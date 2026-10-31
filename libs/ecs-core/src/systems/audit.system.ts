@@ -793,16 +793,20 @@ export const AuditSystem = {
   },
 
   /**
-   * Whether `updateProfile` already wrote this event's row (owner ruling
-   * flip-2 §10.15, Phase 4a 4A-16): an UPDATE whose `profileEditedAtUtcMs`
-   * stamp changed to a new instant is the callable's own edit, audited
-   * inside its transaction, credited to the caller. The callable only ever
-   * writes an instant, so a reset to `null` (a whole-body Admin `set` — the
-   * dev seed, the e2e seed — over an account the callable already stamped)
-   * is never the callable's and is audited by the trigger. A creation (the
-   * provisioned stub, registration, the seed) and a deletion are never
-   * skipped; an edit that leaves the stamp as it was (an account block, an
-   * admin write) is the trigger's to audit, as today.
+   * Whether a callable that audits its own `users` write already wrote this
+   * event's row (owner ruling flip-2 §10.15, Phase 4a 4A-16; security
+   * hardening S-RU-12, S-L-17). Those callables are `updateProfile` (the
+   * owner's edit, credited to the owner) and `setRoles` (an admin's roles
+   * change, its `PROFILE_ROLES_CHANGED` row credited to the admin). An
+   * UPDATE whose `profileEditedAtUtcMs` stamp changed to a new instant is
+   * such a callable's write, audited inside that callable's transaction.
+   * The callables only ever write an instant, so a reset to `null` (a
+   * whole-body Admin `set` — the dev seed, the e2e seed — over an account a
+   * callable already stamped) is never a callable's and is audited by the
+   * trigger. A creation (the provisioned stub, registration, the seed) and
+   * a deletion are never skipped; an edit that leaves the stamp as it was
+   * (an account block, a console or Admin-SDK write) is the trigger's to
+   * audit, as today.
    */
   auditedByCallable(change: ProfileChange): boolean {
     return (

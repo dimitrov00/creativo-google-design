@@ -237,6 +237,46 @@ describe('console-telemetry adapter', () => {
       expect(JSON.stringify(calls)).not.toContain(EMAIL);
     });
 
+    it('skips the message’s own lines even when they look like frames — a phone or a code never passes as one (review round 1, finding 8)', () => {
+      const message = `lookup failed\nat ${PHONE}\n  at code 123456`;
+      // As V8 writes it: the header repeats every message line, then the frames.
+      const shaped = new Error(message);
+      shaped.stack = [
+        `Error: lookup failed`,
+        `at ${PHONE}`,
+        '  at code 123456',
+        '    at main (/workspace/lib/main.js:10:2)',
+      ].join('\n');
+      const recorded = recordingSink();
+      consoleTelemetry(recorded.sink).trackError(shaped, {
+        callable: 'requestOtp',
+      });
+      expect(onlyEntry(recorded.calls).message).toBe(
+        [
+          `Error: ${ClientIssueSystem.scrub(message)}`,
+          '    at main (/workspace/lib/main.js:10:2)',
+        ].join('\n'),
+      );
+
+      // A real V8 stack: the real frames stay, the injected lines do not.
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink).trackError(new Error(message), {
+        callable: 'requestOtp',
+      });
+      const lines = onlyEntry(calls).message.split('\n');
+      expect(lines[0]).toBe(`Error: ${ClientIssueSystem.scrub(message)}`);
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines.slice(1)) expect(line).toMatch(/^ {4}at \S/);
+      for (const written of [
+        JSON.stringify(recorded.calls),
+        JSON.stringify(calls),
+      ]) {
+        expect(written).not.toContain(PHONE);
+        expect(written).not.toContain(PHONE.slice(1));
+        expect(written).not.toContain('123456');
+      }
+    });
+
     it('keeps the recorded residual (S-L-25): a name and free text survive the scrub, the phone and e-mail beside them do not', () => {
       const { sink, calls } = recordingSink();
       consoleTelemetry(sink).trackError(
@@ -503,6 +543,25 @@ describe('console-telemetry adapter', () => {
       expect(payload.error.stack.split('\n')[0]).toBe(
         `Error: ${ClientIssueSystem.scrub(leaky.message)}`,
       );
+    });
+
+    it('skips the message’s own lines in the stack — a frame-shaped one carries no phone or code out (review round 1, finding 8)', () => {
+      const { sink, calls } = recordingSink();
+      const message = `lookup failed\nat ${PHONE}\n  at code 123456`;
+      consoleTelemetry(sink).log('error', 'otp.send_failed', {
+        error: new Error(message),
+      });
+      const payload = calls[0]?.args[1] as {
+        readonly error: { readonly stack: string };
+      };
+      const stack = payload.error.stack.split('\n');
+      expect(stack[0]).toBe(`Error: ${ClientIssueSystem.scrub(message)}`);
+      expect(stack.length).toBeGreaterThan(1);
+      for (const line of stack.slice(1)) expect(line).toMatch(/^ {4}at \S/);
+      const written = JSON.stringify(calls);
+      expect(written).not.toContain(PHONE);
+      expect(written).not.toContain(PHONE.slice(1));
+      expect(written).not.toContain('123456');
     });
 
     it('leaves a non-Error value as it is', () => {

@@ -118,6 +118,31 @@ describe('RoleAssignmentSystem.decide — admitted changes', () => {
     ).toEqual(Roles.ASSIGNABLE);
   });
 
+  it('rolesFrom is the stored set’s known roles — an unknown string and a duplicate dropped, stored order kept (review round 1, finding 2)', () => {
+    // `users` has no read guard: a console-written array reaches decide raw.
+    const consoleWritten = targetUser({
+      roles: [
+        'receptionist',
+        'frontdesk',
+        'receptionist',
+      ] as unknown as readonly Role[],
+    });
+    expect(
+      RoleAssignmentSystem.decide(
+        input({
+          target: consoleWritten,
+          requestedRoles: [Role.Receptionist, Role.Barber],
+        }),
+      ),
+    ).toEqual(
+      Result.ok({
+        rolesFrom: ['receptionist'],
+        rolesTo: ['barber', 'receptionist'],
+        rolesChanged: true,
+      }),
+    );
+  });
+
   it('a blocked or a BLOCKED-until-past target is still admitted (only the caller’s block refuses)', () => {
     const blocked = targetUser(
       AccountLifecycle.block(BlockReason.Manual, null),

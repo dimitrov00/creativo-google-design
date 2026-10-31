@@ -119,7 +119,11 @@ function codeOfError(error: Error): string | number | null {
  * An `Error` as a log field (RU-38): `{ name, code, message, stack }` — the
  * message scrubbed, the stack's head rewritten as `<name>: <scrubbed
  * message>` and every frame line kept only through `ClientIssueSystem.frame`
- * (any other stack line — a message's own continuation — is dropped).
+ * (any other stack line is dropped). The header V8 wrote — `<name>:
+ * <message>`, every line of the message — is skipped by its line count
+ * before the frame filter, so a message line that looks like a frame
+ * (`at +359 …`) never passes as one (security hardening review round 1,
+ * finding 8): `frame` masks no digits.
  */
 function errorField(error: Error): {
   readonly name: string;
@@ -130,7 +134,10 @@ function errorField(error: Error): {
   const name = ClientIssueSystem.scrub(error.name);
   const message = ClientIssueSystem.scrub(error.message);
   const lines = [`${name}: ${message}`];
-  for (const line of (error.stack ?? '').split('\n')) {
+  // The header is rebuilt above from the scrubbed message; only the lines
+  // after it can be frames.
+  const header = Math.max(1, String(error.message).split('\n').length);
+  for (const line of (error.stack ?? '').split('\n').slice(header)) {
     if (FRAME_LINE.test(line)) {
       lines.push(`    at ${ClientIssueSystem.frame(line)}`);
     }

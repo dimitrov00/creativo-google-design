@@ -1,4 +1,8 @@
-import { Injectable } from '@angular/core';
+import {
+  EnvironmentInjector,
+  Injectable,
+  createEnvironmentInjector,
+} from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   type Translation,
@@ -23,7 +27,7 @@ import {
   type RolesCall,
   VisitFilter,
 } from '@core/components';
-import type { Appointment, Customer, JournalEntry } from '@core/entities';
+import type { Appointment, Customer, JournalEntry, User } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
@@ -3158,6 +3162,102 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     // Revoked at last: a re-open forgets it.
     await openedAs(store, ADMIN_VIEWER);
     expect(store.roles()?.line).toBeNull();
+  });
+
+  it('keeps the draft and a refused act’s id through a re-open of the same person — only the line goes (review round 1, finding 1)', async () => {
+    const admin = rolesAdminPortsOf(
+      CoreResult.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
+      changed([Role.Client, Role.Barber]),
+    );
+    const ids = rolesIds();
+    const { store } = rolesRig({ admin, ids });
+    await openedAs(store, ADMIN_VIEWER);
+
+    // An unsaved toggle survives a background re-open (the visit's key moved).
+    store.toggleRole(Role.Barber);
+    await openedAs(store, ADMIN_VIEWER);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.saveEnabled).toBe(true);
+
+    // A refused act (it may have committed): a re-open keeps its call and the
+    // toggles, and forgets only the refusal's line.
+    await store.saveRoles();
+    expect(store.roles()?.line).not.toBeNull();
+    await openedAs(store, ADMIN_VIEWER);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.saveEnabled).toBe(true);
+    expect(store.roles()?.line).toBeNull();
+
+    // The retry is the same act: the same call, the one minted id.
+    await store.saveRoles();
+    expect(admin.calls).toHaveLength(2);
+    expect(admin.calls[1]).toBe(admin.calls[0]);
+    expect(ids.minted).toEqual(['op-card-roles-0001']);
+    expect(store.roles()?.line).toBe(SAVED_LINE);
+  });
+
+  it('a failed revoke outlives the sheet: a new sheet’s store offers its retry under the kept id, until a revoke succeeds (review round 1, finding 6)', async () => {
+    const admin = rolesAdminPortsOf(
+      CoreResult.err(NOT_REVOKED),
+      CoreResult.ok({
+        targetUserId: UserId.of(GEORGI),
+        roles: [Role.Client, Role.Barber],
+        rolesChanged: false,
+      }),
+    );
+    const ids = rolesIds();
+    rolesRig({ admin, ids });
+    const root = TestBed.inject(EnvironmentInjector);
+    /** One visit sheet: its OWN card store (`StaffVisitEditor`'s `providers`), the profile as it reads then. */
+    const sheet = (users?: readonly User[]): EnvironmentInjector =>
+      createEnvironmentInjector(
+        [
+          ClientCardStore,
+          ...(users === undefined
+            ? []
+            : [{ provide: PROFILE_PORTS, useValue: profilePortsOf(users) }]),
+        ],
+        root,
+      );
+    /** The committed set, as `users/{uid}` reads after the commit landed. */
+    const committed = [{ ...georgiUser(), roles: [Role.Client, Role.Barber] }];
+
+    const first = sheet();
+    const a = first.get(ClientCardStore);
+    await openedAs(a, ADMIN_VIEWER);
+    a.toggleRole(Role.Barber);
+    await a.saveRoles();
+    expect(a.roles()?.line).toBe(NOT_REVOKED_LINE);
+    // The sheet closes: its store goes with it.
+    first.destroy();
+
+    const second = sheet(committed);
+    const b = second.get(ClientCardStore);
+    expect(b).not.toBe(a);
+    await openedAs(b, ADMIN_VIEWER);
+    expect(b.roles()?.line).toBe(NOT_REVOKED_LINE);
+    expect(ticked(b)).toEqual([Role.Client, Role.Barber]);
+    expect(b.roles()?.saveEnabled).toBe(true);
+    await b.saveRoles();
+    expect(admin.calls).toHaveLength(2);
+    expect(admin.calls[1]).toBe(admin.calls[0]);
+    expect(admin.calls[1]).toEqual({
+      targetUserId: UserId.of(GEORGI),
+      roles: [Role.Client, Role.Barber],
+      operationId: 'op-card-roles-0001',
+    });
+    expect(ids.minted).toEqual(['op-card-roles-0001']);
+    expect(b.roles()?.line).toBe(SAVED_LINE);
+    second.destroy();
+
+    // Revoked at last: a third sheet has nothing to retry.
+    const third = sheet(committed);
+    const c = third.get(ClientCardStore);
+    await openedAs(c, ADMIN_VIEWER);
+    expect(c.roles()?.line).toBeNull();
+    expect(c.roles()?.saveEnabled).toBe(false);
+    expect(ticked(c)).toEqual([Role.Client, Role.Barber]);
+    third.destroy();
   });
 
   it('asks once while a change is on its way, and drops the answer of a person no longer on the card', async () => {

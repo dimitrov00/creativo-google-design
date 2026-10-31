@@ -166,7 +166,7 @@ hierarchy). Names the brief proposes are proposals (Phase 0–2 brief §1 item
 **WS-E — an audited role change**
 
 - **S-RU-9 (E) rename `ACCOUNTS_ROLES_CHANGED` → `PROFILE_ROLES_CHANGED`.** Brief: _"`ACCOUNTS_ROLES_CHANGED` or the lawful name — roles before/after as tags, never names"_. The verb regex is pinned (`audit-context.data.spec.ts:68`, no `ACCOUNTS_` family). Applied: `AuditAction.ProfileRolesChanged: 'PROFILE_ROLES_CHANGED'`, a member of `ProfileAction`, written through `AuditContext.profileWithTags` with `profileFields: ['roles']`, `profileRolesFrom` / `profileRolesTo` (closed `Role[]` tags) — zero new fields, zero index overrides (`auditLog.profileRolesFrom/To` already `indexes: []`).
-- **S-RU-10 (E) "refreshes the custom claims" = the next sign-in mints them; the callable revokes.** Brief: _"writes `users.roles` and refreshes the custom claims, revokes the target's refresh tokens so the new claims apply"_. §0.1 E.2: no claims are persisted anywhere — `RegistrationSystem.claimsFor(…, user.roles, …)` mints them into every custom token at sign-in, from `users.roles`. A `setCustomUserClaims` writer would add a second source of truth and arm the erasure's claim check (`AuthRolesPorts.loadAuthRoles`, P3-L-16) with values the trigger never audits. Applied: the commit writes `users.roles`; after it, `revokeRefreshTokens(target)` forces the target's next refresh to fail, so their next session is minted from the written roles (proved in the integration spec by minting through the real claims path, §4 PE2). After a SUCCESSFUL revoke an already-issued ID token keeps its roles until it expires (≤ 1 h). After a FAILED one (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`) the old roles live as long as the target's session — developer claims ride every ID token refreshed from it (`auth-claims.adapter.ts:65`, `HANDOFF.md:2595`) — so the failure must not be forgettable: the card keeps a retry that re-sends the stored set (S-L-18), the pipeline logs `LogEvent.RolesSessionsNotRevoked`, and an alert fires on any occurrence (PE2, `tools/ops`). The pipelines that matter re-read STORED roles (privacy, backfill, `setRoles` itself); owner flag §7 item 11.
+- **S-RU-10 (E) "refreshes the custom claims" = the next sign-in mints them; the callable revokes.** Brief: _"writes `users.roles` and refreshes the custom claims, revokes the target's refresh tokens so the new claims apply"_. §0.1 E.2: no claims are persisted anywhere — `RegistrationSystem.claimsFor(…, user.roles, …)` mints them into every custom token at sign-in, from `users.roles`. A `setCustomUserClaims` writer would add a second source of truth and arm the erasure's claim check (`AuthRolesPorts.loadAuthRoles`, P3-L-16) with values the trigger never audits. Applied: the commit writes `users.roles`; after it, `revokeRefreshTokens(target)` forces the target's next refresh to fail, so their next session is minted from the written roles (proved in the integration spec by minting through the real claims path, §4 PE2). After a SUCCESSFUL revoke an already-issued ID token keeps its roles until it expires (≤ 1 h). A custom token minted before the change (`verifyOtp` returns it to the caller; it can be exchanged for up to 1 h after it is minted) and exchanged after the revoke opens a NEW session with the old developer claims. That session refreshes normally until the next revoke of the account, unless the Auth backend refuses a custom token minted before `tokensValidAfterTime`. Production behaviour is unconfirmed, and the Auth emulator validates no custom token at all (firebase-tools 15.34.1 `operations.js:1008-1060`). The callables that re-read STORED roles still refuse the account. Claim-gated rules (`isAdmin()`, `isStaff()`, the storage staff check) do not. Remedy: any later `setRoles` on the account, unchanged sets included, revokes again. A real bound (a roles stamp in the minted claims checked at the edge, or rules reading `users/{uid}.roles`) is a follow-up (review round 1, finding 7). After a FAILED one (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`) the old roles live as long as the target's session — developer claims ride every ID token refreshed from it (`auth-claims.adapter.ts:65`, `HANDOFF.md:2595`) — so the failure must not be forgettable: the card keeps a retry that re-sends the stored set (S-L-18) — its memory is root-provided (`pending-revokes.store.ts`), so it outlives the visit sheet but not a reload of the admin's tab or another device (review round 1, finding 6), where the remedy is an Admin SDK `getAuth().revokeRefreshTokens('<targetUserId>')` run as the functions' runtime service account, or a changed set saved from the card and the original saved back (two audit rows) — the pipeline logs `LogEvent.RolesSessionsNotRevoked`, and an alert fires on any occurrence (PE2, `tools/ops`). The pipelines that matter re-read STORED roles (privacy, backfill, `setRoles` itself); owner flag §7 item 11.
 - **S-RU-11 (E) "refuses removing the last admin" holds by construction.** Brief: _"refuses removing the last admin and changing one's own roles"_. Applied: only the owner-admin assigns (`Roles.ASSIGN = [admin]`, S-RU-14), the caller's STORED roles are re-read inside the transaction (and a caller blocked at `now` — `AccountLifecycle.isBlockedAt`, an existing T2 row, ERASED included — is refused `GOVERNANCE_ROLES_FORBIDDEN`: blocking is console-only and revokes nothing, so a blocked admin keeps a working session), and the self guard refuses touching one's own roles — so every admitted plan leaves the caller an admin, and the shop can never lose its last admin through `setRoles`. The system states the invariant (`RoleAssignmentSystem.decide` answers only plans after which the caller — an admin not blocked at `now` — or the target holds `admin`), and a property spec proves it over every caller × target × requested role set; no count query, no `users.roles` index flip (a query nobody's answer could change is cost without proof). Should `ASSIGN` ever widen, the invariant line becomes a real coded refusal in the same function (S-L-15).
 - **S-RU-12 (E) one row, credited — the trigger skips the callable's write.** The profile trigger already audits `users.roles` as a process row (`audit.system.ts:207-215`). Applied: the callable's `users` update also writes `profileEditedAtUtcMs: now`, which `AuditSystem.auditedByCallable` (`:794-801`) reads as "audited by a callable" — the 4A-16 / flip-2 §10.15 idiom of `updateProfile`. The entity's doc for the stamp widens from "the owner's own edit" to "a callable-audited profile write" (S-L-17).
 - **S-RU-13 (E) the entry point is the staff client card.** Brief: _"an admin UI entry point on an existing staff/admin surface (minimal, new copy flagged)"_. Applied: a «Роли» block on the card beside the admin's privacy block (the existing admin-only card surface, reached through the visit editor's client search), not a new admin page, route or lib. Hidden for the viewer's own account and for a target holding `sysadmin`; the server stays the authority (S-L-18).
@@ -1041,7 +1041,7 @@ The runbook §3 deploy order and its P-row lists gain P10 and these steps.
 **2.A.7 `verify:appcheck` (PA3).** `package.json`:
 
 ```jsonc
-"verify:appcheck": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test --app-check ENFORCE && firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"node tools/verify/app-check/verify-app-check.mjs --expect ENFORCE\" && node tools/flags/write-functions-env.mjs --project demo-creativo-test --app-check MONITOR && firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"node tools/verify/app-check/verify-app-check.mjs --expect MONITOR\""
+"verify:appcheck": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test --app-check ENFORCE && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"node tools/verify/app-check/verify-app-check.mjs --expect ENFORCE\" && node tools/flags/write-functions-env.mjs --project demo-creativo-test --app-check MONITOR && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions --project demo-creativo-test \"node tools/verify/app-check/verify-app-check.mjs --expect MONITOR\""
 ```
 
 The script posts raw callable requests to the Functions emulator (no auth,
@@ -1230,6 +1230,9 @@ test firestore` (the unit target must not pick up the new
   `libs/infrastructure/firestore/src/lib/visit-media-writers.integration.spec.ts`,
   `libs/infrastructure/firestore/src/lib/rules-key-parity.rules-text.spec.ts`
   (new — the compile-checked key tables vs the rules' `hasOnly` lists),
+  `libs/infrastructure/firestore/src/testing/rules-text.ts` (new in review
+  round 1, finding 5 — the one comment stripper and block reader both
+  rules-text specs import),
   `libs/infrastructure/firestore/src/lib/scheduling.adapter.integration.spec.ts`
   (only if a case writes an id its body does not match — re-read; expected
   untouched), `docs/production-deploy.md` (§3.2 Rules `:715-729`: the S-DEP-5
@@ -1787,10 +1790,16 @@ gates keep their reference counts.
     cannot upload (fail-closed). A checkbox in `production-deploy.md` §1
     (PA5) and the §3.2 step (PC2).
 11. **`setRoles`'s windows**: after a SUCCESSFUL revoke an already-issued
-    ID token keeps its roles ≤ 1 h (rules read claims); after a FAILED one
-    the old roles live as long as the target's session (claims ride every
-    refresh) — the card keeps the retry and the `roles_sessions_not_revoked`
-    alert fires (attach a channel); the revoke signs the target out at their
+    ID token keeps its roles ≤ 1 h (rules read claims); a custom token
+    outstanding at the change (minted ≤ 1 h before it and exchanged after
+    it) keeps the old roles for that session's whole life, unless
+    production refuses it (unconfirmed — confirm on the project); after a
+    FAILED one the old roles live as long as the target's session (claims
+    ride every refresh) — the card keeps the retry while the admin's tab
+    stays open (a reload or another device loses it: then an Admin SDK
+    `revokeRefreshTokens` of the target, or a changed set saved and the
+    original saved back) and the `roles_sessions_not_revoked` alert fires
+    (attach a channel); the revoke signs the target out at their
     next refresh and their next OTP sign-in mints the new roles; an
     unchanged `setRoles` is a forced sign-out of that account, logged
     `roles.sessions_revoked` (S-L-26); a console-blocked admin cannot
@@ -1855,3 +1864,81 @@ gates keep their reference counts.
 | S-WS-A — App Check                        | PA1, PA2, PA4, PA3, PA5 | TODO   | —          | —           |
 | Review round 1                            | fixer                   | TODO   | —          | —           |
 | Review round 2 + FULL gate                | fixer                   | TODO   | —          | —           |
+
+### 8.R1 Review round 1
+
+Review of `86870b9..dda0b83` (B–F); eight confirmed findings, all fixed on
+`21881fb` (the orchestrator commits). One line per finding: severity, title,
+file, disposition, the spec that proves it.
+
+1. **MINOR — a same-person re-open reset the «Роли» block**
+   (`libs/features/staff/client-card/src/lib/client-card.store.ts`, `open()`).
+   FIXED: the privacy idiom — a re-open clears only the line; a refused act
+   keeps its draft and its call (one operation id per act, S-L-18); a pending
+   failed revoke still comes back whole (`restoreRoles`). Spec:
+   `client-card.store.spec.ts` «keeps the draft and a refused act’s id
+   through a re-open of the same person».
+2. **MINOR — `PROFILE_ROLES_CHANGED` copied the raw `users.roles` into
+   `profileRolesFrom`** (`libs/ecs-core/src/systems/role-assignment.system.ts`,
+   `decide`). FIXED: `rolesFrom: Roles.known(target.value.roles)` — each once,
+   stored order, an unknown string dropped, as `AuditSystem.profileTagDelta`
+   reads a side. Specs: `role-assignment.system.spec.ts` «rolesFrom is the
+   stored set’s known roles»; `audit.system.spec.ts` «a console-written stored
+   set reaches the row as its known roles» (the two writers agree).
+3. **MINOR — `auditedByCallable` and the trigger pipeline's header named
+   only `updateProfile`** (`libs/ecs-core/src/systems/audit.system.ts`,
+   `libs/ecs-core/src/pipelines/audit-document-change.pipeline.ts`). FIXED
+   (docs): both name `updateProfile` and `setRoles` (S-RU-12, S-L-17); "an
+   admin write" became "a console or Admin-SDK write". Spec (added pin):
+   `audit.system.spec.ts` «plans nothing for setRoles’ write either».
+4. **MINOR — runbook §1.1 `customers` row lacked `loadCustomer`; §3 step 2
+   said `storage.rules` was unchanged** (`docs/architecture/firestore-runbook.md`).
+   FIXED (docs): the **wa** / **st** entries name `loadCustomer` (the
+   walk-in record's card, S-WS-F), the **e2e** entry `seedWalkInRecord`; step
+   2 names the Storage rules agent's `roles/firebaserules.firestoreServiceAgent`
+   grant (S-DEP-4). No spec (a register row; `git grep -n 'loadCustomer\b'`).
+5. **MINOR — the key-parity rules-text spec copied the stamp-window spec's
+   stripper and block reader**
+   (`libs/infrastructure/firestore/src/lib/rules-key-parity.rules-text.spec.ts`).
+   FIXED: ONE helper, `libs/infrastructure/firestore/src/testing/rules-text.ts`
+   (`rulesCode`, `RULES_CODE`, `blockOf`, `occurrences`), imported by both
+   specs; every pin and count unchanged (5 + 2 cases, 17 + 10 expects).
+   `role.rules-parity.spec.ts` (ecs-core) is no true copy (it throws on an
+   unterminated comment, pads block comments) and sits in a lib that cannot
+   import it — kept. Specs: `stamp-window.rules-text.spec.ts`,
+   `rules-key-parity.rules-text.spec.ts`.
+6. **MAJOR — the failed-revoke retry died with the visit sheet**
+   (`client-card.store.ts`). FIXED: the memory moved to a root-provided
+   Angular store, `libs/features/staff/client-card/src/lib/pending-revokes.store.ts`
+   (`PendingRevokesStore`, `@Injectable({ providedIn: 'root' })`, with the
+   `RolesAct` / `PendingRevoke` types); every `ClientCardStore` (one per
+   sheet) reads and writes it; S-L-18's Save rule unchanged. A reload or
+   another device still loses it, so the operator text names the remedy that
+   always works — an Admin SDK `getAuth().revokeRefreshTokens('<targetUserId>')`
+   as the functions' runtime service account, or a changed set saved and the
+   original saved back: `tools/ops/alerts/roles-sessions-not-revoked.yaml`,
+   runbook §3 step 7, `docs/production-deploy.md` §3.3, S-RU-10, §7 item 11.
+   Specs: `client-card.store.spec.ts` «a failed revoke outlives the sheet»
+   (a second and a third store in fresh child injectors over one root);
+   `tools/verify/ops/ops-scripts.spec.mjs` «the roles alert names the remedy
+   that outlives the admin’s tab».
+7. **MINOR — a custom token minted before the change and exchanged after
+   the revoke opens a session with the old roles** (S-RU-10). FIXED (docs):
+   S-RU-10 and §7 item 11 record the residual (production behaviour
+   unconfirmed, the emulator validates no custom token; remedy: any later
+   `setRoles`; a real bound is a follow-up); the runbook's S-WS-E paragraph
+   carries it too. HANDOFF's Phase 4 record carries it (task #14). No spec.
+8. **MINOR — a frame-shaped message line skipped the digit mask in
+   `trackError`'s report** (`apps/functions/src/adapters/console-telemetry.adapter.ts`,
+   `errorField`). FIXED: the V8 header (`<name>: <message>`, every message
+   line) is skipped by the message's line count before the frame filter.
+   Specs: `console-telemetry.adapter.spec.ts` «skips the message’s own lines
+   even when they look like frames» (trackError) and «skips the message’s
+   own lines in the stack» (an `Error` in `log` fields, RU-38).
+
+Also corrected (the stage integrator's notes): `docs/production-deploy.md`
+§1 (a walk-in-only person has a card since S-WS-F, S-DEP-8);
+`tools/verify/p0/README.md` (P0's one raw callable post presents the
+emulator App Check token, S-RU-26, S-DEP-18); §2.A.7 (the `verify:appcheck`
+text gains `START_LOGGING_EMULATOR=true` before each `firebase
+emulators:exec`, as `package.json` has it).

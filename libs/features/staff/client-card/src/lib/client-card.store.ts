@@ -56,7 +56,6 @@ import {
   LocalizedText,
   Registration,
   type Role,
-  type RolesCall,
   Roles,
   type ShopNow,
   type VisitFact,
@@ -187,6 +186,7 @@ import {
   clientPrivacyVm,
 } from './client-privacy.presenter';
 import { type ClientRolesState, clientRolesVm } from './client-roles.presenter';
+import { PendingRevokesStore, type RolesAct } from './pending-revokes.store';
 import { recordsPageVm } from './records.presenter';
 import {
   visitsPageBlank,
@@ -335,27 +335,6 @@ const ERASURE_IDLE: ClientErasureState = {
 const ROLES_IDLE: ClientRolesState = {
   clientRolesPhase: ClientRolesPhase.Idle,
 };
-
-/**
- * The «Роли» block's act (security hardening S-WS-E): the account, the
- * whole new set and the act's own minted operation id — ONE call, sent
- * again verbatim by a retry of the same act. The id rides the payload
- * under `operationId` (`OPERATION_ID_FIELD`), so the callable client mints
- * no transport id of its own over it.
- */
-type RolesAct = RolesCall & { readonly operationId: ClientOperationId };
-
-/**
- * A roles change the server committed but whose sessions it could not
- * revoke (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`, S-RU-10): the act, kept
- * for its retry (the stored set, sent again), and the refusal its line
- * words — never forgotten while the card lives, whatever person it shows
- * in between.
- */
-interface PendingRevoke {
-  readonly call: RolesAct;
-  readonly error: PipelineError;
-}
 
 /**
  * A previewed erasure act waiting for the admin's answer (the ONE alert is
@@ -643,10 +622,12 @@ export class ClientCardStore {
    * `null` once an answer saved it, and for another person.
    */
   private rolesCall: RolesAct | null = null;
-  /** The failed revokes, per account (S-RU-10): each one's Save stays offered until a revoke succeeds. */
-  private readonly _pendingRevokes = signal<ReadonlyMap<UserId, PendingRevoke>>(
-    new Map(),
-  );
+  /**
+   * The failed revokes, per account (S-RU-10): each one's Save stays
+   * offered until a revoke succeeds — root-provided, so the memory outlives
+   * this sheet's store (review round 1, finding 6).
+   */
+  private readonly revokes = inject(PendingRevokesStore);
 
   /** The person the card is about; `null` before the first `open`. */
   readonly subject = this._subject.asReadonly();
@@ -1686,10 +1667,16 @@ export class ClientCardStore {
         ) {
           this._erasure.set(ERASURE_IDLE);
         }
-        // ... and the roles' last line — but never a failed revoke's: its
-        // line and its retry stay until a revoke succeeds (S-RU-10).
+        // ... and the roles' last line; a refused act keeps its draft and
+        // its call for a retry; a failed revoke of theirs comes back whole —
+        // its line and its retry stay until a revoke succeeds (S-RU-10).
         if (this._roles().clientRolesPhase !== ClientRolesPhase.Running) {
-          this.restoreRoles(subject);
+          const uid = subject.userId;
+          if (uid !== null && this.revokes.pending().has(uid)) {
+            this.restoreRoles(subject);
+          } else {
+            this._roles.set(ROLES_IDLE);
+          }
         }
       }
       if (subject.userId !== null) {
@@ -2019,7 +2006,7 @@ export class ClientCardStore {
   /** This person's roles were committed but their sessions not revoked: Save re-sends the stored set (S-RU-10). */
   private readonly revokePending = computed(() => {
     const uid = this._subject()?.userId ?? null;
-    return uid !== null && this._pendingRevokes().has(uid);
+    return uid !== null && this.revokes.pending().has(uid);
   });
 
   /**
@@ -2144,22 +2131,23 @@ export class ClientCardStore {
    * succeeded); any other refusal changes nothing.
    */
   private rememberRevoke(call: RolesAct, error: PipelineError | null): void {
-    if (error !== null && !this.isRevokeFailure(error)) return;
-    const pending = new Map(untracked(this._pendingRevokes));
-    if (error === null) pending.delete(call.targetUserId);
-    else pending.set(call.targetUserId, { call, error });
-    this._pendingRevokes.set(pending);
+    if (error === null) {
+      this.revokes.forget(call.targetUserId);
+    } else if (this.isRevokeFailure(error)) {
+      this.revokes.remember({ call, error });
+    }
   }
 
   /**
-   * The roles block's state for a person (re)opened: a failed revoke of
-   * theirs comes back with its act, its committed set and its line;
-   * anyone else starts idle on their stored set.
+   * The roles block's state for a person opened anew (another person, a new
+   * sheet), or re-opened while a failed revoke of theirs is pending: that
+   * revoke comes back with its act, its committed set and its line; anyone
+   * else starts idle on their stored set.
    */
   private restoreRoles(subject: ClientCardSubject): void {
     const uid = subject.userId;
     const pending =
-      uid === null ? undefined : untracked(this._pendingRevokes).get(uid);
+      uid === null ? undefined : untracked(this.revokes.pending).get(uid);
     this._rolesDraft.set(null);
     if (pending === undefined) {
       this.rolesCall = null;

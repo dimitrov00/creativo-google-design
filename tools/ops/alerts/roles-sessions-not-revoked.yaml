@@ -10,9 +10,16 @@ documentation:
   content: >-
     setRoles committed an account's new roles but Admin Auth's
     revokeRefreshTokens failed, so the account's live session keeps its old
-    roles. The admin's card keeps a retry: Save on the same account re-sends
-    the stored set and re-revokes. The line carries the target uid and the
-    failure code; join it to the callable outcome line in the audit bucket.
+    roles. The admin's card keeps a retry only while the admin's browser tab
+    stays open (closing the visit sheet keeps it): Save on the same account
+    re-sends the stored set and re-revokes. After a reload, or on another
+    device, the card offers no retry. The remedy that always works: an Admin
+    SDK call run as the functions' runtime service account,
+    getAuth().revokeRefreshTokens('<targetUserId from the log line>'). From
+    the card, saving any changed set and then saving the original back also
+    revokes, at the cost of two audit rows. The line carries the target uid
+    (targetUserId) and the failure code; join it to the callable outcome
+    line in the audit bucket.
 combiner: OR
 conditions:
   - displayName: 'any roles_sessions_not_revoked in 5 minutes'

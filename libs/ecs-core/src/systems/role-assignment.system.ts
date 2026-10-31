@@ -5,7 +5,9 @@ import type { User } from '@core/entities';
 
 /**
  * An admitted roles change (security hardening S-WS-E): the target's
- * stored set, the set the call writes (deduplicated, dictionary order) and
+ * stored set's known roles (`rolesFrom` — `Roles.known`: each once, stored
+ * order, an unknown string dropped, as `AuditSystem.profileTagDelta` reads
+ * a side), the set the call writes (deduplicated, dictionary order) and
  * whether the two differ — `false` writes nothing (the pipeline still
  * revokes, S-L-15).
  */
@@ -106,7 +108,10 @@ export const RoleAssignmentSystem = {
    * order); the requested set is non-empty and inside `Roles.ASSIGNABLE`
    * (else `GOVERNANCE_ROLES_INVALID` — an unknown string or the sysadmin
    * alike), normalised to dictionary order. The same set as stored is
-   * admitted with `rolesChanged: false`.
+   * admitted with `rolesChanged: false`. `rolesFrom` is the stored set's
+   * known roles (`Roles.known`: each once, stored order, an unknown string
+   * dropped) — `users` has no read guard, so a console-written array is
+   * read raw, and the audit row's closed `Role[]` tags must not carry it.
    */
   decide(input: {
     readonly callerUserId: UserId;
@@ -140,7 +145,7 @@ export const RoleAssignmentSystem = {
     }
     const change = RoleAssignmentSystem.changeOf(target.value.roles, requested);
     return Result.ok({
-      rolesFrom: target.value.roles,
+      rolesFrom: Roles.known(target.value.roles),
       rolesTo: change.rolesTo,
       rolesChanged: change.rolesChanged,
     });

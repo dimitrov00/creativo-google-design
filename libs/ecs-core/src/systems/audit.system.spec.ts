@@ -67,7 +67,10 @@ import {
   AuditSystem,
   type ProfileChange,
 } from './audit.system';
-import type { RoleAssignment } from './role-assignment.system';
+import {
+  type RoleAssignment,
+  RoleAssignmentSystem,
+} from './role-assignment.system';
 
 /*
  * The pure cases of apps/functions/src/lib/booking/audit.spec.ts (targets,
@@ -1133,6 +1136,27 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
       ).toBeNull();
     });
 
+    it('plans nothing for setRoles’ write either — an admin’s roles change (an Admin SDK write), its own PROFILE_ROLES_CHANGED row already committed (S-RU-12, S-L-17)', () => {
+      for (const before of [null, BEFORE]) {
+        expect(
+          unwrapOk(
+            AuditSystem.planProfileChange(
+              {
+                ...change,
+                writer: AuditSystem.writerOf('service_account', null),
+                fields: [AuditedProfileField.Roles],
+                beforeProfileEditedAtUtcMs: before,
+                afterProfileEditedAtUtcMs: AFTER,
+                profileRolesFrom: [Role.Client],
+                profileRolesTo: [Role.Client, Role.Barber],
+              },
+              AT,
+            ),
+          ),
+        ).toBeNull();
+      }
+    });
+
     it('audits an update that left the stamp as it was (a block, an admin write) as today', () => {
       const plan = unwrapOk(
         AuditSystem.planProfileChange(
@@ -1355,6 +1379,49 @@ describe('AuditSystem.planRolesChanged — the row setRoles writes itself (secur
       AuditSystem.planRolesChanged(TARGET, promotion, admin, CHANGED_AT, null)
         .row.auditOperationId,
     ).toBeNull();
+  });
+
+  it('a console-written stored set reaches the row as its known roles — the profile trigger’s own tags (review round 1, finding 2)', () => {
+    // `users` has no read guard: setRoles' decide reads this array raw.
+    const raw = ['receptionist', 'frontdesk', 'receptionist'];
+    const assignment = unwrapOk(
+      RoleAssignmentSystem.decide({
+        callerUserId: UserId.of('ivan'),
+        caller: registeredUserFixture({
+          id: UserId.of('ivan'),
+          roles: [Role.Admin],
+        }),
+        target: registeredUserFixture({
+          id: TARGET,
+          roles: raw as unknown as readonly Role[],
+        }),
+        targetUserId: TARGET,
+        requestedRoles: [Role.Receptionist, Role.Barber],
+        nowUtcMs: CHANGED_AT,
+      }),
+    );
+    const row = AuditSystem.planRolesChanged(
+      TARGET,
+      assignment,
+      admin,
+      CHANGED_AT,
+      OP,
+    ).row;
+    expect(row).toMatchObject({
+      profileRolesFrom: ['receptionist'],
+      profileRolesTo: ['barber', 'receptionist'],
+    });
+    // The two writers of the field agree: the trigger's delta for the same edit.
+    const delta = AuditSystem.profileTagDelta(
+      { roles: raw },
+      { roles: assignment.rolesTo },
+    );
+    expect('profileRolesFrom' in row && row.profileRolesFrom).toEqual(
+      delta.profileRolesFrom,
+    );
+    expect('profileRolesTo' in row && row.profileRolesTo).toEqual(
+      delta.profileRolesTo,
+    );
   });
 
   it('carries no name, phone or e-mail of the account (sentinel scan, R36)', () => {

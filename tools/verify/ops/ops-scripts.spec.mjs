@@ -408,4 +408,15 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
       );
     }
   });
+
+  it('the roles alert names the remedy that outlives the admin’s tab (security hardening S-RU-10, review round 1 finding 6)', () => {
+    const text = read('tools/ops/alerts/roles-sessions-not-revoked.yaml');
+    // The card's retry lives in the admin's tab, never longer.
+    assert.match(text, /only while the admin's browser tab\s+stays open/);
+    // The always-working remedy, keyed by the log line's target uid.
+    assert.match(
+      text,
+      /getAuth\(\)\.revokeRefreshTokens\('<targetUserId from the log line>'\)/,
+    );
+  });
 });

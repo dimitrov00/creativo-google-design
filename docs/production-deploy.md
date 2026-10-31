@@ -510,9 +510,11 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       e-mail is offered as its own erase row ("Erase the record with the same
       phone or e-mail") — only while the person's own record still holds
       those values, so erase the siblings from the same card. A walk-in-ONLY
-      person (no sign-in account) has no card in Phase 3: the callables
-      accept the record id, but no screen reaches it — such a request needs
-      a hand-run call until a search → record route exists. A person past
+      person (no sign-in account) has a card of their own since security
+      hardening S-WS-F (S-DEP-8): the visit editor's client search (a record
+      result) or the person's walk-in seat opens the record's card, which
+      shows the head and this block, the export and the erasure keyed by the
+      record id. A person past
       the caps is refused, never served partly: the export at 20,000
       documents or 4 MiB (`PRIVACY_EXPORT_TOO_LARGE`), the erasure at 5,000
       documents in any one list (`PRIVACY_ERASURE_TOO_LARGE`) — both need a
@@ -972,7 +974,13 @@ so their next session is minted from the written roles. The revoke runs as
 the functions' runtime service account — the one `eraseClient` deletes Auth
 users as, so the same confirmation covers it (runbook §3). A failed revoke answers
 `GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED` with the roles committed and fires
-the `roles_sessions_not_revoked` alert (the monitoring item below).
+the `roles_sessions_not_revoked` alert (the monitoring item below). The
+admin's card keeps a retry (Save re-sends the stored set) only while the
+admin's browser tab stays open; after a reload or on another device, revoke
+with the Admin SDK as the functions' runtime service account —
+`getAuth().revokeRefreshTokens('<targetUserId>')`, the uid from the log line
+— or save any changed set from the card and then the original back (two
+audit rows).
 Source: `apps/functions/src/main.ts` (`setRoles`);
 `libs/ecs-core/src/pipelines/set-roles.pipeline.ts`;
 `docs/architecture/firestore-runbook.md` §3.
