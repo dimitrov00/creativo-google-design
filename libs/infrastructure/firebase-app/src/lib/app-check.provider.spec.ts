@@ -84,6 +84,29 @@ function loaderScripts(document: Document): HTMLScriptElement[] {
   );
 }
 
+/**
+ * What `enterprise.js` leaves on the page once reCAPTCHA is ready: a
+ * `grecaptcha.enterprise` whose `ready` runs its callback at once.
+ */
+const READY_GRECAPTCHA = {
+  enterprise: { ready: (onReady: () => void) => onReady() },
+};
+
+/**
+ * What the loader alone leaves on the page (review round 2): a
+ * `grecaptcha.enterprise.ready` stub that only queues its callbacks until
+ * the library from `www.gstatic.com/recaptcha/` runs.
+ */
+function loaderOnlyGrecaptcha() {
+  const queued: (() => void)[] = [];
+  return {
+    queued,
+    grecaptcha: {
+      enterprise: { ready: (onReady: () => void) => void queued.push(onReady) },
+    },
+  };
+}
+
 /** The one client issue of a page that runs without App Check. */
 const unavailable = (errorName: string) =>
   ClientIssueSystem.compose({
@@ -204,13 +227,13 @@ describe('provideFirebaseAppCheck — RECAPTCHA_ENTERPRISE (S-L-24)', () => {
     siteKey: 'site-key',
   } as const;
 
-  it('appends enterprise.js at boot and initialises once the loaded grecaptcha.enterprise exists', async () => {
+  it('appends enterprise.js at boot and initialises once grecaptcha.enterprise.ready has fired', async () => {
     const { document, sink } = boot(CONFIG);
     const scripts = loaderScripts(document);
     expect(scripts).toHaveLength(1);
     expect(initializeAppCheckMock).not.toHaveBeenCalled();
 
-    Reflect.set(document.defaultView ?? {}, 'grecaptcha', { enterprise: {} });
+    Reflect.set(document.defaultView ?? {}, 'grecaptcha', READY_GRECAPTCHA);
     scripts[0]?.dispatchEvent(new Event('load'));
 
     await expect(TestBed.inject(FIREBASE_APP_CHECK)).resolves.toBe(APP_CHECK);
@@ -270,10 +293,91 @@ describe('provideFirebaseAppCheck — RECAPTCHA_ENTERPRISE (S-L-24)', () => {
     });
     const { document, sink } = boot(CONFIG);
 
-    Reflect.set(document.defaultView ?? {}, 'grecaptcha', { enterprise: {} });
+    Reflect.set(document.defaultView ?? {}, 'grecaptcha', READY_GRECAPTCHA);
     loaderScripts(document)[0]?.dispatchEvent(new Event('load'));
 
     await expect(TestBed.inject(FIREBASE_APP_CHECK)).resolves.toBeNull();
     expect(sink.reported).toEqual([unavailable('AppCheckNotInitialized')]);
   });
+
+  // Review round 2, finding 1: `enterprise.js` is only a loader. Its
+  // `grecaptcha.enterprise.ready` queues callbacks until the library it
+  // injects from www.gstatic.com/recaptcha/ runs, and the SDK's token waits
+  // on that `ready` with no bound — so App Check starts only once it fired,
+  // and the ONE bound covers the loader and the readiness together.
+  it('a loader whose ready never fires resolves null within APP_CHECK_SCRIPT_TIMEOUT_MS, never initialises, and reports one issue', async () => {
+    vi.useFakeTimers();
+    const { document, sink } = boot(CONFIG);
+    const { queued, grecaptcha } = loaderOnlyGrecaptcha();
+    let settled = false;
+    void TestBed.inject(FIREBASE_APP_CHECK).then(() => {
+      settled = true;
+    });
+
+    // The loader arrives half-way through the bound; its `ready` only queues.
+    await vi.advanceTimersByTimeAsync(APP_CHECK_SCRIPT_TIMEOUT_MS / 2);
+    Reflect.set(document.defaultView ?? {}, 'grecaptcha', grecaptcha);
+    loaderScripts(document)[0]?.dispatchEvent(new Event('load'));
+    expect(queued).toHaveLength(1);
+
+    // One bound from boot, not a second one from `load`.
+    await vi.advanceTimersByTimeAsync(APP_CHECK_SCRIPT_TIMEOUT_MS / 2 - 1);
+    expect(settled).toBe(false);
+    expect(initializeAppCheckMock).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(TestBed.inject(FIREBASE_APP_CHECK)).resolves.toBeNull();
+    expect(initializeAppCheckMock).not.toHaveBeenCalled();
+    expect(sink.reported).toEqual([unavailable('AppCheckNotReady')]);
+
+    // A `ready` that fires after the bound changes nothing.
+    for (const onReady of queued) onReady();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(initializeAppCheckMock).not.toHaveBeenCalled();
+    expect(sink.reported).toHaveLength(1);
+  });
+
+  it('a ready that fires late but within the bound initialises, reporting nothing', async () => {
+    vi.useFakeTimers();
+    const { document, sink } = boot(CONFIG);
+    const { queued, grecaptcha } = loaderOnlyGrecaptcha();
+    Reflect.set(document.defaultView ?? {}, 'grecaptcha', grecaptcha);
+    loaderScripts(document)[0]?.dispatchEvent(new Event('load'));
+
+    await vi.advanceTimersByTimeAsync(APP_CHECK_SCRIPT_TIMEOUT_MS - 1);
+    expect(initializeAppCheckMock).not.toHaveBeenCalled();
+    for (const onReady of queued) onReady();
+
+    await expect(TestBed.inject(FIREBASE_APP_CHECK)).resolves.toBe(APP_CHECK);
+    expect(initializeAppCheckMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(APP_CHECK_SCRIPT_TIMEOUT_MS);
+    expect(sink.reported).toEqual([]);
+  });
+
+  it.each([
+    ['a grecaptcha.enterprise with no ready', { enterprise: {} }],
+    ['a ready that is no function', { enterprise: { ready: 'ready' } }],
+    [
+      'a ready that throws',
+      {
+        enterprise: {
+          ready: () => {
+            throw new Error('reCAPTCHA broke');
+          },
+        },
+      },
+    ],
+  ])(
+    '%s resolves null, never initialises, and reports one issue',
+    async (_, grecaptcha) => {
+      const { document, sink } = boot(CONFIG);
+
+      Reflect.set(document.defaultView ?? {}, 'grecaptcha', grecaptcha);
+      loaderScripts(document)[0]?.dispatchEvent(new Event('load'));
+
+      await expect(TestBed.inject(FIREBASE_APP_CHECK)).resolves.toBeNull();
+      expect(initializeAppCheckMock).not.toHaveBeenCalled();
+      expect(sink.reported).toEqual([unavailable('AppCheckNotInitialized')]);
+    },
+  );
 });

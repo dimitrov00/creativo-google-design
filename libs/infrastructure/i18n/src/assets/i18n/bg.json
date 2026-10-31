@@ -166,6 +166,7 @@
     "GOVERNANCE_ROLES_TARGET_ERASED": "Личните данни на този клиент са изтрити.",
     "GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED": "Ролите са запазени, но старите сесии не бяха прекратени. Опитай пак.",
     "APP_CHECK_REQUIRED": "Не успяхме да потвърдим това устройство. Презареди страницата.",
+    "APP_CHECK_REPLAYED": "Не успяхме да потвърдим това устройство. Презареди страницата.",
     "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Опитай пак.",
     "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Опитай пак.",
     "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Опитай пак.",

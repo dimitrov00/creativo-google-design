@@ -75,8 +75,14 @@ import { ClientIssueSystem } from '@core/systems';
  * cannot mint one — a `FirebaseError` whose code starts with `appCheck/`,
  * the request never left — the client reports it once and retries ONCE as
  * a standard call, so the server still decides (OFF / MONITOR answer,
- * ENFORCE refuses what it refuses). A `FunctionsError` (the server
- * answered) is never retried. The standard callables' call is unchanged.
+ * ENFORCE refuses what it refuses). That standard call carries the page's
+ * cached STANDARD token, which the server consumes on a limited-use
+ * callable under MONITOR / ENFORCE: a second fallback within that token's
+ * lifetime re-sends a consumed token, and ENFORCE refuses it
+ * `APP_CHECK_REPLAYED` — worded, like `APP_CHECK_REQUIRED`, "reload the
+ * page" (a reload builds a fresh provider; review round 2). A
+ * `FunctionsError` (the server answered) is never retried. The standard
+ * callables' call is unchanged.
  */
 export const callableClientPorts = (
   functions: Functions,
@@ -132,7 +138,10 @@ const LIMITED_USE: HttpsCallableOptions = { limitedUseAppCheckTokens: true };
  * One call of `name` — a standard callable as `httpsCallable(functions,
  * name)` always dialled it; a `LIMITED_USE` one with {@link LIMITED_USE},
  * retried ONCE as a standard call (reported once) when App Check could not
- * mint its token (S-RU-31). Any other rejection is the caller's to classify.
+ * mint its token (S-RU-31) — with the cached standard token, consumed on
+ * a limited-use callable under MONITOR / ENFORCE, so a later fallback reads
+ * `APP_CHECK_REPLAYED` under ENFORCE. Any other rejection is the caller's
+ * to classify.
  */
 async function dial<N extends CallableName>(
   functions: Functions,

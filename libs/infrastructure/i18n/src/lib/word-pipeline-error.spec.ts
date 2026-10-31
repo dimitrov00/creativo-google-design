@@ -26,6 +26,7 @@ import { Observable, firstValueFrom, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { BookingStatus } from '@core/primitives';
 import {
+  AppCheckErrorCode,
   BookingErrorCode,
   CancellationRefusalCode,
   GovernanceErrorCode,
@@ -379,6 +380,19 @@ const privacy = refusalOn(PipelineErrorCode.Unknown);
  * sysadmin's, and sends only assignable roles), so they have no words.
  */
 const roles = refusalOn(PipelineErrorCode.Unknown);
+/**
+ * App Check under ENFORCE (security hardening S-RU-24), on the staff client
+ * card's privacy and «Роли» blocks — the five limited-use callables, worded
+ * against the generic `PIPELINE_UNKNOWN`. `APP_CHECK_REQUIRED`: no verified
+ * token. `APP_CHECK_REPLAYED` (review round 2): S-RU-31's standard fallback
+ * re-sent a cached standard token an earlier fallback already consumed. A
+ * reload builds a fresh App Check provider, so both say so.
+ */
+const appCheck = refusalOn(PipelineErrorCode.Unknown);
+const RELOAD = {
+  en: "We couldn't verify this device. Reload the page.",
+  bg: 'Не успяхме да потвърдим това устройство. Презареди страницата.',
+} as const;
 
 const S = HttpsStatus;
 
@@ -501,6 +515,9 @@ const E18_WORDS: readonly WordedRefusal[] = [
     en: "The roles are saved, but the old sessions weren't ended. Try again.",
     bg: 'Ролите са запазени, но старите сесии не бяха прекратени. Опитай пак.',
   }),
+  // App Check under ENFORCE: both refusals, one reload line.
+  appCheck(AppCheckErrorCode.Required, S.FailedPrecondition, RELOAD),
+  appCheck(AppCheckErrorCode.Replayed, S.FailedPrecondition, RELOAD),
 ];
 
 describe('wordPipelineError — every UI-reachable refusal words as itself (E-18)', () => {

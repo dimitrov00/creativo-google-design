@@ -9,10 +9,12 @@ import { AppCheckOutcome } from '@core/primitives';
  * the token.
  *
  * Both leave as `failed-precondition` (the web reads it as "repeating the
- * same request cannot succeed", true for a device without a token).
- * `APP_CHECK_REQUIRED` is worded (`errors.APP_CHECK_REQUIRED`);
- * `APP_CHECK_REPLAYED` is not (OR-55: the build sends a fresh limited-use
- * token per call, so no web surface reaches it).
+ * same request cannot succeed", true for a device without a token), and
+ * both are worded with the same reload line (`errors.APP_CHECK_REQUIRED`,
+ * `errors.APP_CHECK_REPLAYED`). `APP_CHECK_REPLAYED` is reachable (review
+ * round 2): when the web cannot mint a limited-use token, S-RU-31's
+ * standard fallback re-sends the page's cached standard token, which an
+ * earlier fallback already consumed; a reload builds a fresh provider.
  */
 export const AppCheckErrorCode = {
   /** ENFORCE: the request carried no verified App Check token. */

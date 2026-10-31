@@ -45,19 +45,24 @@ export type AppCheckConfig =
   | { readonly appCheckSource: typeof AppCheckSource.None };
 
 /**
- * How long the RECAPTCHA_ENTERPRISE branch waits for `enterprise.js` before
- * the page runs without App Check (S-L-24, S-RU-31). The SDK's own loader
- * has no `onerror` and no bound: a script a blocker, a firewall or a wrong
- * CSP host keeps from loading would leave its readiness unsettled, and
- * every Functions, Firestore, Auth and Storage call would wait on it for
- * ever. Bounded here, such a page sends headerless (`MISSING` — measurable
- * under MONITOR, refused only under ENFORCE) and never hangs.
+ * How long the RECAPTCHA_ENTERPRISE branch waits for reCAPTCHA to be READY
+ * before the page runs without App Check (S-L-24, S-RU-31): ONE bound,
+ * started before `enterprise.js` is appended, over the loader's `load` AND
+ * reCAPTCHA's own `grecaptcha.enterprise.ready`. `enterprise.js` is only a
+ * loader — its `ready` queues callbacks until the library it injects from
+ * `www.gstatic.com/recaptcha/` runs — and the SDK's readiness settles only
+ * inside that `ready`, with no `onerror` and no bound of its own: a loader
+ * or a library a blocker, a firewall or a wrong CSP host keeps from running
+ * would leave it unsettled, and every Functions, Firestore, Auth and
+ * Storage call would wait on it for ever. Bounded here, such a page sends
+ * headerless (`MISSING` — measurable under MONITOR, refused only under
+ * ENFORCE) and never hangs.
  */
 export const APP_CHECK_SCRIPT_TIMEOUT_MS = 10_000;
 
 /**
  * The page's App Check instance — settles ONCE per page: the instance, or
- * `null` (NONE, or a reCAPTCHA script that failed or timed out). Never
+ * `null` (NONE, or a reCAPTCHA that failed, or was not ready in time). Never
  * rejects. The callable client awaits it before each call (S-L-5), so no
  * callable leaves before App Check is decided, and none waits beyond
  * {@link APP_CHECK_SCRIPT_TIMEOUT_MS}.
@@ -87,7 +92,14 @@ const AppCheckUnavailable = {
   ScriptFailed: 'AppCheckScriptFailed',
   /** `enterprise.js` fired nothing within {@link APP_CHECK_SCRIPT_TIMEOUT_MS}. */
   ScriptTimedOut: 'AppCheckScriptTimedOut',
-  /** It loaded, but no `grecaptcha.enterprise` came with it, or `initializeAppCheck` threw. */
+  /**
+   * `enterprise.js` loaded, but `grecaptcha.enterprise.ready` did not fire
+   * within the same {@link APP_CHECK_SCRIPT_TIMEOUT_MS} — the library it
+   * injects from `www.gstatic.com/recaptcha/` was blocked, failed or never
+   * arrived (review round 2).
+   */
+  NotReady: 'AppCheckNotReady',
+  /** It loaded without a callable `grecaptcha.enterprise.ready`, that `ready` threw, or `initializeAppCheck` threw. */
   NotInitialized: 'AppCheckNotInitialized',
 } as const;
 type AppCheckUnavailable =
@@ -116,13 +128,17 @@ export function appCheckConfigOf(environment: {
  * environment initializer that starts it at boot.
  *
  * - **RECAPTCHA_ENTERPRISE** — appends `enterprise.js` itself (through
- *   `DOCUMENT`, `onload` / `onerror`, raced against
- *   {@link APP_CHECK_SCRIPT_TIMEOUT_MS}); once `grecaptcha.enterprise`
- *   exists, `initializeAppCheck` with a `ReCaptchaEnterpriseProvider`,
+ *   `DOCUMENT`, `onload` / `onerror`), then hands a callback to the loaded
+ *   `grecaptcha.enterprise.ready`, both within ONE
+ *   {@link APP_CHECK_SCRIPT_TIMEOUT_MS} started before the script is
+ *   appended; initialised only once `grecaptcha.enterprise.ready` has
+ *   fired: `initializeAppCheck` with a `ReCaptchaEnterpriseProvider`,
  *   auto-refresh on — the SDK reuses the loaded `grecaptcha` and loads no
- *   second script. An error, a timeout or a failed initialisation leaves
- *   App Check uninitialised for the page (`null`, one client issue): every
- *   SDK then sends without a token (S-RU-31).
+ *   second script. An error, a timeout (before `load`, or a `ready` that
+ *   never fires), a missing or throwing `ready` or a failed initialisation
+ *   leaves App Check uninitialised for the page (`null`, one client issue):
+ *   every SDK then sends without a token (S-RU-31). A `ready` that fires
+ *   after the bound changes nothing.
  * - **EMULATOR** — a `CustomProvider` presenting {@link emulatorAppCheckToken},
  *   auto-refresh off (S-RU-18: never the debug provider, which calls
  *   Google's real exchange endpoint).
@@ -198,9 +214,10 @@ function emulatorProvider(app: FirebaseApp): CustomProvider {
 }
 
 /**
- * The RECAPTCHA_ENTERPRISE branch (S-L-24): the script first, bounded; App
- * Check only over a loaded `grecaptcha.enterprise`; `null` and one client
- * issue on any failure — never a rejection.
+ * The RECAPTCHA_ENTERPRISE branch (S-L-24): the script and reCAPTCHA's
+ * readiness first, under one bound; App Check only once
+ * `grecaptcha.enterprise.ready` has fired; `null` and one client issue on
+ * any failure — never a rejection.
  */
 async function recaptchaEnterpriseAppCheck(
   app: FirebaseApp,
@@ -208,13 +225,9 @@ async function recaptchaEnterpriseAppCheck(
   document: Document,
   issues: ClientIssuePorts,
 ): Promise<AppCheck | null> {
-  const failure = await loadEnterpriseScript(document);
+  const failure = await enterpriseReady(document);
   if (failure !== null) {
     reportUnavailable(issues, failure);
-    return null;
-  }
-  if (!hasEnterprise(document.defaultView)) {
-    reportUnavailable(issues, AppCheckUnavailable.NotInitialized);
     return null;
   }
   try {
@@ -229,14 +242,20 @@ async function recaptchaEnterpriseAppCheck(
 }
 
 /**
- * Appends `enterprise.js` and settles on the first of `load` (`null`),
- * `error` or {@link APP_CHECK_SCRIPT_TIMEOUT_MS} (why it did not load).
+ * Appends `enterprise.js` and settles ONCE, on the first of: reCAPTCHA's own
+ * `grecaptcha.enterprise.ready` firing after `load` (`null` — ready);
+ * `error`; a `load` that left no callable `ready`, or a `ready` that threw;
+ * or {@link APP_CHECK_SCRIPT_TIMEOUT_MS} — ONE timer, started before the
+ * script is appended, over both stages (`ScriptTimedOut` before `load`,
+ * `NotReady` after it). A `ready` that fires after the bound is a no-op:
+ * the promise has already settled.
  */
-function loadEnterpriseScript(
+function enterpriseReady(
   document: Document,
 ): Promise<AppCheckUnavailable | null> {
   return new Promise((resolve) => {
     const script = document.createElement('script');
+    let loaded = false;
     const settle = (failure: AppCheckUnavailable | null) => {
       clearTimeout(timer);
       script.onload = null;
@@ -244,25 +263,50 @@ function loadEnterpriseScript(
       resolve(failure);
     };
     const timer = setTimeout(
-      () => settle(AppCheckUnavailable.ScriptTimedOut),
+      () =>
+        settle(
+          loaded
+            ? AppCheckUnavailable.NotReady
+            : AppCheckUnavailable.ScriptTimedOut,
+        ),
       APP_CHECK_SCRIPT_TIMEOUT_MS,
     );
-    script.onload = () => settle(null);
+    script.onload = () => {
+      loaded = true;
+      if (!queuedOnReady(document.defaultView, () => settle(null))) {
+        settle(AppCheckUnavailable.NotInitialized);
+      }
+    };
     script.onerror = () => settle(AppCheckUnavailable.ScriptFailed);
     script.src = RECAPTCHA_ENTERPRISE_SCRIPT;
     document.head.appendChild(script);
   });
 }
 
-/** Whether the loaded script left `grecaptcha.enterprise` on the page — what the SDK reuses (`getRecaptcha(true)`). */
-function hasEnterprise(view: Window | null): boolean {
-  const grecaptcha: unknown =
-    view === null ? undefined : Reflect.get(view, 'grecaptcha');
-  return (
-    typeof grecaptcha === 'object' &&
-    grecaptcha !== null &&
-    Reflect.get(grecaptcha, 'enterprise') !== undefined
-  );
+/**
+ * Hands `onReady` to the loaded `grecaptcha.enterprise.ready` — the queue
+ * the SDK's own readiness waits on (`getRecaptcha(true)`,
+ * `queueWidgetRender`); `false` when the load left no callable `ready` on
+ * the page or it threw. Never a throw.
+ */
+function queuedOnReady(view: Window | null, onReady: () => void): boolean {
+  try {
+    const enterprise = propertyOf(propertyOf(view, 'grecaptcha'), 'enterprise');
+    const ready = propertyOf(enterprise, 'ready');
+    if (typeof ready !== 'function') return false;
+    Reflect.apply(ready, enterprise, [onReady]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `holder[key]` when `holder` is an object or a function, else `undefined`. */
+function propertyOf(holder: unknown, key: string): unknown {
+  return (typeof holder === 'object' && holder !== null) ||
+    typeof holder === 'function'
+    ? Reflect.get(holder, key)
+    : undefined;
 }
 
 /** The one client issue of a page that runs without App Check — a condition, never a rejection. */

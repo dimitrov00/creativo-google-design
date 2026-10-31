@@ -166,6 +166,7 @@
     "GOVERNANCE_ROLES_TARGET_ERASED": "This client's personal data was erased.",
     "GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED": "The roles are saved, but the old sessions weren't ended. Try again.",
     "APP_CHECK_REQUIRED": "We couldn't verify this device. Reload the page.",
+    "APP_CHECK_REPLAYED": "We couldn't verify this device. Reload the page.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
     "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Try again.",
     "PIPELINE_CATALOG_CHANGED": "Something went wrong. Try again.",

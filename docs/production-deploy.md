@@ -566,7 +566,7 @@ ONE switch, `config/app-check.json` (`development` `MONITOR`, `staging` and
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OFF`     | nothing — no outcome reported, nothing consumed, nothing refused (today's behaviour)                                                                                                                                  |
 | `MONITOR` | verifies, and writes `appCheckOutcome` (`VALID`, `MISSING`, `INVALID`, `REPLAYED`) on each outcome line; the five limited-use callables consume their token; never refuses                                            |
-| `ENFORCE` | `MONITOR`, and refuses `MISSING` / `INVALID` with `failed-precondition` / `APP_CHECK_REQUIRED` (the web words it "reload the page"), and a replayed token on the five limited-use callables with `APP_CHECK_REPLAYED` |
+| `ENFORCE` | `MONITOR`, and refuses `MISSING` / `INVALID` with `failed-precondition` / `APP_CHECK_REQUIRED`, and a replayed token on the five limited-use callables with `APP_CHECK_REPLAYED` (both are phrased "reload the page") |
 
 The five limited-use (replay-protected) callables are `eraseClient`,
 `previewClientErasure`, `exportClientData`, `startImpersonation` and
@@ -606,14 +606,17 @@ console after use. Do it in this order:
       (`libs/infrastructure/firebase-app/src/lib/csp-baseline.ts`) if they
       differ; block `www.google.com` in DevTools (request blocking) and
       reload — the app must still work, its calls going out headerless
-      (`MISSING`); at staging `MONITOR`, one real `exportClientData` reads
-      `VALID`.
+      (`MISSING`); then unblock it, block only `www.gstatic.com/recaptcha/`
+      (the loader arrives, reCAPTCHA never gets ready) and reload — the
+      same, within 10 s (`APP_CHECK_SCRIPT_TIMEOUT_MS`); at staging
+      `MONITOR`, one real `exportClientData` reads `VALID`.
 - [ ] **3. Deploy the web with the production key** (P10 passes at `OFF` /
       `MONITOR`). This is the CLIENT-side point of no return: from here every
       client loads reCAPTCHA whatever the server mode (a script that fails
-      or times out leaves the page without App Check, its calls headerless
-      — never hung). A key rolls back as `siteKey: ''` plus a web deploy.
-      Wait for the service worker to roll the new shell out.
+      or times out, or whose reCAPTCHA never gets ready, leaves the page
+      without App Check, its calls headerless — never hung). A key rolls
+      back as `siteKey: ''` plus a web deploy. Wait for the service worker
+      to roll the new shell out.
 - [ ] **4. `MONITOR`.** Set `"production": "MONITOR"` in
       `config/app-check.json`; deploy functions only. Read the console's App
       Check → APIs → Cloud Functions verified share, and the log filter
@@ -622,8 +625,12 @@ console after use. Do it in this order:
       read the platform's own `callable-request-verification` lines). Hold —
       at least 7 days of real traffic — until, PER CALLABLE, `MISSING` +
       `INVALID` + `REPLAYED` are under 1 % and each is explained (old tabs,
-      blockers), and each of the five limited-use callables shows real
-      `VALID` calls and no unexplained `INVALID` (the owner's bar; an
+      blockers; for `REPLAYED` on a limited-use callable, also a
+      limited-use mint failure's standard fallback — a client issue
+      `CALLABLE_TRANSPORT_FAILED` with an `appCheck/*` code just before it,
+      the second such fallback within the cached token's lifetime re-sending
+      a consumed token), and each of the five limited-use callables shows
+      real `VALID` calls and no unexplained `INVALID` (the owner's bar; an
       aggregate would hide the five low-volume admin callables).
 - [ ] **5. `ENFORCE`.** Set `"production": "ENFORCE"`; deploy functions
       only. P10 refuses it unless the LIVE web carries the key. A stale

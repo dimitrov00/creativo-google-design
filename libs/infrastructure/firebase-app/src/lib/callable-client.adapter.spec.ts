@@ -786,6 +786,41 @@ describe('callableClientPorts — App Check', () => {
     ]);
   });
 
+  // Review round 2, finding 2: each failed mint falls back to the standard
+  // call, which the SDK sends with the page's ONE cached standard token. Under
+  // MONITOR / ENFORCE the server consumes it on a limited-use callable, so the
+  // second fallback re-sends a consumed token and ENFORCE refuses it
+  // APP_CHECK_REPLAYED — worded with the reload line (S-RU-24, S-RU-31(ii)).
+  it('falls back to the same standard call on every failed mint — two erasure calls, two standard retries', async () => {
+    const sink = recordingClientIssuePorts();
+    const mintFailure = new FirebaseError('appCheck/throttled', 'throttled');
+    callableMock.mockReset();
+    callableMock
+      .mockRejectedValueOnce(mintFailure)
+      .mockResolvedValueOnce({ data: {} })
+      .mockRejectedValueOnce(mintFailure)
+      .mockResolvedValueOnce({ data: {} });
+
+    await client(IDS, sink.ports)(Callables.PreviewClientErasure)({} as never);
+    await client(IDS, sink.ports)(Callables.EraseClient)({} as never);
+
+    expect(httpsCallableMock.mock.calls).toEqual([
+      [
+        FUNCTIONS,
+        Callables.PreviewClientErasure,
+        { limitedUseAppCheckTokens: true },
+      ],
+      [FUNCTIONS, Callables.PreviewClientErasure],
+      [FUNCTIONS, Callables.EraseClient, { limitedUseAppCheckTokens: true }],
+      [FUNCTIONS, Callables.EraseClient],
+    ]);
+    expect(callableMock).toHaveBeenCalledTimes(4);
+    expect(sink.reported.map((issue) => issue.callableErrorCode)).toEqual([
+      'appCheck/throttled',
+      'appCheck/throttled',
+    ]);
+  });
+
   it('never retries a FunctionsError — the server answered', async () => {
     const sink = recordingClientIssuePorts();
     const refusal = new FunctionsError(
