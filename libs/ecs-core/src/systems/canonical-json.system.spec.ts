@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '@core/testing';
 import { CanonicalJsonSystem } from './canonical-json.system';
-import { ClientStatsSystem } from './client-stats.system';
 
-/* The one canonical JSON printer (audit-hardening WS-4.2): moved out of
- * `ClientStatsSystem.canonicalJson`, which delegates — its own spec is
- * unchanged. */
+/* The one canonical JSON printer (audit-hardening WS-4.2), moved out of the
+ * client-stats system: every caller (the stats' revision guard, the governed
+ * change's field diff) names it here. */
 
 describe('CanonicalJsonSystem.of', () => {
   it('prints object keys sorted, at every depth', () => {
@@ -44,13 +43,6 @@ describe('CanonicalJsonSystem.of', () => {
     expect(CanonicalJsonSystem.of([])).toBe('[]');
   });
 
-  it('is what ClientStatsSystem.canonicalJson answers (the delegation)', () => {
-    const value = { b: [{ d: 1, c: 2 }], a: 'x' };
-    expect(ClientStatsSystem.canonicalJson(value)).toBe(
-      CanonicalJsonSystem.of(value),
-    );
-  });
-
   it('is pure: same input → same output, inputs untouched', () => {
     const value = deepFreeze({ b: [{ d: 1, c: 2 }], a: { y: null, x: 'v' } });
     const once = CanonicalJsonSystem.of(value);
@@ -58,5 +50,53 @@ describe('CanonicalJsonSystem.of', () => {
     expect(twice).toBe(once);
     expect(Object.keys(value)).toEqual(['b', 'a']);
     expect(Object.keys(value.a)).toEqual(['y', 'x']);
+  });
+});
+
+/* The one UTF-8 counter (audit-hardening Phase 3, P3-RU-27): moved here from
+ * `ClientIssueSystem`, whose batch-weight cases (`client-issue.system.spec.ts`,
+ * "weighs at most 4 KB of JSON, in UTF-8 bytes") still pin it through the
+ * sink — the same three widths, here at the counter itself. */
+
+describe('CanonicalJsonSystem.utf8Bytes', () => {
+  it('weighs ASCII one byte a character', () => {
+    expect(CanonicalJsonSystem.utf8Bytes('')).toBe(0);
+    expect(CanonicalJsonSystem.utf8Bytes('{"a":1}')).toBe(7);
+  });
+
+  it('weighs Cyrillic two bytes a character, as an encoder does', () => {
+    expect(CanonicalJsonSystem.utf8Bytes('щ'.repeat(160))).toBe(320);
+    expect(CanonicalJsonSystem.utf8Bytes('Иван')).toBe(
+      new TextEncoder().encode('Иван').length,
+    );
+  });
+
+  it('weighs a three-byte character three, the em dash among them', () => {
+    expect(CanonicalJsonSystem.utf8Bytes('—')).toBe(3);
+    expect(CanonicalJsonSystem.utf8Bytes('€ 1')).toBe(5);
+  });
+
+  it('weighs an astral character — a surrogate pair — four bytes, not six', () => {
+    expect(CanonicalJsonSystem.utf8Bytes('😀'.repeat(80))).toBe(320);
+    expect(CanonicalJsonSystem.utf8Bytes('a😀b')).toBe(6);
+  });
+
+  it('weighs a lone surrogate three, as the replacement character', () => {
+    expect(CanonicalJsonSystem.utf8Bytes('\ud83d')).toBe(3);
+    expect(CanonicalJsonSystem.utf8Bytes('\ude00x')).toBe(4);
+  });
+
+  it('agrees with an encoder over canonical JSON of mixed text', () => {
+    const text = CanonicalJsonSystem.of({ b: 'Мария 😀', a: ['—', 'x'] });
+    expect(CanonicalJsonSystem.utf8Bytes(text)).toBe(
+      new TextEncoder().encode(text).length,
+    );
+  });
+
+  it('is pure: same input → same output', () => {
+    const text = 'Иван — 😀';
+    expect(CanonicalJsonSystem.utf8Bytes(text)).toBe(
+      CanonicalJsonSystem.utf8Bytes(text),
+    );
   });
 });

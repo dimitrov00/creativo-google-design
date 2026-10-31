@@ -21,6 +21,7 @@ import type {
 } from '@core/ports';
 import {
   type AttemptFailure,
+  FailureCodeSystem,
   type PolicyStep,
   PolicyRecomputeJobSystem,
   TriggerAttemptSystem,
@@ -250,7 +251,7 @@ export const continuePolicyRecompute = (
       }
     } catch (error) {
       ports.log('warn', LogEvent.PolicyRecomputeStallNotRecorded, {
-        code: TriggerAttemptSystem.failureCode(error),
+        code: FailureCodeSystem.codeOf(error),
       });
     }
   }
@@ -289,7 +290,7 @@ export const continuePolicyRecompute = (
         walk.failure ??
         TriggerAttemptSystem.attemptFailure(
           null,
-          TriggerAttemptSystem.UNKNOWN_CODE,
+          FailureCodeSystem.UNKNOWN_CODE,
         );
       return Result.ok(await stalled(fired, failure, null));
     }

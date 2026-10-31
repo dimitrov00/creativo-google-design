@@ -113,7 +113,7 @@ export const SeatOccupant = {
   },
 
   /** The occupant slice of a value that carries one (a whole `Seat`), copied to exactly its variant's fields. */
-  of(occupant: SeatOccupant): SeatOccupant {
+  sliceOf<T extends SeatOccupant>(occupant: T): SeatOccupant {
     switch (occupant.seatSubject) {
       case SeatSubject.Account:
         return SeatOccupant.account(

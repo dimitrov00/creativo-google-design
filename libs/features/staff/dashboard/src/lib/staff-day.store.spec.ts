@@ -571,7 +571,7 @@ describe('StaffDayStore — the open visit’s saved bill grants (OR-13)', () =>
     holderUserId: null,
     couponId: COUPON.id,
     grantedAtUtcMs: utcMs('2026-08-01T09:00:00.000+03:00'),
-    ...CouponValue.of(COUPON),
+    ...CouponValue.sliceOf(COUPON),
     ...GrantLifecycle.active(
       GrantCapacityTerms.singleUse(),
       GrantExpiryTerms.none(),

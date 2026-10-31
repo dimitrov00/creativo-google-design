@@ -29,7 +29,6 @@ import {
   Locale,
   RedirectPath,
   type ServiceId,
-  Tag,
 } from '@core/primitives';
 import {
   type AccountsError,
@@ -91,6 +90,7 @@ import {
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   intlLocaleOf,
+  localeFor,
   translateCodedError,
   wordFlowFailure,
 } from '@creativo/infrastructure/i18n';
@@ -647,7 +647,7 @@ export class ClientOnboarding {
 
   /** The catalogue's language for the active one — a `Locale`, anything else Bulgarian. */
   private contentLocale(): Locale {
-    return Tag.or(Locale, this.transloco.getActiveLang(), Locale.Bg);
+    return localeFor(this.transloco.getActiveLang());
   }
 
   /**

@@ -28,7 +28,7 @@ export type PassVm = {
 // wallet.presenter.ts — ecs-core values + words in, the display struct out.
 import { PassFigure, PassState } from '@core/components';
 import { LoyaltyPassSystem } from '@core/systems'; // the DECISION
-import { figure } from './client-card.format';
+import { formatCount } from '@creativo/ui/wall-clock';
 import type { PassVm } from './client-pages.vm';
 
 export function passVm(input: WalletInput): PassVm {
@@ -42,7 +42,7 @@ export function passVm(input: WalletInput): PassVm {
   });
   const visits = pass.passFigure === PassFigure.Visits;
   return {
-    figure: figure(pass.figure, words.lang),
+    figure: formatCount(pass.figure, words.lang),
     unit: visits
       ? words.loyalty.rhythmUnit(pass.figure)
       : words.loyalty.pointsWord(Math.abs(pass.figure)),
@@ -60,7 +60,8 @@ The store calls it inside a `computed()`; the template prints `pass().figure`.
 - **Decides nothing (Law 10.2).** A state, what is owed or earned, what
   qualifies, which items exist or are hidden, an ordering or grouping rule, a
   threshold — each is an ecs-core system's answer (Law 3) and arrives as an
-  input value or tag. A presenter may call a system; it never re-derives one.
+  input value or tag. A presenter may call a system; it never re-derives one,
+  and it calls the system itself — never re-exports or renames one.
   If you find yourself comparing numbers, filtering a list by a domain rule,
   or choosing between states, move that into a system first.
 - **Pure (Law 10.4).** No class, no Angular (`inject`, signals,

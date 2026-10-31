@@ -41,7 +41,6 @@ import {
   MOVE_REFUSAL_WORDS,
   bookingStepOfWord,
 } from '../booking-words';
-import { carriedSeatsInReach } from './carried-reach';
 import {
   BookingChromeHeight,
   BookingChromeService,
@@ -272,9 +271,13 @@ export class ClientBooking {
 
   /**
    * A move whose carried seats the shop can no longer serve at all
-   * (`carriedSeatsInReach`): a barber or service is gone, or no active shop
-   * offers every carried service together. It ends in the call panel, not in
-   * a grid with nothing on it.
+   * (`MoveSystem.carriedSeatsInReach`): a barber or service is gone, or no
+   * active shop offers every carried service together. It ends in the call
+   * panel (`MoveErrorCode.CarriedOutOfReach`), not in a grid with nothing on
+   * it: only the client's OWN services are the client's to change, so the
+   * schedule step's «nowhere» notice cannot answer this. WHICH shop the move
+   * goes to stays the client's choice; a shop that cannot serve the party
+   * while another can is the schedule step's to say.
    *
    * Asked only once BOTH catalogue reads have answered SUCCESSFULLY. An
    * unanswered read and a failed one both render as an empty list, and
@@ -292,10 +295,10 @@ export class ClientBooking {
     if (!this.catalog.servicesKnown() || !this.catalog.barbersKnown()) {
       return true;
     }
-    return carriedSeatsInReach(
+    return MoveSystem.carriedSeatsInReach(
       riders,
-      this.catalog.services(),
       this.catalog.barbers(),
+      this.catalog.services(),
       this.catalog.locationsKnown() ? this.catalog.locations() : null,
     );
   });

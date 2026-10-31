@@ -1,5 +1,5 @@
 import type { ClientIssue } from '@core/components';
-import type { LogPorts } from '@core/ports';
+import type { CallableWire, Callables, LogPorts } from '@core/ports';
 import { ClientIssueSystem, type ClientIssueReporter } from '@core/systems';
 
 /**
@@ -22,14 +22,11 @@ export type ReportClientIssuesCommand = ClientIssueReporter & {
   readonly issues: readonly ClientIssue[];
 };
 
-export type ReportClientIssuesAnswer = {
-  /** How many lines were written — one per issue. */
-  readonly loggedCount: number;
-};
-
 export const reportClientIssues =
   (ports: LogPorts) =>
-  async (cmd: ReportClientIssuesCommand): Promise<ReportClientIssuesAnswer> => {
+  async (
+    cmd: ReportClientIssuesCommand,
+  ): Promise<CallableWire[typeof Callables.ReportClientIssues]['answer']> => {
     for (const issue of cmd.issues) {
       // The command carries the reporter's fields itself — handed on as is.
       const line = ClientIssueSystem.logLine(issue, cmd);

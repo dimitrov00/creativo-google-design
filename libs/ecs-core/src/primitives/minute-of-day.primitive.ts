@@ -191,11 +191,6 @@ export const EndMinute = {
   plusClamped(e: EndMinute, d: MinuteCount): EndMinute {
     return Math.min(e + d, MINUTES_PER_DAY) as EndMinute;
   },
-
-  /** An exclusive end as the next span's start ({@link MinuteOfDay.fromEnd}). */
-  toStart(e: EndMinute): Result<MinuteOfDay, PrimitiveError> {
-    return MinuteOfDay.fromEnd(e);
-  },
 } as const;
 
 /**
@@ -206,8 +201,10 @@ export const EndMinute = {
  * staff sheets' draft and the time grid carry (`VisitDraft`, `GridEvent`,
  * `TrackSpan`, the drag axis) before a commit reads it back onto the stored
  * wall clock. A `MinuteOfDay` and an `EndMinute` ARE track minutes as they
- * are; the way back is {@link TrackMinute.toStart}/{@link TrackMinute.toEnd},
- * which refuse a minute the day's clock cannot hold. Never an instant, never
+ * are; the way back is the brands' own smart constructors,
+ * {@link MinuteOfDay.of} (refused at 1440 and past it) and
+ * {@link EndMinute.of} (refused at 0 and past 1440), which refuse a minute
+ * the day's clock cannot hold. Never an instant, never
  * a zone. Its 24-hour face is the UI's (`formatClock`, Law 5).
  */
 export type TrackMinute =
@@ -251,15 +248,5 @@ export const TrackMinute = {
     const span = MinuteCount.of(to > from ? to - from : 0);
     // Two non-negative safe integers: their clamped difference is one too.
     return span.ok ? span.value : defect(`no span from ${from} to ${to}`);
-  },
-
-  /** The axis minute as a start on the day's clock — refused at 1440 and past it. */
-  toStart(t: TrackMinute): Result<MinuteOfDay, PrimitiveError> {
-    return MinuteOfDay.of(t);
-  },
-
-  /** The axis minute as an exclusive end on the day's clock — refused at 0 and past 1440. */
-  toEnd(t: TrackMinute): Result<EndMinute, PrimitiveError> {
-    return EndMinute.of(t);
   },
 } as const;

@@ -3,6 +3,7 @@ import type { StreakRuleParameter } from './streak-rule-parameter.data';
 import type { StreakTransition } from './streak-transition.data';
 import type { BackfillJobName } from './backfill-job-name.data';
 import {
+  type IdentifierChannel,
   type ImpersonationSessionId,
   type LocalDate,
   type LocationId,
@@ -17,12 +18,18 @@ import type { CancellationDelta } from './cancellation-delta.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
 import type { ImpersonationEndReason } from './end-reason-fields.data';
+import type { ErasureAction } from './erasure-action.data';
+import { ErasureCensus } from './erasure-census.data';
 import type { GovernedAction } from './governed-action.data';
 import type { GovernedCollection } from './governed-collection.data';
 import type { ImpersonationScope } from './impersonation-scope.data';
+import type { OtpDestinationType } from './otp-destination-type.data';
+import type { OtpPurpose } from './otp-purpose.data';
+import type { OtpRefusalReason } from './otp-refusal-reason.data';
 import type { ProfileAction } from './profile-action.data';
 import type { Role } from './role.data';
 import type { RescheduleDelta } from './reschedule-delta.data';
+import type { SessionKind } from './session-kind.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { StaffEditDelta } from './staff-edit-delta.data';
 import type { TipAction } from './tip-action.data';
@@ -42,7 +49,9 @@ import type { TransitionDelta } from './transition-delta.data';
  * `_` (flatten-spec §3.7); the stored bytes were the dotted strings until
  * the governance flip, which the legacy shims converted. A new audited act
  * is a deliberate code change here — the impersonation and governed-document
- * verbs were added by audit-hardening WS-3 (DEP-17).
+ * verbs were added by audit-hardening WS-3 (DEP-17), the sign-in verbs
+ * (`IDENTITY_*`) by audit-hardening Phase 3 (P3-DEP-7), the data-subject
+ * verbs (`PRIVACY_*`) by its WS-C (P3-DEP-10) and WS-D (P3-DEP-18).
  */
 export const AuditAction = {
   BookingCommitted: 'BOOKING_COMMITTED',
@@ -88,6 +97,34 @@ export const AuditAction = {
   GovernedDocCreated: 'GOVERNED_DOC_CREATED',
   GovernedDocUpdated: 'GOVERNED_DOC_UPDATED',
   GovernedDocDeleted: 'GOVERNED_DOC_DELETED',
+  /** A one-time-code challenge saved (`requestOtpChallenge`, Phase 3 WS-B). */
+  IdentityOtpRequested: 'IDENTITY_OTP_REQUESTED',
+  /** A challenge consumed by the right code. */
+  IdentityOtpVerified: 'IDENTITY_OTP_VERIFIED',
+  /** A wrong code recorded against a challenge (`otpRefusalReason` says whether it locked it). */
+  IdentityOtpRefused: 'IDENTITY_OTP_REFUSED',
+  /** A sign-in token answered to the caller who proved the destination (`verifyOtpChallenge`). */
+  IdentitySessionIssued: 'IDENTITY_SESSION_ISSUED',
+  /** An account's first registration completed (`completeRegistration`). */
+  IdentityRegistrationCompleted: 'IDENTITY_REGISTRATION_COMPLETED',
+  /** An admin exported a client's data (`exportClientData`, Phase 3 WS-C) — counts only. */
+  PrivacyClientExported: 'PRIVACY_CLIENT_EXPORTED',
+  /**
+   * An admin's erasure swept, BEFORE its stamp, the contacts of visits that
+   * carry the person's contact values (P3-DEP-28, P3-DEP-33): written in the
+   * sweep's first commit that lands, once per act — the census BEFORE,
+   * counts only.
+   */
+  PrivacyClientErasureSwept: 'PRIVACY_CLIENT_ERASURE_SWEPT',
+  /**
+   * An admin's erasure began (`eraseClient`, Phase 3 WS-D): the stamp commit
+   * cleared the record and the account — the census BEFORE, counts only.
+   */
+  PrivacyClientErasureStarted: 'PRIVACY_CLIENT_ERASURE_STARTED',
+  /** The erasure completed: nothing personal left — the residue census AFTER. */
+  PrivacyClientErased: 'PRIVACY_CLIENT_ERASED',
+  /** An erased record's sweep found residue and cleared it — the census BEFORE the sweep (P3-L-19). */
+  PrivacyClientErasureReswept: 'PRIVACY_CLIENT_ERASURE_RESWEPT',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -133,12 +170,14 @@ export type AuditContext =
   | AuditContext.Profile
   | AuditContext.ImpersonationStarted
   | AuditContext.ImpersonationEnded
-  | AuditContext.Governed;
-
-/** A copy of a nullable id list — `null` stays `null`. */
-function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
-  return list === null ? null : [...list];
-}
+  | AuditContext.Governed
+  | AuditContext.OtpRequested
+  | AuditContext.OtpVerified
+  | AuditContext.OtpRefused
+  | AuditContext.SessionIssued
+  | AuditContext.RegistrationCompleted
+  | AuditContext.ClientExported
+  | AuditContext.ClientErasure;
 
 /** A profile row's four tag fields when neither `roles` nor `accountStatus` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -158,7 +197,7 @@ export const AuditContext = {
   ): AuditContext.Placement {
     return { auditAction, placementLocationId };
   },
-  /** Copies the delta's id lists, so a caller's later mutation cannot rewrite the row. */
+  /** The delta's id lists are carried as given — read-only, never copied (Law 3; no allocation). */
   staffEdit(
     auditAction: StaffEditAction,
     editRevision: number,
@@ -170,8 +209,8 @@ export const AuditContext = {
       editRepriceFromCents: delta.editRepriceFromCents,
       editRepriceToCents: delta.editRepriceToCents,
       editCurrency: delta.editCurrency,
-      editDiscountFromIds: copyOrNull(delta.editDiscountFromIds),
-      editDiscountIds: copyOrNull(delta.editDiscountIds),
+      editDiscountFromIds: delta.editDiscountFromIds,
+      editDiscountIds: delta.editDiscountIds,
       editVoucherDebitCents: delta.editVoucherDebitCents,
       editDurationFromMinutes: delta.editDurationFromMinutes,
       editDurationToMinutes: delta.editDurationToMinutes,
@@ -181,11 +220,11 @@ export const AuditContext = {
       editMoveToLocalDate: delta.editMoveToLocalDate,
       editMoveFromStartMinutes: delta.editMoveFromStartMinutes,
       editMoveToStartMinutes: delta.editMoveToStartMinutes,
-      editRestaffFromBarberIds: copyOrNull(delta.editRestaffFromBarberIds),
-      editRestaffToBarberIds: copyOrNull(delta.editRestaffToBarberIds),
+      editRestaffFromBarberIds: delta.editRestaffFromBarberIds,
+      editRestaffToBarberIds: delta.editRestaffToBarberIds,
     };
   },
-  /** Copies the barber lists, so a caller's later mutation cannot rewrite the row. */
+  /** The delta's barber lists are carried as given — read-only, never copied (Law 3; no allocation). */
   rescheduled(
     rescheduleRevision: number,
     delta: RescheduleDelta,
@@ -197,8 +236,8 @@ export const AuditContext = {
       rescheduleToLocalDate: delta.rescheduleToLocalDate,
       rescheduleFromStartMinutes: delta.rescheduleFromStartMinutes,
       rescheduleToStartMinutes: delta.rescheduleToStartMinutes,
-      rescheduleFromBarberIds: [...delta.rescheduleFromBarberIds],
-      rescheduleToBarberIds: [...delta.rescheduleToBarberIds],
+      rescheduleFromBarberIds: delta.rescheduleFromBarberIds,
+      rescheduleToBarberIds: delta.rescheduleToBarberIds,
       rescheduleFromLocationId: delta.rescheduleFromLocationId,
       rescheduleToLocationId: delta.rescheduleToLocationId,
     };
@@ -255,7 +294,7 @@ export const AuditContext = {
       streakEffectiveFrom: facts.streakEffectiveFrom,
       streakTransition: facts.streakTransition,
       streakRuleDirection: facts.streakRuleDirection,
-      streakChanged: [...facts.streakChanged],
+      streakChanged: facts.streakChanged,
       streakReplacedVersion: facts.streakReplacedVersion,
     };
   },
@@ -288,7 +327,7 @@ export const AuditContext = {
   /**
    * A profile row that names no role or status change — the four tag pairs
    * `null` (an owner's own edit never touches `roles` or `accountStatus`).
-   * Copies the field list, so a caller's later mutation cannot rewrite the row.
+   * The field list is carried as given.
    */
   profile(
     auditAction: ProfileAction,
@@ -299,7 +338,8 @@ export const AuditContext = {
   /**
    * A profile row with its role / status before-and-after (audit-hardening
    * WS-3: each pair set iff its field changed — `AuditSystem.profileTagDelta`).
-   * Copies the lists, so a caller's later mutation cannot rewrite the row.
+   * The lists are carried as given — read-only, never copied (Law 3; no
+   * allocation).
    */
   profileWithTags(
     auditAction: ProfileAction,
@@ -308,9 +348,9 @@ export const AuditContext = {
   ): AuditContext.Profile {
     return {
       auditAction,
-      profileFields: [...profileFields],
-      profileRolesFrom: copyOrNull(tags.profileRolesFrom),
-      profileRolesTo: copyOrNull(tags.profileRolesTo),
+      profileFields,
+      profileRolesFrom: tags.profileRolesFrom,
+      profileRolesTo: tags.profileRolesTo,
       profileAccountStatusFrom: tags.profileAccountStatusFrom,
       profileAccountStatusTo: tags.profileAccountStatusTo,
     };
@@ -343,7 +383,7 @@ export const AuditContext = {
       impersonationEndReason,
     };
   },
-  /** A governed document write; copies the field-name list. */
+  /** A governed document write; the field-name list is carried as given. */
   governed(
     auditAction: GovernedAction,
     governedCollection: GovernedCollection,
@@ -352,8 +392,101 @@ export const AuditContext = {
     return {
       auditAction,
       governedCollection,
-      governedFields: [...governedFields],
+      governedFields,
     };
+  },
+  /**
+   * A challenge saved (Phase 3 WS-B): its channel, purpose and expiry —
+   * never the destination, the code, its hash or its salt (R36 / T5).
+   */
+  otpRequested(
+    otpDestinationType: OtpDestinationType,
+    otpPurpose: OtpPurpose,
+    otpExpiresAtUtcMs: UtcEpochMs,
+  ): AuditContext.OtpRequested {
+    return {
+      auditAction: AuditAction.IdentityOtpRequested,
+      otpDestinationType,
+      otpPurpose,
+      otpExpiresAtUtcMs,
+    };
+  },
+  /** A challenge consumed: its channel, purpose and the wrong codes before the right one. */
+  otpVerified(
+    otpDestinationType: OtpDestinationType,
+    otpPurpose: OtpPurpose,
+    otpAttemptCount: number,
+  ): AuditContext.OtpVerified {
+    return {
+      auditAction: AuditAction.IdentityOtpVerified,
+      otpDestinationType,
+      otpPurpose,
+      otpAttemptCount,
+    };
+  },
+  /** A wrong code recorded: why, and the attempt count after it against the limit. */
+  otpRefused(
+    otpDestinationType: OtpDestinationType,
+    otpPurpose: OtpPurpose,
+    otpRefusalReason: OtpRefusalReason,
+    otpAttemptCount: number,
+    otpMaxAttempts: number,
+  ): AuditContext.OtpRefused {
+    return {
+      auditAction: AuditAction.IdentityOtpRefused,
+      otpDestinationType,
+      otpPurpose,
+      otpRefusalReason,
+      otpAttemptCount,
+      otpMaxAttempts,
+    };
+  },
+  /** A sign-in token answered: whether the person was new, and over which channel. */
+  sessionIssued(
+    sessionKind: SessionKind,
+    otpDestinationType: OtpDestinationType,
+  ): AuditContext.SessionIssued {
+    return {
+      auditAction: AuditAction.IdentitySessionIssued,
+      sessionKind,
+      otpDestinationType,
+    };
+  },
+  /** An account's first registration completed, and the channel it signed in with. */
+  registrationCompleted(
+    registrationIdentifierChannel: IdentifierChannel,
+  ): AuditContext.RegistrationCompleted {
+    return {
+      auditAction: AuditAction.IdentityRegistrationCompleted,
+      registrationIdentifierChannel,
+    };
+  },
+  /**
+   * A client's data exported (Phase 3 WS-C): how many documents, audit rows
+   * and bytes the bundle held — never the bundle, a section or a value.
+   */
+  clientExported(
+    exportDocumentCount: number,
+    exportAuditRowCount: number,
+    exportByteCount: number,
+  ): AuditContext.ClientExported {
+    return {
+      auditAction: AuditAction.PrivacyClientExported,
+      exportDocumentCount,
+      exportAuditRowCount,
+      exportByteCount,
+    };
+  },
+  /**
+   * An erasure row (Phase 3 WS-D, P3-RU-22): the verb and exactly the
+   * eleven census counts ({@link ErasureCensus.countsOf} — a wider struct's
+   * other fields never reach the row) — never a value of the person.
+   */
+  clientErasure(
+    auditAction: ErasureAction,
+    census: ErasureCensus,
+  ): AuditContext.ClientErasure {
+    return { auditAction, ...ErasureCensus.countsOf(census) };
   },
 
   /** The edge guard for a stored or submitted verb. */
@@ -496,4 +629,81 @@ export namespace AuditContext {
     /** Changed top-level field NAMES, ascending, deduplicated — never a value (R36). */
     readonly governedFields: readonly string[];
   };
+  /*
+   * The sign-in rows (audit-hardening Phase 3 WS-B, P3-DEP-7): tags, counts
+   * and the expiry only — never the destination (a phone or an e-mail), the
+   * code, its hash or salt, a name or any free text (R36 / T5). A field
+   * several of these variants share (`otpDestinationType`, `otpPurpose`,
+   * `otpAttemptCount`) is legal: the union is discriminated by
+   * `auditAction` alone, and each field is disjoint from the actor, target
+   * and meta slices (`identity-entities.type-spec.ts`).
+   */
+  /** A challenge saved — the resource is `otps/<id>`, the target none (no account resolved yet). */
+  export type OtpRequested = {
+    readonly auditAction: typeof AuditAction.IdentityOtpRequested;
+    readonly otpDestinationType: OtpDestinationType;
+    readonly otpPurpose: OtpPurpose;
+    readonly otpExpiresAtUtcMs: UtcEpochMs;
+  };
+  /** A challenge consumed; `otpAttemptCount` is the wrong codes recorded before this success. */
+  export type OtpVerified = {
+    readonly auditAction: typeof AuditAction.IdentityOtpVerified;
+    readonly otpDestinationType: OtpDestinationType;
+    readonly otpPurpose: OtpPurpose;
+    readonly otpAttemptCount: number;
+  };
+  /**
+   * A wrong code recorded against a challenge; `otpAttemptCount` is the
+   * count AFTER this attempt, `otpMaxAttempts` the challenge's limit
+   * (`LOCKED_OUT` when the first reaches the second).
+   */
+  export type OtpRefused = {
+    readonly auditAction: typeof AuditAction.IdentityOtpRefused;
+    readonly otpDestinationType: OtpDestinationType;
+    readonly otpPurpose: OtpPurpose;
+    readonly otpRefusalReason: OtpRefusalReason;
+    readonly otpAttemptCount: number;
+    readonly otpMaxAttempts: number;
+  };
+  /** A sign-in token answered — on the account's own timeline (`users/<uid>`). */
+  export type SessionIssued = {
+    readonly auditAction: typeof AuditAction.IdentitySessionIssued;
+    readonly sessionKind: SessionKind;
+    readonly otpDestinationType: OtpDestinationType;
+  };
+  /** An account's first registration completed, credited to the verified caller. */
+  export type RegistrationCompleted = {
+    readonly auditAction: typeof AuditAction.IdentityRegistrationCompleted;
+    readonly registrationIdentifierChannel: IdentifierChannel;
+  };
+  /**
+   * An admin's data-subject export (audit-hardening Phase 3 WS-C, P3-RU-15):
+   * the resource is `customers/<id>`, the target the client record, the
+   * actor the admin. Counts only — never the bundle, a section or any value
+   * of the person (R36 / T5); the row is never inside its own bundle.
+   */
+  export type ClientExported = {
+    readonly auditAction: typeof AuditAction.PrivacyClientExported;
+    /** The documents in the bundle, its audit rows included. */
+    readonly exportDocumentCount: number;
+    /** Of those, the audit rows that target the person. */
+    readonly exportAuditRowCount: number;
+    /** The UTF-8 bytes of the bundle's canonical JSON. */
+    readonly exportByteCount: number;
+  };
+  /**
+   * An admin's data-subject erasure (audit-hardening Phase 3 WS-D, P3-RU-22)
+   * — the resource is `customers/<id>`, the target the client record, the
+   * actor the admin. The verb says which census the row carries: SWEPT the
+   * census BEFORE of the act whose pre-stamp contact sweep it accounts for
+   * (P3-DEP-33), STARTED
+   * the census BEFORE (what will be erased), ERASED the residue AFTER (every
+   * personal count 0, beside what was retained), RESWEPT the census BEFORE a
+   * sweep of an erased record that found residue (P3-L-19). Counts only
+   * ({@link ErasureCensus}) — never a name, a contact value, a label, free
+   * text or a sibling record's id (R36 / T5).
+   */
+  export type ClientErasure = {
+    readonly auditAction: ErasureAction;
+  } & ErasureCensus;
 }

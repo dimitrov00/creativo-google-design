@@ -27,6 +27,7 @@ import {
   CouponGrantId,
   CustomerId,
   JournalEntryId,
+  LocalDate,
   RedemptionId,
   RewardId,
   StreakDefinitionId,
@@ -495,7 +496,7 @@ describe('LedgerSystem.months (`activityGroups`: the months)', () => {
     };
     expect(late.localDate).toBe('2026-09-01');
     expect(months([late], true)[0]?.key).toBe('2026-09');
-    expect(LedgerSystem.monthOf(localDate('2026-09-01'))).toBe('2026-09');
+    expect(LocalDate.monthKey(localDate('2026-09-01'))).toBe('2026-09');
   });
 
   it('prints no net for a month the page boundary may have cut', () => {

@@ -97,7 +97,7 @@ function prefixed(
 /** The version a patch makes: the base with the patch flattened over it, parsed. */
 function rule(patch: Patch = {}): StreakRule {
   const draft = {
-    ...StreakRule.of(base()),
+    ...StreakRule.sliceOf(base()),
     ...(patch.version === undefined ? {} : { version: patch.version }),
     ...(patch.effectiveFrom === undefined
       ? {}
@@ -192,7 +192,7 @@ const waiting = (
 
 /** A rule as the head holds it in force: the rule alone, its role, no transition. */
 const asCurrent = (definition: StreakRule) => ({
-  ...StreakRule.of(definition),
+  ...StreakRule.sliceOf(definition),
   headRole: HeadRole.Current,
   streakTransition: null,
 });
@@ -202,7 +202,7 @@ const asScheduled = (
   definition: StreakRule,
   streakTransition: StreakTransition,
 ) => ({
-  ...StreakRule.of(definition),
+  ...StreakRule.sliceOf(definition),
   headRole: HeadRole.Scheduled,
   streakTransition,
 });
@@ -658,60 +658,6 @@ describe('StreakRuleSystem.excuseCount — «3 от 4»', () => {
       StreakRuleSystem.excuseCount(rule({ excuses: StreakRule.EXCUSES })),
     ).toEqual({ on: 4, all: 4 });
     expect(StreakRule.EXCUSES).toHaveLength(4);
-  });
-});
-
-describe('StreakRuleSystem.exampleDue — the tolerance explained on one habit', () => {
-  const HABIT = 28;
-  const personal = StreakIntervalRule.personal(50, 21, 70, 42);
-
-  it('stretches the habit by the tolerance', () => {
-    expect(StreakRuleSystem.exampleDue(personal, HABIT)).toEqual({
-      days: 42,
-      source: StreakIntervalSource.Personal,
-    });
-  });
-
-  it('holds the example inside the clamp', () => {
-    expect(
-      StreakRuleSystem.exampleDue({ ...personal, intervalMaxDays: 35 }, HABIT)
-        .days,
-    ).toBe(35);
-    expect(
-      StreakRuleSystem.exampleDue(
-        StreakIntervalRule.personal(0, 35, 70, 42),
-        HABIT,
-      ).days,
-    ).toBe(35);
-  });
-
-  it('is the period the projector opens (`daysFor`)', () => {
-    expect(StreakRuleSystem.exampleDue(personal, HABIT)).toEqual(
-      StreakIntervalRule.daysFor(personal, HABIT),
-    );
-  });
-
-  it('equals the words’ old round(28·(1 + p/100)) for every whole percent (§7 R-13)', () => {
-    const clamps: readonly (readonly [number, number])[] = [
-      [14, 182],
-      [21, 70],
-      [30, 35],
-      [42, 56],
-    ];
-    for (const [min, max] of clamps) {
-      for (let pct = 0; pct <= 100; pct++) {
-        const old = Math.min(
-          max,
-          Math.max(min, Math.round(HABIT * (1 + pct / 100))),
-        );
-        expect(
-          StreakRuleSystem.exampleDue(
-            StreakIntervalRule.personal(pct, min, max, min),
-            HABIT,
-          ).days,
-        ).toBe(old);
-      }
-    }
   });
 });
 
@@ -1476,7 +1422,7 @@ describe('StreakRuleSystem purity', () => {
       ),
       StreakRuleSystem.changesInRuleOrder(changed),
       StreakRuleSystem.excuseCount(next),
-      StreakRuleSystem.exampleDue(PERSONAL, 28),
+      StreakIntervalRule.daysFor(PERSONAL, 28),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
       StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {
@@ -1495,7 +1441,7 @@ describe('StreakRuleSystem purity', () => {
       ),
       StreakRuleSystem.changesInRuleOrder(changed),
       StreakRuleSystem.excuseCount(next),
-      StreakRuleSystem.exampleDue(PERSONAL, 28),
+      StreakIntervalRule.daysFor(PERSONAL, 28),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
       StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {
@@ -1544,5 +1490,66 @@ describe('StreakRuleSystem.summary — the shop excuses are StreakRule.coversSho
     expect(StreakRuleSystem.summary(rule({ excuses })).shopExcuses).toBe(
       StreakRule.coversShopExcuses(excuses),
     );
+  });
+});
+
+describe('StreakRuleSystem.qualifies — which visit keeps the rhythm', () => {
+  const fade = ServiceId.of('svc-fade');
+  const beard = ServiceId.of('svc-beard');
+  const hair = ServiceCategoryId.of('cat-hair');
+  const care = ServiceCategoryId.of('cat-care');
+
+  it('keeps nothing for a visit of no service, whatever the qualifier', () => {
+    expect(
+      StreakRuleSystem.qualifies(StreakQualifierRule.anyVisit(), [], []),
+    ).toBe(false);
+    expect(
+      StreakRuleSystem.qualifies(StreakQualifierRule.services([fade]), [], []),
+    ).toBe(false);
+    expect(
+      StreakRuleSystem.qualifies(
+        StreakQualifierRule.categories([hair]),
+        [],
+        [hair],
+      ),
+    ).toBe(false);
+  });
+
+  it('ANY_VISIT takes every visit that holds a service', () => {
+    expect(
+      StreakRuleSystem.qualifies(StreakQualifierRule.anyVisit(), [beard], []),
+    ).toBe(true);
+  });
+
+  it('SERVICES takes a visit one of whose services is on the list', () => {
+    const rule = StreakQualifierRule.services([fade]);
+    expect(StreakRuleSystem.qualifies(rule, [beard, fade], [])).toBe(true);
+    expect(StreakRuleSystem.qualifies(rule, [beard], [hair])).toBe(false);
+  });
+
+  it('CATEGORIES takes a visit one of whose categories is on the list', () => {
+    const rule = StreakQualifierRule.categories([hair]);
+    expect(StreakRuleSystem.qualifies(rule, [beard], [care, hair])).toBe(true);
+    expect(StreakRuleSystem.qualifies(rule, [fade], [care])).toBe(false);
+    expect(StreakRuleSystem.qualifies(rule, [fade], [])).toBe(false);
+  });
+
+  it('compares brands — a raw string is no category id (Law 7.4)', () => {
+    const rule = StreakQualifierRule.categories([hair]);
+    const raw: string[] = ['cat-hair'];
+    // @ts-expect-error — a raw string list is no `ServiceCategoryId[]`: parse it first
+    expect(StreakRuleSystem.qualifies(rule, [fade], raw)).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rule = deepFreeze(StreakQualifierRule.services([fade, beard]));
+    const services = deepFreeze([beard]);
+    const categories = deepFreeze([hair]);
+    const once = StreakRuleSystem.qualifies(rule, services, categories);
+    expect(StreakRuleSystem.qualifies(rule, services, categories)).toBe(once);
+    expect(once).toBe(true);
+    expect(rule).toEqual(StreakQualifierRule.services([fade, beard]));
+    expect(services).toEqual([beard]);
+    expect(categories).toEqual([hair]);
   });
 });

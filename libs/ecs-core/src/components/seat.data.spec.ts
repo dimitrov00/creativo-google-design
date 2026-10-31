@@ -87,9 +87,9 @@ function seat(overrides: SeatOverrides = {}): Seat {
 describe('SeatOccupant', () => {
   it('anonymous subjects are contactless, accounts are not', () => {
     expect(SeatOccupant.isContactless(seat())).toBe(true);
-    expect(Seat.isContactless(seat())).toBe(true);
+    expect(SeatOccupant.isContactless(seat())).toBe(true);
     expect(
-      Seat.isContactless(
+      SeatOccupant.isContactless(
         seat({
           occupant: SeatOccupant.account(
             OWNER,
@@ -129,9 +129,9 @@ describe('SeatOccupant', () => {
       SubjectRelationship.Self,
     );
     const whole = seat({ occupant: account });
-    expect(SeatOccupant.of(whole)).toEqual(account);
+    expect(SeatOccupant.sliceOf(whole)).toEqual(account);
     const guest = SeatOccupant.anonymous(SeatLabel.of('Гост'));
-    expect(SeatOccupant.of(seat({ occupant: guest }))).toEqual(guest);
+    expect(SeatOccupant.sliceOf(seat({ occupant: guest }))).toEqual(guest);
   });
 
   it('is flat at the seat element’s root', () => {
@@ -282,7 +282,7 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
     expect(Seat.isMovableByBooker(walkIn, OWNER)).toBe(true);
     expect(Seat.isMovableByBooker(walkIn, null)).toBe(true);
     expect(Seat.isOwnAccount(walkIn)).toBe(false);
-    expect(Seat.isContactless(walkIn)).toBe(false);
+    expect(SeatOccupant.isContactless(walkIn)).toBe(false);
   });
 
   it('is the SHOP’s for a companion or a client the shop seated', () => {

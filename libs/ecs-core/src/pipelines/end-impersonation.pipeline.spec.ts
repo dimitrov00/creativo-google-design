@@ -19,6 +19,7 @@ import { GovernanceErrorCode } from '@core/errors';
 import { Collections, type ImpersonationSession } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   fixtureHash,
   impersonationSessionFixture,
@@ -26,6 +27,7 @@ import {
   memoryTxPorts,
   pinnedNowUtcMs,
   recordingTelemetry,
+  unwrapOk,
 } from '@core/testing';
 import {
   type EndImpersonationCommand,
@@ -48,13 +50,6 @@ import {
 const ADMIN = UserId.of('u-admin');
 const SESSION = ImpersonationSessionId.of('imp-1');
 const PATH = [Collections.ImpersonationSessions, SESSION];
-
-/** The stored body: the session minus `id`. */
-function bodyOf(session: ImpersonationSession): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(session).filter(([key]) => key !== 'id'),
-  );
-}
 
 function rig(
   sessions: readonly ImpersonationSession[],
@@ -102,12 +97,19 @@ describe('endImpersonation', () => {
     const at = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 5 * 60_000);
     const session = impersonationSessionFixture();
     const { tx, run } = rig([session], at);
-    expect(await run(end())).toEqual(
+    const answer = await run(end());
+    expect(answer).toEqual(
       Result.ok({
         sessionId: SESSION,
         impersonationEndReason: ImpersonationEndReason.AdminEnded,
       }),
     );
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual([
+      'sessionId',
+      'impersonationEndReason',
+    ]);
     const ended: ImpersonationSession = {
       ...session,
       impersonationStatus: ImpersonationStatus.Ended,

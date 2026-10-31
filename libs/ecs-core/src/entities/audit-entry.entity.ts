@@ -11,8 +11,9 @@ import type {
  * derived by the pipeline from the verb's change key, never from the row
  * body, so a retried attempt derives the same id and `create()` writes it
  * once (blueprint §2.6) — when it was recorded, and the resource the act
- * changed (`appointments` id, `users/{uid}`, `streakDefinitions/{id}` — the
- * {@link AuditResourceId} spellings) — and the operation that caused it.
+ * changed (`appointments` id, `users/{uid}`, `streakDefinitions/{id}`,
+ * `impersonationSessions/{id}`, `otps/{id}` — the {@link AuditResourceId}
+ * spellings) — and the operation that caused it.
  * The verb is NOT here: `auditAction` is the {@link AuditContext} slice's
  * discriminator alone (Law 6.3).
  */

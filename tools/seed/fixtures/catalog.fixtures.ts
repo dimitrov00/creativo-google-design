@@ -133,7 +133,7 @@ export const CATEGORY = {
   body: {
     name: { bg: 'Коса и брада', en: 'Hair & beard' },
     sortOrder: 1,
-  } satisfies Omit<ServiceCategory, 'id'>,
+  } satisfies Body<ServiceCategory>,
 } as const;
 
 // ── The two shops ──────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ export const LOCATIONS: readonly Seeded<LocationId, ShopLocation>[] = [
       ...sure(GeoPoint.parse(42.4271, 25.6366), 'geo loc-center'),
       ...phone('+359881234567', '+359 88 123 4567'),
       ...NO_COVER,
-    } satisfies Omit<ShopLocation, 'id'>,
+    } satisfies Body<ShopLocation>,
   },
   {
     id: MLADOST,
@@ -233,7 +233,7 @@ export const LOCATIONS: readonly Seeded<LocationId, ShopLocation>[] = [
       ...sure(GeoPoint.parse(42.46, 25.685), 'geo loc-mladost'),
       ...phone('+359887654321', '+359 88 765 4321'),
       ...NO_COVER,
-    } satisfies Omit<ShopLocation, 'id'>,
+    } satisfies Body<ShopLocation>,
   },
 ];
 
@@ -307,7 +307,7 @@ export const BARBERS: readonly SeededBarber[] = [
       barberStatus: BarberStatus.Active,
       sortOrder: 1,
       ...avatarOf(IVAN),
-    } satisfies Omit<Barber, 'id'>,
+    } satisfies Body<Barber>,
   },
   {
     id: NIKO,
@@ -326,7 +326,7 @@ export const BARBERS: readonly SeededBarber[] = [
       barberStatus: BarberStatus.Active,
       sortOrder: 2,
       ...avatarOf(NIKO),
-    } satisfies Omit<Barber, 'id'>,
+    } satisfies Body<Barber>,
   },
   {
     id: STEFAN,
@@ -345,7 +345,7 @@ export const BARBERS: readonly SeededBarber[] = [
       barberStatus: BarberStatus.Active,
       sortOrder: 3,
       ...avatarOf(STEFAN),
-    } satisfies Omit<Barber, 'id'>,
+    } satisfies Body<Barber>,
   },
 ];
 
@@ -436,7 +436,7 @@ function withCovers(
         coverMediaBlurhash: null,
         coverMediaFocalX: null,
         coverMediaFocalY: null,
-      } satisfies Omit<Service, 'id'>,
+      } satisfies Body<Service>,
     };
   });
 }

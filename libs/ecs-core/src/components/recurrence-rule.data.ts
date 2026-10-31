@@ -153,7 +153,11 @@ export const RecurrenceRule = {
     const normalized = normalize(pattern);
     if (!normalized.ok) return normalized;
     return Result.ok(
-      RecurrenceRule.of(normalized.value, interval, RecurrenceEndRule.of(end)),
+      RecurrenceRule.of(
+        normalized.value,
+        interval,
+        RecurrenceEndRule.sliceOf(end),
+      ),
     );
   },
 
@@ -187,11 +191,6 @@ export const RecurrenceRule = {
       case RecurrenceFrequency.Yearly:
         return RecurrencePattern.yearly(rule.yearlyMonth, rule.yearlyDate);
     }
-  },
-
-  /** The rule's end slice, as a fresh struct. */
-  endOf(rule: RecurrenceRule): RecurrenceEndRule {
-    return RecurrenceEndRule.of(rule);
   },
 
   frequency(rule: RecurrenceRule): RecurrenceFrequency {

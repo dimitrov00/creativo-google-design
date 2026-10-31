@@ -244,7 +244,7 @@ export const DiscountSystem = {
       label: discount.label,
       grantedAtUtcMs: discount.appliedAtUtcMs,
       minSpendCents: null,
-      ...CouponValue.of(discount),
+      ...CouponValue.sliceOf(discount),
     };
   },
 
@@ -255,14 +255,6 @@ export const DiscountSystem = {
       inputs.push(DiscountSystem.inputOf(discounts[i] as AppliedDiscount));
     }
     return inputs;
-  },
-
-  /**
-   * May these share one bill? An exclusive discount must be alone, and no
-   * promise may be counted twice (`AppliedDiscount.isLegalSelection`).
-   */
-  isLegalSet(discounts: readonly AppliedDiscount[]): boolean {
-    return AppliedDiscount.isLegalSelection(discounts);
   },
 
   /**
@@ -365,7 +357,7 @@ export const DiscountSystem = {
       label: coupon.name,
       code,
       exclusive: Combinability.isExclusive(coupon.combinability),
-      ...CouponValue.of(coupon),
+      ...CouponValue.sliceOf(coupon),
     };
   },
 } as const;

@@ -5,11 +5,13 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { workspaceRoot } from '@nx/devkit';
 import { getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import {
   AccountLifecycle,
   BirthDate,
+  BookingContact,
   type ClientStats,
   Combinability,
   CouponExpiryRule,
@@ -18,6 +20,7 @@ import {
   CouponValue,
   CustomerOrigin,
   Email,
+  ErasureLifecycle,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
@@ -29,6 +32,7 @@ import {
   WriteProvenance,
 } from '@core/components';
 import {
+  type AppointmentNote,
   type AppointmentPhoto,
   type ClientStatsRecord,
   Collections,
@@ -78,6 +82,9 @@ const BUCKET = 'demo-creativo-test.appspot.com';
 process.env['FIRESTORE_EMULATOR_HOST'] ??= '127.0.0.1:8080';
 // Same for Storage (`firebase.json`'s `emulators.storage`).
 process.env['FIREBASE_STORAGE_EMULATOR_HOST'] ??= '127.0.0.1:9199';
+// Same for Auth (`firebase.json`'s `emulators.auth`, as `mint-custom-token.ts`
+// sets it): the erasure's person holds a real Auth user.
+process.env['FIREBASE_AUTH_EMULATOR_HOST'] ??= '127.0.0.1:9099';
 
 function adminApp() {
   return (
@@ -93,6 +100,11 @@ function adminApp() {
  * as E.164, and the search keys `SearchFieldsSystem` derives — so the web's
  * profile reads (`ProfilePorts`) and the staff search see exactly what
  * production stores. A refused phone or birth date is a broken spec seed.
+ *
+ * `roles` is the STORED role set, `[client]` unless a spec says otherwise:
+ * `signInAs` puts roles in the token's claims only, and a pipeline that
+ * re-reads the caller's stored roles (the admin's privacy callables,
+ * audit-hardening Phase 3 P3-RU-13) judges by this field.
  */
 export async function seedUserProfile(
   uid: string,
@@ -101,6 +113,7 @@ export async function seedUserProfile(
     lastName?: string;
     phone?: string;
     birthDate?: string | null;
+    roles?: readonly Role[];
   } = {},
 ): Promise<void> {
   const firstName = overrides.firstName ?? 'Ada';
@@ -118,7 +131,7 @@ export async function seedUserProfile(
     phone,
     firstName,
     lastName,
-    roles: [Role.Client],
+    roles: overrides.roles ?? [Role.Client],
     ...AccountLifecycle.active(),
     email: null,
     birthDate,
@@ -208,6 +221,7 @@ export async function seedCustomerRecord(uid: string): Promise<CustomerId> {
     createdAtUtcMs: RECORD_OPENED_AT_UTC_MS,
     customerOrigin: CustomerOrigin.Seed,
     ...WriteProvenance.NONE,
+    ...ErasureLifecycle.none(),
   } satisfies Omit<Customer, 'id'>;
   await db.collection(Collections.Customers).doc(id).set(body);
   return id;
@@ -329,12 +343,10 @@ function activeGrantOf(uid: string, couponId: CouponId, value: CouponValue) {
     holderUserId: UserId.of(uid),
     couponId,
     grantedAtUtcMs: SEEDED_AT_UTC_MS,
-    ...CouponValue.of(value),
-    ...GrantLifecycle.of(
-      GrantLifecycle.active(
-        GrantCapacityTerms.singleUse(),
-        GrantExpiryTerms.none(),
-      ),
+    ...CouponValue.sliceOf(value),
+    ...GrantLifecycle.active(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.none(),
     ),
   } satisfies Omit<CouponGrant, 'id'>;
 }
@@ -665,4 +677,142 @@ export async function seedWaitlistMatch(
     .doc(id)
     .set(body);
   return id;
+}
+
+// ── The erasure's person (audit-hardening Phase 3 WS-D, the GDPR erasure) ──
+
+/** What {@link seedErasablePerson} wrote — the ids a spec reads back. */
+export type ErasablePerson = {
+  /** The client RECORD (`customerIdFor(uid)`, D29). */
+  readonly customerId: CustomerId;
+  /** Today's visit, carrying the person's contact. */
+  readonly visitId: string;
+  /** The `SHOT` photo of that visit (its document and its object). */
+  readonly photoId: string;
+  /** The photo's object path in the bucket. */
+  readonly photoPath: string;
+  /** The person's run-unique phone, E.164. */
+  readonly phone: string;
+};
+
+/**
+ * A phone no other test's person holds: `+35988` and seven digits of the
+ * uid's sha256 — so the erasure's sibling walk-in records (keyed by the
+ * phone, P3-L-7) and its OTP sweep meet nobody else's data, and the Auth
+ * emulator (one user per phone) takes it.
+ */
+function runPhoneOf(uid: string): string {
+  const digits = (Number.parseInt(sha256Hex(uid).slice(0, 12), 16) % 10_000_000)
+    .toString()
+    .padStart(7, '0');
+  const raw = `+35988${digits}`;
+  return sure(PhoneSystem.parse(raw, null), raw).e164;
+}
+
+/**
+ * THE ERASURE'S PERSON — a RUN-UNIQUE client the erasure journey erases
+ * (the act is irreversible, and the workers share the catalogue seed, so it
+ * is never a catalogue person): the account `users/{uid}` (`firstName` /
+ * `lastName`, the run-unique phone), its Auth user (that phone, the full
+ * name), the client record, today's visit at `startsAt` (a naive shop wall
+ * clock) carrying the person's contact — the name, the phone and a note —
+ * the visit's staff note (`appointmentNotes/{visitId}`) and its `SHOT` photo
+ * (document and object, labelled with the name). Every body is the flat
+ * archetype at the seed's fixed instants; the id is the attempt's (`uid`).
+ */
+export async function seedErasablePerson(
+  uid: string,
+  names: { readonly firstName: string; readonly lastName: string },
+  startsAt: string,
+): Promise<ErasablePerson> {
+  const phone = runPhoneOf(uid);
+  const fullName = `${names.firstName} ${names.lastName}`;
+  await seedUserProfile(uid, { ...names, phone });
+  await getAuth(adminApp()).createUser({
+    uid,
+    phoneNumber: phone,
+    displayName: fullName,
+  });
+  const customerId = await seedCustomerRecord(uid);
+  const visitId = `${uid}-today`;
+  const contact = sure(
+    BookingContact.create(
+      {
+        name: fullName,
+        phone,
+        email: null,
+        note: `${names.firstName} asks for a quiet chair`,
+      },
+      (raw) => {
+        const parsed = PhoneSystem.parse(raw, null);
+        return parsed.ok ? parsed.value.e164 : null;
+      },
+    ),
+    'contact',
+  );
+  const db = getFirestore(adminApp());
+  await db
+    .collection(Collections.Appointments)
+    .doc(visitId)
+    .set({
+      ...upcomingAppointmentBody(visitId, uid, customerId, startsAt),
+      ...BookingContact.sliceOf(contact),
+    });
+  const note = {
+    text: `${fullName} — a regular, likes it short`,
+    authorUserId: null,
+    writtenAtUtcMs: SEEDED_AT_UTC_MS,
+  } satisfies Omit<AppointmentNote, 'id'>;
+  await db.collection(Collections.AppointmentNotes).doc(visitId).set(note);
+  const photoId = await seedAppointmentPhoto(visitId, uid, {
+    clientLabel: fullName,
+  });
+  return {
+    customerId,
+    visitId,
+    photoId,
+    photoPath: `appointmentPhotos/${visitId}/${photoId}`,
+    phone,
+  };
+}
+
+/** A top-level collection's name, as the registry spells it. */
+type CollectionName = (typeof Collections)[keyof typeof Collections];
+
+/**
+ * `collection/{id}` raw, read back through the Admin SDK — or `null` while
+ * it is absent: what the server FILED (an erased record's tag, a kept
+ * visit's cleared contact), which no screen shows as such.
+ */
+export async function readStoredBody(
+  collection: CollectionName,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await getFirestore(adminApp())
+    .collection(collection)
+    .doc(id)
+    .get();
+  return snapshot.data() ?? null;
+}
+
+/** Whether the Auth emulator still holds a user `uid` (`auth/user-not-found` → `false`). */
+export async function authUserExists(uid: string): Promise<boolean> {
+  try {
+    await getAuth(adminApp()).getUser(uid);
+    return true;
+  } catch (error: unknown) {
+    if ((error as { code?: unknown }).code === 'auth/user-not-found') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** Whether the bucket still holds the object at `path`. */
+export async function storedObjectExists(path: string): Promise<boolean> {
+  const [exists] = await getStorage(adminApp())
+    .bucket(BUCKET)
+    .file(path)
+    .exists();
+  return exists;
 }

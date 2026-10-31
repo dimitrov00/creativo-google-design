@@ -2,12 +2,11 @@ import {
   ClientQuerySystem,
   type ParsedClientQuery,
   type RankableClient,
-  type TextSegment as EcsTextSegment,
 } from '@core/systems';
 
 /**
- * THE ADD-CLIENT OMNIBOX, as pure functions (2026-09-18; owner: "it should
- * auto detect phone or name or email and auto assign it and look it up").
+ * THE ADD-CLIENT OMNIBOX (2026-09-18; owner: "it should auto detect phone
+ * or name or email and auto assign it and look it up").
  *
  * One field, three kinds of answer. The desk types whatever the caller
  * gives — «Мария», «088 765 4321», «maria@…», or all of it at once, pasted
@@ -17,14 +16,14 @@ import {
  * the others rank what comes back and prefill the new-client form.
  *
  * The reading, the lookup keys, the ranking and the marked segments are
- * `ClientQuerySystem` in `@core/systems`, and the reading IS the system's
- * `ParsedClientQuery` — its leading part the field `clientQueryShape`
- * (`ClientQueryShape`), compared against the dictionary's member. This file
- * keeps only what its callers add over the system: the shop's default
- * calling code and the generic ranking over the caller's own objects. No
- * conversion: a reading goes to the system as it came out of it, and the
- * caller's options are the system's `RankableClient` as they are (every
- * field present, an absent mail `null` — pass D, D-10.4).
+ * `ClientQuerySystem` in `@core/systems`, which its callers call directly;
+ * the reading IS the system's `ParsedClientQuery` — its leading part the
+ * field `clientQueryShape` (`ClientQueryShape`), compared against the
+ * dictionary's member. This file keeps only `rankClients`: the system's
+ * ranking (`ClientQuerySystem.rank`, which answers indexes) resolved onto
+ * the caller's own objects. The caller's options are the system's
+ * `RankableClient` as they are (every field present, an absent mail
+ * `null` — pass D, D-10.4).
  */
 
 export interface RankedClient<T extends RankableClient> {
@@ -33,76 +32,14 @@ export interface RankedClient<T extends RankableClient> {
   readonly exact: boolean;
 }
 
-export type TextSegment = EcsTextSegment;
-
-/** Bulgaria's calling code — the shop's, and the default a bare number gets. */
-export const DEFAULT_CALLING_CODE: string =
-  ClientQuerySystem.DEFAULT_CALLING_CODE;
-
-export function parseClientQuery(raw: string): ParsedClientQuery {
-  return ClientQuerySystem.parse(raw);
-}
-
-/**
- * The number in the forms the index holds — the international digits and
- * the national «0…» — so a number finds its person however it was dialled.
- */
-export function phoneLookupVariants(
-  parsed: ParsedClientQuery,
-  callingCode = DEFAULT_CALLING_CODE,
-): readonly string[] {
-  return ClientQuerySystem.phoneLookupVariants(parsed, callingCode);
-}
-
-/** What to ask the index, most selective part first. */
-export function clientLookupKeys(
-  parsed: ParsedClientQuery,
-  callingCode = DEFAULT_CALLING_CODE,
-): readonly string[] {
-  return ClientQuerySystem.lookupKeys(parsed, callingCode);
-}
-
-/** The typed digits as INTERNATIONAL digits (no `+`), most likely reading first. */
-export function phoneInternationalDigits(
-  parsed: ParsedClientQuery,
-  callingCode = DEFAULT_CALLING_CODE,
-): readonly string[] {
-  return ClientQuerySystem.phoneInternationalDigits(parsed, callingCode);
-}
-
 /** The owner's hits, filtered by the LEADING part and ordered best first. */
 export function rankClients<T extends RankableClient>(
   clients: readonly T[],
   parsed: ParsedClientQuery,
-  callingCode = DEFAULT_CALLING_CODE,
+  callingCode: string = ClientQuerySystem.DEFAULT_CALLING_CODE,
 ): readonly RankedClient<T>[] {
   return ClientQuerySystem.rank(clients, parsed, callingCode).map((hit) => ({
     client: clients[hit.index] as T,
     exact: hit.exact,
   }));
-}
-
-/** A name with the typed beginnings of its words marked. */
-export function nameSegments(
-  label: string,
-  parsed: ParsedClientQuery,
-): readonly TextSegment[] {
-  return ClientQuerySystem.nameSegments(label, parsed);
-}
-
-/** A printed number with the typed run of its digits marked, spacing kept. */
-export function phoneSegments(
-  formatted: string,
-  parsed: ParsedClientQuery,
-  callingCode = DEFAULT_CALLING_CODE,
-): readonly TextSegment[] {
-  return ClientQuerySystem.phoneSegments(formatted, parsed, callingCode);
-}
-
-/** A mail with the typed fragment marked. */
-export function emailSegments(
-  email: string,
-  parsed: ParsedClientQuery,
-): readonly TextSegment[] {
-  return ClientQuerySystem.emailSegments(email, parsed);
 }

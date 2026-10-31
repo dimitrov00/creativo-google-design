@@ -28,7 +28,7 @@ export const Money = {
    * be a non-negative safe integer (a negative zero folds into `0`).
    */
   of(amountCents: number, currency: string): Result<Money, MoneyError> {
-    const tradable = Money.currencyFrom(currency);
+    const tradable = Currency.tradable(currency);
     if (tradable === null) {
       return Result.err(MoneyError.unknownCurrency(currency));
     }
@@ -45,15 +45,6 @@ export const Money = {
   /** Nothing, in `currency` — the identity of `add` and the empty `sum`. */
   zero(currency: Currency): Money {
     return { amountCents: PriceCents.ZERO, currency };
-  },
-
-  /**
-   * The tradable currency a raw code names (trimmed, case-insensitive),
-   * or `null` — the successor of the retired kernel's `currencyFromCode`,
-   * which answered a dinero.js currency object where this answers the brand.
-   */
-  currencyFrom(raw: string): Currency | null {
-    return Currency.tradable(raw);
   },
 
   add(a: Money, b: Money): Result<Money, MoneyError> {

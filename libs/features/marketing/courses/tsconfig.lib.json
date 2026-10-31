@@ -50,6 +50,9 @@
     },
     {
       "path": "../../../shared/view-state/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     }
   ]
 }

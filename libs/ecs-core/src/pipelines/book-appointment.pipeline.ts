@@ -55,6 +55,7 @@ import {
   type AuditFact,
   AuditSystem,
   BookingDecisionSystem,
+  ClientErasureSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
   DecisionInputSystem,
@@ -477,6 +478,14 @@ function decideBooking(
       ),
     );
   }
+  // THE ERASURE GUARD (P3-RU-20): no record under erasure is seated or
+  // re-created — an account's record and a walk-in's alike, each read in the
+  // phase-one getAll this transaction already ran (`set.customers`).
+  const erased = ClientErasureSystem.underErasureAmong(
+    [...customerIds.values(), ...walkIns.map((walkIn) => walkIn.customerId)],
+    set.customers,
+  );
+  if (erased.length > 0) return Result.err(BookingError.clientErased());
   const zone = zoneOf(location) ?? TimeZone.UTC;
   const input: DecideBookingInput = {
     locationId: cmd.locationId,

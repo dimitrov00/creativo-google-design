@@ -28,8 +28,9 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
 } from './support/seed-firestore';
-import { shopToday, stillAheadToday } from './support/shop-clock';
+import { EVENING_VISIT_START } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
+import { pinBrowserClock, suiteDay } from './support/suite-clock';
 import { THEMES, pinTheme } from './support/theme';
 
 /**
@@ -152,14 +153,14 @@ async function seedGeorgi(uid: string, today: string): Promise<void> {
     }),
   );
   // Late in the day and still ahead when the history reads it (its
-  // «Предстоящи»; `stillAheadToday` — a fixed 21:00 had started, and left
-  // that run, whenever the suite ran after nine in the evening) — and OPEN
-  // (not settled), which is what lets the medal page's verb add a service
-  // to it.
+  // «Предстоящи»): the page's clock is pinned to the suite's day at 10:00
+  // (`pinBrowserClock`, P3-DEP-4), so a visit at 21:00 is to come whatever
+  // the real hour — and OPEN (not settled), which is what lets the medal
+  // page's verb add a service to it.
   await seedUpcomingAppointment(
     `${uid}-today`,
     uid,
-    `${today}T${stillAheadToday()}`,
+    `${today}T${EVENING_VISIT_START}`,
   );
   // A past cut on the OLDER visit: «Снимки» (I) shows the cuts the cards
   // do not — the featured last visit's own ride its card as thumbs
@@ -194,7 +195,7 @@ async function seedMartin(uid: string, today: string): Promise<void> {
   await seedUpcomingAppointment(
     `${uid}-today`,
     uid,
-    `${today}T${stillAheadToday()}`,
+    `${today}T${EVENING_VISIT_START}`,
   );
   await seedBirthdayGift(uid);
 }
@@ -364,10 +365,11 @@ test.describe('client card — the glance (client.profile on)', () => {
     test(`a barber reads the card: the hero, the months, the wallet and its ledger, the records, a medal three deep with the dock's verb, ✓ back — ${theme}`, async ({
       page,
     }) => {
+      await pinBrowserClock(page);
       test.setTimeout(180_000);
       const run = attemptKey(test.info());
       const uid = `e2e-card-${run}`;
-      const today = shopToday();
+      const today = suiteDay();
       await seedGeorgi(uid, today);
       await pinTheme(page, theme);
       await signInAs(page, `e2e-card-staff-${run}`, ['barber']);
@@ -382,8 +384,12 @@ test.describe('client card — the glance (client.profile on)', () => {
       // are known (S1-5) — and the quiet line under the name.
       const head = card.getByTestId('client-head');
       await expect(head).toHaveAttribute('data-headline-style', 'hero');
+      // The name is the profile's (`users/{uid}`, one server read): it
+      // waits as the plate below does — an emulator stall once held the
+      // read past the default 5 s (Phase 3 plan §8.A).
       await expect(card.getByTestId('client-head-title')).toHaveText(
         'Георги Петров',
+        { timeout: 20_000 },
       );
       await expect(card.getByTestId('client-head-avatar')).toBeVisible();
       await expect(head).toHaveAttribute('data-plate', '', {
@@ -707,10 +713,11 @@ test.describe('client card — the glance (client.profile on)', () => {
     test(`a birthday client: the band under the head, the gift to use, applied and taken back — ${theme}`, async ({
       page,
     }) => {
+      await pinBrowserClock(page);
       test.setTimeout(120_000);
       const run = attemptKey(test.info());
       const uid = `e2e-card-bday-${run}`;
-      const today = shopToday();
+      const today = suiteDay();
       const age = Number(today.slice(0, 4)) - MARTIN_BORN;
       await seedMartin(uid, today);
       await pinTheme(page, theme);
@@ -721,6 +728,7 @@ test.describe('client card — the glance (client.profile on)', () => {
       const card = await openCardOf(page, today, `${uid}-today#ivan`, uid);
       await expect(card.getByTestId('client-head-title')).toHaveText(
         'Мартин Илиев',
+        { timeout: 20_000 },
       );
 
       // THE BIRTHDAY CARD (§2.1.2 a): once the profile has answered, the

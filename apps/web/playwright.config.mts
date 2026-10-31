@@ -41,6 +41,15 @@ export default defineConfig({
   // scripts; the global setup refuses a hub that is not), so a failure here
   // is ours to read, not the CLI's.
   retries: process.env['CI'] ? 2 : 0,
+  // The screenshot baselines are macOS renders (`*-chromium-darwin.png`),
+  // so the owner's macOS full gate is the screenshot gate. CI's e2e job
+  // alone sets the switch below to `skip` and runs everything else; the
+  // switch is closed — any other value, or none, runs every test, the
+  // `@screenshot`-tagged describes included (P3-RU-30).
+  grepInvert:
+    process.env['CREATIVO_E2E_SCREENSHOTS'] === 'skip'
+      ? /@screenshot/
+      : undefined,
   use: {
     baseURL,
     // Every attempt records; a FAILED attempt keeps its trace, and so does

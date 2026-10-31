@@ -48,6 +48,7 @@ import {
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * A client's move against the REAL Firestore emulator — the successor of
@@ -81,12 +82,6 @@ const ATTEMPT = ((): ClientOperationId => {
   if (!id.ok) throw new Error('a broken fixture');
   return id.value;
 })();
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const BEARD_TERMS = termsFixture(2000, 30);
 

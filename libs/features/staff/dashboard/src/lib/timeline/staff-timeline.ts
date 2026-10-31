@@ -39,14 +39,10 @@ import {
   ScrollAxis,
   snapTo,
 } from '../time-grid/grid-gesture';
-import {
-  closedMinuteRuns,
-  toMinuteRun,
-  trackMinuteOf,
-} from '../time-grid/minute-run';
+import { closedMinuteRuns, toMinuteRun } from '../time-grid/minute-run';
 import { gridEventWords } from '../tag-words';
 import { EditCommand, ResizeEdge } from '@core/components';
-import type { MinuteOfDay, TrackMinute } from '@core/primitives';
+import { type MinuteOfDay, TrackMinute } from '@core/primitives';
 import { GridLayoutSystem } from '@core/systems';
 import type {
   GridColumn,
@@ -61,7 +57,7 @@ import type {
 /** A civil day. */
 const DAY_MINUTES = 1440;
 /** The opening midnight — the axis's first minute when nothing draws earlier. */
-const AXIS_ORIGIN = trackMinuteOf(0);
+const AXIS_ORIGIN = TrackMinute.ofProven(0);
 
 /**
  * The minutes around "now" within which an hour label stands down so the now
@@ -240,8 +236,8 @@ export class StaffTimeline {
     }
     // Whole hours of the track, the first one ≥ 0 (every bound read is a
     // track minute): track minutes.
-    const first = trackMinuteOf(Math.floor(start / 60) * 60);
-    const last = trackMinuteOf(Math.ceil(end / 60) * 60);
+    const first = TrackMinute.ofProven(Math.floor(start / 60) * 60);
+    const last = TrackMinute.ofProven(Math.ceil(end / 60) * 60);
     return {
       start: first,
       end: last,
@@ -272,7 +268,7 @@ export class StaffTimeline {
         key: String(minute),
         index,
         // A whole hour of the axis, from its first (≥ 0): a track minute.
-        label: formatClock(trackMinuteOf(minute), ClockClosing.Wrap),
+        label: formatClock(TrackMinute.ofProven(minute), ClockClosing.Wrap),
         nearNow: now !== null && coveredByNow(minute, now),
       });
     }
@@ -814,11 +810,11 @@ export class StaffTimeline {
     const duration = origin.endMinute - origin.startMinute;
     // The grid's rule: whole (a snapped or stepped minute, whole bounds),
     // never before the axis's first minute (≥ 0); the length kept.
-    const at = trackMinuteOf(clamp(startMinute, start, end - duration));
+    const at = TrackMinute.ofProven(clamp(startMinute, start, end - duration));
     return {
       id: origin.id,
       startMinute: at,
-      endMinute: trackMinuteOf(at + duration),
+      endMinute: TrackMinute.ofProven(at + duration),
     };
   }
 
@@ -827,7 +823,7 @@ export class StaffTimeline {
     const floor = this.minMinutes();
     return {
       id: origin.id,
-      startMinute: trackMinuteOf(
+      startMinute: TrackMinute.ofProven(
         clamp(startMinute, start, origin.endMinute - floor),
       ),
       endMinute: origin.endMinute,
@@ -840,7 +836,7 @@ export class StaffTimeline {
     return {
       id: origin.id,
       startMinute: origin.startMinute,
-      endMinute: trackMinuteOf(
+      endMinute: TrackMinute.ofProven(
         clamp(endMinute, origin.startMinute + floor, end),
       ),
     };

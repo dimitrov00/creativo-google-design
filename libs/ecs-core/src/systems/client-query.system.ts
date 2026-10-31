@@ -117,8 +117,13 @@ function storedDigits(phone: string | null): string {
   return (phone ?? '').replace(NON_DIGIT, '');
 }
 
-/** The typed number as international digits it could be the beginning of. */
-function internationalCandidates(
+/**
+ * The typed digits as INTERNATIONAL digits (no `+`) it could be the
+ * beginning of, most likely reading first: «+359…»/«00359…»/«359…» as
+ * carried, a trunk «0…» with the code in its place, a bare run with the
+ * code before it (and, last, as itself).
+ */
+function phoneInternationalDigits(
   parsed: ParsedClientQuery,
   callingCode: string,
 ): readonly string[] {
@@ -432,17 +437,7 @@ export const ClientQuerySystem = {
     return longest === null ? [] : [longest];
   },
 
-  /**
-   * The typed digits as INTERNATIONAL digits (no `+`), most likely reading
-   * first: «+359…»/«00359…»/«359…» as carried, a trunk «0…» with the code
-   * in its place, a bare run with the code before it (and, last, as itself).
-   */
-  phoneInternationalDigits(
-    parsed: ParsedClientQuery,
-    callingCode: string,
-  ): readonly string[] {
-    return internationalCandidates(parsed, callingCode);
-  },
+  phoneInternationalDigits,
 
   /**
    * The pool's hits, filtered by the LEADING part and ordered best first —
@@ -463,7 +458,7 @@ export const ClientQuerySystem = {
       }
       return all;
     }
-    const candidates = internationalCandidates(parsed, callingCode);
+    const candidates = phoneInternationalDigits(parsed, callingCode);
     const scored: Scored[] = [];
     for (let i = 0; i < clients.length; i++) {
       const client = clients[i] as RankableClient;
@@ -543,7 +538,7 @@ export const ClientQuerySystem = {
     }
     let from = -1;
     let length = 0;
-    const candidates = internationalCandidates(parsed, callingCode);
+    const candidates = phoneInternationalDigits(parsed, callingCode);
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i] as string;
       if (digits.startsWith(candidate)) {

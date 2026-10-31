@@ -2,6 +2,7 @@ import { ClientIssue, ClientIssueKind, type Roles } from '@core/components';
 import { Collections, Subcollections } from '@core/entities';
 import { ClientIssueBatchRefusedReason, ClientIssueError } from '@core/errors';
 import { ClientOperationId, Result, StoredFields, Tag } from '@core/primitives';
+import { CanonicalJsonSystem } from './canonical-json.system';
 
 /**
  * What the web knows of an issue before it is shaped — every text raw, any
@@ -186,11 +187,6 @@ const DOC_ID = /^[!-.0-~]+$/;
 /** A UTF-16 lead surrogate — a cut is never made right after one. */
 function isLeadSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;
-}
-
-/** A UTF-16 trail surrogate. */
-function isTrailSurrogate(code: number): boolean {
-  return code >= 0xdc00 && code <= 0xdfff;
 }
 
 /**
@@ -497,30 +493,11 @@ function issueFault(raw: unknown, index: number): ClientIssueError | null {
 }
 
 /**
- * How many bytes a text weighs in UTF-8 — counted by code unit, nothing
- * encoded. Read on JSON, where every lone surrogate is already an escape,
- * so a lead surrogate here always starts a pair.
+ * What a value weighs on the wire: its JSON, in UTF-8 bytes
+ * (`CanonicalJsonSystem.utf8Bytes`, the one counter — P3-RU-27).
  */
-function utf8Bytes(text: string): number {
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code < 0x80) bytes += 1;
-    else if (code < 0x800) bytes += 2;
-    else if (
-      isLeadSurrogate(code) &&
-      isTrailSurrogate(text.charCodeAt(i + 1))
-    ) {
-      bytes += 4;
-      i++;
-    } else bytes += 3;
-  }
-  return bytes;
-}
-
-/** What a value weighs on the wire: its JSON, in UTF-8 bytes. */
 function jsonBytes(value: unknown): number {
-  return utf8Bytes(JSON.stringify(value));
+  return CanonicalJsonSystem.utf8Bytes(JSON.stringify(value));
 }
 
 /** FNV-1a's 32-bit offset basis and prime. */

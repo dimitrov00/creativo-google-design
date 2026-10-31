@@ -6,7 +6,7 @@
  *   promotions, the programs (OR-41), the waitlist request, the client
  *   records, the accounts (`users`, flip 2) and the booking policy are
  *   bodies in `tools/seed/fixtures/*.fixtures.ts`, each
- *   `satisfies Omit<X, 'id'>` of its `@core/entities` archetype, and the
+ *   `satisfies Body<X>` of its `@core/entities` archetype, and the
  *   plan modules that place them (`catalog.mjs`, `fixtures.mjs`,
  *   `appointments.mjs`, `loyalty.mjs`, `promotions.mjs`, `programs.mjs`,
  *   `waitlist.mjs`, over the shop calendar of `calendar.mjs`) import those

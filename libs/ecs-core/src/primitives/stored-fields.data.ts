@@ -1,5 +1,6 @@
 /**
- * A document body AS READ — field names to values nobody has checked yet:
+ * A document body AS READ — or a wire payload as read — field names to
+ * values nobody has checked yet:
  * what an adapter holds between `snap.data()` and the read-time guard
  * (`StoredDocumentSystem`) that admits it as its entity, and what a
  * companion's `fieldFault` reads a slice's fields from. Never an entity: a
@@ -10,8 +11,9 @@
  * The companion is the ONE home of the stored-SHAPE checks every read-time
  * check composes (a record, an array of them, a text or `null`, a count) —
  * the components' `fieldFault` members and `StoredDocumentSystem` call
- * these, never a copy. Every check is a typeof test or an indexed scan: no
- * allocation.
+ * these, never a copy — and of the one own-field read (`field`) every
+ * decoder, wire reader and read-time check uses. Every check is a typeof
+ * test or an indexed scan: no allocation.
  */
 export type StoredFields = Readonly<Record<string, unknown>>;
 
@@ -36,6 +38,18 @@ function isRecord(raw: unknown): raw is StoredFields {
 }
 
 export const StoredFields = {
+  /**
+   * A field of an untrusted object by name — an OWN property only (never an
+   * inherited `toString`), no dynamic index; `undefined` when absent or when
+   * `raw` is not an object. The one home of the own-field read: a document
+   * body, a wire payload, a callable's answer, a thrown value.
+   */
+  field(raw: unknown, name: string): unknown {
+    return raw !== null && typeof raw === 'object'
+      ? Object.getOwnPropertyDescriptor(raw, name)?.value
+      : undefined;
+  },
+
   /**
    * A non-null object that is not an array — what a document body, a seat
    * or a busy block must be before any of its fields can be read. No

@@ -35,6 +35,7 @@ import {
 } from '@core/testing';
 import { firestoreCatalogPorts } from '../adapters/firestore-catalog.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * The capacity rebuild against the REAL Firestore emulator — the lane that
@@ -63,12 +64,6 @@ const GONE = LocationId.of('loc-gone');
 const NOW = utcMs('2026-08-03T08:00:00.000+03:00');
 const MONDAY = localDate('2026-08-03');
 const AUGUST = CapacityMonthId.of('2026-08');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const entry = (
   day: LocalDate,

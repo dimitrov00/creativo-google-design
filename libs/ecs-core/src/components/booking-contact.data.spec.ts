@@ -156,7 +156,7 @@ describe('BookingContact.NONE / isPresent / of', () => {
     if (!created.ok) throw new Error('bad fixture');
     expect(BookingContact.isPresent(created.value)).toBe(true);
     const appointment = { ...created.value, bookingStatus: 'CONFIRMED' };
-    expect(BookingContact.of(appointment)).toEqual(created.value);
+    expect(BookingContact.sliceOf(appointment)).toEqual(created.value);
   });
 });
 

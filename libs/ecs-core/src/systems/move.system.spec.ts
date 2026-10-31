@@ -793,13 +793,13 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
     const planned = unwrapOk(plan(party(), [cartSeat(at(14))]));
     expect(planned.carried).toHaveLength(1);
     const carriedSon = planned.carried[0];
-    expect(carriedSon?.seatId).toBe('seat-son');
+    expect(carriedSon?.seat.seatId).toBe('seat-son');
     expect(carriedSon?.userId).toBe(SON);
     expect(carriedSon?.seat.serviceId).toBe(BEARD);
     expect(carriedSon?.seat.barberId).toBe(PETAR);
     expect(carriedSon?.seat.barberPreference).toBe('ANY');
     // The terms he was SOLD at — a move is not a re-sale.
-    expect(carriedSon?.terms).toMatchObject({
+    expect(carriedSon?.seat).toMatchObject({
       priceCents: 1500,
       durationMinutes: 30,
     });
@@ -832,9 +832,9 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
     );
     const planned = unwrapOk(plan(party(55, foreignSelf), [cartSeat(at(14))]));
     expect(planned.replaced.map((s) => s.seatId)).toEqual(['seat-father']);
-    expect(planned.carried.map((line) => SeatOccupant.of(line.seat))).toEqual([
-      foreignSelf,
-    ]);
+    expect(
+      planned.carried.map((line) => SeatOccupant.sliceOf(line.seat)),
+    ).toEqual([foreignSelf]);
     expect(planned.carried[0]?.startMinutes).toBe(at(14, 55));
   });
 
@@ -1152,7 +1152,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
         ownerUserId: OWNER,
         customerIds: resolvedCustomerIds([OWNER, SON]),
         termsOverrides: planned.carried.map((line) =>
-          StaffTermsOverride.of(SeatKeyText.of(line.lineId), line.terms),
+          StaffTermsOverride.of(SeatKeyText.of(line.lineId), line.seat),
         ),
         standing: [],
         stood: [],
@@ -1173,7 +1173,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
     const planned = unwrapOk(plan(party(0, foreignSelf), [cartSeat(at(14))]));
     const carriedSon = planned.carried[0];
     expect(
-      carriedSon === undefined ? null : SeatOccupant.of(carriedSon.seat),
+      carriedSon === undefined ? null : SeatOccupant.sliceOf(carriedSon.seat),
     ).toEqual(foreignSelf);
     expect(carriedSon?.seat.barberId).toBe('petar');
     expect(carriedSon?.startMinutes).toBe(at(14));
@@ -1550,8 +1550,10 @@ describe('MoveSystem.decideCarried — the whole party, else the cart alone', ()
     answer: (carried: readonly string[]) => Result<string, BookingError>,
   ) {
     const calls: Calls = [];
-    const decide = (carried: readonly { readonly seatId: SeatId }[]) => {
-      const ids = carried.map((line) => line.seatId as string);
+    const decide = (
+      carried: readonly { readonly seat: { readonly seatId: SeatId } }[],
+    ) => {
+      const ids = carried.map((line) => line.seat.seatId as string);
       calls.push(ids);
       return answer(ids);
     };

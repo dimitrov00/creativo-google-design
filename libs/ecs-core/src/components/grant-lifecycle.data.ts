@@ -31,8 +31,8 @@ export const GrantLifecycle = {
   ): GrantLifecycle.Active {
     return {
       grantStatus: GrantStatus.Active,
-      ...GrantCapacityTerms.of(capacity),
-      ...GrantExpiryTerms.of(expiry),
+      ...GrantCapacityTerms.sliceOf(capacity),
+      ...GrantExpiryTerms.sliceOf(expiry),
     };
   },
 
@@ -55,7 +55,7 @@ export const GrantLifecycle = {
             usesRemaining: 0,
             usesGranted: terms.usesGranted,
           }),
-      ...GrantExpiryTerms.of(terms),
+      ...GrantExpiryTerms.sliceOf(terms),
       usedAtUtcMs: atUtcMs,
       usedNote: note,
     };
@@ -90,7 +90,7 @@ export const GrantLifecycle = {
   },
 
   /** The lifecycle slice of a value that carries one (a whole grant), copied to exactly its variant's fields. */
-  of(lifecycle: GrantLifecycle): GrantLifecycle {
+  sliceOf<T extends GrantLifecycle>(lifecycle: T): GrantLifecycle {
     switch (lifecycle.grantStatus) {
       case GrantStatus.Active:
         return GrantLifecycle.active(lifecycle, lifecycle);

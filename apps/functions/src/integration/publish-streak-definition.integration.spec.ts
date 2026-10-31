@@ -40,6 +40,7 @@ import {
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCatalogPorts } from '../adapters/firestore-catalog.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * `publishStreakDefinition` / `withdrawStreakDefinition` against the REAL
@@ -68,12 +69,6 @@ const OWNER = UserId.of('dev-staff-ivan');
 const HEAD = `${Collections.StreakDefinitions}/${CADENCE}`;
 const versionDoc = (version: number): string =>
   `${HEAD}/${Subcollections.Versions}/${StreakDefinitionVersionId.forVersion(version)}`;
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** Two snapshots' update times are the same instant — the document was not rewritten. */
 function sameUpdate(

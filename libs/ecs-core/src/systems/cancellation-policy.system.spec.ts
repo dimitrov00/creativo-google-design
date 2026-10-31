@@ -15,6 +15,7 @@ import {
   BookingStatus,
   type Result,
   AttendanceState,
+  HourCount,
   BarberId,
   OperationId,
   SeatId,
@@ -55,7 +56,7 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1) and
  * apps/functions/src/lib/booking/cancellation-window-stamp.spec.ts, copied
  * while the originals still ran against their shims: the window is whole
- * hours (`BookingPolicy.isValidCancellationWindowHours`), the deadline its
+ * hours (`HourCount.is`), the deadline its
  * one formula on `UtcEpochMs` (`BookingPolicy.cancellationDeadlineUtcMs`, a
  * T2 lifecycle comparison) that `mayCancel` judges by, and every path that
  * cancels a seat stamps the window in force on it — the stamp spec's
@@ -127,8 +128,8 @@ const anyVisitStart = fc
   )
   .map(instant);
 
-describe('the window as whole hours (`BookingPolicy.isValidCancellationWindowHours`)', () => {
-  const valid = BookingPolicy.isValidCancellationWindowHours;
+describe('the window as whole hours (`HourCount.is`)', () => {
+  const valid = HourCount.is;
 
   it('accepts every whole, non-negative number of hours', () => {
     fc.assert(
@@ -266,9 +267,7 @@ describe('CancellationPolicySystem — the booking policy’s own rule', () => {
           ...BookingPolicy.DEFAULT,
           cancellationWindowHours: hours,
         });
-        expect(policy.ok).toBe(
-          BookingPolicy.isValidCancellationWindowHours(hours),
-        );
+        expect(policy.ok).toBe(HourCount.is(hours));
         if (!policy.ok) {
           expect(
             policy.error.map((error) =>

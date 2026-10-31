@@ -51,9 +51,4 @@ export const MinuteBlock = {
     if (span !== null) return span;
     return Tag.has(BlockKind, raw['blockKind']) ? null : 'blockKind';
   },
-
-  /** Half-open overlap of the spans; the kinds do not matter. */
-  overlaps(a: MinuteBlock, b: MinuteBlock): boolean {
-    return MinuteRange.overlaps(a, b);
-  },
 } as const;

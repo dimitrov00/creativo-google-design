@@ -4,12 +4,21 @@ import {
   type OtpDestinationType,
   OtpPurpose,
   ParsedIdentifier,
+  WriteOp,
 } from '@core/components';
-import { LogEvent, type OtpId, Result } from '@core/primitives';
+import {
+  LogEvent,
+  type OperationId,
+  type OtpId,
+  Result,
+} from '@core/primitives';
 import { IdentityError, type RequestOtpError } from '@core/errors';
+import { Collections } from '@core/entities';
 import type {
   AuthDeploymentPorts,
   ClockPorts,
+  CommitPorts,
+  HashPorts,
   IdPorts,
   OtpCryptoPorts,
   OtpDeliveryPorts,
@@ -17,15 +26,15 @@ import type {
   TelemetryPorts,
   TenantPorts,
 } from '@core/ports';
-import { OtpSystem } from '@core/systems';
+import { AuditSystem, IdentityAuditSystem, OtpSystem } from '@core/systems';
 import { parseContactPhone } from './booking-read-set.pipeline';
 
 /**
  * `requestOtp` — a new login challenge for a phone or an e-mail (blueprint
  * §4.1; identity flip (2), §3.2): the successor of the legacy
  * `RequestOtpUseCase` (deleted in Phase 4b) and the `requestOtpChallenge`
- * handler, as one sandwich with no transaction (as before — the resend
- * window is the throttle, a lost race costs one extra code).
+ * handler, as one sandwich whose only write is ONE commit with no reads
+ * (the resend window is the throttle, a lost race costs one extra code).
  *
  * The order is frozen, refusal by refusal: (1) the deployment's ONE
  * challenge channel (`OtpSystem.channelAccepts`; a magic-link deployment
@@ -38,9 +47,18 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * that window (`OtpSystem.retryAfterSeconds`, OR-9) so the code step
  * restarts its countdown instead of showing a dead end; (4) the tenant;
  * then the challenge is issued with the strategy's own
- * `ttlMinutes`/`maxAttempts`, saved (`saveOtp`, which stamps `purgeAt`) and
- * sent. A send failure is answered as such — the saved challenge stays, as
- * today — and so is the deployed sender's refusal
+ * `ttlMinutes`/`maxAttempts`, saved and sent. It is saved by ONE commit
+ * (audit-hardening Phase 3, P3-RU-6, P3-DEP-6): the whole-body `Set` of
+ * `otps/{id}` (the transaction adapter stamps its `purgeAt` TTL) and the
+ * `IDENTITY_OTP_REQUESTED` audit row (`IdentityAuditSystem.planOtpRequested`
+ * — ids and tags only, never the destination, the code hash or the salt;
+ * keyed by the fresh challenge id, no operation id, P3-L-20), so the row
+ * lands with the challenge or not at all; a commit failure is answered as
+ * the store failure, nothing sent. A refusal before the issue (channel,
+ * identifier, resend window, tenant) commits nothing and plans no row
+ * (P3-L-2). A send failure is answered as such — the saved challenge and
+ * its row stay, as the challenge always has — and so is the deployed
+ * sender's refusal
  * (`IDENTITY_OTP_SEND_UNAVAILABLE`, audit-hardening WS-0), passed through
  * unchanged so the edge words it as its own code. The save and the resend
  * window still come BEFORE the send: an unwired sender refuses every
@@ -55,6 +73,11 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * today (F2-10): the probe queries the parsed identifier while the challenge
  * stores the trimmed raw value, today's exact pair.
  *
+ * The call's transport operation id rides on the command (RU-21, read by
+ * the decoder, never refused) but reaches no row: the caller is not signed
+ * in, the id is text it chose, and `auditLog` is permanent (P3-L-20) — the
+ * edge's outcome line carries it as the join key.
+ *
  * The raw code is answered to the edge (never stored) so the callable can
  * echo it under the emulator only (`devCode`); production never forwards it.
  */
@@ -64,7 +87,9 @@ export type RequestOtpPorts = TenantPorts &
   OtpDeliveryPorts &
   OtpCryptoPorts &
   AuthDeploymentPorts &
+  CommitPorts &
   ClockPorts &
+  HashPorts &
   IdPorts &
   TelemetryPorts;
 
@@ -78,6 +103,12 @@ export type RequestOtpCommand = {
    * follow the channel check).
    */
   readonly rawDestination: string;
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused. It reaches no row
+   * (P3-L-20): the edge's outcome line is its join key.
+   */
+  readonly operationId: OperationId | null;
 };
 
 export type RequestOtpAnswer = {
@@ -152,7 +183,22 @@ export const requestOtp =
       ports.nextId,
     );
 
-    const saved = await ports.saveOtp(otp);
+    // The challenge and its row, in ONE commit with no reads (P3-RU-6):
+    // both land or neither does, and the send comes after (RU-3's order).
+    const { id, ...body } = otp;
+    const saved = await ports.commit(
+      async () => null,
+      (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
+        Result.ok({
+          writes: [
+            WriteOp.set([Collections.Otps, id], body),
+            ...AuditSystem.createsOf(
+              [IdentityAuditSystem.planOtpRequested(otp)],
+              ports.hash,
+            ),
+          ],
+        }),
+    );
     if (!saved.ok) return saved;
 
     const sent = await ports.sendOtp(parsed.value, rawCode);

@@ -15,8 +15,9 @@ import {
   pluralForm,
   type StreakPeriodReasonWord,
 } from '@creativo/infrastructure/i18n';
-import { figure, inSentence } from './client-card.format';
+import { inSentence } from './client-card.format';
 import type { RecordTheme } from './client-pages.vm';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /*
  * THE CARD'S WORDS — every key the presenters read, looked up ONCE per
@@ -986,6 +987,57 @@ export interface ClientCardWords {
   };
   readonly remove: string;
   readonly exitsLabel: string;
+  /**
+   * L — «Лични данни»: an admin's data-subject acts (audit-hardening
+   * Phase 3). A refusal's words are `errors.<errorCode>`, worded by the
+   * presenter through `wordPipelineError`, never held here.
+   */
+  readonly privacy: ClientPrivacyWords;
+  /**
+   * L — the erasure's words in the same group (audit-hardening Phase 3,
+   * WS-D; the catalogue's `clientCard.privacy.erase*` / `alert*` keys). A
+   * refusal's words are `errors.<errorCode>`, as the export's.
+   */
+  readonly erasure: ClientErasureWords;
+}
+
+/** L — the privacy group's own words (`clientCard.privacy.*`). */
+export interface ClientPrivacyWords {
+  /** «Лични данни» — the group's name for a reader. */
+  readonly groupLabel: string;
+  /** «Изтегли данните». */
+  readonly export: string;
+  /** «Файлът е изтеглен.» */
+  readonly exportDone: string;
+}
+
+/** The figures the erasure's alert prints — each a server census count, or the siblings' number. */
+export interface ErasureAlertFigures {
+  readonly visits: number;
+  readonly notes: number;
+  readonly photos: number;
+  readonly accounts: number;
+  readonly siblings: number;
+}
+
+/** L — the erasure's words (`clientCard.privacy.erase*`, `clientCard.privacy.alert*`). */
+export interface ClientErasureWords {
+  /** «Изтрий личните данни» — the record's row, whatever the system offers (erase, resume, re-sweep). */
+  readonly erase: string;
+  /** «Изтрий записа със същия телефон или имейл» — a sibling record's row; never its name. */
+  readonly eraseSibling: string;
+  /** «Изтрит клиент» — an erased record's line. */
+  readonly erased: string;
+  /** «Изтриването още не е завършило. Опитай пак.» */
+  readonly eraseUnfinished: string;
+  /** «Да изтрием ли личните данни?» — the alert's question. */
+  readonly alertTitle: string;
+  /** The alert's message: the census in figures, then what goes and what stays. */
+  readonly alertBody: (figures: ErasureAlertFigures) => string;
+  /** «Изтрий» — the alert's destructive answer. */
+  readonly eraseConfirm: string;
+  /** «Отказ» — the alert's safe answer. */
+  readonly eraseKeep: string;
 }
 
 /**
@@ -996,11 +1048,10 @@ export function clientCardWordsOf(
   translate: ClientCardTranslate,
   lang: string,
 ): ClientCardWords {
-  const t = (key: string, params?: Params) => translate(key, params);
   const plural = (key: string, count: number, params: Params = {}) =>
     translate(`${key}.${pluralForm(count, lang)}`, { count, ...params });
   /** A count as it prints: grouped the locale's way. */
-  const n = (count: number) => figure(count, lang);
+  const n = (count: number) => formatCount(count, lang);
   /** A plural sentence whose count prints grouped («1 200 точки»). */
   const counted = (key: string, count: number, params: Params = {}) =>
     plural(key, count, { count: n(count), ...params });
@@ -1023,112 +1074,124 @@ export function clientCardWordsOf(
     formed('clientCard.achievements.collectionOf', total, { total: n(total) });
   const ticketUntil = (until: string | null) =>
     slot(until, (date) =>
-      t('clientCard.loyaltyPage.ticketUntilSuffix', { date }),
+      translate('clientCard.loyaltyPage.ticketUntilSuffix', { date }),
     );
   return {
     lang,
     visits: visitWordsOf(translate, lang, VisitPerspective.Staff),
     waitlist: visitWaitlistWordsOf(translate),
-    monthShort: (month) => t(`visits.tile.month.${month}`),
+    monthShort: (month) => translate(`visits.tile.month.${month}`),
     head: {
-      since: (since) => t('clientCard.head.since', { since }),
-      firstVisit: t('clientCard.head.firstVisit'),
-      guest: t('clientCard.head.guest'),
-      pausedUntil: (date) => t('clientCard.head.pausedUntil', { date }),
-      pausedPermanent: t('clientCard.head.pausedPermanent'),
+      since: (since) => translate('clientCard.head.since', { since }),
+      firstVisit: translate('clientCard.head.firstVisit'),
+      guest: translate('clientCard.head.guest'),
+      pausedUntil: (date) => translate('clientCard.head.pausedUntil', { date }),
+      pausedPermanent: translate('clientCard.head.pausedPermanent'),
       sinceCadence: (since, cadence) =>
-        t('clientCard.head.sinceCadence', { since, cadence }),
+        translate('clientCard.head.sinceCadence', { since, cadence }),
       cadence: (weeks) => counted('clientCard.head.cadence', weeks),
       tierName: (tier, remaining, next) =>
-        t('clientCard.head.tierName', { tier, remaining, next }),
-      tierTopName: (tier) => t('clientCard.head.tierTopName', { tier }),
+        translate('clientCard.head.tierName', { tier, remaining, next }),
+      tierTopName: (tier) => translate('clientCard.head.tierTopName', { tier }),
     },
     birthday: {
-      today: t('clientCard.birthday.today'),
-      todayAge: (age) => t('clientCard.birthday.todayAge', { age: n(age) }),
-      gift: t('clientCard.birthday.gift'),
+      today: translate('clientCard.birthday.today'),
+      todayAge: (age) =>
+        translate('clientCard.birthday.todayAge', { age: n(age) }),
+      gift: translate('clientCard.birthday.gift'),
       upcoming: (weekday, date, age) =>
-        t('clientCard.birthday.upcoming', { weekday, date }) +
+        translate('clientCard.birthday.upcoming', { weekday, date }) +
         (age === null
           ? ''
-          : t('clientCard.birthday.upcomingAge', { age: n(age) })),
-      name: (age) => t('clientCard.birthday.name', { age: ageSuffix(age) }),
+          : translate('clientCard.birthday.upcomingAge', { age: n(age) })),
+      name: (age) =>
+        translate('clientCard.birthday.name', { age: ageSuffix(age) }),
       giftName: (age, value) =>
-        t('clientCard.birthday.giftName', { age: ageSuffix(age), value }),
+        translate('clientCard.birthday.giftName', {
+          age: ageSuffix(age),
+          value,
+        }),
       giftAppliedName: (age, value) =>
-        t('clientCard.birthday.giftAppliedName', {
+        translate('clientCard.birthday.giftAppliedName', {
           age: ageSuffix(age),
           value,
         }),
     },
     visitCard: {
-      last: t('visits.card.last'),
-      next: t('visits.card.next'),
-      name: (label, sentence) => t('visits.card.name', { label, sentence }),
+      last: translate('visits.card.last'),
+      next: translate('visits.card.next'),
+      name: (label, sentence) =>
+        translate('visits.card.name', { label, sentence }),
     },
     capsules: {
-      label: t('clientCard.capsules.label'),
+      label: translate('clientCard.capsules.label'),
       noShows: (count) => plural('clientCard.capsule.noShows', count),
-      more: (count) => t('clientCard.plusCount', { count }),
+      more: (count) => translate('clientCard.plusCount', { count }),
     },
-    offline: t('clientCard.offline'),
+    offline: translate('clientCard.offline'),
     actions: {
-      label: t('clientCard.actions.label'),
-      call: t('staff.day.visitCall'),
-      sms: t('clientCard.actions.sms'),
-      viber: t('clientCard.actions.viber'),
-      repeat: t('clientCard.actions.repeat'),
+      label: translate('clientCard.actions.label'),
+      call: translate('staff.day.visitCall'),
+      sms: translate('clientCard.actions.sms'),
+      viber: translate('clientCard.actions.viber'),
+      repeat: translate('clientCard.actions.repeat'),
       callName: (name, phone) =>
-        t('clientCard.actions.callName', { name, phone }),
-      smsName: (name) => t('clientCard.actions.smsName', { name }),
-      viberName: (name) => t('clientCard.actions.viberName', { name }),
+        translate('clientCard.actions.callName', { name, phone }),
+      smsName: (name) => translate('clientCard.actions.smsName', { name }),
+      viberName: (name) => translate('clientCard.actions.viberName', { name }),
       againName: (date, services) =>
-        t('clientCard.actions.againName', { date, services }),
+        translate('clientCard.actions.againName', { date, services }),
     },
     reward: {
-      until: (date) => t('clientCard.reward.until', { date }),
-      more: (count) => t('clientCard.reward.more', { count }),
+      until: (date) => translate('clientCard.reward.until', { date }),
+      more: (count) => translate('clientCard.reward.more', { count }),
       name: (title, value) =>
         value === null
-          ? t('clientCard.reward.nameBare', { title })
-          : t('clientCard.reward.name', { title, value }),
+          ? translate('clientCard.reward.nameBare', { title })
+          : translate('clientCard.reward.name', { title, value }),
       appliedName: (title, value) =>
         value === null
-          ? t('clientCard.reward.appliedNameBare', { title })
-          : t('clientCard.reward.appliedName', { title, value }),
+          ? translate('clientCard.reward.appliedNameBare', { title })
+          : translate('clientCard.reward.appliedName', { title, value }),
       stack: (count) =>
-        t('clientCard.reward.stack', { count: figure(count, lang) }),
-      use: t('staff.visit.useNow'),
-      remove: t('staff.visit.remove'),
-      removeName: (title) => `${t('staff.visit.removeDiscount')}: ${title}`,
+        translate('clientCard.reward.stack', {
+          count: formatCount(count, lang),
+        }),
+      use: translate('staff.visit.useNow'),
+      remove: translate('staff.visit.remove'),
+      removeName: (title) =>
+        `${translate('staff.visit.removeDiscount')}: ${title}`,
     },
     visitsModule: {
-      title: t('clientCard.visits.title'),
-      allName: (count) => t('clientCard.visits.allName', { count }),
-      upcoming: t('appointments.sections.upcoming'),
-      filteredEmpty: t('appointments.empty.filtered'),
-      more: t('visits.more'),
-      retry: t('visits.retry'),
-      filterClear: t('visits.filter.clear'),
+      title: translate('clientCard.visits.title'),
+      allName: (count) => translate('clientCard.visits.allName', { count }),
+      upcoming: translate('appointments.sections.upcoming'),
+      filteredEmpty: translate('appointments.empty.filtered'),
+      more: translate('visits.more'),
+      retry: translate('visits.retry'),
+      filterClear: translate('visits.filter.clear'),
       sectionVisits: (count) => counted('visits.section.visits', count),
     },
     loyalty: {
-      title: t('clientCard.loyalty.title'),
-      all: t('clientCard.loyalty.all'),
-      allName: t('clientCard.loyalty.allName'),
+      title: translate('clientCard.loyalty.title'),
+      all: translate('clientCard.loyalty.all'),
+      allName: translate('clientCard.loyalty.allName'),
       rhythmUnit: (count) => plural('clientCard.loyalty.rhythmUnit', count),
       points: (count) => counted('clientCard.loyalty.points', count),
       pointsWord: (count) => plural('clientCard.loyalty.pointsWord', count),
       enoughForPoints: (reward) =>
-        t('clientCard.loyalty.enoughForPoints', { reward }),
+        translate('clientCard.loyalty.enoughForPoints', { reward }),
       moreTo: (points, reward) =>
-        t('clientCard.loyalty.moreTo', { points: n(points), reward }),
-      holding: (holding) => t(`clientCard.loyalty.holding.${holding}`),
+        translate('clientCard.loyalty.moreTo', { points: n(points), reward }),
+      holding: (holding) => translate(`clientCard.loyalty.holding.${holding}`),
       stampsOf: (filled, size) =>
-        t('clientCard.loyalty.stampsOf', { filled: n(filled), size: n(size) }),
+        translate('clientCard.loyalty.stampsOf', {
+          filled: n(filled),
+          size: n(size),
+        }),
       cardName: (points, sentence, holdings) =>
         withoutGaps(
-          t('clientCard.loyalty.cardName', {
+          translate('clientCard.loyalty.cardName', {
             points,
             sentence: slot(sentence, oneStop),
             holdings: slot(holdings, oneStop),
@@ -1138,18 +1201,20 @@ export function clientCardWordsOf(
     loyaltyPage: {
       rewardName: (cost, title, state) =>
         plural('clientCard.loyaltyPage.rewardName', cost, {
-          count: figure(cost, lang),
+          count: formatCount(cost, lang),
           title,
           state,
         }),
       rewardMoreSuffix: (points) =>
-        t('clientCard.loyaltyPage.rewardMoreSuffix', { points }),
-      rhythm: t('clientCard.loyaltyPage.rhythm'),
-      tier: t('clientCard.loyaltyPage.tier'),
-      moreToGo: (points) => t('clientCard.loyaltyPage.moreToGo', { points }),
+        translate('clientCard.loyaltyPage.rewardMoreSuffix', { points }),
+      rhythm: translate('clientCard.loyaltyPage.rhythm'),
+      tier: translate('clientCard.loyaltyPage.tier'),
+      moreToGo: (points) =>
+        translate('clientCard.loyaltyPage.moreToGo', { points }),
       stampsToNext: (count) =>
         plural('clientCard.loyaltyPage.stampsToNext', count),
-      rhythmBest: (count) => t('clientCard.loyaltyPage.rhythmBest', { count }),
+      rhythmBest: (count) =>
+        translate('clientCard.loyaltyPage.rhythmBest', { count }),
       tierQualifying: (count) =>
         plural('clientCard.loyaltyPage.tierQualifying', count),
       tierTop: (count) => plural('clientCard.loyaltyPage.tierTop', count),
@@ -1164,11 +1229,13 @@ export function clientCardWordsOf(
           formed('clientCard.loyaltyPage.passName', points, {
             name: name ?? '',
             tier: slot(tier, (it) =>
-              t('clientCard.loyaltyPage.passTierSuffix', { tier: it }),
+              translate('clientCard.loyaltyPage.passTierSuffix', { tier: it }),
             ),
             points: n(points),
             since: slot(since, (it) =>
-              t('clientCard.loyaltyPage.passSinceSuffix', { since: it }),
+              translate('clientCard.loyaltyPage.passSinceSuffix', {
+                since: it,
+              }),
             ),
           }),
         ),
@@ -1177,49 +1244,52 @@ export function clientCardWordsOf(
           points: n(points),
           date,
         }),
-      passFrozen: t('clientCard.loyaltyPage.passFrozen'),
+      passFrozen: translate('clientCard.loyaltyPage.passFrozen'),
       owes: (points) =>
-        t('clientCard.loyaltyPage.owes', {
+        translate('clientCard.loyaltyPage.owes', {
           points: counted('clientCard.loyalty.points', points),
         }),
       actions: {
-        label: t('clientCard.loyaltyPage.actions.label'),
-        use: t('staff.visit.useNow'),
-        code: t('clientCard.loyaltyPage.actions.code'),
-        catalog: t('clientCard.loyaltyPage.actions.catalog'),
-        history: t('clientCard.loyaltyPage.actions.history'),
-        useName: t('clientCard.loyaltyPage.actions.useName'),
-        codeName: t('clientCard.loyaltyPage.actions.codeName'),
-        catalogName: t('clientCard.loyaltyPage.actions.catalogName'),
-        historyName: t('clientCard.loyaltyPage.actions.historyName'),
+        label: translate('clientCard.loyaltyPage.actions.label'),
+        use: translate('staff.visit.useNow'),
+        code: translate('clientCard.loyaltyPage.actions.code'),
+        catalog: translate('clientCard.loyaltyPage.actions.catalog'),
+        history: translate('clientCard.loyaltyPage.actions.history'),
+        useName: translate('clientCard.loyaltyPage.actions.useName'),
+        codeName: translate('clientCard.loyaltyPage.actions.codeName'),
+        catalogName: translate('clientCard.loyaltyPage.actions.catalogName'),
+        historyName: translate('clientCard.loyaltyPage.actions.historyName'),
         useCount: (count) => counted('clientCard.loyaltyPage.useCount', count),
       },
-      wallet: t('clientCard.loyaltyPage.wallet'),
+      wallet: translate('clientCard.loyaltyPage.wallet'),
       walletName: (count) =>
-        t('clientCard.loyaltyPage.walletName', { count: n(count) }),
+        translate('clientCard.loyaltyPage.walletName', { count: n(count) }),
       walletSum: (count, money) =>
-        t('clientCard.loyaltyPage.walletSum', { count: n(count), money }),
-      walletEmpty: t('clientCard.loyaltyPage.walletEmpty'),
-      voucher: t('clientCard.loyaltyPage.voucher'),
+        translate('clientCard.loyaltyPage.walletSum', {
+          count: n(count),
+          money,
+        }),
+      walletEmpty: translate('clientCard.loyaltyPage.walletEmpty'),
+      voucher: translate('clientCard.loyaltyPage.voucher'),
       voucherDetail: (money, until) =>
-        t('clientCard.loyaltyPage.voucherDetail', {
+        translate('clientCard.loyaltyPage.voucherDetail', {
           money,
           until: slot(until, (date) =>
-            t('clientCard.loyaltyPage.voucherUntil', { date }),
+            translate('clientCard.loyaltyPage.voucherUntil', { date }),
           ),
         }),
       voucherFullName: (balance, value, until) =>
-        t('clientCard.loyaltyPage.voucherFullName', {
+        translate('clientCard.loyaltyPage.voucherFullName', {
           balance,
           value,
           until: ticketUntil(until),
         }),
       ticketName: (title, until) =>
-        t('clientCard.loyaltyPage.ticketName', {
+        translate('clientCard.loyaltyPage.ticketName', {
           title,
           until: ticketUntil(until),
         }),
-      stampCard: t('clientCard.loyaltyPage.stampCard'),
+      stampCard: translate('clientCard.loyaltyPage.stampCard'),
       stampsFor: (size, reward) =>
         formed('clientCard.loyaltyPage.stampsFor', size, {
           size: n(size),
@@ -1232,68 +1302,78 @@ export function clientCardWordsOf(
           left: n(left),
           reward,
         }),
-      tierTo: (next) => t('clientCard.loyaltyPage.tierTo', { next }),
-      tierHighest: t('clientCard.loyaltyPage.tierHighest'),
+      tierTo: (next) => translate('clientCard.loyaltyPage.tierTo', { next }),
+      tierHighest: translate('clientCard.loyaltyPage.tierHighest'),
       inRhythm: (count) => plural('clientCard.loyaltyPage.inRhythm', count),
-      catalogTitle: t('clientCard.loyaltyPage.catalogTitle'),
+      catalogTitle: translate('clientCard.loyaltyPage.catalogTitle'),
       catalogListName: (points, affordable, total) =>
         formed('clientCard.loyaltyPage.catalogListName', total, {
           points,
           affordable: n(affordable),
           total: n(total),
         }),
-      ledgerTitle: t('clientCard.ledgerPage.title'),
-      ledgerAllName: t('clientCard.loyaltyPage.ledgerAllName'),
+      ledgerTitle: translate('clientCard.ledgerPage.title'),
+      ledgerAllName: translate('clientCard.loyaltyPage.ledgerAllName'),
     },
     rhythm: {
       label: (count, best, next) =>
         plural('clientCard.rhythm.label', count, { best, next }),
-      bestSuffix: (count) => t('clientCard.rhythm.bestSuffix', { count }),
-      nextSuffix: (date) => t('clientCard.rhythm.nextSuffix', { date }),
-      dueBy: (date) => t('clientCard.rhythm.dueBy', { date }),
+      bestSuffix: (count) =>
+        translate('clientCard.rhythm.bestSuffix', { count }),
+      nextSuffix: (date) => translate('clientCard.rhythm.nextSuffix', { date }),
+      dueBy: (date) => translate('clientCard.rhythm.dueBy', { date }),
       markKept: (period, date) =>
-        t('clientCard.rhythm.mark.kept', { period, date }),
+        translate('clientCard.rhythm.mark.kept', { period, date }),
       markProtected: (period, reason) =>
-        t('clientCard.rhythm.mark.protected', { period, reason }),
+        translate('clientCard.rhythm.mark.protected', { period, reason }),
       markRepaired: (period) =>
-        t('clientCard.rhythm.mark.repaired', { period }),
-      markMissed: (period) => t('clientCard.rhythm.mark.missed', { period }),
-      markCurrent: (date) => t('clientCard.rhythm.mark.current', { date }),
-      reasonFreeze: t('clientCard.rhythm.reason.freeze'),
-      stateActive: (date) => t('clientCard.rhythm.state.active', { date }),
+        translate('clientCard.rhythm.mark.repaired', { period }),
+      markMissed: (period) =>
+        translate('clientCard.rhythm.mark.missed', { period }),
+      markCurrent: (date) =>
+        translate('clientCard.rhythm.mark.current', { date }),
+      reasonFreeze: translate('clientCard.rhythm.reason.freeze'),
+      stateActive: (date) =>
+        translate('clientCard.rhythm.state.active', { date }),
       stateAtRisk: (weeks, date) =>
         formed('clientCard.rhythm.state.atRisk', weeks, { weeks, date }),
-      stateInGrace: (date) => t('clientCard.rhythm.state.inGrace', { date }),
-      stateFrozenFreeze: t('clientCard.rhythm.state.frozenFreeze'),
-      stateBroken: (date) => t('clientCard.rhythm.state.broken', { date }),
-      stateNone: t('clientCard.rhythm.state.none'),
-      protections: (count) => t('clientCard.rhythm.protections', { count }),
-      frozen: t('clientCard.frozen'),
-      phaseAtRisk: (date) => t('clientCard.rhythm.phase.atRisk', { date }),
-      phaseInGrace: (date) => t('clientCard.rhythm.phase.inGrace', { date }),
-      phaseFrozen: t('clientCard.rhythm.phase.frozen'),
-      phaseHeld: (date) => t('clientCard.rhythm.phase.held', { date }),
-      phaseBroken: t('clientCard.rhythm.phase.broken'),
-      stateHeld: (date) => t('clientCard.rhythm.state.held', { date }),
-      stateFrozenExcuse: t('clientCard.rhythm.state.frozenExcuse'),
-      reason: (reason) => t(`clientCard.rhythm.reason.${reason}`),
-      ruleMore: t('clientCard.rhythm.ruleMore'),
-      ruleUpcoming: (date, rule) => t('rhythmRule.upcoming', { date, rule }),
+      stateInGrace: (date) =>
+        translate('clientCard.rhythm.state.inGrace', { date }),
+      stateFrozenFreeze: translate('clientCard.rhythm.state.frozenFreeze'),
+      stateBroken: (date) =>
+        translate('clientCard.rhythm.state.broken', { date }),
+      stateNone: translate('clientCard.rhythm.state.none'),
+      protections: (count) =>
+        translate('clientCard.rhythm.protections', { count }),
+      frozen: translate('clientCard.frozen'),
+      phaseAtRisk: (date) =>
+        translate('clientCard.rhythm.phase.atRisk', { date }),
+      phaseInGrace: (date) =>
+        translate('clientCard.rhythm.phase.inGrace', { date }),
+      phaseFrozen: translate('clientCard.rhythm.phase.frozen'),
+      phaseHeld: (date) => translate('clientCard.rhythm.phase.held', { date }),
+      phaseBroken: translate('clientCard.rhythm.phase.broken'),
+      stateHeld: (date) => translate('clientCard.rhythm.state.held', { date }),
+      stateFrozenExcuse: translate('clientCard.rhythm.state.frozenExcuse'),
+      reason: (reason) => translate(`clientCard.rhythm.reason.${reason}`),
+      ruleMore: translate('clientCard.rhythm.ruleMore'),
+      ruleUpcoming: (date, rule) =>
+        translate('rhythmRule.upcoming', { date, rule }),
     },
     ledgerPage: {
-      title: t('clientCard.ledgerPage.title'),
+      title: translate('clientCard.ledgerPage.title'),
       subline: (name, points) =>
-        t('clientCard.ledgerPage.subline', { name, points }),
-      filterLabel: t('clientCard.ledgerPage.filter.label'),
+        translate('clientCard.ledgerPage.subline', { name, points }),
+      filterLabel: translate('clientCard.ledgerPage.filter.label'),
       filter: (kind) => {
         switch (kind) {
           case LedgerFilterWord.All:
-            return t('clientCard.loyalty.all');
+            return translate('clientCard.loyalty.all');
           case LedgerFilterWord.Status:
-            return t('clientCard.loyaltyPage.tier');
+            return translate('clientCard.loyaltyPage.tier');
           case LedgerFilterWord.Points:
           case LedgerFilterWord.Rewards:
-            return t(`clientCard.ledgerPage.filter.${kind}`);
+            return translate(`clientCard.ledgerPage.filter.${kind}`);
         }
       },
       signed: (delta) =>
@@ -1306,56 +1386,61 @@ export function clientCardWordsOf(
           sign: points < 0 ? MINUS : '',
           points: n(Math.abs(points)),
         }),
-      empty: t('clientCard.ledgerPage.empty'),
-      emptyFiltered: t('clientCard.ledgerPage.emptyFiltered'),
+      empty: translate('clientCard.ledgerPage.empty'),
+      emptyFiltered: translate('clientCard.ledgerPage.emptyFiltered'),
     },
     ledger: {
-      verb: (verb) => t(`clientCard.ledger.verb.${verb}`),
-      visit: t('clientCard.ledger.source.visit'),
+      verb: (verb) => translate(`clientCard.ledger.verb.${verb}`),
+      visit: translate('clientCard.ledger.source.visit'),
       visitOf: (services) =>
-        t('clientCard.ledger.source.visitOf', { services }),
-      welcome: t('clientCard.ledger.source.welcome'),
+        translate('clientCard.ledger.source.visitOf', { services }),
+      welcome: translate('clientCard.ledger.source.welcome'),
       level: (title, level) =>
-        t('clientCard.ledger.source.level', { title, level }),
+        translate('clientCard.ledger.source.level', { title, level }),
       redemption: (reward) =>
-        t('clientCard.ledger.source.redemption', { reward }),
-      goodwill: t('clientCard.ledger.source.goodwill'),
-      serviceIssue: t('clientCard.ledger.source.serviceIssue'),
-      correction: t('clientCard.ledger.source.correction'),
-      reverses: (date) => t('clientCard.ledger.source.reverses', { date }),
-      tier: (to) => t('clientCard.ledger.source.tier', { to }),
-      tierFrom: (from) => t('clientCard.ledger.source.tierFrom', { from }),
-      rewardGranted: t('clientCard.ledger.source.rewardGranted'),
-      rewardRevoked: t('clientCard.ledger.source.rewardRevoked'),
-      redeemed: t('clientCard.ledger.source.redeemed'),
-      achievement: t('clientCard.ledger.source.achievement'),
+        translate('clientCard.ledger.source.redemption', { reward }),
+      goodwill: translate('clientCard.ledger.source.goodwill'),
+      serviceIssue: translate('clientCard.ledger.source.serviceIssue'),
+      correction: translate('clientCard.ledger.source.correction'),
+      reverses: (date) =>
+        translate('clientCard.ledger.source.reverses', { date }),
+      tier: (to) => translate('clientCard.ledger.source.tier', { to }),
+      tierFrom: (from) =>
+        translate('clientCard.ledger.source.tierFrom', { from }),
+      rewardGranted: translate('clientCard.ledger.source.rewardGranted'),
+      rewardRevoked: translate('clientCard.ledger.source.rewardRevoked'),
+      redeemed: translate('clientCard.ledger.source.redeemed'),
+      achievement: translate('clientCard.ledger.source.achievement'),
     },
     records: {
-      group: (theme) => t(`clientCard.records.group.${theme}`),
-      byYear: t('clientCard.records.byYear'),
-      row: (row) => t(`clientCard.records.row.${row}`),
-      label: (kind) => t(`clientCard.records.label.${kind}`),
+      group: (theme) => translate(`clientCard.records.group.${theme}`),
+      byYear: translate('clientCard.records.byYear'),
+      row: (row) => translate(`clientCard.records.row.${row}`),
+      label: (kind) => translate(`clientCard.records.label.${kind}`),
       times: (count) => counted('clientCard.records.times', count),
-      yearValue: (year) => t('clientCard.records.yearValue', { year }),
-      since: (since) => t('clientCard.records.since', { since }),
+      yearValue: (year) => translate('clientCard.records.yearValue', { year }),
+      since: (since) => translate('clientCard.records.since', { since }),
       yearName: (year, count, record) =>
         formed('clientCard.records.yearName', count, {
           year,
           count: n(count),
-          record: record ? t('clientCard.records.recordSuffix') : '',
+          record: record ? translate('clientCard.records.recordSuffix') : '',
         }),
       sentence: (kind, count) =>
         kind === RecordKindWord.FirstVisit
-          ? t('clientCard.records.sentence.firstVisit')
-          : t(`clientCard.records.sentence.${kind}.${formOf(count)}`),
+          ? translate('clientCard.records.sentence.firstVisit')
+          : translate(`clientCard.records.sentence.${kind}.${formOf(count)}`),
       sentenceFavourite: (service, count) =>
-        t(`clientCard.records.sentence.favouriteService.${formOf(count)}`, {
-          service,
-        }),
-      empty: t('clientCard.records.empty'),
+        translate(
+          `clientCard.records.sentence.favouriteService.${formOf(count)}`,
+          {
+            service,
+          },
+        ),
+      empty: translate('clientCard.records.empty'),
     },
     achievements: {
-      title: t('clientCard.achievements.title'),
+      title: translate('clientCard.achievements.title'),
       levels: (count) => plural('clientCard.achievements.levels', count),
       // The summary's figure is its own run (`ui-metric [uiValue]`), so the
       // unit is the same plural sentence with the count left out: the form
@@ -1364,87 +1449,103 @@ export function clientCardWordsOf(
         plural('clientCard.achievements.levels', count, { count: '' }).trim(),
       allName: (count) => plural('clientCard.achievements.allName', count),
       cueWithThisVisit: (title, level) =>
-        t('clientCard.achievements.cueWithThisVisit', { title, level }),
+        translate('clientCard.achievements.cueWithThisVisit', { title, level }),
       cueNew: (title, level) =>
-        t('clientCard.achievements.cueNew', { title, level }),
+        translate('clientCard.achievements.cueNew', { title, level }),
       cueClose: (title, value, target, level) =>
-        t('clientCard.achievements.cueClose', { title, value, target, level }),
+        translate('clientCard.achievements.cueClose', {
+          title,
+          value,
+          target,
+          level,
+        }),
       summaryName: (count) =>
         plural('clientCard.achievements.summaryName', count),
       seasonFact: (season, level) =>
-        t('clientCard.achievements.seasonFact', { season, level }),
+        translate('clientCard.achievements.seasonFact', { season, level }),
       eventsFact: (count) =>
         plural('clientCard.achievements.eventsFact', count),
-      events: t('clientCard.achievements.events'),
-      records: t('clientCard.achievements.records'),
-      archive: t('clientCard.achievements.archive'),
+      events: translate('clientCard.achievements.events'),
+      records: translate('clientCard.achievements.records'),
+      archive: translate('clientCard.achievements.archive'),
       toLevel: (value, target, level) =>
-        t('clientCard.achievements.toLevel', { value, target, level }),
+        translate('clientCard.achievements.toLevel', { value, target, level }),
       toLevelOn: (level, date) =>
-        t('clientCard.achievements.toLevelOn', { level, date }),
-      complete: t('clientCard.achievements.complete'),
-      withThisVisit: t('clientCard.achievements.withThisVisit'),
+        translate('clientCard.achievements.toLevelOn', { level, date }),
+      complete: translate('clientCard.achievements.complete'),
+      withThisVisit: translate('clientCard.achievements.withThisVisit'),
       nextWithThisVisit: (level) =>
-        t('clientCard.achievements.nextWithThisVisit', { level }),
+        translate('clientCard.achievements.nextWithThisVisit', { level }),
       dayGroupName: (date, count) =>
         plural('clientCard.achievements.dayGroupName', count, { date }),
-      dayTitle: (date) => t('clientCard.achievements.dayTitle', { date }),
+      dayTitle: (date) =>
+        translate('clientCard.achievements.dayTitle', { date }),
       seasonNext: (count, level) =>
         plural('clientCard.achievements.seasonNext', count, { level }),
       seasonFamilies: (earned, total) =>
-        t('clientCard.achievements.seasonFamilies', { earned, total }),
+        translate('clientCard.achievements.seasonFamilies', { earned, total }),
       familyCount: (earned, total) =>
-        t('clientCard.achievements.familyCount', { earned, total }),
-      eventUntil: (date) => t('clientCard.achievements.eventUntil', { date }),
+        translate('clientCard.achievements.familyCount', { earned, total }),
+      eventUntil: (date) =>
+        translate('clientCard.achievements.eventUntil', { date }),
       eventAnnounced: (date) =>
-        t('clientCard.achievements.eventAnnounced', { date }),
+        translate('clientCard.achievements.eventAnnounced', { date }),
       scopeSubline: (name, started, total) =>
-        t('clientCard.achievements.scopeSubline', { name, started, total }),
-      sectionGeneral: t('clientCard.achievements.sectionGeneral'),
-      sectionBarbers: t('clientCard.achievements.sectionBarbers'),
-      sectionShops: t('clientCard.achievements.sectionShops'),
-      firstHint: t('clientCard.achievements.firstHint'),
-      seasonEnded: t('clientCard.achievements.seasonEnded'),
+        translate('clientCard.achievements.scopeSubline', {
+          name,
+          started,
+          total,
+        }),
+      sectionGeneral: translate('clientCard.achievements.sectionGeneral'),
+      sectionBarbers: translate('clientCard.achievements.sectionBarbers'),
+      sectionShops: translate('clientCard.achievements.sectionShops'),
+      firstHint: translate('clientCard.achievements.firstHint'),
+      seasonEnded: translate('clientCard.achievements.seasonEnded'),
       seasonEndedAt: (level) =>
-        t('clientCard.achievements.seasonEndedAt', { level }),
-      record: (kind) => t(`clientCard.achievements.record.${kind}`),
+        translate('clientCard.achievements.seasonEndedAt', { level }),
+      record: (kind) => translate(`clientCard.achievements.record.${kind}`),
       favouriteValue: (service, count) =>
-        t('clientCard.achievements.record.favouriteValue', { service, count }),
+        translate('clientCard.achievements.record.favouriteValue', {
+          service,
+          count,
+        }),
       favouriteCount: (count) =>
-        t('clientCard.achievements.record.favouriteCount', { count }),
-      isNew: t('clientCard.new'),
-      recordsAllName: t('clientCard.achievements.recordsAllName'),
+        translate('clientCard.achievements.record.favouriteCount', { count }),
+      isNew: translate('clientCard.new'),
+      recordsAllName: translate('clientCard.achievements.recordsAllName'),
       recordName: (caption, value, detail, isNew) =>
-        t('clientCard.achievements.recordName', {
+        translate('clientCard.achievements.recordName', {
           caption,
           value,
           detail: listed(detail),
-          new: isNew ? t('clientCard.achievements.newRecordSuffix') : '',
+          new: isNew
+            ? translate('clientCard.achievements.newRecordSuffix')
+            : '',
         }),
-      newRecord: t('clientCard.achievements.newRecord'),
+      newRecord: translate('clientCard.achievements.newRecord'),
       recordsLineName: (facts) =>
-        t('clientCard.achievements.recordsLineName', { facts }),
-      chipsLabel: t('clientCard.achievements.chips.label'),
-      chipSeasons: t('clientCard.achievements.chips.seasons'),
+        translate('clientCard.achievements.recordsLineName', { facts }),
+      chipsLabel: translate('clientCard.achievements.chips.label'),
+      chipSeasons: translate('clientCard.achievements.chips.seasons'),
       chipName: (category, earned, total) =>
-        t('clientCard.achievements.chipName', {
+        translate('clientCard.achievements.chipName', {
           category,
           earned: n(earned),
           total: n(total),
         }),
-      close: t('clientCard.achievements.close'),
+      close: translate('clientCard.achievements.close'),
       collectionOf,
       // Two counted nouns in one sentence: each arrives worded, in its own form.
       collectionName: (earned, total, levels) =>
-        t('clientCard.achievements.collectionName', {
+        translate('clientCard.achievements.collectionName', {
           earned: n(earned),
           of: collectionOf(total),
           levels: counted('clientCard.achievements.summaryName', levels),
         }),
       showAll: (count) =>
-        t('clientCard.achievements.showAll', { count: n(count) }),
+        translate('clientCard.achievements.showAll', { count: n(count) }),
       categorySummary: (category, earned, total) =>
-        t('clientCard.achievements.categorySummary', {
+        translate('clientCard.achievements.categorySummary', {
           category,
           earned: n(earned),
           total: n(total),
@@ -1452,19 +1553,23 @@ export function clientCardWordsOf(
     },
     achievement: {
       stateToNext: (value, target, level) =>
-        t('clientCard.achievement.stateToNext', { value, target, level }),
+        translate('clientCard.achievement.stateToNext', {
+          value,
+          target,
+          level,
+        }),
       stateToNextOn: (level, date) =>
-        t('clientCard.achievement.stateToNextOn', { level, date }),
+        translate('clientCard.achievement.stateToNextOn', { level, date }),
       repeated: (count, date) =>
         plural('clientCard.achievement.repeated', count, { date }),
       oneOffEarned: (date) =>
-        t('clientCard.achievement.oneOffEarned', { date }),
-      oneOffNotYet: t('clientCard.achievement.oneOffNotYet'),
-      notStarted: t('clientCard.achievement.notStarted'),
-      retired: t('clientCard.achievement.retired'),
-      more: (scope) => t('clientCard.achievement.more', { scope }),
+        translate('clientCard.achievement.oneOffEarned', { date }),
+      oneOffNotYet: translate('clientCard.achievement.oneOffNotYet'),
+      notStarted: translate('clientCard.achievement.notStarted'),
+      retired: translate('clientCard.achievement.retired'),
+      more: (scope) => translate('clientCard.achievement.more', { scope }),
       ladderName: (level, max, value, target, next) =>
-        t('clientCard.achievement.ladderName', {
+        translate('clientCard.achievement.ladderName', {
           level,
           max,
           value,
@@ -1472,21 +1577,23 @@ export function clientCardWordsOf(
           next,
         }),
       levelName: (level, requirement, earned, award) =>
-        t('clientCard.achievement.levelName', {
+        translate('clientCard.achievement.levelName', {
           level,
           requirement,
           earned,
           award,
         }),
-      earnedOn: (date) => t('clientCard.achievement.earnedOn', { date }),
+      earnedOn: (date) =>
+        translate('clientCard.achievement.earnedOn', { date }),
       gavePoints: (points) =>
         formed('clientCard.achievement.gavePoints', points, { points }),
-      gaveCoupon: (title) => t('clientCard.achievement.gaveCoupon', { title }),
+      gaveCoupon: (title) =>
+        translate('clientCard.achievement.gaveCoupon', { title }),
       gaveFreeze: (count) => plural('clientCard.achievement.gaveFreeze', count),
       awardShort: (points) =>
-        t('clientCard.achievement.awardShort', { points }),
+        translate('clientCard.achievement.awardShort', { points }),
       medalEarnedName: (title, level, date, next, isNew) =>
-        t('clientCard.achievement.medalEarnedName', {
+        translate('clientCard.achievement.medalEarnedName', {
           title,
           level,
           date,
@@ -1494,31 +1601,38 @@ export function clientCardWordsOf(
           new: isNew,
         }),
       medalProgressName: (title, value, target, level) =>
-        t('clientCard.achievement.medalProgressName', {
+        translate('clientCard.achievement.medalProgressName', {
           title,
           value,
           target,
           level,
         }),
       medalNotStartedName: (title, requirement) =>
-        t('clientCard.achievement.medalNotStartedName', {
+        translate('clientCard.achievement.medalNotStartedName', {
           title,
           requirement,
         }),
-      newSuffix: t('clientCard.achievement.newSuffix'),
+      newSuffix: translate('clientCard.achievement.newSuffix'),
       nextSuffix: (value, target, level) =>
-        t('clientCard.achievement.nextSuffix', { value, target, level }),
+        translate('clientCard.achievement.nextSuffix', {
+          value,
+          target,
+          level,
+        }),
       nextOnSuffix: (level, date) =>
-        t('clientCard.achievement.nextOnSuffix', { level, date }),
+        translate('clientCard.achievement.nextOnSuffix', { level, date }),
       stateWithCategory: (category, state) =>
-        t('clientCard.achievement.stateWithCategory', { category, state }),
+        translate('clientCard.achievement.stateWithCategory', {
+          category,
+          state,
+        }),
       levelSince: (level, date) =>
-        t('clientCard.achievement.levelSince', { level, date }),
+        translate('clientCard.achievement.levelSince', { level, date }),
       completeSince: (date) =>
-        t('clientCard.achievement.completeSince', { date }),
-      stateNotStarted: t('clientCard.achievement.stateNotStarted'),
+        translate('clientCard.achievement.completeSince', { date }),
+      stateNotStarted: translate('clientCard.achievement.stateNotStarted'),
       progressOf: (target) =>
-        t('clientCard.achievement.progressOf', { target: n(target) }),
+        translate('clientCard.achievement.progressOf', { target: n(target) }),
       what: (metric, count) =>
         plural(`clientCard.achievement.what.${metric}`, count),
       // Reuse first: the records already say «посещения с фейд» and
@@ -1536,91 +1650,116 @@ export function clientCardWordsOf(
       remaining: (count, level) =>
         counted('clientCard.achievement.remaining', count, { level }),
       thisVisitCounts: (value, target) =>
-        t('clientCard.achievement.thisVisitCounts', {
+        translate('clientCard.achievement.thisVisitCounts', {
           value: n(value),
           target: n(target),
         }),
       addToVisit: (service) =>
-        t('clientCard.achievement.addToVisit', { service }),
+        translate('clientCard.achievement.addToVisit', { service }),
       addToVisitName: (service) =>
-        t('clientCard.achievement.addToVisitName', { service }),
+        translate('clientCard.achievement.addToVisitName', { service }),
       // The receipt says the service as the verb does (X1-3): in the running case.
       added: (service) =>
-        t('clientCard.achievement.added', {
+        translate('clientCard.achievement.added', {
           service: inSentence(service, lang),
         }),
-      howTitle: t('clientCard.achievement.howTitle'),
-      how: (metric) => t(`clientCard.achievement.how.${metric}`),
+      howTitle: translate('clientCard.achievement.howTitle'),
+      how: (metric) => translate(`clientCard.achievement.how.${metric}`),
       howService: (service) =>
-        t('clientCard.achievement.how.visitsService', { service }),
+        translate('clientCard.achievement.how.visitsService', { service }),
       howBarber: (barber) =>
-        t('clientCard.achievement.how.visitsBarber', { barber }),
-      howShop: (shop) => t('clientCard.achievement.how.visitsShop', { shop }),
-      who: (open) => t(`clientCard.achievement.who.${open}`),
-      excluded: t('clientCard.achievement.excluded'),
+        translate('clientCard.achievement.how.visitsBarber', { barber }),
+      howShop: (shop) =>
+        translate('clientCard.achievement.how.visitsShop', { shop }),
+      who: (open) => translate(`clientCard.achievement.who.${open}`),
+      excluded: translate('clientCard.achievement.excluded'),
       moreCount: (count) =>
-        t('clientCard.achievement.moreCount', { count: n(count) }),
-      levelsTitle: t('clientCard.achievement.levels'),
+        translate('clientCard.achievement.moreCount', { count: n(count) }),
+      levelsTitle: translate('clientCard.achievement.levels'),
       levelRow: (level, requirement) =>
-        t('clientCard.achievement.levelRow', { level, requirement }),
+        translate('clientCard.achievement.levelRow', { level, requirement }),
       levelRowName: (level, requirement, reward, earnedOn) =>
-        t('clientCard.achievement.levelRowName', {
+        translate('clientCard.achievement.levelRowName', {
           level,
           requirement,
           reward: listed(reward),
           earned: slot(earnedOn, (date) =>
-            t('clientCard.achievement.levelEarnedSuffix', { date }),
+            translate('clientCard.achievement.levelEarnedSuffix', { date }),
           ),
         }),
       awardPoints: (points) =>
         formed('clientCard.achievement.award.points', points, {
           points: n(points),
         }),
-      awardBadge: t('clientCard.achievement.award.badge'),
-      awardOneOff: t('clientCard.achievement.award.oneOff'),
-      visitsTitle: t('clientCard.achievement.visits'),
+      awardBadge: translate('clientCard.achievement.award.badge'),
+      awardOneOff: translate('clientCard.achievement.award.oneOff'),
+      visitsTitle: translate('clientCard.achievement.visits'),
     },
     photos: {
-      title: t('staff.visit.photos'),
-      label: t('clientCard.photos.label'),
-      name: (when) => t('staff.visit.photoOpen', { when }),
+      title: translate('staff.visit.photos'),
+      label: translate('clientCard.photos.label'),
+      name: (when) => translate('staff.visit.photoOpen', { when }),
     },
     history: {
       visits: (count) => plural('clientCard.history.stats.visits', count),
       noShows: (count) => plural('clientCard.history.stats.noShows', count),
       cancelled: (count) => plural('clientCard.history.stats.cancelled', count),
-      interval: t('clientCard.history.stats.interval'),
+      interval: translate('clientCard.history.stats.interval'),
       intervalValue: (weeks) =>
-        t('clientCard.history.stats.intervalValue', { weeks }),
-      intervalUnit: t('clientCard.history.stats.intervalUnit'),
+        translate('clientCard.history.stats.intervalValue', { weeks }),
+      intervalUnit: translate('clientCard.history.stats.intervalUnit'),
       statsInterval: (weeks) =>
         plural('clientCard.history.statsInterval', weeks, {
-          count: figure(weeks, lang),
+          count: formatCount(weeks, lang),
         }),
       statsName: (visits, interval, risk) =>
-        t('clientCard.history.statsName', { visits, interval, risk }),
-      noRisk: t('clientCard.history.noRisk'),
-      spend: (money) => t('clientCard.history.spend', { money }),
+        translate('clientCard.history.statsName', { visits, interval, risk }),
+      noRisk: translate('clientCard.history.noRisk'),
+      spend: (money) => translate('clientCard.history.spend', { money }),
       yearVisits: (count) => counted('visits.section.visits', count),
-      end: (date) => oneFinalStop(t('clientCard.history.end', { date })),
-      endAll: t('clientCard.history.endAll'),
-      onlyThisVisit: t('clientCard.history.onlyThisVisit'),
+      end: (date) =>
+        oneFinalStop(translate('clientCard.history.end', { date })),
+      endAll: translate('clientCard.history.endAll'),
+      onlyThisVisit: translate('clientCard.history.onlyThisVisit'),
       line: (visits, cadence) =>
-        t('clientCard.history.line', { visits, cadence }),
-      spendInline: (money) => t('clientCard.history.spendInline', { money }),
-      first: (date) => t('clientCard.history.first', { date }),
+        translate('clientCard.history.line', { visits, cadence }),
+      spendInline: (money) =>
+        translate('clientCard.history.spendInline', { money }),
+      first: (date) => translate('clientCard.history.first', { date }),
     },
     failed: {
-      profile: t('clientCard.failed.profile'),
-      loyalty: t('clientCard.failed.loyalty'),
-      achievements: t('clientCard.failed.achievements'),
-      visits: t('clientCard.failed.visits'),
-      photos: t('clientCard.failed.photos'),
-      some: t('clientCard.failed.some'),
-      vouchers: t('clientCard.failed.vouchers'),
-      activity: t('clientCard.failed.activity'),
+      profile: translate('clientCard.failed.profile'),
+      loyalty: translate('clientCard.failed.loyalty'),
+      achievements: translate('clientCard.failed.achievements'),
+      visits: translate('clientCard.failed.visits'),
+      photos: translate('clientCard.failed.photos'),
+      some: translate('clientCard.failed.some'),
+      vouchers: translate('clientCard.failed.vouchers'),
+      activity: translate('clientCard.failed.activity'),
     },
-    remove: t('staff.visit.removeClient'),
-    exitsLabel: t('staff.visit.client.actions'),
+    remove: translate('staff.visit.removeClient'),
+    exitsLabel: translate('staff.visit.client.actions'),
+    privacy: {
+      groupLabel: translate('clientCard.privacy.groupLabel'),
+      export: translate('clientCard.privacy.export'),
+      exportDone: translate('clientCard.privacy.exportDone'),
+    },
+    erasure: {
+      erase: translate('clientCard.privacy.erase'),
+      eraseSibling: translate('clientCard.privacy.eraseSibling'),
+      erased: translate('clientCard.privacy.erased'),
+      eraseUnfinished: translate('clientCard.privacy.eraseUnfinished'),
+      alertTitle: translate('clientCard.privacy.alertTitle'),
+      alertBody: (figures) =>
+        translate('clientCard.privacy.alertBody', {
+          visits: n(figures.visits),
+          notes: n(figures.notes),
+          photos: n(figures.photos),
+          accounts: n(figures.accounts),
+          siblings: n(figures.siblings),
+        }),
+      eraseConfirm: translate('clientCard.privacy.eraseConfirm'),
+      eraseKeep: translate('clientCard.privacy.eraseKeep'),
+    },
   };
 }

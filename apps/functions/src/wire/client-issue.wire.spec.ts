@@ -11,9 +11,7 @@ import { type EdgeError, toHttpsError } from '../edge';
 import {
   CLIENT_ISSUE_RATE,
   decodeReportClientIssues,
-  encodeReportClientIssuesAnswer,
   REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
-  reportClientIssuesRefusal,
 } from './client-issue.wire';
 import type { WireRequest } from './wire-read';
 
@@ -181,21 +179,6 @@ describe('reportClientIssues — the wire', () => {
       ]);
       expect(JSON.stringify(lines)).not.toContain('u-staff');
     }
-  });
-
-  it('answers the count of lines written', () => {
-    expect(encodeReportClientIssuesAnswer({ loggedCount: 2 })).toEqual({
-      loggedCount: 2,
-    });
-  });
-
-  it('has no refusal after admission — whatever reached it would pass as itself', () => {
-    const refusal = ClientIssueError.batchRefused(
-      ClientIssueBatchRefusedReason.TooLarge,
-      null,
-      null,
-    );
-    expect(reportClientIssuesRefusal(refusal as never)).toBe(refusal);
   });
 
   it('pins the definition: a 10 s timeout, twenty calls a second per instance with a burst of twenty', () => {

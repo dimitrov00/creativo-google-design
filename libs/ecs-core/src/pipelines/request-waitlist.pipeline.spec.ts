@@ -44,6 +44,7 @@ import {
   minute,
   recordingTelemetry,
   serviceFixture,
+  unwrapOk,
 } from '@core/testing';
 import {
   requestWaitlist,
@@ -220,6 +221,9 @@ describe('requestWaitlist — the party, admitted as the commit admits it', () =
     const body = storedRequest(cart, CENTRE);
     const id = waitlistRequestIdOf(body, fixtureHash);
     expect(answer).toEqual({ ok: true, value: { requestId: id } });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual(['requestId']);
     expect(id).toBe(
       `wl_${fixtureHash(WaitlistSystem.idBasis(body)).slice(0, 40)}`,
     );

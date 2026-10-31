@@ -79,14 +79,14 @@ function rule(patch: Partial<StreakRule> = {}): StreakRule {
 
 /** A rule as the head holds it in force. */
 const asCurrent = (r: StreakRule): StreakHeadRule => ({
-  ...StreakRule.of(r),
+  ...StreakRule.sliceOf(r),
   headRole: HeadRole.Current,
   streakTransition: null,
 });
 
 /** A rule as the head holds it waiting, grandfathering the runs that exist. */
 const asScheduled = (r: StreakRule): StreakHeadRule => ({
-  ...StreakRule.of(r),
+  ...StreakRule.sliceOf(r),
   headRole: HeadRole.Scheduled,
   streakTransition: StreakTransition.Grandfather,
 });
@@ -298,7 +298,7 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
     const assessed = StreakPublishSystem.assess(
       head,
       true,
-      { ...StreakRule.of(currentOf(head)), graceDays: 10 },
+      { ...StreakRule.sliceOf(currentOf(head)), graceDays: 10 },
       localDate('2026-11-15'),
       NEXT_MONTH,
       QUIET,
@@ -326,7 +326,7 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
 /** The rule in force on `today` — what the page's draft is made on. */
 function inForceOf(head: StreakSchedule, today: LocalDate): StreakRule {
   const scheduled = scheduledOf(head);
-  return StreakRule.of(
+  return StreakRule.sliceOf(
     scheduled !== null && today >= scheduled.effectiveFromLocalDate
       ? scheduled
       : currentOf(head),
@@ -865,7 +865,7 @@ describe('StreakPublishSystem.publishPlan — what one publish writes', () => {
         streakRuleDirection: StreakRuleDirection.Looser,
       },
       versionBody: {
-        ...StreakRule.of(v2),
+        ...StreakRule.sliceOf(v2),
         publishedAtUtcMs: NOW,
         publishedByUserId: OWNER,
         streakTransition: StreakTransition.Grandfather,

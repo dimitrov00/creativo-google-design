@@ -1,6 +1,5 @@
 import type { DocumentSnapshot, Firestore } from 'firebase-admin/firestore';
 import { LocationId, Result, ServiceId } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { BarberStatus, LocationStatus, ServiceStatus } from '@core/components';
 import {
   type Barber,
@@ -13,7 +12,7 @@ import type {
   ListedCatalogPorts,
   LocationLoadPorts,
 } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * The catalogue's server reads (flip 1, blueprint §4.1) — bodies spread as
@@ -40,13 +39,6 @@ import { TriggerAttemptSystem } from '@core/systems';
 /** The entity a snapshot holds — the body is the entity minus `id`. */
 function entityOf<E>(snap: DocumentSnapshot): E | null {
   return snap.exists ? ({ id: snap.id, ...snap.data() } as E) : null;
-}
-
-function readFailed(path: string, error: unknown): RepositoryError {
-  return RepositoryError.readFailed(
-    path,
-    TriggerAttemptSystem.failureCode(error),
-  );
 }
 
 /** Every document of `collection` whose root `field` is `ACTIVE`. */

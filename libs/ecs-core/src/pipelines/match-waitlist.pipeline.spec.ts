@@ -43,6 +43,7 @@ import {
 } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import {
+  bodyOf,
   barberFixture,
   barberScheduleFixture,
   endMinute,
@@ -89,13 +90,6 @@ const OWNER = FIXTURE_IDS.client;
 /** Tuesday — a day ahead of the pinned Monday 09:00, clear of the lead time. */
 const DAY = localDate('2026-09-29');
 const EARLIER = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -86_400_000);
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const CART: BookingCart = {
   cartSeats: [

@@ -76,9 +76,9 @@ describe('firestorePorts — the assembler', () => {
       'loadBackfillJob',
       'writeBackfillJob',
       'pageAppointments',
-      // flip 2 (identity): the `otps` store and the account lookup
+      // flip 2 (identity): the `otps` probe and the account lookup (the
+      // challenge's save is a commit `Set` — Phase 3 P3-DEP-6)
       'loadOpenOtps',
-      'saveOtp',
       'findUserByDestination',
       // audit-hardening WS-6: the retrying triggers' dead letter
       'writeTriggerFailure',
@@ -107,10 +107,16 @@ describe('firestorePorts — the assembler', () => {
 
   it('saves a challenge and finds an account through the same db — the otps purgeAt stamped', async () => {
     const { fake, ports } = assemble();
-    const otp = otpFixture();
-    expect((await ports.saveOtp(otp)).ok).toBe(true);
+    const { id: otpId, ...otpBody } = otpFixture();
+    // The challenge is saved by `requestOtp`'s commit (P3-DEP-6): a whole-body
+    // `Set` of `otps/{id}`, stamped by the transaction adapter.
+    const saved = await ports.commit(
+      async () => null,
+      () => Result.ok({ writes: [WriteOp.set(['otps', otpId], otpBody)] }),
+    );
+    expect(saved.ok).toBe(true);
     expect(fake.docs.get('otps/otp-1')).toMatchObject({
-      purgeAt: Timestamp.fromMillis(otp.expiresAtUtcMs + 86_400_000),
+      purgeAt: Timestamp.fromMillis(otpBody.expiresAtUtcMs + 86_400_000),
     });
     const mail = Email.of('maria@example.com');
     const { id, ...body } = registeredUserFixture({ email: mail });

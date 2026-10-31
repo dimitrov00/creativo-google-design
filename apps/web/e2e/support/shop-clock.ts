@@ -7,11 +7,20 @@
  * runs (Law 7), never a second `Intl` reading of the zone.
  *
  * Firebase-free and Node-free on purpose: `appointment-seed-document.ts`
- * builds on it, and the web unit-test build compiles that one too.
+ * builds on it, and the web unit-test build compiles that one too — which
+ * is why the PURE half of the suite's clock lives here
+ * (`apps/web/src/testing/e2e-suite-clock.spec.ts` holds it): the instant a
+ * text names, the browser's pinned instant for a shop day, and the run's
+ * one instant. The env-reading half is `suite-clock.ts` (Phase 3 WS-A,
+ * P3-DEP-3). The live `shopToday()` stays for the unpinned specs, which
+ * book or edit days from tomorrow on against the live browser and the
+ * live server (P3-L-1).
  */
+import type { TimeError } from '@core/errors';
 import {
   LocalDate,
   MinuteOfDay,
+  type PrimitiveError,
   type Result,
   type TimeZone,
   UtcEpochMs,
@@ -58,28 +67,73 @@ export function shopToday(): LocalDate {
   ).localDate;
 }
 
-/** The evening start a seeded "today" visit takes while the shop's clock allows it. */
-const EVENING_START = 21 * 60;
-
-/** The latest start a 30-minute chair visit still ends today on (23:55). */
-const LATEST_START = 23 * 60 + 25;
+/**
+ * The minute of the shop day a PINNED browser reads (`pinBrowserClock`):
+ * 10:00 — inside every open day's hours, and never inside a DST gap.
+ */
+export const BROWSER_PIN_MINUTE: MinuteOfDay = sure(
+  MinuteOfDay.of(10 * 60),
+  '10:00',
+);
 
 /**
- * A start STILL AHEAD on today's shop clock, as the naive wall time
- * `HH:mm:00` a seed reads: 21:00 — or, once the shop's clock is past 20:50,
- * the first five-minute step at least ten minutes ahead — so a visit
- * seeded today is still to come (open, not yet started:
- * `VisitStorySystem.isUpcoming`) while the spec reads it. Capped at 23:25,
- * so the dev chair's 30-minute visit ends today: a run started after about
- * 23:15 can no longer seed an hour still to come today.
+ * Where a pinned spec's "today" visits start, as the naive wall time
+ * `HH:mm:00` a seed reads: 21:00 — eleven hours ahead of the pinned 10:00,
+ * so the visit is still to come (`VisitStorySystem.isUpcoming`) whatever
+ * the real hour, and the dev chair's 30-minute visit ends 21:30, the same
+ * shop day.
  */
-export function stillAheadToday(): string {
-  const now = ZonedTimeSystem.shopNow(
-    sure(UtcEpochMs.of(Date.now()), 'now'),
-    SHOP_TIME_ZONE,
+export const EVENING_VISIT_START = '21:00:00';
+
+/** Epoch milliseconds, the one form the suite hands its workers. */
+const EPOCH_DIGITS = /^\d+$/;
+
+/**
+ * One instant from the suite's text — the seed's grammar (P3-RU-3): epoch
+ * milliseconds (digits), a wall time on the SHOP's clock
+ * (`2026-10-27T23:40`), or an ISO instant with `Z` or an offset. A time in
+ * the spring-forward gap refuses (`DST_GAP_INVALID_TIME`), a fall-back
+ * repeat takes the earlier offset (Law 7.3); a refusal fails the run
+ * loudly through {@link sure}, naming its `errorCode`.
+ */
+export function instantOfText(text: string): UtcEpochMs {
+  const parsed: Result<UtcEpochMs, PrimitiveError | TimeError> =
+    EPOCH_DIGITS.test(text)
+      ? UtcEpochMs.of(Number(text))
+      : ZonedTimeSystem.parseIsoIn(text, SHOP_TIME_ZONE);
+  return sure(
+    parsed,
+    `the instant '${text}'${parsed.ok ? '' : ` (${parsed.error.errorCode})`}`,
   );
-  const soonest = Math.ceil((now.currentMinute + 10) / 5) * 5;
-  const start = Math.min(Math.max(EVENING_START, soonest), LATEST_START);
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${pad(Math.floor(start / 60))}:${pad(start % 60)}:00`;
+}
+
+/** The browser's pinned instant for a shop day: `day` at {@link BROWSER_PIN_MINUTE} on the shop's clock. */
+export function browserPinOf(day: LocalDate): UtcEpochMs {
+  return sure(
+    ZonedTimeSystem.toUtc(day, BROWSER_PIN_MINUTE, SHOP_TIME_ZONE),
+    `${day} 10:00`,
+  );
+}
+
+/**
+ * The run's ONE instant: `text` (the suite's `E2E_NOW`) when given — it
+ * must fall on the REAL shop day of `realNowMs`, else the run stops here —
+ * or `realNowMs` itself. Global setup alone calls it (`fixSuiteInstant`):
+ * the workers inherit the answer and never check the day again, so a
+ * worker that starts after the real midnight keeps the run's day.
+ */
+export function resolveSuiteInstant(
+  text: string | null,
+  realNowMs: UtcEpochMs,
+): UtcEpochMs {
+  if (text === null) return realNowMs;
+  const instant = instantOfText(text);
+  const realDay = shopDayOf(realNowMs);
+  const day = shopDayOf(instant);
+  if (day !== realDay) {
+    throw new Error(
+      `e2e: E2E_NOW '${text}' falls on the shop day ${day}, not on today's ${realDay}`,
+    );
+  }
+  return instant;
 }

@@ -144,8 +144,8 @@ function ruleOf(patch: RulePatch = {}): StreakRule {
   const revised = StreakRule.parse({
     ...StreakRule.DEFAULT,
     ...options,
-    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
-    ...(qualifier ?? StreakQualifierRule.of(StreakRule.DEFAULT)),
+    ...(interval ?? StreakIntervalRule.sliceOf(StreakRule.DEFAULT)),
+    ...(qualifier ?? StreakQualifierRule.sliceOf(StreakRule.DEFAULT)),
     version: StreakRule.DEFAULT.version + 1,
     effectiveFromLocalDate: '2026-09-29',
   });

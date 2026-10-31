@@ -13,7 +13,8 @@ import { PageStep } from '@core/components';
 import { type AuditEntry, Collections } from '@core/entities';
 import type { AuditReadPorts, AuditTimelinePage } from '@core/ports';
 import { AuditSystem, PagingSystem } from '@core/systems';
-import { readFailed, readQuery } from './observe';
+import { readQuery } from './observe';
+import { readFailed } from './stored-entity';
 
 /** The most rows one operation's read hands over. */
 const OPERATION_ROWS_MAX = 50;

@@ -31,6 +31,7 @@ import {
   CATALOG_PORTS,
   CLIENT_ISSUE_REPORTER,
   CLIENT_JOURNAL_PORTS,
+  CLIENT_PRIVACY_PORTS,
   CLIENT_STATS_READ_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
@@ -66,6 +67,7 @@ import {
   USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
   callableClientPorts,
+  clientPrivacyPorts,
   errorHandlerLogPorts,
   lazyAdapterScope,
   provideFirebaseApp,
@@ -348,6 +350,12 @@ export const appConfig: ApplicationConfig = {
           inject(GATEWAY_PORTS),
           inject(DOCUMENT),
         ),
+    },
+    // An admin's data-subject callables (the staff client card's export and erasure),
+    // over the same callable client.
+    {
+      provide: CLIENT_PRIVACY_PORTS,
+      useFactory: () => clientPrivacyPorts(inject(GATEWAY_PORTS)),
     },
     // The device's storage: the `/book` draft per tab.
     {

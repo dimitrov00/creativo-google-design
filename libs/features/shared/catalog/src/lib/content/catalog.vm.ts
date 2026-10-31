@@ -1,4 +1,4 @@
-import type { CompositionKind } from '@core/components';
+import type { CompositionKind, LocalizedText } from '@core/components';
 import type {
   BarberId,
   Currency,
@@ -16,26 +16,21 @@ import type { CardPrice, OfferingRange } from '@core/systems';
  * and a view model owned by the marketing lib would have made onboarding
  * depend on marketing to show a service.
  *
- * Presentational by design: localized strings stay `{ en, bg }` pairs
- * resolved at render time; money is integer `…Cents: PriceCents` beside its
- * `currency` (worded by `CatalogWording.price` through `formatCents`),
+ * Presentational by design: localized strings stay the entities'
+ * `LocalizedText` pairs, resolved at render time; money is integer
+ * `…Cents: PriceCents` beside its `currency` (worded by `CatalogWording.price` through `formatCents`),
  * durations are `DurationMinutes`, ids are the catalogue's brands.
  * `catalog.presenter.ts` maps the domain aggregates onto these and words them
  * (Law 10: a display model holds types only).
  */
 
-export interface Localized {
-  readonly en: string;
-  readonly bg: string;
-}
-
 // ─── Barbers ────────────────────────────────────────────────────────────
 
 export interface BarberVm {
   readonly id: BarberId;
-  readonly name: Localized;
-  readonly title: Localized;
-  readonly bio: Localized;
+  readonly name: LocalizedText;
+  readonly title: LocalizedText;
+  readonly bio: LocalizedText;
   readonly avatarSrc: string;
   /** v2 seeds every avatar with FocalPoint(0.5, 0.25) → object-position. */
   readonly objectPosition: string;
@@ -43,7 +38,7 @@ export interface BarberVm {
    *  enough reviews yet. */
   readonly rating?: number;
   /** The one-line craft summary the team cards read. */
-  readonly specialty: Localized;
+  readonly specialty: LocalizedText;
   /** Selected work, for the barber destination's gallery. */
   readonly gallery: readonly string[];
 }
@@ -76,7 +71,7 @@ export type VariantIcon = (typeof VariantIcon)[keyof typeof VariantIcon];
 
 export interface ServiceVariantVm {
   readonly id: ServiceVariantId;
-  readonly name: Localized;
+  readonly name: LocalizedText;
   readonly icon: VariantIcon;
 }
 
@@ -99,8 +94,8 @@ export interface ServiceSourceVm {
     CompositionKind,
     typeof CompositionKind.Unspecified
   >;
-  readonly name: Localized;
-  readonly description: Localized;
+  readonly name: LocalizedText;
+  readonly description: LocalizedText;
   readonly coverSrc?: string;
   readonly variants: readonly ServiceVariantVm[];
   readonly offerings: readonly ServiceOfferingVm[];

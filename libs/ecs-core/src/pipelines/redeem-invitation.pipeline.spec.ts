@@ -8,6 +8,7 @@ import {
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
+  unwrapOk,
 } from '@core/testing';
 import { redeemInvitation } from './redeem-invitation.pipeline';
 
@@ -66,9 +67,16 @@ function stored(entry: Invitation) {
 describe('redeemInvitation', () => {
   it('redeems in ONE plan — the redemption Create and the count Update — reading both in the transaction', async () => {
     const { tx, run } = rig([stored(invitation(2))]);
-    expect(await run({ invitationId: CODE, refereeUserId: REFEREE })).toEqual(
+    const answer = await run({ invitationId: CODE, refereeUserId: REFEREE });
+    expect(answer).toEqual(
       Result.ok({ invitationId: CODE, redemptionCount: 3 }),
     );
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual([
+      'invitationId',
+      'redemptionCount',
+    ]);
     expect(tx.transactions[0]?.reads).toEqual([
       INVITATION_PATH,
       REDEMPTION_PATH,

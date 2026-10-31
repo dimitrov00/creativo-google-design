@@ -43,6 +43,14 @@ export const BookingErrorCode = {
   BeyondHorizon: 'BOOKING_BEYOND_HORIZON',
   PartyTooLarge: 'BOOKING_PARTY_TOO_LARGE',
   InvariantViolated: 'BOOKING_INVARIANT_VIOLATED',
+  /**
+   * A record the act would seat or create is under a data-subject erasure
+   * (`ERASING` or `ERASED`, audit-hardening Phase 3 WS-D, P3-RU-20): an
+   * erased person is never resurrected by a later booking or edit — the
+   * desk books them as an anonymous guest. The code alone: no id rides the
+   * wire (the desk knows whom it typed).
+   */
+  ClientErased: 'BOOKING_CLIENT_ERASED',
   /*
    * The booking callables' own refusals before (or around) a pipeline — the
    * successors of the legacy dotted wire codes retired in Phase 4a (4A-4),
@@ -134,7 +142,8 @@ export type BookingError =
   | BookingError.TooSoon
   | BookingError.BeyondHorizon
   | BookingError.PartyTooLarge
-  | BookingError.InvariantViolated;
+  | BookingError.InvariantViolated
+  | BookingError.ClientErased;
 
 const E = BookingErrorCode;
 
@@ -229,6 +238,10 @@ export const BookingError = {
     violations: readonly SchedulingError[],
   ): BookingError.InvariantViolated {
     return { errorCode: E.InvariantViolated, violations };
+  },
+  /** A seated or created record is under erasure (P3-RU-20) — the code only. */
+  clientErased(): BookingError.ClientErased {
+    return { errorCode: E.ClientErased };
   },
   /**
    * One of the call family's refusals that carries nothing but its code — or
@@ -341,6 +354,10 @@ export namespace BookingError {
   export type InvariantViolated = {
     readonly errorCode: typeof BookingErrorCode.InvariantViolated;
     readonly violations: readonly SchedulingError[];
+  };
+  /** A record the act would seat or create is under erasure — nothing else on the struct. */
+  export type ClientErased = {
+    readonly errorCode: typeof BookingErrorCode.ClientErased;
   };
 
   /** The call family's codes that carry nothing but themselves. */

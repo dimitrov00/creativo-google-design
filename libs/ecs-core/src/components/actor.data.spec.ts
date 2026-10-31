@@ -171,4 +171,17 @@ describe('SystemSource', () => {
     expect(sources).toContain('LOYALTY_ENGINE');
     expect(sources).toContain('UNATTRIBUTED_API_KEY');
   });
+
+  it('names the sign-in callables apart from an unattributed write (audit-hardening Phase 3, P3-RU-10)', () => {
+    expect(SystemSource.IdentityCallable).toBe('IDENTITY_CALLABLE');
+    expect(SystemSource.IdentityCallable).not.toBe(
+      SystemSource.UnattributedUnauthenticated,
+    );
+    const a = Actor.system(SystemSource.IdentityCallable);
+    expect(a).toEqual({
+      actorRole: 'SYSTEM',
+      actorSystemSource: 'IDENTITY_CALLABLE',
+    });
+    expect(Actor.apparentUserId(a)).toBeNull();
+  });
 });

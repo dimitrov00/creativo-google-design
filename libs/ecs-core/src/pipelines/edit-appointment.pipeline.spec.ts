@@ -12,6 +12,8 @@ import {
   CouponStatus,
   CouponValue,
   CustomerOrigin,
+  ErasureLifecycle,
+  ErasureStatus,
   DiscountMethod,
   DiscountProvenance,
   DiscountSource,
@@ -24,6 +26,7 @@ import {
   GrantLifecycle,
   MinuteBlock,
   Placement,
+  PrivacyMarker,
   Role,
   SeatLabel,
   SeatOccupant,
@@ -56,8 +59,10 @@ import {
   Result,
   SeatId,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
+  BookingError,
   BookingErrorCode,
   RepositoryErrorCode,
   StaffEditErrorCode,
@@ -83,6 +88,7 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   at,
   auditRowsOf,
@@ -121,11 +127,6 @@ const GRANT = CouponGrantId.of('grant-1');
 const COUPON = CouponId.of('coupon-1');
 const VOUCHER = GiftVoucherId.of('v-1');
 
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
-
 /** The client's cut on Thursday at 10:00. */
 function visit(
   extra: Parameters<typeof appointmentFixture>[0] = {},
@@ -150,6 +151,7 @@ function customerRecord() {
       searchPrefixes: [],
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.Seed,
+      erasureStatus: ErasureStatus.None,
     },
   };
 }
@@ -230,7 +232,7 @@ const GRANT_LINE: AppliedDiscount = {
   appliedAtUtcMs: utcMs('2026-09-27T10:00:00.000+03:00'),
   combinability: Combinability.Stackable,
   ...DiscountProvenance.grant(GRANT),
-  ...CouponValue.of({
+  ...CouponValue.sliceOf({
     discountMethod: DiscountMethod.PercentOff,
     discountPercent: 10,
   }),
@@ -250,7 +252,7 @@ function coupon(extra: Partial<Coupon> = {}): Coupon {
     usageLimit: null,
     couponStatus: CouponStatus.Enabled,
     couponOccasion: null,
-    ...CouponValue.of({
+    ...CouponValue.sliceOf({
       discountMethod: DiscountMethod.PercentOff,
       discountPercent: 10,
     }),
@@ -330,7 +332,7 @@ function rig(
 const EDIT_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingStaffMove,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `operation:${OPERATION}`,
   ),
@@ -423,7 +425,7 @@ describe('editAppointment — the shop moving its own book', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingStaffMove,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.staffEdit(OPERATION),
         ),
@@ -438,7 +440,7 @@ describe('editAppointment — the shop moving its own book', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingStaffMove,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           'operation:operation-0123456789ab',
         ),
@@ -1297,6 +1299,7 @@ describe('editAppointment — the shop moving its own book', () => {
       displayName: 'Maria Ivanova',
       customerOrigin: CustomerOrigin.FirstBooking,
       writeOperationId: OPERATION,
+      erasureStatus: ErasureStatus.None,
     });
     // The customer record was read in the placement getAll, never users/{uid}.
     expect(
@@ -1355,6 +1358,7 @@ describe('editAppointment — a walk-in the desk took a contact for (OR-26)', ()
       email: null,
       customerOrigin: CustomerOrigin.StaffWalkIn,
       writeOperationId: OPERATION,
+      erasureStatus: ErasureStatus.None,
     });
     expect(readKeys(tx).has(MARIA_PATH)).toBe(true);
     const saved = store.get(PATH);
@@ -1390,7 +1394,10 @@ describe('editAppointment — a walk-in the desk took a contact for (OR-26)', ()
   it('meets the record a visit before created: the same id, nothing written over it', async () => {
     const before = {
       path: [Collections.Customers, MARIA_RECORD],
-      body: { displayName: 'Мария Иванова' },
+      body: {
+        displayName: 'Мария Иванова',
+        erasureStatus: ErasureStatus.None,
+      },
     };
     const { store, tx, run } = rig([...catalogue(), before, stored(visit())]);
     const answer = await run(
@@ -1400,7 +1407,10 @@ describe('editAppointment — a walk-in the desk took a contact for (OR-26)', ()
     expect(
       (tx.plans[0] ?? []).filter((op) => op.path[0] === Collections.Customers),
     ).toEqual([]);
-    expect(store.get(MARIA_PATH)).toEqual({ displayName: 'Мария Иванова' });
+    expect(store.get(MARIA_PATH)).toEqual({
+      displayName: 'Мария Иванова',
+      erasureStatus: ErasureStatus.None,
+    });
   });
 
   it('a re-sent intent writes nothing again — no second record, no second seat', async () => {
@@ -1460,6 +1470,148 @@ describe('editAppointment — a walk-in the desk took a contact for (OR-26)', ()
           guestLabel: 'Мария',
         },
       ],
+    });
+  });
+});
+
+describe('editAppointment — a record under erasure is never seated by the batch (P3-RU-20)', () => {
+  const MARIA_PHONE = E164.of('+359888123456');
+  const MARIA_RECORD = CustomerId.forWalkIn(MARIA_PHONE, fixtureWalkInHash);
+  const CUSTOMER_KEY = `${Collections.Customers}/${FIXTURE_IDS.customer}`;
+  const STARTED = utcMs('2026-09-20T10:00:00.000+03:00');
+  const ERASED = ErasureLifecycle.complete(
+    ErasureLifecycle.begin(STARTED),
+    utcMs('2026-09-21T10:00:00.000+03:00'),
+  );
+
+  /** A record the erasure stripped — the marker name, no contact — at `lifecycle`. */
+  const tombstone = (
+    userId: UserId | null,
+    lifecycle: ErasureLifecycle,
+  ): DocBody => ({
+    userId,
+    displayName: PrivacyMarker.TEXT,
+    phone: null,
+    email: null,
+    searchName: '',
+    searchPrefixes: [],
+    createdAtUtcMs: FIXTURE_NOW_UTC_MS,
+    customerOrigin: CustomerOrigin.Seed,
+    writeOperationId: null,
+    ...lifecycle,
+  });
+  /** The catalogue with the owner's record stripped and under erasure. */
+  const erasedCatalogue = (lifecycle: ErasureLifecycle = ERASED) => [
+    ...catalogue().filter((doc) => doc.path[0] !== Collections.Customers),
+    {
+      path: [Collections.Customers, FIXTURE_IDS.customer],
+      body: tombstone(FIXTURE_IDS.client, lifecycle),
+    },
+  ];
+  const addSelf: BookingCall.EditCommand = {
+    editCommand: EditCommand.AddSeat,
+    seatId: SeatId.of('seat-new'),
+    serviceId: FIXTURE_IDS.service,
+    variantId: null,
+    barberId: FIXTURE_IDS.barber,
+    localDate: THURSDAY,
+    startMinutes: at(12),
+    durationMinutes: duration(30),
+    addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
+  };
+  const addMaria: BookingCall.EditCommand = {
+    editCommand: EditCommand.AddSeat,
+    seatId: SeatId.of('seat-maria'),
+    serviceId: FIXTURE_IDS.service,
+    variantId: null,
+    barberId: FIXTURE_IDS.barber,
+    localDate: THURSDAY,
+    startMinutes: at(12),
+    durationMinutes: duration(30),
+    addedSubject: {
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label: SeatLabel.of('Мария'),
+      contact: { phone: MARIA_PHONE, email: null },
+    },
+  };
+
+  it.each([
+    ['ERASING', ErasureLifecycle.begin(STARTED)],
+    ['ERASED', ERASED],
+  ] as const)(
+    'ADDING an account whose record is %s (read in the placement getAll) → BOOKING_CLIENT_ERASED, nothing written',
+    async (_status, lifecycle) => {
+      const { store, tx, rows, run } = rig([
+        ...erasedCatalogue(lifecycle),
+        stored(visit()),
+      ]);
+      const before = store.get(PATH);
+      const answer = await run(command({ commands: [addSelf] }));
+      expect(answer).toEqual({ ok: false, error: BookingError.clientErased() });
+      expect(tx.plans).toEqual([]);
+      expect(rows).toEqual([]);
+      expect(store.get(PATH)).toEqual(before);
+      expect(store.get(CUSTOMER_KEY)).toEqual(
+        tombstone(FIXTURE_IDS.client, lifecycle),
+      );
+      expect(readKeys(tx).has(CUSTOMER_KEY)).toBe(true);
+    },
+  );
+
+  it('ADDING a walk-in whose contact keys an erased record (read in phase one) → BOOKING_CLIENT_ERASED, never re-seated', async () => {
+    const record = tombstone(null, ErasureLifecycle.begin(STARTED));
+    const { store, tx, run } = rig([
+      ...catalogue(),
+      { path: [Collections.Customers, MARIA_RECORD], body: record },
+      stored(visit()),
+    ]);
+    const answer = await run(command({ commands: [addMaria] }));
+    expect(answer).toEqual({ ok: false, error: BookingError.clientErased() });
+    expect(tx.plans).toEqual([]);
+    expect(store.get(`${Collections.Customers}/${MARIA_RECORD}`)).toEqual(
+      record,
+    );
+  });
+
+  it('a seat of an erased record carried back untouched still saves — a move adds nobody, writes no record', async () => {
+    const { store, tx, run } = rig([...erasedCatalogue(), stored(visit())]);
+    const answer = await run(command());
+    expect(answer.ok).toBe(true);
+    expect(
+      (tx.plans[0] ?? []).filter((op) => op.path[0] === Collections.Customers),
+    ).toEqual([]);
+    expect(store.get(PATH)).toMatchObject({ startMinutes: at(11) });
+    expect(store.get(CUSTOMER_KEY)).toEqual(
+      tombstone(FIXTURE_IDS.client, ERASED),
+    );
+  });
+
+  it('a stored walk-in seat of an erased record moves with its visit — the guard reads only the ids the batch adds', async () => {
+    const walkInSeat = seatFixture({
+      seatId: SeatId.of('seat-walk-in'),
+      startMinutes: at(10),
+      occupant: SeatOccupant.walkIn(MARIA_RECORD, PrivacyMarker.seatLabel(1)),
+    });
+    const walkInVisit = visit({
+      ownerUserId: null,
+      ownerCustomerId: null,
+      subjectUserIds: [],
+      subjectCustomerIds: [MARIA_RECORD],
+      placement: Placement.Staff,
+      seats: [walkInSeat],
+    });
+    const { store, run } = rig([
+      ...catalogue(),
+      {
+        path: [Collections.Customers, MARIA_RECORD],
+        body: tombstone(null, ERASED),
+      },
+      stored(walkInVisit),
+    ]);
+    expect((await run(command())).ok).toBe(true);
+    expect(store.get(PATH)).toMatchObject({
+      startMinutes: at(11),
+      seats: [{ subjectCustomerId: MARIA_RECORD, guestLabel: '— 1' }],
     });
   });
 });

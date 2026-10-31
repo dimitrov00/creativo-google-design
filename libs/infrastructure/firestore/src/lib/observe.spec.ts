@@ -23,7 +23,6 @@ const {
   admitCounted,
   admitted,
   attemptWrite,
-  entityOf,
   guardedReads,
   keepAdmitted,
   observeCountedQuery,
@@ -32,7 +31,6 @@ const {
   readDoc,
   readQuery,
   readRawQuery,
-  reasonOf,
 } = await import('./observe');
 
 type Thing = {
@@ -51,22 +49,6 @@ function recorded<T>(stream: {
 }
 
 const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
-
-describe('observe — the document is the entity', () => {
-  it('spreads the body beside its id, and nothing else', () => {
-    expect(entityOf<Thing>('t1', { rank: 2, tag: 'a' })).toEqual({
-      id: 't1',
-      rank: 2,
-      tag: 'a',
-    });
-  });
-
-  it('reads a failure’s reason as Firestore’s code, else its message', () => {
-    expect(reasonOf({ code: 'permission-denied' })).toBe('permission-denied');
-    expect(reasonOf(new Error('boom'))).toBe('boom');
-    expect(reasonOf('???')).toBeNull();
-  });
-});
 
 describe('observeDoc', () => {
   it('emits the entity, then every change, and null once the document is gone', () => {

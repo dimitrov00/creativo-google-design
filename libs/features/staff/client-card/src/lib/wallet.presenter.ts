@@ -6,6 +6,7 @@ import {
 } from '@core/primitives';
 import {
   FreezeReason,
+  LocalizedText,
   PassFigure,
   PassState,
   PunchCard,
@@ -22,9 +23,10 @@ import type {
   StreakDefinition,
 } from '@core/entities';
 import {
+  LedgerSystem,
+  LoyaltyCatalogSystem,
   type LoyaltyPass,
   LoyaltyPassSystem,
-  LoyaltyCatalogSystem,
   RewardSystem,
   type RewardTiles,
   type StreakOutlookAnswer,
@@ -42,18 +44,15 @@ import {
   rhythmClosedMarkPeriod,
   rhythmRuleWords,
 } from '@creativo/features/shared/visits';
-import { formatCents } from '@creativo/ui/wall-clock';
-import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {
-  cardLocaleOf,
-  dayLong,
-  dayMonth,
-  dayShort,
-  figure,
-  monthLong,
-  monthYearLong,
-  runningCase,
-} from './client-card.format';
+  formatCents,
+  formatCount,
+  formatDayLong,
+  formatDayShort,
+  formatMonthLong,
+} from '@creativo/ui/wall-clock';
+import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
+import { dayMonth, monthYearLong, runningCase } from './client-card.format';
 import {
   type GaugeVm,
   type PassVm,
@@ -72,7 +71,10 @@ import {
   type WalletVm,
 } from './client-pages.vm';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
-import { streakPeriodReasonWords } from '@creativo/infrastructure/i18n';
+import {
+  localeFor,
+  streakPeriodReasonWords,
+} from '@creativo/infrastructure/i18n';
 import {
   type ClientCardTranslate,
   type ClientCardWords,
@@ -81,7 +83,6 @@ import {
   NO_VISIT_NAMES,
   type VisitNames,
   activityGroups,
-  foldByEvent,
   wholeMonthsOf,
 } from './ledger.presenter';
 import {
@@ -184,7 +185,7 @@ function catalogOf(input: WalletInput): ValidLoyaltyCatalog | null {
 
 /** A balance or a count as a display figure; one that owes wears the minus. */
 function signedFigureOf(value: number, lang: string): string {
-  return `${value < 0 ? MINUS : ''}${figure(Math.abs(value), lang)}`;
+  return `${value < 0 ? MINUS : ''}${formatCount(Math.abs(value), lang)}`;
 }
 
 // ── WA · The pass ───────────────────────────────────────────────────────
@@ -199,7 +200,7 @@ function tierPlateOf(
   return tierId === null
     ? null
     : (LoyaltyCatalogSystem.tier(catalog, tierId)?.name[
-        cardLocaleOf(input.words.lang)
+        localeFor(input.words.lang)
       ] ?? null);
 }
 
@@ -231,7 +232,11 @@ function passStateOf(pass: LoyaltyPass, input: WalletInput): string | null {
       // is what the account holds.
       return page.expiring(
         carried(pass.lapsing, pass.passState),
-        dayShort(carried(pass.lapsesOn, pass.passState), today, words.lang),
+        formatDayShort(
+          carried(pass.lapsesOn, pass.passState),
+          today,
+          words.lang,
+        ),
       );
     case PassState.Clear:
       return null;
@@ -256,7 +261,7 @@ export function passVm(input: WalletInput): PassVm {
   if (pass.passFigure === PassFigure.Visits) {
     const visits = pass.figure;
     return {
-      figure: figure(visits, lang),
+      figure: formatCount(visits, lang),
       unit: words.loyalty.rhythmUnit(visits),
       holder,
       tier,
@@ -297,19 +302,6 @@ export function passVm(input: WalletInput): PassVm {
 
 // ── WC · What is held ───────────────────────────────────────────────────
 
-/**
- * The vouchers held (`VoucherSystem.held`): the spendable ones — issued,
- * not voided, not past their day, with a balance — the soonest to run out
- * first, two that end on one day by id in UTF-16 code units (OR-18,
- * DEP-F13: no device locale decides an order).
- */
-function heldOf(
-  vouchers: readonly GiftVoucher[],
-  today: LocalDate,
-): readonly GiftVoucher[] {
-  return VoucherSystem.held(vouchers, today);
-}
-
 function voucherVm(
   voucher: GiftVoucher,
   today: LocalDate,
@@ -321,7 +313,7 @@ function voucherVm(
   const lastDay = voucher.expiresLocalDate;
   const balance = formatCents(voucher.balanceCents, voucher.currency, lang);
   const value = formatCents(voucher.initialValueCents, voucher.currency, lang);
-  const until = lastDay === null ? null : dayShort(lastDay, today, lang);
+  const until = lastDay === null ? null : formatDayShort(lastDay, today, lang);
   // One fact, once: an untouched voucher's chip does not repeat the figure
   // over it, so it says its validity alone, or nothing.
   const untouched = VoucherSystem.untouched(voucher);
@@ -337,22 +329,23 @@ function voucherVm(
     accessibleName: page.voucherFullName(
       balance,
       value,
-      lastDay === null ? null : dayLong(lastDay, today, lang),
+      lastDay === null ? null : formatDayLong(lastDay, today, lang),
     ),
   };
 }
 
 /**
- * WC1 — the vouchers the person can spend, the soonest to expire first. A
- * voided voucher, an empty one and one past its day are absent: the wallet
- * holds what can be used, and a voucher's history is the bill's.
+ * WC1 — the vouchers the person can spend, the soonest to expire first
+ * (`VoucherSystem.held`). A voided voucher, an empty one and one past its
+ * day are absent: the wallet holds what can be used, and a voucher's
+ * history is the bill's.
  */
 export function voucherVms(
   vouchers: readonly GiftVoucher[],
   today: LocalDate,
   words: Words,
 ): readonly VoucherVm[] {
-  return heldOf(vouchers, today).map((voucher) =>
+  return VoucherSystem.held(vouchers, today).map((voucher) =>
     voucherVm(voucher, today, words),
   );
 }
@@ -382,7 +375,9 @@ function walletTickets(input: WalletInput): readonly RewardReadyVm[] {
           ...ticket,
           accessibleName: words.loyaltyPage.ticketName(
             runningCase(ticket.title, words.lang),
-            expiresOn === null ? null : dayLong(expiresOn, today, words.lang),
+            expiresOn === null
+              ? null
+              : formatDayLong(expiresOn, today, words.lang),
           ),
         };
   });
@@ -393,9 +388,9 @@ function stampCards(input: WalletInput): readonly WalletHoldingVm[] {
   const { account, flags, words } = input;
   if (!flags.achievements) return [];
   const page = words.loyaltyPage;
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   return account.punchCards.map((punch): WalletHoldingVm => {
-    const reward = punch.title[locale];
+    const reward = LocalizedText.pick(punch.title, locale);
     const spoken = runningCase(reward, words.lang);
     const { filled, left, toNext } = PunchCard.progress(punch);
     const card: StampCardVm = {
@@ -594,10 +589,7 @@ function inChairDueOf(
   state: StreakState,
   input: WalletInput,
 ): LocalDate | null {
-  return StreakSystem.inChairDue(state, input.today, {
-    inChairToday: input.inChairToday,
-    paused: input.paused,
-  });
+  return StreakSystem.inChairDue(state, input.today, input);
 }
 
 /**
@@ -618,7 +610,7 @@ function capsuleOf(
   const short = () =>
     day === null
       ? defect(`${capsule} names a day`)
-      : dayShort(day, today, words.lang);
+      : formatDayShort(day, today, words.lang);
   const tone = outlook.urgent ? 'warning' : 'neutral';
   switch (capsule) {
     case StreakCapsule.Frozen:
@@ -669,8 +661,8 @@ function closedPeriod(
     mark,
     {
       idSuffix: '',
-      month: (on) => monthLong(on, words.lang),
-      day: (on) => dayShort(on, today, words.lang),
+      month: (on) => formatMonthLong(on, words.lang),
+      day: (on) => formatDayShort(on, today, words.lang),
     },
     {
       kept: rhythm.markKept,
@@ -700,7 +692,7 @@ function openPeriod(
   // One fact, once: the day the sentence under the track names is not
   // captioned a second time.
   const due = (day: LocalDate) =>
-    day === standing.day ? '' : rhythm.dueBy(dayShort(day, today, lang));
+    day === standing.day ? '' : rhythm.dueBy(formatDayShort(day, today, lang));
   if (mark.streakTrackMarkKind === StreakTrackMarkKind.Protected) {
     // The open mark's reason is the frozen phase's own.
     const reason = mark.reason;
@@ -712,9 +704,9 @@ function openPeriod(
         reason === null || reason === FreezeReason.Excuse
           ? // Which excuse it was is the closed period's to say; the open
             // one names the day its due date moved to.
-            rhythm.markCurrent(dayLong(mark.on, today, lang))
+            rhythm.markCurrent(formatDayLong(mark.on, today, lang))
           : rhythm.markProtected(
-              monthLong(mark.on, lang),
+              formatMonthLong(mark.on, lang),
               rhythm.reason(streakPeriodReasonWords[reason]),
             ),
     };
@@ -724,14 +716,14 @@ function openPeriod(
       id: 'current',
       mark: 'current',
       caption: words.visits.today,
-      description: rhythm.markCurrent(dayLong(today, today, lang)),
+      description: rhythm.markCurrent(formatDayLong(today, today, lang)),
     };
   }
   return {
     id: 'current',
     mark: 'current',
     caption: due(mark.on),
-    description: rhythm.markCurrent(dayLong(mark.on, today, lang)),
+    description: rhythm.markCurrent(formatDayLong(mark.on, today, lang)),
   };
 }
 
@@ -798,7 +790,7 @@ export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
   const best = StreakSystem.record(state);
   const protections = StreakSystem.protectionsHeld(state, summary);
   return {
-    figure: figure(state.current, lang),
+    figure: formatCount(state.current, lang),
     unit: words.loyaltyPage.inRhythm(state.current),
     phase: standing.phase,
     periods: rhythmMarks(state, standing, input),
@@ -812,7 +804,7 @@ export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
     ruleUpcoming:
       upcoming !== null
         ? words.rhythm.ruleUpcoming(
-            dayShort(upcoming.effectiveFromLocalDate, today, lang),
+            formatDayShort(upcoming.effectiveFromLocalDate, today, lang),
             runningCase(
               rhythmRuleWords(
                 StreakRuleSystem.summary(upcoming),
@@ -842,7 +834,7 @@ function tierOf(
   const { account, words } = input;
   // A ring only with tiers in the catalogue (`TierSystem.standingTier`).
   if (TierSystem.standingTier(account, catalog.tiers) === null) return null;
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   const page = words.loyaltyPage;
   const track = TierSystem.steps(account, catalog.tiers);
   const stepOf = (tierId: TierId | null) =>
@@ -852,7 +844,7 @@ function tierOf(
   // says it a second time.
   const marks: readonly UiMark[] = track.steps.map((step) => ({
     value: step.atLeast,
-    label: step.name[locale],
+    label: LocalizedText.pick(step.name, locale),
   }));
   // The ring and the gauge are `TierSystem.progress`'s numbers.
   const progress = TierSystem.progress(account, catalog.tiers);
@@ -891,10 +883,10 @@ function tierOf(
   const remaining =
     progress.remaining ?? defect('a tier under way has what remains');
   const sentence = page.tierName(
-    current?.name[locale] ?? '',
+    current === null ? '' : LocalizedText.pick(current.name, locale),
     track.value,
     remaining,
-    next.name[locale],
+    LocalizedText.pick(next.name, locale),
   );
   // From the tier the account stands on to the next: an override may stand
   // above what the visits reached, and the arc never runs backwards.
@@ -907,8 +899,8 @@ function tierOf(
       label: page.tier,
       valueText: sentence,
     },
-    remaining: figure(remaining, words.lang),
-    line1: page.tierTo(next.name[locale]),
+    remaining: formatCount(remaining, words.lang),
+    line1: page.tierTo(LocalizedText.pick(next.name, locale)),
     line2: page.tierQualifying(track.value),
     steps: steps(sentence),
     accessibleName: sentence,
@@ -939,10 +931,12 @@ function tilesOf(
 ): readonly RewardTileVm[] {
   const { words } = input;
   const page = words.loyaltyPage;
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   return answer.tiles.map(({ reward, reach }): RewardTileVm => {
-    const title = reward.name[locale];
-    const missing = reach.affordable ? null : figure(reach.short, words.lang);
+    const title = LocalizedText.pick(reward.name, locale);
+    const missing = reach.affordable
+      ? null
+      : formatCount(reach.short, words.lang);
     return {
       rewardId: reward.id,
       title,
@@ -991,7 +985,7 @@ function rewardGrid(
 function walletActivity(entries: readonly JournalEntry[], input: WalletInput) {
   // A read that came back full may have cut its oldest event.
   const whole = entries.length < WALLET_ACTIVITY_READ;
-  const groups = activityGroups(foldByEvent(entries, whole), {
+  const groups = activityGroups(LedgerSystem.fold(entries, whole), {
     visitTitles: input.visitTitles ?? NO_VISIT_NAMES,
     visitBarbers: input.visitBarbers,
     catalog: catalogOf(input),

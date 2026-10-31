@@ -4,6 +4,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import {
   Actor,
   BarberPreference,
+  ErasureStatus,
   RequestedSubjectRole,
 } from '@core/components';
 import {
@@ -31,6 +32,7 @@ import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * A client's booking against the REAL Firestore emulator (flip 1 §5.3):
@@ -54,12 +56,6 @@ if (!EMULATOR_HOST.includes('127.0.0.1')) {
 const THURSDAY = localDate('2026-10-01');
 const CUSTOMER = CustomerId.forUser(FIXTURE_IDS.client, sha256Hex);
 const ATTEMPT = AppointmentId.of('attempt-0123456789abcdef');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** A booking on the shop's wall clock — the pipeline places it on the location's zone (4A-4). */
 function booking(
@@ -225,6 +221,7 @@ describe('bookAppointment (emulator)', () => {
       displayName: 'Maria Ivanova',
       phone: '+359888123456',
       customerOrigin: 'FIRST_BOOKING',
+      erasureStatus: ErasureStatus.None,
     });
     expect(UtcEpochMs.of(Number(record?.['createdAtUtcMs'])).ok).toBe(true);
     for (const id of [ATTEMPT, second]) {

@@ -172,15 +172,15 @@ describe('BadgeSystem — the family’s own questions', () => {
     expect(BadgeSystem.isRetired(retired)).toBe(true);
   });
 
-  it('is calendar-driven on tenure alone', () => {
-    expect(BadgeSystem.isCalendarDriven(fade)).toBe(false);
+  it('is calendar-driven (`MetricRef.isCalendarDriven`) on tenure alone', () => {
+    expect(MetricRef.isCalendarDriven(fade)).toBe(false);
     const tenure: BadgeSeries = {
       ...fade,
       id: BadgeSeriesId.of('series-tenure'),
       ...counting(Metric.TenureDays),
       levels: levels([365, 730]),
     };
-    expect(BadgeSystem.isCalendarDriven(tenure)).toBe(true);
+    expect(MetricRef.isCalendarDriven(tenure)).toBe(true);
   });
 
   it('finds a level by number', () => {

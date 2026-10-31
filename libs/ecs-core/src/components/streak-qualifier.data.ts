@@ -61,7 +61,7 @@ export const StreakQualifierRule = {
    * The qualifier fields of a rule (or of any struct carrying the slice),
    * as a fresh slice of their own — the lists copied, never shared.
    */
-  of(qualifier: StreakQualifierRule): StreakQualifierRule {
+  sliceOf<T extends StreakQualifierRule>(qualifier: T): StreakQualifierRule {
     switch (qualifier.streakQualifier) {
       case StreakQualifier.Services:
         return StreakQualifierRule.services([...qualifier.qualifierServiceIds]);

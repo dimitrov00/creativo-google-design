@@ -26,28 +26,9 @@ const {
   attemptOutcome,
   decisiveFailure,
   eventAgeMs,
-  failureCode,
 } = TriggerAttemptSystem;
 
 describe('failed attempts — transient codes retry, the rest are dropped', () => {
-  it('reads numeric gRPC codes as the Admin SDK reports them', () => {
-    expect(failureCode({ code: 10 })).toBe('aborted');
-    expect(failureCode({ code: 6 })).toBe('already-exists');
-    expect(failureCode({ code: 14 })).toBe('unavailable');
-    expect(failureCode({ code: 99 })).toBe('unknown');
-  });
-
-  it('reads string codes in any common spelling', () => {
-    expect(failureCode({ code: 'DEADLINE_EXCEEDED' })).toBe(
-      'deadline-exceeded',
-    );
-    expect(failureCode({ code: 'firestore/resource-exhausted' })).toBe(
-      'resource-exhausted',
-    );
-    expect(failureCode(new Error('boom'))).toBe('unknown');
-    expect(failureCode(null)).toBe('unknown');
-  });
-
   it('retries only what a later attempt could change', () => {
     for (const code of [
       'aborted',
@@ -234,12 +215,6 @@ describe('a port’s refusal — judged by the code its adapter recorded as its 
     expect(
       repositoryFailure(RepositoryError.writeFailed(null, '')),
     ).toMatchObject({ failureCode: 'unknown', attemptOutcome: 'PERMANENT' });
-  });
-
-  it('never reads a port’s refusal by a `code` it does not carry — failureCode alone still says unknown', () => {
-    expect(failureCode(RepositoryError.readFailed('a/1', 'unavailable'))).toBe(
-      'unknown',
-    );
   });
 
   it('decides an attempt over refusals and throws alike: transient when any one is, else the first', () => {
@@ -447,16 +422,12 @@ describe('the dead letter — what a retrying trigger records when it gives up (
 });
 
 describe('properties', () => {
-  it('reads every gRPC status by its own name, and never an age below zero', () => {
+  it('never measures an age below zero', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: -5, max: 40 }),
         fc.integer({ min: 0, max: 1e9 }),
         fc.integer({ min: 0, max: 1e9 }),
-        (status, sent, now) => {
-          const code = failureCode({ code: status });
-          if (status < 1 || status > 16) expect(code).toBe('unknown');
-          else expect(code).not.toBe('');
+        (sent, now) => {
           expect(eventAgeMs(at(sent), at(now))).toBeGreaterThanOrEqual(0);
         },
       ),

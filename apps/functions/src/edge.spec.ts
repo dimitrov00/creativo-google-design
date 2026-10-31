@@ -43,6 +43,8 @@ import {
   MoveErrorCode,
   PhoneError,
   PhoneInvalidReason,
+  PrivacyError,
+  PrivacyErrorCode,
   RepositoryError,
   SchedulingErrorCode,
   ShopUnavailableReason,
@@ -427,7 +429,9 @@ describe('edge — the wire table', () => {
           ...(ALLOWLIST.get(code) ?? []),
         ]);
       }
-      // `field` and `refusal` leave exactly where the legacy rows named them.
+      // `field` and `refusal` leave exactly where the legacy rows named them
+      // — and, since audit-hardening Phase 3 (P3-DEP-9), where a privacy
+      // request names the payload field it refused.
       const namedBy = (name: string) =>
         Object.entries(EDGE_WIRE)
           .filter(
@@ -444,6 +448,7 @@ describe('edge — the wire table', () => {
           'BOOKING_WAITLIST_INVALID_REQUEST',
           StreakPublishErrorCode.InvalidInput,
           IdentityErrorCode.RegistrationFieldMissing,
+          PrivacyErrorCode.InvalidInput,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([
@@ -699,6 +704,21 @@ describe('edge — the wire table', () => {
         message: 'IDENTITY_OTP_SEND_UNAVAILABLE',
         details: { errorCode: 'IDENTITY_OTP_SEND_UNAVAILABLE' },
       });
+    });
+
+    it('the erasure’s refusals are `failed-precondition`, each its code alone — the listed count and the person stay on the server (P3-DEP-13, P3-DEP-15)', () => {
+      for (const error of [
+        PrivacyError.erasureStaffAccount(),
+        PrivacyError.accountLinkMismatch(),
+        PrivacyError.erasureTooLarge(5_001),
+        BookingError.clientErased(),
+      ]) {
+        expect(wire(error)).toEqual({
+          status: 'failed-precondition',
+          message: error.errorCode,
+          details: { errorCode: error.errorCode },
+        });
+      }
     });
 
     it('both waitlist doors answer the shared WaitlistError shape', () => {
@@ -1192,7 +1212,6 @@ describe('edge — the wrappers', () => {
       callable: Callables.CommitBooking,
       failureCode: BookingErrorCode.CommitStoreFailed,
       timeoutSeconds: null,
-      answer: null,
       traced: true,
     } as const;
 
@@ -1220,24 +1239,21 @@ describe('edge — the wrappers', () => {
       expect(tracked).toEqual([]);
     });
 
-    it('answers an ANSWERED refusal through the callable’s own answer', async () => {
+    it('throws an ANSWERED code that reaches it as a Result.err as `internal` — a callable answers its own refusal as Result.ok', async () => {
       const { ports } = edgePorts();
       const handler = callableEdge(
         {
           callable: Callables.PublishStreakDefinition,
           failureCode: StreakPublishErrorCode.StoreFailed,
           timeoutSeconds: null,
-          answer: (refusal) => ({
-            streakPublishOutcome: 'REFUSED',
-            errorCode: refusal.errorCode,
-          }),
           traced: true,
         },
         ports,
         async () => Result.err(StreakPublishError.stale(2, 3)),
       );
-      await expect(handler(request({}))).resolves.toEqual({
-        streakPublishOutcome: 'REFUSED',
+      const thrown = await rejection(handler(request({})));
+      expect(thrown.code).toBe('internal');
+      expect(thrown.details).toEqual({
         errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
       });
     });
@@ -1329,7 +1345,6 @@ describe('edge — the wrappers', () => {
       callable: Callables.CancelAppointment,
       failureCode: null,
       timeoutSeconds: null,
-      answer: null,
       traced: true,
     } as const;
     const OP = 'op-0000000000000001';
@@ -1422,28 +1437,26 @@ describe('edge — the wrappers', () => {
       ]);
     });
 
-    it('logs an ANSWERED refusal as callable.refused with wireStatus ok', async () => {
+    it('logs a refusal the callable answers itself (returned as Result.ok) as callable.completed, wireStatus ok', async () => {
       const { ports, logged } = edgePorts();
       const handler = callableEdge(
-        {
-          ...spec,
-          callable: Callables.PublishStreakDefinition,
-          answer: (refusal) => ({ refused: refusal.errorCode }),
-        },
+        { ...spec, callable: Callables.PublishStreakDefinition },
         ports,
-        async () => Result.err(StreakPublishError.stale(2, 3)),
+        async () =>
+          Result.ok({
+            streakPublishOutcome: 'REFUSED',
+            errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+          }),
       );
       await expect(handler(request({}))).resolves.toEqual({
-        refused: 'LOYALTY_STREAK_PUBLISH_STALE',
+        streakPublishOutcome: 'REFUSED',
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
       });
       expect(logged).toHaveLength(1);
       expect(logged[0]).toMatchObject({
-        level: 'warn',
-        msg: 'callable.refused',
-        fields: {
-          errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
-          wireStatus: 'ok',
-        },
+        level: 'info',
+        msg: 'callable.completed',
+        fields: { errorCode: null, wireStatus: 'ok' },
       });
     });
 

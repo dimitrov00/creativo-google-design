@@ -34,6 +34,7 @@
     "BOOKING_BEYOND_HORIZON": "We are not taking bookings that far ahead yet.",
     "BOOKING_PARTY_TOO_LARGE": "A booking seats at most {{maxPartySize}} people.",
     "BOOKING_INVARIANT_VIOLATED": "That combination is not possible. Try another time.",
+    "BOOKING_CLIENT_ERASED": "This client's data was erased. Book them without a phone or e-mail.",
     "BOOKING_STAFF_EDIT_UNAUTHENTICATED": "Sign in again to continue.",
     "BOOKING_STAFF_EDIT_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
     "BOOKING_STAFF_EDIT_INVALID_COMMAND": "That request isn't valid for this visit.",
@@ -152,6 +153,13 @@
     "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Sign in again to continue.",
     "LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE": "For now, existing runs can only be kept.",
     "LOYALTY_STREAK_PUBLISH_PREVIEW_STALE": "The preview is out of date. Save again.",
+    "PRIVACY_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
+    "PRIVACY_UNAVAILABLE": "This isn't on for the shop yet.",
+    "PRIVACY_CLIENT_NOT_FOUND": "We couldn't find this client.",
+    "PRIVACY_EXPORT_TOO_LARGE": "There's too much data for one file. Contact support.",
+    "PRIVACY_ERASURE_STAFF_ACCOUNT": "A staff account can't be erased here.",
+    "PRIVACY_ACCOUNT_LINK_MISMATCH": "The account doesn't match the client's record. Contact support.",
+    "PRIVACY_ERASURE_TOO_LARGE": "There are too many records for one erasure. Contact support.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
     "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Try again.",
     "PIPELINE_CATALOG_CHANGED": "Something went wrong. Try again.",
@@ -2102,6 +2110,19 @@
         "firstVisit": "the first visit"
       },
       "empty": "Records come with the first visits."
+    },
+    "privacy": {
+      "groupLabel": "Personal data",
+      "export": "Download the data",
+      "exportDone": "The file is downloaded.",
+      "erase": "Erase personal data",
+      "eraseSibling": "Erase the record with the same phone or e-mail",
+      "erased": "Erased client",
+      "eraseUnfinished": "The erasure isn't finished yet. Try again.",
+      "alertTitle": "Erase personal data?",
+      "alertBody": "Visits: {{visits}} · Notes: {{notes}} · Photos: {{photos}} · Sign-in accounts: {{accounts}} · Other records with this phone or e-mail: {{siblings}}. The name, phone and e-mail are removed and the sign-in account is deleted. Visits and payments stay.",
+      "eraseConfirm": "Erase",
+      "eraseKeep": "Cancel"
     }
   },
   "visits": {

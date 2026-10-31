@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ClientPrivacyCall } from '@core/components';
 import {
   CALLABLE_ANSWER_DECODERS,
   Callables,
@@ -33,6 +34,29 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
       [Callables.RecordSeatTip]: 'operationId',
       [Callables.StaffEditAppointment]: 'operationId',
     });
+  });
+
+  it('the data-subject export rides `operationId` — the field its input names (Phase 3 WS-C)', () => {
+    expect(OPERATION_ID_FIELD[Callables.ExportClientData]).toBe('operationId');
+    expect(Callables.ExportClientData).toBe('exportClientData');
+    expect(CALLABLE_ANSWER_DECODERS[Callables.ExportClientData]).toBe(
+      ClientPrivacyCall.decodeExported,
+    );
+  });
+
+  it('the erasure’s preview and act ride `operationId` — one act, one id, each answer its own decoder (Phase 3 WS-D)', () => {
+    expect(Callables.PreviewClientErasure).toBe('previewClientErasure');
+    expect(Callables.EraseClient).toBe('eraseClient');
+    expect(OPERATION_ID_FIELD[Callables.PreviewClientErasure]).toBe(
+      'operationId',
+    );
+    expect(OPERATION_ID_FIELD[Callables.EraseClient]).toBe('operationId');
+    expect(CALLABLE_ANSWER_DECODERS[Callables.PreviewClientErasure]).toBe(
+      ClientPrivacyCall.decodeErasurePreview,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.EraseClient]).toBe(
+      ClientPrivacyCall.decodeErasure,
+    );
   });
 
   it('the client issue sink alone carries none (OR-34)', () => {

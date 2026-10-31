@@ -116,8 +116,8 @@ function withLifecycle(
     holderUserId: grant.holderUserId,
     couponId: grant.couponId,
     grantedAtUtcMs: grant.grantedAtUtcMs,
-    ...CouponValue.of(grant),
-    ...GrantLifecycle.of(lifecycle),
+    ...CouponValue.sliceOf(grant),
+    ...GrantLifecycle.sliceOf(lifecycle),
   };
 }
 
@@ -268,7 +268,7 @@ export const CouponGrantSystem = {
         coupon === null
           ? false
           : Combinability.isExclusive(coupon.combinability),
-      ...CouponValue.of(grant),
+      ...CouponValue.sliceOf(grant),
     };
   },
 
@@ -436,8 +436,8 @@ export const CouponGrantSystem = {
    * the old one the new one does not declare deleted (§6).
    */
   transitionWrite(before: CouponGrant, after: CouponGrant): WriteOp {
-    const from = GrantLifecycle.of(before);
-    const to = GrantLifecycle.of(after);
+    const from = GrantLifecycle.sliceOf(before);
+    const to = GrantLifecycle.sliceOf(after);
     return WriteOp.transition(
       [Collections.CouponGrants, after.id],
       { ...to },

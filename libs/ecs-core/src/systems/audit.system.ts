@@ -30,6 +30,7 @@ import {
   defect,
   type ImpersonationSessionId,
   type OperationId,
+  type OtpId,
   type PublishRequestId,
   type SeatId,
   type StoredFields,
@@ -256,14 +257,21 @@ function accountStatusOf(raw: unknown): AccountStatus | null {
 }
 
 /**
- * The basis of one person's row id for one logical change — TEXT in, text
- * out (the brands' text is what is hashed: a booking act's client record, a
- * profile act's account; the action is the verb as the row stores it).
+ * The basis of one person's row id for one logical change — the legacy
+ * row-id derivation minus the SHA-256: `JSON.stringify(['audit-row/v2',
+ * action, resourceId, targetId, changeKey])`. Typed (audit-hardening Phase 3,
+ * P3-RU-7): the verb, the resource and the target as their brands (Law 7.4 —
+ * a `CustomerId` for a client-record row, a `UserId` for an account row,
+ * `null` for an untargeted one); the brands' TEXT is what is hashed, so every
+ * stored row id stays what it was. The JSON array keeps the parts
+ * unambiguous (`("a:b","c")` and `("a","b:c")` never collide). The planners
+ * that build a row outside this file (`IdentityAuditSystem`) key it through
+ * here.
  */
 function rowBasis(
-  action: string,
-  resourceId: string,
-  targetId: string | null,
+  action: AuditAction,
+  resourceId: AuditResourceId,
+  targetId: CustomerId | UserId | null,
   changeKey: string,
 ): string {
   return JSON.stringify([
@@ -309,14 +317,6 @@ function targets(
  * and `CreateAuditRows` (the document-change trigger).
  */
 export const AuditSystem = {
-  /**
-   * The basis of one person's row id for one logical change — the legacy
-   * row-id derivation minus the SHA-256: `JSON.stringify(['audit-row/v2',
-   * action, resourceId, targetId, changeKey])` (the target's id text: a
-   * client record for a booking act, an account for a profile act). The JSON
-   * array keeps the parts unambiguous (`("a:b","c")` and `("a","b:c")` never
-   * collide).
-   */
   rowBasis,
 
   targets,
@@ -551,6 +551,80 @@ export const AuditSystem = {
      */
     ownProfileEdit(ownerUserId: UserId, editedAtUtcMs: UtcEpochMs): string {
       return `profile-edit:${ownerUserId}:${editedAtUtcMs}`;
+    },
+    /*
+     * The sign-in rows (audit-hardening Phase 3, P3-RU-7): keyed by STATE the
+     * act's own commit proves, never by the caller's transport id — these
+     * callables are unauthenticated, so a client id would neither dedupe a
+     * retry nor bound the rows a caller can mint.
+     */
+    /** A challenge saved: one per challenge (a fresh `nextId`). */
+    otpRequested(otpId: OtpId): string {
+      return `otp-requested:${otpId}`;
+    },
+    /** A challenge consumed: one per challenge (the transaction proves it was open). */
+    otpVerified(otpId: OtpId): string {
+      return `otp-verified:${otpId}`;
+    },
+    /**
+     * A wrong code recorded: the challenge and the attempt count AFTER the
+     * increment — strictly increasing, read in the same transaction, so each
+     * recorded attempt is its own row and a retried one is the same row.
+     */
+    otpRefused(otpId: OtpId, attemptCount: number): string {
+      return `otp-refused:${otpId}:${attemptCount}`;
+    },
+    /** A sign-in token answered: one per consumed challenge. */
+    sessionIssued(otpId: OtpId): string {
+      return `session:${otpId}`;
+    },
+    /** An account's first registration: one per account (a re-run plans no row). */
+    registration(userId: UserId): string {
+      return `registration:${userId}`;
+    },
+    /**
+     * An admin's data-subject export (audit-hardening Phase 3 WS-C): its
+     * operation id — the act the admin minted once and keeps for a retry,
+     * so a replay of the same export plans the same row id (and the
+     * pipeline's probe read finds it), while a new export is a new row.
+     */
+    clientExported(operationId: OperationId): string {
+      return `export:${operationId}`;
+    },
+    /*
+     * An admin's data-subject erasure (audit-hardening Phase 3 WS-D,
+     * P3-RU-22). The start and the completion are keyed by STATE, never by
+     * the act's id: each row is planned only on the transition its own
+     * transaction read (`NONE → ERASING`, `ERASING → ERASED`), so a replay,
+     * a resumed call or a concurrent second act plans none and never
+     * reaches the ALREADY_EXISTS tripwire — one STARTED and one ERASED row
+     * per record, ever.
+     */
+    /**
+     * The pre-stamp contact sweep (P3-DEP-28, P3-DEP-33): its operation id —
+     * the act's first sweep commit that lands plans it after its probe read
+     * finds it absent (the re-sweep's idiom), so a resumed call of the same
+     * act plans none, while a new act (a re-minted id) is its own row.
+     */
+    erasureSweep(operationId: OperationId): string {
+      return `erasure-sweep:${operationId}`;
+    },
+    /** The stamp commit (`NONE → ERASING`): one per record. */
+    erasureStarted(customerId: CustomerId): string {
+      return `erasure-start:${customerId}`;
+    },
+    /** The completion commit (`ERASING → ERASED`): one per record. */
+    erased(customerId: CustomerId): string {
+      return `erasure-done:${customerId}`;
+    },
+    /**
+     * A sweep of an ERASED record that found residue (P3-L-19): its
+     * operation id — an ERASED record may be swept by many acts, each its
+     * own row, and the pipeline plans it only when its probe read finds the
+     * row absent (the export row's idiom), so a replay of one act plans none.
+     */
+    erasureResweep(operationId: OperationId): string {
+      return `erasure-resweep:${operationId}`;
     },
   },
 

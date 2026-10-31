@@ -37,6 +37,7 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import { FIXTURE_TIME_ZONE, localDate, unwrapOk, utcMs } from '@core/testing';
+import { formatDayShort } from '@creativo/ui/wall-clock';
 import {
   type VisitTranslate,
   rhythmRuleWords,
@@ -45,7 +46,6 @@ import {
   type AdminRhythmContext,
   afterMissRow,
   changeWord,
-  daysOf,
   earnEveryOptions,
   effectiveOptions,
   effectiveReading,
@@ -55,8 +55,6 @@ import {
   historyRow,
   inForceCapsule,
   intervalOptions,
-  longDay,
-  monthWord,
   onBreakOptions,
   pauseDaysOptions,
   previewWords,
@@ -72,13 +70,11 @@ import {
   samplePeriods,
   sampleUnit,
   servicesCount,
-  shortDay,
   toleranceExample,
   toleranceMarks,
   toleranceReadout,
   upcomingLine,
   weekMarks,
-  weeksOf,
 } from './admin-rhythm.words';
 
 // ── The app's own words, read by key ─────────────────────────────────────
@@ -162,8 +158,8 @@ function revised(patch: RulePatch, effectiveFrom = '2026-09-01'): StreakRule {
   const next = StreakRule.parse({
     ...StreakRule.DEFAULT,
     ...options,
-    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
-    ...StreakQualifierRule.of(StreakRule.DEFAULT),
+    ...(interval ?? StreakIntervalRule.sliceOf(StreakRule.DEFAULT)),
+    ...StreakQualifierRule.sliceOf(StreakRule.DEFAULT),
     version: StreakRule.DEFAULT.version + 1,
     effectiveFromLocalDate: effectiveFrom,
   });
@@ -195,38 +191,6 @@ function versionOf(
     ...facts,
   };
 }
-
-// ── Dates ────────────────────────────────────────────────────────────────
-
-describe('the dates', () => {
-  it('say the day and the month, and the year only outside today’s', () => {
-    expect(shortDay(localDate('2026-09-01'), TODAY, 'bg')).toBe('1.09');
-    expect(shortDay(localDate('2025-03-01'), TODAY, 'bg')).toBe('1.03.2025 г.');
-  });
-
-  it('say a date someone hears in words', () => {
-    expect(longDay(localDate('2026-09-04'), TODAY, 'bg')).toBe('4 септември');
-    expect(longDay(localDate('2025-03-06'), TODAY, 'bg')).toBe(
-      '6 март 2025 г.',
-    );
-    expect(monthWord(localDate('2026-09-04'), 'bg')).toBe('септември');
-  });
-
-  it('never move a day across a zone', () => {
-    expect(shortDay(localDate('2026-12-31'), TODAY, 'bg')).toBe('31.12');
-    expect(shortDay(localDate('2026-01-01'), TODAY, 'bg')).toBe('1.01');
-  });
-});
-
-// ── Figures ──────────────────────────────────────────────────────────────
-
-describe('the figures', () => {
-  it('turn days into weeks and back', () => {
-    expect(weeksOf(42)).toBe(6);
-    expect(weeksOf(39)).toBe(6);
-    expect(daysOf(8)).toBe(56);
-  });
-});
 
 // ── The menus ────────────────────────────────────────────────────────────
 
@@ -828,12 +792,12 @@ describe('the publish refusals, worded by their errorCode', () => {
   it('say the earliest day a change may start', () => {
     expect(
       lineOf('bg', StreakPublishErrorCode.TooEarly, {
-        date: shortDay(localDate('2026-10-12'), TODAY, 'bg'),
+        date: formatDayShort(localDate('2026-10-12'), TODAY, 'bg'),
       }),
     ).toBe('Най-ранният възможен ден е 12.10.');
     expect(
       lineOf('en', StreakPublishErrorCode.TooEarly, {
-        date: shortDay(localDate('2026-10-12'), TODAY, 'en'),
+        date: formatDayShort(localDate('2026-10-12'), TODAY, 'en'),
       }),
     ).toBe('The earliest possible day is 10/12.');
   });

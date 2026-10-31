@@ -112,15 +112,6 @@ export const SeatingRuleSystem = {
     return SeatIdPair.normalize(pairs);
   },
 
-  /**
-   * Pairs as a caller REMEMBERS them (the pairs a save broke, for its undo)
-   * → the canonical set: a seat paired with itself is dropped — it could
-   * only ever exempt a seat from nothing.
-   */
-  ofPairs(pairs: readonly SeatIdPair[]): readonly SeatIdPair[] {
-    return SeatIdPair.normalize(pairs);
-  },
-
   /** Did these two seats already seat one person twice? In either order. */
   stands(
     standing: readonly SeatIdPair[],

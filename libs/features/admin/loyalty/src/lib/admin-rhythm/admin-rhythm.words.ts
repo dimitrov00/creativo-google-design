@@ -5,7 +5,7 @@ import {
   RhythmEffectiveChoice,
   type StreakExcuse,
   StreakInterval,
-  type StreakIntervalRule,
+  StreakIntervalRule,
   StreakOnBreak,
   type StreakPreview,
   StreakPreviewOutcome,
@@ -36,7 +36,12 @@ import {
   pluralForm,
   streakPeriodReasonWords,
 } from '@creativo/infrastructure/i18n';
-import { formatCount, formatWallClock } from '@creativo/ui/wall-clock';
+import {
+  formatCount,
+  formatDayLong,
+  formatDayShort,
+  formatMonthLong,
+} from '@creativo/ui/wall-clock';
 import type {
   UiChoiceOption,
   UiSliderMark,
@@ -126,54 +131,6 @@ export function onBreakOf(id: string): StreakOnBreak {
 /** The typographic minus, as the spec draws a signed figure. */
 const MINUS = '−';
 
-// ── Dates (the house form, R59; the shared wall-clock face) ────────────────
-
-/** A shop day in the locale's form, on the cached wall-clock formatter (read back in UTC, no `Date` built). */
-function formatDay(
-  day: LocalDate,
-  lang: string,
-  options: Intl.DateTimeFormatOptions,
-): string {
-  return formatWallClock(day, null, lang, options);
-}
-
-const yearUnlessCurrent = (
-  day: LocalDate,
-  today: LocalDate,
-): Pick<Intl.DateTimeFormatOptions, 'year'> =>
-  day.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' };
-
-/** «1.09» · «1.03.2025 г.» — a capsule's or a row's date, the year only outside today's. */
-export function shortDay(
-  day: LocalDate,
-  today: LocalDate,
-  lang: string,
-): string {
-  return formatDay(day, lang, {
-    day: 'numeric',
-    month: '2-digit',
-    ...yearUnlessCurrent(day, today),
-  });
-}
-
-/** «4 септември» — a date someone hears. */
-export function longDay(
-  day: LocalDate,
-  today: LocalDate,
-  lang: string,
-): string {
-  return formatDay(day, lang, {
-    day: 'numeric',
-    month: 'long',
-    ...yearUnlessCurrent(day, today),
-  });
-}
-
-/** «септември» — the month in words (a track mark's description). */
-export function monthWord(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, { month: 'long' });
-}
-
 // ── Counting ─────────────────────────────────────────────────────────────
 
 /** A counted sentence in the count's plural: `key.one` / `key.other`. */
@@ -190,14 +147,6 @@ function counted(
 }
 
 /**
- * «12 450» — a figure grouped the language's way, through the shared
- * cached `formatCount` (pass E, E-12).
- */
-function figure(context: AdminRhythmContext, value: number): string {
-  return formatCount(value, context.lang);
-}
-
-/**
  * «+17» · «−3» — a movement the system measured, signed; `null` for none
  * (the zero form and the sign glyph are the words', D-2.2/D-2.3).
  */
@@ -207,15 +156,9 @@ function signedMovement(
 ): string | null {
   if (delta === 0) return null;
   return delta > 0
-    ? `+${figure(context, delta)}`
-    : `${MINUS}${figure(context, -delta)}`;
+    ? `+${formatCount(delta, context.lang)}`
+    : `${MINUS}${formatCount(-delta, context.lang)}`;
 }
-
-/** Days ↔ weeks, as the interval is edited in weeks and held in days: `RhythmDraftSystem`'s unit arithmetic. */
-export const weeksOf = (days: number): number =>
-  RhythmDraftSystem.weeksOf(days);
-export const daysOf = (weeks: number): number =>
-  RhythmDraftSystem.daysOf(weeks);
 
 // ── The menus ────────────────────────────────────────────────────────────
 
@@ -321,7 +264,11 @@ export function repairPerYearOptions(
   context: AdminRhythmContext,
 ): readonly UiChoiceOption[] {
   return ADMIN_RHYTHM_CHOICES.repairPerYear.map((count) =>
-    option(String(count), figure(context, count), `repair-per-year-${count}`),
+    option(
+      String(count),
+      formatCount(count, context.lang),
+      `repair-per-year-${count}`,
+    ),
   );
 }
 
@@ -385,7 +332,7 @@ export function effectiveReading(
       return {
         choice,
         label: t('admin.rhythm.effective.picked', {
-          date: shortDay(day, context.today, context.lang),
+          date: formatDayShort(day, context.today, context.lang),
         }),
       };
   }
@@ -523,17 +470,16 @@ const EXAMPLE_HABIT_DAYS = 28;
 /**
  * «Клиент, който идва на 4 седмици, има срок 6 седмици.» — the tolerance
  * explained on one habit. The period is the rule's own
- * (`StreakRuleSystem.exampleDue`, through `StreakIntervalRule.daysFor`),
- * never a copy of it.
+ * (`StreakIntervalRule.daysFor`), never a copy of it.
  */
 export function toleranceExample(
   context: AdminRhythmContext,
   interval: StreakIntervalRule.Personal,
 ): string {
-  const due = StreakRuleSystem.exampleDue(interval, EXAMPLE_HABIT_DAYS);
+  const due = StreakIntervalRule.daysFor(interval, EXAMPLE_HABIT_DAYS);
   return context.translate('admin.rhythm.interval.example', {
-    habit: context.rule.weeks(weeksOf(EXAMPLE_HABIT_DAYS)),
-    interval: context.rule.weeks(weeksOf(due.days)),
+    habit: context.rule.weeks(RhythmDraftSystem.weeksOf(EXAMPLE_HABIT_DAYS)),
+    interval: context.rule.weeks(RhythmDraftSystem.weeksOf(due.days)),
   });
 }
 
@@ -545,7 +491,7 @@ export function inForceCapsule(
 ): string {
   return context.translate(
     scheduled ? 'admin.rhythm.scheduled' : 'admin.rhythm.inForce',
-    { date: shortDay(day, context.today, context.lang) },
+    { date: formatDayShort(day, context.today, context.lang) },
   );
 }
 
@@ -556,7 +502,7 @@ export function upcomingLine(
   short: string,
 ): string {
   return context.translate('rhythmRule.upcoming', {
-    date: shortDay(day, context.today, context.lang),
+    date: formatDayShort(day, context.today, context.lang),
     rule: short,
   });
 }
@@ -696,7 +642,7 @@ export function historyRow(
     version: version.version,
     title: jointed(
       t('admin.rhythm.history.row', {
-        date: shortDay(version.effectiveFromLocalDate, today, lang),
+        date: formatDayShort(version.effectiveFromLocalDate, today, lang),
         change,
       }),
     ),
@@ -705,7 +651,7 @@ export function historyRow(
         ? name
         : t('admin.rhythm.history.by', {
             name,
-            date: shortDay(publishedOn, today, lang),
+            date: formatDayShort(publishedOn, today, lang),
           }),
     withdrawn: version.withdrawnAtUtcMs !== null,
   };
@@ -822,11 +768,11 @@ export function previewWords(
           return {
             id,
             caption,
-            value: figure(context, to),
+            value: formatCount(to, context.lang),
             delta: signedMovement(context, standingOf(moved, id)),
             label: `${caption}: ${t('admin.rhythm.preview.delta', {
-              from: figure(context, from),
-              to: figure(context, to),
+              from: formatCount(from, context.lang),
+              to: formatCount(to, context.lang),
             })}`,
           };
         });
@@ -842,7 +788,9 @@ export function previewWords(
     rhythmEstimate: RhythmEstimate.Estimate,
     clients: counted(context, 'admin.rhythm.preview.clients', preview.clients),
     capped: capped
-      ? t('admin.rhythm.preview.capped', { count: figure(context, cap) })
+      ? t('admin.rhythm.preview.capped', {
+          count: formatCount(cap, context.lang),
+        })
       : null,
     metrics,
     summary: jointed(t('admin.rhythm.preview.summary', { back, out })),
@@ -863,8 +811,8 @@ function sampleClosed(
     mark,
     {
       idSuffix: `-${index}`,
-      month: (on) => monthWord(on, lang),
-      day: (on) => shortDay(on, today, lang),
+      month: (on) => formatMonthLong(on, lang),
+      day: (on) => formatDayShort(on, today, lang),
     },
     {
       kept: (period, date) =>
@@ -891,7 +839,7 @@ function sampleOpen(
         : 'current',
     caption: '',
     description: context.translate('clientCard.rhythm.mark.current', {
-      date: longDay(mark.on, context.today, context.lang),
+      date: formatDayLong(mark.on, context.today, context.lang),
     }),
   };
 }

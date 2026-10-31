@@ -42,6 +42,10 @@ export type Seat = SeatCore &
   SeatOccupant &
   SeatOutcome;
 
+/**
+ * A projection: the outcome slice of anything that carries one (a whole
+ * seat), copied to exactly its variant's fields.
+ */
 function outcomeOf(outcome: SeatOutcome): SeatOutcome {
   switch (outcome.attendanceState) {
     case AttendanceState.Scheduled:
@@ -67,7 +71,8 @@ function outcomeOf(outcome: SeatOutcome): SeatOutcome {
   }
 }
 
-function endOf(seat: ChairGeometry): EndMinute {
+/** When the sold service ends — start plus the snapshotted duration (was `endMs`). */
+function endMinutes(seat: ChairGeometry): EndMinute {
   const end = EndMinute.after(seat.startMinutes, seat.durationMinutes);
   // One shop day per appointment (F-6): no seat ends past midnight.
   return end.ok ? end.value : defect('a seat ends past its shop day (F-6)');
@@ -99,7 +104,7 @@ export const Seat = {
       cleanupMinutes: terms.cleanupMinutes,
       catalogPriceCents: terms.catalogPriceCents,
       catalogDurationMinutes: terms.catalogDurationMinutes,
-      ...SeatOccupant.of(occupant),
+      ...SeatOccupant.sliceOf(occupant),
       ...outcomeOf(outcome),
     };
   },
@@ -160,10 +165,7 @@ export const Seat = {
     return SeatOccupant.fieldFault(raw) ?? SeatOutcome.fieldFault(raw);
   },
 
-  /** When the sold service ends — start plus the snapshotted duration (was `endMs`). */
-  endMinutes(seat: ChairGeometry): EndMinute {
-    return endOf(seat);
-  },
+  endMinutes,
 
   /**
    * What the CLIENT is sold (was `interval`): the minutes the person sits in
@@ -171,7 +173,7 @@ export const Seat = {
    * one chair at a time" is judged on.
    */
   range(seat: ChairGeometry): MinuteRange {
-    return MinuteRange.of(seat.startMinutes, endOf(seat));
+    return MinuteRange.of(seat.startMinutes, endMinutes(seat));
   },
 
   /**
@@ -182,7 +184,7 @@ export const Seat = {
   chairTime(seat: ChairGeometry): MinuteRange {
     return MinuteRange.of(
       MinuteOfDay.minusClamped(seat.startMinutes, seat.setupMinutes),
-      EndMinute.plusClamped(endOf(seat), seat.cleanupMinutes),
+      EndMinute.plusClamped(endMinutes(seat), seat.cleanupMinutes),
     );
   },
 
@@ -193,8 +195,8 @@ export const Seat = {
   ): boolean {
     return (
       a.barberId === b.barberId &&
-      a.startMinutes < endOf(b) &&
-      b.startMinutes < endOf(a)
+      a.startMinutes < endMinutes(b) &&
+      b.startMinutes < endMinutes(a)
     );
   },
 
@@ -207,10 +209,6 @@ export const Seat = {
     return (
       seat.catalogPriceCents !== null && seat.catalogDurationMinutes !== null
     );
-  },
-
-  isContactless(seat: AccountOccupant): boolean {
-    return SeatOccupant.isContactless(seat);
   },
 
   /**
@@ -254,10 +252,7 @@ export const Seat = {
     return Seat.compose(seat, seat, seat, outcome);
   },
 
-  /** The seat's outcome slice, copied to exactly its variant's fields. */
-  outcomeOf(seat: SeatOutcome): SeatOutcome {
-    return outcomeOf(seat);
-  },
+  outcomeOf,
 
   /** The same seat, tipped; `null` clears it back to "nothing recorded". */
   withTip(seat: Seat, tipCents: PriceCents | null): Seat {
@@ -294,8 +289,8 @@ export const Seat = {
           a.subjectRelationship === SubjectRelationship.Self &&
           b.subjectRelationship === SubjectRelationship.Self &&
           a.subjectUserId === b.subjectUserId &&
-          a.startMinutes < endOf(b) &&
-          b.startMinutes < endOf(a)
+          a.startMinutes < endMinutes(b) &&
+          b.startMinutes < endMinutes(a)
         ) {
           selfOverlap = true;
         }

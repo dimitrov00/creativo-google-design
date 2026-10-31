@@ -624,10 +624,10 @@ function decideLines(
   const overrides: StaffTermsOverride[] = [];
   for (const line of lines) {
     const kept = carried.find((each) => each.lineId === line.lineId) ?? null;
-    ids.push(kept === null ? ports.nextId() : kept.seatId);
+    ids.push(kept === null ? ports.nextId() : kept.seat.seatId);
     if (kept !== null) {
       overrides.push(
-        StaffTermsOverride.of(SeatKeyText.of(kept.lineId), kept.terms),
+        StaffTermsOverride.of(SeatKeyText.of(kept.lineId), kept.seat),
       );
     }
   }

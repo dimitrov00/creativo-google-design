@@ -1,9 +1,6 @@
 import { LogEvent, Result } from '@core/primitives';
-import type { Callables, CallableWire, Log } from '@core/ports';
-import type {
-  ReportClientIssuesAnswer,
-  ReportClientIssuesCommand,
-} from '@core/pipelines';
+import type { Log } from '@core/ports';
+import type { ReportClientIssuesCommand } from '@core/pipelines';
 import { ClientIssueSystem } from '@core/systems';
 import type { EdgeError, ThrottleRate } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
@@ -15,7 +12,8 @@ import type { WireRequest } from './wire-read';
  * structs (`CallableWire`), admitted whole by `ClientIssueSystem.admitBatch`
  * — at most 10 issues and 4 KB, every text within its cap and in its
  * scrubbed form — or refused whole (`CLIENT_ISSUE_BATCH_REFUSED`). The
- * answer is the count of lines written.
+ * answer is the count of lines written — the pipeline's own answer, wired
+ * as it is; after admission nothing is refused (`refusalOf` over `never`).
  *
  * Who reported it is read off the VERIFIED token, never the payload, and
  * never as the uid (privacy by shape): the token's known roles and whether
@@ -51,18 +49,4 @@ export function decodeReportClientIssues(
     return batch;
   }
   return Result.ok({ reporterRoles, reporterAuthed, issues: batch.value });
-}
-
-export function encodeReportClientIssuesAnswer(
-  answer: ReportClientIssuesAnswer,
-): CallableWire[typeof Callables.ReportClientIssues]['answer'] {
-  return { loggedCount: answer.loggedCount };
-}
-
-/**
- * The sink's refusal after admission — there is none: the pipeline writes
- * its lines and answers their count, so nothing reaches here.
- */
-export function reportClientIssuesRefusal(error: never): EdgeError {
-  return error;
 }

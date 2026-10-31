@@ -123,7 +123,7 @@ describe('StreakQualifierRule.parse', () => {
 
   it('copies just the qualifier fields of a whole rule, the list fresh', () => {
     const rule = { ...services('a', 'b'), graceDays: 7 };
-    const copy = StreakQualifierRule.of(rule);
+    const copy = StreakQualifierRule.sliceOf(rule);
     expect(copy).toEqual(services('a', 'b'));
     expect(
       copy.streakQualifier === StreakQualifier.Services

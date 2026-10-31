@@ -52,11 +52,6 @@ function spanOfTerms(terms: readonly ServiceTerms[]): TermsSpan {
   };
 }
 
-/** One bound of a span as the arithmetic value `Money`. */
-function moneyOf(cents: PriceCents, currency: Currency): Money {
-  return Money.fromCents(cents, currency);
-}
-
 /**
  * TermsSpanSystem — the bag's quotes (`booking-bag-sheet.ts:336-404`): one
  * line's span and the spans of several lines summed. Numbers only; the
@@ -130,8 +125,8 @@ export const TermsSpanSystem = {
   /** The span's floor and ceiling as `Money`, for the template's formatter. */
   priceBounds(span: TermsSpan): { readonly min: Money; readonly max: Money } {
     return {
-      min: moneyOf(span.minPriceCents, span.currency),
-      max: moneyOf(span.maxPriceCents, span.currency),
+      min: Money.fromCents(span.minPriceCents, span.currency),
+      max: Money.fromCents(span.maxPriceCents, span.currency),
     };
   },
 } as const;

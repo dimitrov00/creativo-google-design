@@ -31,7 +31,6 @@ import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
 import { ClientStatsSystem } from './client-stats.system';
 import { LocationScopeSystem } from './location-scope.system';
-import { VisitListSystem } from './visit-list.system';
 
 const DAYS_PER_WEEK = 7;
 
@@ -241,19 +240,6 @@ export const VisitStorySystem = {
   },
 
   /**
-   * Has the visit begun — its start on the shop's wall clock at or before
-   * the shop's "now" (T1: `now.localDate` + `now.currentMinute`, never an
-   * instant). THE one "has the visit begun" rule in ecs-core: its one body
-   * is {@link VisitListSystem.hasStarted}, homed there because the list
-   * composes it (`isHistory`) and this file already reads the list's
-   * `VisitRowOutcome` (one-way edge). NOT `!isUpcoming`: at the start minute
-   * a visit has begun AND is still filed upcoming — two questions.
-   */
-  hasStarted(start: WallTime, now: ShopNow): boolean {
-    return VisitListSystem.hasStarted(start, now);
-  },
-
-  /**
    * Has the visit ended — its exclusive end on the shop's wall clock at or
    * before the shop's "now": any earlier day, or this day at or past the
    * end minute. An end at the closing midnight (1440) ends only once the
@@ -278,15 +264,6 @@ export const VisitStorySystem = {
     return occupant.seatSubject === SeatSubject.Account
       ? PersonKey.account(occupant.subjectUserId)
       : PersonKey.guest(occupant.guestLabel);
-  },
-
-  /**
-   * {@link personKeyOf} under the name a caller keying people BY SEAT reads
-   * it by (the staff dashboard's party check) — the same key, off the same
-   * stored occupant.
-   */
-  seatPersonKey(seat: AccountOccupant): PersonKey {
-    return VisitStorySystem.personKeyOf(seat);
   },
 
   /**

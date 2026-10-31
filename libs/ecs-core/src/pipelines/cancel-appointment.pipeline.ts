@@ -1,4 +1,9 @@
-import type { Actor, CancellationReason, WriteOp } from '@core/components';
+import type {
+  Actor,
+  BookingCall,
+  CancellationReason,
+  WriteOp,
+} from '@core/components';
 import {
   LogEvent,
   Result,
@@ -67,10 +72,6 @@ export type CancelAppointmentCommand = {
   readonly actor: Actor | null;
 };
 
-export type CancelAppointmentAnswer = {
-  readonly appointmentId: AppointmentId;
-};
-
 export type CancelAppointmentPorts = TxPorts & PolicyReadPorts & TelemetryPorts;
 
 type Snapshot = {
@@ -89,7 +90,7 @@ export const cancelAppointment =
   (ports: CancelAppointmentPorts) =>
   async (
     cmd: CancelAppointmentCommand,
-  ): Promise<Result<CancelAppointmentAnswer, CancelAppointmentError>> => {
+  ): Promise<Result<BookingCall.Committed, CancelAppointmentError>> => {
     const policy = await ports.loadPolicy();
     if (!policy.ok) {
       ports.log('warn', LogEvent.CancelPolicyUnread, {

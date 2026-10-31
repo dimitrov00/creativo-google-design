@@ -35,7 +35,9 @@ import {
   ClientOperationId,
   CustomerId,
   ImpersonationSessionId,
+  LocationId,
   OperationId,
+  OtpId,
   PublishRequestId,
   SeatId,
   ServiceId,
@@ -55,6 +57,7 @@ import {
   appointmentFixture,
   seatFixture,
   customerOf,
+  auditResource,
 } from '@core/testing';
 import {
   type AuditFact,
@@ -230,13 +233,13 @@ describe('AuditSystem.plan — one row per person', () => {
     expect(keyed.map((r) => r.idBasis)).toEqual([
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
-        'appt-1',
+        auditResource('appt-1'),
         cus('maria'),
         'operation:op-4',
       ),
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
-        'appt-1',
+        auditResource('appt-1'),
         cus('stefan'),
         'operation:op-4',
       ),
@@ -410,21 +413,36 @@ describe('audit context carries codes, never free text (T5)', () => {
 });
 
 describe('AuditSystem.rowBasis — one id per person per logical change', () => {
-  const parts = {
-    action: 'booking.committed',
-    resourceId: 'appt-1',
-    targetUserId: 'maria' as string | null,
+  type Parts = {
+    readonly action: AuditAction;
+    readonly resourceId: AuditResourceId;
+    readonly targetUserId: UserId | null;
+    readonly changeKey: string;
+  };
+  const parts: Parts = {
+    action: AuditAction.BookingCommitted,
+    resourceId: auditResource('appt-1'),
+    targetUserId: UserId.of('maria'),
     changeKey: 'attempt:abc',
   };
-  const basis = (p: typeof parts) =>
+  const basis = (p: Parts) =>
     AuditSystem.rowBasis(p.action, p.resourceId, p.targetUserId, p.changeKey);
+  /** Every text a brand's own `parse` accepts — the parts' real domain. */
+  const resourceIds = fc
+    .string()
+    .filter((raw) => AuditResourceId.parse(raw).ok)
+    .map(auditResource);
+  const userIds = fc
+    .string()
+    .filter((raw) => UserId.parse(raw).ok)
+    .map((raw) => unwrapOk(UserId.parse(raw)));
 
   it('derives the same basis from the same change, every time', () => {
     expect(basis(parts)).toBe(basis({ ...parts }));
     expect(basis(parts)).toBe(
       JSON.stringify([
         'audit-row/v2',
-        'booking.committed',
+        'BOOKING_COMMITTED',
         'appt-1',
         'maria',
         'attempt:abc',
@@ -435,9 +453,9 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
   it('keeps every part recoverable whatever goes in — a hash of it is a legal id', () => {
     fc.assert(
       fc.property(
-        fc.string(),
-        fc.string(),
-        fc.option(fc.string(), { nil: null }),
+        fc.constantFrom(...Object.values(AuditAction)),
+        resourceIds,
+        fc.option(userIds, { nil: null }),
         fc.string(),
         (action, resourceId, targetUserId, changeKey) => {
           const parsed: unknown = JSON.parse(
@@ -458,22 +476,43 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
   it('separates every part — a change to any one of them is a different row', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('action', 'resourceId', 'targetUserId', 'changeKey'),
-        fc.string({ minLength: 1 }),
-        (field, suffix) => {
-          const changed = {
-            ...parts,
-            [field]: `${String(parts[field as keyof typeof parts])}${suffix}`,
-          };
-          expect(basis(changed)).not.toBe(basis(parts));
+        fc.constantFrom(...Object.values(AuditAction)),
+        resourceIds,
+        fc.option(userIds, { nil: null }),
+        fc.string(),
+        (action, resourceId, targetUserId, changeKey) => {
+          const changed = [
+            { ...parts, action },
+            { ...parts, resourceId },
+            { ...parts, targetUserId },
+            { ...parts, changeKey },
+          ];
+          for (const each of changed) {
+            const same =
+              each.action === parts.action &&
+              each.resourceId === parts.resourceId &&
+              each.targetUserId === parts.targetUserId &&
+              each.changeKey === parts.changeKey;
+            expect(basis(each) === basis(parts)).toBe(same);
+          }
         },
       ),
     );
     expect(
-      basis({ ...parts, resourceId: 'appt-1:x', changeKey: 'y' }),
-    ).not.toBe(basis({ ...parts, resourceId: 'appt-1', changeKey: 'x:y' }));
+      basis({
+        ...parts,
+        resourceId: auditResource('appt-1:x'),
+        changeKey: 'y',
+      }),
+    ).not.toBe(
+      basis({
+        ...parts,
+        resourceId: auditResource('appt-1'),
+        changeKey: 'x:y',
+      }),
+    );
     expect(basis({ ...parts, targetUserId: null })).not.toBe(
-      basis({ ...parts, targetUserId: '' }),
+      basis({ ...parts, targetUserId: UserId.of('null') }),
     );
   });
 
@@ -500,6 +539,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(keys.impersonationEnded(ImpersonationSessionId.of('imp-1'))).toBe(
       'impersonation-end:imp-1',
     );
+    expect(keys.clientExported(op)).toBe('export:op-1');
   });
 
   it('keeps two acts apart however close in time — and a seat act apart from the party act', () => {
@@ -513,6 +553,128 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(keys.tip(a, SeatId.of('s1'))).not.toBe(keys.tip(a, SeatId.of('s2')));
     // The arrival pair keeps its two verb words: an undo is its own act.
     expect(keys.arrived(a)).not.toBe(keys.unarrived(a));
+    // Two exports are two acts; an export never shares a key with another verb of its id.
+    expect(keys.clientExported(a)).not.toBe(keys.clientExported(b));
+    expect(keys.clientExported(a)).not.toBe(keys.cancel(a));
+    expect(keys.clientExported(a)).not.toBe(keys.staffEdit(a));
+  });
+
+  it('keys the erasure’s start and completion by the record’s STATE, the sweep and the re-sweep by their act (Phase 3 WS-D, P3-RU-22, P3-DEP-33)', () => {
+    const keys = AuditSystem.changeKey;
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    const other = CustomerId.of('cus_fedcba9876543210fedc');
+    const op = OperationId.of('op-1');
+    expect(keys.erasureStarted(record)).toBe(
+      'erasure-start:cus_0123456789abcdef0123',
+    );
+    expect(keys.erased(record)).toBe('erasure-done:cus_0123456789abcdef0123');
+    expect(keys.erasureResweep(op)).toBe('erasure-resweep:op-1');
+    // One start and one completion per record, whatever act runs them.
+    expect(keys.erasureStarted(record)).toBe(keys.erasureStarted(record));
+    expect(keys.erasureStarted(record)).not.toBe(keys.erasureStarted(other));
+    expect(keys.erasureStarted(record)).not.toBe(keys.erased(record));
+    // Two re-sweeps are two acts; a re-sweep never shares an export’s key.
+    expect(keys.erasureResweep(op)).not.toBe(
+      keys.erasureResweep(OperationId.of('op-2')),
+    );
+    expect(keys.erasureResweep(op)).not.toBe(keys.clientExported(op));
+    // The pre-stamp sweep is keyed by its act too (P3-DEP-33): two acts are
+    // two rows, and it never shares a re-sweep's or an export's key.
+    expect(keys.erasureSweep(op)).toBe('erasure-sweep:op-1');
+    expect(keys.erasureSweep(op)).not.toBe(
+      keys.erasureSweep(OperationId.of('op-2')),
+    );
+    expect(keys.erasureSweep(op)).not.toBe(keys.erasureResweep(op));
+    expect(keys.erasureSweep(op)).not.toBe(keys.clientExported(op));
+  });
+
+  it('keys the sign-in rows by state, never by the caller’s operation id (Phase 3 WS-B, P3-RU-7)', () => {
+    const keys = AuditSystem.changeKey;
+    const otp = OtpId.of('otp-1');
+    expect(keys.otpRequested(otp)).toBe('otp-requested:otp-1');
+    expect(keys.otpVerified(otp)).toBe('otp-verified:otp-1');
+    expect(keys.otpRefused(otp, 1)).toBe('otp-refused:otp-1:1');
+    expect(keys.otpRefused(otp, 2)).toBe('otp-refused:otp-1:2');
+    expect(keys.sessionIssued(otp)).toBe('session:otp-1');
+    expect(keys.registration(UserId.of('u-1'))).toBe('registration:u-1');
+    // Each recorded attempt is its own change; the verbs of one challenge stay apart.
+    expect(keys.otpRefused(otp, 1)).not.toBe(keys.otpRefused(otp, 2));
+    expect(
+      new Set([
+        keys.otpRequested(otp),
+        keys.otpVerified(otp),
+        keys.otpRefused(otp, 1),
+        keys.sessionIssued(otp),
+      ]).size,
+    ).toBe(4);
+  });
+
+  it('rowBasis over the brands is the brands’ exact text — a stored row id stays what it was (Phase 3)', () => {
+    // A booking act's stored row: verb, the bare appointment id, the client record, its key.
+    const booking = AuditSystem.rowBasis(
+      AuditAction.BookingCommitted,
+      APPT_1,
+      cus('maria'),
+      AuditSystem.changeKey.attempt(AppointmentId.of('appt-1')),
+    );
+    expect(booking).toBe(
+      AuditSystem.rowBasis(
+        'BOOKING_COMMITTED',
+        auditResource('appt-1'),
+        cus('maria'),
+        'attempt:appt-1',
+      ),
+    );
+    expect(booking).toBe(
+      JSON.stringify([
+        'audit-row/v2',
+        'BOOKING_COMMITTED',
+        'appt-1',
+        cus('maria'),
+        'attempt:appt-1',
+      ]),
+    );
+    // The id a planner already writes is the id rowBasis derives — byte for byte.
+    const planned = unwrapOk(
+      AuditSystem.plan(
+        [
+          fact({
+            context: AuditContext.placement(
+              AuditAction.BookingCommitted,
+              LocationId.of('loc-1'),
+            ),
+            changeKey: AuditSystem.changeKey.attempt(
+              AppointmentId.of('appt-1'),
+            ),
+          }),
+        ],
+        ivan,
+        AT,
+      ),
+    );
+    expect(planned.map((plan) => hashOf(plan.idBasis))).toEqual([
+      hashOf(booking),
+    ]);
+    // An account row and an untargeted row.
+    const profile = AuditSystem.planOwnProfileEdit(
+      UserId.of('maria'),
+      [AuditedProfileField.FirstName],
+      AT,
+      OP,
+    );
+    expect(profile?.idBasis).toBe(
+      AuditSystem.rowBasis(
+        AuditAction.ProfileUpdated,
+        AuditResourceId.forUser(UserId.of('maria')),
+        UserId.of('maria'),
+        AuditSystem.changeKey.ownProfileEdit(UserId.of('maria'), AT),
+      ),
+    );
+    expect(
+      AuditSystem.rowBasis(AuditAction.OpsBackfill, APPT_1, null, 'k'),
+    ).toBe(
+      AuditSystem.rowBasis('OPS_BACKFILL', auditResource('appt-1'), null, 'k'),
+    );
   });
 });
 
@@ -848,8 +1010,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
         'PROFILE_UPDATED',
-        'users/maria',
-        'maria',
+        auditResource('users/maria'),
+        UserId.of('maria'),
         'evt-1f2e',
       ),
     );
@@ -882,7 +1044,7 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     });
   });
 
-  it('carries the role and status tags the decoder found (WS-3, DEP-13) — the lists copied', () => {
+  it('carries the role and status tags the decoder found (WS-3, DEP-13) — the lists as given', () => {
     const rolesTo: Role[] = [Role.Barber];
     const plan = unwrapOk(
       AuditSystem.planProfileChange(
@@ -900,7 +1062,10 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
         AT,
       ),
     );
-    rolesTo.push(Role.Admin);
+    const row = plan?.row;
+    expect(
+      row !== undefined && 'profileRolesTo' in row && row.profileRolesTo,
+    ).toBe(rolesTo);
     expect(plan?.row).toMatchObject({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['roles', 'accountStatus'],
@@ -1061,8 +1226,8 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
         'PROFILE_UPDATED',
-        'users/maria',
-        'maria',
+        auditResource('users/maria'),
+        UserId.of('maria'),
         AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT),
       ),
     );
@@ -1133,8 +1298,8 @@ describe('AuditSystem.planImpersonationStarted / planImpersonationEnded — the 
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'GOVERNANCE_IMPERSONATION_STARTED',
-        'impersonationSessions/imp-7',
-        'maria',
+        auditResource('impersonationSessions/imp-7'),
+        UserId.of('maria'),
         'impersonation-start:imp-7',
       ),
     );
@@ -1163,8 +1328,8 @@ describe('AuditSystem.planImpersonationStarted / planImpersonationEnded — the 
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'GOVERNANCE_IMPERSONATION_ENDED',
-        'impersonationSessions/imp-7',
-        'maria',
+        auditResource('impersonationSessions/imp-7'),
+        UserId.of('maria'),
         'impersonation-end:imp-7',
       ),
     );

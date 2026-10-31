@@ -79,25 +79,12 @@ import {
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import { StaffTimeline } from '../timeline/staff-timeline';
-import { trackMinuteOf } from '../time-grid/minute-run';
+
 import {
-  MONDAY_TO_FRIDAY,
   RECURRENCE_END_WORD,
   RECURRENCE_FREQUENCY_WORD,
-  REPEAT_PRESETS,
   REPEAT_PRESET_WORD,
   WEEKDAY_WORD,
-  presetOf,
-  ruleForCustom,
-  ruleForEndKind,
-  ruleForFrequency,
-  ruleForPreset,
-  ruleForStart,
-  withCount,
-  withInterval,
-  withMonthly,
-  withUntil,
-  withWeekdays,
 } from './block-repeat';
 import {
   type GridColumn,
@@ -228,9 +215,9 @@ interface BlockDraft {
 }
 
 /** The day's opening midnight on the frame's axis — where an all-day block starts. */
-const DAY_START = trackMinuteOf(0);
+const DAY_START = TrackMinute.ofProven(0);
 /** The day's closing midnight on the frame's axis — where an all-day block ends. */
-const DAY_END = trackMinuteOf(24 * 60);
+const DAY_END = TrackMinute.ofProven(24 * 60);
 
 const FREQUENCIES: readonly RecurrenceFrequency[] = [
   RecurrenceFrequency.Daily,
@@ -603,7 +590,7 @@ export class StaffBlockEditor {
 
   /** The shortcut the rule IS, read back off it — `null` for a rule of the user's own. */
   private readonly preset = computed(() =>
-    presetOf(this.draft().repeat, this.startDay()),
+    VisitDraftSystem.presetOf(this.draft().repeat, this.startDay()),
   );
 
   /**
@@ -623,7 +610,7 @@ export class StaffBlockEditor {
     const custom = this.customShown();
     const checked = custom ? null : this.preset();
     return [
-      ...REPEAT_PRESETS.map((id) => ({
+      ...VisitDraftSystem.REPEAT_PRESETS.map((id) => ({
         id,
         testId: `staff-block-repeat-${REPEAT_PRESET_WORD[id]}`,
         label: this.rawCopy(PRESET_LABEL[id]),
@@ -646,8 +633,8 @@ export class StaffBlockEditor {
     this.customOpen.set(id === CUSTOM_REPEAT);
     this.setRule(
       id === CUSTOM_REPEAT
-        ? ruleForCustom(start, this.draft().repeat)
-        : ruleForPreset(id, start, this.draft().repeat),
+        ? VisitDraftSystem.ruleForCustom(start, this.draft().repeat)
+        : VisitDraftSystem.ruleForPreset(id, start, this.draft().repeat),
     );
   }
 
@@ -689,7 +676,7 @@ export class StaffBlockEditor {
     const frequency = FREQUENCIES.find((entry) => entry === id);
     if (rule === null || frequency === undefined) return;
     this.typedError.set(null);
-    this.setRule(ruleForFrequency(rule, frequency, start));
+    this.setRule(VisitDraftSystem.ruleForFrequency(rule, frequency, start));
   }
 
   /** «седмици» after «2» — the interval field's unit, in the rule's own period. */
@@ -702,7 +689,7 @@ export class StaffBlockEditor {
   protected commitInterval(value: string): void {
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(withInterval(rule, Number(value)));
+    this.typed(VisitDraftSystem.ruleWithInterval(rule, Number(value)));
   }
 
   /** The weekly rule's days (ISO, Monday first), for the picker. */
@@ -721,7 +708,7 @@ export class StaffBlockEditor {
       rule.recurrenceFrequency !== RecurrenceFrequency.Weekly
     )
       return;
-    const next = withWeekdays(rule, weekdays);
+    const next = VisitDraftSystem.ruleWithWeekdays(rule, weekdays);
     if (next.ok) this.setRule(next.value);
   }
 
@@ -774,7 +761,7 @@ export class StaffBlockEditor {
     const rule = this.draft().repeat;
     const day = this.monthlyDays().find((entry) => monthlyId(entry) === id);
     if (rule === null || day === undefined) return;
-    const next = withMonthly(rule, day);
+    const next = VisitDraftSystem.ruleWithMonthly(rule, day);
     if (next.ok) this.setRule(next.value);
   }
 
@@ -809,7 +796,7 @@ export class StaffBlockEditor {
     const kind = END_KINDS.find((entry) => entry === id);
     if (rule === null || kind === undefined) return;
     this.typedError.set(null);
-    this.setRule(ruleForEndKind(rule, kind, start));
+    this.setRule(VisitDraftSystem.ruleForEndKind(rule, kind, start));
   }
 
   protected readonly untilKey = computed(() => {
@@ -823,7 +810,7 @@ export class StaffBlockEditor {
     this.untilOpen.set(false);
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(withUntil(rule, day));
+    this.typed(VisitDraftSystem.ruleWithUntil(rule, day));
   }
 
   protected readonly countFigure = computed(() => {
@@ -843,7 +830,7 @@ export class StaffBlockEditor {
   protected commitCount(value: string): void {
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(withCount(rule, Number(value)));
+    this.typed(VisitDraftSystem.ruleWithCount(rule, Number(value)));
   }
 
   /** A typed change: taken when the domain holds it, said when it refuses. */
@@ -938,8 +925,10 @@ export class StaffBlockEditor {
       case RecurrenceFrequency.Weekly: {
         const days = rule.recurrenceWeekdays;
         if (
-          days.length === MONDAY_TO_FRIDAY.length &&
-          days.every((day, index) => day === MONDAY_TO_FRIDAY[index])
+          days.length === VisitDraftSystem.MONDAY_TO_FRIDAY.length &&
+          days.every(
+            (day, index) => day === VisitDraftSystem.MONDAY_TO_FRIDAY[index],
+          )
         ) {
           return `${weekdayName(Weekday.Mon, locale, 'short')} – ${weekdayName(Weekday.Fri, locale, 'short')}`;
         }
@@ -1009,7 +998,7 @@ export class StaffBlockEditor {
   /** What a shortcut means from this start, under its name. */
   private presetDetail(id: RepeatPreset, start: LocalDate): string | null {
     if (id === RepeatPreset.Never || id === RepeatPreset.Daily) return null;
-    const rule = ruleForPreset(id, start, null);
+    const rule = VisitDraftSystem.ruleForPreset(id, start, null);
     return rule === null ? null : this.daysPhrase(rule);
   }
 
@@ -1049,7 +1038,7 @@ export class StaffBlockEditor {
       // date follows along, and an end the new start overtook moves on.
       repeat:
         current.repeat !== null
-          ? ruleForStart(current.repeat, from, day)
+          ? VisitDraftSystem.ruleForStart(current.repeat, from, day)
           : current.repeat,
     }));
     this.dayChanged.emit(day);
@@ -1086,7 +1075,9 @@ export class StaffBlockEditor {
       .map((barber) => this.laneOf(barber.id)?.rosterStartMinute)
       .filter((value): value is TrackMinute => value !== undefined);
     // The least of non-negative whole track minutes is one itself (proven).
-    return starts.length ? trackMinuteOf(Math.min(...starts)) : DAY_START;
+    return starts.length
+      ? TrackMinute.ofProven(Math.min(...starts))
+      : DAY_START;
   });
 
   /** ONE COLUMN PER CHOSEN CHAIR: the block drawn over each real day. */

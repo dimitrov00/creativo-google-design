@@ -38,6 +38,9 @@ describe('LogEvent', () => {
       PolicyRecomputeStallNotRecorded: 'policy recompute stall not recorded',
       PolicyRecomputeSweepStarted:
         'policy recompute started by the sweep: a dropped start',
+      PrivacyClientErased: 'privacy.client_erased',
+      PrivacyClientExported: 'privacy.client_exported',
+      PrivacyErasureStep: 'privacy.erasure_step',
       ProfileUpdateRefused: 'profile.update.refused',
       RegistrationDisplayNameFailed: 'registration.display_name_failed',
       RhythmRuleWriteFailed: 'rhythm rule write failed',
@@ -75,6 +78,25 @@ describe('LogEvent', () => {
     expect(LogEvent.TriggerFailureNotRecorded).not.toBe(
       LogEvent.TriggerAttemptFailed,
     );
+  });
+
+  it('spells the Phase 3 privacy value dotted and domain-prefixed (WS-C)', () => {
+    expect(LogEvent.PrivacyClientExported).toBe('privacy.client_exported');
+    expect(LogEvent.PrivacyClientExported).toMatch(/^[a-z]+\.[a-z_]+$/);
+    expect(LogEvent.PrivacyClientExported.startsWith('privacy.')).toBe(true);
+  });
+
+  it('spells the Phase 3 erasure values dotted and domain-prefixed (WS-D)', () => {
+    expect(LogEvent.PrivacyErasureStep).toBe('privacy.erasure_step');
+    expect(LogEvent.PrivacyClientErased).toBe('privacy.client_erased');
+    for (const text of [
+      LogEvent.PrivacyErasureStep,
+      LogEvent.PrivacyClientErased,
+    ]) {
+      expect(text).toMatch(/^[a-z]+\.[a-z_]+$/);
+      expect(text.startsWith('privacy.')).toBe(true);
+    }
+    expect(LogEvent.PrivacyErasureStep).not.toBe(LogEvent.PrivacyClientErased);
   });
 
   it('names every message once: no two events share a text', () => {

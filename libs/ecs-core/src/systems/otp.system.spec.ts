@@ -7,6 +7,7 @@ import {
   ParsedIdentifier,
   OtpDestinationType,
   OtpPurpose,
+  OtpRefusalReason,
   RegistrationField,
 } from '@core/components';
 import {
@@ -321,6 +322,88 @@ describe('OtpSystem.attempt (verify-otp.use-case.spec.ts)', () => {
   });
 });
 
+describe('OtpSystem.refusalReasonOf — which refusal is a recorded one (Phase 3 WS-B, P3-RU-8)', () => {
+  it('names a wrong code below the limit WRONG_CODE — at maxAttempts − 2 the challenge stays open', () => {
+    const decision = OtpSystem.attempt(stored({ attemptCount: 3 }), false, T0);
+    expect(decision.write?.attemptCount).toBe(4);
+    expect(OtpSystem.refusalReasonOf(decision)).toBe(
+      OtpRefusalReason.WrongCode,
+    );
+  });
+
+  it('names the wrong code that reaches the limit LOCKED_OUT — at maxAttempts − 1', () => {
+    const decision = OtpSystem.attempt(stored({ attemptCount: 4 }), false, T0);
+    expect(decision.write?.attemptCount).toBe(5);
+    expect(OtpSystem.refusalReasonOf(decision)).toBe(
+      OtpRefusalReason.LockedOut,
+    );
+    // …and the next attempt, the right code included, records nothing: no reason.
+    const next = OtpSystem.attempt(decision.write as Otp, true, T0);
+    expect(unwrapErr(next.result).errorCode).toBe(
+      IdentityErrorCode.OtpLockedOut,
+    );
+    expect(OtpSystem.refusalReasonOf(next)).toBeNull();
+  });
+
+  it('answers null for a success — a consumption is no refusal', () => {
+    const decision = OtpSystem.attempt(stored(), true, T0);
+    expect(decision.result.ok).toBe(true);
+    expect(OtpSystem.refusalReasonOf(decision)).toBeNull();
+  });
+
+  it('answers null for every refusal that writes nothing — expired, consumed, already locked', () => {
+    const refusals = [
+      OtpSystem.attempt(stored(), false, at(10)),
+      OtpSystem.attempt(stored({ consumedAtUtcMs: T0 }), false, T0),
+      OtpSystem.attempt(stored({ attemptCount: 5 }), false, T0),
+    ];
+    expect(
+      refusals.map((decision) => unwrapErr(decision.result).errorCode),
+    ).toEqual([
+      IdentityErrorCode.OtpExpired,
+      IdentityErrorCode.OtpAlreadyConsumed,
+      IdentityErrorCode.OtpLockedOut,
+    ]);
+    for (const decision of refusals) {
+      expect(decision.write).toBeNull();
+      expect(OtpSystem.refusalReasonOf(decision)).toBeNull();
+    }
+  });
+
+  it('answers a reason exactly when the attempt recorded a wrong code (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 8 }),
+        fc.integer({ min: 0, max: 9 }),
+        fc.boolean(),
+        fc.boolean(),
+        fc.boolean(),
+        (maxAttempts, attemptCount, codeMatches, consumed, expired) => {
+          const decision = OtpSystem.attempt(
+            stored({
+              maxAttempts,
+              attemptCount,
+              consumedAtUtcMs: consumed ? T0 : null,
+            }),
+            codeMatches,
+            expired ? at(10) : T0,
+          );
+          const reason = OtpSystem.refusalReasonOf(decision);
+          const recorded = !decision.result.ok && decision.write !== null;
+          expect(reason !== null).toBe(recorded);
+          if (recorded) {
+            expect(reason).toBe(
+              attemptCount + 1 >= maxAttempts
+                ? OtpRefusalReason.LockedOut
+                : OtpRefusalReason.WrongCode,
+            );
+          }
+        },
+      ),
+    );
+  });
+});
+
 describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => {
   it('rate-limits a second request for the same destination within the window', () => {
     const first = issued(T0);
@@ -595,6 +678,9 @@ describe('OtpSystem purity', () => {
       issued: OtpSystem.issue(request, code, T0, () => 'otp_9'),
       verified: OtpSystem.verify(otp, true, at(1)),
       wrong: OtpSystem.attempt(otp, false, at(1)),
+      refusalReason: OtpSystem.refusalReasonOf(
+        OtpSystem.attempt(otp, false, at(1)),
+      ),
       recorded: OtpSystem.recordAttempt(otp),
       mayIssue: OtpSystem.mayIssue(open, at(0, 30)),
       retryAfterSeconds: OtpSystem.retryAfterSeconds(open, at(0, 30)),

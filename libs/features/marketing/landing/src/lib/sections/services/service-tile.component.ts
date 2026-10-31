@@ -15,8 +15,8 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { LandingContentService } from '../../content/landing-content.service';
 import {
+  CatalogWording,
   type ServiceVm,
   servicePriceFrom,
 } from '@creativo/features/shared/catalog';
@@ -77,7 +77,7 @@ import {
             uiFont="callout"
             uiWeight="bold"
             class="cr-services__name"
-            >{{ content.text(service().name) }}</span
+            >{{ words.text(service().name) }}</span
           >
           <ui-stack
             uiCaption
@@ -88,7 +88,7 @@ import {
             <span uiText uiFont="footnote" uiForegroundStyle="secondary">
               {{ t('landing.services.from') }}
               <span class="cr-services__price">{{
-                content.price(servicePriceFrom(service()))
+                words.price(servicePriceFrom(service()))
               }}</span>
             </span>
             @if (service().variants.length > 0) {
@@ -240,7 +240,7 @@ export class ServiceTileComponent {
   readonly service = input.required<ServiceVm>();
   readonly pressed = output();
 
-  protected readonly content = inject(LandingContentService);
+  protected readonly words = inject(CatalogWording);
   protected readonly servicePriceFrom = servicePriceFrom;
   /** The dictionary, for the template's bundle mark (never a bare literal). */
   protected readonly CompositionKind = CompositionKind;

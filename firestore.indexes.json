@@ -683,6 +683,91 @@
       "indexes": []
     },
     {
+      "collectionGroup": "auditLog",
+      "fieldPath": "otpExpiresAtUtcMs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "otpAttemptCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "otpMaxAttempts",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "exportDocumentCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "exportAuditRowCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "exportByteCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureRecordCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureAccountCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureContactCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureLabelCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureNoteCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasurePhotoCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureDocumentCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasurePseudonymCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureVisitCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureContactKeptCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "erasureJournalCount",
+      "indexes": []
+    },
+    {
       "collectionGroup": "loyaltyAccounts",
       "fieldPath": "streaks",
       "indexes": []
@@ -820,6 +905,16 @@
     {
       "collectionGroup": "customers",
       "fieldPath": "writeOperationId",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "customers",
+      "fieldPath": "erasureStartedAtUtcMs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "customers",
+      "fieldPath": "erasedAtUtcMs",
       "indexes": []
     },
     {

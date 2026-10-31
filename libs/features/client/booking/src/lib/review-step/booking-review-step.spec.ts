@@ -207,7 +207,7 @@ function visits(): Visits {
 
 /** What the server answers the move with — the spec's to choose. */
 interface Server {
-  answer: Result<BookingCall.Rescheduled, PipelineError>;
+  answer: Result<BookingCall.Committed, PipelineError>;
 }
 
 function server(): Server {

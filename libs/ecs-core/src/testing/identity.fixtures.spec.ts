@@ -128,6 +128,7 @@ describe('identity fixtures', () => {
       userId: FIXTURE_IDS.client,
       displayName: 'Maria Petrova',
       customerOrigin: 'FIRST_BOOKING',
+      erasureStatus: 'NONE',
     });
     expect(record.createdAtUtcMs).toBeLessThan(FIXTURE_NOW_UTC_MS);
     const admitted = StoredDocumentSystem.customer(record);

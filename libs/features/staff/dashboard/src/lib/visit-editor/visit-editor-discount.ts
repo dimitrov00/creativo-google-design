@@ -21,12 +21,14 @@ import type { VisitEditorDiscount } from './staff-visit-editor';
  */
 
 /**
- * A drafted line's value read back through the domain's validating doors,
- * a fixed amount in `currency` (the bill's) — or `null` for one the guards
- * refuse (a percent off 0–100, a sum that is no positive amount). The
- * drafted discount passes straight in.
+ * A drafted line's value re-validated INTO THE BILL: read back through the
+ * domain's validating doors, a fixed amount re-stated in `currency` (the
+ * bill's) — or `null` for one the guards refuse (a percent off 0–100, a sum
+ * that is no positive amount). Its input already is a `CouponValue`; what
+ * this adds is the bill's currency and the guards. The drafted discount
+ * passes straight in.
  */
-export function toCouponValue(
+export function couponValueInBill(
   value: CouponValue,
   currency: Currency,
 ): CouponValue | null {
@@ -72,7 +74,7 @@ function provenanceOf(discount: VisitEditorDiscount): DiscountProvenance {
 /**
  * WHAT A DRAFTED LINE PROMISES, as the domain's set rules read it
  * (`DiscountSystem.samePromise`, `DiscountSystem.withAdded`) — the ONE edge
- * read of a line's identity, beside {@link toCouponValue}: its
+ * read of a line's identity, beside {@link couponValueInBill}: its
  * combinability, its provenance and its value. A line's value is always a
  * coupon's (read off one, or typed through `CouponValue`'s guards), so one
  * that does not read back is a broken invariant, never input.
@@ -82,7 +84,7 @@ export function promiseOf(
   currency: Currency,
 ): DiscountPromise {
   const value =
-    toCouponValue(discount, currency) ??
+    couponValueInBill(discount, currency) ??
     defect(`a drafted discount whose value is no coupon's: ${discount.label}`);
   return {
     combinability: combinabilityOf(discount.exclusive),

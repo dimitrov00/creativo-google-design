@@ -19,19 +19,14 @@ import {
 import type { RequestWaitlistCommand } from '@core/pipelines';
 import { WaitlistSystem } from '@core/systems';
 import { type EdgeError, toHttpsError } from '../edge';
-import {
-  cancelWaitlistRefusal,
-  decodeCancelWaitlist,
-  decodeRequestWaitlist,
-  encodeCancelWaitlistAnswer,
-  encodeRequestWaitlistAnswer,
-  requestWaitlistRefusal,
-} from './waitlist.wire';
+import { decodeCancelWaitlist, decodeRequestWaitlist } from './waitlist.wire';
+import { refusalOf } from './wire-read';
 
 /*
  * The waitlist callables' flipped wire (Phase 4a 4A-4): the call component
- * `WaitlistCall` decoded into the pipeline commands, its answers encoded,
- * a refusal the ecs-core struct projected by the shared table.
+ * `WaitlistCall` decoded into the pipeline commands, its answers the
+ * pipelines' own (wired as they are), a refusal the ecs-core struct
+ * projected by the shared table (`refusalOf`).
  */
 
 function callable(
@@ -51,7 +46,7 @@ function valueOf<T>(result: Result<T, EdgeError>): T {
   return result.value;
 }
 
-function refusalOf<T>(result: Result<T, EdgeError>): EdgeError {
+function errorOf<T>(result: Result<T, EdgeError>): EdgeError {
   if (result.ok) throw new Error('expected a refusal');
   return result.error;
 }
@@ -288,19 +283,11 @@ describe('decodeRequestWaitlist', () => {
   });
 });
 
-describe('encodeRequestWaitlistAnswer / requestWaitlistRefusal', () => {
-  it('answers `{ requestId }`', () => {
-    expect(
-      encodeRequestWaitlistAnswer({
-        requestId: WaitlistRequestId.of('wl_abc'),
-      }),
-    ).toEqual({ requestId: 'wl_abc' });
-  });
-
+describe('requestWaitlist’s refusals (`refusalOf`)', () => {
   it('lets a refusal leave by the shared table, its field as the struct holds it', () => {
     expect(
       wire(
-        requestWaitlistRefusal(
+        refusalOf(
           WaitlistError.invalidRequest(BookingErrorCode.UnknownService),
         ),
       ),
@@ -316,7 +303,7 @@ describe('encodeRequestWaitlistAnswer / requestWaitlistRefusal', () => {
 
   it('turns a store failure into the edge’s unexpected throw — never a refusal on the wire', () => {
     expect(() =>
-      requestWaitlistRefusal(
+      refusalOf(
         RepositoryError.readFailed('settings/bookingPolicy', 'unavailable'),
       ),
     ).toThrow('REPOSITORY_READ_FAILED');
@@ -326,9 +313,7 @@ describe('encodeRequestWaitlistAnswer / requestWaitlistRefusal', () => {
 describe('decodeCancelWaitlist', () => {
   it('refuses a caller nobody verified as BOOKING_WAITLIST_UNAUTHENTICATED', () => {
     expect(
-      wire(
-        refusalOf(decodeCancelWaitlist(callable({ requestId: 'r1' }, null))),
-      ),
+      wire(errorOf(decodeCancelWaitlist(callable({ requestId: 'r1' }, null)))),
     ).toEqual({
       code: 'unauthenticated',
       message: 'BOOKING_WAITLIST_UNAUTHENTICATED',
@@ -338,7 +323,7 @@ describe('decodeCancelWaitlist', () => {
 
   it('refuses a missing request id as BOOKING_WAITLIST_INVALID_REQUEST naming `requestId`', () => {
     for (const data of [{}, { requestId: '' }, { requestId: 7 }]) {
-      expect(wire(refusalOf(decodeCancelWaitlist(callable(data))))).toEqual({
+      expect(wire(errorOf(decodeCancelWaitlist(callable(data))))).toEqual({
         code: 'invalid-argument',
         message: 'BOOKING_WAITLIST_INVALID_REQUEST',
         details: {
@@ -359,18 +344,12 @@ describe('decodeCancelWaitlist', () => {
   });
 });
 
-describe('encodeCancelWaitlistAnswer / cancelWaitlistRefusal', () => {
-  it('answers `{ requestId }`', () => {
-    expect(
-      encodeCancelWaitlistAnswer({ requestId: WaitlistRequestId.of('wl_1') }),
-    ).toEqual({ requestId: 'wl_1' });
-  });
-
+describe('cancelWaitlist’s refusals (`refusalOf`)', () => {
   it.each([
     [CancelWaitlistRefusalCode.NotFound, 'not-found'],
     [CancelWaitlistRefusalCode.NotCancellable, 'failed-precondition'],
   ])('lets %s leave as its code alone', (errorCode, status) => {
-    expect(wire(cancelWaitlistRefusal({ errorCode }))).toEqual({
+    expect(wire(refusalOf({ errorCode }))).toEqual({
       code: status,
       message: errorCode,
       details: { errorCode },
@@ -379,7 +358,7 @@ describe('encodeCancelWaitlistAnswer / cancelWaitlistRefusal', () => {
 
   it('turns a store failure into the edge’s unexpected throw', () => {
     expect(() =>
-      cancelWaitlistRefusal(
+      refusalOf(
         RepositoryError.writeFailed('waitlistRequests/wl_1', 'aborted'),
       ),
     ).toThrow('REPOSITORY_WRITE_FAILED');

@@ -1,8 +1,4 @@
-import type {
-  DocumentData,
-  DocumentReference,
-  Firestore,
-} from 'firebase-admin/firestore';
+import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
 import {
   Result,
   type AuditEntryId,
@@ -12,7 +8,8 @@ import {
 import { RepositoryError } from '@core/errors';
 import { type AuditEntry, Collections, QueryOp } from '@core/entities';
 import type { AuditPorts, TelemetryPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { FailureCodeSystem } from '@core/systems';
+import { ALREADY_EXISTS, bodyOf, writeFailed } from './store-answer';
 
 /**
  * The audit log's writes and its one reader (`governance.port.ts`, flip 1
@@ -51,17 +48,8 @@ import { TriggerAttemptSystem } from '@core/systems';
 /** Firestore's `in` takes at most 30 values per query. */
 const IN_CHUNK = 30;
 
-/** Firestore's canonical name for gRPC 6, as `TriggerAttemptSystem.failureCode` reads it. */
-const ALREADY_EXISTS = 'already-exists';
-
 const isAlreadyExists = (error: unknown): boolean =>
-  TriggerAttemptSystem.failureCode(error) === ALREADY_EXISTS;
-
-/** The stored body of a row — the entity minus its id (Law 5). */
-function bodyOf(row: AuditEntry): DocumentData {
-  const { id: _id, ...body } = row;
-  return body;
-}
+  FailureCodeSystem.codeOf(error) === ALREADY_EXISTS;
 
 /** Where a row lives, by the id its planner derived. */
 const auditRowRef = (db: Firestore, id: AuditEntryId): DocumentReference =>
@@ -119,12 +107,7 @@ export const firestoreAuditPorts = (
       // message: the retrying edge judges the attempt by this `reason`
       // (`TriggerAttemptSystem.repositoryFailure`), and only a transient
       // code earns the redelivery that writes the row.
-      return Result.err(
-        RepositoryError.writeFailed(
-          Collections.AuditLog,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(writeFailed(Collections.AuditLog, error));
     }
   },
 

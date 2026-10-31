@@ -15,6 +15,7 @@
 import { BOOKING_POLICY_DOC, type BookingPolicySettings } from '@core/entities';
 import { type BookingPolicySettingsId, HourCount } from '@core/primitives';
 import {
+  type Body,
   minuteCount,
   minutesLong,
   type Seeded,
@@ -47,5 +48,5 @@ export const BOOKING_POLICY: Seeded<
     maxFlexibleDays: 7,
     // Owner ruling 2026-08-07: an online booking lands CONFIRMED.
     autoConfirm: true,
-  } satisfies Omit<BookingPolicySettings, 'id'>,
+  } satisfies Body<BookingPolicySettings>,
 };

@@ -1,11 +1,12 @@
 import { LocalizedText } from '@core/components';
 import type { ShopEvent, ShopLocation } from '@core/entities';
 import type { RepositoryError } from '@core/errors';
-import { Locale, type Result, Tag } from '@core/primitives';
+import { type Result } from '@core/primitives';
 import { ProgramsSystem } from '@core/systems';
 import { namedShopsOf } from '@creativo/features/shared/catalog';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { EventRowVm } from './marketing-events.vm';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /*
  * THE EVENTS PAGE'S WORDS (OR-37, Law 10) — the events as read in, the rows
@@ -48,7 +49,7 @@ export type EventRowsInput = {
 
 /** Every event's row, in the read's order. */
 export function eventRowsVm(input: EventRowsInput): readonly EventRowVm[] {
-  const locale = Tag.or(Locale, input.lang, Locale.Bg);
+  const locale = localeFor(input.lang);
   const named = namedShopsOf(input.shops, locale);
   const rows: EventRowVm[] = [];
   for (const event of input.events) {

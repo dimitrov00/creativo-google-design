@@ -104,7 +104,7 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
         segment(Weekday.Fri, MLADOST, 14, 18),
         segment(Weekday.Sat, CENTER, 10, 16),
       ]),
-    } satisfies Omit<BarberSchedule, 'id'>,
+    } satisfies Body<BarberSchedule>,
   },
   {
     id: NIKO,
@@ -120,7 +120,7 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
         ...lateShift(Weekday.Fri),
         segment(Weekday.Sat, CENTER, 10, 18),
       ]),
-    } satisfies Omit<BarberSchedule, 'id'>,
+    } satisfies Body<BarberSchedule>,
   },
   {
     // Stefan works the Center chair only, and takes Wednesdays off — so a
@@ -136,7 +136,7 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
         ...shiftAt(Weekday.Fri, CENTER),
         segment(Weekday.Sat, CENTER, 9, 15),
       ]),
-    } satisfies Omit<BarberSchedule, 'id'>,
+    } satisfies Body<BarberSchedule>,
   },
 ];
 
@@ -170,7 +170,7 @@ export function closedDayBody(
     utcEpochMs: firstInstantOf(localDate, timeZoneOf(locationId)),
     locationId: LocationId.of(locationId),
     ...ExceptionEffectRule.closed(),
-  } satisfies Omit<ScheduleException, 'id'>;
+  } satisfies Body<ScheduleException>;
 }
 
 /**
@@ -193,5 +193,5 @@ export function busyDayBody(
     blocks: merged.map((range) =>
       MinuteBlock.of(range.startMinutes, range.endMinutes, BlockKind.Busy),
     ),
-  } satisfies Omit<BarberBusyDay, 'id'>;
+  } satisfies Body<BarberBusyDay>;
 }

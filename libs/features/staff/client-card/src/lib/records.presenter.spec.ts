@@ -18,11 +18,7 @@ import { isUiIconName } from '@creativo/ui/controls';
 import { RECORD_KIND_WORDS, type RecordKindWord } from './client-card.words';
 import type { AchievementsData, RecordRowVm } from './client-pages.vm';
 import { medalsPageVm } from './medals.presenter';
-import {
-  type RecordsPageInput,
-  YEARS_MIN,
-  recordsPageVm,
-} from './records.presenter';
+import { type RecordsPageInput, recordsPageVm } from './records.presenter';
 import {
   GEORGI,
   GEORGI_PREVIOUS_MS,
@@ -45,6 +41,7 @@ import {
   wallOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
+import { RecordsSystem } from '@core/systems';
 
 const DATA = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const SETTLED = achievementsContextOf(georgiContext(), 'Георги Петров');
@@ -954,7 +951,7 @@ describe('recordsPageVm', () => {
     });
 
     it('says something from the second year on: one bar is «Общо посещения» again', () => {
-      expect(YEARS_MIN).toBe(2);
+      expect(RecordsSystem.YEARS_MIN).toBe(2);
       const visits = [
         visit('a', '2026-05-10T10:00:00'),
         visit('b', '2026-06-10T10:00:00'),

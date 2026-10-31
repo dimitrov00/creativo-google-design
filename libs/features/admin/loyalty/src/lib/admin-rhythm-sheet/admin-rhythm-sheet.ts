@@ -22,10 +22,8 @@ import {
 import type { Service, ServiceCategory } from '@core/entities';
 import {
   LocalDate,
-  Locale,
   type ServiceCategoryId,
   type ServiceId,
-  Tag,
 } from '@core/primitives';
 import type { CategoryGroup } from '@core/systems';
 import { rhythmRuleUnits } from '@creativo/features/shared/visits';
@@ -63,7 +61,11 @@ import {
   repairPerYearOptions,
   repairWindowOptions,
 } from '../admin-rhythm/admin-rhythm.words';
-import { loadedLanguage } from '@creativo/infrastructure/i18n';
+import {
+  DEFAULT_LOCALE,
+  loadedLanguage,
+  localeFor,
+} from '@creativo/infrastructure/i18n';
 
 /**
  * The five secondary editors (§2.6.1a) — the sheet's input `sheet`, the
@@ -213,7 +215,7 @@ export class AdminRhythmSheet {
     initialValue: null,
   });
 
-  protected readonly lang = computed(() => this.loadedLang() ?? Locale.Bg);
+  protected readonly lang = computed(() => this.loadedLang() ?? DEFAULT_LOCALE);
 
   protected readonly context: Signal<AdminRhythmContext | null> = computed(
     () => {
@@ -284,7 +286,7 @@ export class AdminRhythmSheet {
     (): readonly ServiceGroupVm[] | null => {
       const groups = this.services();
       if (groups === null) return null;
-      const locale = Tag.or(Locale, this.lang(), Locale.Bg);
+      const locale = localeFor(this.lang());
       const query = this.query().trim().toLocaleLowerCase(locale);
       return groups
         .map((group) => ({

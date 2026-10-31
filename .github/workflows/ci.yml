@@ -7,12 +7,35 @@ on:
   pull_request:
 
 permissions:
-  actions: read
   contents: read
 
+# One run per pull request (a new push cancels the stale one) and one per
+# push to main — never cancelled there: nx-set-shas reads main's last green
+# run as the affected base.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every job runs cold — no Nx cache is restored (a stale cache once hid a
+# typecheck error) — and in parallel on its own VM, so two emulator suites
+# never share ports. No secret but GITHUB_TOKEN; nothing deploys; every
+# emulator script names the demo-creativo-test project itself.
+#
+# Runner facts this repository cannot check from here (GitHub-hosted
+# images): ubuntu-24.04 has passwordless sudo for `playwright install
+# --with-deps`; setup-java pins JDK 21 whatever the image's default Java is;
+# a public repository's runner has 4 vCPU and a private one 2, so the
+# timeouts below carry slack for the smaller one.
 jobs:
+  # The name is kept: branch protection may require it.
   main:
     runs-on: ubuntu-latest
+    # A change under libs/ecs-core makes the whole graph affected: lint, test,
+    # build and typecheck of every project, cold.
+    timeout-minutes: 75
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -31,14 +54,13 @@ jobs:
       - uses: nrwl/nx-set-shas@v4
 
       - run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
-      - run: pnpm exec nx affected -t lint test build --base=$NX_BASE --head=$NX_HEAD
+      - run: pnpm exec nx affected -t lint test build typecheck --base=$NX_BASE --head=$NX_HEAD
 
       # The CSP gate (owner ruling OR-31): the built index.html's inline
       # scripts, hashed here, against firebase.json's script-src — with the
       # security headers and the cache rules beside it. Built whether or not
       # the affected run touched web (a cache hit when it did): the policy
-      # guards every deploy. The emulator smoke (`pnpm run verify:csp`) is
-      # the full gate's, not CI's.
+      # guards every deploy. The emulator smoke runs in the csp-smoke job.
       - run: pnpm exec nx build web
       - run: node tools/verify/csp/check-csp.mjs
 
@@ -53,3 +75,128 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The static half of the full gate (HANDOFF §4) that `main`'s affected run
+  # does not cover.
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      - run: pnpm exec nx sync:check
+      - run: pnpm exec nx run verify-tools:layering --skip-nx-cache
+      - run: pnpm exec nx typecheck seed-tools
+      - run: pnpm exec nx test lint-rules
+      - run: pnpm run lint:styles
+      - run: pnpm run verify:bundle
+      - run: pnpm exec nx build functions && node tools/verify/p0/check-functions-deps.mjs
+
+  # The runbook's §4 grep gates, extracted from the runbook at run time by the
+  # committed runner. Alone on its VM: nothing else writes the tree while a
+  # gate's canary file exists.
+  runbook-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      - run: pnpm exec nx run verify-tools:runbook-gates
+
+  # ecs-core's coverage thresholds fail the job. The timeout flag is the
+  # baseline's: a property case runs ~5 s under v8 coverage.
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      - run: pnpm exec nx test ecs-core --coverage --skip-nx-cache --testTimeout=30000
+
+  # The emulator journeys, one after the other: they share the emulator ports.
+  emulators:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      # The Firestore emulator needs JDK 21 or newer (firebase-tools 15).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      # The emulator jars firebase-tools downloads on first use; the lockfile
+      # pins firebase-tools, so it keys the jars too.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm run test:emulator
+      - run: pnpm run verify:p0
+
+  # The e2e suite against the emulators, under the config's own CI policy:
+  # the preset's two retries and one worker (P3-RU-35) — a test that passes
+  # on a retry is reported flaky, and its trace is kept in the report.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      # The browser build is pinned by @playwright/test in the lockfile.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm exec playwright install --with-deps chromium
+      # The screenshot baselines are macOS renders (`-chromium-darwin.png`):
+      # the owner's macOS full gate is the screenshot gate, so this job runs
+      # the suite without the tests tagged @screenshot (P3-RU-30). The switch
+      # is closed — only the value `skip` drops them.
+      - run: pnpm run e2e:web
+        env:
+          CREATIVO_E2E_SCREENSHOTS: skip
+      # Kept on success too: a flaky pass's trace lives only in this report.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-report
+          path: dist/.playwright/apps/web
+          retention-days: 7
+
+  # The Hosting CSP smoke (OR-31's emulator half, P3-RU-31): the production
+  # artifact served behind the real headers.
+  csp-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run verify:csp
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: csp-smoke-report
+          path: dist/.playwright/apps/web
+          retention-days: 7

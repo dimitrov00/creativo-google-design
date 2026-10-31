@@ -96,11 +96,7 @@ import {
   withoutPublishedRules,
   workedVisitsOf,
 } from './loyalty.mjs';
-import {
-  journalRowIdOf,
-  ruleVersionIdOf,
-  seedRuleRequestIdOf,
-} from './fixtures/loyalty.fixtures.ts';
+import { seedRuleRequestIdOf } from './fixtures/loyalty.fixtures.ts';
 import {
   SEEDED_WAITLIST_REQUEST,
   WAITLIST_REQUESTS_COLLECTION,
@@ -216,9 +212,6 @@ const published = (patch) => (head) => ({
 
 /** The rhythm's state of an account under the `cadence` rule, or `null`. */
 const cadenceOf = (acc) => StreakState.find(acc.streaks, 'cadence');
-
-/** A label's parameter (`PublicLabel.param`), or `null`. */
-const param = (row, name) => PublicLabel.param(row, name);
 
 const pointsOf = (journal) =>
   Object.values(journal).filter((row) => row.journalEffect === 'POINTS');
@@ -380,17 +373,20 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   for (const row of points) {
     if (row.journalSource === 'REDEMPTION') {
       expect(-row.pointsDelta).toBe(
-        catalog.rewardsCatalog[param(row, 'reward')].cost,
+        catalog.rewardsCatalog[PublicLabel.param(row, 'reward')].cost,
       );
       continue;
     }
     expect(row.idempotencyKey).toBe(`award:${row.sourceAwardKey}#0`);
-    const seriesId = param(row, 'seriesId');
+    const seriesId = PublicLabel.param(row, 'seriesId');
     if (seriesId === null) {
-      expect(row.pointsDelta).toBe(Math.floor(param(row, 'spendMinor') / 100));
+      expect(row.pointsDelta).toBe(
+        Math.floor(PublicLabel.param(row, 'spendMinor') / 100),
+      );
       continue;
     }
-    const level = catalog.badgeSeries[seriesId].levels[param(row, 'level') - 1];
+    const level =
+      catalog.badgeSeries[seriesId].levels[PublicLabel.param(row, 'level') - 1];
     expect(row.sourceRuleId).toBe(level.ruleId);
     expect(level.awards).toContainEqual({
       awardKind: 'POINTS',
@@ -414,9 +410,9 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     ),
   );
   for (const row of levelRows) {
-    const seriesId = param(row, 'seriesId');
-    const level = param(row, 'level');
-    const rule = param(row, 'rule');
+    const seriesId = PublicLabel.param(row, 'seriesId');
+    const level = PublicLabel.param(row, 'level');
+    const rule = PublicLabel.param(row, 'rule');
     const catalogued = catalog.badgeSeries[seriesId].levels[level - 1];
     expect(row.labelCode).toBe('achievement.earned');
     expect(row).toMatchObject({
@@ -452,7 +448,9 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     const earned = points.filter(
       (row) => row.correlationId === `appt:${visit.appointmentId}`,
     );
-    expect(earned.map((row) => param(row, 'spendMinor')).sort()).toEqual(
+    expect(
+      earned.map((row) => PublicLabel.param(row, 'spendMinor')).sort(),
+    ).toEqual(
       visit.seats
         .map((seat) => seat.priceMinor)
         .filter((price) => price >= 100)
@@ -536,7 +534,7 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
       row.rewardRef,
       row.rewardCouponGrantId,
       row.utcEpochMs,
-      param(row, 'stamp'),
+      PublicLabel.param(row, 'stamp'),
     ]),
   ).toEqual(
     minted.map((granted) => [
@@ -613,15 +611,6 @@ describe('the loyalty catalogue', () => {
     expect(CLIENT_JOURNAL_COLLECTION).toBe(Collections.ClientJournal);
     expect(STREAK_DEFINITIONS_COLLECTION).toBe(Collections.StreakDefinitions);
     expect(STREAK_DEFINITION_VERSIONS_COLLECTION).toBe(Subcollections.Versions);
-    const customerId = customerIdOf('dev-client-1');
-    for (const seq of [1, 42, 123456]) {
-      expect(journalRowIdOf(customerId, seq)).toBe(
-        JournalEntryId.forEntry(customerId, seq),
-      );
-      expect(ruleVersionIdOf(seq)).toBe(
-        StreakDefinitionVersionId.forVersion(seq),
-      );
-    }
   });
 
   it('writes every catalogue document at its collection and id, then the rhythm’s first version, and nothing else', () => {
@@ -806,7 +795,9 @@ describe('the rhythm’s rule, as the seed writes it (revision 3 §4.3)', () => 
 
   it('reads back as the version it is, under the head’s name', () => {
     const { path, data } = seedRuleVersionWriteOf('cadence', head());
-    expect(path.split('/').at(-1)).toBe(ruleVersionIdOf(data.version));
+    expect(path.split('/').at(-1)).toBe(
+      StreakDefinitionVersionId.forVersion(data.version),
+    );
     const version = StreakRule.parse(data);
     expect(version.ok).toBe(true);
     const inForce = StreakRuleSystem.inForceOn(head(), LOYALTY_CATALOG_TODAY);
@@ -1398,8 +1389,8 @@ describe('read back by the client card’s readers', () => {
         expect(state.definitionVersion).toBe(rule.version);
       }
       for (const row of read.journal) {
-        const reward = param(row, 'reward');
-        const seriesId = param(row, 'seriesId');
+        const reward = PublicLabel.param(row, 'reward');
+        const seriesId = PublicLabel.param(row, 'seriesId');
         if (reward !== null) {
           expect(
             catalog.rewards.map((entry) => entry.id),
@@ -2000,10 +1991,10 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
     ]);
     expect(
       rowsOf(journal, 'REWARD').map((row) => [
-        param(row, 'stamp'),
+        PublicLabel.param(row, 'stamp'),
         row.rewardCouponGrantId,
-        param(row, 'reward'),
-        param(row, 'coupon'),
+        PublicLabel.param(row, 'reward'),
+        PublicLabel.param(row, 'coupon'),
       ]),
     ).toEqual([
       [10, 'grant-dev-georgi-punch-10', 'reward-cut', PUNCH_CARD.couponId],
@@ -2061,8 +2052,8 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
     for (const event of events) {
       const [level, ...paid] = event.rows;
       expect(level.journalEffect).toBe('ACHIEVEMENT');
-      const seriesId = param(level, 'seriesId');
-      const rank = param(level, 'level');
+      const seriesId = PublicLabel.param(level, 'seriesId');
+      const rank = PublicLabel.param(level, 'level');
       expect(catalog.badgeSeries[seriesId].levels[rank - 1]).toBeDefined();
       expect(event.amount).toBe(
         paid.reduce((sum, row) => sum + row.pointsDelta, 0),

@@ -10,6 +10,7 @@ export * from './identity.port';
 export * from './media.port';
 export * from './notes-photos.port';
 export * from './notifications.port';
+export * from './privacy.port';
 export * from './programs.port';
 export * from './scheduling.port';
 export * from './storage.port';

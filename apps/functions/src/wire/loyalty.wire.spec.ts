@@ -7,6 +7,7 @@ import {
   StreakExcuse,
   StreakInterval,
   StreakOnBreak,
+  type StreakPublishCall,
   StreakPublishOutcome,
   StreakQualifier,
   StreakRule,
@@ -52,7 +53,6 @@ import {
   decodeStreakRequest,
   publishStreakRefusal,
   type StreakCaller,
-  type StreakPublishAnswer,
   StreakPublishOp,
 } from './loyalty.wire';
 
@@ -145,7 +145,7 @@ const refused = (
   effectiveFromLocalDate,
 });
 type StreakPublishCall_AnsweredCode = Extract<
-  StreakPublishAnswer,
+  StreakPublishCall.Answer,
   { readonly streakPublishOutcome: 'REFUSED' }
 >['errorCode'];
 
@@ -203,7 +203,7 @@ function rig(
   const call = async (
     data: unknown,
     auth: Auth | null = owner,
-  ): Promise<StreakPublishAnswer> => {
+  ): Promise<StreakPublishCall.Answer> => {
     const answered = await answerStreakPublish(
       request(data, auth),
       ports,
@@ -1310,7 +1310,7 @@ describe('publishStreakDefinition — the page’s reference story', () => {
         }),
       ],
     ];
-    const answers: StreakPublishAnswer[] = [];
+    const answers: StreakPublishCall.Answer[] = [];
     for (const [, data] of story) answers.push(await call(data));
 
     expect(answers).toStrictEqual([

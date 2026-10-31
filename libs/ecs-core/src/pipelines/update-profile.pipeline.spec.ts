@@ -21,6 +21,7 @@ import {
   provisionedUserFixture,
   recordingTelemetry,
   registeredUserFixture,
+  unwrapOk,
 } from '@core/testing';
 import {
   type UpdateProfileCommand,
@@ -85,10 +86,14 @@ describe('updateProfile', () => {
       email: Email.of('maria@example.com'),
     });
     const { world, tx, run } = rig([maria]);
-    expect(await run(edit({ firstName: '  Mariya ' }))).toEqual({
+    const answer = await run(edit({ firstName: '  Mariya ' }));
+    expect(answer).toEqual({
       ok: true,
       value: { changed: true },
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual(['changed']);
     const search = SearchFieldsSystem.searchFields(
       'Mariya',
       'Petrova',

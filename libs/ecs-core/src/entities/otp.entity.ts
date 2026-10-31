@@ -9,7 +9,10 @@ import type { OtpId, TenantId, UtcEpochMs } from '@core/primitives';
  * An in-flight (or resolved) one-time-code challenge — `otps/{id}`, flat
  * (Law 6; flatten-spec §3.7). The document body is this type minus `id`,
  * byte for byte: `*UtcMs` epoch stamps and SCREAMING_SNAKE tags, written
- * by `saveOtp` and the `verifyOtp` transaction's root-key `Update`s.
+ * by `requestOtp`'s commit (a whole-body `Set` beside its
+ * `IDENTITY_OTP_REQUESTED` audit row) and the `verifyOtp` transaction's
+ * root-key `Update`s. No audit row ever copies `destination`, `codeHash`
+ * or `salt` (R36 / T5: `IdentityAuditSystem` picks its fields explicitly).
  *
  * `destination` is the identifier value as a scalar (the payload text,
  * trimmed — F2-10) — index #10 (`destination, consumedAtUtcMs,

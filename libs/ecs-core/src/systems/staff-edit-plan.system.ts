@@ -18,12 +18,12 @@ import {
   DraftPersonKey,
   type BarberId,
   type DurationMinutes,
+  EndMinute,
   type LocationId,
   MinuteOfDay,
   type PriceCents,
   Result,
   type SeatId,
-  TrackMinute,
   type UserId,
 } from '@core/primitives';
 import {
@@ -388,9 +388,9 @@ export const StaffEditPlanSystem = {
     // The visit's ONE shop day, as the sheet drafted it (Law 7.3: the call
     // carries the wall clock; the server reads it in the shop's zone once).
     const localDate = draft.dayKey;
-    const start = TrackMinute.toStart(draft.startMinute);
+    const start = MinuteOfDay.of(draft.startMinute);
     if (!start.ok) return refusedAt('startMinutes');
-    const end = TrackMinute.toEnd(draft.endMinute);
+    const end = EndMinute.of(draft.endMinute);
     if (!end.ok) return refusedAt('atMinutes');
 
     /*
@@ -405,11 +405,8 @@ export const StaffEditPlanSystem = {
      */
     const seatIds =
       row === null ||
-      AppointmentLifecycleSystem.transitionSeats(
-        BookingStatus.Completed,
-        row.seatIds,
-        row.partySize,
-      ).length === 0
+      AppointmentLifecycleSystem.transitionSeats(BookingStatus.Completed, row)
+        .length === 0
         ? []
         : draft.legs.map((leg) => leg.seatId);
     const scope = seatIds.length > 0 ? seatIds : null;

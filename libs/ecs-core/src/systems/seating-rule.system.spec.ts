@@ -283,7 +283,7 @@ describe('standing double seatings — the pairs an edit broke', () => {
   ];
 
   it('knows a pair named by id, in either order, and drops a seat paired with itself', () => {
-    const remembered = S.ofPairs([
+    const remembered = SeatIdPair.normalize([
       pair('seat-2', 'seat-1'),
       pair('seat-3', 'seat-3'),
     ]);
@@ -357,7 +357,7 @@ describe('standing double seatings — the pairs an edit broke', () => {
     fc.assert(
       fc.property(visitArb, (visit) => {
         const standing = S.standingOf(visit);
-        const read = S.ofPairs(standing);
+        const read = SeatIdPair.normalize(standing);
         for (const a of visit) {
           for (const b of visit) {
             expect(S.stands(read, a.seatId, b.seatId)).toBe(

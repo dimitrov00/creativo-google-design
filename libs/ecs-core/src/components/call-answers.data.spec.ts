@@ -11,8 +11,9 @@ import { WaitlistCall } from './waitlist-call.data';
 /*
  * The call components' answer decoders beside the booking wire's (Phase 4a
  * §3.2): each answer through its primitives' smart constructors; anything
- * else `PIPELINE_UNKNOWN`. The wire round trip with the server's encoders
- * lives in the `*.wire.spec.ts` files.
+ * else `PIPELINE_UNKNOWN`. The server answers each pipeline's value as it
+ * is (Law 5 — no encoder); `wire-answer.ts` in apps/functions proves at
+ * compile time that every answer is the wire's.
  */
 const unusable = (result: { readonly ok: boolean; readonly error?: unknown }) =>
   !result.ok &&
@@ -55,7 +56,7 @@ describe('WaitlistCall', () => {
     expect(unusable(WaitlistCall.decodeRequested({ requestId: '' }))).toBe(
       true,
     );
-    expect(unusable(WaitlistCall.decodeCancelled(undefined))).toBe(true);
+    expect(unusable(WaitlistCall.decodeRequested(undefined))).toBe(true);
   });
 });
 

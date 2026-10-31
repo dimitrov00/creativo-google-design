@@ -283,7 +283,7 @@ export class BookingFlowStore {
    * cannot do anything.
    */
   readonly isTerminal = computed(() =>
-    BookingFlowSystem.isTerminal(this.step()),
+    BookingFlowState.isTerminalStep(this.step()),
   );
 
   /** 1-based position on the wizard spine; terminal states report the end. */
@@ -825,7 +825,7 @@ export class BookingFlowStore {
     moving: HeldMove,
     selection: ScheduleSelection,
     seats: readonly BookingCall.Seat[],
-  ): Promise<Result<BookingCall.Rescheduled, PipelineError>> {
+  ): Promise<Result<BookingCall.Committed, PipelineError>> {
     const attemptId = this._attemptId;
     if (attemptId === null) {
       return Result.err(PipelineError.bare(PipelineErrorCode.InvalidRequest));
@@ -957,10 +957,7 @@ export class BookingFlowStore {
   ): boolean {
     // The stored bag, read back the forgiving way: a line with a blank id is
     // dropped, a corrupt counter refused.
-    const cart = BookingCartSystem.salvage({
-      cartSeats: request.cartSeats,
-      cartNextSequence: request.cartNextSequence,
-    });
+    const cart = BookingCartSystem.salvage(request);
     if (!cart.ok) return false;
 
     // Placeholders, each one no other guest holds
@@ -1150,7 +1147,7 @@ export class BookingFlowStore {
     // Whatever the booker captured or overrode, before the step branches —
     // it belongs to the booking, not to any one step of it. So do the visit
     // it was made from and the one it moves; `claim` re-checks their reader.
-    this._contact.set(BookingContact.of(draft));
+    this._contact.set(BookingContact.sliceOf(draft));
     this._bookedFrom.set(
       draft.bookingDraftOrigin === BookingDraftOrigin.BookedFrom
         ? {
@@ -1272,7 +1269,7 @@ export class BookingFlowStore {
     // Both terminal states end the draft's life: the receipt lives on the
     // server now, and a resumable draft pointing at a finished flow is how a
     // reload lands someone back inside a booking they already made.
-    if (BookingFlowSystem.isTerminal(state.bookingFlowStep)) {
+    if (BookingFlowState.isTerminalStep(state.bookingFlowStep)) {
       this.drafts.clearBookingDraft();
       return;
     }

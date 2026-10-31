@@ -79,7 +79,7 @@ const NOW = Date.parse('2026-09-25T15:00:00+03:00');
 /** What the fold and the read-back are handed of the loyalty domain: each companion, by the members they call. */
 const LOYALTY_DOMAIN_MEMBERS = {
   StreakSystem: ['trace'],
-  StreakRuleSystem: ['inForceOn'],
+  StreakRuleSystem: ['inForceOn', 'qualifies'],
   StreakRule: ['parse'],
   LoyaltyCatalogSystem: ['validate'],
 };

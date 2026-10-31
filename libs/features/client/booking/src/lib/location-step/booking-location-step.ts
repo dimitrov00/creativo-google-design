@@ -124,7 +124,7 @@ export class BookingLocationStep {
       id: shop.id,
       lat: shop.latitude,
       lng: shop.longitude,
-      label: this.content.text({ en: shop.name.en, bg: shop.name.bg }),
+      label: this.content.text(shop.name),
     })),
   );
 
@@ -147,11 +147,8 @@ export class BookingLocationStep {
       ...this.catalog.locations().map((shop) => ({
         key: shop.id,
         id: shop.id,
-        name: this.content.text({ en: shop.name.en, bg: shop.name.bg }),
-        detail: this.content.text({
-          en: shop.address.en,
-          bg: shop.address.bg,
-        }),
+        name: this.content.text(shop.name),
+        detail: this.content.text(shop.address),
         selected: chosen === shop.id,
       })),
     ];

@@ -136,16 +136,15 @@ export const firestoreSchedulePorts = (
         snap.exists ? ({ id: snap.id, ...snap.data() } as BarberBusyDay) : null,
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          path,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(path, error));
     }
   },
 });
 ```
+
+`readFailed` / `writeFailed` / `bodyOf` come from `adapters/store-answer.ts`,
+the one home of what an adapter answers its port with: the `reason` is the
+failure's canonical code (`FailureCodeSystem.codeOf`), never the SDK's message.
 
 The document body is the entity minus `id` — spread, do not map. An adapter
 implements exactly one port family over one SDK and holds no business logic.
@@ -161,7 +160,11 @@ Sentry are not installed, and their adapters would replace it with the same
 bundles (`TelemetryPorts`, `LogContextPorts`)) — assemble the port bundles, call the pipeline factories, wrap
 each use-case function in `onCall`/`onDocument*`/`onSchedule` through the
 edge (`edge.ts`) and the wire (`wire/*.wire.ts`), and map `Result.err` →
-`HttpsError` at that edge only. If the Hono-on-Cloud-Run
+`HttpsError` at that edge only. A callable answers its pipeline's value as
+it is: the pipeline's answer type IS `CallableWire[N]['answer']`, and
+`wiredCallable` proves it (`AnswerIsTheWire`). An answer that keeps
+server-only fields is narrowed by a named `Result.map` (`committedOf`),
+never by an encoder that copies fields. If the Hono-on-Cloud-Run
 `apps/api` move is confirmed, the same wiring moves into its
 `routes/*.router.ts` with typed Hono RPC endpoints — the pipelines do not
 change.

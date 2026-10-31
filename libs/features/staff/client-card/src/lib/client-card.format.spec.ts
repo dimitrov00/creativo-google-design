@@ -3,7 +3,6 @@ import {
   LINE_JOINT,
   NO_BREAK,
   factRun,
-  figure,
   heldFacts,
   hungJoints,
   joined,
@@ -13,6 +12,7 @@ import {
   runsOf,
   unbroken,
 } from './client-card.format';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /*
  * THE CARD'S QUIET LINES — the one grammar every presenter cuts a sentence
@@ -179,17 +179,17 @@ describe('partedAtJoints', () => {
  * Bulgarian groups from five digits (CLDR's minimum grouping) with a
  * no-break space, English from four with a comma.
  */
-describe('figure', () => {
+describe('the card’s figures (`formatCount`)', () => {
   it('prints a single value and a grouped count in bg', () => {
-    expect(figure(7, 'bg')).toBe('7');
-    expect(figure(1000, 'bg')).toBe('1000');
-    expect(figure(12_450, 'bg')).toBe('12\u00a0450');
+    expect(formatCount(7, 'bg')).toBe('7');
+    expect(formatCount(1000, 'bg')).toBe('1000');
+    expect(formatCount(12_450, 'bg')).toBe('12\u00a0450');
   });
 
   it('prints a single value and a grouped count in en', () => {
-    expect(figure(7, 'en')).toBe('7');
-    expect(figure(1000, 'en')).toBe('1,000');
-    expect(figure(12_450, 'en')).toBe('12,450');
+    expect(formatCount(7, 'en')).toBe('7');
+    expect(formatCount(1000, 'en')).toBe('1,000');
+    expect(formatCount(12_450, 'en')).toBe('12,450');
   });
 });
 

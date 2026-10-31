@@ -18,7 +18,7 @@ import {
 } from '../testing/visit-fixtures';
 import { appCatalogue } from '../testing/app-catalogue';
 import { cssRule } from '../testing/css-rule';
-import { matchesVisitFilter } from '../visit-filter';
+import { VisitListSystem } from '@core/systems';
 import { VisitList } from '../visit-list/visit-list';
 import { visitRowOf, visitWordsOf } from '../visit-row.presenter';
 import { VisitFilter, VisitPerspective } from '../visit-row.vm';
@@ -50,7 +50,7 @@ class MenuHost {
 /**
  * «Моите часове»'s funnel and list, rebuilt from the shared parts the way
  * the page composes them (§5.3.5): the menu two-way on the page's filter,
- * the rows narrowed with `matchesVisitFilter`, the filtered empty offering
+ * the rows narrowed with `VisitListSystem.matches`, the filtered empty offering
  * the filter back.
  */
 @Component({
@@ -111,7 +111,7 @@ class PageHost {
   );
   readonly sections = computed(() =>
     sectionVisits(
-      this.rows().filter((row) => matchesVisitFilter(row, this.filter())),
+      this.rows().filter((row) => VisitListSystem.matches(row, this.filter())),
       {
         grain: VisitGrain.Month,
         labels: {

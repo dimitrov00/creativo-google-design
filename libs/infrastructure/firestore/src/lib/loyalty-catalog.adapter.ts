@@ -6,7 +6,7 @@ import {
   type BadgeCategory,
   type BadgeSeries,
   Collections,
-  type LoyaltyCatalog,
+  type LoyaltyCatalogParts,
   type RewardCatalogItem,
   type Season,
   type StreakDefinition,
@@ -51,7 +51,9 @@ export const loyaltyCatalogReadPorts = (
 ): LoyaltyCatalogReadPorts => {
   const whole = <E>(name: string) => readQuery<E>(collection(db, name), name);
 
-  const read = async (): Promise<Result<LoyaltyCatalog, RepositoryError>> => {
+  const read = async (): Promise<
+    Result<LoyaltyCatalogParts, RepositoryError>
+  > => {
     const [categories, series, seasons, tiers, rewards, streaks] =
       await Promise.all([
         whole<BadgeCategory>(Collections.BadgeCategories),

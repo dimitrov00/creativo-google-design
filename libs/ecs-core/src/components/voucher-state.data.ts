@@ -41,7 +41,7 @@ export const VoucherLifecycle = {
   },
 
   /** The lifecycle slice of a value that carries one (a whole voucher), copied. */
-  of(lifecycle: VoucherLifecycle): VoucherLifecycle {
+  sliceOf<T extends VoucherLifecycle>(lifecycle: T): VoucherLifecycle {
     return lifecycle.voucherStatus === VoucherStatus.Void
       ? VoucherLifecycle.voided(lifecycle.voidedAtUtcMs, lifecycle.voidReason)
       : ACTIVE;

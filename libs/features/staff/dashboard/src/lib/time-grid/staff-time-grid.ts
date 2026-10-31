@@ -49,7 +49,6 @@ import {
   closedMinuteRuns,
   toMinuteRun,
   trackEnd,
-  trackMinuteOf,
   trackStart,
 } from './minute-run';
 import { gridEventWords } from '../tag-words';
@@ -64,7 +63,7 @@ import {
   type MinuteCount,
   type MinuteOfDay,
   type Tag,
-  type TrackMinute,
+  TrackMinute,
 } from '@core/primitives';
 import { bookingStatusWords } from '@creativo/infrastructure/i18n';
 import {
@@ -486,7 +485,7 @@ const MINUTES_PER_SLOT = 15;
 /** A civil day. The axis is this long unless something runs past midnight. */
 const DAY_MINUTES = 1440;
 /** The opening midnight — where the derived axis starts. */
-const AXIS_ORIGIN = trackMinuteOf(0);
+const AXIS_ORIGIN = TrackMinute.ofProven(0);
 
 /**
  * Minutes either side of "now" within which an hour label is withheld so the
@@ -920,8 +919,8 @@ export class StaffTimeGrid {
       const end = Math.max(start + 60, Math.ceil(tail / 60) * 60);
       // Whole hours of the track, the first one ≥ 0: track minutes.
       return {
-        start: trackMinuteOf(start),
-        end: trackMinuteOf(end),
+        start: TrackMinute.ofProven(start),
+        end: TrackMinute.ofProven(end),
         minutes: end - start,
         empty: false,
       };
@@ -929,7 +928,7 @@ export class StaffTimeGrid {
     const end = Math.ceil(Math.max(DAY_MINUTES, ...ends) / 60) * 60;
     return {
       start: AXIS_ORIGIN,
-      end: trackMinuteOf(end),
+      end: TrackMinute.ofProven(end),
       minutes: end,
       empty: false,
     };
@@ -965,7 +964,7 @@ export class StaffTimeGrid {
       out.push({
         key: at,
         // A whole hour of the axis, from its first (≥ 0): a track minute.
-        label: formatClock(trackMinuteOf(at), ClockClosing.Wrap),
+        label: formatClock(TrackMinute.ofProven(at), ClockClosing.Wrap),
         nearNow: now !== null && Math.abs(at - now) < NOW_LABEL_CLEARANCE,
       });
     }
@@ -1960,11 +1959,11 @@ export class StaffTimeGrid {
     // are both permitted, and both are named instead. The landing is whole
     // (a snapped or stepped minute, whole bounds) and never before the
     // axis's first minute (≥ 0); the end keeps the block's length.
-    const at = trackMinuteOf(clamp(startMinute, start, end - duration));
+    const at = TrackMinute.ofProven(clamp(startMinute, start, end - duration));
     return {
       id: origin.id,
       startMinute: at,
-      endMinute: trackMinuteOf(at + duration),
+      endMinute: TrackMinute.ofProven(at + duration),
     };
   }
 
@@ -1975,7 +1974,7 @@ export class StaffTimeGrid {
       id: origin.id,
       // A start dragged past the end CLAMPS; it never inverts. Whole, and
       // never before the axis's first minute (≥ 0).
-      startMinute: trackMinuteOf(
+      startMinute: TrackMinute.ofProven(
         clamp(startMinute, start, origin.endMinute - floor),
       ),
       endMinute: origin.endMinute,
@@ -1989,7 +1988,7 @@ export class StaffTimeGrid {
       id: origin.id,
       startMinute: origin.startMinute,
       // Whole, and never before the start plus the floor (≥ 1).
-      endMinute: trackMinuteOf(
+      endMinute: TrackMinute.ofProven(
         clamp(endMinute, origin.startMinute + floor, end),
       ),
     };

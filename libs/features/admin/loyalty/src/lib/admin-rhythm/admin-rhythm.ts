@@ -27,19 +27,22 @@ import {
 } from '@core/components';
 import {
   EngagementErrorCode,
-  type RhythmPublishRefusal,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
-import { Locale, type ServiceId, Tag } from '@core/primitives';
+import { type ServiceId } from '@core/primitives';
 import {
   CatalogSystem,
+  RhythmDraftSystem,
   StreakPublishSystem,
   StreakRuleSystem,
 } from '@core/systems';
 import {
-  translateCodedError,
+  DEFAULT_LOCALE,
   loadedLanguage,
+  localeFor,
+  translateCodedError,
 } from '@creativo/infrastructure/i18n';
 import {
   type RhythmRuleUnits,
@@ -98,7 +101,6 @@ import {
   RhythmEstimate,
   type RhythmEstimateLine,
   afterMissRow,
-  daysOf,
   effectiveOptions,
   effectiveReading,
   excusesRow,
@@ -116,14 +118,13 @@ import {
   sampleLabel,
   sampleUnit,
   servicesCount,
-  shortDay,
   toleranceExample,
   toleranceMarks,
   toleranceReadout,
   upcomingLine,
   weekMarks,
-  weeksOf,
 } from './admin-rhythm.words';
+import { formatDayShort } from '@creativo/ui/wall-clock';
 
 /** A word the page prints that is not a bare key: built once the catalogue has loaded. */
 type Translate = AdminRhythmContext['translate'];
@@ -279,7 +280,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     initialValue: null,
   });
 
-  protected readonly lang = computed(() => this.loadedLang() ?? Locale.Bg);
+  protected readonly lang = computed(() => this.loadedLang() ?? DEFAULT_LOCALE);
 
   private readonly translate: Signal<Translate | null> = computed(() => {
     const lang = this.loadedLang();
@@ -340,7 +341,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** The interval as the ruler holds it, in weeks: the newcomer's period (`StreakIntervalRule.daysFor`, no habit yet). */
   protected readonly weeks = computed(() =>
-    weeksOf(StreakIntervalRule.daysFor(this.draft(), null).days),
+    RhythmDraftSystem.weeksOf(
+      StreakIntervalRule.daysFor(this.draft(), null).days,
+    ),
   );
 
   /** «6 седмици» — the interval ruler's readout and its value text. */
@@ -651,7 +654,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
         for (const service of group.services) {
           names.set(
             service.id,
-            LocalizedText.pick(service.name, Tag.or(Locale, lang, Locale.Bg)),
+            LocalizedText.pick(service.name, localeFor(lang)),
           );
         }
       }
@@ -699,7 +702,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       this.patch({
         qualifier:
           draft.streakQualifier === StreakQualifier.Services
-            ? StreakQualifierRule.of(draft)
+            ? StreakQualifierRule.sliceOf(draft)
             : StreakQualifierRule.services([]),
       });
       // A list with nothing chosen is no rule: the sheet opens on the choice.
@@ -718,7 +721,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
   }
 
   protected setWeeks(weeks: number): void {
-    this.patch({ interval: fixedInterval(daysOf(weeks)) });
+    this.patch({ interval: fixedInterval(RhythmDraftSystem.daysOf(weeks)) });
   }
 
   protected setTolerance(percent: number): void {
@@ -733,7 +736,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
   ): void {
     const weeks = this.typed(value);
     if (weeks === undefined) return;
-    this.patch({ interval: personalInterval({ [part]: daysOf(weeks) }) });
+    this.patch({
+      interval: personalInterval({ [part]: RhythmDraftSystem.daysOf(weeks) }),
+    });
   }
 
   protected setHoldDays(value: string): void {
@@ -781,7 +786,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** A clamp's figure in weeks, as the field edits it. */
   protected weeksOf(days: number): number {
-    return weeksOf(days);
+    return RhythmDraftSystem.weeksOf(days);
   }
 
   // ── «Запази», the receipt, «Отмени» ─────────────────────────────────────
@@ -828,7 +833,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       if (outcome.value === null) return;
       this.toast.set({
         label: t('admin.rhythm.receipt', {
-          date: shortDay(
+          date: formatDayShort(
             outcome.value.effectiveFromLocalDate,
             context.today,
             context.lang,
@@ -948,7 +953,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
    */
   private wordRefusal(
     context: AdminRhythmContext,
-    refusal: RhythmPublishRefusal,
+    refusal: PublishStreakDefinitionError,
   ): string | null {
     if (!StreakPublishError.guard(refusal)) {
       return translateCodedError(this.transloco, {
@@ -968,7 +973,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       case StreakPublishErrorCode.TooEarly:
         return translateCodedError(this.transloco, {
           ...refusal,
-          date: shortDay(refusal.earliest, context.today, context.lang),
+          date: formatDayShort(refusal.earliest, context.today, context.lang),
         });
       case StreakPublishErrorCode.CallerNotAdmin:
       case StreakPublishErrorCode.CallerUnauthenticated:

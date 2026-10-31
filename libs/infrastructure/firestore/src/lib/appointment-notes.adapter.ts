@@ -10,14 +10,8 @@ import type { RepositoryError } from '@core/errors';
 import { type AppointmentNote, Collections } from '@core/entities';
 import type { AppointmentNotePorts } from '@core/ports';
 import type { StoredDocument } from '@core/systems';
-import {
-  admitted,
-  attemptWrite,
-  entityOf,
-  observeDoc,
-  type ReadGuard,
-  writeFailed,
-} from './observe';
+import { admitted, attemptWrite, observeDoc, type ReadGuard } from './observe';
+import { entityOf, writeFailed } from './stored-entity';
 
 /**
  * `appointmentNotes/{appointmentId}` — the team's note on a visit,

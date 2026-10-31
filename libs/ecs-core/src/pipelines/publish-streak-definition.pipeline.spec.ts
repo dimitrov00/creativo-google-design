@@ -117,13 +117,13 @@ function rule(patch: Partial<StreakRule> = {}): StreakRule {
 }
 
 const asCurrent = (r: StreakRule): StreakHeadRule => ({
-  ...StreakRule.of(r),
+  ...StreakRule.sliceOf(r),
   headRole: HeadRole.Current,
   streakTransition: null,
 });
 
 const asScheduled = (r: StreakRule): StreakHeadRule => ({
-  ...StreakRule.of(r),
+  ...StreakRule.sliceOf(r),
   headRole: HeadRole.Scheduled,
   streakTransition: StreakTransition.Grandfather,
 });
@@ -137,7 +137,7 @@ const V2 = rule({
 
 /** Version 2's document, as the publish that scheduled it wrote it. */
 const V2_DOC: StreakDefinitionVersion = {
-  ...StreakRule.of(V2),
+  ...StreakRule.sliceOf(V2),
   id: StreakDefinitionVersionId.forVersion(2),
   publishedAtUtcMs: utcMs('2026-09-20T10:00:00.000+03:00'),
   publishedByUserId: OWNER,
@@ -279,7 +279,7 @@ describe('publishStreakDefinition — what one publish writes', () => {
     expect(tx.plans).toEqual([
       [
         WriteOp.create(versionPath(2), {
-          ...StreakRule.of(scheduled),
+          ...StreakRule.sliceOf(scheduled),
           publishedAtUtcMs: NOW,
           publishedByUserId: OWNER,
           streakTransition: StreakTransition.Grandfather,

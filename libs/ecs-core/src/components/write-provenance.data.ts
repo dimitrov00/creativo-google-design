@@ -5,12 +5,14 @@ import { OperationId, type StoredFields } from '@core/primitives';
  * flat slice (Law 6) intersected into the entities a callable pipeline
  * writes: appointments and customers (L5: not `barberBusy`, a trigger's
  * projection). `writeOperationId` is the operation id of the last
- * booking-verb or registration callable that wrote the document — the join
- * key to its `callable.*` outcome line, its audit rows (`auditOperationId`)
- * and the attempt lines of the triggers it fanned out to. No uid: an
- * appointment is client-readable, and the writer's uid lives on the audit
- * row. `null` when the call sent none (or the write predates WS-4.3 as an
- * explicit null); never queried (its single-field index is off).
+ * booking-verb, registration or privacy callable that wrote the document
+ * (the admin's erasure stamps its own on every record and visit it clears,
+ * audit-hardening Phase 3 WS-D) — the join key to its `callable.*` outcome
+ * line, its audit rows (`auditOperationId`) and the attempt lines of the
+ * triggers it fanned out to. No uid: an appointment is client-readable,
+ * and the writer's uid lives on the audit row. `null` when the call sent
+ * none (or the write predates WS-4.3 as an explicit null); never queried
+ * (its single-field index is off).
  */
 export type WriteProvenance = {
   readonly writeOperationId: OperationId | null;

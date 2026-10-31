@@ -109,9 +109,10 @@ import {
   RosterSystem,
   SearchFieldsSystem,
   type SideWrites,
-  type StaffEditWords,
   StaffEditPlanSystem,
+  type StaffEditWords,
   VisitDraftSystem,
+  VisitListSystem,
   VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -248,11 +249,7 @@ import {
   type BlockEditorVm,
   StaffBlockEditor,
 } from '../block-editor/staff-block-editor';
-import {
-  clientLookupKeys,
-  parseClientQuery,
-  rankClients,
-} from '../visit-editor/client-query';
+import { rankClients } from '../visit-editor/client-query';
 import { clientSearchOptions } from '../visit-editor/client-search';
 import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
 import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
@@ -441,29 +438,13 @@ function rowShape(row: DayRowVm): string {
           discount.grantId,
           discount.code,
           // The value as stored — exactly its variant's fields.
-          CouponValue.of(discount),
+          CouponValue.sliceOf(discount),
         ]),
       )
       .sort(),
     vouchers: row.vouchers.map((voucher) => voucher.code),
     tip: row.tipCents,
   });
-}
-
-/**
- * The seats a move of this row to `to` addresses — `[]` for the ROOT, the
- * whole party in one call (`AppointmentLifecycleSystem.transitionSeats`):
- * the row's own seat ids.
- */
-function transitionSeatsOf(
-  row: DayRowVm,
-  to: BookingStatus,
-): readonly SeatId[] {
-  return AppointmentLifecycleSystem.transitionSeats(
-    to,
-    row.seatIds,
-    row.partySize,
-  );
 }
 
 /** The street line of a postal address — everything before its first comma. */
@@ -581,7 +562,7 @@ export interface DayRowVm {
    * The chair's start and end as INSTANTS — for the countdown and the live
    * remaining only (an elapsed-time phrase, T2: pass D D-6.4), read off the
    * stored start (`TimeCoordinate.instantAt`). Every "has it begun / ended"
-   * answer is the wall clock's (`VisitStorySystem.hasStarted`/`hasEnded`).
+   * answer is the wall clock's (`VisitListSystem.hasStarted`/`hasEnded`).
    */
   readonly startUtcMs: UtcEpochMs;
   readonly endUtcMs: UtcEpochMs;
@@ -760,7 +741,7 @@ interface AgendaGroupVm {
   readonly timeLabel: string;
   /** The minute of the shop's day everything in the group begins at. */
   readonly startMinutes: MinuteOfDay;
-  /** `true` once the clock has reached this heading (`VisitStorySystem.hasStarted`). */
+  /** `true` once the clock has reached this heading (`VisitListSystem.hasStarted`). */
   readonly past: boolean;
   readonly items: readonly RunEntryVm[];
 }
@@ -925,8 +906,8 @@ function minuteRangeOf(
   startMinute: TrackMinute,
   endMinute: TrackMinute,
 ): MinuteRange | null {
-  const start = TrackMinute.toStart(startMinute);
-  const end = TrackMinute.toEnd(endMinute);
+  const start = MinuteOfDay.of(startMinute);
+  const end = EndMinute.of(endMinute);
   if (!start.ok || !end.ok || end.value <= start.value) return null;
   return MinuteRange.of(start.value, end.value);
 }
@@ -2416,17 +2397,6 @@ export class StaffDashboard {
   }
 
   /**
-   * The outer edges of a chair's roster windows on the shop's wall clock —
-   * the earliest start and the latest end (`IntervalSetSystem.hull`) — or
-   * `null` for none, which each caller answers with its own fallback. The
-   * windows are the store's own minutes, so one that closes at midnight
-   * ends at 1440.
-   */
-  private rosterHull(windows: readonly MinuteRange[]): MinuteRange | null {
-    return IntervalSetSystem.hull(windows);
-  }
-
-  /**
    * The first working minute across every visible day — where the grid
    * SCROLLS TO on a day with no now-line to anchor on.
    *
@@ -2696,14 +2666,14 @@ export class StaffDashboard {
       // should find first; the NOW hairline is where the day actually is.
       // The FIRST in the lane's own order (the envelope order the day's
       // reader delivers) that has not begun on the shop's wall clock
-      // (`VisitStorySystem.hasStarted`).
+      // (`VisitListSystem.hasStarted`).
       const next =
         shopNow === null
           ? undefined
           : visits.find(
               (row) =>
                 !row.terminal &&
-                !VisitStorySystem.hasStarted(
+                !VisitListSystem.hasStarted(
                   WallTime.of(row.localDate, row.startMinute),
                   shopNow,
                 ),
@@ -2793,10 +2763,10 @@ export class StaffDashboard {
         timeLabel: this.wallTime(localDate, startMinutes),
         startMinutes,
         // The heading is past once the shop's clock has reached it — its
-        // minute begun (`VisitStorySystem.hasStarted`, DEP-4).
+        // minute begun (`VisitListSystem.hasStarted`, DEP-4).
         past:
           shopNow !== null &&
-          VisitStorySystem.hasStarted(
+          VisitListSystem.hasStarted(
             WallTime.of(localDate, startMinutes),
             shopNow,
           ),
@@ -3570,7 +3540,7 @@ export class StaffDashboard {
     // chair's minutes, never an instant. Neither before a zone is known.
     const start = WallTime.of(appointment.localDate, startMinute);
     const started =
-      shopNow !== null && VisitStorySystem.hasStarted(start, shopNow);
+      shopNow !== null && VisitListSystem.hasStarted(start, shopNow);
     const ended =
       shopNow !== null &&
       VisitStorySystem.hasEnded(
@@ -3670,11 +3640,11 @@ export class StaffDashboard {
       }
     };
     // One entry per PERSON, the first of their seats — the people key of
-    // the server's party check (`VisitStorySystem.seatPersonKey`).
+    // the server's party check (`VisitStorySystem.personKeyOf`).
     const peopleSeen = new Set<PersonKey>();
     const people: VisitEditorClientOption[] = [];
     for (const seat of seats) {
-      const key = VisitStorySystem.seatPersonKey(seat);
+      const key = VisitStorySystem.personKeyOf(seat);
       if (peopleSeen.has(key)) continue;
       peopleSeen.add(key);
       people.push(personOf(seat));
@@ -3876,7 +3846,12 @@ export class StaffDashboard {
     }
     if (to === BookingStatus.Cancelled) {
       this.cancelId.set(row.appointmentId);
-      this.cancelSeatIds.set(transitionSeatsOf(row, BookingStatus.Cancelled));
+      this.cancelSeatIds.set(
+        AppointmentLifecycleSystem.transitionSeats(
+          BookingStatus.Cancelled,
+          row,
+        ),
+      );
       this.cancelReasonCode.set(null);
       this.cancelNote.set('');
       this.cancelNoteFiled.set(false);
@@ -3889,7 +3864,7 @@ export class StaffDashboard {
     ) {
       // `CONFIRMED` is not a per-seat verb — the server rejects it as one, so
       // it always addresses the root (`transitionSeats`).
-      const seatIds = transitionSeatsOf(row, to);
+      const seatIds = AppointmentLifecycleSystem.transitionSeats(to, row);
       const move = (seatId: SeatId | null): Promise<boolean> =>
         this.store.transition(
           transitionOf(row.appointmentId, to, null, seatId),
@@ -4115,7 +4090,7 @@ export class StaffDashboard {
             barberId,
             subject.appointmentId,
           );
-    const roster = this.rosterHull(lane?.rostered ?? []);
+    const roster = IntervalSetSystem.hull(lane?.rostered ?? []);
     return {
       neighbours,
       rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
@@ -4255,7 +4230,7 @@ export class StaffDashboard {
       row.appointmentId,
     );
 
-    const roster = this.rosterHull(storeLane?.rostered ?? []);
+    const roster = IntervalSetSystem.hull(storeLane?.rostered ?? []);
 
     return {
       appointmentId: row.appointmentId,
@@ -4531,7 +4506,7 @@ export class StaffDashboard {
         promo: {
           label: coupon.name,
           // The coupon's value slice, exactly its variant's fields.
-          value: CouponValue.of(coupon),
+          value: CouponValue.sliceOf(coupon),
           exclusive: Combinability.isExclusive(coupon.combinability),
         },
         voucher: null,
@@ -5060,18 +5035,10 @@ export class StaffDashboard {
   /** A photo as the sheet shows it: the chair by name, where the catalogue still has it. */
   private toEditorPhoto(photo: AppointmentPhoto): VisitEditorPhoto {
     return {
-      photoId: photo.id,
-      url: photo.url,
-      takenAtUtcMs: photo.takenAtUtcMs,
-      barberId: photo.barberId,
+      ...photo,
       barberName:
         this.barberOptions().find((chair) => chair.id === photo.barberId)
           ?.label ?? null,
-      clientLabel: photo.clientLabel,
-      width: photo.width,
-      height: photo.height,
-      photoOrigin: photo.photoOrigin,
-      label: photo.label,
     };
   }
 
@@ -5376,7 +5343,7 @@ export class StaffDashboard {
     const storeLane = this.store
       .lanes()
       .find((entry) => entry.barberId === create.barberId);
-    const roster = this.rosterHull(storeLane?.rostered ?? []);
+    const roster = IntervalSetSystem.hull(storeLane?.rostered ?? []);
     // What occupies the chair — the server's rule (DEP-2).
     const neighbours = this.occupyingRows(
       lane,
@@ -5535,7 +5502,7 @@ export class StaffDashboard {
     const chair = vm.chairId;
     if (chair === null) return;
     // A stored visit starts on its day's clock — read back off the axis.
-    const start = TrackMinute.toStart(vm.startMinute);
+    const start = MinuteOfDay.of(vm.startMinute);
     if (!start.ok) return;
     this.closeVisitSheet();
     this.presentOnly();
@@ -5705,7 +5672,7 @@ export class StaffDashboard {
         const shopNow = shopNowAt(visit.locationId);
         return shopNow === null
           ? UtcEpochMs.compare(visit.utcEpochMs, nowUtcMs) < 0
-          : VisitStorySystem.hasStarted(startOf(visit), shopNow);
+          : VisitListSystem.hasStarted(startOf(visit), shopNow);
       })
       .sort((a, b) => WallTime.compare(startOf(b), startOf(a)));
     const recent: VisitEditorClientOption[] = ClientQuerySystem.recentAccounts(
@@ -5785,13 +5752,13 @@ export class StaffDashboard {
 
   protected searchClients(query: string): void {
     if (this.clientSearchTimer !== null) clearTimeout(this.clientSearchTimer);
-    const parsed = parseClientQuery(query);
+    const parsed = ClientQuerySystem.parse(query);
     // By the shop's own dial code: «088…» is asked as «359 88…» too — the
     // query's own default when the country has none.
     const code =
       PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
-      undefined;
-    const keys = clientLookupKeys(parsed, code);
+      ClientQuerySystem.DEFAULT_CALLING_CODE;
+    const keys = ClientQuerySystem.lookupKeys(parsed, code);
     // The book's own matches are on screen already — their faces are owed
     // now, not when the index answers. Only the rows a phone can show.
     if (parsed.clientQueryShape !== ClientQueryShape.Empty) {
@@ -6068,7 +6035,7 @@ export class StaffDashboard {
     shownDay: LocalDate,
   ): BlockEditorLane {
     const windows = (rostered: readonly MinuteRange[]) => {
-      const roster = this.rosterHull(rostered);
+      const roster = IntervalSetSystem.hull(rostered);
       // NO ROSTER IS A SHUT DAY, not an open one. This fell back to the
       // civil day, so a chair standing down all day — the case the block
       // sheet now opens on — drew as a chair free from midnight to midnight.
@@ -6135,7 +6102,7 @@ export class StaffDashboard {
    */
   private draftVisitOn(range: BlockEditorRange): void {
     // A block starts on its day's clock — read back off the axis.
-    const start = TrackMinute.toStart(range.startMinute);
+    const start = MinuteOfDay.of(range.startMinute);
     if (!start.ok) return;
     this.closeBlockSheet();
     this.presentOnly();
@@ -6669,7 +6636,7 @@ function guestLabelOf(seat: Seat): SeatLabel | null {
 function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
   return appointment.discounts.map((applied) => ({
     ...provenanceOf(applied),
-    ...CouponValue.of(applied),
+    ...CouponValue.sliceOf(applied),
     label: applied.label,
     grantId: DiscountProvenance.grantIdOf(applied),
     code: DiscountProvenance.codeOf(applied),

@@ -71,7 +71,11 @@ describe('reportClientIssues', () => {
   it('writes one line per issue, in order — each the system’s line for it', async () => {
     const { telemetry, run } = rig();
     const cmd = command(BATCH);
-    expect(await run(cmd)).toEqual({ loggedCount: 4 });
+    const answer = await run(cmd);
+    expect(answer).toEqual({ loggedCount: 4 });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly this key, byte for byte on the wire.
+    expect(Object.keys(answer)).toEqual(['loggedCount']);
     expect(telemetry.lines).toEqual(
       BATCH.map((one) => {
         const line = ClientIssueSystem.logLine(one, cmd);

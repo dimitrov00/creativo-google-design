@@ -101,7 +101,7 @@ describe('CouponGrantSystem.burn', () => {
       GrantExpiryTerms.at(at(31)),
     );
     const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
-    expect(GrantLifecycle.of(used)).toEqual({
+    expect(GrantLifecycle.sliceOf(used)).toEqual({
       grantStatus: GrantStatus.Used,
       grantCapacity: GrantCapacity.SingleUse,
       grantExpiry: 'EXPIRES_AT',
@@ -109,7 +109,9 @@ describe('CouponGrantSystem.burn', () => {
       usedAtUtcMs: at(1),
       usedNote: '',
     });
-    expect(CouponValue.of(used)).toEqual(unwrapOk(CouponValue.percentOff(10)));
+    expect(CouponValue.sliceOf(used)).toEqual(
+      unwrapOk(CouponValue.percentOff(10)),
+    );
     // Whose it is rides every transition: the record and the reading account (D29).
     expect(used.customerId).toBe(grant.customerId);
     expect(used.holderUserId).toBe(grant.holderUserId);
@@ -118,7 +120,7 @@ describe('CouponGrantSystem.burn', () => {
   it('multi-use decrements remaining and stays active until exhausted — then USED with no use remaining', () => {
     const grant = makeActiveGrant(multiUse(2));
     const first = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
-    expect(GrantLifecycle.of(first)).toEqual(
+    expect(GrantLifecycle.sliceOf(first)).toEqual(
       GrantLifecycle.active(
         {
           grantCapacity: GrantCapacity.MultiUse,
@@ -129,7 +131,7 @@ describe('CouponGrantSystem.burn', () => {
       ),
     );
     const second = unwrapOk(CouponGrantSystem.burn(first, at(2), 'appt-1'));
-    expect(GrantLifecycle.of(second)).toEqual({
+    expect(GrantLifecycle.sliceOf(second)).toEqual({
       grantStatus: GrantStatus.Used,
       grantCapacity: GrantCapacity.MultiUse,
       usesRemaining: 0,
@@ -193,7 +195,7 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
       CouponGrantSystem.burn(makeActiveGrant(multiUse(1)), at(1), ''),
     );
     expect(
-      GrantLifecycle.of(unwrapOk(CouponGrantSystem.restore(used))),
+      GrantLifecycle.sliceOf(unwrapOk(CouponGrantSystem.restore(used))),
     ).toEqual(
       GrantLifecycle.active(
         {
@@ -449,7 +451,7 @@ describe('CouponGrantSystem — purity', () => {
     const once = CouponGrantSystem.burn(grant, at(1), 'x');
     const twice = CouponGrantSystem.burn(grant, at(1), 'x');
     expect(twice).toEqual(once);
-    expect(GrantLifecycle.of(grant)).toEqual(
+    expect(GrantLifecycle.sliceOf(grant)).toEqual(
       GrantLifecycle.active(multiUse(2), GrantExpiryTerms.none()),
     );
   });

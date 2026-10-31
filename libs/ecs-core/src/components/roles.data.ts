@@ -80,6 +80,18 @@ export const Roles = {
    */
   SPEND: [Role.Admin],
 
+  /**
+   * The roles that may act on a person's data as a DATA-SUBJECT REQUEST —
+   * the client export and erasure callables (audit-hardening Phase 3,
+   * P3-RU-13): the shop's admin ONLY. An irreversible or wholesale act on a
+   * client's data stays with the owner; the sysadmin is a support role with
+   * no business in it, so never `isAdmin`. CALLABLE-ONLY: no
+   * `firestore.rules` helper twins it — the callables are the only door
+   * (`role.rules-parity.spec.ts` says so) — and the server re-reads the
+   * caller's STORED roles against it, behind the token's claims.
+   */
+  PRIVACY: [Role.Admin],
+
   /** The edge guard for an untrusted value — a stored array entry, a token claim. */
   isRole(value: unknown): value is Role {
     return Tag.has(Role, value);
@@ -141,6 +153,16 @@ export const Roles = {
    */
   seesClientSpend(roles: readonly string[]): boolean {
     return anyIn(Roles.SPEND, roles);
+  },
+
+  /**
+   * Whether a role set may export or erase a client's data (`PRIVACY` — the
+   * admin alone): the server's gate on the privacy callables (claims, then
+   * the stored roles) and the staff client card's gate on its privacy block,
+   * one home for both. Claims-tolerant like `mayBook`.
+   */
+  handlesClientPrivacy(roles: readonly string[]): boolean {
+    return anyIn(Roles.PRIVACY, roles);
   },
 
   /**

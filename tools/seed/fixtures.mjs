@@ -42,6 +42,16 @@ import {
   takeVisit,
 } from './history.mjs';
 
+// The seed's instant, handed out through the bundle's `book` namespace
+// (`seed.book.seedNowOf`): `seed-dev-catalog.mjs` reaches the calendar
+// through this module only.
+export {
+  SEED_DEFAULT,
+  SEED_NOW_ENV,
+  seedNowOf,
+  seedNowTextOf,
+} from './calendar.mjs';
+
 /** What the seed registered a client with — the contact `users` and `customers` both copy. */
 const seedContactOf = (client) => ({
   firstName: client.firstName,

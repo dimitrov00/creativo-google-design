@@ -1,8 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AppliedOperation } from '@core/components';
+import { AppliedOperation, BookingCall } from '@core/components';
 import { AppointmentId, OperationId } from '@core/primitives';
-import { deepFreeze } from '@core/testing';
+import { deepFreeze, localDate, minute } from '@core/testing';
 import {
   type LandedRevision,
   StaffIntentSystem,
@@ -30,16 +30,11 @@ import {
 const S = StaffIntentSystem;
 
 /** A `BookingCall.EditCommand` as the store sends it (Phase 4a: wall-clock placement). */
-const MOVE = {
-  editCommand: 'MOVE',
-  localDate: '2026-08-05',
-  startMinutes: 660,
-  seatIds: null,
-} as const;
+const MOVE = BookingCall.editMove(localDate('2026-08-05'), minute(660), null);
 
 type Intent = {
   readonly appointmentId: string;
-  readonly command: unknown;
+  readonly command: BookingCall.EditCommand;
   readonly acknowledgedOverlap?: boolean;
   readonly operationId?: string;
   readonly expectedVersion?: number | null;
@@ -64,12 +59,12 @@ function device(answer: (sent: Sent, index: number) => Answer) {
     sent,
     send(intent: Intent): boolean {
       const claim = S.claimFor(chain, intent.expectedVersion ?? null);
-      const key = S.intentBasis(
-        AppointmentId.of(intent.appointmentId),
-        intent.command,
-        intent.acknowledgedOverlap === true,
-        claim,
-      );
+      const key = S.intentBasis({
+        appointmentId: AppointmentId.of(intent.appointmentId),
+        commands: [intent.command],
+        acknowledgedOverlap: intent.acknowledgedOverlap === true,
+        expectedVersion: claim,
+      });
       const operationId =
         (intent.operationId === undefined
           ? null
@@ -130,7 +125,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     d.send({ appointmentId: 'appointment-1', command: MOVE });
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startMinutes: 720 },
+      command: { ...MOVE, startMinutes: minute(720) },
     });
     expect(d.sent[1]?.operationId).not.toBe(d.sent[0]?.operationId);
   });
@@ -167,7 +162,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     );
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startMinutes: 720 },
+      command: { ...MOVE, startMinutes: minute(720) },
     });
     // The first intent, sent again: under its own name, whatever landed.
     d.send({ appointmentId: 'appointment-1', command: MOVE });
@@ -201,13 +196,13 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     });
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startMinutes: 600 },
+      command: { ...MOVE, startMinutes: minute(600) },
       expectedVersion: 3,
     });
     // …and a third save from the same sheet, still drawn at 3.
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startMinutes: 720 },
+      command: { ...MOVE, startMinutes: minute(720) },
       expectedVersion: 3,
     });
     expect(d.sent.map((request) => request.expectedVersion)).toEqual([3, 4, 5]);
@@ -223,7 +218,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     // The queued drop goes once the save has landed.
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startMinutes: 720 },
+      command: { ...MOVE, startMinutes: minute(720) },
       expectedVersion: 3,
     });
     expect(d.sent.map((request) => request.expectedVersion)).toEqual([3, 4]);
@@ -241,7 +236,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     // A refused intent stamped nothing: the next one drawn at 3 claims 3.
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startMinutes: 720 },
+      command: { ...MOVE, startMinutes: minute(720) },
       expectedVersion: 3,
     });
     expect(d.sent[1]?.expectedVersion).toBe(3);
@@ -263,13 +258,13 @@ describe('every staff intent goes out named (2026-09-25)', () => {
   it('holds at most CAP failed names per visit, dropping the oldest', () => {
     const cap = AppliedOperation.CAP;
     const d = device(scripted(Array.from({ length: cap + 2 }, () => 'lost')));
-    const at = (minute: number) => ({
+    const at = (offset: number) => ({
       ...MOVE,
-      startMinutes: 660 + minute,
+      startMinutes: minute(660 + offset),
     });
     // CAP + 1 different intents fail: the oldest name falls off.
-    for (let minute = 0; minute <= cap; minute += 1) {
-      d.send({ appointmentId: 'appointment-1', command: at(minute) });
+    for (let offset = 0; offset <= cap; offset += 1) {
+      d.send({ appointmentId: 'appointment-1', command: at(offset) });
     }
     d.send({ appointmentId: 'appointment-1', command: at(0) });
     expect(d.sent[cap + 1]?.operationId).not.toBe(d.sent[0]?.operationId);
@@ -313,15 +308,28 @@ describe('StaffIntentSystem — the two lists', () => {
   });
 
   it('keys an intent by its visit, batch, acknowledgement and claim', () => {
-    const a1 = AppointmentId.of('a-1');
-    const base = S.intentBasis(a1, MOVE, false, 3);
-    expect(S.intentBasis(a1, MOVE, false, 3)).toBe(base);
-    expect(S.intentBasis(AppointmentId.of('a-2'), MOVE, false, 3)).not.toBe(
+    const intent: BookingCall.StaffEditIntent = {
+      appointmentId: AppointmentId.of('a-1'),
+      commands: [MOVE],
+      acknowledgedOverlap: false,
+      expectedVersion: 3,
+    };
+    const base = S.intentBasis(intent);
+    expect(S.intentBasis({ ...intent })).toBe(base);
+    expect(
+      S.intentBasis({ ...intent, appointmentId: AppointmentId.of('a-2') }),
+    ).not.toBe(base);
+    expect(
+      S.intentBasis({
+        ...intent,
+        commands: [{ ...MOVE, startMinutes: minute(720) }],
+      }),
+    ).not.toBe(base);
+    expect(S.intentBasis({ ...intent, acknowledgedOverlap: true })).not.toBe(
       base,
     );
-    expect(S.intentBasis(a1, MOVE, true, 3)).not.toBe(base);
-    expect(S.intentBasis(a1, MOVE, false, null)).not.toBe(base);
-    expect(base).toBe(JSON.stringify(['a-1', MOVE, false, 3]));
+    expect(S.intentBasis({ ...intent, expectedVersion: null })).not.toBe(base);
+    expect(base).toBe(JSON.stringify(['a-1', [MOVE], false, 3]));
   });
 
   it('moves a name kept again to the end, and settles only that intent', () => {
@@ -379,5 +387,13 @@ describe('StaffIntentSystem — the two lists', () => {
     );
     expect(chain).toHaveLength(2);
     expect(names).toHaveLength(1);
+    const intent = deepFreeze({
+      appointmentId: AppointmentId.of('a-1'),
+      commands: [MOVE],
+      acknowledgedOverlap: false,
+      expectedVersion: null,
+    });
+    expect(S.intentBasis(intent)).toBe(S.intentBasis(intent));
+    expect(intent.commands).toEqual([MOVE]);
   });
 });

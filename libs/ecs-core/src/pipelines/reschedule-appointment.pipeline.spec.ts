@@ -32,6 +32,7 @@ import {
   SeatId,
   ServiceId,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingError,
@@ -50,6 +51,7 @@ import {
 import type { CommitPlan } from '@core/ports';
 import { AuditSystem, DecisionInputSystem, MoveSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   at,
   auditRowsOf,
@@ -85,11 +87,6 @@ const ATTEMPT = ((): ClientOperationId => {
 })();
 const COMPANION = UserId.of('u-son');
 const COMPANION_SEAT = SeatId.of('seat-son');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 /** The client's cut on Thursday at 10:00 — well outside the 24 h window. */
 function visit(
@@ -181,7 +178,7 @@ function rig(
 const MOVE_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingRescheduled,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `move:${ATTEMPT}`,
   ),
@@ -288,7 +285,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingRescheduled,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.move(ATTEMPT),
         ),
@@ -305,7 +302,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingRescheduled,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           'move:move-attempt-0123456789',
         ),

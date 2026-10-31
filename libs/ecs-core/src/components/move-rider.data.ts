@@ -5,6 +5,7 @@ import {
   MinuteDelta,
   ServiceId,
   ServiceVariantId,
+  StoredFields,
 } from '@core/primitives';
 
 /**
@@ -24,11 +25,6 @@ export type MoveRider = {
   readonly setupMinutes: MinuteCount;
   readonly cleanupMinutes: MinuteCount;
 };
-
-/** One own field of a stored value, `undefined` when it has none. */
-function fieldOf(raw: object, name: string): unknown {
-  return Object.getOwnPropertyDescriptor(raw, name)?.value;
-}
 
 /** A text a rider id is read from: a non-empty id with no `/`. */
 function idOk(raw: unknown, parse: (raw: string) => { readonly ok: boolean }) {
@@ -53,15 +49,18 @@ export const MoveRider = {
    */
   is(raw: unknown): raw is MoveRider {
     if (raw === null || typeof raw !== 'object') return false;
-    const variantId = fieldOf(raw, 'variantId');
+    const variantId = StoredFields.field(raw, 'variantId');
     return (
-      idOk(fieldOf(raw, 'serviceId'), ServiceId.parse) &&
-      idOk(fieldOf(raw, 'barberId'), BarberId.parse) &&
+      idOk(StoredFields.field(raw, 'serviceId'), ServiceId.parse) &&
+      idOk(StoredFields.field(raw, 'barberId'), BarberId.parse) &&
       (variantId === null || idOk(variantId, ServiceVariantId.parse)) &&
-      minutesOk(fieldOf(raw, 'offsetMinutes'), MinuteDelta.of) &&
-      minutesOk(fieldOf(raw, 'durationMinutes'), DurationMinutes.of) &&
-      minutesOk(fieldOf(raw, 'setupMinutes'), MinuteCount.of) &&
-      minutesOk(fieldOf(raw, 'cleanupMinutes'), MinuteCount.of)
+      minutesOk(StoredFields.field(raw, 'offsetMinutes'), MinuteDelta.of) &&
+      minutesOk(
+        StoredFields.field(raw, 'durationMinutes'),
+        DurationMinutes.of,
+      ) &&
+      minutesOk(StoredFields.field(raw, 'setupMinutes'), MinuteCount.of) &&
+      minutesOk(StoredFields.field(raw, 'cleanupMinutes'), MinuteCount.of)
     );
   },
 } as const;

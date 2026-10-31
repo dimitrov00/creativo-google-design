@@ -19,6 +19,7 @@ import {
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { StoredDocumentSystem } from '@core/systems';
 import { firestoreSchedulePorts } from './firestore-schedules.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The scheduling server reads outside any transaction, over the in-memory
@@ -34,12 +35,6 @@ import { firestoreSchedulePorts } from './firestore-schedules.adapter';
  * so there is no refusal to report.
  */
 const NO_LOG: Log = () => undefined;
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const IVAN = BarberId.of('ivan');
 const NIKO = BarberId.of('niko');

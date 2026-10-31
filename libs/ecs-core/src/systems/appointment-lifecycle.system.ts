@@ -90,6 +90,16 @@ export type ExitVerbs = {
   readonly cancel: boolean;
 };
 
+/**
+ * The slice `transitionSeats` reads off one chair — its own seat ids and
+ * the size of the party it belongs to. A staff day row and a plan row
+ * carry it as they are.
+ */
+export type ChairSeats = {
+  readonly seatIds: readonly SeatId[];
+  readonly partySize: number;
+};
+
 /** The verbs a staff sheet OFFERS, in the order a shop reaches for them. */
 const OFFERED_VERBS: readonly BookingStatus[] = [
   BookingStatus.Confirmed,
@@ -941,16 +951,14 @@ export const AppointmentLifecycleSystem = {
    * ROOT (the whole party, one call with no seat). A move with no per-seat
    * meaning (`SeatOutcome.hasSeatMeaning`: `PENDING`, `CONFIRMED`) always
    * addresses the root, as the server refuses it per seat; so does a chair
-   * holding the whole party (`chairSeatIds.length === partySize`); a
-   * chair's share of a larger party addresses its own seats, one call each.
+   * holding the whole party (`seatIds.length === partySize`); a chair's
+   * share of a larger party addresses its own seats, one call each. Takes
+   * the chair as it is — a day row, a plan row, any {@link ChairSeats}
+   * (Law 3, zero inbound mapping).
    */
-  transitionSeats(
-    to: BookingStatus,
-    chairSeatIds: readonly SeatId[],
-    partySize: number,
-  ): readonly SeatId[] {
+  transitionSeats(to: BookingStatus, chair: ChairSeats): readonly SeatId[] {
     if (!SeatOutcome.hasSeatMeaning(to)) return [];
-    return chairSeatIds.length === partySize ? [] : chairSeatIds;
+    return chair.seatIds.length === chair.partySize ? [] : chair.seatIds;
   },
 
   /**

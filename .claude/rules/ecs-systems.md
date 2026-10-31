@@ -61,6 +61,11 @@ export const IntervalCollisionSystem = {
 - **Zero inbound mapping (Law 6).** A system takes the slice it needs
   (`readonly TimeCoordinate[]`) or the whole entity, by structural typing —
   never `.map()` to strip, rename or re-nest properties before calling it.
+  `creativo/no-identity-mapper` reports a function that copies its argument
+  into the type it already has, a `LocalizedText` copied field by field and
+  a module function or companion member that only forwards its arguments.
+  Its known gap: a copy into a NARROWER type needs type information, so it
+  is a review rule.
 - **Narrow on the domain discriminator** (`bookingStatus`, `paymentMethod`,
   `attendanceState`) with plain `===` against the dictionary value; never a
   generic `kind`/`type` field.

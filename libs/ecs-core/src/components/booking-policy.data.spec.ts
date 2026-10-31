@@ -255,20 +255,18 @@ describe('cancellation window (elapsed time on instants — flatten-spec §2.3 T
   });
 
   it('accepts exactly the windows the policy could set', () => {
-    expect(BookingPolicy.isValidCancellationWindowHours(0)).toBe(true);
-    expect(BookingPolicy.isValidCancellationWindowHours(24)).toBe(true);
-    expect(
-      BookingPolicy.isValidCancellationWindowHours(
-        BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS,
-      ),
-    ).toBe(true);
+    expect(HourCount.is(0)).toBe(true);
+    expect(HourCount.is(24)).toBe(true);
+    expect(HourCount.is(BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS)).toBe(
+      true,
+    );
     for (const hours of [
       -1,
       1.5,
       Number.NaN,
       BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS + 1,
     ]) {
-      expect(BookingPolicy.isValidCancellationWindowHours(hours)).toBe(false);
+      expect(HourCount.is(hours)).toBe(false);
     }
   });
 

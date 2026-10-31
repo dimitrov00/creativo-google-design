@@ -343,18 +343,6 @@ export interface MeasuredColumn {
 }
 
 /**
- * The content width of `host`, followed as it resizes; `null` until the
- * first measurement, and for good where nothing measures (a server, a
- * test DOM without `ResizeObserver`). Call it in an injection context: it
- * stops observing when that context is destroyed.
- */
-export function measuredWidthOf(
-  host: ElementRef<HTMLElement>,
-): Signal<MeasuredColumn | null> {
-  return measuredColumn(host);
-}
-
-/**
  * A record card's WORD figure (a favourite's service) on the rung its own
  * card holds, by the card's measured width ({@link measuredWidthOf}; a
  * phone's 2-up card until measured): the headline (18/600 — «подстрижка»
@@ -425,7 +413,7 @@ export function recordColumnsFor(columnPx: number, remPx = 16): RecordColumns {
 export function recordColumnsOf(
   host: ElementRef<HTMLElement>,
 ): Signal<RecordColumns> {
-  const column = measuredColumn(host);
+  const column = measuredWidthOf(host);
   return computed(() => {
     const measured = column();
     return measured === null
@@ -434,7 +422,13 @@ export function recordColumnsOf(
   });
 }
 
-function measuredColumn(
+/**
+ * The content width of `host`, followed as it resizes; `null` until the
+ * first measurement, and for good where nothing measures (a server, a
+ * test DOM without `ResizeObserver`). Call it in an injection context: it
+ * stops observing when that context is destroyed.
+ */
+export function measuredWidthOf(
   host: ElementRef<HTMLElement>,
 ): Signal<MeasuredColumn | null> {
   const measured = signal<MeasuredColumn | null>(null, {
@@ -467,7 +461,7 @@ function measuredColumn(
  */
 export function medalGridOf(host: ElementRef<HTMLElement>): Signal<MedalGrid> {
   const regular = regularSheetWidth();
-  const column = measuredColumn(host);
+  const column = measuredWidthOf(host);
   return computed(() => {
     const measured = column();
     if (measured !== null) {
@@ -487,7 +481,7 @@ export function familyGridOf(
   host: ElementRef<HTMLElement>,
 ): Signal<FamilyGrid> {
   const regular = regularSheetWidth();
-  const column = measuredColumn(host);
+  const column = measuredWidthOf(host);
   return computed(() => {
     const measured = column();
     return measured === null
@@ -511,7 +505,7 @@ export function sheetColumnOf(
   host: ElementRef<HTMLElement>,
 ): Signal<MeasuredColumn> {
   const regular = regularSheetWidth();
-  const column = measuredColumn(host);
+  const column = measuredWidthOf(host);
   return computed(
     () =>
       column() ?? {

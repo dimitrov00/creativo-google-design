@@ -85,7 +85,6 @@ const DOMAIN = {
 };
 
 const idOf = ({ path }) => path.split('/').at(-1);
-const valuesOf = (dictionary) => Object.values(dictionary);
 
 /** The fields of a body that ARE its coupon value (`CouponValue`), by method. */
 const VALUE_FIELDS = Object.freeze({
@@ -136,16 +135,16 @@ describe('the coupons', () => {
     (_id, { data }) => {
       expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
       expect(Object.keys(data)).not.toContain('id');
-      expect(valuesOf(DiscountMethod)).toContain(data.discountMethod);
+      expect(Object.values(DiscountMethod)).toContain(data.discountMethod);
       // Exactly the fields of its own variant — never another's beside them.
       for (const field of ALL_VALUE_FIELDS) {
         expect(field in data, field).toBe(
           VALUE_FIELDS[data.discountMethod].includes(field),
         );
       }
-      expect(valuesOf(CouponStatus)).toContain(data.couponStatus);
-      expect(valuesOf(Combinability)).toContain(data.combinability);
-      expect(valuesOf(CouponExpiry)).toContain(data.couponExpiry);
+      expect(Object.values(CouponStatus)).toContain(data.couponStatus);
+      expect(Object.values(Combinability)).toContain(data.combinability);
+      expect(Object.values(CouponExpiry)).toContain(data.couponExpiry);
       // A plain document: what is written is what is read, byte for byte.
       expect(JSON.parse(JSON.stringify(data))).toEqual(data);
     },
@@ -170,7 +169,7 @@ describe('the coupons', () => {
     for (const { data } of couponWritesOf()) {
       expect(Object.keys(data)).toContain('couponOccasion');
       if (data.couponOccasion !== null) {
-        expect(valuesOf(CouponOccasion)).toContain(data.couponOccasion);
+        expect(Object.values(CouponOccasion)).toContain(data.couponOccasion);
       }
     }
   });
@@ -417,7 +416,9 @@ describe('the gift vouchers', () => {
       const { vouchers } = promotionsOn(nowMs);
       expect(vouchers).toHaveLength(6);
       for (const { path, data } of vouchers) {
-        expect(valuesOf(VoucherStatus), path).toContain(data.voucherStatus);
+        expect(Object.values(VoucherStatus), path).toContain(
+          data.voucherStatus,
+        );
         const voided = data.voucherStatus === VoucherStatus.Void;
         expect('voidedAtUtcMs' in data, path).toBe(voided);
         expect('voidReason' in data, path).toBe(voided);

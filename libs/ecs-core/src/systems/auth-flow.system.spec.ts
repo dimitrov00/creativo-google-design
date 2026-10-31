@@ -39,11 +39,11 @@ function advance(state: AuthFlowState, event: AuthFlowEvent): AuthFlowState {
 }
 
 const submitted = (): AuthFlowState =>
-  advance(AuthFlowSystem.initial(), AuthFlowEvent.submitIdentifier(IDENTIFIER));
+  advance(AuthFlowState.initial(), AuthFlowEvent.submitIdentifier(IDENTIFIER));
 
 describe('AuthFlowSystem.next', () => {
   it('opens on identify — the welcome interstitial is retired (design §1.5)', () => {
-    expect(AuthFlowSystem.initial().authFlowStep).toBe(AuthFlowStep.Identify);
+    expect(AuthFlowState.initial().authFlowStep).toBe(AuthFlowStep.Identify);
   });
 
   it('walks identify -> otp -> authenticated for a returning session', () => {
@@ -147,7 +147,7 @@ describe('AuthFlowSystem.next', () => {
 
   it('rejects back from identify — there is no earlier step to return to', () => {
     const result = AuthFlowSystem.next(
-      AuthFlowSystem.initial(),
+      AuthFlowState.initial(),
       AuthFlowEvent.back(),
     );
     expect(result.ok).toBe(false);
@@ -155,7 +155,7 @@ describe('AuthFlowSystem.next', () => {
 
   it('rejects verifying from the identify state', () => {
     const result = AuthFlowSystem.next(
-      AuthFlowSystem.initial(),
+      AuthFlowState.initial(),
       AuthFlowEvent.verified(SessionKind.Returning),
     );
     expect(result.ok).toBe(false);

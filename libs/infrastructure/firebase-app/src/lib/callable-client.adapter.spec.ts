@@ -3,6 +3,7 @@ import { type Functions, FunctionsError } from 'firebase/functions';
 import {
   BookingCall,
   type ClientIssue,
+  Identifier,
   OtpCode,
   Placement,
   StreakPublishCall,
@@ -137,7 +138,7 @@ describe('callableClientPorts — the transport operation id', () => {
 
   const OTP_REQUEST = {
     identifierChannel: IdentifierChannel.Phone,
-    identifier: '+359888123456',
+    identifier: Identifier.of('+359888123456'),
   } as const;
 
   it('mints one for an operationId callable whose input names none, the input otherwise unchanged', async () => {
@@ -319,7 +320,7 @@ describe('callableClientPorts — a refusal, through the ONE classification', ()
     const failure = unwrapErr(
       await client()(Callables.RequestOtpChallenge)({
         identifierChannel: IdentifierChannel.Phone,
-        identifier: '+359888123456',
+        identifier: Identifier.of('+359888123456'),
       }),
     );
 
@@ -366,7 +367,7 @@ describe('callableClientPorts — the operation id on every failure', () => {
 
   const OTP_REQUEST = {
     identifierChannel: IdentifierChannel.Phone,
-    identifier: '+359888123456',
+    identifier: Identifier.of('+359888123456'),
   } as const;
 
   it('carries the attempt id of a booking refusal', async () => {
@@ -510,7 +511,7 @@ describe('callableClientPorts — a transport failure, reported to the issue sin
 
     await client(IDS, sink.ports)(Callables.RequestOtpChallenge)({
       identifierChannel: IdentifierChannel.Phone,
-      identifier: '+359888123456',
+      identifier: Identifier.of('+359888123456'),
     });
 
     expect(sink.reported).toEqual([

@@ -20,6 +20,7 @@ import {
 } from '@core/primitives';
 import { StreakRuleSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_TODAY,
   localDate,
   streakDefinitionFixture,
@@ -75,12 +76,6 @@ const SECOND: StreakDefinitionVersion = {
   requestId: PublishRequestId.of('req-wider-grace'),
   withdrawnAtUtcMs: null,
 };
-
-function bodyOf<E extends { readonly id: string }>(entity: E): Omit<E, 'id'> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  ) as Omit<E, 'id'>;
-}
 
 /**
  * The reads of the rhythm's rule against the emulator and the real rules.

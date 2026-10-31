@@ -7,7 +7,6 @@ import {
   CancellationReasonSet,
   CancelledBy,
   ClientStatsPolicy,
-  type DocBody,
   PolicyPassStamp,
   PolicyStepOutcome,
   PreciseInstant,
@@ -33,6 +32,7 @@ import {
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
 import {
+  bodyOf,
   appointmentFixture,
   customerOf,
   endMinute,
@@ -81,13 +81,6 @@ const DAY = localDate('2026-09-18');
 const START = utcMs('2026-09-18T09:00:00.000+03:00');
 const HOUR = 3_600_000;
 const JOB_PATH = `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}`;
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** A visit `who` called off `leadHours` before it, under a stamped window or none. */
 function cancelledAhead(

@@ -5,6 +5,7 @@ import { RepositoryErrorCode } from '@core/errors';
 import { provisionedUserFixture, registeredUserFixture } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreUserPorts } from './firestore-users.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The account by sign-in destination (identity flip (2)): the single-field
@@ -14,12 +15,6 @@ import { firestoreUserPorts } from './firestore-users.adapter';
  */
 
 const MAIL = Email.of('client@example.com');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 describe('firestoreUserPorts', () => {
   it('finds a provisioned stub back as stored — PROVISIONED, its one channel, every key present', async () => {

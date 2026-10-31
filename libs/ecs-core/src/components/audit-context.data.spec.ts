@@ -7,6 +7,7 @@ import {
   BookingStatus,
   Currency,
   CustomerId,
+  IdentifierChannel,
   ImpersonationSessionId,
   LocationId,
   PriceCents,
@@ -27,12 +28,18 @@ import type { ProfileAction } from './profile-action.data';
 import { AccountStatus } from './account-status.data';
 import { AuditedProfileField } from './audited-profile-field.data';
 import { ImpersonationEndReason } from './end-reason-fields.data';
+import type { ErasureAction } from './erasure-action.data';
+import { ErasureCensus } from './erasure-census.data';
 import type { GovernedAction } from './governed-action.data';
 import { GovernedCollection } from './governed-collection.data';
 import { ImpersonationScope } from './impersonation-scope.data';
+import { OtpDestinationType } from './otp-destination-type.data';
+import { OtpPurpose } from './otp-purpose.data';
+import { OtpRefusalReason } from './otp-refusal-reason.data';
 import { RegistrationField } from './registration.data';
 import { Role } from './role.data';
 import type { RescheduleDelta } from './reschedule-delta.data';
+import { SessionKind } from './session-kind.data';
 import { StaffEditDelta } from './staff-edit-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { TipAction } from './tip-action.data';
@@ -58,7 +65,7 @@ describe('AuditAction', () => {
     );
     for (const action of AuditContext.ACTIONS) {
       expect(action).toMatch(
-        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED)_[A-Z_]+$/,
+        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY|PRIVACY)_[A-Z_]+$/,
       );
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
@@ -78,6 +85,27 @@ describe('AuditAction', () => {
     expect(
       AuditContext.ACTIONS.filter((action) => action.includes('REVOKE')),
     ).toEqual([]);
+    // The sign-in verbs (audit-hardening Phase 3, P3-DEP-7).
+    expect(
+      AuditContext.ACTIONS.filter((action) => action.startsWith('IDENTITY_')),
+    ).toEqual([
+      'IDENTITY_OTP_REQUESTED',
+      'IDENTITY_OTP_VERIFIED',
+      'IDENTITY_OTP_REFUSED',
+      'IDENTITY_SESSION_ISSUED',
+      'IDENTITY_REGISTRATION_COMPLETED',
+    ]);
+    // The data-subject verbs (audit-hardening Phase 3 WS-C, P3-DEP-10; the
+    // erasure's four, WS-D, P3-DEP-18 — the sweep's, P3-DEP-33).
+    expect(
+      AuditContext.ACTIONS.filter((action) => action.startsWith('PRIVACY_')),
+    ).toEqual([
+      'PRIVACY_CLIENT_EXPORTED',
+      'PRIVACY_CLIENT_ERASURE_SWEPT',
+      'PRIVACY_CLIENT_ERASURE_STARTED',
+      'PRIVACY_CLIENT_ERASED',
+      'PRIVACY_CLIENT_ERASURE_RESWEPT',
+    ]);
   });
 
   it('the verb groups plus the single-verb variants partition the dictionary — each verb in exactly one (tsc)', () => {
@@ -88,7 +116,13 @@ describe('AuditAction', () => {
       | typeof AuditAction.LoyaltyStreakDefinitionWithdrawn
       | typeof AuditAction.OpsBackfill
       | typeof AuditAction.GovernanceImpersonationStarted
-      | typeof AuditAction.GovernanceImpersonationEnded;
+      | typeof AuditAction.GovernanceImpersonationEnded
+      | typeof AuditAction.IdentityOtpRequested
+      | typeof AuditAction.IdentityOtpVerified
+      | typeof AuditAction.IdentityOtpRefused
+      | typeof AuditAction.IdentitySessionIssued
+      | typeof AuditAction.IdentityRegistrationCompleted
+      | typeof AuditAction.PrivacyClientExported;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -97,6 +131,7 @@ describe('AuditAction', () => {
       StaffEditAction,
       ProfileAction,
       GovernedAction,
+      ErasureAction,
       Singles,
     ];
     // `tsc` failing on either constant IS the failure.
@@ -193,7 +228,7 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('staff edit carries a touched pair and copies its id lists', () => {
+  it('staff edit carries a touched pair and the delta’s id lists as given', () => {
     const discountIds = [AppliedDiscountId.of('manual')];
     const barbers = [BarberId.of('b-1')];
     const context = AuditContext.staffEdit(AuditAction.BookingStaffSave, 4, {
@@ -203,8 +238,8 @@ describe('AuditContext — one flat variant per verb family, every field present
       editRestaffFromBarberIds: barbers,
       editRestaffToBarberIds: [BarberId.of('b-2')],
     });
-    discountIds.push(AppliedDiscountId.of('code:c-1'));
-    barbers.push(BarberId.of('b-9'));
+    expect(context.editDiscountIds).toBe(discountIds);
+    expect(context.editRestaffFromBarberIds).toBe(barbers);
     expect(context).toMatchObject({
       editDiscountFromIds: [],
       editDiscountIds: ['manual'],
@@ -214,13 +249,13 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('reschedule copies its barber lists', () => {
+  it('reschedule carries the delta’s barber lists as given', () => {
     const from = [BarberId.of('b-1')];
     const context = AuditContext.rescheduled(1, {
       ...MOVE,
       rescheduleFromBarberIds: from,
     });
-    from.push(BarberId.of('b-9'));
+    expect(context.rescheduleFromBarberIds).toBe(from);
     expect(context.rescheduleFromBarberIds).toEqual(['b-1']);
   });
 
@@ -262,7 +297,7 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('streak published / withdrawn copy their facts', () => {
+  it('streak published / withdrawn carry their facts, the changed list as given', () => {
     const streakChanged: StreakRuleParameter[] = [StreakRuleParameter.Interval];
     const published = AuditContext.streakPublished({
       streakFromVersion: 1,
@@ -273,7 +308,7 @@ describe('AuditContext — one flat variant per verb family, every field present
       streakChanged,
       streakReplacedVersion: null,
     });
-    streakChanged.push(StreakRuleParameter.Qualifier);
+    expect(published.streakChanged).toBe(streakChanged);
     expect(published).toEqual({
       auditAction: 'LOYALTY_STREAK_DEFINITION_PUBLISHED',
       streakFromVersion: 1,
@@ -325,10 +360,10 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('profile copies the changed field names; its role and status tags stay null', () => {
+  it('profile carries the changed field names as given; its role and status tags stay null', () => {
     const fields: RegistrationField[] = [RegistrationField.FirstName];
     const context = AuditContext.profile(AuditAction.ProfileUpdated, fields);
-    fields.push(RegistrationField.Phone);
+    expect(context.profileFields).toBe(fields);
     expect(context).toEqual({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['firstName'],
@@ -339,7 +374,7 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('profileWithTags carries the role and status before-and-after, the lists copied (WS-3)', () => {
+  it('profileWithTags carries the role and status before-and-after, the lists as given (WS-3)', () => {
     const rolesTo: Role[] = [Role.Barber];
     const context = AuditContext.profileWithTags(
       AuditAction.ProfileUpdated,
@@ -351,7 +386,7 @@ describe('AuditContext — one flat variant per verb family, every field present
         profileAccountStatusTo: AccountStatus.Blocked,
       },
     );
-    rolesTo.push(Role.Admin);
+    expect(context.profileRolesTo).toBe(rolesTo);
     expect(context).toEqual({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['roles', 'accountStatus'],
@@ -388,19 +423,126 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('governed copies the changed field names (WS-3)', () => {
+  it('governed carries the changed field names as given (WS-3)', () => {
     const fields = ['dayOfWeek', 'closed'];
     const context = AuditContext.governed(
       AuditAction.GovernedDocUpdated,
       GovernedCollection.BarberSchedules,
       fields,
     );
-    fields.push('notes');
+    expect(context.governedFields).toBe(fields);
     expect(context).toEqual({
       auditAction: 'GOVERNED_DOC_UPDATED',
       governedCollection: 'BARBER_SCHEDULES',
       governedFields: ['dayOfWeek', 'closed'],
     });
+  });
+
+  it('the sign-in rows — tags, counts and the expiry, never a destination or a code (Phase 3 WS-B)', () => {
+    expect(
+      AuditContext.otpRequested(OtpDestinationType.Sms, OtpPurpose.Login, AT),
+    ).toEqual({
+      auditAction: 'IDENTITY_OTP_REQUESTED',
+      otpDestinationType: 'SMS',
+      otpPurpose: 'LOGIN',
+      otpExpiresAtUtcMs: AT,
+    });
+    expect(
+      AuditContext.otpVerified(OtpDestinationType.Email, OtpPurpose.Signup, 2),
+    ).toEqual({
+      auditAction: 'IDENTITY_OTP_VERIFIED',
+      otpDestinationType: 'EMAIL',
+      otpPurpose: 'SIGNUP',
+      otpAttemptCount: 2,
+    });
+    expect(
+      AuditContext.otpRefused(
+        OtpDestinationType.Sms,
+        OtpPurpose.Login,
+        OtpRefusalReason.LockedOut,
+        5,
+        5,
+      ),
+    ).toEqual({
+      auditAction: 'IDENTITY_OTP_REFUSED',
+      otpDestinationType: 'SMS',
+      otpPurpose: 'LOGIN',
+      otpRefusalReason: 'LOCKED_OUT',
+      otpAttemptCount: 5,
+      otpMaxAttempts: 5,
+    });
+    expect(
+      AuditContext.sessionIssued(SessionKind.New, OtpDestinationType.Sms),
+    ).toEqual({
+      auditAction: 'IDENTITY_SESSION_ISSUED',
+      sessionKind: 'NEW',
+      otpDestinationType: 'SMS',
+    });
+    expect(AuditContext.registrationCompleted(IdentifierChannel.Phone)).toEqual(
+      {
+        auditAction: 'IDENTITY_REGISTRATION_COMPLETED',
+        registrationIdentifierChannel: 'PHONE',
+      },
+    );
+  });
+
+  it('the export row — counts only, never the bundle or a value (Phase 3 WS-C)', () => {
+    const context = AuditContext.clientExported(42, 7, 18_304);
+    expect(context).toEqual({
+      auditAction: 'PRIVACY_CLIENT_EXPORTED',
+      exportDocumentCount: 42,
+      exportAuditRowCount: 7,
+      exportByteCount: 18_304,
+    });
+    for (const [field, value] of Object.entries(context)) {
+      if (field !== 'auditAction') expect(typeof value, field).toBe('number');
+    }
+  });
+
+  it('the erasure rows — the verb and the eleven census counts, nothing else (Phase 3 WS-D)', () => {
+    const census: ErasureCensus = {
+      erasureRecordCount: 1,
+      erasureAccountCount: 1,
+      erasureContactCount: 3,
+      erasureLabelCount: 2,
+      erasureNoteCount: 4,
+      erasurePhotoCount: 5,
+      erasureDocumentCount: 6,
+      erasurePseudonymCount: 1,
+      erasureVisitCount: 9,
+      erasureContactKeptCount: 1,
+      erasureJournalCount: 12,
+    };
+    for (const auditAction of [
+      AuditAction.PrivacyClientErasureSwept,
+      AuditAction.PrivacyClientErasureStarted,
+      AuditAction.PrivacyClientErased,
+      AuditAction.PrivacyClientErasureReswept,
+    ] as const) {
+      expect(AuditContext.clientErasure(auditAction, census)).toEqual({
+        auditAction,
+        ...census,
+      });
+    }
+    // A wider struct (an answer with its status, a stray value) is copied
+    // count by count: nothing but the eleven reaches the row.
+    const wider = {
+      ...census,
+      erasureStatus: 'ERASING',
+      displayName: 'Sentinel Firstname',
+    };
+    const context = AuditContext.clientErasure(
+      AuditAction.PrivacyClientErased,
+      wider,
+    );
+    expect(Object.keys(context)).toEqual([
+      'auditAction',
+      ...Object.keys(ErasureCensus.EMPTY),
+    ]);
+    expect(JSON.stringify(context)).not.toContain('Sentinel');
+    for (const [field, value] of Object.entries(context)) {
+      if (field !== 'auditAction') expect(typeof value, field).toBe('number');
+    }
   });
 });
 

@@ -53,6 +53,7 @@ import {
   BackfillPlanSystem,
   type BackfillRequest,
   ClientStatsSystem,
+  FailureCodeSystem,
   TriggerAttemptSystem,
   WorkBudgetSystem,
   ZonedTimeSystem,
@@ -661,7 +662,7 @@ export const runBackfill = (
     } catch (error) {
       // Never fatal: a failed audit write never replaces the call's answer.
       ports.log('error', LogEvent.BackfillAuditNotWritten, {
-        code: TriggerAttemptSystem.failureCode(error),
+        code: FailureCodeSystem.codeOf(error),
       });
     }
   }
@@ -714,7 +715,7 @@ export const runBackfill = (
         request.backfillJobName,
         ended ?? {
           backfillCallEnd: BackfillCallEnd.Failed,
-          failureCode: TriggerAttemptSystem.UNKNOWN_CODE,
+          failureCode: FailureCodeSystem.UNKNOWN_CODE,
         },
       );
     }

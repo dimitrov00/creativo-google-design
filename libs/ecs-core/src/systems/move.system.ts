@@ -12,7 +12,6 @@ import {
   SeatOutcome,
   Seat,
   SeatSubject,
-  type ServiceTerms,
 } from '@core/components';
 import {
   BookingStatus,
@@ -77,10 +76,8 @@ export type MovedCartLine = {
  */
 export type CarriedLine = {
   readonly lineId: CartLineId;
-  readonly seatId: SeatId;
   readonly userId: UserId | null;
   readonly startMinutes: MinuteOfDay;
-  readonly terms: ServiceTerms;
   readonly seat: Seat;
 };
 
@@ -647,7 +644,7 @@ export const MoveSystem = {
     const named = decided === null ? retired : plan.carried;
     const seatIds: SeatId[] = [];
     for (let i = 0; i < named.length; i++) {
-      seatIds.push((named[i] as CarriedLine).seatId);
+      seatIds.push((named[i] as CarriedLine).seat.seatId);
     }
     return Result.err(
       MoveCarriedSeatUnplaceable.of(
@@ -773,17 +770,9 @@ export const MoveSystem = {
       }
       carried.push({
         lineId: CartLineId.of(`${CARRIED_LINE}${i}`),
-        seatId: seat.seatId,
         userId:
           seat.seatSubject === SeatSubject.Account ? seat.subjectUserId : null,
         startMinutes,
-        terms: {
-          priceCents: seat.priceCents,
-          currency: seat.currency,
-          durationMinutes: seat.durationMinutes,
-          setupMinutes: seat.setupMinutes,
-          cleanupMinutes: seat.cleanupMinutes,
-        },
         seat,
       });
     }

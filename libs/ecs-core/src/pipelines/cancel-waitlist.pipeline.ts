@@ -1,3 +1,4 @@
+import type { WaitlistCall } from '@core/components';
 import { Result, type UserId, type WaitlistRequestId } from '@core/primitives';
 import type { CancelWaitlistRefusal, RepositoryError } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
@@ -22,10 +23,6 @@ export type CancelWaitlistCommand = {
   readonly requestId: WaitlistRequestId;
 };
 
-export type CancelWaitlistAnswer = {
-  readonly requestId: WaitlistRequestId;
-};
-
 export type CancelWaitlistPorts = CommitPorts & ClockPorts;
 
 export const cancelWaitlist =
@@ -33,7 +30,7 @@ export const cancelWaitlist =
   async (
     cmd: CancelWaitlistCommand,
   ): Promise<
-    Result<CancelWaitlistAnswer, CancelWaitlistRefusal | RepositoryError>
+    Result<WaitlistCall.Requested, CancelWaitlistRefusal | RepositoryError>
   > => {
     const path = [Collections.WaitlistRequests, cmd.requestId];
     // Read once, before the transaction: `decide` may run more than once.

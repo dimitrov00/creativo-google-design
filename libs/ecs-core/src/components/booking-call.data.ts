@@ -362,6 +362,7 @@ export const BookingCall = {
    * Order still counts where the wire means it: the batch is folded in
    * order, and a scope names its seats in order.
    */
+  // eslint-disable-next-line creativo/no-identity-mapper -- the typed door: callers compare command batches, the walker recurses over unknown
   sameCommands(
     a: readonly BookingCall.EditCommand[],
     b: readonly BookingCall.EditCommand[],
@@ -371,7 +372,11 @@ export const BookingCall = {
 
   /* ── answer decoders: the only way an answer becomes branded data ── */
 
-  /** `commitBooking`'s answer — an empty or missing id is a failure, never a success. */
+  /**
+   * `commitBooking`'s answer — and `cancelAppointment`'s and
+   * `rescheduleAppointment`'s, the same `{ appointmentId }` shape: an empty
+   * or missing id is a failure, never a success.
+   */
   decodeCommitted(raw: unknown): Result<BookingCall.Committed, PipelineError> {
     const answer = CallAnswer.read(raw);
     const appointmentId =
@@ -381,16 +386,6 @@ export const BookingCall = {
     return appointmentId === null
       ? CallAnswer.unusable()
       : Result.ok({ appointmentId });
-  },
-
-  decodeRescheduled(
-    raw: unknown,
-  ): Result<BookingCall.Rescheduled, PipelineError> {
-    return BookingCall.decodeCommitted(raw);
-  },
-
-  decodeCancelled(raw: unknown): Result<BookingCall.Cancelled, PipelineError> {
-    return BookingCall.decodeCommitted(raw);
   },
 
   decodeTransitioned(
@@ -757,9 +752,11 @@ export namespace BookingCall {
   }
 
   /* ── answers ── */
+  /**
+   * Every booking write's answer — commit, cancel, reschedule: the visit the
+   * committed write is about (one decoder, `decodeCommitted`, reads all three).
+   */
   export type Committed = { readonly appointmentId: AppointmentId };
-  export type Rescheduled = { readonly appointmentId: AppointmentId };
-  export type Cancelled = { readonly appointmentId: AppointmentId };
   export type Transitioned = {
     readonly appointmentId: AppointmentId;
     readonly toBookingStatus: BookingStatus;

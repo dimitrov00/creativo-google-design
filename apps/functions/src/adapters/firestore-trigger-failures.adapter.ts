@@ -1,9 +1,10 @@
-import type { DocumentData, Firestore } from 'firebase-admin/firestore';
+import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
-import { Collections, type TriggerFailure } from '@core/entities';
+import { Collections } from '@core/entities';
 import type { TriggerFailurePorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { FailureCodeSystem } from '@core/systems';
+import { ALREADY_EXISTS, bodyOf, writeFailed } from './store-answer';
 
 /**
  * The dead letter's one write (audit-hardening WS-6, RU-32 —
@@ -26,16 +27,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * logs it and changes nothing else.
  */
 
-/** Firestore's canonical name for gRPC 6, as `TriggerAttemptSystem.failureCode` reads it. */
-const ALREADY_EXISTS = 'already-exists';
-
-/** The stored body of a dead letter — the entity minus its id (Law 5). */
-function bodyOf(failure: TriggerFailure): DocumentData {
-  return Object.fromEntries(
-    Object.entries(failure).filter(([key]) => key !== 'id'),
-  );
-}
-
 export const firestoreTriggerFailurePorts = (
   db: Firestore,
 ): TriggerFailurePorts => ({
@@ -45,7 +36,7 @@ export const firestoreTriggerFailurePorts = (
       const ref = db.collection(Collections.TriggerFailures).doc(failure.id);
       const code = await ref.create(bodyOf(failure)).then(
         () => null,
-        (error: unknown) => TriggerAttemptSystem.failureCode(error),
+        (error: unknown) => FailureCodeSystem.codeOf(error),
       );
       if (code === null) return Result.ok(undefined);
       if (code !== ALREADY_EXISTS) {
@@ -56,12 +47,7 @@ export const firestoreTriggerFailurePorts = (
         ? Result.ok(undefined)
         : Result.err(RepositoryError.writeFailed(path, ALREADY_EXISTS));
     } catch (error) {
-      return Result.err(
-        RepositoryError.writeFailed(
-          path,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(writeFailed(path, error));
     }
   },
 });

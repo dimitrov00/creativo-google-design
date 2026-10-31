@@ -404,22 +404,28 @@ describe('«Услуги»', () => {
     ).toHaveLength(3);
     click(host, 'admin-rhythm-service-fade');
     await settle(fixture, 2);
-    expect(StreakQualifierRule.of(store.draft())).toEqual(services('fade'));
+    expect(StreakQualifierRule.sliceOf(store.draft())).toEqual(
+      services('fade'),
+    );
     expect(
       byId(host, 'admin-rhythm-service-fade')?.getAttribute('aria-pressed'),
     ).toBe('true');
     click(host, 'admin-rhythm-service-beard');
     await settle(fixture, 2);
-    expect(StreakQualifierRule.of(store.draft())).toEqual(
+    expect(StreakQualifierRule.sliceOf(store.draft())).toEqual(
       services('fade', 'beard'),
     );
     click(host, 'admin-rhythm-service-fade');
     await settle(fixture, 2);
-    expect(StreakQualifierRule.of(store.draft())).toEqual(services('beard'));
+    expect(StreakQualifierRule.sliceOf(store.draft())).toEqual(
+      services('beard'),
+    );
     // The last one chosen stays.
     click(host, 'admin-rhythm-service-beard');
     await settle(fixture, 2);
-    expect(StreakQualifierRule.of(store.draft())).toEqual(services('beard'));
+    expect(StreakQualifierRule.sliceOf(store.draft())).toEqual(
+      services('beard'),
+    );
   });
 
   it('filters by the search', async () => {

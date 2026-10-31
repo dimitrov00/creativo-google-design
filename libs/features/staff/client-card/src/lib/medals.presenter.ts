@@ -1,12 +1,12 @@
-import { type BadgeSeriesId, type LocalDate, defect } from '@core/primitives';
+import { type BadgeSeriesId, defect } from '@core/primitives';
 import {
   BadgeCategoryKind,
   FamilyScopeFilter,
+  LocalizedText,
   MedalRingState,
   MedalState,
   type PersonalRecord,
   PersonalRecordKind,
-  type SeriesStanding,
 } from '@core/components';
 import type { BadgeCategory, BadgeSeries, Season } from '@core/entities';
 import {
@@ -26,12 +26,9 @@ import {
   archiveRowOf,
   completesWithThisVisit,
   completingOf,
-  earnedOnOf,
   eventCardVm,
   familiesOf,
   familyOfMedal,
-  isSingleLevel,
-  latestEarned,
   localeOf,
   medalVm,
   progressList,
@@ -45,9 +42,6 @@ import {
 } from './achievements.presenter';
 import { AchievementScope } from './client-card.contracts';
 import {
-  dayLong,
-  dayShort,
-  figure,
   levelNumeral,
   monthYearLong,
   runningCase,
@@ -68,6 +62,11 @@ import type {
   SeasonCardVm,
   SeasonTrackVm,
 } from './client-pages.vm';
+import {
+  formatCount,
+  formatDayLong,
+  formatDayShort,
+} from '@creativo/ui/wall-clock';
 
 /*
  * «ПОСТИЖЕНИЯ», REVISION 3 (client-card-revision-3 §2.3, §3.8): the
@@ -129,32 +128,29 @@ export const MEDAL_RING_STATES = {
   [MedalRingState.Complete]: 'complete',
 } as const satisfies Record<MedalRingState, UiMedalState>;
 
-/**
- * The ring's arc, 0 … 1 from the last threshold won to the next (§3.8).
- * `null` where there is no next threshold to draw towards: a single act,
- * a family with every level won. A windowed count that fell under the
- * level it once reached draws an empty arc, never a negative one
- * (`BadgeSystem.ringFraction`).
- */
-export function ringValueOf(
-  series: BadgeSeries,
-  standing: SeriesStanding,
-): number | null {
-  return BadgeSystem.ringFraction(series, standing);
-}
-
 /** «23/25»: a target without its level, where a tile has no room for «до III». */
 function fraction(value: number, target: number, lang: string): string {
-  return `${figure(value, lang)}/${figure(target, lang)}`;
+  return `${formatCount(value, lang)}/${formatCount(target, lang)}`;
 }
 
 /** Where a ring is drawn decides what stands under it. */
-interface RingOptions {
+export interface RingOptions {
   /** «Ново» on a level earned since the previous visit: a category's grid only, one place per page. */
   readonly markNew?: boolean;
 }
 
-function ringOf(
+/**
+ * One family as `ui-medal` draws it in revision 3 (§3.8): the built
+ * medal, its ring and the fourth state.
+ *
+ * `size` is the DS's, and says how much stands under the ring:
+ * `extraLarge` is the medal alone (a detail's stage: no title, no
+ * caption); `large` a grid's tile, titled and captioned in full («23/25
+ * до III»); `regular` a card's family, titled and captioned short
+ * («2/3»). A caller that wants less blanks it (`{ ...medal, caption: null }`).
+ * `options` marks «Ново» where one page shows it.
+ */
+export function medalRingVm(
   series: BadgeSeries,
   data: AchievementsData,
   ctx: AchievementsContext,
@@ -179,8 +175,8 @@ function ringOf(
   // is the whole family, so it wears no numeral and no «ниво I» is heard;
   // the same predicate words it by its day below (review 3, round 2: a
   // completed single-level family mixed the one-off's date with a rim chip).
-  const single = isSingleLevel(series);
-  const last = latestEarned(progress);
+  const single = BadgeSystem.isSingleLevel(series);
+  const last = BadgeSystem.latestEarned(progress);
 
   // A regular tile is 53–71 wide: «2/3», never «2/3 до I».
   const toLevel =
@@ -199,11 +195,11 @@ function ringOf(
       ? fraction(standing.value, standing.target, lang)
       : built.caption;
 
-  const earnedOn = earnedOnOf(progress, standing.highestLevel);
+  const earnedOn = BadgeSystem.earnedOn(progress, standing.highestLevel);
   const accessibleName =
     single && standing.medalState === MedalState.Earned && earnedOn !== null
-      ? `${series.title[localeOf(ctx)]}${words.achievement.earnedOn(
-          dayLong(earnedOn, data.today, lang),
+      ? `${LocalizedText.pick(series.title, localeOf(ctx))}${words.achievement.earnedOn(
+          formatDayLong(earnedOn, data.today, lang),
         )}${built.isNew ? words.achievement.newSuffix : ''}${
           pending ? `, ${words.achievements.withThisVisit}` : ''
         }`
@@ -221,7 +217,7 @@ function ringOf(
         ? built.valueText
         : single && last !== null
           ? words.achievement.oneOffEarned(
-              dayShort(last.earnedLocalDate, data.today, lang),
+              formatDayShort(last.earnedLocalDate, data.today, lang),
             )
           : words.achievements.complete,
       accessibleName,
@@ -241,28 +237,9 @@ function ringOf(
         ? null
         : pending
           ? PENDING_RING
-          : (ringValueOf(series, standing) ?? built.value),
+          : (BadgeSystem.ringFraction(series, standing) ?? built.value),
     accessibleName,
   };
-}
-
-/**
- * One family as `ui-medal` draws it in revision 3 (§3.8): the built
- * medal, its ring and the fourth state.
- *
- * `size` is the DS's, and says how much stands under the ring:
- * `extraLarge` is the medal alone (a detail's stage: no title, no
- * caption); `large` a grid's tile, titled and captioned in full («23/25
- * до III»); `regular` a card's family, titled and captioned short
- * («2/3»). A caller that wants less blanks it (`{ ...medal, caption: null }`).
- */
-export function medalRingVm(
-  series: BadgeSeries,
-  data: AchievementsData,
-  ctx: AchievementsContext,
-  size: UiMedalControlSize,
-): MedalVm {
-  return ringOf(series, data, ctx, size);
 }
 
 /** A family as a tile of a grid; a tap opens its detail. */
@@ -274,7 +251,7 @@ function ringTile(
 ): AchievementTileVm {
   return {
     key: series.id,
-    medal: ringOf(series, data, ctx, 'large', options),
+    medal: medalRingVm(series, data, ctx, 'large', options),
     opens: null,
   };
 }
@@ -288,37 +265,6 @@ export const RECORD_ICONS: Readonly<Record<RecordKindWord, UiIconName>> = {
   [RecordKindWord.FavouriteService]: 'loyalty.record.favouriteService',
   [RecordKindWord.FirstVisit]: 'loyalty.record.firstVisit',
 };
-
-/** The cards' order, the account's own (`RecordsSystem.RECORD_ORDER`). */
-export const RECORD_ORDER: readonly PersonalRecordKind[] =
-  RecordsSystem.RECORD_ORDER;
-
-/** How long a record is «Нов рекорд»: set within this many days of the shop's today (`RecordsSystem.NEW_RECORD_DAYS`). */
-export const NEW_RECORD_DAYS: number = RecordsSystem.NEW_RECORD_DAYS;
-
-/**
- * The day a record was set, for «Нов рекорд» and for the newest one: the
- * run's last visit, the record year's last day — today while that year
- * still runs, a record being set now — the first visit's day. A favourite
- * is a sum over the whole book: it has no day, `null`.
- */
-export function recordSetOn(
-  record: PersonalRecord,
-  today: LocalDate,
-): LocalDate | null {
-  return RecordsSystem.setOn(record, today);
-}
-
-/**
- * «Нов рекорд»: set in the last {@link NEW_RECORD_DAYS} days of the shop's
- * today (§4.8). A best that was beaten, so never the first visit (a first
- * is not a record anyone broke), never a favourite (no day), and never the
- * year still running: its figure grows with every visit and is no news
- * until the year closes on it.
- */
-export function isNewRecord(record: PersonalRecord, today: LocalDate): boolean {
-  return RecordsSystem.isNew(record, today);
-}
 
 /**
  * AE — one record of the account as a card of the 2 × 2: its label, the
@@ -345,12 +291,12 @@ export function recordCardVm(
   let src: string | null = null;
   switch (record.personalRecordKind) {
     case PersonalRecordKind.LongestRhythm:
-      value = figure(record.value, lang);
+      value = formatCount(record.value, lang);
       detail = record.on === null ? null : monthYearLong(record.on, lang);
       spoken = words.visitsModule.sectionVisits(record.value);
       break;
     case PersonalRecordKind.MostVisitsInYear:
-      value = figure(record.value, lang);
+      value = formatCount(record.value, lang);
       detail = words.records.yearValue(
         String(record.year ?? defect('a best year held without its year')),
       );
@@ -371,7 +317,7 @@ export function recordCardVm(
       const on = record.on ?? defect('a first visit held without its day');
       // The day and its month as the figure, the year as the detail: the
       // day is read against itself, so no year rides on the figure.
-      value = dayLong(on, on, lang);
+      value = formatDayLong(on, on, lang);
       detail = yearAlone(on, lang);
       spoken = value;
       break;
@@ -379,7 +325,7 @@ export function recordCardVm(
   }
   const kind = RECORD_KIND_WORDS[record.personalRecordKind];
   const label = words.records.label(kind);
-  const isNew = isNewRecord(record, data.today);
+  const isNew = RecordsSystem.isNew(record, data.today);
   return {
     id: kind,
     personalRecordKind: record.personalRecordKind,
@@ -490,7 +436,7 @@ function sectionOf(
 ): MedalSectionVm {
   return {
     categoryId: category.id,
-    title: category.title[localeOf(ctx)],
+    title: LocalizedText.pick(category.title, localeOf(ctx)),
     count: ctx.words.achievements.familyCount(
       earnedAmong(families, data),
       families.length,
@@ -517,7 +463,7 @@ export const CHIP_SEASONS = 'seasons';
 function chipLabel(category: BadgeCategory, ctx: AchievementsContext): string {
   return category.badgeCategoryKind === BadgeCategoryKind.Barbers
     ? ctx.words.achievements.sectionBarbers
-    : category.title[localeOf(ctx)];
+    : LocalizedText.pick(category.title, localeOf(ctx));
 }
 
 /**
@@ -544,7 +490,7 @@ function collectionOf(
       label: words.title,
       valueText: name,
     },
-    figure: figure(earned, ctx.words.lang),
+    figure: formatCount(earned, ctx.words.lang),
     line: words.collectionOf(total),
     levels: words.summaryName(levels),
     accessibleName: name,
@@ -587,7 +533,7 @@ function seasonOf(
   return {
     ...built,
     medal: {
-      ...ringOf(track, data, ctx, 'large'),
+      ...medalRingVm(track, data, ctx, 'large'),
       title: null,
       caption: null,
     },
@@ -595,7 +541,7 @@ function seasonOf(
     families: shelfOrdered(
       familiesOf(data, FamilyScopeFilter.season(season.id)),
       data,
-    ).map((series) => ringOf(series, data, ctx, 'regular')),
+    ).map((series) => medalRingVm(series, data, ctx, 'regular')),
   };
 }
 
@@ -610,7 +556,7 @@ function eventOf(
     medals: shelfOrdered(
       familiesOf(data, FamilyScopeFilter.season(season.id)),
       data,
-    ).map((series) => ringOf(series, data, ctx, 'regular')),
+    ).map((series) => medalRingVm(series, data, ctx, 'regular')),
   };
 }
 
@@ -711,7 +657,7 @@ export function medalsPageVm(
       id: category.id,
       label: chipLabel(category, ctx),
       accessibleName: words.chipName(
-        category.title[localeOf(ctx)],
+        LocalizedText.pick(category.title, localeOf(ctx)),
         earnedAmong(families, data),
         families.length,
       ),
@@ -778,7 +724,7 @@ function trackInRing(
 ): SeasonTrackVm {
   const series = familyOfMedal(data, track.medal);
   if (series === null) return track;
-  const ring = ringOf(series, data, ctx, 'large');
+  const ring = medalRingVm(series, data, ctx, 'large');
   return {
     ...track,
     medal: {
@@ -839,7 +785,7 @@ export function medalScopeVm(
     return {
       ...tile,
       medal: {
-        ...ringOf(series, data, ctx, 'large'),
+        ...medalRingVm(series, data, ctx, 'large'),
         title: tile.medal.title,
         caption: tile.medal.caption,
         accessibleName: tile.medal.accessibleName,
@@ -879,7 +825,7 @@ export function medalScopeVm(
       category === null || drawn === null
         ? built.subline
         : ctx.words.achievements.categorySummary(
-            category.title[localeOf(ctx)],
+            LocalizedText.pick(category.title, localeOf(ctx)),
             earnedAmong(drawn, data),
             drawn.length,
           ),

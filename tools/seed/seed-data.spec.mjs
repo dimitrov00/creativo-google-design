@@ -20,6 +20,7 @@ import {
   CancelledBy,
   ClientStatsPolicy,
   CustomerOrigin,
+  ErasureStatus,
   ParsedIdentifier,
   Placement,
   RegistrationState,
@@ -307,6 +308,7 @@ describe('the dev seed client book', () => {
       expect(id.startsWith('cus_'), uid).toBe(true);
       expect(body.userId, uid).toBe(uid);
       expect(body.customerOrigin, uid).toBe(CustomerOrigin.Seed);
+      expect(body.erasureStatus, uid).toBe(ErasureStatus.None);
       const visits = book.appointments.filter(({ doc }) =>
         doc.subjectUserIds.includes(uid),
       );
@@ -835,6 +837,64 @@ describe('the dev seed client book', () => {
 });
 
 /**
+ * The seed's instant may be pinned at ANY time of day (audit-hardening
+ * Phase 3, P3-DEP-1: `--now` / `SEED_NOW`, the late-shop-time proof at
+ * 23:40): the book must build at every one of them, on the same documents'
+ * ids all day, and one instant must always give one book.
+ */
+describe('the client book at every time of a day (the pinned seed instant)', () => {
+  /** Every 5-minute wall time of a shop day, as instants on the shop's clock (a fall-back repeat at its earlier offset). */
+  const anchorsOf = (localDate) =>
+    Array.from({ length: 288 }, (_, i) => {
+      const instant = ZonedTimeSystem.toUtc(localDate, i * 5, ZONE);
+      if (!instant.ok) throw new Error(`${localDate} ${i * 5}: no instant`);
+      return instant.value;
+    });
+  const written = ({ users, customers, appointments }) => ({
+    users,
+    customers,
+    appointments,
+  });
+  const idsOf = (book) => ({
+    users: book.users.map(({ uid }) => uid),
+    customers: book.customers.map(({ id }) => id),
+    appointments: book.appointments.map(({ id }) => id),
+  });
+
+  it.each([
+    ['a Monday', '2026-09-21'],
+    ['a Sunday', '2026-09-27'],
+    ['the fall-back day', '2026-10-25'],
+  ])(
+    'builds at every 5-minute instant of %s (%s), ids stable, 23:40 among them',
+    (_label, localDate) => {
+      const anchors = anchorsOf(localDate);
+      expect(anchors).toHaveLength(288);
+      expect(new Set(anchors).size).toBe(288);
+      expect(
+        anchors.map((ms) => ZonedTimeSystem.toLocal(ms, ZONE).localDate),
+      ).toEqual(Array(288).fill(localDate));
+      const late = ZonedTimeSystem.toUtc(localDate, 23 * 60 + 40, ZONE);
+      expect(anchors).toContain(late.value);
+
+      const first = idsOf(buildClientBook(anchors[0]));
+      expect(first.appointments.length).toBeGreaterThan(0);
+      for (const nowMs of anchors) {
+        const book = buildClientBook(nowMs);
+        expect(book.calendar.today, String(nowMs)).toBe(localDate);
+        expect(idsOf(book), String(nowMs)).toEqual(first);
+      }
+      // One instant, one book — at the late instant the proof pins.
+      expect(written(buildClientBook(late.value))).toEqual(
+        written(buildClientBook(late.value)),
+      );
+      // 291 books (~9 s alone): room for a loaded parallel run.
+    },
+    120_000,
+  );
+});
+
+/**
  * What revision 3 of the client card reads off the book
  * (client-card-revision-3.md §4.2, §4.7, §4.10). The loyalty fold hands the
  * domain's projector FACTS, and «Движение» folds the journal by event: each
@@ -1240,7 +1300,8 @@ describe('the seed’s documents pass the read-time guards (edge hardening D-1)'
   const refusalsOf = (guard, docs) =>
     docs.flatMap((doc) => {
       const verdict = guard(doc);
-      if (!verdict.ok) return [`${verdict.error.path}: ${verdict.error.reason}`];
+      if (!verdict.ok)
+        return [`${verdict.error.path}: ${verdict.error.reason}`];
       return verdict.value === doc ? [] : [`${doc.id}: not the same object`];
     });
 

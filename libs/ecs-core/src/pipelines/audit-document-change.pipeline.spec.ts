@@ -32,6 +32,7 @@ import {
   pinnedNowUtcMs,
   unwrapOk,
   utcMs,
+  auditResource,
 } from '@core/testing';
 import { auditDocumentChange } from './audit-document-change.pipeline';
 
@@ -329,8 +330,8 @@ describe('auditDocumentChange — a governed write (WS-3, DEP-14)', () => {
               fixtureHash(
                 AuditSystem.rowBasis(
                   'GOVERNED_DOC_UPDATED',
-                  resourceId,
-                  isCustomer ? 'doc-1' : null,
+                  auditResource(resourceId),
+                  isCustomer ? CustomerId.of('doc-1') : null,
                   'evt-g1',
                 ),
               ),

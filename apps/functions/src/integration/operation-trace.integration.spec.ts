@@ -39,6 +39,7 @@ import {
   type TriggerEdgePorts,
 } from '../edge';
 import { decodeCommitBooking } from '../wire/booking.wire';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * ONE operation id, followed end to end against the REAL Firestore emulator
@@ -128,12 +129,6 @@ const REQUEST = {
 
 /** A deployed function's `run` — what the platform (and a spec) invokes. */
 type Runnable = { readonly run: (request: unknown) => Promise<unknown> };
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** A logger level's spy — what the console telemetry adapter wrote through it. */
 type LevelSpy = { readonly mock: { readonly calls: readonly unknown[][] } };

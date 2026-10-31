@@ -6,6 +6,7 @@ import {
   Result,
   ServiceCategoryId,
   ServiceId,
+  StoredFields,
   StreakDefinitionId,
   Tag,
   type UserId,
@@ -39,7 +40,6 @@ import {
   callerUserId,
 } from '../lib/booking/caller-roles';
 import {
-  field,
   isRecord,
   isStoreFailure,
   type Payload,
@@ -73,9 +73,6 @@ import {
  *   `details`.
  */
 
-/** What the callable answers. */
-export type StreakPublishAnswer = StreakPublishCall.Answer;
-
 /**
  * A refusal or a failure → the answer (`Result.ok`, the page words it) or
  * the fault (`Result.err`, the edge throws it): the five rule refusals and
@@ -89,7 +86,7 @@ export type StreakPublishAnswer = StreakPublishCall.Answer;
 export function publishStreakRefusal(
   failure: StreakPublishError.Failure,
   ports: LogPorts,
-): Result<StreakPublishAnswer, EdgeError> {
+): Result<StreakPublishCall.Answer, EdgeError> {
   if (isStoreFailure(failure)) {
     ports.log('error', LogEvent.RhythmRuleWriteFailed, {
       error: failure.reason ?? `${failure.errorCode} ${failure.path}`,
@@ -104,9 +101,9 @@ export function publishStreakRefusal(
 /** A pipeline's answer, as the wire carries it. */
 function settleStreakAnswer<A>(
   result: Result<A, StreakPublishError.Failure>,
-  encode: (answer: A) => StreakPublishAnswer,
+  encode: (answer: A) => StreakPublishCall.Answer,
   ports: LogPorts,
-): Result<StreakPublishAnswer, EdgeError> {
+): Result<StreakPublishCall.Answer, EdgeError> {
   return result.ok
     ? Result.ok(encode(result.value))
     : publishStreakRefusal(result.error, ports);
@@ -128,7 +125,7 @@ export async function answerStreakPublish(
   noteDecoded: (
     command: PublishStreakDefinitionCommand | WithdrawStreakDefinitionCommand,
   ) => void = () => undefined,
-): Promise<Result<StreakPublishAnswer, EdgeError>> {
+): Promise<Result<StreakPublishCall.Answer, EdgeError>> {
   const asked = decodeStreakPublish(request);
   if (!asked.ok) return publishStreakRefusal(asked.error, telemetry);
   const ask = asked.value;
@@ -253,21 +250,21 @@ export function decodeStreakRequest(
   caller: StreakCaller,
 ): Result<StreakPublishAsk, StreakPublishError.InvalidInput> {
   if (!isRecord(raw)) return malformed('request');
-  const rawRequestId = field(raw, 'requestId');
+  const rawRequestId = StoredFields.field(raw, 'requestId');
   const requestId = ClientOperationId.is(rawRequestId)
     ? PublishRequestId.parse(rawRequestId)
     : null;
   if (requestId === null || !requestId.ok) return malformed('requestId');
-  const rawStreakId = field(raw, 'streakId');
+  const rawStreakId = StoredFields.field(raw, 'streakId');
   const streakId =
     typeof rawStreakId === 'string' && STREAK_ID.test(rawStreakId)
       ? StreakDefinitionId.parse(rawStreakId)
       : null;
   if (streakId === null || !streakId.ok) return malformed('streakId');
 
-  const rule = field(raw, 'rule');
+  const rule = StoredFields.field(raw, 'rule');
   if (rule === undefined || rule === null) {
-    const version = field(raw, 'version');
+    const version = StoredFields.field(raw, 'version');
     if (!isWhole(version, 1)) return malformed('version');
     return Result.ok({
       streakPublishOp: StreakPublishOp.Withdraw,
@@ -280,17 +277,17 @@ export function decodeStreakRequest(
     });
   }
 
-  const baseVersion = field(raw, 'baseVersion');
+  const baseVersion = StoredFields.field(raw, 'baseVersion');
   if (!isWhole(baseVersion, 0)) return malformed('baseVersion');
   if (!isRecord(rule) || JSON.stringify(rule).length > RULE_MAX_BYTES) {
     return malformed('rule');
   }
   const streakTransition = wordOf(
     StreakTransition,
-    field(raw, 'streakTransition'),
+    StoredFields.field(raw, 'streakTransition'),
   );
   if (streakTransition === null) return malformed('streakTransition');
-  const previewHash = field(raw, 'previewHash') ?? null;
+  const previewHash = StoredFields.field(raw, 'previewHash') ?? null;
   if (
     previewHash !== null &&
     (typeof previewHash !== 'string' ||
@@ -299,7 +296,7 @@ export function decodeStreakRequest(
   ) {
     return malformed('previewHash');
   }
-  const asked = field(rule, 'effectiveFromLocalDate');
+  const asked = StoredFields.field(rule, 'effectiveFromLocalDate');
   const effectiveFrom = typeof asked === 'string' ? asked : '';
 
   return Result.ok({
@@ -333,7 +330,7 @@ function faultAt(reader: RuleReader, name: string): void {
 
 /** A whole number, `0` or more. */
 function countAt(reader: RuleReader, rule: Payload, name: string): number {
-  const value = field(rule, name);
+  const value = StoredFields.field(rule, name);
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
     return value;
   }
@@ -342,7 +339,7 @@ function countAt(reader: RuleReader, rule: Payload, name: string): number {
 }
 
 function switchAt(reader: RuleReader, rule: Payload, name: string): boolean {
-  const value = field(rule, name);
+  const value = StoredFields.field(rule, name);
   if (typeof value === 'boolean') return value;
   faultAt(reader, name);
   return false;
@@ -355,7 +352,7 @@ function wordAt<D extends Readonly<Record<string, string>>>(
   d: D,
   placeholder: Tag<D>,
 ): Tag<D> {
-  const value = wordOf(d, field(rule, name));
+  const value = wordOf(d, StoredFields.field(rule, name));
   if (value !== null) return value;
   faultAt(reader, name);
   return placeholder;
@@ -367,7 +364,7 @@ function textsAt(
   rule: Payload,
   name: string,
 ): readonly string[] {
-  const value = field(rule, name);
+  const value = StoredFields.field(rule, name);
   if (
     !Array.isArray(value) ||
     !value.every(
@@ -381,7 +378,7 @@ function textsAt(
 }
 
 function excusesAt(reader: RuleReader, rule: Payload): readonly StreakExcuse[] {
-  const value = field(rule, StreakRuleField.Excuses);
+  const value = StoredFields.field(rule, StreakRuleField.Excuses);
   if (!Array.isArray(value)) {
     faultAt(reader, StreakRuleField.Excuses);
     return [];

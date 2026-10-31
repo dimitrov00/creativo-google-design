@@ -33,6 +33,7 @@ import {
   MoveErrorCode,
   PipelineError,
   PipelineErrorCode,
+  PrivacyErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
   TimeErrorCode,
@@ -263,13 +264,15 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
  * `invalid-argument`) is a defect no user can act on, so its four keys were
  * deleted (OR-50): the surface's own generic line answers it, one level
  * down included. Read from the catalogue, never re-typed — the voice pass
- * owns that line's words.
+ * owns that line's words. The admin privacy callables' own
+ * (`PRIVACY_INVALID_INPUT`, audit-hardening Phase 3) never had words.
  */
 const INVALID_INPUT_CODES: readonly string[] = [
   CancellationRefusalCode.InvalidInput,
   BookingErrorCode.ArrivedInvalidInput,
   BookingErrorCode.TipInvalidInput,
   BookingErrorCode.TransitionInvalidInput,
+  PrivacyErrorCode.InvalidInput,
 ];
 
 describe('wordPipelineError — an unreadable request is the surface’s generic line (OR-50)', () => {
@@ -357,6 +360,15 @@ const booking = refusalOn(BookingErrorCode.CallFailed);
  * fallback here.
  */
 const identity = refusalOn(IdentityErrorCode.CallFailed);
+/**
+ * The staff client card's export and erasure (audit-hardening Phase 3,
+ * WS-C / WS-D — its presenter words a refusal against the generic
+ * `PIPELINE_UNKNOWN`).
+ * `PRIVACY_UNAUTHENTICATED` and `PRIVACY_INVALID_INPUT` reach no surface
+ * (the card's block needs a signed-in admin and sends a well-formed call),
+ * so they have no words.
+ */
+const privacy = refusalOn(PipelineErrorCode.Unknown);
 
 const S = HttpsStatus;
 
@@ -407,6 +419,13 @@ const E18_WORDS: readonly WordedRefusal[] = [
   }),
   booking(StaffEditErrorCode.Unauthenticated, S.Unauthenticated, SIGN_IN_AGAIN),
   booking(StaffEditErrorCode.Forbidden, S.PermissionDenied, FORBIDDEN),
+  // A booking or an edit that would seat a record under erasure
+  // (audit-hardening Phase 3, WS-D): no retry can succeed, so the words
+  // say what the desk can do instead.
+  booking(BookingErrorCode.ClientErased, S.FailedPrecondition, {
+    en: "This client's data was erased. Book them without a phone or e-mail.",
+    bg: 'Данните на този клиент са изтрити. Запиши го без телефон и имейл.',
+  }),
   // The onboarding flow's registration.
   identity(IdentityErrorCode.RegistrationUserNotFound, S.FailedPrecondition, {
     en: "We couldn't find your profile. Sign in again.",
@@ -424,6 +443,34 @@ const E18_WORDS: readonly WordedRefusal[] = [
   identity(IdentityErrorCode.ClaimsPromotionFailure, S.Internal, {
     en: "We couldn't finish signing you up. Try again.",
     bg: 'Не успяхме да завършим регистрацията. Опитай пак.',
+  }),
+  // The staff client card's export (audit-hardening Phase 3, WS-C).
+  privacy(PrivacyErrorCode.Forbidden, S.PermissionDenied, FORBIDDEN),
+  privacy(PrivacyErrorCode.Unavailable, S.FailedPrecondition, {
+    en: "This isn't on for the shop yet.",
+    bg: 'Това още не е включено за салона.',
+  }),
+  privacy(PrivacyErrorCode.ClientNotFound, S.NotFound, {
+    en: "We couldn't find this client.",
+    bg: 'Не намерихме този клиент.',
+  }),
+  privacy(PrivacyErrorCode.ExportTooLarge, S.FailedPrecondition, {
+    en: "There's too much data for one file. Contact support.",
+    bg: 'Данните са твърде много за един файл. Свържи се с поддръжката.',
+  }),
+  // The staff client card's erasure (audit-hardening Phase 3, WS-D); the
+  // link check answers the export too (P3-RU-37 (h)).
+  privacy(PrivacyErrorCode.ErasureStaffAccount, S.FailedPrecondition, {
+    en: "A staff account can't be erased here.",
+    bg: 'Профил на служител не може да се изтрие оттук.',
+  }),
+  privacy(PrivacyErrorCode.AccountLinkMismatch, S.FailedPrecondition, {
+    en: "The account doesn't match the client's record. Contact support.",
+    bg: 'Профилът не съвпада със записа на клиента. Свържи се с поддръжката.',
+  }),
+  privacy(PrivacyErrorCode.ErasureTooLarge, S.FailedPrecondition, {
+    en: 'There are too many records for one erasure. Contact support.',
+    bg: 'Записите са твърде много за едно изтриване. Свържи се с поддръжката.',
   }),
 ];
 
@@ -454,6 +501,7 @@ describe('wordPipelineError — every UI-reachable refusal words as itself (E-18
     BookingErrorCode.TransitionForbidden,
     StaffEditErrorCode.Forbidden,
     StreakPublishErrorCode.CallerNotAdmin,
+    PrivacyErrorCode.Forbidden,
   ])('words %s in the one not-allowed line', (errorCode) => {
     expect(errorsOf(en.errors)(errorCode, {})).toBe(FORBIDDEN.en);
     expect(errorsOf(bg.errors)(errorCode, {})).toBe(FORBIDDEN.bg);

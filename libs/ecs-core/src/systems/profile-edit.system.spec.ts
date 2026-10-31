@@ -423,6 +423,37 @@ describe('ProfileEditSystem.decide — the owner edit (F2-6)', () => {
     ).toBe('Georgi');
   });
 
+  it('refuses an ERASED account as not found — its live token edits nothing after an erasure (P3-RU-17)', () => {
+    const erased = owner({
+      firstName: '—',
+      lastName: '—',
+      phone: null,
+      email: null,
+      birthDate: null,
+      searchName: null,
+      searchPrefixes: [],
+      ...AccountLifecycle.erase(utcMs('2026-07-20T10:00:00Z')),
+    });
+    for (const edit of [
+      edits({ firstName: 'Georgi' }),
+      edits({ firstName: 'Georgi', lastName: 'Ivanov' }),
+      edits({ birthDate: '1990-05-17' }),
+      edits(),
+    ]) {
+      expect(
+        unwrapErr(ProfileEditSystem.decide(erased, edit, AGE_DAY)),
+      ).toEqual({ errorCode: 'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND' });
+    }
+    // The arm is the status alone: the same body ACTIVE is an editable profile.
+    expect(
+      ProfileEditSystem.decide(
+        owner({ firstName: '—', lastName: '—', ...AccountLifecycle.active() }),
+        edits({ firstName: 'Georgi', lastName: 'Ivanov' }),
+        AGE_DAY,
+      ).ok,
+    ).toBe(true);
+  });
+
   it('is pure: same input → same output, inputs untouched', () => {
     const stored = deepFreeze(owner());
     const given = deepFreeze(

@@ -1,19 +1,19 @@
 import { Injectable, computed, inject } from '@angular/core';
-import type { Money } from '@core/components';
+import { LocalizedText, type Money } from '@core/components';
 import type { DurationMinutes } from '@core/primitives';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { formatCents, formatMinutesRange } from '@creativo/ui/wall-clock';
-import { type Localized, type ServiceVm } from './catalog.vm';
+import { type ServiceVm } from './catalog.vm';
 import { formatServiceMeta, serviceCardPrice } from './catalog.presenter';
 
 /**
  * The three locale-bound reads every catalog surface needs: resolve a
- * `Localized` pair, format money, format a duration range.
+ * `LocalizedText` pair, format money, format a duration range.
  *
  * Extracted from `LandingContentService` so the service-detail sheet can
  * be rendered by ANY feature — onboarding, booking — without dragging the
- * marketing lib's content source in behind it. The landing's `text` and
- * `price` delegate here rather than repeating them.
+ * marketing lib's content source in behind it. The landing's components
+ * inject it directly, as every other catalog surface does.
  */
 @Injectable({ providedIn: 'root' })
 export class CatalogWording {
@@ -22,9 +22,9 @@ export class CatalogWording {
   /** Intl locale for money/durations — tracks the active language. */
   readonly locale = computed(() => this.language.activeLang());
 
-  /** Resolve a localized pair against the active language. */
-  text(localized: Localized): string {
-    return localized[this.language.activeLang()] ?? localized.en;
+  /** Resolve a localized pair against the active language (`LanguageService`'s `localeFor`). */
+  text(localized: LocalizedText): string {
+    return LocalizedText.pick(localized, this.language.activeLang());
   }
 
   /**

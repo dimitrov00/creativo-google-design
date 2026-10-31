@@ -172,7 +172,7 @@ function intervalOf(
   patch: RhythmIntervalPatch | null,
   remembered: RememberedIntervals,
 ): StreakIntervalRule {
-  if (patch === null) return StreakIntervalRule.of(held);
+  if (patch === null) return StreakIntervalRule.sliceOf(held);
   const days = StreakIntervalRule.LIMITS.intervalDays;
   const tolerancePct = StreakIntervalRule.LIMITS.intervalTolerancePct;
   if (patch.streakInterval === StreakInterval.Fixed) {
@@ -333,7 +333,7 @@ export const RhythmDraftSystem = {
       version: draft.version,
       effectiveFromLocalDate: draft.effectiveFromLocalDate,
       enabled: patch.enabled ?? draft.enabled,
-      ...StreakQualifierRule.of(patch.qualifier ?? draft),
+      ...StreakQualifierRule.sliceOf(patch.qualifier ?? draft),
       minGapDays: figure(
         patch.minGapDays,
         draft.minGapDays,
@@ -441,7 +441,7 @@ export const RhythmDraftSystem = {
       enabled: draft.enabled === madeOn.enabled ? null : draft.enabled,
       qualifier: sameQualifier(draft, madeOn)
         ? null
-        : StreakQualifierRule.of(draft),
+        : StreakQualifierRule.sliceOf(draft),
       minGapDays:
         draft.minGapDays === madeOn.minGapDays ? null : draft.minGapDays,
       bookingHoldEnabled: holdMoved ? draft.bookingHoldEnabled : null,

@@ -36,7 +36,7 @@ import {
 import {
   type EngagementError,
   RepositoryError,
-  type RhythmPublishRefusal,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
@@ -55,7 +55,6 @@ import {
 import {
   type RememberedIntervals,
   RhythmDraftSystem,
-  type RhythmBounds,
   type RhythmEffectivePresets,
   type RhythmIntervalPatch,
   type RhythmPatch,
@@ -97,9 +96,6 @@ import {
  * reads, never a local copy of it.
  */
 
-/** The business has ONE rhythm rule (§4.1): the recommended rule's id. */
-export const ADMIN_RHYTHM_STREAK_ID = StreakRule.DEFAULT_DEFINITION_ID;
-
 /** A read that has not answered by then counts as failed. */
 export const ADMIN_RHYTHM_READ_TIMEOUT_MS = 10_000;
 
@@ -115,14 +111,6 @@ const READ_FAILURES = {
 
 /** How much of the history «История» lists. */
 export const ADMIN_RHYTHM_HISTORY_LIMIT = 20;
-
-/**
- * The notice a stricter rule owes the clients once they see the rhythm
- * (R29): the ONE figure the server's notice policy and this page share
- * (`StreakRule.RULE_CHANGE_NOTICE_DAYS`), so the page never offers a day
- * the server refuses.
- */
-export const ADMIN_RHYTHM_NOTICE_DAYS = StreakRule.RULE_CHANGE_NOTICE_DAYS;
 
 /** What the new rule does to the runs that exist. «Преизчисляват се» needs the engine and is not offered. */
 export const ADMIN_RHYTHM_TRANSITION: StreakTransition =
@@ -247,11 +235,6 @@ export function patchedRhythmDraft(
   );
 }
 
-/** The ranges that move with the draft (`RhythmDraftSystem.bounds`). */
-export function rhythmBoundsOf(draft: StreakRuleInput): RhythmBounds {
-  return RhythmDraftSystem.bounds(draft);
-}
-
 /** A rule as the form holds it: the rule alone (no head role), through the same clamp every change takes. */
 const draftOf = (rule: StreakRuleInput): StreakRuleInput =>
   patchedRhythmDraft(rule, {});
@@ -298,7 +281,7 @@ function headAfterPublish(
   today: LocalDate,
 ): AdminRhythmHead | null {
   const numbered: StreakRule = {
-    ...StreakRule.of(assessed),
+    ...StreakRule.sliceOf(assessed),
     version: receipt.version,
     effectiveFromLocalDate: receipt.effectiveFromLocalDate,
   };
@@ -408,7 +391,9 @@ export class AdminRhythmStore {
   /** When a change may start: the server's policy, read from the same flag. */
   readonly policy: StreakNoticePolicy = {
     clientsSeeRhythm: this.flags.flagOn(FlagName.LoyaltySelfView),
-    noticeDays: ADMIN_RHYTHM_NOTICE_DAYS,
+    // The notice a stricter rule owes (R29): the ONE figure the server's
+    // notice policy shares, so the page never offers a day it refuses.
+    noticeDays: StreakRule.RULE_CHANGE_NOTICE_DAYS,
   };
 
   /** What a publish does to the runs that exist: a value, not a choice, in this round. */
@@ -470,7 +455,7 @@ export class AdminRhythmStore {
    * that got no answer (`RepositoryError`). Which is which is
    * `StreakPublishError.guard`'s answer.
    */
-  private readonly _refusal = signal<RhythmPublishRefusal | null>(null);
+  private readonly _refusal = signal<PublishStreakDefinitionError | null>(null);
   private readonly _names = signal<
     ReadonlyMap<ServiceId | ServiceCategoryId, string>
   >(new Map());
@@ -605,7 +590,7 @@ export class AdminRhythmStore {
   );
 
   /** The ranges that move with the draft. */
-  readonly bounds = computed(() => rhythmBoundsOf(this._draft()));
+  readonly bounds = computed(() => RhythmDraftSystem.bounds(this._draft()));
 
   /** «Запази» is in flight. */
   readonly saving = this._saving.asReadonly();
@@ -866,7 +851,7 @@ export class AdminRhythmStore {
       this._zone.set(zone.value);
     }
     this.subscription = definitions
-      .observeStreakDefinitionHead(ADMIN_RHYTHM_STREAK_ID)
+      .observeStreakDefinitionHead(StreakRule.DEFAULT_DEFINITION_ID)
       .subscribe({
         next: (head) =>
           this.heard(head.ok ? Result.ok(headOf(head.value)) : head),
@@ -1023,7 +1008,7 @@ export class AdminRhythmStore {
       this._versions.set(LoadSlice.loading);
     const read = await this.timed(() =>
       definitions.listStreakDefinitionVersions(
-        ADMIN_RHYTHM_STREAK_ID,
+        StreakRule.DEFAULT_DEFINITION_ID,
         ADMIN_RHYTHM_HISTORY_LIMIT,
       ),
     );
@@ -1075,7 +1060,7 @@ export class AdminRhythmStore {
       assessment: assessed,
       published: base.published,
       requestId,
-      streakId: ADMIN_RHYTHM_STREAK_ID,
+      streakId: StreakRule.DEFAULT_DEFINITION_ID,
       streakTransition: ADMIN_RHYTHM_TRANSITION,
       effectiveFrom,
       today,
@@ -1155,7 +1140,7 @@ export class AdminRhythmStore {
       head: head.schedule,
       published: head.published,
       requestId,
-      streakId: ADMIN_RHYTHM_STREAK_ID,
+      streakId: StreakRule.DEFAULT_DEFINITION_ID,
       today,
     });
     if (generation !== this.generation) return outcome;

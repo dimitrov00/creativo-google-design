@@ -119,7 +119,7 @@ export const CouponValue = {
    * applied discount passes straight in — copied to exactly its variant's
    * fields.
    */
-  of(value: CouponValue): CouponValue {
+  sliceOf<T extends CouponValue>(value: T): CouponValue {
     switch (value.discountMethod) {
       case DiscountMethod.PercentOff:
         return {

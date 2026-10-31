@@ -7,6 +7,4 @@ import { flagOn } from '../lib/flags';
  * CALL, never at module load: during deploy analysis the env holds no
  * values yet, so a top-level read would bake in `false`. Logic-free.
  */
-export const paramFlagsPorts = (): FlagsPorts => ({
-  flagOn: (key) => flagOn(key),
-});
+export const paramFlagsPorts = (): FlagsPorts => ({ flagOn });

@@ -10,6 +10,7 @@ import {
   CustomerOrigin,
   DiscountSource,
   EditCommand,
+  ErasureLifecycle,
   GrantCapacity,
   GrantCapacityTerms,
   GrantExpiry,
@@ -59,6 +60,7 @@ import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * ONE SINGLE-USE REWARD, TWO VISITS, against the REAL Firestore emulator
@@ -93,12 +95,6 @@ let named = 0;
 function nextOperation(): OperationId {
   named += 1;
   return OperationId.of(`burn-operation-${String(named).padStart(6, '0')}`);
-}
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 const thursdayAt = (hour: number) =>
@@ -191,6 +187,7 @@ describe('a coupon grant is burned by the save that spends it (emulator)', () =>
           searchPrefixes: [],
           createdAtUtcMs: FIXTURE_NOW_UTC_MS,
           customerOrigin: CustomerOrigin.Seed,
+          ...ErasureLifecycle.none(),
         },
       ],
       [`${Collections.Appointments}/${FIRST}`, bodyOf(visit())],

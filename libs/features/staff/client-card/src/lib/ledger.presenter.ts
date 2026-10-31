@@ -22,10 +22,7 @@ import { visitSectionLabel } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
 import {
   LINE_JOINT,
-  cardLocaleOf,
-  dayLong,
   dayMonth,
-  dayShort,
   levelNumeral,
   runningCase,
   runsOf,
@@ -39,6 +36,8 @@ import {
 } from './client-pages.vm';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import { type ClientCardWords, LedgerVerbWord } from './client-card.words';
+import { formatDayLong, formatDayShort } from '@creativo/ui/wall-clock';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /*
  * «ДВИЖЕНИЕ» — the journal as a feed (client-card-revision-3 §2.2.5,
@@ -78,21 +77,6 @@ export type ActivityEvent = LedgerEvent<JournalEntry>;
 function textOf(entry: JournalEntry, name: string): string | null {
   const value = PublicLabel.param(entry, name);
   return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
-
-/**
- * The entries as events, newest first. `whole` says the entries are
- * everything there is under the pill (no cursor is left); when they are
- * NOT, the page boundary may have cut the oldest event, so it is held back
- * until the next page, or the end, confirms it (§4.7). An event that is
- * the only one read is kept: a page never reads as empty while it holds a
- * row.
- */
-export function foldByEvent(
-  entries: readonly JournalEntry[],
-  whole: boolean,
-): readonly ActivityEvent[] {
-  return LedgerSystem.fold(entries, whole);
 }
 
 /**
@@ -203,7 +187,7 @@ function rewardNameOf(
   if (rewardId === null) return null;
   return (
     input.catalog?.rewards.find((reward) => reward.id === rewardId)?.name[
-      cardLocaleOf(input.words.lang)
+      localeFor(input.words.lang)
     ] ?? null
   );
 }
@@ -212,7 +196,7 @@ function tierNameOf(tierId: TierId, input: ActivityInput): string | null {
   return input.catalog === null
     ? null
     : (LoyaltyCatalogSystem.tier(input.catalog, tierId)?.name[
-        cardLocaleOf(input.words.lang)
+        localeFor(input.words.lang)
       ] ?? null);
 }
 
@@ -232,7 +216,7 @@ function levelDraft(
     seriesId === null || input.catalog === null
       ? null
       : (LoyaltyCatalogSystem.series(input.catalog, seriesId)?.title[
-          cardLocaleOf(words.lang)
+          localeFor(words.lang)
         ] ?? null);
   const welcome = LedgerSystem.isWelcome(earned);
   const named = welcome
@@ -288,12 +272,12 @@ function reversalDraft(
     before:
       day === null
         ? null
-        : words.ledger.reverses(dayShort(day, today, words.lang)),
+        : words.ledger.reverses(formatDayShort(day, today, words.lang)),
     // A date someone hears says its month in words.
     spoken:
       day === null
         ? null
-        : words.ledger.reverses(dayLong(day, today, words.lang)),
+        : words.ledger.reverses(formatDayLong(day, today, words.lang)),
   };
 }
 
@@ -521,7 +505,7 @@ function rowOf(
     accessibleName: [
       draft.verb,
       draft.spoken,
-      dayLong(day, today, lang),
+      formatDayLong(day, today, lang),
       draft.said,
       amount,
       cancelled,
@@ -614,7 +598,7 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
         : runsOf(words.ledgerPage.subline(holder, balance), [balance]),
     filter: input.filter,
     groups: ready
-      ? activityGroups(foldByEvent(input.entries, input.next === null), {
+      ? activityGroups(LedgerSystem.fold(input.entries, input.next === null), {
           ...input,
           // Only under the pills of POINT rows is a month's net the month's
           // (`LedgerSystem.netsUnder`).

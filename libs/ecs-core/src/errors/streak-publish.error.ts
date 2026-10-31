@@ -150,14 +150,6 @@ export const StreakPublishError = {
  */
 export type PublishStreakDefinitionError = StreakPublishError | RepositoryError;
 
-/**
- * Why the admin page's publish or withdrawal (`rhythm-publish.pipeline.ts`)
- * landed nothing — the same set as the server pipeline's: a refusal the
- * page words, or a request that got no answer (`RepositoryError`), told
- * apart by {@link StreakPublishError.guard}.
- */
-export type RhythmPublishRefusal = PublishStreakDefinitionError;
-
 export namespace StreakPublishError {
   /** A refusal the callable answers rather than throws. */
   export type Answered = Extract<

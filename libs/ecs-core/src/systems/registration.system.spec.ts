@@ -535,6 +535,39 @@ describe('RegistrationSystem.adoptStub — verifyOtp’s tx-2 decision (F2-9)', 
     expect(RegistrationSystem.adoptStub(emailOnly, UID, PHONE).ok).toBe(false);
   });
 
+  it('an ERASED account is never signed into — registered or a cleared stub, the existing paths refuse it (P3-RU-17)', () => {
+    const erasedAt = utcMs('2026-07-20T10:00:00Z');
+    const cleared = {
+      firstName: '—',
+      lastName: '—',
+      phone: null,
+      email: null,
+      birthDate: null,
+      searchName: null,
+      searchPrefixes: [],
+      ...AccountLifecycle.erase(erasedAt),
+    } as const;
+    const erasedRegistered: User = {
+      ...RegistrationSystem.provision(UID, PHONE),
+      registrationState: RegistrationState.Registered,
+      roles: [Role.Client],
+      ...cleared,
+    };
+    const erasedStub: User = {
+      ...RegistrationSystem.provision(UID, PHONE),
+      ...cleared,
+    };
+    for (const stored of [erasedRegistered, erasedStub]) {
+      expect(stored.accountStatus).toBe(AccountStatus.Erased);
+      for (const parsed of [PHONE, EMAIL]) {
+        expect(RegistrationSystem.adoptStub(stored, UID, parsed)).toEqual({
+          ok: false,
+          error: { errorCode: 'IDENTITY_OTP_ACCOUNT_CONFLICT' },
+        });
+      }
+    }
+  });
+
   it('is pure: same input → same output, inputs untouched', () => {
     const stub = deepFreeze(RegistrationSystem.provision(UID, PHONE));
     const parsed = deepFreeze({ ...PHONE });

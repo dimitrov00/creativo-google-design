@@ -1,7 +1,6 @@
 import {
   Actor,
   AuditAction,
-  type DocBody,
   SeatOccupant,
   SeatLabel,
   WriteOp,
@@ -13,6 +12,7 @@ import {
   OperationId,
   SeatId,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -22,6 +22,7 @@ import {
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   cents,
@@ -33,6 +34,7 @@ import {
   memoryTxPorts,
   recordingTelemetry,
   seatFixture,
+  unwrapOk,
 } from '@core/testing';
 import { recordSeatTip } from './record-seat-tip.pipeline';
 
@@ -40,11 +42,6 @@ const STAFF = Actor.staff(UserId.of('u-staff'), []);
 const GUEST_SEAT = SeatId.of('seat-2');
 /** The tip's client-minted operation id (WS-4.1 — required on the call). */
 const OPERATION = OperationId.of('tip-op-0123456789ab');
-
-function bodyOf(appointment: Appointment): DocBody {
-  const { id: _id, ...body } = appointment;
-  return body;
-}
 
 /** The client's cut and a guest's, side by side. */
 function party(): Appointment {
@@ -88,7 +85,7 @@ function rig(appointments: readonly Appointment[]) {
 const TIP_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingTipRecorded,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `tip:${OPERATION}:${FIXTURE_IDS.seat}`,
   ),
@@ -114,6 +111,13 @@ describe('recordSeatTip', () => {
         unchanged: false,
       },
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual([
+      'appointmentId',
+      'seatId',
+      'unchanged',
+    ]);
     const before = party();
     expect(tx.plans).toEqual([
       [
@@ -171,7 +175,7 @@ describe('recordSeatTip', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingTipRecorded,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.tip(OPERATION, FIXTURE_IDS.seat),
         ),

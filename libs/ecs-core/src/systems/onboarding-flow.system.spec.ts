@@ -52,7 +52,7 @@ function advance(
 }
 
 const registered = (): OnboardingFlowState =>
-  advance(OnboardingFlowSystem.initial(), OnboardingFlowEvent.registered());
+  advance(OnboardingFlowState.initial(), OnboardingFlowEvent.registered());
 
 describe('OnboardingFlowSystem.next', () => {
   it('walks about -> reward -> services -> birthday -> avatar -> entering, personalizing along the way', () => {
@@ -121,7 +121,7 @@ describe('OnboardingFlowSystem.next', () => {
 
   it('keeps a failed registration on the about step, carrying the error', () => {
     const state = advance(
-      OnboardingFlowSystem.initial(),
+      OnboardingFlowState.initial(),
       OnboardingFlowEvent.registrationFailed(ALREADY_REGISTERED),
     );
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.About);
@@ -168,14 +168,14 @@ describe('OnboardingFlowSystem.next', () => {
 
   it('rejects personalizing from the about step', () => {
     const result = OnboardingFlowSystem.next(
-      OnboardingFlowSystem.initial(),
+      OnboardingFlowState.initial(),
       OnboardingFlowEvent.personalize(),
     );
     expect(result.ok).toBe(false);
   });
 
   it('stays on about while the registration call is in flight', () => {
-    const about = OnboardingFlowSystem.initial();
+    const about = OnboardingFlowState.initial();
     expect(
       advance(
         about,
@@ -190,7 +190,7 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
   function begin(plan: readonly PersonalizeStep[]): OnboardingFlowState {
     const reward = unwrapOk(
       OnboardingFlowSystem.nextWithinPlan(
-        OnboardingFlowSystem.initial(),
+        OnboardingFlowState.initial(),
         OnboardingFlowEvent.registered(),
         plan,
       ),
@@ -280,7 +280,7 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
   it('an event the step refuses is the answer — nothing is skipped', () => {
     expect(
       OnboardingFlowSystem.nextWithinPlan(
-        OnboardingFlowSystem.initial(),
+        OnboardingFlowState.initial(),
         OnboardingFlowEvent.personalize(),
         PersonalizeStep.ALL,
       ).ok,
@@ -365,7 +365,7 @@ describe('OnboardingFlowSystem properties', () => {
             plan,
           ),
         );
-        if (OnboardingFlowSystem.isPersonalizeStep(state.onboardingFlowStep)) {
+        if (PersonalizeStep.is(state.onboardingFlowStep)) {
           expect(plan).toContain(state.onboardingFlowStep);
         } else {
           expect(plan).toEqual([]);

@@ -66,7 +66,7 @@ import {
   type InboxNotification,
   type JournalEntry,
   type LoyaltyAccount,
-  type LoyaltyCatalog,
+  type LoyaltyCatalogParts,
   type Otp,
   type Position,
   type ScheduleException,
@@ -837,8 +837,9 @@ export type MintedToken = {
  * The ONE state the identity doubles share, data only (never a port
  * member): the document table — `otps/{id}` and `users/{uid}` bodies, the
  * entity minus `id`, the SAME store a spec hands `memoryTxPorts`, so a stub
- * a transaction creates is found by the next `findUserByDestination` and an
- * `saveOtp`'d challenge is read by the next transaction — the Auth users
+ * a transaction creates is found by the next `findUserByDestination` and a
+ * challenge `requestOtp` commits is read by the next probe and the next
+ * transaction — the Auth users
  * (a provision is visible to the next lookup), the minted tokens and the
  * display names, all mutated IN PLACE.
  */
@@ -892,8 +893,9 @@ function entitiesOf<E>(store: MemoryStore, collection: string): readonly E[] {
 
 /**
  * The `otps` store over the world: `loadOpenOtps` — `destination ==`,
- * `consumedAtUtcMs == null`, `createdAtUtcMs >=` (index #10), oldest first;
- * `saveOtp` — a `Set` of the body.
+ * `consumedAtUtcMs == null`, `createdAtUtcMs >=` (index #10), oldest first.
+ * A challenge is saved by a commit plan (`requestOtp`), so a spec serves it
+ * through `memoryTxPorts(world.store)` — the same table this probe reads.
  */
 export function memoryOtpStorePorts(world: IdentityWorld): OtpStorePorts {
   return {
@@ -910,10 +912,6 @@ export function memoryOtpStorePorts(world: IdentityWorld): OtpStorePorts {
             UtcEpochMs.compare(a.createdAtUtcMs, b.createdAtUtcMs),
           ),
       ),
-    saveOtp: async ({ id, ...body }) => {
-      world.store.set(`${Collections.Otps}/${id}`, body);
-      return Result.ok(undefined);
-    },
   };
 }
 
@@ -1120,7 +1118,7 @@ export type LoyaltyCatalogDoubleOptions = {
  * order) unless one is given; with `failing`, a `RepositoryError`.
  */
 export function memoryLoyaltyCatalogReadPorts(
-  catalog: LoyaltyCatalog = loyaltyCatalogFixture(),
+  catalog: LoyaltyCatalogParts = loyaltyCatalogFixture(),
   options: Partial<LoyaltyCatalogDoubleOptions> = {},
 ): LoyaltyCatalogReadPorts {
   return {

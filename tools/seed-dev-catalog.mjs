@@ -18,7 +18,7 @@
  * Every document this file writes is a FLAT ARCHETYPE BODY (Laws 5–7,
  * flip 1 of the ECS migration): `tools/seed/fixtures/*.fixtures.ts` builds
  * each one and holds it to its `@core/entities` type with
- * `satisfies Omit<X, 'id'>`, so a stale shape fails
+ * `satisfies Body<X>`, so a stale shape fails
  * `pnpm nx typecheck seed-tools` before it could fail a query. The client
  * book is authored there too, in the entity's own vocabulary
  * (`book.fixtures.ts`: the clients, one history plan each, the visits
@@ -78,6 +78,24 @@
  * book an earlier full run wrote stays. The loyalty catalogue is catalogue
  * too, and is written in this mode; the loyalty accounts are the book's,
  * and are not.
+ *
+ * ### Pinning the instant
+ *   node tools/seed-dev-catalog.mjs --now=2026-10-27T23:40
+ *   SEED_NOW=1793137200000 pnpm run seed:dev
+ * The client book's calendar — the shop's today, which of today's visits
+ * have already settled, every relative day — is anchored at ONE instant
+ * (`seedNowOf`, `tools/seed/calendar.mjs`): `--now=<text>` first, then env
+ * `SEED_NOW`, else the live clock (`SEED_DEFAULT`), so a plain
+ * `pnpm run seed:dev` writes what it always wrote. `<text>` is epoch
+ * milliseconds (digits), a wall time on the SHOP's clock
+ * (`YYYY-MM-DDTHH:mm`, read on its zone: a spring-forward gap time is
+ * refused, a fall-back repeat takes the earlier offset), or an ISO instant
+ * with `Z` or an offset. A text that names no instant stops the seed before
+ * its first write — it never falls back to the clock. The seed prints
+ * `seed: instant <ISO> (pinned | live)`. `verify:p0` (a) hands both of its
+ * runs ONE instant (`SEED_NOW`); the e2e global setup runs `--catalog-only`
+ * with `--now=` its suite day's 10:00. The stats projection keeps the live
+ * clock (the functions' triggers recompute the same clients on it).
  *
  * ### `--check`
  *   node tools/seed-dev-catalog.mjs --check
@@ -158,7 +176,7 @@ const {
   scheduleExceptionsFor,
 } = seed.catalog;
 const { appointmentPhotoBody } = seed.appointments;
-const { buildClientBook } = seed.book;
+const { buildClientBook, seedNowOf, seedNowTextOf } = seed.book;
 const { staffAccountBody } = seed.users;
 const { BOOKING_POLICY } = seed.settings;
 const { customerIdOf } = seed.customers;
@@ -281,8 +299,16 @@ if (CHECK_ONLY) {
  * what its archetype cannot hold while the book is built.
  */
 // Built in both modes: its calendar and its appointment days place the busy.
-const clientBook = buildClientBook(Date.now());
+// Anchored at the ONE seed instant (see "Pinning the instant" above): the
+// live clock unless `--now=<text>` or `SEED_NOW` pins it; a refused text
+// stops the seed here, before the first write.
+const seedNow = { argv: process.argv, env: process.env };
+const seedNowMs = seedNowOf({ ...seedNow, realNowMs: Date.now() });
+const clientBook = buildClientBook(seedNowMs);
 const { calendar } = clientBook;
+console.log(
+  `seed: instant ${new Date(seedNowMs).toISOString()} (${seedNowTextOf(seedNow) === null ? 'live' : 'pinned'})`,
+);
 
 await db.doc(`serviceCategories/${CATEGORY.id}`).set(CATEGORY.body);
 
@@ -349,7 +375,6 @@ const APPOINTMENT_DAYS = clientBook.appointmentDays;
 
 for (const schedule of SCHEDULES) {
   const barberId = schedule.id;
-  // eslint-disable-next-line security/detect-object-injection -- fixed keys.
   const pattern = BUSY_PATTERN[barberId] ?? [];
   for (let offset = APPOINTMENT_DAYS; offset < BUSY_HORIZON_DAYS; offset++) {
     const localDate = calendar.dayKeyAt(offset);
@@ -438,10 +463,10 @@ console.log(`seeded settings/${BOOKING_POLICY.id}`);
  * THE LOYALTY CATALOGUE (client-card-redesign.md §4.6): the achievement
  * shelves and their medal families, the seasons and the event, the tiers,
  * the rewards and the rhythm — `catalog.json` from ecs-core's test fixtures
- * (`libs/ecs-core/src/testing/fixtures/loyalty/`),
- * the same file the mapper specs and the e2e read, with its seasons moved to
- * the shop's today so every run has one open season, one open event and one
- * ended season. Presentation, not personal data: anyone signed in reads it,
+ * (`libs/ecs-core/src/testing/fixtures/loyalty/`), the same file the
+ * ecs-core specs (`@core/testing`'s loyalty fixtures) and the e2e read,
+ * with its seasons moved to the shop's today so every run has one open
+ * season, one open event and one ended season. Presentation, not personal data: anyone signed in reads it,
  * so the catalogue mode writes it too.
  *
  * THE RHYTHM'S RULE goes in with it: the head, and the first version under
@@ -657,7 +682,7 @@ console.log(`seeded ${clientBook.customers.length} client records`);
  *
  * ### The document IS the flat `Appointment` body
  * Built by `appointmentBody` (`tools/seed/fixtures/appointments.fixtures.ts`,
- * `satisfies Omit<Appointment, 'id'>`), its root lifecycle summarised from
+ * `satisfies Body<Appointment>`), its root lifecycle summarised from
  * its seats (`SeatOutcome.summarize`) and its query mirrors recomputed from
  * them by `AppointmentIndexSystem`, as every write plan derives both: the
  * account keys (`ownerUserId`, `subjectUserIds`) beside the client records
@@ -709,11 +734,15 @@ const statsProjection = seed.projectClientStats({
     seed.StoredDocumentSystem.guardOf,
     seedLog,
   ),
+  // LIVE on purpose, whatever instant the book was seeded at (Phase 3
+  // P3-RU-2): the functions' `dispatchClientProjections` recomputes these
+  // clients on the real clock, and `verify:p0` (c) compares the two — a
+  // pinned projection clock would make (c) flake.
   nowUtcMs: () => Date.now(),
   ...seed.firestoreSettingsPorts(db),
   ...seed.firestoreCatalogPorts(db),
   defaultLocationId: seed.TenantConfig.DEFAULT.defaultLocationId,
-  log: () => {},
+  log: () => undefined,
 });
 
 /**

@@ -1,4 +1,5 @@
 // Phase 4b (2026-10) — read CLAUDE.md Laws 1–9 for the current shape. libs/domain/* and libs/application/* were deleted in Phase 4b; links and paths into them below are dead history.
+// Pre-Law-6/7 shapes (`kind` discriminators, ISO-string instants, a local Brand): never copy a type from this file — the live shapes are libs/ecs-core's.
 /**
  * Client details — data model (spec §9), grown with the achievements read model of
  * `client-card-redesign.md` §4: medal families and seasons, per-client progress, and the pure standing services

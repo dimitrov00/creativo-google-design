@@ -65,6 +65,7 @@ import {
   customerOf,
   termsFixture,
 } from '@core/testing';
+import { CanonicalJsonSystem } from './canonical-json.system';
 import {
   type BilledAppointment,
   ClientStatsSystem,
@@ -1579,8 +1580,8 @@ describe('statsInputChanged — the early exit (§13 R28)', () => {
       seats: base.seats.map((entry) => reversed(entry)),
     };
     expect(changed(base, reordered)).toBe(false);
-    expect(ClientStatsSystem.canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe(
-      ClientStatsSystem.canonicalJson({ a: { c: 3, d: 2 }, b: 1 }),
+    expect(CanonicalJsonSystem.of({ b: 1, a: { d: 2, c: 3 } })).toBe(
+      CanonicalJsonSystem.of({ a: { c: 3, d: 2 }, b: 1 }),
     );
   });
 });

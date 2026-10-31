@@ -10,7 +10,6 @@ import {
   Combinability,
   CouponValue,
   DiscountProvenance,
-  type DocBody,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
@@ -33,6 +32,7 @@ import {
   OperationId,
   Result,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -49,6 +49,7 @@ import {
 } from '@core/entities';
 import { AuditSystem, CouponGrantSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   cents,
@@ -69,11 +70,6 @@ import { cancelAppointment } from './cancel-appointment.pipeline';
 const CLIENT = Actor.user(FIXTURE_IDS.client);
 const VOUCHER = GiftVoucherId.of('v-1');
 const GRANT = CouponGrantId.of('grant-1');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 /** The client's visit three days ahead — well outside the 24 h window. */
 function laterVisit(
@@ -203,7 +199,7 @@ const OPERATION = OperationId.of('cancel-op-0123456789');
 const CANCEL_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingCancelled,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `cancel:${OPERATION}`,
   ),
@@ -221,6 +217,9 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       actor: CLIENT,
     });
     expect(answer).toEqual({ ok: true, value: { appointmentId: visit.id } });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual(['appointmentId']);
     const seat = visit.seats[0];
     const cancelledSeat = {
       ...seat,
@@ -301,7 +300,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingCancelled,
-          visit.id,
+          AuditResourceId.forAppointment(visit.id),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.cancel(OPERATION),
         ),

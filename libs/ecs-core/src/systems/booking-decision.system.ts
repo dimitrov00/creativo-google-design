@@ -12,7 +12,7 @@ import {
   type Placement,
   type PlacementPolicy,
   StaffTermsOverride,
-  type SeatIdPair,
+  SeatIdPair,
   SeatLabel,
   SeatOutcome,
   Seat,
@@ -198,16 +198,6 @@ export type BookingDecision = {
 
 function isBlank(raw: string): boolean {
   return raw.trim().length === 0;
-}
-
-/** A set-algebra start back under its brand — chair time never leaves `[0, 1440)`. */
-function startOf(minutes: number): MinuteOfDay {
-  return MinuteOfDay.ofProven(minutes);
-}
-
-/** A set-algebra end back under its brand — chair time never leaves `(0, 1440]`. */
-function endOf(minutes: number): EndMinute {
-  return EndMinute.ofProven(minutes);
 }
 
 function findSchedule(
@@ -570,7 +560,7 @@ export const BookingDecisionSystem = {
     }
     const standing = SeatingRuleSystem.union(
       SeatingRuleSystem.standingOf(standingSpans),
-      SeatingRuleSystem.ofPairs(context.stood),
+      SeatIdPair.normalize(context.stood),
     );
     const memo = new Map<string, PlacementFacts>();
 
@@ -753,8 +743,8 @@ export const BookingDecisionSystem = {
       busyWrites.push({
         barberId,
         localDate,
-        startMinutes: startOf(occupied.startMinutes),
-        endMinutes: endOf(occupied.endMinutes),
+        startMinutes: MinuteOfDay.ofProven(occupied.startMinutes),
+        endMinutes: EndMinute.ofProven(occupied.endMinutes),
       });
     }
 

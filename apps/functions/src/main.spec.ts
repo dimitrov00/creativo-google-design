@@ -42,8 +42,11 @@ const seam = vi.hoisted(() => {
     'continuePolicyRecompute',
     'editAppointment',
     'endImpersonation',
+    'eraseClient',
+    'exportClientData',
     'markArrival',
     'matchWaitlist',
+    'previewClientErasure',
     'projectClientStats',
     'publishStreakDefinition',
     'rebuildBusy',
@@ -113,6 +116,7 @@ const seam = vi.hoisted(() => {
     pipelines,
     adminFirestore: vi.fn(() => DB),
     adminAuth: vi.fn(() => ({})),
+    adminBucket: vi.fn(() => ({ sentinel: 'bucket' })),
     firestorePorts: vi.fn((...args: unknown[]) => {
       built.push(args);
       return BUNDLE;
@@ -123,6 +127,7 @@ const seam = vi.hoisted(() => {
 vi.mock('./lib/firebase-admin', () => ({
   adminFirestore: seam.adminFirestore,
   adminAuth: seam.adminAuth,
+  adminBucket: seam.adminBucket,
 }));
 vi.mock('./adapters/firestore-ports', () => ({
   firestorePorts: seam.firestorePorts,
@@ -173,7 +178,11 @@ const tracedCallable = {
   secretEnvironmentVariables: [{ key: 'LOG_DIGEST_KEY' }],
 };
 
-/** A callable bound to the walk-in key (OR-26) — the two that mint walk-in records — and the log digest key. */
+/**
+ * A callable bound to the walk-in key (OR-26) — the two that mint walk-in
+ * records, and the admin privacy callables that recognise them (P3-RU-36)
+ * — and the log digest key.
+ */
 const walkInCallable = {
   ...callable,
   secretEnvironmentVariables: [
@@ -234,7 +243,12 @@ const daily = (schedule: string) => ({
  * Pass F's new sink, `reportClientIssues` (OR-34), declares its own: two
  * instances, 80 concurrent calls each, 256 MiB, 10 s. The two callables
  * that mint walk-in records (`commitBooking`, `staffEditAppointment`) bind
- * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26), and every
+ * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26), as does
+ * audit-hardening Phase 3's `exportClientData` (P3-DEP-9: the admin's
+ * data-subject export, 512 MiB, recognising a walk-in's contact by that
+ * key, P3-RU-36) and its erasure pair (P3-DEP-15, P3-DEP-19): the
+ * read-only `previewClientErasure` and the resumable `eraseClient` —
+ * 512 MiB and 540 s, the `runBackfill` idiom — and every
  * callable but the sink binds `LOG_DIGEST_KEY` (audit-hardening WS-4.2,
  * DEP-18: the outcome line's keyed `inputDigest`); no other export holds a
  * secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
@@ -307,6 +321,13 @@ const ENDPOINTS = {
   startImpersonation: tracedCallable,
   endImpersonation: tracedCallable,
   redeemInvitation: tracedCallable,
+  exportClientData: { ...walkInCallable, availableMemoryMb: 512 },
+  previewClientErasure: walkInCallable,
+  eraseClient: {
+    ...walkInCallable,
+    availableMemoryMb: 512,
+    timeoutSeconds: 540,
+  },
   reportClientIssues: {
     ...callable,
     availableMemoryMb: 256,
@@ -353,6 +374,67 @@ const CLIENT = { uid: 'u-client' } as const;
 const STAFF = { uid: 'u-staff', roles: ['barber'] } as const;
 const SYSADMIN = { uid: 'u-admin', roles: ['sysadmin'] } as const;
 const OWNER = { uid: 'u-owner', roles: ['barber', 'admin'] } as const;
+/** The shop's admin alone — the one role `Roles.PRIVACY` admits (P3-RU-13). */
+const PRIVACY_ADMIN = { uid: 'u-owner', roles: ['admin'] } as const;
+/** A staff account with every role but the admin's. */
+const OWNER_WITHOUT_ADMIN = {
+  uid: 'u-owner',
+  roles: ['barber', 'receptionist', 'content_manager', 'sysadmin'],
+} as const;
+
+/** The eleven census counts an erasure answer carries — the residue after a call. */
+const CENSUS = {
+  erasureRecordCount: 0,
+  erasureAccountCount: 0,
+  erasureContactCount: 0,
+  erasureLabelCount: 0,
+  erasureNoteCount: 0,
+  erasurePhotoCount: 0,
+  erasureDocumentCount: 0,
+  erasurePseudonymCount: 0,
+  erasureVisitCount: 3,
+  erasureContactKeptCount: 1,
+  erasureJournalCount: 2,
+} as const;
+
+/** The preview's answer, as the pipeline returns it and the call answers it. */
+const ERASURE_PREVIEW = {
+  erasureStatus: 'NONE',
+  erasureSiblingCustomerIds: ['cus-walkin-sibling'],
+  ...CENSUS,
+  erasureNoteCount: 2,
+} as const;
+
+/** One erasure call's answer — done, the residue empty of personal values. */
+const ERASED = {
+  erasureStatus: 'ERASED',
+  erasureDone: true,
+  ...CENSUS,
+} as const;
+
+/** The privacy call every privacy callable takes — the record and the act's own id. */
+const PRIVACY_CALL = {
+  customerId: 'cus-1',
+  operationId: 'operation-0123456789ab',
+} as const;
+
+/** The command the privacy decoders make of {@link PRIVACY_CALL} for the admin. */
+const PRIVACY_COMMAND = {
+  callerUserId: 'u-owner',
+  callerRoles: ['admin'],
+  customerId: 'cus-1',
+  operationId: 'operation-0123456789ab',
+} as const;
+
+/** An export's answer, as the pipeline returns it and the call answers it verbatim. */
+const EXPORTED = {
+  clientExportVersion: 1,
+  exportedCustomerId: 'cus-1',
+  exportedAtUtcMs: Date.UTC(2026, 9, 11, 7),
+  exportDocumentCount: 2,
+  exportByteCount: 17,
+  exportJson: '{"customers":[]}',
+} as const;
 
 /** The call component, as the admin page sends it — the rule's body is the pipeline's to judge. */
 const STREAK_PUBLISH = {
@@ -456,7 +538,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
     pipeline: 'verifyOtp',
     input: request({ challengeId: 'otp-1', code: '123456' }, null),
     command: { otpId: 'otp-1', code: '123456' },
-    answer: ok({ customToken: 'token-1', sessionKind: 'NEW' }),
+    answer: ok({ sessionKind: 'NEW', customToken: 'token-1' }),
     expected: { sessionKind: 'NEW', customToken: 'token-1' },
   },
   completeRegistration: {
@@ -591,7 +673,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
       STAFF,
     ),
     command: { appointmentId: 'a-1', to: 'COMPLETED', seatId: null },
-    answer: ok({ appointmentId: 'a-1', to: 'COMPLETED' }),
+    answer: ok({ appointmentId: 'a-1', toBookingStatus: 'COMPLETED' }),
     expected: { appointmentId: 'a-1', toBookingStatus: 'COMPLETED' },
   },
   markArrived: {
@@ -901,6 +983,37 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ invitationId: 'inv-1', redemptionCount: 3 }),
     expected: { invitationId: 'inv-1', redemptionCount: 3 },
   },
+  // ── audit-hardening Phase 3: the admin's data-subject export (P3-DEP-9) ──
+  exportClientData: {
+    pipeline: 'exportClientData',
+    input: request(
+      { customerId: 'cus-1', operationId: 'operation-0123456789ab' },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      customerId: 'cus-1',
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok(EXPORTED),
+    expected: EXPORTED,
+  },
+  // ── audit-hardening Phase 3: the admin's data-subject erasure (P3-DEP-15) ──
+  previewClientErasure: {
+    pipeline: 'previewClientErasure',
+    input: request(PRIVACY_CALL, PRIVACY_ADMIN),
+    command: PRIVACY_COMMAND,
+    answer: ok(ERASURE_PREVIEW),
+    expected: ERASURE_PREVIEW,
+  },
+  eraseClient: {
+    pipeline: 'eraseClient',
+    input: request(PRIVACY_CALL, PRIVACY_ADMIN),
+    command: PRIVACY_COMMAND,
+    answer: ok(ERASED),
+    expected: ERASED,
+  },
   // ── pass F: the client issue sink (OR-34) ──
   reportClientIssues: {
     pipeline: 'reportClientIssues',
@@ -972,13 +1085,14 @@ describe('main.ts — the composition root', () => {
   it('loads without building a port: the Admin SDK and the Firestore bundle wait for the first invocation', () => {
     expect(seam.adminFirestore).not.toHaveBeenCalled();
     expect(seam.adminAuth).not.toHaveBeenCalled();
+    expect(seam.adminBucket).not.toHaveBeenCalled();
     expect(seam.firestorePorts).not.toHaveBeenCalled();
     for (const name of seam.PIPELINES) {
       expect(seam.pipelines[name], name).not.toHaveBeenCalled();
     }
   });
 
-  it('exports exactly the 47 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink and WS-3’s thirteen governed-collection audit triggers', () => {
+  it('exports exactly the 50 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers and Phase 3’s client export and erasure pair', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1024,7 +1138,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(47);
+    expect(FLIPPED_EXPORTS).toHaveLength(50);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
@@ -1035,6 +1149,9 @@ describe('main.ts — the composition root', () => {
         seam.answers.set(own.pipeline, own.answer);
         const answer = await run(name, own.input);
         expect(answer).toEqual(own.expected);
+        // The answer's bytes — key order included: the wire JSON is the
+        // pipeline's answer as it is, or its named projection.
+        expect(JSON.stringify(answer)).toBe(JSON.stringify(own.expected));
         expect(seam.calls.map((call) => call.pipeline)).toEqual([own.pipeline]);
         const call = seam.calls[0];
         if (TELEMETRY_EXPORTS.has(name)) {
@@ -1213,6 +1330,186 @@ describe('main.ts — the composition root', () => {
         errorCode: 'ENGAGEMENT_INVITATION_UNAUTHENTICATED',
       });
       expect(seam.calls).toEqual([]);
+    });
+
+    it('gates exportClientData on the verified admin before any pipeline runs — the sysadmin is not enough (P3-RU-13)', async () => {
+      const call = {
+        customerId: 'cus-1',
+        operationId: 'operation-0123456789ab',
+      };
+      const nobody = await rejection(
+        run('exportClientData', request(call, null)),
+      );
+      expect(nobody.code).toBe('unauthenticated');
+      expect(nobody.details).toEqual({ errorCode: 'PRIVACY_UNAUTHENTICATED' });
+      for (const auth of [SYSADMIN, STAFF, { uid: 'u-client', roles: [] }]) {
+        const refused = await rejection(
+          run('exportClientData', request(call, auth)),
+        );
+        expect(refused.code).toBe('permission-denied');
+        expect(refused.details).toEqual({ errorCode: 'PRIVACY_FORBIDDEN' });
+      }
+      const missing = await rejection(
+        run(
+          'exportClientData',
+          request({ customerId: 'cus-1' }, PRIVACY_ADMIN),
+        ),
+      );
+      expect(missing.code).toBe('invalid-argument');
+      expect(missing.details).toEqual({
+        errorCode: 'PRIVACY_INVALID_INPUT',
+        field: 'operationId',
+      });
+      expect(seam.calls).toEqual([]);
+    });
+
+    it('hands exportClientData the server ports, the keyed walk-in digest, the footprint reads, the audit timelines and the flags — and never one operation’s rows', async () => {
+      const own = caseOf('exportClientData');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('exportClientData', own.input);
+      const ports = seam.calls[0]?.ports as Record<string, unknown>;
+      for (const member of [
+        'walkInHash',
+        'flagOn',
+        'loadClientRecord',
+        'loadProfile',
+        'listClientVisits',
+        'listPhotosOfClient',
+        'listClientJournal',
+        'loadLoyaltyAccount',
+        'loadClientMoney',
+        'pageAuditByTargetCustomer',
+        'pageAuditByTargetUser',
+      ]) {
+        expect(typeof Reflect.get(ports, member), member).toBe('function');
+      }
+      expect(ports).not.toHaveProperty('auditRowsForOperation');
+      expect(ports).toMatchObject({ sentinel: seam.BUNDLE.sentinel });
+      expect(seam.built).toHaveLength(1);
+    });
+
+    it('gates the erasure pair on the verified admin before any pipeline runs — the sysadmin is not enough, the act’s id required (P3-RU-13)', async () => {
+      for (const name of ['previewClientErasure', 'eraseClient']) {
+        const nobody = await rejection(run(name, request(PRIVACY_CALL, null)));
+        expect(nobody.code).toBe('unauthenticated');
+        expect(nobody.details).toEqual({
+          errorCode: 'PRIVACY_UNAUTHENTICATED',
+        });
+        for (const auth of [SYSADMIN, STAFF, OWNER_WITHOUT_ADMIN]) {
+          const refused = await rejection(
+            run(name, request(PRIVACY_CALL, auth)),
+          );
+          expect(refused.code).toBe('permission-denied');
+          expect(refused.details).toEqual({ errorCode: 'PRIVACY_FORBIDDEN' });
+        }
+        const missing = await rejection(
+          run(name, request({ customerId: 'cus-1' }, PRIVACY_ADMIN)),
+        );
+        expect(missing.details).toEqual({
+          errorCode: 'PRIVACY_INVALID_INPUT',
+          field: 'operationId',
+        });
+      }
+      expect(seam.calls).toEqual([]);
+    });
+
+    it('hands previewClientErasure the privacy ports and the Auth claim roles — never Storage — over the Admin SDK’s Auth', async () => {
+      const own = caseOf('previewClientErasure');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('previewClientErasure', own.input);
+      const ports = seam.calls[0]?.ports as Record<string, unknown>;
+      for (const member of [
+        'walkInHash',
+        'flagOn',
+        'loadClientRecord',
+        'loadProfile',
+        'listClientVisits',
+        'listAccountSessions',
+        'listOtpsByDestination',
+        'loadAuthRoles',
+      ]) {
+        expect(typeof Reflect.get(ports, member), member).toBe('function');
+      }
+      expect(ports).not.toHaveProperty('deleteStoredObject');
+      expect(ports).not.toHaveProperty('deleteStoredPrefix');
+      expect(ports).toMatchObject({ sentinel: seam.BUNDLE.sentinel });
+    });
+
+    it('hands eraseClient the privacy ports, the Auth eraser, the default bucket’s object eraser and its work budget — a share of its 540 s timeout', async () => {
+      const own = caseOf('eraseClient');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('eraseClient', own.input);
+      const call = seam.calls[0];
+      const ports = call?.ports as Record<string, unknown>;
+      for (const member of [
+        'commit',
+        'walkInHash',
+        'flagOn',
+        'loadClientRecord',
+        'loadProfile',
+        'listClientVisits',
+        'loadVisitNotes',
+        'listPhotosOfClient',
+        'listVisitPhotos',
+        'listAccountNotifications',
+        'listAccountWaitlist',
+        'listAccountInvitations',
+        'listAccountSessions',
+        'listOtpsByDestination',
+        'loadAuthRoles',
+        'deleteAuthUser',
+        'deleteStoredObject',
+        'deleteStoredPrefix',
+      ]) {
+        expect(typeof Reflect.get(ports, member), member).toBe('function');
+      }
+      expect(call?.args[0]).toMatchObject(PRIVACY_COMMAND);
+      const budget = call?.args[1] as {
+        spent: () => boolean;
+        limitMs: number;
+      };
+      expect(budget.spent()).toBe(false);
+      expect(budget.limitMs).toBeGreaterThan(40_000);
+      expect(budget.limitMs).toBeLessThan(70_000);
+      // Built once per instance: a second call reuses the bucket.
+      const before = seam.adminBucket.mock.calls.length;
+      await run('eraseClient', own.input);
+      expect(seam.adminBucket.mock.calls.length).toBe(before);
+      expect(seam.adminBucket.mock.calls.length).toBeLessThanOrEqual(1);
+    });
+
+    it('answers an erasure refusal in its own words — a staff account and a broken link `failed-precondition`, the Auth eraser’s failure without its SDK code', async () => {
+      for (const errorCode of [
+        'PRIVACY_ERASURE_STAFF_ACCOUNT',
+        'PRIVACY_ACCOUNT_LINK_MISMATCH',
+      ]) {
+        seam.answers.set('eraseClient', () => ({
+          ok: false,
+          error: { errorCode },
+        }));
+        const refused = await rejection(
+          run('eraseClient', caseOf('eraseClient').input),
+        );
+        expect(refused.code).toBe('failed-precondition');
+        expect(refused.details).toEqual({ errorCode });
+      }
+      seam.answers.set('eraseClient', () => ({
+        ok: false,
+        error: {
+          errorCode: 'PIPELINE_UNAVAILABLE',
+          serverErrorCode: null,
+          refusal: 'auth/internal-error',
+          field: null,
+          wireStatus: null,
+          serverParams: {},
+          operationId: null,
+        },
+      }));
+      const auth = await rejection(
+        run('eraseClient', caseOf('eraseClient').input),
+      );
+      expect(auth.code).toBe('unavailable');
+      expect(auth.details).toEqual({ errorCode: 'PIPELINE_UNAVAILABLE' });
     });
 
     it('fails a non-retrying trigger on a store failure, and lets a retrying one log its one attempt line and rethrow a transient', async () => {
@@ -1588,6 +1885,21 @@ describe('main.ts — the composition root', () => {
       }
       const loadTenant = ports['loadTenant'] as () => Promise<unknown>;
       expect(await loadTenant()).toEqual({ ok: true, value: 'creativo' });
+    });
+
+    it('hands requestOtp and verifyOtp the commit and the hash their audit rows ride on (Phase 3 P3-DEP-6, P3-DEP-7)', async () => {
+      await run('requestOtpChallenge', caseOf('requestOtpChallenge').input);
+      await run('verifyOtpChallenge', caseOf('verifyOtpChallenge').input);
+      for (const pipeline of ['requestOtp', 'verifyOtp']) {
+        const ports = seam.calls.find((call) => call.pipeline === pipeline)
+          ?.ports as Record<string, unknown>;
+        expect(ports, pipeline).toHaveProperty('commit', seam.commit);
+      }
+      // The hash is the server bundle's own member: `firestorePorts` spreads
+      // the primitives it is handed (`firestore-ports.spec.ts`), and here
+      // the bundle is the seam's — so the proof is what the root hands it.
+      const primitives = seam.built[0]?.[1] as Record<string, unknown>;
+      expect(typeof primitives['hash']).toBe('function');
     });
 
     it('answers devCode only under the emulator — `null` everywhere else', async () => {

@@ -13,7 +13,7 @@ import {
   ParsedIdentifier,
   Principal,
 } from '@core/components';
-import { Result, UserId } from '@core/primitives';
+import { Result, StoredFields, UserId } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import type { AuthSessionPorts } from '@core/ports';
 
@@ -49,17 +49,10 @@ const SESSION_GONE_CODES: ReadonlySet<unknown> = new Set<unknown>([
   'auth/null-user',
 ]);
 
-/** The SDK's `code` of a failure, `undefined` for anything else. */
-function codeOf(error: unknown): unknown {
-  return typeof error === 'object' && error !== null
-    ? Object.getOwnPropertyDescriptor(error, 'code')?.value
-    : undefined;
-}
-
 /** A failed refresh: the session is gone, or the network is. */
 function refreshFailure(error: unknown): PipelineError {
   return PipelineError.bare(
-    SESSION_GONE_CODES.has(codeOf(error))
+    SESSION_GONE_CODES.has(StoredFields.field(error, 'code'))
       ? PipelineErrorCode.Unauthenticated
       : PipelineErrorCode.Unavailable,
   );
@@ -137,14 +130,8 @@ export const authSessionPorts = (auth: Auth): AuthSessionPorts => {
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null) return null;
-      const uid: unknown = Object.getOwnPropertyDescriptor(
-        parsed,
-        'uid',
-      )?.value;
-      const claims: unknown = Object.getOwnPropertyDescriptor(
-        parsed,
-        'claims',
-      )?.value;
+      const uid = StoredFields.field(parsed, 'uid');
+      const claims = StoredFields.field(parsed, 'claims');
       return typeof uid === 'string' &&
         typeof claims === 'object' &&
         claims !== null

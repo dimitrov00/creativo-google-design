@@ -1,9 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result, WaitlistStatus } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import type { OpenWaitlistReadPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * The waitlist's server read outside any transaction (flip 1, blueprint
@@ -18,13 +17,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * a read that throws answers a `RepositoryError` value whose `reason` is the
  * failure's canonical code.
  */
-
-function readFailed(path: string, error: unknown): RepositoryError {
-  return RepositoryError.readFailed(
-    path,
-    TriggerAttemptSystem.failureCode(error),
-  );
-}
 
 export const firestoreWaitlistPorts = (
   db: Firestore,

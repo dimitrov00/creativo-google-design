@@ -6,6 +6,7 @@ import {
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { AttemptOutcome } from '@core/components';
 import type { TriggerFailure } from '@core/entities';
+import { FailureCodeSystem } from './failure-code.system';
 
 /**
  * How a retrying handler judges one failed attempt
@@ -26,37 +27,15 @@ import type { TriggerFailure } from '@core/entities';
  * adapter recorded as its `reason`; a MALFORMED stored document
  * (`REPOSITORY_MALFORMED`, refused at read time — edge-hardening D-2/D-5)
  * by `data-loss` whatever field its `reason` names: it reads the same on
- * every redelivery, so it is logged and never retried.
+ * every redelivery, so it is logged and never retried. The canonical code
+ * itself is {@link FailureCodeSystem}'s.
  */
-
-/** What a code is called when nothing names it. */
-const UNKNOWN_CODE = 'unknown';
 
 /**
  * What a malformed stored document is judged by — gRPC 15, "unrecoverable
  * data loss or corruption": never transient, so never redelivered.
  */
 const DATA_LOSS_CODE = 'data-loss';
-
-/** gRPC status numbers as the Admin SDK reports them, by canonical name. */
-const GRPC_CODE_NAMES: { readonly [status: number]: string } = {
-  1: 'cancelled',
-  2: 'unknown',
-  3: 'invalid-argument',
-  4: 'deadline-exceeded',
-  5: 'not-found',
-  6: 'already-exists',
-  7: 'permission-denied',
-  8: 'resource-exhausted',
-  9: 'failed-precondition',
-  10: 'aborted',
-  11: 'out-of-range',
-  12: 'unimplemented',
-  13: 'internal',
-  14: 'unavailable',
-  15: 'data-loss',
-  16: 'unauthenticated',
-} as const;
 
 /**
  * The failures worth a redelivery: a contended, overloaded or briefly absent
@@ -133,12 +112,6 @@ export type AttemptEvent = {
   readonly writeOperationId: OperationId | null;
 };
 
-/** The `code` a thrown value carries, read without trusting its shape. */
-function codeOf(error: unknown): unknown {
-  if (error === null || typeof error !== 'object') return undefined;
-  return 'code' in error ? error.code : undefined;
-}
-
 /**
  * The code a failure is JUDGED by: a port's refusal (`RepositoryError.guard`)
  * by the canonical code its adapter recorded as its `reason` (`unavailable`,
@@ -148,35 +121,17 @@ function codeOf(error: unknown): unknown {
  */
 function judgedCode(error: unknown): string {
   if (!RepositoryError.guard(error)) {
-    return TriggerAttemptSystem.failureCode(error);
+    return FailureCodeSystem.codeOf(error);
   }
   return error.errorCode === RepositoryErrorCode.Malformed
     ? DATA_LOSS_CODE
-    : TriggerAttemptSystem.failureCode({ code: error.reason ?? '' });
+    : FailureCodeSystem.codeOf({ code: error.reason ?? '' });
 }
 
 export const TriggerAttemptSystem = {
-  UNKNOWN_CODE,
   DATA_LOSS_CODE,
   RETRY_WINDOW_MS,
   LAST_ATTEMPT_MARGIN_MS,
-
-  /** A failure's canonical code — numeric (Admin SDK) or string, `unknown` otherwise. */
-  failureCode(error: unknown): string {
-    const code = codeOf(error);
-    if (typeof code === 'number') {
-      return Object.hasOwn(GRPC_CODE_NAMES, code)
-        ? (GRPC_CODE_NAMES[code] as string)
-        : UNKNOWN_CODE;
-    }
-    if (typeof code === 'string' && code.length > 0) {
-      return code
-        .replace(/^[a-z]+\//, '')
-        .replace(/_/g, '-')
-        .toLowerCase();
-    }
-    return UNKNOWN_CODE;
-  },
 
   attemptOutcome(code: string): AttemptOutcome {
     return TRANSIENT_CODES.includes(code)

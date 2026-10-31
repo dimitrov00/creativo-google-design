@@ -12,25 +12,24 @@
  * entities (`BarberId.of`, `ServiceId.of`, the catalogue's parse guards).
  */
 
-import { CompositionKind } from '@core/components';
+import { CompositionKind, type LocalizedText } from '@core/components';
 import {
-  type Localized,
   type ServiceSourceVm,
   VariantIcon,
 } from '@creativo/features/shared/catalog';
 
-const lt = (en: string, bg: string): Localized => ({ en, bg });
+const lt = (en: string, bg: string): LocalizedText => ({ en, bg });
 
 /** A barber as authored — the catalogue's `Barber` fields, its id a literal. */
 export interface AuthoredBarber {
   readonly id: string;
-  readonly name: Localized;
-  readonly title: Localized;
-  readonly bio: Localized;
+  readonly name: LocalizedText;
+  readonly title: LocalizedText;
+  readonly bio: LocalizedText;
   readonly avatarSrc: string;
   readonly objectPosition: string;
   readonly rating?: number;
-  readonly specialty: Localized;
+  readonly specialty: LocalizedText;
   readonly gallery: readonly string[];
 }
 
@@ -51,7 +50,7 @@ export interface AuthoredOffering {
 /** A variant as authored. */
 export interface AuthoredVariant {
   readonly id: string;
-  readonly name: Localized;
+  readonly name: LocalizedText;
   readonly icon: VariantIcon;
 }
 
@@ -59,8 +58,8 @@ export interface AuthoredVariant {
 export interface AuthoredService {
   readonly id: string;
   readonly compositionKind: ServiceSourceVm['compositionKind'];
-  readonly name: Localized;
-  readonly description: Localized;
+  readonly name: LocalizedText;
+  readonly description: LocalizedText;
   readonly coverSrc?: string;
   readonly variants: readonly AuthoredVariant[];
   readonly offerings: readonly AuthoredOffering[];

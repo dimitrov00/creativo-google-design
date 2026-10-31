@@ -272,7 +272,7 @@ export class BookingBagSheet {
           seat,
           lines: described.map((entry) => entry.vm),
           subtotalLabel: this.priceLabel(
-            this.sum(described.map((entry) => entry.span)),
+            TermsSpanSystem.sum(described.map((entry) => entry.span)),
           ),
         };
       })
@@ -291,7 +291,9 @@ export class BookingBagSheet {
   });
 
   protected readonly totalLabel = computed(() =>
-    this.priceLabel(this.sum(this.wholeBag().map((entry) => entry.span))),
+    this.priceLabel(
+      TermsSpanSystem.sum(this.wholeBag().map((entry) => entry.span)),
+    ),
   );
 
   /**
@@ -303,7 +305,9 @@ export class BookingBagSheet {
    * reason the price does — an unpinned barber decides how long it takes too.
    */
   protected readonly summaryLabel = computed(() => {
-    const span = this.sum(this.wholeBag().map((entry) => entry.span));
+    const span = TermsSpanSystem.sum(
+      this.wholeBag().map((entry) => entry.span),
+    );
     const total = this.transloco.translate('booking.bag.total');
     return span
       ? `${total} · ${this.content.durationRange(span.minMinutes, span.maxMinutes)}`
@@ -351,34 +355,6 @@ export class BookingBagSheet {
 
   // ── Terms ───────────────────────────────────────────────────────────
 
-  /**
-   * What a (service, variant, barber) will cost and take
-   * (`TermsSpanSystem.spanFor`): a named barber resolves to exactly the one
-   * `ServiceTerms` the server will charge; "anyone" to the span across
-   * everyone who performs it, because the scheduler picks the performer and
-   * their rate comes with them; a service nobody has claimed yet to the
-   * catalog's base terms, the only quote there is.
-   */
-  private spanFor(
-    service: Service,
-    variantId: ServiceVariantId | null,
-    barberId: BarberId | null,
-  ): TermsSpan {
-    // The service IS its terms matrix: its own terms and its offerings.
-    return TermsSpanSystem.spanFor(service, variantId, barberId);
-  }
-
-  /**
-   * Several spans as one (`TermsSpanSystem.sum`): floors add to the floor
-   * and ceilings to the ceiling — a bag holding one pinned 14,50 € line and
-   * one open 13,00–15,50 € line is honestly 27,50 – 30,00 €. Mixed
-   * currencies (a data error the aggregate also refuses) give `null`: a
-   * PARTIAL total would be worse than none, so the label vanishes.
-   */
-  private sum(spans: readonly TermsSpan[]): TermsSpan | null {
-    return TermsSpanSystem.sum(spans);
-  }
-
   /** "28,00 €", or "13,00 € – 15,50 €" when the barber is still open. */
   private priceLabel(span: TermsSpan | null): string | null {
     if (!span) return null;
@@ -414,7 +390,7 @@ export class BookingBagSheet {
 
     const barberId = line.barberId;
     const variantId = line.variantId;
-    const span = this.spanFor(service, variantId, barberId);
+    const span = TermsSpanSystem.spanFor(service, variantId, barberId);
 
     const name = this.content.text(vm.name);
     const key = line.lineId;
@@ -472,7 +448,9 @@ export class BookingBagSheet {
         avatarSrc: null,
         // Priced on the CURRENT performer answer, so switching variant shows
         // what it would cost the way this line is actually set up.
-        terms: this.termsLabel(this.spanFor(service, variant.id, barberId)),
+        terms: this.termsLabel(
+          TermsSpanSystem.spanFor(service, variant.id, barberId),
+        ),
         selected: variant.id === variantId,
       })),
     };
@@ -500,7 +478,7 @@ export class BookingBagSheet {
       id: null,
       name: this.transloco.translate('booking.configure.anyBarber'),
       avatarSrc: null,
-      terms: this.termsLabel(this.spanFor(service, variantId, null)),
+      terms: this.termsLabel(TermsSpanSystem.spanFor(service, variantId, null)),
       selected: barberId === null,
     };
 
@@ -514,7 +492,11 @@ export class BookingBagSheet {
         return [
           {
             barber: candidate,
-            span: this.spanFor(service, variantId, performer.barberId),
+            span: TermsSpanSystem.spanFor(
+              service,
+              variantId,
+              performer.barberId,
+            ),
           },
         ];
       })

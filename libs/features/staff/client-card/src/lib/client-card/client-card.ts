@@ -1,4 +1,4 @@
-import { NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -7,8 +7,8 @@ import {
   input,
   output,
 } from '@angular/core';
-import type { VisitLeg } from '@core/components';
-import type { CouponGrantId } from '@core/primitives';
+import type { ClientPrivacyCall, VisitLeg } from '@core/components';
+import type { CouponGrantId, CustomerId } from '@core/primitives';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
@@ -38,12 +38,14 @@ import {
   UiVisuallyHiddenDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import { UiAlert } from '@creativo/ui/patterns';
 import { BirthdayCard } from '../birthday-card/birthday-card';
 import { ClientCardRegion, type WalletAnchor } from '../client-card.contracts';
-import { figure, partedAtJoints } from '../client-card.format';
+import { partedAtJoints } from '../client-card.format';
 import { ClientCardStore } from '../client-card.store';
 import {
   type ClientPhotoVm,
+  ErasureAlertAnswer,
   type LinePart,
   QuickActionId,
 } from '../client-pages.vm';
@@ -51,6 +53,7 @@ import { LoadState } from '@creativo/shared/view-state';
 import { LoyaltyGlance } from '../loyalty-glance/loyalty-glance';
 import { MedalsGlance } from '../medals-glance/medals-glance';
 import { regularSheetWidth } from '../sheet-width';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /** A module of the glance that reads data of its own, and can fail on its own. */
 type GlanceModule = Exclude<
@@ -108,7 +111,11 @@ const PLACEHOLDER = {
  * order for the last visit, the next one and a waiting request; the
  * loyalty as ONE card and ONE button to the wallet; the medals as three
  * named rings in a grid with the cue and the records line; the photos as a
- * grid of three, never a rail; one list group, the exits.
+ * grid of three, never a rail; one list group, the exits. After them, for
+ * the shop's admin only, a second group: the person's data (L), whose
+ * «Изтегли данните» saves the bundle the server answers as a file, and
+ * whose «Изтрий личните данни» asks ONE alert, worded with the server's
+ * census, before the store erases exactly the record it previewed.
  *
  * A module is ABSENT when its slice is (a flag off, no account, a guest,
  * nothing to show); while its read runs it holds a placeholder shaped like
@@ -117,9 +124,11 @@ const PLACEHOLDER = {
  * the head. A failed profile is the whole card's failure: the head, one
  * notice, the verbs and the exits.
  *
- * The page computes nothing: the store's `hero` and `overview` are already
- * worded. It writes nothing either — every act is an output the visit
- * editor turns into a push, a draft change or a pop.
+ * The page computes nothing: the store's `hero`, `overview` and `privacy`
+ * are already worded. It writes nothing either — every act is an output the
+ * visit editor turns into a push, a draft change or a pop, except the
+ * admin's export, which the store asks the server for and this page saves,
+ * and the admin's erasure, which the store carries out.
  */
 @Component({
   selector: 'lib-client-card',
@@ -129,6 +138,7 @@ const PLACEHOLDER = {
     MedalsGlance,
     NgTemplateOutlet,
     UI_SHEET_HEADLINE,
+    UiAlert,
     UiAvatar,
     UiBadge,
     UiButton,
@@ -195,9 +205,14 @@ export class ClientCard {
   readonly removeClient = output<void>();
 
   private readonly store = inject(ClientCardStore);
+  private readonly document = inject(DOCUMENT);
   protected readonly words = this.store.words;
   protected readonly hero = this.store.hero;
   protected readonly overview = this.store.overview;
+  /** L — the admin's privacy block; `null` is no block. */
+  protected readonly privacy = this.store.privacy;
+  /** L — the erasure's rows and its ONE alert; `null` is none. */
+  protected readonly erasure = this.store.erasure;
   protected readonly online = this.store.online;
 
   protected readonly placeholder = PLACEHOLDER;
@@ -267,7 +282,7 @@ export class ClientCard {
     }
     const count = slice.data.count;
     return {
-      figure: figure(count, words.lang),
+      figure: formatCount(count, words.lang),
       name: words.visitsModule.allName(count),
     };
   });
@@ -281,7 +296,7 @@ export class ClientCard {
     }
     const count = slice.data.levelCount;
     return {
-      figure: figure(count, words.lang),
+      figure: formatCount(count, words.lang),
       name: words.achievements.allName(count),
     };
   });
@@ -317,6 +332,53 @@ export class ClientCard {
   /** «Опитай пак» under one module. */
   protected retry(region: ClientCardRegion): void {
     this.store.retry(region);
+  }
+
+  /** L «Изтегли данните»: the store asks for the bundle; a bundle that came back is saved. */
+  protected async exportData(): Promise<void> {
+    const answer = await this.store.exportData();
+    if (answer !== null) this.save(answer);
+  }
+
+  /**
+   * The bundle as a file, byte for byte as the server decided it: a JSON
+   * blob behind a link clicked once, named by the record's id — no clock
+   * and no zone in the name.
+   */
+  private save(answer: ClientPrivacyCall.Exported): void {
+    const blob = new Blob([answer.exportJson], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = this.document.createElement('a');
+    link.href = url;
+    link.download = `creativo-client-${answer.exportedCustomerId}.json`;
+    link.click();
+    // Freed on the next turn of the loop — revoking synchronously races the
+    // click the browser has not finished handling.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  /** L «Изтрий личните данни»: the store previews the card's record; its census opens the alert. */
+  protected eraseRecord(): void {
+    const customerId = this.store.customerId();
+    if (customerId !== null) void this.store.previewErasure(customerId);
+  }
+
+  /** L a sibling record's row: its own act — its own preview, alert and id. */
+  protected eraseSibling(customerId: CustomerId): void {
+    void this.store.previewErasure(customerId);
+  }
+
+  /** The alert's answer: «Изтрий» erases the previewed record; «Отказ» drops the act. */
+  protected onErasurePick(answer: string): void {
+    if (answer === ErasureAlertAnswer.Erase) void this.store.confirmErasure();
+    else this.store.dismissErasure();
+  }
+
+  /** Escape or the scrim: the safe answer. */
+  protected dismissErasure(): void {
+    this.store.dismissErasure();
   }
 
   /** «Опитай пак» under the head: every failed module again — or the whole card. */

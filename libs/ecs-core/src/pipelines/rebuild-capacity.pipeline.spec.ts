@@ -19,6 +19,7 @@ import { RepositoryError } from '@core/errors';
 import { Collections, QueryOp } from '@core/entities';
 import { CapacitySystem, LeadTimeSystem } from '@core/systems';
 import {
+  bodyOf,
   barberBusyDayFixture,
   barberScheduleFixture,
   FIXTURE_IDS,
@@ -50,13 +51,6 @@ const PETAR = BarberId.of('b-petar');
 const CENTRE = FIXTURE_IDS.location;
 const MONTH = CapacityMonthId.of('2026-09');
 const MONTH_PATH = [Collections.Capacity, MONTH];
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const entry = (
   day: LocalDate,

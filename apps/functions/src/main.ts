@@ -15,6 +15,7 @@ import {
 import {
   AuthDeployment,
   GovernedCollection,
+  type StreakPublishCall,
   TenantConfig,
 } from '@core/components';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
@@ -28,7 +29,11 @@ import {
   type NowUtcMs,
   type TriggerFailurePorts,
 } from '@core/ports';
-import { GovernedChangeSystem, LogDigestSystem } from '@core/systems';
+import {
+  GovernedChangeSystem,
+  LogDigestSystem,
+  StoredDocumentSystem,
+} from '@core/systems';
 import {
   auditDocumentChange,
   bookAppointment,
@@ -38,8 +43,11 @@ import {
   continuePolicyRecompute,
   editAppointment,
   endImpersonation as endImpersonationPipeline,
+  eraseClient as eraseClientPipeline,
+  exportClientData as exportClientDataPipeline,
   markArrival,
   matchWaitlist,
+  previewClientErasure as previewClientErasurePipeline,
   projectClientStats,
   rebuildBusy,
   rebuildCapacity,
@@ -60,6 +68,7 @@ import {
 } from '@core/pipelines';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
+import { authEraserPorts } from './adapters/firebase-auth-eraser.adapter';
 import {
   consoleLogContext,
   consoleTelemetry,
@@ -69,7 +78,9 @@ import {
   logDigestPorts,
   walkInKeyPorts,
 } from './adapters/crypto.adapter';
+import { firestoreAuditReadPorts } from './adapters/firestore-audit-read.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
+import { firestorePrivacyPorts } from './adapters/firestore-privacy.adapter';
 import { logRefusal } from './adapters/firestore-tx.adapter';
 import { paramFlagsPorts } from './adapters/flags.adapter';
 import {
@@ -77,10 +88,12 @@ import {
   nodeOtpCryptoPorts,
 } from './adapters/otp-crypto.adapter';
 import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';
+import { storageObjectPorts } from './adapters/storage-objects.adapter';
 import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
   type CallableEdgePorts,
   callableEdge,
+  type CallableSpec,
   type CallTrace,
   type EdgeCode,
   type EdgeError,
@@ -90,11 +103,13 @@ import {
   type WorkBudget,
 } from './edge';
 import { CRON_TIME_ZONE } from './lib/cron-zone';
-import { adminAuth, adminFirestore } from './lib/firebase-admin';
+import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
 import {
   arrivalRefusal,
+  arrivedOf,
   cancelAppointmentRefusal,
-  commitBookingRefusal,
+  clearedOf,
+  committedOf,
   decodeCancelAppointment,
   decodeClearArrival,
   decodeCommitBooking,
@@ -103,33 +118,19 @@ import {
   decodeRescheduleAppointment,
   decodeStaffEditAppointment,
   decodeTransitionAppointment,
-  encodeCancelAppointmentAnswer,
-  encodeClearArrivalAnswer,
-  encodeCommitBookingAnswer,
-  encodeMarkArrivedAnswer,
-  encodeRecordSeatTipAnswer,
-  encodeRescheduleAppointmentAnswer,
-  encodeStaffEditAppointmentAnswer,
-  encodeTransitionAppointmentAnswer,
   recordSeatTipRefusal,
-  rescheduleAppointmentRefusal,
-  staffEditAppointmentRefusal,
+  rescheduledOf,
+  staffEditedOf,
   transitionAppointmentRefusal,
 } from './wire/booking.wire';
 import {
   CLIENT_ISSUE_RATE,
   decodeReportClientIssues,
-  encodeReportClientIssuesAnswer,
   REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
-  reportClientIssuesRefusal,
 } from './wire/client-issue.wire';
 import {
   decodeEndImpersonation,
   decodeStartImpersonation,
-  encodeEndImpersonationAnswer,
-  encodeStartImpersonationAnswer,
-  endImpersonationRefusal,
-  startImpersonationRefusal,
 } from './wire/governance.wire';
 import {
   completeRegistrationRefusal,
@@ -137,29 +138,20 @@ import {
   decodeRequestOtp,
   decodeUpdateProfile,
   decodeVerifyOtp,
-  encodeCompleteRegistrationAnswer,
-  encodeRequestOtpAnswer,
-  encodeUpdateProfileAnswer,
-  encodeVerifyOtpAnswer,
+  otpChallengeOf,
   requestOtpRefusal,
-  updateProfileRefusal,
   verifyOtpRefusal,
 } from './wire/identity.wire';
-import {
-  decodeRedeemInvitation,
-  encodeRedeemInvitationAnswer,
-  redeemInvitationRefusal,
-} from './wire/invitation.wire';
-import {
-  answerStreakPublish,
-  type StreakPublishAnswer,
-} from './wire/loyalty.wire';
+import { decodeRedeemInvitation } from './wire/invitation.wire';
+import { answerStreakPublish } from './wire/loyalty.wire';
 import {
   decodeRunBackfill,
-  encodeRunBackfillAnswer,
   RUN_BACKFILL_TIMEOUT_SECONDS,
-  runBackfillRefusal,
 } from './wire/ops.wire';
+import {
+  decodeClientPrivacyCall,
+  ERASE_CLIENT_TIMEOUT_SECONDS,
+} from './wire/privacy.wire';
 import {
   CapacitySource,
   decodeCapacityEvent,
@@ -178,14 +170,11 @@ import {
   settleAttempt,
 } from './wire/triggers.wire';
 import {
-  cancelWaitlistRefusal,
   decodeCancelWaitlist,
   decodeRequestWaitlist,
-  encodeCancelWaitlistAnswer,
-  encodeRequestWaitlistAnswer,
-  requestWaitlistRefusal,
 } from './wire/waitlist.wire';
-import { settle, type WireRequest } from './wire/wire-read';
+import type { AnswerIsTheWire, WireAnswer } from './wire/wire-answer';
+import { refusalOf, type WireRequest } from './wire/wire-read';
 
 /**
  * THE COMPOSITION ROOT (blueprint §4.3, D1(a)) — the only place in the
@@ -193,9 +182,12 @@ import { settle, type WireRequest } from './wire/wire-read';
  * assembles the port bundles, and wraps each pipeline in `onCall` /
  * `onDocument*` / `onSchedule` through the edge (`edge.ts`) and the wire
  * (`wire/*.wire.ts`): a decoder turns the call component or event into the
- * pipeline's command, an encoder turns its answer into the call
- * component's answer, and a `Result.err` becomes an `HttpsError`
- * (callables) or an attempt line (triggers). A handler here holds no logic.
+ * pipeline's command, a pipeline answers the call component's answer
+ * itself — a callable whose pipeline keeps server-only fields maps them
+ * away by name (`committedOf`), and `wiredCallable` proves the answer IS
+ * the wire's (`AnswerIsTheWire`) — and a `Result.err` becomes an
+ * `HttpsError` (callables) or an attempt line (triggers). A handler here
+ * holds no logic.
  *
  * The exports keep their names, trigger paths and options exactly — the
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
@@ -204,7 +196,9 @@ import { settle, type WireRequest } from './wire/wire-read';
  * below), which no export sets a region, secret or App Check on — except
  * the walk-in key the two callables that mint walk-in records bind
  * (`commitBooking`, `staffEditAppointment`: the `WALKIN_ID_KEY` secret
- * their ids are keyed by, OR-26), the log digest key every callable but
+ * their ids are keyed by, OR-26) and the admin privacy callables that
+ * recognise them (`exportClientData`, `previewClientErasure`,
+ * `eraseClient`, P3-RU-36), the log digest key every callable but
  * the sink binds (`LOG_DIGEST_KEY`, audit-hardening WS-4.2: the outcome
  * line's keyed `inputDigest`), and seven retry flags: edge-hardening D-5 flipped
  * `rebuildBusyOnAppointmentChange`,
@@ -229,7 +223,14 @@ import { settle, type WireRequest } from './wire/wire-read';
  * governed-collection audit triggers — new, each on its own
  * `<collection>/{docId}` with the retry flag on — built, with
  * `auditProfileChanges` (its name kept, its path param now `{docId}`), by
- * the ONE `documentAuditTrigger` helper: 47 exports.
+ * the ONE `documentAuditTrigger` helper: 47 exports. Audit-hardening
+ * Phase 3 (WS-C, P3-DEP-9) added `exportClientData`, the admin's
+ * data-subject export — bound to the walk-in key it recognises a walk-in's
+ * contact by (P3-RU-36) and the log digest key: 48 exports. WS-D
+ * (P3-DEP-15, P3-DEP-19) added the admin's data-subject erasure — the
+ * read-only `previewClientErasure` and the resumable `eraseClient` (540 s,
+ * 512 MiB, the `runBackfill` idiom: its work budgeted by its timeout) —
+ * both bound to the same two keys: 50 exports.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -323,6 +324,12 @@ const edge: CallableEdgePorts & TriggerFailurePorts = {
 };
 
 /**
+ * Admin Auth, built on first use and SHARED — the identity callables' and
+ * the erasure pair's (an instance builds its Auth client once).
+ */
+const auth = once(() => adminAuth());
+
+/**
  * The identity callables' ports: the server ports, Admin Auth, the
  * login-OTP sender, the OTP crypto, the tenant and the deployment's auth
  * configuration — each callable's pipeline names the bundles it reads
@@ -332,7 +339,7 @@ const edge: CallableEdgePorts & TriggerFailurePorts = {
  */
 const identityPorts = once(() => ({
   ...serverPorts(),
-  ...authClaimsPorts(adminAuth()),
+  ...authClaimsPorts(auth()),
   // The login-OTP sender identity — never a campaign sender. Under the
   // emulator the code goes to the log (manual QA reads `devCode` anyway); a
   // deployed environment can only construct the refusing sender, which
@@ -378,14 +385,19 @@ const streakPorts = once(() => {
 /**
  * The key a walk-in's record id is keyed by (OR-26, `WalkInKeyPorts`): a
  * Secret Manager secret, bound to the two callables that mint walk-in
- * records and to no other export (`WALK_IN_SECRETS`). A deployment holds its
+ * records and the admin privacy callables that recognise them (P3-RU-36),
+ * and to no other export (`WALK_IN_SECRETS`). A deployment holds its
  * own (`firebase functions:secrets:set WALKIN_ID_KEY`, the runbook's step
  * 4); the emulator reads the fixed test key `tools/flags/write-functions-env.mjs`
  * writes beside the build (`.secret.local`, never deployed).
  */
 const WALKIN_ID_KEY = defineSecret('WALKIN_ID_KEY');
 
-/** The options of the two callables that mint walk-in records: the walk-in key and the log digest key, bound. */
+/**
+ * The options of the two callables that mint walk-in records and the admin
+ * privacy callables that recognise them: the walk-in key and the log
+ * digest key, bound.
+ */
 const WALK_IN_SECRETS = { secrets: [WALKIN_ID_KEY, LOG_DIGEST_KEY] };
 
 /**
@@ -408,6 +420,52 @@ const walkInPorts = once(() => ({
   ...walkInKeyPorts(walkInKey),
 }));
 
+/**
+ * The admin privacy callables' ports (`exportClientData`, audit-hardening
+ * Phase 3 WS-C; the erasure's below build on them): the server ports (the
+ * commit, the clock, the digests, the
+ * caller's stored roles, the telemetry), the keyed walk-in digest a visit's
+ * contact is recognised by (P3-RU-36), the person's footprint reads — the
+ * guarded ones over the stored-document guard and the telemetry log
+ * (OR-33) — the audit timelines and the build-time flags (`client.privacy`
+ * gates them, P3-RU-14). Built on first use; handed to no other export.
+ */
+const privacyPorts = once(() => ({
+  ...serverPorts(),
+  ...walkInKeyPorts(walkInKey),
+  ...firestorePrivacyPorts(
+    adminFirestore(),
+    StoredDocumentSystem.guardOf,
+    telemetry.log,
+  ),
+  ...firestoreAuditReadPorts(adminFirestore()),
+  ...paramFlagsPorts(),
+}));
+
+/**
+ * The erasure preview's ports (`previewClientErasure`, WS-D): the privacy
+ * ports and the Admin-Auth eraser bundle — the preview's port type reads
+ * only its claim roles (`loadAuthRoles`: the staff-account refusal,
+ * P3-L-16). Built on first use; handed to no other export.
+ */
+const previewPorts = once(() => ({
+  ...privacyPorts(),
+  ...authEraserPorts(auth()),
+}));
+
+/**
+ * The erasure's ports (`eraseClient`, WS-D): the privacy ports, the Auth
+ * user's claim roles and its deletion, and the default bucket's object
+ * deletions (P3-L-9, P3-L-10, P3-DEP-23 — the only export that reaches
+ * Storage or deletes an Auth user). Built on first use; handed to no other
+ * export.
+ */
+const erasurePorts = once(() => ({
+  ...privacyPorts(),
+  ...authEraserPorts(auth()),
+  ...storageObjectPorts(adminBucket()),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -417,21 +475,10 @@ const root = {
   walkIns: walkInPorts,
   identity: identityPorts,
   streak: streakPorts,
+  privacy: privacyPorts,
+  erasurePreview: previewPorts,
+  erasure: erasurePorts,
 } as const;
-
-/** How one callable is wired: its name, its coded failure, its timeout. */
-type Wiring = {
-  readonly callable: CallableName;
-  /**
-   * What an infrastructure failure answers with — the callable's coded
-   * `internal` (`BOOKING_COMMIT_STORE_FAILED`) — or `null` for the
-   * platform's bare INTERNAL.
-   */
-  readonly failureCode: EdgeCode | null;
-  readonly timeoutSeconds: number | null;
-  /** Traced (WS-4.2): the scope and the outcome line — `false` for the sink alone (RU-24). */
-  readonly traced: boolean;
-};
 
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
 const noteDigest =
@@ -443,32 +490,36 @@ const noteDigest =
 
 /**
  * One callable: the call component decoded into the command (or refused),
- * the pipeline run over its ports, its answer encoded and its refusal in
- * the callable's own words. A traced callable notes its decoded command's
- * digest (the sink reads no key: it digests nothing).
+ * the pipeline run over its ports, its answer answered AS IT IS and its
+ * refusal in the callable's own words (`refusalOf` when every refusal
+ * leaves as itself; a store failure thrown on the way). The answer must be
+ * exactly callable `N`'s wire answer — the spec's `AnswerIsTheWire` half
+ * does not compile otherwise; a pipeline that keeps server-only
+ * fields is projected by name inside `run` (`committedOf`). A traced
+ * callable notes its decoded command's digest (the sink reads no key: it
+ * digests nothing).
  */
-function wiredCallable<P, C, A, E, Out>(
-  wiring: Wiring,
+function wiredCallable<
+  N extends CallableName,
+  P,
+  C,
+  A extends WireAnswer<N>,
+  E,
+>(
+  spec: CallableSpec<N> & AnswerIsTheWire<A, N>,
   ports: () => P,
   decode: (request: WireRequest) => Result<C, EdgeError>,
   run: (ports: P, cmd: C, budget: WorkBudget) => Promise<Result<A, E>>,
-  encode: (answer: A) => Out,
   refuse: (error: E, cmd: C) => EdgeError,
 ) {
-  return callableEdge<unknown, Out>(
-    {
-      callable: wiring.callable,
-      failureCode: wiring.failureCode,
-      timeoutSeconds: wiring.timeoutSeconds,
-      answer: null,
-      traced: wiring.traced,
-    },
+  return callableEdge<unknown, WireAnswer<N>>(
+    spec,
     root.edge,
     async (request: CallableRequest<unknown>, budget, trace) => {
       const cmd = decode(request);
       if (!cmd.ok) return cmd;
-      if (wiring.traced) noteDigest(trace)(cmd.value);
-      return settle(await run(ports(), cmd.value, budget), encode, (error) =>
+      if (spec.traced) noteDigest(trace)(cmd.value);
+      return Result.mapError(await run(ports(), cmd.value, budget), (error) =>
         refuse(error, cmd.value),
       );
     },
@@ -476,10 +527,15 @@ function wiredCallable<P, C, A, E, Out>(
 }
 
 /** A traced callable with the platform's timeout. */
-const plain = (
-  callable: CallableName,
+const plain = <N extends CallableName>(
+  callable: N,
   failureCode: EdgeCode | null,
-): Wiring => ({ callable, failureCode, timeoutSeconds: null, traced: true });
+): CallableSpec<N> => ({
+  callable,
+  failureCode,
+  timeoutSeconds: null,
+  traced: true,
+});
 
 // ── Trigger paths, spelled through the collection registry ────────────────
 
@@ -493,9 +549,10 @@ const POLICY_RECOMPUTE_JOB_DOC =
   `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}` as const;
 
 /**
- * The two handlers whose input is the size of the book take a long timeout
- * and the larger instance, as today — the timeouts read from the wire that
- * budgets their work by them, so the two can never disagree.
+ * The handlers whose input is the size of the book — or of one person's
+ * footprint (the export's bundle, the erasure) — take the larger instance,
+ * and those that budget their work a long timeout read from the wire that
+ * budgets it, so the two can never disagree.
  */
 const LARGE_MEMORY = '512MiB';
 
@@ -507,9 +564,11 @@ export const requestOtpChallenge = onCall(
     plain(Callables.RequestOtpChallenge, IdentityErrorCode.RepositoryFailure),
     root.identity,
     decodeRequestOtp,
-    (ports, cmd) => requestOtp(ports)(cmd),
     // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
-    (answer) => encodeRequestOtpAnswer(answer, onEmulator()),
+    async (ports, cmd) =>
+      Result.map(await requestOtp(ports)(cmd), (answer) =>
+        otpChallengeOf(answer, onEmulator()),
+      ),
     requestOtpRefusal,
   ),
 );
@@ -521,7 +580,6 @@ export const verifyOtpChallenge = onCall(
     root.identity,
     decodeVerifyOtp,
     (ports, cmd) => verifyOtp(ports)(cmd),
-    encodeVerifyOtpAnswer,
     verifyOtpRefusal,
   ),
 );
@@ -533,7 +591,6 @@ export const completeRegistration = onCall(
     root.identity,
     decodeCompleteRegistration,
     (ports, cmd) => completeRegistrationPipeline(ports)(cmd),
-    encodeCompleteRegistrationAnswer,
     completeRegistrationRefusal,
   ),
 );
@@ -550,8 +607,7 @@ export const updateProfile = onCall(
     root.ports,
     decodeUpdateProfile,
     (ports, cmd) => updateProfilePipeline(ports)(cmd),
-    encodeUpdateProfileAnswer,
-    updateProfileRefusal,
+    refusalOf,
   ),
 );
 
@@ -673,9 +729,9 @@ export const commitBooking = onCall(
     plain(Callables.CommitBooking, BookingErrorCode.CommitStoreFailed),
     root.walkIns,
     decodeCommitBooking,
-    (ports, cmd) => bookAppointment(ports)(cmd),
-    encodeCommitBookingAnswer,
-    commitBookingRefusal,
+    async (ports, cmd) =>
+      Result.map(await bookAppointment(ports)(cmd), committedOf),
+    refusalOf,
   ),
 );
 
@@ -686,7 +742,6 @@ export const cancelAppointment = onCall(
     root.ports,
     decodeCancelAppointment,
     (ports, cmd) => cancelAppointmentPipeline(ports)(cmd),
-    encodeCancelAppointmentAnswer,
     cancelAppointmentRefusal,
   ),
 );
@@ -697,9 +752,12 @@ export const rescheduleAppointment = onCall(
     plain(Callables.RescheduleAppointment, BookingErrorCode.CommitStoreFailed),
     root.ports,
     decodeRescheduleAppointment,
-    (ports, cmd) => rescheduleAppointmentPipeline(ports)(cmd),
-    encodeRescheduleAppointmentAnswer,
-    rescheduleAppointmentRefusal,
+    async (ports, cmd) =>
+      Result.map(
+        await rescheduleAppointmentPipeline(ports)(cmd),
+        rescheduledOf,
+      ),
+    refusalOf,
   ),
 );
 
@@ -710,7 +768,6 @@ export const transitionAppointment = onCall(
     root.ports,
     decodeTransitionAppointment,
     (ports, cmd) => transitionAppointmentPipeline(ports)(cmd),
-    encodeTransitionAppointmentAnswer,
     transitionAppointmentRefusal,
   ),
 );
@@ -721,8 +778,7 @@ export const markArrived = onCall(
     plain(Callables.MarkArrived, null),
     root.ports,
     decodeMarkArrived,
-    (ports, cmd) => markArrival(ports)(cmd),
-    encodeMarkArrivedAnswer,
+    async (ports, cmd) => Result.map(await markArrival(ports)(cmd), arrivedOf),
     arrivalRefusal,
   ),
 );
@@ -733,8 +789,7 @@ export const clearArrival = onCall(
     plain(Callables.ClearArrival, null),
     root.ports,
     decodeClearArrival,
-    (ports, cmd) => markArrival(ports)(cmd),
-    encodeClearArrivalAnswer,
+    async (ports, cmd) => Result.map(await markArrival(ports)(cmd), clearedOf),
     arrivalRefusal,
   ),
 );
@@ -746,7 +801,6 @@ export const recordSeatTip = onCall(
     root.ports,
     decodeRecordSeatTip,
     (ports, cmd) => recordSeatTipPipeline(ports)(cmd),
-    encodeRecordSeatTipAnswer,
     recordSeatTipRefusal,
   ),
 );
@@ -757,9 +811,9 @@ export const staffEditAppointment = onCall(
     plain(Callables.StaffEditAppointment, BookingErrorCode.CommitStoreFailed),
     root.walkIns,
     decodeStaffEditAppointment,
-    (ports, cmd) => editAppointment(ports)(cmd),
-    encodeStaffEditAppointmentAnswer,
-    staffEditAppointmentRefusal,
+    async (ports, cmd) =>
+      Result.map(await editAppointment(ports)(cmd), staffEditedOf),
+    refusalOf,
   ),
 );
 
@@ -896,8 +950,7 @@ export const requestWaitlist = onCall(
     root.ports,
     decodeRequestWaitlist,
     (ports, cmd) => requestWaitlistPipeline(ports)(cmd),
-    encodeRequestWaitlistAnswer,
-    requestWaitlistRefusal,
+    refusalOf,
   ),
 );
 
@@ -908,8 +961,7 @@ export const cancelWaitlist = onCall(
     root.ports,
     decodeCancelWaitlist,
     (ports, cmd) => cancelWaitlistPipeline(ports)(cmd),
-    encodeCancelWaitlistAnswer,
-    cancelWaitlistRefusal,
+    refusalOf,
   ),
 );
 
@@ -1025,8 +1077,7 @@ export const runBackfill = onCall(
     root.ports,
     decodeRunBackfill,
     (ports, cmd, budget) => runBackfillPipeline(ports)(cmd, budget),
-    encodeRunBackfillAnswer,
-    runBackfillRefusal,
+    refusalOf,
   ),
 );
 
@@ -1039,12 +1090,11 @@ export const runBackfill = onCall(
  */
 export const publishStreakDefinition = onCall(
   LOG_DIGEST_SECRETS,
-  callableEdge<unknown, StreakPublishAnswer>(
+  callableEdge<unknown, StreakPublishCall.Answer>(
     {
       callable: Callables.PublishStreakDefinition,
       failureCode: StreakPublishErrorCode.StoreFailed,
       timeoutSeconds: null,
-      answer: null,
       traced: true,
     },
     root.edge,
@@ -1070,8 +1120,7 @@ export const startImpersonation = onCall(
     root.ports,
     decodeStartImpersonation,
     (ports, cmd) => startImpersonationPipeline(ports)(cmd),
-    encodeStartImpersonationAnswer,
-    startImpersonationRefusal,
+    refusalOf,
   ),
 );
 
@@ -1083,8 +1132,7 @@ export const endImpersonation = onCall(
     root.ports,
     decodeEndImpersonation,
     (ports, cmd) => endImpersonationPipeline(ports)(cmd),
-    encodeEndImpersonationAnswer,
-    endImpersonationRefusal,
+    refusalOf,
   ),
 );
 
@@ -1096,8 +1144,70 @@ export const redeemInvitation = onCall(
     root.ports,
     decodeRedeemInvitation,
     (ports, cmd) => redeemInvitationPipeline(ports)(cmd),
-    encodeRedeemInvitationAnswer,
-    redeemInvitationRefusal,
+    refusalOf,
+  ),
+);
+
+// ── The admin's data-subject requests (audit-hardening Phase 3) ───────────
+
+/**
+ * An admin exports one client's data (WS-C, GDPR Art. 15 / 20): ONE
+ * canonical JSON bundle of every document holding the person's data, and
+ * one `PRIVACY_CLIENT_EXPORTED` row. The larger instance: the bundle may
+ * reach its 4 MiB cap.
+ */
+export const exportClientData = onCall(
+  { memory: LARGE_MEMORY, ...WALK_IN_SECRETS },
+  wiredCallable(
+    plain(Callables.ExportClientData, null),
+    root.privacy,
+    decodeClientPrivacyCall,
+    (ports, cmd) => exportClientDataPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * An admin previews an erasure (WS-D, P3-L-17): read-only — the record's
+ * tag, the census of the person's footprint and the sibling walk-in records
+ * the card's ONE alert words in figures; it refuses as the erasure would.
+ * No row, no write.
+ */
+export const previewClientErasure = onCall(
+  WALK_IN_SECRETS,
+  wiredCallable(
+    plain(Callables.PreviewClientErasure, null),
+    root.erasurePreview,
+    decodeClientPrivacyCall,
+    (ports, cmd) => previewClientErasurePipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * An admin erases one client (WS-D, GDPR Art. 17 — "pseudonymize, keep
+ * records"): ONE resumable call — the stamp, the paged units, the avatar
+ * and the Auth user, the completion — its work budgeted by its timeout
+ * (the `runBackfill` idiom); the browser calls again with the same act
+ * until it answers `erasureDone`.
+ */
+export const eraseClient = onCall(
+  {
+    timeoutSeconds: ERASE_CLIENT_TIMEOUT_SECONDS,
+    memory: LARGE_MEMORY,
+    ...WALK_IN_SECRETS,
+  },
+  wiredCallable(
+    {
+      callable: Callables.EraseClient,
+      failureCode: null,
+      timeoutSeconds: ERASE_CLIENT_TIMEOUT_SECONDS,
+      traced: true,
+    },
+    root.erasure,
+    decodeClientPrivacyCall,
+    (ports, cmd, budget) => eraseClientPipeline(ports)(cmd, budget),
+    refusalOf,
   ),
 );
 
@@ -1137,10 +1247,13 @@ export const reportClientIssues = onCall(
       },
       () => root.telemetry,
       (request) => decodeReportClientIssues(request, root.telemetry.log),
-      async (ports, cmd) =>
-        Result.ok(await reportClientIssuesPipeline(ports)(cmd)),
-      encodeReportClientIssuesAnswer,
-      reportClientIssuesRefusal,
+      async (
+        ports,
+        cmd,
+      ): Promise<
+        Result<WireAnswer<typeof Callables.ReportClientIssues>, never>
+      > => Result.ok(await reportClientIssuesPipeline(ports)(cmd)),
+      refusalOf,
     ),
   ),
 );

@@ -9,7 +9,7 @@ import {
   StreakTransition,
 } from '@core/components';
 import type {
-  LoyaltyCatalog,
+  LoyaltyCatalogParts,
   StreakDefinition,
   StreakDefinitionVersion,
 } from '@core/entities';
@@ -30,6 +30,7 @@ import {
 } from '@core/errors';
 import { LoyaltyCatalogSystem, StreakRuleSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_TODAY,
   type GatewayScript,
   localDate,
@@ -84,13 +85,6 @@ function seeded(skip: ReadonlySet<string> = new Set()): FakeFirestore {
     }
   }
   return db;
-}
-
-/** An entity's stored body: every field but its id. */
-function bodyOf<E extends { readonly id: string }>(entity: E): Omit<E, 'id'> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  ) as Omit<E, 'id'>;
 }
 
 /** The head after one publish that waits for 5.10, with both versions beneath it. */
@@ -171,7 +165,7 @@ const read = async (ports: ReturnType<typeof setUp>['ports']) =>
   unwrapOk(await ports.loadLoyaltyCatalog());
 
 /** The rhythm's rule in force on `day`, or `null` without the head. */
-const inForce = (catalog: LoyaltyCatalog, day: LocalDate) => {
+const inForce = (catalog: LoyaltyCatalogParts, day: LocalDate) => {
   const head = catalog.streaks.find(
     (entry) => entry.id === StreakRule.DEFAULT_DEFINITION_ID,
   );

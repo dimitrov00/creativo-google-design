@@ -28,6 +28,7 @@ import {
 import {
   BookingCart,
   BookingPolicy,
+  type LocalizedText,
   Principal,
   type ScheduleSelection,
   ShopCoverage,
@@ -308,9 +309,9 @@ export class BookingScheduleStep {
    * - `NOWHERE`: no active shop offers everything on the visit together.
    *   Only a change to the services can fix that. A move whose CARRIED seats
    *   no one active shop serves together never gets here: the shell ends it
-   *   in the call panel (`carriedSeatsInReach` asks about all of them at
-   *   once), because a change to the client's own services cannot fix a
-   *   companion's.
+   *   in the call panel (`MoveSystem.carriedSeatsInReach` asks about all of
+   *   them at once), because a change to the client's own services cannot
+   *   fix a companion's.
    *
    * A chosen shop that is not on the active list is not this question's to
    * answer (it would read as "does not offer your services", which is not
@@ -354,10 +355,8 @@ export class BookingScheduleStep {
     () => this.shopCoverage().shopCoverage === ShopCoverage.Served,
   );
 
-  private shopName(shop: {
-    readonly name: { readonly en: string; readonly bg: string };
-  }): string {
-    return this.content.text({ en: shop.name.en, bg: shop.name.bg });
+  private shopName(shop: { readonly name: LocalizedText }): string {
+    return this.content.text(shop.name);
   }
 
   /**

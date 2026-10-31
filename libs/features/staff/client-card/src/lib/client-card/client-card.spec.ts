@@ -1,14 +1,34 @@
-import { CouponGrantId } from '@core/primitives';
-import { CouponOccasion, type VisitLeg } from '@core/components';
+import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { CouponGrantId, CustomerId, Result, UserId } from '@core/primitives';
+import {
+  ClientPrivacyCall,
+  CouponOccasion,
+  ErasureCensus,
+  ErasureLifecycle,
+  ErasureStatus,
+  Role,
+  type VisitLeg,
+} from '@core/components';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
+import type { ClientPrivacyGatewayPorts } from '@core/ports';
+import {
+  CLIENT_PRIVACY_PORTS,
+  ID_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
 import { RECORD_KIND_WORDS } from '../client-card.words';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
   GEORGI_NOTE,
   GUEST,
   MARTIN,
+  NOW_MS,
+  customerPortsOf,
+  fixtureCustomers,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
@@ -27,11 +47,13 @@ import {
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
+  ALL_LOYALTY_FLAGS,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
 } from '../../testing/achievements-pages.rig';
 import { cssRule } from '../../testing/css-rule';
+import { UiAlert } from '@creativo/ui/patterns';
 import { ClientCard } from './client-card';
 import { LoadState } from '@creativo/shared/view-state';
 
@@ -1089,5 +1111,331 @@ describe('lib-client-card — its states', () => {
     expect(byId('client-head-tier')).toBeNull();
     expect(byId('client-loyalty-skeleton')).toBeNull();
     expect(byId('client-achievements-skeleton')).toBeNull();
+  });
+});
+
+/*
+ * L «Лични данни» (audit-hardening Phase 3, WS-C): the shop's admin, with
+ * `client.privacy` on, the callables' port and the id source bound — every
+ * case above mounts without them, so the block is absent there.
+ */
+describe('lib-client-card — the admin’s privacy block', () => {
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+  const EXPORTED: ClientPrivacyCall.Exported = {
+    clientExportVersion: ClientPrivacyCall.EXPORT_VERSION,
+    exportedCustomerId: GEORGI_CUSTOMER_ID,
+    exportedAtUtcMs: NOW_MS,
+    exportDocumentCount: 4,
+    exportByteCount: 25,
+    exportJson: '{"clientExportVersion":1}',
+  };
+
+  /** The export answering `EXPORTED`; the store's calls recorded. */
+  function bindPrivacy(): ClientPrivacyCall[] {
+    const calls: ClientPrivacyCall[] = [];
+    const privacy: ClientPrivacyGatewayPorts = {
+      exportClientData: async (call) => {
+        calls.push(call);
+        return Result.ok(EXPORTED);
+      },
+      previewClientErasure: async () =>
+        Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+      eraseClient: async () =>
+        Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+    };
+    let minted = 0;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CLIENT_PRIVACY_PORTS, useValue: privacy },
+        {
+          provide: ID_PORTS,
+          useValue: { nextId: () => `op-card-export-${(minted += 1)}-000000` },
+        },
+      ],
+    });
+    return calls;
+  }
+
+  /** A blob's text, read as the browser reads a file (jsdom's `Blob` has no `text()`). */
+  const textOfBlob = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+
+  const asAdmin = (overrides: Parameters<typeof georgiContext>[0] = {}) =>
+    mount({
+      context: georgiContext({ viewer: ADMIN, ...overrides }),
+      rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true } },
+    });
+
+  afterEach(() => {
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+    vi.restoreAllMocks();
+  });
+
+  it('sits after the exits as a group of its own, its row with a leading icon', async () => {
+    bindPrivacy();
+    const { byId, text, before } = await asAdmin();
+    const block = must(byId('client-privacy'));
+    const exits = must(byId('client-exits'));
+    expect(before(exits, block)).toBe(true);
+    expect(exits.contains(block)).toBe(false);
+    const group = must(block.querySelector('ul'));
+    expect(group.getAttribute('aria-label')).toBe('Лични данни');
+    const row = must(byId<HTMLButtonElement>('client-export'));
+    expect(row.parentElement?.tagName).toBe('LI');
+    expect(row.type).toBe('button');
+    expect(row.getAttribute('data-role')).not.toBe('destructive');
+    expect(
+      row.querySelector('[uileading] ui-icon')?.getAttribute('uiName'),
+    ).toBe('client.export');
+    expect(text(row)).toBe('Изтегли данните');
+    expect(byId('client-export-status')).toBeNull();
+  });
+
+  it('renders on a cancelled visit too, where the exits are gone', async () => {
+    bindPrivacy();
+    const { byId } = await asAdmin({ gone: true });
+    expect(byId('client-exits')).toBeNull();
+    expect(byId('client-privacy')).not.toBeNull();
+  });
+
+  it('is absent for a barber', async () => {
+    bindPrivacy();
+    const { byId } = await mount({
+      rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true } },
+    });
+    expect(byId('client-exits')).not.toBeNull();
+    expect(byId('client-privacy')).toBeNull();
+  });
+
+  it('saves the answer as creativo-client-<id>.json, byte for byte, and says so', async () => {
+    const calls = bindPrivacy();
+    const blobs: Blob[] = [];
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:creativo-export';
+      }),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const saved: { readonly href: string; readonly download: string }[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved.push({ href: this.href, download: this.download });
+    });
+    const { click, byId, text } = await asAdmin();
+
+    await click('client-export');
+
+    expect(calls).toEqual([
+      {
+        customerId: GEORGI_CUSTOMER_ID,
+        operationId: 'op-card-export-1-000000',
+      },
+    ]);
+    expect(saved).toEqual([
+      {
+        href: 'blob:creativo-export',
+        download: `creativo-client-${GEORGI_CUSTOMER_ID}.json`,
+      },
+    ]);
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0]?.type).toBe('application/json;charset=utf-8');
+    expect(await textOfBlob(must(blobs[0]))).toBe(EXPORTED.exportJson);
+    const status = must(byId('client-export-status'));
+    expect(status.matches('[role="status"]')).toBe(true);
+    expect(text(status)).toBe('Файлът е изтеглен.');
+  });
+});
+
+/*
+ * L — the admin's erasure (audit-hardening Phase 3, WS-D, P3-DEP-22): the
+ * record's destructive row, ONE `ui-alert` worded with the preview's census,
+ * the sibling rows, and the erased line on an `ERASED` record.
+ */
+describe('lib-client-card — the admin’s erasure', () => {
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+  const SIBLING = CustomerId.of('cus_5151515151515151515a');
+  const PREVIEW: ClientPrivacyCall.ErasurePreview = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.None,
+    erasureRecordCount: 1,
+    erasureAccountCount: 1,
+    erasureVisitCount: 12,
+    erasureNoteCount: 2,
+    erasurePhotoCount: 3,
+    erasureSiblingCustomerIds: [SIBLING],
+  };
+  const ERASED: ClientPrivacyCall.Erasure = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.Erased,
+    erasureDone: true,
+    erasureVisitCount: 12,
+  };
+
+  /** The erasure answering `PREVIEW` and `ERASED`; the store's calls recorded. */
+  function bindErasure(): {
+    readonly previews: ClientPrivacyCall[];
+    readonly erasures: ClientPrivacyCall[];
+  } {
+    const previews: ClientPrivacyCall[] = [];
+    const erasures: ClientPrivacyCall[] = [];
+    const privacy: ClientPrivacyGatewayPorts = {
+      exportClientData: async () =>
+        Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+      previewClientErasure: async (call) => {
+        previews.push(call);
+        return Result.ok(PREVIEW);
+      },
+      eraseClient: async (call) => {
+        erasures.push(call);
+        return Result.ok(ERASED);
+      },
+    };
+    let minted = 0;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CLIENT_PRIVACY_PORTS, useValue: privacy },
+        {
+          provide: ID_PORTS,
+          useValue: { nextId: () => `op-card-erase-${(minted += 1)}-000000` },
+        },
+      ],
+    });
+    return { previews, erasures };
+  }
+
+  const asAdmin = (
+    customers: Parameters<typeof customerPortsOf>[0] = fixtureCustomers(),
+  ) =>
+    mount({
+      context: georgiContext({ viewer: ADMIN }),
+      rig: {
+        flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true },
+        customers: customerPortsOf(customers),
+      },
+    });
+
+  it('offers the record’s destructive row after the export, its leading icon `client.erase`, and no erased line', async () => {
+    bindErasure();
+    const { byId, text, before } = await asAdmin();
+    const exportRow = must(byId('client-export'));
+    const row = must(byId<HTMLButtonElement>('client-erase'));
+    expect(before(exportRow, row)).toBe(true);
+    expect(row.closest('ul')).toBe(exportRow.closest('ul'));
+    expect(row.parentElement?.tagName).toBe('LI');
+    expect(row.getAttribute('uiRole')).toBe('destructive');
+    expect(
+      row.querySelector('[uileading] ui-icon')?.getAttribute('uiName'),
+    ).toBe('client.erase');
+    expect(text(row)).toBe('Изтрий личните данни');
+    expect(byId('client-erased')).toBeNull();
+    expect(byId('client-erase-status')).toBeNull();
+  });
+
+  it('opens ONE alert worded with the census: the destructive answer first, the safe one last and preferred', async () => {
+    const calls = bindErasure();
+    const { click, fixture, store } = await asAdmin();
+
+    await click('client-erase');
+
+    expect(calls.previews).toHaveLength(1);
+    const alerts = fixture.debugElement.queryAll(By.directive(UiAlert));
+    expect(alerts).toHaveLength(1);
+    const alert = alerts[0]?.componentInstance as UiAlert;
+    expect(alert.uiPresented()).toBe(true);
+    expect(alert.uiTitle()).toBe('Да изтрием ли личните данни?');
+    expect(alert.uiMessage()).toBe(
+      'Посещения: 12 · Бележки: 2 · Снимки: 3 · Профили за вход: 1 · ' +
+        'Други записи със същия телефон или имейл: 1. Името, телефонът и ' +
+        'имейлът изчезват, профилът за вход се изтрива. Посещенията и ' +
+        'плащанията остават.',
+    );
+    expect(alert.uiActions()).toEqual([
+      {
+        id: 'ERASE',
+        label: 'Изтрий',
+        role: 'destructive',
+        preferred: false,
+        testId: 'client-privacy-erase-confirm',
+      },
+      {
+        id: 'KEEP',
+        label: 'Отказ',
+        role: 'cancel',
+        preferred: true,
+        testId: 'client-privacy-erase-keep',
+      },
+    ]);
+    expect(store.erasure()?.alert.open).toBe(true);
+  });
+
+  it('«Отказ» erases nothing; «Изтрий» erases the previewed record and shows the erased line', async () => {
+    const calls = bindErasure();
+    const { click, byId, text, fixture, render } = await asAdmin();
+    const alertOf = () =>
+      fixture.debugElement.query(By.directive(UiAlert))
+        .componentInstance as UiAlert;
+
+    await click('client-erase');
+    alertOf().uiPicked.emit('KEEP');
+    await render();
+    expect(calls.erasures).toEqual([]);
+    expect(alertOf().uiPresented()).toBe(false);
+
+    await click('client-erase');
+    alertOf().uiPicked.emit('ERASE');
+    await render();
+
+    expect(calls.erasures).toEqual([calls.previews[1]]);
+    expect(calls.previews[1]?.customerId).toBe(calls.previews[0]?.customerId);
+    expect(calls.previews[1]?.operationId).not.toBe(
+      calls.previews[0]?.operationId,
+    );
+    expect(text(byId('client-erased'))).toBe('Изтрит клиент');
+    // The sibling the preview named: its own row, no name.
+    const sibling = must(byId<HTMLButtonElement>('client-privacy-sibling-1'));
+    expect(text(sibling)).toBe('Изтрий записа със същия телефон или имейл');
+    expect(sibling.getAttribute('uiRole')).toBe('destructive');
+  });
+
+  it('the alert’s empty host adds no gap under the privacy block — a boxless child of its stack (client-card.css)', async () => {
+    bindErasure();
+    const { byId } = await asAdmin();
+    const block = must(byId('client-privacy'));
+    expect(block.classList.contains('client-card__privacy')).toBe(true);
+    const host = must(byId('client-privacy-alert'));
+    expect(host.tagName).toBe('UI-ALERT');
+    expect(host.parentElement).toBe(block);
+    // Unasked, it draws nothing — yet as a box it would be a stack item.
+    expect(host.childElementCount).toBe(0);
+    // jsdom lays nothing out: the stylesheet is the contract.
+    expect(
+      cssRule(
+        'client-card/client-card.css',
+        '.client-card__privacy > ui-alert',
+      ).get('display'),
+    ).toBe('contents');
+  });
+
+  it('shows the erased line beside the re-sweep row on an ERASED record', async () => {
+    bindErasure();
+    const erased = fixtureCustomers().map((record) => ({
+      ...record,
+      ...ErasureLifecycle.complete(ErasureLifecycle.begin(NOW_MS), NOW_MS),
+    }));
+    const { byId, text } = await asAdmin(erased);
+    expect(text(byId('client-erase'))).toBe('Изтрий личните данни');
+    expect(text(byId('client-erased'))).toBe('Изтрит клиент');
   });
 });

@@ -32,6 +32,7 @@ import {
   ImpersonationSessionId,
   JournalEntryId,
   LocationId,
+  OtpId,
   PolicyRecomputeJobId,
   SeatKeyText,
   StreakDefinitionId,
@@ -254,6 +255,23 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
     );
     expect(resource).toBe(`${Collections.ImpersonationSessions}/imp_7`);
     expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+  });
+
+  it('names a sign-in challenge by its collection path — the restated name is the registry’s (Phase 3 WS-B)', () => {
+    const resource = AuditResourceId.forOtp(OtpId.of('otp_3'));
+    expect(resource).toBe(`${Collections.Otps}/otp_3`);
+    expect(resource).toBe('otps/otp_3');
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+  });
+
+  it('names a client record by its collection path — the restated name is the registry’s (Phase 3 WS-C)', () => {
+    const record = CustomerId.forUser(UserId.of('u_42'), fixtureHash);
+    const resource = AuditResourceId.forCustomer(record);
+    expect(resource).toBe(`${Collections.Customers}/${record}`);
+    expect(resource).toBe(`customers/${record}`);
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+    // A record's row never reads as the account's: two spellings, two resources.
+    expect(resource).not.toBe(AuditResourceId.forUser(UserId.of('u_42')));
   });
 
   it('parse takes at most one slash', () => {

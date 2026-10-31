@@ -11,6 +11,7 @@ import {
   VoucherCode,
   VoucherLifecycle,
   EditCommand,
+  ErasureLifecycle,
   RequestedSubjectRole,
 } from '@core/components';
 import {
@@ -21,6 +22,7 @@ import {
   Currency,
   GiftVoucherId,
   OperationId,
+  Result,
   SeatId,
 } from '@core/primitives';
 import { BookingErrorCode, StaffEditErrorCode } from '@core/errors';
@@ -56,15 +58,13 @@ import {
 } from '@core/testing';
 import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { toHttpsError } from '../edge';
-import {
-  encodeStaffEditAppointmentAnswer,
-  staffEditAppointmentRefusal,
-} from '../wire/booking.wire';
-import { settle } from '../wire/wire-read';
+import { staffEditedOf } from '../wire/booking.wire';
+import { refusalOf } from '../wire/wire-read';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * One NAMED staff intent against the REAL Firestore emulator — the
@@ -105,12 +105,6 @@ function nextOperation(): OperationId {
 const PETAR = BarberId.of('b-petar');
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 const RECEPTION = Actor.staff(FIXTURE_IDS.client, [Role.Receptionist]);
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const thursdayAt = (hour: number, minute = 0) =>
   utcMs(
@@ -188,6 +182,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
           searchPrefixes: [],
           createdAtUtcMs: FIXTURE_NOW_UTC_MS,
           customerOrigin: CustomerOrigin.Seed,
+          ...ErasureLifecycle.none(),
         },
       ],
       [PATH, bodyOf(visit())],
@@ -466,18 +461,20 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       commands: BookingCall.EditCommand | readonly BookingCall.EditCommand[],
       expectedVersion: number | null = null,
     ): Promise<unknown> {
-      const settled = settle(
-        await editAppointment(ports())({
-          appointmentId: PAIR,
-          actorRoles: [Role.Receptionist],
-          commands: Array.isArray(commands) ? commands : [commands],
-          acknowledgedOverlap: false,
-          expectedVersion,
-          operationId: nextOperation(),
-          actor: RECEPTION,
-        }),
-        encodeStaffEditAppointmentAnswer,
-        staffEditAppointmentRefusal,
+      const settled = Result.mapError(
+        Result.map(
+          await editAppointment(ports())({
+            appointmentId: PAIR,
+            actorRoles: [Role.Receptionist],
+            commands: Array.isArray(commands) ? commands : [commands],
+            acknowledgedOverlap: false,
+            expectedVersion,
+            operationId: nextOperation(),
+            actor: RECEPTION,
+          }),
+          staffEditedOf,
+        ),
+        refusalOf,
       );
       if (!settled.ok) throw toHttpsError(settled.error);
       return settled.value;

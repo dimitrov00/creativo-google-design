@@ -17,13 +17,22 @@ import {
   AuditTarget,
   type AuditTargetRef,
   type CancellationDelta,
+  type ErasureAction,
+  type ErasureCensus,
+  type ErasureLifecycle,
+  ErasureStatus,
   type GovernedCollection,
+  type IdentityCall,
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
+  type OtpRefusalReason,
+  type ParsedIdentifier,
+  type RegistrationFields,
   type RescheduleDelta,
   type Role,
   type SearchFields,
+  type SessionKind,
   type StaffEditDelta,
   type TipDelta,
   type TransitionDelta,
@@ -32,6 +41,7 @@ import {
 import type {
   AttendanceState,
   CustomerId,
+  IdentifierChannel,
   ImpersonationSessionId,
   OperationId,
   UserId,
@@ -75,6 +85,19 @@ if (user.accountStatus === AccountStatus.Blocked) {
 if (user.accountStatus === AccountStatus.Active) {
   // @ts-expect-error — an active account has no block reason
   void user.blockReason;
+}
+/** The erased account (Phase 3 WS-D, P3-DEP-17) narrows to its terminal stamp — and to nothing of a block. */
+if (user.accountStatus === AccountStatus.Erased) {
+  const erasedAt: UtcEpochMs = user.accountErasedAtUtcMs;
+  void erasedAt;
+  // @ts-expect-error — an erasure is no block: no reason
+  void user.blockReason;
+  // @ts-expect-error — nor a block's expiry
+  void user.blockedUntilUtcMs;
+}
+if (user.accountStatus === AccountStatus.Blocked) {
+  // @ts-expect-error — a blocked account carries no erasure stamp
+  void user.accountErasedAtUtcMs;
 }
 // @ts-expect-error — the nested `{ kind }` status object is gone (Law 6)
 void user.accountStatus.kind;
@@ -354,6 +377,210 @@ if (row.auditAction === AuditAction.GovernedDocDeleted) {
   // @ts-expect-error — a governed row carries no profile field list
   void row.profileFields;
 }
+/*
+ * The sign-in rows (audit-hardening Phase 3 WS-B, P3-DEP-7): each verb
+ * narrows to its own fields, every variant is flat, and the new context
+ * fields are disjoint from the actor, target and meta slices — tags, counts
+ * and the expiry only; the challenge's destination, hash and salt are never
+ * on a row (R36 / T5).
+ */
+export const identityContextsFlat: [
+  AllTrue<NoNested<AuditContext.OtpRequested>>,
+  AllTrue<NoNested<AuditContext.OtpVerified>>,
+  AllTrue<NoNested<AuditContext.OtpRefused>>,
+  AllTrue<NoNested<AuditContext.SessionIssued>>,
+  AllTrue<NoNested<AuditContext.RegistrationCompleted>>,
+] = [true, true, true, true, true];
+/** Each identity variant minus its verb, against the three other slices of the row. */
+type IdentityFacts =
+  | Omit<AuditContext.OtpRequested, 'auditAction'>
+  | Omit<AuditContext.OtpVerified, 'auditAction'>
+  | Omit<AuditContext.OtpRefused, 'auditAction'>
+  | Omit<AuditContext.SessionIssued, 'auditAction'>
+  | Omit<AuditContext.RegistrationCompleted, 'auditAction'>;
+export const identityContextsDisjoint: [
+  Disjoint<Omit<AuditContext.OtpRequested, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.OtpVerified, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.OtpRefused, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.SessionIssued, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.RegistrationCompleted, 'auditAction'>, Actor>,
+  Disjoint<IdentityFacts, AuditTargetRef>,
+  Disjoint<IdentityFacts, AuditEntryMeta>,
+] = [true, true, true, true, true, true, true];
+/** The check is not vacuous: a context repeating the target's id would share a key. */
+export const identityTargetRepeatCaught: Disjoint<
+  Omit<AuditContext.SessionIssued, 'auditAction'> & {
+    readonly targetUserId: UserId;
+  },
+  AuditTargetRef
+> = false;
+export const identityFieldsAre: [
+  Equals<AuditContext.OtpRequested['otpExpiresAtUtcMs'], UtcEpochMs>,
+  Equals<AuditContext.OtpVerified['otpAttemptCount'], number>,
+  Equals<AuditContext.OtpRefused['otpAttemptCount'], number>,
+  Equals<AuditContext.OtpRefused['otpMaxAttempts'], number>,
+] = [true, true, true, true];
+if (row.auditAction === AuditAction.IdentityOtpRequested) {
+  const expires: UtcEpochMs = row.otpExpiresAtUtcMs;
+  void expires;
+  void row.otpDestinationType;
+  void row.otpPurpose;
+  // @ts-expect-error — a request has no refusal reason
+  void row.otpRefusalReason;
+  // @ts-expect-error — the destination (a phone or an e-mail) is never on a row (R36)
+  void row.destination;
+  // @ts-expect-error — nor the code's hash
+  void row.codeHash;
+}
+if (row.auditAction === AuditAction.IdentityOtpVerified) {
+  const attempts: number = row.otpAttemptCount;
+  void attempts;
+  // @ts-expect-error — a verification carries no limit
+  void row.otpMaxAttempts;
+}
+if (row.auditAction === AuditAction.IdentityOtpRefused) {
+  const reason: OtpRefusalReason = row.otpRefusalReason;
+  void reason;
+  void row.otpAttemptCount;
+  void row.otpMaxAttempts;
+  // @ts-expect-error — a refusal carries no expiry
+  void row.otpExpiresAtUtcMs;
+}
+if (row.auditAction === AuditAction.IdentitySessionIssued) {
+  const kind: SessionKind = row.sessionKind;
+  void kind;
+  void row.otpDestinationType;
+  // @ts-expect-error — a session row names no purpose
+  void row.otpPurpose;
+}
+if (row.auditAction === AuditAction.IdentityRegistrationCompleted) {
+  const channel: IdentifierChannel = row.registrationIdentifierChannel;
+  void channel;
+  // @ts-expect-error — a registration row names no challenge channel
+  void row.otpDestinationType;
+  // @ts-expect-error — nor any profile field (the users trigger's row does that)
+  void row.profileFields;
+}
+/*
+ * The data-subject export row (audit-hardening Phase 3 WS-C, P3-DEP-10):
+ * flat, counts only, disjoint from the actor, target and meta slices — the
+ * bundle, a section or a value of the person is never on a row (R36 / T5).
+ */
+export const clientExportedFlat: AllTrue<
+  NoNested<AuditContext.ClientExported>
+> = true;
+export const clientExportedDisjoint: [
+  Disjoint<Omit<AuditContext.ClientExported, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.ClientExported, 'auditAction'>, AuditTargetRef>,
+  Disjoint<Omit<AuditContext.ClientExported, 'auditAction'>, AuditEntryMeta>,
+] = [true, true, true];
+/** The check is not vacuous: an export row repeating the target's record id would share a key. */
+export const clientExportedTargetRepeatCaught: Disjoint<
+  Omit<AuditContext.ClientExported, 'auditAction'> & {
+    readonly targetCustomerId: CustomerId;
+  },
+  AuditTargetRef
+> = false;
+export const clientExportedFieldsAre: [
+  Equals<AuditContext.ClientExported['exportDocumentCount'], number>,
+  Equals<AuditContext.ClientExported['exportAuditRowCount'], number>,
+  Equals<AuditContext.ClientExported['exportByteCount'], number>,
+] = [true, true, true];
+export const auditEntryWithExportNotNever: IsNever<
+  Extract<AuditEntry, { readonly auditAction: 'PRIVACY_CLIENT_EXPORTED' }>
+> = false;
+if (row.auditAction === AuditAction.PrivacyClientExported) {
+  const documents: number = row.exportDocumentCount;
+  void documents;
+  void row.exportAuditRowCount;
+  void row.exportByteCount;
+  // @ts-expect-error — an export row carries no profile field list
+  void row.profileFields;
+  // @ts-expect-error — nor the bundle's text
+  void row.exportJson;
+  // @ts-expect-error — nor a governed field list
+  void row.governedFields;
+}
+/*
+ * The data-subject erasure rows (audit-hardening Phase 3 WS-D, P3-DEP-18):
+ * ONE variant for the four verbs, flat — the verb and the eleven census
+ * counts, disjoint from the actor, target and meta slices; a name, a contact
+ * value, a label, free text or a sibling's id is never on a row (R36 / T5).
+ */
+export const clientErasureFlat: AllTrue<NoNested<AuditContext.ClientErasure>> =
+  true;
+export const clientErasureDisjoint: [
+  Disjoint<ErasureCensus, Actor>,
+  Disjoint<ErasureCensus, AuditTargetRef>,
+  Disjoint<ErasureCensus, AuditEntryMeta>,
+  Disjoint<ErasureCensus, Omit<AuditContext.ClientExported, 'auditAction'>>,
+] = [true, true, true, true];
+/** The check is not vacuous: a census repeating the target's record id would share a key. */
+export const clientErasureTargetRepeatCaught: Disjoint<
+  ErasureCensus & { readonly targetCustomerId: CustomerId },
+  AuditTargetRef
+> = false;
+/** The census never collides with the record's erasure slice it reports on. */
+export const clientErasureLifecycleDisjoint: Disjoint<
+  ErasureCensus,
+  ErasureLifecycle
+> = true;
+export const clientErasureVerbsAre: [
+  Equals<
+    ErasureAction,
+    | 'PRIVACY_CLIENT_ERASURE_SWEPT'
+    | 'PRIVACY_CLIENT_ERASURE_STARTED'
+    | 'PRIVACY_CLIENT_ERASED'
+    | 'PRIVACY_CLIENT_ERASURE_RESWEPT'
+  >,
+  Equals<AuditContext.ClientErasure['auditAction'], ErasureAction>,
+  Equals<AuditContext.ClientErasure['erasureNoteCount'], number>,
+  Equals<AuditContext.ClientErasure['erasureJournalCount'], number>,
+] = [true, true, true, true];
+/*
+ * ONE variant carries the four verbs (its `auditAction` is the union), so
+ * it is extracted by the union and each verb narrows it by intersection.
+ */
+export const auditEntryWithErasureNotNever: [
+  IsNever<Extract<AuditEntry, { readonly auditAction: ErasureAction }>>,
+  IsNever<
+    AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_SWEPT' }
+  >,
+  IsNever<
+    AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_STARTED' }
+  >,
+  IsNever<AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASED' }>,
+  IsNever<
+    AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_RESWEPT' }
+  >,
+] = [false, false, false, false, false];
+/** The check is not vacuous: a verb no variant carries narrows the entry to `never`. */
+export const auditEntryWithForeignVerbIsNever: IsNever<
+  AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_FORGOTTEN' }
+> = true;
+if (
+  row.auditAction === AuditAction.PrivacyClientErasureSwept ||
+  row.auditAction === AuditAction.PrivacyClientErasureStarted ||
+  row.auditAction === AuditAction.PrivacyClientErased ||
+  row.auditAction === AuditAction.PrivacyClientErasureReswept
+) {
+  const notes: number = row.erasureNoteCount;
+  void notes;
+  void row.erasureRecordCount;
+  void row.erasureContactKeptCount;
+  // @ts-expect-error — an erasure row carries no export count
+  void row.exportDocumentCount;
+  // @ts-expect-error — nor the record's erasure tag (the census is counts only)
+  void row.erasureStatus;
+  // @ts-expect-error — nor any sibling record's id
+  void row.erasureSiblingCustomerIds;
+  // @ts-expect-error — nor a name
+  void row.displayName;
+}
+if (row.auditAction === AuditAction.PrivacyClientExported) {
+  // @ts-expect-error — an export row carries no census
+  void row.erasureNoteCount;
+}
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;
   void target;
@@ -365,7 +592,7 @@ if (row.auditTarget === AuditTarget.Customer) {
   void row.targetUserId;
 }
 
-/* ── Customer = Meta & WriteProvenance (D29, WS-4.3) ───────────────────── */
+/* ── Customer = Meta & WriteProvenance & ErasureLifecycle (D29, WS-4.3, P3 WS-D) ── */
 
 export const customerNotNever: IsNever<Customer> = false;
 export const customerFlat: EveryVariantFlat<Customer> = true;
@@ -373,10 +600,61 @@ export const customerProvenanceDisjoint: Disjoint<
   CustomerMeta,
   WriteProvenance
 > = true;
+/** The erasure slice shares no field with the record's other two slices (P3-L-18). */
+export const customerErasureDisjoint: [
+  Disjoint<CustomerMeta, ErasureLifecycle>,
+  Disjoint<WriteProvenance, ErasureLifecycle>,
+] = [true, true];
+/** The check is not vacuous: an erasure slice repeating the record's name would share a key. */
+export const customerErasureRepeatCaught: Disjoint<
+  CustomerMeta,
+  ErasureLifecycle & { readonly displayName: string }
+> = false;
+/** Every variant of the record keeps the archetype — no variant collapses it to `never`. */
+export const customerVariantsNotNever: [
+  IsNever<Extract<Customer, { readonly erasureStatus: 'NONE' }>>,
+  IsNever<Extract<Customer, { readonly erasureStatus: 'ERASING' }>>,
+  IsNever<Extract<Customer, { readonly erasureStatus: 'ERASED' }>>,
+] = [false, false, false];
 declare const customer: Customer;
 const customerWriteOperationId: OperationId | null = customer.writeOperationId;
 void customerWriteOperationId;
+const customerErasureStatus: ErasureStatus = customer.erasureStatus;
+void customerErasureStatus;
+if (customer.erasureStatus === ErasureStatus.Erasing) {
+  const started: UtcEpochMs = customer.erasureStartedAtUtcMs;
+  void started;
+  // @ts-expect-error — an erasure under way is not yet certified erased
+  void customer.erasedAtUtcMs;
+}
+if (customer.erasureStatus === ErasureStatus.Erased) {
+  const started: UtcEpochMs = customer.erasureStartedAtUtcMs;
+  const erasedAt: UtcEpochMs = customer.erasedAtUtcMs;
+  void started;
+  void erasedAt;
+}
+if (customer.erasureStatus === ErasureStatus.None) {
+  // @ts-expect-error — a record no erasure reached carries no erasure stamp
+  void customer.erasureStartedAtUtcMs;
+}
 // @ts-expect-error — a CustomerId is never a UserId (Law 7.4, D29)
 export const customerIdIsNotUser: UserId = customer.id;
 // @ts-expect-error — a UserId is never a CustomerId (Law 7.4, D29)
 export const userIdIsNotCustomer: CustomerId = user.id;
+
+/* ── The identity wire carries the parsed identifier as it is (B7) ─────── */
+
+declare const parsedIdentifier: ParsedIdentifier;
+declare const registrationFields: RegistrationFields;
+/** The client's edge parse IS the OTP request — no field-by-field copy. */
+export const otpRequestIsParsed: IdentityCall = parsedIdentifier;
+/** …and, with the typed fields beside it, the registration request. */
+export const registrationIsParsed: IdentityCall.CompleteRegistration = {
+  ...parsedIdentifier,
+  fields: registrationFields,
+};
+export const rawIdentifierRefused: IdentityCall = {
+  identifierChannel: parsedIdentifier.identifierChannel,
+  // @ts-expect-error — a raw string is no `Identifier` (Law 7.4): parse it first
+  identifier: 'anna@example.com',
+};

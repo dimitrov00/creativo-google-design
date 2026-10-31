@@ -15,29 +15,28 @@ import {
   ServiceId,
   UtcEpochMs,
 } from '@core/primitives';
-import { BadgeSystem, LoyaltyCatalogSystem } from '@core/systems';
+import {
+  BadgeSystem,
+  LoyaltyCatalogSystem,
+  RecordsSystem,
+} from '@core/systems';
 import { localDate } from '@core/testing';
 import { isUiIconName } from '@creativo/ui/controls';
 import { RECORD_KIND_WORDS, type RecordKindWord } from './client-card.words';
-import { PENDING_RING, isSingleLevel, medalVm } from './achievements.presenter';
+import { PENDING_RING, medalVm } from './achievements.presenter';
 import type { AchievementsData, MedalVm } from './client-pages.vm';
 import {
   CHIP_ALL,
   CHIP_SEASONS,
   CLOSE_LIMIT,
-  NEW_RECORD_DAYS,
   RECORD_ICONS,
-  RECORD_ORDER,
   SECTION_FOLD_OVER,
-  isNewRecord,
   medalRingVm,
   medalScopeVm,
   medalsPageVm,
   recordCardVm,
-  recordSetOn,
   recordsOf,
   rhythmLiveOf,
-  ringValueOf,
   sectionTilesShown,
 } from './medals.presenter';
 import {
@@ -212,113 +211,6 @@ function withRecords(records: readonly PersonalRecord[]): AchievementsData {
   return { ...GEORGI, account: { ...GEORGI.account, records } };
 }
 
-describe('ringValueOf', () => {
-  it('draws the arc from the last threshold won to the next, not from nought', () => {
-    // «Фейд» at 24 with II = 10 and III = 25: 14 of 15.
-    const fade = series(GEORGI, 'series-svc-fade');
-    expect(
-      ringValueOf(
-        fade,
-        BadgeSystem.standing(
-          fade,
-          GEORGI.progress.get(BadgeSeriesId.of('series-svc-fade')) ?? null,
-        ),
-      ),
-    ).toBeCloseTo(14 / 15);
-    // The spec's own sum: 23 draws 13 of 15, 87 %.
-    const at23 = withProgress('series-svc-fade', 23, [
-      [1, '2025-04-21'],
-      [2, '2025-09-22'],
-    ]);
-    expect(
-      ringValueOf(
-        fade,
-        BadgeSystem.standing(
-          fade,
-          at23.progress.get(BadgeSeriesId.of('series-svc-fade')) ?? null,
-        ),
-      ),
-    ).toBeCloseTo(13 / 15);
-  });
-
-  it('draws the way to the first level from nought', () => {
-    const weekend = series(GEORGI, 'series-weekend');
-    expect(
-      ringValueOf(
-        weekend,
-        BadgeSystem.standing(
-          weekend,
-          GEORGI.progress.get(BadgeSeriesId.of('series-weekend')) ?? null,
-        ),
-      ),
-    ).toBeCloseTo(2 / 3);
-  });
-
-  it('is empty on the day a level is won, and never negative when a windowed count fell', () => {
-    // «Изследовател»: I = 2, II = 4, two services tried.
-    const explorer = series(GEORGI, 'series-explorer');
-    expect(
-      ringValueOf(
-        explorer,
-        BadgeSystem.standing(
-          explorer,
-          GEORGI.progress.get(BadgeSeriesId.of('series-explorer')) ?? null,
-        ),
-      ),
-    ).toBe(0);
-    // «Цяла година» counts the last 365 days: II = 8 won, six months left in the window.
-    const fallen = withProgress('series-twelve-months', 6, [
-      [1, '2025-06-04'],
-      [2, '2025-10-15'],
-    ]);
-    const year = series(fallen, 'series-twelve-months');
-    expect(
-      ringValueOf(
-        year,
-        BadgeSystem.standing(
-          year,
-          fallen.progress.get(BadgeSeriesId.of('series-twelve-months')) ?? null,
-        ),
-      ),
-    ).toBe(0);
-  });
-
-  it('never runs past full', () => {
-    // A level due and not yet stamped: 26 of 25.
-    const over = withProgress('series-svc-fade', 26, [
-      [1, '2025-04-21'],
-      [2, '2025-09-22'],
-    ]);
-    const fade = series(over, 'series-svc-fade');
-    expect(
-      ringValueOf(
-        fade,
-        BadgeSystem.standing(
-          fade,
-          over.progress.get(BadgeSeriesId.of('series-svc-fade')) ?? null,
-        ),
-      ),
-    ).toBe(1);
-  });
-
-  it('has nothing to draw towards where no level is left, or the level is an act', () => {
-    const rhythm = series(GEORGI, 'series-rhythm');
-    expect(
-      ringValueOf(
-        rhythm,
-        BadgeSystem.standing(
-          rhythm,
-          GEORGI.progress.get(BadgeSeriesId.of('series-rhythm')) ?? null,
-        ),
-      ),
-    ).toBeNull();
-    const birthday = series(GEORGI, 'series-birthday');
-    expect(
-      ringValueOf(birthday, BadgeSystem.standing(birthday, null)),
-    ).toBeNull();
-  });
-});
-
 describe('medalRingVm', () => {
   it('draws an earned family on its way: the rim numeral, the arc from the level won, the target in words', () => {
     expect(ring(GEORGI, 'series-svc-fade')).toEqual({
@@ -420,7 +312,7 @@ describe('medalRingVm', () => {
     // live book, the seasons' one-offs here — wears the form of «Добре
     // дошъл»: a full ring, no rim numeral, no «ниво» heard.
     const completeSingles = GEORGI.catalog.families
-      .filter((family) => isSingleLevel(family))
+      .filter((family) => BadgeSystem.isSingleLevel(family))
       .map((family) => medalRingVm(family, GEORGI, SETTLED, 'large'))
       .filter((medal) => medal.state === 'complete');
     expect(completeSingles.length).toBeGreaterThan(1);
@@ -611,11 +503,13 @@ describe('records', () => {
     for (const icon of Object.values(RECORD_ICONS)) {
       expect(isUiIconName(icon)).toBe(true);
     }
-    expect(new Set(Object.values(RECORD_ICONS)).size).toBe(RECORD_ORDER.length);
-    // Every kind of the order has its glyph, under the card's word for it.
-    expect(RECORD_ORDER.map((kind) => RECORD_KIND_WORDS[kind]).sort()).toEqual(
-      Object.keys(RECORD_ICONS).sort(),
+    expect(new Set(Object.values(RECORD_ICONS)).size).toBe(
+      RecordsSystem.RECORD_ORDER.length,
     );
+    // Every kind of the order has its glyph, under the card's word for it.
+    expect(
+      RecordsSystem.RECORD_ORDER.map((kind) => RECORD_KIND_WORDS[kind]).sort(),
+    ).toEqual(Object.keys(RECORD_ICONS).sort());
   });
 
   it('words the longest run: the count, the month it was set, new while it is', () => {
@@ -742,80 +636,6 @@ describe('records', () => {
     ).toMatchObject({
       label: 'Favourite service',
       detail: '24 times',
-    });
-  });
-
-  describe('recordSetOn', () => {
-    it('is the run’s last visit, the first visit’s day, the record year’s last day', () => {
-      expect(
-        recordSetOn(record('longestRhythm'), localDate('2026-09-28')),
-      ).toBe('2026-09-28');
-      expect(recordSetOn(record('firstVisit'), localDate('2026-09-28'))).toBe(
-        '2025-03-06',
-      );
-      expect(
-        recordSetOn(record('mostVisitsInYear'), localDate('2026-09-28')),
-      ).toBe('2025-12-31');
-    });
-
-    it('is today while the record year still runs, and no day for a favourite', () => {
-      expect(
-        recordSetOn(
-          record('mostVisitsInYear', { year: 2026 }),
-          localDate('2026-09-28'),
-        ),
-      ).toBe('2026-09-28');
-      expect(
-        recordSetOn(record('favouriteService'), localDate('2026-09-28')),
-      ).toBeNull();
-      expect(
-        recordSetOn(
-          record('mostVisitsInYear', { year: null }),
-          localDate('2026-09-28'),
-        ),
-      ).toBeNull();
-    });
-  });
-
-  describe('isNewRecord', () => {
-    it('is a run set within the last thirty days of the shop’s today', () => {
-      const run = (on: string) => record('longestRhythm', { on });
-      expect(NEW_RECORD_DAYS).toBe(30);
-      expect(isNewRecord(run('2026-09-28'), localDate('2026-09-28'))).toBe(
-        true,
-      );
-      expect(isNewRecord(run('2026-08-29'), localDate('2026-09-28'))).toBe(
-        true,
-      );
-      expect(isNewRecord(run('2026-08-28'), localDate('2026-09-28'))).toBe(
-        false,
-      );
-      // A day ahead of today is no record yet.
-      expect(isNewRecord(run('2026-09-29'), localDate('2026-09-28'))).toBe(
-        false,
-      );
-    });
-
-    it('is a best year for the thirty days after it closed, never the year still running', () => {
-      const year = (value: number) =>
-        record('mostVisitsInYear', { year: value });
-      expect(isNewRecord(year(2025), localDate('2026-01-01'))).toBe(true);
-      expect(isNewRecord(year(2025), localDate('2026-01-30'))).toBe(true);
-      expect(isNewRecord(year(2025), localDate('2026-01-31'))).toBe(false);
-      expect(isNewRecord(year(2026), localDate('2026-09-28'))).toBe(false);
-      expect(isNewRecord(year(2026), localDate('2026-12-31'))).toBe(false);
-    });
-
-    it('is never a first visit, never a favourite', () => {
-      expect(
-        isNewRecord(
-          record('firstVisit', { on: '2026-09-28' }),
-          localDate('2026-09-28'),
-        ),
-      ).toBe(false);
-      expect(
-        isNewRecord(record('favouriteService'), localDate('2026-09-28')),
-      ).toBe(false);
     });
   });
 

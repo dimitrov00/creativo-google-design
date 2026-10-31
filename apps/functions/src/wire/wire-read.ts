@@ -2,13 +2,13 @@ import {
   ClientOperationId,
   OperationId,
   Result,
+  StoredFields,
   Tag,
   type UtcEpochMs,
 } from '@core/primitives';
 import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import type { OperationIdField } from '@core/ports';
 import { ZonedTimeSystem } from '@core/systems';
-import type { EdgeError } from '../edge';
 import type { VerifiedRequest } from '../lib/booking/caller-roles';
 
 /**
@@ -39,28 +39,21 @@ export function payloadOf(request: WireRequest): Payload {
   return data !== null && typeof data === 'object' ? (data as Payload) : {};
 }
 
-/** A field of an untrusted object by name — no dynamic index; `undefined` when absent. */
-export function field(source: unknown, name: string): unknown {
-  return source !== null && typeof source === 'object'
-    ? Object.getOwnPropertyDescriptor(source, name)?.value
-    : undefined;
-}
-
 /** `String(x ?? '')` — the wire's reading of a text field. */
 export function text(source: unknown, name: string): string {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return value === undefined || value === null ? '' : String(value);
 }
 
 /** A text field that is present and not `null`, else `null` (`String`-coerced as the wire reads text). */
 export function textOrNull(source: unknown, name: string): string | null {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return value === undefined || value === null ? null : String(value);
 }
 
 /** A list field, or none. */
 export function listOf(source: unknown, name: string): readonly unknown[] {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return Array.isArray(value) ? value : [];
 }
 
@@ -77,7 +70,7 @@ export function eventInstantOf(time: string): UtcEpochMs | null {
 
 /** A number field as sent, or `null` for anything that is not a number. */
 export function numberOrNull(source: unknown, name: string): number | null {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return typeof value === 'number' ? value : null;
 }
 
@@ -125,25 +118,13 @@ export function storeFailure(error: RepositoryError): Error {
 
 /**
  * Throws a store failure for the edge's unexpected path ({@link storeFailure});
- * any other refusal comes back narrowed.
+ * any other refusal comes back narrowed, as itself. The refusal of every
+ * callable whose refusals all leave as themselves, and the first step of
+ * every refusal function that words some in the callable's own codes.
  */
 export function refusalOf<E extends { readonly errorCode: string }>(
   error: E | RepositoryError,
 ): Exclude<E, RepositoryError> {
   if (isStoreFailure(error)) throw storeFailure(error);
   return error as Exclude<E, RepositoryError>;
-}
-
-/**
- * A pipeline's result as the callable answers it: the answer encoded, a
- * refusal in the callable's own words (a store failure thrown on the way).
- */
-export function settle<A, E, Out>(
-  result: Result<A, E>,
-  encode: (answer: A) => Out,
-  refuse: (error: E) => EdgeError,
-): Result<Out, EdgeError> {
-  return result.ok
-    ? Result.ok(encode(result.value))
-    : Result.err(refuse(result.error));
 }

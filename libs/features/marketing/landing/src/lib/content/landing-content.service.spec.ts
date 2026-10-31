@@ -5,30 +5,22 @@ import {
   CATALOG_PORTS,
   MEDIA_RESOLVE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { type MediaRef, Money } from '@core/components';
+import type { MediaRef } from '@core/components';
 import type {
   CatalogReadPorts,
   MediaResolvePorts,
   MediaVariant,
 } from '@core/ports';
 import type { Barber, Service } from '@core/entities';
-import {
-  BarberId,
-  Currency,
-  MediaRefId,
-  Result,
-  ServiceId,
-} from '@core/primitives';
+import { BarberId, MediaRefId, Result, ServiceId } from '@core/primitives';
 import { MediaError, type RepositoryError } from '@core/errors';
 import {
   barberFixture,
-  cents,
   memoryCatalogReadPorts,
   serviceFixture,
 } from '@core/testing';
 import {
   CatalogContentService,
-  CatalogWording,
   DEFAULT_MEDIA_RETRY_POLICY,
 } from '@creativo/features/shared/catalog';
 import { LanguageService } from '@creativo/features/shared/shell';
@@ -251,14 +243,6 @@ describe('LandingContentService — media', () => {
     // The very view models, not a second mapping of the same data.
     expect(landing.allServices()).toBe(booking.serviceVms());
     expect(landing.barbers()).toBe(booking.barberVms());
-  });
-
-  it('words a localized pair and a price as the catalogue’s presenter does', () => {
-    const content = setUp(scriptedMedia({}));
-    const words = TestBed.inject(CatalogWording);
-    expect(content.text({ en: 'Skin fade', bg: 'Фейд' })).toBe('Фейд');
-    const price = Money.fromCents(cents(1450), Currency.EUR);
-    expect(content.price(price)).toBe(words.price(price));
   });
 
   it('stops retrying when its injector is destroyed', async () => {

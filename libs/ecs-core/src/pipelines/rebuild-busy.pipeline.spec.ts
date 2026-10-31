@@ -21,6 +21,7 @@ import { RepositoryError } from '@core/errors';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   endMinute,
   FIXTURE_IDS,
@@ -52,13 +53,6 @@ const IVAN = FIXTURE_IDS.barber;
 const TOMORROW = localDate('2026-09-29');
 const TODAY_KEY = BusyKey.of(IVAN, FIXTURE_TODAY);
 const TOMORROW_KEY = BusyKey.of(IVAN, TOMORROW);
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const LONDON = (() => {
   const zone = ZonedTimeSystem.checkZone('Europe/London');

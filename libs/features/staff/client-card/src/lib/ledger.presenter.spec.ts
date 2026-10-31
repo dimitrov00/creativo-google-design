@@ -27,7 +27,7 @@ import {
   RewardId,
   TierId,
 } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { LedgerSystem, ZonedTimeSystem } from '@core/systems';
 import { localDate, utcMs } from '@core/testing';
 import { type ActivityRowVm, type LinePart } from './client-pages.vm';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
@@ -37,7 +37,6 @@ import {
   type LedgerPageInput,
   NO_VISIT_NAMES,
   activityGroups,
-  foldByEvent,
   ledgerPageVm,
   wholeMonthsOf,
 } from './ledger.presenter';
@@ -352,7 +351,7 @@ function rowsOf(
 ): ReadonlyMap<string, ActivityRowVm> {
   return new Map(
     activityGroups(
-      foldByEvent(entries, true),
+      LedgerSystem.fold(entries, true),
       activityInput({
         wholeMonths: wholeMonthsOf(entries, true),
         ...overrides,
@@ -375,158 +374,6 @@ function georgiEntryId(seq: number): string {
     `Георги’s row ${seq}`,
   ).id;
 }
-
-describe('foldByEvent', () => {
-  it('folds the entries of one event into one, newest first, whatever order they arrive in', () => {
-    const events = foldByEvent([...JOURNAL].reverse(), true);
-    expect(events.map((event) => event.id)).toEqual([
-      'e-51',
-      'e-49',
-      'e-46',
-      'e-44',
-      'e-43',
-      'e-42',
-      'e-41',
-      'e-40',
-      'e-35',
-      'e-30',
-    ]);
-    expect(events[0]?.entries.map((row) => row.id)).toEqual(['e-51', 'e-50']);
-    expect(events[0]?.utcEpochMs).toEqual(VISIT_BEARD.utcEpochMs);
-    expect(events[0]?.localDate).toEqual(VISIT_BEARD.localDate);
-  });
-
-  it('sums what an event moved and keeps the balance its newest point row left', () => {
-    const [visit, tier, redemption] = foldByEvent(JOURNAL, true);
-    expect(visit).toMatchObject({ delta: 27, balanceAfter: 371 });
-    // No points moved: no amount, no balance.
-    expect(tier).toMatchObject({ delta: null, balanceAfter: null });
-    expect(redemption).toMatchObject({ delta: -250, balanceAfter: 94 });
-  });
-
-  it('folds a visit’s seats under either spelling of its id', () => {
-    const seats = [
-      entry(
-        2,
-        '2026-07-13',
-        'appt:appt-c:seat:s2',
-        points(10, 307),
-        earned(10),
-      ),
-      entry(
-        1,
-        '2026-07-13',
-        'appt:appt-c:seat:s1',
-        points(17, 297),
-        earned(17),
-      ),
-    ];
-    expect(foldByEvent(seats, true)).toEqual([
-      {
-        id: 'e-2',
-        utcEpochMs: seats[0]?.utcEpochMs,
-        localDate: seats[0]?.localDate,
-        entries: seats,
-        delta: 27,
-        balanceAfter: 307,
-      },
-    ]);
-  });
-
-  it('keeps a level an event of its own where its bonus rode the visit’s id', () => {
-    // The first round's journals file a level's points under the visit
-    // that earned it: the visit stays a visit, the level a level.
-    const day = [
-      entry(8, '2025-06-04', 'appt:appt-d:seat:s1', points(20, 135), {
-        code: 'points.rule',
-        params: {
-          rule: 'rule-visits-2',
-          points: 20,
-          seriesId: 'series-visits',
-          level: 2,
-        },
-      }),
-      entry(
-        7,
-        '2025-06-04',
-        'appt:appt-d:seat:s1',
-        points(17, 115),
-        earned(17),
-      ),
-    ];
-    expect(
-      foldByEvent(day, true).map((event) => [event.id, event.delta]),
-    ).toEqual([
-      ['e-8', 20],
-      ['e-7', 17],
-    ]);
-  });
-
-  it('says what a redemption cost when its point row was not read (the pill «Награди»)', () => {
-    expect(foldByEvent([REDEEMED], true)).toEqual([
-      {
-        id: 'e-46',
-        utcEpochMs: REDEEMED.utcEpochMs,
-        localDate: REDEEMED.localDate,
-        entries: [REDEEMED],
-        delta: -250,
-        balanceAfter: null,
-      },
-    ]);
-    const back = entry(
-      47,
-      '2026-06-21',
-      'rdm-1-back',
-      redemption(RedemptionOp.Reversed, 250, 344),
-      {
-        code: 'redemption.changed',
-        params: { op: 'reversed', reward: 'reward-cut' },
-      },
-    );
-    expect(foldByEvent([back], true)[0]?.delta).toBe(250);
-    const lapsed = entry(
-      48,
-      '2026-09-20',
-      'rdm-1-lapsed',
-      redemption(RedemptionOp.Expired, 250, 344),
-      {
-        code: 'redemption.changed',
-        params: { op: 'expired', reward: 'reward-cut' },
-      },
-    );
-    // The points were spent when it was taken: nothing moves a second time.
-    expect(foldByEvent([lapsed], true)[0]?.delta).toBeNull();
-  });
-
-  it('never folds a row that compensates another, nor the row it struck, into their visit', () => {
-    const other = entry(
-      40.5,
-      '2026-04-04',
-      'appt:appt-b',
-      points(10, 341),
-      earned(10),
-    );
-    const events = foldByEvent([REVERSAL, REVERSED, other], true);
-    expect(events.map((event) => [event.id, event.delta])).toEqual([
-      ['e-42', -17],
-      ['e-41', 17],
-      ['e-40.5', 10],
-    ]);
-  });
-
-  it('holds the oldest event back while a page is left, and shows it once the end confirms it', () => {
-    expect(foldByEvent(JOURNAL, false).map((event) => event.id)).toEqual(
-      foldByEvent(JOURNAL, true)
-        .map((event) => event.id)
-        .slice(0, -1),
-    );
-    // A page never reads as empty while it holds a row.
-    expect(foldByEvent([VISIT_FADE], false).map((event) => event.id)).toEqual([
-      'e-50',
-    ]);
-    expect(foldByEvent([], false)).toEqual([]);
-  });
-});
 
 describe('wholeMonthsOf', () => {
   it('holds every month whole once nothing older is left', () => {
@@ -797,7 +644,10 @@ describe('activityGroups: a row by its kind (§2.2.5)', () => {
 
 describe('activityGroups: the months', () => {
   it('groups by the shop’s month, newest first, each under its heading', () => {
-    const groups = activityGroups(foldByEvent(JOURNAL, true), activityInput());
+    const groups = activityGroups(
+      LedgerSystem.fold(JOURNAL, true),
+      activityInput(),
+    );
     expect(groups.map((group) => [group.key, group.label, group.net])).toEqual([
       ['2026-09', heading('Септември 2026'), '+27 т.'],
       ['2026-06', heading('Юни 2026'), `${MINUS}250 т.`],
@@ -825,7 +675,7 @@ describe('activityGroups: the months', () => {
       ...stamped('2026-08-31T22:30:00.000Z'),
     };
     const [group] = activityGroups(
-      foldByEvent([late], true),
+      LedgerSystem.fold([late], true),
       activityInput({ wholeMonths: wholeMonthsOf([late], true) }),
     );
     expect(group?.key).toBe('2026-09');
@@ -834,7 +684,7 @@ describe('activityGroups: the months', () => {
 
   it('prints no net for a month the page boundary may have cut', () => {
     const groups = activityGroups(
-      foldByEvent(JOURNAL, false),
+      LedgerSystem.fold(JOURNAL, false),
       activityInput({ wholeMonths: wholeMonthsOf(JOURNAL, false) }),
     );
     // The oldest event is held back, and with it its month.
@@ -844,7 +694,7 @@ describe('activityGroups: the months', () => {
       net: `${MINUS}40 т.`,
     });
     const cut = activityGroups(
-      foldByEvent([VISIT_BEARD, VISIT_FADE, TIER, REDEEMED], false),
+      LedgerSystem.fold([VISIT_BEARD, VISIT_FADE, TIER, REDEEMED], false),
       activityInput({
         wholeMonths: wholeMonthsOf(
           [VISIT_BEARD, VISIT_FADE, TIER, REDEEMED],
@@ -859,7 +709,7 @@ describe('activityGroups: the months', () => {
 
   it('shows the newest events only under a limit, and no net over a month the limit cut', () => {
     const groups = activityGroups(
-      foldByEvent(JOURNAL, true),
+      LedgerSystem.fold(JOURNAL, true),
       activityInput({ limit: 5 }),
     );
     expect(
@@ -873,7 +723,10 @@ describe('activityGroups: the months', () => {
       ['2026-04', null],
     ]);
     expect(
-      activityGroups(foldByEvent(JOURNAL, true), activityInput({ limit: 0 })),
+      activityGroups(
+        LedgerSystem.fold(JOURNAL, true),
+        activityInput({ limit: 0 }),
+      ),
     ).toEqual([]);
   });
 });
@@ -884,7 +737,7 @@ describe('Георги’s own journal', () => {
   it('reads every row of the wire, a visit’s two seats one row', () => {
     expect(journal).toHaveLength(35);
     const groups = activityGroups(
-      foldByEvent(journal, true),
+      LedgerSystem.fold(journal, true),
       activityInput({
         visitTitles: {
           byAppointment: new Map(),
@@ -924,7 +777,7 @@ describe('Георги’s own journal', () => {
 
   it('ends on the balance the account holds', () => {
     const [newest] = activityGroups(
-      foldByEvent(journal, true),
+      LedgerSystem.fold(journal, true),
       activityInput({ wholeMonths: wholeMonthsOf(journal, true) }),
     );
     expect(newest?.rows[0]?.balanceAfter).toBe('358 т.');

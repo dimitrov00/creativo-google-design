@@ -1,15 +1,8 @@
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
+import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
-import {
-  type TextSegment,
-  emailSegments,
-  nameSegments,
-  parseClientQuery,
-  phoneInternationalDigits,
-  phoneSegments,
-  rankClients,
-} from './client-query';
+import { rankClients } from './client-query';
 import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
 import {
@@ -25,6 +18,7 @@ import {
   type CustomerId,
   DraftPersonKey,
   type DurationMinutes,
+  EndMinute,
   type GiftVoucherId,
   LocalDate,
   type LocationId,
@@ -81,14 +75,16 @@ import {
   LocationScopeSystem,
   type ParsedClientQuery,
   PhoneSystem,
+  type TextSegment,
   VisitDraftSystem,
+  VisitListSystem,
   VisitSidesSystem,
   VisitStorySystem,
 } from '@core/systems';
 import {
   combinabilityOf,
   promiseOf,
-  toCouponValue,
+  couponValueInBill,
 } from './visit-editor-discount';
 import {
   AUTH_DEPLOYMENT_PORTS,
@@ -521,7 +517,7 @@ export interface VisitEditorVm {
    * `now.localDate`, and the clock reads on this sheet's day only when that
    * day IS today. The month picker marks it, the relative shortcuts resolve
    * against it, and the story's wall-clock rules
-   * (`VisitStorySystem.hasStarted`/`hasEnded`) read it — never its instant.
+   * (`VisitListSystem.hasStarted`/`hasEnded`) read it — never its instant.
    */
   readonly now: ShopNow | null;
   /**
@@ -588,28 +584,19 @@ export interface VisitEditorServiceOption {
   readonly priceLabel: string | null;
 }
 
-/** One of the shop's photos of the visit, as the sheet shows it. */
-export interface VisitEditorPhoto {
-  readonly photoId: AppointmentPhotoId;
-  readonly url: string;
-  /** When it was taken — read on the shop's calendar for its label. */
-  readonly takenAtUtcMs: UtcEpochMs;
-  /** The chair, and its name when the catalogue still knows it. */
-  readonly barberId: BarberId;
+/**
+ * One of the shop's photos of the visit, as the sheet shows it: the stored
+ * photo as it is, plus the chair's name when the catalogue still knows it.
+ */
+export type VisitEditorPhoto = AppointmentPhoto & {
   readonly barberName: string | null;
-  readonly clientLabel: string;
   /**
    * The person's face, when the source already knows it — a past cut
    * carries the client card head's. Absent on this visit's own pictures:
    * the sheet fills the row from the picked person (`photoClientFace`).
    */
   readonly clientAvatarSrc?: string | null;
-  readonly width: number | null;
-  readonly height: number | null;
-  /** The visit's own picture, or one of the shop's pointed at — with its name (the stored tag). */
-  readonly photoOrigin: PhotoOrigin;
-  readonly label: string | null;
-}
+};
 
 /** One of the shop's own pictures — a catalogue cover, a work shot — on offer to a visit. */
 export interface VisitEditorLibraryImage {
@@ -1308,8 +1295,8 @@ function readableShiftOf(
 ): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
   const shift = shiftOf(day);
   return shift !== null &&
-    TrackMinute.toStart(shift.startMinute).ok &&
-    TrackMinute.toEnd(shift.endMinute).ok
+    MinuteOfDay.of(shift.startMinute).ok &&
+    EndMinute.of(shift.endMinute).ok
     ? shift
     : null;
 }
@@ -2850,7 +2837,7 @@ export class StaffVisitEditor {
     const now = day.nowMinute === null ? null : today;
     const ended = (endMinute: TrackMinute): boolean => {
       if (dayGone) return true;
-      const end = TrackMinute.toEnd(endMinute);
+      const end = EndMinute.of(endMinute);
       return (
         now !== null &&
         end.ok &&
@@ -3071,11 +3058,11 @@ export class StaffVisitEditor {
   /**
    * WHAT WAS TYPED, read for every part at once (2026-09-18): the words
    * are a name, the digit run a number, the `@` token a mail — see
-   * `client-query.ts`. The most selective part leads the lookup and the
-   * filter; the rest rank the rows and prefill the form.
+   * `ClientQuerySystem.parse`. The most selective part leads the lookup and
+   * the filter; the rest rank the rows and prefill the form.
    */
   protected readonly parsedQuery = computed<ParsedClientQuery>(() =>
-    parseClientQuery(this.query()),
+    ClientQuerySystem.parse(this.query()),
   );
 
   /**
@@ -3099,14 +3086,18 @@ export class StaffVisitEditor {
       lines.push({
         text: client.email,
         icon: 'contact.email',
-        parts: markedRuns(emailSegments(client.email, parsed)),
+        parts: markedRuns(
+          ClientQuerySystem.emailSegments(client.email, parsed),
+        ),
       });
     }
     if (client.phone) {
       lines.push({
         text: client.phone,
         icon: 'contact.phone',
-        parts: markedRuns(phoneSegments(client.phone, parsed, code)),
+        parts: markedRuns(
+          ClientQuerySystem.phoneSegments(client.phone, parsed, code),
+        ),
       });
     }
     // `meta` is the owner's own line — «посл. 22.09» — unless it only
@@ -3128,7 +3119,9 @@ export class StaffVisitEditor {
       ...client,
       selected: chosen.has(client.id),
       exact,
-      titleParts: markedRuns(nameSegments(client.label, parsed)) ?? null,
+      titleParts:
+        markedRuns(ClientQuerySystem.nameSegments(client.label, parsed)) ??
+        null,
       lines,
     };
   }
@@ -3142,7 +3135,7 @@ export class StaffVisitEditor {
     () =>
       PhoneSystem.countryCallingCode(
         this.newClientCountry() ?? this.deployment.defaultCountry,
-      ) ?? undefined,
+      ) ?? ClientQuerySystem.DEFAULT_CALLING_CODE,
   );
 
   /**
@@ -3364,7 +3357,7 @@ export class StaffVisitEditor {
 
   /**
    * Has the visit begun — its start at or before the shop's "now" on the
-   * wall clock (`VisitStorySystem.hasStarted`, the start minute included),
+   * wall clock (`VisitListSystem.hasStarted`, the start minute included),
    * "now" being the owner's (`vm.now`, pass D D-10.5 — never built here).
    * Without a "now" nothing has begun; a start the day's clock cannot hold
    * (the closing midnight) has begun only on a day already gone.
@@ -3373,9 +3366,9 @@ export class StaffVisitEditor {
     const vm = this.vm();
     const now = vm.now;
     if (now === null) return false;
-    const start = TrackMinute.toStart(vm.startMinute);
+    const start = MinuteOfDay.of(vm.startMinute);
     return start.ok
-      ? VisitStorySystem.hasStarted(WallTime.of(vm.dayKey, start.value), now)
+      ? VisitListSystem.hasStarted(WallTime.of(vm.dayKey, start.value), now)
       : LocalDate.compare(vm.dayKey, now.localDate) < 0;
   });
 
@@ -4372,7 +4365,7 @@ export class StaffVisitEditor {
    */
   protected readonly clientSections = computed(() => {
     const chosen = new Set(this.draft().clients.map((client) => client.id));
-    const nothing = parseClientQuery('');
+    const nothing = ClientQuerySystem.parse('');
     return this.uiClientSections()
       .map((section) => ({
         ...section,
@@ -4435,7 +4428,7 @@ export class StaffVisitEditor {
    * formatter, fed the international form.
    */
   private phoneAsTyped(parsed: ParsedClientQuery): string {
-    const [international] = phoneInternationalDigits(
+    const [international] = ClientQuerySystem.phoneInternationalDigits(
       parsed,
       this.callingCode(),
     );
@@ -4592,7 +4585,7 @@ export class StaffVisitEditor {
   /** The picked, as rows of their own group — selected, unmarked. */
   protected readonly pickedRows = computed<readonly ClientRowVm[]>(() => {
     const chosen = new Set(this.draft().clients.map((client) => client.id));
-    const nothing = parseClientQuery('');
+    const nothing = ClientQuerySystem.parse('');
     return this.pickedClients().map((client) =>
       this.toRowVm(client, nothing, chosen, false),
     );
@@ -4690,10 +4683,10 @@ export class StaffVisitEditor {
     // The number in front of the phone field as E.164 by the shop's own
     // dial code — the field validates for real. Too few digits are not a
     // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
-    const [international] = phoneInternationalDigits(
+    const [international] = ClientQuerySystem.phoneInternationalDigits(
       parsed,
       PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
-        undefined,
+        ClientQuerySystem.DEFAULT_CALLING_CODE,
     );
     this.newClient.set({
       name: parsed.name,
@@ -5430,7 +5423,7 @@ export class StaffVisitEditor {
     const page = this.page();
     if (page?.editorPage !== EditorPage.Photo) return null;
     return (
-      this.vm().photos?.find((photo) => photo.photoId === page.subjectId) ??
+      this.vm().photos?.find((photo) => photo.id === page.subjectId) ??
       this.pastCut(page.subjectId)
     );
   });
@@ -5442,21 +5435,17 @@ export class StaffVisitEditor {
    */
   private pastCut(photoId: string | null): VisitEditorPhoto | null {
     const store = this.cardStoreRef();
-    const cut = photoId === null ? null : (store?.photoById(photoId) ?? null);
+    const cut =
+      photoId === null ? null : (store?.storedPhotoById(photoId) ?? null);
     if (store === null || cut === null) return null;
     return {
-      photoId: cut.photoId,
-      url: cut.url,
-      takenAtUtcMs: cut.takenAtUtcMs,
-      barberId: cut.barberId,
+      ...cut,
       barberName: this.cardCatalog().barberName(cut.barberId),
       clientLabel: store.displayName() ?? this.clientOfStack()?.label ?? '',
       // The face the card's head just showed, so the push keeps the person.
       clientAvatarSrc:
         store.avatarSrc() ??
         this.faceOfPicked(this.clientOfStack()?.id ?? null),
-      width: cut.width,
-      height: cut.height,
       photoOrigin: PhotoOrigin.Shot,
       label: null,
     };
@@ -5471,9 +5460,7 @@ export class StaffVisitEditor {
     const page = this.page();
     return (
       page?.editorPage === EditorPage.Photo &&
-      !(this.vm().photos ?? []).some(
-        (photo) => photo.photoId === page.subjectId,
-      )
+      !(this.vm().photos ?? []).some((photo) => photo.id === page.subjectId)
     );
   });
 
@@ -5487,7 +5474,7 @@ export class StaffVisitEditor {
     return this.photoReadOnly()
       ? (this.cardStoreRef()?.barTitle(
           editorCardPages[EditorPage.Photo],
-          photo.photoId,
+          photo.id,
         ) ?? this.photoDay(photo))
       : this.photoDay(photo);
   }
@@ -5683,7 +5670,7 @@ export class StaffVisitEditor {
   protected removePhoto(): void {
     const photo = this.currentPhoto();
     if (photo === null || this.photoReadOnly()) return;
-    this.photoRemoved.emit(photo.photoId);
+    this.photoRemoved.emit(photo.id);
     this.pop();
   }
 
@@ -6192,7 +6179,7 @@ export class StaffVisitEditor {
     const keys = new Map<string, VisitEditorDiscount>();
     const currency = this.vm().currency;
     discounts.forEach((discount, index) => {
-      const value = toCouponValue(discount, currency);
+      const value = couponValueInBill(discount, currency);
       if (value === null) return;
       const key = discountKey(discount);
       keys.set(key, discount);
@@ -7061,7 +7048,7 @@ export class StaffVisitEditor {
     const vm = this.vm();
     const draft = this.draft();
     const partyOfOne = draft.clients.length <= 1;
-    const startMinutes = TrackMinute.toStart(draft.startMinute);
+    const startMinutes = MinuteOfDay.of(draft.startMinute);
     const legs: ClientCardLeg[] = draft.legs
       .filter((leg) => partyOfOne || leg.clientId === client.id)
       .map((leg) => ({
@@ -7694,7 +7681,7 @@ function codeDiscountOf(
 ): VisitEditorDiscount {
   return {
     ...DiscountProvenance.code(code),
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     label,
     grantId: null,
     code,
@@ -7711,7 +7698,7 @@ function grantDiscountOf(
 ): VisitEditorDiscount {
   return {
     ...DiscountProvenance.grant(grantId),
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     label,
     grantId,
     code: null,
@@ -7729,7 +7716,7 @@ function manualDiscountOf(
 ): VisitEditorDiscount {
   return {
     ...DiscountProvenance.manual(),
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     label: 'manual',
     grantId: null,
     code: null,

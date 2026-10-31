@@ -16,6 +16,7 @@ import {
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * `updateProfile` against the REAL Firestore emulator (identity flip (2),
@@ -37,12 +38,6 @@ if (!FIRESTORE_HOST.includes('127.0.0.1')) {
 
 const UID = UserId.of('u-client');
 const MAIL = Email.of('maria@example.com');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** Two snapshots' update times are the same instant — the document was not rewritten. */
 function sameUpdate(

@@ -12,6 +12,7 @@ export * from './money.error';
 export * from './move.error';
 export * from './phone.error';
 export * from './pipeline.error';
+export * from './privacy.error';
 export * from './repository.error';
 export * from './scheduling.error';
 export * from './staff-edit.error';

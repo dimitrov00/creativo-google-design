@@ -1,4 +1,9 @@
-import { type Actor, AuditContext, WriteOp } from '@core/components';
+import {
+  type Actor,
+  AuditContext,
+  type BookingCall,
+  WriteOp,
+} from '@core/components';
 import {
   Result,
   type AppointmentId,
@@ -45,13 +50,6 @@ export type RecordSeatTipCommand = {
   readonly actor: Actor | null;
 };
 
-export type RecordSeatTipAnswer = {
-  readonly appointmentId: AppointmentId;
-  readonly seatId: SeatId;
-  /** The stored figure already was this one — nothing written, nothing logged. */
-  readonly unchanged: boolean;
-};
-
 export type RecordSeatTipPorts = TxPorts & TelemetryPorts;
 
 /** The decision: whether anything changes and the facts it could not audit, with the plan beside it. */
@@ -65,7 +63,7 @@ export const recordSeatTip =
   (ports: RecordSeatTipPorts) =>
   async (
     cmd: RecordSeatTipCommand,
-  ): Promise<Result<RecordSeatTipAnswer, RecordSeatTipError>> => {
+  ): Promise<Result<BookingCall.TipRecorded, RecordSeatTipError>> => {
     // Read before the transaction: a contention re-run of `decide` derives
     // the same plan, row ids included.
     const recordedAtUtcMs = ports.nowUtcMs();

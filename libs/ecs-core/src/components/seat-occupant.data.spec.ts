@@ -31,7 +31,7 @@ describe('SeatOccupant — who a seat is for', () => {
       guestLabel: 'Гост',
     });
     expect(
-      SeatOccupant.of({ ...account, seatId: 's1' } as SeatOccupant),
+      SeatOccupant.sliceOf({ ...account, seatId: 's1' } as SeatOccupant),
     ).toEqual(account);
     expect(SeatOccupant.isContactless(guest)).toBe(true);
     expect(SeatOccupant.isContactless(account)).toBe(false);
@@ -46,7 +46,7 @@ describe('SeatOccupant — who a seat is for', () => {
     expect(walkIn).not.toHaveProperty('subjectUserId');
     // Copied back out to exactly its fields — a whole seat's extras dropped.
     expect(
-      SeatOccupant.of({ ...walkIn, seatId: 's1' } as SeatOccupant),
+      SeatOccupant.sliceOf({ ...walkIn, seatId: 's1' } as SeatOccupant),
     ).toEqual(walkIn);
     // The shop keeps a phone or an e-mail for them: not contactless.
     expect(SeatOccupant.isContactless(walkIn)).toBe(false);

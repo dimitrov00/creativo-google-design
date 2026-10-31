@@ -277,3 +277,7 @@ answers an error from `@core/errors` (components sit above it).
       `*ErrorCode`/`*RefusalCode` dictionary, its flat struct union and a
       factory companion — no `throw`.
 - [ ] Values are what systems compute on (local minutes, cents, epoch ms), never formatted strings.
+- [ ] No member that only forwards to another function, or copies its
+      argument field by field into its own type (`creativo/no-identity-mapper`).
+      A projection declares the wider value it cuts from
+      (`<T extends X>(value: T): X`), and its doc says what it keeps.

@@ -105,7 +105,7 @@ const LONG_AGO = '2024-09-28T12:00:00';
 /** The cancel callable's answer to a cancel it took. */
 function cancelled(
   input: BookingCall.Cancel,
-): Result<BookingCall.Cancelled, PipelineError> {
+): Result<BookingCall.Committed, PipelineError> {
   return Result.ok({ appointmentId: input.appointmentId });
 }
 
@@ -115,7 +115,7 @@ function refused(status: string, details?: unknown): PipelineError {
 }
 
 /** The server's refusal of a cancel whose free window closed meanwhile (24 h). */
-function closedWindow(): Result<BookingCall.Cancelled, PipelineError> {
+function closedWindow(): Result<BookingCall.Committed, PipelineError> {
   return Result.err(
     refused('failed-precondition', {
       errorCode: CancellationRefusalCode.WindowClosed,
@@ -324,8 +324,8 @@ interface ConfigureExtras {
 type CancelBehavior = (
   input: BookingCall.Cancel,
 ) =>
-  | Result<BookingCall.Cancelled, PipelineError>
-  | Promise<Result<BookingCall.Cancelled, PipelineError>>;
+  | Result<BookingCall.Committed, PipelineError>
+  | Promise<Result<BookingCall.Committed, PipelineError>>;
 
 async function configure(
   upcoming: readonly Appointment[],
@@ -1533,7 +1533,7 @@ describe('ClientAppointments', () => {
       value: { writeText },
     });
     const operationId = unwrapOk(ClientOperationId.parse('cancel-operation-1'));
-    const answers: readonly Result<BookingCall.Cancelled, PipelineError>[] = [
+    const answers: readonly Result<BookingCall.Committed, PipelineError>[] = [
       Result.err(
         PipelineError.withOperation(refused('unavailable'), operationId),
       ),
@@ -1591,7 +1591,7 @@ describe('ClientAppointments', () => {
   });
 
   it('says to try again in a moment when the terms could not be read — and the same button does', async () => {
-    const answers: readonly Result<BookingCall.Cancelled, PipelineError>[] = [
+    const answers: readonly Result<BookingCall.Committed, PipelineError>[] = [
       Result.err(
         refused('unavailable', {
           errorCode: CancellationRefusalCode.PolicyUnavailable,

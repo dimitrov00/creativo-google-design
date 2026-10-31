@@ -15,7 +15,9 @@ import {
   LocalDate,
   TrackMinute,
   MinuteOfDay,
+  type Result,
 } from '@core/primitives';
+import type { SchedulingError } from '@core/errors';
 import type { TrackSpan } from './grid-layout.system';
 import { RecurrenceSystem } from './recurrence.system';
 
@@ -519,7 +521,7 @@ export const VisitDraftSystem = {
       const candidate = RecurrenceRule.create(
         patternOf(preset, startLocalDate),
         1,
-        RecurrenceRule.endOf(rule),
+        RecurrenceEndRule.sliceOf(rule),
       );
       if (candidate.ok && RecurrenceRule.equals(candidate.value, rule)) {
         return preset;
@@ -538,7 +540,7 @@ export const VisitDraftSystem = {
     return fitted(
       patternOf(preset, startLocalDate),
       1,
-      current === null ? null : RecurrenceRule.endOf(current),
+      current === null ? null : RecurrenceEndRule.sliceOf(current),
       startLocalDate,
     );
   },
@@ -573,7 +575,7 @@ export const VisitDraftSystem = {
       fitted(
         RecurrenceSystem.patternFor(frequency, startLocalDate),
         rule.recurrenceInterval,
-        RecurrenceRule.endOf(rule),
+        RecurrenceEndRule.sliceOf(rule),
         startLocalDate,
       ) ?? rule
     );
@@ -634,9 +636,77 @@ export const VisitDraftSystem = {
       fitted(
         RecurrenceRule.patternOf(followed),
         followed.recurrenceInterval,
-        RecurrenceRule.endOf(followed),
+        RecurrenceEndRule.sliceOf(followed),
         toLocalDate,
       ) ?? followed
+    );
+  },
+
+  /*
+   * The repeat page's typed edits — a figure or a day typed into the
+   * custom sheet, each through the rule's own checks (`RecurrenceRule.create`):
+   * a refusal is the domain's `SchedulingError`, which the page words.
+   * Moved from the feature's `block-repeat.ts` (law-fix wave B, B4): a rule
+   * edit is a domain decision (Law 3).
+   */
+
+  /** Every `interval`-th period; refused (`SCHEDULING_RECURRENCE_INVALID_INTERVAL`) off `1…99`. */
+  ruleWithInterval(
+    rule: RecurrenceRule,
+    interval: number,
+  ): Result<RecurrenceRule, SchedulingError> {
+    return RecurrenceRule.create(
+      RecurrenceRule.patternOf(rule),
+      interval,
+      RecurrenceEndRule.sliceOf(rule),
+    );
+  },
+
+  /** A weekly rule's days; refused (`SCHEDULING_RECURRENCE_NO_WEEKDAYS`) for none. */
+  ruleWithWeekdays(
+    rule: RecurrenceRule,
+    weekdays: readonly Weekday[],
+  ): Result<RecurrenceRule, SchedulingError> {
+    return RecurrenceRule.create(
+      RecurrencePattern.weekly(weekdays),
+      rule.recurrenceInterval,
+      RecurrenceEndRule.sliceOf(rule),
+    );
+  },
+
+  /** A monthly rule's reading of its day. */
+  ruleWithMonthly(
+    rule: RecurrenceRule,
+    day: RecurrencePattern.Monthly,
+  ): Result<RecurrenceRule, SchedulingError> {
+    return RecurrenceRule.create(
+      day,
+      rule.recurrenceInterval,
+      RecurrenceEndRule.sliceOf(rule),
+    );
+  },
+
+  /** Ends inclusively on `until`. */
+  ruleWithUntil(
+    rule: RecurrenceRule,
+    until: LocalDate,
+  ): Result<RecurrenceRule, SchedulingError> {
+    return RecurrenceRule.create(
+      RecurrenceRule.patternOf(rule),
+      rule.recurrenceInterval,
+      RecurrenceEndRule.until(until),
+    );
+  },
+
+  /** Ends after `count` days; refused (`SCHEDULING_RECURRENCE_INVALID_COUNT`) off `1…366`. */
+  ruleWithCount(
+    rule: RecurrenceRule,
+    count: number,
+  ): Result<RecurrenceRule, SchedulingError> {
+    return RecurrenceRule.create(
+      RecurrenceRule.patternOf(rule),
+      rule.recurrenceInterval,
+      RecurrenceEndRule.count(count),
     );
   },
 } as const;

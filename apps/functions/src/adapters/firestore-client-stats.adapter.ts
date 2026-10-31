@@ -1,6 +1,5 @@
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import { CustomerId, Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { BookingPolicy, PreciseInstant } from '@core/components';
 import {
   BOOKING_POLICY_DOC,
@@ -10,7 +9,7 @@ import {
   type PolicyRecomputeJob,
 } from '@core/entities';
 import type { AdminBatchPorts, PolicyLinePorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * The policy recompute's server reads outside any transaction (flip 1,
@@ -36,13 +35,6 @@ import { TriggerAttemptSystem } from '@core/systems';
 
 const JOB_PATH = `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}`;
 const POLICY_PATH = `${Collections.Settings}/${BOOKING_POLICY_DOC}`;
-
-function readFailed(path: string, error: unknown): RepositoryError {
-  return RepositoryError.readFailed(
-    path,
-    TriggerAttemptSystem.failureCode(error),
-  );
-}
 
 export const firestoreClientStatsPorts = (
   db: Firestore,

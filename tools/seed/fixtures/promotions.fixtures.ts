@@ -76,7 +76,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       combinability: Combinability.Stackable,
       ...percentOff(10),
       ...CouponExpiryRule.never(),
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
   {
     id: CouponId.of('coupon-beard5'),
@@ -87,7 +87,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       combinability: Combinability.Stackable,
       ...sure(CouponValue.fixedAmount(cents(500), Currency.EUR), 'beard −5 €'),
       ...CouponExpiryRule.never(),
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
   {
     id: CouponId.of('coupon-retired'),
@@ -100,7 +100,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       ...CouponExpiryRule.never(),
       // Retired: the code must read as "no such code" at the counter.
       couponStatus: CouponStatus.Disabled,
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
   {
     id: CouponId.of('coupon-birthday'),
@@ -113,7 +113,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       ...sure(CouponExpiryRule.days(30), 'thirty days'),
       // What makes a grant of it THE birthday gift.
       couponOccasion: CouponOccasion.Birthday,
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
   {
     id: CouponId.of('coupon-fifth-cut'),
@@ -124,7 +124,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       combinability: Combinability.Exclusive,
       ...CouponValue.freeService(),
       ...CouponExpiryRule.never(),
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
   {
     // The stamp card's reward, minted at every tenth worked visit.
@@ -136,7 +136,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       combinability: Combinability.Exclusive,
       ...CouponValue.freeService(),
       ...CouponExpiryRule.never(),
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
   {
     // What «Безплатно оформяне на брада» in the rewards catalogue grants.
@@ -148,7 +148,7 @@ export const COUPONS: readonly Seeded<CouponId, Coupon>[] = [
       combinability: Combinability.Exclusive,
       ...CouponValue.freeService(),
       ...CouponExpiryRule.never(),
-    } satisfies Omit<Coupon, 'id'>,
+    } satisfies Body<Coupon>,
   },
 ];
 
@@ -178,23 +178,21 @@ export function couponGrantBody(
     holderUserId: UserId.of(uid),
     couponId: CouponId.of(couponId),
     grantedAtUtcMs: sure(UtcEpochMs.of(grantedAtUtcMs), 'granted'),
-    ...CouponValue.of(couponOf(couponId)),
-    ...GrantLifecycle.of(
-      usedAtUtcMs === null
-        ? GrantLifecycle.active(
-            GrantCapacityTerms.singleUse(),
-            GrantExpiryTerms.none(),
-          )
-        : GrantLifecycle.used(
-            {
-              ...GrantCapacityTerms.singleUse(),
-              ...GrantExpiryTerms.none(),
-            },
-            sure(UtcEpochMs.of(usedAtUtcMs), 'used'),
-            'seed',
-          ),
-    ),
-  } satisfies Omit<CouponGrant, 'id'>;
+    ...CouponValue.sliceOf(couponOf(couponId)),
+    ...(usedAtUtcMs === null
+      ? GrantLifecycle.active(
+          GrantCapacityTerms.singleUse(),
+          GrantExpiryTerms.none(),
+        )
+      : GrantLifecycle.used(
+          {
+            ...GrantCapacityTerms.singleUse(),
+            ...GrantExpiryTerms.none(),
+          },
+          sure(UtcEpochMs.of(usedAtUtcMs), 'used'),
+          'seed',
+        )),
+  } satisfies Body<CouponGrant>;
 }
 
 // ── Gift vouchers ──────────────────────────────────────────────────────────
@@ -276,7 +274,7 @@ export function giftVoucherBodies(
         ...goodUntil('2026-12-31', shiftDays),
         ...holderOf('dev-client-1'),
         ...VoucherLifecycle.active(),
-      } satisfies Omit<GiftVoucher, 'id'>,
+      } satisfies Body<GiftVoucher>,
     },
     {
       id: GiftVoucherId.of('voucher-dev-georgi-spent'),
@@ -289,7 +287,7 @@ export function giftVoucherBodies(
         ...NEVER_EXPIRES,
         ...holderOf('dev-client-1'),
         ...VoucherLifecycle.active(),
-      } satisfies Omit<GiftVoucher, 'id'>,
+      } satisfies Body<GiftVoucher>,
     },
     {
       id: GiftVoucherId.of('voucher-dev-georgi-void'),
@@ -305,7 +303,7 @@ export function giftVoucherBodies(
           movedInstant('2026-06-13', 10, 44, shiftDays),
           'Издаден с грешна стойност',
         ),
-      } satisfies Omit<GiftVoucher, 'id'>,
+      } satisfies Body<GiftVoucher>,
     },
     {
       id: GiftVoucherId.of('voucher-dev-martin'),
@@ -318,7 +316,7 @@ export function giftVoucherBodies(
         ...NEVER_EXPIRES,
         ...holderOf('dev-client-2'),
         ...VoucherLifecycle.active(),
-      } satisfies Omit<GiftVoucher, 'id'>,
+      } satisfies Body<GiftVoucher>,
     },
     {
       id: GiftVoucherId.of('voucher-dev-five'),
@@ -331,7 +329,7 @@ export function giftVoucherBodies(
         ...NEVER_EXPIRES,
         ...holderOf(null),
         ...VoucherLifecycle.active(),
-      } satisfies Omit<GiftVoucher, 'id'>,
+      } satisfies Body<GiftVoucher>,
     },
     {
       id: GiftVoucherId.of('voucher-dev-empty'),
@@ -344,7 +342,7 @@ export function giftVoucherBodies(
         ...NEVER_EXPIRES,
         ...holderOf(null),
         ...VoucherLifecycle.active(),
-      } satisfies Omit<GiftVoucher, 'id'>,
+      } satisfies Body<GiftVoucher>,
     },
   ];
 }

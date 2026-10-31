@@ -1,4 +1,9 @@
-import { CustomerId, type Result, type UserId } from '@core/primitives';
+import {
+  CustomerId,
+  type Result,
+  StoredFields,
+  type UserId,
+} from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import { Collections, type Customer } from '@core/entities';
 import type { Hash, ReadTx } from '@core/ports';
@@ -79,9 +84,8 @@ export function isCreateConflict<T, E>(
 ): boolean {
   if (result.ok) return false;
   const error: unknown = result.error;
-  if (typeof error !== 'object' || error === null) return false;
-  const code = Object.getOwnPropertyDescriptor(error, 'errorCode')?.value;
-  const path = Object.getOwnPropertyDescriptor(error, 'path')?.value;
+  const code = StoredFields.field(error, 'errorCode');
+  const path = StoredFields.field(error, 'path');
   if (code !== RepositoryErrorCode.AlreadyExists || typeof path !== 'string') {
     return false;
   }

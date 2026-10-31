@@ -3,6 +3,7 @@ import {
   BlockReason,
   CustomerOrigin,
   E164,
+  ErasureLifecycle,
   Identifier,
   ImpersonationLifecycle,
   ImpersonationScope,
@@ -147,13 +148,13 @@ export function blockedUserFixture(overrides: Partial<User> = {}): User {
  * The fixture client's RECORD (`customers/{id}`, D29) as the first booking
  * opened it: Maria Petrova, linked to her account by the explicit `userId`,
  * her login phone, no e-mail, the search keys of her name, opened a day
- * before the pinned clock. The id is DERIVED from the account
- * (`customerOf` — `CustomerId.forUser`), never cast. Every field present,
- * overridable field by field; it passes `StoredDocumentSystem.customer`
- * as stored (`identity.fixtures.spec.ts`).
+ * before the pinned clock, no erasure (`NONE`). The id is DERIVED from the
+ * account (`customerOf` — `CustomerId.forUser`), never cast. Every field
+ * present, overridable field by field; it passes
+ * `StoredDocumentSystem.customer` as stored (`identity.fixtures.spec.ts`).
  */
 export function customerFixture(overrides: Partial<Customer> = {}): Customer {
-  return {
+  const base: Customer = {
     id: customerOf(CLIENT_USER_ID),
     userId: CLIENT_USER_ID,
     displayName: 'Maria Petrova',
@@ -164,8 +165,11 @@ export function customerFixture(overrides: Partial<Customer> = {}): Customer {
     createdAtUtcMs: instant(NOW_MS - 86_400_000),
     customerOrigin: CustomerOrigin.FirstBooking,
     ...WriteProvenance.NONE,
-    ...overrides,
+    ...ErasureLifecycle.none(),
   };
+  // A spread of a partial union is wider than the union; the override is the
+  // spec's own choice of variant (an erasure passes its stamps too).
+  return { ...base, ...overrides } as Customer;
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   BookingCall,
   CallAnswer,
   type ClientIssue,
+  ClientPrivacyCall,
   GovernanceCall,
   IdentityCall,
   InvitationCall,
@@ -23,8 +24,11 @@ import type { PipelineError } from '@core/errors';
  *
  * Phase 4a adds `startImpersonation`, `endImpersonation` and
  * `redeemInvitation` with their server pipelines (4A-3 (4), (5)); pass F
- * adds `reportClientIssues`, the web's first-party issue sink (OR-34).
- * Triggers and schedules are never dialled, so they are not here.
+ * adds `reportClientIssues`, the web's first-party issue sink (OR-34);
+ * audit-hardening Phase 3 adds `exportClientData`, the admin's data-subject
+ * export (WS-C), and `previewClientErasure` / `eraseClient`, the admin's
+ * erasure (WS-D). Triggers and schedules are never dialled, so they are not
+ * here.
  */
 export const Callables = {
   RequestOtpChallenge: 'requestOtpChallenge',
@@ -47,14 +51,18 @@ export const Callables = {
   EndImpersonation: 'endImpersonation',
   RedeemInvitation: 'redeemInvitation',
   ReportClientIssues: 'reportClientIssues',
+  ExportClientData: 'exportClientData',
+  PreviewClientErasure: 'previewClientErasure',
+  EraseClient: 'eraseClient',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
 /**
  * THE WIRE, BY NAME (Phase 4a 4A-4) — what each callable takes and answers:
  * the flat call components of `@core/components`. The web's
- * `callableClient` is typed through it; the server's decoders and encoders
- * type against it too. Total over {@link CallableName}.
+ * `callableClient` is typed through it; the server's decoders type against
+ * it, and its wiring proves each pipeline's answer IS the wire answer (or a
+ * named projection onto it). Total over {@link CallableName}.
  */
 export type CallableWire = {
   readonly [Callables.RequestOtpChallenge]: {
@@ -79,11 +87,11 @@ export type CallableWire = {
   };
   readonly [Callables.CancelAppointment]: {
     readonly input: BookingCall.Cancel;
-    readonly answer: BookingCall.Cancelled;
+    readonly answer: BookingCall.Committed;
   };
   readonly [Callables.RescheduleAppointment]: {
     readonly input: BookingCall.Reschedule;
-    readonly answer: BookingCall.Rescheduled;
+    readonly answer: BookingCall.Committed;
   };
   readonly [Callables.TransitionAppointment]: {
     readonly input: BookingCall.Transition;
@@ -111,7 +119,7 @@ export type CallableWire = {
   };
   readonly [Callables.CancelWaitlist]: {
     readonly input: WaitlistCall.Cancel;
-    readonly answer: WaitlistCall.Cancelled;
+    readonly answer: WaitlistCall.Requested;
   };
   readonly [Callables.RunBackfill]: {
     readonly input: BackfillCall;
@@ -141,6 +149,33 @@ export type CallableWire = {
   readonly [Callables.ReportClientIssues]: {
     readonly input: readonly ClientIssue[];
     readonly answer: { readonly loggedCount: number };
+  };
+  /**
+   * An admin's data-subject export (audit-hardening Phase 3 WS-C): the
+   * record and the act's own id in; the person's ONE bundle out, as the
+   * server's canonical JSON text beside its counts (P3-RU-16) — the web
+   * decodes no entity of it and saves the text verbatim.
+   */
+  readonly [Callables.ExportClientData]: {
+    readonly input: ClientPrivacyCall;
+    readonly answer: ClientPrivacyCall.Exported;
+  };
+  /**
+   * An admin's erasure preview (audit-hardening Phase 3 WS-D, P3-L-17) —
+   * read-only: the record and the act's own id in; the record's erasure tag,
+   * the census and the sibling walk-in records out.
+   */
+  readonly [Callables.PreviewClientErasure]: {
+    readonly input: ClientPrivacyCall;
+    readonly answer: ClientPrivacyCall.ErasurePreview;
+  };
+  /**
+   * One resumable call of an admin's erasure — the SAME `ClientPrivacyCall`
+   * (one act, one operation id) until the answer says it is done.
+   */
+  readonly [Callables.EraseClient]: {
+    readonly input: ClientPrivacyCall;
+    readonly answer: ClientPrivacyCall.Erasure;
   };
 };
 
@@ -183,6 +218,9 @@ export const OPERATION_ID_FIELD: {
   [Callables.EndImpersonation]: 'operationId',
   [Callables.RedeemInvitation]: 'operationId',
   [Callables.ReportClientIssues]: null,
+  [Callables.ExportClientData]: 'operationId',
+  [Callables.PreviewClientErasure]: 'operationId',
+  [Callables.EraseClient]: 'operationId',
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -225,19 +263,22 @@ export const CALLABLE_ANSWER_DECODERS: {
     IdentityCall.decodeCompleteRegistrationAnswer,
   [Callables.UpdateProfile]: IdentityCall.decodeUpdateProfileAnswer,
   [Callables.CommitBooking]: BookingCall.decodeCommitted,
-  [Callables.CancelAppointment]: BookingCall.decodeCancelled,
-  [Callables.RescheduleAppointment]: BookingCall.decodeRescheduled,
+  [Callables.CancelAppointment]: BookingCall.decodeCommitted,
+  [Callables.RescheduleAppointment]: BookingCall.decodeCommitted,
   [Callables.TransitionAppointment]: BookingCall.decodeTransitioned,
   [Callables.MarkArrived]: BookingCall.decodeArrived,
   [Callables.ClearArrival]: BookingCall.decodeCleared,
   [Callables.RecordSeatTip]: BookingCall.decodeTipRecorded,
   [Callables.StaffEditAppointment]: BookingCall.decodeStaffEdited,
   [Callables.RequestWaitlist]: WaitlistCall.decodeRequested,
-  [Callables.CancelWaitlist]: WaitlistCall.decodeCancelled,
+  [Callables.CancelWaitlist]: WaitlistCall.decodeRequested,
   [Callables.RunBackfill]: BackfillCall.decodePage,
   [Callables.PublishStreakDefinition]: StreakPublishCall.decodeAnswer,
   [Callables.StartImpersonation]: GovernanceCall.decodeStarted,
   [Callables.EndImpersonation]: GovernanceCall.decodeEnded,
   [Callables.RedeemInvitation]: InvitationCall.decodeRedeemed,
   [Callables.ReportClientIssues]: decodeIssuesLogged,
+  [Callables.ExportClientData]: ClientPrivacyCall.decodeExported,
+  [Callables.PreviewClientErasure]: ClientPrivacyCall.decodeErasurePreview,
+  [Callables.EraseClient]: ClientPrivacyCall.decodeErasure,
 };

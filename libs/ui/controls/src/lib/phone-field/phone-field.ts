@@ -52,7 +52,9 @@ function countryNaming(locale: string): CountryNaming {
   const collator = new Intl.Collator(locale);
   return {
     nameOf: (code) => displayNames.of(code) ?? null,
-    compare: (a, b) => collator.compare(a, b),
+    // `Intl.Collator.prototype.compare` is a bound getter (ECMA-402): the
+    // function it answers keeps its collator.
+    compare: collator.compare,
   };
 }
 

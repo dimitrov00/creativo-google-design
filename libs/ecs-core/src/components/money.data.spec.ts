@@ -147,13 +147,6 @@ describe('Currency', () => {
       'HALF_AWAY_FROM_ZERO',
     ]);
   });
-
-  it('currencyFrom trims and upper-cases, or answers null', () => {
-    expect(Money.currencyFrom(' eur ')).toBe(Currency.EUR);
-    expect(Money.currencyFrom('BGN')).toBeNull();
-    expect(Money.currencyFrom('GBP')).toBeNull();
-    expect(Money.currencyFrom('')).toBeNull();
-  });
 });
 
 describe('Money arithmetic', () => {

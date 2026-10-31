@@ -17,9 +17,9 @@ import type {
 } from '@core/primitives';
 import { ClientStatsSystem, VisitListSystem } from '@core/systems';
 import { type VisitRowVm, visitRowOf } from '@creativo/features/shared/visits';
-import { formatCents } from '@creativo/ui/wall-clock';
+import { formatCents, formatCount } from '@creativo/ui/wall-clock';
 import type { ClientCardCatalog } from './client-card.contracts';
-import { figure } from './client-card.format';
+
 import {
   HistoryCellId,
   type HistoryCellVm,
@@ -38,11 +38,6 @@ import type { ClientCardWords } from './client-card.words';
  * year sections and its foot went with its body in W4.
  */
 
-/** Weeks, from the stats' mean days between worked visits — at least one (`ClientStatsSystem.cadenceWeeks`). */
-export function cadenceWeeks(avgCadenceDays: number): number {
-  return ClientStatsSystem.cadenceWeeks(avgCadenceDays);
-}
-
 /** HC — the open figures: visits, the interval, and no-shows and cancellations only when there are any. */
 export function historyCells(
   stats: ClientStatsRecord | null,
@@ -54,14 +49,16 @@ export function historyCells(
   const cells: HistoryCellVm[] = [
     {
       id: HistoryCellId.Visits,
-      value: figure(visits, lang),
+      value: formatCount(visits, lang),
       caption: history.visits(visits),
     },
   ];
   if (stats?.avgCadenceDays != null) {
     cells.push({
       id: HistoryCellId.Cadence,
-      value: history.intervalValue(cadenceWeeks(stats.avgCadenceDays)),
+      value: history.intervalValue(
+        ClientStatsSystem.cadenceWeeks(stats.avgCadenceDays),
+      ),
       unit: history.intervalUnit,
       caption: history.interval,
     });
@@ -70,7 +67,7 @@ export function historyCells(
   if (noShows > 0) {
     cells.push({
       id: HistoryCellId.NoShows,
-      value: figure(noShows, lang),
+      value: formatCount(noShows, lang),
       caption: history.noShows(noShows),
     });
   }
@@ -78,7 +75,7 @@ export function historyCells(
   if (cancelled > 0) {
     cells.push({
       id: HistoryCellId.Cancelled,
-      value: figure(cancelled, lang),
+      value: formatCount(cancelled, lang),
       caption: history.cancelled(cancelled),
     });
   }

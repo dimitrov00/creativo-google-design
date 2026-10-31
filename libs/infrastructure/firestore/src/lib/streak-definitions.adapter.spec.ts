@@ -19,6 +19,7 @@ import {
 import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { StreakRuleSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_TODAY,
   localDate,
   streakDefinitionFixture,
@@ -83,13 +84,6 @@ const SECOND: StreakDefinitionVersion = {
   requestId: PublishRequestId.of('req-wider-grace'),
   withdrawnAtUtcMs: null,
 };
-
-/** An entity's stored body: the entity minus its id. */
-function bodyOf<E extends { readonly id: string }>(entity: E): Omit<E, 'id'> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  ) as Omit<E, 'id'>;
-}
 
 /** The rule's documents after the publish that waits: the head and both versions. */
 function published(): FakeFirestore {

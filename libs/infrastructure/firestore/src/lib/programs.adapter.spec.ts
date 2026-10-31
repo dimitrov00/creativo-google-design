@@ -14,6 +14,7 @@ import {
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,
   at,
@@ -60,13 +61,6 @@ function recorded<T>(stream: {
 
 const idsOf = (answer: Result<readonly { readonly id: string }[], unknown>) =>
   answer.ok ? answer.value.map((entity) => entity.id) : answer;
-
-/** A stored body: the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** Each entity at `collection/{id}`, its body exactly as a save would leave it. */
 function documentsOf(

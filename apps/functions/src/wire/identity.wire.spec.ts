@@ -2,7 +2,6 @@ import {
   AuthStrategyKind,
   OtpDestinationType,
   RegistrationField,
-  SessionKind,
 } from '@core/components';
 import { IdentifierChannel, OperationId, OtpId } from '@core/primitives';
 import {
@@ -17,19 +16,15 @@ import {
   RepositoryError,
 } from '@core/errors';
 import { type EdgeError, toHttpsError } from '../edge';
-import type { WireRequest } from './wire-read';
+import { refusalOf, type WireRequest } from './wire-read';
 import {
   completeRegistrationRefusal,
   decodeCompleteRegistration,
   decodeRequestOtp,
   decodeUpdateProfile,
   decodeVerifyOtp,
-  encodeCompleteRegistrationAnswer,
-  encodeRequestOtpAnswer,
-  encodeUpdateProfileAnswer,
-  encodeVerifyOtpAnswer,
+  otpChallengeOf,
   requestOtpRefusal,
-  updateProfileRefusal,
   verifyOtpRefusal,
 } from './identity.wire';
 
@@ -54,7 +49,7 @@ function wire(error: EdgeError): {
 }
 
 /** A decoder's refusal, as it leaves. */
-function refusalOf<T>(
+function errorOf<T>(
   decoded:
     | { readonly ok: true; readonly value: T }
     | {
@@ -104,7 +99,7 @@ describe('identity wire', () => {
         null,
         'not an object',
       ]) {
-        expect(refusalOf(decodeRequestOtp(request(data)))).toEqual(
+        expect(errorOf(decodeRequestOtp(request(data)))).toEqual(
           invalidInput('missing or empty destination'),
         );
       }
@@ -118,6 +113,7 @@ describe('identity wire', () => {
         value: {
           otpDestinationType: OtpDestinationType.Sms,
           rawDestination: 'a@b.com',
+          operationId: null,
         },
       });
       for (const channel of [
@@ -147,17 +143,33 @@ describe('identity wire', () => {
         value: {
           otpDestinationType: OtpDestinationType.Email,
           rawDestination: ' a@b.com ',
+          operationId: null,
         },
       });
     });
 
-    it('answers { challengeId, devCode } — the code only behind the emulator gate, else `null`', () => {
+    it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21, P3-DEP-8)', () => {
+      const idOf = (operationId: unknown) => {
+        const decoded = decodeRequestOtp(
+          request({
+            identifierChannel: IdentifierChannel.Email,
+            identifier: 'a@b.com',
+            operationId,
+          }),
+        );
+        return decoded.ok ? decoded.value.operationId : 'refused';
+      };
+      expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
+      for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
+    });
+
+    it('projects the challenge to { challengeId, devCode } — the code only behind the emulator gate, else `null`', () => {
       const answer = { otpId: OtpId.of('otp-1'), rawCode: '123456' };
-      expect(encodeRequestOtpAnswer(answer, false)).toEqual({
+      expect(otpChallengeOf(answer, false)).toStrictEqual({
         challengeId: 'otp-1',
         devCode: null,
       });
-      expect(encodeRequestOtpAnswer(answer, true)).toEqual({
+      expect(otpChallengeOf(answer, true)).toStrictEqual({
         challengeId: 'otp-1',
         devCode: '123456',
       });
@@ -268,7 +280,7 @@ describe('identity wire', () => {
         { challengeId: '  ', code: '123456' },
         null,
       ]) {
-        expect(refusalOf(decodeVerifyOtp(request(data)))).toEqual(
+        expect(errorOf(decodeVerifyOtp(request(data)))).toEqual(
           invalidInput('missing or empty otpId'),
         );
       }
@@ -284,14 +296,14 @@ describe('identity wire', () => {
         null,
       ]) {
         expect(
-          refusalOf(decodeVerifyOtp(request({ challengeId: 'otp-1', code }))),
+          errorOf(decodeVerifyOtp(request({ challengeId: 'otp-1', code }))),
         ).toEqual(invalidInput('code must be a 6-digit string'));
       }
     });
 
     it('refuses an id that is no document id', () => {
       expect(
-        refusalOf(
+        errorOf(
           decodeVerifyOtp(request({ challengeId: 'a/b', code: '123456' })),
         ),
       ).toEqual(invalidInput('invalid otpId'));
@@ -300,22 +312,21 @@ describe('identity wire', () => {
     it('decodes { challengeId, code } into the command', () => {
       expect(
         decodeVerifyOtp(request({ challengeId: 'otp-1', code: '042917' })),
-      ).toEqual({ ok: true, value: { otpId: 'otp-1', code: '042917' } });
+      ).toEqual({
+        ok: true,
+        value: { otpId: 'otp-1', code: '042917', operationId: null },
+      });
     });
 
-    it('answers { sessionKind, customToken } with the SCREAMING kinds', () => {
-      expect(
-        encodeVerifyOtpAnswer({
-          customToken: 't',
-          sessionKind: SessionKind.New,
-        }),
-      ).toEqual({ sessionKind: 'NEW', customToken: 't' });
-      expect(
-        encodeVerifyOtpAnswer({
-          customToken: 't',
-          sessionKind: SessionKind.Returning,
-        }),
-      ).toEqual({ sessionKind: 'RETURNING', customToken: 't' });
+    it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21, P3-DEP-8)', () => {
+      const idOf = (operationId: unknown) => {
+        const decoded = decodeVerifyOtp(
+          request({ challengeId: 'otp-1', code: '042917', operationId }),
+        );
+        return decoded.ok ? decoded.value.operationId : 'refused';
+      };
+      expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
+      for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
     });
 
     it.each([
@@ -378,7 +389,7 @@ describe('identity wire', () => {
           fields: {},
         },
       ]) {
-        expect(refusalOf(decodeCompleteRegistration(request(data)))).toEqual({
+        expect(errorOf(decodeCompleteRegistration(request(data)))).toEqual({
           status: 'unauthenticated',
           details: {
             errorCode: IdentityErrorCode.RegistrationUnauthenticated,
@@ -389,7 +400,7 @@ describe('identity wire', () => {
 
     it('answers the payload refusals in today’s order, each reason naming the field by its new name', () => {
       const of = (data: unknown) =>
-        refusalOf(decodeCompleteRegistration(request(data, 'uid_1')));
+        errorOf(decodeCompleteRegistration(request(data, 'uid_1')));
       expect(of(null)).toEqual(invalidInput('payload must be an object'));
       expect(of('text')).toEqual(invalidInput('payload must be an object'));
       for (const identifierChannel of ['FAX', 'phone', undefined]) {
@@ -459,12 +470,6 @@ describe('identity wire', () => {
       };
       expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
       for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
-    });
-
-    it('answers { customToken }', () => {
-      expect(encodeCompleteRegistrationAnswer({ customToken: 't' })).toEqual({
-        customToken: 't',
-      });
     });
 
     it('lets a missing field leave as invalid-argument naming the field', () => {
@@ -643,7 +648,7 @@ describe('identity wire', () => {
 
   describe('updateProfile', () => {
     it('refuses an unauthenticated caller with its own code', () => {
-      expect(refusalOf(decodeUpdateProfile(request({})))).toEqual({
+      expect(errorOf(decodeUpdateProfile(request({})))).toEqual({
         status: 'unauthenticated',
         details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED' },
       });
@@ -669,7 +674,7 @@ describe('identity wire', () => {
         decodeUpdateProfile(request({ firstName: 'Ada' }, 'uid_1')),
       ).toMatchObject({ ok: true, value: { edits: { birthDate: null } } });
       for (const data of [{ lastName: 7 }, { birthDate: {} }]) {
-        expect(refusalOf(decodeUpdateProfile(request(data, 'uid_1')))).toEqual({
+        expect(errorOf(decodeUpdateProfile(request(data, 'uid_1')))).toEqual({
           status: 'invalid-argument',
           details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED' },
         });
@@ -687,26 +692,19 @@ describe('identity wire', () => {
       for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
       // The caller still comes first: no session is refused, id or none.
       expect(
-        refusalOf(
-          decodeUpdateProfile(request({ operationId: OPERATION_TEXT })),
-        ),
+        errorOf(decodeUpdateProfile(request({ operationId: OPERATION_TEXT }))),
       ).toEqual({
         status: 'unauthenticated',
         details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED' },
       });
     });
 
-    it('answers { changed }, and its refusals as themselves', () => {
-      expect(encodeUpdateProfileAnswer({ changed: false })).toEqual({
-        changed: false,
-      });
-      expect(
-        wire(updateProfileRefusal(AccountsError.updateProfileNotFound())),
-      ).toEqual({
+    it('leaves its refusals as themselves (`refusalOf`), a store failure thrown', () => {
+      expect(wire(refusalOf(AccountsError.updateProfileNotFound()))).toEqual({
         status: 'not-found',
         details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND' },
       });
-      expect(() => updateProfileRefusal(STORE_DOWN)).toThrow();
+      expect(() => refusalOf(STORE_DOWN)).toThrow();
     });
   });
 });

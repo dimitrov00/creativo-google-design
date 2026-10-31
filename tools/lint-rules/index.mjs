@@ -17,6 +17,7 @@ import { noSlicedPorts } from './no-sliced-ports.mjs';
 import { presenterPurity } from './presenter-purity.mjs';
 import { noUndecoratedClass } from './no-undecorated-class.mjs';
 import { noLiteralLogMessage } from './no-literal-log-message.mjs';
+import { noIdentityMapper } from './no-identity-mapper.mjs';
 
 export {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
@@ -58,6 +59,7 @@ const plugin = {
     'presenter-purity': presenterPurity,
     'no-undecorated-class': noUndecoratedClass,
     'no-literal-log-message': noLiteralLogMessage,
+    'no-identity-mapper': noIdentityMapper,
   },
 };
 

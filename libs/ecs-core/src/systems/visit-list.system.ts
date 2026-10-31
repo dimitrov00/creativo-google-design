@@ -403,10 +403,10 @@ export const VisitListSystem = {
   /**
    * Has the visit begun: its start on the shop's wall clock at or before
    * the shop's "now" (`WallTime.compare ≤ 0` against `ShopNow.wallTime`,
-   * T1 — never an instant). The ONE body of the rule in ecs-core;
-   * `VisitStorySystem.hasStarted` is the story's name for it (homed here
-   * because this file is the lower of the two: the story reads the list's
-   * `VisitRowOutcome`, so the list may not read the story).
+   * T1 — never an instant). THE one "has the visit begun" rule in ecs-core,
+   * the list's and the story's alike (homed here because the list composes
+   * it, {@link isHistory}). NOT `!VisitStorySystem.isUpcoming`: at the start
+   * minute a visit has begun AND is still filed upcoming — two questions.
    */
   hasStarted(start: WallTime, now: ShopNow): boolean {
     return WallTime.compare(start, ShopNow.wallTime(now)) <= 0;

@@ -24,7 +24,7 @@ describe('VoucherLifecycle', () => {
     expect(VoucherLifecycle.isVoid(active)).toBe(false);
     expect(VoucherLifecycle.isVoid(voided)).toBe(true);
     const voucher = { ...voided, balanceCents: 0 };
-    expect(VoucherLifecycle.of(voucher)).toEqual(voided);
-    expect(VoucherLifecycle.of(active)).toBe(active);
+    expect(VoucherLifecycle.sliceOf(voucher)).toEqual(voided);
+    expect(VoucherLifecycle.sliceOf(active)).toBe(active);
   });
 });

@@ -4,12 +4,8 @@ import { localDate } from '@core/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { describe, expect, it } from 'vitest';
 import {
-  cardLocaleOf,
-  dayLong,
   dayRange,
-  dayShort,
   dayWithYear,
-  figure,
   monogramOf,
   monthYearLong,
 } from './client-card.format';
@@ -21,6 +17,7 @@ import {
   clientCardWordsOf,
 } from './client-card.words';
 import { catalogueOf, translatorOf } from '../testing/client-card.fixtures';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /** The sixteen words a metric is said with («Как се печели», the progress card). */
 const HOW_WORDS = [
@@ -130,6 +127,10 @@ const CLOSED_SETS: Readonly<Record<string, readonly (readonly unknown[])[]>> = {
   'words.achievement.whatBarber': NAMED_IN_BOTH_FORMS,
   'words.achievement.whatShop': NAMED_IN_BOTH_FORMS,
   'words.achievements.dayGroupName': NAMED_IN_BOTH_FORMS,
+  'words.erasure.alertBody': [
+    [{ visits: 12, notes: 2, photos: 3, accounts: 1, siblings: 1 }],
+    [{ visits: 1, notes: 0, photos: 0, accounts: 0, siblings: 0 }],
+  ],
   'words.achievements.collectionName': [
     [18, 42, 38],
     [1, 1, 1],
@@ -456,7 +457,7 @@ describe('clientCardWordsOf', () => {
     ).toBe('Продукт по избор, 400 точки, още 92');
     expect(page.rewardName(1, 'Стикер', '')).toBe('Стикер, 1 точка');
     expect(page.rewardName(1200, 'Сешоар', '')).toBe(
-      `Сешоар, ${figure(1200, 'bg')} точки`,
+      `Сешоар, ${formatCount(1200, 'bg')} точки`,
     );
     expect(bg.reward.stack(2)).toBe('×2');
     expect(bg.history.statsInterval(1)).toBe(', средно на 1 седмица');
@@ -683,7 +684,7 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
   it('words the loyalty card: the unit in agreement, the name with whatever the card holds', () => {
     expect(bg.loyalty.points(371)).toBe('371 точки');
     expect(bg.loyalty.points(1)).toBe('1 точка');
-    expect(bg.loyalty.points(12450)).toBe(`${figure(12450, 'bg')} точки`);
+    expect(bg.loyalty.points(12450)).toBe(`${formatCount(12450, 'bg')} точки`);
     expect(bg.loyalty.pointsWord(371)).toBe('точки');
     expect(bg.loyalty.pointsWord(1)).toBe('точка');
     expect(bg.loyalty.enoughForPoints('безплатно оформяне на брада')).toBe(
@@ -874,7 +875,7 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
     expect(page.signed(27)).toBe('+27 т.');
     expect(page.signed(-250)).toBe('−250 т.');
     expect(page.signed(0)).toBe('0 т.');
-    expect(page.signed(-12450)).toBe(`−${figure(12450, 'bg')} т.`);
+    expect(page.signed(-12450)).toBe(`−${formatCount(12450, 'bg')} т.`);
     expect(page.points(371)).toBe('371 т.');
     expect(page.points(-40)).toBe('−40 т.');
     expect(page.subline('Георги Петров', page.points(371))).toBe(
@@ -1106,6 +1107,71 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
   });
 });
 
+describe('the privacy group (audit-hardening Phase 3, WS-C)', () => {
+  it('words «Лични данни» and its export in bg and en', () => {
+    const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
+    const en = clientCardWordsOf(translatorOf('en'), 'en');
+    expect(bg.privacy).toEqual({
+      groupLabel: 'Лични данни',
+      export: 'Изтегли данните',
+      exportDone: 'Файлът е изтеглен.',
+    });
+    expect(en.privacy).toEqual({
+      groupLabel: 'Personal data',
+      export: 'Download the data',
+      exportDone: 'The file is downloaded.',
+    });
+  });
+});
+
+describe('the erasure’s words (audit-hardening Phase 3, WS-D)', () => {
+  it('words the rows, the lines and the ONE alert in bg and en, the figures grouped the locale’s way', () => {
+    const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
+    const en = clientCardWordsOf(translatorOf('en'), 'en');
+    const figures = {
+      visits: 1200,
+      notes: 2,
+      photos: 3,
+      accounts: 1,
+      siblings: 0,
+    };
+    expect({
+      ...bg.erasure,
+      alertBody: bg.erasure.alertBody(figures),
+    }).toEqual({
+      erase: 'Изтрий личните данни',
+      eraseSibling: 'Изтрий записа със същия телефон или имейл',
+      erased: 'Изтрит клиент',
+      eraseUnfinished: 'Изтриването още не е завършило. Опитай пак.',
+      alertTitle: 'Да изтрием ли личните данни?',
+      alertBody:
+        'Посещения: 1200 · Бележки: 2 · Снимки: 3 · Профили за вход: 1 · ' +
+        'Други записи със същия телефон или имейл: 0. Името, телефонът и ' +
+        'имейлът изчезват, профилът за вход се изтрива. Посещенията и ' +
+        'плащанията остават.',
+      eraseConfirm: 'Изтрий',
+      eraseKeep: 'Отказ',
+    });
+    expect({
+      ...en.erasure,
+      alertBody: en.erasure.alertBody(figures),
+    }).toEqual({
+      erase: 'Erase personal data',
+      eraseSibling: 'Erase the record with the same phone or e-mail',
+      erased: 'Erased client',
+      eraseUnfinished: "The erasure isn't finished yet. Try again.",
+      alertTitle: 'Erase personal data?',
+      alertBody:
+        'Visits: 1,200 · Notes: 2 · Photos: 3 · Sign-in accounts: 1 · ' +
+        'Other records with this phone or e-mail: 0. The name, phone and ' +
+        'e-mail are removed and the sign-in account is deleted. Visits and ' +
+        'payments stay.',
+      eraseConfirm: 'Erase',
+      eraseKeep: 'Cancel',
+    });
+  });
+});
+
 describe('the gaps K1b fills (lead ruling G1-6)', () => {
   const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
   const en = clientCardWordsOf(translatorOf('en'), 'en');
@@ -1284,7 +1350,7 @@ describe('the gaps K1b fills (lead ruling G1-6)', () => {
       'Награди за точки: 1 точка, стигат за 0 от 1 награда',
     );
     expect(page.catalogListName(bg.loyalty.points(1200), 1, 3)).toBe(
-      `Награди за точки: ${figure(1200, 'bg')} точки, стигат за 1 от 3 награди`,
+      `Награди за точки: ${formatCount(1200, 'bg')} точки, стигат за 1 от 3 награди`,
     );
     expect(bg.achievements.collectionOf(1)).toBe('от 1 медал');
     expect(bg.achievements.collectionName(1, 1, 1)).toBe(
@@ -1583,26 +1649,14 @@ describe('the gaps K1b fills (lead ruling G1-6)', () => {
 });
 
 describe('the card’s dates and figures (R59)', () => {
-  it('prints a fact line’s date short, with the year only outside today’s', () => {
-    expect(
-      dayShort(localDate('2026-08-12'), localDate('2026-09-28'), 'bg'),
-    ).toBe('12.08');
-    expect(
-      dayShort(localDate('2025-03-06'), localDate('2026-09-28'), 'bg'),
-    ).toBe('6.03.2025 г.');
+  // The short and heard forms («12.08», «4 септември») are
+  // `@creativo/ui/wall-clock`'s (`formatDayShort`, `formatDayLong`), proved
+  // in `wall-clock.spec.ts`; the card's own forms stay here.
+  it('prints a date that always names its year', () => {
     expect(dayWithYear(localDate('2026-03-06'), 'bg')).toBe('6.03.2026 г.');
   });
 
-  it('spells a date someone hears, the month in words', () => {
-    expect(
-      dayLong(localDate('2026-09-04'), localDate('2026-09-28'), 'bg'),
-    ).toBe('4 септември');
-    expect(
-      dayLong(localDate('2025-03-06'), localDate('2026-09-28'), 'bg'),
-    ).toBe('6 март 2025 г.');
-    expect(
-      dayLong(localDate('2026-09-04'), localDate('2026-09-28'), 'en'),
-    ).toBe('September 4');
+  it('spells a month someone has been a client since', () => {
     expect(monthYearLong(localDate('2025-03-06'), 'bg')).toBe('март 2025 г.');
   });
 
@@ -1618,18 +1672,12 @@ describe('the card’s dates and figures (R59)', () => {
   });
 
   it('groups figures the locale’s way', () => {
-    expect(figure(12450, 'bg')).toBe('12 450');
+    expect(formatCount(12450, 'bg')).toBe('12 450');
   });
 
   it('draws a monogram from the first letter', () => {
     expect(monogramOf('Фейд', 'bg')).toBe('Ф');
     expect(monogramOf('„Баща и син“', 'bg')).toBe('Б');
     expect(monogramOf('— 1 —', 'bg')).toBeNull();
-  });
-
-  it('reads any language but English as the shop’s own', () => {
-    expect(cardLocaleOf('en')).toBe('en');
-    expect(cardLocaleOf('bg')).toBe('bg');
-    expect(cardLocaleOf('de')).toBe('bg');
   });
 });

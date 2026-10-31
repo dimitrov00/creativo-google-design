@@ -78,6 +78,7 @@ import {
   AuditSystem,
   BillingSystem,
   BookingDecisionSystem,
+  ClientErasureSystem,
   CouponGrantSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
@@ -378,11 +379,6 @@ function releaseRead(snapshot: Snapshot | null): readonly ChairTime[] {
     snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
     ? MoveSystem.release(snapshot.stored)
     : [];
-}
-
-/** An instant on the shop's clock. */
-function wallOf(at: UtcEpochMs, zone: TimeZone) {
-  return ZonedTimeSystem.toLocal(at, zone);
 }
 
 /**
@@ -845,7 +841,9 @@ function decideEdit(
     stored.bookingStatus,
     draft.localDate,
     draft.seats,
-    stored.arrivedAtUtcMs === null ? null : wallOf(stored.arrivedAtUtcMs, zone),
+    stored.arrivedAtUtcMs === null
+      ? null
+      : ZonedTimeSystem.toLocal(stored.arrivedAtUtcMs, zone),
   );
   if (refusal !== null) return Result.err(refusal);
 
@@ -859,6 +857,24 @@ function decideEdit(
   ) {
     return Result.err(StaffEditError.invalidCommand('barberId'));
   }
+
+  // 3b. THE ERASURE GUARD (P3-RU-20): the batch seats no record under
+  //     erasure — each id read in the map that holds it: an added account's
+  //     record in the placement getAll, an added walk-in's in phase one. The
+  //     stored seats' records are carried back untouched (no personal value
+  //     is written for them).
+  const added = customerIdsFor(loaded.addedAccounts, context.hash);
+  const erased = [
+    ...ClientErasureSystem.underErasureAmong(
+      added.values(),
+      loaded.placement.customers,
+    ),
+    ...ClientErasureSystem.underErasureAmong(
+      loaded.addedWalkIns.map((walkIn) => walkIn.customerId),
+      loaded.set.customers,
+    ),
+  ];
+  if (erased.length > 0) return Result.err(BookingError.clientErased());
 
   // 4. The decision, under the shop's rules, with the stored ids and terms.
   const lines: BookingCall.SeatInput[] = [];
@@ -966,7 +982,6 @@ function decideEdit(
 
   // 7. The client records of added accounts: a missing one needs its
   //    contact snapshot first (read outside, then the edit runs again).
-  const added = customerIdsFor(loaded.addedAccounts, context.hash);
   const missing = CustomerRecordSystem.missingContacts(
     added,
     loaded.placement.customers,

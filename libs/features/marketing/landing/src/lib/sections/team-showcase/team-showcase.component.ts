@@ -23,6 +23,7 @@ import {
 import { UiModalSheet } from '@creativo/ui/controls';
 import { BarberId } from '@core/primitives';
 import {
+  CatalogWording,
   ServiceRowComponent,
   type ServiceVm,
   ShowcaseGalleryComponent,
@@ -77,9 +78,10 @@ interface BarberItem {
 })
 export class TeamShowcaseComponent {
   private readonly platformId = inject(PLATFORM_ID);
-  protected readonly content = inject(LandingContentService);
+  private readonly content = inject(LandingContentService);
+  protected readonly words = inject(CatalogWording);
   private readonly catalog = inject(CatalogNavigationService);
-  /** A price-list row's terms as the money the content service words. */
+  /** A price-list row's terms as the money `CatalogWording.price` words. */
   protected readonly termsPrice = termsPrice;
 
   /** Held across the exit — see `openService`. */

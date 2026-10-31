@@ -54,6 +54,8 @@ describe('BookingError', () => {
         // successors, 4B-4) — no pipeline raises them.
         'BOOKING_CALL_FAILED',
         'BOOKING_TRANSITION_SEAT_RESOLVED',
+        // Phase 3 WS-D (P3-DEP-18): a seated or created record under erasure.
+        'BOOKING_CLIENT_ERASED',
       ].sort(),
     );
   });
@@ -88,6 +90,7 @@ describe('BookingError', () => {
       BookingError.beyondHorizon(3),
       BookingError.partyTooLarge(5),
       BookingError.invariantViolated([violation]),
+      BookingError.clientErased(),
       BookingError.bare(BookingErrorCode.CommitForbidden),
       BookingError.bare(BookingErrorCode.CommitStoreFailed),
       BookingError.bare(BookingErrorCode.TransitionUnauthenticated),
@@ -152,6 +155,14 @@ describe('BookingError', () => {
     expect(
       BookingError.callNotFound(BookingErrorCode.TipNotFound, visit),
     ).toEqual({ errorCode: 'BOOKING_TIP_NOT_FOUND', appointmentId: 'apt-1' });
+  });
+
+  it('refuses an erased client by its code alone — no id, no contact on the struct (Phase 3 WS-D, P3-RU-20)', () => {
+    const error: BookingError = BookingError.clientErased();
+    expect(error).toEqual({ errorCode: 'BOOKING_CLIENT_ERASED' });
+    expect(Object.keys(error)).toEqual(['errorCode']);
+    expect(JSON.parse(JSON.stringify(error))).toEqual(error);
+    expect(Object.getPrototypeOf(error)).toBe(Object.prototype);
   });
 
   it('spells the surfaces’ own words — the successors of the dotted i18n keys (Phase 4b, 4B-4)', () => {

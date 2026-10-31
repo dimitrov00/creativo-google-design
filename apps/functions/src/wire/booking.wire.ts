@@ -34,19 +34,17 @@ import {
   SeatId,
   ServiceId,
   ServiceVariantId,
+  StoredFields,
   Tag,
   UserId,
 } from '@core/primitives';
 import {
-  type BookAppointmentError,
   BookingError,
   BookingErrorCode,
   type CancelAppointmentError,
   CancellationRefusal,
-  type EditAppointmentError,
   type MarkArrivalError,
   type RecordSeatTipError,
-  type RescheduleAppointmentError,
   SchedulingErrorCode,
   StaffEditError,
   StaffEditErrorCode,
@@ -55,17 +53,14 @@ import {
 import {
   type BookAppointmentAnswer,
   type BookAppointmentCommand,
-  type CancelAppointmentAnswer,
   type CancelAppointmentCommand,
   type EditAppointmentAnswer,
   type EditAppointmentCommand,
   type MarkArrivalAnswer,
   type MarkArrivalCommand,
-  type RecordSeatTipAnswer,
   type RecordSeatTipCommand,
   type RescheduleAppointmentAnswer,
   type RescheduleAppointmentCommand,
-  type TransitionAppointmentAnswer,
   type TransitionAppointmentCommand,
 } from '@core/pipelines';
 import { PhoneSystem } from '@core/systems';
@@ -77,7 +72,6 @@ import {
   callerWorksTheBook,
 } from '../lib/booking/caller-roles';
 import {
-  field,
   idOf,
   isRecord,
   listOf,
@@ -105,12 +99,17 @@ import {
  *   cents, the caller and their roles off the VERIFIED token. The refusals
  *   a decoder answers itself — unauthenticated, forbidden, a payload that is
  *   no request — are the ecs-core successors of the legacy codes.
- * - **Out:** one encoder per callable answers the call component's answer;
- *   one refusal function per callable turns a pipeline refusal whose meaning
- *   is the callable's own into its successor struct
- *   (`BOOKING_CANCEL_NOT_FOUND`, `BOOKING_TRANSITION_NOT_ALLOWED` with its
- *   SCREAMING `fromBookingStatus`/`toBookingStatus`, …); every other refusal
- *   leaves as itself, projected by the shared table (`EDGE_WIRE`). A store
+ * - **Out:** a pipeline whose answer IS the call component's answer
+ *   (cancel, transition, tip) is answered as it is; one that keeps
+ *   server-only fields (`replayed`, `revision`) or one arrival answer worded
+ *   two ways is projected by name (`committedOf`, `rescheduledOf`,
+ *   `staffEditedOf`, `arrivedOf`, `clearedOf`). A refusal function exists
+ *   only where a pipeline refusal's meaning is the callable's own — it turns
+ *   it into its successor struct (`BOOKING_CANCEL_NOT_FOUND`,
+ *   `BOOKING_TRANSITION_NOT_ALLOWED` with its SCREAMING
+ *   `fromBookingStatus`/`toBookingStatus`, …); every other callable passes
+ *   `refusalOf`, and its refusals leave as themselves, projected by the
+ *   shared table (`EDGE_WIRE`). A store
  *   failure is no refusal: it is thrown, for the edge to track and answer as
  *   the callable's coded `internal` (`BOOKING_COMMIT_STORE_FAILED`) or the
  *   platform's bare one.
@@ -119,15 +118,13 @@ import {
 /**
  * The states a lifecycle refusal names that the `BookingStatus` graph does
  * not — the callable's own words, SCREAMING beside the graph's values (the
- * web words them with its status table, its own for these).
+ * web words them with its status table, its own for these). An arrival
+ * refusal names the arrival asked for in `ArrivalVerb`'s words, declared
+ * once there.
  */
 export const CallStateWord = {
   /** A seat whose story is over (served, no-show, cancelled). */
   Resolved: 'RESOLVED',
-  /** The arrival `markArrived` asks for. */
-  Arrived: ArrivalVerb.Arrived,
-  /** The arrival `clearArrival` takes back. */
-  Unarrived: ArrivalVerb.Unarrived,
 } as const;
 export type CallStateWord = (typeof CallStateWord)[keyof typeof CallStateWord];
 
@@ -142,7 +139,7 @@ function preferenceOf(raw: unknown): BarberPreference | null {
 function isAppointmentMiss(error: { readonly errorCode: string }): boolean {
   return (
     error.errorCode === BookingErrorCode.InvalidInput &&
-    field(error, 'field') === 'appointmentId'
+    StoredFields.field(error, 'field') === 'appointmentId'
   );
 }
 
@@ -163,8 +160,8 @@ const GUEST_EMAIL_MAX = 254;
  */
 function guestContactOf(raw: unknown): BookingCall.GuestContact | null {
   if (!isRecord(raw)) return null;
-  const phone = field(raw, 'phone');
-  const email = field(raw, 'email');
+  const phone = StoredFields.field(raw, 'phone');
+  const email = StoredFields.field(raw, 'email');
   const parsed =
     typeof phone === 'string' && phone.length <= GUEST_PHONE_MAX
       ? PhoneSystem.parse(phone, null)
@@ -185,14 +182,14 @@ function guestContactOf(raw: unknown): BookingCall.GuestContact | null {
  * pipeline's to ignore (only the shop's placement keeps a record).
  */
 function subjectOf(raw: unknown): BookingCall.SubjectInput {
-  switch (field(raw, 'requestedSubjectRole')) {
+  switch (StoredFields.field(raw, 'requestedSubjectRole')) {
     case RequestedSubjectRole.Guest: {
-      const guestKey = field(raw, 'guestKey');
+      const guestKey = StoredFields.field(raw, 'guestKey');
       return {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: text(raw, 'label'),
         guestKey: GuestKey.is(guestKey) ? guestKey : null,
-        contact: guestContactOf(field(raw, 'contact')),
+        contact: guestContactOf(StoredFields.field(raw, 'contact')),
       };
     }
     case RequestedSubjectRole.Companion:
@@ -217,9 +214,11 @@ function seatsOf(raw: unknown): readonly BookingCall.SeatInput[] {
     serviceId: text(entry, 'serviceId'),
     variantId: textOrNull(entry, 'variantId'),
     barberId: text(entry, 'barberId'),
-    barberPreference: preferenceOf(field(entry, 'barberPreference')),
+    barberPreference: preferenceOf(
+      StoredFields.field(entry, 'barberPreference'),
+    ),
     startMinutes: numberOrNull(entry, 'startMinutes'),
-    subject: subjectOf(field(entry, 'subject')),
+    subject: subjectOf(StoredFields.field(entry, 'subject')),
   }));
 }
 
@@ -238,7 +237,7 @@ const BOOKED_FROM = /^[A-Za-z0-9_-]{1,64}$/;
 function contactOf(raw: unknown): BookingContact.Input | null {
   if (!isRecord(raw)) return null;
   const bounded = (name: string, max: number): string => {
-    const value = field(raw, name);
+    const value = StoredFields.field(raw, name);
     return typeof value === 'string' ? value.slice(0, max) : '';
   };
   const name = bounded('name', 120);
@@ -275,10 +274,10 @@ export function decodeCommitBooking(
   request: WireRequest,
 ): Result<BookAppointmentCommand, EdgeError> {
   const payload = payloadOf(request);
-  const seats = seatsOf(field(payload, 'seats'));
-  const onBehalfOf = field(payload, 'onBehalfOfUserId');
+  const seats = seatsOf(StoredFields.field(payload, 'seats'));
+  const onBehalfOf = StoredFields.field(payload, 'onBehalfOfUserId');
   const staffPlacement = isStaffPlacement(
-    field(payload, 'placement'),
+    StoredFields.field(payload, 'placement'),
     onBehalfOf,
   );
   if (staffPlacement && !callerWorksTheBook(request)) {
@@ -304,7 +303,7 @@ export function decodeCommitBooking(
     typeof onBehalfOf === 'string' && ON_BEHALF_OF.test(onBehalfOf)
       ? UserId.of(onBehalfOf)
       : null;
-  const bookedFrom = field(payload, 'bookedFromAppointmentId');
+  const bookedFrom = StoredFields.field(payload, 'bookedFromAppointmentId');
   return Result.ok({
     locationId: text(payload, 'locationId'),
     localDate: text(payload, 'localDate'),
@@ -315,22 +314,22 @@ export function decodeCommitBooking(
       typeof bookedFrom === 'string' && BOOKED_FROM.test(bookedFrom)
         ? AppointmentId.of(bookedFrom)
         : null,
-    contact: contactOf(field(payload, 'contact')),
+    contact: contactOf(StoredFields.field(payload, 'contact')),
     ownerUserId: staffPlacement ? named : owner,
     staffPlacement,
     actor: callerActorAsClaimed(request),
   });
 }
 
-export function encodeCommitBookingAnswer(
+/**
+ * The commit's wire answer, a projection: the id alone — `replayed` stays
+ * on the server (a replay answers exactly as the first commit did). The
+ * commit's refusals all leave as themselves (`refusalOf`).
+ */
+export function committedOf(
   answer: BookAppointmentAnswer,
 ): BookingCall.Committed {
   return { appointmentId: answer.appointmentId };
-}
-
-/** The commit's refusals all leave as themselves, through the shared table. */
-export function commitBookingRefusal(error: BookAppointmentError): EdgeError {
-  return refusalOf(error);
 }
 
 // ── cancelAppointment ────────────────────────────────────────────────────
@@ -342,14 +341,14 @@ export function decodeCancelAppointment(
   if (caller === null) return Result.err(CancellationRefusal.unauthenticated());
   const payload = payloadOf(request);
   const appointmentId = idOf(
-    field(payload, 'appointmentId'),
+    StoredFields.field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
   if (appointmentId === null) {
     return Result.err(CancellationRefusal.invalidInput('appointmentId'));
   }
   // The code the client files the cancellation under (code-only, D23).
-  const reason = field(payload, 'reason');
+  const reason = StoredFields.field(payload, 'reason');
   if (!Tag.has(CancellationReason, reason)) {
     return Result.err(CancellationRefusal.invalidInput('reason'));
   }
@@ -365,12 +364,6 @@ export function decodeCancelAppointment(
     operationId,
     actor: callerActorAsClaimed(request),
   });
-}
-
-export function encodeCancelAppointmentAnswer(
-  answer: CancelAppointmentAnswer,
-): BookingCall.Cancelled {
-  return { appointmentId: answer.appointmentId };
 }
 
 /** A visit that is not there — or not the caller's — is `BOOKING_CANCEL_NOT_FOUND`. */
@@ -391,7 +384,7 @@ export function decodeRescheduleAppointment(
 ): Result<RescheduleAppointmentCommand, EdgeError> {
   const payload = payloadOf(request);
   const appointmentId = idOf(
-    field(payload, 'appointmentId'),
+    StoredFields.field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
   if (appointmentId === null) {
@@ -413,24 +406,22 @@ export function decodeRescheduleAppointment(
     callerUserId: caller,
     locationId: text(payload, 'locationId'),
     localDate: text(payload, 'localDate'),
-    seats: seatsOf(field(payload, 'seats')),
+    seats: seatsOf(StoredFields.field(payload, 'seats')),
     attemptId,
     operationId,
     actor: callerActorAsClaimed(request),
   });
 }
 
-export function encodeRescheduleAppointmentAnswer(
+/**
+ * The move's wire answer, a projection: the id alone — `revision` and
+ * `replayed` stay on the server. The move's refusals — the commit's codes
+ * and its own — all leave as themselves (`refusalOf`).
+ */
+export function rescheduledOf(
   answer: RescheduleAppointmentAnswer,
-): BookingCall.Rescheduled {
+): BookingCall.Committed {
   return { appointmentId: answer.appointmentId };
-}
-
-/** The move's refusals — the commit's codes and its own — all leave as themselves. */
-export function rescheduleAppointmentRefusal(
-  error: RescheduleAppointmentError,
-): EdgeError {
-  return refusalOf(error);
 }
 
 // ── transitionAppointment ────────────────────────────────────────────────
@@ -468,14 +459,14 @@ export function decodeTransitionAppointment(
       ),
     );
   const appointmentId = idOf(
-    field(payload, 'appointmentId'),
+    StoredFields.field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
   if (appointmentId === null) return invalid('appointmentId');
-  const raw = field(payload, 'toBookingStatus');
+  const raw = StoredFields.field(payload, 'toBookingStatus');
   const to = BookingLifecycle.isTransitionTarget(raw) ? raw : null;
   if (to === null) return invalid('toBookingStatus');
-  const rawSeat = field(payload, 'seatId');
+  const rawSeat = StoredFields.field(payload, 'seatId');
   const seatId =
     rawSeat === undefined || rawSeat === null
       ? null
@@ -485,7 +476,7 @@ export function decodeTransitionAppointment(
   }
   const reason =
     to === BookingStatus.Cancelled
-      ? transitionReasonOf(field(payload, 'cancellationReason'))
+      ? transitionReasonOf(StoredFields.field(payload, 'cancellationReason'))
       : null;
   if (to === BookingStatus.Cancelled && reason === null) {
     return invalid('cancellationReason');
@@ -501,12 +492,6 @@ export function decodeTransitionAppointment(
     operationId,
     actor: callerActorAsClaimed(request),
   });
-}
-
-export function encodeTransitionAppointmentAnswer(
-  answer: TransitionAppointmentAnswer,
-): BookingCall.Transitioned {
-  return { appointmentId: answer.appointmentId, toBookingStatus: answer.to };
 }
 
 /** A state as the refusal names it: a `BookingStatus` value, else the callable's own word. */
@@ -593,7 +578,7 @@ function arrivalOf(
       BookingError.callInvalidInput(BookingErrorCode.ArrivedInvalidInput, name),
     );
   const appointmentId = idOf(
-    field(payload, 'appointmentId'),
+    StoredFields.field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
   if (appointmentId === null) return invalid('appointmentId');
@@ -620,18 +605,22 @@ export function decodeClearArrival(
   return arrivalOf(request, MarkArrivalAction.Clear);
 }
 
-export function encodeMarkArrivedAnswer(
-  answer: MarkArrivalAnswer,
-): BookingCall.Arrived {
+/**
+ * `markArrived`'s wire answer: the one arrival pipeline's `unchanged`
+ * worded as the arrival's own `alreadyArrived` (a second tap).
+ */
+export function arrivedOf(answer: MarkArrivalAnswer): BookingCall.Arrived {
   return {
     appointmentId: answer.appointmentId,
     alreadyArrived: answer.unchanged,
   };
 }
 
-export function encodeClearArrivalAnswer(
-  answer: MarkArrivalAnswer,
-): BookingCall.Cleared {
+/**
+ * `clearArrival`'s wire answer: the one arrival pipeline's `unchanged`
+ * worded as the clearing's own `alreadyClear`.
+ */
+export function clearedOf(answer: MarkArrivalAnswer): BookingCall.Cleared {
   return {
     appointmentId: answer.appointmentId,
     alreadyClear: answer.unchanged,
@@ -655,8 +644,8 @@ export function arrivalRefusal(
       BookingErrorCode.ArrivedNotAllowed,
       error.bookingStatus,
       cmd.markArrivalAction === MarkArrivalAction.Arrive
-        ? CallStateWord.Arrived
-        : CallStateWord.Unarrived,
+        ? ArrivalVerb.Arrived
+        : ArrivalVerb.Unarrived,
     );
   }
   return error;
@@ -679,15 +668,15 @@ export function decodeRecordSeatTip(
       BookingError.callInvalidInput(BookingErrorCode.TipInvalidInput, name),
     );
   const appointmentId = idOf(
-    field(payload, 'appointmentId'),
+    StoredFields.field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
   if (appointmentId === null) return invalid('appointmentId');
-  const seatId = idOf(field(payload, 'seatId'), SeatId.parse);
+  const seatId = idOf(StoredFields.field(payload, 'seatId'), SeatId.parse);
   if (seatId === null) return invalid('seatId');
   // `null` clears; anything else must be a whole, non-negative number of
   // cents — nothing is rounded into plausibility.
-  const raw = field(payload, 'amountCents');
+  const raw = StoredFields.field(payload, 'amountCents');
   const amount =
     raw === null || raw === undefined
       ? null
@@ -707,16 +696,6 @@ export function decodeRecordSeatTip(
     operationId,
     actor: callerActorAsClaimed(request),
   });
-}
-
-export function encodeRecordSeatTipAnswer(
-  answer: RecordSeatTipAnswer,
-): BookingCall.TipRecorded {
-  return {
-    appointmentId: answer.appointmentId,
-    seatId: answer.seatId,
-    unchanged: answer.unchanged,
-  };
 }
 
 /** No such visit, or no such seat on it, is `BOOKING_TIP_NOT_FOUND`. */
@@ -781,9 +760,9 @@ function wholeOf<T>(
  * cents (`CouponValue.positiveAmount`, the figure `fixedAmount` guards).
  */
 function manualDiscountOf(entry: unknown): BookingCall.StaffDiscount | null {
-  switch (field(entry, 'discountMethod')) {
+  switch (StoredFields.field(entry, 'discountMethod')) {
     case DiscountMethod.PercentOff: {
-      const percent = field(entry, 'discountPercent');
+      const percent = StoredFields.field(entry, 'discountPercent');
       if (typeof percent !== 'number') return null;
       const value = CouponValue.manualPercentOff(percent);
       return value.ok
@@ -795,7 +774,10 @@ function manualDiscountOf(entry: unknown): BookingCall.StaffDiscount | null {
         : null;
     }
     case DiscountMethod.FixedAmount: {
-      const cents = wholeOf(field(entry, 'discountAmountCents'), PriceCents.of);
+      const cents = wholeOf(
+        StoredFields.field(entry, 'discountAmountCents'),
+        PriceCents.of,
+      );
       if (cents === null) return null;
       // Only the cents travel (`BookingCall.StaffDiscount`): the visit's own
       // currency is chosen when the batch is decided
@@ -820,9 +802,9 @@ function discountsOf(
   if (!Array.isArray(raw)) return null;
   const out: BookingCall.StaffDiscount[] = [];
   for (const entry of raw) {
-    switch (field(entry, 'discountSource')) {
+    switch (StoredFields.field(entry, 'discountSource')) {
       case DiscountSource.Grant: {
-        const grantId = field(entry, 'grantId');
+        const grantId = StoredFields.field(entry, 'grantId');
         const id =
           typeof grantId === 'string' && grantId.trim().length > 0
             ? idOf(grantId, CouponGrantId.parse)
@@ -832,7 +814,7 @@ function discountsOf(
         break;
       }
       case DiscountSource.Code: {
-        const code = field(entry, 'code');
+        const code = StoredFields.field(entry, 'code');
         const parsed =
           typeof code === 'string' && code.trim().length > 0
             ? VoucherCode.parseTyped(code)
@@ -875,18 +857,18 @@ function voucherCodesOf(raw: unknown): readonly VoucherCode[] | null {
  * accept — with the contact the desk took, parsed here (OR-26).
  */
 function addedSubjectOf(raw: unknown): BookingCall.AddedSubject | null {
-  switch (field(raw, 'requestedSubjectRole')) {
+  switch (StoredFields.field(raw, 'requestedSubjectRole')) {
     case RequestedSubjectRole.Self:
       return { requestedSubjectRole: RequestedSubjectRole.Self };
     case RequestedSubjectRole.Guest: {
-      const label = field(raw, 'label');
+      const label = StoredFields.field(raw, 'label');
       const parsed = named(label) ? SeatLabel.parse(label) : null;
       return parsed === null || !parsed.ok
         ? null
         : {
             requestedSubjectRole: RequestedSubjectRole.Guest,
             label: parsed.value,
-            contact: guestContactOf(field(raw, 'contact')),
+            contact: guestContactOf(StoredFields.field(raw, 'contact')),
           };
     }
     default:
@@ -900,13 +882,16 @@ function addedSubjectOf(raw: unknown): BookingCall.AddedSubject | null {
  * the refusal naming the field.
  */
 function editCommandOf(raw: unknown): CommandResult {
-  switch (field(raw, 'editCommand')) {
+  switch (StoredFields.field(raw, 'editCommand')) {
     case EditCommand.Move: {
-      const seatIds = scopeOf(field(raw, 'seatIds'));
+      const seatIds = scopeOf(StoredFields.field(raw, 'seatIds'));
       if (seatIds === undefined) return invalid('seatIds');
-      const localDate = dayOf(field(raw, 'localDate'));
+      const localDate = dayOf(StoredFields.field(raw, 'localDate'));
       if (localDate === null) return invalid('localDate');
-      const startMinutes = wholeOf(field(raw, 'startMinutes'), MinuteOfDay.of);
+      const startMinutes = wholeOf(
+        StoredFields.field(raw, 'startMinutes'),
+        MinuteOfDay.of,
+      );
       if (startMinutes === null) return invalid('startMinutes');
       return Result.ok({
         editCommand: EditCommand.Move,
@@ -916,16 +901,19 @@ function editCommandOf(raw: unknown): CommandResult {
       });
     }
     case EditCommand.Resize: {
-      const edge = field(raw, 'resizeEdge');
+      const edge = StoredFields.field(raw, 'resizeEdge');
       if (edge !== ResizeEdge.Start && edge !== ResizeEdge.End) {
         return invalid('resizeEdge');
       }
-      const seatIds = scopeOf(field(raw, 'seatIds'));
+      const seatIds = scopeOf(StoredFields.field(raw, 'seatIds'));
       if (seatIds === undefined) return invalid('seatIds');
-      const localDate = dayOf(field(raw, 'localDate'));
+      const localDate = dayOf(StoredFields.field(raw, 'localDate'));
       if (localDate === null) return invalid('localDate');
       if (edge === ResizeEdge.Start) {
-        const atMinutes = wholeOf(field(raw, 'atMinutes'), MinuteOfDay.of);
+        const atMinutes = wholeOf(
+          StoredFields.field(raw, 'atMinutes'),
+          MinuteOfDay.of,
+        );
         if (atMinutes === null) return invalid('atMinutes');
         return Result.ok({
           editCommand: EditCommand.Resize,
@@ -935,7 +923,10 @@ function editCommandOf(raw: unknown): CommandResult {
           seatIds,
         });
       }
-      const atMinutes = wholeOf(field(raw, 'atMinutes'), EndMinute.of);
+      const atMinutes = wholeOf(
+        StoredFields.field(raw, 'atMinutes'),
+        EndMinute.of,
+      );
       if (atMinutes === null) return invalid('atMinutes');
       return Result.ok({
         editCommand: EditCommand.Resize,
@@ -946,9 +937,9 @@ function editCommandOf(raw: unknown): CommandResult {
       });
     }
     case EditCommand.Reprice: {
-      const seatId = idOf(field(raw, 'seatId'), SeatId.parse);
+      const seatId = idOf(StoredFields.field(raw, 'seatId'), SeatId.parse);
       if (seatId === null) return invalid('seatId');
-      const price = field(raw, 'priceCents');
+      const price = StoredFields.field(raw, 'priceCents');
       const cents =
         typeof price === 'number' && Number.isInteger(price) && price >= 0
           ? PriceCents.of(price)
@@ -961,24 +952,35 @@ function editCommandOf(raw: unknown): CommandResult {
       });
     }
     case EditCommand.AddSeat: {
-      const seatId = idOf(field(raw, 'seatId'), SeatId.parse);
+      const seatId = idOf(StoredFields.field(raw, 'seatId'), SeatId.parse);
       if (seatId === null) return invalid('seatId');
-      const serviceId = idOf(field(raw, 'serviceId'), ServiceId.parse);
+      const serviceId = idOf(
+        StoredFields.field(raw, 'serviceId'),
+        ServiceId.parse,
+      );
       if (serviceId === null) return invalid('serviceId');
-      const barberId = idOf(field(raw, 'barberId'), BarberId.parse);
+      const barberId = idOf(
+        StoredFields.field(raw, 'barberId'),
+        BarberId.parse,
+      );
       if (barberId === null) return invalid('barberId');
-      const localDate = dayOf(field(raw, 'localDate'));
+      const localDate = dayOf(StoredFields.field(raw, 'localDate'));
       if (localDate === null) return invalid('localDate');
-      const startMinutes = wholeOf(field(raw, 'startMinutes'), MinuteOfDay.of);
+      const startMinutes = wholeOf(
+        StoredFields.field(raw, 'startMinutes'),
+        MinuteOfDay.of,
+      );
       if (startMinutes === null) return invalid('startMinutes');
       const duration = wholeOf(
-        field(raw, 'durationMinutes'),
+        StoredFields.field(raw, 'durationMinutes'),
         DurationMinutes.of,
       );
       if (duration === null) return invalid('durationMinutes');
-      const addedSubject = addedSubjectOf(field(raw, 'addedSubject'));
+      const addedSubject = addedSubjectOf(
+        StoredFields.field(raw, 'addedSubject'),
+      );
       if (addedSubject === null) return invalid('addedSubject');
-      const variant = field(raw, 'variantId');
+      const variant = StoredFields.field(raw, 'variantId');
       let variantId: ServiceVariantId | null = null;
       if (variant !== undefined && variant !== null) {
         variantId = named(variant)
@@ -999,34 +1001,37 @@ function editCommandOf(raw: unknown): CommandResult {
       });
     }
     case EditCommand.RemoveSeat: {
-      const seatId = idOf(field(raw, 'seatId'), SeatId.parse);
+      const seatId = idOf(StoredFields.field(raw, 'seatId'), SeatId.parse);
       return seatId === null
         ? invalid('seatId')
         : Result.ok({ editCommand: EditCommand.RemoveSeat, seatId });
     }
     case EditCommand.Relocate: {
-      const locationId = idOf(field(raw, 'locationId'), LocationId.parse);
+      const locationId = idOf(
+        StoredFields.field(raw, 'locationId'),
+        LocationId.parse,
+      );
       return locationId === null
         ? invalid('locationId')
         : Result.ok({ editCommand: EditCommand.Relocate, locationId });
     }
     case EditCommand.Discounts: {
-      const discounts = discountsOf(field(raw, 'discounts'));
+      const discounts = discountsOf(StoredFields.field(raw, 'discounts'));
       return discounts === null
         ? invalid('discounts')
         : Result.ok({ editCommand: EditCommand.Discounts, discounts });
     }
     case EditCommand.Vouchers: {
-      const codes = voucherCodesOf(field(raw, 'codes'));
+      const codes = voucherCodesOf(StoredFields.field(raw, 'codes'));
       return codes === null
         ? invalid('codes')
         : Result.ok({ editCommand: EditCommand.Vouchers, codes });
     }
     case EditCommand.Redurate: {
-      const seatId = idOf(field(raw, 'seatId'), SeatId.parse);
+      const seatId = idOf(StoredFields.field(raw, 'seatId'), SeatId.parse);
       if (seatId === null) return invalid('seatId');
       const duration = wholeOf(
-        field(raw, 'durationMinutes'),
+        StoredFields.field(raw, 'durationMinutes'),
         DurationMinutes.of,
       );
       if (duration === null) return invalid('durationMinutes');
@@ -1037,9 +1042,9 @@ function editCommandOf(raw: unknown): CommandResult {
       });
     }
     case EditCommand.Restaff: {
-      const seatId = idOf(field(raw, 'seatId'), SeatId.parse);
+      const seatId = idOf(StoredFields.field(raw, 'seatId'), SeatId.parse);
       if (seatId === null) return invalid('seatId');
-      const barber = field(raw, 'barberId');
+      const barber = StoredFields.field(raw, 'barberId');
       const barberId =
         typeof barber === 'string' && barber.trim().length > 0
           ? idOf(barber, BarberId.parse)
@@ -1065,7 +1070,7 @@ export function decodeStaffEditAppointment(
   }
   const payload = payloadOf(request);
   const appointmentId = idOf(
-    field(payload, 'appointmentId'),
+    StoredFields.field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
   if (appointmentId === null) return invalid('appointmentId');
@@ -1073,7 +1078,7 @@ export function decodeStaffEditAppointment(
   // refused alike — the web always sent one.
   const operationId = operationIdOf(payload, 'operationId');
   if (operationId === null) return invalid('operationId');
-  const version = field(payload, 'expectedVersion');
+  const version = StoredFields.field(payload, 'expectedVersion');
   let expectedVersion: number | null = null;
   if (version !== undefined && version !== null) {
     if (
@@ -1097,22 +1102,21 @@ export function decodeStaffEditAppointment(
     appointmentId,
     actorRoles: callerRoles(request),
     commands,
-    acknowledgedOverlap: field(payload, 'acknowledgedOverlap') === true,
+    acknowledgedOverlap:
+      StoredFields.field(payload, 'acknowledgedOverlap') === true,
     expectedVersion,
     operationId,
     actor: callerActorAsClaimed(request),
   });
 }
 
-export function encodeStaffEditAppointmentAnswer(
+/**
+ * The staff edit's wire answer, a projection: the id and the revision the
+ * sheet sends next — `replayed` stays on the server. Its refusals leave as
+ * themselves (`refusalOf`) — an overlap with its SCREAMING `resizeEdge`.
+ */
+export function staffEditedOf(
   answer: EditAppointmentAnswer,
 ): BookingCall.StaffEdited {
   return { appointmentId: answer.appointmentId, revision: answer.revision };
-}
-
-/** The staff edit's refusals leave as themselves — an overlap with its SCREAMING `resizeEdge`. */
-export function staffEditAppointmentRefusal(
-  failure: EditAppointmentError,
-): EdgeError {
-  return refusalOf(failure);
 }

@@ -1,10 +1,9 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { Collections } from '@core/entities';
 import type { LeadTimeWritePorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
 import { withPurgeAt } from './firestore-ttl.adapter';
+import { writeFailed } from './store-answer';
 
 /**
  * The lead-time sample writer (flip 1, blueprint §4.1 `sampleLeadTime`): one
@@ -23,12 +22,7 @@ export const firestoreLeadTimePorts = (db: Firestore): LeadTimeWritePorts => ({
       await db.doc(path.join('/')).set(withPurgeAt(path, body));
       return Result.ok(undefined);
     } catch (error) {
-      return Result.err(
-        RepositoryError.writeFailed(
-          path.join('/'),
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(writeFailed(path.join('/'), error));
     }
   },
 });

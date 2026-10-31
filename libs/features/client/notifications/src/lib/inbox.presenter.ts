@@ -1,14 +1,16 @@
 import { LocalizedText, NotificationTopic } from '@core/components';
 import type { InboxNotification } from '@core/entities';
 import {
-  Locale,
   type LocalDate,
   type MinuteOfDay,
   type NotificationId,
-  Tag,
   type UtcEpochMs,
 } from '@core/primitives';
-import { intlLocaleOf, relativeTime } from '@creativo/infrastructure/i18n';
+import {
+  intlLocaleOf,
+  localeFor,
+  relativeTime,
+} from '@creativo/infrastructure/i18n';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import {
   type InboxRouteVm,
@@ -175,7 +177,7 @@ function topicWordsOf(
       // Authored content in both shop languages (`LocalizedText`, like a
       // catalogue name) — the catalogue only frames it.
       const key = `notifications.topic.${notification.notificationTopic}`;
-      const locale = Tag.or(Locale, input.lang, Locale.Bg);
+      const locale = localeFor(input.lang);
       const title = LocalizedText.pick(notification.announcementTitle, locale);
       const body = notification.announcementBody;
       return {

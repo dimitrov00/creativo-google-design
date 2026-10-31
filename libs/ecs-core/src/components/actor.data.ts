@@ -31,6 +31,13 @@ export const SystemSource = {
   FirestoreSystem: 'FIRESTORE_SYSTEM',
   ProfileTrigger: 'PROFILE_TRIGGER',
   LoyaltyEngine: 'LOYALTY_ENGINE',
+  /**
+   * A sign-in callable acting before any session exists (`requestOtpChallenge`,
+   * `verifyOtpChallenge` — audit-hardening Phase 3, P3-RU-10). Never
+   * `UNATTRIBUTED_UNAUTHENTICATED`: that value says a Firestore write's auth
+   * context named nobody; this one names the process that acted.
+   */
+  IdentityCallable: 'IDENTITY_CALLABLE',
   UnattributedUnknown: 'UNATTRIBUTED_UNKNOWN',
   UnattributedApiKey: 'UNATTRIBUTED_API_KEY',
   UnattributedUnauthenticated: 'UNATTRIBUTED_UNAUTHENTICATED',

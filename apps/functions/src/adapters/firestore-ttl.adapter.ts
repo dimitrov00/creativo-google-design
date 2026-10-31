@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import { LocalDate, UtcEpochMs } from '@core/primitives';
+import { LocalDate, StoredFields, UtcEpochMs } from '@core/primitives';
 import { type DocBody, type DocPath, RetentionAnchor } from '@core/components';
 import { Collections, Subcollections } from '@core/entities';
 import { RetentionSystem } from '@core/systems';
@@ -8,9 +8,10 @@ import { RetentionSystem } from '@core/systems';
  * THE ONE `purgeAt` STAMP (flip 1, F-1-7; `firestore-layout.md`): the TTL
  * root field is the one Firestore `Timestamp` a document holds, stamped by
  * the adapter beside the entity body and never part of the entity type.
- * `firestoreCommitPlan` applies it to every `Set`/`Create` of a TTL group;
- * the lead-time sample writer, `saveOtp` and the seed call this same
- * function, so every write stamps through here.
+ * `firestoreCommitPlan` applies it to every `Set`/`Create` of a TTL group
+ * (the issued OTP challenge's `Set` among them — `requestOtp`'s commit,
+ * audit-hardening Phase 3 P3-RU-6); the lead-time sample writer and the
+ * seed call this same function, so every write stamps through here.
  *
  * The group is matched by the LAST COLLECTION SEGMENT of the path
  * (`users/u1/notifications/n1` → `notifications`); any other group answers
@@ -31,11 +32,6 @@ import { RetentionSystem } from '@core/systems';
  * a `Create` / `Set`, so the end re-stamps (Phase 4a 4A-3 (4), runbook
  * §2.1).
  */
-
-/** A root field of the body by name — no dynamic index. */
-function fieldOf(body: DocBody, field: string): unknown {
-  return Object.getOwnPropertyDescriptor(body, field)?.value;
-}
 
 /** A stored `LocalDate`, or `null` when the field is absent or no civil date. */
 function localDateOf(raw: unknown): LocalDate | null {
@@ -74,8 +70,8 @@ function localDatesOf(raw: unknown): readonly LocalDate[] {
 function impersonationAnchorOf(
   body: DocBody,
 ): RetentionAnchor.ImpersonationSessions | null {
-  const ended = fieldOf(body, 'endedAtUtcMs');
-  const expiresAtUtcMs = instantOf(fieldOf(body, 'expiresAtUtcMs'));
+  const ended = StoredFields.field(body, 'endedAtUtcMs');
+  const expiresAtUtcMs = instantOf(StoredFields.field(body, 'expiresAtUtcMs'));
   if (typeof ended === 'number') {
     const endedAtUtcMs = instantOf(ended);
     return endedAtUtcMs === null
@@ -100,27 +96,27 @@ function groupOf(path: DocPath): string | null {
 function anchorOf(path: DocPath, body: DocBody): RetentionAnchor | null {
   switch (groupOf(path)) {
     case Collections.BarberBusy: {
-      const day = localDateOf(fieldOf(body, 'localDate'));
+      const day = localDateOf(StoredFields.field(body, 'localDate'));
       return day === null ? null : RetentionAnchor.barberBusy(day);
     }
     case Collections.Capacity: {
-      const first = monthFirstDayOf(fieldOf(body, 'month'));
+      const first = monthFirstDayOf(StoredFields.field(body, 'month'));
       return first === null ? null : RetentionAnchor.capacity(first);
     }
     case Collections.WaitlistRequests:
       return RetentionAnchor.waitlistRequests(
-        localDatesOf(fieldOf(body, 'localDates')),
+        localDatesOf(StoredFields.field(body, 'localDates')),
       );
     case Subcollections.Notifications: {
-      const sent = instantOf(fieldOf(body, 'sentAtUtcMs'));
+      const sent = instantOf(StoredFields.field(body, 'sentAtUtcMs'));
       return sent === null ? null : RetentionAnchor.notifications(sent);
     }
     case Collections.BarberLeadTimeSamples: {
-      const day = localDateOf(fieldOf(body, 'localDate'));
+      const day = localDateOf(StoredFields.field(body, 'localDate'));
       return day === null ? null : RetentionAnchor.leadTimeSamples(day);
     }
     case Collections.Otps: {
-      const expires = instantOf(fieldOf(body, 'expiresAtUtcMs'));
+      const expires = instantOf(StoredFields.field(body, 'expiresAtUtcMs'));
       return expires === null ? null : RetentionAnchor.otps(expires);
     }
     case Collections.ImpersonationSessions:

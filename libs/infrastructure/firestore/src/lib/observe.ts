@@ -15,6 +15,7 @@ import {
   StoredDocumentSystem,
   type StoredGuardOf,
 } from '@core/systems';
+import { entityOf, readFailed, writeFailed } from './stored-entity';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
 /**
@@ -68,35 +69,6 @@ import { subscribeWithRetry } from './subscribe-with-retry';
  * failure into `RepositoryError.readFailed(path, reason)`, the reason being
  * Firestore's own code (`permission-denied`, `failed-precondition`).
  */
-
-/**
- * A document as its entity: the body spread beside its id. The one cast of
- * the web data layer — Firestore types a body `DocumentData`, and the
- * archetype is exactly that body plus its id (as `firestoreReadTx` does on
- * the server).
- */
-export function entityOf<E>(id: string, data: DocumentData): E {
-  return { id, ...data } as E;
-}
-
-/** The store's own reason for a failure: Firestore's `code`, else the message. */
-export function reasonOf(cause: unknown): string | null {
-  if (typeof cause === 'object' && cause !== null) {
-    const code = (cause as { readonly code?: unknown }).code;
-    if (typeof code === 'string') return code;
-  }
-  return cause instanceof Error ? cause.message : null;
-}
-
-/** A refused or failed read of `path`. */
-export function readFailed(path: string, cause: unknown): RepositoryError {
-  return RepositoryError.readFailed(path, reasonOf(cause));
-}
-
-/** A refused or failed write of `path`. */
-export function writeFailed(path: string, cause: unknown): RepositoryError {
-  return RepositoryError.writeFailed(path, reasonOf(cause));
-}
 
 /**
  * How the shared reads treat a stored document of a guarded collection —

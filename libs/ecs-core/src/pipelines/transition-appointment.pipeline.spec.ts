@@ -44,6 +44,7 @@ import {
   Result,
   SeatId,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -67,6 +68,7 @@ import {
   CouponGrantSystem,
 } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   contendedCommit,
@@ -105,11 +107,6 @@ import { transitionAppointment } from './transition-appointment.pipeline';
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
 const GUEST_SEAT = SeatId.of('seat-2');
 const VOUCHER = GiftVoucherId.of('v-1');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 function party(
   extra: Parameters<typeof appointmentFixture>[0] = {},
@@ -237,7 +234,7 @@ function rowId(
   return fixtureHash(
     AuditSystem.rowBasis(
       action,
-      FIXTURE_IDS.appointment,
+      AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
       FIXTURE_IDS.customer,
       AuditSystem.changeKey.transition(operationId, seatId),
     ),
@@ -256,9 +253,15 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
       ok: true,
       value: {
         appointmentId: FIXTURE_IDS.appointment,
-        to: BookingStatus.Confirmed,
+        toBookingStatus: BookingStatus.Confirmed,
       },
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these two keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual([
+      'appointmentId',
+      'toBookingStatus',
+    ]);
     expect(tx.plans).toEqual([
       [
         WriteOp.transition(
@@ -316,7 +319,7 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingStaffConfirmed,
-          pending.id,
+          AuditResourceId.forAppointment(pending.id),
           FIXTURE_IDS.customer,
           `transition:${opOf(BookingStatus.Confirmed)}`,
         ),

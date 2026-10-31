@@ -1,26 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, map } from 'rxjs';
-import type {
-  CourseInput,
-  PositionInput,
-  ShopEventInput,
-} from '@core/components';
 import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
-import type { ProgramSaveError } from '@core/errors';
-import {
-  type WriteProgramCommand,
-  writeCourse,
-  writePosition,
-  writeShopEvent,
-} from '@core/pipelines';
-import type {
-  CourseId,
-  EventId,
-  LocationId,
-  PositionId,
-  Result,
-} from '@core/primitives';
+import { writeCourse, writePosition, writeShopEvent } from '@core/pipelines';
+import type { LocationId } from '@core/primitives';
 import {
   CATALOG_PORTS,
   CLOCK_PORTS,
@@ -70,12 +53,13 @@ export class AdminProgramsStore {
   /** The instant splitting upcoming from past events — read ONCE, at construction, never rolling (F4-8). */
   private readonly nowUtcMs = inject(CLOCK_PORTS).nowUtcMs();
 
-  private readonly savePosition = writePosition({
+  /** The three saves, one per kind — each the browser pipeline itself. */
+  readonly submitPosition = writePosition({
     ...this.programs,
     ...this.ids,
   });
-  private readonly saveCourse = writeCourse({ ...this.programs, ...this.ids });
-  private readonly saveEvent = writeShopEvent({
+  readonly submitCourse = writeCourse({ ...this.programs, ...this.ids });
+  readonly submitEvent = writeShopEvent({
     ...this.programs,
     ...this.locations,
     ...this.defaultLocation,
@@ -147,23 +131,5 @@ export class AdminProgramsStore {
       if (answer.ok) out.set(id, answer.value);
     }
     return out;
-  }
-
-  submitPosition(
-    command: WriteProgramCommand<PositionId, PositionInput>,
-  ): Promise<Result<Position, readonly ProgramSaveError[]>> {
-    return this.savePosition(command);
-  }
-
-  submitCourse(
-    command: WriteProgramCommand<CourseId, CourseInput>,
-  ): Promise<Result<Course, readonly ProgramSaveError[]>> {
-    return this.saveCourse(command);
-  }
-
-  submitEvent(
-    command: WriteProgramCommand<EventId, ShopEventInput>,
-  ): Promise<Result<ShopEvent, readonly ProgramSaveError[]>> {
-    return this.saveEvent(command);
   }
 }

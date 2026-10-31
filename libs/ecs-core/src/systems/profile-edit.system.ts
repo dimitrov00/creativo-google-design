@@ -1,4 +1,5 @@
 import {
+  AccountLifecycle,
   type BirthDate,
   Email,
   Registration,
@@ -136,8 +137,10 @@ export const ProfileEditSystem = {
   },
 
   /**
-   * The owner's edit of a stored account. `stored` absent or not
-   * `REGISTERED` (a contact-only stub) → `ACCOUNTS_UPDATE_PROFILE_NOT_FOUND`.
+   * The owner's edit of a stored account. `stored` absent, not
+   * `REGISTERED` (a contact-only stub) or erased (Art. 17 — its live token
+   * may still call within the hour after an erasure, audit-hardening Phase 3
+   * P3-RU-17) → `ACCOUNTS_UPDATE_PROFILE_NOT_FOUND`.
    * Otherwise the effective names (the edit, else the stored one) go through
    * {@link nameRefusals} and the effective birth date (the edit, else the
    * stored one) through `AgeSystem.parseIso` on `ageDay` — today's
@@ -155,7 +158,11 @@ export const ProfileEditSystem = {
     edits: ProfileEdits,
     ageDay: LocalDate,
   ): Result<OwnerProfileFields | null, AccountsError> {
-    if (stored === null || !Registration.isRegistered(stored)) {
+    if (
+      stored === null ||
+      !Registration.isRegistered(stored) ||
+      AccountLifecycle.isErased(stored)
+    ) {
       return Result.err(AccountsError.updateProfileNotFound());
     }
     const rawFirst = edits.firstName ?? stored.firstName ?? '';

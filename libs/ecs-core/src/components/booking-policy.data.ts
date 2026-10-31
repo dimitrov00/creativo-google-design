@@ -19,8 +19,8 @@ import { SchedulingError } from '@core/errors';
  *
  * The free-cancellation window is whole hours here and wherever it is
  * stamped (`SeatOutcome`'s `cancellationWindowHours`), and one rule — the
- * `HourCount` primitive's (OR-45), which
- * {@link BookingPolicy.isValidCancellationWindowHours} answers through —
+ * `HourCount` primitive's (OR-45), `HourCount.is` — an integer number of
+ * hours, zero or more, within {@link BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS} —
  * says what a window may be, so the setting and the stamp accept exactly the
  * same numbers.
  */
@@ -89,16 +89,6 @@ export const BookingPolicy = {
    * instant. An arithmetic bound, not a product one.
    */
   CANCELLATION_WINDOW_MAX_HOURS: HourCount.MAX,
-
-  /**
-   * The ONE rule for a free-cancellation window — the setting and every
-   * stamp on a cancelled seat: an `HourCount` (`HourCount.is` — an integer
-   * number of hours, zero or more, within
-   * {@link CANCELLATION_WINDOW_MAX_HOURS}).
-   */
-  isValidCancellationWindowHours(hours: number): hours is HourCount {
-    return HourCount.is(hours);
-  },
 
   /**
    * The edge guard, every invalid field at once (one

@@ -26,6 +26,7 @@ import {
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * A client's cancel against the REAL Firestore emulator (flip 1 §5.3): the
@@ -46,12 +47,6 @@ const VOUCHER = GiftVoucherId.of('v-gift50');
 const OPERATION = OperationId.of('cancel-operation-0123456789');
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 const VOUCHER_PATH = `${Collections.GiftVouchers}/${VOUCHER}`;
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** 20,00 € of the visit paid from a 50,00 € voucher, 10,00 € left on it. */
 const LINE: VoucherRedemption = {

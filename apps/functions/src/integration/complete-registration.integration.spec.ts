@@ -6,6 +6,7 @@ import {
   AuthDeployment,
   CustomerOrigin,
   E164,
+  ErasureStatus,
   ParsedIdentifier,
   Registration,
   RegistrationState,
@@ -15,6 +16,7 @@ import {
 import {
   CustomerId,
   IdentifierChannel,
+  OperationId,
   TenantId,
   UserId,
 } from '@core/primitives';
@@ -24,13 +26,22 @@ import {
   type CompleteRegistrationCommand,
   completeRegistration,
 } from '@core/pipelines';
-import { RegistrationSystem, StoredDocumentSystem } from '@core/systems';
-import { pinnedNowUtcMs, recordingTelemetry } from '@core/testing';
+import {
+  IdentityAuditSystem,
+  RegistrationSystem,
+  StoredDocumentSystem,
+} from '@core/systems';
+import {
+  FIXTURE_NOW_UTC_MS,
+  pinnedNowUtcMs,
+  recordingTelemetry,
+} from '@core/testing';
 import { authClaimsPorts } from '../adapters/auth-claims.adapter';
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { firestoreUserPorts } from '../adapters/firestore-users.adapter';
 import { singleTenantPorts } from '../adapters/tenant.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * `completeRegistration` against the REAL Firestore and Auth emulators
@@ -38,7 +49,10 @@ import { singleTenantPorts } from '../adapters/tenant.adapter';
  * the stub, the `REGISTRATION` client record is created beside it with
  * `userId == uid`, a re-run writes the same body and no second record (two
  * concurrent ones neither), and a uid that does not own the identifier
- * writes nothing.
+ * writes nothing. The FIRST completion commits one
+ * `IDENTITY_REGISTRATION_COMPLETED` audit row with it — credited to the
+ * verified caller, naming the call's operation; a re-run, a race's loser and
+ * a forbidden call write none (audit-hardening Phase 3, P3-DEP-7).
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -55,12 +69,8 @@ if (!FIRESTORE_HOST.includes('127.0.0.1') || !AUTH_HOST.includes('127.0.0.1')) {
 const UID = UserId.of('uid-ada');
 const PHONE = E164.of('+359888123456');
 const CUSTOMER = CustomerId.forUser(UID, sha256Hex);
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
+/** A transport operation id the caller sent (WS-4.1) — the registration row names it. */
+const OPERATION = OperationId.of('operation-0123456789ab');
 
 /** Two snapshots' update times are the same instant — the document was not rewritten. */
 function sameUpdate(
@@ -151,6 +161,34 @@ describe('completeRegistration (emulator)', () => {
     (await db.collection(Collections.Customers).get()).docs.map(
       (doc) => doc.id,
     );
+  /** Every `auditLog` document as `[id, body]`. */
+  const auditRows = async (): Promise<
+    readonly (readonly [string, unknown])[]
+  > =>
+    (await db.collection(Collections.AuditLog).get()).docs.map(
+      (doc) => [doc.id, doc.data()] as const,
+    );
+
+  it('commits ONE IDENTITY_REGISTRATION_COMPLETED row with the first completion — the verified caller over the stored roles, the account, the operation (P3-DEP-7)', async () => {
+    const answer = await run({ ...command(), operationId: OPERATION });
+    expect(answer.ok).toBe(true);
+    const plan = IdentityAuditSystem.planRegistrationCompleted(
+      UID,
+      RegistrationSystem.provision(UID, ParsedIdentifier.phone(PHONE)).roles,
+      IdentifierChannel.Phone,
+      OPERATION,
+      FIXTURE_NOW_UTC_MS,
+    );
+    expect(await auditRows()).toEqual([[sha256Hex(plan.idBasis), plan.row]]);
+    expect(plan.row).toMatchObject({
+      targetUserId: UID,
+      auditOperationId: OPERATION,
+    });
+    const serialised = JSON.stringify(await auditRows());
+    for (const value of [PHONE, 'Ada', 'Lovelace']) {
+      expect(serialised, value).not.toContain(value);
+    }
+  });
 
   it('sets the flat REGISTERED body over the stub and creates the REGISTRATION client record with userId == uid', async () => {
     const answer = await run(command());
@@ -176,6 +214,7 @@ describe('completeRegistration (emulator)', () => {
       phone: PHONE,
       email: null,
       customerOrigin: CustomerOrigin.Registration,
+      erasureStatus: ErasureStatus.None,
     });
     expect((await auth.getUser(UID)).displayName).toBe('Ada Lovelace');
   });
@@ -184,16 +223,21 @@ describe('completeRegistration (emulator)', () => {
     expect((await run(command())).ok).toBe(true);
     const first = await user();
     const record = await customer();
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
     expect((await run(command())).ok).toBe(true);
     expect((await user()).data()).toEqual(first.data());
     expect(await customerIds()).toEqual([CUSTOMER]);
     expect(sameUpdate(await customer(), record)).toBe(true);
+    // A re-run changes no state, so it plans no row (P3-RU-7).
+    expect(await auditRows()).toEqual(rows);
   });
 
   it('creates ONE record when two registrations of the account race', async () => {
     const [one, two] = await Promise.all([run(command()), run(command())]);
     expect(one.ok && two.ok).toBe(true);
     expect(await customerIds()).toEqual([CUSTOMER]);
+    expect(await auditRows()).toHaveLength(1);
   });
 
   it('writes nothing for a uid that does not own the identifier', async () => {
@@ -206,5 +250,6 @@ describe('completeRegistration (emulator)', () => {
     expect(after.data()).toEqual(before.data());
     expect(sameUpdate(after, before)).toBe(true);
     expect(await customerIds()).toEqual([]);
+    expect(await auditRows()).toEqual([]);
   });
 });

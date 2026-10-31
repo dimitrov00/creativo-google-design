@@ -102,7 +102,7 @@ export class BookingConfirmedStep {
       .locations()
       .find((candidate) => candidate.id === confirmation.selection.locationId);
     return shop
-      ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
+      ? this.content.text(shop.name)
       : confirmation.selection.locationId;
   });
 

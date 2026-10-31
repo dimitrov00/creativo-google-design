@@ -5,7 +5,12 @@ import {
   RegistrationField,
   type RegistrationFields,
 } from '@core/components';
-import { IdentifierChannel, OtpId, Result } from '@core/primitives';
+import {
+  IdentifierChannel,
+  OtpId,
+  Result,
+  StoredFields,
+} from '@core/primitives';
 import {
   AccountsError,
   type CompleteRegistrationError,
@@ -18,27 +23,21 @@ import {
   PipelineError,
   type RegistrationProfileError,
   type RequestOtpError,
-  type UpdateProfileError,
   type VerifyOtpError,
 } from '@core/errors';
 import type {
-  CompleteRegistrationAnswer,
   CompleteRegistrationCommand,
   RequestOtpAnswer,
   RequestOtpCommand,
-  UpdateProfileAnswer,
   UpdateProfileCommand,
-  VerifyOtpAnswer,
   VerifyOtpCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
 import {
-  field,
   isRecord,
-  isStoreFailure,
   operationIdOf,
-  storeFailure,
+  refusalOf,
   type WireRequest,
 } from './wire-read';
 
@@ -54,17 +53,22 @@ import {
  *   verified caller first, before the payload), `updateProfile`
  *   `{ firstName, lastName, birthDate }` off a verified caller. A payload
  *   the callable cannot read is `IDENTITY_INVALID_INPUT` with today's
- *   `reason` (its `reason` words the field by its new name).
+ *   `reason` (its `reason` words the field by its new name). The client
+ *   sends `identifier` as the `Identifier` brand its own parse produced;
+ *   this edge never trusts the brand — it reads the text, and the pipeline
+ *   parses it again on the asked channel (F2-10, the Law 7.4 exception).
  * - **Out:** `{ challengeId, devCode }` (`devCode` only under the emulator,
- *   else `null`), `{ sessionKind: 'NEW' | 'RETURNING', customToken }`,
- *   `{ customToken }`, `{ changed }`.
+ *   else `null` — `otpChallengeOf`, the one projection), then
+ *   `{ sessionKind: 'NEW' | 'RETURNING', customToken }`, `{ customToken }`
+ *   and `{ changed }`: those three pipelines answer the call component's
+ *   answer itself, wired as it is.
  * - **Refusals:** one function per OTP callable turns the pipeline refusals
  *   whose meaning is the callable's own into their successors (an Auth
  *   failure as `IDENTITY_TOKEN_MINTING_FAILURE` /
  *   `IDENTITY_CLAIMS_PROMOTION_FAILURE`, a refused adoption as the token
  *   failure, an identifier as the invalid input it always answered, the
  *   registration's birth date wrapping its cause); every other refusal
- *   leaves as itself. The registration's refused profile leaves as the
+ *   leaves as itself (`updateProfile` passes `refusalOf` alone). The registration's refused profile leaves as the
  *   aggregate it always was, each nested refusal the successor of its
  *   legacy nested code. A store failure is no refusal: it is thrown, for
  *   the edge to track and answer as the callable's coded
@@ -73,23 +77,25 @@ import {
 
 /** A non-blank text field, or `null`. */
 function filledText(source: unknown, name: string): string | null {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
 // ── requestOtpChallenge ─────────────────────────────────────────────────
 
 /**
- * `{ identifierChannel, identifier }` → the command. The channel is never
- * refused (`PHONE` → SMS, anything else → e-mail); a blank `identifier` is
- * `'missing or empty destination'` — checked on the UNTRIMMED text's trim;
- * the text itself is handed on untrimmed for the pipeline's single trim
- * (F2-10).
+ * `{ identifierChannel, identifier, operationId? }` → the command. The
+ * channel is never refused (`PHONE` → SMS, anything else → e-mail); a blank
+ * `identifier` is `'missing or empty destination'` — checked on the
+ * UNTRIMMED text's trim; the text itself is handed on untrimmed for the
+ * pipeline's single trim (F2-10). The transport `operationId` is OPTIONAL
+ * (RU-21, audit-hardening Phase 3 P3-DEP-8): absent or malformed is `null`,
+ * never refused — it reaches no audit row (P3-L-20), only the outcome line.
  */
 export function decodeRequestOtp(
   request: WireRequest,
 ): Result<RequestOtpCommand, EdgeError> {
-  const identifier = field(request.data, 'identifier');
+  const identifier = StoredFields.field(request.data, 'identifier');
   if (typeof identifier !== 'string' || identifier.trim().length === 0) {
     return Result.err(
       IdentityError.invalidInput('missing or empty destination'),
@@ -97,19 +103,22 @@ export function decodeRequestOtp(
   }
   return Result.ok({
     otpDestinationType:
-      field(request.data, 'identifierChannel') === IdentifierChannel.Phone
+      StoredFields.field(request.data, 'identifierChannel') ===
+      IdentifierChannel.Phone
         ? OtpDestinationType.Sms
         : OtpDestinationType.Email,
     rawDestination: identifier,
+    operationId: operationIdOf(request.data, 'operationId'),
   });
 }
 
 /**
- * `{ challengeId, devCode }` — `devCode` only when `exposeDevCode` (the root
- * passes the `FUNCTIONS_EMULATOR` gate): there is no inbox for the e2e
- * suite to read a real code from, and production never forwards it.
+ * The challenge's wire answer, a projection: `otpId` as `challengeId`, and
+ * `devCode` only when `exposeDevCode` (the root passes the
+ * `FUNCTIONS_EMULATOR` gate): there is no inbox for the e2e suite to read a
+ * real code from, and production never forwards it.
  */
-export function encodeRequestOtpAnswer(
+export function otpChallengeOf(
   answer: RequestOtpAnswer,
   exposeDevCode: boolean,
 ): IdentityCall.RequestOtpAnswer {
@@ -125,8 +134,8 @@ export function encodeRequestOtpAnswer(
  * `IDENTITY_OTP_SEND_FAILURE`: a retry can never succeed, and the web must
  * not offer one (WS-0).
  */
-export function requestOtpRefusal(error: RequestOtpError): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
+export function requestOtpRefusal(failure: RequestOtpError): EdgeError {
+  const error = refusalOf(failure);
   if (error.errorCode === IdentityErrorCode.OtpSendUnavailable) return error;
   if (PipelineError.isPipelineError(error))
     return IdentityError.otpSendFailure();
@@ -143,15 +152,18 @@ export function requestOtpRefusal(error: RequestOtpError): EdgeError {
 // ── verifyOtpChallenge ──────────────────────────────────────────────────
 
 /**
- * `{ challengeId, code }` → the command, the refusals in today's order: a
- * blank `challengeId`, then a `code` that is not exactly six ASCII digits
- * (untrimmed — `' 123456'` is refused), then an id that is no document id.
+ * `{ challengeId, code, operationId? }` → the command, the refusals in
+ * today's order: a blank `challengeId`, then a `code` that is not exactly
+ * six ASCII digits (untrimmed — `' 123456'` is refused), then an id that is
+ * no document id. The transport `operationId` is OPTIONAL (RU-21,
+ * P3-DEP-8): absent or malformed is `null`, never refused — only the
+ * session row names it (P3-L-20).
  */
 export function decodeVerifyOtp(
   request: WireRequest,
 ): Result<VerifyOtpCommand, EdgeError> {
-  const challengeId = field(request.data, 'challengeId');
-  const code = field(request.data, 'code');
+  const challengeId = StoredFields.field(request.data, 'challengeId');
+  const code = StoredFields.field(request.data, 'code');
   if (typeof challengeId !== 'string' || challengeId.trim().length === 0) {
     return Result.err(IdentityError.invalidInput('missing or empty otpId'));
   }
@@ -168,22 +180,16 @@ export function decodeVerifyOtp(
       IdentityError.invalidInput('code must be a 6-digit string'),
     );
   }
-  return Result.ok({ otpId: otpId.value, code: otpCode.value });
-}
-
-/** `{ sessionKind, customToken }` — the SCREAMING `SessionKind`. */
-export function encodeVerifyOtpAnswer(
-  answer: VerifyOtpAnswer,
-): IdentityCall.VerifyOtpAnswer {
-  return {
-    sessionKind: answer.sessionKind,
-    customToken: answer.customToken,
-  };
+  return Result.ok({
+    otpId: otpId.value,
+    code: otpCode.value,
+    operationId: operationIdOf(request.data, 'operationId'),
+  });
 }
 
 /** A `verifyOtp` refusal (a store failure thrown). */
-export function verifyOtpRefusal(error: VerifyOtpError): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
+export function verifyOtpRefusal(failure: VerifyOtpError): EdgeError {
+  const error = refusalOf(failure);
   if (PipelineError.isPipelineError(error))
     return IdentityError.tokenMintingFailure();
   // A refused adoption answers as a failed provisioning (F2-9).
@@ -198,7 +204,7 @@ export function verifyOtpRefusal(error: VerifyOtpError): EdgeError {
 /** The about step's fields, every key present: a text as sent, anything else not sent. */
 function registrationFieldsOf(raw: unknown): RegistrationFields {
   const textOf = (name: RegistrationField): string | null => {
-    const value = field(raw, name);
+    const value = StoredFields.field(raw, name);
     return typeof value === 'string' ? value : null;
   };
   return {
@@ -227,7 +233,7 @@ export function decodeCompleteRegistration(
   if (payload === null || typeof payload !== 'object') {
     return Result.err(IdentityError.invalidInput('payload must be an object'));
   }
-  const channel = field(payload, 'identifierChannel');
+  const channel = StoredFields.field(payload, 'identifierChannel');
   if (
     channel !== IdentifierChannel.Phone &&
     channel !== IdentifierChannel.Email
@@ -244,7 +250,7 @@ export function decodeCompleteRegistration(
       IdentityError.invalidInput('missing or empty identifier'),
     );
   }
-  const fields = field(payload, 'fields');
+  const fields = StoredFields.field(payload, 'fields');
   if (!isRecord(fields)) {
     return Result.err(IdentityError.invalidInput('missing fields'));
   }
@@ -256,13 +262,6 @@ export function decodeCompleteRegistration(
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(payload, 'operationId'),
   });
-}
-
-/** `{ customToken }`. */
-export function encodeCompleteRegistrationAnswer(
-  answer: CompleteRegistrationAnswer,
-): IdentityCall.CompleteRegistrationAnswer {
-  return { customToken: answer.customToken };
 }
 
 /** The birth-date refusals — wrapped as `IDENTITY_REGISTRATION_BIRTH_DATE_INVALID`, their cause nested. */
@@ -303,9 +302,9 @@ function nestedProfileRefusal(
 
 /** A `completeRegistration` refusal (a store failure thrown). */
 export function completeRegistrationRefusal(
-  error: CompleteRegistrationError,
+  failure: CompleteRegistrationError,
 ): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
+  const error = refusalOf(failure);
   if (PipelineError.isPipelineError(error))
     return IdentityError.claimsPromotionFailure();
   if (error.errorCode === CompleteRegistrationRefusalCode.ProfileInvalid) {
@@ -326,7 +325,7 @@ export function completeRegistrationRefusal(
 type EditField = { readonly text: string | null; readonly valid: boolean };
 
 function editFieldOf(raw: unknown, name: string): EditField {
-  const value = field(raw, name);
+  const value = StoredFields.field(raw, name);
   if (value === undefined || value === null) return { text: null, valid: true };
   return typeof value === 'string'
     ? { text: value, valid: true }
@@ -362,17 +361,4 @@ export function decodeUpdateProfile(
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(request.data, 'operationId'),
   });
-}
-
-/** `{ changed }`. */
-export function encodeUpdateProfileAnswer(
-  answer: UpdateProfileAnswer,
-): IdentityCall.UpdateProfileAnswer {
-  return { changed: answer.changed };
-}
-
-/** An `updateProfile` refusal: its ecs-core code as itself (a store failure thrown). */
-export function updateProfileRefusal(error: UpdateProfileError): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
-  return error;
 }

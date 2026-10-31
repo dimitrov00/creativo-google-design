@@ -10,6 +10,12 @@ export const AccountStatus = {
   Active: 'ACTIVE',
   /** Denied — temporarily when `blockedUntilUtcMs` is set, permanently when it is `null`. */
   Blocked: 'BLOCKED',
+  /**
+   * Erased under Art. 17 (audit-hardening Phase 3 WS-D, P3-RU-17): terminal,
+   * never reverts — the account's personal values are cleared, its Auth
+   * user deleted, and every reader denies it for good.
+   */
+  Erased: 'ERASED',
 } as const;
 export type AccountStatus = (typeof AccountStatus)[keyof typeof AccountStatus];
 
@@ -27,15 +33,16 @@ export const BlockReason = {
 export type BlockReason = (typeof BlockReason)[keyof typeof BlockReason];
 
 /**
- * The live, REVOCABLE authorization status of an account — a union of flat
- * variant slices (Law 6), not an `isBlocked` boolean, so "blocked but no
- * reason" is unrepresentable. Intersected into `User` at the root: the
- * blocked variant's `blockReason` and `blockedUntilUtcMs` are root fields
- * of the account. `blockedUntilUtcMs` is the temporary block's expiry
- * (exclusive); `null` means permanent.
+ * The live authorization status of an account — a union of flat variant
+ * slices (Law 6), not an `isBlocked` boolean, so "blocked but no reason" is
+ * unrepresentable. Intersected into `User` at the root: the blocked
+ * variant's `blockReason` and `blockedUntilUtcMs` are root fields of the
+ * account. `blockedUntilUtcMs` is the temporary block's expiry (exclusive);
+ * `null` means permanent. `ACTIVE` and `BLOCKED` are REVOCABLE; `ERASED`
+ * (with its `accountErasedAtUtcMs`) is terminal — no move leaves it.
  */
 export type AccountLifecycle =
-  AccountLifecycle.Active | AccountLifecycle.Blocked;
+  AccountLifecycle.Active | AccountLifecycle.Blocked | AccountLifecycle.Erased;
 
 /** The one active slice — every active account shares this struct. */
 const ACTIVE: AccountLifecycle.Active = { accountStatus: AccountStatus.Active };
@@ -66,16 +73,35 @@ export const AccountLifecycle = {
   },
 
   /**
+   * Erased at `accountErasedAtUtcMs` (Art. 17, P3-RU-17) — the terminal
+   * variant the erasure's stamp commit moves the account to.
+   */
+  erase(accountErasedAtUtcMs: UtcEpochMs): AccountLifecycle.Erased {
+    return { accountStatus: AccountStatus.Erased, accountErasedAtUtcMs };
+  },
+
+  /** The account was erased — terminal, whatever the instant. */
+  isErased(lifecycle: AccountLifecycle): boolean {
+    return lifecycle.accountStatus === AccountStatus.Erased;
+  },
+
+  /**
    * Whether the lifecycle denies app access AS OF `nowUtcMs` (a T2 row:
    * an expiry compared in elapsed real time). A temporary block whose
    * `blockedUntilUtcMs` has come is treated as active — it auto-clears,
-   * nothing has to rewrite it. The caller passes the instant, so the check
-   * is pure.
+   * nothing has to rewrite it; an erased account is denied for good. The
+   * caller passes the instant, so the check is pure.
    */
   isBlockedAt(lifecycle: AccountLifecycle, nowUtcMs: UtcEpochMs): boolean {
-    if (lifecycle.accountStatus === AccountStatus.Active) return false;
-    if (lifecycle.blockedUntilUtcMs === null) return true;
-    return UtcEpochMs.compare(lifecycle.blockedUntilUtcMs, nowUtcMs) > 0;
+    switch (lifecycle.accountStatus) {
+      case AccountStatus.Active:
+        return false;
+      case AccountStatus.Erased:
+        return true;
+      case AccountStatus.Blocked:
+        if (lifecycle.blockedUntilUtcMs === null) return true;
+        return UtcEpochMs.compare(lifecycle.blockedUntilUtcMs, nowUtcMs) > 0;
+    }
   },
 
   /** The edge guard for an untrusted reason (an admin's dropdown pick, a stored string). */
@@ -100,5 +126,10 @@ export namespace AccountLifecycle {
     readonly blockReason: BlockReason;
     /** Temporary block expiry (exclusive); `null` = permanent. */
     readonly blockedUntilUtcMs: UtcEpochMs | null;
+  };
+  export type Erased = {
+    readonly accountStatus: typeof AccountStatus.Erased;
+    /** When the erasure's stamp commit erased the account (a lifecycle stamp, T2). */
+    readonly accountErasedAtUtcMs: UtcEpochMs;
   };
 }
