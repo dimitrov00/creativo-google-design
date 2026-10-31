@@ -352,6 +352,17 @@ if (row.auditAction === AuditAction.ProfileUpdated) {
   // @ts-expect-error — a profile row names no governed collection
   void row.governedCollection;
 }
+// An admin's roles change (security hardening S-RU-9) narrows to the same
+// Profile variant: the role tags, never a name or an impersonation field.
+if (row.auditAction === AuditAction.ProfileRolesChanged) {
+  const rolesFrom: readonly Role[] | null = row.profileRolesFrom;
+  const rolesTo: readonly Role[] | null = row.profileRolesTo;
+  void rolesFrom;
+  void rolesTo;
+  void row.profileFields;
+  // @ts-expect-error — a roles change carries no impersonation session
+  void row.impersonationSessionId;
+}
 if (row.auditAction === AuditAction.GovernanceImpersonationStarted) {
   const session: ImpersonationSessionId = row.impersonationSessionId;
   const expires: UtcEpochMs = row.impersonationExpiresAtUtcMs;

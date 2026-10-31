@@ -106,7 +106,7 @@ describe('firestoreAuditPorts', () => {
           fields: {
             action: AuditAction.BookingStaffCreated,
             resourceId: 'a1',
-            error: 'Error: unavailable',
+            reason: 'unknown',
           },
         },
       ]);
@@ -164,7 +164,7 @@ describe('firestoreAuditPorts', () => {
           msg: 'audit write failed',
           fields: expect.objectContaining({
             action: AuditAction.BookingStaffCreated,
-            error: expect.stringContaining('PERMISSION_DENIED'),
+            reason: 'permission-denied',
           }),
         },
       ]);
@@ -260,6 +260,66 @@ describe('firestoreAuditPorts', () => {
         failureCode: 'permission-denied',
         attemptOutcome: AttemptOutcome.Permanent,
       });
+    });
+  });
+
+  describe('a failure names its canonical code, never the SDK’s message (S-DEP-2)', () => {
+    const leaky = (): Error =>
+      Object.assign(new Error('14 UNAVAILABLE: no route to +359880000777'), {
+        code: 14,
+      });
+
+    it('the backfill row’s failure line holds the code as `reason`, no message', async () => {
+      const failing = {
+        collection: () => ({ doc: (id: string) => ({ id }) }),
+        batch: () => ({
+          create: () => undefined,
+          commit: async () => {
+            throw leaky();
+          },
+        }),
+      } as unknown as Firestore;
+      const telemetry = recordingTelemetry();
+      await firestoreAuditPorts(failing, telemetry).appendAudit([
+        row('r1', null),
+      ]);
+      expect(telemetry.lines).toEqual([
+        {
+          level: 'error',
+          msg: 'audit write failed',
+          fields: {
+            action: AuditAction.BookingStaffCreated,
+            resourceId: 'a1',
+            reason: 'unavailable',
+          },
+        },
+      ]);
+      expect(JSON.stringify(telemetry.lines)).not.toContain('359880000777');
+    });
+
+    it('the backfill read answers the code as its reason', async () => {
+      const failing = {
+        collection: () => ({
+          where: () => ({
+            get: async () => {
+              throw leaky();
+            },
+          }),
+        }),
+      } as unknown as Firestore;
+      const result = await firestoreAuditPorts(
+        failing,
+        recordingTelemetry(),
+      ).auditActionsFor([AppointmentId.of('a1')]);
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          errorCode: RepositoryErrorCode.ReadFailed,
+          path: 'auditLog',
+          reason: 'unavailable',
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('359880000777');
     });
   });
 

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore, Timestamp } from 'firebase-admin/firestore';
 import {
+  AccountLifecycle,
   Actor,
   AuditAction,
   AuditTargetRef,
@@ -16,13 +17,15 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
-import { Collections } from '@core/entities';
+import { Collections, type User } from '@core/entities';
 import { StoredDocumentSystem } from '@core/systems';
 import { endImpersonation, startImpersonation } from '@core/pipelines';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   pinnedNowUtcMs,
   recordingTelemetry,
+  registeredUserFixture,
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
@@ -38,6 +41,9 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
  * (DEP-12) each start and each end also CREATES its audit row in the same
  * commit — credited to the admin, targeted at the impersonated user, on the
  * session's resource, never carrying the reason; the refusal writes none.
+ * Since security hardening S-DEP-3 a start reads `users/{target}` in its
+ * commit, so each start case seeds the target's account after the clear;
+ * an ERASED target writes no session and no audit row.
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -122,6 +128,12 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
   const purgeAtOf = (body: Record<string, unknown> | undefined): number =>
     (body?.['purgeAt'] as Timestamp).toMillis();
 
+  /** The target's stored account — registered unless a case says otherwise. */
+  const seedTarget = (overrides: Partial<User> = {}) =>
+    db
+      .doc(`${Collections.Users}/${CLIENT}`)
+      .set(bodyOf(registeredUserFixture({ id: CLIENT, ...overrides })));
+
   const start = () =>
     startImpersonation(ports())({
       adminUserId: OWNER,
@@ -135,6 +147,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
     });
 
   it('starts ONE session, stamped to purge 30 days after its expiry', async () => {
+    await seedTarget();
     expect(await start()).toEqual({ ok: true, value: { sessionId: SESSION } });
     const body = await stored();
     expect(body).toMatchObject({
@@ -157,6 +170,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
   });
 
   it('ends it with ONE Set of the ended body — purgeAt RE-STAMPED on the end + 30 days', async () => {
+    await seedTarget();
     await start();
     expect(
       await endImpersonation(ports(ENDED))({
@@ -190,6 +204,17 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       }),
     );
     expect(JSON.stringify(rows)).not.toContain('support ticket 42');
+  });
+
+  it('refuses an ERASED target — no session, no audit row (S-DEP-3)', async () => {
+    await seedTarget(AccountLifecycle.erase(FIXTURE_NOW_UTC_MS));
+    const answer = await start();
+    expect(!answer.ok && answer.error).toEqual({
+      errorCode: GovernanceErrorCode.ImpersonationTargetErased,
+      targetUserId: CLIENT,
+    });
+    expect(await stored()).toBeUndefined();
+    expect(await auditRows()).toEqual([]);
   });
 
   it('refuses a session nobody holds, and writes nothing', async () => {

@@ -7,6 +7,7 @@ import {
   GovernanceCall,
   IdentityCall,
   InvitationCall,
+  RolesCall,
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
@@ -27,8 +28,9 @@ import type { PipelineError } from '@core/errors';
  * adds `reportClientIssues`, the web's first-party issue sink (OR-34);
  * audit-hardening Phase 3 adds `exportClientData`, the admin's data-subject
  * export (WS-C), and `previewClientErasure` / `eraseClient`, the admin's
- * erasure (WS-D). Triggers and schedules are never dialled, so they are not
- * here.
+ * erasure (WS-D); security hardening adds `setRoles`, the admin's roles
+ * change (S-WS-E). Triggers and schedules are never dialled, so they are
+ * not here.
  */
 export const Callables = {
   RequestOtpChallenge: 'requestOtpChallenge',
@@ -54,6 +56,7 @@ export const Callables = {
   ExportClientData: 'exportClientData',
   PreviewClientErasure: 'previewClientErasure',
   EraseClient: 'eraseClient',
+  SetRoles: 'setRoles',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -177,6 +180,16 @@ export type CallableWire = {
     readonly input: ClientPrivacyCall;
     readonly answer: ClientPrivacyCall.Erasure;
   };
+  /**
+   * An admin's roles change (security hardening S-WS-E): the account and
+   * the whole new set in — the act's transport operation id rides the
+   * payload ({@link OPERATION_ID_FIELD}), the impersonation calls' shape;
+   * the stored set and whether anything was written out.
+   */
+  readonly [Callables.SetRoles]: {
+    readonly input: RolesCall;
+    readonly answer: RolesCall.Changed;
+  };
 };
 
 /**
@@ -221,6 +234,7 @@ export const OPERATION_ID_FIELD: {
   [Callables.ExportClientData]: 'operationId',
   [Callables.PreviewClientErasure]: 'operationId',
   [Callables.EraseClient]: 'operationId',
+  [Callables.SetRoles]: 'operationId',
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -281,4 +295,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.ExportClientData]: ClientPrivacyCall.decodeExported,
   [Callables.PreviewClientErasure]: ClientPrivacyCall.decodeErasurePreview,
   [Callables.EraseClient]: ClientPrivacyCall.decodeErasure,
+  [Callables.SetRoles]: RolesCall.decodeChanged,
 };

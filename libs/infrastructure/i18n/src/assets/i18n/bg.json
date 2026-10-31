@@ -160,6 +160,11 @@
     "PRIVACY_ERASURE_STAFF_ACCOUNT": "Профил на служител не може да се изтрие оттук.",
     "PRIVACY_ACCOUNT_LINK_MISMATCH": "Профилът не съвпада със записа на клиента. Свържи се с поддръжката.",
     "PRIVACY_ERASURE_TOO_LARGE": "Записите са твърде много за едно изтриване. Свържи се с поддръжката.",
+    "GOVERNANCE_ROLES_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
+    "GOVERNANCE_ROLES_TARGET_NOT_FOUND": "Не намерихме този профил.",
+    "GOVERNANCE_ROLES_TARGET_NOT_REGISTERED": "Този човек още не е завършил регистрацията си.",
+    "GOVERNANCE_ROLES_TARGET_ERASED": "Личните данни на този клиент са изтрити.",
+    "GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED": "Ролите са запазени, но старите сесии не бяха прекратени. Опитай пак.",
     "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Опитай пак.",
     "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Опитай пак.",
     "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Опитай пак.",
@@ -2126,6 +2131,18 @@
       "alertBody": "Посещения: {{visits}} · Бележки: {{notes}} · Снимки: {{photos}} · Профили за вход: {{accounts}} · Други записи със същия телефон или имейл: {{siblings}}. Името, телефонът и имейлът изчезват, профилът за вход се изтрива. Посещенията и плащанията остават.",
       "eraseConfirm": "Изтрий",
       "eraseKeep": "Отказ"
+    },
+    "roles": {
+      "groupLabel": "Роли",
+      "role": {
+        "client": "Клиент",
+        "barber": "Бръснар",
+        "receptionist": "Рецепция",
+        "content_manager": "Съдържание",
+        "admin": "Администратор"
+      },
+      "save": "Запази ролите",
+      "saved": "Ролите са запазени. Важат от следващото влизане."
     }
   },
   "visits": {

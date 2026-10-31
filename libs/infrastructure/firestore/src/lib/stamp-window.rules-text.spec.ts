@@ -97,8 +97,10 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
 
   it('windows a note’s create and update beside its author, and leaves its delete to the book', () => {
     const notes = folded(matchBlock('/appointmentNotes/{appointmentId}'));
+    // Security hardening S-DEP-5 (S-RU-8): the id proof and the key list
+    // follow the window — the author check and the one stamp stay first.
     expect(notes).toContain(
-      'allow create, update: if worksTheBook() && request.resource.data.authorUserId == request.auth.uid && stampInWindow(request.resource.data.writtenAtUtcMs);',
+      "allow create, update: if worksTheBook() && request.resource.data.authorUserId == request.auth.uid && stampInWindow(request.resource.data.writtenAtUtcMs) && request.resource.data.keys().hasOnly(['authorUserId', 'text', 'writtenAtUtcMs']) && exists(/databases/$(database)/documents/appointments/$(appointmentId));",
     );
     expect(notes).toContain('allow read: if worksTheBook();');
     expect(notes).toContain('allow delete: if worksTheBook();');
@@ -107,8 +109,11 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
 
   it('windows a photo’s create beside its taker, refuses every update, and leaves its delete to the book', () => {
     const photos = folded(matchBlock('/appointmentPhotos/{photoId}'));
+    // Security hardening S-DEP-5 (S-RU-8): the id proofs, the key list and
+    // the origin / path pins follow the window — the taker check and the one
+    // stamp stay first.
     expect(photos).toContain(
-      'allow create: if worksTheBook() && request.resource.data.takenByUserId == request.auth.uid && stampInWindow(request.resource.data.takenAtUtcMs);',
+      "allow create: if worksTheBook() && request.resource.data.takenByUserId == request.auth.uid && stampInWindow(request.resource.data.takenAtUtcMs) && photoId.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') && request.resource.data.keys().hasOnly(['appointmentId', 'barberId', 'clientCustomerId', 'clientLabel', 'height', 'label', 'path', 'photoOrigin', 'takenAtUtcMs', 'takenByUserId', 'url', 'width']) && request.resource.data.appointmentId is string && request.resource.data.photoOrigin in ['SHOT', 'LIBRARY'] && (request.resource.data.photoOrigin != 'SHOT' || request.resource.data.path == 'appointmentPhotos/' + request.resource.data.appointmentId + '/' + photoId) && exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId));",
     );
     expect(photos).toContain('allow read: if worksTheBook();');
     expect(photos).toContain('allow update: if false;');

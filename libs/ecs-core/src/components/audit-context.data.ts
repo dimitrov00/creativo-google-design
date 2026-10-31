@@ -89,6 +89,12 @@ export const AuditAction = {
   ProfileCreated: 'PROFILE_CREATED',
   ProfileUpdated: 'PROFILE_UPDATED',
   ProfileDeleted: 'PROFILE_DELETED',
+  /**
+   * An admin changed an account's roles through `setRoles` (security
+   * hardening S-WS-E, S-RU-9): written inside the `users` commit, credited
+   * to the admin, the roles before / after as tags (`profileRolesFrom/To`).
+   */
+  ProfileRolesChanged: 'PROFILE_ROLES_CHANGED',
   /** An admin opened an impersonation session (no REVOKED verb: nothing revokes). */
   GovernanceImpersonationStarted: 'GOVERNANCE_IMPERSONATION_STARTED',
   /** A session was ended — by an admin, or found lapsed at the end call. */

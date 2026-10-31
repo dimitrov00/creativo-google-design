@@ -21,7 +21,7 @@ import {
 } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import type { AppointmentNote, AppointmentPhoto } from '@core/entities';
-import type { ClockPorts } from '@core/ports';
+import type { ClockPorts, IdPorts } from '@core/ports';
 import {
   type VisitPhotoSubject,
   adoptVisitPhoto,
@@ -30,9 +30,10 @@ import {
   saveTeamNote,
 } from '@core/pipelines';
 import {
+  appointmentFixture,
+  bodyOf,
   customerOf,
   memoryAppointmentPhotoPorts,
-  memoryIdPorts,
   recordingTelemetry,
   unwrapErr,
   unwrapOk,
@@ -62,10 +63,21 @@ import { guardedReads } from './observe';
  *
  * The clock the pipelines read is the EMULATOR's (`emulatorNowMs`, RU-18):
  * the rule judges `request.time`, which no spec can pin.
+ *
+ * Since security hardening S-DEP-5 a note or a photo must name a visit that
+ * exists, and a photo id is UUID-shaped (its one minter is the browser's
+ * `crypto.randomUUID()`): each case runs on a seeded `appointments/appt-1`,
+ * and the photo writer's id source answers {@link PHOTO_ID}.
  */
 
 const APPOINTMENT = AppointmentId.of('appt-1');
 const NOTE_PATH = `appointmentNotes/${APPOINTMENT}`;
+
+/** The id every photo below is written under — UUID-shaped, as `browserIdPorts` mints. */
+const PHOTO_ID = '7c3e9a51-2f4b-4d8e-9a6c-0b1d2e3f4a5b';
+
+/** The photo pipelines' id source: one photo per case, so one fixed UUID. */
+const photoIds: IdPorts = { nextId: () => PHOTO_ID };
 
 /** The book's two workers: the author of each write is its caller. */
 const IVAN = 'staff-ivan';
@@ -86,6 +98,15 @@ describe('the visit-media writers under firestore.rules (emulator)', () => {
   beforeEach(async () => {
     telemetry = recordingTelemetry();
     await testEnv.clearFirestore();
+    // The visit every note and photo below names (rules off — appointments
+    // are callable-only): `firestore.rules` admits neither for a visit that
+    // does not exist (S-DEP-5).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `appointments/${APPOINTMENT}`),
+        bodyOf(appointmentFixture()),
+      );
+    });
   });
 
   /** A signed-in caller whose ID token carries exactly these role claims. */
@@ -248,7 +269,7 @@ describe('the visit-media writers under firestore.rules (emulator)', () => {
       const photos: AppointmentPhoto[] = [];
       return {
         ...memoryAppointmentPhotoPorts(photos),
-        ...memoryIdPorts('photo'),
+        ...photoIds,
         ...clock,
         saveAppointmentPhoto: async (
           photo: AppointmentPhoto,
@@ -284,10 +305,12 @@ describe('the visit-media writers under firestore.rules (emulator)', () => {
 
       expect(photo.takenAtUtcMs).toBe(landed);
       expect(photo.takenByUserId).toBe(IVAN);
+      expect(photo.id).toBe(PHOTO_ID);
       expect(await stored(`appointmentPhotos/${photo.id}`)).toMatchObject({
         takenByUserId: IVAN,
         takenAtUtcMs: landed,
         photoOrigin: PhotoOrigin.Shot,
+        path: `appointmentPhotos/${APPOINTMENT}/${PHOTO_ID}`,
       });
     });
 
@@ -323,7 +346,7 @@ describe('the visit-media writers under firestore.rules (emulator)', () => {
       expect(unwrapErr(refused).errorCode).toBe(
         RepositoryErrorCode.WriteFailed,
       );
-      expect(await stored('appointmentPhotos/photo-1')).toBeNull();
+      expect(await stored(`appointmentPhotos/${PHOTO_ID}`)).toBeNull();
     });
   });
 });

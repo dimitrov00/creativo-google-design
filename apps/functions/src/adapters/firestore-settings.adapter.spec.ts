@@ -67,4 +67,26 @@ describe('firestoreSettingsPorts — settings/bookingPolicy', () => {
       RepositoryErrorCode.ReadFailed,
     );
   });
+
+  it('answers the failure’s canonical code as its reason — never the SDK’s message (S-DEP-2)', async () => {
+    const db = {
+      doc: () => ({
+        get: async () => {
+          throw Object.assign(new Error('deadline for +359880000777'), {
+            code: 4,
+          });
+        },
+      }),
+    } as unknown as Firestore;
+    const result = await firestoreSettingsPorts(db).loadPolicy();
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'settings/bookingPolicy',
+        reason: 'deadline-exceeded',
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('359880000777');
+  });
 });

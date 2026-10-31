@@ -16,7 +16,7 @@ import type {
   ClockPorts,
   CouponVoucherPorts,
   CourseReadPorts,
-  CustomerPorts,
+  CustomerReadPorts,
   CustomerSearchPorts,
   DefaultLocationPorts,
   FlagsPorts,
@@ -31,6 +31,7 @@ import type {
   PositionReadPorts,
   ProfilePorts,
   ProgramsPorts,
+  RolesAdminPorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
   ShopEventReadPorts,
@@ -107,8 +108,8 @@ export const APPOINTMENT_NOTE_PORTS = new InjectionToken<AppointmentNotePorts>(
 export const APPOINTMENT_PHOTO_PORTS =
   new InjectionToken<AppointmentPhotoPorts>('APPOINTMENT_PHOTO_PORTS');
 
-/** The signed-in account's client record (`CustomerPorts`). */
-export const CUSTOMER_PORTS = new InjectionToken<CustomerPorts>(
+/** A client record — an account's by its uid, a walk-in's by its id (`CustomerReadPorts`). */
+export const CUSTOMER_PORTS = new InjectionToken<CustomerReadPorts>(
   'CUSTOMER_PORTS',
 );
 
@@ -203,6 +204,15 @@ export const OTP_CHALLENGE_PORTS = new InjectionToken<OtpChallengePorts>(
  */
 export const CLIENT_PRIVACY_PORTS =
   new InjectionToken<ClientPrivacyGatewayPorts>('CLIENT_PRIVACY_PORTS');
+
+/**
+ * The admin's roles change on the staff client card (`RolesAdminPorts`,
+ * security hardening S-WS-E, S-RU-13): `setRoles`, the «Роли» block's one
+ * callable. The card injects it optionally — unbound, the block is absent.
+ */
+export const ROLES_ADMIN_PORTS = new InjectionToken<RolesAdminPorts>(
+  'ROLES_ADMIN_PORTS',
+);
 
 /**
  * The deployment's authentication configuration (`AuthDeploymentPorts`) —

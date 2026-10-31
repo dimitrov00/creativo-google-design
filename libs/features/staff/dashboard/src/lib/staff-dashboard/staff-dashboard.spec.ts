@@ -7638,6 +7638,55 @@ describe('StaffDashboard', () => {
     }
   });
 
+  // S-WS-F (security hardening): a stored WALK_IN seat hands the editor
+  // its record id as its own field (S-RU-15) — what opens the walk-in's
+  // card keyed by the record; an anonymous seat has none.
+  it('carries a WALK_IN seat’s record id to the editor’s people, and none for an anonymous seat', async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const walkInId = CustomerId.of('cus_7070707070707070707a');
+    // Both people in Ivan's chair, one after the other: one row, two people.
+    const seatFor = (startsAt: string, occupant: SeatOccupant) =>
+      seatAt({ chair: 'ivan', startsAt, occupant, serviceId: 'fade' });
+    const party = visitOf('appointment-walk-in', [
+      seatFor(
+        '2026-08-05T10:00:00',
+        SeatOccupant.walkIn(walkInId, SeatLabel.of('Иво')),
+      ),
+      seatFor(
+        '2026-08-05T10:30:00',
+        SeatOccupant.anonymous(SeatLabel.of('Петър')),
+      ),
+    ]);
+    observeBarberDay.mockImplementation((barberId: string) =>
+      of(PortResult.ok(barberId === 'ivan' ? [party] : [])),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-row-id="appointment-walk-in#ivan"]',
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+        .componentInstance as StaffVisitEditor;
+      expect(
+        (editor.vm().people ?? []).map((person) => [
+          person.id,
+          person.customerId,
+        ]),
+      ).toEqual([
+        ['guest-Иво', walkInId],
+        ['guest-Петър', null],
+      ]);
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
   /*
    * ── THE TOOLBAR BOX, OFF THE RENDER HOOK (2026-10-06) ─────────────────
    * `watchToolbar` keeps asking for the bar frame by frame, which puts it

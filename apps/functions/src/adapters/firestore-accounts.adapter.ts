@@ -1,8 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result, type UserId } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { type AccountContact, Collections } from '@core/entities';
 import type { AccountContactPorts } from '@core/ports';
+import { readFailed } from './store-answer';
 
 /**
  * The FIRST_BOOKING contact snapshot (flip 1, F1-5): `users/{uid}` of every
@@ -33,9 +33,7 @@ export const firestoreAccountPorts = (db: Firestore): AccountContactPorts => ({
       }
       return Result.ok(contacts);
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(Collections.Users, String(error)),
-      );
+      return Result.err(readFailed(Collections.Users, error));
     }
   },
 });

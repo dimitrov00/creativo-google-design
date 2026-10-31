@@ -79,9 +79,10 @@ import {
  * `CALLER_NOT_ADMIN` are ANSWERED (`REFUSED`); `CALLER_UNAUTHENTICATED` and
  * an envelope the callable cannot read are thrown as themselves; ANY
  * `RepositoryError` is logged — the struct's `reason` when it has one (a
- * rejected commit's `String(cause)`), else `errorCode path` (a taken
- * version number's `ALREADY_EXISTS`, F3-1 (c)) — and thrown as
- * `LOYALTY_STREAK_PUBLISH_STORE_FAILED`, the cause never in `details`.
+ * rejected commit's canonical code, never the cause's message), else
+ * `errorCode path` (a taken version number's `ALREADY_EXISTS`, F3-1 (c)) —
+ * and thrown as `LOYALTY_STREAK_PUBLISH_STORE_FAILED`, the cause never in
+ * `details`.
  */
 export function publishStreakRefusal(
   failure: StreakPublishError.Failure,

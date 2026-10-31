@@ -30,6 +30,7 @@ import {
   type TriggerFailurePorts,
 } from '@core/ports';
 import {
+  FailureCodeSystem,
   GovernedChangeSystem,
   LogDigestSystem,
   StoredDocumentSystem,
@@ -59,6 +60,7 @@ import {
   rescheduleAppointment as rescheduleAppointmentPipeline,
   runBackfill as runBackfillPipeline,
   sampleLeadTime,
+  setRoles as setRolesPipeline,
   startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
@@ -66,7 +68,10 @@ import {
   updateProfile as updateProfilePipeline,
   verifyOtp,
 } from '@core/pipelines';
-import { authClaimsPorts } from './adapters/auth-claims.adapter';
+import {
+  authClaimsPorts,
+  authSessionRevokePorts,
+} from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { authEraserPorts } from './adapters/firebase-auth-eraser.adapter';
 import {
@@ -130,6 +135,7 @@ import {
 } from './wire/client-issue.wire';
 import {
   decodeEndImpersonation,
+  decodeSetRoles,
   decodeStartImpersonation,
 } from './wire/governance.wire';
 import {
@@ -230,7 +236,9 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * (P3-DEP-15, P3-DEP-19) added the admin's data-subject erasure — the
  * read-only `previewClientErasure` and the resumable `eraseClient` (540 s,
  * 512 MiB, the `runBackfill` idiom: its work budgeted by its timeout) —
- * both bound to the same two keys: 50 exports.
+ * both bound to the same two keys: 50 exports. Security hardening (S-WS-E,
+ * S-DEP-6) added `setRoles`, the admin's audited roles change — bound to
+ * the log digest key: 51 exports.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -324,8 +332,9 @@ const edge: CallableEdgePorts & TriggerFailurePorts = {
 };
 
 /**
- * Admin Auth, built on first use and SHARED — the identity callables' and
- * the erasure pair's (an instance builds its Auth client once).
+ * Admin Auth, built on first use and SHARED — the identity callables', the
+ * erasure pair's and the roles change's (an instance builds its Auth client
+ * once).
  */
 const auth = once(() => adminAuth());
 
@@ -357,14 +366,17 @@ const identityPorts = once(() => ({
  * The commit port as the streak publish has always failed: a commit that
  * REJECTS — contention retries exhausted, a deadline or network fault, a
  * defect thrown inside the decision — answers
- * `RepositoryError.writeFailed(null, String(cause))`, the value the
- * callable logs (`'rhythm rule write failed'`, the cause's text) and
- * answers as its store failure (flip-3 plan §3.3).
+ * `RepositoryError.writeFailed(null, FailureCodeSystem.codeOf(cause))`, the
+ * value the callable logs (`'rhythm rule write failed'`, the cause's
+ * canonical code — never its message, Phase 4 S-RU-2) and answers as its
+ * store failure (flip-3 plan §3.3).
  */
 function settledCommit(commit: CommitPlan): CommitPlan {
   return (read, decide) =>
     commit(read, decide).catch((cause: unknown) =>
-      Result.err(RepositoryError.writeFailed(null, String(cause))),
+      Result.err(
+        RepositoryError.writeFailed(null, FailureCodeSystem.codeOf(cause)),
+      ),
     );
 }
 
@@ -466,6 +478,12 @@ const erasurePorts = once(() => ({
   ...storageObjectPorts(adminBucket()),
 }));
 
+/** The admin roles change's ports: the server ports and Admin Auth's session revocation. Built on first use. */
+const rolesPorts = once(() => ({
+  ...serverPorts(),
+  ...authSessionRevokePorts(auth()),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -478,6 +496,7 @@ const root = {
   privacy: privacyPorts,
   erasurePreview: previewPorts,
   erasure: erasurePorts,
+  roles: rolesPorts,
 } as const;
 
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
@@ -1144,6 +1163,23 @@ export const redeemInvitation = onCall(
     root.ports,
     decodeRedeemInvitation,
     (ports, cmd) => redeemInvitationPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * An admin changes one account's roles (security hardening S-WS-E) —
+ * `users.roles` and its `PROFILE_ROLES_CHANGED` row in one commit, then the
+ * target's sessions revoked so their next token is minted from the written
+ * roles (S-RU-10). The only callable that writes `users.roles`.
+ */
+export const setRoles = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.SetRoles, null),
+    root.roles,
+    decodeSetRoles,
+    (ports, cmd) => setRolesPipeline(ports)(cmd),
     refusalOf,
   ),
 );

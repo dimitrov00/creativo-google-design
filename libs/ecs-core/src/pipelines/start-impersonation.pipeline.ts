@@ -11,10 +11,19 @@ import {
   LogEvent,
   type OperationId,
   Result,
+  Tag,
   type UserId,
 } from '@core/primitives';
-import { GovernanceError, type StartImpersonationError } from '@core/errors';
-import { Collections, type ImpersonationSession } from '@core/entities';
+import {
+  GovernanceError,
+  GovernanceErrorCode,
+  type StartImpersonationError,
+} from '@core/errors';
+import {
+  Collections,
+  type ImpersonationSession,
+  type User,
+} from '@core/entities';
 import type {
   ClockPorts,
   CommitPorts,
@@ -36,14 +45,22 @@ import { AuditSystem, ImpersonationSystem } from '@core/systems';
  * the structural invariants (no self-impersonation, a reason, an expiry
  * after the start) and its own staff gate — over a minted id and the
  * server's clock; a refused start leaves as the FIRST of its faults, one
- * flat refusal per call (Law 7.5). Then ONE commit of two `Create`s: the
- * flat `ACTIVE` body, and its audit row (audit-hardening WS-3, DEP-12 —
+ * flat refusal per call (Law 7.5). Then ONE commit (Law 4: the transaction
+ * is the sandwich) that reads the target's `users/{uid}` — the ONE read —
+ * and asks `ImpersonationSystem.admitTarget` (security hardening S-RU-5):
+ * an absent, `ERASED` or never-registered target is refused with its code
+ * and nothing is written (an erasure committing meanwhile is serialised by
+ * the transaction); a `BLOCKED` one is admitted. An admitted target's plan
+ * is two `Create`s: the flat `ACTIVE` body, and its audit row
+ * (audit-hardening WS-3, DEP-12 —
  * `AuditSystem.planImpersonationStarted`: credited to the caller as
  * `Actor.forCaller` sees them (RU-13: the sysadmin is STAFF, never the
  * owner), naming the call's transport operation id, never the reason) under
  * `hash(idBasis)` — the row lands with the session or not at all, and is
  * never TTL'd. The functions TTL adapter stamps the session's `purgeAt`
- * (`expiresAtUtcMs` + 30 d, runbook §2.1). Nothing is read.
+ * (`expiresAtUtcMs` + 30 d, runbook §2.1). Every governance refusal
+ * logs the one `impersonation.start.refused` line with its code; a store
+ * failure answers as the commit answers it.
  */
 
 export type StartImpersonationPorts = CommitPorts &
@@ -116,9 +133,16 @@ export const startImpersonation =
     const { id, ...body } = session;
     const actor = Actor.forCaller(admitted.value, cmd.adminRoles);
     const committed = await ports.commit(
-      async () => null,
-      (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
-        Result.ok({
+      (tx) => tx.get<User>([Collections.Users, session.targetUserId]),
+      (
+        stored,
+      ): Result<{ readonly writes: readonly WriteOp[] }, GovernanceError> => {
+        const target = ImpersonationSystem.admitTarget(
+          stored,
+          session.targetUserId,
+        );
+        if (!target.ok) return target;
+        return Result.ok({
           writes: [
             WriteOp.create(impersonationSessionPath(id), body),
             ...AuditSystem.createsOf(
@@ -132,9 +156,17 @@ export const startImpersonation =
               ports.hash,
             ),
           ],
-        }),
+        });
+      },
     );
-    if (!committed.ok) return committed;
+    if (!committed.ok) {
+      if (Tag.has(GovernanceErrorCode, committed.error.errorCode)) {
+        ports.log('info', LogEvent.ImpersonationStartRefused, {
+          errorCode: committed.error.errorCode,
+        });
+      }
+      return committed;
+    }
     ports.log('info', LogEvent.ImpersonationStarted, {
       sessionId: id,
       adminUserId: session.adminUserId,

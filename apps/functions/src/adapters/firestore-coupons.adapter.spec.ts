@@ -51,4 +51,22 @@ describe('firestoreCouponPorts — the typed-code lookup', () => {
       RepositoryErrorCode.ReadFailed,
     );
   });
+
+  it('answers the failure’s canonical code as its reason — never the SDK’s message (S-DEP-2)', async () => {
+    const failing = {
+      collection: () => {
+        throw new Error('lookup for +359880000777 failed');
+      },
+    } as unknown as Firestore;
+    const result = await firestoreCouponPorts(failing).findCouponByCode(SUMMER);
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'coupons',
+        reason: 'unknown',
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('359880000777');
+  });
 });

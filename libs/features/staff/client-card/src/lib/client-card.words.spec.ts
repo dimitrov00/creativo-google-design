@@ -1172,6 +1172,37 @@ describe('the erasure’s words (audit-hardening Phase 3, WS-D)', () => {
   });
 });
 
+describe('the «Роли» block’s words (security hardening S-WS-E)', () => {
+  it('words the group, the five assignable roles, Save and the saved line in bg and en', () => {
+    const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
+    const en = clientCardWordsOf(translatorOf('en'), 'en');
+    expect(bg.roles).toEqual({
+      groupLabel: 'Роли',
+      role: {
+        client: 'Клиент',
+        barber: 'Бръснар',
+        receptionist: 'Рецепция',
+        content_manager: 'Съдържание',
+        admin: 'Администратор',
+      },
+      save: 'Запази ролите',
+      saved: 'Ролите са запазени. Важат от следващото влизане.',
+    });
+    expect(en.roles).toEqual({
+      groupLabel: 'Roles',
+      role: {
+        client: 'Client',
+        barber: 'Barber',
+        receptionist: 'Front desk',
+        content_manager: 'Content',
+        admin: 'Admin',
+      },
+      save: 'Save roles',
+      saved: 'Roles saved. They apply from the next sign-in.',
+    });
+  });
+});
+
 describe('the gaps K1b fills (lead ruling G1-6)', () => {
   const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
   const en = clientCardWordsOf(translatorOf('en'), 'en');

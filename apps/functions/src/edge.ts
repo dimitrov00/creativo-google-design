@@ -502,6 +502,27 @@ const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
   // The impersonation callables' caller gate (Phase 4a 4A-3 (4)).
   [GovernanceErrorCode.ImpersonationUnauthenticated]: fields(S.Unauthenticated),
   [GovernanceErrorCode.ImpersonationForbidden]: fields(S.PermissionDenied),
+  // The start's target guard (security hardening S-RU-5): no account, an
+  // erased one, a stub that never registered — the code alone, the uid
+  // stays on the server.
+  [GovernanceErrorCode.ImpersonationTargetNotFound]: fields(S.NotFound),
+  [GovernanceErrorCode.ImpersonationTargetErased]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.ImpersonationTargetNotRegistered]: fields(
+    S.FailedPrecondition,
+  ),
+  // The admin's roles change (security hardening S-WS-E, S-L-15): the
+  // caller's gate, a malformed set, one's own account, a target that is
+  // absent / unregistered / erased / the vendor's sysadmin — the code alone,
+  // the uids stay on the server; a failed revoke is retryable.
+  [GovernanceErrorCode.RolesUnauthenticated]: fields(S.Unauthenticated),
+  [GovernanceErrorCode.RolesForbidden]: fields(S.PermissionDenied),
+  [GovernanceErrorCode.RolesInvalid]: fields(S.InvalidArgument),
+  [GovernanceErrorCode.RolesSelf]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesTargetNotFound]: fields(S.NotFound),
+  [GovernanceErrorCode.RolesTargetNotRegistered]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesTargetErased]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesTargetSysadmin]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesSessionsNotRevoked]: fields(S.Unavailable),
 };
 
 const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {

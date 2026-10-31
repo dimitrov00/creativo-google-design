@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ClientPrivacyCall } from '@core/components';
+import { ClientPrivacyCall, RolesCall } from '@core/components';
 import {
   CALLABLE_ANSWER_DECODERS,
   Callables,
@@ -56,6 +56,14 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
     expect(CALLABLE_ANSWER_DECODERS[Callables.EraseClient]).toBe(
       ClientPrivacyCall.decodeErasure,
+    );
+  });
+
+  it('the roles change rides `operationId` — the transport id, the impersonation calls’ shape (security hardening S-WS-E)', () => {
+    expect(Callables.SetRoles).toBe('setRoles');
+    expect(OPERATION_ID_FIELD[Callables.SetRoles]).toBe('operationId');
+    expect(CALLABLE_ANSWER_DECODERS[Callables.SetRoles]).toBe(
+      RolesCall.decodeChanged,
     );
   });
 

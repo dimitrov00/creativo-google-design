@@ -15,11 +15,13 @@ import type { ClientPrivacyGatewayPorts } from '@core/ports';
 import {
   CLIENT_PRIVACY_PORTS,
   ID_PORTS,
+  ROLES_ADMIN_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
 import { RECORD_KIND_WORDS } from '../client-card.words';
 import {
+  ADMIN_VIEWER,
   GEORGI,
   GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
@@ -44,6 +46,8 @@ import {
   pausedUntilOctober,
   photoPortsOf,
   profilePortsOf,
+  type RolesAdminDouble,
+  rolesAdminPortsOf,
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
@@ -1437,5 +1441,129 @@ describe('lib-client-card — the admin’s erasure', () => {
     const { byId, text } = await asAdmin(erased);
     expect(text(byId('client-erase'))).toBe('Изтрий личните данни');
     expect(text(byId('client-erased'))).toBe('Изтрит клиент');
+  });
+});
+
+/*
+ * «Роли» (security hardening S-WS-E, S-RU-13): the shop's admin on
+ * another person's account, the callable's port and the id source bound —
+ * every case above mounts without them, so the block is absent there.
+ */
+describe('lib-client-card — the admin’s roles block', () => {
+  /** No privacy callable answers: only the privacy block's presence matters here. */
+  const UNANSWERED = async () =>
+    Result.err(PipelineError.bare(PipelineErrorCode.Unknown));
+  const PRIVACY: ClientPrivacyGatewayPorts = {
+    exportClientData: UNANSWERED,
+    previewClientErasure: UNANSWERED,
+    eraseClient: UNANSWERED,
+  };
+
+  /** The roles callable, every call saved as sent; the privacy callables; and the id source. */
+  function bindRoles(): RolesAdminDouble {
+    const admin = rolesAdminPortsOf();
+    let minted = 0;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ROLES_ADMIN_PORTS, useValue: admin },
+        { provide: CLIENT_PRIVACY_PORTS, useValue: PRIVACY },
+        {
+          provide: ID_PORTS,
+          useValue: { nextId: () => `op-card-roles-${(minted += 1)}-000000` },
+        },
+      ],
+    });
+    return admin;
+  }
+
+  const asAdmin = (privacy = true) =>
+    mount({
+      context: georgiContext({ viewer: ADMIN_VIEWER }),
+      rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': privacy } },
+    });
+
+  it('sits after the privacy block as a group of its own: five checkbox rows, the stored roles ticked, Save off', async () => {
+    bindRoles();
+    const { byId, text, before } = await asAdmin();
+    const block = must(byId('client-roles'));
+    const privacy = must(byId('client-privacy'));
+    expect(before(privacy, block)).toBe(true);
+    expect(privacy.contains(block)).toBe(false);
+    const group = must(block.querySelector('ul'));
+    expect(group.getAttribute('aria-label')).toBe('Роли');
+    const rows = Array.from(
+      group.querySelectorAll<HTMLButtonElement>('li > button'),
+    );
+    expect(rows.map((row) => text(row))).toEqual([
+      'Клиент',
+      'Бръснар',
+      'Рецепция',
+      'Съдържание',
+      'Администратор',
+    ]);
+    expect(rows.map((row) => row.getAttribute('role'))).toEqual(
+      Array(5).fill('checkbox'),
+    );
+    expect(rows.map((row) => row.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+      'false',
+    ]);
+    expect(
+      must(byId('client-roles-client'))
+        .querySelector('[uitrailing] ui-icon')
+        ?.getAttribute('uiName'),
+    ).toBe('checklist.done');
+    const save = must(byId<HTMLButtonElement>('client-roles-save'));
+    expect(text(save)).toBe('Запази ролите');
+    expect(save.disabled).toBe(true);
+    expect(byId('client-roles-status')).toBeNull();
+  });
+
+  it('stands without the privacy block too (client.privacy off)', async () => {
+    bindRoles();
+    const { byId } = await asAdmin(false);
+    expect(byId('client-privacy')).toBeNull();
+    expect(byId('client-roles')).not.toBeNull();
+  });
+
+  it('ticks «Бръснар», saves the whole set and says when it applies', async () => {
+    const admin = bindRoles();
+    const { byId, click, text, render } = await asAdmin();
+
+    await click('client-roles-barber');
+    expect(must(byId('client-roles-barber')).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(must(byId<HTMLButtonElement>('client-roles-save')).disabled).toBe(
+      false,
+    );
+
+    await click('client-roles-save');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await render();
+
+    expect(admin.calls).toHaveLength(1);
+    expect(admin.calls[0]?.targetUserId).toBe(UserId.of(GEORGI));
+    expect(admin.calls[0]?.roles).toEqual([Role.Client, Role.Barber]);
+    const status = must(byId('client-roles-status'));
+    // A status, announced when it appears.
+    expect(status.matches('[role=status]')).toBe(true);
+    expect(text(status)).toBe(
+      'Ролите са запазени. Важат от следващото влизане.',
+    );
+    expect(must(byId<HTMLButtonElement>('client-roles-save')).disabled).toBe(
+      true,
+    );
+  });
+
+  it('is absent for a barber', async () => {
+    bindRoles();
+    const { byId } = await mount({
+      rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true } },
+    });
+    expect(byId('client-roles')).toBeNull();
   });
 });

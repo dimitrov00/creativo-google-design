@@ -10,4 +10,5 @@ export * from './lib/callable-client.adapter';
 export * from './lib/error-handler-log.adapter';
 export * from './lib/client-issue-reporter.adapter';
 export * from './lib/client-privacy.adapter';
+export * from './lib/roles-admin.adapter';
 export * from './lib/reporting-error-handler';

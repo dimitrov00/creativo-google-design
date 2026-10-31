@@ -47,6 +47,7 @@ import {
   type ImpersonationSession,
 } from '@core/entities';
 import { type EditCommandRequest } from './appointment-edit.system';
+import type { RoleAssignment } from './role-assignment.system';
 
 /**
  * A seat's person as the audit log sees them (`audit.ts:19-25`): a client
@@ -200,9 +201,12 @@ export type ProfileChange = {
  * `Tag.values(AuditedProfileField)` (their order differs): the order is the
  * order of the stored `profileFields` arrays, the registration five first,
  * then `roles` and `accountStatus` appended (audit-hardening WS-3, DEP-13).
- * No other writer audits those two: `completeRegistration`'s `Set` writes
- * the roles with no row of its own, no callable writes the status, and the
- * Admin SDK or the console can change either — so the trigger does.
+ * `completeRegistration`'s `Set` writes the roles with no row of its own,
+ * no callable writes the status, and the Admin SDK or the console can
+ * change either — so the trigger audits them; the one callable that writes
+ * `roles`, `setRoles` (security hardening S-RU-12), writes its own
+ * `PROFILE_ROLES_CHANGED` row and stamps `profileEditedAtUtcMs`, so the
+ * trigger skips that event ({@link AuditSystem.auditedByCallable}).
  */
 const AUDITED_PROFILE_FIELDS: readonly AuditedProfileField[] = [
   AuditedProfileField.FirstName,
@@ -552,6 +556,15 @@ export const AuditSystem = {
     ownProfileEdit(ownerUserId: UserId, editedAtUtcMs: UtcEpochMs): string {
       return `profile-edit:${ownerUserId}:${editedAtUtcMs}`;
     },
+    /**
+     * An admin's roles change through `setRoles` (security hardening
+     * S-RU-12): the target account and the instant its `users` update
+     * stamped — each landed change its own row; a replay of a landed change
+     * finds the set unchanged and plans none.
+     */
+    rolesChanged(targetUserId: UserId, recordedAtUtcMs: UtcEpochMs): string {
+      return `roles-change:${targetUserId}:${recordedAtUtcMs}`;
+    },
     /*
      * The sign-in rows (audit-hardening Phase 3, P3-RU-7): keyed by STATE the
      * act's own commit proves, never by the caller's transport id — these
@@ -832,6 +845,53 @@ export const AuditSystem = {
         resourceId,
         ownerUserId,
         AuditSystem.changeKey.ownProfileEdit(ownerUserId, nowUtcMs),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row an admin's roles change writes inside `setRoles`' commit
+   * (security hardening S-WS-E, S-RU-9, S-RU-12):
+   * `PROFILE_ROLES_CHANGED`, credited to `actor` (the pipeline's
+   * `Actor.forCaller` over the caller's STORED roles, never the token's),
+   * `profileFields: ['roles']` and the roles before / after as tags
+   * (closed vocabularies, never a name — R36), stamped with the instant the
+   * `users` update stamps, naming `users/<uid>`, targeted at the account,
+   * with the call's transport operation id (`null` without one, RU-21); its
+   * id basis keyed by {@link AuditSystem.changeKey.rolesChanged}. An
+   * unchanged set writes no row: planning one is a programmer defect.
+   */
+  planRolesChanged(
+    targetUserId: UserId,
+    assignment: RoleAssignment,
+    actor: Actor,
+    recordedAtUtcMs: UtcEpochMs,
+    operationId: OperationId | null,
+  ): AuditRowPlan {
+    if (!assignment.rolesChanged) {
+      return defect('an unchanged role set writes no row (S-L-15)');
+    }
+    const action = AuditAction.ProfileRolesChanged;
+    const resourceId = AuditResourceId.forUser(targetUserId);
+    return {
+      row: {
+        recordedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.profileWithTags(action, [AuditedProfileField.Roles], {
+          profileRolesFrom: assignment.rolesFrom,
+          profileRolesTo: assignment.rolesTo,
+          profileAccountStatusFrom: null,
+          profileAccountStatusTo: null,
+        }),
+        ...AuditTargetRef.user(targetUserId),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        targetUserId,
+        AuditSystem.changeKey.rolesChanged(targetUserId, recordedAtUtcMs),
       ),
     };
   },

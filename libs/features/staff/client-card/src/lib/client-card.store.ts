@@ -41,6 +41,7 @@ import {
   type UserId,
 } from '@core/primitives';
 import {
+  GovernanceErrorCode,
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
@@ -54,6 +55,8 @@ import {
   JournalFeed,
   LocalizedText,
   Registration,
+  type Role,
+  type RolesCall,
   Roles,
   type ShopNow,
   type VisitFact,
@@ -64,6 +67,7 @@ import {
   ClientPrivacySystem,
   ClientStatsSystem,
   LoyaltyCatalogSystem,
+  RoleAssignmentSystem,
   StreakRuleSystem,
   StreakSystem,
   type StreakRuleSummary,
@@ -87,6 +91,7 @@ import {
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
+  ROLES_ADMIN_PORTS,
   ShopZoneService,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -128,6 +133,8 @@ import {
   type ClientOverviewVm,
   type ClientPhotoVm,
   type ClientPrivacyVm,
+  ClientRolesPhase,
+  type ClientRolesVm,
   type DetailActionVm,
   type LedgerPageVm,
   type RecordsPageVm,
@@ -179,6 +186,7 @@ import {
   clientErasureVm,
   clientPrivacyVm,
 } from './client-privacy.presenter';
+import { type ClientRolesState, clientRolesVm } from './client-roles.presenter';
 import { recordsPageVm } from './records.presenter';
 import {
   visitsPageBlank,
@@ -322,6 +330,32 @@ const EXPORT_IDLE: ClientExportState = {
 const ERASURE_IDLE: ClientErasureState = {
   clientErasurePhase: ClientErasurePhase.Idle,
 };
+
+/** No roles change on its way (or the last one's line forgotten). */
+const ROLES_IDLE: ClientRolesState = {
+  clientRolesPhase: ClientRolesPhase.Idle,
+};
+
+/**
+ * The «Роли» block's act (security hardening S-WS-E): the account, the
+ * whole new set and the act's own minted operation id — ONE call, sent
+ * again verbatim by a retry of the same act. The id rides the payload
+ * under `operationId` (`OPERATION_ID_FIELD`), so the callable client mints
+ * no transport id of its own over it.
+ */
+type RolesAct = RolesCall & { readonly operationId: ClientOperationId };
+
+/**
+ * A roles change the server committed but whose sessions it could not
+ * revoke (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`, S-RU-10): the act, kept
+ * for its retry (the stored set, sent again), and the refusal its line
+ * words — never forgotten while the card lives, whatever person it shows
+ * in between.
+ */
+interface PendingRevoke {
+  readonly call: RolesAct;
+  readonly error: PipelineError;
+}
 
 /**
  * A previewed erasure act waiting for the admin's answer (the ONE alert is
@@ -467,8 +501,13 @@ export class ClientCardStore {
   private readonly privacyPorts = inject(CLIENT_PRIVACY_PORTS, {
     optional: true,
   });
-  /** Mints each privacy act's `operationId` (WS-4.1); unbound, the privacy block is absent. */
+  /** Mints each privacy and roles act's `operationId` (WS-4.1); unbound, the privacy and «Роли» blocks are absent. */
   private readonly ids = inject(ID_PORTS, { optional: true });
+  /**
+   * The admin's roles change (`setRoles`, security hardening S-WS-E) —
+   * optional: unbound, the «Роли» block is absent.
+   */
+  private readonly rolesPorts = inject(ROLES_ADMIN_PORTS, { optional: true });
   /**
    * The erasure's loop of resumable `eraseClient` calls (`@core/pipelines`
    * `completeClientErasure`, audit-hardening Phase 3 WS-D) over the same
@@ -585,6 +624,29 @@ export class ClientCardStore {
    * card, is dropped.
    */
   private erasureCall: ClientPrivacyCall | null = null;
+  /** Where the admin's roles change of this person stands (S-RU-13). */
+  private readonly _roles = signal<ClientRolesState>(ROLES_IDLE);
+  /**
+   * The set the toggles show, as the admin left them; `null` — untouched:
+   * the stored set. Forgotten with its person and by every saved answer.
+   */
+  private readonly _rolesDraft = signal<readonly Role[] | null>(null);
+  /**
+   * The person's stored set as the last `setRoles` answer settled it (the
+   * committed set of a failed revoke included); `null` — none yet: the
+   * profile's `roles`.
+   */
+  private readonly _rolesStored = signal<readonly Role[] | null>(null);
+  /**
+   * The roles act not yet answered with the stored set — ONE call, minted
+   * on its first Save and sent again verbatim by a retry of the same set;
+   * `null` once an answer saved it, and for another person.
+   */
+  private rolesCall: RolesAct | null = null;
+  /** The failed revokes, per account (S-RU-10): each one's Save stays offered until a revoke succeeds. */
+  private readonly _pendingRevokes = signal<ReadonlyMap<UserId, PendingRevoke>>(
+    new Map(),
+  );
 
   /** The person the card is about; `null` before the first `open`. */
   readonly subject = this._subject.asReadonly();
@@ -1598,7 +1660,9 @@ export class ClientCardStore {
   /**
    * Opens the card on a person. Idempotent per subject id: a re-open of the
    * same person refreshes every read without skeletons; another person
-   * starts over. Reads nothing for a guest.
+   * starts over. A walk-in's record (`subject.customerId`, no account —
+   * S-WS-F, S-RU-15) is known at once and read for its erasure tag alone
+   * (S-L-19); a typed guest reads nothing.
    */
   open(subject: ClientCardSubject, context: ClientCardContext): void {
     untracked(() => {
@@ -1622,9 +1686,23 @@ export class ClientCardStore {
         ) {
           this._erasure.set(ERASURE_IDLE);
         }
+        // ... and the roles' last line — but never a failed revoke's: its
+        // line and its retry stay until a revoke succeeds (S-RU-10).
+        if (this._roles().clientRolesPhase !== ClientRolesPhase.Running) {
+          this.restoreRoles(subject);
+        }
       }
       if (subject.userId !== null) {
         void this.loadAll(this.generation, subject.userId);
+      } else if (subject.customerId !== null) {
+        // The record is the key: the privacy block becomes decidable now.
+        // Its tag is read once per person, like an account's record (a
+        // re-open after a failed read asks again); the preview and erasure
+        // answers keep it current after that.
+        this._customerId.set(subject.customerId);
+        if (this._erasureStatus() === null) {
+          void this.loadRecordById(this.generation, subject.customerId);
+        }
       }
     });
   }
@@ -1635,8 +1713,9 @@ export class ClientCardStore {
    * `null` — absent — without the callables' port or the id source, with
    * `client.privacy` off, for a viewer who is not the shop's admin
    * (`Roles.handlesClientPrivacy`: not a barber, a receptionist or the
-   * sysadmin), before the client record is known (a guest has none), and
-   * offline. A gone visit keeps it: the export writes nothing to the visit.
+   * sysadmin), before the client record is known (a typed guest has none;
+   * a walk-in's record is known at once, S-WS-F), and offline. A gone
+   * visit keeps it: the export writes nothing to the visit.
    */
   readonly privacy: Signal<ClientPrivacyVm | null> = computed(() => {
     const words = this.words();
@@ -1886,6 +1965,214 @@ export class ClientCardStore {
       ? { customerId, operationId: operationId.value }
       : null;
     return this.exportCall;
+  }
+
+  /**
+   * «Роли» (security hardening S-WS-E, S-RU-13, S-L-18) — the admin's roles
+   * block, a separate block after the privacy block (never part of
+   * `overview`). `null` — absent — without the callable's port or the id
+   * source, before the words load, offline, and wherever
+   * `RoleAssignmentSystem.offerOf` says no: a viewer who is not the shop's
+   * admin (`Roles.assignsRoles`), a guest, an account not yet read, a
+   * `PROVISIONED` stub, an erased account, the viewer's own account, an
+   * account holding the sysadmin. Independent of `client.privacy`. Save is
+   * `RoleAssignmentSystem.saveOf` over `changeOf` (a changed, non-empty
+   * set — or the stored set while this person's revoke is pending). The
+   * server stays the authority: the block only hides what it would refuse.
+   */
+  readonly roles: Signal<ClientRolesVm | null> = computed(() => {
+    const words = this.words();
+    const translateCode = this.translateCode();
+    const viewer = this._context()?.viewer ?? null;
+    if (
+      this.rolesPorts === null ||
+      this.ids === null ||
+      words === null ||
+      translateCode === null ||
+      viewer === null ||
+      !this._online() ||
+      !RoleAssignmentSystem.offerOf(viewer.userId, viewer.roles, this.user())
+    ) {
+      return null;
+    }
+    const change = this.rolesChange();
+    return clientRolesVm({
+      words: words.roles,
+      roles: change.rolesTo,
+      saveEnabled: RoleAssignmentSystem.saveOf(change, this.revokePending()),
+      rolesState: this._roles(),
+      translateCode,
+    });
+  });
+
+  /** The person's stored set: the last answer's, else the profile's. */
+  private readonly storedRoles = computed(
+    (): readonly Role[] => this._rolesStored() ?? this.user()?.roles ?? [],
+  );
+
+  /** The toggles' set against the stored one (`RoleAssignmentSystem.changeOf`): what Save would send. */
+  private readonly rolesChange = computed(() => {
+    const stored = this.storedRoles();
+    return RoleAssignmentSystem.changeOf(stored, this._rolesDraft() ?? stored);
+  });
+
+  /** This person's roles were committed but their sessions not revoked: Save re-sends the stored set (S-RU-10). */
+  private readonly revokePending = computed(() => {
+    const uid = this._subject()?.userId ?? null;
+    return uid !== null && this._pendingRevokes().has(uid);
+  });
+
+  /**
+   * One role's row: on ⇄ off in the set Save would send. Only a role the
+   * block shows, while it is shown and no change is on its way; a saved
+   * line goes with the set it was about (a refusal's stays).
+   */
+  toggleRole(role: Role): void {
+    untracked(() => {
+      const block = this.roles();
+      if (
+        block === null ||
+        !block.toggles.some((toggle) => toggle.role === role) ||
+        this._roles().clientRolesPhase === ClientRolesPhase.Running
+      ) {
+        return;
+      }
+      const current = this._rolesDraft() ?? this.storedRoles();
+      this._rolesDraft.set(
+        current.includes(role)
+          ? current.filter((held) => held !== role)
+          : [...current, role],
+      );
+      if (this._roles().clientRolesPhase === ClientRolesPhase.Saved) {
+        this._roles.set(ROLES_IDLE);
+      }
+    });
+  }
+
+  /**
+   * «Запази ролите»: `setRoles` for the person's account with the set the
+   * toggles show, under ONE operation id per act — minted on the act's
+   * first Save and kept for its retry of the same set. A saved answer
+   * becomes the stored set (the toggles follow it); a failed revoke
+   * (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`) keeps its line and its act,
+   * and Save stays offered with the committed set until a revoke succeeds
+   * (S-RU-10). Nothing while the block is absent, Save is not offered, or a
+   * change is on its way; an answer for a person no longer on the card is
+   * dropped (a failed revoke is still remembered for its person).
+   */
+  async saveRoles(): Promise<void> {
+    const ports = this.rolesPorts;
+    const ids = this.ids;
+    const block = untracked(this.roles);
+    const targetUserId = untracked(this._subject)?.userId ?? null;
+    if (
+      ports === null ||
+      ids === null ||
+      block === null ||
+      !block.saveEnabled ||
+      targetUserId === null ||
+      untracked(this._roles).clientRolesPhase === ClientRolesPhase.Running
+    ) {
+      return;
+    }
+    const call = this.rolesCallFor(
+      targetUserId,
+      untracked(this.rolesChange).rolesTo,
+      ids,
+    );
+    if (call === null) {
+      // A minted name the wire cannot carry: refused before anything goes out.
+      this._roles.set({
+        clientRolesPhase: ClientRolesPhase.Refused,
+        rolesError: PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      });
+      return;
+    }
+    this._roles.set({ clientRolesPhase: ClientRolesPhase.Running });
+    const answer = await ports.setRoles(call);
+    this.rememberRevoke(call, answer.ok ? null : answer.error);
+    if (this.rolesCall !== call) return;
+    if (!answer.ok) {
+      if (this.isRevokeFailure(answer.error)) {
+        // The roles ARE committed: the stored set is the one sent.
+        this._rolesStored.set(call.roles);
+        this._rolesDraft.set(null);
+      }
+      this._roles.set({
+        clientRolesPhase: ClientRolesPhase.Refused,
+        rolesError: answer.error,
+      });
+      return;
+    }
+    this.rolesCall = null;
+    this._rolesStored.set(answer.value.roles);
+    this._rolesDraft.set(null);
+    this._roles.set({ clientRolesPhase: ClientRolesPhase.Saved });
+  }
+
+  /** The act's call: the kept one for this account and this set, else one under a freshly minted id. */
+  private rolesCallFor(
+    targetUserId: UserId,
+    roles: readonly Role[],
+    ids: IdPorts,
+  ): RolesAct | null {
+    const kept = this.rolesCall;
+    if (
+      kept !== null &&
+      kept.targetUserId === targetUserId &&
+      !RoleAssignmentSystem.changeOf(kept.roles, roles).rolesChanged
+    ) {
+      return kept;
+    }
+    const operationId = ClientOperationId.parse(ids.nextId());
+    this.rolesCall = operationId.ok
+      ? { targetUserId, roles, operationId: operationId.value }
+      : null;
+    return this.rolesCall;
+  }
+
+  /** Whether a refusal is the failed revoke of committed roles (S-RU-10). */
+  private isRevokeFailure(error: PipelineError): boolean {
+    return (
+      error.serverErrorCode === GovernanceErrorCode.RolesSessionsNotRevoked
+    );
+  }
+
+  /**
+   * The failed revokes, kept per account: a failed revoke is remembered
+   * with its act, a saved answer forgets the account's (its revoke
+   * succeeded); any other refusal changes nothing.
+   */
+  private rememberRevoke(call: RolesAct, error: PipelineError | null): void {
+    if (error !== null && !this.isRevokeFailure(error)) return;
+    const pending = new Map(untracked(this._pendingRevokes));
+    if (error === null) pending.delete(call.targetUserId);
+    else pending.set(call.targetUserId, { call, error });
+    this._pendingRevokes.set(pending);
+  }
+
+  /**
+   * The roles block's state for a person (re)opened: a failed revoke of
+   * theirs comes back with its act, its committed set and its line;
+   * anyone else starts idle on their stored set.
+   */
+  private restoreRoles(subject: ClientCardSubject): void {
+    const uid = subject.userId;
+    const pending =
+      uid === null ? undefined : untracked(this._pendingRevokes).get(uid);
+    this._rolesDraft.set(null);
+    if (pending === undefined) {
+      this.rolesCall = null;
+      this._rolesStored.set(null);
+      this._roles.set(ROLES_IDLE);
+      return;
+    }
+    this.rolesCall = pending.call;
+    this._rolesStored.set(pending.call.roles);
+    this._roles.set({
+      clientRolesPhase: ClientRolesPhase.Refused,
+      rolesError: pending.error,
+    });
   }
 
   /** «Покажи още»: the next page of the history (a no-op offline, at the end, or while one is loading). */
@@ -2166,6 +2453,26 @@ export class ClientCardStore {
   }
 
   /**
+   * A walk-in's record by its id (`CUSTOMER_PORTS.loadCustomer`, S-WS-F) —
+   * its erasure tag only (S-L-19): the id itself is already known from the
+   * subject. No record, a failed read, an answer for an older open or no
+   * port bound — the tag stays unknown (`null`): the privacy block keeps the
+   * id (the export), the erasure rows wait on the tag.
+   */
+  private async loadRecordById(
+    generation: number,
+    customerId: CustomerId,
+  ): Promise<void> {
+    const customers = this.customers;
+    if (customers === null) return;
+    const result = await this.timed(() => customers.loadCustomer(customerId));
+    if (generation !== this.generation || !result.ok || result.value === null) {
+      return;
+    }
+    this._erasureStatus.set(result.value.erasureStatus);
+  }
+
+  /**
    * A read keyed by the record, once it is known: `run` for a record, the
    * reader's empty answer for none (an account with no record has no
    * stats, visits, photos or vouchers yet), and the slice `failed` when the
@@ -2202,6 +2509,9 @@ export class ClientCardStore {
     this._erasureSiblings.set([]);
     this._alertSiblings.set([]);
     this._erasureStatus.set(null);
+    // A change of person drops any roles act still on its way (its answer
+    // is dropped too) — a failed revoke of the new person's comes back.
+    this.restoreRoles(subject);
     this._avatar.set(null);
     this._money.set(null);
     const account = subject.userId !== null;

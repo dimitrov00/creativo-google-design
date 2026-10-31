@@ -6,10 +6,12 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
-import { ImpersonationLifecycle } from '@core/components';
+import { ImpersonationLifecycle, Roles } from '@core/components';
 import {
   admitImpersonationCaller,
+  admitRolesCaller,
   type EndImpersonationCommand,
+  type SetRolesCommand,
   type StartImpersonationCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
@@ -34,6 +36,13 @@ import { operationIdOf, payloadOf, type WireRequest } from './wire-read';
  * reason, no window) leave the pipeline as the FIRST of them — one flat
  * refusal per call, as every callable answers. No web caller exists yet
  * (4A-3 (4)).
+ *
+ * `setRoles` (security hardening S-WS-E) rides the same wire: its request is
+ * `RolesCall`, its answer `RolesCall.Changed`, and its caller is read off the
+ * verified token first through its own pipeline's gate
+ * (`admitRolesCaller`: no session → `GOVERNANCE_ROLES_UNAUTHENTICATED`,
+ * claims holding no `Roles.ASSIGN` role → `GOVERNANCE_ROLES_FORBIDDEN`)
+ * before the payload is read.
  */
 
 /**
@@ -99,6 +108,34 @@ export function decodeEndImpersonation(
     sessionId: sessionId.value,
     adminUserId: callerUserId(request),
     adminRoles: callerKnownRoles(request),
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(payload, 'operationId'),
+  });
+}
+
+export function decodeSetRoles(
+  request: WireRequest,
+): Result<SetRolesCommand, EdgeError> {
+  const admitted = admitRolesCaller(
+    callerUserId(request),
+    callerKnownRoles(request),
+  );
+  if (!admitted.ok) return admitted;
+  const payload = payloadOf(request);
+  const target = UserId.parse(sentText(payload, 'targetUserId'));
+  if (!target.ok) return Result.err(target.error);
+  // The requested set as sent: an array whose every entry is a `Role` value,
+  // in the order given — the system deduplicates and orders it, and refuses
+  // an empty set or the sysadmin; anything else is GOVERNANCE_ROLES_INVALID.
+  const roles: unknown = StoredFields.field(payload, 'roles');
+  if (!Array.isArray(roles) || !roles.every(Roles.isRole)) {
+    return Result.err(GovernanceError.rolesInvalid());
+  }
+  return Result.ok({
+    adminUserId: admitted.value,
+    adminRoles: callerKnownRoles(request),
+    targetUserId: target.value,
+    roles,
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(payload, 'operationId'),
   });
