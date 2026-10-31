@@ -101,7 +101,7 @@ import type {
   CouponVoucherPorts,
   CourseReadPorts,
   CourseWritePorts,
-  CustomerPorts,
+  CustomerReadPorts,
   CustomerSearchPorts,
   DefaultLocationPorts,
   FlagsPorts,
@@ -751,13 +751,18 @@ export function memoryAppointmentPhotoPorts(
 
 // ── The client record ────────────────────────────────────────────────────
 
-/** `CUSTOMER_PORTS` — the record whose `userId` is the account (`userId ==`, `limit 1`), `null` when none. */
+/**
+ * `CUSTOMER_PORTS` — the record whose `userId` is the account (`userId ==`,
+ * `limit 1`), and the record by its id (`customers/{id}`); `null` when none.
+ */
 export function memoryCustomerPorts(
   customers: readonly Customer[],
-): CustomerPorts {
+): CustomerReadPorts {
   return {
     loadCustomerForUser: async (userId) =>
       Result.ok(customers.find((entry) => entry.userId === userId) ?? null),
+    loadCustomer: async (customerId) =>
+      Result.ok(customers.find((entry) => entry.id === customerId) ?? null),
   };
 }
 

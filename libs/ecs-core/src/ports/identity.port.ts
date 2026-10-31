@@ -4,7 +4,13 @@ import type {
   Identifier,
   ParsedIdentifier,
 } from '@core/components';
-import type { Result, TenantId, UserId, UtcEpochMs } from '@core/primitives';
+import type {
+  CustomerId,
+  Result,
+  TenantId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import type {
   IdentityError,
   PipelineError,
@@ -116,6 +122,16 @@ export type LoadCustomerForUser = (
 ) => Promise<Result<Customer | null, RepositoryError>>;
 
 /**
+ * One client record by its id, OUTSIDE any transaction — `customers/{id}`
+ * (the staff read `worksTheBook()` admits): the card of a walk-in with no
+ * account, whose record id the staff search or a stored `WALK_IN` seat
+ * carries (S-WS-F, S-RU-15); `null` when there is no such record.
+ */
+export type LoadCustomer = (
+  customerId: CustomerId,
+) => Promise<Result<Customer | null, RepositoryError>>;
+
+/**
  * The FIRST_BOOKING contact snapshot (F1-5) — one NON-transactional
  * `getAll` of `users/{uid}` for the given accounts, read BEFORE the booking
  * or edit transaction opens, so `users/{uid}` never enters its conflict set
@@ -173,10 +189,18 @@ export type SetDisplayName = (
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
-/** The signed-in account's client record — the bundle the web's `CUSTOMER_PORTS` token binds. */
+/** The signed-in account's client record (one half of the web's `CUSTOMER_PORTS`, `CustomerReadPorts`). */
 export type CustomerPorts = {
   readonly loadCustomerForUser: LoadCustomerForUser;
 };
+
+/** One client record by its id — the card of a walk-in with no account (S-WS-F). */
+export type CustomerRecordPorts = {
+  readonly loadCustomer: LoadCustomer;
+};
+
+/** The web's client-record reads — the suite the `CUSTOMER_PORTS` token binds (Law 9: an intersection). */
+export type CustomerReadPorts = CustomerPorts & CustomerRecordPorts;
 
 /** The first-booking contact snapshot (F1-5) — `firestore-accounts.adapter.ts`. */
 export type AccountContactPorts = {
@@ -264,7 +288,7 @@ export type AuthDeploymentPorts = {
  * entries of a `CommitPlan` (`tx.port.ts`), never a port of their own; so
  * is a `FIRST_BOOKING` or `REGISTRATION` customer `Create` (F1-5, F2-7b).
  */
-export type IdentityPorts = CustomerPorts &
+export type IdentityPorts = CustomerReadPorts &
   AccountContactPorts &
   TenantPorts &
   OtpStorePorts &

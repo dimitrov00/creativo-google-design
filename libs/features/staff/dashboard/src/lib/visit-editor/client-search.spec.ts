@@ -87,7 +87,7 @@ describe('accountOption', () => {
 });
 
 describe('recordOption', () => {
-  it("keys a walk-in's record by the record, never by the name, and marks it as having no profile", () => {
+  it("keys a walk-in's record by the record, never by the name, marks it as having no profile, and carries the record id as its own field (S-RU-15)", () => {
     expect(recordOption(IVAN_WALK_IN)).toEqual({
       id: 'guest-cus_walkin_ivan',
       label: 'Иван',
@@ -96,10 +96,11 @@ describe('recordOption', () => {
       meta: 'ivan@mail.bg',
       email: 'ivan@mail.bg',
       noAccount: true,
+      customerId: IVAN_WALK_IN.id,
     });
   });
 
-  it("reads an account's record as that account — unmarked", () => {
+  it("reads an account's record as that account — unmarked, no record id (its card resolves the record by the uid)", () => {
     const option = recordOption(MARTIN_RECORD);
     expect(option).toEqual({
       id: 'u-martin',
@@ -108,8 +109,19 @@ describe('recordOption', () => {
       phoneHref: '+359887654321',
       meta: null,
       email: null,
+      customerId: null,
     });
     expect('noAccount' in option).toBe(false);
+  });
+
+  it('carries every walk-in record’s id through the merged search', () => {
+    const options = clientSearchOptions([
+      { accounts: nobody, records: Result.ok([IVAN_WALK_IN, MARTIN_RECORD]) },
+    ]);
+    expect(options.map((option) => [option.id, option.customerId])).toEqual([
+      ['guest-cus_walkin_ivan', IVAN_WALK_IN.id],
+      ['u-martin', null],
+    ]);
   });
 });
 

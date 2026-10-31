@@ -543,7 +543,10 @@ export const appConfig: ApplicationConfig = {
           inj.get(FIREBASE_FIRESTORE),
           m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
         ),
-      methods: { loadCustomerForUser: LazyMethod.Promise },
+      methods: {
+        loadCustomerForUser: LazyMethod.Promise,
+        loadCustomer: LazyMethod.Promise,
+      },
       onLoadError: dataUnavailable,
     }),
 

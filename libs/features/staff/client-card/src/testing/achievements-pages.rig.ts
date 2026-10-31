@@ -33,7 +33,7 @@ import type {
   ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
-  CustomerPorts,
+  CustomerReadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
   ProfilePorts,
@@ -152,7 +152,7 @@ export interface AchievementsRig {
   readonly photos?: AppointmentPhotoPorts;
   readonly waitlist?: WaitlistReadPorts;
   /** The client records the card resolves its person by (D29) — Георги's and Мартин's by default. */
-  readonly customers?: CustomerPorts;
+  readonly customers?: CustomerReadPorts;
   readonly avatars?: AvatarPorts;
   /**
    * The wallet's two readers (revision 3 §4.5, §4.7). Bound ONLY when a

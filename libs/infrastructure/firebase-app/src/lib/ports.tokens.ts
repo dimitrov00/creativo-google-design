@@ -16,7 +16,7 @@ import type {
   ClockPorts,
   CouponVoucherPorts,
   CourseReadPorts,
-  CustomerPorts,
+  CustomerReadPorts,
   CustomerSearchPorts,
   DefaultLocationPorts,
   FlagsPorts,
@@ -108,8 +108,8 @@ export const APPOINTMENT_NOTE_PORTS = new InjectionToken<AppointmentNotePorts>(
 export const APPOINTMENT_PHOTO_PORTS =
   new InjectionToken<AppointmentPhotoPorts>('APPOINTMENT_PHOTO_PORTS');
 
-/** The signed-in account's client record (`CustomerPorts`). */
-export const CUSTOMER_PORTS = new InjectionToken<CustomerPorts>(
+/** A client record — an account's by its uid, a walk-in's by its id (`CustomerReadPorts`). */
+export const CUSTOMER_PORTS = new InjectionToken<CustomerReadPorts>(
   'CUSTOMER_PORTS',
 );
 

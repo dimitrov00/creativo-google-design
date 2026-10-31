@@ -1660,7 +1660,9 @@ export class ClientCardStore {
   /**
    * Opens the card on a person. Idempotent per subject id: a re-open of the
    * same person refreshes every read without skeletons; another person
-   * starts over. Reads nothing for a guest.
+   * starts over. A walk-in's record (`subject.customerId`, no account —
+   * S-WS-F, S-RU-15) is known at once and read for its erasure tag alone
+   * (S-L-19); a typed guest reads nothing.
    */
   open(subject: ClientCardSubject, context: ClientCardContext): void {
     untracked(() => {
@@ -1692,6 +1694,15 @@ export class ClientCardStore {
       }
       if (subject.userId !== null) {
         void this.loadAll(this.generation, subject.userId);
+      } else if (subject.customerId !== null) {
+        // The record is the key: the privacy block becomes decidable now.
+        // Its tag is read once per person, like an account's record (a
+        // re-open after a failed read asks again); the preview and erasure
+        // answers keep it current after that.
+        this._customerId.set(subject.customerId);
+        if (this._erasureStatus() === null) {
+          void this.loadRecordById(this.generation, subject.customerId);
+        }
       }
     });
   }
@@ -1702,8 +1713,9 @@ export class ClientCardStore {
    * `null` — absent — without the callables' port or the id source, with
    * `client.privacy` off, for a viewer who is not the shop's admin
    * (`Roles.handlesClientPrivacy`: not a barber, a receptionist or the
-   * sysadmin), before the client record is known (a guest has none), and
-   * offline. A gone visit keeps it: the export writes nothing to the visit.
+   * sysadmin), before the client record is known (a typed guest has none;
+   * a walk-in's record is known at once, S-WS-F), and offline. A gone
+   * visit keeps it: the export writes nothing to the visit.
    */
   readonly privacy: Signal<ClientPrivacyVm | null> = computed(() => {
     const words = this.words();
@@ -2438,6 +2450,26 @@ export class ClientCardStore {
       result.value === null ? null : result.value.erasureStatus,
     );
     return recordSliceOf(record);
+  }
+
+  /**
+   * A walk-in's record by its id (`CUSTOMER_PORTS.loadCustomer`, S-WS-F) —
+   * its erasure tag only (S-L-19): the id itself is already known from the
+   * subject. No record, a failed read, an answer for an older open or no
+   * port bound — the tag stays unknown (`null`): the privacy block keeps the
+   * id (the export), the erasure rows wait on the tag.
+   */
+  private async loadRecordById(
+    generation: number,
+    customerId: CustomerId,
+  ): Promise<void> {
+    const customers = this.customers;
+    if (customers === null) return;
+    const result = await this.timed(() => customers.loadCustomer(customerId));
+    if (generation !== this.generation || !result.ok || result.value === null) {
+      return;
+    }
+    this._erasureStatus.set(result.value.erasureStatus);
   }
 
   /**

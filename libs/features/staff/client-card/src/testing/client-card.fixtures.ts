@@ -115,7 +115,7 @@ import type {
   ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
-  CustomerPorts,
+  CustomerReadPorts,
   DefaultLocationPorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
@@ -1034,6 +1034,7 @@ export function subjectOf(
   return {
     id: DraftPersonKey.of(uid),
     userId: UserId.of(uid),
+    customerId: null,
     label: georgi ? 'Георги П.' : 'Мартин И.',
     phone: georgi ? '+359 88 123 4567' : '+359 88 765 4321',
     phoneHref: georgi ? '+359881234567' : '+359887654321',
@@ -1043,10 +1044,11 @@ export function subjectOf(
   };
 }
 
-/** A walk-in without a profile: the card reads nothing. */
+/** A typed guest — no account, no client record: the card reads nothing. */
 export const GUEST: ClientCardSubject = {
   id: DraftPersonKey.of('guest-1'),
   userId: null,
+  customerId: null,
   label: 'Иво',
   phone: '+359 89 000 1111',
   phoneHref: '+359890001111',
@@ -1448,7 +1450,7 @@ export function heldProfilePortsOf(
 /** `CUSTOMER_PORTS` over the client records — Георги's and Мартин's unless said. */
 export function customerPortsOf(
   customers: readonly Customer[] = fixtureCustomers(),
-): PortDouble<CustomerPorts> {
+): PortDouble<CustomerReadPorts> {
   return portDouble(memoryCustomerPorts(customers));
 }
 

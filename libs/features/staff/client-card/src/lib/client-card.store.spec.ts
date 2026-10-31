@@ -13,6 +13,7 @@ import {
   BirthDate,
   ClientPrivacyCall,
   CouponOccasion,
+  CustomerOrigin,
   ErasureCensus,
   ErasureLifecycle,
   ErasureStatus,
@@ -22,7 +23,7 @@ import {
   type RolesCall,
   VisitFilter,
 } from '@core/components';
-import type { Appointment, JournalEntry } from '@core/entities';
+import type { Appointment, Customer, JournalEntry } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
@@ -33,7 +34,7 @@ import type {
   LocationLoadPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
-  CustomerPorts,
+  CustomerReadPorts,
   EraseClient,
   IdPorts,
   JournalPage,
@@ -49,6 +50,7 @@ import {
   BadgeSeriesId,
   ClientOperationId,
   CustomerId,
+  DraftPersonKey,
   Result as CoreResult,
   UserId,
 } from '@core/primitives';
@@ -128,6 +130,7 @@ import {
   must,
   pausedUntilOctober,
   photoPortsOf,
+  portDouble,
   profilePortsOf,
   rolesAdminPortsOf,
   shopZonePortsOf,
@@ -280,7 +283,7 @@ function heldJournal(inner: ClientJournalPorts): ClientJournalPorts & {
 interface RigOptions {
   readonly flags?: Readonly<Record<string, boolean>>;
   readonly profiles?: PortDouble<ProfilePorts> | null;
-  readonly customers?: CustomerPorts | null;
+  readonly customers?: CustomerReadPorts | null;
   readonly stats?: PortDouble<ClientStatsReadPorts> | null;
   readonly history?: AppointmentReadPorts | null;
   readonly photos?: PortDouble<AppointmentPhotoPorts> | null;
@@ -381,13 +384,38 @@ const textOf = (parts: readonly { readonly text: string }[]) =>
  * `wallet`, `visits`) that read the same slices.
  */
 
+/** A walk-in the desk entered: a client RECORD with no account (S-WS-F). */
+const WALK_IN_ID = CustomerId.of('cus_7070707070707070707a');
+
+function walkInRecord(
+  lifecycle: ErasureLifecycle = ErasureLifecycle.none(),
+): Customer {
+  const [georgi] = fixtureCustomers();
+  return {
+    ...must(georgi, 'a fixture record'),
+    id: WALK_IN_ID,
+    userId: null,
+    displayName: 'Иво Иванов',
+    customerOrigin: CustomerOrigin.StaffWalkIn,
+    ...lifecycle,
+  };
+}
+
+/** The walk-in's seat as the search or a stored WALK_IN seat hands it over: its record id beside the guest key. */
+const WALK_IN: ClientCardSubject = {
+  ...GUEST,
+  id: DraftPersonKey.of(`guest-${WALK_IN_ID}`),
+  customerId: WALK_IN_ID,
+};
+
 describe('ClientCardStore — a guest', () => {
-  it('reads nothing, and draws the hero, the phone and the exit', async () => {
+  it('a TYPED guest reads nothing, and draws the hero, the phone and the exit', async () => {
     const history = historyPortsOf(BOOK);
     const profiles = profilePortsOf([]);
     const loyalty = loyaltyPortsOf();
     const photos = photoPortsOf(georgiPhotos());
-    const { store } = rig({ history, profiles, loyalty, photos });
+    const customers = customerPortsOf();
+    const { store } = rig({ history, profiles, loyalty, photos, customers });
     open(
       store,
       GUEST,
@@ -412,9 +440,64 @@ describe('ClientCardStore — a guest', () => {
     expect(loyalty.calls).toEqual([]);
     expect(photos.calls).toEqual([]);
     expect(history.calls).toEqual([]);
+    expect(customers.calls).toEqual([]);
+    expect(store.customerId()).toBeNull();
     expect(store.wallet()).toBeNull();
     expect(store.achievementsData()).toBeNull();
     expect(store.displayName()).toBe('Иво');
+  });
+
+  it('a typed label shaped like a record id stays a typed guest — the id is never parsed from the key (S-RU-15)', async () => {
+    const customers = customerPortsOf([...fixtureCustomers(), walkInRecord()]);
+    const { store } = rig({ customers });
+    open(
+      store,
+      { ...GUEST, id: DraftPersonKey.of(`guest-${WALK_IN_ID}`) },
+      martinContext({ isOwner: false }),
+    );
+    await settle();
+    expect(customers.calls).toEqual([]);
+    expect(store.customerId()).toBeNull();
+  });
+
+  it('a walk-in RECORD is known at once and reads its record alone — no profile, loyalty, history, photos, waitlist or picture (S-WS-F)', async () => {
+    const history = historyPortsOf(BOOK);
+    const profiles = profilePortsOf([]);
+    const loyalty = loyaltyPortsOf();
+    const photos = photoPortsOf(georgiPhotos());
+    const waitlist = waitlistPortsOf([martinWaitlist()]);
+    const avatars = portDouble(avatarPortsOf());
+    const customers = customerPortsOf([...fixtureCustomers(), walkInRecord()]);
+    const { store } = rig({
+      history,
+      profiles,
+      loyalty,
+      photos,
+      waitlist,
+      avatars,
+      customers,
+    });
+    open(store, WALK_IN, martinContext({ isOwner: false }));
+    // Set at once, before any read answers: the privacy block is decidable.
+    expect(store.customerId()).toBe(WALK_IN_ID);
+    await settle();
+    expect(customers.calls).toEqual([
+      { method: 'loadCustomer', args: [WALK_IN_ID] },
+    ]);
+    expect(profiles.calls).toEqual([]);
+    expect(loyalty.calls).toEqual([]);
+    expect(photos.calls).toEqual([]);
+    expect(history.calls).toEqual([]);
+    expect(waitlist.calls).toEqual([]);
+    expect(avatars.calls).toEqual([]);
+    // The head stays the seat's (S-L-19).
+    expect(store.hero()).toMatchObject({ name: 'Иво', paused: false });
+    expect(store.displayName()).toBe('Иво');
+    expect(store.wallet()).toBeNull();
+    // Opening the same walk-in again reads the record no second time.
+    open(store, WALK_IN, martinContext({ isOwner: false }));
+    await settle();
+    expect(customers.callsTo('loadCustomer')).toHaveLength(1);
   });
 });
 
@@ -3105,5 +3188,187 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     await settle();
     expect(store.roles()?.line).toBeNull();
     expect(store.roles()?.saveEnabled).toBe(false);
+  });
+});
+
+/*
+ * S-WS-F (security hardening): a walk-in with no account opens its card
+ * keyed by the RECORD the search found or a stored WALK_IN seat carries —
+ * the head, the admin's privacy block and the erasure state from the
+ * record (S-L-19). The «Роли» block stays account-only.
+ */
+describe('ClientCardStore — a walk-in’s record: the privacy block (security hardening S-WS-F)', () => {
+  const PRIVACY_FLAGS = { ...ALL_FLAGS, 'client.privacy': true };
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+
+  const EXPORTED: ClientPrivacyCall.Exported = {
+    clientExportVersion: ClientPrivacyCall.EXPORT_VERSION,
+    exportedCustomerId: WALK_IN_ID,
+    exportedAtUtcMs: NOW_MS,
+    exportDocumentCount: 1,
+    exportByteCount: 21,
+    exportJson: '{"clientExportVersion":1}',
+  };
+  const PREVIEW: ClientPrivacyCall.ErasurePreview = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.None,
+    erasureRecordCount: 1,
+    erasureVisitCount: 2,
+    erasureSiblingCustomerIds: [],
+  };
+  const ERASED: ClientPrivacyCall.Erasure = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.Erased,
+    erasureDone: true,
+    erasureVisitCount: 2,
+  };
+
+  /** The three privacy callables, every call recorded by its name. */
+  function recordingPrivacy(): ClientPrivacyGatewayPorts & {
+    readonly calls: {
+      readonly method: string;
+      readonly call: ClientPrivacyCall;
+    }[];
+  } {
+    const calls: { method: string; call: ClientPrivacyCall }[] = [];
+    return {
+      calls,
+      exportClientData: async (call) => {
+        calls.push({ method: 'exportClientData', call });
+        return CoreResult.ok(EXPORTED);
+      },
+      previewClientErasure: async (call) => {
+        calls.push({ method: 'previewClientErasure', call });
+        return CoreResult.ok(PREVIEW);
+      },
+      eraseClient: async (call) => {
+        calls.push({ method: 'eraseClient', call });
+        return CoreResult.ok(ERASED);
+      },
+    };
+  }
+
+  function walkInRig(
+    options: RigOptions & {
+      readonly privacy?: ClientPrivacyGatewayPorts;
+      readonly roles?: RolesAdminPorts;
+    } = {},
+  ) {
+    const privacy = options.privacy ?? recordingPrivacy();
+    let minted = 0;
+    const ids: IdPorts = {
+      nextId: () => `op-card-walk-in-${String((minted += 1)).padStart(4, '0')}`,
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CLIENT_PRIVACY_PORTS, useValue: privacy },
+        { provide: ID_PORTS, useValue: ids },
+        ...(options.roles === undefined
+          ? []
+          : [{ provide: ROLES_ADMIN_PORTS, useValue: options.roles }]),
+      ],
+    });
+    return rig({
+      flags: PRIVACY_FLAGS,
+      customers: customerPortsOf([...fixtureCustomers(), walkInRecord()]),
+      ...options,
+    });
+  }
+
+  async function openedAs(
+    store: ClientCardStore,
+    viewer: ClientCardContext['viewer'],
+  ): Promise<void> {
+    open(store, WALK_IN, martinContext({ isOwner: false, viewer }));
+    await settle();
+  }
+
+  it('offers the shop’s admin the export and the erase row on the record, and no «Роли» block', async () => {
+    const { store } = walkInRig({ roles: rolesAdminPortsOf() });
+    await openedAs(store, ADMIN);
+    expect(store.customerId()).toBe(WALK_IN_ID);
+    expect(store.privacy()).toEqual({
+      groupLabel: 'Лични данни',
+      exportLabel: 'Изтегли данните',
+      exportStatus: null,
+    });
+    const vm = must(store.erasure(), 'the erasure rows');
+    expect(vm.eraseLabel).toBe('Изтрий личните данни');
+    expect(vm.erasedLine).toBeNull();
+    // Account-only: a record-keyed card shows no roles block.
+    expect(store.roles()).toBeNull();
+  });
+
+  it('exports, previews and erases the RECORD by its id', async () => {
+    const privacy = recordingPrivacy();
+    const { store } = walkInRig({ privacy });
+    await openedAs(store, ADMIN);
+
+    expect(await store.exportData()).toEqual(EXPORTED);
+    await store.previewErasure(WALK_IN_ID);
+    expect(store.erasure()?.alert.open).toBe(true);
+    await store.confirmErasure();
+
+    expect(
+      privacy.calls.map(({ method, call }) => [method, call.customerId]),
+    ).toEqual([
+      ['exportClientData', WALK_IN_ID],
+      ['previewClientErasure', WALK_IN_ID],
+      ['eraseClient', WALK_IN_ID],
+    ]);
+    expect(store.erasure()?.erasedLine).toBe('Изтрит клиент');
+  });
+
+  it('is absent for a barber, a receptionist, the sysadmin and no viewer', async () => {
+    for (const viewer of [
+      null,
+      { userId: UserId.of('dev-barber'), roles: [Role.Barber] },
+      { userId: UserId.of('dev-desk'), roles: [Role.Receptionist] },
+      { userId: UserId.of('dev-sysadmin'), roles: [Role.Sysadmin] },
+    ]) {
+      const { store } = walkInRig();
+      await openedAs(store, viewer);
+      expect(store.customerId()).toBe(WALK_IN_ID);
+      expect(store.privacy()).toBeNull();
+      expect(store.erasure()).toBeNull();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  it('is absent with the flag off, and offline until the network is back', async () => {
+    const flagOff = walkInRig({ flags: ALL_FLAGS });
+    await openedAs(flagOff.store, ADMIN);
+    expect(flagOff.store.privacy()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const { store } = walkInRig();
+    await openedAs(store, ADMIN);
+    window.dispatchEvent(new Event('offline'));
+    expect(store.privacy()).toBeNull();
+    expect(store.erasure()).toBeNull();
+    window.dispatchEvent(new Event('online'));
+    expect(store.privacy()).not.toBeNull();
+  });
+
+  it('words an ERASED record’s line from the record it read', async () => {
+    const erased = ErasureLifecycle.complete(
+      ErasureLifecycle.begin(NOW_MS),
+      NOW_MS,
+    );
+    const { store } = walkInRig({
+      customers: customerPortsOf([walkInRecord(erased)]),
+    });
+    await openedAs(store, ADMIN);
+    expect(store.erasure()?.erasedLine).toBe('Изтрит клиент');
+  });
+
+  it('an absent record keeps the id — the export stays — and the erasure rows wait on a tag', async () => {
+    const customers = customerPortsOf([]);
+    const { store } = walkInRig({ customers });
+    await openedAs(store, ADMIN);
+    expect(customers.callsTo('loadCustomer')).toEqual([[WALK_IN_ID]]);
+    expect(store.customerId()).toBe(WALK_IN_ID);
+    expect(store.privacy()).not.toBeNull();
+    expect(store.erasure()).toBeNull();
   });
 });
