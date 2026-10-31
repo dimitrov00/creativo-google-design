@@ -13,9 +13,12 @@ import { Roles } from './roles.data';
  * capability-matrix harness (client-details design §12.6.3), which later drives
  * the rules lane from the same role sets.
  *
- * `Roles.PRIVACY` (the admin alone — the data-subject export and erasure,
- * audit-hardening Phase 3 P3-RU-13) is CALLABLE-ONLY: no rules helper twins
- * it, because the callables are the only door, so it has no case here.
+ * The CALLABLE-ONLY lists have no case here — no rules helper twins them,
+ * because the callables are the only door: `Roles.PRIVACY` (the admin alone
+ * — the data-subject export and erasure, audit-hardening Phase 3
+ * P3-RU-13), and `Roles.ASSIGN` / `Roles.ASSIGNABLE` (the admin alone, and
+ * every role but the sysadmin — the `setRoles` roles change, security
+ * hardening S-RU-14; `users.roles` takes no client write at all).
  *
  * The reader is deliberately small: it understands a helper whose body is a
  * single `return` of role checks joined by `||`, which is how every

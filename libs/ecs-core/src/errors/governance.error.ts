@@ -55,6 +55,35 @@ export const GovernanceErrorCode = {
   /** `startImpersonation` named an account that never finished registering (a PROVISIONED stub). */
   ImpersonationTargetNotRegistered:
     'GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED',
+  /*
+   * `setRoles` — an admin's roles change (security hardening S-WS-E,
+   * S-RU-11, S-RU-14, S-L-15).
+   */
+  /** `setRoles` called without a signed-in session. */
+  RolesUnauthenticated: 'GOVERNANCE_ROLES_UNAUTHENTICATED',
+  /**
+   * The caller may not change roles: the token's claims, then the STORED
+   * roles, hold no `Roles.ASSIGN` role, or the stored account is blocked
+   * (or erased) at the call's instant.
+   */
+  RolesForbidden: 'GOVERNANCE_ROLES_FORBIDDEN',
+  /** The requested set is empty, or names a role outside `Roles.ASSIGNABLE` (unknown, or the sysadmin). */
+  RolesInvalid: 'GOVERNANCE_ROLES_INVALID',
+  /** An admin cannot change their own roles. */
+  RolesSelf: 'GOVERNANCE_ROLES_SELF',
+  /** `setRoles` named a uid with no account document. */
+  RolesTargetNotFound: 'GOVERNANCE_ROLES_TARGET_NOT_FOUND',
+  /** `setRoles` named an account that never finished registering (a PROVISIONED stub). */
+  RolesTargetNotRegistered: 'GOVERNANCE_ROLES_TARGET_NOT_REGISTERED',
+  /** `setRoles` named an erased account. */
+  RolesTargetErased: 'GOVERNANCE_ROLES_TARGET_ERASED',
+  /** `setRoles` named an account holding the vendor's `sysadmin` — provisioned out of band. */
+  RolesTargetSysadmin: 'GOVERNANCE_ROLES_TARGET_SYSADMIN',
+  /**
+   * The roles are committed but the target's sessions could not be revoked
+   * (S-RU-10) — retryable: the same act sent again re-revokes.
+   */
+  RolesSessionsNotRevoked: 'GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED',
 } as const;
 export type GovernanceErrorCode =
   (typeof GovernanceErrorCode)[keyof typeof GovernanceErrorCode];
@@ -75,7 +104,16 @@ export type GovernanceError =
   | GovernanceError.ImpersonationForbidden
   | GovernanceError.ImpersonationTargetNotFound
   | GovernanceError.ImpersonationTargetErased
-  | GovernanceError.ImpersonationTargetNotRegistered;
+  | GovernanceError.ImpersonationTargetNotRegistered
+  | GovernanceError.RolesUnauthenticated
+  | GovernanceError.RolesForbidden
+  | GovernanceError.RolesInvalid
+  | GovernanceError.RolesSelf
+  | GovernanceError.RolesTargetNotFound
+  | GovernanceError.RolesTargetNotRegistered
+  | GovernanceError.RolesTargetErased
+  | GovernanceError.RolesTargetSysadmin
+  | GovernanceError.RolesSessionsNotRevoked;
 
 export const GovernanceError = {
   auditEntryEmptyAction(): GovernanceError.AuditEntryEmptyAction {
@@ -175,6 +213,53 @@ export const GovernanceError = {
       targetUserId,
     };
   },
+  rolesUnauthenticated(): GovernanceError.RolesUnauthenticated {
+    return { errorCode: GovernanceErrorCode.RolesUnauthenticated };
+  },
+  rolesForbidden(callerUserId: UserId): GovernanceError.RolesForbidden {
+    return { errorCode: GovernanceErrorCode.RolesForbidden, callerUserId };
+  },
+  rolesInvalid(): GovernanceError.RolesInvalid {
+    return { errorCode: GovernanceErrorCode.RolesInvalid };
+  },
+  rolesSelf(callerUserId: UserId): GovernanceError.RolesSelf {
+    return { errorCode: GovernanceErrorCode.RolesSelf, callerUserId };
+  },
+  rolesTargetNotFound(
+    targetUserId: UserId,
+  ): GovernanceError.RolesTargetNotFound {
+    return {
+      errorCode: GovernanceErrorCode.RolesTargetNotFound,
+      targetUserId,
+    };
+  },
+  rolesTargetNotRegistered(
+    targetUserId: UserId,
+  ): GovernanceError.RolesTargetNotRegistered {
+    return {
+      errorCode: GovernanceErrorCode.RolesTargetNotRegistered,
+      targetUserId,
+    };
+  },
+  rolesTargetErased(targetUserId: UserId): GovernanceError.RolesTargetErased {
+    return { errorCode: GovernanceErrorCode.RolesTargetErased, targetUserId };
+  },
+  rolesTargetSysadmin(
+    targetUserId: UserId,
+  ): GovernanceError.RolesTargetSysadmin {
+    return {
+      errorCode: GovernanceErrorCode.RolesTargetSysadmin,
+      targetUserId,
+    };
+  },
+  rolesSessionsNotRevoked(
+    targetUserId: UserId,
+  ): GovernanceError.RolesSessionsNotRevoked {
+    return {
+      errorCode: GovernanceErrorCode.RolesSessionsNotRevoked,
+      targetUserId,
+    };
+  },
 
   /** Narrows an error to one code — `GovernanceError.is(e, GovernanceErrorCode.ImpersonationSelf)`. */
   is<C extends GovernanceErrorCode>(
@@ -249,6 +334,47 @@ export namespace GovernanceError {
     /** The uid the start named — its account is a `PROVISIONED` stub. */
     readonly targetUserId: UserId;
   };
+  export type RolesUnauthenticated = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesUnauthenticated;
+  };
+  export type RolesForbidden = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesForbidden;
+    /** The signed-in caller who may not change roles. */
+    readonly callerUserId: UserId;
+  };
+  export type RolesInvalid = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesInvalid;
+  };
+  export type RolesSelf = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesSelf;
+    /** The admin who named their own account. */
+    readonly callerUserId: UserId;
+  };
+  export type RolesTargetNotFound = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesTargetNotFound;
+    /** The uid the call named — no `users` document holds it. */
+    readonly targetUserId: UserId;
+  };
+  export type RolesTargetNotRegistered = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesTargetNotRegistered;
+    /** The uid the call named — its account is a `PROVISIONED` stub. */
+    readonly targetUserId: UserId;
+  };
+  export type RolesTargetErased = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesTargetErased;
+    /** The uid the call named — its account is `ERASED`. */
+    readonly targetUserId: UserId;
+  };
+  export type RolesTargetSysadmin = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesTargetSysadmin;
+    /** The uid the call named — its account holds `sysadmin`. */
+    readonly targetUserId: UserId;
+  };
+  export type RolesSessionsNotRevoked = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesSessionsNotRevoked;
+    /** The account whose roles were committed but whose sessions live on. */
+    readonly targetUserId: UserId;
+  };
 }
 
 /** Why the operator backfill (`runBackfill`) refused a call — the ONLY source of these strings, the field `errorCode`. */
@@ -272,6 +398,9 @@ export type RunBackfillRefusal = { readonly errorCode: RunBackfillRefusalCode };
 
 /** What `startImpersonation` answers with: a governance refusal or the store's failure. */
 export type StartImpersonationError = GovernanceError | RepositoryError;
+
+/** What `setRoles` answers with: a governance refusal (the failed revoke included) or the store's failure. */
+export type SetRolesError = GovernanceError | RepositoryError;
 
 /** What `endImpersonation` answers with: a governance refusal or the store's failure. */
 export type EndImpersonationError = GovernanceError | RepositoryError;

@@ -54,6 +54,14 @@ export const LogEvent = {
   ProfileUpdateRefused: 'profile.update.refused',
   RegistrationDisplayNameFailed: 'registration.display_name_failed',
   RhythmRuleWriteFailed: 'rhythm rule write failed',
+  /** An admin changed an account's roles (security hardening S-WS-E): ids and a count only. */
+  RolesChanged: 'roles.changed',
+  /** `setRoles` refused: the code alone. */
+  RolesChangeRefused: 'roles.change_refused',
+  /** The roles are committed but the target's sessions were not revoked (S-RU-10) — alerted on any occurrence. */
+  RolesSessionsNotRevoked: 'roles.sessions_not_revoked',
+  /** The target's sessions were revoked — every successful revoke, the unchanged call too (S-L-26): ids and a boolean. */
+  RolesSessionsRevoked: 'roles.sessions_revoked',
   TriggerAttemptFailed: 'trigger attempt failed',
   TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
   WaitlistBarberSkipped: 'waitlist barber skipped',

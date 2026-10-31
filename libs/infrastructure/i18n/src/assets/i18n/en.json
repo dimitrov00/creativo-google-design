@@ -160,6 +160,11 @@
     "PRIVACY_ERASURE_STAFF_ACCOUNT": "A staff account can't be erased here.",
     "PRIVACY_ACCOUNT_LINK_MISMATCH": "The account doesn't match the client's record. Contact support.",
     "PRIVACY_ERASURE_TOO_LARGE": "There are too many records for one erasure. Contact support.",
+    "GOVERNANCE_ROLES_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
+    "GOVERNANCE_ROLES_TARGET_NOT_FOUND": "We couldn't find this account.",
+    "GOVERNANCE_ROLES_TARGET_NOT_REGISTERED": "This person hasn't finished signing up yet.",
+    "GOVERNANCE_ROLES_TARGET_ERASED": "This client's personal data was erased.",
+    "GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED": "The roles are saved, but the old sessions weren't ended. Try again.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
     "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Try again.",
     "PIPELINE_CATALOG_CHANGED": "Something went wrong. Try again.",
@@ -2123,6 +2128,18 @@
       "alertBody": "Visits: {{visits}} · Notes: {{notes}} · Photos: {{photos}} · Sign-in accounts: {{accounts}} · Other records with this phone or e-mail: {{siblings}}. The name, phone and e-mail are removed and the sign-in account is deleted. Visits and payments stay.",
       "eraseConfirm": "Erase",
       "eraseKeep": "Cancel"
+    },
+    "roles": {
+      "groupLabel": "Roles",
+      "role": {
+        "client": "Client",
+        "barber": "Barber",
+        "receptionist": "Front desk",
+        "content_manager": "Content",
+        "admin": "Admin"
+      },
+      "save": "Save roles",
+      "saved": "Roles saved. They apply from the next sign-in."
     }
   },
   "visits": {

@@ -208,6 +208,7 @@ export * from './reward-redemption.data';
 export * from './reward-ref-fields.data';
 export * from './rhythm-effective.data';
 export * from './role.data';
+export * from './roles-call.data';
 export * from './roles.data';
 export * from './roster-window.data';
 export * from './rounding-mode.data';

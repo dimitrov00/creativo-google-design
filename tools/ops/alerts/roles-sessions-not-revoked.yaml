@@ -1,0 +1,31 @@
+# Alert: a roles change committed but the target's sessions were not revoked
+# (security hardening S-WS-E, S-RU-10) over the roles_sessions_not_revoked
+# metric of tools/ops/log-metrics.sh. Until a revoke succeeds the target's
+# old roles ride every ID token refreshed from their live session, and one
+# failure stays under callable_failed's threshold — so ANY occurrence
+# alerts. Add a notification channel before relying on it.
+displayName: 'Creativo: roles changed with sessions not revoked (roles_sessions_not_revoked)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    setRoles committed an account's new roles but Admin Auth's
+    revokeRefreshTokens failed, so the account's live session keeps its old
+    roles. The admin's card keeps a retry: Save on the same account re-sends
+    the stored set and re-revokes. The line carries the target uid and the
+    failure code; join it to the callable outcome line in the audit bucket.
+combiner: OR
+conditions:
+  - displayName: 'any roles_sessions_not_revoked in 5 minutes'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/roles_sessions_not_revoked" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

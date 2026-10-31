@@ -44,6 +44,10 @@ describe('LogEvent', () => {
       ProfileUpdateRefused: 'profile.update.refused',
       RegistrationDisplayNameFailed: 'registration.display_name_failed',
       RhythmRuleWriteFailed: 'rhythm rule write failed',
+      RolesChanged: 'roles.changed',
+      RolesChangeRefused: 'roles.change_refused',
+      RolesSessionsNotRevoked: 'roles.sessions_not_revoked',
+      RolesSessionsRevoked: 'roles.sessions_revoked',
       TriggerAttemptFailed: 'trigger attempt failed',
       TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
       WaitlistBarberSkipped: 'waitlist barber skipped',
@@ -97,6 +101,22 @@ describe('LogEvent', () => {
       expect(text.startsWith('privacy.')).toBe(true);
     }
     expect(LogEvent.PrivacyErasureStep).not.toBe(LogEvent.PrivacyClientErased);
+  });
+
+  it('spells the roles-change values dotted and domain-prefixed (security hardening S-WS-E)', () => {
+    for (const text of [
+      LogEvent.RolesChanged,
+      LogEvent.RolesChangeRefused,
+      LogEvent.RolesSessionsNotRevoked,
+      LogEvent.RolesSessionsRevoked,
+    ]) {
+      expect(text).toMatch(/^[a-z]+\.[a-z_]+$/);
+      expect(text.startsWith('roles.')).toBe(true);
+    }
+    // The alert filters on the failed revoke's value alone (S-RU-10).
+    expect(LogEvent.RolesSessionsNotRevoked).not.toBe(
+      LogEvent.RolesSessionsRevoked,
+    );
   });
 
   it('names every message once: no two events share a text', () => {

@@ -230,6 +230,23 @@ export type AuthAdminPorts = {
 };
 
 /**
+ * Ends every session of an Auth account (Admin Auth's
+ * `revokeRefreshTokens`): its next refresh fails, so its next token is
+ * minted fresh at sign-in — from the written `users.roles` (security
+ * hardening S-RU-10, `setRoles`). An account with no Auth user
+ * (`auth/user-not-found`) has no session to end: ok. Any other failure
+ * answers its code, never the SDK's message.
+ */
+export type RevokeRefreshTokens = (
+  uid: UserId,
+) => Promise<Result<void, PipelineError>>;
+
+/** Ending an account's sessions so its next token is minted fresh — `setRoles` (S-RU-10); `auth-claims.adapter.ts`, beside {@link AuthAdminPorts}. */
+export type AuthSessionRevokePorts = {
+  readonly revokeRefreshTokens: RevokeRefreshTokens;
+};
+
+/**
  * The deployment's authentication configuration — which strategy runs (the
  * channel `requestOtp` accepts, the OTP policy, the fields registration
  * requires): a value the composition root says in one place

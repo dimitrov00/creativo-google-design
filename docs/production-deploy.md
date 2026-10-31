@@ -456,12 +456,13 @@ gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
       `jsonPayload.clientIssueKind:*`, label `kind`, DELTA INT64 — the recipe
       this item used to spell out), and, recommended by audit-hardening WS-6,
       `trigger_attempt_failed` (labels `outcome`, `fn`), `document_refused`,
-      `audit_actor_missing` and `callable_failed` (label `callable`), then
-      the alert policies of `tools/ops/alerts/` (client issues above 100 per
+      `audit_actor_missing`, `callable_failed` (label `callable`) and, from
+      security hardening S-WS-E, `roles_sessions_not_revoked`, then the
+      alert policies of `tools/ops/alerts/` (client issues above 100 per
       5 minutes, as before; any PERMANENT trigger attempt or more than 10
       failing in 5 minutes; any refused document; any act without its audit
-      row; more than 5 failures of one callable in 5 minutes). Read the dry
-      run first:
+      row; more than 5 failures of one callable in 5 minutes; any roles
+      change whose sessions were not revoked). Read the dry run first:
 
 ```bash
 tools/ops/log-metrics.sh --project "$PROJECT_ID"
@@ -471,7 +472,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID"
 tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 ```
 
-- [ ] **Attach an e-mail notification channel** to each of the five alert
+- [ ] **Attach an e-mail notification channel** to each of the six alert
       policies in Cloud Monitoring → Alerting (the files name none).
       Source: `docs/architecture/firestore-runbook.md` §3 step 7;
       `tools/ops/log-metrics.sh`, `tools/ops/alerts/*.yaml`;
@@ -588,10 +589,17 @@ pnpm run preflight --project "$PROJECT_ID"
       `rebuildCapacityOnSettingsChange`.
       Source: `apps/functions/src/adapters/firestore-settings.adapter.ts:26-36`;
       `firestore.rules:750-757`; `tools/seed/fixtures/settings.fixtures.ts`.
-- [ ] **The first admin, then the staff.** No callable grants roles
-      (`grantRoles` is unbuilt), and the rules never let a client write
-      `users/{uid}`. Roles reach the ID token only from the stored
-      `users/{uid}.roles`, and only at sign-in. Steps:
+- [ ] **The first admin, then the staff.** The FIRST admin is a console or
+      Admin-SDK write (below): `setRoles`, the admin's audited roles change
+      (security hardening S-WS-E), needs an admin to call it, and the rules
+      never let a client write `users/{uid}`. Every later change — the
+      staff, a second admin, a demotion — goes through `setRoles` (the staff
+      client card's «Роли» block), which writes `users/{uid}.roles` with its
+      own `PROFILE_ROLES_CHANGED` row and revokes the account's sessions; a
+      console edit is audited only as `SYSTEM` / `ADMIN_SDK`. The sysadmin is
+      never assignable through `setRoles`: it stays a console write. Roles
+      reach the ID token only from the stored `users/{uid}.roles`, and only
+      at sign-in. Steps for the first admin:
   1. The person signs in once through OTP and finishes registration. This
      needs the real OTP sender from section 1.
   2. With Admin credentials, set the root `roles` array on `users/{uid}` (for
@@ -606,7 +614,8 @@ pnpm run preflight --project "$PROJECT_ID"
      `libs/ecs-core/src/pipelines/verify-otp.pipeline.ts:60-64`;
      `libs/ecs-core/src/components/role.data.ts:15-22`;
      `libs/ecs-core/src/components/auth-claims.data.ts:94-101`;
-     `tools/seed/fixtures/users.fixtures.ts:30-40` (`registeredAccountBody`).
+     `tools/seed/fixtures/users.fixtures.ts:30-40` (`registeredAccountBody`);
+     `libs/ecs-core/src/pipelines/set-roles.pipeline.ts` (every later change).
 
 ---
 
@@ -775,7 +784,7 @@ ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
 code) is wired outside the emulator (P7), while the refusing OTP sender is
 still wired (P8), or if `WALKIN_ID_KEY` is missing.
 
-The deploy holds 50 functions. Audit-hardening WS-3 (DEP-14) added thirteen
+The deploy holds 51 functions. Audit-hardening WS-3 (DEP-14) added thirteen
 document-change audit triggers, one per governed collection, each retrying:
 `auditSettingsChanges`, `auditServicesChanges`, `auditBarbersChanges`,
 `auditLocationsChanges`, `auditBarberSchedulesChanges`,
@@ -811,6 +820,20 @@ service account: confirm its roles on the project (runbook §3).
 Source: `apps/functions/src/main.ts` (`previewClientErasure`,
 `eraseClient`); `docs/architecture/firestore-runbook.md` §1.1 ("The
 erasure's reads and writes"), §2.5 and §3.
+
+Security hardening (S-WS-E, S-DEP-6) added the 51st: `setRoles`, the
+admin's audited roles change (the staff client card's «Роли» block). It is
+bound to `LOG_DIGEST_KEY` like every traced callable (nothing new to
+create), writes `users/{uid}.roles` and one `PROFILE_ROLES_CHANGED` row in
+one commit, then revokes the target's refresh tokens (`auth.revokeRefreshTokens`)
+so their next session is minted from the written roles. The revoke runs as
+the functions' runtime service account — the one `eraseClient` deletes Auth
+users as, so the same confirmation covers it (runbook §3). A failed revoke answers
+`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED` with the roles committed and fires
+the `roles_sessions_not_revoked` alert (the monitoring item below).
+Source: `apps/functions/src/main.ts` (`setRoles`);
+`libs/ecs-core/src/pipelines/set-roles.pipeline.ts`;
+`docs/architecture/firestore-runbook.md` §3.
 
 ### 3.4 Hosting, straight after functions
 
@@ -870,7 +893,7 @@ curl -sI "https://<domain>/"
 ```
 
 - [ ] **Logs:** Cloud Logging has **no** `[otp] would send` line. The
-      five metrics of `tools/ops/log-metrics.sh` exist
+      six metrics of `tools/ops/log-metrics.sh` exist
       (`gcloud logging metrics list --project="$PROJECT_ID"`). Error Reporting
       shows no new group.
 - [ ] **The next morning:** the 03:00, 03:30 and 04:00 schedules ran without

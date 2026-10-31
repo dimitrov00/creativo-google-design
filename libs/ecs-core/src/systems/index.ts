@@ -68,6 +68,7 @@ export * from './registration.system';
 export * from './retention.system';
 export * from './reward.system';
 export * from './rhythm-draft.system';
+export * from './role-assignment.system';
 export * from './roster.system';
 export * from './schedule-exception.system';
 export * from './search-fields.system';

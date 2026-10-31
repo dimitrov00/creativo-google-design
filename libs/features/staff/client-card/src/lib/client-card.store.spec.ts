@@ -9,6 +9,7 @@ import {
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  AccountLifecycle,
   BirthDate,
   ClientPrivacyCall,
   CouponOccasion,
@@ -18,6 +19,7 @@ import {
   JournalEffect,
   JournalFeed,
   Role,
+  type RolesCall,
   VisitFilter,
 } from '@core/components';
 import type { Appointment, JournalEntry } from '@core/entities';
@@ -39,6 +41,7 @@ import type {
   LoyaltyCatalogReadPorts,
   PreviewClientErasure,
   ProfilePorts,
+  RolesAdminPorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
@@ -50,6 +53,7 @@ import {
   UserId,
 } from '@core/primitives';
 import {
+  GovernanceErrorCode,
   PipelineError,
   PipelineErrorCode,
   RepositoryError as CoreRepositoryError,
@@ -73,6 +77,7 @@ import {
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
+  ROLES_ADMIN_PORTS,
   WAITLIST_READ_PORTS,
   provideFlags,
 } from '@creativo/infrastructure/firebase-app';
@@ -89,6 +94,7 @@ import {
 import { LEDGER_PAGE_READ } from './ledger.presenter';
 import { WALLET_ACTIVITY_READ } from './wallet.presenter';
 import {
+  ADMIN_VIEWER,
   GEORGI,
   GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
@@ -123,6 +129,7 @@ import {
   pausedUntilOctober,
   photoPortsOf,
   profilePortsOf,
+  rolesAdminPortsOf,
   shopZonePortsOf,
   statsOf,
   statsPortsOf,
@@ -2737,5 +2744,366 @@ describe('ClientCardStore — the admin’s erasure (audit-hardening Phase 3, WS
     expect(store.erasure()?.eraseStatus).toBe(
       'Изтриването още не е завършило. Опитай пак.',
     );
+  });
+});
+
+/*
+ * «Роли» — the admin's roles change (security hardening S-WS-E, S-RU-13,
+ * S-L-18): toggles over `Roles.ASSIGNABLE`, Save as
+ * `RoleAssignmentSystem.saveOf` answers, ONE operation id per act reused
+ * on its retry, and a failed revoke that is never forgotten (S-RU-10). The
+ * rig binds the callable's port and the id source only here, as the
+ * privacy block's does.
+ */
+describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', () => {
+  const NOT_REVOKED = PipelineError.fromWire('functions/unavailable', {
+    errorCode: GovernanceErrorCode.RolesSessionsNotRevoked,
+  });
+  const NOT_REVOKED_LINE =
+    'Ролите са запазени, но старите сесии не бяха прекратени. Опитай пак.';
+  const SAVED_LINE = 'Ролите са запазени. Важат от следващото влизане.';
+
+  /** Names the wire can carry, `op-card-roles-0001`, … — each one recorded. */
+  function rolesIds(): IdPorts & { readonly minted: string[] } {
+    const minted: string[] = [];
+    return {
+      minted,
+      nextId: () => {
+        const id = `op-card-roles-${String(minted.length + 1).padStart(4, '0')}`;
+        minted.push(id);
+        return id;
+      },
+    };
+  }
+
+  const changed = (
+    roles: readonly Role[],
+  ): CoreResult<RolesCall.Changed, PipelineError> =>
+    CoreResult.ok({
+      targetUserId: UserId.of(GEORGI),
+      roles,
+      rolesChanged: true,
+    });
+
+  function rolesRig(
+    options: RigOptions & {
+      readonly admin?: RolesAdminPorts | null;
+      readonly ids?: IdPorts | null;
+    } = {},
+  ) {
+    const admin =
+      options.admin === undefined ? rolesAdminPortsOf() : options.admin;
+    const ids = options.ids === undefined ? rolesIds() : options.ids;
+    TestBed.configureTestingModule({
+      providers: [
+        ...(admin === null
+          ? []
+          : [{ provide: ROLES_ADMIN_PORTS, useValue: admin }]),
+        ...(ids === null ? [] : [{ provide: ID_PORTS, useValue: ids }]),
+      ],
+    });
+    return rig(options);
+  }
+
+  async function openedAs(
+    store: ClientCardStore,
+    viewer: ClientCardContext['viewer'],
+    subject: ClientCardSubject = subjectOf(GEORGI),
+  ): Promise<void> {
+    open(store, subject, georgiContext({ viewer }));
+    await settle();
+  }
+
+  const ticked = (store: ClientCardStore): readonly Role[] =>
+    (store.roles()?.toggles ?? [])
+      .filter((toggle) => toggle.checked)
+      .map((toggle) => toggle.role);
+
+  it('offers the block to the shop’s admin on another account, the stored roles ticked, Save off, no line', async () => {
+    const { store } = rolesRig();
+    await openedAs(store, ADMIN_VIEWER);
+    const block = must(store.roles(), 'the roles block');
+    expect(block.groupLabel).toBe('Роли');
+    expect(
+      block.toggles.map((toggle) => [toggle.label, toggle.checked]),
+    ).toEqual([
+      ['Клиент', true],
+      ['Бръснар', false],
+      ['Рецепция', false],
+      ['Съдържание', false],
+      ['Администратор', false],
+    ]);
+    expect(block.saveLabel).toBe('Запази ролите');
+    expect(block.saveEnabled).toBe(false);
+    expect(block.line).toBeNull();
+    expect(block.testId).toBe('client-roles');
+    // Never part of the overview, and independent of `client.privacy` (off here).
+    expect('roles' in store.overview()).toBe(false);
+    expect(store.privacy()).toBeNull();
+  });
+
+  it('is absent without the port or the id source', async () => {
+    const noPort = rolesRig({ admin: null });
+    await openedAs(noPort.store, ADMIN_VIEWER);
+    expect(noPort.store.roles()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const noIds = rolesRig({ ids: null });
+    await openedAs(noIds.store, ADMIN_VIEWER);
+    expect(noIds.store.roles()).toBeNull();
+  });
+
+  it('is absent for no viewer, a barber, a receptionist, a content manager and the sysadmin — the admin alone', async () => {
+    for (const viewer of [
+      null,
+      { userId: UserId.of('dev-barber'), roles: [Role.Barber] },
+      { userId: UserId.of('dev-desk'), roles: [Role.Receptionist] },
+      { userId: UserId.of('dev-content'), roles: [Role.ContentManager] },
+      { userId: UserId.of('dev-sysadmin'), roles: [Role.Sysadmin] },
+    ]) {
+      const { store } = rolesRig();
+      await openedAs(store, viewer);
+      expect(store.roles()).toBeNull();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  it('is absent on the viewer’s own account, on an account holding the sysadmin, an erased one, a stub and a guest', async () => {
+    const own = rolesRig();
+    await openedAs(own.store, {
+      userId: UserId.of(GEORGI),
+      roles: [Role.Admin],
+    });
+    expect(own.store.roles()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const sysadmin = rolesRig({
+      profiles: profilePortsOf([
+        { ...georgiUser(), roles: [Role.Client, Role.Sysadmin] },
+      ]),
+    });
+    await openedAs(sysadmin.store, ADMIN_VIEWER);
+    expect(sysadmin.store.roles()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const erased = rolesRig({
+      profiles: profilePortsOf([georgiUser(AccountLifecycle.erase(NOW_MS))]),
+    });
+    await openedAs(erased.store, ADMIN_VIEWER);
+    expect(erased.store.roles()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const stub = rolesRig({ profiles: profilePortsOf([stubOf(GEORGI)]) });
+    await openedAs(stub.store, ADMIN_VIEWER);
+    expect(stub.store.roles()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const guest = rolesRig();
+    await openedAs(guest.store, ADMIN_VIEWER, GUEST);
+    expect(guest.store.roles()).toBeNull();
+  });
+
+  it('is absent until the profile has answered, offline, and back with the network', async () => {
+    const profiles = heldProfilePortsOf();
+    const { store } = rolesRig({ profiles });
+    open(store, subjectOf(GEORGI), georgiContext({ viewer: ADMIN_VIEWER }));
+    await settle();
+    expect(store.roles()).toBeNull();
+    profiles.answer();
+    await settle();
+    expect(store.roles()).not.toBeNull();
+
+    window.dispatchEvent(new Event('offline'));
+    expect(store.roles()).toBeNull();
+    window.dispatchEvent(new Event('online'));
+    expect(store.roles()).not.toBeNull();
+  });
+
+  it('a toggle then Save sends the whole set once under the act’s ONE id; the answer refreshes the toggles', async () => {
+    const admin = rolesAdminPortsOf(changed([Role.Client, Role.Barber]));
+    const ids = rolesIds();
+    const { store } = rolesRig({ admin, ids });
+    await openedAs(store, ADMIN_VIEWER);
+
+    store.toggleRole(Role.Barber);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.saveEnabled).toBe(true);
+
+    await store.saveRoles();
+
+    expect(admin.calls).toEqual([
+      {
+        targetUserId: UserId.of(GEORGI),
+        roles: [Role.Client, Role.Barber],
+        operationId: 'op-card-roles-0001',
+      },
+    ]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.saveEnabled).toBe(false);
+    expect(store.roles()?.line).toBe(SAVED_LINE);
+
+    // A new change is a new act: a new name.
+    store.toggleRole(Role.Receptionist);
+    expect(store.roles()?.line).toBeNull();
+    await store.saveRoles();
+    expect(
+      admin.calls.map((call) =>
+        ClientOperationId.inPayload(call, 'operationId'),
+      ),
+    ).toEqual(['op-card-roles-0001', 'op-card-roles-0002']);
+  });
+
+  it('follows the server’s answer, not the set it sent', async () => {
+    const admin = rolesAdminPortsOf(changed([Role.Barber]));
+    const { store } = rolesRig({ admin });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Barber);
+    await store.saveRoles();
+    expect(ticked(store)).toEqual([Role.Barber]);
+  });
+
+  it('never offers Save for an empty set or the stored one, and sends nothing then', async () => {
+    const admin = rolesAdminPortsOf();
+    const { store } = rolesRig({ admin });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Client);
+    expect(ticked(store)).toEqual([]);
+    expect(store.roles()?.saveEnabled).toBe(false);
+    await store.saveRoles();
+    store.toggleRole(Role.Client);
+    expect(store.roles()?.saveEnabled).toBe(false);
+    await store.saveRoles();
+    expect(admin.calls).toEqual([]);
+    // A role the block does not show is never toggled.
+    store.toggleRole(Role.Sysadmin);
+    expect(ticked(store)).toEqual([Role.Client]);
+  });
+
+  it('keeps a refused act’s id for its retry, words the refusal, and mints anew once it lands', async () => {
+    const forbidden = PipelineError.fromWire('functions/permission-denied', {
+      errorCode: GovernanceErrorCode.RolesForbidden,
+    });
+    const admin = rolesAdminPortsOf(
+      CoreResult.err(forbidden),
+      changed([Role.Client, Role.Barber]),
+    );
+    const ids = rolesIds();
+    const { store } = rolesRig({ admin, ids });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Barber);
+
+    await store.saveRoles();
+    expect(store.roles()?.line).toBe(
+      'Нямаш права за това. Влез отново или питай администратора.',
+    );
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.saveEnabled).toBe(true);
+
+    await store.saveRoles();
+    expect(admin.calls).toHaveLength(2);
+    expect(admin.calls[0]).toBe(admin.calls[1]);
+    expect(ids.minted).toEqual(['op-card-roles-0001']);
+    expect(store.roles()?.line).toBe(SAVED_LINE);
+  });
+
+  it('after a failed revoke keeps the line and Save with the toggles unchanged, and Save re-sends the stored set', async () => {
+    const admin = rolesAdminPortsOf(
+      CoreResult.err(NOT_REVOKED),
+      CoreResult.ok({
+        targetUserId: UserId.of(GEORGI),
+        roles: [Role.Client, Role.Barber],
+        rolesChanged: false,
+      }),
+    );
+    const ids = rolesIds();
+    const { store } = rolesRig({ admin, ids });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Barber);
+
+    await store.saveRoles();
+    expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.saveEnabled).toBe(true);
+
+    await store.saveRoles();
+    expect(admin.calls).toHaveLength(2);
+    expect(admin.calls[1]).toEqual({
+      targetUserId: UserId.of(GEORGI),
+      roles: [Role.Client, Role.Barber],
+      operationId: 'op-card-roles-0001',
+    });
+    expect(ids.minted).toEqual(['op-card-roles-0001']);
+    expect(store.roles()?.line).toBe(SAVED_LINE);
+    expect(store.roles()?.saveEnabled).toBe(false);
+  });
+
+  it('never forgets a failed revoke: it outlives a re-open and another person, until a revoke succeeds', async () => {
+    const admin = rolesAdminPortsOf(
+      CoreResult.err(NOT_REVOKED),
+      CoreResult.err(NOT_REVOKED),
+      changed([Role.Client, Role.Barber]),
+    );
+    const { store } = rolesRig({ admin });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Barber);
+    await store.saveRoles();
+
+    // The same person again: the line and the retry stay.
+    await openedAs(store, ADMIN_VIEWER);
+    expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
+    expect(store.roles()?.saveEnabled).toBe(true);
+
+    // Another person: nothing pending for him.
+    open(store, subjectOf(MARTIN), martinContext({ viewer: ADMIN_VIEWER }));
+    await settle();
+    expect(store.roles()?.line).toBeNull();
+    expect(store.roles()?.saveEnabled).toBe(false);
+
+    // Back to Георги: his retry comes back, the committed set ticked.
+    await openedAs(store, ADMIN_VIEWER);
+    expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    await store.saveRoles();
+    expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
+    await store.saveRoles();
+    expect(admin.calls).toHaveLength(3);
+    expect(new Set(admin.calls.map((call) => call.roles.join(',')))).toEqual(
+      new Set(['client,barber']),
+    );
+    expect(store.roles()?.line).toBe(SAVED_LINE);
+
+    // Revoked at last: a re-open forgets it.
+    await openedAs(store, ADMIN_VIEWER);
+    expect(store.roles()?.line).toBeNull();
+  });
+
+  it('asks once while a change is on its way, and drops the answer of a person no longer on the card', async () => {
+    const pending: { release: (() => void) | null } = { release: null };
+    const calls: RolesCall[] = [];
+    const held: RolesAdminPorts = {
+      setRoles: (call) => {
+        calls.push(call);
+        return new Promise((resolve) => {
+          pending.release = () => resolve(changed([Role.Client, Role.Barber]));
+        });
+      },
+    };
+    const { store } = rolesRig({ admin: held });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Barber);
+
+    const first = store.saveRoles();
+    await store.saveRoles();
+    store.toggleRole(Role.Admin);
+    expect(calls).toHaveLength(1);
+    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(store.roles()?.line).toBeNull();
+
+    open(store, subjectOf(MARTIN), martinContext({ viewer: ADMIN_VIEWER }));
+    must(pending.release, 'the held change')();
+    await first;
+    await settle();
+    expect(store.roles()?.line).toBeNull();
+    expect(store.roles()?.saveEnabled).toBe(false);
   });
 });

@@ -816,3 +816,19 @@ export async function storedObjectExists(path: string): Promise<boolean> {
     .exists();
   return exists;
 }
+
+/**
+ * The `auditAction` of every `auditLog` row about the account `uid`
+ * (`targetUserId`), read back through the Admin SDK — what the server
+ * FILED for an act on that account (the roles change's
+ * `PROFILE_ROLES_CHANGED`, security hardening S-WS-E), in no set order.
+ */
+export async function readAuditActionsFor(
+  uid: string,
+): Promise<readonly string[]> {
+  const snapshot = await getFirestore(adminApp())
+    .collection(Collections.AuditLog)
+    .where('targetUserId', '==', uid)
+    .get();
+  return snapshot.docs.map((doc) => String(doc.get('auditAction')));
+}

@@ -52,7 +52,10 @@ import {
   WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
-import { RepositoryError as CoreRepositoryError } from '@core/errors';
+import {
+  type PipelineError,
+  RepositoryError as CoreRepositoryError,
+} from '@core/errors';
 import {
   AccountLifecycle,
   BirthDate,
@@ -76,6 +79,7 @@ import {
   PolicyPassStamp,
   PublicLabel,
   Role,
+  type RolesCall,
   type ScheduledStreakRule,
   type ShopNow,
   StreakRule,
@@ -117,6 +121,7 @@ import type {
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
   ProfilePorts,
+  RolesAdminPorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
@@ -1070,6 +1075,12 @@ export const BARBER_VIEWER: ClientCardViewer = {
   roles: [Role.Barber],
 };
 
+/** The shop's admin (`Roles.ASSIGN`): the «Роли» block's one viewer (security hardening S-WS-E). */
+export const ADMIN_VIEWER: ClientCardViewer = {
+  userId: UserId.of('dev-admin'),
+  roles: [Role.Admin],
+};
+
 /** Георги's card, opened from today's settled 10:00 fade (he owns it). */
 export function georgiContext(
   overrides: Partial<ClientCardContext> = {},
@@ -1467,4 +1478,35 @@ export function journalPortsOf(
   ],
 ): PortDouble<ClientJournalPorts> {
   return portDouble(memoryClientJournalPorts(entries));
+}
+
+/** {@link rolesAdminPortsOf}'s double: every call recorded, in order. */
+export type RolesAdminDouble = RolesAdminPorts & {
+  readonly calls: RolesCall[];
+};
+
+/**
+ * `ROLES_ADMIN_PORTS` (security hardening S-WS-E), scripted: each answer in
+ * turn, the last one repeating — with none scripted, every call is saved
+ * as sent (the set it named, `rolesChanged: true`). Every call recorded.
+ */
+export function rolesAdminPortsOf(
+  ...answers: CoreResult<RolesCall.Changed, PipelineError>[]
+): RolesAdminDouble {
+  const calls: RolesCall[] = [];
+  return {
+    calls,
+    setRoles: async (call) => {
+      calls.push(call);
+      const scripted = answers[Math.min(calls.length, answers.length) - 1];
+      return (
+        scripted ??
+        CoreResult.ok({
+          targetUserId: call.targetUserId,
+          roles: call.roles,
+          rolesChanged: true,
+        })
+      );
+    },
+  };
 }

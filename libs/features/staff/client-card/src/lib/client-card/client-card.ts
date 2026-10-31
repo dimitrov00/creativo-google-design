@@ -7,7 +7,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import type { ClientPrivacyCall, VisitLeg } from '@core/components';
+import type { ClientPrivacyCall, Role, VisitLeg } from '@core/components';
 import type { CouponGrantId, CustomerId } from '@core/primitives';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
@@ -128,7 +128,7 @@ const PLACEHOLDER = {
  * are already worded. It writes nothing either — every act is an output the
  * visit editor turns into a push, a draft change or a pop, except the
  * admin's export, which the store asks the server for and this page saves,
- * and the admin's erasure, which the store carries out.
+ * and the admin's erasure and roles change, which the store carries out.
  */
 @Component({
   selector: 'lib-client-card',
@@ -213,6 +213,8 @@ export class ClientCard {
   protected readonly privacy = this.store.privacy;
   /** L — the erasure's rows and its ONE alert; `null` is none. */
   protected readonly erasure = this.store.erasure;
+  /** «Роли» — the admin's roles block; `null` is no block. */
+  protected readonly roles = this.store.roles;
   protected readonly online = this.store.online;
 
   protected readonly placeholder = PLACEHOLDER;
@@ -379,6 +381,16 @@ export class ClientCard {
   /** Escape or the scrim: the safe answer. */
   protected dismissErasure(): void {
     this.store.dismissErasure();
+  }
+
+  /** «Роли» a role's row: on ⇄ off in the set Save would send. */
+  protected toggleRole(role: Role): void {
+    this.store.toggleRole(role);
+  }
+
+  /** «Запази ролите»: the store sends the set; its line follows the answer. */
+  protected saveRoles(): void {
+    void this.store.saveRoles();
   }
 
   /** «Опитай пак» under the head: every failed module again — or the whole card. */

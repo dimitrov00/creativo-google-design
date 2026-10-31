@@ -58,6 +58,7 @@ import {
   PROFILE_PORTS,
   PROGRAMS_PORTS,
   ReportingErrorHandler,
+  ROLES_ADMIN_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   SHOP_EVENT_READ_PORTS,
@@ -75,6 +76,7 @@ import {
   provideFirebaseFunctions,
   provideFlags,
   provideLazyPort,
+  rolesAdminPorts,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
 import { Result } from '@core/primitives';
@@ -356,6 +358,12 @@ export const appConfig: ApplicationConfig = {
     {
       provide: CLIENT_PRIVACY_PORTS,
       useFactory: () => clientPrivacyPorts(inject(GATEWAY_PORTS)),
+    },
+    // The admin's roles change (the staff client card's «Роли» block, S-WS-E),
+    // over the same callable client.
+    {
+      provide: ROLES_ADMIN_PORTS,
+      useFactory: () => rolesAdminPorts(inject(GATEWAY_PORTS)),
     },
     // The device's storage: the `/book` draft per tab.
     {

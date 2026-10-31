@@ -9,6 +9,8 @@ import {
   JournalFeed,
   Metric,
   PersonalRecordKind,
+  Role,
+  type Roles,
   VisitPerspective,
 } from '@core/components';
 import {
@@ -999,6 +1001,13 @@ export interface ClientCardWords {
    * refusal's words are `errors.<errorCode>`, as the export's.
    */
   readonly erasure: ClientErasureWords;
+  /**
+   * The «Роли» block's words (security hardening S-WS-E, S-RU-13; the
+   * catalogue's `clientCard.roles.*`). A refusal's words are
+   * `errors.<errorCode>`, worded by the presenter through
+   * `wordPipelineError`, never held here.
+   */
+  readonly roles: ClientRolesWords;
 }
 
 /** L — the privacy group's own words (`clientCard.privacy.*`). */
@@ -1009,6 +1018,21 @@ export interface ClientPrivacyWords {
   readonly export: string;
   /** «Файлът е изтеглен.» */
   readonly exportDone: string;
+}
+
+/** A role the «Роли» block can grant or take away — a member of `Roles.ASSIGNABLE` (every role but the sysadmin). */
+export type AssignableRole = (typeof Roles.ASSIGNABLE)[number];
+
+/** The «Роли» block's own words (`clientCard.roles.*`). */
+export interface ClientRolesWords {
+  /** «Роли» — the group's name for a reader. */
+  readonly groupLabel: string;
+  /** Each assignable role's name: «Клиент», «Бръснар», «Рецепция», «Съдържание», «Администратор». */
+  readonly role: { readonly [R in AssignableRole]: string };
+  /** «Запази ролите». */
+  readonly save: string;
+  /** «Ролите са запазени. Важат от следващото влизане.» */
+  readonly saved: string;
 }
 
 /** The figures the erasure's alert prints — each a server census count, or the siblings' number. */
@@ -1760,6 +1784,20 @@ export function clientCardWordsOf(
         }),
       eraseConfirm: translate('clientCard.privacy.eraseConfirm'),
       eraseKeep: translate('clientCard.privacy.eraseKeep'),
+    },
+    roles: {
+      groupLabel: translate('clientCard.roles.groupLabel'),
+      role: {
+        [Role.Client]: translate('clientCard.roles.role.client'),
+        [Role.Barber]: translate('clientCard.roles.role.barber'),
+        [Role.Receptionist]: translate('clientCard.roles.role.receptionist'),
+        [Role.ContentManager]: translate(
+          'clientCard.roles.role.content_manager',
+        ),
+        [Role.Admin]: translate('clientCard.roles.role.admin'),
+      },
+      save: translate('clientCard.roles.save'),
+      saved: translate('clientCard.roles.saved'),
     },
   };
 }
