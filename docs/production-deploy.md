@@ -728,6 +728,23 @@ updated; a device whose clock is more than five minutes off is refused.
 Source: `docs/architecture/firestore-runbook.md:229`; `firestore.rules`
 (`stampInWindow`).
 
+Since security hardening Phase 4 (S-DEP-5) each of those writes must also
+name what it belongs to, and hold only its entity's keys
+(`keys().hasOnly`): a team note's id is its visit's, and that appointment
+must exist (one billed read per note save); a photo's id must be a UUID (its
+one minter is the browser's `crypto.randomUUID()`), the appointment its body
+names must exist (one billed read per photo), its `photoOrigin` must be
+`SHOT` or `LIBRARY`, and a `SHOT`'s `path` must be
+`appointmentPhotos/<appointmentId>/<photoId>`; a schedule exception
+(`scheduleExceptions`) must sit under its body's busy key
+(`<barberId>__<localDate>`, `localDate` shaped `YYYY-MM-DD`) — no read, so a
+multi-day block stays one transaction. Deletes are unchanged. The web's own
+writers already comply, so the rules can deploy before or after the hosting
+that carries them; a document written by hand (console, script) under any
+other id or with any other key is refused to a client — the Admin SDK
+bypasses rules. Source: `firestore.rules` (the three blocks);
+`libs/infrastructure/firestore/src/lib/rules-key-parity.rules-text.spec.ts`.
+
 Since security hardening Phase 4 (S-DEP-4) an avatar upload reads the
 uploader's account across services: `storage.rules` (`accountMayUpload`)
 refuses a create or update under `avatars/{uid}/` when
