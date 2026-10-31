@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AccountLifecycle,
   Actor,
+  BlockReason,
   ImpersonationScope,
   ImpersonationStatus,
   Role,
@@ -15,14 +17,21 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode, RepositoryError } from '@core/errors';
-import { Collections, type ImpersonationSession } from '@core/entities';
+import {
+  Collections,
+  type ImpersonationSession,
+  type User,
+} from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   fixtureHash,
   memoryStore,
   memoryTxPorts,
+  provisionedUserFixture,
   recordingTelemetry,
+  registeredUserFixture,
   sequentialIds,
   unwrapOk,
 } from '@core/testing';
@@ -40,17 +49,29 @@ import {
  * ONE commit of the flat ACTIVE body's `Create` and its audit row's
  * (audit-hardening WS-3, DEP-12). Carries the legacy
  * `StartImpersonationUseCase` spec's cases (a staff admin starts and saves;
- * a non-staff impersonator is refused, nothing saved).
+ * a non-staff impersonator is refused, nothing saved). Since security
+ * hardening S-DEP-3 the commit reads `users/{target}` and refuses an
+ * absent, erased or never-registered target, so the rig seeds a registered
+ * target for every start case.
  */
 
 const ADMIN = UserId.of('u-admin');
 const TARGET = UserId.of('u-client');
 const IN_AN_HOUR = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 3_600_000);
 
-function rig() {
-  const tx = memoryTxPorts(memoryStore([]), {
-    nextId: sequentialIds('session'),
-  });
+/** The stored target every start case opens on unless it says otherwise. */
+const REGISTERED_TARGET: User = registeredUserFixture({ id: TARGET });
+
+/** The ports over a store holding `target` at `users/{TARGET}` (`null`: no document). */
+function rig(target: User | null = REGISTERED_TARGET) {
+  const tx = memoryTxPorts(
+    memoryStore(
+      target === null
+        ? []
+        : [{ path: [Collections.Users, TARGET], body: bodyOf(target) }],
+    ),
+    { nextId: sequentialIds('session') },
+  );
   const telemetry = recordingTelemetry();
   return { tx, telemetry, run: startImpersonation({ ...tx, ...telemetry }) };
 }
@@ -204,6 +225,96 @@ describe('startImpersonation', () => {
     expect(await run(start({ expiresAtUtcMs: FIXTURE_NOW_UTC_MS }))).toEqual(
       Result.err({ errorCode: GovernanceErrorCode.ImpersonationInvalidExpiry }),
     );
+    expect(tx.transactions).toEqual([]);
+  });
+
+  it('reads the target’s account — the ONE read — inside the commit (S-RU-5)', async () => {
+    const { tx, run } = rig();
+    await run(start());
+    expect(tx.transactions.map((t) => t.reads)).toEqual([
+      [[Collections.Users, TARGET]],
+    ]);
+  });
+
+  it('refuses a target with no account document as NOT_FOUND — nothing committed, one refusal line', async () => {
+    const { tx, telemetry, run } = rig(null);
+    expect(await run(start())).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationTargetNotFound,
+        targetUserId: TARGET,
+      }),
+    );
+    expect(tx.plans).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'info',
+        msg: 'impersonation.start.refused',
+        fields: {
+          errorCode: GovernanceErrorCode.ImpersonationTargetNotFound,
+        },
+      },
+    ]);
+  });
+
+  it('refuses an ERASED target — no session, no audit row', async () => {
+    const { tx, telemetry, run } = rig(
+      registeredUserFixture({
+        id: TARGET,
+        ...AccountLifecycle.erase(FIXTURE_NOW_UTC_MS),
+      }),
+    );
+    expect(await run(start())).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationTargetErased,
+        targetUserId: TARGET,
+      }),
+    );
+    expect(tx.plans).toEqual([]);
+    expect(telemetry.lines.map((line) => line.msg)).toEqual([
+      'impersonation.start.refused',
+    ]);
+  });
+
+  it('refuses a PROVISIONED stub that never finished registering — nothing written', async () => {
+    const { tx, telemetry, run } = rig(provisionedUserFixture({ id: TARGET }));
+    expect(await run(start())).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationTargetNotRegistered,
+        targetUserId: TARGET,
+      }),
+    );
+    expect(tx.plans).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'info',
+        msg: 'impersonation.start.refused',
+        fields: {
+          errorCode: GovernanceErrorCode.ImpersonationTargetNotRegistered,
+        },
+      },
+    ]);
+  });
+
+  it('still starts on a BLOCKED target (S-L-13)', async () => {
+    const { tx, run } = rig(
+      registeredUserFixture({
+        id: TARGET,
+        ...AccountLifecycle.block(BlockReason.Manual, null),
+      }),
+    );
+    expect(await run(start())).toEqual(
+      Result.ok({ sessionId: ImpersonationSessionId.of('session-1') }),
+    );
+    expect(tx.plans).toHaveLength(1);
+  });
+
+  it('refuses the caller gate and a self-impersonation BEFORE the target is read', async () => {
+    const { tx, run } = rig(null);
+    await run(start({ adminUserId: null }));
+    await run(start({ adminRoles: [Role.Client] }));
+    expect(
+      await run(start({ targetUserId: ADMIN, adminUserId: ADMIN })),
+    ).toEqual(Result.err({ errorCode: GovernanceErrorCode.ImpersonationSelf }));
     expect(tx.transactions).toEqual([]);
   });
 

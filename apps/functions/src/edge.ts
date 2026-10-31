@@ -502,6 +502,14 @@ const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
   // The impersonation callables' caller gate (Phase 4a 4A-3 (4)).
   [GovernanceErrorCode.ImpersonationUnauthenticated]: fields(S.Unauthenticated),
   [GovernanceErrorCode.ImpersonationForbidden]: fields(S.PermissionDenied),
+  // The start's target guard (security hardening S-RU-5): no account, an
+  // erased one, a stub that never registered — the code alone, the uid
+  // stays on the server.
+  [GovernanceErrorCode.ImpersonationTargetNotFound]: fields(S.NotFound),
+  [GovernanceErrorCode.ImpersonationTargetErased]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.ImpersonationTargetNotRegistered]: fields(
+    S.FailedPrecondition,
+  ),
 };
 
 const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {

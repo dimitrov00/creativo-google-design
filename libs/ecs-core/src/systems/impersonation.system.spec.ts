@@ -1,8 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ImpersonationSessionId, UserId, UtcEpochMs } from '@core/primitives';
+import {
+  ImpersonationSessionId,
+  Result,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
 import {
+  AccountLifecycle,
+  BlockReason,
   ImpersonationScope,
   EndReasonFields,
   ImpersonationEndReason,
@@ -10,8 +17,15 @@ import {
   ImpersonationStatus,
   Role,
 } from '@core/components';
-import type { ImpersonationSession } from '@core/entities';
-import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '@core/testing';
+import type { ImpersonationSession, User } from '@core/entities';
+import {
+  deepFreeze,
+  provisionedUserFixture,
+  registeredUserFixture,
+  unwrapErr,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   ImpersonationSystem,
   type StartImpersonation,
@@ -335,16 +349,87 @@ describe('ImpersonationSystem properties', () => {
   });
 });
 
+describe('ImpersonationSystem.admitTarget (security hardening S-RU-5, S-L-13)', () => {
+  const registered = (overrides: Partial<User> = {}): User =>
+    registeredUserFixture({ id: targetId, ...overrides });
+  const erased = (overrides: Partial<User> = {}): User =>
+    registered({ ...AccountLifecycle.erase(STARTED), ...overrides });
+
+  it('refuses no account document as NOT_FOUND, naming the uid the start named', () => {
+    expect(ImpersonationSystem.admitTarget(null, targetId)).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationTargetNotFound,
+        targetUserId: targetId,
+      }),
+    );
+  });
+
+  it('refuses an ERASED account', () => {
+    expect(ImpersonationSystem.admitTarget(erased(), targetId)).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationTargetErased,
+        targetUserId: targetId,
+      }),
+    );
+  });
+
+  it('refuses a PROVISIONED stub that never finished registering', () => {
+    expect(
+      ImpersonationSystem.admitTarget(
+        provisionedUserFixture({ id: targetId }),
+        targetId,
+      ),
+    ).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationTargetNotRegistered,
+        targetUserId: targetId,
+      }),
+    );
+  });
+
+  it('admits an ACTIVE and a BLOCKED registered account — the stored account itself', () => {
+    const active = registered();
+    const blocked = registered(
+      AccountLifecycle.block(BlockReason.Manual, null),
+    );
+    expect(unwrapOk(ImpersonationSystem.admitTarget(active, targetId))).toBe(
+      active,
+    );
+    expect(unwrapOk(ImpersonationSystem.admitTarget(blocked, targetId))).toBe(
+      blocked,
+    );
+  });
+
+  it('asks in order: absent, then ERASED, then NOT_REGISTERED', () => {
+    // An erased stub fails both later checks: the erasure answers first.
+    const erasedStub = provisionedUserFixture({
+      id: targetId,
+      ...AccountLifecycle.erase(STARTED),
+    });
+    expect(
+      unwrapErr(ImpersonationSystem.admitTarget(erasedStub, targetId))
+        .errorCode,
+    ).toBe(GovernanceErrorCode.ImpersonationTargetErased);
+    expect(
+      unwrapErr(ImpersonationSystem.admitTarget(null, targetId)).errorCode,
+    ).toBe(GovernanceErrorCode.ImpersonationTargetNotFound);
+  });
+});
+
 describe('ImpersonationSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const request = deepFreeze(startProps());
     const session = deepFreeze(activeSession());
+    const target = deepFreeze(registeredUserFixture({ id: targetId }));
     const run = () => ({
       started: ImpersonationSystem.start(request),
       ended: ImpersonationSystem.endByAdmin(session, adminId, EXPIRES),
       expired: ImpersonationSystem.isExpired(session, EXPIRES),
+      admitted: ImpersonationSystem.admitTarget(target, targetId),
+      refused: ImpersonationSystem.admitTarget(null, targetId),
     });
     expect(run()).toEqual(run());
     expect(session).toEqual(activeSession());
+    expect(target).toEqual(registeredUserFixture({ id: targetId }));
   });
 });

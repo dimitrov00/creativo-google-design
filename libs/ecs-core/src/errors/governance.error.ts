@@ -48,6 +48,13 @@ export const GovernanceErrorCode = {
    * `isAdmin()` on `impersonationSessions`; checked before any read.
    */
   ImpersonationForbidden: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
+  /** `startImpersonation` named a uid with no account document. */
+  ImpersonationTargetNotFound: 'GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND',
+  /** `startImpersonation` named an erased account (Phase 3's ERASED tag). */
+  ImpersonationTargetErased: 'GOVERNANCE_IMPERSONATION_TARGET_ERASED',
+  /** `startImpersonation` named an account that never finished registering (a PROVISIONED stub). */
+  ImpersonationTargetNotRegistered:
+    'GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED',
 } as const;
 export type GovernanceErrorCode =
   (typeof GovernanceErrorCode)[keyof typeof GovernanceErrorCode];
@@ -65,7 +72,10 @@ export type GovernanceError =
   | GovernanceError.EndImpersonationNotFound
   | GovernanceError.SearchUsersQueryTooShort
   | GovernanceError.ImpersonationUnauthenticated
-  | GovernanceError.ImpersonationForbidden;
+  | GovernanceError.ImpersonationForbidden
+  | GovernanceError.ImpersonationTargetNotFound
+  | GovernanceError.ImpersonationTargetErased
+  | GovernanceError.ImpersonationTargetNotRegistered;
 
 export const GovernanceError = {
   auditEntryEmptyAction(): GovernanceError.AuditEntryEmptyAction {
@@ -141,6 +151,30 @@ export const GovernanceError = {
       callerUserId,
     };
   },
+  impersonationTargetNotFound(
+    targetUserId: UserId,
+  ): GovernanceError.ImpersonationTargetNotFound {
+    return {
+      errorCode: GovernanceErrorCode.ImpersonationTargetNotFound,
+      targetUserId,
+    };
+  },
+  impersonationTargetErased(
+    targetUserId: UserId,
+  ): GovernanceError.ImpersonationTargetErased {
+    return {
+      errorCode: GovernanceErrorCode.ImpersonationTargetErased,
+      targetUserId,
+    };
+  },
+  impersonationTargetNotRegistered(
+    targetUserId: UserId,
+  ): GovernanceError.ImpersonationTargetNotRegistered {
+    return {
+      errorCode: GovernanceErrorCode.ImpersonationTargetNotRegistered,
+      targetUserId,
+    };
+  },
 
   /** Narrows an error to one code — `GovernanceError.is(e, GovernanceErrorCode.ImpersonationSelf)`. */
   is<C extends GovernanceErrorCode>(
@@ -199,6 +233,21 @@ export namespace GovernanceError {
     readonly errorCode: typeof GovernanceErrorCode.ImpersonationForbidden;
     /** The signed-in caller whose roles hold no admin role. */
     readonly callerUserId: UserId;
+  };
+  export type ImpersonationTargetNotFound = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationTargetNotFound;
+    /** The uid the start named — no `users` document holds it. */
+    readonly targetUserId: UserId;
+  };
+  export type ImpersonationTargetErased = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationTargetErased;
+    /** The uid the start named — its account is `ERASED`. */
+    readonly targetUserId: UserId;
+  };
+  export type ImpersonationTargetNotRegistered = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationTargetNotRegistered;
+    /** The uid the start named — its account is a `PROVISIONED` stub. */
+    readonly targetUserId: UserId;
   };
 }
 

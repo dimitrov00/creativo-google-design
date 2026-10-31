@@ -54,6 +54,22 @@ describe('GovernanceError', () => {
     });
   });
 
+  it('builds the impersonation target refusals, each naming the uid the start named (S-RU-5)', () => {
+    const target = UserId.of('u-target');
+    expect(GovernanceError.impersonationTargetNotFound(target)).toEqual({
+      errorCode: 'GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.impersonationTargetErased(target)).toEqual({
+      errorCode: 'GOVERNANCE_IMPERSONATION_TARGET_ERASED',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.impersonationTargetNotRegistered(target)).toEqual({
+      errorCode: 'GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED',
+      targetUserId: 'u-target',
+    });
+  });
+
   it('keeps every code in the GOVERNANCE_ domain, SCREAMING_SNAKE, each once', () => {
     const codes = Object.values(GovernanceErrorCode);
     expect(new Set(codes).size).toBe(codes.length);

@@ -728,6 +728,21 @@ updated; a device whose clock is more than five minutes off is refused.
 Source: `docs/architecture/firestore-runbook.md:229`; `firestore.rules`
 (`stampInWindow`).
 
+Since security hardening Phase 4 (S-DEP-4) an avatar upload reads the
+uploader's account across services: `storage.rules` (`accountMayUpload`)
+refuses a create or update under `avatars/{uid}/` when
+`users/{uid}.accountStatus` is `ERASED`, or when there is no `users/{uid}`
+document at all (fail-closed); a delete stays the owner's. That is ONE
+billed Firestore read per avatar upload. The first deploy of these Storage
+rules asks to grant the Storage rules service agent
+(`service-<project number>@gcp-sa-firebasestorage.iam.gserviceaccount.com`)
+the role `roles/firebaserules.firestoreServiceAgent` — run that deploy once
+from a terminal and answer yes (or grant the role beforehand). A
+`--non-interactive` deploy skips the question silently, and until the role
+is granted every avatar upload is refused. Source: `storage.rules`
+(`accountMayUpload`); `firebase-tools` `lib/rulesDeploy.js`
+(`checkStorageRulesIamPermissions`).
+
 ### 3.3 Functions
 
 ```bash
