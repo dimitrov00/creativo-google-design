@@ -18,8 +18,19 @@ import { ClientIssueSystem } from '@core/systems';
  *
  * Structured: `fields` / `context` ride as the entry's `jsonPayload` (the
  * logger takes a trailing PLAIN object as the payload, so they are copied
- * into one), the message stays the bare `msg`. An `Error` is logged as
- * itself, so its stack reaches the entry and Error Reporting groups it.
+ * into one), the message stays the bare `msg`.
+ *
+ * **A tracked error (Phase 4 WS-B, S-RU-1).** `trackError` never hands the
+ * raw `Error` to the logger, which would format its message, stack, `cause`
+ * and every own property into the entry. It writes ONE whole ERROR entry
+ * instead: `error` is the scrubbed `{ name, code, message, stack }` struct of
+ * an `Error` in the fields (below), and `message` is that struct's stack —
+ * the V8 shape rebuilt and scrubbed, `<name>: <scrubbed message>` plus each
+ * frame line — so Error Reporting still groups it by the server's frames, as
+ * `logger.error(err)` did. `cause`, `details` and every other own property
+ * never leave; a thrown non-`Error` is written scrubbed. The scrub masks
+ * e-mails, token runs and digit runs; a name or free text inside a message
+ * survives it (S-L-25, the residual OR-34 and RU-38 accepted).
  *
  * A web client's error line (OR-34 — the fields typed as Error Reporting's
  * `ReportedErrorEvent`, `ClientIssueSystem.REPORTED_ERROR_EVENT`) is written
@@ -158,9 +169,20 @@ export const consoleTelemetry = (sink: LogSink = logger): TelemetryPorts => ({
   },
   trackError: (error, context) => {
     const payload = withScope(context) ?? {};
-    if (error instanceof Error) sink.error(error, payload);
-    else
-      sink.error('non-error thrown', { ...payload, thrown: describe(error) });
+    if (error instanceof Error) {
+      const field = errorField(error);
+      sink.write({
+        ...payload,
+        error: field,
+        severity: 'ERROR',
+        message: field.stack,
+      });
+      return;
+    }
+    sink.error('non-error thrown', {
+      ...payload,
+      thrown: ClientIssueSystem.scrub(describe(error)),
+    });
   },
 });
 

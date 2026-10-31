@@ -1,9 +1,9 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { CouponStatus } from '@core/components';
 import { type Coupon, Collections, QueryOp } from '@core/entities';
 import type { CouponLookupPorts } from '@core/ports';
+import { readFailed } from './store-answer';
 
 /**
  * The staff edit's out-of-transaction code lookup (blueprint §4.1, flip 1
@@ -31,9 +31,7 @@ export const firestoreCouponPorts = (db: Firestore): CouponLookupPorts => ({
           : ({ id: found.id, ...found.data() } as Coupon),
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(Collections.Coupons, String(error)),
-      );
+      return Result.err(readFailed(Collections.Coupons, error));
     }
   },
 });

@@ -63,4 +63,28 @@ describe('firestoreAccountPorts — the FIRST_BOOKING contact snapshot (F1-5)', 
       RepositoryErrorCode.ReadFailed,
     );
   });
+
+  it('answers the failure’s canonical code as its reason — never the SDK’s message (S-DEP-2)', async () => {
+    const db = {
+      collection: () => ({ doc: (id: string) => ({ id }) }),
+      getAll: async () => {
+        throw Object.assign(
+          new Error('14 UNAVAILABLE: no route to +359880000777'),
+          {
+            code: 14,
+          },
+        );
+      },
+    } as unknown as Firestore;
+    const result = await firestoreAccountPorts(db).loadAccountContacts([U1]);
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'users',
+        reason: 'unavailable',
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('359880000777');
+  });
 });

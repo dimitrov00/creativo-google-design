@@ -30,6 +30,7 @@ import {
   type TriggerFailurePorts,
 } from '@core/ports';
 import {
+  FailureCodeSystem,
   GovernedChangeSystem,
   LogDigestSystem,
   StoredDocumentSystem,
@@ -357,14 +358,17 @@ const identityPorts = once(() => ({
  * The commit port as the streak publish has always failed: a commit that
  * REJECTS — contention retries exhausted, a deadline or network fault, a
  * defect thrown inside the decision — answers
- * `RepositoryError.writeFailed(null, String(cause))`, the value the
- * callable logs (`'rhythm rule write failed'`, the cause's text) and
- * answers as its store failure (flip-3 plan §3.3).
+ * `RepositoryError.writeFailed(null, FailureCodeSystem.codeOf(cause))`, the
+ * value the callable logs (`'rhythm rule write failed'`, the cause's
+ * canonical code — never its message, Phase 4 S-RU-2) and answers as its
+ * store failure (flip-3 plan §3.3).
  */
 function settledCommit(commit: CommitPlan): CommitPlan {
   return (read, decide) =>
     commit(read, decide).catch((cause: unknown) =>
-      Result.err(RepositoryError.writeFailed(null, String(cause))),
+      Result.err(
+        RepositoryError.writeFailed(null, FailureCodeSystem.codeOf(cause)),
+      ),
     );
 }
 

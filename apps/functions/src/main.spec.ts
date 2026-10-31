@@ -1954,6 +1954,7 @@ describe('main.ts — the composition root', () => {
       });
 
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      vi.spyOn(logger, 'write').mockImplementation(() => undefined);
       seam.answers.set('verifyOtp', () => ({
         ok: false,
         error: RepositoryError.readFailed('otps/otp-1', 'unavailable'),
@@ -1965,8 +1966,17 @@ describe('main.ts — the composition root', () => {
       expect(down.details).toEqual({
         errorCode: 'IDENTITY_REPOSITORY_FAILURE',
       });
-      // The store failure tracked once, and its ONE outcome line (DEP-18).
-      expect(logger.error).toHaveBeenCalledTimes(2);
+      // The store failure tracked once — ONE whole scrubbed ERROR entry
+      // (Phase 4 S-DEP-1) — and its ONE outcome line (DEP-18).
+      expect(logger.write).toHaveBeenCalledTimes(1);
+      expect(logger.write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callable: 'verifyOtpChallenge',
+          severity: 'ERROR',
+          error: expect.objectContaining({ message: 'REPOSITORY_READ_FAILED' }),
+        }),
+      );
+      expect(logger.error).toHaveBeenCalledTimes(1);
       expect(logger.error).toHaveBeenLastCalledWith(
         'callable.failed',
         expect.objectContaining({
@@ -2087,7 +2097,7 @@ describe('main.ts — the composition root', () => {
           callable: 'publishStreakDefinition',
           operationId: STREAK_PUBLISH.requestId,
           uid: OWNER.uid,
-          error: 'Error: deadline exceeded',
+          error: 'unknown',
         }),
       );
       expect(logged).toHaveBeenLastCalledWith(
@@ -2211,8 +2221,11 @@ describe('main.ts — the composition root', () => {
   it.each(EXPORTS.filter((name) => CALLABLE_NAMES.has(name)))(
     '%s reports an unexpected throw under its own callable name',
     async (name) => {
-      const trackError = vi
+      const errorLines = vi
         .spyOn(logger, 'error')
+        .mockImplementation(() => undefined);
+      const trackedEntries = vi
+        .spyOn(logger, 'write')
         .mockImplementation(() => undefined);
       const thrown = new Error(`boom in ${name}`);
       const own = caseOf(name);
@@ -2221,26 +2234,37 @@ describe('main.ts — the composition root', () => {
       });
       const answer = await rejection(run(name, own.input));
       expect(answer.code).toBe('internal');
-      // Tracked ONCE, under its own name — inside a traced call the
-      // invocation's scope rides under the context (DEP-18) — and, but for
-      // the untraced sink, ONE `callable.failed` outcome line beside it.
-      const calls = trackError.mock.calls;
-      expect(calls.filter(([first]) => first === thrown)).toHaveLength(1);
-      expect(trackError).toHaveBeenCalledWith(
-        thrown,
-        expect.objectContaining({ callable: name }),
-      );
+      // Tracked ONCE, under its own name, as ONE whole scrubbed ERROR entry
+      // (Phase 4 S-DEP-1) — inside a traced call the invocation's scope
+      // rides under the context (DEP-18) — and, but for the untraced sink,
+      // ONE `callable.failed` outcome line beside it.
+      expect(trackedEntries).toHaveBeenCalledTimes(1);
+      const entry = trackedEntries.mock.calls[0]?.[0];
+      expect(entry).toMatchObject({
+        callable: name,
+        severity: 'ERROR',
+        error: { name: 'Error', message: `boom in ${name}` },
+      });
+      const stack = String(entry?.message).split('\n');
+      expect(stack[0]).toBe(`Error: boom in ${name}`);
+      expect(stack.length).toBeGreaterThan(1);
+      const calls = errorLines.mock.calls;
       const outcomes = calls.filter(([first]) => first === 'callable.failed');
       if (TELEMETRY_EXPORTS.has(name)) {
-        expect(trackError).toHaveBeenCalledWith(thrown, { callable: name });
-        expect(calls).toHaveLength(1);
+        expect(Object.keys(entry ?? {}).sort()).toEqual([
+          'callable',
+          'error',
+          'message',
+          'severity',
+        ]);
+        expect(calls).toHaveLength(0);
       } else {
         expect(outcomes).toHaveLength(1);
         expect(outcomes[0]?.[1]).toMatchObject({
           callable: name,
           wireStatus: 'internal',
         });
-        expect(calls).toHaveLength(2);
+        expect(calls).toHaveLength(1);
       }
     },
   );
