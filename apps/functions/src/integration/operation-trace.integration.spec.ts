@@ -166,6 +166,9 @@ describe('one operation id, from the callable to a trigger’s attempt line (emu
     vi.setSystemTime(FIXTURE_NOW_UTC_MS);
     vi.stubEnv('LOG_DIGEST_KEY', LOG_DIGEST_KEY);
     vi.stubEnv('WALKIN_ID_KEY', WALKIN_ID_KEY);
+    // The App Check switch as every in-process run reads it: unset — the
+    // empty string, which the edge reads as OFF (security hardening S-RU-19).
+    vi.stubEnv('APP_CHECK_MODE', '');
     info = recorded('info');
     recorded('warn');
     error = recorded('error');
@@ -227,6 +230,8 @@ describe('one operation id, from the callable to a trigger’s attempt line (emu
           operationId: OPERATION,
           uid: FIXTURE_IDS.client,
           roles: [],
+          // The switch is OFF: no App Check outcome is reported (S-DEP-9).
+          appCheckOutcome: null,
           // Added to the scope by the root after the decode, then the line's own.
           inputDigest: LogDigestSystem.digestOf(decoded.value, (input) =>
             hmacSha256Hex(LOG_DIGEST_KEY, input),
@@ -328,5 +333,26 @@ describe('one operation id, from the callable to a trigger’s attempt line (emu
       unavailable,
     );
     expect(deadLetters.map((failure) => failure.id)).toEqual(['event-trace-1']);
+  });
+  it('under MONITOR, a headerless call is answered and its outcome line carries appCheckOutcome MISSING (security hardening S-RU-20)', async () => {
+    // The switch is read per call — stubbed before the call, as the
+    // Functions emulator's `.env.local` would set it (the development map).
+    vi.stubEnv('APP_CHECK_MODE', 'MONITOR');
+    const answer = await (main.commitBooking as unknown as Runnable).run(
+      REQUEST,
+    );
+    expect(answer).toEqual({ appointmentId: ATTEMPT_ID });
+    const outcome = linesOf(info).filter(
+      (line) => line.msg === LogEvent.CallableCompleted,
+    );
+    expect(outcome).toHaveLength(1);
+    expect(outcome[0]?.fields).toMatchObject({
+      callable: Callables.CommitBooking,
+      operationId: OPERATION,
+      appCheckOutcome: 'MISSING',
+      errorCode: null,
+      wireStatus: 'ok',
+    });
+    expect(linesOf(error)).toEqual([]);
   });
 });

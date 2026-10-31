@@ -15,6 +15,8 @@
  * import (Law 8).
  */
 export const LogEvent = {
+  /** The App Check switch held a non-empty value that is no mode — read as OFF, logged once per instance (security hardening S-RU-19). */
+  AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
   AuditActorMissing: 'audit row has no verified actor',
   AuditWriteFailed: 'audit write failed',
   BackfillAuditNotWritten: 'backfill audit row not written',

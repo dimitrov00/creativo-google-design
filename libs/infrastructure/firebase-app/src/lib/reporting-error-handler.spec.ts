@@ -302,6 +302,58 @@ describe('cspViolationIssue — a CSP report as a CSP_VIOLATION issue (OR-30)', 
     }
   });
 
+  // S-RU-28 / S-L-22: the reCAPTCHA script's report-only noise (UNMEASURED
+  // lists) is dropped the same way; anything else stays an issue.
+  it('drops the reCAPTCHA script’s report-only sink samples (RECAPTCHA_REPORT_ONLY_SINKS)', () => {
+    for (const sample of [
+      'HTMLScriptElement src|https://www.google.com/recaptcha/enterpri',
+      'HTMLScriptElement src|https://www.gstatic.com/recaptcha/release',
+    ]) {
+      expect(cspViolationIssue(trustedTypesSink(sample), '/book')).toBeNull();
+    }
+  });
+
+  it('keeps the reCAPTCHA sink sample when the policy ENFORCED it', () => {
+    expect(
+      cspViolationIssue(
+        trustedTypesSink(
+          'HTMLScriptElement src|https://www.google.com/recaptcha/enterpri',
+          'enforce',
+        ),
+        '/book',
+      )?.scrubbedMessage,
+    ).toBe('enforce trusted-types-sink');
+  });
+
+  it('drops a report-only `trusted-types` sample naming a reCAPTCHA policy (RECAPTCHA_REPORT_ONLY_POLICIES)', () => {
+    const policy = (
+      sample: string,
+      disposition: CspViolationReport['disposition'] = 'report',
+    ) =>
+      violation({
+        blockedURI: 'trusted-types-policy',
+        disposition,
+        effectiveDirective: 'trusted-types',
+        sample,
+        sourceFile:
+          'https://www.gstatic.com/recaptcha/releases/x/recaptcha__en.js',
+      });
+
+    expect(cspViolationIssue(policy('goog#html'), '/book')).toBeNull();
+    expect(
+      cspViolationIssue(policy('goog#html', 'enforce'), '/book')
+        ?.scrubbedMessage,
+    ).toBe('enforce trusted-types-policy');
+    expect(
+      cspViolationIssue(policy('evil#policy'), '/book')?.scrubbedMessage,
+    ).toBe('report trusted-types-policy');
+    // A policy name under the SINK directive is no sink sample.
+    expect(
+      cspViolationIssue(trustedTypesSink('goog#html'), '/book')
+        ?.scrubbedMessage,
+    ).toBe('report trusted-types-sink');
+  });
+
   it('keeps a baseline sample under any other directive', () => {
     expect(
       cspViolationIssue(

@@ -8,6 +8,7 @@ import { LogEvent } from './log-event.data';
 describe('LogEvent', () => {
   it('keeps every existing message text byte for byte, beside the new dotted values', () => {
     expect(LogEvent).toEqual({
+      AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
       AuditActorMissing: 'audit row has no verified actor',
       AuditWriteFailed: 'audit write failed',
       BackfillAuditNotWritten: 'backfill audit row not written',
@@ -117,6 +118,14 @@ describe('LogEvent', () => {
     expect(LogEvent.RolesSessionsNotRevoked).not.toBe(
       LogEvent.RolesSessionsRevoked,
     );
+  });
+
+  it('spells the App Check switch value dotted and edge-prefixed (security hardening S-RU-19)', () => {
+    expect(LogEvent.AppCheckModeUnreadable).toBe(
+      'edge.app_check_mode_unreadable',
+    );
+    expect(LogEvent.AppCheckModeUnreadable).toMatch(/^[a-z]+\.[a-z_]+$/);
+    expect(LogEvent.AppCheckModeUnreadable.startsWith('edge.')).toBe(true);
   });
 
   it('names every message once: no two events share a text', () => {

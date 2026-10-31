@@ -1,4 +1,5 @@
 export * from './lib/firebase-app.provider';
+export * from './lib/app-check.provider';
 export * from './lib/lazy-port';
 export * from './lib/retry-schedule';
 export * from './lib/ports.tokens';

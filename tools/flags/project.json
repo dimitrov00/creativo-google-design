@@ -4,16 +4,24 @@
   "sourceRoot": "tools/flags",
   "projectType": "library",
   "tags": ["scope:tooling", "type:util"],
-  "// inputs": "config/feature-flags.json sits outside every project and these specs read it: a flag edit must re-run them and mark this project affected",
+  "// inputs": "config/feature-flags.json and config/app-check.json sit outside every project and these specs read them: a flag or App Check mode edit must re-run them and mark this project affected",
   "targets": {
     "test": {
-      "inputs": ["...", "{workspaceRoot}/config/feature-flags.json"]
+      "inputs": [
+        "...",
+        "{workspaceRoot}/config/feature-flags.json",
+        "{workspaceRoot}/config/app-check.json"
+      ]
     },
     "test-ci--feature-flags.manifest.spec.mjs": {
       "inputs": ["...", "{workspaceRoot}/config/feature-flags.json"]
     },
     "test-ci--write-functions-env.spec.mjs": {
-      "inputs": ["...", "{workspaceRoot}/config/feature-flags.json"]
+      "inputs": [
+        "...",
+        "{workspaceRoot}/config/feature-flags.json",
+        "{workspaceRoot}/config/app-check.json"
+      ]
     }
   }
 }

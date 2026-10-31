@@ -133,6 +133,9 @@ jobs:
           key: firebase-emulators-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm run test:emulator
       - run: pnpm run verify:p0
+      # App Check end to end (security hardening S-DEP-14): ENFORCE, then
+      # MONITOR, each opened by its mode probe.
+      - run: pnpm run verify:appcheck
 
   # The e2e suite against the emulators, under the config's own CI policy:
   # the preset's two retries and one worker (P3-RU-35) — a test that passes

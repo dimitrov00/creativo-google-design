@@ -11,7 +11,7 @@ import {
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
-import { Result } from '@core/primitives';
+import { AppCheckTokenUse, Result } from '@core/primitives';
 import type { PipelineError } from '@core/errors';
 
 /**
@@ -235,6 +235,47 @@ export const OPERATION_ID_FIELD: {
   [Callables.PreviewClientErasure]: 'operationId',
   [Callables.EraseClient]: 'operationId',
   [Callables.SetRoles]: 'operationId',
+};
+
+/**
+ * Which App Check token each callable takes (security hardening S-WS-A,
+ * S-RU-21, S-L-3) — the ONE table both sides read, so they cannot drift:
+ * the web's callable client asks `limitedUseAppCheckTokens` for a
+ * `LIMITED_USE` callable, and the functions consume its token
+ * (`consumeAppCheckToken`, replay protection) while the switch is MONITOR
+ * or ENFORCE; the edge refuses a replay of it under ENFORCE. The
+ * destructive and sensitive acts take limited-use tokens — the erasure,
+ * its preview, the data-subject export, an impersonation start and a roles
+ * change; every other callable a standard one. Total over
+ * {@link CallableName} by its mapped type.
+ */
+export const CALLABLE_APP_CHECK_TOKEN: {
+  readonly [N in CallableName]: AppCheckTokenUse;
+} = {
+  [Callables.RequestOtpChallenge]: AppCheckTokenUse.Standard,
+  [Callables.VerifyOtpChallenge]: AppCheckTokenUse.Standard,
+  [Callables.CompleteRegistration]: AppCheckTokenUse.Standard,
+  [Callables.UpdateProfile]: AppCheckTokenUse.Standard,
+  [Callables.CommitBooking]: AppCheckTokenUse.Standard,
+  [Callables.CancelAppointment]: AppCheckTokenUse.Standard,
+  [Callables.RescheduleAppointment]: AppCheckTokenUse.Standard,
+  [Callables.TransitionAppointment]: AppCheckTokenUse.Standard,
+  [Callables.MarkArrived]: AppCheckTokenUse.Standard,
+  [Callables.ClearArrival]: AppCheckTokenUse.Standard,
+  [Callables.RecordSeatTip]: AppCheckTokenUse.Standard,
+  [Callables.StaffEditAppointment]: AppCheckTokenUse.Standard,
+  [Callables.RequestWaitlist]: AppCheckTokenUse.Standard,
+  [Callables.CancelWaitlist]: AppCheckTokenUse.Standard,
+  [Callables.RunBackfill]: AppCheckTokenUse.Standard,
+  [Callables.PublishStreakDefinition]: AppCheckTokenUse.Standard,
+  [Callables.StartImpersonation]: AppCheckTokenUse.LimitedUse,
+  [Callables.EndImpersonation]: AppCheckTokenUse.Standard,
+  [Callables.RedeemInvitation]: AppCheckTokenUse.Standard,
+  [Callables.ReportClientIssues]: AppCheckTokenUse.Standard,
+  [Callables.ExportClientData]: AppCheckTokenUse.LimitedUse,
+  [Callables.PreviewClientErasure]: AppCheckTokenUse.LimitedUse,
+  [Callables.EraseClient]: AppCheckTokenUse.LimitedUse,
+  [Callables.SetRoles]: AppCheckTokenUse.LimitedUse,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */

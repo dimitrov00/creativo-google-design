@@ -40,6 +40,9 @@ export const environment = {
     storageHost: emulatorHost,
     storagePort: 9199,
   },
+  // App Check (security hardening S-RU-18): the reCAPTCHA Enterprise SITE key — public client
+  // config like `firebase` above; '' = not configured (no App Check loads).
+  appCheck: { siteKey: '' },
   // Build-time flags (R41): the manifest's `development` map, parsed and
   // validated by `provideFlags` at bootstrap.
   featureFlags,

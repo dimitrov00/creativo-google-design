@@ -3,6 +3,7 @@ import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
+  AppCheckMode,
   AppointmentId,
   BarberId,
   BookingStatus,
@@ -61,6 +62,7 @@ import { AttemptOutcome, ResizeEdge } from '@core/components';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { TriggerFailure } from '@core/entities';
 import {
+  type CallableName,
   Callables,
   type LogContext,
   type TelemetryPorts,
@@ -1150,8 +1152,11 @@ function edgePorts(start = 1_000) {
   const writer: { write: WriteTriggerFailure } = {
     write: async () => Result.ok(undefined),
   };
+  /** The App Check switch the edge reads per call (S-RU-17) — OFF, as shipped, unless a case flips it. */
+  const appCheck: { mode: AppCheckMode } = { mode: AppCheckMode.Off };
   const ports: CallableEdgePorts & TriggerFailurePorts = {
     ...telemetry,
+    appCheckMode: () => appCheck.mode,
     nowUtcMs: () => utc(now),
     writeTriggerFailure: async (failure) => {
       deadLetters.push(failure);
@@ -1174,6 +1179,7 @@ function edgePorts(start = 1_000) {
     added,
     deadLetters,
     writer,
+    appCheck,
     advance: (ms: number) => {
       now += ms;
     },
@@ -1354,6 +1360,8 @@ describe('edge — the wrappers', () => {
       operationId: OP,
       uid: 'u-staff',
       roles: ['barber'],
+      // The switch is OFF (as shipped): no App Check outcome is reported (S-DEP-9).
+      appCheckOutcome: null,
     } as const;
 
     it('binds the invocation’s scope once — callable, operation id, uid, known roles — and logs callable.completed', async () => {
@@ -1401,6 +1409,7 @@ describe('edge — the wrappers', () => {
             operationId: null,
             uid: null,
             roles: [],
+            appCheckOutcome: null,
           },
         ]);
       }
@@ -1528,6 +1537,267 @@ describe('edge — the wrappers', () => {
       expect(bound).toEqual([]);
       expect(added).toEqual([]);
       expect(logged).toEqual([]);
+    });
+  });
+
+  describe('callableEdge — App Check FIRST: the switch, the verdict and the tag (security hardening S-RU-17, S-DEP-9, S-DEP-10)', () => {
+    const STAFF_AUTH = { uid: 'u-staff', token: { roles: ['barber'] } };
+    /** The request facts the platform leaves on a callable request, by outcome — never a real token. */
+    const FACTS = {
+      MISSING: { header: false, app: null },
+      INVALID: { header: true, app: null },
+      VALID: { header: true, app: { appId: 'app-1', token: {} } },
+      REPLAYED: {
+        header: true,
+        app: { appId: 'app-1', token: {}, alreadyConsumed: true },
+      },
+    } as const;
+    type Facts = (typeof FACTS)[keyof typeof FACTS];
+
+    /** A signed-in barber's request carrying `facts`; its payload's one field throws when read. */
+    function appCheckRequest(
+      facts: Facts,
+      data: unknown = payloadThatThrows(),
+    ): CallableRequest<unknown> {
+      return {
+        data,
+        auth: STAFF_AUTH,
+        rawRequest: {
+          headers: facts.header
+            ? { 'x-firebase-appcheck': 'opaque-placeholder' }
+            : {},
+        },
+        ...(facts.app === null ? {} : { app: facts.app }),
+        acceptsStreaming: false,
+      } as unknown as CallableRequest<unknown>;
+    }
+
+    /** A payload no reader may decode: reading `appointmentId` throws. */
+    function payloadThatThrows(): object {
+      return Object.defineProperty({}, 'appointmentId', {
+        enumerable: true,
+        get: () => {
+          throw new Error('the payload was decoded');
+        },
+      });
+    }
+
+    const traced = (callable: CallableName) =>
+      ({
+        callable,
+        failureCode: null,
+        timeoutSeconds: null,
+        traced: true,
+      }) as const;
+
+    it('OFF (as shipped) reports nothing and refuses nothing: the handler runs, the line carries appCheckOutcome null — whatever the facts', async () => {
+      for (const facts of Object.values(FACTS)) {
+        const { ports, logged } = edgePorts();
+        const handle = vi.fn(async () => Result.ok({ cancelled: true }));
+        await expect(
+          callableEdge(
+            traced(Callables.EraseClient),
+            ports,
+            handle,
+          )(appCheckRequest(facts, {})),
+        ).resolves.toEqual({ cancelled: true });
+        expect(handle).toHaveBeenCalledTimes(1);
+        expect(logged).toHaveLength(1);
+        expect(logged[0]).toMatchObject({
+          msg: 'callable.completed',
+          fields: { appCheckOutcome: null, wireStatus: 'ok' },
+        });
+      }
+    });
+
+    it.each([
+      ['MISSING', FACTS.MISSING],
+      ['INVALID', FACTS.INVALID],
+      ['VALID', FACTS.VALID],
+      ['REPLAYED', FACTS.REPLAYED],
+    ] as const)(
+      'MONITOR never refuses — %s: answered, callable.completed carrying the tag, in the scope too',
+      async (outcome, facts) => {
+        const { ports, logged, bound, appCheck } = edgePorts();
+        appCheck.mode = AppCheckMode.Monitor;
+        const handle = vi.fn(async () => Result.ok({ cancelled: true }));
+        await expect(
+          callableEdge(
+            traced(Callables.EraseClient),
+            ports,
+            handle,
+          )(appCheckRequest(facts, {})),
+        ).resolves.toEqual({ cancelled: true });
+        expect(handle).toHaveBeenCalledTimes(1);
+        expect(bound).toEqual([
+          {
+            callable: 'eraseClient',
+            operationId: null,
+            uid: 'u-staff',
+            roles: ['barber'],
+            appCheckOutcome: outcome,
+          },
+        ]);
+        expect(logged).toEqual([
+          {
+            level: 'info',
+            msg: 'callable.completed',
+            fields: {
+              callable: 'eraseClient',
+              operationId: null,
+              uid: 'u-staff',
+              roles: ['barber'],
+              appCheckOutcome: outcome,
+              errorCode: null,
+              wireStatus: 'ok',
+              durationMs: 0,
+              inputDigest: null,
+            },
+          },
+        ]);
+      },
+    );
+
+    it.each([
+      ['MISSING', FACTS.MISSING],
+      ['INVALID', FACTS.INVALID],
+    ] as const)(
+      'ENFORCE refuses %s before anything is decoded: failed-precondition / APP_CHECK_REQUIRED, ONE callable.refused line with the tag, the handler never run',
+      async (outcome, facts) => {
+        const { ports, logged, tracked, appCheck } = edgePorts();
+        appCheck.mode = AppCheckMode.Enforce;
+        const handle = vi.fn(async () => Result.ok({ cancelled: true }));
+        const thrown = await rejection(
+          callableEdge(
+            traced(Callables.CancelAppointment),
+            ports,
+            handle,
+          )(appCheckRequest(facts)),
+        );
+        expect(thrown.code).toBe('failed-precondition');
+        expect(thrown.details).toEqual({ errorCode: 'APP_CHECK_REQUIRED' });
+        expect(handle).not.toHaveBeenCalled();
+        expect(tracked).toEqual([]);
+        expect(logged).toEqual([
+          {
+            level: 'warn',
+            msg: 'callable.refused',
+            fields: {
+              callable: 'cancelAppointment',
+              operationId: null,
+              uid: 'u-staff',
+              roles: ['barber'],
+              appCheckOutcome: outcome,
+              errorCode: 'APP_CHECK_REQUIRED',
+              wireStatus: 'failed-precondition',
+              durationMs: 0,
+              inputDigest: null,
+            },
+          },
+        ]);
+      },
+    );
+
+    it('ENFORCE refuses a REPLAYED token on a limited-use callable (eraseClient) — APP_CHECK_REPLAYED — and answers it on a standard one (cancelAppointment)', async () => {
+      const limited = edgePorts();
+      limited.appCheck.mode = AppCheckMode.Enforce;
+      const erase = vi.fn(async () => Result.ok({ erasureDone: true }));
+      const thrown = await rejection(
+        callableEdge(
+          traced(Callables.EraseClient),
+          limited.ports,
+          erase,
+        )(appCheckRequest(FACTS.REPLAYED)),
+      );
+      expect(thrown.code).toBe('failed-precondition');
+      expect(thrown.details).toEqual({ errorCode: 'APP_CHECK_REPLAYED' });
+      expect(erase).not.toHaveBeenCalled();
+      expect(limited.logged).toHaveLength(1);
+      expect(limited.logged[0]).toMatchObject({
+        level: 'warn',
+        msg: 'callable.refused',
+        fields: {
+          appCheckOutcome: 'REPLAYED',
+          errorCode: 'APP_CHECK_REPLAYED',
+          wireStatus: 'failed-precondition',
+        },
+      });
+
+      const standard = edgePorts();
+      standard.appCheck.mode = AppCheckMode.Enforce;
+      await expect(
+        callableEdge(
+          traced(Callables.CancelAppointment),
+          standard.ports,
+          async () => Result.ok({ cancelled: true }),
+        )(appCheckRequest(FACTS.REPLAYED, {})),
+      ).resolves.toEqual({ cancelled: true });
+      expect(standard.logged[0]).toMatchObject({
+        msg: 'callable.completed',
+        fields: { appCheckOutcome: 'REPLAYED', errorCode: null },
+      });
+    });
+
+    it('ENFORCE answers a verified token: the handler runs, the line carries VALID', async () => {
+      const { ports, logged, appCheck } = edgePorts();
+      appCheck.mode = AppCheckMode.Enforce;
+      await expect(
+        callableEdge(traced(Callables.EraseClient), ports, async () =>
+          Result.ok({ erasureDone: true }),
+        )(appCheckRequest(FACTS.VALID, {})),
+      ).resolves.toEqual({ erasureDone: true });
+      expect(logged[0]).toMatchObject({
+        msg: 'callable.completed',
+        fields: { appCheckOutcome: 'VALID', errorCode: null },
+      });
+    });
+
+    it('the untraced sink (RU-24) under ENFORCE: a missing token is refused with no scope and no line; a verified one is answered', async () => {
+      const sink = traced(Callables.ReportClientIssues);
+      const refused = edgePorts();
+      refused.appCheck.mode = AppCheckMode.Enforce;
+      const handle = vi.fn(async () => Result.ok({ loggedCount: 1 }));
+      const thrown = await rejection(
+        callableEdge(
+          { ...sink, traced: false },
+          refused.ports,
+          handle,
+        )(appCheckRequest(FACTS.MISSING)),
+      );
+      expect(thrown.code).toBe('failed-precondition');
+      expect(thrown.details).toEqual({ errorCode: 'APP_CHECK_REQUIRED' });
+      expect(handle).not.toHaveBeenCalled();
+      expect(refused.bound).toEqual([]);
+      expect(refused.logged).toEqual([]);
+
+      const answered = edgePorts();
+      answered.appCheck.mode = AppCheckMode.Enforce;
+      await expect(
+        callableEdge({ ...sink, traced: false }, answered.ports, async () =>
+          Result.ok({ loggedCount: 1 }),
+        )(appCheckRequest(FACTS.VALID, [])),
+      ).resolves.toEqual({ loggedCount: 1 });
+      expect(answered.logged).toEqual([]);
+    });
+
+    it('reads the switch at every call, never once — a flip applies to the next request', async () => {
+      const { ports, appCheck } = edgePorts();
+      const handler = callableEdge(
+        traced(Callables.CancelAppointment),
+        ports,
+        async () => Result.ok({ cancelled: true }),
+      );
+      await expect(
+        handler(appCheckRequest(FACTS.MISSING, {})),
+      ).resolves.toEqual({ cancelled: true });
+      appCheck.mode = AppCheckMode.Enforce;
+      expect(
+        (await rejection(handler(appCheckRequest(FACTS.MISSING, {})))).details,
+      ).toEqual({ errorCode: 'APP_CHECK_REQUIRED' });
+      appCheck.mode = AppCheckMode.Off;
+      await expect(
+        handler(appCheckRequest(FACTS.MISSING, {})),
+      ).resolves.toEqual({ cancelled: true });
     });
   });
 

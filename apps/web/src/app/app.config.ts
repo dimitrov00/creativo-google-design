@@ -39,6 +39,7 @@ import {
   CUSTOMER_PORTS,
   CUSTOMER_SEARCH_PORTS,
   DEFAULT_LOCATION_PORTS,
+  FIREBASE_APP_CHECK,
   FIREBASE_AUTH,
   FIREBASE_FIRESTORE,
   FIREBASE_FUNCTIONS,
@@ -67,11 +68,13 @@ import {
   TIMER_PORTS,
   USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
+  appCheckConfigOf,
   callableClientPorts,
   clientPrivacyPorts,
   errorHandlerLogPorts,
   lazyAdapterScope,
   provideFirebaseApp,
+  provideFirebaseAppCheck,
   provideFirebaseAuth,
   provideFirebaseFunctions,
   provideFlags,
@@ -293,6 +296,11 @@ export const appConfig: ApplicationConfig = {
     // Firebase SDK singletons (raw SDK stays behind these tokens). Only the
     // eager ones: Firestore and Storage are created inside `firebaseData`.
     provideFirebaseApp(environment.firebase),
+    // App Check (security hardening S-WS-A, S-L-5): started at boot — the
+    // emulator token under the emulators, reCAPTCHA Enterprise with a site
+    // key (its script bounded), nothing at all without one (production
+    // today). The callable client waits for that bounded decision.
+    provideFirebaseAppCheck(appCheckConfigOf(environment)),
     provideFirebaseAuth(emulators),
     provideFirebaseFunctions(emulators),
 
@@ -342,6 +350,7 @@ export const appConfig: ApplicationConfig = {
           inject(FIREBASE_FUNCTIONS),
           inject(ID_PORTS),
           inject(CLIENT_ISSUE_REPORTER),
+          inject(FIREBASE_APP_CHECK),
         ),
     },
     {

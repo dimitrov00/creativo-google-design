@@ -104,9 +104,17 @@ const seam = vi.hoisted(() => {
   );
   /** The console OTP sender, spied over the real one — the WS-0 proof that a deployment never builds it. */
   const consoleOtpSender = vi.fn<(log: Log) => OtpDeliveryPorts>();
+  /**
+   * Every `onCall` definition's OPTIONS, keyed by the function the REAL
+   * `onCall` returned (security hardening S-DEP-11): the platform's App
+   * Check options are not part of `__endpoint`, so the replay-protection
+   * proof reads them where `main.ts` hands them over.
+   */
+  const onCallOptions = new Map<unknown, unknown>();
   return {
     PIPELINES,
     consoleOtpSender,
+    onCallOptions,
     calls,
     answers,
     DB,
@@ -139,6 +147,18 @@ vi.mock('./adapters/console-otp-sender.adapter', async (importOriginal) => {
   }>();
   seam.consoleOtpSender.mockImplementation(actual.consoleOtpSender);
   return { ...actual, consoleOtpSender: seam.consoleOtpSender };
+});
+vi.mock('firebase-functions/v2/https', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('firebase-functions/v2/https')>();
+  // Delegates to the real `onCall` (the deployed endpoint and its handler are
+  // the real ones) and records the options it was handed.
+  const onCall = (options: unknown, handler: unknown): unknown => {
+    const defined = Reflect.apply(actual.onCall, undefined, [options, handler]);
+    seam.onCallOptions.set(defined, options);
+    return defined;
+  };
+  return { ...actual, onCall };
 });
 vi.mock('@core/pipelines', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -2376,6 +2396,8 @@ describe('main.ts — the composition root', () => {
         operationId: 'operation-0123456789ab',
         uid: CLIENT.uid,
         roles: [],
+        // The switch unset in-process reads OFF: no App Check outcome (S-DEP-9).
+        appCheckOutcome: null,
         errorCode: null,
         wireStatus: 'ok',
         durationMs: expect.any(Number),
@@ -2429,6 +2451,116 @@ describe('main.ts — the composition root', () => {
         lines.filter(([msg]) => String(msg).startsWith('callable.')),
       ).toEqual([]);
       expect(JSON.stringify(lines)).not.toContain(STAFF.uid);
+    });
+  });
+
+  describe('security hardening S-WS-A — App Check reads one switch', () => {
+    /** The App Check options `main.ts` handed an export's `onCall`. */
+    function appCheckOptionsOf(name: string): readonly string[] {
+      const options = seam.onCallOptions.get(exported.get(name));
+      return typeof options === 'object' && options !== null
+        ? Object.keys(options).filter((key) => /appcheck/i.test(key))
+        : [];
+    }
+
+    it('captured every callable export’s onCall options', () => {
+      for (const name of EXPORTS.filter((n) => CALLABLE_NAMES.has(n))) {
+        expect(seam.onCallOptions.has(exported.get(name)), name).toBe(true);
+      }
+    });
+
+    it('exactly the five LIMITED_USE exports carry consumeAppCheckToken (S-DEP-11); none carries enforceAppCheck (S-RU-17)', () => {
+      const consuming = EXPORTS.filter((name) =>
+        appCheckOptionsOf(name).includes('consumeAppCheckToken'),
+      );
+      expect([...consuming].sort()).toEqual(
+        [
+          'eraseClient',
+          'exportClientData',
+          'previewClientErasure',
+          'setRoles',
+          'startImpersonation',
+        ].sort(),
+      );
+      for (const name of EXPORTS) {
+        expect(appCheckOptionsOf(name), name).not.toContain('enforceAppCheck');
+        expect(
+          appCheckOptionsOf(name).every(
+            (key) => key === 'consumeAppCheckToken',
+          ),
+          name,
+        ).toBe(true);
+      }
+    });
+
+    it('an unset switch (in-process) neither refuses nor reports: a headerless call answers, its line carries appCheckOutcome null', async () => {
+      const lines: (readonly unknown[])[] = [];
+      vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+      vi.stubEnv('APP_CHECK_MODE', '');
+      try {
+        const own = caseOf('eraseClient');
+        seam.answers.set(own.pipeline, own.answer);
+        await expect(run('eraseClient', own.input)).resolves.toEqual(
+          own.expected,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      const outcome = lines.find(([msg]) => msg === 'callable.completed');
+      expect(outcome?.[1]).toMatchObject({
+        callable: 'eraseClient',
+        appCheckOutcome: null,
+      });
+    });
+
+    it('MONITOR, read per call: the same headerless call answers, its line carries MISSING', async () => {
+      const lines: (readonly unknown[])[] = [];
+      vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+      vi.stubEnv('APP_CHECK_MODE', 'MONITOR');
+      try {
+        const own = caseOf('cancelAppointment');
+        seam.answers.set(own.pipeline, own.answer);
+        await expect(run('cancelAppointment', own.input)).resolves.toEqual(
+          own.expected,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      const outcome = lines.find(([msg]) => msg === 'callable.completed');
+      expect(outcome?.[1]).toMatchObject({
+        callable: 'cancelAppointment',
+        appCheckOutcome: 'MISSING',
+      });
+    });
+
+    it('ENFORCE, read per call: a headerless call is refused failed-precondition / APP_CHECK_REQUIRED before its pipeline runs', async () => {
+      const lines: (readonly unknown[])[] = [];
+      vi.spyOn(logger, 'warn').mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+      vi.stubEnv('APP_CHECK_MODE', 'ENFORCE');
+      let thrown: HttpsError;
+      try {
+        const own = caseOf('cancelAppointment');
+        seam.answers.set(own.pipeline, own.answer);
+        thrown = await rejection(run('cancelAppointment', own.input));
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(thrown.code).toBe('failed-precondition');
+      expect(thrown.details).toEqual({ errorCode: 'APP_CHECK_REQUIRED' });
+      expect(seam.calls).toEqual([]);
+      const refused = lines.find(([msg]) => msg === 'callable.refused');
+      expect(refused?.[1]).toMatchObject({
+        callable: 'cancelAppointment',
+        appCheckOutcome: 'MISSING',
+        errorCode: 'APP_CHECK_REQUIRED',
+        wireStatus: 'failed-precondition',
+      });
     });
   });
 

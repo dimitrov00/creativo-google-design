@@ -2,17 +2,23 @@
 /**
  * The functions half of the build-time flags (R41, §12.1): turns one map of
  * config/feature-flags.json into the `.env` files the Firebase CLI reads for
- * the params in apps/functions/src/lib/flags.ts.
+ * the params in apps/functions/src/lib/flags.ts — and the same environment's
+ * App Check mode of config/app-check.json into the ONE string param
+ * `APP_CHECK_MODE` (apps/functions/src/lib/app-check.ts; security hardening
+ * S-RU-19: OFF | MONITOR | ENFORCE).
  *
  *   node tools/flags/write-functions-env.mjs                   # firebase.json predeploy; project from $GCLOUD_PROJECT
  *   node tools/flags/write-functions-env.mjs --env staging     # a real project's map (default: production)
  *   node tools/flags/write-functions-env.mjs --project demo-creativo-test
+ *   node tools/flags/write-functions-env.mjs --project demo-creativo-test --app-check ENFORCE
  *   FLAGS_ENV=staging firebase deploy --only functions --project <staging-id>
  *
  * The files land in dist/apps/functions/, the deployed `functions.source`,
  * so this runs AFTER `pnpm nx build functions` (the build wipes the folder):
- *   .env.<projectId>  the chosen map, one `PARAM=true|false` line per flag;
- *   .env.local        the development map; the CLI loads it only when emulating;
+ *   .env.<projectId>  the chosen map, one `PARAM=true|false` line per flag,
+ *                     and the chosen environment's `APP_CHECK_MODE=<mode>`;
+ *   .env.local        the development map and mode; the CLI loads it only
+ *                     when emulating — LAST, so it wins over .env.<projectId>;
  *   .secret.local     a demo-* project only: a fixed TEST value for every
  *                     secret the functions bind (`EMULATOR_SECRETS`) — the
  *                     CLI reads it only when emulating, `firebase.json`
@@ -22,6 +28,13 @@
  * Which map: a demo-* project, or none, only ever gets `development`. A real
  * project gets --env / FLAGS_ENV, else `production` — the map that switches
  * features on last, so a forgotten argument leaves a feature dark, not lit.
+ *
+ * The App Check override (S-L-2): `--app-check <MODE>` or
+ * `CREATIVO_APP_CHECK_MODE` — a name distinct from the param, so a stray
+ * shell variable never reaches an in-process run — replaces the mode in
+ * BOTH files, for an explicit demo-* project only (the emulator journeys'
+ * ENFORCE runs); for any other project it is refused (exit 2), so a deploy
+ * can only ever carry the committed manifest's mode.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -30,6 +43,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 export const WORKSPACE_ROOT = resolve(here, '..', '..');
 export const MANIFEST_PATH = join(WORKSPACE_ROOT, 'config/feature-flags.json');
+/** The App Check switch per environment (security hardening S-RU-19, S-L-1). */
+export const APP_CHECK_MANIFEST_PATH = join(
+  WORKSPACE_ROOT,
+  'config/app-check.json',
+);
 export const FUNCTIONS_DIST = join(WORKSPACE_ROOT, 'dist/apps/functions');
 
 export const ENVIRONMENTS = ['development', 'staging', 'production'];
@@ -39,6 +57,15 @@ const DEPLOYABLE = ['staging', 'production'];
 const KEY_PATTERN = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
 /** The CLI refuses these in any .env (firebase-tools functions/env.js). */
 const RESERVED_PREFIXES = ['X_GOOGLE_', 'FIREBASE_', 'EXT_'];
+
+/** The param the App Check mode is written to — `defineString('APP_CHECK_MODE')`. */
+export const APP_CHECK_PARAM = 'APP_CHECK_MODE';
+/**
+ * The modes, as `AppCheckMode` (`@core/primitives`) spells them — a Node
+ * script cannot import the TypeScript dictionary; the parity spec holds the
+ * two equal.
+ */
+export const APP_CHECK_MODES = ['OFF', 'MONITOR', 'ENFORCE'];
 
 /** `loyalty.selfView` → `LOYALTY_SELF_VIEW`, the name `defineBoolean` reads. */
 export function paramNameOf(key) {
@@ -74,7 +101,10 @@ export function manifestErrors(manifest) {
     for (const [key, value] of Object.entries(map)) {
       if (!KEY_PATTERN.test(key))
         errors.push(`${env}: "${key}" is not a dotted flag key`);
-      else if (RESERVED_PREFIXES.some((p) => paramNameOf(key).startsWith(p)))
+      else if (
+        RESERVED_PREFIXES.some((p) => paramNameOf(key).startsWith(p)) ||
+        paramNameOf(key) === APP_CHECK_PARAM
+      )
         errors.push(`${env}: "${key}" maps to a reserved env name`);
       if (typeof value !== 'boolean')
         errors.push(`${env}: "${key}" must be true or false`);
@@ -86,6 +116,49 @@ export function manifestErrors(manifest) {
     }
   }
   return errors;
+}
+
+/**
+ * Every problem of config/app-check.json at once, as sentences: exactly the
+ * three environments, each one of the three modes.
+ */
+export function appCheckManifestErrors(manifest) {
+  if (!isPlainObject(manifest)) return ['the manifest is not a JSON object'];
+  const errors = [];
+  for (const env of Object.keys(manifest)) {
+    if (!ENVIRONMENTS.includes(env))
+      errors.push(`unknown environment "${env}"`);
+  }
+  for (const env of ENVIRONMENTS) {
+    if (!(env in manifest)) errors.push(`missing environment "${env}"`);
+    else if (!APP_CHECK_MODES.includes(manifest[env]))
+      errors.push(`${env}: must be one of ${APP_CHECK_MODES.join(', ')}`);
+  }
+  return errors;
+}
+
+/**
+ * The App Check mode one run writes: the chosen environment's, unless an
+ * override is given — honoured for an explicit demo-* project only, and
+ * only when it is a mode. Throws (with `exitCode` 2 for a real project)
+ * rather than ever writing a mode the manifest does not hold for it.
+ */
+export function appCheckModeOf({ manifest, environment, override, projectId }) {
+  if (override === undefined || override === '') return manifest[environment];
+  if (!projectId || !projectId.startsWith('demo-')) {
+    throw Object.assign(
+      new Error(
+        `the App Check override is for a demo-* project only (project "${projectId}"); a deploy carries config/app-check.json`,
+      ),
+      { exitCode: 2 },
+    );
+  }
+  if (!APP_CHECK_MODES.includes(override)) {
+    throw new Error(
+      `the App Check override must be one of ${APP_CHECK_MODES.join(', ')} (got "${override}")`,
+    );
+  }
+  return override;
 }
 
 /**
@@ -117,13 +190,14 @@ export function chooseEnvironment({ projectId, requested }) {
   return requested;
 }
 
-export function renderEnv(map, environment) {
+export function renderEnv(map, environment, appCheckMode) {
   const lines = Object.entries(map).map(
     ([key, value]) => `${paramNameOf(key)}=${value}`,
   );
   return [
-    `# Generated from config/feature-flags.json (${environment}) by tools/flags/write-functions-env.mjs. Do not edit.`,
+    `# Generated from config/feature-flags.json and config/app-check.json (${environment}) by tools/flags/write-functions-env.mjs. Do not edit.`,
     ...lines,
+    `${APP_CHECK_PARAM}=${appCheckMode}`,
     '',
   ].join('\n');
 }
@@ -137,12 +211,37 @@ export function renderSecrets(secrets) {
 }
 
 /** Returns what it wrote; throws before writing anything when the input is bad. */
-export function writeFunctionsEnv({ manifest, projectId, requested, outDir }) {
+export function writeFunctionsEnv({
+  manifest,
+  appCheckManifest,
+  appCheckOverride,
+  projectId,
+  requested,
+  outDir,
+}) {
   const errors = manifestErrors(manifest);
   if (errors.length > 0) {
     throw new Error(`config/feature-flags.json: ${errors.join('; ')}`);
   }
+  const appCheckErrors = appCheckManifestErrors(appCheckManifest);
+  if (appCheckErrors.length > 0) {
+    throw new Error(`config/app-check.json: ${appCheckErrors.join('; ')}`);
+  }
   const environment = chooseEnvironment({ projectId, requested });
+  const appCheckMode = appCheckModeOf({
+    manifest: appCheckManifest,
+    environment,
+    override: appCheckOverride,
+    projectId,
+  });
+  // The emulator loads .env.local LAST (firebase-tools functions/env.js), so
+  // an override must land there too or an ENFORCE run silently stays MONITOR.
+  const localAppCheckMode = appCheckModeOf({
+    manifest: appCheckManifest,
+    environment: 'development',
+    override: appCheckOverride,
+    projectId,
+  });
   if (!existsSync(outDir)) {
     throw new Error(
       `${outDir} does not exist; run \`pnpm nx build functions\` first`,
@@ -152,11 +251,17 @@ export function writeFunctionsEnv({ manifest, projectId, requested, outDir }) {
   const files = [];
   if (projectId) {
     const path = join(outDir, `.env.${projectId}`);
-    writeFileSync(path, renderEnv(manifest[environment], environment));
+    writeFileSync(
+      path,
+      renderEnv(manifest[environment], environment, appCheckMode),
+    );
     files.push(path);
   }
   const local = join(outDir, '.env.local');
-  writeFileSync(local, renderEnv(manifest.development, 'development'));
+  writeFileSync(
+    local,
+    renderEnv(manifest.development, 'development', localAppCheckMode),
+  );
   files.push(local);
   // The emulator's secrets — only for a project that can only ever be
   // emulated (an explicit demo-*), never beside a real project's build.
@@ -165,7 +270,7 @@ export function writeFunctionsEnv({ manifest, projectId, requested, outDir }) {
     writeFileSync(secrets, renderSecrets(EMULATOR_SECRETS));
     files.push(secrets);
   }
-  return { environment, files };
+  return { environment, appCheckMode, files };
 }
 
 function isPlainObject(value) {
@@ -182,15 +287,22 @@ function main() {
   const projectId =
     argValue(argv, '--project') ?? process.env['GCLOUD_PROJECT'] ?? '';
   const requested = argValue(argv, '--env') ?? process.env['FLAGS_ENV'];
+  const appCheckOverride =
+    argValue(argv, '--app-check') ?? process.env['CREATIVO_APP_CHECK_MODE'];
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-  const { environment, files } = writeFunctionsEnv({
+  const appCheckManifest = JSON.parse(
+    readFileSync(APP_CHECK_MANIFEST_PATH, 'utf8'),
+  );
+  const { environment, appCheckMode, files } = writeFunctionsEnv({
     manifest,
+    appCheckManifest,
+    appCheckOverride,
     projectId,
     requested,
     outDir: FUNCTIONS_DIST,
   });
   console.log(
-    `flags: ${environment} map → ${files.map((f) => relative(WORKSPACE_ROOT, f)).join(', ')}`,
+    `flags: ${environment} map, App Check ${appCheckMode} → ${files.map((f) => relative(WORKSPACE_ROOT, f)).join(', ')}`,
   );
 }
 
@@ -202,6 +314,6 @@ if (
     main();
   } catch (error) {
     console.error(`flags: ${error.message}`);
-    process.exit(1);
+    process.exit(error.exitCode ?? 1);
   }
 }
