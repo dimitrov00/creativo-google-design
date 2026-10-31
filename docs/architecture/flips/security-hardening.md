@@ -1,6 +1,6 @@
 # Security hardening — Phase 4
 
-**Date:** 2026-10-31 · **Status:** PLAN (ledger §8 all TODO) — written on
+**Date:** 2026-10-31 · **Status:** BUILT — six workstreams, two review rounds and the final FULL gate, ledger §8 — written on
 branch `claude/adoring-pascal-o0miro`, restarted from `origin/main` at
 branch point `86870b9` (PR #5 merged: audit hardening Phase 3 and the
 owner-review sweep `968a97e` / `ac23b1d`). Every line number below is a hint
@@ -1664,29 +1664,29 @@ The "last recorded" column is HANDOFF §4's "After the owner-review sweep"
 block (the same tree as `86870b9` modulo the record commit `de32ef6`) — a
 hint, never a substitute for the measurement.
 
-| Gate step                                                           | Last recorded (`ac23b1d`)             | Baseline `86870b9`                | After C_B | After C_C | After C_D | After C_E | After C_F | Final (after C_A + reviews)   |
-| ------------------------------------------------------------------- | ------------------------------------- | --------------------------------- | --------- | --------- | --------- | --------- | --------- | ----------------------------- |
-| `nx sync:check`                                                     | up to date                            | up to date                        | ___       | ___       | ___       | ___       | ___       | ___                           |
-| layering (files / import edges)                                     | 987 / 4,453                           | 987 / 4,453                       | ___       | ___       | ___       | ___       | ___       | ___                           |
-| typecheck (projects green)                                          | 40 / 40                               | 40 / 40                           | ___       | ___       | ___       | ___       | ___       | ___                           |
-| lint (projects, errors, warnings)                                   | 45, 0, 220                            | 45, 0, 215                        | ___       | ___       | ___       | ___       | ___       | ___                           |
-| `run-many -t test` (vitest + node; failed)                          | 14,639 + 239; 0                       | 14,538 + 239; 0 ¹                 | ___       | ___       | ___       | ___       | ___       | ___                           |
-| ecs-core tests / statements %                                       | 7,136 / 98.57 % (16,034 / 16,266)     | 7,136 / 98.57 % (16,034 / 16,266) | ___       | ___       | ___       | ___       | ___       | ___ (new files ≥ 95 %)        |
-| functions tests                                                     | 1,428                                 | 1,428                             | ___       | ___       | ___       | ___       | ___       | ___                           |
-| `verify-tools` / `flag-tools` tests                                 | 239 / ___                             | 239 / 28                          | ___       | ___       | ___       | ___       | ___       | ___                           |
-| `seed-tools` typecheck / `lint-rules` tests                         | green / 422                           | green / 422                       | ___       | ___       | ___       | ___       | ___       | ___                           |
-| `lint:styles`                                                       | green                                 | green                             | ___       | ___       | ___       | ___       | ___       | ___                           |
-| `build web` initial (kB, transfer) + `verify:bundle`                | 587.74 kB (159.30 kB) — Phase 3 final | 587.28 kB (159.31 kB), OK         | ___       | ___       | ___       | ___       | ___       | ___ (+ `@firebase/app-check`) |
-| functions dist runtime dependencies                                 | 4                                     | 4                                 | 4         | 4         | 4         | 4         | 4         | 4                             |
-| functions exports                                                   | 50                                    | 50                                | 50        | 50        | 50        | 51        | 51        | 51                            |
-| `firestore.indexes.json` composites / overrides                     | 24 / 120 (57 on `auditLog`)           | 24 / 120                          | 24 / 120  | 24 / 120  | 24 / 120  | 24 / 120  | 24 / 120  | 24 / 120                      |
-| runbook §4.2 / §4.3 / §4.4 / §4.5 / §4.7 / §4.8 / §4.9 / §4.10 `ok` | 28/22/17/6/24/27/25/20, 0 FAIL        | 28/22/17/6/24/27/25/20, 0 FAIL    | ___       | ___       | ___       | ___       | ___       | ___                           |
-| `verify:p0`                                                         | (a)–(g) green                         | (a)–(g) all proved                | ___       | —         | —         | ___       | —         | ___                           |
-| `test:emulator` (functions + infra)                                 | 135 + 361                             | 135 + 361                         | —         | ___       | ___       | ___       | —         | ___                           |
-| `e2e:web` (passed / failed)                                         | 68 / 0                                | 68 / 0                            | —         | —         | ___       | ___       | ___       | ___                           |
-| `verify:csp` (hashes, smoke)                                        | both match; smoke 10 passed           | both match; smoke 10 passed       | —         | —         | —         | —         | —         | ___                           |
-| `verify:appcheck` (ENFORCE / MONITOR cases)                         | — (new)                               | —                                 | —         | —         | —         | —         | —         | ___                           |
-| ENFORCE `verify:p0` / `e2e:web` / `verify:csp` (probe first)        | — (new)                               | —                                 | —         | —         | —         | —         | —         | ___ / ___ / ___               |
+| Gate step                                                           | Last recorded (`ac23b1d`)             | Baseline `86870b9`                | After C_B | After C_C | After C_D | After C_E | After C_F | Final (after C_A + reviews)                     |
+| ------------------------------------------------------------------- | ------------------------------------- | --------------------------------- | --------- | --------- | --------- | --------- | --------- | ----------------------------------------------- |
+| `nx sync:check`                                                     | up to date                            | up to date                        | ___       | ___       | ___       | ___       | ___       | up to date                                      |
+| layering (files / import edges)                                     | 987 / 4,453                           | 987 / 4,453                       | ___       | ___       | ___       | ___       | ___       | 1,004 / 4,526                                   |
+| typecheck (projects green)                                          | 40 / 40                               | 40 / 40                           | ___       | ___       | ___       | ___       | ___       | 40 / 40 (cold, `--parallel=1`)                  |
+| lint (projects, errors, warnings)                                   | 45, 0, 220                            | 45, 0, 215                        | ___       | ___       | ___       | ___       | ___       | 45, 0, 215                                      |
+| `run-many -t test` (vitest + node; failed)                          | 14,639 + 239; 0                       | 14,538 + 239; 0 ¹                 | ___       | ___       | ___       | ___       | ___       | 15,003 + 290; 0                                 |
+| ecs-core tests / statements %                                       | 7,136 / 98.57 % (16,034 / 16,266)     | 7,136 / 98.57 % (16,034 / 16,266) | ___       | ___       | ___       | ___       | ___       | 7,264 / 98.58 % (16,186 / 16,419)               |
+| functions tests                                                     | 1,428                                 | 1,428                             | ___       | ___       | ___       | ___       | ___       | 1,538                                           |
+| `verify-tools` / `flag-tools` tests                                 | 239 / ___                             | 239 / 28                          | ___       | ___       | ___       | ___       | ___       | 290 / 44                                        |
+| `seed-tools` typecheck / `lint-rules` tests                         | green / 422                           | green / 422                       | ___       | ___       | ___       | ___       | ___       | green / 422                                     |
+| `lint:styles`                                                       | green                                 | green                             | ___       | ___       | ___       | ___       | ___       | green                                           |
+| `build web` initial (kB, transfer) + `verify:bundle`                | 587.74 kB (159.30 kB) — Phase 3 final | 587.28 kB (159.31 kB), OK         | ___       | ___       | ___       | ___       | ___       | 608.70 kB (164.64 kB), OK                       |
+| functions dist runtime dependencies                                 | 4                                     | 4                                 | 4         | 4         | 4         | 4         | 4         | 4                                               |
+| functions exports                                                   | 50                                    | 50                                | 50        | 50        | 50        | 51        | 51        | 51                                              |
+| `firestore.indexes.json` composites / overrides                     | 24 / 120 (57 on `auditLog`)           | 24 / 120                          | 24 / 120  | 24 / 120  | 24 / 120  | 24 / 120  | 24 / 120  | 24 / 120                                        |
+| runbook §4.2 / §4.3 / §4.4 / §4.5 / §4.7 / §4.8 / §4.9 / §4.10 `ok` | 28/22/17/6/24/27/25/20, 0 FAIL        | 28/22/17/6/24/27/25/20, 0 FAIL    | ___       | ___       | ___       | ___       | ___       | 28/22/17/6/24/27/25/20, 0 FAIL                  |
+| `verify:p0`                                                         | (a)–(g) green                         | (a)–(g) all proved                | ___       | —         | —         | ___       | —         | (a)–(g) all proved                              |
+| `test:emulator` (functions + infra)                                 | 135 + 361                             | 135 + 361                         | —         | ___       | ___       | ___       | —         | 141 + 385                                       |
+| `e2e:web` (passed / failed)                                         | 68 / 0                                | 68 / 0                            | —         | —         | ___       | ___       | ___       | 72 / 0                                          |
+| `verify:csp` (hashes, smoke)                                        | both match; smoke 10 passed           | both match; smoke 10 passed       | —         | —         | —         | —         | —         | both match (+ checks (f), (g)); smoke 10 passed |
+| `verify:appcheck` (ENFORCE / MONITOR cases)                         | — (new)                               | —                                 | —         | —         | —         | —         | —         | 10 pass, 0 FAIL (both modes)                    |
+| ENFORCE `verify:p0` / `e2e:web` / `verify:csp` (probe first)        | — (new)                               | —                                 | —         | —         | —         | —         | —         | all proved / 72 / 10                            |
 
 ¹ Summed per project from the baseline log (43 vitest projects + `verify-tools`' node runner). HANDOFF §4's 14,639 for `ac23b1d` was summed another way: no spec file differs between `ac23b1d` and `86870b9`. This phase compares against the measured column.
 
@@ -1862,21 +1862,85 @@ gates keep their reference counts.
 
 ## 8. Ledger (the orchestrator fills it)
 
-| Workstream                                | Packages                | Status | Commit sha | Gate result |
-| ----------------------------------------- | ----------------------- | ------ | ---------- | ----------- |
-| S-WS-B — error reports scrubbed           | PB                      | TODO   | —          | —           |
-| S-WS-C — an erased person can do nothing  | PC1, PC2                | TODO   | —          | —           |
-| S-WS-D — rules the audit found missing    | PD                      | TODO   | —          | —           |
-| S-WS-E — an audited role change           | PE1, PE2, PE3           | TODO   | —          | —           |
-| S-WS-F — a staff route to walk-in records | PF                      | TODO   | —          | —           |
-| S-WS-A — App Check                        | PA1, PA2, PA4, PA3, PA5 | TODO   | —          | —           |
-| Review round 1                            | fixer                   | TODO   | —          | —           |
-| Review round 2 + FULL gate                | fixer                   | TODO   | —          | —           |
+| Workstream                                | Packages                | Status | Commit sha | Gate result                                                                                                                                      |
+| ----------------------------------------- | ----------------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S-WS-B — error reports scrubbed           | PB                      | DONE   | `f246c58`  | stage gate green (load timeouts only, solo green); `verify:p0` (a)–(g); CI 7/7                                                                   |
+| S-WS-C — an erased person can do nothing  | PC1, PC2                | DONE   | `30e6a4f`  | `test:emulator` 136 + 373; static green (load timeouts only); CI 7/7                                                                             |
+| S-WS-D — rules the audit found missing    | PD                      | DONE   | `ba1c555`  | `test:emulator` 136 + 385; `e2e:web` 68/68; CI 7/7                                                                                               |
+| S-WS-E — an audited role change           | PE1, PE2, PE3           | DONE   | `6b65407`  | `verify:p0`; `e2e:web` 70/71 + solo 12/12, 9/9; the integration spec's project fix (§8.S); CI 7/7                                                |
+| S-WS-F — a staff route to walk-in records | PF                      | DONE   | `dda0b83`  | `e2e:web` 72/72; build web; CI 7/7                                                                                                               |
+| S-WS-A — App Check                        | PA1, PA2, PA4, PA3, PA5 | DONE   | `aa61bcc`  | `verify:appcheck` ENFORCE + MONITOR; ENFORCE `verify:p0` / `e2e:web` 72/72 / `verify:csp` 10 (probe first); the header-read fix (§8.S)           |
+| Review round 1                            | fixer                   | DONE   | `bfb672b`  | 8 of 10 confirmed (1 MAJOR), all fixed (§8.R1); runbook gates PASS                                                                               |
+| Review round 2 + FULL gate                | fixer                   | DONE   | `8fe6da4`  | 3 of 4 confirmed (1 MAJOR), all fixed (§8.R2); the FULL gate cold on `8fe6da4` + `verify:appcheck` + the ENFORCE runs green (§6.3 Final); CI 7/7 |
+
+### 8.S Stage notes (orchestrator)
+
+Each stage was committed after its builders (and, for C, E and A, its
+integrator), gated in a separate worktree on exactly the committed tree, and
+pushed; CI ran on every push (all seven jobs green on every head, the one red
+noted below). The stage gates ran one journey at a time; from C_A on the
+static half ran through the integrator and CI (Nx cache on, affected only) and
+the final gate ran cold and complete.
+
+- **C_B** (`f246c58`): functions 1,439 tests (+11); `verify:p0` (a)–(g);
+  runbook 28/22/17/6/24/27/25/20. Deviations (recorded here): two more
+  `main.spec.ts` blocks re-pinned under S-DEP-1 (the identity store failure
+  `:1956-1977`, the unexpected-throw `it.each` `:2213-2262` — `logger.write`
+  carries the tracked entry), a second S-DEP-2 pin in the audit adapter spec
+  (`:167`), and §3 PB's grep expectation (only `firestore-tx.adapter.ts:346`).
+- **C_C** (`30e6a4f`): `test:emulator` 136 + 373 (the first Storage rules
+  spec, its own bucket `demo-creativo-test-storage-rules`); the integrator
+  made no edit; the refusal line is logged for governance codes only.
+- **C_D** (`ba1c555`): `test:emulator` 136 + 385; `e2e:web` 68/68 (the staff
+  journeys write notes and photos under the new rules). The parity spec's own
+  comment stripper was later shared (§8.R1 item 5).
+- **C_E** (`6b65407`): the integration spec as built signed in through the
+  Auth emulator's REST endpoint, which answers every API-key call from its
+  DEFAULT project (`demo-creativo-test`, firebase-tools
+  `getProjectIdByApiKey`), while the revoke ran on the spec's own project —
+  the tested token was another project's user. Fixed before push: case (a)
+  proves the pipeline's revoke on its project (`tokensValidAfterTime` unset
+  before, set after); a new case (b) proves, through the SAME revoke adapter on
+  the default project, that a pre-revoke ID token then fails
+  `verifyIdToken(…, true)` with `auth/id-token-revoked`. The orchestrator also
+  widened the `profileEditedAtUtcMs` doc (S-RU-12), the integrator's reported
+  forced edit. `verify:p0` all proved; `e2e:web` 70/71, the red
+  `appointments-screenshots.spec.ts:47` (an emulator stall) green alone 12/12,
+  the roles journey 9/9.
+- **C_F** (`dda0b83`): `e2e:web` 72/72 (the walk-in privacy journey); the
+  seeded walk-in id is `cus_` + a digest of the attempt key (the seed holds no
+  `WALKIN_ID_KEY`).
+- **C_A** (`aa61bcc`): the first gate read every MONITOR outcome as
+  `MISSING` and refused the emulator token under ENFORCE: `appCheckFactsOf`
+  read `rawRequest.headers` as an own property, but Node's `IncomingMessage`
+  defines `headers` as a prototype getter (the unit spec fed plain objects).
+  Fixed before push (`Reflect.get`, plus a spec with a prototype-getter
+  request); two environment comments reworded off the §4.8 gate's
+  `(Phase 4)` spelling. Then `verify:appcheck` passed every case in both
+  modes, and the ENFORCE runs of `verify:p0`, `e2e:web` (72/72; 46 outcome
+  lines `VALID`, the refused probe `MISSING`) and `verify:csp` (10) passed,
+  each opened by the probe. The integrator added `START_LOGGING_EMULATOR=true`
+  to `verify:appcheck` (the settle-scripts spec).
+- **CI fix** (`78bf9aa`): CI's `main` failed `staff-dashboard:typecheck` with
+  177 errors, all from `dist/out-tsc/…/primitives/index.d.ts` reading as "not
+  a module": typecheck depended on `^build` only, so parallel `tsc --build`
+  processes rebuilt the shared references into one `dist/out-tsc` and one read
+  a declaration another was rewriting. `nx.json`'s typecheck now also depends
+  on `^typecheck`; a cold `--parallel=3` typecheck was green in 5.5 min once. It narrows the race, not removes it: the final gate's cold `--parallel=3` run saw `functions` read ecs-core's errors barrel mid-write (each project's lib and spec tsconfigs emit into one `dist/out-tsc`, and a dependent's `tsc --build` may re-emit a reference), so the FULL gate keeps the cold typecheck at `--parallel=1`; the lasting fix is a HANDOFF next-pass item.
+- **Process note — a hard-limit breach, recorded:** a PA3 builder ran the
+  preflight twice against a made-up non-demo project id (`creativo-prod`) —
+  read-only, no credential, nothing fetched or written. The brief forbids any
+  preflight run against a non-`demo-*` project; it had no effect, and every
+  later prompt forbade running the preflight at all.
+- **Unit-test load timeouts:** on the 4-core container, while builders ran,
+  the heavy `client-booking`, `staff-dashboard`, `shared-visits` and ecs-core
+  property specs hit their 5 s / 10 s timeouts in several stage gates; each
+  was green alone and in CI.
 
 ### 8.R1 Review round 1
 
 Review of `86870b9..dda0b83` (B–F); eight confirmed findings, all fixed on
-`21881fb` (the orchestrator commits). One line per finding: severity, title,
+top of `21881fb` and committed as `bfb672b`. One line per finding: severity, title,
 file, disposition, the spec that proves it.
 
 1. **MINOR — a same-person re-open reset the «Роли» block**
