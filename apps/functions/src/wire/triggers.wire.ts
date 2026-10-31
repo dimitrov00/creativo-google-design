@@ -7,7 +7,7 @@ import {
   LogEvent,
   type PrimitiveError,
   Result,
-  type StoredFields,
+  StoredFields,
   TriggerEventId,
   UserId,
   UtcEpochMs,
@@ -26,6 +26,7 @@ import {
   AuditSystem,
   ClientStatsSystem,
   type DocumentChange,
+  FailureCodeSystem,
   GovernedChangeSystem,
   type StoredDocument,
   StoredDocumentSystem,
@@ -47,7 +48,7 @@ import {
   type DeliveredEvent,
   type EdgePorts,
 } from '../edge';
-import { eventInstantOf, field, isStoreFailure } from './wire-read';
+import { eventInstantOf, isStoreFailure } from './wire-read';
 
 /**
  * The flip-1 TRIGGERS' edge (blueprint §4.1, F1-3): a Firestore write or a
@@ -180,7 +181,7 @@ function appointmentSide(
 }
 
 /** A side of a write as its raw body, `{}` when absent. */
-function bodyOf(snapshot: StoredSnapshot | undefined): {
+function rawBodyOf(snapshot: StoredSnapshot | undefined): {
   readonly [field: string]: unknown;
 } {
   return snapshot?.data() ?? {};
@@ -352,7 +353,7 @@ function profileEditedAtOf(
   snapshot: StoredSnapshot | undefined,
 ): UtcEpochMs | null {
   if (snapshot?.exists !== true) return null;
-  const stamp = field(bodyOf(snapshot), 'profileEditedAtUtcMs');
+  const stamp = StoredFields.field(rawBodyOf(snapshot), 'profileEditedAtUtcMs');
   if (typeof stamp !== 'number') return null;
   const instant = UtcEpochMs.of(stamp);
   return instant.ok ? instant.value : null;
@@ -406,8 +407,8 @@ export function decodeDocumentChangeEvent(
     afterExists: after?.exists === true,
   };
   if (governedCollection === GovernedCollection.Users) {
-    const was = bodyOf(before);
-    const is = bodyOf(after);
+    const was = rawBodyOf(before);
+    const is = rawBodyOf(after);
     return {
       governedCollection,
       ...core,
@@ -454,7 +455,7 @@ export type AttemptReport = {
  * `reason`), so the edge reaches the same verdict.
  */
 export function attemptThrowable(failure: AttemptFailure): unknown {
-  if (TriggerAttemptSystem.failureCode(failure.error) === failure.failureCode) {
+  if (FailureCodeSystem.codeOf(failure.error) === failure.failureCode) {
     return failure.error;
   }
   return Object.assign(new Error(failure.failureCode), {

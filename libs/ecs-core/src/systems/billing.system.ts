@@ -513,7 +513,7 @@ export const BillingSystem = {
             appliedAtUtcMs: nowUtcMs,
             combinability: combinabilityOf(grant.exclusive),
             ...DiscountProvenance.grant(grant.grantId),
-            ...CouponValue.of(grant),
+            ...CouponValue.sliceOf(grant),
           });
           break;
         }
@@ -537,7 +537,7 @@ export const BillingSystem = {
             appliedAtUtcMs: nowUtcMs,
             combinability: combinabilityOf(coupon.exclusive),
             ...DiscountProvenance.code(coupon.code),
-            ...CouponValue.of(coupon),
+            ...CouponValue.sliceOf(coupon),
           });
           break;
         }

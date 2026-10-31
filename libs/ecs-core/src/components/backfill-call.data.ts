@@ -1,4 +1,4 @@
-import { CustomerId, Result, UtcEpochMs } from '@core/primitives';
+import { CustomerId, Result, StoredFields, UtcEpochMs } from '@core/primitives';
 import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import { BackfillJobName } from './backfill-job-name.data';
@@ -25,8 +25,8 @@ export const BackfillCall = {
       'backfillJobName',
       BackfillJobName,
     );
-    const cursor = CallAnswer.field(answer, 'cursor');
-    const startedFrom = CallAnswer.field(answer, 'startedFrom');
+    const cursor = StoredFields.field(answer, 'cursor');
+    const startedFrom = StoredFields.field(answer, 'startedFrom');
     const done = CallAnswer.flag(answer, 'done');
     const budgetSpent = CallAnswer.flag(answer, 'budgetSpent');
     const processed = CallAnswer.whole(answer, 'processed', 0);
@@ -34,11 +34,11 @@ export const BackfillCall = {
     const stamped = CallAnswer.whole(answer, 'stamped', 0);
     const recomputed = CallAnswer.whole(answer, 'recomputed', 0);
     const total = CallAnswer.whole(answer, 'total', 0);
-    const startedAt = CallAnswer.field(answer, 'runStartedAtUtcMs');
+    const startedAt = StoredFields.field(answer, 'runStartedAtUtcMs');
     const runStartedAtUtcMs =
       typeof startedAt === 'number' ? UtcEpochMs.of(startedAt) : null;
-    const sampleChecked = CallAnswer.field(answer, 'sampleChecked');
-    const mismatched = CallAnswer.field(answer, 'sampleMismatched');
+    const sampleChecked = StoredFields.field(answer, 'sampleChecked');
+    const mismatched = StoredFields.field(answer, 'sampleMismatched');
     if (
       backfillJobName === null ||
       (cursor !== null && typeof cursor !== 'string') ||

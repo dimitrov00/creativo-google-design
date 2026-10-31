@@ -12,6 +12,7 @@ import {
 } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreCatalogPorts } from './firestore-catalog.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The catalogue's server reads, over the in-memory Admin SDK: bodies spread
@@ -19,12 +20,6 @@ import { firestoreCatalogPorts } from './firestore-catalog.adapter';
  * id that could not name a document never read, the listed catalogue on the
  * root status keys, and a failure answered as a value.
  */
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const RETIRED = ServiceId.of('svc-retired');
 const HIDDEN = LocationId.of('loc-hidden');

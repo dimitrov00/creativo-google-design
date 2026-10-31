@@ -675,7 +675,7 @@ export const StreakPublishSystem = {
         change.direction,
       ),
       versionBody: {
-        ...StreakRule.of(rule),
+        ...StreakRule.sliceOf(rule),
         publishedAtUtcMs: nowUtcMs,
         publishedByUserId,
         streakTransition: call.streakTransition,
@@ -727,7 +727,7 @@ export const StreakPublishSystem = {
         name,
         rules: [
           {
-            ...StreakRule.of(current),
+            ...StreakRule.sliceOf(current),
             headRole: HeadRole.Current,
             streakTransition: null,
           },

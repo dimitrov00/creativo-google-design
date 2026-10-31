@@ -55,6 +55,7 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  bodyOf,
   at,
   auditRowsOf,
   barberBusyDayFixture,
@@ -95,11 +96,6 @@ const MARIA: AccountContact = {
   phone: null,
   email: null,
 };
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 function catalogue(locationStatus: LocationStatus = LocationStatus.Active) {
   return [

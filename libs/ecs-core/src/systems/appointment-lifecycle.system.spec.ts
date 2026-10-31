@@ -936,7 +936,7 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         nowAt(RESOLVED_AT),
       ),
     );
-    expect(BookingContact.of(step.appointment)).toEqual(contact);
+    expect(BookingContact.sliceOf(step.appointment)).toEqual(contact);
   });
 });
 
@@ -1514,33 +1514,51 @@ describe('AppointmentLifecycleSystem.transitionSeats — party or seats', () => 
 
   it('addresses the root for CONFIRMED and PENDING, whatever the chair holds', () => {
     for (const to of [S.Confirmed, S.Pending]) {
-      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 3)).toEqual(
-        [],
-      );
-      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 2)).toEqual(
-        [],
-      );
+      expect(
+        AppointmentLifecycleSystem.transitionSeats(to, {
+          seatIds: ids,
+          partySize: 3,
+        }),
+      ).toEqual([]);
+      expect(
+        AppointmentLifecycleSystem.transitionSeats(to, {
+          seatIds: ids,
+          partySize: 2,
+        }),
+      ).toEqual([]);
     }
   });
 
   it('addresses the root when the chair holds the whole party', () => {
     for (const to of [S.Completed, S.NoShow, S.Cancelled]) {
-      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 2)).toEqual(
-        [],
-      );
       expect(
-        AppointmentLifecycleSystem.transitionSeats(to, [SeatId.of('s-1')], 1),
+        AppointmentLifecycleSystem.transitionSeats(to, {
+          seatIds: ids,
+          partySize: 2,
+        }),
+      ).toEqual([]);
+      expect(
+        AppointmentLifecycleSystem.transitionSeats(to, {
+          seatIds: [SeatId.of('s-1')],
+          partySize: 1,
+        }),
       ).toEqual([]);
     }
   });
 
   it('addresses the chair’s own seats when it holds a share of the party', () => {
     for (const to of [S.Completed, S.NoShow, S.Cancelled]) {
-      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 3)).toEqual(
-        ids,
-      );
       expect(
-        AppointmentLifecycleSystem.transitionSeats(to, [SeatId.of('s-2')], 2),
+        AppointmentLifecycleSystem.transitionSeats(to, {
+          seatIds: ids,
+          partySize: 3,
+        }),
+      ).toEqual(ids);
+      expect(
+        AppointmentLifecycleSystem.transitionSeats(to, {
+          seatIds: [SeatId.of('s-2')],
+          partySize: 2,
+        }),
       ).toEqual([SeatId.of('s-2')]);
     }
   });
@@ -1872,7 +1890,10 @@ describe('AppointmentLifecycleSystem — the read-only legality is pure', () => 
         FIXTURE_TODAY,
       ),
       lead: AppointmentLifecycleSystem.leadVerb(chair, legal, false),
-      seats: AppointmentLifecycleSystem.transitionSeats(S.Cancelled, ids, 3),
+      seats: AppointmentLifecycleSystem.transitionSeats(S.Cancelled, {
+        seatIds: ids,
+        partySize: 3,
+      }),
       inverse: AppointmentLifecycleSystem.inverseOf(S.Cancelled, true),
       exits: AppointmentLifecycleSystem.exitVerbs(S.Confirmed, offered, true),
       reopenable: AppointmentLifecycleSystem.reopenable(

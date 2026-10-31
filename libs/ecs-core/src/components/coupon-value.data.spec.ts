@@ -97,7 +97,7 @@ describe('CouponValue.freeService', () => {
   });
 });
 
-describe('CouponValue.of', () => {
+describe('CouponValue.sliceOf', () => {
   it('copies exactly the variant fields of a value-carrying struct', () => {
     const carrier = {
       grantStatus: 'ACTIVE',
@@ -105,16 +105,16 @@ describe('CouponValue.of', () => {
       discountAmountCents: cents(500),
       discountCurrency: Currency.EUR,
     } as const;
-    expect(CouponValue.of(carrier)).toEqual({
+    expect(CouponValue.sliceOf(carrier)).toEqual({
       discountMethod: 'FIXED_AMOUNT',
       discountAmountCents: 500,
       discountCurrency: 'EUR',
     });
-    expect(CouponValue.of(unwrapOk(CouponValue.percentOff(15)))).toEqual({
+    expect(CouponValue.sliceOf(unwrapOk(CouponValue.percentOff(15)))).toEqual({
       discountMethod: 'PERCENT_OFF',
       discountPercent: 15,
     });
-    expect(CouponValue.of(CouponValue.freeService())).toBe(
+    expect(CouponValue.sliceOf(CouponValue.freeService())).toBe(
       CouponValue.freeService(),
     );
   });

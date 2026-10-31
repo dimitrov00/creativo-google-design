@@ -98,7 +98,7 @@ import type {
   GiftVoucher,
   GiftVoucherMeta,
   JournalEntry,
-  LoyaltyCatalog,
+  LoyaltyCatalogParts,
   SeasonProgress,
   StreakDefinition,
   User,
@@ -1186,7 +1186,7 @@ export function loyaltyCatalog(): ValidLoyaltyCatalog {
 
 /** The published catalogue with one edit to its documents, judged as the store judges it. */
 export function loyaltyCatalogWith(
-  edit: (catalog: LoyaltyCatalog) => LoyaltyCatalog,
+  edit: (catalog: LoyaltyCatalogParts) => LoyaltyCatalogParts,
 ): ValidLoyaltyCatalog {
   return unwrapOk(LoyaltyCatalogSystem.validate(edit(loyaltyCatalogFixture())));
 }
@@ -1454,7 +1454,7 @@ export function loyaltyPortsOf(
 
 /** `LOYALTY_CATALOG_READ_PORTS` answering the published catalogue (or the one given), as the port answers it. */
 export function catalogPortsOf(
-  catalog: LoyaltyCatalog = loyaltyCatalogFixture(),
+  catalog: LoyaltyCatalogParts = loyaltyCatalogFixture(),
 ): PortDouble<LoyaltyCatalogReadPorts> {
   return portDouble(memoryLoyaltyCatalogReadPorts(catalog));
 }

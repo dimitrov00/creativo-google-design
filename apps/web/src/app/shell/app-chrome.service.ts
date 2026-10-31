@@ -1,11 +1,10 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, effect, inject, signal } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
-import { Locale, Tag } from '@core/primitives';
+import { localeFor } from '@creativo/infrastructure/i18n';
 import { ThemeService } from '@creativo/ui/theme';
 import {
   DEFAULT_DENSITY,
-  DEFAULT_LANG,
   DENSITY_STORAGE_KEY,
   LANG_STORAGE_KEY,
   UI_DENSITIES,
@@ -48,7 +47,7 @@ export class AppChromeService {
     });
 
     const storedLang = this.readStored(LANG_STORAGE_KEY);
-    this.transloco.setActiveLang(Tag.or(Locale, storedLang, DEFAULT_LANG));
+    this.transloco.setActiveLang(localeFor(storedLang));
     this.document.documentElement.lang = this.transloco.getActiveLang();
     this.transloco.langChanges$.subscribe((lang) => {
       this.document.documentElement.lang = lang;

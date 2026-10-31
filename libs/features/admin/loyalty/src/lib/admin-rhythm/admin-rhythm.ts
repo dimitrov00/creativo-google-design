@@ -27,11 +27,11 @@ import {
 } from '@core/components';
 import {
   EngagementErrorCode,
-  type RhythmPublishRefusal,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
-import { Locale, type ServiceId, Tag } from '@core/primitives';
+import { type ServiceId } from '@core/primitives';
 import {
   CatalogSystem,
   RhythmDraftSystem,
@@ -39,8 +39,10 @@ import {
   StreakRuleSystem,
 } from '@core/systems';
 import {
-  translateCodedError,
+  DEFAULT_LOCALE,
   loadedLanguage,
+  localeFor,
+  translateCodedError,
 } from '@creativo/infrastructure/i18n';
 import {
   type RhythmRuleUnits,
@@ -116,13 +118,13 @@ import {
   sampleLabel,
   sampleUnit,
   servicesCount,
-  shortDay,
   toleranceExample,
   toleranceMarks,
   toleranceReadout,
   upcomingLine,
   weekMarks,
 } from './admin-rhythm.words';
+import { formatDayShort } from '@creativo/ui/wall-clock';
 
 /** A word the page prints that is not a bare key: built once the catalogue has loaded. */
 type Translate = AdminRhythmContext['translate'];
@@ -278,7 +280,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     initialValue: null,
   });
 
-  protected readonly lang = computed(() => this.loadedLang() ?? Locale.Bg);
+  protected readonly lang = computed(() => this.loadedLang() ?? DEFAULT_LOCALE);
 
   private readonly translate: Signal<Translate | null> = computed(() => {
     const lang = this.loadedLang();
@@ -652,7 +654,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
         for (const service of group.services) {
           names.set(
             service.id,
-            LocalizedText.pick(service.name, Tag.or(Locale, lang, Locale.Bg)),
+            LocalizedText.pick(service.name, localeFor(lang)),
           );
         }
       }
@@ -700,7 +702,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       this.patch({
         qualifier:
           draft.streakQualifier === StreakQualifier.Services
-            ? StreakQualifierRule.of(draft)
+            ? StreakQualifierRule.sliceOf(draft)
             : StreakQualifierRule.services([]),
       });
       // A list with nothing chosen is no rule: the sheet opens on the choice.
@@ -831,7 +833,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       if (outcome.value === null) return;
       this.toast.set({
         label: t('admin.rhythm.receipt', {
-          date: shortDay(
+          date: formatDayShort(
             outcome.value.effectiveFromLocalDate,
             context.today,
             context.lang,
@@ -951,7 +953,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
    */
   private wordRefusal(
     context: AdminRhythmContext,
-    refusal: RhythmPublishRefusal,
+    refusal: PublishStreakDefinitionError,
   ): string | null {
     if (!StreakPublishError.guard(refusal)) {
       return translateCodedError(this.transloco, {
@@ -971,7 +973,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       case StreakPublishErrorCode.TooEarly:
         return translateCodedError(this.transloco, {
           ...refusal,
-          date: shortDay(refusal.earliest, context.today, context.lang),
+          date: formatDayShort(refusal.earliest, context.today, context.lang),
         });
       case StreakPublishErrorCode.CallerNotAdmin:
       case StreakPublishErrorCode.CallerUnauthenticated:

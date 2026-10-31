@@ -35,6 +35,7 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { firestoreUserPorts } from '../adapters/firestore-users.adapter';
 import { nodeOtpCryptoPorts } from '../adapters/otp-crypto.adapter';
 import { verifyOtpRefusal } from '../wire/identity.wire';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * `verifyOtp` against the REAL Firestore and Auth emulators (identity flip
@@ -82,12 +83,6 @@ function phoneOtp(id: string): Otp {
     salt: SALT,
     codeHash: crypto.otpCrypto.hashCode(CODE, SALT),
   });
-}
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 /** Two snapshots' update times are the same instant — the document was not rewritten. */

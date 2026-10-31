@@ -1,6 +1,6 @@
 import type { DocumentData, Firestore, Query } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import type { RepositoryError } from '@core/errors';
 import {
   type Appointment,
   type AppointmentNote,
@@ -30,12 +30,9 @@ import type {
   Log,
   LoyaltyAccountReadPorts,
 } from '@core/ports';
-import {
-  type StoredDocument,
-  type StoredGuardOf,
-  TriggerAttemptSystem,
-} from '@core/systems';
+import type { StoredDocument, StoredGuardOf } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
+import { readFailed } from './store-answer';
 
 /**
  * The person's footprint, read by the admin's privacy callables over the
@@ -106,13 +103,6 @@ function entityOf(id: string, data: DocumentData | undefined): StoredDocument {
       Object.entries(data ?? {}).filter(([field]) => field !== TTL_FIELD),
     ),
   };
-}
-
-function readFailed(path: string, error: unknown): RepositoryError {
-  return RepositoryError.readFailed(
-    path,
-    TriggerAttemptSystem.failureCode(error),
-  );
 }
 
 export const firestorePrivacyPorts = (

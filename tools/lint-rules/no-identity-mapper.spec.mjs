@@ -98,7 +98,7 @@ tester.run('creativo/no-identity-mapper', noIdentityMapper, {
     },
     // 2. A seed body builder behind `satisfies`.
     {
-      code: "export function tierDefinitionBody(stored: Body<TierDefinition>): Body<TierDefinition> { return { name: stored.name, rank: stored.rank } satisfies Omit<TierDefinition, 'id'>; }",
+      code: 'export function tierDefinitionBody(stored: Body<TierDefinition>): Body<TierDefinition> { return { name: stored.name, rank: stored.rank } satisfies Body<TierDefinition>; }',
       errors: [copy('tierDefinitionBody')],
     },
     // 3. An arrow.

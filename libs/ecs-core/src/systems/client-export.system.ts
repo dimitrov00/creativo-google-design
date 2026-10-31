@@ -379,7 +379,7 @@ function exportedVisit(
     person,
     walkInHash,
   )
-    ? BookingContact.of(visit)
+    ? BookingContact.sliceOf(visit)
     : BookingContact.NONE;
   const redemptions: ExportedVoucherRedemption[] = [];
   for (let i = 0; i < visit.voucherRedemptions.length; i++) {

@@ -317,8 +317,8 @@ async function elsewhere(
   const next = StreakRule.parse({
     ...StreakRule.DEFAULT,
     ...options,
-    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
-    ...(qualifier ?? StreakQualifierRule.of(StreakRule.DEFAULT)),
+    ...(interval ?? StreakIntervalRule.sliceOf(StreakRule.DEFAULT)),
+    ...(qualifier ?? StreakQualifierRule.sliceOf(StreakRule.DEFAULT)),
     version: baseVersion + 1,
     effectiveFromLocalDate: effectiveFrom,
   });
@@ -425,7 +425,7 @@ async function loaded(options: RigOptions = {}) {
 
 /** The interval a rule (or a draft, or a call's rule) holds, as a slice of its own. */
 const intervalOf = (rule: StreakIntervalRule | undefined) =>
-  rule === undefined ? undefined : StreakIntervalRule.of(rule);
+  rule === undefined ? undefined : StreakIntervalRule.sliceOf(rule);
 
 const fixed = (days: number) => fixedInterval(days);
 
@@ -711,7 +711,7 @@ describe('patchedRhythmDraft', () => {
       qualifier: StreakQualifierRule.services(serviceIds),
     });
 
-    expect(StreakQualifierRule.of(next)).toEqual(
+    expect(StreakQualifierRule.sliceOf(next)).toEqual(
       StreakQualifierRule.services(serviceIds),
     );
     expect(

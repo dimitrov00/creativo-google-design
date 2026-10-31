@@ -115,6 +115,7 @@ import {
 } from '@core/primitives';
 import { RegistrationSystem, SearchFieldsSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_TIME_ZONE,
   cents,
   courseOf,
@@ -270,13 +271,6 @@ function moneyBody(uid: string, spent: number): Omit<ClientMoneyRecord, 'id'> {
     version: 4,
     updatedAtUtcMs: SEPT_FIRST,
   } satisfies Omit<ClientMoneyRecord, 'id'>;
-}
-
-/** A stored body: the entity minus its id (Law 5) — what `programsPorts`' `saveBody` writes. */
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 /** `body` with one root key dropped — a document missing a key its entity declares. */

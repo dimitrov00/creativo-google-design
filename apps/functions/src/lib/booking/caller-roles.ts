@@ -1,4 +1,4 @@
-import { UserId } from '@core/primitives';
+import { StoredFields, UserId } from '@core/primitives';
 import { Actor, type Role, Roles } from '@core/components';
 
 /**
@@ -38,11 +38,7 @@ export function callerUserId(request: VerifiedRequest): UserId | null {
 
 /** The `roles` claim as the token holds it: its entries untouched, none when it is no array. */
 function claimedRoles(request: VerifiedRequest): readonly unknown[] {
-  const token = request.auth?.token;
-  const roles =
-    token === undefined
-      ? undefined
-      : Object.getOwnPropertyDescriptor(token, 'roles')?.value;
+  const roles = StoredFields.field(request.auth?.token, 'roles');
   return Array.isArray(roles) ? roles : [];
 }
 

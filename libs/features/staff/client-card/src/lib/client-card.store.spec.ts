@@ -518,6 +518,14 @@ describe('ClientCardStore — Георги, settled', () => {
       barberId: 'ivan',
     });
     expect(store.photoById('photo-gone')).toBeNull();
+    // The editor's past-cut page takes the photo AS STORED, under the same
+    // readiness as `photoById`.
+    expect(store.storedPhotoById('photo-dev-georgi-1')).toMatchObject({
+      id: 'photo-dev-georgi-1',
+      appointmentId: 'appt-dev-1',
+      barberId: 'ivan',
+    });
+    expect(store.storedPhotoById('photo-gone')).toBeNull();
   });
 
   it('reads the ‹admin› spend for an admin only', async () => {

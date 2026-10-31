@@ -41,6 +41,7 @@ import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { firestoreUserPorts } from '../adapters/firestore-users.adapter';
 import { singleTenantPorts } from '../adapters/tenant.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * `completeRegistration` against the REAL Firestore and Auth emulators
@@ -70,12 +71,6 @@ const PHONE = E164.of('+359888123456');
 const CUSTOMER = CustomerId.forUser(UID, sha256Hex);
 /** A transport operation id the caller sent (WS-4.1) — the registration row names it. */
 const OPERATION = OperationId.of('operation-0123456789ab');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** Two snapshots' update times are the same instant — the document was not rewritten. */
 function sameUpdate(

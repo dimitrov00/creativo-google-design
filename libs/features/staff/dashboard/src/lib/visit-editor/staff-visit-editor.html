@@ -2350,14 +2350,14 @@
           [attr.aria-label]="t('staff.visit.photos')"
           data-testid="staff-visit-photo-grid"
         >
-          @for (photo of vm().photos; track photo.photoId) {
+          @for (photo of vm().photos; track photo.id) {
           <li>
             <button
               type="button"
               class="staff-visit__photo"
               [attr.aria-label]="t('staff.visit.photoOpen', { when: photoWhen(photo) })"
-              [attr.data-testid]="'staff-visit-photo-' + photo.photoId"
-              (click)="openPhoto(photo.photoId)"
+              [attr.data-testid]="'staff-visit-photo-' + photo.id"
+              (click)="openPhoto(photo.id)"
             >
               <ui-async-image [uiSrc]="photo.url" uiRatio="1 / 1" />
             </button>

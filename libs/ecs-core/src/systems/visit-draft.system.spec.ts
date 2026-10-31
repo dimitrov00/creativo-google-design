@@ -7,7 +7,9 @@ import {
   RecurrencePattern,
   RecurrenceRule,
   RepeatPreset,
+  WeekOfMonth,
 } from '@core/components';
+import { SchedulingErrorCode } from '@core/errors';
 import {
   DraftPersonKey,
   DurationMinutes,
@@ -102,7 +104,7 @@ function withRule(
     RecurrenceRule.create(
       patch.pattern ?? RecurrenceRule.patternOf(rule),
       patch.interval ?? rule.recurrenceInterval,
-      RecurrenceEndRule.of(rule),
+      RecurrenceEndRule.sliceOf(rule),
     ),
   );
 }
@@ -215,7 +217,7 @@ describe('the repeat page policy', () => {
     const weekly = S.ruleForPreset(RepeatPreset.Weekly, thursday, null);
     if (weekly === null) throw new Error('fixture');
     const counted = S.ruleForEndKind(weekly, RecurrenceEnd.Count, thursday);
-    expect(RecurrenceEndRule.of(counted)).toEqual({
+    expect(RecurrenceEndRule.sliceOf(counted)).toEqual({
       recurrenceEnd: 'COUNT',
       occurrenceCount: 5,
     });
@@ -266,7 +268,7 @@ describe('the repeat page policy — identities and fallbacks', () => {
       ),
     );
     expect(
-      RecurrenceEndRule.of(
+      RecurrenceEndRule.sliceOf(
         S.ruleForEndKind(stale, RecurrenceEnd.Count, thursday),
       ),
     ).toEqual({ recurrenceEnd: 'COUNT', occurrenceCount: 10 });
@@ -779,6 +781,101 @@ describe('a typed end', () => {
     expect(S.spanToEnd(minute(600), minute(601))).toBe(5);
     expect(S.spanToEnd(minute(600), minute(602))).toBe(5);
     expect(S.spanToEnd(minute(0), minute(1439))).toBe(1440);
+  });
+});
+
+/* ── the repeat page's typed edits (moved from block-repeat.spec.ts, B4) ── */
+
+describe('the repeat page’s typed edits', () => {
+  const weekly = S.ruleForPreset(
+    RepeatPreset.Weekly,
+    thursday,
+    null,
+  ) as RecurrenceRule;
+
+  it('refuses a typed figure no rule can hold, in the domain’s words', () => {
+    const none = S.ruleWithInterval(weekly, 0);
+    expect(!none.ok && none.error.errorCode).toBe(
+      SchedulingErrorCode.RecurrenceInvalidInterval,
+    );
+    const tooMany = S.ruleWithCount(weekly, 500);
+    expect(!tooMany.ok && tooMany.error.errorCode).toBe(
+      SchedulingErrorCode.RecurrenceInvalidCount,
+    );
+    const noDays = S.ruleWithWeekdays(weekly, []);
+    expect(!noDays.ok && noDays.error.errorCode).toBe(
+      SchedulingErrorCode.RecurrenceNoWeekdays,
+    );
+  });
+
+  it('a typed interval lands; the days and the end are kept', () => {
+    const every3 = unwrapOk(S.ruleWithInterval(weekly, 3));
+    expect(every3.recurrenceInterval).toBe(3);
+    expect(RecurrenceRule.patternOf(every3)).toEqual(
+      RecurrenceRule.patternOf(weekly),
+    );
+    expect(endKey(every3)).toBe(endKey(weekly));
+  });
+
+  it('typed weekdays land unique and in ISO order; the interval and the end are kept', () => {
+    const every2 = unwrapOk(S.ruleWithInterval(weekly, 2));
+    const days = unwrapOk(
+      S.ruleWithWeekdays(every2, [Weekday.Fri, Weekday.Mon]),
+    );
+    expect(RecurrenceRule.patternOf(days)).toEqual(
+      RecurrencePattern.weekly([Weekday.Mon, Weekday.Fri]),
+    );
+    expect(days.recurrenceInterval).toBe(2);
+    expect(endKey(days)).toBe(endKey(weekly));
+  });
+
+  it('a monthly reading lands; the interval and the end are kept', () => {
+    const monthly = S.ruleForPreset(
+      RepeatPreset.Monthly,
+      thursday,
+      null,
+    ) as RecurrenceRule;
+    const fourthThursday = RecurrencePattern.monthlyByWeekday(
+      WeekOfMonth.Fourth,
+      Weekday.Thu,
+    );
+    const read = unwrapOk(S.ruleWithMonthly(monthly, fourthThursday));
+    expect(RecurrenceRule.patternOf(read)).toEqual(fourthThursday);
+    expect(read.recurrenceInterval).toBe(monthly.recurrenceInterval);
+    expect(endKey(read)).toBe(endKey(monthly));
+  });
+
+  it('a typed end lands — a date or a count; the days and the interval are kept', () => {
+    const until = unwrapOk(S.ruleWithUntil(weekly, day('2026-12-31')));
+    expect(endKey(until)).toBe('2026-12-31');
+    expect(RecurrenceRule.patternOf(until)).toEqual(
+      RecurrenceRule.patternOf(weekly),
+    );
+    expect(until.recurrenceInterval).toBe(1);
+    const count = unwrapOk(S.ruleWithCount(weekly, 6));
+    expect(endKey(count)).toBe('×6');
+    expect(keys(thursday, count)).toHaveLength(6);
+    expect(RecurrenceRule.patternOf(count)).toEqual(
+      RecurrenceRule.patternOf(weekly),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rule = deepFreeze(
+      S.ruleForPreset(RepeatPreset.Weekly, thursday, null) as RecurrenceRule,
+    );
+    const weekdays = deepFreeze([Weekday.Tue, Weekday.Thu]);
+    const snapshot = { ...rule };
+    expect(S.ruleWithInterval(rule, 2)).toEqual(S.ruleWithInterval(rule, 2));
+    expect(S.ruleWithWeekdays(rule, weekdays)).toEqual(
+      S.ruleWithWeekdays(rule, weekdays),
+    );
+    expect(S.ruleWithUntil(rule, day('2027-01-07'))).toEqual(
+      S.ruleWithUntil(rule, day('2027-01-07')),
+    );
+    expect(S.ruleWithCount(rule, 4)).toEqual(S.ruleWithCount(rule, 4));
+    expect(rule).toEqual(snapshot);
+    expect(weekdays).toEqual([Weekday.Tue, Weekday.Thu]);
   });
 });
 

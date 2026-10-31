@@ -15,6 +15,7 @@ import {
 import {
   AuthDeployment,
   GovernedCollection,
+  type StreakPublishCall,
   TenantConfig,
 } from '@core/components';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
@@ -142,10 +143,7 @@ import {
   verifyOtpRefusal,
 } from './wire/identity.wire';
 import { decodeRedeemInvitation } from './wire/invitation.wire';
-import {
-  answerStreakPublish,
-  type StreakPublishAnswer,
-} from './wire/loyalty.wire';
+import { answerStreakPublish } from './wire/loyalty.wire';
 import {
   decodeRunBackfill,
   RUN_BACKFILL_TIMEOUT_SECONDS,
@@ -1092,7 +1090,7 @@ export const runBackfill = onCall(
  */
 export const publishStreakDefinition = onCall(
   LOG_DIGEST_SECRETS,
-  callableEdge<unknown, StreakPublishAnswer>(
+  callableEdge<unknown, StreakPublishCall.Answer>(
     {
       callable: Callables.PublishStreakDefinition,
       failureCode: StreakPublishErrorCode.StoreFailed,

@@ -2,6 +2,7 @@ import { type BadgeSeriesId, defect } from '@core/primitives';
 import {
   BadgeCategoryKind,
   FamilyScopeFilter,
+  LocalizedText,
   MedalRingState,
   MedalState,
   type PersonalRecord,
@@ -41,8 +42,6 @@ import {
 } from './achievements.presenter';
 import { AchievementScope } from './client-card.contracts';
 import {
-  dayLong,
-  dayShort,
   levelNumeral,
   monthYearLong,
   runningCase,
@@ -63,7 +62,11 @@ import type {
   SeasonCardVm,
   SeasonTrackVm,
 } from './client-pages.vm';
-import { formatCount } from '@creativo/ui/wall-clock';
+import {
+  formatCount,
+  formatDayLong,
+  formatDayShort,
+} from '@creativo/ui/wall-clock';
 
 /*
  * «ПОСТИЖЕНИЯ», REVISION 3 (client-card-revision-3 §2.3, §3.8): the
@@ -195,8 +198,8 @@ export function medalRingVm(
   const earnedOn = BadgeSystem.earnedOn(progress, standing.highestLevel);
   const accessibleName =
     single && standing.medalState === MedalState.Earned && earnedOn !== null
-      ? `${series.title[localeOf(ctx)]}${words.achievement.earnedOn(
-          dayLong(earnedOn, data.today, lang),
+      ? `${LocalizedText.pick(series.title, localeOf(ctx))}${words.achievement.earnedOn(
+          formatDayLong(earnedOn, data.today, lang),
         )}${built.isNew ? words.achievement.newSuffix : ''}${
           pending ? `, ${words.achievements.withThisVisit}` : ''
         }`
@@ -214,7 +217,7 @@ export function medalRingVm(
         ? built.valueText
         : single && last !== null
           ? words.achievement.oneOffEarned(
-              dayShort(last.earnedLocalDate, data.today, lang),
+              formatDayShort(last.earnedLocalDate, data.today, lang),
             )
           : words.achievements.complete,
       accessibleName,
@@ -314,7 +317,7 @@ export function recordCardVm(
       const on = record.on ?? defect('a first visit held without its day');
       // The day and its month as the figure, the year as the detail: the
       // day is read against itself, so no year rides on the figure.
-      value = dayLong(on, on, lang);
+      value = formatDayLong(on, on, lang);
       detail = yearAlone(on, lang);
       spoken = value;
       break;
@@ -433,7 +436,7 @@ function sectionOf(
 ): MedalSectionVm {
   return {
     categoryId: category.id,
-    title: category.title[localeOf(ctx)],
+    title: LocalizedText.pick(category.title, localeOf(ctx)),
     count: ctx.words.achievements.familyCount(
       earnedAmong(families, data),
       families.length,
@@ -460,7 +463,7 @@ export const CHIP_SEASONS = 'seasons';
 function chipLabel(category: BadgeCategory, ctx: AchievementsContext): string {
   return category.badgeCategoryKind === BadgeCategoryKind.Barbers
     ? ctx.words.achievements.sectionBarbers
-    : category.title[localeOf(ctx)];
+    : LocalizedText.pick(category.title, localeOf(ctx));
 }
 
 /**
@@ -654,7 +657,7 @@ export function medalsPageVm(
       id: category.id,
       label: chipLabel(category, ctx),
       accessibleName: words.chipName(
-        category.title[localeOf(ctx)],
+        LocalizedText.pick(category.title, localeOf(ctx)),
         earnedAmong(families, data),
         families.length,
       ),
@@ -822,7 +825,7 @@ export function medalScopeVm(
       category === null || drawn === null
         ? built.subline
         : ctx.words.achievements.categorySummary(
-            category.title[localeOf(ctx)],
+            LocalizedText.pick(category.title, localeOf(ctx)),
             earnedAmong(drawn, data),
             drawn.length,
           ),

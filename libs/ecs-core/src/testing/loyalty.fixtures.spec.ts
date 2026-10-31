@@ -737,7 +737,7 @@ describe('streakDefinitionFixture — catalog.json’s head, as the entity', () 
         loyaltyCatalogJson.streakDefinitions.cadence.updatedAtUtcMs,
     });
     const [current] = streakDefinitionFixture().rules;
-    expect(current === undefined ? null : StreakRule.of(current)).toEqual(
+    expect(current === undefined ? null : StreakRule.sliceOf(current)).toEqual(
       StreakRule.DEFAULT,
     );
   });

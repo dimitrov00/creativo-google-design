@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { BarberId, type BusyKey, Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import type { RepositoryError } from '@core/errors';
 import {
   type BarberBusyDay,
   type BarberSchedule,
@@ -8,8 +8,9 @@ import {
   type ScheduleException,
 } from '@core/entities';
 import type { BarberListPorts, Log, ShopDayReadPorts } from '@core/ports';
-import { type StoredGuardOf, TriggerAttemptSystem } from '@core/systems';
+import type { StoredGuardOf } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
+import { readFailed } from './store-answer';
 
 /**
  * The scheduling server reads outside any transaction (flip 1, blueprint
@@ -36,13 +37,6 @@ import { admitStored } from './firestore-tx.adapter';
  * and the log are REQUIRED (OR-33, DEP-F24): a bare
  * `firestoreSchedulePorts(db)` does not type-check.
  */
-
-function readFailed(path: string, error: unknown): RepositoryError {
-  return RepositoryError.readFailed(
-    path,
-    TriggerAttemptSystem.failureCode(error),
-  );
-}
 
 /**
  * One document by collection and id — the entity, `null` when absent, or

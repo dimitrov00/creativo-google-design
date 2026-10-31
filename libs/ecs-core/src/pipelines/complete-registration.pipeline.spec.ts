@@ -8,7 +8,6 @@ import {
   BlockReason,
   CustomerOrigin,
   ErasureStatus,
-  type DocBody,
   E164,
   Email,
   ParsedIdentifier,
@@ -42,6 +41,7 @@ import {
   SearchFieldsSystem,
 } from '@core/systems';
 import {
+  bodyOf,
   auditRowsOf,
   contendedCommit,
   customerOf,
@@ -134,12 +134,6 @@ function rig(options: Rig) {
 /** A stored body by path — the entity minus `id`. */
 function stored(world: IdentityWorld, path: readonly string[]) {
   return world.store.get(path.join('/'));
-}
-
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 /** What the stub registered as Ada leaves — the system's own body. */

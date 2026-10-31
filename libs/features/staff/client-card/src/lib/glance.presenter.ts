@@ -14,6 +14,7 @@ import {
 import {
   formatCents,
   formatCount,
+  formatDayShort,
   formatWallClock,
 } from '@creativo/ui/wall-clock';
 import {
@@ -25,6 +26,7 @@ import {
 import {
   BirthdayMoment,
   CouponOccasion,
+  LocalizedText,
   type PersonalRecord,
   PersonalRecordKind,
   PointsReach,
@@ -57,8 +59,6 @@ import {
 } from './achievements.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
 import {
-  cardLocaleOf,
-  dayShort,
   dayWithYear,
   heldFacts,
   hungJoints,
@@ -102,6 +102,7 @@ import {
 } from './client-card.words';
 import { glanceReward, rhythmStateOf } from './loyalty.presenter';
 import { medalRingVm } from './medals.presenter';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /*
  * THE GLANCE PAGE «client», REVISION 3 (client-card-revision-3 §2.1), module
@@ -181,7 +182,7 @@ function heroLine(
   if (!input.settled || zone === null) return null;
   if (pause !== null) {
     if (pause.until === null) return plainLine(words.head.pausedPermanent);
-    const until = dayShort(
+    const until = formatDayShort(
       pause.until,
       shopDayOf(input.nowUtcMs, zone),
       words.lang,
@@ -220,14 +221,14 @@ function heroTier(
   tier: NonNullable<HeroInput['tier']>,
   words: ClientCardWords,
 ): HeroTierVm | null {
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   // Which plate, its ring and what remains are `TierSystem.plate`'s; the
   // tiers' names are the catalogue's.
   const plate = TierSystem.plate(tier.account, tier.catalog.tiers);
   if (plate === null) return null;
   const current = LoyaltyCatalogSystem.tier(tier.catalog, plate.currentTierId);
   if (current === null) return null;
-  const name = current.name[locale];
+  const name = LocalizedText.pick(current.name, locale);
   switch (plate.tierPlateState) {
     case TierPlateState.Top:
       return {
@@ -254,7 +255,7 @@ function heroTier(
         accessibleName: words.head.tierName(
           name,
           words.visitsModule.sectionVisits(plate.remaining),
-          next.name[locale],
+          LocalizedText.pick(next.name, locale),
         ),
       };
     }
@@ -398,7 +399,7 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
   // A birthday of the week to come: the day it is kept on, and the age it brings.
   const title = words.birthday.upcoming(
     weekdayLong(moment.localDate, words.lang),
-    dayShort(moment.localDate, today, words.lang),
+    formatDayShort(moment.localDate, today, words.lang),
     moment.turning,
   );
   return {
@@ -686,7 +687,7 @@ function pointsSentence(
   catalog: ValidLoyaltyCatalog,
 ): string | null {
   const { account, today, words } = input;
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   // Which rewards the sentence may name, what the balance reaches and how
   // far it falls short are `RewardSystem.pointsReachBeyondHeld`'s — a held
   // reward known by the coupon it mints (OR-15).
@@ -698,7 +699,7 @@ function pointsSentence(
   );
   const reward = reach.reward;
   if (reward === null) return null;
-  const name = inSentence(reward.name[locale], words.lang);
+  const name = inSentence(LocalizedText.pick(reward.name, locale), words.lang);
   switch (reach.pointsReach) {
     case PointsReach.EnoughFor:
       return words.loyalty.enoughForPoints(name);

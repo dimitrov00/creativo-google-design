@@ -438,29 +438,13 @@ function rowShape(row: DayRowVm): string {
           discount.grantId,
           discount.code,
           // The value as stored — exactly its variant's fields.
-          CouponValue.of(discount),
+          CouponValue.sliceOf(discount),
         ]),
       )
       .sort(),
     vouchers: row.vouchers.map((voucher) => voucher.code),
     tip: row.tipCents,
   });
-}
-
-/**
- * The seats a move of this row to `to` addresses — `[]` for the ROOT, the
- * whole party in one call (`AppointmentLifecycleSystem.transitionSeats`):
- * the row's own seat ids.
- */
-function transitionSeatsOf(
-  row: DayRowVm,
-  to: BookingStatus,
-): readonly SeatId[] {
-  return AppointmentLifecycleSystem.transitionSeats(
-    to,
-    row.seatIds,
-    row.partySize,
-  );
 }
 
 /** The street line of a postal address — everything before its first comma. */
@@ -3862,7 +3846,12 @@ export class StaffDashboard {
     }
     if (to === BookingStatus.Cancelled) {
       this.cancelId.set(row.appointmentId);
-      this.cancelSeatIds.set(transitionSeatsOf(row, BookingStatus.Cancelled));
+      this.cancelSeatIds.set(
+        AppointmentLifecycleSystem.transitionSeats(
+          BookingStatus.Cancelled,
+          row,
+        ),
+      );
       this.cancelReasonCode.set(null);
       this.cancelNote.set('');
       this.cancelNoteFiled.set(false);
@@ -3875,7 +3864,7 @@ export class StaffDashboard {
     ) {
       // `CONFIRMED` is not a per-seat verb — the server rejects it as one, so
       // it always addresses the root (`transitionSeats`).
-      const seatIds = transitionSeatsOf(row, to);
+      const seatIds = AppointmentLifecycleSystem.transitionSeats(to, row);
       const move = (seatId: SeatId | null): Promise<boolean> =>
         this.store.transition(
           transitionOf(row.appointmentId, to, null, seatId),
@@ -4517,7 +4506,7 @@ export class StaffDashboard {
         promo: {
           label: coupon.name,
           // The coupon's value slice, exactly its variant's fields.
-          value: CouponValue.of(coupon),
+          value: CouponValue.sliceOf(coupon),
           exclusive: Combinability.isExclusive(coupon.combinability),
         },
         voucher: null,
@@ -5046,18 +5035,10 @@ export class StaffDashboard {
   /** A photo as the sheet shows it: the chair by name, where the catalogue still has it. */
   private toEditorPhoto(photo: AppointmentPhoto): VisitEditorPhoto {
     return {
-      photoId: photo.id,
-      url: photo.url,
-      takenAtUtcMs: photo.takenAtUtcMs,
-      barberId: photo.barberId,
+      ...photo,
       barberName:
         this.barberOptions().find((chair) => chair.id === photo.barberId)
           ?.label ?? null,
-      clientLabel: photo.clientLabel,
-      width: photo.width,
-      height: photo.height,
-      photoOrigin: photo.photoOrigin,
-      label: photo.label,
     };
   }
 
@@ -6655,7 +6636,7 @@ function guestLabelOf(seat: Seat): SeatLabel | null {
 function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
   return appointment.discounts.map((applied) => ({
     ...provenanceOf(applied),
-    ...CouponValue.of(applied),
+    ...CouponValue.sliceOf(applied),
     label: applied.label,
     grantId: DiscountProvenance.grantIdOf(applied),
     code: DiscountProvenance.codeOf(applied),

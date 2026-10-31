@@ -13,6 +13,7 @@ import {
 } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The waitlist's server read, over the in-memory Admin SDK: the requests
@@ -44,12 +45,6 @@ function requestOf(
     ...WaitlistLifecycle.open(FIXTURE_NOW_UTC_MS),
     waitlistStatus: status,
   };
-}
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 const open = requestOf('wl_open', [MONDAY, TUESDAY]);

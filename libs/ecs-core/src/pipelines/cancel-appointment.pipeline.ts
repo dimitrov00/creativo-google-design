@@ -90,7 +90,7 @@ export const cancelAppointment =
   (ports: CancelAppointmentPorts) =>
   async (
     cmd: CancelAppointmentCommand,
-  ): Promise<Result<BookingCall.Cancelled, CancelAppointmentError>> => {
+  ): Promise<Result<BookingCall.Committed, CancelAppointmentError>> => {
     const policy = await ports.loadPolicy();
     if (!policy.ok) {
       ports.log('warn', LogEvent.CancelPolicyUnread, {

@@ -10,7 +10,7 @@ import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { EnrollmentStatus, LocalizedText } from '@core/components';
 import type { Course } from '@core/entities';
-import { Locale, Tag } from '@core/primitives';
+import { Tag } from '@core/primitives';
 import { ProgramsSystem } from '@core/systems';
 import { COURSE_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
@@ -34,6 +34,7 @@ import {
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 type CoursesTab =
   typeof EnrollmentStatus.Open | typeof EnrollmentStatus.Upcoming;
@@ -127,11 +128,11 @@ export class MarketingCourses {
     this.tab.set(next);
   }
 
-  /** The active language's string — `bg` for every language but `en`. */
+  /** The active language's string, through the one rule (`localeFor`): the default for an unknown one. */
   protected text(localized: LocalizedText): string {
     return LocalizedText.pick(
       localized,
-      this.transloco.getActiveLang() === Locale.En ? Locale.En : Locale.Bg,
+      localeFor(this.transloco.getActiveLang()),
     );
   }
 

@@ -33,7 +33,14 @@ import {
   PositionId,
 } from '@core/primitives';
 import { ProgramsSystem, ZonedTimeSystem } from '@core/systems';
-import { CENTER, LOCATIONS, type Seeded, sure } from './catalog.fixtures';
+import {
+  type Body,
+  CENTER,
+  LOCATIONS,
+  type Seeded,
+  sure,
+  type Without,
+} from './catalog.fixtures';
 
 /** A program as the admin form types it: where it is stored (`id`) and the form (`input`). */
 export type ProgramForm<Id, Input> = {
@@ -49,7 +56,7 @@ export type ProgramForm<Id, Input> = {
 export type EventForm = {
   readonly id: EventId;
   readonly startTime: string;
-  readonly input: Omit<ShopEventInput, 'startsAt'>;
+  readonly input: Without<ShopEventInput, 'startsAt'>;
 };
 
 // ── Positions ──────────────────────────────────────────────────────────────
@@ -188,7 +195,7 @@ export function positionDocument(
     ProgramsSystem.position(form.id, form.input),
     `position ${form.id}`,
   );
-  return { id, body: body satisfies Omit<Position, 'id'> };
+  return { id, body: body satisfies Body<Position> };
 }
 
 /** The course the admin save would store for `form`. */
@@ -199,7 +206,7 @@ export function courseDocument(
     ProgramsSystem.course(form.id, form.input),
     `course ${form.id}`,
   );
-  return { id, body: body satisfies Omit<Course, 'id'> };
+  return { id, body: body satisfies Body<Course> };
 }
 
 /**
@@ -233,5 +240,5 @@ export function shopEventDocument(
     what,
   );
   const { id, ...body } = ProgramsSystem.shopEvent(form.id, fields, utcEpochMs);
-  return { id, body: body satisfies Omit<ShopEvent, 'id'> };
+  return { id, body: body satisfies Body<ShopEvent> };
 }

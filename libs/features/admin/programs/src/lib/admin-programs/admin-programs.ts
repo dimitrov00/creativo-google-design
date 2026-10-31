@@ -20,12 +20,13 @@ import {
 } from '@core/components';
 import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
 import type { ProgramSaveError } from '@core/errors';
-import { Locale, type LocationId, Tag } from '@core/primitives';
+import { type LocationId } from '@core/primitives';
 import { LocationScopeSystem, ProgramsSystem } from '@core/systems';
 import { shopNameOf } from '@creativo/features/shared/catalog';
 import { sameLocationIds } from '@creativo/infrastructure/firebase-app';
 import {
   loadedLanguage,
+  localeFor,
   translateCodedError,
 } from '@creativo/infrastructure/i18n';
 import {
@@ -204,9 +205,7 @@ export class AdminPrograms {
   });
 
   /** The data language a shop's name is read in — `bg` for every language but `en`. */
-  private readonly locale = computed(() =>
-    Tag.or(Locale, this.loadedLang(), Locale.Bg),
-  );
+  private readonly locale = computed(() => localeFor(this.loadedLang()));
 
   // ── The shops (OR-37, OR-42) ────────────────────────────────────────────
 

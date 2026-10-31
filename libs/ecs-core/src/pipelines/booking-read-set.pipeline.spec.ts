@@ -6,7 +6,6 @@ import {
   Combinability,
   CouponValue,
   DiscountProvenance,
-  type DocBody,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
@@ -40,6 +39,7 @@ import {
 } from '@core/entities';
 import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   at,
   barberBusyDayFixture,
@@ -73,11 +73,6 @@ import {
 } from './booking-read-set.pipeline';
 
 const KEY = BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY);
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 describe('the booking read set', () => {
   it('phase one is ONE getAll — the location, the services, the schedules and the client records, duplicates read once', async () => {

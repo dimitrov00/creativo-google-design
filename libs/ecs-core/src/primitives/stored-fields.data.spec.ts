@@ -3,6 +3,34 @@ import { deepFreeze } from '@core/testing';
 import { StoredFields } from './stored-fields.data';
 
 describe('StoredFields — a body as read, nothing checked yet', () => {
+  it('field reads an own field by name', () => {
+    expect(StoredFields.field({ startMinutes: 600 }, 'startMinutes')).toBe(600);
+    expect(StoredFields.field({ note: null }, 'note')).toBeNull();
+  });
+
+  it('field never reads an inherited property', () => {
+    expect(StoredFields.field({}, 'toString')).toBeUndefined();
+    expect(StoredFields.field([], 'map')).toBeUndefined();
+    expect(
+      StoredFields.field(Object.create({ inherited: 1 }), 'inherited'),
+    ).toBeUndefined();
+  });
+
+  it('field answers undefined for an absent field and for a non-object', () => {
+    expect(StoredFields.field({ a: 1 }, 'b')).toBeUndefined();
+    for (const raw of [null, undefined, 'seat', 0, true]) {
+      expect(StoredFields.field(raw, 'length')).toBeUndefined();
+    }
+  });
+
+  it('field is pure: same input → same output, input untouched', () => {
+    const raw = deepFreeze({ errorCode: 'X', path: 'a/1' });
+    expect(StoredFields.field(raw, 'path')).toBe(
+      StoredFields.field(raw, 'path'),
+    );
+    expect(raw).toEqual({ errorCode: 'X', path: 'a/1' });
+  });
+
   it('isRecord accepts a plain object, an empty one and one without a prototype', () => {
     expect(StoredFields.isRecord({ startMinutes: 600 })).toBe(true);
     expect(StoredFields.isRecord({})).toBe(true);

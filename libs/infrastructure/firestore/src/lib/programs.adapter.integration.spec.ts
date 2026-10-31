@@ -8,6 +8,7 @@ import type { EventsQuery } from '@core/ports';
 import { LocalDate, LocationId, PositionId, Result } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,
   courseOf,
@@ -22,13 +23,6 @@ import {
   modularFirestore,
 } from '../testing/emulator-test-env';
 import { programsPorts } from './programs.adapter';
-
-/** A stored body: the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** An event on the shop day `days` from `FIXTURE_TODAY`, at 19:00 shop time. */
 const eventOn = (

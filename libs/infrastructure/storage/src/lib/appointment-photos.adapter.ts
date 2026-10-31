@@ -1,5 +1,4 @@
 import {
-  type DocumentData,
   type Firestore,
   type QueryConstraint,
   collection,
@@ -21,9 +20,14 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import type { Observable } from 'rxjs';
-import { subscribeWithRetry } from '@creativo/infrastructure/firestore';
+import {
+  entityOf,
+  readFailed,
+  subscribeWithRetry,
+  writeFailed,
+} from '@creativo/infrastructure/firestore';
 import { type AppointmentId, Result, UtcEpochMs } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import type { RepositoryError } from '@core/errors';
 import { PhotoOrigin } from '@core/components';
 import { type AppointmentPhoto, Collections } from '@core/entities';
 import type { AppointmentPhotoPorts } from '@core/ports';
@@ -38,20 +42,9 @@ const IN_FILTER_MAX = 30;
 
 const PHOTOS = Collections.AppointmentPhotos;
 
-/** A photo document as its entity — the body beside its id (Law 5), no mapping. */
-const photoOf = (id: string, data: DocumentData): AppointmentPhoto =>
-  ({ id, ...data }) as AppointmentPhoto;
-
 /** Ascending by the instant taken — the order a visit's strip reads in. */
 const byTaken = (a: AppointmentPhoto, b: AppointmentPhoto): number =>
   UtcEpochMs.compare(a.takenAtUtcMs, b.takenAtUtcMs);
-
-/** The store's own reason for a failure: the SDK's `code`, else the message. */
-function reasonOf(cause: unknown): string | null {
-  const code = storageErrorCode(cause);
-  if (code !== undefined) return code;
-  return cause instanceof Error ? cause.message : null;
-}
 
 /** `ids`, each once, in chunks one `in` filter can carry. */
 function chunksOf(
@@ -95,10 +88,12 @@ export const appointmentPhotoPorts = (
     try {
       const snap = await getDocs(query(photos, ...constraints));
       return Result.ok(
-        snap.docs.map((entry) => photoOf(entry.id, entry.data())),
+        snap.docs.map((entry) =>
+          entityOf<AppointmentPhoto>(entry.id, entry.data()),
+        ),
       );
     } catch (cause) {
-      return Result.err(RepositoryError.readFailed(PHOTOS, reasonOf(cause)));
+      return Result.err(readFailed(PHOTOS, cause));
     }
   };
 
@@ -118,12 +113,14 @@ export const appointmentPhotoPorts = (
             (snap) =>
               next(
                 snap.docs
-                  .map((entry) => photoOf(entry.id, entry.data()))
+                  .map((entry) =>
+                    entityOf<AppointmentPhoto>(entry.id, entry.data()),
+                  )
                   .sort(byTaken),
               ),
             error,
           ),
-        (cause) => RepositoryError.readFailed(PHOTOS, reasonOf(cause)),
+        (cause) => readFailed(PHOTOS, cause),
       ),
 
     saveAppointmentPhoto: async (photo) => {
@@ -132,9 +129,7 @@ export const appointmentPhotoPorts = (
         await setDoc(doc(db, PHOTOS, id), body);
         return Result.ok(undefined);
       } catch (cause) {
-        return Result.err(
-          RepositoryError.writeFailed(`${PHOTOS}/${id}`, reasonOf(cause)),
-        );
+        return Result.err(writeFailed(`${PHOTOS}/${id}`, cause));
       }
     },
 
@@ -148,9 +143,7 @@ export const appointmentPhotoPorts = (
       try {
         await deleteDoc(doc(db, PHOTOS, photo.id));
       } catch (cause) {
-        return Result.err(
-          RepositoryError.writeFailed(`${PHOTOS}/${photo.id}`, reasonOf(cause)),
-        );
+        return Result.err(writeFailed(`${PHOTOS}/${photo.id}`, cause));
       }
       if (!PhotoOrigin.ownsBytes(photo.photoOrigin))
         return Result.ok(undefined);
@@ -160,9 +153,7 @@ export const appointmentPhotoPorts = (
       } catch (cause) {
         return storageErrorCode(cause) === OBJECT_NOT_FOUND
           ? Result.ok(undefined)
-          : Result.err(
-              RepositoryError.writeFailed(photo.path, reasonOf(cause)),
-            );
+          : Result.err(writeFailed(photo.path, cause));
       }
     },
 

@@ -538,7 +538,7 @@ describe('«Ритъм», its states', () => {
       StreakRule.parse({
         ...StreakRule.DEFAULT,
         ...StreakIntervalRule.fixed(35),
-        ...StreakQualifierRule.of(StreakRule.DEFAULT),
+        ...StreakQualifierRule.sliceOf(StreakRule.DEFAULT),
         version: 2,
         effectiveFromLocalDate: '2026-10-10',
       }),
@@ -580,7 +580,7 @@ describe('«Ритъм», the draft', () => {
     const { host, fixture, store } = await rig();
     slide(host, 'admin-rhythm-interval-weeks', 8);
     await settle(fixture);
-    expect(StreakIntervalRule.of(store.draft())).toEqual(
+    expect(StreakIntervalRule.sliceOf(store.draft())).toEqual(
       StreakIntervalRule.fixed(56),
     );
     expect(text(host, 'admin-rhythm-interval-readout')).toBe('8 седмици');

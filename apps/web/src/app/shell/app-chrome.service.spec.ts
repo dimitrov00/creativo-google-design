@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { ThemeService } from '@creativo/ui/theme';
+import { DEFAULT_LOCALE } from '@creativo/infrastructure/i18n';
 import {
+  DEFAULT_LANG,
   DENSITY_STORAGE_KEY,
   LANG_STORAGE_KEY,
   THEME_STORAGE_KEY,
@@ -65,6 +67,12 @@ describe('AppChromeService', () => {
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-density');
     Reflect.deleteProperty(document.defaultView as Window, 'matchMedia');
+  });
+
+  test('pre-paints the app’s default language — the tokens’ copy is the i18n setup’s', () => {
+    // `@creativo/ui/tokens` cannot import the i18n lib (type:tokens), so it
+    // keeps its own copy for the pre-paint script; this pins the two.
+    expect(DEFAULT_LANG).toBe(DEFAULT_LOCALE);
   });
 
   test('boots without saving a theme, and leaves the stamped one in place', () => {

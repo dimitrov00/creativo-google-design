@@ -81,6 +81,7 @@ import {
   decodeDispatchProjectionsEvent,
   preciseInstantOf,
 } from '../wire/triggers.wire';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * The client-stats projection against the REAL Firestore emulator (the
@@ -264,12 +265,6 @@ const FIXTURES: readonly Appointment[] = [
     { who: MIRA, outcome: 'WORKED', pref: 'ANY' },
   ]),
 ];
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const policyAt = (windowHours: number): BookingPolicy => ({
   ...BookingPolicy.DEFAULT,

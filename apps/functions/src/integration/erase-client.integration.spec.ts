@@ -123,6 +123,7 @@ import {
   type AuthDocumentWriteEvent,
   decodeDocumentChangeEvent,
 } from '../wire/triggers.wire';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * The admin's data-subject ERASURE against the REAL Firestore, Auth and
@@ -229,12 +230,6 @@ const SALT = '9f86d081884c7d659a2feaa0c55ad015';
 const otpCrypto = nodeOtpCryptoPorts();
 
 type Data = Record<string, unknown>;
-
-function bodyOf(entity: { readonly id: string }): Data {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** One document as comparable text — its keys sorted at every level. */
 function canonical(value: unknown): string {

@@ -36,7 +36,12 @@ import {
   pluralForm,
   streakPeriodReasonWords,
 } from '@creativo/infrastructure/i18n';
-import { formatCount, formatWallClock } from '@creativo/ui/wall-clock';
+import {
+  formatCount,
+  formatDayLong,
+  formatDayShort,
+  formatMonthLong,
+} from '@creativo/ui/wall-clock';
 import type {
   UiChoiceOption,
   UiSliderMark,
@@ -125,54 +130,6 @@ export function onBreakOf(id: string): StreakOnBreak {
 
 /** The typographic minus, as the spec draws a signed figure. */
 const MINUS = '−';
-
-// ── Dates (the house form, R59; the shared wall-clock face) ────────────────
-
-/** A shop day in the locale's form, on the cached wall-clock formatter (read back in UTC, no `Date` built). */
-function formatDay(
-  day: LocalDate,
-  lang: string,
-  options: Intl.DateTimeFormatOptions,
-): string {
-  return formatWallClock(day, null, lang, options);
-}
-
-const yearUnlessCurrent = (
-  day: LocalDate,
-  today: LocalDate,
-): Pick<Intl.DateTimeFormatOptions, 'year'> =>
-  day.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' };
-
-/** «1.09» · «1.03.2025 г.» — a capsule's or a row's date, the year only outside today's. */
-export function shortDay(
-  day: LocalDate,
-  today: LocalDate,
-  lang: string,
-): string {
-  return formatDay(day, lang, {
-    day: 'numeric',
-    month: '2-digit',
-    ...yearUnlessCurrent(day, today),
-  });
-}
-
-/** «4 септември» — a date someone hears. */
-export function longDay(
-  day: LocalDate,
-  today: LocalDate,
-  lang: string,
-): string {
-  return formatDay(day, lang, {
-    day: 'numeric',
-    month: 'long',
-    ...yearUnlessCurrent(day, today),
-  });
-}
-
-/** «септември» — the month in words (a track mark's description). */
-export function monthWord(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, { month: 'long' });
-}
 
 // ── Counting ─────────────────────────────────────────────────────────────
 
@@ -375,7 +332,7 @@ export function effectiveReading(
       return {
         choice,
         label: t('admin.rhythm.effective.picked', {
-          date: shortDay(day, context.today, context.lang),
+          date: formatDayShort(day, context.today, context.lang),
         }),
       };
   }
@@ -534,7 +491,7 @@ export function inForceCapsule(
 ): string {
   return context.translate(
     scheduled ? 'admin.rhythm.scheduled' : 'admin.rhythm.inForce',
-    { date: shortDay(day, context.today, context.lang) },
+    { date: formatDayShort(day, context.today, context.lang) },
   );
 }
 
@@ -545,7 +502,7 @@ export function upcomingLine(
   short: string,
 ): string {
   return context.translate('rhythmRule.upcoming', {
-    date: shortDay(day, context.today, context.lang),
+    date: formatDayShort(day, context.today, context.lang),
     rule: short,
   });
 }
@@ -685,7 +642,7 @@ export function historyRow(
     version: version.version,
     title: jointed(
       t('admin.rhythm.history.row', {
-        date: shortDay(version.effectiveFromLocalDate, today, lang),
+        date: formatDayShort(version.effectiveFromLocalDate, today, lang),
         change,
       }),
     ),
@@ -694,7 +651,7 @@ export function historyRow(
         ? name
         : t('admin.rhythm.history.by', {
             name,
-            date: shortDay(publishedOn, today, lang),
+            date: formatDayShort(publishedOn, today, lang),
           }),
     withdrawn: version.withdrawnAtUtcMs !== null,
   };
@@ -854,8 +811,8 @@ function sampleClosed(
     mark,
     {
       idSuffix: `-${index}`,
-      month: (on) => monthWord(on, lang),
-      day: (on) => shortDay(on, today, lang),
+      month: (on) => formatMonthLong(on, lang),
+      day: (on) => formatDayShort(on, today, lang),
     },
     {
       kept: (period, date) =>
@@ -882,7 +839,7 @@ function sampleOpen(
         : 'current',
     caption: '',
     description: context.translate('clientCard.rhythm.mark.current', {
-      date: longDay(mark.on, context.today, context.lang),
+      date: formatDayLong(mark.on, context.today, context.lang),
     }),
   };
 }

@@ -52,11 +52,12 @@ import {
   type ErasureStatus,
   FlagName,
   JournalFeed,
+  LocalizedText,
   Registration,
+  Roles,
   type ShopNow,
   type VisitFact,
   VisitFilter,
-  Roles,
   VisitRowOutcome,
 } from '@core/components';
 import {
@@ -107,7 +108,6 @@ import {
   ClientCardRegion,
   type ClientCardSubject,
 } from './client-card.contracts';
-import { cardLocaleOf, dayShort } from './client-card.format';
 import {
   clientPhotoVm,
   displayNameOf,
@@ -187,9 +187,11 @@ import {
 } from './visits-page.presenter';
 import { WALLET_ACTIVITY_READ, walletVm } from './wallet.presenter';
 import {
-  type TranslateCode,
   loadedLanguage,
+  localeFor,
+  type TranslateCode,
 } from '@creativo/infrastructure/i18n';
+import { formatDayShort } from '@creativo/ui/wall-clock';
 
 /** Every read settles within this, or counts as failed (§5.2.1). */
 export const CLIENT_CARD_READ_TIMEOUT_MS = 10_000;
@@ -2018,7 +2020,7 @@ export class ClientCardStore {
     });
   }
 
-  /** One past cut for the read-only `photo` page (the editor maps it to its own photo type). */
+  /** One past cut, worded, for the card's own `photo` page title. */
   photoById(photoId: string): ClientPhotoVm | null {
     const photos = LoadSlice.dataOf(this._photos());
     const words = this.words();
@@ -2029,6 +2031,20 @@ export class ClientCardStore {
     return photo === undefined || words === null || zone === null
       ? null
       : clientPhotoVm(photo, this._nowUtcMs(), zone, words);
+  }
+
+  /**
+   * One past cut AS STORED, for the editor's read-only `photo` page (§3.7),
+   * which draws it as its own photo. Ready exactly when {@link photoById}
+   * is — `null` until the photos, the words and the shop's zone are in —
+   * so the page opens under the same conditions.
+   */
+  storedPhotoById(photoId: string): AppointmentPhoto | null {
+    const photos = LoadSlice.dataOf(this._photos());
+    if (this.words() === null || this.zone() === null) return null;
+    // The page key the editor minted from a photo's id (pass D, D-8.9).
+    const id = AppointmentPhotoId.of(photoId);
+    return photos?.find((p) => p.id === id) ?? null;
   }
 
   /**
@@ -2064,7 +2080,7 @@ export class ClientCardStore {
         const today = this.today();
         if (scope.achievementScope === AchievementScope.Day && today !== null) {
           return words.achievements.dayTitle(
-            dayShort(scope.day, today, words.lang),
+            formatDayShort(scope.day, today, words.lang),
           );
         }
         return null;
@@ -2075,7 +2091,9 @@ export class ClientCardStore {
           subjectId === null || data === null
             ? null
             : seriesById(data, BadgeSeriesId.of(subjectId));
-        return series?.title[cardLocaleOf(words.lang)] ?? null;
+        return series === null
+          ? null
+          : LocalizedText.pick(series.title, localeFor(words.lang));
       }
       case ClientCardPage.Photo:
         return subjectId === null

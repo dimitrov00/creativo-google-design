@@ -15,7 +15,10 @@ import {
   formatCents,
   formatCentsFigure,
   formatCount,
+  formatDayLong,
+  formatDayShort,
   formatInstant,
+  formatMonthLong,
   formatMinutesRange,
   formatZoneName,
   formatWallClockParts,
@@ -544,5 +547,40 @@ describe('formatClock — the one 24-hour HH:MM face', () => {
     expect(formatClock(t, ClockClosing.EndOfDay)).toBe(
       formatClock(t, ClockClosing.EndOfDay),
     );
+  });
+});
+
+/*
+ * The house date forms (R59): the cases of the client card's
+ * `dayShort`/`dayLong`/`monthLong` (`client-card.words.spec.ts`) and the
+ * rhythm editor's `shortDay`/`longDay`/`monthWord`
+ * (`admin-rhythm.words.spec.ts`), merged here with their one home.
+ */
+describe('the house date forms (R59)', () => {
+  const day = (raw: string): LocalDate => unwrapOk(LocalDate.parse(raw));
+  const TODAY = day('2026-09-28');
+
+  it('prints a fact line’s date short, with the year only outside today’s', () => {
+    expect(formatDayShort(day('2026-08-12'), TODAY, 'bg')).toBe('12.08');
+    expect(formatDayShort(day('2026-09-01'), TODAY, 'bg')).toBe('1.09');
+    expect(formatDayShort(day('2025-03-06'), TODAY, 'bg')).toBe('6.03.2025 г.');
+    expect(formatDayShort(day('2025-03-01'), TODAY, 'bg')).toBe('1.03.2025 г.');
+  });
+
+  it('never moves a day across a zone', () => {
+    expect(formatDayShort(day('2026-12-31'), TODAY, 'bg')).toBe('31.12');
+    expect(formatDayShort(day('2026-01-01'), TODAY, 'bg')).toBe('1.01');
+  });
+
+  it('spells a date someone hears, the month in words', () => {
+    expect(formatDayLong(day('2026-09-04'), TODAY, 'bg')).toBe('4 септември');
+    expect(formatDayLong(day('2025-03-06'), TODAY, 'bg')).toBe(
+      '6 март 2025 г.',
+    );
+    expect(formatDayLong(day('2026-09-04'), TODAY, 'en')).toBe('September 4');
+  });
+
+  it('says a month in words', () => {
+    expect(formatMonthLong(day('2026-09-04'), 'bg')).toBe('септември');
   });
 });

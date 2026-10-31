@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { logger } from 'firebase-functions';
+import { StoredFields } from '@core/primitives';
 import type {
   Log,
   LogContext,
@@ -98,7 +99,7 @@ const FRAME_LINE = /^\s*at\s/;
 
 /** An `Error`'s `code`, when it carries a string or a number — else `null`. */
 function codeOfError(error: Error): string | number | null {
-  const code = Object.getOwnPropertyDescriptor(error, 'code')?.value;
+  const code = StoredFields.field(error, 'code');
   if (typeof code === 'number') return code;
   return typeof code === 'string' ? ClientIssueSystem.scrub(code) : null;
 }

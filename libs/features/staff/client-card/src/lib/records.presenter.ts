@@ -14,12 +14,7 @@ import {
 } from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { AchievementsContext } from './achievements.presenter';
-import {
-  dayLong,
-  dayWithYear,
-  monthYearLong,
-  runningCase,
-} from './client-card.format';
+import { dayWithYear, monthYearLong, runningCase } from './client-card.format';
 import {
   type AchievementsData,
   type FeaturedRecordVm,
@@ -36,7 +31,7 @@ import {
 } from './client-card.words';
 import { rhythmStateOf } from './loyalty.presenter';
 import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
-import { formatCount } from '@creativo/ui/wall-clock';
+import { formatCount, formatDayLong } from '@creativo/ui/wall-clock';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8) — the page behind the
@@ -282,7 +277,7 @@ function firstVisitRow(day: LocalDate, input: RecordsPageInput): RecordRowVm {
     faceName: null,
     accessibleName: words.achievements.recordName(
       title,
-      dayLong(day, input.data.today, words.lang),
+      formatDayLong(day, input.data.today, words.lang),
       null,
       false,
     ),

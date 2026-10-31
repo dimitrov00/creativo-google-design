@@ -228,7 +228,7 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('staff edit carries a touched pair and copies its id lists', () => {
+  it('staff edit carries a touched pair and the delta’s id lists as given', () => {
     const discountIds = [AppliedDiscountId.of('manual')];
     const barbers = [BarberId.of('b-1')];
     const context = AuditContext.staffEdit(AuditAction.BookingStaffSave, 4, {
@@ -238,8 +238,8 @@ describe('AuditContext — one flat variant per verb family, every field present
       editRestaffFromBarberIds: barbers,
       editRestaffToBarberIds: [BarberId.of('b-2')],
     });
-    discountIds.push(AppliedDiscountId.of('code:c-1'));
-    barbers.push(BarberId.of('b-9'));
+    expect(context.editDiscountIds).toBe(discountIds);
+    expect(context.editRestaffFromBarberIds).toBe(barbers);
     expect(context).toMatchObject({
       editDiscountFromIds: [],
       editDiscountIds: ['manual'],
@@ -249,13 +249,13 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('reschedule copies its barber lists', () => {
+  it('reschedule carries the delta’s barber lists as given', () => {
     const from = [BarberId.of('b-1')];
     const context = AuditContext.rescheduled(1, {
       ...MOVE,
       rescheduleFromBarberIds: from,
     });
-    from.push(BarberId.of('b-9'));
+    expect(context.rescheduleFromBarberIds).toBe(from);
     expect(context.rescheduleFromBarberIds).toEqual(['b-1']);
   });
 
@@ -297,7 +297,7 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('streak published / withdrawn copy their facts', () => {
+  it('streak published / withdrawn carry their facts, the changed list as given', () => {
     const streakChanged: StreakRuleParameter[] = [StreakRuleParameter.Interval];
     const published = AuditContext.streakPublished({
       streakFromVersion: 1,
@@ -308,7 +308,7 @@ describe('AuditContext — one flat variant per verb family, every field present
       streakChanged,
       streakReplacedVersion: null,
     });
-    streakChanged.push(StreakRuleParameter.Qualifier);
+    expect(published.streakChanged).toBe(streakChanged);
     expect(published).toEqual({
       auditAction: 'LOYALTY_STREAK_DEFINITION_PUBLISHED',
       streakFromVersion: 1,
@@ -360,10 +360,10 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('profile copies the changed field names; its role and status tags stay null', () => {
+  it('profile carries the changed field names as given; its role and status tags stay null', () => {
     const fields: RegistrationField[] = [RegistrationField.FirstName];
     const context = AuditContext.profile(AuditAction.ProfileUpdated, fields);
-    fields.push(RegistrationField.Phone);
+    expect(context.profileFields).toBe(fields);
     expect(context).toEqual({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['firstName'],
@@ -374,7 +374,7 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('profileWithTags carries the role and status before-and-after, the lists copied (WS-3)', () => {
+  it('profileWithTags carries the role and status before-and-after, the lists as given (WS-3)', () => {
     const rolesTo: Role[] = [Role.Barber];
     const context = AuditContext.profileWithTags(
       AuditAction.ProfileUpdated,
@@ -386,7 +386,7 @@ describe('AuditContext — one flat variant per verb family, every field present
         profileAccountStatusTo: AccountStatus.Blocked,
       },
     );
-    rolesTo.push(Role.Admin);
+    expect(context.profileRolesTo).toBe(rolesTo);
     expect(context).toEqual({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['roles', 'accountStatus'],
@@ -423,14 +423,14 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('governed copies the changed field names (WS-3)', () => {
+  it('governed carries the changed field names as given (WS-3)', () => {
     const fields = ['dayOfWeek', 'closed'];
     const context = AuditContext.governed(
       AuditAction.GovernedDocUpdated,
       GovernedCollection.BarberSchedules,
       fields,
     );
-    fields.push('notes');
+    expect(context.governedFields).toBe(fields);
     expect(context).toEqual({
       auditAction: 'GOVERNED_DOC_UPDATED',
       governedCollection: 'BARBER_SCHEDULES',

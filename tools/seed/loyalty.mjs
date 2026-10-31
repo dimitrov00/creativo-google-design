@@ -40,7 +40,8 @@
  * since (`rulesPublishedOver`). Each holder's visits, called-off visits,
  * bookings and earned protections are handed as facts to the domain's
  * `StreakSystem.trace`, under the rule `StreakRuleSystem.inForceOn` reads
- * off the head for the shop's today. Publish another interval, run the seed
+ * off the head for the shop's today (each visit counted by
+ * `StreakRuleSystem.qualifies`). Publish another interval, run the seed
  * again, and both cards move.
  *
  * ### The journal holds every kind the feed shows (§4.7, §4.10)
@@ -103,7 +104,6 @@ import {
   loyaltyAccountBody,
   mostVisitsInYearRecord,
   pointsEffect,
-  qualifierCounts,
   redemptionEffect,
   redemptionSource,
   rewardEffect,
@@ -745,7 +745,7 @@ function rhythmOf(domain, streakId, rule, { visits, calledOff, bookings }) {
   // along with another (`seed-dev-catalog.mjs` writes both so).
   const categoryIds = [CATEGORY.id];
   const counts = (visit) =>
-    qualifierCounts(
+    domain.StreakRuleSystem.qualifies(
       rule,
       // A bundle's members count as its services, as for the families.
       distinct([...visit.serviceIds, ...servicesOf(visit.serviceIds)]),

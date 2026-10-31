@@ -58,7 +58,7 @@ import {
   WorkBudgetSystem,
 } from '@core/systems';
 import type { StepBudget } from './continue-policy-recompute.pipeline';
-import type { ExportClientDataCommand } from './export-client-data.pipeline';
+import type { ClientPrivacyCommand } from './export-client-data.pipeline';
 
 /**
  * The admin's data-subject ERASURE of one client (audit-hardening Phase 3
@@ -138,9 +138,6 @@ export type EraseClientPorts = CommitPorts &
   ObjectEraserPorts &
   TelemetryPorts;
 
-/** The verified caller and the call — the export's four fields, one type. */
-export type EraseClientCommand = ExportClientDataCommand;
-
 /** The most documents any one list read returns — the cap and one, so a person past it is refused. */
 const LIST_LIMIT = ERASURE_MAX_DOCUMENTS + 1;
 
@@ -191,7 +188,7 @@ function chunksOf<T>(items: readonly T[], size: number): readonly T[][] {
  */
 async function admit(
   ports: PreviewClientErasurePorts,
-  cmd: EraseClientCommand,
+  cmd: ClientPrivacyCommand,
 ): Promise<Result<Admitted, Refusal>> {
   if (!ports.flagOn(FlagName.ClientPrivacy)) {
     return Result.err(PrivacyError.unavailable());
@@ -367,7 +364,7 @@ async function rereadPerson(
 export const previewClientErasure =
   (ports: PreviewClientErasurePorts) =>
   async (
-    cmd: EraseClientCommand,
+    cmd: ClientPrivacyCommand,
   ): Promise<Result<ClientPrivacyCall.ErasurePreview, Refusal>> => {
     const admitted = await admit(ports, cmd);
     if (!admitted.ok) return admitted;
@@ -407,7 +404,7 @@ type Unit = () => Promise<Result<boolean, RepositoryError | PrivacyError>>;
 export const eraseClient =
   (ports: EraseClientPorts) =>
   async (
-    cmd: EraseClientCommand,
+    cmd: ClientPrivacyCommand,
     budget: StepBudget,
   ): Promise<Result<ClientPrivacyCall.Erasure, Refusal>> => {
     // 1. The gate.

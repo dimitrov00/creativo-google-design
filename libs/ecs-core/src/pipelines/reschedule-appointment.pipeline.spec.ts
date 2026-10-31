@@ -51,6 +51,7 @@ import {
 import type { CommitPlan } from '@core/ports';
 import { AuditSystem, DecisionInputSystem, MoveSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   at,
   auditRowsOf,
@@ -86,11 +87,6 @@ const ATTEMPT = ((): ClientOperationId => {
 })();
 const COMPANION = UserId.of('u-son');
 const COMPANION_SEAT = SeatId.of('seat-son');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 /** The client's cut on Thursday at 10:00 — well outside the 24 h window. */
 function visit(

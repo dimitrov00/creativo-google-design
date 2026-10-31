@@ -9,7 +9,13 @@ import {
   type UtcEpochMs,
   defect,
 } from '@core/primitives';
-import { DialSource, MedalCue, type ShopNow, WallTime } from '@core/components';
+import {
+  DialSource,
+  LocalizedText,
+  MedalCue,
+  type ShopNow,
+  WallTime,
+} from '@core/components';
 import {
   AgeSystem,
   BadgeSystem,
@@ -44,13 +50,7 @@ import type {
   ClientCardContext,
   ClientCardSubject,
 } from './client-card.contracts';
-import {
-  cardLocaleOf,
-  dayLong,
-  dayShort,
-  levelNumeral,
-  shopDayOf,
-} from './client-card.format';
+import { levelNumeral, shopDayOf } from './client-card.format';
 import { type LoyaltyFlags } from './loyalty.presenter';
 import {
   type AchievementsData,
@@ -62,6 +62,8 @@ import {
   type QuickActionVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
+import { formatDayLong, formatDayShort } from '@creativo/ui/wall-clock';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /*
  * THE GLANCE'S SHARED HELPERS (client-card-redesign §3.1; revision 3 §2.1
@@ -280,7 +282,7 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
         label: words.actions.repeat,
         href: null,
         accessibleName: words.actions.againName(
-          dayLong(lastDay, today, words.lang),
+          formatDayLong(lastDay, today, words.lang),
           services.join(', '),
         ),
         legs: lastLegs,
@@ -351,8 +353,8 @@ export function clientPhotoVm(
     appointmentId: photo.appointmentId,
     url: photo.url,
     takenAtUtcMs: photo.takenAtUtcMs,
-    dateLabel: dayShort(day, today, words.lang),
-    accessibleName: words.photos.name(dayLong(day, today, words.lang)),
+    dateLabel: formatDayShort(day, today, words.lang),
+    accessibleName: words.photos.name(formatDayLong(day, today, words.lang)),
     barberId: photo.barberId,
     width: photo.width,
     height: photo.height,
@@ -417,7 +419,7 @@ export function medalStripVm(
   ctx: AchievementsContext,
 ): MedalStripVm {
   const words = ctx.words;
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   const options = { titled: false, captioned: false, meter: true } as const;
   // The newest day as «Последни» draws it — the same face, one push away.
   const newest = newestFaceLevel(data, ctx);
@@ -485,7 +487,7 @@ export function medalStripVm(
   switch (stripCue.medalCue) {
     case MedalCue.WithThisVisit: {
       const series = completing ?? defect('a WITH_THIS_VISIT cue, no family');
-      const title = series.title[locale];
+      const title = LocalizedText.pick(series.title, locale);
       // A single act has no levels (its tile wears no numeral, no «ниво I»
       // is heard, medals.presenter): «Рожден ден в салона с това
       // посещение», the suffix the pending tile's caption already says
@@ -505,7 +507,7 @@ export function medalStripVm(
       const series = newestSeries ?? defect('a NEW cue with no family');
       const level = stripCue.level ?? defect('a NEW cue with no level');
       cue = words.achievements.cueNew(
-        series.title[locale],
+        LocalizedText.pick(series.title, locale),
         levelNumeral(level),
       );
       break;
@@ -517,7 +519,7 @@ export function medalStripVm(
       const target = standing.target ?? defect('a CLOSE cue with no target');
       const level = stripCue.level ?? defect('a CLOSE cue with no level');
       cue = words.achievements.cueClose(
-        series.title[locale],
+        LocalizedText.pick(series.title, locale),
         standing.value,
         target,
         levelNumeral(level),

@@ -13,6 +13,7 @@ import {
   BadgeSubject,
   type EarnedLevel,
   LadderRung,
+  LocalizedText,
   MedalDetailState,
   MedalProgressCard,
   Metric,
@@ -52,7 +53,6 @@ import {
 import type { ClientCardCatalog } from './client-card.contracts';
 import {
   NO_BREAK,
-  dayLong,
   dayWithYear,
   inSentence,
   levelNumeral,
@@ -79,7 +79,7 @@ import {
 import type { HistoryRowsInput } from './history.presenter';
 import { medalRingVm } from './medals.presenter';
 import { visitsRows } from './visits-page.presenter';
-import { formatCount } from '@creativo/ui/wall-clock';
+import { formatCount, formatDayLong } from '@creativo/ui/wall-clock';
 
 /*
  * A MEDAL'S DETAIL (client-card revision 3 §2.4, R2-H) — one family's page
@@ -416,14 +416,17 @@ function scopeNameOf(
 ): string | null {
   const locale = localeOf(ctx);
   if (series.categoryId !== null) {
-    return (
-      LoyaltyCatalogSystem.category(data.catalog, series.categoryId)?.title[
-        locale
-      ] ?? null
+    const category = LoyaltyCatalogSystem.category(
+      data.catalog,
+      series.categoryId,
     );
+    return category === null
+      ? null
+      : LocalizedText.pick(category.title, locale);
   }
   if (series.seasonId !== null) {
-    return seasonOfSeries(series, data)?.title[locale] ?? null;
+    const season = seasonOfSeries(series, data);
+    return season === null ? null : LocalizedText.pick(season.title, locale);
   }
   return null;
 }
@@ -476,7 +479,10 @@ function whatOf(
 ): string {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
-  const own = inSentence(series.requirement[localeOf(ctx)], lang);
+  const own = inSentence(
+    LocalizedText.pick(series.requirement, localeOf(ctx)),
+    lang,
+  );
   const metric = series.metric;
   if (metric === null)
     return BadgeSystem.isOneOff(series) ? own : words.whatRhythm(count);
@@ -608,7 +614,7 @@ function howSentenceOf(
 ): string {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
-  const own = oneStop(series.requirement[localeOf(ctx)]);
+  const own = oneStop(LocalizedText.pick(series.requirement, localeOf(ctx)));
   const metric = series.metric;
   if (metric === null) {
     return BadgeSystem.isOneOff(series) ? own : (rule?.sentence ?? own);
@@ -785,7 +791,7 @@ function rewardOf(level: BadgeLevel, ctx: AchievementsContext): string {
       case AwardKind.Points:
         return [ctx.words.achievement.awardPoints(award.awardPoints)];
       case AwardKind.Coupon:
-        return [award.awardCouponTitle[locale]];
+        return [LocalizedText.pick(award.awardCouponTitle, locale)];
       case AwardKind.Freeze:
         return [ctx.words.rhythm.protections(award.awardFreezeCount)];
       case AwardKind.Perk:
@@ -811,7 +817,7 @@ function thresholdOf(
 ): string {
   return level.target !== null && BadgeSystem.countsInVisits(series)
     ? asOneUnit(ctx.words.visitsModule.sectionVisits(level.target))
-    : level.requirement[localeOf(ctx)];
+    : LocalizedText.pick(level.requirement, localeOf(ctx));
 }
 
 /**
@@ -845,11 +851,13 @@ function ladderOf(
     const reward = rewardOf(level, ctx);
     const accessibleName = words.levelRowName(
       numeral,
-      oneOff ? level.requirement[locale] : thresholdOf(series, level, ctx),
+      oneOff
+        ? LocalizedText.pick(level.requirement, locale)
+        : thresholdOf(series, level, ctx),
       reward,
       earned === null
         ? null
-        : dayLong(earned.earnedLocalDate, data.today, lang),
+        : formatDayLong(earned.earnedLocalDate, data.today, lang),
     );
     return {
       level: level.level,
@@ -983,7 +991,7 @@ export function medalDetailVm(
   return {
     seriesId: series.id,
     categoryId: series.categoryId,
-    title: series.title[localeOf(ctx)],
+    title: LocalizedText.pick(series.title, localeOf(ctx)),
     medal,
     stateLine: stateLineOf(series, standing, progress, data, ctx),
     progress: progressCardOf(series, standing, progress, data, ctx),

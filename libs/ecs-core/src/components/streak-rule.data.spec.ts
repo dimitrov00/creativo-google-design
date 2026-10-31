@@ -671,7 +671,7 @@ describe('StreakRule.DEFAULT', () => {
       headRole: HeadRole.Current,
       streakTransition: null,
     };
-    const rule = StreakRule.of(element);
+    const rule = StreakRule.sliceOf(element);
     expect(rule).toEqual(StreakRule.DEFAULT);
     expect('headRole' in rule).toBe(false);
     expect(rule.excuses).not.toBe(StreakRule.DEFAULT.excuses);

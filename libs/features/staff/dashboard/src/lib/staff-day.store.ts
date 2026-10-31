@@ -107,24 +107,6 @@ import type {
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /**
- * What makes two sends the SAME staff intent: the visit, the batch, and the
- * two claims beside it — an acknowledged overlap is a different decision
- * from an unacknowledged one, and a claim on another revision is a draft of
- * another visit. Serialised, because equality is the only question ever
- * asked of it. Read off the request AS SENT (the claim rebased — see
- * `StaffDayStore.claimFor`), so a re-send is recognised by what the wire
- * carried.
- */
-function intentOf(request: BookingCall.StaffEditIntent): string {
-  return StaffIntentSystem.intentBasis(
-    request.appointmentId,
-    request.commands,
-    request.acknowledgedOverlap,
-    request.expectedVersion,
-  );
-}
-
-/**
  * The refusal a staff intent earns BEFORE it is sent — a field the wire
  * cannot carry (a minted name that is no `ClientOperationId`, a minute off
  * the shop's day): the server's own refusal of it, `field` named, said here
@@ -1314,7 +1296,7 @@ export class StaffDayStore {
       grantId: grant.id,
       couponId: coupon.id,
       label: coupon.name,
-      value: CouponValue.of(grant),
+      value: CouponValue.sliceOf(grant),
       exclusive: Combinability.isExclusive(coupon.combinability),
       // The coupon's moment (revision 3 §4.6): the client card heads a
       // birthday gift with its band only when the coupon says so — a
@@ -1348,7 +1330,7 @@ export class StaffDayStore {
           code: coupon.code,
           couponId: coupon.id,
           label: coupon.name,
-          value: CouponValue.of(coupon),
+          value: CouponValue.sliceOf(coupon),
           exclusive: Combinability.isExclusive(coupon.combinability),
         }))
         // By name, the way a barber says them — not by the store's own ids.
@@ -2142,7 +2124,9 @@ export class StaffDayStore {
       ...intent,
       expectedVersion: this.claimFor(id, intent.expectedVersion),
     };
-    const key = intentOf(request);
+    // Keyed by the request AS SENT (the claim rebased — `claimFor`), so a
+    // re-send is recognised by what the wire carried.
+    const key = StaffIntentSystem.intentBasis(request);
     const operationId = this.operationIdFor(request, key);
     try {
       if (operationId === null) {
@@ -2239,7 +2223,8 @@ export class StaffDayStore {
 
   /**
    * THE INTENTS THAT DID NOT LAND, per appointment — each keyed by the
-   * intent itself (`intentOf`), with the name it went out under.
+   * intent itself (`StaffIntentSystem.intentBasis`), with the name it went
+   * out under.
    *
    * A failed send was either refused or lost after the server committed it,
    * and nothing here can tell which. So a later send of the SAME intent —

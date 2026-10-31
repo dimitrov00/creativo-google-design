@@ -1,5 +1,5 @@
 import { Injectable, computed, inject } from '@angular/core';
-import type { LocalizedText, Money } from '@core/components';
+import { LocalizedText, type Money } from '@core/components';
 import type { DurationMinutes } from '@core/primitives';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { formatCents, formatMinutesRange } from '@creativo/ui/wall-clock';
@@ -22,9 +22,9 @@ export class CatalogWording {
   /** Intl locale for money/durations — tracks the active language. */
   readonly locale = computed(() => this.language.activeLang());
 
-  /** Resolve a localized pair against the active language. */
+  /** Resolve a localized pair against the active language (`LanguageService`'s `localeFor`). */
   text(localized: LocalizedText): string {
-    return localized[this.language.activeLang()] ?? localized.en;
+    return LocalizedText.pick(localized, this.language.activeLang());
   }
 
   /**

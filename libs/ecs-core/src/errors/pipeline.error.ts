@@ -1,4 +1,4 @@
-import { type ClientOperationId, Tag } from '@core/primitives';
+import { type ClientOperationId, StoredFields, Tag } from '@core/primitives';
 import { BookingErrorCode } from './booking.error';
 import { CancellationRefusalCode } from './cancellation.error';
 import { CarriedSeatRefusal, MoveErrorCode } from './move.error';
@@ -283,11 +283,6 @@ function fieldsOf(raw: unknown): WireStruct | null {
     : null;
 }
 
-/** One own field, read without a dynamic index; `undefined` when absent. */
-function fieldOf(struct: WireStruct, name: string): unknown {
-  return Object.getOwnPropertyDescriptor(struct, name)?.value;
-}
-
 /**
  * The refusal struct `details` carries: itself when it names an `errorCode`;
  * an aggregate's FIRST refusal (`errors[0]`) otherwise — one code is enough
@@ -296,11 +291,14 @@ function fieldOf(struct: WireStruct, name: string): unknown {
 function structOf(details: unknown): WireStruct | null {
   const top = fieldsOf(details);
   if (top === null) return null;
-  if (typeof fieldOf(top, 'errorCode') === 'string') return top;
-  const errors = fieldOf(top, 'errors');
+  if (typeof StoredFields.field(top, 'errorCode') === 'string') return top;
+  const errors = StoredFields.field(top, 'errors');
   if (Array.isArray(errors) && errors.length > 0) {
     const first = fieldsOf(errors[0]);
-    if (first !== null && typeof fieldOf(first, 'errorCode') === 'string') {
+    if (
+      first !== null &&
+      typeof StoredFields.field(first, 'errorCode') === 'string'
+    ) {
       return first;
     }
   }
@@ -309,7 +307,7 @@ function structOf(details: unknown): WireStruct | null {
 
 /** A text field, `null` unless a non-empty string. */
 function textOf(struct: WireStruct | null, name: string): string | null {
-  const value = struct === null ? undefined : fieldOf(struct, name);
+  const value = struct === null ? undefined : StoredFields.field(struct, name);
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
@@ -323,7 +321,7 @@ function paramsOf(
   const params: Record<string, string | number | boolean | null> = {};
   for (let i = 0; i < allowed.length; i++) {
     const name = allowed[i] as string;
-    const value = fieldOf(struct, name);
+    const value = StoredFields.field(struct, name);
     if (
       value === null ||
       typeof value === 'string' ||

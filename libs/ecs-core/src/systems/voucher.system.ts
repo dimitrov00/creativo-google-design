@@ -392,8 +392,8 @@ export const VoucherSystem = {
    * (§6).
    */
   transitionWrite(before: GiftVoucher, after: GiftVoucher): WriteOp {
-    const from = VoucherLifecycle.of(before);
-    const to = VoucherLifecycle.of(after);
+    const from = VoucherLifecycle.sliceOf(before);
+    const to = VoucherLifecycle.sliceOf(after);
     return WriteOp.transition(
       [Collections.GiftVouchers, after.id],
       { balanceCents: after.balanceCents, ...to },

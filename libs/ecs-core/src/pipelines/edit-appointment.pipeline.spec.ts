@@ -88,6 +88,7 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   at,
   auditRowsOf,
@@ -125,11 +126,6 @@ const RECEPTION = Actor.staff(UserId.of('u-desk'), [Role.Receptionist]);
 const GRANT = CouponGrantId.of('grant-1');
 const COUPON = CouponId.of('coupon-1');
 const VOUCHER = GiftVoucherId.of('v-1');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 /** The client's cut on Thursday at 10:00. */
 function visit(
@@ -236,7 +232,7 @@ const GRANT_LINE: AppliedDiscount = {
   appliedAtUtcMs: utcMs('2026-09-27T10:00:00.000+03:00'),
   combinability: Combinability.Stackable,
   ...DiscountProvenance.grant(GRANT),
-  ...CouponValue.of({
+  ...CouponValue.sliceOf({
     discountMethod: DiscountMethod.PercentOff,
     discountPercent: 10,
   }),
@@ -256,7 +252,7 @@ function coupon(extra: Partial<Coupon> = {}): Coupon {
     usageLimit: null,
     couponStatus: CouponStatus.Enabled,
     couponOccasion: null,
-    ...CouponValue.of({
+    ...CouponValue.sliceOf({
       discountMethod: DiscountMethod.PercentOff,
       discountPercent: 10,
     }),

@@ -3,7 +3,7 @@ import { IdentifierChannel, Result, UserId } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { AttemptOutcome, AuthClaims } from '@core/components';
 import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { FailureCodeSystem, TriggerAttemptSystem } from '@core/systems';
 
 /**
  * The Admin-Auth bundles of `identity.port.ts` over `firebase-admin/auth`
@@ -48,7 +48,7 @@ export function authCodeOf(error: unknown): string | null {
  * as `refusal`.
  */
 export function authFailure(error: unknown): PipelineError {
-  const canonical = TriggerAttemptSystem.failureCode(error);
+  const canonical = FailureCodeSystem.codeOf(error);
   const code =
     TriggerAttemptSystem.attemptOutcome(canonical) === AttemptOutcome.Transient
       ? PipelineErrorCode.Unavailable

@@ -2,6 +2,7 @@ import {
   type ClientOperationId,
   CustomerId,
   Result,
+  StoredFields,
   UtcEpochMs,
 } from '@core/primitives';
 import { type PipelineError } from '@core/errors';
@@ -52,7 +53,7 @@ export const ClientPrivacyCall = {
       'exportedCustomerId',
       CustomerId.parse,
     );
-    const exportedAt = CallAnswer.field(answer, 'exportedAtUtcMs');
+    const exportedAt = StoredFields.field(answer, 'exportedAtUtcMs');
     const exportedAtUtcMs =
       typeof exportedAt === 'number' ? UtcEpochMs.of(exportedAt) : null;
     const exportDocumentCount = CallAnswer.whole(
@@ -102,7 +103,7 @@ export const ClientPrivacyCall = {
     );
     const census = censusOf(answer);
     const siblings = customerIdsOf(
-      CallAnswer.field(answer, 'erasureSiblingCustomerIds'),
+      StoredFields.field(answer, 'erasureSiblingCustomerIds'),
     );
     if (erasureStatus === null || census === null || siblings === null) {
       return CallAnswer.unusable();

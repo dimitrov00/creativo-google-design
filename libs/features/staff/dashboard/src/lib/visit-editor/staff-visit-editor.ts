@@ -1,4 +1,5 @@
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
+import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import { rankClients } from './client-query';
@@ -583,28 +584,19 @@ export interface VisitEditorServiceOption {
   readonly priceLabel: string | null;
 }
 
-/** One of the shop's photos of the visit, as the sheet shows it. */
-export interface VisitEditorPhoto {
-  readonly photoId: AppointmentPhotoId;
-  readonly url: string;
-  /** When it was taken — read on the shop's calendar for its label. */
-  readonly takenAtUtcMs: UtcEpochMs;
-  /** The chair, and its name when the catalogue still knows it. */
-  readonly barberId: BarberId;
+/**
+ * One of the shop's photos of the visit, as the sheet shows it: the stored
+ * photo as it is, plus the chair's name when the catalogue still knows it.
+ */
+export type VisitEditorPhoto = AppointmentPhoto & {
   readonly barberName: string | null;
-  readonly clientLabel: string;
   /**
    * The person's face, when the source already knows it — a past cut
    * carries the client card head's. Absent on this visit's own pictures:
    * the sheet fills the row from the picked person (`photoClientFace`).
    */
   readonly clientAvatarSrc?: string | null;
-  readonly width: number | null;
-  readonly height: number | null;
-  /** The visit's own picture, or one of the shop's pointed at — with its name (the stored tag). */
-  readonly photoOrigin: PhotoOrigin;
-  readonly label: string | null;
-}
+};
 
 /** One of the shop's own pictures — a catalogue cover, a work shot — on offer to a visit. */
 export interface VisitEditorLibraryImage {
@@ -5431,7 +5423,7 @@ export class StaffVisitEditor {
     const page = this.page();
     if (page?.editorPage !== EditorPage.Photo) return null;
     return (
-      this.vm().photos?.find((photo) => photo.photoId === page.subjectId) ??
+      this.vm().photos?.find((photo) => photo.id === page.subjectId) ??
       this.pastCut(page.subjectId)
     );
   });
@@ -5443,21 +5435,17 @@ export class StaffVisitEditor {
    */
   private pastCut(photoId: string | null): VisitEditorPhoto | null {
     const store = this.cardStoreRef();
-    const cut = photoId === null ? null : (store?.photoById(photoId) ?? null);
+    const cut =
+      photoId === null ? null : (store?.storedPhotoById(photoId) ?? null);
     if (store === null || cut === null) return null;
     return {
-      photoId: cut.photoId,
-      url: cut.url,
-      takenAtUtcMs: cut.takenAtUtcMs,
-      barberId: cut.barberId,
+      ...cut,
       barberName: this.cardCatalog().barberName(cut.barberId),
       clientLabel: store.displayName() ?? this.clientOfStack()?.label ?? '',
       // The face the card's head just showed, so the push keeps the person.
       clientAvatarSrc:
         store.avatarSrc() ??
         this.faceOfPicked(this.clientOfStack()?.id ?? null),
-      width: cut.width,
-      height: cut.height,
       photoOrigin: PhotoOrigin.Shot,
       label: null,
     };
@@ -5472,9 +5460,7 @@ export class StaffVisitEditor {
     const page = this.page();
     return (
       page?.editorPage === EditorPage.Photo &&
-      !(this.vm().photos ?? []).some(
-        (photo) => photo.photoId === page.subjectId,
-      )
+      !(this.vm().photos ?? []).some((photo) => photo.id === page.subjectId)
     );
   });
 
@@ -5488,7 +5474,7 @@ export class StaffVisitEditor {
     return this.photoReadOnly()
       ? (this.cardStoreRef()?.barTitle(
           editorCardPages[EditorPage.Photo],
-          photo.photoId,
+          photo.id,
         ) ?? this.photoDay(photo))
       : this.photoDay(photo);
   }
@@ -5684,7 +5670,7 @@ export class StaffVisitEditor {
   protected removePhoto(): void {
     const photo = this.currentPhoto();
     if (photo === null || this.photoReadOnly()) return;
-    this.photoRemoved.emit(photo.photoId);
+    this.photoRemoved.emit(photo.id);
     this.pop();
   }
 
@@ -7695,7 +7681,7 @@ function codeDiscountOf(
 ): VisitEditorDiscount {
   return {
     ...DiscountProvenance.code(code),
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     label,
     grantId: null,
     code,
@@ -7712,7 +7698,7 @@ function grantDiscountOf(
 ): VisitEditorDiscount {
   return {
     ...DiscountProvenance.grant(grantId),
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     label,
     grantId,
     code: null,
@@ -7730,7 +7716,7 @@ function manualDiscountOf(
 ): VisitEditorDiscount {
   return {
     ...DiscountProvenance.manual(),
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     label: 'manual',
     grantId: null,
     code: null,

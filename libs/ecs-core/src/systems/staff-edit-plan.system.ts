@@ -405,11 +405,8 @@ export const StaffEditPlanSystem = {
      */
     const seatIds =
       row === null ||
-      AppointmentLifecycleSystem.transitionSeats(
-        BookingStatus.Completed,
-        row.seatIds,
-        row.partySize,
-      ).length === 0
+      AppointmentLifecycleSystem.transitionSeats(BookingStatus.Completed, row)
+        .length === 0
         ? []
         : draft.legs.map((leg) => leg.seatId);
     const scope = seatIds.length > 0 ? seatIds : null;

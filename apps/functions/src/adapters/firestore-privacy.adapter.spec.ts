@@ -14,6 +14,7 @@ import { StoredDocumentSystem } from '@core/systems';
 import { PRIVACY_SENTINELS, privacyWorld, unguarded } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestorePrivacyPorts } from './firestore-privacy.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The person's footprint over the in-memory Admin SDK (audit-hardening
@@ -29,12 +30,6 @@ import { firestorePrivacyPorts } from './firestore-privacy.adapter';
  */
 
 type Data = Record<string, unknown>;
-
-function bodyOf(entity: { readonly id: string }): Data {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const NO_LOG: Log = () => undefined;
 

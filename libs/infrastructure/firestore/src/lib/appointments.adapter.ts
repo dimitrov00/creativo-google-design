@@ -28,9 +28,9 @@ import {
   observeDoc,
   observeQuery,
   type ReadGuard,
-  readFailed,
   readRawQuery,
 } from './observe';
+import { readFailed } from './stored-entity';
 
 /** Ascending by the absolute start — the order a day sheet reads in. */
 const byStart = (a: Appointment, b: Appointment): number =>

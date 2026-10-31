@@ -17,9 +17,9 @@ import type { TierDefinition } from './tier-definition.entity';
  *
  * Generic over the rows: each list is read through the few fields the
  * catalogue's rules name (the `Catalog*Ref` bounds, `Pick`s of the stored
- * entities), and its defaults are the entities as stored — so
- * `LoyaltyCatalog` (the port's answer) IS `LoyaltyCatalogParts` and passes
- * to `validate` unmapped (Law 3).
+ * entities), and its defaults are the entities as stored — so the port's
+ * answer IS `LoyaltyCatalogParts` at its defaults and passes to `validate`
+ * unmapped (Law 3).
  */
 
 /** What a catalogue reads of a shelf. */
@@ -49,7 +49,13 @@ export type CatalogWindowRef = CatalogSeasonRef & Pick<Season, 'seasonKind'>;
 export type CatalogSubjectRef = BadgeSubjectSlot &
   Pick<BadgeSeries, 'retiredAtUtcMs'>;
 
-/** The lists a catalogue is built of, in any order. */
+/**
+ * The lists a catalogue is built of, in any order. At its defaults it is the
+ * loyalty catalogue as stored — the shelves, the medal families, the
+ * seasons, the tiers, the rewards and the rhythm's heads (`streaks`), every
+ * document as read: what `LoadLoyaltyCatalog` answers and
+ * `LoyaltyCatalogSystem.validate` takes.
+ */
 export type LoyaltyCatalogParts<
   C extends CatalogCategoryRef = BadgeCategory,
   S extends CatalogSeriesRef = BadgeSeries,
@@ -66,11 +72,3 @@ export type LoyaltyCatalogParts<
   /** The rhythm's heads: the version in force and the one that waits. `[]` for a catalogue without a rhythm. */
   readonly streaks: readonly H[];
 };
-
-/**
- * The loyalty catalogue as stored — the shelves, the medal families, the
- * seasons, the tiers, the rewards and the rhythm's heads (`streaks`), every
- * document as read: `LoyaltyCatalogParts` at its defaults, what
- * `LoadLoyaltyCatalog` answers and `LoyaltyCatalogSystem.validate` takes.
- */
-export type LoyaltyCatalog = LoyaltyCatalogParts;

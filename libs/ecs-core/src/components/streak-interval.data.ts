@@ -73,7 +73,7 @@ export const StreakIntervalRule = {
    * The interval fields of a rule (or of any struct carrying the slice), as
    * a fresh slice of their own — never the rule's other fields.
    */
-  of(interval: StreakIntervalRule): StreakIntervalRule {
+  sliceOf<T extends StreakIntervalRule>(interval: T): StreakIntervalRule {
     return interval.streakInterval === StreakInterval.Fixed
       ? StreakIntervalRule.fixed(interval.intervalDays)
       : StreakIntervalRule.personal(

@@ -85,6 +85,7 @@ import {
   statsPortsOf,
   waitlistPortsOf,
 } from './client-card.fixtures';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /** The id the visit editor labels its page container by. */
 export const PAGE_TITLE_ID = 'staff-visit-page-title';
@@ -101,7 +102,7 @@ export const ALL_LOYALTY_FLAGS: Readonly<Record<string, boolean>> = {
 @Injectable()
 class CatalogueLoader implements TranslocoLoader {
   getTranslation(lang: string): Observable<Translation> {
-    return of(catalogueOf(lang === 'en' ? 'en' : 'bg'));
+    return of(catalogueOf(localeFor(lang)));
   }
 }
 

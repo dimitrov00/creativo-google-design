@@ -312,8 +312,8 @@ describe('StreakIntervalRule, as a value', () => {
 
   it('copies just the interval fields of a whole rule, as a slice of their own', () => {
     const rule = { ...PERSONAL, graceDays: 7, enabled: true };
-    expect(StreakIntervalRule.of(rule)).toEqual(PERSONAL);
-    expect(StreakIntervalRule.of(fixed(42))).toEqual(fixed(42));
+    expect(StreakIntervalRule.sliceOf(rule)).toEqual(PERSONAL);
+    expect(StreakIntervalRule.sliceOf(fixed(42))).toEqual(fixed(42));
   });
 });
 

@@ -34,6 +34,7 @@ export * from './coupon-grant.system';
 export * from './customer-record.system';
 export * from './decision-input.system';
 export * from './discount.system';
+export * from './failure-code.system';
 export * from './governed-change.system';
 export * from './grid-layout.system';
 export * from './guest-guard.system';

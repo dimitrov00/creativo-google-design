@@ -85,11 +85,6 @@ import {
   RECURRENCE_FREQUENCY_WORD,
   REPEAT_PRESET_WORD,
   WEEKDAY_WORD,
-  withCount,
-  withInterval,
-  withMonthly,
-  withUntil,
-  withWeekdays,
 } from './block-repeat';
 import {
   type GridColumn,
@@ -694,7 +689,7 @@ export class StaffBlockEditor {
   protected commitInterval(value: string): void {
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(withInterval(rule, Number(value)));
+    this.typed(VisitDraftSystem.ruleWithInterval(rule, Number(value)));
   }
 
   /** The weekly rule's days (ISO, Monday first), for the picker. */
@@ -713,7 +708,7 @@ export class StaffBlockEditor {
       rule.recurrenceFrequency !== RecurrenceFrequency.Weekly
     )
       return;
-    const next = withWeekdays(rule, weekdays);
+    const next = VisitDraftSystem.ruleWithWeekdays(rule, weekdays);
     if (next.ok) this.setRule(next.value);
   }
 
@@ -766,7 +761,7 @@ export class StaffBlockEditor {
     const rule = this.draft().repeat;
     const day = this.monthlyDays().find((entry) => monthlyId(entry) === id);
     if (rule === null || day === undefined) return;
-    const next = withMonthly(rule, day);
+    const next = VisitDraftSystem.ruleWithMonthly(rule, day);
     if (next.ok) this.setRule(next.value);
   }
 
@@ -815,7 +810,7 @@ export class StaffBlockEditor {
     this.untilOpen.set(false);
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(withUntil(rule, day));
+    this.typed(VisitDraftSystem.ruleWithUntil(rule, day));
   }
 
   protected readonly countFigure = computed(() => {
@@ -835,7 +830,7 @@ export class StaffBlockEditor {
   protected commitCount(value: string): void {
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(withCount(rule, Number(value)));
+    this.typed(VisitDraftSystem.ruleWithCount(rule, Number(value)));
   }
 
   /** A typed change: taken when the domain holds it, said when it refuses. */

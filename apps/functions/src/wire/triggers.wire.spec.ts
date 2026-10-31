@@ -27,7 +27,11 @@ import {
   type PolicyRecomputeJob,
   type TriggerFailure,
 } from '@core/entities';
-import { GovernedChangeSystem, TriggerAttemptSystem } from '@core/systems';
+import {
+  FailureCodeSystem,
+  GovernedChangeSystem,
+  TriggerAttemptSystem,
+} from '@core/systems';
 import {
   appointmentFixture,
   FIXTURE_IDS,
@@ -58,6 +62,7 @@ import {
   projectionReport,
   settleAttempt,
 } from './triggers.wire';
+import { bodyOf } from '../adapters/store-answer';
 
 /*
  * The flip-1 triggers' edge: each event decoded into its pipeline command
@@ -81,12 +86,6 @@ function recordingDeadLetters(): TriggerFailurePorts & {
       return Result.ok(undefined);
     },
   };
-}
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 const side = (body: Record<string, unknown> | null) => ({
@@ -792,7 +791,7 @@ describe('attempts — today’s line and redelivery', () => {
   it('throws a failure as a value the edge judges the same way — a port refusal by the code in its reason', () => {
     expect(attemptThrowable(transient)).toBe(transient.error);
     const thrown = attemptThrowable(permanent);
-    expect(TriggerAttemptSystem.failureCode(thrown)).toBe('internal');
+    expect(FailureCodeSystem.codeOf(thrown)).toBe('internal');
   });
 
   it('redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`', async () => {

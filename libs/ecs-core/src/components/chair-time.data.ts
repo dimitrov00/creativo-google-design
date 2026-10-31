@@ -1,4 +1,9 @@
-import { BarberId, EndMinute, MinuteOfDay } from '@core/primitives';
+import {
+  BarberId,
+  EndMinute,
+  MinuteOfDay,
+  StoredFields,
+} from '@core/primitives';
 
 /**
  * One chair a visit being moved holds on its shop day — a barber and the
@@ -15,11 +20,6 @@ export type ChairTime = {
   readonly endMinutes: EndMinute;
 };
 
-/** One own field of a stored value, `undefined` when it has none. */
-function fieldOf(raw: object, name: string): unknown {
-  return Object.getOwnPropertyDescriptor(raw, name)?.value;
-}
-
 export const ChairTime = {
   /**
    * The restore guard (the booking store's `isChairTime`, lifted onto the
@@ -30,9 +30,9 @@ export const ChairTime = {
    */
   is(raw: unknown): raw is ChairTime {
     if (raw === null || typeof raw !== 'object') return false;
-    const barberId = fieldOf(raw, 'barberId');
-    const start = fieldOf(raw, 'startMinutes');
-    const end = fieldOf(raw, 'endMinutes');
+    const barberId = StoredFields.field(raw, 'barberId');
+    const start = StoredFields.field(raw, 'startMinutes');
+    const end = StoredFields.field(raw, 'endMinutes');
     return (
       typeof barberId === 'string' &&
       BarberId.parse(barberId).ok &&

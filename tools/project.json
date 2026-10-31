@@ -1,0 +1,9 @@
+{
+  "name": "script-tools",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "// files": "the three Node scripts at the root of tools/ (seed-dev-catalog.mjs, dev-host.mjs, capture-v2-landing-baselines.mjs), which sit in no nested project; `lint` is inferred by @nx/eslint/plugin from tools/eslint.config.mjs, which ignores every nested project (each lints itself)",
+  "targets": {}
+}

@@ -1,13 +1,14 @@
 import { LocalizedText } from '@core/components';
 import type { Position, ShopLocation } from '@core/entities';
 import type { RepositoryError } from '@core/errors';
-import { Locale, type Result, Tag } from '@core/primitives';
+import { type Result } from '@core/primitives';
 import { ProgramsSystem } from '@core/systems';
 import {
   type NamedShop,
   namedShopsOf,
 } from '@creativo/features/shared/catalog';
 import type { PositionRowVm } from './marketing-careers.vm';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /*
  * THE CAREERS PAGE'S WORDS (OR-42, Law 10) — the roles as read in, the rows
@@ -53,7 +54,7 @@ function shopsLineOf(
 export function positionRowsVm(
   input: PositionRowsInput,
 ): readonly PositionRowVm[] {
-  const locale = Tag.or(Locale, input.lang, Locale.Bg);
+  const locale = localeFor(input.lang);
   const named = namedShopsOf(input.shops, locale);
   const rows: PositionRowVm[] = [];
   for (const position of input.positions) {

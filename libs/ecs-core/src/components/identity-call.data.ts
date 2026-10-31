@@ -1,6 +1,12 @@
-import { type IdentifierChannel, OtpId, Result } from '@core/primitives';
+import {
+  type IdentifierChannel,
+  OtpId,
+  Result,
+  StoredFields,
+} from '@core/primitives';
 import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
+import type { Identifier } from './identifier.data';
 import type { OtpCode } from './otp-code.data';
 import type { ProfileEdits } from './profile-edits.data';
 import { SessionKind } from './session-kind.data';
@@ -9,12 +15,16 @@ import type { RegistrationFields } from './registration-fields.data';
 /**
  * THE IDENTITY WIRE (Phase 4a 4A-4) — the three OTP callables and
  * `updateProfile`. The root type is `requestOtpChallenge`'s request: the
- * channel and the identifier as typed (the server parses it with the
- * deployment's strategy). `devCode` rides only on the emulator.
+ * channel and the identifier as the client's own edge parse produced it
+ * (`ParsedIdentifier.parse` — the canonical value, an `Identifier` brand,
+ * Law 7.4), so a `ParsedIdentifier` IS the request. The server never
+ * trusts the brand: its edge reads the text and the pipeline parses it
+ * again on the asked channel (F2-10, the stated Law 7.4 exception). The
+ * wire bytes are the same string. `devCode` rides only on the emulator.
  */
 export type IdentityCall = {
   readonly identifierChannel: IdentifierChannel;
-  readonly identifier: string;
+  readonly identifier: Identifier;
 };
 
 export const IdentityCall = {
@@ -24,7 +34,7 @@ export const IdentityCall = {
     const answer = CallAnswer.read(raw);
     if (answer === null) return CallAnswer.unusable();
     const challengeId = CallAnswer.parsed(answer, 'challengeId', OtpId.parse);
-    const devCode = CallAnswer.field(answer, 'devCode') ?? null;
+    const devCode = StoredFields.field(answer, 'devCode') ?? null;
     if (
       challengeId === null ||
       (devCode !== null && typeof devCode !== 'string')
@@ -83,7 +93,7 @@ export namespace IdentityCall {
   };
   export type CompleteRegistration = {
     readonly identifierChannel: IdentifierChannel;
-    readonly identifier: string;
+    readonly identifier: Identifier;
     readonly fields: RegistrationFields;
   };
   export type CompleteRegistrationAnswer = { readonly customToken: string };

@@ -44,7 +44,7 @@ export const GrantCapacityTerms = {
   },
 
   /** The capacity slice of a value that carries one (an active grant), copied. */
-  of(terms: GrantCapacityTerms): GrantCapacityTerms {
+  sliceOf<T extends GrantCapacityTerms>(terms: T): GrantCapacityTerms {
     return terms.grantCapacity === GrantCapacity.SingleUse
       ? SINGLE_USE
       : {

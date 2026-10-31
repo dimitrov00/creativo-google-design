@@ -5,3 +5,4 @@
 // bind their ports with `provideLazyPort` (@creativo/infrastructure/firebase-app).
 export * from './lib/firestore.lazy';
 export * from './lib/subscribe-with-retry';
+export * from './lib/stored-entity';

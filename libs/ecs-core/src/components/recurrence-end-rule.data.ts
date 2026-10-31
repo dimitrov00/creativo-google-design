@@ -28,7 +28,7 @@ export const RecurrenceEndRule = {
   },
 
   /** The end slice of anything that carries one (a whole rule), as a fresh struct. */
-  of(end: RecurrenceEndRule): RecurrenceEndRule {
+  sliceOf<T extends RecurrenceEndRule>(end: T): RecurrenceEndRule {
     return end.recurrenceEnd === RecurrenceEnd.Until
       ? RecurrenceEndRule.until(end.untilLocalDate)
       : RecurrenceEndRule.count(end.occurrenceCount);

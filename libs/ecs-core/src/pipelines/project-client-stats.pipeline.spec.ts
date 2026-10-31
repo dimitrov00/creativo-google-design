@@ -6,7 +6,6 @@ import {
   BookingPolicy,
   ClientStatsOutcome,
   ClientStatsPolicy,
-  type DocBody,
   Placement,
   PolicyPass,
   PreciseInstant,
@@ -28,6 +27,7 @@ import { RepositoryError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
 import {
+  bodyOf,
   appointmentFixture,
   customerOf,
   endMinute,
@@ -68,13 +68,6 @@ const CLIENT = FIXTURE_IDS.customer;
 const COMPANION_USER = UserId.of('u-companion');
 const COMPANION = customerOf(COMPANION_USER);
 const WORKED_AT = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -3_600_000);
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** A worked party visit: the client and a companion, each with a seat. */
 function partyVisit(

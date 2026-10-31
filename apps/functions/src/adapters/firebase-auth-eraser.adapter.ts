@@ -1,5 +1,5 @@
 import type { Auth } from 'firebase-admin/auth';
-import { Result } from '@core/primitives';
+import { Result, StoredFields } from '@core/primitives';
 import { Roles } from '@core/components';
 import type { AuthEraserPorts, AuthRolesPorts } from '@core/ports';
 import { authCodeOf, authFailure } from './auth-claims.adapter';
@@ -28,8 +28,7 @@ const USER_NOT_FOUND = 'auth/user-not-found';
 
 /** The roles a custom-claims bag lists (`roles`, the token's own key) — none when it lists none. */
 function claimRolesOf(claims: unknown): Roles {
-  if (claims === null || typeof claims !== 'object') return [];
-  const roles = Object.getOwnPropertyDescriptor(claims, 'roles')?.value;
+  const roles = StoredFields.field(claims, 'roles');
   return Array.isArray(roles) ? Roles.known(roles) : [];
 }
 

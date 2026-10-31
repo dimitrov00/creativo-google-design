@@ -1,10 +1,11 @@
 import type { Firestore, Query } from 'firebase-admin/firestore';
 import { Result, type UtcEpochMs } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import type { RepositoryError } from '@core/errors';
 import { PageStep } from '@core/components';
 import { type AuditEntry, Collections } from '@core/entities';
 import type { AuditTimelinePage, AuditTimelinePorts } from '@core/ports';
-import { PagingSystem, TriggerAttemptSystem } from '@core/systems';
+import { PagingSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * `auditLog/*`, read on the server (audit-hardening Phase 3, WS-C): the
@@ -100,12 +101,7 @@ export const firestoreAuditReadPorts = (db: Firestore): AuditTimelinePorts => {
       try {
         return Result.ok(await pageOf(field, key, beforeRecordedAtUtcMs, max));
       } catch (error) {
-        return Result.err(
-          RepositoryError.readFailed(
-            path,
-            TriggerAttemptSystem.failureCode(error),
-          ),
-        );
+        return Result.err(readFailed(path, error));
       }
     };
 

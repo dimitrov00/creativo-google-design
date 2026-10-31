@@ -1,6 +1,5 @@
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { Roles } from '@core/components';
 import {
   type Appointment,
@@ -8,8 +7,9 @@ import {
   Collections,
 } from '@core/entities';
 import type { BackfillJobPorts, CallerRolesPorts, Log } from '@core/ports';
-import { type StoredGuardOf, TriggerAttemptSystem } from '@core/systems';
+import type { StoredGuardOf } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
+import { readFailed, writeFailed } from './store-answer';
 
 /**
  * The operator backfill's server reads and its progress write (flip 1,
@@ -57,12 +57,7 @@ export const firestoreJobPorts = (
         snap.exists ? ({ id: snap.id, ...snap.data() } as BackfillJob) : null,
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          path,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(path, error));
     }
   },
 
@@ -73,12 +68,7 @@ export const firestoreJobPorts = (
       await db.doc(path).set(body);
       return Result.ok(undefined);
     } catch (error) {
-      return Result.err(
-        RepositoryError.writeFailed(
-          path,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(writeFailed(path, error));
     }
   },
 
@@ -92,12 +82,7 @@ export const firestoreJobPorts = (
       if (afterId !== null) query = query.startAfter(afterId);
       page = await query.get();
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          Collections.Appointments,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(Collections.Appointments, error));
     }
     const rows: Appointment[] = [];
     for (const snap of page.docs) {
@@ -119,12 +104,7 @@ export const firestoreJobPorts = (
       const roles: unknown = (await db.doc(path).get()).get('roles');
       return Result.ok(Array.isArray(roles) ? Roles.known(roles) : []);
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          path,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(path, error));
     }
   },
 });

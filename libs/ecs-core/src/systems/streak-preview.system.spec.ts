@@ -645,8 +645,8 @@ function ruleOf(
   const rule = StreakRule.parse({
     ...SIX_WEEKS,
     ...options,
-    ...(interval ?? StreakIntervalRule.of(SIX_WEEKS)),
-    ...(qualifier ?? StreakQualifierRule.of(SIX_WEEKS)),
+    ...(interval ?? StreakIntervalRule.sliceOf(SIX_WEEKS)),
+    ...(qualifier ?? StreakQualifierRule.sliceOf(SIX_WEEKS)),
     version: SIX_WEEKS.version + 1,
     effectiveFromLocalDate: localDate(addDays(TODAY, 1)),
   });

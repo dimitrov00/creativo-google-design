@@ -1,8 +1,7 @@
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import type { ObjectEraserPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
 import type { AdminBucket } from '../lib/firebase-admin';
+import { writeFailed } from './store-answer';
 
 /**
  * The erasure's Storage writes over the Admin SDK's default bucket
@@ -36,20 +35,13 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
-function deleteFailed(path: string, error: unknown): RepositoryError {
-  return RepositoryError.writeFailed(
-    path,
-    TriggerAttemptSystem.failureCode(error),
-  );
-}
-
 export const storageObjectPorts = (bucket: AdminBucket): ObjectEraserPorts => ({
   deleteStoredObject: async (path) => {
     try {
       await bucket.file(path).delete({ ignoreNotFound: true });
       return Result.ok(undefined);
     } catch (error) {
-      return Result.err(deleteFailed(path, error));
+      return Result.err(writeFailed(path, error));
     }
   },
 
@@ -58,13 +50,13 @@ export const storageObjectPorts = (bucket: AdminBucket): ObjectEraserPorts => ({
     try {
       [files] = await bucket.getFiles({ prefix });
     } catch (error) {
-      return Result.err(deleteFailed(prefix, error));
+      return Result.err(writeFailed(prefix, error));
     }
     for (const file of files) {
       try {
         await file.delete({ ignoreNotFound: true });
       } catch (error) {
-        return Result.err(deleteFailed(prefix, error));
+        return Result.err(writeFailed(prefix, error));
       }
     }
     return Result.ok(files.length);
@@ -85,7 +77,7 @@ export const storageObjectPorts = (bucket: AdminBucket): ObjectEraserPorts => ({
     } catch (error) {
       return isNotFound(error)
         ? Result.ok(undefined)
-        : Result.err(deleteFailed(path, error));
+        : Result.err(writeFailed(path, error));
     }
   },
 });

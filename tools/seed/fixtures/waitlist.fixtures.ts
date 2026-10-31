@@ -102,5 +102,5 @@ export function waitlistRequestBody(plan: WaitlistPlan): Body<WaitlistRequest> {
     ...cart,
     flexibleDays,
     ...WaitlistLifecycle.open(createdAtUtcMs),
-  } satisfies Omit<WaitlistRequest, 'id'>;
+  } satisfies Body<WaitlistRequest>;
 }

@@ -9,7 +9,8 @@ import {
   type ScheduleException,
 } from '@core/entities';
 import type { ScheduleExceptionPorts, SchedulingReadPorts } from '@core/ports';
-import { entityOf, observeDoc, type ReadGuard, writeFailed } from './observe';
+import { observeDoc, type ReadGuard } from './observe';
+import { entityOf, writeFailed } from './stored-entity';
 
 /**
  * The booking store's raw scheduling streams (flip 1, plan §3.4) — the

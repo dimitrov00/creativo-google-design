@@ -87,6 +87,7 @@ import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { withPurgeAt } from '../adapters/firestore-ttl.adapter';
 import { decodeCommitBooking } from '../wire/booking.wire';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * The admin's data-subject export against the REAL Firestore emulator
@@ -175,12 +176,6 @@ const OP_TWO = OperationId.of('export-operation-000002');
 const ADMIN_ROLES: readonly Role[] = [Role.Admin];
 
 type Data = Record<string, unknown>;
-
-function bodyOf(entity: { readonly id: string }): Data {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** The world's documents at their stored paths, in a fixed order. */
 function worldDocuments(

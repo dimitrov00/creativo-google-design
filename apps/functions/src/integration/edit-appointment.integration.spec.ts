@@ -64,6 +64,7 @@ import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * One NAMED staff intent against the REAL Firestore emulator — the
@@ -104,12 +105,6 @@ function nextOperation(): OperationId {
 const PETAR = BarberId.of('b-petar');
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 const RECEPTION = Actor.staff(FIXTURE_IDS.client, [Role.Receptionist]);
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const thursdayAt = (hour: number, minute = 0) =>
   utcMs(

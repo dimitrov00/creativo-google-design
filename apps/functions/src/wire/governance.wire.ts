@@ -1,6 +1,7 @@
 import {
   ImpersonationSessionId,
   Result,
+  StoredFields,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
@@ -13,7 +14,7 @@ import {
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
-import { field, operationIdOf, payloadOf, type WireRequest } from './wire-read';
+import { operationIdOf, payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE IMPERSONATION CALLABLES' WIRE (Phase 4a 4A-3 (4)) — new with the
@@ -41,7 +42,7 @@ import { field, operationIdOf, payloadOf, type WireRequest } from './wire-read';
  * `String`-coerced into an id.
  */
 function sentText(source: unknown, name: string): string {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return typeof value === 'string' ? value : '';
 }
 
@@ -66,7 +67,7 @@ export function decodeStartImpersonation(
     sentText(payload, 'impersonationScope'),
   );
   if (!scope.ok) return Result.err(scope.error);
-  const rawExpiry = field(payload, 'expiresAtUtcMs');
+  const rawExpiry = StoredFields.field(payload, 'expiresAtUtcMs');
   const expiry =
     typeof rawExpiry === 'number' ? UtcEpochMs.of(rawExpiry) : null;
   if (expiry === null || !expiry.ok) {

@@ -22,10 +22,13 @@ import {
   type ErasureLifecycle,
   ErasureStatus,
   type GovernedCollection,
+  type IdentityCall,
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
   type OtpRefusalReason,
+  type ParsedIdentifier,
+  type RegistrationFields,
   type RescheduleDelta,
   type Role,
   type SearchFields,
@@ -638,3 +641,20 @@ if (customer.erasureStatus === ErasureStatus.None) {
 export const customerIdIsNotUser: UserId = customer.id;
 // @ts-expect-error — a UserId is never a CustomerId (Law 7.4, D29)
 export const userIdIsNotCustomer: CustomerId = user.id;
+
+/* ── The identity wire carries the parsed identifier as it is (B7) ─────── */
+
+declare const parsedIdentifier: ParsedIdentifier;
+declare const registrationFields: RegistrationFields;
+/** The client's edge parse IS the OTP request — no field-by-field copy. */
+export const otpRequestIsParsed: IdentityCall = parsedIdentifier;
+/** …and, with the typed fields beside it, the registration request. */
+export const registrationIsParsed: IdentityCall.CompleteRegistration = {
+  ...parsedIdentifier,
+  fields: registrationFields,
+};
+export const rawIdentifierRefused: IdentityCall = {
+  identifierChannel: parsedIdentifier.identifierChannel,
+  // @ts-expect-error — a raw string is no `Identifier` (Law 7.4): parse it first
+  identifier: 'anna@example.com',
+};

@@ -446,16 +446,16 @@ export const StreakRule = {
    * whatever else the struct handed in carries (a head element's `headRole`
    * and `streakTransition`, a version document's history), the lists copied.
    */
-  of(rule: StreakRule): StreakRule {
+  sliceOf<T extends StreakRule>(rule: T): StreakRule {
     return {
       version: rule.version,
       effectiveFromLocalDate: rule.effectiveFromLocalDate,
       enabled: rule.enabled,
-      ...StreakQualifierRule.of(rule),
+      ...StreakQualifierRule.sliceOf(rule),
       minGapDays: rule.minGapDays,
       bookingHoldEnabled: rule.bookingHoldEnabled,
       bookingHoldMaxDaysPastDue: rule.bookingHoldMaxDaysPastDue,
-      ...StreakIntervalRule.of(rule),
+      ...StreakIntervalRule.sliceOf(rule),
       graceDays: rule.graceDays,
       riskLeadDays: rule.riskLeadDays,
       protectionsEnabled: rule.protectionsEnabled,

@@ -274,8 +274,8 @@ export default [
               // `seed-tools` (tools/seed), retagged from `type:util` in ECS
               // migration Phase 3a: its fixture bodies
               // (`tools/seed/fixtures/*.ts`) import their entity types from
-              // `@core/entities` (`type:domain`) to `satisfies
-              // Omit<XEntity, 'id'>` them, which the `type:util` row above
+              // `@core/entities` (`type:domain`) to `satisfies Body<X>`
+              // them, which the `type:util` row above
               // forbids. Never infrastructure: a fixture is a document body,
               // not an adapter's input.
               sourceTag: 'type:tooling',

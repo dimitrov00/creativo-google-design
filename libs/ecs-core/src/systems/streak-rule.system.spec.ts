@@ -97,7 +97,7 @@ function prefixed(
 /** The version a patch makes: the base with the patch flattened over it, parsed. */
 function rule(patch: Patch = {}): StreakRule {
   const draft = {
-    ...StreakRule.of(base()),
+    ...StreakRule.sliceOf(base()),
     ...(patch.version === undefined ? {} : { version: patch.version }),
     ...(patch.effectiveFrom === undefined
       ? {}
@@ -192,7 +192,7 @@ const waiting = (
 
 /** A rule as the head holds it in force: the rule alone, its role, no transition. */
 const asCurrent = (definition: StreakRule) => ({
-  ...StreakRule.of(definition),
+  ...StreakRule.sliceOf(definition),
   headRole: HeadRole.Current,
   streakTransition: null,
 });
@@ -202,7 +202,7 @@ const asScheduled = (
   definition: StreakRule,
   streakTransition: StreakTransition,
 ) => ({
-  ...StreakRule.of(definition),
+  ...StreakRule.sliceOf(definition),
   headRole: HeadRole.Scheduled,
   streakTransition,
 });
@@ -1490,5 +1490,66 @@ describe('StreakRuleSystem.summary — the shop excuses are StreakRule.coversSho
     expect(StreakRuleSystem.summary(rule({ excuses })).shopExcuses).toBe(
       StreakRule.coversShopExcuses(excuses),
     );
+  });
+});
+
+describe('StreakRuleSystem.qualifies — which visit keeps the rhythm', () => {
+  const fade = ServiceId.of('svc-fade');
+  const beard = ServiceId.of('svc-beard');
+  const hair = ServiceCategoryId.of('cat-hair');
+  const care = ServiceCategoryId.of('cat-care');
+
+  it('keeps nothing for a visit of no service, whatever the qualifier', () => {
+    expect(
+      StreakRuleSystem.qualifies(StreakQualifierRule.anyVisit(), [], []),
+    ).toBe(false);
+    expect(
+      StreakRuleSystem.qualifies(StreakQualifierRule.services([fade]), [], []),
+    ).toBe(false);
+    expect(
+      StreakRuleSystem.qualifies(
+        StreakQualifierRule.categories([hair]),
+        [],
+        [hair],
+      ),
+    ).toBe(false);
+  });
+
+  it('ANY_VISIT takes every visit that holds a service', () => {
+    expect(
+      StreakRuleSystem.qualifies(StreakQualifierRule.anyVisit(), [beard], []),
+    ).toBe(true);
+  });
+
+  it('SERVICES takes a visit one of whose services is on the list', () => {
+    const rule = StreakQualifierRule.services([fade]);
+    expect(StreakRuleSystem.qualifies(rule, [beard, fade], [])).toBe(true);
+    expect(StreakRuleSystem.qualifies(rule, [beard], [hair])).toBe(false);
+  });
+
+  it('CATEGORIES takes a visit one of whose categories is on the list', () => {
+    const rule = StreakQualifierRule.categories([hair]);
+    expect(StreakRuleSystem.qualifies(rule, [beard], [care, hair])).toBe(true);
+    expect(StreakRuleSystem.qualifies(rule, [fade], [care])).toBe(false);
+    expect(StreakRuleSystem.qualifies(rule, [fade], [])).toBe(false);
+  });
+
+  it('compares brands — a raw string is no category id (Law 7.4)', () => {
+    const rule = StreakQualifierRule.categories([hair]);
+    const raw: string[] = ['cat-hair'];
+    // @ts-expect-error — a raw string list is no `ServiceCategoryId[]`: parse it first
+    expect(StreakRuleSystem.qualifies(rule, [fade], raw)).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rule = deepFreeze(StreakQualifierRule.services([fade, beard]));
+    const services = deepFreeze([beard]);
+    const categories = deepFreeze([hair]);
+    const once = StreakRuleSystem.qualifies(rule, services, categories);
+    expect(StreakRuleSystem.qualifies(rule, services, categories)).toBe(once);
+    expect(once).toBe(true);
+    expect(rule).toEqual(StreakQualifierRule.services([fade, beard]));
+    expect(services).toEqual([beard]);
+    expect(categories).toEqual([hair]);
   });
 });

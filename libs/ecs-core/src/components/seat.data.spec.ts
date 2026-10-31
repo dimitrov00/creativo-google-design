@@ -129,9 +129,9 @@ describe('SeatOccupant', () => {
       SubjectRelationship.Self,
     );
     const whole = seat({ occupant: account });
-    expect(SeatOccupant.of(whole)).toEqual(account);
+    expect(SeatOccupant.sliceOf(whole)).toEqual(account);
     const guest = SeatOccupant.anonymous(SeatLabel.of('Гост'));
-    expect(SeatOccupant.of(seat({ occupant: guest }))).toEqual(guest);
+    expect(SeatOccupant.sliceOf(seat({ occupant: guest }))).toEqual(guest);
   });
 
   it('is flat at the seat element’s root', () => {

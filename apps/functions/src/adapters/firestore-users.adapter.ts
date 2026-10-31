@@ -1,9 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { IdentifierChannel, Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { Collections, type User } from '@core/entities';
 import type { UserLookupPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * The account holding a sign-in destination (identity flip (2), blueprint
@@ -39,12 +38,7 @@ export const firestoreUserPorts = (db: Firestore): UserLookupPorts => ({
         doc === undefined ? null : ({ id: doc.id, ...doc.data() } as User),
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          Collections.Users,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(Collections.Users, error));
     }
   },
 });

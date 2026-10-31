@@ -2,6 +2,7 @@ import {
   AppointmentId,
   LocalDate,
   type Result,
+  StoredFields,
   UserId,
 } from '@core/primitives';
 import { BookingContact } from './booking-contact.data';
@@ -43,11 +44,6 @@ export type BookingDraft = BookingFlowState &
     readonly draftLocalDate: LocalDate | null;
   };
 
-/** One own field of a stored value, `undefined` when it has none. */
-function fieldOf(raw: object, name: string): unknown {
-  return Object.getOwnPropertyDescriptor(raw, name)?.value;
-}
-
 /** A stored text the brand's smart constructor accepts, as that brand — or `null`. */
 function idOf<T, E>(
   raw: unknown,
@@ -66,7 +62,7 @@ function contactOk(fields: object): boolean {
     'contactEmail',
     'contactNote',
   ]) {
-    const value = fieldOf(fields, key);
+    const value = StoredFields.field(fields, key);
     if (value !== null && typeof value !== 'string') return false;
   }
   return true;
@@ -83,14 +79,14 @@ function contactOk(fields: object): boolean {
  * link lands it again from the live visit.
  */
 function originOf(fields: object): BookingDraft.Origin | null {
-  switch (fieldOf(fields, 'bookingDraftOrigin')) {
+  switch (StoredFields.field(fields, 'bookingDraftOrigin')) {
     case BookingDraftOrigin.BookedFrom: {
       const appointmentId = idOf(
-        fieldOf(fields, 'bookedFromAppointmentId'),
+        StoredFields.field(fields, 'bookedFromAppointmentId'),
         AppointmentId.parse,
       );
       const ownerUserId = idOf(
-        fieldOf(fields, 'bookedFromOwnerUserId'),
+        StoredFields.field(fields, 'bookedFromOwnerUserId'),
         UserId.parse,
       );
       return appointmentId !== null && ownerUserId !== null
@@ -99,19 +95,19 @@ function originOf(fields: object): BookingDraft.Origin | null {
     }
     case BookingDraftOrigin.Reschedule: {
       const appointmentId = idOf(
-        fieldOf(fields, 'rescheduleAppointmentId'),
+        StoredFields.field(fields, 'rescheduleAppointmentId'),
         AppointmentId.parse,
       );
       const ownerUserId = idOf(
-        fieldOf(fields, 'rescheduleOwnerUserId'),
+        StoredFields.field(fields, 'rescheduleOwnerUserId'),
         UserId.parse,
       );
       const localDate = idOf(
-        fieldOf(fields, 'rescheduleLocalDate'),
+        StoredFields.field(fields, 'rescheduleLocalDate'),
         LocalDate.parse,
       );
-      const riders: unknown = fieldOf(fields, 'rescheduleRiders');
-      const release: unknown = fieldOf(fields, 'rescheduleRelease');
+      const riders: unknown = StoredFields.field(fields, 'rescheduleRiders');
+      const release: unknown = StoredFields.field(fields, 'rescheduleRelease');
       if (
         appointmentId === null ||
         ownerUserId === null ||
@@ -255,14 +251,14 @@ export const BookingDraft = {
     if (!BookingFlowState.is(raw)) return null;
     const fields: object = raw;
     if (!contactOk(fields)) return null;
-    const day = fieldOf(fields, 'draftLocalDate');
+    const day = StoredFields.field(fields, 'draftLocalDate');
     const draftLocalDate = day === null ? null : idOf(day, LocalDate.parse);
     if (day !== null && draftLocalDate === null) return null;
     const contact: BookingContact = {
-      contactName: textOf(fieldOf(fields, 'contactName')),
-      contactPhone: phoneOf(fieldOf(fields, 'contactPhone')),
-      contactEmail: emailOf(fieldOf(fields, 'contactEmail')),
-      contactNote: textOf(fieldOf(fields, 'contactNote')),
+      contactName: textOf(StoredFields.field(fields, 'contactName')),
+      contactPhone: phoneOf(StoredFields.field(fields, 'contactPhone')),
+      contactEmail: emailOf(StoredFields.field(fields, 'contactEmail')),
+      contactNote: textOf(StoredFields.field(fields, 'contactNote')),
     };
     const origin = originOf(fields);
     if (origin === null) return null;
@@ -278,7 +274,7 @@ export const BookingDraft = {
     const read = BookingDraft.read(raw);
     return (
       read !== null &&
-      read.bookingDraftOrigin === fieldOf(raw as object, 'bookingDraftOrigin')
+      read.bookingDraftOrigin === StoredFields.field(raw, 'bookingDraftOrigin')
     );
   },
 } as const;

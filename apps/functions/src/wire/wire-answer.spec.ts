@@ -25,7 +25,7 @@ const A1 = AppointmentId.of('a1');
 
 // Typed as the pipelines and call components declare them — as a handler's
 // answer reaches `wiredCallable`.
-const cancelled: BookingCall.Cancelled = { appointmentId: A1 };
+const cancelled: BookingCall.Committed = { appointmentId: A1 };
 const transitioned: BookingCall.Transitioned = {
   appointmentId: A1,
   toBookingStatus: BookingStatus.Completed,

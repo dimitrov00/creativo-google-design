@@ -30,7 +30,7 @@ export const GrantExpiryTerms = {
   },
 
   /** The expiry slice of a value that carries one (an active grant), copied. */
-  of(terms: GrantExpiryTerms): GrantExpiryTerms {
+  sliceOf<T extends GrantExpiryTerms>(terms: T): GrantExpiryTerms {
     return terms.grantExpiry === GrantExpiry.NoExpiry
       ? NO_EXPIRY
       : GrantExpiryTerms.at(terms.grantExpiresAtUtcMs);

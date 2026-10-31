@@ -19,7 +19,7 @@ import type {
   GiftVoucher,
   JournalEntry,
   LoyaltyAccount,
-  LoyaltyCatalog,
+  LoyaltyCatalogParts,
   OfferedCoupon,
   SeasonProgress,
   StreakDefinition,
@@ -144,7 +144,7 @@ export type ListSeasonProgress = (
  * `LoyaltyCatalogSystem.validate`'s call, made by the reader.
  */
 export type LoadLoyaltyCatalog = () => Promise<
-  Result<LoyaltyCatalog, RepositoryError>
+  Result<LoyaltyCatalogParts, RepositoryError>
 >;
 
 /** One page of a client record's client-visible journal, newest first. */

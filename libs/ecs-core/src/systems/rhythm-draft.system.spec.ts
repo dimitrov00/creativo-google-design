@@ -153,8 +153,8 @@ const personal = (
 ): LooseInterval => ({ streakInterval: StreakInterval.Personal, ...figures });
 
 /* The rule's parts, read back off the flat rule — the shapes the cases assert. */
-const intervalOf = (rule: StreakRule) => StreakIntervalRule.of(rule);
-const qualifierOf = (rule: StreakRule) => StreakQualifierRule.of(rule);
+const intervalOf = (rule: StreakRule) => StreakIntervalRule.sliceOf(rule);
+const qualifierOf = (rule: StreakRule) => StreakQualifierRule.sliceOf(rule);
 const holdOf = (rule: StreakRule) => ({
   enabled: rule.bookingHoldEnabled,
   maxDaysPastDue: rule.bookingHoldMaxDaysPastDue,
@@ -913,7 +913,7 @@ describe('RhythmDraftSystem purity — remember, carryOver, effectivePresets', (
     const draft = deepFreeze(
       patchedRhythmDraft(RECOMMENDED, { graceDays: 21 }),
     );
-    const madeOn = deepFreeze(StreakRule.of(RECOMMENDED));
+    const madeOn = deepFreeze(StreakRule.sliceOf(RECOMMENDED));
     const now = deepFreeze({
       ...patchedRhythmDraft(RECOMMENDED, { interval: fixed(14) }),
       version: 2,

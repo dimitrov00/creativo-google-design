@@ -225,8 +225,8 @@ describe('ClientExportSystem.bundleOf — the sections', () => {
     const solo = bundle.appointments.find(
       (entry) => entry.id === world.visits.solo.id,
     );
-    expect(solo === undefined ? null : BookingContact.of(solo)).toEqual(
-      BookingContact.of(world.visits.solo),
+    expect(solo === undefined ? null : BookingContact.sliceOf(solo)).toEqual(
+      BookingContact.sliceOf(world.visits.solo),
     );
     expect(solo?.seats).toEqual(world.visits.solo.seats);
     expect(bundle.appointmentNotes[0]?.text).toBe(PRIVACY_SENTINELS.note);
@@ -250,7 +250,7 @@ describe('ClientExportSystem — nothing of another person', () => {
       (entry) => entry.id === world.visits.party.id,
     );
     if (party === undefined) throw new Error('the party was not exported');
-    expect(BookingContact.of(party)).toEqual(BookingContact.NONE);
+    expect(BookingContact.sliceOf(party)).toEqual(BookingContact.NONE);
     expect(
       party.seats.map((seat) =>
         'guestLabel' in seat ? seat.guestLabel : seat.subjectCustomerId,
@@ -296,8 +296,8 @@ describe('ClientExportSystem — nothing of another person', () => {
       (entry) => entry.id === world.visits.walkInParty.id,
     );
     if (party === undefined) throw new Error('the party was not exported');
-    expect(BookingContact.of(party)).toEqual(
-      BookingContact.of(world.visits.walkInParty),
+    expect(BookingContact.sliceOf(party)).toEqual(
+      BookingContact.sliceOf(world.visits.walkInParty),
     );
     expect(
       party.seats.map((seat) =>
@@ -313,7 +313,7 @@ describe('ClientExportSystem — nothing of another person', () => {
     const alone = bundle.appointments.find(
       (entry) => entry.id === world.visits.walkInThird.id,
     );
-    expect(alone === undefined ? null : BookingContact.of(alone)).toEqual(
+    expect(alone === undefined ? null : BookingContact.sliceOf(alone)).toEqual(
       BookingContact.NONE,
     );
     expect(json).not.toContain(WALK_IN_SENTINELS.thirdName);

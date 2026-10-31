@@ -107,6 +107,56 @@ export function formatWallClock(
   return dateFormat(locale, 'UTC', options).format(civilMs(localDate, minute));
 }
 
+// ── The house date forms (old spec R59) ─────────────────────────────────
+
+/*
+ * A fact line or a caption says «4.09», with the year only outside the
+ * current one («6.03.2025 г.»); a sentence someone hears says the month in
+ * words («4 септември»). Each is {@link formatWallClock} with fixed options,
+ * written once for every presenter (the client card's and the rhythm
+ * editor's copies went here). `Intl`'s output is never post-processed (its
+ * « г.» included).
+ */
+
+/** The year, only when the day is not in `today`'s. */
+function yearUnlessCurrent(
+  day: LocalDate,
+  today: LocalDate,
+): { readonly year?: 'numeric' } {
+  return day.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' };
+}
+
+/** «4.09» · «6.03.2025 г.» — a fact line's or a caption's date, the year only outside `today`'s. */
+export function formatDayShort(
+  day: LocalDate,
+  today: LocalDate,
+  locale: string,
+): string {
+  return formatWallClock(day, null, locale, {
+    day: 'numeric',
+    month: '2-digit',
+    ...yearUnlessCurrent(day, today),
+  });
+}
+
+/** «4 септември» · «6 март 2025 г.» — a date someone hears (accessible names, announcements). */
+export function formatDayLong(
+  day: LocalDate,
+  today: LocalDate,
+  locale: string,
+): string {
+  return formatWallClock(day, null, locale, {
+    day: 'numeric',
+    month: 'long',
+    ...yearUnlessCurrent(day, today),
+  });
+}
+
+/** «септември» — a month in words. */
+export function formatMonthLong(day: LocalDate, locale: string): string {
+  return formatWallClock(day, null, locale, { month: 'long' });
+}
+
 /**
  * The PARTS of a wall-clock reading (`formatToParts`, cached formatter) —
  * for a face that reads the locale's own order or touches one part: the

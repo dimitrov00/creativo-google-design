@@ -1,9 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { type CapacityMonth, Collections } from '@core/entities';
 import type { CapacityReadPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * The capacity rollup's server read outside any transaction (flip 1,
@@ -34,12 +33,7 @@ export const firestoreCapacityPorts = (db: Firestore): CapacityReadPorts => ({
         ),
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          Collections.Capacity,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(Collections.Capacity, error));
     }
   },
 });

@@ -6,7 +6,7 @@ import {
 } from '@core/primitives';
 import {
   RepositoryError,
-  type RhythmPublishRefusal,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
@@ -60,7 +60,7 @@ export type RhythmDraftReceipt = StreakPublishCall.Receipt & {
 /** What became of a «Запази»: the receipt; `null` when there was nothing to publish; or the refusal. */
 export type RhythmPublishOutcome = Result<
   RhythmDraftReceipt | null,
-  RhythmPublishRefusal
+  PublishStreakDefinitionError
 >;
 
 /** An «Отмени», as the page hands it over: the head it stands on, whether the shop has published, the intent's id, the rule's id and the shop's today. */
@@ -73,7 +73,10 @@ export type WithdrawRhythmCommand = {
 };
 
 /** What became of an «Отмени»: the version called off; `null` when nothing waits; or the refusal. */
-export type RhythmWithdrawOutcome = Result<number | null, RhythmPublishRefusal>;
+export type RhythmWithdrawOutcome = Result<
+  number | null,
+  PublishStreakDefinitionError
+>;
 
 /**
  * «Запази»: the draft judged first (`StreakPublishSystem.gate` — no rule,
@@ -95,7 +98,7 @@ export const publishRhythmDraft =
     if (!gated.ok) return gated;
     const draft = gated.value;
     if (draft === null) return Result.ok(null);
-    let sent: Result<StreakPublishCall.Receipt, RhythmPublishRefusal>;
+    let sent: Result<StreakPublishCall.Receipt, PublishStreakDefinitionError>;
     try {
       sent = await ports.publishStreakRule({
         requestId: command.requestId,
@@ -144,7 +147,7 @@ export const withdrawRhythm =
     );
     if (waiting === null) return Result.ok(null);
     const { version } = waiting;
-    let sent: Result<void, RhythmPublishRefusal>;
+    let sent: Result<void, PublishStreakDefinitionError>;
     try {
       sent = await ports.withdrawStreakRule(
         StreakPublishCall.withdraw(

@@ -5,7 +5,12 @@ import {
   RegistrationField,
   type RegistrationFields,
 } from '@core/components';
-import { IdentifierChannel, OtpId, Result } from '@core/primitives';
+import {
+  IdentifierChannel,
+  OtpId,
+  Result,
+  StoredFields,
+} from '@core/primitives';
 import {
   AccountsError,
   type CompleteRegistrationError,
@@ -30,7 +35,6 @@ import type {
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
 import {
-  field,
   isRecord,
   operationIdOf,
   refusalOf,
@@ -49,7 +53,10 @@ import {
  *   verified caller first, before the payload), `updateProfile`
  *   `{ firstName, lastName, birthDate }` off a verified caller. A payload
  *   the callable cannot read is `IDENTITY_INVALID_INPUT` with today's
- *   `reason` (its `reason` words the field by its new name).
+ *   `reason` (its `reason` words the field by its new name). The client
+ *   sends `identifier` as the `Identifier` brand its own parse produced;
+ *   this edge never trusts the brand — it reads the text, and the pipeline
+ *   parses it again on the asked channel (F2-10, the Law 7.4 exception).
  * - **Out:** `{ challengeId, devCode }` (`devCode` only under the emulator,
  *   else `null` — `otpChallengeOf`, the one projection), then
  *   `{ sessionKind: 'NEW' | 'RETURNING', customToken }`, `{ customToken }`
@@ -70,7 +77,7 @@ import {
 
 /** A non-blank text field, or `null`. */
 function filledText(source: unknown, name: string): string | null {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
@@ -88,7 +95,7 @@ function filledText(source: unknown, name: string): string | null {
 export function decodeRequestOtp(
   request: WireRequest,
 ): Result<RequestOtpCommand, EdgeError> {
-  const identifier = field(request.data, 'identifier');
+  const identifier = StoredFields.field(request.data, 'identifier');
   if (typeof identifier !== 'string' || identifier.trim().length === 0) {
     return Result.err(
       IdentityError.invalidInput('missing or empty destination'),
@@ -96,7 +103,8 @@ export function decodeRequestOtp(
   }
   return Result.ok({
     otpDestinationType:
-      field(request.data, 'identifierChannel') === IdentifierChannel.Phone
+      StoredFields.field(request.data, 'identifierChannel') ===
+      IdentifierChannel.Phone
         ? OtpDestinationType.Sms
         : OtpDestinationType.Email,
     rawDestination: identifier,
@@ -154,8 +162,8 @@ export function requestOtpRefusal(failure: RequestOtpError): EdgeError {
 export function decodeVerifyOtp(
   request: WireRequest,
 ): Result<VerifyOtpCommand, EdgeError> {
-  const challengeId = field(request.data, 'challengeId');
-  const code = field(request.data, 'code');
+  const challengeId = StoredFields.field(request.data, 'challengeId');
+  const code = StoredFields.field(request.data, 'code');
   if (typeof challengeId !== 'string' || challengeId.trim().length === 0) {
     return Result.err(IdentityError.invalidInput('missing or empty otpId'));
   }
@@ -196,7 +204,7 @@ export function verifyOtpRefusal(failure: VerifyOtpError): EdgeError {
 /** The about step's fields, every key present: a text as sent, anything else not sent. */
 function registrationFieldsOf(raw: unknown): RegistrationFields {
   const textOf = (name: RegistrationField): string | null => {
-    const value = field(raw, name);
+    const value = StoredFields.field(raw, name);
     return typeof value === 'string' ? value : null;
   };
   return {
@@ -225,7 +233,7 @@ export function decodeCompleteRegistration(
   if (payload === null || typeof payload !== 'object') {
     return Result.err(IdentityError.invalidInput('payload must be an object'));
   }
-  const channel = field(payload, 'identifierChannel');
+  const channel = StoredFields.field(payload, 'identifierChannel');
   if (
     channel !== IdentifierChannel.Phone &&
     channel !== IdentifierChannel.Email
@@ -242,7 +250,7 @@ export function decodeCompleteRegistration(
       IdentityError.invalidInput('missing or empty identifier'),
     );
   }
-  const fields = field(payload, 'fields');
+  const fields = StoredFields.field(payload, 'fields');
   if (!isRecord(fields)) {
     return Result.err(IdentityError.invalidInput('missing fields'));
   }
@@ -317,7 +325,7 @@ export function completeRegistrationRefusal(
 type EditField = { readonly text: string | null; readonly valid: boolean };
 
 function editFieldOf(raw: unknown, name: string): EditField {
-  const value = field(raw, name);
+  const value = StoredFields.field(raw, name);
   if (value === undefined || value === null) return { text: null, valid: true };
   return typeof value === 'string'
     ? { text: value, valid: true }

@@ -14,6 +14,7 @@ import {
 import { StoredDocumentSystem } from '@core/systems';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreJobPorts } from './firestore-jobs.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The operator backfill's server reads and progress write, over the
@@ -28,12 +29,6 @@ import { firestoreJobPorts } from './firestore-jobs.adapter';
  * so there is no refusal to report.
  */
 const NO_LOG: Log = () => undefined;
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const JOB_ID = BackfillJobId.of('clientStats');
 const job: BackfillJob = {

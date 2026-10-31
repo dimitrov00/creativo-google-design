@@ -77,6 +77,9 @@ export namespace WaitlistCall {
   };
   /** `cancelWaitlist`: the owner's own request. */
   export type Cancel = { readonly requestId: WaitlistRequestId };
+  /**
+   * Every waitlist write's answer — request, cancel: the request the write
+   * is about (one decoder, `decodeRequested`, reads both).
+   */
   export type Requested = { readonly requestId: WaitlistRequestId };
-  export type Cancelled = { readonly requestId: WaitlistRequestId };
 }

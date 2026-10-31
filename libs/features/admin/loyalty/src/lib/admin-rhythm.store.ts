@@ -36,7 +36,7 @@ import {
 import {
   type EngagementError,
   RepositoryError,
-  type RhythmPublishRefusal,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
@@ -281,7 +281,7 @@ function headAfterPublish(
   today: LocalDate,
 ): AdminRhythmHead | null {
   const numbered: StreakRule = {
-    ...StreakRule.of(assessed),
+    ...StreakRule.sliceOf(assessed),
     version: receipt.version,
     effectiveFromLocalDate: receipt.effectiveFromLocalDate,
   };
@@ -455,7 +455,7 @@ export class AdminRhythmStore {
    * that got no answer (`RepositoryError`). Which is which is
    * `StreakPublishError.guard`'s answer.
    */
-  private readonly _refusal = signal<RhythmPublishRefusal | null>(null);
+  private readonly _refusal = signal<PublishStreakDefinitionError | null>(null);
   private readonly _names = signal<
     ReadonlyMap<ServiceId | ServiceCategoryId, string>
   >(new Map());

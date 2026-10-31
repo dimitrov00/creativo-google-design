@@ -7418,7 +7418,7 @@ describe('StaffDashboard', () => {
         holderUserId: null,
         couponId: of.id,
         grantedAtUtcMs: wall('2026-08-01T09:00:00').utcEpochMs,
-        ...CouponValue.of(of),
+        ...CouponValue.sliceOf(of),
         ...GrantLifecycle.active(
           GrantCapacityTerms.singleUse(),
           expiresAtUtcMs === null

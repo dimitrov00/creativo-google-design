@@ -11,7 +11,7 @@ import { PublishRequestId, Result, type LocalDate } from '@core/primitives';
 import {
   RepositoryError,
   RepositoryErrorCode,
-  type RhythmPublishRefusal,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakRuleField,
 } from '@core/errors';
@@ -116,9 +116,11 @@ const NEUTRAL: Partial<StreakRule> = { riskLeadDays: 3 };
 function gateway(
   script: {
     readonly publish?: () => Promise<
-      Result<StreakPublishCall.Receipt, RhythmPublishRefusal>
+      Result<StreakPublishCall.Receipt, PublishStreakDefinitionError>
     >;
-    readonly withdraw?: () => Promise<Result<void, RhythmPublishRefusal>>;
+    readonly withdraw?: () => Promise<
+      Result<void, PublishStreakDefinitionError>
+    >;
   } = {},
 ) {
   const published: StreakPublishCall[] = [];

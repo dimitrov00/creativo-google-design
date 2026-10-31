@@ -752,9 +752,11 @@ export namespace BookingCall {
   }
 
   /* ── answers ── */
+  /**
+   * Every booking write's answer — commit, cancel, reschedule: the visit the
+   * committed write is about (one decoder, `decodeCommitted`, reads all three).
+   */
   export type Committed = { readonly appointmentId: AppointmentId };
-  export type Rescheduled = { readonly appointmentId: AppointmentId };
-  export type Cancelled = { readonly appointmentId: AppointmentId };
   export type Transitioned = {
     readonly appointmentId: AppointmentId;
     readonly toBookingStatus: BookingStatus;

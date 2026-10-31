@@ -68,6 +68,7 @@ import {
   CouponGrantSystem,
 } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   contendedCommit,
@@ -106,11 +107,6 @@ import { transitionAppointment } from './transition-appointment.pipeline';
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
 const GUEST_SEAT = SeatId.of('seat-2');
 const VOUCHER = GiftVoucherId.of('v-1');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 function party(
   extra: Parameters<typeof appointmentFixture>[0] = {},

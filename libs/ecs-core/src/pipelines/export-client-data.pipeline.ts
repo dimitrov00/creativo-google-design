@@ -87,8 +87,13 @@ export type ExportClientDataPorts = CommitPorts &
   AuditTimelinePorts &
   TelemetryPorts;
 
-/** The verified caller and the call (`ClientPrivacyCall`, decoded) — never the payload's caller. */
-export type ExportClientDataCommand = {
+/**
+ * The verified caller and the call (`ClientPrivacyCall`, decoded) — never
+ * the payload's caller. One command for every privacy act on a client: the
+ * export and the erasure (`erase-client.pipeline.ts`) take the same four
+ * fields.
+ */
+export type ClientPrivacyCommand = {
   /** The verified session's uid. */
   readonly callerUserId: UserId;
   /** The verified token's roles — the first gate; the stored roles are the second. */
@@ -107,7 +112,7 @@ const LIST_LIMIT = EXPORT_MAX_DOCUMENTS + 1;
 export const exportClientData =
   (ports: ExportClientDataPorts) =>
   async (
-    cmd: ExportClientDataCommand,
+    cmd: ClientPrivacyCommand,
   ): Promise<
     Result<ClientPrivacyCall.Exported, PrivacyError | RepositoryError>
   > => {

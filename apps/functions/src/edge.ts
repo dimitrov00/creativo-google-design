@@ -9,6 +9,7 @@ import {
   OperationId,
   PrimitiveErrorCode,
   type Result,
+  StoredFields,
   TriggerEventId,
   UtcEpochMs,
 } from '@core/primitives';
@@ -60,7 +61,7 @@ import {
   WorkBudgetSystem,
 } from '@core/systems';
 import { callerKnownRoles, callerUserId } from './lib/booking/caller-roles';
-import { eventInstantOf, field, idOf, operationIdOf } from './wire/wire-read';
+import { eventInstantOf, idOf, operationIdOf } from './wire/wire-read';
 
 /**
  * THE EDGE (blueprint §4.3, D1(a)) — the one place a `Result.err` becomes an
@@ -760,7 +761,7 @@ function isEdgeError(value: unknown): value is EdgeError {
   return (
     value !== null &&
     typeof value === 'object' &&
-    typeof field(value, 'errorCode') === 'string'
+    typeof StoredFields.field(value, 'errorCode') === 'string'
   );
 }
 
@@ -775,7 +776,7 @@ export function projected(
 ): Record<string, unknown> {
   const entries: [string, unknown][] = [['errorCode', error.errorCode]];
   for (const name of wireFields) {
-    const value = field(error, name);
+    const value = StoredFields.field(error, name);
     if (value !== undefined) entries.push([name, value]);
   }
   return Object.fromEntries(entries);
@@ -792,7 +793,7 @@ function projectedByRule(error: EdgeError): Record<string, unknown> {
 
 /** An aggregate's nested refusals, each projected by its own row. */
 function nestedOf(error: EdgeError): readonly Record<string, unknown>[] {
-  const nested = field(error, 'errors');
+  const nested = StoredFields.field(error, 'errors');
   if (!Array.isArray(nested)) return [];
   return nested.filter(isEdgeError).map(projectedByRule);
 }
@@ -991,9 +992,7 @@ type Outcome = {
 
 /** The `errorCode` an `HttpsError`'s details carry (the flipped wire, 4A-4), else `null`. */
 function wireCodeOf(error: HttpsError): string | null {
-  const details: unknown = error.details;
-  if (details === null || typeof details !== 'object') return null;
-  const code = Object.getOwnPropertyDescriptor(details, 'errorCode')?.value;
+  const code = StoredFields.field(error.details, 'errorCode');
   return typeof code === 'string' ? code : null;
 }
 
@@ -1024,12 +1023,12 @@ function invocationContext(
   callable: CallableName,
   request: CallableRequest<unknown>,
 ): LogContext {
-  const field: OperationIdField | null =
-    Object.getOwnPropertyDescriptor(OPERATION_ID_FIELD, callable)?.value ??
-    null;
+  const idField =
+    (StoredFields.field(OPERATION_ID_FIELD, callable) as
+      OperationIdField | null | undefined) ?? null;
   return {
     callable,
-    operationId: field === null ? null : operationIdOf(request.data, field),
+    operationId: idField === null ? null : operationIdOf(request.data, idField),
     uid: callerUserId(request),
     roles: callerKnownRoles(request),
   };
@@ -1390,10 +1389,11 @@ export function attemptProvenanceOf(event: unknown): {
   readonly documentPath: string | null;
   readonly writeOperationId: OperationId | null;
 } {
-  const document = field(event, 'document');
-  const data = field(event, 'data');
+  const document = StoredFields.field(event, 'document');
+  const data = StoredFields.field(event, 'data');
   const body =
-    existingBody(field(data, 'after')) ?? existingBody(field(data, 'before'));
+    existingBody(StoredFields.field(data, 'after')) ??
+    existingBody(StoredFields.field(data, 'before'));
   const sent = ClientOperationId.inPayload(body, 'writeOperationId');
   return {
     documentPath: typeof document === 'string' ? document : null,

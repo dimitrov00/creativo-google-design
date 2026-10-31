@@ -12,7 +12,7 @@
  * same day writes the same bytes and the stats trigger sees nothing to
  * recompute.
  *
- * The body is typed (`satisfies Omit<Appointment, 'id'>` in the builder),
+ * The body is typed (`satisfies Body<Appointment>` in the builder),
  * so a field the archetype gains and the seed lacks fails
  * `pnpm nx typecheck seed-tools`, and `seed-data.spec.mjs` holds every
  * document to the mirrors `AppointmentIndexSystem` derives.

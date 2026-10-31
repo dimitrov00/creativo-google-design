@@ -1,7 +1,6 @@
 import {
   Actor,
   AuditAction,
-  type DocBody,
   SeatOccupant,
   SeatLabel,
   WriteOp,
@@ -23,6 +22,7 @@ import {
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   cents,
@@ -42,11 +42,6 @@ const STAFF = Actor.staff(UserId.of('u-staff'), []);
 const GUEST_SEAT = SeatId.of('seat-2');
 /** The tip's client-minted operation id (WS-4.1 — required on the call). */
 const OPERATION = OperationId.of('tip-op-0123456789ab');
-
-function bodyOf(appointment: Appointment): DocBody {
-  const { id: _id, ...body } = appointment;
-  return body;
-}
 
 /** The client's cut and a guest's, side by side. */
 function party(): Appointment {

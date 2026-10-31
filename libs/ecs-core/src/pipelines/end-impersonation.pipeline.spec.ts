@@ -19,6 +19,7 @@ import { GovernanceErrorCode } from '@core/errors';
 import { Collections, type ImpersonationSession } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   fixtureHash,
   impersonationSessionFixture,
@@ -49,13 +50,6 @@ import {
 const ADMIN = UserId.of('u-admin');
 const SESSION = ImpersonationSessionId.of('imp-1');
 const PATH = [Collections.ImpersonationSessions, SESSION];
-
-/** The stored body: the session minus `id`. */
-function bodyOf(session: ImpersonationSession): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(session).filter(([key]) => key !== 'id'),
-  );
-}
 
 function rig(
   sessions: readonly ImpersonationSession[],

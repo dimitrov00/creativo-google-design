@@ -22,7 +22,7 @@ this doc covers only who may import whom.
 | `scope:web`      | The single consolidated SPA (`apps/web`)                                                                                 |
 | `scope:showcase` | The design-system workbench (`apps/showcase`)                                                                            |
 | `scope:backend`  | Cloud Functions (`apps/functions`) — see [`scope:backend`](#scopebackend)                                                |
-| `scope:tooling`  | Workspace tooling projects under `tools/` (lint rules, icons, flags, seed, verify)                                       |
+| `scope:tooling`  | Workspace tooling projects under `tools/` (lint rules, icons, flags, seed, verify, the root scripts)                     |
 
 **Rules** (the root `depConstraints`, scope half):
 
@@ -131,7 +131,7 @@ Why each arrow:
 - **`domain` → `domain` only**: `libs/ecs-core` imports no other project.
 - **`tooling` → `domain`** (2026-10-10, ECS Phase 3a): `seed-tools`' fixture
   bodies (`tools/seed/fixtures/*.ts`) import their archetype from
-  `@core/entities` to `satisfies Omit<X, 'id'>` it, which the `type:util`
+  `@core/entities` to `satisfies Body<X>` it, which the `type:util`
   row forbids. Never infrastructure: a fixture is a document body, not an
   adapter's input.
 
@@ -211,7 +211,7 @@ and the lint-rule specs therefore name `@core/*` aliases freely (the deep
 relative-import half of Law 8 still covers them through the layering
 verifier).
 
-## Today's projects (43)
+## Today's projects (45)
 
 | Project                | Root                                 | Tags                                  |
 | ---------------------- | ------------------------------------ | ------------------------------------- |
@@ -257,11 +257,12 @@ verifier).
 | `flag-tools`           | `tools/flags`                        | `scope:tooling`, `type:util`          |
 | `icon-tools`           | `tools/icons`                        | `scope:tooling`, `type:util`          |
 | `lint-rules`           | `tools/lint-rules`                   | `scope:tooling`, `type:util`          |
+| `script-tools`         | `tools`                              | `scope:tooling`, `type:util`          |
 | `seed-tools`           | `tools/seed`                         | `scope:tooling`, `type:tooling`       |
 | `verify-tools`         | `tools/verify`                       | `scope:tooling`, `type:tooling`       |
 
 Read off every `project.json` (`git ls-files '**/project.json'`); check it at
-any time with `pnpm nx show projects` (43) and `pnpm nx graph`.
+any time with `pnpm nx show projects` (45) and `pnpm nx graph`.
 
 Two of them exist for the UI residue cleanup
 (`docs/architecture/flips/ui-residue-cleanup.md` UR-2, UR-9) and carry a

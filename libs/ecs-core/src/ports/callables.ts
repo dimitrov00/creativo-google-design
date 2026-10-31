@@ -87,11 +87,11 @@ export type CallableWire = {
   };
   readonly [Callables.CancelAppointment]: {
     readonly input: BookingCall.Cancel;
-    readonly answer: BookingCall.Cancelled;
+    readonly answer: BookingCall.Committed;
   };
   readonly [Callables.RescheduleAppointment]: {
     readonly input: BookingCall.Reschedule;
-    readonly answer: BookingCall.Rescheduled;
+    readonly answer: BookingCall.Committed;
   };
   readonly [Callables.TransitionAppointment]: {
     readonly input: BookingCall.Transition;
@@ -119,7 +119,7 @@ export type CallableWire = {
   };
   readonly [Callables.CancelWaitlist]: {
     readonly input: WaitlistCall.Cancel;
-    readonly answer: WaitlistCall.Cancelled;
+    readonly answer: WaitlistCall.Requested;
   };
   readonly [Callables.RunBackfill]: {
     readonly input: BackfillCall;

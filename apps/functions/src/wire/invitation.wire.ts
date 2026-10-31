@@ -1,9 +1,9 @@
-import { InvitationId, Result } from '@core/primitives';
+import { InvitationId, Result, StoredFields } from '@core/primitives';
 import { EngagementError } from '@core/errors';
 import type { RedeemInvitationCommand } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
-import { field, payloadOf, type WireRequest } from './wire-read';
+import { payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE `redeemInvitation` CALLABLE'S WIRE (flip-3 plan F3-2, Phase 4a
@@ -24,7 +24,7 @@ export function decodeRedeemInvitation(
     return Result.err(EngagementError.invitationUnauthenticated());
   }
   // Anything that is no string reads as none — never `String`-coerced into an id.
-  const raw = field(payloadOf(request), 'invitationId');
+  const raw = StoredFields.field(payloadOf(request), 'invitationId');
   const invitationId = InvitationId.parse(typeof raw === 'string' ? raw : '');
   if (!invitationId.ok) return Result.err(invitationId.error);
   return Result.ok({

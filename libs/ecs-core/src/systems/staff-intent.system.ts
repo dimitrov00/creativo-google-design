@@ -1,5 +1,5 @@
-import { AppliedOperation } from '@core/components';
-import type { AppointmentId, OperationId } from '@core/primitives';
+import { AppliedOperation, type BookingCall } from '@core/components';
+import type { OperationId } from '@core/primitives';
 
 /**
  * One of THIS device's own intents that landed on a visit: the revision it
@@ -55,19 +55,15 @@ export const StaffIntentSystem = {
    * claims beside it — an acknowledged overlap is a different decision from
    * an unacknowledged one, and a claim on another revision is a draft of
    * another visit. Serialised, because equality is the only question ever
-   * asked of it; read off the request AS SENT (the claim already rebased).
+   * asked of it; read off the request AS SENT (the claim already rebased),
+   * taken as it is (Law 3, zero inbound mapping).
    */
-  intentBasis(
-    appointmentId: AppointmentId,
-    command: unknown,
-    acknowledgedOverlap: boolean,
-    expectedVersion: number | null,
-  ): string {
+  intentBasis(intent: BookingCall.StaffEditIntent): string {
     return JSON.stringify([
-      appointmentId,
-      command,
-      acknowledgedOverlap,
-      expectedVersion,
+      intent.appointmentId,
+      intent.commands,
+      intent.acknowledgedOverlap,
+      intent.expectedVersion,
     ]);
   },
 

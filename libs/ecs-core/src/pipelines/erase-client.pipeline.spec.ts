@@ -41,6 +41,7 @@ import {
   ERASURE_MAX_DOCUMENTS,
 } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   customerFixture,
   type ErasureStores,
@@ -71,11 +72,11 @@ import {
 } from '@core/testing';
 import type { StepBudget } from './continue-policy-recompute.pipeline';
 import {
-  type EraseClientCommand,
   type EraseClientPorts,
   eraseClient,
   previewClientErasure,
 } from './erase-client.pipeline';
+import type { ClientPrivacyCommand } from './export-client-data.pipeline';
 
 /* `previewClientErasure` and `eraseClient` (audit-hardening Phase 3 WS-D):
  * the gate before any write, the caps, the OTP sweep before the stamp, the
@@ -104,11 +105,11 @@ type Rig = {
   readonly telemetry: ReturnType<typeof recordingTelemetry>;
   readonly ports: EraseClientPorts;
   readonly erase: (
-    cmd?: Partial<EraseClientCommand>,
+    cmd?: Partial<ClientPrivacyCommand>,
     budget?: StepBudget,
   ) => ReturnType<ReturnType<typeof eraseClient>>;
   readonly preview: (
-    cmd?: Partial<EraseClientCommand>,
+    cmd?: Partial<ClientPrivacyCommand>,
   ) => ReturnType<ReturnType<typeof previewClientErasure>>;
 };
 
@@ -186,7 +187,9 @@ function rig(
     trackError: telemetry.trackError,
     ...options.overrides,
   };
-  const command = (cmd: Partial<EraseClientCommand>): EraseClientCommand => ({
+  const command = (
+    cmd: Partial<ClientPrivacyCommand>,
+  ): ClientPrivacyCommand => ({
     callerUserId: world.admin,
     callerRoles: [Role.Admin],
     customerId: world.person.customerId,
@@ -204,13 +207,6 @@ function rig(
       eraseClient(ports)(command(cmd), budget),
     preview: (cmd = {}) => previewClientErasure(ports)(command(cmd)),
   };
-}
-
-/** A stored body — the entity minus `id` (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 /** The store as sorted entries — two runs that end alike compare equal. */

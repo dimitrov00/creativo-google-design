@@ -136,16 +136,15 @@ export const firestoreSchedulePorts = (
         snap.exists ? ({ id: snap.id, ...snap.data() } as BarberBusyDay) : null,
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          path,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(path, error));
     }
   },
 });
 ```
+
+`readFailed` / `writeFailed` / `bodyOf` come from `adapters/store-answer.ts`,
+the one home of what an adapter answers its port with: the `reason` is the
+failure's canonical code (`FailureCodeSystem.codeOf`), never the SDK's message.
 
 The document body is the entity minus `id` — spread, do not map. An adapter
 implements exactly one port family over one SDK and holds no business logic.

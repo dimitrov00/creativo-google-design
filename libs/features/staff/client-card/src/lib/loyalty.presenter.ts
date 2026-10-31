@@ -21,11 +21,12 @@ import {
 } from '@core/systems';
 import { streakPeriodReasonWords } from '@creativo/infrastructure/i18n';
 import type { ClientCardGrant } from './client-card.contracts';
-import { dayLong, dayShort, shopDayOf } from './client-card.format';
+import { shopDayOf } from './client-card.format';
 import { type RewardReadyVm } from './client-pages.vm';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from './client-card.words';
 import type { VisitNames } from './ledger.presenter';
+import { formatDayLong, formatDayShort } from '@creativo/ui/wall-clock';
 
 /*
  * «ЛОЯЛНОСТ» — what the wallet (`wallet.presenter.ts`) and the glance
@@ -82,7 +83,7 @@ export function ticketOf(
   const detail = [
     first.expiresOn === null
       ? null
-      : words.reward.until(dayShort(first.expiresOn, today, words.lang)),
+      : words.reward.until(formatDayShort(first.expiresOn, today, words.lang)),
     others > 0 ? words.reward.more(others) : null,
   ].filter((part): part is string => part !== null);
   return {
@@ -168,7 +169,7 @@ export function rhythmTrackName(
     best === null ? '' : words.rhythm.bestSuffix(best),
     due === null
       ? ''
-      : words.rhythm.nextSuffix(dayLong(due, today, words.lang)),
+      : words.rhythm.nextSuffix(formatDayLong(due, today, words.lang)),
   );
 }
 
@@ -249,7 +250,7 @@ export function rhythmLineOf(
   const naming = (worded: (date: string) => string): RhythmStateLine =>
     day === null
       ? defect(`${outlook.streakOutlook} names a day`)
-      : { line: worded(dayShort(day, today, words.lang)), day };
+      : { line: worded(formatDayShort(day, today, words.lang)), day };
   switch (outlook.streakOutlook) {
     case StreakOutlook.Paused:
       return none(rhythm.frozen);

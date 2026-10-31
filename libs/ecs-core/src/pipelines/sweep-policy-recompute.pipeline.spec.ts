@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   AttemptOutcome,
   BookingPolicy,
-  type DocBody,
   type LivePolicyLine,
   PolicySweepOutcome,
   PreciseInstant,
@@ -17,6 +16,7 @@ import { RepositoryError } from '@core/errors';
 import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
 import { PolicyRecomputeJobSystem } from '@core/systems';
 import {
+  bodyOf,
   FIXTURE_NOW_UTC_MS,
   hourCount,
   memoryStore,
@@ -47,13 +47,6 @@ const instant = (seconds: number) => {
   if (at === null) throw new Error('a broken fixture');
   return at;
 };
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 function jobOf(
   overrides: Partial<PolicyRecomputeJob> = {},

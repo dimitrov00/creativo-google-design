@@ -1,10 +1,4 @@
-import {
-  type LocalDate,
-  Locale,
-  Tag,
-  type TimeZone,
-  type UtcEpochMs,
-} from '@core/primitives';
+import type { LocalDate, TimeZone, UtcEpochMs } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { LinePart } from './client-pages.vm';
@@ -17,7 +11,9 @@ import type { LinePart } from './client-pages.vm';
  *
  * Dates are the house form (old spec R59): a fact line or a caption says
  * «12.08», with the year only outside the current one («6.03.2025 г.»); a
- * sentence someone hears says the month in words («4 септември»). Every
+ * sentence someone hears says the month in words («4 септември») — those
+ * two and the month alone are `@creativo/ui/wall-clock`'s (`formatDayShort`,
+ * `formatDayLong`, `formatMonthLong`), the card's own forms are here. Every
  * date is a day on the SHOP'S calendar (its location's zone, Law 7.2): an
  * instant becomes one through `shopDayOf`, and a day is formatted as
  * itself — the shared wall-clock face (`formatWallClock`, read back in UTC,
@@ -25,31 +21,6 @@ import type { LinePart } from './client-pages.vm';
  * never post-processed (its « г.» included). Every day here is the
  * branded `LocalDate` it is at its source (Law 7.4): no formatter parses.
  */
-
-/** The catalogue's language for the card's words: a `Locale`, anything else Bulgarian — the shop's own. */
-export function cardLocaleOf(lang: string): Locale {
-  return Tag.or(Locale, lang, Locale.Bg);
-}
-
-function yearOf(day: LocalDate): string {
-  return day.slice(0, 4);
-}
-
-/** The year, only when the day is not in `today`'s. */
-function yearUnlessCurrent(
-  day: LocalDate,
-  today: LocalDate,
-): Pick<Intl.DateTimeFormatOptions, 'year'> {
-  return yearOf(day) === yearOf(today) ? {} : { year: 'numeric' };
-}
-
-function formatDay(
-  day: LocalDate,
-  lang: string,
-  options: Intl.DateTimeFormatOptions,
-): string {
-  return formatWallClock(day, null, lang, options);
-}
 
 /**
  * The shop day an instant falls on on the shop's zone — the one the card's
@@ -60,59 +31,28 @@ export function shopDayOf(at: UtcEpochMs, zone: TimeZone): LocalDate {
   return ZonedTimeSystem.toLocal(at, zone).localDate;
 }
 
-/** «4.09» · «6.03.2025 г.» — a fact line's or a caption's date (R59). */
-export function dayShort(
-  day: LocalDate,
-  today: LocalDate,
-  lang: string,
-): string {
-  return formatDay(day, lang, {
-    day: 'numeric',
-    month: '2-digit',
-    ...yearUnlessCurrent(day, today),
-  });
-}
-
 /** «6.03» — the day and month alone, where the year stands elsewhere (a ladder node's line under it). */
 export function dayMonth(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, { day: 'numeric', month: '2-digit' });
+  return formatWallClock(day, null, lang, { day: 'numeric', month: '2-digit' });
 }
 
 /** «2025 г.» — a day's year alone (a ladder node's second line, under its «6.03»). */
 export function yearAlone(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, { year: 'numeric' });
+  return formatWallClock(day, null, lang, { year: 'numeric' });
 }
 
 /** «6.03.2025 г.» — a date that always names its year (a first visit, a record). */
 export function dayWithYear(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, {
+  return formatWallClock(day, null, lang, {
     day: 'numeric',
     month: '2-digit',
     year: 'numeric',
   });
 }
 
-/** «4 септември» · «6 март 2025 г.» — a date someone hears (accessible names, announcements). */
-export function dayLong(
-  day: LocalDate,
-  today: LocalDate,
-  lang: string,
-): string {
-  return formatDay(day, lang, {
-    day: 'numeric',
-    month: 'long',
-    ...yearUnlessCurrent(day, today),
-  });
-}
-
 /** «март 2025 г.» — a month someone has been a client since. */
 export function monthYearLong(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, { month: 'long', year: 'numeric' });
-}
-
-/** «септември» — a month in words (the rhythm's hidden period list). */
-export function monthLong(day: LocalDate, lang: string): string {
-  return formatDay(day, lang, { month: 'long' });
+  return formatWallClock(day, null, lang, { month: 'long', year: 'numeric' });
 }
 
 /*

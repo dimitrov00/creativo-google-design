@@ -1901,7 +1901,7 @@ const anyRule: fc.Arbitrary<StreakRule> = fc
       : StreakIntervalRule.fixed(drawn.days);
     const under =
       (interval.streakInterval === 'FIXED' ? drawn.days : drawn.floor) - 1;
-    return StreakRule.of({
+    return StreakRule.sliceOf({
       ...StreakRule.DEFAULT,
       ...interval,
       graceDays: Math.min(drawn.graceDays, under),

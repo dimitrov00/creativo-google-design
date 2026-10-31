@@ -4,6 +4,7 @@ import {
   BadgeSubject,
   type EarnedDay,
   FamilyScopeFilter,
+  LocalizedText,
   MedalCaption,
   MedalMeter,
   MedalState,
@@ -47,14 +48,7 @@ import {
   type ClientCardLeg,
   type ClientCardStart,
 } from './client-card.contracts';
-import {
-  cardLocaleOf,
-  dayLong,
-  dayRange,
-  dayShort,
-  levelNumeral,
-  monogramOf,
-} from './client-card.format';
+import { dayRange, levelNumeral, monogramOf } from './client-card.format';
 import type {
   AchievementTileVm,
   AchievementsData,
@@ -69,7 +63,12 @@ import type {
   SeasonTrackVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
-import { formatCount } from '@creativo/ui/wall-clock';
+import {
+  formatCount,
+  formatDayLong,
+  formatDayShort,
+} from '@creativo/ui/wall-clock';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 /*
  * «ПОСТИЖЕНИЯ» — the collection, a scope, a medal (client-card-redesign
@@ -270,7 +269,7 @@ export interface MedalOptions {
 }
 
 export function localeOf(ctx: AchievementsContext) {
-  return cardLocaleOf(ctx.words.lang);
+  return localeFor(ctx.words.lang);
 }
 
 export function progressOf(
@@ -655,7 +654,7 @@ function monogramFor(
     case null:
       return null;
     case BadgeSubject.Service:
-      name = series.title[localeOf(ctx)];
+      name = LocalizedText.pick(series.title, localeOf(ctx));
       break;
     case BadgeSubject.Barber:
       name = ctx.catalog.barberName(series.subjectBarberId);
@@ -706,7 +705,7 @@ function captionOf(
       // «1.03.2027 г.»), never inside it (an orphaned «г.»).
       return words.toLevelOn(
         levelNumeral(BadgeSystem.nextLevelNumber(standing)),
-        dayShort(on, data.today, ctx.words.lang).replace(/ /gu, ' '),
+        formatDayShort(on, data.today, ctx.words.lang).replace(/ /gu, ' '),
       );
     case MedalCaption.NotYet:
       return ctx.words.achievement.oneOffNotYet;
@@ -718,7 +717,7 @@ function captionOf(
       );
     case MedalCaption.OnDay:
       if (last === null) return defect('an ON_DAY caption without a level');
-      return dayShort(last.earnedLocalDate, data.today, ctx.words.lang);
+      return formatDayShort(last.earnedLocalDate, data.today, ctx.words.lang);
     case MedalCaption.Complete:
       return words.complete;
   }
@@ -761,7 +760,7 @@ function meterWords(
               )
             : ctx.words.achievement.stateToNextOn(
                 toNext.level,
-                dayShort(on, data.today, ctx.words.lang),
+                formatDayShort(on, data.today, ctx.words.lang),
               ),
       };
     }
@@ -787,7 +786,7 @@ export function medalVm(
   const progress = progressOf(data, series);
   const standing = BadgeSystem.standing(series, progress);
   const withThisVisit = completesWithThisVisit(series, data, ctx);
-  const title = options.title ?? series.title[locale];
+  const title = options.title ?? LocalizedText.pick(series.title, locale);
   const src = artOf(series, data, ctx);
   const monogram = src === null ? monogramFor(series, ctx) : null;
   const isNew =
@@ -847,13 +846,13 @@ export function medalVm(
       achievement.medalEarnedName(
         title,
         levelNumeral(standing.highestLevel),
-        earnedOn === null ? '' : dayLong(earnedOn, data.today, lang),
+        earnedOn === null ? '' : formatDayLong(earnedOn, data.today, lang),
         toNext === null
           ? ''
           : on !== null
             ? achievement.nextOnSuffix(
                 toNext.level,
-                dayLong(on, data.today, lang),
+                formatDayLong(on, data.today, lang),
               )
             : achievement.nextSuffix(toNext.value, toNext.target, toNext.level),
         isNew ? achievement.newSuffix : '',
@@ -863,7 +862,7 @@ export function medalVm(
       (on !== null
         ? `${title}${achievement.nextOnSuffix(
             toNext.level,
-            dayLong(on, data.today, lang),
+            formatDayLong(on, data.today, lang),
           )}`
         : achievement.medalProgressName(
             title,
@@ -874,10 +873,14 @@ export function medalVm(
   } else if (standing.medalState === MedalState.InProgress) {
     accessibleName = `${title}, ${achievement.oneOffNotYet}${withVisitSuffix}`;
   } else {
+    const first = series.levels[0];
     accessibleName =
       achievement.medalNotStartedName(
         title,
-        series.levels[0]?.requirement[locale] ?? series.requirement[locale],
+        LocalizedText.pick(
+          first === undefined ? series.requirement : first.requirement,
+          locale,
+        ),
       ) + withVisitSuffix;
   }
 
@@ -1043,7 +1046,7 @@ export function latestTiles(
     if (tiles.length >= RAIL_LIMIT) break;
     const newest = day.fresh[0];
     if (newest === undefined) continue;
-    const short = dayShort(day.localDate, data.today, words.lang);
+    const short = formatDayShort(day.localDate, data.today, words.lang);
     if (day.levels.length === 1) {
       const series = LoyaltyCatalogSystem.series(
         data.catalog,
@@ -1083,7 +1086,7 @@ export function latestTiles(
     // +2», the count bound to the name), over «28.09».
     const count = day.levels.length;
     const medal = medalVm(series, data, ctx, {
-      title: `${series.title[localeOf(ctx)]}\u00a0+${formatCount(
+      title: `${LocalizedText.pick(series.title, localeOf(ctx))}\u00a0+${formatCount(
         count - 1,
         words.lang,
       )}`,
@@ -1101,7 +1104,7 @@ export function latestTiles(
         isNew,
         accessibleName:
           words.achievements.dayGroupName(
-            dayLong(day.localDate, data.today, words.lang),
+            formatDayLong(day.localDate, data.today, words.lang),
             count,
           ) + (isNew ? words.achievement.newSuffix : ''),
       },
@@ -1206,7 +1209,7 @@ function seasonTrack(
     min: 0,
     max: outlook.max,
     marks,
-    label: season.title[localeOf(ctx)],
+    label: LocalizedText.pick(season.title, localeOf(ctx)),
     valueText:
       sentence ?? words.seasonEndedAt(levelNumeral(standing.highestLevel)),
   };
@@ -1256,13 +1259,13 @@ export function seasonCardVm(
   const track = seasonTrack(season, data, ctx);
   if (track === null) return null;
   const words = ctx.words;
-  const title = season.title[localeOf(ctx)];
+  const title = LocalizedText.pick(season.title, localeOf(ctx));
   const scope = FamilyScopeFilter.season(season.id);
   const counts = familyCountsOf(data, scope);
   const families = familiesOf(data, scope);
   const level = data.seasonProgress.get(season.id)?.trackLevel ?? 0;
   const until = words.achievements.eventUntil(
-    dayLong(season.windowUntil, data.today, words.lang),
+    formatDayLong(season.windowUntil, data.today, words.lang),
   );
   return {
     ...track,
@@ -1300,7 +1303,7 @@ export function eventCardVm(
   ctx: AchievementsContext,
 ): EventCardVm {
   const words = ctx.words;
-  const title = season.title[localeOf(ctx)];
+  const title = LocalizedText.pick(season.title, localeOf(ctx));
   const scope = FamilyScopeFilter.season(season.id);
   const announced = seasonPhaseOf(season, data) === SeasonPhase.Announced;
   const counts = familyCountsOf(data, scope);
@@ -1309,17 +1312,17 @@ export function eventCardVm(
     : words.achievements.familyCount(counts.earned, counts.total);
   const when = announced
     ? words.achievements.eventAnnounced(
-        dayShort(season.windowFrom, data.today, words.lang),
+        formatDayShort(season.windowFrom, data.today, words.lang),
       )
     : words.achievements.eventUntil(
-        dayShort(season.windowUntil, data.today, words.lang),
+        formatDayShort(season.windowUntil, data.today, words.lang),
       );
   const spoken = announced
     ? words.achievements.eventAnnounced(
-        dayLong(season.windowFrom, data.today, words.lang),
+        formatDayLong(season.windowFrom, data.today, words.lang),
       )
     : words.achievements.eventUntil(
-        dayLong(season.windowUntil, data.today, words.lang),
+        formatDayLong(season.windowUntil, data.today, words.lang),
       );
   return {
     seasonId: season.id,
@@ -1371,25 +1374,26 @@ export function scopeTitleOf(
   scope: AchievementScope,
   words: ClientCardWords,
 ): string | null {
-  const locale = cardLocaleOf(words.lang);
+  const locale = localeFor(words.lang);
   switch (scope.achievementScope) {
-    case AchievementScope.Category:
-      return (
-        LoyaltyCatalogSystem.category(data.catalog, scope.categoryId)?.title[
-          locale
-        ] ?? null
+    case AchievementScope.Category: {
+      const category = LoyaltyCatalogSystem.category(
+        data.catalog,
+        scope.categoryId,
       );
-    case AchievementScope.Season:
-      return (
-        LoyaltyCatalogSystem.season(data.catalog, scope.seasonId)?.title[
-          locale
-        ] ?? null
-      );
+      return category === null
+        ? null
+        : LocalizedText.pick(category.title, locale);
+    }
+    case AchievementScope.Season: {
+      const season = LoyaltyCatalogSystem.season(data.catalog, scope.seasonId);
+      return season === null ? null : LocalizedText.pick(season.title, locale);
+    }
     case AchievementScope.Archive:
       return words.achievements.archive;
     case AchievementScope.Day:
       return words.achievements.dayTitle(
-        dayShort(scope.day, data.today, words.lang),
+        formatDayShort(scope.day, data.today, words.lang),
       );
   }
 }
@@ -1505,7 +1509,7 @@ function archivedSeasonTile(
 ): AchievementTileVm {
   const words = ctx.words;
   const locale = localeOf(ctx);
-  const title = season.title[locale];
+  const title = LocalizedText.pick(season.title, locale);
   const range = dayRange(
     season.windowFrom,
     season.windowUntil,
@@ -1674,13 +1678,13 @@ export function relatedOf(
       series.categoryId,
     );
     if (category !== null) {
-      scopeTitle = category.title[locale];
+      scopeTitle = LocalizedText.pick(category.title, locale);
       icon = BADGE_CATEGORY_ICONS[category.badgeCategoryKind];
     }
   } else if (series.seasonId !== null) {
     const season = LoyaltyCatalogSystem.season(data.catalog, series.seasonId);
     if (season !== null) {
-      scopeTitle = season.title[locale];
+      scopeTitle = LocalizedText.pick(season.title, locale);
       icon =
         season.seasonKind === SeasonKind.Event
           ? 'loyalty.event'

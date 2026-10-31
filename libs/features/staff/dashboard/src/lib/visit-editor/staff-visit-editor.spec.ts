@@ -4118,7 +4118,11 @@ describe('StaffVisitEditor', () => {
     // meta on them: who — barber, client, appointment".
     const PHOTOS: readonly VisitEditorPhoto[] = [
       {
-        photoId: AppointmentPhotoId.of('p-1'),
+        id: AppointmentPhotoId.of('p-1'),
+        appointmentId: AppointmentId.of('appointment-1'),
+        clientCustomerId: null,
+        takenByUserId: null,
+        path: 'appointmentPhotos/appointment-1/p-1.jpg',
         barberId: BarberId.of('ivan'),
         url: 'https://cdn/p1.jpg',
         takenAtUtcMs: utcMs('2026-08-26T09:05:00.000Z'),
@@ -4130,7 +4134,11 @@ describe('StaffVisitEditor', () => {
         label: null,
       },
       {
-        photoId: AppointmentPhotoId.of('p-2'),
+        id: AppointmentPhotoId.of('p-2'),
+        appointmentId: AppointmentId.of('appointment-1'),
+        clientCustomerId: null,
+        takenByUserId: null,
+        path: 'appointmentPhotos/appointment-1/p-2.jpg',
         barberId: BarberId.of('gone'),
         url: 'https://cdn/p2.jpg',
         takenAtUtcMs: utcMs('2026-08-26T09:40:00.000Z'),
@@ -4144,7 +4152,11 @@ describe('StaffVisitEditor', () => {
     ];
     /** One of the shop's own pictures, pointed at from the gallery page. */
     const ADOPTED: VisitEditorPhoto = {
-      photoId: AppointmentPhotoId.of('p-3'),
+      id: AppointmentPhotoId.of('p-3'),
+      appointmentId: AppointmentId.of('appointment-1'),
+      clientCustomerId: null,
+      takenByUserId: null,
+      path: '/work/modern-cut.jpg',
       barberId: BarberId.of('ivan'),
       url: '/work/modern-cut.jpg',
       takenAtUtcMs: utcMs('2026-08-26T10:00:00.000Z'),
@@ -4441,7 +4453,11 @@ describe('StaffVisitEditor', () => {
     it('words the same moment as Bulgaria writes it in Bulgarian, the year only outside this one (R59)', () => {
       // Last March's picture: 09:05 on 6 March 2025 in the shop's clock.
       const lastYear: VisitEditorPhoto = {
-        photoId: AppointmentPhotoId.of('p-old'),
+        id: AppointmentPhotoId.of('p-old'),
+        appointmentId: AppointmentId.of('appointment-1'),
+        clientCustomerId: null,
+        takenByUserId: null,
+        path: 'appointmentPhotos/appointment-1/p-old.jpg',
         barberId: BarberId.of('ivan'),
         url: 'https://cdn/p-old.jpg',
         takenAtUtcMs: utcMs('2025-03-06T07:05:00.000Z'),

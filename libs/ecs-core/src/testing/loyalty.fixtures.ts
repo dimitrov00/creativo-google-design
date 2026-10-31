@@ -17,7 +17,7 @@ import type {
   StreakDefinition,
   StreakDefinitionVersion,
   TierDefinition,
-  LoyaltyCatalog,
+  LoyaltyCatalogParts,
 } from '@core/entities';
 import {
   CustomerId,
@@ -189,7 +189,7 @@ function collection<E>(documents: { readonly [id: string]: object }): E[] {
     .map(([id, body]) => stored<E>(id, body));
 }
 
-const CATALOG: LoyaltyCatalog = deepFreeze({
+const CATALOG: LoyaltyCatalogParts = deepFreeze({
   categories: collection<BadgeCategory>(loyaltyCatalogJson.badgeCategories),
   series: collection<BadgeSeries>(loyaltyCatalogJson.badgeSeries),
   seasons: collection<Season>(loyaltyCatalogJson.seasons),
@@ -205,7 +205,7 @@ const CATALOG: LoyaltyCatalog = deepFreeze({
  * `LoyaltyCatalogSystem.validate`'s). One frozen value, however often it is
  * asked for.
  */
-export function loyaltyCatalogFixture(): LoyaltyCatalog {
+export function loyaltyCatalogFixture(): LoyaltyCatalogParts {
   return CATALOG;
 }
 

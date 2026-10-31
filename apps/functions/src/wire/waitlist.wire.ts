@@ -1,4 +1,4 @@
-import { Result, WaitlistRequestId } from '@core/primitives';
+import { Result, StoredFields, WaitlistRequestId } from '@core/primitives';
 import { WaitlistError } from '@core/errors';
 import type { WaitlistCall } from '@core/components';
 import type {
@@ -8,7 +8,6 @@ import type {
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
 import {
-  field,
   idOf,
   listOf,
   payloadOf,
@@ -21,8 +20,8 @@ import {
  * THE WAITLIST CALLABLES' WIRE (Phase 4a 4A-4) — flipped with the web's
  * `callableClient`: the request is the call component `WaitlistCall` read
  * into its raw twin (`WaitlistCall.Input`); each pipeline answers the call
- * component's answer itself (`WaitlistCall.Requested` / `.Cancelled`, wired
- * as it is), and a refusal leaves as its ecs-core struct (`refusalOf`: a
+ * component's answer itself (`WaitlistCall.Requested`, the request and its
+ * cancellation alike, wired as it is), and a refusal leaves as its ecs-core struct (`refusalOf`: a
  * store failure thrown).
  *
  * - `requestWaitlist` `{ locationId, days: [{ localDate, windows:
@@ -53,8 +52,8 @@ function daysOf(raw: unknown): readonly WaitlistCall.DayInput[] {
   return raw.map((day: unknown) => ({
     localDate: text(day, 'localDate'),
     windows: listOf(day, 'windows').map((window) => ({
-      startMinutes: minutesOf(field(window, 'startMinutes')),
-      endMinutes: minutesOf(field(window, 'endMinutes')),
+      startMinutes: minutesOf(StoredFields.field(window, 'startMinutes')),
+      endMinutes: minutesOf(StoredFields.field(window, 'endMinutes')),
     })),
   }));
 }
@@ -82,7 +81,7 @@ function cartOf(raw: unknown): WaitlistCall.CartInput {
         locationId: textOrNull(line, 'locationId'),
       })),
     })),
-    cartNextSequence: Number(field(raw, 'cartNextSequence') ?? 0),
+    cartNextSequence: Number(StoredFields.field(raw, 'cartNextSequence') ?? 0),
   };
 }
 
@@ -94,8 +93,8 @@ export function decodeRequestWaitlist(
     ownerUserId: callerUserId(request),
     ask: {
       locationId: textOrNull(payload, 'locationId'),
-      days: daysOf(field(payload, 'days')),
-      cart: cartOf(field(payload, 'cart')),
+      days: daysOf(StoredFields.field(payload, 'days')),
+      cart: cartOf(StoredFields.field(payload, 'cart')),
     },
   });
 }
@@ -107,7 +106,7 @@ export function decodeCancelWaitlist(
   const ownerUserId = callerUserId(request);
   if (ownerUserId === null) return Result.err(WaitlistError.unauthenticated());
   const requestId = idOf(
-    field(payloadOf(request), 'requestId'),
+    StoredFields.field(payloadOf(request), 'requestId'),
     WaitlistRequestId.parse,
   );
   if (requestId === null) {

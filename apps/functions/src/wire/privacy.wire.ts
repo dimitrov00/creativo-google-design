@@ -1,16 +1,10 @@
-import { CustomerId, Result } from '@core/primitives';
+import { CustomerId, Result, StoredFields } from '@core/primitives';
 import { PrivacyError } from '@core/errors';
 import { Roles } from '@core/components';
-import type { ExportClientDataCommand } from '@core/pipelines';
+import type { ClientPrivacyCommand } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
-import {
-  field,
-  idOf,
-  operationIdOf,
-  payloadOf,
-  type WireRequest,
-} from './wire-read';
+import { idOf, operationIdOf, payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE PRIVACY CALLABLES' WIRE (audit-hardening Phase 3, WS-C / WS-D) — the
@@ -18,8 +12,8 @@ import {
  * read-only `previewClientErasure` and resumable `eraseClient`. The request
  * of all three is the call component `ClientPrivacyCall`
  * `{ customerId, operationId }`, decoded by ONE reading
- * (`decodeClientPrivacyCall`: the same gate and field rules) — the
- * erasure's command is the export's (`EraseClientCommand`). The answers are
+ * (`decodeClientPrivacyCall`: the same gate and field rules) into the ONE
+ * command both pipelines take (`ClientPrivacyCommand`). The answers are
  * the pipelines' own, `ClientPrivacyCall.Exported`, `.ErasurePreview` and
  * `.Erasure`, wired as they are (`exportJson` byte for byte); a refusal
  * leaves as itself (`refusalOf`) — the pipeline's `PRIVACY_*` struct, or
@@ -60,7 +54,7 @@ export const ERASE_CLIENT_TIMEOUT_SECONDS = 540;
  */
 export function decodeClientPrivacyCall(
   request: WireRequest,
-): Result<ExportClientDataCommand, EdgeError> {
+): Result<ClientPrivacyCommand, EdgeError> {
   // The caller's gate, answered before the payload is read.
   const callerUid = callerUserId(request);
   if (callerUid === null) return Result.err(PrivacyError.unauthenticated());
@@ -68,7 +62,10 @@ export function decodeClientPrivacyCall(
     return Result.err(PrivacyError.forbidden());
   }
   const payload = payloadOf(request);
-  const customerId = idOf(field(payload, 'customerId'), CustomerId.parse);
+  const customerId = idOf(
+    StoredFields.field(payload, 'customerId'),
+    CustomerId.parse,
+  );
   if (customerId === null) {
     return Result.err(PrivacyError.invalidInput('customerId'));
   }

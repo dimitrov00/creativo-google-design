@@ -30,7 +30,7 @@ export const cancelWaitlist =
   async (
     cmd: CancelWaitlistCommand,
   ): Promise<
-    Result<WaitlistCall.Cancelled, CancelWaitlistRefusal | RepositoryError>
+    Result<WaitlistCall.Requested, CancelWaitlistRefusal | RepositoryError>
   > => {
     const path = [Collections.WaitlistRequests, cmd.requestId];
     // Read once, before the transaction: `decide` may run more than once.

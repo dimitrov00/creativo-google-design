@@ -48,8 +48,6 @@ import {
   RewardOp,
   RewardRefFields,
   Role,
-  StreakQualifier,
-  type StreakQualifierRule,
   StreakRule,
   StreakRuleDirection,
   type StreakState,
@@ -141,7 +139,7 @@ export const seedRuleRequestIdOf = (
 
 /**
  * `streakDefinitions/{id}/versions/{version:06}` for the rule a head the
- * SEED wrote holds in force: the rule alone (`StreakRule.of` — no
+ * SEED wrote holds in force: the rule alone (`StreakRule.sliceOf` — no
  * `headRole`), published by nobody at the instant the head was written,
  * changing nothing (there was no rule before it), never withdrawn.
  */
@@ -151,7 +149,7 @@ export function seedRuleVersionBody(
   publishedAtUtcMs: UtcEpochMs,
 ): Body<StreakDefinitionVersion> {
   return {
-    ...StreakRule.of(rule),
+    ...StreakRule.sliceOf(rule),
     publishedAtUtcMs,
     publishedByUserId: SEED_RULE_PUBLISHER,
     streakTransition: StreakTransition.Grandfather,
@@ -159,34 +157,7 @@ export function seedRuleVersionBody(
     changed: [],
     requestId: seedRuleRequestIdOf(streakId, rule.version),
     withdrawnAtUtcMs: null,
-  } satisfies Omit<StreakDefinitionVersion, 'id'>;
-}
-
-/**
- * Does a visit of these services (in these categories) keep the rhythm
- * under the rule's qualifier? It must hold a service: the seed books no
- * service that only rides along with another, so every one counts as its
- * own. With a list, one of the visit's services (or of their categories)
- * must be on it.
- */
-export function qualifierCounts(
-  qualifier: StreakQualifierRule,
-  serviceIds: readonly string[],
-  categoryIds: readonly string[],
-): boolean {
-  if (serviceIds.length === 0) return false;
-  switch (qualifier.streakQualifier) {
-    case StreakQualifier.AnyVisit:
-      return true;
-    case StreakQualifier.Services:
-      return serviceIds.some((id) =>
-        qualifier.qualifierServiceIds.includes(ServiceId.of(id)),
-      );
-    case StreakQualifier.Categories:
-      return categoryIds.some((id) =>
-        qualifier.qualifierCategoryIds.some((listed) => listed === id),
-      );
-  }
+  } satisfies Body<StreakDefinitionVersion>;
 }
 
 // ── An account holder's documents ──────────────────────────────────────────
@@ -259,7 +230,7 @@ export function loyaltyAccountBody(
     tierRemaining: plan.tier.remaining,
     ...TierOverride.none(),
     ...PointsExpiry.none(),
-  } satisfies Omit<LoyaltyAccount, 'id'>;
+  } satisfies Body<LoyaltyAccount>;
 }
 
 /** «Рекорди»: the longest rhythm, and the day of the visit that reached it. */
@@ -334,7 +305,7 @@ export function badgeProgressBody(
         count: level.count,
       };
     }),
-  } satisfies Omit<BadgeProgress, 'id'>;
+  } satisfies Body<BadgeProgress>;
 }
 
 /** `…/seasonProgress/{seasonId}`: the season's track, mirrored. */
@@ -342,7 +313,7 @@ export function seasonProgressBody(
   trackValue: number,
   trackLevel: number,
 ): Body<SeasonProgress> {
-  return { trackValue, trackLevel } satisfies Omit<SeasonProgress, 'id'>;
+  return { trackValue, trackLevel } satisfies Body<SeasonProgress>;
 }
 
 // ── The journal ────────────────────────────────────────────────────────────
@@ -476,5 +447,5 @@ export function journalEntryBody(row: SeedJournalRow): Body<JournalEntry> {
     ...row.actor,
     ...row.source,
     ...row.effect,
-  } satisfies Omit<JournalEntry, 'id'>;
+  } satisfies Body<JournalEntry>;
 }

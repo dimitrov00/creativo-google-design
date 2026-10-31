@@ -4,14 +4,14 @@ import { RecurrenceEndRule } from './recurrence-end-rule.data';
 import { RecurrencePattern } from './recurrence-pattern.data';
 import { RecurrenceRule } from './recurrence-rule.data';
 
-describe('RecurrenceEndRule.of — the end slice, as a fresh struct', () => {
+describe('RecurrenceEndRule.sliceOf — the end slice, as a fresh struct', () => {
   it('keeps only the end fields of a whole rule', () => {
     const rule = RecurrenceRule.of(
       RecurrencePattern.monthlyByDate(24),
       2,
       RecurrenceEndRule.until(localDate('2026-12-31')),
     );
-    expect(RecurrenceEndRule.of(rule)).toEqual({
+    expect(RecurrenceEndRule.sliceOf(rule)).toEqual({
       recurrenceEnd: 'UNTIL',
       untilLocalDate: '2026-12-31',
     });
@@ -20,7 +20,7 @@ describe('RecurrenceEndRule.of — the end slice, as a fresh struct', () => {
       1,
       RecurrenceEndRule.count(5),
     );
-    expect(RecurrenceEndRule.of(counted)).toEqual({
+    expect(RecurrenceEndRule.sliceOf(counted)).toEqual({
       recurrenceEnd: 'COUNT',
       occurrenceCount: 5,
     });
@@ -28,9 +28,9 @@ describe('RecurrenceEndRule.of — the end slice, as a fresh struct', () => {
 
   it('is pure — a fresh struct, the input unchanged', () => {
     const end = deepFreeze(RecurrenceEndRule.count(3));
-    const copy = RecurrenceEndRule.of(end);
+    const copy = RecurrenceEndRule.sliceOf(end);
     expect(copy).toEqual(end);
     expect(copy).not.toBe(end);
-    expect(RecurrenceEndRule.of(end)).toEqual(copy);
+    expect(RecurrenceEndRule.sliceOf(end)).toEqual(copy);
   });
 });

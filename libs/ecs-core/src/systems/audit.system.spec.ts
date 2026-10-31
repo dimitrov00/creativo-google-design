@@ -1044,7 +1044,7 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     });
   });
 
-  it('carries the role and status tags the decoder found (WS-3, DEP-13) — the lists copied', () => {
+  it('carries the role and status tags the decoder found (WS-3, DEP-13) — the lists as given', () => {
     const rolesTo: Role[] = [Role.Barber];
     const plan = unwrapOk(
       AuditSystem.planProfileChange(
@@ -1062,7 +1062,10 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
         AT,
       ),
     );
-    rolesTo.push(Role.Admin);
+    const row = plan?.row;
+    expect(
+      row !== undefined && 'profileRolesTo' in row && row.profileRolesTo,
+    ).toBe(rolesTo);
     expect(plan?.row).toMatchObject({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['roles', 'accountStatus'],

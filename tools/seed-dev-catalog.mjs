@@ -18,7 +18,7 @@
  * Every document this file writes is a FLAT ARCHETYPE BODY (Laws 5–7,
  * flip 1 of the ECS migration): `tools/seed/fixtures/*.fixtures.ts` builds
  * each one and holds it to its `@core/entities` type with
- * `satisfies Omit<X, 'id'>`, so a stale shape fails
+ * `satisfies Body<X>`, so a stale shape fails
  * `pnpm nx typecheck seed-tools` before it could fail a query. The client
  * book is authored there too, in the entity's own vocabulary
  * (`book.fixtures.ts`: the clients, one history plan each, the visits
@@ -375,7 +375,6 @@ const APPOINTMENT_DAYS = clientBook.appointmentDays;
 
 for (const schedule of SCHEDULES) {
   const barberId = schedule.id;
-  // eslint-disable-next-line security/detect-object-injection -- fixed keys.
   const pattern = BUSY_PATTERN[barberId] ?? [];
   for (let offset = APPOINTMENT_DAYS; offset < BUSY_HORIZON_DAYS; offset++) {
     const localDate = calendar.dayKeyAt(offset);
@@ -683,7 +682,7 @@ console.log(`seeded ${clientBook.customers.length} client records`);
  *
  * ### The document IS the flat `Appointment` body
  * Built by `appointmentBody` (`tools/seed/fixtures/appointments.fixtures.ts`,
- * `satisfies Omit<Appointment, 'id'>`), its root lifecycle summarised from
+ * `satisfies Body<Appointment>`), its root lifecycle summarised from
  * its seats (`SeatOutcome.summarize`) and its query mirrors recomputed from
  * them by `AppointmentIndexSystem`, as every write plan derives both: the
  * account keys (`ownerUserId`, `subjectUserIds`) beside the client records
@@ -743,7 +742,7 @@ const statsProjection = seed.projectClientStats({
   ...seed.firestoreSettingsPorts(db),
   ...seed.firestoreCatalogPorts(db),
   defaultLocationId: seed.TenantConfig.DEFAULT.defaultLocationId,
-  log: () => {},
+  log: () => undefined,
 });
 
 /**

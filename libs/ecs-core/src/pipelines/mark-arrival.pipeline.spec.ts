@@ -2,7 +2,6 @@ import {
   Actor,
   AuditAction,
   BookingLifecycle,
-  type DocBody,
   MarkArrivalAction,
   WriteOp,
 } from '@core/components';
@@ -22,6 +21,7 @@ import {
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   contendedCommit,
@@ -37,11 +37,6 @@ import { markArrival } from './mark-arrival.pipeline';
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
 /** The tap's client-minted operation id (WS-4.1 — required on the call). */
 const OPERATION = OperationId.of('arrival-op-0123456789');
-
-function bodyOf(appointment: Appointment): DocBody {
-  const { id: _id, ...body } = appointment;
-  return body;
-}
 
 function rig(appointments: readonly Appointment[]) {
   const store = memoryStore(

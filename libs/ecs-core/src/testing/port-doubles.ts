@@ -66,7 +66,7 @@ import {
   type InboxNotification,
   type JournalEntry,
   type LoyaltyAccount,
-  type LoyaltyCatalog,
+  type LoyaltyCatalogParts,
   type Otp,
   type Position,
   type ScheduleException,
@@ -1118,7 +1118,7 @@ export type LoyaltyCatalogDoubleOptions = {
  * order) unless one is given; with `failing`, a `RepositoryError`.
  */
 export function memoryLoyaltyCatalogReadPorts(
-  catalog: LoyaltyCatalog = loyaltyCatalogFixture(),
+  catalog: LoyaltyCatalogParts = loyaltyCatalogFixture(),
   options: Partial<LoyaltyCatalogDoubleOptions> = {},
 ): LoyaltyCatalogReadPorts {
   return {

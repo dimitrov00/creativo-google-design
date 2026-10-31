@@ -1,6 +1,7 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
-import { Locale, Tag } from '@core/primitives';
+import { Locale } from '@core/primitives';
+import { localeFor } from '@creativo/infrastructure/i18n';
 
 export interface LanguageOption {
   readonly code: Locale;
@@ -27,7 +28,7 @@ export class LanguageService {
   private readonly transloco = inject(TranslocoService);
 
   readonly activeLang = computed<Locale>(() =>
-    Tag.or(Locale, this.transloco.activeLang(), Locale.Bg),
+    localeFor(this.transloco.activeLang()),
   );
 
   /** One entry per locale — adding a language is a single line here. */

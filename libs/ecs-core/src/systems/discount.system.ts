@@ -244,7 +244,7 @@ export const DiscountSystem = {
       label: discount.label,
       grantedAtUtcMs: discount.appliedAtUtcMs,
       minSpendCents: null,
-      ...CouponValue.of(discount),
+      ...CouponValue.sliceOf(discount),
     };
   },
 
@@ -357,7 +357,7 @@ export const DiscountSystem = {
       label: coupon.name,
       code,
       exclusive: Combinability.isExclusive(coupon.combinability),
-      ...CouponValue.of(coupon),
+      ...CouponValue.sliceOf(coupon),
     };
   },
 } as const;

@@ -179,11 +179,6 @@ export type AuditContext =
   | AuditContext.ClientExported
   | AuditContext.ClientErasure;
 
-/** A copy of a nullable id list — `null` stays `null`. */
-function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
-  return list === null ? null : [...list];
-}
-
 /** A profile row's four tag fields when neither `roles` nor `accountStatus` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
   profileRolesFrom: null,
@@ -202,7 +197,7 @@ export const AuditContext = {
   ): AuditContext.Placement {
     return { auditAction, placementLocationId };
   },
-  /** Copies the delta's id lists, so a caller's later mutation cannot rewrite the row. */
+  /** The delta's id lists are carried as given — read-only, never copied (Law 3; no allocation). */
   staffEdit(
     auditAction: StaffEditAction,
     editRevision: number,
@@ -214,8 +209,8 @@ export const AuditContext = {
       editRepriceFromCents: delta.editRepriceFromCents,
       editRepriceToCents: delta.editRepriceToCents,
       editCurrency: delta.editCurrency,
-      editDiscountFromIds: copyOrNull(delta.editDiscountFromIds),
-      editDiscountIds: copyOrNull(delta.editDiscountIds),
+      editDiscountFromIds: delta.editDiscountFromIds,
+      editDiscountIds: delta.editDiscountIds,
       editVoucherDebitCents: delta.editVoucherDebitCents,
       editDurationFromMinutes: delta.editDurationFromMinutes,
       editDurationToMinutes: delta.editDurationToMinutes,
@@ -225,11 +220,11 @@ export const AuditContext = {
       editMoveToLocalDate: delta.editMoveToLocalDate,
       editMoveFromStartMinutes: delta.editMoveFromStartMinutes,
       editMoveToStartMinutes: delta.editMoveToStartMinutes,
-      editRestaffFromBarberIds: copyOrNull(delta.editRestaffFromBarberIds),
-      editRestaffToBarberIds: copyOrNull(delta.editRestaffToBarberIds),
+      editRestaffFromBarberIds: delta.editRestaffFromBarberIds,
+      editRestaffToBarberIds: delta.editRestaffToBarberIds,
     };
   },
-  /** Copies the barber lists, so a caller's later mutation cannot rewrite the row. */
+  /** The delta's barber lists are carried as given — read-only, never copied (Law 3; no allocation). */
   rescheduled(
     rescheduleRevision: number,
     delta: RescheduleDelta,
@@ -241,8 +236,8 @@ export const AuditContext = {
       rescheduleToLocalDate: delta.rescheduleToLocalDate,
       rescheduleFromStartMinutes: delta.rescheduleFromStartMinutes,
       rescheduleToStartMinutes: delta.rescheduleToStartMinutes,
-      rescheduleFromBarberIds: [...delta.rescheduleFromBarberIds],
-      rescheduleToBarberIds: [...delta.rescheduleToBarberIds],
+      rescheduleFromBarberIds: delta.rescheduleFromBarberIds,
+      rescheduleToBarberIds: delta.rescheduleToBarberIds,
       rescheduleFromLocationId: delta.rescheduleFromLocationId,
       rescheduleToLocationId: delta.rescheduleToLocationId,
     };
@@ -299,7 +294,7 @@ export const AuditContext = {
       streakEffectiveFrom: facts.streakEffectiveFrom,
       streakTransition: facts.streakTransition,
       streakRuleDirection: facts.streakRuleDirection,
-      streakChanged: [...facts.streakChanged],
+      streakChanged: facts.streakChanged,
       streakReplacedVersion: facts.streakReplacedVersion,
     };
   },
@@ -332,7 +327,7 @@ export const AuditContext = {
   /**
    * A profile row that names no role or status change — the four tag pairs
    * `null` (an owner's own edit never touches `roles` or `accountStatus`).
-   * Copies the field list, so a caller's later mutation cannot rewrite the row.
+   * The field list is carried as given.
    */
   profile(
     auditAction: ProfileAction,
@@ -343,7 +338,8 @@ export const AuditContext = {
   /**
    * A profile row with its role / status before-and-after (audit-hardening
    * WS-3: each pair set iff its field changed — `AuditSystem.profileTagDelta`).
-   * Copies the lists, so a caller's later mutation cannot rewrite the row.
+   * The lists are carried as given — read-only, never copied (Law 3; no
+   * allocation).
    */
   profileWithTags(
     auditAction: ProfileAction,
@@ -352,9 +348,9 @@ export const AuditContext = {
   ): AuditContext.Profile {
     return {
       auditAction,
-      profileFields: [...profileFields],
-      profileRolesFrom: copyOrNull(tags.profileRolesFrom),
-      profileRolesTo: copyOrNull(tags.profileRolesTo),
+      profileFields,
+      profileRolesFrom: tags.profileRolesFrom,
+      profileRolesTo: tags.profileRolesTo,
       profileAccountStatusFrom: tags.profileAccountStatusFrom,
       profileAccountStatusTo: tags.profileAccountStatusTo,
     };
@@ -387,7 +383,7 @@ export const AuditContext = {
       impersonationEndReason,
     };
   },
-  /** A governed document write; copies the field-name list. */
+  /** A governed document write; the field-name list is carried as given. */
   governed(
     auditAction: GovernedAction,
     governedCollection: GovernedCollection,
@@ -396,7 +392,7 @@ export const AuditContext = {
     return {
       auditAction,
       governedCollection,
-      governedFields: [...governedFields],
+      governedFields,
     };
   },
   /**

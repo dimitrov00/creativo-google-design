@@ -1,4 +1,11 @@
-import { Result, defect, LocalDate, Tag } from '@core/primitives';
+import {
+  Result,
+  defect,
+  LocalDate,
+  type ServiceCategoryId,
+  type ServiceId,
+  Tag,
+} from '@core/primitives';
 import {
   EngagementError,
   type StreakScheduleError,
@@ -9,6 +16,7 @@ import {
   StreakIntervalRule,
   StreakIntervalSource,
   QualifierComparison,
+  StreakQualifier,
   StreakQualifierRule,
   HeadRole,
   StreakOnBreak,
@@ -335,7 +343,7 @@ export const StreakRuleSystem = {
     scheduled: ScheduledStreakRule | null,
   ): Result<StreakSchedule, readonly StreakScheduleError[]> {
     const inForce: StreakHeadRule = {
-      ...StreakRule.of(current),
+      ...StreakRule.sliceOf(current),
       headRole: HeadRole.Current,
       streakTransition: null,
     };
@@ -372,7 +380,7 @@ export const StreakRuleSystem = {
           rules: [
             inForce,
             {
-              ...StreakRule.of(scheduled),
+              ...StreakRule.sliceOf(scheduled),
               headRole: HeadRole.Scheduled,
               streakTransition: scheduled.streakTransition,
             },
@@ -591,7 +599,7 @@ export const StreakRuleSystem = {
     const shopExcuses = StreakRule.coversShopExcuses(rule.excuses);
     return {
       enabled: rule.enabled,
-      interval: StreakIntervalRule.of(rule),
+      interval: StreakIntervalRule.sliceOf(rule),
       graceDays: rule.graceDays,
       protections:
         rule.protectionsEnabled && rule.protectionsMaxBanked > 0
@@ -610,7 +618,7 @@ export const StreakRuleSystem = {
           ? { windowDays: rule.repairWindowDays }
           : null,
       holdsCount: rule.onBreak === StreakOnBreak.Hold,
-      qualifier: StreakQualifierRule.of(rule),
+      qualifier: StreakQualifierRule.sliceOf(rule),
     };
   },
 
@@ -681,5 +689,44 @@ export const StreakRuleSystem = {
     readonly excuses: readonly StreakExcuse[];
   }): StreakExcuseCount {
     return { on: rule.excuses.length, all: StreakRule.EXCUSES.length };
+  },
+
+  /**
+   * Does a visit of these services (in these categories) keep the rhythm
+   * under the rule's qualifier? It must hold a service — a visit of none
+   * keeps nothing. `ANY_VISIT` takes every visit that does; with a list,
+   * one of the visit's services (`SERVICES`) or of their categories
+   * (`CATEGORIES`) must be on it. Brands compared with `===`, linear scans,
+   * no allocation. The one home of the qualification the seed's fold and a
+   * future projector share (law-fix wave B, B8).
+   */
+  qualifies(
+    qualifier: StreakQualifierRule,
+    serviceIds: readonly ServiceId[],
+    categoryIds: readonly ServiceCategoryId[],
+  ): boolean {
+    if (serviceIds.length === 0) return false;
+    switch (qualifier.streakQualifier) {
+      case StreakQualifier.AnyVisit:
+        return true;
+      case StreakQualifier.Services: {
+        const listed = qualifier.qualifierServiceIds;
+        for (let i = 0; i < serviceIds.length; i++) {
+          for (let j = 0; j < listed.length; j++) {
+            if (serviceIds[i] === listed[j]) return true;
+          }
+        }
+        return false;
+      }
+      case StreakQualifier.Categories: {
+        const listed = qualifier.qualifierCategoryIds;
+        for (let i = 0; i < categoryIds.length; i++) {
+          for (let j = 0; j < listed.length; j++) {
+            if (categoryIds[i] === listed[j]) return true;
+          }
+        }
+        return false;
+      }
+    }
   },
 } as const;

@@ -103,7 +103,7 @@ interface Server {
   readonly calls: GatewayCall[];
   commitAnswer: Result<BookingCall.Committed, PipelineError>;
   /** A move's answer, by its 1-based call count. */
-  moveAnswer: (call: number) => Result<BookingCall.Rescheduled, PipelineError>;
+  moveAnswer: (call: number) => Result<BookingCall.Committed, PipelineError>;
   commits(): readonly BookingCall[];
   moves(): readonly BookingCall.Reschedule[];
 }
@@ -113,7 +113,7 @@ function server(): Server {
   let moveCount = 0;
   const answers: {
     commit: Result<BookingCall.Committed, PipelineError>;
-    move: (call: number) => Result<BookingCall.Rescheduled, PipelineError>;
+    move: (call: number) => Result<BookingCall.Committed, PipelineError>;
   } = {
     commit: Result.ok({ appointmentId: AppointmentId.of('appt-1') }),
     move: () => Result.ok({ appointmentId: AppointmentId.of('appt-moving') }),

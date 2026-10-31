@@ -23,12 +23,13 @@ import {
   type ReadTx,
 } from '@core/ports';
 import {
+  FailureCodeSystem,
   type StoredDocument,
   StoredDocumentSystem,
   type StoredGuardOf,
-  TriggerAttemptSystem,
 } from '@core/systems';
 import { withPurgeAt } from './firestore-ttl.adapter';
+import { ALREADY_EXISTS } from './store-answer';
 
 /**
  * The transactional sandwich over the Admin SDK (`tx.port.ts`, blueprint §4):
@@ -95,9 +96,6 @@ import { withPurgeAt } from './firestore-ttl.adapter';
 
 /** The reason a plan that sets and deletes one key is refused with (the doubles use the same). */
 export const FIELD_SET_AND_DELETED = 'field-set-and-deleted';
-
-/** Firestore's canonical name for gRPC 6, as `TriggerAttemptSystem.failureCode` reads it. */
-const ALREADY_EXISTS = 'already-exists';
 
 /**
  * Logs one refusal under the line every functions read site logs a refused
@@ -437,7 +435,7 @@ export const firestoreCommitPlan =
       }
       return settled;
     } catch (error) {
-      if (TriggerAttemptSystem.failureCode(error) !== ALREADY_EXISTS) {
+      if (FailureCodeSystem.codeOf(error) !== ALREADY_EXISTS) {
         throw error;
       }
       return Result.err(

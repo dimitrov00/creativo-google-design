@@ -72,7 +72,7 @@ function withPattern(
   return RecurrenceRule.of(
     pattern,
     rule.recurrenceInterval,
-    RecurrenceEndRule.of(rule),
+    RecurrenceEndRule.sliceOf(rule),
   );
 }
 

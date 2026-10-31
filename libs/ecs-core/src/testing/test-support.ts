@@ -41,6 +41,7 @@ import {
 } from '@core/components';
 import {
   Result,
+  StoredFields,
   AppointmentId,
   AuditResourceId,
   BarberId,
@@ -380,6 +381,16 @@ export function memoryStore(
   return store;
 }
 
+/**
+ * A stored document's body — the entity minus its id (Law 5), key order
+ * kept: the ONE spec spelling of a seeded document (the functions adapters
+ * share theirs in `apps/functions/src/adapters/store-answer.ts`).
+ */
+export function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
+  const { id: _id, ...body } = entity;
+  return body;
+}
+
 function pathKey(path: DocPath): string {
   return path.join('/');
 }
@@ -390,11 +401,6 @@ function entityAt<E>(store: MemoryStore, path: DocPath): E | null {
   return { id: path[path.length - 1], ...body } as E;
 }
 
-/** A field of a map by name, or `undefined` — no dynamic index. */
-function own(map: object, name: string): unknown {
-  return Object.getOwnPropertyDescriptor(map, name)?.value;
-}
-
 /**
  * A `where`/`orderBy` field read off a body: a ROOT key of the flat document
  * (`bookingStatus`, `utcEpochMs` — Laws 5 and 6, `QueryFilter`), read as is.
@@ -402,7 +408,7 @@ function own(map: object, name: string): unknown {
  * matches nothing.
  */
 function fieldAt(body: DocBody, field: string): unknown {
-  return own(body, field);
+  return StoredFields.field(body, field);
 }
 
 /** Firestore value equality: deep, key-order independent for maps. */
@@ -420,7 +426,8 @@ function sameValue(a: unknown, b: unknown): boolean {
   const aEntries = Object.entries(a);
   if (aEntries.length !== Object.keys(b).length) return false;
   for (const [key, value] of aEntries) {
-    if (!Object.hasOwn(b, key) || !sameValue(value, own(b, key))) return false;
+    if (!Object.hasOwn(b, key) || !sameValue(value, StoredFields.field(b, key)))
+      return false;
   }
   return true;
 }

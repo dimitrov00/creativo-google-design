@@ -10,7 +10,6 @@ import {
   Combinability,
   CouponValue,
   DiscountProvenance,
-  type DocBody,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
@@ -50,6 +49,7 @@ import {
 } from '@core/entities';
 import { AuditSystem, CouponGrantSystem } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   auditRowsOf,
   cents,
@@ -70,11 +70,6 @@ import { cancelAppointment } from './cancel-appointment.pipeline';
 const CLIENT = Actor.user(FIXTURE_IDS.client);
 const VOUCHER = GiftVoucherId.of('v-1');
 const GRANT = CouponGrantId.of('grant-1');
-
-function bodyOf<E extends { readonly id: string }>(entity: E): DocBody {
-  const { id: _id, ...body } = entity;
-  return body;
-}
 
 /** The client's visit three days ahead — well outside the 24 h window. */
 function laterVisit(

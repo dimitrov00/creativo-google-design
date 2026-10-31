@@ -116,12 +116,12 @@ describe('GrantLifecycle', () => {
     const multi = unwrapOk(GrantCapacityTerms.multiUse(2));
     const active = GrantLifecycle.active(multi, GrantExpiryTerms.at(at(9)));
     const grant = { ...active, couponId: 'c-1' };
-    expect(GrantLifecycle.of(grant)).toEqual(active);
+    expect(GrantLifecycle.sliceOf(grant)).toEqual(active);
     const used = GrantLifecycle.used(active, at(3), 'seed');
     const spent = { ...used, couponId: 'c-1' };
-    expect(GrantLifecycle.of(spent)).toEqual(used);
+    expect(GrantLifecycle.sliceOf(spent)).toEqual(used);
     const expired = GrantLifecycle.expired(at(5), at(4));
-    expect(GrantLifecycle.of(expired)).toEqual({
+    expect(GrantLifecycle.sliceOf(expired)).toEqual({
       grantStatus: 'EXPIRED',
       expiredAtUtcMs: 5,
       expiryScheduledAtUtcMs: 4,
@@ -131,7 +131,7 @@ describe('GrantLifecycle', () => {
       UserId.of('u-admin'),
       'abuse',
     );
-    expect(GrantLifecycle.of(revoked)).toEqual({
+    expect(GrantLifecycle.sliceOf(revoked)).toEqual({
       grantStatus: 'REVOKED',
       revokedAtUtcMs: 6,
       revokedByUserId: 'u-admin',

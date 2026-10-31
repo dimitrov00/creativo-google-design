@@ -43,6 +43,7 @@ import { firestoreNotificationPorts } from '../adapters/firestore-notifications.
 import { firestoreSchedulePorts } from '../adapters/firestore-schedules.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { firestoreWaitlistPorts } from '../adapters/firestore-waitlist.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * The waitlist matcher against the REAL Firestore emulator: a match is ONE
@@ -67,12 +68,6 @@ const OWNER = FIXTURE_IDS.client;
 /** Tuesday, a day ahead of the pinned Monday 09:00. */
 const DAY = localDate('2026-09-29');
 const REQUEST = WaitlistRequestId.of('wl_integration');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 const request: WaitlistRequest = {
   id: REQUEST,

@@ -1,4 +1,4 @@
-import { Result, Tag } from '@core/primitives';
+import { Result, StoredFields, Tag } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 
 /**
@@ -13,11 +13,6 @@ import { PipelineError, PipelineErrorCode } from '@core/errors';
  */
 export type CallAnswer = { readonly [field: string]: unknown };
 
-/** One own field of the answer, `undefined` when it has none. */
-function fieldOf(answer: CallAnswer, name: string): unknown {
-  return Object.getOwnPropertyDescriptor(answer, name)?.value;
-}
-
 export const CallAnswer = {
   /** The answer as an object of fields, or `null` when it is no object. */
   read(raw: unknown): CallAnswer | null {
@@ -26,9 +21,6 @@ export const CallAnswer = {
       : null;
   },
 
-  /** One own field, as received (`undefined` when absent). */
-  field: fieldOf,
-
   /** The one refusal of an answer the call cannot use. */
   unusable<T>(): Result<T, PipelineError> {
     return Result.err(PipelineError.bare(PipelineErrorCode.Unknown));
@@ -36,19 +28,19 @@ export const CallAnswer = {
 
   /** A text field, `null` when absent or not a string. */
   text(answer: CallAnswer, name: string): string | null {
-    const value = fieldOf(answer, name);
+    const value = StoredFields.field(answer, name);
     return typeof value === 'string' ? value : null;
   },
 
   /** A boolean field, `null` when absent or not a boolean. */
   flag(answer: CallAnswer, name: string): boolean | null {
-    const value = fieldOf(answer, name);
+    const value = StoredFields.field(answer, name);
     return typeof value === 'boolean' ? value : null;
   },
 
   /** A whole-number field (≥ `min`), `null` otherwise. */
   whole(answer: CallAnswer, name: string, min: number): number | null {
-    const value = fieldOf(answer, name);
+    const value = StoredFields.field(answer, name);
     return typeof value === 'number' &&
       Number.isSafeInteger(value) &&
       value >= min
@@ -65,7 +57,7 @@ export const CallAnswer = {
     name: string,
     parse: (raw: string) => Result<T, unknown>,
   ): T | null {
-    const value = fieldOf(answer, name);
+    const value = StoredFields.field(answer, name);
     if (typeof value !== 'string') return null;
     const parsed = parse(value);
     return parsed.ok ? parsed.value : null;
@@ -80,7 +72,7 @@ export const CallAnswer = {
     name: string,
     d: D,
   ): Tag<D> | null {
-    const value = fieldOf(answer, name);
+    const value = StoredFields.field(answer, name);
     return Tag.has(d, value) ? value : null;
   },
 
@@ -94,7 +86,7 @@ export const CallAnswer = {
     name: string,
     values: readonly T[],
   ): T | null {
-    const value = fieldOf(answer, name);
+    const value = StoredFields.field(answer, name);
     for (let i = 0; i < values.length; i++) {
       if (values[i] === value) return values[i] as T;
     }

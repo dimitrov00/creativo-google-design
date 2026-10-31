@@ -2,6 +2,7 @@ import {
   ClientOperationId,
   OperationId,
   Result,
+  StoredFields,
   Tag,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -38,28 +39,21 @@ export function payloadOf(request: WireRequest): Payload {
   return data !== null && typeof data === 'object' ? (data as Payload) : {};
 }
 
-/** A field of an untrusted object by name — no dynamic index; `undefined` when absent. */
-export function field(source: unknown, name: string): unknown {
-  return source !== null && typeof source === 'object'
-    ? Object.getOwnPropertyDescriptor(source, name)?.value
-    : undefined;
-}
-
 /** `String(x ?? '')` — the wire's reading of a text field. */
 export function text(source: unknown, name: string): string {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return value === undefined || value === null ? '' : String(value);
 }
 
 /** A text field that is present and not `null`, else `null` (`String`-coerced as the wire reads text). */
 export function textOrNull(source: unknown, name: string): string | null {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return value === undefined || value === null ? null : String(value);
 }
 
 /** A list field, or none. */
 export function listOf(source: unknown, name: string): readonly unknown[] {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return Array.isArray(value) ? value : [];
 }
 
@@ -76,7 +70,7 @@ export function eventInstantOf(time: string): UtcEpochMs | null {
 
 /** A number field as sent, or `null` for anything that is not a number. */
 export function numberOrNull(source: unknown, name: string): number | null {
-  const value = field(source, name);
+  const value = StoredFields.field(source, name);
   return typeof value === 'number' ? value : null;
 }
 

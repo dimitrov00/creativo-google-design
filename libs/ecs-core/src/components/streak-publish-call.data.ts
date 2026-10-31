@@ -2,6 +2,7 @@ import {
   LocalDate,
   type PublishRequestId,
   Result,
+  StoredFields,
   type StreakDefinitionId,
 } from '@core/primitives';
 import {
@@ -31,7 +32,7 @@ export type StreakPublishOutcome =
 
 /** A day field holds a day, or nothing (`null`/absent) — never anything else. */
 function dayFieldOk(answer: CallAnswer, name: string): boolean {
-  const raw = CallAnswer.field(answer, name);
+  const raw = StoredFields.field(answer, name);
   return (
     raw === null ||
     raw === undefined ||
@@ -161,7 +162,7 @@ export const StreakPublishCall = {
   decodeAnswer(raw: unknown): Result<StreakPublishCall.Answer, PipelineError> {
     const answer = CallAnswer.read(raw);
     if (answer === null) return CallAnswer.unusable();
-    switch (CallAnswer.field(answer, 'streakPublishOutcome')) {
+    switch (StoredFields.field(answer, 'streakPublishOutcome')) {
       case StreakPublishOutcome.Published: {
         const version = CallAnswer.whole(answer, 'version', 1);
         const day = dayFieldOf(answer, 'effectiveFromLocalDate');
@@ -190,7 +191,7 @@ export const StreakPublishCall = {
           'errorCode',
           StreakPublishError.ANSWERED_CODES,
         );
-        const rawFields = CallAnswer.field(answer, 'fields');
+        const rawFields = StoredFields.field(answer, 'fields');
         if (
           errorCode === null ||
           !Array.isArray(rawFields) ||

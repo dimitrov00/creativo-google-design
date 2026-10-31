@@ -5,6 +5,7 @@ import { RepositoryErrorCode } from '@core/errors';
 import { FIXTURE_NOW_UTC_MS, otpFixture } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreOtpPorts } from './firestore-otps.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The `otps` store (identity flip (2)): the flat body spread both ways, the
@@ -14,12 +15,6 @@ import { firestoreOtpPorts } from './firestore-otps.adapter';
 
 const DESTINATION = Identifier.of('client@example.com');
 const minus = (ms: number) => UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -ms);
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 function seeded(...otps: ReturnType<typeof otpFixture>[]) {
   return createProjectionFirestore(

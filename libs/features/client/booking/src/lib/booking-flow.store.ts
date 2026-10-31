@@ -825,7 +825,7 @@ export class BookingFlowStore {
     moving: HeldMove,
     selection: ScheduleSelection,
     seats: readonly BookingCall.Seat[],
-  ): Promise<Result<BookingCall.Rescheduled, PipelineError>> {
+  ): Promise<Result<BookingCall.Committed, PipelineError>> {
     const attemptId = this._attemptId;
     if (attemptId === null) {
       return Result.err(PipelineError.bare(PipelineErrorCode.InvalidRequest));
@@ -1147,7 +1147,7 @@ export class BookingFlowStore {
     // Whatever the booker captured or overrode, before the step branches —
     // it belongs to the booking, not to any one step of it. So do the visit
     // it was made from and the one it moves; `claim` re-checks their reader.
-    this._contact.set(BookingContact.of(draft));
+    this._contact.set(BookingContact.sliceOf(draft));
     this._bookedFrom.set(
       draft.bookingDraftOrigin === BookingDraftOrigin.BookedFrom
         ? {

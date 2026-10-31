@@ -104,7 +104,7 @@ export const Seat = {
       cleanupMinutes: terms.cleanupMinutes,
       catalogPriceCents: terms.catalogPriceCents,
       catalogDurationMinutes: terms.catalogDurationMinutes,
-      ...SeatOccupant.of(occupant),
+      ...SeatOccupant.sliceOf(occupant),
       ...outcomeOf(outcome),
     };
   },

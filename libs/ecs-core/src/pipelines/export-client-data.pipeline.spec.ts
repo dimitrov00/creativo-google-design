@@ -46,7 +46,7 @@ import {
 } from '@core/testing';
 import { ClientExportSystem, EXPORT_MAX_DOCUMENTS } from '@core/systems';
 import {
-  type ExportClientDataCommand,
+  type ClientPrivacyCommand,
   type ExportClientDataPorts,
   exportClientData,
 } from './export-client-data.pipeline';
@@ -90,7 +90,7 @@ type Rig = {
   readonly telemetry: ReturnType<typeof recordingTelemetry>;
   readonly reads: readonly string[];
   readonly run: (
-    cmd?: Partial<ExportClientDataCommand>,
+    cmd?: Partial<ClientPrivacyCommand>,
   ) => ReturnType<ReturnType<typeof exportClientData>>;
 };
 
@@ -459,7 +459,7 @@ describe('exportClientData — the reads', () => {
       (visit) => visit['id'] === removed.id,
     );
     expect(exported).toMatchObject({
-      ...BookingContact.of(removed),
+      ...BookingContact.sliceOf(removed),
       subjectCustomerIds: [world.other.customerId],
     });
     expect(bundle.appointmentNotes.map((entry) => entry['id'])).not.toContain(

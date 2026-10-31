@@ -133,7 +133,7 @@ export const BookingContact = {
    * A projection: the contact slice of a value that carries one (a whole
    * `Appointment`, a draft) — exactly the four contact fields, copied.
    */
-  of<C extends BookingContact>(contact: C): BookingContact {
+  sliceOf<C extends BookingContact>(contact: C): BookingContact {
     return {
       contactName: contact.contactName,
       contactPhone: contact.contactPhone,

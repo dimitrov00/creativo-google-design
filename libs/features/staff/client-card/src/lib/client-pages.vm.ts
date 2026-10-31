@@ -269,8 +269,8 @@ export interface MedalStripVm {
 
 /**
  * One past cut: a tile of the glance rail and, through `store.photoById`,
- * the read-only `photo` page — which the editor maps to its own
- * `VisitEditorPhoto` (this lib cannot import that type: a cycle).
+ * the read-only `photo` page's title. The editor's page itself takes the
+ * stored photo (`store.storedPhotoById`) as its own `VisitEditorPhoto`.
  */
 export interface ClientPhotoVm {
   readonly photoId: AppointmentPhotoId;

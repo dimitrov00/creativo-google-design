@@ -20,6 +20,7 @@ import { type AuditEntry, Collections } from '@core/entities';
 import type { AuditTimelinePage, AuditTimelinePorts } from '@core/ports';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreAuditReadPorts } from './firestore-audit-read.adapter';
+import { bodyOf } from './store-answer';
 
 /*
  * The five audit timelines over the in-memory Admin SDK (audit-hardening
@@ -82,12 +83,6 @@ const ROWS: readonly AuditEntry[] = [
   row('r-bob', 5_000, BOB_RECORD),
   profileRow('p1', 6_000),
 ];
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 function seeded(rows: readonly AuditEntry[] = ROWS) {
   return createProjectionFirestore(

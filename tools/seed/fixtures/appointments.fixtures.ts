@@ -307,7 +307,7 @@ function seatOf(plan: SeatPlan): Seat {
       tipCents: seat.tipCents === null ? null : cents(seat.tipCents),
     },
     Seat.termsOf(charged, catalog),
-    SeatOccupant.of(seat),
+    SeatOccupant.sliceOf(seat),
     outcomeOf(plan),
   );
 }
@@ -381,7 +381,7 @@ export function appointmentBody(plan: AppointmentPlan): Body<Appointment> {
     startMinutes: envelope.startMinutes,
     endMinutes: envelope.endMinutes,
     utcEpochMs,
-    ...BookingContact.of(contact),
+    ...BookingContact.sliceOf(contact),
     bookedAtUtcMs:
       plan.bookedAtUtcMs === null ? null : instant(plan.bookedAtUtcMs),
     arrivedAtUtcMs:
@@ -389,7 +389,7 @@ export function appointmentBody(plan: AppointmentPlan): Body<Appointment> {
     ...StoodSeatPairs.NONE,
     ...WriteProvenance.NONE,
     ...BookingLifecycle.sliceOf(lifecycle),
-  } satisfies Omit<Appointment, 'id'>;
+  } satisfies Body<Appointment>;
 }
 
 /** What the seed knows about a past cut it pictures: the visit, the chair, the client, when. */
@@ -429,5 +429,5 @@ export function appointmentPhotoBody(plan: PhotoPlan): Body<AppointmentPhoto> {
     height: plan.height,
     photoOrigin: PhotoOrigin.Shot,
     label: null,
-  } satisfies Omit<AppointmentPhoto, 'id'>;
+  } satisfies Body<AppointmentPhoto>;
 }

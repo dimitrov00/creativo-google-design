@@ -61,6 +61,7 @@ import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { bodyOf } from '../adapters/store-answer';
 
 /**
  * An act's audit rows COMMIT WITH THE ACT (audit-hardening WS-1, DEP-5),
@@ -122,12 +123,6 @@ const CANCEL = OperationId.of('cancel-operation-0123456789');
 const NO_SHOW = OperationId.of('transition-operation-0123456789');
 const ARRIVE = OperationId.of('arrive-operation-0123456789');
 const TIP = OperationId.of('tip-operation-0123456789');
-
-function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** The client's cut with Ivan on Thursday at 10:00 — days outside any cancel window. */
 function thursdayVisit(): Appointment {

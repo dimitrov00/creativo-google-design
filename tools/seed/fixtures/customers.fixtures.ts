@@ -75,5 +75,5 @@ export function seededCustomerBody(
     customerOrigin: CustomerOrigin.Seed,
     ...WriteProvenance.NONE,
     ...ErasureLifecycle.none(),
-  } satisfies Omit<Customer, 'id'>;
+  } satisfies Body<Customer>;
 }

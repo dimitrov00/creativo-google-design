@@ -832,9 +832,9 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
     );
     const planned = unwrapOk(plan(party(55, foreignSelf), [cartSeat(at(14))]));
     expect(planned.replaced.map((s) => s.seatId)).toEqual(['seat-father']);
-    expect(planned.carried.map((line) => SeatOccupant.of(line.seat))).toEqual([
-      foreignSelf,
-    ]);
+    expect(
+      planned.carried.map((line) => SeatOccupant.sliceOf(line.seat)),
+    ).toEqual([foreignSelf]);
     expect(planned.carried[0]?.startMinutes).toBe(at(14, 55));
   });
 
@@ -1173,7 +1173,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
     const planned = unwrapOk(plan(party(0, foreignSelf), [cartSeat(at(14))]));
     const carriedSon = planned.carried[0];
     expect(
-      carriedSon === undefined ? null : SeatOccupant.of(carriedSon.seat),
+      carriedSon === undefined ? null : SeatOccupant.sliceOf(carriedSon.seat),
     ).toEqual(foreignSelf);
     expect(carriedSon?.seat.barberId).toBe('petar');
     expect(carriedSon?.startMinutes).toBe(at(14));

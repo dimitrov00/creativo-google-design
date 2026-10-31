@@ -343,7 +343,7 @@ function activeGrantOf(uid: string, couponId: CouponId, value: CouponValue) {
     holderUserId: UserId.of(uid),
     couponId,
     grantedAtUtcMs: SEEDED_AT_UTC_MS,
-    ...CouponValue.of(value),
+    ...CouponValue.sliceOf(value),
     ...GrantLifecycle.active(
       GrantCapacityTerms.singleUse(),
       GrantExpiryTerms.none(),
@@ -756,7 +756,7 @@ export async function seedErasablePerson(
     .doc(visitId)
     .set({
       ...upcomingAppointmentBody(visitId, uid, customerId, startsAt),
-      ...BookingContact.of(contact),
+      ...BookingContact.sliceOf(contact),
     });
   const note = {
     text: `${fullName} — a regular, likes it short`,

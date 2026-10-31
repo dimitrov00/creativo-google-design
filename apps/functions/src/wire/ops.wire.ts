@@ -1,11 +1,11 @@
-import { Result } from '@core/primitives';
+import { Result, StoredFields } from '@core/primitives';
 import { RunBackfillRefusalCode } from '@core/errors';
 import { Actor, Role } from '@core/components';
 import { BackfillPlanSystem } from '@core/systems';
 import type { RunBackfillCommand } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerRoles, callerUserId } from '../lib/booking/caller-roles';
-import { field, payloadOf, type WireRequest } from './wire-read';
+import { payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE `runBackfill` CALLABLE'S WIRE (Phase 4a 4A-4) — flipped with the
@@ -38,10 +38,10 @@ export const RUN_BACKFILL_TIMEOUT_SECONDS = 540;
 /** The call as the payload the system parses — `{ backfillJobName, cursor? }`, no cursor key to resume. */
 function requestStruct(raw: unknown): unknown {
   if (raw === null || typeof raw !== 'object') return raw;
-  const backfillJobName = field(raw, 'backfillJobName');
-  return field(raw, 'backfillResume') === true
+  const backfillJobName = StoredFields.field(raw, 'backfillJobName');
+  return StoredFields.field(raw, 'backfillResume') === true
     ? { backfillJobName }
-    : { backfillJobName, cursor: field(raw, 'cursor') ?? null };
+    : { backfillJobName, cursor: StoredFields.field(raw, 'cursor') ?? null };
 }
 
 export function decodeRunBackfill(

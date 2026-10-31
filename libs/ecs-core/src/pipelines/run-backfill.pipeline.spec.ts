@@ -9,7 +9,6 @@ import {
   BackfillStart,
   BookingLifecycle,
   BookingPolicy,
-  type DocBody,
   Placement,
   Role,
   SeatOccupant,
@@ -40,6 +39,7 @@ import {
 import type { CommitPlan } from '@core/ports';
 import { AuditSystem, type BackfillRequest } from '@core/systems';
 import {
+  bodyOf,
   appointmentFixture,
   customerOf,
   FIXTURE_IDS,
@@ -81,13 +81,6 @@ const SYSADMIN = UserId.of('u-sysadmin');
 const ACTOR = Actor.forCaller(SYSADMIN, [Role.Sysadmin]);
 const WORKED_AT = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -86_400_000);
 const unbounded: StepBudget = { spent: () => false };
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
-}
 
 /** A worked visit of `who`; `legacy` leaves the mirrors and the placement out, as a row written before them. */
 function visitOf(id: string, who: UserId, legacy = false): Appointment {

@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DayWindows,
-  type DocBody,
-  MinuteRange,
-  WriteOp,
-} from '@core/components';
+import { DayWindows, MinuteRange, WriteOp } from '@core/components';
 import {
   UserId,
   UtcEpochMs,
@@ -15,6 +10,7 @@ import { CancelWaitlistRefusalCode } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import {
+  bodyOf,
   endMinute,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
@@ -55,13 +51,6 @@ function requestWith(status: WaitlistStatus): WaitlistRequest {
     waitlistStatus: status,
     waitlistStatusAtUtcMs: EARLIER,
   };
-}
-
-/** A stored document's body — the entity minus its id (Law 5). */
-function bodyOf(entity: { readonly id: string }): DocBody {
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => key !== 'id'),
-  );
 }
 
 function rig(stored: WaitlistRequest | null) {

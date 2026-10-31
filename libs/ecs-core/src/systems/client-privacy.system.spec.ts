@@ -346,8 +346,8 @@ describe('ClientPrivacySystem — a visit that kept a removed person’s contact
     expect(removed.subjectCustomerIds).toEqual([Q]);
     expect(removed.ownerCustomerId).toBeNull();
     expect(removed.ownerUserId).toBeNull();
-    expect(BookingContact.of(removed)).toEqual(
-      BookingContact.of(personsParty(world)),
+    expect(BookingContact.sliceOf(removed)).toEqual(
+      BookingContact.sliceOf(personsParty(world)),
     );
   });
 

@@ -4,10 +4,7 @@ import { localDate } from '@core/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { describe, expect, it } from 'vitest';
 import {
-  cardLocaleOf,
-  dayLong,
   dayRange,
-  dayShort,
   dayWithYear,
   monogramOf,
   monthYearLong,
@@ -1652,26 +1649,14 @@ describe('the gaps K1b fills (lead ruling G1-6)', () => {
 });
 
 describe('the card’s dates and figures (R59)', () => {
-  it('prints a fact line’s date short, with the year only outside today’s', () => {
-    expect(
-      dayShort(localDate('2026-08-12'), localDate('2026-09-28'), 'bg'),
-    ).toBe('12.08');
-    expect(
-      dayShort(localDate('2025-03-06'), localDate('2026-09-28'), 'bg'),
-    ).toBe('6.03.2025 г.');
+  // The short and heard forms («12.08», «4 септември») are
+  // `@creativo/ui/wall-clock`'s (`formatDayShort`, `formatDayLong`), proved
+  // in `wall-clock.spec.ts`; the card's own forms stay here.
+  it('prints a date that always names its year', () => {
     expect(dayWithYear(localDate('2026-03-06'), 'bg')).toBe('6.03.2026 г.');
   });
 
-  it('spells a date someone hears, the month in words', () => {
-    expect(
-      dayLong(localDate('2026-09-04'), localDate('2026-09-28'), 'bg'),
-    ).toBe('4 септември');
-    expect(
-      dayLong(localDate('2025-03-06'), localDate('2026-09-28'), 'bg'),
-    ).toBe('6 март 2025 г.');
-    expect(
-      dayLong(localDate('2026-09-04'), localDate('2026-09-28'), 'en'),
-    ).toBe('September 4');
+  it('spells a month someone has been a client since', () => {
     expect(monthYearLong(localDate('2025-03-06'), 'bg')).toBe('март 2025 г.');
   });
 
@@ -1694,11 +1679,5 @@ describe('the card’s dates and figures (R59)', () => {
     expect(monogramOf('Фейд', 'bg')).toBe('Ф');
     expect(monogramOf('„Баща и син“', 'bg')).toBe('Б');
     expect(monogramOf('— 1 —', 'bg')).toBeNull();
-  });
-
-  it('reads any language but English as the shop’s own', () => {
-    expect(cardLocaleOf('en')).toBe('en');
-    expect(cardLocaleOf('bg')).toBe('bg');
-    expect(cardLocaleOf('de')).toBe('bg');
   });
 });

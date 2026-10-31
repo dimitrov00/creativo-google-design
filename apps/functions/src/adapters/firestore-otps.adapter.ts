@@ -1,9 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { Collections, type Otp } from '@core/entities';
 import type { OtpStorePorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { readFailed } from './store-answer';
 
 /**
  * The `otps` store outside any transaction (identity flip (2), blueprint
@@ -36,12 +35,7 @@ export const firestoreOtpPorts = (db: Firestore): OtpStorePorts => ({
         snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Otp),
       );
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(
-          Collections.Otps,
-          TriggerAttemptSystem.failureCode(error),
-        ),
-      );
+      return Result.err(readFailed(Collections.Otps, error));
     }
   },
 });

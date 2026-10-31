@@ -32,7 +32,7 @@ import {
   stubResizeObserver,
 } from '../../testing/achievements-pages.rig';
 import { ClientAchievementsPage } from './client-achievements';
-import type { LoyaltyCatalog } from '@core/entities';
+import type { LoyaltyCatalogParts } from '@core/entities';
 
 /*
  * «ПОСТИЖЕНИЯ», revision 3 (§2.3; R2-G, F9, F11): the page is mounted
@@ -154,7 +154,7 @@ function nothingEarned(): LoyaltyAccountReadPorts {
 }
 
 /** The published catalogue with «Специални» grown past nine families: the fold. */
-function specialGrown(by: number): LoyaltyCatalog {
+function specialGrown(by: number): LoyaltyCatalogParts {
   const catalog = loyaltyCatalogFixture();
   const party = must(
     catalog.series.find((series) => series.id === 'series-party'),
