@@ -137,6 +137,88 @@ describe('customerPorts.loadCustomerForUser, guarded — the SINGLE rule (edge h
   });
 });
 
+describe('customerPorts.loadCustomer — one client record by its id, the walk-in’s card (S-WS-F)', () => {
+  const walkIn = {
+    userId: null,
+    displayName: 'Мария Иванова',
+    phone: '+359888000003',
+    email: null,
+    searchName: 'мария иванова',
+    searchPrefixes: ['ма', 'мар'],
+    createdAtUtcMs: 1_790_575_200_000,
+    customerOrigin: CustomerOrigin.StaffWalkIn,
+    erasureStatus: ErasureStatus.None,
+  };
+
+  it('reads customers/{id} — one document, no query — and answers the record', async () => {
+    const telemetry = recordingTelemetry();
+    const fake = new FakeFirestore({
+      'customers/cus_maria': walkIn,
+      'customers/cus_other': { ...walkIn, displayName: 'Друг' },
+    });
+
+    const found = await customerPorts(
+      asDb(fake),
+      guardedReads(telemetry),
+    ).loadCustomer(CustomerId.of('cus_maria'));
+
+    expect(found).toEqual(Result.ok({ id: 'cus_maria', ...walkIn }));
+    expect(fake.reads).toEqual([
+      { kind: 'document', path: 'customers/cus_maria', constraints: [] },
+    ]);
+    expect(telemetry.lines).toEqual([]);
+  });
+
+  it('answers null for an id with no record', async () => {
+    const found = await customerPorts(
+      asDb(new FakeFirestore()),
+      guardedReads(recordingTelemetry()),
+    ).loadCustomer(CustomerId.of('cus_gone'));
+
+    expect(found).toEqual(Result.ok(null));
+  });
+
+  it('guarded, answers a malformed record as REPOSITORY_MALFORMED and reports it — never ok(null)', async () => {
+    const telemetry = recordingTelemetry();
+    const fake = new FakeFirestore({
+      'customers/cus_maria': { ...walkIn, customerOrigin: 'WALK_IN' },
+    });
+
+    const found = await customerPorts(
+      asDb(fake),
+      guardedReads(telemetry),
+    ).loadCustomer(CustomerId.of('cus_maria'));
+
+    expect(found).toEqual(
+      Result.err({
+        errorCode: RepositoryErrorCode.Malformed,
+        path: 'customers/cus_maria',
+        reason: 'customerOrigin',
+      }),
+    );
+    expect(telemetry.lines.map((line) => line.fields)).toEqual([
+      { path: 'customers/cus_maria', field: 'customerOrigin' },
+    ]);
+  });
+
+  it('turns a refused read into a failed Result naming the document and Firestore’s code', async () => {
+    const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
+
+    const found = await customerPorts(
+      asDb(fake),
+      guardedReads(recordingTelemetry()),
+    ).loadCustomer(CustomerId.of('cus_maria'));
+
+    expect(found).toEqual(
+      Result.err({
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'customers/cus_maria',
+        reason: 'permission-denied',
+      }),
+    );
+  });
+});
+
 describe('customerSearchPorts.searchCustomers — the client records the desk can find again (OR-26)', () => {
   /** A record whose search keys are computed as the server writes them. */
   function record(

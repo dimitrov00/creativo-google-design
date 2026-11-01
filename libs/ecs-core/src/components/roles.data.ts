@@ -92,6 +92,30 @@ export const Roles = {
    */
   PRIVACY: [Role.Admin],
 
+  /**
+   * The roles that may CHANGE AN ACCOUNT'S ROLES — the `setRoles` callable
+   * (security hardening S-WS-E, S-RU-14): the shop's admin ONLY. The
+   * sysadmin is the vendor's support role, provisioned out of band, so never
+   * `isAdmin`. CALLABLE-ONLY like `PRIVACY`: `users.roles` takes no client
+   * write (`firestore.rules`), so no rules helper twins it
+   * (`role.rules-parity.spec.ts` says so); the server re-reads the caller's
+   * STORED roles against it, behind the token's claims.
+   */
+  ASSIGN: [Role.Admin],
+
+  /**
+   * The roles `setRoles` may grant or take away — every role but the
+   * vendor's `sysadmin`, dictionary order (S-RU-14). CALLABLE-ONLY, as
+   * {@link Roles.ASSIGN}.
+   */
+  ASSIGNABLE: [
+    Role.Client,
+    Role.Barber,
+    Role.Receptionist,
+    Role.ContentManager,
+    Role.Admin,
+  ],
+
   /** The edge guard for an untrusted value — a stored array entry, a token claim. */
   isRole(value: unknown): value is Role {
     return Tag.has(Role, value);
@@ -163,6 +187,16 @@ export const Roles = {
    */
   handlesClientPrivacy(roles: readonly string[]): boolean {
     return anyIn(Roles.PRIVACY, roles);
+  },
+
+  /**
+   * Whether a role set may change another account's roles (`ASSIGN` — the
+   * admin alone): the `setRoles` wire's gate on the claims, the system's on
+   * the stored roles and the staff client card's gate on its «Роли» block,
+   * one home for all three. Claims-tolerant like `mayBook`.
+   */
+  assignsRoles(roles: readonly string[]): boolean {
+    return anyIn(Roles.ASSIGN, roles);
   },
 
   /**

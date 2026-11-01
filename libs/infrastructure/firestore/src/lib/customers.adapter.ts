@@ -1,14 +1,21 @@
 import {
   type Firestore,
   collection,
+  doc,
   limit,
   orderBy,
   query,
   where,
 } from 'firebase/firestore';
 import { Collections, type Customer } from '@core/entities';
-import type { CustomerPorts, CustomerSearchPorts } from '@core/ports';
-import { admitted, type ReadGuard, readQuery, readRawQuery } from './observe';
+import type { CustomerReadPorts, CustomerSearchPorts } from '@core/ports';
+import {
+  admitted,
+  type ReadGuard,
+  readDoc,
+  readQuery,
+  readRawQuery,
+} from './observe';
 
 /**
  * `customers/*`, read side (D29, flip 1, plan §3.4) — the client RECORD of
@@ -24,11 +31,16 @@ import { admitted, type ReadGuard, readQuery, readRawQuery } from './observe';
  * `REPOSITORY_MALFORMED` (reported) — never read as "no record yet", which
  * the client card would offer to create over it. The guard is REQUIRED
  * (OR-33, DEP-F24): a bare `customerPorts(db)` does not type-check.
+ *
+ * `loadCustomer` reads ONE record by its id (`customers/{id}`, the staff
+ * read `worksTheBook()` admits) — the card of a walk-in with no account
+ * (S-WS-F): the same guard, the same SINGLE rule (a malformed record
+ * answers `REPOSITORY_MALFORMED`, reported), `null` when absent.
  */
 export const customerPorts = (
   db: Firestore,
   guard: ReadGuard,
-): CustomerPorts => ({
+): CustomerReadPorts => ({
   loadCustomerForUser: async (userId) => {
     const found = await readRawQuery(
       query(
@@ -42,6 +54,8 @@ export const customerPorts = (
       ? admitted<Customer>(found.value[0] ?? null, Collections.Customers, guard)
       : found;
   },
+  loadCustomer: (customerId) =>
+    readDoc<Customer>(doc(db, Collections.Customers, customerId), guard),
 });
 
 /**

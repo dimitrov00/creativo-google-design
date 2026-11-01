@@ -51,6 +51,7 @@ import {
   BusyKey,
   CouponGrantId,
   Currency,
+  CustomerId,
   DurationMinutes,
   EndMinute,
   GiftVoucherId,
@@ -120,6 +121,7 @@ import {
   AchievementScope,
   ClientAchievementsPage,
   ClientCard,
+  ClientCardStore,
   ClientLedgerPage,
   ClientLoyaltyPage,
   ClientRecordsPage,
@@ -7753,6 +7755,51 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     // His modules came from the readers: the loyalty and the achievements.
     expect(find('client-loyalty-all')).not.toBeNull();
     expect(find('client-achievements-all')).not.toBeNull();
+  });
+
+  it('hands a walk-in’s card the RECORD id the pick or the seat carried, and a typed guest’s none (S-WS-F, S-RU-15)', async () => {
+    const walkInId = CustomerId.of('cus_7070707070707070707a');
+    const walkInKey = draftPersonKey(`guest-${walkInId}`);
+    const typedKey = draftPersonKey('guest-1');
+    render(
+      visit({
+        clientLabel: 'Иво',
+        people: [
+          {
+            id: walkInKey,
+            label: 'Иво',
+            phone: null,
+            phoneHref: null,
+            meta: null,
+            email: null,
+            noAccount: true,
+            customerId: walkInId,
+          },
+          {
+            id: typedKey,
+            label: 'Петър',
+            phone: null,
+            phoneHref: null,
+            meta: null,
+            email: null,
+          },
+        ],
+        legs: visit().legs.map((leg, index) => ({
+          ...leg,
+          clientId: index === 0 ? walkInKey : typedKey,
+        })),
+      }),
+    );
+    const store = fixture.debugElement.injector.get(ClientCardStore);
+
+    await openCard(walkInKey);
+    expect(pageKind()).toBe('client');
+    expect(store.customerId()).toBe(walkInId);
+    await back();
+
+    await openCard(typedKey);
+    expect(pageKind()).toBe('client');
+    expect(store.customerId()).toBeNull();
   });
 
   it('pushes the card’s pages two, three and four deep — and at the cap a push replaces the top page', async () => {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ClientPrivacyCall } from '@core/components';
+import { ClientPrivacyCall, RolesCall } from '@core/components';
+import { AppCheckTokenUse, Tag } from '@core/primitives';
 import {
   CALLABLE_ANSWER_DECODERS,
+  CALLABLE_APP_CHECK_TOKEN,
   Callables,
   OPERATION_ID_FIELD,
 } from './callables';
@@ -59,9 +61,57 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
   });
 
+  it('the roles change rides `operationId` — the transport id, the impersonation calls’ shape (security hardening S-WS-E)', () => {
+    expect(Callables.SetRoles).toBe('setRoles');
+    expect(OPERATION_ID_FIELD[Callables.SetRoles]).toBe('operationId');
+    expect(CALLABLE_ANSWER_DECODERS[Callables.SetRoles]).toBe(
+      RolesCall.decodeChanged,
+    );
+  });
+
   it('the client issue sink alone carries none (OR-34)', () => {
     expect(ROWS.filter(([, field]) => field === null)).toEqual([
       [Callables.ReportClientIssues, null],
     ]);
+  });
+});
+
+describe('CALLABLE_APP_CHECK_TOKEN — the token each callable takes (security hardening S-RU-21)', () => {
+  it('is total over the registry: one row per callable, no other key', () => {
+    expect(Object.keys(CALLABLE_APP_CHECK_TOKEN).sort()).toEqual(
+      Object.values(Callables).sort(),
+    );
+    for (const use of Object.values(CALLABLE_APP_CHECK_TOKEN)) {
+      expect(Tag.has(AppCheckTokenUse, use)).toBe(true);
+    }
+  });
+
+  it('names exactly the five destructive / sensitive callables LIMITED_USE (S-L-3)', () => {
+    const limited = Object.entries(CALLABLE_APP_CHECK_TOKEN)
+      .filter(([, use]) => use === AppCheckTokenUse.LimitedUse)
+      .map(([name]) => name)
+      .sort();
+    expect(limited).toEqual(
+      [
+        Callables.EraseClient,
+        Callables.PreviewClientErasure,
+        Callables.ExportClientData,
+        Callables.StartImpersonation,
+        Callables.SetRoles,
+      ].sort(),
+    );
+  });
+
+  it('every other callable — the client issue sink and the impersonation end included — takes a standard token', () => {
+    const standard = Object.entries(CALLABLE_APP_CHECK_TOKEN).filter(
+      ([, use]) => use === AppCheckTokenUse.Standard,
+    );
+    expect(standard).toHaveLength(Object.values(Callables).length - 5);
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.ReportClientIssues]).toBe(
+      AppCheckTokenUse.Standard,
+    );
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.EndImpersonation]).toBe(
+      AppCheckTokenUse.Standard,
+    );
   });
 });

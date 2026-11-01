@@ -1,6 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { BookingPolicy } from '@core/components';
 import {
   BOOKING_POLICY_DOC,
@@ -8,6 +7,7 @@ import {
   Collections,
 } from '@core/entities';
 import type { PolicyReadPorts } from '@core/ports';
+import { readFailed } from './store-answer';
 
 /**
  * `settings/bookingPolicy`, read OUTSIDE any transaction on purpose
@@ -31,7 +31,7 @@ export const firestoreSettingsPorts = (db: Firestore): PolicyReadPorts => ({
         : null;
       return Result.ok(BookingPolicy.withDefaults(stored));
     } catch (error) {
-      return Result.err(RepositoryError.readFailed(POLICY_PATH, String(error)));
+      return Result.err(readFailed(POLICY_PATH, error));
     }
   },
 });

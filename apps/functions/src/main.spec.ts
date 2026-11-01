@@ -59,6 +59,7 @@ const seam = vi.hoisted(() => {
     'rescheduleAppointment',
     'runBackfill',
     'sampleLeadTime',
+    'setRoles',
     'startImpersonation',
     'startPolicyRecompute',
     'sweepPolicyRecompute',
@@ -103,9 +104,17 @@ const seam = vi.hoisted(() => {
   );
   /** The console OTP sender, spied over the real one — the WS-0 proof that a deployment never builds it. */
   const consoleOtpSender = vi.fn<(log: Log) => OtpDeliveryPorts>();
+  /**
+   * Every `onCall` definition's OPTIONS, keyed by the function the REAL
+   * `onCall` returned (security hardening S-DEP-11): the platform's App
+   * Check options are not part of `__endpoint`, so the replay-protection
+   * proof reads them where `main.ts` hands them over.
+   */
+  const onCallOptions = new Map<unknown, unknown>();
   return {
     PIPELINES,
     consoleOtpSender,
+    onCallOptions,
     calls,
     answers,
     DB,
@@ -138,6 +147,18 @@ vi.mock('./adapters/console-otp-sender.adapter', async (importOriginal) => {
   }>();
   seam.consoleOtpSender.mockImplementation(actual.consoleOtpSender);
   return { ...actual, consoleOtpSender: seam.consoleOtpSender };
+});
+vi.mock('firebase-functions/v2/https', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('firebase-functions/v2/https')>();
+  // Delegates to the real `onCall` (the deployed endpoint and its handler are
+  // the real ones) and records the options it was handed.
+  const onCall = (options: unknown, handler: unknown): unknown => {
+    const defined = Reflect.apply(actual.onCall, undefined, [options, handler]);
+    seam.onCallOptions.set(defined, options);
+    return defined;
+  };
+  return { ...actual, onCall };
 });
 vi.mock('@core/pipelines', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -256,7 +277,9 @@ const daily = (schedule: string) => ({
  * `auditAppointmentPhotosChanges`), each the write with its auth context on
  * its own `<collection>/{docId}`, retrying — the one helper behind them is
  * also `auditProfileChanges`', whose name is kept and whose path param
- * became `{docId}` (`users/{uid}` before).
+ * became `{docId}` (`users/{uid}` before). Security hardening (S-DEP-6)
+ * added `setRoles`, the admin's audited roles change — a traced callable
+ * declaring no other option.
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
  * timeout, memory, instance cap, secret or schedule fails here.
  */
@@ -321,6 +344,7 @@ const ENDPOINTS = {
   startImpersonation: tracedCallable,
   endImpersonation: tracedCallable,
   redeemInvitation: tracedCallable,
+  setRoles: tracedCallable,
   exportClientData: { ...walkInCallable, availableMemoryMb: 512 },
   previewClientErasure: walkInCallable,
   eraseClient: {
@@ -983,6 +1007,35 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ invitationId: 'inv-1', redemptionCount: 3 }),
     expected: { invitationId: 'inv-1', redemptionCount: 3 },
   },
+  // ── security hardening: the admin's roles change (S-DEP-6) ──
+  setRoles: {
+    pipeline: 'setRoles',
+    input: request(
+      {
+        targetUserId: 'u-client',
+        roles: ['barber', 'client'],
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      adminUserId: 'u-owner',
+      adminRoles: ['admin'],
+      targetUserId: 'u-client',
+      roles: ['barber', 'client'],
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({
+      targetUserId: 'u-client',
+      roles: ['client', 'barber'],
+      rolesChanged: true,
+    }),
+    expected: {
+      targetUserId: 'u-client',
+      roles: ['client', 'barber'],
+      rolesChanged: true,
+    },
+  },
   // ── audit-hardening Phase 3: the admin's data-subject export (P3-DEP-9) ──
   exportClientData: {
     pipeline: 'exportClientData',
@@ -1092,7 +1145,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 50 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers and Phase 3’s client export and erasure pair', () => {
+  it('exports exactly the 51 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair and Phase 4’s roles change', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1138,7 +1191,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(50);
+    expect(FLIPPED_EXPORTS).toHaveLength(51);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
@@ -1309,7 +1362,7 @@ describe('main.ts — the composition root', () => {
       expect(seam.calls).toEqual([]);
     });
 
-    it('gates the impersonation callables on the verified caller before the payload is read, and the invitation on a session', async () => {
+    it('gates the impersonation callables and the roles change on the verified caller before the payload is read, and the invitation on a session', async () => {
       for (const name of ['startImpersonation', 'endImpersonation']) {
         const nobody = await rejection(run(name, request({}, null)));
         expect(nobody.code).toBe('unauthenticated');
@@ -1320,6 +1373,19 @@ describe('main.ts — the composition root', () => {
         expect(staff.code).toBe('permission-denied');
         expect(staff.details).toEqual({
           errorCode: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
+        });
+      }
+      // The roles change (S-L-15): its own codes, the sysadmin no admin (S-RU-14).
+      const nobody = await rejection(run('setRoles', request({}, null)));
+      expect(nobody.code).toBe('unauthenticated');
+      expect(nobody.details).toEqual({
+        errorCode: 'GOVERNANCE_ROLES_UNAUTHENTICATED',
+      });
+      for (const auth of [STAFF, SYSADMIN, OWNER_WITHOUT_ADMIN]) {
+        const refused = await rejection(run('setRoles', request({}, auth)));
+        expect(refused.code).toBe('permission-denied');
+        expect(refused.details).toEqual({
+          errorCode: 'GOVERNANCE_ROLES_FORBIDDEN',
         });
       }
       const anonymous = await rejection(
@@ -1361,6 +1427,25 @@ describe('main.ts — the composition root', () => {
         field: 'operationId',
       });
       expect(seam.calls).toEqual([]);
+    });
+
+    it('hands setRoles the server ports and Admin Auth’s session revocation — never the identity or eraser bundles (S-RU-10)', async () => {
+      const own = caseOf('setRoles');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('setRoles', own.input);
+      const ports = seam.calls[0]?.ports as Record<string, unknown>;
+      expect(typeof Reflect.get(ports, 'revokeRefreshTokens')).toBe('function');
+      for (const member of [
+        'provisionAuthUser',
+        'mintCustomToken',
+        'loadAuthRoles',
+        'deleteAuthUser',
+        'walkInHash',
+      ]) {
+        expect(ports, member).not.toHaveProperty(member);
+      }
+      expect(ports).toMatchObject({ sentinel: seam.BUNDLE.sentinel });
+      expect(seam.built).toHaveLength(1);
     });
 
     it('hands exportClientData the server ports, the keyed walk-in digest, the footprint reads, the audit timelines and the flags — and never one operation’s rows', async () => {
@@ -1954,6 +2039,7 @@ describe('main.ts — the composition root', () => {
       });
 
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      vi.spyOn(logger, 'write').mockImplementation(() => undefined);
       seam.answers.set('verifyOtp', () => ({
         ok: false,
         error: RepositoryError.readFailed('otps/otp-1', 'unavailable'),
@@ -1965,8 +2051,17 @@ describe('main.ts — the composition root', () => {
       expect(down.details).toEqual({
         errorCode: 'IDENTITY_REPOSITORY_FAILURE',
       });
-      // The store failure tracked once, and its ONE outcome line (DEP-18).
-      expect(logger.error).toHaveBeenCalledTimes(2);
+      // The store failure tracked once — ONE whole scrubbed ERROR entry
+      // (Phase 4 S-DEP-1) — and its ONE outcome line (DEP-18).
+      expect(logger.write).toHaveBeenCalledTimes(1);
+      expect(logger.write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callable: 'verifyOtpChallenge',
+          severity: 'ERROR',
+          error: expect.objectContaining({ message: 'REPOSITORY_READ_FAILED' }),
+        }),
+      );
+      expect(logger.error).toHaveBeenCalledTimes(1);
       expect(logger.error).toHaveBeenLastCalledWith(
         'callable.failed',
         expect.objectContaining({
@@ -2087,7 +2182,7 @@ describe('main.ts — the composition root', () => {
           callable: 'publishStreakDefinition',
           operationId: STREAK_PUBLISH.requestId,
           uid: OWNER.uid,
-          error: 'Error: deadline exceeded',
+          error: 'unknown',
         }),
       );
       expect(logged).toHaveBeenLastCalledWith(
@@ -2211,8 +2306,11 @@ describe('main.ts — the composition root', () => {
   it.each(EXPORTS.filter((name) => CALLABLE_NAMES.has(name)))(
     '%s reports an unexpected throw under its own callable name',
     async (name) => {
-      const trackError = vi
+      const errorLines = vi
         .spyOn(logger, 'error')
+        .mockImplementation(() => undefined);
+      const trackedEntries = vi
+        .spyOn(logger, 'write')
         .mockImplementation(() => undefined);
       const thrown = new Error(`boom in ${name}`);
       const own = caseOf(name);
@@ -2221,26 +2319,37 @@ describe('main.ts — the composition root', () => {
       });
       const answer = await rejection(run(name, own.input));
       expect(answer.code).toBe('internal');
-      // Tracked ONCE, under its own name — inside a traced call the
-      // invocation's scope rides under the context (DEP-18) — and, but for
-      // the untraced sink, ONE `callable.failed` outcome line beside it.
-      const calls = trackError.mock.calls;
-      expect(calls.filter(([first]) => first === thrown)).toHaveLength(1);
-      expect(trackError).toHaveBeenCalledWith(
-        thrown,
-        expect.objectContaining({ callable: name }),
-      );
+      // Tracked ONCE, under its own name, as ONE whole scrubbed ERROR entry
+      // (Phase 4 S-DEP-1) — inside a traced call the invocation's scope
+      // rides under the context (DEP-18) — and, but for the untraced sink,
+      // ONE `callable.failed` outcome line beside it.
+      expect(trackedEntries).toHaveBeenCalledTimes(1);
+      const entry = trackedEntries.mock.calls[0]?.[0];
+      expect(entry).toMatchObject({
+        callable: name,
+        severity: 'ERROR',
+        error: { name: 'Error', message: `boom in ${name}` },
+      });
+      const stack = String(entry?.message).split('\n');
+      expect(stack[0]).toBe(`Error: boom in ${name}`);
+      expect(stack.length).toBeGreaterThan(1);
+      const calls = errorLines.mock.calls;
       const outcomes = calls.filter(([first]) => first === 'callable.failed');
       if (TELEMETRY_EXPORTS.has(name)) {
-        expect(trackError).toHaveBeenCalledWith(thrown, { callable: name });
-        expect(calls).toHaveLength(1);
+        expect(Object.keys(entry ?? {}).sort()).toEqual([
+          'callable',
+          'error',
+          'message',
+          'severity',
+        ]);
+        expect(calls).toHaveLength(0);
       } else {
         expect(outcomes).toHaveLength(1);
         expect(outcomes[0]?.[1]).toMatchObject({
           callable: name,
           wireStatus: 'internal',
         });
-        expect(calls).toHaveLength(2);
+        expect(calls).toHaveLength(1);
       }
     },
   );
@@ -2287,6 +2396,8 @@ describe('main.ts — the composition root', () => {
         operationId: 'operation-0123456789ab',
         uid: CLIENT.uid,
         roles: [],
+        // The switch unset in-process reads OFF: no App Check outcome (S-DEP-9).
+        appCheckOutcome: null,
         errorCode: null,
         wireStatus: 'ok',
         durationMs: expect.any(Number),
@@ -2340,6 +2451,116 @@ describe('main.ts — the composition root', () => {
         lines.filter(([msg]) => String(msg).startsWith('callable.')),
       ).toEqual([]);
       expect(JSON.stringify(lines)).not.toContain(STAFF.uid);
+    });
+  });
+
+  describe('security hardening S-WS-A — App Check reads one switch', () => {
+    /** The App Check options `main.ts` handed an export's `onCall`. */
+    function appCheckOptionsOf(name: string): readonly string[] {
+      const options = seam.onCallOptions.get(exported.get(name));
+      return typeof options === 'object' && options !== null
+        ? Object.keys(options).filter((key) => /appcheck/i.test(key))
+        : [];
+    }
+
+    it('captured every callable export’s onCall options', () => {
+      for (const name of EXPORTS.filter((n) => CALLABLE_NAMES.has(n))) {
+        expect(seam.onCallOptions.has(exported.get(name)), name).toBe(true);
+      }
+    });
+
+    it('exactly the five LIMITED_USE exports carry consumeAppCheckToken (S-DEP-11); none carries enforceAppCheck (S-RU-17)', () => {
+      const consuming = EXPORTS.filter((name) =>
+        appCheckOptionsOf(name).includes('consumeAppCheckToken'),
+      );
+      expect([...consuming].sort()).toEqual(
+        [
+          'eraseClient',
+          'exportClientData',
+          'previewClientErasure',
+          'setRoles',
+          'startImpersonation',
+        ].sort(),
+      );
+      for (const name of EXPORTS) {
+        expect(appCheckOptionsOf(name), name).not.toContain('enforceAppCheck');
+        expect(
+          appCheckOptionsOf(name).every(
+            (key) => key === 'consumeAppCheckToken',
+          ),
+          name,
+        ).toBe(true);
+      }
+    });
+
+    it('an unset switch (in-process) neither refuses nor reports: a headerless call answers, its line carries appCheckOutcome null', async () => {
+      const lines: (readonly unknown[])[] = [];
+      vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+      vi.stubEnv('APP_CHECK_MODE', '');
+      try {
+        const own = caseOf('eraseClient');
+        seam.answers.set(own.pipeline, own.answer);
+        await expect(run('eraseClient', own.input)).resolves.toEqual(
+          own.expected,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      const outcome = lines.find(([msg]) => msg === 'callable.completed');
+      expect(outcome?.[1]).toMatchObject({
+        callable: 'eraseClient',
+        appCheckOutcome: null,
+      });
+    });
+
+    it('MONITOR, read per call: the same headerless call answers, its line carries MISSING', async () => {
+      const lines: (readonly unknown[])[] = [];
+      vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+      vi.stubEnv('APP_CHECK_MODE', 'MONITOR');
+      try {
+        const own = caseOf('cancelAppointment');
+        seam.answers.set(own.pipeline, own.answer);
+        await expect(run('cancelAppointment', own.input)).resolves.toEqual(
+          own.expected,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      const outcome = lines.find(([msg]) => msg === 'callable.completed');
+      expect(outcome?.[1]).toMatchObject({
+        callable: 'cancelAppointment',
+        appCheckOutcome: 'MISSING',
+      });
+    });
+
+    it('ENFORCE, read per call: a headerless call is refused failed-precondition / APP_CHECK_REQUIRED before its pipeline runs', async () => {
+      const lines: (readonly unknown[])[] = [];
+      vi.spyOn(logger, 'warn').mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+      vi.stubEnv('APP_CHECK_MODE', 'ENFORCE');
+      let thrown: HttpsError;
+      try {
+        const own = caseOf('cancelAppointment');
+        seam.answers.set(own.pipeline, own.answer);
+        thrown = await rejection(run('cancelAppointment', own.input));
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(thrown.code).toBe('failed-precondition');
+      expect(thrown.details).toEqual({ errorCode: 'APP_CHECK_REQUIRED' });
+      expect(seam.calls).toEqual([]);
+      const refused = lines.find(([msg]) => msg === 'callable.refused');
+      expect(refused?.[1]).toMatchObject({
+        callable: 'cancelAppointment',
+        appCheckOutcome: 'MISSING',
+        errorCode: 'APP_CHECK_REQUIRED',
+        wireStatus: 'failed-precondition',
+      });
     });
   });
 

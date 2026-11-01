@@ -18,8 +18,19 @@ import { ClientIssueSystem } from '@core/systems';
  *
  * Structured: `fields` / `context` ride as the entry's `jsonPayload` (the
  * logger takes a trailing PLAIN object as the payload, so they are copied
- * into one), the message stays the bare `msg`. An `Error` is logged as
- * itself, so its stack reaches the entry and Error Reporting groups it.
+ * into one), the message stays the bare `msg`.
+ *
+ * **A tracked error (Phase 4 WS-B, S-RU-1).** `trackError` never hands the
+ * raw `Error` to the logger, which would format its message, stack, `cause`
+ * and every own property into the entry. It writes ONE whole ERROR entry
+ * instead: `error` is the scrubbed `{ name, code, message, stack }` struct of
+ * an `Error` in the fields (below), and `message` is that struct's stack —
+ * the V8 shape rebuilt and scrubbed, `<name>: <scrubbed message>` plus each
+ * frame line — so Error Reporting still groups it by the server's frames, as
+ * `logger.error(err)` did. `cause`, `details` and every other own property
+ * never leave; a thrown non-`Error` is written scrubbed. The scrub masks
+ * e-mails, token runs and digit runs; a name or free text inside a message
+ * survives it (S-L-25, the residual OR-34 and RU-38 accepted).
  *
  * A web client's error line (OR-34 — the fields typed as Error Reporting's
  * `ReportedErrorEvent`, `ClientIssueSystem.REPORTED_ERROR_EVENT`) is written
@@ -108,7 +119,11 @@ function codeOfError(error: Error): string | number | null {
  * An `Error` as a log field (RU-38): `{ name, code, message, stack }` — the
  * message scrubbed, the stack's head rewritten as `<name>: <scrubbed
  * message>` and every frame line kept only through `ClientIssueSystem.frame`
- * (any other stack line — a message's own continuation — is dropped).
+ * (any other stack line is dropped). The header V8 wrote — `<name>:
+ * <message>`, every line of the message — is skipped by its line count
+ * before the frame filter, so a message line that looks like a frame
+ * (`at +359 …`) never passes as one (security hardening review round 1,
+ * finding 8): `frame` masks no digits.
  */
 function errorField(error: Error): {
   readonly name: string;
@@ -119,7 +134,10 @@ function errorField(error: Error): {
   const name = ClientIssueSystem.scrub(error.name);
   const message = ClientIssueSystem.scrub(error.message);
   const lines = [`${name}: ${message}`];
-  for (const line of (error.stack ?? '').split('\n')) {
+  // The header is rebuilt above from the scrubbed message; only the lines
+  // after it can be frames.
+  const header = Math.max(1, String(error.message).split('\n').length);
+  for (const line of (error.stack ?? '').split('\n').slice(header)) {
     if (FRAME_LINE.test(line)) {
       lines.push(`    at ${ClientIssueSystem.frame(line)}`);
     }
@@ -158,9 +176,20 @@ export const consoleTelemetry = (sink: LogSink = logger): TelemetryPorts => ({
   },
   trackError: (error, context) => {
     const payload = withScope(context) ?? {};
-    if (error instanceof Error) sink.error(error, payload);
-    else
-      sink.error('non-error thrown', { ...payload, thrown: describe(error) });
+    if (error instanceof Error) {
+      const field = errorField(error);
+      sink.write({
+        ...payload,
+        error: field,
+        severity: 'ERROR',
+        message: field.stack,
+      });
+      return;
+    }
+    sink.error('non-error thrown', {
+      ...payload,
+      thrown: ClientIssueSystem.scrub(describe(error)),
+    });
   },
 });
 

@@ -1,12 +1,16 @@
+import { FirebaseError } from 'firebase/app';
 import {
   type Functions,
   FunctionsError,
+  type HttpsCallableOptions,
+  type HttpsCallableResult,
   httpsCallable,
 } from 'firebase/functions';
-import { ClientOperationId, Result } from '@core/primitives';
+import { AppCheckTokenUse, ClientOperationId, Result } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import {
   CALLABLE_ANSWER_DECODERS,
+  CALLABLE_APP_CHECK_TOKEN,
   type CallableName,
   Callables,
   type CallableWire,
@@ -61,16 +65,38 @@ import { ClientIssueSystem } from '@core/systems';
  * `attemptId` / `requestId` calls and the issue sink are never touched). A
  * mint that fails the key's shape sends none: the callables that read a
  * transport id read it optionally.
+ *
+ * App Check (security hardening S-WS-A, S-L-5, S-RU-31): every call first
+ * awaits `appCheckReady` — the page's bounded App Check decision
+ * (`FIREBASE_APP_CHECK`; settled within `APP_CHECK_SCRIPT_TIMEOUT_MS`, an
+ * already-settled promise afterwards), so no call leaves before App Check
+ * is decided and none waits beyond the bound. A `LIMITED_USE` callable
+ * (`CALLABLE_APP_CHECK_TOKEN`) asks a limited-use token; when the provider
+ * cannot mint one — a `FirebaseError` whose code starts with `appCheck/`,
+ * the request never left — the client reports it once and retries ONCE as
+ * a standard call, so the server still decides (OFF / MONITOR answer,
+ * ENFORCE refuses what it refuses). That standard call carries the page's
+ * cached STANDARD token, which the server consumes on a limited-use
+ * callable under MONITOR / ENFORCE: a second fallback within that token's
+ * lifetime re-sends a consumed token, and ENFORCE refuses it
+ * `APP_CHECK_REPLAYED` — worded, like `APP_CHECK_REQUIRED`, "reload the
+ * page" (a reload builds a fresh provider; review round 2). A
+ * `FunctionsError` (the server answered) is never retried. The standard
+ * callables' call is unchanged.
  */
 export const callableClientPorts = (
   functions: Functions,
   ids: IdPorts,
   issues: ClientIssuePorts,
+  appCheckReady: Promise<unknown>,
 ): GatewayPorts => ({
   callableClient: (name) => async (input) => {
     const sent = withTransportId(name, input, ids);
+    // The decision never rejects (`FIREBASE_APP_CHECK`); one that did would
+    // only mean a page without App Check, never a failed call.
+    await appCheckReady.catch(() => null);
     try {
-      const answer = await httpsCallable(functions, name)(sent);
+      const answer = await dial(functions, name, sent, issues);
       // eslint-disable-next-line security/detect-object-injection -- `name` is a closed `CallableName` literal and `CALLABLE_ANSWER_DECODERS` is total over it.
       const decoded = CALLABLE_ANSWER_DECODERS[name](answer.data);
       return decoded.ok
@@ -104,6 +130,50 @@ export const callableClientPorts = (
     }
   },
 });
+
+/** What a `LIMITED_USE` callable asks the SDK for: a fresh, replay-protected App Check token per call (S-RU-21). */
+const LIMITED_USE: HttpsCallableOptions = { limitedUseAppCheckTokens: true };
+
+/**
+ * One call of `name` — a standard callable as `httpsCallable(functions,
+ * name)` always dialled it; a `LIMITED_USE` one with {@link LIMITED_USE},
+ * retried ONCE as a standard call (reported once) when App Check could not
+ * mint its token (S-RU-31) — with the cached standard token, consumed on
+ * a limited-use callable under MONITOR / ENFORCE, so a later fallback reads
+ * `APP_CHECK_REPLAYED` under ENFORCE. Any other rejection is the caller's
+ * to classify.
+ */
+async function dial<N extends CallableName>(
+  functions: Functions,
+  name: N,
+  sent: CallableWire[N]['input'],
+  issues: ClientIssuePorts,
+): Promise<HttpsCallableResult<unknown>> {
+  // eslint-disable-next-line security/detect-object-injection -- `name` is a closed `CallableName` literal and `CALLABLE_APP_CHECK_TOKEN` is total over it.
+  if (CALLABLE_APP_CHECK_TOKEN[name] !== AppCheckTokenUse.LimitedUse) {
+    return httpsCallable(functions, name)(sent);
+  }
+  try {
+    return await httpsCallable(functions, name, LIMITED_USE)(sent);
+  } catch (error) {
+    if (!isAppCheckMintFailure(error)) throw error;
+    reportTransportFailure(issues, name, error, operationIdOf(name, sent));
+    return httpsCallable(functions, name)(sent);
+  }
+}
+
+/**
+ * Whether App Check itself refused to mint the call's token
+ * (`appCheck/recaptcha-error`, `appCheck/throttled`, …) — thrown before the
+ * request was sent. A `FunctionsError` never is: the server answered it.
+ */
+function isAppCheckMintFailure(error: unknown): boolean {
+  return (
+    error instanceof FirebaseError &&
+    !(error instanceof FunctionsError) &&
+    error.code.startsWith('appCheck/')
+  );
+}
 
 /** The two texts the SDK words a body it cannot read with (`firebase/functions`, `call()`). */
 const SDK_FIXED_TEXTS: ReadonlySet<string> = new Set([

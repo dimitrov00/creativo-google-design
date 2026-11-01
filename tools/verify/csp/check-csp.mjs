@@ -24,7 +24,15 @@
 //       rule its name calls for (a hashed `main|polyfills|chunk|styles-*`
 //       is immutable; a service-worker script, index.html, ngsw.json, the
 //       manifest and the i18n catalogues revalidate), and so do `/` and an
-//       extensionless route.
+//       extensionless route;
+//   (f) App Check sources (S-RU-23) — script-src holds both reCAPTCHA
+//       sources of APP_CHECK_SOURCES and no other host, frame-src is exactly
+//       its two frame sources, connect-src holds the token exchange host,
+//       and none of the three directives carries a wildcard;
+//   (g) no redirects — the web hosting entry declares no `redirects`: CSP
+//       drops a source's path once a request is redirected, so a redirect
+//       from an admitted origin would widen the path-scoped
+//       `https://www.google.com/recaptcha/` to the whole host.
 //
 // The hashes are never typed by hand: on a mismatch this prints the
 // script-src the artifact needs. Exits 1 on any failure, 2 when the build
@@ -51,6 +59,25 @@ export const SECURITY_HEADERS = [
 export const CSP_HEADER = 'Content-Security-Policy';
 const NO_CACHE = 'no-cache';
 const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+/**
+ * The sources App Check needs, by directive (S-RU-23, S-L-6): reCAPTCHA
+ * Enterprise's script (`www.google.com/recaptcha/enterprise.js`, which
+ * loads its release from `www.gstatic.com/recaptcha/`), its invisible
+ * frames, and the token exchange the App Check SDK posts to. Exact and
+ * path-scoped, never a wildcard (OR-29); check (f) pins exactly these.
+ */
+export const APP_CHECK_SOURCES = {
+  'script-src': [
+    'https://www.google.com/recaptcha/',
+    'https://www.gstatic.com/recaptcha/',
+  ],
+  'frame-src': [
+    'https://www.google.com/recaptcha/',
+    'https://recaptcha.google.com/recaptcha/',
+  ],
+  'connect-src': ['https://content-firebaseappcheck.googleapis.com'],
+};
 
 /** script-src keywords a hash policy never carries. */
 const REFUSED_SCRIPT_KEYWORDS = new Set([
@@ -197,6 +224,52 @@ function expectedCacheOf(path) {
   return null;
 }
 
+/** A host source — neither a quoted keyword or hash nor a bare scheme. */
+function isHostSource(source) {
+  return !source.startsWith("'") && !SCHEME_SOURCE.test(source);
+}
+
+/** Check (f) over a parsed policy: the App Check sources, exactly where they belong. */
+export function appCheckFailures(policy) {
+  const failures = [];
+  for (const directive of Object.keys(APP_CHECK_SOURCES)) {
+    for (const source of policy.get(directive) ?? []) {
+      if (source.includes('*')) {
+        failures.push(`(f) ${directive} carries a wildcard (${source})`);
+      }
+    }
+  }
+  const scriptSrc = policy.get('script-src') ?? [];
+  const scriptAllowed = APP_CHECK_SOURCES['script-src'];
+  for (const source of scriptAllowed) {
+    if (!scriptSrc.includes(source))
+      failures.push(`(f) script-src lacks ${source}`);
+  }
+  for (const source of scriptSrc) {
+    if (isHostSource(source) && !scriptAllowed.includes(source)) {
+      failures.push(
+        `(f) script-src admits a host App Check does not need (${source})`,
+      );
+    }
+  }
+  const frameSrc = policy.get('frame-src') ?? [];
+  const frameAllowed = APP_CHECK_SOURCES['frame-src'];
+  const frameExact =
+    frameSrc.length === frameAllowed.length &&
+    frameAllowed.every((source) => frameSrc.includes(source));
+  if (!frameExact) {
+    failures.push(
+      `(f) frame-src must be exactly ${frameAllowed.join(' ')}, found ${frameSrc.join(' ') || 'none'}`,
+    );
+  }
+  const connectSrc = policy.get('connect-src') ?? [];
+  for (const source of APP_CHECK_SOURCES['connect-src']) {
+    if (!connectSrc.includes(source))
+      failures.push(`(f) connect-src lacks ${source}`);
+  }
+  return failures;
+}
+
 /**
  * Every check over a parsed firebase.json, the built index.html, the
  * build's site paths and the `.firebaserc` default project — the list of
@@ -285,6 +358,16 @@ export function checkArtifact({ config, html, paths, projectId }) {
       );
     }
   }
+
+  // (f) App Check sources
+  failures.push(...appCheckFailures(policy));
+
+  // (g) no redirects
+  if (hosting.redirects !== undefined) {
+    failures.push(
+      '(g) the web hosting entry declares `redirects`: a redirect voids the path scope of the script-src App Check sources',
+    );
+  }
   return failures;
 }
 
@@ -330,7 +413,7 @@ function main(args) {
   console.log(`  inline scripts: ${hashes.length} (${hashes.join(' ')})`);
   if (failures.length === 0) {
     console.log(
-      '  pass — headers, script-src, hashes, functions host, caching',
+      '  pass — headers, script-src, hashes, functions host, caching, App Check sources, no redirects',
     );
     return 0;
   }

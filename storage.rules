@@ -26,23 +26,36 @@ service firebase.storage {
         && request.auth.token.roles.hasAny(['barber', 'receptionist', 'admin', 'sysadmin']);
     }
 
+    // An erased account (`users/{uid}.accountStatus` ERASED, audit hardening
+    // Phase 3) keeps a valid ID token for up to an hour after its Auth user
+    // is deleted; it uploads nothing in that hour. ONE cross-service read per
+    // upload (rules v2; the deploy grants the Storage rules agent Firestore
+    // read — production-deploy.md). No `users` document reads as no account:
+    // refused. Evaluated last, after the cheap checks.
+    function accountMayUpload(uid) {
+      return firestore.get(/databases/(default)/documents/users/$(uid)).data.accountStatus != 'ERASED';
+    }
+
     // One object per user (`avatars/{userId}/original`, `avatarPorts`),
     // overwritten on re-upload. Publicly readable (avatars are shown across
     // staff dashboards and to other booking parties, and carry no sensitive
     // data) — writes restricted to the owner, capped at 5 MiB, image
-    // content-types only.
+    // content-types only, and refused to an erased account
+    // (`accountMayUpload`, Phase 4 S-RU-4).
     //
     // `create`/`update` and `delete` are split deliberately: `write` covers
     // all three, but on a DELETE `request.resource` is null, so the size and
     // content-type checks below can never pass — a single `allow write` rule
     // silently makes deletion impossible. Owners may drop their own avatar
-    // (the profile screen's "Remove photo", `removeAvatar`); the size/type
-    // guards only make sense where there IS an incoming object.
+    // (the profile screen's "Remove photo", `removeAvatar`) — an erased
+    // owner too: a delete reads no account; the size/type guards only make
+    // sense where there IS an incoming object.
     match /avatars/{userId}/{fileName} {
       allow read: if true;
       allow create, update: if isOwner(userId)
         && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && request.resource.contentType.matches('image/.*')
+        && accountMayUpload(userId);
       allow delete: if isOwner(userId);
     }
 

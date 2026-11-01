@@ -1,4 +1,5 @@
 export * from './accounts.error';
+export * from './app-check.error';
 export * from './booking-flow.error';
 export * from './booking.error';
 export * from './cancellation.error';

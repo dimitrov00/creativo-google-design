@@ -33,14 +33,17 @@ The preflight is a read-only check that the project is ready (OR-35, DEP-F26).
 Both predeploy hooks in `firebase.json` run it too and refuse the deploy if a
 check fails. Run it by hand before you start, in both scopes as above, so a
 failure doesn't land in the middle of a deploy. By hand it defaults to
-`--scope web` (P1–P6), so build the web first (`pnpm nx build web`) or P4
-fails with "no built scripts"; only `--scope functions` (P1–P3, P6–P9) runs
-P7, P8 and P9. Without `--project` it falls back to `$GCLOUD_PROJECT`, then to
-`.firebaserc`'s default. On a first deploy P2 and P3 fail until the index
-deploy of section 3.1 has run; that is expected. P8 fails every functions
+`--scope web` (P1–P6, P10), so build the web first (`pnpm nx build web`) or P4
+fails with "no built scripts"; only `--scope functions` (P1–P3, P6–P10) runs
+P7, P8 and P9 (P10 runs in both). Without `--project` it falls back to
+`$GCLOUD_PROJECT`, then to `.firebaserc`'s default. On a first deploy P2 and
+P3 fail until the index deploy of section 3.1 has run; that is expected. P8 fails every functions
 deploy until the OTP sender of section 1 lands — that is the point. P9 never
 fails: it reports the platform backstops (PITR, backups, the audit sink and
-its bucket) as `INFO` lines. Its nine checks are:
+its bucket) as `INFO` lines. P10 passes today (App Check ships `OFF`) and
+refuses an `ENFORCE` the web cannot satisfy: the built bundle in the web
+scope, the LIVE site in the functions scope (unreadable = FAIL; the App Check
+section below). Its ten checks are:
 
 | Check | Passes when                                                                                                       |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
@@ -53,6 +56,7 @@ its bucket) as `INFO` lines. Its nine checks are:
 | P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)  |
 | P8    | no `@launchBlocker` export in `apps/functions/src` is used at all (functions scope only)                          |
 | P9    | always — informational: reports PITR, the backup schedules, the audit sink and its bucket (functions scope only)  |
+| P10   | `config/app-check.json`'s mode is `OFF` or `MONITOR`, or `ENFORCE` and the web carries the site key (both scopes) |
 
 The `@emulatorOnly` exports are the console OTP sender (`consoleOtpSender`),
 the fixed-code OTP crypto (`fixedCodeOtpCryptoPorts`) and its code
@@ -72,7 +76,8 @@ read only the repository, so they run either way. P9 reads the names in
 every read it cannot make into an `INFO … unreadable` line (audit-hardening
 WS-6, plan RU-33): promoting it to a gate is the owner's call.
 Source: `tools/verify/preflight/preflight.mjs:1-64`, `:110-113`, `:492-948`
-(P7, P8), `:950-1147` (P9, `opsNamesOf` … `readBackstops`), `:1269-1291`;
+(P7, P8), `:950-1147` (P9, `opsNamesOf` … `readBackstops`), `:1269-1291`,
+`checkAppCheck` / `liveBundle` (P10); `config/app-check.json`;
 `tools/ops/names.env`; runbook §3 (the preflight table and its bullets).
 
 Set these once in the shell you deploy from:
@@ -169,7 +174,12 @@ Source: `.firebaserc:2-12`; P6 refuses the placeholder
       wrong, every callable (booking, OTP, staff) is blocked by `connect-src`.
       Edit `.firebaserc` first: `check-csp.mjs` compares `connect-src` with the
       host of `.firebaserc`'s default project (check (d)), and CI runs it on
-      every push. Then check it:
+      every push. Leave the App Check sources as they are (reCAPTCHA
+      Enterprise's script and frames under `script-src` / `frame-src`, the
+      token exchange `https://content-firebaseappcheck.googleapis.com` under
+      `connect-src`; security hardening S-RU-23): check (f) refuses any
+      change to them, and check (g) refuses a `redirects` entry on the web
+      hosting entry, which would void their path scope. Then check it:
 
 ```bash
 pnpm nx build web
@@ -180,8 +190,9 @@ node tools/verify/csp/check-csp.mjs
 ```
 
 Source: `firebase.json:41`; `tools/verify/csp/check-csp.mjs:20-22`,
-`:170-173`, `:312`; `.github/workflows/ci.yml:64-65`;
-`docs/security/csp-baseline.md` (Follow-ups, "The project id"); P5.
+`:170-173`, `:312`, `APP_CHECK_SOURCES` (checks (f), (g));
+`.github/workflows/ci.yml:64-65`; `docs/security/csp-baseline.md`
+(Follow-ups, "The project id"; the policy's App Check sources); P5.
 
 ### Credentials on the deploying machine
 
@@ -442,11 +453,16 @@ gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
 ```
 
 - [ ] **Budget and alerts — decide the amount.** Google Cloud console →
-      Billing → Budgets & alerts: a monthly budget with e-mail alerts. All
-      callables are reachable without App Check (see section 8), and only
-      `reportClientIssues` is capped (`maxInstances: 2`).
-      Source: `apps/functions/src/main.ts:1120-1127` (`reportClientIssues`);
-      Deferred #4.
+      Billing → Budgets & alerts: a monthly budget with e-mail alerts. App
+      Check ships `OFF` (the App Check section below): until the switch is
+      at `ENFORCE` every callable is reachable without it, and only
+      `reportClientIssues` is capped (`maxInstances: 2`). Once a site key
+      ships, count the reCAPTCHA Enterprise assessments in (auto-refresh is
+      about one per active tab per hour, plus one per call of the five
+      limited-use callables) and, from `MONITOR` on, one App Check API
+      round-trip per call of those five.
+      Source: `apps/functions/src/main.ts` (`reportClientIssues`);
+      `config/app-check.json`; security hardening §7 items 3, 14.
 
 ### Monitoring and privacy (owner's, OR-34)
 
@@ -456,12 +472,13 @@ gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
       `jsonPayload.clientIssueKind:*`, label `kind`, DELTA INT64 — the recipe
       this item used to spell out), and, recommended by audit-hardening WS-6,
       `trigger_attempt_failed` (labels `outcome`, `fn`), `document_refused`,
-      `audit_actor_missing` and `callable_failed` (label `callable`), then
-      the alert policies of `tools/ops/alerts/` (client issues above 100 per
+      `audit_actor_missing`, `callable_failed` (label `callable`) and, from
+      security hardening S-WS-E, `roles_sessions_not_revoked`, then the
+      alert policies of `tools/ops/alerts/` (client issues above 100 per
       5 minutes, as before; any PERMANENT trigger attempt or more than 10
       failing in 5 minutes; any refused document; any act without its audit
-      row; more than 5 failures of one callable in 5 minutes). Read the dry
-      run first:
+      row; more than 5 failures of one callable in 5 minutes; any roles
+      change whose sessions were not revoked). Read the dry run first:
 
 ```bash
 tools/ops/log-metrics.sh --project "$PROJECT_ID"
@@ -471,7 +488,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID"
 tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 ```
 
-- [ ] **Attach an e-mail notification channel** to each of the five alert
+- [ ] **Attach an e-mail notification channel** to each of the six alert
       policies in Cloud Monitoring → Alerting (the files name none).
       Source: `docs/architecture/firestore-runbook.md` §3 step 7;
       `tools/ops/log-metrics.sh`, `tools/ops/alerts/*.yaml`;
@@ -493,9 +510,11 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       e-mail is offered as its own erase row ("Erase the record with the same
       phone or e-mail") — only while the person's own record still holds
       those values, so erase the siblings from the same card. A walk-in-ONLY
-      person (no sign-in account) has no card in Phase 3: the callables
-      accept the record id, but no screen reaches it — such a request needs
-      a hand-run call until a search → record route exists. A person past
+      person (no sign-in account) has a card of their own since security
+      hardening S-WS-F (S-DEP-8): the visit editor's client search (a record
+      result) or the person's walk-in seat opens the record's card, which
+      shows the head and this block, the export and the erasure keyed by the
+      record id. A person past
       the caps is refused, never served partly: the export at 20,000
       documents or 4 MiB (`PRIVACY_EXPORT_TOO_LARGE`), the erasure at 5,000
       documents in any one list (`PRIVACY_ERASURE_TOO_LARGE`) — both need a
@@ -510,6 +529,125 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       the `_Default` log bucket at 30 days so the statement stays true.
       Source: `docs/architecture/decisions/2026-10-26-owner-rulings.md:919`;
       `docs/architecture/HANDOFF.md:2364-2374`.
+- [ ] **reCAPTCHA on every page — disclosure, privacy line, pre-consent
+      view (decide, before a site key ships).** Once
+      `environment.production.ts` carries an App Check site key, every page
+      (the public landing included) loads Google's reCAPTCHA Enterprise
+      script and an invisible frame before any consent. Google's terms ask
+      for the reCAPTCHA badge or a "protected by reCAPTCHA" disclosure; the
+      privacy policy needs a line for it (Google processes the device's
+      signals to tell people from bots); and whether loading it before
+      consent is acceptable under GDPR is the owner's view to take. Nothing
+      loads while the key is empty (today).
+      Source: `libs/infrastructure/firebase-app/src/lib/app-check.provider.ts`;
+      security hardening §7 item 7.
+- [ ] **Grant the Storage rules agent its Firestore read, once.** Since
+      security hardening S-DEP-4 an avatar upload's rule reads
+      `users/{uid}` across services (section 3.2): the first
+      `firebase deploy --only storage` asks to grant
+      `roles/firebaserules.firestoreServiceAgent` to the Storage rules
+      service agent. Deploy interactively once and answer yes, or grant the
+      role beforehand; until it is granted every avatar upload is refused
+      (fail-closed). One billed Firestore read per avatar upload.
+      Source: `storage.rules` (`accountMayUpload`); security hardening §7
+      item 10.
+
+### App Check (staged: OFF → MONITOR → ENFORCE)
+
+App Check is wired (security hardening S-WS-A) and ships **`OFF`**. The web
+initialises it only when `environment.production.ts` carries a reCAPTCHA
+Enterprise site key (`appCheck.siteKey`, PUBLIC client config like the
+`firebase` block; `''` = not configured, nothing loads). The server side is
+ONE switch, `config/app-check.json` (`development` `MONITOR`, `staging` and
+`production` `OFF`), which the functions predeploy writes into
+`.env.<projectId>` as `APP_CHECK_MODE=<mode>`:
+
+| Mode      | What every callable and `reportClientIssues` does                                                                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OFF`     | nothing — no outcome reported, nothing consumed, nothing refused (today's behaviour)                                                                                                                                  |
+| `MONITOR` | verifies, and writes `appCheckOutcome` (`VALID`, `MISSING`, `INVALID`, `REPLAYED`) on each outcome line; the five limited-use callables consume their token; never refuses                                            |
+| `ENFORCE` | `MONITOR`, and refuses `MISSING` / `INVALID` with `failed-precondition` / `APP_CHECK_REQUIRED`, and a replayed token on the five limited-use callables with `APP_CHECK_REPLAYED` (both are phrased "reload the page") |
+
+The five limited-use (replay-protected) callables are `eraseClient`,
+`previewClientErasure`, `exportClientData`, `startImpersonation` and
+`setRoles` (`CALLABLE_APP_CHECK_TOKEN`): the web asks a fresh limited-use
+token per call and the server consumes it. A demo-only override
+(`--app-check <MODE>` / `CREATIVO_APP_CHECK_MODE`) exists for the emulator
+journeys; the writer refuses it for any real project, so a deploy carries
+exactly the committed manifest. Preflight P10 refuses an `ENFORCE` the web
+cannot satisfy. Debug tokens are not wired: a developer's own device only,
+never in an environment file, a CI variable or the repo, and revoked in the
+console after use. Do it in this order:
+
+- [ ] **1. Create the key and register the app.** Google Cloud console →
+      reCAPTCHA (Enterprise): a score-based **website** key for the
+      hosting domains (the `web.app` site and the custom domain). Firebase
+      console → App Check → register the web app with the reCAPTCHA
+      Enterprise provider and that key. Billing is on (Blaze); confirm the
+      assessment quota. Enable the **Firebase App Check API** on the
+      project, and give the functions runtime service account the App Check
+      token-verifier role (`roles/firebaseappcheck.tokenVerifier`, or any
+      role holding the token-verify permission — confirm it in the console):
+      the five consuming callables call the API to verify, and without the
+      role they read `INVALID` on every call. Paste the PUBLIC site key into
+      `apps/web/src/environments/environment.production.ts`
+      `appCheck.siteKey` — every web deploy from then on ships it (step 3),
+      so finish step 2 first (gitleaks has no rule for site keys; if it ever
+      flags one, allowlist it — never bypass the hook).
+- [ ] **2. Staging first.** The same with a staging key — a temporary,
+      NEVER-COMMITTED edit of `environment.production.ts` for the staging
+      build (no staging build configuration exists; P10 judges the edited
+      file). In a real browser with the console open: no ENFORCED CSP
+      violation — none from `connect-src` either (a host it shows missing
+      joins `firebase.json` in the same change as the measurement); record
+      the Trusted Types report-only samples of BOTH directives
+      (`require-trusted-types-for`, `trusted-types`) and correct
+      `RECAPTCHA_REPORT_ONLY_SINKS` / `RECAPTCHA_REPORT_ONLY_POLICIES`
+      (`libs/infrastructure/firebase-app/src/lib/csp-baseline.ts`) if they
+      differ; block `www.google.com` in DevTools (request blocking) and
+      reload — the app must still work, its calls going out headerless
+      (`MISSING`); then unblock it, block only `www.gstatic.com/recaptcha/`
+      (the loader arrives, reCAPTCHA never gets ready) and reload — the
+      same, within 10 s (`APP_CHECK_SCRIPT_TIMEOUT_MS`); at staging
+      `MONITOR`, one real `exportClientData` reads `VALID`.
+- [ ] **3. Deploy the web with the production key** (P10 passes at `OFF` /
+      `MONITOR`). This is the CLIENT-side point of no return: from here every
+      client loads reCAPTCHA whatever the server mode (a script that fails
+      or times out, or whose reCAPTCHA never gets ready, leaves the page
+      without App Check, its calls headerless — never hung). A key rolls
+      back as `siteKey: ''` plus a web deploy. Wait for the service worker
+      to roll the new shell out.
+- [ ] **4. `MONITOR`.** Set `"production": "MONITOR"` in
+      `config/app-check.json`; deploy functions only. Read the console's App
+      Check → APIs → Cloud Functions verified share, and the log filter
+      `jsonPayload.appCheckOutcome` on the outcome lines grouped by
+      `jsonPayload.callable` (`reportClientIssues` writes no line of ours:
+      read the platform's own `callable-request-verification` lines). Hold —
+      at least 7 days of real traffic — until, PER CALLABLE, `MISSING` +
+      `INVALID` + `REPLAYED` are under 1 % and each is explained (old tabs,
+      blockers; for `REPLAYED` on a limited-use callable, also a
+      limited-use mint failure's standard fallback — a client issue
+      `CALLABLE_TRANSPORT_FAILED` with an `appCheck/*` code just before it,
+      the second such fallback within the cached token's lifetime re-sending
+      a consumed token), and each of the five limited-use callables shows
+      real `VALID` calls and no unexplained `INVALID` (the owner's bar; an
+      aggregate would hide the five low-volume admin callables).
+- [ ] **5. `ENFORCE`.** Set `"production": "ENFORCE"`; deploy functions
+      only. P10 refuses it unless the LIVE web carries the key. A stale
+      shell then reads `APP_CHECK_REQUIRED` ("reload"), never "sign in".
+- [ ] **6. Firestore, then Storage.** Their App Check metrics at `MONITOR`
+      (Firebase console → App Check → APIs), then the console's enforce
+      switch for each (up to about 15 minutes to apply) — never code.
+- [ ] **7. Rollback** at any step: `"OFF"` plus a functions-only deploy
+      (section 6).
+
+Source: `config/app-check.json`; `apps/functions/src/lib/app-check.ts`
+(`APP_CHECK_MODE`), `apps/functions/src/edge.ts` (`callableEdge`);
+`libs/ecs-core/src/ports/callables.ts` (`CALLABLE_APP_CHECK_TOKEN`);
+`libs/infrastructure/firebase-app/src/lib/app-check.provider.ts`;
+`tools/flags/write-functions-env.mjs`; `tools/verify/preflight/preflight.mjs`
+(P10); `docs/security/csp-baseline.md`;
+`docs/architecture/flips/security-hardening.md` §2.A.6, §7 items 3–6.
 
 ### Schedules and flags
 
@@ -588,10 +726,17 @@ pnpm run preflight --project "$PROJECT_ID"
       `rebuildCapacityOnSettingsChange`.
       Source: `apps/functions/src/adapters/firestore-settings.adapter.ts:26-36`;
       `firestore.rules:750-757`; `tools/seed/fixtures/settings.fixtures.ts`.
-- [ ] **The first admin, then the staff.** No callable grants roles
-      (`grantRoles` is unbuilt), and the rules never let a client write
-      `users/{uid}`. Roles reach the ID token only from the stored
-      `users/{uid}.roles`, and only at sign-in. Steps:
+- [ ] **The first admin, then the staff.** The FIRST admin is a console or
+      Admin-SDK write (below): `setRoles`, the admin's audited roles change
+      (security hardening S-WS-E), needs an admin to call it, and the rules
+      never let a client write `users/{uid}`. Every later change — the
+      staff, a second admin, a demotion — goes through `setRoles` (the staff
+      client card's «Роли» block), which writes `users/{uid}.roles` with its
+      own `PROFILE_ROLES_CHANGED` row and revokes the account's sessions; a
+      console edit is audited only as `SYSTEM` / `ADMIN_SDK`. The sysadmin is
+      never assignable through `setRoles`: it stays a console write. Roles
+      reach the ID token only from the stored `users/{uid}.roles`, and only
+      at sign-in. Steps for the first admin:
   1. The person signs in once through OTP and finishes registration. This
      needs the real OTP sender from section 1.
   2. With Admin credentials, set the root `roles` array on `users/{uid}` (for
@@ -606,7 +751,8 @@ pnpm run preflight --project "$PROJECT_ID"
      `libs/ecs-core/src/pipelines/verify-otp.pipeline.ts:60-64`;
      `libs/ecs-core/src/components/role.data.ts:15-22`;
      `libs/ecs-core/src/components/auth-claims.data.ts:94-101`;
-     `tools/seed/fixtures/users.fixtures.ts:30-40` (`registeredAccountBody`).
+     `tools/seed/fixtures/users.fixtures.ts:30-40` (`registeredAccountBody`);
+     `libs/ecs-core/src/pipelines/set-roles.pipeline.ts` (every later change).
 
 ---
 
@@ -620,10 +766,12 @@ lint/test/build/typecheck, the static CSP hash check, the icon checks,
 seed-tools typecheck, the lint-rules tests, the style lint, the
 initial-bundle guard and the functions build with its dependency check;
 `runbook-gates` the runbook's §4 grep gates; `coverage` the ecs-core
-coverage thresholds; `emulators` `pnpm run test:emulator` then
-`pnpm run verify:p0`; `e2e` `pnpm run e2e:web` without the `@screenshot`
-tests, whose baselines are macOS renders (the owner's macOS full gate runs
-them); `csp-smoke` the emulator CSP smoke (`pnpm run verify:csp`).
+coverage thresholds; `emulators` `pnpm run test:emulator`, then
+`pnpm run verify:p0`, then `pnpm run verify:appcheck` (App Check under
+`ENFORCE` and `MONITOR` on the Functions emulator); `e2e` `pnpm run e2e:web`
+without the `@screenshot` tests, whose baselines are macOS renders (the
+owner's macOS full gate runs them); `csp-smoke` the emulator CSP smoke
+(`pnpm run verify:csp`).
 
 This is runbook §3's ordinary order. Its Phase 4a exception (rules after
 functions and hosting, `firestore-runbook.md:265-270`) protects a project
@@ -642,13 +790,23 @@ DEP-22); once functions are live, a tab opened before the hosting deploy has
 its id-less booking calls refused until it reloads (DEP-4). Like the Phase
 4a exception, this is moot for a first deploy.
 
+**The security-hardening deploy (Phase 4), on a project already serving an
+older tree: rules → functions → hosting** — the ordinary order (3.2, 3.3,
+3.4; no index changes). The tightened Firestore and Storage rules go first
+because the current web already complies with them (S-DEP-4, S-DEP-5); the
+functions carry `setRoles` and write `APP_CHECK_MODE` (`OFF` for
+production) into `.env.<projectId>`; the hosting serves the CSP with the
+App Check sources and the web's App Check init, which loads nothing while
+`appCheck.siteKey` is empty. Every later App Check flip is a functions-only
+deploy, and P10 judges both predeploys (section 1, App Check).
+
 ### 3.0 The gate
 
 - [ ] Run the full gate from `docs/architecture/HANDOFF.md` §4 (sync:check,
       layering, typecheck, lint, test, `test ecs-core --coverage`,
       `typecheck seed-tools`, build web, verify:bundle, build functions +
       check-functions-deps, the grep gates, `verify:p0`, `test:emulator`,
-      `e2e:web`). Run the emulator journeys one at a time.
+      `e2e:web`, `verify:appcheck`). Run the emulator journeys one at a time.
       Source: `docs/architecture/HANDOFF.md:2102-2133`.
 - [ ] Run the CSP gate on its own, because it starts every emulator. A changed
       inline script (the pre-paint script, or Beasties output after an Angular
@@ -728,6 +886,38 @@ updated; a device whose clock is more than five minutes off is refused.
 Source: `docs/architecture/firestore-runbook.md:229`; `firestore.rules`
 (`stampInWindow`).
 
+Since security hardening Phase 4 (S-DEP-5) each of those writes must also
+name what it belongs to, and hold only its entity's keys
+(`keys().hasOnly`): a team note's id is its visit's, and that appointment
+must exist (one billed read per note save); a photo's id must be a UUID (its
+one minter is the browser's `crypto.randomUUID()`), the appointment its body
+names must exist (one billed read per photo), its `photoOrigin` must be
+`SHOT` or `LIBRARY`, and a `SHOT`'s `path` must be
+`appointmentPhotos/<appointmentId>/<photoId>`; a schedule exception
+(`scheduleExceptions`) must sit under its body's busy key
+(`<barberId>__<localDate>`, `localDate` shaped `YYYY-MM-DD`) — no read, so a
+multi-day block stays one transaction. Deletes are unchanged. The web's own
+writers already comply, so the rules can deploy before or after the hosting
+that carries them; a document written by hand (console, script) under any
+other id or with any other key is refused to a client — the Admin SDK
+bypasses rules. Source: `firestore.rules` (the three blocks);
+`libs/infrastructure/firestore/src/lib/rules-key-parity.rules-text.spec.ts`.
+
+Since security hardening Phase 4 (S-DEP-4) an avatar upload reads the
+uploader's account across services: `storage.rules` (`accountMayUpload`)
+refuses a create or update under `avatars/{uid}/` when
+`users/{uid}.accountStatus` is `ERASED`, or when there is no `users/{uid}`
+document at all (fail-closed); a delete stays the owner's. That is ONE
+billed Firestore read per avatar upload. The first deploy of these Storage
+rules asks to grant the Storage rules service agent
+(`service-<project number>@gcp-sa-firebasestorage.iam.gserviceaccount.com`)
+the role `roles/firebaserules.firestoreServiceAgent` — run that deploy once
+from a terminal and answer yes (or grant the role beforehand). A
+`--non-interactive` deploy skips the question silently, and until the role
+is granted every avatar upload is refused. Source: `storage.rules`
+(`accountMayUpload`); `firebase-tools` `lib/rulesDeploy.js`
+(`checkStorageRulesIamPermissions`).
+
 ### 3.3 Functions
 
 ```bash
@@ -735,15 +925,17 @@ firebase deploy --only functions --project "$PROJECT_ID"
 ```
 
 The predeploy hook already runs, in order: `pnpm nx build functions`, then
-`node tools/flags/write-functions-env.mjs` (the `production` flag map into
+`node tools/flags/write-functions-env.mjs` (the `production` flag map and
+the `production` App Check mode, `APP_CHECK_MODE=<mode>`, into
 `dist/apps/functions/.env.<projectId>`), then the preflight with
-`--scope functions` (P1–P3, P6–P9). Don't set `FLAGS_ENV` for production.
+`--scope functions` (P1–P3, P6–P10). Don't set `FLAGS_ENV` for production.
 The deploy fails closed if `loc-center`, the TTLs or the composites aren't
 ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
 code) is wired outside the emulator (P7), while the refusing OTP sender is
-still wired (P8), or if `WALKIN_ID_KEY` is missing.
+still wired (P8), if the App Check mode is `ENFORCE` while the live web
+carries no site key (P10), or if `WALKIN_ID_KEY` is missing.
 
-The deploy holds 50 functions. Audit-hardening WS-3 (DEP-14) added thirteen
+The deploy holds 51 functions. Audit-hardening WS-3 (DEP-14) added thirteen
 document-change audit triggers, one per governed collection, each retrying:
 `auditSettingsChanges`, `auditServicesChanges`, `auditBarbersChanges`,
 `auditLocationsChanges`, `auditBarberSchedulesChanges`,
@@ -780,10 +972,32 @@ Source: `apps/functions/src/main.ts` (`previewClientErasure`,
 `eraseClient`); `docs/architecture/firestore-runbook.md` §1.1 ("The
 erasure's reads and writes"), §2.5 and §3.
 
+Security hardening (S-WS-E, S-DEP-6) added the 51st: `setRoles`, the
+admin's audited roles change (the staff client card's «Роли» block). It is
+bound to `LOG_DIGEST_KEY` like every traced callable (nothing new to
+create), writes `users/{uid}.roles` and one `PROFILE_ROLES_CHANGED` row in
+one commit, then revokes the target's refresh tokens (`auth.revokeRefreshTokens`)
+so their next session is minted from the written roles. The revoke runs as
+the functions' runtime service account — the one `eraseClient` deletes Auth
+users as, so the same confirmation covers it (runbook §3). A failed revoke answers
+`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED` with the roles committed and fires
+the `roles_sessions_not_revoked` alert (the monitoring item below). The
+admin's card keeps a retry (Save re-sends the stored set) only while the
+admin's browser tab stays open; after a reload or on another device, revoke
+with the Admin SDK as the functions' runtime service account —
+`getAuth().revokeRefreshTokens('<targetUserId>')`, the uid from the log line
+— or save any changed set from the card and then the original back (two
+audit rows).
+Source: `apps/functions/src/main.ts` (`setRoles`);
+`libs/ecs-core/src/pipelines/set-roles.pipeline.ts`;
+`docs/architecture/firestore-runbook.md` §3.
+
 ### 3.4 Hosting, straight after functions
 
 The hosting predeploy does **not** build. It only runs the preflight with
-`--scope web` (P1–P6) over `dist/apps/web/browser`. Build first:
+`--scope web` (P1–P6, P10) over `dist/apps/web/browser`. A build carrying an
+App Check site key is the client-side point of no return (section 1, App
+Check, step 3). Build first:
 
 ```bash
 pnpm nx build web
@@ -838,7 +1052,7 @@ curl -sI "https://<domain>/"
 ```
 
 - [ ] **Logs:** Cloud Logging has **no** `[otp] would send` line. The
-      five metrics of `tools/ops/log-metrics.sh` exist
+      six metrics of `tools/ops/log-metrics.sh` exist
       (`gcloud logging metrics list --project="$PROJECT_ID"`). Error Reporting
       shows no new group.
 - [ ] **The next morning:** the 03:00, 03:30 and 04:00 schedules ran without
@@ -903,6 +1117,12 @@ CREATIVO_SKIP_PREFLIGHT=1 firebase deploy --only functions,hosting:web --project
 
 - [ ] **Flags:** turn the web flag off first, then the server param
       (`apps/functions/src/lib/flags.ts:11-13`).
+- [ ] **App Check:** set the project's environment back to `"OFF"` in
+      `config/app-check.json` and deploy functions only — nothing is
+      verified, consumed or refused any more. A shipped site key rolls back
+      as `appCheck.siteKey: ''` in `environment.production.ts` plus a web
+      deploy (the page then loads no reCAPTCHA). Firestore and Storage
+      enforcement are switched off in the console.
 - [ ] **A CSP or shell change that has to reach every client now:** returning
       clients run the cached shell and policy for one service-worker cycle.
       Force the update (`SwUpdate`) or ship the `safety-worker.js` kill switch.
@@ -958,10 +1178,10 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
 
 ## 8. Deferred security items to revisit
 
-| Item                                                                 | State at launch                                                                                                                                                                                                          | Ruling                                                                                                        |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| **App Check** on the callables and `reportClientIssues`              | Not wired: the web has no provider and no callable enforces it. **Leave enforcement OFF in the console**, or every callable from the current build is refused. Needs reCAPTCHA hosts in the CSP and an enrolment design. | Deferred #4 (`docs/architecture/decisions/2026-10-26-owner-rulings.md:1472`); `docs/security/csp-baseline.md` |
-| **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1471`); `firebase.json:43-46`                                                 |
-| **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1478`); OR-29                                                                |
-| **Firestore connectivity probe** (`www.google.com` in `img-src`)     | Blocked: clients on a failing network report an `img-src` violation and see "no network". Owner's call.                                                                                                                  | `docs/security/csp-baseline.md` (Follow-ups)                                                                  |
-| **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:1120-1127` (`reportClientIssues`)                                                 |
+| Item                                                                 | State at launch                                                                                                                                                                                                                                                                          | Ruling                                                                                                                  |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **App Check** on the callables and `reportClientIssues`              | Wired (security hardening Phase 4); the switch is `config/app-check.json`, shipped `OFF`, and the web loads nothing until `appCheck.siteKey` is set. Roll out `MONITOR` → `ENFORCE` per section 1 (App Check); Firestore and Storage enforcement stay console steps after the callables. | Deferred #4, built (`docs/architecture/flips/security-hardening.md` S-RU-17 … S-RU-32); `docs/security/csp-baseline.md` |
+| **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks, the SW-registration report and the reCAPTCHA script injection (UNMEASURED) are gone or policied.                                                                                                     | Deferred #3 (`…owner-rulings.md:1471`); `firebase.json:43-46`                                                           |
+| **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1478`); OR-29                                                                          |
+| **Firestore connectivity probe** (`www.google.com` in `img-src`)     | Blocked: clients on a failing network report an `img-src` violation and see "no network". Owner's call.                                                                                                                                                                                  | `docs/security/csp-baseline.md` (Follow-ups)                                                                            |
+| **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                                                                                              | `apps/functions/src/main.ts:1120-1127` (`reportClientIssues`)                                                           |

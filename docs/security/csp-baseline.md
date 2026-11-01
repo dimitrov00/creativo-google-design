@@ -8,6 +8,13 @@
 > one CSR app on Firebase Hosting, its faces are self-hosted, and no server
 > sits in front of it. `firebase.json` is the policy's ONE home; this file
 > says why each line is there and how it is kept true.
+>
+> **Amended (2026-10-31, security hardening Phase 4, S-RU-23 / S-DEP-16).**
+> App Check (Deferred #4) admits five exact, path-scoped sources —
+> reCAPTCHA Enterprise's script and frames and the App Check token
+> exchange — and OR-29's `frame-src 'none'` is superseded for that one
+> directive. `check-csp.mjs` checks (f) and (g) pin them
+> (`docs/architecture/flips/security-hardening.md` §2.A.5).
 
 ## What Hosting serves
 
@@ -29,17 +36,19 @@ Every response of the web site carries, from the `**` header rule of
 
 ```
 default-src 'self';
-script-src 'self' 'sha256-<pre-paint theme>' 'sha256-<Beasties media swap>';
+script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/
+  'sha256-<pre-paint theme>' 'sha256-<Beasties media swap>';
 style-src 'self' 'unsafe-inline';
 img-src 'self' data: blob: https://firebasestorage.googleapis.com;
 font-src 'self';
 media-src 'self';
 connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com
   https://securetoken.googleapis.com https://firebasestorage.googleapis.com
+  https://content-firebaseappcheck.googleapis.com
   https://us-central1-<PROJECT_ID>.cloudfunctions.net https://tiles.openfreemap.org;
 worker-src 'self' blob:;
 manifest-src 'self';
-frame-src 'none';
+frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/;
 object-src 'none';
 base-uri 'self';
 form-action 'self';
@@ -58,6 +67,20 @@ upgrade-insecure-requests
   `eval`, `innerHTML` or `bypassSecurityTrust*` sink (measured at
   `1322b782`). A hash is a script the policy admits by name, so an extra
   one is refused as firmly as a missing one (`check-csp.mjs`, below).
+  **App Check (S-RU-23):** reCAPTCHA Enterprise's loader
+  (`https://www.google.com/recaptcha/enterprise.js`, injected by
+  `app-check.provider.ts` only when the build carries a site key) and the
+  release it pulls from `https://www.gstatic.com/recaptcha/`. Google
+  requires `www.google.com`, so the source is **path-scoped** to
+  `/recaptcha/` — the host as a whole is never admitted, and no
+  `'strict-dynamic'` widens what those scripts may load. The trade-off is
+  recorded, not hidden: CSP drops a source's path once a request is
+  redirected, so the path scope holds only while no admitted origin
+  redirects. `firebase.json`'s hosting entry has no `redirects` (only the
+  `**` rewrite), and `check-csp.mjs` check (g) keeps it so. CSP Evaluator
+  still flags `www.google.com` in a `script-src`; that is the price of
+  reCAPTCHA. A build without a site key (production today) loads none of
+  it.
 - **`style-src 'self' 'unsafe-inline'`** — Angular writes every component's
   styles into `<style>` tags at runtime, and `ui-map` puts MapLibre's
   stylesheet into one (`maplibre-loader.ts`); without per-request nonces
@@ -78,7 +101,16 @@ upgrade-insecure-requests
   all; none is an `<img>`). `<PROJECT_ID>` is the literal of `.firebaserc`'s
   default — the placeholder `creativo-replace-me` until the project exists;
   the production preflight refuses a mismatch or the placeholder (OR-35 P5,
-  P6).
+  P6). **App Check (S-RU-23):** `https://content-firebaseappcheck.googleapis.com`,
+  where the App Check SDK exchanges a reCAPTCHA Enterprise token for an App
+  Check token (an exact host). **Not admitted:** `https://www.google.com/recaptcha/`
+  in `connect-src` (reCAPTCHA's reload beacons, named by the phase's
+  inventory) — Google's reCAPTCHA CSP list names `script-src` and
+  `frame-src`, and those requests run inside Google's own frame under its
+  own policy. The owner's staging smoke checks for a `connect-src`
+  violation; a host it shows missing joins here in the same change as its
+  measurement. A blocked request means a headerless call (`MISSING`,
+  visible in MONITOR), never a hang (S-RU-31).
 - **`worker-src 'self' blob:`** — the Angular service worker, and MapLibre's
   tile worker (without it the map silently never draws). Since maplibre-gl
   6 that worker is the self-hosted module `/maplibre-gl-worker.mjs`, which
@@ -86,11 +118,14 @@ upgrade-insecure-requests
   it from a `blob:` URL. The map no longer needs `blob:` here: dropping it is
   a policy change, left to the owner.
 - **`manifest-src 'self'`** — `manifest.webmanifest`.
-- **`frame-src 'none'`** — the app embeds nothing. This holds because Auth
-  is built with `initializeAuth` and no popup/redirect resolver (OR-32):
+- **`frame-src`** — exactly reCAPTCHA Enterprise's invisible frames
+  (`https://www.google.com/recaptcha/`, `https://recaptcha.google.com/recaptcha/`),
+  App Check's and nothing else's (S-RU-23 supersedes OR-29's `'none'` for
+  this directive). OR-32's reason still holds for Auth: Auth is built with
+  `initializeAuth` and no popup/redirect resolver, so it embeds nothing —
   `getAuth` would load `apis.google.com` and a hidden `__/auth/iframe` on
   phones and Safari, for sign-in flows the app never runs (every session
-  starts from a custom token).
+  starts from a custom token). Without a site key no frame loads at all.
 - **`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`** — no
   plugins, no `<base>` hijack, no form posting off-site.
 - **`frame-ancestors 'none'`** (and `X-Frame-Options: DENY` for older
@@ -114,6 +149,16 @@ upgrade-insecure-requests
   string; the smoke's build ships no service worker, so the smoke cannot
   see it). Enforcing waits on exactly those (Deferred #3: a DS attribution
   footnote, a worker policy, and a trusted URL for the registration).
+  **reCAPTCHA (S-RU-28, UNMEASURED):** with a site key the page injects
+  the reCAPTCHA script by assigning a script's `src`, and reCAPTCHA's own
+  code is expected to create a `goog#html` policy — two more report-only
+  sources on every page load. They are listed, unmeasured, in
+  `RECAPTCHA_REPORT_ONLY_SINKS` (the `require-trusted-types-for` samples)
+  and `RECAPTCHA_REPORT_ONLY_POLICIES` (the `trusted-types` samples, the
+  policy name) of `@creativo/infrastructure/firebase-app/csp-baseline`; the
+  smoke runs the emulator path and never loads reCAPTCHA, so the owner's
+  staging smoke with a real key measures BOTH directives and corrects the
+  lists before the production key. They are Deferred #3's second blocker.
 - **HSTS** — a year, subdomains included. No `preload` until the apex
   domain is fixed: the preload list is near-irreversible (Deferred #10).
 - **`Referrer-Policy: strict-origin-when-cross-origin`** — another origin
@@ -166,7 +211,18 @@ The hashes are **computed by the gate, never typed by hand**.
 - a `connect-src` that does not name exactly the callables host of
   `.firebaserc`'s default project;
 - a built js/css file, `/` or a route outside the cache rule its name
-  calls for.
+  calls for;
+- (f) the App Check sources out of place — `APP_CHECK_SOURCES` by
+  directive: a `script-src` that lacks either reCAPTCHA source or admits
+  any other host, a `frame-src` other than exactly the two frame sources
+  (`'none'` included), a `connect-src` without the exchange host, or a
+  wildcard in any of the three;
+- (g) a `redirects` entry on the web hosting entry (it would void the
+  `script-src` path scope).
+
+`tools/verify/csp/check-csp.spec.mjs` (`pnpm nx test verify-tools`) runs
+every check over synthetic configs and markup, and (f) and (g) over the
+real `firebase.json`.
 
 **When an inline script changes** (the pre-paint script in
 `apps/web/src/index.html`, or the builder's critical-CSS output after an
@@ -204,6 +260,13 @@ the app RUNS under it. `pnpm run verify:csp`:
    header, and it pins `Cache-Control` on `/`, `/staff`, a hashed chunk and
    `ngsw.json`.
 
+The smoke half is unchanged by App Check (S-RU-32): the `csp-smoke` build
+runs the emulator path, whose App Check provider is a local stand-in that
+loads no Google script, so no smoke assertion can see the reCAPTCHA
+hosts. Their proof is the ENFORCE run of the smoke (the browser carries
+the emulator token) and the owner's staging smoke with a real key
+(`docs/production-deploy.md`, App Check).
+
 The full gate (HANDOFF §4) runs `verify:csp` from wave 1 of pass F on; it
 shares the emulators' ports with `e2e:web`, so it runs alone.
 
@@ -230,7 +293,10 @@ violation whose sample is one of the three of `MAPLIBRE_REPORT_ONLY_SINKS`
 (`@creativo/infrastructure/firebase-app/csp-baseline`, the one list the
 smoke tolerates them by): every map render trips them, and reported they
 would spend the callable's shared throttle and the `client_issue_count`
-alert on known noise at every landing and `/book` visit. An enforced
+alert on known noise at every landing and `/book` visit. With a site key
+it drops the reCAPTCHA script's report-only Trusted Types noise the same
+way (`RECAPTCHA_REPORT_ONLY_SINKS` / `RECAPTCHA_REPORT_ONLY_POLICIES`,
+UNMEASURED — a wrong pattern drops nothing). An enforced
 violation, and any other report-only one, is always reported. It hands
 the rest — the directive, the disposition, the blocked ORIGIN (never a
 path), the script and line that tripped it, the route's pattern — to the
@@ -252,8 +318,9 @@ reporter 1.1, the issue data and error 0.9). Initial total: 580.09 kB
 
 ## Follow-ups
 
-- **Enforce Trusted Types** once the MapLibre sinks and the
-  service-worker registration are gone (Deferred #3). Until then every
+- **Enforce Trusted Types** once the MapLibre sinks, the service-worker
+  registration and the reCAPTCHA script injection (its UNMEASURED lists,
+  above) are gone or policied (Deferred #3). Until then every
   production page session reports the registration once (one
   `reportClientIssues` call per session, deduped and batched).
 - **Firestore's connectivity probe.** When a WebChannel request fails,
@@ -264,9 +331,12 @@ reporter 1.1, the issue data and error 0.9). Initial total: 580.09 kB
   "no network". Admitting `https://www.google.com` in `img-src` is the
   owner's call (a request to Google on every failure); until then the
   reports name it.
-- **App Check** on the callables needs a reCAPTCHA host admitted here
+- ~~**App Check** on the callables needs a reCAPTCHA host admitted here
   (`script-src`, `frame-src`, `connect-src`) and an enrolment design
-  (Deferred #4).
+  (Deferred #4).~~ **Done** (security hardening Phase 4, S-RU-23): the five
+  sources above, checks (f) and (g). Left for the owner's staging smoke:
+  the live hosts (a `connect-src` beacon, if any) and the Trusted Types
+  samples.
 - **HSTS `preload`** once the apex domain is fixed (Deferred #10).
 - **The project id**: `.firebaserc`'s placeholder becomes the real
   project, and `connect-src`'s callables host with it (`check-csp.mjs`

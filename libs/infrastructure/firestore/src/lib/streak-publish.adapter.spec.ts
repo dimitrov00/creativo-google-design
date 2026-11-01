@@ -83,6 +83,7 @@ function setUp() {
         FUNCTIONS,
         memoryIdPorts('transport-operation'),
         recordingClientIssuePorts().ports,
+        Promise.resolve(null),
       ),
       memo,
     ),

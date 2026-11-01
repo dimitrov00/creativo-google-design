@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FirebaseError } from 'firebase/app';
 import { type Functions, FunctionsError } from 'firebase/functions';
 import {
   BookingCall,
@@ -10,6 +11,7 @@ import {
   StreakRule,
 } from '@core/components';
 import {
+  AppCheckTokenUse,
   AppointmentId,
   BarberId,
   CartLineId,
@@ -27,7 +29,12 @@ import {
   PipelineError,
   PipelineErrorCode,
 } from '@core/errors';
-import { Callables, type ClientIssuePorts } from '@core/ports';
+import {
+  CALLABLE_APP_CHECK_TOKEN,
+  type CallableName,
+  Callables,
+  type ClientIssuePorts,
+} from '@core/ports';
 import { ClientIssueSystem } from '@core/systems';
 import {
   localDate,
@@ -41,7 +48,7 @@ const { callableMock, httpsCallableMock } = vi.hoisted(() => {
   return {
     callableMock: callable,
     httpsCallableMock: vi.fn<
-      (functions: unknown, name: string) => typeof callable
+      (functions: unknown, name: string, options?: unknown) => typeof callable
     >(() => callable),
   };
 });
@@ -94,7 +101,9 @@ const IDS = { nextId: () => TRANSPORT_ID };
 const client = (
   ids = IDS,
   issues: ClientIssuePorts = recordingClientIssuePorts().ports,
-) => callableClientPorts(FUNCTIONS, ids, issues).callableClient;
+) =>
+  callableClientPorts(FUNCTIONS, ids, issues, Promise.resolve(null))
+    .callableClient;
 
 describe('callableClientPorts — the request', () => {
   beforeEach(() => {
@@ -670,5 +679,178 @@ describe('callableClientPorts — a transport failure, reported to the issue sin
       client(IDS, sink.ports)(Callables.CommitBooking)(COLD),
     ).resolves.toMatchObject({ ok: false });
     expect(sink.reported).toEqual([]);
+  });
+});
+
+// Security hardening S-WS-A (S-L-3, S-L-5, S-RU-31): the five LIMITED_USE
+// callables ask a limited-use App Check token, every other call is dialled
+// exactly as before; no call leaves before the page's App Check decision;
+// a token App Check could not mint is retried once as a standard call.
+describe('callableClientPorts — App Check', () => {
+  beforeEach(() => {
+    callableMock.mockReset();
+    callableMock.mockResolvedValue({ data: {} });
+    httpsCallableMock.mockClear();
+  });
+
+  const LIMITED: readonly CallableName[] = [
+    Callables.StartImpersonation,
+    Callables.ExportClientData,
+    Callables.PreviewClientErasure,
+    Callables.EraseClient,
+    Callables.SetRoles,
+  ];
+
+  it('the table names exactly the five limited-use callables', () => {
+    const limited = Object.entries(CALLABLE_APP_CHECK_TOKEN)
+      .filter(([, use]) => use === AppCheckTokenUse.LimitedUse)
+      .map(([name]) => name);
+    expect([...limited].sort()).toEqual([...LIMITED].sort());
+  });
+
+  it.each(Object.values(Callables))(
+    'dials %s with limited-use tokens exactly when it is LIMITED_USE, else with two arguments',
+    async (name) => {
+      await client()(name)({} as never);
+
+      expect(httpsCallableMock).toHaveBeenCalledTimes(1);
+      if (LIMITED.includes(name)) {
+        expect(httpsCallableMock).toHaveBeenCalledWith(FUNCTIONS, name, {
+          limitedUseAppCheckTokens: true,
+        });
+      } else {
+        expect(httpsCallableMock.mock.calls[0]).toEqual([FUNCTIONS, name]);
+      }
+    },
+  );
+
+  it('sends nothing before the App Check decision settles', async () => {
+    let decide: (value: null) => void = () => undefined;
+    const appCheckReady = new Promise<null>((resolve) => {
+      decide = resolve;
+    });
+    const call = callableClientPorts(
+      FUNCTIONS,
+      IDS,
+      recordingClientIssuePorts().ports,
+      appCheckReady,
+    ).callableClient(Callables.CommitBooking)(COLD);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(httpsCallableMock).not.toHaveBeenCalled();
+    expect(callableMock).not.toHaveBeenCalled();
+
+    decide(null);
+    await call;
+    expect(callableMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a decision that rejected still sends the call — a page without App Check', async () => {
+    const answer = await callableClientPorts(
+      FUNCTIONS,
+      IDS,
+      recordingClientIssuePorts().ports,
+      Promise.reject(new Error('never happens')),
+    ).callableClient(Callables.CommitBooking)(COLD);
+
+    expect(callableMock).toHaveBeenCalledTimes(1);
+    expect(answer.ok).toBe(false);
+  });
+
+  it('retries a limited-use call App Check could not mint ONCE as a standard call, reported once', async () => {
+    const sink = recordingClientIssuePorts();
+    const mintFailure = new FirebaseError(
+      'appCheck/recaptcha-error',
+      'AppCheck: ReCAPTCHA error.',
+    );
+    callableMock.mockReset();
+    callableMock
+      .mockRejectedValueOnce(mintFailure)
+      .mockResolvedValueOnce({ data: {} });
+
+    await client(IDS, sink.ports)(Callables.EraseClient)({} as never);
+
+    expect(httpsCallableMock.mock.calls).toEqual([
+      [FUNCTIONS, Callables.EraseClient, { limitedUseAppCheckTokens: true }],
+      [FUNCTIONS, Callables.EraseClient],
+    ]);
+    expect(callableMock).toHaveBeenCalledTimes(2);
+    expect(sink.reported).toEqual([
+      ClientIssueSystem.composeTransport({
+        callableName: Callables.EraseClient,
+        errorName: 'FirebaseError',
+        callableErrorCode: 'appCheck/recaptcha-error',
+        operationId: brand(ClientOperationId.parse(TRANSPORT_ID)),
+        release: null,
+      }),
+    ]);
+  });
+
+  // Review round 2, finding 2: each failed mint falls back to the standard
+  // call, which the SDK sends with the page's ONE cached standard token. Under
+  // MONITOR / ENFORCE the server consumes it on a limited-use callable, so the
+  // second fallback re-sends a consumed token and ENFORCE refuses it
+  // APP_CHECK_REPLAYED — worded with the reload line (S-RU-24, S-RU-31(ii)).
+  it('falls back to the same standard call on every failed mint — two erasure calls, two standard retries', async () => {
+    const sink = recordingClientIssuePorts();
+    const mintFailure = new FirebaseError('appCheck/throttled', 'throttled');
+    callableMock.mockReset();
+    callableMock
+      .mockRejectedValueOnce(mintFailure)
+      .mockResolvedValueOnce({ data: {} })
+      .mockRejectedValueOnce(mintFailure)
+      .mockResolvedValueOnce({ data: {} });
+
+    await client(IDS, sink.ports)(Callables.PreviewClientErasure)({} as never);
+    await client(IDS, sink.ports)(Callables.EraseClient)({} as never);
+
+    expect(httpsCallableMock.mock.calls).toEqual([
+      [
+        FUNCTIONS,
+        Callables.PreviewClientErasure,
+        { limitedUseAppCheckTokens: true },
+      ],
+      [FUNCTIONS, Callables.PreviewClientErasure],
+      [FUNCTIONS, Callables.EraseClient, { limitedUseAppCheckTokens: true }],
+      [FUNCTIONS, Callables.EraseClient],
+    ]);
+    expect(callableMock).toHaveBeenCalledTimes(4);
+    expect(sink.reported.map((issue) => issue.callableErrorCode)).toEqual([
+      'appCheck/throttled',
+      'appCheck/throttled',
+    ]);
+  });
+
+  it('never retries a FunctionsError — the server answered', async () => {
+    const sink = recordingClientIssuePorts();
+    const refusal = new FunctionsError(
+      'failed-precondition',
+      'APP_CHECK_REQUIRED',
+      { errorCode: 'APP_CHECK_REQUIRED' },
+    );
+    callableMock.mockReset();
+    callableMock.mockRejectedValueOnce(refusal);
+
+    const failure = unwrapErr(
+      await client(IDS, sink.ports)(Callables.EraseClient)({} as never),
+    );
+
+    expect(httpsCallableMock).toHaveBeenCalledTimes(1);
+    expect(callableMock).toHaveBeenCalledTimes(1);
+    expect(failure.serverErrorCode).toBe('APP_CHECK_REQUIRED');
+    expect(sink.reported).toEqual([]);
+  });
+
+  it('never retries a standard call, nor a limited-use one that failed otherwise', async () => {
+    const mintFailure = new FirebaseError('appCheck/throttled', 'throttled');
+    callableMock.mockReset();
+    callableMock.mockRejectedValue(mintFailure);
+    await client()(Callables.CommitBooking)(COLD);
+    expect(callableMock).toHaveBeenCalledTimes(1);
+
+    callableMock.mockReset();
+    callableMock.mockRejectedValue(new Error('network'));
+    await client()(Callables.EraseClient)({} as never);
+    expect(callableMock).toHaveBeenCalledTimes(1);
   });
 });

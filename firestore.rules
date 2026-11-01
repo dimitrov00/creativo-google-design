@@ -357,11 +357,19 @@ service cloud.firestore {
     // A write names its author and its instant truthfully (audit hardening
     // WS-3.4, DEP-15): the author is the caller, the stamp is fresh. An empty
     // note deletes the document, which any book worker may do.
+    // Its id IS the visit's (one note per visit, `appointmentNotePorts`), and
+    // it reaches the audit row's `resourceId` and the attempt lines, so a
+    // write must name an appointment that exists (one read) and hold only
+    // the note's three keys (`AppointmentNote`, pinned by
+    // rules-key-parity.rules-text.spec.ts) — security hardening S-DEP-5. A
+    // stray note's delete needs neither: it can always be removed.
     match /appointmentNotes/{appointmentId} {
       allow read: if worksTheBook();
       allow create, update: if worksTheBook()
         && request.resource.data.authorUserId == request.auth.uid
-        && stampInWindow(request.resource.data.writtenAtUtcMs);
+        && stampInWindow(request.resource.data.writtenAtUtcMs)
+        && request.resource.data.keys().hasOnly(['authorUserId', 'text', 'writtenAtUtcMs'])
+        && exists(/databases/$(database)/documents/appointments/$(appointmentId));
       allow delete: if worksTheBook();
     }
 
@@ -376,11 +384,26 @@ service cloud.firestore {
     // taker is the caller, the stamp is fresh — read after the upload
     // (`attachVisitPhoto`, L6). No update path exists (RU-19); a delete is
     // the book's.
+    // Its id has ONE minter — `AppointmentPhotoId.of(nextId())`, the
+    // browser's `crypto.randomUUID()` — so a create needs a UUID id, its
+    // body's appointment to exist (one read), only the photo's twelve keys
+    // (`AppointmentPhoto`, pinned by rules-key-parity.rules-text.spec.ts), a
+    // known `photoOrigin`, and for a `SHOT` the object path its one minter
+    // writes (`uploadPhotoBytes`: `appointmentPhotos/<appointmentId>/<id>`);
+    // a `LIBRARY` photo's path names the shop's library object and stays
+    // free — security hardening S-DEP-5 (Phase 3 flag 26 included).
     match /appointmentPhotos/{photoId} {
       allow read: if worksTheBook();
       allow create: if worksTheBook()
         && request.resource.data.takenByUserId == request.auth.uid
-        && stampInWindow(request.resource.data.takenAtUtcMs);
+        && stampInWindow(request.resource.data.takenAtUtcMs)
+        && photoId.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        && request.resource.data.keys().hasOnly(['appointmentId', 'barberId', 'clientCustomerId', 'clientLabel', 'height', 'label', 'path', 'photoOrigin', 'takenAtUtcMs', 'takenByUserId', 'url', 'width'])
+        && request.resource.data.appointmentId is string
+        && request.resource.data.photoOrigin in ['SHOT', 'LIBRARY']
+        && (request.resource.data.photoOrigin != 'SHOT'
+            || request.resource.data.path == 'appointmentPhotos/' + request.resource.data.appointmentId + '/' + photoId)
+        && exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId));
       allow update: if false;
       allow delete: if worksTheBook();
     }
@@ -575,7 +598,20 @@ service cloud.firestore {
       // The roster editors' boundary — see `mayEditRoster`. The live writer
       // is the staff's pen on the day, `scheduleExceptionPorts`
       // (`scheduling.adapter.ts`, one transaction per edit).
-      allow write: if mayEditRoster();
+      // Its id is the day's busy key (`BusyKey.of`: `<barberId>__<localDate>`,
+      // which the booking transaction reads by), so a write must BE the day
+      // its id names — the body's barber and date-shaped day — and hold only
+      // the six keys (`ScheduleException`, pinned by
+      // rules-key-parity.rules-text.spec.ts): zero reads, since a multi-day
+      // block writes many days in one transaction — security hardening
+      // S-DEP-5. A delete needs neither.
+      allow create, update: if mayEditRoster()
+        && request.resource.data.keys().hasOnly(['barberId', 'exceptionEffect', 'exceptionRanges', 'localDate', 'locationId', 'utcEpochMs'])
+        && request.resource.data.barberId is string
+        && request.resource.data.localDate is string
+        && request.resource.data.localDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && dayDocId == request.resource.data.barberId + '__' + request.resource.data.localDate;
+      allow delete: if mayEditRoster();
     }
 
     match /capacity/{monthId} {

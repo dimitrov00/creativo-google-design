@@ -1,6 +1,8 @@
+import type { RolesCall } from '@core/components';
 import type { Result, AppointmentId, BackfillJobId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
+import type { Callable } from './scheduling.port';
 
 /**
  * The governance context's ports (blueprint §4, §4.1, §4.2): the audit
@@ -70,6 +72,15 @@ export type PageAppointments = (
   limit: number,
 ) => Promise<Result<readonly Appointment[], RepositoryError>>;
 
+// ── The web's roles change ────────────────────────────────────────────────
+
+/**
+ * `setRoles` — an admin's change of one account's roles (security hardening
+ * S-WS-E): the account and the whole new set in; the stored set and whether
+ * anything was written out.
+ */
+export type SetRoles = Callable<RolesCall, RolesCall.Changed>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The after-commit audit write — the operator backfill's per-call row only (L2). */
@@ -95,6 +106,11 @@ export type BackfillJobPorts = {
   readonly loadBackfillJob: LoadBackfillJob;
   readonly writeBackfillJob: WriteBackfillJob;
   readonly pageAppointments: PageAppointments;
+};
+
+/** The admin's roles change — the staff client card's «Роли» block; ONE token, `ROLES_ADMIN_PORTS` (web). */
+export type RolesAdminPorts = {
+  readonly setRoles: SetRoles;
 };
 
 /** The governance context's whole port suite — an intersection of its bundles. */

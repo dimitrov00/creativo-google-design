@@ -2,7 +2,11 @@ import type { Auth } from 'firebase-admin/auth';
 import { IdentifierChannel, Result, UserId } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { AttemptOutcome, AuthClaims } from '@core/components';
-import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
+import type {
+  AuthAdminPorts,
+  AuthSessionRevokePorts,
+  AuthUserLookupPorts,
+} from '@core/ports';
 import { FailureCodeSystem, TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -15,6 +19,10 @@ import { FailureCodeSystem, TriggerAttemptSystem } from '@core/systems';
  * the first-verification race's winner or an orphan Auth user (blueprint
  * §4.1 `verifyOtp`, F2-9).
  *
+ * Beside it, `authSessionRevokePorts` serves `AuthSessionRevokePorts` —
+ * Admin Auth's session revocation, `setRoles`' only (security hardening
+ * S-RU-10): a factory of its own, so no other export is handed it.
+ *
  * The claims bag written on the token is the component's own stored shape,
  * `AuthClaims.toToken` — the adapter maps nothing, and the token shape has
  * one source of truth beside `AuthClaims.fromToken`.
@@ -26,7 +34,7 @@ const AuthRefusal = {
   PhoneTaken: 'auth/phone-number-already-exists',
   /** `createUser` on an e-mail another Auth user holds — the race loser. */
   EmailTaken: 'auth/email-already-exists',
-  /** `getUserByPhoneNumber` / `getUserByEmail` found nobody. */
+  /** `getUserByPhoneNumber` / `getUserByEmail` / `revokeRefreshTokens` found nobody. */
   UserNotFound: 'auth/user-not-found',
 } as const;
 
@@ -104,6 +112,27 @@ export const authClaimsPorts = (
     } catch (error) {
       return authCodeOf(error) === AuthRefusal.UserNotFound
         ? Result.ok(null)
+        : Result.err(authFailure(error));
+    }
+  },
+});
+
+/**
+ * Admin Auth's session revocation (`AuthSessionRevokePorts`, security
+ * hardening S-RU-10 — `setRoles`): `revokeRefreshTokens` moves the account's
+ * `tokensValidAfterTime` to now, so its next refresh fails and its next
+ * session is minted from the written `users.roles`. An account with no Auth
+ * user (`auth/user-not-found`) has no session to end: ok. Any other failure
+ * answers `authFailure` — the SDK's code, never its message.
+ */
+export const authSessionRevokePorts = (auth: Auth): AuthSessionRevokePorts => ({
+  revokeRefreshTokens: async (uid) => {
+    try {
+      await auth.revokeRefreshTokens(uid);
+      return Result.ok(undefined);
+    } catch (error) {
+      return authCodeOf(error) === AuthRefusal.UserNotFound
+        ? Result.ok(undefined)
         : Result.err(authFailure(error));
     }
   },

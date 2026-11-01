@@ -39,6 +39,7 @@ import {
   CUSTOMER_PORTS,
   CUSTOMER_SEARCH_PORTS,
   DEFAULT_LOCATION_PORTS,
+  FIREBASE_APP_CHECK,
   FIREBASE_AUTH,
   FIREBASE_FIRESTORE,
   FIREBASE_FUNCTIONS,
@@ -58,6 +59,7 @@ import {
   PROFILE_PORTS,
   PROGRAMS_PORTS,
   ReportingErrorHandler,
+  ROLES_ADMIN_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   SHOP_EVENT_READ_PORTS,
@@ -66,15 +68,18 @@ import {
   TIMER_PORTS,
   USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
+  appCheckConfigOf,
   callableClientPorts,
   clientPrivacyPorts,
   errorHandlerLogPorts,
   lazyAdapterScope,
   provideFirebaseApp,
+  provideFirebaseAppCheck,
   provideFirebaseAuth,
   provideFirebaseFunctions,
   provideFlags,
   provideLazyPort,
+  rolesAdminPorts,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
 import { Result } from '@core/primitives';
@@ -291,6 +296,11 @@ export const appConfig: ApplicationConfig = {
     // Firebase SDK singletons (raw SDK stays behind these tokens). Only the
     // eager ones: Firestore and Storage are created inside `firebaseData`.
     provideFirebaseApp(environment.firebase),
+    // App Check (security hardening S-WS-A, S-L-5): started at boot — the
+    // emulator token under the emulators, reCAPTCHA Enterprise with a site
+    // key (its script bounded), nothing at all without one (production
+    // today). The callable client waits for that bounded decision.
+    provideFirebaseAppCheck(appCheckConfigOf(environment)),
     provideFirebaseAuth(emulators),
     provideFirebaseFunctions(emulators),
 
@@ -340,6 +350,7 @@ export const appConfig: ApplicationConfig = {
           inject(FIREBASE_FUNCTIONS),
           inject(ID_PORTS),
           inject(CLIENT_ISSUE_REPORTER),
+          inject(FIREBASE_APP_CHECK),
         ),
     },
     {
@@ -356,6 +367,12 @@ export const appConfig: ApplicationConfig = {
     {
       provide: CLIENT_PRIVACY_PORTS,
       useFactory: () => clientPrivacyPorts(inject(GATEWAY_PORTS)),
+    },
+    // The admin's roles change (the staff client card's «Роли» block, S-WS-E),
+    // over the same callable client.
+    {
+      provide: ROLES_ADMIN_PORTS,
+      useFactory: () => rolesAdminPorts(inject(GATEWAY_PORTS)),
     },
     // The device's storage: the `/book` draft per tab.
     {
@@ -535,7 +552,10 @@ export const appConfig: ApplicationConfig = {
           inj.get(FIREBASE_FIRESTORE),
           m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
         ),
-      methods: { loadCustomerForUser: LazyMethod.Promise },
+      methods: {
+        loadCustomerForUser: LazyMethod.Promise,
+        loadCustomer: LazyMethod.Promise,
+      },
       onLoadError: dataUnavailable,
     }),
 

@@ -28,6 +28,7 @@ export * from './reschedule-appointment.pipeline';
 export * from './resolve-shop-zone.pipeline';
 export * from './run-backfill.pipeline';
 export * from './sample-lead-time.pipeline';
+export * from './set-roles.pipeline';
 export * from './shop-zone-read.pipeline';
 export * from './shop-today.pipeline';
 export * from './start-impersonation.pipeline';

@@ -11,9 +11,25 @@
     },
     "test-integration": {
       "executor": "@nx/vitest:test",
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/firestore.rules",
+        "{workspaceRoot}/storage.rules"
+      ],
       "options": {
         "configFile": "libs/infrastructure/firestore/vitest.integration.config.mts"
       }
+    },
+    "test": {
+      "inputs": [
+        "...",
+        "{workspaceRoot}/firestore.rules",
+        "{workspaceRoot}/storage.rules"
+      ]
+    },
+    "test-ci--src/lib/stamp-window.rules-text.spec.ts": {
+      "inputs": ["...", "{workspaceRoot}/firestore.rules"]
     }
   }
 }

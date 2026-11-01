@@ -12,7 +12,10 @@
 #                           outcome (TRANSIENT | PERMANENT) and fn;
 #   document_refused        a stored document a server read guard refused;
 #   audit_actor_missing     an act committed without its audit row;
-#   callable_failed         a callable's failure outcome line, label callable.
+#   callable_failed         a callable's failure outcome line, label callable;
+#   roles_sessions_not_revoked  a roles change committed whose target's
+#                           sessions were not revoked (security hardening
+#                           S-RU-10) — alerted on any occurrence.
 # Every message a filter names is a `LogEvent` value
 # (libs/ecs-core/src/primitives/log-event.data.ts) — pinned by
 # tools/verify/ops/ops-scripts.spec.mjs, so a renamed event cannot silently
@@ -186,6 +189,10 @@ metric "$METRIC_CALLABLE_FAILED" \
   'Callable failure outcome lines (LogEvent.CallableFailed), by callable' \
   "${SERVER} AND jsonPayload.message:\"callable.failed\"" \
   callable=jsonPayload.callable
+
+metric "$METRIC_ROLES_SESSIONS_NOT_REVOKED" \
+  'Roles changes committed with the target sessions not revoked (LogEvent.RolesSessionsNotRevoked)' \
+  "${SERVER} AND jsonPayload.message:\"roles.sessions_not_revoked\""
 
 for file in "$HERE"/alerts/*.yaml; do
   alert "$file"

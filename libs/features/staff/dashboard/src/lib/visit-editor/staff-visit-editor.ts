@@ -629,6 +629,13 @@ export interface VisitEditorClientOption {
    * Absent for everyone else.
    */
   readonly noAccount?: boolean;
+  /**
+   * That walk-in's client RECORD id — set only from a record the search
+   * found (`recordOption`) or a stored WALK_IN seat's `subjectCustomerId`,
+   * never parsed from the `guest-…` key (S-RU-15): what opens their card
+   * keyed by the record (S-WS-F). `null` or absent for everyone else.
+   */
+  readonly customerId?: CustomerId | null;
 }
 
 /** A person row as the add-client page draws it: ticked, matched, marked. */
@@ -828,6 +835,8 @@ interface DraftClient {
   readonly email: Email | null;
   /** A walk-in's record with no account, picked from the search (OR-26). */
   readonly noAccount?: boolean;
+  /** That walk-in's record id, as the pick or the seat carried it (S-RU-15). */
+  readonly customerId?: CustomerId | null;
 }
 
 interface VisitDraft {
@@ -7020,6 +7029,7 @@ export class StaffVisitEditor {
     return {
       id: client.id,
       userId: DraftPersonKey.accountOf(client.id),
+      customerId: client.customerId ?? null,
       label: client.label,
       phone: client.phone,
       phoneHref: client.phoneHref,

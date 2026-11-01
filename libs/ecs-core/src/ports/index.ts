@@ -1,4 +1,5 @@
 export * from './accounts.port';
+export * from './app-check.port';
 export * from './audit-read.port';
 export * from './auth.port';
 export * from './callables';

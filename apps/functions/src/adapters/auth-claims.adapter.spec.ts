@@ -8,8 +8,12 @@ import {
   ParsedIdentifier,
   Role,
 } from '@core/components';
-import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
-import { authClaimsPorts } from './auth-claims.adapter';
+import type {
+  AuthAdminPorts,
+  AuthSessionRevokePorts,
+  AuthUserLookupPorts,
+} from '@core/ports';
+import { authClaimsPorts, authSessionRevokePorts } from './auth-claims.adapter';
 
 type FakeAuth = {
   readonly createCustomToken: ReturnType<typeof vi.fn>;
@@ -18,6 +22,7 @@ type FakeAuth = {
   readonly getUserByEmail: ReturnType<typeof vi.fn>;
   readonly getUserByPhoneNumber: ReturnType<typeof vi.fn>;
   readonly updateUser: ReturnType<typeof vi.fn>;
+  readonly revokeRefreshTokens: ReturnType<typeof vi.fn>;
 };
 
 function fakeAuth(): FakeAuth {
@@ -28,6 +33,7 @@ function fakeAuth(): FakeAuth {
     getUserByEmail: vi.fn(async () => ({ uid: 'uid-mail' })),
     getUserByPhoneNumber: vi.fn(async () => ({ uid: 'uid-phone' })),
     updateUser: vi.fn(async () => ({ uid: 'u-1' })),
+    revokeRefreshTokens: vi.fn(async () => undefined),
   };
 }
 
@@ -268,6 +274,76 @@ describe('auth-claims adapter', () => {
       expect(failed.ok).toBe(false);
       if (!failed.ok)
         expect(failed.error.errorCode).toBe(PipelineErrorCode.Unavailable);
+    });
+  });
+
+  describe('the session revocation (security hardening S-RU-10, setRoles)', () => {
+    it('is its own bundle — AuthSessionRevokePorts, one member', () => {
+      const ports: AuthSessionRevokePorts = authSessionRevokePorts(
+        asAuth(fakeAuth()),
+      );
+      expect(Object.keys(ports)).toEqual(['revokeRefreshTokens']);
+    });
+
+    it('revokes the uid’s refresh tokens — the one Admin call', async () => {
+      const auth = fakeAuth();
+      const result = await authSessionRevokePorts(
+        asAuth(auth),
+      ).revokeRefreshTokens(UID);
+      expect(result).toEqual({ ok: true, value: undefined });
+      expect(auth.revokeRefreshTokens.mock.calls).toEqual([['u-1']]);
+      expect(auth.setCustomUserClaims).not.toHaveBeenCalled();
+    });
+
+    it('answers ok for an account with no Auth user — no session to end', async () => {
+      const auth = fakeAuth();
+      auth.revokeRefreshTokens.mockRejectedValueOnce(
+        authError('auth/user-not-found'),
+      );
+      expect(
+        await authSessionRevokePorts(asAuth(auth)).revokeRefreshTokens(UID),
+      ).toEqual({ ok: true, value: undefined });
+    });
+
+    it('answers any other failure by its code, never its message', async () => {
+      const auth = fakeAuth();
+      auth.revokeRefreshTokens.mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            'revoke failed for Sentinel Firstname sentinel@example.invalid',
+          ),
+          { code: 'auth/internal-error' },
+        ),
+      );
+      const result = await authSessionRevokePorts(
+        asAuth(auth),
+      ).revokeRefreshTokens(UID);
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          errorCode: PipelineErrorCode.Unknown,
+          serverErrorCode: null,
+          refusal: 'auth/internal-error',
+          field: null,
+          wireStatus: null,
+          serverParams: {},
+          operationId: null,
+        },
+      });
+      const serialised = JSON.stringify(result);
+      expect(serialised).not.toContain('Sentinel Firstname');
+      expect(serialised).not.toContain('sentinel@example.invalid');
+    });
+
+    it('a transient failure is `unavailable` — the retry of the same act re-revokes', async () => {
+      const auth = fakeAuth();
+      auth.revokeRefreshTokens.mockRejectedValueOnce(authError(14));
+      const result = await authSessionRevokePorts(
+        asAuth(auth),
+      ).revokeRefreshTokens(UID);
+      expect(result.ok).toBe(false);
+      if (!result.ok)
+        expect(result.error.errorCode).toBe(PipelineErrorCode.Unavailable);
     });
   });
 });

@@ -52,7 +52,10 @@ import {
   WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
-import { RepositoryError as CoreRepositoryError } from '@core/errors';
+import {
+  type PipelineError,
+  RepositoryError as CoreRepositoryError,
+} from '@core/errors';
 import {
   AccountLifecycle,
   BirthDate,
@@ -76,6 +79,7 @@ import {
   PolicyPassStamp,
   PublicLabel,
   Role,
+  type RolesCall,
   type ScheduledStreakRule,
   type ShopNow,
   StreakRule,
@@ -111,12 +115,13 @@ import type {
   ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
-  CustomerPorts,
+  CustomerReadPorts,
   DefaultLocationPorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
   ProfilePorts,
+  RolesAdminPorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
@@ -1029,6 +1034,7 @@ export function subjectOf(
   return {
     id: DraftPersonKey.of(uid),
     userId: UserId.of(uid),
+    customerId: null,
     label: georgi ? 'Георги П.' : 'Мартин И.',
     phone: georgi ? '+359 88 123 4567' : '+359 88 765 4321',
     phoneHref: georgi ? '+359881234567' : '+359887654321',
@@ -1038,10 +1044,11 @@ export function subjectOf(
   };
 }
 
-/** A walk-in without a profile: the card reads nothing. */
+/** A typed guest — no account, no client record: the card reads nothing. */
 export const GUEST: ClientCardSubject = {
   id: DraftPersonKey.of('guest-1'),
   userId: null,
+  customerId: null,
   label: 'Иво',
   phone: '+359 89 000 1111',
   phoneHref: '+359890001111',
@@ -1068,6 +1075,12 @@ export const GEORGI_GRANT: ClientCardGrant = {
 export const BARBER_VIEWER: ClientCardViewer = {
   userId: UserId.of('dev-staff-ivan'),
   roles: [Role.Barber],
+};
+
+/** The shop's admin (`Roles.ASSIGN`): the «Роли» block's one viewer (security hardening S-WS-E). */
+export const ADMIN_VIEWER: ClientCardViewer = {
+  userId: UserId.of('dev-admin'),
+  roles: [Role.Admin],
 };
 
 /** Георги's card, opened from today's settled 10:00 fade (he owns it). */
@@ -1437,7 +1450,7 @@ export function heldProfilePortsOf(
 /** `CUSTOMER_PORTS` over the client records — Георги's and Мартин's unless said. */
 export function customerPortsOf(
   customers: readonly Customer[] = fixtureCustomers(),
-): PortDouble<CustomerPorts> {
+): PortDouble<CustomerReadPorts> {
   return portDouble(memoryCustomerPorts(customers));
 }
 
@@ -1467,4 +1480,35 @@ export function journalPortsOf(
   ],
 ): PortDouble<ClientJournalPorts> {
   return portDouble(memoryClientJournalPorts(entries));
+}
+
+/** {@link rolesAdminPortsOf}'s double: every call recorded, in order. */
+export type RolesAdminDouble = RolesAdminPorts & {
+  readonly calls: RolesCall[];
+};
+
+/**
+ * `ROLES_ADMIN_PORTS` (security hardening S-WS-E), scripted: each answer in
+ * turn, the last one repeating — with none scripted, every call is saved
+ * as sent (the set it named, `rolesChanged: true`). Every call recorded.
+ */
+export function rolesAdminPortsOf(
+  ...answers: CoreResult<RolesCall.Changed, PipelineError>[]
+): RolesAdminDouble {
+  const calls: RolesCall[] = [];
+  return {
+    calls,
+    setRoles: async (call) => {
+      calls.push(call);
+      const scripted = answers[Math.min(calls.length, answers.length) - 1];
+      return (
+        scripted ??
+        CoreResult.ok({
+          targetUserId: call.targetUserId,
+          roles: call.roles,
+          rolesChanged: true,
+        })
+      );
+    },
+  };
 }

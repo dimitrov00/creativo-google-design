@@ -7,10 +7,11 @@ import {
   GovernanceCall,
   IdentityCall,
   InvitationCall,
+  RolesCall,
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
-import { Result } from '@core/primitives';
+import { AppCheckTokenUse, Result } from '@core/primitives';
 import type { PipelineError } from '@core/errors';
 
 /**
@@ -27,8 +28,9 @@ import type { PipelineError } from '@core/errors';
  * adds `reportClientIssues`, the web's first-party issue sink (OR-34);
  * audit-hardening Phase 3 adds `exportClientData`, the admin's data-subject
  * export (WS-C), and `previewClientErasure` / `eraseClient`, the admin's
- * erasure (WS-D). Triggers and schedules are never dialled, so they are not
- * here.
+ * erasure (WS-D); security hardening adds `setRoles`, the admin's roles
+ * change (S-WS-E). Triggers and schedules are never dialled, so they are
+ * not here.
  */
 export const Callables = {
   RequestOtpChallenge: 'requestOtpChallenge',
@@ -54,6 +56,7 @@ export const Callables = {
   ExportClientData: 'exportClientData',
   PreviewClientErasure: 'previewClientErasure',
   EraseClient: 'eraseClient',
+  SetRoles: 'setRoles',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -177,6 +180,16 @@ export type CallableWire = {
     readonly input: ClientPrivacyCall;
     readonly answer: ClientPrivacyCall.Erasure;
   };
+  /**
+   * An admin's roles change (security hardening S-WS-E): the account and
+   * the whole new set in — the act's transport operation id rides the
+   * payload ({@link OPERATION_ID_FIELD}), the impersonation calls' shape;
+   * the stored set and whether anything was written out.
+   */
+  readonly [Callables.SetRoles]: {
+    readonly input: RolesCall;
+    readonly answer: RolesCall.Changed;
+  };
 };
 
 /**
@@ -221,6 +234,48 @@ export const OPERATION_ID_FIELD: {
   [Callables.ExportClientData]: 'operationId',
   [Callables.PreviewClientErasure]: 'operationId',
   [Callables.EraseClient]: 'operationId',
+  [Callables.SetRoles]: 'operationId',
+};
+
+/**
+ * Which App Check token each callable takes (security hardening S-WS-A,
+ * S-RU-21, S-L-3) — the ONE table both sides read, so they cannot drift:
+ * the web's callable client asks `limitedUseAppCheckTokens` for a
+ * `LIMITED_USE` callable, and the functions consume its token
+ * (`consumeAppCheckToken`, replay protection) while the switch is MONITOR
+ * or ENFORCE; the edge refuses a replay of it under ENFORCE. The
+ * destructive and sensitive acts take limited-use tokens — the erasure,
+ * its preview, the data-subject export, an impersonation start and a roles
+ * change; every other callable a standard one. Total over
+ * {@link CallableName} by its mapped type.
+ */
+export const CALLABLE_APP_CHECK_TOKEN: {
+  readonly [N in CallableName]: AppCheckTokenUse;
+} = {
+  [Callables.RequestOtpChallenge]: AppCheckTokenUse.Standard,
+  [Callables.VerifyOtpChallenge]: AppCheckTokenUse.Standard,
+  [Callables.CompleteRegistration]: AppCheckTokenUse.Standard,
+  [Callables.UpdateProfile]: AppCheckTokenUse.Standard,
+  [Callables.CommitBooking]: AppCheckTokenUse.Standard,
+  [Callables.CancelAppointment]: AppCheckTokenUse.Standard,
+  [Callables.RescheduleAppointment]: AppCheckTokenUse.Standard,
+  [Callables.TransitionAppointment]: AppCheckTokenUse.Standard,
+  [Callables.MarkArrived]: AppCheckTokenUse.Standard,
+  [Callables.ClearArrival]: AppCheckTokenUse.Standard,
+  [Callables.RecordSeatTip]: AppCheckTokenUse.Standard,
+  [Callables.StaffEditAppointment]: AppCheckTokenUse.Standard,
+  [Callables.RequestWaitlist]: AppCheckTokenUse.Standard,
+  [Callables.CancelWaitlist]: AppCheckTokenUse.Standard,
+  [Callables.RunBackfill]: AppCheckTokenUse.Standard,
+  [Callables.PublishStreakDefinition]: AppCheckTokenUse.Standard,
+  [Callables.StartImpersonation]: AppCheckTokenUse.LimitedUse,
+  [Callables.EndImpersonation]: AppCheckTokenUse.Standard,
+  [Callables.RedeemInvitation]: AppCheckTokenUse.Standard,
+  [Callables.ReportClientIssues]: AppCheckTokenUse.Standard,
+  [Callables.ExportClientData]: AppCheckTokenUse.LimitedUse,
+  [Callables.PreviewClientErasure]: AppCheckTokenUse.LimitedUse,
+  [Callables.EraseClient]: AppCheckTokenUse.LimitedUse,
+  [Callables.SetRoles]: AppCheckTokenUse.LimitedUse,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -281,4 +336,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.ExportClientData]: ClientPrivacyCall.decodeExported,
   [Callables.PreviewClientErasure]: ClientPrivacyCall.decodeErasurePreview,
   [Callables.EraseClient]: ClientPrivacyCall.decodeErasure,
+  [Callables.SetRoles]: RolesCall.decodeChanged,
 };

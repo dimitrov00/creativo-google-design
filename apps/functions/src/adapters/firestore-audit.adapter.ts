@@ -5,11 +5,15 @@ import {
   AuditResourceId,
   LogEvent,
 } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import { type AuditEntry, Collections, QueryOp } from '@core/entities';
 import type { AuditPorts, TelemetryPorts } from '@core/ports';
 import { FailureCodeSystem } from '@core/systems';
-import { ALREADY_EXISTS, bodyOf, writeFailed } from './store-answer';
+import {
+  ALREADY_EXISTS,
+  bodyOf,
+  readFailed,
+  writeFailed,
+} from './store-answer';
 
 /**
  * The audit log's writes and its one reader (`governance.port.ts`, flip 1
@@ -27,8 +31,9 @@ import { ALREADY_EXISTS, bodyOf, writeFailed } from './store-answer';
  *   nobody); when the batch meets a row already there, the rows are created
  *   one by one so a replay that names somebody the first call did not still
  *   gets that one row, and no row the first call wrote is rewritten. NEVER
- *   fatal and never silent: any other failure is logged at error level and
- *   the call's answer stands.
+ *   fatal and never silent: any other failure is logged at error level
+ *   (its canonical code as `reason`, never the SDK's message) and the
+ *   call's answer stands.
  * - `createAuditRows` — the document-change triggers' only write (the
  *   profile trigger and the thirteen governed-collection triggers): the same
  *   deterministic-id `create()`s, ALREADY_EXISTS a success, but a real
@@ -93,7 +98,7 @@ export const firestoreAuditPorts = (
       telemetry.log('error', LogEvent.AuditWriteFailed, {
         action: first?.auditAction ?? null,
         resourceId: first?.resourceId ?? null,
-        error: String(error),
+        reason: FailureCodeSystem.codeOf(error),
       });
     }
   },
@@ -130,9 +135,7 @@ export const firestoreAuditPorts = (
       }
       return Result.ok(rows);
     } catch (error) {
-      return Result.err(
-        RepositoryError.readFailed(Collections.AuditLog, String(error)),
-      );
+      return Result.err(readFailed(Collections.AuditLog, error));
     }
   },
 });

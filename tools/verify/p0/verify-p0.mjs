@@ -65,6 +65,11 @@
  * run the same state-based code as the seed and the backfill, so a trigger
  * landing between two steps can only write the same answer.
  *
+ * Every callable post carries the emulator's App Check token
+ * (`tools/verify/app-check/emulator-token.mjs`, security hardening
+ * S-RU-26), so the proofs hold whatever App Check mode the emulator runs —
+ * the C_A gate runs them under ENFORCE too.
+ *
  * Emulator-only by construction (the seed's own guard): refuses to run
  * unless FIRESTORE_EMULATOR_HOST points at this machine. It rebuilds
  * `clientStats` from scratch, and edits the party and dev-client-1's first
@@ -78,6 +83,10 @@ import { fileURLToPath } from 'node:url';
 import admin from 'firebase-admin';
 import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import { settleTriggers } from '../../seed/settle.mjs';
+import {
+  JOURNEY_APP_ID,
+  emulatorAppCheckToken,
+} from '../app-check/emulator-token.mjs';
 import { CallableAnswer, readCallableAnswer } from './callable-answer.mjs';
 import { checkFunctionsDeps } from './functions-deps.mjs';
 import { proofInstantOf, seedRunEnv } from './seed-run.mjs';
@@ -247,6 +256,11 @@ function callableAnswer(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
           'content-type': 'application/json',
           'content-length': Buffer.byteLength(payload),
           authorization: `Bearer ${idToken}`,
+          // The emulator's App Check token (security hardening S-RU-26), so
+          // every proof passes in OFF, MONITOR and ENFORCE alike and its
+          // outcome lines read VALID; the headerless refusal is
+          // verify:appcheck's to prove.
+          'X-Firebase-AppCheck': emulatorAppCheckToken(JOURNEY_APP_ID),
         },
         timeout: timeoutMs,
       },

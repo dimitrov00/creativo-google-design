@@ -21,5 +21,8 @@ export const environment = {
     functionsHost: undefined,
     functionsPort: undefined,
   },
+  // App Check (security hardening S-RU-18): the reCAPTCHA Enterprise SITE key — public client
+  // config like `firebase` above; '' = not configured (no App Check loads).
+  appCheck: { siteKey: '' },
   featureFlags,
 };

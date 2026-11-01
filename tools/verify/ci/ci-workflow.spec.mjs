@@ -118,6 +118,8 @@ const GATE = [
   ['verify-tools:runbook-gates', 'runbook-gates'],
   ['test:emulator', 'emulators'],
   ['verify:p0', 'emulators'],
+  // security hardening S-DEP-14: the App Check journey, after verify:p0.
+  ['verify:appcheck', 'emulators'],
   ['e2e:web', 'e2e'],
   ['verify:csp', 'csp-smoke'],
 ];
@@ -243,6 +245,11 @@ describe('the CI workflow', () => {
       emulators.indexOf('pnpm run verify:p0') >
         emulators.indexOf('pnpm run test:emulator'),
       'the two emulator journeys run one after the other (they share ports)',
+    );
+    assert.ok(
+      emulators.indexOf('pnpm run verify:appcheck') >
+        emulators.indexOf('pnpm run verify:p0'),
+      'the App Check journey runs after verify:p0 (S-DEP-14)',
     );
   });
 

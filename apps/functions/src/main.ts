@@ -30,6 +30,7 @@ import {
   type TriggerFailurePorts,
 } from '@core/ports';
 import {
+  FailureCodeSystem,
   GovernedChangeSystem,
   LogDigestSystem,
   StoredDocumentSystem,
@@ -59,6 +60,7 @@ import {
   rescheduleAppointment as rescheduleAppointmentPipeline,
   runBackfill as runBackfillPipeline,
   sampleLeadTime,
+  setRoles as setRolesPipeline,
   startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
@@ -66,7 +68,11 @@ import {
   updateProfile as updateProfilePipeline,
   verifyOtp,
 } from '@core/pipelines';
-import { authClaimsPorts } from './adapters/auth-claims.adapter';
+import {
+  authClaimsPorts,
+  authSessionRevokePorts,
+} from './adapters/auth-claims.adapter';
+import { paramAppCheckModePorts } from './adapters/app-check.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { authEraserPorts } from './adapters/firebase-auth-eraser.adapter';
 import {
@@ -102,6 +108,7 @@ import {
   tokenBucket,
   type WorkBudget,
 } from './edge';
+import { replayProtectedOptions } from './lib/app-check';
 import { CRON_TIME_ZONE } from './lib/cron-zone';
 import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
 import {
@@ -130,6 +137,7 @@ import {
 } from './wire/client-issue.wire';
 import {
   decodeEndImpersonation,
+  decodeSetRoles,
   decodeStartImpersonation,
 } from './wire/governance.wire';
 import {
@@ -193,14 +201,15 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
  * are the ones the legacy definitions declared (pass F's new sink aside,
- * below), which no export sets a region, secret or App Check on — except
- * the walk-in key the two callables that mint walk-in records bind
+ * below), which no export sets a region, secret or App Check option on —
+ * except the walk-in key the two callables that mint walk-in records bind
  * (`commitBooking`, `staffEditAppointment`: the `WALKIN_ID_KEY` secret
  * their ids are keyed by, OR-26) and the admin privacy callables that
  * recognise them (`exportClientData`, `previewClientErasure`,
  * `eraseClient`, P3-RU-36), the log digest key every callable but
  * the sink binds (`LOG_DIGEST_KEY`, audit-hardening WS-4.2: the outcome
- * line's keyed `inputDigest`), and seven retry flags: edge-hardening D-5 flipped
+ * line's keyed `inputDigest`), the replay protection the five limited-use
+ * callables carry (App Check, below), and seven retry flags: edge-hardening D-5 flipped
  * `rebuildBusyOnAppointmentChange`,
  * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, and pass E
  * (E-1) the four other capacity triggers `rebuildCapacityOnExceptionChange`,
@@ -230,7 +239,21 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * (P3-DEP-15, P3-DEP-19) added the admin's data-subject erasure — the
  * read-only `previewClientErasure` and the resumable `eraseClient` (540 s,
  * 512 MiB, the `runBackfill` idiom: its work budgeted by its timeout) —
- * both bound to the same two keys: 50 exports.
+ * both bound to the same two keys: 50 exports. Security hardening (S-WS-E,
+ * S-DEP-6) added `setRoles`, the admin's audited roles change — bound to
+ * the log digest key: 51 exports.
+ *
+ * App Check (security hardening S-WS-A) reads ONE switch, the string param
+ * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
+ * reads it per call and decides every callable's App Check outcome itself
+ * (OFF / MONITOR / ENFORCE, S-RU-17) — no export sets the platform's
+ * enforcement option. The one App Check option an export carries is replay
+ * protection: the five limited-use callables (`eraseClient`,
+ * `previewClientErasure`, `exportClientData`, `startImpersonation`,
+ * `setRoles` — `CALLABLE_APP_CHECK_TOKEN`) spread
+ * `replayProtectedOptions(…)`, which consumes their token while the switch
+ * is MONITOR or ENFORCE (S-RU-21, S-DEP-11); it is not part of the
+ * deployed endpoint (`__endpoint`).
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -309,8 +332,9 @@ const serverPorts = once(() => ({
 
 /**
  * What the edge itself reads: telemetry, the clock, the per-invocation log
- * scope (`consoleLogContext`, WS-4.2) and the keyed input digest — read per
- * call (a secret is a runtime value). The triggers' edge reads the first
+ * scope (`consoleLogContext`, WS-4.2), the keyed input digest and the App
+ * Check switch (S-RU-17) — both read per call (a secret and a param are
+ * runtime values). The triggers' edge reads the first
  * two, and the dead-letter writer (audit-hardening WS-6, RU-32): LAZY — it
  * reaches the server ports, so the Admin SDK is built only when a retrying
  * trigger first gives up on a delivery, never at load.
@@ -319,13 +343,15 @@ const edge: CallableEdgePorts & TriggerFailurePorts = {
   ...telemetry,
   ...consoleLogContext(),
   ...logDigestPorts(() => LOG_DIGEST_KEY.value()),
+  ...paramAppCheckModePorts(telemetry.log),
   nowUtcMs,
   writeTriggerFailure: (failure) => serverPorts().writeTriggerFailure(failure),
 };
 
 /**
- * Admin Auth, built on first use and SHARED — the identity callables' and
- * the erasure pair's (an instance builds its Auth client once).
+ * Admin Auth, built on first use and SHARED — the identity callables', the
+ * erasure pair's and the roles change's (an instance builds its Auth client
+ * once).
  */
 const auth = once(() => adminAuth());
 
@@ -357,14 +383,17 @@ const identityPorts = once(() => ({
  * The commit port as the streak publish has always failed: a commit that
  * REJECTS — contention retries exhausted, a deadline or network fault, a
  * defect thrown inside the decision — answers
- * `RepositoryError.writeFailed(null, String(cause))`, the value the
- * callable logs (`'rhythm rule write failed'`, the cause's text) and
- * answers as its store failure (flip-3 plan §3.3).
+ * `RepositoryError.writeFailed(null, FailureCodeSystem.codeOf(cause))`, the
+ * value the callable logs (`'rhythm rule write failed'`, the cause's
+ * canonical code — never its message, Phase 4 S-RU-2) and answers as its
+ * store failure (flip-3 plan §3.3).
  */
 function settledCommit(commit: CommitPlan): CommitPlan {
   return (read, decide) =>
     commit(read, decide).catch((cause: unknown) =>
-      Result.err(RepositoryError.writeFailed(null, String(cause))),
+      Result.err(
+        RepositoryError.writeFailed(null, FailureCodeSystem.codeOf(cause)),
+      ),
     );
 }
 
@@ -466,6 +495,12 @@ const erasurePorts = once(() => ({
   ...storageObjectPorts(adminBucket()),
 }));
 
+/** The admin roles change's ports: the server ports and Admin Auth's session revocation. Built on first use. */
+const rolesPorts = once(() => ({
+  ...serverPorts(),
+  ...authSessionRevokePorts(auth()),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -478,6 +513,7 @@ const root = {
   privacy: privacyPorts,
   erasurePreview: previewPorts,
   erasure: erasurePorts,
+  roles: rolesPorts,
 } as const;
 
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
@@ -1114,7 +1150,10 @@ export const publishStreakDefinition = onCall(
  * `impersonationSessions` since the rules refused the direct write.
  */
 export const startImpersonation = onCall(
-  LOG_DIGEST_SECRETS,
+  {
+    ...LOG_DIGEST_SECRETS,
+    ...replayProtectedOptions(Callables.StartImpersonation),
+  },
   wiredCallable(
     plain(Callables.StartImpersonation, null),
     root.ports,
@@ -1148,6 +1187,23 @@ export const redeemInvitation = onCall(
   ),
 );
 
+/**
+ * An admin changes one account's roles (security hardening S-WS-E) —
+ * `users.roles` and its `PROFILE_ROLES_CHANGED` row in one commit, then the
+ * target's sessions revoked so their next token is minted from the written
+ * roles (S-RU-10). The only callable that writes `users.roles`.
+ */
+export const setRoles = onCall(
+  { ...LOG_DIGEST_SECRETS, ...replayProtectedOptions(Callables.SetRoles) },
+  wiredCallable(
+    plain(Callables.SetRoles, null),
+    root.roles,
+    decodeSetRoles,
+    (ports, cmd) => setRolesPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
 // ── The admin's data-subject requests (audit-hardening Phase 3) ───────────
 
 /**
@@ -1157,7 +1213,11 @@ export const redeemInvitation = onCall(
  * reach its 4 MiB cap.
  */
 export const exportClientData = onCall(
-  { memory: LARGE_MEMORY, ...WALK_IN_SECRETS },
+  {
+    memory: LARGE_MEMORY,
+    ...WALK_IN_SECRETS,
+    ...replayProtectedOptions(Callables.ExportClientData),
+  },
   wiredCallable(
     plain(Callables.ExportClientData, null),
     root.privacy,
@@ -1174,7 +1234,10 @@ export const exportClientData = onCall(
  * No row, no write.
  */
 export const previewClientErasure = onCall(
-  WALK_IN_SECRETS,
+  {
+    ...WALK_IN_SECRETS,
+    ...replayProtectedOptions(Callables.PreviewClientErasure),
+  },
   wiredCallable(
     plain(Callables.PreviewClientErasure, null),
     root.erasurePreview,
@@ -1196,6 +1259,7 @@ export const eraseClient = onCall(
     timeoutSeconds: ERASE_CLIENT_TIMEOUT_SECONDS,
     memory: LARGE_MEMORY,
     ...WALK_IN_SECRETS,
+    ...replayProtectedOptions(Callables.EraseClient),
   },
   wiredCallable(
     {

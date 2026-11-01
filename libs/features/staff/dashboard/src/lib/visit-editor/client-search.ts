@@ -60,6 +60,10 @@ export function accountOption(user: User): VisitEditorClientOption {
  * minted person can spell — marked as having no profile. Picked, the
  * walk-in rides the save as a guest with this name, number and mail, and
  * the server finds the same record again by them (`CustomerId.forWalkIn`).
+ * The walk-in's record id rides beside the key as its own field
+ * (`customerId`, S-RU-15) — what opens their card keyed by the record
+ * (S-WS-F); an account's record answers `null` (its card resolves the
+ * record by the uid).
  */
 export function recordOption(customer: Customer): VisitEditorClientOption {
   const facts = {
@@ -70,8 +74,17 @@ export function recordOption(customer: Customer): VisitEditorClientOption {
     email: customer.email,
   };
   return customer.userId === null
-    ? { id: DraftPersonKey.guest(customer.id), ...facts, noAccount: true }
-    : { id: DraftPersonKey.account(customer.userId), ...facts };
+    ? {
+        id: DraftPersonKey.guest(customer.id),
+        ...facts,
+        noAccount: true,
+        customerId: customer.id,
+      }
+    : {
+        id: DraftPersonKey.account(customer.userId),
+        ...facts,
+        customerId: null,
+      };
 }
 
 /**

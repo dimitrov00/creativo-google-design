@@ -6,15 +6,18 @@ import {
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
 import {
+  AccountLifecycle,
   type ImpersonationScope,
   EndReasonFields,
   ImpersonationLifecycle,
+  Registration,
   type Role,
   Roles,
 } from '@core/components';
 import type {
   ImpersonationSession,
   ImpersonationSessionMeta,
+  User,
 } from '@core/entities';
 
 /**
@@ -32,6 +35,9 @@ import type {
  * {@link ImpersonationSystem.isExpired}, never the stored status alone.
  * Every instant is a lifecycle stamp compared in elapsed real time (a T2
  * row, flatten-spec §2.3): a session has no location, so `nowUtcMs` (F-5).
+ * The target a start may open on is decided here too
+ * ({@link ImpersonationSystem.admitTarget}, security hardening S-RU-5):
+ * the pipeline reads `users/{target}` inside its commit and asks.
  */
 
 /** What a start request carries — ids and scope already through their edge guards. */
@@ -156,6 +162,39 @@ export const ImpersonationSystem = {
       ? EndReasonFields.expired()
       : EndReasonFields.adminEnded(endedByUserId);
     return ImpersonationSystem.end(session, nowUtcMs, reason);
+  },
+
+  /**
+   * The stored target an impersonation may open on: present, not erased,
+   * registered — asked in that order, the first failing answer alone
+   * (security hardening S-RU-5, S-L-13). No `users` document →
+   * `GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND`; an `ERASED` account →
+   * `GOVERNANCE_IMPERSONATION_TARGET_ERASED`; a `PROVISIONED` stub that
+   * never finished registering →
+   * `GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED`. A `BLOCKED` account
+   * is admitted: support may need to see what a blocked client sees.
+   * Answers the stored account itself, never a copy.
+   */
+  admitTarget(
+    stored: User | null,
+    targetUserId: UserId,
+  ): Result<User, GovernanceError> {
+    if (stored === null) {
+      return Result.err(
+        GovernanceError.impersonationTargetNotFound(targetUserId),
+      );
+    }
+    if (AccountLifecycle.isErased(stored)) {
+      return Result.err(
+        GovernanceError.impersonationTargetErased(targetUserId),
+      );
+    }
+    if (!Registration.isRegistered(stored)) {
+      return Result.err(
+        GovernanceError.impersonationTargetNotRegistered(targetUserId),
+      );
+    }
+    return Result.ok(stored);
   },
 
   /** The session's window has elapsed — true from `expiresAtUtcMs` itself on. */

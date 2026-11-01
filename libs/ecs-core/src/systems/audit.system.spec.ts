@@ -22,6 +22,7 @@ import {
   SeatSubject,
   SubjectRelationship,
   EditCommand,
+  Email,
   StaffEditDelta,
 } from '@core/components';
 import {
@@ -58,6 +59,7 @@ import {
   seatFixture,
   customerOf,
   auditResource,
+  registeredUserFixture,
 } from '@core/testing';
 import {
   type AuditFact,
@@ -65,6 +67,10 @@ import {
   AuditSystem,
   type ProfileChange,
 } from './audit.system';
+import {
+  type RoleAssignment,
+  RoleAssignmentSystem,
+} from './role-assignment.system';
 
 /*
  * The pure cases of apps/functions/src/lib/booking/audit.spec.ts (targets,
@@ -1130,6 +1136,27 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
       ).toBeNull();
     });
 
+    it('plans nothing for setRoles’ write either — an admin’s roles change (an Admin SDK write), its own PROFILE_ROLES_CHANGED row already committed (S-RU-12, S-L-17)', () => {
+      for (const before of [null, BEFORE]) {
+        expect(
+          unwrapOk(
+            AuditSystem.planProfileChange(
+              {
+                ...change,
+                writer: AuditSystem.writerOf('service_account', null),
+                fields: [AuditedProfileField.Roles],
+                beforeProfileEditedAtUtcMs: before,
+                afterProfileEditedAtUtcMs: AFTER,
+                profileRolesFrom: [Role.Client],
+                profileRolesTo: [Role.Client, Role.Barber],
+              },
+              AT,
+            ),
+          ),
+        ).toBeNull();
+      }
+    });
+
     it('audits an update that left the stamp as it was (a block, an admin write) as today', () => {
       const plan = unwrapOk(
         AuditSystem.planProfileChange(
@@ -1248,6 +1275,199 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
     expect(AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT)).toBe(
       `profile-edit:maria:${EDITED_AT}`,
     );
+  });
+});
+
+describe('AuditSystem.planRolesChanged — the row setRoles writes itself (security hardening S-RU-9, S-RU-12)', () => {
+  const TARGET = UserId.of('maria');
+  const CHANGED_AT = utcMs('2026-10-31T09:00:00.000Z');
+  /** The stored target the row is about — names and contact a row must never carry (R36). */
+  const stored = registeredUserFixture({
+    id: TARGET,
+    firstName: 'Zebulon',
+    lastName: 'Quixotic',
+    email: Email.of('zebulon.quixotic@example.test'),
+  });
+  const promotion: RoleAssignment = {
+    rolesFrom: [Role.Client],
+    rolesTo: [Role.Client, Role.Barber],
+    rolesChanged: true,
+  };
+  /** The token said admin AND barber; the stored roles say admin alone — the row credits the stored. */
+  const admin = Actor.forCaller(UserId.of('ivan'), [Role.Admin]);
+
+  it('credits the admin, names `roles` alone and carries the set before and after as tags', () => {
+    const plan = AuditSystem.planRolesChanged(
+      TARGET,
+      promotion,
+      admin,
+      CHANGED_AT,
+      OP,
+    );
+    expect(plan.row).toEqual({
+      recordedAtUtcMs: CHANGED_AT,
+      resourceId: 'users/maria',
+      auditOperationId: OP,
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'ivan',
+      auditAction: 'PROFILE_ROLES_CHANGED',
+      profileFields: ['roles'],
+      profileRolesFrom: ['client'],
+      profileRolesTo: ['client', 'barber'],
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+    });
+    expect(plan.row.resourceId).toBe(AuditResourceId.forUser(TARGET));
+  });
+
+  it('credits whatever actor the pipeline built from the STORED roles (Actor.forCaller)', () => {
+    const staffish = Actor.forCaller(UserId.of('ivan'), [
+      Role.Barber,
+      Role.Receptionist,
+    ]);
+    expect(
+      AuditSystem.planRolesChanged(TARGET, promotion, staffish, CHANGED_AT, OP)
+        .row,
+    ).toMatchObject({
+      actorRole: 'STAFF',
+      actorUserId: 'ivan',
+      actorRoles: ['barber', 'receptionist'],
+    });
+  });
+
+  it('keys the row by the account and the instant — stable for the same instant, a new row for another', () => {
+    const once = AuditSystem.planRolesChanged(
+      TARGET,
+      promotion,
+      admin,
+      CHANGED_AT,
+      OP,
+    );
+    const again = AuditSystem.planRolesChanged(
+      TARGET,
+      promotion,
+      admin,
+      CHANGED_AT,
+      null,
+    );
+    expect(again.idBasis).toBe(once.idBasis);
+    expect(once.idBasis).toBe(
+      AuditSystem.rowBasis(
+        'PROFILE_ROLES_CHANGED',
+        auditResource('users/maria'),
+        TARGET,
+        AuditSystem.changeKey.rolesChanged(TARGET, CHANGED_AT),
+      ),
+    );
+    expect(AuditSystem.changeKey.rolesChanged(TARGET, CHANGED_AT)).toBe(
+      `roles-change:maria:${CHANGED_AT}`,
+    );
+    const later = AuditSystem.planRolesChanged(
+      TARGET,
+      promotion,
+      admin,
+      UtcEpochMs.plusMs(CHANGED_AT, 1),
+      OP,
+    );
+    expect(later.idBasis).not.toBe(once.idBasis);
+  });
+
+  it('names no operation when the call sent none (RU-21)', () => {
+    expect(
+      AuditSystem.planRolesChanged(TARGET, promotion, admin, CHANGED_AT, null)
+        .row.auditOperationId,
+    ).toBeNull();
+  });
+
+  it('a console-written stored set reaches the row as its known roles — the profile trigger’s own tags (review round 1, finding 2)', () => {
+    // `users` has no read guard: setRoles' decide reads this array raw.
+    const raw = ['receptionist', 'frontdesk', 'receptionist'];
+    const assignment = unwrapOk(
+      RoleAssignmentSystem.decide({
+        callerUserId: UserId.of('ivan'),
+        caller: registeredUserFixture({
+          id: UserId.of('ivan'),
+          roles: [Role.Admin],
+        }),
+        target: registeredUserFixture({
+          id: TARGET,
+          roles: raw as unknown as readonly Role[],
+        }),
+        targetUserId: TARGET,
+        requestedRoles: [Role.Receptionist, Role.Barber],
+        nowUtcMs: CHANGED_AT,
+      }),
+    );
+    const row = AuditSystem.planRolesChanged(
+      TARGET,
+      assignment,
+      admin,
+      CHANGED_AT,
+      OP,
+    ).row;
+    expect(row).toMatchObject({
+      profileRolesFrom: ['receptionist'],
+      profileRolesTo: ['barber', 'receptionist'],
+    });
+    // The two writers of the field agree: the trigger's delta for the same edit.
+    const delta = AuditSystem.profileTagDelta(
+      { roles: raw },
+      { roles: assignment.rolesTo },
+    );
+    expect('profileRolesFrom' in row && row.profileRolesFrom).toEqual(
+      delta.profileRolesFrom,
+    );
+    expect('profileRolesTo' in row && row.profileRolesTo).toEqual(
+      delta.profileRolesTo,
+    );
+  });
+
+  it('carries no name, phone or e-mail of the account (sentinel scan, R36)', () => {
+    const text = JSON.stringify(
+      AuditSystem.planRolesChanged(TARGET, promotion, admin, CHANGED_AT, OP),
+    );
+    for (const value of [
+      stored.firstName,
+      stored.lastName,
+      stored.phone,
+      stored.email,
+    ]) {
+      expect(typeof value).toBe('string');
+      expect(text).not.toContain(value as string);
+    }
+  });
+
+  it('an unchanged set writes no row — planning one is a programmer defect', () => {
+    expect(() =>
+      AuditSystem.planRolesChanged(
+        TARGET,
+        {
+          rolesFrom: [Role.Client],
+          rolesTo: [Role.Client],
+          rolesChanged: false,
+        },
+        admin,
+        CHANGED_AT,
+        OP,
+      ),
+    ).toThrow(/unchanged role set/);
+  });
+
+  it('is pure: same input → same plan, the assignment untouched', () => {
+    const frozen = deepFreeze({ ...promotion });
+    const once = AuditSystem.planRolesChanged(
+      TARGET,
+      frozen,
+      admin,
+      CHANGED_AT,
+      OP,
+    );
+    expect(
+      AuditSystem.planRolesChanged(TARGET, frozen, admin, CHANGED_AT, OP),
+    ).toEqual(once);
+    expect(frozen).toEqual(promotion);
   });
 });
 

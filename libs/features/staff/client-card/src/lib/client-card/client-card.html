@@ -712,4 +712,68 @@
   />
   }
 </ui-stack>
+}
+
+<!-- «РОЛИ» — the shop's admin only (security hardening S-WS-E, S-RU-13):
+     another person's account, registered, not erased, holding no sysadmin,
+     online. A third group after the personal data, apart from it. Each row
+     is a checkbox (a Save stands between the tick and the change, so not a
+     switch); Save sends the whole set and is offered only when the system
+     says so — a changed, non-empty set, or the stored set again after a
+     failed revoke. The line under it is a STATUS, announced when it
+     appears: the roles saved, or why not. -->
+@if (roles(); as block) {
+<ui-stack uiSpacing="compact" [attr.data-testid]="block.testId">
+  <ul uiListGroup [attr.aria-label]="block.groupLabel">
+    @for (toggle of block.toggles; track toggle.role) {
+    <li>
+      <button
+        uiListRow
+        uiSize="large"
+        type="button"
+        role="checkbox"
+        [uiInteractive]="true"
+        [uiSelected]="toggle.checked"
+        [attr.aria-checked]="toggle.checked"
+        [attr.data-testid]="toggle.testId"
+        (click)="toggleRole(toggle.role)"
+      >
+        {{ toggle.label }}
+        <span uiTrailing>
+          @if (toggle.checked) {
+          <ui-icon
+            uiName="checklist.done"
+            uiForegroundStyle="accent"
+            aria-hidden="true"
+          />
+          }
+        </span>
+      </button>
+    </li>
+    }
+  </ul>
+  <button
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    type="button"
+    [disabled]="!block.saveEnabled"
+    data-testid="client-roles-save"
+    (click)="saveRoles()"
+  >
+    {{ block.saveLabel }}
+  </button>
+  @if (block.line; as line) {
+  <p
+    uiText
+    uiFont="footnote"
+    uiForegroundStyle="secondary"
+    role="status"
+    data-testid="client-roles-status"
+  >
+    {{ line }}
+  </p>
+  }
+</ui-stack>
 } }

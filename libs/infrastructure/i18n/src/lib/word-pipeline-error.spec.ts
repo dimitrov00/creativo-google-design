@@ -26,8 +26,10 @@ import { Observable, firstValueFrom, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { BookingStatus } from '@core/primitives';
 import {
+  AppCheckErrorCode,
   BookingErrorCode,
   CancellationRefusalCode,
+  GovernanceErrorCode,
   HttpsStatus,
   IdentityErrorCode,
   MoveErrorCode,
@@ -369,6 +371,28 @@ const identity = refusalOn(IdentityErrorCode.CallFailed);
  * so they have no words.
  */
 const privacy = refusalOn(PipelineErrorCode.Unknown);
+/**
+ * The staff client card's «Роли» block (security hardening S-WS-E — its
+ * presenter words a refusal against the generic `PIPELINE_UNKNOWN`, the
+ * privacy block's idiom). `GOVERNANCE_ROLES_UNAUTHENTICATED`, `…_SELF`,
+ * `…_TARGET_SYSADMIN` and `…_INVALID` reach no surface (the block needs a
+ * signed-in admin, hides itself on the viewer's own account and on a
+ * sysadmin's, and sends only assignable roles), so they have no words.
+ */
+const roles = refusalOn(PipelineErrorCode.Unknown);
+/**
+ * App Check under ENFORCE (security hardening S-RU-24), on the staff client
+ * card's privacy and «Роли» blocks — the five limited-use callables, worded
+ * against the generic `PIPELINE_UNKNOWN`. `APP_CHECK_REQUIRED`: no verified
+ * token. `APP_CHECK_REPLAYED` (review round 2): S-RU-31's standard fallback
+ * re-sent a cached standard token an earlier fallback already consumed. A
+ * reload builds a fresh App Check provider, so both say so.
+ */
+const appCheck = refusalOn(PipelineErrorCode.Unknown);
+const RELOAD = {
+  en: "We couldn't verify this device. Reload the page.",
+  bg: 'Не успяхме да потвърдим това устройство. Презареди страницата.',
+} as const;
 
 const S = HttpsStatus;
 
@@ -472,6 +496,28 @@ const E18_WORDS: readonly WordedRefusal[] = [
     en: 'There are too many records for one erasure. Contact support.',
     bg: 'Записите са твърде много за едно изтриване. Свържи се с поддръжката.',
   }),
+  // The staff client card's roles change (security hardening S-WS-E).
+  roles(GovernanceErrorCode.RolesForbidden, S.PermissionDenied, FORBIDDEN),
+  roles(GovernanceErrorCode.RolesTargetNotFound, S.NotFound, {
+    en: "We couldn't find this account.",
+    bg: 'Не намерихме този профил.',
+  }),
+  roles(GovernanceErrorCode.RolesTargetNotRegistered, S.FailedPrecondition, {
+    en: "This person hasn't finished signing up yet.",
+    bg: 'Този човек още не е завършил регистрацията си.',
+  }),
+  roles(GovernanceErrorCode.RolesTargetErased, S.FailedPrecondition, {
+    en: "This client's personal data was erased.",
+    bg: 'Личните данни на този клиент са изтрити.',
+  }),
+  // A retry can succeed (the same act re-revokes), so the words offer one.
+  roles(GovernanceErrorCode.RolesSessionsNotRevoked, S.Unavailable, {
+    en: "The roles are saved, but the old sessions weren't ended. Try again.",
+    bg: 'Ролите са запазени, но старите сесии не бяха прекратени. Опитай пак.',
+  }),
+  // App Check under ENFORCE: both refusals, one reload line.
+  appCheck(AppCheckErrorCode.Required, S.FailedPrecondition, RELOAD),
+  appCheck(AppCheckErrorCode.Replayed, S.FailedPrecondition, RELOAD),
 ];
 
 describe('wordPipelineError — every UI-reachable refusal words as itself (E-18)', () => {
@@ -502,6 +548,7 @@ describe('wordPipelineError — every UI-reachable refusal words as itself (E-18
     StaffEditErrorCode.Forbidden,
     StreakPublishErrorCode.CallerNotAdmin,
     PrivacyErrorCode.Forbidden,
+    GovernanceErrorCode.RolesForbidden,
   ])('words %s in the one not-allowed line', (errorCode) => {
     expect(errorsOf(en.errors)(errorCode, {})).toBe(FORBIDDEN.en);
     expect(errorsOf(bg.errors)(errorCode, {})).toBe(FORBIDDEN.bg);

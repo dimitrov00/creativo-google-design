@@ -13,6 +13,7 @@ import {
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   decodeEndImpersonation,
+  decodeSetRoles,
   decodeStartImpersonation,
 } from './governance.wire';
 import { refusalOf, type WireRequest } from './wire-read';
@@ -232,5 +233,133 @@ describe('decodeEndImpersonation', () => {
         ),
       ),
     ).toThrow('REPOSITORY_READ_FAILED');
+  });
+});
+
+describe('decodeSetRoles (security hardening S-WS-E)', () => {
+  const ROLES_CALL = { targetUserId: 'u-client', roles: ['barber', 'client'] };
+
+  /** A payload whose every read throws — proof the gate refuses before reading it. */
+  const unreadable = (): unknown =>
+    new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('the payload was read');
+        },
+        has: () => {
+          throw new Error('the payload was read');
+        },
+      },
+    );
+
+  it('refuses nobody as GOVERNANCE_ROLES_UNAUTHENTICATED, before the payload is read', () => {
+    for (const data of [null, ROLES_CALL, unreadable()]) {
+      expect(wire(decodeSetRoles(signedIn(data, null)))).toEqual({
+        code: 'unauthenticated',
+        details: { errorCode: GovernanceErrorCode.RolesUnauthenticated },
+      });
+    }
+  });
+
+  it.each([
+    ['a barber', ['barber']],
+    ['the front desk', ['receptionist']],
+    ['the vendor’s sysadmin (S-RU-14)', ['sysadmin']],
+    ['a client', ['client']],
+    ['no claim', []],
+    ['a list inside the claim', [['admin']]],
+  ])(
+    'refuses %s as GOVERNANCE_ROLES_FORBIDDEN before the payload is read — the uid stays on the server',
+    (_who, roles) => {
+      expect(
+        wire(decodeSetRoles(signedIn(unreadable(), 'u-1', roles))),
+      ).toEqual({
+        code: 'permission-denied',
+        details: { errorCode: GovernanceErrorCode.RolesForbidden },
+      });
+    },
+  );
+
+  it('decodes the call component and the verified admin — the roles as sent, for the system to order', () => {
+    expect(valueOf(decodeSetRoles(admin(ROLES_CALL)))).toEqual({
+      adminUserId: 'u-owner',
+      adminRoles: ['barber', 'admin'],
+      targetUserId: 'u-client',
+      roles: ['barber', 'client'],
+      operationId: null,
+    });
+    // An empty set and the sysadmin are the SYSTEM's refusals: they pass the wire.
+    expect(
+      valueOf(decodeSetRoles(admin({ ...ROLES_CALL, roles: [] }))).roles,
+    ).toEqual([]);
+    expect(
+      valueOf(decodeSetRoles(admin({ ...ROLES_CALL, roles: ['sysadmin'] })))
+        .roles,
+    ).toEqual(['sysadmin']);
+  });
+
+  it('refuses a target that is no uid as the id’s own refusal', () => {
+    for (const targetUserId of ['', 42, undefined]) {
+      expect(
+        wire(decodeSetRoles(admin({ ...ROLES_CALL, targetUserId }))),
+      ).toEqual({
+        code: 'invalid-argument',
+        details: { errorCode: PrimitiveErrorCode.IdEmpty },
+      });
+    }
+  });
+
+  it('refuses a set that is no array, or names anything but a role, as GOVERNANCE_ROLES_INVALID', () => {
+    for (const roles of [
+      undefined,
+      null,
+      'admin',
+      { 0: 'admin' },
+      ['admin', 'owner'],
+      ['ADMIN'],
+      [['admin']],
+      [null],
+    ]) {
+      expect(wire(decodeSetRoles(admin({ ...ROLES_CALL, roles })))).toEqual({
+        code: 'invalid-argument',
+        details: { errorCode: GovernanceErrorCode.RolesInvalid },
+      });
+    }
+  });
+
+  it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21)', () => {
+    expect(
+      valueOf(
+        decodeSetRoles(admin({ ...ROLES_CALL, operationId: OPERATION_TEXT })),
+      ).operationId,
+    ).toBe(OperationId.of(OPERATION_TEXT));
+    for (const operationId of NOT_AN_OPERATION_ID) {
+      expect(
+        valueOf(decodeSetRoles(admin({ ...ROLES_CALL, operationId })))
+          .operationId,
+      ).toBeNull();
+    }
+  });
+
+  it('leaves its refusals as themselves — the uids stay on the server — and throws a store failure (`refusalOf`)', () => {
+    const target = UserId.of('u-client');
+    for (const [refusal, code] of [
+      [GovernanceError.rolesSelf(UserId.of('u-owner')), 'failed-precondition'],
+      [GovernanceError.rolesTargetNotFound(target), 'not-found'],
+      [GovernanceError.rolesTargetErased(target), 'failed-precondition'],
+      [GovernanceError.rolesTargetNotRegistered(target), 'failed-precondition'],
+      [GovernanceError.rolesTargetSysadmin(target), 'failed-precondition'],
+      [GovernanceError.rolesSessionsNotRevoked(target), 'unavailable'],
+    ] as const) {
+      expect(refusalOf(refusal)).toEqual(refusal);
+      expect(toHttpsError(refusalOf(refusal))).toMatchObject({
+        code,
+        details: { errorCode: refusal.errorCode },
+      });
+    }
+    expect(() =>
+      refusalOf(RepositoryError.writeFailed('users/u-client', 'aborted')),
+    ).toThrow('REPOSITORY_WRITE_FAILED');
   });
 });

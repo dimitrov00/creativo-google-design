@@ -88,7 +88,7 @@ after(() => {
 });
 
 describe('tools/ops — every script, dry by default', () => {
-  it('holds the four scripts and the five alert policies the plan names', () => {
+  it('holds the four scripts and the six alert policies the plans name', () => {
     assert.deepEqual(SCRIPTS, [
       'audit-logs.sh',
       'firestore-backups.sh',
@@ -100,6 +100,7 @@ describe('tools/ops — every script, dry by default', () => {
       'callable-failures.yaml',
       'client-issues.yaml',
       'documents-refused.yaml',
+      'roles-sessions-not-revoked.yaml',
       'trigger-attempts.yaml',
     ]);
   });
@@ -321,7 +322,7 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
     }
   });
 
-  it('creates the five metrics of names.env — each server metric on one LogEvent message, client_issue_count on the OR-34 recipe', () => {
+  it('creates the six metrics of names.env — each server metric on one LogEvent message, client_issue_count on the OR-34 recipe', () => {
     const names = opsNamesOf(read('tools/ops/names.env'));
     const values = logEventValues();
     const { out } = dryRun('log-metrics.sh');
@@ -344,6 +345,7 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
       .map(([, value]) => value)
       .sort();
     assert.deepEqual([...configs.keys()].sort(), metricNames);
+    assert.equal(metricNames.length, 6);
     assert.equal(
       configs.get('client_issue_count'),
       'jsonPayload.clientIssueKind:*',
@@ -353,6 +355,8 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
       document_refused: 'DocumentRefused',
       audit_actor_missing: 'AuditActorMissing',
       callable_failed: 'CallableFailed',
+      // Security hardening S-RU-10: one failed revoke alerts.
+      roles_sessions_not_revoked: 'RolesSessionsNotRevoked',
     };
     const source = read('libs/ecs-core/src/primitives/log-event.data.ts');
     for (const [metric, key] of Object.entries(expected)) {
@@ -403,5 +407,16 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
         file,
       );
     }
+  });
+
+  it('the roles alert names the remedy that outlives the admin’s tab (security hardening S-RU-10, review round 1 finding 6)', () => {
+    const text = read('tools/ops/alerts/roles-sessions-not-revoked.yaml');
+    // The card's retry lives in the admin's tab, never longer.
+    assert.match(text, /only while the admin's browser tab\s+stays open/);
+    // The always-working remedy, keyed by the log line's target uid.
+    assert.match(
+      text,
+      /getAuth\(\)\.revokeRefreshTokens\('<targetUserId from the log line>'\)/,
+    );
   });
 });

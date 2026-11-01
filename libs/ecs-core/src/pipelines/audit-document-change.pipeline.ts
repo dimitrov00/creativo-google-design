@@ -12,8 +12,9 @@ import { type DocumentChange, GovernedChangeSystem } from '@core/systems';
  * instrumentation in each writer, so no writer can forget to log (L4: every
  * write, no skip). A users write plans exactly the row it planned before
  * (`AuditSystem.planProfileChange` — the changed field NAMES and the role /
- * status tags, and nothing for an edit `updateProfile` already audited in
- * its own transaction, `AuditSystem.auditedByCallable`); any other write a
+ * status tags, and nothing for a write a callable already audited in its
+ * own transaction — `updateProfile`'s owner edit or `setRoles`' roles
+ * change, `AuditSystem.auditedByCallable`); any other write a
  * `GOVERNED_DOC_*` row naming the collection and the changed fields — never
  * a value (R36). `GovernedChangeSystem.plan` decides which.
  *

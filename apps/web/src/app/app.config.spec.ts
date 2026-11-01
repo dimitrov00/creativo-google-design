@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import {
   FIREBASE_APP,
+  FIREBASE_APP_CHECK,
   FIREBASE_AUTH,
   FIREBASE_FIRESTORE,
   FIREBASE_FUNCTIONS,
@@ -37,6 +38,9 @@ describe('appConfig — the lazily bound data ports', () => {
         { provide: FIREBASE_APP, useValue: {} },
         { provide: FIREBASE_AUTH, useValue: {} },
         { provide: FIREBASE_FUNCTIONS, useValue: {} },
+        // App Check decided as "none": the emulator branch would otherwise
+        // call `initializeAppCheck` over the `{}` app stand-in above.
+        { provide: FIREBASE_APP_CHECK, useValue: Promise.resolve(null) },
       ],
     });
   });

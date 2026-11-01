@@ -14,6 +14,8 @@ import {
   CHECKS,
   SCOPES,
   Verdict,
+  appCheckModeFrom,
+  checkAppCheck,
   checkBackstops,
   checkBundle,
   checkComposites,
@@ -26,11 +28,14 @@ import {
   exitCodeOf,
   fieldKeyOf,
   functionsSourceUnder,
+  liveWebOriginOf,
+  mainScriptOf,
   optionsOf,
   preflight,
   renderTable,
   runPreflight,
   sameIndex,
+  siteKeyOf,
   skipBanner,
 } from './preflight.mjs';
 
@@ -245,6 +250,20 @@ const BUCKET = {
   locked: true,
 };
 
+/** A public reCAPTCHA Enterprise site key, as environment.production.ts would ship it (P10). */
+const SITE_KEY = '6LcTestSiteKeyForThePreflightSpec0000000';
+
+/** The live site's main script as P10's `liveBundle()` answers it, the key compiled in. */
+const LIVE_WEB = {
+  dist: 'https://creativo-web.web.app/main-AB12.js',
+  scripts: [
+    {
+      path: 'https://creativo-web.web.app/main-AB12.js',
+      text: `const e={appCheck:{siteKey:"${SITE_KEY}"}};`,
+    },
+  ],
+};
+
 /** Readers that answer a healthy project, each overridable, and count their calls. */
 function fakeReaders(overrides = {}) {
   const calls = [];
@@ -283,6 +302,14 @@ function fakeReaders(overrides = {}) {
     backupSchedules: counted('backupSchedules', () => [SCHEDULE]),
     sink: counted('sink', () => SINK),
     bucket: counted('bucket', () => BUCKET),
+    // P10 (security hardening S-DEP-13): today's shipped values — OFF, no
+    // site key — and a live site that would carry SITE_KEY.
+    appCheckMode: counted('appCheckMode', () => ({
+      environment: 'production',
+      mode: 'OFF',
+    })),
+    siteKey: counted('siteKey', () => ''),
+    liveBundle: counted('liveBundle', () => LIVE_WEB),
     ...overrides,
   };
   return { read, calls };
@@ -1315,13 +1342,336 @@ describe('P9 · the platform backstops (informational, RU-33)', () => {
   });
 });
 
+describe('P10 · App Check (security hardening S-L-8)', () => {
+  const MANIFEST = {
+    development: 'MONITOR',
+    staging: 'OFF',
+    production: 'OFF',
+  };
+  /** A settled web read, as runPreflight hands it to the check. */
+  const built = (text) => ({
+    ok: true,
+    value: {
+      dist: 'dist/apps/web/browser',
+      scripts: [{ path: 'main-AB12.js', text }],
+    },
+  });
+  const KEYED = `const e={appCheck:{siteKey:"${SITE_KEY}"}};`;
+  const KEYLESS = 'const e={appCheck:{siteKey:""}};';
+  const check = (input) =>
+    checkAppCheck({
+      scope: 'web',
+      environment: 'production',
+      siteKey: SITE_KEY,
+      web: null,
+      ...input,
+    });
+
+  it('passes OFF whatever the key — nothing verified, nothing refused', () => {
+    for (const siteKey of ['', null, SITE_KEY]) {
+      const entry = check({ mode: 'OFF', siteKey });
+      assert.equal(entry.check, 'P10');
+      assert.equal(entry.verdict, Verdict.Pass);
+      assert.match(
+        entry.detail,
+        /^App Check OFF in config\/app-check\.json \(production\)/,
+      );
+      assert.deepEqual(entry.lines, []);
+    }
+  });
+
+  it('passes MONITOR, with an INFO line when the web has no site key (every request then reads MISSING)', () => {
+    assert.deepEqual(check({ mode: 'MONITOR' }).lines, []);
+    assert.equal(check({ mode: 'MONITOR' }).verdict, Verdict.Pass);
+    const keyless = check({ mode: 'MONITOR', siteKey: '' });
+    assert.equal(keyless.verdict, Verdict.Pass);
+    assert.match(
+      keyless.lines[0],
+      /^INFO {2}site key empty — every request reads MISSING/,
+    );
+    assert.match(
+      check({ mode: 'MONITOR', siteKey: null }).lines[0],
+      /^INFO {2}site key unreadable/,
+    );
+  });
+
+  it('fails ENFORCE without a site key — empty or unreadable — in both scopes, naming the environment file', () => {
+    for (const scope of ['web', 'functions']) {
+      for (const siteKey of ['', null]) {
+        const entry = check({
+          scope,
+          mode: 'ENFORCE',
+          siteKey,
+          web: built(KEYED),
+        });
+        assert.equal(entry.verdict, Verdict.Fail, `${scope} ${siteKey}`);
+        assert.match(entry.detail, /without a site key$/);
+        assert.match(
+          entry.lines[0],
+          /environment\.production\.ts's appCheck\.siteKey is (empty|unreadable)/,
+        );
+      }
+    }
+  });
+
+  it('fails ENFORCE in the web scope when the built bundle does not carry the key, and passes when it does', () => {
+    const missing = check({ mode: 'ENFORCE', web: built(KEYLESS) });
+    assert.equal(missing.verdict, Verdict.Fail);
+    assert.match(missing.detail, /the built web does not carry the site key$/);
+    assert.match(missing.lines[0], /pnpm nx build web/);
+    const ok = check({ mode: 'ENFORCE', web: built(KEYED) });
+    assert.equal(ok.verdict, Verdict.Pass);
+    assert.match(
+      ok.detail,
+      /the built web carries the site key \(dist\/apps\/web\/browser\)$/,
+    );
+    assert.deepEqual(ok.lines, []);
+    // P4's literal idiom: the key must be a string literal, not a substring of one.
+    assert.equal(
+      check({ mode: 'ENFORCE', web: built(`x="${SITE_KEY}tail"`) }).verdict,
+      Verdict.Fail,
+    );
+  });
+
+  it('fails ENFORCE when the web it must judge was not read, naming why', () => {
+    const unread = check({
+      scope: 'functions',
+      mode: 'ENFORCE',
+      web: { ok: false, reason: 'https://creativo-web.web.app/: HTTP 503' },
+    });
+    assert.equal(unread.verdict, Verdict.Fail);
+    assert.match(
+      unread.detail,
+      /cannot prove the LIVE web carries the site key$/,
+    );
+    assert.deepEqual(unread.lines, ['https://creativo-web.web.app/: HTTP 503']);
+    assert.equal(check({ mode: 'ENFORCE', web: null }).verdict, Verdict.Fail);
+  });
+
+  it('fails a mode the manifest should never hold', () => {
+    for (const mode of ['ENFORCED', 'monitor', '', undefined, null]) {
+      const entry = check({ mode });
+      assert.equal(entry.verdict, Verdict.Fail, String(mode));
+      assert.match(entry.detail, /not an App Check mode$/);
+      assert.match(entry.lines[0], /^one of OFF, MONITOR, ENFORCE/);
+    }
+  });
+
+  it('judges a functions-scope ENFORCE flip on the LIVE web, never the build: carries the key → PASS with the per-callable bar', async () => {
+    const enforce = {
+      appCheckMode: async () => ({
+        environment: 'production',
+        mode: 'ENFORCE',
+      }),
+      siteKey: async () => SITE_KEY,
+    };
+    const { read, calls } = fakeReaders(enforce);
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read,
+    });
+    const p10 = rows.find((entry) => entry.check === 'P10');
+    assert.equal(p10.verdict, Verdict.Pass);
+    assert.match(
+      p10.detail,
+      /the LIVE web carries the site key \(https:\/\/creativo-web\.web\.app\/main-AB12\.js\)$/,
+    );
+    assert.match(
+      p10.lines[0],
+      /^INFO {2}ENFORCE only after MONITOR met the bar PER CALLABLE/,
+    );
+    assert.equal(calls.filter((name) => name === 'liveBundle').length, 1);
+    assert.equal(calls.includes('bundle'), false);
+
+    const lacking = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read: fakeReaders({
+        ...enforce,
+        liveBundle: async () => ({
+          dist: LIVE_WEB.dist,
+          scripts: [{ path: LIVE_WEB.dist, text: KEYLESS }],
+        }),
+      }).read,
+    });
+    const notLive = lacking.find((entry) => entry.check === 'P10');
+    assert.equal(notLive.verdict, Verdict.Fail);
+    assert.match(notLive.detail, /the LIVE web does not carry the site key$/);
+    assert.match(notLive.lines[0], /deploy the web with the key first/);
+
+    const unreachable = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read: fakeReaders({
+        ...enforce,
+        liveBundle: async () => {
+          throw new Error('fetch failed');
+        },
+      }).read,
+    });
+    const down = unreachable.find((entry) => entry.check === 'P10');
+    assert.equal(down.verdict, Verdict.Fail, 'fail-closed, never SKIP');
+    assert.deepEqual(down.lines, ['fetch failed']);
+    assert.equal(exitCodeOf(unreachable), 1);
+  });
+
+  it('judges a web-scope ENFORCE on the built bundle, never the live site; reads no web at all without a key', async () => {
+    const { read, calls } = fakeReaders({
+      appCheckMode: async () => ({
+        environment: 'production',
+        mode: 'ENFORCE',
+      }),
+      siteKey: async () => SITE_KEY,
+    });
+    const rows = await runPreflight({
+      scope: 'web',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read,
+    });
+    const p10 = rows.find((entry) => entry.check === 'P10');
+    // The fake build names the project but not the key.
+    assert.equal(p10.verdict, Verdict.Fail);
+    assert.match(p10.detail, /the built web does not carry the site key$/);
+    assert.equal(calls.includes('liveBundle'), false);
+    assert.ok(calls.includes('bundle'));
+
+    const keyless = fakeReaders({
+      appCheckMode: async () => ({
+        environment: 'production',
+        mode: 'ENFORCE',
+      }),
+    });
+    for (const scope of ['web', 'functions']) {
+      await runPreflight({
+        scope,
+        projectId: PROJECT,
+        env: { GCLOUD_PROJECT: PROJECT },
+        read: keyless.read,
+      });
+    }
+    assert.equal(keyless.calls.includes('liveBundle'), false);
+    assert.equal(
+      keyless.calls.filter((name) => name === 'bundle').length,
+      1,
+      'P4 alone',
+    );
+  });
+
+  it('fails P10 when the mode cannot be read', async () => {
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read: fakeReaders({
+        appCheckMode: async () => {
+          throw new Error('Unexpected end of JSON input');
+        },
+      }).read,
+    });
+    const p10 = rows.find((entry) => entry.check === 'P10');
+    assert.equal(p10.verdict, Verdict.Fail);
+    assert.equal(p10.detail, 'cannot read: Unexpected end of JSON input');
+  });
+
+  it('reads the mode as the flags writer chooses it: production by default, --env through FLAGS_ENV, development for a demo project', () => {
+    assert.deepEqual(
+      appCheckModeFrom({ manifest: MANIFEST, projectId: PROJECT, env: {} }),
+      {
+        environment: 'production',
+        mode: 'OFF',
+      },
+    );
+    assert.deepEqual(
+      appCheckModeFrom({
+        manifest: { ...MANIFEST, staging: 'ENFORCE' },
+        projectId: PROJECT,
+        env: { FLAGS_ENV: 'staging' },
+      }),
+      { environment: 'staging', mode: 'ENFORCE' },
+    );
+    assert.deepEqual(
+      appCheckModeFrom({
+        manifest: MANIFEST,
+        projectId: 'demo-creativo-test',
+        env: {},
+      }),
+      { environment: 'development', mode: 'MONITOR' },
+    );
+    assert.throws(
+      () =>
+        appCheckModeFrom({
+          manifest: MANIFEST,
+          projectId: PROJECT,
+          env: { FLAGS_ENV: 'development' },
+        }),
+      /--env must be staging or production/,
+    );
+    // The emulator-only override stops a real project's deploy here as it stops the writer.
+    assert.throws(
+      () =>
+        appCheckModeFrom({
+          manifest: MANIFEST,
+          projectId: PROJECT,
+          env: { CREATIVO_APP_CHECK_MODE: 'ENFORCE' },
+        }),
+      (error) =>
+        error.exitCode === 2 && /demo-\* project only/.test(error.message),
+    );
+  });
+
+  it('reads the one appCheck.siteKey literal of an environment file, else null', () => {
+    assert.equal(siteKeyOf("  appCheck: { siteKey: '' },\n"), '');
+    assert.equal(siteKeyOf(`appCheck: { siteKey: '${SITE_KEY}' },`), SITE_KEY);
+    assert.equal(
+      siteKeyOf(`appCheck: {\n    siteKey: "${SITE_KEY}",\n  },`),
+      SITE_KEY,
+    );
+    assert.equal(
+      siteKeyOf('export const environment = { featureFlags };'),
+      null,
+    );
+    assert.equal(
+      siteKeyOf("appCheck: { siteKey: 'a' },\nappCheck: { siteKey: 'b' },"),
+      null,
+    );
+    assert.equal(siteKeyOf('appCheck: { siteKey: KEY },'), null);
+  });
+
+  it('finds the main script an Angular index.html loads, and the live origin of the web hosting target', () => {
+    const index =
+      '<head><script>/* inline */</script><link rel="modulepreload" href="chunk-AB.js"><script src="main-GLL6SHZU.js" type="module"></script></head>';
+    assert.equal(mainScriptOf(index), 'main-GLL6SHZU.js');
+    assert.equal(mainScriptOf('<script src="polyfills-X.js"></script>'), null);
+    assert.equal(
+      mainScriptOf(
+        '<script src="main-A.js"></script><script src="main-B.js"></script>',
+      ),
+      null,
+    );
+    const rc = {
+      projects: { default: PROJECT },
+      targets: { [PROJECT]: { hosting: { web: ['creativo-web'] } } },
+    };
+    assert.equal(liveWebOriginOf(rc, PROJECT), 'https://creativo-web.web.app');
+    assert.equal(liveWebOriginOf(rc, 'creativo-other'), null);
+    assert.equal(liveWebOriginOf({ projects: {} }, PROJECT), null);
+    assert.equal(liveWebOriginOf(null, PROJECT), null);
+  });
+});
+
 describe('runPreflight', () => {
   const env = { GCLOUD_PROJECT: PROJECT };
 
   // Widened ON PURPOSE by audit-hardening WS-6 (DEP-24): the functions
-  // scope gains P9, the informational backstop row.
-  it('runs P1–P6 for the web scope and P1–P3, P6–P9 for the functions scope — every check in one of them', async () => {
-    assert.deepEqual(SCOPES.web, ['P1', 'P2', 'P3', 'P4', 'P5', 'P6']);
+  // scope gains P9, the informational backstop row. Widened again ON
+  // PURPOSE by security hardening S-DEP-13: both scopes gain P10, App Check.
+  it('runs P1–P6 and P10 for the web scope and P1–P3, P6–P10 for the functions scope — every check in one of them', async () => {
+    assert.deepEqual(SCOPES.web, ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P10']);
     assert.deepEqual(SCOPES.functions, [
       'P1',
       'P2',
@@ -1330,10 +1680,11 @@ describe('runPreflight', () => {
       'P7',
       'P8',
       'P9',
+      'P10',
     ]);
     assert.deepEqual(
       [...new Set([...SCOPES.web, ...SCOPES.functions])].sort(),
-      Object.keys(CHECKS),
+      Object.keys(CHECKS).sort(),
     );
     const web = await runPreflight({
       scope: 'web',
@@ -1359,6 +1710,8 @@ describe('runPreflight', () => {
     );
     assert.equal(calls.includes('bundle'), false);
     assert.equal(calls.includes('config'), false);
+    // At OFF, P10 reads the mode and the key, never a web.
+    assert.equal(calls.includes('liveBundle'), false);
     assert.equal(
       web.some((entry) => entry.check === 'P9'),
       false,
@@ -1366,8 +1719,11 @@ describe('runPreflight', () => {
   });
 
   // P9 joins the SKIP rows ON PURPOSE (audit-hardening WS-6, DEP-24): it
-  // reads the project, so a failed P6 keeps it from reading too.
-  it('reads nothing of the project when P6 fails: P1–P3 and P9 SKIP, P7 and P8 still judge the source (read once), and the run fails', async () => {
+  // reads the project, so a failed P6 keeps it from reading too. P10 does
+  // NOT join them (security hardening S-DEP-13): at OFF / MONITOR it reads
+  // repository files only, and an ENFORCE flip — whose live-web read a
+  // failed P6 forbids — FAILs instead (fail-closed, below).
+  it('reads nothing of the project when P6 fails: P1–P3 and P9 SKIP, P7, P8 and P10 still judge the files (the source read once), and the run fails', async () => {
     const { read, calls } = fakeReaders();
     const rows = await runPreflight({
       scope: 'functions',
@@ -1385,10 +1741,29 @@ describe('runPreflight', () => {
         Verdict.Pass,
         Verdict.Pass,
         Verdict.Skip,
+        Verdict.Pass,
       ],
     );
-    assert.deepEqual(calls, ['functionsSource']);
+    assert.deepEqual(calls, ['functionsSource', 'appCheckMode', 'siteKey']);
     assert.equal(exitCodeOf(rows), 1);
+    // An ENFORCE flip with a key: the live web is never read, and P10 fails.
+    const flip = fakeReaders({
+      appCheckMode: async () => ({
+        environment: 'production',
+        mode: 'ENFORCE',
+      }),
+      siteKey: async () => SITE_KEY,
+    });
+    const flipped = await runPreflight({
+      scope: 'functions',
+      projectId: 'creativo-replace-me',
+      env: {},
+      read: flip.read,
+    });
+    const p10 = flipped.find((entry) => entry.check === 'P10');
+    assert.equal(p10.verdict, Verdict.Fail);
+    assert.match(p10.lines[0], /^not read — P6 failed/);
+    assert.equal(flip.calls.includes('liveBundle'), false);
   });
 
   it('fails the functions deploy on the console sender wired outright, whatever the project reads', async () => {
@@ -1413,6 +1788,7 @@ describe('runPreflight', () => {
         ['P7', Verdict.Fail],
         ['P8', Verdict.Pass],
         ['P9', Verdict.Pass],
+        ['P10', Verdict.Pass],
       ],
     );
     assert.equal(exitCodeOf(rows), 1);
@@ -1434,9 +1810,10 @@ describe('runPreflight', () => {
     assert.equal(p3.verdict, Verdict.Fail);
     assert.match(p3.detail, /^cannot read: Could not load/);
     assert.match(p3.lines[0], /gcloud auth application-default login/);
+    // Six: P10 (S-DEP-13) joined the web scope's five other passing rows.
     assert.equal(
       rows.filter((entry) => entry.verdict === Verdict.Pass).length,
-      5,
+      6,
     );
     assert.equal(exitCodeOf(rows), 1);
     // A read the credentials do not explain carries no credentials hint.
@@ -1519,7 +1896,7 @@ describe('preflight · the command', () => {
     const functions = skipBanner({ projectId: PROJECT, scope: 'functions' });
     assert.match(
       functions,
-      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters, the launch blockers or the platform backstops of creativo-prod\./,
+      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters, the launch blockers, the platform backstops or App Check of creativo-prod\./,
     );
     assert.match(
       functions,
@@ -1528,7 +1905,7 @@ describe('preflight · the command', () => {
     const web = skipBanner({ projectId: PROJECT, scope: 'web' });
     assert.match(
       web,
-      /the bundle, the CSP or the environment of creativo-prod\./,
+      /the bundle, the CSP, the environment or App Check of creativo-prod\./,
     );
     assert.doesNotMatch(web, /emulator-only|launch blocker/);
     assert.match(
@@ -1580,7 +1957,7 @@ describe('the deploy wiring', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
   const json = (file) => JSON.parse(readFileSync(join(root, file), 'utf8'));
 
-  it('runs the preflight as the hosting predeploy (P1–P6) and last in the functions predeploy (P1–P3, P6–P9), on the deployed project', () => {
+  it('runs the preflight as the hosting predeploy (P1–P6, P10) and last in the functions predeploy (P1–P3, P6–P10), on the deployed project', () => {
     const config = json('firebase.json');
     const web = config.hosting.find((entry) => entry.target === 'web');
     assert.deepEqual(web.predeploy, [
@@ -1696,9 +2073,57 @@ describe('the deploy wiring', () => {
         ['P7', Verdict.Pass],
         ['P8', Verdict.Fail],
         ['P9', Verdict.Pass],
+        ['P10', Verdict.Pass],
       ],
     );
     assert.equal(exitCodeOf(rows), 1);
+  });
+
+  // P10 over today's tree (security hardening S-DEP-13): the shipped
+  // manifest is OFF for every deployed environment and the web ships no
+  // site key, so P10 passes in both scopes — and the readers find both.
+  it('P10 passes on today’s tree: the shipped manifest OFF for a deployed project, the site key empty', () => {
+    const manifest = json('config/app-check.json');
+    const siteKey = siteKeyOf(
+      readFileSync(
+        join(root, 'apps/web/src/environments/environment.production.ts'),
+        'utf8',
+      ),
+    );
+    assert.equal(siteKey, '');
+    for (const env of [{}, { FLAGS_ENV: 'staging' }]) {
+      const { environment, mode } = appCheckModeFrom({
+        manifest,
+        projectId: PROJECT,
+        env,
+      });
+      assert.equal(mode, 'OFF', environment);
+      for (const scope of ['web', 'functions']) {
+        const entry = checkAppCheck({
+          scope,
+          environment,
+          mode,
+          siteKey,
+          web: null,
+        });
+        assert.equal(entry.verdict, Verdict.Pass, `${environment} ${scope}`);
+      }
+    }
+    // The emulators' development map is MONITOR (S-RU-20): it passes, keyless INFO.
+    const dev = appCheckModeFrom({
+      manifest,
+      projectId: 'demo-creativo-test',
+      env: {},
+    });
+    assert.deepEqual(dev, { environment: 'development', mode: 'MONITOR' });
+    const entry = checkAppCheck({
+      scope: 'functions',
+      ...dev,
+      siteKey,
+      web: null,
+    });
+    assert.equal(entry.verdict, Verdict.Pass);
+    assert.match(entry.lines[0], /site key empty/);
   });
 
   it('names it `pnpm run preflight`', () => {

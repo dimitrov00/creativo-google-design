@@ -3602,7 +3602,10 @@ export class StaffDashboard {
     // `guest-<label>`, an account by its uid — no address is known for any
     // of them here (`email: null`, what the client search reads as none).
     // A walk-in (OR-26) is a guest by label here too: the seat holds only
-    // its label and its record's id, and the contact is the record's.
+    // its label and its record's id, and the contact is the record's. The
+    // record's id rides as its own field (S-RU-15) — what opens the
+    // walk-in's card keyed by the record (S-WS-F); an anonymous seat has
+    // none.
     const personOf = (seat: Seat): VisitEditorClientOption => {
       switch (seat.seatSubject) {
         case SeatSubject.Anonymous:
@@ -3614,6 +3617,10 @@ export class StaffDashboard {
             phoneHref: null,
             meta: null,
             email: null,
+            customerId:
+              seat.seatSubject === SeatSubject.WalkIn
+                ? seat.subjectCustomerId
+                : null,
           };
         case SeatSubject.Account:
           return seat.subjectRelationship === SubjectRelationship.Companion

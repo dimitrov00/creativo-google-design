@@ -115,6 +115,7 @@ import {
 } from '@core/primitives';
 import { RegistrationSystem, SearchFieldsSystem } from '@core/systems';
 import {
+  appointmentFixture,
   bodyOf,
   FIXTURE_TIME_ZONE,
   cents,
@@ -400,6 +401,18 @@ describe('firestore.rules', () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), path), data);
     });
+  }
+
+  /**
+   * `appointments/{id}` for each id, as the callables write it (rules off —
+   * appointments are callable-only): the visit a note or a photo must name
+   * (security hardening S-DEP-5, `exists()`), so a case about the author,
+   * the stamp or the role is refused for that reason only.
+   */
+  async function seedAppointments(...ids: string[]): Promise<void> {
+    for (const id of ids) {
+      await seed(`appointments/${id}`, bodyOf(appointmentFixture()));
+    }
   }
 
   /**
@@ -1288,6 +1301,76 @@ describe('firestore.rules', () => {
       await assertFails(setDoc(doc(copy, path), closedDay('2026-09-03')));
       await assertFails(deleteDoc(doc(copy, path)));
     });
+
+    it('admits a day whose id is its body’s busy key, the CLOSED variant with no ranges and a ranged one alike (S-DEP-5)', async () => {
+      const barber = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(
+        setDoc(
+          doc(barber, 'scheduleExceptions/ivan__2026-09-04'),
+          closedDay('2026-09-04'),
+        ),
+      );
+      await assertSucceeds(
+        setDoc(doc(barber, 'scheduleExceptions/ivan__2026-09-05'), {
+          ...closedDay('2026-09-05'),
+          ...unwrapOk(
+            ExceptionEffectRule.blocked([
+              MinuteRange.of(minute(10 * 60), endMinute(11 * 60)),
+            ]),
+          ),
+        }),
+      );
+    });
+
+    it('refuses an id that is not its body’s busy key — another day or another barber (S-DEP-5)', async () => {
+      const barber = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(
+          doc(barber, 'scheduleExceptions/ivan__2026-09-06'),
+          closedDay('2026-09-07'),
+        ),
+      );
+      await assertFails(
+        setDoc(
+          doc(barber, 'scheduleExceptions/stefan__2026-09-06'),
+          closedDay('2026-09-06'),
+        ),
+      );
+      await assertFails(
+        setDoc(
+          doc(barber, 'scheduleExceptions/day-off'),
+          closedDay('2026-09-06'),
+        ),
+      );
+    });
+
+    it('refuses a body day that is no YYYY-MM-DD, even under the id it spells (S-DEP-5)', async () => {
+      const barber = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(doc(barber, 'scheduleExceptions/ivan__2026-9-8'), {
+          ...closedDay('2026-09-08'),
+          localDate: '2026-9-8',
+        }),
+      );
+    });
+
+    it('refuses a day carrying a key its entity does not store — a reason above all (S-DEP-5)', async () => {
+      const barber = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(doc(barber, 'scheduleExceptions/ivan__2026-09-09'), {
+          ...closedDay('2026-09-09'),
+          exceptionReason: 'SICK',
+        }),
+      );
+    });
+
+    it('lets a barber delete a day whatever its id (S-DEP-5: deletes unchanged)', async () => {
+      await seed('scheduleExceptions/day-off', closedDay('2026-09-10'));
+      const barber = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(
+        deleteDoc(doc(barber, 'scheduleExceptions/day-off')),
+      );
+    });
   });
 
   describe('couponGrants — the holder, and the book (2026-09-10)', () => {
@@ -1791,15 +1874,27 @@ describe('firestore.rules', () => {
     const photoPath = 'appointmentPhotos/photo-1';
 
     /**
+     * The `n`th photo id a create under test uses — UUID-shaped, as the one
+     * minter's `crypto.randomUUID()` (security hardening S-DEP-5): the rules
+     * refuse any other id on a create. The seeded `photo-1` keeps its legacy
+     * id — it is only read, rewritten (refused anyway) and deleted.
+     */
+    const uuidOf = (n: number): string =>
+      `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+    /**
      * A photo as `appointmentPhotos/{id}` stores it (`AppointmentPhoto`,
-     * `clientCustomerId`) — taken by `takenBy` at `takenAtUtcMs`. The seeded
-     * one keeps the flat fixtures' `SEPT_FIRST`; a WRITE under test is built
-     * for its caller with a fresh stamp (DEP-15), so each refusal below is for
-     * its stated reason only.
+     * `clientCustomerId`) — taken by `takenBy` at `takenAtUtcMs`, a `SHOT`
+     * whose object path is the one `uploadPhotoBytes` mints for `photoId`
+     * on `appt-1`. The seeded one keeps the flat fixtures' `SEPT_FIRST`; a
+     * WRITE under test is built for its caller with a fresh stamp (DEP-15)
+     * and a UUID id on a seeded appointment (S-DEP-5), so each refusal
+     * below is for its stated reason only.
      */
     const photoBody = (
       takenBy: string | null = 'staff-1',
       takenAtUtcMs: UtcEpochMs = SEPT_FIRST,
+      photoId = 'photo-1',
     ): Omit<AppointmentPhoto, 'id'> =>
       ({
         appointmentId: AppointmentId.of('appt-1'),
@@ -1808,8 +1903,8 @@ describe('firestore.rules', () => {
         clientLabel: 'Иван Петров',
         takenByUserId: takenBy === null ? null : UserId.of(takenBy),
         takenAtUtcMs,
-        path: 'appointmentPhotos/appt-1/photo-1',
-        url: 'https://example.test/photo-1.jpg',
+        path: `appointmentPhotos/appt-1/${photoId}`,
+        url: `https://example.test/${photoId}.jpg`,
         width: 1100,
         height: 1400,
         photoOrigin: PhotoOrigin.Shot,
@@ -1818,6 +1913,7 @@ describe('firestore.rules', () => {
 
     beforeEach(async () => {
       await seed(photoPath, photoBody());
+      await seedAppointments('appt-1', 'appt-2');
     });
 
     it('lets the book read a client’s photos by their record, newest first, and save one', async () => {
@@ -1835,10 +1931,10 @@ describe('firestore.rules', () => {
         ),
       );
       await assertSucceeds(
-        setDoc(doc(db, 'appointmentPhotos/photo-2'), {
-          ...photoBody('staff-1', await emulatorNowMs()),
-          path: 'appointmentPhotos/appt-1/photo-2',
-        }),
+        setDoc(
+          doc(db, `appointmentPhotos/${uuidOf(2)}`),
+          photoBody('staff-1', await emulatorNowMs(), uuidOf(2)),
+        ),
       );
     });
 
@@ -1852,8 +1948,8 @@ describe('firestore.rules', () => {
         // A body that names THIS caller with a fresh stamp: the role refuses it.
         await assertFails(
           setDoc(
-            doc(db, 'appointmentPhotos/photo-3'),
-            photoBody(uid, await emulatorNowMs()),
+            doc(db, `appointmentPhotos/${uuidOf(3)}`),
+            photoBody(uid, await emulatorNowMs(), uuidOf(3)),
           ),
         );
       }
@@ -1862,14 +1958,14 @@ describe('firestore.rules', () => {
     it('admits a photo stamped now and 240 s either side of the emulator’s clock (WS-3.4, DEP-15)', async () => {
       const db = signedIn('staff-1', 'barber').firestore();
       for (const [id, seconds] of [
-        ['photo-now', 0],
-        ['photo-early', -240],
-        ['photo-late', 240],
+        [uuidOf(10), 0],
+        [uuidOf(11), -240],
+        [uuidOf(12), 240],
       ] as const) {
         await assertSucceeds(
           setDoc(
             doc(db, `appointmentPhotos/${id}`),
-            photoBody('staff-1', shifted(await emulatorNowMs(), seconds)),
+            photoBody('staff-1', shifted(await emulatorNowMs(), seconds), id),
           ),
         );
       }
@@ -1879,41 +1975,119 @@ describe('firestore.rules', () => {
       const db = signedIn('staff-1', 'barber').firestore();
       await assertFails(
         setDoc(
-          doc(db, 'appointmentPhotos/photo-forged'),
-          photoBody('staff-2', await emulatorNowMs()),
+          doc(db, `appointmentPhotos/${uuidOf(20)}`),
+          photoBody('staff-2', await emulatorNowMs(), uuidOf(20)),
         ),
       );
       await assertFails(
         setDoc(
-          doc(db, 'appointmentPhotos/photo-nobody'),
-          photoBody(null, await emulatorNowMs()),
+          doc(db, `appointmentPhotos/${uuidOf(21)}`),
+          photoBody(null, await emulatorNowMs(), uuidOf(21)),
         ),
       );
     });
 
     it('refuses a stamp 301 s and 360 s from the emulator’s clock either way, and a stamp that is no integer (WS-3.4, DEP-15)', async () => {
       const db = signedIn('staff-1', 'barber').firestore();
-      for (const seconds of [-301, 301, -360, 360]) {
+      for (const [id, seconds] of [
+        [uuidOf(30), -301],
+        [uuidOf(31), 301],
+        [uuidOf(32), -360],
+        [uuidOf(33), 360],
+      ] as const) {
         await assertFails(
           setDoc(
-            doc(db, `appointmentPhotos/photo-off-${seconds}`),
-            photoBody('staff-1', shifted(await emulatorNowMs(), seconds)),
+            doc(db, `appointmentPhotos/${id}`),
+            photoBody('staff-1', shifted(await emulatorNowMs(), seconds), id),
           ),
         );
       }
       const now = await emulatorNowMs();
       for (const [id, stamp] of [
-        ['photo-fraction', now + 0.5],
-        ['photo-text', String(now)],
-        ['photo-null', null],
+        [uuidOf(34), now + 0.5],
+        [uuidOf(35), String(now)],
+        [uuidOf(36), null],
       ] as const) {
         await assertFails(
           setDoc(doc(db, `appointmentPhotos/${id}`), {
-            ...photoBody('staff-1', now),
+            ...photoBody('staff-1', now, id),
             takenAtUtcMs: stamp,
           }),
         );
       }
+    });
+
+    it('admits a UUID id on an existing appointment, and refuses a `photo-1`-style id and an appointment that does not exist (S-DEP-5)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(
+        setDoc(
+          doc(db, `appointmentPhotos/${uuidOf(40)}`),
+          photoBody('staff-1', await emulatorNowMs(), uuidOf(40)),
+        ),
+      );
+      // Every other fact true of `photo-9`: only its id is refused.
+      await assertFails(
+        setDoc(
+          doc(db, 'appointmentPhotos/photo-9'),
+          photoBody('staff-1', await emulatorNowMs(), 'photo-9'),
+        ),
+      );
+      // The id, path and stamp hold; the visit it names does not exist.
+      await assertFails(
+        setDoc(doc(db, `appointmentPhotos/${uuidOf(41)}`), {
+          ...photoBody('staff-1', await emulatorNowMs(), uuidOf(41)),
+          appointmentId: AppointmentId.of('appt-absent'),
+          path: `appointmentPhotos/appt-absent/${uuidOf(41)}`,
+        }),
+      );
+    });
+
+    it('refuses a photo carrying a key its entity does not store (S-DEP-5)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(doc(db, `appointmentPhotos/${uuidOf(42)}`), {
+          ...photoBody('staff-1', await emulatorNowMs(), uuidOf(42)),
+          clientPhone: '+359888123456',
+        }),
+      );
+    });
+
+    it('refuses an unknown origin, and a SHOT whose path names another appointment or another photo (Phase 3 flag 26, S-DEP-5)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(doc(db, `appointmentPhotos/${uuidOf(43)}`), {
+          ...photoBody('staff-1', await emulatorNowMs(), uuidOf(43)),
+          photoOrigin: 'UPLOAD',
+        }),
+      );
+      // `appt-2` exists: the path is refused for naming it, not for absence.
+      await assertFails(
+        setDoc(doc(db, `appointmentPhotos/${uuidOf(44)}`), {
+          ...photoBody('staff-1', await emulatorNowMs(), uuidOf(44)),
+          path: `appointmentPhotos/appt-2/${uuidOf(44)}`,
+        }),
+      );
+      await assertFails(
+        setDoc(doc(db, `appointmentPhotos/${uuidOf(45)}`), {
+          ...photoBody('staff-1', await emulatorNowMs(), uuidOf(45)),
+          path: `appointmentPhotos/appt-1/${uuidOf(46)}`,
+        }),
+      );
+    });
+
+    it('admits a LIBRARY photo whose path is the shop’s library object (S-DEP-5: its path stays free)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(
+        setDoc(doc(db, `appointmentPhotos/${uuidOf(47)}`), {
+          ...photoBody('staff-1', await emulatorNowMs(), uuidOf(47)),
+          path: '/work/fade.jpg',
+          url: 'https://media.test/work/fade.jpg',
+          width: null,
+          height: null,
+          photoOrigin: PhotoOrigin.Library,
+          label: 'Фейд · витрина',
+        }),
+      );
     });
 
     it('refuses every update — no update path exists (RU-19), the taker’s own fresh one included', async () => {
@@ -1947,6 +2121,13 @@ describe('firestore.rules', () => {
 
     beforeEach(async () => {
       await seed(notePath, noteBody('staff-1', SEPT_FIRST));
+      await seedAppointments(
+        'appt-1',
+        'appt-2',
+        'appt-new0',
+        'appt-new-240',
+        'appt-new240',
+      );
     });
 
     it('lets the book read a note, and its author create and rewrite one stamped now and 240 s either side', async () => {
@@ -2003,6 +2184,43 @@ describe('firestore.rules', () => {
           );
         }
       }
+    });
+
+    it('admits a note on an appointment that exists, and refuses one whose appointment id names no appointment (S-DEP-5)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(
+        setDoc(
+          doc(db, 'appointmentNotes/appt-2'),
+          noteBody('staff-1', await emulatorNowMs()),
+        ),
+      );
+      await assertFails(
+        setDoc(
+          doc(db, 'appointmentNotes/appt-absent'),
+          noteBody('staff-1', await emulatorNowMs()),
+        ),
+      );
+    });
+
+    it('refuses a note carrying a key its entity does not store, on create and on update (S-DEP-5)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      for (const path of [notePath, 'appointmentNotes/appt-2']) {
+        await assertFails(
+          setDoc(doc(db, path), {
+            ...noteBody('staff-1', await emulatorNowMs()),
+            clientName: 'Иван Петров',
+          }),
+        );
+      }
+    });
+
+    it('lets the book delete a stray note whose appointment does not exist (S-DEP-5: deletes unchanged)', async () => {
+      await seed(
+        'appointmentNotes/appt-absent',
+        noteBody('staff-1', SEPT_FIRST),
+      );
+      const db = signedIn('staff-2', 'receptionist').firestore();
+      await assertSucceeds(deleteDoc(doc(db, 'appointmentNotes/appt-absent')));
     });
 
     it('lets anyone who works the book delete a note — an empty note deletes it — not only its author', async () => {

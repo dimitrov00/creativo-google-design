@@ -95,6 +95,16 @@ describe('AuditAction', () => {
       'IDENTITY_SESSION_ISSUED',
       'IDENTITY_REGISTRATION_COMPLETED',
     ]);
+    // The account verbs: the trigger's three and the admin's roles change
+    // (security hardening S-RU-9, S-DEP-6 — no ACCOUNTS_ family).
+    expect(
+      AuditContext.ACTIONS.filter((action) => action.startsWith('PROFILE_')),
+    ).toEqual([
+      'PROFILE_CREATED',
+      'PROFILE_UPDATED',
+      'PROFILE_DELETED',
+      'PROFILE_ROLES_CHANGED',
+    ]);
     // The data-subject verbs (audit-hardening Phase 3 WS-C, P3-DEP-10; the
     // erasure's four, WS-D, P3-DEP-18 — the sweep's, P3-DEP-33).
     expect(

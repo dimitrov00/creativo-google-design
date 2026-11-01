@@ -776,6 +776,61 @@ export async function seedErasablePerson(
   };
 }
 
+// ── A walk-in's record with no account (security hardening S-WS-F) ──
+
+/** What {@link seedWalkInRecord} wrote — the id and the number a spec finds it by. */
+export type WalkInRecord = {
+  /** The client RECORD (`customers/{id}`, `userId: null`). */
+  readonly customerId: CustomerId;
+  /** The record's run-unique phone, E.164. */
+  readonly phone: string;
+  /** The same number as the desk dials it (`088…`) — what the client search is typed. */
+  readonly dialled: string;
+};
+
+/**
+ * A WALK-IN THE DESK ENTERED, with no account behind it (OR-26) — a
+ * run-unique `customers/{id}` record, `userId: null`, `STAFF_WALK_IN`, its
+ * search keys the ones `SearchFieldsSystem` derives from the name and the
+ * run-unique phone (so the staff search finds it by the number), the
+ * erasure tag `NONE`. The id is a digest of the attempt's `key` under its
+ * own namespace — never a contact's digest: the server's keyed walk-in id
+ * (`CustomerId.forWalkIn`) is not the seed's to compute, and nothing here
+ * needs it to be (the card and the privacy callables take the record by
+ * its id). No account, no Auth user: the erasure of this record touches
+ * neither (S-WS-F).
+ */
+export async function seedWalkInRecord(
+  key: string,
+  names: { readonly firstName: string; readonly lastName: string },
+): Promise<WalkInRecord> {
+  // The run-unique number as its brand (`runPhoneOf` answers it as text).
+  const e164 = sure(PhoneSystem.parse(runPhoneOf(key), null), 'phone').e164;
+  const raw = `cus_${sha256Hex(`e2e-walk-in/v1:${key}`).slice(0, 20)}`;
+  const customerId = sure(CustomerId.parse(raw), raw);
+  const body = {
+    userId: null,
+    displayName: Profile.fullName(names),
+    phone: e164,
+    email: null,
+    ...SearchFieldsSystem.searchFields(
+      names.firstName,
+      names.lastName,
+      e164,
+      null,
+    ),
+    createdAtUtcMs: RECORD_OPENED_AT_UTC_MS,
+    customerOrigin: CustomerOrigin.StaffWalkIn,
+    ...WriteProvenance.NONE,
+    ...ErasureLifecycle.none(),
+  } satisfies Omit<Customer, 'id'>;
+  await getFirestore(adminApp())
+    .collection(Collections.Customers)
+    .doc(customerId)
+    .set(body);
+  return { customerId, phone: e164, dialled: `0${e164.slice(4)}` };
+}
+
 /** A top-level collection's name, as the registry spells it. */
 type CollectionName = (typeof Collections)[keyof typeof Collections];
 
@@ -815,4 +870,20 @@ export async function storedObjectExists(path: string): Promise<boolean> {
     .file(path)
     .exists();
   return exists;
+}
+
+/**
+ * The `auditAction` of every `auditLog` row about the account `uid`
+ * (`targetUserId`), read back through the Admin SDK — what the server
+ * FILED for an act on that account (the roles change's
+ * `PROFILE_ROLES_CHANGED`, security hardening S-WS-E), in no set order.
+ */
+export async function readAuditActionsFor(
+  uid: string,
+): Promise<readonly string[]> {
+  const snapshot = await getFirestore(adminApp())
+    .collection(Collections.AuditLog)
+    .where('targetUserId', '==', uid)
+    .get();
+  return snapshot.docs.map((doc) => String(doc.get('auditAction')));
 }

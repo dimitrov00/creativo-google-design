@@ -40,6 +40,7 @@ import {
   BirthdayMoment,
   type JournalFeed,
   type PersonalRecordKind,
+  type Role,
   type VisitLeg,
 } from '@core/components';
 import type {
@@ -762,6 +763,53 @@ export interface ClientErasureVm {
   /** One row per sibling record the record's last preview named. */
   readonly siblings: readonly ClientErasureSiblingVm[];
   readonly alert: ClientErasureAlertVm;
+}
+
+// ── «Роли»: an admin's roles change (security hardening S-WS-E) ──────────
+
+/**
+ * Where the card's roles change stands: none sent (or the last line
+ * forgotten), on its way, saved, or refused. Values: SCREAMING tags, the
+ * store's.
+ */
+export const ClientRolesPhase = {
+  Idle: 'IDLE',
+  Running: 'RUNNING',
+  Saved: 'SAVED',
+  Refused: 'REFUSED',
+} as const;
+export type ClientRolesPhase =
+  (typeof ClientRolesPhase)[keyof typeof ClientRolesPhase];
+
+/** One role of the «Роли» block — a checkbox row, its state the set Save would send. */
+export interface ClientRoleToggleVm {
+  readonly role: Role;
+  /** «Бръснар». */
+  readonly label: string;
+  readonly checked: boolean;
+  /** `client-roles-<role>`. */
+  readonly testId: string;
+}
+
+/**
+ * The «Роли» block (S-RU-13, S-L-18) — a separate block after the privacy
+ * block, never part of `ClientOverviewVm`: present only for the shop's
+ * admin on another, registered, not erased account holding no sysadmin,
+ * with the callable bound and the network; `null` otherwise.
+ */
+export interface ClientRolesVm {
+  /** «Роли» — the group's name for a reader. */
+  readonly groupLabel: string;
+  /** The five `Roles.ASSIGNABLE`, in dictionary order. */
+  readonly toggles: readonly ClientRoleToggleVm[];
+  /** «Запази ролите». */
+  readonly saveLabel: string;
+  /** A system answer (`RoleAssignmentSystem.saveOf`): a changed, non-empty set — or a failed revoke's retry. */
+  readonly saveEnabled: boolean;
+  /** «Ролите са запазени. …» or a refusal's words; `null` while idle or on its way. */
+  readonly line: string | null;
+  /** `client-roles`. */
+  readonly testId: string;
 }
 
 // ── «Лоялност»: the wallet (§2.2) ───────────────────────────────────────

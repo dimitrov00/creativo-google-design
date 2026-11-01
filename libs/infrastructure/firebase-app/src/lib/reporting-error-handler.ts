@@ -14,7 +14,11 @@ import {
   type ClientIssueReporter,
   clientIssueReporter,
 } from './client-issue-reporter.adapter';
-import { MAPLIBRE_REPORT_ONLY_SINKS } from './csp-baseline';
+import {
+  MAPLIBRE_REPORT_ONLY_SINKS,
+  RECAPTCHA_REPORT_ONLY_POLICIES,
+  RECAPTCHA_REPORT_ONLY_SINKS,
+} from './csp-baseline';
 import { DATA_LOG_ERROR } from './error-handler-log.adapter';
 
 /**
@@ -234,6 +238,15 @@ const REPORT_ONLY = 'report';
 /** The directive a Trusted Types sink violation names. */
 const TRUSTED_TYPES_DIRECTIVE = 'require-trusted-types-for';
 
+/** The directive a Trusted Types policy violation names — its sample is the policy's name. */
+const TRUSTED_TYPES_POLICY_DIRECTIVE = 'trusted-types';
+
+/** Every report-only Trusted Types sink sample a known baseline accounts for: MapLibre's (measured) and reCAPTCHA's (UNMEASURED). */
+const BASELINE_SINKS: readonly RegExp[] = [
+  ...MAPLIBRE_REPORT_ONLY_SINKS,
+  ...RECAPTCHA_REPORT_ONLY_SINKS,
+];
+
 function isExtension(uri: string): boolean {
   return EXTENSION_SCHEMES.some((scheme) => uri.startsWith(scheme));
 }
@@ -250,17 +263,23 @@ function blockedOf(uri: string): string {
 }
 
 /**
- * Whether `report` is one of the measured MapLibre baseline's: report-only,
- * a Trusted Types sink, and one of its three samples
- * ({@link MAPLIBRE_REPORT_ONLY_SINKS}). Never read off the script that
- * tripped it — a production chunk's name is hashed, and its content is the
- * smoke's to read, not the page's.
+ * Whether `report` is known report-only noise: report-only, and either a
+ * Trusted Types SINK sample of the measured MapLibre baseline
+ * ({@link MAPLIBRE_REPORT_ONLY_SINKS}) or of the reCAPTCHA script
+ * ({@link RECAPTCHA_REPORT_ONLY_SINKS}, UNMEASURED), or a Trusted Types
+ * POLICY reCAPTCHA creates ({@link RECAPTCHA_REPORT_ONLY_POLICIES} — the
+ * `trusted-types` directive's sample is the policy name). Never read off
+ * the script that tripped it — a production chunk's name is hashed, and
+ * its content is the smoke's to read, not the page's.
  */
-function isMapLibreBaseline(report: CspViolationReport): boolean {
+function isMeasuredBaseline(report: CspViolationReport): boolean {
+  if (report.disposition !== REPORT_ONLY) return false;
+  if (report.effectiveDirective === TRUSTED_TYPES_DIRECTIVE) {
+    return BASELINE_SINKS.some((sink) => sink.test(report.sample));
+  }
   return (
-    report.disposition === REPORT_ONLY &&
-    report.effectiveDirective === TRUSTED_TYPES_DIRECTIVE &&
-    MAPLIBRE_REPORT_ONLY_SINKS.some((sink) => sink.test(report.sample))
+    report.effectiveDirective === TRUSTED_TYPES_POLICY_DIRECTIVE &&
+    RECAPTCHA_REPORT_ONLY_POLICIES.includes(report.sample)
   );
 }
 
@@ -270,9 +289,10 @@ function isMapLibreBaseline(report: CspViolationReport): boolean {
  * as its message (`enforce https://evil.example`, `report
  * trusted-types-sink`), the script that tripped it as its frame — or `null`
  * for a violation a browser extension raised in the page (its code is not
- * this app's, and neither is the fix), and for one of the measured MapLibre
- * baseline's (every map render trips them; reported, they would spend the
- * shared issue throttle on known noise). An enforced violation, and any
+ * this app's, and neither is the fix), and for one of the known report-only
+ * baselines' — MapLibre's and reCAPTCHA's (every map render and every keyed
+ * page load trips them; reported, they would spend the shared issue
+ * throttle on known noise). An enforced violation, and any
  * other report-only one, is always an issue.
  */
 export function cspViolationIssue(
@@ -282,7 +302,7 @@ export function cspViolationIssue(
   if (isExtension(report.sourceFile) || isExtension(report.blockedURI)) {
     return null;
   }
-  if (isMapLibreBaseline(report)) return null;
+  if (isMeasuredBaseline(report)) return null;
   return ClientIssueSystem.compose({
     clientIssueKind: ClientIssueKind.CspViolation,
     errorName: textOrNull(report.effectiveDirective),

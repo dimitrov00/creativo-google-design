@@ -36,14 +36,27 @@
 //       audit sink and its 400-day bucket (named in tools/ops/names.env,
 //       created by the tools/ops scripts) are each reported as an INFO line
 //       inside a PASS row; a missing backstop or an unreadable one never
-//       fails a deploy.
+//       fails a deploy;
+//   P10 App Check (security hardening S-L-8, S-DEP-13): the mode
+//       config/app-check.json holds for the project's environment (the
+//       flags writer's own chooser, tools/flags/write-functions-env.mjs —
+//       the mode the deploy writes) — OFF passes; MONITOR passes (INFO when
+//       the web has no site key: every request then reads MISSING); ENFORCE
+//       fails unless environment.production.ts's `appCheck.siteKey` is set
+//       AND a web that can satisfy it carries the key: in the web scope the
+//       built bundle (P4's literal search), in the functions scope — which
+//       has no web build — the LIVE web (the `web` hosting target of
+//       `.firebaserc`, `https://<site>.web.app/` and the `main-*.js` its
+//       index.html names), failing closed when that cannot be read or P6
+//       failed; an unknown mode fails.
 //
-// `--scope web` (the default; the hosting predeploy) runs P1–P6,
-// `--scope functions` (the functions predeploy) P1–P3 and P6–P9. The
+// `--scope web` (the default; the hosting predeploy) runs P1–P6 and P10,
+// `--scope functions` (the functions predeploy) P1–P3, P6–P9 and P10. The
 // project is `--project`, else $GCLOUD_PROJECT (the Firebase CLI sets it for
 // a predeploy), else `.firebaserc`'s default. When P6 fails, P1–P3 and P9
 // never read (SKIP): the read would reach an emulator, or a project nobody
-// deploys to.
+// deploys to. P10 never SKIPs: it reads repository files only, but for an
+// ENFORCE flip in the functions scope, which then FAILs instead.
 //
 // Reads only. P1 reads through firebase-admin under the application-default
 // credentials; P2, P3 and P9's database and backup reads go through the
@@ -53,7 +66,10 @@
 // (`gcloud auth application-default login` first; runbook §3); P7 and P8
 // read no project: they resolve names across the files of
 // apps/functions/src that tsconfig.app.json builds, in memory, with the
-// TypeScript compiler. The
+// TypeScript compiler. P10 reads config/app-check.json and
+// environment.production.ts, and — under ENFORCE in the functions scope
+// only — GETs the live site's public index.html and main script, with no
+// credential. The
 // domain is the production TypeScript, bundled by
 // `tools/seed/load-domain.mjs` — never a second copy of the default id, the
 // read guard or the zone check.
@@ -68,6 +84,12 @@ import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import ts from 'typescript';
+import {
+  APP_CHECK_MANIFEST_PATH,
+  APP_CHECK_MODES,
+  appCheckModeOf,
+  chooseEnvironment,
+} from '../../flags/write-functions-env.mjs';
 import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import {
   CSP_HEADER,
@@ -91,6 +113,7 @@ export const CHECKS = {
   P7: 'the emulator-only adapters run only behind onEmulator()',
   P8: 'no launch-blocker stand-in is wired (@launchBlocker)',
   P9: 'the platform backstops (PITR, backups, audit sink, locked bucket) — informational',
+  P10: 'App Check: the mode, and a web build that can satisfy ENFORCE',
 };
 
 /** What each check proves something about — the escape hatch names what went unproven. */
@@ -104,12 +127,13 @@ const SUBJECTS = {
   P7: 'the emulator-only adapters',
   P8: 'the launch blockers',
   P9: 'the platform backstops',
+  P10: 'App Check',
 };
 
 /** The checks each predeploy runs (firebase.json). */
 export const SCOPES = {
-  web: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'],
-  functions: ['P1', 'P2', 'P3', 'P6', 'P7', 'P8', 'P9'],
+  web: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P10'],
+  functions: ['P1', 'P2', 'P3', 'P6', 'P7', 'P8', 'P9', 'P10'],
 };
 
 /** The checks that read the hosted project — never run when P6 fails. */
@@ -188,6 +212,21 @@ const CREDENTIALS_HINT =
 
 /** P7's way out: the shape the OTP crypto already has, and the OTP sender's checklist item. */
 const EMULATOR_ONLY_HINT = `wire a deployed adapter beside it — ${EMULATOR_GATE}() ? <emulator adapter> : <deployed adapter>, as the OTP crypto is; the OTP sender's is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
+
+/** The web's production environment — P10 reads its `appCheck.siteKey` literal. */
+const ENVIRONMENT_PRODUCTION =
+  'apps/web/src/environments/environment.production.ts';
+
+/** The one `appCheck: { siteKey: '…' }` literal of an environment file. */
+const SITE_KEY_LITERAL =
+  /\bappCheck:\s*\{\s*siteKey:\s*(['"`])([^'"`\n]*)\1\s*,?\s*\}/g;
+
+/** The entry script an Angular index.html loads (`<script src="main-<hash>.js" type="module">`). */
+const MAIN_SCRIPT = /<script\b[^>]*\bsrc="([^"]*\bmain-[\w-]+\.js)"/g;
+
+/** P10's bar for an ENFORCE flip, named in its PASS row (plan §7 item 4) — the owner's, not a check's. */
+const APP_CHECK_MONITOR_BAR =
+  "ENFORCE only after MONITOR met the bar PER CALLABLE: MISSING + INVALID + REPLAYED under 1 % of each callable's calls, each explained, every limited-use callable showing real VALID calls (docs/production-deploy.md, App Check)";
 
 /** P8's way out: the checklist item that replaces the refusing sender. */
 const LAUNCH_BLOCKER_HINT = `replace each use with the real adapter — the deployed OTP sender is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
@@ -419,6 +458,14 @@ export function checkComposites({ declared, listed }) {
   );
 }
 
+/** Whether a script of `scripts` names `value` as a string literal (`"…"`, `'…'` or a template). */
+function namesLiteral(scripts, value) {
+  const literals = [`"${value}"`, `'${value}'`, `\`${value}\``];
+  return scripts.some(({ text }) =>
+    literals.some((literal) => text.includes(literal)),
+  );
+}
+
 /**
  * P4 — the built scripts (`scripts`: `{ path, text }` for every `.js` file
  * under `dist`) carry no placeholder, and at least one names the project id
@@ -438,12 +485,7 @@ export function checkBundle({ dist, scripts, projectId }) {
       );
     }
   }
-  const literals = [`"${projectId}"`, `'${projectId}'`, `\`${projectId}\``];
-  if (
-    !scripts.some(({ text }) =>
-      literals.some((literal) => text.includes(literal)),
-    )
-  ) {
+  if (!namesLiteral(scripts, projectId)) {
     lines.push(
       `no script names "${projectId}" — environment.production.ts's firebase.projectId is another project's`,
     );
@@ -460,6 +502,131 @@ export function checkBundle({ dist, scripts, projectId }) {
         `the build under ${dist} is not this project's`,
         lines,
       );
+}
+
+/**
+ * The App Check mode a deploy to `projectId` carries: the environment the
+ * flags writer chooses (`chooseEnvironment`, `--env` read as `FLAGS_ENV`)
+ * and its mode in `manifest` (config/app-check.json) — through the writer's
+ * own `appCheckModeOf`, so a `CREATIVO_APP_CHECK_MODE` override for a real
+ * project throws here as it stops the writer. `{ environment, mode }`.
+ */
+export function appCheckModeFrom({ manifest, projectId, env }) {
+  const environment = chooseEnvironment({
+    projectId,
+    requested: env.FLAGS_ENV,
+  });
+  return {
+    environment,
+    mode: appCheckModeOf({
+      manifest,
+      environment,
+      override: env.CREATIVO_APP_CHECK_MODE,
+      projectId,
+    }),
+  };
+}
+
+/** The site key of an environment file's one `appCheck: { siteKey: '…' }` literal; `null` when there is not exactly one. */
+export function siteKeyOf(text) {
+  const found = [...text.matchAll(SITE_KEY_LITERAL)];
+  return found.length === 1 ? found[0][2] : null;
+}
+
+/** The `main-*.js` an index.html loads; `null` when it names not exactly one. */
+export function mainScriptOf(html) {
+  const found = [...html.matchAll(MAIN_SCRIPT)];
+  return found.length === 1 ? found[0][1] : null;
+}
+
+/** The live origin of `projectId`'s `web` hosting target in `.firebaserc` (`https://<site>.web.app`); `null` when it maps none. */
+export function liveWebOriginOf(firebaserc, projectId) {
+  const site = firebaserc?.targets?.[projectId]?.hosting?.web?.[0];
+  return typeof site === 'string' && site !== ''
+    ? `https://${site}.web.app`
+    : null;
+}
+
+/**
+ * P10 — App Check (S-L-8): the mode (`mode`, of `environment`), the site
+ * key environment.production.ts ships (`siteKey`; `null` when unreadable)
+ * and — read only for an ENFORCE flip with a key — the web that must carry
+ * it, settled (`web`: `{ ok: true, value: { dist, scripts } }`, `dist`
+ * naming where the scripts were read, or `{ ok: false, reason }`; `null`
+ * when not read): the built bundle in the `web` scope, the LIVE site in the
+ * `functions` scope. OFF and MONITOR never stop a deploy; ENFORCE stops it
+ * unless that web carries the key literal — what is live, not the source,
+ * judges a flip (a key committed with it but not yet hosted fails).
+ */
+export function checkAppCheck({ scope, environment, mode, siteKey, web }) {
+  const where = `config/app-check.json (${environment})`;
+  if (!APP_CHECK_MODES.includes(mode)) {
+    return row(
+      'P10',
+      Verdict.Fail,
+      `${where} holds ${JSON.stringify(mode ?? null)}, not an App Check mode`,
+      [
+        `one of ${APP_CHECK_MODES.join(', ')} — node tools/flags/write-functions-env.mjs refuses it too`,
+      ],
+    );
+  }
+  if (mode === 'OFF') {
+    return row(
+      'P10',
+      Verdict.Pass,
+      `App Check OFF in ${where} — nothing verified, nothing refused`,
+    );
+  }
+  const keyed = typeof siteKey === 'string' && siteKey !== '';
+  if (mode === 'MONITOR') {
+    return row(
+      'P10',
+      Verdict.Pass,
+      `App Check MONITOR in ${where} — outcomes logged, nothing refused`,
+      keyed
+        ? []
+        : [
+            `INFO  site key ${siteKey === null ? 'unreadable' : 'empty'} — every request reads MISSING (${ENVIRONMENT_PRODUCTION}, appCheck.siteKey)`,
+          ],
+    );
+  }
+  if (!keyed) {
+    return row(
+      'P10',
+      Verdict.Fail,
+      `App Check ENFORCE in ${where} without a site key`,
+      [
+        `${ENVIRONMENT_PRODUCTION}'s appCheck.siteKey is ${siteKey === null ? 'unreadable' : 'empty'} — every call would be refused APP_CHECK_REQUIRED; ship the key on the web first (docs/production-deploy.md, App Check)`,
+      ],
+    );
+  }
+  const judged = scope === 'web' ? 'the built web' : 'the LIVE web';
+  if (web === null || !web.ok) {
+    return row(
+      'P10',
+      Verdict.Fail,
+      `App Check ENFORCE in ${where}: cannot prove ${judged} carries the site key`,
+      [web?.reason ?? 'the web was not read'],
+    );
+  }
+  if (!namesLiteral(web.value.scripts, siteKey)) {
+    return row(
+      'P10',
+      Verdict.Fail,
+      `App Check ENFORCE in ${where}: ${judged} does not carry the site key`,
+      [
+        scope === 'web'
+          ? `no script under ${web.value.dist} names it — pnpm nx build web after setting appCheck.siteKey`
+          : `${web.value.dist} does not name it — deploy the web with the key first and wait for its shell to roll (docs/production-deploy.md, App Check)`,
+      ],
+    );
+  }
+  return row(
+    'P10',
+    Verdict.Pass,
+    `App Check ENFORCE in ${where}; ${judged} carries the site key (${web.value.dist})`,
+    scope === 'functions' ? [`INFO  ${APP_CHECK_MONITOR_BAR}`] : [],
+  );
 }
 
 /**
@@ -1152,15 +1319,30 @@ async function readBackstops(read) {
  * project's listings), `bundle()` (`{ dist, scripts }`), `config()`
  * (firebase.json), `functionsSource()` (`{ root, sources }`), and P9's
  * `opsNames()` (tools/ops/names.env), `database()`, `backupSchedules()`,
- * `sink(names)` and `bucket(names)` (the last two `null` when absent). A
- * read that throws fails its check — but P9's, each an INFO line (RU-33);
+ * `sink(names)` and `bucket(names)` (the last two `null` when absent), and
+ * P10's `appCheckMode()` (`{ environment, mode }`), `siteKey()` (`null`
+ * when unreadable) and `liveBundle()` (the live site's `{ dist, scripts }`).
+ * A read that throws fails its check — but P9's, each an INFO line (RU-33);
  * P6 runs first and, failing, keeps P1–P3 and P9 from reading at all — P7
  * and P8 read the repository only (one read, shared), so they run either
- * way.
+ * way, and so does P10, whose one project-facing read (the live web, for an
+ * ENFORCE flip in the functions scope) a failed P6 turns into a FAIL.
  */
 export async function runPreflight({ scope, projectId, env, read }) {
   const environment = checkEnvironment({ env, projectId });
   const functionsSource = once(() => read.functionsSource());
+  /** The web an ENFORCE flip must find the key in: the build (web scope) or the live site (functions scope, never with P6 failed). */
+  const appCheckWeb = () => {
+    if (scope === 'web') return settle(() => read.bundle());
+    if (environment.verdict !== Verdict.Pass) {
+      return Promise.resolve({
+        ok: false,
+        reason:
+          'not read — P6 failed: an ENFORCE flip is judged on the live web of a real project only',
+      });
+    }
+    return settle(() => read.liveBundle());
+  };
   const jobs = {
     P1: async () => {
       const domain = await read.domain();
@@ -1185,6 +1367,19 @@ export async function runPreflight({ scope, projectId, env, read }) {
     P7: async () => checkEmulatorOnly(await functionsSource()),
     P8: async () => checkLaunchBlockers(await functionsSource()),
     P9: async () => checkBackstops(await readBackstops(read)),
+    P10: async () => {
+      const { environment: flagsEnvironment, mode } = await read.appCheckMode();
+      const siteKey = await read.siteKey();
+      const flip =
+        mode === 'ENFORCE' && typeof siteKey === 'string' && siteKey !== '';
+      return checkAppCheck({
+        scope,
+        environment: flagsEnvironment,
+        mode,
+        siteKey,
+        web: flip ? await appCheckWeb() : null,
+      });
+    },
   };
   return Promise.all(
     SCOPES[scope].map(async (check) => {
@@ -1318,7 +1513,7 @@ export async function preflight({
     scope: options.scope,
     projectId: options.projectId,
     env,
-    read: readersFor(options),
+    read: readersFor(options, env),
   });
   print(renderTable({ ...options, rows }));
   return exitCodeOf(rows);
@@ -1373,14 +1568,17 @@ function once(load) {
 }
 
 /**
- * The live reads for `options`: the files on disk (the functions' source
- * and tools/ops/names.env among them), the default location through
- * firebase-admin, the two listings and P9's database and backup schedules
- * through the Firestore Admin REST API, P9's sink and bucket through the
- * Cloud Logging API — all under the one application-default credential.
- * firebase-admin loads only when a project read runs.
+ * The live reads for `options`: the files on disk (the functions' source,
+ * tools/ops/names.env, config/app-check.json and the web's production
+ * environment among them), the default location through firebase-admin,
+ * the two listings and P9's database and backup schedules through the
+ * Firestore Admin REST API, P9's sink and bucket through the Cloud Logging
+ * API — all under the one application-default credential; and P10's live
+ * web, public, with no credential. firebase-admin loads only when a project
+ * read runs. `env` chooses the App Check environment as the flags writer
+ * does (`FLAGS_ENV`, `CREATIVO_APP_CHECK_MODE`).
  */
-function liveReaders({ projectId, dist, config }) {
+function liveReaders({ projectId, dist, config }, env) {
   const configPath = resolve(config);
   const firebaseConfig = once(async () => readJson(configPath));
   const credential = once(async () => {
@@ -1411,6 +1609,15 @@ function liveReaders({ projectId, dist, config }) {
       );
     }
     return body;
+  }
+
+  /** One public GET of the live site (P10): the body's text, else a throw naming `label` and the status. */
+  async function getText(url, label) {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`${label}: HTTP ${response.status}`);
+    return response.text();
   }
 
   /** Every item of a paged Admin listing (`key`: `indexes`, `fields` or `backupSchedules`). */
@@ -1461,14 +1668,45 @@ function liveReaders({ projectId, dist, config }) {
     ttlFields: () =>
       listAll('collectionGroups/-/fields', 'fields', 'ttlConfig:*'),
     indexes: () => listAll('collectionGroups/-/indexes', 'indexes'),
-    bundle: async () => {
+    bundle: once(async () => {
       const dir = resolve(dist);
       return {
         dist: relative(process.cwd(), dir) || dir,
         scripts: existsSync(dir) ? scriptsUnder(dir) : [],
       };
-    },
+    }),
     config: firebaseConfig,
+    appCheckMode: async () =>
+      appCheckModeFrom({
+        manifest: readJson(APP_CHECK_MANIFEST_PATH),
+        projectId,
+        env,
+      }),
+    siteKey: async () => {
+      const path = resolve(ENVIRONMENT_PRODUCTION);
+      return existsSync(path) ? siteKeyOf(readFileSync(path, 'utf8')) : null;
+    },
+    liveBundle: async () => {
+      const origin = liveWebOriginOf(
+        readJson(resolve('.firebaserc')),
+        projectId,
+      );
+      if (origin === null) {
+        throw new Error(
+          `.firebaserc maps no "web" hosting target for ${projectId} — firebase target:apply hosting web <site-id>`,
+        );
+      }
+      const index = `${origin}/`;
+      const main = mainScriptOf(await getText(index, index));
+      if (main === null) {
+        throw new Error(`${index} names no single main-*.js`);
+      }
+      const url = new URL(main, index).href;
+      return {
+        dist: url,
+        scripts: [{ path: url, text: await getText(url, url) }],
+      };
+    },
     functionsSource: async () => ({
       root: FUNCTIONS_SOURCE,
       sources: functionsSourceUnder(resolve(FUNCTIONS_SOURCE)),

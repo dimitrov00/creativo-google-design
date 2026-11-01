@@ -54,6 +54,61 @@ describe('GovernanceError', () => {
     });
   });
 
+  it('builds the impersonation target refusals, each naming the uid the start named (S-RU-5)', () => {
+    const target = UserId.of('u-target');
+    expect(GovernanceError.impersonationTargetNotFound(target)).toEqual({
+      errorCode: 'GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.impersonationTargetErased(target)).toEqual({
+      errorCode: 'GOVERNANCE_IMPERSONATION_TARGET_ERASED',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.impersonationTargetNotRegistered(target)).toEqual({
+      errorCode: 'GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED',
+      targetUserId: 'u-target',
+    });
+  });
+
+  it('builds the roles-change refusals, each naming the caller or the target (S-WS-E, S-L-15)', () => {
+    const caller = UserId.of('u-admin');
+    const target = UserId.of('u-target');
+    expect(GovernanceError.rolesUnauthenticated()).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_UNAUTHENTICATED',
+    });
+    expect(GovernanceError.rolesForbidden(caller)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_FORBIDDEN',
+      callerUserId: 'u-admin',
+    });
+    expect(GovernanceError.rolesInvalid()).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_INVALID',
+    });
+    expect(GovernanceError.rolesSelf(caller)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_SELF',
+      callerUserId: 'u-admin',
+    });
+    expect(GovernanceError.rolesTargetNotFound(target)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_TARGET_NOT_FOUND',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.rolesTargetNotRegistered(target)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_TARGET_NOT_REGISTERED',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.rolesTargetErased(target)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_TARGET_ERASED',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.rolesTargetSysadmin(target)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_TARGET_SYSADMIN',
+      targetUserId: 'u-target',
+    });
+    expect(GovernanceError.rolesSessionsNotRevoked(target)).toEqual({
+      errorCode: 'GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED',
+      targetUserId: 'u-target',
+    });
+  });
+
   it('keeps every code in the GOVERNANCE_ domain, SCREAMING_SNAKE, each once', () => {
     const codes = Object.values(GovernanceErrorCode);
     expect(new Set(codes).size).toBe(codes.length);

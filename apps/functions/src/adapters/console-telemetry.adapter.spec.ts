@@ -101,13 +101,222 @@ describe('console-telemetry adapter', () => {
   });
 
   describe('trackError', () => {
-    it('logs an Error as itself at error severity, the context as payload', () => {
+    /** The one whole entry a tracked `Error` is written as. */
+    type TrackedEntry = {
+      readonly severity: string;
+      readonly message: string;
+      readonly error: {
+        readonly name: string;
+        readonly code: string | number | null;
+        readonly message: string;
+        readonly stack: string;
+      };
+      readonly [key: string]: unknown;
+    };
+
+    const PHONE = '+359880000777';
+    const EMAIL = 'sentinel@example.invalid';
+
+    /** The sink's only call, asserted to be ONE whole ERROR entry. */
+    function onlyEntry(calls: readonly Call[]): TrackedEntry {
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.level).toBe('write');
+      expect(calls[0]?.args).toHaveLength(1);
+      return calls[0]?.args[0] as TrackedEntry;
+    }
+
+    it('writes an Error as ONE whole ERROR entry — the scrubbed struct, its stack the message, the context beside it', () => {
       const { sink, calls } = recordingSink();
       const error = new Error('store unreachable');
       consoleTelemetry(sink).trackError(error, { callable: 'commitBooking' });
-      expect(calls).toEqual([
-        { level: 'error', args: [error, { callable: 'commitBooking' }] },
+      const entry = onlyEntry(calls);
+      expect(entry.severity).toBe('ERROR');
+      expect(entry['callable']).toBe('commitBooking');
+      expect(entry.error).toMatchObject({
+        name: 'Error',
+        code: null,
+        message: 'store unreachable',
+      });
+      // Error Reporting groups by the V8-shaped stack in `message`.
+      expect(entry.message).toBe(entry.error.stack);
+      const lines = entry.message.split('\n');
+      expect(lines[0]).toBe('Error: store unreachable');
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines.slice(1)) expect(line).toMatch(/^ {4}at \S/);
+      expect(Object.keys(entry).sort()).toEqual([
+        'callable',
+        'error',
+        'message',
+        'severity',
       ]);
+    });
+
+    it('never lets a phone or an e-mail of the message leave (R36 / T5)', () => {
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink).trackError(
+        new Error(`no route to ${PHONE} for ${EMAIL}`),
+        { callable: 'requestOtp' },
+      );
+      const entry = onlyEntry(calls);
+      expect(entry.severity).toBe('ERROR');
+      const lines = entry.message.split('\n');
+      expect(lines[0]).toBe(
+        `Error: ${ClientIssueSystem.scrub(`no route to ${PHONE} for ${EMAIL}`)}`,
+      );
+      for (const line of lines.slice(1)) expect(line).toMatch(/^ {4}at \S/);
+      const written = JSON.stringify(calls);
+      expect(written).not.toContain(PHONE);
+      expect(written).not.toContain(PHONE.slice(1));
+      expect(written).not.toContain(EMAIL);
+    });
+
+    it('drops cause, details and every other own property; scrubs a string code', () => {
+      const { sink, calls } = recordingSink();
+      const leakyCause = new Error(`cause for ${PHONE}`);
+      const error = Object.assign(new Error('provider refused'), {
+        code: `bad-${EMAIL}`,
+        cause: leakyCause,
+        details: { phone: PHONE },
+        contactEmail: EMAIL,
+      });
+      consoleTelemetry(sink).trackError(error);
+      const entry = onlyEntry(calls);
+      expect(Object.keys(entry).sort()).toEqual([
+        'error',
+        'message',
+        'severity',
+      ]);
+      expect(Object.keys(entry.error).sort()).toEqual([
+        'code',
+        'message',
+        'name',
+        'stack',
+      ]);
+      expect(entry.error.code).toBe(ClientIssueSystem.scrub(`bad-${EMAIL}`));
+      const written = JSON.stringify(calls);
+      expect(written).not.toContain(PHONE);
+      expect(written).not.toContain(PHONE.slice(1));
+      expect(written).not.toContain(EMAIL);
+      expect(written).not.toContain('cause for');
+    });
+
+    it('cuts a frame’s query — a token in a URL never reaches the stack', () => {
+      const { sink, calls } = recordingSink();
+      const error = new Error('fetch failed');
+      error.stack = [
+        'Error: fetch failed',
+        '    at get (https://example.invalid/x.js?token=sentinelquerytoken:3:9)',
+        '    at main (/workspace/lib/main.js:10:2)',
+      ].join('\n');
+      consoleTelemetry(sink).trackError(error);
+      const entry = onlyEntry(calls);
+      expect(entry.message).toBe(
+        [
+          'Error: fetch failed',
+          '    at get (https://example.invalid/x.js:3:9)',
+          '    at main (/workspace/lib/main.js:10:2)',
+        ].join('\n'),
+      );
+      expect(JSON.stringify(calls)).not.toContain('sentinelquerytoken');
+    });
+
+    it('drops a stack line that is no frame — a message’s own continuation', () => {
+      const { sink, calls } = recordingSink();
+      const error = new Error('first line');
+      error.stack = [
+        'Error: first line',
+        `second line with ${EMAIL}`,
+        '    at main (/workspace/lib/main.js:10:2)',
+      ].join('\n');
+      consoleTelemetry(sink).trackError(error);
+      expect(onlyEntry(calls).message).toBe(
+        ['Error: first line', '    at main (/workspace/lib/main.js:10:2)'].join(
+          '\n',
+        ),
+      );
+      expect(JSON.stringify(calls)).not.toContain(EMAIL);
+    });
+
+    it('skips the message’s own lines even when they look like frames — a phone or a code never passes as one (review round 1, finding 8)', () => {
+      const message = `lookup failed\nat ${PHONE}\n  at code 123456`;
+      // As V8 writes it: the header repeats every message line, then the frames.
+      const shaped = new Error(message);
+      shaped.stack = [
+        `Error: lookup failed`,
+        `at ${PHONE}`,
+        '  at code 123456',
+        '    at main (/workspace/lib/main.js:10:2)',
+      ].join('\n');
+      const recorded = recordingSink();
+      consoleTelemetry(recorded.sink).trackError(shaped, {
+        callable: 'requestOtp',
+      });
+      expect(onlyEntry(recorded.calls).message).toBe(
+        [
+          `Error: ${ClientIssueSystem.scrub(message)}`,
+          '    at main (/workspace/lib/main.js:10:2)',
+        ].join('\n'),
+      );
+
+      // A real V8 stack: the real frames stay, the injected lines do not.
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink).trackError(new Error(message), {
+        callable: 'requestOtp',
+      });
+      const lines = onlyEntry(calls).message.split('\n');
+      expect(lines[0]).toBe(`Error: ${ClientIssueSystem.scrub(message)}`);
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines.slice(1)) expect(line).toMatch(/^ {4}at \S/);
+      for (const written of [
+        JSON.stringify(recorded.calls),
+        JSON.stringify(calls),
+      ]) {
+        expect(written).not.toContain(PHONE);
+        expect(written).not.toContain(PHONE.slice(1));
+        expect(written).not.toContain('123456');
+      }
+    });
+
+    it('keeps the recorded residual (S-L-25): a name and free text survive the scrub, the phone and e-mail beside them do not', () => {
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink).trackError(
+        new Error(
+          `Sentinel Firstname ${PHONE} wrote sentinel note text to ${EMAIL}`,
+        ),
+      );
+      const written = JSON.stringify(calls);
+      // A stricter scrub would make these two fail — a visible change.
+      expect(written).toContain('Sentinel Firstname');
+      expect(written).toContain('sentinel note text');
+      expect(written).not.toContain(PHONE);
+      expect(written).not.toContain(PHONE.slice(1));
+      expect(written).not.toContain(EMAIL);
+    });
+
+    it('scrubs a thrown non-Error object holding the sentinels', () => {
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink).trackError(
+        { phone: PHONE, email: EMAIL },
+        { fn: 'sendOtp' },
+      );
+      expect(calls).toEqual([
+        {
+          level: 'error',
+          args: [
+            'non-error thrown',
+            {
+              fn: 'sendOtp',
+              thrown: ClientIssueSystem.scrub(
+                JSON.stringify({ phone: PHONE, email: EMAIL }),
+              ),
+            },
+          ],
+        },
+      ]);
+      const written = JSON.stringify(calls);
+      expect(written).not.toContain(PHONE);
+      expect(written).not.toContain(PHONE.slice(1));
+      expect(written).not.toContain(EMAIL);
     });
 
     it('describes a thrown non-Error and keeps the payload structured', () => {
@@ -246,8 +455,19 @@ describe('console-telemetry adapter', () => {
       });
       expect(calls).toEqual([
         {
-          level: 'error',
-          args: [boom, { ...SCOPE, callable: 'commitBooking' }],
+          level: 'write',
+          args: [
+            {
+              ...SCOPE,
+              callable: 'commitBooking',
+              error: expect.objectContaining({
+                name: 'Error',
+                message: 'store unreachable',
+              }),
+              severity: 'ERROR',
+              message: expect.stringMatching(/^Error: store unreachable\n/),
+            },
+          ],
         },
       ]);
     });
@@ -325,6 +545,25 @@ describe('console-telemetry adapter', () => {
       );
     });
 
+    it('skips the message’s own lines in the stack — a frame-shaped one carries no phone or code out (review round 1, finding 8)', () => {
+      const { sink, calls } = recordingSink();
+      const message = `lookup failed\nat ${PHONE}\n  at code 123456`;
+      consoleTelemetry(sink).log('error', 'otp.send_failed', {
+        error: new Error(message),
+      });
+      const payload = calls[0]?.args[1] as {
+        readonly error: { readonly stack: string };
+      };
+      const stack = payload.error.stack.split('\n');
+      expect(stack[0]).toBe(`Error: ${ClientIssueSystem.scrub(message)}`);
+      expect(stack.length).toBeGreaterThan(1);
+      for (const line of stack.slice(1)) expect(line).toMatch(/^ {4}at \S/);
+      const written = JSON.stringify(calls);
+      expect(written).not.toContain(PHONE);
+      expect(written).not.toContain(PHONE.slice(1));
+      expect(written).not.toContain('123456');
+    });
+
     it('leaves a non-Error value as it is', () => {
       const { sink, calls } = recordingSink();
       consoleTelemetry(sink).log('info', 'x', { error: 'text', n: 1 });
@@ -334,11 +573,20 @@ describe('console-telemetry adapter', () => {
 
   it('writes through firebase-functions/logger by default', () => {
     const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const write = vi.spyOn(logger, 'write').mockImplementation(() => undefined);
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const telemetry = consoleTelemetry();
     telemetry.log('info', 'root.ready', { exports: 29 });
     telemetry.trackError(new Error('boom'));
     expect(info).toHaveBeenCalledWith('root.ready', { exports: 29 });
-    expect(error).toHaveBeenCalledWith(expect.any(Error), {});
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'ERROR',
+        message: expect.stringMatching(/^Error: boom\n/),
+        error: expect.objectContaining({ name: 'Error', message: 'boom' }),
+      }),
+    );
+    // The raw Error never reaches the logger's own error writer.
+    expect(error).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ import type {
   BarberId,
   CouponGrantId,
   CouponId,
+  CustomerId,
   DraftPersonKey,
   DurationMinutes,
   LocalDate,
@@ -45,8 +46,16 @@ import type { VisitLookup } from '@creativo/features/shared/visits';
 export interface ClientCardSubject {
   /** `DraftClient.id`: an account uid, or a `guest-…` key for a walk-in without a profile. */
   readonly id: DraftPersonKey;
-  /** The account (`DraftPersonKey.accountOf`); `null` for a guest, whose card reads nothing. */
+  /** The account (`DraftPersonKey.accountOf`); `null` for a guest. */
   readonly userId: UserId | null;
+  /**
+   * The walk-in's client RECORD (`customers/{id}`) when the seat has no
+   * account — set only from a record the search found or a WALK_IN seat's
+   * `subjectCustomerId`, never parsed from a `guest-…` key (S-RU-15);
+   * `null` for an account (the card resolves its record by uid) and for a
+   * typed guest, whose card reads nothing.
+   */
+  readonly customerId: CustomerId | null;
   /** The seat's name, shown until `users/{uid}` answers (and for good, for a guest). */
   readonly label: string;
   readonly phone: string | null;

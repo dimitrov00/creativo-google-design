@@ -26,7 +26,9 @@ export type UserMeta = {
   readonly roles: readonly Role[];
   readonly birthDate: BirthDate | null;
   /**
-   * When the owner last edited their profile through `updateProfile` — a
+   * When a callable that audits its own `users` write last wrote this
+   * profile — the owner's edit through `updateProfile`, or an admin's role
+   * change through `setRoles` (security hardening S-RU-12, S-L-17). A
    * lifecycle stamp (Law 7.3 T2), `null` on the provisioned stub and on
    * registration, and reset to `null` by the erasure's stamp (WS-D). The
    * callable writes the audit row itself, inside its transaction; the

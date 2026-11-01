@@ -87,6 +87,7 @@ import type {
   AuditTimelinePage,
   AuthAdminPorts,
   AuthSessionPorts,
+  AuthSessionRevokePorts,
   AuthUserLookupPorts,
   AvatarPorts,
   CallableClient,
@@ -100,7 +101,7 @@ import type {
   CouponVoucherPorts,
   CourseReadPorts,
   CourseWritePorts,
-  CustomerPorts,
+  CustomerReadPorts,
   CustomerSearchPorts,
   DefaultLocationPorts,
   FlagsPorts,
@@ -750,13 +751,18 @@ export function memoryAppointmentPhotoPorts(
 
 // ── The client record ────────────────────────────────────────────────────
 
-/** `CUSTOMER_PORTS` — the record whose `userId` is the account (`userId ==`, `limit 1`), `null` when none. */
+/**
+ * `CUSTOMER_PORTS` — the record whose `userId` is the account (`userId ==`,
+ * `limit 1`), and the record by its id (`customers/{id}`); `null` when none.
+ */
 export function memoryCustomerPorts(
   customers: readonly Customer[],
-): CustomerPorts {
+): CustomerReadPorts {
   return {
     loadCustomerForUser: async (userId) =>
       Result.ok(customers.find((entry) => entry.userId === userId) ?? null),
+    loadCustomer: async (customerId) =>
+      Result.ok(customers.find((entry) => entry.id === customerId) ?? null),
   };
 }
 
@@ -981,6 +987,32 @@ export function memoryAuthAdminPorts(world: IdentityWorld): AuthAdminPorts {
     setDisplayName: async (uid, displayName) => {
       world.displayNames.set(uid, displayName);
       return Result.ok(undefined);
+    },
+  };
+}
+
+/**
+ * Admin Auth's session revocation (`setRoles`, security hardening S-RU-10),
+ * recording every uid it is asked to revoke (failed ones too) in
+ * `revoked`, in call order; with `failing`, each answers
+ * `PIPELINE_UNAVAILABLE` — a revoke the same call later may finish.
+ */
+export function recordingSessionRevokePorts(
+  options: { readonly failing?: boolean } = {},
+): {
+  readonly ports: AuthSessionRevokePorts;
+  readonly revoked: readonly UserId[];
+} {
+  const revoked: UserId[] = [];
+  return {
+    revoked,
+    ports: {
+      revokeRefreshTokens: async (uid) => {
+        revoked.push(uid);
+        return options.failing === true
+          ? Result.err(PipelineError.bare(PipelineErrorCode.Unavailable))
+          : Result.ok(undefined);
+      },
     },
   };
 }

@@ -4,6 +4,7 @@ import {
   HttpsError,
 } from 'firebase-functions/v2/https';
 import {
+  type AppCheckOutcome,
   ClientOperationId,
   LogEvent,
   OperationId,
@@ -15,6 +16,7 @@ import {
 } from '@core/primitives';
 import {
   AccountsErrorCode,
+  AppCheckErrorCode,
   BookingErrorCode,
   BookingFlowErrorCode,
   CancellationRefusalCode,
@@ -43,6 +45,8 @@ import {
 } from '@core/errors';
 import { AttemptOutcome } from '@core/components';
 import {
+  type AppCheckModePorts,
+  CALLABLE_APP_CHECK_TOKEN,
   type CallableName,
   type ClockPorts,
   type LogContext,
@@ -55,11 +59,13 @@ import {
   type TriggerFailurePorts,
 } from '@core/ports';
 import {
+  AppCheckSystem,
   type AttemptEvent,
   type AttemptLine,
   TriggerAttemptSystem,
   WorkBudgetSystem,
 } from '@core/systems';
+import { appCheckFactsOf } from './lib/app-check';
 import { callerKnownRoles, callerUserId } from './lib/booking/caller-roles';
 import { eventInstantOf, idOf, operationIdOf } from './wire/wire-read';
 
@@ -97,6 +103,7 @@ import { eventInstantOf, idOf, operationIdOf } from './wire/wire-read';
  */
 export const EDGE_DICTIONARIES = {
   AccountsErrorCode,
+  AppCheckErrorCode,
   PrimitiveErrorCode,
   BookingErrorCode,
   BookingFlowErrorCode,
@@ -126,6 +133,7 @@ export const EDGE_DICTIONARIES = {
 /** Every code the edge can put on the wire. */
 export type EdgeCode =
   | AccountsErrorCode
+  | AppCheckErrorCode
   | PrimitiveErrorCode
   | BookingErrorCode
   | BookingFlowErrorCode
@@ -399,6 +407,19 @@ const CLIENT_ISSUE_WIRE: WireTable<ClientIssueErrorCode> = {
 };
 
 /**
+ * App Check under ENFORCE (security hardening S-RU-17, S-RU-24): a request
+ * with no verified token, or a replayed one on a limited-use callable, is
+ * refused before it is decoded — a state that forbids the act, so
+ * `failed-precondition` (the web reads `unauthenticated` as "sign in" and
+ * `permission-denied` as "blocked"). Its code leaves alone: the outcome tag
+ * stays on the outcome line, no `WIRE_PARAM_ALLOWLIST` row.
+ */
+const APP_CHECK_WIRE: WireTable<AppCheckErrorCode> = {
+  [AppCheckErrorCode.Required]: fields(S.FailedPrecondition),
+  [AppCheckErrorCode.Replayed]: fields(S.FailedPrecondition),
+};
+
+/**
  * The streak publish's refusals are ANSWERED —
  * `{ streakPublishOutcome: 'REFUSED', errorCode, fields, earliest, … }`
  * (`StreakPublishCall.refused`) — never thrown, but for a caller without a
@@ -502,6 +523,27 @@ const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
   // The impersonation callables' caller gate (Phase 4a 4A-3 (4)).
   [GovernanceErrorCode.ImpersonationUnauthenticated]: fields(S.Unauthenticated),
   [GovernanceErrorCode.ImpersonationForbidden]: fields(S.PermissionDenied),
+  // The start's target guard (security hardening S-RU-5): no account, an
+  // erased one, a stub that never registered — the code alone, the uid
+  // stays on the server.
+  [GovernanceErrorCode.ImpersonationTargetNotFound]: fields(S.NotFound),
+  [GovernanceErrorCode.ImpersonationTargetErased]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.ImpersonationTargetNotRegistered]: fields(
+    S.FailedPrecondition,
+  ),
+  // The admin's roles change (security hardening S-WS-E, S-L-15): the
+  // caller's gate, a malformed set, one's own account, a target that is
+  // absent / unregistered / erased / the vendor's sysadmin — the code alone,
+  // the uids stay on the server; a failed revoke is retryable.
+  [GovernanceErrorCode.RolesUnauthenticated]: fields(S.Unauthenticated),
+  [GovernanceErrorCode.RolesForbidden]: fields(S.PermissionDenied),
+  [GovernanceErrorCode.RolesInvalid]: fields(S.InvalidArgument),
+  [GovernanceErrorCode.RolesSelf]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesTargetNotFound]: fields(S.NotFound),
+  [GovernanceErrorCode.RolesTargetNotRegistered]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesTargetErased]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesTargetSysadmin]: fields(S.FailedPrecondition),
+  [GovernanceErrorCode.RolesSessionsNotRevoked]: fields(S.Unavailable),
 };
 
 const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {
@@ -710,6 +752,7 @@ function withAllowlists<C extends string>(
 export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
   withAllowlists<EdgeCode>({
     ...ACCOUNTS_WIRE,
+    ...APP_CHECK_WIRE,
     ...PRIMITIVE_WIRE,
     ...BOOKING_WIRE,
     ...BOOKING_FLOW_WIRE,
@@ -954,10 +997,14 @@ export type EdgePorts = TelemetryPorts & ClockPorts;
 
 /**
  * What a callable's edge reads (audit-hardening WS-4.2, RU-26): the edge's
- * own ports, the per-invocation log scope and the keyed input digest the
- * composition root notes after a decode — `EdgePorts` keep their members.
+ * own ports, the per-invocation log scope, the keyed input digest the
+ * composition root notes after a decode, and the App Check switch it reads
+ * per call (security hardening S-RU-17) — `EdgePorts` keep their members.
  */
-export type CallableEdgePorts = EdgePorts & LogContextPorts & LogDigestPorts;
+export type CallableEdgePorts = EdgePorts &
+  LogContextPorts &
+  LogDigestPorts &
+  AppCheckModePorts;
 
 /**
  * What a retrying trigger's edge reads (audit-hardening WS-6, RU-32): the
@@ -1016,12 +1063,15 @@ function thrownOutcome(error: HttpsError, errorCode: string | null): Outcome {
  * The correlation fields ONE invocation binds (WS-4.2): the callable, the
  * operation id its payload carries in its `OPERATION_ID_FIELD` (a
  * client-minted key of the right shape, else `null` — never refused here),
- * the VERIFIED uid and the claim's known roles. Ids, codes and roles only
- * (R36 / T5).
+ * the VERIFIED uid, the claim's known roles and the request's App Check
+ * outcome (security hardening S-RU-17: `null` while the switch is OFF, the
+ * tag under MONITOR / ENFORCE — never the token). Ids, codes, tags and
+ * roles only (R36 / T5).
  */
 function invocationContext(
   callable: CallableName,
   request: CallableRequest<unknown>,
+  appCheckOutcome: AppCheckOutcome | null,
 ): LogContext {
   const idField =
     (StoredFields.field(OPERATION_ID_FIELD, callable) as
@@ -1031,6 +1081,7 @@ function invocationContext(
     operationId: idField === null ? null : operationIdOf(request.data, idField),
     uid: callerUserId(request),
     roles: callerKnownRoles(request),
+    appCheckOutcome,
   };
 }
 
@@ -1093,8 +1144,21 @@ export type CallableSpec<N extends CallableName = CallableName> = {
  * `HttpsError` (its status), and
  * `callable.failed` (error) for an unexpected throw (`'internal'`, the
  * coded failure as `errorCode`) — tracked once, as before. The line holds
- * `{ callable, operationId, uid, roles, errorCode, wireStatus, durationMs,
- * inputDigest }`; the answer is unchanged.
+ * `{ callable, operationId, uid, roles, appCheckOutcome, errorCode,
+ * wireStatus, durationMs, inputDigest }`; the answer is unchanged.
+ *
+ * **App Check FIRST (security hardening S-RU-17, S-L-1).** Before anything
+ * is decoded, digested or run, the edge reads the switch
+ * (`ports.appCheckMode()`) and the request's facts ({@link appCheckFactsOf}
+ * — presence and the platform's verdict, never the token) and asks
+ * `AppCheckSystem.verdictOf`, with the callable's token use
+ * (`CALLABLE_APP_CHECK_TOKEN`). OFF reports nothing (`appCheckOutcome:
+ * null`); MONITOR reports the outcome and refuses nothing; ENFORCE refuses
+ * a missing or unverified token (`APP_CHECK_REQUIRED`) and a replayed one
+ * on a limited-use callable (`APP_CHECK_REPLAYED`), both
+ * `failed-precondition`: a traced callable writes ONE `callable.refused`
+ * line carrying the tag and never runs its handler; the untraced sink is
+ * refused with no line (RU-24).
  */
 export const callableEdge =
   <In, Out>(
@@ -1107,6 +1171,12 @@ export const callableEdge =
     ) => Promise<Result<Out, EdgeError>>,
   ) =>
   async (request: CallableRequest<In>): Promise<Out> => {
+    const verdict = AppCheckSystem.verdictOf(
+      ports.appCheckMode(),
+      appCheckFactsOf(request as CallableRequest<unknown>),
+      CALLABLE_APP_CHECK_TOKEN[spec.callable],
+    );
+    if (!spec.traced && !verdict.ok) throw toHttpsError(verdict.error);
     const budget = workBudget(
       ports.nowUtcMs,
       WorkBudgetSystem.callableBudgetMs(
@@ -1121,7 +1191,13 @@ export const callableEdge =
     const context = invocationContext(
       spec.callable,
       request as CallableRequest<unknown>,
+      verdict.ok ? verdict.value : verdict.error.appCheckOutcome,
     );
+    // A refused request never reaches its handler: nothing decoded,
+    // digested or run — the refusal settles through the same outcome path.
+    const run = verdict.ok
+      ? handle
+      : async (): Promise<Result<Out, EdgeError>> => verdict;
     return ports.bindLogContext(context, async () => {
       let inputDigest: string | null = null;
       const trace: CallTrace = {
@@ -1130,14 +1206,7 @@ export const callableEdge =
           ports.addLogContext({ inputDigest: digest });
         },
       };
-      const settled = await attempt(
-        spec,
-        ports,
-        handle,
-        request,
-        budget,
-        trace,
-      );
+      const settled = await attempt(spec, ports, run, request, budget, trace);
       const outcome = outcomeOf(spec, settled);
       ports.log(outcome.level, outcome.msg, {
         ...context,
