@@ -11,16 +11,20 @@ import {
 } from '@core/components';
 import { SchedulingErrorCode } from '@core/errors';
 import {
+  Currency,
   DraftPersonKey,
   DurationMinutes,
   EndMinute,
   LocalDate,
   MinuteOfDay,
   SeatId,
+  ServiceId,
+  ServiceVariantId,
   TrackMinute,
   Weekday,
 } from '@core/primitives';
 import {
+  cents,
   deepFreeze,
   draftPersonKey,
   endMinute,
@@ -515,19 +519,118 @@ describe('VisitDraftSystem.FRAME_MIN_MINUTES — the frame’s floor', () => {
   });
 });
 
+describe('VisitDraftSystem.pastLegsOnCatalogue — a past visit’s legs, today', () => {
+  const SERVICE = ServiceId.of('cut');
+  const LONG = ServiceVariantId.of('long');
+  const past = (serviceId: ServiceId, variantId: ServiceVariantId | null) => ({
+    serviceId,
+    variantId,
+  });
+  const offer = (
+    serviceId: ServiceId,
+    variantId: ServiceVariantId | null,
+    priceCents: number,
+  ) => ({ serviceId, variantId, priceCents });
+  const pair = (
+    leg: ReturnType<typeof past>,
+    found: ReturnType<typeof offer>,
+    index: number,
+  ) => `${index}:${leg.serviceId}@${found.priceCents}`;
+
+  it('hands each leg its offer by service and variant, with its index', () => {
+    const offers = [offer(SERVICE, null, 2000), offer(SERVICE, LONG, 3000)];
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, LONG), past(SERVICE, null)],
+        () => offers,
+        pair,
+      ),
+    ).toEqual(['0:cut@3000', '1:cut@2000']);
+  });
+
+  it('asks each leg’s own offers', () => {
+    const asked: string[] = [];
+    S.pastLegsOnCatalogue(
+      [past(SERVICE, null)],
+      (leg) => {
+        asked.push(leg.serviceId);
+        return [];
+      },
+      pair,
+    );
+    expect(asked).toEqual(['cut']);
+  });
+
+  it('leaves out a service the catalogue no longer sells', () => {
+    expect(
+      S.pastLegsOnCatalogue([past(SERVICE, null)], () => [], pair),
+    ).toEqual([]);
+  });
+
+  it('leaves out a variant it no longer sells, never reading a bare seat as one', () => {
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, LONG)],
+        () => [offer(SERVICE, null, 2000)],
+        pair,
+      ),
+    ).toEqual([]);
+    // A leg with no variant finds no bare offer among a service's variants.
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, null)],
+        () => [offer(SERVICE, LONG, 3000)],
+        pair,
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads an offer that declares no variant as having none', () => {
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, null)],
+        () => [{ serviceId: SERVICE, priceCents: 2000 }],
+        (_leg, found) => found.priceCents,
+      ),
+    ).toEqual([2000]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([past(SERVICE, null)]);
+    const offers = deepFreeze([offer(SERVICE, null, 2000)]);
+    expect(S.pastLegsOnCatalogue(legs, () => offers, pair)).toEqual(
+      S.pastLegsOnCatalogue(legs, () => offers, pair),
+    );
+  });
+});
+
 describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries', () => {
+  const SERVICE = ServiceId.of('cut');
   const leg = (seat: string, overridden: boolean) => ({
     seatId: SeatId.of(seat),
-    priceLabel: '28,00 €',
+    serviceId: SERVICE,
+    variantId: null,
+    priceCents: cents(1500),
+    currency: Currency.BGN,
+    priceLabel: '15,00 лв.',
     durationMinutes: d(45),
     overridden,
   });
+  const today = {
+    serviceId: SERVICE,
+    variantId: null,
+    priceCents: cents(2800),
+    currency: Currency.EUR,
+    priceLabel: '28,00 €',
+  };
+  const offers = () => [today];
   const mint = (_leg: unknown, index: number) => SeatId.of(`draft-${index}`);
 
   it('mints a fresh seat per leg, in order, handing the mint its index', () => {
     const seen: string[] = [];
     const out = S.rebookLegs(
       [leg('a', false), leg('b', false)],
+      offers,
       (entry, index) => {
         seen.push(`${entry.seatId}:${index}`);
         return mint(entry, index);
@@ -537,24 +640,35 @@ describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries',
     expect(seen).toEqual(['a:0', 'b:1']);
   });
 
-  it('clears the mark and keeps the stored price label and minutes', () => {
-    const [out] = S.rebookLegs([leg('a', true)], mint);
+  it('clears the mark, keeps the minutes, and takes today’s price: what the server charges (B5)', () => {
+    const [out] = S.rebookLegs([leg('a', true)], offers, mint);
     expect(out).toEqual({
       seatId: 'draft-0',
+      serviceId: SERVICE,
+      variantId: null,
+      priceCents: 2800,
+      currency: Currency.EUR,
       priceLabel: '28,00 €',
       durationMinutes: 45,
       overridden: false,
     });
   });
 
+  it('leaves out what the catalogue no longer sells: the server refuses that seat', () => {
+    expect(S.rebookLegs([leg('a', false)], () => [], mint)).toEqual([]);
+  });
+
   it('answers nothing for no legs', () => {
-    expect(S.rebookLegs([], mint)).toEqual([]);
+    expect(S.rebookLegs([], offers, mint)).toEqual([]);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
     const legs = deepFreeze([leg('a', true)]);
-    expect(S.rebookLegs(legs, mint)).toEqual(S.rebookLegs(legs, mint));
+    expect(S.rebookLegs(legs, offers, mint)).toEqual(
+      S.rebookLegs(legs, offers, mint),
+    );
     expect(legs[0]?.seatId).toBe('a');
+    expect(legs[0]?.priceCents).toBe(1500);
   });
 });
 

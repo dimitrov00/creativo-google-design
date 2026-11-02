@@ -1274,12 +1274,16 @@ export class StaffDashboard {
       lane?.barberId ??
       this.createVisit()?.barberId ??
       null;
-    if (barberId === null) return [];
+    return barberId === null ? [] : this.offersOn(barberId);
+  });
+
+  /** The catalogue as `barberId`'s chair sells it today, priced and timed for him. */
+  private offersOn(barberId: BarberId): readonly VisitEditorServiceOption[] {
     return serviceOptionsOf(this.catalog.serviceVms(), barberId, {
       ...this.catalogNames,
       price: (money) => this.content.price(money),
     });
-  });
+  }
 
   /** Chairs the scope picker offers — every chair that works this period. */
   protected readonly scopeOptions = computed(() =>
@@ -3654,13 +3658,8 @@ export class StaffDashboard {
     );
     // A new visit starts in the chair's own shop — the first it is
     // rostered at — and the «Салон» row may move it before the save.
-    const chairBarber = this.catalog
-      .barbers()
-      .find((barber) => barber.id === create.barberId);
     const locationId =
-      (chairBarber === undefined
-        ? null
-        : LocationScopeSystem.homeOf(chairBarber)) ??
+      this.homeOfChair(create.barberId) ??
       this.catalog.locations()[0]?.id ??
       null;
     return {
@@ -3815,11 +3814,15 @@ export class StaffDashboard {
         TrackMinute.span(vm.startMinute, vm.endMinute),
       ),
       nonce: ++this.createSeq,
-      legs: VisitDraftSystem.rebookLegs(vm.legs, (leg, index) =>
-        // A fresh draft seat — a `SeatId` by construction (`draft-…`).
-        SeatId.of(
-          `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
-        ),
+      // Each leg on ITS chair's menu: what the server will charge it, today.
+      legs: VisitDraftSystem.rebookLegs(
+        vm.legs,
+        (leg) => this.offersOn(leg.barberId),
+        (leg, index) =>
+          // A fresh draft seat — a `SeatId` by construction (`draft-…`).
+          SeatId.of(
+            `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
+          ),
       ),
       client: {
         id: vm.clientUserId,
@@ -4123,17 +4126,11 @@ export class StaffDashboard {
   protected async createFromEditor(commit: VisitEditorCommit): Promise<void> {
     const create = this.createVisit();
     if (create === null) return;
-    const chairBarber = this.catalog
-      .barbers()
-      .find((barber) => barber.id === create.barberId);
     const clientUserId = create.client?.id ?? null;
     const request = StaffEditPlanSystem.bookingRequest(
       commit,
       {
-        homeLocationId:
-          chairBarber === undefined
-            ? null
-            : LocationScopeSystem.homeOf(chairBarber),
+        homeLocationId: this.homeOfChair(create.barberId),
         clientId:
           clientUserId === null ? null : DraftPersonKey.account(clientUserId),
         bookedFrom: create.bookedFrom ?? null,
@@ -4520,14 +4517,17 @@ export class StaffDashboard {
       shownDay,
       saved: commit,
       savedRange: minuteRangeOf(commit.startMinute, commit.endMinute),
-      homeOf: (barberId) => {
-        const barber = this.catalog
-          .barbers()
-          .find((entry) => entry.id === barberId);
-        return barber === undefined ? null : LocationScopeSystem.homeOf(barber);
-      },
+      homeOf: (barberId) => this.homeOfChair(barberId),
     });
     if (await this.store.saveBlocks(plan)) this.closeBlockSheet();
+  }
+
+  /** A chair's home shop; `null` off the catalogue or with no scope of its own. */
+  private homeOfChair(barberId: BarberId): LocationId | null {
+    const barber = this.catalog
+      .barbers()
+      .find((entry) => entry.id === barberId);
+    return barber === undefined ? null : LocationScopeSystem.homeOf(barber);
   }
 
   protected async liftFromEditor(): Promise<void> {

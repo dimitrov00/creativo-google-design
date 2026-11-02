@@ -6478,17 +6478,13 @@ export class StaffVisitEditor {
     if (client === null) return;
     const date = this.lastVisitDate();
     const draft = this.draft();
-    const repeated = legs.flatMap((leg): DraftLeg[] => {
-      const option = this.uiServices().find(
-        (entry) =>
-          entry.serviceId === leg.serviceId &&
-          (entry.variantId ?? null) === leg.variantId,
-      );
-      if (option === undefined) return [];
-      // The last visit's barber only while the sheet has no chair of its own.
-      const chair = this.chairOf(draft.chairId ?? leg.barberId);
-      return [
-        {
+    const repeated = VisitDraftSystem.pastLegsOnCatalogue(
+      legs,
+      () => this.uiServices(),
+      (leg, option): DraftLeg => {
+        // The last visit's barber only while the sheet has no chair of its own.
+        const chair = this.chairOf(draft.chairId ?? leg.barberId);
+        return {
           seatId: this.mintSeatId(option),
           serviceId: option.serviceId,
           variantId: option.variantId,
@@ -6506,9 +6502,9 @@ export class StaffVisitEditor {
           // length somebody agreed — said on the row, as a stored one is.
           overridden: leg.durationMinutes !== option.minutes,
           clientId: client.id,
-        },
-      ];
-    });
+        };
+      },
+    );
     if (repeated.length === 0) return;
     const partyOfOne = draft.clients.length <= 1;
     this.draft.update((current) => ({

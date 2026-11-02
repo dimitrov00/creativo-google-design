@@ -7,6 +7,7 @@ import {
   RepeatPreset,
 } from '@core/components';
 import {
+  type Currency,
   Weekday,
   defect,
   DraftPersonKey,
@@ -15,8 +16,11 @@ import {
   LocalDate,
   TrackMinute,
   MinuteOfDay,
+  type PriceCents,
   type Result,
   type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
 } from '@core/primitives';
 import type { SchedulingError } from '@core/errors';
 import type { TrackSpan } from './grid-layout.system';
@@ -185,6 +189,34 @@ function fitted(
   );
   return fresh.ok ? fresh.value : null;
 }
+
+/** What a past visit's leg is matched on the catalogue by. */
+type PastLeg = {
+  readonly serviceId: ServiceId;
+  readonly variantId: ServiceVariantId | null;
+};
+
+/** What a catalogue offer is matched by; no `variantId` is a bare service. */
+type OfferKey = {
+  readonly serviceId: ServiceId;
+  readonly variantId?: ServiceVariantId | null;
+};
+
+/** A catalogue offer's price, as a leg holds it. */
+type CataloguePrice = OfferKey & {
+  readonly priceCents: PriceCents | null;
+  readonly currency: Currency;
+  readonly priceLabel: string | null;
+};
+
+/** The leg «Запиши пак» reads and rewrites. */
+type RebookedLeg = PastLeg & {
+  readonly seatId: SeatId;
+  readonly overridden: boolean;
+  readonly priceCents: PriceCents | null;
+  readonly currency: Currency;
+  readonly priceLabel: string | null;
+};
 
 /**
  * VisitDraftSystem — the moves a staff sheet makes on a DRAFT on someone's
@@ -454,21 +486,55 @@ export const VisitDraftSystem = {
   },
 
   /**
-   * WHAT «ЗАПИШИ ПАК» CARRIES: the visit's legs as they are, in order, each on
-   * a fresh seat (`mint`) with its override mark cleared, so the commit mints
-   * new seats rather than naming old ones. Price and minutes stay as stored.
-   * Not what the visit sheet's «Повтори» does: that one re-reads today's
-   * catalogue.
+   * A PAST VISIT'S LEGS ON TODAY'S CATALOGUE, the rule «Запиши пак» and
+   * «Повтори» share: a booked seat is priced by the server from the catalogue
+   * (`OfferingPriceSystem.termsFor`, the booking request carries no price), so
+   * each leg takes its offer by service and variant, and one the catalogue no
+   * longer sells is left out, as the server would refuse that seat. `offersOf`
+   * answers a leg's chair's offers; `make` builds the leg from its offer.
    */
-  rebookLegs<
-    L extends { readonly seatId: SeatId; readonly overridden: boolean },
-  >(legs: readonly L[], mint: (leg: L, index: number) => SeatId): readonly L[] {
-    const out: L[] = [];
+  pastLegsOnCatalogue<L extends PastLeg, O extends OfferKey, R>(
+    legs: readonly L[],
+    offersOf: (leg: L) => readonly O[],
+    make: (leg: L, offer: O, index: number) => R,
+  ): readonly R[] {
+    const out: R[] = [];
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i] as L;
-      out.push({ ...leg, seatId: mint(leg, i), overridden: false });
+      const offer = offersOf(leg).find(
+        (entry) =>
+          entry.serviceId === leg.serviceId &&
+          (entry.variantId ?? null) === leg.variantId,
+      );
+      if (offer !== undefined) out.push(make(leg, offer, i));
     }
     return out;
+  },
+
+  /**
+   * WHAT «ЗАПИШИ ПАК» CARRIES: the visit's legs in order, each on a fresh seat
+   * (`mint`) with its override mark cleared, so the commit mints new seats
+   * rather than naming old ones. The price is today's
+   * ({@link pastLegsOnCatalogue}), what the sheet must show because it is what
+   * the server charges. The minutes stay as stored.
+   */
+  rebookLegs<L extends RebookedLeg>(
+    legs: readonly L[],
+    offersOf: (leg: L) => readonly CataloguePrice[],
+    mint: (leg: L, index: number) => SeatId,
+  ): readonly L[] {
+    return VisitDraftSystem.pastLegsOnCatalogue(
+      legs,
+      offersOf,
+      (leg, offer, index) => ({
+        ...leg,
+        seatId: mint(leg, index),
+        overridden: false,
+        priceCents: offer.priceCents,
+        currency: offer.currency,
+        priceLabel: offer.priceLabel,
+      }),
+    );
   },
 
   /* ── Strangers' names ────────────────────────────────────────────────── */

@@ -6572,6 +6572,47 @@ describe('StaffDashboard', () => {
       return { clientUserId: vm.clientUserId, clientLabel: vm.clientLabel };
     }
 
+    it('prints what the server will charge: today’s catalogue price, on the leg’s chair (B5)', () => {
+      const component =
+        fixture.componentInstance as unknown as RebookHarness & {
+          createVisit: () => {
+            legs?: readonly {
+              serviceId: string;
+              priceCents: number | null;
+              priceLabel: string | null;
+              currency: string;
+            }[];
+          } | null;
+        };
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const vm = component.visitEditorVm() as unknown as {
+        legs: readonly { serviceId: string }[];
+      };
+      const [leg] = vm.legs;
+      component.rebookFromEditor({
+        ...vm,
+        legs: [
+          // Stored at 15,00 €; the catalogue sells it at 28,00 € today.
+          {
+            ...leg,
+            serviceId: ServiceId.of('fade'),
+            variantId: null,
+            priceCents: 1500,
+            priceLabel: '15,00 €',
+          },
+          // No longer sold: the server would refuse the seat.
+          { ...leg, serviceId: ServiceId.of('gone'), variantId: null },
+        ],
+      });
+      const legs = component.createVisit()?.legs ?? [];
+      expect(legs.map((entry) => entry.serviceId)).toEqual(['fade']);
+      expect(legs[0]?.priceCents).toBe(2800);
+      expect(legs[0]?.priceLabel).toContain('28');
+    });
+
     it('books the new visit FROM the finished one, for the same client', async () => {
       const requests = capture();
       const component = fixture.componentInstance as unknown as RebookHarness;
