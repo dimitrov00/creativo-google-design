@@ -381,14 +381,18 @@ export type LegRowsInput = {
 };
 
 /**
- * THE PERSON A VISIT'S PHOTO NAMES, by id and never by label: two people of one
- * name are two people. The photo's client record first; a record that is the
- * visit's own is its account holder, whose draft key is his account; no record
- * is a guest, known by the draft key his label makes, else the account holder.
+ * THE PERSON A VISIT'S PHOTO NAMES, by id first: two people of one name are two
+ * people. The photo's client record; a record that is the visit's own is its
+ * account holder, whose draft key is his account; no record is a guest, known by
+ * the draft key his label makes, else the account holder. The label only where
+ * there is no id to go by: the photo holds no record, or the person holds none
+ * (a companion the book does not list). A person with a record of their own is
+ * never another record's namesake.
  */
 export function photoPersonOf<
   C extends {
     readonly id: DraftPersonKey;
+    readonly label: string;
     readonly customerId?: CustomerId | null;
   },
 >(
@@ -403,18 +407,24 @@ export function photoPersonOf<
   },
 ): C | null {
   const record = photo.clientCustomerId;
-  const named =
-    record !== null
+  const holder =
+    record === visit.clientCustomerId && visit.clientUserId !== null
+      ? DraftPersonKey.account(visit.clientUserId)
+      : null;
+  return (
+    (record !== null
       ? clients.find((client) => client.customerId === record)
       : clients.find(
           (client) => client.id === DraftPersonKey.guest(photo.clientLabel),
-        );
-  if (named !== undefined) return named;
-  if (record !== visit.clientCustomerId || visit.clientUserId === null) {
-    return null;
-  }
-  const holder = DraftPersonKey.account(visit.clientUserId);
-  return clients.find((client) => client.id === holder) ?? null;
+        )) ??
+    clients.find((client) => client.id === holder) ??
+    clients.find(
+      (client) =>
+        client.label === photo.clientLabel &&
+        (record === null || (client.customerId ?? null) === null),
+    ) ??
+    null
+  );
 }
 
 /**

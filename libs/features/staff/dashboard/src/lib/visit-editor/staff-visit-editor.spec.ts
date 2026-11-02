@@ -4832,6 +4832,37 @@ describe('StaffVisitEditor', () => {
       ).toBeUndefined();
     });
 
+    it('keeps the face of a companion the book does not list: no id, so the label (BUG-9)', () => {
+      const host = render(
+        visit({
+          photos: [
+            {
+              ...(PHOTOS[0] as VisitEditorPhoto),
+              clientLabel: 'Иво Колев',
+              clientCustomerId: CustomerId.of('customer-son'),
+            },
+          ],
+          people: [
+            {
+              id: draftPersonKey('user-son'),
+              label: 'Иво Колев',
+              phone: null,
+              phoneHref: null,
+              meta: null,
+              email: null,
+              avatarSrc: '/son.jpg',
+            },
+          ],
+        }),
+      );
+      click(host, 'staff-visit-photo-p-1');
+      expect(
+        find(host, 'staff-visit-photo-client-row')
+          ?.querySelector('[uileading] ui-avatar img')
+          ?.getAttribute('src'),
+      ).toBe('/son.jpg');
+    });
+
     it('hands every picked file up at once — a photo is not a draft — and leaves the draft clean', () => {
       const host = render(visit({ photos: [] }));
       const picked: string[] = [];

@@ -634,9 +634,9 @@ describe('photoPersonOf — the person a photo names, by id (BUG-9)', () => {
   const GUEST = DraftPersonKey.guest('Ани');
   const RECORD_B = CustomerId.of('customer-b');
   const clients = [
-    { id: A, customerId: CustomerId.of('customer-a') },
-    { id: B, customerId: RECORD_B },
-    { id: GUEST },
+    { id: A, label: 'Иван', customerId: CustomerId.of('customer-a') },
+    { id: B, label: 'Иван', customerId: RECORD_B },
+    { id: GUEST, label: 'Ани' },
   ];
   const noOwner = { clientCustomerId: null, clientUserId: null };
   const photo = (
@@ -654,7 +654,7 @@ describe('photoPersonOf — the person a photo names, by id (BUG-9)', () => {
   it('reads the visit’s own record as its account holder', () => {
     const own = CustomerId.of('customer-own');
     expect(
-      photoPersonOf(photo(own), [{ id: A }], {
+      photoPersonOf(photo(own), [{ id: A, label: 'Друг' }], {
         clientCustomerId: own,
         clientUserId: UserId.of('user-a'),
       })?.id,
@@ -681,7 +681,39 @@ describe('photoPersonOf — the person a photo names, by id (BUG-9)', () => {
         clientUserId: UserId.of('user-b'),
       })?.id,
     ).toBe(B);
-    expect(photoPersonOf(photo(null), clients, noOwner)).toBeNull();
+    // No record and no account holder: the label is all there is (below).
+  });
+
+  it('falls back to the label only where there is no id to go by', () => {
+    const son = { id: B, label: 'Иво' };
+    // The photo names a record, and the person holds none: a companion the
+    // book does not list. The label is what is left.
+    expect(
+      photoPersonOf(photo(CustomerId.of('customer-son'), 'Иво'), [son], noOwner)
+        ?.id,
+    ).toBe(B);
+    // The photo holds no record: the same.
+    expect(photoPersonOf(photo(null, 'Иво'), [son], noOwner)?.id).toBe(B);
+    // A person with a record of their own is not this photo's, namesake or not.
+    expect(
+      photoPersonOf(
+        photo(CustomerId.of('customer-z'), 'Иван'),
+        [{ id: A, label: 'Иван', customerId: CustomerId.of('customer-a') }],
+        noOwner,
+      ),
+    ).toBeNull();
+    // And the id wins over a namesake with none.
+    expect(
+      photoPersonOf(
+        photo(RECORD_B, 'Иван'),
+        [
+          { id: GUEST, label: 'Иван' },
+          { id: B, label: 'Иван', customerId: RECORD_B },
+        ],
+        noOwner,
+      )?.id,
+    ).toBe(B);
+    expect(photoPersonOf(photo(null, 'Никой'), [son], noOwner)).toBeNull();
   });
 
   it('holds no person for an account no longer on the visit', () => {
