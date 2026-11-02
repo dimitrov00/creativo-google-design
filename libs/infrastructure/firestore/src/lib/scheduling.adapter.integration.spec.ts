@@ -23,9 +23,17 @@ import {
   Result,
   ScheduleExceptionId,
 } from '@core/primitives';
-import { RepositoryErrorCode } from '@core/errors';
+import { RepositoryErrorCode, SchedulingErrorCode } from '@core/errors';
 import type { ScheduleException } from '@core/entities';
-import { at, localDate, recordingTelemetry, until, utcMs } from '@core/testing';
+import { moveScheduleBlock } from '@core/pipelines';
+import {
+  FIXTURE_TIME_ZONE,
+  at,
+  localDate,
+  recordingTelemetry,
+  until,
+  utcMs,
+} from '@core/testing';
 import {
   createEmulatorTestEnv,
   modularFirestore,
@@ -221,6 +229,126 @@ describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
     expect(!answer.ok && answer.error).toMatchObject({
       errorCode: RepositoryErrorCode.WriteFailed,
       path: 'scheduleExceptions',
+    });
+  });
+
+  describe('moveScheduleBlock, an edited block in one real transaction', () => {
+    const SHOP = LocationId.of('loc-center');
+    const NIKO = BarberId.of('niko');
+    const MONDAY_DAY = localDate('2026-10-12');
+    const TUESDAY_DAY = localDate('2026-10-13');
+    const TUESDAY = BusyKey.of(IVAN, TUESDAY_DAY);
+    const NIKOS_MONDAY = BusyKey.of(NIKO, MONDAY_DAY);
+    const OLD = MinuteRange.of(at(10), until(11));
+    const NEW = MinuteRange.of(at(14), until(15));
+    const lift = { barberId: IVAN, localDate: MONDAY_DAY, range: OLD };
+    const write = (
+      ranges: readonly MinuteRange[],
+      localDates: readonly ReturnType<typeof localDate>[],
+      barberId = IVAN,
+    ) => ({
+      barberId,
+      locationId: SHOP,
+      timeZone: FIXTURE_TIME_ZONE,
+      ranges,
+      localDates,
+    });
+    /** A day's stored body, read past the rules. */
+    const storedDay = async (key: BusyKey) => {
+      let body: object | undefined;
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const snap = await getDoc(
+          doc(modularFirestore(ctx), 'scheduleExceptions', key),
+        );
+        body = snap.data();
+      });
+      return body;
+    };
+    const blockedBody = (
+      barberId: BarberId,
+      day: ReturnType<typeof localDate>,
+      utc: string,
+      range: MinuteRange,
+    ) => ({
+      barberId,
+      localDate: day,
+      utcEpochMs: utcMs(utc),
+      locationId: SHOP,
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range],
+    });
+    const OLD_BODY = blockedBody(
+      IVAN,
+      MONDAY_DAY,
+      '2026-10-12T00:00:00+03:00',
+      OLD,
+    );
+
+    it('moves a block inside its day, on one document', async () => {
+      const answer = await moveScheduleBlock(writesFor(barber()))({
+        lift,
+        writes: [write([NEW], [MONDAY_DAY])],
+      });
+      expect(answer).toEqual(Result.ok(undefined));
+      expect(await storedDay(MONDAY)).toEqual(
+        blockedBody(IVAN, MONDAY_DAY, '2026-10-12T00:00:00+03:00', NEW),
+      );
+    });
+
+    it('moves a block to another day: the old day deleted, the new one written', async () => {
+      const answer = await moveScheduleBlock(writesFor(barber()))({
+        lift,
+        writes: [write([NEW], [TUESDAY_DAY])],
+      });
+      expect(answer).toEqual(Result.ok(undefined));
+      expect(await storedDay(MONDAY)).toBeUndefined();
+      expect(await storedDay(TUESDAY)).toEqual(
+        blockedBody(IVAN, TUESDAY_DAY, '2026-10-13T00:00:00+03:00', NEW),
+      );
+    });
+
+    it('moves a block across two chairs in one write', async () => {
+      const answer = await moveScheduleBlock(writesFor(barber()))({
+        lift,
+        writes: [write([NEW], [MONDAY_DAY]), write([NEW], [MONDAY_DAY], NIKO)],
+      });
+      expect(answer).toEqual(Result.ok(undefined));
+      expect(await storedDay(MONDAY)).toEqual(
+        blockedBody(IVAN, MONDAY_DAY, '2026-10-12T00:00:00+03:00', NEW),
+      );
+      expect(await storedDay(NIKOS_MONDAY)).toEqual(
+        blockedBody(NIKO, MONDAY_DAY, '2026-10-12T00:00:00+03:00', NEW),
+      );
+    });
+
+    it('leaves the old block intact when the decision refuses a written day', async () => {
+      // A range with no minute in it is no block: the merge refuses it.
+      const answer = await moveScheduleBlock(writesFor(barber()))({
+        lift,
+        writes: [write([MinuteRange.of(at(14), until(14))], [TUESDAY_DAY])],
+      });
+      expect(answer.ok).toBe(false);
+      expect(!answer.ok && answer.error.errorCode).toBe(
+        SchedulingErrorCode.ScheduleExceptionEmptyRanges,
+      );
+      expect(await storedDay(MONDAY)).toEqual(OLD_BODY);
+      expect(await storedDay(TUESDAY)).toBeUndefined();
+    });
+
+    it('leaves the old block intact when the rules refuse the write', async () => {
+      const answer = await moveScheduleBlock(
+        writesFor(
+          testEnv.authenticatedContext('copy-1', {
+            roles: ['content_manager'],
+          }),
+        ),
+      )({ lift, writes: [write([NEW], [TUESDAY_DAY])] });
+      expect(answer.ok).toBe(false);
+      expect(!answer.ok && answer.error.errorCode).toBe(
+        RepositoryErrorCode.WriteFailed,
+      );
+      expect(await storedDay(MONDAY)).toEqual(OLD_BODY);
+      expect(await storedDay(TUESDAY)).toBeUndefined();
     });
   });
 });
