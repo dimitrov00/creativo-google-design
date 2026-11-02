@@ -28,7 +28,7 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
 } from './support/seed-firestore';
-import { EVENING_VISIT_START } from './support/shop-clock';
+import { EVENING_VISIT_START, shopInstant } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
 import { pinBrowserClock, suiteDay } from './support/suite-clock';
 import { THEMES, pinTheme } from './support/theme';
@@ -77,6 +77,7 @@ function tenAm(appointmentId: string, day: string): VisitFact {
     appointmentId: AppointmentId.of(appointmentId),
     localDate: localDate.value,
     startMinutes: startMinutes.value,
+    startUtcMs: shopInstant(day, 10),
   };
 }
 
@@ -109,6 +110,7 @@ function statsFor(uid: string): ClientStatsSeed {
     lastVisitAppointmentId: last.appointmentId,
     lastVisitLocalDate: last.localDate,
     lastVisitStartMinutes: last.startMinutes,
+    lastVisitUtcMs: last.startUtcMs,
     lastVisitServiceIds: [cut],
     lastVisitBarberIds: [ivan],
     lastVisitLegs: [

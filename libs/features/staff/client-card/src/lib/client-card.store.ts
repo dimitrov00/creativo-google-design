@@ -58,7 +58,6 @@ import {
   type Role,
   Roles,
   type ShopNow,
-  type VisitFact,
   VisitFilter,
   VisitRowOutcome,
 } from '@core/components';
@@ -215,19 +214,6 @@ const FILTER_REFILL_ROWS = 10;
 
 /** …up to this many pages at once. */
 const FILTER_REFILL_PAGES = 3;
-
-/**
- * A worked visit's stored shop day and minute (Law 7.3) as the instant the
- * loyalty presenters (flip 3) still read — once, at this boundary, on the
- * shop's `zone`; a minute inside a spring-forward gap reads as the day's
- * start.
- */
-function factInstant(fact: VisitFact, zone: TimeZone): UtcEpochMs {
-  const at = ZonedTimeSystem.toUtc(fact.localDate, fact.startMinutes, zone);
-  return at.ok
-    ? at.value
-    : ZonedTimeSystem.startOfLocalDay(fact.localDate, zone);
-}
 
 /** Each day's names, the repeats of one day once, joined in their order («Иван, Никола»). */
 function joinedByDay(
@@ -827,19 +813,13 @@ export class ClientCardStore {
   });
 
   /**
-   * The visits the rhythm reads: the stats' worked visits of the last year,
-   * each a shop day and minute (Law 7.3), read back as the instant the
-   * loyalty presenters (flip 3) still take — once, here, in the shop's zone.
+   * The visits the rhythm reads: the instants the stats' worked visits of the
+   * last year stored (Law 7.3).
    */
-  private readonly visitsMs = computed((): readonly UtcEpochMs[] => {
-    const zone = this.zone();
-    if (zone === null) return [];
-    return (
-      this.stats()?.last365VisitsCompleted.map((fact) =>
-        factInstant(fact, zone),
-      ) ?? []
-    );
-  });
+  private readonly visitsMs = computed(
+    (): readonly UtcEpochMs[] =>
+      this.stats()?.last365VisitsCompleted.map((fact) => fact.startUtcMs) ?? [],
+  );
 
   private readonly inChairToday = computed(() => {
     const context = this._context();
@@ -907,12 +887,9 @@ export class ClientCardStore {
    */
   private readonly previousVisitUtcMs = computed((): UtcEpochMs | null => {
     const stats = this.stats();
-    const zone = this.zone();
     const current = this._context()?.appointmentId ?? null;
-    if (stats === null || zone === null) return null;
-    return ClientStatsSystem.previousVisit(stats, current, (fact) =>
-      factInstant(fact, zone),
-    );
+    if (stats === null) return null;
+    return ClientStatsSystem.previousVisit(stats, current);
   });
 
   /** The presenters' context for the achievements pages; `null` until a card is open and worded. */

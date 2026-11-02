@@ -124,6 +124,7 @@ const factAt = (id: string, ms: number): VisitFact => {
     appointmentId: AppointmentId.of(id),
     localDate: wall.localDate,
     startMinutes: wall.minute,
+    startUtcMs: instant(ms),
   };
 };
 
@@ -1967,6 +1968,13 @@ const factOn = (id: string, day: string, minuteOfDay: number): VisitFact => ({
   appointmentId: AppointmentId.of(id),
   localDate: localDate(day),
   startMinutes: minute(minuteOfDay),
+  startUtcMs: unwrapOk(
+    ZonedTimeSystem.toUtc(
+      localDate(day),
+      minute(minuteOfDay),
+      FIXTURE_TIME_ZONE,
+    ),
+  ),
 });
 
 describe('ClientStatsSystem.cadenceWeeks — the ONE home of max(1, round(days / 7))', () => {
@@ -2291,15 +2299,6 @@ describe('ClientStatsSystem.billedHistory — the visits that count toward spend
 });
 
 describe('ClientStatsSystem.previousVisit — what «Ново» is measured from (pass C, K-3)', () => {
-  /** The fixture shop's instant of a fact — the caller's zone-bound reader. */
-  const instantOf = (fact: VisitFact): UtcEpochMs =>
-    unwrapOk(
-      ZonedTimeSystem.toUtc(
-        fact.localDate,
-        fact.startMinutes,
-        FIXTURE_TIME_ZONE,
-      ),
-    );
   const TODAY_VISIT = AppointmentId.of('today');
 
   it('is the latest bounded worked visit other than the one on screen', () => {
@@ -2310,36 +2309,38 @@ describe('ClientStatsSystem.previousVisit — what «Ново» is measured from
         factOn('before', '2026-09-14', 660),
       ],
     });
-    expect(ClientStatsSystem.previousVisit(stats, TODAY_VISIT, instantOf)).toBe(
-      instantOf(factOn('before', '2026-09-14', 660)),
+    expect(ClientStatsSystem.previousVisit(stats, TODAY_VISIT)).toBe(
+      factOn('before', '2026-09-14', 660).startUtcMs,
     );
     // With no visit on screen, every worked visit counts.
-    expect(ClientStatsSystem.previousVisit(stats, null, instantOf)).toBe(
-      instantOf(factOn('today', '2026-09-28', 600)),
+    expect(ClientStatsSystem.previousVisit(stats, null)).toBe(
+      factOn('today', '2026-09-28', 600).startUtcMs,
     );
   });
 
-  it('orders by the instant the reader gives, never by the wall clock', () => {
+  it('orders by the stored instant, never by the wall clock', () => {
+    // Instants that run against the wall clock (a fall-back hour, two shops).
+    const wallLater = instant(NOW_UTC_MS - 900 * MINUTE);
+    const wallEarlier = instant(NOW_UTC_MS - 600 * MINUTE);
     const stats = recordWith({
       last365VisitsCompleted: [
-        factOn('wall-later', '2026-09-14', 900),
-        factOn('wall-earlier', '2026-09-14', 600),
+        { ...factOn('wall-later', '2026-09-14', 900), startUtcMs: wallLater },
+        {
+          ...factOn('wall-earlier', '2026-09-14', 600),
+          startUtcMs: wallEarlier,
+        },
       ],
     });
-    // A reader whose instants run against the wall clock (a fall-back hour,
-    // two shops): the instant order decides.
-    const inverted = (fact: VisitFact): UtcEpochMs =>
-      instant(NOW_UTC_MS - fact.startMinutes * MINUTE);
-    expect(ClientStatsSystem.previousVisit(stats, null, inverted)).toBe(
-      instant(NOW_UTC_MS - 600 * MINUTE),
-    );
+    expect(ClientStatsSystem.previousVisit(stats, null)).toBe(wallEarlier);
   });
 
-  it('falls back to the stored last visit when no bounded visit is left — only another, fully stamped one', () => {
+  it('falls back to the stored last visit when no bounded visit is left — only another one', () => {
+    const lastVisitUtcMs = factOn('long-ago', '2025-01-10', 540).startUtcMs;
     const lastVisit = {
       lastVisitAppointmentId: AppointmentId.of('long-ago'),
       lastVisitLocalDate: localDate('2025-01-10'),
       lastVisitStartMinutes: minute(540),
+      lastVisitUtcMs,
     };
     expect(
       ClientStatsSystem.previousVisit(
@@ -2348,31 +2349,17 @@ describe('ClientStatsSystem.previousVisit — what «Ново» is measured from
           last365VisitsCompleted: [factOn('today', '2026-09-28', 600)],
         }),
         TODAY_VISIT,
-        instantOf,
       ),
-    ).toBe(instantOf(factOn('long-ago', '2025-01-10', 540)));
+    ).toBe(lastVisitUtcMs);
     // The stored last visit IS the one on screen: nothing before it.
     expect(
       ClientStatsSystem.previousVisit(
         recordWith({ ...lastVisit, lastVisitAppointmentId: TODAY_VISIT }),
         TODAY_VISIT,
-        instantOf,
-      ),
-    ).toBeNull();
-    // A last visit missing its day or its minute is no anchor.
-    expect(
-      ClientStatsSystem.previousVisit(
-        recordWith({ ...lastVisit, lastVisitStartMinutes: null }),
-        TODAY_VISIT,
-        instantOf,
       ),
     ).toBeNull();
     expect(
-      ClientStatsSystem.previousVisit(
-        ClientStats.empty(),
-        TODAY_VISIT,
-        instantOf,
-      ),
+      ClientStatsSystem.previousVisit(ClientStats.empty(), TODAY_VISIT),
     ).toBeNull();
   });
 
@@ -2385,15 +2372,11 @@ describe('ClientStatsSystem.previousVisit — what «Ново» is measured from
         ],
       }),
     );
-    const once = ClientStatsSystem.previousVisit(
-      stats,
-      AppointmentId.of('b'),
-      instantOf,
+    const once = ClientStatsSystem.previousVisit(stats, AppointmentId.of('b'));
+    expect(ClientStatsSystem.previousVisit(stats, AppointmentId.of('b'))).toBe(
+      once,
     );
-    expect(
-      ClientStatsSystem.previousVisit(stats, AppointmentId.of('b'), instantOf),
-    ).toBe(once);
-    expect(once).toBe(instantOf(factOn('a', '2026-09-01', 600)));
+    expect(once).toBe(factOn('a', '2026-09-01', 600).startUtcMs);
     expect(stats.last365VisitsCompleted).toHaveLength(2);
   });
 });

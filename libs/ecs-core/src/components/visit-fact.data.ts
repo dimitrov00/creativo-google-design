@@ -1,4 +1,9 @@
-import type { AppointmentId, LocalDate, MinuteOfDay } from '@core/primitives';
+import type {
+  AppointmentId,
+  LocalDate,
+  MinuteOfDay,
+  UtcEpochMs,
+} from '@core/primitives';
 
 /*
  * Split out of `client-stats.data.ts` (pass D, S-21; one name per file,
@@ -9,10 +14,13 @@ import type { AppointmentId, LocalDate, MinuteOfDay } from '@core/primitives';
  * One VISIT — a person's seats in one appointment, counted once (R33) — at
  * the appointment's start on the shop's wall clock (Law 7: windows are
  * `LocalDate` arithmetic, T8). A party of three is three visits; a cut and
- * a beard trim for one client is one. Array element.
+ * a beard trim for one client is one. Beside it the instant the booking
+ * stored (`startUtcMs`, Law 7.3): a reader never derives it from the wall
+ * clock again. Array element.
  */
 export type VisitFact = {
   readonly appointmentId: AppointmentId;
   readonly localDate: LocalDate;
   readonly startMinutes: MinuteOfDay;
+  readonly startUtcMs: UtcEpochMs;
 };

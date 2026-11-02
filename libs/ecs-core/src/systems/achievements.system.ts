@@ -19,6 +19,7 @@ import {
   type LocationId,
   type ServiceId,
   LocalDate,
+  MinuteDelta,
   type MinuteOfDay,
   UtcEpochMs,
 } from '@core/primitives';
@@ -90,14 +91,6 @@ export type CountedVisit = {
   /** Someone else holds a seat on the visit. */
   readonly withCompany: boolean;
 };
-
-/**
- * One appointment as the person's WORKED visit, zone-free — what
- * `workedVisitOf` reads off the appointment. The edge adds the start's
- * instant (`startUtcMs`, through `ZonedTimeSystem.toUtc` on the shop's zone)
- * and so builds the {@link CountedVisit}: a system never converts zones.
- */
-export type WorkedVisitFacts = Omit<CountedVisit, 'startUtcMs'>;
 
 /**
  * The visit on screen as «с това посещение» reads it
@@ -323,16 +316,15 @@ export const AchievementsSystem = {
    * One appointment as the client RECORD's WORKED visit (D29: whom the shop
    * served) — `null` when the record holds no worked seat on it: its own
    * worked seats' services and barbers, the shop, the shop day, the minute
-   * the FIRST of those seats began (the earliest), its weekday, the arrival
-   * stamp, and whether someone else holds a seat on it. Zone-free: the edge
-   * adds the start's instant (`ZonedTimeSystem.toUtc(localDate,
-   * startMinutes, zone)`, the visit's own instant where the minute names
-   * none) and so builds the {@link CountedVisit}.
+   * the FIRST of those seats began (the earliest), that start's instant, its
+   * weekday, the arrival stamp, and whether someone else holds a seat on it.
+   * The instant is the one the booking stored, moved by the minutes between
+   * the visit's start and that seat's: zone-free, with no gap to refuse.
    */
   workedVisitOf(
     appointment: Appointment,
     subject: CustomerId,
-  ): WorkedVisitFacts | null {
+  ): CountedVisit | null {
     const own = ClientStatsSystem.subjectVisitOf(subject, appointment);
     if (own === null) return null;
     const serviceIds: ServiceId[] = [];
@@ -359,6 +351,10 @@ export const AchievementsSystem = {
       locationId: appointment.locationId,
       localDate: appointment.localDate,
       startMinutes,
+      startUtcMs: UtcEpochMs.plusMinutes(
+        appointment.utcEpochMs,
+        MinuteDelta.between(appointment.startMinutes, startMinutes),
+      ),
       weekday: LocalDate.weekday(appointment.localDate),
       arrivedAtUtcMs: appointment.arrivedAtUtcMs,
       withCompany: own.seats.length < appointment.seats.length,

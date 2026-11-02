@@ -182,12 +182,10 @@ export type StatWindows = {
 };
 
 /**
- * A no-show the pause suggestion may rest on: its fact, and the start
- * instant the desk's dismissal is compared with (T2).
+ * A no-show the pause suggestion may rest on: its fact, whose start instant
+ * the desk's dismissal is compared with (T2).
  */
-export type PauseBasisFact = VisitFact & {
-  readonly startUtcMs: UtcEpochMs;
-};
+export type PauseBasisFact = VisitFact;
 
 /**
  * One seat as the change detection reads it — every field a stat can read,
@@ -379,14 +377,6 @@ function factOf(visit: SubjectVisit): VisitFact {
     appointmentId: visit.appointment.id,
     localDate: visit.localDate,
     startMinutes: visit.startMinutes,
-  };
-}
-
-function basisFactOf(visit: SubjectVisit): PauseBasisFact {
-  return {
-    appointmentId: visit.appointment.id,
-    localDate: visit.localDate,
-    startMinutes: visit.startMinutes,
     startUtcMs: visit.startUtcMs,
   };
 }
@@ -435,6 +425,7 @@ function lastVisitOf(visit: SubjectVisit | undefined): LastVisit {
     lastVisitAppointmentId: ref.appointmentId,
     lastVisitLocalDate: ref.localDate,
     lastVisitStartMinutes: ref.startMinutes,
+    lastVisitUtcMs: visit.startUtcMs,
     lastVisitServiceIds: ref.serviceIds,
     lastVisitBarberIds: ref.barberIds,
     lastVisitLegs: ref.legs,
@@ -762,7 +753,7 @@ function statsOf(
         now.currentMinute,
       ) > 0
     ) {
-      recentNoShows.push(basisFactOf(visit));
+      recentNoShows.push(factOf(visit));
     }
   }
 
@@ -841,6 +832,7 @@ function statsContent<S extends ClientStats>(stats: S): ClientStats {
     lastVisitAppointmentId: stats.lastVisitAppointmentId,
     lastVisitLocalDate: stats.lastVisitLocalDate,
     lastVisitStartMinutes: stats.lastVisitStartMinutes,
+    lastVisitUtcMs: stats.lastVisitUtcMs,
     lastVisitServiceIds: stats.lastVisitServiceIds,
     lastVisitBarberIds: stats.lastVisitBarberIds,
     lastVisitLegs: stats.lastVisitLegs,
@@ -1026,40 +1018,28 @@ export const ClientStatsSystem = {
    * When the client's last worked visit BEFORE `current` started — what the
    * card's «Ново» is measured from (pass C, K-3 — the client card store's
    * `previousVisitAtMs`, homed here): the latest of the bounded worked
-   * visits other than `current`, by the instant `instantOf` reads (the
-   * caller's, zone-bound — the shop's wall clock to an instant, D-6), so the
-   * order is the instant order; with none, the stored last visit when it is
-   * another visit and fully stamped; `null` otherwise.
+   * visits other than `current`, by their stored instants; with none, the
+   * stored last visit when it is another visit; `null` otherwise.
    */
   previousVisit(
     stats: Pick<
       ClientStats,
-      | 'last365VisitsCompleted'
-      | 'lastVisitAppointmentId'
-      | 'lastVisitLocalDate'
-      | 'lastVisitStartMinutes'
+      'last365VisitsCompleted' | 'lastVisitAppointmentId' | 'lastVisitUtcMs'
     >,
     current: AppointmentId | null,
-    instantOf: (fact: VisitFact) => UtcEpochMs,
   ): UtcEpochMs | null {
     let latest: UtcEpochMs | null = null;
     const facts = stats.last365VisitsCompleted;
     for (let i = 0; i < facts.length; i++) {
       const fact = facts[i] as VisitFact;
       if (fact.appointmentId === current) continue;
-      const at = instantOf(fact);
-      if (latest === null || UtcEpochMs.compare(at, latest) > 0) latest = at;
+      if (latest === null || UtcEpochMs.compare(fact.startUtcMs, latest) > 0) {
+        latest = fact.startUtcMs;
+      }
     }
     if (latest !== null) return latest;
-    return stats.lastVisitAppointmentId !== null &&
-      stats.lastVisitAppointmentId !== current &&
-      stats.lastVisitLocalDate !== null &&
-      stats.lastVisitStartMinutes !== null
-      ? instantOf({
-          appointmentId: stats.lastVisitAppointmentId,
-          localDate: stats.lastVisitLocalDate,
-          startMinutes: stats.lastVisitStartMinutes,
-        })
+    return stats.lastVisitAppointmentId !== current
+      ? stats.lastVisitUtcMs
       : null;
   },
 
