@@ -1,35 +1,44 @@
 # Performance and cost audit, and the enforcement design
 
-Audited at commit `86870b9d` on 2026-11-02; no code changed. **Review concluded the same day: the plan is
-not ready to implement and known errors remain in this text. Read `docs/architecture/review/` before acting. F-01 and F-02 are since fixed. Security hardening Phase 4 (PR #6) landed on `main` while this was written and this text does not reflect it: App Check now exists behind an OFF / MONITOR / ENFORCE switch, so re-check F-21 and A9 against it.**
+Audited at commit `86870b9d` on 2026-11-02, reviewed in five stages
+(`docs/architecture/review/`) and revised the same day. The findings describe
+that commit; those reports' line numbers point at the first draft.
+
+Creativo is a booking app for barbershops, in Bulgaria, on Angular and Firebase.
+"The laws" are the ten in `CLAUDE.md` §1. `HANDOFF.md` is the project record, and
+D-numbers and OR-numbers are rulings recorded there and in `decisions/`.
 
 ## 1. Summary
 
-The laws hold up well in the ECS core and poorly in the two largest staff
-components. Steady-state cost is low at the expected scale. The serious
-problems are of a different kind from the ones the question assumed:
+The question was whether the code follows the laws, is data-oriented and
+cost-efficient, and whether any gap stands between it and feature work.
 
-1. **A booking defect.** The availability search runs out of its node budget
-   for parties of three or more service lines, and the app silently shows too
-   few times. Two people with two services each see one start time on a
-   half-empty day (F-01).
-2. **Nothing blocks a bad merge.** `main` has no protection, and CI lints only
-   affected projects. Editing a lint rule does not re-lint `ecs-core` or
-   `functions` (F-02, F-03).
-3. **Performance and cost have almost no gates.** The shape laws are linted;
-   performance is not. A future feature can add an unbounded query, a new
-   listener or a heavy import and every check stays green (F-04).
-4. **The bill risk is abuse, not traffic.** 49 of 50 functions have no instance
-   cap, no budget amount is set, and the OTP callable will need limits it does
-   not have before a real SMS sender can go live (F-05, F-06).
+**Before feature work, four things needed fixing. All are fixed or in review:**
 
-"No gaps left" cannot be claimed from this audit. Section 9 lists what was not
-examined. What this document can do is define budgets, so that a gap becomes a
-red check instead of something a later audit has to find.
+| Finding | What was wrong                                                           | State                    |
+| ------- | ------------------------------------------------------------------------ | ------------------------ |
+| F-01    | Parties of four or more service lines lost most of the day's start times | Fixed on `main`          |
+| F-02    | Nothing blocked a bad merge                                              | Fixed: ruleset on `main` |
+| F-03    | A lint rule change did not re-lint `ecs-core` or `functions`             | PR #8                    |
+| F-04    | Performance and cost had almost no checks                                | PRs #10, #11, #12        |
 
-**Recommendation.** Do the Gate A work (section 11) before feature development.
-Do the Gate B work before the first production deploy. Leave alone the items in
-section 8, which look like savings and are not.
+F-09, a Law 7.3 breach that gave one daylight-saving-gap time three answers, is
+also in review: PR #9.
+
+**Laws:** the sweep found no blocker-level violation. The largest open breach is
+domain rules inside two staff components (F-08), held at their current size by
+PR #10 and left to shrink as features touch them. This was the owner's call.
+
+**Data-oriented design:** true of the availability search, not of the feature
+layer. The V8 goal stays unproven, and nothing here measures it (section 8).
+
+**Cost:** low at the assumed scale. Firestore is about $1-2 a month, and Hosting is
+probably the largest recurring line (section 5.4). The real exposure is abuse
+(section 5.6), and it can't cost money until the first deploy. Gate B handles it.
+
+"No gaps left" cannot be claimed: section 9 lists what was not examined. The
+checks turn some regressions into a red build, but several laws stay review
+rules, because no reliable check exists for them (section 6).
 
 ## 2. Problem
 
@@ -52,9 +61,9 @@ base can only be protected by review.
 
 **Goals**
 
+- Find what would make bookings wrong or lost.
 - State whether the code follows the ten laws, including what lint cannot see.
-- State what the system costs per user action in Firestore, Functions, Storage
-  and Hosting, and in client CPU and memory.
+- State what Firestore costs per user action, and the rough bill by service.
 - Rank what to fix before feature work and what to fix before the first deploy.
 - Define budgets and automated checks that stop regressions.
 
@@ -66,6 +75,7 @@ base can only be protected by review.
 - Reopening decisions D1–D29 or the owner rulings OR-1 to OR-59, except where a
   finding is flagged as needing a new ruling.
 - Reviewing visual design, `libs/ui` internals or security beyond cost abuse.
+- Per-action costs for Functions, Storage and Hosting, and client memory figures.
 
 ## 4. Method and limits
 
@@ -84,8 +94,9 @@ document. Each finding carries one of these labels:
 and `build functions` all exited 0. The test, typecheck and emulator gates were
 not re-run.
 
-**Planning scale (assumption):** 2 shops, 10 barbers, 30 services, 300 bookings
-a day, 1,000 `/book` visitors a day, 10 staff. The app has never been deployed,
+**Planning scale (assumption):** 2 shops, 10 barbers, 30 services, 100 bookings
+a day, 1,000 `/book` visitors a day, 10 staff. The first draft assumed 300 bookings
+a day, which exceeds what 10 barbers can serve. The app has never been deployed,
 so no real billing or traffic data exists.
 
 **Prices.** The Firebase pricing page gave the free allowances used here: 50,000
@@ -102,8 +113,9 @@ in section 11.
 
 ### 5.1 Booking correctness
 
-**F-01 🔴 The availability search loses most of the day for larger parties.**
-_Measured, reproduced twice._
+**F-01 🔴 The availability search loses start times for larger parties.**
+_Measured, reproduced twice. Fixed: see `review/availability_spike.md`, whose
+e2e journey fails on the old search on the real dev catalogue._
 
 `availableStarts` walks every arrangement depth-first. The first seat stays at
 its earliest start while later seats try every other time of day, so the 200,000
@@ -126,10 +138,10 @@ Synthetic day, all lines on any barber, 30 min service, 15 min step, 09:00–19:
 | 10      | 3                | a, a, b, b        | 200,000 | 1            | 09:30      | 30                  |
 
 The default `maxPartySize` is 5 and lines count services, so these parties can
-be booked today. Cost on the CPU is small: about 9 ms on the dev Mac, about 45 ms
-on a phone (estimated), running in `computed()`. The harm is lost bookings, not
-slowness. The real shop's barber preferences would narrow the search, and that
-case was not measured.
+be booked today. Three-line parties lost anything from none to most of their
+starts on these synthetic days, and the seed catalogue's party of three lost none.
+Four lines lost nearly all. The app has never been deployed, so no real booking was
+lost. The search also fed the waitlist, which could report a false "no match".
 
 ### 5.2 Enforcement
 
@@ -248,10 +260,15 @@ barber-day, H a client's total visits.
 | Client card opened                | about 120 plus catalog                   | 0      | about 160          |
 | Admin rhythm preview              | up to 1,005 per visit                    | 0      | up to 1,005        |
 
-**Daily total (estimated):** about 150,000 reads and 3,000 writes. After the free
-allowance that is about 100,000 billed reads, or $0.03–0.06 a day. Firestore cost
-is not a problem at this scale, and at ten times this scale it is still only a
-few dollars a month by the same estimate.
+**Daily total (order of magnitude, estimated):** about 150,000 reads and 1,000
+writes, most of the reads from `/book` visitors. After the free allowance that is
+about 100,000 billed reads, or $0.03–0.06 a day, about $1-2 a month. At ten times this
+scale it is about $13-26 a month by the same estimate. These prices are from memory.
+
+**Rough bill by service (estimated):** Firestore as above. Hosting about $33 a month
+if 1,000 landing visits a day each pull both videos (7.6 MB), which is what F-18 is
+for. Functions and Storage inside their free allowances at this scale, though free
+Storage allowances do not apply in an EU region.
 
 **Already good.** _Confirmed._ No security rule reads a document except one
 `exists()` (claims carry roles). 24 composites all map to a query, and none was
@@ -282,8 +299,7 @@ every busy write, including TTL purges. Reading the waitlist first gets this to 
 when nobody is waiting.
 
 **F-16 🟢 Rhythm preview reads up to 1,005 documents per admin page visit.**
-_Confirmed._ It is admin-only and rare, so no fix now. It belongs in the journey
-budget so that it cannot grow.
+_Confirmed._ It is admin-only and rare, so no fix now.
 
 ### 5.5 Storage and Hosting
 
@@ -294,8 +310,8 @@ anonymous visitor. This wastes mobile data and uses up Hosting's 360 MB daily fr
 transfer in under 280 first visits, before any video.
 
 **F-18 🟡 Two videos are large.** _Measured._ `apps/web/public/hero.mp4` is 3.2 MB
-and `welcome.mp4` is 4.4 MB. Whether they load on the landing page by default
-was not checked.
+and `welcome.mp4` is 4.4 MB. The landing hero plays `hero.mp4` with `preload="auto"`
+(`ambient-video.ts`, confirmed). The review traced `welcome.mp4` to the hiring section too.
 
 **F-19 🟡 Images are stored and served larger than needed.** _Confirmed._
 `downscaleImage` is used only in `staff-day.store.ts`, so avatars upload at their
@@ -320,27 +336,34 @@ set.** _Confirmed._ No `setGlobalOptions` exists. The platform default is 100
 instances per function (from firebase-tools source), and the default region is
 `us-central1`, which adds an estimated 130 ms round trip from Bulgaria. A flood's
 theoretical ceiling is about $4,900 a day across the callables, though project
-quotas may be lower; a realistic 1,000 requests a second is about $80–100 a day
-(both estimated). `docs/production-deploy.md:967` lists this as **decide**.
+quotas may be lower (estimated). A cap of 10 is no brake on its own: ten instances
+at the default concurrency of 80 handle far more than a 1,000-request-a-second
+flood. What the cap limits is the worst case. At that rate the OTP path alone would
+write about 172.8 million documents a day, or $155-311 at the prices above, which is
+why Gate B throttles it. Hosting and anonymous Firestore reads (12 `allow read: if
+true` blocks) sit outside any function cap. `docs/production-deploy.md` lists this
+as **decide**.
 
-**F-06 🔴 (Gate B) No spending brake.** _Confirmed._ `production-deploy.md:444`
+**F-06 🔴 (Gate B) Nothing limits or even reports a flood's spend.** _Confirmed._ `production-deploy.md:444`
 describes an alert only, with no amount, and alert policies have no channel until
 someone attaches one by hand. A weekend flood runs until someone reads an email.
 The checklist also has no `functions:artifacts:setpolicy` step for the images of
 50 functions.
 
-**F-21 🔴 (Gate B) The OTP callable is ready for abuse once a sender lands.**
-_Confirmed for the code; dollars estimated._ `request-otp.pipeline.ts:152` limits
-one challenge per destination per 60 s, with no IP, daily, global or country limit.
-At 1 request a second to random international numbers that is 86,400 SMS a day,
-about $4,000–9,000. It cannot be billed today, because `main.ts:347` constructs a
-refusing sender outside the emulator and preflight P8 refuses the deploy. The
-sender item in `production-deploy.md` does not list these limits as conditions.
+**F-21 🔴 (Gate B) The OTP callable has too few limits for a real sender.**
+_Confirmed for the code._ `request-otp.pipeline.ts` limits one challenge per
+destination per 60 s, with no daily or global cap. Nothing can be sent today:
+`main.ts` constructs a refusing sender outside the emulator and preflight P8 refuses
+the deploy. The deployment uses `EmailOtp`, so the threat at launch is email: provider
+cost, mail-bombing strangers, and sender-domain reputation. **The first draft's
+"86,400 SMS a day" scenario is not reachable** without adopting `PhoneOtp` as well.
+Security hardening Phase 4 added App Check behind an OFF / MONITOR / ENFORCE switch,
+and its rollout is an owner checklist at the end of `HANDOFF.md` §3.3.
 
 **F-22 🟡 (Gate B) Anonymous callers can write permanent rows.** _Confirmed._ Each
 new destination commits an `otps` document and an `auditLog` row, even under the
 refusing sender, and `auditLog` has no TTL. At 100 requests a second that is 8.6
-million permanent rows a day (estimated). The limiter must sit before the commit.
+million permanent rows a day (estimated). The limit must refuse before the commit.
 
 **F-23 🟢 The client issue sink's worst case.** _Estimated._ At its cap it writes
 about 14 GiB of logs a day, $5–12. It is capped already, so this is only a note.
@@ -400,69 +423,57 @@ the store, and flat variant unions produce several object shapes by design.
 `reportClientIssues`, which now sits at about `main.ts:1230`. The comment at
 `availability.system.ts:851` is false (F-01).
 
-## 6. The design: budgets, checks and one new law
+## 6. The checks
 
-The design rule is that a budget must be **deterministic, cheap and able to fail a
-build**. Wall-clock timing fails the first test, so the design counts operations,
-bytes, modules and call sites instead.
+A check must be deterministic, cheap and able to fail a build, so these count bytes,
+lines, nodes and call sites, never wall-clock time. They run in CI, and the ruleset on
+`main` makes that binding.
 
-### 6.1 The budgets
+| Check                                           | Where                                       | Limit                        | State   |
+| ----------------------------------------------- | ------------------------------------------- | ---------------------------- | ------- |
+| Availability recall and search effort           | `availability.system.spec.ts`               | Pinned starts, node ceilings | On main |
+| Every project linted                            | `static` job, pinned by `ci-workflow.spec`  | Not affected-only            | PR #8   |
+| Initial bundle                                  | `apps/web/project.json`                     | Warn 650 kB, fail 750 kB     | PR #10  |
+| Raw bytes to open a route, with a default       | `tools/verify/bundle/budgets.json`          | 1.55 MB; named routes above  | PR #10  |
+| Largest public asset                            | same                                        | 4.5 MB                       | PR #10  |
+| Size of the two largest staff files             | `max-lines` in the root ESLint config       | Their current length         | PR #10  |
+| A query with no limit                           | `creativo/query-needs-limit`                | A limit, or a stated reason  | PR #11  |
+| System purity, including lazy imports           | `ecs-syntax`, `libs/ecs-core` ESLint config | Fails lint                   | PR #12  |
+| Files in `src/systems` are `*.system.ts`        | `verify-tools:layering` (f)                 | Fails the verifier           | PR #12  |
+| Hyphenated wording helpers are pure             | `creativo/presenter-purity`                 | Fails lint                   | PR #12  |
+| Every function has a region and an instance cap | `main.spec.ts`                              | Non-null                     | Gate B  |
 
-Numbers start at today's measured value plus a small margin, then only go down.
+**Stay review rules on purpose,** because no reliable check exists or they have no
+use today: Law 4 and Law 10.2 "decides nothing", placement math on UTC, allocation in
+hot loops, new realtime listeners (4 sites already make 40-220 live listeners, so a
+static count sees nothing), bare discriminator literals, dot-path keys, `Record`
+fields, named nested types, port types declared in a pipeline. A query's stated
+reason is also a review promise: nothing notices when it stops being true.
 
-| Budget                                       | Starting limit               | Today                 | Mechanism                |
-| -------------------------------------------- | ---------------------------- | --------------------- | ------------------------ |
-| Initial JS + CSS, raw                        | warn 650 kB, error 750 kB    | 589 kB                | `apps/web/project.json`  |
-| Route closure, compressed: `/`               | 400 KB, then 250 KB (WS-4)   | 363 KB                | new verifier             |
-| Route closure, compressed: `/book`           | 650 KB, then 500 KB (WS-4)   | 609 KB                | new verifier             |
-| Route closure, compressed: `/staff/schedule` | 720 KB                       | 679 KB                | new verifier             |
-| Functions load: modules and bytes            | baseline + 10%               | 1,429 modules         | new verifier             |
-| Realtime listener sites                      | allowlist, 2 files           | 4 sites in 2 files    | new ratchet              |
-| `get`/`exists` in rules                      | 1                            | 1                     | new ratchet              |
-| Query without limit                          | needs `// unbounded-ok: why` | 19 to triage          | new lint rule            |
-| Reads and writes per server pipeline         | pinned per pipeline          | section 5.4           | spec with counting ports |
-| Availability nodes per query                 | see WS-1                     | 200,000 and exhausted | spec on `nodesVisited`   |
-| Endpoint region and `maxInstances`           | required, non-null           | 1 of 50               | `main.spec.ts`           |
-| `new Intl.*`                                 | module scope or cached files | 5 sites               | new lint rule            |
-
-The availability budget works because `nodesVisited` is already a pure output, so
-a spec can test search effort with no clock.
-
-### 6.2 A new law, for the owner to rule
-
-Laws are added by the owner, so `CLAUDE.md` and its mirror `AGENTS.md` are not
-changed by this document. Proposed text:
-
-> **Law 11 — Performance and cost are budgets, enforced.** Every cost that can grow
-> without a code review noticing has a number in the repository and a check that
-> fails the build: bundle bytes per route, function load weight, realtime listeners,
-> unbounded queries, rule-time reads, reads and writes per pipeline, and search effort.
-> Checks count operations, bytes and call sites; never wall-clock time. A budget rises
-> only in the commit that explains why.
-
-### 6.3 Reads per journey
-
-Server pipelines can be pinned exactly: port doubles in `@core/testing` count their
-calls, so a spec can assert "`commitBooking` with K=1 reads 8+S". Browser journeys
-open many streams and are not pinned this way. This document's table in section 5.4
-serves as their reference until real billing data exists.
+**Dropped from the first draft:** a Law 11 (it promised more than any check delivers),
+read-count specs per pipeline (they break on every legitimate extra read, for cents),
+a functions load-weight verifier (the saving is under 100 ms and no money).
 
 ## 7. Alternatives considered
 
-| #   | Alternative                                                | Decision and reason                                                                                                                                                                                                                                                   |
-| --- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | Protect `main`: pull requests with required checks         | **Recommended, needs an owner ruling.** It ends direct commits to `main`, a practice recorded on 2026-10-10. Recent work already went through PR #5. The weaker option is a required-checks ruleset with owner bypass, which keeps the habit and also keeps the hole. |
-| A2  | Timed benchmarks in CI                                     | Rejected. Runner noise makes them flaky, and flaky gates get disabled. Operation counts answer the same question for the one search that matters.                                                                                                                     |
-| A3  | A lint rule against allocation in hot loops                | Rejected. 212 candidate sites in 46 system files, and most are harmless at their real sizes.                                                                                                                                                                          |
-| A4  | Bundled functions, lazy per-function loading, or codebases | Rejected. Saves an estimated 50–100 ms and no meaningful money, and Law 8's ban on deep subpaths means the barrel still loads.                                                                                                                                        |
-| A5  | `minInstances: 1` on booking callables                     | Deferred. About $8 a month per function (estimated), for latency only. Decide with a real cold-start measurement.                                                                                                                                                     |
-| A6  | Rewrite the staff components before feature work           | Rejected. 14,000 lines, a large regression risk. Instead: extract the listed rules, plus a ratchet so these files cannot grow.                                                                                                                                        |
-| A7  | Shard `capacity` by shop                                   | Rejected. Entries span shops. A one-shot calendar read removes the re-fire cost without a schema change.                                                                                                                                                              |
-| A8  | Automatic billing cut-off                                  | Rejected at this size. It also takes the site down, and the budget, caps and a runbook step cover the realistic case.                                                                                                                                                 |
-| A9  | App Check on all callables now                             | Deferred as ruled (Deferred #4), except the OTP callable, which needs it before a real sender lands.                                                                                                                                                                  |
-| A10 | `maxInstances` per function, tuned                         | Rejected for now. One global value of 10 is one line and enough at this size. Raise per function when data shows a need.                                                                                                                                              |
+| #   | Alternative                                                | Decision and reason                                                                                                                                                                                                                                                                                                               |
+| --- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A0  | F-01: raise the node budget                                | Rejected. The worst case measured needs 12.7 million nodes even with the new pruning.                                                                                                                                                                                                                                             |
+| A0b | F-01: a per-start quota taking the first seating           | Rejected. It keeps every start and gives up the tightest arrangement. The fix adds that step.                                                                                                                                                                                                                                     |
+| A0c | F-01: check feasibility, find the tightest on pick         | Rejected. It changes what the grid returns, so every caller and the pinned digests change.                                                                                                                                                                                                                                        |
+| A1  | Protect `main`: pull requests with required checks         | **Done, owner ruling 2026-11-02.** No bypass, no approvals, all seven jobs. A bypass would keep the hole.                                                                                                                                                                                                                         |
+| A2  | Timed benchmarks in CI                                     | Rejected. Runner noise makes them flaky, and flaky gates get disabled. Operation counts answer the same question for the one search that matters.                                                                                                                                                                                 |
+| A3  | A lint rule against allocation in hot loops                | Rejected. 212 candidate sites in 46 system files, and most are harmless at their real sizes.                                                                                                                                                                                                                                      |
+| A4  | Bundled functions, lazy per-function loading, or codebases | Rejected. Saves an estimated 50–100 ms and no meaningful money, and Law 8's ban on deep subpaths means the barrel still loads.                                                                                                                                                                                                    |
+| A5  | `minInstances: 1` on booking callables                     | Deferred. About $8 a month per function (estimated), for latency only. Decide with a real cold-start measurement.                                                                                                                                                                                                                 |
+| A6  | Rewrite the staff components before feature work           | Rejected. 14,000 lines, a large regression risk. Instead `max-lines` stops them growing, and rules move out as features touch them.                                                                                                                                                                                               |
+| A7  | Shard `capacity` by shop                                   | Rejected. Entries span shops. A one-shot calendar read removes the re-fire cost without a schema change.                                                                                                                                                                                                                          |
+| A8  | Automatic billing cut-off                                  | Rejected at this size. It also takes the site down, and the budget, caps and a runbook step cover the realistic case.                                                                                                                                                                                                             |
+| A9  | App Check on all callables now                             | Out of this audit: Phase 4 built the switch, and its rollout is an owner checklist in `HANDOFF.md` §3.3.                                                                                                                                                                                                                          |
+| A11 | Firestore location                                         | Owner's, and irreversible. `nam5` or `us-central1` needs no code change, and gets free Storage allowances. An EU location gets an estimated 130 ms less latency from Bulgaria and may matter for data residency, but it means one change across every export, the web client, the CSP and the verifiers (`production-deploy.md`). |
+| A10 | `maxInstances` per function, tuned                         | Rejected for now. One global value of 10 is one line and enough at this size. Raise per function when data shows a need.                                                                                                                                                                                                          |
 
-## 8. Things that look like savings and are not
+## 8. Savings not worth taking
 
 **Incremental client stats.** `project-client-stats.pipeline.ts:123-135` reads a
 client's whole history on each relevant write, with no limit, and one audit ranked it
@@ -472,9 +483,17 @@ the current design repairs itself from source data, which an incremental one wou
 up. **Keep it.** The real risk is a very long read set inside one transaction, and that
 risk arrives only at several hundred visits per person. Revisit if a client's history
 passes 300. The counterargument is that a data bug or a shared walk-in record could
-create a very large H. The check for this is a test or log for H over 300 (WS-3).
+create a very large H, and nothing watches for that yet.
 
-**Also leave alone:** trigger filtering beyond F-13 and F-15, log trimming,
+**F-13: skip `rebuildBusy` on non-geometry writes.** Worth under a cent a day, and it
+would remove the only self-repair of data the booking conflict check reads. No busy
+backfill exists to replace it, so real billing data should not revive this.
+
+**V8 monomorphism.** The claim stays unproven, because no benchmark exists and none
+is planned: timed checks flake, and the one search that needed it now has node
+ceilings. Revisit if a real trace shows a problem.
+
+**Also leave alone:** trigger filtering, log trimming,
 converting scheduled jobs (all three run daily), and removing `rxjs` from the
 functions bundle (22 ms, kept by ruling).
 
@@ -495,170 +514,76 @@ functions bundle (22 ms, kept by ruling).
 
 ## 10. Risks of this plan
 
-| Risk                                                     | Mitigation                                                                                                                                                                                                                     |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The F-01 fix changes which arrangement a time offers     | Keep the "tightest arrangement" rule; every existing `availability.system.spec.ts` case must pass unchanged. Add recall specs from the table in F-01. Recheck that the server's commit path accepts every newly offered start. |
-| A required-checks ruleset slows work, or CI flakes       | The record lists a load flake in e2e. Start by requiring `main`, `static` and `runbook-gates`, and add `emulators` and `e2e` after a week without flakes.                                                                      |
-| Budgets breed noise and get raised by habit              | Few budgets, starting near today's values, and a rise must be explained in its commit. Measured in bytes and counts, so no flakes.                                                                                             |
-| `query-needs-limit` adds comments nobody reads           | `// unbounded-ok:` needs a reason, and bounded-by-construction cases (an `in` batch) are recognised by the rule rather than commented.                                                                                         |
-| `maxInstances: 10` refuses real users during a spike     | Accepted at this size: refusal is cheaper than the alternative. Alert on refused requests, and raise per function with evidence.                                                                                               |
-| Moving rules out of the staff components changes screens | Move with specs first. The earlier passes' DOM-differential method applies. Each move lands alone.                                                                                                                             |
-| Estimates in this document are wrong                     | Every estimate is labelled. WS-6 includes one real trace and the first week's billing; revise the budgets then.                                                                                                                |
+| Risk                                                       | Mitigation                                                                                                                                   |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| A query's stated reason stops being true                   | Accepted: review only. It is one comment on the query's own line, which is where a reader looks.                                             |
+| Budgets breed noise and get raised by habit                | Few budgets, near today's values, and a rise must be explained in its commit. Measured in bytes and counts, so no flakes.                    |
+| The required jobs flake or slow every merge                | A flaky job blocks until it is re-run, and the `main` job can take up to 75 minutes. Watch this; the ruling can be narrowed.                 |
+| A global function cap refuses real users, or lags triggers | It binds the 24 Firestore triggers too, so projections can lag under load. Accepted at this size. Raise it per function with evidence.       |
+| A global OTP throttle lets a flood lock out real logins    | Accepted at this size: refusal costs less than the flood. The provider's own quota is the real cap on spend.                                 |
+| Moving rules out of the staff components changes screens   | Move with specs first. The earlier passes' DOM-differential method applies. Each move lands alone.                                           |
+| Estimates in this document are wrong                       | Estimates are labelled where they lead a finding, though not every figure in the prose is. The first deploy gives real numbers: revise then. |
 
 ## 11. Detailed Implementation Plan
 
-Each work stream ends at a green gate (`CLAUDE.md` §5) and lands alone. **Gate A**
-(WS-1 to WS-5) comes before feature development. **Gate B** (WS-6) comes before the
-first production deploy. "Create" and "Modify" mark each file; the paths under Create
-do not exist yet.
+Gate A holds what lets bad code merge, gets worse as features land, or is a booking
+defect. Gate B holds what can cost money or harm users at launch. The rest waits for
+evidence. Everything in Gate B needs its own plan before it starts, because the review
+found the first draft of these steps not ready to implement.
 
-### WS-1 Availability recall (F-01) — Gate A
+### Gate A: before feature work
 
-1. **Modify** `libs/ecs-core/src/systems/availability.system.ts`: for `availableStarts`,
-   search per candidate party start with a small node quota, rather than a single
-   depth-first walk over the day. Keep `search` for the non-deduplicated path. Keep the
-   "tightest arrangement per start" rule and rule 3's order. Correct the comment at
-   `:851`. An earlier prototype of this approach found all but at most one start in
-   57–150 nodes; it took the first leaf, so it does not yet keep the tightest rule, and
-   the author of this document has not re-run it. Treat those numbers as a target.
-2. **Modify** `libs/ecs-core/src/systems/booking-cart.system.ts:638-655`: stop dropping
-   `exhausted`, and carry it in the merged answer.
-3. **Modify** the two callers, `booking-time-sheet.ts:265` and
-   `booking-schedule-step.ts:673`: when the answer is incomplete, show a message (bg and
-   en copy, added to both catalogues). This should become rare after step 1.
-4. **Modify** `libs/ecs-core/src/systems/availability.system.spec.ts`: add recall cases
-   from the F-01 table (starts found equals the exhaustive answer) and a `nodesVisited`
-   ceiling for up to 5 lines at 10 barbers.
+Merge PRs #8 to #12. Nothing else is left. If a required job goes red on the combined
+tree after one of them, fix it through a PR.
 
-Verify: `pnpm nx test ecs-core`; every existing availability case passes unchanged; the
-new cases fail on the current code; a booking journey in `apps/web/e2e` for a party of
-four books an afternoon time. Check the server accepts it.
+### Gate B: before the first production deploy
 
-### WS-2 Merge gates (F-02, F-03) — Gate A
+1. **Owner decides the Firestore location** (A11). If EU, make the one change
+   `production-deploy.md` describes.
+2. **`setGlobalOptions({ region, maxInstances: 10 })`** in `apps/functions/src/main.ts`,
+   before the definitions, and require both values in `main.spec.ts`. Set `reportClientIssues`'s
+   own cap aside as it is.
+3. **A real email sender with its limits, as one change.** The existing
+   `throttledCallable` with a low `maxInstances`, so a flood is refused before any read or
+   write. A per-destination daily cap in `OtpSystem`, through the existing `loadOpenOtps`
+   read. The provider's daily quota, which is what actually caps the spend. Gate B's check
+   is that preflight P8 passes. `PhoneOtp` would need a country allowlist and provider geo
+   limits as well.
+4. **`docs/production-deploy.md`:** a budget amount with 50/90/100% alerts and an attached
+   channel; `functions:artifacts:setpolicy`; a flood step covering functions and Hosting;
+   the stale citations of F-29.
+5. **What visitors download:**
+   - F-17: the service worker prefetches only what the first page needs. Hashed chunk names
+     may not separate by glob, so this needs a look at the build first.
+   - F-18: recompress both videos and lower `publicAssetBytes`.
+   - F-19: pass avatars through `downscaleImage`, and set `cacheControl`. Avatars overwrite
+     one fixed path, so a long lifetime could show a stale image.
+   - F-24: make `gsap` a dynamic import, then lower the route ceilings to the result.
+   - F-26: debounce the agenda search (`CLIENT_SEARCH_DEBOUNCE_MS` exists) and cap its rows.
+6. **After the deploy:** one browser trace of the staff grid on a mid-range phone, real cold
+   starts, the first week's bill. Then revisit the next list.
 
-1. **Owner ruling first:** alternative A1.
-2. **Modify** `.github/workflows/ci.yml`: add `pnpm nx run-many -t lint` to the `static`
-   job. Alternatively make every project depend on `lint-rules`; the `run-many` line is
-   simpler and costs CI time only.
-3. **Apply** the GitHub ruleset on `main`: this acts on the repository's settings, so it
-   runs only after the ruling. Start with `main`, `static`, `runbook-gates` as required.
-4. **Modify** lint config: set `maxWarnings: 0` for `@typescript-eslint/no-non-null-assertion`
-   only after the 71 current warnings are triaged. Do not apply this to the `security/*`
-   rules; 127 `detect-object-injection` hits are mostly false positives on array
-   indexing, and those rules are noise as configured. Rule on them separately.
+### Waits for evidence
 
-Verify: a deliberately violating branch goes red and cannot merge. Delete the branch.
+- **F-12, F-14, F-15, F-16, F-25:** Firestore and listener costs, worth cents today. Act on
+  real billing or trace data. F-25 also found that the week view does not default to one
+  chair, although `staff-day.store.ts` says it does.
 
-### WS-3 Budgets and checks (F-04, F-07) — Gate A
+### Backlog, as files are touched
 
-All lint rules live in `tools/lint-rules/` with a canary test beside them, and each
-verifier runs in the CI `static` job. Order by value:
+- **F-08:** the rules listed there. `max-lines` forces extraction before a file can grow.
+- **F-10, F-11:** the mapping in the time grid, and the smaller items.
+- **F-20:** a Storage lifecycle rule or orphan sweep, if failures turn out to be common.
 
-1. **Modify** `apps/functions/src/main.spec.ts`: require non-null `maxInstances` and a
-   region on every endpoint. It stays red until WS-6, so land this test with WS-6.
-2. **Create** `tools/lint-rules/query-needs-limit.mjs` (+ spec): on `*.adapter.ts` and
-   `QuerySpec` builders, each `query()` or admin chain has a `limit` or a
-   `// unbounded-ok: <reason>` comment. Triage the 19 candidates, starting with
-   `catalog.adapter.ts:33`, `appointments.adapter.ts:272`, `appointment-photos.adapter.ts:112`
-   and `firestore-tx.adapter.ts:170`.
-3. **Create** `tools/verify/budgets/route-closure.mjs` and `budgets.json`: compressed size
-   of each route's static import closure, compared with the limits in section 6.1.
-4. **Create** `tools/verify/budgets/functions-load.mjs`: load built `main.js` with a
-   `Module._load` hook, then compare module count and bytes with baseline +10%.
-5. **Create** `tools/verify/budgets/ratchets.mjs`: `onSnapshot` import sites allowlisted
-   to `observe.ts` and `appointment-photos.adapter.ts`; `get`/`exists`/`getAfter`/`existsAfter`
-   count in `firestore.rules` (baseline 1).
-6. **Create** `tools/lint-rules/intl-cached.mjs` (+ spec): `new Intl.*` only at module
-   scope or in the cached formatter files. Fix the 5 sites.
-7. **Modify** `tools/lint-rules/ecs-syntax.mjs`: close the holes in F-07: extra system
-   globals, `node:*`, lazy package imports, purity guards on non-suffix tier files, L1
-   and L3 on pipelines, functions, `libs/shared` and `libs/infrastructure`, sort/reverse/
-   splice on system parameters. Fix what they find; read the two `.push` sites first.
-8. **Modify** `tools/lint-rules/presenter-purity.mjs`: match `*-words.ts` as well.
-9. **Create** read and write count specs for `commit-booking`, `cancel`, `rebuild-busy`,
-   `rebuild-capacity`, `match-waitlist` and `project-client-stats`, built on counting
-   port doubles (**Modify** `libs/ecs-core/src/testing/port-doubles.ts`).
-10. **Modify** `apps/web/project.json`: initial budget to 650/750 kB. Fix the 45-byte
-    `gauge.css` warning, then treat that warning as an error.
-11. **Create** a line-count ratchet in `tools/verify/budgets/ratchets.mjs` for
-    `staff-dashboard.ts` and `staff-visit-editor.ts`: neither may grow.
-12. **Add** a warning log when `clientHistory` returns over 300 documents (section 8), in
-    `project-client-stats.pipeline.ts` through the existing `LogEvent` port.
+### No action
 
-Verify: each rule's spec holds a failing and a passing canary; `pnpm nx run-many -t lint`
-and `pnpm nx run verify-tools:layering` remain green.
+F-23 (capped already), F-27 (none is noticeable), F-28 (section 8).
 
-### WS-4 Cheap cost fixes (F-12 to F-15, F-17 to F-19, F-24 to F-26) — Gate A
+### Owner decisions left
 
-Each item is small and lands alone, with its own spec or budget:
-
-1. **F-13.** **Modify** `busy.system.ts` and `rebuild-busy.pipeline.ts`: return no keys when
-   busy keys, chair times and liveness are unchanged. Make sure drift repair still has a
-   path, through the backfill.
-2. **F-14.** **Modify** `rebuild-capacity.pipeline.ts:194-202`: skip the write when `entries`
-   are unchanged. **Modify** `shop-day.pipeline.ts:90`: read the calendar's month once on
-   open, not as a stream. The commit path remains the authority.
-3. **F-15.** **Modify** `match-waitlist.pipeline.ts:427-442`: read the waitlist first; read
-   zone and policy on a hit. Keep `retireLapsed`, which still needs the zone for past days.
-4. **F-12.** **Modify** `staff-day.store.ts:131`: reduce the window to 60 per side and fall
-   through to `searchCustomers` for older names. Verify the search still finds an older
-   client.
-5. **F-26.** **Modify** `staff-dashboard.html:355,375`: debounce, cap at 50 rows with «Покажи
-   още». Add `content-visibility: auto` to long lists.
-6. **F-25.** **Modify** `staff-day.store.ts:1447-1451`: `distinctUntilChanged` on the lane key;
-   per-`BusyKey` shared streams that linger 30 s; schedules in their own stream; default the
-   week view to one chair, as the comment there states.
-7. **F-17.** **Modify** `apps/web/ngsw-config.json`: prefetch index, main and styles; move the
-   other chunks to a lazy group. Check the offline and update behaviours still work.
-8. **F-18.** Recompress both videos to under 1 MB, and check their `preload`.
-9. **F-19.** **Modify** `profile.store.ts` and `onboarding-flow.store.ts` to pass avatars through
-   `downscaleImage(file, 256)`. **Modify** `avatar.adapter.ts:33` and
-   `appointment-photos.adapter.ts:223` to set `cacheControl`.
-10. **F-24.** Make `gsap` a dynamic import (`confetti.ts:14`), `@defer` the reward moment, move
-    rare `ui/patterns` components to secondary entry points, then lower the route budgets to the
-    second values in section 6.1.
-
-Verify: the full gate in `CLAUDE.md` §5, `verify:p0`, `test:emulator`, `e2e:web`.
-
-### WS-5 Law fixes (F-08 to F-11, F-29) — Gate A
-
-1. **F-09.** **Modify** the three read sites to use the stored `utcEpochMs`, adding it to
-   `VisitFact` if absent. If the stored instant can't reach these screens, a system owns the one
-   fallback. Compare with the server's projection in a spec.
-2. **F-08.** **Create or extend** systems and presenters for the rules listed in F-08, each with a
-   purity and boundary spec, then point the components at them. This is the listed set, not a
-   rewrite. Do a full inventory of both files first, because F-08 is a sample.
-3. **F-10.** **Modify** `staff-time-grid.ts` so its struct uses the system's field name.
-4. **F-11.** Fix the confirmed items (`user.entity.ts:91`, `staff-day.store.ts:1337`). Move the
-   duplicated next-state assembly into one system. Rule on the Law 1 "one name" wording with the
-   owner.
-5. **F-29.** Correct the citations in `production-deploy.md` and the comment.
-
-Verify: the full gate; the DOM differential method from the earlier passes for each component
-move.
-
-### WS-6 First-deploy readiness (F-05, F-06, F-20 to F-22) — Gate B
-
-1. **Owner decision, irreversible:** the Firestore location. Recommended: one region in
-   Frankfurt (`europe-west3`), with functions and Storage in the same place, for latency from
-   Bulgaria and lower per-operation cost than a multi-region. Check the current price list.
-2. **Modify** `apps/functions/src/main.ts`: `setGlobalOptions({ region, maxInstances: 10 })`.
-   Update the table in `main.spec.ts` and land the WS-3 step 1 test.
-3. **Modify** the OTP path (`request-otp.pipeline.ts`, a new limiter port and adapter, `OtpSystem`):
-   a country allowlist, a daily cap per destination, an IP bucket and a global daily counter,
-   all **before** the commit, so a refused request writes nothing. Add App Check on this callable.
-   Add these as conditions of the sender item in `docs/production-deploy.md`.
-4. **Owner decision:** whether `IDENTITY_OTP_REQUESTED` rows get a TTL. This would reverse
-   P3-RU-6's permanent trail, so the default is no. The limiter makes it less urgent.
-5. **Modify** `docs/production-deploy.md`: set a budget amount with 50/90/100% alerts and a channel;
-   add `functions:artifacts:setpolicy`; add a runbook step to cap or delete a function during a
-   flood; add a Storage lifecycle or orphan sweep decision (F-20).
-6. **Add** a per-client open-booking cap in a system, against commit and cancel loops.
-7. **After the first deploy:** take one real browser trace of the staff grid on a mid-range phone,
-   measure cold starts, read the first week's billing, and update section 6.1 with real numbers.
-
-Verify: `pnpm run preflight` for both scopes; preflight P8 still refuses a deploy until a real
-sender is wired.
+1. The Firestore location (A11).
+2. The monthly budget amount, and how much loss a flood may cost before someone acts.
+3. The App Check rollout, the OTP provider, and the other owner items in `HANDOFF.md` §3.3.
 
 ## 12. Appendix: law sweep counts
 
