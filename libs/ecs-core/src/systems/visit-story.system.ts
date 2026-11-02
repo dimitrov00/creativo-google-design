@@ -122,6 +122,17 @@ function ownSeats(
  */
 export const VisitStorySystem = {
   /**
+   * Whole minutes from `nowUtcMs` until a chair's end: never below zero, an
+   * elapsed-time answer on instants (T2).
+   */
+  minutesLeft(endUtcMs: UtcEpochMs, nowUtcMs: UtcEpochMs): number {
+    return Math.max(
+      0,
+      Math.round(UtcEpochMs.elapsedMs(nowUtcMs, endUtcMs) / 60_000),
+    );
+  },
+
+  /**
    * The story a row tells. The staff row tells the SUBJECT's — the client
    * record the card is about (D29), its seats alone, so a companion's
    * no-show says nothing about the booker (the statistics' own reading,

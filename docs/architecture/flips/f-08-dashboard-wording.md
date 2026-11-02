@@ -53,7 +53,7 @@ No decision turned up that the earlier stage missed, so no system was added for 
 
 ## Departures
 
-**Reactivity (the one thing that differs, and only before the table loads).** `allDay`, `regionLabel`, `scopeLabel`, `daySummary`, `dayTips`, the grid's blocks, the row's unnamed-client word and the sheets' labels read `translate()` in a `computed`, so one built before the table landed could keep a key until something else invalidated it. They now rebuild when it lands. After load the words are the same.
+**Reactivity (the one thing that differs: before the table loads, and on a language switch, when these labels now re-word at once).** `allDay`, `regionLabel`, `scopeLabel`, `daySummary`, `dayTips`, the grid's blocks, the row's unnamed-client word and the sheets' labels read `translate()` in a `computed`, so one built before the table landed could keep a key until something else invalidated it. They now rebuild when it lands. After load the words are the same.
 
 **Delegates kept for the page's spec.** `statusWord`, `statusNote`, `rowLabel`, `whenLabel`, `rowIcons`, `hasFoot` and `chairMinutesOf` are one-line calls that only specs read. `agendaFlags()` reads `fields.isOn` per switch, because a spec patches `isOn`.
 

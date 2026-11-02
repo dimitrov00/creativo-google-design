@@ -688,12 +688,12 @@ export default [
     files: [
       'libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts',
     ],
-    rules: { 'max-lines': ['error', { max: 6679 }] },
+    rules: { 'max-lines': ['error', { max: 4726 }] },
   },
   {
     files: [
       'libs/features/staff/dashboard/src/lib/visit-editor/staff-visit-editor.ts',
     ],
-    rules: { 'max-lines': ['error', { max: 7820 }] },
+    rules: { 'max-lines': ['error', { max: 6717 }] },
   },
 ];

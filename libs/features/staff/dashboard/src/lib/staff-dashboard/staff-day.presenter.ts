@@ -784,10 +784,7 @@ export function whenWords(
   if (moment === ChairMoment.InChair) {
     // The time LEFT is real elapsed time to the chair's end — an
     // elapsed-time phrase on instants (T2, D-6.4).
-    const minutes = Math.max(
-      0,
-      Math.round(UtcEpochMs.elapsedMs(nowUtcMs, entry.endUtcMs) / 60_000),
-    );
+    const minutes = VisitStorySystem.minutesLeft(entry.endUtcMs, nowUtcMs);
     return words.remaining(spanWords(minutes, words.span));
   }
   // THEY ARE HERE — and that displaces the countdown rather than adding a

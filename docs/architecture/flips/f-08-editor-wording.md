@@ -58,7 +58,7 @@ The component now holds `copyTable = toSignal(selectTranslation())`, the dashboa
 
 **Language (the one sanctioned change).** With the table reactive, a language switch under an open sheet re-words these strings at once. They used to stay until something else invalidated them. `locale` reads the table too, so the money, `nameSaysRule` and the picker move with the words instead of staying in the first language for the sheet's life. A `computed()` read before the load (the shell's bound title) now corrects itself, where it used to keep the key.
 
-**Fewer recomputes.** The menus' arrays (`variantChoices`) are stable between draft changes. They were a new array on every change detection. Nothing should see this but the menu's own input.
+**Fewer recomputes.** The menus' arrays (`variantChoices`) are stable between changes of the draft or the visit. They were a new array on every change detection. Nothing should see this but the menu's own input.
 
 **`WALLET_TILE_WORDS` stays in the component.** It is a test-id table keyed by `WalletAnchor`, a value only the client card's barrel exports. Moving it would load the card's Angular library into a display model. `editorCardPages` stays for the same reason.
 
