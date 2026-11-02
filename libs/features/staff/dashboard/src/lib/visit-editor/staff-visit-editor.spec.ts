@@ -1267,6 +1267,33 @@ describe('StaffVisitEditor', () => {
       expect(variant?.getAttribute('aria-label')).toContain('Къса коса');
     });
 
+    it('takes a pick on an added seat: its minutes, its name on the chip, the variant under the service', () => {
+      const host = render();
+      click(host, 'staff-visit-add-service');
+      click(host, 'staff-visit-service-cut:short');
+      click(host, 'staff-visit-service-apply');
+      const row = host.querySelector<HTMLElement>(
+        '[data-testid^="staff-visit-leg-draft-"]',
+      );
+      const seat =
+        row?.dataset['testid']?.replace('staff-visit-leg-', '') ?? '';
+      const variant = () => find(host, `staff-visit-leg-variant-${seat}`);
+      expect(variant()?.getAttribute('aria-label')).toContain('Къса коса');
+
+      click(host, `staff-visit-leg-variant-${seat}`);
+      pickOpen(host, 'staff-visit-variant-pick-long');
+
+      // The chip's name follows the pick; the chip itself stays an icon.
+      expect(variant()?.getAttribute('aria-label')).toContain('Дълга коса');
+      expect(variant()?.textContent).not.toContain('Дълга коса');
+      // The variant is a DESCRIPTION: under the service, not welded to it.
+      expect(row?.textContent).toContain('Подстригване');
+      expect(row?.textContent).toContain('Дълга коса');
+      expect(row?.textContent).not.toContain('Подстригване · Дълга коса');
+      // The pick brought its minutes, said on the line of a multi-service visit.
+      expect(text(host, `staff-visit-leg-line-${seat}`)).toContain('45 мин');
+    });
+
     it('keeps both on every seat of a visit not yet saved, a rebooking’s included', () => {
       const host = render(
         visit({
