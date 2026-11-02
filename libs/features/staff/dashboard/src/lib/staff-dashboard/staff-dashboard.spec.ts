@@ -7756,7 +7756,16 @@ describe('StaffDashboard', () => {
         return fixture.debugElement.query(By.directive(StaffVisitEditor))
           .componentInstance as StaffVisitEditor;
       };
-      const son = open('appointment-family#niko').vm().people?.[0];
+      // His own card names him, on the agenda (B4).
+      const card = host().querySelector(
+        '[data-row-id="appointment-family#niko"]',
+      );
+      expect(card?.textContent).toContain('Иво Колев');
+      expect(card?.textContent).not.toContain('Стоян Колев');
+      const sonSheet = open('appointment-family#niko').vm();
+      // The sheet's number and account are the booker's, and answer to his name.
+      expect(sonSheet.clientLabel).toBe('Стоян Колев');
+      const son = sonSheet.people?.[0];
       expect(son).toEqual({
         id: 'user-son',
         label: 'Иво Колев',

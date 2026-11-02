@@ -2629,7 +2629,7 @@ export class StaffDashboard {
       startMinute: row.startMinute,
       endMinute: row.endMinute,
       legs: row.legs,
-      clientLabel: row.clientLabel,
+      clientLabel: row.contactLabel,
       people: row.people,
       clientUserId: row.ownerUserId,
       clientCustomerId: row.ownerCustomerId,

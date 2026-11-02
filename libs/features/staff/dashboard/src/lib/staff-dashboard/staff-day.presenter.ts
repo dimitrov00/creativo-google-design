@@ -382,6 +382,26 @@ export function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
 }
 
 /**
+ * The names of a chair that holds companion accounts and nobody else, each
+ * person once; `null` for any other chair, and while any of them has no read
+ * profile.
+ */
+function companionsLabelOf(
+  seats: readonly Seat[],
+  companionNames: Readonly<Record<string, string>>,
+): string | null {
+  const names = new Set<string>();
+  for (const seat of seats) {
+    if (seat.seatSubject !== SeatSubject.Account) return null;
+    if (!Seat.isCompanion(seat)) return null;
+    const name = companionNames[seat.subjectUserId];
+    if (name === undefined) return null;
+    names.add(name);
+  }
+  return names.size === 0 ? null : [...names].join(' + ');
+}
+
+/**
  * One lane's view of one appointment.
  *
  * Only THIS chair's seats: a two-barber party appears in both lanes, each
@@ -443,10 +463,13 @@ export function dayRowVm(
       : PhoneSystem.formatInternational(contactPhone);
   const guestLabels = guestLabelsOf(seats);
   const allGuests = seats.length > 0 && guestLabels.length === seats.length;
-  const clientLabel: string =
+  const contactLabel: string =
     (allGuests ? guestLabels.join(' + ') : contactName) ??
     guestLabels[0] ??
     words.unnamedClient;
+  // A chair holding only companions is named by them (B4, the rule above),
+  // once their profiles are read: a seat holds no name of its own for them.
+  const clientLabel = companionsLabelOf(seats, companionNames) ?? contactLabel;
 
   /*
    * THE PEOPLE, from the seats themselves. `clientLabel` above is one
@@ -623,6 +646,7 @@ export function dayRowVm(
     crossesMidnight: endMinute >= 24 * 60,
     serviceLabel,
     clientLabel,
+    contactLabel,
     phone: phoneLabel,
     phoneHref: contactPhone,
     email: appointment.contactEmail,

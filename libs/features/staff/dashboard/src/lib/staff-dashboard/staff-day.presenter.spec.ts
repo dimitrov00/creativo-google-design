@@ -136,6 +136,7 @@ function row(overrides: Partial<DayRowVm> = {}): DayRowVm {
     crossesMidnight: false,
     serviceLabel: 'Фейд',
     clientLabel: 'Георги',
+    contactLabel: 'Георги',
     phone: null,
     phoneHref: null,
     email: null,
@@ -721,6 +722,46 @@ describe('dayRowVm — one lane’s view of one appointment', () => {
     expect(
       dayRowVm(appointmentFixture(), CHAIR, context({ words: EN })).clientLabel,
     ).toBe('Unnamed client');
+  });
+
+  it('names a chair holding only a companion by his own name, never the booker’s (B4)', () => {
+    const son = (seatId: string) =>
+      seatFixture({
+        seatId: SeatId.of(seatId),
+        occupant: SeatOccupant.account(
+          companion,
+          FIXTURE_IDS.customer,
+          SubjectRelationship.Companion,
+        ),
+      });
+    const visit = appointmentFixture({
+      contactName: 'Стоян Колев',
+      seats: [son('seat-son')],
+    });
+    const named = context({ companionNames: { [companion]: 'Иво Колев' } });
+    expect(dayRowVm(visit, CHAIR, named).clientLabel).toBe('Иво Колев');
+    // The number and the account beside him stay the booker's, and so does
+    // the name they answer to.
+    expect(dayRowVm(visit, CHAIR, named).contactLabel).toBe('Стоян Колев');
+    // Two services for him in the chair: still one person, once.
+    expect(
+      dayRowVm(
+        { ...visit, seats: [son('seat-a'), son('seat-b')] },
+        CHAIR,
+        named,
+      ).clientLabel,
+    ).toBe('Иво Колев');
+    // The seat holds no name of its own: until his profile answers, the row
+    // keeps what it had, rather than a name made up here.
+    expect(dayRowVm(visit, CHAIR, context()).clientLabel).toBe('Стоян Колев');
+    // The booker in the chair beside him keeps the contact: it is his.
+    expect(
+      dayRowVm(
+        { ...visit, seats: [seatFixture(), son('seat-son')] },
+        CHAIR,
+        named,
+      ).clientLabel,
+    ).toBe('Стоян Колев');
   });
 
   it('keys each person, and never hands a companion the booker’s number', () => {
