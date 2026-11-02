@@ -6200,6 +6200,7 @@ export class StaffDashboard {
     const shownDay = this.store.dayKey();
     if (shownDay === null) return;
     const plan = ScheduleExceptionSystem.blockSavePlan({
+      editing: edit.blockId !== null,
       opened: edit,
       openedRange: minuteRangeOf(edit.startMinute, edit.endMinute),
       shownDay,

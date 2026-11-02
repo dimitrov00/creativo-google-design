@@ -37,7 +37,7 @@ Deleted as dead, after a grep across `.ts` and `.html`, specs included: `fabActi
 
 **VE-2 (deliberate, BUG-3).** The dock's preview calls `DiscountSystem.withAdded`, as `addDiscount` does. With an exclusive coupon on the bill and a typed figure, the preview used to show both; it now shows the figure alone, which is what «Приложи» does. The spec is in `staff-visit-editor.spec.ts`.
 
-A side effect comes with it: `withAdded` reads every line through `promiseOf`, which throws a defect on a line whose value is no coupon's. `evaluate` skips such a line, so the old preview survived it. «Приложи» already threw on it. The preview now throws too, inside a `computed`. It takes a line that fails the sheet's guards (a percent off 0–100, a sum that is not positive) already on the draft while a figure is typed.
+A stored line that does not read still takes nothing in the preview, as in `evaluate`, so the preview cannot throw on every render. «Приложи» still refuses such a line, as it did.
 
 **SD-8 (small).** The plan is computed before the first `await`, so a chair's home is read once, before the lift. It used to be read per chair, after the awaits. It differs only if the catalogue changes during the save.
 

@@ -603,7 +603,8 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
   const old = range('10:00', '11:00');
   const now = range('12:00', '13:00');
   const newOne = {
-    opened: { blockId: null, allDay: false, barberIds: [IVAN] },
+    editing: false,
+    opened: { allDay: false, barberIds: [IVAN] },
     openedRange: old,
     shownDay: SHOWN,
     saved: { allDay: false, barberIds: [IVAN], days: [OTHER] },
@@ -612,7 +613,8 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
   };
   const edited = {
     ...newOne,
-    opened: { blockId: 'block:ivan', allDay: false, barberIds: [IVAN, NIKO] },
+    editing: true,
+    opened: { allDay: false, barberIds: [IVAN, NIKO] },
   };
 
   it('lifts an edited range first, its first chair on the shown day', () => {
@@ -626,7 +628,8 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
   it('lifts nothing for an edited all-day block', () => {
     const plan = ScheduleExceptionSystem.blockSavePlan({
       ...edited,
-      opened: { blockId: 'day:ivan', allDay: true, barberIds: [IVAN] },
+      editing: true,
+      opened: { allDay: true, barberIds: [IVAN] },
     });
     expect(plan.lift).toBeNull();
     expect(plan.writes).toHaveLength(1);

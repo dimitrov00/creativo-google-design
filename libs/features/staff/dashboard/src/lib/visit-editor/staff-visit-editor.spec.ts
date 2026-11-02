@@ -5921,6 +5921,31 @@ describe('StaffVisitEditor', () => {
       expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
     });
 
+    it('keeps previewing past a stored line that does not read, as the bill does', () => {
+      const host = renderWith(
+        visit({
+          discounts: [
+            {
+              discountSource: DiscountSource.Code,
+              discountCode: VoucherCode.of('BROKEN'),
+              label: 'Счупена',
+              discountMethod: DiscountMethod.PercentOff,
+              discountPercent: 101,
+              grantId: null,
+              code: VoucherCode.of('BROKEN'),
+              exclusive: false,
+            },
+          ],
+        }),
+        { uiMayDiscount: true },
+      );
+      openPage(host);
+      expect(text(host, 'staff-visit-total-figure')).toBe('28,00 €');
+      pickKind(host, 'percent');
+      slide(host, 'staff-visit-discount-percent-slider', '10');
+      expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
+    });
+
     it('reads saved lines back — on the row as one line, on the page as tickets under «Приложени» — and withholds the money from a draft and a visit that is gone', () => {
       const saved = renderWith(
         visit({

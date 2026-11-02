@@ -27,9 +27,10 @@ function metaOfStored(stored: ScheduleException): ScheduleExceptionMeta {
 
 /** The block sheet's save, as {@link ScheduleExceptionSystem.blockSavePlan} reads it. */
 export type BlockSaveInput = {
-  /** The sheet as it opened: the block it edits (`null` for a new one), whether it was all day, and its chairs. */
+  /** Whether the sheet opened on a stored block, rather than a new one. */
+  readonly editing: boolean;
+  /** The sheet as it opened: whether it was all day, and its chairs. */
   readonly opened: {
-    readonly blockId: string | null;
     readonly allDay: boolean;
     readonly barberIds: readonly BarberId[];
   };
@@ -102,13 +103,10 @@ export const ScheduleExceptionSystem = {
    * count a series. An all-day save writes no `ranges`.
    */
   blockSavePlan(input: BlockSaveInput): BlockSavePlan {
-    const { opened, openedRange, saved, savedRange } = input;
+    const { editing, opened, openedRange, saved, savedRange } = input;
     const from = opened.barberIds[0];
     const lift: BlockLift | null =
-      opened.blockId !== null &&
-      !opened.allDay &&
-      openedRange !== null &&
-      from !== undefined
+      editing && !opened.allDay && openedRange !== null && from !== undefined
         ? { barberId: from, range: openedRange, localDate: input.shownDay }
         : null;
     if (!saved.allDay && savedRange === null) return { lift, writes: null };

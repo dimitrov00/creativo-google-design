@@ -6044,10 +6044,15 @@ export class StaffVisitEditor {
     const drafted = this.draftedManual();
     if (drafted === null) return this.bill();
     // What «Приложи» would make of the set (`DiscountSystem.withAdded`, as
-    // `addDiscount` calls it), so the preview and the act agree.
+    // `addDiscount` calls it), so the preview and the act agree. A stored line
+    // that does not read takes nothing, as in `evaluate`: this runs on every
+    // render, so it must not stop at the broken line the way the act does.
     const currency = this.vm().currency;
+    const readable = this.draft().discounts.filter(
+      (entry) => couponValueInBill(entry, currency) !== null,
+    );
     return this.evaluate(
-      DiscountSystem.withAdded(this.draft().discounts, drafted, (entry) =>
+      DiscountSystem.withAdded(readable, drafted, (entry) =>
         promiseOf(entry, currency),
       ),
     );
