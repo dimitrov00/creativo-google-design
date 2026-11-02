@@ -219,6 +219,90 @@ test.describe('booking core (flip 1) — live', () => {
     await expect(cell).toBeVisible();
   });
 
+  test('a party of four sees the afternoon and books it: one appointment, four seats', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const run = attemptKey(test.info());
+    const uid = `e2e-party-${run}`;
+    await seedUserProfile(uid, {
+      firstName: 'Петър',
+      lastName: 'Иванов',
+      phone: '+359881112244',
+    });
+    await seedCustomerRecord(uid);
+    await signInAs(page, uid, ['client']);
+
+    await page.goto('/book', { waitUntil: 'commit' });
+    const machine = page.getByTestId('booking-machine');
+    await expect(machine).toHaveAttribute('data-state', 'location', {
+      timeout: 20_000,
+    });
+    await page
+      .locator(
+        `[data-testid="booking-location-row"][data-location="${DEV_CHAIR.locationId}"]`,
+      )
+      .click();
+    await page.getByTestId('booking-location-continue').click();
+    await expect(machine).toHaveAttribute('data-state', 'services');
+
+    // Two people with two services each, any barber: the party whose search
+    // once spent its whole budget before the first seat left the morning.
+    const addTwoServices = async (): Promise<void> => {
+      for (const serviceId of ['svc-beard', 'svc-finish']) {
+        await page.getByTestId(`service-card-${serviceId}`).click();
+        await page.getByTestId('booking-barber-menu').click();
+        await page.getByTestId('booking-barber-any').click();
+        await page.getByTestId('booking-add-to-bag').click();
+      }
+    };
+    await addTwoServices();
+    await page.getByTestId('booking-add-guest').click();
+    await addTwoServices();
+    await expect(page.getByTestId('booking-bag-count')).toHaveText('4');
+    await page.getByTestId('booking-services-continue').click();
+    await expect(machine).toHaveAttribute('data-state', 'schedule');
+
+    const workers = Math.max(1, test.info().config.workers);
+    await expect(bookableDays(page).nth(workers - 1)).toBeVisible({
+      timeout: 60_000,
+    });
+    const days = bookableDays(page);
+    const day = days.nth(bookingLane(test.info(), await days.count()));
+    const dayKey = await day.getAttribute('data-day-key');
+    await day.click();
+    await page.getByTestId('booking-time-pick').click();
+    const times = page.getByTestId('booking-time');
+    await expect(times.first()).toBeVisible({ timeout: 20_000 });
+
+    const afternoon = (await times.allInnerTexts()).findIndex(
+      (label) => minutesOf(label) >= 14 * 60,
+    );
+    expect(afternoon, 'an afternoon time on offer').toBeGreaterThanOrEqual(0);
+    const time = times.nth(afternoon);
+    const startMinutes = minutesOf(await time.innerText());
+    await time.click();
+    await page.getByTestId('booking-time-continue').click();
+    await page.getByTestId('booking-schedule-continue').click();
+
+    await expect(machine).toHaveAttribute('data-state', 'review');
+    await page.getByTestId('booking-review-confirm').click();
+    await expect(machine).toHaveAttribute('data-state', 'confirmed', {
+      timeout: 30_000,
+    });
+
+    // The server's own placement rules accepted what the search offered.
+    const booked = await readAppointmentsOwnedBy(uid);
+    expect(booked).toHaveLength(1);
+    const appointment = booked[0] ?? { id: '' };
+    expect(appointment).toMatchObject({
+      bookingStatus: 'CONFIRMED',
+      localDate: dayKey,
+      startMinutes,
+    });
+    expect(appointment['seats']).toHaveLength(4);
+  });
+
   test('staff block a time: it shows on the day and is stored as the flat public effect', async ({
     page,
   }) => {

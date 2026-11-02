@@ -1660,7 +1660,7 @@ describe('the search budget — nodeBudget, maxOptions, nodesVisited, exhausted'
     );
 
   it('never tries more than nodeBudget placements, and says when it ran out', () => {
-    const result = AvailabilitySystem.availableStarts(wide(), {
+    const result = AvailabilitySystem.availableOptions(wide(), {
       nodeBudget: 500,
       maxOptions: 10_000,
     });
@@ -1668,6 +1668,24 @@ describe('the search budget — nodeBudget, maxOptions, nodesVisited, exhausted'
     expect(result.exhausted).toBe(true);
     // What it found before the budget ran out is still a valid answer.
     expect(result.options.length).toBeGreaterThan(0);
+  });
+
+  it('the grid never tries more than nodeBudget placements either', () => {
+    const result = AvailabilitySystem.availableStarts(wide(), {
+      nodeBudget: 500,
+      maxOptions: 10_000,
+    });
+    expect(result.nodesVisited).toBeLessThanOrEqual(500);
+    expect(result.options.length).toBeGreaterThan(0);
+  });
+
+  it('the grid says when a start got no seating from its share', () => {
+    const result = AvailabilitySystem.availableStarts(wide(), {
+      nodeBudget: 3,
+      maxOptions: 10_000,
+    });
+    expect(result.nodesVisited).toBeLessThanOrEqual(3);
+    expect(result.exhausted).toBe(true);
   });
 
   it('is not exhausted when the walk finishes inside the budget', () => {
@@ -1712,7 +1730,9 @@ describe('the search budget — nodeBudget, maxOptions, nodesVisited, exhausted'
  * domain lib's `availability.ts`, run once on 2026-10-10 with a node counter
  * added in a scratch copy) visited the node counts and
  * produced the answers recorded below; the digest is djb2-xor over the
- * rendered list. The port must answer the same and never search more.
+ * rendered list. The port must answer the same. The option list never
+ * searches more; the grid no longer walks that way, so its effort has
+ * ceilings of its own, measured when it stopped (`availability_spike.md`).
  */
 const LEGACY = {
   partyOf3: {
@@ -1814,6 +1834,33 @@ function seedCatalogue(lineCount: number): AvailabilityQuery {
       ]),
     ),
   ];
+  // Past the legacy engine's record: the guest has a second service, and a
+  // third person comes along.
+  lines.push(
+    line(
+      'cut-2',
+      45,
+      BarberPref.any(),
+      {},
+      'guest-0',
+      by([
+        [IVAN, 35],
+        [NIKO, 30],
+        [STEFAN, 45],
+      ]),
+    ),
+    line(
+      'beard-2',
+      30,
+      BarberPref.any(),
+      {},
+      'guest-1',
+      by([
+        [STEFAN, 25],
+        [IVAN, 30],
+      ]),
+    ),
+  );
   return query(lines.slice(0, lineCount), pool);
 }
 
@@ -1838,19 +1885,19 @@ function digest(text: string): number {
 
 describe('the seed catalogue — hot path #1 against the legacy engine', () => {
   const cases = [
-    ['a party of three', 3, LEGACY.partyOf3],
-    ['a party of two', 2, LEGACY.partyOf2],
-    ['a single seat', 1, LEGACY.single],
+    ['a party of three', 3, LEGACY.partyOf3, 2_000],
+    ['a party of two', 2, LEGACY.partyOf2, 300],
+    ['a single seat', 1, LEGACY.single, 100],
   ] as const;
 
-  for (const [name, lineCount, legacy] of cases) {
-    it(`${name}: the grid answers as the legacy engine did, in no more nodes`, () => {
+  for (const [name, lineCount, legacy, ceiling] of cases) {
+    it(`${name}: the grid answers as the legacy engine did, within its ceiling`, () => {
       const result = AvailabilitySystem.availableStarts(
         seedCatalogue(lineCount),
         BUDGET,
       );
       expect(result.exhausted).toBe(false);
-      expect(result.nodesVisited).toBeLessThanOrEqual(legacy.startsNodes);
+      expect(result.nodesVisited).toBeLessThanOrEqual(ceiling);
       expect(result.options).toHaveLength(legacy.starts);
       expect(digest(legacyRender(result.options))).toBe(legacy.startsDigest);
     });
@@ -1877,6 +1924,128 @@ describe('the seed catalogue — hot path #1 against the legacy engine', () => {
     expect(legacyRender(grid.slice(-1))).toBe(
       'fade@1095/niko cut@1140/niko beard@1170/niko',
     );
+  });
+
+  it.each([
+    [4, 38, H(17, 30), 8_000],
+    [5, 37, H(17, 25), 12_000],
+  ])(
+    'a party of %i lines settles every start, the afternoon included',
+    (lineCount, count, lastStart, ceiling) => {
+      const result = AvailabilitySystem.availableStarts(
+        seedCatalogue(lineCount),
+        BUDGET,
+      );
+      expect(result.exhausted).toBe(false);
+      expect(result.nodesVisited).toBeLessThanOrEqual(ceiling);
+      expect(result.options).toHaveLength(count);
+      expect(result.options.at(-1)?.startMinutes).toBe(lastStart);
+    },
+  );
+});
+
+/* ── Recall: the budget buys the whole day, whatever the party ──────────── */
+
+/*
+ * The defect this pins (`docs/architecture/review/availability_spike.md`): the
+ * grid used to walk the day depth-first, trying the first seat at 09:30 with
+ * the others at every later time, and spent its budget before the first seat
+ * ever reached the afternoon. Two people with two services each saw one start.
+ */
+describe('availableStarts — recall across the day', () => {
+  /** `perBarber` visits spread over 09:00–19:00, the same on every run. */
+  function spreadDay(
+    barberCount: number,
+    perBarber: number,
+  ): readonly BarberDayAvailability[] {
+    let seed = 11;
+    const next = (bound: number): number => {
+      seed = (seed * 1_103_515_245 + 12_345) & 0x7fffffff;
+      return seed % bound;
+    };
+    const pool: BarberDayAvailability[] = [];
+    for (let b = 0; b < barberCount; b++) {
+      const busy: MinuteRange[] = [];
+      for (let k = 0; k < perBarber; k++) {
+        const from = H(9) + Math.floor((k * 600) / perBarber) + next(4) * 15;
+        busy.push(span(from, from + 30 + next(2) * 15));
+      }
+      pool.push(
+        barber(BarberId.of(`barber-${b}`), {
+          windows: [iv(9, 19)],
+          busy: IntervalSetSystem.normalize(busy),
+        }),
+      );
+    }
+    return pool;
+  }
+
+  /** One line per letter, the letter its person: `aabb` is two people, two services each. */
+  function party(people: string): readonly LineDraft[] {
+    return [...people].map((person, index) =>
+      line(`l${index}`, 30, BarberPref.any(), {}, person),
+    );
+  }
+
+  it.each([
+    [3, 4, 'aabb', 26, H(18)],
+    [5, 5, 'abc', 25, H(18, 30)],
+    [5, 5, 'aabb', 23, H(18)],
+    [5, 5, 'aabbc', 23, H(18)],
+    [10, 6, 'abc', 18, H(18, 20)],
+    [10, 3, 'aabb', 28, H(17, 55)],
+    [10, 6, 'abcde', 18, H(18, 20)],
+  ])(
+    '%i barbers with %i visits each: party %s keeps %i starts, the last at minute %i',
+    (barberCount, perBarber, people, count, lastStart) => {
+      const result = AvailabilitySystem.availableStarts(
+        query(party(people), spreadDay(barberCount, perBarber)),
+        BUDGET,
+      );
+      expect(result.exhausted).toBe(false);
+      expect(result.nodesVisited).toBeLessThanOrEqual(BUDGET.nodeBudget);
+      expect(result.options).toHaveLength(count);
+      expect(result.options.at(-1)?.startMinutes).toBe(lastStart);
+    },
+  );
+
+  it('a small party on a quiet day stays cheap', () => {
+    const result = AvailabilitySystem.availableStarts(
+      query(party('abc'), spreadDay(3, 4)),
+      BUDGET,
+    );
+    expect(result.options).toHaveLength(28);
+    expect(result.nodesVisited).toBeLessThanOrEqual(1_000);
+  });
+
+  it('maxOptions keeps the EARLIEST starts, each at its tightest', () => {
+    const day = query(party('aabb'), spreadDay(3, 4));
+    const all = AvailabilitySystem.availableStarts(day, BUDGET).options;
+    const first = AvailabilitySystem.availableStarts(day, {
+      nodeBudget: BUDGET.nodeBudget,
+      maxOptions: 1,
+    }).options;
+    expect(first).toEqual(all.slice(0, 1));
+  });
+
+  it('a spent share keeps the start, at a seating that may not be the tightest', () => {
+    const day = query(party('aabb'), spreadDay(5, 5));
+    const open = AvailabilitySystem.availableStarts(day, {
+      nodeBudget: 10_000_000,
+      maxOptions: 200,
+    }).options;
+    const tight = AvailabilitySystem.availableStarts(day, {
+      nodeBudget: 5_000,
+      maxOptions: 200,
+    }).options;
+    expect(tight.map((option) => option.startMinutes)).toEqual(
+      open.map((option) => option.startMinutes),
+    );
+    for (const [index, option] of tight.entries()) {
+      expect(option.endMinutes).toBeGreaterThanOrEqual(
+        (open[index] as AvailabilityOption).endMinutes,
+      );
+    }
   });
 });
 
@@ -2230,16 +2399,65 @@ describe('AvailabilitySystem — equivalence and determinism (fast-check)', () =
     );
   });
 
-  it('availableStarts equals the naive reference search, in no more nodes', () => {
+  /** The reference with no brakes: every arrangement of the query, walked. */
+  const OPEN: SearchBudget = { nodeBudget: 1e9, maxOptions: 1e6 };
+
+  it('availableStarts equals the unbudgeted reference search, earliest starts first', () => {
+    fc.assert(
+      fc.property(anyQuery, ({ q, limits }) => {
+        const shipped = AvailabilitySystem.availableStarts(q, {
+          nodeBudget: BUDGET.nodeBudget,
+          maxOptions: limits.maxOptions,
+        });
+        const reference = referenceSearch(q, OPEN, true);
+        expect(shipped.options).toEqual(
+          reference.options.slice(0, limits.maxOptions),
+        );
+        expect(shipped.exhausted).toBe(false);
+      }),
+      { numRuns: 150 },
+    );
+  });
+
+  it('availableStarts equals the unbudgeted reference at four lines too', () => {
+    fc.assert(
+      fc.property(anyQuery, ({ q }) => {
+        const lines = [
+          ...q.lines,
+          line('x1', 15, BarberPref.any(), {}, 'self').line,
+          line('x2', 30, BarberPref.any(), {}, 'guest-1').line,
+        ].slice(0, 4);
+        const wide = { ...q, lines };
+        const shipped = AvailabilitySystem.availableStarts(wide, {
+          nodeBudget: BUDGET.nodeBudget,
+          maxOptions: OPEN.maxOptions,
+        });
+        expect(shipped.options).toEqual(
+          referenceSearch(wide, OPEN, true).options,
+        );
+      }),
+      // Pinned: a random day can be dear enough to outrun the budget, which is
+      // allowed, and the walk of the reference is slow at this size.
+      { numRuns: 20, seed: 20_261_102 },
+    );
+  });
+
+  it('under any budget availableStarts invents nothing: real starts, no tighter than the truth', () => {
     fc.assert(
       fc.property(anyQuery, ({ q, limits }) => {
         const shipped = AvailabilitySystem.availableStarts(q, limits);
-        const reference = referenceSearch(q, limits, true);
-        expect(shipped.options).toEqual(reference.options);
-        expect(shipped.exhausted).toBe(reference.exhausted);
-        expect(shipped.nodesVisited).toBeLessThanOrEqual(
-          reference.nodesVisited,
-        );
+        expect(shipped.nodesVisited).toBeLessThanOrEqual(limits.nodeBudget);
+        expect(shipped.options.length).toBeLessThanOrEqual(limits.maxOptions);
+        const reference = referenceSearch(q, OPEN, true);
+        for (const option of shipped.options) {
+          const truth = reference.options.find(
+            (candidate) => candidate.startMinutes === option.startMinutes,
+          );
+          expect(truth).toBeDefined();
+          expect(option.endMinutes).toBeGreaterThanOrEqual(
+            (truth as AvailabilityOption).endMinutes,
+          );
+        }
       }),
       { numRuns: 150 },
     );

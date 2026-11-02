@@ -167,8 +167,10 @@ export type AvailabilityQuery = {
 
 /**
  * The search's two brakes: `nodeBudget` — placements tried, so a pathological
- * query degrades to a shorter list rather than a frozen tab; `maxOptions` —
- * options returned (distinct starts, for {@link AvailabilitySystem.availableStarts}).
+ * query degrades rather than freezes a tab; `maxOptions` — options returned
+ * (the earliest distinct starts, for {@link AvailabilitySystem.availableStarts}).
+ * A spent budget costs `availableOptions` the rest of its walk, and
+ * `availableStarts` a start's tightest arrangement before it costs the start.
  */
 export type SearchBudget = {
   readonly nodeBudget: number;
@@ -176,10 +178,11 @@ export type SearchBudget = {
 };
 
 /**
- * The answer: the options (sorted), whether the node budget ran out before
- * the walk finished (`exhausted` — the list may then be incomplete), and the
- * placements tried (`nodesVisited ≤ nodeBudget`) — a pure output, so a spec
- * can compare search effort without a probe.
+ * The answer: the options (sorted), whether the node budget left the list
+ * possibly incomplete (`exhausted` — for `availableStarts`, a start whose share
+ * ran out before any seating was found, which may yet be a start that has
+ * none), and the placements tried (`nodesVisited ≤ nodeBudget`) — a pure
+ * output, so a spec can compare search effort without a probe.
  */
 export type AvailabilityResult = {
   readonly options: readonly AvailabilityOption[];
@@ -187,8 +190,13 @@ export type AvailabilityResult = {
   readonly nodesVisited: number;
 };
 
-/** The legacy engine's brakes (`availability.ts:453,463`). */
-const DEFAULT_BUDGET: SearchBudget = { nodeBudget: 200_000, maxOptions: 200 };
+/**
+ * `maxOptions` is the legacy engine's (`availability.ts:463`). The start-by-start
+ * search lost nothing more at half that engine's 200,000 nodes on every party
+ * measured, for half the worst-case time on a phone
+ * (`docs/architecture/review/availability_spike.md`).
+ */
+const DEFAULT_BUDGET: SearchBudget = { nodeBudget: 100_000, maxOptions: 200 };
 
 const NO_RESULT: AvailabilityResult = {
   options: [],
@@ -314,6 +322,11 @@ function compareOptions(a: AvailabilityOption, b: AvailabilityOption): number {
  * - candidate starts are walked INLINE over the barber's free gaps minus the
  *   taken list — no per-branch `number[]`;
  * - an `AvailabilityOption` is allocated only when a leaf is accepted.
+ *
+ * Deduping (`availableStarts`) settles one party start at a time, earliest
+ * first, under an even share of the budget: any seating first, so the start
+ * cannot be lost, then the tightest. A dense morning cannot spend the
+ * afternoon's nodes, and an answer inside the budget equals the exhaustive one.
  *
  * Determinism: lines are ordered by {@link compareLines}; barbers are tried in
  * the caller's order; the result is sorted by {@link compareOptions} (stable,
@@ -454,6 +467,19 @@ function search(
   const byStart = new Map<number, number>();
   let nodesVisited = 0;
   let exhausted = false;
+  /** The walk stops here: the whole budget, or a start's share of it. */
+  let nodeLimit = nodeBudget;
+  let halted = false;
+  /** The party start being settled — deduping only. */
+  let floor = 0;
+  /** Its tightest envelope so far: a seat past it cannot improve the answer. */
+  let ceiling = Number.MAX_SAFE_INTEGER;
+  /** Seats of this branch sold exactly at `floor`; a leaf needs one. */
+  let anchored = 0;
+  /** The last position whose line can sell at `floor` at all. */
+  let lastAnchor = -1;
+  /** The first pass over a start: any seating will do. */
+  let stopAtLeaf = false;
 
   /* ── The taken list: sorted insert on descent, removal on return ─────── */
 
@@ -492,8 +518,10 @@ function search(
    * server's questions of a carried seat: after the lead floor (measured from
    * its chair time's start), inside one open gap of its barber, clear of this
    * arrangement's picks and of the riders already placed on that barber.
+   * `seated` is how many positions hold a pick: none, to place the riders of a
+   * known start before any seat is tried.
    */
-  const ridersFit = (partyStart: number): boolean => {
+  const ridersFit = (partyStart: number, seated: number): boolean => {
     for (let r = 0; r < riderCount; r++) {
       const rider = riders[r] as AvailabilityRider;
       const soldStart = partyStart + rider.offsetMinutes;
@@ -506,7 +534,7 @@ function search(
       if (!insideOneGap(open[b] as readonly MinuteRange[], start, end)) {
         return false;
       }
-      for (let p = 0; p < lineCount; p++) {
+      for (let p = 0; p < seated; p++) {
         if (
           chosenBarber[p] === b &&
           (chosenOccStart[p] as number) < end &&
@@ -603,7 +631,7 @@ function search(
     }
     // A start that strands a rider is no answer for THIS arrangement — but
     // another at the same start may leave them room, so the walk goes on.
-    if (riderCount > 0 && !ridersFit(envelopeStart)) return;
+    if (riderCount > 0 && !ridersFit(envelopeStart, lineCount)) return;
     orderLeaf();
     if (!dedupeByStart) {
       options.push(buildOption(envelopeStart, envelopeEnd));
@@ -613,17 +641,19 @@ function search(
     if (existing === undefined) {
       byStart.set(envelopeStart, options.length);
       options.push(buildOption(envelopeStart, envelopeEnd));
+      ceiling = envelopeEnd;
     } else if (
       isTighter(envelopeEnd, options[existing] as AvailabilityOption)
     ) {
       options[existing] = buildOption(envelopeStart, envelopeEnd);
+      ceiling = envelopeEnd;
     }
   };
 
   /* ── The walk ────────────────────────────────────────────────────────── */
 
   const descend = (p: number): void => {
-    if (options.length >= maxOptions) return;
+    if (!dedupeByStart && options.length >= maxOptions) return;
     if (p === lineCount) {
       leaf();
       return;
@@ -654,19 +684,46 @@ function search(
           const subEnd = takenInside
             ? (takenStart[base + t] as number)
             : gapEnd;
+          // Deduping, no seat sells before the start being settled.
+          const lowest =
+            dedupeByStart && floor - before > notBefore
+              ? floor - before
+              : notBefore;
           for (
-            let start = firstStart(cursor, notBefore, step);
+            let start = firstStart(cursor, lowest, step);
             start + occupied <= subEnd;
             start += step
           ) {
-            if (nodesVisited >= nodeBudget) {
-              exhausted = true;
-              return;
-            }
-            nodesVisited++;
             // The SOLD slot is the service; the pads surround it.
             const slotStart = start + before;
             const slotEnd = slotStart + duration;
+            if (dedupeByStart) {
+              // Later starts only end later, and past this seat no line can
+              // sell at `floor`.
+              if (slotEnd > ceiling) break;
+              if (p === lastAnchor && anchored === 0 && slotStart > floor)
+                break;
+            }
+            if (nodesVisited >= nodeLimit) {
+              halted = true;
+              return;
+            }
+            nodesVisited++;
+            // Deduping, the riders' chair time is known before the leaf.
+            if (dedupeByStart && riderCount > 0) {
+              let onRider = false;
+              for (let r = 0; r < riderCount; r++) {
+                if (
+                  riderBarber[r] === b &&
+                  (riderStart[r] as number) < start + occupied &&
+                  start < (riderEnd[r] as number)
+                ) {
+                  onRider = true;
+                  break;
+                }
+              }
+              if (onRider) continue;
+            }
             // …and the PERSON cannot be in another chair then (sold slots).
             if (person >= 0) {
               let twice = false;
@@ -688,9 +745,12 @@ function search(
             chosenSlotStart[p] = slotStart;
             chosenSlotEnd[p] = slotEnd;
             take(b, start, start + occupied);
+            if (slotStart === floor) anchored++;
             descend(p + 1);
+            if (slotStart === floor) anchored--;
             release(b, start, start + occupied);
-            if (exhausted || options.length >= maxOptions) return;
+            if (halted || (stopAtLeaf && byStart.has(floor))) return;
+            if (!dedupeByStart && options.length >= maxOptions) return;
           }
           if (!takenInside) break;
           cursor = takenEnd[base + t] as number;
@@ -700,7 +760,105 @@ function search(
     }
   };
 
-  descend(0);
+  if (dedupeByStart) {
+    // Every start a party could have, with the last position that could sell
+    // at it. The earliest seat always stands on its gap's grid: another seat
+    // before it in that gap would have to end before it, and sell earlier.
+    const lastAnchorAt = new Map<number, number>();
+    for (let p = 0; p < lineCount; p++) {
+      const eligibleTo = eligibleFrom[p + 1] as number;
+      for (let e = eligibleFrom[p] as number; e < eligibleTo; e++) {
+        const b = eligible[e] as number;
+        const k = p * barberCount + b;
+        const gaps = free[b] as readonly MinuteRange[];
+        for (let g = 0; g < gaps.length; g++) {
+          const gap = gaps[g] as MinuteRange;
+          for (
+            let start = firstStart(gap.startMinutes, notBefore, step);
+            start + (occupiedOf[k] as number) <= gap.endMinutes;
+            start += step
+          ) {
+            lastAnchorAt.set(start + (padBeforeOf[k] as number), p);
+          }
+        }
+      }
+    }
+    // The shortest envelope any arrangement could have: one person's seats
+    // cannot overlap, so their fastest services add up.
+    const chainOf = new Int32Array(lineCount);
+    let shortest = 0;
+    let lastClose = 0;
+    for (let p = 0; p < lineCount; p++) {
+      let fastest = Number.MAX_SAFE_INTEGER;
+      const eligibleTo = eligibleFrom[p + 1] as number;
+      for (let e = eligibleFrom[p] as number; e < eligibleTo; e++) {
+        const b = eligible[e] as number;
+        const service = serviceOf[p * barberCount + b] as number;
+        if (service < fastest) fastest = service;
+        const gaps = free[b] as readonly MinuteRange[];
+        const last = gaps[gaps.length - 1];
+        if (last !== undefined && last.endMinutes > lastClose) {
+          lastClose = last.endMinutes;
+        }
+      }
+      const person = personOf[p] as number;
+      const chain = fastest + (person >= 0 ? (chainOf[person] as number) : 0);
+      if (person >= 0) chainOf[person] = chain;
+      if (chain > shortest) shortest = chain;
+    }
+    /** The starts whose share ran out before any seating. */
+    const unsettled: number[] = [];
+    const settle = (start: number, share: number): void => {
+      if (riderCount > 0 && !ridersFit(start, 0)) return;
+      floor = start;
+      lastAnchor = lastAnchorAt.get(floor) as number;
+      anchored = 0;
+      halted = false;
+      nodeLimit = nodesVisited + share;
+      // Any seating first: once one exists the start cannot be lost.
+      ceiling = lastClose;
+      stopAtLeaf = true;
+      descend(0);
+      stopAtLeaf = false;
+      const at = byStart.get(floor);
+      if (at === undefined) {
+        if (halted) unsettled.push(floor);
+        return;
+      }
+      // Then tighten: widen the envelope from the shortest possible until a
+      // pass finds a seating. That pass ranks every arrangement inside it, so
+      // its winner is the tightest there is; a spent share keeps the seating.
+      const first = options[at] as AvailabilityOption;
+      let bound = floor + shortest;
+      for (let width: number = step; !halted; width *= 2) {
+        ceiling = bound < first.endMinutes ? bound : first.endMinutes;
+        const widest = ceiling === first.endMinutes;
+        descend(0);
+        if (widest || options[at] !== first) break;
+        bound += width;
+      }
+    };
+    const shareOf = (remaining: number): number =>
+      Math.ceil((nodeBudget - nodesVisited) / remaining);
+    // An even share of what is left: a cheap start leaves more for the rest.
+    const starts = Int32Array.from(lastAnchorAt.keys()).sort();
+    for (let c = 0; c < starts.length; c++) {
+      settle(starts[c] as number, shareOf(starts.length - c));
+      if (options.length >= maxOptions) break;
+    }
+    // What the cheap starts left goes to those their share could not seat. A
+    // start still unsettled after that is how the list can fall short.
+    const retried = unsettled.length;
+    for (let u = 0; u < retried && options.length < maxOptions; u++) {
+      settle(unsettled[u] as number, shareOf(retried - u));
+    }
+    exhausted =
+      unsettled.length > retried ||
+      (retried > 0 && options.length >= maxOptions);
+  } else {
+    descend(0);
+    exhausted = halted;
+  }
 
   // Rule 3 — a total order that never depends on how the search walked.
   options.sort(compareOptions);
@@ -848,10 +1006,11 @@ export const AvailabilitySystem = {
 
   /**
    * ONE canonical arrangement per distinct party start — what the slot grid
-   * renders (`availability.ts:399-420`). Deduplicated DURING the search, so
-   * the budget buys breadth (the afternoon) instead of the ninth way to
-   * arrange 09:15; the arrangement kept for a start is the TIGHTEST one, never
-   * merely the first the walk reached.
+   * renders (`availability.ts:399-420`). Each start gets its own share of the
+   * budget, so the afternoon is reached whatever the morning costs; the
+   * arrangement kept for a start is the TIGHTEST one, unless its share ran out
+   * first (then the seating it found).
+   * With `maxOptions`, the earliest starts.
    */
   availableStarts(
     query: AvailabilityQuery,
