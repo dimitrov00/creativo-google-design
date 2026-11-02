@@ -70,7 +70,6 @@ import {
   type DiscountInput,
   DiscountSystem,
   type DraftBill,
-  type DraftLegMinutes,
   GridLayoutSystem,
   LocationScopeSystem,
   type ParsedClientQuery,
@@ -251,7 +250,7 @@ export interface VisitEditorLeg {
    */
   readonly clientId?: DraftPersonKey;
   readonly serviceLabel: string;
-  readonly minutes: DurationMinutes;
+  readonly durationMinutes: DurationMinutes;
   /**
    * The chair's CATALOGUE minutes for this seat, as the dashboard resolved
    * them — the base terms for a seat booked without a variant on a service
@@ -1320,17 +1319,7 @@ function clockLabel(minute: TrackMinute): string {
 
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
 function spanOf(draft: VisitDraft): DurationMinutes {
-  return VisitDraftSystem.span(
-    draft.durationOverride,
-    legMinutesOf(draft.legs),
-  );
-}
-
-/** The legs as the span reads them — their minutes. */
-function legMinutesOf(
-  legs: readonly { readonly minutes: DurationMinutes }[],
-): readonly DraftLegMinutes[] {
-  return legs.map((leg) => ({ durationMinutes: leg.minutes }));
+  return VisitDraftSystem.span(draft.durationOverride, draft.legs);
 }
 
 /**
@@ -1447,7 +1436,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     durationOverride: VisitDraftSystem.durationOverrideOf(
       vm.startMinute,
       vm.endMinute,
-      legMinutesOf(legs),
+      legs,
     ),
     chairId: vm.chairId,
     locationId: vm.locationId ?? null,
@@ -1471,7 +1460,7 @@ function commitLegOf(
     seatId: leg.seatId,
     serviceId: leg.serviceId,
     variantId: leg.variantId,
-    minutes: leg.minutes,
+    durationMinutes: leg.durationMinutes,
     priceCents: leg.priceCents,
     currency: leg.currency,
     typedPriceCents,
@@ -1967,7 +1956,11 @@ export class StaffVisitEditor {
             );
             return saved === undefined
               ? leg
-              : { ...leg, minutes: saved.minutes, barberId: saved.barberId };
+              : {
+                  ...leg,
+                  durationMinutes: saved.durationMinutes,
+                  barberId: saved.barberId,
+                };
           }),
         })),
       );
@@ -2113,7 +2106,7 @@ export class StaffVisitEditor {
       legs: draft.legs.map((leg) => ({
         seatId: leg.seatId,
         serviceId: leg.serviceId,
-        minutes: leg.minutes,
+        minutes: leg.durationMinutes,
         barberId: leg.barberId,
         // A typed price travels with the save (owner, 2026-09-10), so it
         // is part of the shape; the seed never carries one.
@@ -2231,7 +2224,7 @@ export class StaffVisitEditor {
       this.draft().legs.map((leg) => {
         const catalog =
           this.catalogTermsOf(leg)?.minutes ?? leg.catalogMinutes ?? null;
-        return { catalogMinutes: catalog, bookedMinutes: leg.minutes };
+        return { catalogMinutes: catalog, bookedMinutes: leg.durationMinutes };
       }),
     ),
   );
@@ -2503,7 +2496,7 @@ export class StaffVisitEditor {
               ...leg,
               variantId: option.variantId,
               serviceLabel: option.label,
-              minutes: option.minutes,
+              durationMinutes: option.minutes,
               // The price travels as cents, the label beside it only printed.
               priceCents: option.priceCents,
               currency: option.currency,
@@ -2519,10 +2512,7 @@ export class StaffVisitEditor {
   /** The minutes the frame draws — the override, else the legs, never under a grain (`VisitDraftSystem.editorSpan`). */
   protected readonly durationMinutes = computed(() => {
     const draft = this.draft();
-    return VisitDraftSystem.editorSpan(
-      draft.durationOverride,
-      legMinutesOf(draft.legs),
-    );
+    return VisitDraftSystem.editorSpan(draft.durationOverride, draft.legs);
   });
 
   /** THE DERIVED END. It is a computation and it is persisted nowhere. */
@@ -3200,7 +3190,7 @@ export class StaffVisitEditor {
     const variant = this.legVariant(leg);
     if (variant !== null) parts.push(variant);
     if (draft.legs.length > 1 && draft.durationOverride === null) {
-      parts.push(this.minutesLabel(leg.minutes));
+      parts.push(this.minutesLabel(leg.durationMinutes));
     }
     // No money on the service line (owner, 2026-09-10): the receipt
     // says what each seat costs. Only whose chair, when it is not this one.
@@ -3856,10 +3846,7 @@ export class StaffVisitEditor {
       // move leaves it alone — writing a phantom field made every resize
       // snap back to the services' sum and re-emit from the grid. Which
       // span pins is the frame's rule (`VisitDraftSystem.overrideFor`).
-      const overrideNow = VisitDraftSystem.overrideFor(
-        span,
-        legMinutesOf(current.legs),
-      );
+      const overrideNow = VisitDraftSystem.overrideFor(span, current.legs);
 
       // No-op when nothing actually moved. A redundant write is a redundant
       // render, and a redundant render mid-gesture is how a loop starts.
@@ -3946,10 +3933,7 @@ export class StaffVisitEditor {
   protected setDuration(minutes: DurationMinutes): void {
     this.draft.update((draft) => ({
       ...draft,
-      durationOverride: VisitDraftSystem.typedOverrideFor(
-        minutes,
-        legMinutesOf(draft.legs),
-      ),
+      durationOverride: VisitDraftSystem.typedOverrideFor(minutes, draft.legs),
     }));
   }
 
@@ -4231,7 +4215,7 @@ export class StaffVisitEditor {
             serviceId: option.serviceId,
             variantId: option.variantId,
             serviceLabel: option.serviceLabel ?? option.label,
-            minutes: option.minutes,
+            durationMinutes: option.minutes,
             // The catalogue's price, as cents beside its label.
             priceCents: option.priceCents,
             currency: option.currency,
@@ -7009,7 +6993,7 @@ export class StaffVisitEditor {
       .map((leg) => ({
         serviceId: leg.serviceId,
         variantId: leg.variantId,
-        minutes: leg.minutes,
+        minutes: leg.durationMinutes,
         // A leg with no chair yet names none (was `''`).
         barberId: leg.barberId,
       }));
@@ -7490,7 +7474,7 @@ export class StaffVisitEditor {
           serviceId: option.serviceId,
           variantId: option.variantId,
           serviceLabel: option.serviceLabel ?? option.label,
-          minutes: leg.durationMinutes,
+          durationMinutes: leg.durationMinutes,
           // The catalogue's price today, as cents beside its label.
           priceCents: option.priceCents,
           currency: option.currency,

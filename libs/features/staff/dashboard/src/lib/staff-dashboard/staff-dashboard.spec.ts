@@ -6034,14 +6034,14 @@ describe('StaffDashboard', () => {
     // delta cannot swap them.
     const twoLegs: VisitEditorCommit = {
       ...before,
-      endMinute: trackMinute(before.startMinute + cut.minutes + 20),
+      endMinute: trackMinute(before.startMinute + cut.durationMinutes + 20),
       legs: [
         ...before.legs,
         {
           seatId: SeatId.of('seat-beard'),
           serviceId: ServiceId.of('beard'),
           variantId: null,
-          minutes: duration(20),
+          durationMinutes: duration(20),
           priceCents: cents(1000),
           currency: Currency.EUR,
           typedPriceCents: null,
@@ -6168,7 +6168,7 @@ describe('StaffDashboard', () => {
           serviceId: 'beard',
           variantId: null,
           serviceLabel: 'Брада',
-          minutes: 20,
+          durationMinutes: 20,
           priceLabel: '10,00 €',
           barberId: cut.barberId,
           barberName: cut.barberName,
@@ -6201,7 +6201,7 @@ describe('StaffDashboard', () => {
         seatId: cut.seatId,
         serviceId: cut.serviceId,
         barberId: cut.barberId,
-        durationMinutes: cut.minutes,
+        durationMinutes: cut.durationMinutes,
         addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
       }),
     );
@@ -6326,7 +6326,7 @@ describe('StaffDashboard', () => {
           seatId: 'draft-cut',
           serviceId: 'cut',
           variantId: null,
-          minutes: 30,
+          durationMinutes: 30,
           priceLabel: null,
           barberId: 'ivan',
           clientId,
@@ -6401,7 +6401,7 @@ describe('StaffDashboard', () => {
         locationId: string;
         legs: readonly {
           seatId: string;
-          minutes: number;
+          durationMinutes: number;
           barberId: string;
           priceCents: number | null;
           currency: string;
@@ -6440,7 +6440,7 @@ describe('StaffDashboard', () => {
           seatId: leg.seatId,
           serviceId: 'cut',
           variantId: null,
-          minutes: leg.minutes,
+          durationMinutes: leg.durationMinutes,
           priceCents: leg.priceCents,
           currency: leg.currency,
           typedPriceCents: null,
@@ -6477,7 +6477,7 @@ describe('StaffDashboard', () => {
         appointmentId: string;
         legs: readonly {
           seatId: string;
-          minutes: number;
+          durationMinutes: number;
           barberId: string;
           priceLabel: string | null;
         }[];
@@ -6515,7 +6515,7 @@ describe('StaffDashboard', () => {
           seatId: leg.seatId,
           serviceId: 'cut',
           variantId: null,
-          minutes: leg.minutes,
+          durationMinutes: leg.durationMinutes,
           priceCents: 1800,
           currency: Currency.EUR,
           typedPriceCents: 1800,
@@ -6528,7 +6528,7 @@ describe('StaffDashboard', () => {
           seatId: 'draft-wash-1',
           serviceId: 'wash',
           variantId: null,
-          minutes: 10,
+          durationMinutes: 10,
           priceCents: 900,
           currency: Currency.EUR,
           typedPriceCents: 900,
@@ -6645,7 +6645,7 @@ describe('StaffDashboard', () => {
           seatId: 'draft-late',
           serviceId: 'fade',
           variantId: null,
-          minutes: 30,
+          durationMinutes: 30,
           priceLabel: null,
           barberId: 'ivan',
           clientId: 'primary',
@@ -6838,7 +6838,7 @@ describe('StaffDashboard', () => {
           seatId: 'draft-cut',
           serviceId: 'cut',
           variantId: null,
-          minutes: 30,
+          durationMinutes: 30,
           priceLabel: null,
           barberId: 'ivan',
           clientId: 'primary',
@@ -6847,7 +6847,7 @@ describe('StaffDashboard', () => {
           seatId: 'draft-beard',
           serviceId: 'beard',
           variantId: null,
-          minutes: 15,
+          durationMinutes: 15,
           priceLabel: null,
           barberId: 'ivan',
           clientId: 'user-martin',
@@ -6896,7 +6896,7 @@ describe('StaffDashboard', () => {
       seatId,
       serviceId: 'cut',
       variantId: null,
-      minutes: 30,
+      durationMinutes: 30,
       priceLabel: null,
       barberId: 'ivan',
       clientId,
@@ -7003,7 +7003,7 @@ describe('StaffDashboard', () => {
       // walk-in placeholder beside the chair's own client.
       const withStranger: VisitEditorCommit = {
         ...before,
-        endMinute: trackMinute(before.endMinute + cut.minutes),
+        endMinute: trackMinute(before.endMinute + cut.durationMinutes),
         legs: [
           ...before.legs,
           {

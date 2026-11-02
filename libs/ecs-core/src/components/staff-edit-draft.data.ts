@@ -72,7 +72,7 @@ export namespace StaffEditDraft {
     readonly serviceId: ServiceId;
     /** The variant chosen, or `null` for a service that declares none. */
     readonly variantId: ServiceVariantId | null;
-    readonly minutes: DurationMinutes;
+    readonly durationMinutes: DurationMinutes;
     /** The leg's price — the seat's stored one, or the catalogue's for an added leg; `null` when unknown. */
     readonly priceCents: PriceCents | null;
     readonly currency: Currency;

@@ -116,7 +116,7 @@ const ROW: StaffEditRowFacts = {
   legs: [
     {
       seatId: CUT_SEAT,
-      minutes: duration(30),
+      durationMinutes: duration(30),
       barberId: IVAN,
       priceCents: cents(2800),
     },
@@ -130,7 +130,7 @@ function leg(overrides: Partial<StaffEditDraft.Leg> = {}): StaffEditDraft.Leg {
     seatId: CUT_SEAT,
     serviceId: CUT,
     variantId: null,
-    minutes: duration(30),
+    durationMinutes: duration(30),
     priceCents: cents(2800),
     currency: Currency.EUR,
     typedPriceCents: null,
@@ -241,7 +241,7 @@ describe('StaffEditPlanSystem.commandsFor — the ladder (:5570)', () => {
       leg({
         seatId: BEARD_SEAT,
         serviceId: BEARD,
-        minutes: duration(20),
+        durationMinutes: duration(20),
         priceCents: cents(1000),
       }),
     ],
@@ -281,7 +281,9 @@ describe('StaffEditPlanSystem.commandsFor — the ladder (:5570)', () => {
     const longer: StaffEditDraft = {
       ...SNAPSHOT,
       endMinute: trackMinute(645),
-      legs: [leg({ minutes: duration(45), typedPriceCents: cents(2800) })],
+      legs: [
+        leg({ durationMinutes: duration(45), typedPriceCents: cents(2800) }),
+      ],
     };
     expectBytes(plan(longer), [
       BookingCall.editMove(DAY, minute(600), [CUT_SEAT]),
@@ -300,7 +302,7 @@ describe('StaffEditPlanSystem.commandsFor — the undo (:5697)', () => {
       legs: [
         {
           seatId: BEARD_SEAT,
-          minutes: duration(20),
+          durationMinutes: duration(20),
           barberId: IVAN,
           priceCents: cents(1000),
         },
@@ -388,7 +390,7 @@ describe('StaffEditPlanSystem.commandsFor — REPRICE (:6028, DEP-20)', () => {
         leg({
           seatId: SeatId.of('draft-wash-1'),
           serviceId: ServiceId.of('wash'),
-          minutes: duration(10),
+          durationMinutes: duration(10),
           priceCents: cents(900),
           typedPriceCents: cents(900),
           clientId: draftPersonKey('user-martin'),
@@ -945,7 +947,7 @@ describe('StaffEditPlanSystem.savePlan — the whole write (OR-4)', () => {
           seatIds: [FIRST, SECOND],
           legs: [FIRST, SECOND].map((seatId) => ({
             seatId,
-            minutes: duration(30),
+            durationMinutes: duration(30),
             barberId: IVAN,
             priceCents: cents(2800),
           })),
@@ -1063,7 +1065,7 @@ describe('StaffEditPlanSystem.savePlan — the whole write (OR-4)', () => {
         leg({
           seatId: SeatId.of('draft-wash-1'),
           serviceId: ServiceId.of('wash'),
-          minutes: duration(10),
+          durationMinutes: duration(10),
         }),
       ],
     };
@@ -1134,7 +1136,7 @@ describe('StaffEditPlanSystem.bookingRequest — the create sheet’s booking (:
     leg({
       seatId: SeatId.of(seatId),
       serviceId: ServiceId.of(serviceId),
-      minutes: duration(minutes),
+      durationMinutes: duration(minutes),
       priceCents: null,
       clientId: draftPersonKey(clientId),
     });
@@ -1464,7 +1466,11 @@ describe('StaffEditPlanSystem — purity', () => {
       ...at(660, 700),
       legs: [
         ...SNAPSHOT.legs,
-        leg({ seatId: BEARD_SEAT, serviceId: BEARD, minutes: duration(10) }),
+        leg({
+          seatId: BEARD_SEAT,
+          serviceId: BEARD,
+          durationMinutes: duration(10),
+        }),
       ],
     });
     const row = deepFreeze(ROW);

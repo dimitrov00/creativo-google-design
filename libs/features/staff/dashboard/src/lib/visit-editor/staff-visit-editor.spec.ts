@@ -393,7 +393,7 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
         serviceId: ServiceId.of('cut'),
         variantId: null,
         serviceLabel: 'Класическо подстригване',
-        minutes: mins(30),
+        durationMinutes: mins(30),
         priceCents: cents(2000),
         currency: Currency.EUR,
         priceLabel: '20,00 €',
@@ -407,7 +407,7 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
         serviceId: ServiceId.of('beard'),
         variantId: null,
         serviceLabel: 'Оформяне на брада',
-        minutes: mins(15),
+        durationMinutes: mins(15),
         priceCents: cents(800),
         currency: Currency.EUR,
         priceLabel: '8,00 €',
@@ -689,7 +689,7 @@ describe('StaffVisitEditor', () => {
             serviceId: ServiceId.of('svc-cut'),
             variantId: null,
             serviceLabel: 'Подстригване',
-            minutes: mins(30),
+            durationMinutes: mins(30),
             priceLabel: '20,00 €',
             priceCents: cents(2000),
             currency: Currency.EUR,
@@ -703,7 +703,7 @@ describe('StaffVisitEditor', () => {
             serviceId: ServiceId.of('svc-beard'),
             variantId: null,
             serviceLabel: 'Брада',
-            minutes: mins(15),
+            durationMinutes: mins(15),
             priceLabel: '8,00 €',
             priceCents: cents(800),
             currency: Currency.EUR,
@@ -1934,7 +1934,7 @@ describe('StaffVisitEditor', () => {
               seatId: 'seat-cut',
               serviceId: 'cut',
               variantId: null,
-              minutes: 30,
+              durationMinutes: 30,
               // The leg's price as cents beside its currency, and no typed
               // price (the commit is `StaffEditDraft`, pass D §2.12).
               priceCents: 2000,
@@ -1947,7 +1947,7 @@ describe('StaffVisitEditor', () => {
               seatId: 'seat-beard',
               serviceId: 'beard',
               variantId: null,
-              minutes: 15,
+              durationMinutes: 15,
               priceCents: 800,
               currency: Currency.EUR,
               typedPriceCents: null,
@@ -3106,7 +3106,7 @@ describe('StaffVisitEditor', () => {
               serviceId: ServiceId.of('cut'),
               variantId: null,
               serviceLabel: 'Класическо подстригване',
-              minutes: mins(30),
+              durationMinutes: mins(30),
               priceLabel: '20,00 €',
               priceCents: cents(2000),
               currency: Currency.EUR,
@@ -6648,7 +6648,7 @@ describe('StaffVisitEditor', () => {
                 variantId: null,
                 clientId: draftPersonKey('user-martin'),
                 serviceLabel: 'Подстригване',
-                minutes: mins(30),
+                durationMinutes: mins(30),
                 priceLabel: '20,00 €',
                 priceCents: cents(2000),
                 currency: Currency.EUR,
@@ -6663,7 +6663,7 @@ describe('StaffVisitEditor', () => {
                 variantId: null,
                 clientId: draftPersonKey('guest-Петър Гост'),
                 serviceLabel: 'Оформяне на брада',
-                minutes: mins(15),
+                durationMinutes: mins(15),
                 priceLabel: '8,00 €',
                 priceCents: cents(800),
                 currency: Currency.EUR,
@@ -6744,7 +6744,7 @@ describe('StaffVisitEditor', () => {
                 serviceId: ServiceId.of('cut'),
                 variantId: null,
                 serviceLabel: 'Класическо подстригване',
-                minutes: mins(30),
+                durationMinutes: mins(30),
                 priceLabel: '20,00 €',
                 priceCents: cents(2000),
                 currency: Currency.EUR,
@@ -6759,7 +6759,7 @@ describe('StaffVisitEditor', () => {
                 serviceId: ServiceId.of('cut'),
                 variantId: null,
                 serviceLabel: 'Класическо подстригване',
-                minutes: mins(30),
+                durationMinutes: mins(30),
                 priceLabel: '20,00 €',
                 priceCents: cents(2000),
                 currency: Currency.EUR,
@@ -8076,7 +8076,11 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     editor().committed.subscribe((commit) => commits.push(commit));
     find('staff-visit-save')?.click();
     expect(
-      commits[0]?.legs.map((leg) => [leg.serviceId, leg.barberId, leg.minutes]),
+      commits[0]?.legs.map((leg) => [
+        leg.serviceId,
+        leg.barberId,
+        leg.durationMinutes,
+      ]),
     ).toEqual([['fade', 'ivan', 45]]);
     expect(document.activeElement?.getAttribute('data-testid')).toBe(
       `staff-visit-client-row-${GEORGI}`,
@@ -8532,7 +8536,7 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     ]);
     expect(
       commits[0]?.legs.find((leg) => leg.serviceId === 'svc-fade'),
-    ).toMatchObject({ barberId: 'ivan', minutes: 45 });
+    ).toMatchObject({ barberId: 'ivan', durationMinutes: 45 });
   });
 
   it('draws ✓ alone on a medal page whose family is not about a service (§2.4)', async () => {
@@ -8580,7 +8584,11 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     find('staff-visit-save')?.click();
     expect(
       commits[0]?.legs.find((leg) => leg.serviceId === 'svc-fade'),
-    ).toMatchObject({ clientId: MARTIN, barberId: 'ivan', minutes: 45 });
+    ).toMatchObject({
+      clientId: MARTIN,
+      barberId: 'ivan',
+      durationMinutes: 45,
+    });
     // Георги's own services stay his.
     expect(
       commits[0]?.legs

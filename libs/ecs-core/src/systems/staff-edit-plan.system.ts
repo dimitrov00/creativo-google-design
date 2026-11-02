@@ -66,7 +66,7 @@ export type StaffEditRowFacts = {
   /** The chair's seats as the sheet shows them — what a draft leg is compared against. */
   readonly legs: readonly {
     readonly seatId: SeatId;
-    readonly minutes: DurationMinutes;
+    readonly durationMinutes: DurationMinutes;
     /** The seat's barber; `null` when the row named none. */
     readonly barberId: BarberId | null;
     /** The seat's stored price; `null` when unknown. */
@@ -486,7 +486,7 @@ export const StaffEditPlanSystem = {
             leg.barberId,
             localDate,
             at.value,
-            leg.minutes,
+            leg.durationMinutes,
             subject.value,
           ),
         );
@@ -498,7 +498,7 @@ export const StaffEditPlanSystem = {
           );
         }
       }
-      offset += leg.minutes;
+      offset += leg.durationMinutes;
     }
 
     /*
@@ -518,7 +518,7 @@ export const StaffEditPlanSystem = {
             BookingCall.editMove(localDate, at.value, [leg.seatId]),
           );
         }
-        slot += leg.minutes;
+        slot += leg.durationMinutes;
       }
     }
 
@@ -531,8 +531,10 @@ export const StaffEditPlanSystem = {
     for (const leg of draft.legs) {
       const stored = row?.legs.find((entry) => entry.seatId === leg.seatId);
       if (stored === undefined) continue;
-      if (leg.minutes !== stored.minutes) {
-        commands.push(BookingCall.editRedurate(leg.seatId, leg.minutes));
+      if (leg.durationMinutes !== stored.durationMinutes) {
+        commands.push(
+          BookingCall.editRedurate(leg.seatId, leg.durationMinutes),
+        );
       }
       if (leg.barberId !== stored.barberId) {
         commands.push(BookingCall.editRestaff(leg.seatId, leg.barberId));
@@ -758,7 +760,7 @@ export const StaffEditPlanSystem = {
               ),
         ),
       );
-      offset += leg.minutes;
+      offset += leg.durationMinutes;
     }
 
     const contactPerson = owner ?? draft.clients[0] ?? null;

@@ -423,7 +423,7 @@ function rowShape(row: DayRowVm): string {
       leg.seatId,
       leg.serviceId,
       leg.variantId,
-      leg.minutes,
+      leg.durationMinutes,
       leg.barberId,
       // The price as cents in its currency, never re-read off a label (D-10.3).
       leg.priceCents,
@@ -3684,7 +3684,7 @@ export class StaffDashboard {
           serviceLabel: service
             ? this.content.text(service.name)
             : seat.serviceId,
-          minutes: seat.durationMinutes,
+          durationMinutes: seat.durationMinutes,
           // The same resolver the card's tag reads, so the frame agrees.
           catalogMinutes: this.chairMinutesOf(seat, seatBarberId),
           // The seat's own price in its currency; the label is printed from
