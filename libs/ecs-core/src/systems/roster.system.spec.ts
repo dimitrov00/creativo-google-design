@@ -1007,29 +1007,32 @@ describe('worksDay — the chairs the staff day draws', () => {
   });
 });
 
-describe('offAllDay / rosteredNowhere — is this chair off', () => {
+describe('offAllDay — is this chair off', () => {
   const shift = MinuteRange.of(minute(540), endMinute(1020));
+  const read = { failed: false, rosterRead: true };
 
   it('is off with an empty roster', () => {
-    const lane = { rostered: [], failed: false };
-    expect(RosterSystem.offAllDay(lane)).toBe(true);
-    expect(RosterSystem.rosteredNowhere(lane)).toBe(true);
+    expect(RosterSystem.offAllDay({ ...read, rostered: [] })).toBe(true);
   });
 
-  it('is not off all day when the read failed, though it is rostered nowhere (OR-2)', () => {
-    const lane = { rostered: [], failed: true };
-    expect(RosterSystem.offAllDay(lane)).toBe(false);
-    expect(RosterSystem.rosteredNowhere(lane)).toBe(true);
+  it('is not off when the read failed, though it is rostered nowhere (OR-2)', () => {
+    expect(
+      RosterSystem.offAllDay({ ...read, rostered: [], failed: true }),
+    ).toBe(false);
+  });
+
+  it('is not off while the roster is unread: an empty roster is no answer yet', () => {
+    expect(
+      RosterSystem.offAllDay({ ...read, rostered: [], rosterRead: false }),
+    ).toBe(false);
   });
 
   it('is not off with a roster', () => {
-    const lane = { rostered: [shift], failed: false };
-    expect(RosterSystem.offAllDay(lane)).toBe(false);
-    expect(RosterSystem.rosteredNowhere(lane)).toBe(false);
+    expect(RosterSystem.offAllDay({ ...read, rostered: [shift] })).toBe(false);
   });
 
   it('calls a chair with bookings and no roster off, where worksDay still draws it', () => {
-    const lane = { rostered: [], failed: false, appointments: [{}] };
+    const lane = { ...read, rostered: [], appointments: [{}] };
     expect(RosterSystem.offAllDay(lane)).toBe(true);
     expect(
       RosterSystem.worksDay(lane.rostered.length, lane.appointments.length),
@@ -1037,11 +1040,8 @@ describe('offAllDay / rosteredNowhere — is this chair off', () => {
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
-    const lane = deepFreeze({ rostered: [shift], failed: false });
+    const lane = deepFreeze({ ...read, rostered: [shift] });
     expect(RosterSystem.offAllDay(lane)).toBe(RosterSystem.offAllDay(lane));
-    expect(RosterSystem.rosteredNowhere(lane)).toBe(
-      RosterSystem.rosteredNowhere(lane),
-    );
   });
 });
 

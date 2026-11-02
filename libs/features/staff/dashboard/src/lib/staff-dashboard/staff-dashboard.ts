@@ -4412,18 +4412,18 @@ export class StaffDashboard {
   }
 
   /**
-   * Is this chair off for the whole of that day — by that day's own lanes:
-   * rostered nowhere, the shown day included, whatever it still holds
-   * (DEP-4). A chair stood down all day with bookings on it is off, so its
-   * lift is the whole day's — the range lift the store refuses on a closed
-   * day is never offered.
+   * Is this chair off for the whole of that day — by that day's own lanes
+   * (`RosterSystem.offAllDay`, DEP-4): rostered nowhere, the shown day
+   * included, whatever it still holds. So its lift is the whole day's, and the
+   * range lift the store refuses on a closed day is never offered. A chair
+   * whose read failed is not off (OR-2).
    */
   private offOn(barberId: BarberId | undefined, dayKey: LocalDate): boolean {
     if (barberId === undefined) return false;
     const lane = this.store
       .cellFor(dayKey)
       ?.lanes.find((entry) => entry.barberId === barberId);
-    return lane !== undefined && RosterSystem.rosteredNowhere(lane);
+    return lane !== undefined && RosterSystem.offAllDay(lane);
   }
 
   /**

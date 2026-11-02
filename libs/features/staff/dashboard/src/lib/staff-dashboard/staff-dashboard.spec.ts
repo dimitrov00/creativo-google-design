@@ -9,7 +9,14 @@ import {
   TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
-import { BehaviorSubject, Observable, ReplaySubject, map, of } from 'rxjs';
+import {
+  BehaviorSubject,
+  NEVER,
+  Observable,
+  ReplaySubject,
+  map,
+  of,
+} from 'rxjs';
 import {
   afterEach,
   beforeEach,
@@ -1415,6 +1422,94 @@ describe('StaffDashboard', () => {
       } finally {
         unreadableBy = new Map();
         if (visits) observeBarberDay.mockImplementation(visits);
+      }
+    });
+  });
+
+  describe('a chair the page could not read is not off (B3, OR-2)', () => {
+    type OffPage = {
+      store: { setView: (view: string) => void };
+      allDay: () => Record<string, readonly unknown[]>;
+      openBlockSheet: (barberId: BarberId) => void;
+      blockEditorVm: () => { dayIsOff: boolean } | null;
+      blockLiftArmed: () => boolean;
+      liftFromEditor: () => Promise<void>;
+    };
+    const page = () => fixture.componentInstance as unknown as OffPage;
+
+    async function buildDayView(): Promise<void> {
+      TestBed.resetTestingModule();
+      await build();
+      page().store.setView('day');
+      fixture.detectChanges();
+    }
+
+    it('does not call a failed chair off, nor offer it the whole day’s lift', async () => {
+      const visits = observeBarberDay.getMockImplementation();
+      // Niko is rostered nowhere: all a failed read leaves to go on.
+      observeBarberDay.mockImplementation((barberId: string) =>
+        of(
+          barberId === 'niko'
+            ? PortResult.err(
+                RepositoryError.readFailed('appointments', 'unavailable'),
+              )
+            : PortResult.ok([]),
+        ),
+      );
+      try {
+        await buildDayView();
+        expect(page().allDay()['niko']).toBeUndefined();
+        page().openBlockSheet(BarberId.of('niko'));
+        fixture.detectChanges();
+        expect(page().blockEditorVm()?.dayIsOff).toBe(false);
+        // The whole day's lift arms first; a chair not off never reaches it.
+        await page().liftFromEditor();
+        expect(page().blockLiftArmed()).toBe(false);
+      } finally {
+        if (visits) observeBarberDay.mockImplementation(visits);
+      }
+    });
+
+    it('still calls a chair that read cleanly and is rostered nowhere off', async () => {
+      await buildDayView();
+      expect(page().allDay()['niko']).toHaveLength(1);
+      page().openBlockSheet(BarberId.of('niko'));
+      fixture.detectChanges();
+      expect(page().blockEditorVm()?.dayIsOff).toBe(true);
+    });
+
+    it('calls no chair off while the roster has not answered', async () => {
+      const roster = observeSchedule.getMockImplementation();
+      observeSchedule.mockImplementation(() => NEVER);
+      try {
+        await buildDayView();
+        expect(page().allDay()).toEqual({});
+        page().openBlockSheet(BarberId.of('ivan'));
+        fixture.detectChanges();
+        expect(page().blockEditorVm()?.dayIsOff).toBe(false);
+      } finally {
+        if (roster) observeSchedule.mockImplementation(roster);
+      }
+    });
+
+    it('calls no chair off when the roster read failed', async () => {
+      const roster = observeSchedule.getMockImplementation();
+      observeSchedule.mockImplementation(
+        () =>
+          of(
+            PortResult.err(
+              RepositoryError.readFailed('barberSchedules', 'unavailable'),
+            ),
+          ) as unknown as ReturnType<typeof observeSchedule>,
+      );
+      try {
+        await buildDayView();
+        expect(page().allDay()).toEqual({});
+        page().openBlockSheet(BarberId.of('ivan'));
+        fixture.detectChanges();
+        expect(page().blockEditorVm()?.dayIsOff).toBe(false);
+      } finally {
+        if (roster) observeSchedule.mockImplementation(roster);
       }
     });
   });

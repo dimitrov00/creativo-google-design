@@ -623,6 +623,7 @@ describe('the frame’s neighbours', () => {
       ],
       rostered: true,
       failed: false,
+      rosterRead: true,
     };
     expect(occupyingRows(undefined, [beside], null)).toEqual([]);
     expect(occupyingRows(lane, [beside], null).map((n) => n.name)).toEqual([

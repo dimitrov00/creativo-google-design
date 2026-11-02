@@ -400,6 +400,12 @@ export interface BarberDayLane {
    */
   readonly failed: boolean;
   /**
+   * The roster's answer is in: `rostered` empty means NOT ROSTERED only when
+   * this is true. While the day's geometry is unread or failed `rostered` is
+   * empty too, which says nothing.
+   */
+  readonly rosterRead: boolean;
+  /**
    * How many of the day's stored visits the read-time guard dropped from
    * this chair's answer (`BarberDayRead.unreadableCount`, OR-2) — `0` on a
    * clean read and on a failed one. The sheet words it beside the chair, so
@@ -1612,17 +1618,18 @@ export class StaffDayStore {
         const failed = result !== undefined && !result.ok;
         const answer = answers?.[barberIndex];
         const schedule = schedules[barberIndex];
-        const geo =
-          dayFailed || answer === undefined || schedule === undefined
-            ? NO_GEOMETRY
-            : laneGeometryOf(
-                barber.id,
-                dayKey,
-                schedule.ok ? schedule.value : null,
-                answer[0].ok ? answer[0].value : null,
-                answer[1].ok ? answer[1].value : null,
-                locations,
-              );
+        const rosterRead =
+          !dayFailed && answer !== undefined && schedule !== undefined;
+        const geo = !rosterRead
+          ? NO_GEOMETRY
+          : laneGeometryOf(
+              barber.id,
+              dayKey,
+              schedule.ok ? schedule.value : null,
+              answer[0].ok ? answer[0].value : null,
+              answer[1].ok ? answer[1].value : null,
+              locations,
+            );
 
         // The lane carries the roster's own minutes of its shop day — the
         // windows, the blocks and the holes as `MinuteRange`s (Law 7.3:
@@ -1639,6 +1646,7 @@ export class StaffDayStore {
                 occupiedOn(dayKey, appointments, barber.id, geo.busy),
               ),
           failed,
+          rosterRead,
           unreadable: result?.ok ? result.value.unreadableCount : 0,
         };
       });
