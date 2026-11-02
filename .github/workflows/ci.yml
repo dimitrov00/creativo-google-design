@@ -30,8 +30,8 @@ jobs:
   # The name is kept: branch protection may require it.
   main:
     runs-on: ubuntu-latest
-    # A change under libs/ecs-core makes the whole graph affected: lint, test,
-    # build and typecheck of every project, cold.
+    # A change under libs/ecs-core makes the whole graph affected: test, build
+    # and typecheck of every project, cold.
     timeout-minutes: 75
     permissions:
       actions: read
@@ -54,7 +54,7 @@ jobs:
       - uses: nrwl/nx-set-shas@v4
 
       - run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
-      - run: pnpm exec nx affected -t lint test build typecheck --base=$NX_BASE --head=$NX_HEAD
+      - run: pnpm exec nx affected -t test build typecheck --base=$NX_BASE --head=$NX_HEAD
 
       # The CSP gate (owner ruling OR-31): the built index.html's inline
       # scripts, hashed here, against firebase.json's script-src — with the
@@ -85,6 +85,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-workspace
       - run: pnpm exec nx sync:check
+      # Every project, not the affected ones: the graph has no edge from a lint
+      # rule or an ESLint config to the code it judges, so a tightened rule
+      # would merge green without ever running on libs/ecs-core.
+      - run: pnpm exec nx run-many -t lint
       - run: pnpm exec nx run verify-tools:layering --skip-nx-cache
       - run: pnpm exec nx typecheck seed-tools
       - run: pnpm exec nx test lint-rules

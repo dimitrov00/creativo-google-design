@@ -108,6 +108,8 @@ const JOB_NAMES = [
 /** The full gate's commands this workflow runs, and the job each runs in. */
 const GATE = [
   ['nx sync:check', 'static'],
+  // Not `affected`: nothing in the graph links a lint rule to what it judges.
+  ['run-many -t lint', 'static'],
   ['verify-tools:layering', 'static'],
   ['typecheck seed-tools', 'static'],
   ['test lint-rules', 'static'],
