@@ -805,6 +805,16 @@ export type VisitClock = {
   readonly whenHeard: (today: string) => string;
 };
 
+/** The year only outside the shop's current one (R59) — the rule itself, for a day with no clock of its own. */
+export function yearOutsideNow(
+  day: LocalDate,
+  now: ShopNow,
+): Pick<Intl.DateTimeFormatOptions, 'year'> {
+  return LocalDate.parts(now.localDate).year === LocalDate.parts(day).year
+    ? {}
+    : { year: 'numeric' };
+}
+
 /** The clock of one visit — its shop day and minute, against the shop's `now`. */
 export function visitClockOf(
   localDate: LocalDate,
@@ -822,10 +832,7 @@ export function visitClockOf(
 
   const yearIfElsewhere = (
     day: LocalDate,
-  ): Pick<Intl.DateTimeFormatOptions, 'year'> =>
-    LocalDate.parts(now.localDate).year === LocalDate.parts(day).year
-      ? {}
-      : { year: 'numeric' };
+  ): Pick<Intl.DateTimeFormatOptions, 'year'> => yearOutsideNow(day, now);
 
   const whenShort = (today: string): string =>
     `${isToday() ? today : weekday()}, ${time()}`;

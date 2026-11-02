@@ -1,9 +1,9 @@
 import type { ShopNow } from '@core/components';
-import type { TimeZone, UtcEpochMs } from '@core/primitives';
+import type { LocalDate, TimeZone, UtcEpochMs } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { PhotoMomentVm } from './photo-moment.vm';
-import { visitClockOf } from './visit-row.presenter';
+import { visitClockOf, yearOutsideNow } from './visit-row.presenter';
 
 /**
  * A photo's moment in the active language (OR-5): its stamp read ONCE onto
@@ -43,4 +43,22 @@ export function photoMomentOf(
     }),
     time: clock.time(),
   };
+}
+
+/**
+ * The day of a last visit, as an announcement says it: «4 септември» — the
+ * long month (R59), the year by the visit clock's own rule. Before the shop's
+ * `now` is known no day is this year's, so the year shows. `locale` is what
+ * the caller formats in, as it is.
+ */
+export function lastVisitDayOf(
+  localDate: LocalDate,
+  now: ShopNow | null,
+  locale: string,
+): string {
+  return formatWallClock(localDate, null, locale, {
+    day: 'numeric',
+    month: 'long',
+    ...(now === null ? { year: 'numeric' } : yearOutsideNow(localDate, now)),
+  });
 }
