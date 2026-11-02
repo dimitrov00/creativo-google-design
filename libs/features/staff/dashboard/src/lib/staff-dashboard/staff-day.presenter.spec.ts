@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   ArrivalVerb,
+  CancelledBy,
+  CancellationReason,
+  DiscountProvenance,
+  DiscountSource,
   GridEvent as GridEventTag,
   MinuteRange,
+  Seat,
+  SeatOccupant,
+  SeatOutcome,
+  SubjectRelationship,
 } from '@core/components';
 import {
   AppointmentId,
@@ -19,25 +27,32 @@ import {
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  FIXTURE_IDS,
   FIXTURE_TODAY,
   appointmentFixture,
   cents,
   deepFreeze,
   seatFixture,
+  serviceFixture,
+  termsFixture,
   utcMs,
 } from '@core/testing';
 import { catalogueTranslate } from './catalogue.spec-support';
 import {
   type AgendaFlags,
+  type DayRowContext,
   agendaCardVm,
   allDayMoreEntry,
   blockName,
   bookClientOption,
+  chairMinutesOf,
+  dayRowVm,
   daySummaryWords,
   dayTipsWords,
   editorVerb,
   exceptionWord,
   footShown,
+  gapRowVm,
   gridBlockEvent,
   gridVisitEvent,
   occupantNeighbours,
@@ -54,6 +69,7 @@ import {
   stateLabel,
   verbKeyOf,
   visitEditorWords,
+  wallClockLabel,
   whenWords,
 } from './staff-day.presenter';
 import { AgendaRow, type DayRowVm } from './staff-day.vm';
@@ -624,5 +640,329 @@ describe('the add-client page’s rows', () => {
       phone: null,
       phoneHref: null,
     });
+  });
+});
+
+describe('dayRowVm — one lane’s view of one appointment', () => {
+  const CHAIR = FIXTURE_IDS.barber;
+  const context = (overrides: Partial<DayRowContext> = {}): DayRowContext => ({
+    nowUtcMs: NOW,
+    shopNow: ZonedTimeSystem.shopNow(NOW, FIXTURE_TIME_ZONE),
+    zone: FIXTURE_TIME_ZONE,
+    locale: 'bg',
+    lang: 'bg',
+    companionNames: {},
+    words: BG,
+    names: {
+      findService: () => serviceFixture(),
+      text: (localized) => localized.bg,
+      barberName: () => 'Иван Колев',
+      barberAvatarSrc: () => null,
+      toneOf: () => 3,
+    },
+    ...overrides,
+  });
+  const guest = (label: string) =>
+    seatFixture({
+      occupant: SeatOccupant.anonymous(label as never),
+    });
+  const companion = UserId.of('u-son');
+
+  it('keys the row by the lane, and carries the aggregate apart', () => {
+    const vm = dayRowVm(appointmentFixture(), CHAIR, context());
+    expect(vm.id).toBe(`${FIXTURE_IDS.appointment}#${CHAIR}`);
+    expect(vm.appointmentId).toBe(FIXTURE_IDS.appointment);
+    expect(vm.agendaRow).toBe(AgendaRow.Visit);
+    expect(vm.isNext).toBe(false);
+  });
+
+  it('prints the chair’s stored wall clock, in the reader’s locale', () => {
+    const vm = dayRowVm(appointmentFixture(), CHAIR, context());
+    expect(vm.startLabel).toBe('10:00');
+    expect(vm.endLabel).toBe('10:30');
+    expect(vm.crossesMidnight).toBe(false);
+    expect(wallClockLabel(FIXTURE_TODAY, EndMinute.ofProven(780), 'en')).toBe(
+      '13:00',
+    );
+  });
+
+  it('names the chair by who sits in it', () => {
+    const booker = appointmentFixture({ contactName: 'Стоян Колев' });
+    expect(dayRowVm(booker, CHAIR, context()).clientLabel).toBe('Стоян Колев');
+    const guests = appointmentFixture({
+      contactName: 'Стоян Колев',
+      seats: [guest('Ани'), guest('Боби')],
+    });
+    expect(dayRowVm(guests, CHAIR, context()).clientLabel).toBe('Ани + Боби');
+    expect(dayRowVm(appointmentFixture(), CHAIR, context()).clientLabel).toBe(
+      'Клиент без име',
+    );
+    expect(
+      dayRowVm(appointmentFixture(), CHAIR, context({ words: EN })).clientLabel,
+    ).toBe('Unnamed client');
+  });
+
+  it('keys each person, and never hands a companion the booker’s number', () => {
+    const son = seatFixture({
+      seatId: SeatId.of('seat-son'),
+      occupant: SeatOccupant.account(
+        companion,
+        FIXTURE_IDS.customer,
+        SubjectRelationship.Companion,
+      ),
+    });
+    const visit = appointmentFixture({
+      contactName: 'Стоян Колев',
+      seats: [seatFixture(), son, guest('Ани')],
+    });
+    const people = dayRowVm(
+      visit,
+      CHAIR,
+      context({ companionNames: { [companion]: 'Боян Колев' } }),
+    ).people;
+    expect(people.map((person) => person.label)).toEqual([
+      'Стоян Колев',
+      'Боян Колев',
+      'Ани',
+    ]);
+    expect(people[1]?.phone).toBeNull();
+    expect(dayRowVm(visit, CHAIR, context()).people[1]?.label).toBe(
+      'Клиент без име',
+    );
+  });
+
+  it('carries a walk-in’s record, and an anonymous guest none', () => {
+    const walkIn = seatFixture({
+      occupant: SeatOccupant.walkIn(FIXTURE_IDS.customer, 'Ани' as never),
+    });
+    const [person] = dayRowVm(
+      appointmentFixture({ seats: [walkIn] }),
+      CHAIR,
+      context(),
+    ).people;
+    expect(person?.customerId).toBe(FIXTURE_IDS.customer);
+    const [anonymous] = dayRowVm(
+      appointmentFixture({ seats: [guest('Ани')] }),
+      CHAIR,
+      context(),
+    ).people;
+    expect(anonymous?.customerId).toBeNull();
+  });
+
+  it('marks this chair’s share of a party, tight', () => {
+    const elsewhere = seatFixture({
+      seatId: SeatId.of('seat-2'),
+      barberId: BarberId.of('niko'),
+    });
+    const vm = dayRowVm(
+      appointmentFixture({ seats: [seatFixture(), elsewhere] }),
+      CHAIR,
+      context(),
+    );
+    expect(vm.partyLabel).toBe('1/2');
+    expect(vm.seatsHere).toBe(1);
+    expect(vm.partySize).toBe(2);
+    expect(
+      dayRowVm(appointmentFixture(), CHAIR, context()).partyLabel,
+    ).toBeNull();
+  });
+
+  it('formats the chair’s price and tip in the seats’ currency', () => {
+    const tipped = appointmentFixture({
+      seats: [seatFixture({ tipCents: cents(500) })],
+    });
+    const bg = dayRowVm(tipped, CHAIR, context());
+    expect(bg.priceCents).toBe(2800);
+    expect(bg.priceLabel).toContain('28,00');
+    expect(bg.tipCents).toBe(500);
+    expect(bg.tipLabel).toContain('5,00');
+    const en = dayRowVm(tipped, CHAIR, context({ lang: 'en' }));
+    expect(en.priceLabel).toContain('28.00');
+    const untipped = dayRowVm(appointmentFixture(), CHAIR, context());
+    expect([untipped.tipLabel, untipped.tipCents]).toEqual([null, null]);
+  });
+
+  describe('the tag', () => {
+    const stretched = appointmentFixture({
+      seats: [
+        seatFixture({
+          terms: Seat.termsOf(termsFixture(2800, 45), termsFixture(2800, 30)),
+        }),
+      ],
+      endMinutes: EndMinute.ofProven(645),
+    });
+
+    it('says how far the run is from the catalogue', () => {
+      expect(dayRowVm(stretched, CHAIR, context()).tag).toBe('+15 мин');
+      expect(dayRowVm(stretched, CHAIR, context({ words: EN })).tag).toBe(
+        '+15 min',
+      );
+    });
+
+    it('says nothing of a visit that runs as sold', () => {
+      expect(dayRowVm(appointmentFixture(), CHAIR, context()).tag).toBeNull();
+    });
+
+    it('is withheld until the table lands, never printed as its key', () => {
+      const words = staffDayWordsOf(catalogueTranslate('bg'), null);
+      expect(dayRowVm(stretched, CHAIR, context({ words })).tag).toBeNull();
+    });
+  });
+
+  it('measures a seat against the chair’s own catalogue minutes', () => {
+    expect(
+      chairMinutesOf(seatFixture(), CHAIR, { findService: () => undefined }),
+    ).toBeNull();
+    expect(
+      chairMinutesOf(seatFixture(), CHAIR, {
+        findService: () =>
+          serviceFixture({ ...termsFixture(2800, 40), offerings: [] }),
+      }),
+    ).toBe(40);
+  });
+
+  describe('what settled the chair', () => {
+    const cancelledAt = (at: UtcEpochMs, reason: CancellationReason) =>
+      seatFixture({
+        outcome: SeatOutcome.cancelled(at, CancelledBy.Staff, reason, null),
+      });
+
+    it('says nothing on a live chair', () => {
+      expect(
+        dayRowVm(appointmentFixture(), CHAIR, context()).resolution,
+      ).toBeNull();
+    });
+
+    it('prints the clock alone on the visit’s own day, and a reason once', () => {
+      const at = utcMs('2026-09-28T05:30:00Z');
+      const vm = dayRowVm(
+        appointmentFixture({
+          seats: [
+            cancelledAt(at, CancellationReason.ClientUnwell),
+            cancelledAt(at, CancellationReason.ClientUnwell),
+          ],
+        }),
+        CHAIR,
+        context(),
+      );
+      expect(vm.bookingStatus).toBe(BookingStatus.Cancelled);
+      expect(vm.resolution?.whenLabel).toBe('08:30');
+      expect(vm.resolution?.detail).not.toContain(' · ');
+    });
+
+    it('prints the day too for a stamp on another, nothing before the zone', () => {
+      const at = utcMs('2026-09-27T15:40:00Z');
+      const visit = appointmentFixture({
+        seats: [cancelledAt(at, CancellationReason.ClientChangedPlans)],
+      });
+      const onOtherDay = dayRowVm(visit, CHAIR, context({ locale: 'en' }));
+      expect(onOtherDay.resolution?.whenLabel).toContain('Sep 27');
+      expect(onOtherDay.resolution?.whenLabel).toContain('18:40');
+      expect(
+        dayRowVm(visit, CHAIR, context({ zone: null })).resolution?.whenLabel,
+      ).toBe('');
+    });
+  });
+
+  it('answers past and live from the system, on the shop’s clock', () => {
+    const during = ZonedTimeSystem.shopNow(
+      utcMs('2026-09-28T07:10:00Z'),
+      FIXTURE_TIME_ZONE,
+    );
+    const vm = dayRowVm(
+      appointmentFixture(),
+      CHAIR,
+      context({ shopNow: during }),
+    );
+    expect([vm.live, vm.past]).toEqual([true, false]);
+    const after = ZonedTimeSystem.shopNow(
+      utcMs('2026-09-28T08:00:00Z'),
+      FIXTURE_TIME_ZONE,
+    );
+    const later = dayRowVm(
+      appointmentFixture(),
+      CHAIR,
+      context({ shopNow: after }),
+    );
+    expect([later.live, later.past]).toEqual([false, true]);
+    const unknown = dayRowVm(
+      appointmentFixture(),
+      CHAIR,
+      context({ shopNow: null }),
+    );
+    expect([unknown.live, unknown.past]).toEqual([false, false]);
+  });
+
+  it('carries the bill’s discounts as the domain stored them', () => {
+    const vm = dayRowVm(
+      appointmentFixture({
+        discounts: [
+          {
+            ...DiscountProvenance.manual(),
+            discountMethod: 'PERCENT_OFF',
+            discountPercent: 10,
+            label: 'Приятел',
+          } as never,
+        ],
+      }),
+      CHAIR,
+      context(),
+    );
+    expect(vm.discounts[0]).toMatchObject({
+      discountSource: DiscountSource.Manual,
+      label: 'Приятел',
+      grantId: null,
+      code: null,
+    });
+    expect(vm.vouchers).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(appointmentFixture());
+    expect(dayRowVm(frozen, CHAIR, context())).toEqual(
+      dayRowVm(frozen, CHAIR, context()),
+    );
+  });
+});
+
+describe('gapRowVm — a hole, attributed', () => {
+  const gap = {
+    startMinutes: MinuteOfDay.ofProven(840),
+    endMinutes: EndMinute.ofProven(950),
+    minutes: 110 as never,
+    sellable: true,
+  };
+  const chair = {
+    barberId: IVAN,
+    barberName: 'Иван',
+    barberAvatarSrc: null,
+    barberTone: 1,
+  };
+
+  it('words its clock and its length, in the chair’s id', () => {
+    const bg = gapRowVm(gap, chair, FIXTURE_TODAY, { locale: 'bg', words: BG });
+    expect(bg).toMatchObject({
+      agendaRow: AgendaRow.Gap,
+      id: 'gap-ivan-840',
+      startLabel: '14:00',
+      endLabel: '15:50',
+      spanLabel: '1 ч 50 мин',
+      past: false,
+      sellable: true,
+      barberName: 'Иван',
+    });
+    expect(
+      gapRowVm(gap, chair, FIXTURE_TODAY, { locale: 'en', words: EN })
+        .spanLabel,
+    ).toBe('1 h 50 min');
+  });
+
+  it('prints no clock without a day, and an elapsed hole is past', () => {
+    const elapsed = gapRowVm({ ...gap, sellable: false }, chair, null, {
+      locale: 'bg',
+      words: BG,
+    });
+    expect([elapsed.startLabel, elapsed.endLabel]).toEqual(['', '']);
+    expect(elapsed.past).toBe(true);
   });
 });

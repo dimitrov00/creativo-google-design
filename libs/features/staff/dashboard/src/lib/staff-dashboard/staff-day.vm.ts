@@ -310,7 +310,7 @@ export interface DayRowVm {
    * shape for a line the eye skims and the wrong one for a list you edit: a
    * leg carries its own duration, its own price and its own barber, and the
    * join throws all three away. Built here rather than in the editor because
-   * `toRow` is already holding the seats and the catalog.
+   * `dayRowVm` is already holding the seats and the catalog.
    */
   readonly legs: readonly VisitEditorLeg[];
   /**
@@ -400,6 +400,8 @@ export interface GapRowVm {
   readonly startLabel: string;
   readonly endLabel: string;
   readonly minutes: MinuteCount;
+  /** How long the hole runs, in words — «45 мин», «1 ч». */
+  readonly spanLabel: string;
   /** Where the hole begins on the shop's wall clock — the run's order. */
   readonly startMinutes: MinuteOfDay;
   /**

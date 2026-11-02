@@ -1,25 +1,55 @@
 import {
+  AppliedDiscount,
+  BookingLifecycle,
+  ChairMoment,
+  CouponValue,
+  DiscountProvenance,
   GridEvent as GridEventTag,
   type MinuteRange,
   type Money,
   Seat,
+  SeatOutcome,
+  SeatSubject,
   type ShopNow,
+  TimeCoordinate,
+  VoucherRedemption,
+  WallTime,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
   type BarberId,
   BookingStatus,
+  Currency,
   DraftPersonKey,
+  DurationMinutes,
   type EndMinute,
   type LocalDate,
+  MinuteCount,
   type MinuteOfDay,
+  type PersonKey,
+  type PriceCents,
+  type TimeZone,
   type UserId,
   UtcEpochMs,
+  defect,
 } from '@core/primitives';
-import { BusySystem, PhoneSystem, VisitStorySystem } from '@core/systems';
+import {
+  AppointmentLifecycleSystem,
+  BillingSystem,
+  BusySystem,
+  OfferingPriceSystem,
+  PhoneSystem,
+  VisitDraftSystem,
+  VisitStorySystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
-import { formatCents, formatWallClock } from '@creativo/ui/wall-clock';
+import {
+  formatCents,
+  formatInstant,
+  formatWallClock,
+} from '@creativo/ui/wall-clock';
 import {
   bookingStatusWords,
   cancellationReasonWords,
@@ -30,14 +60,18 @@ import {
   hollowStatus,
   type StaffEventLine,
 } from '@creativo/features/shared/visits';
-import { ChairMoment } from '@core/components';
 import type { AgendaField } from '../agenda-fields';
 import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
+import { catalogTagWords } from '../shared/catalog-tag.words';
 import { spanCopyOf, spanWords } from '../shared/span.words';
+import { fill } from '../time-grid/grid-gesture';
 import type { AllDayEntry, GridEvent } from '../time-grid/staff-time-grid';
 import type {
   VisitEditorClientOption,
+  VisitEditorDiscount,
+  VisitEditorResolution,
   VisitEditorVerb,
+  VisitEditorVoucher,
 } from '../visit-editor/staff-visit-editor';
 import {
   ALL_DAY_MORE_KEY,
@@ -45,12 +79,14 @@ import {
   AgendaRow,
   type DayRowVm,
   type FrameNeighbour,
+  type GapRowVm,
   type LaneVm,
   STATUS_ICONS,
   type StaffDayWords,
   type StaffTranslate,
 } from './staff-day.vm';
 import type { StaffCatalogNames } from './staff-day-chrome.presenter';
+import { guestLabelsOf } from './staff-day-guest.words';
 
 /*
  * THE STAFF DAY, WORDED (Law 10). The row's state, its verbs, what is next and
@@ -107,6 +143,576 @@ export const CLOCK_FACE: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
   hour12: false,
 };
+
+/** A stored wall-clock reading — the visit's own day and minute — as the page's clock. */
+export function wallClockLabel(
+  localDate: LocalDate,
+  minute: MinuteOfDay | EndMinute,
+  locale: string,
+): string {
+  return formatWallClock(localDate, minute, locale, CLOCK_FACE);
+}
+
+// ── The row ───────────────────────────────────────────────────────────
+
+/** The catalogue as a row reads it — the page's live lookups. */
+export interface DayRowNames extends StaffCatalogNames {
+  readonly barberName: (id: BarberId) => string;
+  readonly barberAvatarSrc: (id: BarberId) => string | null;
+  readonly toneOf: (id: BarberId) => number;
+}
+
+/** What every row is worded from — the page reads it once per change. */
+export interface DayRowContext {
+  /** The page's tick; a seat's outcome is summarized against it. */
+  readonly nowUtcMs: UtcEpochMs;
+  /** The shop's clock (`null` before the zone is known). */
+  readonly shopNow: ShopNow | null;
+  /** The day's zone, for the stamps on the sheet's head. */
+  readonly zone: TimeZone | null;
+  /** The wall clock's locale (`CatalogWording.locale`). */
+  readonly locale: string;
+  /** Money's locale, the active language. */
+  readonly lang: string;
+  /** Companions by account, as their own profiles name them (`resolveCompanionNames`). */
+  readonly companionNames: Readonly<Record<string, string>>;
+  readonly words: StaffDayWords;
+  readonly names: DayRowNames;
+}
+
+/**
+ * A ROW'S NAME — the aggregate it belongs to, plus the lane it is drawn in.
+ *
+ * `#` is safe as the seam: both halves are ids the app mints itself
+ * (Firestore doc ids and barber slugs), and neither can contain one. The key
+ * is opaque — nothing parses it back apart, because everything that needs the
+ * appointment reads `DayRowVm.appointmentId` instead.
+ */
+function rowKey(appointmentId: AppointmentId, barberId: BarberId): string {
+  return `${appointmentId}#${barberId}`;
+}
+
+/** The same sum, formatted («27,50 €»). */
+function seatsPrice(seats: readonly Seat[], lang: string): string | null {
+  const sum = BillingSystem.subtotalOf(seats);
+  return sum.ok
+    ? formatCents(sum.value.amountCents, sum.value.currency, lang)
+    : null;
+}
+
+/**
+ * What this chair's seats were tipped, as a figure and in cents.
+ *
+ * `null` on both when NOT ONE seat carries a recording — which is not the
+ * same as a chair that was tipped nothing, and is why an unrecorded row
+ * offers `＋ Добави бакшиш` while a zero one states `0,00 €`.
+ */
+function seatsTip(
+  seats: readonly Seat[],
+  lang: string,
+): {
+  readonly tipLabel: string | null;
+  readonly tipCents: PriceCents | null;
+} {
+  const first = seats[0];
+  // Mixed currencies within one chair is a data error, not a feature;
+  // the tips are read in the chair's own currency (`BillingSystem.tipsOf`).
+  const total =
+    first === undefined ? null : BillingSystem.tipsOf(seats, first.currency);
+  if (total === null) return { tipLabel: null, tipCents: null };
+  return {
+    tipLabel: formatCents(total.amountCents, total.currency, lang),
+    tipCents: total.amountCents,
+  };
+}
+
+/**
+ * When a stamp landed, in shop time: the clock alone on the visit's own
+ * day, the day before it otherwise — in the day pill's short form, so a
+ * cancellation the evening before reads `24.08, 18:40`.
+ */
+function stampLabel(
+  atUtcMs: UtcEpochMs,
+  visitLocalDate: LocalDate,
+  zone: TimeZone | null,
+  locale: string,
+): string {
+  // `''` before the zone is known: the page shows nothing then anyway.
+  if (zone === null) return '';
+  if (ZonedTimeSystem.toLocal(atUtcMs, zone).localDate === visitLocalDate) {
+    return formatInstant(atUtcMs, zone, locale, CLOCK_FACE);
+  }
+  return formatInstant(atUtcMs, zone, locale, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/**
+ * WHAT SETTLED THIS CHAIR, for the sheet's head (owner, 2026-09-11: "the
+ * cancellation reason or no-show is not showing in the event detail
+ * sheets").
+ *
+ * From the chair's OWN seats, the same way its status is
+ * (`VisitStorySystem.chairResolution`, DEP-1): the stamp that closed the
+ * last of them is the moment; a cancellation's side is the one the card's
+ * rows and the statistics read — the seat called off last, by its reason
+ * first; and the reasons are the DISTINCT ones — a father and son called
+ * off together for one reason read as one line, not two. A reason nobody
+ * gave adds nothing rather than "no reason", and «Друго» is the barber's
+ * own words. `null` on a live chair and on a finished one. The clock and
+ * the reason words are this page's.
+ */
+function resolutionOf(
+  seats: readonly Seat[],
+  status: BookingStatus,
+  visitLocalDate: LocalDate,
+  context: DayRowContext,
+): VisitEditorResolution | null {
+  const resolution = VisitStorySystem.chairResolution(status, seats);
+  if (resolution === null) return null;
+  const details = new Set<string>();
+  for (const reason of resolution.reasons) {
+    details.add(context.words.cancelReason(reason));
+  }
+  return {
+    // What settled the chair — the stored tag the system narrowed.
+    bookingStatus: resolution.bookingStatus,
+    by: resolution.cancelledBy,
+    whenLabel: stampLabel(
+      resolution.atUtcMs,
+      visitLocalDate,
+      context.zone,
+      context.locale,
+    ),
+    detail: details.size > 0 ? [...details].join(' · ') : null,
+  };
+}
+
+/**
+ * The chair's catalogue minutes for a seat's service and variant, or
+ * nothing when the catalogue no longer knows the service — the seat's own
+ * booked terms then stand in, exactly as they do on the sheet.
+ */
+export function chairMinutesOf(
+  seat: Seat,
+  barberId: BarberId,
+  names: Pick<StaffCatalogNames, 'findService'>,
+): DurationMinutes | null {
+  const service = names.findService(seat.serviceId);
+  if (service === undefined) return null;
+  // The server's resolution (`OfferingPriceSystem.termsFor`): a chair
+  // that does not perform the service is measured against the service's
+  // own minutes — never against another chair's offering.
+  return OfferingPriceSystem.termsFor(service, barberId, seat.variantId)
+    .durationMinutes;
+}
+
+/**
+ * The frame's tag, on the row: the run's distance from the catalogue.
+ *
+ * The pattern («{{minutes}} мин») is read FIRST, off the loaded table,
+ * and filled here — the way the editors word their drag readouts — so
+ * every row depends on the table: built before `bg.json` has landed, the
+ * tag is withheld rather than printed as its key, and the row is rebuilt
+ * the moment the words are there (review r4, 2026-10-06).
+ */
+function catalogTag(
+  seats: readonly Seat[],
+  barberId: BarberId,
+  startMinute: MinuteOfDay,
+  endMinute: EndMinute,
+  context: DayRowContext,
+): string | null {
+  const pattern = context.words.minutesPattern;
+  if (pattern === null) return null;
+  // The chair's run on the shop's wall clock (DEP-8). A visit lasts a
+  // positive whole number of minutes by construction, so a span that is
+  // not one is a broken invariant, never an input.
+  const span = DurationMinutes.of(MinuteCount.span(startMinute, endMinute));
+  if (!span.ok) {
+    return defect(`not a visit's span: ${startMinute}–${endMinute}`);
+  }
+  // A seat the catalogue no longer knows stands at its booked length.
+  const sold = VisitDraftSystem.catalogMinutesOf(
+    seats.map((seat) => ({
+      catalogMinutes: chairMinutesOf(seat, barberId, context.names),
+      bookedMinutes: seat.durationMinutes,
+    })),
+  );
+  return catalogTagWords(
+    VisitDraftSystem.minutesDelta(span.value, sold),
+    (minutes) => fill(pattern, { minutes }),
+  );
+}
+
+/**
+ * The bill's discounts as the sheet reads them — every snapshot, in stored
+ * order: its provenance and its value as the domain stored them (exactly
+ * their variants' fields), with the coupon's name, the grant it honoured,
+ * the code it was opened with and whether it must be alone on the bill.
+ */
+export function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
+  return appointment.discounts.map((applied) => ({
+    ...DiscountProvenance.sliceOf(applied),
+    ...CouponValue.sliceOf(applied),
+    label: applied.label,
+    grantId: DiscountProvenance.grantIdOf(applied),
+    code: DiscountProvenance.codeOf(applied),
+    exclusive: AppliedDiscount.isExclusive(applied),
+  }));
+}
+
+/**
+ * The vouchers still paying the bill. `availableCents` is what THIS visit
+ * may draw on that voucher if the bill changes: its own amount plus what
+ * the voucher had left after it — the server re-clamps on save.
+ */
+export function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
+  return appointment.voucherRedemptions
+    .filter(VoucherRedemption.isLive)
+    .map((redemption) => ({
+      voucherId: redemption.voucherId,
+      code: redemption.code,
+      availableCents: VoucherRedemption.drawableCents(redemption),
+    }));
+}
+
+/**
+ * One lane's view of one appointment.
+ *
+ * Only THIS chair's seats: a two-barber party appears in both lanes, each
+ * lane naming its own work. The state, the verbs and the fold are the systems'
+ * (`SeatOutcome.summarize`, `AppointmentLifecycleSystem`, `VisitStorySystem`);
+ * this words them. `isNext` is the lane's to set.
+ */
+export function dayRowVm(
+  appointment: Appointment,
+  barberId: BarberId,
+  context: DayRowContext,
+): DayRowVm {
+  const { nowUtcMs, shopNow, words, names, companionNames } = context;
+  const seats = Seat.ofChair(appointment.seats, barberId);
+  const first = seats[0];
+  // The chair's own span on the visit's shop day (Law 7.3).
+  const { startMinutes: startMinute, endMinutes: endMinute } = Seat.chairSpan(
+    seats,
+    appointment,
+  );
+  // HAS IT BEGUN, HAS IT ENDED — on the shop's wall clock, against the
+  // store's `ShopNow` (Law 7.3 T1, pass D D-6): the visit's day and the
+  // chair's minutes, never an instant. Neither before a zone is known.
+  const start = WallTime.of(appointment.localDate, startMinute);
+  const ended =
+    shopNow !== null &&
+    VisitStorySystem.hasEnded(
+      { localDate: appointment.localDate, minute: endMinute },
+      shopNow,
+    );
+
+  const serviceLabel = seats
+    .map((seat) => {
+      const service = names.findService(seat.serviceId);
+      return service ? names.text(service.name) : seat.serviceId;
+    })
+    .join(' + ');
+
+  /*
+   * WHO IS IN THIS CHAIR — not who made the booking. (owner ruling
+   * 2026-09-03)
+   *
+   * The contact used to win outright, which named the booker in every lane
+   * of a party: a father booked for himself with Ivan and his son with
+   * Stefan, and Stefan's row said "Стоян Колев" — the son was invisible in
+   * the whole staff app, and the two rows were indistinguishable.
+   *
+   * A row is one chair's share, so it is named by the people sitting in it.
+   * When every seat here is a guest, their labels are the name; the contact
+   * is still the number to ring, which is the only job it had. A chair
+   * holding the account holder — alone or beside a guest — keeps the
+   * contact's name, because that IS the person in it.
+   */
+  const contactName = appointment.contactName;
+  const contactPhone = appointment.contactPhone;
+  const phoneLabel =
+    contactPhone === null
+      ? null
+      : PhoneSystem.formatInternational(contactPhone);
+  const guestLabels = guestLabelsOf(seats);
+  const allGuests = seats.length > 0 && guestLabels.length === seats.length;
+  const clientLabel: string =
+    (allGuests ? guestLabels.join(' + ') : contactName) ??
+    guestLabels[0] ??
+    words.unnamedClient;
+
+  /*
+   * THE PEOPLE, from the seats themselves. `clientLabel` above is one
+   * string for the row; the sheet needs each person as their own key so a
+   * party keeps its grammar when reopened (owner ruling 2026-09-08). The
+   * booker's own seat carries the contact; a guest carries only their
+   * label, which is all the shop holds about them.
+   *
+   * A COMPANION ACCOUNT IS NOT THE BOOKER (client-card-redesign §3.1.4,
+   * the P0 audit's defect): the contact is the booker's, so a son booked
+   * by his father never wears the father's name or number. He is named
+   * by his own profile once it is read (`companionNames`), and his card
+   * reads `users/{uid}` itself; his number is his profile's, never the
+   * booking's.
+   */
+  // Each person by the sheet's draft key (`DraftPersonKey`): a guest by
+  // `guest-<label>`, an account by its uid — no address is known for any
+  // of them here (`email: null`, what the client search reads as none).
+  // A walk-in (OR-26) is a guest by label here too: the seat holds only
+  // its label and its record's id, and the contact is the record's. The
+  // record's id rides as its own field (S-RU-15) — what opens the
+  // walk-in's card keyed by the record (S-WS-F); an anonymous seat has
+  // none.
+  const personOf = (seat: Seat): VisitEditorClientOption => {
+    switch (seat.seatSubject) {
+      case SeatSubject.Anonymous:
+      case SeatSubject.WalkIn:
+        return {
+          id: DraftPersonKey.guest(seat.guestLabel),
+          label: seat.guestLabel,
+          phone: null,
+          phoneHref: null,
+          meta: null,
+          email: null,
+          customerId:
+            seat.seatSubject === SeatSubject.WalkIn
+              ? seat.subjectCustomerId
+              : null,
+        };
+      case SeatSubject.Account:
+        return Seat.wearsBookingContact(seat)
+          ? {
+              id: DraftPersonKey.account(seat.subjectUserId),
+              label: contactName ?? words.unnamedClient,
+              phone: phoneLabel,
+              phoneHref: contactPhone,
+              meta: null,
+              email: null,
+            }
+          : {
+              id: DraftPersonKey.account(seat.subjectUserId),
+              label: companionNames[seat.subjectUserId] ?? words.unnamedClient,
+              phone: null,
+              phoneHref: null,
+              meta: null,
+              email: null,
+            };
+    }
+  };
+  // One entry per PERSON, the first of their seats — the people key of
+  // the server's party check (`VisitStorySystem.personKeyOf`).
+  const peopleSeen = new Set<PersonKey>();
+  const people: VisitEditorClientOption[] = [];
+  for (const seat of seats) {
+    const key = VisitStorySystem.personKeyOf(seat);
+    if (peopleSeen.has(key)) continue;
+    peopleSeen.add(key);
+    people.push(personOf(seat));
+  }
+
+  /*
+   * THIS CHAIR'S status, not the party's (found live, 2026-09-11).
+   *
+   * A party across two chairs is one appointment whose ROOT stays
+   * `CONFIRMED` while any seat is still scheduled — so a guest cancelled
+   * out of it kept reading as a live visit on his own chair, the sheet
+   * offered «Откажи часа» a second time, and the server refused it as
+   * already resolved with nothing the sheet could say but "something went
+   * wrong". Once every seat on this chair is resolved, the chair's own
+   * outcome is the row's status: the domain's fold (`SeatOutcome.summarize`
+   * — cancelled if all cancelled, completed if any worked, else no-show),
+   * applied to this chair's seats. A chair with a seat still open keeps
+   * the root's word, as before; a one-chair visit is unchanged, because
+   * the root was folded from the same seats when it was written.
+   */
+  const chairLifecycle = SeatOutcome.summarize(seats, appointment, nowUtcMs);
+  const status = chairLifecycle.bookingStatus;
+  // What the graph allows from the CHAIR, plus the same-day correction
+  // edge (owner ruling 2026-09-08) — the root settled the same way and the
+  // shop still in the visit's day (`offeredVerbs`, over `reopenable`).
+  const legal = AppointmentLifecycleSystem.offeredVerbs(
+    chairLifecycle,
+    appointment,
+    appointment.localDate,
+    shopNow?.localDate ?? null,
+  );
+  const arrived = appointment.arrivedAtUtcMs !== null;
+  // Which verb leads, drawn from the legal set (`leadVerb`).
+  const primary = AppointmentLifecycleSystem.leadVerb(
+    chairLifecycle,
+    legal,
+    arrived,
+  );
+  const seatCount = appointment.seats.length;
+  /*
+   * "1 / 2" — this chair's share over the whole party.
+   *
+   * It was computed here and rendered NOWHERE, while the only party mark the
+   * agenda drew was a `+N` keyed on `seatsHere`, which counts one chair. A
+   * party split across two chairs has `seatsHere === 1` in both of them, so
+   * the one case that most needs saying so — two rows, same time, same
+   * booking, different barbers — was the exact case that showed nothing.
+   */
+  // «1/2», set tight (owner, 2026-09-16): a share, not a sum.
+  const partyLabel = seatCount > 1 ? `${seats.length}/${seatCount}` : null;
+  const note = appointment.contactNote?.trim() || null;
+  // What the chair's seats come to, in the seats' own currency — the
+  // shop's one for a chair holding none, or a mixed one (no figure then).
+  const subtotal = BillingSystem.subtotalOf(seats);
+
+  return {
+    agendaRow: AgendaRow.Visit,
+    id: rowKey(appointment.id, barberId),
+    appointmentId: appointment.id,
+    revision: appointment.revision,
+    locationId: appointment.locationId,
+    seatId: first?.seatId ?? null,
+    seatIds: seats.map((seat) => seat.seatId),
+    selfSeat: seats.some((seat) => Seat.isOwnAccount(seat)),
+    ownerUserId: appointment.ownerUserId,
+    ownerCustomerId: appointment.ownerCustomerId,
+    arrived,
+    arrivedAtUtcMs: appointment.arrivedAtUtcMs,
+    localDate: appointment.localDate,
+    startMinute,
+    endMinute,
+    // The chair's instants off the STORED start (`TimeCoordinate.instantAt`,
+    // D-6.5) — the countdown's and the live remaining's only.
+    startUtcMs: TimeCoordinate.instantAt(appointment, startMinute),
+    endUtcMs: TimeCoordinate.instantAt(appointment, endMinute),
+    partySize: seatCount,
+    seatsHere: seats.length,
+    // The stored wall clock, printed as stored (Law 7.3).
+    startLabel: wallClockLabel(
+      appointment.localDate,
+      startMinute,
+      context.locale,
+    ),
+    endLabel: wallClockLabel(appointment.localDate, endMinute, context.locale),
+    tag: catalogTag(seats, barberId, startMinute, endMinute, context),
+    priceLabel: seatsPrice(seats, context.lang),
+    // In cents — what a tip preset is a share of. `subtotalOf` refuses
+    // two currencies: a party mixed-currency has no number at all rather
+    // than a wrong one.
+    priceCents: subtotal.ok ? subtotal.value.amountCents : null,
+    currency: subtotal.ok
+      ? subtotal.value.currency
+      : (first?.currency ?? Currency.EUR),
+    barberName: names.barberName(barberId),
+    barberAvatarSrc: names.barberAvatarSrc(barberId),
+    barberTone: names.toneOf(barberId),
+    past: ended,
+    live: VisitStorySystem.isInChair(
+      chairLifecycle,
+      start,
+      { localDate: appointment.localDate, minute: endMinute },
+      shopNow,
+    ),
+    // Set by the lane, which is the only scope that can know which visit is
+    // FIRST — a row cannot see its siblings.
+    isNext: false,
+    // One shop day per visit (F-6): a chair that runs to the closing
+    // midnight ends on the next day's first instant — mark it, never move it.
+    crossesMidnight: endMinute >= 24 * 60,
+    serviceLabel,
+    clientLabel,
+    phone: phoneLabel,
+    phoneHref: contactPhone,
+    email: appointment.contactEmail,
+    rebooked: appointment.bookedFromAppointmentId !== null,
+    // The note's EXISTENCE is a row signal; its prose belongs in the sheet.
+    hasNote: note !== null,
+    note,
+    partyLabel,
+    ...seatsTip(seats, context.lang),
+    discounts: discountsOf(appointment),
+    vouchers: vouchersOf(appointment),
+    resolution: resolutionOf(seats, status, appointment.localDate, context),
+    people,
+    legs: seats.map((seat) => {
+      const service = names.findService(seat.serviceId);
+      const seatBarberId = seat.barberId;
+      return {
+        seatId: seat.seatId,
+        serviceId: seat.serviceId,
+        variantId: seat.variantId,
+        clientId: personOf(seat).id,
+        serviceLabel: service ? names.text(service.name) : seat.serviceId,
+        durationMinutes: seat.durationMinutes,
+        // The same resolver the card's tag reads, so the frame agrees.
+        catalogMinutes: chairMinutesOf(seat, seatBarberId, names),
+        // The seat's own price in its currency; the label is printed from
+        // it (D-10.3).
+        priceCents: seat.priceCents,
+        currency: seat.currency,
+        priceLabel: seatsPrice([seat], context.lang),
+        barberId: seatBarberId,
+        barberName: names.barberName(seatBarberId),
+        barberTone: names.toneOf(seatBarberId),
+        // The catalogue's terms are kept only when the stored ones DIFFER
+        // (`Seat.termsOf`), so their presence is the override mark.
+        overridden: Seat.overridden(seat),
+      };
+    }),
+    bookingStatus: status,
+    rootBookingStatus: appointment.bookingStatus,
+    primary,
+    overflow: legal.filter((verb) => verb !== primary),
+    terminal: BookingLifecycle.isSettled(chairLifecycle),
+  };
+}
+
+/** Whose chair a hole is in. */
+export interface GapChair {
+  readonly barberId: BarberId;
+  readonly barberName: string;
+  readonly barberAvatarSrc: string | null;
+  readonly barberTone: number;
+}
+
+/** A sellable or elapsed hole, as the run prints it. */
+export function gapRowVm(
+  gap: {
+    readonly startMinutes: MinuteOfDay;
+    readonly endMinutes: EndMinute;
+    readonly minutes: MinuteCount;
+    readonly sellable: boolean;
+  },
+  chair: GapChair,
+  localDate: LocalDate | null,
+  context: Pick<DayRowContext, 'locale' | 'words'>,
+): GapRowVm {
+  return {
+    agendaRow: AgendaRow.Gap,
+    // The BARBER in the id: two chairs free from 14:00 are two different
+    // holes, and a shared key would collapse them in the agenda's track.
+    // The START too, since one hole now splits into two at the clock.
+    id: `gap-${chair.barberId}-${gap.startMinutes}`,
+    startLabel:
+      localDate === null
+        ? ''
+        : wallClockLabel(localDate, gap.startMinutes, context.locale),
+    endLabel:
+      localDate === null
+        ? ''
+        : wallClockLabel(localDate, gap.endMinutes, context.locale),
+    minutes: gap.minutes,
+    spanLabel: spanWords(gap.minutes, context.words.span),
+    startMinutes: gap.startMinutes,
+    past: !gap.sellable,
+    sellable: gap.sellable,
+    barberName: chair.barberName,
+    barberAvatarSrc: chair.barberAvatarSrc,
+    barberTone: chair.barberTone,
+  };
+}
 
 // ── The agenda's card ─────────────────────────────────────────────────
 
