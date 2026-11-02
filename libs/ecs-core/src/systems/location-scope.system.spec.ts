@@ -81,6 +81,39 @@ describe('LocationScopeSystem.homeOf — the chair’s own shop', () => {
   });
 });
 
+describe('LocationScopeSystem.homeOrFirst — the shop a chair’s act lands at', () => {
+  const shops = [{ id: MLADOST }, { id: CENTER }];
+
+  it('is the chair’s home when its scope names one', () => {
+    expect(
+      LocationScopeSystem.homeOrFirst({ locationIds: [CENTER] }, shops),
+    ).toBe(CENTER);
+  });
+
+  it('is the first shop for a chair that serves every shop', () => {
+    expect(LocationScopeSystem.homeOrFirst({ locationIds: [] }, shops)).toBe(
+      MLADOST,
+    );
+  });
+
+  it('is the first shop for a chair off the catalogue', () => {
+    expect(LocationScopeSystem.homeOrFirst(null, shops)).toBe(MLADOST);
+  });
+
+  it('is nothing only with no shop at all', () => {
+    expect(LocationScopeSystem.homeOrFirst({ locationIds: [] }, [])).toBeNull();
+    expect(LocationScopeSystem.homeOrFirst(null, [])).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const entry = deepFreeze({ locationIds: [] });
+    const frozen = deepFreeze(shops);
+    expect(LocationScopeSystem.homeOrFirst(entry, frozen)).toBe(
+      LocationScopeSystem.homeOrFirst(entry, frozen),
+    );
+  });
+});
+
 describe('LocationScopeSystem.isMultiShop — shops to tell apart', () => {
   it('is true only for more than one shop', () => {
     expect(LocationScopeSystem.isMultiShop(0)).toBe(false);

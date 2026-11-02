@@ -47,6 +47,23 @@ export const LocationScopeSystem = {
   },
 
   /**
+   * THE SHOP A CHAIR'S NEW ACT LANDS AT, on the staff dashboard: its home
+   * ({@link homeOf}), else the first shop for a chair that serves every shop or
+   * that the catalogue no longer lists. `null` only with no shop at all. A
+   * visit's first shop and a block's filed shop are both this one.
+   */
+  homeOrFirst(
+    entry: LocationScoped | null,
+    shops: readonly { readonly id: LocationId }[],
+  ): LocationId | null {
+    return (
+      (entry === null ? null : LocationScopeSystem.homeOf(entry)) ??
+      shops[0]?.id ??
+      null
+    );
+  },
+
+  /**
    * Are there shops to tell apart — more than one? A visit names its shop
    * only then (the visit sheet's «Салон» row, `uiShops().length > 1`).
    */

@@ -1881,8 +1881,8 @@ export class StaffDayStore {
 
   /**
    * «Запази» on the block sheet, as `ScheduleExceptionSystem.blockSavePlan`
-   * decided it, and whether it all landed. A chair with no home refuses the
-   * whole save, by name. An EDITED range (`lift`) moves in ONE write
+   * decided it, and whether it all landed. A chair with no shop to file it at
+   * refuses the whole save, by name. An EDITED range (`lift`) moves in ONE write
    * (`moveScheduleBlock`), so a refused write never loses the old block. A
    * new block is one pass per chair.
    */

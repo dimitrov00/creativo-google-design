@@ -40,6 +40,7 @@ import {
   BusySystem,
   OfferingPriceSystem,
   PhoneSystem,
+  RosterSystem,
   VisitDraftSystem,
   VisitStorySystem,
   ZonedTimeSystem,
@@ -1202,6 +1203,83 @@ export function allDayMoreEntry(
     tone: null,
     accessibleName: words.allDayMore(rest),
   };
+}
+
+/**
+ * How many chairs the all-day band names on one date before it says «+N»
+ * (§8): a fourth chip would push the band into a second screen of chrome,
+ * and a phone has no tooltip to read the rest from.
+ */
+const ALL_DAY_CHIP_CAP = 3;
+
+/** What the all-day band is worded from. */
+export interface AllDayInput {
+  /** A column IS a chair in the day view, and a date otherwise. */
+  readonly dayView: boolean;
+  readonly cells: readonly {
+    readonly dayKey: LocalDate;
+    readonly lanes: readonly {
+      readonly barberId: BarberId;
+      readonly rostered: readonly MinuteRange[];
+      readonly failed: boolean;
+      readonly rosterRead: boolean;
+    }[];
+  }[];
+  readonly shownDay: LocalDate | null;
+  readonly nameOf: (barberId: BarberId) => string;
+  readonly toneOf: (barberId: BarberId) => number;
+  readonly words: StaffDayWords;
+}
+
+/**
+ * What the band above each column holds, by the column's id: a chair off all
+ * day (`RosterSystem.offAllDay`). A failed or unread lane is not off (OR-2).
+ *
+ * In the day view a column IS a barber, so the chip names the fact rather than
+ * the person — the column head above it is already the name. The shading says
+ * "nothing can happen here"; this says WHY, which shading alone cannot, and
+ * which is the only form a screen reader can read.
+ *
+ * In a date column the chip says WHO — the first name where the cell can carry
+ * a word, the initial on the chair's tone disc where it cannot (§8) — and the
+ * whole sentence stays the accessible name. Three chips, then «+N», never fewer
+ * names as more chairs are off: a scroller inside the pinned band would be a
+ * trap.
+ */
+export function allDayEntriesOf(
+  input: AllDayInput,
+): Record<string, readonly AllDayEntry[]> {
+  const { nameOf, toneOf, words } = input;
+  const out = new Map<string, readonly AllDayEntry[]>();
+  if (input.dayView) {
+    const cell = input.cells.find((entry) => entry.dayKey === input.shownDay);
+    for (const lane of cell?.lanes ?? []) {
+      if (!RosterSystem.offAllDay(lane)) continue;
+      const { barberId } = lane;
+      out.set(barberId, [
+        offChairEntry(barberId, nameOf(barberId), toneOf(barberId), words),
+      ]);
+    }
+    return Object.fromEntries(out);
+  }
+  for (const cell of input.cells) {
+    const off = cell.lanes
+      .filter((lane) => RosterSystem.offAllDay(lane))
+      .map(({ barberId }) =>
+        offDateEntry(barberId, nameOf(barberId), toneOf(barberId), words),
+      );
+    if (off.length === 0) continue;
+    out.set(
+      cell.dayKey,
+      off.length <= ALL_DAY_CHIP_CAP
+        ? off
+        : [
+            ...off.slice(0, ALL_DAY_CHIP_CAP),
+            allDayMoreEntry(off.length - ALL_DAY_CHIP_CAP, words),
+          ],
+    );
+  }
+  return Object.fromEntries(out);
 }
 
 /** One chair off the shown day, as its all-day row names it. */

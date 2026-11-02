@@ -702,6 +702,8 @@ describe('StaffDashboard', () => {
   > | null = null;
   /** The catalogue's services, when a case prices its own; `null` is the one timed fade. */
   let catalogServices: readonly Service[] | null = null;
+  /** The chairs `CATALOG_PORTS` lists, when a case says so (and puts it back). */
+  let catalogBarbers: readonly Barber[] | null = null;
   /**
    * The search window's visits (what the day search and «Скорошни» read),
    * when a case pools its own; `null` is the one Георги visit.
@@ -819,7 +821,10 @@ describe('StaffDashboard', () => {
               : { ...ports, observeLocations: () => catalogShops ?? of() })(
             memoryCatalogReadPorts({
               services: catalogServices ?? [service('fade', 45)],
-              barbers: [barber('ivan', 'Иван'), barber('niko', 'Нико')],
+              barbers: catalogBarbers ?? [
+                barber('ivan', 'Иван'),
+                barber('niko', 'Нико'),
+              ],
               categories: [],
               locations: [SHOP_LOCATION],
             }),
@@ -9136,24 +9141,72 @@ describe('StaffDashboard', () => {
           }
         });
 
-        it('refuses a chair with no home: nothing written, the sheet open, the refusal said', async () => {
-          await openLunch();
-          // `ghost` is on no catalogue row, so it has no home shop.
-          await commitBlock({
-            ...moved,
-            barberIds: [BarberId.of('ivan'), BarberId.of('ghost')],
+        describe('a chair that serves every shop (`locationIds: []`)', () => {
+          const everywhere = (id: string, name: string) => ({
+            ...barber(id, name),
+            locationIds: [],
           });
-          expect(writeScheduleException).not.toHaveBeenCalled();
-          expect(storedRanges()).toEqual([12 * 60]);
-          expect(page().blockEdit()).not.toBeNull();
-          expect(absenceError()).toEqual({
-            errorCode: SchedulingErrorCode.BlockChairWithoutHome,
-            barberId: 'ghost',
+          afterEach(() => {
+            catalogBarbers = null;
+            catalogShops = null;
           });
-          fixture.detectChanges();
-          expect(
-            host().querySelector('[data-testid="staff-block-error"]'),
-          ).not.toBeNull();
+
+          it('is filed at the shop the page starts its visits at', async () => {
+            catalogBarbers = [everywhere('ivan', 'Иван')];
+            await openLunch();
+            await commitBlock(moved);
+            expect(storedRanges()).toEqual([14 * 60]);
+            expect(exceptions[0]?.locationId).toBe(SHOP);
+            expect(page().blockEdit()).toBeNull();
+            expect(absenceError()).toBeNull();
+          });
+
+          it('holds up no other chair in the same save', async () => {
+            catalogBarbers = [
+              barber('ivan', 'Иван'),
+              everywhere('niko', 'Нико'),
+            ];
+            await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+            (
+              fixture.componentInstance as unknown as {
+                openBlockSheet: (barberId: BarberId) => void;
+              }
+            ).openBlockSheet(BarberId.of('ivan'));
+            fixture.detectChanges();
+            await commitBlock({
+              ...moved,
+              barberIds: [BarberId.of('ivan'), BarberId.of('niko')],
+            });
+            expect(exceptions.map((entry) => entry.barberId).sort()).toEqual([
+              'ivan',
+              'niko',
+            ]);
+            expect(page().blockEdit()).toBeNull();
+          });
+
+          it('refuses only a deployment with no shop at all: nothing written, the sheet open, the refusal said', async () => {
+            catalogBarbers = [everywhere('ivan', 'Иван')];
+            catalogShops = of(PortResult.ok([]));
+            await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+            (
+              fixture.componentInstance as unknown as {
+                openBlockSheet: (barberId: BarberId) => void;
+              }
+            ).openBlockSheet(BarberId.of('ivan'));
+            fixture.detectChanges();
+            writeScheduleException.mockClear();
+            await commitBlock(moved);
+            expect(writeScheduleException).not.toHaveBeenCalled();
+            expect(page().blockEdit()).not.toBeNull();
+            expect(absenceError()).toEqual({
+              errorCode: SchedulingErrorCode.BlockChairWithoutHome,
+              barberId: 'ivan',
+            });
+            fixture.detectChanges();
+            expect(
+              host().querySelector('[data-testid="staff-block-error"]'),
+            ).not.toBeNull();
+          });
         });
       });
 

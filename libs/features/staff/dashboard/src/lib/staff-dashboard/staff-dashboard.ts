@@ -249,7 +249,7 @@ import {
   gapRowVm,
   wallClockLabel,
   agendaCardVm,
-  allDayMoreEntry,
+  allDayEntriesOf,
   bookClientOption,
   daySummaryWords,
   dayTipsWords,
@@ -259,8 +259,6 @@ import {
   gridVisitEvent,
   occupantNeighbours,
   occupyingRows,
-  offChairEntry,
-  offDateEntry,
   peerRowOf,
   recentClientOption,
   restingChairs,
@@ -493,13 +491,6 @@ function minuteRangeOf(
   if (!start.ok || !end.ok || end.value <= start.value) return null;
   return MinuteRange.of(start.value, end.value);
 }
-
-/**
- * How many chairs the all-day band names on one date before it says «+N»
- * (§8): a fourth chip would push the band into a second screen of chrome,
- * and a phone has no tooltip to read the rest from.
- */
-const ALL_DAY_CHIP_CAP = 3;
 
 /**
  * `/staff` — the shop's day, one lane per chair.
@@ -1456,65 +1447,15 @@ export class StaffDashboard {
    * reads an empty column as "free" rather than "away".
    */
   protected readonly allDay = computed<Record<string, readonly AllDayEntry[]>>(
-    () => {
-      const out: Record<string, AllDayEntry[]> = {};
-      const words = this.dayWords();
-
-      // In the day view a column IS a barber, so the chip names the fact rather
-      // than the person — the column head above it is already the name. The
-      // shading says "nothing can happen here"; this says WHY, which shading
-      // alone cannot, and which is the only form a screen reader can read.
-      if (this.store.view() === StaffView.Day) {
-        const cell = this.store
-          .dayCells()
-          .find((entry) => entry.dayKey === this.store.dayKey());
-        for (const lane of cell?.lanes ?? []) {
-          // A FAILED lane is not off (OR-2): its health row says so.
-          if (RosterSystem.offAllDay(lane)) {
-            out[lane.barberId] = [
-              offChairEntry(
-                lane.barberId,
-                this.barberNameOf(lane.barberId),
-                this.toneOf(lane.barberId),
-                words,
-              ),
-            ];
-          }
-        }
-        return out;
-      }
-
-      // A DATE column: the chip says WHO — the first name where the cell
-      // can carry a word, the initial on the chair's tone disc where it
-      // cannot (§8) — and the whole sentence stays the accessible name.
-      // Three chips, then «+N»: a phone has no tooltips, and a scroller
-      // inside the pinned band would be a trap.
-      for (const cell of this.store.dayCells()) {
-        const off = cell.lanes
-          .filter((lane) => RosterSystem.offAllDay(lane))
-          .map((lane) =>
-            offDateEntry(
-              lane.barberId,
-              this.barberNameOf(lane.barberId),
-              this.toneOf(lane.barberId),
-              words,
-            ),
-          );
-        if (off.length === 0) continue;
-        if (off.length <= ALL_DAY_CHIP_CAP) {
-          out[cell.dayKey] = off;
-          continue;
-        }
-        // Three named, then «+N» for the rest — never fewer names as more
-        // chairs are off (an off-by-one found in review, 2026-09-23).
-        const rest = off.length - ALL_DAY_CHIP_CAP;
-        out[cell.dayKey] = [
-          ...off.slice(0, ALL_DAY_CHIP_CAP),
-          allDayMoreEntry(rest, words),
-        ];
-      }
-      return out;
-    },
+    () =>
+      allDayEntriesOf({
+        dayView: this.store.view() === StaffView.Day,
+        cells: this.store.dayCells(),
+        shownDay: this.store.dayKey(),
+        nameOf: (barberId) => this.barberNameOf(barberId),
+        toneOf: (barberId) => this.toneOf(barberId),
+        words: this.dayWords(),
+      }),
   );
 
   /**
@@ -3658,10 +3599,7 @@ export class StaffDashboard {
     );
     // A new visit starts in the chair's own shop — the first it is
     // rostered at — and the «Салон» row may move it before the save.
-    const locationId =
-      this.homeOfChair(create.barberId) ??
-      this.catalog.locations()[0]?.id ??
-      null;
+    const locationId = this.shopOfChair(create.barberId);
     return {
       // Not saved yet: no id (the sheet's «new» visit).
       appointmentId: null,
@@ -4130,7 +4068,7 @@ export class StaffDashboard {
     const request = StaffEditPlanSystem.bookingRequest(
       commit,
       {
-        homeLocationId: this.homeOfChair(create.barberId),
+        homeLocationId: this.shopOfChair(create.barberId),
         clientId:
           clientUserId === null ? null : DraftPersonKey.account(clientUserId),
         bookedFrom: create.bookedFrom ?? null,
@@ -4502,8 +4440,9 @@ export class StaffDashboard {
    * batched pass per chair (2026-09-24) — and the sheet closes when the
    * last chair has landed. The DAYS are the sheet's: it expanded the rule
    * with the same `RecurrenceSeries` it counted aloud. An EDITED range moves
-   * in one write, so a refusal leaves the old block; a chair with no home
-   * refuses the save (`StaffDayStore.saveBlocks`). The sheet stays on a refusal.
+   * in one write, so a refusal leaves the old block; with no shop at all to
+   * file it at the save refuses (`StaffDayStore.saveBlocks`). The sheet stays
+   * on a refusal.
    */
   protected async commitBlock(commit: BlockEditorCommit): Promise<void> {
     const edit = this.blockEdit();
@@ -4517,17 +4456,20 @@ export class StaffDashboard {
       shownDay,
       saved: commit,
       savedRange: minuteRangeOf(commit.startMinute, commit.endMinute),
-      homeOf: (barberId) => this.homeOfChair(barberId),
+      homeOf: (barberId) => this.shopOfChair(barberId),
     });
     if (await this.store.saveBlocks(plan)) this.closeBlockSheet();
   }
 
-  /** A chair's home shop; `null` off the catalogue or with no scope of its own. */
-  private homeOfChair(barberId: BarberId): LocationId | null {
+  /** Where a chair's new visit starts and its block is filed (`homeOrFirst`). */
+  private shopOfChair(barberId: BarberId): LocationId | null {
     const barber = this.catalog
       .barbers()
       .find((entry) => entry.id === barberId);
-    return barber === undefined ? null : LocationScopeSystem.homeOf(barber);
+    return LocationScopeSystem.homeOrFirst(
+      barber ?? null,
+      this.catalog.locations(),
+    );
   }
 
   protected async liftFromEditor(): Promise<void> {

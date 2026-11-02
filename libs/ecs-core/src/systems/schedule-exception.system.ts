@@ -46,7 +46,7 @@ export type BlockSaveInput = {
   };
   /** The range it now says, parsed at the edge; `null` when it is no range of one day. */
   readonly savedRange: MinuteRange | null;
-  /** A chair's home shop; `null` when it has none. */
+  /** The shop a chair's block is filed at; `null` only with no shop at all. */
   readonly homeOf: (barberId: BarberId) => LocationId | null;
 };
 
