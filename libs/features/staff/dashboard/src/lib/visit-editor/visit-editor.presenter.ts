@@ -2,12 +2,14 @@ import { CancelledSide, PlacementVerdict } from '@core/components';
 import {
   type BarberId,
   BookingStatus,
-  type DraftPersonKey,
+  type CustomerId,
+  DraftPersonKey,
   type DurationMinutes,
   type SeatId,
   type ServiceId,
   type ServiceVariantId,
   type TrackMinute,
+  type UserId,
 } from '@core/primitives';
 import { AppointmentLifecycleSystem } from '@core/systems';
 import type { UiChoiceOption, UiSegment } from '@creativo/ui/controls';
@@ -372,6 +374,43 @@ export type LegRowsInput = {
   readonly chairName: string;
   readonly words: VisitEditorWords;
 };
+
+/**
+ * THE PERSON A VISIT'S PHOTO NAMES, by id and never by label: two people of one
+ * name are two people. The photo's client record first; a record that is the
+ * visit's own is its account holder, whose draft key is his account; no record
+ * is a guest, known by the draft key his label makes, else the account holder.
+ */
+export function photoPersonOf<
+  C extends {
+    readonly id: DraftPersonKey;
+    readonly customerId?: CustomerId | null;
+  },
+>(
+  photo: {
+    readonly clientCustomerId: CustomerId | null;
+    readonly clientLabel: string;
+  },
+  clients: readonly C[],
+  visit: {
+    readonly clientCustomerId: CustomerId | null;
+    readonly clientUserId: UserId | null;
+  },
+): C | null {
+  const record = photo.clientCustomerId;
+  const named =
+    record !== null
+      ? clients.find((client) => client.customerId === record)
+      : clients.find(
+          (client) => client.id === DraftPersonKey.guest(photo.clientLabel),
+        );
+  if (named !== undefined) return named;
+  if (record !== visit.clientCustomerId || visit.clientUserId === null) {
+    return null;
+  }
+  const holder = DraftPersonKey.account(visit.clientUserId);
+  return clients.find((client) => client.id === holder) ?? null;
+}
 
 /** What {@link chairOptionsOf} reads. */
 export type ChairOptionsInput = {

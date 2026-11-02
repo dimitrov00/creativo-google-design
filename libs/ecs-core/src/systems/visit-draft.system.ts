@@ -64,12 +64,6 @@ const DEFAULT_SPAN_MINUTES = durationOf(30);
  */
 const GRAIN_MINUTES = durationOf(5);
 
-/**
- * The shortest visit the sheet's frame will draw. The typed floor is one grain
- * ({@link VisitDraftSystem.typedSpan}), so a typed visit can be shorter.
- */
-const FRAME_MIN_MINUTES = durationOf(10);
-
 /** How far either side of a shift a typed start is offered. */
 const TYPED_START_MARGIN_MINUTES = durationOf(60);
 
@@ -244,7 +238,6 @@ export const VisitDraftSystem = {
   PLACEHOLDER_CLIENT_ID,
   DEFAULT_SPAN_MINUTES,
   GRAIN_MINUTES,
-  FRAME_MIN_MINUTES,
   TYPED_START_MARGIN_MINUTES,
   REPEAT_PRESETS,
   MONDAY_TO_FRIDAY,

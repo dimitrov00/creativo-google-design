@@ -3,12 +3,14 @@ import { ArrivalVerb, CancelledSide, PlacementVerdict } from '@core/components';
 import {
   BarberId,
   BookingStatus,
+  CustomerId,
   DraftPersonKey,
   DurationMinutes,
   SeatId,
   ServiceId,
   ServiceVariantId,
   TrackMinute,
+  UserId,
 } from '@core/primitives';
 import { unwrapOk } from '@core/testing';
 import { catalogueWords } from '../testing/visit-editor-words';
@@ -38,6 +40,7 @@ import {
   timingOptions,
   visitExitsVm,
   chairOptionsOf,
+  photoPersonOf,
 } from './visit-editor.presenter';
 import { EditorPage } from './visit-editor.vm';
 
@@ -615,5 +618,71 @@ describe('chairOptionsOf — every barber a visit knows about', () => {
         legs: [legOn(null, 'Иван')],
       }).map((option) => option.key),
     ).toEqual(['']);
+  });
+});
+
+describe('photoPersonOf — the person a photo names, by id (BUG-9)', () => {
+  const A = DraftPersonKey.account(UserId.of('user-a'));
+  const B = DraftPersonKey.account(UserId.of('user-b'));
+  const GUEST = DraftPersonKey.guest('Ани');
+  const RECORD_B = CustomerId.of('customer-b');
+  const clients = [
+    { id: A, customerId: CustomerId.of('customer-a') },
+    { id: B, customerId: RECORD_B },
+    { id: GUEST },
+  ];
+  const noOwner = { clientCustomerId: null, clientUserId: null };
+  const photo = (
+    clientCustomerId: CustomerId | null,
+    clientLabel = 'Иван',
+  ) => ({
+    clientCustomerId,
+    clientLabel,
+  });
+
+  it('finds the record’s person, whatever the label', () => {
+    expect(photoPersonOf(photo(RECORD_B), clients, noOwner)?.id).toBe(B);
+  });
+
+  it('reads the visit’s own record as its account holder', () => {
+    const own = CustomerId.of('customer-own');
+    expect(
+      photoPersonOf(photo(own), [{ id: A }], {
+        clientCustomerId: own,
+        clientUserId: UserId.of('user-a'),
+      })?.id,
+    ).toBe(A);
+  });
+
+  it('answers nobody for a record no one on the visit holds', () => {
+    expect(
+      photoPersonOf(photo(CustomerId.of('customer-z')), clients, {
+        clientCustomerId: null,
+        clientUserId: UserId.of('user-a'),
+      }),
+    ).toBeNull();
+  });
+
+  it('knows a guest with no record by the key his label makes', () => {
+    expect(photoPersonOf(photo(null, 'Ани'), clients, noOwner)?.id).toBe(GUEST);
+  });
+
+  it('reads no record on a visit of no record as its account holder', () => {
+    expect(
+      photoPersonOf(photo(null), clients, {
+        clientCustomerId: null,
+        clientUserId: UserId.of('user-b'),
+      })?.id,
+    ).toBe(B);
+    expect(photoPersonOf(photo(null), clients, noOwner)).toBeNull();
+  });
+
+  it('holds no person for an account no longer on the visit', () => {
+    expect(
+      photoPersonOf(photo(null), [], {
+        clientCustomerId: null,
+        clientUserId: UserId.of('user-a'),
+      }),
+    ).toBeNull();
   });
 });

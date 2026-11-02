@@ -1423,7 +1423,6 @@
       "tomorrow": "Tomorrow",
       "tooShort": "At least {{minutes}} min",
       "backTo": "Back to {{time}}",
-      "currencySymbol": "€",
       "save": "Save",
       "minutesUnit": "min",
       "monthNext": "Next month",

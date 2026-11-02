@@ -14,6 +14,7 @@ import {
   formatClock,
   formatCents,
   formatCentsFigure,
+  formatCurrencyUnit,
   formatCount,
   formatDayLong,
   formatDayShort,
@@ -173,6 +174,15 @@ describe('formatZoneName', () => {
  * per-call `Intl.NumberFormat(lang, { 2 fraction digits }).format(c / 100)`
  * for EUR, the shop's currency, in both languages.
  */
+describe('formatCurrencyUnit', () => {
+  it('prints the symbol `formatCents` prints beside the figure', () => {
+    expect(formatCurrencyUnit(Currency.EUR, 'bg-BG')).toBe('€');
+    expect(formatCurrencyUnit(Currency.EUR, 'en-GB')).toBe('€');
+    expect(formatCurrencyUnit(Currency.BGN, 'bg-BG')).toBe('лв.');
+    expect(formatCurrencyUnit(Currency.GBP, 'en-GB')).toBe('£');
+  });
+});
+
 describe('formatCentsFigure', () => {
   const eur = Currency.EUR;
   const reference = (cents: number, lang: string): string =>

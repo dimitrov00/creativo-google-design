@@ -138,6 +138,7 @@ import {
   shopViews,
   timingOptions,
   chairOptionsOf,
+  photoPersonOf,
   visitEditorWordsOf,
   visitExitsVm,
 } from './visit-editor.presenter';
@@ -254,7 +255,7 @@ import {
   photoMomentOf,
 } from '@creativo/features/shared/visits';
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
-import { formatCentsFigure } from '@creativo/ui/wall-clock';
+import { formatCentsFigure, formatCurrencyUnit } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
@@ -3884,6 +3885,7 @@ export class StaffVisitEditor {
         ...client,
         email: client.email ?? fuller?.email ?? null,
         meta: client.meta ?? fuller?.meta ?? null,
+        customerId: client.customerId ?? fuller?.customerId ?? null,
         avatarSrc:
           client.avatarSrc ??
           known.find((option) => option.id === client.id && option.avatarSrc)
@@ -4693,10 +4695,9 @@ export class StaffVisitEditor {
    */
   protected photoClientFace(photo: VisitEditorPhoto): string | null {
     if (photo.clientAvatarSrc != null) return photo.clientAvatarSrc;
-    const named = this.pickedClients().find(
-      (client) => client.label === photo.clientLabel,
+    return (
+      photoPersonOf(photo, this.pickedClients(), this.vm())?.avatarSrc ?? null
     );
-    return named?.avatarSrc ?? null;
   }
 
   /** A picked person's face by their id, filled as the picked group fills it. */
@@ -5831,16 +5832,21 @@ export class StaffVisitEditor {
 
   /**
    * The `Intl` tag the active language formats in (`intlLocaleOf`: bg →
-   * `bg-BG`, en → `en-GB`) — the sheet's photo moments and money (OR-5,
-   * DEP-F4: the raw `'en'` formatted as `en-US`).
+   * `bg-BG`, en → `en-GB`) — the sheet's photo moments, its last-visit day and
+   * money (OR-5, DEP-F4: the raw `'en'` formatted as `en-US`).
    */
   protected readonly intlLocale = computed(() => intlLocaleOf(this.locale()));
+
+  /** A typed sum's unit, in the bill's currency (DEP-21): «€», «лв.». */
+  protected readonly currencyUnit = computed(() =>
+    formatCurrencyUnit(this.vm().currency, this.intlLocale()),
+  );
 
   /** `Днес` / `Утре` (`dayRelatives`). */
   protected readonly dayRelatives = computed(() => dayRelatives(this.words()));
 
+  /** The surface's one grain, and the one floor of a typed or dragged length. */
   protected readonly snapMinutes = VisitDraftSystem.GRAIN_MINUTES;
-  protected readonly frameMinMinutes = VisitDraftSystem.FRAME_MIN_MINUTES;
 
   /* ── THE CLIENT CARD (client-card-redesign §2, §3) ─────────────────────
    *
@@ -6544,7 +6550,7 @@ export class StaffVisitEditor {
     return lastVisitDayOf(
       featured.appointment.localDate,
       this.vm().now,
-      this.locale(),
+      this.intlLocale(),
     );
   }
 

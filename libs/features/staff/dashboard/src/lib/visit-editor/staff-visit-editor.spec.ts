@@ -67,6 +67,7 @@ import {
   UtcEpochMs,
   VoucherRefusal,
 } from '@core/primitives';
+import { VisitDraftSystem } from '@core/systems';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
@@ -272,7 +273,6 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.voucherVoid': 'Ваучерът е анулиран.',
       'staff.visit.voucherNothingLeft': 'Няма какво да покрие.',
       'staff.visit.codeAlready': 'Вече е добавен.',
-      'staff.visit.currencySymbol': '€',
       'staff.visit.atShop': 'В салона',
       'staff.visit.addPromo': 'Добави промоция',
       'staff.visit.addTip': 'Добави бакшиш',
@@ -1737,6 +1737,13 @@ describe('StaffVisitEditor', () => {
    * sheet already states at the top. What is left is the one thing a barber
    * does from here that is not an edit.
    */
+  it('holds typed and dragged lengths to one floor, the one the server admits (BUG-6)', () => {
+    render();
+    // A typed `0` or `2` is a typo for the floor; the frame's drag stops there.
+    expect(frameGrid().uiMinMinutes()).toBe(VisitDraftSystem.typedSpan(0));
+    expect(frameGrid().uiMinMinutes()).toBe(VisitDraftSystem.GRAIN_MINUTES);
+  });
+
   describe('the dock', () => {
     /*
      * DEP-21 (pass D): the sheet words the bill in the BILL's currency —
@@ -1752,6 +1759,24 @@ describe('StaffVisitEditor', () => {
         }),
       );
       expect(text(bgn, 'staff-visit-total-figure')).toBe('28,00 лв.');
+    });
+
+    it('prints a typed sum’s unit in the bill’s currency, not a fixed word (BUG-8)', () => {
+      const bgn = visit({
+        tipCents: cents(200),
+        currency: Currency.BGN,
+        legs: visit().legs.map((leg) => ({ ...leg, currency: Currency.BGN })),
+      });
+      const unit = (host: HTMLElement) =>
+        host.querySelector('.ui-amount-field__unit')?.textContent?.trim();
+      const host = render(bgn);
+      click(host, 'staff-visit-tip-row');
+      click(host, 'staff-visit-tip-tile-other');
+      expect(unit(host)).toBe('лв.');
+      const eur = render();
+      click(eur, 'staff-visit-tip-row');
+      click(eur, 'staff-visit-tip-tile-other');
+      expect(unit(eur)).toBe('€');
     });
 
     it('carries no `⋯` and no verb button', () => {
@@ -4508,6 +4533,51 @@ describe('StaffVisitEditor', () => {
           ?.getAttribute('src'),
       ).toBe('/clients/georgi.jpg');
       expect(text(host, 'staff-visit-photo-client')).toBe('Георги Петров');
+    });
+
+    it('draws a photo’s face by the person’s id, never a namesake’s (BUG-9)', () => {
+      const face = (clientId: string, src: string, customerId?: string) => ({
+        id: clientId,
+        label: 'Георги Петров',
+        phone: null,
+        phoneHref: null,
+        meta: null,
+        avatarSrc: src,
+        customerId: customerId === undefined ? null : CustomerId.of(customerId),
+      });
+      const faceOnPhotoPage = (
+        photo: Partial<VisitEditorPhoto>,
+        overrides: Partial<VisitEditorVm> = {},
+      ): string | null | undefined => {
+        const host = render(
+          visit({
+            photos: [{ ...(PHOTOS[0] as VisitEditorPhoto), ...photo }],
+            clientLabel: 'Георги Петров',
+            people: [
+              { ...face('user-a', '/a.jpg'), email: null },
+              { ...face('user-b', '/b.jpg'), email: null },
+            ] as unknown as VisitEditorVm['people'],
+            ...overrides,
+          }),
+        );
+        fixture.componentRef.setInput('uiClientBook', [
+          face('user-a', '/a.jpg', 'customer-a'),
+          face('user-b', '/b.jpg', 'customer-b'),
+        ]);
+        fixture.detectChanges();
+        click(host, 'staff-visit-photo-p-1');
+        return find(host, 'staff-visit-photo-client-row')
+          ?.querySelector('[uileading] ui-avatar img')
+          ?.getAttribute('src');
+      };
+      // Two of one name on the visit: the photo's record says which.
+      expect(
+        faceOnPhotoPage({ clientCustomerId: CustomerId.of('customer-b') }),
+      ).toBe('/b.jpg');
+      // A record nobody on the visit holds is nobody's face, namesake or not.
+      expect(
+        faceOnPhotoPage({ clientCustomerId: CustomerId.of('customer-z') }),
+      ).toBeUndefined();
     });
 
     it('hands every picked file up at once — a photo is not a draft — and leaves the draft clean', () => {
@@ -8146,6 +8216,29 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     expect(find('staff-visit-announce')?.getAttribute('role')).toBe('status');
     expect(find('staff-visit-announce')?.textContent?.trim()).toBe(
       'Взехме услугите от 4 септември.',
+    );
+  });
+
+  it('says the last visit’s day in `en-GB` in English, never the raw language’s order (BUG-7)', async () => {
+    const transloco = TestBed.inject(TranslocoService);
+    transloco.setActiveLang('en');
+    await firstValueFrom(transloco.selectTranslation('en'));
+    render();
+    await openCard();
+    const last: readonly VisitLeg[] = georgiLastVisit().seats.map((seat) => ({
+      seatId: seat.seatId,
+      serviceId: seat.serviceId,
+      variantId: seat.variantId,
+      barberId: seat.barberId,
+      durationMinutes: seat.durationMinutes,
+    }));
+    child(ClientCard).repeatLast.emit(last);
+    await settle();
+    await new Promise((done) => setTimeout(done, 200));
+    fixture.detectChanges();
+    expect(find('staff-visit-announce')?.textContent).toContain('4 September');
+    expect(find('staff-visit-announce')?.textContent).not.toContain(
+      'September 4',
     );
   });
 

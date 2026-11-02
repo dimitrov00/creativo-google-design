@@ -512,10 +512,10 @@ describe('VisitDraftSystem.typedStartBounds — the bounds offered to a typed st
   });
 });
 
-describe('VisitDraftSystem.FRAME_MIN_MINUTES — the frame’s floor', () => {
-  it('is ten minutes, twice the typed floor of one grain', () => {
-    expect(S.FRAME_MIN_MINUTES).toBe(10);
+describe('VisitDraftSystem.GRAIN_MINUTES — the one floor of a visit’s length', () => {
+  it('is five minutes, what a typed length floors at (BUG-6)', () => {
     expect(S.GRAIN_MINUTES).toBe(5);
+    expect(S.typedSpan(0)).toBe(S.GRAIN_MINUTES);
   });
 });
 
