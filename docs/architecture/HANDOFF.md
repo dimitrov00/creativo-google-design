@@ -3704,9 +3704,16 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 - Production deploy: `docs/production-deploy.md` (the checklist — setup,
   bootstrap, order, verification, rollback; the preflight first).
-- Work directly on `main`; commit and push at every green step, in a few
-  logical commits; fast-forward only, never force-push. Never bypass the
-  pre-commit hook (Prettier + stylelint + gitleaks).
+- `main` takes changes only through a pull request (owner ruling 2026-11-02,
+  replacing the 2026-10-10 direct commits): the GitHub ruleset «main requires
+  pull requests» has no bypass, needs no approval, and requires all seven CI
+  jobs (`main`, `static`, `runbook-gates`, `coverage`, `emulators`, `e2e`,
+  `csp-smoke`). They need not run against the latest `main`, so the push to
+  `main` is what proves the combined tree. A new job name, or a renamed one,
+  needs the ruleset changed in the same step, or every merge waits on a check
+  that never arrives. Commit and push the branch at every green step, in a few
+  logical commits; never force-push `main`. Never bypass the pre-commit hook
+  (Prettier + stylelint + gitleaks).
 - Behaviour is frozen during reshaping: a failing legacy spec means the code
   changed behaviour — fix the code, never the spec.
 - Greenfield: no dual shapes, no backfill, no fallback readers — the emulator
