@@ -1992,6 +1992,31 @@ describe('StaffDashboard', () => {
     }
   });
 
+  it('keeps a card’s relative time true: the tick reaches the same node', () => {
+    // The gloss is a field of the card's display struct now, built in the
+    // `computed` that reads the clock — so a tick must re-word it, and the
+    // row must survive that rebuild (`track entry.id`), or a gesture under
+    // way would lose its element.
+    const card = host().querySelector('[data-testid="staff-visit-row"]');
+    const gloss = () =>
+      card?.querySelector('.staff-event-head__gloss')?.textContent?.trim();
+    const before = gloss();
+    expect(before).toBeTruthy();
+    const store = (
+      fixture.componentInstance as unknown as {
+        store: {
+          nowUtcMs: () => UtcEpochMs;
+          _nowUtcMs: { set: (now: UtcEpochMs) => void };
+        };
+      }
+    ).store;
+    // Three hours on: the same card, no longer the same phrase.
+    store._nowUtcMs.set(UtcEpochMs.plusMs(store.nowUtcMs(), 3 * 3_600_000));
+    fixture.detectChanges();
+    expect(host().querySelector('[data-testid="staff-visit-row"]')).toBe(card);
+    expect(gloss()).not.toBe(before);
+  });
+
   it('joins nothing to anything — no middot survives in the run', () => {
     // The owner's central complaint: the card foreach-ed its fields into one
     // line and punctuated them with middots. The pattern is gone at the root

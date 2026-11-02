@@ -14,8 +14,10 @@ import type {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import type { Email } from '@core/components';
+import type { CancellationReason, Email } from '@core/components';
 import type { UiIconName } from '@creativo/ui/controls';
+import type { StaffEventLine } from '@creativo/features/shared/visits';
+import type { SpanWords } from '../shared/span.words';
 import type {
   VisitEditorClientOption,
   VisitEditorDiscount,
@@ -42,6 +44,58 @@ export type StaffTranslate = (
   key: string,
   params?: Readonly<Record<string, string | number>>,
 ) => string;
+
+/** The day's words from the catalogue, read once (`staffDayWordsOf`). */
+export interface StaffDayWords {
+  /** «Клиент без име» — `staff.day.unnamedClient`. */
+  readonly unnamedClient: string;
+  /** «Отказан» — `appointments.status.<word>`. */
+  readonly statusName: (status: BookingStatus) => string;
+  /** «Заявен» — `staff.day.exception.<word>`, for a state worth interrupting a glance. */
+  readonly exception: (status: BookingStatus) => string;
+  /** «Не дойде» — `staff.visit.resolution.noShow`. */
+  readonly noShow: string;
+  /** «Дошъл» — `staff.day.statusArrived`. */
+  readonly arrived: string;
+  /** «още 12 мин» — `staff.day.agendaRemaining`. */
+  readonly remaining: (span: string) => string;
+  /** «Още действия — Иван, 10:00» — `staff.day.rowMenu`. */
+  readonly rowMenu: (client: string, time: string) => string;
+  /** A reason's words — `staff.day.cancelReasonCode.<word>`. */
+  readonly cancelReason: (reason: CancellationReason) => string;
+  /** A verb's word, by its catalogue key (`verbKeyOf`). */
+  readonly verb: (key: string) => string;
+  /** «Група от 2» — `staff.day.partyOf`. */
+  readonly partyOf: (count: number) => string;
+  /** «Блокирано» — `staff.day.blockedLabel`. */
+  readonly blocked: string;
+  /** «45 мин», «1 ч», «6 ч 30 мин» — `staff.day.span*`. */
+  readonly span: SpanWords;
+  /** «2 ч свободни» — `staff.day.daySummaryFree`. */
+  readonly daySummaryFree: (span: string) => string;
+  /** «12,00 € бакшиши» — `staff.day.daySummaryTips`. */
+  readonly daySummaryTips: (amount: string) => string;
+  /** «Почивен ден» — `staff.day.offBadge`. */
+  readonly offBadge: string;
+  /** «Иван почива» — `staff.day.offChip`. */
+  readonly offChip: (name: string) => string;
+  /** «още 2» — `staff.day.allDayMore`. */
+  readonly allDayMore: (count: number) => string;
+  /** «Редовен» — `staff.visit.clientReturning`. */
+  readonly clientReturning: string;
+  /** «Нов час» — `staff.visit.newTitle`. */
+  readonly newVisitTitle: string;
+  /** «посл. 3 авг» — `staff.visit.lastVisit`. */
+  readonly lastVisit: (date: string) => string;
+  /** «Скорошни» — `staff.visit.clientsRecent`. */
+  readonly recentClients: string;
+  /**
+   * «{{minutes}} мин», raw off the LOADED table, or `null` while it is not
+   * here — the tag is withheld then rather than printed as its key (review r4,
+   * `staff.visit.minutes`).
+   */
+  readonly minutesPattern: string | null;
+}
 
 /**
  * Which DS options the scope switcher's «Всички» answers by — the menu's
@@ -336,7 +390,7 @@ export interface AgendaGroupVm {
   readonly startMinutes: MinuteOfDay;
   /** `true` once the clock has reached this heading (`VisitListSystem.hasStarted`). */
   readonly past: boolean;
-  readonly items: readonly RunEntryVm[];
+  readonly items: readonly AgendaItemVm[];
 }
 
 /** A sellable hole. Same row grammar, no segment fill (§4.4). */
@@ -370,6 +424,44 @@ export interface GapRowVm {
 }
 
 export type RunEntryVm = DayRowVm | GapRowVm;
+
+/**
+ * WHAT A VISIT'S CARD PRINTS, as the agenda's switches and the clock leave it —
+ * built with the group, in the `computed()` that reads the tick, so the words
+ * that say "right now" stay true and every row keeps its `@for` identity.
+ */
+export interface AgendaCardVm {
+  /** The row's accessible name — and the only place its state is still said. */
+  readonly rowLabel: string;
+  /** The glyph of an hour that did not happen, on the client's disc. */
+  readonly stateIcon: UiIconName | null;
+  /** An hour that did not happen: the head is struck through. */
+  readonly struck: boolean;
+  /** The lines under the name, each with something to say and its switch on. */
+  readonly lines: readonly StaffEventLine[];
+  /** «+1» — the rest of this chair's seats, on the face's badge. */
+  readonly guestsMark: string;
+  readonly start: string | null;
+  /** The end, marked when it falls on the next day: «00:15⁺¹». */
+  readonly end: string | null;
+  /** The state's one word, else the relative time, else nothing. */
+  readonly gloss: string | null;
+  /** The gloss says a state, not a time. */
+  readonly glossState: boolean;
+  /** Is there anything for the foot to hold? */
+  readonly foot: boolean;
+  readonly price: string | null;
+  readonly partyShare: string | null;
+  /** How far the run is from the catalogue — never on an hour that did not happen. */
+  readonly tag: string | null;
+  readonly marks: readonly UiIconName[];
+}
+
+/** A visit as the agenda draws it: the row, and its card's words. */
+export type AgendaVisitVm = DayRowVm & { readonly card: AgendaCardVm };
+
+/** One entry of a time group. */
+export type AgendaItemVm = AgendaVisitVm | GapRowVm;
 
 /** One neighbour on a sheet's frame — a name, a span on its axis, a tone. */
 export interface FrameNeighbour {
