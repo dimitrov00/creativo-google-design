@@ -16,6 +16,7 @@ import {
   TrackMinute,
   MinuteOfDay,
   type Result,
+  type SeatId,
 } from '@core/primitives';
 import type { SchedulingError } from '@core/errors';
 import type { TrackSpan } from './grid-layout.system';
@@ -58,6 +59,18 @@ const DEFAULT_SPAN_MINUTES = durationOf(30);
  * and the shortest span a visit or a block may be drawn at.
  */
 const GRAIN_MINUTES = durationOf(5);
+
+/**
+ * The shortest visit the sheet's frame will draw. The typed floor is one grain
+ * ({@link VisitDraftSystem.typedSpan}), so a typed visit can be shorter.
+ */
+const FRAME_MIN_MINUTES = durationOf(10);
+
+/** How far either side of a shift a typed start is offered. */
+const TYPED_START_MARGIN_MINUTES = durationOf(60);
+
+/** The last minute of the civil day a typed start can name. */
+const LAST_DAY_MINUTE = 1439;
 /** A shop day's minutes — a typed end before the start runs into the next day. */
 const DAY_MINUTES = 1440;
 
@@ -199,6 +212,8 @@ export const VisitDraftSystem = {
   PLACEHOLDER_CLIENT_ID,
   DEFAULT_SPAN_MINUTES,
   GRAIN_MINUTES,
+  FRAME_MIN_MINUTES,
+  TYPED_START_MARGIN_MINUTES,
   REPEAT_PRESETS,
   MONDAY_TO_FRIDAY,
 
@@ -411,6 +426,47 @@ export const VisitDraftSystem = {
           ? { ...leg, clientId: personId }
           : leg,
       );
+    }
+    return out;
+  },
+
+  /**
+   * THE BOUNDS OFFERED TO A TYPED START: an hour either side of the shift,
+   * held to the civil day; the whole day with no shift, so an unreadable roster
+   * never narrows what can be typed. Advisory: the field's `min`/`max` only.
+   */
+  typedStartBounds(shift: TrackSpan | null): TrackSpan {
+    return {
+      startMinute: TrackMinute.ofProven(
+        shift === null
+          ? 0
+          : Math.max(0, shift.startMinute - TYPED_START_MARGIN_MINUTES),
+      ),
+      endMinute: TrackMinute.ofProven(
+        shift === null
+          ? LAST_DAY_MINUTE
+          : Math.min(
+              LAST_DAY_MINUTE,
+              shift.endMinute + TYPED_START_MARGIN_MINUTES,
+            ),
+      ),
+    };
+  },
+
+  /**
+   * WHAT «ЗАПИШИ ПАК» CARRIES: the visit's legs as they are, in order, each on
+   * a fresh seat (`mint`) with its override mark cleared, so the commit mints
+   * new seats rather than naming old ones. Price and minutes stay as stored.
+   * Not what the visit sheet's «Повтори» does: that one re-reads today's
+   * catalogue.
+   */
+  rebookLegs<
+    L extends { readonly seatId: SeatId; readonly overridden: boolean },
+  >(legs: readonly L[], mint: (leg: L, index: number) => SeatId): readonly L[] {
+    const out: L[] = [];
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i] as L;
+      out.push({ ...leg, seatId: mint(leg, i), overridden: false });
     }
     return out;
   },

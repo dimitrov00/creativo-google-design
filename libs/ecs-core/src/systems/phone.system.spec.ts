@@ -183,6 +183,22 @@ describe('PhoneSystem.countryCallingCode', () => {
   });
 });
 
+describe('PhoneSystem.callingCodeOr — the dial code with its fallback', () => {
+  it('gives a known country’s code, not the fallback', () => {
+    expect(PhoneSystem.callingCodeOr(iso('US'), '359')).toBe('1');
+  });
+
+  it('gives the fallback for a code the metadata does not support', () => {
+    expect(PhoneSystem.callingCodeOr(CountryIso2.of('XX'), '359')).toBe('359');
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(PhoneSystem.callingCodeOr(BG, '1')).toBe(
+      PhoneSystem.callingCodeOr(BG, '1'),
+    );
+  });
+});
+
 describe('PhoneSystem.listPhoneCountries', () => {
   it('localizes names for an English locale and carries dial codes', () => {
     const bulgaria = PhoneSystem.listPhoneCountries(namingFor('en')).find(

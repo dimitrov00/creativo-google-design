@@ -245,6 +245,63 @@ export const Seat = {
   },
 
   /**
+   * Is this an account seated as somebody's companion — a person the booker
+   * brought, with an account of their own? A guest is not.
+   */
+  isCompanion(seat: AccountOccupant): boolean {
+    return (
+      seat.seatSubject === SeatSubject.Account &&
+      seat.subjectRelationship === SubjectRelationship.Companion
+    );
+  },
+
+  /**
+   * Does this seat's person wear the booking's contact — its name and its
+   * number? Any account seat but a companion: the contact is the booker's, so
+   * a son booked by his father never wears the father's name or number. A
+   * staff `CLIENT` seat does wear it. A guest holds only their own label.
+   */
+  wearsBookingContact(seat: AccountOccupant): boolean {
+    return (
+      seat.seatSubject === SeatSubject.Account &&
+      seat.subjectRelationship !== SubjectRelationship.Companion
+    );
+  },
+
+  /** One chair's share of a party: the seats on `barberId`, in stored order. */
+  ofChair<S extends { readonly barberId: BarberId }>(
+    seats: readonly S[],
+    barberId: BarberId,
+  ): readonly S[] {
+    const out: S[] = [];
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i] as S;
+      if (seat.barberId === barberId) out.push(seat);
+    }
+    return out;
+  },
+
+  /**
+   * A chair's own span on the visit's shop day (Law 7.3): the FIRST of its
+   * seats' start to the LAST of its seats' end, in stored order and not a
+   * hull — the envelope's minutes when the chair holds no seat.
+   */
+  chairSpan(
+    seats: readonly ChairGeometry[],
+    envelope: {
+      readonly startMinutes: MinuteOfDay;
+      readonly endMinutes: EndMinute;
+    },
+  ): MinuteRange {
+    const first = seats[0];
+    const last = seats[seats.length - 1];
+    return MinuteRange.of(
+      first === undefined ? envelope.startMinutes : first.startMinutes,
+      last === undefined ? envelope.endMinutes : endMinutes(last),
+    );
+  },
+
+  /**
    * The same seat, resolved — its core, terms and occupant untouched; the
    * old outcome's variant fields are gone, the new outcome's present.
    */

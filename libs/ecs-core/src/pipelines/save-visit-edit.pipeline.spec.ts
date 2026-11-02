@@ -79,7 +79,7 @@ const ROW: StaffSaveRowFacts = {
   legs: [
     {
       seatId: CUT_SEAT,
-      minutes: duration(30),
+      durationMinutes: duration(30),
       barberId: IVAN,
       priceCents: cents(2800),
     },
@@ -94,7 +94,7 @@ function leg(overrides: Partial<StaffEditDraft.Leg> = {}): StaffEditDraft.Leg {
     seatId: CUT_SEAT,
     serviceId: ServiceId.of('svc-unknown-0003'),
     variantId: null,
-    minutes: duration(30),
+    durationMinutes: duration(30),
     priceCents: cents(2800),
     currency: Currency.EUR,
     typedPriceCents: cents(2800),
@@ -240,7 +240,7 @@ describe('saveVisitEdit — the batch first, then the note, then the tip (round 
           seatIds: [FIRST, SECOND],
           legs: [FIRST, SECOND].map((seatId) => ({
             seatId,
-            minutes: duration(30),
+            durationMinutes: duration(30),
             barberId: IVAN,
             priceCents: cents(2800),
           })),

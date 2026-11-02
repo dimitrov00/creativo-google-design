@@ -16,6 +16,7 @@ import {
   EndMinute,
   LocalDate,
   MinuteOfDay,
+  SeatId,
   TrackMinute,
   Weekday,
 } from '@core/primitives';
@@ -474,6 +475,88 @@ describe("the visit draft's span and placeholder seats", () => {
 });
 
 /* ── pass C: the grain, the typed pair, the span rules, the person keys ── */
+
+describe('VisitDraftSystem.typedStartBounds — the bounds offered to a typed start', () => {
+  const shift = (start: number, end: number) => ({
+    startMinute: trackMinute(start),
+    endMinute: trackMinute(end),
+  });
+
+  it('offers the whole civil day with no shift', () => {
+    expect(S.typedStartBounds(null)).toEqual(shift(0, 1439));
+  });
+
+  it('offers an hour either side of a shift', () => {
+    expect(S.typedStartBounds(shift(540, 1020))).toEqual(shift(480, 1080));
+  });
+
+  it('clamps a start under the margin to midnight', () => {
+    expect(S.typedStartBounds(shift(30, 600)).startMinute).toBe(0);
+    expect(S.typedStartBounds(shift(60, 600)).startMinute).toBe(0);
+    expect(S.typedStartBounds(shift(61, 600)).startMinute).toBe(1);
+  });
+
+  it('clamps an end at or past 1379 to the last minute of the day', () => {
+    expect(S.typedStartBounds(shift(600, 1378)).endMinute).toBe(1438);
+    expect(S.typedStartBounds(shift(600, 1379)).endMinute).toBe(1439);
+    expect(S.typedStartBounds(shift(600, 1440)).endMinute).toBe(1439);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(shift(540, 1020));
+    expect(S.typedStartBounds(input)).toEqual(S.typedStartBounds(input));
+  });
+});
+
+describe('VisitDraftSystem.FRAME_MIN_MINUTES — the frame’s floor', () => {
+  it('is ten minutes, twice the typed floor of one grain', () => {
+    expect(S.FRAME_MIN_MINUTES).toBe(10);
+    expect(S.GRAIN_MINUTES).toBe(5);
+  });
+});
+
+describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries', () => {
+  const leg = (seat: string, overridden: boolean) => ({
+    seatId: SeatId.of(seat),
+    priceLabel: '28,00 €',
+    durationMinutes: d(45),
+    overridden,
+  });
+  const mint = (_leg: unknown, index: number) => SeatId.of(`draft-${index}`);
+
+  it('mints a fresh seat per leg, in order, handing the mint its index', () => {
+    const seen: string[] = [];
+    const out = S.rebookLegs(
+      [leg('a', false), leg('b', false)],
+      (entry, index) => {
+        seen.push(`${entry.seatId}:${index}`);
+        return mint(entry, index);
+      },
+    );
+    expect(out.map((entry) => entry.seatId)).toEqual(['draft-0', 'draft-1']);
+    expect(seen).toEqual(['a:0', 'b:1']);
+  });
+
+  it('clears the mark and keeps the stored price label and minutes', () => {
+    const [out] = S.rebookLegs([leg('a', true)], mint);
+    expect(out).toEqual({
+      seatId: 'draft-0',
+      priceLabel: '28,00 €',
+      durationMinutes: 45,
+      overridden: false,
+    });
+  });
+
+  it('answers nothing for no legs', () => {
+    expect(S.rebookLegs([], mint)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([leg('a', true)]);
+    expect(S.rebookLegs(legs, mint)).toEqual(S.rebookLegs(legs, mint));
+    expect(legs[0]?.seatId).toBe('a');
+  });
+});
 
 describe('the grain', () => {
   it('is five minutes', () => {

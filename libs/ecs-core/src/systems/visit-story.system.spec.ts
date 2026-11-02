@@ -6,6 +6,7 @@ import {
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
+  ChairMoment,
   Combinability,
   CouponValue,
   DiscountProvenance,
@@ -31,6 +32,7 @@ import {
   GiftVoucherId,
   SeatId,
   ServiceId,
+  TimeZone,
   UserId,
   LocalDate,
   UtcEpochMs,
@@ -46,6 +48,7 @@ import {
   localDate,
   minute,
   unwrapOk,
+  utcMs,
   appointmentFixture,
   seatFixture,
   termsFixture,
@@ -1637,5 +1640,298 @@ describe('VisitStorySystem — the extraction, purity', () => {
     expect(S.lastWorked(book, pick)).toBe(S.lastWorked(book, pick));
     expect(book.map((appointment) => appointment.id)).toHaveLength(2);
     expect(JSON.stringify([party, story])).toBe(before);
+  });
+});
+
+describe('VisitStorySystem.outwardFromNow — the order outward from now', () => {
+  const NOON = ZonedTimeSystem.shopNow(
+    at('2026-09-28T12:00:00'),
+    FIXTURE_TIME_ZONE,
+  );
+  const visit = (key: string, day: string, start: number, end: number) => ({
+    key,
+    shop: 'sofia',
+    localDate: localDate(day),
+    startMinutes: minute(start),
+    endMinutes: endMinute(end),
+  });
+  const keys = (hits: readonly { visit: { key: string } }[]) =>
+    hits.map((hit) => hit.visit.key);
+
+  it('takes what is still to come soonest first, then what has ended newest first', () => {
+    const hits = S.outwardFromNow(
+      [
+        visit('yesterday', '2026-09-27', 600, 630),
+        visit('tomorrow', '2026-09-29', 600, 630),
+        visit('this-morning', '2026-09-28', 540, 570),
+        visit('this-evening', '2026-09-28', 1080, 1110),
+      ],
+      () => NOON,
+    );
+    expect(keys(hits)).toEqual([
+      'this-evening',
+      'tomorrow',
+      'this-morning',
+      'yesterday',
+    ]);
+    expect(hits.map((hit) => hit.past)).toEqual([false, false, true, true]);
+  });
+
+  it('counts a visit whose end minute IS now as past', () => {
+    const [hit] = S.outwardFromNow(
+      [visit('ends-now', '2026-09-28', 690, 720)],
+      () => NOON,
+    );
+    expect(hit?.past).toBe(true);
+  });
+
+  it('keeps a running visit on the future side, ordered soonest', () => {
+    const hits = S.outwardFromNow(
+      [
+        visit('later', '2026-09-28', 800, 830),
+        visit('running', '2026-09-28', 700, 750),
+      ],
+      () => NOON,
+    );
+    expect(keys(hits)).toEqual(['running', 'later']);
+    expect(hits[0]?.past).toBe(false);
+  });
+
+  it('does not call a visit past while its shop has no known clock', () => {
+    const hits = S.outwardFromNow(
+      [visit('long-gone', '2020-01-01', 600, 630)],
+      () => null,
+    );
+    expect(hits[0]?.past).toBe(false);
+  });
+
+  it('judges each visit on its own shop’s clock', () => {
+    // 09:30 in Sofia, 06:30 at the UTC shop: the same 08:00–09:00 has ended in
+    // one and not in the other.
+    const instant = utcMs('2026-09-28T06:30:00Z');
+    const clocks: Record<string, ShopNow> = {
+      sofia: ZonedTimeSystem.shopNow(instant, FIXTURE_TIME_ZONE),
+      utc: ZonedTimeSystem.shopNow(instant, TimeZone.UTC),
+    };
+    const hits = S.outwardFromNow(
+      [
+        { ...visit('at-sofia', '2026-09-28', 480, 540), shop: 'sofia' },
+        { ...visit('at-utc', '2026-09-28', 480, 540), shop: 'utc' },
+      ],
+      (entry) => clocks[entry.shop] ?? null,
+    );
+    expect(keys(hits)).toEqual(['at-utc', 'at-sofia']);
+    expect(hits.map((hit) => hit.past)).toEqual([false, true]);
+  });
+
+  it('keeps the input’s order on equal wall times, on both sides', () => {
+    const same = (key: string, day: string) => visit(key, day, 600, 630);
+    expect(
+      keys(
+        S.outwardFromNow(
+          [
+            same('future-a', '2026-09-29'),
+            same('past-a', '2026-09-27'),
+            same('future-b', '2026-09-29'),
+            same('past-b', '2026-09-27'),
+          ],
+          () => NOON,
+        ),
+      ),
+    ).toEqual(['future-a', 'future-b', 'past-a', 'past-b']);
+  });
+
+  it('answers an empty list, an all-past list and an all-future list', () => {
+    expect(S.outwardFromNow([], () => NOON)).toEqual([]);
+    expect(
+      keys(
+        S.outwardFromNow(
+          [
+            visit('older', '2026-09-26', 600, 630),
+            visit('newer', '2026-09-27', 600, 630),
+          ],
+          () => NOON,
+        ),
+      ),
+    ).toEqual(['newer', 'older']);
+    expect(
+      keys(
+        S.outwardFromNow(
+          [
+            visit('later', '2026-09-30', 600, 630),
+            visit('sooner', '2026-09-29', 600, 630),
+          ],
+          () => NOON,
+        ),
+      ),
+    ).toEqual(['sooner', 'later']);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const visits = deepFreeze([
+      visit('a', '2026-09-27', 600, 630),
+      visit('b', '2026-09-29', 600, 630),
+    ]);
+    const once = S.outwardFromNow(visits, () => NOON);
+    expect(S.outwardFromNow(visits, () => NOON)).toEqual(once);
+  });
+});
+
+describe('VisitStorySystem.isInChair — running now', () => {
+  const NOON = ZonedTimeSystem.shopNow(
+    at('2026-09-28T12:00:00'),
+    FIXTURE_TIME_ZONE,
+  );
+  const open = { bookingStatus: BookingStatus.Confirmed };
+
+  it('is true from the start minute', () => {
+    expect(
+      S.isInChair(
+        open,
+        wall('2026-09-28T12:00:00'),
+        wall('2026-09-28T12:30:00'),
+        NOON,
+      ),
+    ).toBe(true);
+  });
+
+  it('is false at the end minute', () => {
+    expect(
+      S.isInChair(
+        open,
+        wall('2026-09-28T11:30:00'),
+        wall('2026-09-28T12:00:00'),
+        NOON,
+      ),
+    ).toBe(false);
+  });
+
+  it('holds a chair running to the closing midnight until the day has gone', () => {
+    const closing = {
+      localDate: localDate('2026-09-28'),
+      minute: endMinute(1440),
+    };
+    expect(S.isInChair(open, wall('2026-09-28T11:00:00'), closing, NOON)).toBe(
+      true,
+    );
+    expect(
+      S.isInChair(
+        open,
+        wall('2026-09-28T11:00:00'),
+        closing,
+        ZonedTimeSystem.shopNow(at('2026-09-29T00:00:00'), FIXTURE_TIME_ZONE),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    BookingStatus.Completed,
+    BookingStatus.Cancelled,
+    BookingStatus.NoShow,
+  ])('is false on a %s chair', (bookingStatus) => {
+    expect(
+      S.isInChair(
+        { bookingStatus },
+        wall('2026-09-28T11:30:00'),
+        wall('2026-09-28T12:30:00'),
+        NOON,
+      ),
+    ).toBe(false);
+  });
+
+  it('is false on another day, and with no clock known', () => {
+    expect(
+      S.isInChair(
+        open,
+        wall('2026-09-27T11:30:00'),
+        wall('2026-09-27T12:30:00'),
+        NOON,
+      ),
+    ).toBe(false);
+    expect(
+      S.isInChair(
+        open,
+        wall('2026-09-28T11:30:00'),
+        wall('2026-09-28T12:30:00'),
+        null,
+      ),
+    ).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const chair = deepFreeze({ ...open });
+    const start = deepFreeze(wall('2026-09-28T11:30:00'));
+    const end = deepFreeze(wall('2026-09-28T12:30:00'));
+    const now = deepFreeze({ ...NOON });
+    expect(S.isInChair(chair, start, end, now)).toBe(
+      S.isInChair(chair, start, end, now),
+    );
+  });
+});
+
+describe('VisitStorySystem.chairMoment / arrivedOpen — the row’s clock ladder', () => {
+  const chair = (bookingStatus: BookingStatus) => ({ bookingStatus });
+
+  it('words only tags', () => {
+    expect(ChairMoment).toEqual({
+      Hollow: 'HOLLOW',
+      InChair: 'IN_CHAIR',
+      Arrived: 'ARRIVED',
+      Scheduled: 'SCHEDULED',
+    });
+  });
+
+  it('calls a cancelled or no-show chair hollow, even with an arrival stamp', () => {
+    expect(S.chairMoment(chair(BookingStatus.Cancelled), true, false)).toBe(
+      ChairMoment.Hollow,
+    );
+    expect(S.chairMoment(chair(BookingStatus.NoShow), false, false)).toBe(
+      ChairMoment.Hollow,
+    );
+  });
+
+  it('ranks a running chair over the arrival, while the grid’s glyph still shows it', () => {
+    const open = chair(BookingStatus.Confirmed);
+    expect(S.chairMoment(open, true, true)).toBe(ChairMoment.InChair);
+    expect(S.arrivedOpen(open, true)).toBe(true);
+  });
+
+  it('says arrived for an open chair with the stamp, before it runs', () => {
+    expect(S.chairMoment(chair(BookingStatus.Pending), true, false)).toBe(
+      ChairMoment.Arrived,
+    );
+    expect(S.chairMoment(chair(BookingStatus.Confirmed), true, false)).toBe(
+      ChairMoment.Arrived,
+    );
+  });
+
+  it('leaves a completed chair with the stamp scheduled: today’s relative phrase', () => {
+    const done = chair(BookingStatus.Completed);
+    expect(S.chairMoment(done, true, false)).toBe(ChairMoment.Scheduled);
+    expect(S.arrivedOpen(done, true)).toBe(false);
+  });
+
+  it('is scheduled with no stamp', () => {
+    const open = chair(BookingStatus.Confirmed);
+    expect(S.chairMoment(open, false, false)).toBe(ChairMoment.Scheduled);
+    expect(S.arrivedOpen(open, false)).toBe(false);
+  });
+
+  it('keeps the arrival glyph off every settled chair', () => {
+    for (const status of [
+      BookingStatus.Completed,
+      BookingStatus.Cancelled,
+      BookingStatus.NoShow,
+    ]) {
+      expect(S.arrivedOpen(chair(status), true)).toBe(false);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(chair(BookingStatus.Confirmed));
+    expect(S.chairMoment(frozen, true, false)).toBe(
+      S.chairMoment(frozen, true, false),
+    );
+    expect(S.arrivedOpen(frozen, true)).toBe(S.arrivedOpen(frozen, true));
   });
 });

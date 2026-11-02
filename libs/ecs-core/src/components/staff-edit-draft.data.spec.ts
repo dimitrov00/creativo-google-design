@@ -33,7 +33,7 @@ const LEG: StaffEditDraft.Leg = {
   seatId: SeatId.of('seat-1'),
   serviceId: ServiceId.of('svc-cut'),
   variantId: null,
-  minutes: duration(30),
+  durationMinutes: duration(30),
   priceCents: cents(2800),
   currency: Currency.EUR,
   typedPriceCents: null,

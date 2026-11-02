@@ -231,7 +231,7 @@ describe('ClientPrivacySystem.contactIsPersons', () => {
       seatId: SeatId.of(seatId),
       serviceId: ServiceId.of('svc-classic-cut'),
       variantId: null,
-      minutes: duration(30),
+      durationMinutes: duration(30),
       priceCents: cents(2800),
       currency: Currency.EUR,
       typedPriceCents: null,

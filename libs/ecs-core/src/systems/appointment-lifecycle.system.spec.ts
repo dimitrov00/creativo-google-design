@@ -1941,3 +1941,66 @@ describe('AppointmentLifecycleSystem — purity', () => {
     ]);
   });
 });
+
+describe('AppointmentLifecycleSystem.requestVerb — the request’s verb', () => {
+  const offered = (...verbs: readonly StaffVerb[]) =>
+    verbs.map((rowVerb) => ({ rowVerb, label: String(rowVerb) }));
+  const verbOf = (item: { readonly rowVerb: StaffVerb }) => item.rowVerb;
+
+  it('gives the offered confirm on a pending chair — the worded item itself', () => {
+    const items = offered(BookingStatus.Cancelled, BookingStatus.Confirmed);
+    expect(
+      AppointmentLifecycleSystem.requestVerb(
+        BookingStatus.Pending,
+        items,
+        verbOf,
+      ),
+    ).toBe(items[1]);
+  });
+
+  it('is null on a pending chair whose confirm is not offered', () => {
+    expect(
+      AppointmentLifecycleSystem.requestVerb(
+        BookingStatus.Pending,
+        offered(BookingStatus.Cancelled),
+        verbOf,
+      ),
+    ).toBeNull();
+    expect(
+      AppointmentLifecycleSystem.requestVerb(BookingStatus.Pending, [], verbOf),
+    ).toBeNull();
+  });
+
+  it.each([
+    BookingStatus.Confirmed,
+    BookingStatus.Completed,
+    BookingStatus.Cancelled,
+    BookingStatus.NoShow,
+    null,
+  ])('is null on a %s chair, the confirm offered or not', (status) => {
+    expect(
+      AppointmentLifecycleSystem.requestVerb(
+        status,
+        offered(BookingStatus.Confirmed),
+        verbOf,
+      ),
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const items = deepFreeze(offered(BookingStatus.Confirmed));
+    expect(
+      AppointmentLifecycleSystem.requestVerb(
+        BookingStatus.Pending,
+        items,
+        verbOf,
+      ),
+    ).toBe(
+      AppointmentLifecycleSystem.requestVerb(
+        BookingStatus.Pending,
+        items,
+        verbOf,
+      ),
+    );
+  });
+});

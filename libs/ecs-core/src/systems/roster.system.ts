@@ -311,6 +311,55 @@ export const RosterSystem = {
   },
 
   /**
+   * Rostered nowhere on that day, whatever else the lane holds and whether
+   * or not its read failed: the block sheet's question (`offOn`, DEP-4).
+   * {@link offAllDay} also asks that the read did not fail; the two are not
+   * the same answer on a failed lane.
+   */
+  rosteredNowhere(lane: {
+    readonly rostered: readonly MinuteRange[];
+  }): boolean {
+    return lane.rostered.length === 0;
+  },
+
+  /**
+   * IS THIS CHAIR OFF ALL DAY, as the all-day band says it: rostered nowhere
+   * and the lane's read did not fail (OR-2: a failed lane is not off). A chair
+   * off all day may still hold bookings, which is where this differs from the
+   * negation of {@link worksDay}.
+   */
+  offAllDay(lane: {
+    readonly rostered: readonly MinuteRange[];
+    readonly failed: boolean;
+  }): boolean {
+    return RosterSystem.rosteredNowhere(lane) && !lane.failed;
+  },
+
+  /**
+   * THE DAY THE CHAIRS ARE AT WORK: rostered time AND the time carved out of
+   * it, normalized. Rostered alone is post-carve, so a blocked hour would read
+   * as "not working"; a block is working, but taken.
+   */
+  atWork(
+    lanes: readonly {
+      readonly rostered: readonly MinuteRange[];
+      readonly blocks: readonly MinuteRange[];
+    }[],
+  ): readonly MinuteRange[] {
+    const ranges: MinuteRange[] = [];
+    for (let i = 0; i < lanes.length; i++) {
+      const lane = lanes[i] as (typeof lanes)[number];
+      for (let k = 0; k < lane.rostered.length; k++) {
+        ranges.push(lane.rostered[k] as MinuteRange);
+      }
+      for (let k = 0; k < lane.blocks.length; k++) {
+        ranges.push(lane.blocks[k] as MinuteRange);
+      }
+    }
+    return IntervalSetSystem.normalize(ranges);
+  },
+
+  /**
    * Where the shop stands at `minute` of `localDate` against its Mon-first
    * week (`DayHours`, the closed day kept), on the shop's wall clock:
    *

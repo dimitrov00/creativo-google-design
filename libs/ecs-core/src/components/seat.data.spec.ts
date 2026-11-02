@@ -15,6 +15,7 @@ import {
 import { SchedulingError } from '@core/errors';
 import {
   deepFreeze,
+  endMinute,
   hourCount,
   minute,
   unwrapOk,
@@ -22,6 +23,7 @@ import {
   seatFixture,
 } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
+import { MinuteRange } from './minute-range.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';
@@ -380,6 +382,98 @@ describe('Seat.isOwnAccount — an account seated as the booker’s SELF', () =>
     const once = Seat.isOwnAccount(frozen);
     expect(Seat.isOwnAccount(frozen)).toBe(once);
     expect(frozen).toEqual(accountSeat(OWNER, SubjectRelationship.Self));
+  });
+});
+
+describe('Seat.isCompanion / wearsBookingContact — who wears the booking’s contact', () => {
+  const account = (relationship: SubjectRelationship) =>
+    seat({
+      occupant: SeatOccupant.account(OWNER, customerOf(OWNER), relationship),
+    });
+
+  it('SELF wears it', () => {
+    const self = account(SubjectRelationship.Self);
+    expect(Seat.isCompanion(self)).toBe(false);
+    expect(Seat.wearsBookingContact(self)).toBe(true);
+  });
+
+  it('COMPANION never does: a son does not wear his father’s name or number', () => {
+    const companion = account(SubjectRelationship.Companion);
+    expect(Seat.isCompanion(companion)).toBe(true);
+    expect(Seat.wearsBookingContact(companion)).toBe(false);
+  });
+
+  it('a staff CLIENT seat does', () => {
+    const client = account(SubjectRelationship.Client);
+    expect(Seat.isCompanion(client)).toBe(false);
+    expect(Seat.wearsBookingContact(client)).toBe(true);
+  });
+
+  it('a guest, anonymous or walk-in, holds neither', () => {
+    const anonymous = seat();
+    const walkIn = seat({
+      occupant: SeatOccupant.walkIn(customerOf(OTHER), SeatLabel.of('Иван')),
+    });
+    for (const guest of [anonymous, walkIn]) {
+      expect(Seat.isCompanion(guest)).toBe(false);
+      expect(Seat.wearsBookingContact(guest)).toBe(false);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(account(SubjectRelationship.Companion));
+    expect(Seat.isCompanion(frozen)).toBe(Seat.isCompanion(frozen));
+    expect(Seat.wearsBookingContact(frozen)).toBe(
+      Seat.wearsBookingContact(frozen),
+    );
+  });
+});
+
+describe('Seat.ofChair / chairSpan — a chair’s seats and its span', () => {
+  const ENVELOPE = { startMinutes: minute(540), endMinutes: endMinute(600) };
+  const at = (start: number, barberId = IVAN) =>
+    seat({ startMinutes: minute(start), barberId });
+
+  it('picks one chair’s seats, in stored order', () => {
+    const seats = [at(600), at(630, STEFAN), at(660)];
+    expect(Seat.ofChair(seats, IVAN)).toEqual([seats[0], seats[2]]);
+    expect(Seat.ofChair(seats, BarberId.of('nobody'))).toEqual([]);
+  });
+
+  it('spans one seat', () => {
+    expect(Seat.chairSpan([at(600)], ENVELOPE)).toEqual(
+      MinuteRange.of(minute(600), endMinute(630)),
+    );
+  });
+
+  it('spans sequential seats, first start to last end', () => {
+    expect(Seat.chairSpan([at(600), at(630)], ENVELOPE)).toEqual(
+      MinuteRange.of(minute(600), endMinute(660)),
+    );
+  });
+
+  it('reads first and last in stored order: it is not a hull', () => {
+    expect(Seat.chairSpan([at(630), at(600)], ENVELOPE)).toEqual(
+      MinuteRange.of(minute(630), endMinute(630)),
+    );
+  });
+
+  it('falls to the envelope when the chair holds no seat', () => {
+    expect(Seat.chairSpan([], ENVELOPE)).toEqual(
+      MinuteRange.of(ENVELOPE.startMinutes, ENVELOPE.endMinutes),
+    );
+  });
+
+  it('holds a seat ending at the closing midnight', () => {
+    expect(Seat.chairSpan([at(1410)], ENVELOPE).endMinutes).toBe(1440);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const seats = deepFreeze([at(600), at(630, STEFAN)]);
+    expect(Seat.ofChair(seats, IVAN)).toEqual(Seat.ofChair(seats, IVAN));
+    expect(Seat.chairSpan(seats, ENVELOPE)).toEqual(
+      Seat.chairSpan(seats, ENVELOPE),
+    );
   });
 });
 

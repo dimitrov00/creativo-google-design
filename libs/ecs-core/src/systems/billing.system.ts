@@ -273,6 +273,29 @@ type VoucherDrawer = {
  */
 export const BillingSystem = {
   /**
+   * WHAT A NEW VISIT WILL COST, before the server's figure: each leg's typed
+   * price, else the price it was picked at, summed. `null` with no legs, or
+   * while any leg's price is unknown («по договорка»). Cents of the bill's one
+   * currency: a leg's own `currency` is not read.
+   */
+  draftLegsTotal(
+    legs: readonly {
+      readonly typedPriceCents: PriceCents | null;
+      readonly priceCents: PriceCents | null;
+    }[],
+  ): PriceCents | null {
+    if (legs.length === 0) return null;
+    const prices: PriceCents[] = [];
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i] as (typeof legs)[number];
+      const cents = leg.typedPriceCents ?? leg.priceCents;
+      if (cents === null) return null;
+      prices.push(cents);
+    }
+    return PriceCents.sum(prices);
+  },
+
+  /**
    * The seats' prices summed — one currency per visit is an invariant, so a
    * second one is refused (`MIXED_CURRENCY`), and a visit with no seat has
    * no bill (`EMPTY_SEATS`).

@@ -275,6 +275,31 @@ export const DiscountSystem = {
   },
 
   /**
+   * Is this code already on the bill — on a discount or on a voucher? The
+   * code as `VoucherCode.normalize` answers it, before any lookup, so a plain
+   * string. A line with no code (`null`) never matches.
+   */
+  codeOnBill(
+    code: string,
+    discounts: readonly { readonly code: VoucherCode | null }[],
+    vouchers: readonly { readonly code: VoucherCode }[],
+  ): boolean {
+    for (let i = 0; i < discounts.length; i++) {
+      if (
+        (discounts[i] as { readonly code: VoucherCode | null }).code === code
+      ) {
+        return true;
+      }
+    }
+    for (let i = 0; i < vouchers.length; i++) {
+      if ((vouchers[i] as { readonly code: VoucherCode }).code === code) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  /**
    * The inputs in the evaluator's own total order — method rank, magnitude,
    * then `grantedAtUtcMs`, then id: the order {@link apply} takes them in,
    * every input kept (a min-spend gate is {@link apply}'s, not the

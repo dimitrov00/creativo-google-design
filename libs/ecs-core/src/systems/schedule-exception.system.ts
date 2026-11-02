@@ -1,4 +1,10 @@
-import { ExceptionEffect, Result } from '@core/primitives';
+import {
+  type BarberId,
+  ExceptionEffect,
+  type LocalDate,
+  type LocationId,
+  Result,
+} from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import {
   ExceptionEffectRule,
@@ -19,6 +25,58 @@ function metaOfStored(stored: ScheduleException): ScheduleExceptionMeta {
   };
 }
 
+/** The block sheet's save, as {@link ScheduleExceptionSystem.blockSavePlan} reads it. */
+export type BlockSaveInput = {
+  /** Whether the sheet opened on a stored block, rather than a new one. */
+  readonly editing: boolean;
+  /** The sheet as it opened: whether it was all day, and its chairs. */
+  readonly opened: {
+    readonly allDay: boolean;
+    readonly barberIds: readonly BarberId[];
+  };
+  /** The range the sheet opened on, parsed at the edge; `null` when it is no range of one day. */
+  readonly openedRange: MinuteRange | null;
+  /** The day shown behind the sheet: the day an edited range is lifted from. */
+  readonly shownDay: LocalDate;
+  /** What the sheet now says. */
+  readonly saved: {
+    readonly allDay: boolean;
+    readonly barberIds: readonly BarberId[];
+    readonly days: readonly LocalDate[];
+  };
+  /** The range it now says, parsed at the edge; `null` when it is no range of one day. */
+  readonly savedRange: MinuteRange | null;
+  /** A chair's home shop; `null` when it has none. */
+  readonly homeOf: (barberId: BarberId) => LocationId | null;
+};
+
+/** A range to lift before anything is written. */
+export type BlockLift = {
+  readonly barberId: BarberId;
+  readonly range: MinuteRange;
+  readonly localDate: LocalDate;
+};
+
+/** One chair's write. No `ranges` means the whole day. */
+export type BlockWrite = {
+  readonly barberId: BarberId;
+  readonly locationId: LocationId;
+  readonly ranges: readonly MinuteRange[];
+  /** The one day this write names; `null` when it is a series over `days`. */
+  readonly localDate: LocalDate | null;
+  readonly days: readonly LocalDate[];
+};
+
+/**
+ * What a block sheet's save costs, in order: the lift, then the writes.
+ * `writes` is `null` when the saved range cannot be read: the lift still
+ * stands and nothing is written.
+ */
+export type BlockSavePlan = {
+  readonly lift: BlockLift | null;
+  readonly writes: readonly BlockWrite[] | null;
+};
+
 /**
  * A staff editor's exception, sanitised to what the public may know, and the
  * merge arithmetic of the exception writer
@@ -27,6 +85,45 @@ function metaOfStored(stored: ScheduleException): ScheduleExceptionMeta {
  * one shop day throughout — no instant, no zone.
  */
 export const ScheduleExceptionSystem = {
+  /**
+   * Does the sheet's lift take the WHOLE day: an all-day block, or a chair off
+   * all day. The store refuses a range lift on a closed day, so a closed day's
+   * only lift is the whole one.
+   */
+  liftsWholeDay(allDayBlock: boolean, chairOff: boolean): boolean {
+    return allDayBlock || chairOff;
+  },
+
+  /**
+   * THE BLOCK SHEET'S WRITE PLAN. An edited range is lifted where it was, its
+   * first chair on the shown day, then written where it now is; an edited
+   * all-day block lifts nothing here, and neither does a range or a chair that
+   * cannot be read. Each saved chair writes once, in order, on its home shop;
+   * a chair with no home is skipped. One day is a single write and any other
+   * count a series. An all-day save writes no `ranges`.
+   */
+  blockSavePlan(input: BlockSaveInput): BlockSavePlan {
+    const { editing, opened, openedRange, saved, savedRange } = input;
+    const from = opened.barberIds[0];
+    const lift: BlockLift | null =
+      editing && !opened.allDay && openedRange !== null && from !== undefined
+        ? { barberId: from, range: openedRange, localDate: input.shownDay }
+        : null;
+    if (!saved.allDay && savedRange === null) return { lift, writes: null };
+    const ranges: readonly MinuteRange[] =
+      saved.allDay || savedRange === null ? [] : [savedRange];
+    const days = saved.days;
+    const localDate = days.length === 1 ? (days[0] as LocalDate) : null;
+    const writes: BlockWrite[] = [];
+    for (let i = 0; i < saved.barberIds.length; i++) {
+      const barberId = saved.barberIds[i] as BarberId;
+      const locationId = input.homeOf(barberId);
+      if (locationId === null) continue;
+      writes.push({ barberId, locationId, ranges, localDate, days });
+    }
+    return { lift, writes };
+  },
+
   /**
    * **The GDPR boundary.** The reasoned detail → the PUBLIC effect: `CLOSED`,
    * `TIME_OFF`, `SICK`, `TRAINING` and `TRAVEL` all collapse to the SAME

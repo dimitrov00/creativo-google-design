@@ -1,4 +1,9 @@
-import { BarberOffering, type Money, ServiceTerms } from '@core/components';
+import {
+  BarberOffering,
+  type Money,
+  type ServiceVariant,
+  ServiceTerms,
+} from '@core/components';
 import type { Service } from '@core/entities';
 import type {
   DurationMinutes,
@@ -13,6 +18,18 @@ import type {
  * passes straight in (Law 3: zero inbound mapping).
  */
 export type PricedService = ServiceTerms & Pick<Service, 'offerings'>;
+
+/**
+ * What {@link OfferingPriceSystem.offersOf} reads of a service: the terms
+ * matrix and the variants it declares. A whole `Service` passes straight in.
+ */
+export type OfferedService = PricedService & Pick<Service, 'variants'>;
+
+/** One thing a chair's menu sells: the variant, or `null` for a service that declares none, at its terms. */
+export type ServiceOffer = {
+  readonly variant: ServiceVariant | null;
+  readonly terms: ServiceTerms;
+};
 
 /** A closed `[min, max]` of cents or minutes. */
 export type OfferingRange<T extends number = number> = {
@@ -68,6 +85,39 @@ export const OfferingPriceSystem = {
     return ServiceTerms.price(
       OfferingPriceSystem.termsFor(service, barberId, variantId),
     );
+  },
+
+  /**
+   * What a chair's menu holds of this service, each at {@link termsFor}'s
+   * terms. A service WITH variants is offered per variant, in declared order,
+   * and never bare: the server refuses a seat whose price the variant would
+   * move. A service without variants is one bare offer.
+   */
+  offersOf(
+    service: OfferedService,
+    barberId: BarberId,
+  ): readonly ServiceOffer[] {
+    if (service.variants.length === 0) {
+      return [
+        {
+          variant: null,
+          terms: OfferingPriceSystem.termsFor(service, barberId, null),
+        },
+      ];
+    }
+    const offers: ServiceOffer[] = [];
+    for (let i = 0; i < service.variants.length; i++) {
+      const variant = service.variants[i] as ServiceVariant;
+      offers.push({
+        variant,
+        terms: OfferingPriceSystem.termsFor(
+          service,
+          barberId,
+          variant.variantId,
+        ),
+      });
+    }
+    return offers;
   },
 
   /** Who performs the service, in declaration order. */

@@ -580,3 +580,137 @@ describe('ScheduleExceptionSystem.unblock — lifting a block', () => {
     );
   });
 });
+
+describe('ScheduleExceptionSystem.liftsWholeDay — the block sheet’s lift scope', () => {
+  it.each([
+    [true, true, true],
+    [true, false, true],
+    [false, true, true],
+    [false, false, false],
+  ])('all-day %s, chair off %s → %s', (allDay, chairOff, whole) => {
+    expect(ScheduleExceptionSystem.liftsWholeDay(allDay, chairOff)).toBe(whole);
+  });
+});
+
+describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save costs', () => {
+  const IVAN = BarberId.of('ivan');
+  const NIKO = BarberId.of('niko');
+  const HOMELESS = BarberId.of('homeless');
+  const SHOP = LocationId.of('shop');
+  const SHOWN = localDate('2026-09-28');
+  const OTHER = localDate('2026-09-29');
+  const homeOf = (barberId: BarberId) => (barberId === HOMELESS ? null : SHOP);
+  const old = range('10:00', '11:00');
+  const now = range('12:00', '13:00');
+  const newOne = {
+    editing: false,
+    opened: { allDay: false, barberIds: [IVAN] },
+    openedRange: old,
+    shownDay: SHOWN,
+    saved: { allDay: false, barberIds: [IVAN], days: [OTHER] },
+    savedRange: now,
+    homeOf,
+  };
+  const edited = {
+    ...newOne,
+    editing: true,
+    opened: { allDay: false, barberIds: [IVAN, NIKO] },
+  };
+
+  it('lifts an edited range first, its first chair on the shown day', () => {
+    expect(ScheduleExceptionSystem.blockSavePlan(edited).lift).toEqual({
+      barberId: IVAN,
+      range: old,
+      localDate: SHOWN,
+    });
+  });
+
+  it('lifts nothing for an edited all-day block', () => {
+    const plan = ScheduleExceptionSystem.blockSavePlan({
+      ...edited,
+      editing: true,
+      opened: { allDay: true, barberIds: [IVAN] },
+    });
+    expect(plan.lift).toBeNull();
+    expect(plan.writes).toHaveLength(1);
+  });
+
+  it('lifts nothing for an opened range it cannot read, or no chair', () => {
+    expect(
+      ScheduleExceptionSystem.blockSavePlan({ ...edited, openedRange: null })
+        .lift,
+    ).toBeNull();
+    expect(
+      ScheduleExceptionSystem.blockSavePlan({
+        ...edited,
+        opened: { ...edited.opened, barberIds: [] },
+      }).lift,
+    ).toBeNull();
+  });
+
+  it('writes a new block without a lift', () => {
+    expect(ScheduleExceptionSystem.blockSavePlan(newOne)).toEqual({
+      lift: null,
+      writes: [
+        {
+          barberId: IVAN,
+          locationId: SHOP,
+          ranges: [now],
+          localDate: OTHER,
+          days: [OTHER],
+        },
+      ],
+    });
+  });
+
+  it('names the one day, and leaves a series its days', () => {
+    const days = [SHOWN, OTHER];
+    const [series] =
+      ScheduleExceptionSystem.blockSavePlan({
+        ...newOne,
+        saved: { ...newOne.saved, days },
+      }).writes ?? [];
+    expect(series?.localDate).toBeNull();
+    expect(series?.days).toEqual(days);
+    const [none] =
+      ScheduleExceptionSystem.blockSavePlan({
+        ...newOne,
+        saved: { ...newOne.saved, days: [] },
+      }).writes ?? [];
+    expect(none?.localDate).toBeNull();
+    expect(none?.days).toEqual([]);
+  });
+
+  it('skips a chair with no home, and keeps the rest in order', () => {
+    const plan = ScheduleExceptionSystem.blockSavePlan({
+      ...newOne,
+      saved: { ...newOne.saved, barberIds: [NIKO, HOMELESS, IVAN] },
+    });
+    expect(plan.writes?.map((write) => write.barberId)).toEqual([NIKO, IVAN]);
+  });
+
+  it('writes no ranges for the whole day', () => {
+    const plan = ScheduleExceptionSystem.blockSavePlan({
+      ...newOne,
+      saved: { ...newOne.saved, allDay: true },
+      savedRange: null,
+    });
+    expect(plan.writes?.[0]?.ranges).toEqual([]);
+  });
+
+  it('keeps the lift and writes nothing when the saved range cannot be read', () => {
+    expect(
+      ScheduleExceptionSystem.blockSavePlan({ ...edited, savedRange: null }),
+    ).toEqual({
+      lift: { barberId: IVAN, range: old, localDate: SHOWN },
+      writes: null,
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(edited);
+    expect(ScheduleExceptionSystem.blockSavePlan(input)).toEqual(
+      ScheduleExceptionSystem.blockSavePlan(input),
+    );
+  });
+});

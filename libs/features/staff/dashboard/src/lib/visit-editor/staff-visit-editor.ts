@@ -70,16 +70,17 @@ import {
   type DiscountInput,
   DiscountSystem,
   type DraftBill,
-  type DraftLegMinutes,
   GridLayoutSystem,
   LocationScopeSystem,
   type ParsedClientQuery,
   PhoneSystem,
+  StaffEditPlanSystem,
   type TextSegment,
   VisitDraftSystem,
   VisitListSystem,
   VisitSidesSystem,
   VisitStorySystem,
+  VoucherSystem,
 } from '@core/systems';
 import {
   combinabilityOf,
@@ -251,7 +252,7 @@ export interface VisitEditorLeg {
    */
   readonly clientId?: DraftPersonKey;
   readonly serviceLabel: string;
-  readonly minutes: DurationMinutes;
+  readonly durationMinutes: DurationMinutes;
   /**
    * The chair's CATALOGUE minutes for this seat, as the dashboard resolved
    * them — the base terms for a seat booked without a variant on a service
@@ -1193,16 +1194,6 @@ type FrameVerdictSlice =
       readonly time: string;
     };
 
-/**
- * Status → badge tone.
- *
- * The same five rows `staff-dashboard.ts` keeps in its own `STATUS_TONES`,
- * and deliberately the same reasoning: `confirmed` and `completed` stay
- * NEUTRAL because nine visits in ten are one of them, and a colour that
- * means "ordinary" means nothing. The map is module-private over there, so
- * it cannot be imported today — it belongs in a shared module the moment the
- * dashboard wires this component, and that is a one-line move, not a rewrite.
- */
 /** The glyph that doubles the state word — form, so the state survives a
     greyscale print and a reader who cannot separate two washes. */
 /**
@@ -1330,17 +1321,7 @@ function clockLabel(minute: TrackMinute): string {
 
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
 function spanOf(draft: VisitDraft): DurationMinutes {
-  return VisitDraftSystem.span(
-    draft.durationOverride,
-    legMinutesOf(draft.legs),
-  );
-}
-
-/** The legs as the span reads them — their minutes. */
-function legMinutesOf(
-  legs: readonly { readonly minutes: DurationMinutes }[],
-): readonly DraftLegMinutes[] {
-  return legs.map((leg) => ({ durationMinutes: leg.minutes }));
+  return VisitDraftSystem.span(draft.durationOverride, draft.legs);
 }
 
 /**
@@ -1457,7 +1438,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     durationOverride: VisitDraftSystem.durationOverrideOf(
       vm.startMinute,
       vm.endMinute,
-      legMinutesOf(legs),
+      legs,
     ),
     chairId: vm.chairId,
     locationId: vm.locationId ?? null,
@@ -1481,7 +1462,7 @@ function commitLegOf(
     seatId: leg.seatId,
     serviceId: leg.serviceId,
     variantId: leg.variantId,
-    minutes: leg.minutes,
+    durationMinutes: leg.durationMinutes,
     priceCents: leg.priceCents,
     currency: leg.currency,
     typedPriceCents,
@@ -1508,7 +1489,7 @@ function commitOf(
     startMinute: draft.startMinute,
     endMinute,
     locationId: draft.locationId,
-    note: draft.note?.trim() ? draft.note.trim() : null,
+    note: VisitSidesSystem.storedNote(draft.note),
     discounts: draft.discounts,
     vouchers: draft.vouchers,
     tipCents: draft.tipCents,
@@ -1593,7 +1574,7 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
  * start, the span (the frame's drag and resize included since 2026-09-23;
  * they wrote on release from 2026-09-03 until then, and their toast's undo
  * moved the server while the draft stayed put), each leg, the chair, the
- * shop, the discounts, the vouchers, the tip, the note (`savedShape` is
+ * shop, the discounts, the vouchers, the tip, the note (`StaffEditPlanSystem.sameSave` is
  * what «Запази» waits for). The shell asks before a dirty draft is
  * dropped. IMMEDIATE: the status verbs (arrived, done, no-show, cancel)
  * and a photo write at once and are not the draft's; each stamp offers
@@ -1977,7 +1958,11 @@ export class StaffVisitEditor {
             );
             return saved === undefined
               ? leg
-              : { ...leg, minutes: saved.minutes, barberId: saved.barberId };
+              : {
+                  ...leg,
+                  durationMinutes: saved.durationMinutes,
+                  barberId: saved.barberId,
+                };
           }),
         })),
       );
@@ -2107,57 +2092,19 @@ export class StaffVisitEditor {
    * 30-minute service stretched to 45 comes back AS a 45-minute service
    * while the draft still holds a 30-minute leg under a 45-minute override.
    *
-   * The saveable shape is the answer to both. What the command set can carry
-   * is the day, the start, the span and each leg's minutes and chair — so
-   * that, and nothing else, is what the button waits for. The rest is named
-   * under the dock instead of being promised by a control.
+   * The saveable shape is the answer to both (`StaffEditPlanSystem.sameSave`).
+   * What the command set can carry is what the button waits for. The rest is
+   * named under the dock instead of being promised by a control.
+   *
+   * Public: the shell's ✕ asks before dropping a dirty draft.
    */
-  private savedShape(draft: VisitDraft): string {
-    return JSON.stringify({
-      dayKey: draft.dayKey,
-      startMinute: draft.startMinute,
-      // The shop travels as its own command (2026-09-18): the other tile
-      // is a change worth a «Запази».
-      shop: draft.locationId,
-      span: spanOf(draft),
-      legs: draft.legs.map((leg) => ({
-        seatId: leg.seatId,
-        serviceId: leg.serviceId,
-        minutes: leg.minutes,
-        barberId: leg.barberId,
-        // A typed price travels with the save (owner, 2026-09-10), so it
-        // is part of the shape; the seed never carries one.
-        price: leg.typedPriceCents,
-      })),
-      // The team note saves now (its own staff-only document), so a typed
-      // note is a change worth a `Запази`.
-      note: draft.note?.trim() || null,
-      // The bill travels as its own commands (2026-09-10): the discounts as
-      // a set, the vouchers as codes in cover order.
-      discounts: draft.discounts.map((discount) => ({
-        discountSource: discount.discountSource,
-        grantId: discount.grantId,
-        code: discount.code,
-        // What it takes off: the method and its figure (the percent, the
-        // cents) — the promise, whatever currency word rides beside it.
-        value: [discount.discountMethod, CouponValue.magnitude(discount)],
-      })),
-      vouchers: draft.vouchers.map((voucher) => voucher.code),
-      // The tip drafts with the rest (2026-09-15): a changed tip is a
-      // change worth a «Запази».
-      tip: draft.tipCents,
-    });
-  }
-
-  /** Public: the shell's ✕ asks before dropping a dirty draft. */
   readonly dirty = computed(
-    () => this.savedShape(this.draft()) !== this.savedShape(this.seed()),
+    () => !StaffEditPlanSystem.sameSave(this.draft(), this.seed()),
   );
 
   /* ── Disclosure and menu state ─────────────────────────────────────── */
 
   protected readonly dayOpen = signal(false);
-  protected readonly legDurationMenu = signal(false);
   /**
    * WHICH LEG'S CHIP IS OPEN, and which chip — the ladder row carries three
    * menus per seat (person on a party, variant), so the state is one record
@@ -2242,7 +2189,7 @@ export class StaffVisitEditor {
       this.draft().legs.map((leg) => {
         const catalog =
           this.catalogTermsOf(leg)?.minutes ?? leg.catalogMinutes ?? null;
-        return { catalogMinutes: catalog, bookedMinutes: leg.minutes };
+        return { catalogMinutes: catalog, bookedMinutes: leg.durationMinutes };
       }),
     ),
   );
@@ -2280,11 +2227,6 @@ export class StaffVisitEditor {
 
   protected readonly noteOpen = signal(false);
   protected readonly query = signal('');
-  /**
-   * The decoupling line fires ONCE, on the first duration edit, and then
-   * never again — a sentence repeated on every edit is chrome, not an answer.
-   */
-  protected readonly durationTouched = signal(false);
 
   /* ── The navigation stack ──────────────────────────────────────────── */
 
@@ -2519,7 +2461,7 @@ export class StaffVisitEditor {
               ...leg,
               variantId: option.variantId,
               serviceLabel: option.label,
-              minutes: option.minutes,
+              durationMinutes: option.minutes,
               // The price travels as cents, the label beside it only printed.
               priceCents: option.priceCents,
               currency: option.currency,
@@ -2535,10 +2477,7 @@ export class StaffVisitEditor {
   /** The minutes the frame draws — the override, else the legs, never under a grain (`VisitDraftSystem.editorSpan`). */
   protected readonly durationMinutes = computed(() => {
     const draft = this.draft();
-    return VisitDraftSystem.editorSpan(
-      draft.durationOverride,
-      legMinutesOf(draft.legs),
-    );
+    return VisitDraftSystem.editorSpan(draft.durationOverride, draft.legs);
   });
 
   /** THE DERIVED END. It is a computation and it is persisted nowhere. */
@@ -2602,32 +2541,18 @@ export class StaffVisitEditor {
   /** `input[type=time]` speaks `HH:MM` and nothing else. */
   protected readonly startValue = this.startLabel;
 
-  // Bounded by the SHIFT when there is one; by the civil day when there is
-  // not, so an unreadable roster never narrows what can be typed. Each bound
-  // is a whole minute held on the axis by its own clamp (`ofProven`).
-  protected readonly startMinAttr = computed(() => {
-    const shift = shiftOf(this.frameDay());
-    return clockLabel(
-      TrackMinute.ofProven(shift ? Math.max(0, shift.startMinute - 60) : 0),
-    );
-  });
-  protected readonly startMaxAttr = computed(() => {
-    const shift = shiftOf(this.frameDay());
-    return clockLabel(
-      TrackMinute.ofProven(
-        Math.min(
-          DAY_MINUTES - 1,
-          shift ? shift.endMinute + 60 : DAY_MINUTES - 1,
-        ),
-      ),
-    );
-  });
+  // The bounds offered to a typed start (`VisitDraftSystem.typedStartBounds`).
+  private readonly typedStartBounds = computed(() =>
+    VisitDraftSystem.typedStartBounds(shiftOf(this.frameDay())),
+  );
+  protected readonly startMinAttr = computed(() =>
+    clockLabel(this.typedStartBounds().startMinute),
+  );
+  protected readonly startMaxAttr = computed(() =>
+    clockLabel(this.typedStartBounds().endMinute),
+  );
 
   /* ── The pinned summary strip ──────────────────────────────────────── */
-
-  protected readonly clientHeadline = computed(
-    () => this.draft().clients[0]?.label ?? this.vm().clientLabel,
-  );
 
   /**
    * THE PARTICIPANTS, barber side — deduplicated by id, in leg order.
@@ -2697,8 +2622,8 @@ export class StaffVisitEditor {
 
   protected pickBarberFor(
     fromId: BarberId | null,
-    // The MENU's own shape (`name`), the one `setLegBarber` already takes —
-    // not the input's (`label`). One vocabulary per boundary.
+    // The MENU's own shape (`name`), not the input's (`label`). One
+    // vocabulary per boundary.
     option: { id: BarberId | null; name: string; tone: number },
   ): void {
     this.barberMenu.set(null);
@@ -3140,11 +3065,11 @@ export class StaffVisitEditor {
    * the country a typed «088…» is read in — the trunk zero becomes «+359»
    * for the lookup, the ranking, the marks and the create row's reading.
    */
-  private readonly callingCode = computed(
-    () =>
-      PhoneSystem.countryCallingCode(
-        this.newClientCountry() ?? this.deployment.defaultCountry,
-      ) ?? ClientQuerySystem.DEFAULT_CALLING_CODE,
+  private readonly callingCode = computed(() =>
+    PhoneSystem.callingCodeOr(
+      this.newClientCountry() ?? this.deployment.defaultCountry,
+      ClientQuerySystem.DEFAULT_CALLING_CODE,
+    ),
   );
 
   /**
@@ -3220,7 +3145,7 @@ export class StaffVisitEditor {
     const variant = this.legVariant(leg);
     if (variant !== null) parts.push(variant);
     if (draft.legs.length > 1 && draft.durationOverride === null) {
-      parts.push(this.minutesLabel(leg.minutes));
+      parts.push(this.minutesLabel(leg.durationMinutes));
     }
     // No money on the service line (owner, 2026-09-10): the receipt
     // says what each seat costs. Only whose chair, when it is not this one.
@@ -3348,14 +3273,13 @@ export class StaffVisitEditor {
   );
 
   /** A REQUEST waiting for its answer: the confirm edge, while pending. */
-  protected readonly requestVerb = computed<VisitEditorVerb | null>(() => {
-    if (this.vm().bookingStatus !== BookingStatus.Pending) return null;
-    return (
-      this.allVerbs().find(
-        (verb) => verb.rowVerb === BookingStatus.Confirmed,
-      ) ?? null
-    );
-  });
+  protected readonly requestVerb = computed<VisitEditorVerb | null>(() =>
+    AppointmentLifecycleSystem.requestVerb(
+      this.vm().bookingStatus,
+      this.allVerbs(),
+      (verb) => verb.rowVerb,
+    ),
+  );
 
   private allVerbs(): readonly VisitEditorVerb[] {
     const vm = this.vm();
@@ -3876,10 +3800,7 @@ export class StaffVisitEditor {
       // move leaves it alone — writing a phantom field made every resize
       // snap back to the services' sum and re-emit from the grid. Which
       // span pins is the frame's rule (`VisitDraftSystem.overrideFor`).
-      const overrideNow = VisitDraftSystem.overrideFor(
-        span,
-        legMinutesOf(current.legs),
-      );
+      const overrideNow = VisitDraftSystem.overrideFor(span, current.legs);
 
       // No-op when nothing actually moved. A redundant write is a redundant
       // render, and a redundant render mid-gesture is how a loop starts.
@@ -3966,12 +3887,8 @@ export class StaffVisitEditor {
   protected setDuration(minutes: DurationMinutes): void {
     this.draft.update((draft) => ({
       ...draft,
-      durationOverride: VisitDraftSystem.typedOverrideFor(
-        minutes,
-        legMinutesOf(draft.legs),
-      ),
+      durationOverride: VisitDraftSystem.typedOverrideFor(minutes, draft.legs),
     }));
-    this.durationTouched.set(true);
   }
 
   /**
@@ -4028,38 +3945,6 @@ export class StaffVisitEditor {
     // What the field shows afterwards is `ui-unit-field`'s own business:
     // it writes the bound figure straight back, so a snapped or refused
     // entry visibly springs back rather than sitting there looking saved.
-  }
-
-  protected setLegDuration(seatId: SeatId, minutes: DurationMinutes): void {
-    this.draft.update((draft) => ({
-      ...draft,
-      legs: draft.legs.map((leg) =>
-        leg.seatId === seatId ? { ...leg, minutes } : leg,
-      ),
-    }));
-    this.durationTouched.set(true);
-    this.legDurationMenu.set(false);
-  }
-
-  protected setLegBarber(
-    seatId: SeatId,
-    barber: { id: BarberId | null; name: string; tone: number },
-  ): void {
-    const seats = this.seatsOf(seatId);
-    this.draft.update((draft) => ({
-      ...draft,
-      legs: draft.legs.map((leg) =>
-        seats.has(leg.seatId)
-          ? {
-              ...leg,
-              barberId: barber.id,
-              barberName: barber.name,
-              barberTone: barber.tone,
-            }
-          : leg,
-      ),
-    }));
-    this.legMenu.set(null);
   }
 
   /**
@@ -4284,7 +4169,7 @@ export class StaffVisitEditor {
             serviceId: option.serviceId,
             variantId: option.variantId,
             serviceLabel: option.serviceLabel ?? option.label,
-            minutes: option.minutes,
+            durationMinutes: option.minutes,
             // The catalogue's price, as cents beside its label.
             priceCents: option.priceCents,
             currency: option.currency,
@@ -4694,8 +4579,10 @@ export class StaffVisitEditor {
     // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
     const [international] = ClientQuerySystem.phoneInternationalDigits(
       parsed,
-      PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
+      PhoneSystem.callingCodeOr(
+        this.deployment.defaultCountry,
         ClientQuerySystem.DEFAULT_CALLING_CODE,
+      ),
     );
     this.newClient.set({
       name: parsed.name,
@@ -4952,9 +4839,6 @@ export class StaffVisitEditor {
       ? this.rawCopy('staff.visit.tipNone')
       : this.moneyLabel(cents);
   });
-
-  /** The trigger's spoken value: «Бакшиш: 2,00 €». */
-  protected readonly tipChoiceName = computed(() => this.tipReadout());
 
   /**
    * The row's tap: the section unfolds, or folds. Opening a custom sum
@@ -6159,12 +6043,19 @@ export class StaffVisitEditor {
   private readonly dockBill = computed(() => {
     const drafted = this.draftedManual();
     if (drafted === null) return this.bill();
-    return this.evaluate([
-      ...this.draft().discounts.filter(
-        (discount) => discount.discountSource !== DiscountSource.Manual,
+    // What «Приложи» would make of the set (`DiscountSystem.withAdded`, as
+    // `addDiscount` calls it), so the preview and the act agree. A stored line
+    // that does not read takes nothing, as in `evaluate`: this runs on every
+    // render, so it must not stop at the broken line the way the act does.
+    const currency = this.vm().currency;
+    const readable = this.draft().discounts.filter(
+      (entry) => couponValueInBill(entry, currency) !== null,
+    );
+    return this.evaluate(
+      DiscountSystem.withAdded(readable, drafted, (entry) =>
+        promiseOf(entry, currency),
       ),
-      drafted,
-    ]);
+    );
   });
 
   /** The manual line the discount page's figure would put on the bill, while it would take. */
@@ -6539,11 +6430,10 @@ export class StaffVisitEditor {
 
   private addVoucher(voucher: VisitEditorVoucher): void {
     this.settleCode();
-    this.draft.update((draft) =>
-      draft.vouchers.some((entry) => entry.voucherId === voucher.voucherId)
-        ? draft
-        : { ...draft, vouchers: [...draft.vouchers, voucher] },
-    );
+    this.draft.update((draft) => {
+      const vouchers = VoucherSystem.withAddedVoucher(draft.vouchers, voucher);
+      return vouchers === draft.vouchers ? draft : { ...draft, vouchers };
+    });
   }
 
   /** The swipe's act — one line off the bill. */
@@ -6580,10 +6470,7 @@ export class StaffVisitEditor {
       return;
     }
     const draft = this.draft();
-    const onBill =
-      draft.discounts.some((discount) => discount.code === code) ||
-      draft.vouchers.some((voucher) => voucher.code === code);
-    if (onBill) {
+    if (DiscountSystem.codeOnBill(code, draft.discounts, draft.vouchers)) {
       this.pendingCode.set(code);
       this.codeState.set(DiscountCodeState.Already);
       return;
@@ -6651,8 +6538,10 @@ export class StaffVisitEditor {
   }
 
   protected commitNote(value: string): void {
-    const trimmed = value.trim();
-    this.draft.update((draft) => ({ ...draft, note: trimmed || null }));
+    this.draft.update((draft) => ({
+      ...draft,
+      note: VisitSidesSystem.storedNote(value),
+    }));
   }
 
   /**
@@ -6824,17 +6713,8 @@ export class StaffVisitEditor {
    */
   protected readonly catalogueTotalLabel = computed<string | null>(() => {
     if (!this.isNew()) return null;
-    const legs = this.draft().legs;
-    if (legs.length === 0) return null;
-    // Each leg's price as cents — a typed one first, else the catalogue's it
-    // was picked at (pass D, D-10.3: never a label read back).
-    const prices: PriceCents[] = [];
-    for (const leg of legs) {
-      const cents = leg.typedPriceCents ?? leg.priceCents;
-      if (cents === null) return null;
-      prices.push(cents);
-    }
-    return this.moneyLabel(PriceCents.sum(prices));
+    const total = BillingSystem.draftLegsTotal(this.draft().legs);
+    return total === null ? null : this.moneyLabel(total);
   });
 
   /** What «Запази» last published — what the saved mark's adoption waits for. */
@@ -6852,7 +6732,6 @@ export class StaffVisitEditor {
 
   protected discard(): void {
     this.draft.set(seedDraft(this.vm()));
-    this.durationTouched.set(false);
     this.noteOpen.set(false);
     this.page.set(null);
     this.resetDiscountEntry();
@@ -6922,6 +6801,7 @@ export class StaffVisitEditor {
   ]);
 
   protected readonly snapMinutes = VisitDraftSystem.GRAIN_MINUTES;
+  protected readonly frameMinMinutes = VisitDraftSystem.FRAME_MIN_MINUTES;
 
   /* ── THE CLIENT CARD (client-card-redesign §2, §3) ─────────────────────
    *
@@ -7064,7 +6944,7 @@ export class StaffVisitEditor {
       .map((leg) => ({
         serviceId: leg.serviceId,
         variantId: leg.variantId,
-        minutes: leg.minutes,
+        minutes: leg.durationMinutes,
         // A leg with no chair yet names none (was `''`).
         barberId: leg.barberId,
       }));
@@ -7545,7 +7425,7 @@ export class StaffVisitEditor {
           serviceId: option.serviceId,
           variantId: option.variantId,
           serviceLabel: option.serviceLabel ?? option.label,
-          minutes: leg.durationMinutes,
+          durationMinutes: leg.durationMinutes,
           // The catalogue's price today, as cents beside its label.
           priceCents: option.priceCents,
           currency: option.currency,
