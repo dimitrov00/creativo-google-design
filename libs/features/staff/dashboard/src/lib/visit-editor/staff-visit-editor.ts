@@ -1958,6 +1958,7 @@ export class StaffVisitEditor {
       clients: draft.clients,
       services: this.uiServices(),
       chairName: this.vm().chairName,
+      storedSeats: VisitDraftSystem.storedSeats(!this.isNew(), this.vm().legs),
       words: this.words(),
     });
   });
@@ -2178,7 +2179,8 @@ export class StaffVisitEditor {
   /**
    * A different variant IS different terms (owner, 2026-09-09: "changing it
    * would be nice when you open the service itself"): the leg takes the
-   * variant's catalogue minutes and price along with its name.
+   * variant's catalogue minutes and price along with its name. An added seat's
+   * pick only: a stored seat's variant has no command, and its row offers none.
    */
   protected pickLegVariant(seatId: SeatId, optionId: string): void {
     this.legMenu.set(null);
@@ -5647,8 +5649,9 @@ export class StaffVisitEditor {
   }
 
   /**
-   * A leg's «За кого» pick. The menu's options were minted from the
-   * draft's own person keys (`legClientOptions`), so the id handed back is
+   * A leg's «За кого» pick, on an added seat only: a stored seat's person has
+   * no command, and its row offers none. The menu's options were minted from
+   * the draft's own person keys (`legClientOptions`), so the id handed back is
    * one by construction.
    */
   protected setLegClient(seatId: SeatId, clientId: string): void {

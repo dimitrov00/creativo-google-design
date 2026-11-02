@@ -372,6 +372,8 @@ export type LegRowsInput = {
   readonly services: readonly VisitEditorServiceOption[];
   /** The chair the frame is headed by. */
   readonly chairName: string;
+  /** The seats the server already holds (`VisitDraftSystem.storedSeats`). */
+  readonly storedSeats: ReadonlySet<SeatId>;
   readonly words: VisitEditorWords;
 };
 
@@ -549,6 +551,7 @@ export function legRowsVm(input: LegRowsInput): readonly LegRowVm[] {
       service: option?.serviceLabel ?? option?.label ?? leg.serviceLabel,
       line: legLine(leg, option?.variantLabel ?? null, input),
       clientLabel,
+      stored: input.storedSeats.has(leg.seatId),
       forWhomName: `${words.forWhom}: ${clientLabel}`,
       // A service's variants as choices — empty for a service that has none.
       variantChoices: services

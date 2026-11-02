@@ -12,6 +12,7 @@ import {
   SeatId,
   ServiceId,
   type TrackMinute,
+  ServiceVariantId,
 } from '@core/primitives';
 import {
   BookingCall,
@@ -1517,6 +1518,54 @@ describe('StaffEditPlanSystem — purity', () => {
         WORDS,
       ),
     ).not.toThrow();
+  });
+});
+
+describe('no edit command carries a kept seat’s person or variant (BUG-1, BUG-2)', () => {
+  // As the live sheet publishes it: nobody typed a price on this seat.
+  const commandsOf = (changed: Partial<StaffEditDraft.Leg>) =>
+    unwrapOk(
+      StaffEditPlanSystem.commandsFor(
+        { ...SNAPSHOT, legs: [leg(changed)] },
+        ROW,
+        [],
+        WORDS,
+      ),
+    );
+  const unchanged = commandsOf({});
+
+  it('sends nothing more for another person', () => {
+    expect(commandsOf({ clientId: draftPersonKey('user-petar') })).toEqual(
+      unchanged,
+    );
+  });
+
+  it('sends nothing more for another variant, nor for the price it brought', () => {
+    expect(
+      commandsOf({
+        variantId: ServiceVariantId.of('long'),
+        priceCents: cents(9900),
+      }),
+    ).toEqual(unchanged);
+  });
+
+  it('sends only a REDURATE for the minutes a variant brought', () => {
+    const added = commandsOf({
+      variantId: ServiceVariantId.of('long'),
+      priceCents: cents(9900),
+      durationMinutes: duration(95),
+    }).filter(
+      (command) =>
+        !unchanged.some(
+          (before) => JSON.stringify(before) === JSON.stringify(command),
+        ),
+    );
+    expect(
+      added.some((command) => command.editCommand === EditCommand.Reprice),
+    ).toBe(false);
+    expect(
+      added.some((command) => command.editCommand === EditCommand.Redurate),
+    ).toBe(true);
   });
 });
 

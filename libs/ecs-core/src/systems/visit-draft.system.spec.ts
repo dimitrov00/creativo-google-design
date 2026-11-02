@@ -519,6 +519,27 @@ describe('VisitDraftSystem.GRAIN_MINUTES — the one floor of a visit’s length
   });
 });
 
+describe('VisitDraftSystem.storedSeats — the seats the server already holds', () => {
+  const seat = (id: string) => ({ seatId: SeatId.of(id) });
+
+  it('holds every seat a saved visit was opened on, and no other', () => {
+    const stored = S.storedSeats(true, [seat('a'), seat('b')]);
+    expect(stored.has(SeatId.of('a'))).toBe(true);
+    expect(stored.has(SeatId.of('b'))).toBe(true);
+    expect(stored.has(SeatId.of('draft-c'))).toBe(false);
+  });
+
+  it('holds none on a visit not yet saved, however it was seeded', () => {
+    expect(S.storedSeats(false, [seat('draft-a')]).size).toBe(0);
+    expect(S.storedSeats(true, []).size).toBe(0);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([seat('a')]);
+    expect(S.storedSeats(true, legs)).toEqual(S.storedSeats(true, legs));
+  });
+});
+
 describe('VisitDraftSystem.pastLegsOnCatalogue — a past visit’s legs, today', () => {
   const SERVICE = ServiceId.of('cut');
   const LONG = ServiceVariantId.of('long');

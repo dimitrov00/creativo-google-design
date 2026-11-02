@@ -237,6 +237,7 @@ describe('the services’ rows', () => {
     clients: [{ id: MARTIN, label: 'Мартин' }],
     services: [plainCut, longCut],
     chairName: 'Иван',
+    storedSeats: new Set<SeatId>(),
     words: BG,
     ...partial,
   });
@@ -246,6 +247,11 @@ describe('the services’ rows', () => {
     if (row === undefined) throw new Error('no row');
     return row;
   };
+
+  it('says which seats the server holds, as it is told (BUG-1, BUG-2)', () => {
+    expect(only().stored).toBe(false);
+    expect(only({ storedSeats: new Set([leg().seatId]) }).stored).toBe(true);
+  });
 
   it('titles a seat by the catalogue’s service, bare, and says nothing twice', () => {
     const row = only();

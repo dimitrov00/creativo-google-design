@@ -1004,9 +1004,9 @@ describe('StaffVisitEditor', () => {
     expect(find(host, 'staff-visit-not-built')).toBeNull();
   });
 
-  it('carries its chips on the ladder row — variant, and the way off — and swipes to remove', () => {
-    // One row is one seat (owner, 2026-09-10): the title with its variant,
-    // the variant chip, and a visible «−». No counter, no money — the
+  it('carries the way off on the ladder row, and swipes to remove', () => {
+    // One row is one seat (owner, 2026-09-10): the title with its variant
+    // and a visible «−». No counter, no money — the
     // receipt says what a seat costs. No barber chip (2026-09-09): the
     // sheet is opened for a chair, and the chair row above is where it
     // changes.
@@ -1025,25 +1025,12 @@ describe('StaffVisitEditor', () => {
     expect(remove?.tagName).toBe('BUTTON');
     expect(remove?.getAttribute('aria-label')).toContain('Премахни услугата');
 
-    // The variant chip is an ICON on the service that has variants; the
-    // title carries the variant's name, joined the way the catalogue does.
-    const variant = find(host, 'staff-visit-leg-variant-seat-cut');
-    expect(variant).not.toBeNull();
-    expect(variant?.hasAttribute('data-icon-only')).toBe(true);
-    expect(variant?.textContent).not.toContain('Къса коса');
+    // A stored seat offers no variant (BUG-2): no command would carry it. The
+    // chip on an added seat is pinned in «a stored seat's person and variant».
+    expect(find(host, 'staff-visit-leg-variant-seat-cut')).toBeNull();
     expect(find(host, 'staff-visit-leg-variant-seat-beard')).toBeNull();
-    // This seat was stored without a variant: its title is the stored
-    // name until a variant is picked, and then the catalogue's joined one.
+    // This seat was stored without a variant: its title is the stored name.
     expect(row?.textContent).toContain('Класическо подстригване');
-    expect(variant?.getAttribute('aria-label')).toContain('—');
-    click(host, 'staff-visit-leg-variant-seat-cut');
-    pickOpen(host, 'staff-visit-variant-pick-long');
-    // The variant is a DESCRIPTION now — under the service, not welded to it.
-    expect(row?.textContent).toContain('Подстригване');
-    expect(row?.textContent).toContain('Дълга коса');
-    expect(row?.textContent).not.toContain('Подстригване · Дълга коса');
-    expect(variant?.getAttribute('aria-label')).toContain('Дълга коса');
-    expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain('45 мин');
 
     // The «−» removes the seat; the swipe's own act is a button too.
     expect(find(host, 'staff-visit-swipe-leg-seat-beard')?.tagName).toBe(
@@ -1051,6 +1038,94 @@ describe('StaffVisitEditor', () => {
     );
     click(host, 'staff-visit-remove-leg-seat-cut');
     expect(find(host, 'staff-visit-leg-seat-cut')).toBeNull();
+  });
+
+  describe('a stored seat’s person and variant are read, never offered (BUG-1, BUG-2)', () => {
+    const party = () =>
+      visit({
+        people: [
+          {
+            id: 'user-martin',
+            label: 'Мартин Илиев',
+            phone: null,
+            phoneHref: null,
+            meta: null,
+            email: null,
+          },
+          {
+            id: 'user-petar',
+            label: 'Петър Ганев',
+            phone: null,
+            phoneHref: null,
+            meta: null,
+            email: null,
+          },
+        ] as unknown as VisitEditorVm['people'],
+      });
+
+    it('draws no «За кого» menu on a stored seat, and prints whose seat it is', () => {
+      const host = render(party());
+      expect(find(host, 'staff-visit-leg-person-seat-cut')).toBeNull();
+      expect(
+        host.querySelector(
+          '[data-testid^="staff-visit-leg-seat-cut"] ui-choice-menu',
+        ),
+      ).toBeNull();
+      expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain(
+        'Мартин Илиев',
+      );
+    });
+
+    it('draws no variant menu on a stored seat, and prints the variant it holds', () => {
+      const host = render(
+        visit({
+          legs: visit().legs.map((leg) =>
+            leg.seatId === SeatId.of('seat-cut')
+              ? { ...leg, variantId: ServiceVariantId.of('short') }
+              : leg,
+          ),
+        }),
+      );
+      expect(find(host, 'staff-visit-leg-variant-seat-cut')).toBeNull();
+      expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain(
+        'Къса коса',
+      );
+    });
+
+    it('keeps both on a seat the sheet just added, which saves with them', () => {
+      const host = render(party());
+      click(host, 'staff-visit-add-service');
+      click(host, 'staff-visit-service-cut:short');
+      click(host, 'staff-visit-service-apply');
+      const row = host.querySelector<HTMLElement>(
+        '[data-testid^="staff-visit-leg-draft-"]',
+      );
+      const seat =
+        row?.dataset['testid']?.replace('staff-visit-leg-', '') ?? '';
+      expect(find(host, `staff-visit-leg-person-${seat}`)).not.toBeNull();
+      const variant = find(host, `staff-visit-leg-variant-${seat}`);
+      expect(variant).not.toBeNull();
+      expect(variant?.hasAttribute('data-icon-only')).toBe(true);
+      expect(variant?.textContent).not.toContain('Къса коса');
+      expect(variant?.getAttribute('aria-label')).toContain('Къса коса');
+    });
+
+    it('keeps both on every seat of a visit not yet saved, a rebooking’s included', () => {
+      const host = render(
+        visit({
+          appointmentId: null,
+          rowId: '',
+          people: party().people,
+          legs: visit().legs.map((leg) => ({
+            ...leg,
+            variantId: ServiceVariantId.of('short'),
+            serviceId: ServiceId.of('cut'),
+          })),
+        }),
+      );
+      expect(find(host, 'staff-visit-leg-person-seat-cut')).not.toBeNull();
+      expect(find(host, 'staff-visit-leg-variant-seat-cut')).not.toBeNull();
+    });
   });
 
   it('moves the derived end when the visit gets longer, and leaves the price alone', () => {

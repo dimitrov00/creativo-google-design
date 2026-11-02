@@ -507,6 +507,11 @@ export type LegRowVm = {
   readonly line: string;
   /** Whose seat, on a party. */
   readonly clientLabel: string;
+  /**
+   * The server holds this seat, and no edit command carries its person or its
+   * variant: the row prints both on its line and offers neither.
+   */
+  readonly stored: boolean;
   readonly forWhomName: string;
   /** The service's variants as choices — empty for a service that has none. */
   readonly variantChoices: readonly UiChoiceOption[];

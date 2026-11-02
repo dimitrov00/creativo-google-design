@@ -479,6 +479,26 @@ export const VisitDraftSystem = {
   },
 
   /**
+   * WHICH SEATS THE SERVER ALREADY HOLDS: the seats a visit that exists was
+   * opened on. No edit command carries a stored seat's person or variant, only
+   * an added seat's (`StaffEditPlanSystem.commandsFor`), so the sheet offers
+   * those two only on a seat outside this set, or a change would show and be
+   * lost. A visit not yet saved (`visitExists` false) holds none, however many
+   * legs it was seeded with: a rebooking's are fresh seats.
+   */
+  storedSeats(
+    visitExists: boolean,
+    seeded: readonly { readonly seatId: SeatId }[],
+  ): ReadonlySet<SeatId> {
+    const stored = new Set<SeatId>();
+    if (!visitExists) return stored;
+    for (let i = 0; i < seeded.length; i++) {
+      stored.add((seeded[i] as { readonly seatId: SeatId }).seatId);
+    }
+    return stored;
+  },
+
+  /**
    * A PAST VISIT'S LEGS ON TODAY'S CATALOGUE, the rule «Запиши пак» and
    * «Повтори» share: a booked seat is priced by the server from the catalogue
    * (`OfferingPriceSystem.termsFor`, the booking request carries no price), so
