@@ -617,7 +617,7 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
     opened: { allDay: false, barberIds: [IVAN, NIKO] },
   };
 
-  it('lifts an edited range first, its first chair on the shown day', () => {
+  it('lifts an edited range, its first chair on the shown day', () => {
     expect(ScheduleExceptionSystem.blockSavePlan(edited).lift).toEqual({
       barberId: IVAN,
       range: old,
@@ -660,6 +660,7 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
           days: [OTHER],
         },
       ],
+      chairWithoutHome: null,
     });
   });
 
@@ -681,12 +682,22 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
     expect(none?.days).toEqual([]);
   });
 
-  it('skips a chair with no home, and keeps the rest in order', () => {
+  it('keeps every chair in order', () => {
     const plan = ScheduleExceptionSystem.blockSavePlan({
       ...newOne,
-      saved: { ...newOne.saved, barberIds: [NIKO, HOMELESS, IVAN] },
+      saved: { ...newOne.saved, barberIds: [NIKO, IVAN] },
     });
     expect(plan.writes?.map((write) => write.barberId)).toEqual([NIKO, IVAN]);
+    expect(plan.chairWithoutHome).toBeNull();
+  });
+
+  it('refuses a chair with no home whole: no write, no lift, the chair named (B6)', () => {
+    expect(
+      ScheduleExceptionSystem.blockSavePlan({
+        ...edited,
+        saved: { ...edited.saved, barberIds: [NIKO, HOMELESS, IVAN] },
+      }),
+    ).toEqual({ lift: null, writes: null, chairWithoutHome: HOMELESS });
   });
 
   it('writes no ranges for the whole day', () => {
@@ -698,13 +709,25 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
     expect(plan.writes?.[0]?.ranges).toEqual([]);
   });
 
-  it('keeps the lift and writes nothing when the saved range cannot be read', () => {
+  it('neither lifts nor writes when the saved range cannot be read (B6)', () => {
     expect(
       ScheduleExceptionSystem.blockSavePlan({ ...edited, savedRange: null }),
-    ).toEqual({
-      lift: { barberId: IVAN, range: old, localDate: SHOWN },
-      writes: null,
-    });
+    ).toEqual({ lift: null, writes: null, chairWithoutHome: null });
+  });
+
+  it('lifts nothing for a save with no chair or no day, so the old block stays (B6)', () => {
+    expect(
+      ScheduleExceptionSystem.blockSavePlan({
+        ...edited,
+        saved: { ...edited.saved, barberIds: [] },
+      }).lift,
+    ).toBeNull();
+    expect(
+      ScheduleExceptionSystem.blockSavePlan({
+        ...edited,
+        saved: { ...edited.saved, days: [] },
+      }).lift,
+    ).toBeNull();
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

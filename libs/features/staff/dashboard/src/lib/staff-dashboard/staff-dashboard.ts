@@ -4483,9 +4483,9 @@ export class StaffDashboard {
    * one day through `blockTime`, a series through `blockSeries` — one
    * batched pass per chair (2026-09-24) — and the sheet closes when the
    * last chair has landed. The DAYS are the sheet's: it expanded the rule
-   * with the same `RecurrenceSeries` it counted aloud. An EDITED range is
-   * lifted where it was first — its own chair, the shown day — then
-   * written where it now is.
+   * with the same `RecurrenceSeries` it counted aloud. An EDITED range moves
+   * in one write, so a refusal leaves the old block; a chair with no home
+   * refuses the save (`StaffDayStore.saveBlocks`). The sheet stays on a refusal.
    */
   protected async commitBlock(commit: BlockEditorCommit): Promise<void> {
     const edit = this.blockEdit();
@@ -4506,31 +4506,7 @@ export class StaffDashboard {
         return barber === undefined ? null : LocationScopeSystem.homeOf(barber);
       },
     });
-    if (plan.lift !== null) {
-      const { barberId, range, localDate } = plan.lift;
-      const lifted = await this.store.clearBlock(barberId, range, localDate);
-      if (!lifted) return;
-    }
-    if (plan.writes === null) return;
-    for (const write of plan.writes) {
-      const { barberId, locationId, ranges } = write;
-      const done =
-        write.localDate !== null
-          ? await this.store.blockTime(
-              barberId,
-              locationId,
-              ranges,
-              write.localDate,
-            )
-          : await this.store.blockSeries(
-              barberId,
-              locationId,
-              ranges,
-              write.days,
-            );
-      if (!done) return;
-    }
-    this.closeBlockSheet();
+    if (await this.store.saveBlocks(plan)) this.closeBlockSheet();
   }
 
   protected async liftFromEditor(): Promise<void> {

@@ -68,13 +68,17 @@ export type BlockWrite = {
 };
 
 /**
- * What a block sheet's save costs, in order: the lift, then the writes.
- * `writes` is `null` when the saved range cannot be read: the lift still
- * stands and nothing is written.
+ * What a block sheet's save costs: the writes and, for an edited range, the
+ * lift they replace it with. One answer, so the store can land both in one
+ * write. `writes` is `null` when nothing may be written: the saved range
+ * cannot be read, or a saved chair has no home (`chairWithoutHome`), and then
+ * nothing is lifted either.
  */
 export type BlockSavePlan = {
   readonly lift: BlockLift | null;
   readonly writes: readonly BlockWrite[] | null;
+  /** The first saved chair with no home shop: the save is refused whole. */
+  readonly chairWithoutHome: BarberId | null;
 };
 
 /**
@@ -96,20 +100,19 @@ export const ScheduleExceptionSystem = {
 
   /**
    * THE BLOCK SHEET'S WRITE PLAN. An edited range is lifted where it was, its
-   * first chair on the shown day, then written where it now is; an edited
+   * first chair on the shown day, and written where it now is; an edited
    * all-day block lifts nothing here, and neither does a range or a chair that
-   * cannot be read. Each saved chair writes once, in order, on its home shop;
-   * a chair with no home is skipped. One day is a single write and any other
-   * count a series. An all-day save writes no `ranges`.
+   * cannot be read, or a save that names no day. Each saved chair writes once,
+   * in order, on its home shop. A chair with no home refuses the whole save
+   * rather than be skipped. A saved range that cannot be read writes and lifts
+   * nothing. One day is a single write and any other count a series. An
+   * all-day save writes no `ranges`.
    */
   blockSavePlan(input: BlockSaveInput): BlockSavePlan {
     const { editing, opened, openedRange, saved, savedRange } = input;
-    const from = opened.barberIds[0];
-    const lift: BlockLift | null =
-      editing && !opened.allDay && openedRange !== null && from !== undefined
-        ? { barberId: from, range: openedRange, localDate: input.shownDay }
-        : null;
-    if (!saved.allDay && savedRange === null) return { lift, writes: null };
+    if (!saved.allDay && savedRange === null) {
+      return { lift: null, writes: null, chairWithoutHome: null };
+    }
     const ranges: readonly MinuteRange[] =
       saved.allDay || savedRange === null ? [] : [savedRange];
     const days = saved.days;
@@ -118,10 +121,22 @@ export const ScheduleExceptionSystem = {
     for (let i = 0; i < saved.barberIds.length; i++) {
       const barberId = saved.barberIds[i] as BarberId;
       const locationId = input.homeOf(barberId);
-      if (locationId === null) continue;
+      if (locationId === null) {
+        return { lift: null, writes: null, chairWithoutHome: barberId };
+      }
       writes.push({ barberId, locationId, ranges, localDate, days });
     }
-    return { lift, writes };
+    const from = opened.barberIds[0];
+    const lift: BlockLift | null =
+      editing &&
+      !opened.allDay &&
+      openedRange !== null &&
+      from !== undefined &&
+      writes.length > 0 &&
+      days.length > 0
+        ? { barberId: from, range: openedRange, localDate: input.shownDay }
+        : null;
+    return { lift, writes, chairWithoutHome: null };
   },
 
   /**

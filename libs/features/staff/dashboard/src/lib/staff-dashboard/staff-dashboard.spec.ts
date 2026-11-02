@@ -121,6 +121,7 @@ import {
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
+  SchedulingErrorCode,
   StaffEditErrorCode,
 } from '@core/errors';
 import {
@@ -8802,6 +8803,122 @@ describe('StaffDashboard', () => {
         expect(page().blockEdit()).toEqual(
           expect.objectContaining({ startMinute: 720, endMinute: 780 }),
         );
+      });
+
+      describe('an edited block (B6)', () => {
+        const DAY = unwrapOk(LocalDate.parse('2026-08-05'));
+        const moved = {
+          barberIds: [BarberId.of('ivan')],
+          dayKey: DAY,
+          days: [DAY],
+          allDay: false,
+          startMinute: 14 * 60,
+          endMinute: 15 * 60,
+        };
+        const commitBlock = (commit: unknown): Promise<void> =>
+          (
+            fixture.componentInstance as unknown as {
+              commitBlock: (commit: unknown) => Promise<void>;
+            }
+          ).commitBlock(commit);
+        const absenceError = () =>
+          (
+            page() as unknown as {
+              store: { absenceError: () => { errorCode: string } | null };
+            }
+          ).store.absenceError();
+        const storedRanges = () =>
+          exceptions
+            .filter((entry) => entry.barberId === BarberId.of('ivan'))
+            .flatMap((entry) =>
+              entry.exceptionEffect === ExceptionEffect.Blocked
+                ? entry.exceptionRanges
+                : [],
+            )
+            .map((range) => range.startMinutes);
+        const openLunch = async () => {
+          blockOn(DAY, wallAt(12), until(13));
+          await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+          page().openBlock(`block:ivan:${DAY}:720`);
+          fixture.detectChanges();
+          expect(page().blockEdit()).not.toBeNull();
+          writeScheduleException.mockClear();
+        };
+
+        it('moves it in ONE write: the old range gone, the new one there', async () => {
+          await openLunch();
+          await commitBlock(moved);
+          expect(writeScheduleException).toHaveBeenCalledTimes(1);
+          expect(storedRanges()).toEqual([14 * 60]);
+          expect(page().blockEdit()).toBeNull();
+        });
+
+        it('keeps the old block and the sheet when the write is refused', async () => {
+          await openLunch();
+          const real = writeScheduleException.getMockImplementation();
+          // A writer that refuses whatever would hold the new range; anything
+          // else lands, as a lift on its own would.
+          writeScheduleException.mockImplementation(
+            async <E>(
+              keys: readonly BusyKey[],
+              merge: (
+                stored: readonly (ScheduleException | null)[],
+              ) => PortResult<readonly (ScheduleException | null)[], E>,
+            ) => {
+              const refused = merge(
+                keys.map(
+                  (key) =>
+                    exceptions.find((entry) => entry.id === String(key)) ??
+                    null,
+                ),
+              );
+              const holdsNew =
+                refused.ok &&
+                refused.value.some(
+                  (entry) =>
+                    entry?.exceptionEffect === ExceptionEffect.Blocked &&
+                    entry.exceptionRanges.some(
+                      (range) => range.startMinutes === 14 * 60,
+                    ),
+                );
+              return holdsNew
+                ? PortResult.err(RepositoryError.writeFailed('refused', null))
+                : (real as typeof writeScheduleException)(keys, merge);
+            },
+          );
+          try {
+            await commitBlock(moved);
+            expect(storedRanges()).toEqual([12 * 60]);
+            expect(page().blockEdit()).not.toBeNull();
+            expect(absenceError()).not.toBeNull();
+            fixture.detectChanges();
+            expect(
+              host().querySelector('[data-testid="staff-block-error"]'),
+            ).not.toBeNull();
+          } finally {
+            if (real) writeScheduleException.mockImplementation(real);
+          }
+        });
+
+        it('refuses a chair with no home: nothing written, the sheet open, the refusal said', async () => {
+          await openLunch();
+          // `ghost` is on no catalogue row, so it has no home shop.
+          await commitBlock({
+            ...moved,
+            barberIds: [BarberId.of('ivan'), BarberId.of('ghost')],
+          });
+          expect(writeScheduleException).not.toHaveBeenCalled();
+          expect(storedRanges()).toEqual([12 * 60]);
+          expect(page().blockEdit()).not.toBeNull();
+          expect(absenceError()).toEqual({
+            errorCode: SchedulingErrorCode.BlockChairWithoutHome,
+            barberId: 'ghost',
+          });
+          fixture.detectChanges();
+          expect(
+            host().querySelector('[data-testid="staff-block-error"]'),
+          ).not.toBeNull();
+        });
       });
 
       it('counts down to a chair at a shop of another zone from its STORED instant (DEP-12)', async () => {

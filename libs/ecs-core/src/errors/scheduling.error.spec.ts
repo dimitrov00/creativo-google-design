@@ -137,6 +137,7 @@ describe('SchedulingError factories', () => {
         WaitlistStatus.Open,
       ),
       SchedulingError.scheduleExceptionEmptyRanges(ExceptionEffect.Hours),
+      SchedulingError.blockChairWithoutHome(BarberId.of('ivan')),
     ];
     // One factory per code, each code reached once.
     expect(errors.map((error) => error.errorCode).sort()).toEqual(
