@@ -16,6 +16,7 @@ import {
   TrackMinute,
   MinuteOfDay,
   type Result,
+  type SeatId,
 } from '@core/primitives';
 import type { SchedulingError } from '@core/errors';
 import type { TrackSpan } from './grid-layout.system';
@@ -411,6 +412,24 @@ export const VisitDraftSystem = {
           ? { ...leg, clientId: personId }
           : leg,
       );
+    }
+    return out;
+  },
+
+  /**
+   * WHAT «ЗАПИШИ ПАК» CARRIES: the visit's legs as they are, in order, each on
+   * a fresh seat (`mint`) with its override mark cleared, so the commit mints
+   * new seats rather than naming old ones. Price and minutes stay as stored.
+   * Not what the visit sheet's «Повтори» does: that one re-reads today's
+   * catalogue.
+   */
+  rebookLegs<
+    L extends { readonly seatId: SeatId; readonly overridden: boolean },
+  >(legs: readonly L[], mint: (leg: L, index: number) => SeatId): readonly L[] {
+    const out: L[] = [];
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i] as L;
+      out.push({ ...leg, seatId: mint(leg, i), overridden: false });
     }
     return out;
   },

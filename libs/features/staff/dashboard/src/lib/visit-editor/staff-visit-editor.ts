@@ -3120,11 +3120,11 @@ export class StaffVisitEditor {
    * the country a typed «088…» is read in — the trunk zero becomes «+359»
    * for the lookup, the ranking, the marks and the create row's reading.
    */
-  private readonly callingCode = computed(
-    () =>
-      PhoneSystem.countryCallingCode(
-        this.newClientCountry() ?? this.deployment.defaultCountry,
-      ) ?? ClientQuerySystem.DEFAULT_CALLING_CODE,
+  private readonly callingCode = computed(() =>
+    PhoneSystem.callingCodeOr(
+      this.newClientCountry() ?? this.deployment.defaultCountry,
+      ClientQuerySystem.DEFAULT_CALLING_CODE,
+    ),
   );
 
   /**
@@ -4641,8 +4641,10 @@ export class StaffVisitEditor {
     // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
     const [international] = ClientQuerySystem.phoneInternationalDigits(
       parsed,
-      PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
+      PhoneSystem.callingCodeOr(
+        this.deployment.defaultCountry,
         ClientQuerySystem.DEFAULT_CALLING_CODE,
+      ),
     );
     this.newClient.set({
       name: parsed.name,

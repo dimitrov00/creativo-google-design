@@ -118,3 +118,45 @@ describe('OfferingPriceSystem — algebra and purity', () => {
     expect(service).toEqual(withMatrix());
   });
 });
+
+describe('OfferingPriceSystem.offersOf — what a chair’s menu holds', () => {
+  it('offers a service without variants once, bare', () => {
+    const service = serviceFixture({
+      ...terms(1500, 30),
+      variants: [],
+      offerings: [{ barberId: niko, ...terms(1300, 30), overrides: [] }],
+    });
+    expect(S.offersOf(service, niko)).toEqual([
+      { variant: null, terms: S.termsFor(service, niko, null) },
+    ]);
+    expect(S.offersOf(service, niko)[0]?.terms.priceCents).toBe(1300);
+  });
+
+  it('offers a service with variants per variant, in order, never bare', () => {
+    const service = withMatrix();
+    const offers = S.offersOf(service, ivan);
+    expect(offers.map((offer) => offer.variant?.variantId)).toEqual([
+      short,
+      long,
+    ]);
+    expect(offers.map((offer) => offer.terms.priceCents)).toEqual([1450, 1850]);
+  });
+
+  it('gives a chair that does not perform it the service’s own terms', () => {
+    const service = withMatrix();
+    for (const offer of S.offersOf(service, BarberId.of('stranger'))) {
+      expect(offer.terms.priceCents).toBe(1500);
+      expect(offer.terms.durationMinutes).toBe(30);
+    }
+  });
+
+  it('falls an unpriced variant to the chair’s base', () => {
+    const offers = S.offersOf(withMatrix(), niko);
+    expect(offers.map((offer) => offer.terms.priceCents)).toEqual([1300, 1300]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const service = deepFreeze(withMatrix());
+    expect(S.offersOf(service, ivan)).toEqual(S.offersOf(service, ivan));
+  });
+});

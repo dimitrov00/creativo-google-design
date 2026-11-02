@@ -50,7 +50,6 @@ import {
   type Result,
   SeatId,
   type ServiceId,
-  ServiceVariantId,
   Tag,
   TrackMinute,
   type UserId,
@@ -68,6 +67,7 @@ import {
   BookingCall,
   BookingLifecycle,
   CancellationReason,
+  ChairMoment,
   ClientQueryShape,
   Combinability,
   CouponValue,
@@ -86,7 +86,6 @@ import {
   SeatSubject,
   type ShopNow,
   StaffVerb,
-  SubjectRelationship,
   TimeCoordinate,
   VisitEditWrite,
   VisitEditWriteOutcome,
@@ -107,6 +106,7 @@ import {
   OfferingPriceSystem,
   PhoneSystem,
   RosterSystem,
+  ScheduleExceptionSystem,
   SearchFieldsSystem,
   type SideWrites,
   StaffEditPlanSystem,
@@ -886,6 +886,12 @@ interface SearchableField {
   readonly value: string;
 }
 
+/** A visit's searchable fields, and those the term hit. */
+interface SearchMatch {
+  readonly fields: readonly SearchableField[];
+  readonly matched: readonly SearchableField[];
+}
+
 /** One appointment the search found. */
 interface SearchHitVm {
   readonly id: AppointmentId;
@@ -1520,82 +1526,64 @@ export class StaffDashboard {
     // the formatter's spaces in it (`digitQuery`: `null` when it is none).
     const digits = SearchFieldsSystem.digitQuery(term);
 
-    const found: { readonly hit: SearchHitVm; readonly when: WallTime }[] = [];
+    const found = new Map<Appointment, SearchMatch>();
+    const visits: Appointment[] = [];
     for (const appointment of this.store.pool()) {
       const fields = this.searchableFields(appointment);
       const matched = fields.filter((field) => matches(field, term, digits));
       if (matched.length === 0) continue;
-
-      // The client is the title, highlighted when it is what matched. Every
-      // OTHER matched field lists beneath — so a phone search shows the
-      // number it hit, and a name search does not print the name twice.
-      const titleField = fields[0];
-      const shopNow = shopNowAt(appointment.locationId);
-      found.push({
-        // The party's start on its shop's wall clock — the order outward
-        // from now.
-        when: WallTime.of(appointment.localDate, appointment.startMinutes),
-        hit: {
-          id: appointment.id,
-          dayKey: appointment.localDate,
-          whenLabel: this.wallLabel(
-            appointment.localDate,
-            appointment.startMinutes,
-            {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            },
-          ),
-          // ONE definition of past, shared with the grid (see `eventsFor`): a
-          // visit is past once it has ENDED — a cut that began ten minutes
-          // ago and is still in the chair is not history. Whatever is
-          // happening right now belongs with what is coming. Not past while
-          // no zone is known for its shop (nothing is past yet).
-          past:
-            shopNow !== null &&
-            VisitStorySystem.hasEnded(
-              {
-                localDate: appointment.localDate,
-                minute: appointment.endMinutes,
-              },
-              shopNow,
-            ),
-          bookingStatus: appointment.bookingStatus,
-          titleParts: titleField
-            ? splitOnTerm(titleField.value, term)
-            : [{ text: '', hit: false }],
-          matches: matched
-            .filter((field) => field !== titleField)
-            .map((field) => ({
-              label: field.label,
-              parts: splitOnTerm(
-                field.value,
-                // Highlight the run that actually matched: the digits form
-                // when that is what hit, the typed term otherwise.
-                digits !== null && field.label === SearchField.Phone
-                  ? digits
-                  : term,
-                digits !== null && field.label === SearchField.Phone,
-              ),
-            })),
-        },
-      });
+      found.set(appointment, { fields, matched });
+      visits.push(appointment);
     }
 
     // Soonest first among the future; most recent first among the past —
     // the two things a person searching a book is actually looking for.
-    return found
-      .sort((a, b) => {
-        if (a.hit.past !== b.hit.past) return a.hit.past ? 1 : -1;
-        return a.hit.past
-          ? WallTime.compare(b.when, a.when)
-          : WallTime.compare(a.when, b.when);
-      })
-      .map(({ hit }) => hit);
+    // A visit is past once it has ENDED, on its own shop's clock
+    // (`VisitStorySystem.outwardFromNow`, the grid's definition too).
+    return VisitStorySystem.outwardFromNow(visits, (visit) =>
+      shopNowAt(visit.locationId),
+    ).map(({ visit: appointment, past }) => {
+      const { fields, matched } = found.get(appointment) as SearchMatch;
+      // The client is the title, highlighted when it is what matched. Every
+      // OTHER matched field lists beneath — so a phone search shows the
+      // number it hit, and a name search does not print the name twice.
+      const titleField = fields[0];
+      return {
+        id: appointment.id,
+        dayKey: appointment.localDate,
+        whenLabel: this.wallLabel(
+          appointment.localDate,
+          appointment.startMinutes,
+          {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          },
+        ),
+        past,
+        bookingStatus: appointment.bookingStatus,
+        titleParts: titleField
+          ? splitOnTerm(titleField.value, term)
+          : [{ text: '', hit: false }],
+        matches: matched
+          .filter((field) => field !== titleField)
+          .map((field) => ({
+            label: field.label,
+            parts: splitOnTerm(
+              field.value,
+              // Highlight the run that actually matched: the digits form
+              // when that is what hit, the typed term otherwise.
+              digits !== null && field.label === SearchField.Phone
+                ? digits
+                : term,
+              digits !== null && field.label === SearchField.Phone,
+            ),
+          })),
+      };
+    });
   });
 
   /** Every field a search is allowed to look at, in display priority. */
@@ -1872,55 +1860,45 @@ export class StaffDashboard {
         // The VM is the entity's own (`serviceVms` maps `services`); one
         // the list no longer holds has no terms to quote.
         if (service === undefined) return [];
-        // The chair's terms as the server resolves them: the cents, the
-        // currency and the minutes straight off `ServiceTerms` (D-10.3);
-        // the LABEL is those cents in their own currency, worded as the
-        // client's catalogue words them (`CatalogWording.price`).
-        const termsOf = (variantId: ServiceVariantId | null) =>
-          OfferingPriceSystem.termsFor(service, barberId, variantId);
         const name = this.content.text(vm.name);
-        // A service WITH variants is offered per variant — `Класическа
-        // подстрижка · Дълга коса` — and never bare: the server refuses a
-        // seat whose price the variant would move. Terms come from the
-        // chair's own matrix, falling back to its base for a variant it has
-        // not priced separately (`termsFor`).
-        if (vm.variants.length > 0) {
-          return vm.variants.map((variant) => {
-            const terms = termsOf(variant.id);
-            return {
-              id: `${vm.id}:${variant.id}`,
-              serviceId: service.id,
-              variantId: variant.id,
-              label: `${name} · ${this.content.text(variant.name)}`,
-              serviceLabel: name,
-              variantLabel: this.content.text(variant.name),
-              minutes: terms.durationMinutes,
-              priceCents: terms.priceCents,
-              currency: terms.currency,
-              priceLabel: this.content.price({
-                amountCents: terms.priceCents,
-                currency: terms.currency,
-              }),
-            };
-          });
-        }
-        const terms = termsOf(null);
-        return [
-          {
-            id: vm.id,
-            serviceId: service.id,
-            variantId: null,
-            label: name,
-            serviceLabel: name,
-            minutes: terms.durationMinutes,
-            priceCents: terms.priceCents,
-            currency: terms.currency,
-            priceLabel: this.content.price({
-              amountCents: terms.priceCents,
-              currency: terms.currency,
-            }),
-          },
-        ];
+        // Which offers the chair's menu holds, at the terms the server
+        // resolves (`OfferingPriceSystem.offersOf`): the cents, the currency
+        // and the minutes straight off `ServiceTerms` (D-10.3); the LABEL is
+        // those cents in their own currency, worded as the client's catalogue
+        // words them (`CatalogWording.price`).
+        return OfferingPriceSystem.offersOf(service, barberId).map(
+          ({ variant, terms }): VisitEditorServiceOption =>
+            variant === null
+              ? {
+                  id: vm.id,
+                  serviceId: service.id,
+                  variantId: null,
+                  label: name,
+                  serviceLabel: name,
+                  minutes: terms.durationMinutes,
+                  priceCents: terms.priceCents,
+                  currency: terms.currency,
+                  priceLabel: this.content.price({
+                    amountCents: terms.priceCents,
+                    currency: terms.currency,
+                  }),
+                }
+              : {
+                  id: `${vm.id}:${variant.variantId}`,
+                  serviceId: service.id,
+                  variantId: variant.variantId,
+                  label: `${name} · ${this.content.text(variant.name)}`,
+                  serviceLabel: name,
+                  variantLabel: this.content.text(variant.name),
+                  minutes: terms.durationMinutes,
+                  priceCents: terms.priceCents,
+                  currency: terms.currency,
+                  priceLabel: this.content.price({
+                    amountCents: terms.priceCents,
+                    currency: terms.currency,
+                  }),
+                },
+        );
       });
   });
 
@@ -2056,16 +2034,9 @@ export class StaffDashboard {
   private openWindowsOf(
     lanes: readonly BarberDayLane[],
   ): readonly OpenWindow[] {
-    return IntervalSetSystem.normalize(
-      // Rostered time AND the time carved out of it — together they are the
-      // day the barber is AT WORK, which is what the shading is answering.
-      //
-      // `rostered` alone is post-carve, so a blocked hour was shaded closed
-      // AND drawn as a block on top of it: the same span said twice, in two
-      // vocabularies, one of which meant "the shop is shut". Shading now says
-      // only "not working"; a block says "working, but taken".
-      lanes.flatMap((lane) => [...lane.rostered, ...lane.blocks]),
-    ).map((window) => ({
+    // The day the barber is AT WORK, which is what the shading is answering:
+    // it says only "not working"; a block says "working, but taken".
+    return RosterSystem.atWork(lanes).map((window) => ({
       startMinute: window.startMinutes,
       endMinute: window.endMinutes,
     }));
@@ -2137,7 +2108,7 @@ export class StaffDashboard {
         const off = this.transloco.translate('staff.day.offBadge');
         for (const lane of cell?.lanes ?? []) {
           // A FAILED lane is not off (OR-2): its health row says so.
-          if (lane.rostered.length === 0 && !lane.failed) {
+          if (RosterSystem.offAllDay(lane)) {
             out[lane.barberId] = [
               {
                 key: lane.barberId,
@@ -2162,7 +2133,7 @@ export class StaffDashboard {
       // inside the pinned band would be a trap.
       for (const cell of this.store.dayCells()) {
         const off = cell.lanes
-          .filter((lane) => lane.rostered.length === 0 && !lane.failed)
+          .filter((lane) => RosterSystem.offAllDay(lane))
           .map((lane) => {
             const name = this.barberNameOf(lane.barberId);
             const first = firstNameOf(name);
@@ -2256,10 +2227,9 @@ export class StaffDashboard {
           // One vocabulary across the three surfaces (owner review
           // 2026-09-08): the sheet's arrived glyph is the block's too, for as
           // long as the visit is live.
-          statusIcon:
-            row.arrived && !row.terminal
-              ? 'visit.arrived'
-              : (STATUS_ICONS[row.bookingStatus] ?? null),
+          statusIcon: VisitStorySystem.arrivedOpen(row, row.arrived)
+            ? 'visit.arrived'
+            : (STATUS_ICONS[row.bookingStatus] ?? null),
           partyLabel: row.partyLabel,
         },
       ];
@@ -2609,14 +2579,14 @@ export class StaffDashboard {
       // (`VisitListSystem.hasStarted`).
       const next =
         shopNow === null
-          ? undefined
-          : visits.find(
-              (row) =>
-                !row.terminal &&
-                !VisitListSystem.hasStarted(
-                  WallTime.of(row.localDate, row.startMinute),
-                  shopNow,
-                ),
+          ? null
+          : VisitListSystem.firstOpenInChair(
+              visits,
+              (row) => ({
+                bookingStatus: row.bookingStatus,
+                start: WallTime.of(row.localDate, row.startMinute),
+              }),
+              shopNow,
             );
       const entries: RunEntryVm[] = clockOrder.map((entry) =>
         entry.agendaRow === AgendaRow.Visit && entry.id === next?.id
@@ -2939,9 +2909,7 @@ export class StaffDashboard {
     const seats: Seat[] = [];
     for (const lane of this.store.lanes()) {
       for (const appointment of lane.appointments) {
-        for (const seat of appointment.seats) {
-          if (seat.barberId === lane.barberId) seats.push(seat);
-        }
+        seats.push(...Seat.ofChair(appointment.seats, lane.barberId));
       }
     }
     // Strict: nothing recorded, or a mixed-currency day — a data error, not
@@ -3116,7 +3084,12 @@ export class StaffDashboard {
 
   protected whenLabel(entry: DayRowVm): string {
     const lang = this.transloco.getActiveLang();
-    if (entry.live) {
+    const moment = VisitStorySystem.chairMoment(
+      entry,
+      entry.arrived,
+      entry.live,
+    );
+    if (moment === ChairMoment.InChair) {
       // The time LEFT is real elapsed time to the chair's end — an
       // elapsed-time phrase on instants (T2, D-6.4).
       const minutes = Math.max(
@@ -3137,7 +3110,7 @@ export class StaffDashboard {
     // stopped being a fact row: every other state is carried by the card's
     // form, but arrival is the one that is about RIGHT NOW, and form is
     // already spoken for by `data-live` and `data-next`.
-    if (entry.arrived && !entry.terminal) {
+    if (moment === ChairMoment.Arrived) {
       return this.transloco.translate('staff.day.statusArrived');
     }
     return relativeTime(entry.startUtcMs, this.nowUtcMs(), lang, 'short');
@@ -3458,22 +3431,17 @@ export class StaffDashboard {
     nowUtcMs: UtcEpochMs,
     shopNow: ShopNow | null,
   ): DayRowVm {
-    const seats = appointment.seats.filter(
-      (seat) => seat.barberId === barberId,
-    );
-    // The chair's own span on the visit's shop day (Law 7.3): its first
-    // seat's start to its last seat's end — the envelope's when it holds none.
+    const seats = Seat.ofChair(appointment.seats, barberId);
     const first = seats[0];
-    const last = seats.at(-1);
-    const startMinute = first?.startMinutes ?? appointment.startMinutes;
-    const endMinute =
-      last === undefined ? appointment.endMinutes : Seat.endMinutes(last);
+    // The chair's own span on the visit's shop day (Law 7.3).
+    const { startMinutes: startMinute, endMinutes: endMinute } = Seat.chairSpan(
+      seats,
+      appointment,
+    );
     // HAS IT BEGUN, HAS IT ENDED — on the shop's wall clock, against the
     // store's `ShopNow` (Law 7.3 T1, pass D D-6): the visit's day and the
     // chair's minutes, never an instant. Neither before a zone is known.
     const start = WallTime.of(appointment.localDate, startMinute);
-    const started =
-      shopNow !== null && VisitListSystem.hasStarted(start, shopNow);
     const ended =
       shopNow !== null &&
       VisitStorySystem.hasEnded(
@@ -3556,24 +3524,24 @@ export class StaffDashboard {
                 : null,
           };
         case SeatSubject.Account:
-          return seat.subjectRelationship === SubjectRelationship.Companion
+          return Seat.wearsBookingContact(seat)
             ? {
-                id: DraftPersonKey.account(seat.subjectUserId),
-                label:
-                  companionNames[seat.subjectUserId] ??
-                  this.transloco.translate('staff.day.unnamedClient'),
-                phone: null,
-                phoneHref: null,
-                meta: null,
-                email: null,
-              }
-            : {
                 id: DraftPersonKey.account(seat.subjectUserId),
                 label:
                   contactName ??
                   this.transloco.translate('staff.day.unnamedClient'),
                 phone: phoneLabel,
                 phoneHref: contactPhone,
+                meta: null,
+                email: null,
+              }
+            : {
+                id: DraftPersonKey.account(seat.subjectUserId),
+                label:
+                  companionNames[seat.subjectUserId] ??
+                  this.transloco.translate('staff.day.unnamedClient'),
+                phone: null,
+                phoneHref: null,
                 meta: null,
                 email: null,
               };
@@ -3678,7 +3646,12 @@ export class StaffDashboard {
       barberAvatarSrc: this.barberAvatarOf(barberId),
       barberTone: this.toneOf(barberId),
       past: ended,
-      live: started && !ended && !BookingLifecycle.isSettled(chairLifecycle),
+      live: VisitStorySystem.isInChair(
+        chairLifecycle,
+        start,
+        { localDate: appointment.localDate, minute: endMinute },
+        shopNow,
+      ),
       // Set by the lane, which is the only scope that can know which visit is
       // FIRST — a row cannot see its siblings.
       isNext: false,
@@ -4896,9 +4869,9 @@ export class StaffDashboard {
           (entry) => entry.id === appointmentId,
         );
         if (appointment === undefined) continue;
-        const here = appointment.seats
-          .filter((seat) => seat.barberId === lane.barberId)
-          .map((seat) => seat.seatId);
+        const here = Seat.ofChair(appointment.seats, lane.barberId).map(
+          (seat) => seat.seatId,
+        );
         if (lane.barberId === barberId || holds(here)) {
           return this.toRow(appointment, lane.barberId, nowUtcMs, shopNow);
         }
@@ -5450,14 +5423,12 @@ export class StaffDashboard {
         TrackMinute.span(vm.startMinute, vm.endMinute),
       ),
       nonce: ++this.createSeq,
-      legs: vm.legs.map((leg, index) => ({
-        ...leg,
+      legs: VisitDraftSystem.rebookLegs(vm.legs, (leg, index) =>
         // A fresh draft seat — a `SeatId` by construction (`draft-…`).
-        seatId: SeatId.of(
+        SeatId.of(
           `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
         ),
-        overridden: false,
-      })),
+      ),
       client: {
         id: vm.clientUserId,
         label: vm.clientLabel,
@@ -5536,7 +5507,7 @@ export class StaffDashboard {
         for (const seat of appointment.seats) {
           if (
             seat.seatSubject === SeatSubject.Account &&
-            seat.subjectRelationship === SubjectRelationship.Companion
+            Seat.isCompanion(seat)
           ) {
             ids.add(seat.subjectUserId);
           }
@@ -5598,17 +5569,11 @@ export class StaffDashboard {
     // (the booker's, never a companion's — DEP-5).
     const nowUtcMs = this.store.nowUtcMs();
     const shopNowAt = this.store.shopNowAt();
-    const startOf = (visit: Appointment): WallTime =>
-      WallTime.of(visit.localDate, visit.startMinutes);
-    const past = this.store
-      .window()
-      .filter((visit) => {
-        const shopNow = shopNowAt(visit.locationId);
-        return shopNow === null
-          ? UtcEpochMs.compare(visit.utcEpochMs, nowUtcMs) < 0
-          : VisitListSystem.hasStarted(startOf(visit), shopNow);
-      })
-      .sort((a, b) => WallTime.compare(startOf(b), startOf(a)));
+    const past = VisitListSystem.begunNewestFirst(
+      this.store.window(),
+      shopNowAt,
+      nowUtcMs,
+    );
     const recent: VisitEditorClientOption[] = ClientQuerySystem.recentAccounts(
       past,
       RECENT_CLIENTS_CAP,
@@ -5689,9 +5654,10 @@ export class StaffDashboard {
     const parsed = ClientQuerySystem.parse(query);
     // By the shop's own dial code: «088…» is asked as «359 88…» too — the
     // query's own default when the country has none.
-    const code =
-      PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
-      ClientQuerySystem.DEFAULT_CALLING_CODE;
+    const code = PhoneSystem.callingCodeOr(
+      this.deployment.defaultCountry,
+      ClientQuerySystem.DEFAULT_CALLING_CODE,
+    );
     const keys = ClientQuerySystem.lookupKeys(parsed, code);
     // The book's own matches are on screen already — their faces are owed
     // now, not when the index answers. Only the rows a phone can show.
@@ -6145,7 +6111,7 @@ export class StaffDashboard {
     const lane = this.store
       .cellFor(dayKey)
       ?.lanes.find((entry) => entry.barberId === barberId);
-    return lane !== undefined && lane.rostered.length === 0;
+    return lane !== undefined && RosterSystem.rosteredNowhere(lane);
   }
 
   /**
@@ -6233,33 +6199,41 @@ export class StaffDashboard {
     if (edit === null) return;
     const shownDay = this.store.dayKey();
     if (shownDay === null) return;
-    if (edit.blockId !== null && !edit.allDay) {
-      const old = minuteRangeOf(edit.startMinute, edit.endMinute);
-      const from = edit.barberIds[0];
-      if (old !== null && from !== undefined) {
-        const lifted = await this.store.clearBlock(from, old, shownDay);
-        if (!lifted) return;
-      }
+    const plan = ScheduleExceptionSystem.blockSavePlan({
+      opened: edit,
+      openedRange: minuteRangeOf(edit.startMinute, edit.endMinute),
+      shownDay,
+      saved: commit,
+      savedRange: minuteRangeOf(commit.startMinute, commit.endMinute),
+      homeOf: (barberId) => {
+        const barber = this.catalog
+          .barbers()
+          .find((entry) => entry.id === barberId);
+        return barber === undefined ? null : LocationScopeSystem.homeOf(barber);
+      },
+    });
+    if (plan.lift !== null) {
+      const { barberId, range, localDate } = plan.lift;
+      const lifted = await this.store.clearBlock(barberId, range, localDate);
+      if (!lifted) return;
     }
-    let ranges: readonly MinuteRange[] = [];
-    if (!commit.allDay) {
-      const range = minuteRangeOf(commit.startMinute, commit.endMinute);
-      if (range === null) return;
-      ranges = [range];
-    }
-    const days = commit.days;
-    const only = days.length === 1 ? days[0] : undefined;
-    for (const barberId of commit.barberIds) {
-      const barber = this.catalog
-        .barbers()
-        .find((entry) => entry.id === barberId);
-      const locationId =
-        barber === undefined ? null : LocationScopeSystem.homeOf(barber);
-      if (locationId === null) continue;
+    if (plan.writes === null) return;
+    for (const write of plan.writes) {
+      const { barberId, locationId, ranges } = write;
       const done =
-        only !== undefined
-          ? await this.store.blockTime(barberId, locationId, ranges, only)
-          : await this.store.blockSeries(barberId, locationId, ranges, days);
+        write.localDate !== null
+          ? await this.store.blockTime(
+              barberId,
+              locationId,
+              ranges,
+              write.localDate,
+            )
+          : await this.store.blockSeries(
+              barberId,
+              locationId,
+              ranges,
+              write.days,
+            );
       if (!done) return;
     }
     this.closeBlockSheet();
@@ -6274,7 +6248,10 @@ export class StaffDashboard {
     const barberId = edit.barberIds[0];
     // The sheet always opens on a chair, on a known day.
     if (barberId === undefined || dayKey === null) return;
-    const wholeDay = edit.allDay || this.offOn(barberId, dayKey);
+    const wholeDay = ScheduleExceptionSystem.liftsWholeDay(
+      edit.allDay,
+      this.offOn(barberId, dayKey),
+    );
     if (wholeDay) {
       if (!this.blockLiftArmed()) {
         this.blockLiftArmed.set(true);

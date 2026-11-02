@@ -12,8 +12,10 @@ import {
 } from '@core/primitives';
 import {
   type AccountOccupant,
+  BookingLifecycle,
   CancellationReason,
   CancelledSide,
+  ChairMoment,
   type Money,
   type Seat,
   type SeatOutcome,
@@ -31,6 +33,7 @@ import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
 import { ClientStatsSystem } from './client-stats.system';
 import { LocationScopeSystem } from './location-scope.system';
+import { VisitListSystem } from './visit-list.system';
 
 const DAYS_PER_WEEK = 7;
 
@@ -74,6 +77,13 @@ type WallEnd = {
 export type DayRun = {
   readonly first: number;
   readonly last: number;
+};
+
+/** A visit as {@link VisitStorySystem.outwardFromNow} orders it. A whole `Appointment` passes straight in. */
+type OutwardVisit = {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
 /** A cancellation as the side rule reads it. */
@@ -248,6 +258,91 @@ export const VisitStorySystem = {
   hasEnded(end: WallEnd, now: ShopNow): boolean {
     if (end.localDate !== now.localDate) return end.localDate < now.localDate;
     return end.minute <= now.currentMinute;
+  },
+
+  /**
+   * THE ORDER OUTWARD FROM NOW, each visit on ITS shop's clock (`nowOf`,
+   * Law 7.2): what has not ended first, soonest first; then what has ended,
+   * newest first. A visit still running is on the future side ({@link
+   * hasEnded}); one whose shop has no known clock (`nowOf` answers `null`) is
+   * not past. Equal wall times keep the input's order. A new array; each entry
+   * says which side it fell on.
+   */
+  outwardFromNow<V extends OutwardVisit>(
+    visits: readonly V[],
+    nowOf: (visit: V) => ShopNow | null,
+  ): readonly { readonly visit: V; readonly past: boolean }[] {
+    const out: { readonly visit: V; readonly past: boolean }[] = [];
+    for (let i = 0; i < visits.length; i++) {
+      const visit = visits[i] as V;
+      const now = nowOf(visit);
+      out.push({
+        visit,
+        past:
+          now !== null &&
+          VisitStorySystem.hasEnded(
+            { localDate: visit.localDate, minute: visit.endMinutes },
+            now,
+          ),
+      });
+    }
+    return out.sort((a, b) => {
+      if (a.past !== b.past) return a.past ? 1 : -1;
+      const startA = WallTime.of(a.visit.localDate, a.visit.startMinutes);
+      const startB = WallTime.of(b.visit.localDate, b.visit.startMinutes);
+      return a.past
+        ? WallTime.compare(startB, startA)
+        : WallTime.compare(startA, startB);
+    });
+  },
+
+  /**
+   * Is this chair running NOW — begun ({@link VisitListSystem.hasStarted}, its
+   * start minute included), not ended ({@link hasEnded}, its end minute
+   * excluded) and not settled. Never before a clock is known (`null`).
+   */
+  isInChair(
+    chair: { readonly bookingStatus: BookingStatus },
+    start: WallTime,
+    end: WallEnd,
+    now: ShopNow | null,
+  ): boolean {
+    return (
+      now !== null &&
+      VisitListSystem.hasStarted(start, now) &&
+      !VisitStorySystem.hasEnded(end, now) &&
+      !BookingLifecycle.isSettled(chair)
+    );
+  },
+
+  /**
+   * THE PARTY IS IN THE SHOP, AND THIS CHAIR IS STILL OPEN: `arrived` (the
+   * party's stamp is on record) on a chair that is not settled. True while the
+   * chair is running too; only {@link chairMoment} ranks the two.
+   */
+  arrivedOpen(
+    chair: { readonly bookingStatus: BookingStatus },
+    arrived: boolean,
+  ): boolean {
+    return arrived && !BookingLifecycle.isSettled(chair);
+  },
+
+  /**
+   * The chair's moment, in the precedence the row's clock speaks: an hour that
+   * did not happen, then the chair running (`inChair`, {@link isInChair}), then
+   * the party arrived ({@link arrivedOpen}), else scheduled. A completed chair
+   * with an arrival stamp is `SCHEDULED`.
+   */
+  chairMoment(
+    chair: { readonly bookingStatus: BookingStatus },
+    arrived: boolean,
+    inChair: boolean,
+  ): ChairMoment {
+    if (BookingLifecycle.didNotHappen(chair)) return ChairMoment.Hollow;
+    if (inChair) return ChairMoment.InChair;
+    return VisitStorySystem.arrivedOpen(chair, arrived)
+      ? ChairMoment.Arrived
+      : ChairMoment.Scheduled;
   },
 
   /**

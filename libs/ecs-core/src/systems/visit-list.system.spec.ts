@@ -1044,3 +1044,193 @@ describe('VisitListSystem.nextUpcoming / countUpcoming — the next visit to com
     expect(items.map((entry) => entry.key)).toEqual(['b', 'a', 'c']);
   });
 });
+
+describe('VisitListSystem.begunNewestFirst — the visits that have begun', () => {
+  const SOFIA_SHOP = LocationId.of('loc-sofia');
+  const UTC_SHOP = LocationId.of('loc-utc');
+  const UNKNOWN_SHOP = LocationId.of('loc-unknown');
+  // 06:00 UTC on 2026-09-28: 09:00 in Sofia (+03:00), 06:00 at the UTC shop.
+  const INSTANT = utcMs('2026-09-28T06:00:00Z');
+  const nowOf = (locationId: LocationId): ShopNow | null => {
+    if (locationId === SOFIA_SHOP) {
+      return ZonedTimeSystem.shopNow(INSTANT, FIXTURE_TIME_ZONE);
+    }
+    return locationId === UTC_SHOP
+      ? ZonedTimeSystem.shopNow(INSTANT, TimeZone.UTC)
+      : null;
+  };
+  const visit = (
+    key: string,
+    locationId: LocationId,
+    day: string,
+    at: number,
+    stamp = '2026-09-28T00:00:00Z',
+  ) => ({
+    key,
+    locationId,
+    localDate: localDate(day),
+    startMinutes: minute(at),
+    utcEpochMs: utcMs(stamp),
+  });
+  const keys = (found: readonly { readonly key: string }[]) =>
+    found.map((entry) => entry.key);
+
+  it('takes the start minute itself, leaves a minute later, newest first', () => {
+    expect(
+      keys(
+        S.begunNewestFirst(
+          [
+            visit('earlier', SOFIA_SHOP, '2026-09-28', 480),
+            visit('at-nine', SOFIA_SHOP, '2026-09-28', 540),
+            visit('a-minute-on', SOFIA_SHOP, '2026-09-28', 541),
+            visit('yesterday', SOFIA_SHOP, '2026-09-27', 1000),
+          ],
+          nowOf,
+          INSTANT,
+        ),
+      ),
+    ).toEqual(['at-nine', 'earlier', 'yesterday']);
+  });
+
+  it('with no zone known, reads the stamp strictly before the tick', () => {
+    expect(
+      keys(
+        S.begunNewestFirst(
+          [
+            visit(
+              'on-the-tick',
+              UNKNOWN_SHOP,
+              '2026-09-28',
+              540,
+              '2026-09-28T06:00:00Z',
+            ),
+            visit(
+              'just-before',
+              UNKNOWN_SHOP,
+              '2026-09-28',
+              539,
+              '2026-09-28T05:59:59Z',
+            ),
+          ],
+          nowOf,
+          INSTANT,
+        ),
+      ),
+    ).toEqual(['just-before']);
+  });
+
+  it('judges each shop on its own clock', () => {
+    expect(
+      keys(
+        S.begunNewestFirst(
+          [
+            visit('sofia-eight', SOFIA_SHOP, '2026-09-28', 480),
+            visit('utc-eight', UTC_SHOP, '2026-09-28', 480),
+            visit('utc-five', UTC_SHOP, '2026-09-28', 300),
+          ],
+          nowOf,
+          INSTANT,
+        ),
+      ),
+    ).toEqual(['sofia-eight', 'utc-five']);
+  });
+
+  it('does not admit a settled visit still to come — it is not `isHistory`', () => {
+    const settledFuture = {
+      ...visit('settled-future', SOFIA_SHOP, '2026-09-29', 600),
+      bookingStatus: BookingStatus.Cancelled,
+    };
+    expect(S.begunNewestFirst([settledFuture], nowOf, INSTANT)).toEqual([]);
+    expect(S.isHistory(settledFuture, nowOf(SOFIA_SHOP) as ShopNow)).toBe(true);
+  });
+
+  it('keeps the input’s order on equal wall times', () => {
+    expect(
+      keys(
+        S.begunNewestFirst(
+          [
+            visit('first', SOFIA_SHOP, '2026-09-28', 480),
+            visit('second', SOFIA_SHOP, '2026-09-28', 480),
+          ],
+          nowOf,
+          INSTANT,
+        ),
+      ),
+    ).toEqual(['first', 'second']);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const visits = deepFreeze([
+      visit('a', SOFIA_SHOP, '2026-09-28', 480),
+      visit('b', SOFIA_SHOP, '2026-09-27', 480),
+    ]);
+    const once = S.begunNewestFirst(visits, nowOf, INSTANT);
+    expect(S.begunNewestFirst(visits, nowOf, INSTANT)).toEqual(once);
+  });
+});
+
+describe('VisitListSystem.firstOpenInChair — the chair’s next visit', () => {
+  const NOW_9 = ZonedTimeSystem.shopNow(
+    utcMs('2026-09-28T09:00:00+03:00'),
+    FIXTURE_TIME_ZONE,
+  );
+  const row = (
+    key: string,
+    bookingStatus: BookingStatus,
+    day: string,
+    at: number,
+  ) => ({ key, bookingStatus, start: WallTime.of(localDate(day), minute(at)) });
+  type Row = ReturnType<typeof row>;
+  const chairOf = (entry: Row) => entry;
+  const next = (rows: readonly Row[]) =>
+    S.firstOpenInChair(rows, chairOf, NOW_9)?.key ?? null;
+
+  it('does not take a start equal to now', () => {
+    expect(
+      next([
+        row('at-nine', BookingStatus.Confirmed, '2026-09-28', 540),
+        row('later', BookingStatus.Confirmed, '2026-09-28', 600),
+      ]),
+    ).toBe('later');
+  });
+
+  it('skips a settled first row', () => {
+    expect(
+      next([
+        row('called-off', BookingStatus.Cancelled, '2026-09-28', 600),
+        row('open', BookingStatus.Pending, '2026-09-28', 660),
+      ]),
+    ).toBe('open');
+  });
+
+  it('takes the lane’s order over the start’s', () => {
+    expect(
+      next([
+        row('second-leg', BookingStatus.Confirmed, '2026-09-28', 700),
+        row('earlier-start', BookingStatus.Confirmed, '2026-09-28', 600),
+      ]),
+    ).toBe('second-leg');
+  });
+
+  it('reads another day on its own terms', () => {
+    expect(
+      next([row('tomorrow', BookingStatus.Confirmed, '2026-09-29', 0)]),
+    ).toBe('tomorrow');
+    expect(
+      next([row('yesterday', BookingStatus.Confirmed, '2026-09-27', 1000)]),
+    ).toBeNull();
+  });
+
+  it('answers null on an empty lane', () => {
+    expect(next([])).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rows = deepFreeze([
+      row('a', BookingStatus.Confirmed, '2026-09-28', 600),
+    ]);
+    expect(S.firstOpenInChair(rows, chairOf, NOW_9)).toBe(
+      S.firstOpenInChair(rows, chairOf, NOW_9),
+    );
+  });
+});

@@ -57,6 +57,7 @@ export * from './capacity-trigger.data';
 export * from './cart-line.data';
 export * from './cart-seat-lines.data';
 export * from './chair-geometry.data';
+export * from './chair-moment.data';
 export * from './chair-time.data';
 export * from './client-issue.data';
 export * from './client-money-stats.data';

@@ -4,6 +4,7 @@ import {
   LocalDate,
   type LocationId,
   type MinuteOfDay,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   BookingLifecycle,
@@ -410,6 +411,78 @@ export const VisitListSystem = {
    */
   hasStarted(start: WallTime, now: ShopNow): boolean {
     return WallTime.compare(start, ShopNow.wallTime(now)) <= 0;
+  },
+
+  /**
+   * The visits that have BEGUN, newest first: each on its own shop's wall
+   * clock (`nowOf` its `locationId`, the start minute included, {@link
+   * hasStarted}). Where no clock is known it falls back to stamp order against
+   * `nowUtcMs` (strictly before; T2, no zone needed). A settled visit still to
+   * come is not begun, which is where this differs from {@link isHistory}.
+   * Equal wall times keep the input's order. A new array.
+   */
+  begunNewestFirst<
+    V extends {
+      readonly locationId: LocationId;
+      readonly localDate: LocalDate;
+      readonly startMinutes: MinuteOfDay;
+      readonly utcEpochMs: UtcEpochMs;
+    },
+  >(
+    visits: readonly V[],
+    nowOf: (locationId: LocationId) => ShopNow | null,
+    nowUtcMs: UtcEpochMs,
+  ): readonly V[] {
+    const begun: V[] = [];
+    for (let i = 0; i < visits.length; i++) {
+      const visit = visits[i] as V;
+      const now = nowOf(visit.locationId);
+      if (
+        now === null
+          ? UtcEpochMs.compare(visit.utcEpochMs, nowUtcMs) < 0
+          : VisitListSystem.hasStarted(
+              WallTime.of(visit.localDate, visit.startMinutes),
+              now,
+            )
+      ) {
+        begun.push(visit);
+      }
+    }
+    return begun.sort((a, b) =>
+      WallTime.compare(
+        WallTime.of(b.localDate, b.startMinutes),
+        WallTime.of(a.localDate, a.startMinutes),
+      ),
+    );
+  },
+
+  /**
+   * THE CHAIR'S NEXT VISIT: the first item, in the lane's OWN order, whose
+   * chair is not settled and has not begun ({@link hasStarted}, so a start
+   * equal to now is not next). Reads the CHAIR's status and start through
+   * `chairOf`, which is why {@link nextUpcoming} does not answer this: that one
+   * reads the root status and takes the minimum start across shops. `null`
+   * when none is open.
+   */
+  firstOpenInChair<T>(
+    items: readonly T[],
+    chairOf: (item: T) => {
+      readonly bookingStatus: BookingStatus;
+      readonly start: WallTime;
+    },
+    now: ShopNow,
+  ): T | null {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i] as T;
+      const chair = chairOf(item);
+      if (
+        !BookingLifecycle.isSettled(chair) &&
+        !VisitListSystem.hasStarted(chair.start, now)
+      ) {
+        return item;
+      }
+    }
+    return null;
   },
 
   /**

@@ -16,6 +16,7 @@ import {
   EndMinute,
   LocalDate,
   MinuteOfDay,
+  SeatId,
   TrackMinute,
   Weekday,
 } from '@core/primitives';
@@ -474,6 +475,49 @@ describe("the visit draft's span and placeholder seats", () => {
 });
 
 /* ── pass C: the grain, the typed pair, the span rules, the person keys ── */
+
+describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries', () => {
+  const leg = (seat: string, overridden: boolean) => ({
+    seatId: SeatId.of(seat),
+    priceLabel: '28,00 €',
+    durationMinutes: d(45),
+    overridden,
+  });
+  const mint = (_leg: unknown, index: number) => SeatId.of(`draft-${index}`);
+
+  it('mints a fresh seat per leg, in order, handing the mint its index', () => {
+    const seen: string[] = [];
+    const out = S.rebookLegs(
+      [leg('a', false), leg('b', false)],
+      (entry, index) => {
+        seen.push(`${entry.seatId}:${index}`);
+        return mint(entry, index);
+      },
+    );
+    expect(out.map((entry) => entry.seatId)).toEqual(['draft-0', 'draft-1']);
+    expect(seen).toEqual(['a:0', 'b:1']);
+  });
+
+  it('clears the mark and keeps the stored price label and minutes', () => {
+    const [out] = S.rebookLegs([leg('a', true)], mint);
+    expect(out).toEqual({
+      seatId: 'draft-0',
+      priceLabel: '28,00 €',
+      durationMinutes: 45,
+      overridden: false,
+    });
+  });
+
+  it('answers nothing for no legs', () => {
+    expect(S.rebookLegs([], mint)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([leg('a', true)]);
+    expect(S.rebookLegs(legs, mint)).toEqual(S.rebookLegs(legs, mint));
+    expect(legs[0]?.seatId).toBe('a');
+  });
+});
 
 describe('the grain', () => {
   it('is five minutes', () => {

@@ -189,6 +189,16 @@ export const PhoneSystem = {
     return isSupportedCountry(country) ? getCountryCallingCode(country) : null;
   },
 
+  /**
+   * {@link countryCallingCode}, or `fallback` for a code the metadata does not
+   * support. The default is the caller's (`ClientQuerySystem.DEFAULT_CALLING_CODE`):
+   * this file owns the metadata, and nothing else imports it for the sake of a
+   * constant.
+   */
+  callingCodeOr(country: CountryIso2, fallback: string): string {
+    return PhoneSystem.countryCallingCode(country) ?? fallback;
+  },
+
   /** Presentation only, e.g. `'088 555 0100'` — falls back to the E.164 itself. */
   formatNational(e164: E164): string {
     return parsePhoneNumberFromString(e164)?.formatNational() ?? e164;

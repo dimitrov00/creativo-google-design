@@ -1007,6 +1007,86 @@ describe('worksDay — the chairs the staff day draws', () => {
   });
 });
 
+describe('offAllDay / rosteredNowhere — is this chair off', () => {
+  const shift = MinuteRange.of(minute(540), endMinute(1020));
+
+  it('is off with an empty roster', () => {
+    const lane = { rostered: [], failed: false };
+    expect(RosterSystem.offAllDay(lane)).toBe(true);
+    expect(RosterSystem.rosteredNowhere(lane)).toBe(true);
+  });
+
+  it('is not off all day when the read failed, though it is rostered nowhere (OR-2)', () => {
+    const lane = { rostered: [], failed: true };
+    expect(RosterSystem.offAllDay(lane)).toBe(false);
+    expect(RosterSystem.rosteredNowhere(lane)).toBe(true);
+  });
+
+  it('is not off with a roster', () => {
+    const lane = { rostered: [shift], failed: false };
+    expect(RosterSystem.offAllDay(lane)).toBe(false);
+    expect(RosterSystem.rosteredNowhere(lane)).toBe(false);
+  });
+
+  it('calls a chair with bookings and no roster off, where worksDay still draws it', () => {
+    const lane = { rostered: [], failed: false, appointments: [{}] };
+    expect(RosterSystem.offAllDay(lane)).toBe(true);
+    expect(
+      RosterSystem.worksDay(lane.rostered.length, lane.appointments.length),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const lane = deepFreeze({ rostered: [shift], failed: false });
+    expect(RosterSystem.offAllDay(lane)).toBe(RosterSystem.offAllDay(lane));
+    expect(RosterSystem.rosteredNowhere(lane)).toBe(
+      RosterSystem.rosteredNowhere(lane),
+    );
+  });
+});
+
+describe('atWork — the day the chairs are at work', () => {
+  const range = (start: number, end: number) =>
+    MinuteRange.of(minute(start), endMinute(end));
+
+  it('merges overlapping shifts across lanes', () => {
+    expect(
+      RosterSystem.atWork([
+        { rostered: [range(540, 720)], blocks: [] },
+        { rostered: [range(660, 900)], blocks: [] },
+      ]),
+    ).toEqual([range(540, 900)]);
+  });
+
+  it('counts a block as at work, inside the roster and outside it', () => {
+    expect(
+      RosterSystem.atWork([
+        {
+          rostered: [range(540, 600), range(660, 720)],
+          blocks: [range(600, 660), range(800, 830)],
+        },
+      ]),
+    ).toEqual([range(540, 720), range(800, 830)]);
+  });
+
+  it('answers nothing for no lanes', () => {
+    expect(RosterSystem.atWork([])).toEqual([]);
+  });
+
+  it('holds a shift to the closing midnight', () => {
+    expect(
+      RosterSystem.atWork([{ rostered: [range(1200, 1440)], blocks: [] }]),
+    ).toEqual([range(1200, 1440)]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const lanes = deepFreeze([
+      { rostered: [range(540, 720)], blocks: [range(800, 830)] },
+    ]);
+    expect(RosterSystem.atWork(lanes)).toEqual(RosterSystem.atWork(lanes));
+  });
+});
+
 describe('shopOpeningAt — where a shop stands at one wall-clock minute', () => {
   /** Mon–Thu 09:00–20:00, Fri 09:00–21:00, Sat 10:00–18:00, Sunday closed. */
   const centerWeek: readonly DayHours[] = [
