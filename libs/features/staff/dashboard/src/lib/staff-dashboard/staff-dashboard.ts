@@ -3433,6 +3433,18 @@ export class StaffDashboard {
   }
 
   protected readonly cancelId = signal<AppointmentId | null>(null);
+  /** What «Откажи и блокирай» blocks once this cancel lands; `null` on a plain cancel. */
+  private readonly blockAfterCancel = signal<{
+    readonly chair: BarberId;
+    readonly startMinute: TrackMinute;
+    readonly endMinute: TrackMinute;
+  } | null>(null);
+
+  /** The cancel sheet let go of: the visit stands, and nothing is blocked. */
+  protected dismissCancel(): void {
+    this.cancelId.set(null);
+    this.blockAfterCancel.set(null);
+  }
   /**
    * WHICH SEATS this cancellation resolves — empty means the whole booking.
    *
@@ -3543,6 +3555,9 @@ export class StaffDashboard {
       if (row && inverse !== null) {
         this.offerUndo(row, BookingStatus.Cancelled, inverse);
       }
+      const blocked = this.blockAfterCancel();
+      this.blockAfterCancel.set(null);
+      if (blocked !== null) this.openBlockSheet(blocked.chair, blocked);
     }
     /*
      * THE WORDS GO ON THE VISIT'S NOTE (D23: "free text, when staff type
@@ -4311,7 +4326,10 @@ export class StaffDashboard {
     });
   }
 
-  /** «Откажи и блокирай времето»: the cancel, then the block sheet on its range. */
+  /**
+   * «Откажи и блокирай времето»: the reason sheet now, and the block sheet on
+   * the visit's range only once the cancel has landed (`confirmCancel`).
+   */
   protected async blockInsteadFromEditor(vm: VisitEditorVm): Promise<void> {
     const row = this.visitSheetRow();
     if (row === null || row.appointmentId !== vm.appointmentId) return;
@@ -4319,7 +4337,8 @@ export class StaffDashboard {
     await this.actFromSheet(row, BookingStatus.Cancelled);
     this.closeVisitSheet();
     if (chair === null) return;
-    this.openBlockSheet(chair, {
+    this.blockAfterCancel.set({
+      chair,
       startMinute: vm.startMinute,
       endMinute: vm.endMinute,
     });

@@ -2746,6 +2746,97 @@ describe('StaffDashboard', () => {
    * the note's one transaction (`updateAppointmentNote`: the note read on
    * the server, the line joined below it, written — edge hardening D-6).
    */
+  describe('«Откажи и блокирай»: the block sheet waits for the cancel (B1)', () => {
+    type BlockInsteadPage = {
+      visitEditorVm: () => { appointmentId: string } | null;
+      blockInsteadFromEditor: (vm: unknown) => Promise<void>;
+      cancelId: { (): string | null; set: (id: string | null) => void };
+      confirmCancel: () => Promise<void>;
+      blockEdit: () => {
+        barberIds: readonly string[];
+        startMinute: number;
+        endMinute: number;
+      } | null;
+    };
+    const page = () => fixture.componentInstance as unknown as BlockInsteadPage;
+
+    /** The visit's sheet, and «Откажи и блокирай» pressed on it. */
+    async function pressBlockInstead(): Promise<void> {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      await page().blockInsteadFromEditor(page().visitEditorVm());
+      fixture.detectChanges();
+    }
+
+    afterEach(() => {
+      transition.mockReset();
+      transition.mockImplementation(async (input) =>
+        PortResult.ok({
+          appointmentId: input.appointmentId,
+          toBookingStatus: input.toBookingStatus,
+        }),
+      );
+    });
+
+    it('asks the reason first, with no block sheet yet', async () => {
+      await pressBlockInstead();
+      expect(page().cancelId()).toBe('appointment-1');
+      expect(page().blockEdit()).toBeNull();
+      expect(transition).not.toHaveBeenCalled();
+    });
+
+    it('opens the block sheet on the visit’s range once the cancel has landed', async () => {
+      await pressBlockInstead();
+      await page().confirmCancel();
+      fixture.detectChanges();
+      expect(transition).toHaveBeenCalled();
+      expect(page().cancelId()).toBeNull();
+      expect(page().blockEdit()).toEqual(
+        expect.objectContaining({
+          barberIds: ['ivan'],
+          startMinute: 600,
+          endMinute: 630,
+        }),
+      );
+    });
+
+    it('leaves the visit as it was, with no block sheet, when the reason sheet is dismissed', async () => {
+      await pressBlockInstead();
+      fixture.debugElement
+        .query(By.css('[data-testid="staff-cancel-sheet"]'))
+        .componentInstance.dismissed.emit();
+      fixture.detectChanges();
+      expect(page().cancelId()).toBeNull();
+      expect(page().blockEdit()).toBeNull();
+      expect(transition).not.toHaveBeenCalled();
+      // A plain cancel afterwards owes no block sheet.
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      page().cancelId.set('appointment-1');
+      await page().confirmCancel();
+      expect(page().blockEdit()).toBeNull();
+    });
+
+    it('opens no block sheet on a refused cancel; the retry that lands does', async () => {
+      await pressBlockInstead();
+      transition.mockImplementationOnce(async () =>
+        PortResult.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
+      );
+      await page().confirmCancel();
+      fixture.detectChanges();
+      expect(page().cancelId()).toBe('appointment-1');
+      expect(page().blockEdit()).toBeNull();
+      await page().confirmCancel();
+      fixture.detectChanges();
+      expect(page().cancelId()).toBeNull();
+      expect(page().blockEdit()).not.toBeNull();
+    });
+  });
+
   describe('«Друго…» files its words as the visit’s note (D23)', () => {
     /** The visit's stored note, as the notes collection would answer it. */
     let storedText: string | null;
