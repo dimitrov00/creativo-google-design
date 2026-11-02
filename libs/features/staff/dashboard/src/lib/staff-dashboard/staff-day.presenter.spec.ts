@@ -271,6 +271,26 @@ describe('the card’s marks and its foot', () => {
     ).toBe(true);
     expect(footShown(row({ rebooked: true }), NOTHING_ON)).toBe(true);
   });
+
+  it('holds no foot for a tag an hour that did not happen never prints (B2)', () => {
+    // The avatar switch on: the state glyph sits on the avatar, not the foot,
+    // so the tag is the only thing left to ask for one.
+    const flags = { ...NOTHING_ON, avatar: true };
+    const hollow = row({
+      tag: '−5 мин',
+      bookingStatus: BookingStatus.Cancelled,
+    });
+    expect(rowMarks(hollow, flags)).toEqual([]);
+    expect(footShown(hollow, flags)).toBe(false);
+    // The flag and what the card prints are one answer.
+    const card = agendaCardVm(hollow, { ...CARD, flags });
+    expect(card.tag).toBeNull();
+    expect(card.foot).toBe(false);
+    // Anything else on the foot still holds it.
+    expect(footShown(hollow, { ...flags, barberAvatar: true })).toBe(true);
+    // A live visit's tag does print, and holds its foot.
+    expect(footShown(row({ tag: '−5 мин' }), flags)).toBe(true);
+  });
 });
 
 describe('agendaCardVm — what a card prints', () => {

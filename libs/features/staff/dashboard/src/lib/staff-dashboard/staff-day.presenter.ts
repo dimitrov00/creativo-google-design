@@ -899,6 +899,15 @@ export function rowMarks(
 }
 
 /**
+ * The tag a card prints. Not on an hour that did not happen (2026-09-24): how
+ * far a run is from the catalogue's length means nothing for a visit that will
+ * not run.
+ */
+function printedTag(entry: DayRowVm): string | null {
+  return entry.tag && !hollowStatus(entry.bookingStatus) ? entry.tag : null;
+}
+
+/**
  * Is there anything for the foot to hold?
  *
  * With price, marks and the barber's face all switched off the row still
@@ -906,14 +915,14 @@ export function rowMarks(
  * not: the card's `row-gap` sits on BOTH sides of it, so every card carried
  * 8px of dead space (measured) for a row with nothing in it.
  *
- * A tag counts whether or not the card prints it, which is today's answer on
- * an hour that did not happen (Bug B2 of the F-08 inventory, not fixed here).
+ * The same answer as what the card prints ({@link agendaCardVm}): a tag on an
+ * hour that did not happen is not printed, so it holds no foot.
  */
 export function footShown(entry: DayRowVm, flags: AgendaFlags): boolean {
   return (
     (flags.price && !!entry.priceLabel) ||
     // The frame's tag is a mark, never a field: it shows whenever it is.
-    entry.tag !== null ||
+    printedTag(entry) !== null ||
     // ⚠ The party share joined the foot (owner ruling 2026-09-04); a card
     // whose only mark is `1 / 2` must still get a row to put it on.
     (flags.party && !!entry.partyLabel) ||
@@ -981,9 +990,7 @@ export function agendaCardVm(
     foot: footShown(entry, flags),
     price: flags.price && entry.priceLabel ? entry.priceLabel : null,
     partyShare: flags.party && entry.partyLabel ? entry.partyLabel : null,
-    // Not on an hour that did not happen (2026-09-24): how far a run is from
-    // the catalogue's length means nothing for a visit that will not run.
-    tag: entry.tag && !hollow ? entry.tag : null,
+    tag: printedTag(entry),
     marks: rowMarks(entry, flags),
   };
 }
