@@ -109,6 +109,7 @@ export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
       Result<readonly OfferedCoupon[], RepositoryError>
     > => {
       const open = await readQuery<Coupon>(
+        // unbounded-ok: the coupons on offer, which staff write by hand
         query(coupons, where('couponStatus', '==', CouponStatus.Enabled)),
         Collections.Coupons,
       );
@@ -134,6 +135,7 @@ export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
      */
     listUsableCouponGrants: (customerId) =>
       readQuery<CouponGrant>(
+        // unbounded-ok: one client's active grants: a used one leaves the status filter
         query(
           grants,
           where('customerId', '==', customerId),
@@ -158,6 +160,7 @@ export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
      */
     listGiftVouchersForHolder: (customerId) =>
       readQuery<GiftVoucher>(
+        // unbounded-ok: the vouchers one client holds, which staff issue by hand
         query(vouchers, where('issuedToCustomerId', '==', customerId)),
         Collections.GiftVouchers,
       ),

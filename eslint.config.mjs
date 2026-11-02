@@ -492,6 +492,13 @@ export default [
     plugins: { creativo },
     rules: { 'creativo/no-literal-log-message': 'error' },
   },
+  // A query says how much it may read: tools/lint-rules/query-needs-limit.mjs.
+  {
+    files: ['**/*.adapter.ts', '**/*.pipeline.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: { 'creativo/query-needs-limit': 'error' },
+  },
   // OR-33 (owner rulings 2026-10-26, DEP-F24) — the read guard is a required
   // parameter, and the registries that guard NOTHING are test support:
   // `unguarded` (@core/testing, libs/ecs-core/src/testing/unguarded.ts) and

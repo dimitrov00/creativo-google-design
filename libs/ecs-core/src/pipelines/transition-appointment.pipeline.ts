@@ -173,6 +173,7 @@ async function readCollisions(
         },
       ],
       orderBy: [],
+      // unbounded-ok: one barber's one shop day: as many visits as fit in a day
       limit: null,
     });
     others.push(...found);

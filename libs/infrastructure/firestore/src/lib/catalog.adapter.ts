@@ -30,6 +30,7 @@ import { observeQuery, readDoc } from './observe';
  */
 export const catalogReadPorts = (db: Firestore): CatalogReadPorts => {
   const ordered = (path: string, ...constraints: readonly QueryConstraint[]) =>
+    // unbounded-ok: the shop's own catalogue, which staff write by hand
     query(collection(db, path), ...constraints, orderBy('sortOrder'));
 
   return {

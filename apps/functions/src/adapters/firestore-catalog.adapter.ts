@@ -48,6 +48,7 @@ async function active<E>(
   field: string,
   value: string,
 ): Promise<readonly E[]> {
+  // unbounded-ok: the shop's own catalogue, which staff write by hand
   const snap = await db.collection(collection).where(field, '==', value).get();
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as E);
 }

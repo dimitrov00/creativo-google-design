@@ -19,6 +19,7 @@ import { observeQuery } from './observe';
 export const waitlistReadPorts = (db: Firestore): WaitlistReadPorts => ({
   observeMyWaitlistRequests: (ownerUserId) =>
     observeQuery<WaitlistRequest>(
+      // unbounded-ok: one client's waitlist requests, which a TTL removes
       query(
         collection(db, Collections.WaitlistRequests),
         where('ownerUserId', '==', ownerUserId),

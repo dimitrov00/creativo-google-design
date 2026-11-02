@@ -94,6 +94,7 @@ export const firestoreSchedulePorts = (
 
   listBarbers: async () => {
     try {
+      // unbounded-ok: one document per barber
       const snap = await db
         .collection(Collections.BarberSchedules)
         .select()
