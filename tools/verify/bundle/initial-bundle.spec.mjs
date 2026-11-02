@@ -6,6 +6,8 @@ import {
   formatBytes,
   initialOutputs,
   ownerOf,
+  routeBytes,
+  routesOverBudget,
 } from './initial-bundle.mjs';
 
 const FIRESTORE =
@@ -189,5 +191,66 @@ describe('formatBytes — the builder’s units', () => {
     assert.equal(formatBytes(954573), '954.57 kB');
     assert.equal(formatBytes(1553404), '1.55 MB');
     assert.equal(formatBytes(512), '512 B');
+  });
+});
+
+describe('routeBytes', () => {
+  const meta = {
+    outputs: {
+      'main-A.js': { bytes: 100, imports: [] },
+      'chunk-SHARED.js': { bytes: 40, imports: [] },
+      'chunk-ROUTE.js': {
+        bytes: 10,
+        entryPoint: 'libs/features/client/booking/src/index.ts',
+        imports: [
+          { path: 'chunk-SHARED.js', kind: 'import-statement' },
+          { path: 'chunk-LAZY.js', kind: 'dynamic-import' },
+        ],
+      },
+      'chunk-PAGE.js': {
+        bytes: 1,
+        entryPoint: 'apps/web/src/app/pages/forbidden.page.ts',
+        imports: [],
+      },
+      'chunk-LAZY.js': {
+        bytes: 9000,
+        entryPoint: 'node_modules/maplibre-gl/dist/maplibre-gl.mjs',
+        imports: [],
+      },
+    },
+  };
+
+  it('counts the initial files and the static closure, never a dynamic import', () => {
+    assert.deepEqual(routeBytes(meta), [
+      { route: 'libs/features/client/booking/src/index.ts', bytes: 150 },
+      { route: 'apps/web/src/app/pages/forbidden.page.ts', bytes: 101 },
+    ]);
+  });
+
+  it('does not count a shared chunk twice when the initial files reach it too', () => {
+    const shared = {
+      outputs: {
+        ...meta.outputs,
+        'main-A.js': {
+          bytes: 100,
+          imports: [{ path: 'chunk-SHARED.js', kind: 'import-statement' }],
+        },
+      },
+    };
+    assert.equal(routeBytes(shared)[0].bytes, 150);
+  });
+
+  it('holds a named route to its own ceiling and any other to the default', () => {
+    const budgets = {
+      defaultRouteBytes: 100,
+      routes: { 'libs/features/client/booking/src/index.ts': 200 },
+    };
+    assert.deepEqual(routesOverBudget(routeBytes(meta), budgets), [
+      {
+        route: 'apps/web/src/app/pages/forbidden.page.ts',
+        bytes: 101,
+        limit: 100,
+      },
+    ]);
   });
 });

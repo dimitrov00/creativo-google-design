@@ -673,4 +673,20 @@ export default [
     // Override or add rules here
     rules: {},
   },
+  // The two largest files hold domain rules that belong in systems and
+  // presenters (performance-cost-audit.md F-08). They may only shrink: a
+  // feature that needs a line here extracts one first. Lower the figure when
+  // a file gets shorter; never raise it.
+  {
+    files: [
+      'libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts',
+    ],
+    rules: { 'max-lines': ['error', { max: 6679 }] },
+  },
+  {
+    files: [
+      'libs/features/staff/dashboard/src/lib/visit-editor/staff-visit-editor.ts',
+    ],
+    rules: { 'max-lines': ['error', { max: 7820 }] },
+  },
 ];

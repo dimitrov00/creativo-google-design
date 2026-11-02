@@ -1,0 +1,10 @@
+{
+  "// routes": "Raw bytes to open a route, initial files included. About 5% above the build of 2026-11-02.",
+  "defaultRouteBytes": 1550000,
+  "routes": {
+    "libs/features/staff/dashboard/src/index.ts": 2650000,
+    "libs/features/client/booking/src/index.ts": 1720000
+  },
+  "// publicAssetBytes": "Any one file under apps/web/public. Today's largest is welcome.mp4, 4.37 MB; lower this when the videos are recompressed.",
+  "publicAssetBytes": 4500000
+}

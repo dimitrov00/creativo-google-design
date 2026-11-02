@@ -49,12 +49,9 @@ export const FORBIDDEN_IN_INITIAL = [
   },
 ];
 
-/** The initial output files: entries plus their static-import closure. */
-export function initialOutputs(metafile) {
-  const outputs = metafile.outputs ?? {};
-  const pending = Object.keys(outputs).filter((path) =>
-    INITIAL_ENTRY.test(path),
-  );
+/** The outputs a set of outputs reaches through static imports, themselves included. */
+function staticClosure(outputs, from) {
+  const pending = [...from];
   const seen = new Set();
   while (pending.length > 0) {
     const path = pending.pop();
@@ -67,6 +64,52 @@ export function initialOutputs(metafile) {
     }
   }
   return [...seen].sort();
+}
+
+/** The initial output files: entries plus their static-import closure. */
+export function initialOutputs(metafile) {
+  const outputs = metafile.outputs ?? {};
+  return staticClosure(
+    outputs,
+    Object.keys(outputs).filter((path) => INITIAL_ENTRY.test(path)),
+  );
+}
+
+/** A lazy route's own entry: a feature's barrel, or a page of the app itself. */
+const ROUTE_ENTRY =
+  /^(libs\/features\/.*\/src\/index\.ts|apps\/web\/src\/app\/pages\/.*\.ts)$/;
+
+/**
+ * What the browser must fetch to open each lazy route: the initial files plus
+ * the route's chunk and everything that chunk reaches through a static import,
+ * in raw bytes (what the phone parses), by the route's source path.
+ */
+export function routeBytes(metafile) {
+  const outputs = metafile.outputs ?? {};
+  const initial = initialOutputs(metafile);
+  const routes = [];
+  for (const [path, output] of Object.entries(outputs)) {
+    if (!ROUTE_ENTRY.test(output.entryPoint ?? '')) continue;
+    let bytes = 0;
+    for (const file of staticClosure(outputs, [path, ...initial])) {
+      bytes += outputs[file].bytes;
+    }
+    routes.push({ route: output.entryPoint, bytes });
+  }
+  return routes.sort((a, b) => b.bytes - a.bytes);
+}
+
+/**
+ * Each route against its ceiling: its own in `budgets.routes`, else
+ * `budgets.defaultRouteBytes`, so a new route is covered from its first build.
+ */
+export function routesOverBudget(routes, budgets) {
+  const over = [];
+  for (const { route, bytes } of routes) {
+    const limit = budgets.routes[route] ?? budgets.defaultRouteBytes;
+    if (bytes > limit) over.push({ route, bytes, limit });
+  }
+  return over;
 }
 
 /**
