@@ -62,6 +62,12 @@ tester.run('creativo/presenter-purity', presenterPurity, {
     },
   ],
   invalid: [
+    // A wording helper named with a hyphen is one too.
+    {
+      code: "import { inject } from '@angular/core';\nexport const x = 1;",
+      filename: '/repo/libs/features/client/booking/src/lib/booking-words.ts',
+      errors: [{ messageId: 'noAngular' }],
+    },
     {
       code: 'export class Pass {}',
       filename: PRESENTER,
