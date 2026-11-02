@@ -129,6 +129,10 @@ export type VisitEditorWords = {
   readonly discountApplied: (count: number) => string;
   readonly discountCount: (count: number) => string;
   readonly sameAsLast: (date: string) => string;
+  /** «Вече не е в каталога: Брада. Избери друга услуга.» */
+  readonly leftOffNamed: (services: string) => string;
+  /** The same, with no name at hand. */
+  readonly leftOffUnnamed: string;
   readonly tipInDock: (amount: string) => string;
   readonly tipRoundUp: (total: string) => string;
   readonly voucherLeft: (amount: string) => string;

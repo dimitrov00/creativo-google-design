@@ -147,6 +147,9 @@ export function visitEditorWordsOf(
     discountCount: (count) => translate('staff.visit.discountCount', { count }),
     sameAsLast: (date) =>
       translate('staff.visit.client.announce.sameAsLast', { date }),
+    leftOffNamed: (services) =>
+      translate('staff.visit.leftOffNamed', { services }),
+    leftOffUnnamed: copy('staff.visit.leftOffUnnamed'),
     tipInDock: (amount) => translate('staff.visit.tipInDock', { amount }),
     tipRoundUp: (total) => tipRoundUp.replace('{{total}}', total),
     voucherLeft: (amount) => voucherLeft.replace('{{amount}}', amount),
@@ -412,6 +415,27 @@ export function photoPersonOf<
   }
   const holder = DraftPersonKey.account(visit.clientUserId);
   return clients.find((client) => client.id === holder) ?? null;
+}
+
+/**
+ * THE LINE A REBOOKING'S MISSING SERVICE EARNS, or `null` with none left off. It
+ * names each service it has a name for. A seat whose service left the catalogue
+ * holds only its id, which is never printed: then it says so without a name.
+ */
+export function leftOffNoticeOf(
+  leftOff: readonly {
+    readonly serviceId: ServiceId;
+    readonly serviceLabel: string;
+  }[],
+  words: VisitEditorWords,
+): string | null {
+  if (leftOff.length === 0) return null;
+  const named = leftOff
+    .filter((leg) => leg.serviceLabel !== leg.serviceId)
+    .map((leg) => leg.serviceLabel);
+  return named.length === 0
+    ? words.leftOffUnnamed
+    : words.leftOffNamed(named.join(', '));
 }
 
 /** What {@link chairOptionsOf} reads. */

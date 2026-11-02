@@ -206,9 +206,17 @@ type CataloguePrice = OfferKey & {
   readonly priceLabel: string | null;
 };
 
+/** What «Запиши пак» drafts: the legs, those left off, the span the legs leave. */
+export type RebookPlan<L> = {
+  readonly legs: readonly L[];
+  readonly leftOff: readonly L[];
+  readonly spanMinutes: DurationMinutes | null;
+};
+
 /** The leg «Запиши пак» reads and rewrites. */
 type RebookedLeg = PastLeg & {
   readonly seatId: SeatId;
+  readonly durationMinutes: DurationMinutes;
   readonly overridden: boolean;
   readonly priceCents: PriceCents | null;
   readonly currency: Currency;
@@ -603,25 +611,52 @@ export const VisitDraftSystem = {
    * (`mint`) with its override mark cleared, so the commit mints new seats
    * rather than naming old ones. The price is today's
    * ({@link pastLegsOnCatalogue}), what the sheet must show because it is what
-   * the server charges. The minutes stay as stored.
+   * the server charges; a leg the catalogue no longer sells is left off and
+   * listed, for the sheet to say so. Only a catalogue that has really answered
+   * can say that (`catalogueKnown`): an unread one keeps every leg as stored.
+   * The minutes stay as stored. The span is the stored one, until a leg is left
+   * off: then it follows the legs that remain, `null` when none do.
    */
-  rebookLegs<L extends RebookedLeg>(
+  rebook<L extends RebookedLeg>(
     legs: readonly L[],
-    offersOf: (leg: L) => readonly CataloguePrice[],
-    mint: (leg: L, index: number) => SeatId,
-  ): readonly L[] {
-    return VisitDraftSystem.pastLegsOnCatalogue(
+    input: {
+      readonly catalogueKnown: boolean;
+      readonly offersOf: (leg: L) => readonly CataloguePrice[];
+      readonly mint: (leg: L, index: number) => SeatId;
+      readonly storedSpan: DurationMinutes;
+    },
+  ): RebookPlan<L> {
+    const { catalogueKnown, mint, storedSpan } = input;
+    if (!catalogueKnown) {
+      const kept: L[] = [];
+      for (let i = 0; i < legs.length; i++) {
+        const leg = legs[i] as L;
+        kept.push({ ...leg, seatId: mint(leg, i), overridden: false });
+      }
+      return { legs: kept, leftOff: [], spanMinutes: storedSpan };
+    }
+    const sold = new Set<L>();
+    const kept = VisitDraftSystem.pastLegsOnCatalogue(
       legs,
-      offersOf,
-      (leg, offer, index) => ({
-        ...leg,
-        seatId: mint(leg, index),
-        overridden: false,
-        priceCents: offer.priceCents,
-        currency: offer.currency,
-        priceLabel: offer.priceLabel,
-      }),
+      input.offersOf,
+      (leg, offer, index) => {
+        sold.add(leg);
+        return {
+          ...leg,
+          seatId: mint(leg, index),
+          overridden: false,
+          priceCents: offer.priceCents,
+          currency: offer.currency,
+          priceLabel: offer.priceLabel,
+        };
+      },
     );
+    const leftOff = legs.filter((leg) => !sold.has(leg));
+    return {
+      legs: kept,
+      leftOff,
+      spanMinutes: leftOff.length === 0 ? storedSpan : legSum(kept),
+    };
   },
 
   /* ── Strangers' names ────────────────────────────────────────────────── */

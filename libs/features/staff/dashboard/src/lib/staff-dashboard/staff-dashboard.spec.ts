@@ -702,6 +702,10 @@ describe('StaffDashboard', () => {
   > | null = null;
   /** The catalogue's services, when a case prices its own; `null` is the one timed fade. */
   let catalogServices: readonly Service[] | null = null;
+  /** The catalogue's services as a stream, when a case says so (and puts it back). */
+  let catalogServiceStream: Observable<
+    PortResult<readonly Service[], RepositoryError>
+  > | null = null;
   /** The chairs `CATALOG_PORTS` lists, when a case says so (and puts it back). */
   let catalogBarbers: readonly Barber[] | null = null;
   /**
@@ -815,10 +819,15 @@ describe('StaffDashboard', () => {
           // the shop the chairs work at — a window is kept only at a shop
           // the day OFFERS.
           provide: CATALOG_PORTS,
-          useValue: ((ports) =>
-            catalogShops === null
-              ? ports
-              : { ...ports, observeLocations: () => catalogShops ?? of() })(
+          useValue: ((ports) => ({
+            ...ports,
+            ...(catalogShops === null
+              ? {}
+              : { observeLocations: () => catalogShops ?? of() }),
+            ...(catalogServiceStream === null
+              ? {}
+              : { observeServices: () => catalogServiceStream ?? of() }),
+          }))(
             memoryCatalogReadPorts({
               services: catalogServices ?? [service('fade', 45)],
               barbers: catalogBarbers ?? [
@@ -6514,7 +6523,17 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     const vm = component.visitEditorVm();
     if (vm === null) throw new Error('the sheet did not open');
-    component.rebookFromEditor({ ...vm, startMinute: 615, endMinute: 660 });
+    component.rebookFromEditor({
+      ...vm,
+      startMinute: 615,
+      endMinute: 660,
+      // A service the shop still sells: a seat left off moves the span.
+      legs: (vm['legs'] as readonly object[]).map((leg) => ({
+        ...leg,
+        serviceId: ServiceId.of('fade'),
+        variantId: null,
+      })),
+    });
     fixture.detectChanges();
     expect(component.createVisit()?.startMinute).toBe(615);
     expect(component.createVisit()?.minutes).toBe(45);
@@ -6616,6 +6635,107 @@ describe('StaffDashboard', () => {
       expect(legs.map((entry) => entry.serviceId)).toEqual(['fade']);
       expect(legs[0]?.priceCents).toBe(2800);
       expect(legs[0]?.priceLabel).toContain('28');
+    });
+
+    describe('what the catalogue does not sell (B5 follow-up)', () => {
+      type Drafted = {
+        serviceId: string;
+        priceCents: number | null;
+        durationMinutes: number;
+      };
+      const page = () =>
+        fixture.componentInstance as unknown as RebookHarness & {
+          createVisit: () => {
+            legs?: readonly Drafted[];
+            minutes?: number;
+            leftOffServices?: readonly { serviceLabel: string }[];
+          } | null;
+          createVm: () => {
+            startMinute: number;
+            endMinute: number;
+            leftOffServices?: readonly { serviceLabel: string }[];
+          } | null;
+        };
+      /** A 09:00–10:00 visit: a 30-minute fade the shop sells, and 15 of something gone. */
+      const rebook = () => {
+        (
+          host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+        ).click();
+        fixture.detectChanges();
+        const vm = page().visitEditorVm() as unknown as {
+          legs: readonly object[];
+        };
+        const [leg] = vm.legs;
+        page().rebookFromEditor({
+          ...vm,
+          startMinute: 540,
+          endMinute: 600,
+          legs: [
+            {
+              ...leg,
+              serviceId: ServiceId.of('fade'),
+              variantId: null,
+              serviceLabel: 'Фейд',
+              priceCents: 1500,
+              durationMinutes: 30,
+            },
+            {
+              ...leg,
+              serviceId: ServiceId.of('gone'),
+              variantId: null,
+              serviceLabel: 'Брада',
+              priceCents: 700,
+              durationMinutes: 15,
+            },
+          ],
+        });
+        fixture.detectChanges();
+      };
+      afterEach(() => {
+        catalogServiceStream = null;
+      });
+
+      it('keeps every stored leg while the catalogue is pending', async () => {
+        catalogServiceStream = NEVER;
+        TestBed.resetTestingModule();
+        await build();
+        rebook();
+        const legs = page().createVisit()?.legs ?? [];
+        expect(legs.map((leg) => leg.serviceId)).toEqual(['fade', 'gone']);
+        expect(legs[0]?.priceCents).toBe(1500);
+        expect(page().createVisit()?.leftOffServices).toEqual([]);
+        expect(page().createVisit()?.minutes).toBe(60);
+      });
+
+      it('keeps every stored leg when the catalogue read failed', async () => {
+        catalogServiceStream = of(
+          PortResult.err(RepositoryError.readFailed('services', 'unavailable')),
+        );
+        TestBed.resetTestingModule();
+        await build();
+        rebook();
+        expect(
+          (page().createVisit()?.legs ?? []).map((leg) => leg.serviceId),
+        ).toEqual(['fade', 'gone']);
+      });
+
+      it('drops only what a read catalogue does not sell, says so, and lets the span follow', () => {
+        rebook();
+        expect(
+          (page().createVisit()?.legs ?? []).map((leg) => leg.serviceId),
+        ).toEqual(['fade']);
+        expect(
+          page()
+            .createVm()
+            ?.leftOffServices?.map((leg) => leg.serviceLabel),
+        ).toEqual(['Брада']);
+        // The sheet's span is the 30 that remain, not the visit's old 60.
+        expect(page().createVisit()?.minutes).toBe(30);
+        const created = page().createVm();
+        expect((created?.endMinute ?? 0) - (created?.startMinute ?? 0)).toBe(
+          30,
+        );
+      });
     });
 
     it('books the new visit FROM the finished one, for the same client', async () => {

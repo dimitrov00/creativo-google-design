@@ -1562,6 +1562,17 @@
       </li>
       }
     </ul>
+    @if (leftOffNotice(); as notice) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      role="status"
+      data-testid="staff-visit-left-off"
+    >
+      {{ notice }}
+    </p>
+    }
 
     <!-- ── НАЧАЛО + ВРЕМЕТРАЕНЕ ────────────────────────────────────
            ONE GROUP, THREE SEGMENTS: the frame FIRST — the chair's day as a

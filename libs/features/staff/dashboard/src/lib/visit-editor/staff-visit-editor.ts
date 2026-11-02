@@ -138,6 +138,7 @@ import {
   shopViews,
   timingOptions,
   chairOptionsOf,
+  leftOffNoticeOf,
   photoPersonOf,
   visitEditorWordsOf,
   visitExitsVm,
@@ -472,6 +473,11 @@ export interface VisitEditorVm {
    * leg named. Absent (or empty) means the one client the fields describe.
    */
   readonly people?: readonly VisitEditorClientOption[];
+  /** What a rebooking left off, the catalogue no longer selling it (`leftOffNoticeOf`). */
+  readonly leftOffServices?: readonly {
+    readonly serviceId: ServiceId;
+    readonly serviceLabel: string;
+  }[];
   /** The client's account, when they have one — what a booking is placed FOR. */
   readonly clientUserId: UserId | null;
   /**
@@ -1906,6 +1912,11 @@ export class StaffVisitEditor {
       words: this.words(),
     });
   });
+
+  /** The line a rebooking's missing service earns, or none. */
+  protected readonly leftOffNotice = computed(() =>
+    leftOffNoticeOf(this.vm().leftOffServices ?? [], this.words()),
+  );
 
   /** The seats the server already holds (`VisitDraftSystem.storedSeats`). */
   private readonly storedSeats = computed(() =>

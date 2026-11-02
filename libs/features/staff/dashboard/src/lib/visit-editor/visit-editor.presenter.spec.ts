@@ -40,6 +40,7 @@ import {
   timingOptions,
   visitExitsVm,
   chairOptionsOf,
+  leftOffNoticeOf,
   photoPersonOf,
 } from './visit-editor.presenter';
 import { EditorPage } from './visit-editor.vm';
@@ -690,5 +691,44 @@ describe('photoPersonOf — the person a photo names, by id (BUG-9)', () => {
         clientUserId: UserId.of('user-a'),
       }),
     ).toBeNull();
+  });
+});
+
+describe('leftOffNoticeOf — the line a rebooked draft’s missing service earns', () => {
+  const gone = (serviceLabel: string, id = 'svc-gone') => ({
+    serviceId: ServiceId.of(id),
+    serviceLabel,
+  });
+
+  it('says nothing when nothing was left off', () => {
+    expect(leftOffNoticeOf([], BG)).toBeNull();
+    expect(leftOffNoticeOf([], EN)).toBeNull();
+  });
+
+  it('names the service, in «ти» and in English', () => {
+    expect(leftOffNoticeOf([gone('Брада')], BG)).toBe(
+      'Вече не е в каталога: Брада. Избери друга услуга.',
+    );
+    expect(leftOffNoticeOf([gone('Beard')], EN)).toBe(
+      'No longer in the catalogue: Beard. Pick another service.',
+    );
+  });
+
+  it('names each one it can', () => {
+    expect(leftOffNoticeOf([gone('Брада'), gone('Фейд', 'svc-2')], BG)).toBe(
+      'Вече не е в каталога: Брада, Фейд. Избери друга услуга.',
+    );
+    expect(leftOffNoticeOf([gone('Брада'), gone('svc-2', 'svc-2')], BG)).toBe(
+      'Вече не е в каталога: Брада. Избери друга услуга.',
+    );
+  });
+
+  it('prints no raw id: with no name at hand it says so plainly', () => {
+    expect(leftOffNoticeOf([gone('svc-gone')], BG)).toBe(
+      'Услуга от това посещение вече не е в каталога. Избери друга.',
+    );
+    expect(leftOffNoticeOf([gone('svc-gone')], EN)).toBe(
+      'A service from this visit is no longer in the catalogue. Pick another.',
+    );
   });
 });

@@ -714,16 +714,16 @@ describe('VisitDraftSystem.pastLegsOnCatalogue — a past visit’s legs, today'
   });
 });
 
-describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries', () => {
+describe('VisitDraftSystem.rebook — what «Запиши пак» carries', () => {
   const SERVICE = ServiceId.of('cut');
-  const leg = (seat: string, overridden: boolean) => ({
+  const leg = (seat: string, overridden: boolean, minutes = 45) => ({
     seatId: SeatId.of(seat),
     serviceId: SERVICE,
     variantId: null,
     priceCents: cents(1500),
     currency: Currency.BGN,
     priceLabel: '15,00 лв.',
-    durationMinutes: d(45),
+    durationMinutes: d(minutes),
     overridden,
   });
   const today = {
@@ -733,50 +733,88 @@ describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries',
     currency: Currency.EUR,
     priceLabel: '28,00 €',
   };
-  const offers = () => [today];
   const mint = (_leg: unknown, index: number) => SeatId.of(`draft-${index}`);
+  const known = {
+    catalogueKnown: true,
+    offersOf: () => [today],
+    mint,
+    storedSpan: d(60),
+  };
 
   it('mints a fresh seat per leg, in order, handing the mint its index', () => {
     const seen: string[] = [];
-    const out = S.rebookLegs(
-      [leg('a', false), leg('b', false)],
-      offers,
-      (entry, index) => {
+    const { legs } = S.rebook([leg('a', false), leg('b', false)], {
+      ...known,
+      mint: (entry, index) => {
         seen.push(`${entry.seatId}:${index}`);
         return mint(entry, index);
       },
-    );
-    expect(out.map((entry) => entry.seatId)).toEqual(['draft-0', 'draft-1']);
+    });
+    expect(legs.map((entry) => entry.seatId)).toEqual(['draft-0', 'draft-1']);
     expect(seen).toEqual(['a:0', 'b:1']);
   });
 
   it('clears the mark, keeps the minutes, and takes today’s price: what the server charges (B5)', () => {
-    const [out] = S.rebookLegs([leg('a', true)], offers, mint);
-    expect(out).toEqual({
-      seatId: 'draft-0',
-      serviceId: SERVICE,
-      variantId: null,
-      priceCents: 2800,
-      currency: Currency.EUR,
-      priceLabel: '28,00 €',
-      durationMinutes: 45,
-      overridden: false,
+    const out = S.rebook([leg('a', true)], known);
+    expect(out.legs).toEqual([
+      {
+        seatId: 'draft-0',
+        serviceId: SERVICE,
+        variantId: null,
+        priceCents: 2800,
+        currency: Currency.EUR,
+        priceLabel: '28,00 €',
+        durationMinutes: 45,
+        overridden: false,
+      },
+    ]);
+    expect(out.leftOff).toEqual([]);
+    expect(out.spanMinutes).toBe(60);
+  });
+
+  it('leaves out what a catalogue it has read no longer sells, and says which', () => {
+    const gone = leg('a', false);
+    const out = S.rebook([gone], { ...known, offersOf: () => [] });
+    expect(out.legs).toEqual([]);
+    expect(out.leftOff).toEqual([gone]);
+  });
+
+  it('keeps every leg as stored while the catalogue is unread: nothing to say it is gone', () => {
+    const out = S.rebook([leg('a', true)], {
+      ...known,
+      catalogueKnown: false,
+      offersOf: () => [],
     });
+    expect(out.legs).toEqual([
+      { ...leg('a', false), seatId: SeatId.of('draft-0') },
+    ]);
+    expect(out.leftOff).toEqual([]);
+    expect(out.spanMinutes).toBe(60);
   });
 
-  it('leaves out what the catalogue no longer sells: the server refuses that seat', () => {
-    expect(S.rebookLegs([leg('a', false)], () => [], mint)).toEqual([]);
+  it('lets the span follow the legs that remain once one is left off', () => {
+    const other = { ...leg('b', false, 15), serviceId: ServiceId.of('gone') };
+    const out = S.rebook([leg('a', false, 30), other], known);
+    expect(out.legs).toHaveLength(1);
+    expect(out.spanMinutes).toBe(30);
   });
 
-  it('answers nothing for no legs', () => {
-    expect(S.rebookLegs([], offers, mint)).toEqual([]);
+  it('has no span to pin when nothing remains', () => {
+    const out = S.rebook([leg('a', false)], { ...known, offersOf: () => [] });
+    expect(out.spanMinutes).toBeNull();
+  });
+
+  it('answers nothing for no legs, the stored span standing', () => {
+    expect(S.rebook([], known)).toEqual({
+      legs: [],
+      leftOff: [],
+      spanMinutes: 60,
+    });
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
     const legs = deepFreeze([leg('a', true)]);
-    expect(S.rebookLegs(legs, offers, mint)).toEqual(
-      S.rebookLegs(legs, offers, mint),
-    );
+    expect(S.rebook(legs, known)).toEqual(S.rebook(legs, known));
     expect(legs[0]?.seatId).toBe('a');
     expect(legs[0]?.priceCents).toBe(1500);
   });

@@ -227,6 +227,10 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.photoTakenAt': 'Снимано',
       'staff.visit.photoChair': 'Бръснар',
       'staff.visit.photoClient': 'Клиент',
+      'staff.visit.leftOffNamed':
+        'Вече не е в каталога: {{services}}. Избери друга услуга.',
+      'staff.visit.leftOffUnnamed':
+        'Услуга от това посещение вече не е в каталога. Избери друга.',
       'staff.visit.photoRemove': 'Изтрий снимката',
       'staff.visit.photoOpen': 'Снимка от {{when}}',
       'staff.visit.appliedRow': 'Приложени',
@@ -1965,6 +1969,26 @@ describe('StaffVisitEditor', () => {
    * sheet already states at the top. What is left is the one thing a barber
    * does from here that is not an edit.
    */
+  it('says, once, which service a rebooking left off (B5)', () => {
+    const quiet = render(visit({ appointmentId: null, rowId: '' }));
+    expect(find(quiet, 'staff-visit-left-off')).toBeNull();
+    const host = render(
+      visit({
+        appointmentId: null,
+        rowId: '',
+        leftOffServices: [
+          { serviceId: ServiceId.of('gone'), serviceLabel: 'Брада' },
+        ],
+      }),
+    );
+    expect(text(host, 'staff-visit-left-off')).toBe(
+      'Вече не е в каталога: Брада. Избери друга услуга.',
+    );
+    expect(find(host, 'staff-visit-left-off')?.getAttribute('role')).toBe(
+      'status',
+    );
+  });
+
   it('holds typed and dragged lengths to one floor, the one the server admits (BUG-6)', () => {
     render();
     // A typed `0` or `2` is a typo for the floor; the frame's drag stops there.

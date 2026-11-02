@@ -3561,6 +3561,8 @@ export class StaffDashboard {
     readonly nonce: number;
     /** Prefilled from a finished visit (`Запиши пак`). */
     readonly legs?: readonly VisitEditorLeg[];
+    /** What a rebooking left off: the catalogue no longer sells it. */
+    readonly leftOffServices?: readonly VisitEditorLeg[];
     readonly client?: {
       /** The person's account, or `null` for a walk-in. */
       readonly id: UserId | null;
@@ -3616,6 +3618,7 @@ export class StaffDashboard {
         create.minutes ?? VisitDraftSystem.DEFAULT_SPAN_MINUTES,
       ),
       legs: create.legs ?? [],
+      leftOffServices: create.leftOffServices ?? [],
       // A walk-in has a name and no account; a booking starts with nobody —
       // unless it is a rebooking, which starts with last time's client.
       clientLabel: create.client?.label ?? '',
@@ -3743,25 +3746,28 @@ export class StaffDashboard {
     this.closeVisitSheet();
     this.presentOnly();
     this.visitClientOptions.set([]);
+    // Each leg on ITS chair's menu: what the server will charge it, today.
+    const plan = VisitDraftSystem.rebook(vm.legs, {
+      catalogueKnown: this.catalog.servicesKnown(),
+      offersOf: (leg) => this.offersOn(leg.barberId),
+      mint: (leg, index) =>
+        // A fresh draft seat — a `SeatId` by construction (`draft-…`).
+        SeatId.of(
+          `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
+        ),
+      storedSpan: VisitDraftSystem.floorSpan(
+        TrackMinute.span(vm.startMinute, vm.endMinute),
+      ),
+    });
     // The finished visit's own start and span (2026-09-18): the day is the
     // desk's to pick, the hour is what the client already comes at.
     this.createVisit.set({
       barberId: chair,
       startMinute: start.value,
-      minutes: VisitDraftSystem.floorSpan(
-        TrackMinute.span(vm.startMinute, vm.endMinute),
-      ),
+      ...(plan.spanMinutes === null ? {} : { minutes: plan.spanMinutes }),
       nonce: ++this.createSeq,
-      // Each leg on ITS chair's menu: what the server will charge it, today.
-      legs: VisitDraftSystem.rebookLegs(
-        vm.legs,
-        (leg) => this.offersOn(leg.barberId),
-        (leg, index) =>
-          // A fresh draft seat — a `SeatId` by construction (`draft-…`).
-          SeatId.of(
-            `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
-          ),
-      ),
+      legs: plan.legs,
+      leftOffServices: plan.leftOff,
       client: {
         id: vm.clientUserId,
         label: vm.clientLabel,
