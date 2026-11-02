@@ -5892,6 +5892,35 @@ describe('StaffVisitEditor', () => {
       });
     });
 
+    it('previews what «Приложи» will do: an exclusive line gives way to a typed figure (BUG-3)', () => {
+      const host = renderWith(
+        visit({
+          discounts: [
+            {
+              discountSource: DiscountSource.Code,
+              discountCode: VoucherCode.of('ALONE20'),
+              label: 'Само аз',
+              discountMethod: DiscountMethod.PercentOff,
+              discountPercent: 20,
+              grantId: null,
+              code: VoucherCode.of('ALONE20'),
+              exclusive: true,
+            },
+          ],
+        }),
+        { uiMayDiscount: true },
+      );
+      openPage(host);
+      expect(text(host, 'staff-visit-total-figure')).toBe('22,40 €');
+      pickKind(host, 'percent');
+      slide(host, 'staff-visit-discount-percent-slider', '10');
+      // 10 % of 28,00 € alone, not 10 % on top of the 20 %.
+      expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
+      click(host, 'staff-visit-discount-apply');
+      expect(applied(host)).toEqual(['staff-visit-discount-manual']);
+      expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
+    });
+
     it('reads saved lines back — on the row as one line, on the page as tickets under «Приложени» — and withholds the money from a draft and a visit that is gone', () => {
       const saved = renderWith(
         visit({

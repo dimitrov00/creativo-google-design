@@ -59,6 +59,18 @@ const DEFAULT_SPAN_MINUTES = durationOf(30);
  * and the shortest span a visit or a block may be drawn at.
  */
 const GRAIN_MINUTES = durationOf(5);
+
+/**
+ * The shortest visit the sheet's frame will draw. The typed floor is one grain
+ * ({@link VisitDraftSystem.typedSpan}), so a typed visit can be shorter.
+ */
+const FRAME_MIN_MINUTES = durationOf(10);
+
+/** How far either side of a shift a typed start is offered. */
+const TYPED_START_MARGIN_MINUTES = durationOf(60);
+
+/** The last minute of the civil day a typed start can name. */
+const LAST_DAY_MINUTE = 1439;
 /** A shop day's minutes — a typed end before the start runs into the next day. */
 const DAY_MINUTES = 1440;
 
@@ -200,6 +212,8 @@ export const VisitDraftSystem = {
   PLACEHOLDER_CLIENT_ID,
   DEFAULT_SPAN_MINUTES,
   GRAIN_MINUTES,
+  FRAME_MIN_MINUTES,
+  TYPED_START_MARGIN_MINUTES,
   REPEAT_PRESETS,
   MONDAY_TO_FRIDAY,
 
@@ -414,6 +428,29 @@ export const VisitDraftSystem = {
       );
     }
     return out;
+  },
+
+  /**
+   * THE BOUNDS OFFERED TO A TYPED START: an hour either side of the shift,
+   * held to the civil day; the whole day with no shift, so an unreadable roster
+   * never narrows what can be typed. Advisory: the field's `min`/`max` only.
+   */
+  typedStartBounds(shift: TrackSpan | null): TrackSpan {
+    return {
+      startMinute: TrackMinute.ofProven(
+        shift === null
+          ? 0
+          : Math.max(0, shift.startMinute - TYPED_START_MARGIN_MINUTES),
+      ),
+      endMinute: TrackMinute.ofProven(
+        shift === null
+          ? LAST_DAY_MINUTE
+          : Math.min(
+              LAST_DAY_MINUTE,
+              shift.endMinute + TYPED_START_MARGIN_MINUTES,
+            ),
+      ),
+    };
   },
 
   /**

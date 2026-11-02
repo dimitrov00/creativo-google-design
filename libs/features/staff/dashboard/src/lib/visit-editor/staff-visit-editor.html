@@ -1697,7 +1697,7 @@
             [uiEditableEventId]="vm().appointmentId ?? ''"
             [uiEditable]="!gone()"
             [uiPickable]="false"
-            [uiMinMinutes]="10"
+            [uiMinMinutes]="frameMinMinutes"
             [rosterStartMinute]="frameDay().rosterStartMinute"
             [nowMinute]="frameDay().nowMinute"
             (draftChanged)="onFrameDraft($event)"

@@ -699,3 +699,40 @@ describe('DiscountSystem.isOffered — the counter’s offer rule, said once (pa
     expect(frozen.code).toBe('FIRST10');
   });
 });
+
+describe('DiscountSystem.codeOnBill — is this code already on the bill', () => {
+  const FIRST10 = VoucherCode.of('FIRST10');
+  const GIFT = VoucherCode.of('GIFT2025');
+
+  it('finds it on a discount', () => {
+    expect(DiscountSystem.codeOnBill('FIRST10', [{ code: FIRST10 }], [])).toBe(
+      true,
+    );
+  });
+
+  it('finds it on a voucher', () => {
+    expect(DiscountSystem.codeOnBill('GIFT2025', [], [{ code: GIFT }])).toBe(
+      true,
+    );
+  });
+
+  it('answers false on neither, and on an empty bill', () => {
+    expect(
+      DiscountSystem.codeOnBill('OTHER', [{ code: FIRST10 }], [{ code: GIFT }]),
+    ).toBe(false);
+    expect(DiscountSystem.codeOnBill('FIRST10', [], [])).toBe(false);
+  });
+
+  it('never matches a line with no code', () => {
+    expect(DiscountSystem.codeOnBill('', [{ code: null }], [])).toBe(false);
+    expect(DiscountSystem.codeOnBill('null', [{ code: null }], [])).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const discounts = deepFreeze([{ code: FIRST10 }]);
+    const vouchers = deepFreeze([{ code: GIFT }]);
+    expect(DiscountSystem.codeOnBill('GIFT2025', discounts, vouchers)).toBe(
+      DiscountSystem.codeOnBill('GIFT2025', discounts, vouchers),
+    );
+  });
+});

@@ -1,6 +1,8 @@
 import {
   BookingCall,
+  CouponValue,
   DiscountMethod,
+  DiscountProvenance,
   DiscountSource,
   Email,
   Placement,
@@ -19,11 +21,14 @@ import {
   type BarberId,
   type DurationMinutes,
   EndMinute,
+  type LocalDate,
   type LocationId,
   MinuteOfDay,
   type PriceCents,
   Result,
   type SeatId,
+  type ServiceId,
+  type TrackMinute,
   type UserId,
 } from '@core/primitives';
 import {
@@ -42,6 +47,70 @@ import {
   type SideWrites,
   VisitSidesSystem,
 } from './visit-sides.system';
+
+/**
+ * What a visit sheet's save carries, as the draft holds it: the only fields
+ * «Запази» can send ({@link StaffEditPlanSystem.sameSave}). The sheet's draft
+ * passes straight in.
+ */
+export type DraftSaveSlice = {
+  readonly dayKey: LocalDate;
+  readonly startMinute: TrackMinute;
+  readonly locationId: LocationId | null;
+  readonly durationOverride: DurationMinutes | null;
+  readonly legs: readonly {
+    readonly seatId: SeatId;
+    readonly serviceId: ServiceId;
+    readonly durationMinutes: DurationMinutes;
+    /** The seat's chair; `null` for a leg added before the draft had one. */
+    readonly barberId: BarberId | null;
+    readonly typedPriceCents: PriceCents | null;
+  }[];
+  readonly note: string | null;
+  readonly discounts: readonly (DiscountProvenance &
+    CouponValue &
+    Pick<StaffEditDraft.Discount, 'grantId' | 'code'>)[];
+  readonly vouchers: readonly { readonly code: VoucherCode }[];
+  readonly tipCents: PriceCents | null;
+};
+
+/** {@link DraftSaveSlice} as one string: the shape two drafts are compared by. */
+function saveShape(draft: DraftSaveSlice): string {
+  return JSON.stringify({
+    dayKey: draft.dayKey,
+    startMinute: draft.startMinute,
+    // The shop travels as its own command (2026-09-18): the other tile is a
+    // change worth a «Запази».
+    shop: draft.locationId,
+    span: VisitDraftSystem.span(draft.durationOverride, draft.legs),
+    legs: draft.legs.map((leg) => ({
+      seatId: leg.seatId,
+      serviceId: leg.serviceId,
+      minutes: leg.durationMinutes,
+      barberId: leg.barberId,
+      // A typed price travels with the save (owner, 2026-09-10), so it is part
+      // of the shape; the seed never carries one.
+      price: leg.typedPriceCents,
+    })),
+    // The team note saves (its own staff-only document), so a typed note is a
+    // change worth a «Запази».
+    note: VisitSidesSystem.storedNote(draft.note),
+    // The bill travels as its own commands (2026-09-10): the discounts as a
+    // set, the vouchers as codes in cover order.
+    discounts: draft.discounts.map((discount) => ({
+      discountSource: discount.discountSource,
+      grantId: discount.grantId,
+      code: discount.code,
+      // What it takes off: the method and its figure — the promise, whatever
+      // currency word rides beside it.
+      value: [discount.discountMethod, CouponValue.magnitude(discount)],
+    })),
+    vouchers: draft.vouchers.map((voucher) => voucher.code),
+    // The tip drafts with the rest (2026-09-15): a changed tip is a change
+    // worth a «Запази».
+    tip: draft.tipCents,
+  });
+}
 
 /**
  * The facts of the ROW a staff visit sheet was opened on that the save plan
@@ -348,6 +417,17 @@ function toDiscountRequest(
  * receipt the dashboard's.
  */
 export const StaffEditPlanSystem = {
+  /**
+   * WOULD THESE TWO DRAFTS SAVE THE SAME: the day, the start, the shop, the
+   * span, each leg's minutes, chair and typed price, the note as stored, the
+   * discounts and vouchers, the tip. What no command carries is not compared,
+   * or a sheet would offer a «Запази» that saves nothing. Lists compare in
+   * order, where {@link commandsFor} compares the bill as a set.
+   */
+  sameSave(a: DraftSaveSlice, b: DraftSaveSlice): boolean {
+    return saveShape(a) === saveShape(b);
+  },
+
   /**
    * THE BATCH from a row to a target — every command decided by the server
    * in one fold. In this order:

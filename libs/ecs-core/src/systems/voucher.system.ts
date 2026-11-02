@@ -142,6 +142,20 @@ function restore<V extends VoucherBalance>(
  */
 export const VoucherSystem = {
   /**
+   * What the drafted vouchers become with `candidate`: added last in cover
+   * order, or the SAME array when that voucher is already held.
+   */
+  withAddedVoucher<V extends { readonly voucherId: GiftVoucherId }>(
+    current: readonly V[],
+    candidate: V,
+  ): readonly V[] {
+    for (let i = 0; i < current.length; i++) {
+      if ((current[i] as V).voucherId === candidate.voucherId) return current;
+    }
+    return [...current, candidate];
+  },
+
+  /**
    * Why it cannot be used at `nowUtcMs` — void, expired (AT the instant
    * still is not), empty — or `null`: the gate a voucher NEW to a bill
    * passes before it draws (`BillingSystem.settleVouchers`).

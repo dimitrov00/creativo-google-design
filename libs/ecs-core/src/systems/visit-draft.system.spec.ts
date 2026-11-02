@@ -476,6 +476,45 @@ describe("the visit draft's span and placeholder seats", () => {
 
 /* ── pass C: the grain, the typed pair, the span rules, the person keys ── */
 
+describe('VisitDraftSystem.typedStartBounds — the bounds offered to a typed start', () => {
+  const shift = (start: number, end: number) => ({
+    startMinute: trackMinute(start),
+    endMinute: trackMinute(end),
+  });
+
+  it('offers the whole civil day with no shift', () => {
+    expect(S.typedStartBounds(null)).toEqual(shift(0, 1439));
+  });
+
+  it('offers an hour either side of a shift', () => {
+    expect(S.typedStartBounds(shift(540, 1020))).toEqual(shift(480, 1080));
+  });
+
+  it('clamps a start under the margin to midnight', () => {
+    expect(S.typedStartBounds(shift(30, 600)).startMinute).toBe(0);
+    expect(S.typedStartBounds(shift(60, 600)).startMinute).toBe(0);
+    expect(S.typedStartBounds(shift(61, 600)).startMinute).toBe(1);
+  });
+
+  it('clamps an end at or past 1379 to the last minute of the day', () => {
+    expect(S.typedStartBounds(shift(600, 1378)).endMinute).toBe(1438);
+    expect(S.typedStartBounds(shift(600, 1379)).endMinute).toBe(1439);
+    expect(S.typedStartBounds(shift(600, 1440)).endMinute).toBe(1439);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(shift(540, 1020));
+    expect(S.typedStartBounds(input)).toEqual(S.typedStartBounds(input));
+  });
+});
+
+describe('VisitDraftSystem.FRAME_MIN_MINUTES — the frame’s floor', () => {
+  it('is ten minutes, twice the typed floor of one grain', () => {
+    expect(S.FRAME_MIN_MINUTES).toBe(10);
+    expect(S.GRAIN_MINUTES).toBe(5);
+  });
+});
+
 describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries', () => {
   const leg = (seat: string, overridden: boolean) => ({
     seatId: SeatId.of(seat),

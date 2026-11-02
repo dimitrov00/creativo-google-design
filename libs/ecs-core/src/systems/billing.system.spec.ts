@@ -1523,3 +1523,38 @@ describe("BillingSystem.pendingDiscounts — the batch's discounts, resolved", (
     );
   });
 });
+
+describe('BillingSystem.draftLegsTotal — what a new visit will cost', () => {
+  const leg = (typed: number | null, priced: number | null) => ({
+    typedPriceCents: typed === null ? null : cents(typed),
+    priceCents: priced === null ? null : cents(priced),
+  });
+
+  it('is null with no legs', () => {
+    expect(BillingSystem.draftLegsTotal([])).toBeNull();
+  });
+
+  it('is null while any leg’s price is unknown', () => {
+    expect(
+      BillingSystem.draftLegsTotal([leg(null, 2800), leg(null, null)]),
+    ).toBeNull();
+  });
+
+  it('sums each leg, a typed price beating the stored one', () => {
+    expect(
+      BillingSystem.draftLegsTotal([leg(2500, 2800), leg(null, 1000)]),
+    ).toBe(3500);
+  });
+
+  it('counts a typed zero, over the stored price and over none', () => {
+    expect(BillingSystem.draftLegsTotal([leg(0, 2800)])).toBe(0);
+    expect(BillingSystem.draftLegsTotal([leg(0, null)])).toBe(0);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([leg(2500, 2800), leg(null, 1000)]);
+    expect(BillingSystem.draftLegsTotal(legs)).toBe(
+      BillingSystem.draftLegsTotal(legs),
+    );
+  });
+});

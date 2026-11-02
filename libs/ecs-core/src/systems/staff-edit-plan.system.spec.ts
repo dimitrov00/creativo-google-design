@@ -1519,3 +1519,178 @@ describe('StaffEditPlanSystem — purity', () => {
     ).not.toThrow();
   });
 });
+
+describe('StaffEditPlanSystem.sameSave — would two drafts save the same', () => {
+  const coupon = {
+    ...DiscountProvenance.code(VoucherCode.of('FIRST10')),
+    discountMethod: DiscountMethod.PercentOff,
+    discountPercent: 10,
+    grantId: null,
+    code: VoucherCode.of('FIRST10'),
+  };
+  const fixedOff = (currency: Currency) => ({
+    ...DiscountProvenance.manual(),
+    discountMethod: DiscountMethod.FixedAmount,
+    discountAmountCents: cents(500),
+    discountCurrency: currency,
+    grantId: null,
+    code: null,
+  });
+  const draftLeg = (seatId: SeatId, durationMinutes = 30) => ({
+    seatId,
+    serviceId: CUT,
+    durationMinutes: duration(durationMinutes),
+    barberId: IVAN as BarberId | null,
+    typedPriceCents: null,
+  });
+  const base = {
+    dayKey: DAY,
+    startMinute: trackMinute(600),
+    locationId: SHOP,
+    durationOverride: null,
+    legs: [draftLeg(CUT_SEAT)],
+    note: null,
+    discounts: [],
+    vouchers: [],
+    tipCents: null,
+  };
+  const same = StaffEditPlanSystem.sameSave;
+
+  it('holds a draft against itself', () => {
+    expect(same(base, { ...base })).toBe(true);
+  });
+
+  it('reads a whitespace-only note as no note, and a note by its stored form', () => {
+    expect(same(base, { ...base, note: '   ' })).toBe(true);
+    expect(same({ ...base, note: ' чай ' }, { ...base, note: 'чай' })).toBe(
+      true,
+    );
+    expect(same(base, { ...base, note: 'чай' })).toBe(false);
+  });
+
+  it('reads the same span through an override or through the legs', () => {
+    expect(same(base, { ...base, durationOverride: duration(30) })).toBe(true);
+    expect(same(base, { ...base, durationOverride: duration(45) })).toBe(false);
+  });
+
+  it('gives a visit with no legs the half-hour default', () => {
+    const noLegs = { ...base, legs: [] };
+    expect(same(noLegs, { ...noLegs, durationOverride: duration(30) })).toBe(
+      true,
+    );
+    expect(same(noLegs, { ...noLegs, durationOverride: duration(35) })).toBe(
+      false,
+    );
+  });
+
+  it('differs when the legs reorder', () => {
+    const two = [draftLeg(CUT_SEAT), draftLeg(BEARD_SEAT)];
+    expect(
+      same({ ...base, legs: two }, { ...base, legs: [...two].reverse() }),
+    ).toBe(false);
+  });
+
+  it('differs on a leg’s minutes, chair and typed price', () => {
+    const leg0 = draftLeg(CUT_SEAT);
+    const withLeg = (changed: typeof leg0) => ({ ...base, legs: [changed] });
+    const pinned = { ...base, durationOverride: duration(30) };
+    expect(
+      same(pinned, {
+        ...withLeg(draftLeg(CUT_SEAT, 45)),
+        durationOverride: duration(30),
+      }),
+    ).toBe(false);
+    expect(same(base, withLeg({ ...leg0, barberId: STEFAN }))).toBe(false);
+    expect(
+      same(base, {
+        ...base,
+        legs: [{ ...leg0, typedPriceCents: cents(100) }],
+      }),
+    ).toBe(false);
+  });
+
+  it('takes a leg with no chair yet, against itself and against a chair', () => {
+    const unseated = withBarber(null);
+    expect(same(unseated, { ...unseated })).toBe(true);
+    expect(same(unseated, base)).toBe(false);
+    function withBarber(barberId: BarberId | null) {
+      return { ...base, legs: [{ ...draftLeg(CUT_SEAT), barberId }] };
+    }
+  });
+
+  it('compares a discount by source, grant, code, method and magnitude', () => {
+    const on = { ...base, discounts: [coupon] };
+    expect(same(on, { ...base, discounts: [{ ...coupon }] })).toBe(true);
+    expect(same(on, base)).toBe(false);
+    expect(
+      same(on, {
+        ...base,
+        discounts: [{ ...coupon, discountPercent: 15 }],
+      }),
+    ).toBe(false);
+    expect(
+      same(on, {
+        ...base,
+        discounts: [{ ...coupon, code: VoucherCode.of('OTHER') }],
+      }),
+    ).toBe(false);
+    expect(
+      same(on, {
+        ...base,
+        discounts: [{ ...coupon, grantId: CouponGrantId.of('grant-1') }],
+      }),
+    ).toBe(false);
+    expect(
+      same(on, {
+        ...base,
+        discounts: [{ ...coupon, ...DiscountProvenance.manual() }],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not differ on a currency word alone', () => {
+    expect(
+      same(
+        { ...base, discounts: [fixedOff(Currency.EUR)] },
+        { ...base, discounts: [fixedOff(Currency.BGN)] },
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps `dirty`’s order-sensitivity: two lines reordered differ', () => {
+    const other = { ...coupon, code: VoucherCode.of('BEARD5') };
+    expect(
+      same(
+        { ...base, discounts: [coupon, other] },
+        { ...base, discounts: [other, coupon] },
+      ),
+    ).toBe(false);
+  });
+
+  it('differs on a voucher code, and on a tip against none', () => {
+    const voucher = { code: VoucherCode.of('GIFT2025') };
+    expect(same(base, { ...base, vouchers: [voucher] })).toBe(false);
+    expect(same(base, { ...base, tipCents: cents(200) })).toBe(false);
+    expect(
+      same(
+        { ...base, tipCents: cents(200) },
+        { ...base, tipCents: cents(200) },
+      ),
+    ).toBe(true);
+  });
+
+  it('differs on the day, the start and the shop', () => {
+    expect(same(base, { ...base, dayKey: localDate('2026-08-06') })).toBe(
+      false,
+    );
+    expect(same(base, { ...base, startMinute: trackMinute(605) })).toBe(false);
+    expect(same(base, { ...base, locationId: MLADOST })).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const a = deepFreeze({ ...base, discounts: [coupon] });
+    const b = deepFreeze({ ...base, note: ' чай ' });
+    expect(same(a, b)).toBe(same(a, b));
+    expect(same(a, a)).toBe(true);
+  });
+});

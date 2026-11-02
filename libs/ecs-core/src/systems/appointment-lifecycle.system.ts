@@ -1033,6 +1033,25 @@ export const AppointmentLifecycleSystem = {
   },
 
   /**
+   * A REQUEST WAITING FOR ITS ANSWER: while the chair is `PENDING`, the offered
+   * item whose verb (`verbOf`) is the confirm edge; `null` when it is not
+   * offered, and on every other status. The other half of {@link exitVerbs},
+   * which leaves that confirm out of the exits.
+   */
+  requestVerb<T>(
+    chairStatus: BookingStatus | null,
+    offered: readonly T[],
+    verbOf: (item: T) => StaffVerb,
+  ): T | null {
+    if (chairStatus !== BookingStatus.Pending) return null;
+    for (let i = 0; i < offered.length; i++) {
+      const item = offered[i] as T;
+      if (verbOf(item) === BookingStatus.Confirmed) return item;
+    }
+    return null;
+  },
+
+  /**
    * Could this move END the visit live — a move to a live status of a visit
    * that is not live: the reopen of a `CANCELLED`, `NO_SHOW` or `COMPLETED`
    * visit? Asked of the REQUEST, before the decision, it names every move

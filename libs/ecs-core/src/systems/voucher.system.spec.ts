@@ -642,3 +642,31 @@ describe('VoucherSystem.cascade — vouchers covering a bill in order', () => {
     expect(available).toEqual([1000, 5000]);
   });
 });
+
+describe('VoucherSystem.withAddedVoucher — the same voucher twice', () => {
+  const held = (id: string) => ({
+    voucherId: GiftVoucherId.of(id),
+    label: id,
+  });
+
+  it('adds a new voucher last, in cover order', () => {
+    const a = held('a');
+    const b = held('b');
+    expect(VoucherSystem.withAddedVoucher([a], b)).toEqual([a, b]);
+    expect(VoucherSystem.withAddedVoucher([], a)).toEqual([a]);
+  });
+
+  it('returns the SAME array for a voucher already held', () => {
+    const current = [held('a'), held('b')];
+    expect(VoucherSystem.withAddedVoucher(current, held('b'))).toBe(current);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const current = deepFreeze([held('a')]);
+    const candidate = deepFreeze(held('b'));
+    expect(VoucherSystem.withAddedVoucher(current, candidate)).toEqual(
+      VoucherSystem.withAddedVoucher(current, candidate),
+    );
+    expect(current).toHaveLength(1);
+  });
+});
