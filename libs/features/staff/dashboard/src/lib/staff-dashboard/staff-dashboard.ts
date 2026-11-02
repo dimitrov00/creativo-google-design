@@ -1,10 +1,5 @@
-import {
-  StaffDayPill,
-  formatDayPill,
-  formatDayPillRange,
-} from '../day-pill/staff-day-pill';
+import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import { runViewTransition } from '../shared/view-transition';
-import { fill } from '../time-grid/grid-gesture';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -25,7 +20,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  type Appointment,
   type AppointmentPhoto,
   Profile,
   type ServiceCategory,
@@ -37,16 +31,12 @@ import {
   BookingStatus,
   type ClientOperationId,
   Currency,
-  type CustomerId,
   DraftPersonKey,
   DurationMinutes,
   EndMinute,
   LocalDate,
   type LocationId,
-  MinuteCount,
   MinuteOfDay,
-  type PersonKey,
-  type PriceCents,
   type Result,
   SeatId,
   type ServiceId,
@@ -54,7 +44,6 @@ import {
   TrackMinute,
   type UserId,
   UtcEpochMs,
-  defect,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -63,34 +52,24 @@ import {
   StaffEditErrorCode,
 } from '@core/errors';
 import {
-  AppliedDiscount,
   BookingCall,
-  BookingLifecycle,
   CancellationReason,
-  ChairMoment,
   ClientQueryShape,
   Combinability,
   CouponValue,
-  DiscountProvenance,
-  DiscountSource,
-  type Email,
-  GridEvent as GridEventTag,
   MinuteRange,
   Principal,
   Registration,
   type Role,
   Roles,
   Seat,
-  type SeatLabel,
   SeatOutcome,
   SeatSubject,
   type ShopNow,
   StaffVerb,
-  TimeCoordinate,
   VisitEditWrite,
   VisitEditWriteOutcome,
   type VisitSides,
-  VoucherRedemption,
   WallTime,
 } from '@core/components';
 import {
@@ -98,12 +77,10 @@ import {
   AppointmentLifecycleSystem,
   BarberToneSystem,
   BillingSystem,
-  BusySystem,
   ClientQuerySystem,
   GridLayoutSystem,
   IntervalSetSystem,
   LocationScopeSystem,
-  OfferingPriceSystem,
   PhoneSystem,
   RosterSystem,
   ScheduleExceptionSystem,
@@ -113,7 +90,6 @@ import {
   type StaffEditWords,
   VisitDraftSystem,
   VisitListSystem,
-  VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import type { SaveVisitEditCommand } from '@core/pipelines';
@@ -141,40 +117,21 @@ import {
   type VisitEditorShopOption,
   type VisitEditorCommit,
   type VisitEditorLeg,
-  type VisitEditorVerb,
   type VisitEditorVm,
   type VisitEditorCodeResult,
-  type VisitEditorDiscount,
-  type VisitEditorVoucher,
-  type VisitEditorResolution,
   snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
 import {
   CatalogContentService,
   CatalogWording,
 } from '@creativo/features/shared/catalog';
-import { catalogTagWords } from '../shared/catalog-tag.words';
-import {
-  firstNameOf,
-  hollowStatus,
-  StaffEventHead,
-  type StaffEventLine,
-} from '@creativo/features/shared/visits';
-import {
-  formatCents,
-  formatInstant,
-  formatWallClock,
-  formatZoneName,
-  wallClockParts,
-} from '@creativo/ui/wall-clock';
+import { StaffEventHead } from '@creativo/features/shared/visits';
 import {
   bookingStatusWords,
   cancellationReasonWords,
   operationReferenceWords,
   pluralForm,
-  relativeTime,
   translateCodedError,
-  wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import {
   UiChoiceLeading,
@@ -252,31 +209,72 @@ import { rankClients } from '../visit-editor/client-query';
 import { clientSearchOptions } from '../visit-editor/client-search';
 import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
 import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
+import {
+  AgendaRow,
+  ALL_DAY_MORE_KEY,
+  DiscardAnswer,
+  SCOPE_ALL,
+  type AgendaGroupVm,
+  type AgendaItemVm,
+  type DayRowVm,
+  type GapRowVm,
+  type LaneVm,
+  type RunEntryVm,
+  type StaffTranslate,
+} from './staff-day.vm';
+import { guestLabelsOf } from './staff-day-guest.words';
+import { refusalSentence } from './staff-day-error.words';
+import {
+  chairColumnHead,
+  dateColumnHead,
+  discardActionsOf,
+  periodLabelOf,
+  scopeChoicesOf,
+  serviceOptionsOf,
+  shopOptionsOf,
+  staffChromeWordsOf,
+  type StaffCatalogNames,
+  viewChoicesOf,
+  viewSegmentsOf,
+  weekCalendarOf,
+  zoneActionsOf,
+  zoneLabelOf,
+} from './staff-day-chrome.presenter';
+import {
+  type AgendaCardInput,
+  type AgendaFlags,
+  chairMinutesOf,
+  type DayRowContext,
+  dayRowVm,
+  gapRowVm,
+  wallClockLabel,
+  agendaCardVm,
+  allDayMoreEntry,
+  bookClientOption,
+  daySummaryWords,
+  dayTipsWords,
+  exceptionWord,
+  footShown,
+  gridBlockEvent,
+  gridVisitEvent,
+  occupantNeighbours,
+  occupyingRows,
+  offChairEntry,
+  offDateEntry,
+  peerRowOf,
+  recentClientOption,
+  restingChairs,
+  rowMarks,
+  rowName,
+  rowStateNote,
+  staffDayWordsOf,
+  visitEditorWords,
+  whenWords,
+} from './staff-day.presenter';
+import { searchHits } from './staff-search.presenter';
+import type { SearchHitVm } from './staff-search.vm';
 
-/**
- * A ROW'S NAME — the aggregate it belongs to, plus the lane it is drawn in.
- *
- * `#` is safe as the seam: both halves are ids the app mints itself
- * (Firestore doc ids and barber slugs), and neither can contain one. The key
- * is opaque — nothing parses it back apart, because everything that needs the
- * appointment reads `DayRowVm.appointmentId` instead.
- */
-function rowKey(appointmentId: AppointmentId, barberId: BarberId): string {
-  return `${appointmentId}#${barberId}`;
-}
-
-/**
- * Which DS options the scope switcher's «Всички» answers by — the menu's
- * option id for "every chair", never a `BarberId` (a DS option id: the
- * value the `ui-choice-menu` hands back and is handed as its selection).
- */
-const SCOPE_ALL = 'all';
-
-/**
- * The key of the all-day band's «+N» chip — every other chip is keyed by
- * its chair's id; this one opens the date itself (an opaque grid key).
- */
-const ALL_DAY_MORE_KEY = 'more';
+export { AgendaRow, type DayRowVm } from './staff-day.vm';
 
 /**
  * Which sheet's ✕ is waiting on «Отхвърли промените?» — the visit sheet's
@@ -309,29 +307,6 @@ const DaySurface = {
   Picker: 'PICKER',
 } as const;
 type DaySurface = Tag<typeof DaySurface>;
-
-/**
- * What a search field of an appointment holds — the field `label` of a
- * searchable field and of a matched line. Internal: the matched lines print
- * their parts, never this tag.
- */
-const SearchField = {
-  Client: 'CLIENT',
-  Service: 'SERVICE',
-  Phone: 'PHONE',
-  Email: 'EMAIL',
-  Note: 'NOTE',
-} as const;
-type SearchField = Tag<typeof SearchField>;
-
-/**
- * The discard alert's two answers — values: external contract (the
- * `ui-alert` action ids the alert is handed and hands back on a pick).
- */
-const DiscardAnswer = {
-  Discard: 'discard',
-  Keep: 'keep',
-} as const;
 
 /** The opening midnight — where a minute that nobody could read falls back to (`0`, a minute of every day). */
 const MIDNIGHT = MinuteOfDay.ofProven(0);
@@ -445,12 +420,6 @@ function rowShape(row: DayRowVm): string {
   });
 }
 
-/** The street line of a postal address — everything before its first comma. */
-function streetOf(address: string): string {
-  const street = address.split(',')[0]?.trim() ?? '';
-  return street.length > 0 ? street : address;
-}
-
 /** One question per typed name, not one per keystroke. */
 const CLIENT_SEARCH_DEBOUNCE_MS = 220;
 /** The most accounts one lookup key answers with (index #8's `limit`). */
@@ -459,16 +428,6 @@ const CLIENT_SEARCH_LIMIT = 20;
 const BOOK_FACES_PER_QUERY = 12;
 /** How many recent visitors «Скорошни» lists — a display cap. */
 const RECENT_CLIENTS_CAP = 8;
-
-/**
- * What an agenda entry is — the field `agendaRow`: a booked VISIT, or a
- * sellable GAP between them. One run, two row grammars.
- */
-export const AgendaRow = {
-  Visit: 'VISIT',
-  Gap: 'GAP',
-} as const;
-export type AgendaRow = (typeof AgendaRow)[keyof typeof AgendaRow];
 
 /**
  * Which door the ＋ menu opened — a BOOKING (the visit sheet) or a BLOCK
@@ -480,315 +439,11 @@ export const CreateIntent = {
 } as const;
 export type CreateIntent = (typeof CreateIntent)[keyof typeof CreateIntent];
 
-export interface DayRowVm {
-  readonly agendaRow: typeof AgendaRow.Visit;
-  /**
-   * THE ROW'S OWN IDENTITY — `appointmentId#barberId`, never the bare
-   * appointment id. (owner ruling 2026-09-03)
-   *
-   * A party is ONE appointment fanned out to one row PER LANE, so keying a row
-   * on the aggregate gives two rows the same name. Every lookup that took that
-   * name then returned whichever came first: tapping Stefan's block opened
-   * Ivan's sheet, `restoreFocusToRow` restored the wrong row, and the grid
-   * measured the wrong block while dragging. Two `@for` tracks collided
-   * outright — the 3-day and week views merge lanes into one date column, and
-   * the agenda groups by start minute, so both of a 16:00 party's rows land in
-   * the same list under one key.
-   *
-   * The lane is what distinguishes them, so the lane is in the key. Anything
-   * addressing the AGGREGATE — a gateway call, a pending flag, a row error —
-   * wants `appointmentId` and must not use this.
-   */
-  readonly id: string;
-  /** The aggregate this row is a share of. What the server is told about. */
-  readonly appointmentId: AppointmentId;
-  /**
-   * The stored revision the visit was read at (`Appointment.revision`), or
-   * `null` where the reader did not say. What a sheet drawn from this row
-   * claims on its next save — see `StaffIntent`.
-   */
-  readonly revision: number | null;
-  /** WHERE the visit is — the root's own fact, one place for every chair. */
-  readonly locationId: LocationId;
-  /**
-   * THIS lane's seat. A row is one barber's share of a party, so resolving it
-   * must name the seat — the root can hold one answer and a party has several.
-   * `null` for a chair holding none of the visit's seats.
-   */
-  readonly seatId: SeatId | null;
-  /**
-   * EVERY seat of this row's own chair, in order.
-   *
-   * `seatId` is only the first, which is right for a lane holding one seat and
-   * silently wrong for a father and son in one chair: cancelling that row has
-   * two seats to resolve, and naming one of them calls off half a row while
-   * reporting success.
-   */
-  readonly seatIds: readonly SeatId[];
-  /**
-   * Whether the person in this chair is the BOOKER (an account `self` seat)
-   * rather than a guest. A service added from the sheet joins the visit as
-   * a seat for the same person, and this is how the command names them.
-   */
-  readonly selfSeat: boolean;
-  /** The account the booking belongs to, or `null` for a walk-in. */
-  readonly ownerUserId: UserId | null;
-  /**
-   * The booker's client RECORD (D29) — what their held coupons, the photos
-   * of the visit and the client card are keyed by; `null` for a walk-in.
-   */
-  readonly ownerCustomerId: CustomerId | null;
-  /** Seats in the whole party, across every lane. `1` is the ordinary case. */
-  readonly partySize: number;
-  /**
-   * Seats in THIS row's own chair — which is what the card's `+N` counts.
-   *
-   * `partySize` spans lanes, and the agenda renders one row per appointment
-   * PER LANE, so a two-chair party is already two rows: marking each of them
-   * "+1" counts the same people twice and says the run holds four when it
-   * holds two. A father and son booked into one chair, though, is genuinely
-   * one row holding two seats — and that is the case worth a mark.
-   */
-  readonly seatsHere: number;
-  /** The visit's shop day — what its wall-clock minutes are on (Law 7.3). */
-  readonly localDate: LocalDate;
-  /** This chair's start on the shop's wall clock, as stored (`startMinutes`). */
-  readonly startMinute: MinuteOfDay;
-  /** This chair's end on the same axis — `1440` is the closing midnight. */
-  readonly endMinute: EndMinute;
-  /**
-   * The chair's start and end as INSTANTS — for the countdown and the live
-   * remaining only (an elapsed-time phrase, T2: pass D D-6.4), read off the
-   * stored start (`TimeCoordinate.instantAt`). Every "has it begun / ended"
-   * answer is the wall clock's (`VisitListSystem.hasStarted`/`hasEnded`).
-   */
-  readonly startUtcMs: UtcEpochMs;
-  readonly endUtcMs: UtcEpochMs;
-  readonly startLabel: string;
-  readonly endLabel: string;
-  /**
-   * THE TAG — how far this chair's run is from the catalogue's length,
-   * «−5 мин»: exactly the frame's own mark (owner, 2026-09-10: "the events
-   * here should look a lot like the ones in the frame"). `null` when the
-   * visit runs as sold, or when the catalogue cannot say.
-   */
-  readonly tag: string | null;
-  /**
-   * What this chair's share of the party is worth, formatted.
-   *
-   * The seat's OWN snapshot (`terms.price`), summed across this lane's seats
-   * — not `Appointment.subtotal()`, which is the whole party across every
-   * chair and would print Stefan's cut in Ivan's row. `null` when the seats
-   * disagree on currency, which the domain treats as a data error rather
-   * than a feature.
-   */
-  readonly priceLabel: string | null;
-  /** The same, in cents — for the tip presets — beside its currency. */
-  readonly priceCents: PriceCents | null;
-  /** The chair's currency — its seats' (the shop's one where it holds none). */
-  readonly currency: Currency;
-  readonly barberName: string;
-  readonly barberAvatarSrc: string | null;
-  /** Which of the five identity tones this chair wears — `BarberToneSystem`. */
-  readonly barberTone: number;
-  /** Set only when the seat runs past midnight — "00:15⁺¹". */
-  readonly crossesMidnight: boolean;
-  readonly serviceLabel: string;
-  readonly clientLabel: string;
-  /** Formatted for reading — "+359 88 123 4567". */
-  readonly phone: string | null;
-  /**
-   * The same number in E.164, for the `tel:` href.
-   *
-   * Separate from `phone` because a dial string must not carry the display
-   * formatter's spaces: some dialers take them literally and fail to place
-   * the call, and the URI grammar has no room for them either.
-   */
-  readonly phoneHref: string | null;
-  /** The client's address, when they left one. */
-  readonly email: Email | null;
-  /**
-   * Whether this visit was rebooked from a previous one.
-   *
-   * `Appointment.bookedFrom` — a real, persisted link that round-trips
-   * through the repository, not a guess. It is the closest thing the model
-   * has to "a regular": a client who came back.
-   */
-  readonly rebooked: boolean;
-  readonly hasNote: boolean;
-  /**
-   * The note's PROSE — for the visit sheet only.
-   *
-   * The row shows `hasNote` and nothing else, because that surface is held
-   * up in front of the person it describes. A sheet is opened deliberately,
-   * by someone who has already decided to look, which is where the mapper's
-   * own comment always said this belonged.
-   */
-  readonly note: string | null;
-  readonly partyLabel: string | null;
-  /**
-   * What this chair's barber was left, summed across the row's own seats —
-   * `null` when nothing has been recorded on any of them.
-   *
-   * Summed rather than taken from one seat because a chair holding a father
-   * and son is one barber and one tip in practice; the storage is per seat
-   * and the reading is per chair, which is the unit a barber counts in.
-   */
-  readonly tipLabel: string | null;
-  readonly tipCents: PriceCents | null;
-  /**
-   * WHAT WAS TAKEN OFF the bill, as the server snapshotted it — every
-   * discount on the visit, empty at full price. The whole appointment's,
-   * not this chair's: a discount is a fact about what is owed, and a party
-   * across two chairs owes one bill.
-   */
-  readonly discounts: readonly VisitEditorDiscount[];
-  /**
-   * WHAT VOUCHERS PAID — the live draw-downs, each with what this visit may
-   * still draw (its own amount plus what the voucher had left).
-   */
-  readonly vouchers: readonly VisitEditorVoucher[];
-  /**
-   * WHAT SETTLED THIS CHAIR — who called it off and when, and why, or that
-   * nobody came — for the sheet's head. `null` while the chair is live and
-   * on a finished visit, whose ending needs no explaining.
-   */
-  readonly resolution: VisitEditorResolution | null;
-  /**
-   * THIS lane's seats, one entry each — the editor's service rows.
-   *
-   * `serviceLabel` joins them with `+` for the agenda card, which is the right
-   * shape for a line the eye skims and the wrong one for a list you edit: a
-   * leg carries its own duration, its own price and its own barber, and the
-   * join throws all three away. Built here rather than in the editor because
-   * `toRow` is already holding the seats and the catalog.
-   */
-  readonly legs: readonly VisitEditorLeg[];
-  /**
-   * EVERYONE seated in this chair, keyed the way the sheet keys people: an
-   * account by its user id, a guest by `guest-<label>`. One entry for the
-   * ordinary visit; a party reopened lists each person and names each leg.
-   */
-  readonly people: readonly VisitEditorClientOption[];
-  /** THIS chair's status — the stored tag (`SeatOutcome.summarize`). */
-  readonly bookingStatus: BookingStatus;
-  /**
-   * The ROOT appointment's status, as stored — the party's, which a split
-   * party's chair may not share. What the server's save rules read
-   * (the save plan's way back, `StaffEditPlanSystem.savePlan`, DEP-3).
-   */
-  readonly rootBookingStatus: BookingStatus;
-  /** Whether the party has walked in — the gate for offering "Done". */
-  readonly arrived: boolean;
-  /**
-   * WHEN they walked in — the stored stamp — or `null`. The sheet's state
-   * header reads the waiting time off it; `arrived` alone could only say
-   * that it exists.
-   */
-  readonly arrivedAtUtcMs: UtcEpochMs | null;
-  /** The ONE verb this row leads with, or `null` on a settled row. */
-  readonly primary: RowVerb | null;
-  /** Everything else `canTransition` allows — the overflow menu. */
-  readonly overflow: readonly BookingStatus[];
-  readonly terminal: boolean;
-  /**
-   * Already over. ONE definition of past, shared with the grid and the
-   * search sheet: a visit is past once it has ENDED, so a cut that began ten
-   * minutes ago and is still in the chair is not history.
-   */
-  readonly past: boolean;
-  /**
-   * The chair's next unstarted visit — at most one per lane.
-   *
-   * The run had no present tense at all: nothing separated a cut finished at
-   * ten from one three hours out, so answering "who's next" meant reading
-   * timestamps down a scrolling list between cuts. This is the row the eye
-   * should find in under a second.
-   */
-  readonly isNext: boolean;
-  /**
-   * Started and not yet over — someone is in this chair right now.
-   *
-   * The third time-state, and the one an agenda ordered by START cannot
-   * otherwise show: a 12:00 cut is still running when the 12:30 group is
-   * read, and without this the earlier card looks as finished as the 10:00
-   * one. It is also what makes overlap legible in a list — the grid views
-   * draw simultaneity spatially, the agenda says it in words.
-   */
-  readonly live: boolean;
-}
-
-/**
- * One start time, and everything that begins at it.
- *
- * ### Why the agenda groups by TIME rather than by chair
- * The run used to be one list per barber, stacked. That reads as three
- * schedules printed on one page: the same 16:00 appears three times, the now
- * line has to be drawn three times to mean one thing, and answering "what is
- * happening at four" means scanning three places. Grouping by start time is
- * how every calendar agenda worth copying does it — the time is said once,
- * in the heading, and concurrency becomes something you SEE rather than
- * something you reconstruct.
- *
- * It also gives the time back to the card: with the hour in the heading, the
- * card's width is free for the fields the viewer actually chose.
- */
-interface AgendaGroupVm {
-  /** `String(startMinutes)` — the heading's DOM id segment and its track key. */
-  readonly key: string;
-  readonly timeLabel: string;
-  /** The minute of the shop's day everything in the group begins at. */
-  readonly startMinutes: MinuteOfDay;
-  /** `true` once the clock has reached this heading (`VisitListSystem.hasStarted`). */
-  readonly past: boolean;
-  readonly items: readonly RunEntryVm[];
-}
-
-/** A sellable hole. Same row grammar, no segment fill (§4.4). */
-interface GapRowVm {
-  readonly agendaRow: typeof AgendaRow.Gap;
-  readonly id: string;
-  readonly startLabel: string;
-  readonly endLabel: string;
-  readonly minutes: MinuteCount;
-  /** Where the hole begins on the shop's wall clock — the run's order. */
-  readonly startMinutes: MinuteOfDay;
-  /**
-   * Already elapsed — the run's one definition of past, shared with visits.
-   *
-   * An elapsed hole is a RECORD: the chair sat empty and nobody filled it.
-   * A future hole is INVENTORY. Same geometry, opposite tense, and the card
-   * says so rather than rendering an offer nobody can take.
-   */
-  readonly past: boolean;
-  readonly sellable: boolean;
-  /**
-   * WHOSE chair is free (owner ruling 2026-08-20).
-   *
-   * Unattributed free time is meaningless the moment the agenda stops being
-   * one list per barber: "110 мин свободни" sitting between two of Niko's
-   * cuts says nothing about which chair a walk-in could take.
-   */
-  readonly barberName: string;
-  readonly barberAvatarSrc: string | null;
-  readonly barberTone: number;
-}
-
-type RunEntryVm = DayRowVm | GapRowVm;
-
 /** Where an entry of the run begins on the shop's wall clock — a visit's chair start, a hole's start. */
 function startMinuteOf(entry: RunEntryVm): MinuteOfDay {
   return entry.agendaRow === AgendaRow.Visit
     ? entry.startMinute
     : entry.startMinutes;
-}
-
-/** One neighbour on a sheet's frame — a name, a span on its axis, a tone. */
-interface FrameNeighbour {
-  readonly name: string;
-  readonly startMinute: MinuteOfDay;
-  readonly endMinute: EndMinute;
-  readonly tone: number;
 }
 
 /**
@@ -800,41 +455,6 @@ interface FrameSubject {
   readonly appointmentId: AppointmentId | null;
   readonly chair: BarberId | null;
 }
-
-interface LaneVm {
-  readonly barberId: BarberId;
-  readonly barberName: string;
-  readonly avatarSrc: string | null;
-  /** Visits and gaps interleaved in clock order — the COMPLETE run. */
-  readonly entries: readonly RunEntryVm[];
-  readonly rostered: boolean;
-  readonly failed: boolean;
-}
-
-/**
- * The glyph that doubles a TERMINAL state on a calendar block.
- *
- * Live states get none: a block that is simply filled and unmarked is the
- * ordinary case, and marking it would spend a signal on "nothing has
- * happened yet".
- */
-const STATUS_ICONS: Partial<Record<BookingStatus, UiIconName>> = {
-  [BookingStatus.Completed]: 'checklist.done',
-  [BookingStatus.NoShow]: 'visit.noShow',
-  // It was missing (found 2026-09-24): a cancelled block drew no glyph at
-  // all while the card's face and the sheet carried one.
-  [BookingStatus.Cancelled]: 'visit.cancelled',
-};
-
-/**
- * The page's clock face — «13:00», 24-hour: in the reader's locale on the
- * rows, in `en-GB` in a block's accessible name.
- */
-const CLOCK_FACE: Intl.DateTimeFormatOptions = {
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-};
 
 /** A beat of air above the anchored marker, so it does not hug the toolbar. */
 const CLEARANCE = 12;
@@ -872,127 +492,6 @@ function minuteRangeOf(
   const end = EndMinute.of(endMinute);
   if (!start.ok || !end.ok || end.value <= start.value) return null;
   return MinuteRange.of(start.value, end.value);
-}
-
-/** One field that matched, split so the matching run can be marked. */
-interface MatchVm {
-  readonly label: SearchField;
-  readonly parts: readonly { readonly text: string; readonly hit: boolean }[];
-}
-
-/** One searchable field of an appointment — what it holds, and its text. */
-interface SearchableField {
-  readonly label: SearchField;
-  readonly value: string;
-}
-
-/** A visit's searchable fields, and those the term hit. */
-interface SearchMatch {
-  readonly fields: readonly SearchableField[];
-  readonly matched: readonly SearchableField[];
-}
-
-/** One appointment the search found. */
-interface SearchHitVm {
-  readonly id: AppointmentId;
-  readonly dayKey: LocalDate;
-  readonly whenLabel: string;
-  readonly past: boolean;
-  readonly bookingStatus: BookingStatus;
-  readonly titleParts: readonly {
-    readonly text: string;
-    readonly hit: boolean;
-  }[];
-  readonly matches: readonly MatchVm[];
-}
-
-/**
- * Does this field hold the term — by text (the Bulgarian collation, this
- * page's), or by the term's bare digits for a phone (`digits`, `null` when
- * the term is no phone number — `SearchFieldsSystem.digitQuery`)?
- */
-function matches(
-  field: SearchableField,
-  term: string,
-  digits: string | null,
-): boolean {
-  if (field.value.toLocaleLowerCase('bg').includes(term)) return true;
-  return (
-    digits !== null &&
-    field.label === SearchField.Phone &&
-    SearchFieldsSystem.digitsMatch(field.value, digits)
-  );
-}
-
-/**
- * Split a value around every occurrence of the term.
- *
- * Case-insensitive on the BULGARIAN collation but returning the ORIGINAL
- * slices, so a match on "георги" still renders "Георги" — highlighting must
- * never rewrite what the shop typed.
- */
-function splitOnTerm(
-  value: string,
-  term: string,
-  ignoreSeparators = false,
-): readonly { readonly text: string; readonly hit: boolean }[] {
-  if (ignoreSeparators) return splitOnDigits(value, term);
-  const haystack = value.toLocaleLowerCase('bg');
-  const parts: { text: string; hit: boolean }[] = [];
-  let at = 0;
-  for (;;) {
-    const found = haystack.indexOf(term, at);
-    if (found === -1) break;
-    if (found > at) parts.push({ text: value.slice(at, found), hit: false });
-    parts.push({ text: value.slice(found, found + term.length), hit: true });
-    at = found + term.length;
-  }
-  if (at < value.length) parts.push({ text: value.slice(at), hit: false });
-  return parts;
-}
-
-/**
- * Split a formatted phone around a run of digits, keeping the separators.
- *
- * "+359 88 777 8899" searched for "887778899" has to mark from the first 8
- * through the last 9 INCLUDING the spaces between them — highlighting only
- * the digit runs would break one match into three.
- */
-function splitOnDigits(
-  value: string,
-  digits: string,
-): readonly { readonly text: string; readonly hit: boolean }[] {
-  const map: number[] = [];
-  let bare = '';
-  for (let i = 0; i < value.length; i++) {
-    if (/\d/.test(value[i] as string)) {
-      map.push(i);
-      bare += value[i];
-    }
-  }
-  const at = bare.indexOf(digits);
-  if (at === -1) return [{ text: value, hit: false }];
-  const from = map[at] as number;
-  const to = (map[at + digits.length - 1] as number) + 1;
-  const parts: { text: string; hit: boolean }[] = [];
-  if (from > 0) parts.push({ text: value.slice(0, from), hit: false });
-  parts.push({ text: value.slice(from, to), hit: true });
-  if (to < value.length) parts.push({ text: value.slice(to), hit: false });
-  return parts;
-}
-
-/**
- * "петък" → "Пет", "friday" → "Fri".
- *
- * THREE letters off the long name, not `Intl`'s `short`. English's short IS
- * three ("Fri"), but Bulgarian's is two ("пт") by CLDR convention — which read
- * as a different, terser system beside the reference. Slicing the long form
- * gives the idiomatic Bulgarian abbreviation (пон/вто/сря/чет/пет/съб/нед) and
- * leaves English exactly where it already was.
- */
-function abbreviateWeekday(long: string, locale: string): string {
-  const three = long.slice(0, 3);
-  return three.charAt(0).toLocaleUpperCase(locale) + three.slice(1);
 }
 
 /**
@@ -1075,8 +574,6 @@ const ALL_DAY_CHIP_CAP = 3;
   },
 })
 export class StaffDashboard {
-  /** An hour that did not happen — struck on the card's head (staff-event-head). */
-  protected readonly hollowStatus = hollowStatus;
   /** The agenda's two row grammars, for the template's comparison. */
   protected readonly AgendaRow = AgendaRow;
   /** The ＋ menu's two doors, for the template's calls. */
@@ -1102,6 +599,24 @@ export class StaffDashboard {
    * every row is rebuilt the moment the table is there.
    */
   private readonly copyTable = toSignal(this.transloco.selectTranslation());
+  /** `translate`, as a presenter's words struct takes it. */
+  private readonly say: StaffTranslate = (key, params) =>
+    this.transloco.translate<string>(key, params);
+  /**
+   * The day's words, rebuilt when the table lands (`copyTable`, review r4):
+   * every `computed` that words itself reads them through here, never through
+   * `translate()`, which would hand the key back and never say when the real
+   * word arrived.
+   */
+  private readonly dayWords = computed(() => {
+    this.copyTable();
+    return staffDayWordsOf(this.say, this.copyOf('staff.visit.minutes'));
+  });
+  /** The chrome's words, rebuilt when the table lands (`copyTable`). */
+  private readonly chromeWords = computed(() => {
+    this.copyTable();
+    return staffChromeWordsOf(this.say);
+  });
   private readonly title = inject(Title);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
@@ -1273,6 +788,15 @@ export class StaffDashboard {
 
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogWording);
+  /**
+   * The catalogue, as a presenter reads it: each lookup reads the catalogue's
+   * live signals when it is ASKED, so the `computed` calling the presenter
+   * follows a late catalogue on its own.
+   */
+  private readonly catalogNames: StaffCatalogNames = {
+    findService: (id) => this.catalog.findService(id),
+    text: (localized) => this.content.text(localized),
+  };
 
   /**
    * WHO IS AT THE BOOK — the settled principal the route guard already
@@ -1464,6 +988,29 @@ export class StaffDashboard {
    */
   protected readonly nowUtcMs = this.store.nowUtcMs;
 
+  /**
+   * WHAT EVERY ROW IS WORDED FROM, read once per change: the tick, the shop's
+   * clock, the words and the companions' names. The catalogue lookups read
+   * its live signals when asked, so the `computed` building rows follows a
+   * late catalogue on its own. Rows rebuild on every tick, as they always
+   * have; `id` keeps each one's `@for` identity.
+   */
+  private readonly rowContext = computed<DayRowContext>(() => ({
+    nowUtcMs: this.nowUtcMs(),
+    shopNow: this.store.shopNow(),
+    zone: this.store.zone(),
+    locale: this.content.locale(),
+    lang: this.transloco.getActiveLang(),
+    companionNames: this.companionNames(),
+    words: this.dayWords(),
+    names: {
+      ...this.catalogNames,
+      barberName: (id) => this.barberNameOf(id),
+      barberAvatarSrc: (id) => this.barberAvatarOf(id),
+      toneOf: (id) => this.toneOf(id),
+    },
+  }));
+
   /** The clock port itself — for the nonce a re-booking's draft seats are minted with. */
   private readonly clock = inject(CLOCK_PORTS);
 
@@ -1478,31 +1025,6 @@ export class StaffDashboard {
     return zone === null ? null : ZonedTimeSystem.toLocal(atUtcMs, zone);
   }
 
-  /** An instant in the reader's locale, on the SHOP's calendar — `''` before the zone is known. */
-  private instantLabel(
-    atUtcMs: UtcEpochMs,
-    options: Intl.DateTimeFormatOptions,
-    locale: string = this.content.locale(),
-  ): string {
-    const zone = this.store.zone();
-    return zone === null ? '' : formatInstant(atUtcMs, zone, locale, options);
-  }
-
-  /**
-   * A stored wall-clock reading in the reader's locale — `''` while the
-   * day's zone is not known, exactly as {@link instantLabel} answers then
-   * (the pooled search and «Скорошни» print nothing before it, D-6.2).
-   */
-  private wallLabel(
-    localDate: LocalDate,
-    minute: MinuteOfDay | null,
-    options: Intl.DateTimeFormatOptions,
-  ): string {
-    return this.store.zone() === null
-      ? ''
-      : formatWallClock(localDate, minute, this.content.locale(), options);
-  }
-
   // ── Search ──────────────────────────────────────────────────────────
 
   /**
@@ -1513,114 +1035,19 @@ export class StaffDashboard {
    * (name, phone, email, note, service) are four different shapes, one of
    * them nested inside the `seats` array.
    */
-  protected readonly searchResults = computed<readonly SearchHitVm[]>(() => {
-    const term = this.store.term().trim().toLocaleLowerCase('bg');
-    if (!SearchFieldsSystem.termSearchable(term)) return [];
-    // Each visit is judged on ITS shop's wall clock (the physical chair
-    // invariant, Law 7.2): one `ShopNow` per zone per tick, read at the
-    // store's edge (`shopNowAt`, pass D D-6.2).
-    const shopNowAt = this.store.shopNowAt();
-
-    // Digits-only alias, so "887778899" finds "+359 88 777 8899". A person
-    // searching by phone types the number off a screen or a card, never with
-    // the formatter's spaces in it (`digitQuery`: `null` when it is none).
-    const digits = SearchFieldsSystem.digitQuery(term);
-
-    const found = new Map<Appointment, SearchMatch>();
-    const visits: Appointment[] = [];
-    for (const appointment of this.store.pool()) {
-      const fields = this.searchableFields(appointment);
-      const matched = fields.filter((field) => matches(field, term, digits));
-      if (matched.length === 0) continue;
-      found.set(appointment, { fields, matched });
-      visits.push(appointment);
-    }
-
-    // Soonest first among the future; most recent first among the past —
-    // the two things a person searching a book is actually looking for.
-    // A visit is past once it has ENDED, on its own shop's clock
-    // (`VisitStorySystem.outwardFromNow`, the grid's definition too).
-    return VisitStorySystem.outwardFromNow(visits, (visit) =>
-      shopNowAt(visit.locationId),
-    ).map(({ visit: appointment, past }) => {
-      const { fields, matched } = found.get(appointment) as SearchMatch;
-      // The client is the title, highlighted when it is what matched. Every
-      // OTHER matched field lists beneath — so a phone search shows the
-      // number it hit, and a name search does not print the name twice.
-      const titleField = fields[0];
-      return {
-        id: appointment.id,
-        dayKey: appointment.localDate,
-        whenLabel: this.wallLabel(
-          appointment.localDate,
-          appointment.startMinutes,
-          {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          },
-        ),
-        past,
-        bookingStatus: appointment.bookingStatus,
-        titleParts: titleField
-          ? splitOnTerm(titleField.value, term)
-          : [{ text: '', hit: false }],
-        matches: matched
-          .filter((field) => field !== titleField)
-          .map((field) => ({
-            label: field.label,
-            parts: splitOnTerm(
-              field.value,
-              // Highlight the run that actually matched: the digits form
-              // when that is what hit, the typed term otherwise.
-              digits !== null && field.label === SearchField.Phone
-                ? digits
-                : term,
-              digits !== null && field.label === SearchField.Phone,
-            ),
-          })),
-      };
-    });
-  });
-
-  /** Every field a search is allowed to look at, in display priority. */
-  private searchableFields(
-    appointment: Appointment,
-  ): readonly SearchableField[] {
-    const out: SearchableField[] = [];
-    if (appointment.contactName) {
-      out.push({ label: SearchField.Client, value: appointment.contactName });
-    }
-    for (const seat of appointment.seats) {
-      const guestLabel = guestLabelOf(seat);
-      if (guestLabel !== null) {
-        out.push({ label: SearchField.Client, value: guestLabel });
-      }
-      const service = this.catalog.findService(seat.serviceId);
-      if (service) {
-        out.push({
-          label: SearchField.Service,
-          value: this.content.text(service.name),
-        });
-      }
-    }
-    if (appointment.contactPhone !== null) {
-      out.push({
-        label: SearchField.Phone,
-        value: PhoneSystem.formatInternational(appointment.contactPhone),
-      });
-    }
-    if (appointment.contactEmail !== null) {
-      out.push({ label: SearchField.Email, value: appointment.contactEmail });
-    }
-    if (appointment.contactNote) {
-      out.push({ label: SearchField.Note, value: appointment.contactNote });
-    }
-    return out;
-  }
+  protected readonly searchResults = computed<readonly SearchHitVm[]>(() =>
+    searchHits({
+      term: this.store.term(),
+      pool: this.store.pool(),
+      // Each visit is judged on ITS shop's wall clock (the physical chair
+      // invariant, Law 7.2): one `ShopNow` per zone per tick, read at the
+      // store's edge (`shopNowAt`, pass D D-6.2).
+      shopNowAt: this.store.shopNowAt(),
+      names: this.catalogNames,
+      zoneKnown: this.store.zone() !== null,
+      locale: this.content.locale(),
+    }),
+  );
 
   /** Jump the sheet to the day a hit lives on, and close the search. */
   protected openHit(hit: SearchHitVm): void {
@@ -1751,7 +1178,7 @@ export class StaffDashboard {
 
   protected readonly scopeLabel = computed(() => {
     const scope = this.store.scope();
-    if (scope === null) return this.transloco.translate('staff.day.scopeAll');
+    if (scope === null) return this.chromeWords().scopeAll;
     return this.barberNameOf(scope);
   });
 
@@ -1794,14 +1221,7 @@ export class StaffDashboard {
    * where the staff already are, and the row has two lines to spend.
    */
   protected readonly shopOptions = computed<readonly VisitEditorShopOption[]>(
-    () =>
-      this.catalog.locations().map((location) => ({
-        id: location.id,
-        label: this.content.text(location.name),
-        address: streetOf(this.content.text(location.address)),
-        lat: location.latitude,
-        lng: location.longitude,
-      })),
+    () => shopOptionsOf(this.catalog.locations(), this.catalogNames),
   );
 
   /**
@@ -1853,53 +1273,10 @@ export class StaffDashboard {
       this.createVisit()?.barberId ??
       null;
     if (barberId === null) return [];
-    return this.catalog
-      .serviceVms()
-      .flatMap((vm): VisitEditorServiceOption[] => {
-        const service = this.catalog.findService(vm.id);
-        // The VM is the entity's own (`serviceVms` maps `services`); one
-        // the list no longer holds has no terms to quote.
-        if (service === undefined) return [];
-        const name = this.content.text(vm.name);
-        // Which offers the chair's menu holds, at the terms the server
-        // resolves (`OfferingPriceSystem.offersOf`): the cents, the currency
-        // and the minutes straight off `ServiceTerms` (D-10.3); the LABEL is
-        // those cents in their own currency, worded as the client's catalogue
-        // words them (`CatalogWording.price`).
-        return OfferingPriceSystem.offersOf(service, barberId).map(
-          ({ variant, terms }): VisitEditorServiceOption =>
-            variant === null
-              ? {
-                  id: vm.id,
-                  serviceId: service.id,
-                  variantId: null,
-                  label: name,
-                  serviceLabel: name,
-                  minutes: terms.durationMinutes,
-                  priceCents: terms.priceCents,
-                  currency: terms.currency,
-                  priceLabel: this.content.price({
-                    amountCents: terms.priceCents,
-                    currency: terms.currency,
-                  }),
-                }
-              : {
-                  id: `${vm.id}:${variant.variantId}`,
-                  serviceId: service.id,
-                  variantId: variant.variantId,
-                  label: `${name} · ${this.content.text(variant.name)}`,
-                  serviceLabel: name,
-                  variantLabel: this.content.text(variant.name),
-                  minutes: terms.durationMinutes,
-                  priceCents: terms.priceCents,
-                  currency: terms.currency,
-                  priceLabel: this.content.price({
-                    amountCents: terms.priceCents,
-                    currency: terms.currency,
-                  }),
-                },
-        );
-      });
+    return serviceOptionsOf(this.catalog.serviceVms(), barberId, {
+      ...this.catalogNames,
+      price: (money) => this.content.price(money),
+    });
   });
 
   /** Chairs the scope picker offers — every chair that works this period. */
@@ -1944,23 +1321,16 @@ export class StaffDashboard {
       // column with a day-off chip in the all-day row (owner ruling
       // 2026-08-10).
       return (cell?.lanes ?? []).map((lane) => ({
-        id: lane.barberId,
-        title: this.barberNameOf(lane.barberId),
-        // THE HEAD AT THREE WIDTHS (2026-09-23, §4): the first name where
-        // the whole one would truncate, the portrait alone below that; the
-        // whole name stays on the accessible label.
-        shortTitle: firstNameOf(this.barberNameOf(lane.barberId)),
-        initial: null,
-        fullTitle: this.barberNameOf(lane.barberId),
-        detail: null,
-        dayNumber: null,
-        // Barber columns all sit on the anchor day, so they are "today"
-        // together — which is what tells the grid whether to draw the
-        // now-line at all.
-        isToday: this.store.dayKey() === today,
-        avatarSrc:
+        ...chairColumnHead(
+          lane.barberId,
+          this.barberNameOf(lane.barberId),
+          // Barber columns all sit on the anchor day, so they are "today"
+          // together — which is what tells the grid whether to draw the
+          // now-line at all.
+          this.store.dayKey() === today,
           this.scopeOptions().find((option) => option.id === lane.barberId)
             ?.avatarSrc ?? null,
+        ),
         events:
           cell === undefined
             ? []
@@ -1978,23 +1348,11 @@ export class StaffDashboard {
     return cells
       .filter((cell) => visible.includes(cell.dayKey))
       .map((cell) => ({
-        id: cell.dayKey,
-        title: this.weekdayLabel(cell.dayKey),
-        // The short weekday beside the capsule while the column can carry a
-        // word; the weekday's INITIAL over it below that — the same narrow
-        // form the week strip writes, from the same formatter (§4). The
-        // long date is the accessible name at every width.
-        shortTitle: this.weekdayLabel(cell.dayKey),
-        initial: this.weekdayInitial(cell.dayKey),
-        fullTitle: this.formatTitled(cell.dayKey, {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-        }),
-        detail: null,
-        dayNumber: LocalDate.parts(cell.dayKey).day,
-        isToday: cell.dayKey === today,
-        avatarSrc: null,
+        ...dateColumnHead(
+          cell.dayKey,
+          cell.dayKey === today,
+          this.content.locale(),
+        ),
         events: cell.lanes
           .filter((lane) =>
             RosterSystem.worksDay(
@@ -2062,11 +1420,9 @@ export class StaffDashboard {
    * true across the changeover (`formatZoneName`, the shared cached face; the
    * `en-GB` abbreviation whatever the reader's language).
    */
-  protected readonly zoneLabel = computed(() => {
-    const zone = this.store.zone();
-    if (zone === null) return '';
-    return formatZoneName(this.nowUtcMs(), zone, 'en-GB');
-  });
+  protected readonly zoneLabel = computed(() =>
+    zoneLabelOf(this.nowUtcMs(), this.store.zone()),
+  );
 
   /** The zone the device's clock is set to, as the platform resolves it. */
   protected readonly deviceZone = signal(
@@ -2096,6 +1452,7 @@ export class StaffDashboard {
   protected readonly allDay = computed<Record<string, readonly AllDayEntry[]>>(
     () => {
       const out: Record<string, AllDayEntry[]> = {};
+      const words = this.dayWords();
 
       // In the day view a column IS a barber, so the chip names the fact rather
       // than the person — the column head above it is already the name. The
@@ -2105,21 +1462,16 @@ export class StaffDashboard {
         const cell = this.store
           .dayCells()
           .find((entry) => entry.dayKey === this.store.dayKey());
-        const off = this.transloco.translate('staff.day.offBadge');
         for (const lane of cell?.lanes ?? []) {
           // A FAILED lane is not off (OR-2): its health row says so.
           if (RosterSystem.offAllDay(lane)) {
             out[lane.barberId] = [
-              {
-                key: lane.barberId,
-                label: off,
-                shortLabel: off,
-                initial: firstNameOf(this.barberNameOf(lane.barberId)).charAt(
-                  0,
-                ),
-                tone: this.toneOf(lane.barberId),
-                accessibleName: off,
-              },
+              offChairEntry(
+                lane.barberId,
+                this.barberNameOf(lane.barberId),
+                this.toneOf(lane.barberId),
+                words,
+              ),
             ];
           }
         }
@@ -2134,22 +1486,14 @@ export class StaffDashboard {
       for (const cell of this.store.dayCells()) {
         const off = cell.lanes
           .filter((lane) => RosterSystem.offAllDay(lane))
-          .map((lane) => {
-            const name = this.barberNameOf(lane.barberId);
-            const first = firstNameOf(name);
-            return {
-              key: lane.barberId,
-              label: this.transloco.translate('staff.day.offChip', {
-                name: first,
-              }),
-              shortLabel: first,
-              initial: first.charAt(0),
-              tone: this.toneOf(lane.barberId),
-              accessibleName: this.transloco.translate('staff.day.offChip', {
-                name,
-              }),
-            };
-          });
+          .map((lane) =>
+            offDateEntry(
+              lane.barberId,
+              this.barberNameOf(lane.barberId),
+              this.toneOf(lane.barberId),
+              words,
+            ),
+          );
         if (off.length === 0) continue;
         if (off.length <= ALL_DAY_CHIP_CAP) {
           out[cell.dayKey] = off;
@@ -2158,19 +1502,9 @@ export class StaffDashboard {
         // Three named, then «+N» for the rest — never fewer names as more
         // chairs are off (an off-by-one found in review, 2026-09-23).
         const rest = off.length - ALL_DAY_CHIP_CAP;
-        const more = this.transloco.translate('staff.day.allDayMore', {
-          count: rest,
-        });
         out[cell.dayKey] = [
           ...off.slice(0, ALL_DAY_CHIP_CAP),
-          {
-            key: ALL_DAY_MORE_KEY,
-            label: `+${rest}`,
-            shortLabel: `+${rest}`,
-            initial: `+${rest}`,
-            tone: null,
-            accessibleName: more,
-          },
+          allDayMoreEntry(rest, words),
         ];
       }
       return out;
@@ -2199,41 +1533,15 @@ export class StaffDashboard {
     shopNow: ShopNow | null,
     attribute: boolean,
   ): readonly GridEvent[] {
-    const nowUtcMs = this.nowUtcMs();
-    const visits = lane.appointments.flatMap((appointment) => {
-      const row = this.toRow(appointment, lane.barberId, nowUtcMs, shopNow);
-      return [
-        {
-          id: row.id,
-          gridEvent: GridEventTag.Visit,
-          // The seat's own wall clock, as stored (Law 7.3).
-          startMinute: row.startMinute,
-          endMinute: row.endMinute,
-          title: row.clientLabel,
-          // A cancelled or missed hour says so on the line under the name —
-          // the block's clock is withheld on a narrow column, and the
-          // service matters less than that it did not happen (2026-09-24).
-          detail: this.stateLabel(row) ?? row.serviceLabel,
-          attribution: attribute ? this.barberNameOf(lane.barberId) : null,
-          // The stored tag; the grid prints its lowercase DOM word.
-          bookingStatus: row.bookingStatus,
-          terminal: row.terminal,
-          barberTone: this.toneOf(lane.barberId),
-          // The hour, not the outcome: whatever became of it, a 10:00 slot is
-          // behind us by noon. Same rule the search sheet sorts by — the
-          // row's own (`VisitStorySystem.hasEnded`, on the wall clock).
-          past: row.past,
-          accessibleName: this.blockName(row, lane.barberId),
-          // One vocabulary across the three surfaces (owner review
-          // 2026-09-08): the sheet's arrived glyph is the block's too, for as
-          // long as the visit is live.
-          statusIcon: VisitStorySystem.arrivedOpen(row, row.arrived)
-            ? 'visit.arrived'
-            : (STATUS_ICONS[row.bookingStatus] ?? null),
-          partyLabel: row.partyLabel,
-        },
-      ];
-    });
+    const words = this.dayWords();
+    const context = this.rowContext();
+    const visits = lane.appointments.map((appointment) =>
+      gridVisitEvent(
+        dayRowVm(appointment, lane.barberId, context),
+        attribute,
+        words,
+      ),
+    );
     // NO gap blocks on the grid.
     //
     // A proportional canvas already draws a hole as a hole — empty space IS
@@ -2256,54 +1564,20 @@ export class StaffDashboard {
     shopNow: ShopNow | null,
     attribute: boolean,
   ): readonly GridEvent[] {
-    const label = this.transloco.translate('staff.day.blockedLabel');
-    return lane.blocks.map((interval) => {
-      const from = this.nameClock(localDate, interval.startMinutes);
-      const to = this.nameClock(localDate, interval.endMinutes);
-      return {
-        // Stable across a re-render, and unique per lane and DAY: a
-        // barber's day holds at most one exception document, so the chair,
-        // the day and the start name this block uniquely without inventing
-        // an id the store cannot resolve back to anything — and the day
-        // keeps a block of another visible date from answering for the
-        // shown day's (`openBlock`, DEP-11).
-        id: `block:${lane.barberId}:${localDate}:${interval.startMinutes}`,
-        gridEvent: GridEventTag.Block,
-        // The store's own wall-clock minutes — a block that closes at
-        // midnight ends at 1440, anchored on its day.
-        startMinute: interval.startMinutes,
-        endMinute: interval.endMinutes,
-        title: label,
-        detail: null,
-        // A carve-out is the opposite of a booking; identity is not its
-        // business, and the rail stays neutral (the grid's own ruling).
-        barberTone: null,
-        attribution: attribute ? this.barberNameOf(lane.barberId) : null,
-        bookingStatus: null,
-        terminal: false,
-        past:
-          shopNow !== null &&
-          VisitStorySystem.hasEnded(
-            { localDate, minute: interval.endMinutes },
-            shopNow,
-          ),
-        // Says WHAT it is and WHEN — the channel the shading never had.
-        accessibleName: `${label}, ${from}–${to}`,
-        statusIcon: 'booking.blocked' as const,
-        // A carve-out is time, not a booking — there is no party to be part of.
-        partyLabel: null,
-      };
-    });
-  }
-
-  /**
-   * A wall-clock minute of a shop day as an accessible name reads it —
-   * «13:00» in `en-GB`, whatever the reader's locale (a fixed 24-hour face,
-   * not a language): a laptop left in UTC must not put a barber's lunch two
-   * hours out. The closing midnight reads «00:00».
-   */
-  private nameClock(localDate: LocalDate, minute: MinuteOfDay | EndMinute) {
-    return formatWallClock(localDate, minute, 'en-GB', CLOCK_FACE);
+    const words = this.dayWords();
+    return lane.blocks.map((interval) =>
+      gridBlockEvent(
+        interval,
+        {
+          barberId: lane.barberId,
+          barberName: this.barberNameOf(lane.barberId),
+          localDate,
+          shopNow,
+          attribute,
+        },
+        words,
+      ),
+    );
   }
 
   /**
@@ -2339,74 +1613,6 @@ export class StaffDashboard {
     () => this.store.shopNow()?.currentMinute ?? MIDNIGHT,
   );
 
-  /**
-   * The block's story in words — client, service, span, and the state.
-   *
-   * The visual block drops its service line when it is short and says its
-   * state only in form and a glyph; none of that reaches a screen reader, so
-   * the whole fact is composed here.
-   */
-  private blockName(row: DayRowVm, barberId: BarberId): string {
-    return [
-      row.clientLabel,
-      row.serviceLabel,
-      `${row.startLabel}–${row.endLabel}`,
-      this.barberNameOf(barberId),
-      this.transloco.translate(
-        `appointments.status.${bookingStatusWords[row.bookingStatus]}`,
-      ),
-      // The party share is drawn as a glyph and a ratio, and a short block
-      // drops it entirely — neither reaches a screen reader, and "this is one
-      // of two seats" is exactly the fact that changes what a move means.
-      ...(row.partySize > 1
-        ? [
-            this.transloco.translate('staff.day.partyOf', {
-              count: row.partySize,
-            }),
-          ]
-        : []),
-    ].join(', ');
-  }
-
-  /** The same sum, formatted («27,50 €»). */
-  private seatsPrice(seats: readonly Seat[]): string | null {
-    const sum = BillingSystem.subtotalOf(seats);
-    return sum.ok
-      ? formatCents(
-          sum.value.amountCents,
-          sum.value.currency,
-          this.transloco.getActiveLang(),
-        )
-      : null;
-  }
-
-  /**
-   * What this chair's seats were tipped, as a figure and in cents.
-   *
-   * `null` on both when NOT ONE seat carries a recording — which is not the
-   * same as a chair that was tipped nothing, and is why an unrecorded row
-   * offers `＋ Добави бакшиш` while a zero one states `0,00 €`.
-   */
-  private seatsTip(seats: readonly Seat[]): {
-    tipLabel: string | null;
-    tipCents: PriceCents | null;
-  } {
-    const first = seats[0];
-    // Mixed currencies within one chair is a data error, not a feature;
-    // the tips are read in the chair's own currency (`BillingSystem.tipsOf`).
-    const total =
-      first === undefined ? null : BillingSystem.tipsOf(seats, first.currency);
-    if (total === null) return { tipLabel: null, tipCents: null };
-    return {
-      tipLabel: formatCents(
-        total.amountCents,
-        total.currency,
-        this.transloco.getActiveLang(),
-      ),
-      tipCents: total.amountCents,
-    };
-  }
-
   private barberNameOf(barberId: BarberId): string {
     const barber = this.catalog
       .barbers()
@@ -2414,81 +1620,10 @@ export class StaffDashboard {
     return barber ? this.content.text(barber.name) : barberId;
   }
 
-  private weekdayLabel(dayKey: LocalDate): string {
-    return abbreviateWeekday(
-      this.formatTitled(dayKey, { weekday: 'long' }),
-      this.content.locale(),
-    );
-  }
-
-  /**
-   * The weekday's one-letter form — the week strip's own, from the same
-   * `Intl` narrow formatter, so a date column too narrow for a word writes
-   * its day the way the strip above it does (never a second formatter: the
-   * pickers may not differ in facts, 2026-09-04).
-   */
-  private weekdayInitial(dayKey: LocalDate): string {
-    const locale = this.content.locale();
-    return formatWallClock(dayKey, null, locale, { weekday: 'narrow' });
-  }
-
-  /**
-   * Format, with the MONTH capitalised.
-   *
-   * Bulgarian writes month names lowercase in prose ("7 август"), and `Intl`
-   * follows the language. A heading is not prose — the reference's `May` is
-   * title case, and "7 Август" reads as a label rather than a sentence
-   * fragment. Only the month part is touched, so the day number and any
-   * separators come back untouched, and English (already capitalised) is
-   * unchanged.
-   */
-  private formatTitled(
-    at: LocalDate,
-    options: Intl.DateTimeFormatOptions,
-  ): string {
-    const locale = this.content.locale();
-    return wallClockParts(at, null, locale, options)
-      .map((part) =>
-        part.type === 'month'
-          ? part.value.charAt(0).toLocaleUpperCase(locale) + part.value.slice(1)
-          : part.value,
-      )
-      .join('');
-  }
-
-  /**
-   * «ср, 9.09» for a day; «21 – 27.09» for a period — the pill's ONE
-   * numeric grammar for both (2026-09-23, the grid views' design record
-   * §9). The range used to be written in the long month («23 – 25
-   * Септември») for a headline segment that no longer exists, and in the
-   * pill it pushed the search and the chair picker off a 390px bar.
-   */
-  protected readonly periodLabel = computed(() => {
-    const days = this.store.visibleDays();
-    const first = days[0];
-    // NO DAYS YET — a cold load before the shop's zone is read, when there
-    // is no "today" to anchor a period on. The canvas binds its region
-    // label off this before `store.ready()`, so it names nothing rather
-    // than formatting a day that is not there (it threw on every load).
-    if (first === undefined) return '';
-    if (days.length <= 1) {
-      /*
-       * ⚠ THE WEEKDAY LEADS. (owner ruling 2026-09-04)
-       *
-       * This read `4 Септември` while the visit sheet's pill two taps away
-       * read `пт, 4.09` — the same date, and one of them never said which
-       * day of the week it was. The two pickers may differ in DENSITY, a
-       * page title against a field value, and Apple's own apps do exactly
-       * that; they must not differ in FACTS. In a barbershop a Saturday is
-       * not a Tuesday, and the day a barber is standing in was the one
-       * thing this label left out.
-       */
-      // The pill's own grammar — one formatter for both pickers.
-      return formatDayPill(first, this.content.locale());
-    }
-    const last = days.at(-1) ?? first;
-    return formatDayPillRange(first, last, this.content.locale());
-  });
+  /** The pill's words for what is on screen (`periodLabelOf`). */
+  protected readonly periodLabel = computed(() =>
+    periodLabelOf(this.store.visibleDays(), this.content.locale()),
+  );
 
   /**
    * The scroller's accessible name — which period the region holds, so a
@@ -2496,9 +1631,7 @@ export class StaffDashboard {
    * knows what it has reached.
    */
   protected readonly regionLabel = computed(() =>
-    this.transloco.translate('staff.day.gridRegion', {
-      period: this.periodLabel(),
-    }),
+    this.chromeWords().gridRegion(this.periodLabel()),
   );
 
   /**
@@ -2530,8 +1663,8 @@ export class StaffDashboard {
     const vmById = new Map(
       this.catalog.barberVms().map((vm) => [vm.id, vm] as const),
     );
-    const nowUtcMs = this.nowUtcMs();
-    const shopNow = this.store.shopNow();
+    const context = this.rowContext();
+    const shopNow = context.shopNow;
     // The lanes are the shown day's (`workingLanes`).
     const localDate = this.store.dayKey();
 
@@ -2539,27 +1672,22 @@ export class StaffDashboard {
       const vm = vmById.get(lane.barberId);
 
       const visits = lane.appointments.map((appointment) =>
-        this.toRow(appointment, lane.barberId, nowUtcMs, shopNow),
+        dayRowVm(appointment, lane.barberId, context),
       );
       const barberName = vm ? this.content.text(vm.name) : lane.barberId;
-      const gaps: GapRowVm[] = lane.gaps.map((gap) => ({
-        agendaRow: AgendaRow.Gap,
-        // The BARBER in the id: two chairs free from 14:00 are two different
-        // holes, and a shared key would collapse them in the agenda's track.
-        // The START too, since one hole now splits into two at the clock.
-        id: `gap-${lane.barberId}-${gap.startMinutes}`,
-        startLabel:
-          localDate === null ? '' : this.wallTime(localDate, gap.startMinutes),
-        endLabel:
-          localDate === null ? '' : this.wallTime(localDate, gap.endMinutes),
-        minutes: gap.minutes,
-        startMinutes: gap.startMinutes,
-        past: !gap.sellable,
-        sellable: gap.sellable,
-        barberName,
-        barberAvatarSrc: vm?.avatarSrc ?? null,
-        barberTone: this.toneOf(lane.barberId),
-      }));
+      const gaps: GapRowVm[] = lane.gaps.map((gap) =>
+        gapRowVm(
+          gap,
+          {
+            barberId: lane.barberId,
+            barberName,
+            barberAvatarSrc: vm?.avatarSrc ?? null,
+            barberTone: this.toneOf(lane.barberId),
+          },
+          localDate,
+          context,
+        ),
+      );
 
       // One run in clock order, on the shop's wall clock (one shop day per
       // lane). A gap and a visit never share a start minute — a hole holds
@@ -2656,6 +1784,14 @@ export class StaffDashboard {
       });
 
     if (localDate === null) return [];
+    // What every card is worded from: the switches, the table, and the TICK —
+    // the relative time is true right now, or it is nothing.
+    const card: AgendaCardInput = {
+      flags: this.agendaFlags(),
+      words: this.dayWords(),
+      nowUtcMs: this.nowUtcMs(),
+      lang: this.transloco.getActiveLang(),
+    };
     const byStart = new Map<MinuteOfDay, RunEntryVm[]>();
     for (const item of items) {
       // Minute resolution — the wall clock's own grain: every entry begins
@@ -2670,7 +1806,11 @@ export class StaffDashboard {
       .sort(([a], [b]) => a - b)
       .map(([startMinutes, group]) => ({
         key: String(startMinutes),
-        timeLabel: this.wallTime(localDate, startMinutes),
+        timeLabel: wallClockLabel(
+          localDate,
+          startMinutes,
+          this.content.locale(),
+        ),
         startMinutes,
         // The heading is past once the shop's clock has reached it — its
         // minute begun (`VisitListSystem.hasStarted`, DEP-4).
@@ -2683,15 +1823,21 @@ export class StaffDashboard {
         // Visits before gaps at the same minute — what is booked outranks
         // what is merely available, and a stable order stops cards jumping
         // as the store ticks.
-        items: [...group].sort((a, b) => {
-          if (a.agendaRow !== b.agendaRow) {
-            return a.agendaRow === AgendaRow.Visit ? -1 : 1;
-          }
-          return a.agendaRow === AgendaRow.Visit &&
-            b.agendaRow === AgendaRow.Visit
-            ? a.barberName.localeCompare(b.barberName)
-            : 0;
-        }),
+        items: [...group]
+          .sort((a, b) => {
+            if (a.agendaRow !== b.agendaRow) {
+              return a.agendaRow === AgendaRow.Visit ? -1 : 1;
+            }
+            return a.agendaRow === AgendaRow.Visit &&
+              b.agendaRow === AgendaRow.Visit
+              ? a.barberName.localeCompare(b.barberName)
+              : 0;
+          })
+          .map((entry): AgendaItemVm =>
+            entry.agendaRow === AgendaRow.Visit
+              ? { ...entry, card: agendaCardVm(entry, card) }
+              : entry,
+          ),
       }));
   });
 
@@ -2723,10 +1869,6 @@ export class StaffDashboard {
   // horizon. Anchoring to the selection instead would re-key every week on
   // every tap, and `@for` would rebuild the strip under the user's thumb.
 
-  /** How far the strip runs either side of this week. */
-  private static readonly WEEKS_BACK = 4;
-  private static readonly WEEKS_AHEAD = 8;
-
   /**
    * The strip's CELLS — thirteen weeks of them, and not one of them depends
    * on which day is SHOWN.
@@ -2744,36 +1886,9 @@ export class StaffDashboard {
    * turns over, and the two faces come from the shared, cached formatters
    * (`formatWallClock`) instead of two built per cell.
    */
-  private readonly weekCalendar = computed(() => {
-    const today = this.store.todayKey();
-    // No today before the shop's zone is known: no strip to build.
-    if (today === null) return [];
-    const locale = this.content.locale();
-    const first = LocalDate.addDays(
-      LocalDate.startOfWeek(today),
-      -StaffDashboard.WEEKS_BACK * 7,
-    );
-    const weeks = StaffDashboard.WEEKS_BACK + StaffDashboard.WEEKS_AHEAD + 1;
-
-    return Array.from({ length: weeks }, (_, w) => {
-      const weekStart = LocalDate.addDays(first, w * 7);
-      return {
-        key: weekStart,
-        days: Array.from({ length: 7 }, (_, d) => {
-          const key = LocalDate.addDays(weekStart, d);
-          return {
-            key,
-            // The weekday INITIAL, Apple's own strip: the column position
-            // already says which day it is, so the letter is a reminder and
-            // not a label.
-            initial: formatWallClock(key, null, locale, { weekday: 'narrow' }),
-            number: formatWallClock(key, null, locale, { day: 'numeric' }),
-            today: key === today,
-          };
-        }),
-      };
-    });
-  });
+  private readonly weekCalendar = computed(() =>
+    weekCalendarOf(this.store.todayKey(), this.content.locale()),
+  );
 
   /**
    * The strip, with the selection laid over it.
@@ -2848,6 +1963,12 @@ export class StaffDashboard {
   // ── Which facts each card carries ────────────────────────────────────
   protected readonly fields = inject(AgendaFields);
   protected readonly agendaFieldIds = AGENDA_FIELDS;
+  /** The switches as they stand, the struct a presenter takes. */
+  private agendaFlags(): AgendaFlags {
+    return Object.fromEntries(
+      AGENDA_FIELDS.map((id) => [id, this.fields.isOn(id)]),
+    ) as AgendaFlags;
+  }
   protected readonly fieldsOpen = signal(false);
 
   protected openFields(): void {
@@ -2888,9 +2009,7 @@ export class StaffDashboard {
     }
     const freeMinutes = GridLayoutSystem.totalMinutes(gaps);
     if (freeMinutes === 0) return null;
-    return this.transloco.translate('staff.day.daySummaryFree', {
-      span: this.span(freeMinutes),
-    });
+    return daySummaryWords(freeMinutes, this.dayWords());
   });
 
   /**
@@ -2917,21 +2036,9 @@ export class StaffDashboard {
     const total = BillingSystem.recordedTipsTotal(seats);
     return total === null
       ? null
-      : this.transloco.translate('staff.day.daySummaryTips', {
-          amount: formatCents(
-            total.amountCents,
-            total.currency,
-            this.transloco.getActiveLang(),
-          ),
-        });
+      : dayTipsWords(total, this.transloco.getActiveLang(), this.dayWords());
   });
 
-  /**
-   * "in 20 minutes" / "tomorrow", for the relative-time field.
-   *
-   * Reads `nowUtcMs` so it re-renders with the store's clock rather than going
-   * stale — the whole value of this field is that it is true right now.
-   */
   /**
    * Barbers with neither a window nor a booking — an ALL-DAY EVENT each.
    *
@@ -2946,22 +2053,14 @@ export class StaffDashboard {
    * own all-day event and wears its own chair's tone — which is also the
    * third place that colour gets explained.
    */
-  protected readonly resting = computed(() => {
-    const vmById = new Map(
-      this.catalog.barberVms().map((vm) => [vm.id, vm] as const),
-    );
-    return this.store
-      .offToday()
-      .map((id) => {
-        const vm = vmById.get(id);
-        return {
-          id,
-          name: vm ? this.content.text(vm.name) : id,
-          tone: this.toneOf(id),
-        };
-      })
-      .filter((barber) => barber.name.length > 0);
-  });
+  protected readonly resting = computed(() =>
+    restingChairs(
+      this.store.offToday(),
+      this.catalog.barberVms(),
+      this.catalogNames,
+      (id) => this.toneOf(id),
+    ),
+  );
 
   /**
    * THE DAY'S HEALTH (OR-2) — one all-day row per chair whose day the sheet
@@ -3006,271 +2105,42 @@ export class StaffDashboard {
     return 'calc(var(--control-size-regular) + var(--sys-space-compact))';
   });
 
-  /**
-   * WHEN this visit is, said relatively — the third line of the interval.
-   *
-   * A live cut counts down to its END: the barber is standing in it and wants
-   * the time left, not the time since. Everything else counts to its start,
-   * which `Intl` renders as "утре", "след 2 ч", "преди 20 мин". `short`,
-   * because this shares a narrow column with the clock times above it.
-   */
-  /**
-   * The lines under the client's name, in the card's fixed order — the
-   * email, the phone, the service — each only when its switch is on and it
-   * has something to say. A line that is not rendered costs no height.
-   */
-  protected factLines(entry: DayRowVm): readonly StaffEventLine[] {
-    const lines: StaffEventLine[] = [];
-    if (this.fields.isOn(AgendaField.Email) && entry.email) {
-      lines.push({
-        text: entry.email,
-        icon: 'contact.email',
-        testId: 'staff-visit-email',
-      });
-    }
-    if (this.fields.isOn(AgendaField.Phone) && entry.phone) {
-      lines.push({
-        text: entry.phone,
-        icon: 'contact.phone',
-        testId: 'staff-visit-phone',
-      });
-    }
-    if (this.fields.isOn(AgendaField.Service))
-      lines.push({ text: entry.serviceLabel });
-    return lines;
-  }
-
-  /** The end, marked when it falls on the next day. */
-  protected endLabel(entry: DayRowVm): string {
-    return entry.crossesMidnight ? `${entry.endLabel}⁺¹` : entry.endLabel;
-  }
-
-  /**
-   * AN HOUR THAT DID NOT HAPPEN, SAID IN ONE WORD (owner, 2026-09-24: "so
-   * it's instantly recognised") — «Отказан», «Не дойде». The card puts it
-   * where the countdown stood (a countdown to a visit that will not happen
-   * was the card's loudest lie), the grid's block on its second line;
-   * `null` for every live or finished visit. ONE word, not «Отказан от
-   * салона»: at a phone's width the phrase widened the clock's column and
-   * broke the service line under the name in two — and whose act it was
-   * is the sheet's head, one tap away.
-   */
-  protected stateLabel(entry: DayRowVm): string | null {
-    if (entry.bookingStatus === BookingStatus.NoShow) {
-      return this.transloco.translate('staff.visit.resolution.noShow');
-    }
-    if (entry.bookingStatus === BookingStatus.Cancelled) {
-      return this.transloco.translate(
-        `appointments.status.${bookingStatusWords[BookingStatus.Cancelled]}`,
-      );
-    }
-    return null;
-  }
-
-  /**
-   * THE STATE ON THE FACE (owner, 2026-09-24: "so it's instantly
-   * recognised") — the glyph of an hour that did not happen, as a badge on
-   * the client's disc, at the leading edge where a glance starts. The same
-   * two glyphs the grid's block and the sheet use; `null` for everything
-   * live or finished.
-   */
-  protected stateIcon(entry: DayRowVm): UiIconName | null {
-    if (entry.bookingStatus === BookingStatus.Cancelled) {
-      return 'visit.cancelled';
-    }
-    if (entry.bookingStatus === BookingStatus.NoShow) return 'visit.noShow';
-    return null;
-  }
-
+  /** A row's relative time now (`whenWords`), on the page's clock and table. */
   protected whenLabel(entry: DayRowVm): string {
-    const lang = this.transloco.getActiveLang();
-    const moment = VisitStorySystem.chairMoment(
+    return whenWords(
       entry,
-      entry.arrived,
-      entry.live,
+      this.nowUtcMs(),
+      this.transloco.getActiveLang(),
+      this.dayWords(),
     );
-    if (moment === ChairMoment.InChair) {
-      // The time LEFT is real elapsed time to the chair's end — an
-      // elapsed-time phrase on instants (T2, D-6.4).
-      const minutes = Math.max(
-        0,
-        Math.round(
-          UtcEpochMs.elapsedMs(this.nowUtcMs(), entry.endUtcMs) / 60_000,
-        ),
-      );
-      return this.transloco.translate('staff.day.agendaRemaining', {
-        span: this.span(minutes),
-      });
-    }
-    // THEY ARE HERE — and that displaces the countdown rather than adding a
-    // line to the card. The gloss answers "when, relative to now"; once
-    // someone is in the shop, "in 20 min" is not merely less useful than
-    // "arrived", it is WRONG, because the thing it counts down to has
-    // already happened. This is also where the word went when the state
-    // stopped being a fact row: every other state is carried by the card's
-    // form, but arrival is the one that is about RIGHT NOW, and form is
-    // already spoken for by `data-live` and `data-next`.
-    if (moment === ChairMoment.Arrived) {
-      return this.transloco.translate('staff.day.statusArrived');
-    }
-    return relativeTime(entry.startUtcMs, this.nowUtcMs(), lang, 'short');
   }
 
-  /** "45 мин" / "1 ч" / "6 ч 30 мин" — never a bare minute count. */
-  protected span(totalMinutes: number): string {
-    const minutes = Math.max(0, Math.round(totalMinutes));
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    if (hours === 0) {
-      return this.transloco.translate('staff.day.spanMinutes', { minutes });
-    }
-    if (rest === 0) {
-      return this.transloco.translate('staff.day.spanHours', { hours });
-    }
-    return this.transloco.translate('staff.day.spanHoursMinutes', {
-      hours,
-      minutes: rest,
-    });
-  }
-
-  /**
-   * The exception word, and it is NOT a field.
-   *
-   * It prints only for states that went other than to plan: confirmed and
-   * completed say nothing, because "this booking is a booking" is not news on
-   * nine cards in ten.
-   */
+  /** The exception word of a status (`exceptionWord`). */
   protected statusWord(status: BookingStatus): string | null {
-    if (
-      status === BookingStatus.Confirmed ||
-      status === BookingStatus.Completed
-    )
-      return null;
-    return this.transloco.translate(
-      'staff.day.exception.' + bookingStatusWords[status],
-    );
+    return exceptionWord(status, this.dayWords());
   }
 
   /** The DOM's lowercase word for a status (`data-status`) — the shared table. */
   protected readonly statusWords = bookingStatusWords;
 
-  /**
-   * WHAT BECAME OF IT — a word, and only when there is something to say.
-   *
-   * This was a capsule, then a glyph, and the glyph was the problem: it fired
-   * on EVERY card, because every booking has a status. A mark on 100% of rows
-   * is not a signal, it is texture — and it made the foot row read as heavy
-   * on the nine cards in ten where the answer is "confirmed, like all the
-   * others".
-   *
-   * So it is a word again, printing for the four states that are worth
-   * interrupting a glance for and staying silent for the two that are not.
-   * `confirmed` and `completed` say nothing at all; a cancelled row is
-   * additionally struck through, and a past one is already striped and faded.
-   */
-  /**
-   * THE ROW'S ACCESSIBLE NAME — and the only place the state is still said.
-   *
-   * The state left the fact column because it read as one more field there,
-   * and it is carried by the card's FORM now: hollow for a cancellation or a
-   * no-show, dashed for pending, struck through for a cancellation
-   * specifically. Not one of those reaches a screen reader —
-   * `text-decoration` is not announced and a missing background certainly is
-   * not — so a cancelled booking would have been indistinguishable from a
-   * live one.
-   *
-   * It rides the name rather than a visually-hidden node in the column: the
-   * row already has an explicit `aria-label`, and a second hidden line in a
-   * list whose every child is a fact was exactly the arrangement the sighted
-   * card just got rid of.
-   */
+  /** The row's accessible name (`rowName`). */
   protected rowLabel(entry: DayRowVm): string {
-    const base = this.transloco.translate('staff.day.rowMenu', {
-      client: entry.clientLabel,
-      time: entry.startLabel,
-    });
-    const note = this.statusNote(entry);
-    return note === null ? base : `${base}, ${note}`;
+    return rowName(entry, this.dayWords());
   }
 
+  /** What the row's name says of its state (`rowStateNote`). */
   protected statusNote(entry: DayRowVm): string | null {
-    // Arrival is NOT here any more. It is visible text in the trailing
-    // gloss (`whenLabel`), so repeating it here would announce it twice to
-    // a screen reader. What is left is exactly the set of states the card
-    // says with its FORM — hollow, hollow-and-struck, dashed — none of
-    // which a screen reader can perceive.
-    return this.statusWord(entry.bookingStatus);
+    return rowStateNote(entry, this.dayWords());
   }
 
-  /**
-   * The marks that ride the body row's trailing edge.
-   *
-   * TWO THINGS ONLY, and the rule is the owner's: an icon earns its place for
-   * a note, for a repeat, and for a blocker. Nothing else.
-   *
-   * Status is NOT among them any more. It was a glyph on every card, which
-   * made the foot row texture rather than signal; it is a word now, and only
-   * for the states worth interrupting a glance for — see `statusNote`.
-   *
-   * Both survivors are facts the model actually holds: a note is
-   * `contact.note`, a repeat is `Appointment.bookedFrom` (persisted and
-   * round-tripped). There is no blocker glyph HERE because a block is not a
-   * visit — it is its own object, and `staff-time-grid` draws it on the axis
-   * where it has an extent. And no paid glyph, because payment is not
-   * modelled anywhere in this codebase; an icon that can never appear is a
-   * claim about the schema, not a feature.
-   */
+  /** The marks on a row's foot (`rowMarks`), under the switches as they stand. */
   protected rowIcons(entry: DayRowVm): readonly UiIconName[] {
-    const icons: UiIconName[] = [];
-    // THE TWO STATES THAT ARE NOT ORDINARY, and they lead — a row that did
-    // not happen is the first thing to know about it.
-    //
-    // A status glyph was removed from this foot once, and correctly: it fired
-    // on EVERY card, because every booking has a status, and a mark on 100%
-    // of rows is texture rather than signal. These two are the opposite case.
-    // They fire on the small minority of rows where something went wrong, and
-    // they are the second channel for a state the card otherwise says only in
-    // FORM — hollow, and struck through for a cancellation. Form reads across
-    // the room; a glyph names which of the two it is without a word.
-    //
-    // …and since 2026-09-24 they ride the client's FACE (`stateIcon`), where
-    // scanning starts: the foot keeps them only when faces are switched off.
-    const state = this.stateIcon(entry);
-    if (state !== null && !this.fields.isOn(AgendaField.Avatar))
-      icons.push(state);
-    if (entry.rebooked) icons.push('visit.repeat');
-    // The note is a MARK, not a row. Its text was a clamped line in the fact
-    // column — the one fact there that could not be read in full, sitting in
-    // a column whose whole premise is that everything gets its place. A mark
-    // says "there is one" honestly; the sheet says what it is.
-    if (this.fields.isOn(AgendaField.Note) && entry.hasNote)
-      icons.push('visit.note');
-    return icons;
+    return rowMarks(entry, this.agendaFlags());
   }
 
-  /**
-   * Is there anything for the foot to hold?
-   *
-   * With price, marks and the barber's face all switched off the row still
-   * rendered — an empty flex box of zero height, which sounds free and is
-   * not: the card's `row-gap` sits on BOTH sides of it, so every card carried
-   * 8px of dead space (measured) for a row with nothing in it.
-   *
-   * The three conditions are the same three the template asks, and they have
-   * to stay that way — `hasFootMatchesTheFoot` in the suite is what holds
-   * them together.
-   */
+  /** Is there anything for a row's foot to hold (`footShown`)? */
   protected hasFoot(entry: DayRowVm): boolean {
-    return (
-      (this.fields.isOn(AgendaField.Price) && !!entry.priceLabel) ||
-      // The frame's tag is a mark, never a field: it shows whenever it is.
-      entry.tag !== null ||
-      // ⚠ The party share joined the foot (owner ruling 2026-09-04); a card
-      // whose only mark is `1 / 2` must still get a row to put it on.
-      (this.fields.isOn(AgendaField.Party) && !!entry.partyLabel) ||
-      this.rowIcons(entry).length > 0 ||
-      this.fields.isOn(AgendaField.BarberAvatar)
-    );
+    return footShown(entry, this.agendaFlags());
   }
 
   protected onVisitRowClick(event: Event, row: DayRowVm): void {
@@ -3284,451 +2154,20 @@ export class StaffDashboard {
     this.openVisitSheet(row);
   }
 
+  /** A seat's catalogue minutes for a chair (`chairMinutesOf`), on the live catalogue. */
+  protected chairMinutesOf(
+    seat: Seat,
+    barberId: BarberId,
+  ): DurationMinutes | null {
+    return chairMinutesOf(seat, barberId, this.catalogNames);
+  }
+
   /** The barber's headshot, or nothing if HR never uploaded one. */
   private barberAvatarOf(barberId: BarberId): string | null {
     return (
       this.catalog.barberVms().find((vm) => vm.id === barberId)?.avatarSrc ??
       null
     );
-  }
-
-  /** An instant's wall clock, in SHOP time — never the reader's device zone. */
-  private time(atUtcMs: UtcEpochMs): string {
-    return this.instantLabel(atUtcMs, CLOCK_FACE);
-  }
-
-  /** A stored wall-clock reading — the visit's own day and minute — as the page's clock. */
-  private wallTime(localDate: LocalDate, minute: MinuteOfDay | EndMinute) {
-    return formatWallClock(
-      localDate,
-      minute,
-      this.content.locale(),
-      CLOCK_FACE,
-    );
-  }
-
-  /**
-   * When a stamp landed, in shop time: the clock alone on the visit's own
-   * day, the day before it otherwise — in the day pill's short form, so a
-   * cancellation the evening before reads `24.08, 18:40`.
-   */
-  private stampLabel(atUtcMs: UtcEpochMs, visitLocalDate: LocalDate): string {
-    if (this.stampWall(atUtcMs)?.localDate === visitLocalDate) {
-      return this.time(atUtcMs);
-    }
-    return this.instantLabel(atUtcMs, {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  }
-
-  /**
-   * WHAT SETTLED THIS CHAIR, for the sheet's head (owner, 2026-09-11: "the
-   * cancellation reason or no-show is not showing in the event detail
-   * sheets").
-   *
-   * From the chair's OWN seats, the same way its status is
-   * (`VisitStorySystem.chairResolution`, DEP-1): the stamp that closed the
-   * last of them is the moment; a cancellation's side is the one the card's
-   * rows and the statistics read — the seat called off last, by its reason
-   * first; and the reasons are the DISTINCT ones — a father and son called
-   * off together for one reason read as one line, not two. A reason nobody
-   * gave adds nothing rather than "no reason", and «Друго» is the barber's
-   * own words. `null` on a live chair and on a finished one. The clock and
-   * the reason words are this page's.
-   */
-  private resolutionOf(
-    seats: readonly Seat[],
-    status: BookingStatus,
-    visitLocalDate: LocalDate,
-  ): VisitEditorResolution | null {
-    const resolution = VisitStorySystem.chairResolution(status, seats);
-    if (resolution === null) return null;
-    const details = new Set<string>();
-    for (const reason of resolution.reasons) {
-      details.add(
-        this.transloco.translate(
-          'staff.day.cancelReasonCode.' + cancellationReasonWords[reason],
-        ),
-      );
-    }
-    return {
-      // What settled the chair — the stored tag the system narrowed.
-      bookingStatus: resolution.bookingStatus,
-      by: resolution.cancelledBy,
-      whenLabel: this.stampLabel(resolution.atUtcMs, visitLocalDate),
-      detail: details.size > 0 ? [...details].join(' · ') : null,
-    };
-  }
-
-  /**
-   * One lane's view of one appointment.
-   *
-   * Only THIS chair's seats: a two-barber party appears in both lanes, each
-   * lane naming its own work.
-   */
-  /**
-   * The chair's catalogue minutes for a seat's service and variant, or
-   * nothing when the catalogue no longer knows the service — the seat's own
-   * booked terms then stand in, exactly as they do on the sheet.
-   */
-  private chairMinutesOf(
-    seat: Seat,
-    barberId: BarberId,
-  ): DurationMinutes | null {
-    const service = this.catalog.findService(seat.serviceId);
-    if (service === undefined) return null;
-    // The server's resolution (`OfferingPriceSystem.termsFor`): a chair
-    // that does not perform the service is measured against the service's
-    // own minutes — never against another chair's offering.
-    return OfferingPriceSystem.termsFor(service, barberId, seat.variantId)
-      .durationMinutes;
-  }
-
-  /**
-   * The frame's tag, on the row: the run's distance from the catalogue.
-   *
-   * The pattern («{{minutes}} мин») is read FIRST, off the loaded table,
-   * and filled here — the way the editors word their drag readouts — so
-   * every row depends on the table: built before `bg.json` has landed, the
-   * tag is withheld rather than printed as its key, and the row is rebuilt
-   * the moment the words are there (review r4, 2026-10-06).
-   */
-  private catalogTag(
-    seats: readonly Seat[],
-    barberId: BarberId,
-    startMinute: MinuteOfDay,
-    endMinute: EndMinute,
-  ): string | null {
-    const pattern = this.copyOf('staff.visit.minutes');
-    if (pattern === null) return null;
-    // The chair's run on the shop's wall clock (DEP-8). A visit lasts a
-    // positive whole number of minutes by construction, so a span that is
-    // not one is a broken invariant, never an input.
-    const span = DurationMinutes.of(MinuteCount.span(startMinute, endMinute));
-    if (!span.ok) {
-      return defect(`not a visit's span: ${startMinute}–${endMinute}`);
-    }
-    // A seat the catalogue no longer knows stands at its booked length.
-    const sold = VisitDraftSystem.catalogMinutesOf(
-      seats.map((seat) => ({
-        catalogMinutes: this.chairMinutesOf(seat, barberId),
-        bookedMinutes: seat.durationMinutes,
-      })),
-    );
-    return catalogTagWords(
-      VisitDraftSystem.minutesDelta(span.value, sold),
-      (minutes) => fill(pattern, { minutes }),
-    );
-  }
-
-  private toRow(
-    appointment: Appointment,
-    barberId: BarberId,
-    nowUtcMs: UtcEpochMs,
-    shopNow: ShopNow | null,
-  ): DayRowVm {
-    const seats = Seat.ofChair(appointment.seats, barberId);
-    const first = seats[0];
-    // The chair's own span on the visit's shop day (Law 7.3).
-    const { startMinutes: startMinute, endMinutes: endMinute } = Seat.chairSpan(
-      seats,
-      appointment,
-    );
-    // HAS IT BEGUN, HAS IT ENDED — on the shop's wall clock, against the
-    // store's `ShopNow` (Law 7.3 T1, pass D D-6): the visit's day and the
-    // chair's minutes, never an instant. Neither before a zone is known.
-    const start = WallTime.of(appointment.localDate, startMinute);
-    const ended =
-      shopNow !== null &&
-      VisitStorySystem.hasEnded(
-        { localDate: appointment.localDate, minute: endMinute },
-        shopNow,
-      );
-
-    const serviceLabel = seats
-      .map((seat) => {
-        const service = this.catalog.findService(seat.serviceId);
-        return service ? this.content.text(service.name) : seat.serviceId;
-      })
-      .join(' + ');
-
-    /*
-     * WHO IS IN THIS CHAIR — not who made the booking. (owner ruling
-     * 2026-09-03)
-     *
-     * The contact used to win outright, which named the booker in every lane
-     * of a party: a father booked for himself with Ivan and his son with
-     * Stefan, and Stefan's row said "Стоян Колев" — the son was invisible in
-     * the whole staff app, and the two rows were indistinguishable.
-     *
-     * A row is one chair's share, so it is named by the people sitting in it.
-     * When every seat here is a guest, their labels are the name; the contact
-     * is still the number to ring, which is the only job it had. A chair
-     * holding the account holder — alone or beside a guest — keeps the
-     * contact's name, because that IS the person in it.
-     */
-    const contactName = appointment.contactName;
-    const contactPhone = appointment.contactPhone;
-    const phoneLabel =
-      contactPhone === null
-        ? null
-        : PhoneSystem.formatInternational(contactPhone);
-    const guestLabels = guestLabelsOf(seats);
-    const allGuests = seats.length > 0 && guestLabels.length === seats.length;
-    const clientLabel: string =
-      (allGuests ? guestLabels.join(' + ') : contactName) ??
-      guestLabels[0] ??
-      this.transloco.translate('staff.day.unnamedClient');
-
-    /*
-     * THE PEOPLE, from the seats themselves. `clientLabel` above is one
-     * string for the row; the sheet needs each person as their own key so a
-     * party keeps its grammar when reopened (owner ruling 2026-09-08). The
-     * booker's own seat carries the contact; a guest carries only their
-     * label, which is all the shop holds about them.
-     *
-     * A COMPANION ACCOUNT IS NOT THE BOOKER (client-card-redesign §3.1.4,
-     * the P0 audit's defect): the contact is the booker's, so a son booked
-     * by his father never wears the father's name or number. He is named
-     * by his own profile once it is read (`companionNames`), and his card
-     * reads `users/{uid}` itself; his number is his profile's, never the
-     * booking's.
-     */
-    const companionNames = this.companionNames();
-    // Each person by the sheet's draft key (`DraftPersonKey`): a guest by
-    // `guest-<label>`, an account by its uid — no address is known for any
-    // of them here (`email: null`, what the client search reads as none).
-    // A walk-in (OR-26) is a guest by label here too: the seat holds only
-    // its label and its record's id, and the contact is the record's. The
-    // record's id rides as its own field (S-RU-15) — what opens the
-    // walk-in's card keyed by the record (S-WS-F); an anonymous seat has
-    // none.
-    const personOf = (seat: Seat): VisitEditorClientOption => {
-      switch (seat.seatSubject) {
-        case SeatSubject.Anonymous:
-        case SeatSubject.WalkIn:
-          return {
-            id: DraftPersonKey.guest(seat.guestLabel),
-            label: seat.guestLabel,
-            phone: null,
-            phoneHref: null,
-            meta: null,
-            email: null,
-            customerId:
-              seat.seatSubject === SeatSubject.WalkIn
-                ? seat.subjectCustomerId
-                : null,
-          };
-        case SeatSubject.Account:
-          return Seat.wearsBookingContact(seat)
-            ? {
-                id: DraftPersonKey.account(seat.subjectUserId),
-                label:
-                  contactName ??
-                  this.transloco.translate('staff.day.unnamedClient'),
-                phone: phoneLabel,
-                phoneHref: contactPhone,
-                meta: null,
-                email: null,
-              }
-            : {
-                id: DraftPersonKey.account(seat.subjectUserId),
-                label:
-                  companionNames[seat.subjectUserId] ??
-                  this.transloco.translate('staff.day.unnamedClient'),
-                phone: null,
-                phoneHref: null,
-                meta: null,
-                email: null,
-              };
-      }
-    };
-    // One entry per PERSON, the first of their seats — the people key of
-    // the server's party check (`VisitStorySystem.personKeyOf`).
-    const peopleSeen = new Set<PersonKey>();
-    const people: VisitEditorClientOption[] = [];
-    for (const seat of seats) {
-      const key = VisitStorySystem.personKeyOf(seat);
-      if (peopleSeen.has(key)) continue;
-      peopleSeen.add(key);
-      people.push(personOf(seat));
-    }
-
-    /*
-     * THIS CHAIR'S status, not the party's (found live, 2026-09-11).
-     *
-     * A party across two chairs is one appointment whose ROOT stays
-     * `CONFIRMED` while any seat is still scheduled — so a guest cancelled
-     * out of it kept reading as a live visit on his own chair, the sheet
-     * offered «Откажи часа» a second time, and the server refused it as
-     * already resolved with nothing the sheet could say but "something went
-     * wrong". Once every seat on this chair is resolved, the chair's own
-     * outcome is the row's status: the domain's fold (`SeatOutcome.summarize`
-     * — cancelled if all cancelled, completed if any worked, else no-show),
-     * applied to this chair's seats. A chair with a seat still open keeps
-     * the root's word, as before; a one-chair visit is unchanged, because
-     * the root was folded from the same seats when it was written.
-     */
-    const chairLifecycle = SeatOutcome.summarize(seats, appointment, nowUtcMs);
-    const status = chairLifecycle.bookingStatus;
-    // What the graph allows from the CHAIR, plus the same-day correction
-    // edge (owner ruling 2026-09-08) — the root settled the same way and the
-    // shop still in the visit's day (`offeredVerbs`, over `reopenable`).
-    const legal = AppointmentLifecycleSystem.offeredVerbs(
-      chairLifecycle,
-      appointment,
-      appointment.localDate,
-      this.store.shopNow()?.localDate ?? null,
-    );
-    const arrived = appointment.arrivedAtUtcMs !== null;
-    // Which verb leads, drawn from the legal set (`leadVerb`).
-    const primary = AppointmentLifecycleSystem.leadVerb(
-      chairLifecycle,
-      legal,
-      arrived,
-    );
-    const seatCount = appointment.seats.length;
-    /*
-     * "1 / 2" — this chair's share over the whole party.
-     *
-     * It was computed here and rendered NOWHERE, while the only party mark the
-     * agenda drew was a `+N` keyed on `seatsHere`, which counts one chair. A
-     * party split across two chairs has `seatsHere === 1` in both of them, so
-     * the one case that most needs saying so — two rows, same time, same
-     * booking, different barbers — was the exact case that showed nothing.
-     */
-    // «1/2», set tight (owner, 2026-09-16): a share, not a sum.
-    const partyLabel = seatCount > 1 ? `${seats.length}/${seatCount}` : null;
-    const note = appointment.contactNote?.trim() || null;
-    // What the chair's seats come to, in the seats' own currency — the
-    // shop's one for a chair holding none, or a mixed one (no figure then).
-    const subtotal = BillingSystem.subtotalOf(seats);
-
-    return {
-      agendaRow: AgendaRow.Visit,
-      id: rowKey(appointment.id, barberId),
-      appointmentId: appointment.id,
-      revision: appointment.revision,
-      locationId: appointment.locationId,
-      seatId: first?.seatId ?? null,
-      seatIds: seats.map((seat) => seat.seatId),
-      selfSeat: seats.some((seat) => Seat.isOwnAccount(seat)),
-      ownerUserId: appointment.ownerUserId,
-      ownerCustomerId: appointment.ownerCustomerId,
-      arrived,
-      arrivedAtUtcMs: appointment.arrivedAtUtcMs,
-      localDate: appointment.localDate,
-      startMinute,
-      endMinute,
-      // The chair's instants off the STORED start (`TimeCoordinate.instantAt`,
-      // D-6.5) — the countdown's and the live remaining's only.
-      startUtcMs: TimeCoordinate.instantAt(appointment, startMinute),
-      endUtcMs: TimeCoordinate.instantAt(appointment, endMinute),
-      partySize: seatCount,
-      seatsHere: seats.length,
-      // The stored wall clock, printed as stored (Law 7.3).
-      startLabel: this.wallTime(appointment.localDate, startMinute),
-      endLabel: this.wallTime(appointment.localDate, endMinute),
-      tag: this.catalogTag(seats, barberId, startMinute, endMinute),
-      priceLabel: this.seatsPrice(seats),
-      // In cents — what a tip preset is a share of. `subtotalOf` refuses
-      // two currencies: a party mixed-currency has no number at all rather
-      // than a wrong one.
-      priceCents: subtotal.ok ? subtotal.value.amountCents : null,
-      currency: subtotal.ok
-        ? subtotal.value.currency
-        : (first?.currency ?? Currency.EUR),
-      barberName: this.barberNameOf(barberId),
-      barberAvatarSrc: this.barberAvatarOf(barberId),
-      barberTone: this.toneOf(barberId),
-      past: ended,
-      live: VisitStorySystem.isInChair(
-        chairLifecycle,
-        start,
-        { localDate: appointment.localDate, minute: endMinute },
-        shopNow,
-      ),
-      // Set by the lane, which is the only scope that can know which visit is
-      // FIRST — a row cannot see its siblings.
-      isNext: false,
-      // One shop day per visit (F-6): a chair that runs to the closing
-      // midnight ends on the next day's first instant — mark it, never move it.
-      crossesMidnight: endMinute >= 24 * 60,
-      serviceLabel,
-      clientLabel,
-      phone: phoneLabel,
-      phoneHref: contactPhone,
-      email: appointment.contactEmail,
-      rebooked: appointment.bookedFromAppointmentId !== null,
-      // The note's EXISTENCE is a row signal; its prose belongs in the sheet.
-      hasNote: note !== null,
-      note,
-      partyLabel,
-      ...this.seatsTip(seats),
-      discounts: discountsOf(appointment),
-      vouchers: vouchersOf(appointment),
-      resolution: this.resolutionOf(seats, status, appointment.localDate),
-      people,
-      legs: seats.map((seat) => {
-        const service = this.catalog.findService(seat.serviceId);
-        const seatBarberId = seat.barberId;
-        return {
-          seatId: seat.seatId,
-          serviceId: seat.serviceId,
-          variantId: seat.variantId,
-          clientId: personOf(seat).id,
-          serviceLabel: service
-            ? this.content.text(service.name)
-            : seat.serviceId,
-          durationMinutes: seat.durationMinutes,
-          // The same resolver the card's tag reads, so the frame agrees.
-          catalogMinutes: this.chairMinutesOf(seat, seatBarberId),
-          // The seat's own price in its currency; the label is printed from
-          // it (D-10.3).
-          priceCents: seat.priceCents,
-          currency: seat.currency,
-          priceLabel: this.seatsPrice([seat]),
-          barberId: seatBarberId,
-          barberName: this.barberNameOf(seatBarberId),
-          barberTone: this.toneOf(seatBarberId),
-          // The catalogue's terms are kept only when the stored ones DIFFER
-          // (`Seat.termsOf`), so their presence is the override mark.
-          overridden: Seat.overridden(seat),
-        };
-      }),
-      bookingStatus: status,
-      rootBookingStatus: appointment.bookingStatus,
-      primary,
-      overflow: legal.filter((verb) => verb !== primary),
-      terminal: BookingLifecycle.isSettled(chairLifecycle),
-    };
-  }
-
-  /**
-   * The WORD for a verb. Reopening a no-show is not "confirm" — it is undoing
-   * a judgement, and it says so.
-   */
-  protected verbKey(status: BookingStatus, verb: RowVerb): string {
-    if (verb === BookingStatus.Confirmed && status === BookingStatus.NoShow) {
-      return 'staff.day.act.reopen';
-    }
-    if (
-      verb === BookingStatus.Confirmed &&
-      status === BookingStatus.Completed
-    ) {
-      return 'staff.day.act.reopenCompleted';
-    }
-    if (
-      verb === BookingStatus.Confirmed &&
-      status === BookingStatus.Cancelled
-    ) {
-      return 'staff.day.act.reinstate';
-    }
-    return 'staff.day.act.' + ROW_VERB_WORD[verb];
   }
 
   /**
@@ -3970,7 +2409,7 @@ export class StaffDashboard {
    * does. This does move — that is its entire job — and nothing here is ever
    * seeded or compared.
    *
-   * The probe's cell holds APPOINTMENTS, not agenda rows — `toRow` runs for
+   * The probe's cell holds APPOINTMENTS, not agenda rows — `dayRowVm` runs for
    * the day on screen and nothing builds rows for a day nobody is looking
    * at. The frame needs three fields per neighbour, so it takes them off the
    * documents rather than making the whole agenda run twice. What occupies
@@ -3997,10 +2436,12 @@ export class StaffDashboard {
     const neighbours =
       barberId === null
         ? []
-        : this.occupantNeighbours(
+        : occupantNeighbours(
             lane?.appointments ?? [],
             barberId,
             subject.appointmentId,
+            this.toneOf(barberId),
+            this.dayWords(),
           );
     const roster = IntervalSetSystem.hull(lane?.rostered ?? []);
     return {
@@ -4131,13 +2572,14 @@ export class StaffDashboard {
 
     // What occupies the chair: the visits beside this one whose ROOT is
     // live — the server's overlap rule (`BusySystem.chairOccupants`, DEP-2).
-    const neighbours = this.occupyingRows(
+    const neighbours = occupyingRows(
       lane,
       storeLane?.appointments ?? [],
       row.appointmentId,
     );
 
     const roster = IntervalSetSystem.hull(storeLane?.rostered ?? []);
+    const editorWords = visitEditorWords(row, this.dayWords());
 
     return {
       appointmentId: row.appointmentId,
@@ -4165,13 +2607,7 @@ export class StaffDashboard {
             entry.appointmentId === row.appointmentId &&
             entry.id !== row.id,
         )
-        .map((entry) => ({
-          rowId: entry.id,
-          clientLabel: entry.clientLabel,
-          chairName: entry.barberName,
-          chairTone: entry.barberTone,
-          timeLabel: `${entry.startLabel} – ${entry.endLabel}`,
-        })),
+        .map(peerRowOf),
       /*
        * ⚠ THE APPOINTMENT'S OWN DAY, never the drafted one.
        *
@@ -4188,7 +2624,7 @@ export class StaffDashboard {
        * SEPARATE input carrying only what is drawn and never seeded.
        */
       dayKey,
-      dayLabel: this.dayPillLabel(dayKey),
+      dayLabel: formatDayPill(dayKey, this.transloco.getActiveLang()),
       // The chair's own wall clock, as stored (Law 7.3).
       startMinute: row.startMinute,
       endMinute: row.endMinute,
@@ -4202,9 +2638,7 @@ export class StaffDashboard {
       // `rebooked` is the one durable fact the shop holds about a person here:
       // a client who came back. Anything richer needs a history read the sheet
       // does not have, so it says the true thing or nothing.
-      clientMeta: row.rebooked
-        ? this.transloco.translate('staff.visit.clientReturning')
-        : null,
+      clientMeta: editorWords.clientMeta,
       note: row.note,
       teamNote: this.store.teamNote(),
       photos: this.store
@@ -4221,9 +2655,7 @@ export class StaffDashboard {
       resolution: row.resolution,
       // The chair's stored tag; the sheet prints its word where it shows one.
       bookingStatus: row.bookingStatus,
-      statusLabel: this.transloco.translate(
-        'appointments.status.' + bookingStatusWords[row.bookingStatus],
-      ),
+      statusLabel: editorWords.statusLabel,
       // The arrival STAMP read onto the shop's wall clock (the opening
       // midnight while no zone is known, as it always read then).
       arrivedMinute:
@@ -4242,8 +2674,8 @@ export class StaffDashboard {
       // Regime A, carried through unchanged. `offeredVerbs` already decided
       // what is legal and `leadVerb` already decided what leads; the editor
       // renders that decision rather than re-taking it.
-      primaryVerb: row.primary ? this.toEditorVerb(row, row.primary) : null,
-      overflowVerbs: row.overflow.map((verb) => this.toEditorVerb(row, verb)),
+      primaryVerb: editorWords.primaryVerb,
+      overflowVerbs: editorWords.overflowVerbs,
       // Busy while the store holds the visit, or while a save of it is
       // under way here — a note or a tip alone never touches the store's
       // pending set, and «Запази» must turn its ring for those too.
@@ -4252,39 +2684,6 @@ export class StaffDashboard {
         this.savingVisitId() === row.appointmentId,
     };
   });
-
-  private toEditorVerb(row: DayRowVm, verb: RowVerb): VisitEditorVerb {
-    return {
-      // The verb itself — what the sheet emits back through `(acted)`.
-      rowVerb: verb,
-      label: this.transloco.translate(this.verbKey(row.bookingStatus, verb)),
-      // ONE red in the menu (owner review, 2026-09-08). Cancelling is the
-      // destructive act: it is terminal and it pages the waitlist. A no-show
-      // is a fact about the client, and the graph keeps a correction edge for
-      // it, so it reads as an ordinary verb rather than a second warning.
-      destructive: verb === BookingStatus.Cancelled,
-    };
-  }
-
-  /**
-   * `пт, 4.09` / `Fri, Sep 4` — the date as the pill wears it.
-   *
-   * ⚠ TWINNED WITH `StaffVisitEditor.dayLabelFor`, which formats the SAME
-   * pill after the barber steps a day while this one formats it on open.
-   * Two functions for one label is why shortening it in the editor alone
-   * left the sheet still rendering `пт, 4 септември` until this changed
-   * too. Both now call `formatDayPill`, so they cannot drift again.
-   */
-  private dayPillLabel(dayKey: LocalDate): string {
-    // The pill's own formatter — `weekday: 'short'`, `day: 'numeric'`,
-    // `month: 'short'` on UTC — which the editor's twin already calls, so
-    // the two can no longer drift. ⚠ `short`, reversing the `long` this
-    // carried (owner ruling 2026-09-04): numeric IS bg's abbreviated date
-    // (CLDR gives `dateStyle: 'medium'` as `4.09.2026 г.`, exactly as it
-    // gives `Sep 4, 2026` in en). UTC throughout: the key is a wall-clock
-    // date with no instant behind it.
-    return formatDayPill(dayKey, this.transloco.getActiveLang());
-  }
 
   protected openVisitSheet(row: DayRowVm): void {
     this.presentOnly();
@@ -4344,21 +2743,9 @@ export class StaffDashboard {
    * The alert's two answers (2026-09-23): the destructive one, and the
    * safe one — bold, last in the stack, and what Escape and the scrim mean.
    */
-  protected readonly discardActions = computed<readonly UiAlertAction[]>(() => [
-    {
-      id: DiscardAnswer.Discard,
-      label: this.rawCopy('staff.visit.discard'),
-      role: 'destructive',
-      testId: 'staff-discard-confirm',
-    },
-    {
-      id: DiscardAnswer.Keep,
-      label: this.rawCopy('staff.visit.keepEditing'),
-      role: 'cancel',
-      preferred: true,
-      testId: 'staff-discard-keep',
-    },
-  ]);
+  protected readonly discardActions = computed<readonly UiAlertAction[]>(() =>
+    discardActionsOf(this.chromeWords()),
+  );
 
   protected onDiscardPick(id: string): void {
     if (id === DiscardAnswer.Discard) this.confirmDiscard();
@@ -4366,15 +2753,9 @@ export class StaffDashboard {
   }
 
   /** The zone notice's one way out. */
-  protected readonly zoneActions = computed<readonly UiAlertAction[]>(() => [
-    {
-      id: 'close',
-      label: this.rawCopy('staff.day.cancelDismiss'),
-      role: 'cancel',
-      preferred: true,
-      testId: 'staff-zone-close',
-    },
-  ]);
+  protected readonly zoneActions = computed<readonly UiAlertAction[]>(() =>
+    zoneActionsOf(this.chromeWords()),
+  );
 
   protected closeVisitSheet(): void {
     const id = this.visitSheetId();
@@ -4861,8 +3242,6 @@ export class StaffDashboard {
     );
     if (bySeat !== undefined) return bySeat;
 
-    const nowUtcMs = this.nowUtcMs();
-    const shopNow = this.store.shopNow();
     for (const cell of this.store.dayCells()) {
       for (const lane of cell.lanes) {
         const appointment = lane.appointments.find(
@@ -4873,7 +3252,7 @@ export class StaffDashboard {
           (seat) => seat.seatId,
         );
         if (lane.barberId === barberId || holds(here)) {
-          return this.toRow(appointment, lane.barberId, nowUtcMs, shopNow);
+          return dayRowVm(appointment, lane.barberId, this.rowContext());
         }
       }
     }
@@ -5252,11 +3631,7 @@ export class StaffDashboard {
       .find((entry) => entry.barberId === create.barberId);
     const roster = IntervalSetSystem.hull(storeLane?.rostered ?? []);
     // What occupies the chair — the server's rule (DEP-2).
-    const neighbours = this.occupyingRows(
-      lane,
-      storeLane?.appointments ?? [],
-      null,
-    );
+    const neighbours = occupyingRows(lane, storeLane?.appointments ?? [], null);
     const chair = this.scopeOptions().find(
       (option) => option.id === create.barberId,
     );
@@ -5280,7 +3655,7 @@ export class StaffDashboard {
       timeZone: this.store.zoneAt()(locationId),
       peers: [],
       dayKey,
-      dayLabel: this.dayPillLabel(dayKey),
+      dayLabel: formatDayPill(dayKey, this.transloco.getActiveLang()),
       startMinute: create.startMinute,
       endMinute: TrackMinute.plus(
         create.startMinute,
@@ -5312,7 +3687,7 @@ export class StaffDashboard {
       resolution: null,
       // Not booked yet: no stored tag (the sheet's «new» visit).
       bookingStatus: null,
-      statusLabel: this.transloco.translate('staff.visit.newTitle'),
+      statusLabel: this.dayWords().newVisitTitle,
       arrivedMinute: null,
       chairId: create.barberId,
       chairName: chair?.name ?? this.barberNameOf(create.barberId),
@@ -5567,6 +3942,7 @@ export class StaffDashboard {
     // stored instant against the tick — stamp ordering, no zone needed).
     // Whose account each one is, once per person, is `recentAccounts`'
     // (the booker's, never a companion's — DEP-5).
+    const words = this.dayWords();
     const nowUtcMs = this.store.nowUtcMs();
     const shopNowAt = this.store.shopNowAt();
     const past = VisitListSystem.begunNewestFirst(
@@ -5577,25 +3953,13 @@ export class StaffDashboard {
     const recent: VisitEditorClientOption[] = ClientQuerySystem.recentAccounts(
       past,
       RECENT_CLIENTS_CAP,
-    ).map(({ userId, visit }) => {
-      const phone = visit.contactPhone;
-      return {
-        id: DraftPersonKey.account(userId),
-        label:
-          visit.contactName ??
-          this.transloco.translate('staff.day.unnamedClient'),
-        phone: phone === null ? null : PhoneSystem.formatInternational(phone),
-        phoneHref: phone,
-        meta: this.transloco.translate('staff.visit.lastVisit', {
-          // `3 авг` — the day a person was last here, as stored.
-          date: this.wallLabel(visit.localDate, null, {
-            day: 'numeric',
-            month: 'short',
-          }),
-        }),
-        email: visit.contactEmail,
-      };
-    });
+    ).map(({ userId, visit }) =>
+      recentClientOption(userId, visit, {
+        words,
+        zoneKnown: this.store.zone() !== null,
+        locale: this.content.locale(),
+      }),
+    );
     /*
      * THE BOOK (2026-09-18): every account in the loaded days, past and to
      * come — the omnibox ranks these on the keystroke, before the index
@@ -5604,22 +3968,14 @@ export class StaffDashboard {
      */
     const book: VisitEditorClientOption[] = ClientQuerySystem.bookAccounts(
       this.store.window(),
-    ).map(({ userId, visit, contactName }) => {
-      const phone = visit.contactPhone;
-      return {
-        id: DraftPersonKey.account(userId),
-        label: contactName,
-        phone: phone === null ? null : PhoneSystem.formatInternational(phone),
-        phoneHref: phone,
-        meta: null,
-        email: visit.contactEmail,
-      };
-    });
+    ).map(({ userId, visit, contactName }) =>
+      bookClientOption(userId, visit, contactName),
+    );
     this.visitClientBook.set(book);
     this.visitClientSections.set([
       {
         id: VisitEditorClientSectionId.Recent,
-        title: this.transloco.translate('staff.visit.clientsRecent'),
+        title: words.recentClients,
         clients: recent,
       },
     ]);
@@ -5864,67 +4220,6 @@ export class StaffDashboard {
   });
 
   /**
-   * WHAT OCCUPIES `barberId`'s CHAIR beside the visit `excludeId` names
-   * (`null`: a new one), read off one day's documents —
-   * `BusySystem.chairOccupants`, the server's collision rule (DEP-2): one
-   * neighbour per seat the chair holds, on the seat's own wall clock.
-   */
-  private occupantNeighbours(
-    appointments: readonly Appointment[],
-    barberId: BarberId,
-    excludeId: AppointmentId | null,
-  ): FrameNeighbour[] {
-    return BusySystem.chairOccupants(appointments, barberId, excludeId).map(
-      ({ appointment, seat }) => ({
-        name:
-          appointment.contactName ??
-          this.transloco.translate<string>('staff.day.unnamedClient'),
-        // The seat's own wall clock — the frame's axis (Law 7.3).
-        startMinute: seat.startMinutes,
-        endMinute: Seat.endMinutes(seat),
-        tone: this.toneOf(barberId),
-      }),
-    );
-  }
-
-  /**
-   * The same answer on the shown day, where the agenda already drew each
-   * chair's rows: the lane's visit rows whose appointment occupies the chair
-   * by `BusySystem.chairOccupants` over the store lane's documents (the
-   * ones the rows were drawn from) — one neighbour per row, on the row's
-   * own wall clock. Which rows are drawn is the agenda's; which occupy is
-   * the system's.
-   */
-  private occupyingRows(
-    lane: LaneVm | undefined,
-    appointments: readonly Appointment[],
-    excludeId: AppointmentId | null,
-  ): FrameNeighbour[] {
-    if (lane === undefined) return [];
-    const occupying = new Set<AppointmentId>();
-    for (const { appointment } of BusySystem.chairOccupants(
-      appointments,
-      lane.barberId,
-      excludeId,
-    )) {
-      occupying.add(appointment.id);
-    }
-    return lane.entries
-      .filter(
-        (entry): entry is DayRowVm =>
-          entry.agendaRow === AgendaRow.Visit &&
-          occupying.has(entry.appointmentId),
-      )
-      .map((entry) => ({
-        name: entry.clientLabel,
-        // The visit's own wall clock, as stored (Law 7.3).
-        startMinute: entry.startMinute,
-        endMinute: entry.endMinute,
-        tone: entry.barberTone,
-      }));
-  }
-
-  /**
    * One chair's real day for the block sheet's frame: the agenda's own rows
    * on the shown day, the probe's documents on any other — the same two
    * sources `visitFrameDay` reads, for the same reason.
@@ -5953,11 +4248,7 @@ export class StaffDashboard {
       return {
         barberId,
         // What occupies the chair — the server's rule (DEP-2).
-        neighbours: this.occupyingRows(
-          lane,
-          storeLane?.appointments ?? [],
-          null,
-        ),
+        neighbours: occupyingRows(lane, storeLane?.appointments ?? [], null),
         ...windows(storeLane?.rostered ?? []),
       };
     }
@@ -5965,10 +4256,12 @@ export class StaffDashboard {
     const draftLane = cell?.lanes.find((entry) => entry.barberId === barberId);
     return {
       barberId,
-      neighbours: this.occupantNeighbours(
+      neighbours: occupantNeighbours(
         draftLane?.appointments ?? [],
         barberId,
         null,
+        this.toneOf(barberId),
+        this.dayWords(),
       ),
       ...windows(draftLane?.rostered ?? []),
     };
@@ -6301,12 +4594,7 @@ export class StaffDashboard {
 
   /** The four readings, as `ui-choice-menu` options (owner, 2026-09-09). */
   protected readonly viewChoices = computed<readonly UiChoiceOption[]>(() =>
-    this.views.map((view) => ({
-      id: view.id,
-      label: this.rawCopy(`staff.day.view.${view.id}`),
-      icon: view.icon,
-      testId: `staff-view-${view.id}`,
-    })),
+    viewChoicesOf(this.views, this.chromeWords()),
   );
 
   /**
@@ -6330,13 +4618,7 @@ export class StaffDashboard {
    * bar's own width shows one.
    */
   protected readonly viewSegments = computed<readonly UiSegment[]>(() =>
-    this.views.map((view) => ({
-      id: view.id,
-      label: this.rawCopy(`staff.day.view.${view.id}`),
-      icon: view.icon,
-      iconOnly: true,
-      testId: `staff-view-segment-${view.id}`,
-    })),
+    viewSegmentsOf(this.views, this.chromeWords()),
   );
 
   /** A DATE column's head, tapped: that day, in the day view (§4). */
@@ -6371,19 +4653,9 @@ export class StaffDashboard {
   }
 
   /** Everyone, then each chair — the scope switcher's options. */
-  protected readonly scopeChoices = computed<readonly UiChoiceOption[]>(() => [
-    {
-      id: SCOPE_ALL,
-      label: this.rawCopy('staff.day.scopeAll'),
-      testId: 'staff-scope-all',
-    },
-    ...this.scopeOptions().map((option) => ({
-      id: option.id,
-      label: option.name,
-      avatarSrc: option.avatarSrc,
-      testId: `staff-scope-${option.id}`,
-    })),
-  ]);
+  protected readonly scopeChoices = computed<readonly UiChoiceOption[]>(() =>
+    scopeChoicesOf(this.scopeOptions(), this.chromeWords()),
+  );
 
   /**
    * The menu hands back an option id: «Всички», or a chair's — each option
@@ -6405,14 +4677,6 @@ export class StaffDashboard {
       this.transloco.getTranslation(this.transloco.getActiveLang());
     const raw = (table as Record<string, unknown> | undefined)?.[key];
     return typeof raw === 'string' ? raw : null;
-  }
-
-  /**
-   * A string from the loaded table — the key itself until it loads, which
-   * is what a missing string looks like everywhere else in the app.
-   */
-  private rawCopy(key: string): string {
-    return this.copyOf(key) ?? this.transloco.translate(key);
   }
 
   protected togglePicker(which: DayPicker): void {
@@ -6455,120 +4719,8 @@ export class StaffDashboard {
    * (`BookingErrorCode.CallFailed`) is only the fallback.
    */
   private describeError(error: PipelineError): string {
-    // THE TRANSITION'S TWO STATUSES, in the shop's words: the wire carries
-    // the stored tags (`fromBookingStatus`, `toBookingStatus`), and the
-    // sentence says them as the rows do — the shared words table, then the
-    // catalogue's label for the word. A seat already resolved has its own
-    // line, because "from resolved to cancelled" is the graph talking.
-    const extra: Record<string, string> = {};
-    if (error.serverErrorCode === BookingErrorCode.TransitionNotAllowed) {
-      const fromRaw = error.serverParams['fromBookingStatus'];
-      const from = Tag.has(BookingStatus, fromRaw) ? fromRaw : null;
-      // A SEAT already resolved names no status it moves from.
-      if (typeof fromRaw === 'string' && fromRaw.length > 0 && from === null) {
-        return this.transloco.translate(
-          `errors.${BookingErrorCode.TransitionSeatResolved}`,
-        );
-      }
-      const toRaw = error.serverParams['toBookingStatus'];
-      const to = Tag.has(BookingStatus, toRaw) ? toRaw : null;
-      for (const [side, status] of [
-        ['from', from],
-        ['to', to],
-      ] as const) {
-        if (status === null) continue;
-        const word = bookingStatusWords[status];
-        const key = 'appointments.status.' + word;
-        const label = this.transloco.translate(key);
-        extra[side] = label !== key ? label : word;
-      }
-    }
-    // ONE LEVEL DEEPER FIRST (round 4, 2026-09-25): the refusal's own
-    // reason (`field` — «one person, two chairs», a shared guest label — or
-    // a carried seat's `refusal`) has copy of its own, so
-    // `<serverErrorCode>.<reason>` is tried before `<serverErrorCode>`, then
-    // the surface's own generic key. The client's rule
-    // (`wordPipelineError`), reused: a staff save refused for seating one
-    // person twice said only "invalid input".
-    return wordPipelineError(
-      error,
-      (code, params) =>
-        translateCodedError(this.transloco, { ...params, errorCode: code }),
-      BookingErrorCode.CallFailed,
-      extra,
+    return refusalSentence(error, this.say, (code, params) =>
+      translateCodedError(this.transloco, { ...params, errorCode: code }),
     );
   }
-}
-
-/**
- * The labels these seats' guests ride under, seat by seat — a guest's only
- * identity, and what the server's party check tells people apart by
- * (`personKey`).
- */
-function guestLabelsOf(seats: readonly Seat[]): string[] {
-  return seats.flatMap((seat) => {
-    const guestLabel = guestLabelOf(seat);
-    return guestLabel === null ? [] : [guestLabel];
-  });
-}
-
-/**
- * The label a seat's subject rides under: an anonymous guest's, and a
- * walk-in's — the label the desk gave them on this visit, their record
- * (OR-26) keeping its own name — or `null` for an account, which is named
- * by the contact or its profile. Every `SeatSubject` answers here, so a new
- * one is a compile error until it does.
- */
-function guestLabelOf(seat: Seat): SeatLabel | null {
-  switch (seat.seatSubject) {
-    case SeatSubject.Anonymous:
-    case SeatSubject.WalkIn:
-      return seat.guestLabel;
-    case SeatSubject.Account:
-      return null;
-  }
-}
-
-/**
- * The bill's discounts as the sheet reads them — every snapshot, in stored
- * order: its provenance and its value as the domain stored them (exactly
- * their variants' fields), with the coupon's name, the grant it honoured,
- * the code it was opened with and whether it must be alone on the bill.
- */
-function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
-  return appointment.discounts.map((applied) => ({
-    ...provenanceOf(applied),
-    ...CouponValue.sliceOf(applied),
-    label: applied.label,
-    grantId: DiscountProvenance.grantIdOf(applied),
-    code: DiscountProvenance.codeOf(applied),
-    exclusive: AppliedDiscount.isExclusive(applied),
-  }));
-}
-
-/** The provenance slice of a stored discount — exactly its variant's fields. */
-function provenanceOf(applied: DiscountProvenance): DiscountProvenance {
-  switch (applied.discountSource) {
-    case DiscountSource.Grant:
-      return DiscountProvenance.grant(applied.discountGrantId);
-    case DiscountSource.Code:
-      return DiscountProvenance.code(applied.discountCode);
-    case DiscountSource.Manual:
-      return DiscountProvenance.manual();
-  }
-}
-
-/**
- * The vouchers still paying the bill. `availableCents` is what THIS visit
- * may draw on that voucher if the bill changes: its own amount plus what
- * the voucher had left after it — the server re-clamps on save.
- */
-function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
-  return appointment.voucherRedemptions
-    .filter(VoucherRedemption.isLive)
-    .map((redemption) => ({
-      voucherId: redemption.voucherId,
-      code: redemption.code,
-      availableCents: VoucherRedemption.drawableCents(redemption),
-    }));
 }
