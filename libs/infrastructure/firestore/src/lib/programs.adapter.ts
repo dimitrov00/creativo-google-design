@@ -73,6 +73,7 @@ function saveBody(
 export const positionReadPorts = (db: Firestore): PositionReadPorts => ({
   observePositions: (positionStatus) =>
     observeQuery<Position>(
+      // unbounded-ok: open positions, which staff write by hand
       query(
         collection(db, Collections.Positions),
         ...(positionStatus === null
@@ -100,6 +101,7 @@ export const courseReadPorts = (db: Firestore): CourseReadPorts => ({
     statuses !== null && statuses.length === 0
       ? of(Result.ok<readonly Course[]>([]))
       : observeQuery<Course>(
+          // unbounded-ok: courses, which staff write by hand
           query(
             collection(db, Collections.Courses),
             ...(statuses === null
@@ -126,7 +128,8 @@ export const shopEventReadPorts = (db: Firestore): ShopEventReadPorts => ({
   observeEvents: ({ nowUtcMs, upcoming }) =>
     observeQuery<ShopEvent>(
       upcoming
-        ? query(
+        ? // unbounded-ok: upcoming events, which staff write by hand: past ones leave the range
+          query(
             collection(db, Collections.Events),
             where('utcEpochMs', '>=', nowUtcMs),
             orderBy('utcEpochMs', 'asc'),

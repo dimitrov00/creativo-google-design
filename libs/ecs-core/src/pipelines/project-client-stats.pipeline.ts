@@ -131,6 +131,7 @@ export function clientHistory(customerId: CustomerId): QuerySpec {
       },
     ],
     orderBy: [],
+    // unbounded-ok: one client's whole history, on purpose: the projection rebuilds from source so it repairs itself (performance-cost-audit.md §8)
     limit: null,
   };
 }

@@ -124,3 +124,13 @@ staff }`, a component bag itself).
 - `pnpm run seed:dev` (`tools/seed-dev-catalog.mjs`) writes the component-bag
   shapes directly; it is the executable example of the layout and must be
   updated with every archetype change.
+
+## A query says how much it may read
+
+Every document a query returns is billed. `creativo/query-needs-limit`
+(`tools/lint-rules/query-needs-limit.mjs`, on every `*.adapter.ts` and
+`*.pipeline.ts`) reports a query with no limit, including a `QuerySpec` with
+`limit: null`. Add a limit, or state why it is bounded with
+`// unbounded-ok: <reason>` on the line above: a true reason, naming what keeps
+the answer small. It reads syntax only, so a chain assembled across variables
+is out of its sight.

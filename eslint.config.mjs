@@ -673,4 +673,11 @@ export default [
     // Override or add rules here
     rules: {},
   },
+  // A query says how much it may read: tools/lint-rules/query-needs-limit.mjs.
+  {
+    files: ['**/*.adapter.ts', '**/*.pipeline.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: { 'creativo/query-needs-limit': 'error' },
+  },
 ];

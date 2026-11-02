@@ -17,6 +17,7 @@ import { noSlicedPorts } from './no-sliced-ports.mjs';
 import { presenterPurity } from './presenter-purity.mjs';
 import { noUndecoratedClass } from './no-undecorated-class.mjs';
 import { noLiteralLogMessage } from './no-literal-log-message.mjs';
+import { queryNeedsLimit } from './query-needs-limit.mjs';
 import { noIdentityMapper } from './no-identity-mapper.mjs';
 
 export {
@@ -59,6 +60,7 @@ const plugin = {
     'presenter-purity': presenterPurity,
     'no-undecorated-class': noUndecoratedClass,
     'no-literal-log-message': noLiteralLogMessage,
+    'query-needs-limit': queryNeedsLimit,
     'no-identity-mapper': noIdentityMapper,
   },
 };

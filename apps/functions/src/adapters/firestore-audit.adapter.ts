@@ -125,6 +125,7 @@ export const firestoreAuditPorts = (
     const rows: AuditEntry[] = [];
     try {
       for (let at = 0; at < resourceIds.length; at += IN_CHUNK) {
+        // unbounded-ok: the audit rows of one backfill page's visits: a page's ids, a few rows each
         const snap = await db
           .collection(Collections.AuditLog)
           .where('resourceId', QueryOp.In, resourceIds.slice(at, at + IN_CHUNK))
