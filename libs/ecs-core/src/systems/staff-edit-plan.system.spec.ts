@@ -1631,19 +1631,58 @@ describe('StaffEditPlanSystem.sameSave — would two drafts save the same', () =
     expect(
       same(on, {
         ...base,
-        discounts: [{ ...coupon, code: VoucherCode.of('OTHER') }],
+        discounts: [
+          { ...coupon, ...DiscountProvenance.code(VoucherCode.of('OTHER')) },
+        ],
       }),
     ).toBe(false);
     expect(
       same(on, {
         ...base,
-        discounts: [{ ...coupon, grantId: CouponGrantId.of('grant-1') }],
+        discounts: [
+          {
+            ...coupon,
+            ...DiscountProvenance.grant(CouponGrantId.of('grant-1')),
+          },
+        ],
       }),
     ).toBe(false);
     expect(
       same(on, {
         ...base,
         discounts: [{ ...coupon, ...DiscountProvenance.manual() }],
+      }),
+    ).toBe(false);
+  });
+
+  it('reads the discounts as a set, as the batch does: another order is no change (BUG-5)', () => {
+    const line = {
+      label: '',
+      exclusive: false,
+    };
+    const manual = { ...fixedOff(Currency.EUR), ...line };
+    const code = { ...coupon, ...line };
+    const drafted = { ...base, discounts: [code, manual] };
+    const stored = { ...base, discounts: [manual, code] };
+    expect(same(drafted, stored)).toBe(true);
+    // Nothing for the batch to send, so nothing for «Запази» to offer.
+    const plan = StaffEditPlanSystem.commandsFor(
+      { ...SNAPSHOT, discounts: drafted.discounts },
+      { ...ROW, discounts: stored.discounts },
+      [],
+      WORDS,
+    );
+    expect(
+      unwrapOk(plan).filter(
+        (command) => command.editCommand === EditCommand.Discounts,
+      ),
+    ).toEqual([]);
+    // A different set is still a change, whatever the order.
+    expect(same(drafted, { ...base, discounts: [manual] })).toBe(false);
+    expect(
+      same(drafted, {
+        ...base,
+        discounts: [manual, { ...code, discountPercent: 20 }],
       }),
     ).toBe(false);
   });
@@ -1655,16 +1694,6 @@ describe('StaffEditPlanSystem.sameSave — would two drafts save the same', () =
         { ...base, discounts: [fixedOff(Currency.BGN)] },
       ),
     ).toBe(true);
-  });
-
-  it('keeps `dirty`’s order-sensitivity: two lines reordered differ', () => {
-    const other = { ...coupon, code: VoucherCode.of('BEARD5') };
-    expect(
-      same(
-        { ...base, discounts: [coupon, other] },
-        { ...base, discounts: [other, coupon] },
-      ),
-    ).toBe(false);
   });
 
   it('differs on a voucher code, and on a tip against none', () => {
