@@ -23,6 +23,7 @@ export const firestoreWaitlistPorts = (
 ): OpenWaitlistReadPorts => ({
   loadOpenWaitlist: async (localDate) => {
     try {
+      // unbounded-ok: one shop day's open requests, which a TTL removes
       const snap = await db
         .collection(Collections.WaitlistRequests)
         .where('waitlistStatus', '==', WaitlistStatus.Open)

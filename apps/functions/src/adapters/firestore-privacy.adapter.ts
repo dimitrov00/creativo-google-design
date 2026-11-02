@@ -145,6 +145,7 @@ export const firestorePrivacyPorts = (
   ): Promise<Result<E[], RepositoryError>> => {
     let page;
     try {
+      // unbounded-ok: one person's whole record, on purpose: export and erasure must see all of it
       page = await query().get();
     } catch (error) {
       return Result.err(readFailed(path, error));

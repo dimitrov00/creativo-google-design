@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Guard: the Firestore and Storage SDKs and the phone metadata
-// (libphonenumber-js) stay out of the initial web chunk.
+// (libphonenumber-js) stay out of the initial web chunk, every lazy route stays
+// under its ceiling and every public asset under its own (budgets.json).
 //
 //   pnpm nx build web -- --stats-json
 //   node tools/verify/bundle/check-initial-bundle.mjs [path/to/stats.json] [--top=N]
@@ -14,10 +15,19 @@
 // FORBIDDEN_IN_INITIAL is in the initial closure. The byte ceiling itself is
 // the builder's `initial` budget in apps/web/project.json (it fails the
 // build); this guard proves WHAT is in the chunk, which a size alone cannot.
+//
+// A ceiling rises only in the commit that says why. Lower one when a route gets
+// lighter, so the gain cannot quietly be spent again.
 
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { analyseInitial, formatBytes } from './initial-bundle.mjs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  analyseInitial,
+  formatBytes,
+  routeBytes,
+  routesOverBudget,
+} from './initial-bundle.mjs';
 
 const args = process.argv.slice(2);
 const top = Number(
@@ -78,6 +88,40 @@ if (report.forbidden.length > 0) {
   );
   process.exit(1);
 }
+
+const budgets = JSON.parse(
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'budgets.json'),
+    'utf8',
+  ),
+);
+
+const routes = routeBytes(metafile);
+console.log('\nLazy routes, initial files included:');
+for (const { route, bytes } of routes) {
+  console.log(`  ${formatBytes(bytes).padStart(10)}  ${route}`);
+}
+const overRoutes = routesOverBudget(routes, budgets);
+
+const publicDir = resolve('apps/web/public');
+const overAssets = readdirSync(publicDir, { recursive: true })
+  .map((file) => ({ file, bytes: statSync(join(publicDir, file)).size }))
+  .filter(({ bytes }) => bytes > budgets.publicAssetBytes);
+
+if (overRoutes.length > 0 || overAssets.length > 0) {
+  console.error('\nFAIL — over budget (tools/verify/bundle/budgets.json):');
+  for (const { route, bytes, limit } of overRoutes) {
+    console.error(
+      `  ${route}: ${formatBytes(bytes)}, ceiling ${formatBytes(limit)}`,
+    );
+  }
+  for (const { file, bytes } of overAssets) {
+    console.error(
+      `  apps/web/public/${file}: ${formatBytes(bytes)}, ceiling ${formatBytes(budgets.publicAssetBytes)}`,
+    );
+  }
+  process.exit(1);
+}
 console.log(
-  '\nOK — firebase/firestore, firebase/storage and libphonenumber-js are not in the initial chunk.',
+  '\nOK — firebase/firestore, firebase/storage and libphonenumber-js are not in the initial chunk; routes and public assets are inside their budgets.',
 );

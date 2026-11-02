@@ -396,6 +396,12 @@ export const ECS_SYSTEM_RESTRICTIONS = [
       'A system never draws randomness (Law 3): take the random value or a `nextId: () => string` as a parameter.',
   },
   {
+    selector:
+      'VariableDeclarator[init.name="Math"] > ObjectPattern > Property[key.name="random"]',
+    message:
+      'A system never draws randomness (Law 3): take the random value or a `nextId: () => string` as a parameter.',
+  },
+  {
     selector: 'MemberExpression[object.name="crypto"]',
     message:
       'A system never calls `crypto` (Law 3): take `hash: (input: string) => string` or `nextId` as a parameter.',
@@ -594,10 +600,28 @@ export const ECS_SYSTEM_GLOBALS = [
     message:
       'A system does not log (Law 3): return a value; the pipeline logs through the `Log` port.',
   },
-  {
-    name: 'setTimeout',
+  ...[
+    'setTimeout',
+    'setInterval',
+    'setImmediate',
+    'queueMicrotask',
+    'requestAnimationFrame',
+  ].map((name) => ({
+    name,
     message: 'A system is synchronous pure math (Law 3): no timers.',
+  })),
+  {
+    name: 'performance',
+    message:
+      'A system never reads the clock (Law 3): take `now: ShopNow` as a parameter.',
   },
+  ...['process', 'window', 'document', 'localStorage', 'sessionStorage'].map(
+    (name) => ({
+      name,
+      message:
+        'A system reads no environment (Law 3): the pipeline passes what it needs as a parameter.',
+    }),
+  ),
 ];
 
 /**

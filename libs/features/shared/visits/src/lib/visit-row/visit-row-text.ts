@@ -54,8 +54,8 @@ import {
     UiIcon,
     UiTextDirective,
   ],
-  templateUrl: './visit-row-words.html',
-  styleUrl: './visit-row-words.css',
+  templateUrl: './visit-row-text.html',
+  styleUrl: './visit-row-text.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   host: {

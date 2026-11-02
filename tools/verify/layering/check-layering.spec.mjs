@@ -18,6 +18,7 @@ import {
   checkHierarchy,
   checkLayering,
   checkNameHomes,
+  checkSystemFiles,
   checkTsconfigPaths,
   climbsOf,
   exportedNames,
@@ -828,5 +829,34 @@ describe('the workspace on disk', () => {
       ),
       failed.stderr,
     );
+  });
+});
+
+describe('(f) system files', () => {
+  const SYSTEMS = 'libs/ecs-core/src/systems';
+
+  it('accepts systems, their specs and the barrel', () => {
+    assert.deepEqual(
+      checkSystemFiles(
+        snapshotOf(
+          withFiles({
+            [`${SYSTEMS}/x.system.ts`]: 'export const X = {};',
+            [`${SYSTEMS}/x.system.spec.ts`]: '',
+            [`${SYSTEMS}/index.ts`]: '',
+          }),
+        ),
+      ),
+      [],
+    );
+  });
+
+  it('rejects any other file in the tier', () => {
+    const found = checkSystemFiles(
+      snapshotOf(
+        withFiles({ [`${SYSTEMS}/helper.ts`]: 'export const h = 1;' }),
+      ),
+    );
+    assert.equal(found.length, 1);
+    assert.equal(found[0].file, `${SYSTEMS}/helper.ts`);
   });
 });

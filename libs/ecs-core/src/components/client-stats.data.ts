@@ -36,7 +36,7 @@ import type { VisitLeg } from './visit-leg.data';
  * Invariants of the nullable groups (N9, stated here and kept by the
  * companion and `ClientStatsSystem`): `firstVisitLocalDate` and
  * `firstVisitStartMinutes` are `null` together; `lastVisitAppointmentId`,
- * `lastVisitLocalDate` and `lastVisitStartMinutes` are `null` together, and
+ * `lastVisitLocalDate`, `lastVisitStartMinutes` and `lastVisitUtcMs` are `null` together, and
  * then `lastVisitServiceIds`, `lastVisitBarberIds` and `lastVisitLegs` are
  * `[]` (likewise every `nextVisit*`); `pauseSuggestedNoShows`,
  * `pauseSuggestedWindowDays` and `pauseSuggestedAtUtcMs` are `null`
@@ -61,6 +61,7 @@ export type ClientStats = {
   readonly lastVisitAppointmentId: AppointmentId | null;
   readonly lastVisitLocalDate: LocalDate | null;
   readonly lastVisitStartMinutes: MinuteOfDay | null;
+  readonly lastVisitUtcMs: UtcEpochMs | null;
   /** Distinct, in seat order. */
   readonly lastVisitServiceIds: readonly ServiceId[];
   /** Distinct, in seat order. */

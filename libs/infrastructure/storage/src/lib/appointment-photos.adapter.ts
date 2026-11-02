@@ -86,6 +86,7 @@ export const appointmentPhotoPorts = (
     ...constraints: readonly QueryConstraint[]
   ): Promise<Result<readonly AppointmentPhoto[], RepositoryError>> => {
     try {
+      // unbounded-ok: its callers pass a limit, or one id batch of a page of visits
       const snap = await getDocs(query(photos, ...constraints));
       return Result.ok(
         snap.docs.map((entry) =>
@@ -109,6 +110,7 @@ export const appointmentPhotoPorts = (
       subscribeWithRetry<readonly AppointmentPhoto[]>(
         (next, error) =>
           onSnapshot(
+            // unbounded-ok: one visit's photos, taken by hand at the chair
             query(photos, where('appointmentId', '==', appointmentId)),
             (snap) =>
               next(

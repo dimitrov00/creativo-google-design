@@ -244,15 +244,9 @@ export function shopNowAt(nowMs: number): ShopNow {
 /** `NOW_MS` on the shop's wall clock: Monday 28 September 2026, minute 760. */
 export const NOW: ShopNow = shopNowAt(NOW_MS);
 
-/**
- * A stored fact's shop wall clock as the instant it names — what the
- * loyalty presenters (flip 3) still count in (`visitsMs`), the store's own
- * reading of a `VisitFact`.
- */
+/** The instant a stored fact holds — what the loyalty presenters count in (`visitsMs`). */
 export function factMs(fact: VisitFact): UtcEpochMs {
-  return unwrapOk(
-    ZonedTimeSystem.toUtc(fact.localDate, fact.startMinutes, SHOP_TIME_ZONE),
-  );
+  return fact.startUtcMs;
 }
 
 /** Георги's client record (D29), derived the way the pipelines derive it. */

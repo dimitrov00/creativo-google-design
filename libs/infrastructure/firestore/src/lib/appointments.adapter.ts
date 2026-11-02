@@ -193,6 +193,7 @@ export const appointmentReadPorts = (
     }
     const [sameInstant, older] = await Promise.all([
       rawVisits(
+        // unbounded-ok: one instant's rows of one client: a paging boundary, a handful at most
         query(appointments, theirs, where('utcEpochMs', '==', step.boundary)),
       ),
       newestFirst(theirs, [where('utcEpochMs', '<', step.boundary)], 1),
@@ -269,6 +270,7 @@ export const appointmentReadPorts = (
      */
     observeBarberDay: (key) =>
       observeCountedQuery<Appointment>(
+        // unbounded-ok: one barber's one shop day: as many visits as fit in a day
         query(appointments, where('busyKeys', 'array-contains', key)),
         path,
         guard,
@@ -291,6 +293,7 @@ export const appointmentReadPorts = (
      */
     observeUpcoming: (ownerUserId) =>
       observeQuery<Appointment>(
+        // unbounded-ok: one client's live visits: past ones have left the status filter
         query(
           appointments,
           where('ownerUserId', '==', ownerUserId),

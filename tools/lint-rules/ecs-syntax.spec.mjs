@@ -82,6 +82,8 @@ const CASES = {
   'MemberExpression[object.name="Math"][property.name="random"]': [
     'const r = Math.random();',
   ],
+  'VariableDeclarator[init.name="Math"] > ObjectPattern > Property[key.name="random"]':
+    ['const { random } = Math;'],
   'MemberExpression[object.name="crypto"]': ['const id = crypto.randomUUID();'],
   'ImportDeclaration[source.value=/^(node:)?crypto$/]': [
     `import { createHash } from 'node:crypto';`,
@@ -472,6 +474,32 @@ describe('systems (ECS_SYSTEM_RESTRICTIONS)', () => {
       ECS_SYSTEM_GLOBALS,
     );
     expect(messages).toHaveLength(4);
+  });
+
+  it('bans the clock, timer and environment globals', async () => {
+    for (const code of [
+      'const t = performance.now();',
+      'setInterval(() => undefined, 1);',
+      'setImmediate(() => undefined);',
+      'queueMicrotask(() => undefined);',
+      'requestAnimationFrame(() => undefined);',
+      'const e = process.env;',
+      'const w = window.innerWidth;',
+      'const d = document.title;',
+      "const v = localStorage.getItem('x');",
+      "const v = sessionStorage.getItem('x');",
+    ]) {
+      expect(await lint(code, [], ECS_SYSTEM_GLOBALS), code).toHaveLength(1);
+    }
+  });
+
+  it('lets the rest of Math be destructured', async () => {
+    expect(
+      await lint('const { floor } = Math;', [
+        ...ICON_SYNTAX_RESTRICTIONS,
+        ...ECS_SYSTEM_RESTRICTIONS,
+      ]),
+    ).toEqual([]);
   });
 
   it('keeps an optional FUNCTION PARAMETER legal but not an optional or `| undefined` property', async () => {

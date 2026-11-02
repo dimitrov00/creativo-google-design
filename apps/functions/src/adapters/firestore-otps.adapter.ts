@@ -25,6 +25,7 @@ import { readFailed } from './store-answer';
 export const firestoreOtpPorts = (db: Firestore): OtpStorePorts => ({
   loadOpenOtps: async (destination, sinceUtcMs) => {
     try {
+      // unbounded-ok: one destination inside the resend window
       const snap = await db
         .collection(Collections.Otps)
         .where('destination', '==', destination)

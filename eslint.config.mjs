@@ -492,6 +492,13 @@ export default [
     plugins: { creativo },
     rules: { 'creativo/no-literal-log-message': 'error' },
   },
+  // A query says how much it may read: tools/lint-rules/query-needs-limit.mjs.
+  {
+    files: ['**/*.adapter.ts', '**/*.pipeline.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: { 'creativo/query-needs-limit': 'error' },
+  },
   // OR-33 (owner rulings 2026-10-26, DEP-F24) — the read guard is a required
   // parameter, and the registries that guard NOTHING are test support:
   // `unguarded` (@core/testing, libs/ecs-core/src/testing/unguarded.ts) and
@@ -672,5 +679,21 @@ export default [
     ],
     // Override or add rules here
     rules: {},
+  },
+  // The two largest files hold domain rules that belong in systems and
+  // presenters (performance-cost-audit.md F-08). They may only shrink: a
+  // feature that needs a line here extracts one first. Lower the figure when
+  // a file gets shorter; never raise it.
+  {
+    files: [
+      'libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts',
+    ],
+    rules: { 'max-lines': ['error', { max: 6679 }] },
+  },
+  {
+    files: [
+      'libs/features/staff/dashboard/src/lib/visit-editor/staff-visit-editor.ts',
+    ],
+    rules: { 'max-lines': ['error', { max: 7820 }] },
   },
 ];

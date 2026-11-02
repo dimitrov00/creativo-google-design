@@ -111,6 +111,7 @@ const ACTIVE_LOCATIONS: QuerySpec = {
     { field: 'locationStatus', op: QueryOp.Eq, value: LocationStatus.Active },
   ],
   orderBy: [],
+  // unbounded-ok: the shops of one tenant
   limit: null,
 };
 
@@ -129,6 +130,7 @@ function dayRange(
       { field: 'localDate', op: QueryOp.Lte, value: to },
     ],
     orderBy: [],
+    // unbounded-ok: one barber's days inside the booking horizon
     limit: null,
   };
 }

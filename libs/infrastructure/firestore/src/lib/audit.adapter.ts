@@ -101,6 +101,7 @@ export const auditReadPorts = (db: Firestore): AuditReadPorts => {
     }
     const [sameInstant, older] = await Promise.all([
       readQuery<AuditEntry>(
+        // unbounded-ok: one instant's rows of one key: a paging boundary, a handful at most
         query(auditLog, keyedBy, where('recordedAtUtcMs', '==', step.boundary)),
         path,
       ),

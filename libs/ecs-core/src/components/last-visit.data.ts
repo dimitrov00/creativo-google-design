@@ -11,6 +11,7 @@ export type LastVisit = Pick<
   | 'lastVisitAppointmentId'
   | 'lastVisitLocalDate'
   | 'lastVisitStartMinutes'
+  | 'lastVisitUtcMs'
   | 'lastVisitServiceIds'
   | 'lastVisitBarberIds'
   | 'lastVisitLegs'
@@ -20,6 +21,7 @@ const NO_LAST_VISIT: LastVisit = {
   lastVisitAppointmentId: null,
   lastVisitLocalDate: null,
   lastVisitStartMinutes: null,
+  lastVisitUtcMs: null,
   lastVisitServiceIds: [],
   lastVisitBarberIds: [],
   lastVisitLegs: [],

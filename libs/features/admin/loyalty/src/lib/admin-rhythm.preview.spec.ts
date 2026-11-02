@@ -32,6 +32,7 @@ import {
   minute,
   unwrapOk,
   utcMs,
+  FIXTURE_NOW_UTC_MS,
 } from '@core/testing';
 import {
   RHYTHM_PREVIEW_CAP,
@@ -83,6 +84,7 @@ function statsOf(
       appointmentId: AppointmentId.of(`appt-${id}-${index}`),
       localDate: visit.localDate,
       startMinutes: visit.startMinutes,
+      startUtcMs: FIXTURE_NOW_UTC_MS,
     })),
     firstVisitLocalDate: first?.localDate ?? null,
     firstVisitStartMinutes: first?.startMinutes ?? null,

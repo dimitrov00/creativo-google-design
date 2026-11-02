@@ -5,7 +5,7 @@
 //   pnpm nx run verify-tools:layering
 //   node tools/verify/layering/check-layering.mjs [--root=<workspace>]
 //
-// Five checks, each failure printed as `file:line  (check) message`:
+// Six checks, each failure printed as `file:line  (check) message`:
 //
 //   (a) entry points — libs/ecs-core/src has no root barrel (no module sits
 //       directly in src/), the retired root alias appears nowhere in
@@ -165,6 +165,7 @@ export const CHECKS = {
   cycles: '(c) cycles',
   deepRelative: '(d) deep relative',
   barrels: '(e) barrels',
+  systemFiles: '(f) system files',
 };
 
 // ── reading ──────────────────────────────────────────────────────────────
@@ -710,6 +711,34 @@ export function checkDeepRelative(snapshot) {
 
 // ── (e) barrels ──────────────────────────────────────────────────────────
 
+/**
+ * The purity guards scope themselves by suffix (`*.system.ts`), so a file in
+ * src/systems with any other name would escape them all.
+ */
+export function checkSystemFiles(snapshot) {
+  const found = [];
+  const folder = `${CORE_SRC}/systems/`;
+  for (const path of snapshot.files.keys()) {
+    if (
+      path.startsWith(folder) &&
+      isCodeFile(path) &&
+      !isTestFile(path) &&
+      path !== `${folder}index.ts` &&
+      !path.endsWith('.system.ts')
+    ) {
+      found.push(
+        violation(
+          CHECKS.systemFiles,
+          path,
+          1,
+          'A file in src/systems must be a `*.system.ts`, or the purity guards never see it (Law 3).',
+        ),
+      );
+    }
+  }
+  return found;
+}
+
 export function checkBarrels(snapshot) {
   const found = [];
   for (const tier of TIER_IMPORTS.keys()) {
@@ -900,6 +929,7 @@ export function checkLayering(snapshot) {
     ...checkCycles(snapshot, modules),
     ...checkDeepRelative(snapshot),
     ...checkBarrels(snapshot),
+    ...checkSystemFiles(snapshot),
     ...checkNameHomes(snapshot),
   ].sort(
     (left, right) =>

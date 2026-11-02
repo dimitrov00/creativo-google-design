@@ -511,8 +511,7 @@ describe('the capsules (B)', () => {
     last365NoShows: days.map((day, index) => {
       const wall = wallOf(`${day}T12:30:00`);
       return {
-        appointmentId: must(MARTIN_STATS.last365VisitsCompleted.at(index))
-          .appointmentId,
+        ...must(MARTIN_STATS.last365VisitsCompleted.at(index)),
         localDate: wall.localDate,
         startMinutes: wall.minute,
       };
