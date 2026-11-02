@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { DurationMinutes, MinuteDelta } from '@core/primitives';
 import { VisitDraftSystem } from '@core/systems';
 import { unwrapOk } from '@core/testing';
-import { catalogTagWords, minutesDeltaWords } from './catalog-tag.words';
+import {
+  catalogNoteWords,
+  catalogTagWords,
+  minutesDeltaWords,
+} from './catalog-tag.words';
 
 /*
  * The tag's words over the system's signed figure. The arithmetic itself —
@@ -33,5 +37,23 @@ describe('the catalogue tag’s words', () => {
     expect(tag(60, 45)).toBe('+15 мин');
     expect(tag(45, 45)).toBeNull();
     expect(tag(45, null)).toBeNull();
+  });
+});
+
+describe('the visit’s catalogue readout', () => {
+  const catalog = (minutes: number) => `Каталог: ${minutes} мин`;
+
+  it('says the catalogue’s total and the distance from it', () => {
+    expect(catalogNoteWords(45, delta(15), catalog, label)).toBe(
+      'Каталог: 45 мин · +15 мин',
+    );
+    expect(catalogNoteWords(45, delta(-5), catalog, label)).toBe(
+      'Каталог: 45 мин · −5 мин',
+    );
+  });
+
+  it('says nothing when there is no distance, or no catalogue to measure by', () => {
+    expect(catalogNoteWords(45, null, catalog, label)).toBeNull();
+    expect(catalogNoteWords(null, delta(5), catalog, label)).toBeNull();
   });
 });

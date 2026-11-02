@@ -13,6 +13,7 @@
   "include": ["src/**/*.ts"],
   "exclude": [
     "src/**/*.spec.ts",
+    "src/**/*.spec-support.ts",
     "src/**/*.test.ts",
     "vite.config.ts",
     "vite.config.mts",
@@ -24,7 +25,8 @@
     "src/**/*.spec.js",
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx",
-    "src/test-setup.ts"
+    "src/test-setup.ts",
+    "src/lib/testing/**"
   ],
   "references": [
     {

@@ -663,7 +663,7 @@
                   uiFont="footnote"
                   uiForegroundStyle="secondary"
                 >
-                  {{ span(entry.minutes) }}
+                  {{ entry.spanLabel }}
                 </span>
               </div>
             </li>
@@ -694,7 +694,7 @@
               [attr.data-past]="entry.past ? '' : null"
               [attr.data-next]="entry.isNext ? '' : null"
               [attr.data-live]="entry.live ? '' : null"
-              [attr.aria-label]="rowLabel(entry)"
+              [attr.aria-label]="entry.card.rowLabel"
               [attr.data-barber-tone]="entry.barberTone"
               data-testid="staff-visit-row"
               (click)="onVisitRowClick($event, entry)"
@@ -734,9 +734,9 @@
                     [attr.aria-label]="
                       t('staff.day.partyOf', { count: entry.seatsHere })
                     "
-                    >+{{ entry.seatsHere - 1 }}</span
+                    >{{ entry.card.guestsMark }}</span
                   >
-                  } @if (stateIcon(entry); as state) {
+                  } @if (entry.card.stateIcon; as state) {
                   <!-- THE STATE ON THE FACE (owner, 2026-09-24): the glyph
                        of an hour that did not happen, at the bottom leading
                        corner, opposite the party's «+N» and in its dress —
@@ -770,16 +770,13 @@
                   class="agenda-card__head"
                   size="regular"
                   [title]="entry.clientLabel"
-                  [struck]="hollowStatus(entry.bookingStatus)"
+                  [struck]="entry.card.struck"
                   [receded]="entry.past"
-                  [lines]="factLines(entry)"
-                  [start]="fields.isOn(AgendaField.TimeStart) ? entry.startLabel : null"
-                  [end]="fields.isOn(AgendaField.TimeEnd) ? endLabel(entry) : null"
-                  [gloss]="
-                    stateLabel(entry) ??
-                    (fields.isOn(AgendaField.TimeRelative) ? whenLabel(entry) : null)
-                  "
-                  [glossState]="stateLabel(entry) !== null"
+                  [lines]="entry.card.lines"
+                  [start]="entry.card.start"
+                  [end]="entry.card.end"
+                  [gloss]="entry.card.gloss"
+                  [glossState]="entry.card.glossState"
                   timesTestId="staff-visit-time"
                 />
               </div>
@@ -806,17 +803,17 @@
                    whitespace text node, and it could not have worked anyway,
                    because the gap belongs to the grid TRACK, which exists
                    whether or not anything is in it.) -->
-              @if (hasFoot(entry)) {
+              @if (entry.card.foot) {
               <div class="agenda-card__foot">
-                @if (fields.isOn(AgendaField.Price) && entry.priceLabel) {
+                @if (entry.card.price; as price) {
                 <span
                   class="agenda-card__price"
                   uiText
                   uiFont="callout"
                   uiForegroundStyle="secondary"
-                  >{{ entry.priceLabel }}</span
+                  >{{ price }}</span
                 >
-                } @if (fields.isOn(AgendaField.Party) && entry.partyLabel) {
+                } @if (entry.card.partyShare; as share) {
                 <!-- ⚠ THE CARD MUST SAY IT IS HALF OF SOMETHING.
                      (owner ruling 2026-09-03; moved here 2026-09-04)
 
@@ -854,11 +851,9 @@
                   "
                 >
                   <ui-icon uiName="nav.team" aria-hidden="true" />
-                  <span class="agenda-card__figures"
-                    >{{ entry.partyLabel }}</span
-                  >
+                  <span class="agenda-card__figures">{{ share }}</span>
                 </span>
-                } @if (entry.tag && !hollowStatus(entry.bookingStatus)) {
+                } @if (entry.card.tag; as tag) {
                 <!-- (Not on an hour that did not happen, 2026-09-24: how far
                      a run is from the catalogue's length means nothing for a
                      visit that will not run.)
@@ -870,9 +865,9 @@
                 <span
                   class="staff-event-tag agenda-card__tag"
                   data-testid="staff-visit-tag"
-                  >{{ entry.tag }}</span
+                  >{{ tag }}</span
                 >
-                } @for (icon of rowIcons(entry); track icon) {
+                } @for (icon of entry.card.marks; track icon) {
                 <ui-icon [uiName]="icon" class="agenda-card__mark" />
                 } @if (fields.isOn(AgendaField.BarberAvatar)) {
                 <ui-avatar

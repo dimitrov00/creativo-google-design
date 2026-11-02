@@ -3,7 +3,7 @@ import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import { rankClients } from './client-query';
-import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
+import type { RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
 import {
   AppliedDiscountId,
@@ -55,7 +55,6 @@ import {
   PlacementVerdict,
   type ShopNow,
   type StaffEditDraft,
-  TipPreset,
   type VisitLeg,
   type VisitSides,
   VoucherCode,
@@ -69,13 +68,11 @@ import {
   CouponGrantSystem,
   type DiscountInput,
   DiscountSystem,
-  type DraftBill,
   GridLayoutSystem,
   LocationScopeSystem,
   type ParsedClientQuery,
   PhoneSystem,
   StaffEditPlanSystem,
-  type TextSegment,
   VisitDraftSystem,
   VisitListSystem,
   VisitSidesSystem,
@@ -87,6 +84,89 @@ import {
   promiseOf,
   couponValueInBill,
 } from './visit-editor-discount';
+import {
+  amountMarks,
+  amountValueText,
+  codeNoteOf,
+  couponValueLine,
+  discountApplyVm,
+  discountKindLabelOf,
+  discountKindName,
+  discountKindOptions,
+  discountLineVm,
+  discountRowName,
+  discountSummaryVm,
+  discountWhisper,
+  dockBillVm,
+  grantOfferVm,
+  linesRowName,
+  PERCENT_MARKS,
+  percentValueText,
+  promoOfferVm,
+  tipPresetsVm,
+  tipReadoutOf,
+  tipRowName,
+  tipTilesVm,
+  voucherLineVm,
+} from './visit-discount.presenter';
+import {
+  clientRowVm,
+  createLinesOf,
+  createPartsOf,
+  createRowNameOf,
+  searchGlyphOf,
+} from './visit-client-row.presenter';
+import {
+  callName,
+  clientLineOf,
+  clockLabel,
+  dayRelatives,
+  editorPageTitleOf,
+  frameSummaryOf,
+  frameVerdictVm,
+  legRowsVm,
+  peerLine,
+  photoDoors,
+  removeClientName,
+  resolutionHeadOf,
+  serviceApplyVm,
+  serviceOptionLine,
+  servicePersonOf,
+  sheetTitleOf,
+  shopReadoutOf,
+  shopRowName,
+  shopViews,
+  timingOptions,
+  visitEditorWordsOf,
+  visitExitsVm,
+} from './visit-editor.presenter';
+import {
+  type ClientRowVm,
+  type DiscountApplyVm,
+  DiscountCodeState,
+  DiscountKind,
+  type DiscountSummaryVm,
+  type EditorBarberRow,
+  type EditorChairOption,
+  EditorPage,
+  editorPageWords,
+  type EvaluatedBill,
+  type FrameVerdictSlice,
+  type LegRowVm,
+  type OfferChoice,
+  OfferSource,
+  PhotoDoor,
+  placementVerdictWords,
+  type ServiceApplyVm,
+  ShopView,
+  TIP_AMOUNT_PREFIX,
+  TimingMode,
+  TipTile,
+  type VisitEditorWords,
+  type VisitExit,
+  VisitExitId,
+  type VisitWording,
+} from './visit-editor.vm';
 import {
   AUTH_DEPLOYMENT_PORTS,
   CLOCK_PORTS,
@@ -113,6 +193,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   AchievementCategoryPage,
@@ -141,12 +222,7 @@ import {
 } from '@creativo/features/staff/client-card';
 import {
   type UiChoiceOption,
-  type UiChoiceTile,
-  type UiChoiceTileSize,
-  type UiIconName,
   type UiMapPin,
-  type UiSegment,
-  type UiSliderMark,
   UiAmountField,
   UiAsyncImage,
   UiAvatar,
@@ -168,30 +244,19 @@ import {
   UiTimeField,
   UiUnitField,
 } from '@creativo/ui/controls';
-import {
-  catalogTagWords,
-  minutesDeltaWords,
-} from '../shared/catalog-tag.words';
+import { catalogNoteWords, catalogTagWords } from '../shared/catalog-tag.words';
 import {
   type PhotoMomentVm,
   StaffEventHead,
-  type StaffEventLine,
-  type StaffEventRun,
   type VisitRowVm,
+  lastVisitDayOf,
   photoMomentOf,
 } from '@creativo/features/shared/visits';
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
-import {
-  ClockClosing,
-  formatCents,
-  formatCentsFigure,
-  formatClock,
-  formatWallClock,
-} from '@creativo/ui/wall-clock';
+import { formatCentsFigure } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
-  type UiForegroundStyle,
   UiMaterialDirective,
   UiForegroundStyleDirective,
   UiInteractiveDirective,
@@ -639,35 +704,6 @@ export interface VisitEditorClientOption {
   readonly customerId?: CustomerId | null;
 }
 
-/** A person row as the add-client page draws it: ticked, matched, marked. */
-interface ClientRowVm extends VisitEditorClientOption {
-  readonly selected: boolean;
-  /** The typed number or mail IS theirs. */
-  readonly exact: boolean;
-  /** The name as runs, only while some run is the typed one. */
-  readonly titleParts: readonly StaffEventRun[] | null;
-  /** The facts under the name — the mail, the number, the last visit. */
-  readonly lines: readonly StaffEventLine[];
-}
-
-/** One detected part of what was typed, as the create row shows it. */
-interface CreatePart {
-  /** Which part of the reading it is — never the empty one. */
-  readonly clientQueryShape: Exclude<
-    ClientQueryShape,
-    typeof ClientQueryShape.Empty
-  >;
-  readonly icon: UiIconName;
-  readonly value: string;
-}
-
-/** Runs only when one of them is the typed one; otherwise the plain text. */
-function markedRuns(
-  runs: readonly TextSegment[],
-): readonly StaffEventRun[] | undefined {
-  return runs.some((run) => run.hit) ? runs : undefined;
-}
-
 /**
  * A SECTION of the add-client page before anything is typed — «Днес», the
  * people booked on the shown day; «Скорошни», the shop's last visitors —
@@ -776,21 +812,6 @@ export interface VisitEditorCodeResult {
   readonly refusal: VoucherRefusal | null;
 }
 
-/**
- * A percent as a figure: «20 %» — the sign set off by a narrow no-break
- * space, as Bulgarian typography and revision 3 (§1.1, §2.1.2) write it;
- * `Intl`'s percent style for `bg` sets none. The one place the spacing
- * lives: the ruler's marks, the dock, every ticket.
- */
-function percentLabel(percent: number): string {
-  return `${percent}\u202f%`;
-}
-
-/** A percent discount's RULE: «−20 %» — one grammar for the ticket, the dock and the slider alike. */
-function percentOffLabel(percent: number): string {
-  return `−${percentLabel(percent)}`;
-}
-
 /* ── The draft ─────────────────────────────────────────────────────────── */
 
 /**
@@ -884,61 +905,6 @@ interface VisitDraft {
 }
 
 /**
- * Which page is presented on top of the ladder. The client card's pages
- * (client-card-redesign §2) stack under the person's page, four deep at
- * most; every other page sits one deep, straight on the ladder.
- *
- * Revision 3 (§5.1) adds the wallet's ledger «Движение» (`ClientLedger`,
- * three deep under «Лоялност») and the records page «Рекорди»
- * (`ClientRecords`, two deep from the glance's line, three from
- * «Постижения»). `AchievementCategory` stays for the season, archive and
- * day scopes; a category is a chip on «Постижения» now, never a page.
- * The field is `editorPage`; `editorPageWords` keeps each page's word.
- */
-const EditorPage = {
-  Client: 'CLIENT',
-  ClientSearch: 'CLIENT_SEARCH',
-  ClientNew: 'CLIENT_NEW',
-  Service: 'SERVICE',
-  Discount: 'DISCOUNT',
-  Scan: 'SCAN',
-  Photo: 'PHOTO',
-  Camera: 'CAMERA',
-  Library: 'LIBRARY',
-  ClientLoyalty: 'CLIENT_LOYALTY',
-  ClientLedger: 'CLIENT_LEDGER',
-  ClientAchievements: 'CLIENT_ACHIEVEMENTS',
-  ClientRecords: 'CLIENT_RECORDS',
-  AchievementCategory: 'ACHIEVEMENT_CATEGORY',
-  AchievementDetail: 'ACHIEVEMENT_DETAIL',
-  ClientHistory: 'CLIENT_HISTORY',
-} as const;
-type EditorPage = (typeof EditorPage)[keyof typeof EditorPage];
-
-/**
- * Each page as the DOM spells it — the section's `data-page` (the CSS and
- * the specs select on it).
- */
-const editorPageWords = {
-  [EditorPage.Client]: 'client',
-  [EditorPage.ClientSearch]: 'clientSearch',
-  [EditorPage.ClientNew]: 'clientNew',
-  [EditorPage.Service]: 'service',
-  [EditorPage.Discount]: 'discount',
-  [EditorPage.Scan]: 'scan',
-  [EditorPage.Photo]: 'photo',
-  [EditorPage.Camera]: 'camera',
-  [EditorPage.Library]: 'library',
-  [EditorPage.ClientLoyalty]: 'clientLoyalty',
-  [EditorPage.ClientLedger]: 'clientLedger',
-  [EditorPage.ClientAchievements]: 'clientAchievements',
-  [EditorPage.ClientRecords]: 'clientRecords',
-  [EditorPage.AchievementCategory]: 'achievementCategory',
-  [EditorPage.AchievementDetail]: 'achievementDetail',
-  [EditorPage.ClientHistory]: 'clientHistory',
-} as const satisfies Record<EditorPage, string>;
-
-/**
  * The card's own pages, as the client card's store titles them
  * (`ClientCardStore.barTitle`) — the editor's page kinds the card names.
  */
@@ -995,145 +961,10 @@ function canTakeFocus(element: HTMLElement): boolean {
   );
 }
 
-/**
- * What the «Вид» pop-up offers: the shop's codes, a voucher or coupon, and —
- * for money roles — a percent or a sum. The pop-up's option ids; internal
- * values, printed nowhere (the options' test ids spell their own words).
- */
-const DiscountKind = {
-  Promo: 'PROMO',
-  Coupon: 'COUPON',
-  Percent: 'PERCENT',
-  Amount: 'AMOUNT',
-} as const;
-type DiscountKind = Tag<typeof DiscountKind>;
-
-/**
- * Where the code field stands: at rest, asking the owner, or one of its
- * refusals — beside a voucher's own (`VoucherRefusal`, whose values no
- * member here shares). Internal values, printed nowhere.
- */
-const DiscountCodeState = {
-  Idle: 'IDLE',
-  Checking: 'CHECKING',
-  Unknown: 'UNKNOWN',
-  Already: 'ALREADY',
-  NothingLeft: 'NOTHING_LEFT',
-} as const;
-type DiscountCodeState = Tag<typeof DiscountCodeState> | VoucherRefusal;
-
-/**
- * How the end is entered — as a duration, or as a clock time (owner,
- * 2026-09-09). The «Времетраене / Край» pop-up's option ids; internal
- * values, printed nowhere.
- */
-const TimingMode = {
-  Duration: 'DURATION',
-  End: 'END',
-} as const;
-type TimingMode = Tag<typeof TimingMode>;
-
-/**
- * The «Салон» fold's view — values: external contract (the segmented
- * control's `data-segment-id` and the fold's `data-view`), so they keep
- * their spelling.
- */
-const ShopView = {
-  Map: 'map',
-  List: 'list',
-} as const;
-type ShopView = Tag<typeof ShopView>;
-
-/**
- * «Добави снимка»'s doors — the camera, the phone's own pictures, the
- * shop's. The pop-up's option ids; internal values, printed nowhere.
- */
-const PhotoDoor = {
-  Camera: 'CAMERA',
-  Upload: 'UPLOAD',
-  System: 'SYSTEM',
-} as const;
-type PhotoDoor = Tag<typeof PhotoDoor>;
-
-/**
- * The tip section's two tiles that are not amounts — values: external
- * contract (the DS tiles' `data-tile-id`), so they keep their spelling.
- * An amount's tile is {@link TIP_AMOUNT_PREFIX} and its cents.
- */
-const TipTile = {
-  None: 'none',
-  Other: 'other',
-} as const;
-type TipTile = Tag<typeof TipTile>;
-
-/** An amount tile's id: `amt:<cents>` (the same `data-tile-id` contract). */
-const TIP_AMOUNT_PREFIX = 'amt:';
-
-/**
- * Which line the head of a settled chair reads — values: external
- * contract (the `staff.visit.resolution.<word>` i18n key segment).
- */
-const ResolutionWord = {
-  CancelledByStaff: 'cancelledByStaff',
-  CancelledByClient: 'cancelledByClient',
-  NoShow: 'noShow',
-} as const;
-type ResolutionWord = Tag<typeof ResolutionWord>;
-
-/**
- * The exits the sheet names itself — values: external contract (the
- * `staff-visit-<id>` test id). Any other exit is a lifecycle verb, named by
- * its word (`ROW_VERB_WORD`).
- */
-const VisitExitId = {
-  Reinstate: 'reinstate',
-  NoShow: 'no-show',
-  Rebook: 'rebook',
-  Cancel: 'cancel',
-  CancelBlock: 'cancel-block',
-} as const;
-type VisitExitId = Tag<typeof VisitExitId>;
 /** The sum's ruler steps by half a euro, a euro a tick, five the taller. */
 const AMOUNT_SLIDER_STEP_MINOR = 50;
 const AMOUNT_SLIDER_TICK_MINOR = 100;
 const AMOUNT_SLIDER_MAJOR_MINOR = 500;
-
-/** Where an offer on the discount card comes from — the field `offerSource`. */
-const OfferSource = {
-  /** One of the shop's published codes. */
-  Promo: 'PROMO',
-  /** A coupon the client holds. */
-  Grant: 'GRANT',
-} as const;
-type OfferSource = (typeof OfferSource)[keyof typeof OfferSource];
-
-/**
- * One offer on the discount card — a coupon the client holds or a code the
- * shop published — in one of three states: on offer, applied (its line is
- * on the bill), or blocked by what is on the bill.
- */
-interface OfferChoice {
-  /** Where the offer comes from — a shop code or the client's own coupon. */
-  readonly offerSource: OfferSource;
-  /** The bill line's key, for the way off — and the card's `@for` track key. */
-  readonly key: string;
-  readonly testId: string;
-  /** The shop code a promo card offers; `null` on the client's own coupon. */
-  readonly code: VoucherCode | null;
-  /** The grant a coupon card honours; `null` on a shop code. */
-  readonly grantId: CouponGrantId | null;
-  readonly label: string;
-  readonly exclusive: boolean;
-  /**
-   * The RULE — «−10 %», «−5,00 €» — never a figure computed on this bill;
-   * `null` when the name already says it (`couponValue`).
-   */
-  readonly value: string | null;
-  /** Whether it stacks, in words. */
-  readonly line: string;
-  readonly applied: boolean;
-  readonly blocked: boolean;
-}
 
 interface EditorStackPage {
   readonly editorPage: EditorPage;
@@ -1169,46 +1000,6 @@ type LegMenu = {
   readonly legMenuFace: LegMenuFace;
 };
 
-/** The verdicts the line under the frame speaks (`GridLayoutSystem.frameVerdict`). */
-type SheetVerdict =
-  typeof PlacementVerdict.Overlap | typeof PlacementVerdict.Outside;
-
-/** Each verdict as the line's `data-verdict` spells it (the CSS selects on it). */
-const placementVerdictWords = {
-  [PlacementVerdict.Overlap]: 'conflict',
-  [PlacementVerdict.Outside]: 'outsideRoster',
-} as const satisfies Record<SheetVerdict, string>;
-
-/** The line under the frame, with what each verdict names. */
-type FrameVerdictSlice =
-  | {
-      readonly placementVerdict: typeof PlacementVerdict.Overlap;
-      /** The neighbour run into, and its hours. */
-      readonly name: string;
-      readonly start: string;
-      readonly end: string;
-    }
-  | {
-      readonly placementVerdict: typeof PlacementVerdict.Outside;
-      /** When the shift opens. */
-      readonly time: string;
-    };
-
-/** The glyph that doubles the state word — form, so the state survives a
-    greyscale print and a reader who cannot separate two washes. */
-/**
- * One row of the sheet's last group — an act that is not an edit and not a
- * stamp. `act` is the graph edge the owner performs; `null` for the two that
- * are the sheet's own (the next visit, the block instead).
- */
-interface VisitExit {
-  /** The exit's own name, or the lifecycle verb's word — the `staff-visit-<id>` test id. */
-  readonly id: VisitExitId | (typeof ROW_VERB_WORD)[RowVerb];
-  readonly label: string;
-  readonly icon: UiIconName;
-  readonly destructive: boolean;
-  readonly act: RowVerb | null;
-}
 /** A chair the picker offers — the shop's roster, not this visit's. */
 export interface VisitEditorBarberOption {
   readonly id: BarberId;
@@ -1235,35 +1026,6 @@ export interface VisitEditorShopOption {
   readonly address: string;
   readonly lat: number;
   readonly lng: number;
-}
-
-/**
- * A barber as a PARTICIPANT — one token at the top of the sheet.
- *
- * Derived, never stored: a visit has no barber of its own, it has legs, and
- * each leg is worked by someone. Two legs worked by one barber are one
- * participant with two services named on the line under him. `null` is a
- * chair the sheet cannot name (was `''`).
- */
-interface EditorBarberRow {
-  readonly id: BarberId | null;
-  readonly label: string;
-  readonly tone: number;
-  readonly avatarSrc: string | null;
-}
-
-/**
- * A chair as the chair row's menu offers it. `key` is the DS option's id —
- * the chair's id, or, on the roster-less fallback's chair, its name, which
- * the menu has always keyed it by; `id` is what a pick writes into the
- * draft.
- */
-interface EditorChairOption {
-  readonly key: string;
-  readonly id: BarberId | null;
-  readonly name: string;
-  readonly tone: number;
-  readonly avatarSrc: string | null;
 }
 
 /**
@@ -1313,11 +1075,6 @@ const DAY_MINUTES = 1440;
 /** The frame's axis from the shop day's midnight to the closing one — literals on the track. */
 const TRACK_DAY_START: TrackMinute = TrackMinute.ofProven(0);
 const TRACK_DAY_END: TrackMinute = TrackMinute.ofProven(DAY_MINUTES);
-
-/** The 24-hour face every time on the sheet is written in — a late minute wraps onto the next day's clock. */
-function clockLabel(minute: TrackMinute): string {
-  return formatClock(minute, ClockClosing.Wrap);
-}
 
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
 function spanOf(draft: VisitDraft): DurationMinutes {
@@ -1670,6 +1427,64 @@ export class StaffVisitEditor {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly transloco = inject(TranslocoService);
+  /**
+   * THE LOADED TABLE, AS A SIGNAL — the dashboard's own (`copyTable` there,
+   * review r4, 2026-10-06). `selectTranslation()` waits for the load and
+   * re-emits on a language change or a `setTranslation`, so whatever is
+   * worded from it is rebuilt the moment the words are there; `translate()`
+   * and `getTranslation()` read no signal and would never say.
+   */
+  private readonly copyTable = toSignal(this.transloco.selectTranslation());
+
+  /**
+   * THE WORDS A PRESENTER TAKES (Law 10.1, VE-11): one struct, rebuilt only
+   * when the table moves, read inside the `computed()` that calls the
+   * presenter — so no presenter looks anything up.
+   *
+   * ⚠ The table is the ONE tracked read. Every lookup runs `untracked`,
+   * those the struct makes here and those its figure-bearing words make later
+   * from inside somebody else's `computed()`: `translate()` inside a tracked
+   * `computed` is what froze the tab for one build (see `dragCopy`), and it is
+   * never given that chance again.
+   */
+  private readonly words = computed<VisitEditorWords>(() => {
+    const table =
+      this.copyTable() ??
+      untracked(() =>
+        this.transloco.getTranslation(this.transloco.getActiveLang()),
+      );
+    return untracked(() =>
+      visitEditorWordsOf(
+        (key) => {
+          const raw = (table as Record<string, unknown> | undefined)?.[key];
+          // A table that has not loaded answers as `rawCopy` does: the key,
+          // which is what a missing string looks like everywhere else.
+          return typeof raw === 'string' ? raw : this.transloco.translate(key);
+        },
+        (key, params) =>
+          untracked(() => this.transloco.translate<string>(key, params)),
+      ),
+    );
+  });
+
+  /** The words, with what money and a name's echo are worded in. */
+  private readonly wording = computed<VisitWording>(
+    () => ({
+      words: this.words(),
+      currency: this.vm().currency,
+      intlLocale: this.intlLocale(),
+      lang: this.locale(),
+    }),
+    {
+      // A VM recompute (every minute, the now-line) is not new wording.
+      equal: (a, b) =>
+        a.words === b.words &&
+        a.currency === b.currency &&
+        a.intlLocale === b.intlLocale &&
+        a.lang === b.lang,
+    },
+  );
+
   /**
    * The app's clock — the stamp in a minted seat or guest id, and the
    * captured photo's file name. Never placement math: the sheet's days and
@@ -2132,40 +1947,18 @@ export class StaffVisitEditor {
     this.legMenu.set(open ? { seatId, legMenuFace } : null);
   }
 
-  /**
-   * The row's title: the service AND its variant, joined the way the
-   * catalogue joins them — «Класическа подстрижка · Дълга коса», as on the
-   * search page (owner, 2026-09-09). The variant's chip is an icon, so the
-   * name has to live here.
-   */
-  protected legTitle(leg: DraftLeg): string {
-    return this.legOption(leg)?.label ?? leg.serviceLabel;
-  }
-
-  /** The catalogue's option for a leg — its service and variant — or none. */
-  private legOption(leg: DraftLeg): VisitEditorServiceOption | undefined {
-    return this.uiServices().find(
-      (entry) =>
-        entry.serviceId === leg.serviceId &&
-        (entry.variantId ?? null) === (leg.variantId ?? null),
-    );
-  }
-
-  /**
-   * THE SERVICE, bare — the row's title (owner, 2026-09-10: "the variant
-   * could be a description, muted and a size down"). The variant goes on
-   * the line beneath, in the footnote every other row keeps its readings
-   * in, rather than welded to the name with a middot.
-   */
-  protected legService(leg: DraftLeg): string {
-    const option = this.legOption(leg);
-    return option?.serviceLabel ?? option?.label ?? leg.serviceLabel;
-  }
-
-  /** The variant, as a description — or nothing for a service without one. */
-  protected legVariant(leg: DraftLeg): string | null {
-    return this.legOption(leg)?.variantLabel ?? null;
-  }
+  /** One row per seat, each worded once (`legRowsVm`). */
+  protected readonly legRows = computed<readonly LegRowVm[]>(() => {
+    const draft = this.draft();
+    return legRowsVm({
+      legs: draft.legs,
+      durationOverride: draft.durationOverride,
+      clients: draft.clients,
+      services: this.uiServices(),
+      chairName: this.vm().chairName,
+      words: this.words(),
+    });
+  });
 
   /* ── The ladder's rows ─────────────────────────────────────────────── */
 
@@ -2206,10 +1999,13 @@ export class StaffVisitEditor {
 
   /** The VISIT's readout: the catalogue's total and the distance from it. */
   protected readonly visitCatalogNote = computed<string | null>(() => {
-    const sum = this.catalogSum();
-    const delta = this.catalogDelta();
-    if (sum === null || delta === null) return null;
-    return `${this.transloco.translate('staff.visit.catalogMinutes', { minutes: sum })} · ${this.minutesDelta(delta)}`;
+    const { catalogMinutes, minutes } = this.words();
+    return catalogNoteWords(
+      this.catalogSum(),
+      this.catalogDelta(),
+      catalogMinutes,
+      minutes,
+    );
   });
   private readonly frameGrid = viewChild(StaffTimeGrid);
 
@@ -2290,81 +2086,53 @@ export class StaffVisitEditor {
    * It replaces «Редактиране на час», the one line that never scrolled and
    * answered nothing while the name sat below the first screen.
    */
-  readonly sheetTitle = computed<string>(() => {
-    const page = this.pageTitle();
-    if (page !== null) return page;
-    if (this.isNew()) return this.rawCopy('staff.visit.newTitle');
-    const clients = this.draft().clients;
-    const first = clients[0];
-    if (first === undefined) return this.rawCopy('staff.visit.walkIn');
-    return clients.length > 1
-      ? `${first.label} +${clients.length - 1}`
-      : first.label;
-  });
+  readonly sheetTitle = computed<string>(() =>
+    sheetTitleOf({
+      pageTitle: this.pageTitle(),
+      isNew: this.isNew(),
+      clients: this.draft().clients,
+      words: this.words(),
+    }),
+  );
 
   readonly pageTitle = computed<string | null>(() => {
     const page = this.page();
     if (page === null) return null;
-    // THE CLIENT STACK'S NAMES are the card's (§2.1): the person as their
-    // profile names them once read, a module page's own name, the scope's
-    // or the family's title — each falling back to what is known before
-    // the card's words and data have loaded.
+    const { editorPage } = page;
     const store = this.cardStoreRef();
+    const photo = editorPage === EditorPage.Photo ? this.currentPhoto() : null;
+    return editorPageTitleOf({
+      editorPage,
+      clientName:
+        editorPage === EditorPage.Client
+          ? (store?.displayName() ?? this.currentClient()?.label ?? null)
+          : null,
+      photoTitle: photo === null ? null : this.photoTitle(photo),
+      cardTitle: this.cardTitleOf(page),
+      words: this.words(),
+    });
+  });
+
+  /** A card module's own name from the store, once it has one; `null` on every other page. */
+  private cardTitleOf(page: EditorStackPage): string | null {
     switch (page.editorPage) {
-      case EditorPage.Client:
-        return store?.displayName() ?? this.currentClient()?.label ?? null;
-      case EditorPage.ClientSearch:
-        return this.rawCopy('staff.visit.addClient');
-      case EditorPage.ClientNew:
-        return this.rawCopy('staff.visit.newClientTitle');
-      case EditorPage.Service:
-        return this.rawCopy('staff.visit.addService');
-      case EditorPage.Discount:
-        return this.rawCopy('staff.visit.discount');
-      case EditorPage.Scan:
-        return this.rawCopy('staff.visit.scanTitle');
-      case EditorPage.Photo: {
-        // The day, as Photos names it — the picture itself is the page.
-        const photo = this.currentPhoto();
-        return photo === null
-          ? this.rawCopy('staff.visit.photo')
-          : this.photoTitle(photo);
-      }
-      case EditorPage.Camera:
-        return this.rawCopy('staff.visit.photoTake');
-      case EditorPage.Library:
-        return this.rawCopy('staff.visit.photoSystem');
       case EditorPage.ClientLoyalty:
-        return (
-          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
-          this.rawCopy('clientCard.loyalty.title')
-        );
-      // Revision 3's two leaves: the wallet's ledger and the records page
-      // (§5.3), named by the store's `barTitle` as the module pages are.
       case EditorPage.ClientLedger:
-        return (
-          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
-          this.rawCopy('clientCard.ledgerPage.title')
-        );
       case EditorPage.ClientRecords:
-        return (
-          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
-          this.rawCopy('clientCard.achievements.records')
-        );
       case EditorPage.ClientHistory:
-        return (
-          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
-          this.rawCopy('clientCard.visits.title')
-        );
       case EditorPage.ClientAchievements:
       case EditorPage.AchievementCategory:
       case EditorPage.AchievementDetail:
         return (
-          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
-          this.rawCopy('clientCard.achievements.title')
+          this.cardStoreRef()?.barTitle(
+            editorCardPages[page.editorPage],
+            page.subjectId,
+          ) ?? null
         );
+      default:
+        return null;
     }
-  });
+  }
 
   /**
    * The dock's ✓ on a page — the draft already holds the edits; back to the
@@ -2398,49 +2166,12 @@ export class StaffVisitEditor {
       : null;
   }
 
-  /** `−10 мин` / `+15 мин` — a signed distance from a catalogue length. */
-  protected minutesDelta(delta: MinuteDelta): string {
-    return minutesDeltaWords(delta, (count) => this.minutesLabel(count));
-  }
-
   /** The VISIT's distance from the catalogue's total, for the frame's tag. */
   protected readonly frameTag = computed<string | null>(() =>
-    catalogTagWords(this.catalogDelta(), (count) => this.minutesLabel(count)),
+    catalogTagWords(this.catalogDelta(), this.words().minutes),
   );
 
   /* ── The variant row ─────────────────────────────────────────────────── */
-
-  /** A service's variants as choices — empty for a service that has none. */
-  protected legVariantChoices(leg: DraftLeg): readonly UiChoiceOption[] {
-    return this.uiServices()
-      .filter(
-        (option) =>
-          option.serviceId === leg.serviceId && option.variantId !== null,
-      )
-      .map((option) => ({
-        id: option.id,
-        label: option.variantLabel ?? option.label,
-        testId: `staff-visit-variant-pick-${option.variantId}`,
-      }));
-  }
-
-  protected legVariantId(leg: DraftLeg): string | null {
-    return (
-      this.uiServices().find(
-        (option) =>
-          option.serviceId === leg.serviceId &&
-          option.variantId !== null &&
-          option.variantId === leg.variantId,
-      )?.id ?? null
-    );
-  }
-
-  protected legVariantLabel(leg: DraftLeg): string {
-    const id = this.legVariantId(leg);
-    return (
-      this.uiServices().find((option) => option.id === id)?.variantLabel ?? '—'
-    );
-  }
 
   /**
    * A different variant IS different terms (owner, 2026-09-09: "changing it
@@ -2503,18 +2234,9 @@ export class StaffVisitEditor {
   protected readonly TimingMode = TimingMode;
 
   /** The row title's two words, as choice-menu options. */
-  protected readonly timingOptions = computed<readonly UiChoiceOption[]>(() => [
-    {
-      id: TimingMode.Duration,
-      label: this.rawCopy('staff.visit.duration'),
-      testId: 'staff-visit-timing-duration',
-    },
-    {
-      id: TimingMode.End,
-      label: this.rawCopy('staff.visit.end'),
-      testId: 'staff-visit-timing-end',
-    },
-  ]);
+  protected readonly timingOptions = computed(() =>
+    timingOptions(this.words()),
+  );
 
   /** The pop-up's pick — one of its own two ids, else nothing (`Tag.has`). */
   protected setTimingMode(mode: string): void {
@@ -2738,7 +2460,10 @@ export class StaffVisitEditor {
       title: draft.clients[0]?.label ?? vm.clientLabel,
       // Services only, joined the way the agenda card joins them; a
       // variant is a description, and the block's one line is for names.
-      detail: draft.legs.map((leg) => this.legService(leg)).join(' + ') || null,
+      detail:
+        this.legRows()
+          .map((leg) => leg.service)
+          .join(' + ') || null,
       attribution: null,
       bookingStatus: vm.bookingStatus,
       // A visit not booked yet has no status — and still prints the frame's
@@ -2835,23 +2560,17 @@ export class StaffVisitEditor {
    * everyone who can see.
    */
   protected readonly frameSummary = computed(() => {
-    const range = `${this.startLabel()} – ${this.endLabel()}`;
     const day = this.frameDay();
-    const shift = `${clockLabel(day.rosterStartMinute)} – ${clockLabel(day.rosterEndMinute)}`;
-    const around = day.neighbours
-      .map(
-        (neighbour) =>
-          `${neighbour.name} ${clockLabel(neighbour.startMinute)} – ${clockLabel(neighbour.endMinute)}`,
-      )
-      .join(', ');
-    return [
-      `${range}, ${this.minutesLabel(this.durationMinutes())}`,
-      this.frameChair().name,
-      shift,
-      around,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    return frameSummaryOf({
+      startLabel: this.startLabel(),
+      endLabel: this.endLabel(),
+      durationMinutes: this.durationMinutes(),
+      chairName: this.frameChair().name,
+      rosterStartMinute: day.rosterStartMinute,
+      rosterEndMinute: day.rosterEndMinute,
+      neighbours: day.neighbours,
+      words: this.words(),
+    });
   });
 
   /**
@@ -2884,21 +2603,7 @@ export class StaffVisitEditor {
     );
     const clash =
       placed.hit === null ? undefined : day.neighbours[placed.hit.event];
-    if (placed.placementVerdict === PlacementVerdict.Overlap && clash) {
-      return {
-        placementVerdict: PlacementVerdict.Overlap,
-        name: clash.name,
-        start: clockLabel(clash.startMinute),
-        end: clockLabel(clash.endMinute),
-      };
-    }
-    if (placed.placementVerdict === PlacementVerdict.Outside && shift) {
-      return {
-        placementVerdict: PlacementVerdict.Outside,
-        time: clockLabel(shift.startMinute),
-      };
-    }
-    return null;
+    return frameVerdictVm(placed.placementVerdict, clash, shift);
   });
 
   /* ── Pages: their subjects ─────────────────────────────────────────── */
@@ -2999,65 +2704,20 @@ export class StaffVisitEditor {
     ClientQuerySystem.parse(this.query()),
   );
 
-  /**
-   * A PERSON ROW IS THE EVENT'S HEAD (owner, 2026-09-22: "there should be
-   * phone and email fields dedicated to themselves, not all the data
-   * separated by a dot — this looks cheap"): the name, then every fact on
-   * its own glyph-led line in the agenda card's order — the mail, the
-   * number, when they were last here — the same recipe the card and the
-   * frame's block already draw, so a person reads the same on every staff
-   * surface. The typed run stays marked in the name and in the lines.
-   */
+  /** A person row, worded by `clientRowVm`. */
   private toRowVm(
     client: VisitEditorClientOption,
     parsed: ParsedClientQuery,
     chosen: ReadonlySet<DraftPersonKey>,
     exact: boolean,
   ): ClientRowVm {
-    const code = this.callingCode();
-    const lines: StaffEventLine[] = [];
-    if (client.email) {
-      lines.push({
-        text: client.email,
-        icon: 'contact.email',
-        parts: markedRuns(
-          ClientQuerySystem.emailSegments(client.email, parsed),
-        ),
-      });
-    }
-    if (client.phone) {
-      lines.push({
-        text: client.phone,
-        icon: 'contact.phone',
-        parts: markedRuns(
-          ClientQuerySystem.phoneSegments(client.phone, parsed, code),
-        ),
-      });
-    }
-    // `meta` is the owner's own line — «посл. 22.09» — unless it only
-    // repeats the mail (the index's hits carry it in both).
-    if (client.meta && client.meta !== client.email) {
-      lines.push({ text: client.meta, icon: 'visit.last' });
-    }
-    // A WALK-IN'S RECORD (OR-26): found again by the number or the mail the
-    // desk typed once, and said to have no profile — the last fact, in ink
-    // like the others, never a badge competing with «Вече е клиент».
-    if (client.noAccount) {
-      lines.push({
-        text: this.rawCopy('staff.client.noAccount'),
-        icon: 'account.anonymous',
-        testId: `staff-visit-client-no-account-${client.id}`,
-      });
-    }
-    return {
-      ...client,
-      selected: chosen.has(client.id),
+    return clientRowVm(client, {
+      parsed,
+      chosen,
       exact,
-      titleParts:
-        markedRuns(ClientQuerySystem.nameSegments(client.label, parsed)) ??
-        null,
-      lines,
-    };
+      callingCode: this.callingCode(),
+      words: this.words(),
+    });
   }
 
   /**
@@ -3122,49 +2782,6 @@ export class StaffVisitEditor {
       return [...pool.values()];
     },
   );
-
-  /* ── The line under a leg's row ────────────────────────────────────── */
-
-  /**
-   * `30 мин · 20,00 €`, and the barber ONLY when he is not the chair.
-   *
-   * When they agree the frame's owner header has already said it once, and
-   * repeating it on every row is the duplication that deleted the `Стол` row.
-   */
-  protected legLine(leg: DraftLeg): string {
-    const draft = this.draft();
-    /*
-     * MINUTES only when they say something the frame does not (owner,
-     * 2026-09-09). With one leg the frame's duration IS the leg's, and once
-     * the frame has been resized the catalogue's minutes on each leg are a
-     * number the visit no longer runs to — both read as "the original
-     * minutes" beside the real ones. The leg page still edits them.
-     */
-    const parts: string[] = [];
-    // THE VARIANT leads the line — a description of the service above it.
-    const variant = this.legVariant(leg);
-    if (variant !== null) parts.push(variant);
-    if (draft.legs.length > 1 && draft.durationOverride === null) {
-      parts.push(this.minutesLabel(leg.durationMinutes));
-    }
-    // No money on the service line (owner, 2026-09-10): the receipt
-    // says what each seat costs. Only whose chair, when it is not this one.
-    if (leg.barberName !== this.vm().chairName) parts.push(leg.barberName);
-    // On a party, whose seat this is — the leg page is where it changes.
-    const clients = this.draft().clients;
-    if (clients.length > 1) {
-      const person = clients.find((client) => client.id === leg.clientId);
-      if (person) parts.push(person.label);
-    }
-    // Provenance shown, never hidden: a repriced or re-timed seat says so.
-    if (leg.overridden)
-      parts.push(this.transloco.translate('staff.visit.custom'));
-    return parts.join(' · ');
-  }
-
-  protected minutesLabel(minutes: number): string {
-    return this.transloco.translate('staff.visit.minutes', { minutes });
-  }
 
   /**
    * Every transition the graph allows, as ONE list — the `СТАТУС` picker's
@@ -3240,36 +2857,9 @@ export class StaffVisitEditor {
    * was «Друго».
    */
 
-  /** Which line the head reads — the act, and whose it was. */
-  protected readonly resolutionKey = computed<ResolutionWord | null>(() => {
-    const resolution = this.vm().resolution;
-    if (resolution === null) return null;
-    if (resolution.bookingStatus === BookingStatus.NoShow) {
-      return ResolutionWord.NoShow;
-    }
-    return resolution.by === CancelledSide.Client
-      ? ResolutionWord.CancelledByClient
-      : ResolutionWord.CancelledByStaff;
-  });
-
-  /**
-   * The glyph's ink — the design system's own foreground tones (its
-   * `data-tone`). Cancelling keeps the sheet's one red — it is the
-   * destructive act everywhere else on it — and a no-show is a warning, the
-   * client's fact rather than the shop's.
-   */
-  protected readonly resolutionTone = computed<
-    Extract<UiForegroundStyle, 'destructive' | 'warning'>
-  >(() =>
-    this.vm().resolution?.bookingStatus === BookingStatus.NoShow
-      ? 'warning'
-      : 'destructive',
-  );
-
-  protected readonly resolutionIcon = computed<UiIconName>(() =>
-    this.vm().resolution?.bookingStatus === BookingStatus.NoShow
-      ? 'visit.noShow'
-      : 'visit.cancelled',
+  /** Which line the head reads, in which ink, under which glyph (`resolutionHeadOf`). */
+  protected readonly resolutionHead = computed(() =>
+    resolutionHeadOf(this.vm().resolution),
   );
 
   /** A REQUEST waiting for its answer: the confirm edge, while pending. */
@@ -3305,99 +2895,19 @@ export class StaffVisitEditor {
       : LocalDate.compare(vm.dayKey, now.localDate) < 0;
   });
 
-  /**
-   * THE EXITS — the sheet's last group. Every act that is not an edit and
-   * not a stamp: no-show once the start has passed (before it, nobody has
-   * failed to come), cancel, cancel-and-block for the appointment that
-   * should have been a block, the way back from a no-show, and the next
-   * visit after any settled one. The stamps the graph still allows —
-   * arrived, completed — are not offered anywhere.
-   */
+  /** THE EXITS — the sheet's last group: legal by the lifecycle, worded by `visitExitsVm`. */
   protected readonly exits = computed<readonly VisitExit[]>(() => {
     const vm = this.vm();
     const status = vm.bookingStatus;
     if (this.isNew() || status === null) return [];
-    // WHICH verbs are exits, in which order, is the lifecycle's
-    // (`AppointmentLifecycleSystem.exitVerbs`): never the stamps (arrived,
-    // completed); reinstate only off a request (a PENDING chair's confirm
-    // is the head's own); no-show once the start has passed — before it,
-    // nobody has failed to come; cancel last, below.
-    const verbs = this.allVerbs();
-    const legal = AppointmentLifecycleSystem.exitVerbs(
-      status,
-      verbs.map((verb) => verb.rowVerb),
-      this.started(),
-    );
-    const out: VisitExit[] = [];
-    for (const verb of verbs) {
-      if (!legal.verbs.includes(verb.rowVerb)) continue;
-      if (verb.rowVerb === BookingStatus.Confirmed) {
-        out.push({
-          id: VisitExitId.Reinstate,
-          label: verb.label,
-          icon: 'visit.confirmed',
-          destructive: false,
-          act: verb.rowVerb,
-        });
-        continue;
-      }
-      if (verb.rowVerb === BookingStatus.NoShow) {
-        out.push({
-          id: VisitExitId.NoShow,
-          label: verb.label,
-          icon: 'visit.noShow',
-          destructive: false,
-          act: verb.rowVerb,
-        });
-        continue;
-      }
-      out.push({
-        // The exit's id is the verb's word — what its test id prints.
-        id: ROW_VERB_WORD[verb.rowVerb],
-        label: verb.label,
-        icon: 'visit.confirmed',
-        destructive: verb.destructive,
-        act: verb.rowVerb,
-      });
-    }
-    // A FINISHED visit offers the next one here; a visit that is GONE
-    // offers it from the dock instead (owner, 2026-09-11), where nothing is
-    // due and «Запази» has nothing left to save — one control per act.
-    if (legal.rebook) {
-      out.push({
-        id: VisitExitId.Rebook,
-        label: this.rawCopy('staff.visit.rebook'),
-        icon: 'appointment.book',
-        destructive: false,
-        act: null,
-      });
-    }
-    if (legal.cancel) {
-      // ON A PARTY'S CHAIR the exit calls off THIS chair's share alone —
-      // the shell scopes it to the chair's seats — so it says whose
-      // (2026-09-24): «Откажи часа» read as the whole booking.
-      const names = this.draft()
-        .clients.map((client) => client.label)
-        .join(', ');
-      out.push({
-        id: VisitExitId.Cancel,
-        label:
-          vm.peers.length > 0 && names.length > 0
-            ? this.transloco.translate('staff.visit.cancelFor', { names })
-            : this.rawCopy('staff.visit.cancelVisit'),
-        icon: 'visit.cancelled',
-        destructive: true,
-        act: BookingStatus.Cancelled,
-      });
-      out.push({
-        id: VisitExitId.CancelBlock,
-        label: this.rawCopy('staff.visit.cancelAndBlock'),
-        icon: 'booking.blocked',
-        destructive: true,
-        act: null,
-      });
-    }
-    return out;
+    return visitExitsVm({
+      bookingStatus: status,
+      verbs: this.allVerbs(),
+      started: this.started(),
+      peerCount: vm.peers.length,
+      clients: this.draft().clients,
+      words: this.words(),
+    });
   });
 
   protected runExit(exit: VisitExit): void {
@@ -3412,21 +2922,28 @@ export class StaffVisitEditor {
     if (exit.act !== null) this.acted.emit(exit.act);
   }
 
-  /**
-   * THE LINE UNDER A PERSON'S NAME on their page: what the rows below do
-   * not already say (2026-09-24). It printed the number, and the call row
-   * right under it printed the same number again; the number is the call
-   * row's, and this line keeps the one fact the sheet's own client rows
-   * gave up — the last visit — or says there is no number to call.
-   */
+  /** The line under a person's name on their page (`clientLineOf`). */
   protected clientLine(client: DraftClient): string {
-    return [
-      client.meta,
-      client.phone ? null : this.rawCopy('staff.day.visitNoPhone'),
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    return clientLineOf(client, this.words());
   }
+
+  /** A party person's way off, spoken. */
+  protected removeClientName(client: DraftClient): string {
+    return removeClientName(client.label, this.words());
+  }
+
+  /** A catalogue row's line. */
+  protected serviceLine(option: VisitEditorServiceOption): string {
+    return serviceOptionLine(option, this.words());
+  }
+
+  /** A peer chair's line. */
+  protected readonly peerLine = peerLine;
+
+  /** The dock's call, spoken. */
+  protected readonly callName = computed(() =>
+    callName(this.vm().clientLabel, this.words()),
+  );
 
   /* ── Navigation ────────────────────────────────────────────────────── */
 
@@ -3672,6 +3189,9 @@ export class StaffVisitEditor {
    * loop inside `afterNextRender`: the renderer never gets the frame back,
    * the tab wedges hard enough that the debugger has to interrupt it, and no
    * error is ever printed. Read the raw table instead.
+   *
+   * Only the grid's drag copy reads this now (`resolveDragCopy`); every other
+   * word reaches its presenter through `words`.
    */
   private rawCopy(key: string): string {
     const table = this.transloco.getTranslation(this.transloco.getActiveLang());
@@ -4016,26 +3536,12 @@ export class StaffVisitEditor {
     [...this.servicePicks().values()].reduce((sum, count) => sum + count, 0),
   );
 
-  /**
-   * THE DOCK'S PROMISE on the service page: «Добави» for one pick, «Добави
-   * 3 услуги» for more — or nothing, and the dock keeps its ✓: the page is
-   * only being read.
-   */
-  protected readonly serviceApply = computed<{
-    label: string;
-    count: number;
-  } | null>(() => {
-    if (this.page()?.editorPage !== EditorPage.Service) return null;
-    const count = this.servicePickTotal();
-    if (count === 0) return null;
-    return {
-      count,
-      label:
-        count === 1
-          ? this.rawCopy('staff.visit.servicesAddOne')
-          : this.transloco.translate('staff.visit.servicesAddCount', { count }),
-    };
-  });
+  /** The dock's promise on the service page (`serviceApplyVm`), while it is up. */
+  protected readonly serviceApply = computed<ServiceApplyVm | null>(() =>
+    this.page()?.editorPage === EditorPage.Service
+      ? serviceApplyVm(this.servicePickTotal(), this.words())
+      : null,
+  );
 
   /**
    * The dock's act: every pick seated, in the order it was picked and as
@@ -4271,83 +3777,23 @@ export class StaffVisitEditor {
   });
 
   /** The field's own glyph says what it took the typing for. */
-  protected readonly searchGlyph = computed<UiIconName>(() => {
-    const shape = this.parsedQuery().clientQueryShape;
-    return shape === ClientQueryShape.Phone
-      ? 'contact.phone'
-      : shape === ClientQueryShape.Email
-        ? 'contact.email'
-        : 'action.search';
-  });
-
-  /**
-   * THE CREATE ROW SAYS WHAT IT WILL ASSIGN: every detected part with its
-   * glyph — the name as typed, the number printed the way the profile
-   * prints it once it is a whole number, the mail — so the desk sees the
-   * form it is about to open before opening it.
-   */
-  protected readonly createParts = computed<readonly CreatePart[]>(() => {
-    const parsed = this.parsedQuery();
-    const parts: CreatePart[] = [];
-    if (parsed.name.length > 0) {
-      parts.push({
-        clientQueryShape: ClientQueryShape.Name,
-        icon: 'contact.person',
-        value: parsed.name,
-      });
-    }
-    if (parsed.phoneTyped.length > 0) {
-      parts.push({
-        clientQueryShape: ClientQueryShape.Phone,
-        icon: 'contact.phone',
-        value: this.phoneAsTyped(parsed),
-      });
-    }
-    if (parsed.email.length > 0) {
-      parts.push({
-        clientQueryShape: ClientQueryShape.Email,
-        icon: 'contact.email',
-        value: parsed.email,
-      });
-    }
-    return parts;
-  });
-
-  /**
-   * A NUMBER READ AS IT IS TYPED (owner, 2026-09-22: "translate the 0 to
-   * +359 when not specifying the country code"): «088 76» prints
-   * «+359 88 76» before it is whole — the trunk zero becomes the shop's
-   * dial code, a «+…» or «00…» keeps the code it carries — and a whole
-   * number prints the way the profile prints it. The kernel's as-you-type
-   * formatter, fed the international form.
-   */
-  private phoneAsTyped(parsed: ParsedClientQuery): string {
-    const [international] = ClientQuerySystem.phoneInternationalDigits(
-      parsed,
-      this.callingCode(),
-    );
-    if (international === undefined) return parsed.phoneTyped;
-    return PhoneSystem.formatDraft(`+${international}`, null).formatted;
-  }
-
-  /** The create row's facts: every detected part on its own line. */
-  protected readonly createLines = computed<readonly StaffEventLine[]>(() =>
-    this.createParts().map((part) => ({
-      text: part.value,
-      icon: part.icon,
-      testId: `staff-visit-new-client-${clientQueryShapeWords[part.clientQueryShape]}`,
-    })),
+  protected readonly searchGlyph = computed(() =>
+    searchGlyphOf(this.parsedQuery().clientQueryShape),
   );
 
-  protected readonly createRowName = computed(() => {
-    const parts = this.createParts();
-    return parts.length === 0
-      ? this.rawCopy('staff.visit.newClient')
-      : this.rawCopy('staff.visit.newClientParts').replace(
-          '{{parts}}',
-          parts.map((part) => part.value).join(', '),
-        );
-  });
+  /** What the create row will assign (`createPartsOf`). */
+  private readonly createParts = computed(() =>
+    createPartsOf(this.parsedQuery(), this.callingCode()),
+  );
+
+  /** The create row's facts: every detected part on its own line. */
+  protected readonly createLines = computed(() =>
+    createLinesOf(this.createParts()),
+  );
+
+  protected readonly createRowName = computed(() =>
+    createRowNameOf(this.createParts(), this.words()),
+  );
 
   /** The typed number or mail is already somebody's — badged as such. */
   protected readonly exactMatch = computed(() =>
@@ -4700,43 +4146,9 @@ export class StaffVisitEditor {
    * «Запази» (owner's call 1, 2026-09-15) — nothing is written on a tap.
    */
 
-  /**
-   * The presets, each already a figure of THIS visit's total, sized for the
-   * BENTO (owner, 2026-09-16: "small tiles for direct tips, bigger tiles
-   * for the ones that mean something else"): the round-ups LARGE — next
-   * whole euro, next 5, next 10, while the tip stays within the cap — and
-   * the coins on top REGULAR: the three lowest of 1, 2, 5, 10, 20 € inside
-   * their share band, never an amount a round-up already is. None when the
-   * total is unknown.
-   */
-  protected readonly tipPresets = computed<
-    readonly {
-      id: string;
-      amount: PriceCents;
-      label: string;
-      detail: string;
-      size: UiChoiceTileSize;
-    }[]
-  >(() =>
-    // The figures are `BillingSystem.tipPresets`: the round-ups LARGE, the
-    // coins REGULAR. THE TIP IS THE FIGURE, on every tile alike; the target
-    // a round-up rounds the bill to is the muted line beneath — «0,50 € ·
-    // общо 15,00 €» (owner, 2026-09-16: «до 15,00 €» as the headline read
-    // as "anything up to 15"). No share beneath a coin: the barber counts
-    // money, not percentages, and a coin says all it means by itself.
-    BillingSystem.tipPresets(this.vm().priceCents).map((preset) => ({
-      id: `${TIP_AMOUNT_PREFIX}${preset.amountCents}`,
-      amount: preset.amountCents,
-      label: this.moneyLabel(preset.amountCents),
-      detail:
-        preset.targetCents === null
-          ? ''
-          : this.rawCopy('staff.visit.tipRoundUp').replace(
-              '{{total}}',
-              this.moneyLabel(preset.targetCents),
-            ),
-      size: preset.tipPreset === TipPreset.RoundUp ? 'large' : 'regular',
-    })),
+  /** The presets, each already a figure of THIS visit's total (`tipPresetsVm`). */
+  protected readonly tipPresets = computed(() =>
+    tipPresetsVm(this.vm().priceCents, this.wording()),
   );
 
   /* ── THE TIP, A DISCLOSURE ON THE LADDER (owner, 2026-09-17: "adding a
@@ -4784,45 +4196,10 @@ export class StaffVisitEditor {
     () => this.tipTileId() === TipTile.Other && this.tipCents() !== null,
   );
 
-  /**
-   * The section's tiles in the bento's order: the AMOUNTS first — the
-   * large round-ups so they sit side by side, then the coins, and «Без»
-   * closing the coins' row as the amounts' zero, so four regular tiles
-   * fill a row (or the cells beside and beneath an odd round-up) — and
-   * «Друга сума» as the full-width row at the end. The two that are not
-   * amounts, «Без» and «Друга сума», sit together at the foot of the grid
-   * (owner, 2026-09-17: "None and Other should be next to each other"; the
-   * order Square's tipping screen keeps, with the amounts read first).
-   */
-  protected readonly tipTiles = computed<readonly UiChoiceTile[]>(() => {
-    const presets = this.tipPresets();
-    const tile = (preset: (typeof presets)[number]): UiChoiceTile => ({
-      id: preset.id,
-      label: preset.label,
-      ...(preset.detail ? { detail: preset.detail } : {}),
-      size: preset.size,
-      testId: `staff-visit-tip-tile-${preset.amount}`,
-    });
-    return [
-      ...presets.filter((preset) => preset.size === 'large').map(tile),
-      ...presets.filter((preset) => preset.size === 'regular').map(tile),
-      {
-        id: TipTile.None,
-        label: this.rawCopy('staff.visit.tipNone'),
-        testId: 'staff-visit-tip-tile-none',
-      },
-      {
-        id: TipTile.Other,
-        // The tile is the CHOICE, not the readout: its name stays whatever
-        // sum the entry beneath holds (owner, 2026-09-16: "adding the
-        // custom tip should not change the label"). The sum is read on
-        // the entry, on the dock and on the row.
-        label: this.rawCopy('staff.visit.tipPageAmount'),
-        size: 'wide',
-        testId: 'staff-visit-tip-tile-other',
-      },
-    ];
-  });
+  /** The section's tiles in the bento's order (`tipTilesVm`). */
+  protected readonly tipTiles = computed(() =>
+    tipTilesVm(this.tipPresets(), this.words()),
+  );
 
   /** The bento is four cells across. */
   protected readonly tipTileColumns = TIP_TILE_COLUMNS;
@@ -4833,12 +4210,9 @@ export class StaffVisitEditor {
   );
 
   /** The row's readout: «Без», or the amount — never a share it inferred. */
-  protected readonly tipReadout = computed(() => {
-    const cents = this.tipCents();
-    return cents === null
-      ? this.rawCopy('staff.visit.tipNone')
-      : this.moneyLabel(cents);
-  });
+  protected readonly tipReadout = computed(() =>
+    tipReadoutOf(this.tipCents(), this.wording()),
+  );
 
   /**
    * The row's tap: the section unfolds, or folds. Opening a custom sum
@@ -4893,8 +4267,8 @@ export class StaffVisitEditor {
   }
 
   /** The row's spoken name: «Бакшиш: 2,00 €», «Бакшиш: Без». */
-  protected readonly tipRowName = computed(
-    () => `${this.rawCopy('staff.visit.tip')}: ${this.tipReadout()}`,
+  protected readonly tipRowName = computed(() =>
+    tipRowName(this.tipReadout(), this.words()),
   );
 
   /* ── «Салон» — the shop, a row that unfolds a map ──────────────────── */
@@ -4931,12 +4305,12 @@ export class StaffVisitEditor {
   });
 
   /** What the row reads: the shop's name, or a dash for one the catalogue no longer lists. */
-  protected readonly shopReadout = computed(
-    () => this.shop()?.label ?? this.rawCopy('staff.visit.shopUnknown'),
+  protected readonly shopReadout = computed(() =>
+    shopReadoutOf(this.shop(), this.words()),
   );
 
-  protected readonly shopRowName = computed(
-    () => `${this.rawCopy('staff.visit.shop')}: ${this.shopReadout()}`,
+  protected readonly shopRowName = computed(() =>
+    shopRowName(this.shopReadout(), this.words()),
   );
 
   /**
@@ -4951,22 +4325,7 @@ export class StaffVisitEditor {
   protected readonly shopView = signal<ShopView>(ShopView.Map);
   protected readonly ShopView = ShopView;
 
-  protected readonly shopViews = computed<readonly UiSegment[]>(() => [
-    {
-      id: ShopView.Map,
-      label: this.rawCopy('staff.visit.shopMap'),
-      icon: 'view.map',
-      iconOnly: true,
-      testId: 'staff-visit-shop-view-map',
-    },
-    {
-      id: ShopView.List,
-      label: this.rawCopy('staff.visit.shopList'),
-      icon: 'view.list',
-      iconOnly: true,
-      testId: 'staff-visit-shop-view-list',
-    },
-  ]);
+  protected readonly shopViews = computed(() => shopViews(this.words()));
 
   /** The pill's pick — one of its own two views, else nothing (`Tag.has`). */
   protected setShopView(id: string): void {
@@ -5022,12 +4381,6 @@ export class StaffVisitEditor {
     const cents = minor === null || minor <= 0 ? null : PriceCents.of(minor);
     this.setTip(cents !== null && cents.ok ? cents.value : null);
   }
-
-  /** The dock's green plus — the drafted tip, formatted, or nothing. */
-  protected readonly tipDockLabel = computed(() => {
-    const cents = this.tipCents();
-    return cents === null || cents <= 0 ? null : this.moneyLabel(cents);
-  });
 
   /* ── THE BILL'S LADDER (2026-09-10) ──────────────────────────────────
    *
@@ -5110,38 +4463,12 @@ export class StaffVisitEditor {
   );
 
   /** The kinds on offer: the shop's codes when it has live ones, a voucher or coupon always, the figures for money roles. */
-  protected readonly discountKinds = computed<readonly UiChoiceOption[]>(() => {
-    const kinds: UiChoiceOption[] = [];
-    if (this.promoChoices().length > 0) {
-      kinds.push({
-        id: DiscountKind.Promo,
-        label: this.rawCopy('staff.visit.kindPromo'),
-        description: this.rawCopy('staff.visit.kindPromoDetail'),
-        testId: 'staff-visit-discount-kind-promo',
-      });
-    }
-    kinds.push({
-      id: DiscountKind.Coupon,
-      label: this.rawCopy('staff.visit.kindCoupon'),
-      description: this.rawCopy('staff.visit.kindCouponDetail'),
-      testId: 'staff-visit-discount-kind-coupon',
-    });
-    if (this.uiMayDiscount()) {
-      kinds.push({
-        id: DiscountKind.Percent,
-        label: this.rawCopy('staff.visit.discountPercent'),
-        description: this.rawCopy('staff.visit.discountScope'),
-        testId: 'staff-visit-discount-kind-percent',
-      });
-      kinds.push({
-        id: DiscountKind.Amount,
-        label: this.rawCopy('staff.visit.discountAmount'),
-        description: this.rawCopy('staff.visit.discountScope'),
-        testId: 'staff-visit-discount-kind-amount',
-      });
-    }
-    return kinds;
-  });
+  protected readonly discountKinds = computed(() =>
+    discountKindOptions(this.words(), {
+      hasPromos: this.promoChoices().length > 0,
+      mayDiscount: this.uiMayDiscount(),
+    }),
+  );
 
   /** The kind in force: the one picked while offered; else the client's coupon when they hold one; else the first on offer. */
   protected readonly discountKind = computed<DiscountKind>(() => {
@@ -5157,10 +4484,12 @@ export class StaffVisitEditor {
   });
   protected readonly DiscountKind = DiscountKind;
 
-  protected readonly discountKindLabel = computed(
-    () =>
-      this.discountKinds().find((kind) => kind.id === this.discountKind())
-        ?.label ?? '',
+  protected readonly discountKindLabel = computed(() =>
+    discountKindLabelOf(this.discountKinds(), this.discountKind()),
+  );
+
+  protected readonly discountKindName = computed(() =>
+    discountKindName(this.discountKindLabel(), this.words()),
   );
 
   /**
@@ -5241,30 +4570,14 @@ export class StaffVisitEditor {
       (promo) => promo.couponId,
     ).map((promo) => {
       const applied = onBill.has(promo.code);
-      return {
-        offerSource: OfferSource.Promo,
-        key: `code:${promo.code}`,
-        testId: `staff-visit-discount-promo-${promo.code}`,
-        code: promo.code,
-        grantId: null,
-        label: promo.label,
-        exclusive: promo.exclusive,
-        value: this.couponValue(promo.label, promo.value),
-        line: this.rawCopy(
-          promo.exclusive ? 'staff.visit.alone' : 'staff.visit.stacks',
-        ),
+      return promoOfferVm(
+        promo,
         applied,
-        blocked: this.offerBlocked(promo.exclusive, applied),
-      };
+        this.offerBlocked(promo.exclusive, applied),
+        this.wording(),
+      );
     });
   });
-
-  /** An offer's spoken name: «Първо посещение, FIRST10, −10 %». */
-  protected offerName(offer: OfferChoice): string {
-    return [offer.label, offer.code, offer.value]
-      .filter((part): part is string => part !== null)
-      .join(', ');
-  }
 
   /**
    * Whether an offer can join what is on the bill: an exclusive offer only
@@ -5427,38 +4740,10 @@ export class StaffVisitEditor {
   /** «Добави снимка» opens its doors — the camera, the phone's own pictures, the shop's. */
   protected readonly photoMenuOpen = signal(false);
 
-  /**
-   * THE DOORS, as the sheet's every pop-up offers its options — the DS
-   * choice menu, the chair's and «Вид»'s own (owner, 2026-09-17: "why is
-   * it not using our ui menu the other dropdowns are using?"). The camera
-   * is offered only where the engine has one to ask for.
-   */
-  protected readonly photoDoors = computed<readonly UiChoiceOption[]>(() => {
-    const doors: UiChoiceOption[] = [];
-    if (this.uiCamera() ?? isCameraSupported()) {
-      doors.push({
-        id: PhotoDoor.Camera,
-        label: this.rawCopy('staff.visit.photoTake'),
-        icon: 'media.camera',
-        testId: 'staff-visit-photo-take',
-      });
-    }
-    doors.push(
-      {
-        id: PhotoDoor.Upload,
-        label: this.rawCopy('staff.visit.photoUpload'),
-        icon: 'media.library',
-        testId: 'staff-visit-photo-upload',
-      },
-      {
-        id: PhotoDoor.System,
-        label: this.rawCopy('staff.visit.photoSystem'),
-        icon: 'media.gallery',
-        testId: 'staff-visit-photo-system',
-      },
-    );
-    return doors;
-  });
+  /** The doors (`photoDoors`); the camera only where the engine has one to ask for. */
+  protected readonly photoDoors = computed(() =>
+    photoDoors(this.words(), this.uiCamera() ?? isCameraSupported()),
+  );
 
   private readonly libraryInput =
     viewChild<ElementRef<HTMLInputElement>>('photoLibrary');
@@ -5725,48 +5010,18 @@ export class StaffVisitEditor {
     }
   });
 
-  /**
-   * THE CARD'S PROMISE on the discount sheet: what «Приложи» would put on
-   * the bill from the field beneath the kind, in its own words — «Приложи GIFT2025»,
-   * «Приложи −10 %», «Приложи −5,00 €» — or nothing, in which case the foot
-   * keeps its «Готово» and the card is only being read. A code being checked
-   * holds the button with «Проверявам…»; a figure never exceeds what the
-   * page can take, since it snaps to it as it is written. The cards need
-   * no promise: «Използвай» applies them.
-   */
-  protected readonly discountApply = computed<{
-    label: string;
-    disabled: boolean;
-  } | null>(() => {
-    if (this.page()?.editorPage !== EditorPage.Discount) return null;
-    const apply = (what: string) =>
-      this.transloco.translate('staff.visit.applyDiscount', { what });
-    switch (this.discountKind()) {
-      case DiscountKind.Coupon: {
-        const code = VoucherCode.normalize(this.codeDraft());
-        if (code.length === 0) return null;
-        if (this.codeState() === DiscountCodeState.Checking) {
-          return {
-            label: this.rawCopy('staff.visit.discountChecking'),
-            disabled: true,
-          };
-        }
-        return { label: apply(code), disabled: false };
-      }
-      case DiscountKind.Percent:
-      case DiscountKind.Amount: {
-        const read = this.figureRead();
-        if (read === null) return null;
-        const what =
-          read.discountMethod === DiscountMethod.PercentOff
-            ? percentOffLabel(read.discountPercent)
-            : `−${this.moneyLabel(read.discountAmountCents)}`;
-        return { label: apply(what), disabled: false };
-      }
-      default:
-        return null;
-    }
-  });
+  /** The dock's promise on the discount page (`discountApplyVm`), while it is up. */
+  protected readonly discountApply = computed<DiscountApplyVm | null>(() =>
+    this.page()?.editorPage === EditorPage.Discount
+      ? discountApplyVm({
+          discountKind: this.discountKind(),
+          code: VoucherCode.normalize(this.codeDraft()),
+          checking: this.codeState() === DiscountCodeState.Checking,
+          figure: this.figureRead(),
+          wording: this.wording(),
+        })
+      : null,
+  );
 
   /**
    * The dock's act: the promise kept and the PAGE STAYS — the line lands
@@ -5851,14 +5106,11 @@ export class StaffVisitEditor {
   );
 
   /** The quarters, named. */
-  protected readonly percentMarks: readonly UiSliderMark[] = [
-    0, 25, 50, 75, 100,
-  ].map((value) => ({ value, label: percentLabel(value) }));
+  protected readonly percentMarks = PERCENT_MARKS;
 
   /** What a reader hears for the thumb: «−15 % · 23,80 €» — the share, and what the dock says is due. */
-  protected readonly percentValueText = computed(
-    () =>
-      `${percentOffLabel(this.percentSliderValue())} · ${this.dockTotalLabel()}`,
+  protected readonly percentValueText = computed(() =>
+    percentValueText(this.percentSliderValue(), this.dockBillWords().figure),
   );
 
   /** A move of the thumb writes the figure; the floor writes a zero, which promises nothing. */
@@ -5946,19 +5198,16 @@ export class StaffVisitEditor {
   });
 
   /** The ends, named: «0,00 €» and the bill. */
-  protected readonly amountMarks = computed<readonly UiSliderMark[]>(() => {
-    const max = this.amountSliderMax();
-    return max === null
-      ? []
-      : [
-          { value: 0, label: this.moneyLabel(PriceCents.ZERO) },
-          { value: max, label: this.moneyLabel(max) },
-        ];
-  });
+  protected readonly amountMarks = computed(() =>
+    amountMarks(this.amountSliderMax(), this.wording()),
+  );
 
-  protected readonly amountValueText = computed(
-    () =>
-      `−${this.moneyLabel(this.amountSliderValue())} · ${this.dockTotalLabel()}`,
+  protected readonly amountValueText = computed(() =>
+    amountValueText(
+      this.amountSliderValue(),
+      this.dockBillWords().figure,
+      this.wording(),
+    ),
   );
 
   /**
@@ -5983,26 +5232,9 @@ export class StaffVisitEditor {
   );
 
   /** The copy under the code field for its state; `null` when idle. */
-  protected readonly codeNote = computed<string | null>(() => {
-    switch (this.codeState()) {
-      case DiscountCodeState.Idle:
-        return null;
-      case DiscountCodeState.Checking:
-        return this.rawCopy('staff.visit.discountChecking');
-      case DiscountCodeState.Unknown:
-        return this.rawCopy('staff.visit.discountUnknownCode');
-      case DiscountCodeState.Already:
-        return this.rawCopy('staff.visit.codeAlready');
-      case VoucherRefusal.Void:
-        return this.rawCopy('staff.visit.voucherVoid');
-      case VoucherRefusal.Expired:
-        return this.rawCopy('staff.visit.voucherExpired');
-      case VoucherRefusal.Empty:
-        return this.rawCopy('staff.visit.voucherEmpty');
-      case DiscountCodeState.NothingLeft:
-        return this.rawCopy('staff.visit.voucherNothingLeft');
-    }
-  });
+  protected readonly codeNote = computed(() =>
+    codeNoteOf(this.codeState(), this.words()),
+  );
 
   /** A refusal reads red; a wait reads quiet. */
   protected readonly codeRefused = computed(
@@ -6106,47 +5338,9 @@ export class StaffVisitEditor {
     };
   }
 
-  /**
-   * The bill's discount lines as TICKETS on the ladder — the card's own
-   * applied ticket, brought to the root (owner, 2026-09-17: "not list rows
-   * — the exact components you use in the action sheet, the applied ones
-   * with «Премахни»"): the kind's glyph, the name, the RULE as the figure
-   * with the code beside it, exactly as it reads on the card. In the chip,
-   * what the rule made of THIS bill — the evaluator's own settled figure,
-   * which adds up where the card's previews could not — or nothing, where
-   * the rule is the sum itself (a fixed sum, unless the bill capped it).
-   */
+  /** The bill's discount lines as TICKETS on the ladder (`discountLineVm`). */
   protected readonly discountLines = computed(() =>
-    this.bill().lines.map((line) => {
-      const title = this.discountTitle(line.discount);
-      const value = this.couponValue(title, line.discount);
-      const took = `−${this.moneyLabel(line.amount)}`;
-      const glyph: UiIconName =
-        line.discount.discountSource === DiscountSource.Manual
-          ? line.discount.discountMethod === DiscountMethod.PercentOff
-            ? 'promo.percent'
-            : 'promo.sum'
-          : 'promo.coupon';
-      const code =
-        line.discount.discountSource === DiscountSource.Code
-          ? line.discount.code
-          : null;
-      const detail = took === value ? null : took;
-      return {
-        key: line.key,
-        discountSource: line.discount.discountSource,
-        testId: `staff-visit-discount-${line.key}`,
-        title,
-        code,
-        glyph,
-        value,
-        detail,
-        /** The ticket's spoken name: «Първо посещение, FIRST10, −10 %, −2,80 €». */
-        name: [title, code, value, detail]
-          .filter((part): part is string => part !== null)
-          .join(', '),
-      };
-    }),
+    this.bill().lines.map((line) => discountLineVm(line, this.wording())),
   );
 
   /**
@@ -6164,89 +5358,18 @@ export class StaffVisitEditor {
     this.linesOpen.update((open) => !open);
   }
 
-  /**
-   * The receipt's voucher lines, tickets too: each covers what the
-   * discounts and the vouchers before it left, never more than it has
-   * (the drafted bill's cascade) — what it covers is its figure, what it
-   * still holds its chip.
-   */
+  /** The receipt's voucher lines, tickets too (`voucherLineVm`). */
   protected readonly voucherLines = computed(() => {
     const { covers, left: holds } = this.bill().figures;
-    return this.draft().vouchers.map((voucher, index) => {
-      const amountLabel = `−${this.moneyLabel(covers.at(index) ?? PriceCents.ZERO)}`;
-      const left = this.rawCopy('staff.visit.voucherLeft').replace(
-        '{{amount}}',
-        this.moneyLabel(holds.at(index) ?? PriceCents.ZERO),
-      );
-      return {
+    return this.draft().vouchers.map((voucher, index) =>
+      voucherLineVm(
         voucher,
-        testId: `staff-visit-voucher-${voucher.voucherId}`,
-        amountLabel,
-        /** What the voucher still holds — the ticket's chip. */
-        left,
-        name: [
-          this.rawCopy('staff.visit.voucher'),
-          voucher.code,
-          amountLabel,
-          left,
-        ].join(', '),
-      };
-    });
+        covers.at(index) ?? PriceCents.ZERO,
+        holds.at(index) ?? PriceCents.ZERO,
+        this.wording(),
+      ),
+    );
   });
-
-  /**
-   * Cents → `2,80 €`, in the BILL's currency (`vm.currency` — DEP-21: it
-   * was the constant EUR; identical for every EUR visit). Every figure the
-   * sheet words is cents already, so there is no `''` path any more.
-   */
-  private moneyLabel(cents: PriceCents): string {
-    return formatCents(cents, this.vm().currency, this.intlLocale());
-  }
-
-  /**
-   * What a value does — the RULE: `−10 %`, `−5,00 €`, «Безплатна услуга».
-   * The rule, never an echo of the coupon's name above it: «Безплатно
-   * подстригване» over «Безплатно» said one word twice (WP7 review).
-   */
-  private valueLabel(value: CouponValue): string {
-    switch (value.discountMethod) {
-      case DiscountMethod.PercentOff:
-        return percentOffLabel(value.discountPercent);
-      case DiscountMethod.FixedAmount:
-        return `−${this.moneyLabel(value.discountAmountCents)}`;
-      case DiscountMethod.FreeService:
-        return this.rawCopy('staff.visit.discountFree');
-    }
-  }
-
-  /**
-   * THE COUPON'S VALUE LINE — one grammar for every ticket that shows a
-   * coupon: the discount page's offers and applied lines, the client
-   * card's ready tickets (E, LD). The rule, as `valueLabel` words it —
-   * unless the coupon's NAME already says it, and then nothing: «Безплатно
-   * подстригване» over «Безплатна услуга» told one fact twice, in the
-   * ticket's loudest line (WP7 review r6). Only a free service can: a
-   * percentage or a sum is a figure the name does not carry. Never the
-   * saving on this bill in its place — a free service zeroes whatever is
-   * left, so its sum is a bill preview, and an offer shows its rule, never
-   * a preview (owner, 2026-09-16). A name that does not say it («Пето
-   * подстригване») keeps «Безплатна услуга»; an applied line's chip still
-   * says what it took («−17,50 €»).
-   */
-  private couponValue(name: string, value: CouponValue): string | null {
-    const rule = this.valueLabel(value);
-    return value.discountMethod === DiscountMethod.FreeService &&
-      nameSaysRule(name, rule, this.transloco.getActiveLang())
-      ? null
-      : rule;
-  }
-
-  /** The line's title: the coupon's name, or the row's own word for a manual figure. */
-  private discountTitle(discount: VisitEditorDiscount): string {
-    return discount.discountSource === DiscountSource.Manual
-      ? this.rawCopy('staff.visit.discount')
-      : discount.label;
-  }
 
   /** The client's coupons not yet on the bill — the grant kind's rows, and the row's whisper. */
   protected readonly grantChoices = computed<readonly OfferChoice[]>(() => {
@@ -6259,56 +5382,28 @@ export class StaffVisitEditor {
     );
     return this.uiGrants().map((grant) => {
       const applied = onBill.has(grant.grantId);
-      return {
-        offerSource: OfferSource.Grant,
-        key: `grant:${grant.grantId}`,
-        testId: `staff-visit-discount-grant-${grant.grantId}`,
-        code: null,
-        grantId: grant.grantId,
-        label: grant.label,
-        exclusive: grant.exclusive,
-        value: this.couponValue(grant.label, grant.value),
-        // The card's chip: whether it stacks, in words.
-        line: this.rawCopy(
-          grant.exclusive ? 'staff.visit.alone' : 'staff.visit.stacks',
-        ),
+      return grantOfferVm(
+        grant,
         applied,
-        blocked: this.offerBlocked(grant.exclusive, applied),
-      };
+        this.offerBlocked(grant.exclusive, applied),
+        this.wording(),
+      );
     });
   });
 
-  /**
-   * THE ADD ROW'S WHISPER: while nothing is on the bill, the coupon the
-   * client holds, so the promise the shop made is read without opening
-   * anything (recognition over recall). Once a line stands, nothing — the
-   * lines above the row say what is on the bill.
-   */
-  protected readonly discountWhisper = computed<string | null>(() => {
-    if (this.discountLines().length > 0 || this.voucherLines().length > 0) {
-      return null;
-    }
-    const grant = this.grantChoices().find((choice) => !choice.applied);
-    return grant === undefined
-      ? null
-      : this.rawCopy('staff.visit.discountHasGrant').replace(
-          '{{label}}',
-          grant.label,
-        );
-  });
-
-  /** The add row's spoken name: «Добави отстъпка», and the coupon it whispers. */
-  /**
-   * THE ROW'S VALUE (owner, 2026-09-17: "in the main sheet they should live
-   * only minimal on the row"): «Няма»; one line — its code, its name, or a
-   * figure's rule — with what it took off in brackets; more — how many,
-   * with what they took off together. A voucher counts among them: it is a
-   * line on the bill, and the page holds its ticket with the rest.
-   */
-  protected readonly discountRowValue = computed(() =>
-    this.discountSummary((count) =>
-      this.transloco.translate('staff.visit.discountApplied', { count }),
+  /** The add row's whisper: the coupon the client holds, while nothing is on the bill. */
+  protected readonly discountWhisper = computed(() =>
+    discountWhisper(
+      this.discountLines(),
+      this.voucherLines(),
+      this.grantChoices(),
+      this.words(),
     ),
+  );
+
+  /** The root row's value: «Няма», one line, or how many («2 приложени»). */
+  protected readonly discountRowValue = computed(() =>
+    this.discountSummary(this.words().discountApplied),
   );
 
   /**
@@ -6327,59 +5422,45 @@ export class StaffVisitEditor {
    * the label already says applied.
    */
   protected readonly linesRowValue = computed(() =>
-    this.discountSummary((count) =>
-      this.transloco.translate('staff.visit.discountCount', { count }),
-    ),
+    this.discountSummary(this.words().discountCount),
   );
 
-  private discountSummary(many: (count: number) => string): {
-    label: string;
-    applied: boolean;
-  } {
-    const lines = this.discountLines();
-    const vouchers = this.voucherLines();
-    const count = lines.length + vouchers.length;
-    if (count === 0) {
-      return {
-        label: this.rawCopy('staff.visit.discountNone'),
-        applied: false,
-      };
-    }
-    // What came off altogether — the lines and the covers (the drafted bill's).
-    const amount = this.moneyLabel(this.bill().figures.takenCents);
-    if (count === 1) {
-      const line = lines[0];
-      const name =
-        line !== undefined
-          ? (line.code ??
-            (line.discountSource !== DiscountSource.Manual
-              ? line.title
-              : (line.value ?? line.title)))
-          : (vouchers[0]?.voucher.code ?? '');
-      return { label: `${name} (${amount})`, applied: true };
-    }
-    return { label: `${many(count)} (${amount})`, applied: true };
+  /** The page's own row, spoken. */
+  protected readonly linesRowName = computed(() =>
+    linesRowName(this.linesRowValue(), this.words()),
+  );
+
+  private discountSummary(many: (count: number) => string): DiscountSummaryVm {
+    return discountSummaryVm(
+      this.discountLines(),
+      this.voucherLines(),
+      this.bill().figures.takenCents,
+      many,
+      this.wording(),
+    );
   }
 
   /** The row's spoken name: «Отстъпка: Няма», «Отстъпка: FIRST10 (2,80 €)» — and the coupon whispered, when one is. */
-  protected readonly discountRowName = computed(() => {
-    const note = this.discountWhisper();
-    return `${this.rawCopy('staff.visit.discount')}: ${this.discountRowValue().label}${note ? `, ${note}` : ''}`;
-  });
+  protected readonly discountRowName = computed(() =>
+    discountRowName(
+      this.discountRowValue(),
+      this.discountWhisper(),
+      this.words(),
+    ),
+  );
 
-  /**
-   * THE DOCK'S FIGURE: what still changes hands at the counter — the saved
-   * subtotal, less what the drafted discounts take off, less what the
-   * drafted vouchers pay. The subtotal is the VM owner's (the legs' figures
-   * are labels, not a sum); the bill is the one live term, because this
-   * sheet is where it is chosen.
-   */
-  protected readonly dockTotalLabel = computed(() => {
-    if (this.isNew()) return this.catalogueTotalLabel() ?? '—';
-    const saved = this.vm().priceLabel ?? '—';
-    const due = this.dockDue();
-    return due === null ? saved : this.moneyLabel(due);
-  });
+  /** The dock's bill, worded: its caption, the price struck, the figure, the tip (`dockBillVm`). */
+  protected readonly dockBillWords = computed(() =>
+    dockBillVm({
+      isNew: this.isNew(),
+      catalogueTotal: this.catalogueTotal(),
+      savedLabel: this.vm().priceLabel,
+      due: this.dockDue(),
+      was: this.dockWasCents(),
+      tip: this.tipCents(),
+      wording: this.wording(),
+    }),
+  );
 
   /** What is due on the dock's bill: its total, less what the vouchers would cover of it (the drafted bill's balance). */
   private readonly dockDue = computed<PriceCents | null>(
@@ -6392,11 +5473,12 @@ export class StaffVisitEditor {
    * struck over «Rp425.000», Depop's new price beside the old): the one
    * line that says what a discount did, or would do, without a word.
    */
-  protected readonly dockWasLabel = computed<string | null>(() => {
+  private readonly dockWasCents = computed<PriceCents | null>(() => {
     const subtotal = this.subtotalMoney()?.amountCents ?? null;
     const due = this.dockDue();
-    if (subtotal === null || due === null || due >= subtotal) return null;
-    return this.moneyLabel(subtotal);
+    return subtotal === null || due === null || due >= subtotal
+      ? null
+      : subtotal;
   });
 
   protected applyGrant(grantId: CouponGrantId): void {
@@ -6556,13 +5638,6 @@ export class StaffVisitEditor {
   /** Creating, rather than editing something that exists. */
   protected readonly isNew = computed(() => this.vm().appointmentId === null);
 
-  protected legClientLabel(leg: DraftLeg): string {
-    return (
-      this.draft().clients.find((client) => client.id === leg.clientId)
-        ?.label ?? ''
-    );
-  }
-
   /** The leg page's `За кого`: move a service to another person. */
   /** The visit's people, as choice-menu options for a leg's «За кого». */
   protected readonly legClientOptions = computed<readonly UiChoiceOption[]>(
@@ -6698,10 +5773,7 @@ export class StaffVisitEditor {
     if (page?.editorPage !== EditorPage.Service || page.subjectId === null) {
       return null;
     }
-    return (
-      this.draft().clients.find((client) => client.id === page.subjectId)
-        ?.label ?? null
-    );
+    return servicePersonOf(this.draft().clients, page.subjectId);
   });
 
   /**
@@ -6711,11 +5783,9 @@ export class StaffVisitEditor {
    * visit exists; «По каталог» says so meanwhile. `null` while a leg's
    * price is unknown («по договорка») or nothing is drafted.
    */
-  protected readonly catalogueTotalLabel = computed<string | null>(() => {
-    if (!this.isNew()) return null;
-    const total = BillingSystem.draftLegsTotal(this.draft().legs);
-    return total === null ? null : this.moneyLabel(total);
-  });
+  private readonly catalogueTotal = computed<PriceCents | null>(() =>
+    this.isNew() ? BillingSystem.draftLegsTotal(this.draft().legs) : null,
+  );
 
   /** What «Запази» last published — what the saved mark's adoption waits for. */
   private savedCommit: VisitEditorCommit | null = null;
@@ -6779,8 +5849,14 @@ export class StaffVisitEditor {
     }
   }
 
-  /** The locale the shared picker writes its month and weekday row in. */
-  protected readonly locale = computed(() => this.transloco.getActiveLang());
+  /**
+   * The locale the shared picker writes its month and weekday row in. It
+   * follows the table, so the sheet's money and its words move together.
+   */
+  protected readonly locale = computed(() => {
+    this.copyTable();
+    return this.transloco.getActiveLang();
+  });
 
   /**
    * The `Intl` tag the active language formats in (`intlLocaleOf`: bg →
@@ -6789,16 +5865,8 @@ export class StaffVisitEditor {
    */
   protected readonly intlLocale = computed(() => intlLocaleOf(this.locale()));
 
-  /**
-   * `Днес` / `Утре` — most re-datings are one or two days, and aiming at a
-   * cell for that is the wrong amount of work. The picker resolves the
-   * offsets against `uiToday`, so these cannot drift from the shop's own
-   * today the way a locally-computed date could.
-   */
-  protected readonly dayRelatives = computed(() => [
-    { offset: 0, label: this.rawCopy('staff.visit.today') },
-    { offset: 1, label: this.rawCopy('staff.visit.tomorrow') },
-  ]);
+  /** `Днес` / `Утре` (`dayRelatives`). */
+  protected readonly dayRelatives = computed(() => dayRelatives(this.words()));
 
   protected readonly snapMinutes = VisitDraftSystem.GRAIN_MINUTES;
   protected readonly frameMinMinutes = VisitDraftSystem.FRAME_MIN_MINUTES;
@@ -6967,7 +6035,7 @@ export class StaffVisitEditor {
           couponId: grant.couponId,
           value: grant.value,
           title: grant.label,
-          valueLabel: this.couponValue(grant.label, grant.value),
+          valueLabel: couponValueLine(grant.label, grant.value, this.wording()),
           // When it lapses, as the store read it off the grant: the
           // ticket's «до 28.10», and nothing for one that never does.
           expiresOn: grant.expiresOn ?? null,
@@ -7456,11 +6524,7 @@ export class StaffVisitEditor {
     }));
     this.popToLadder();
     if (date !== null) {
-      this.announce(
-        this.transloco.translate('staff.visit.client.announce.sameAsLast', {
-          date,
-        }),
-      );
+      this.announce(this.words().sameAsLast(date));
     }
   }
 
@@ -7510,22 +6574,10 @@ export class StaffVisitEditor {
       this.vm().appointmentId,
     );
     if (featured === null) return null;
-    const last = featured.appointment;
-    // This year is the owner's today's; before it is known, no year is.
-    const now = this.vm().now;
-    const thisYear =
-      now !== null &&
-      LocalDate.parts(last.localDate).year ===
-        LocalDate.parts(now.localDate).year;
-    return formatWallClock(
-      last.localDate,
-      null,
-      this.transloco.getActiveLang(),
-      {
-        day: 'numeric',
-        month: 'long',
-        ...(thisYear ? {} : { year: 'numeric' }),
-      },
+    return lastVisitDayOf(
+      featured.appointment.localDate,
+      this.vm().now,
+      this.locale(),
     );
   }
 
@@ -7614,43 +6666,8 @@ function manualDiscountOf(
   };
 }
 
-/**
- * The drafted bill as the sheet reads it: the system's figures
- * (`BillingSystem.draftBill`), and each listed line with the drafted
- * discount it is — keyed the way the ladder keys it.
- */
-interface EvaluatedBill {
-  readonly figures: DraftBill;
-  readonly lines: readonly {
-    readonly key: string;
-    readonly discount: VisitEditorDiscount;
-    readonly amount: PriceCents;
-  }[];
-}
-
-/**
- * Whether a coupon's NAME already says its rule: a word of the name shares
- * its stem with the rule's first word — «Безплатно подстригване» and
- * «Безплатна услуга» (безплат-), "Free haircut" and "Free service". The
- * stem is the word less its ending (its last two letters, never under
- * four), so a gender or number ending does not hide the echo; «Пето
- * подстригване» says nothing of the kind.
- */
-export function nameSaysRule(
-  name: string,
-  rule: string,
-  locale: string,
-): boolean {
-  const words = (text: string): string[] =>
-    text
-      .toLocaleLowerCase(locale)
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((word) => word.length > 0);
-  const [head] = words(rule);
-  if (head === undefined) return false;
-  const stem = head.slice(0, Math.max(4, head.length - 2));
-  return words(name).some((word) => word.startsWith(stem));
-}
+// The spec and the barrel name it from here, as they always have.
+export { nameSaysRule } from './visit-discount.presenter';
 
 /** A line's identity on the ladder — the promise, never a stored id. */
 function discountKey(discount: VisitEditorDiscount): string {

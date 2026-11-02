@@ -1935,3 +1935,26 @@ describe('VisitStorySystem.chairMoment / arrivedOpen — the row’s clock ladde
     expect(S.arrivedOpen(frozen, true)).toBe(S.arrivedOpen(frozen, true));
   });
 });
+
+describe('VisitStorySystem.minutesLeft', () => {
+  const end = unwrapOk(UtcEpochMs.of(1_800_000_000_000));
+  const before = (ms: number) => UtcEpochMs.plusMs(end, -ms);
+
+  it('counts whole minutes to the end, rounding to the nearest', () => {
+    expect(VisitStorySystem.minutesLeft(end, before(45 * 60_000))).toBe(45);
+    expect(VisitStorySystem.minutesLeft(end, before(89_000))).toBe(1);
+    expect(VisitStorySystem.minutesLeft(end, before(91_000))).toBe(2);
+  });
+
+  it('is zero at the end and past it', () => {
+    expect(VisitStorySystem.minutesLeft(end, end)).toBe(0);
+    expect(VisitStorySystem.minutesLeft(end, before(-5 * 60_000))).toBe(0);
+  });
+
+  it('is pure: same input, same output', () => {
+    const now = before(600_000);
+    expect(VisitStorySystem.minutesLeft(end, now)).toBe(
+      VisitStorySystem.minutesLeft(end, now),
+    );
+  });
+});
