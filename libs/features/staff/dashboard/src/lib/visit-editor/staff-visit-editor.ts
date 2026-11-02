@@ -1193,16 +1193,6 @@ type FrameVerdictSlice =
       readonly time: string;
     };
 
-/**
- * Status → badge tone.
- *
- * The same five rows `staff-dashboard.ts` keeps in its own `STATUS_TONES`,
- * and deliberately the same reasoning: `confirmed` and `completed` stay
- * NEUTRAL because nine visits in ten are one of them, and a colour that
- * means "ordinary" means nothing. The map is module-private over there, so
- * it cannot be imported today — it belongs in a shared module the moment the
- * dashboard wires this component, and that is a one-line move, not a rewrite.
- */
 /** The glyph that doubles the state word — form, so the state survives a
     greyscale print and a reader who cannot separate two washes. */
 /**
@@ -2157,7 +2147,6 @@ export class StaffVisitEditor {
   /* ── Disclosure and menu state ─────────────────────────────────────── */
 
   protected readonly dayOpen = signal(false);
-  protected readonly legDurationMenu = signal(false);
   /**
    * WHICH LEG'S CHIP IS OPEN, and which chip — the ladder row carries three
    * menus per seat (person on a party, variant), so the state is one record
@@ -2280,11 +2269,6 @@ export class StaffVisitEditor {
 
   protected readonly noteOpen = signal(false);
   protected readonly query = signal('');
-  /**
-   * The decoupling line fires ONCE, on the first duration edit, and then
-   * never again — a sentence repeated on every edit is chrome, not an answer.
-   */
-  protected readonly durationTouched = signal(false);
 
   /* ── The navigation stack ──────────────────────────────────────────── */
 
@@ -2625,10 +2609,6 @@ export class StaffVisitEditor {
 
   /* ── The pinned summary strip ──────────────────────────────────────── */
 
-  protected readonly clientHeadline = computed(
-    () => this.draft().clients[0]?.label ?? this.vm().clientLabel,
-  );
-
   /**
    * THE PARTICIPANTS, barber side — deduplicated by id, in leg order.
    *
@@ -2697,8 +2677,8 @@ export class StaffVisitEditor {
 
   protected pickBarberFor(
     fromId: BarberId | null,
-    // The MENU's own shape (`name`), the one `setLegBarber` already takes —
-    // not the input's (`label`). One vocabulary per boundary.
+    // The MENU's own shape (`name`), not the input's (`label`). One
+    // vocabulary per boundary.
     option: { id: BarberId | null; name: string; tone: number },
   ): void {
     this.barberMenu.set(null);
@@ -3971,7 +3951,6 @@ export class StaffVisitEditor {
         legMinutesOf(draft.legs),
       ),
     }));
-    this.durationTouched.set(true);
   }
 
   /**
@@ -4028,38 +4007,6 @@ export class StaffVisitEditor {
     // What the field shows afterwards is `ui-unit-field`'s own business:
     // it writes the bound figure straight back, so a snapped or refused
     // entry visibly springs back rather than sitting there looking saved.
-  }
-
-  protected setLegDuration(seatId: SeatId, minutes: DurationMinutes): void {
-    this.draft.update((draft) => ({
-      ...draft,
-      legs: draft.legs.map((leg) =>
-        leg.seatId === seatId ? { ...leg, minutes } : leg,
-      ),
-    }));
-    this.durationTouched.set(true);
-    this.legDurationMenu.set(false);
-  }
-
-  protected setLegBarber(
-    seatId: SeatId,
-    barber: { id: BarberId | null; name: string; tone: number },
-  ): void {
-    const seats = this.seatsOf(seatId);
-    this.draft.update((draft) => ({
-      ...draft,
-      legs: draft.legs.map((leg) =>
-        seats.has(leg.seatId)
-          ? {
-              ...leg,
-              barberId: barber.id,
-              barberName: barber.name,
-              barberTone: barber.tone,
-            }
-          : leg,
-      ),
-    }));
-    this.legMenu.set(null);
   }
 
   /**
@@ -4952,9 +4899,6 @@ export class StaffVisitEditor {
       ? this.rawCopy('staff.visit.tipNone')
       : this.moneyLabel(cents);
   });
-
-  /** The trigger's spoken value: «Бакшиш: 2,00 €». */
-  protected readonly tipChoiceName = computed(() => this.tipReadout());
 
   /**
    * The row's tap: the section unfolds, or folds. Opening a custom sum
@@ -6852,7 +6796,6 @@ export class StaffVisitEditor {
 
   protected discard(): void {
     this.draft.set(seedDraft(this.vm()));
-    this.durationTouched.set(false);
     this.noteOpen.set(false);
     this.page.set(null);
     this.resetDiscountEntry();

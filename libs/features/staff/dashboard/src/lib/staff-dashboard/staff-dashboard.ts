@@ -183,7 +183,6 @@ import {
   UiSegmentedControl,
   type UiSegment,
   UiAvatar,
-  type UiBadgeTone,
   UiButton,
   UiChip,
   UiIcon,
@@ -303,12 +302,11 @@ export type DayPicker = Tag<typeof DayPicker>;
 
 /**
  * The page's transient surfaces `presentOnly` keeps while it closes the
- * rest — the date popover, a toolbar picker, a row's overflow. Internal.
+ * rest — the date popover, a toolbar picker. Internal.
  */
 const DaySurface = {
   Date: 'DATE',
   Picker: 'PICKER',
-  Row: 'ROW',
 } as const;
 type DaySurface = Tag<typeof DaySurface>;
 
@@ -827,42 +825,6 @@ const STATUS_ICONS: Partial<Record<BookingStatus, UiIconName>> = {
   // all while the card's face and the sheet carried one.
   [BookingStatus.Cancelled]: 'visit.cancelled',
 };
-
-/**
- * Status is FORM, never hue — the grid's ruling, now honoured here too.
- *
- * These badges were accent / success-green / destructive-red / warning-amber,
- * which is exactly the arrangement `staff-time-grid.state.css` quotes HIG at
- * length to forbid: a pale green beside a pale amber is the pair red-green
- * colour blindness cannot separate, and "the cut happened" versus "they never
- * came" is not a distinction to hang on a hue. Success and warning are system
- * meanings besides; a finished haircut is not a success and an absent client
- * is not a warning.
- *
- * It also became load-bearing the moment hue started meaning WHOSE CHAIR: a
- * colour cannot say "Ivan" and "no-show" at once. The badge keeps the WORD,
- * which was always the channel actually carrying the meaning.
- */
-/**
- * WHAT EACH STATUS MEANS, as a tone.
- *
- * All five were flattened to `neutral` when status was an inline word among
- * other inline words — colour there was a second voice competing with the
- * accent for a fact that was usually "confirmed". In a capsule at a fixed
- * end of the header it is the only coloured thing on that line, so the tone
- * can do its job again.
- *
- * `confirmed` and `completed` stay NEUTRAL on purpose: they are the ordinary
- * outcomes and nine cards in ten are one of them, so a colour there would
- * mean nothing. Colour is spent only where something needs looking at.
- */
-const STATUS_TONES = {
-  [BookingStatus.Pending]: 'warning',
-  [BookingStatus.Confirmed]: 'neutral',
-  [BookingStatus.Completed]: 'neutral',
-  [BookingStatus.Cancelled]: 'destructive',
-  [BookingStatus.NoShow]: 'destructive',
-} as const satisfies Record<BookingStatus, UiBadgeTone>;
 
 /**
  * The page's clock face — «13:00», 24-hour: in the reader's locale on the
@@ -1709,28 +1671,6 @@ export class StaffDashboard {
   }
 
   // ── The write actions ───────────────────────────────────────────────
-
-  /**
-   * The things staff ADD to a schedule — currently none, so there is no FAB.
-   *
-   * It shipped with three arms and two of them opened a sheet saying the
-   * feature was not built. The notice was honest about itself and dishonest
-   * about the screen: a receptionist who taps the primary action twice and
-   * is told "not yet" both times has learned that this app does not do what
-   * its buttons say, and that lesson is not undone by the third arm working.
-   * Every review team called it out.
-   *
-   * The third arm, blocking time, was not a loss either — it was a SECOND
-   * entry point to a control that already lives on each lane header, aimed
-   * by default at whichever chair happened to sort first. The lane's own
-   * button has always been the honest door to it, and it is now the only one.
-   *
-   * The FAB comes back with the walk-in write (plan item C4), at which point
-   * it will have exactly one arm that works and will not need to fan out at
-   * all. Until then this surface reads the day; it does not pretend to
-   * author it.
-   */
-  protected readonly fabActions = [] as const;
 
   // ── The date picker ─────────────────────────────────────────────────
 
@@ -2914,8 +2854,6 @@ export class StaffDashboard {
     });
   });
 
-  protected readonly nowLabel = computed(() => this.time(this.nowUtcMs()));
-
   /**
    * Which group the run should OPEN on.
    *
@@ -3238,11 +3176,6 @@ export class StaffDashboard {
     return this.transloco.translate(
       'staff.day.exception.' + bookingStatusWords[status],
     );
-  }
-
-  protected statusTone(status: BookingStatus): UiBadgeTone {
-    // eslint-disable-next-line security/detect-object-injection -- closed union.
-    return STATUS_TONES[status];
   }
 
   /** The DOM's lowercase word for a status (`data-status`) — the shared table. */
@@ -3830,7 +3763,6 @@ export class StaffDashboard {
    * a destructive act on someone's booking asks why first.
    */
   protected async act(row: DayRowVm, to: RowVerb): Promise<void> {
-    this.openMenuId.set(null);
     if (to === ArrivalVerb.Arrived) {
       // Arriving is the PARTY walking in, not a chair filling: the stamp lives
       // on the appointment, so it takes the aggregate id and no seat.
@@ -4195,11 +4127,6 @@ export class StaffDashboard {
     }
     return null;
   });
-
-  /** The chair this visit sits in — the sheet says whose lane it is. */
-  protected readonly visitSheetBarber = computed<string | null>(
-    () => this.visitSheetRow()?.barberName ?? null,
-  );
 
   /**
    * The row, plus the context only the day knows — its neighbours, its roster
@@ -6364,13 +6291,10 @@ export class StaffDashboard {
     if (done) this.closeBlockSheet();
   }
 
-  /** Which row's overflow menu is open — one at a time, by construction. */
-  protected readonly openMenuId = signal<string | null>(null);
-
   /**
    * ONE transient surface at a time.
    *
-   * The FAB, the date popover, the view/scope pickers and a row's overflow
+   * The FAB, the date popover and the view/scope pickers
    * each owned their own open flag and none of them knew about the others,
    * so opening the date picker left the FAB fanned out behind it — three
    * interactive layers with the FAB's full-screen scrim still swallowing
@@ -6384,13 +6308,6 @@ export class StaffDashboard {
   private presentOnly(keep?: DaySurface): void {
     if (keep !== DaySurface.Date) this.datePickerOpen.set(false);
     if (keep !== DaySurface.Picker) this.openPicker.set(null);
-    if (keep !== DaySurface.Row) this.openMenuId.set(null);
-  }
-
-  protected toggleMenu(rowId: string): void {
-    const opening = this.openMenuId() !== rowId;
-    this.presentOnly(opening ? DaySurface.Row : undefined);
-    this.openMenuId.set(opening ? rowId : null);
   }
 
   protected toggleDatePicker(): void {
