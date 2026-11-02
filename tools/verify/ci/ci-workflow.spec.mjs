@@ -108,6 +108,8 @@ const JOB_NAMES = [
 /** The full gate's commands this workflow runs, and the job each runs in. */
 const GATE = [
   ['nx sync:check', 'static'],
+  // Not `affected`: nothing in the graph links a lint rule to what it judges.
+  ['run-many -t lint', 'static'],
   ['verify-tools:layering', 'static'],
   ['typecheck seed-tools', 'static'],
   ['test lint-rules', 'static'],
@@ -257,9 +259,9 @@ describe('the CI workflow', () => {
     const main = runsOf(job('main'));
     assert.ok(
       main.includes(
-        'pnpm exec nx affected -t lint test build typecheck --base=$NX_BASE --head=$NX_HEAD',
+        'pnpm exec nx affected -t test build typecheck --base=$NX_BASE --head=$NX_HEAD',
       ),
-      'affected lint test build typecheck (P3-RU-32)',
+      'affected test build typecheck (P3-RU-32; lint runs whole in static)',
     );
     assert.ok(main.includes('node tools/verify/csp/check-csp.mjs'));
     assert.match(job('main'), /uses: nrwl\/nx-set-shas@v\d+\s*$/m);
