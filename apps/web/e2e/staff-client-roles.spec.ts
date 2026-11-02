@@ -162,6 +162,11 @@ test.describe('client card — the roles (security hardening S-WS-E)', () => {
       ).toHaveLength(1);
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      // A fixed place to measure from: a row the scroll leaves half under the
+      // sheet's edge reads as a small target, wherever the card happens to end.
+      await page
+        .locator('[data-testid="staff-visit-sheet"] .modal-sheet__scroll')
+        .evaluate((sheet) => sheet.scrollTo(0, sheet.scrollHeight));
       await sheetAtRest(page);
       await expectNoAxeViolations(page, {
         include: '[data-testid="staff-visit-sheet"]',
