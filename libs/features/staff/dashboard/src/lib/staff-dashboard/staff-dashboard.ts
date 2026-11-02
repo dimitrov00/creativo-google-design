@@ -1046,6 +1046,8 @@ export class StaffDashboard {
       names: this.catalogNames,
       zoneKnown: this.store.zone() !== null,
       locale: this.content.locale(),
+      companionNames: this.companionNames(),
+      unnamedClient: this.dayWords().unnamedClient,
     }),
   );
 

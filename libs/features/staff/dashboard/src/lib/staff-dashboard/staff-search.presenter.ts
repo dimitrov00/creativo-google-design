@@ -3,7 +3,7 @@ import {
   PhoneSystem,
   VisitStorySystem,
 } from '@core/systems';
-import type { ShopNow } from '@core/components';
+import { SeatSubject, type ShopNow } from '@core/components';
 import type { Appointment } from '@core/entities';
 import type { LocationId } from '@core/primitives';
 import { formatWallClock } from '@creativo/ui/wall-clock';
@@ -36,6 +36,10 @@ export interface SearchInput {
   /** A wall-clock reading prints nothing before the zone is known (D-6.2). */
   readonly zoneKnown: boolean;
   readonly locale: string;
+  /** A companion's own name, by account, once his profile is read. */
+  readonly companionNames: Readonly<Record<string, string>>;
+  /** «Клиент без име» — `staff.day.unnamedClient`. */
+  readonly unnamedClient: string;
 }
 
 /**
@@ -151,7 +155,7 @@ export function searchHits(input: SearchInput): readonly SearchHitVm[] {
     // The client is the title, highlighted when it is what matched. Every
     // OTHER matched field lists beneath — so a phone search shows the
     // number it hit, and a name search does not print the name twice.
-    const titleField = fields[0];
+    const titleField = titleFieldOf(appointment, fields, input);
     return {
       id: appointment.id,
       dayKey: appointment.localDate,
@@ -191,6 +195,36 @@ export function searchHits(input: SearchInput): readonly SearchHitVm[] {
         })),
     };
   });
+}
+
+/**
+ * A hit's title: the contact, else the first seat whose person has a name (a
+ * guest's label, a read companion's profile), else, for an account seat with
+ * no name anywhere, the unnamed word. Any other field only with no person at
+ * all.
+ */
+function titleFieldOf(
+  appointment: Appointment,
+  fields: readonly SearchableField[],
+  input: SearchInput,
+): SearchableField | undefined {
+  if (appointment.contactName) return fields[0];
+  for (const seat of appointment.seats) {
+    const name =
+      guestLabelOf(seat) ??
+      (seat.seatSubject === SeatSubject.Account
+        ? input.companionNames[seat.subjectUserId]
+        : undefined);
+    if (name === undefined) continue;
+    return (
+      fields.find(
+        (field) => field.label === SearchField.Client && field.value === name,
+      ) ?? { label: SearchField.Client, value: name }
+    );
+  }
+  return appointment.seats.length > 0
+    ? { label: SearchField.Client, value: input.unnamedClient }
+    : fields[0];
 }
 
 /** Every field a search is allowed to look at, in display priority. */
