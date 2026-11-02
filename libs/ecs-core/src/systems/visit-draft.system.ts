@@ -109,6 +109,9 @@ export type DraftLegClient = {
   readonly clientId: DraftPersonKey;
 };
 
+/** A seat and whose it is. */
+type DraftSeatOfPerson = DraftLegClient & { readonly seatId: SeatId };
+
 /**
  * A seat as the catalogue tag reads it: the catalogue's minutes for it, or
  * `null` when the catalogue no longer knows the service, and the minutes it
@@ -434,25 +437,96 @@ export const VisitDraftSystem = {
   /**
    * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS: a service picked before
    * anyone was named sits on the placeholder id; when the first person joins
-   * an EMPTY draft those seats become theirs. With anyone already seated the
-   * legs come back as given (the same array).
+   * an EMPTY draft those seats become theirs. A stored seat stays as it is: no
+   * command would carry the change ({@link storedSeats}). With anyone already
+   * seated the legs come back as given (the same array).
    */
-  adoptPlaceholderLegs<L extends DraftLegClient>(
+  adoptPlaceholderLegs<L extends DraftSeatOfPerson>(
     clientCount: number,
     legs: readonly L[],
     personId: DraftPersonKey,
+    stored: ReadonlySet<SeatId>,
   ): readonly L[] {
     if (clientCount > 0) return legs;
     const out: L[] = [];
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i] as L;
       out.push(
-        leg.clientId === PLACEHOLDER_CLIENT_ID
+        leg.clientId === PLACEHOLDER_CLIENT_ID && !stored.has(leg.seatId)
           ? { ...leg, clientId: personId }
           : leg,
       );
     }
     return out;
+  },
+
+  /**
+   * THE PERSON WHO MAY NOT LEAVE: the visit's only person, while they hold a
+   * stored seat. Letting them go would put that seat on the placeholder for the
+   * next person ticked to take, a change no command carries. Once «−» has taken
+   * their stored seats, or with anyone else on the visit (where leaving takes
+   * the seats too, and that saves), nobody is held. `null` when nobody is.
+   */
+  pinnedPerson(
+    clients: readonly { readonly id: DraftPersonKey }[],
+    legs: readonly DraftSeatOfPerson[],
+    stored: ReadonlySet<SeatId>,
+  ): DraftPersonKey | null {
+    const only =
+      clients.length === 1 ? (clients[0] as (typeof clients)[0]) : null;
+    if (only === null) return null;
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i] as DraftSeatOfPerson;
+      if (leg.clientId === only.id && stored.has(leg.seatId)) return only.id;
+    }
+    return null;
+  },
+
+  /**
+   * ONE RULE FOR A PERSON LEAVING (2026-09-24), wherever it is done — the
+   * row's «−», its swipe, unticking them on the add-client page, or the card.
+   * While others remain on the visit, the person leaves WITH their services: a
+   * seat is a service for a person, and handing a son's haircut to his father
+   * rewrote somebody's booking without asking (the heir rule this replaces).
+   * The last person is the visit's own: their services stay, as the walk-in's —
+   * "nobody seated is the walk-in" — unless they hold a stored seat
+   * ({@link pinnedPerson}), when they stay and the same draft comes back.
+   */
+  withoutClient<
+    D extends {
+      readonly clients: readonly { readonly id: DraftPersonKey }[];
+      readonly legs: readonly DraftSeatOfPerson[];
+      readonly durationOverride: DurationMinutes | null;
+    },
+  >(draft: D, clientId: DraftPersonKey, stored: ReadonlySet<SeatId>): D {
+    if (
+      VisitDraftSystem.pinnedPerson(draft.clients, draft.legs, stored) ===
+      clientId
+    ) {
+      return draft;
+    }
+    const clients = draft.clients.filter((client) => client.id !== clientId);
+    if (clients.length === draft.clients.length) return draft;
+    if (clients.length === 0) {
+      return {
+        ...draft,
+        clients,
+        legs: draft.legs.map((leg) =>
+          leg.clientId === clientId
+            ? { ...leg, clientId: PLACEHOLDER_CLIENT_ID }
+            : leg,
+        ),
+      };
+    }
+    const legs = draft.legs.filter((leg) => leg.clientId !== clientId);
+    return {
+      ...draft,
+      clients,
+      legs,
+      // Seats left: the span is the services' again, as removing one does.
+      durationOverride:
+        legs.length === draft.legs.length ? draft.durationOverride : null,
+    };
   },
 
   /**

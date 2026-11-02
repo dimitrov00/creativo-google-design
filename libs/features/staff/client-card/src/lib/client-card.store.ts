@@ -1054,7 +1054,7 @@ export class ClientCardStore {
       return subject.userId !== null && this.zoneFailed()
         ? {
             actions: [],
-            canRemove: this._online() && !context.gone,
+            canRemove: this._online() && !context.gone && !context.pinned,
             failed: [ClientCardRegion.Profile],
           }
         : EMPTY_OVERVIEW;
@@ -1075,7 +1075,7 @@ export class ClientCardStore {
       zone,
       words,
     });
-    const canRemove = online && !context.gone;
+    const canRemove = online && !context.gone && !context.pinned;
     if (subject.userId === null) return { actions, canRemove, failed: [] };
     if (this.profileFailed()) {
       return { actions, canRemove, failed: [ClientCardRegion.Profile] };

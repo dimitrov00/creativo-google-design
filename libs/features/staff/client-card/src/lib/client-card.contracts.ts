@@ -188,6 +188,11 @@ export interface ClientCardContext {
    * not gone: its reward, its person and its services can still change.
    */
   readonly gone: boolean;
+  /**
+   * This person holds a seat the server stored and is the visit's only person
+   * (`VisitDraftSystem.pinnedPerson`): they stay, so K offers no way off.
+   */
+  readonly pinned: boolean;
   readonly partyOfOne: boolean;
   /**
    * The drafted start of the visit on screen, on the shop's wall clock —

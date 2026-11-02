@@ -77,6 +77,8 @@ import { VisitDraftSystem } from './visit-draft.system';
  */
 
 const S = VisitDraftSystem;
+/** A draft none of whose seats the server holds yet. */
+const NO_SEATS: ReadonlySet<SeatId> = new Set();
 
 /* ── block-repeat.spec.ts ─────────────────────────────────────────────── */
 
@@ -462,19 +464,27 @@ describe("the visit draft's span and placeholder seats", () => {
 
   it('hands the placeholder seats to the first person to join, and no one else', () => {
     const drafted = [
-      { clientId: draftPersonKey('primary'), durationMinutes: d(30) },
-      { clientId: draftPersonKey('u-anna'), durationMinutes: d(15) },
+      {
+        seatId: SeatId.of('seat-a'),
+        clientId: draftPersonKey('primary'),
+        durationMinutes: d(30),
+      },
+      {
+        seatId: SeatId.of('seat-b'),
+        clientId: draftPersonKey('u-anna'),
+        durationMinutes: d(15),
+      },
     ];
     expect(
-      S.adoptPlaceholderLegs(0, drafted, draftPersonKey('u-ivan')),
+      S.adoptPlaceholderLegs(0, drafted, draftPersonKey('u-ivan'), NO_SEATS),
     ).toEqual([
-      { clientId: 'u-ivan', durationMinutes: 30 },
-      { clientId: 'u-anna', durationMinutes: 15 },
+      { seatId: 'seat-a', clientId: 'u-ivan', durationMinutes: 30 },
+      { seatId: 'seat-b', clientId: 'u-anna', durationMinutes: 15 },
     ]);
     // Somebody is already seated: the legs come back as given.
-    expect(S.adoptPlaceholderLegs(1, drafted, draftPersonKey('u-ivan'))).toBe(
-      drafted,
-    );
+    expect(
+      S.adoptPlaceholderLegs(1, drafted, draftPersonKey('u-ivan'), NO_SEATS),
+    ).toBe(drafted);
   });
 });
 
@@ -537,6 +547,95 @@ describe('VisitDraftSystem.storedSeats — the seats the server already holds', 
   it('is pure: same input → same output, inputs untouched', () => {
     const legs = deepFreeze([seat('a')]);
     expect(S.storedSeats(true, legs)).toEqual(S.storedSeats(true, legs));
+  });
+});
+
+describe('VisitDraftSystem — who may leave a visit, and who takes its seats (BUG-1)', () => {
+  const A = draftPersonKey('user-a');
+  const B = draftPersonKey('user-b');
+  const SEAT = SeatId.of('seat');
+  const DRAFTED = SeatId.of('draft-seat');
+  const seatOf = (seatId: SeatId, clientId: DraftPersonKey) => ({
+    seatId,
+    clientId,
+  });
+  const stored = new Set([SEAT]);
+  const person = (id: DraftPersonKey) => ({ id });
+  const draftOf = (
+    clients: readonly DraftPersonKey[],
+    legs: readonly ReturnType<typeof seatOf>[],
+  ) => ({
+    clients: clients.map(person),
+    legs,
+    durationOverride: d(60),
+  });
+
+  it('pins the only person while they hold a stored seat', () => {
+    expect(S.pinnedPerson([person(A)], [seatOf(SEAT, A)], stored)).toBe(A);
+  });
+
+  it('pins nobody once their stored seats are gone, with anyone else on, or on a new visit', () => {
+    expect(
+      S.pinnedPerson([person(A)], [seatOf(DRAFTED, A)], stored),
+    ).toBeNull();
+    expect(S.pinnedPerson([person(A)], [], stored)).toBeNull();
+    expect(
+      S.pinnedPerson([person(A), person(B)], [seatOf(SEAT, A)], stored),
+    ).toBeNull();
+    expect(S.pinnedPerson([], [seatOf(SEAT, A)], stored)).toBeNull();
+    expect(S.pinnedPerson([person(A)], [seatOf(SEAT, A)], NO_SEATS)).toBeNull();
+    // A seat that is somebody else's holds nobody here.
+    expect(S.pinnedPerson([person(A)], [seatOf(SEAT, B)], stored)).toBeNull();
+  });
+
+  it('keeps a pinned person: the same draft comes back', () => {
+    const draft = draftOf([A], [seatOf(SEAT, A)]);
+    expect(S.withoutClient(draft, A, stored)).toBe(draft);
+  });
+
+  it('puts a last person’s added seats on the placeholder, the walk-in’s', () => {
+    const left = S.withoutClient(draftOf([A], [seatOf(DRAFTED, A)]), A, stored);
+    expect(left.clients).toEqual([]);
+    expect(left.legs).toEqual([seatOf(DRAFTED, S.PLACEHOLDER_CLIENT_ID)]);
+    expect(left.durationOverride).toBe(60);
+  });
+
+  it('takes a party’s person off with their seats, stored ones too, the span the services’ again', () => {
+    const left = S.withoutClient(
+      draftOf([A, B], [seatOf(SEAT, A), seatOf(DRAFTED, B)]),
+      A,
+      stored,
+    );
+    expect(left.clients).toEqual([person(B)]);
+    expect(left.legs).toEqual([seatOf(DRAFTED, B)]);
+    expect(left.durationOverride).toBeNull();
+  });
+
+  it('keeps the span when the person leaving held no seat, and ignores someone not on the visit', () => {
+    const draft = draftOf([A, B], [seatOf(DRAFTED, B)]);
+    expect(S.withoutClient(draft, A, stored).durationOverride).toBe(60);
+    expect(S.withoutClient(draft, draftPersonKey('user-z'), stored)).toBe(
+      draft,
+    );
+  });
+
+  it('never hands a stored seat with nobody on it to the first person', () => {
+    const legs = [
+      seatOf(SEAT, S.PLACEHOLDER_CLIENT_ID),
+      seatOf(DRAFTED, S.PLACEHOLDER_CLIENT_ID),
+    ];
+    expect(S.adoptPlaceholderLegs(0, legs, A, stored)).toEqual([
+      seatOf(SEAT, S.PLACEHOLDER_CLIENT_ID),
+      seatOf(DRAFTED, A),
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const draft = deepFreeze(draftOf([A, B], [seatOf(SEAT, A)]));
+    expect(S.withoutClient(draft, A, stored)).toEqual(
+      S.withoutClient(draft, A, stored),
+    );
+    expect(S.pinnedPerson(draft.clients, draft.legs, stored)).toBeNull();
   });
 });
 
@@ -1098,11 +1197,21 @@ describe('VisitDraftSystem — purity', () => {
     expect(S.presetOf(weekly, thursday)).toBe(RepeatPreset.Weekly);
 
     const legs = deepFreeze([
-      { clientId: draftPersonKey('primary'), durationMinutes: d(30) },
-      { clientId: draftPersonKey('u-anna'), durationMinutes: d(15) },
+      {
+        seatId: SeatId.of('seat-a'),
+        clientId: draftPersonKey('primary'),
+        durationMinutes: d(30),
+      },
+      {
+        seatId: SeatId.of('seat-b'),
+        clientId: draftPersonKey('u-anna'),
+        durationMinutes: d(15),
+      },
     ]);
-    expect(S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'))).toEqual(
-      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan')),
+    expect(
+      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'), NO_SEATS),
+    ).toEqual(
+      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'), NO_SEATS),
     );
     expect(legs[0]?.clientId).toBe('primary');
 

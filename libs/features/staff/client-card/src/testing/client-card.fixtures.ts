@@ -1087,6 +1087,7 @@ export function georgiContext(
     isOwner: true,
     settled: true,
     gone: false,
+    pinned: false,
     partyOfOne: true,
     start: startOf('2026-09-28T10:00:00'),
     legs: [
@@ -1132,6 +1133,7 @@ export function martinContext(
     isOwner: true,
     settled: false,
     gone: false,
+    pinned: false,
     partyOfOne: true,
     start: startOf('2026-09-28T12:30:00'),
     legs: [

@@ -226,6 +226,7 @@
           role="checkbox"
           [uiInteractive]="true"
           [uiSelected]="option.selected"
+          [disabled]="option.locked"
           [attr.aria-checked]="option.selected"
           [attr.data-testid]="(prefix ?? 'staff-visit-client-') + option.id"
           (click)="toggleClient(option)"

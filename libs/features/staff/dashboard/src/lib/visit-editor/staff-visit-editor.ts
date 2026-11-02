@@ -1083,62 +1083,6 @@ function spanOf(draft: VisitDraft): DurationMinutes {
   return VisitDraftSystem.span(draft.durationOverride, draft.legs);
 }
 
-/**
- * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS. A service picked before
- * anyone was named sits on the placeholder (`DraftPersonKey.PLACEHOLDER`);
- * when the first person joins an empty draft those seats become theirs —
- * the mirror of the heir rule in `toggleClient` — so the catalogue is not
- * asked for them again and the save does not file their cut under a
- * walk-in (found in review).
- */
-function adoptPlaceholderLegs(
-  draft: VisitDraft,
-  id: DraftPersonKey,
-): readonly DraftLeg[] {
-  return VisitDraftSystem.adoptPlaceholderLegs(
-    draft.clients.length,
-    draft.legs,
-    id,
-  );
-}
-
-/**
- * ONE RULE FOR A PERSON LEAVING (2026-09-24), wherever it is done — the
- * row's «−», its swipe, or unticking them on the add-client page. While
- * others remain on the visit, the person leaves WITH their services: a
- * seat is a service for a person, and handing a son's haircut to his
- * father rewrote somebody's booking without asking (the heir rule this
- * replaces). The last person is the visit's own: their services stay, as
- * the walk-in's — "nobody seated is the walk-in".
- */
-function withoutClient(
-  draft: VisitDraft,
-  clientId: DraftPersonKey,
-): VisitDraft {
-  const clients = draft.clients.filter((client) => client.id !== clientId);
-  if (clients.length === draft.clients.length) return draft;
-  if (clients.length === 0) {
-    return {
-      ...draft,
-      clients,
-      legs: draft.legs.map((leg) =>
-        leg.clientId === clientId
-          ? { ...leg, clientId: DraftPersonKey.PLACEHOLDER }
-          : leg,
-      ),
-    };
-  }
-  const legs = draft.legs.filter((leg) => leg.clientId !== clientId);
-  return {
-    ...draft,
-    clients,
-    legs,
-    // Seats left: the span is the services' again, as removing one does.
-    durationOverride:
-      legs.length === draft.legs.length ? draft.durationOverride : null,
-  };
-}
-
 /** The people a VM seeds — its party, else its one named client, else nobody. */
 function seedClientsOf(vm: VisitEditorVm): readonly DraftClient[] {
   // A NEW visit starts with nobody in the chair; the add row invites one.
@@ -1958,10 +1902,24 @@ export class StaffVisitEditor {
       clients: draft.clients,
       services: this.uiServices(),
       chairName: this.vm().chairName,
-      storedSeats: VisitDraftSystem.storedSeats(!this.isNew(), this.vm().legs),
+      storedSeats: this.storedSeats(),
       words: this.words(),
     });
   });
+
+  /** The seats the server already holds (`VisitDraftSystem.storedSeats`). */
+  private readonly storedSeats = computed(() =>
+    VisitDraftSystem.storedSeats(!this.isNew(), this.vm().legs),
+  );
+
+  /** Who may not leave the visit (`VisitDraftSystem.pinnedPerson`), or nobody. */
+  private readonly pinnedPerson = computed(() =>
+    VisitDraftSystem.pinnedPerson(
+      this.draft().clients,
+      this.draft().legs,
+      this.storedSeats(),
+    ),
+  );
 
   /* ── The ladder's rows ─────────────────────────────────────────────── */
 
@@ -2689,6 +2647,7 @@ export class StaffVisitEditor {
       parsed,
       chosen,
       exact,
+      pinned: this.pinnedPerson(),
       callingCode: this.callingCode(),
       words: this.words(),
     });
@@ -3909,11 +3868,22 @@ export class StaffVisitEditor {
   protected toggleClient(option: VisitEditorClientOption): void {
     this.draft.update((draft) => {
       const existing = draft.clients.find((client) => client.id === option.id);
-      if (existing) return withoutClient(draft, existing.id);
+      if (existing) {
+        return VisitDraftSystem.withoutClient(
+          draft,
+          existing.id,
+          this.storedSeats(),
+        );
+      }
       return {
         ...draft,
         clients: [...draft.clients, { ...option }],
-        legs: adoptPlaceholderLegs(draft, option.id),
+        legs: VisitDraftSystem.adoptPlaceholderLegs(
+          draft.clients.length,
+          draft.legs,
+          option.id,
+          this.storedSeats(),
+        ),
       };
     });
   }
@@ -3921,11 +3891,13 @@ export class StaffVisitEditor {
   /**
    * A PARTY'S PERSON COMES OFF (owner, 2026-09-24: "having multiple
    * clients should be possible to remove one of them") — the row's «−» or
-   * its swipe, the service rows' own grammar. See `withoutClient` for what
+   * its swipe, the service rows' own grammar. See `VisitDraftSystem.withoutClient` for what
    * leaves with them.
    */
   protected removeClient(clientId: DraftPersonKey): void {
-    this.draft.update((draft) => withoutClient(draft, clientId));
+    this.draft.update((draft) =>
+      VisitDraftSystem.withoutClient(draft, clientId, this.storedSeats()),
+    );
   }
 
   /** The «−» is a party's: the last person is the visit's, not a row's. */
@@ -4064,7 +4036,12 @@ export class StaffVisitEditor {
           email,
         },
       ],
-      legs: adoptPlaceholderLegs(draft, id),
+      legs: VisitDraftSystem.adoptPlaceholderLegs(
+        draft.clients.length,
+        draft.legs,
+        id,
+        this.storedSeats(),
+      ),
     }));
     this.query.set('');
     this.page.set(null);
@@ -6037,6 +6014,7 @@ export class StaffVisitEditor {
       // Only a gone visit locks what the card offers (the reward, the
       // person's removal, «Повтори»): a finished one stays correctable.
       gone: this.gone(),
+      pinned: this.pinnedPerson() === client.id,
       partyOfOne,
       start: {
         localDate: draft.dayKey,
@@ -6506,12 +6484,12 @@ export class StaffVisitEditor {
 
   /**
    * «Махни от посещението» — the one rule for a person leaving
-   * (`withoutClient`), then back to the visit: the focus on the next
+   * (`VisitDraftSystem.withoutClient`), then back to the visit: the focus on the next
    * person's row, or «Добави клиент» when nobody is left.
    */
   protected removeFromCard(): void {
     const client = this.clientOfStack();
-    if (client === null) return;
+    if (client === null || client.id === this.pinnedPerson()) return;
     const clients = this.draft().clients;
     const index = clients.findIndex((entry) => entry.id === client.id);
     const remaining = clients.filter((entry) => entry.id !== client.id);

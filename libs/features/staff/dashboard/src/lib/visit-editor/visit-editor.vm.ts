@@ -557,6 +557,8 @@ export const RESOLUTION_HEADS = {
 /** A person row as the add-client page draws it: ticked, matched, marked. */
 export type ClientRowVm = VisitEditorClientOption & {
   readonly selected: boolean;
+  /** On the visit for good: the row reads, and a tap takes them off nothing. */
+  readonly locked: boolean;
   /** The typed number or mail IS theirs. */
   readonly exact: boolean;
   /** The name as runs, only while some run is the typed one. */
