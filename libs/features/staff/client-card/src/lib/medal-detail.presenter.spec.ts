@@ -303,12 +303,7 @@ describe('countsToward', () => {
   ) =>
     book
       .filter((visit) =>
-        countsToward(
-          family(data, id),
-          visit,
-          CustomerId.of(recordOf(who)),
-          SHOP_TIME_ZONE,
-        ),
+        countsToward(family(data, id), visit, CustomerId.of(recordOf(who))),
       )
       .map((visit) => visit.id);
 
@@ -396,18 +391,10 @@ describe('countsToward', () => {
     ]);
     const fade = family(GEORGI_DATA, 'series-svc-fade');
     const niko = family(GEORGI_DATA, 'series-barber-niko');
-    expect(countsToward(fade, party, GEORGI_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      false,
-    );
-    expect(countsToward(fade, party, MARTIN_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      true,
-    );
-    expect(countsToward(niko, party, GEORGI_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      false,
-    );
-    expect(countsToward(niko, party, MARTIN_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      true,
-    );
+    expect(countsToward(fade, party, GEORGI_CUSTOMER_ID)).toBe(false);
+    expect(countsToward(fade, party, MARTIN_CUSTOMER_ID)).toBe(true);
+    expect(countsToward(niko, party, GEORGI_CUSTOMER_ID)).toBe(false);
+    expect(countsToward(niko, party, MARTIN_CUSTOMER_ID)).toBe(true);
   });
 
   it('counts the person’s worked seat on a visit a companion has not finished', () => {
@@ -416,12 +403,8 @@ describe('countsToward', () => {
       { who: MARTIN, worked: false },
     ]);
     const visits = family(GEORGI_DATA, 'series-visits');
-    expect(countsToward(visits, half, GEORGI_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      true,
-    );
-    expect(countsToward(visits, half, MARTIN_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      false,
-    );
+    expect(countsToward(visits, half, GEORGI_CUSTOMER_ID)).toBe(true);
+    expect(countsToward(visits, half, MARTIN_CUSTOMER_ID)).toBe(false);
   });
 
   it('reads an early bird by when the person’s own first worked seat began: by 10:00', () => {
@@ -432,7 +415,6 @@ describe('countsToward', () => {
         early,
         visitOf('a', '2026-09-10T10:00:00', who),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(true);
     expect(
@@ -440,7 +422,6 @@ describe('countsToward', () => {
         early,
         visitOf('b', '2026-09-10T10:05:00', who),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(false);
     // The booker sat at 9:30; the companion's own seat began at 10:15.
@@ -448,12 +429,8 @@ describe('countsToward', () => {
       { who: GEORGI },
       { who: MARTIN },
     ]);
-    expect(countsToward(early, party, GEORGI_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      true,
-    );
-    expect(countsToward(early, party, MARTIN_CUSTOMER_ID, SHOP_TIME_ZONE)).toBe(
-      false,
-    );
+    expect(countsToward(early, party, GEORGI_CUSTOMER_ID)).toBe(true);
+    expect(countsToward(early, party, MARTIN_CUSTOMER_ID)).toBe(false);
   });
 
   it('reads a weekend visit off the shop’s calendar: Saturday and Sunday', () => {
@@ -468,12 +445,7 @@ describe('countsToward', () => {
     for (const [day, counts] of days) {
       expect([
         day,
-        countsToward(
-          weekend,
-          visitOf('w', day, who),
-          GEORGI_CUSTOMER_ID,
-          SHOP_TIME_ZONE,
-        ),
+        countsToward(weekend, visitOf('w', day, who), GEORGI_CUSTOMER_ID),
       ]).toEqual([day, counts]);
     }
   });
@@ -483,19 +455,13 @@ describe('countsToward', () => {
     const start = '2026-09-10T11:00:00';
     const who = [{ who: GEORGI }];
     expect(
-      countsToward(
-        onTime,
-        visitOf('a', start, who),
-        GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
-      ),
+      countsToward(onTime, visitOf('a', start, who), GEORGI_CUSTOMER_ID),
     ).toBe(false);
     expect(
       countsToward(
         onTime,
         visitOf('b', start, who, { arrivedAt: '2026-09-10T10:55:00' }),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(true);
     expect(
@@ -503,7 +469,6 @@ describe('countsToward', () => {
         onTime,
         visitOf('c', start, who, { arrivedAt: start }),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(true);
     expect(
@@ -511,7 +476,6 @@ describe('countsToward', () => {
         onTime,
         visitOf('d', start, who, { arrivedAt: '2026-09-10T11:05:00' }),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(false);
   });
@@ -524,7 +488,6 @@ describe('countsToward', () => {
         party,
         visitOf('a', start, [{ who: GEORGI }]),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(false);
     expect(
@@ -532,7 +495,6 @@ describe('countsToward', () => {
         party,
         visitOf('b', start, [{ who: GEORGI }, { who: MARTIN }]),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(true);
     // Two services of his own are not company.
@@ -544,7 +506,6 @@ describe('countsToward', () => {
           { who: GEORGI, serviceId: 'svc-beard' },
         ]),
         GEORGI_CUSTOMER_ID,
-        SHOP_TIME_ZONE,
       ),
     ).toBe(false);
   });

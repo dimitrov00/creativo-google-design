@@ -656,10 +656,28 @@ describe('AchievementsSystem.workedVisitOf — one appointment as the person’s
       locationId: FIXTURE_IDS.location,
       localDate: '2026-09-28',
       startMinutes: 600,
+      startUtcMs: visit.utcEpochMs,
       weekday: Weekday.Mon,
       arrivedAtUtcMs: at,
       withCompany: false,
     });
+  });
+
+  it('takes the start’s instant from what the booking stored, moved to the person’s own first seat', () => {
+    // The friend sits down at 09:30, the visit's start; the person at 10:00.
+    const visit = appointmentFixture({
+      startMinutes: minute(570),
+      seats: [
+        friendSeat(SeatOutcome.worked(at)),
+        seatFixture({ outcome: SeatOutcome.worked(at) }),
+      ],
+    });
+    const worked = AchievementsSystem.workedVisitOf(visit, me);
+    expect(visit.startMinutes).toBe(570);
+    expect(worked?.startMinutes).toBe(600);
+    expect(worked?.startUtcMs).toBe(
+      UtcEpochMs.plusMs(visit.utcEpochMs, 30 * 60_000),
+    );
   });
 
   it('counts only a worked visit: never an hour still to come, a cancelled one or a no-show', () => {

@@ -5,7 +5,6 @@ import {
   type BarberId,
   type CustomerId,
   type LocalDate,
-  type TimeZone,
   defect,
 } from '@core/primitives';
 import {
@@ -27,7 +26,6 @@ import {
   type CountedVisit,
   LoyaltyCatalogSystem,
   type MedalDetailReading,
-  ZonedTimeSystem,
 } from '@core/systems';
 import {
   type RhythmRuleWords,
@@ -194,26 +192,16 @@ function canStillMove(
 
 /**
  * One loaded visit as the client RECORD's counted visit (D29: whom the
- * shop served) — `AchievementsSystem.workedVisitOf`'s zone-free facts, and
- * the instant its worked start falls on, read on the shop's zone HERE, at
- * the edge (Law 7): the punctuality rule compares it with the arrival
- * stamp (T2); the visit's own instant when the minute names none. `null`
- * when the record holds no worked seat on it.
+ * shop served), as `AchievementsSystem.workedVisitOf` reads it. `null` when
+ * there is no record, or the record holds no worked seat on it.
  */
 function countedVisitOf(
   visit: Appointment,
   subjectCustomerId: CustomerId | null,
-  zone: TimeZone,
 ): CountedVisit | null {
-  if (subjectCustomerId === null) return null;
-  const facts = AchievementsSystem.workedVisitOf(visit, subjectCustomerId);
-  if (facts === null) return null;
-  const start = ZonedTimeSystem.toUtc(
-    facts.localDate,
-    facts.startMinutes,
-    zone,
-  );
-  return { ...facts, startUtcMs: start.ok ? start.value : visit.utcEpochMs };
+  return subjectCustomerId === null
+    ? null
+    : AchievementsSystem.workedVisitOf(visit, subjectCustomerId);
 }
 
 /**
@@ -247,9 +235,8 @@ export function countsToward(
   series: BadgeSeries,
   visit: Appointment,
   subjectCustomerId: CustomerId | null,
-  zone: TimeZone,
 ): boolean {
-  const counted = countedVisitOf(visit, subjectCustomerId, zone);
+  const counted = countedVisitOf(visit, subjectCustomerId);
   return counted !== null && AchievementsSystem.countsToward(series, counted);
 }
 
@@ -914,7 +901,7 @@ function countedVisitsOf(
 ): readonly VisitRowVm[] {
   const rows = extra.rows;
   if (rows === null) return [];
-  // Each loaded visit as counted, read on the shop's zone here (the edge);
+  // Each loaded visit as counted;
   // which of them counted, inside the family's windows, newest first, is
   // `AchievementsSystem.countedVisits`.
   const counted = AchievementsSystem.countedVisits(
@@ -922,7 +909,7 @@ function countedVisitsOf(
     seasonOfSeries(series, data),
     extra.visits.map((appointment) => ({
       appointment,
-      counted: countedVisitOf(appointment, extra.subjectCustomerId, ctx.zone),
+      counted: countedVisitOf(appointment, extra.subjectCustomerId),
     })),
     data.today,
     countingDraftOf(series, standing, data, ctx),

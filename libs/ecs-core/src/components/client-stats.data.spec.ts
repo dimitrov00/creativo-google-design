@@ -17,6 +17,7 @@ describe('ClientStats', () => {
       lastVisitAppointmentId: null,
       lastVisitLocalDate: null,
       lastVisitStartMinutes: null,
+      lastVisitUtcMs: null,
       lastVisitServiceIds: [],
       lastVisitBarberIds: [],
       lastVisitLegs: [],

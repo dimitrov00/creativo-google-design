@@ -623,6 +623,7 @@ function workedAt(isoWithOffset: string, index: number): VisitFact {
     appointmentId: AppointmentId.of(`appt-${index}`),
     localDate: wall.localDate,
     startMinutes: wall.minute,
+    startUtcMs: utcMs(isoWithOffset),
   };
 }
 
@@ -631,6 +632,13 @@ function workedDaysAgo(days: number, index: number): VisitFact {
     appointmentId: AppointmentId.of(`appt-${index}`),
     localDate: LocalDate.addDays(localDate(TODAY), -days),
     startMinutes: minute(12 * 60),
+    startUtcMs: unwrapOk(
+      ZonedTimeSystem.toUtc(
+        LocalDate.addDays(localDate(TODAY), -days),
+        minute(12 * 60),
+        FIXTURE_TIME_ZONE,
+      ),
+    ),
   };
 }
 
