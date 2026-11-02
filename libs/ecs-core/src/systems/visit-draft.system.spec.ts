@@ -606,16 +606,6 @@ describe('VisitDraftSystem.pastLegsOnCatalogue — a past visit’s legs, today'
     ).toEqual([]);
   });
 
-  it('reads an offer that declares no variant as having none', () => {
-    expect(
-      S.pastLegsOnCatalogue(
-        [past(SERVICE, null)],
-        () => [{ serviceId: SERVICE, priceCents: 2000 }],
-        (_leg, found) => found.priceCents,
-      ),
-    ).toEqual([2000]);
-  });
-
   it('is pure: same input → same output, inputs untouched', () => {
     const legs = deepFreeze([past(SERVICE, null)]);
     const offers = deepFreeze([offer(SERVICE, null, 2000)]);

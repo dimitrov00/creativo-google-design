@@ -190,10 +190,10 @@ type PastLeg = {
   readonly variantId: ServiceVariantId | null;
 };
 
-/** What a catalogue offer is matched by; no `variantId` is a bare service. */
+/** What a catalogue offer is matched by; `null` is a bare service. */
 type OfferKey = {
   readonly serviceId: ServiceId;
-  readonly variantId?: ServiceVariantId | null;
+  readonly variantId: ServiceVariantId | null;
 };
 
 /** A catalogue offer's price, as a leg holds it. */
@@ -517,7 +517,7 @@ export const VisitDraftSystem = {
       const offer = offersOf(leg).find(
         (entry) =>
           entry.serviceId === leg.serviceId &&
-          (entry.variantId ?? null) === leg.variantId,
+          entry.variantId === leg.variantId,
       );
       if (offer !== undefined) out.push(make(leg, offer, i));
     }
