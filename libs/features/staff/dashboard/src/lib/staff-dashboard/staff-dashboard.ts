@@ -3380,8 +3380,9 @@ export class StaffDashboard {
   }
 
   protected readonly cancelId = signal<AppointmentId | null>(null);
-  /** What «Откажи и блокирай» blocks once this cancel lands; `null` on a plain cancel. */
+  /** What «Откажи и блокирай» blocks once ITS visit's cancel lands; `null` on a plain cancel. */
   private readonly blockAfterCancel = signal<{
+    readonly appointmentId: AppointmentId;
     readonly chair: BarberId;
     readonly startMinute: TrackMinute;
     readonly endMinute: TrackMinute;
@@ -3482,10 +3483,18 @@ export class StaffDashboard {
        * again was refused as already resolved — on every retry, so the sheet
        * could never close and the second seat never be called off.
        */
-      if (!done) this.cancelSeatIds.set(refused);
+      if (!done && this.cancelId() === appointmentId) {
+        this.cancelSeatIds.set(refused);
+      }
     }
+    /*
+     * THE SHEET MAY HAVE MOVED ON while the call was out: dismissed, and the
+     * next visit's opened. What lands here is this visit's, so it touches the
+     * sheet, its block and its note flag only if they are still this visit's.
+     */
+    const stillOpen = this.cancelId() === appointmentId;
     if (done) {
-      this.cancelId.set(null);
+      if (stillOpen) this.cancelId.set(null);
       // Whole-booking cancellations get the way back; a seat cancelled out
       // of a party has no inverse the callable offers (`inverseOf`).
       const row = this.lanes()
@@ -3503,8 +3512,10 @@ export class StaffDashboard {
         this.offerUndo(row, BookingStatus.Cancelled, inverse);
       }
       const blocked = this.blockAfterCancel();
-      this.blockAfterCancel.set(null);
-      if (blocked !== null) this.openBlockSheet(blocked.chair, blocked);
+      if (blocked?.appointmentId === appointmentId) {
+        this.blockAfterCancel.set(null);
+        this.openBlockSheet(blocked.chair, blocked);
+      }
     }
     /*
      * THE WORDS GO ON THE VISIT'S NOTE (D23: "free text, when staff type
@@ -3521,9 +3532,9 @@ export class StaffDashboard {
     if (
       reasonCode === CancellationReason.Other &&
       landed &&
-      !this.cancelNoteFiled()
+      !(stillOpen && this.cancelNoteFiled())
     ) {
-      this.cancelNoteFiled.set(true);
+      if (stillOpen) this.cancelNoteFiled.set(true);
       if (!(await this.store.appendTeamNote(appointmentId, note))) {
         this.refuse(null, 'staff.day.cancelNoteFailed');
       }
@@ -4281,6 +4292,7 @@ export class StaffDashboard {
     this.closeVisitSheet();
     if (chair === null) return;
     this.blockAfterCancel.set({
+      appointmentId: row.appointmentId,
       chair,
       startMinute: vm.startMinute,
       endMinute: vm.endMinute,

@@ -2930,6 +2930,89 @@ describe('StaffDashboard', () => {
       expect(page().blockEdit()).toBeNull();
     });
 
+    describe('with another visit’s cancel still in flight (the race)', () => {
+      const visits = observeBarberDay.getMockImplementation();
+      afterEach(() => {
+        if (visits) observeBarberDay.mockImplementation(visits);
+      });
+
+      it('opens the block sheet only for the visit whose cancel landed', async () => {
+        const x = appointment(
+          'appointment-x',
+          '2026-08-05T10:00:00',
+          undefined,
+          'ivan',
+        );
+        const y = appointment(
+          'appointment-y',
+          '2026-08-05T12:00:00',
+          undefined,
+          'ivan',
+        );
+        observeBarberDay.mockImplementation((barberId: string) =>
+          of(PortResult.ok(barberId === 'ivan' ? [x, y] : [])),
+        );
+        TestBed.resetTestingModule();
+        await build();
+        const open = (id: string) => {
+          (
+            host().querySelector(`[data-row-id="${id}#ivan"]`) as HTMLElement
+          ).click();
+          fixture.detectChanges();
+        };
+        const dismissSheet = () => {
+          fixture.debugElement
+            .query(By.css('[data-testid="staff-cancel-sheet"]'))
+            .componentInstance.dismissed.emit();
+          fixture.detectChanges();
+        };
+
+        // X's plain cancel goes out and hangs.
+        let land: (value: unknown) => void = () => undefined;
+        transition.mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              land = resolve as (value: unknown) => void;
+            }) as ReturnType<typeof transition>,
+        );
+        open('appointment-x');
+        await (
+          page() as unknown as {
+            actFromEditor: (id: string, verb: string) => Promise<void>;
+          }
+        ).actFromEditor('appointment-x', BookingStatus.Cancelled);
+        fixture.detectChanges();
+        expect(page().cancelId()).toBe('appointment-x');
+        const inFlight = page().confirmCancel();
+        // X's sheet let go of, and «Откажи и блокирай» pressed on Y.
+        dismissSheet();
+        open('appointment-y');
+        await page().blockInsteadFromEditor(page().visitEditorVm());
+        fixture.detectChanges();
+        expect(page().cancelId()).toBe('appointment-y');
+
+        // X lands: Y's sheet stays up, and no block sheet opens.
+        land(
+          PortResult.ok({
+            appointmentId: 'appointment-x',
+            toBookingStatus: BookingStatus.Cancelled,
+          }),
+        );
+        await inFlight;
+        fixture.detectChanges();
+        expect(page().cancelId()).toBe('appointment-y');
+        expect(page().blockEdit()).toBeNull();
+
+        // Y's own cancel opens it, on Y's range.
+        await page().confirmCancel();
+        fixture.detectChanges();
+        expect(page().cancelId()).toBeNull();
+        expect(page().blockEdit()).toEqual(
+          expect.objectContaining({ startMinute: 720 }),
+        );
+      });
+    });
+
     it('opens no block sheet on a refused cancel; the retry that lands does', async () => {
       await pressBlockInstead();
       transition.mockImplementationOnce(async () =>
