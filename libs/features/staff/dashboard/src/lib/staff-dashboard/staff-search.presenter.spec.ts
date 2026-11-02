@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { BookingContact, E164 } from '@core/components';
-import { BookingStatus, LocalDate, MinuteOfDay } from '@core/primitives';
 import {
+  BookingContact,
+  E164,
+  SeatOccupant,
+  SubjectRelationship,
+} from '@core/components';
+import {
+  BookingStatus,
+  LocalDate,
+  MinuteOfDay,
+  UserId,
+} from '@core/primitives';
+import {
+  FIXTURE_IDS,
   FIXTURE_TODAY,
   appointmentFixture,
   deepFreeze,
@@ -42,6 +53,8 @@ const input = (
   names: NAMES,
   zoneKnown,
   locale: 'bg',
+  companionNames: {},
+  unnamedClient: 'Клиент без име',
 });
 
 describe('splitOnTerm — the runs a match marks', () => {
@@ -111,6 +124,71 @@ describe('searchHits — the hits as the sheet prints them', () => {
     expect(hit?.matches).toEqual([]);
     expect(hit?.bookingStatus).toBe(BookingStatus.Confirmed);
     expect(hit?.dayKey).toBe(FIXTURE_TODAY);
+  });
+
+  describe('the title is the client (B7)', () => {
+    const titled = (
+      overrides: Parameters<typeof appointmentFixture>[0],
+      names: Readonly<Record<string, string>> = {},
+    ) => {
+      const [hit] = searchHits({
+        ...input('Класическо', [visit({ contactName: null, ...overrides })]),
+        companionNames: names,
+      });
+      return hit?.titleParts.map((part) => part.text).join('');
+    };
+    const son = UserId.of('u-son');
+    const companionSeat = seatFixture({
+      occupant: SeatOccupant.account(
+        son,
+        FIXTURE_IDS.customer,
+        SubjectRelationship.Companion,
+      ),
+    });
+    const guestSeat = seatFixture({
+      occupant: SeatOccupant.anonymous('Ани' as never),
+    });
+
+    it('never makes a service the title of an account seat with no contact', () => {
+      expect(titled({ seats: [seatFixture()] })).toBe('Клиент без име');
+    });
+
+    it('names a companion by his read profile', () => {
+      expect(titled({ seats: [companionSeat] }, { [son]: 'Иво Колев' })).toBe(
+        'Иво Колев',
+      );
+      expect(titled({ seats: [companionSeat] })).toBe('Клиент без име');
+    });
+
+    it('takes the first seat that holds a name, past an account seat with none', () => {
+      expect(titled({ seats: [seatFixture(), guestSeat] })).toBe('Ани');
+    });
+
+    it('lists the service that matched beneath the person', () => {
+      const [hit] = searchHits(
+        input('Класическо', [
+          visit({ contactName: null, seats: [seatFixture()] }),
+        ]),
+      );
+      expect(hit?.matches.map((match) => match.label)).toEqual([
+        SearchField.Service,
+      ]);
+    });
+
+    it('falls to the service only with no person at all', () => {
+      const [hit] = searchHits(
+        input('Алергия', [
+          visit({ contactName: null, contactNote: 'Алергия', seats: [] }),
+        ]),
+      );
+      expect(hit?.titleParts.map((part) => part.text).join('')).toBe('Алергия');
+    });
+
+    it('keeps the contact when there is one', () => {
+      expect(titled({ contactName: 'Георги', seats: [guestSeat] })).toBe(
+        'Георги',
+      );
+    });
   });
 
   it('finds a phone by its bare digits and marks the run through its spaces', () => {

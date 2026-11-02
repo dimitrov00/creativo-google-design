@@ -40,6 +40,7 @@ import {
   BusySystem,
   OfferingPriceSystem,
   PhoneSystem,
+  RosterSystem,
   VisitDraftSystem,
   VisitStorySystem,
   ZonedTimeSystem,
@@ -382,6 +383,26 @@ export function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
 }
 
 /**
+ * The names of a chair that holds companion accounts and nobody else, each
+ * person once; `null` for any other chair, and while any of them has no read
+ * profile.
+ */
+function companionsLabelOf(
+  seats: readonly Seat[],
+  companionNames: Readonly<Record<string, string>>,
+): string | null {
+  const names = new Set<string>();
+  for (const seat of seats) {
+    if (seat.seatSubject !== SeatSubject.Account) return null;
+    if (!Seat.isCompanion(seat)) return null;
+    const name = companionNames[seat.subjectUserId];
+    if (name === undefined) return null;
+    names.add(name);
+  }
+  return names.size === 0 ? null : [...names].join(' + ');
+}
+
+/**
  * One lane's view of one appointment.
  *
  * Only THIS chair's seats: a two-barber party appears in both lanes, each
@@ -443,10 +464,13 @@ export function dayRowVm(
       : PhoneSystem.formatInternational(contactPhone);
   const guestLabels = guestLabelsOf(seats);
   const allGuests = seats.length > 0 && guestLabels.length === seats.length;
-  const clientLabel: string =
+  const contactLabel: string =
     (allGuests ? guestLabels.join(' + ') : contactName) ??
     guestLabels[0] ??
     words.unnamedClient;
+  // A chair holding only companions is named by them (B4, the rule above),
+  // once their profiles are read: a seat holds no name of its own for them.
+  const clientLabel = companionsLabelOf(seats, companionNames) ?? contactLabel;
 
   /*
    * THE PEOPLE, from the seats themselves. `clientLabel` above is one
@@ -623,6 +647,7 @@ export function dayRowVm(
     crossesMidnight: endMinute >= 24 * 60,
     serviceLabel,
     clientLabel,
+    contactLabel,
     phone: phoneLabel,
     phoneHref: contactPhone,
     email: appointment.contactEmail,
@@ -899,6 +924,15 @@ export function rowMarks(
 }
 
 /**
+ * The tag a card prints. Not on an hour that did not happen (2026-09-24): how
+ * far a run is from the catalogue's length means nothing for a visit that will
+ * not run.
+ */
+function printedTag(entry: DayRowVm): string | null {
+  return entry.tag && !hollowStatus(entry.bookingStatus) ? entry.tag : null;
+}
+
+/**
  * Is there anything for the foot to hold?
  *
  * With price, marks and the barber's face all switched off the row still
@@ -906,14 +940,14 @@ export function rowMarks(
  * not: the card's `row-gap` sits on BOTH sides of it, so every card carried
  * 8px of dead space (measured) for a row with nothing in it.
  *
- * A tag counts whether or not the card prints it, which is today's answer on
- * an hour that did not happen (Bug B2 of the F-08 inventory, not fixed here).
+ * The same answer as what the card prints ({@link agendaCardVm}): a tag on an
+ * hour that did not happen is not printed, so it holds no foot.
  */
 export function footShown(entry: DayRowVm, flags: AgendaFlags): boolean {
   return (
     (flags.price && !!entry.priceLabel) ||
     // The frame's tag is a mark, never a field: it shows whenever it is.
-    entry.tag !== null ||
+    printedTag(entry) !== null ||
     // ⚠ The party share joined the foot (owner ruling 2026-09-04); a card
     // whose only mark is `1 / 2` must still get a row to put it on.
     (flags.party && !!entry.partyLabel) ||
@@ -981,9 +1015,7 @@ export function agendaCardVm(
     foot: footShown(entry, flags),
     price: flags.price && entry.priceLabel ? entry.priceLabel : null,
     partyShare: flags.party && entry.partyLabel ? entry.partyLabel : null,
-    // Not on an hour that did not happen (2026-09-24): how far a run is from
-    // the catalogue's length means nothing for a visit that will not run.
-    tag: entry.tag && !hollow ? entry.tag : null,
+    tag: printedTag(entry),
     marks: rowMarks(entry, flags),
   };
 }
@@ -1171,6 +1203,83 @@ export function allDayMoreEntry(
     tone: null,
     accessibleName: words.allDayMore(rest),
   };
+}
+
+/**
+ * How many chairs the all-day band names on one date before it says «+N»
+ * (§8): a fourth chip would push the band into a second screen of chrome,
+ * and a phone has no tooltip to read the rest from.
+ */
+const ALL_DAY_CHIP_CAP = 3;
+
+/** What the all-day band is worded from. */
+export interface AllDayInput {
+  /** A column IS a chair in the day view, and a date otherwise. */
+  readonly dayView: boolean;
+  readonly cells: readonly {
+    readonly dayKey: LocalDate;
+    readonly lanes: readonly {
+      readonly barberId: BarberId;
+      readonly rostered: readonly MinuteRange[];
+      readonly failed: boolean;
+      readonly rosterRead: boolean;
+    }[];
+  }[];
+  readonly shownDay: LocalDate | null;
+  readonly nameOf: (barberId: BarberId) => string;
+  readonly toneOf: (barberId: BarberId) => number;
+  readonly words: StaffDayWords;
+}
+
+/**
+ * What the band above each column holds, by the column's id: a chair off all
+ * day (`RosterSystem.offAllDay`). A failed or unread lane is not off (OR-2).
+ *
+ * In the day view a column IS a barber, so the chip names the fact rather than
+ * the person — the column head above it is already the name. The shading says
+ * "nothing can happen here"; this says WHY, which shading alone cannot, and
+ * which is the only form a screen reader can read.
+ *
+ * In a date column the chip says WHO — the first name where the cell can carry
+ * a word, the initial on the chair's tone disc where it cannot (§8) — and the
+ * whole sentence stays the accessible name. Three chips, then «+N», never fewer
+ * names as more chairs are off: a scroller inside the pinned band would be a
+ * trap.
+ */
+export function allDayEntriesOf(
+  input: AllDayInput,
+): Record<string, readonly AllDayEntry[]> {
+  const { nameOf, toneOf, words } = input;
+  const out = new Map<string, readonly AllDayEntry[]>();
+  if (input.dayView) {
+    const cell = input.cells.find((entry) => entry.dayKey === input.shownDay);
+    for (const lane of cell?.lanes ?? []) {
+      if (!RosterSystem.offAllDay(lane)) continue;
+      const { barberId } = lane;
+      out.set(barberId, [
+        offChairEntry(barberId, nameOf(barberId), toneOf(barberId), words),
+      ]);
+    }
+    return Object.fromEntries(out);
+  }
+  for (const cell of input.cells) {
+    const off = cell.lanes
+      .filter((lane) => RosterSystem.offAllDay(lane))
+      .map(({ barberId }) =>
+        offDateEntry(barberId, nameOf(barberId), toneOf(barberId), words),
+      );
+    if (off.length === 0) continue;
+    out.set(
+      cell.dayKey,
+      off.length <= ALL_DAY_CHIP_CAP
+        ? off
+        : [
+            ...off.slice(0, ALL_DAY_CHIP_CAP),
+            allDayMoreEntry(off.length - ALL_DAY_CHIP_CAP, words),
+          ],
+    );
+  }
+  return Object.fromEntries(out);
 }
 
 /** One chair off the shown day, as its all-day row names it. */

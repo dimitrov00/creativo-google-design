@@ -311,28 +311,19 @@ export const RosterSystem = {
   },
 
   /**
-   * Rostered nowhere on that day, whatever else the lane holds and whether
-   * or not its read failed: the block sheet's question (`offOn`, DEP-4).
-   * {@link offAllDay} also asks that the read did not fail; the two are not
-   * the same answer on a failed lane.
-   */
-  rosteredNowhere(lane: {
-    readonly rostered: readonly MinuteRange[];
-  }): boolean {
-    return lane.rostered.length === 0;
-  },
-
-  /**
-   * IS THIS CHAIR OFF ALL DAY, as the all-day band says it: rostered nowhere
-   * and the lane's read did not fail (OR-2: a failed lane is not off). A chair
-   * off all day may still hold bookings, which is where this differs from the
-   * negation of {@link worksDay}.
+   * IS THIS CHAIR OFF ALL DAY: rostered nowhere, as far as anything read says.
+   * A lane whose day failed to read is not off (OR-2), and neither is one whose
+   * roster has not been read: its empty `rostered` is no answer yet. The all-day
+   * band and the block sheet's whole-day lift both ask this. A chair off all day
+   * may still hold bookings, which is where this differs from the negation of
+   * {@link worksDay}.
    */
   offAllDay(lane: {
     readonly rostered: readonly MinuteRange[];
     readonly failed: boolean;
+    readonly rosterRead: boolean;
   }): boolean {
-    return RosterSystem.rosteredNowhere(lane) && !lane.failed;
+    return lane.rosterRead && !lane.failed && lane.rostered.length === 0;
   },
 
   /**

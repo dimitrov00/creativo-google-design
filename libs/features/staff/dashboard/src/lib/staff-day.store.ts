@@ -33,6 +33,7 @@ import {
   PipelineError,
   PipelineErrorCode,
   type RepositoryError,
+  SchedulingError,
   type StaffBlockFailure,
   StaffEditErrorCode,
 } from '@core/errors';
@@ -73,12 +74,17 @@ import {
   VisitSidesSystem,
   VoucherSystem,
   ZonedTimeSystem,
+  type BlockLift,
+  type BlockSavePlan,
+  type BlockWrite,
 } from '@core/systems';
 import {
   adoptVisitPhoto,
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
   clearScheduleBlock,
+  moveScheduleBlock,
+  type ScheduleBlocksCommand,
   loadHeldGrants,
   saveTeamNote as saveTeamNotePipeline,
   type SaveVisitEditCommand,
@@ -393,6 +399,12 @@ export interface BarberDayLane {
    * failed, on the day's all-day strip.
    */
   readonly failed: boolean;
+  /**
+   * The roster's answer is in: `rostered` empty means NOT ROSTERED only when
+   * this is true. While the day's geometry is unread or failed `rostered` is
+   * empty too, which says nothing.
+   */
+  readonly rosterRead: boolean;
   /**
    * How many of the day's stored visits the read-time guard dropped from
    * this chair's answer (`BarberDayRead.unreadableCount`, OR-2) — `0` on a
@@ -1606,17 +1618,18 @@ export class StaffDayStore {
         const failed = result !== undefined && !result.ok;
         const answer = answers?.[barberIndex];
         const schedule = schedules[barberIndex];
-        const geo =
-          dayFailed || answer === undefined || schedule === undefined
-            ? NO_GEOMETRY
-            : laneGeometryOf(
-                barber.id,
-                dayKey,
-                schedule.ok ? schedule.value : null,
-                answer[0].ok ? answer[0].value : null,
-                answer[1].ok ? answer[1].value : null,
-                locations,
-              );
+        const rosterRead =
+          !dayFailed && answer !== undefined && schedule !== undefined;
+        const geo = !rosterRead
+          ? NO_GEOMETRY
+          : laneGeometryOf(
+              barber.id,
+              dayKey,
+              schedule.ok ? schedule.value : null,
+              answer[0].ok ? answer[0].value : null,
+              answer[1].ok ? answer[1].value : null,
+              locations,
+            );
 
         // The lane carries the roster's own minutes of its shop day — the
         // windows, the blocks and the holes as `MinuteRange`s (Law 7.3:
@@ -1633,6 +1646,7 @@ export class StaffDayStore {
                 occupiedOn(dayKey, appointments, barber.id, geo.busy),
               ),
           failed,
+          rosterRead,
           unreadable: result?.ok ? result.value.unreadableCount : 0,
         };
       });
@@ -1863,6 +1877,76 @@ export class StaffDayStore {
   ): Promise<boolean> {
     if (this._absencePending()) return false;
     return this.writeBlocks(barberId, locationId, ranges, days);
+  }
+
+  /**
+   * «Запази» on the block sheet, as `ScheduleExceptionSystem.blockSavePlan`
+   * decided it, and whether it all landed. A chair with no shop to file it at
+   * refuses the whole save, by name. An EDITED range (`lift`) moves in ONE write
+   * (`moveScheduleBlock`), so a refused write never loses the old block. A
+   * new block is one pass per chair.
+   */
+  async saveBlocks(plan: BlockSavePlan): Promise<boolean> {
+    if (plan.chairWithoutHome !== null) {
+      this._absenceError.set(
+        SchedulingError.blockChairWithoutHome(plan.chairWithoutHome),
+      );
+      return false;
+    }
+    if (plan.writes === null) return false;
+    if (plan.lift !== null) return this.moveBlock(plan.lift, plan.writes);
+    for (const {
+      barberId,
+      locationId,
+      ranges,
+      localDate,
+      days,
+    } of plan.writes) {
+      const done =
+        localDate !== null
+          ? await this.blockTime(barberId, locationId, ranges, localDate)
+          : await this.blockSeries(barberId, locationId, ranges, days);
+      if (!done) return false;
+    }
+    return true;
+  }
+
+  /** An edited block's one write (`moveScheduleBlock`), each chair's day read in its shop's zone. */
+  private async moveBlock(
+    lift: BlockLift,
+    writes: readonly BlockWrite[],
+  ): Promise<boolean> {
+    if (this._absencePending()) return false;
+    const commands: ScheduleBlocksCommand[] = [];
+    for (const { barberId, locationId, ranges, days } of writes) {
+      const timeZone = untracked(this.zoneAt)(locationId);
+      if (timeZone === null) {
+        this._absenceError.set(CatalogError.locationZoneUnknown(locationId));
+        return false;
+      }
+      commands.push({
+        barberId,
+        locationId,
+        timeZone,
+        ranges,
+        localDates: days,
+      });
+    }
+    this._absencePending.set(true);
+    this._absenceError.set(null);
+    try {
+      const result = await moveScheduleBlock(this.exceptions)({
+        lift,
+        writes: commands,
+      });
+      if (!result.ok) {
+        this._absenceError.set(result.error);
+        return false;
+      }
+      return true;
+    } finally {
+      this._absencePending.set(false);
+    }
   }
 
   /**

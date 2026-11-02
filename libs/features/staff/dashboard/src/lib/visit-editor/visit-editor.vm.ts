@@ -129,6 +129,10 @@ export type VisitEditorWords = {
   readonly discountApplied: (count: number) => string;
   readonly discountCount: (count: number) => string;
   readonly sameAsLast: (date: string) => string;
+  /** «Вече не е в каталога: Брада. Избери друга услуга.» */
+  readonly leftOffNamed: (services: string) => string;
+  /** The same, with no name at hand. */
+  readonly leftOffUnnamed: string;
   readonly tipInDock: (amount: string) => string;
   readonly tipRoundUp: (total: string) => string;
   readonly voucherLeft: (amount: string) => string;
@@ -507,6 +511,11 @@ export type LegRowVm = {
   readonly line: string;
   /** Whose seat, on a party. */
   readonly clientLabel: string;
+  /**
+   * The server holds this seat, and no edit command carries its person or its
+   * variant: the row prints both on its line and offers neither.
+   */
+  readonly stored: boolean;
   readonly forWhomName: string;
   /** The service's variants as choices — empty for a service that has none. */
   readonly variantChoices: readonly UiChoiceOption[];
@@ -552,6 +561,8 @@ export const RESOLUTION_HEADS = {
 /** A person row as the add-client page draws it: ticked, matched, marked. */
 export type ClientRowVm = VisitEditorClientOption & {
   readonly selected: boolean;
+  /** On the visit for good: the row reads, and a tap takes them off nothing. */
+  readonly locked: boolean;
   /** The typed number or mail IS theirs. */
   readonly exact: boolean;
   /** The name as runs, only while some run is the typed one. */

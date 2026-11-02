@@ -9,7 +9,14 @@ import {
   TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
-import { BehaviorSubject, Observable, ReplaySubject, map, of } from 'rxjs';
+import {
+  BehaviorSubject,
+  NEVER,
+  Observable,
+  ReplaySubject,
+  map,
+  of,
+} from 'rxjs';
 import {
   afterEach,
   beforeEach,
@@ -121,6 +128,7 @@ import {
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
+  SchedulingErrorCode,
   StaffEditErrorCode,
 } from '@core/errors';
 import {
@@ -694,6 +702,12 @@ describe('StaffDashboard', () => {
   > | null = null;
   /** The catalogue's services, when a case prices its own; `null` is the one timed fade. */
   let catalogServices: readonly Service[] | null = null;
+  /** The catalogue's services as a stream, when a case says so (and puts it back). */
+  let catalogServiceStream: Observable<
+    PortResult<readonly Service[], RepositoryError>
+  > | null = null;
+  /** The chairs `CATALOG_PORTS` lists, when a case says so (and puts it back). */
+  let catalogBarbers: readonly Barber[] | null = null;
   /**
    * The search window's visits (what the day search and «Скорошни» read),
    * when a case pools its own; `null` is the one Георги visit.
@@ -805,13 +819,21 @@ describe('StaffDashboard', () => {
           // the shop the chairs work at — a window is kept only at a shop
           // the day OFFERS.
           provide: CATALOG_PORTS,
-          useValue: ((ports) =>
-            catalogShops === null
-              ? ports
-              : { ...ports, observeLocations: () => catalogShops ?? of() })(
+          useValue: ((ports) => ({
+            ...ports,
+            ...(catalogShops === null
+              ? {}
+              : { observeLocations: () => catalogShops ?? of() }),
+            ...(catalogServiceStream === null
+              ? {}
+              : { observeServices: () => catalogServiceStream ?? of() }),
+          }))(
             memoryCatalogReadPorts({
               services: catalogServices ?? [service('fade', 45)],
-              barbers: [barber('ivan', 'Иван'), barber('niko', 'Нико')],
+              barbers: catalogBarbers ?? [
+                barber('ivan', 'Иван'),
+                barber('niko', 'Нико'),
+              ],
               categories: [],
               locations: [SHOP_LOCATION],
             }),
@@ -1414,6 +1436,94 @@ describe('StaffDashboard', () => {
       } finally {
         unreadableBy = new Map();
         if (visits) observeBarberDay.mockImplementation(visits);
+      }
+    });
+  });
+
+  describe('a chair the page could not read is not off (B3, OR-2)', () => {
+    type OffPage = {
+      store: { setView: (view: string) => void };
+      allDay: () => Record<string, readonly unknown[]>;
+      openBlockSheet: (barberId: BarberId) => void;
+      blockEditorVm: () => { dayIsOff: boolean } | null;
+      blockLiftArmed: () => boolean;
+      liftFromEditor: () => Promise<void>;
+    };
+    const page = () => fixture.componentInstance as unknown as OffPage;
+
+    async function buildDayView(): Promise<void> {
+      TestBed.resetTestingModule();
+      await build();
+      page().store.setView('day');
+      fixture.detectChanges();
+    }
+
+    it('does not call a failed chair off, nor offer it the whole day’s lift', async () => {
+      const visits = observeBarberDay.getMockImplementation();
+      // Niko is rostered nowhere: all a failed read leaves to go on.
+      observeBarberDay.mockImplementation((barberId: string) =>
+        of(
+          barberId === 'niko'
+            ? PortResult.err(
+                RepositoryError.readFailed('appointments', 'unavailable'),
+              )
+            : PortResult.ok([]),
+        ),
+      );
+      try {
+        await buildDayView();
+        expect(page().allDay()['niko']).toBeUndefined();
+        page().openBlockSheet(BarberId.of('niko'));
+        fixture.detectChanges();
+        expect(page().blockEditorVm()?.dayIsOff).toBe(false);
+        // The whole day's lift arms first; a chair not off never reaches it.
+        await page().liftFromEditor();
+        expect(page().blockLiftArmed()).toBe(false);
+      } finally {
+        if (visits) observeBarberDay.mockImplementation(visits);
+      }
+    });
+
+    it('still calls a chair that read cleanly and is rostered nowhere off', async () => {
+      await buildDayView();
+      expect(page().allDay()['niko']).toHaveLength(1);
+      page().openBlockSheet(BarberId.of('niko'));
+      fixture.detectChanges();
+      expect(page().blockEditorVm()?.dayIsOff).toBe(true);
+    });
+
+    it('calls no chair off while the roster has not answered', async () => {
+      const roster = observeSchedule.getMockImplementation();
+      observeSchedule.mockImplementation(() => NEVER);
+      try {
+        await buildDayView();
+        expect(page().allDay()).toEqual({});
+        page().openBlockSheet(BarberId.of('ivan'));
+        fixture.detectChanges();
+        expect(page().blockEditorVm()?.dayIsOff).toBe(false);
+      } finally {
+        if (roster) observeSchedule.mockImplementation(roster);
+      }
+    });
+
+    it('calls no chair off when the roster read failed', async () => {
+      const roster = observeSchedule.getMockImplementation();
+      observeSchedule.mockImplementation(
+        () =>
+          of(
+            PortResult.err(
+              RepositoryError.readFailed('barberSchedules', 'unavailable'),
+            ),
+          ) as unknown as ReturnType<typeof observeSchedule>,
+      );
+      try {
+        await buildDayView();
+        expect(page().allDay()).toEqual({});
+        page().openBlockSheet(BarberId.of('ivan'));
+        fixture.detectChanges();
+        expect(page().blockEditorVm()?.dayIsOff).toBe(false);
+      } finally {
+        if (roster) observeSchedule.mockImplementation(roster);
       }
     });
   });
@@ -2745,6 +2855,180 @@ describe('StaffDashboard', () => {
    * the note's one transaction (`updateAppointmentNote`: the note read on
    * the server, the line joined below it, written — edge hardening D-6).
    */
+  describe('«Откажи и блокирай»: the block sheet waits for the cancel (B1)', () => {
+    type BlockInsteadPage = {
+      visitEditorVm: () => { appointmentId: string } | null;
+      blockInsteadFromEditor: (vm: unknown) => Promise<void>;
+      cancelId: { (): string | null; set: (id: string | null) => void };
+      confirmCancel: () => Promise<void>;
+      blockEdit: () => {
+        barberIds: readonly string[];
+        startMinute: number;
+        endMinute: number;
+      } | null;
+    };
+    const page = () => fixture.componentInstance as unknown as BlockInsteadPage;
+
+    /** The visit's sheet, and «Откажи и блокирай» pressed on it. */
+    async function pressBlockInstead(): Promise<void> {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      await page().blockInsteadFromEditor(page().visitEditorVm());
+      fixture.detectChanges();
+    }
+
+    afterEach(() => {
+      transition.mockReset();
+      transition.mockImplementation(async (input) =>
+        PortResult.ok({
+          appointmentId: input.appointmentId,
+          toBookingStatus: input.toBookingStatus,
+        }),
+      );
+    });
+
+    it('asks the reason first, with no block sheet yet', async () => {
+      await pressBlockInstead();
+      expect(page().cancelId()).toBe('appointment-1');
+      expect(page().blockEdit()).toBeNull();
+      expect(transition).not.toHaveBeenCalled();
+    });
+
+    it('opens the block sheet on the visit’s range once the cancel has landed', async () => {
+      await pressBlockInstead();
+      await page().confirmCancel();
+      fixture.detectChanges();
+      expect(transition).toHaveBeenCalled();
+      expect(page().cancelId()).toBeNull();
+      expect(page().blockEdit()).toEqual(
+        expect.objectContaining({
+          barberIds: ['ivan'],
+          startMinute: 600,
+          endMinute: 630,
+        }),
+      );
+    });
+
+    it('leaves the visit as it was, with no block sheet, when the reason sheet is dismissed', async () => {
+      await pressBlockInstead();
+      fixture.debugElement
+        .query(By.css('[data-testid="staff-cancel-sheet"]'))
+        .componentInstance.dismissed.emit();
+      fixture.detectChanges();
+      expect(page().cancelId()).toBeNull();
+      expect(page().blockEdit()).toBeNull();
+      expect(transition).not.toHaveBeenCalled();
+      // A plain cancel afterwards owes no block sheet.
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      page().cancelId.set('appointment-1');
+      await page().confirmCancel();
+      expect(page().blockEdit()).toBeNull();
+    });
+
+    describe('with another visit’s cancel still in flight (the race)', () => {
+      const visits = observeBarberDay.getMockImplementation();
+      afterEach(() => {
+        if (visits) observeBarberDay.mockImplementation(visits);
+      });
+
+      it('opens the block sheet only for the visit whose cancel landed', async () => {
+        const x = appointment(
+          'appointment-x',
+          '2026-08-05T10:00:00',
+          undefined,
+          'ivan',
+        );
+        const y = appointment(
+          'appointment-y',
+          '2026-08-05T12:00:00',
+          undefined,
+          'ivan',
+        );
+        observeBarberDay.mockImplementation((barberId: string) =>
+          of(PortResult.ok(barberId === 'ivan' ? [x, y] : [])),
+        );
+        TestBed.resetTestingModule();
+        await build();
+        const open = (id: string) => {
+          (
+            host().querySelector(`[data-row-id="${id}#ivan"]`) as HTMLElement
+          ).click();
+          fixture.detectChanges();
+        };
+        const dismissSheet = () => {
+          fixture.debugElement
+            .query(By.css('[data-testid="staff-cancel-sheet"]'))
+            .componentInstance.dismissed.emit();
+          fixture.detectChanges();
+        };
+
+        // X's plain cancel goes out and hangs.
+        let land: (value: unknown) => void = () => undefined;
+        transition.mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              land = resolve as (value: unknown) => void;
+            }) as ReturnType<typeof transition>,
+        );
+        open('appointment-x');
+        await (
+          page() as unknown as {
+            actFromEditor: (id: string, verb: string) => Promise<void>;
+          }
+        ).actFromEditor('appointment-x', BookingStatus.Cancelled);
+        fixture.detectChanges();
+        expect(page().cancelId()).toBe('appointment-x');
+        const inFlight = page().confirmCancel();
+        // X's sheet let go of, and «Откажи и блокирай» pressed on Y.
+        dismissSheet();
+        open('appointment-y');
+        await page().blockInsteadFromEditor(page().visitEditorVm());
+        fixture.detectChanges();
+        expect(page().cancelId()).toBe('appointment-y');
+
+        // X lands: Y's sheet stays up, and no block sheet opens.
+        land(
+          PortResult.ok({
+            appointmentId: 'appointment-x',
+            toBookingStatus: BookingStatus.Cancelled,
+          }),
+        );
+        await inFlight;
+        fixture.detectChanges();
+        expect(page().cancelId()).toBe('appointment-y');
+        expect(page().blockEdit()).toBeNull();
+
+        // Y's own cancel opens it, on Y's range.
+        await page().confirmCancel();
+        fixture.detectChanges();
+        expect(page().cancelId()).toBeNull();
+        expect(page().blockEdit()).toEqual(
+          expect.objectContaining({ startMinute: 720 }),
+        );
+      });
+    });
+
+    it('opens no block sheet on a refused cancel; the retry that lands does', async () => {
+      await pressBlockInstead();
+      transition.mockImplementationOnce(async () =>
+        PortResult.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
+      );
+      await page().confirmCancel();
+      fixture.detectChanges();
+      expect(page().cancelId()).toBe('appointment-1');
+      expect(page().blockEdit()).toBeNull();
+      await page().confirmCancel();
+      fixture.detectChanges();
+      expect(page().cancelId()).toBeNull();
+      expect(page().blockEdit()).not.toBeNull();
+    });
+  });
+
   describe('«Друго…» files its words as the visit’s note (D23)', () => {
     /** The visit's stored note, as the notes collection would answer it. */
     let storedText: string | null;
@@ -6322,7 +6606,17 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     const vm = component.visitEditorVm();
     if (vm === null) throw new Error('the sheet did not open');
-    component.rebookFromEditor({ ...vm, startMinute: 615, endMinute: 660 });
+    component.rebookFromEditor({
+      ...vm,
+      startMinute: 615,
+      endMinute: 660,
+      // A service the shop still sells: a seat left off moves the span.
+      legs: (vm['legs'] as readonly object[]).map((leg) => ({
+        ...leg,
+        serviceId: ServiceId.of('fade'),
+        variantId: null,
+      })),
+    });
     fixture.detectChanges();
     expect(component.createVisit()?.startMinute).toBe(615);
     expect(component.createVisit()?.minutes).toBe(45);
@@ -6384,6 +6678,148 @@ describe('StaffDashboard', () => {
       fixture.detectChanges();
       return { clientUserId: vm.clientUserId, clientLabel: vm.clientLabel };
     }
+
+    it('prints what the server will charge: today’s catalogue price, on the leg’s chair (B5)', () => {
+      const component =
+        fixture.componentInstance as unknown as RebookHarness & {
+          createVisit: () => {
+            legs?: readonly {
+              serviceId: string;
+              priceCents: number | null;
+              priceLabel: string | null;
+              currency: string;
+            }[];
+          } | null;
+        };
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const vm = component.visitEditorVm() as unknown as {
+        legs: readonly { serviceId: string }[];
+      };
+      const [leg] = vm.legs;
+      component.rebookFromEditor({
+        ...vm,
+        legs: [
+          // Stored at 15,00 €; the catalogue sells it at 28,00 € today.
+          {
+            ...leg,
+            serviceId: ServiceId.of('fade'),
+            variantId: null,
+            priceCents: 1500,
+            priceLabel: '15,00 €',
+          },
+          // No longer sold: the server would refuse the seat.
+          { ...leg, serviceId: ServiceId.of('gone'), variantId: null },
+        ],
+      });
+      const legs = component.createVisit()?.legs ?? [];
+      expect(legs.map((entry) => entry.serviceId)).toEqual(['fade']);
+      expect(legs[0]?.priceCents).toBe(2800);
+      expect(legs[0]?.priceLabel).toContain('28');
+    });
+
+    describe('what the catalogue does not sell (B5 follow-up)', () => {
+      type Drafted = {
+        serviceId: string;
+        priceCents: number | null;
+        durationMinutes: number;
+      };
+      const page = () =>
+        fixture.componentInstance as unknown as RebookHarness & {
+          createVisit: () => {
+            legs?: readonly Drafted[];
+            minutes?: number;
+            leftOffServices?: readonly { serviceLabel: string }[];
+          } | null;
+          createVm: () => {
+            startMinute: number;
+            endMinute: number;
+            leftOffServices?: readonly { serviceLabel: string }[];
+          } | null;
+        };
+      /** A 09:00–10:00 visit: a 30-minute fade the shop sells, and 15 of something gone. */
+      const rebook = () => {
+        (
+          host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+        ).click();
+        fixture.detectChanges();
+        const vm = page().visitEditorVm() as unknown as {
+          legs: readonly object[];
+        };
+        const [leg] = vm.legs;
+        page().rebookFromEditor({
+          ...vm,
+          startMinute: 540,
+          endMinute: 600,
+          legs: [
+            {
+              ...leg,
+              serviceId: ServiceId.of('fade'),
+              variantId: null,
+              serviceLabel: 'Фейд',
+              priceCents: 1500,
+              durationMinutes: 30,
+            },
+            {
+              ...leg,
+              serviceId: ServiceId.of('gone'),
+              variantId: null,
+              serviceLabel: 'Брада',
+              priceCents: 700,
+              durationMinutes: 15,
+            },
+          ],
+        });
+        fixture.detectChanges();
+      };
+      afterEach(() => {
+        catalogServiceStream = null;
+      });
+
+      it('keeps every stored leg while the catalogue is pending', async () => {
+        catalogServiceStream = NEVER;
+        TestBed.resetTestingModule();
+        await build();
+        rebook();
+        const legs = page().createVisit()?.legs ?? [];
+        expect(legs.map((leg) => leg.serviceId)).toEqual(['fade', 'gone']);
+        expect(legs[0]?.priceCents).toBe(1500);
+        expect(page().createVisit()?.leftOffServices).toEqual([]);
+        expect(page().createVisit()?.minutes).toBe(60);
+      });
+
+      it('keeps every stored leg when the catalogue read failed', async () => {
+        catalogServiceStream = of(
+          PortResult.err(RepositoryError.readFailed('services', 'unavailable')),
+        );
+        TestBed.resetTestingModule();
+        await build();
+        rebook();
+        expect(
+          (page().createVisit()?.legs ?? []).map((leg) => leg.serviceId),
+        ).toEqual(['fade', 'gone']);
+      });
+
+      it('drops only what a read catalogue does not sell, says so, and lets the span follow', () => {
+        rebook();
+        expect(
+          (page().createVisit()?.legs ?? []).map((leg) => leg.serviceId),
+        ).toEqual(['fade']);
+        expect(
+          page()
+            .createVm()
+            ?.leftOffServices?.map((leg) => leg.serviceLabel),
+        ).toEqual(['Брада']);
+        // The sheet's span is the 30 that remain, not the visit's old 60.
+        expect(page().createVisit()?.minutes).toBe(30);
+        const created = page().createVm();
+        expect((created?.endMinute ?? 0) - (created?.startMinute ?? 0)).toBe(
+          30,
+        );
+      });
+    });
 
     it('books the new visit FROM the finished one, for the same client', async () => {
       const requests = capture();
@@ -7569,7 +8005,16 @@ describe('StaffDashboard', () => {
         return fixture.debugElement.query(By.directive(StaffVisitEditor))
           .componentInstance as StaffVisitEditor;
       };
-      const son = open('appointment-family#niko').vm().people?.[0];
+      // His own card names him, on the agenda (B4).
+      const card = host().querySelector(
+        '[data-row-id="appointment-family#niko"]',
+      );
+      expect(card?.textContent).toContain('Иво Колев');
+      expect(card?.textContent).not.toContain('Стоян Колев');
+      const sonSheet = open('appointment-family#niko').vm();
+      // The sheet's number and account are the booker's, and answer to his name.
+      expect(sonSheet.clientLabel).toBe('Стоян Колев');
+      const son = sonSheet.people?.[0];
       expect(son).toEqual({
         id: 'user-son',
         label: 'Иво Колев',
@@ -8802,6 +9247,170 @@ describe('StaffDashboard', () => {
         expect(page().blockEdit()).toEqual(
           expect.objectContaining({ startMinute: 720, endMinute: 780 }),
         );
+      });
+
+      describe('an edited block (B6)', () => {
+        const DAY = unwrapOk(LocalDate.parse('2026-08-05'));
+        const moved = {
+          barberIds: [BarberId.of('ivan')],
+          dayKey: DAY,
+          days: [DAY],
+          allDay: false,
+          startMinute: 14 * 60,
+          endMinute: 15 * 60,
+        };
+        const commitBlock = (commit: unknown): Promise<void> =>
+          (
+            fixture.componentInstance as unknown as {
+              commitBlock: (commit: unknown) => Promise<void>;
+            }
+          ).commitBlock(commit);
+        const absenceError = () =>
+          (
+            page() as unknown as {
+              store: { absenceError: () => { errorCode: string } | null };
+            }
+          ).store.absenceError();
+        const storedRanges = () =>
+          exceptions
+            .filter((entry) => entry.barberId === BarberId.of('ivan'))
+            .flatMap((entry) =>
+              entry.exceptionEffect === ExceptionEffect.Blocked
+                ? entry.exceptionRanges
+                : [],
+            )
+            .map((range) => range.startMinutes);
+        const openLunch = async () => {
+          blockOn(DAY, wallAt(12), until(13));
+          await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+          page().openBlock(`block:ivan:${DAY}:720`);
+          fixture.detectChanges();
+          expect(page().blockEdit()).not.toBeNull();
+          writeScheduleException.mockClear();
+        };
+
+        it('moves it in ONE write: the old range gone, the new one there', async () => {
+          await openLunch();
+          await commitBlock(moved);
+          expect(writeScheduleException).toHaveBeenCalledTimes(1);
+          expect(storedRanges()).toEqual([14 * 60]);
+          expect(page().blockEdit()).toBeNull();
+        });
+
+        it('keeps the old block and the sheet when the write is refused', async () => {
+          await openLunch();
+          const real = writeScheduleException.getMockImplementation();
+          // A writer that refuses whatever would hold the new range; anything
+          // else lands, as a lift on its own would.
+          writeScheduleException.mockImplementation(
+            async <E>(
+              keys: readonly BusyKey[],
+              merge: (
+                stored: readonly (ScheduleException | null)[],
+              ) => PortResult<readonly (ScheduleException | null)[], E>,
+            ) => {
+              const refused = merge(
+                keys.map(
+                  (key) =>
+                    exceptions.find((entry) => entry.id === String(key)) ??
+                    null,
+                ),
+              );
+              const holdsNew =
+                refused.ok &&
+                refused.value.some(
+                  (entry) =>
+                    entry?.exceptionEffect === ExceptionEffect.Blocked &&
+                    entry.exceptionRanges.some(
+                      (range) => range.startMinutes === 14 * 60,
+                    ),
+                );
+              return holdsNew
+                ? PortResult.err(RepositoryError.writeFailed('refused', null))
+                : (real as typeof writeScheduleException)(keys, merge);
+            },
+          );
+          try {
+            await commitBlock(moved);
+            expect(storedRanges()).toEqual([12 * 60]);
+            expect(page().blockEdit()).not.toBeNull();
+            expect(absenceError()).not.toBeNull();
+            fixture.detectChanges();
+            expect(
+              host().querySelector('[data-testid="staff-block-error"]'),
+            ).not.toBeNull();
+          } finally {
+            if (real) writeScheduleException.mockImplementation(real);
+          }
+        });
+
+        describe('a chair that serves every shop (`locationIds: []`)', () => {
+          const everywhere = (id: string, name: string) => ({
+            ...barber(id, name),
+            locationIds: [],
+          });
+          afterEach(() => {
+            catalogBarbers = null;
+            catalogShops = null;
+          });
+
+          it('is filed at the shop the page starts its visits at', async () => {
+            catalogBarbers = [everywhere('ivan', 'Иван')];
+            await openLunch();
+            await commitBlock(moved);
+            expect(storedRanges()).toEqual([14 * 60]);
+            expect(exceptions[0]?.locationId).toBe(SHOP);
+            expect(page().blockEdit()).toBeNull();
+            expect(absenceError()).toBeNull();
+          });
+
+          it('holds up no other chair in the same save', async () => {
+            catalogBarbers = [
+              barber('ivan', 'Иван'),
+              everywhere('niko', 'Нико'),
+            ];
+            await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+            (
+              fixture.componentInstance as unknown as {
+                openBlockSheet: (barberId: BarberId) => void;
+              }
+            ).openBlockSheet(BarberId.of('ivan'));
+            fixture.detectChanges();
+            await commitBlock({
+              ...moved,
+              barberIds: [BarberId.of('ivan'), BarberId.of('niko')],
+            });
+            expect(exceptions.map((entry) => entry.barberId).sort()).toEqual([
+              'ivan',
+              'niko',
+            ]);
+            expect(page().blockEdit()).toBeNull();
+          });
+
+          it('refuses only a deployment with no shop at all: nothing written, the sheet open, the refusal said', async () => {
+            catalogBarbers = [everywhere('ivan', 'Иван')];
+            catalogShops = of(PortResult.ok([]));
+            await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+            (
+              fixture.componentInstance as unknown as {
+                openBlockSheet: (barberId: BarberId) => void;
+              }
+            ).openBlockSheet(BarberId.of('ivan'));
+            fixture.detectChanges();
+            writeScheduleException.mockClear();
+            await commitBlock(moved);
+            expect(writeScheduleException).not.toHaveBeenCalled();
+            expect(page().blockEdit()).not.toBeNull();
+            expect(absenceError()).toEqual({
+              errorCode: SchedulingErrorCode.BlockChairWithoutHome,
+              barberId: 'ivan',
+            });
+            fixture.detectChanges();
+            expect(
+              host().querySelector('[data-testid="staff-block-error"]'),
+            ).not.toBeNull();
+          });
+        });
       });
 
       it('counts down to a chair at a shop of another zone from its STORED instant (DEP-12)', async () => {

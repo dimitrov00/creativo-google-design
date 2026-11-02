@@ -136,6 +136,7 @@ function row(overrides: Partial<DayRowVm> = {}): DayRowVm {
     crossesMidnight: false,
     serviceLabel: 'Фейд',
     clientLabel: 'Георги',
+    contactLabel: 'Георги',
     phone: null,
     phoneHref: null,
     email: null,
@@ -270,6 +271,26 @@ describe('the card’s marks and its foot', () => {
       footShown(row({ partyLabel: '1/2' }), { ...NOTHING_ON, party: true }),
     ).toBe(true);
     expect(footShown(row({ rebooked: true }), NOTHING_ON)).toBe(true);
+  });
+
+  it('holds no foot for a tag an hour that did not happen never prints (B2)', () => {
+    // The avatar switch on: the state glyph sits on the avatar, not the foot,
+    // so the tag is the only thing left to ask for one.
+    const flags = { ...NOTHING_ON, avatar: true };
+    const hollow = row({
+      tag: '−5 мин',
+      bookingStatus: BookingStatus.Cancelled,
+    });
+    expect(rowMarks(hollow, flags)).toEqual([]);
+    expect(footShown(hollow, flags)).toBe(false);
+    // The flag and what the card prints are one answer.
+    const card = agendaCardVm(hollow, { ...CARD, flags });
+    expect(card.tag).toBeNull();
+    expect(card.foot).toBe(false);
+    // Anything else on the foot still holds it.
+    expect(footShown(hollow, { ...flags, barberAvatar: true })).toBe(true);
+    // A live visit's tag does print, and holds its foot.
+    expect(footShown(row({ tag: '−5 мин' }), flags)).toBe(true);
   });
 });
 
@@ -603,6 +624,7 @@ describe('the frame’s neighbours', () => {
       ],
       rostered: true,
       failed: false,
+      rosterRead: true,
     };
     expect(occupyingRows(undefined, [beside], null)).toEqual([]);
     expect(occupyingRows(lane, [beside], null).map((n) => n.name)).toEqual([
@@ -700,6 +722,46 @@ describe('dayRowVm — one lane’s view of one appointment', () => {
     expect(
       dayRowVm(appointmentFixture(), CHAIR, context({ words: EN })).clientLabel,
     ).toBe('Unnamed client');
+  });
+
+  it('names a chair holding only a companion by his own name, never the booker’s (B4)', () => {
+    const son = (seatId: string) =>
+      seatFixture({
+        seatId: SeatId.of(seatId),
+        occupant: SeatOccupant.account(
+          companion,
+          FIXTURE_IDS.customer,
+          SubjectRelationship.Companion,
+        ),
+      });
+    const visit = appointmentFixture({
+      contactName: 'Стоян Колев',
+      seats: [son('seat-son')],
+    });
+    const named = context({ companionNames: { [companion]: 'Иво Колев' } });
+    expect(dayRowVm(visit, CHAIR, named).clientLabel).toBe('Иво Колев');
+    // The number and the account beside him stay the booker's, and so does
+    // the name they answer to.
+    expect(dayRowVm(visit, CHAIR, named).contactLabel).toBe('Стоян Колев');
+    // Two services for him in the chair: still one person, once.
+    expect(
+      dayRowVm(
+        { ...visit, seats: [son('seat-a'), son('seat-b')] },
+        CHAIR,
+        named,
+      ).clientLabel,
+    ).toBe('Иво Колев');
+    // The seat holds no name of its own: until his profile answers, the row
+    // keeps what it had, rather than a name made up here.
+    expect(dayRowVm(visit, CHAIR, context()).clientLabel).toBe('Стоян Колев');
+    // The booker in the chair beside him keeps the contact: it is his.
+    expect(
+      dayRowVm(
+        { ...visit, seats: [seatFixture(), son('seat-son')] },
+        CHAIR,
+        named,
+      ).clientLabel,
+    ).toBe('Стоян Колев');
   });
 
   it('keys each person, and never hands a companion the booker’s number', () => {

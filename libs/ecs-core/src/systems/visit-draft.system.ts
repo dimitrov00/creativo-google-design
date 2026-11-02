@@ -7,6 +7,7 @@ import {
   RepeatPreset,
 } from '@core/components';
 import {
+  type Currency,
   Weekday,
   defect,
   DraftPersonKey,
@@ -15,8 +16,11 @@ import {
   LocalDate,
   TrackMinute,
   MinuteOfDay,
+  type PriceCents,
   type Result,
   type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
 } from '@core/primitives';
 import type { SchedulingError } from '@core/errors';
 import type { TrackSpan } from './grid-layout.system';
@@ -59,12 +63,6 @@ const DEFAULT_SPAN_MINUTES = durationOf(30);
  * and the shortest span a visit or a block may be drawn at.
  */
 const GRAIN_MINUTES = durationOf(5);
-
-/**
- * The shortest visit the sheet's frame will draw. The typed floor is one grain
- * ({@link VisitDraftSystem.typedSpan}), so a typed visit can be shorter.
- */
-const FRAME_MIN_MINUTES = durationOf(10);
 
 /** How far either side of a shift a typed start is offered. */
 const TYPED_START_MARGIN_MINUTES = durationOf(60);
@@ -110,6 +108,9 @@ export type DraftLegMinutes = { readonly durationMinutes: DurationMinutes };
 export type DraftLegClient = {
   readonly clientId: DraftPersonKey;
 };
+
+/** A seat and whose it is. */
+type DraftSeatOfPerson = DraftLegClient & { readonly seatId: SeatId };
 
 /**
  * A seat as the catalogue tag reads it: the catalogue's minutes for it, or
@@ -186,6 +187,42 @@ function fitted(
   return fresh.ok ? fresh.value : null;
 }
 
+/** What a past visit's leg is matched on the catalogue by. */
+type PastLeg = {
+  readonly serviceId: ServiceId;
+  readonly variantId: ServiceVariantId | null;
+};
+
+/** What a catalogue offer is matched by; `null` is a bare service. */
+type OfferKey = {
+  readonly serviceId: ServiceId;
+  readonly variantId: ServiceVariantId | null;
+};
+
+/** A catalogue offer's price, as a leg holds it. */
+type CataloguePrice = OfferKey & {
+  readonly priceCents: PriceCents | null;
+  readonly currency: Currency;
+  readonly priceLabel: string | null;
+};
+
+/** What «Запиши пак» drafts: the legs, those left off, the span the legs leave. */
+export type RebookPlan<L> = {
+  readonly legs: readonly L[];
+  readonly leftOff: readonly L[];
+  readonly spanMinutes: DurationMinutes | null;
+};
+
+/** The leg «Запиши пак» reads and rewrites. */
+type RebookedLeg = PastLeg & {
+  readonly seatId: SeatId;
+  readonly durationMinutes: DurationMinutes;
+  readonly overridden: boolean;
+  readonly priceCents: PriceCents | null;
+  readonly currency: Currency;
+  readonly priceLabel: string | null;
+};
+
 /**
  * VisitDraftSystem — the moves a staff sheet makes on a DRAFT on someone's
  * behalf, as minutes, keys and rules (never words), on the shop's calendar
@@ -212,7 +249,6 @@ export const VisitDraftSystem = {
   PLACEHOLDER_CLIENT_ID,
   DEFAULT_SPAN_MINUTES,
   GRAIN_MINUTES,
-  FRAME_MIN_MINUTES,
   TYPED_START_MARGIN_MINUTES,
   REPEAT_PRESETS,
   MONDAY_TO_FRIDAY,
@@ -409,25 +445,96 @@ export const VisitDraftSystem = {
   /**
    * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS: a service picked before
    * anyone was named sits on the placeholder id; when the first person joins
-   * an EMPTY draft those seats become theirs. With anyone already seated the
-   * legs come back as given (the same array).
+   * an EMPTY draft those seats become theirs. A stored seat stays as it is: no
+   * command would carry the change ({@link storedSeats}). With anyone already
+   * seated the legs come back as given (the same array).
    */
-  adoptPlaceholderLegs<L extends DraftLegClient>(
+  adoptPlaceholderLegs<L extends DraftSeatOfPerson>(
     clientCount: number,
     legs: readonly L[],
     personId: DraftPersonKey,
+    stored: ReadonlySet<SeatId>,
   ): readonly L[] {
     if (clientCount > 0) return legs;
     const out: L[] = [];
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i] as L;
       out.push(
-        leg.clientId === PLACEHOLDER_CLIENT_ID
+        leg.clientId === PLACEHOLDER_CLIENT_ID && !stored.has(leg.seatId)
           ? { ...leg, clientId: personId }
           : leg,
       );
     }
     return out;
+  },
+
+  /**
+   * THE PERSON WHO MAY NOT LEAVE: the visit's only person, while they hold a
+   * stored seat. Letting them go would put that seat on the placeholder for the
+   * next person ticked to take, a change no command carries. Once «−» has taken
+   * their stored seats, or with anyone else on the visit (where leaving takes
+   * the seats too, and that saves), nobody is held. `null` when nobody is.
+   */
+  pinnedPerson(
+    clients: readonly { readonly id: DraftPersonKey }[],
+    legs: readonly DraftSeatOfPerson[],
+    stored: ReadonlySet<SeatId>,
+  ): DraftPersonKey | null {
+    const only =
+      clients.length === 1 ? (clients[0] as (typeof clients)[0]) : null;
+    if (only === null) return null;
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i] as DraftSeatOfPerson;
+      if (leg.clientId === only.id && stored.has(leg.seatId)) return only.id;
+    }
+    return null;
+  },
+
+  /**
+   * ONE RULE FOR A PERSON LEAVING (2026-09-24), wherever it is done — the
+   * row's «−», its swipe, unticking them on the add-client page, or the card.
+   * While others remain on the visit, the person leaves WITH their services: a
+   * seat is a service for a person, and handing a son's haircut to his father
+   * rewrote somebody's booking without asking (the heir rule this replaces).
+   * The last person is the visit's own: their services stay, as the walk-in's —
+   * "nobody seated is the walk-in" — unless they hold a stored seat
+   * ({@link pinnedPerson}), when they stay and the same draft comes back.
+   */
+  withoutClient<
+    D extends {
+      readonly clients: readonly { readonly id: DraftPersonKey }[];
+      readonly legs: readonly DraftSeatOfPerson[];
+      readonly durationOverride: DurationMinutes | null;
+    },
+  >(draft: D, clientId: DraftPersonKey, stored: ReadonlySet<SeatId>): D {
+    if (
+      VisitDraftSystem.pinnedPerson(draft.clients, draft.legs, stored) ===
+      clientId
+    ) {
+      return draft;
+    }
+    const clients = draft.clients.filter((client) => client.id !== clientId);
+    if (clients.length === draft.clients.length) return draft;
+    if (clients.length === 0) {
+      return {
+        ...draft,
+        clients,
+        legs: draft.legs.map((leg) =>
+          leg.clientId === clientId
+            ? { ...leg, clientId: PLACEHOLDER_CLIENT_ID }
+            : leg,
+        ),
+      };
+    }
+    const legs = draft.legs.filter((leg) => leg.clientId !== clientId);
+    return {
+      ...draft,
+      clients,
+      legs,
+      // Seats left: the span is the services' again, as removing one does.
+      durationOverride:
+        legs.length === draft.legs.length ? draft.durationOverride : null,
+    };
   },
 
   /**
@@ -454,21 +561,102 @@ export const VisitDraftSystem = {
   },
 
   /**
-   * WHAT «ЗАПИШИ ПАК» CARRIES: the visit's legs as they are, in order, each on
-   * a fresh seat (`mint`) with its override mark cleared, so the commit mints
-   * new seats rather than naming old ones. Price and minutes stay as stored.
-   * Not what the visit sheet's «Повтори» does: that one re-reads today's
-   * catalogue.
+   * WHICH SEATS THE SERVER ALREADY HOLDS: the seats a visit that exists was
+   * opened on. No edit command carries a stored seat's person or variant, only
+   * an added seat's (`StaffEditPlanSystem.commandsFor`), so the sheet offers
+   * those two only on a seat outside this set, or a change would show and be
+   * lost. A visit not yet saved (`visitExists` false) holds none, however many
+   * legs it was seeded with: a rebooking's are fresh seats.
    */
-  rebookLegs<
-    L extends { readonly seatId: SeatId; readonly overridden: boolean },
-  >(legs: readonly L[], mint: (leg: L, index: number) => SeatId): readonly L[] {
-    const out: L[] = [];
+  storedSeats(
+    visitExists: boolean,
+    seeded: readonly { readonly seatId: SeatId }[],
+  ): ReadonlySet<SeatId> {
+    const stored = new Set<SeatId>();
+    if (!visitExists) return stored;
+    for (let i = 0; i < seeded.length; i++) {
+      stored.add((seeded[i] as { readonly seatId: SeatId }).seatId);
+    }
+    return stored;
+  },
+
+  /**
+   * A PAST VISIT'S LEGS ON TODAY'S CATALOGUE, the rule «Запиши пак» and
+   * «Повтори» share: a booked seat is priced by the server from the catalogue
+   * (`OfferingPriceSystem.termsFor`, the booking request carries no price), so
+   * each leg takes its offer by service and variant, and one the catalogue no
+   * longer sells is left out, as the server would refuse that seat. `offersOf`
+   * answers a leg's chair's offers; `make` builds the leg from its offer.
+   */
+  pastLegsOnCatalogue<L extends PastLeg, O extends OfferKey, R>(
+    legs: readonly L[],
+    offersOf: (leg: L) => readonly O[],
+    make: (leg: L, offer: O, index: number) => R,
+  ): readonly R[] {
+    const out: R[] = [];
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i] as L;
-      out.push({ ...leg, seatId: mint(leg, i), overridden: false });
+      const offer = offersOf(leg).find(
+        (entry) =>
+          entry.serviceId === leg.serviceId &&
+          entry.variantId === leg.variantId,
+      );
+      if (offer !== undefined) out.push(make(leg, offer, i));
     }
     return out;
+  },
+
+  /**
+   * WHAT «ЗАПИШИ ПАК» CARRIES: the visit's legs in order, each on a fresh seat
+   * (`mint`) with its override mark cleared, so the commit mints new seats
+   * rather than naming old ones. The price is today's
+   * ({@link pastLegsOnCatalogue}), what the sheet must show because it is what
+   * the server charges; a leg the catalogue no longer sells is left off and
+   * listed, for the sheet to say so. Only a catalogue that has really answered
+   * can say that (`catalogueKnown`): an unread one keeps every leg as stored.
+   * The minutes stay as stored. The span is the stored one, until a leg is left
+   * off: then it follows the legs that remain, `null` when none do.
+   */
+  rebook<L extends RebookedLeg>(
+    legs: readonly L[],
+    input: {
+      readonly catalogueKnown: boolean;
+      readonly offersOf: (leg: L) => readonly CataloguePrice[];
+      readonly mint: (leg: L, index: number) => SeatId;
+      readonly storedSpan: DurationMinutes;
+    },
+  ): RebookPlan<L> {
+    const { catalogueKnown, mint, storedSpan } = input;
+    if (!catalogueKnown) {
+      const kept: L[] = [];
+      for (let i = 0; i < legs.length; i++) {
+        const leg = legs[i] as L;
+        kept.push({ ...leg, seatId: mint(leg, i), overridden: false });
+      }
+      return { legs: kept, leftOff: [], spanMinutes: storedSpan };
+    }
+    const sold = new Set<L>();
+    const kept = VisitDraftSystem.pastLegsOnCatalogue(
+      legs,
+      input.offersOf,
+      (leg, offer, index) => {
+        sold.add(leg);
+        return {
+          ...leg,
+          seatId: mint(leg, index),
+          overridden: false,
+          priceCents: offer.priceCents,
+          currency: offer.currency,
+          priceLabel: offer.priceLabel,
+        };
+      },
+    );
+    const leftOff = legs.filter((leg) => !sold.has(leg));
+    return {
+      legs: kept,
+      leftOff,
+      spanMinutes: leftOff.length === 0 ? storedSpan : legSum(kept),
+    };
   },
 
   /* ── Strangers' names ────────────────────────────────────────────────── */

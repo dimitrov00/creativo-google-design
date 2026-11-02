@@ -137,6 +137,9 @@ import {
   shopRowName,
   shopViews,
   timingOptions,
+  chairOptionsOf,
+  leftOffNoticeOf,
+  photoPersonOf,
   visitEditorWordsOf,
   visitExitsVm,
 } from './visit-editor.presenter';
@@ -253,7 +256,7 @@ import {
   photoMomentOf,
 } from '@creativo/features/shared/visits';
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
-import { formatCentsFigure } from '@creativo/ui/wall-clock';
+import { formatCentsFigure, formatCurrencyUnit } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
@@ -470,6 +473,11 @@ export interface VisitEditorVm {
    * leg named. Absent (or empty) means the one client the fields describe.
    */
   readonly people?: readonly VisitEditorClientOption[];
+  /** What a rebooking left off, the catalogue no longer selling it (`leftOffNoticeOf`). */
+  readonly leftOffServices?: readonly {
+    readonly serviceId: ServiceId;
+    readonly serviceLabel: string;
+  }[];
   /** The client's account, when they have one — what a booking is placed FOR. */
   readonly clientUserId: UserId | null;
   /**
@@ -1079,62 +1087,6 @@ const TRACK_DAY_END: TrackMinute = TrackMinute.ofProven(DAY_MINUTES);
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
 function spanOf(draft: VisitDraft): DurationMinutes {
   return VisitDraftSystem.span(draft.durationOverride, draft.legs);
-}
-
-/**
- * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS. A service picked before
- * anyone was named sits on the placeholder (`DraftPersonKey.PLACEHOLDER`);
- * when the first person joins an empty draft those seats become theirs —
- * the mirror of the heir rule in `toggleClient` — so the catalogue is not
- * asked for them again and the save does not file their cut under a
- * walk-in (found in review).
- */
-function adoptPlaceholderLegs(
-  draft: VisitDraft,
-  id: DraftPersonKey,
-): readonly DraftLeg[] {
-  return VisitDraftSystem.adoptPlaceholderLegs(
-    draft.clients.length,
-    draft.legs,
-    id,
-  );
-}
-
-/**
- * ONE RULE FOR A PERSON LEAVING (2026-09-24), wherever it is done — the
- * row's «−», its swipe, or unticking them on the add-client page. While
- * others remain on the visit, the person leaves WITH their services: a
- * seat is a service for a person, and handing a son's haircut to his
- * father rewrote somebody's booking without asking (the heir rule this
- * replaces). The last person is the visit's own: their services stay, as
- * the walk-in's — "nobody seated is the walk-in".
- */
-function withoutClient(
-  draft: VisitDraft,
-  clientId: DraftPersonKey,
-): VisitDraft {
-  const clients = draft.clients.filter((client) => client.id !== clientId);
-  if (clients.length === draft.clients.length) return draft;
-  if (clients.length === 0) {
-    return {
-      ...draft,
-      clients,
-      legs: draft.legs.map((leg) =>
-        leg.clientId === clientId
-          ? { ...leg, clientId: DraftPersonKey.PLACEHOLDER }
-          : leg,
-      ),
-    };
-  }
-  const legs = draft.legs.filter((leg) => leg.clientId !== clientId);
-  return {
-    ...draft,
-    clients,
-    legs,
-    // Seats left: the span is the services' again, as removing one does.
-    durationOverride:
-      legs.length === draft.legs.length ? draft.durationOverride : null,
-  };
 }
 
 /** The people a VM seeds — its party, else its one named client, else nobody. */
@@ -1956,9 +1908,29 @@ export class StaffVisitEditor {
       clients: draft.clients,
       services: this.uiServices(),
       chairName: this.vm().chairName,
+      storedSeats: this.storedSeats(),
       words: this.words(),
     });
   });
+
+  /** The line a rebooking's missing service earns, or none. */
+  protected readonly leftOffNotice = computed(() =>
+    leftOffNoticeOf(this.vm().leftOffServices ?? [], this.words()),
+  );
+
+  /** The seats the server already holds (`VisitDraftSystem.storedSeats`). */
+  private readonly storedSeats = computed(() =>
+    VisitDraftSystem.storedSeats(!this.isNew(), this.vm().legs),
+  );
+
+  /** Who may not leave the visit (`VisitDraftSystem.pinnedPerson`), or nobody. */
+  private readonly pinnedPerson = computed(() =>
+    VisitDraftSystem.pinnedPerson(
+      this.draft().clients,
+      this.draft().legs,
+      this.storedSeats(),
+    ),
+  );
 
   /* ── The ladder's rows ─────────────────────────────────────────────── */
 
@@ -2176,7 +2148,8 @@ export class StaffVisitEditor {
   /**
    * A different variant IS different terms (owner, 2026-09-09: "changing it
    * would be nice when you open the service itself"): the leg takes the
-   * variant's catalogue minutes and price along with its name.
+   * variant's catalogue minutes and price along with its name. An added seat's
+   * pick only: a stored seat's variant has no command, and its row offers none.
    */
   protected pickLegVariant(seatId: SeatId, optionId: string): void {
     this.legMenu.set(null);
@@ -2635,44 +2608,14 @@ export class StaffVisitEditor {
 
   /** Every barber this visit already knows about, the chair included. */
   protected readonly barberOptions = computed<readonly EditorChairOption[]>(
-    () => {
-      // THE ROSTER when it is bound — real ids, real portraits. The derived
-      // fallback below keys a synthesized chair by its NAME, which is not an
-      // id and never matched anything; it survives only for the case where
-      // no roster is supplied, and a pick of it writes the row's own chair.
-      const roster = this.uiBarbers();
-      if (roster.length > 0) {
-        return roster.map((barber) => ({
-          key: barber.id,
-          id: barber.id,
-          name: barber.label,
-          tone: barber.tone,
-          avatarSrc: barber.avatarSrc,
-        }));
-      }
-      const vm = this.vm();
-      const seen = new Map<string, EditorChairOption>();
-      for (const leg of this.draft().legs) {
-        const key = leg.barberId ?? '';
-        seen.set(key, {
-          key,
-          id: leg.barberId,
-          name: leg.barberName,
-          tone: leg.barberTone,
-          avatarSrc: null,
-        });
-      }
-      if (!seen.has('chair')) {
-        seen.set(vm.chairName, {
-          key: vm.chairName,
-          id: vm.chairId,
-          name: vm.chairName,
-          tone: vm.chairTone,
-          avatarSrc: null,
-        });
-      }
-      return [...seen.values()];
-    },
+    () =>
+      chairOptionsOf({
+        roster: this.uiBarbers(),
+        legs: this.draft().legs,
+        chairId: this.vm().chairId,
+        chairName: this.vm().chairName,
+        chairTone: this.vm().chairTone,
+      }),
   );
 
   /** The consequence strip under a service page's large title — live. */
@@ -2715,6 +2658,7 @@ export class StaffVisitEditor {
       parsed,
       chosen,
       exact,
+      pinned: this.pinnedPerson(),
       callingCode: this.callingCode(),
       words: this.words(),
     });
@@ -3913,6 +3857,7 @@ export class StaffVisitEditor {
         ...client,
         email: client.email ?? fuller?.email ?? null,
         meta: client.meta ?? fuller?.meta ?? null,
+        customerId: client.customerId ?? fuller?.customerId ?? null,
         avatarSrc:
           client.avatarSrc ??
           known.find((option) => option.id === client.id && option.avatarSrc)
@@ -3934,11 +3879,22 @@ export class StaffVisitEditor {
   protected toggleClient(option: VisitEditorClientOption): void {
     this.draft.update((draft) => {
       const existing = draft.clients.find((client) => client.id === option.id);
-      if (existing) return withoutClient(draft, existing.id);
+      if (existing) {
+        return VisitDraftSystem.withoutClient(
+          draft,
+          existing.id,
+          this.storedSeats(),
+        );
+      }
       return {
         ...draft,
         clients: [...draft.clients, { ...option }],
-        legs: adoptPlaceholderLegs(draft, option.id),
+        legs: VisitDraftSystem.adoptPlaceholderLegs(
+          draft.clients.length,
+          draft.legs,
+          option.id,
+          this.storedSeats(),
+        ),
       };
     });
   }
@@ -3946,11 +3902,13 @@ export class StaffVisitEditor {
   /**
    * A PARTY'S PERSON COMES OFF (owner, 2026-09-24: "having multiple
    * clients should be possible to remove one of them") — the row's «−» or
-   * its swipe, the service rows' own grammar. See `withoutClient` for what
+   * its swipe, the service rows' own grammar. See `VisitDraftSystem.withoutClient` for what
    * leaves with them.
    */
   protected removeClient(clientId: DraftPersonKey): void {
-    this.draft.update((draft) => withoutClient(draft, clientId));
+    this.draft.update((draft) =>
+      VisitDraftSystem.withoutClient(draft, clientId, this.storedSeats()),
+    );
   }
 
   /** The «−» is a party's: the last person is the visit's, not a row's. */
@@ -4089,7 +4047,12 @@ export class StaffVisitEditor {
           email,
         },
       ],
-      legs: adoptPlaceholderLegs(draft, id),
+      legs: VisitDraftSystem.adoptPlaceholderLegs(
+        draft.clients.length,
+        draft.legs,
+        id,
+        this.storedSeats(),
+      ),
     }));
     this.query.set('');
     this.page.set(null);
@@ -4722,10 +4685,9 @@ export class StaffVisitEditor {
    */
   protected photoClientFace(photo: VisitEditorPhoto): string | null {
     if (photo.clientAvatarSrc != null) return photo.clientAvatarSrc;
-    const named = this.pickedClients().find(
-      (client) => client.label === photo.clientLabel,
+    return (
+      photoPersonOf(photo, this.pickedClients(), this.vm())?.avatarSrc ?? null
     );
-    return named?.avatarSrc ?? null;
   }
 
   /** A picked person's face by their id, filled as the picked group fills it. */
@@ -5675,8 +5637,9 @@ export class StaffVisitEditor {
   }
 
   /**
-   * A leg's «За кого» pick. The menu's options were minted from the
-   * draft's own person keys (`legClientOptions`), so the id handed back is
+   * A leg's «За кого» pick, on an added seat only: a stored seat's person has
+   * no command, and its row offers none. The menu's options were minted from
+   * the draft's own person keys (`legClientOptions`), so the id handed back is
    * one by construction.
    */
   protected setLegClient(seatId: SeatId, clientId: string): void {
@@ -5860,16 +5823,21 @@ export class StaffVisitEditor {
 
   /**
    * The `Intl` tag the active language formats in (`intlLocaleOf`: bg →
-   * `bg-BG`, en → `en-GB`) — the sheet's photo moments and money (OR-5,
-   * DEP-F4: the raw `'en'` formatted as `en-US`).
+   * `bg-BG`, en → `en-GB`) — the sheet's photo moments, its last-visit day and
+   * money (OR-5, DEP-F4: the raw `'en'` formatted as `en-US`).
    */
   protected readonly intlLocale = computed(() => intlLocaleOf(this.locale()));
+
+  /** A typed sum's unit, in the bill's currency (DEP-21): «€», «лв.». */
+  protected readonly currencyUnit = computed(() =>
+    formatCurrencyUnit(this.vm().currency, this.intlLocale()),
+  );
 
   /** `Днес` / `Утре` (`dayRelatives`). */
   protected readonly dayRelatives = computed(() => dayRelatives(this.words()));
 
+  /** The surface's one grain, and the one floor of a typed or dragged length. */
   protected readonly snapMinutes = VisitDraftSystem.GRAIN_MINUTES;
-  protected readonly frameMinMinutes = VisitDraftSystem.FRAME_MIN_MINUTES;
 
   /* ── THE CLIENT CARD (client-card-redesign §2, §3) ─────────────────────
    *
@@ -6057,6 +6025,7 @@ export class StaffVisitEditor {
       // Only a gone visit locks what the card offers (the reward, the
       // person's removal, «Повтори»): a finished one stays correctable.
       gone: this.gone(),
+      pinned: this.pinnedPerson() === client.id,
       partyOfOne,
       start: {
         localDate: draft.dayKey,
@@ -6478,17 +6447,13 @@ export class StaffVisitEditor {
     if (client === null) return;
     const date = this.lastVisitDate();
     const draft = this.draft();
-    const repeated = legs.flatMap((leg): DraftLeg[] => {
-      const option = this.uiServices().find(
-        (entry) =>
-          entry.serviceId === leg.serviceId &&
-          (entry.variantId ?? null) === leg.variantId,
-      );
-      if (option === undefined) return [];
-      // The last visit's barber only while the sheet has no chair of its own.
-      const chair = this.chairOf(draft.chairId ?? leg.barberId);
-      return [
-        {
+    const repeated = VisitDraftSystem.pastLegsOnCatalogue(
+      legs,
+      () => this.uiServices(),
+      (leg, option): DraftLeg => {
+        // The last visit's barber only while the sheet has no chair of its own.
+        const chair = this.chairOf(draft.chairId ?? leg.barberId);
+        return {
           seatId: this.mintSeatId(option),
           serviceId: option.serviceId,
           variantId: option.variantId,
@@ -6506,9 +6471,9 @@ export class StaffVisitEditor {
           // length somebody agreed — said on the row, as a stored one is.
           overridden: leg.durationMinutes !== option.minutes,
           clientId: client.id,
-        },
-      ];
-    });
+        };
+      },
+    );
     if (repeated.length === 0) return;
     const partyOfOne = draft.clients.length <= 1;
     this.draft.update((current) => ({
@@ -6530,12 +6495,12 @@ export class StaffVisitEditor {
 
   /**
    * «Махни от посещението» — the one rule for a person leaving
-   * (`withoutClient`), then back to the visit: the focus on the next
+   * (`VisitDraftSystem.withoutClient`), then back to the visit: the focus on the next
    * person's row, or «Добави клиент» when nobody is left.
    */
   protected removeFromCard(): void {
     const client = this.clientOfStack();
-    if (client === null) return;
+    if (client === null || client.id === this.pinnedPerson()) return;
     const clients = this.draft().clients;
     const index = clients.findIndex((entry) => entry.id === client.id);
     const remaining = clients.filter((entry) => entry.id !== client.id);
@@ -6577,7 +6542,7 @@ export class StaffVisitEditor {
     return lastVisitDayOf(
       featured.appointment.localDate,
       this.vm().now,
-      this.locale(),
+      this.intlLocale(),
     );
   }
 

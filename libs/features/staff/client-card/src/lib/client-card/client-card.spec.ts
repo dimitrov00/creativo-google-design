@@ -706,6 +706,12 @@ describe('lib-client-card — Георги, today’s fade settled', () => {
     expect(byId('client-exits')).toBeNull();
     expect(byId('client-quick-call')).not.toBeNull();
   });
+
+  it('offers no way off a visit its only person holds a stored seat on (BUG-1)', async () => {
+    const { byId } = await mount({ context: georgiContext({ pinned: true }) });
+    expect(byId('client-exits')).toBeNull();
+    expect(byId('client-reward-ready')).not.toBeNull();
+  });
 });
 
 describe('lib-client-card — Мартин, in the chair on his birthday', () => {

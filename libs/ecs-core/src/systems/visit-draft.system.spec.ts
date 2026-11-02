@@ -11,16 +11,20 @@ import {
 } from '@core/components';
 import { SchedulingErrorCode } from '@core/errors';
 import {
+  Currency,
   DraftPersonKey,
   DurationMinutes,
   EndMinute,
   LocalDate,
   MinuteOfDay,
   SeatId,
+  ServiceId,
+  ServiceVariantId,
   TrackMinute,
   Weekday,
 } from '@core/primitives';
 import {
+  cents,
   deepFreeze,
   draftPersonKey,
   endMinute,
@@ -73,6 +77,8 @@ import { VisitDraftSystem } from './visit-draft.system';
  */
 
 const S = VisitDraftSystem;
+/** A draft none of whose seats the server holds yet. */
+const NO_SEATS: ReadonlySet<SeatId> = new Set();
 
 /* ── block-repeat.spec.ts ─────────────────────────────────────────────── */
 
@@ -458,19 +464,27 @@ describe("the visit draft's span and placeholder seats", () => {
 
   it('hands the placeholder seats to the first person to join, and no one else', () => {
     const drafted = [
-      { clientId: draftPersonKey('primary'), durationMinutes: d(30) },
-      { clientId: draftPersonKey('u-anna'), durationMinutes: d(15) },
+      {
+        seatId: SeatId.of('seat-a'),
+        clientId: draftPersonKey('primary'),
+        durationMinutes: d(30),
+      },
+      {
+        seatId: SeatId.of('seat-b'),
+        clientId: draftPersonKey('u-anna'),
+        durationMinutes: d(15),
+      },
     ];
     expect(
-      S.adoptPlaceholderLegs(0, drafted, draftPersonKey('u-ivan')),
+      S.adoptPlaceholderLegs(0, drafted, draftPersonKey('u-ivan'), NO_SEATS),
     ).toEqual([
-      { clientId: 'u-ivan', durationMinutes: 30 },
-      { clientId: 'u-anna', durationMinutes: 15 },
+      { seatId: 'seat-a', clientId: 'u-ivan', durationMinutes: 30 },
+      { seatId: 'seat-b', clientId: 'u-anna', durationMinutes: 15 },
     ]);
     // Somebody is already seated: the legs come back as given.
-    expect(S.adoptPlaceholderLegs(1, drafted, draftPersonKey('u-ivan'))).toBe(
-      drafted,
-    );
+    expect(
+      S.adoptPlaceholderLegs(1, drafted, draftPersonKey('u-ivan'), NO_SEATS),
+    ).toBe(drafted);
   });
 });
 
@@ -508,53 +522,301 @@ describe('VisitDraftSystem.typedStartBounds — the bounds offered to a typed st
   });
 });
 
-describe('VisitDraftSystem.FRAME_MIN_MINUTES — the frame’s floor', () => {
-  it('is ten minutes, twice the typed floor of one grain', () => {
-    expect(S.FRAME_MIN_MINUTES).toBe(10);
+describe('VisitDraftSystem.GRAIN_MINUTES — the one floor of a visit’s length', () => {
+  it('is five minutes, what a typed length floors at (BUG-6)', () => {
     expect(S.GRAIN_MINUTES).toBe(5);
+    expect(S.typedSpan(0)).toBe(S.GRAIN_MINUTES);
   });
 });
 
-describe('VisitDraftSystem.rebookLegs — what «Запиши пак» carries', () => {
-  const leg = (seat: string, overridden: boolean) => ({
+describe('VisitDraftSystem.storedSeats — the seats the server already holds', () => {
+  const seat = (id: string) => ({ seatId: SeatId.of(id) });
+
+  it('holds every seat a saved visit was opened on, and no other', () => {
+    const stored = S.storedSeats(true, [seat('a'), seat('b')]);
+    expect(stored.has(SeatId.of('a'))).toBe(true);
+    expect(stored.has(SeatId.of('b'))).toBe(true);
+    expect(stored.has(SeatId.of('draft-c'))).toBe(false);
+  });
+
+  it('holds none on a visit not yet saved, however it was seeded', () => {
+    expect(S.storedSeats(false, [seat('draft-a')]).size).toBe(0);
+    expect(S.storedSeats(true, []).size).toBe(0);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([seat('a')]);
+    expect(S.storedSeats(true, legs)).toEqual(S.storedSeats(true, legs));
+  });
+});
+
+describe('VisitDraftSystem — who may leave a visit, and who takes its seats (BUG-1)', () => {
+  const A = draftPersonKey('user-a');
+  const B = draftPersonKey('user-b');
+  const SEAT = SeatId.of('seat');
+  const DRAFTED = SeatId.of('draft-seat');
+  const seatOf = (seatId: SeatId, clientId: DraftPersonKey) => ({
+    seatId,
+    clientId,
+  });
+  const stored = new Set([SEAT]);
+  const person = (id: DraftPersonKey) => ({ id });
+  const draftOf = (
+    clients: readonly DraftPersonKey[],
+    legs: readonly ReturnType<typeof seatOf>[],
+  ) => ({
+    clients: clients.map(person),
+    legs,
+    durationOverride: d(60),
+  });
+
+  it('pins the only person while they hold a stored seat', () => {
+    expect(S.pinnedPerson([person(A)], [seatOf(SEAT, A)], stored)).toBe(A);
+  });
+
+  it('pins nobody once their stored seats are gone, with anyone else on, or on a new visit', () => {
+    expect(
+      S.pinnedPerson([person(A)], [seatOf(DRAFTED, A)], stored),
+    ).toBeNull();
+    expect(S.pinnedPerson([person(A)], [], stored)).toBeNull();
+    expect(
+      S.pinnedPerson([person(A), person(B)], [seatOf(SEAT, A)], stored),
+    ).toBeNull();
+    expect(S.pinnedPerson([], [seatOf(SEAT, A)], stored)).toBeNull();
+    expect(S.pinnedPerson([person(A)], [seatOf(SEAT, A)], NO_SEATS)).toBeNull();
+    // A seat that is somebody else's holds nobody here.
+    expect(S.pinnedPerson([person(A)], [seatOf(SEAT, B)], stored)).toBeNull();
+  });
+
+  it('keeps a pinned person: the same draft comes back', () => {
+    const draft = draftOf([A], [seatOf(SEAT, A)]);
+    expect(S.withoutClient(draft, A, stored)).toBe(draft);
+  });
+
+  it('puts a last person’s added seats on the placeholder, the walk-in’s', () => {
+    const left = S.withoutClient(draftOf([A], [seatOf(DRAFTED, A)]), A, stored);
+    expect(left.clients).toEqual([]);
+    expect(left.legs).toEqual([seatOf(DRAFTED, S.PLACEHOLDER_CLIENT_ID)]);
+    expect(left.durationOverride).toBe(60);
+  });
+
+  it('takes a party’s person off with their seats, stored ones too, the span the services’ again', () => {
+    const left = S.withoutClient(
+      draftOf([A, B], [seatOf(SEAT, A), seatOf(DRAFTED, B)]),
+      A,
+      stored,
+    );
+    expect(left.clients).toEqual([person(B)]);
+    expect(left.legs).toEqual([seatOf(DRAFTED, B)]);
+    expect(left.durationOverride).toBeNull();
+  });
+
+  it('keeps the span when the person leaving held no seat, and ignores someone not on the visit', () => {
+    const draft = draftOf([A, B], [seatOf(DRAFTED, B)]);
+    expect(S.withoutClient(draft, A, stored).durationOverride).toBe(60);
+    expect(S.withoutClient(draft, draftPersonKey('user-z'), stored)).toBe(
+      draft,
+    );
+  });
+
+  it('never hands a stored seat with nobody on it to the first person', () => {
+    const legs = [
+      seatOf(SEAT, S.PLACEHOLDER_CLIENT_ID),
+      seatOf(DRAFTED, S.PLACEHOLDER_CLIENT_ID),
+    ];
+    expect(S.adoptPlaceholderLegs(0, legs, A, stored)).toEqual([
+      seatOf(SEAT, S.PLACEHOLDER_CLIENT_ID),
+      seatOf(DRAFTED, A),
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const draft = deepFreeze(draftOf([A, B], [seatOf(SEAT, A)]));
+    expect(S.withoutClient(draft, A, stored)).toEqual(
+      S.withoutClient(draft, A, stored),
+    );
+    expect(S.pinnedPerson(draft.clients, draft.legs, stored)).toBeNull();
+  });
+});
+
+describe('VisitDraftSystem.pastLegsOnCatalogue — a past visit’s legs, today', () => {
+  const SERVICE = ServiceId.of('cut');
+  const LONG = ServiceVariantId.of('long');
+  const past = (serviceId: ServiceId, variantId: ServiceVariantId | null) => ({
+    serviceId,
+    variantId,
+  });
+  const offer = (
+    serviceId: ServiceId,
+    variantId: ServiceVariantId | null,
+    priceCents: number,
+  ) => ({ serviceId, variantId, priceCents });
+  const pair = (
+    leg: ReturnType<typeof past>,
+    found: ReturnType<typeof offer>,
+    index: number,
+  ) => `${index}:${leg.serviceId}@${found.priceCents}`;
+
+  it('hands each leg its offer by service and variant, with its index', () => {
+    const offers = [offer(SERVICE, null, 2000), offer(SERVICE, LONG, 3000)];
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, LONG), past(SERVICE, null)],
+        () => offers,
+        pair,
+      ),
+    ).toEqual(['0:cut@3000', '1:cut@2000']);
+  });
+
+  it('asks each leg’s own offers', () => {
+    const asked: string[] = [];
+    S.pastLegsOnCatalogue(
+      [past(SERVICE, null)],
+      (leg) => {
+        asked.push(leg.serviceId);
+        return [];
+      },
+      pair,
+    );
+    expect(asked).toEqual(['cut']);
+  });
+
+  it('leaves out a service the catalogue no longer sells', () => {
+    expect(
+      S.pastLegsOnCatalogue([past(SERVICE, null)], () => [], pair),
+    ).toEqual([]);
+  });
+
+  it('leaves out a variant it no longer sells, never reading a bare seat as one', () => {
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, LONG)],
+        () => [offer(SERVICE, null, 2000)],
+        pair,
+      ),
+    ).toEqual([]);
+    // A leg with no variant finds no bare offer among a service's variants.
+    expect(
+      S.pastLegsOnCatalogue(
+        [past(SERVICE, null)],
+        () => [offer(SERVICE, LONG, 3000)],
+        pair,
+      ),
+    ).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([past(SERVICE, null)]);
+    const offers = deepFreeze([offer(SERVICE, null, 2000)]);
+    expect(S.pastLegsOnCatalogue(legs, () => offers, pair)).toEqual(
+      S.pastLegsOnCatalogue(legs, () => offers, pair),
+    );
+  });
+});
+
+describe('VisitDraftSystem.rebook — what «Запиши пак» carries', () => {
+  const SERVICE = ServiceId.of('cut');
+  const leg = (seat: string, overridden: boolean, minutes = 45) => ({
     seatId: SeatId.of(seat),
-    priceLabel: '28,00 €',
-    durationMinutes: d(45),
+    serviceId: SERVICE,
+    variantId: null,
+    priceCents: cents(1500),
+    currency: Currency.BGN,
+    priceLabel: '15,00 лв.',
+    durationMinutes: d(minutes),
     overridden,
   });
+  const today = {
+    serviceId: SERVICE,
+    variantId: null,
+    priceCents: cents(2800),
+    currency: Currency.EUR,
+    priceLabel: '28,00 €',
+  };
   const mint = (_leg: unknown, index: number) => SeatId.of(`draft-${index}`);
+  const known = {
+    catalogueKnown: true,
+    offersOf: () => [today],
+    mint,
+    storedSpan: d(60),
+  };
 
   it('mints a fresh seat per leg, in order, handing the mint its index', () => {
     const seen: string[] = [];
-    const out = S.rebookLegs(
-      [leg('a', false), leg('b', false)],
-      (entry, index) => {
+    const { legs } = S.rebook([leg('a', false), leg('b', false)], {
+      ...known,
+      mint: (entry, index) => {
         seen.push(`${entry.seatId}:${index}`);
         return mint(entry, index);
       },
-    );
-    expect(out.map((entry) => entry.seatId)).toEqual(['draft-0', 'draft-1']);
+    });
+    expect(legs.map((entry) => entry.seatId)).toEqual(['draft-0', 'draft-1']);
     expect(seen).toEqual(['a:0', 'b:1']);
   });
 
-  it('clears the mark and keeps the stored price label and minutes', () => {
-    const [out] = S.rebookLegs([leg('a', true)], mint);
-    expect(out).toEqual({
-      seatId: 'draft-0',
-      priceLabel: '28,00 €',
-      durationMinutes: 45,
-      overridden: false,
-    });
+  it('clears the mark, keeps the minutes, and takes today’s price: what the server charges (B5)', () => {
+    const out = S.rebook([leg('a', true)], known);
+    expect(out.legs).toEqual([
+      {
+        seatId: 'draft-0',
+        serviceId: SERVICE,
+        variantId: null,
+        priceCents: 2800,
+        currency: Currency.EUR,
+        priceLabel: '28,00 €',
+        durationMinutes: 45,
+        overridden: false,
+      },
+    ]);
+    expect(out.leftOff).toEqual([]);
+    expect(out.spanMinutes).toBe(60);
   });
 
-  it('answers nothing for no legs', () => {
-    expect(S.rebookLegs([], mint)).toEqual([]);
+  it('leaves out what a catalogue it has read no longer sells, and says which', () => {
+    const gone = leg('a', false);
+    const out = S.rebook([gone], { ...known, offersOf: () => [] });
+    expect(out.legs).toEqual([]);
+    expect(out.leftOff).toEqual([gone]);
+  });
+
+  it('keeps every leg as stored while the catalogue is unread: nothing to say it is gone', () => {
+    const out = S.rebook([leg('a', true)], {
+      ...known,
+      catalogueKnown: false,
+      offersOf: () => [],
+    });
+    expect(out.legs).toEqual([
+      { ...leg('a', false), seatId: SeatId.of('draft-0') },
+    ]);
+    expect(out.leftOff).toEqual([]);
+    expect(out.spanMinutes).toBe(60);
+  });
+
+  it('lets the span follow the legs that remain once one is left off', () => {
+    const other = { ...leg('b', false, 15), serviceId: ServiceId.of('gone') };
+    const out = S.rebook([leg('a', false, 30), other], known);
+    expect(out.legs).toHaveLength(1);
+    expect(out.spanMinutes).toBe(30);
+  });
+
+  it('has no span to pin when nothing remains', () => {
+    const out = S.rebook([leg('a', false)], { ...known, offersOf: () => [] });
+    expect(out.spanMinutes).toBeNull();
+  });
+
+  it('answers nothing for no legs, the stored span standing', () => {
+    expect(S.rebook([], known)).toEqual({
+      legs: [],
+      leftOff: [],
+      spanMinutes: 60,
+    });
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
     const legs = deepFreeze([leg('a', true)]);
-    expect(S.rebookLegs(legs, mint)).toEqual(S.rebookLegs(legs, mint));
+    expect(S.rebook(legs, known)).toEqual(S.rebook(legs, known));
     expect(legs[0]?.seatId).toBe('a');
+    expect(legs[0]?.priceCents).toBe(1500);
   });
 });
 
@@ -973,11 +1235,21 @@ describe('VisitDraftSystem — purity', () => {
     expect(S.presetOf(weekly, thursday)).toBe(RepeatPreset.Weekly);
 
     const legs = deepFreeze([
-      { clientId: draftPersonKey('primary'), durationMinutes: d(30) },
-      { clientId: draftPersonKey('u-anna'), durationMinutes: d(15) },
+      {
+        seatId: SeatId.of('seat-a'),
+        clientId: draftPersonKey('primary'),
+        durationMinutes: d(30),
+      },
+      {
+        seatId: SeatId.of('seat-b'),
+        clientId: draftPersonKey('u-anna'),
+        durationMinutes: d(15),
+      },
     ]);
-    expect(S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'))).toEqual(
-      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan')),
+    expect(
+      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'), NO_SEATS),
+    ).toEqual(
+      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'), NO_SEATS),
     );
     expect(legs[0]?.clientId).toBe('primary');
 

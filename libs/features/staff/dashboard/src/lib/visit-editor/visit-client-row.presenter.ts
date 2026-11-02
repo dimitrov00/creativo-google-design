@@ -39,6 +39,8 @@ export type ClientRowInput = {
   readonly chosen: ReadonlySet<DraftPersonKey>;
   /** The rank's answer: the typed number or mail is theirs. */
   readonly exact: boolean;
+  /** Who may not leave the visit (`VisitDraftSystem.pinnedPerson`), or nobody. */
+  readonly pinned: DraftPersonKey | null;
   /** The shop's dial code, which a typed «088…» is read in. */
   readonly callingCode: string;
   readonly words: VisitEditorWords;
@@ -93,6 +95,7 @@ export function clientRowVm(
   return {
     ...client,
     selected: chosen.has(client.id),
+    locked: input.pinned === client.id,
     exact,
     titleParts:
       markedRuns(ClientQuerySystem.nameSegments(client.label, parsed)) ?? null,

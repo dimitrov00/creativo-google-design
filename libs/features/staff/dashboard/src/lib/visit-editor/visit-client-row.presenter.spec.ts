@@ -37,16 +37,26 @@ const row = (
   query = '',
   client: Parameters<typeof clientRowVm>[0] = martin,
   words = BG,
+  pinned: DraftPersonKey | null = null,
 ) =>
   clientRowVm(client, {
     parsed: query === '' ? nothing : ClientQuerySystem.parse(query),
     chosen: new Set([MARTIN]),
     exact: query !== '',
+    pinned,
     callingCode: CODE,
     words,
   });
 
 describe('a person row', () => {
+  it('locks only the person who may not leave (BUG-1)', () => {
+    expect(row().locked).toBe(false);
+    expect(row('', martin, BG, MARTIN).locked).toBe(true);
+    expect(row('', martin, BG, DraftPersonKey.of('user-other')).locked).toBe(
+      false,
+    );
+  });
+
   it('reads the mail, the number and the last visit, each on its own glyph-led line', () => {
     const vm = row();
     expect(vm.lines.map((line) => [line.icon, line.text])).toEqual([

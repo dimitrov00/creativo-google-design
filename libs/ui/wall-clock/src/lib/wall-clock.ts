@@ -327,6 +327,18 @@ function exponentOf(format: Intl.NumberFormat): number {
   return format.resolvedOptions().maximumFractionDigits ?? 2;
 }
 
+/**
+ * A currency's own symbol in a locale — «€», «лв.» — for a field whose figure
+ * is {@link formatCentsFigure}'s and whose unit is its own word. What
+ * {@link formatCents} prints beside the figure, read from the same formatter.
+ */
+export function formatCurrencyUnit(currency: Currency, locale: string): string {
+  const unit = moneyFormat(locale, currency)
+    .formatToParts(0)
+    .find((part) => part.type === 'currency');
+  return unit?.value ?? currency;
+}
+
 const FIGURE_FORMATS = new Map<string, Intl.NumberFormat>();
 
 /**

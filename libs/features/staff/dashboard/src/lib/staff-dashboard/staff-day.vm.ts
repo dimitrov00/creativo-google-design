@@ -243,7 +243,15 @@ export interface DayRowVm {
   /** Set only when the seat runs past midnight — "00:15⁺¹". */
   readonly crossesMidnight: boolean;
   readonly serviceLabel: string;
+  /** Who sits in this chair — what the card and the grid print. */
   readonly clientLabel: string;
+  /**
+   * Who the booking's contact and account answer to: `clientLabel`, but on a
+   * chair of companions, where it stays the booker. What the sheet's call
+   * button, its photos and a rebooking are named by, beside the booker's number
+   * and account.
+   */
+  readonly contactLabel: string;
   /** Formatted for reading — "+359 88 123 4567". */
   readonly phone: string | null;
   /**

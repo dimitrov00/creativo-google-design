@@ -1445,7 +1445,7 @@
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
     data-testid="staff-cancel-sheet"
-    (dismissed)="cancelId.set(null)"
+    (dismissed)="dismissCancel()"
   >
     <span sheet-title>{{ t('staff.day.cancelTitle') }}</span>
 

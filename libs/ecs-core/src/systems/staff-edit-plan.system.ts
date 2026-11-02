@@ -67,9 +67,7 @@ export type DraftSaveSlice = {
     readonly typedPriceCents: PriceCents | null;
   }[];
   readonly note: string | null;
-  readonly discounts: readonly (DiscountProvenance &
-    CouponValue &
-    Pick<StaffEditDraft.Discount, 'grantId' | 'code'>)[];
+  readonly discounts: readonly (DiscountProvenance & CouponValue)[];
   readonly vouchers: readonly { readonly code: VoucherCode }[];
   readonly tipCents: PriceCents | null;
 };
@@ -95,21 +93,28 @@ function saveShape(draft: DraftSaveSlice): string {
     // The team note saves (its own staff-only document), so a typed note is a
     // change worth a «Запази».
     note: VisitSidesSystem.storedNote(draft.note),
-    // The bill travels as its own commands (2026-09-10): the discounts as a
-    // set, the vouchers as codes in cover order.
-    discounts: draft.discounts.map((discount) => ({
-      discountSource: discount.discountSource,
-      grantId: discount.grantId,
-      code: discount.code,
-      // What it takes off: the method and its figure — the promise, whatever
-      // currency word rides beside it.
-      value: [discount.discountMethod, CouponValue.magnitude(discount)],
-    })),
+    // The bill travels as its own commands (2026-09-10): the vouchers as codes
+    // in cover order. The discounts compare as a set ({@link sameDiscounts}).
     vouchers: draft.vouchers.map((voucher) => voucher.code),
     // The tip drafts with the rest (2026-09-15): a changed tip is a change
     // worth a «Запази».
     tip: draft.tipCents,
   });
+}
+
+/**
+ * THE SAME SET OF PROMISES, whatever the order (`DiscountSystem.samePromise`:
+ * the source and what it takes off, whatever currency word rides beside it).
+ * What `dirty` and the batch both ask, so they cannot disagree.
+ */
+function sameDiscounts(
+  a: readonly (DiscountProvenance & CouponValue)[],
+  b: readonly (DiscountProvenance & CouponValue)[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((one) => b.some((other) => DiscountSystem.samePromise(one, other)))
+  );
 }
 
 /**
@@ -421,11 +426,13 @@ export const StaffEditPlanSystem = {
    * WOULD THESE TWO DRAFTS SAVE THE SAME: the day, the start, the shop, the
    * span, each leg's minutes, chair and typed price, the note as stored, the
    * discounts and vouchers, the tip. What no command carries is not compared,
-   * or a sheet would offer a «Запази» that saves nothing. Lists compare in
-   * order, where {@link commandsFor} compares the bill as a set.
+   * or a sheet would offer a «Запази» that saves nothing. The discounts compare
+   * as a set, as {@link commandsFor} does; other lists in order.
    */
   sameSave(a: DraftSaveSlice, b: DraftSaveSlice): boolean {
-    return saveShape(a) === saveShape(b);
+    return (
+      saveShape(a) === saveShape(b) && sameDiscounts(a.discounts, b.discounts)
+    );
   },
 
   /**
@@ -637,15 +644,7 @@ export const StaffEditPlanSystem = {
      */
     const draftedDiscounts = draft.discounts;
     const storedDiscounts = row?.discounts ?? [];
-    // The same set of promises, whatever the order.
-    const sameBill =
-      draftedDiscounts.length === storedDiscounts.length &&
-      draftedDiscounts.every((drafted) =>
-        storedDiscounts.some((stored) =>
-          DiscountSystem.samePromise(drafted, stored),
-        ),
-      );
-    if (!sameBill) {
+    if (!sameDiscounts(draftedDiscounts, storedDiscounts)) {
       const discounts: BookingCall.StaffDiscount[] = [];
       for (const discount of draftedDiscounts) {
         const request = toDiscountRequest(discount);

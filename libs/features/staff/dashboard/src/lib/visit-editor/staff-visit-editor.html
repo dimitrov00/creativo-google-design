@@ -226,6 +226,7 @@
           role="checkbox"
           [uiInteractive]="true"
           [uiSelected]="option.selected"
+          [disabled]="option.locked"
           [attr.aria-checked]="option.selected"
           [attr.data-testid]="(prefix ?? 'staff-visit-client-') + option.id"
           (click)="toggleClient(option)"
@@ -857,7 +858,7 @@
         <ui-amount-field
           uiId="staff-visit-discount-amount"
           [uiValue]="amountValue()"
-          [uiUnit]="t('staff.visit.currencySymbol')"
+          [uiUnit]="currencyUnit()"
           uiReserve="00,00"
           [uiMax]="amountCap()"
           [uiStepper]="false"
@@ -1413,8 +1414,8 @@
       } } @else { @for (leg of legRows(); track leg.seatId) {
       <!-- ONE ROW PER SEAT (owner, 2026-09-10: "services only about
            services"). The row is what is booked and nothing else: the
-           title with its variant in it, the person on a party, the variant
-           chip when the service has one, and the way off. No money — that
+           title with its variant in it, the person on a party, an added
+           seat's person and variant chips, and the way off. No money — that
            is ПЛАЩАНЕ's — and no counter: the same service twice is two
            rows, each a seat with its own time and price, and the fold that
            hid that is gone. Swipe removes; the trailing «−» is the visible
@@ -1447,7 +1448,10 @@
             >
           </span>
           <span uiTrailing class="staff-visit__leg-chips">
-            @if (draft().clients.length > 1) {
+            <!-- A STORED SEAT reads, as a gone visit's row does: its line says
+                 whose seat and which variant, and no edit command carries
+                 either. An added seat offers both. -->
+            @if (!leg.stored && draft().clients.length > 1) {
             <ui-choice-menu
               uiAlignment="trailing"
               [uiOptions]="legClientOptions()"
@@ -1473,7 +1477,7 @@
                 <ui-avatar [uiName]="leg.clientLabel" uiControlSize="small" />
               </button>
             </ui-choice-menu>
-            } @if (leg.variantChoices.length > 0) {
+            } @if (!leg.stored && leg.variantChoices.length > 0) {
             <ui-choice-menu
               uiAlignment="trailing"
               [uiOptions]="leg.variantChoices"
@@ -1558,6 +1562,17 @@
       </li>
       }
     </ul>
+    @if (leftOffNotice(); as notice) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      role="status"
+      data-testid="staff-visit-left-off"
+    >
+      {{ notice }}
+    </p>
+    }
 
     <!-- ── НАЧАЛО + ВРЕМЕТРАЕНЕ ────────────────────────────────────
            ONE GROUP, THREE SEGMENTS: the frame FIRST — the chair's day as a
@@ -1565,9 +1580,9 @@
            (owner, 2026-09-10: "the frame first and the timings below";
            this comment said the reverse until 2026-09-18). Unconditional:
            the frame is the tool of the shop's commonest correction and is
-           never collapsed. A finished drag or resize in it WRITES on
-           release, on the day it draws (the sheet's one immediate gesture,
-           with its own «Върни»); the typed figures draft. There is no `До`
+           never collapsed. A finished drag or resize in it DRAFTS, as the
+           typed figures do, and saves with «Запази» (since 2026-09-23); both
+           stop at one floor, the grain. There is no `До`
            field: the end is a computation and it is stored nowhere, so
            `До ≤ От` is unrepresentable rather than validated. -->
     <ul
@@ -1694,7 +1709,7 @@
             [uiEditableEventId]="vm().appointmentId ?? ''"
             [uiEditable]="!gone()"
             [uiPickable]="false"
-            [uiMinMinutes]="frameMinMinutes"
+            [uiMinMinutes]="snapMinutes"
             [rosterStartMinute]="frameDay().rosterStartMinute"
             [nowMinute]="frameDay().nowMinute"
             (draftChanged)="onFrameDraft($event)"
@@ -2559,7 +2574,7 @@
                 <ui-amount-field
                   uiId="staff-visit-tip"
                   [uiValue]="tipCustomCents()"
-                  [uiUnit]="t('staff.visit.currencySymbol')"
+                  [uiUnit]="currencyUnit()"
                   uiReserve="00,00"
                   [uiStep]="50"
                   [uiLabel]="t('staff.visit.tipPageAmount')"

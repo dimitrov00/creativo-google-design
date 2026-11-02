@@ -1,18 +1,22 @@
 import { CancelledSide, PlacementVerdict } from '@core/components';
 import {
+  type BarberId,
   BookingStatus,
-  type DraftPersonKey,
+  type CustomerId,
+  DraftPersonKey,
   type DurationMinutes,
   type SeatId,
   type ServiceId,
   type ServiceVariantId,
   type TrackMinute,
+  type UserId,
 } from '@core/primitives';
 import { AppointmentLifecycleSystem } from '@core/systems';
 import type { UiChoiceOption, UiSegment } from '@creativo/ui/controls';
 import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ROW_VERB_WORD } from '../row-verb';
 import type {
+  VisitEditorBarberOption,
   VisitEditorPeer,
   VisitEditorResolution,
   VisitEditorServiceOption,
@@ -21,6 +25,7 @@ import type {
 } from './staff-visit-editor';
 import {
   EditorPage,
+  type EditorChairOption,
   type FrameVerdictSlice,
   type LegRowVm,
   PhotoDoor,
@@ -142,6 +147,9 @@ export function visitEditorWordsOf(
     discountCount: (count) => translate('staff.visit.discountCount', { count }),
     sameAsLast: (date) =>
       translate('staff.visit.client.announce.sameAsLast', { date }),
+    leftOffNamed: (services) =>
+      translate('staff.visit.leftOffNamed', { services }),
+    leftOffUnnamed: copy('staff.visit.leftOffUnnamed'),
     tipInDock: (amount) => translate('staff.visit.tipInDock', { amount }),
     tipRoundUp: (total) => tipRoundUp.replace('{{total}}', total),
     voucherLeft: (amount) => voucherLeft.replace('{{amount}}', amount),
@@ -367,8 +375,134 @@ export type LegRowsInput = {
   readonly services: readonly VisitEditorServiceOption[];
   /** The chair the frame is headed by. */
   readonly chairName: string;
+  /** The seats the server already holds (`VisitDraftSystem.storedSeats`). */
+  readonly storedSeats: ReadonlySet<SeatId>;
   readonly words: VisitEditorWords;
 };
+
+/**
+ * THE PERSON A VISIT'S PHOTO NAMES, by id first: two people of one name are two
+ * people. The photo's client record; a record that is the visit's own is its
+ * account holder, whose draft key is his account; no record is a guest, known by
+ * the draft key his label makes, else the account holder. The label only where
+ * there is no id to go by: the photo holds no record, or the person holds none
+ * (a companion the book does not list). A person with a record of their own is
+ * never another record's namesake.
+ */
+export function photoPersonOf<
+  C extends {
+    readonly id: DraftPersonKey;
+    readonly label: string;
+    readonly customerId?: CustomerId | null;
+  },
+>(
+  photo: {
+    readonly clientCustomerId: CustomerId | null;
+    readonly clientLabel: string;
+  },
+  clients: readonly C[],
+  visit: {
+    readonly clientCustomerId: CustomerId | null;
+    readonly clientUserId: UserId | null;
+  },
+): C | null {
+  const record = photo.clientCustomerId;
+  const holder =
+    record === visit.clientCustomerId && visit.clientUserId !== null
+      ? DraftPersonKey.account(visit.clientUserId)
+      : null;
+  return (
+    (record !== null
+      ? clients.find((client) => client.customerId === record)
+      : clients.find(
+          (client) => client.id === DraftPersonKey.guest(photo.clientLabel),
+        )) ??
+    clients.find((client) => client.id === holder) ??
+    clients.find(
+      (client) =>
+        client.label === photo.clientLabel &&
+        (record === null || (client.customerId ?? null) === null),
+    ) ??
+    null
+  );
+}
+
+/**
+ * THE LINE A REBOOKING'S MISSING SERVICE EARNS, or `null` with none left off. It
+ * names each service it has a name for. A seat whose service left the catalogue
+ * holds only its id, which is never printed: then it says so without a name.
+ */
+export function leftOffNoticeOf(
+  leftOff: readonly {
+    readonly serviceId: ServiceId;
+    readonly serviceLabel: string;
+  }[],
+  words: VisitEditorWords,
+): string | null {
+  if (leftOff.length === 0) return null;
+  const named = leftOff
+    .filter((leg) => leg.serviceLabel !== leg.serviceId)
+    .map((leg) => leg.serviceLabel);
+  return named.length === 0
+    ? words.leftOffUnnamed
+    : words.leftOffNamed(named.join(', '));
+}
+
+/** What {@link chairOptionsOf} reads. */
+export type ChairOptionsInput = {
+  /** The shop's chairs, when the host bound them. */
+  readonly roster: readonly VisitEditorBarberOption[];
+  readonly legs: readonly {
+    readonly barberId: BarberId | null;
+    readonly barberName: string;
+    readonly barberTone: number;
+  }[];
+  readonly chairId: BarberId | null;
+  readonly chairName: string;
+  readonly chairTone: number;
+};
+
+/**
+ * Every barber a visit knows about, the chair included. THE ROSTER when it is
+ * bound: real ids, real portraits. The fallback lists the legs' chairs and then
+ * the visit's own, for a host that binds no roster; a pick of its row writes
+ * the row's own chair. The chair is listed once, whether or not a leg sits on it
+ * (BUG-4).
+ */
+export function chairOptionsOf(
+  input: ChairOptionsInput,
+): readonly EditorChairOption[] {
+  if (input.roster.length > 0) {
+    return input.roster.map((barber) => ({
+      key: barber.id,
+      id: barber.id,
+      name: barber.label,
+      tone: barber.tone,
+      avatarSrc: barber.avatarSrc,
+    }));
+  }
+  const seen = new Map<string, EditorChairOption>();
+  for (const leg of input.legs) {
+    const key = leg.barberId ?? '';
+    seen.set(key, {
+      key,
+      id: leg.barberId,
+      name: leg.barberName,
+      tone: leg.barberTone,
+      avatarSrc: null,
+    });
+  }
+  if (!seen.has(input.chairId ?? '')) {
+    seen.set(input.chairName, {
+      key: input.chairName,
+      id: input.chairId,
+      name: input.chairName,
+      tone: input.chairTone,
+      avatarSrc: null,
+    });
+  }
+  return [...seen.values()];
+}
 
 /** The catalogue's option for a leg — its service and variant — or none. */
 function legOption(
@@ -451,6 +585,7 @@ export function legRowsVm(input: LegRowsInput): readonly LegRowVm[] {
       service: option?.serviceLabel ?? option?.label ?? leg.serviceLabel,
       line: legLine(leg, option?.variantLabel ?? null, input),
       clientLabel,
+      stored: input.storedSeats.has(leg.seatId),
       forWhomName: `${words.forWhom}: ${clientLabel}`,
       // A service's variants as choices — empty for a service that has none.
       variantChoices: services

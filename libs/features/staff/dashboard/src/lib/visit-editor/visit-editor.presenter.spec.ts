@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ArrivalVerb, CancelledSide, PlacementVerdict } from '@core/components';
 import {
+  BarberId,
   BookingStatus,
+  CustomerId,
   DraftPersonKey,
   DurationMinutes,
   SeatId,
   ServiceId,
   ServiceVariantId,
   TrackMinute,
+  UserId,
 } from '@core/primitives';
 import { unwrapOk } from '@core/testing';
 import { catalogueWords } from '../testing/visit-editor-words';
@@ -36,6 +39,9 @@ import {
   shopViews,
   timingOptions,
   visitExitsVm,
+  chairOptionsOf,
+  leftOffNoticeOf,
+  photoPersonOf,
 } from './visit-editor.presenter';
 import { EditorPage } from './visit-editor.vm';
 
@@ -232,6 +238,7 @@ describe('the services’ rows', () => {
     clients: [{ id: MARTIN, label: 'Мартин' }],
     services: [plainCut, longCut],
     chairName: 'Иван',
+    storedSeats: new Set<SeatId>(),
     words: BG,
     ...partial,
   });
@@ -241,6 +248,11 @@ describe('the services’ rows', () => {
     if (row === undefined) throw new Error('no row');
     return row;
   };
+
+  it('says which seats the server holds, as it is told (BUG-1, BUG-2)', () => {
+    expect(only().stored).toBe(false);
+    expect(only({ storedSeats: new Set([leg().seatId]) }).stored).toBe(true);
+  });
 
   it('titles a seat by the catalogue’s service, bare, and says nothing twice', () => {
     const row = only();
@@ -556,5 +568,199 @@ describe('the people’s lines', () => {
         timeLabel: '16:00 – 16:30',
       }),
     ).toBe('Иван · 16:00 – 16:30');
+  });
+});
+
+describe('chairOptionsOf — every barber a visit knows about', () => {
+  const IVAN = BarberId.of('ivan');
+  const NIKO = BarberId.of('niko');
+  const chair = { chairId: IVAN, chairName: 'Иван', chairTone: 1 };
+  const legOn = (barberId: BarberId | null, barberName: string) => ({
+    barberId,
+    barberName,
+    barberTone: 1,
+  });
+
+  it('is the roster when one is bound', () => {
+    const options = chairOptionsOf({
+      ...chair,
+      roster: [{ id: NIKO, label: 'Нико', tone: 2, avatarSrc: '/niko.jpg' }],
+      legs: [legOn(IVAN, 'Иван')],
+    });
+    expect(options).toEqual([
+      { key: NIKO, id: NIKO, name: 'Нико', tone: 2, avatarSrc: '/niko.jpg' },
+    ]);
+  });
+
+  it('lists the chair once when a leg sits on it, roster-less (BUG-4)', () => {
+    const options = chairOptionsOf({
+      ...chair,
+      roster: [],
+      legs: [legOn(IVAN, 'Иван')],
+    });
+    expect(options.map((option) => option.id)).toEqual([IVAN]);
+  });
+
+  it('adds the chair when no leg sits on it, roster-less', () => {
+    const options = chairOptionsOf({
+      ...chair,
+      roster: [],
+      legs: [legOn(NIKO, 'Нико')],
+    });
+    expect(options.map((option) => option.id)).toEqual([NIKO, IVAN]);
+    expect(options[1]?.key).toBe('Иван');
+  });
+
+  it('lists the chair alone with no legs, and a chairless leg’s row beside it', () => {
+    expect(
+      chairOptionsOf({ ...chair, roster: [], legs: [] }).map(
+        (option) => option.id,
+      ),
+    ).toEqual([IVAN]);
+    expect(
+      chairOptionsOf({
+        ...chair,
+        chairId: null,
+        roster: [],
+        legs: [legOn(null, 'Иван')],
+      }).map((option) => option.key),
+    ).toEqual(['']);
+  });
+});
+
+describe('photoPersonOf — the person a photo names, by id (BUG-9)', () => {
+  const A = DraftPersonKey.account(UserId.of('user-a'));
+  const B = DraftPersonKey.account(UserId.of('user-b'));
+  const GUEST = DraftPersonKey.guest('Ани');
+  const RECORD_B = CustomerId.of('customer-b');
+  const clients = [
+    { id: A, label: 'Иван', customerId: CustomerId.of('customer-a') },
+    { id: B, label: 'Иван', customerId: RECORD_B },
+    { id: GUEST, label: 'Ани' },
+  ];
+  const noOwner = { clientCustomerId: null, clientUserId: null };
+  const photo = (
+    clientCustomerId: CustomerId | null,
+    clientLabel = 'Иван',
+  ) => ({
+    clientCustomerId,
+    clientLabel,
+  });
+
+  it('finds the record’s person, whatever the label', () => {
+    expect(photoPersonOf(photo(RECORD_B), clients, noOwner)?.id).toBe(B);
+  });
+
+  it('reads the visit’s own record as its account holder', () => {
+    const own = CustomerId.of('customer-own');
+    expect(
+      photoPersonOf(photo(own), [{ id: A, label: 'Друг' }], {
+        clientCustomerId: own,
+        clientUserId: UserId.of('user-a'),
+      })?.id,
+    ).toBe(A);
+  });
+
+  it('answers nobody for a record no one on the visit holds', () => {
+    expect(
+      photoPersonOf(photo(CustomerId.of('customer-z')), clients, {
+        clientCustomerId: null,
+        clientUserId: UserId.of('user-a'),
+      }),
+    ).toBeNull();
+  });
+
+  it('knows a guest with no record by the key his label makes', () => {
+    expect(photoPersonOf(photo(null, 'Ани'), clients, noOwner)?.id).toBe(GUEST);
+  });
+
+  it('reads no record on a visit of no record as its account holder', () => {
+    expect(
+      photoPersonOf(photo(null), clients, {
+        clientCustomerId: null,
+        clientUserId: UserId.of('user-b'),
+      })?.id,
+    ).toBe(B);
+    // No record and no account holder: the label is all there is (below).
+  });
+
+  it('falls back to the label only where there is no id to go by', () => {
+    const son = { id: B, label: 'Иво' };
+    // The photo names a record, and the person holds none: a companion the
+    // book does not list. The label is what is left.
+    expect(
+      photoPersonOf(photo(CustomerId.of('customer-son'), 'Иво'), [son], noOwner)
+        ?.id,
+    ).toBe(B);
+    // The photo holds no record: the same.
+    expect(photoPersonOf(photo(null, 'Иво'), [son], noOwner)?.id).toBe(B);
+    // A person with a record of their own is not this photo's, namesake or not.
+    expect(
+      photoPersonOf(
+        photo(CustomerId.of('customer-z'), 'Иван'),
+        [{ id: A, label: 'Иван', customerId: CustomerId.of('customer-a') }],
+        noOwner,
+      ),
+    ).toBeNull();
+    // And the id wins over a namesake with none.
+    expect(
+      photoPersonOf(
+        photo(RECORD_B, 'Иван'),
+        [
+          { id: GUEST, label: 'Иван' },
+          { id: B, label: 'Иван', customerId: RECORD_B },
+        ],
+        noOwner,
+      )?.id,
+    ).toBe(B);
+    expect(photoPersonOf(photo(null, 'Никой'), [son], noOwner)).toBeNull();
+  });
+
+  it('holds no person for an account no longer on the visit', () => {
+    expect(
+      photoPersonOf(photo(null), [], {
+        clientCustomerId: null,
+        clientUserId: UserId.of('user-a'),
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('leftOffNoticeOf — the line a rebooked draft’s missing service earns', () => {
+  const gone = (serviceLabel: string, id = 'svc-gone') => ({
+    serviceId: ServiceId.of(id),
+    serviceLabel,
+  });
+
+  it('says nothing when nothing was left off', () => {
+    expect(leftOffNoticeOf([], BG)).toBeNull();
+    expect(leftOffNoticeOf([], EN)).toBeNull();
+  });
+
+  it('names the service, in «ти» and in English', () => {
+    expect(leftOffNoticeOf([gone('Брада')], BG)).toBe(
+      'Вече не е в каталога: Брада. Избери друга услуга.',
+    );
+    expect(leftOffNoticeOf([gone('Beard')], EN)).toBe(
+      'No longer in the catalogue: Beard. Pick another service.',
+    );
+  });
+
+  it('names each one it can', () => {
+    expect(leftOffNoticeOf([gone('Брада'), gone('Фейд', 'svc-2')], BG)).toBe(
+      'Вече не е в каталога: Брада, Фейд. Избери друга услуга.',
+    );
+    expect(leftOffNoticeOf([gone('Брада'), gone('svc-2', 'svc-2')], BG)).toBe(
+      'Вече не е в каталога: Брада. Избери друга услуга.',
+    );
+  });
+
+  it('prints no raw id: with no name at hand it says so plainly', () => {
+    expect(leftOffNoticeOf([gone('svc-gone')], BG)).toBe(
+      'Услуга от това посещение вече не е в каталога. Избери друга.',
+    );
+    expect(leftOffNoticeOf([gone('svc-gone')], EN)).toBe(
+      'A service from this visit is no longer in the catalogue. Pick another.',
+    );
   });
 });

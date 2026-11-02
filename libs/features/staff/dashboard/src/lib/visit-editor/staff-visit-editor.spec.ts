@@ -67,6 +67,7 @@ import {
   UtcEpochMs,
   VoucherRefusal,
 } from '@core/primitives';
+import { VisitDraftSystem } from '@core/systems';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
@@ -226,6 +227,10 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.photoTakenAt': 'Снимано',
       'staff.visit.photoChair': 'Бръснар',
       'staff.visit.photoClient': 'Клиент',
+      'staff.visit.leftOffNamed':
+        'Вече не е в каталога: {{services}}. Избери друга услуга.',
+      'staff.visit.leftOffUnnamed':
+        'Услуга от това посещение вече не е в каталога. Избери друга.',
       'staff.visit.photoRemove': 'Изтрий снимката',
       'staff.visit.photoOpen': 'Снимка от {{when}}',
       'staff.visit.appliedRow': 'Приложени',
@@ -272,7 +277,6 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.voucherVoid': 'Ваучерът е анулиран.',
       'staff.visit.voucherNothingLeft': 'Няма какво да покрие.',
       'staff.visit.codeAlready': 'Вече е добавен.',
-      'staff.visit.currencySymbol': '€',
       'staff.visit.atShop': 'В салона',
       'staff.visit.addPromo': 'Добави промоция',
       'staff.visit.addTip': 'Добави бакшиш',
@@ -318,6 +322,16 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.day.visitCall': 'Обади се',
     });
   }
+}
+
+/** The sheet's draft, as a spec reads who sits where. */
+function draftOfSheet(sheet: StaffVisitEditor): {
+  readonly clients: readonly { readonly id: string }[];
+  readonly legs: readonly { readonly clientId: string }[];
+} {
+  return (
+    sheet as unknown as { draft: () => ReturnType<typeof draftOfSheet> }
+  ).draft();
 }
 
 function provideTestI18n(): EnvironmentProviders[] {
@@ -1004,9 +1018,9 @@ describe('StaffVisitEditor', () => {
     expect(find(host, 'staff-visit-not-built')).toBeNull();
   });
 
-  it('carries its chips on the ladder row — variant, and the way off — and swipes to remove', () => {
-    // One row is one seat (owner, 2026-09-10): the title with its variant,
-    // the variant chip, and a visible «−». No counter, no money — the
+  it('carries the way off on the ladder row, and swipes to remove', () => {
+    // One row is one seat (owner, 2026-09-10): the title with its variant
+    // and a visible «−». No counter, no money — the
     // receipt says what a seat costs. No barber chip (2026-09-09): the
     // sheet is opened for a chair, and the chair row above is where it
     // changes.
@@ -1025,25 +1039,12 @@ describe('StaffVisitEditor', () => {
     expect(remove?.tagName).toBe('BUTTON');
     expect(remove?.getAttribute('aria-label')).toContain('Премахни услугата');
 
-    // The variant chip is an ICON on the service that has variants; the
-    // title carries the variant's name, joined the way the catalogue does.
-    const variant = find(host, 'staff-visit-leg-variant-seat-cut');
-    expect(variant).not.toBeNull();
-    expect(variant?.hasAttribute('data-icon-only')).toBe(true);
-    expect(variant?.textContent).not.toContain('Къса коса');
+    // A stored seat offers no variant (BUG-2): no command would carry it. The
+    // chip on an added seat is pinned in «a stored seat's person and variant».
+    expect(find(host, 'staff-visit-leg-variant-seat-cut')).toBeNull();
     expect(find(host, 'staff-visit-leg-variant-seat-beard')).toBeNull();
-    // This seat was stored without a variant: its title is the stored
-    // name until a variant is picked, and then the catalogue's joined one.
+    // This seat was stored without a variant: its title is the stored name.
     expect(row?.textContent).toContain('Класическо подстригване');
-    expect(variant?.getAttribute('aria-label')).toContain('—');
-    click(host, 'staff-visit-leg-variant-seat-cut');
-    pickOpen(host, 'staff-visit-variant-pick-long');
-    // The variant is a DESCRIPTION now — under the service, not welded to it.
-    expect(row?.textContent).toContain('Подстригване');
-    expect(row?.textContent).toContain('Дълга коса');
-    expect(row?.textContent).not.toContain('Подстригване · Дълга коса');
-    expect(variant?.getAttribute('aria-label')).toContain('Дълга коса');
-    expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain('45 мин');
 
     // The «−» removes the seat; the swipe's own act is a button too.
     expect(find(host, 'staff-visit-swipe-leg-seat-beard')?.tagName).toBe(
@@ -1051,6 +1052,264 @@ describe('StaffVisitEditor', () => {
     );
     click(host, 'staff-visit-remove-leg-seat-cut');
     expect(find(host, 'staff-visit-leg-seat-cut')).toBeNull();
+  });
+
+  describe('a stored seat’s person and variant are read, never offered (BUG-1, BUG-2)', () => {
+    const party = () =>
+      visit({
+        people: [
+          {
+            id: 'user-martin',
+            label: 'Мартин Илиев',
+            phone: null,
+            phoneHref: null,
+            meta: null,
+            email: null,
+          },
+          {
+            id: 'user-petar',
+            label: 'Петър Ганев',
+            phone: null,
+            phoneHref: null,
+            meta: null,
+            email: null,
+          },
+        ] as unknown as VisitEditorVm['people'],
+      });
+
+    it('draws no «За кого» menu on a stored seat, and prints whose seat it is', () => {
+      const host = render(party());
+      expect(find(host, 'staff-visit-leg-person-seat-cut')).toBeNull();
+      expect(
+        host.querySelector(
+          '[data-testid^="staff-visit-leg-seat-cut"] ui-choice-menu',
+        ),
+      ).toBeNull();
+      expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain(
+        'Мартин Илиев',
+      );
+    });
+
+    it('draws no variant menu on a stored seat, and prints the variant it holds', () => {
+      const host = render(
+        visit({
+          legs: visit().legs.map((leg) =>
+            leg.seatId === SeatId.of('seat-cut')
+              ? { ...leg, variantId: ServiceVariantId.of('short') }
+              : leg,
+          ),
+        }),
+      );
+      expect(find(host, 'staff-visit-leg-variant-seat-cut')).toBeNull();
+      expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain(
+        'Къса коса',
+      );
+    });
+
+    describe('the person holding a stored seat stays (BUG-1, its second path)', () => {
+      const SECTION = [
+        {
+          id: 'recent',
+          label: 'Скорошни',
+          clients: [
+            {
+              id: draftPersonKey('user-petar'),
+              label: 'Петър Ганев',
+              phone: null,
+              phoneHref: null,
+              meta: null,
+              email: null,
+            },
+          ],
+        },
+      ];
+      const martinRow = (host: HTMLElement) =>
+        find(host, 'staff-visit-picked-user-martin') as HTMLButtonElement;
+      const legsOfCommit = (host: HTMLElement) => {
+        const commits: VisitEditorCommit[] = [];
+        fixture.componentInstance.committed.subscribe((commit) =>
+          commits.push(commit),
+        );
+        click(host, 'staff-visit-save');
+        return commits[0]?.legs ?? [];
+      };
+
+      it('reads him on the add-client page: ticked, and no way to untick him', () => {
+        fixture.componentRef.setInput('uiClientSections', SECTION);
+        const host = render();
+        click(host, 'staff-visit-add-client');
+        expect(martinRow(host).disabled).toBe(true);
+        expect(martinRow(host).getAttribute('aria-checked')).toBe('true');
+      });
+
+      it('never hands his seat to the next person ticked: the draft stays his, and clean', () => {
+        fixture.componentRef.setInput('uiClientSections', SECTION);
+        const host = render();
+        click(host, 'staff-visit-add-client');
+        // The tap a disabled row swallows, and the door behind it.
+        (
+          fixture.componentInstance as unknown as {
+            toggleClient: (option: { id: string }) => void;
+          }
+        ).toggleClient({ id: draftPersonKey('user-martin') });
+        fixture.detectChanges();
+        expect(martinRow(host)).not.toBeNull();
+        click(host, 'staff-visit-client-user-petar');
+        back();
+        expect(text(host, 'staff-visit-leg-line-seat-cut')).toContain(
+          'Мартин Илиев',
+        );
+        expect(text(host, 'staff-visit-leg-line-seat-cut')).not.toContain(
+          'Петър Ганев',
+        );
+      });
+
+      it('still takes another person, for a seat added for them', () => {
+        fixture.componentRef.setInput('uiClientSections', SECTION);
+        const host = render();
+        click(host, 'staff-visit-add-client');
+        click(host, 'staff-visit-client-user-petar');
+        back();
+        click(host, 'staff-visit-choose-service');
+        click(host, 'staff-visit-service-beard');
+        click(host, 'staff-visit-service-apply');
+        const legs = legsOfCommit(host);
+        expect(legs.map((leg) => leg.clientId)).toEqual([
+          'user-martin',
+          'user-martin',
+          'user-petar',
+        ]);
+      });
+
+      it('lets go of him once «−» has taken his stored seats: that swap saves, as an added seat', () => {
+        fixture.componentRef.setInput('uiClientSections', SECTION);
+        const host = render();
+        click(host, 'staff-visit-remove-leg-seat-cut');
+        click(host, 'staff-visit-add-client');
+        expect(martinRow(host).disabled).toBe(true);
+        back();
+        click(host, 'staff-visit-remove-leg-seat-beard');
+        click(host, 'staff-visit-add-client');
+        expect(martinRow(host).disabled).toBe(false);
+        click(host, 'staff-visit-picked-user-martin');
+        click(host, 'staff-visit-client-user-petar');
+        back();
+        click(host, 'staff-visit-choose-service');
+        click(host, 'staff-visit-service-beard');
+        click(host, 'staff-visit-service-apply');
+        const legs = legsOfCommit(host);
+        expect(legs).toHaveLength(1);
+        expect(legs[0]?.clientId).toBe('user-petar');
+        expect(legs[0]?.seatId.startsWith('draft-')).toBe(true);
+        expect(
+          draftOfSheet(fixture.componentInstance).clients.map(
+            (client) => client.id,
+          ),
+        ).toEqual(['user-petar']);
+      });
+
+      it('lets a party’s person leave with his stored seats: that really saves', () => {
+        const host = render(party());
+        click(host, 'staff-visit-add-client');
+        expect(martinRow(host).disabled).toBe(false);
+        expect(
+          (find(host, 'staff-visit-picked-user-petar') as HTMLButtonElement)
+            .disabled,
+        ).toBe(false);
+      });
+
+      it('leaves a new visit’s last person free to go', () => {
+        const host = render(
+          visit({
+            appointmentId: null,
+            rowId: '',
+            people: party().people?.slice(0, 1),
+          }),
+        );
+        click(host, 'staff-visit-add-client');
+        expect(martinRow(host).disabled).toBe(false);
+        click(host, 'staff-visit-picked-user-martin');
+        expect(martinRow(host)).toBeNull();
+      });
+
+      it('never hands a stored seat with nobody on it to the first person ticked', () => {
+        fixture.componentRef.setInput('uiClientSections', SECTION);
+        const host = render(visit({ clientLabel: '', people: [] }));
+        click(host, 'staff-visit-add-client');
+        click(host, 'staff-visit-client-user-petar');
+        back();
+        expect(text(host, 'staff-visit-leg-line-seat-cut') ?? '').not.toContain(
+          'Петър Ганев',
+        );
+        expect(
+          draftOfSheet(fixture.componentInstance)
+            .legs.map((leg) => leg.clientId)
+            .every((id) => id === VisitDraftSystem.PLACEHOLDER_CLIENT_ID),
+        ).toBe(true);
+      });
+    });
+
+    it('keeps both on a seat the sheet just added, which saves with them', () => {
+      const host = render(party());
+      click(host, 'staff-visit-add-service');
+      click(host, 'staff-visit-service-cut:short');
+      click(host, 'staff-visit-service-apply');
+      const row = host.querySelector<HTMLElement>(
+        '[data-testid^="staff-visit-leg-draft-"]',
+      );
+      const seat =
+        row?.dataset['testid']?.replace('staff-visit-leg-', '') ?? '';
+      expect(find(host, `staff-visit-leg-person-${seat}`)).not.toBeNull();
+      const variant = find(host, `staff-visit-leg-variant-${seat}`);
+      expect(variant).not.toBeNull();
+      expect(variant?.hasAttribute('data-icon-only')).toBe(true);
+      expect(variant?.textContent).not.toContain('Къса коса');
+      expect(variant?.getAttribute('aria-label')).toContain('Къса коса');
+    });
+
+    it('takes a pick on an added seat: its minutes, its name on the chip, the variant under the service', () => {
+      const host = render();
+      click(host, 'staff-visit-add-service');
+      click(host, 'staff-visit-service-cut:short');
+      click(host, 'staff-visit-service-apply');
+      const row = host.querySelector<HTMLElement>(
+        '[data-testid^="staff-visit-leg-draft-"]',
+      );
+      const seat =
+        row?.dataset['testid']?.replace('staff-visit-leg-', '') ?? '';
+      const variant = () => find(host, `staff-visit-leg-variant-${seat}`);
+      expect(variant()?.getAttribute('aria-label')).toContain('Къса коса');
+
+      click(host, `staff-visit-leg-variant-${seat}`);
+      pickOpen(host, 'staff-visit-variant-pick-long');
+
+      // The chip's name follows the pick; the chip itself stays an icon.
+      expect(variant()?.getAttribute('aria-label')).toContain('Дълга коса');
+      expect(variant()?.textContent).not.toContain('Дълга коса');
+      // The variant is a DESCRIPTION: under the service, not welded to it.
+      expect(row?.textContent).toContain('Подстригване');
+      expect(row?.textContent).toContain('Дълга коса');
+      expect(row?.textContent).not.toContain('Подстригване · Дълга коса');
+      // The pick brought its minutes, said on the line of a multi-service visit.
+      expect(text(host, `staff-visit-leg-line-${seat}`)).toContain('45 мин');
+    });
+
+    it('keeps both on every seat of a visit not yet saved, a rebooking’s included', () => {
+      const host = render(
+        visit({
+          appointmentId: null,
+          rowId: '',
+          people: party().people,
+          legs: visit().legs.map((leg) => ({
+            ...leg,
+            variantId: ServiceVariantId.of('short'),
+            serviceId: ServiceId.of('cut'),
+          })),
+        }),
+      );
+      expect(find(host, 'staff-visit-leg-person-seat-cut')).not.toBeNull();
+      expect(find(host, 'staff-visit-leg-variant-seat-cut')).not.toBeNull();
+    });
   });
 
   it('moves the derived end when the visit gets longer, and leaves the price alone', () => {
@@ -1737,6 +1996,33 @@ describe('StaffVisitEditor', () => {
    * sheet already states at the top. What is left is the one thing a barber
    * does from here that is not an edit.
    */
+  it('says, once, which service a rebooking left off (B5)', () => {
+    const quiet = render(visit({ appointmentId: null, rowId: '' }));
+    expect(find(quiet, 'staff-visit-left-off')).toBeNull();
+    const host = render(
+      visit({
+        appointmentId: null,
+        rowId: '',
+        leftOffServices: [
+          { serviceId: ServiceId.of('gone'), serviceLabel: 'Брада' },
+        ],
+      }),
+    );
+    expect(text(host, 'staff-visit-left-off')).toBe(
+      'Вече не е в каталога: Брада. Избери друга услуга.',
+    );
+    expect(find(host, 'staff-visit-left-off')?.getAttribute('role')).toBe(
+      'status',
+    );
+  });
+
+  it('holds typed and dragged lengths to one floor, the one the server admits (BUG-6)', () => {
+    render();
+    // A typed `0` or `2` is a typo for the floor; the frame's drag stops there.
+    expect(frameGrid().uiMinMinutes()).toBe(VisitDraftSystem.typedSpan(0));
+    expect(frameGrid().uiMinMinutes()).toBe(VisitDraftSystem.GRAIN_MINUTES);
+  });
+
   describe('the dock', () => {
     /*
      * DEP-21 (pass D): the sheet words the bill in the BILL's currency —
@@ -1752,6 +2038,24 @@ describe('StaffVisitEditor', () => {
         }),
       );
       expect(text(bgn, 'staff-visit-total-figure')).toBe('28,00 лв.');
+    });
+
+    it('prints a typed sum’s unit in the bill’s currency, not a fixed word (BUG-8)', () => {
+      const bgn = visit({
+        tipCents: cents(200),
+        currency: Currency.BGN,
+        legs: visit().legs.map((leg) => ({ ...leg, currency: Currency.BGN })),
+      });
+      const unit = (host: HTMLElement) =>
+        host.querySelector('.ui-amount-field__unit')?.textContent?.trim();
+      const host = render(bgn);
+      click(host, 'staff-visit-tip-row');
+      click(host, 'staff-visit-tip-tile-other');
+      expect(unit(host)).toBe('лв.');
+      const eur = render();
+      click(eur, 'staff-visit-tip-row');
+      click(eur, 'staff-visit-tip-tile-other');
+      expect(unit(eur)).toBe('€');
     });
 
     it('carries no `⋯` and no verb button', () => {
@@ -4508,6 +4812,82 @@ describe('StaffVisitEditor', () => {
           ?.getAttribute('src'),
       ).toBe('/clients/georgi.jpg');
       expect(text(host, 'staff-visit-photo-client')).toBe('Георги Петров');
+    });
+
+    it('draws a photo’s face by the person’s id, never a namesake’s (BUG-9)', () => {
+      const face = (clientId: string, src: string, customerId?: string) => ({
+        id: clientId,
+        label: 'Георги Петров',
+        phone: null,
+        phoneHref: null,
+        meta: null,
+        avatarSrc: src,
+        customerId: customerId === undefined ? null : CustomerId.of(customerId),
+      });
+      const faceOnPhotoPage = (
+        photo: Partial<VisitEditorPhoto>,
+        overrides: Partial<VisitEditorVm> = {},
+      ): string | null | undefined => {
+        const host = render(
+          visit({
+            photos: [{ ...(PHOTOS[0] as VisitEditorPhoto), ...photo }],
+            clientLabel: 'Георги Петров',
+            people: [
+              { ...face('user-a', '/a.jpg'), email: null },
+              { ...face('user-b', '/b.jpg'), email: null },
+            ] as unknown as VisitEditorVm['people'],
+            ...overrides,
+          }),
+        );
+        fixture.componentRef.setInput('uiClientBook', [
+          face('user-a', '/a.jpg', 'customer-a'),
+          face('user-b', '/b.jpg', 'customer-b'),
+        ]);
+        fixture.detectChanges();
+        click(host, 'staff-visit-photo-p-1');
+        return find(host, 'staff-visit-photo-client-row')
+          ?.querySelector('[uileading] ui-avatar img')
+          ?.getAttribute('src');
+      };
+      // Two of one name on the visit: the photo's record says which.
+      expect(
+        faceOnPhotoPage({ clientCustomerId: CustomerId.of('customer-b') }),
+      ).toBe('/b.jpg');
+      // A record nobody on the visit holds is nobody's face, namesake or not.
+      expect(
+        faceOnPhotoPage({ clientCustomerId: CustomerId.of('customer-z') }),
+      ).toBeUndefined();
+    });
+
+    it('keeps the face of a companion the book does not list: no id, so the label (BUG-9)', () => {
+      const host = render(
+        visit({
+          photos: [
+            {
+              ...(PHOTOS[0] as VisitEditorPhoto),
+              clientLabel: 'Иво Колев',
+              clientCustomerId: CustomerId.of('customer-son'),
+            },
+          ],
+          people: [
+            {
+              id: draftPersonKey('user-son'),
+              label: 'Иво Колев',
+              phone: null,
+              phoneHref: null,
+              meta: null,
+              email: null,
+              avatarSrc: '/son.jpg',
+            },
+          ],
+        }),
+      );
+      click(host, 'staff-visit-photo-p-1');
+      expect(
+        find(host, 'staff-visit-photo-client-row')
+          ?.querySelector('[uileading] ui-avatar img')
+          ?.getAttribute('src'),
+      ).toBe('/son.jpg');
     });
 
     it('hands every picked file up at once — a photo is not a draft — and leaves the draft clean', () => {
@@ -8147,6 +8527,42 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     expect(find('staff-visit-announce')?.textContent?.trim()).toBe(
       'Взехме услугите от 4 септември.',
     );
+  });
+
+  it('says the last visit’s day in `en-GB` in English, never the raw language’s order (BUG-7)', async () => {
+    const transloco = TestBed.inject(TranslocoService);
+    transloco.setActiveLang('en');
+    await firstValueFrom(transloco.selectTranslation('en'));
+    render();
+    await openCard();
+    const last: readonly VisitLeg[] = georgiLastVisit().seats.map((seat) => ({
+      seatId: seat.seatId,
+      serviceId: seat.serviceId,
+      variantId: seat.variantId,
+      barberId: seat.barberId,
+      durationMinutes: seat.durationMinutes,
+    }));
+    child(ClientCard).repeatLast.emit(last);
+    await settle();
+    await new Promise((done) => setTimeout(done, 200));
+    fixture.detectChanges();
+    expect(find('staff-visit-announce')?.textContent).toContain('4 September');
+    expect(find('staff-visit-announce')?.textContent).not.toContain(
+      'September 4',
+    );
+  });
+
+  it('offers no «Махни от посещението» to the only person holding a stored seat (BUG-1)', async () => {
+    render(georgiVisit());
+    await openCard(GEORGI);
+    expect(find('client-remove')).toBeNull();
+    // The door behind the row: he stays, and the sheet stays where it is.
+    child(ClientCard).removeClient.emit();
+    await settle();
+    expect(draftOfSheet(editor()).clients.map((client) => client.id)).toEqual([
+      GEORGI,
+    ]);
+    expect(editor().depth()).toBeGreaterThan(0);
   });
 
   it('«Махни от посещението» runs the one rule for a person leaving, and lands on the next person', async () => {

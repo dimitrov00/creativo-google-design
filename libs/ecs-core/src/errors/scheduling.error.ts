@@ -93,6 +93,8 @@ export const SchedulingErrorCode = {
   WaitlistEmptyCart: 'SCHEDULING_WAITLIST_EMPTY_CART',
   WaitlistInvalidTransition: 'SCHEDULING_WAITLIST_INVALID_TRANSITION',
   ScheduleExceptionEmptyRanges: 'SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES',
+  /** A block saved where no shop exists to file it at, not even a first one. */
+  BlockChairWithoutHome: 'SCHEDULING_BLOCK_CHAIR_WITHOUT_HOME',
 } as const;
 export type SchedulingErrorCode =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
@@ -140,7 +142,8 @@ export type SchedulingError =
   | SchedulingError.WaitlistNoDays
   | SchedulingError.WaitlistEmptyCart
   | SchedulingError.WaitlistInvalidTransition
-  | SchedulingError.ScheduleExceptionEmptyRanges;
+  | SchedulingError.ScheduleExceptionEmptyRanges
+  | SchedulingError.BlockChairWithoutHome;
 
 const C = SchedulingErrorCode;
 
@@ -405,6 +408,12 @@ export const SchedulingError = {
   ): SchedulingError.ScheduleExceptionEmptyRanges {
     return { errorCode: C.ScheduleExceptionEmptyRanges, exceptionKind };
   },
+  /** A block saved with no shop to file it at: nothing was written. */
+  blockChairWithoutHome(
+    barberId: BarberId,
+  ): SchedulingError.BlockChairWithoutHome {
+    return { errorCode: C.BlockChairWithoutHome, barberId };
+  },
 
   /** Narrows an error to one code — `SchedulingError.is(e, SchedulingErrorCode.FlexibleWhenFull)`. */
   is<K extends SchedulingErrorCode>(
@@ -601,6 +610,10 @@ export namespace SchedulingError {
   export type ScheduleExceptionEmptyRanges = {
     readonly errorCode: typeof SchedulingErrorCode.ScheduleExceptionEmptyRanges;
     readonly exceptionKind: ExceptionEffect;
+  };
+  export type BlockChairWithoutHome = {
+    readonly errorCode: typeof SchedulingErrorCode.BlockChairWithoutHome;
+    readonly barberId: BarberId;
   };
 }
 
