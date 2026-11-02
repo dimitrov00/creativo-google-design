@@ -1,5 +1,6 @@
 import { CancelledSide, PlacementVerdict } from '@core/components';
 import {
+  type BarberId,
   BookingStatus,
   type DraftPersonKey,
   type DurationMinutes,
@@ -13,6 +14,7 @@ import type { UiChoiceOption, UiSegment } from '@creativo/ui/controls';
 import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ROW_VERB_WORD } from '../row-verb';
 import type {
+  VisitEditorBarberOption,
   VisitEditorPeer,
   VisitEditorResolution,
   VisitEditorServiceOption,
@@ -21,6 +23,7 @@ import type {
 } from './staff-visit-editor';
 import {
   EditorPage,
+  type EditorChairOption,
   type FrameVerdictSlice,
   type LegRowVm,
   PhotoDoor,
@@ -369,6 +372,62 @@ export type LegRowsInput = {
   readonly chairName: string;
   readonly words: VisitEditorWords;
 };
+
+/** What {@link chairOptionsOf} reads. */
+export type ChairOptionsInput = {
+  /** The shop's chairs, when the host bound them. */
+  readonly roster: readonly VisitEditorBarberOption[];
+  readonly legs: readonly {
+    readonly barberId: BarberId | null;
+    readonly barberName: string;
+    readonly barberTone: number;
+  }[];
+  readonly chairId: BarberId | null;
+  readonly chairName: string;
+  readonly chairTone: number;
+};
+
+/**
+ * Every barber a visit knows about, the chair included. THE ROSTER when it is
+ * bound: real ids, real portraits. The fallback lists the legs' chairs and then
+ * the visit's own, for a host that binds no roster; a pick of its row writes
+ * the row's own chair. The chair is listed once, whether or not a leg sits on it
+ * (BUG-4).
+ */
+export function chairOptionsOf(
+  input: ChairOptionsInput,
+): readonly EditorChairOption[] {
+  if (input.roster.length > 0) {
+    return input.roster.map((barber) => ({
+      key: barber.id,
+      id: barber.id,
+      name: barber.label,
+      tone: barber.tone,
+      avatarSrc: barber.avatarSrc,
+    }));
+  }
+  const seen = new Map<string, EditorChairOption>();
+  for (const leg of input.legs) {
+    const key = leg.barberId ?? '';
+    seen.set(key, {
+      key,
+      id: leg.barberId,
+      name: leg.barberName,
+      tone: leg.barberTone,
+      avatarSrc: null,
+    });
+  }
+  if (!seen.has(input.chairId ?? '')) {
+    seen.set(input.chairName, {
+      key: input.chairName,
+      id: input.chairId,
+      name: input.chairName,
+      tone: input.chairTone,
+      avatarSrc: null,
+    });
+  }
+  return [...seen.values()];
+}
 
 /** The catalogue's option for a leg — its service and variant — or none. */
 function legOption(

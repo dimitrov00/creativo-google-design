@@ -137,6 +137,7 @@ import {
   shopRowName,
   shopViews,
   timingOptions,
+  chairOptionsOf,
   visitEditorWordsOf,
   visitExitsVm,
 } from './visit-editor.presenter';
@@ -2635,44 +2636,14 @@ export class StaffVisitEditor {
 
   /** Every barber this visit already knows about, the chair included. */
   protected readonly barberOptions = computed<readonly EditorChairOption[]>(
-    () => {
-      // THE ROSTER when it is bound — real ids, real portraits. The derived
-      // fallback below keys a synthesized chair by its NAME, which is not an
-      // id and never matched anything; it survives only for the case where
-      // no roster is supplied, and a pick of it writes the row's own chair.
-      const roster = this.uiBarbers();
-      if (roster.length > 0) {
-        return roster.map((barber) => ({
-          key: barber.id,
-          id: barber.id,
-          name: barber.label,
-          tone: barber.tone,
-          avatarSrc: barber.avatarSrc,
-        }));
-      }
-      const vm = this.vm();
-      const seen = new Map<string, EditorChairOption>();
-      for (const leg of this.draft().legs) {
-        const key = leg.barberId ?? '';
-        seen.set(key, {
-          key,
-          id: leg.barberId,
-          name: leg.barberName,
-          tone: leg.barberTone,
-          avatarSrc: null,
-        });
-      }
-      if (!seen.has('chair')) {
-        seen.set(vm.chairName, {
-          key: vm.chairName,
-          id: vm.chairId,
-          name: vm.chairName,
-          tone: vm.chairTone,
-          avatarSrc: null,
-        });
-      }
-      return [...seen.values()];
-    },
+    () =>
+      chairOptionsOf({
+        roster: this.uiBarbers(),
+        legs: this.draft().legs,
+        chairId: this.vm().chairId,
+        chairName: this.vm().chairName,
+        chairTone: this.vm().chairTone,
+      }),
   );
 
   /** The consequence strip under a service page's large title — live. */

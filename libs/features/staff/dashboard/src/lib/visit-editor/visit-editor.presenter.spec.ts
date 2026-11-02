@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ArrivalVerb, CancelledSide, PlacementVerdict } from '@core/components';
 import {
+  BarberId,
   BookingStatus,
   DraftPersonKey,
   DurationMinutes,
@@ -36,6 +37,7 @@ import {
   shopViews,
   timingOptions,
   visitExitsVm,
+  chairOptionsOf,
 } from './visit-editor.presenter';
 import { EditorPage } from './visit-editor.vm';
 
@@ -556,5 +558,62 @@ describe('the people’s lines', () => {
         timeLabel: '16:00 – 16:30',
       }),
     ).toBe('Иван · 16:00 – 16:30');
+  });
+});
+
+describe('chairOptionsOf — every barber a visit knows about', () => {
+  const IVAN = BarberId.of('ivan');
+  const NIKO = BarberId.of('niko');
+  const chair = { chairId: IVAN, chairName: 'Иван', chairTone: 1 };
+  const legOn = (barberId: BarberId | null, barberName: string) => ({
+    barberId,
+    barberName,
+    barberTone: 1,
+  });
+
+  it('is the roster when one is bound', () => {
+    const options = chairOptionsOf({
+      ...chair,
+      roster: [{ id: NIKO, label: 'Нико', tone: 2, avatarSrc: '/niko.jpg' }],
+      legs: [legOn(IVAN, 'Иван')],
+    });
+    expect(options).toEqual([
+      { key: NIKO, id: NIKO, name: 'Нико', tone: 2, avatarSrc: '/niko.jpg' },
+    ]);
+  });
+
+  it('lists the chair once when a leg sits on it, roster-less (BUG-4)', () => {
+    const options = chairOptionsOf({
+      ...chair,
+      roster: [],
+      legs: [legOn(IVAN, 'Иван')],
+    });
+    expect(options.map((option) => option.id)).toEqual([IVAN]);
+  });
+
+  it('adds the chair when no leg sits on it, roster-less', () => {
+    const options = chairOptionsOf({
+      ...chair,
+      roster: [],
+      legs: [legOn(NIKO, 'Нико')],
+    });
+    expect(options.map((option) => option.id)).toEqual([NIKO, IVAN]);
+    expect(options[1]?.key).toBe('Иван');
+  });
+
+  it('lists the chair alone with no legs, and a chairless leg’s row beside it', () => {
+    expect(
+      chairOptionsOf({ ...chair, roster: [], legs: [] }).map(
+        (option) => option.id,
+      ),
+    ).toEqual([IVAN]);
+    expect(
+      chairOptionsOf({
+        ...chair,
+        chairId: null,
+        roster: [],
+        legs: [legOn(null, 'Иван')],
+      }).map((option) => option.key),
+    ).toEqual(['']);
   });
 });
