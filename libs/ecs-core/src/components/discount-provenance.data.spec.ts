@@ -36,6 +36,13 @@ describe('DiscountProvenance — each source carries its own evidence', () => {
     expect(DiscountProvenance.codeOf(MANUAL)).toBeNull();
   });
 
+  it('cuts a stored discount down to exactly its variant’s fields', () => {
+    for (const provenance of [GRANT, CODE, MANUAL]) {
+      const stored = { ...provenance, label: 'FIRST10' };
+      expect(DiscountProvenance.sliceOf(stored)).toEqual(provenance);
+    }
+  });
+
   it('is the same provenance only for the same source with the same evidence', () => {
     expect(
       DiscountProvenance.sameProvenance(

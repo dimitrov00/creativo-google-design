@@ -25,9 +25,11 @@ cost-efficient, and whether any gap stands between it and feature work.
 F-09, a Law 7.3 breach that gave one daylight-saving-gap time three answers, is
 also in review: PR #9.
 
-**Laws:** the sweep found no blocker-level violation. The largest open breach is
-domain rules inside two staff components (F-08), held at their current size by
-PR #10 and left to shrink as features touch them. This was the owner's call.
+**Laws:** the sweep found no blocker-level violation. The largest breach, domain
+rules and wording inside two staff components (F-08), is fixed on the owner's ruling
+that it comes before feature work: 24 decisions moved to systems, 65 wording rows to
+presenters, and `max-lines` holds both files at their new, shorter length. Both files
+were then read in full, so the inventories in `review/` replace the sample below.
 
 **Data-oriented design:** true of the availability search, not of the feature
 layer. The V8 goal stays unproven, and nothing here measures it (section 8).
@@ -533,8 +535,7 @@ found the first draft of these steps not ready to implement.
 
 ### Gate A: before feature work
 
-Merge PRs #8 to #12. Nothing else is left. If a required job goes red on the combined
-tree after one of them, fix it through a PR.
+Merged: PRs #8 to #14, and F-08's wording in its own PR. Nothing else is left.
 
 ### Gate B: before the first production deploy
 
@@ -571,7 +572,6 @@ tree after one of them, fix it through a PR.
 
 ### Backlog, as files are touched
 
-- **F-08:** the rules listed there. `max-lines` forces extraction before a file can grow.
 - **F-10, F-11:** the mapping in the time grid, and the smaller items.
 - **F-20:** a Storage lifecycle rule or orphan sweep, if failures turn out to be common.
 

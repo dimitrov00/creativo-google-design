@@ -61,6 +61,21 @@ export const DiscountProvenance = {
       : null;
   },
 
+  /**
+   * The provenance slice of a stored discount — exactly its variant's fields,
+   * whatever else the struct carries.
+   */
+  sliceOf(applied: DiscountProvenance): DiscountProvenance {
+    switch (applied.discountSource) {
+      case DiscountSource.Grant:
+        return DiscountProvenance.grant(applied.discountGrantId);
+      case DiscountSource.Code:
+        return DiscountProvenance.code(applied.discountCode);
+      case DiscountSource.Manual:
+        return DiscountProvenance.manual();
+    }
+  },
+
   /** The same source with the same evidence — the grant, the code, or neither. */
   sameProvenance(a: DiscountProvenance, b: DiscountProvenance): boolean {
     switch (a.discountSource) {

@@ -550,9 +550,7 @@
                 uiForegroundStyle="secondary"
                 class="staff-visit__figures"
               >
-                @if (option.variantLabel) { {{ option.variantLabel }} · }{{
-                t('staff.visit.minutes', { minutes: option.minutes }) }}@if
-                (option.priceLabel) { · {{ option.priceLabel }} }
+                {{ serviceLine(option) }}
               </span>
             </ui-stack>
           </button>
@@ -632,7 +630,7 @@
             type="button"
             [uiInteractive]="true"
             [disabled]="!linesRowValue().applied"
-            [attr.aria-label]="t('staff.visit.appliedRow') + ': ' + linesRowValue().label"
+            [attr.aria-label]="linesRowName()"
             [attr.aria-expanded]="linesOpen()"
             aria-controls="staff-visit-discount-lines"
             data-testid="staff-visit-discount-lines-row"
@@ -715,7 +713,7 @@
               uiRadius="capsule"
               uiMenuTrigger
               class="staff-visit__row-title staff-visit__row-choice"
-              [attr.aria-label]="t('staff.visit.discountKind') + ': ' + discountKindLabel()"
+              [attr.aria-label]="discountKindName()"
               data-testid="staff-visit-discount-kind"
               (click)="discountKindMenu.set(true)"
             >
@@ -1256,12 +1254,15 @@
     <section
       class="staff-visit__state"
       data-head="resolution"
-      [attr.data-tone]="resolutionTone()"
+      [attr.data-tone]="resolutionHead()?.tone"
       [attr.data-detail]="resolution.detail !== null ? '' : null"
       data-testid="staff-visit-resolution"
     >
       <span class="staff-visit__state-glyph" aria-hidden="true">
-        <ui-icon [uiName]="resolutionIcon()" uiScale="large" />
+        <ui-icon
+          [uiName]="resolutionHead()?.icon ?? 'visit.cancelled'"
+          uiScale="large"
+        />
       </span>
       <p
         class="staff-visit__state-line"
@@ -1270,7 +1271,7 @@
         uiForegroundStyle="secondary"
         data-testid="staff-visit-resolution-line"
       >
-        {{ t('staff.visit.resolution.' + resolutionKey()) }} · {{
+        {{ t('staff.visit.resolution.' + resolutionHead()?.word) }} · {{
         resolution.whenLabel }}
       </p>
       @if (resolution.detail; as detail) {
@@ -1388,7 +1389,7 @@
       class="staff-visit__group staff-visit__group--services"
       [attr.aria-label]="t('staff.visit.services')"
     >
-      @if (gone()) { @for (leg of draft().legs; track leg.seatId) {
+      @if (gone()) { @for (leg of legRows(); track leg.seatId) {
       <li
         uiListRow
         uiSize="large"
@@ -1405,11 +1406,11 @@
             uiForegroundStyle="secondary"
             class="staff-visit__figures"
             [attr.data-testid]="'staff-visit-leg-line-' + leg.seatId"
-            >{{ legLine(leg) }}</span
+            >{{ leg.line }}</span
           >
         </ui-stack>
       </li>
-      } } @else { @for (leg of draft().legs; track leg.seatId) {
+      } } @else { @for (leg of legRows(); track leg.seatId) {
       <!-- ONE ROW PER SEAT (owner, 2026-09-10: "services only about
            services"). The row is what is booked and nothing else: the
            title with its variant in it, the person on a party, the variant
@@ -1430,7 +1431,7 @@
         <ui-list-row uiSize="large" class="staff-visit__swipe-content">
           <span class="staff-visit__leg-body">
             <span uiText uiFont="callout" uiWeight="medium"
-              >{{ legService(leg) }}</span
+              >{{ leg.service }}</span
             >
             <!-- Only when it says something the title does not: minutes on
                  a multi-service visit, another chair's barber, overridden
@@ -1440,9 +1441,9 @@
               uiFont="footnote"
               uiForegroundStyle="secondary"
               class="staff-visit__figures staff-visit__leg-line"
-              [class.staff-visit__leg-line--blank]="!legLine(leg)"
+              [class.staff-visit__leg-line--blank]="!leg.line"
               [attr.data-testid]="'staff-visit-leg-line-' + leg.seatId"
-              >{{ legLine(leg) }}</span
+              >{{ leg.line }}</span
             >
           </span>
           <span uiTrailing class="staff-visit__leg-chips">
@@ -1465,22 +1466,18 @@
                 [uiIconOnly]="true"
                 uiMenuTrigger
                 class="staff-visit__leg-face-chip"
-                [attr.aria-label]="t('staff.visit.forWhom') + ': ' + legClientLabel(leg)"
+                [attr.aria-label]="leg.forWhomName"
                 [attr.data-testid]="'staff-visit-leg-person-' + leg.seatId"
                 (click)="setLegMenu(leg.seatId, LegMenuFace.Client, true)"
               >
-                <ui-avatar
-                  [uiName]="legClientLabel(leg)"
-                  uiControlSize="small"
-                />
+                <ui-avatar [uiName]="leg.clientLabel" uiControlSize="small" />
               </button>
             </ui-choice-menu>
-            } @if (legVariantChoices(leg); as variants) { @if (variants.length >
-            0) {
+            } @if (leg.variantChoices.length > 0) {
             <ui-choice-menu
               uiAlignment="trailing"
-              [uiOptions]="variants"
-              [uiSelectedId]="legVariantId(leg)"
+              [uiOptions]="leg.variantChoices"
+              [uiSelectedId]="leg.variantKey"
               [uiLabel]="t('staff.visit.variant')"
               [uiPresented]="isLegMenu(leg.seatId, LegMenuFace.Variant)"
               (uiPresentedChange)="setLegMenu(leg.seatId, LegMenuFace.Variant, $event)"
@@ -1497,14 +1494,14 @@
                 [uiIconOnly]="true"
                 uiMenuTrigger
                 class="staff-visit__leg-variant-chip"
-                [attr.aria-label]="t('staff.visit.variant') + ': ' + legVariantLabel(leg)"
+                [attr.aria-label]="leg.variantName"
                 [attr.data-testid]="'staff-visit-leg-variant-' + leg.seatId"
                 (click)="setLegMenu(leg.seatId, LegMenuFace.Variant, true)"
               >
                 <ui-icon uiName="service.variants" />
               </button>
             </ui-choice-menu>
-            } }
+            }
             <!-- THE WAY OFF, in sight: the same tinted capsule the variant
                  chip beside it wears (owner, 2026-09-10: a bare glyph next
                  to a material chip read as two grammars), red under the
@@ -1517,7 +1514,7 @@
               uiControlSize="small"
               [uiIconOnly]="true"
               class="staff-visit__leg-remove"
-              [attr.aria-label]="t('staff.visit.removeService') + ': ' + legTitle(leg)"
+              [attr.aria-label]="leg.removeName"
               [attr.data-testid]="'staff-visit-remove-leg-' + leg.seatId"
               (click)="removeLeg(leg.seatId)"
             >
@@ -1529,7 +1526,7 @@
         <button
           type="button"
           class="staff-visit__swipe-action"
-          [attr.aria-label]="t('staff.visit.removeService') + ': ' + legTitle(leg)"
+          [attr.aria-label]="leg.removeName"
           [attr.data-testid]="'staff-visit-swipe-leg-' + leg.seatId"
           (click)="removeLeg(leg.seatId)"
         >
@@ -1900,7 +1897,7 @@
               uiControlSize="small"
               [uiIconOnly]="true"
               class="staff-visit__leg-remove"
-              [attr.aria-label]="t('staff.visit.removeClient') + ': ' + client.label"
+              [attr.aria-label]="removeClientName(client)"
               [attr.data-testid]="'staff-visit-remove-client-' + client.id"
               (click)="removeClient(client.id)"
             >
@@ -1912,7 +1909,7 @@
         <button
           type="button"
           class="staff-visit__swipe-action"
-          [attr.aria-label]="t('staff.visit.removeClient') + ': ' + client.label"
+          [attr.aria-label]="removeClientName(client)"
           [attr.data-testid]="'staff-visit-swipe-client-' + client.id"
           (click)="removeClient(client.id)"
         >
@@ -2032,7 +2029,7 @@
                 uiForegroundStyle="secondary"
                 class="staff-visit__figures"
               >
-                {{ peer.chairName }} · {{ peer.timeLabel }}
+                {{ peerLine(peer) }}
               </span>
             </ui-stack>
             <!-- `›`, because this GOES somewhere: the sheet re-frames on that
@@ -2687,7 +2684,7 @@
       uiControlSize="large"
       [uiIconOnly]="true"
       [href]="'tel:' + (vm().phoneHref ?? phone)"
-      [attr.aria-label]="t('staff.day.visitCall') + ' — ' + vm().clientLabel"
+      [attr.aria-label]="callName()"
       data-testid="staff-visit-call"
     >
       <ui-icon uiName="location.call" />
@@ -3013,11 +3010,10 @@
        some cool way with a green plus in the action bar"); it rises in. -->
   <ng-template #billTotal let-prefix="prefix" let-tipId="tipId">
     <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-      >{{ isNew() ? t('staff.visit.byCatalogue') : t('staff.visit.atShop')
-      }}</span
+      >{{ dockBillWords().caption }}</span
     >
     <span class="staff-visit__total-line">
-      @if (dockWasLabel(); as was) {
+      @if (dockBillWords().was; as was) {
       <s
         uiText
         uiFont="subheadline"
@@ -3033,10 +3029,10 @@
         uiWeight="semibold"
         class="staff-visit__figures"
         [attr.data-testid]="prefix + '-figure'"
-        >{{ dockTotalLabel() }}</span
+        >{{ dockBillWords().figure }}</span
       >
     </span>
-    @if (tipDockLabel(); as tip) {
+    @if (dockBillWords().tip; as tip) {
     <span
       uiText
       uiFont="footnote"
@@ -3044,7 +3040,7 @@
       uiForegroundStyle="success"
       class="staff-visit__figures staff-visit__dock-plus"
       [attr.data-testid]="tipId"
-      >{{ t('staff.visit.tipInDock', { amount: tip }) }}</span
+      >{{ tip }}</span
     >
     }
   </ng-template>
@@ -3098,7 +3094,7 @@
         uiButtonStyle="plain"
         uiTint="neutral"
         uiControlSize="small"
-        [attr.aria-label]="t('staff.visit.removeDiscount') + ': ' + line.title"
+        [attr.aria-label]="line.removeName"
         [attr.data-testid]="'staff-visit-remove-discount-' + line.key"
         (click)="removeDiscount(line.key)"
       >
@@ -3128,7 +3124,7 @@
         uiButtonStyle="plain"
         uiTint="neutral"
         uiControlSize="small"
-        [attr.aria-label]="t('staff.visit.removeVoucher') + ': ' + line.voucher.code"
+        [attr.aria-label]="line.removeName"
         [attr.data-testid]="'staff-visit-remove-voucher-' + line.voucher.voucherId"
         (click)="removeVoucher(line.voucher.voucherId)"
       >
@@ -3161,7 +3157,7 @@
       [uiDetail]="offer.line"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
-      [attr.aria-label]="offerName(offer)"
+      [attr.aria-label]="offer.accessibleName"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />
       <ui-icon uiCouponBadge uiName="checklist.done" />
@@ -3172,7 +3168,7 @@
         uiButtonStyle="plain"
         uiTint="neutral"
         uiControlSize="small"
-        [attr.aria-label]="t('staff.visit.removeDiscount') + ': ' + offer.label"
+        [attr.aria-label]="offer.removeName"
         [attr.data-testid]="offer.testId + '-remove'"
         (click)="removeDiscount(offer.key)"
       >
@@ -3191,7 +3187,7 @@
       [uiDetail]="offer.line"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
-      [attr.aria-label]="offerName(offer) + ', ' + t('staff.visit.couponBlocked')"
+      [attr.aria-label]="offer.blockedName"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />
       <ui-icon uiCouponBadge uiName="booking.blocked" />
@@ -3219,7 +3215,7 @@
       [uiDetail]="offer.line"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
-      [attr.aria-label]="offerName(offer)"
+      [attr.aria-label]="offer.accessibleName"
       (click)="applyOffer(offer)"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />

@@ -33,3 +33,18 @@ export function catalogTagWords(
 ): string | null {
   return delta === null ? null : minutesDeltaWords(delta, minutesLabel);
 }
+
+/**
+ * The visit's readout under its length: the catalogue's total and the
+ * distance from it — «30 мин по каталог · +15 мин» — or nothing when the
+ * catalogue cannot say, or the visit runs exactly as it says.
+ */
+export function catalogNoteWords(
+  sum: number | null,
+  delta: MinuteDelta | null,
+  catalogMinutes: (minutes: number) => string,
+  minutesLabel: (minutes: number) => string,
+): string | null {
+  if (sum === null || delta === null) return null;
+  return `${catalogMinutes(sum)} · ${minutesDeltaWords(delta, minutesLabel)}`;
+}

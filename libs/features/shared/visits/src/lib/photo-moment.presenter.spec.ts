@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { LocalDate } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import { photoMomentOf } from './photo-moment.presenter';
+import { unwrapOk } from '@core/testing';
+import { lastVisitDayOf, photoMomentOf } from './photo-moment.presenter';
 import { VISITS_TIME_ZONE, sofia } from './testing/visit-fixtures';
 
 /*
@@ -79,5 +81,27 @@ describe('photoMomentOf', () => {
     expect(NOW).toEqual(
       ZonedTimeSystem.shopNow(sofia('2026-09-28T12:40:00'), VISITS_TIME_ZONE),
     );
+  });
+});
+
+describe('lastVisitDayOf', () => {
+  const day = (raw: string) => unwrapOk(LocalDate.parse(raw));
+
+  it('takes the long month, the year only outside the shop’s current one (R59)', () => {
+    expect(lastVisitDayOf(day('2026-09-04'), NOW, 'bg')).toBe('4 септември');
+    expect(lastVisitDayOf(day('2025-09-04'), NOW, 'bg')).toBe(
+      '4 септември 2025 г.',
+    );
+  });
+
+  it('shows the year while the shop’s "now" is not known', () => {
+    expect(lastVisitDayOf(day('2026-09-04'), null, 'bg')).toBe(
+      '4 септември 2026 г.',
+    );
+  });
+
+  it('formats in the language it is handed, as it is', () => {
+    expect(lastVisitDayOf(day('2026-09-04'), NOW, 'en')).toBe('September 4');
+    expect(lastVisitDayOf(day('2026-09-04'), NOW, 'en-GB')).toBe('4 September');
   });
 });
