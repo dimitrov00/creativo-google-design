@@ -1,7 +1,11 @@
 import { EnvironmentProviders } from '@angular/core';
-import { provideTransloco } from '@jsverse/transloco';
+import {
+  provideTransloco,
+  provideTranslocoTranspiler,
+} from '@jsverse/transloco';
 import { Locale, Tag } from '@core/primitives';
 import { DEFAULT_LOCALE } from './intl-locale';
+import { SinglePassTranspiler } from './single-pass-transpiler';
 import { TranslationHttpLoader } from './translation-loader';
 
 /**
@@ -13,17 +17,21 @@ import { TranslationHttpLoader } from './translation-loader';
  * through the one rule, `localeFor(raw)` (`intl-locale.ts`).
  */
 export function provideI18n(): EnvironmentProviders[] {
-  return provideTransloco({
-    config: {
-      availableLangs: [...Tag.values(Locale)],
-      defaultLang: DEFAULT_LOCALE,
-      fallbackLang: DEFAULT_LOCALE,
-      reRenderOnLangChange: true,
-      prodMode: true,
-      // translateCodedError() owns the missing-key fallback (the raw errorCode) —
-      // suppress Transloco's own console warning to avoid double-reporting.
-      missingHandler: { logMissingKey: false },
-    },
-    loader: TranslationHttpLoader,
-  });
+  return [
+    ...provideTransloco({
+      config: {
+        availableLangs: [...Tag.values(Locale)],
+        defaultLang: DEFAULT_LOCALE,
+        fallbackLang: DEFAULT_LOCALE,
+        reRenderOnLangChange: true,
+        prodMode: true,
+        // translateCodedError() owns the missing-key fallback (the raw errorCode) —
+        // suppress Transloco's own console warning to avoid double-reporting.
+        missingHandler: { logMissingKey: false },
+      },
+      loader: TranslationHttpLoader,
+    }),
+    // After provideTransloco, which provides the default: the last one wins.
+    provideTranslocoTranspiler(SinglePassTranspiler),
+  ];
 }
