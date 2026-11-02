@@ -1,7 +1,7 @@
 # Performance and cost audit, and the enforcement design
 
 Audited at commit `86870b9d` on 2026-11-02; no code changed. **Review concluded the same day: the plan is
-not ready to implement and known errors remain in this text. Read `docs/architecture/review/` before acting. F-01 is since fixed. Security hardening Phase 4 (PR #6) landed on `main` while this was written and this text does not reflect it: App Check now exists behind an OFF / MONITOR / ENFORCE switch, so re-check F-21 and A9 against it.**
+not ready to implement and known errors remain in this text. Read `docs/architecture/review/` before acting. F-01 and F-02 are since fixed. Security hardening Phase 4 (PR #6) landed on `main` while this was written and this text does not reflect it: App Check now exists behind an OFF / MONITOR / ENFORCE switch, so re-check F-21 and A9 against it.**
 
 ## 1. Summary
 
