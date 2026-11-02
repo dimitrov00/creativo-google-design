@@ -138,6 +138,7 @@ function coreImports(tier, { test = false, exempt = null } = {}) {
     patterns: [
       ...layerPatterns,
       ...(production ? [CORE_TESTING_ENTRY_POINT_RESTRICTION] : []),
+      ...(production && tier === 'systems' ? [SYSTEM_PACKAGE_RESTRICTION] : []),
       ...tierRestrictions(tier, { test }),
     ],
     paths: LAYER_IMPORT_RESTRICTIONS.paths.filter(
@@ -145,6 +146,18 @@ function coreImports(tier, { test = false, exempt = null } = {}) {
     ),
   };
 }
+
+/**
+ * What a system may never reach, statically or lazily (Law 3): the runtime and
+ * every SDK. `libs/ecs-core` already has no reason to load these, and a lazy
+ * `import()` is the one way past the root config's static cages.
+ */
+const SYSTEM_PACKAGE_RESTRICTION = {
+  regex:
+    '^(node:.*|fs|path|os|firebase(-admin|-functions)?(/.*)?|@firebase/.*|@angular/.*|rxjs(/.*)?)$',
+  message:
+    'A system does no I/O and knows no framework (Law 3): the pipeline reads through a port.',
+};
 
 /** `@core/testing` as a `regex` pattern — the lazy half has no `group`. */
 const CORE_TESTING_ALIAS = coreAliasRestriction(
@@ -157,14 +170,15 @@ const CORE_TESTING_ALIAS = coreAliasRestriction(
  * `@core/testing` in a production file, for the specifiers
  * `no-restricted-imports` never reads — `import('…')`, `import('…').X` type
  * queries, `import x = require('…')` (`creativo/no-restricted-import-expressions`).
- * The package cages stay static-only: no file of the core imports a package
- * lazily, and the verifier does not police packages either.
+ * The package cages stay static-only, but for what a system may reach: no file
+ * of the core imports a package lazily, and the verifier does not police them.
  */
 function coreImportExpressions(tier, { test = false } = {}) {
   const production = !test && tier !== 'testing';
   return {
     patterns: [
       ...(production ? [CORE_TESTING_ALIAS] : []),
+      ...(production && tier === 'systems' ? [SYSTEM_PACKAGE_RESTRICTION] : []),
       ...tierRestrictions(tier, { test }),
     ],
   };

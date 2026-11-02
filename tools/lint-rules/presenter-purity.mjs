@@ -1,7 +1,7 @@
 /**
  * `creativo/presenter-purity` — Law 10 (CLAUDE.md): a presenter
  * (`*.presenter.ts`), a display model (`*.vm.ts`) and their wording helpers
- * (`*.words.ts`, `*.format.ts`) are PURE: ecs-core values and words in, a
+ * (`*.words.ts`, `*-words.ts`, `*.format.ts`) are PURE: ecs-core values and words in, a
  * display struct out. In those files the rule reports
  *
  *  - a `class` (Law 1/§2: plain functions and records only);
@@ -23,7 +23,7 @@
  * path and needs no `files` glob.
  */
 
-const PRESENTATION_FILE = /\.(presenter|vm|words|format)\.ts$/;
+const PRESENTATION_FILE = /(\.(presenter|vm)|[.-](words|format))\.ts$/;
 const DISPLAY_MODEL = /\.vm\.ts$/;
 const ANGULAR_CALLS = new Set([
   'inject',

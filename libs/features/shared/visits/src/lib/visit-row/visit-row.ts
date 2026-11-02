@@ -21,7 +21,7 @@ import {
   type VisitTrailing,
   type VisitTrailingFact,
 } from '../visit-row.vm';
-import { VisitRowWords } from './visit-row-words';
+import { VisitRowWords } from './visit-row-text';
 
 /**
  * ONE VISIT, ONE ROW (client-card redesign §5.3.3–§5.3.5; revision 3 §2.5,

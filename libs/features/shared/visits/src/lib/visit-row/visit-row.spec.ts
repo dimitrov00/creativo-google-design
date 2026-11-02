@@ -286,7 +286,7 @@ describe('VisitRow · the staff history', () => {
     );
     expect(
       cssRule(
-        readFileSync(resolve(__dirname, 'visit-row-words.css'), 'utf8'),
+        readFileSync(resolve(__dirname, 'visit-row-text.css'), 'utf8'),
         '.visit-row-words[data-lead-whole] .staff-event-head__title + .staff-event-head__line',
       ).get('flex-basis'),
     ).toBe('auto');
@@ -470,7 +470,7 @@ describe('VisitRow · the staff row’s face', () => {
 
 describe('VisitRow · the staff row’s words, laid out', () => {
   const css = () =>
-    readFileSync(resolve(__dirname, 'visit-row-words.css'), 'utf8');
+    readFileSync(resolve(__dirname, 'visit-row-text.css'), 'utf8');
 
   it('mounts the event head, never a copy of it, beside the end of its second line', async () => {
     const { q } = await mount(staffRow('appt-sep'));
