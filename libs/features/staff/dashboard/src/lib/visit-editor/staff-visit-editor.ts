@@ -73,6 +73,7 @@ import {
   type ParsedClientQuery,
   PhoneSystem,
   StaffEditPlanSystem,
+  TextMatchSystem,
   VisitDraftSystem,
   VisitListSystem,
   VisitSidesSystem,
@@ -130,7 +131,7 @@ import {
   removeClientName,
   resolutionHeadOf,
   serviceApplyVm,
-  serviceOptionLine,
+  serviceRowVm,
   servicePersonOf,
   sheetTitleOf,
   shopReadoutOf,
@@ -2623,18 +2624,19 @@ export class StaffVisitEditor {
   /**
    * The whole catalogue, each row knowing whether this visit already has it.
    *
-   * ⚠ NOT filtered by `query()`: the card renders `serviceResults`, this
+   * ⚠ NOT filtered by `query()`: the card renders `serviceRows`, this
    * list with the query applied, and `openServiceSheet` empties the query
    * first — so what was typed last time cannot silently shorten the
    * catalogue the next time the card rises.
    */
   protected readonly serviceOptions = computed(() => this.uiServices());
 
-  protected readonly serviceResults = computed(() => {
-    const query = this.query().trim().toLocaleLowerCase('bg');
-    return this.serviceOptions().filter((service) =>
-      service.label.toLocaleLowerCase('bg').includes(query),
-    );
+  /** The rows the query keeps, worded with the runs it found marked. */
+  protected readonly serviceRows = computed(() => {
+    const [query, words] = [this.query(), this.words()];
+    return this.serviceOptions()
+      .filter((service) => TextMatchSystem.matches(service.label, query))
+      .map((option) => serviceRowVm(option, query, words));
   });
 
   /**
@@ -2874,11 +2876,6 @@ export class StaffVisitEditor {
   /** A party person's way off, spoken. */
   protected removeClientName(client: DraftClient): string {
     return removeClientName(client.label, this.words());
-  }
-
-  /** A catalogue row's line. */
-  protected serviceLine(option: VisitEditorServiceOption): string {
-    return serviceOptionLine(option, this.words());
   }
 
   /** A peer chair's line. */

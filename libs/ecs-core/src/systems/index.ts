@@ -88,6 +88,7 @@ export * from './streak-publish.system';
 export * from './streak-rule.system';
 export * from './streak.system';
 export * from './terms-span.system';
+export * from './text-match.system';
 export * from './tier.system';
 export * from './trigger-attempt.system';
 export * from './visit-draft.system';

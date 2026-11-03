@@ -11,7 +11,7 @@ import {
   type TrackMinute,
   type UserId,
 } from '@core/primitives';
-import { AppointmentLifecycleSystem } from '@core/systems';
+import { AppointmentLifecycleSystem, TextMatchSystem } from '@core/systems';
 import type { UiChoiceOption, UiSegment } from '@creativo/ui/controls';
 import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ROW_VERB_WORD } from '../row-verb';
@@ -33,6 +33,7 @@ import {
   type ResolutionHeadVm,
   ResolutionWord,
   type ServiceApplyVm,
+  type ServiceRowVm,
   ShopView,
   TimingMode,
   type VisitEditorWords,
@@ -617,6 +618,32 @@ export function serviceOptionLine(
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
+}
+
+/**
+ * A CATALOGUE ROW FOR WHAT WAS TYPED (owner, 2026-11-03: "highlight the
+ * matches, case-insensitive, as a background"): the title, and the line's
+ * variant, carry the runs `TextMatchSystem` found; the minutes and the price
+ * after the variant are never searched, so they stay one plain run.
+ */
+export function serviceRowVm(
+  option: VisitEditorServiceOption,
+  query: string,
+  words: VisitEditorWords,
+): ServiceRowVm {
+  const line = serviceOptionLine(option, words);
+  const variant = option.variantLabel || '';
+  return {
+    option,
+    titleRuns: TextMatchSystem.segments(
+      option.serviceLabel ?? option.label,
+      query,
+    ),
+    lineRuns: [
+      ...TextMatchSystem.segments(variant, query),
+      ...TextMatchSystem.segments(line.slice(variant.length), ''),
+    ],
+  };
 }
 
 /**
