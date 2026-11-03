@@ -32,6 +32,7 @@ import {
   resolutionHeadOf,
   serviceApplyVm,
   serviceOptionLine,
+  serviceRowVm,
   servicePersonOf,
   sheetTitleOf,
   shopReadoutOf,
@@ -320,6 +321,38 @@ describe('the services’ rows', () => {
     expect(serviceOptionLine({ ...plainCut, priceLabel: null }, EN)).toBe(
       '30 min',
     );
+  });
+
+  it('marks what was typed in a catalogue row’s title and variant, case aside', () => {
+    const byTitle = serviceRowVm(longCut, 'ПОДСТР', BG);
+    expect(byTitle.option).toBe(longCut);
+    expect(byTitle.titleRuns).toEqual([
+      { text: 'Подстр', hit: true },
+      { text: 'игване', hit: false },
+    ]);
+    // The line is whole and unmarked when only the title was found.
+    expect(byTitle.lineRuns.map((run) => run.text).join('')).toBe(
+      'Дълга коса · 45 мин · 28,00 €',
+    );
+    expect(byTitle.lineRuns.some((run) => run.hit)).toBe(false);
+    // The variant is searched too; the minutes and the price never are.
+    expect(serviceRowVm(longCut, 'коса', BG).lineRuns).toEqual([
+      { text: 'Дълга ', hit: false },
+      { text: 'коса', hit: true },
+      { text: ' · 45 мин · 28,00 €', hit: false },
+    ]);
+    expect(serviceRowVm(longCut, '45', BG).lineRuns.some((r) => r.hit)).toBe(
+      false,
+    );
+  });
+
+  it('leaves a catalogue row unmarked with nothing typed, and a bare service’s line whole', () => {
+    expect(
+      serviceRowVm(longCut, '  ', BG).titleRuns.some((run) => run.hit),
+    ).toBe(false);
+    expect(serviceRowVm(plainCut, 'ф', EN).lineRuns).toEqual([
+      { text: '30 min · 20,00 €', hit: false },
+    ]);
   });
 
   it('promises the picks, or nothing', () => {
