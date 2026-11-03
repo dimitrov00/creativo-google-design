@@ -4952,9 +4952,15 @@ describe('StaffDashboard', () => {
       await fixture.whenStable();
       fixture.detectChanges();
       expect(writeText).toHaveBeenCalledWith('operation-202608051030');
+      // The confirmation prints in the reference and is announced through
+      // the toast's own live region — no region nested inside it.
       expect(
-        toast()?.querySelector('ui-reference [role="status"]')?.textContent,
+        toast()?.querySelector('ui-reference .ui-reference__copied')
+          ?.textContent,
       ).toBe('Кодът е копиран.');
+      expect(
+        toast()?.querySelectorAll('ui-reference [aria-live]'),
+      ).toHaveLength(0);
 
       // The same refusal with no id: the sentence, and no line.
       answer = refusal(
