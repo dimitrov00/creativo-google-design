@@ -101,13 +101,15 @@ collection) is kept, not reversed.
 - **CUJ 3 has no e2e.** It is the store's rule, pinned in
   `staff-day.store.spec.ts`.
 
-## Not verified
+## Verified, and not
 
-- `apps/web/e2e/staff-search.spec.ts` was typechecked and linted but **not
-  run**: the Firestore emulator could not be started without a download.
-- The stage 3 emulator integration case
-  (`appointments.adapter.integration.spec.ts`) was rewritten for the range and
-  typechecked, not run. It is the proof that the range queries need no new
-  composite index; if it fails for a missing index, the plan changes before
-  deploy.
-- The document reads of one window load were not counted in the emulator UI.
+- **Run, passing (2026-11-04):** `apps/web/e2e/staff-search.spec.ts` against the
+  emulators (2 passed: the number found four ways with the wash painted, and a
+  booking 24 days out found by name); the firestore adapter's emulator
+  integration suite (390 passed), including the window case, which is the proof
+  that the range queries need no new composite index — on the emulator, which
+  does not enforce composite indexes, so `firestore.indexes.json` was reasoned
+  over, not exercised.
+- **Not done:** counting the document reads of one window load in the emulator
+  UI's Requests tab; a check of the real Firestore price and region; the
+  per-load logging (no log port exists on the web side).
