@@ -83,6 +83,7 @@ function reasonOf(diagnosis: string | undefined): PhoneInvalidReason {
 }
 
 const NON_DIGITS = /\D/g;
+const ONLY_DIGITS = /^\d*$/;
 
 /** A text that reads as a number: a `+` or digit, then digits and dialling punctuation. */
 const NUMBER_SHAPE = /^[+\d][\d\s().-]*$/;
@@ -285,7 +286,10 @@ export const PhoneSystem = {
    */
   readingRun(reading: PhoneReading, stored: string): string | null {
     if (reading.phoneReadingKind === PhoneReadingKind.None) return null;
-    const digits = stored.replace(NON_DIGITS, '');
+    // The index holds digits already: skip the copy a print would need.
+    const digits = ONLY_DIGITS.test(stored)
+      ? stored
+      : stored.replace(NON_DIGITS, '');
     const candidates = reading.phoneReadingCandidates;
     const run = (
       reading.phoneReadingKind === PhoneReadingKind.International
