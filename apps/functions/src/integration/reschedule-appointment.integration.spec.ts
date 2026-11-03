@@ -69,6 +69,14 @@ if (!EMULATOR_HOST.includes('127.0.0.1')) {
 }
 
 const PETAR = BarberId.of('b-petar');
+/**
+ * The father's ONE record (D29), as the server derives it — over the same
+ * `sha256Hex` the move hashes with, so the seeded seat and the record the
+ * move re-derives for the caller's `SELF` seat are one record.
+ * (`FIXTURE_IDS.customer` is the same derivation over `fixtureHash` —
+ * another record for the same account here.)
+ */
+const FATHER_CUSTOMER = CustomerId.forUser(FIXTURE_IDS.client, sha256Hex);
 const SON = UserId.of('u-son');
 const SON_CUSTOMER = CustomerId.forUser(SON, sha256Hex);
 const SON_SEAT = SeatId.of('seat-son');
@@ -87,7 +95,13 @@ const BEARD_TERMS = termsFixture(2000, 30);
 
 /** The father's cut with Ivan and — seated by the shop, priced by hand — his son's beard with Petar, both at 10:00. */
 function fatherAndSon(): Appointment {
-  const father = seatFixture();
+  const father = seatFixture({
+    occupant: SeatOccupant.account(
+      FIXTURE_IDS.client,
+      FATHER_CUSTOMER,
+      SubjectRelationship.Self,
+    ),
+  });
   const son = seatFixture({
     seatId: SON_SEAT,
     serviceId: BEARD,
@@ -104,7 +118,8 @@ function fatherAndSon(): Appointment {
     utcEpochMs: utcMs('2026-10-01T10:00:00.000+03:00'),
     seats: [father, son],
     subjectUserIds: [FIXTURE_IDS.client, SON],
-    subjectCustomerIds: [FIXTURE_IDS.customer, SON_CUSTOMER],
+    ownerCustomerId: FATHER_CUSTOMER,
+    subjectCustomerIds: [FATHER_CUSTOMER, SON_CUSTOMER],
     barberIds: [FIXTURE_IDS.barber, PETAR],
     busyKeys: [
       BusyKey.of(FIXTURE_IDS.barber, THURSDAY),
@@ -224,6 +239,16 @@ describe('rescheduleAppointment (emulator)', () => {
     const visit = await stored();
     const seats = visit['seats'] as readonly Record<string, unknown>[];
     expect(seats).toHaveLength(2);
+    expect(visit['subjectCustomerIds']).toHaveLength(2);
+    // ONE record per person after the move: the father's re-derived SELF
+    // seat names the record his seeded seat named — never a second one.
+    const father = seats.find(
+      (seat) => seat['subjectUserId'] === FIXTURE_IDS.client,
+    );
+    expect(father).toMatchObject({
+      subjectUserId: FIXTURE_IDS.client,
+      subjectCustomerId: FATHER_CUSTOMER,
+    });
     const son = seats.find((seat) => seat['seatId'] === SON_SEAT);
     expect(son).toMatchObject({
       seatSubject: 'ACCOUNT',
@@ -238,6 +263,12 @@ describe('rescheduleAppointment (emulator)', () => {
       startMinutes: at(14),
       utcEpochMs: utcMs('2026-10-02T14:00:00.000+03:00'),
       subjectUserIds: [FIXTURE_IDS.client, SON],
+      ownerCustomerId: FATHER_CUSTOMER,
+      // Two people, two records — whatever order the move lists them in.
+      subjectCustomerIds: expect.arrayContaining([
+        FATHER_CUSTOMER,
+        SON_CUSTOMER,
+      ]),
       busyKeys: [
         BusyKey.of(FIXTURE_IDS.barber, FRIDAY),
         BusyKey.of(PETAR, FRIDAY),

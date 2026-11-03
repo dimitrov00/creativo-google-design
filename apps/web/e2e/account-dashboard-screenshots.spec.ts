@@ -7,11 +7,23 @@ import {
 import { signInAs } from './support/sign-in';
 import { THEMES, pinTheme, type Theme } from './support/theme';
 
+/**
+ * The page's "now", pinned before the seeded visit — so its fixed
+ * `2030-06-01`, printed in the baseline, stays the visit to come on any run
+ * date (audit hardening Phase 3, flag 21; the picture shows no "today").
+ * The clock RUNS from there (`setSystemTime`, `suite-clock.ts`
+ * `pinBrowserClock`): a frozen `Date.now()` starves the Firestore channel's
+ * watchdog. It sits before any real run, so the tokens the emulator mints
+ * stay valid to the page — `appointments-screenshots.spec.ts`'s instant.
+ */
+const PINNED_NOW = new Date('2026-09-25T10:00:00+03:00');
+
 async function gotoAccountWithTheme(
   page: Page,
   uid: string,
   theme: Theme,
 ): Promise<void> {
+  await page.clock.setSystemTime(PINNED_NOW);
   await pinTheme(page, theme);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await signInAs(page, uid, ['client']);

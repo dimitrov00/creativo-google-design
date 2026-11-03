@@ -200,7 +200,11 @@ export type ProfileChange = {
  * in the stored order — an explicit list, never `Registration.FIELDS` or
  * `Tag.values(AuditedProfileField)` (their order differs): the order is the
  * order of the stored `profileFields` arrays, the registration five first,
- * then `roles` and `accountStatus` appended (audit-hardening WS-3, DEP-13).
+ * then `roles` and `accountStatus` appended (audit-hardening WS-3, DEP-13),
+ * then the block's `blockReason` and `blockedUntilUtcMs` (next pass,
+ * 2026-11-03: names only — the reason is a closed tag and the expiry an
+ * instant, but the row keeps no value of either, as it keeps none of a
+ * name's).
  * `completeRegistration`'s `Set` writes the roles with no row of its own,
  * no callable writes the status, and the Admin SDK or the console can
  * change either — so the trigger audits them; the one callable that writes
@@ -216,6 +220,8 @@ const AUDITED_PROFILE_FIELDS: readonly AuditedProfileField[] = [
   AuditedProfileField.BirthDate,
   AuditedProfileField.Roles,
   AuditedProfileField.AccountStatus,
+  AuditedProfileField.BlockReason,
+  AuditedProfileField.BlockedUntilUtcMs,
 ];
 
 /** A profile row's tag fields when neither `roles` nor `accountStatus` changed. */

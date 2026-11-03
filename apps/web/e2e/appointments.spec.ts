@@ -7,7 +7,7 @@ import {
   seedWorkedAppointment,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
-import { pinBrowserClock, suiteDay } from './support/suite-clock';
+import { farVisitDay, pinBrowserClock, suiteDay } from './support/suite-clock';
 
 /** The suite day's `YYYY-MM` in the shop's zone — the month the calendar of a
  *  pinned page (`pinBrowserClock`) opens on, whatever day it already is on
@@ -56,7 +56,8 @@ test.describe('account appointments', () => {
     const uid = `e2e-appts-populated-${test.info().testId}`;
     const appointmentId = `appt-${uid}`;
     await seedUserProfile(uid);
-    await seedUpcomingAppointment(appointmentId, uid, '2030-06-01T10:00:00');
+    const visitDay = farVisitDay();
+    await seedUpcomingAppointment(appointmentId, uid, `${visitDay}T10:00:00`);
     // A past visit too: the jump pills show from two sections up (OR-56 c).
     await seedWorkedAppointment(
       `${appointmentId}-past`,
@@ -92,7 +93,7 @@ test.describe('account appointments', () => {
     await expect(page.getByTestId('appointments-calendar')).toBeVisible();
     // Its day is a live cell — the run widens to reach a visit years out.
     const day = page.locator(
-      '[data-testid="appointments-calendar-day"][data-day-key="2030-06-01"]',
+      `[data-testid="appointments-calendar-day"][data-day-key="${visitDay}"]`,
     );
     await day.scrollIntoViewIfNeeded();
     await expect(day).toBeVisible();
@@ -164,7 +165,11 @@ test.describe('account appointments', () => {
     const uid = `e2e-appts-cancel-${test.info().testId}`;
     const appointmentId = `appt-${uid}`;
     await seedUserProfile(uid);
-    await seedUpcomingAppointment(appointmentId, uid, '2030-06-01T10:00:00');
+    await seedUpcomingAppointment(
+      appointmentId,
+      uid,
+      `${farVisitDay()}T10:00:00`,
+    );
     await signInAs(page, uid, ['client']);
 
     await page.goto('/account/appointments');

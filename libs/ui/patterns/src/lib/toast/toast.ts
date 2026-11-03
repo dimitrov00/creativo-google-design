@@ -93,11 +93,14 @@ import { UiReference } from '../reference/reference';
         <div class="ui-toast__body">
           <span class="ui-toast__label">{{ uiLabel() }}</span>
           @if (uiReferenceValue()) {
+            <!-- The surface is the one live region: the reference's own
+                 confirmation is announced through it, never nested. -->
             <ui-reference
               class="ui-toast__reference"
               [uiLabel]="uiReferenceText()"
               [uiValue]="uiReferenceValue()"
               [uiCopiedText]="uiReferenceCopiedText()"
+              [uiAnnounce]="false"
             />
           }
         </div>

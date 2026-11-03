@@ -6,9 +6,12 @@ working on this codebase after the ECS / data-oriented migration. It is the
 migration record: what landed in which order and how each step was proved
 (§2, §3), the gate every change still passes and its baselines (§4), the
 operating rules (§5), the owner's rulings and open questions (§6), and what
-was carried forward as follow-up work (end of §3.3). Last updated 2026-10-31
-— security hardening, Phase 4, and ONE checklist of every open item (end of
-§3.3); the record before it: (flip 1 complete; Law 9 port-composition pass; flips 2, 3 and 4 integrated;
+was carried forward as follow-up work (end of §3.3). Last updated 2026-11-03
+— the checklist's next-pass items closed or ruled before feature work
+(`decisions/2026-11-03-privacy-flags.md`; the standalone staff client page
+left to the owner as a feature); before that 2026-10-31 — security
+hardening, Phase 4, and ONE checklist of every open item (end of §3.3); the
+record before it: (flip 1 complete; Law 9 port-composition pass; flips 2, 3 and 4 integrated;
 Phase 4a integrated; Phase 4b integrated — `libs/application/*`,
 `libs/domain/*`, `luxon`, `dinero.js` and the dotted i18n keys are gone,
 §3.3; the FULL §4 gate — the emulator journeys included — and the dev smoke
@@ -3280,9 +3283,10 @@ _Owner — review, legal, deploy_
 - [ ] Annotate OR-29 (`frame-src` superseded for reCAPTCHA, S-RU-23) and
       Deferred #4 (built) in the rulings file (§7 item 18); Deferred #3
       (enforcing Trusted Types) gains reCAPTCHA as a second blocker.
-- [ ] CI: mark the jobs required after a run of green builds; runner size
-      and minutes; Nx Cloud remote cache or a larger runner would cut the
-      gate's wall time (Phase 3 flag 15, 22; §7 item 19).
+- [x] CI: the seven jobs are required — done 2026-11-02 by the ruleset
+      «main requires pull requests» (id 26367400; no bypass, no approval).
+- [ ] CI: runner size and minutes; Nx Cloud remote cache or a larger runner
+      would cut the gate's wall time (Phase 3 flag 15, 22; §7 item 19).
 - [ ] The trackError residual (names / free text inside an SDK message) —
       keep, or replace the message by the canonical code (§7 item 20).
 - [ ] `IDENTITY_OTP_REQUESTED` rows for codes never sent while P8 fails
@@ -3296,11 +3300,27 @@ _Next pass — engineering, no decision needed_
 
 - [ ] A standalone staff client page (today the card opens from the visit
       editor only, S-RU-16); the record-keyed card's stats, history and
-      photos (all keyed by `CustomerId` today, S-L-19).
-- [ ] `blockReason` / `blockedUntilUtcMs` are not audited; governed rows
-      carry `auditOperationId: null` beside a `writeOperationId`.
-- [ ] `trigger.failure_not_recorded` has no metric or alert; `shellcheck`
-      before any ops `--apply`.
+      photos (all keyed by `CustomerId` today, S-L-19). Not picked up with
+      the rest of this list on 2026-11-03: it is a new screen and menu entry
+      — the owner's call (security hardening §7 item 12) — so it is a
+      candidate for the first feature pass, not a next-pass fix.
+- [x] `blockReason` / `blockedUntilUtcMs` are not audited; governed rows
+      carry `auditOperationId: null` beside a `writeOperationId` — closed
+      2026-11-03: both names joined `AuditedProfileField` (names only, after
+      `accountStatus`), and a governed row names the operation its write
+      STAMPED (`GovernedChangeSystem.stampedOperationOf`: a create carrying
+      a `writeOperationId`, or an update that changed it — a write that left
+      it alone names none, so a console edit is never credited to the call
+      before it). Only `customers` stores the slice today, so the erasure's
+      record row now names the erasure.
+- [x] `trigger.failure_not_recorded` has no metric or alert; `shellcheck`
+      before any ops `--apply` — closed 2026-11-03: the seventh metric
+      `trigger_failure_not_recorded` (label `fn`) and its any-occurrence
+      alert (`tools/ops/alerts/trigger-failure-not-recorded.yaml`, pinned by
+      `ops-scripts.spec.mjs`; runbook §3 step 7 and `production-deploy.md`
+      say seven), and CI `static` runs ShellCheck over `tools/ops/*.sh`
+      (warnings and errors; the runner image carries it — a Mac without it
+      leaves the check to CI).
 - [x] Parallel typecheck could read a half-written declaration — closed
       2026-11-03 after it failed main's CI at PR #17's merge (`TS2305` on an
       exported `ClientStatsRecord`). The writer was not a dependent rebuilding
@@ -3317,22 +3337,58 @@ _Next pass — engineering, no decision needed_
       safe at any `--parallel`. The specs still compile ecs-core's sources
       (slower, not wrong) — references from each spec config to the libs it
       reads would let them use the declarations instead.
-- [ ] `reschedule-appointment.integration.spec.ts` mixes two hashes (green
-      only because it asserts no rows).
-- [ ] `FailureCodeSystem.codeOf` passes any string `code` through — restrict
-      it to the canonical set.
-- [ ] `memoryCustomerPorts.loadCustomer` has no case in
+- [x] `reschedule-appointment.integration.spec.ts` mixes two hashes — closed
+      2026-11-03: the father's seat names the record the move derives
+      (`sha256Hex`), and the spec now asserts one record per person after
+      the move.
+- [x] `FailureCodeSystem.codeOf` passes any string `code` through — closed
+      2026-11-03: it answers one of the sixteen gRPC canonical names or
+      `unknown`, so a thrown value's own text (an `ECONNRESET`, a product
+      code, a value someone's text reached) never reaches a log line or a
+      stored dead letter. A product code that is an answer stays its
+      adapter's (`authCodeOf`). A port refusal's recorded `reason` is the
+      adapter's own value, so the retry verdict reads it whole
+      (`FailureCodeSystem.reasonCodeOf`): a stall on an unstored location
+      keeps `catalog-location-zone-unknown` in the pipeline's record, and
+      only the edge's line and dead letter for such a rethrown name read
+      `unknown` — the same permanent verdict.
+- [x] `memoryCustomerPorts.loadCustomer` has no case in
       `port-doubles.spec.ts`; `role.rules-parity.spec.ts` keeps its own
-      rules reader (ecs-core cannot import the firestore lib's helper).
-- [ ] No Nx target typechecks `apps/web/e2e/**`; the 2030 e2e seeds and the
-      midnight exposure of `booking-core.spec.ts` (Phase 3 flags 13, 21).
-- [ ] A person past the export cap needs a runbook export; the re-sweep for a
-      note or photo written after completion; a returning person's phone;
-      by-value contact matching and the post-stamp `REMOVE_SEAT` orphan; a
-      missing `users` document refusing the erasure; the STARTED census
-      (Phase 3 flags 8, 12, 13, 24, 25, 27, 28).
-- [ ] The reference line's tap target (WCAG 2.5.8) and the nested live
-      region.
+      rules reader — closed 2026-11-03: the case is in, and ONE
+      `firestore.rules` text reader lives in `@core/testing`
+      (`testing/rules-text.ts`, pure, its own spec beside it) for the
+      role-parity spec, the firestore lib's two rules-text specs and the
+      functions' `caller-roles.spec.ts` — three readers before. Each spec
+      reads the file itself (`@core/testing` stays free of node modules).
+- [x] No Nx target typechecks `apps/web/e2e/**`; the 2030 e2e seeds and the
+      midnight exposure of `booking-core.spec.ts` — closed 2026-11-03:
+      `apps/web/tsconfig.e2e.json` (referenced from `apps/web/tsconfig.json`,
+      its own output folder) puts the e2e specs, their support and both
+      Playwright configs into web's `typecheck` (clean on arrival). The
+      functional specs seed `farVisitDay()` (`suite-clock.ts`: the suite
+      day + 36 months); the dashboard screenshot keeps its printed
+      `2030-06-01` under a pinned browser clock (2026-09-25, running), as
+      the appointments screenshot already did. The midnight exposure was
+      one line: `bookableDays` skipped Node's today, so a run crossing the
+      shop's midnight could offer the old today — it now skips the cell
+      whose date badge carries the page's own `data-today`; the other
+      `shopToday()` readers shift days ≥ 3 ahead and are not exposed.
+- [x] The Phase 3 privacy flags 8, 12, 13, 24, 25, 27, 28 — RULED
+      2026-11-03 in `docs/architecture/decisions/2026-11-03-privacy-flags.md`
+      (PF-1 … PF-7): none changes code; each fails safe today and the
+      feature is dark in production. PF-1 (the caps) and PF-5 (the
+      `REMOVE_SEAT` orphan) are built on their first occurrence; PF-2 (a
+      note or photo after completion) keeps the admin's re-sweep and is
+      built — a visit-level erasure stamp the notes / photos rules read —
+      before `client.privacy` is lit for a shop using the camera capture;
+      PF-3, PF-4 and PF-7 are accepted (PF-4's export half joins the counsel
+      review); PF-6 stays fail-closed with the operator's remedy in
+      `production-deploy.md`'s data-subject item.
+- [x] The reference line's tap target (WCAG 2.5.8) and the nested live
+      region — closed 2026-11-03: `.ui-reference__line` keeps a 1.5 rem
+      (24 px) minimum target, and `ui-reference`'s confirmation is its own
+      polite region only when its host is not one (`uiAnnounce`, off inside
+      `ui-toast`, whose surface announces it).
 
 _Accepted — kept on purpose_
 
@@ -3352,6 +3408,7 @@ _Accepted — kept on purpose_
 pnpm nx sync:check
 pnpm nx run verify-tools:layering --skip-nx-cache
 node tools/verify/typecheck/check-out-dirs.mjs   # each tsconfig owns its output folder
+shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR tools/ops/*.sh   # CI static; locally where installed
 pnpm nx run-many -t typecheck --skip-nx-cache   # ALWAYS skip the cache here
 pnpm nx run-many -t lint
 pnpm nx run-many -t test --parallel=3

@@ -472,13 +472,15 @@ gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
       `jsonPayload.clientIssueKind:*`, label `kind`, DELTA INT64 — the recipe
       this item used to spell out), and, recommended by audit-hardening WS-6,
       `trigger_attempt_failed` (labels `outcome`, `fn`), `document_refused`,
-      `audit_actor_missing`, `callable_failed` (label `callable`) and, from
-      security hardening S-WS-E, `roles_sessions_not_revoked`, then the
-      alert policies of `tools/ops/alerts/` (client issues above 100 per
-      5 minutes, as before; any PERMANENT trigger attempt or more than 10
-      failing in 5 minutes; any refused document; any act without its audit
-      row; more than 5 failures of one callable in 5 minutes; any roles
-      change whose sessions were not revoked). Read the dry run first:
+      `audit_actor_missing`, `callable_failed` (label `callable`), from
+      security hardening S-WS-E `roles_sessions_not_revoked`, and
+      `trigger_failure_not_recorded` (label `fn`), then the alert policies
+      of `tools/ops/alerts/` (client issues above 100 per 5 minutes, as
+      before; any PERMANENT trigger attempt or more than 10 failing in 5
+      minutes; any refused document; any act without its audit row; more
+      than 5 failures of one callable in 5 minutes; any roles change whose
+      sessions were not revoked; any failed trigger attempt whose dead
+      letter could not be written). Read the dry run first:
 
 ```bash
 tools/ops/log-metrics.sh --project "$PROJECT_ID"
@@ -488,7 +490,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID"
 tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 ```
 
-- [ ] **Attach an e-mail notification channel** to each of the six alert
+- [ ] **Attach an e-mail notification channel** to each of the seven alert
       policies in Cloud Monitoring → Alerting (the files name none).
       Source: `docs/architecture/firestore-runbook.md` §3 step 7;
       `tools/ops/log-metrics.sh`, `tools/ops/alerts/*.yaml`;
@@ -517,13 +519,22 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       record id. A person past
       the caps is refused, never served partly: the export at 20,000
       documents or 4 MiB (`PRIVACY_EXPORT_TOO_LARGE`), the erasure at 5,000
-      documents in any one list (`PRIVACY_ERASURE_TOO_LARGE`) — both need a
-      runbook procedure. A staff account is refused
-      (`PRIVACY_ERASURE_STAFF_ACCOUNT`). What backups, PITR and the Storage
-      soft-delete window keep is the backups item above.
+      documents in any one list (`PRIVACY_ERASURE_TOO_LARGE`). The bulk
+      procedure is built when the first such refusal is seen (ruling PF-1):
+      record the request's date, tell the person the answer is on its way
+      (the legal month extends by two for a complex request, GDPR Art.
+      12(3)), and open the engineering task. A staff account is refused
+      (`PRIVACY_ERASURE_STAFF_ACCOUNT`) — and so, fail-closed, is an account
+      whose `users` document is gone while its Auth user remains (ruling
+      PF-6): confirm in the console that the uid is in no staff list (the
+      `barbers` documents, the shop's own staff records), then delete that
+      Auth user — or restore the `users` document from a backup — and erase
+      again. What backups, PITR and the Storage soft-delete window keep is
+      the backups item above.
       Source: `docs/architecture/firestore-runbook.md` §1.1 ("The export's
       reads", "The erasure's reads and writes"), §2.5;
-      `docs/architecture/flips/audit-hardening-phase-3.md` §7 items 3, 4, 8, 11.
+      `docs/architecture/flips/audit-hardening-phase-3.md` §7 items 3, 4, 8, 11;
+      `docs/architecture/decisions/2026-11-03-privacy-flags.md`.
 - [ ] **Publish the privacy-policy line:** "diagnostic data under legitimate
       interest, 30-day Cloud Logging retention, no personal identifiers". Keep
       the `_Default` log bucket at 30 days so the statement stays true.
@@ -1052,7 +1063,7 @@ curl -sI "https://<domain>/"
 ```
 
 - [ ] **Logs:** Cloud Logging has **no** `[otp] would send` line. The
-      six metrics of `tools/ops/log-metrics.sh` exist
+      seven metrics of `tools/ops/log-metrics.sh` exist
       (`gcloud logging metrics list --project="$PROJECT_ID"`). Error Reporting
       shows no new group.
 - [ ] **The next morning:** the 03:00, 03:30 and 04:00 schedules ran without

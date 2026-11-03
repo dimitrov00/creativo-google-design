@@ -1012,6 +1012,25 @@ describe('memoryCustomerPorts — the signed-in account’s client record', () =
     expect(unwrapOk(await ports.loadCustomerForUser(ANA))).toBe(record);
     expect(unwrapOk(await ports.loadCustomerForUser(BOB))).toBeNull();
   });
+
+  it('loads a record by its own id — a walk-in with no account included — null when none', async () => {
+    const walkIn: Customer = {
+      id: CustomerId.of('cus_walk_in'),
+      userId: null,
+      displayName: 'Иван Гост',
+      phone: E164.of('+359888000002'),
+      email: null,
+      searchName: 'иван гост',
+      searchPrefixes: ['ив', 'ива'],
+      createdAtUtcMs: utcMs('2026-09-01T09:00:00+03:00'),
+      customerOrigin: CustomerOrigin.StaffWalkIn,
+      ...WriteProvenance.NONE,
+      erasureStatus: ErasureStatus.None,
+    };
+    const ports = memoryCustomerPorts([walkIn]);
+    expect(unwrapOk(await ports.loadCustomer(walkIn.id))).toBe(walkIn);
+    expect(unwrapOk(await ports.loadCustomer(ANA_RECORD))).toBeNull();
+  });
 });
 
 /** An owner edit that keeps every field — override the ones a case changes. */

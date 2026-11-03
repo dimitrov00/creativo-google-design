@@ -1,15 +1,18 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { shopToday } from './shop-clock';
 
 /**
  * The days after today the booking calendar lets you tap, in calendar order.
  *
  * Today is skipped: its cell turns on before its live query answers, and by
- * evening it can have no time left worth booking.
+ * evening it can have no time left worth booking. "Today" is the PAGE's own
+ * — the cell whose date badge carries `data-today` — never a day Node read
+ * from its clock: a run crossing the shop's midnight between the two reads
+ * would skip tomorrow and offer the old today (audit hardening Phase 3,
+ * flag 21).
  */
 export function bookableDays(page: Page): Locator {
   return page.locator(
-    `[data-testid="booking-day"]:not([disabled]):not([data-day-key="${shopToday()}"])`,
+    '[data-testid="booking-day"]:not([disabled]):not(:has([data-today]))',
   );
 }
 

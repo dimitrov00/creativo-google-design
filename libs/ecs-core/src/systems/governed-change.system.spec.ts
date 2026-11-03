@@ -10,6 +10,7 @@ import {
 import {
   AuditResourceId,
   CustomerId,
+  OperationId,
   Tag,
   TriggerEventId,
   UserId,
@@ -63,6 +64,7 @@ function changeOf(
     beforeExists: true,
     afterExists: true,
     fields: [fieldOf(collection)],
+    writeOperationId: null,
     ...overrides,
   };
 }
@@ -201,7 +203,7 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
   });
 
   it.each(DOCS)(
-    '%s: one GOVERNED_DOC row — the resource, the writer, the event’s instant, no operation',
+    '%s: one GOVERNED_DOC row — the resource, the writer, the event’s instant, no operation when the write stamped none',
     (collection) => {
       const change = changeOf(collection);
       const plan = unwrapOk(GovernedChangeSystem.plan(change, AT));
@@ -229,6 +231,44 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
       );
     },
   );
+
+  it('names the operation the write stamped as the row’s auditOperationId — the join to its call; the id basis stays the event’s', () => {
+    const operation = OperationId.of('op-erase-0000000001');
+    const change = changeOf(GovernedCollection.Customers, {
+      writeOperationId: operation,
+    });
+    const plan = unwrapOk(GovernedChangeSystem.plan(change, AT));
+    expect(plan?.row.auditOperationId).toBe(operation);
+    expect(plan?.idBasis).toBe(
+      unwrapOk(
+        GovernedChangeSystem.plan(changeOf(GovernedCollection.Customers), AT),
+      )?.idBasis,
+    );
+  });
+
+  it('stampedOperationOf: the after-image’s id only when this write set it', () => {
+    const { stampedOperationOf } = GovernedChangeSystem;
+    const op = 'op-0000000000000007';
+    expect(stampedOperationOf(null, { writeOperationId: op })).toBe(op);
+    expect(
+      stampedOperationOf(
+        { writeOperationId: 'op-0000000000000006' },
+        { writeOperationId: op },
+      ),
+    ).toBe(op);
+    // Left as it was: an earlier call's id, never this write's.
+    expect(
+      stampedOperationOf({ writeOperationId: op }, { writeOperationId: op }),
+    ).toBeNull();
+    // A delete, a write with none, and values `OperationId.is` refuses.
+    expect(stampedOperationOf({ writeOperationId: op }, null)).toBeNull();
+    expect(stampedOperationOf(null, { a: 1 })).toBeNull();
+    for (const malformed of [null, '', 'a/b', '__op__', 7]) {
+      expect(
+        stampedOperationOf(null, { writeOperationId: malformed }),
+      ).toBeNull();
+    }
+  });
 
   it('a CUSTOMERS change targets the client record; every other collection nobody', () => {
     for (const collection of DOCS) {

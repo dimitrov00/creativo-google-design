@@ -27,11 +27,7 @@ import {
   type PolicyRecomputeJob,
   type TriggerFailure,
 } from '@core/entities';
-import {
-  FailureCodeSystem,
-  GovernedChangeSystem,
-  TriggerAttemptSystem,
-} from '@core/systems';
+import { GovernedChangeSystem, TriggerAttemptSystem } from '@core/systems';
 import {
   appointmentFixture,
   FIXTURE_IDS,
@@ -621,6 +617,32 @@ describe('decodeDocumentChangeEvent — the thirteen governed collections (WS-3,
         resourceId: resource.ok ? resource.value : null,
         targetCustomerId: target,
         fields: ['alpha', 'zeta'],
+        writeOperationId: null,
+      });
+    });
+
+    it('names the operation THIS write stamped — never one an earlier call left on the document', () => {
+      const op = 'op-0000000000000007';
+      // A create that carries one, and an update that changed it.
+      expect(decode(null, { a: 1, writeOperationId: op })).toMatchObject({
+        writeOperationId: op,
+      });
+      expect(
+        decode(
+          { a: 1, writeOperationId: 'op-0000000000000006' },
+          { a: 2, writeOperationId: op },
+        ),
+      ).toMatchObject({ writeOperationId: op });
+      // A write that left it as it was (a console edit), a delete, and a
+      // value `OperationId.is` refuses.
+      expect(
+        decode({ a: 1, writeOperationId: op }, { a: 2, writeOperationId: op }),
+      ).toMatchObject({ writeOperationId: null });
+      expect(decode({ a: 1, writeOperationId: op }, null)).toMatchObject({
+        writeOperationId: null,
+      });
+      expect(decode(null, { a: 1, writeOperationId: 'a/b' })).toMatchObject({
+        writeOperationId: null,
       });
     });
 
@@ -791,7 +813,27 @@ describe('attempts — today’s line and redelivery', () => {
   it('throws a failure as a value the edge judges the same way — a port refusal by the code in its reason', () => {
     expect(attemptThrowable(transient)).toBe(transient.error);
     const thrown = attemptThrowable(permanent);
-    expect(FailureCodeSystem.codeOf(thrown)).toBe('internal');
+    expect(TriggerAttemptSystem.attemptFailure(thrown).failureCode).toBe(
+      'internal',
+    );
+    // One of our own codes: the pipeline judged it by name; the thrown Error
+    // reads `unknown` at the edge (no thrown code is trusted) — the same
+    // permanent verdict.
+    const zone = TriggerAttemptSystem.repositoryFailure(
+      RepositoryError.readFailed(
+        'locations/loc-gone',
+        'CATALOG_LOCATION_ZONE_UNKNOWN',
+      ),
+    );
+    expect(zone.failureCode).toBe('catalog-location-zone-unknown');
+    const atTheEdge = TriggerAttemptSystem.attemptFailure(
+      attemptThrowable(zone),
+    );
+    expect(attemptThrowable(zone)).toBeInstanceOf(Error);
+    expect(atTheEdge).toMatchObject({
+      failureCode: 'unknown',
+      attemptOutcome: zone.attemptOutcome,
+    });
   });
 
   it('redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`', async () => {

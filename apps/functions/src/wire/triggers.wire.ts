@@ -389,8 +389,10 @@ function fromPath<T>(parsed: Result<T, PrimitiveError>): T {
  * status tags and both sides' `profileEditedAtUtcMs` stamps (4A-16); any
  * other collection the resource `<path>/<docId>` (branded here, Law 7.4),
  * the client record a `customers` write is (`CustomerId.parse` of the id;
- * `null` for every other collection) and the changed top-level field names
- * (`GovernedChangeSystem.changedFields`: a delete lists the before-image's).
+ * `null` for every other collection), the changed top-level field names
+ * (`GovernedChangeSystem.changedFields`: a delete lists the before-image's)
+ * and the operation the write stamped
+ * (`GovernedChangeSystem.stampedOperationOf`).
  */
 export function decodeDocumentChangeEvent(
   governedCollection: GovernedCollection,
@@ -419,6 +421,8 @@ export function decodeDocumentChangeEvent(
       afterProfileEditedAtUtcMs: profileEditedAtOf(after),
     };
   }
+  const was = fieldsOf(before);
+  const is = fieldsOf(after);
   return {
     governedCollection,
     ...core,
@@ -431,10 +435,8 @@ export function decodeDocumentChangeEvent(
       governedCollection === GovernedCollection.Customers
         ? fromPath(CustomerId.parse(docId))
         : null,
-    fields: GovernedChangeSystem.changedFields(
-      fieldsOf(before),
-      fieldsOf(after),
-    ),
+    fields: GovernedChangeSystem.changedFields(was, is),
+    writeOperationId: GovernedChangeSystem.stampedOperationOf(was, is),
   };
 }
 
@@ -452,7 +454,11 @@ export type AttemptReport = {
  * A failure as the value `retryingTrigger` judges when it is thrown: the
  * failure itself when its own code says the same, else an `Error` carrying
  * the code the pipeline judged it by (a port's refusal names it in its
- * `reason`), so the edge reaches the same verdict.
+ * `reason`), so the edge reaches the same verdict. A code outside the
+ * canonical set (one of our own, `catalog-location-zone-unknown`) reads
+ * `unknown` at the edge (`FailureCodeSystem.codeOf` trusts no thrown
+ * `code`) — permanent either way, and the pipeline's own record of the
+ * failure keeps its name.
  */
 export function attemptThrowable(failure: AttemptFailure): unknown {
   if (FailureCodeSystem.codeOf(failure.error) === failure.failureCode) {

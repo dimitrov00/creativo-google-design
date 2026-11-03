@@ -5,6 +5,7 @@ import {
   seedUserProfile,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
+import { farVisitDay } from './support/suite-clock';
 
 /**
  * Goal 06.3 exit gate (docs/migration/goals/06-feature-slices.md) — the
@@ -55,7 +56,11 @@ test.describe('account dashboard', () => {
     const uid = `e2e-account-populated-${test.info().testId}`;
     await seedUserProfile(uid, { birthDate: '1990-05-05' });
     await seedProfilePhoto(uid);
-    await seedUpcomingAppointment(`appt-${uid}`, uid, '2030-06-01T10:00:00');
+    await seedUpcomingAppointment(
+      `appt-${uid}`,
+      uid,
+      `${farVisitDay()}T10:00:00`,
+    );
     await signInAs(page, uid, ['client']);
 
     await page.goto('/account');

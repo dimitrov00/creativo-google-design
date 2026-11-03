@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { type LocalDate, UtcEpochMs } from '@core/primitives';
+import { LocalDate, UtcEpochMs } from '@core/primitives';
 import {
   browserPinOf,
   instantOfText,
@@ -60,6 +60,18 @@ export function suiteNowUtcMs(): UtcEpochMs {
 /** The suite's shop day — what a PINNED spec calls "today" (never the live `shopToday()`). */
 export function suiteDay(): LocalDate {
   return shopDayOf(suiteNowUtcMs());
+}
+
+/**
+ * A shop day three years after the suite's day — where an UNPINNED spec
+ * seeds a visit that must stay to come for the live browser and the live
+ * server whatever the run's date, and far enough out that the account
+ * calendar's run of months has to widen to reach it. It replaced the fixed
+ * `2030-06-01` seeds, which would have turned past after 2030-05-31 (audit
+ * hardening Phase 3, flag 21).
+ */
+export function farVisitDay(): LocalDate {
+  return LocalDate.addMonths(suiteDay(), 36);
 }
 
 /** The browser's pinned instant for this run: the suite's day at 10:00 on the shop's clock. */

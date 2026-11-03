@@ -10,6 +10,7 @@ import {
 import {
   type AuditResourceId,
   type CustomerId,
+  OperationId,
   Result,
   type StoredFields,
   type TriggerEventId,
@@ -37,8 +38,9 @@ import { CanonicalJsonSystem } from './canonical-json.system';
  * `<path>/<docId>` (branded at the wire edge by `AuditResourceId.parse` —
  * Law 7.4, never a raw id field), the client record for a CUSTOMERS write
  * (`CustomerId.parse` of the document id at the edge, else `null`), who
- * wrote it, both sides' existence and the changed top-level field NAMES
- * ({@link GovernedChangeSystem.changedFields}).
+ * wrote it, both sides' existence, the changed top-level field NAMES
+ * ({@link GovernedChangeSystem.changedFields}) and the operation THIS write
+ * stamped ({@link GovernedChangeSystem.stampedOperationOf}).
  */
 export type GovernedChange = {
   readonly governedCollection: GovernedDocCollection;
@@ -51,6 +53,8 @@ export type GovernedChange = {
   readonly beforeExists: boolean;
   readonly afterExists: boolean;
   readonly fields: readonly string[];
+  /** The call that made this write — `null` when the write stamped none (the row's `auditOperationId`). */
+  readonly writeOperationId: OperationId | null;
 };
 
 /**
@@ -230,6 +234,27 @@ export const GovernedChangeSystem = {
     return [...kept].sort(byCodeUnit);
   },
 
+  /**
+   * The operation id THIS write stamped (`WriteProvenance`, WS-4.3) — the
+   * after-image's `writeOperationId` when the write set it: a create that
+   * carries one, or an update that changed it. `null` for a delete, for a
+   * write that left the field as it was (the id there names an EARLIER call
+   * — a console edit must never be credited to it) and for anything
+   * `OperationId.is` refuses. Only `customers` stores the slice among the
+   * governed collections today; any other reads `null`.
+   */
+  stampedOperationOf(
+    before: StoredFields | null,
+    after: StoredFields | null,
+  ): OperationId | null {
+    if (after === null) return null;
+    const stamped = after['writeOperationId'];
+    if (!OperationId.is(stamped)) return null;
+    return before !== null && before['writeOperationId'] === stamped
+      ? null
+      : stamped;
+  },
+
   /** Creation, update and deletion, named apart. */
   action(beforeExists: boolean, afterExists: boolean): GovernedAction {
     if (!beforeExists) return AuditAction.GovernedDocCreated;
@@ -248,7 +273,9 @@ export const GovernedChangeSystem = {
    * at the client record for a CUSTOMERS write and at nobody otherwise,
    * listing the changed names {@link GovernedChangeSystem.namedFields}
    * keeps, its id basis keyed by the event id (a redelivery derives the
-   * same row). A trigger row names no operation (`auditOperationId: null`).
+   * same row), naming the operation the write stamped as its
+   * `auditOperationId` — the join to that call's outcome line and its own
+   * rows — or `null` when it stamped none.
    */
   plan(
     change: DocumentChange,
@@ -269,7 +296,7 @@ export const GovernedChangeSystem = {
       row: {
         recordedAtUtcMs: change.eventAtUtcMs ?? nowUtcMs,
         resourceId: change.resourceId,
-        auditOperationId: null,
+        auditOperationId: change.writeOperationId,
         ...change.writer,
         ...AuditContext.governed(
           action,

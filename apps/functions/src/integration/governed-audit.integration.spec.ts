@@ -118,7 +118,7 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
   ) => ({
     recordedAtUtcMs: utcMs(EVENT_TIME),
     resourceId,
-    // A trigger row names no operation.
+    // These writes stamp no operation (`writeOperationId`), so none is named.
     auditOperationId: null,
     governedCollection,
   });
@@ -240,6 +240,43 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
       },
     ]);
     expect(JSON.stringify(rows)).not.toContain('+359888000002');
+  });
+
+  it('a record a call wrote names that call’s operation; a console edit after it names none', async () => {
+    const ref = db.doc(`${Collections.Customers}/cus_2`);
+    await ref.set({ phone: '+359888000001', writeOperationId: null });
+    const stamped = await writeOf(
+      ref,
+      () =>
+        ref.update({
+          phone: '+359888000003',
+          writeOperationId: 'op-erase-0000000001',
+        }),
+      CONSOLE,
+      'evt-stamped',
+    );
+    await deliver(GovernedCollection.Customers, stamped);
+    const edited = await writeOf(
+      ref,
+      () => ref.update({ phone: '+359888000004' }),
+      CONSOLE,
+      'evt-console',
+    );
+    await deliver(GovernedCollection.Customers, edited);
+    const rows = await auditRows();
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          auditOperationId: 'op-erase-0000000001',
+          governedFields: ['phone', 'writeOperationId'],
+        }),
+        expect.objectContaining({
+          auditOperationId: null,
+          governedFields: ['phone'],
+        }),
+      ]),
+    );
   });
 
   it('a schedule exception and its DELETE: a created row, then a deleted row listing the before-image’s fields', async () => {

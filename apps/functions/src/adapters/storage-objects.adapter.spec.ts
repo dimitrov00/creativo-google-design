@@ -223,7 +223,9 @@ describe('storage-objects adapter', () => {
       const bucket = fakeBucket([AVATAR, AVATAR_THUMB]);
       bucket.objects
         .get(AVATAR)
-        ?.delete.mockRejectedValueOnce(storageError('auth/forbidden'));
+        ?.delete.mockRejectedValueOnce(
+          storageError('storage/permission-denied'),
+        );
       const result = await storageObjectPorts(
         asBucket(bucket),
       ).deleteStoredPrefix('avatars/u-erased/');
@@ -232,7 +234,7 @@ describe('storage-objects adapter', () => {
         error: {
           errorCode: RepositoryErrorCode.WriteFailed,
           path: 'avatars/u-erased/',
-          reason: 'forbidden',
+          reason: 'permission-denied',
         },
       });
       expect(JSON.stringify(result)).not.toContain(PRIVACY_SENTINELS.email);

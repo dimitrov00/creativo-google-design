@@ -168,7 +168,7 @@ import { bodyOf } from '../adapters/store-answer';
  * P3-DEP-33, P3-DEP-34), one STARTED and one ERASED row; (3) no erased value reaches a row of the
  * document-change audit or a log line, and the erased documents carry the
  * erasure's `writeOperationId` (WS-4.3's join from a trigger's attempt line
- * back to the act); (4) a second call is a no-op, and an erasure cut short
+ * back to the act — the record's governed row names it too); (4) a second call is a no-op, and an erasure cut short
  * by a spent budget or a failing object eraser resumes into exactly the
  * same final state; (4b) a note written on P's old visit afterwards is
  * swept by the next call with ONE `PRIVACY_CLIENT_ERASURE_RESWEPT` row;
@@ -1076,10 +1076,19 @@ describe('eraseClient (emulator)', () => {
       await db.collection(Collections.AuditLog).get()
     ).docs.filter((row) => !rowsBefore.has(row.id));
     expect(governedRows.length).toBeGreaterThan(0);
+    // A trigger row names the operation its write stamped (next pass,
+    // 2026-11-03): the record's row names the erasure — the act's own
+    // `writeOperationId` — and every row that stamped none names none;
+    // its fields by NAME only.
+    const recordResource = `${Collections.Customers}/${p()}`;
     for (const row of governedRows) {
-      // A trigger row names no operation (WS-3); its fields by NAME only.
-      expect(row.get('auditOperationId'), row.id).toBeNull();
+      expect(row.get('auditOperationId'), row.id).toBe(
+        row.get('resourceId') === recordResource ? OP : null,
+      );
     }
+    expect(
+      governedRows.some((row) => row.get('resourceId') === recordResource),
+    ).toBe(true);
 
     // Every row and every line the run logged: no value of P.
     const rows = (await db.collection(Collections.AuditLog).get()).docs.map(

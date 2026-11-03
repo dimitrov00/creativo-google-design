@@ -88,7 +88,7 @@ after(() => {
 });
 
 describe('tools/ops — every script, dry by default', () => {
-  it('holds the four scripts and the six alert policies the plans name', () => {
+  it('holds the four scripts and the seven alert policies the plans name', () => {
     assert.deepEqual(SCRIPTS, [
       'audit-logs.sh',
       'firestore-backups.sh',
@@ -102,6 +102,7 @@ describe('tools/ops — every script, dry by default', () => {
       'documents-refused.yaml',
       'roles-sessions-not-revoked.yaml',
       'trigger-attempts.yaml',
+      'trigger-failure-not-recorded.yaml',
     ]);
   });
 
@@ -322,7 +323,7 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
     }
   });
 
-  it('creates the six metrics of names.env — each server metric on one LogEvent message, client_issue_count on the OR-34 recipe', () => {
+  it('creates the seven metrics of names.env — each server metric on one LogEvent message, client_issue_count on the OR-34 recipe', () => {
     const names = opsNamesOf(read('tools/ops/names.env'));
     const values = logEventValues();
     const { out } = dryRun('log-metrics.sh');
@@ -345,7 +346,7 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
       .map(([, value]) => value)
       .sort();
     assert.deepEqual([...configs.keys()].sort(), metricNames);
-    assert.equal(metricNames.length, 6);
+    assert.equal(metricNames.length, 7);
     assert.equal(
       configs.get('client_issue_count'),
       'jsonPayload.clientIssueKind:*',
@@ -357,6 +358,8 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
       callable_failed: 'CallableFailed',
       // Security hardening S-RU-10: one failed revoke alerts.
       roles_sessions_not_revoked: 'RolesSessionsNotRevoked',
+      // Next pass (2026-11-03): one unrecorded dead letter alerts.
+      trigger_failure_not_recorded: 'TriggerFailureNotRecorded',
     };
     const source = read('libs/ecs-core/src/primitives/log-event.data.ts');
     for (const [metric, key] of Object.entries(expected)) {
