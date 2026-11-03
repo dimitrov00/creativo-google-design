@@ -168,6 +168,7 @@ import {
 import {
   UiListGroup,
   UiListRow,
+  UiMarkedText,
   UiMenu,
   UiAlert,
   type UiAlertAction,
@@ -534,6 +535,7 @@ function minuteRangeOf(
     UiInteractiveDirective,
     UiListGroup,
     UiListRow,
+    UiMarkedText,
     UiMenu,
     UiMenuItem,
     UiMenuTrigger,
@@ -1077,8 +1079,6 @@ export class StaffDashboard {
     event.preventDefault();
     first.focus();
   }
-
-  // ── The write actions ───────────────────────────────────────────────
 
   // ── The date picker ─────────────────────────────────────────────────
 

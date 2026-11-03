@@ -203,8 +203,7 @@ describe('segments', () => {
   it('marks the typed beginning of each matched word of a name', () => {
     expect(nameSegments('Мартин Илиев', parseClientQuery('ил март'))).toEqual([
       { text: 'Март', hit: true },
-      { text: 'ин', hit: false },
-      { text: ' ', hit: false },
+      { text: 'ин ', hit: false },
       { text: 'Ил', hit: true },
       { text: 'иев', hit: false },
     ]);

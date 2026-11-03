@@ -112,6 +112,10 @@ tabular-nums` on every element because the `font` shorthand resets it. An
   reads one step lifted on any ground. `uiMaterial` (`thin`/`regular`/`thick`
   glass) is chrome only — sheets, toolbars, bars over media — never a field
   or a card.
+- **Marked text:** what was typed is marked in a result with `ui-marked-text`
+  over the runs `TextMatchSystem` decides — a wash of `--sys-color-mark`, the
+  word on it stays ink. Never an ad-hoc `<mark>`, never ink-only marking
+  ([decisions.md](./design-research/decisions.md), 2026-11-03).
 - **Motion:** durations and easings come from `--sys-motion-*` — `instant`
   (150 ms), `regular` (200), `deliberate` (300) for controls; `slow`,
   `slowest`, `cinematic` only for marketing-scale reveals — and in TS

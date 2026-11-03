@@ -99,6 +99,7 @@ export class ControlsPage {
         { slug: 'metric', name: 'Metric' },
         { slug: 'gauge', name: 'Gauge' },
         { slug: 'mark-scale', name: 'MarkScale' },
+        { slug: 'marked-text', name: 'MarkedText' },
         { slug: 'streak-track', name: 'StreakTrack' },
         { slug: 'medal', name: 'Medal' },
       ],

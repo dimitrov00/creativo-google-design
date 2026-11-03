@@ -241,21 +241,3 @@
   margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
   min-inline-size: 0;
 }
-
-/* WHAT WAS TYPED, MARKED IN THE CATALOGUE (owner, 2026-11-03: "highlight the
-   matches … as a background"). A wash, not ink — the search that marks the
-   book (`staff-search__mark`) keeps its ink-only grammar; this one answers
-   a filtered list, where the eye needs to see WHY each row stayed. The accent
-   at twice the selection rung, so a picked (already washed) row still shows
-   its marks. */
-.staff-visit__mark {
-  background: color-mix(
-    in srgb,
-    var(--sys-color-accent) calc(var(--sys-alpha-segment-selected) * 2),
-    transparent
-  );
-  color: inherit;
-  border-radius: 3px;
-  padding-inline: 1px;
-  margin-inline: -1px;
-}

@@ -218,6 +218,8 @@ const WASHES: Readonly<Record<string, (theme: 'light' | 'dark') => number>> = {
     percentage('var(--sys-alpha-tint)', themeTokens(theme)),
   '--sys-alpha-segment-selected': (theme) =>
     percentage('var(--sys-alpha-segment-selected)', themeTokens(theme)),
+  'the match wash (--sys-color-mark, twice the selection rung)': (theme) =>
+    2 * percentage('var(--sys-alpha-segment-selected)', themeTokens(theme)),
 };
 
 describe.each(THEMES)('3 · ink on the accent’s washes, %s theme', (theme) => {
@@ -248,9 +250,12 @@ describe.each(THEMES)('3 · ink on the accent’s washes, %s theme', (theme) => 
         ),
       ),
     );
-    // 14.51:1 in light (18% over a segment), 9.72:1 in dark (20% over an
-    // elevated card).
-    expect(worst).toBeGreaterThanOrEqual(theme === 'light' ? 14.5 : 9.7);
+    // 13.05:1 in light (the match wash, 28%, over a segment), 6.93:1 in dark
+    // (the match wash, 40%, over an elevated card). The match wash is twice
+    // the selection rung ON PURPOSE: a picked row is already washed at one
+    // rung, and a mark at one rung would vanish on it. Before it joined the
+    // list the worst pairings were 14.51:1 and 9.72:1.
+    expect(worst).toBeGreaterThanOrEqual(theme === 'light' ? 13 : 6.9);
   });
 
   it('the accent itself fails as a word on its own washes: why the label is ink', () => {

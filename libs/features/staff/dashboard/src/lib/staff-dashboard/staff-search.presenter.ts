@@ -1,6 +1,7 @@
 import {
   SearchFieldsSystem,
   PhoneSystem,
+  TextMatchSystem,
   VisitStorySystem,
 } from '@core/systems';
 import { SeatSubject, type ShopNow } from '@core/components';
@@ -58,63 +59,6 @@ export function matches(
     field.label === SearchField.Phone &&
     SearchFieldsSystem.digitsMatch(field.value, digits)
   );
-}
-
-/**
- * Split a value around every occurrence of the term.
- *
- * Case-insensitive on the BULGARIAN collation but returning the ORIGINAL
- * slices, so a match on "георги" still renders "Георги" — highlighting must
- * never rewrite what the shop typed.
- */
-export function splitOnTerm(
-  value: string,
-  term: string,
-  ignoreSeparators = false,
-): readonly { readonly text: string; readonly hit: boolean }[] {
-  if (ignoreSeparators) return splitOnDigits(value, term);
-  const haystack = value.toLocaleLowerCase('bg');
-  const parts: { text: string; hit: boolean }[] = [];
-  let at = 0;
-  for (;;) {
-    const found = haystack.indexOf(term, at);
-    if (found === -1) break;
-    if (found > at) parts.push({ text: value.slice(at, found), hit: false });
-    parts.push({ text: value.slice(found, found + term.length), hit: true });
-    at = found + term.length;
-  }
-  if (at < value.length) parts.push({ text: value.slice(at), hit: false });
-  return parts;
-}
-
-/**
- * Split a formatted phone around a run of digits, keeping the separators.
- *
- * "+359 88 777 8899" searched for "887778899" has to mark from the first 8
- * through the last 9 INCLUDING the spaces between them — highlighting only
- * the digit runs would break one match into three.
- */
-export function splitOnDigits(
-  value: string,
-  digits: string,
-): readonly { readonly text: string; readonly hit: boolean }[] {
-  const map: number[] = [];
-  let bare = '';
-  for (let i = 0; i < value.length; i++) {
-    if (/\d/.test(value[i] as string)) {
-      map.push(i);
-      bare += value[i];
-    }
-  }
-  const at = bare.indexOf(digits);
-  if (at === -1) return [{ text: value, hit: false }];
-  const from = map[at] as number;
-  const to = (map[at + digits.length - 1] as number) + 1;
-  const parts: { text: string; hit: boolean }[] = [];
-  if (from > 0) parts.push({ text: value.slice(0, from), hit: false });
-  parts.push({ text: value.slice(from, to), hit: true });
-  if (to < value.length) parts.push({ text: value.slice(to), hit: false });
-  return parts;
 }
 
 /**
@@ -177,21 +121,18 @@ export function searchHits(input: SearchInput): readonly SearchHitVm[] {
       past,
       bookingStatus: appointment.bookingStatus,
       titleParts: titleField
-        ? splitOnTerm(titleField.value, term)
+        ? TextMatchSystem.segments(titleField.value, term)
         : [{ text: '', hit: false }],
       matches: matched
         .filter((field) => field !== titleField)
         .map((field) => ({
           label: field.label,
-          parts: splitOnTerm(
-            field.value,
-            // Highlight the run that actually matched: the digits form
-            // when that is what hit, the typed term otherwise.
+          // Highlight the run that actually matched: the digits form
+          // when that is what hit, the typed term otherwise.
+          parts:
             digits !== null && field.label === SearchField.Phone
-              ? digits
-              : term,
-            digits !== null && field.label === SearchField.Phone,
-          ),
+              ? TextMatchSystem.phoneSegments(field.value, digits)
+              : TextMatchSystem.segments(field.value, term),
         })),
     };
   });
