@@ -243,9 +243,15 @@ describe('UiToast — the reference line', () => {
     fixture.detectChanges();
 
     expect(writeText).toHaveBeenCalledWith('op_7f3c2a9b41d84e0c');
-    expect(reference?.querySelector('[role="status"]')?.textContent).toBe(
+    expect(reference?.querySelector('.ui-reference__copied')?.textContent).toBe(
       'Кодът е копиран.',
     );
+    // ONE live region: the surface's — the confirmation rides inside it,
+    // never a region nested in another.
+    expect(surface.getAttribute('aria-live')).toBe('polite');
+    expect(
+      surface.querySelectorAll('[aria-live], [role="status"]'),
+    ).toHaveLength(0);
   });
 
   it('prints no line without an id', async () => {

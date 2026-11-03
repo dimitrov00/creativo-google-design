@@ -20,9 +20,12 @@ import { UiInteractiveDirective } from '@creativo/ui/modifiers';
  * The tap writes the id to the clipboard and, once it landed, says so in a
  * polite `role="status"` line (`uiCopiedText`) — the region is there from
  * the first render, so assistive tech hears the confirmation when it
- * arrives. Where the platform has no clipboard (an insecure origin, a
- * refused permission) nothing is said: the line stays there to read. A new
- * value starts unconfirmed.
+ * arrives. Inside a host that is a live region already (`ui-toast`), the
+ * host turns that off (`uiAnnounce`): its own region announces the line,
+ * and a region nested in another is read inconsistently — twice, or as the
+ * outer one only. Where the platform has no clipboard (an insecure origin,
+ * a refused permission) nothing is said: the line stays there to read. A
+ * new value starts unconfirmed.
  *
  * DS inputs only; the consumer decides whether there is a line at all.
  */
@@ -38,9 +41,12 @@ import { UiInteractiveDirective } from '@creativo/ui/modifiers';
     >
       {{ uiLabel() }}
     </button>
-    <span class="ui-reference__copied" role="status" aria-live="polite">{{
-      copied() ? uiCopiedText() : ''
-    }}</span>
+    <span
+      class="ui-reference__copied"
+      [attr.role]="uiAnnounce() ? 'status' : null"
+      [attr.aria-live]="uiAnnounce() ? 'polite' : null"
+      >{{ copied() ? uiCopiedText() : '' }}</span
+    >
   `,
   styleUrl: './reference.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -59,6 +65,12 @@ export class UiReference {
   readonly uiValue = input.required<string>();
   /** What is announced once the id is on the clipboard. */
   readonly uiCopiedText = input('');
+  /**
+   * Whether the confirmation is its own polite status region — `false`
+   * inside a host that already is one (the toast), whose region announces
+   * it.
+   */
+  readonly uiAnnounce = input(true);
 
   /** Confirmed for THIS value; a new value starts unconfirmed. */
   protected readonly copied = linkedSignal({

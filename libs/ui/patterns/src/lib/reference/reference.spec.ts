@@ -15,11 +15,13 @@ const OTHER_ID = 'op_0a1b2c3d4e5f6a7b';
       [uiLabel]="'Код за справка: ' + value()"
       [uiValue]="value()"
       uiCopiedText="Кодът е копиран."
+      [uiAnnounce]="announce()"
     />
   `,
 })
 class Host {
   readonly value = signal(ID);
+  readonly announce = signal(true);
 }
 
 /** The platform clipboard, stubbed per case (jsdom has none). */
@@ -102,6 +104,19 @@ describe('UiReference', () => {
     expect(region()?.textContent).toBe('');
   });
 
+  it('is no live region of its own inside a host that is one (uiAnnounce off) — the confirmation still prints', async () => {
+    stubClipboard(() => Promise.resolve());
+    fixture.componentInstance.announce.set(false);
+    fixture.detectChanges();
+    const copied = host().querySelector('.ui-reference__copied');
+    expect(region()).toBeNull();
+    expect(copied?.hasAttribute('aria-live')).toBe(false);
+
+    await tap();
+
+    expect(copied?.textContent).toBe('Кодът е копиран.');
+  });
+
   it('starts a new id unconfirmed', async () => {
     stubClipboard(() => Promise.resolve());
     await tap();
@@ -135,6 +150,10 @@ describe('reference.css', () => {
     expect(lineRule).toContain('color: var(--sys-color-secondary-label);');
     expect(lineRule).toContain('overflow-wrap: anywhere;');
     expect(lineRule).not.toContain('text-overflow');
+  });
+
+  it('keeps the line a 24 px target at least (WCAG 2.5.8)', () => {
+    expect(rule('.ui-reference__line')).toContain('min-block-size: 1.5rem;');
   });
 
   it('never hides the confirmation region from assistive tech', () => {
