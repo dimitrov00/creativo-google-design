@@ -78,6 +78,12 @@ committed at a green boundary, DEP-1…DEP-24, end of §3.3).
     list, the per-ruling ledger of what landed (BUILT) and the
     implementation plan. A question it rules is not reopened in code
     (`CLAUDE.md` §4).
+11. `docs/architecture/decisions/2026-11-03-staff-search.md` — the schedule
+    search, part 1 (BUILT): one highlighter (`ui-marked-text`), one phone
+    reading (`PhoneSystem.searchDigitsOf`), a window that reaches the booking
+    horizon and refreshes on open; the cost model, the alternatives with their
+    reopen conditions and where the build differs from
+    `docs/designs/staff-search.md`. Part 2 (the Spotlight sheet) is not built.
 
 ## 2. Where the work stands
 

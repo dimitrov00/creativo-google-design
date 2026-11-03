@@ -251,6 +251,22 @@ export async function seedUpcomingAppointment(
 }
 
 /**
+ * Gives a seeded visit the contact the desk typed for it — the name and the
+ * number a search reads (`contactName`, `contactPhone`; the seeded body
+ * carries none). Root fields, as every write targets them (Law 5).
+ */
+export async function setVisitContact(
+  id: string,
+  contact: { readonly name: string; readonly phone: string },
+): Promise<void> {
+  const phone = sure(PhoneSystem.parse(contact.phone, null), contact.phone);
+  await getFirestore(adminApp())
+    .collection(Collections.Appointments)
+    .doc(id)
+    .update({ contactName: contact.name, contactPhone: phone.e164 });
+}
+
+/**
  * Seeds `appointments/{id}`: a finished visit `ownerUserId` booked for
  * themselves in the dev catalogue's chair, worked at the naive shop-time
  * `startsAt` — the body {@link workedAppointmentBody} builds — and the
