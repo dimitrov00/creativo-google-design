@@ -4,7 +4,12 @@ import {
   TextMatchSystem,
   VisitStorySystem,
 } from '@core/systems';
-import { SeatSubject, type ShopNow } from '@core/components';
+import {
+  SeatSubject,
+  type PhoneReading,
+  type ShopNow,
+  type TextSegment,
+} from '@core/components';
 import type { Appointment } from '@core/entities';
 import type { LocationId } from '@core/primitives';
 import { formatWallClock } from '@creativo/ui/wall-clock';
@@ -19,10 +24,11 @@ import {
 
 /*
  * THE SEARCH SHEET, WORDED (Law 10). The outward order and what counts as
- * past are `VisitStorySystem.outwardFromNow`'s, the digit rule
- * `SearchFieldsSystem`'s; this reads each visit's text fields and marks the
+ * past are `VisitStorySystem.outwardFromNow`'s, the number rule
+ * `PhoneSystem`'s; this reads each visit's text fields and marks the
  * runs that matched (pass C PC-D-3: the collation match and its highlight are
- * no decision, and they could never live in a system).
+ * no decision, and they could never live in a system). A term that reads as a
+ * number is read by `PhoneSystem.searchDigitsOf`, the rule every search shares.
  */
 
 /** What the hits are worded from. */
@@ -37,6 +43,8 @@ export interface SearchInput {
   /** A wall-clock reading prints nothing before the zone is known (D-6.2). */
   readonly zoneKnown: boolean;
   readonly locale: string;
+  /** The shop's dial code, digits only: `088…` is read as `359 88…`. */
+  readonly callingCode: string;
   /** A companion's own name, by account, once his profile is read. */
   readonly companionNames: Readonly<Record<string, string>>;
   /** «Клиент без име» — `staff.day.unnamedClient`. */
@@ -45,19 +53,19 @@ export interface SearchInput {
 
 /**
  * Does this field hold the term — by text (the Bulgarian collation, this
- * page's), or by the term's bare digits for a phone (`digits`, `null` when
- * the term is no phone number — `SearchFieldsSystem.digitQuery`)?
+ * page's), or, for a phone, by the number the term reads as (`reading`,
+ * `null` when the term is no number — `PhoneSystem.isNumberShaped`)?
  */
 export function matches(
   field: SearchableField,
   term: string,
-  digits: string | null,
+  reading: PhoneReading | null,
 ): boolean {
   if (field.value.toLocaleLowerCase('bg').includes(term)) return true;
   return (
-    digits !== null &&
+    reading !== null &&
     field.label === SearchField.Phone &&
-    SearchFieldsSystem.digitsMatch(field.value, digits)
+    PhoneSystem.readingMatches(reading, field.value)
   );
 }
 
@@ -73,16 +81,18 @@ export function searchHits(input: SearchInput): readonly SearchHitVm[] {
   const term = input.term.trim().toLocaleLowerCase('bg');
   if (!SearchFieldsSystem.termSearchable(term)) return [];
 
-  // Digits-only alias, so "887778899" finds "+359 88 777 8899". A person
-  // searching by phone types the number off a screen or a card, never with
-  // the formatter's spaces in it (`digitQuery`: `null` when it is none).
-  const digits = SearchFieldsSystem.digitQuery(term);
+  // A term that is all number — «887778899», «088 777», «+359 88» — also finds
+  // a phone by the number it reads as, however the formatter spaced it. A
+  // mixed term («Иван 088») stays text only until the spotlight's rule lands.
+  const reading = PhoneSystem.isNumberShaped(term)
+    ? PhoneSystem.searchDigitsOf(term, input.callingCode)
+    : null;
 
   const found = new Map<Appointment, SearchMatch>();
   const visits: Appointment[] = [];
   for (const appointment of input.pool) {
     const fields = searchableFields(appointment, input.names);
-    const matched = fields.filter((field) => matches(field, term, digits));
+    const matched = fields.filter((field) => matches(field, term, reading));
     if (matched.length === 0) continue;
     found.set(appointment, { fields, matched });
     visits.push(appointment);
@@ -127,15 +137,27 @@ export function searchHits(input: SearchInput): readonly SearchHitVm[] {
         .filter((field) => field !== titleField)
         .map((field) => ({
           label: field.label,
-          // Highlight the run that actually matched: the digits form
+          // Highlight the run that actually matched: the number's digits
           // when that is what hit, the typed term otherwise.
-          parts:
-            digits !== null && field.label === SearchField.Phone
-              ? TextMatchSystem.phoneSegments(field.value, digits)
-              : TextMatchSystem.segments(field.value, term),
+          parts: phonePartsOf(field, term, reading),
         })),
     };
   });
+}
+
+/** The marked runs of a matched field: a phone by its reading, anything else by the term. */
+function phonePartsOf(
+  field: SearchableField,
+  term: string,
+  reading: PhoneReading | null,
+): readonly TextSegment[] {
+  const run =
+    reading !== null && field.label === SearchField.Phone
+      ? PhoneSystem.readingRun(reading, field.value)
+      : null;
+  return run === null
+    ? TextMatchSystem.segments(field.value, term)
+    : TextMatchSystem.phoneSegments(field.value, run);
 }
 
 /**

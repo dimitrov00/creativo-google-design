@@ -238,49 +238,6 @@ describe('SearchFieldsSystem — the book search (staff-dashboard.ts searchResul
     expect(SearchFieldsSystem.termSearchable(' г')).toBe(true);
     expect(SearchFieldsSystem.termSearchable(' г'.trim())).toBe(false);
   });
-
-  it('reads four or more digits as a phone’s bare run, three or fewer as none', () => {
-    expect(SearchFieldsSystem.DIGIT_QUERY_MIN).toBe(4);
-    expect(SearchFieldsSystem.digitQuery('359881234567')).toBe('359881234567');
-    expect(SearchFieldsSystem.digitQuery('8812')).toBe('8812');
-    expect(SearchFieldsSystem.digitQuery('881')).toBeNull();
-    expect(SearchFieldsSystem.digitQuery('георги')).toBeNull();
-    expect(SearchFieldsSystem.digitQuery('')).toBeNull();
-  });
-
-  it('drops separators and letters from the typed term — the digits alone count', () => {
-    expect(SearchFieldsSystem.digitQuery('+359 88 123')).toBe('35988123');
-    expect(SearchFieldsSystem.digitQuery('88-1')).toBeNull();
-    expect(SearchFieldsSystem.digitQuery('иван 0881')).toBe('0881');
-    expect(SearchFieldsSystem.digitQuery('(088) 1')).toBe('0881');
-  });
-
-  it("finds a phone by its bare digits across the formatter's spaces", () => {
-    const digits = SearchFieldsSystem.digitQuery('359881234567') as string;
-    expect(SearchFieldsSystem.digitsMatch('+359 88 123 4567', digits)).toBe(
-      true,
-    );
-    expect(
-      SearchFieldsSystem.digitsMatch('+359 88 777 8899', '887778899'),
-    ).toBe(true);
-    expect(SearchFieldsSystem.digitsMatch('+359 88 777 8899', '8877799')).toBe(
-      false,
-    );
-    expect(SearchFieldsSystem.digitsMatch('Георги Петров', '8877')).toBe(false);
-  });
-
-  it('a digit query always matches the field it was typed from (property)', () => {
-    fc.assert(
-      fc.property(fc.stringMatching(/^\+?[\d ()-]{0,16}$/), (typed) => {
-        const digits = SearchFieldsSystem.digitQuery(typed);
-        const bare = typed.replace(/\D/g, '');
-        expect(digits).toBe(bare.length >= 4 ? bare : null);
-        if (digits !== null) {
-          expect(SearchFieldsSystem.digitsMatch(typed, digits)).toBe(true);
-        }
-      }),
-    );
-  });
 });
 
 describe('SearchFieldsSystem purity', () => {
@@ -294,12 +251,6 @@ describe('SearchFieldsSystem purity', () => {
 
   it('the book search is pure: same input → same output', () => {
     const term = '+359 88 777 8899';
-    expect(SearchFieldsSystem.digitQuery(term)).toBe(
-      SearchFieldsSystem.digitQuery(term),
-    );
-    expect(SearchFieldsSystem.digitsMatch(term, '8877')).toBe(
-      SearchFieldsSystem.digitsMatch(term, '8877'),
-    );
     expect(SearchFieldsSystem.termSearchable(term)).toBe(
       SearchFieldsSystem.termSearchable(term),
     );

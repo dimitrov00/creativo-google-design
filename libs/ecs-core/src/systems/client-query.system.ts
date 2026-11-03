@@ -1,12 +1,14 @@
 import {
   ClientQueryShape,
   MatchMode,
+  PhoneReadingKind,
   Seat,
   SeatSubject,
   type AccountOccupant,
   type TextSegment,
 } from '@core/components';
 import { UtcEpochMs, type UserId } from '@core/primitives';
+import { PhoneSystem } from './phone.system';
 import { TextMatchSystem } from './text-match.system';
 
 /**
@@ -122,13 +124,8 @@ function phoneInternationalDigits(
   parsed: ParsedClientQuery,
   callingCode: string,
 ): readonly string[] {
-  const digits = parsed.phoneDigits;
-  if (digits.length === 0) return [];
-  if (parsed.phoneInternational || digits.startsWith(callingCode)) {
-    return [digits];
-  }
-  if (digits.startsWith('0')) return [callingCode + digits.slice(1)];
-  return [callingCode + digits, digits];
+  return PhoneSystem.searchDigitsOf(parsed.phoneTyped, callingCode)
+    .phoneReadingCandidates;
 }
 
 function phoneScore(
@@ -372,15 +369,16 @@ export const ClientQuerySystem = {
     parsed: ParsedClientQuery,
     callingCode: string,
   ): readonly string[] {
-    const digits = parsed.phoneDigits;
-    if (digits.length < MIN_PHONE_DIGITS) return [];
+    const reading = PhoneSystem.searchDigitsOf(parsed.phoneTyped, callingCode);
+    const candidates = reading.phoneReadingCandidates;
     const variants: string[] = [];
     const add = (variant: string): void => {
       if (!variants.includes(variant)) variants.push(variant);
     };
-    const international =
-      parsed.phoneInternational || digits.startsWith(callingCode);
-    if (international) {
+    if (reading.phoneReadingKind === PhoneReadingKind.International) {
+      // The international digits, and — for the shop's own code — the
+      // national «0…» form the index holds too.
+      const digits = candidates[0] as string;
       add(digits);
       if (
         digits.startsWith(callingCode) &&
@@ -388,13 +386,11 @@ export const ClientQuerySystem = {
       ) {
         add('0' + digits.slice(callingCode.length));
       }
-    } else if (digits.startsWith('0')) {
-      add(digits);
-      if (digits.length > 1) add(callingCode + digits.slice(1));
-    } else {
-      add(digits);
-      add('0' + digits);
-      add(callingCode + digits);
+    } else if (reading.phoneReadingKind === PhoneReadingKind.Bare) {
+      const run = candidates[1] as string;
+      add(run);
+      add('0' + run);
+      add(candidates[0] as string);
     }
     const out: string[] = [];
     for (let i = 0; i < variants.length; i++) {
@@ -431,8 +427,6 @@ export const ClientQuerySystem = {
     }
     return longest === null ? [] : [longest];
   },
-
-  phoneInternationalDigits,
 
   /**
    * The pool's hits, filtered by the LEADING part and ordered best first —
