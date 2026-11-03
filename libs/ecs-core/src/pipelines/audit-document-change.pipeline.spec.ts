@@ -299,6 +299,7 @@ function governedOf(
     beforeExists: true,
     afterExists: true,
     fields: fieldsOf(collection),
+    writeOperationId: null,
     ...overrides,
   };
 }

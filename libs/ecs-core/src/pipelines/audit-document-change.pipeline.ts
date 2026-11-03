@@ -51,7 +51,7 @@ export const auditDocumentChange =
     if (planned.value === null) return Result.ok({ rows: 0 });
     const { row, idBasis } = planned.value;
     // A trigger row's basis is keyed by the event id (its change key,
-    // RU-41); the row names no operation (`auditOperationId: null`).
+    // RU-41), never by the operation the row may name.
     const id = AuditEntryId.of(ports.hash(idBasis));
     const entry: AuditEntry = { id, ...row };
     const written = await ports.createAuditRows([entry]);

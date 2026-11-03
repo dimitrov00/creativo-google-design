@@ -716,7 +716,8 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
           searchName: null,
           searchPrefixes: [],
         },
-        // …set over by a registered, blocked body: roles and status changed.
+        // …set over by a registered, blocked body: roles, status and the
+        // block's own fields changed.
         {
           registrationState: 'REGISTERED',
           roles: ['barber'],
@@ -727,7 +728,7 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
           searchPrefixes: ['b'],
         },
       ),
-    ).toEqual(['roles', 'accountStatus']);
+    ).toEqual(['roles', 'accountStatus', 'blockReason', 'blockedUntilUtcMs']);
     // The other server-owned keys are still nobody's row.
     expect(
       AuditSystem.changedProfileFields(
@@ -735,6 +736,27 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
         { registrationState: 'REGISTERED', searchPrefixes: ['b'] },
       ),
     ).toEqual([]);
+  });
+
+  it('lists a block extended or re-reasoned while the status stays BLOCKED — names only (next pass, R11)', () => {
+    const blocked = {
+      accountStatus: 'BLOCKED',
+      blockReason: 'MANUAL',
+      blockedUntilUtcMs: 1_798_761_600_000,
+    };
+    expect(
+      AuditSystem.changedProfileFields(blocked, {
+        ...blocked,
+        blockedUntilUtcMs: 1_830_297_600_000,
+      }),
+    ).toEqual(['blockedUntilUtcMs']);
+    expect(
+      AuditSystem.changedProfileFields(blocked, {
+        ...blocked,
+        blockReason: 'FRAUD_SUSPECT',
+        blockedUntilUtcMs: null,
+      }),
+    ).toEqual(['blockReason', 'blockedUntilUtcMs']);
   });
 
   it('reads an empty roles list as "no value" — the stub lists nothing; the stored order is the registration five first', () => {
@@ -753,7 +775,13 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
 
   it('never lets a value into the row context, whatever the profile held — the tags carry closed vocabularies only', () => {
     const FIELDS = ['firstName', 'lastName', 'phone', 'email', 'birthDate'];
-    const AUDITED = [...FIELDS, 'roles', 'accountStatus'];
+    const AUDITED = [
+      ...FIELDS,
+      'roles',
+      'accountStatus',
+      'blockReason',
+      'blockedUntilUtcMs',
+    ];
     const value = fc.oneof(
       fc.constant(undefined),
       fc.constant(null),
@@ -780,6 +808,8 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
       ...Object.fromEntries(FIELDS.map((f) => [f, value])),
       roles,
       accountStatus: status,
+      blockReason: value,
+      blockedUntilUtcMs: value,
     });
     fc.assert(
       fc.property(profile, profile, (before, after) => {

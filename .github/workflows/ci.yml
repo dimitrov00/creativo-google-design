@@ -93,6 +93,9 @@ jobs:
       # Every config owns its typecheck output folder: a shared one let
       # parallel builds read a half-written declaration (main, 2026-11-02).
       - run: node tools/verify/typecheck/check-out-dirs.mjs
+      # The ops scripts the owner runs with --apply (tools/ops): ShellCheck,
+      # preinstalled on the runner image, warnings and errors.
+      - run: shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR tools/ops/*.sh
       - run: pnpm exec nx typecheck seed-tools
       - run: pnpm exec nx test lint-rules
       - run: pnpm run lint:styles

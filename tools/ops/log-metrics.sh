@@ -16,6 +16,10 @@
 #   roles_sessions_not_revoked  a roles change committed whose target's
 #                           sessions were not revoked (security hardening
 #                           S-RU-10) — alerted on any occurrence.
+#   trigger_failure_not_recorded  a failed trigger attempt whose dead letter
+#                           (triggerFailures/{eventId}) could not be written,
+#                           label fn — alerted on any occurrence: it is the
+#                           one failure nothing else keeps.
 # Every message a filter names is a `LogEvent` value
 # (libs/ecs-core/src/primitives/log-event.data.ts) — pinned by
 # tools/verify/ops/ops-scripts.spec.mjs, so a renamed event cannot silently
@@ -193,6 +197,11 @@ metric "$METRIC_CALLABLE_FAILED" \
 metric "$METRIC_ROLES_SESSIONS_NOT_REVOKED" \
   'Roles changes committed with the target sessions not revoked (LogEvent.RolesSessionsNotRevoked)' \
   "${SERVER} AND jsonPayload.message:\"roles.sessions_not_revoked\""
+
+metric "$METRIC_TRIGGER_FAILURE_NOT_RECORDED" \
+  'Failed trigger attempts whose dead letter was not written (LogEvent.TriggerFailureNotRecorded), by fn' \
+  "${SERVER} AND jsonPayload.message:\"trigger.failure_not_recorded\"" \
+  fn=jsonPayload.fn
 
 for file in "$HERE"/alerts/*.yaml; do
   alert "$file"

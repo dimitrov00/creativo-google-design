@@ -112,6 +112,8 @@ const GATE = [
   ['run-many -t lint', 'static'],
   ['verify-tools:layering', 'static'],
   ['check-out-dirs.mjs', 'static'],
+  // The ops scripts, before anyone runs them with --apply (next pass).
+  ['shellcheck', 'static'],
   ['typecheck seed-tools', 'static'],
   ['test lint-rules', 'static'],
   ['lint:styles', 'static'],

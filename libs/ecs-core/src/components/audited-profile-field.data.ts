@@ -6,7 +6,10 @@ import { RegistrationField } from './registration.data';
  * RU-16): {@link RegistrationField}'s five names, then `roles` and
  * `accountStatus`, which no writer audits on its own (`completeRegistration`
  * sets the roles, nothing sets the status, the Admin SDK and the console
- * can change either). The values ARE document field names (the
+ * can change either), then the block's own `blockReason` and
+ * `blockedUntilUtcMs` (next pass, 2026-11-03 — the WS-3 inventory's R11): a
+ * block extended or re-reasoned without its status changing is still a
+ * change of who may sign in. The values ARE document field names (the
  * `RegistrationField` precedent, flatten-spec §3.7), so they are exempt
  * from the SCREAMING sweep; the five registration names are spread from
  * their own dictionary, never restated.
@@ -15,6 +18,8 @@ export const AuditedProfileField = {
   ...RegistrationField,
   Roles: 'roles',
   AccountStatus: 'accountStatus',
+  BlockReason: 'blockReason',
+  BlockedUntilUtcMs: 'blockedUntilUtcMs',
 } as const;
 export type AuditedProfileField =
   (typeof AuditedProfileField)[keyof typeof AuditedProfileField];

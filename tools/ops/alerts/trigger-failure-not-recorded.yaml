@@ -1,0 +1,37 @@
+# Alert: a failed trigger attempt whose dead letter could not be written
+# (audit-hardening WS-6, RU-32; next pass 2026-11-03) over the
+# trigger_failure_not_recorded metric of tools/ops/log-metrics.sh (label fn).
+# The dead letter in triggerFailures/{eventId} is where a failed attempt is
+# kept for the operator; when its write fails too, the log line is the only
+# record left — and it ages out of the 30-day default bucket — so ANY
+# occurrence alerts. Add a notification channel before relying on it.
+displayName: 'Creativo: trigger failures not recorded (trigger_failure_not_recorded)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    A retrying trigger failed AND its dead letter (triggerFailures/{eventId},
+    runbook §1.1, §2.5) could not be written, so no document keeps the
+    failure. The line names the trigger (fn), the event (eventId) and the
+    write's own code (errorCode); the matching trigger attempt line, under
+    the same fn and eventId, carries the written document's path and
+    operation id. Look into the dead-letter write first (Firestore
+    availability, the functions' service account), then replay or repair the
+    document the event named by hand.
+combiner: OR
+conditions:
+  - displayName: 'any trigger_failure_not_recorded in 5 minutes'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/trigger_failure_not_recorded" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields:
+            - metric.label.fn
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

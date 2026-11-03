@@ -621,6 +621,32 @@ describe('decodeDocumentChangeEvent — the thirteen governed collections (WS-3,
         resourceId: resource.ok ? resource.value : null,
         targetCustomerId: target,
         fields: ['alpha', 'zeta'],
+        writeOperationId: null,
+      });
+    });
+
+    it('names the operation THIS write stamped — never one an earlier call left on the document', () => {
+      const op = 'op-0000000000000007';
+      // A create that carries one, and an update that changed it.
+      expect(decode(null, { a: 1, writeOperationId: op })).toMatchObject({
+        writeOperationId: op,
+      });
+      expect(
+        decode(
+          { a: 1, writeOperationId: 'op-0000000000000006' },
+          { a: 2, writeOperationId: op },
+        ),
+      ).toMatchObject({ writeOperationId: op });
+      // A write that left it as it was (a console edit), a delete, and a
+      // value `OperationId.is` refuses.
+      expect(
+        decode({ a: 1, writeOperationId: op }, { a: 2, writeOperationId: op }),
+      ).toMatchObject({ writeOperationId: null });
+      expect(decode({ a: 1, writeOperationId: op }, null)).toMatchObject({
+        writeOperationId: null,
+      });
+      expect(decode(null, { a: 1, writeOperationId: 'a/b' })).toMatchObject({
+        writeOperationId: null,
       });
     });
 
