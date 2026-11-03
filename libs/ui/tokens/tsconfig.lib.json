@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../../dist/out-tsc",
+    "outDir": "../../../dist/out-tsc/libs/ui/tokens/lib",
+    "tsBuildInfoFile": "../../../dist/out-tsc/libs/ui/tokens/lib/tsconfig.lib.tsbuildinfo",
     "declaration": true,
     "types": ["node"],
     "composite": true,
