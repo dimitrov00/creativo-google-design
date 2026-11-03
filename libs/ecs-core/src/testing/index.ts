@@ -7,6 +7,7 @@ export * from './loyalty.fixtures';
 export * from './port-doubles';
 export * from './privacy-doubles';
 export * from './programs.fixtures';
+export * from './rules-text';
 export * from './scheduling.port.contract';
 export * from './streak-publish-gateway.double';
 export * from './test-support';

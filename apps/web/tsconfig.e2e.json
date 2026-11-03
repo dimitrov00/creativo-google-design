@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc/apps/web/e2e",
+    "tsBuildInfoFile": "../../dist/out-tsc/apps/web/e2e/tsconfig.e2e.tsbuildinfo",
+    "types": ["node"],
+    "declaration": true,
+    "rootDir": "../.."
+  },
+  "include": [
+    "e2e/**/*.ts",
+    "playwright.config.mts",
+    "playwright.csp.config.mts"
+  ]
+}

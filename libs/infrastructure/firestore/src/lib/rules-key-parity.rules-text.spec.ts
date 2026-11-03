@@ -1,14 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type {
   AppointmentNote,
   AppointmentPhoto,
   ScheduleException,
 } from '@core/entities';
-import {
-  RULES_CODE as CODE,
-  blockOf,
-  occurrences,
-} from '../testing/rules-text';
+import { blockOf, occurrences, rulesCode } from '@core/testing';
 
 /*
  * The book's three browser-written collections as rules TEXT (security
@@ -22,9 +20,14 @@ import {
  * block, none in the exceptions block (a multi-day block writes many days
  * in one transaction), and the photo id's UUID pattern once. Like
  * `stamp-window.rules-text.spec.ts` and `role.rules-parity.spec.ts`, it
- * reads the rules file as text, comments removed — through the reader it
- * shares with the stamp-window spec (`../testing/rules-text`).
+ * reads the rules file as text, comments removed — through the one rules
+ * reader of `@core/testing` (`rules-text.ts`).
  */
+
+/** The workspace's own `firestore.rules`, comments removed (`src/lib` is five levels down). */
+const CODE = rulesCode(
+  readFileSync(resolve(__dirname, '../../../../../firestore.rules'), 'utf8'),
+);
 
 /** The quoted keys of every `keys().hasOnly([…])` in `block`, one list per call. */
 function hasOnlyLists(block: string): string[][] {
@@ -86,30 +89,33 @@ describe('firestore.rules — the book’s key lists match the entities (S-DEP-5
   ] as const)(
     '%s lists exactly its entity’s stored keys, once',
     (path, table) => {
-      expect(hasOnlyLists(blockOf(path))).toEqual([sortedKeys(table)]);
+      expect(hasOnlyLists(blockOf(CODE, path))).toEqual([sortedKeys(table)]);
     },
   );
 
   it('ties a note and a photo to an existing appointment with one exists( each, and an exception to no read at all', () => {
     expect(
-      occurrences(blockOf('/appointmentNotes/{appointmentId}'), 'exists('),
+      occurrences(
+        blockOf(CODE, '/appointmentNotes/{appointmentId}'),
+        'exists(',
+      ),
     ).toBe(1);
     expect(
       occurrences(
-        blockOf('/appointmentNotes/{appointmentId}'),
+        blockOf(CODE, '/appointmentNotes/{appointmentId}'),
         'exists(/databases/$(database)/documents/appointments/$(appointmentId))',
       ),
     ).toBe(1);
     expect(
-      occurrences(blockOf('/appointmentPhotos/{photoId}'), 'exists('),
+      occurrences(blockOf(CODE, '/appointmentPhotos/{photoId}'), 'exists('),
     ).toBe(1);
     expect(
       occurrences(
-        blockOf('/appointmentPhotos/{photoId}'),
+        blockOf(CODE, '/appointmentPhotos/{photoId}'),
         'exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId))',
       ),
     ).toBe(1);
-    const exceptions = blockOf('/scheduleExceptions/{dayDocId}');
+    const exceptions = blockOf(CODE, '/scheduleExceptions/{dayDocId}');
     expect(occurrences(exceptions, 'exists(')).toBe(0);
     expect(occurrences(exceptions, 'get(')).toBe(0);
     expect(exceptions).toContain(
@@ -119,6 +125,8 @@ describe('firestore.rules — the book’s key lists match the entities (S-DEP-5
 
   it('holds the photo id’s UUID pattern once, inside the photos block', () => {
     expect(occurrences(CODE, PHOTO_ID_PATTERN)).toBe(1);
-    expect(blockOf('/appointmentPhotos/{photoId}')).toContain(PHOTO_ID_PATTERN);
+    expect(blockOf(CODE, '/appointmentPhotos/{photoId}')).toContain(
+      PHOTO_ID_PATTERN,
+    );
   });
 });

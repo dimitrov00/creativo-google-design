@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ActorRole, Roles } from '@core/components';
+import { helperRoles, rulesCode } from '@core/testing';
 import {
   callerActor,
   callerActorAsClaimed,
@@ -38,23 +39,16 @@ function workspaceRoot(from: string): string {
 
 /**
  * The roles `isAdmin()` admits in `firestore.rules`, read off the rules'
- * text. The helper is one `hasAnyRole([...])`; anything else is refused by
+ * text through the one rules reader (`@core/testing` `rules-text.ts`): a
+ * helper that is anything but role checks joined by `||` is refused by
  * name, never guessed at.
  */
 function rulesAdminRoles(): string[] {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the workspace's own rules file, located from this spec.
-  const rules = readFileSync(
-    join(workspaceRoot(__dirname), 'firestore.rules'),
-    'utf8',
+  const rules = rulesCode(
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- the workspace's own rules file, located from this spec.
+    readFileSync(join(workspaceRoot(__dirname), 'firestore.rules'), 'utf8'),
   );
-  const helper =
-    /function isAdmin\(\)\s*\{\s*return hasAnyRole\(\[([^\]]*)\]\);\s*\}/.exec(
-      rules,
-    );
-  if (!helper) throw new Error('isAdmin() is not one hasAnyRole([...])');
-  return [...(helper[1] ?? '').matchAll(/['"]([^'"]+)['"]/g)].map(
-    (role) => role[1] ?? '',
-  );
+  return [...helperRoles(rules, 'isAdmin')];
 }
 
 describe('callerIsAdmin', () => {

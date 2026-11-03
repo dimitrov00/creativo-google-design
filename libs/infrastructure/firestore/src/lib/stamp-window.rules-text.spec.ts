@@ -1,9 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  RULES_CODE as CODE,
-  blockOf,
-  occurrences,
-} from '../testing/rules-text';
+import { blockOf, occurrences, rulesCode } from '@core/testing';
 
 /*
  * The stamp window of `firestore.rules` as TEXT (audit hardening WS-3.4,
@@ -15,6 +13,11 @@ import {
  * author check — so the window can neither widen nor wander onto a
  * shop-time coordinate (`utcEpochMs`, Law 7.3) unnoticed.
  */
+
+/** The workspace's own `firestore.rules`, comments removed (`src/lib` is five levels down). */
+const CODE = rulesCode(
+  readFileSync(resolve(__dirname, '../../../../../firestore.rules'), 'utf8'),
+);
 
 /** Whitespace folded to one space — the rules' own layout is not the pin. */
 const folded = (text: string): string => text.replace(/\s+/g, ' ').trim();
@@ -44,7 +47,7 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
   });
 
   it('windows a note’s create and update beside its author, and leaves its delete to the book', () => {
-    const notes = folded(blockOf('/appointmentNotes/{appointmentId}'));
+    const notes = folded(blockOf(CODE, '/appointmentNotes/{appointmentId}'));
     // Security hardening S-DEP-5 (S-RU-8): the id proof and the key list
     // follow the window — the author check and the one stamp stay first.
     expect(notes).toContain(
@@ -56,7 +59,7 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
   });
 
   it('windows a photo’s create beside its taker, refuses every update, and leaves its delete to the book', () => {
-    const photos = folded(blockOf('/appointmentPhotos/{photoId}'));
+    const photos = folded(blockOf(CODE, '/appointmentPhotos/{photoId}'));
     // Security hardening S-DEP-5 (S-RU-8): the id proofs, the key list and
     // the origin / path pins follow the window — the taker check and the one
     // stamp stay first.

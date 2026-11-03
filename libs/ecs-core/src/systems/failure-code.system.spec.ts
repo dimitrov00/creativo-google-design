@@ -29,6 +29,16 @@ describe('FailureCodeSystem.codeOf — an SDK failure’s canonical code', () =>
     expect(codeOf(null)).toBe('unknown');
   });
 
+  it('answers only a canonical name — any other code reads unknown, never as its own text', () => {
+    expect(codeOf({ code: 'auth/user-not-found' })).toBe('unknown');
+    expect(codeOf({ code: 'storage/object-not-found' })).toBe('unknown');
+    expect(codeOf({ code: 'ECONNRESET' })).toBe('unknown');
+    expect(codeOf({ code: 'bad-sentinel@example.invalid' })).toBe('unknown');
+    expect(codeOf({ code: '' })).toBe('unknown');
+    // A product prefix in front of a canonical name still reads as the name.
+    expect(codeOf({ code: 'auth/internal' })).toBe('internal');
+  });
+
   it('never reads a port’s refusal by a `code` it does not carry — codeOf alone still says unknown', () => {
     expect(codeOf(RepositoryError.readFailed('a/1', 'unavailable'))).toBe(
       'unknown',
@@ -63,7 +73,7 @@ describe('properties', () => {
     }
     expect(codeOf(errors[0])).toBe('internal');
     expect(codeOf(errors[1])).toBe('aborted');
-    expect(codeOf(errors[2])).toBe('user-not-found');
+    expect(codeOf(errors[2])).toBe('unknown');
     expect(codeOf(errors[3])).toBe('unknown');
     expect(errors[1]).toEqual({ code: 'ABORTED' });
   });
