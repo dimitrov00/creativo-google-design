@@ -497,7 +497,7 @@
       (uiSubmit)="leaveSearch($event)"
       (uiNavigate)="focusFirstResult($event)"
     />
-    @if (serviceResults().length === 0) {
+    @if (serviceRows().length === 0) {
     <!-- NOTHING MATCHED: the client search's own quiet figure — the
          glyph over one line — never a bare footnote at a row's inset. -->
     <figure
@@ -515,7 +515,8 @@
       [attr.aria-label]="t('staff.visit.addService')"
       data-testid="staff-visit-service-list"
     >
-      @for (option of serviceResults(); track option.id) {
+      @for (row of serviceRows(); track row.option.id) { @let option =
+      row.option;
       <!-- A ROW WITH TWO CONTROLS (owner, 2026-09-17: "animated like
            select — in place of a check, a stepper should animate, expand"):
            the PICK, a checkbox button that IS the row's label, and the DS
@@ -542,16 +543,20 @@
                  the row's second line, ahead of the minutes and the price,
                  never welded to the name. -->
             <ui-stack uiSpacing="none">
-              <span uiText uiFont="callout" uiWeight="medium"
-                >{{ option.serviceLabel ?? option.label }}</span
-              >
+              <span uiText uiFont="callout" uiWeight="medium">
+                @for (part of row.titleRuns; track $index) { @if (part.hit) {
+                <mark class="staff-visit__mark">{{ part.text }}</mark>
+                } @else {{{ part.text }}} }
+              </span>
               <span
                 uiText
                 uiFont="footnote"
                 uiForegroundStyle="secondary"
                 class="staff-visit__figures"
               >
-                {{ serviceLine(option) }}
+                @for (part of row.lineRuns; track $index) { @if (part.hit) {
+                <mark class="staff-visit__mark">{{ part.text }}</mark>
+                } @else {{{ part.text }}} }
               </span>
             </ui-stack>
           </button>

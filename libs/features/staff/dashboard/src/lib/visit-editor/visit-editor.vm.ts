@@ -26,7 +26,10 @@ import type {
 } from '@creativo/ui/controls';
 import type { UiForegroundStyle } from '@creativo/ui/modifiers';
 import type { ROW_VERB_WORD, RowVerb } from '../row-verb';
-import type { VisitEditorClientOption } from './staff-visit-editor';
+import type {
+  VisitEditorClientOption,
+  VisitEditorServiceOption,
+} from './staff-visit-editor';
 
 /*
  * THE VISIT SHEET'S DISPLAY MODEL (Law 10.3): the words a presenter takes,
@@ -414,6 +417,16 @@ export type DiscountSummaryVm = {
 export type DiscountApplyVm = {
   readonly label: string;
   readonly disabled: boolean;
+};
+
+/**
+ * A catalogue row, worded for the typed query (2026-11-03): the option, its
+ * title and its variant line as runs — what the query found marked.
+ */
+export type ServiceRowVm = {
+  readonly option: VisitEditorServiceOption;
+  readonly titleRuns: readonly StaffEventRun[];
+  readonly lineRuns: readonly StaffEventRun[];
 };
 
 /** The dock's promise on the service page. */
