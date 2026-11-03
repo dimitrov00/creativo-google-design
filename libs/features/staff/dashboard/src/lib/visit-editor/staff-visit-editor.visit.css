@@ -34,8 +34,15 @@
    inside keeps its own: while the pointer is on the stepper the row's
    layer stays clear and the row does not press. */
 .staff-visit__service-row {
+  /* The wash answers the tap at the press's own pace (2026-11-03: "tapping
+     doesn't take effect instantly"): at the 300ms `deliberate` tier an
+     ease-standard fade shows almost nothing for its first 100ms, so the
+     pick read as late. This `transition` also replaces the group's, so the
+     radius morph the selected shape rides is restated here. */
   transition:
-    background-color var(--sys-motion-duration-deliberate)
+    background-color var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard),
+    border-radius var(--sys-motion-duration-instant)
       var(--sys-motion-ease-standard),
     transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
 }
