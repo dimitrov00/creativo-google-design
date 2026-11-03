@@ -13,7 +13,8 @@
   // the library the fixture bodies are held to.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
+    "outDir": "../../dist/out-tsc/tools/seed/fixtures",
+    "tsBuildInfoFile": "../../dist/out-tsc/tools/seed/fixtures/tsconfig.fixtures.tsbuildinfo",
     "composite": true,
     "declaration": true,
     "types": ["node"],

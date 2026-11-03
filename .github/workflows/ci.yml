@@ -90,6 +90,9 @@ jobs:
       # would merge green without ever running on libs/ecs-core.
       - run: pnpm exec nx run-many -t lint
       - run: pnpm exec nx run verify-tools:layering --skip-nx-cache
+      # Every config owns its typecheck output folder: a shared one let
+      # parallel builds read a half-written declaration (main, 2026-11-02).
+      - run: node tools/verify/typecheck/check-out-dirs.mjs
       - run: pnpm exec nx typecheck seed-tools
       - run: pnpm exec nx test lint-rules
       - run: pnpm run lint:styles

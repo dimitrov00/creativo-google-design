@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../../dist/out-tsc",
+    "outDir": "../../../dist/out-tsc/libs/ui/controls/lib",
+    "tsBuildInfoFile": "../../../dist/out-tsc/libs/ui/controls/lib/tsconfig.lib.tsbuildinfo",
     "declaration": true,
     "declarationMap": true,
     "inlineSources": true,

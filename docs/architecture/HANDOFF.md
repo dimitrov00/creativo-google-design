@@ -3301,13 +3301,22 @@ _Next pass — engineering, no decision needed_
       carry `auditOperationId: null` beside a `writeOperationId`.
 - [ ] `trigger.failure_not_recorded` has no metric or alert; `shellcheck`
       before any ops `--apply`.
-- [ ] Parallel typecheck can still read a half-written declaration: each
-      project's lib and spec tsconfigs emit into one `dist/out-tsc`, and a
-      dependent's `tsc --build` may re-emit a reference (the final Phase 4
-      gate's `--parallel=3` run saw `functions` read ecs-core's errors barrel
-      mid-write). `78bf9aa` (typecheck depends on `^typecheck`) narrows it;
-      separate spec `outDir`s or Nx's TS-solution layout would close it. The
-      gate runs the cold typecheck at `--parallel=1` meanwhile.
+- [x] Parallel typecheck could read a half-written declaration — closed
+      2026-11-03 after it failed main's CI at PR #17's merge (`TS2305` on an
+      exported `ClientStatsRecord`). The writer was not a dependent rebuilding
+      a reference (a cold one-at-a-time run with `--verbose` rebuilt none):
+      35 spec configs compile ecs-core's SOURCES, their references stopping
+      short of `libs/ecs-core/tsconfig.lib.json`, and so re-emitted ecs-core's
+      620 declarations to the shared `dist/out-tsc` paths every dependent
+      reads. Nx also declared each project's outputs as the whole folder, so
+      one cache hit rewrote every project's declarations, and derived each
+      build-info path wrongly from `rootDir`. Each of the 79 configs now
+      emits to `dist/out-tsc/<project>/<kind>` and names its
+      `tsconfig.<kind>.tsbuildinfo` there; `tools/verify/typecheck/check-out-dirs.mjs`
+      (CI `static`, §4) refuses a config that does not. A cold typecheck is
+      safe at any `--parallel`. The specs still compile ecs-core's sources
+      (slower, not wrong) — references from each spec config to the libs it
+      reads would let them use the declarations instead.
 - [ ] `reschedule-appointment.integration.spec.ts` mixes two hashes (green
       only because it asserts no rows).
 - [ ] `FailureCodeSystem.codeOf` passes any string `code` through — restrict
@@ -3342,6 +3351,7 @@ _Accepted — kept on purpose_
 ```bash
 pnpm nx sync:check
 pnpm nx run verify-tools:layering --skip-nx-cache
+node tools/verify/typecheck/check-out-dirs.mjs   # each tsconfig owns its output folder
 pnpm nx run-many -t typecheck --skip-nx-cache   # ALWAYS skip the cache here
 pnpm nx run-many -t lint
 pnpm nx run-many -t test --parallel=3
