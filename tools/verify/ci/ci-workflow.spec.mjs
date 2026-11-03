@@ -111,6 +111,7 @@ const GATE = [
   // Not `affected`: nothing in the graph links a lint rule to what it judges.
   ['run-many -t lint', 'static'],
   ['verify-tools:layering', 'static'],
+  ['check-out-dirs.mjs', 'static'],
   ['typecheck seed-tools', 'static'],
   ['test lint-rules', 'static'],
   ['lint:styles', 'static'],
