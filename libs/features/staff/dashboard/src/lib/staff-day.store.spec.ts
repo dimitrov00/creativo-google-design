@@ -31,6 +31,7 @@ import {
   PriceCents,
   Result,
   SeatId,
+  type UtcEpochMs,
   Weekday,
 } from '@core/primitives';
 import {
@@ -40,6 +41,7 @@ import {
   RepositoryError,
 } from '@core/errors';
 import {
+  type BookingCall,
   Combinability,
   CouponExpiryRule,
   CouponStatus,
@@ -61,6 +63,7 @@ import {
   type AppointmentNotePorts,
   type AppointmentReadPorts,
   Callables,
+  type ClockPorts,
   type CouponVoucherPorts,
   type IdPorts,
   type MediaResolvePorts,
@@ -70,6 +73,7 @@ import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
   type GatewayCall,
+  type GatewayScript,
   appointmentFixture,
   at,
   barberFixture,
@@ -144,6 +148,12 @@ async function build(
     readonly ids?: IdPorts;
     /** Every callable the store dialled, in order (each answers `PIPELINE_UNKNOWN`). */
     readonly calls?: GatewayCall[];
+    /** The callables that succeed, by name (the rest answer `PIPELINE_UNKNOWN`). */
+    readonly script?: GatewayScript;
+    /** The instant the store reads — pinned at `nowIso` by default. */
+    readonly clock?: ClockPorts;
+    /** The search window's read port — an empty, uncapped window by default. */
+    readonly searchWindow?: AppointmentReadPorts['searchAppointmentWindow'];
   } = {},
 ): Promise<Harness> {
   localStorage.clear();
@@ -157,9 +167,11 @@ async function build(
       provideRouter([]),
       {
         provide: CLOCK_PORTS,
-        useValue: memoryClockPorts(
-          utcMs(options.nowIso ?? '2026-08-05T09:00:00.000+03:00'),
-        ),
+        useValue:
+          options.clock ??
+          memoryClockPorts(
+            utcMs(options.nowIso ?? '2026-08-05T09:00:00.000+03:00'),
+          ),
       },
       {
         provide: ID_PORTS,
@@ -186,12 +198,14 @@ async function build(
           observeHistory: () => of(Result.ok([])),
           pageClientHistory: async () =>
             Result.ok({ appointments: [], nextBeforeUtcMs: null }),
-          searchAppointmentWindow: async () => Result.ok([]),
+          searchAppointmentWindow:
+            options.searchWindow ??
+            (async () => Result.ok({ appointments: [], capped: false })),
         } satisfies AppointmentReadPorts,
       },
       {
         provide: GATEWAY_PORTS,
-        useValue: scriptedGatewayPorts({}, options.calls),
+        useValue: scriptedGatewayPorts(options.script ?? {}, options.calls),
       },
       {
         provide: CATALOG_PORTS,
@@ -754,4 +768,176 @@ describe('StaffDayStore — each act goes out named (WS-4.1)', () => {
       expect(store.isPending(VISIT)).toBe(false);
     },
   );
+});
+
+describe('StaffDayStore — the search window reaches the horizon and stays fresh', () => {
+  const EPOCH = utcMs('2026-08-05T09:00:00.000+03:00');
+
+  /** A store whose clock the spec moves and whose window reads are counted. */
+  async function windowed(
+    options: {
+      readonly answer?: Awaited<
+        ReturnType<AppointmentReadPorts['searchAppointmentWindow']>
+      >;
+      readonly script?: GatewayScript;
+    } = {},
+  ) {
+    const reads: {
+      from: UtcEpochMs;
+      to: UtcEpochMs;
+      now: UtcEpochMs;
+      cap: number;
+    }[] = [];
+    let now = EPOCH;
+    let answer =
+      options.answer ?? Result.ok({ appointments: [], capped: false });
+    const harness = await build({
+      script: options.script,
+      clock: { nowUtcMs: () => now },
+      searchWindow: async (from, to, at, cap) => {
+        reads.push({ from, to, now: at, cap });
+        return answer;
+      },
+    });
+    return {
+      ...harness,
+      reads,
+      advanceMinutes: (minutes: number) => {
+        now = utcMs(
+          new Date(EPOCH + (now - EPOCH) + minutes * 60_000).toISOString(),
+        );
+      },
+      answerWith: (next: typeof answer) => {
+        answer = next;
+      },
+    };
+  }
+
+  it('reads the range once on the first opening: 60 days back to the end of the two-month horizon, in the shop’s zone', async () => {
+    const { store, reads } = await windowed();
+
+    await store.openSearch();
+
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toEqual({
+      from: utcMs('2026-06-06T00:00:00+03:00'),
+      to: utcMs('2026-10-31T23:59:59.999+02:00'),
+      now: EPOCH,
+      cap: 3000,
+    });
+  });
+
+  it('reads nothing when it is reopened inside 15 minutes with no visit written here', async () => {
+    const { store, reads, advanceMinutes } = await windowed();
+
+    await store.openSearch();
+    store.closeSearch();
+    advanceMinutes(14);
+    await store.openSearch();
+    await store.ensureWindow();
+
+    expect(reads).toHaveLength(1);
+  });
+
+  it('reads again after 15 minutes, keeping the old window on screen meanwhile', async () => {
+    const first = [appointmentFixture()];
+    const { store, reads, advanceMinutes, answerWith } = await windowed({
+      answer: Result.ok({ appointments: first, capped: false }),
+    });
+    await store.openSearch();
+    advanceMinutes(15);
+    answerWith(Result.ok({ appointments: [], capped: false }));
+
+    const reloading = store.openSearch();
+    expect(store.pool()).toEqual(first);
+    await reloading;
+
+    expect(reads).toHaveLength(2);
+    expect(store.pool()).toEqual([]);
+  });
+
+  it('reads again after invalidateSearchWindow, once', async () => {
+    const { store, reads } = await windowed();
+    await store.openSearch();
+
+    store.invalidateSearchWindow();
+    await store.openSearch();
+    await store.openSearch();
+
+    expect(reads).toHaveLength(2);
+  });
+
+  const intent = {
+    appointmentId: AppointmentId.of('visit-1'),
+  } as unknown as BookingCall.TransitionIntent;
+
+  it('does not invalidate on a refused transition', async () => {
+    const { store, reads } = await windowed();
+    await store.openSearch();
+
+    await store.transition(intent);
+    await store.openSearch();
+
+    expect(reads).toHaveLength(1);
+  });
+
+  it('invalidates on a landed transition', async () => {
+    const { store, reads } = await windowed({
+      script: {
+        [Callables.TransitionAppointment]: () => Result.ok(undefined as never),
+      },
+    });
+    await store.openSearch();
+
+    await store.transition(intent);
+    await store.openSearch();
+
+    expect(reads).toHaveLength(2);
+  });
+
+  it('keeps the window and says it may be out of date when a refresh fails', async () => {
+    const first = [appointmentFixture()];
+    const { store, advanceMinutes, answerWith } = await windowed({
+      answer: Result.ok({ appointments: first, capped: false }),
+    });
+    await store.openSearch();
+    advanceMinutes(20);
+    answerWith(Result.err(RepositoryError.readFailed('appointments', null)));
+
+    await store.openSearch();
+
+    expect(store.pool()).toEqual(first);
+    expect(store.searchStale()).toBe(true);
+  });
+
+  it('clears the out-of-date note when the next refresh lands', async () => {
+    const { store, advanceMinutes, answerWith } = await windowed();
+    await store.openSearch();
+    advanceMinutes(20);
+    answerWith(Result.err(RepositoryError.readFailed('appointments', null)));
+    await store.openSearch();
+    answerWith(Result.ok({ appointments: [], capped: false }));
+
+    await store.openSearch();
+
+    expect(store.searchStale()).toBe(false);
+  });
+
+  it('carries the cap flag of the window it read', async () => {
+    const { store } = await windowed({
+      answer: Result.ok({ appointments: [], capped: true }),
+    });
+
+    await store.openSearch();
+
+    expect(store.searchCapped()).toBe(true);
+  });
+
+  it('shares one read between two callers that open it together', async () => {
+    const { store, reads } = await windowed();
+
+    await Promise.all([store.openSearch(), store.ensureWindow()]);
+
+    expect(reads).toHaveLength(1);
+  });
 });

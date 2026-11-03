@@ -19,7 +19,11 @@ import {
 import { type RepositoryError } from '@core/errors';
 import { BookingLifecycle, PageStep } from '@core/components';
 import { type Appointment, Collections } from '@core/entities';
-import type { AppointmentReadPorts, ClientHistoryPage } from '@core/ports';
+import type {
+  AppointmentReadPorts,
+  AppointmentWindowRead,
+  ClientHistoryPage,
+} from '@core/ports';
 import { PagingSystem, type StoredDocument } from '@core/systems';
 import {
   keepAdmitted,
@@ -214,24 +218,29 @@ export const appointmentReadPorts = (
   };
 
   /**
-   * The nearest visits on either side of `nowUtcMs`, ascending by start.
-   * Both halves are read RAW and admitted ONCE, as the one answer they make
-   * — so the systemic rule judges the whole window: a half whose every row
-   * is malformed (the evening's only upcoming visit) drops beside the other
+   * The visits starting in `fromUtcMs … toUtcMs` on either side of
+   * `nowUtcMs`, ascending by start, each side cut at `capPerSide`. Both
+   * halves are read RAW and admitted ONCE, as the one answer they make — so
+   * the systemic rule judges the whole window: a half whose every row is
+   * malformed (the evening's only upcoming visit) drops beside the other
    * half's visits instead of refusing the search; only a window that read
-   * rows and kept none refuses.
+   * rows and kept none refuses. `capped` is a side that came back full — the
+   * far edge of that side was left unread.
    */
   const windowOf = async (
+    fromUtcMs: UtcEpochMs,
+    toUtcMs: UtcEpochMs,
     nowUtcMs: UtcEpochMs,
-    limitPerSide: number,
-  ): Promise<Result<readonly Appointment[], RepositoryError>> => {
+    capPerSide: number,
+  ): Promise<Result<AppointmentWindowRead, RepositoryError>> => {
     const [past, upcoming] = await Promise.all([
       readRawQuery(
         query(
           appointments,
+          where('utcEpochMs', '>=', fromUtcMs),
           where('utcEpochMs', '<', nowUtcMs),
           orderBy('utcEpochMs', 'desc'),
-          limit(limitPerSide),
+          limit(capPerSide),
         ),
         path,
       ),
@@ -239,20 +248,29 @@ export const appointmentReadPorts = (
         query(
           appointments,
           where('utcEpochMs', '>=', nowUtcMs),
+          where('utcEpochMs', '<=', toUtcMs),
           orderBy('utcEpochMs'),
-          limit(limitPerSide),
+          limit(capPerSide),
         ),
         path,
       ),
     ]);
     if (!past.ok) return past;
     if (!upcoming.ok) return upcoming;
-    return keepAdmitted<Appointment>(
+    const admitted = keepAdmitted<Appointment>(
       [...past.value].reverse().concat(upcoming.value),
       path,
       guard,
       null,
     );
+    return admitted.ok
+      ? Result.ok({
+          appointments: admitted.value,
+          capped:
+            past.value.length >= capPerSide ||
+            upcoming.value.length >= capPerSide,
+        })
+      : admitted;
   };
 
   return {
@@ -335,17 +353,22 @@ export const appointmentReadPorts = (
     },
 
     /**
-     * The staff search pool and the add-client page's «Скорошни» — the
-     * nearest visits on either side of now: two halves, each a range and an
-     * `orderBy` on the SAME root key, so both ride the automatic single-field
-     * index on `utcEpochMs` (no composite, and no fieldOverride may ever be
-     * put on it). Ordering each half outward from now is what makes the
-     * limit cut the far edges, not the middle; the two are answered as one
-     * list, ascending by start.
+     * The staff search window and the add-client page's «Скорошни» — the
+     * visits of a day range, two halves outward from now: each a range and
+     * an `orderBy` on the SAME root key, so both ride the automatic
+     * single-field index on `utcEpochMs` (no composite, and no fieldOverride
+     * may ever be put on it). Ordering each half outward from now is what
+     * makes the cap cut the far edges, not the middle; the two are answered
+     * as one list, ascending by start.
      */
-    searchAppointmentWindow: async (nowUtcMs, limitPerSide) => {
+    searchAppointmentWindow: async (
+      fromUtcMs,
+      toUtcMs,
+      nowUtcMs,
+      capPerSide,
+    ) => {
       try {
-        return await windowOf(nowUtcMs, limitPerSide);
+        return await windowOf(fromUtcMs, toUtcMs, nowUtcMs, capPerSide);
       } catch (cause) {
         return Result.err(readFailed(path, cause));
       }

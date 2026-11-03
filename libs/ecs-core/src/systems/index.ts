@@ -73,6 +73,7 @@ export * from './role-assignment.system';
 export * from './roster.system';
 export * from './schedule-exception.system';
 export * from './search-fields.system';
+export * from './search-window.system';
 export * from './season.system';
 export * from './seating-rule.system';
 export * from './service-conflict.system';

@@ -63,6 +63,18 @@ function recorded<T>(stream: {
 const idsOf = (answer: Result<readonly { readonly id: string }[], unknown>) =>
   answer.ok ? answer.value.map((appointment) => appointment.id) : answer;
 
+/** The search window the specs read: October 2026, whole. */
+const FROM: UtcEpochMs = utcMs('2026-10-01T00:00:00+03:00');
+const TO: UtcEpochMs = utcMs('2026-10-31T23:59:59+02:00');
+
+/** A window's answer as its visits' ids. */
+const windowIdsOf = (
+  answer: Result<
+    { readonly appointments: readonly { readonly id: string }[] },
+    unknown
+  >,
+) => (answer.ok ? answer.value.appointments.map((entry) => entry.id) : answer);
+
 /** A staff day's answer as its visits' ids and the count it could not read (OR-2). */
 const dayOf = (
   answer: Result<
@@ -323,7 +335,7 @@ describe('appointmentReadPorts.pageClientHistory — the client card, a page at 
   });
 });
 
-describe('appointmentReadPorts.searchAppointmentWindow — the staff search pool', () => {
+describe('appointmentReadPorts.searchAppointmentWindow — the staff search window', () => {
   const NOW: UtcEpochMs = utcMs('2026-10-12T12:00:00+03:00');
   const seeded = () =>
     new FakeFirestore({
@@ -335,39 +347,73 @@ describe('appointmentReadPorts.searchAppointmentWindow — the staff search pool
       'appointments/n3': visit({ at: '2026-10-15T10:00:00+03:00' }),
     });
 
-  it('reads two halves outward from now on utcEpochMs alone, each cut at the limit, and answers them by start', async () => {
+  it('reads two halves of the range outward from now on utcEpochMs alone, each cut at the cap, and answers them by start', async () => {
     const fake = seeded();
 
-    const pool = await appointmentReadPorts(
+    const window = await appointmentReadPorts(
       asDb(fake),
       UNGUARDED,
-    ).searchAppointmentWindow(NOW, 2);
+    ).searchAppointmentWindow(FROM, TO, NOW, 2);
 
-    expect(idsOf(pool)).toEqual(['p2', 'p1', 'n1', 'n2']);
+    expect(windowIdsOf(window)).toEqual(['p2', 'p1', 'n1', 'n2']);
     expect(fake.reads.map((read) => read.constraints)).toEqual([
-      [`utcEpochMs < ${NOW}`, 'orderBy utcEpochMs desc', 'limit 2'],
-      [`utcEpochMs >= ${NOW}`, 'orderBy utcEpochMs asc', 'limit 2'],
+      [
+        `utcEpochMs >= ${FROM}`,
+        `utcEpochMs < ${NOW}`,
+        'orderBy utcEpochMs desc',
+        'limit 2',
+      ],
+      [
+        `utcEpochMs >= ${NOW}`,
+        `utcEpochMs <= ${TO}`,
+        'orderBy utcEpochMs asc',
+        'limit 2',
+      ],
     ]);
   });
 
-  it('answers whatever there is when a side runs short', async () => {
-    const pool = await appointmentReadPorts(
+  it('says a side that came back full was capped', async () => {
+    const window = await appointmentReadPorts(
       asDb(seeded()),
       UNGUARDED,
-    ).searchAppointmentWindow(NOW, 10);
+    ).searchAppointmentWindow(FROM, TO, NOW, 2);
 
-    expect(idsOf(pool)).toEqual(['p3', 'p2', 'p1', 'n1', 'n2', 'n3']);
+    expect(window.ok && window.value.capped).toBe(true);
   });
 
-  it('turns a refused read — or a limit no query takes — into a failed Result', async () => {
+  it('answers whatever there is, uncapped, when both sides run short', async () => {
+    const window = await appointmentReadPorts(
+      asDb(seeded()),
+      UNGUARDED,
+    ).searchAppointmentWindow(FROM, TO, NOW, 10);
+
+    expect(windowIdsOf(window)).toEqual(['p3', 'p2', 'p1', 'n1', 'n2', 'n3']);
+    expect(window.ok && window.value.capped).toBe(false);
+  });
+
+  it('leaves out the days outside the range', async () => {
+    const window = await appointmentReadPorts(
+      asDb(seeded()),
+      UNGUARDED,
+    ).searchAppointmentWindow(
+      utcMs('2026-10-10T00:00:00+03:00'),
+      utcMs('2026-10-14T23:59:59+03:00'),
+      NOW,
+      10,
+    );
+
+    expect(windowIdsOf(window)).toEqual(['p2', 'p1', 'n1', 'n2']);
+  });
+
+  it('turns a refused read — or a cap no query takes — into a failed Result', async () => {
     const refused = await appointmentReadPorts(
       asDb(seeded().failWith({ code: 'permission-denied' })),
       UNGUARDED,
-    ).searchAppointmentWindow(NOW, 2);
+    ).searchAppointmentWindow(FROM, TO, NOW, 2);
     const nonsense = await appointmentReadPorts(
       asDb(seeded()),
       UNGUARDED,
-    ).searchAppointmentWindow(NOW, 0);
+    ).searchAppointmentWindow(FROM, TO, NOW, 0);
 
     expect(refused.ok).toBe(false);
     expect(nonsense.ok).toBe(false);
@@ -710,8 +756,13 @@ describe('appointmentReadPorts, guarded — malformed visits at read time (edge 
       'appointments/p2': malformedVisit({ at: '2026-10-12T10:00:00+03:00' }),
       'appointments/n1': storedVisit({ at: '2026-10-13T10:00:00+03:00' }),
     });
-    const pool = await guarded(fake).ports.searchAppointmentWindow(NOW, 5);
-    expect(idsOf(pool)).toEqual(['p1', 'n1']);
+    const window = await guarded(fake).ports.searchAppointmentWindow(
+      FROM,
+      TO,
+      NOW,
+      5,
+    );
+    expect(windowIdsOf(window)).toEqual(['p1', 'n1']);
   });
 
   it('searchAppointmentWindow judges the WHOLE window: the evening’s only upcoming visit malformed still answers the past visits, and reports the drop', async () => {
@@ -725,10 +776,9 @@ describe('appointmentReadPorts, guarded — malformed visits at read time (edge 
       },
     });
     const { lines, ports } = guarded(fake);
-    expect(idsOf(await ports.searchAppointmentWindow(NOW, 5))).toEqual([
-      'p2',
-      'p1',
-    ]);
+    expect(
+      windowIdsOf(await ports.searchAppointmentWindow(FROM, TO, NOW, 5)),
+    ).toEqual(['p2', 'p1']);
     expect(lines).toEqual([
       {
         level: 'error',
@@ -744,14 +794,16 @@ describe('appointmentReadPorts, guarded — malformed visits at read time (edge 
       'appointments/p1': malformedVisit({ at: '2026-10-11T10:00:00+03:00' }),
       'appointments/n1': malformedVisit({ at: '2026-10-13T10:00:00+03:00' }),
     });
-    expect(await guarded(fake).ports.searchAppointmentWindow(NOW, 5)).toEqual(
-      malformed('appointments/p1', 'seats[0]'),
-    );
+    expect(
+      await guarded(fake).ports.searchAppointmentWindow(FROM, TO, NOW, 5),
+    ).toEqual(malformed('appointments/p1', 'seats[0]'));
     expect(
       await guarded(new FakeFirestore({})).ports.searchAppointmentWindow(
+        FROM,
+        TO,
         NOW,
         5,
       ),
-    ).toEqual(Result.ok([]));
+    ).toEqual(Result.ok({ appointments: [], capped: false }));
   });
 });

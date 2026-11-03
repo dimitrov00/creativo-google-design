@@ -9,7 +9,15 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { type Observable, combineLatest, from, map, of, switchMap } from 'rxjs';
+import {
+  type Observable,
+  combineLatest,
+  filter,
+  from,
+  map,
+  of,
+  switchMap,
+} from 'rxjs';
 import { settledViewTransition } from './shared/view-transition';
 import {
   type AppointmentId,
@@ -39,6 +47,7 @@ import {
 } from '@core/errors';
 import {
   type BookingCall,
+  BookingPolicy,
   Combinability,
   CouponValue,
   type MinuteRange,
@@ -68,6 +77,7 @@ import {
   type LandedRevision,
   type LaneGap,
   RosterSystem,
+  SearchWindowSystem,
   ShopZoneSystem,
   StaffIntentSystem,
   type UnsettledName,
@@ -127,14 +137,8 @@ export function invalidCommand(field: string): PipelineError {
   );
 }
 
-/**
- * How many appointments the search reads each side of now.
- *
- * A 3–5 chair shop books ~40 a day, so 300 reaches roughly a working week
- * back and a working week forward — past the horizon anyone searches by
- * name, and small enough to match in memory without a pause.
- */
-const SEARCH_WINDOW_PER_SIDE = 300;
+/** The zone the search window is read in until the shop's own is known. */
+const UTC_ZONE = ZonedTimeSystem.checkZone('UTC');
 
 /**
  * The shop's day a held coupon lapses on, or `null` for one that never
@@ -1770,7 +1774,12 @@ export class StaffDayStore {
   readonly term = this._term.asReadonly();
 
   /**
-   * The window the search matches against, loaded ONCE when search opens.
+   * The window the search matches against: every visit from 60 days back to
+   * the booking horizon (`SearchWindowSystem.rangeOf`), read when search
+   * opens and again only when it is stale — older than
+   * `SEARCH_WINDOW_MAX_AGE_MINUTES`, or this device wrote a visit since
+   * (`invalidateSearchWindow`). The old window stays on screen while the new
+   * one is read.
    *
    * Not live and not re-fetched per keystroke: the shop's book does not
    * change between two letters, and a listener held open for as long as a
@@ -1779,10 +1788,30 @@ export class StaffDayStore {
   private readonly _pool = signal<readonly Appointment[]>([]);
   readonly pool = this._pool.asReadonly();
 
+  /** The window stopped at its cap on a side — the sheet says it shows the nearest. */
+  private readonly _searchCapped = signal(false);
+  readonly searchCapped = this._searchCapped.asReadonly();
+
+  /** The last refresh failed, so the window on screen may be out of date. */
+  private readonly _searchStale = signal(false);
+  readonly searchStale = this._searchStale.asReadonly();
+
+  private windowLoadedAtUtcMs: UtcEpochMs | null = null;
+  private windowInvalidated = false;
+  private windowLoad: Promise<void> | null = null;
+
+  /** The tenant's booking policy (its horizon sets how far ahead the window reaches). */
+  private readonly policy = toSignal(
+    this.scheduling.observePolicy().pipe(
+      filter((answer) => answer.ok),
+      map((answer) => answer.value),
+    ),
+    { initialValue: BookingPolicy.DEFAULT },
+  );
+
   async openSearch(): Promise<void> {
     this._searching.set(true);
-    if (this._pool().length > 0) return;
-    await this.reloadSearchPool();
+    await this.ensureWindow();
   }
 
   closeSearch(): void {
@@ -1797,24 +1826,70 @@ export class StaffDayStore {
   /** The window as last read — the add-client page's «Скорошни» read it too. */
   readonly window = this._pool.asReadonly();
 
-  /** The window, read once if nobody has yet — the add-client page's way in. */
+  /** The window, read if nobody has yet or it is stale — the add-client page's way in too. */
   async ensureWindow(): Promise<void> {
-    if (this._pool().length === 0) await this.reloadSearchPool();
+    const stale = SearchWindowSystem.isStale(
+      this.windowLoadedAtUtcMs,
+      this.readNow(),
+      this.windowInvalidated,
+    );
+    if (stale) await this.reloadSearchPool();
   }
 
   /**
-   * Re-read the window — after a write, or when search is reopened stale:
-   * the `SEARCH_WINDOW_PER_SIDE` visits each side of now, by their start
-   * instant (`searchAppointmentWindow`, the range `utcEpochMs` is for).
+   * This device wrote a visit (booked, moved, cancelled…): the window it
+   * holds is out of date, so the next opening of the search reads it again.
    */
-  async reloadSearchPool(): Promise<void> {
+  invalidateSearchWindow(): void {
+    this.windowInvalidated = true;
+  }
+
+  /**
+   * Read the window now — `SearchWindowSystem.rangeOf` the policy's horizon,
+   * as instants in the shop's zone (`searchAppointmentWindow`, the range
+   * `utcEpochMs` is for). One read at a time: a call that finds one under
+   * way waits for it. A failed read keeps the window on screen and says it
+   * may be out of date; with no zone yet there is no "today" to reach from.
+   */
+  reloadSearchPool(): Promise<void> {
+    this.windowLoad ??= this.loadWindow().finally(() => {
+      this.windowLoad = null;
+    });
+    return this.windowLoad;
+  }
+
+  private async loadWindow(): Promise<void> {
+    // Before the shop's zone is known the range is read in UTC — a day's
+    // slack at the window's far edges, so the search never waits on the zone.
+    const zone = untracked(this.zone) ?? (UTC_ZONE.ok ? UTC_ZONE.value : null);
+    if (zone === null) return;
+    const now = this.readNow();
+    const bounds = SearchWindowSystem.boundsOf(
+      SearchWindowSystem.rangeOf(
+        untracked(this.policy),
+        ZonedTimeSystem.shopNow(now, zone).localDate,
+      ),
+      zone,
+    );
     this._searchLoading.set(true);
+    // A write that lands while this read is out marks the window again.
+    this.windowInvalidated = false;
     try {
       const result = await this.appointments.searchAppointmentWindow(
-        this.readNow(),
-        SEARCH_WINDOW_PER_SIDE,
+        bounds.fromUtcMs,
+        bounds.toUtcMs,
+        now,
+        SearchWindowSystem.SEARCH_CAP_PER_SIDE,
       );
-      if (result.ok) this._pool.set(result.value);
+      if (result.ok) {
+        this._pool.set(result.value.appointments);
+        this._searchCapped.set(result.value.capped);
+        this._searchStale.set(false);
+        this.windowLoadedAtUtcMs = now;
+      } else {
+        this.windowInvalidated = true;
+        this._searchStale.set(true);
+      }
     } finally {
       this._searchLoading.set(false);
     }
@@ -2062,6 +2137,7 @@ export class StaffDayStore {
         this._createError.set(result.error);
         return false;
       }
+      this.invalidateSearchWindow();
       return true;
     } finally {
       this._creating.set(false);
@@ -2233,6 +2309,7 @@ export class StaffDayStore {
       }
       this.settle(id, key);
       this.recordLanded(id, request.expectedVersion, result.value.revision);
+      this.invalidateSearchWindow();
       return true;
     } finally {
       this._pending.update((set) => {
@@ -2476,6 +2553,7 @@ export class StaffDayStore {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
       }
+      this.invalidateSearchWindow();
       return true;
     } finally {
       this._pending.update((set) => {

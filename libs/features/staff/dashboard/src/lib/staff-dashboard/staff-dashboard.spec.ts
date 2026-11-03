@@ -713,6 +713,10 @@ describe('StaffDashboard', () => {
    * when a case pools its own; `null` is the one Георги visit.
    */
   let searchPool: readonly Appointment[] | null = null;
+  /** Whether the search window stopped at its cap (the sheet's truncated footnote). */
+  let searchCapped = false;
+  /** The next window read fails (the sheet's out-of-date footnote). */
+  let searchWindowFails = false;
 
   /**
    * The whole fixture, with the CLOCK as the one dial worth turning.
@@ -795,14 +799,19 @@ describe('StaffDashboard', () => {
             pageClientHistory: async () =>
               PortResult.ok({ appointments: [], nextBeforeUtcMs: null }),
             searchAppointmentWindow: async () =>
-              PortResult.ok(
-                searchPool ?? [
-                  appointment('appointment-1', '2026-08-05T10:00:00', {
-                    name: 'Георги Петров',
-                    phone: '+359 88 123 4567',
+              searchWindowFails
+                ? PortResult.err(
+                    RepositoryError.readFailed('appointments', null),
+                  )
+                : PortResult.ok({
+                    appointments: searchPool ?? [
+                      appointment('appointment-1', '2026-08-05T10:00:00', {
+                        name: 'Георги Петров',
+                        phone: '+359 88 123 4567',
+                      }),
+                    ],
+                    capped: searchCapped,
                   }),
-                ],
-              ),
           } satisfies AppointmentReadPorts,
         },
         {
@@ -5431,6 +5440,51 @@ describe('StaffDashboard', () => {
       ).click();
       fixture.detectChanges();
     }
+  });
+
+  describe('the search sheet’s footnotes', () => {
+    afterEach(() => {
+      searchCapped = false;
+      searchWindowFails = false;
+    });
+
+    const openSheet = async (): Promise<void> => {
+      (
+        host().querySelector(
+          '[data-testid="staff-search-open"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('says nothing while the window is whole and fresh', async () => {
+      await openSheet();
+      expect(
+        host().querySelector('[data-testid="staff-search-truncated"]'),
+      ).toBeNull();
+      expect(
+        host().querySelector('[data-testid="staff-search-stale"]'),
+      ).toBeNull();
+    });
+
+    it('says it shows the nearest visits when the window stopped at its cap', async () => {
+      searchCapped = true;
+      await openSheet();
+      expect(
+        host().querySelector('[data-testid="staff-search-truncated"]')
+          ?.textContent,
+      ).toContain('staff.day.searchTruncated');
+    });
+
+    it('says the results may be out of date when the window could not be read', async () => {
+      searchWindowFails = true;
+      await openSheet();
+      expect(
+        host().querySelector('[data-testid="staff-search-stale"]'),
+      ).not.toBeNull();
+    });
   });
 
   it("gives the day search the sheets' one search grammar: the head folds, the DS field is pinned, ↓ reaches the hits", async () => {
