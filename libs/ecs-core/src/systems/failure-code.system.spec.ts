@@ -39,6 +39,17 @@ describe('FailureCodeSystem.codeOf — an SDK failure’s canonical code', () =>
     expect(codeOf({ code: 'auth/internal' })).toBe('internal');
   });
 
+  it('reads a port refusal’s recorded reason whole — the adapter’s own answer, only spelled canonically', () => {
+    const { reasonCodeOf } = FailureCodeSystem;
+    expect(reasonCodeOf('unavailable')).toBe('unavailable');
+    expect(reasonCodeOf('CATALOG_LOCATION_ZONE_UNKNOWN')).toBe(
+      'catalog-location-zone-unknown',
+    );
+    expect(reasonCodeOf('firestore/aborted')).toBe('aborted');
+    expect(reasonCodeOf(null)).toBe('unknown');
+    expect(reasonCodeOf('')).toBe('unknown');
+  });
+
   it('never reads a port’s refusal by a `code` it does not carry — codeOf alone still says unknown', () => {
     expect(codeOf(RepositoryError.readFailed('a/1', 'unavailable'))).toBe(
       'unknown',

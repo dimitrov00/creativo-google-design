@@ -454,7 +454,11 @@ export type AttemptReport = {
  * A failure as the value `retryingTrigger` judges when it is thrown: the
  * failure itself when its own code says the same, else an `Error` carrying
  * the code the pipeline judged it by (a port's refusal names it in its
- * `reason`), so the edge reaches the same verdict.
+ * `reason`), so the edge reaches the same verdict. A code outside the
+ * canonical set (one of our own, `catalog-location-zone-unknown`) reads
+ * `unknown` at the edge (`FailureCodeSystem.codeOf` trusts no thrown
+ * `code`) — permanent either way, and the pipeline's own record of the
+ * failure keeps its name.
  */
 export function attemptThrowable(failure: AttemptFailure): unknown {
   if (FailureCodeSystem.codeOf(failure.error) === failure.failureCode) {

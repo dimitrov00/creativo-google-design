@@ -12,7 +12,10 @@
  * someone's text reached), and the answer lands in log lines and in the
  * stored `triggerFailures` letters (R36: no foreign text in a record). A
  * product code outside the set (`auth/user-not-found`) is read by its own
- * adapter where it is an answer (`authCodeOf`), never through here.
+ * adapter where it is an answer (`authCodeOf`), never through here. A port
+ * refusal's recorded `reason` is no thrown value: it is the adapter's own
+ * answer — a code this reader gave it, or one of our error codes — and
+ * {@link FailureCodeSystem.reasonCodeOf} reads it whole.
  */
 
 /** What a code is called when nothing names it. */
@@ -41,6 +44,14 @@ const GRPC_CODE_NAMES: { readonly [status: number]: string } = {
 /** The canonical names a string code may read as — {@link GRPC_CODE_NAMES}' values. */
 const CANONICAL_NAMES: readonly string[] = Object.values(GRPC_CODE_NAMES);
 
+/** A code in its canonical spelling: no product prefix, kebab-case, lower case. */
+function spelled(code: string): string {
+  return code
+    .replace(/^[a-z]+\//, '')
+    .replace(/_/g, '-')
+    .toLowerCase();
+}
+
 /** The `code` a thrown value carries, read without trusting its shape. */
 function rawCodeOf(error: unknown): unknown {
   if (error === null || typeof error !== 'object') return undefined;
@@ -63,12 +74,22 @@ export const FailureCodeSystem = {
         : UNKNOWN_CODE;
     }
     if (typeof code === 'string') {
-      const name = code
-        .replace(/^[a-z]+\//, '')
-        .replace(/_/g, '-')
-        .toLowerCase();
+      const name = spelled(code);
       return CANONICAL_NAMES.includes(name) ? name : UNKNOWN_CODE;
     }
     return UNKNOWN_CODE;
+  },
+
+  /**
+   * A port refusal's recorded `reason` as a code (`RepositoryError.reason`):
+   * the adapter's own answer — a canonical code {@link FailureCodeSystem.codeOf}
+   * gave it, or one of our error codes (`CATALOG_LOCATION_ZONE_UNKNOWN` when
+   * no location is stored) — so it is trusted and only spelled the canonical
+   * way; `unknown` when the refusal recorded none.
+   */
+  reasonCodeOf(reason: string | null): string {
+    return reason === null || reason.length === 0
+      ? UNKNOWN_CODE
+      : spelled(reason);
   },
 } as const;

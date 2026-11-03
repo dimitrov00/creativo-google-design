@@ -125,7 +125,7 @@ function judgedCode(error: unknown): string {
   }
   return error.errorCode === RepositoryErrorCode.Malformed
     ? DATA_LOSS_CODE
-    : FailureCodeSystem.codeOf({ code: error.reason ?? '' });
+    : FailureCodeSystem.reasonCodeOf(error.reason);
 }
 
 export const TriggerAttemptSystem = {

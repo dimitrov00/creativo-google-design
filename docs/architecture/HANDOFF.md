@@ -3346,7 +3346,12 @@ _Next pass — engineering, no decision needed_
       `unknown`, so a thrown value's own text (an `ECONNRESET`, a product
       code, a value someone's text reached) never reaches a log line or a
       stored dead letter. A product code that is an answer stays its
-      adapter's (`authCodeOf`).
+      adapter's (`authCodeOf`). A port refusal's recorded `reason` is the
+      adapter's own value, so the retry verdict reads it whole
+      (`FailureCodeSystem.reasonCodeOf`): a stall on an unstored location
+      keeps `catalog-location-zone-unknown` in the pipeline's record, and
+      only the edge's line and dead letter for such a rethrown name read
+      `unknown` — the same permanent verdict.
 - [x] `memoryCustomerPorts.loadCustomer` has no case in
       `port-doubles.spec.ts`; `role.rules-parity.spec.ts` keeps its own
       rules reader — closed 2026-11-03: the case is in, and ONE

@@ -27,11 +27,7 @@ import {
   type PolicyRecomputeJob,
   type TriggerFailure,
 } from '@core/entities';
-import {
-  FailureCodeSystem,
-  GovernedChangeSystem,
-  TriggerAttemptSystem,
-} from '@core/systems';
+import { GovernedChangeSystem, TriggerAttemptSystem } from '@core/systems';
 import {
   appointmentFixture,
   FIXTURE_IDS,
@@ -817,7 +813,27 @@ describe('attempts — today’s line and redelivery', () => {
   it('throws a failure as a value the edge judges the same way — a port refusal by the code in its reason', () => {
     expect(attemptThrowable(transient)).toBe(transient.error);
     const thrown = attemptThrowable(permanent);
-    expect(FailureCodeSystem.codeOf(thrown)).toBe('internal');
+    expect(TriggerAttemptSystem.attemptFailure(thrown).failureCode).toBe(
+      'internal',
+    );
+    // One of our own codes: the pipeline judged it by name; the thrown Error
+    // reads `unknown` at the edge (no thrown code is trusted) — the same
+    // permanent verdict.
+    const zone = TriggerAttemptSystem.repositoryFailure(
+      RepositoryError.readFailed(
+        'locations/loc-gone',
+        'CATALOG_LOCATION_ZONE_UNKNOWN',
+      ),
+    );
+    expect(zone.failureCode).toBe('catalog-location-zone-unknown');
+    const atTheEdge = TriggerAttemptSystem.attemptFailure(
+      attemptThrowable(zone),
+    );
+    expect(attemptThrowable(zone)).toBeInstanceOf(Error);
+    expect(atTheEdge).toMatchObject({
+      failureCode: 'unknown',
+      attemptOutcome: zone.attemptOutcome,
+    });
   });
 
   it('redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`', async () => {
