@@ -35,15 +35,23 @@
 Assumptions: a 3 to 5 chair shop books about 40 visits a day (the store
 comment's old estimate); the default policy horizon is two months; the window
 is 60 days back and about 60 ahead, so about 4,800 visits (about 8 times the
-old 600). Firestore list price about US$0.06 per 100,000 document reads in the
-default US region — to be checked against the project's region and the current
-price sheet before launch.
+old 600). Price: Google's Firestore pricing lists document reads from US$0.03
+per 100,000 (Standard edition; a Firebase page gives the same figure for
+`us-central1`), after a free 50,000 reads a day per project, shared by
+everything the project reads (checked 2026-11-04; the pricing page is
+rendered by script, so the per-location table could not be read here, and one
+unlabelled table shows `europe-west4` at about US$0.0315 per 100,000). The
+project's Firestore location is not decided
+(`docs/production-deploy.md`, "Project, plan, region"), so the figures below
+use US$0.03 and move by a few percent, not by a multiple, across the regions
+seen. An earlier draft of this record used US$0.06; that was out of date.
 
-- One window load: about 4,800 reads, about US$0.003.
+- One window load: about 4,800 reads, about US$0.0014.
 - Loads happen only on an opening that finds the window stale (15 minutes, or
   a write on this device). A device that opens the sheet 50 times a day and
-  finds it stale every time reads about 240,000 documents: about US$0.14 a day,
-  about US$3 a month.
+  finds it stale every time reads about 240,000 documents: about US$0.07 a
+  day, about US$2 a month, less the free quota on the project's first 50,000
+  reads of each day.
 - Typing, filtering and reopening inside 15 minutes read nothing.
 - Memory: about 1.5 MB for the window. One keystroke over 4,800 visits
   measured about 57 ms in the presenter spec (inside the 80 ms debounce).
@@ -110,6 +118,23 @@ collection) is kept, not reversed.
   that the range queries need no new composite index — on the emulator, which
   does not enforce composite indexes, so `firestore.indexes.json` was reasoned
   over, not exercised.
-- **Not done:** counting the document reads of one window load in the emulator
-  UI's Requests tab; a check of the real Firestore price and region; the
-  per-load logging (no log port exists on the web side).
+- **Reads, by construction and by test (2026-11-04):** a read is billed per
+  document the server returns, and the window is two range queries on
+  `utcEpochMs` with `limit(cap)`, so one load reads at most `2 × cap` documents
+  and none outside the range. `appointments.adapter.integration.spec.ts` pins
+  it ("bills only what it returns": a visit before the start, one after the
+  end and the ones past the cap are never returned); 391 passed. The emulator
+  UI's Requests tab was not used: it does not bill, and the count it would
+  show is this set's size.
+- **Not done, on purpose: per-load logging.** The web's only sink is the
+  faults reporter (`ReportClientIssues`, OR-34): a closed, scrubbed struct,
+  at most 20 distinct issues per page session, and no feature library can
+  inject it. A load log needs a new `ClientIssueKind`, the server's admission
+  and `Log` mapping, and a feature-side reporter token, and would spend the
+  per-session fault budget on routine loads. It needs an owner ruling. Until
+  then a bill spike is traced from Cloud Monitoring's
+  `firestore.googleapis.com/document/read_count`, and the "cap is hit
+  routinely" condition of alternative B has no signal.
+- **Not done, cannot be yet:** the per-location price (above) and the run of
+  the range queries against a real project's composite-index enforcement, both
+  waiting on the project and its location.
