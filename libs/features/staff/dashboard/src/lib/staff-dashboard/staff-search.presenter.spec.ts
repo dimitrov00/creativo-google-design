@@ -48,6 +48,7 @@ const input = (
   names: NAMES,
   zoneKnown,
   locale: 'bg',
+  callingCode: '359',
   companionNames: {},
   unnamedClient: 'Клиент без име',
 });
@@ -174,6 +175,36 @@ describe('searchHits — the hits as the sheet prints them', () => {
         .map((part) => part.text.replace(/\s/g, ''))
         .join(''),
     ).toBe('887778899');
+  });
+
+  describe('a phone, however it is typed', () => {
+    const phoned = (term: string) =>
+      searchHits(
+        input(term, [visit({ contactPhone: E164.of('+359887778899') })]),
+      );
+    const marked = (term: string) =>
+      phoned(term)[0]?.matches[0]?.parts.filter((part) => part.hit)[0]?.text;
+
+    it.each(['088 777', '0887', '088 (777)-88', '+359 88 777', '359 88 777'])(
+      'finds %s',
+      (term) => {
+        expect(phoned(term)).toHaveLength(1);
+      },
+    );
+
+    it('marks the run through the spaces, the trunk 0 read as +359', () => {
+      expect(marked('088 777')).toBe('359 88 777');
+    });
+
+    it('finds nothing in a number that does not begin so, nor in too few digits', () => {
+      expect(phoned('099 777')).toEqual([]);
+      expect(phoned('0088 777')).toEqual([]);
+      expect(phoned('08')).toEqual([]);
+    });
+
+    it('keeps a mixed term to the text fields', () => {
+      expect(phoned('Иван 088')).toEqual([]);
+    });
   });
 
   it('prints the shop’s wall clock, nothing before the zone is known', () => {

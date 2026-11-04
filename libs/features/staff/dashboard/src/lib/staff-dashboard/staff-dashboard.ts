@@ -1021,12 +1021,8 @@ export class StaffDashboard {
   // ── Search ──────────────────────────────────────────────────────────
 
   /**
-   * Results for the current term, newest-relevant first.
-   *
-   * Matched in memory against a window the store loaded once — Firestore
-   * cannot substring-match, and the fields a shop actually searches by
-   * (name, phone, email, note, service) are four different shapes, one of
-   * them nested inside the `seats` array.
+   * Results for the current term, matched in memory against the window the
+   * store loaded once (`searchHits`: Firestore cannot substring-match).
    */
   protected readonly searchResults = computed<readonly SearchHitVm[]>(() =>
     searchHits({
@@ -1039,6 +1035,7 @@ export class StaffDashboard {
       names: this.catalogNames,
       zoneKnown: this.store.zone() !== null,
       locale: this.content.locale(),
+      callingCode: this.shopCallingCode,
       companionNames: this.companionNames(),
       unnamedClient: this.dayWords().unnamedClient,
     }),
@@ -3977,18 +3974,18 @@ export class StaffDashboard {
    */
   protected readonly visitClientSearching = signal(false);
   private readonly deployment = inject(AUTH_DEPLOYMENT_PORTS).authDeployment;
+  /** The shop's dial code, the query's own default when its country has none. */
+  private readonly shopCallingCode = PhoneSystem.callingCodeOr(
+    this.deployment.defaultCountry,
+    ClientQuerySystem.DEFAULT_CALLING_CODE,
+  );
   private clientSearchSeq = 0;
   private clientSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected searchClients(query: string): void {
     if (this.clientSearchTimer !== null) clearTimeout(this.clientSearchTimer);
     const parsed = ClientQuerySystem.parse(query);
-    // By the shop's own dial code: «088…» is asked as «359 88…» too — the
-    // query's own default when the country has none.
-    const code = PhoneSystem.callingCodeOr(
-      this.deployment.defaultCountry,
-      ClientQuerySystem.DEFAULT_CALLING_CODE,
-    );
+    const code = this.shopCallingCode;
     const keys = ClientQuerySystem.lookupKeys(parsed, code);
     // The book's own matches are on screen already — their faces are owed
     // now, not when the index answers. Only the rows a phone can show.

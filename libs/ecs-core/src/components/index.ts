@@ -168,6 +168,7 @@ export * from './pause-suggestion.data';
 export * from './personal-record.data';
 export * from './personalize-step.data';
 export * from './phone-number.data';
+export * from './phone-reading.data';
 export * from './photo-origin.data';
 export * from './placement-action.data';
 export * from './placement-kind.data';

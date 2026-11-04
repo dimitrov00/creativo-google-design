@@ -124,8 +124,8 @@ describe('clientLookupKeys', () => {
       clientLookupKeys(parseClientQuery('Мария maria@mail.bg 0887')),
     ).toEqual(['maria@mail.bg']);
     expect(clientLookupKeys(parseClientQuery('Мария 088 765'))).toEqual([
-      '088765',
       '35988765',
+      '088765',
     ]);
     expect(clientLookupKeys(parseClientQuery('Ив Мартинова'))).toEqual([
       'мартинова',

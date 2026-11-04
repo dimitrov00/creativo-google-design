@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CountryIso2, DialSource, E164 } from '@core/components';
+import {
+  CountryIso2,
+  DialSource,
+  E164,
+  PhoneReadingKind,
+  type PhoneReading,
+} from '@core/components';
 import { type Result } from '@core/primitives';
 import { PhoneErrorCode, PhoneInvalidReason } from '@core/errors';
 import { PhoneSystem, type CountryNaming } from './phone.system';
@@ -397,6 +403,139 @@ describe('PhoneSystem.dialable', () => {
       PhoneSystem.dialable(null, ''),
     ];
     expect(run()).toEqual(run());
+  });
+});
+
+describe('PhoneSystem.searchDigitsOf — a typed number, read', () => {
+  const CC = '359';
+  const read = (typed: string) => PhoneSystem.searchDigitsOf(typed, CC);
+  const intl = (digits: string): PhoneReading => ({
+    phoneReadingKind: PhoneReadingKind.International,
+    phoneReadingCandidates: [digits],
+  });
+  const none: PhoneReading = {
+    phoneReadingKind: PhoneReadingKind.None,
+    phoneReadingCandidates: [],
+  };
+
+  it('keeps a typed + as the number it carries', () => {
+    expect(read('+359 88 333')).toEqual(intl('35988333'));
+    expect(read('+44 7911 123')).toEqual(intl('447911123'));
+  });
+
+  it('reads a leading 00 as +', () => {
+    expect(read('00359 88 333')).toEqual(intl('35988333'));
+    expect(read('0044 7911')).toEqual(intl('447911'));
+    expect(read('0088 333')).toEqual(intl('88333'));
+  });
+
+  it('puts the shop code in the place of a single trunk 0', () => {
+    expect(read('088 333')).toEqual(intl('35988333'));
+    expect(read('088 (333)-44')).toEqual(intl('3598833344'));
+  });
+
+  it('takes digits that begin with the shop code as typed', () => {
+    expect(read('359 88 333')).toEqual(intl('35988333'));
+  });
+
+  it('reads any other run as bare: with the code, and as itself', () => {
+    expect(read('88 333 4455')).toEqual({
+      phoneReadingKind: PhoneReadingKind.Bare,
+      phoneReadingCandidates: ['359883334455', '883334455'],
+    });
+    expect(read('887').phoneReadingKind).toBe(PhoneReadingKind.Bare);
+  });
+
+  it('reads under three digits as nothing yet', () => {
+    expect(read('')).toEqual(none);
+    expect(read('0')).toEqual(none);
+    expect(read('00')).toEqual(none);
+    expect(read('08')).toEqual(none);
+    expect(read('+35')).toEqual(none);
+  });
+
+  it('reads no country code that starts with 0 (+0088…, 000…)', () => {
+    expect(read('+0088 333')).toEqual(none);
+    expect(read('000 333')).toEqual(none);
+    expect(read('+000')).toEqual(none);
+  });
+
+  it('follows another shop code, and reads by the digits when letters are mixed in', () => {
+    expect(PhoneSystem.searchDigitsOf('0171 555', '49')).toEqual(
+      intl('49171555'),
+    );
+    expect(PhoneSystem.searchDigitsOf('+44 7911', '359')).toEqual(
+      intl('447911'),
+    );
+    expect(read('иван 088')).toEqual(intl('35988'));
+  });
+
+  it('never throws on odd text', () => {
+    for (const typed of ['+', '++', ' ', '(', '٣٣٣', '0'.repeat(40)]) {
+      expect(() => read(typed)).not.toThrow();
+    }
+  });
+});
+
+describe('PhoneSystem.readingMatches / readingRun / isNumberShaped', () => {
+  const CC = '359';
+  const STORED = '+359 88 777 8899';
+  const matches = (typed: string, stored = STORED) =>
+    PhoneSystem.readingMatches(PhoneSystem.searchDigitsOf(typed, CC), stored);
+
+  it('an international reading must begin the stored number', () => {
+    expect(matches('+359 88 777')).toBe(true);
+    expect(matches('088 777')).toBe(true);
+    expect(matches('359 88 777')).toBe(true);
+    expect(matches('00359 88')).toBe(true);
+    expect(matches('+88 777')).toBe(false);
+    expect(matches('0088 777')).toBe(false);
+    expect(matches('+359 99 777')).toBe(false);
+  });
+
+  it('a bare reading begins with the code or holds the run anywhere', () => {
+    expect(matches('887778899')).toBe(true);
+    expect(matches('777 8899')).toBe(true);
+    expect(matches('77788')).toBe(true);
+    expect(matches('777 9988')).toBe(false);
+  });
+
+  it('no reading matches nothing', () => {
+    expect(matches('08')).toBe(false);
+    expect(matches('')).toBe(false);
+  });
+
+  it('answers the run a screen marks', () => {
+    const run = (typed: string) =>
+      PhoneSystem.readingRun(PhoneSystem.searchDigitsOf(typed, CC), STORED);
+    expect(run('088 777')).toBe('35988777');
+    expect(run('777 88')).toBe('77788');
+    // the typed digits are marked, never the code nobody typed
+    expect(run('887778899')).toBe('887778899');
+    expect(run('777 9')).toBeNull();
+    expect(run('08')).toBeNull();
+  });
+
+  it('knows a number-shaped text from words', () => {
+    expect(PhoneSystem.isNumberShaped('088 333')).toBe(true);
+    expect(PhoneSystem.isNumberShaped(' +359 (88) 333-44 ')).toBe(true);
+    expect(PhoneSystem.isNumberShaped('088 (333)')).toBe(true);
+    expect(PhoneSystem.isNumberShaped('(088) 333')).toBe(false);
+    expect(PhoneSystem.isNumberShaped('иван 088')).toBe(false);
+    expect(PhoneSystem.isNumberShaped('088 abc')).toBe(false);
+    expect(PhoneSystem.isNumberShaped('')).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const reading = deepFreeze(PhoneSystem.searchDigitsOf('88 333 4455', CC));
+    expect(PhoneSystem.searchDigitsOf('88 333 4455', CC)).toEqual(reading);
+    expect(PhoneSystem.readingMatches(reading, STORED)).toBe(
+      PhoneSystem.readingMatches(reading, STORED),
+    );
+    expect(reading.phoneReadingCandidates).toEqual([
+      '359883334455',
+      '883334455',
+    ]);
   });
 });
 
