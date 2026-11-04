@@ -31,7 +31,7 @@ const issue = (clientIssueKind: ClientIssueKind): ClientIssue => ({
 });
 
 describe('ClientIssueKind', () => {
-  it('holds the six kinds of the ruling and the transport failure, SCREAMING', () => {
+  it('holds the six kinds of the ruling, the transport failure and the capped search window, SCREAMING', () => {
     expect(Object.values(ClientIssueKind)).toEqual([
       'DATA_DOCUMENT_DROPPED',
       'DATA_DOCUMENT_REFUSED',
@@ -40,6 +40,7 @@ describe('ClientIssueKind', () => {
       'UNHANDLED_REJECTION',
       'CSP_VIOLATION',
       'CALLABLE_TRANSPORT_FAILED',
+      'SEARCH_WINDOW_CAPPED',
     ]);
   });
 });

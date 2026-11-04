@@ -1,4 +1,4 @@
-import { InjectionToken } from '@angular/core';
+import { InjectionToken, inject } from '@angular/core';
 import { AuthDeployment, FeatureFlags } from '@core/components';
 import type {
   AppointmentNotePorts,
@@ -10,6 +10,7 @@ import type {
   AvatarPorts,
   BookingDraftPorts,
   CatalogReadPorts,
+  ClientIssuePorts,
   ClientJournalPorts,
   ClientPrivacyGatewayPorts,
   ClientStatsReadPorts,
@@ -41,6 +42,7 @@ import type {
   UserSearchPorts,
   WaitlistReadPorts,
 } from '@core/ports';
+import { CLIENT_ISSUE_REPORTER } from './reporting-error-handler';
 
 /**
  * The web's port tokens (blueprint §5.2) — the ONE file where Angular's
@@ -182,6 +184,17 @@ export const CLOCK_PORTS = new InjectionToken<ClockPorts>('CLOCK_PORTS');
 
 /** The browser's fresh document ids (`IdPorts`). */
 export const ID_PORTS = new InjectionToken<IdPorts>('ID_PORTS');
+
+/**
+ * The page's client issue sink (`ClientIssuePorts`, OR-34) — the one
+ * reporter of `CLIENT_ISSUE_REPORTER`, narrowed to what a feature may call:
+ * a store reports a condition it saw (a capped search window) and never
+ * the reporter's `connect`.
+ */
+export const CLIENT_ISSUE_PORTS = new InjectionToken<ClientIssuePorts>(
+  'CLIENT_ISSUE_PORTS',
+  { providedIn: 'root', factory: () => inject(CLIENT_ISSUE_REPORTER) },
+);
 
 // ── The web's wiring (Phase 4a 4A-7) — one token per bundle ──────────────
 

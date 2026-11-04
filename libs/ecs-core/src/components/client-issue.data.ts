@@ -29,6 +29,15 @@ export const ClientIssueKind = {
    * logged at `warn`.
    */
   CallableTransportFailed: 'CALLABLE_TRANSPORT_FAILED',
+  /**
+   * The schedule search's window load hit its per-side cap, so the search
+   * sees fewer visits than the window holds (`routePattern` only; the
+   * decision `docs/architecture/decisions/2026-11-03-staff-search.md` names
+   * as the signal for reopening its alternatives B and C). A condition, not
+   * a fault: logged at `warn`, and the reporter's dedupe keeps it to one
+   * line per page session.
+   */
+  SearchWindowCapped: 'SEARCH_WINDOW_CAPPED',
 } as const;
 export type ClientIssueKind =
   (typeof ClientIssueKind)[keyof typeof ClientIssueKind];

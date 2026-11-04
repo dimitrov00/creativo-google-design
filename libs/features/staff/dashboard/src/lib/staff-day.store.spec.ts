@@ -8,6 +8,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   CATALOG_PORTS,
+  CLIENT_ISSUE_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   DEFAULT_LOCATION_PORTS,
@@ -42,6 +43,7 @@ import {
 } from '@core/errors';
 import {
   type BookingCall,
+  ClientIssueKind,
   Combinability,
   CouponExpiryRule,
   CouponStatus,
@@ -63,6 +65,7 @@ import {
   type AppointmentNotePorts,
   type AppointmentReadPorts,
   Callables,
+  type ClientIssuePorts,
   type ClockPorts,
   type CouponVoucherPorts,
   type IdPorts,
@@ -90,6 +93,7 @@ import {
   memoryProgramsWorld,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
+  recordingClientIssuePorts,
   scriptedGatewayPorts,
   unwrapOk,
   until,
@@ -154,6 +158,8 @@ async function build(
     readonly clock?: ClockPorts;
     /** The search window's read port — an empty, uncapped window by default. */
     readonly searchWindow?: AppointmentReadPorts['searchAppointmentWindow'];
+    /** The client issue sink — a recording one by default (`issues.reported`). */
+    readonly issues?: ClientIssuePorts;
   } = {},
 ): Promise<Harness> {
   localStorage.clear();
@@ -176,6 +182,10 @@ async function build(
       {
         provide: ID_PORTS,
         useValue: options.ids ?? { nextId: () => 'operation-000000000001' },
+      },
+      {
+        provide: CLIENT_ISSUE_PORTS,
+        useValue: options.issues ?? recordingClientIssuePorts().ports,
       },
       {
         provide: LOCATION_LOAD_PORTS,
@@ -780,6 +790,7 @@ describe('StaffDayStore — the search window reaches the horizon and stays fres
         ReturnType<AppointmentReadPorts['searchAppointmentWindow']>
       >;
       readonly script?: GatewayScript;
+      readonly issues?: ClientIssuePorts;
     } = {},
   ) {
     const reads: {
@@ -793,6 +804,7 @@ describe('StaffDayStore — the search window reaches the horizon and stays fres
       options.answer ?? Result.ok({ appointments: [], capped: false });
     const harness = await build({
       script: options.script,
+      issues: options.issues,
       clock: { nowUtcMs: () => now },
       searchWindow: async (from, to, at, cap) => {
         reads.push({ from, to, now: at, cap });
@@ -931,6 +943,52 @@ describe('StaffDayStore — the search window reaches the horizon and stays fres
     await store.openSearch();
 
     expect(store.searchCapped()).toBe(true);
+  });
+
+  it('reports a capped window once as a SEARCH_WINDOW_CAPPED issue that names no person and no document', async () => {
+    const { ports, reported } = recordingClientIssuePorts();
+    const { store } = await windowed({
+      answer: Result.ok({ appointments: [], capped: true }),
+      issues: ports,
+    });
+
+    await store.openSearch();
+
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toMatchObject({
+      clientIssueKind: ClientIssueKind.SearchWindowCapped,
+      occurrences: 1,
+      documentPath: null,
+      fieldName: null,
+      scrubbedMessage: null,
+      topFrame: null,
+    });
+  });
+
+  it('reports nothing when the window was read whole', async () => {
+    const { ports, reported } = recordingClientIssuePorts();
+    const { store } = await windowed({ issues: ports });
+
+    await store.openSearch();
+
+    expect(reported).toHaveLength(0);
+  });
+
+  it('keeps the window it read when the issue sink throws', async () => {
+    const first = [appointmentFixture()];
+    const { store } = await windowed({
+      answer: Result.ok({ appointments: first, capped: true }),
+      issues: {
+        reportClientIssues: () => {
+          throw new Error('sink down');
+        },
+      },
+    });
+
+    await store.openSearch();
+
+    expect(store.pool()).toEqual(first);
+    expect(store.searchStale()).toBe(false);
   });
 
   it('shares one read between two callers that open it together', async () => {
