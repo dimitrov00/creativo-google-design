@@ -83,7 +83,13 @@ committed at a green boundary, DEP-1…DEP-24, end of §3.3).
     reading (`PhoneSystem.searchDigitsOf`), a window that reaches the booking
     horizon and refreshes on open; the cost model, the alternatives with their
     reopen conditions and where the build differs from
-    `docs/designs/staff-search.md`. Part 2 (the Spotlight sheet) is not built.
+    `docs/designs/staff-search.md`.
+12. `docs/architecture/decisions/2026-11-03-staff-search-sheet.md` — the
+    schedule search, part 2 (BUILT): the Spotlight sheet
+    (`lib-staff-search-sheet`), filters as chips inside `ui-search-field`,
+    event-card results with the matched lines, device recents, the pure
+    query/index/filter systems; the alternatives with their reopen conditions
+    and where the build differs from `docs/designs/staff-search-spotlight.md`.
 
 ## 2. Where the work stands
 
