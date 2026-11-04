@@ -1,0 +1,50 @@
+<sc-page scTitle="Marked text">
+  <ng-container scLede>
+    What was typed, marked in a result: the one look every search shares. A
+    system decides the runs (<code>TextMatchSystem</code>); the element prints
+    them. The wash is <code>--sys-color-mark</code> — the accent as a shape —
+    and the word on it stays ink.
+  </ng-container>
+
+  <sc-demo scTitle="Runs">
+    <ng-container scAbout>
+      No hit, one hit, several hits, and a digit run through a formatted phone.
+      The marks add no text of their own: the line reads as one string.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <span uiText uiFont="body"><ui-marked-text [uiRuns]="plain" /></span>
+      <span uiText uiFont="body"><ui-marked-text [uiRuns]="one" /></span>
+      <span uiText uiFont="body"><ui-marked-text [uiRuns]="several" /></span>
+      <span uiText uiFont="body"><ui-marked-text [uiRuns]="phone" /></span>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="A run that wraps">
+    <ng-container scAbout>
+      The wash keeps its corner and padding at both ends of a run that breaks
+      across lines (<code>box-decoration-break: clone</code>).
+    </ng-container>
+    <p uiText uiFont="body" class="marked-text__narrow">
+      <ui-marked-text [uiRuns]="wrapped" />
+    </p>
+  </sc-demo>
+
+  <sc-demo scTitle="In a selected row">
+    <ng-container scAbout>
+      A picked row is already washed at one selection rung; the mark is twice
+      that, so it still shows. Switch the theme to see both.
+    </ng-container>
+    <ui-list-group>
+      <ui-list-row uiSize="large" [uiSelected]="true">
+        <span uiText uiFont="callout" uiWeight="medium">
+          <ui-marked-text [uiRuns]="one" />
+        </span>
+      </ui-list-row>
+      <ui-list-row uiSize="large" [uiSelected]="false">
+        <span uiText uiFont="callout" uiWeight="medium">
+          <ui-marked-text [uiRuns]="one" />
+        </span>
+      </ui-list-row>
+    </ui-list-group>
+  </sc-demo>
+</sc-page>

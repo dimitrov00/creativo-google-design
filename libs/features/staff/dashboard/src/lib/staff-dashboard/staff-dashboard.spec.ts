@@ -4117,7 +4117,7 @@ describe('StaffDashboard', () => {
     const hits = host().querySelectorAll('[data-testid="staff-search-hit"]');
     expect(hits.length).toBe(1);
     // The matching run is MARKED, and the original casing survives it.
-    const mark = hits[0]?.querySelector('.staff-search__mark');
+    const mark = hits[0]?.querySelector('mark');
     expect(mark?.textContent).toBe('Георги');
   });
 

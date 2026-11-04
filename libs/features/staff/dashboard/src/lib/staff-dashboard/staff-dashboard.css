@@ -854,20 +854,6 @@
   opacity: 0.55;
 }
 
-/* WHAT MATCHED IS WHAT IS PRIMARY — the add-client search's own grammar
-   (the event head's marked runs, Spotlight's): the text around a match
-   recedes to the secondary ink and the typed run holds the foreground.
-   Ink only — the browser's yellow highlighter was the one search in the
-   app that wore one (2026-09-24). */
-.staff-search__item [uiText]:has(> .staff-search__mark) {
-  color: var(--sys-color-secondary-label);
-}
-
-.staff-search__mark {
-  background: none;
-  color: var(--sys-color-foreground);
-}
-
 /* A sheet's head in a body spaced `loose`: the fold takes THAT gap with it
    (the DS default is the pages' `comfortable`). */
 .staff-sheet__headline {

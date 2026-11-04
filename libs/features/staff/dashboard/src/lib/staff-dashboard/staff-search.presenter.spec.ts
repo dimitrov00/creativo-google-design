@@ -20,12 +20,7 @@ import {
   serviceFixture,
 } from '@core/testing';
 import type { StaffCatalogNames } from './staff-day-chrome.presenter';
-import {
-  searchHits,
-  searchableFields,
-  splitOnDigits,
-  splitOnTerm,
-} from './staff-search.presenter';
+import { searchHits, searchableFields } from './staff-search.presenter';
 import { SearchField } from './staff-search.vm';
 
 const NAMES: StaffCatalogNames = {
@@ -55,31 +50,6 @@ const input = (
   locale: 'bg',
   companionNames: {},
   unnamedClient: 'Клиент без име',
-});
-
-describe('splitOnTerm — the runs a match marks', () => {
-  it('marks every occurrence and returns the ORIGINAL slices', () => {
-    expect(splitOnTerm('Георги и георги', 'георги')).toEqual([
-      { text: 'Георги', hit: true },
-      { text: ' и ', hit: false },
-      { text: 'георги', hit: true },
-    ]);
-  });
-
-  it('leaves a value the term does not hold whole', () => {
-    expect(splitOnTerm('Иван', 'георги')).toEqual([
-      { text: 'Иван', hit: false },
-    ]);
-  });
-});
-
-describe('splitOnDigits — one run through a formatted phone', () => {
-  it('marks across the separators, never three runs for one match', () => {
-    expect(splitOnDigits('+359 88 777 8899', '887778899')).toEqual([
-      { text: '+359 ', hit: false },
-      { text: '88 777 8899', hit: true },
-    ]);
-  });
 });
 
 describe('searchableFields — what a visit offers a search, in display order', () => {

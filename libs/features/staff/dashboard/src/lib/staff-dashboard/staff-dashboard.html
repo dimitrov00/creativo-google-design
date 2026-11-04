@@ -386,9 +386,7 @@
             >
               <ui-stack uiSpacing="none">
                 <span uiText uiFont="body">
-                  @for (part of hit.titleParts; track $index) { @if (part.hit) {
-                  <mark class="staff-search__mark">{{ part.text }}</mark>
-                  } @else {{{ part.text }}} }
+                  <ui-marked-text [uiRuns]="hit.titleParts" />
                 </span>
                 <!-- EVERY field that earned the hit, with the matching run
                    marked — a phone search must show the number it matched,
@@ -400,9 +398,7 @@
                   uiForegroundStyle="secondary"
                   class="staff-search__match"
                 >
-                  @for (part of match.parts; track $index) { @if (part.hit) {
-                  <mark class="staff-search__mark">{{ part.text }}</mark>
-                  } @else {{{ part.text }}} }
+                  <ui-marked-text [uiRuns]="match.parts" />
                 </span>
                 }
               </ui-stack>

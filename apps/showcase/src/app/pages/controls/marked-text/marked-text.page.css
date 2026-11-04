@@ -1,0 +1,8 @@
+:host {
+  display: block;
+}
+
+.marked-text__narrow {
+  max-inline-size: 16rem;
+  margin: 0;
+}

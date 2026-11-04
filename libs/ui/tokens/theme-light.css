@@ -160,5 +160,14 @@
     --sys-alpha-press: 9%;
     --sys-alpha-interactive: 7%;
     --sys-alpha-segment-selected: 14%;
+    /* THE MATCH WASH (2026-11-03: "highlight the matches as a background"):
+       what was typed, marked in every search — the accent at twice the
+       selection rung, so a picked (already washed) row still shows its
+       marks. A wash is a shape; the word on it stays ink. */
+    --sys-color-mark: color-mix(
+      in srgb,
+      var(--sys-color-accent) calc(var(--sys-alpha-segment-selected) * 2),
+      transparent
+    );
   }
 }

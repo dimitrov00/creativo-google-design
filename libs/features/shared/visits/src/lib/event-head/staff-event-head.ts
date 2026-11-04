@@ -8,6 +8,7 @@ import {
 import { BookingLifecycle } from '@core/components';
 import type { BookingStatus } from '@core/primitives';
 import { UiIcon } from '@creativo/ui/controls';
+import { UiMarkedText } from '@creativo/ui/patterns';
 import type { StaffEventLine, StaffEventRun } from './staff-event-line';
 
 /**
@@ -86,17 +87,12 @@ export function hollowStatus(
  */
 @Component({
   selector: 'lib-staff-event-head',
-  imports: [UiIcon],
+  imports: [UiIcon, UiMarkedText],
   template: `
     <span class="staff-event-head__lines">
-      <span
-        class="staff-event-head__title"
-        [attr.data-marked]="titleParts() ? '' : null"
-      >
+      <span class="staff-event-head__title">
         @if (titleParts(); as parts) {
-          @for (run of parts; track $index) {
-            <span [class.staff-event-head__hit]="run.hit">{{ run.text }}</span>
-          }
+          <ui-marked-text [uiRuns]="parts" />
         } @else {
           {{ title() }}
         }
@@ -116,16 +112,11 @@ export function hollowStatus(
           }
           <span
             class="staff-event-head__text"
-            [attr.data-marked]="drawn.line.parts ? '' : null"
             [attr.data-held]="drawn.hold === null ? null : ''"
             [attr.data-whole]="drawn.whole ? '' : null"
           >
             @if (drawn.line.parts; as parts) {
-              @for (run of parts; track $index) {
-                <span [class.staff-event-head__hit]="run.hit">{{
-                  run.text
-                }}</span>
-              }
+              <ui-marked-text [uiRuns]="parts" />
             } @else if (drawn.hold !== null) {
               <span class="staff-event-head__lead">{{ drawn.lead }}</span
               ><span class="staff-event-head__hold">{{ drawn.hold }}</span>

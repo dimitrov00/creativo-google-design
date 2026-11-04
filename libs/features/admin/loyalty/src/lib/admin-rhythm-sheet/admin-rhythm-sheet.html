@@ -64,7 +64,7 @@
               [attr.data-testid]="'admin-rhythm-service-' + service.id"
               (click)="toggleService(service.id)"
             >
-              {{ service.name }} @if (chosen) {
+              <ui-marked-text [uiRuns]="service.nameRuns" /> @if (chosen) {
               <ui-icon
                 uiTrailing
                 uiName="checklist.done"

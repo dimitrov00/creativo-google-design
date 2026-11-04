@@ -3971,7 +3971,7 @@ describe('StaffVisitEditor', () => {
       ]);
       const hits = [
         ...(find(host, 'staff-visit-client-user-marto')?.querySelectorAll(
-          '.staff-event-head__hit',
+          'mark',
         ) ?? []),
       ].map((node) => node.textContent);
       expect(hits).toEqual(['Март']);
@@ -3992,7 +3992,7 @@ describe('StaffVisitEditor', () => {
       expect(
         [
           ...(find(host, 'staff-visit-client-user-marto')?.querySelectorAll(
-            '.staff-event-head__hit',
+            'mark',
           ) ?? []),
         ].map((node) => node.textContent),
       ).toEqual(['359 88 765 4321']);
@@ -4018,7 +4018,7 @@ describe('StaffVisitEditor', () => {
       expect(
         [
           ...(find(host, 'staff-visit-client-user-marto')?.querySelectorAll(
-            '.staff-event-head__hit',
+            'mark',
           ) ?? []),
         ].map((node) => node.textContent),
       ).toEqual(['martin@te']);

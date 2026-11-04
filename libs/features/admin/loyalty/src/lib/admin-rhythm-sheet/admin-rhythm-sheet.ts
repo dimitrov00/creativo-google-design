@@ -18,6 +18,7 @@ import {
   StreakQualifier,
   StreakQualifierRule,
   StreakRule,
+  type TextSegment,
 } from '@core/components';
 import type { Service, ServiceCategory } from '@core/entities';
 import {
@@ -25,7 +26,7 @@ import {
   type ServiceCategoryId,
   type ServiceId,
 } from '@core/primitives';
-import type { CategoryGroup } from '@core/systems';
+import { TextMatchSystem, type CategoryGroup } from '@core/systems';
 import { rhythmRuleUnits } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
@@ -50,6 +51,7 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { UiMarkedText } from '@creativo/ui/patterns';
 import { AdminRhythmStore } from '../admin-rhythm.store';
 import {
   type AdminRhythmContext,
@@ -114,6 +116,8 @@ const p9Rank = (excuse: StreakExcuse): number => {
 interface ServiceRow {
   readonly id: ServiceId;
   readonly name: string;
+  /** The name cut into runs, what the search typed marked. */
+  readonly nameRuns: readonly TextSegment[];
 }
 
 interface ServiceGroupVm {
@@ -146,6 +150,7 @@ let sequence = 0;
     UiInteractiveDirective,
     UiListGroup,
     UiListRow,
+    UiMarkedText,
     UiMenuTrigger,
     UiModalSheet,
     UiMonthPicker,
@@ -287,21 +292,21 @@ export class AdminRhythmSheet {
       const groups = this.services();
       if (groups === null) return null;
       const locale = localeFor(this.lang());
-      const query = this.query().trim().toLocaleLowerCase(locale);
+      const query = this.query();
       return groups
         .map((group) => ({
           id: group.category.id,
           name: LocalizedText.pick(group.category.name, locale),
           services: group.services
-            .map((service) => ({
-              id: service.id,
-              name: LocalizedText.pick(service.name, locale),
-            }))
-            .filter(
-              (service) =>
-                query === '' ||
-                service.name.toLocaleLowerCase(locale).includes(query),
-            ),
+            .map((service) => {
+              const name = LocalizedText.pick(service.name, locale);
+              return {
+                id: service.id,
+                name,
+                nameRuns: TextMatchSystem.segments(name, query),
+              };
+            })
+            .filter((service) => TextMatchSystem.matches(service.name, query)),
         }))
         .filter((group) => group.services.length > 0);
     },

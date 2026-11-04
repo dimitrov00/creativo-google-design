@@ -1,10 +1,9 @@
-import { ClientQueryShape } from '@core/components';
+import { ClientQueryShape, type TextSegment } from '@core/components';
 import type { DraftPersonKey } from '@core/primitives';
 import {
   ClientQuerySystem,
   type ParsedClientQuery,
   PhoneSystem,
-  type TextSegment,
 } from '@core/systems';
 import type {
   StaffEventLine,
