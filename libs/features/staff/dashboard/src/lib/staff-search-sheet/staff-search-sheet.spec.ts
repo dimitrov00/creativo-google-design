@@ -187,23 +187,81 @@ describe('StaffSearchSheet', () => {
     ).toEqual(['FIELD:WHEN', 'FIELD:BARBER', 'FIELD:SERVICE', 'FIELD:STATUS']);
   });
 
-  it('builds a key │ value token from the dropdown, the typed search parked meanwhile', async () => {
+  it('builds a key │ value token from the dropdown', async () => {
     await mount();
-    type('иван');
-    after(100);
-    expect(cards()).toHaveLength(2);
-
     press('[data-suggestion="FIELD:BARBER"]');
-    // The key is half built; the text now narrows its values, the cards stay.
     expect(token('BARBER')?.hasAttribute('data-building')).toBe(true);
-    expect(field().value).toBe('');
-    expect(cards()).toHaveLength(2);
-
     press('[data-suggestion="BARBER:b-niko"]');
     expect(token('BARBER')?.textContent).toContain('Нико');
     expect(token('BARBER')?.hasAttribute('data-building')).toBe(false);
-    expect(field().value).toBe('иван');
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('parks the typed search while a pressed token’s values are open, and brings it back', async () => {
+    await mount();
+    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    type('иван');
+    after(100);
     expect(cards()).toHaveLength(1);
+
+    press('[data-testid="staff-search-input-token-BARBER"]');
+    // The text now narrows the values; the cards under the list stay put.
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(1);
+
+    press('[data-suggestion="BARBER:b-ivan"]');
+    field().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
+    );
+    fixture.detectChanges();
+    expect(field().value).toBe('иван');
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('draws a token being built as both segments, its value saying «избери…»', async () => {
+    await mount();
+    press('[data-suggestion="FIELD:SERVICE"]');
+    expect(
+      token('SERVICE')?.querySelector('.ui-search-field__token-value')
+        ?.textContent,
+    ).toContain('staff.search.tokenPlaceholder');
+    expect(field().placeholder).toBe('');
+  });
+
+  it('keeps the tokens in the order they were added', async () => {
+    await mount();
+    // Barber, then When — the reverse of the order the keys are listed in.
+    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-suggestion="FIELD:WHEN"]');
+    press('[data-suggestion^="WHEN:"]');
+    expect(
+      all('.ui-search-field__token').map((t) => t.getAttribute('data-testid')),
+    ).toEqual([
+      'staff-search-input-token-BARBER',
+      'staff-search-input-token-WHEN',
+    ]);
+  });
+
+  it('lets the keys the typed text does not name leave the list, and opens a named key without the text', async () => {
+    await mount();
+    type('ни');
+    after(100);
+    expect(el('[data-suggestion^="FIELD:"]')).toBeNull();
+    // Untranslated here, a key reads as its catalogue path.
+    type('staff.search.key.barber');
+    after(100);
+    expect(
+      all('[data-testid="staff-search-suggestion"]').map((row) =>
+        row.getAttribute('data-suggestion'),
+      ),
+    ).toEqual(['FIELD:BARBER']);
+    press('[data-suggestion="FIELD:BARBER"]');
+    expect(token('BARBER')?.hasAttribute('data-building')).toBe(true);
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
   });
 
   it('opens a pressed token on its values: ✓ on the held one, a toggle, and «Махни филтъра» last', async () => {

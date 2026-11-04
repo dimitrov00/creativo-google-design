@@ -15,6 +15,7 @@ import { UiSearchField, type UiSearchFieldToken } from './search-field';
       uiBusyTestId="probe-busy"
       uiClearLabel="Изчисти търсенето"
       [uiTokens]="tokens()"
+      uiTokenPlaceholder="избери…"
       [uiActiveToken]="active()"
       [uiDropdownOpen]="dropdown()"
       uiDropdownLabel="Филтри"
@@ -186,15 +187,18 @@ describe('UiSearchField', () => {
       ).toBeTruthy();
     });
 
-    it('draws a token still being built as its key alone', () => {
+    it('draws a token still being built as its key and the placeholder in its value segment', () => {
       fixture.componentInstance.tokens.set([BUILDING]);
       fixture.detectChanges();
       const [building] = tokens();
       expect(building?.hasAttribute('data-building')).toBe(true);
       expect(text(building, 'key')).toBe('Услуга');
+      expect(text(building, 'text')).toBe('избери…');
       expect(
-        building?.querySelector('.ui-search-field__token-value'),
-      ).toBeNull();
+        building
+          ?.querySelector('.ui-search-field__token-value')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true');
     });
 
     it('asks the owner to open a pressed token, keeps the focus in the field, and rings the active one', () => {

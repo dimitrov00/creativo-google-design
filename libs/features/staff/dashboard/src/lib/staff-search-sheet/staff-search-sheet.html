@@ -35,7 +35,8 @@
 
       <!-- The filters are key │ value tokens; while the field is focused the
            dropdown hangs under it: the keys, an open key's values (✓ on the
-           held ones, «Махни филтъра» last), or what the typed text names. -->
+           held ones, «Махни филтъра» last), or the values and keys the typed
+           text names. -->
       <ui-search-field
         uiPinned
         [uiValue]="typed()"
@@ -47,6 +48,7 @@
         uiTestId="staff-search-input"
         [uiClearLabel]="t('staff.day.searchClear')"
         [uiTokens]="vm().tokens"
+        [uiTokenPlaceholder]="vm().tokenPlaceholder"
         [uiActiveToken]="activeToken()"
         [uiDropdownOpen]="dropdownOpen()"
         [uiDropdownLabel]="t('staff.search.dropdownLabel')"
@@ -65,10 +67,7 @@
         >
           @for (section of vm().dropdown.sections; track section.id) { @if
           (section.rows.length > 0) {
-          <div
-            class="staff-search-sheet__section"
-            [attr.data-compact]="section.compact ? '' : null"
-          >
+          <div class="staff-search-sheet__section">
             @if (section.heading; as heading) {
             <p
               uiText
@@ -78,26 +77,7 @@
             >
               {{ heading }}
             </p>
-            } @if (section.compact) {
-            <div class="staff-search-sheet__chips">
-              @for (row of section.rows; track row.id) {
-              <button
-                type="button"
-                uiChip
-                uiControlSize="small"
-                [uiToggle]="false"
-                data-search-focusable
-                data-testid="staff-search-suggestion"
-                [attr.data-suggestion]="row.id"
-                (click)="pickRow(row)"
-              >
-                @if (row.glyph; as glyph) {
-                <ui-icon [uiName]="glyph" aria-hidden="true" />
-                } {{ row.label }}
-              </button>
-              }
-            </div>
-            } @else { @for (row of section.rows; track row.id) {
+            } @for (row of section.rows; track row.id) {
             <button
               type="button"
               uiListRow
@@ -133,7 +113,7 @@
               <span uiTrailing>{{ detail }}</span>
               }
             </button>
-            } }
+            }
           </div>
           } } @if (vm().dropdown.calendar; as calendar) {
           <div class="staff-search-sheet__section">

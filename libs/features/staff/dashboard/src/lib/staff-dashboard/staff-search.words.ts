@@ -38,6 +38,8 @@ export interface StaffSearchWords {
   readonly placeholder: string;
   /** The placeholder beside tokens: «Търси…». */
   readonly placeholderShort: string;
+  /** «избери…» — the value segment of a token still being built. */
+  readonly tokenPlaceholder: string;
   readonly empty: string;
   readonly clearFilters: string;
   readonly truncated: string;
@@ -97,6 +99,7 @@ export function staffSearchWordsOf(
       translate('staff.search.rangeLastCaption', { from }),
     placeholder: translate('staff.day.searchPlaceholder'),
     placeholderShort: translate('staff.search.placeholderShort'),
+    tokenPlaceholder: translate('staff.search.tokenPlaceholder'),
     empty: translate('staff.day.searchEmpty'),
     clearFilters: translate('staff.search.clearFilters'),
     truncated: translate('staff.day.searchTruncated'),

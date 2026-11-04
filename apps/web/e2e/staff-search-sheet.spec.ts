@@ -179,27 +179,27 @@ test.describe('the schedule search sheet — part 2', () => {
     await openSearch(page);
     const input = page.getByTestId('staff-search-input');
 
-    await input.fill(run);
-    await expect(cardsOf(page, run)).toHaveCount(2, { timeout: 30_000 });
-
-    // The key first: the typed search is parked while its values are listed.
+    // The key first, from the list on the empty field; then the text.
     await page.locator('[data-suggestion="FIELD:BARBER"]').click();
     const token = page.getByTestId('staff-search-input-token-BARBER');
     await expect(token).toBeVisible();
-    await expect(input).toHaveValue('');
     const niko = page.locator('[data-suggestion="BARBER:niko"]');
     await niko.click();
     await expect(token).toContainText('Нико');
-    await expect(cardsOf(page, run)).toHaveCount(1);
-    await expect(input).toHaveValue(run);
+    await input.fill(run);
+    await expect(cardsOf(page, run)).toHaveCount(1, { timeout: 30_000 });
 
-    // The token opens on its values; removing lives there, not on a ✕.
+    // The token opens on its values, the typed search parked meanwhile;
+    // removing lives there, not on a ✕, and the search comes back.
     await token.click();
+    await expect(input).toHaveValue('');
     await expect(niko).toHaveAttribute('aria-pressed', 'true');
     await page.locator('[data-suggestion="REMOVE:BARBER"]').click();
     await expect(token).toHaveCount(0);
-    await expect(cardsOf(page, run)).toHaveCount(2);
     await expect(input).toHaveValue(run);
+    await expect(cardsOf(page, run)).toHaveCount(2);
+
+    await input.fill('');
 
     // Backspace on an empty field takes the last token off too.
     await page.locator('[data-suggestion="FIELD:BARBER"]').click();

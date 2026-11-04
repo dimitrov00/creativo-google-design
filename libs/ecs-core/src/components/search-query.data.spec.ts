@@ -44,18 +44,31 @@ describe('SearchQuery — the companion', () => {
     expect(barberIds(query)).toEqual([IVAN, NIKO]);
   });
 
-  it('keeps one filter per kind, always in kind order', () => {
+  it('keeps one filter per kind, in the order the kinds were added', () => {
     let query = SearchQuery.withFilter(
       SearchQuery.empty(),
       SearchFilter.note(),
     );
     query = SearchQuery.withFilter(query, SearchFilter.service([FADE]));
     query = SearchQuery.withFilter(query, SearchFilter.barber([IVAN]));
+    query = SearchQuery.withFilter(query, SearchFilter.service([FADE]));
     expect(query.searchFilters.map((f) => f.searchFilterField)).toEqual([
-      SearchFilterField.Barber,
-      SearchFilterField.Service,
       SearchFilterField.Note,
+      SearchFilterField.Service,
+      SearchFilterField.Barber,
     ]);
+  });
+
+  it('is the same search whatever order its filters were added in', () => {
+    const a = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      SearchFilter.barber([IVAN]),
+    );
+    const b = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.barber([IVAN])),
+      SearchFilter.note(),
+    );
+    expect(SearchQuery.equals(a, b)).toBe(true);
   });
 
   it('replaces a date span and the note flag, not merges them', () => {

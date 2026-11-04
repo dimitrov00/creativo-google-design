@@ -422,15 +422,15 @@ describe('searchSheetVm — tokens', () => {
       ),
     );
     expect(vm.tokens.map((t) => [t.id, t.key, t.value])).toEqual([
-      ['WHEN', 'Кога', 'Тази седмица'],
       ['BARBER', 'Бръснар', 'Иван, Нико'],
+      ['WHEN', 'Кога', 'Тази седмица'],
     ]);
-    expect(vm.tokens[1]?.faces).toEqual([
+    expect(vm.tokens[0]?.faces).toEqual([
       { src: null, name: 'Иван' },
       { src: null, name: 'Нико' },
     ]);
-    expect(vm.tokens[1]?.label).toBe('Бръснар: Иван, Нико. Промени филтъра');
-    expect(vm.tokens[1]?.removeLabel).toBe('Махни филтъра Бръснар');
+    expect(vm.tokens[0]?.label).toBe('Бръснар: Иван, Нико. Промени филтъра');
+    expect(vm.tokens[0]?.removeLabel).toBe('Махни филтъра Бръснар');
     expect(vm.placeholder).toBe('Търси…');
   });
 
@@ -451,7 +451,7 @@ describe('searchSheetVm — tokens', () => {
     expect(vm.tokens[0]?.value).toBe('Потвърдени, Отказани +1');
   });
 
-  it('draws the token being built as its key alone, last', () => {
+  it('draws the token being built last, its value waiting on the placeholder, the text quiet', () => {
     const vm = searchSheetVm(
       input('bg', withBarber, { openField: SearchFilterField.Service }),
     );
@@ -460,6 +460,24 @@ describe('searchSheetVm — tokens', () => {
       ['SERVICE', ''],
     ]);
     expect(vm.tokens[1]?.label).toBe('Услуга: избери стойност');
+    expect(vm.tokenPlaceholder).toBe('избери…');
+    expect(vm.placeholder).toBe('');
+    expect(
+      searchSheetVm(
+        input('en', SearchQuery.empty(), { openField: SearchFilterField.When }),
+      ).tokenPlaceholder,
+    ).toBe('choose…');
+  });
+
+  it('stands the tokens in the order their filters were added', () => {
+    const query = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      SearchFilter.barber([IVAN]),
+    );
+    expect(searchSheetVm(input('bg', query)).tokens.map((t) => t.id)).toEqual([
+      SearchFilterField.Note,
+      SearchFilterField.Barber,
+    ]);
   });
 
   it('says Today for the span that is today, Yesterday for yesterday, and the dates for any other', () => {
@@ -568,16 +586,27 @@ describe('searchSheetVm — the dropdown', () => {
     );
   });
 
-  it('under typed text lists the values whose name holds it with their key, then the keys as one line', () => {
+  it('under typed text lists the values whose name holds it with their key, and only the keys it names', () => {
     const vm = searchSheetVm(input('bg', text('ни'), { dropdownText: 'ни' }));
     expect(vm.dropdown.dropdownMode).toBe(DropdownMode.Matches);
-    expect(vm.dropdown.sections.map((s) => [s.heading, s.compact])).toEqual([
-      ['Предложения', false],
-      ['Филтрирай по', true],
-    ]);
+    expect(vm.dropdown.sections.map((s) => s.heading)).toEqual(['Предложения']);
     expect(
       vm.dropdown.sections[0]?.rows.map((r) => [r.label, r.detail]),
     ).toEqual([['Нико', 'Бръснар']]);
+    const key = searchSheetVm(
+      input('bg', text('бръ'), { dropdownText: 'бръ' }),
+    );
+    expect(key.dropdown.sections.map((s) => s.heading)).toEqual([
+      'Филтрирай по',
+    ]);
+    expect(dropdownRows(key).map((r) => r.id)).toEqual(['FIELD:BARBER']);
+  });
+
+  it('lists nothing when the typed text names no value and no key', () => {
+    const vm = searchSheetVm(
+      input('bg', text('zzzz-no-such'), { dropdownText: 'zzzz-no-such' }),
+    );
+    expect(vm.dropdown.sections).toEqual([]);
   });
 
   it('does not offer a value that is already held', () => {

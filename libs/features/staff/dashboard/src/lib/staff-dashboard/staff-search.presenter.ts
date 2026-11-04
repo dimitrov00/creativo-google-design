@@ -303,16 +303,15 @@ function tokenOf(
   };
 }
 
-/** One token per held filter, in kind order, then the one still being built. */
+/** One token per held filter, in the order they were added, then the one still being built. */
 function tokensOf(
   query: SearchQuery,
   openField: SearchFilterField | null,
   input: SearchSheetInput,
 ): readonly TokenVm[] {
   const tokens: TokenVm[] = [];
-  for (const field of FIELD_ORDER) {
-    const held = heldOf(query, field);
-    if (held !== null) tokens.push(tokenOf(field, held, input));
+  for (const held of query.searchFilters) {
+    tokens.push(tokenOf(held.searchFilterField, held, input));
   }
   if (openField !== null && heldOf(query, openField) === null) {
     tokens.push(tokenOf(openField, null, input));
@@ -531,7 +530,6 @@ function valuesDropdown(
     {
       id: `VALUES:${field}`,
       heading: keyOf(field, input.words),
-      compact: false,
       rows,
     },
   ];
@@ -539,7 +537,6 @@ function valuesDropdown(
     sections.push({
       id: 'REMOVE',
       heading: null,
-      compact: false,
       rows: [
         {
           id: `REMOVE:${field}`,
@@ -562,8 +559,7 @@ function valuesDropdown(
 /**
  * The list under the field. With a key open, its values. With nothing typed,
  * the keys. With text typed, the values whose name holds it (each with its
- * key), then the keys as one quiet line of chips — so the live results under
- * the list stay in sight while filtering stays a tap away.
+ * key), then the keys it names — the rest leave, as in Mail and GitLab.
  */
 function dropdownOf(
   query: SearchQuery,
@@ -573,8 +569,19 @@ function dropdownOf(
   if (input.openField !== null) {
     return valuesDropdown(input.openField, offered, query, input);
   }
-  const keys = keyRowsOf(offered, query, input);
   const text = input.dropdownText.trim();
+  // Under typed text a pick TAKES the text (it named the value or the key),
+  // so what is offered is what narrows the search without it.
+  const bare =
+    text === ''
+      ? offered
+      : SearchFilterSystem.suggestions(
+          input.index,
+          SearchQuerySystem.read('', input.callingCode),
+          query.searchFilters,
+          input.shopNow,
+        );
+  const keys = keyRowsOf(bare, query, input);
   if (text === '') {
     return {
       dropdownMode: DropdownMode.Fields,
@@ -582,7 +589,6 @@ function dropdownOf(
         {
           id: 'FIELDS',
           heading: input.words.filterBy,
-          compact: false,
           rows: keys,
         },
       ],
@@ -591,7 +597,7 @@ function dropdownOf(
   }
   const matched: DropdownRowVm[] = [];
   for (const field of FIELD_ORDER) {
-    for (const filter of valuesOf(field, offered, SearchQuery.empty(), input)) {
+    for (const filter of valuesOf(field, bare, SearchQuery.empty(), input)) {
       if (matched.length === MATCHED_VALUES) break;
       if (isHeldValue(filter, query)) continue;
       const row = valueRow(filter, input, {
@@ -607,16 +613,20 @@ function dropdownOf(
     sections.push({
       id: 'MATCHES',
       heading: input.words.matches,
-      compact: false,
       rows: matched,
     });
   }
-  sections.push({
-    id: 'FIELDS',
-    heading: input.words.filterBy,
-    compact: true,
-    rows: keys,
-  });
+  // Only the keys the text names stay («бръ» → Бръснар); the rest leave, so
+  // typing narrows the list rather than standing beside it. Nothing named
+  // is an empty list, which the field draws as closed.
+  const namedKeys = keys.filter((row) => namesText(row.label, text));
+  if (namedKeys.length > 0) {
+    sections.push({
+      id: 'FIELDS',
+      heading: input.words.filterBy,
+      rows: namedKeys,
+    });
+  }
   return { dropdownMode: DropdownMode.Matches, sections, calendar: null };
 }
 
@@ -783,8 +793,13 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
   const glyph = searchGlyphOf(
     ClientQuerySystem.parse(query.searchText).clientQueryShape,
   );
-  const placeholder =
-    tokens.length > 0 ? input.words.placeholderShort : input.words.placeholder;
+  // A token being built already says what it waits for; the text says nothing.
+  const building = tokens.some((token) => token.value === '');
+  const placeholder = building
+    ? ''
+    : tokens.length > 0
+      ? input.words.placeholderShort
+      : input.words.placeholder;
   const phoneRow =
     read.queryPhone.phoneReadingKind === PhoneReadingKind.None
       ? null
@@ -803,6 +818,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
       searchSheetState: SearchSheetState.Idle,
       glyph,
       placeholder,
+      tokenPlaceholder: input.words.tokenPlaceholder,
       tokens,
       dropdown,
       recents: recentsOf(input),
@@ -824,6 +840,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
       kept.length === 0 ? SearchSheetState.Empty : SearchSheetState.Results,
     glyph,
     placeholder,
+    tokenPlaceholder: input.words.tokenPlaceholder,
     tokens,
     dropdown,
     recents: [],

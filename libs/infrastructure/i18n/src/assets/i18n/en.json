@@ -1207,6 +1207,7 @@
       "rangeFirstCaption": "Pick the first day",
       "rangeLastCaption": "From {{from}} · pick the last day",
       "placeholderShort": "Search…",
+      "tokenPlaceholder": "choose…",
       "clearFilters": "Clear filters",
       "chipRemove": "Remove filter {{label}}",
       "tokenLabel": "{{key}}: {{value}}. Change the filter",

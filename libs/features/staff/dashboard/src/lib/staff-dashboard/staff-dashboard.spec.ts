@@ -5543,11 +5543,10 @@ describe('StaffDashboard', () => {
     // A query standing keeps it folded, keyboard or not.
     expect(head()?.hasAttribute('data-folded')).toBe(true);
 
-    // Escape puts the filter dropdown away (a no-op when it is not open)…
-    input.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    );
-    fixture.detectChanges();
+    // Text that names no filter leaves no dropdown open…
+    expect(
+      host().querySelector('[data-testid="staff-search-input-dropdown"]'),
+    ).toBeNull();
     input.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
     );

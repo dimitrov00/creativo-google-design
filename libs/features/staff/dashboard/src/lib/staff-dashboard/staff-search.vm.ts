@@ -33,7 +33,7 @@ export const DropdownMode = {
   Fields: 'FIELDS',
   /** A key open (a token being built, or a token pressed): its values. */
   Values: 'VALUES',
-  /** Text typed, no key open: the values and keys the text names, then the keys. */
+  /** Text typed, no key open: the values and the keys the text names. */
   Matches: 'MATCHES',
 } as const;
 export type DropdownMode = (typeof DropdownMode)[keyof typeof DropdownMode];
@@ -106,8 +106,6 @@ export interface DropdownSectionVm {
   readonly id: string;
   /** «Филтрирай по», «Бръснар»; null for a section that needs none. */
   readonly heading: string | null;
-  /** The keys as one line of chips under matched values; rows otherwise. */
-  readonly compact: boolean;
   readonly rows: readonly DropdownRowVm[];
 }
 
@@ -140,8 +138,10 @@ export interface SearchSheetVm {
   readonly searchSheetState: SearchSheetState;
   /** The field's leading glyph: what the text was taken for. */
   readonly glyph: UiIconName;
-  /** «Име, телефон, имейл, услуга…», or «Търси…» beside tokens. */
+  /** «Име, телефон, имейл, услуга…», «Търси…» beside tokens, '' beside one being built. */
   readonly placeholder: string;
+  /** «избери…» — the value segment of a token still being built. */
+  readonly tokenPlaceholder: string;
   readonly tokens: readonly TokenVm[];
   readonly dropdown: SearchDropdownVm;
   readonly recents: readonly RecentVm[];

@@ -249,11 +249,11 @@
     text-overflow: ellipsis;
   }
 
-  /* A token still being built is its key alone, closed on both ends. */
-  .ui-search-field__token[data-building] .ui-search-field__token-key {
-    border-radius: var(--control-radius-capsule);
-    padding-inline-end: var(--sys-space-regular);
-    color: var(--sys-color-foreground);
+  /* A token still being built is already both segments: the value one says
+     what it waits for in the field's own placeholder ink. */
+  .ui-search-field__token[data-building] .ui-search-field__token-value {
+    color: var(--sys-color-secondary-label);
+    font-weight: 400;
   }
 
   /* The faces lead the value, overlapped like ui-avatar-group's run, at a
@@ -316,7 +316,9 @@
   .ui-search-field__dropdown {
     position: absolute;
     inset-inline: 0;
-    inset-block-start: calc(100% + var(--sys-space-tight));
+    /* A clear gap under the field, so the list reads as its own surface
+       rather than the field's lower half. */
+    inset-block-start: calc(100% + var(--sys-space-compact));
     z-index: var(--sys-layer-popover);
     max-block-size: min(60dvh, 28rem);
     overflow-y: auto;
@@ -331,11 +333,14 @@
     transform-origin: top center;
   }
 
-  /* Pinned, the band pads the field by the sheet's inset: the dropdown
-     lines up with the field, not with the band. */
+  /* Pinned, the band pads the field by the sheet's inset and a tight block
+     pad: the dropdown lines up with the field, not with the band, and keeps
+     the same gap under it. */
   .ui-search-field[data-pinned] .ui-search-field__dropdown {
     inset-inline: var(--ui-sheet-inset, var(--sys-space-regular));
-    inset-block-start: calc(100% - var(--sys-space-tight));
+    inset-block-start: calc(
+      100% - var(--sys-space-tight) + var(--sys-space-compact)
+    );
   }
 
   @keyframes ui-search-field-drop {

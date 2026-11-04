@@ -25,8 +25,8 @@ export interface UiSearchFieldTokenFace {
 /**
  * One token in the field — a filter the owner holds beside the text, drawn
  * as a key and its value («Бръснар │ Иван, Стефан»), ≙ GitLab's filtered
- * search token. An empty `value` is a token still being built: the key alone,
- * waiting for its value.
+ * search token. An empty `value` is a token still being built: its key, and
+ * a value segment holding the field's `uiTokenPlaceholder`.
  */
 export interface UiSearchFieldToken {
   readonly id: string;
@@ -135,7 +135,15 @@ let nextDropdownId = 0;
           (click)="activateToken(token)"
         >
           <span class="ui-search-field__token-key">{{ token.key }}</span>
-          @if (token.value !== '') {
+          @if (token.value === '') {
+            <!-- Still being built: the value segment is there, holding the
+                 placeholder, so the token is already the shape it will be. -->
+            <span class="ui-search-field__token-value" aria-hidden="true">
+              <span class="ui-search-field__token-text">{{
+                uiTokenPlaceholder()
+              }}</span>
+            </span>
+          } @else {
             <span class="ui-search-field__token-value">
               @if (token.faces.length > 0) {
                 <span class="ui-search-field__faces" aria-hidden="true">
@@ -260,6 +268,8 @@ export class UiSearchField {
   readonly uiClearLabel = input('');
   /** The filters before the text — none by default. */
   readonly uiTokens = input<readonly UiSearchFieldToken[]>([]);
+  /** What the value segment of a token still being built says: «избери…». */
+  readonly uiTokenPlaceholder = input('');
   /** The token whose values the owner has open: it wears the focus ring. */
   readonly uiActiveToken = input<string | null>(null);
   /** The projected `uiSearchDropdown` content hangs under the field. */

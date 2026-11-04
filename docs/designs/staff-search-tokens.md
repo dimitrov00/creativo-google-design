@@ -42,6 +42,10 @@ the filter as stored:
   kind's values: each has a check mark, a press toggles it, and a destructive
   «Махни филтъра» row sits last. **There is no ✕ on a token.** Backspace in an
   empty field still removes the last token, and says so.
+- Tokens stand in the order their filters were added (`SearchQuery.withFilter`
+  appends a new kind and merges a held one where it stands). Two searches
+  with the same filters in a different order are still the same search
+  (`SearchQuery.equals` compares a sorted key), so recents do not double up.
 - The token being edited wears the focus ring. A token is never wider than
   the field minus the leading glyph: a long value ellipsizes beside the glyph
   rather than wrapping and leaving the glyph alone on its line.
@@ -62,27 +66,35 @@ a backdrop root, so a blur nested inside it samples only the band and the
 results read straight through. The list covers the results and leaves the
 field where it was. It has three modes:
 
-| Mode      | When                             | Rows                                                                                                                                                         |
-| --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `FIELDS`  | nothing typed, no key chosen     | «Филтрирай по»: Кога, Бръснар, Услуга, Статус, С бележка — only the kinds that still narrow (`SearchFilterSystem.suggestions`)                               |
-| `VALUES`  | a key chosen, or a token pressed | that kind's values, faces for barbers; typing filters them; ✓ on chosen values; «Махни филтъра» when the kind is held                                        |
-| `MATCHES` | text typed, no key chosen        | the values with a word starting with the text (at most five), each with its key as detail («Нико Димов · Бръснар»), then the keys as ONE line of small chips |
+| Mode      | When                             | Rows                                                                                                                                                               |
+| --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FIELDS`  | nothing typed, no key chosen     | «Филтрирай по»: Кога, Бръснар, Услуга, Статус, С бележка — only the kinds that still narrow (`SearchFilterSystem.suggestions`)                                     |
+| `VALUES`  | a key chosen, or a token pressed | that kind's values, faces for barbers; typing filters them; ✓ on chosen values; «Махни филтъра» when the kind is held                                              |
+| `MATCHES` | text typed, no key chosen        | the values with a word starting with the text (at most five), each with its key as detail («Нико Димов · Бръснар»), then the keys the text names («бръ» → Бръснар) |
 
-- Picking a key in `FIELDS` puts a key-only token («Бръснар») before the
-  caret. This is the GitLab half-built token. The list switches to its values,
-  and Backspace on the empty text drops the half-built token.
+- Picking a key in `FIELDS` puts a half-built token before the caret: the
+  key, and a value segment that says «избери…» in placeholder ink, so the
+  token already has the shape it will keep. The text beside it shows no
+  placeholder of its own. The list switches to the key's values, and
+  Backspace on the empty text drops the half-built token.
 - Picking a value from a half-built token adds the filter and returns to
   `FIELDS`. Picking it from a pressed token toggles it and keeps the list open.
 - «С бележка» has no values: picking the key adds the filter.
-- Opening a key PARKS the typed search: the input empties, the text typed
-  then narrows the key's values, and the search comes back when the key
-  closes (a value picked, Escape, a press outside). The visits under the list
-  do not jump while a filter is being built. This is how a search typed first
-  can still be narrowed by a barber, as GitLab keeps its free text.
-- `MATCHES` keeps the keys as one line of chips so filtering stays a tap away
-  while typing, and the list stays short enough that the live results under
-  it stay in sight. A value is matched where a word of its name starts (the
-  add-client page's rule), so «ни» offers «Нико», not «Потвърдени».
+- Pressing a token while text is typed PARKS the search: the input empties,
+  the text typed then narrows the token's values, and the search comes back
+  when the values close (Escape, a press outside, the filter removed). The
+  visits under the list do not jump while a filter is being changed.
+- Typing narrows the list rather than standing beside it (owner, 2026-11-05:
+  "when you type the filters below should disappear"). Only the values and
+  the keys whose name the text starts a word of stay; a text that names
+  nothing leaves no list, and the results are all there is. Picking a matched
+  value or key TAKES the text, because the text was naming it, so what is
+  offered is what would narrow the search without the text. A value is
+  matched where a word of its name starts (the add-client page's rule), so
+  «ни» offers «Нико», not «Потвърдени». To add a filter after typing a
+  search, type the key's name, or clear the text.
+- The list hangs a clear gap (`--sys-space-compact`) under the field, so it
+  reads as its own surface and not as the field's lower half.
 - Escape closes the month first, then the open key, then the list; a press
   outside or opening a card closes it. ↓ from the field lands on its first
   row; with the list closed, on the first card. Return with a key open picks
@@ -123,8 +135,8 @@ when the sheet opens, so the keys show at once, as Spotlight does.
   name on the visit. A client filter would need a customer-id column in the
   search index and names that are not in the catalogue. It is a follow-up if
   typing proves not enough.
-- **Typed `key:value` syntax.** The keys stay one tap away under typed text
-  (`MATCHES`' line of chips), which covers the need without a parser.
+- **Typed `key:value` syntax.** Typing a key's name already offers the key
+  (`MATCHES`), which covers the need without a parser.
 - **A range drawn across the month grid.** The picker marks the chosen end and
   the caption names the span. Shading the days between needs a range input on
   `ui-month-picker`. Until a day is picked the picker marks today (it draws no

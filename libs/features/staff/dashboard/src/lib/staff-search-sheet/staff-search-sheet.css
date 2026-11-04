@@ -8,7 +8,7 @@
   );
 }
 
-/* Chips wrap in a flow: recents and the keys under typed text are short words. */
+/* Chips wrap in a flow: recents are short words. */
 .staff-search-sheet__chips {
   display: flex;
   flex-wrap: wrap;
@@ -35,11 +35,6 @@
 .staff-search-sheet__heading {
   padding: var(--sys-space-compact) var(--sys-space-compact)
     var(--sys-space-tight);
-}
-
-.staff-search-sheet__section[data-compact] .staff-search-sheet__chips {
-  padding: var(--sys-space-tight) var(--sys-space-compact)
-    var(--sys-space-compact);
 }
 
 .staff-search-sheet__row {

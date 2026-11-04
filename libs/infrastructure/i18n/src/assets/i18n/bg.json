@@ -1207,6 +1207,7 @@
       "rangeFirstCaption": "Избери първия ден",
       "rangeLastCaption": "От {{from}} · избери последния ден",
       "placeholderShort": "Търси…",
+      "tokenPlaceholder": "избери…",
       "clearFilters": "Махни филтрите",
       "chipRemove": "Махни филтъра {{label}}",
       "tokenLabel": "{{key}}: {{value}}. Промени филтъра",

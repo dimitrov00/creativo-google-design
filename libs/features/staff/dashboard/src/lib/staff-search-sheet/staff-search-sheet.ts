@@ -394,6 +394,9 @@ export class StaffSearchSheet {
   protected pickRow(row: DropdownRowVm): void {
     switch (row.dropdownAction) {
       case DropdownAction.OpenField:
+        // A key the typed text named («бръ» → Бръснар) takes the text with it.
+        if (this.openField() === null && this.typed() !== '')
+          this.commitNow('');
         this.openKey(row.searchFilterField);
         return;
       case DropdownAction.AddValue: {

@@ -20,7 +20,11 @@ export type SearchQuery = {
   readonly searchFilters: readonly SearchFilter[];
 };
 
-/** The order filters are kept in: one per kind, always this order. */
+/**
+ * The order a query's KEY lists its filters in, so two searches with the
+ * same filters added in a different order are the same search. The query
+ * itself keeps the order the filters were added in (the tokens read that way).
+ */
 const KIND_ORDER: readonly SearchFilterField[] = [
   SearchFilterField.Barber,
   SearchFilterField.Service,
@@ -165,7 +169,10 @@ export const SearchQuery = {
     return { searchText, searchFilters: query.searchFilters };
   },
 
-  /** The filter added: one of a kind is kept, so a second barber joins the first. */
+  /**
+   * The filter added: one of a kind is kept, so a second barber joins the
+   * first where it stands; a new kind goes last.
+   */
   withFilter(query: SearchQuery, filter: SearchFilter): SearchQuery {
     let merged = false;
     const filters: SearchFilter[] = [];
@@ -179,10 +186,7 @@ export const SearchQuery = {
       }
     }
     if (!merged) filters.push(filter);
-    return {
-      searchText: query.searchText,
-      searchFilters: inKindOrder(filters),
-    };
+    return { searchText: query.searchText, searchFilters: filters };
   },
 
   /** Every filter of a kind taken off. */
