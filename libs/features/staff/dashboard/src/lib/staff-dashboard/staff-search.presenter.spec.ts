@@ -6,6 +6,7 @@ import {
   SubjectRelationship,
 } from '@core/components';
 import {
+  AppointmentId,
   BookingStatus,
   LocalDate,
   MinuteOfDay,
@@ -222,5 +223,27 @@ describe('searchHits — the hits as the sheet prints them', () => {
     expect(searchHits(input('георги', pool))).toEqual(
       searchHits(input('георги', pool)),
     );
+  });
+});
+
+describe('searchHits — a keystroke over the whole window', () => {
+  it('matches a term over 4,800 visits well inside a keystroke’s budget (measured, logged)', () => {
+    const pool = Array.from({ length: 4800 }, (_, index) =>
+      visit({
+        id: AppointmentId.of(`visit-${index}`),
+        contactName: `Клиент ${index} Иванов`,
+        contactPhone: E164.of(`+3598${String(10000000 + index).slice(1)}`),
+      }),
+    );
+    const started = performance.now();
+    const hits = searchHits(input('клиент 47', pool));
+    const keystrokeMs = performance.now() - started;
+    console.info(
+      `[staff-search] one keystroke over ${pool.length} visits: ${keystrokeMs.toFixed(1)} ms, ${hits.length} hits`,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    // Generous on purpose: this makes the cost visible, it does not gate on a
+    // machine's speed. A real regression is an order of magnitude, not a few ms.
+    expect(keystrokeMs).toBeLessThan(1500);
   });
 });

@@ -415,7 +415,25 @@
           </li>
           }
         </ul>
-        } } }
+        } } } @if (store.searchCapped()) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="staff-search-truncated"
+        >
+          {{ t('staff.day.searchTruncated') }}
+        </p>
+        } @if (store.searchStale()) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="staff-search-stale"
+        >
+          {{ t('staff.day.searchStale') }}
+        </p>
+        }
       </ui-stack>
     </ui-modal-sheet>
     } @if (isGrid()) { @if (dayHealth().length > 0) {

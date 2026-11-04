@@ -248,17 +248,20 @@ describe('appointmentReadPorts (emulator)', () => {
         n3: visit({ at: '2026-10-15T10:00:00+03:00' }),
       });
 
-      const pool = await portsFor(barber()).searchAppointmentWindow(
+      const window = await portsFor(barber()).searchAppointmentWindow(
+        utcMs('2026-10-01T00:00:00+03:00'),
+        utcMs('2026-10-31T23:59:59+02:00'),
         utcMs('2026-10-12T12:00:00+03:00'),
         2,
       );
 
-      expect(pool.ok && pool.value.map((a) => a.id)).toEqual([
+      expect(window.ok && window.value.appointments.map((a) => a.id)).toEqual([
         'p2',
         'p1',
         'n1',
         'n2',
       ]);
+      expect(window.ok && window.value.capped).toBe(true);
     });
   });
 

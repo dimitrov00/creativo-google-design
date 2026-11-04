@@ -148,21 +148,35 @@ export type ObserveHistory = (
 ) => Observable<Result<readonly Appointment[], RepositoryError>>;
 
 /**
- * The staff search pool — the visits nearest `nowUtcMs` on BOTH sides: the
- * `limitPerSide` latest starting before it (`utcEpochMs < now`, `desc`) and
- * the `limitPerSide` earliest starting at or after it (`utcEpochMs >= now`,
- * `asc`), merged oldest first. Each half is a range + `orderBy` on the ONE
- * field, so both ride its automatic single-field index (no composite, no
- * `fieldOverrides` entry on `utcEpochMs`); ordering each half outward from
- * now makes the limit cut the far edges, never the middle. Every status.
- * The successor of `APPOINTMENT_REPOSITORY.searchWindow` — what the staff
- * day's search pool and the add-client page's «Скорошни» read
- * (`staff-day.store.ts` `reloadSearchPool`).
+ * What the staff search window read: the visits, ascending by start, and
+ * whether either side stopped at its cap (so the sheet can say it shows the
+ * nearest ones only).
+ */
+export type AppointmentWindowRead = {
+  readonly appointments: readonly Appointment[];
+  readonly capped: boolean;
+};
+
+/**
+ * The staff search window — every visit starting in `fromUtcMs … toUtcMs`
+ * (both inclusive), read as two halves around `nowUtcMs`: the latest
+ * `capPerSide` starting before it (`utcEpochMs < now`, `desc`) and the
+ * earliest `capPerSide` at or after it (`utcEpochMs >= now`, `asc`), merged
+ * oldest first. Each half is a range + `orderBy` on the ONE field, so both
+ * ride its automatic single-field index (no composite, no `fieldOverrides`
+ * entry on `utcEpochMs`); ordering each half outward from now makes the cap
+ * cut the far edges, never the middle, and `capped` says one did. Every
+ * status. The bounds are the shop's days as instants, converted once by
+ * `SearchWindowSystem.boundsOf`. What the staff day's search and the
+ * add-client page's «Скорошни» read (`staff-day.store.ts`
+ * `reloadSearchPool`).
  */
 export type SearchAppointmentWindow = (
+  fromUtcMs: UtcEpochMs,
+  toUtcMs: UtcEpochMs,
   nowUtcMs: UtcEpochMs,
-  limitPerSide: number,
-) => Promise<Result<readonly Appointment[], RepositoryError>>;
+  capPerSide: number,
+) => Promise<Result<AppointmentWindowRead, RepositoryError>>;
 
 /** One page of a client's visits, newest first, and where the next one starts. */
 export type ClientHistoryPage = {

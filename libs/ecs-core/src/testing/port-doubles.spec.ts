@@ -451,8 +451,41 @@ describe('memoryAppointmentReadPorts — the appointment readers', () => {
       visit('n1', '2026-09-29T10:00:00+03:00'),
       visit('n2', '2026-09-30T10:00:00+03:00'),
     ]);
-    const window = unwrapOk(await ports.searchAppointmentWindow(now, 2));
-    expect(window.map((entry) => entry.id)).toEqual(['p2', 'p1', 'n0', 'n1']);
+    const window = unwrapOk(
+      await ports.searchAppointmentWindow(
+        at('2026-09-01T00:00:00+03:00'),
+        at('2026-10-31T23:59:59+02:00'),
+        now,
+        2,
+      ),
+    );
+    expect(window.appointments.map((entry) => entry.id)).toEqual([
+      'p2',
+      'p1',
+      'n0',
+      'n1',
+    ]);
+    expect(window.capped).toBe(true);
+  });
+
+  it('reads only the days asked for, and says nothing was cut when each side fits its cap', async () => {
+    const now = at('2026-09-28T12:00:00+03:00');
+    const ports = memoryAppointmentReadPorts([
+      visit('before', '2026-09-20T10:00:00+03:00'),
+      visit('p', '2026-09-27T10:00:00+03:00'),
+      visit('n', '2026-09-29T10:00:00+03:00'),
+      visit('after', '2026-10-20T10:00:00+03:00'),
+    ]);
+    const window = unwrapOk(
+      await ports.searchAppointmentWindow(
+        at('2026-09-25T00:00:00+03:00'),
+        at('2026-09-30T23:59:59+03:00'),
+        now,
+        5,
+      ),
+    );
+    expect(window.appointments.map((entry) => entry.id)).toEqual(['p', 'n']);
+    expect(window.capped).toBe(false);
   });
 });
 
