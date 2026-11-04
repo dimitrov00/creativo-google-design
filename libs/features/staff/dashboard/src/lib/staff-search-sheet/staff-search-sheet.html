@@ -1,0 +1,168 @@
+<ng-container>
+  <!-- THE SHEETS' ONE SEARCH GRAMMAR: the head, its scope as the line under
+       the title, the DS field pinned under the bar with the chosen filters
+       as chips inside it, and the head folding while the search is engaged
+       (the bar is told, because a folded title never scrolls under it). The
+       read in flight is the field's own quiet ring. -->
+  <ui-modal-sheet
+    sheetId="staff-search-sheet"
+    labelledBy="staff-search-title"
+    [closeLabel]="t('staff.day.cancelDismiss')"
+    [open]="true"
+    [titleCollapsed]="engaged() ? true : undefined"
+    data-testid="staff-search-sheet"
+    (dismissed)="close()"
+  >
+    <span sheet-title>{{ t('staff.day.searchLabel') }}</span>
+
+    <ui-stack uiSpacing="comfortable" class="staff-search-sheet__body">
+      <ui-sheet-headline
+        [uiFolded]="engaged()"
+        data-testid="staff-search-headline"
+      >
+        <h2
+          id="staff-search-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('staff.day.searchLabel') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('staff.day.searchScope') }}
+        </p>
+      </ui-sheet-headline>
+
+      <ui-search-field
+        uiPinned
+        [uiValue]="typed()"
+        [uiIcon]="vm().glyph"
+        [uiPlaceholder]="t('staff.day.searchPlaceholder')"
+        [uiBusy]="store.searchLoading()"
+        uiBusyTestId="staff-search-loading"
+        uiTestId="staff-search-input"
+        [uiClearLabel]="t('staff.day.searchClear')"
+        [uiTokens]="vm().chips"
+        (uiInput)="typeText($event)"
+        (uiTokenRemove)="removeChip($event)"
+        (uiFocusChange)="focused.set($event)"
+        (uiSubmit)="submit()"
+        (uiNavigate)="focusFirst($event)"
+      />
+
+      @if (vm().phoneRow; as phone) {
+      <!-- The text reads as a number: said, never rewritten under the caret. -->
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="staff-search-phone-row"
+      >
+        {{ phone }}
+      </p>
+      } @switch (vm().searchSheetState) { @case (SearchSheetState.Results) {
+      <lib-visit-list
+        [sections]="vm().groups"
+        [perspective]="VisitPerspective.Staff"
+        [listStyle]="VisitListStyle.Plain"
+        [interactive]="true"
+        testIdPrefix="staff-search"
+        (openRow)="openHit($event)"
+      />
+      } @case (SearchSheetState.Empty) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="staff-search-empty"
+      >
+        {{ t('staff.day.searchEmpty') }}
+      </p>
+      @if (vm().clearFilters; as clear) {
+      <button
+        type="button"
+        uiChip
+        [uiToggle]="false"
+        data-search-focusable
+        data-testid="staff-search-clear-filters"
+        (click)="clearFilters()"
+      >
+        {{ clear }}
+      </button>
+      } } @case (SearchSheetState.Idle) { @if (vm().recents.length > 0) {
+      <section data-testid="staff-search-recents">
+        <ui-section-header uiHeaderProminence="increased">
+          <h3 uiTitle>{{ t('staff.search.recents') }}</h3>
+          <button
+            uiSectionAction
+            type="button"
+            uiButton
+            uiButtonStyle="plain"
+            uiControlSize="small"
+            data-testid="staff-search-clear-recents"
+            (click)="clearAllRecents()"
+          >
+            {{ t('staff.search.clearRecents') }}
+          </button>
+        </ui-section-header>
+        <div class="staff-search-sheet__chips">
+          @for (recent of vm().recents; track recent.id) {
+          <button
+            type="button"
+            uiChip
+            [uiToggle]="false"
+            data-search-focusable
+            data-testid="staff-search-recent"
+            (click)="runRecent(recent)"
+          >
+            {{ recent.label }}
+          </button>
+          }
+        </div>
+      </section>
+      } } }
+
+      <!-- What can still narrow the search; each offer keeps a result. -->
+      @if (vm().suggestions.length > 0) {
+      <section data-testid="staff-search-suggestions">
+        <ui-section-header uiHeaderProminence="increased">
+          <h3 uiTitle>{{ t('staff.search.suggestions') }}</h3>
+        </ui-section-header>
+        @for (group of vm().suggestions; track group.suggestionGroupKind) {
+        <div class="staff-search-sheet__group">
+          @if (group.heading; as heading) {
+          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ heading }}
+          </p>
+          }
+          <div class="staff-search-sheet__chips">
+            @for (suggestion of group.suggestions; track suggestion.id) {
+            <button
+              type="button"
+              uiChip
+              [uiToggle]="false"
+              data-search-focusable
+              data-testid="staff-search-suggestion"
+              [attr.data-suggestion]="suggestion.id"
+              (click)="addSuggestion(suggestion)"
+            >
+              {{ suggestion.label }}
+            </button>
+            }
+          </div>
+        </div>
+        }
+      </section>
+      } @for (note of vm().footnotes; track note) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        data-testid="staff-search-footnote"
+      >
+        {{ note }}
+      </p>
+      }
+    </ui-stack>
+  </ui-modal-sheet>
+</ng-container>

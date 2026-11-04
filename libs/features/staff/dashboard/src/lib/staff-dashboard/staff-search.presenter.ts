@@ -1,228 +1,459 @@
 import {
-  SearchFieldsSystem,
-  PhoneSystem,
-  TextMatchSystem,
-  VisitStorySystem,
-} from '@core/systems';
-import {
-  SeatSubject,
-  type PhoneReading,
+  DayBucket,
+  MatchMode,
+  PhoneReadingKind,
+  type SearchFilter,
+  SearchFilterField,
+  SearchQuery,
+  SearchWhenPreset,
   type ShopNow,
   type TextSegment,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
-import type { LocationId } from '@core/primitives';
-import { formatWallClock } from '@creativo/ui/wall-clock';
-import { guestLabelOf } from './staff-day-guest.words';
-import type { StaffCatalogNames } from './staff-day-chrome.presenter';
 import {
-  SearchField,
-  type SearchHitVm,
-  type SearchMatch,
-  type SearchableField,
+  type BarberId,
+  type BookingStatus,
+  type LocalDate,
+  type ServiceId,
+  type TimeZone,
+} from '@core/primitives';
+import {
+  ClientQuerySystem,
+  PhoneSystem,
+  type ReadQuery,
+  SearchFilterSystem,
+  type SearchIndex,
+  SearchQuerySystem,
+  type SearchSuggestions,
+  TextMatchSystem,
+  VisitListSystem,
+  VisitStorySystem,
+} from '@core/systems';
+import {
+  type AppointmentRowVm,
+  type StaffEventLine,
+  type VisitBuilderWords,
+  type VisitLookup,
+  VisitGrain,
+  VisitPerspective,
+  type VisitSectionVm,
+  visitRowOf,
+} from '@creativo/features/shared/visits';
+import { formatWallClock } from '@creativo/ui/wall-clock';
+import { searchGlyphOf } from '../visit-editor/visit-client-row.presenter';
+import {
+  type ChipVm,
+  type RecentVm,
+  SearchSheetState,
+  type SearchSheetVm,
+  type SuggestionGroupVm,
+  SuggestionGroupKind,
+  type SuggestionVm,
 } from './staff-search.vm';
+import type { StaffSearchWords } from './staff-search.words';
 
 /*
- * THE SEARCH SHEET, WORDED (Law 10). The outward order and what counts as
- * past are `VisitStorySystem.outwardFromNow`'s, the number rule
- * `PhoneSystem`'s; this reads each visit's text fields and marks the
- * runs that matched (pass C PC-D-3: the collation match and its highlight are
- * no decision, and they could never live in a system). A term that reads as a
- * number is read by `PhoneSystem.searchDigitsOf`, the rule every search shares.
+ * THE SEARCH SHEET, WORDED (Law 10). What matches, which filters can still
+ * narrow, how the visits group under their days and what the numbers read as
+ * are the systems' (`SearchFilterSystem`, `VisitListSystem.dayGroups`,
+ * `PhoneSystem`); this words them — chips, suggestions, headings, the event
+ * cards' matched lines — and marks the runs `TextMatchSystem` found.
  */
 
-/** What the hits are worded from. */
-export interface SearchInput {
-  /** The term as typed; trimmed and folded on the Bulgarian collation here. */
-  readonly term: string;
-  /** The loaded window of visits. */
+/** What the sheet is worded from. */
+export interface SearchSheetInput {
+  readonly query: SearchQuery;
+  /** The window, and the folded index built from it when it was replaced. */
   readonly pool: readonly Appointment[];
-  /** Each shop's own `ShopNow`, read at the store's edge at this tick. */
-  readonly shopNowAt: (locationId: LocationId) => ShopNow | null;
-  readonly names: StaffCatalogNames;
-  /** A wall-clock reading prints nothing before the zone is known (D-6.2). */
-  readonly zoneKnown: boolean;
+  readonly index: SearchIndex;
+  readonly recents: readonly SearchQuery[];
+  /** The page's "now" in its zone: today's heading, the date presets. */
+  readonly shopNow: ShopNow;
+  readonly timeZone: TimeZone;
+  /** Each visit's own shop's "now" (the physical chair invariant, Law 7.2). */
+  readonly shopNowAt: (visit: Appointment) => ShopNow | null;
   readonly locale: string;
-  /** The shop's dial code, digits only: `088…` is read as `359 88…`. */
+  /** The shop's dial code: `088…` is read as `359 88…`. */
   readonly callingCode: string;
-  /** A companion's own name, by account, once his profile is read. */
-  readonly companionNames: Readonly<Record<string, string>>;
-  /** «Клиент без име» — `staff.day.unnamedClient`. */
+  readonly lookup: VisitLookup;
+  readonly rowWords: VisitBuilderWords;
+  readonly words: StaffSearchWords;
+  /** Every name a visit is findable by as a client (contact, guests, companions). */
+  readonly clientNames: (visit: Appointment) => readonly string[];
+  /** «Клиент без име» — a visit that has no name anywhere. */
   readonly unnamedClient: string;
+  readonly capped: boolean;
+  readonly stale: boolean;
 }
 
-/**
- * Does this field hold the term — by text (the Bulgarian collation, this
- * page's), or, for a phone, by the number the term reads as (`reading`,
- * `null` when the term is no number — `PhoneSystem.isNumberShaped`)?
- */
-export function matches(
-  field: SearchableField,
-  term: string,
-  reading: PhoneReading | null,
-): boolean {
-  if (field.value.toLocaleLowerCase('bg').includes(term)) return true;
-  return (
-    reading !== null &&
-    field.label === SearchField.Phone &&
-    PhoneSystem.readingMatches(reading, field.value)
-  );
-}
-
-/**
- * The hits for a term, or none for a term too short to search.
- *
- * Matched in memory against a window the store loaded once — Firestore
- * cannot substring-match, and the fields a shop actually searches by
- * (name, phone, email, note, service) are four different shapes, one of
- * them nested inside the `seats` array.
- */
-export function searchHits(input: SearchInput): readonly SearchHitVm[] {
-  const term = input.term.trim().toLocaleLowerCase('bg');
-  if (!SearchFieldsSystem.termSearchable(term)) return [];
-
-  // A term that is all number — «887778899», «088 777», «+359 88» — also finds
-  // a phone by the number it reads as, however the formatter spaced it. A
-  // mixed term («Иван 088») stays text only until the spotlight's rule lands.
-  const reading = PhoneSystem.isNumberShaped(term)
-    ? PhoneSystem.searchDigitsOf(term, input.callingCode)
-    : null;
-
-  const found = new Map<Appointment, SearchMatch>();
-  const visits: Appointment[] = [];
-  for (const appointment of input.pool) {
-    const fields = searchableFields(appointment, input.names);
-    const matched = fields.filter((field) => matches(field, term, reading));
-    if (matched.length === 0) continue;
-    found.set(appointment, { fields, matched });
-    visits.push(appointment);
+/** The value a chip or suggestion stands for, as the single-value filter it adds or removes. */
+function singleValues(filter: SearchFilter): readonly SearchFilter[] {
+  switch (filter.searchFilterField) {
+    case SearchFilterField.Barber:
+      return filter.filterBarberIds.map((id) => singleBarber(id));
+    case SearchFilterField.Service:
+      return filter.filterServiceIds.map((id) => singleService(id));
+    case SearchFilterField.Status:
+      return filter.filterBookingStatuses.map((status) => singleStatus(status));
+    case SearchFilterField.When:
+    case SearchFilterField.Note:
+      return [filter];
   }
-
-  // Soonest first among the future; most recent first among the past —
-  // the two things a person searching a book is actually looking for.
-  // A visit is past once it has ENDED, on its own shop's clock
-  // (`VisitStorySystem.outwardFromNow`, the grid's definition too).
-  return VisitStorySystem.outwardFromNow(visits, (visit) =>
-    input.shopNowAt(visit.locationId),
-  ).map(({ visit: appointment, past }) => {
-    const { fields, matched } = found.get(appointment) as SearchMatch;
-    // The client is the title, highlighted when it is what matched. Every
-    // OTHER matched field lists beneath — so a phone search shows the
-    // number it hit, and a name search does not print the name twice.
-    const titleField = titleFieldOf(appointment, fields, input);
-    return {
-      id: appointment.id,
-      dayKey: appointment.localDate,
-      whenLabel: input.zoneKnown
-        ? formatWallClock(
-            appointment.localDate,
-            appointment.startMinutes,
-            input.locale,
-            {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            },
-          )
-        : '',
-      past,
-      bookingStatus: appointment.bookingStatus,
-      titleParts: titleField
-        ? TextMatchSystem.segments(titleField.value, term)
-        : [{ text: '', hit: false }],
-      matches: matched
-        .filter((field) => field !== titleField)
-        .map((field) => ({
-          label: field.label,
-          // Highlight the run that actually matched: the number's digits
-          // when that is what hit, the typed term otherwise.
-          parts: phonePartsOf(field, term, reading),
-        })),
-    };
-  });
 }
 
-/** The marked runs of a matched field: a phone by its reading, anything else by the term. */
-function phonePartsOf(
-  field: SearchableField,
-  term: string,
-  reading: PhoneReading | null,
-): readonly TextSegment[] {
-  const run =
-    reading !== null && field.label === SearchField.Phone
-      ? PhoneSystem.readingRun(reading, field.value)
-      : null;
-  return run === null
-    ? TextMatchSystem.segments(field.value, term)
-    : TextMatchSystem.phoneSegments(field.value, run);
+const singleBarber = (id: BarberId): SearchFilter => ({
+  searchFilterField: SearchFilterField.Barber,
+  filterBarberIds: [id],
+});
+const singleService = (id: ServiceId): SearchFilter => ({
+  searchFilterField: SearchFilterField.Service,
+  filterServiceIds: [id],
+});
+const singleStatus = (status: BookingStatus): SearchFilter => ({
+  searchFilterField: SearchFilterField.Status,
+  filterBookingStatuses: [status],
+});
+
+function dayLabel(day: LocalDate, locale: string): string {
+  return formatWallClock(day, null, locale, { day: 'numeric', month: 'short' });
 }
 
-/**
- * A hit's title: the contact, else the first seat whose person has a name (a
- * guest's label, a read companion's profile), else, for an account seat with
- * no name anywhere, the unnamed word. Any other field only with no person at
- * all.
- */
-function titleFieldOf(
-  appointment: Appointment,
-  fields: readonly SearchableField[],
-  input: SearchInput,
-): SearchableField | undefined {
-  if (appointment.contactName) return fields[0];
-  for (const seat of appointment.seats) {
-    const name =
-      guestLabelOf(seat) ??
-      (seat.seatSubject === SeatSubject.Account
-        ? input.companionNames[seat.subjectUserId]
-        : undefined);
-    if (name === undefined) continue;
-    return (
-      fields.find(
-        (field) => field.label === SearchField.Client && field.value === name,
-      ) ?? { label: SearchField.Client, value: name }
-    );
+function whenLabel(filter: SearchFilter.When, input: SearchSheetInput): string {
+  const preset = SearchFilterSystem.presetOf(filter, input.shopNow);
+  if (preset === SearchWhenPreset.Today) return input.words.today;
+  if (preset === SearchWhenPreset.Tomorrow) return input.words.tomorrow;
+  if (preset === SearchWhenPreset.ThisWeek) return input.words.thisWeek;
+  return filter.filterFromDate === filter.filterToDate
+    ? dayLabel(filter.filterFromDate, input.locale)
+    : `${dayLabel(filter.filterFromDate, input.locale)} – ${dayLabel(filter.filterToDate, input.locale)}`;
+}
+
+/** A single-value filter's label, in the reader's words. */
+function labelOf(filter: SearchFilter, input: SearchSheetInput): string {
+  switch (filter.searchFilterField) {
+    case SearchFilterField.Barber:
+      return (
+        input.lookup.barberName(filter.filterBarberIds[0] as BarberId) ??
+        input.rowWords.barberRole
+      );
+    case SearchFilterField.Service:
+      return (
+        input.lookup.serviceName(filter.filterServiceIds[0] as ServiceId) ??
+        input.rowWords.unknownService
+      );
+    case SearchFilterField.Status:
+      return input.words.statusWord(
+        filter.filterBookingStatuses[0] as BookingStatus,
+      );
+    case SearchFilterField.When:
+      return whenLabel(filter, input);
+    case SearchFilterField.Note:
+      return input.words.withNote;
   }
-  return appointment.seats.length > 0
-    ? { label: SearchField.Client, value: input.unnamedClient }
-    : fields[0];
 }
 
-/** Every field a search is allowed to look at, in display priority. */
-export function searchableFields(
-  appointment: Appointment,
-  names: StaffCatalogNames,
-): readonly SearchableField[] {
-  const out: SearchableField[] = [];
-  if (appointment.contactName) {
-    out.push({ label: SearchField.Client, value: appointment.contactName });
+function filterKey(filter: SearchFilter): string {
+  switch (filter.searchFilterField) {
+    case SearchFilterField.Barber:
+      return `BARBER:${filter.filterBarberIds[0]}`;
+    case SearchFilterField.Service:
+      return `SERVICE:${filter.filterServiceIds[0]}`;
+    case SearchFilterField.Status:
+      return `STATUS:${filter.filterBookingStatuses[0]}`;
+    case SearchFilterField.When:
+      return `WHEN:${filter.filterFromDate}..${filter.filterToDate}`;
+    case SearchFilterField.Note:
+      return 'NOTE';
   }
-  for (const seat of appointment.seats) {
-    const guestLabel = guestLabelOf(seat);
-    if (guestLabel !== null) {
-      out.push({ label: SearchField.Client, value: guestLabel });
-    }
-    const service = names.findService(seat.serviceId);
-    if (service) {
-      out.push({
-        label: SearchField.Service,
-        value: names.text(service.name),
+}
+
+function chipsOf(
+  query: SearchQuery,
+  input: SearchSheetInput,
+): readonly ChipVm[] {
+  const chips: ChipVm[] = [];
+  for (const held of query.searchFilters) {
+    for (const filter of singleValues(held)) {
+      const label = labelOf(filter, input);
+      chips.push({
+        id: filterKey(filter),
+        label,
+        removeLabel: input.words.chipRemove(label),
+        filter,
       });
     }
   }
-  if (appointment.contactPhone !== null) {
-    out.push({
-      label: SearchField.Phone,
-      value: PhoneSystem.formatInternational(appointment.contactPhone),
-    });
+  return chips;
+}
+
+/** Is this single value already a chip of the query? */
+function isChosen(filter: SearchFilter, chips: readonly ChipVm[]): boolean {
+  const key = filterKey(filter);
+  return chips.some((chip) => chip.id === key);
+}
+
+function offer(
+  filter: SearchFilter,
+  input: SearchSheetInput,
+  chips: readonly ChipVm[],
+): SuggestionVm | null {
+  return isChosen(filter, chips)
+    ? null
+    : { id: filterKey(filter), label: labelOf(filter, input), filter };
+}
+
+function suggestionGroups(
+  offered: SearchSuggestions,
+  input: SearchSheetInput,
+  chips: readonly ChipVm[],
+): readonly SuggestionGroupVm[] {
+  const present = <T>(items: readonly (T | null)[]): readonly T[] =>
+    items.filter((item): item is T => item !== null);
+  const groups: SuggestionGroupVm[] = [
+    {
+      suggestionGroupKind: SuggestionGroupKind.When,
+      heading: null,
+      suggestions: present(
+        offered.whenPresets.map((preset) =>
+          offer(SearchFilterSystem.whenOf(preset, input.shopNow), input, chips),
+        ),
+      ),
+    },
+    {
+      suggestionGroupKind: SuggestionGroupKind.Status,
+      heading: null,
+      suggestions: present(
+        offered.bookingStatuses.map((status) =>
+          offer(singleStatus(status), input, chips),
+        ),
+      ),
+    },
+    {
+      suggestionGroupKind: SuggestionGroupKind.Note,
+      heading: null,
+      suggestions: present([
+        offered.hasNote
+          ? offer(
+              {
+                searchFilterField: SearchFilterField.Note,
+                filterHasNote: true,
+              },
+              input,
+              chips,
+            )
+          : null,
+      ]),
+    },
+    {
+      suggestionGroupKind: SuggestionGroupKind.Barber,
+      heading: input.words.barberGroup,
+      suggestions: present(
+        offered.barberIds.map((id) => offer(singleBarber(id), input, chips)),
+      ),
+    },
+    {
+      suggestionGroupKind: SuggestionGroupKind.Service,
+      heading: input.words.serviceGroup,
+      suggestions: present(
+        offered.serviceIds.map((id) => offer(singleService(id), input, chips)),
+      ),
+    },
+  ];
+  return groups.filter((group) => group.suggestions.length > 0);
+}
+
+function recentsOf(input: SearchSheetInput): readonly RecentVm[] {
+  return input.recents.map((query, index) => {
+    const parts = [
+      query.searchText.trim(),
+      ...chipsOf(query, input).map((chip) => chip.label),
+    ].filter((part) => part.length > 0);
+    return { id: `recent-${index}`, label: parts.join(' · '), query };
+  });
+}
+
+/** The lines a card adds for what the query found: the client always, the rest only when matched. */
+function matchLinesOf(
+  visit: Appointment,
+  read: ReadQuery,
+  input: SearchSheetInput,
+): readonly StaffEventLine[] {
+  const lines: StaffEventLine[] = [];
+  const terms = read.queryTerms;
+  const mark = (text: string): readonly TextSegment[] =>
+    TextMatchSystem.segmentsAny(text, terms, MatchMode.Anywhere);
+  const hits = (parts: readonly TextSegment[]): boolean =>
+    parts.some((part) => part.hit);
+
+  // WHO: every card names its client (a filter alone would leave the cards
+  // anonymous), marked when the typed words found them.
+  const names = input.clientNames(visit);
+  const named =
+    names.find((name) => hits(mark(name))) ?? names[0] ?? input.unnamedClient;
+  lines.push({
+    text: named,
+    icon: 'contact.person',
+    testId: 'staff-search-line-client',
+    parts: mark(named),
+  });
+
+  if (visit.contactPhone !== null) {
+    const formatted = PhoneSystem.formatInternational(visit.contactPhone);
+    const run = PhoneSystem.readingRun(read.queryPhone, formatted);
+    if (run !== null) {
+      lines.push({
+        text: formatted,
+        icon: 'contact.phone',
+        testId: 'staff-search-line-phone',
+        parts: TextMatchSystem.phoneSegments(formatted, run),
+      });
+    }
   }
-  if (appointment.contactEmail !== null) {
-    out.push({ label: SearchField.Email, value: appointment.contactEmail });
+  if (visit.contactEmail !== null) {
+    const parts = mark(visit.contactEmail);
+    if (hits(parts)) {
+      lines.push({
+        text: visit.contactEmail,
+        icon: 'contact.email',
+        testId: 'staff-search-line-email',
+        parts,
+      });
+    }
   }
-  if (appointment.contactNote) {
-    out.push({ label: SearchField.Note, value: appointment.contactNote });
+  if (visit.contactNote) {
+    const parts = mark(visit.contactNote);
+    if (hits(parts)) {
+      lines.push({
+        text: visit.contactNote,
+        icon: 'visit.note',
+        testId: 'staff-search-line-note',
+        parts,
+      });
+    }
   }
-  return out;
+  return lines;
+}
+
+function headingOf(
+  bucket: DayBucket,
+  date: LocalDate | null,
+  input: SearchSheetInput,
+): string {
+  switch (bucket) {
+    case DayBucket.Today:
+      return input.words.today;
+    case DayBucket.Tomorrow:
+      return input.words.tomorrow;
+    case DayBucket.Past:
+      return input.words.earlier;
+    case DayBucket.Later:
+      return formatWallClock(date as LocalDate, null, input.locale, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+  }
+}
+
+function groupsOf(
+  visits: readonly Appointment[],
+  read: ReadQuery,
+  input: SearchSheetInput,
+): readonly VisitSectionVm[] {
+  const ordered = VisitStorySystem.outwardFromNow(visits, input.shopNowAt).map(
+    ({ visit }) => visit,
+  );
+  return VisitListSystem.dayGroups(ordered, input.shopNow.localDate).map(
+    (group) => ({
+      key: group.groupKey,
+      label: headingOf(group.dayBucket, group.groupDate, input),
+      detail: null,
+      testId: `staff-search-group-${group.groupKey}`,
+      rows: group.visits.map((visit): AppointmentRowVm =>
+        visitRowOf(
+          visit,
+          {
+            perspective: VisitPerspective.Staff,
+            grain: VisitGrain.Month,
+            subjectUserId: null,
+            subjectCustomerId: null,
+            currentAppointmentId: null,
+            now: input.shopNow,
+            timeZone: input.timeZone,
+            locale: input.locale,
+            words: input.rowWords,
+            matched: {
+              titleTerms: read.queryTerms,
+              matchLines: matchLinesOf(visit, read, input),
+            },
+          },
+          input.lookup,
+        ),
+      ),
+    }),
+  );
+}
+
+/** The sheet, worded: the chips and recents, the suggestions, and the cards under their days. */
+export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
+  const query = input.query;
+  const read = SearchQuerySystem.read(query.searchText, input.callingCode);
+  const chips = chipsOf(query, input);
+  const idle = SearchQuery.isEmpty(query);
+  const offered = SearchFilterSystem.suggestions(
+    input.index,
+    read,
+    query.searchFilters,
+    input.shopNow,
+  );
+  const suggestions = suggestionGroups(offered, input, chips);
+  const glyph = searchGlyphOf(
+    ClientQuerySystem.parse(query.searchText).clientQueryShape,
+  );
+  const phoneRow =
+    read.queryPhone.phoneReadingKind === PhoneReadingKind.None
+      ? null
+      : input.words.phoneRow(
+          PhoneSystem.formatDraft(
+            `+${read.queryPhone.phoneReadingCandidates[0] as string}`,
+            null,
+          ).formatted,
+        );
+  const footnotes: string[] = [];
+  if (input.capped) footnotes.push(input.words.truncated);
+  if (input.stale) footnotes.push(input.words.stale);
+
+  if (idle) {
+    return {
+      searchSheetState: SearchSheetState.Idle,
+      glyph,
+      chips,
+      recents: recentsOf(input),
+      suggestions,
+      phoneRow,
+      groups: [],
+      clearFilters: null,
+      footnotes,
+    };
+  }
+
+  const kept = SearchFilterSystem.keep(input.index, read, query.searchFilters);
+  const shown = kept.slice(0, SearchFilterSystem.RESULT_LIMIT);
+  if (kept.length > shown.length) {
+    footnotes.push(input.words.moreThanShown(shown.length));
+  }
+  const visits = shown.map((at) => input.pool[at] as Appointment);
+  return {
+    searchSheetState:
+      kept.length === 0 ? SearchSheetState.Empty : SearchSheetState.Results,
+    glyph,
+    chips,
+    recents: [],
+    suggestions,
+    phoneRow,
+    groups: groupsOf(visits, read, input),
+    clearFilters:
+      kept.length === 0 && chips.length > 0 ? input.words.clearFilters : null,
+    footnotes,
+  };
 }

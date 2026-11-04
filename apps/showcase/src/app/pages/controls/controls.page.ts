@@ -67,6 +67,7 @@ export class ControlsPage {
         { slug: 'skeleton', name: 'Skeleton' },
         { slug: 'otp-field', name: 'OTP Field' },
         { slug: 'phone-field', name: 'Phone Field' },
+        { slug: 'search-field', name: 'Search Field' },
         { slug: 'date-field', name: 'Date Field' },
         { slug: 'month-picker', name: 'MonthPicker' },
         { slug: 'icon', name: 'Icon' },

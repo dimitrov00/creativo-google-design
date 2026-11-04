@@ -361,3 +361,30 @@ describe('SearchFilterSystem.whenOf — the date presets', () => {
     expect(augustEnd.filterToDate >= augustEnd.filterFromDate).toBe(true);
   });
 });
+
+describe('SearchFilterSystem.presetOf — which preset a span is, today', () => {
+  it('names the span a preset built, on the shop’s own today', () => {
+    for (const preset of [
+      SearchWhenPreset.Today,
+      SearchWhenPreset.Tomorrow,
+      SearchWhenPreset.ThisWeek,
+    ]) {
+      expect(
+        SearchFilterSystem.presetOf(
+          SearchFilterSystem.whenOf(preset, NOW),
+          NOW,
+        ),
+      ).toBe(preset);
+    }
+  });
+
+  it('is nothing for another span, or for a preset built on another day', () => {
+    const yesterday = LocalDate.addDays(NOW.localDate, -1);
+    expect(
+      SearchFilterSystem.presetOf(SearchFilter.when(yesterday, yesterday), NOW),
+    ).toBeNull();
+    const lastWeek: ShopNow = { ...NOW, localDate: yesterday };
+    const stale = SearchFilterSystem.whenOf(SearchWhenPreset.Today, lastWeek);
+    expect(SearchFilterSystem.presetOf(stale, NOW)).toBeNull();
+  });
+});

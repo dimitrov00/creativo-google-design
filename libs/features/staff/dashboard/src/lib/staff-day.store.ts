@@ -1770,9 +1770,6 @@ export class StaffDayStore {
   private readonly _searchLoading = signal(false);
   readonly searchLoading = this._searchLoading.asReadonly();
 
-  private readonly _term = signal('');
-  readonly term = this._term.asReadonly();
-
   /**
    * The window the search matches against: every visit from 60 days back to
    * the booking horizon (`SearchWindowSystem.rangeOf`), read when search
@@ -1816,11 +1813,6 @@ export class StaffDayStore {
 
   closeSearch(): void {
     this._searching.set(false);
-    this._term.set('');
-  }
-
-  setTerm(term: string): void {
-    this._term.set(term);
   }
 
   /** The window as last read — the add-client page's «Скорошни» read it too. */
