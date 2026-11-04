@@ -1,8 +1,8 @@
 # The schedule search, part 1 — one highlighter, one phone reading, a window that reaches the horizon (2026-11-03)
 
 > **Status: BUILT (stages 1 to 4 of part 1).** Part 2 (the Spotlight sheet,
-> filters, event-card results) is `docs/designs/staff-search-spotlight.md` and
-> is not built. The design is `docs/designs/staff-search.md` and its review
+> filters, event-card results) is `docs/designs/staff-search-spotlight.md`,
+> recorded in `2026-11-03-staff-search-sheet.md`. The design is `docs/designs/staff-search.md` and its review
 > reports are in `docs/designs/staff-search-review/`; this file is the record
 > of what was decided and where the build differs from the design.
 
