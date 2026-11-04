@@ -13,7 +13,12 @@
     border-radius: var(--control-radius-capsule);
     padding-inline: var(--sys-space-regular);
     padding-block: var(--sys-space-tight);
-    background: var(--sys-color-surface-secondary);
+    /* The translucent control fill (2026-11-04), as every field and pill on
+       a sheet: a step lifted from whatever the chip lands on — a page, a
+       sheet, a card, a menu. The opaque surface grey it painted before read
+       pasted on over a sheet and vanished on an elevated surface, whose
+       grey it nearly matched. */
+    background: var(--sys-color-fill);
     color: var(--sys-color-foreground);
     font: var(--sys-font-subheadline);
     font-weight: 600;

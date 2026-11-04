@@ -1,7 +1,7 @@
 <ng-container>
   <!-- THE SHEETS' ONE SEARCH GRAMMAR: the head, its scope as the line under
        the title, the DS field pinned under the bar with the chosen filters
-       as chips inside it, and the head folding while the search is engaged
+       as keyed tokens inside it, and the head folding while the search is engaged
        (the bar is told, because a folded title never scrolls under it). The
        read in flight is the field's own quiet ring. -->
   <ui-modal-sheet
@@ -33,22 +33,130 @@
         </p>
       </ui-sheet-headline>
 
+      <!-- The filters are key │ value tokens; while the field is focused the
+           dropdown hangs under it: the keys, an open key's values (✓ on the
+           held ones, «Махни филтъра» last), or what the typed text names. -->
       <ui-search-field
         uiPinned
         [uiValue]="typed()"
         [uiIcon]="vm().glyph"
-        [uiPlaceholder]="t('staff.day.searchPlaceholder')"
+        [uiPlaceholder]="vm().placeholder"
+        [uiLabel]="t('staff.day.searchPlaceholder')"
         [uiBusy]="store.searchLoading()"
         uiBusyTestId="staff-search-loading"
         uiTestId="staff-search-input"
         [uiClearLabel]="t('staff.day.searchClear')"
-        [uiTokens]="vm().chips"
+        [uiTokens]="vm().tokens"
+        [uiActiveToken]="activeToken()"
+        [uiDropdownOpen]="dropdownOpen()"
+        [uiDropdownLabel]="t('staff.search.dropdownLabel')"
         (uiInput)="typeText($event)"
-        (uiTokenRemove)="removeChip($event)"
-        (uiFocusChange)="focused.set($event)"
+        (uiTokenActivate)="activateToken($event)"
+        (uiTokenRemove)="removeToken($event)"
+        (uiFocusChange)="focusChange($event)"
+        (uiEscape)="escape()"
         (uiSubmit)="submit()"
         (uiNavigate)="focusFirst($event)"
-      />
+      >
+        <div
+          uiSearchDropdown
+          class="staff-search-sheet__dropdown"
+          [attr.data-dropdown-mode]="vm().dropdown.dropdownMode"
+        >
+          @for (section of vm().dropdown.sections; track section.id) { @if
+          (section.rows.length > 0) {
+          <div
+            class="staff-search-sheet__section"
+            [attr.data-compact]="section.compact ? '' : null"
+          >
+            @if (section.heading; as heading) {
+            <p
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-search-sheet__heading"
+            >
+              {{ heading }}
+            </p>
+            } @if (section.compact) {
+            <div class="staff-search-sheet__chips">
+              @for (row of section.rows; track row.id) {
+              <button
+                type="button"
+                uiChip
+                uiControlSize="small"
+                [uiToggle]="false"
+                data-search-focusable
+                data-testid="staff-search-suggestion"
+                [attr.data-suggestion]="row.id"
+                (click)="pickRow(row)"
+              >
+                @if (row.glyph; as glyph) {
+                <ui-icon [uiName]="glyph" aria-hidden="true" />
+                } {{ row.label }}
+              </button>
+              }
+            </div>
+            } @else { @for (row of section.rows; track row.id) {
+            <button
+              type="button"
+              uiListRow
+              uiSize="regular"
+              [uiInteractive]="true"
+              [uiRole]="row.destructive ? 'destructive' : null"
+              class="staff-search-sheet__row"
+              data-search-focusable
+              data-testid="staff-search-suggestion"
+              [attr.data-suggestion]="row.id"
+              [attr.aria-pressed]="row.checked"
+              (click)="pickRow(row)"
+            >
+              @if (row.face; as face) {
+              <ui-avatar
+                uiLeading
+                uiControlSize="small"
+                [uiSrc]="face.src"
+                [uiName]="face.name"
+              />
+              } @else if (row.glyph; as glyph) {
+              <span uiLeading>
+                <ui-icon [uiName]="glyph" aria-hidden="true" />
+              </span>
+              } {{ row.label }} @if (row.checked === true) {
+              <ui-icon
+                uiTrailing
+                uiName="checklist.done"
+                class="staff-search-sheet__check"
+                aria-hidden="true"
+              />
+              } @else if (row.detail; as detail) {
+              <span uiTrailing>{{ detail }}</span>
+              }
+            </button>
+            } }
+          </div>
+          } } @if (vm().dropdown.calendar; as calendar) {
+          <div class="staff-search-sheet__section">
+            <p
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-search-sheet__heading"
+              data-testid="staff-search-calendar-caption"
+            >
+              {{ calendar.caption }}
+            </p>
+            <ui-month-picker
+              [uiSelected]="calendar.selected ?? calendar.today"
+              [uiToday]="calendar.today"
+              [uiLocale]="locale()"
+              data-testid="staff-search-calendar"
+              (uiPicked)="pickDay($event)"
+            />
+          </div>
+          }
+        </div>
+      </ui-search-field>
 
       @if (vm().phoneRow; as phone) {
       <!-- The text reads as a number: said, never rewritten under the caret. -->
@@ -120,40 +228,7 @@
           }
         </div>
       </section>
-      } } }
-
-      <!-- What can still narrow the search; each offer keeps a result. -->
-      @if (vm().suggestions.length > 0) {
-      <section data-testid="staff-search-suggestions">
-        <ui-section-header uiHeaderProminence="increased">
-          <h3 uiTitle>{{ t('staff.search.suggestions') }}</h3>
-        </ui-section-header>
-        @for (group of vm().suggestions; track group.suggestionGroupKind) {
-        <div class="staff-search-sheet__group">
-          @if (group.heading; as heading) {
-          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-            {{ heading }}
-          </p>
-          }
-          <div class="staff-search-sheet__chips">
-            @for (suggestion of group.suggestions; track suggestion.id) {
-            <button
-              type="button"
-              uiChip
-              [uiToggle]="false"
-              data-search-focusable
-              data-testid="staff-search-suggestion"
-              [attr.data-suggestion]="suggestion.id"
-              (click)="addSuggestion(suggestion)"
-            >
-              {{ suggestion.label }}
-            </button>
-            }
-          </div>
-        </div>
-        }
-      </section>
-      } @for (note of vm().footnotes; track note) {
+      } } } @for (note of vm().footnotes; track note) {
       <p
         uiText
         uiFont="footnote"

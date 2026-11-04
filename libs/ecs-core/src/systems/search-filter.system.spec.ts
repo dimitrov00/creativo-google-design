@@ -310,7 +310,9 @@ describe('SearchFilterSystem.suggestions — what can still narrow the search', 
       [
         SearchWhenPreset.Today,
         SearchWhenPreset.Tomorrow,
+        SearchWhenPreset.Yesterday,
         SearchWhenPreset.ThisWeek,
+        SearchWhenPreset.PastWeek,
       ].filter((preset) => offered.whenPresets.includes(preset)),
     );
     const none = SearchFilterSystem.suggestions(
@@ -346,6 +348,17 @@ describe('SearchFilterSystem.whenOf — the date presets', () => {
     );
   });
 
+  it('builds yesterday and the six days before today through today', () => {
+    const today = NOW.localDate;
+    const yesterday = LocalDate.addDays(today, -1);
+    expect(SearchFilterSystem.whenOf(SearchWhenPreset.Yesterday, NOW)).toEqual(
+      SearchFilter.when(yesterday, yesterday),
+    );
+    expect(SearchFilterSystem.whenOf(SearchWhenPreset.PastWeek, NOW)).toEqual(
+      SearchFilter.when(LocalDate.addDays(today, -6), today),
+    );
+  });
+
   it('crosses a month end', () => {
     const when = SearchFilterSystem.whenOf(SearchWhenPreset.ThisWeek, {
       ...NOW,
@@ -362,13 +375,25 @@ describe('SearchFilterSystem.whenOf — the date presets', () => {
   });
 });
 
+describe('SearchFilterSystem.spanOf — two picked days', () => {
+  it('starts at the earlier day whichever was picked first; one day twice is that day', () => {
+    const today = NOW.localDate;
+    const later = LocalDate.addDays(today, 3);
+    expect(SearchFilterSystem.spanOf(later, today)).toEqual(
+      SearchFilter.when(today, later),
+    );
+    expect(SearchFilterSystem.spanOf(today, later)).toEqual(
+      SearchFilter.when(today, later),
+    );
+    expect(SearchFilterSystem.spanOf(today, today)).toEqual(
+      SearchFilter.when(today, today),
+    );
+  });
+});
+
 describe('SearchFilterSystem.presetOf — which preset a span is, today', () => {
   it('names the span a preset built, on the shop’s own today', () => {
-    for (const preset of [
-      SearchWhenPreset.Today,
-      SearchWhenPreset.Tomorrow,
-      SearchWhenPreset.ThisWeek,
-    ]) {
+    for (const preset of Object.values(SearchWhenPreset)) {
       expect(
         SearchFilterSystem.presetOf(
           SearchFilterSystem.whenOf(preset, NOW),
@@ -379,11 +404,15 @@ describe('SearchFilterSystem.presetOf — which preset a span is, today', () => 
   });
 
   it('is nothing for another span, or for a preset built on another day', () => {
-    const yesterday = LocalDate.addDays(NOW.localDate, -1);
+    const twoDaysAgo = LocalDate.addDays(NOW.localDate, -2);
     expect(
-      SearchFilterSystem.presetOf(SearchFilter.when(yesterday, yesterday), NOW),
+      SearchFilterSystem.presetOf(
+        SearchFilter.when(twoDaysAgo, twoDaysAgo),
+        NOW,
+      ),
     ).toBeNull();
-    const lastWeek: ShopNow = { ...NOW, localDate: yesterday };
+    // «Днес» saved two days ago is no preset now (yesterday's would be «Вчера»).
+    const lastWeek: ShopNow = { ...NOW, localDate: twoDaysAgo };
     const stale = SearchFilterSystem.whenOf(SearchWhenPreset.Today, lastWeek);
     expect(SearchFilterSystem.presetOf(stale, NOW)).toBeNull();
   });

@@ -4163,10 +4163,14 @@ describe('StaffDashboard', () => {
     ).not.toBeNull();
   });
 
-  it('shows the recent searches and the filters on offer before anything is typed', async () => {
+  it('offers the keys a filter is made of under the field once it is focused, before anything is typed', async () => {
     await openSearchSheet();
+    (
+      host().querySelector('[data-testid="staff-search-input"]') as HTMLElement
+    ).dispatchEvent(new Event('focus'));
+    fixture.detectChanges();
     expect(
-      host().querySelector('[data-testid="staff-search-suggestions"]'),
+      host().querySelector('[data-testid="staff-search-input-dropdown"]'),
     ).not.toBeNull();
     expect(
       host().querySelectorAll('[data-testid="staff-search-suggestion"]').length,
@@ -5539,11 +5543,16 @@ describe('StaffDashboard', () => {
     // A query standing keeps it folded, keyboard or not.
     expect(head()?.hasAttribute('data-folded')).toBe(true);
 
+    // Escape puts the filter dropdown away (a no-op when it is not open)…
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    fixture.detectChanges();
     input.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
     );
     fixture.detectChanges();
-    // ↓ lands on the first card, a control inside the results list.
+    // …and ↓ lands on the first card, a control inside the results list.
     expect(
       document.activeElement?.closest('lib-staff-search-sheet lib-visit-list'),
     ).not.toBeNull();

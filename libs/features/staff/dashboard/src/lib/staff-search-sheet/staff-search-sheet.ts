@@ -3,17 +3,30 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  afterNextRender,
   computed,
   inject,
   input,
   signal,
+  viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
-import { SearchQuery, type ShopNow } from '@core/components';
-import type { Appointment } from '@core/entities';
-import type { AppointmentId, TimeZone } from '@core/primitives';
 import {
+  SearchFilter,
+  SearchFilterField,
+  SearchQuery,
+  type ShopNow,
+} from '@core/components';
+import type { Appointment } from '@core/entities';
+import {
+  type AppointmentId,
+  type LocalDate,
+  Tag,
+  type TimeZone,
+} from '@core/primitives';
+import {
+  SearchFilterSystem,
   SearchIndexSystem,
   type SearchLabels,
   ZonedTimeSystem,
@@ -26,9 +39,12 @@ import {
   visitWordsOf,
 } from '@creativo/features/shared/visits';
 import {
+  UiAvatar,
   UiButton,
   UiChip,
+  UiIcon,
   UiModalSheet,
+  UiMonthPicker,
   UiSearchField,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
@@ -36,13 +52,19 @@ import {
   UiForegroundStyleDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { UiSectionHeader, UiSheetHeadline } from '@creativo/ui/patterns';
+import {
+  UiListRow,
+  UiSectionHeader,
+  UiSheetHeadline,
+} from '@creativo/ui/patterns';
 import { guestLabelOf } from '../staff-dashboard/staff-day-guest.words';
 import { searchSheetVm } from '../staff-dashboard/staff-search.presenter';
 import {
+  CalendarMode,
+  DropdownAction,
+  type DropdownRowVm,
   type RecentVm,
   SearchSheetState,
-  type SuggestionVm,
 } from '../staff-dashboard/staff-search.vm';
 import { staffSearchWordsOf } from '../staff-dashboard/staff-search.words';
 import { StaffDayStore } from '../staff-day.store';
@@ -74,13 +96,20 @@ function deviceStorage(): Storage | null {
 
 /**
  * THE SCHEDULE SEARCH SHEET — a Spotlight-style sheet (docs/designs/
- * staff-search-spotlight.md). The DS field pinned under the bar, with the
- * chosen filters as chips inside it; before anything is typed the recent
- * searches and the filters on offer; while typing the visits as event cards
- * under their days, the lines the query found marked.
+ * staff-search-spotlight.md, its filters keyed in staff-search-tokens.md).
+ * The DS field pinned under the bar, with the chosen filters as key │ value
+ * tokens inside it and, while it is focused, the filter dropdown under it
+ * (≙ GitLab's filtered search): the keys, a key's values, the values the
+ * typed text names. Before anything is typed the recent searches; while
+ * typing the visits as event cards under their days, the lines the query
+ * found marked.
  *
- * It owns the query (the field's text and the chips) and the device's
- * recents; the window it searches is the store's (`pool`, `searchCapped`,
+ * A key opened from the dropdown or a pressed token PARKS the typed search
+ * (`heldText`): the text typed then narrows the key's values, and the search
+ * comes back when the key closes — the visits under the list do not jump.
+ *
+ * It owns the query (the field's text and the filters), the open key and the
+ * device's recents; the window it searches is the store's (`pool`, `searchCapped`,
  * `searchStale`, read by `ensureWindow` when the sheet opens). Every
  * decision — what matches, what can still narrow it, which day a card files
  * under — is a system's (`SearchFilterSystem`, `VisitListSystem.dayGroups`);
@@ -89,10 +118,14 @@ function deviceStorage(): Storage | null {
 @Component({
   selector: 'lib-staff-search-sheet',
   imports: [
+    UiAvatar,
     UiButton,
     UiChip,
     UiForegroundStyleDirective,
+    UiIcon,
+    UiListRow,
     UiModalSheet,
+    UiMonthPicker,
     UiSearchField,
     UiSectionHeader,
     UiSheetHeadline,
@@ -123,6 +156,7 @@ export class StaffSearchSheet {
   private readonly storage = deviceStorage();
 
   protected readonly SearchSheetState = SearchSheetState;
+  protected readonly CalendarMode = CalendarMode;
   protected readonly VisitPerspective = VisitPerspective;
   protected readonly VisitListStyle = VisitListStyle;
 
@@ -132,15 +166,25 @@ export class StaffSearchSheet {
   protected readonly typed = signal('');
   /** The text the window is scanned for: `typed` after the debounce. */
   private readonly committed = signal('');
-  /** The chips (a query with no text). */
+  /** The filters (a query with no text). */
   private readonly filters = signal<SearchQuery>(SearchQuery.empty());
   private timer: ReturnType<typeof setTimeout> | null = null;
 
+  /** The key whose values the dropdown lists — a token being built or pressed. */
+  protected readonly openField = signal<SearchFilterField | null>(null);
+  /** The search parked while a key is open; null while none is. */
+  private readonly heldText = signal<string | null>(null);
+  /** The month open in the dropdown, and a span's first picked end. */
+  private readonly calendarMode = signal<CalendarMode | null>(null);
+  private readonly rangeStart = signal<LocalDate | null>(null);
+  /** Escape closed the dropdown; typing or a new focus opens it again. */
+  private readonly dismissed = signal(false);
+
   protected readonly query = computed(() =>
-    SearchQuery.withText(this.filters(), this.committed()),
+    SearchQuery.withText(this.filters(), this.heldText() ?? this.committed()),
   );
 
-  /** The field is focused: the head folds, the bar is told. */
+  /** The field (its text, tokens or dropdown) is focused: the head folds, the bar is told. */
   protected readonly focused = signal(false);
   protected readonly engaged = computed(
     () =>
@@ -148,6 +192,8 @@ export class StaffSearchSheet {
       this.typed().trim().length > 0 ||
       this.filters().searchFilters.length > 0,
   );
+
+  private readonly field = viewChild(UiSearchField);
 
   protected readonly recents = signal<readonly SearchQuery[]>(
     loadRecents(this.storage),
@@ -222,19 +268,47 @@ export class StaffSearchSheet {
       unnamedClient: this.unnamedClient(),
       capped: this.store.searchCapped(),
       stale: this.store.searchStale(),
+      openField: this.openField(),
+      dropdownText: this.typed(),
+      calendarMode: this.calendarMode(),
+      rangeStart: this.rangeStart(),
     });
+  });
+
+  /** The dropdown shows while the field is focused and has something to list. */
+  protected readonly dropdownOpen = computed(() => {
+    const dropdown = this.vm().dropdown;
+    return (
+      this.focused() &&
+      !this.dismissed() &&
+      (dropdown.calendar !== null ||
+        dropdown.sections.some((section) => section.rows.length > 0))
+    );
+  });
+
+  /** The pressed token wears the ring while its values are open. */
+  protected readonly activeToken = computed(() => {
+    const field = this.openField();
+    return field !== null && this.heldFilter(field) ? field : null;
   });
 
   constructor() {
     this.destroyRef.onDestroy(() => {
       if (this.timer !== null) clearTimeout(this.timer);
     });
+    // Spotlight's grammar: the sheet opens on the caret, the keys under it.
+    // One frame on: the sheet hands its surface the focus in the frame after
+    // it opens (`UiSheetBehavior`), and the field must come after that.
+    afterNextRender(() => requestAnimationFrame(() => this.field()?.focus()));
   }
 
   // ── The field ─────────────────────────────────────────────────────────
 
   protected typeText(text: string): void {
     this.typed.set(text);
+    this.dismissed.set(false);
+    // With a key open the text narrows its values, at once; the search is parked.
+    if (this.openField() !== null) return;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
@@ -242,7 +316,7 @@ export class StaffSearchSheet {
     }, SEARCH_DEBOUNCE_MS);
   }
 
-  /** The text is the scan's right away (a chip or a recent was pressed). */
+  /** The text is the scan's right away (a value or a recent was pressed). */
   private commitNow(text: string): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
@@ -250,25 +324,137 @@ export class StaffSearchSheet {
     this.committed.set(text);
   }
 
-  protected removeChip(id: string): void {
-    const chip = this.vm().chips.find((held) => held.id === id);
-    if (chip === undefined) return;
-    this.filters.update((held) =>
-      SearchQuery.withoutFilterValue(held, chip.filter),
+  protected focusChange(focused: boolean): void {
+    this.focused.set(focused);
+    this.dismissed.set(false);
+    if (!focused) this.closeKey();
+  }
+
+  private heldFilter(field: SearchFilterField): boolean {
+    return this.filters().searchFilters.some(
+      (held) => held.searchFilterField === field,
     );
   }
 
-  protected addSuggestion(suggestion: SuggestionVm): void {
-    this.filters.update((held) =>
-      SearchQuery.withFilter(held, suggestion.filter),
-    );
+  /** A key opened: the search is parked and the text narrows the key's values. */
+  private openKey(field: SearchFilterField): void {
+    if (this.openField() === null) {
+      if (this.timer !== null) clearTimeout(this.timer);
+      this.timer = null;
+      this.heldText.set(this.typed());
+      this.typed.set('');
+    }
+    this.openField.set(field);
+    this.calendarMode.set(null);
+    this.rangeStart.set(null);
+    this.dismissed.set(false);
+  }
+
+  /** The key closed: the parked search comes back as it was. */
+  private closeKey(): void {
+    const held = this.heldText();
+    this.openField.set(null);
+    this.calendarMode.set(null);
+    this.rangeStart.set(null);
+    if (held === null) return;
+    this.heldText.set(null);
+    this.commitNow(held);
+  }
+
+  /** A token pressed opens its values; pressed again, it closes them. */
+  protected activateToken(id: string): void {
+    if (!Tag.has(SearchFilterField, id)) return;
+    if (this.openField() === id) this.closeKey();
+    else this.openKey(id);
+  }
+
+  /** Backspace on an empty field: the token being built goes, else the last filter. */
+  protected removeToken(id: string): void {
+    if (!Tag.has(SearchFilterField, id)) return;
+    if (this.openField() === id && !this.heldFilter(id)) {
+      this.closeKey();
+      return;
+    }
+    this.filters.update((held) => SearchQuery.withoutFilter(held, id));
+    if (this.openField() === id) this.closeKey();
+  }
+
+  /** Escape: the month first, then the open key, then the dropdown itself. */
+  protected escape(): void {
+    if (this.calendarMode() !== null) {
+      this.calendarMode.set(null);
+      this.rangeStart.set(null);
+    } else if (this.openField() !== null) {
+      this.closeKey();
+    } else {
+      this.dismissed.set(true);
+    }
+  }
+
+  protected pickRow(row: DropdownRowVm): void {
+    switch (row.dropdownAction) {
+      case DropdownAction.OpenField:
+        this.openKey(row.searchFilterField);
+        return;
+      case DropdownAction.AddValue: {
+        const filter = row.filter;
+        if (filter === null) return;
+        this.filters.update((held) => SearchQuery.withFilter(held, filter));
+        // A key's value closes the key; a matched value took the typed text with it.
+        if (this.openField() !== null) this.closeKey();
+        else this.commitNow('');
+        return;
+      }
+      case DropdownAction.ToggleValue: {
+        const filter = row.filter;
+        if (filter === null) return;
+        this.filters.update((held) =>
+          row.checked === true
+            ? SearchQuery.withoutFilterValue(held, filter)
+            : SearchQuery.withFilter(held, filter),
+        );
+        if (!this.heldFilter(row.searchFilterField)) this.closeKey();
+        return;
+      }
+      case DropdownAction.RemoveFilter:
+        this.filters.update((held) =>
+          SearchQuery.withoutFilter(held, row.searchFilterField),
+        );
+        this.closeKey();
+        return;
+      case DropdownAction.PickDay:
+        this.calendarMode.set(CalendarMode.Day);
+        this.rangeStart.set(null);
+        return;
+      case DropdownAction.PickRange:
+        this.calendarMode.set(CalendarMode.Range);
+        this.rangeStart.set(null);
+        return;
+    }
+  }
+
+  /** A day pressed in the month: one day is the span; a span takes two presses. */
+  protected pickDay(day: LocalDate): void {
+    const start = this.rangeStart();
+    if (this.calendarMode() === CalendarMode.Range && start === null) {
+      this.rangeStart.set(day);
+      return;
+    }
+    const when =
+      this.calendarMode() === CalendarMode.Range && start !== null
+        ? SearchFilterSystem.spanOf(start, day)
+        : SearchFilter.when(day, day);
+    this.filters.update((held) => SearchQuery.withFilter(held, when));
+    this.closeKey();
   }
 
   protected clearFilters(): void {
+    this.closeKey();
     this.filters.set(SearchQuery.empty());
   }
 
   protected runRecent(recent: RecentVm): void {
+    this.closeKey();
     this.filters.set(SearchQuery.withText(recent.query, ''));
     this.commitNow(recent.query.searchText);
   }
@@ -278,15 +464,20 @@ export class StaffSearchSheet {
     clearRecents(this.storage);
   }
 
-  /** Return: the search is kept as a recent. */
+  /** Return: with a key open, its first value; else the search is kept as a recent. */
   protected submit(): void {
+    if (this.openField() !== null) {
+      const first = this.vm().dropdown.sections[0]?.rows[0];
+      if (first !== undefined) this.pickRow(first);
+      return;
+    }
     this.keepRecent();
   }
 
   private keepRecent(): void {
     const next = pushRecent(
       this.recents(),
-      SearchQuery.withText(this.filters(), this.typed()),
+      SearchQuery.withText(this.filters(), this.heldText() ?? this.typed()),
     );
     this.recents.set(next);
     saveRecents(this.storage, next);
@@ -314,6 +505,7 @@ export class StaffSearchSheet {
   }
 
   protected close(): void {
+    this.closeKey();
     this.focused.set(false);
     this.store.closeSearch();
   }

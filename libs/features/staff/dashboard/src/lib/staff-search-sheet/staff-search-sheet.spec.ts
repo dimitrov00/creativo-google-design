@@ -121,6 +121,8 @@ describe('StaffSearchSheet', () => {
     fixture = TestBed.createComponent(Host);
     fixture.detectChanges();
     await fixture.whenStable();
+    // The frame the sheet focuses its surface in, and the field's after it.
+    vi.advanceTimersByTime(40);
     fixture.detectChanges();
   }
 
@@ -148,12 +150,9 @@ describe('StaffSearchSheet', () => {
     localStorage.clear();
   });
 
-  it('opens idle: the filters on offer, no cards, the field pinned and named', async () => {
+  it('opens idle: no cards, the field pinned and named', async () => {
     await mount();
     expect(cards()).toHaveLength(0);
-    expect(
-      all('[data-testid="staff-search-suggestion"]').length,
-    ).toBeGreaterThan(0);
     expect(el('ui-search-field[data-pinned]')).not.toBeNull();
     expect(el('[data-testid="staff-search-recents"]')).toBeNull();
   });
@@ -167,41 +166,108 @@ describe('StaffSearchSheet', () => {
     expect(cards()).toHaveLength(2);
   });
 
-  it('adds a chip when a suggestion is pressed, narrows the cards, and takes it off when the chip is pressed', async () => {
+  const press = (selector: string) => {
+    (el<HTMLButtonElement>(selector) as HTMLButtonElement).click();
+    fixture.detectChanges();
+  };
+  const field = () =>
+    el<HTMLInputElement>(
+      '[data-testid="staff-search-input"]',
+    ) as HTMLInputElement;
+  const token = (id: string) =>
+    el<HTMLButtonElement>(`[data-testid="staff-search-input-token-${id}"]`);
+
+  it('opens on the caret with the keys under it', async () => {
+    await mount();
+    expect(document.activeElement).toBe(field());
+    expect(
+      all('[data-testid="staff-search-suggestion"]').map((row) =>
+        row.getAttribute('data-suggestion'),
+      ),
+    ).toEqual(['FIELD:WHEN', 'FIELD:BARBER', 'FIELD:SERVICE', 'FIELD:STATUS']);
+  });
+
+  it('builds a key │ value token from the dropdown, the typed search parked meanwhile', async () => {
     await mount();
     type('иван');
     after(100);
-    const niko = el<HTMLButtonElement>(
-      '[data-suggestion="BARBER:b-niko"]',
-    ) as HTMLButtonElement;
-    niko.click();
-    fixture.detectChanges();
-    expect(cards()).toHaveLength(1);
-    const chip = el<HTMLButtonElement>(
-      '.ui-search-field__token',
-    ) as HTMLButtonElement;
-    expect(chip.textContent).toContain('Нико');
-    // A chosen value is no longer on offer.
-    expect(el('[data-suggestion="BARBER:b-niko"]')).toBeNull();
-    chip.click();
-    fixture.detectChanges();
     expect(cards()).toHaveLength(2);
-    expect(el('.ui-search-field__token')).toBeNull();
+
+    press('[data-suggestion="FIELD:BARBER"]');
+    // The key is half built; the text now narrows its values, the cards stay.
+    expect(token('BARBER')?.hasAttribute('data-building')).toBe(true);
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
+
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(token('BARBER')?.textContent).toContain('Нико');
+    expect(token('BARBER')?.hasAttribute('data-building')).toBe(false);
+    expect(field().value).toBe('иван');
+    expect(cards()).toHaveLength(1);
   });
 
-  it('takes the last chip off on Backspace in an empty field', async () => {
+  it('opens a pressed token on its values: ✓ on the held one, a toggle, and «Махни филтъра» last', async () => {
     await mount();
-    el<HTMLButtonElement>('[data-suggestion="BARBER:b-niko"]')?.click();
-    fixture.detectChanges();
+    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-testid="staff-search-input-token-BARBER"]');
+    expect(token('BARBER')?.hasAttribute('data-active')).toBe(true);
+    expect(
+      el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      el('[data-suggestion="BARBER:b-ivan"]')?.getAttribute('aria-pressed'),
+    ).toBe('false');
+
+    // A toggle keeps the values open.
+    press('[data-suggestion="BARBER:b-ivan"]');
+    expect(token('BARBER')?.textContent).toContain('Нико, Иван');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
+
+    press('[data-suggestion="REMOVE:BARBER"]');
+    expect(token('BARBER')).toBeNull();
+    expect(el('[data-suggestion="FIELD:BARBER"]')).not.toBeNull();
+  });
+
+  it('adds a value the typed text names, taking the text with it', async () => {
+    await mount();
+    type('ни');
+    after(100);
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(token('BARBER')?.textContent).toContain('Нико');
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('takes the token being built, then the last token, off on Backspace in an empty field', async () => {
+    await mount();
+    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-suggestion="FIELD:SERVICE"]');
+    expect(all('.ui-search-field__token')).toHaveLength(2);
+    const backspace = () => {
+      field().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
+      );
+      fixture.detectChanges();
+    };
+    backspace();
     expect(all('.ui-search-field__token')).toHaveLength(1);
-    const input = el<HTMLInputElement>(
-      '[data-testid="staff-search-input"]',
-    ) as HTMLInputElement;
-    input.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
+    expect(token('BARBER')).not.toBeNull();
+    backspace();
+    expect(all('.ui-search-field__token')).toHaveLength(0);
+  });
+
+  it('closes the dropdown on Escape, and opens it again on typing', async () => {
+    await mount();
+    expect(el('[data-testid="staff-search-input-dropdown"]')).not.toBeNull();
+    field().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
     );
     fixture.detectChanges();
-    expect(all('.ui-search-field__token')).toHaveLength(0);
+    expect(el('[data-testid="staff-search-input-dropdown"]')).toBeNull();
+    type('и');
+    expect(el('[data-testid="staff-search-input-dropdown"]')).not.toBeNull();
   });
 
   it('keeps the search as a recent when a card is opened, jumps to its day and closes', async () => {

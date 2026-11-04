@@ -2,7 +2,7 @@ import {
   DayBucket,
   MatchMode,
   PhoneReadingKind,
-  type SearchFilter,
+  SearchFilter,
   SearchFilterField,
   SearchQuery,
   SearchWhenPreset,
@@ -39,25 +39,32 @@ import {
   type VisitSectionVm,
   visitRowOf,
 } from '@creativo/features/shared/visits';
+import type { UiIconName } from '@creativo/ui/controls';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import { searchGlyphOf } from '../visit-editor/visit-client-row.presenter';
 import {
-  type ChipVm,
+  CalendarMode,
+  DropdownAction,
+  type DropdownCalendarVm,
+  DropdownMode,
+  type DropdownRowVm,
+  type DropdownSectionVm,
+  type FaceVm,
   type RecentVm,
+  type SearchDropdownVm,
   SearchSheetState,
   type SearchSheetVm,
-  type SuggestionGroupVm,
-  SuggestionGroupKind,
-  type SuggestionVm,
+  type TokenVm,
 } from './staff-search.vm';
 import type { StaffSearchWords } from './staff-search.words';
 
 /*
  * THE SEARCH SHEET, WORDED (Law 10). What matches, which filters can still
- * narrow, how the visits group under their days and what the numbers read as
- * are the systems' (`SearchFilterSystem`, `VisitListSystem.dayGroups`,
- * `PhoneSystem`); this words them — chips, suggestions, headings, the event
- * cards' matched lines — and marks the runs `TextMatchSystem` found.
+ * narrow, which names hold the typed text, how the visits group under their
+ * days and what the numbers read as are the systems' (`SearchFilterSystem`,
+ * `TextMatchSystem`, `VisitListSystem.dayGroups`, `PhoneSystem`); this words
+ * them — the keyed tokens, the dropdown's keys and values, headings, the
+ * event cards' matched lines — and marks the runs `TextMatchSystem` found.
  */
 
 /** What the sheet is worded from. */
@@ -84,6 +91,14 @@ export interface SearchSheetInput {
   readonly unnamedClient: string;
   readonly capped: boolean;
   readonly stale: boolean;
+  /** The key whose values the dropdown lists — a token being built or pressed; null for none. */
+  readonly openField: SearchFilterField | null;
+  /** The text as typed: with a key open, what narrows its values. */
+  readonly dropdownText: string;
+  /** The month open in the dropdown for a day or a span; null for none. */
+  readonly calendarMode: CalendarMode | null;
+  /** A span's first picked end; null before it. */
+  readonly rangeStart: LocalDate | null;
 }
 
 /** The value a chip or suggestion stands for, as the single-value filter it adds or removes. */
@@ -120,9 +135,7 @@ function dayLabel(day: LocalDate, locale: string): string {
 
 function whenLabel(filter: SearchFilter.When, input: SearchSheetInput): string {
   const preset = SearchFilterSystem.presetOf(filter, input.shopNow);
-  if (preset === SearchWhenPreset.Today) return input.words.today;
-  if (preset === SearchWhenPreset.Tomorrow) return input.words.tomorrow;
-  if (preset === SearchWhenPreset.ThisWeek) return input.words.thisWeek;
+  if (preset !== null) return presetWord(preset, input.words);
   return filter.filterFromDate === filter.filterToDate
     ? dayLabel(filter.filterFromDate, input.locale)
     : `${dayLabel(filter.filterFromDate, input.locale)} – ${dayLabel(filter.filterToDate, input.locale)}`;
@@ -152,6 +165,7 @@ function labelOf(filter: SearchFilter, input: SearchSheetInput): string {
   }
 }
 
+/** A single value's id: `BARBER:ivan`, `WHEN:2026-11-04..2026-11-10`, `NOTE`. */
 function filterKey(filter: SearchFilter): string {
   switch (filter.searchFilterField) {
     case SearchFilterField.Barber:
@@ -167,106 +181,465 @@ function filterKey(filter: SearchFilter): string {
   }
 }
 
-function chipsOf(
-  query: SearchQuery,
-  input: SearchSheetInput,
-): readonly ChipVm[] {
-  const chips: ChipVm[] = [];
-  for (const held of query.searchFilters) {
-    for (const filter of singleValues(held)) {
-      const label = labelOf(filter, input);
-      chips.push({
-        id: filterKey(filter),
-        label,
-        removeLabel: input.words.chipRemove(label),
-        filter,
-      });
-    }
+/** The kinds of filter, in the order a token and a key row stand in. */
+const FIELD_ORDER: readonly SearchFilterField[] = [
+  SearchFilterField.When,
+  SearchFilterField.Barber,
+  SearchFilterField.Service,
+  SearchFilterField.Status,
+  SearchFilterField.Note,
+];
+
+/** The values a token names before it says «+N». */
+const NAMED_VALUES = 2;
+/** The faces a barber token leads with. */
+const TOKEN_FACES = 3;
+/** The matched values the dropdown lists under typed text. */
+const MATCHED_VALUES = 5;
+
+function glyphOf(field: SearchFilterField): UiIconName {
+  switch (field) {
+    case SearchFilterField.When:
+      return 'visit.calendar';
+    case SearchFilterField.Barber:
+      return 'contact.person';
+    case SearchFilterField.Service:
+      return 'nav.services';
+    case SearchFilterField.Status:
+      return 'visit.confirmed';
+    case SearchFilterField.Note:
+      return 'visit.note';
   }
-  return chips;
 }
 
-/** Is this single value already a chip of the query? */
-function isChosen(filter: SearchFilter, chips: readonly ChipVm[]): boolean {
+function keyOf(field: SearchFilterField, words: StaffSearchWords): string {
+  switch (field) {
+    case SearchFilterField.When:
+      return words.whenKey;
+    case SearchFilterField.Barber:
+      return words.barberKey;
+    case SearchFilterField.Service:
+      return words.serviceKey;
+    case SearchFilterField.Status:
+      return words.statusKey;
+    case SearchFilterField.Note:
+      return words.noteKey;
+  }
+}
+
+function presetWord(preset: SearchWhenPreset, words: StaffSearchWords): string {
+  switch (preset) {
+    case SearchWhenPreset.Today:
+      return words.today;
+    case SearchWhenPreset.Tomorrow:
+      return words.tomorrow;
+    case SearchWhenPreset.Yesterday:
+      return words.yesterday;
+    case SearchWhenPreset.ThisWeek:
+      return words.thisWeek;
+    case SearchWhenPreset.PastWeek:
+      return words.pastWeek;
+  }
+}
+
+/** The filter of a kind the query holds, or null. */
+function heldOf(
+  query: SearchQuery,
+  field: SearchFilterField,
+): SearchFilter | null {
+  return (
+    query.searchFilters.find((held) => held.searchFilterField === field) ?? null
+  );
+}
+
+function faceOf(id: BarberId, input: SearchSheetInput): FaceVm {
+  return {
+    src: input.lookup.barberAvatarSrc(id),
+    name: input.lookup.barberName(id) ?? input.rowWords.barberRole,
+  };
+}
+
+/** «Иван, Стефан +1» — the first values named, the rest counted. */
+function valueOf(filter: SearchFilter, input: SearchSheetInput): string {
+  if (filter.searchFilterField === SearchFilterField.Note) {
+    return input.words.hasNote;
+  }
+  const names = singleValues(filter).map((one) => labelOf(one, input));
+  const named = names.slice(0, NAMED_VALUES).join(', ');
+  return names.length > NAMED_VALUES
+    ? `${named} ${input.words.moreValues(names.length - NAMED_VALUES)}`
+    : named;
+}
+
+function tokenOf(
+  field: SearchFilterField,
+  held: SearchFilter | null,
+  input: SearchSheetInput,
+): TokenVm {
+  const key = keyOf(field, input.words);
+  if (held === null) {
+    return {
+      id: field,
+      key,
+      value: '',
+      faces: [],
+      label: input.words.tokenBuilding(key),
+      removeLabel: input.words.chipRemove(key),
+    };
+  }
+  const value = valueOf(held, input);
+  return {
+    id: field,
+    key,
+    value,
+    faces:
+      held.searchFilterField === SearchFilterField.Barber
+        ? held.filterBarberIds
+            .slice(0, TOKEN_FACES)
+            .map((id) => faceOf(id, input))
+        : [],
+    label: input.words.tokenLabel(key, value),
+    removeLabel: input.words.chipRemove(key),
+  };
+}
+
+/** One token per held filter, in kind order, then the one still being built. */
+function tokensOf(
+  query: SearchQuery,
+  openField: SearchFilterField | null,
+  input: SearchSheetInput,
+): readonly TokenVm[] {
+  const tokens: TokenVm[] = [];
+  for (const field of FIELD_ORDER) {
+    const held = heldOf(query, field);
+    if (held !== null) tokens.push(tokenOf(field, held, input));
+  }
+  if (openField !== null && heldOf(query, openField) === null) {
+    tokens.push(tokenOf(openField, null, input));
+  }
+  return tokens;
+}
+
+/** Is this single value one the held filter of its kind holds? */
+function isHeldValue(filter: SearchFilter, query: SearchQuery): boolean {
+  const held = heldOf(query, filter.searchFilterField);
+  if (held === null) return false;
   const key = filterKey(filter);
-  return chips.some((chip) => chip.id === key);
+  return singleValues(held).some((value) => filterKey(value) === key);
 }
 
-function offer(
+function valueRow(
   filter: SearchFilter,
   input: SearchSheetInput,
-  chips: readonly ChipVm[],
-): SuggestionVm | null {
-  return isChosen(filter, chips)
-    ? null
-    : { id: filterKey(filter), label: labelOf(filter, input), filter };
+  shape: {
+    readonly checked: boolean | null;
+    readonly detail: string | null;
+    readonly dropdownAction: DropdownAction;
+  },
+): DropdownRowVm {
+  return {
+    id: filterKey(filter),
+    label: labelOf(filter, input),
+    detail: shape.detail,
+    glyph: null,
+    face:
+      filter.searchFilterField === SearchFilterField.Barber
+        ? faceOf(filter.filterBarberIds[0] as BarberId, input)
+        : null,
+    checked: shape.checked,
+    destructive: false,
+    dropdownAction: shape.dropdownAction,
+    searchFilterField: filter.searchFilterField,
+    filter,
+  };
 }
 
-function suggestionGroups(
-  offered: SearchSuggestions,
+function keyRow(
+  field: SearchFilterField,
+  query: SearchQuery,
   input: SearchSheetInput,
-  chips: readonly ChipVm[],
-): readonly SuggestionGroupVm[] {
-  const present = <T>(items: readonly (T | null)[]): readonly T[] =>
-    items.filter((item): item is T => item !== null);
-  const groups: SuggestionGroupVm[] = [
+): DropdownRowVm {
+  const held = heldOf(query, field);
+  const note = field === SearchFilterField.Note;
+  return {
+    id: `FIELD:${field}`,
+    label: note ? input.words.withNote : keyOf(field, input.words),
+    detail: held === null || note ? null : valueOf(held, input),
+    glyph: glyphOf(field),
+    face: null,
+    checked: null,
+    destructive: false,
+    // A note has no values: its key IS the filter.
+    dropdownAction: note ? DropdownAction.AddValue : DropdownAction.OpenField,
+    searchFilterField: field,
+    filter: note ? SearchFilter.note() : null,
+  };
+}
+
+/** The single values of a kind the window still offers, the held ones first. */
+function valuesOf(
+  field: SearchFilterField,
+  offered: SearchSuggestions,
+  query: SearchQuery,
+  input: SearchSheetInput,
+): readonly SearchFilter[] {
+  const held = heldOf(query, field);
+  const out: SearchFilter[] = held === null ? [] : [...singleValues(held)];
+  const add = (filter: SearchFilter): void => {
+    if (!out.some((value) => filterKey(value) === filterKey(filter))) {
+      out.push(filter);
+    }
+  };
+  switch (field) {
+    case SearchFilterField.Barber:
+      for (const id of offered.barberIds) add(singleBarber(id));
+      break;
+    case SearchFilterField.Service:
+      for (const id of offered.serviceIds) add(singleService(id));
+      break;
+    case SearchFilterField.Status:
+      for (const status of offered.bookingStatuses) add(singleStatus(status));
+      break;
+    case SearchFilterField.When:
+      // The held span answers only as itself; the presets the window reaches follow.
+      for (const preset of offered.whenPresets) {
+        add(SearchFilterSystem.whenOf(preset, input.shopNow));
+      }
+      break;
+    case SearchFilterField.Note:
+      break;
+  }
+  return out;
+}
+
+/** The keys a filter can be made of: those that still narrow, and the held ones. */
+function keyRowsOf(
+  offered: SearchSuggestions,
+  query: SearchQuery,
+  input: SearchSheetInput,
+): readonly DropdownRowVm[] {
+  const offers = (field: SearchFilterField): boolean => {
+    switch (field) {
+      case SearchFilterField.When:
+        // A day or a span can always be picked, whatever the window reaches.
+        return true;
+      case SearchFilterField.Barber:
+        return offered.barberIds.length > 0;
+      case SearchFilterField.Service:
+        return offered.serviceIds.length > 0;
+      case SearchFilterField.Status:
+        return offered.bookingStatuses.length > 0;
+      case SearchFilterField.Note:
+        return (
+          offered.hasNote && heldOf(query, SearchFilterField.Note) === null
+        );
+    }
+  };
+  return FIELD_ORDER.filter(
+    (field) =>
+      offers(field) ||
+      (field !== SearchFilterField.Note && heldOf(query, field) !== null),
+  ).map((field) => keyRow(field, query, input));
+}
+
+function calendarOf(
+  query: SearchQuery,
+  input: SearchSheetInput,
+): DropdownCalendarVm | null {
+  const mode = input.calendarMode;
+  if (mode === null || input.openField !== SearchFilterField.When) return null;
+  const held = heldOf(query, SearchFilterField.When);
+  if (mode === CalendarMode.Range) {
+    return {
+      calendarMode: mode,
+      selected: input.rangeStart,
+      today: input.shopNow.localDate,
+      caption:
+        input.rangeStart === null
+          ? input.words.rangeFirstCaption
+          : input.words.rangeLastCaption(
+              dayLabel(input.rangeStart, input.locale),
+            ),
+    };
+  }
+  return {
+    calendarMode: mode,
+    selected:
+      held !== null &&
+      held.searchFilterField === SearchFilterField.When &&
+      held.filterFromDate === held.filterToDate
+        ? held.filterFromDate
+        : null,
+    today: input.shopNow.localDate,
+    caption: input.words.pickDayCaption,
+  };
+}
+
+function calendarRow(
+  calendarMode: CalendarMode,
+  input: SearchSheetInput,
+): DropdownRowVm {
+  const day = calendarMode === CalendarMode.Day;
+  return {
+    id: `CALENDAR:${calendarMode}`,
+    label: day ? input.words.pickDay : input.words.pickRange,
+    detail: null,
+    // No glyph: it lines up with the presets above it, words all.
+    glyph: null,
+    face: null,
+    checked: null,
+    destructive: false,
+    dropdownAction: day ? DropdownAction.PickDay : DropdownAction.PickRange,
+    searchFilterField: SearchFilterField.When,
+    filter: null,
+  };
+}
+
+/** The open key's values: ✓ on the held ones, the typed text narrowing them. */
+function valuesDropdown(
+  field: SearchFilterField,
+  offered: SearchSuggestions,
+  query: SearchQuery,
+  input: SearchSheetInput,
+): SearchDropdownVm {
+  const calendar = calendarOf(query, input);
+  if (calendar !== null) {
+    return { dropdownMode: DropdownMode.Values, sections: [], calendar };
+  }
+  const held = heldOf(query, field);
+  const text = input.dropdownText.trim();
+  // A span replaces the held one and closes the key; a list kind toggles in place.
+  const toggles = held !== null && field !== SearchFilterField.When;
+  const rows = valuesOf(field, offered, query, input)
+    .map((filter) =>
+      valueRow(filter, input, {
+        checked: held === null ? null : isHeldValue(filter, query),
+        detail: null,
+        dropdownAction: toggles
+          ? DropdownAction.ToggleValue
+          : DropdownAction.AddValue,
+      }),
+    )
+    .filter((row) => namesText(row.label, text));
+  if (field === SearchFilterField.When) {
+    rows.push(
+      calendarRow(CalendarMode.Day, input),
+      calendarRow(CalendarMode.Range, input),
+    );
+  }
+  const sections: DropdownSectionVm[] = [
     {
-      suggestionGroupKind: SuggestionGroupKind.When,
-      heading: null,
-      suggestions: present(
-        offered.whenPresets.map((preset) =>
-          offer(SearchFilterSystem.whenOf(preset, input.shopNow), input, chips),
-        ),
-      ),
-    },
-    {
-      suggestionGroupKind: SuggestionGroupKind.Status,
-      heading: null,
-      suggestions: present(
-        offered.bookingStatuses.map((status) =>
-          offer(singleStatus(status), input, chips),
-        ),
-      ),
-    },
-    {
-      suggestionGroupKind: SuggestionGroupKind.Note,
-      heading: null,
-      suggestions: present([
-        offered.hasNote
-          ? offer(
-              {
-                searchFilterField: SearchFilterField.Note,
-                filterHasNote: true,
-              },
-              input,
-              chips,
-            )
-          : null,
-      ]),
-    },
-    {
-      suggestionGroupKind: SuggestionGroupKind.Barber,
-      heading: input.words.barberGroup,
-      suggestions: present(
-        offered.barberIds.map((id) => offer(singleBarber(id), input, chips)),
-      ),
-    },
-    {
-      suggestionGroupKind: SuggestionGroupKind.Service,
-      heading: input.words.serviceGroup,
-      suggestions: present(
-        offered.serviceIds.map((id) => offer(singleService(id), input, chips)),
-      ),
+      id: `VALUES:${field}`,
+      heading: keyOf(field, input.words),
+      compact: false,
+      rows,
     },
   ];
-  return groups.filter((group) => group.suggestions.length > 0);
+  if (held !== null) {
+    sections.push({
+      id: 'REMOVE',
+      heading: null,
+      compact: false,
+      rows: [
+        {
+          id: `REMOVE:${field}`,
+          label: input.words.removeFilter,
+          detail: null,
+          glyph: 'action.remove',
+          face: null,
+          checked: null,
+          destructive: true,
+          dropdownAction: DropdownAction.RemoveFilter,
+          searchFilterField: field,
+          filter: null,
+        },
+      ],
+    });
+  }
+  return { dropdownMode: DropdownMode.Values, sections, calendar: null };
+}
+
+/**
+ * The list under the field. With a key open, its values. With nothing typed,
+ * the keys. With text typed, the values whose name holds it (each with its
+ * key), then the keys as one quiet line of chips — so the live results under
+ * the list stay in sight while filtering stays a tap away.
+ */
+function dropdownOf(
+  query: SearchQuery,
+  offered: SearchSuggestions,
+  input: SearchSheetInput,
+): SearchDropdownVm {
+  if (input.openField !== null) {
+    return valuesDropdown(input.openField, offered, query, input);
+  }
+  const keys = keyRowsOf(offered, query, input);
+  const text = input.dropdownText.trim();
+  if (text === '') {
+    return {
+      dropdownMode: DropdownMode.Fields,
+      sections: [
+        {
+          id: 'FIELDS',
+          heading: input.words.filterBy,
+          compact: false,
+          rows: keys,
+        },
+      ],
+      calendar: null,
+    };
+  }
+  const matched: DropdownRowVm[] = [];
+  for (const field of FIELD_ORDER) {
+    for (const filter of valuesOf(field, offered, SearchQuery.empty(), input)) {
+      if (matched.length === MATCHED_VALUES) break;
+      if (isHeldValue(filter, query)) continue;
+      const row = valueRow(filter, input, {
+        checked: null,
+        detail: keyOf(field, input.words),
+        dropdownAction: DropdownAction.AddValue,
+      });
+      if (namesText(row.label, text)) matched.push(row);
+    }
+  }
+  const sections: DropdownSectionVm[] = [];
+  if (matched.length > 0) {
+    sections.push({
+      id: 'MATCHES',
+      heading: input.words.matches,
+      compact: false,
+      rows: matched,
+    });
+  }
+  sections.push({
+    id: 'FIELDS',
+    heading: input.words.filterBy,
+    compact: true,
+    rows: keys,
+  });
+  return { dropdownMode: DropdownMode.Matches, sections, calendar: null };
+}
+
+/** Does a name hold the typed text at the start of one of its words (the add-client page's rule)? */
+function namesText(label: string, text: string): boolean {
+  return (
+    text === '' ||
+    TextMatchSystem.segmentsAny(label, [text], MatchMode.WordStart).some(
+      (part) => part.hit,
+    )
+  );
 }
 
 function recentsOf(input: SearchSheetInput): readonly RecentVm[] {
   return input.recents.map((query, index) => {
     const parts = [
       query.searchText.trim(),
-      ...chipsOf(query, input).map((chip) => chip.label),
+      ...tokensOf(query, null, input).map((token) =>
+        // A note's value («има») reads only beside its key; alone it is «С бележка».
+        token.id === SearchFilterField.Note
+          ? input.words.withNote
+          : token.value,
+      ),
     ].filter((part) => part.length > 0);
     return { id: `recent-${index}`, label: parts.join(' · '), query };
   });
@@ -394,11 +767,11 @@ function groupsOf(
   );
 }
 
-/** The sheet, worded: the chips and recents, the suggestions, and the cards under their days. */
+/** The sheet, worded: the tokens and recents, the dropdown, and the cards under their days. */
 export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
   const query = input.query;
   const read = SearchQuerySystem.read(query.searchText, input.callingCode);
-  const chips = chipsOf(query, input);
+  const tokens = tokensOf(query, input.openField, input);
   const idle = SearchQuery.isEmpty(query);
   const offered = SearchFilterSystem.suggestions(
     input.index,
@@ -406,10 +779,12 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     query.searchFilters,
     input.shopNow,
   );
-  const suggestions = suggestionGroups(offered, input, chips);
+  const dropdown = dropdownOf(query, offered, input);
   const glyph = searchGlyphOf(
     ClientQuerySystem.parse(query.searchText).clientQueryShape,
   );
+  const placeholder =
+    tokens.length > 0 ? input.words.placeholderShort : input.words.placeholder;
   const phoneRow =
     read.queryPhone.phoneReadingKind === PhoneReadingKind.None
       ? null
@@ -427,9 +802,10 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     return {
       searchSheetState: SearchSheetState.Idle,
       glyph,
-      chips,
+      placeholder,
+      tokens,
+      dropdown,
       recents: recentsOf(input),
-      suggestions,
       phoneRow,
       groups: [],
       clearFilters: null,
@@ -447,13 +823,16 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     searchSheetState:
       kept.length === 0 ? SearchSheetState.Empty : SearchSheetState.Results,
     glyph,
-    chips,
+    placeholder,
+    tokens,
+    dropdown,
     recents: [],
-    suggestions,
     phoneRow,
     groups: groupsOf(visits, read, input),
     clearFilters:
-      kept.length === 0 && chips.length > 0 ? input.words.clearFilters : null,
+      kept.length === 0 && query.searchFilters.length > 0
+        ? input.words.clearFilters
+        : null,
     footnotes,
   };
 }

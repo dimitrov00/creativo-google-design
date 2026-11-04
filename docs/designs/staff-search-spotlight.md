@@ -3,6 +3,7 @@
 - **Author:** Dimitar Dimitrov
 - **Status:** Built (2026-11-04). What was decided and where the build differs from this design: [`docs/architecture/decisions/2026-11-03-staff-search-sheet.md`](../architecture/decisions/2026-11-03-staff-search-sheet.md).
 - **Date:** 2026-11-03
+- **Superseded in part (2026-11-04):** decision B1, the removable-chip anatomy and the idle «Предложения» section gave way to keyed tokens and a filter dropdown — [staff-search-tokens.md](./staff-search-tokens.md).
 - **Part 1:** [staff-search.md](./staff-search.md) (one highlighter, phone reading, a window that reaches and stays fresh). This part builds on it and does not start before part 1's stages 1 to 3 have merged.
 
 ---

@@ -131,9 +131,10 @@ test.describe('the schedule search sheet — part 2', () => {
     await signInAs(page, `e2e-sheet-recent-staff-${run}`, ['barber']);
     await openSearch(page);
 
-    // A new device remembers nothing, and still offers what can narrow.
+    // A new device remembers nothing; the sheet opens on the caret with the
+    // keys a filter is made of under it.
     await expect(page.getByTestId('staff-search-recents')).toHaveCount(0);
-    await expect(page.getByTestId('staff-search-suggestions')).toBeVisible({
+    await expect(page.locator('[data-suggestion="FIELD:WHEN"]')).toBeVisible({
       timeout: 30_000,
     });
 
@@ -156,7 +157,7 @@ test.describe('the schedule search sheet — part 2', () => {
     await expect(page.getByTestId('staff-search-recents')).toHaveCount(0);
   });
 
-  test('CUJ 3: a barber becomes a chip in the field, narrows the cards, comes off', async ({
+  test('CUJ 3: a barber becomes a key │ value token, narrows the cards, comes off', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -181,26 +182,29 @@ test.describe('the schedule search sheet — part 2', () => {
     await input.fill(run);
     await expect(cardsOf(page, run)).toHaveCount(2, { timeout: 30_000 });
 
-    // Niko is on offer; choosing him moves him into the field.
-    const offer = page.locator('[data-suggestion="BARBER:niko"]');
-    await expect(offer).toHaveCount(1);
-    await offer.click();
-    const token = page.getByTestId('staff-search-input-token-BARBER:niko');
+    // The key first: the typed search is parked while its values are listed.
+    await page.locator('[data-suggestion="FIELD:BARBER"]').click();
+    const token = page.getByTestId('staff-search-input-token-BARBER');
     await expect(token).toBeVisible();
+    await expect(input).toHaveValue('');
+    const niko = page.locator('[data-suggestion="BARBER:niko"]');
+    await niko.click();
+    await expect(token).toContainText('Нико');
     await expect(cardsOf(page, run)).toHaveCount(1);
     await expect(input).toHaveValue(run);
-    // A chosen value is not offered twice.
-    await expect(offer).toHaveCount(0);
 
-    // Taking the chip off brings the other visit back; the text stays.
+    // The token opens on its values; removing lives there, not on a ✕.
     await token.click();
+    await expect(niko).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('[data-suggestion="REMOVE:BARBER"]').click();
     await expect(token).toHaveCount(0);
     await expect(cardsOf(page, run)).toHaveCount(2);
     await expect(input).toHaveValue(run);
 
-    // Backspace on an empty field takes the last chip off too.
-    await page.locator('[data-suggestion="BARBER:niko"]').click();
-    await expect(token).toBeVisible();
+    // Backspace on an empty field takes the last token off too.
+    await page.locator('[data-suggestion="FIELD:BARBER"]').click();
+    await niko.click();
+    await expect(token).toContainText('Нико');
     await input.fill('');
     await input.press('Backspace');
     await expect(token).toHaveCount(0);

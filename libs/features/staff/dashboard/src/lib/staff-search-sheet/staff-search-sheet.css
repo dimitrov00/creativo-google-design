@@ -8,15 +8,45 @@
   );
 }
 
-/* Chips wrap in a flow: recents and suggestions are short words. */
+/* Chips wrap in a flow: recents and the keys under typed text are short words. */
 .staff-search-sheet__chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sys-space-compact);
 }
 
-.staff-search-sheet__group {
+/* THE DROPDOWN's sections: a quiet heading over its rows, a hairline of
+   space between sections. The rows are the DS list row; the surface is the
+   field's. */
+.staff-search-sheet__dropdown {
   display: grid;
   gap: var(--sys-space-tight);
-  margin-block-start: var(--sys-space-compact);
+}
+
+.staff-search-sheet__section {
+  display: grid;
+}
+
+.staff-search-sheet__section + .staff-search-sheet__section {
+  padding-block-start: var(--sys-space-tight);
+  border-block-start: 1px solid var(--sys-color-separator);
+}
+
+.staff-search-sheet__heading {
+  padding: var(--sys-space-compact) var(--sys-space-compact)
+    var(--sys-space-tight);
+}
+
+.staff-search-sheet__section[data-compact] .staff-search-sheet__chips {
+  padding: var(--sys-space-tight) var(--sys-space-compact)
+    var(--sys-space-compact);
+}
+
+.staff-search-sheet__row {
+  border-radius: var(--control-radius-small, var(--control-radius-regular));
+}
+
+/* The held value's mark: the accent as a glyph, the word stays ink. */
+.staff-search-sheet__check {
+  color: var(--sys-color-accent);
 }

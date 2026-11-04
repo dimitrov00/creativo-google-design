@@ -9,22 +9,49 @@ import type { StaffTranslate } from './staff-day.vm';
 export interface StaffSearchWords {
   readonly recents: string;
   readonly clearRecents: string;
-  readonly suggestions: string;
   readonly today: string;
   readonly tomorrow: string;
+  readonly yesterday: string;
   readonly thisWeek: string;
+  readonly pastWeek: string;
   readonly earlier: string;
+  /** The keys a token is made of: «Кога», «Бръснар», «Услуга», «Статус», «Бележка». */
+  readonly whenKey: string;
+  readonly barberKey: string;
+  readonly serviceKey: string;
+  readonly statusKey: string;
+  readonly noteKey: string;
+  /** The note token's value and its key row: «има» · «С бележка». */
+  readonly hasNote: string;
   readonly withNote: string;
-  readonly barberGroup: string;
-  readonly serviceGroup: string;
+  /** The dropdown: «Филтри», «Филтрирай по», «Предложения». */
+  readonly dropdownLabel: string;
+  readonly filterBy: string;
+  readonly matches: string;
+  readonly pickDay: string;
+  readonly pickRange: string;
+  readonly removeFilter: string;
+  readonly pickDayCaption: string;
+  readonly rangeFirstCaption: string;
+  /** «От 5 ноем. · избери последния ден» — `{{from}}` is already formatted. */
+  readonly rangeLastCaption: (from: string) => string;
+  readonly placeholder: string;
+  /** The placeholder beside tokens: «Търси…». */
+  readonly placeholderShort: string;
   readonly empty: string;
   readonly clearFilters: string;
   readonly truncated: string;
   readonly stale: string;
   /** «Телефон +359 88 333» — `{{number}}` is already formatted. */
   readonly phoneRow: (number: string) => string;
-  /** «Махни филтъра Николай». */
+  /** «Махни филтъра Бръснар». */
   readonly chipRemove: (label: string) => string;
+  /** «Бръснар: Иван, Стефан. Промени филтъра». */
+  readonly tokenLabel: (key: string, value: string) => string;
+  /** «Бръснар: избери стойност» — a token still being built. */
+  readonly tokenBuilding: (key: string) => string;
+  /** «+2» — the values a token does not name. */
+  readonly moreValues: (count: number) => string;
   /** «Показани са първите 200 резултата» — `{{count}}`. */
   readonly moreThanShown: (count: number) => string;
   /** «Потвърдени» · «Отказани» · … — one word per stored status. */
@@ -45,20 +72,41 @@ export function staffSearchWordsOf(
   return {
     recents: translate('staff.search.recents'),
     clearRecents: translate('staff.search.clearRecents'),
-    suggestions: translate('staff.search.suggestions'),
     today: translate('staff.search.today'),
     tomorrow: translate('staff.search.tomorrow'),
+    yesterday: translate('staff.search.yesterday'),
     thisWeek: translate('staff.search.thisWeek'),
+    pastWeek: translate('staff.search.pastWeek'),
     earlier: translate('staff.search.earlier'),
+    whenKey: translate('staff.search.key.when'),
+    barberKey: translate('staff.search.key.barber'),
+    serviceKey: translate('staff.search.key.service'),
+    statusKey: translate('staff.search.key.status'),
+    noteKey: translate('staff.search.key.note'),
+    hasNote: translate('staff.search.hasNote'),
     withNote: translate('staff.search.withNote'),
-    barberGroup: translate('staff.search.barberGroup'),
-    serviceGroup: translate('staff.search.serviceGroup'),
+    dropdownLabel: translate('staff.search.dropdownLabel'),
+    filterBy: translate('staff.search.filterBy'),
+    matches: translate('staff.search.matches'),
+    pickDay: translate('staff.search.pickDay'),
+    pickRange: translate('staff.search.pickRange'),
+    removeFilter: translate('staff.search.removeFilter'),
+    pickDayCaption: translate('staff.search.pickDayCaption'),
+    rangeFirstCaption: translate('staff.search.rangeFirstCaption'),
+    rangeLastCaption: (from) =>
+      translate('staff.search.rangeLastCaption', { from }),
+    placeholder: translate('staff.day.searchPlaceholder'),
+    placeholderShort: translate('staff.search.placeholderShort'),
     empty: translate('staff.day.searchEmpty'),
     clearFilters: translate('staff.search.clearFilters'),
     truncated: translate('staff.day.searchTruncated'),
     stale: translate('staff.day.searchStale'),
     phoneRow: (number) => translate('staff.search.phoneRow', { number }),
     chipRemove: (label) => translate('staff.search.chipRemove', { label }),
+    tokenLabel: (key, value) =>
+      translate('staff.search.tokenLabel', { key, value }),
+    tokenBuilding: (key) => translate('staff.search.tokenBuilding', { key }),
+    moreValues: (count) => translate('staff.search.moreValues', { count }),
     moreThanShown: (count) =>
       translate('staff.search.moreThanShown', { count }),
     statusWord: (status) =>

@@ -4,6 +4,23 @@ import { UiStack } from '@creativo/ui/layout';
 import { ScDemo } from '@showcase/shared/demo';
 import { ScPage } from '@showcase/shared/page';
 
+/** A keyed token, as the schedule search words one. */
+function token(
+  id: string,
+  key: string,
+  value: string,
+  faces: UiSearchFieldToken['faces'] = [],
+): UiSearchFieldToken {
+  return {
+    id,
+    key,
+    value,
+    faces,
+    label: value === '' ? `${key}: избери стойност` : `${key}: ${value}`,
+    removeLabel: `Махни филтъра ${key}`,
+  };
+}
+
 @Component({
   selector: 'cr-search-field-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -13,30 +30,37 @@ import { ScPage } from '@showcase/shared/page';
 })
 export class SearchFieldPage {
   protected readonly plain = signal('');
-  protected readonly withChips = signal('иван');
+  protected readonly withTokens = signal('иван');
   protected readonly many = signal('');
+  protected readonly dropped = signal('');
 
   private readonly all: readonly UiSearchFieldToken[] = [
-    { id: 'barber', label: 'Николай', removeLabel: 'Махни филтъра Николай' },
-    { id: 'status', label: 'Отказани', removeLabel: 'Махни филтъра Отказани' },
-    {
-      id: 'when',
-      label: 'Тази седмица',
-      removeLabel: 'Махни филтъра Тази седмица',
-    },
-    {
-      id: 'service',
-      label: 'Класическо подстригване',
-      removeLabel: 'Махни филтъра Класическо подстригване',
-    },
+    token('BARBER', 'Бръснар', 'Николай, Иван', [
+      { src: null, name: 'Николай' },
+      { src: null, name: 'Иван' },
+    ]),
+    token('STATUS', 'Статус', 'Отказани'),
+    token('WHEN', 'Кога', 'Тази седмица'),
+    token('SERVICE', 'Услуга', 'Класическо подстригване'),
   ];
-  protected readonly chips = signal(this.all.slice(0, 2));
+  protected readonly tokens = signal(this.all.slice(0, 2));
   protected readonly lots = signal(this.all);
+  protected readonly building = signal([
+    this.all[2] as UiSearchFieldToken,
+    token('SERVICE', 'Услуга', ''),
+  ]);
+  /** The token whose values the demo's owner "opened". */
+  protected readonly active = signal<string | null>(null);
+  protected readonly dropdownFocused = signal(false);
 
   protected remove(
     tokens: ReturnType<typeof signal<readonly UiSearchFieldToken[]>>,
     id: string,
   ): void {
     tokens.update((held) => held.filter((token) => token.id !== id));
+  }
+
+  protected toggle(id: string): void {
+    this.active.update((open) => (open === id ? null : id));
   }
 }

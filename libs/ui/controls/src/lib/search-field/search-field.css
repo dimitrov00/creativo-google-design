@@ -1,6 +1,9 @@
 @layer sys-components {
   .ui-search-field {
     display: block;
+    /* The dropdown hangs from the field (a pinned band is sticky, which
+       anchors it as well). */
+    position: relative;
   }
 
   /* The glyph, the field and the ring share one grid cell: the field spans
@@ -149,14 +152,13 @@
     margin-inline-start: 0;
   }
 
-  .ui-search-field[data-has-tokens] .ui-search-field__token {
-    flex: none;
-  }
-
+  /* The text keeps a readable run: below it, it drops to a line of its
+     own and the field grows, as a text area does, rather than leaving the
+     placeholder clipped to a few letters beside the tokens. */
   .ui-search-field[data-has-tokens] .ui-search-field__native {
     flex: 1 1 6em;
     inline-size: auto;
-    min-inline-size: 4em;
+    min-inline-size: 6em;
     min-block-size: calc(var(--control-size-small));
     padding-inline: 0;
     border: 0;
@@ -178,5 +180,168 @@
     margin-inline-start: auto;
     inline-size: var(--control-size-small);
     block-size: var(--control-size-small);
+  }
+
+  /* THE TOKEN (2026-11-04) — a key and its value, ≙ GitLab's filtered-search
+     token, in the stacked-alpha grammar of every control on a sheet: the key
+     on the plain fill (the foreground at --sys-alpha-fill) in the quieter
+     ink, the value on the value pill's fill (at --sys-alpha-interactive) in
+     the primary ink. Both are translucent, so each lifts the field's own fill
+     a step — never the opaque surface grey of a chip, which read pasted on.
+     One capsule, the two halves a hairline apart. No ✕: the token is one
+     button that opens its values, where removing lives. */
+  .ui-search-field__token {
+    flex: none;
+    display: inline-flex;
+    align-items: stretch;
+    gap: 1px;
+    min-block-size: var(--control-size-small);
+    /* Room beside the leading glyph (a 1em icon of the field's text and the
+       tight gap, rounded up), so a wide token ellipsizes its value on the
+       glyph's line instead of wrapping and leaving the glyph alone above. */
+    max-inline-size: calc(100% - 1.25rem - var(--sys-space-tight));
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    background: none;
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-subheadline);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .ui-search-field__token-key,
+  .ui-search-field__token-value {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    padding-inline: var(--sys-space-compact);
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-search-field__token-key {
+    border-start-start-radius: var(--control-radius-capsule);
+    border-end-start-radius: var(--control-radius-capsule);
+    padding-inline-start: var(--sys-space-regular);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-secondary-label-on-fill);
+    font-weight: 500;
+  }
+
+  .ui-search-field__token-value {
+    min-inline-size: 0;
+    overflow: hidden;
+    border-start-end-radius: var(--control-radius-capsule);
+    border-end-end-radius: var(--control-radius-capsule);
+    padding-inline-end: var(--sys-space-regular);
+    background: color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-alpha-interactive),
+      transparent
+    );
+  }
+
+  .ui-search-field__token-text {
+    min-inline-size: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* A token still being built is its key alone, closed on both ends. */
+  .ui-search-field__token[data-building] .ui-search-field__token-key {
+    border-radius: var(--control-radius-capsule);
+    padding-inline-end: var(--sys-space-regular);
+    color: var(--sys-color-foreground);
+  }
+
+  /* The faces lead the value, overlapped like ui-avatar-group's run, at a
+     disc that clears the token's block padding. */
+  .ui-search-field__faces {
+    display: inline-flex;
+    flex: none;
+    margin-inline-start: calc(-1 * var(--sys-space-tight));
+  }
+  .ui-search-field__faces .ui-avatar[data-control-size='small'] {
+    --ui-avatar-disc: calc(var(--sys-space-unit) * 6);
+    font: var(--sys-font-caption);
+    box-shadow: 0 0 0 1.5px var(--sys-color-surface);
+  }
+  .ui-search-field__faces .ui-avatar + .ui-avatar {
+    margin-inline-start: calc(-1 * var(--sys-space-compact));
+  }
+
+  @media (hover: hover) {
+    .ui-search-field__token:hover .ui-search-field__token-key {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-foreground) var(--sys-alpha-fill-hover),
+        transparent
+      );
+    }
+    .ui-search-field__token:hover .ui-search-field__token-value {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-foreground) var(--sys-alpha-press),
+        transparent
+      );
+    }
+  }
+
+  /* The press, ungated, so a tap shows it on a phone. */
+  .ui-search-field__token:active .ui-search-field__token-key,
+  .ui-search-field__token:active .ui-search-field__token-value {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-alpha-press),
+      transparent
+    );
+  }
+
+  /* The token whose values are open, and the keyboard's focus, wear the ring. */
+  .ui-search-field__token[data-active],
+  .ui-search-field__token:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
+  }
+
+  /* THE DROPDOWN — the suggestions of a filtered search, hung under the
+     field on the ELEVATED surface, opaque. The menu's thick material cannot
+     work here: a pinned band already blurs what is behind it, which makes it
+     a backdrop root — a blur nested inside it samples only the band, so the
+     results under the list read straight through a translucent fill. It
+     covers the list under the field and never moves it; it scrolls inside
+     itself, stopping at its own edge. */
+  .ui-search-field__dropdown {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: calc(100% + var(--sys-space-tight));
+    z-index: var(--sys-layer-popover);
+    max-block-size: min(60dvh, 28rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--sys-space-tight);
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background-color: var(--sys-color-surface-elevated);
+    box-shadow: var(--sys-elevation-overlay);
+    animation: ui-search-field-drop var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+    transform-origin: top center;
+  }
+
+  /* Pinned, the band pads the field by the sheet's inset: the dropdown
+     lines up with the field, not with the band. */
+  .ui-search-field[data-pinned] .ui-search-field__dropdown {
+    inset-inline: var(--ui-sheet-inset, var(--sys-space-regular));
+    inset-block-start: calc(100% - var(--sys-space-tight));
+  }
+
+  @keyframes ui-search-field-drop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
   }
 }

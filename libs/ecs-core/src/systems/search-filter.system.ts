@@ -31,10 +31,13 @@ export type SearchSuggestions = {
   readonly hasNote: boolean;
 };
 
+/** The order presets are offered in: the single days nearest first, then the weeks. */
 const PRESET_ORDER: readonly SearchWhenPreset[] = [
   SearchWhenPreset.Today,
   SearchWhenPreset.Tomorrow,
+  SearchWhenPreset.Yesterday,
   SearchWhenPreset.ThisWeek,
+  SearchWhenPreset.PastWeek,
 ];
 
 /** The filters of a query, one slot per kind — `null` for a kind not chosen. */
@@ -259,7 +262,8 @@ export const SearchFilterSystem = {
 
   /**
    * The date filter of a preset, from the shop's own today (Law 7):
-   * `TODAY`, `TOMORROW`, and `THIS_WEEK` — today through the next six days.
+   * `TODAY`, `TOMORROW`, `YESTERDAY`, `THIS_WEEK` — today through the next
+   * six days — and `PAST_WEEK`, the six days before today through today.
    */
   whenOf(preset: SearchWhenPreset, shopNow: ShopNow): SearchFilter.When {
     const today = shopNow.localDate;
@@ -270,8 +274,24 @@ export const SearchFilterSystem = {
         const tomorrow = LocalDate.addDays(today, 1);
         return SearchFilter.when(tomorrow, tomorrow);
       }
+      case SearchWhenPreset.Yesterday: {
+        const yesterday = LocalDate.addDays(today, -1);
+        return SearchFilter.when(yesterday, yesterday);
+      }
       case SearchWhenPreset.ThisWeek:
         return SearchFilter.when(today, LocalDate.addDays(today, 6));
+      case SearchWhenPreset.PastWeek:
+        return SearchFilter.when(LocalDate.addDays(today, -6), today);
     }
+  },
+
+  /**
+   * The span two picked days make, whichever was picked first: the earlier
+   * day starts it. The same day twice is that one day.
+   */
+  spanOf(a: LocalDate, b: LocalDate): SearchFilter.When {
+    return LocalDate.compare(a, b) <= 0
+      ? SearchFilter.when(a, b)
+      : SearchFilter.when(b, a);
   },
 } as const;
