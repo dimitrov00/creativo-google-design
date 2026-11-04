@@ -66,7 +66,7 @@ reason it lost and the condition that reopens it.
 | Alternative                                          | Rejected because                                                                                                                                                        | Reopen if                                                                                                   |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | A. A hosted search service                           | A second system to pay for, secure and keep in sync; copies clients' names, phones and e-mails to a third party; a linear scan of under 5,000 visits answers in ms      | One shop's searchable history passes about 50,000 visits, or typo tolerance and transliteration is required |
-| B. A search-prefix index on the appointment document | Firestore tests "begins with", never "contains"; phone runs, e-mail local parts and notes would not work; every filter needs its own composite index; every write grows | The window cap is regularly hit (the "nearest 3,000" note appears in the logs)                              |
+| B. A search-prefix index on the appointment document | Firestore tests "begins with", never "contains"; phone runs, e-mail local parts and notes would not work; every filter needs its own composite index; every write grows | The window cap is regularly hit (`SEARCH_WINDOW_CAPPED` issues appear in the logs)                          |
 | C. A fixed count around now                          | A count does not follow the booking horizon (300 is a week, 3,000 about 75 days); a range follows it and the cap is only a safety valve                                 | The horizon is so long the cap is hit routinely (see B)                                                     |
 | D. Query Firestore on each search                    | Every keystroke bills the documents returned                                                                                                                            | The window outgrows what fits in memory                                                                     |
 | E. Rewrite the field's text in place                 | Fights the caret: backspace, IME composition and undo break                                                                                                             | The owner prefers it; then only for a whole-phone-shaped field, on blur, never mid-typing                   |
@@ -101,8 +101,9 @@ collection) is kept, not reversed.
   at the far edges, so the search never waits on the zone.
 - **Lookup keys for `088 765`** are now asked as `35988765`, `088765` (the
   order flipped; the same two keys).
-- **No per-load logging.** The web app has no log port token to inject; the
-  design's observability bullet is open.
+- **No per-load logging; a capped window is reported (2026-11-04).** The
+  design's observability bullet became one `warn` issue: see "Verified, and
+  not" below.
 - **No seed visit 24 days ahead.** The dev seed keeps its hand-written visits
   within four days and fabricates busy days beyond; a far visit breaks that
   model. The e2e spec seeds its own.
@@ -126,15 +127,24 @@ collection) is kept, not reversed.
   end and the ones past the cap are never returned); 391 passed. The emulator
   UI's Requests tab was not used: it does not bill, and the count it would
   show is this set's size.
-- **Not done, on purpose: per-load logging.** The web's only sink is the
-  faults reporter (`ReportClientIssues`, OR-34): a closed, scrubbed struct,
-  at most 20 distinct issues per page session, and no feature library can
-  inject it. A load log needs a new `ClientIssueKind`, the server's admission
-  and `Log` mapping, and a feature-side reporter token, and would spend the
-  per-session fault budget on routine loads. It needs an owner ruling. Until
-  then a bill spike is traced from Cloud Monitoring's
-  `firestore.googleapis.com/document/read_count`, and the "cap is hit
-  routinely" condition of alternative B has no signal.
+- **Built instead of per-load logging: the capped-window report
+  (2026-11-04, owner: "go on").** A window load that answers `capped: true`
+  hands the page's issue sink one `SEARCH_WINDOW_CAPPED` issue
+  (`ClientIssueKind.SearchWindowCapped`): the route pattern and the build,
+  every other text `null`, so no person and no document is named. It is a
+  condition, not a fault: logged at `warn`, counted by `client_issue_count`
+  by kind, and the reporter's dedupe keeps it to one line per page session
+  (`StaffDayStore.reportCappedWindow`). A feature reaches the reporter through
+  `CLIENT_ISSUE_PORTS` (`ports.tokens.ts`, a `ClientIssuePorts` token that
+  resolves to the page's one reporter); a sink that throws never reaches the
+  search. This is the signal for alternative B's reopen condition above.
+- **Still not done, on purpose: a line per load.** Routine loads would spend
+  the per-session fault budget (20 distinct issues) and say nothing the
+  deterministic refresh rules (first open, older than 15 minutes, a write on
+  this device) do not. A bill spike is traced from Cloud Monitoring's
+  `firestore.googleapis.com/document/read_count`. The size of a capped window
+  is not reported: `ClientIssue` is closed, and a numeric field is a separate
+  ruling.
 - **Not done, cannot be yet:** the per-location price (above) and the run of
   the range queries against a real project's composite-index enforcement, both
   waiting on the project and its location.

@@ -48,6 +48,7 @@ import {
 import {
   type BookingCall,
   BookingPolicy,
+  ClientIssueKind,
   Combinability,
   CouponValue,
   type MinuteRange,
@@ -71,6 +72,7 @@ import type {
 } from '@core/entities';
 import {
   AvailabilitySystem,
+  ClientIssueSystem,
   CouponGrantSystem,
   GridLayoutSystem,
   type HeldGrant,
@@ -108,10 +110,12 @@ import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
+  CLIENT_ISSUE_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   GATEWAY_PORTS,
   ID_PORTS,
+  routePatternOf,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   ShopZoneService,
@@ -446,6 +450,8 @@ export class StaffDayStore {
   /** The one typed callable client — every write of the day goes through it. */
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly clock = inject(CLOCK_PORTS);
+  /** Where a capped search window is reported (once per page session, by the reporter's dedupe). */
+  private readonly issues = inject(CLIENT_ISSUE_PORTS);
   /** Mints each act's `operationId` (WS-4.1) — see `staffEdit` and `mintFor`. */
   private readonly ids = inject(ID_PORTS);
   private readonly catalog = inject(CatalogContentService);
@@ -1876,6 +1882,7 @@ export class StaffDayStore {
       if (result.ok) {
         this._pool.set(result.value.appointments);
         this._searchCapped.set(result.value.capped);
+        if (result.value.capped) this.reportCappedWindow();
         this._searchStale.set(false);
         this.windowLoadedAtUtcMs = now;
       } else {
@@ -1884,6 +1891,31 @@ export class StaffDayStore {
       }
     } finally {
       this._searchLoading.set(false);
+    }
+  }
+
+  /**
+   * The window hit its per-side cap, so the search sees fewer visits than
+   * the window holds: the condition `2026-11-03-staff-search.md` names as the
+   * signal for reopening its alternatives B and C. The route's pattern is
+   * all it says; a reporter fault never reaches the search.
+   */
+  private reportCappedWindow(): void {
+    try {
+      this.issues.reportClientIssues([
+        ClientIssueSystem.compose({
+          clientIssueKind: ClientIssueKind.SearchWindowCapped,
+          errorName: null,
+          documentPath: null,
+          fieldName: null,
+          routePattern: routePatternOf(this.router),
+          topFrame: null,
+          message: null,
+          release: null,
+        }),
+      ]);
+    } catch {
+      // A report is a courtesy: the search carries on without it.
     }
   }
 

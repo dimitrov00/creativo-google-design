@@ -559,6 +559,24 @@ describe('ClientIssueSystem.admitBatch — the callable’s edge guard', () => {
     expect(unwrapOk(ClientIssueSystem.admitBatch(batch))).toBe(batch);
   });
 
+  it('admits a composed capped-window issue: the route pattern alone, no text', () => {
+    const composed = ClientIssueSystem.compose({
+      clientIssueKind: ClientIssueKind.SearchWindowCapped,
+      errorName: null,
+      documentPath: null,
+      fieldName: null,
+      routePattern: '/staff/schedule',
+      topFrame: null,
+      message: null,
+      release: null,
+    });
+    expect(composed.routePattern).toBe('/staff/schedule');
+    expect(composed.scrubbedMessage).toBeNull();
+    expect(unwrapOk(ClientIssueSystem.admitBatch([composed]))).toEqual([
+      composed,
+    ]);
+  });
+
   it('refuses what is not a non-empty array — SHAPE, the batch’s own', () => {
     for (const raw of [{}, null, 'issues', 42, []]) {
       expect(unwrapErr(ClientIssueSystem.admitBatch(raw))).toEqual(
@@ -915,6 +933,7 @@ describe('ClientIssueSystem.logLine — one Cloud Logging line', () => {
       ClientIssueKind.DataDocumentRefused,
       ClientIssueKind.ChunkLoadFailed,
       ClientIssueKind.CspViolation,
+      ClientIssueKind.SearchWindowCapped,
     ]) {
       const condition = ClientIssueSystem.logLine(
         issue({ clientIssueKind }),
