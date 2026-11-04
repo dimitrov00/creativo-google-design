@@ -9,6 +9,7 @@ export * from './privacy-doubles';
 export * from './programs.fixtures';
 export * from './rules-text';
 export * from './scheduling.port.contract';
+export * from './search.fixtures';
 export * from './streak-publish-gateway.double';
 export * from './test-support';
 export * from './unguarded';

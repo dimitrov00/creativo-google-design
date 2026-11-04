@@ -37,6 +37,7 @@ import {
   RepositoryErrorCode,
   RunBackfillRefusalCode,
   SchedulingErrorCode,
+  SearchQueryErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
   TimeErrorCode,
@@ -124,6 +125,7 @@ export const EDGE_DICTIONARIES = {
   RepositoryErrorCode,
   RunBackfillRefusalCode,
   SchedulingErrorCode,
+  SearchQueryErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
   TimeErrorCode,
@@ -154,6 +156,7 @@ export type EdgeCode =
   | RepositoryErrorCode
   | RunBackfillRefusalCode
   | SchedulingErrorCode
+  | SearchQueryErrorCode
   | StaffEditErrorCode
   | StreakPublishErrorCode
   | TimeErrorCode
@@ -712,6 +715,12 @@ const CATALOG_WIRE = uniform(CatalogErrorCode, fields(S.InvalidArgument), {
 });
 const MONEY_WIRE = uniform(MoneyErrorCode, fields(S.InvalidArgument), {});
 const PHONE_WIRE = uniform(PhoneErrorCode, fields(S.InvalidArgument), {});
+/** A saved search that does not read back: a device-only refusal (`SearchQuery.parse` over localStorage), listed because the table is total. */
+const SEARCH_QUERY_WIRE = uniform(
+  SearchQueryErrorCode,
+  fields(S.InvalidArgument),
+  {},
+);
 const TIME_WIRE = uniform(TimeErrorCode, fields(S.InvalidArgument), {
   // As the retired `invalid_time_zone` did — a server zone, never the caller's.
   [TimeErrorCode.InvalidTimeZone]: fields(S.Internal),
@@ -773,6 +782,7 @@ export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
     ...REPOSITORY_WIRE,
     ...RUN_BACKFILL_WIRE,
     ...SCHEDULING_WIRE,
+    ...SEARCH_QUERY_WIRE,
     ...STAFF_EDIT_WIRE,
     ...STREAK_PUBLISH_WIRE,
     ...TIME_WIRE,
