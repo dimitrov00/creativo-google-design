@@ -108,5 +108,18 @@ each with the reason it lost and the condition that reopens it.
   theme (`controls/search-field`): the field keeps its quiet fill and hairline,
   the white chips and their remove glyphs stay legible, the wrapped field's
   clear stays at the trailing edge.
-- **Not done:** the sheet used by hand in the running app against seeded data
-  (the e2e covers it through assertions).
+- **Used by hand (2026-11-04):** the sheet in the running dev app as the seeded
+  staff account (`dev-staff-ivan`), against the dev seed, at desktop and phone
+  width. It opens with no recents and 17 offers (3 date presets, 4 statuses,
+  the note filter, 3 barbers, 6 services). «Георги» finds 8 visits with the
+  runs washed, including «Георгиев» and «Карагеоргиев» (a substring match, as
+  designed); `georgi@` finds 3 and prints the e-mail line; `088 123` finds 3,
+  prints the phone line and the «Телефон +359 88 123» row; a nonsense term
+  shows the empty note. A barber chip narrows the cards and is not offered
+  twice; Backspace on an empty field takes the last chip off and pressing a
+  chip removes it. Picking a card closes the sheet, moves the day to the
+  visit's (`?day=2026-11-06`) and shows its row; the search is then kept in
+  `localStorage` and offered as a recent on reopening. Nothing broke. The
+  picked card does not open the visit editor, only its day; the design asks
+  for no more. Not looked at by hand: the dark theme of the sheet itself (the
+  chip field was, in the showcase).
