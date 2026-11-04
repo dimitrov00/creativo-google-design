@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ViewEncapsulation,
+  computed,
   input,
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
@@ -27,10 +28,20 @@ import type { UiControlSize } from '../button/button';
     class: 'ui-chip',
     '[attr.data-selected]': 'uiSelected() ? "" : null',
     '[attr.data-control-size]': 'uiControlSize()',
-    '[attr.aria-pressed]': 'uiSelected()',
+    '[attr.aria-pressed]': 'pressed()',
   },
 })
 export class UiChip {
   readonly uiSelected = input(false);
   readonly uiControlSize = input<UiControlSize>('regular');
+  /**
+   * Whether the chip is a toggle (the default: it announces pressed or not).
+   * A chip that is an ACTION — a removable token's ✕ — sets it false and
+   * announces as a plain button.
+   */
+  readonly uiToggle = input(true);
+
+  protected readonly pressed = computed(() =>
+    this.uiToggle() ? this.uiSelected() : null,
+  );
 }

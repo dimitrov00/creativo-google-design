@@ -8,6 +8,7 @@ import {
   TimeZone,
 } from '@core/primitives';
 import {
+  DayBucket,
   type ShopNow,
   type VisitFilter,
   type VisitRowOutcome,
@@ -1232,5 +1233,71 @@ describe('VisitListSystem.firstOpenInChair — the chair’s next visit', () => 
     expect(S.firstOpenInChair(rows, chairOf, NOW_9)).toBe(
       S.firstOpenInChair(rows, chairOf, NOW_9),
     );
+  });
+});
+
+describe('VisitListSystem.dayGroups — the search list under its day headings', () => {
+  const S = VisitListSystem;
+  const day = (localDate: string, id: string) => ({
+    id,
+    localDate: localDate as LocalDate,
+  });
+  const TODAY = localDate('2026-08-05');
+
+  it('files future days ascending under today, tomorrow and later, the past in one last group', () => {
+    const groups = S.dayGroups(
+      [
+        day('2026-08-05', 'a'),
+        day('2026-08-05', 'b'),
+        day('2026-08-06', 'c'),
+        day('2026-08-20', 'd'),
+        day('2026-08-04', 'e'),
+        day('2026-07-01', 'f'),
+      ],
+      TODAY,
+    );
+    expect(groups.map((g) => [g.dayBucket, g.groupKey])).toEqual([
+      [DayBucket.Today, '2026-08-05'],
+      [DayBucket.Tomorrow, '2026-08-06'],
+      [DayBucket.Later, '2026-08-20'],
+      [DayBucket.Past, 'past'],
+    ]);
+    expect(groups.map((g) => g.visits.map((v) => v.id))).toEqual([
+      ['a', 'b'],
+      ['c'],
+      ['d'],
+      ['e', 'f'],
+    ]);
+    expect(groups[3]?.groupDate).toBeNull();
+    expect(groups[0]?.groupDate).toBe('2026-08-05');
+  });
+
+  it('keeps the order given inside a group (most recent first among the past)', () => {
+    const groups = S.dayGroups(
+      [day('2026-08-04', 'newer'), day('2026-07-01', 'older')],
+      TODAY,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.visits.map((v) => v.id)).toEqual(['newer', 'older']);
+  });
+
+  it('files by the shop’s day across a month end', () => {
+    const groups = S.dayGroups(
+      [day('2026-09-01', 'x')],
+      localDate('2026-08-31'),
+    );
+    expect(groups[0]?.dayBucket).toBe(DayBucket.Tomorrow);
+  });
+
+  it('answers no groups for no visits, and only a past group when nothing is ahead', () => {
+    expect(S.dayGroups([], TODAY)).toEqual([]);
+    expect(
+      S.dayGroups([day('2026-01-01', 'old')], TODAY).map((g) => g.dayBucket),
+    ).toEqual([DayBucket.Past]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const visits = deepFreeze([day('2026-08-05', 'a'), day('2026-08-01', 'b')]);
+    expect(S.dayGroups(visits, TODAY)).toEqual(S.dayGroups(visits, TODAY));
   });
 });

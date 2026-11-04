@@ -8,6 +8,7 @@ import {
 } from '@core/primitives';
 import {
   BookingLifecycle,
+  DayBucket,
   ShopNow,
   VisitFilter,
   VisitGrain,
@@ -51,6 +52,21 @@ export type UpcomingVisit = {
   readonly locationId: LocationId;
   readonly localDate: LocalDate;
   readonly startMinutes: MinuteOfDay;
+};
+
+/** The past group's key — not a date, so it can never collide with one. */
+const PAST_GROUP_KEY = 'past';
+
+/**
+ * One day-heading of a search list: the bucket it is, the shop day it is for
+ * (`null` for the single past group) and its visits in the order they came.
+ */
+export type DayGroup<V extends { readonly localDate: LocalDate }> = {
+  readonly dayBucket: DayBucket;
+  /** The shop day (`YYYY-MM-DD`) of a future group, or the past group's key. */
+  readonly groupKey: string;
+  readonly groupDate: LocalDate | null;
+  readonly visits: readonly V[];
 };
 
 /** One section of a list: its key and its rows, in the section's own order. */
@@ -559,5 +575,55 @@ export const VisitListSystem = {
       if (now !== null && !VisitListSystem.isHistory(item, now)) count++;
     }
     return count;
+  },
+  /**
+   * Visits filed under their day headings, for a list read outward from now
+   * (`VisitStorySystem.outwardFromNow`): one group per FUTURE shop day —
+   * today, tomorrow, later days — ascending, then ONE group for every earlier
+   * day, its visits in the order given (most recent first). A day is judged
+   * on the shop's own `today` (Law 7); a visit that has already ended today
+   * still files under today. Which bucket a day is in is decided here, so a
+   * presenter only words the heading.
+   */
+  dayGroups<V extends { readonly localDate: LocalDate }>(
+    visits: readonly V[],
+    today: LocalDate,
+  ): readonly DayGroup<V>[] {
+    const tomorrow = LocalDate.addDays(today, 1);
+    const future = new Map<LocalDate, V[]>();
+    const past: V[] = [];
+    for (let i = 0; i < visits.length; i++) {
+      const visit = visits[i] as V;
+      if (visit.localDate < today) {
+        past.push(visit);
+        continue;
+      }
+      const day = future.get(visit.localDate);
+      if (day === undefined) future.set(visit.localDate, [visit]);
+      else day.push(visit);
+    }
+    const out: DayGroup<V>[] = [];
+    for (const date of [...future.keys()].sort()) {
+      out.push({
+        dayBucket:
+          date === today
+            ? DayBucket.Today
+            : date === tomorrow
+              ? DayBucket.Tomorrow
+              : DayBucket.Later,
+        groupKey: date,
+        groupDate: date,
+        visits: future.get(date) as V[],
+      });
+    }
+    if (past.length > 0) {
+      out.push({
+        dayBucket: DayBucket.Past,
+        groupKey: PAST_GROUP_KEY,
+        groupDate: null,
+        visits: past,
+      });
+    }
+    return out;
   },
 } as const;

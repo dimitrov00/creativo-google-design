@@ -544,9 +544,7 @@
                  never welded to the name. -->
             <ui-stack uiSpacing="none">
               <span uiText uiFont="callout" uiWeight="medium">
-                @for (part of row.titleRuns; track $index) { @if (part.hit) {
-                <mark class="staff-visit__mark">{{ part.text }}</mark>
-                } @else {{{ part.text }}} }
+                <ui-marked-text [uiRuns]="row.titleRuns" />
               </span>
               <span
                 uiText
@@ -554,9 +552,7 @@
                 uiForegroundStyle="secondary"
                 class="staff-visit__figures"
               >
-                @for (part of row.lineRuns; track $index) { @if (part.hit) {
-                <mark class="staff-visit__mark">{{ part.text }}</mark>
-                } @else {{{ part.text }}} }
+                <ui-marked-text [uiRuns]="row.lineRuns" />
               </span>
             </ui-stack>
           </button>

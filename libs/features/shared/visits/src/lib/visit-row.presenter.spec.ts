@@ -876,6 +876,68 @@ describe('visitRowOf · the staff card', () => {
   });
 });
 
+describe('visitRowOf · what a search found (options.matched)', () => {
+  const plain = visitRowOf(LAST_VISIT, staffOptions(), LOOKUP);
+
+  it('changes nothing without a match', () => {
+    expect(
+      visitRowOf(LAST_VISIT, staffOptions({ matched: undefined }), LOOKUP),
+    ).toEqual(plain);
+    expect(plain.titleParts).toBeUndefined();
+  });
+
+  it('appends the matched lines after the usual ones, each with its marked runs', () => {
+    const row = visitRowOf(
+      LAST_VISIT,
+      staffOptions({
+        matched: {
+          titleTerms: [],
+          matchLines: [
+            {
+              text: '+359 88 777 8899',
+              parts: [
+                { text: '+', hit: false },
+                { text: '359 88', hit: true },
+                { text: ' 777 8899', hit: false },
+              ],
+            },
+          ],
+        },
+      }),
+      LOOKUP,
+    );
+    expect(row.lines).toEqual([
+      ...plain.lines,
+      expect.objectContaining({ text: '+359 88 777 8899' }),
+    ]);
+    expect(row.titleParts).toBeUndefined();
+    expect(row.title).toBe(plain.title);
+  });
+
+  it('leaves the title unmarked when no typed word is in it', () => {
+    const row = visitRowOf(
+      LAST_VISIT,
+      staffOptions({ matched: { titleTerms: ['брада'], matchLines: [] } }),
+      LOOKUP,
+    );
+    expect(row.titleParts).toBeUndefined();
+  });
+
+  it('marks the title when a service name matched', () => {
+    const row = visitRowOf(
+      LAST_VISIT,
+      staffOptions({ matched: { titleTerms: ['фей'], matchLines: [] } }),
+      LOOKUP,
+    );
+    expect(row.titleParts).toEqual([
+      { text: 'Фей', hit: true },
+      { text: 'д', hit: false },
+    ]);
+    expect(row.lines).toEqual(plain.lines);
+    expect(row.accessibleName).toBe(plain.accessibleName);
+  });
+});
+
 describe('visitRowOf · the client’s own list', () => {
   const clientOptions = (
     overrides: Partial<VisitRowOptions> = {},

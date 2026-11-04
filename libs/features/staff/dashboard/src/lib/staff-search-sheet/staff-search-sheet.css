@@ -1,0 +1,22 @@
+/* The sheet's body keeps the house padding of its siblings
+   (`.staff-cancel__body` is the dashboard's, unreachable from here). */
+.staff-search-sheet__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+/* Chips wrap in a flow: recents and suggestions are short words. */
+.staff-search-sheet__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+}
+
+.staff-search-sheet__group {
+  display: grid;
+  gap: var(--sys-space-tight);
+  margin-block-start: var(--sys-space-compact);
+}

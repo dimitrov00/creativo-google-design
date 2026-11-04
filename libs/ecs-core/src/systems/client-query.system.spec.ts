@@ -124,8 +124,8 @@ describe('clientLookupKeys', () => {
       clientLookupKeys(parseClientQuery('Мария maria@mail.bg 0887')),
     ).toEqual(['maria@mail.bg']);
     expect(clientLookupKeys(parseClientQuery('Мария 088 765'))).toEqual([
-      '088765',
       '35988765',
+      '088765',
     ]);
     expect(clientLookupKeys(parseClientQuery('Ив Мартинова'))).toEqual([
       'мартинова',
@@ -203,8 +203,7 @@ describe('segments', () => {
   it('marks the typed beginning of each matched word of a name', () => {
     expect(nameSegments('Мартин Илиев', parseClientQuery('ил март'))).toEqual([
       { text: 'Март', hit: true },
-      { text: 'ин', hit: false },
-      { text: ' ', hit: false },
+      { text: 'ин ', hit: false },
       { text: 'Ил', hit: true },
       { text: 'иев', hit: false },
     ]);

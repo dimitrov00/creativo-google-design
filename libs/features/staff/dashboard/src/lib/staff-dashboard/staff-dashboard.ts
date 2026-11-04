@@ -145,7 +145,6 @@ import {
   UiIcon,
   type UiIconName,
   UiModalSheet,
-  UiSearchField,
   UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
@@ -269,8 +268,7 @@ import {
   visitEditorWords,
   whenWords,
 } from './staff-day.presenter';
-import { searchHits } from './staff-search.presenter';
-import type { SearchHitVm } from './staff-search.vm';
+import { StaffSearchSheet } from '../staff-search-sheet/staff-search-sheet';
 
 export { AgendaRow, type DayRowVm } from './staff-day.vm';
 
@@ -519,6 +517,7 @@ function minuteRangeOf(
     UiChoiceLeading,
     UiChoiceMenu,
     UiSegmentedControl,
+    StaffSearchSheet,
     StaffTimeGrid,
     StaffVisitEditor,
     StaffEventHead,
@@ -543,7 +542,6 @@ function minuteRangeOf(
     UiScrollRow,
     UiSheetActionBar,
     UiSheetHeadline,
-    UiSearchField,
     UiToast,
     UiSwitch,
     StaffBlockEditor,
@@ -1015,70 +1013,6 @@ export class StaffDashboard {
     const zone = this.store.zone();
     return zone === null ? null : ZonedTimeSystem.toLocal(atUtcMs, zone);
   }
-
-  // ── Search ──────────────────────────────────────────────────────────
-
-  /**
-   * Results for the current term, newest-relevant first.
-   *
-   * Matched in memory against a window the store loaded once — Firestore
-   * cannot substring-match, and the fields a shop actually searches by
-   * (name, phone, email, note, service) are four different shapes, one of
-   * them nested inside the `seats` array.
-   */
-  protected readonly searchResults = computed<readonly SearchHitVm[]>(() =>
-    searchHits({
-      term: this.store.term(),
-      pool: this.store.pool(),
-      // Each visit is judged on ITS shop's wall clock (the physical chair
-      // invariant, Law 7.2): one `ShopNow` per zone per tick, read at the
-      // store's edge (`shopNowAt`, pass D D-6.2).
-      shopNowAt: this.store.shopNowAt(),
-      names: this.catalogNames,
-      zoneKnown: this.store.zone() !== null,
-      locale: this.content.locale(),
-      companionNames: this.companionNames(),
-      unnamedClient: this.dayWords().unnamedClient,
-    }),
-  );
-
-  /** Jump the sheet to the day a hit lives on, and close the search. */
-  protected openHit(hit: SearchHitVm): void {
-    this.store.goToDay(hit.dayKey);
-    this.closeSearchSheet();
-  }
-
-  /*
-   * THE SEARCH SHEET'S FOLD (2026-09-24): the head folds while the search
-   * is engaged — the field focused, or a query standing — the visit
-   * sheet's own grammar, told to the bar the same way.
-   */
-  protected readonly searchFieldFocused = signal(false);
-  /** Is the standing term long enough to search (`termSearchable`)? */
-  protected readonly searchTermSearchable = computed(() =>
-    SearchFieldsSystem.termSearchable(this.store.term().trim()),
-  );
-  protected readonly searchSheetEngaged = computed(
-    () => this.searchFieldFocused() || this.store.term().trim().length > 0,
-  );
-
-  /** A field taken away while focused reports no blur; the sheet resets it. */
-  protected closeSearchSheet(): void {
-    this.searchFieldFocused.set(false);
-    this.store.closeSearch();
-  }
-
-  /** ↓ from the field lands on the first hit, as the visit sheet's lists do. */
-  protected focusFirstHit(event: KeyboardEvent): void {
-    const first = this.host.nativeElement.querySelector<HTMLElement>(
-      '[data-testid="staff-search-hit"]',
-    );
-    if (first === null) return;
-    event.preventDefault();
-    first.focus();
-  }
-
-  // ── The write actions ───────────────────────────────────────────────
 
   // ── The date picker ─────────────────────────────────────────────────
 
@@ -3977,18 +3911,18 @@ export class StaffDashboard {
    */
   protected readonly visitClientSearching = signal(false);
   private readonly deployment = inject(AUTH_DEPLOYMENT_PORTS).authDeployment;
+  /** The shop's dial code, the query's own default when its country has none. */
+  protected readonly shopCallingCode = PhoneSystem.callingCodeOr(
+    this.deployment.defaultCountry,
+    ClientQuerySystem.DEFAULT_CALLING_CODE,
+  );
   private clientSearchSeq = 0;
   private clientSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected searchClients(query: string): void {
     if (this.clientSearchTimer !== null) clearTimeout(this.clientSearchTimer);
     const parsed = ClientQuerySystem.parse(query);
-    // By the shop's own dial code: «088…» is asked as «359 88…» too — the
-    // query's own default when the country has none.
-    const code = PhoneSystem.callingCodeOr(
-      this.deployment.defaultCountry,
-      ClientQuerySystem.DEFAULT_CALLING_CODE,
-    );
+    const code = this.shopCallingCode;
     const keys = ClientQuerySystem.lookupKeys(parsed, code);
     // The book's own matches are on screen already — their faces are owed
     // now, not when the index answers. Only the rows a phone can show.

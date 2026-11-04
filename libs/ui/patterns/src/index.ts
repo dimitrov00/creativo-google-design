@@ -15,6 +15,7 @@ export * from './lib/gauge/gauge';
 export * from './lib/list-group/list-group';
 export * from './lib/list-row/list-row';
 export * from './lib/mark-scale/mark-scale';
+export * from './lib/marked-text/marked-text';
 export * from './lib/medal/medal';
 export * from './lib/menu/menu';
 export * from './lib/metric/metric';

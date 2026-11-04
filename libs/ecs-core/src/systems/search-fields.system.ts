@@ -21,24 +21,19 @@ import { PhoneSystem } from './phone.system';
  *
  * Beside the index, the staff dashboard's in-memory book search (pass C,
  * `staff-dashboard.ts` `searchResults`): a term is searched from
- * {@link SearchFieldsSystem.TERM_MIN} characters on, and a term with at
- * least {@link SearchFieldsSystem.DIGIT_QUERY_MIN} digits also finds a phone
- * by its bare digits, whatever the formatter's spacing (`digitQuery`,
- * `digitsMatch`). The text match itself (Bulgarian collation) and the
- * highlight runs stay the page's — locale collation and display wording.
+ * {@link SearchFieldsSystem.TERM_MIN} characters on. A typed number finds a
+ * phone through `PhoneSystem.searchDigitsOf` and `readingMatches`, whatever
+ * the formatter's spacing. The text match itself (Bulgarian collation) and
+ * the highlight runs stay the page's — locale collation and display wording.
  */
 
 /** Phone and e-mail prefixes start at the third character — keeps the array sane. */
 const MIN_CONTACT_PREFIX = 3;
 /** A search term shorter than this asks nothing. */
 const TERM_MIN = 2;
-/** A term with at least this many digits also reads as a phone number's bare digits. */
-const DIGIT_QUERY_MIN = 4;
 
 const WHITESPACE = /\s+/;
 const NON_DIGITS = /\D/g;
-/** A query that reads as a phone number: a `+` or digit, then digits and dialling punctuation. */
-const PHONE_SHAPE = /^[+\d][\d\s().-]*$/;
 const INTERNATIONAL_PREFIX = /^00/;
 
 /**
@@ -107,7 +102,7 @@ export const SearchFieldsSystem = {
    */
   normalizeQuery(raw: string): string {
     const trimmed = raw.trim();
-    if (PHONE_SHAPE.test(trimmed)) {
+    if (PhoneSystem.isNumberShaped(trimmed)) {
       return trimmed.replace(NON_DIGITS, '').replace(INTERNATIONAL_PREFIX, '');
     }
     return trimmed.toLowerCase();
@@ -116,9 +111,6 @@ export const SearchFieldsSystem = {
   /** A search term shorter than this asks nothing (the book search's threshold). */
   TERM_MIN,
 
-  /** A term with at least this many digits also finds a phone by its bare digits. */
-  DIGIT_QUERY_MIN,
-
   /**
    * Is the term long enough to search — at least {@link TERM_MIN}
    * characters? Measured on the caller's own operand (the trimmed text, or
@@ -126,21 +118,5 @@ export const SearchFieldsSystem = {
    */
   termSearchable(term: string): boolean {
     return term.length >= TERM_MIN;
-  },
-
-  /**
-   * The term's digits alone — the bare run a phone is matched by, so
-   * «887778899» finds «+359 88 777 8899» — or `null` when the term holds
-   * fewer than {@link DIGIT_QUERY_MIN} digits: a person searching by phone
-   * types the number off a screen or a card, and three digits are not one.
-   */
-  digitQuery(raw: string): string | null {
-    const digits = raw.replace(NON_DIGITS, '');
-    return digits.length >= DIGIT_QUERY_MIN ? digits : null;
-  },
-
-  /** Does the field's own digits, separators dropped, hold the run? */
-  digitsMatch(field: string, digits: string): boolean {
-    return field.replace(NON_DIGITS, '').includes(digits);
   },
 } as const;

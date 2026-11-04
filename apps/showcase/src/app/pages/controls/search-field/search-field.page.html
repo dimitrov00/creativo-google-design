@@ -1,0 +1,52 @@
+<sc-page scTitle="Search field">
+  <ng-container scLede>
+    The one search field (<code>ui-search-field</code>): a glyph, a field, a
+    clear. It can hold removable chips before the text — the filters the owner
+    keeps beside what was typed. Pressing a chip, or Backspace in an empty
+    field, takes it off.
+  </ng-container>
+
+  <sc-demo scTitle="Plain">
+    <ng-container scAbout>
+      No chips: the field as the visit sheet's lists use it.
+    </ng-container>
+    <ui-search-field
+      uiPlaceholder="Търси…"
+      uiClearLabel="Изчисти търсенето"
+      [uiValue]="plain()"
+      (uiInput)="plain.set($event)"
+    />
+  </sc-demo>
+
+  <sc-demo scTitle="With chips">
+    <ng-container scAbout>
+      Chips sit inside the frame before the text; the frame wears the field's
+      fill, hairline and focus glow. Press a chip to remove it.
+    </ng-container>
+    <ui-search-field
+      uiPlaceholder="Търси…"
+      uiTestId="showcase-chips"
+      uiClearLabel="Изчисти търсенето"
+      [uiValue]="withChips()"
+      [uiTokens]="chips()"
+      (uiInput)="withChips.set($event)"
+      (uiTokenRemove)="remove(chips, $event)"
+    />
+  </sc-demo>
+
+  <sc-demo scTitle="Chips that wrap">
+    <ng-container scAbout>
+      Chips and text wrap together; the clear stays at the trailing edge.
+    </ng-container>
+    <ui-stack uiSpacing="comfortable" class="search-field__narrow">
+      <ui-search-field
+        uiPlaceholder="Търси…"
+        uiClearLabel="Изчисти търсенето"
+        [uiValue]="many()"
+        [uiTokens]="lots()"
+        (uiInput)="many.set($event)"
+        (uiTokenRemove)="remove(lots, $event)"
+      />
+    </ui-stack>
+  </sc-demo>
+</sc-page>

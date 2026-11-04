@@ -1107,6 +1107,8 @@
       "searchScope": "Търси в предстоящи и минали посещения.",
       "searchLoading": "Чете графика…",
       "searchEmpty": "Няма съвпадения.",
+      "searchTruncated": "Показани са най-близките 3 000 посещения от двете страни.",
+      "searchStale": "Резултатите може да не са актуални.",
       "allDay": "Цял ден",
       "allDayMore": "още {{count}}",
       "allDayBlock": "Блокирай целия ден",
@@ -1176,6 +1178,29 @@
         "pending": "Заявен"
       },
       "daySummaryTips": "{{amount}} бакшиши"
+    },
+    "search": {
+      "recents": "Скорошни",
+      "clearRecents": "Изчисти",
+      "suggestions": "Предложения",
+      "today": "Днес",
+      "tomorrow": "Утре",
+      "thisWeek": "Тази седмица",
+      "earlier": "По-рано",
+      "withNote": "С бележка",
+      "barberGroup": "Бръснар",
+      "serviceGroup": "Услуга",
+      "clearFilters": "Махни филтрите",
+      "chipRemove": "Махни филтъра {{label}}",
+      "phoneRow": "Телефон {{number}}",
+      "moreThanShown": "Показани са първите {{count}} резултата. Стесни търсенето.",
+      "status": {
+        "pending": "Заявени",
+        "confirmed": "Потвърдени",
+        "completed": "Приключени",
+        "noShow": "Не са дошли",
+        "cancelled": "Отказани"
+      }
     },
     "block": {
       "title": "Блок",

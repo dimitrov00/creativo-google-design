@@ -1,0 +1,15 @@
+@layer sys-components {
+  /* The typed run, washed. The padding and the equal negative margin make the
+     wash a hair wider than the letters without moving them, so a marked word
+     sits exactly where the unmarked one would. `box-decoration-break: clone`
+     keeps the corner and the padding on both ends of a run that wraps. */
+  .ui-marked-text__hit {
+    background: var(--sys-color-mark);
+    color: inherit;
+    border-radius: 3px;
+    padding-inline: 1px;
+    margin-inline: -1px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+}

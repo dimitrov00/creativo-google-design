@@ -1,0 +1,7 @@
+:host {
+  display: block;
+}
+
+.search-field__narrow {
+  max-inline-size: 22rem;
+}

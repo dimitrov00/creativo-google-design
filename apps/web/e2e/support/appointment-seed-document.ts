@@ -118,6 +118,7 @@ function chairVisitBody(
   startsAt: string,
   fate: VisitFate,
   service: ChairService,
+  barberId: string,
 ): AppointmentBody {
   const startUtcMs = sure(
     ZonedTimeSystem.parseIsoIn(startsAt, SHOP_TIME_ZONE),
@@ -146,7 +147,7 @@ function chairVisitBody(
       seatId: SeatId.of(`${id}-seat`),
       serviceId: ServiceId.of(service.serviceId),
       variantId: null,
-      barberId: BarberId.of(DEV_CHAIR.barberId),
+      barberId: BarberId.of(barberId),
       barberPreference: BarberPreference.Specific,
       startMinutes: minute,
       tipCents: null,
@@ -205,13 +206,15 @@ function chairVisitBody(
 /**
  * A confirmed visit `ownerUserId` booked for themselves in the dev
  * catalogue's chair, starting at `startsAt` — see {@link chairVisitBody}.
- * The fixed booking instant is in 2026, so pick a start after it.
+ * The fixed booking instant is in 2026, so pick a start after it. The chair
+ * is Ivan's unless `barberId` names another of the catalogue's barbers.
  */
 export function upcomingAppointmentBody(
   id: string,
   ownerUserId: string,
   ownerCustomerId: CustomerId,
   startsAt: string,
+  barberId: string = DEV_CHAIR.barberId,
 ): AppointmentBody {
   return chairVisitBody(
     id,
@@ -220,6 +223,7 @@ export function upcomingAppointmentBody(
     startsAt,
     'upcoming',
     DEV_CHAIR,
+    barberId,
   );
 }
 
@@ -244,5 +248,6 @@ export function workedAppointmentBody(
     startsAt,
     'worked',
     service,
+    DEV_CHAIR.barberId,
   );
 }

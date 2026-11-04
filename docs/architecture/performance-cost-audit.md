@@ -278,7 +278,7 @@ found missing by tracing. 120 `fieldOverrides`. No offset pagination. Seven TTL
 policies. No trigger loops. The 14 audit handlers read nothing.
 
 **F-12 🟡 Staff search reads 600 full appointments.** _Confirmed._
-`staff-day.store.ts:131` sets `SEARCH_WINDOW_PER_SIDE = 300`, read with `getDocs`.
+`staff-day.store.ts:131` sets `SEARCH_WINDOW_PER_SIDE = 300`, read with `getDocs`. _(2026-11-03: replaced by a date-range window refreshed on open — `decisions/2026-11-03-staff-search.md`.)_
 The local cache does not help a `getDocs`. At three mounts per staff member per
 day this one path costs 18,000 reads a day, more than a third of the free
 allowance (estimated). It is the biggest avoidable read in normal use.

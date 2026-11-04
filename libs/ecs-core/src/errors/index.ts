@@ -16,6 +16,7 @@ export * from './pipeline.error';
 export * from './privacy.error';
 export * from './repository.error';
 export * from './scheduling.error';
+export * from './search-query.error';
 export * from './staff-edit.error';
 export * from './streak-publish.error';
 export * from './time.error';

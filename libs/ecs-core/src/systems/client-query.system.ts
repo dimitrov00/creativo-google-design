@@ -1,10 +1,15 @@
 import {
   ClientQueryShape,
+  MatchMode,
+  PhoneReadingKind,
   Seat,
   SeatSubject,
   type AccountOccupant,
+  type TextSegment,
 } from '@core/components';
 import { UtcEpochMs, type UserId } from '@core/primitives';
+import { PhoneSystem } from './phone.system';
+import { TextMatchSystem } from './text-match.system';
 
 /**
  * One omnibox entry, read apart (`visit-editor/client-query.ts:17-50`): the
@@ -41,12 +46,6 @@ export type RankedClientIndex = {
   readonly index: number;
   /** The typed number or mail IS this person's — a duplicate in waiting. */
   readonly exact: boolean;
-};
-
-/** A run of text, marked when it is what was typed. */
-export type TextSegment = {
-  readonly text: string;
-  readonly hit: boolean;
 };
 
 /**
@@ -100,8 +99,6 @@ const LEADING_ZEROS = /^0+/;
 const LETTER = /\p{L}/u;
 const WHITESPACE_RUN = /\s+/;
 const LABEL_WORD_SPLIT = /[\s·]+/;
-const WORD_OR_SPACE = /\S+|\s+/g;
-const ONLY_SPACE = /^\s+$/;
 /** The locale names are matched in — the shop's. */
 const NAME_LOCALE = 'bg';
 
@@ -127,13 +124,8 @@ function phoneInternationalDigits(
   parsed: ParsedClientQuery,
   callingCode: string,
 ): readonly string[] {
-  const digits = parsed.phoneDigits;
-  if (digits.length === 0) return [];
-  if (parsed.phoneInternational || digits.startsWith(callingCode)) {
-    return [digits];
-  }
-  if (digits.startsWith('0')) return [callingCode + digits.slice(1)];
-  return [callingCode + digits, digits];
+  return PhoneSystem.searchDigitsOf(parsed.phoneTyped, callingCode)
+    .phoneReadingCandidates;
 }
 
 function phoneScore(
@@ -377,15 +369,16 @@ export const ClientQuerySystem = {
     parsed: ParsedClientQuery,
     callingCode: string,
   ): readonly string[] {
-    const digits = parsed.phoneDigits;
-    if (digits.length < MIN_PHONE_DIGITS) return [];
+    const reading = PhoneSystem.searchDigitsOf(parsed.phoneTyped, callingCode);
+    const candidates = reading.phoneReadingCandidates;
     const variants: string[] = [];
     const add = (variant: string): void => {
       if (!variants.includes(variant)) variants.push(variant);
     };
-    const international =
-      parsed.phoneInternational || digits.startsWith(callingCode);
-    if (international) {
+    if (reading.phoneReadingKind === PhoneReadingKind.International) {
+      // The international digits, and — for the shop's own code — the
+      // national «0…» form the index holds too.
+      const digits = candidates[0] as string;
       add(digits);
       if (
         digits.startsWith(callingCode) &&
@@ -393,13 +386,11 @@ export const ClientQuerySystem = {
       ) {
         add('0' + digits.slice(callingCode.length));
       }
-    } else if (digits.startsWith('0')) {
-      add(digits);
-      if (digits.length > 1) add(callingCode + digits.slice(1));
-    } else {
-      add(digits);
-      add('0' + digits);
-      add(callingCode + digits);
+    } else if (reading.phoneReadingKind === PhoneReadingKind.Bare) {
+      const run = candidates[1] as string;
+      add(run);
+      add('0' + run);
+      add(candidates[0] as string);
     }
     const out: string[] = [];
     for (let i = 0; i < variants.length; i++) {
@@ -436,8 +427,6 @@ export const ClientQuerySystem = {
     }
     return longest === null ? [] : [longest];
   },
-
-  phoneInternationalDigits,
 
   /**
    * The pool's hits, filtered by the LEADING part and ordered best first —
@@ -494,30 +483,12 @@ export const ClientQuerySystem = {
     parsed: ParsedClientQuery,
   ): readonly TextSegment[] {
     if (parsed.nameTokens.length === 0) return plain(label);
-    const out: TextSegment[] = [];
-    const pieces = label.match(WORD_OR_SPACE) ?? [];
-    for (let p = 0; p < pieces.length; p++) {
-      const piece = pieces[p] as string;
-      const lower = piece.toLocaleLowerCase(NAME_LOCALE);
-      // The LONGEST typed beginning wins; the first of equal ones keeps it.
-      let token: string | null = null;
-      for (let t = 0; t < parsed.nameTokens.length; t++) {
-        const candidate = parsed.nameTokens[t] as string;
-        if (!lower.startsWith(candidate)) continue;
-        if (token === null || candidate.length > token.length) {
-          token = candidate;
-        }
-      }
-      if (token === null || ONLY_SPACE.test(piece)) {
-        out.push({ text: piece, hit: false });
-        continue;
-      }
-      out.push({ text: piece.slice(0, token.length), hit: true });
-      if (piece.length > token.length) {
-        out.push({ text: piece.slice(token.length), hit: false });
-      }
-    }
-    return out;
+    // The add-client page's rule: a typed run marks the beginning of a word.
+    return TextMatchSystem.segmentsAny(
+      label,
+      parsed.nameTokens,
+      MatchMode.WordStart,
+    );
   },
 
   /** A printed number with the typed run of its digits marked, spacing kept. */
@@ -527,45 +498,32 @@ export const ClientQuerySystem = {
     callingCode: string,
   ): readonly TextSegment[] {
     if (parsed.phoneDigits.length === 0) return plain(formatted);
-    const positions: number[] = [];
     let digits = '';
     for (let index = 0; index < formatted.length; index += 1) {
       const char = formatted.charAt(index);
-      if (char >= '0' && char <= '9') {
-        positions.push(index);
-        digits += char;
-      }
+      if (char >= '0' && char <= '9') digits += char;
     }
-    let from = -1;
-    let length = 0;
+    // Which run of digits is the typed one: the dialled candidate the number
+    // starts with, else the typed digits found inside it. Marking it through
+    // the formatter's spacing is `TextMatchSystem`'s.
+    let run = '';
     const candidates = phoneInternationalDigits(parsed, callingCode);
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i] as string;
-      if (digits.startsWith(candidate)) {
-        from = 0;
-        length = candidate.length;
+      if (candidate.length > 0 && digits.startsWith(candidate)) {
+        run = candidate;
         break;
       }
     }
-    if (from < 0) {
+    if (run.length === 0) {
       const dialled = parsed.phoneDigits.replace(LEADING_ZEROS, '');
-      const at =
-        dialled.length >= MIN_PHONE_DIGITS ? digits.indexOf(dialled) : -1;
-      if (at >= 0) {
-        from = at;
-        length = dialled.length;
+      if (dialled.length >= MIN_PHONE_DIGITS && digits.includes(dialled)) {
+        run = dialled;
       }
     }
-    const start = positions[from];
-    const end = positions[from + length - 1];
-    if (from < 0 || start === undefined || end === undefined) {
-      return plain(formatted);
-    }
-    return [
-      ...plain(formatted.slice(0, start)),
-      { text: formatted.slice(start, end + 1), hit: true },
-      ...plain(formatted.slice(end + 1)),
-    ];
+    return run.length === 0
+      ? plain(formatted)
+      : TextMatchSystem.phoneSegments(formatted, run);
   },
 
   /** A mail with the typed fragment marked. */
@@ -574,12 +532,6 @@ export const ClientQuerySystem = {
     parsed: ParsedClientQuery,
   ): readonly TextSegment[] {
     if (parsed.email.length === 0) return plain(email);
-    const at = email.toLowerCase().indexOf(parsed.email);
-    if (at < 0) return plain(email);
-    return [
-      ...plain(email.slice(0, at)),
-      { text: email.slice(at, at + parsed.email.length), hit: true },
-      ...plain(email.slice(at + parsed.email.length)),
-    ];
+    return TextMatchSystem.segments(email, parsed.email);
   },
 } as const;

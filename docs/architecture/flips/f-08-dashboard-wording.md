@@ -6,40 +6,40 @@ The owner ruled that domain rules and wording leave `staff-dashboard.ts` before 
 
 ## The rows
 
-| Row   | What                               | Now in                                                                                       |
-| ----- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
-| SD-15 | The row's view model               | `P` `dayRowVm`; `DayRowVm` in `V`                                                            |
-| SD-16 | Whose name the row prints          | `P` `dayRowVm`, `clientLabel`                                                                |
-| SD-17 | The row's people                   | `P` `dayRowVm`, `people`                                                                     |
-| SD-18 | The row's legs                     | `P` `dayRowVm`, `legs`                                                                       |
-| SD-19 | «1/2» and «+1»                     | `P` `dayRowVm` `partyLabel`; `agendaCardVm` `guestsMark`                                     |
-| SD-20 | The chair's price and tip          | `P` `seatsPrice`, `seatsTip`                                                                 |
-| SD-21 | The tag                            | `P` `catalogTag`, reusing `shared/catalog-tag.words.ts`                                      |
-| SD-22 | What settled the chair             | `P` `resolutionOf`, `stampLabel`                                                             |
-| SD-23 | The bill's discounts and vouchers  | `P` `discountsOf`, `vouchersOf`; `DiscountProvenance.sliceOf`                                |
-| SD-24 | A verb's word and red              | `P` `verbKeyOf`, `editorVerb`                                                                |
-| SD-25 | «45 мин», «1 ч», «6 ч 30 мин»      | `shared/span.words.ts` `spanWords`                                                           |
-| SD-26 | The relative time                  | `P` `whenWords`                                                                              |
-| SD-27 | A state's glyph and word           | `V` `STATUS_ICONS`; `P` `stateLabel`, `stateIcon`                                            |
-| SD-28 | The row's accessible name          | `P` `exceptionWord`, `rowStateNote`, `rowName`                                               |
-| SD-29 | The card's lines, marks and foot   | `P` `factLines`, `rowMarks`, `footShown`, `endWords`, `agendaCardVm`; `V` `AgendaCardVm`     |
-| SD-30 | A grid block                       | `P` `gridVisitEvent`, `gridBlockEvent`, `blockName`                                          |
-| SD-31 | A grid column's head               | `C` `chairColumnHead`, `dateColumnHead`, `abbreviateWeekday`                                 |
-| SD-32 | The all-day chips                  | `P` `offChairEntry`, `offDateEntry`, `allDayMoreEntry`                                       |
-| SD-33 | The pill, region and zone labels   | `C` `periodLabelOf`, `zoneLabelOf`, `StaffChromeWords.gridRegion`                            |
-| SD-34 | The week strip's cells             | `C` `weekCalendarOf`                                                                         |
-| SD-35 | The search's match and highlight   | `S` `searchHits`, `matches`, `splitOnTerm`, `splitOnDigits`                                  |
-| SD-36 | A visit's searchable fields        | `S` `searchableFields`                                                                       |
-| SD-37 | The day's line                     | `P` `daySummaryWords`, `dayTipsWords`                                                        |
-| SD-38 | A refusal's sentence               | `staff-day-error.words.ts` `refusalSentence`                                                 |
-| SD-39 | «Скорошни» and the book            | `P` `recentClientOption`, `bookClientOption`                                                 |
-| SD-40 | A shop's street line               | `C` `streetOf`, `shopOptionsOf`                                                              |
-| SD-41 | The chair's service options        | `C` `serviceOptionsOf`                                                                       |
-| SD-42 | The sheets' word fields            | `P` `visitEditorWords`, `peerRowOf`; `StaffDayWords.newVisitTitle`                           |
-| SD-43 | The frame's neighbours             | `P` `occupantNeighbours`, `occupyingRows`                                                    |
-| SD-44 | The toolbar and alert option lists | `C` `viewChoicesOf`, `viewSegmentsOf`, `scopeChoicesOf`, `discardActionsOf`, `zoneActionsOf` |
-| SD-45 | Gap and group labels               | `P` `gapRowVm`, `wallClockLabel`; `GapRowVm.spanLabel`                                       |
-| SD-46 | The chairs resting today           | `P` `restingChairs`                                                                          |
+| Row   | What                               | Now in                                                                                                                                                                    |
+| ----- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SD-15 | The row's view model               | `P` `dayRowVm`; `DayRowVm` in `V`                                                                                                                                         |
+| SD-16 | Whose name the row prints          | `P` `dayRowVm`, `clientLabel`                                                                                                                                             |
+| SD-17 | The row's people                   | `P` `dayRowVm`, `people`                                                                                                                                                  |
+| SD-18 | The row's legs                     | `P` `dayRowVm`, `legs`                                                                                                                                                    |
+| SD-19 | «1/2» and «+1»                     | `P` `dayRowVm` `partyLabel`; `agendaCardVm` `guestsMark`                                                                                                                  |
+| SD-20 | The chair's price and tip          | `P` `seatsPrice`, `seatsTip`                                                                                                                                              |
+| SD-21 | The tag                            | `P` `catalogTag`, reusing `shared/catalog-tag.words.ts`                                                                                                                   |
+| SD-22 | What settled the chair             | `P` `resolutionOf`, `stampLabel`                                                                                                                                          |
+| SD-23 | The bill's discounts and vouchers  | `P` `discountsOf`, `vouchersOf`; `DiscountProvenance.sliceOf`                                                                                                             |
+| SD-24 | A verb's word and red              | `P` `verbKeyOf`, `editorVerb`                                                                                                                                             |
+| SD-25 | «45 мин», «1 ч», «6 ч 30 мин»      | `shared/span.words.ts` `spanWords`                                                                                                                                        |
+| SD-26 | The relative time                  | `P` `whenWords`                                                                                                                                                           |
+| SD-27 | A state's glyph and word           | `V` `STATUS_ICONS`; `P` `stateLabel`, `stateIcon`                                                                                                                         |
+| SD-28 | The row's accessible name          | `P` `exceptionWord`, `rowStateNote`, `rowName`                                                                                                                            |
+| SD-29 | The card's lines, marks and foot   | `P` `factLines`, `rowMarks`, `footShown`, `endWords`, `agendaCardVm`; `V` `AgendaCardVm`                                                                                  |
+| SD-30 | A grid block                       | `P` `gridVisitEvent`, `gridBlockEvent`, `blockName`                                                                                                                       |
+| SD-31 | A grid column's head               | `C` `chairColumnHead`, `dateColumnHead`, `abbreviateWeekday`                                                                                                              |
+| SD-32 | The all-day chips                  | `P` `offChairEntry`, `offDateEntry`, `allDayMoreEntry`                                                                                                                    |
+| SD-33 | The pill, region and zone labels   | `C` `periodLabelOf`, `zoneLabelOf`, `StaffChromeWords.gridRegion`                                                                                                         |
+| SD-34 | The week strip's cells             | `C` `weekCalendarOf`                                                                                                                                                      |
+| SD-35 | The search's match and highlight   | `S` `searchHits`, `matches` (`splitOnTerm`/`splitOnDigits` replaced 2026-11-03 by `TextMatchSystem.segments`/`phoneSegments`, see `decisions/2026-11-03-staff-search.md`) |
+| SD-36 | A visit's searchable fields        | `S` `searchableFields`                                                                                                                                                    |
+| SD-37 | The day's line                     | `P` `daySummaryWords`, `dayTipsWords`                                                                                                                                     |
+| SD-38 | A refusal's sentence               | `staff-day-error.words.ts` `refusalSentence`                                                                                                                              |
+| SD-39 | «Скорошни» and the book            | `P` `recentClientOption`, `bookClientOption`                                                                                                                              |
+| SD-40 | A shop's street line               | `C` `streetOf`, `shopOptionsOf`                                                                                                                                           |
+| SD-41 | The chair's service options        | `C` `serviceOptionsOf`                                                                                                                                                    |
+| SD-42 | The sheets' word fields            | `P` `visitEditorWords`, `peerRowOf`; `StaffDayWords.newVisitTitle`                                                                                                        |
+| SD-43 | The frame's neighbours             | `P` `occupantNeighbours`, `occupyingRows`                                                                                                                                 |
+| SD-44 | The toolbar and alert option lists | `C` `viewChoicesOf`, `viewSegmentsOf`, `scopeChoicesOf`, `discardActionsOf`, `zoneActionsOf`                                                                              |
+| SD-45 | Gap and group labels               | `P` `gapRowVm`, `wallClockLabel`; `GapRowVm.spanLabel`                                                                                                                    |
+| SD-46 | The chairs resting today           | `P` `restingChairs`                                                                                                                                                       |
 
 No decision turned up that the earlier stage missed, so no system was added for one.
 

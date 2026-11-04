@@ -15,7 +15,9 @@ import {
   CountryIso2,
   DialSource,
   E164,
+  PhoneReadingKind,
   type PhoneNumber,
+  type PhoneReading,
 } from '@core/components';
 import { Result } from '@core/primitives';
 import { PhoneError, PhoneInvalidReason } from '@core/errors';
@@ -81,6 +83,13 @@ function reasonOf(diagnosis: string | undefined): PhoneInvalidReason {
 }
 
 const NON_DIGITS = /\D/g;
+const ONLY_DIGITS = /^\d*$/;
+
+/** A text that reads as a number: a `+` or digit, then digits and dialling punctuation. */
+const NUMBER_SHAPE = /^[+\d][\d\s().-]*$/;
+
+/** Fewer typed digits than this are no number on their way to one. */
+const MIN_READING_DIGITS = 3;
 
 /**
  * The number the client card dials — {@link PhoneSystem.dialable}'s answer:
@@ -197,6 +206,110 @@ export const PhoneSystem = {
    */
   callingCodeOr(country: CountryIso2, fallback: string): string {
     return PhoneSystem.countryCallingCode(country) ?? fallback;
+  },
+
+  /**
+   * A typed number, read the way people type it — the one rule every search
+   * shares. Every non-digit is dropped, then:
+   *
+   * - a leading `+` or `00` settles the country: the digits after it are the
+   *   international number (`+359 88 3` and `00359 88 3` alike). No country
+   *   code starts with `0`, so `+0088…` and `000…` read as nothing;
+   * - digits that begin with the shop's `callingCode` are international as
+   *   typed (`359 88 333`);
+   * - a single leading `0` is the trunk prefix: the shop's code takes its
+   *   place (`088 333` → `35988333`);
+   * - any other run is `BARE`, `[code + run, run]`: it may be a number typed
+   *   without its prefix, or the middle of one.
+   *
+   * Under three typed digits there is no reading (`0`, `00`, `08`). Never
+   * throws; text with letters mixed in reads by its digits, so a caller that
+   * means "the whole text is a number" gates on that first.
+   */
+  searchDigitsOf(typed: string, callingCode: string): PhoneReading {
+    const digits = typed.replace(NON_DIGITS, '');
+    if (digits.length < MIN_READING_DIGITS) {
+      return {
+        phoneReadingKind: PhoneReadingKind.None,
+        phoneReadingCandidates: [],
+      };
+    }
+    const plus = typed.trimStart().startsWith('+');
+    const doubleZero = !plus && digits.startsWith('00');
+    if (plus || doubleZero) {
+      const international = doubleZero ? digits.slice(2) : digits;
+      return international.length === 0 || international.startsWith('0')
+        ? {
+            phoneReadingKind: PhoneReadingKind.None,
+            phoneReadingCandidates: [],
+          }
+        : {
+            phoneReadingKind: PhoneReadingKind.International,
+            phoneReadingCandidates: [international],
+          };
+    }
+    if (callingCode.length > 0 && digits.startsWith(callingCode)) {
+      return {
+        phoneReadingKind: PhoneReadingKind.International,
+        phoneReadingCandidates: [digits],
+      };
+    }
+    if (digits.startsWith('0')) {
+      return {
+        phoneReadingKind: PhoneReadingKind.International,
+        phoneReadingCandidates: [callingCode + digits.slice(1)],
+      };
+    }
+    return {
+      phoneReadingKind: PhoneReadingKind.Bare,
+      phoneReadingCandidates: [callingCode + digits, digits],
+    };
+  },
+
+  /**
+   * Does a stored number answer the reading? `stored` is a number in any
+   * print (`+359 88 777 8899` or its bare digits). `INTERNATIONAL` must
+   * begin with its one candidate; `BARE` must begin with the code-led
+   * candidate or hold the bare run anywhere (the plain digit search);
+   * `NONE` matches nothing.
+   */
+  readingMatches(reading: PhoneReading, stored: string): boolean {
+    return PhoneSystem.readingRun(reading, stored) !== null;
+  },
+
+  /**
+   * The run of digits a stored number answers the reading by — the one a
+   * screen marks — or `null` when it does not answer: an `INTERNATIONAL`
+   * reading's one candidate, a `BARE` reading's typed run. (A number that
+   * begins with the code-led candidate holds the typed run too, so the typed
+   * digits are what gets marked, never a code nobody typed.)
+   */
+  readingRun(reading: PhoneReading, stored: string): string | null {
+    if (reading.phoneReadingKind === PhoneReadingKind.None) return null;
+    // The index holds digits already: skip the copy a print would need.
+    const digits = ONLY_DIGITS.test(stored)
+      ? stored
+      : stored.replace(NON_DIGITS, '');
+    const candidates = reading.phoneReadingCandidates;
+    const run = (
+      reading.phoneReadingKind === PhoneReadingKind.International
+        ? candidates[0]
+        : candidates[1]
+    ) as string;
+    const found =
+      reading.phoneReadingKind === PhoneReadingKind.International
+        ? digits.startsWith(run)
+        : digits.includes(run);
+    return found ? run : null;
+  },
+
+  /**
+   * Does the whole text read as a number — a `+` or digit first, then
+   * digits and dialling punctuation only? A search that takes the text for a
+   * number (rather than words) asks this before {@link searchDigitsOf}.
+   */
+  isNumberShaped(typed: string): boolean {
+    return NUMBER_SHAPE.test(typed.trim());
   },
 
   /** Presentation only, e.g. `'088 555 0100'` — falls back to the E.164 itself. */

@@ -213,19 +213,6 @@
   font-weight: 600;
 }
 
-/* WHAT MATCHED IS WHAT IS PRIMARY (2026-09-22, the add-client page's
-   search): a marked title or line recedes to the secondary ink around its
-   runs and the typed runs hold the foreground — Spotlight's grammar. Ink
-   only, never weight: the mono face has no honest semibold, and the title
-   is 600 already. */
-.staff-event-head__title[data-marked] {
-  color: var(--sys-color-secondary-label);
-}
-
-.staff-event-head__hit {
-  color: var(--sys-color-foreground);
-}
-
 /* COMPACT — a block scanned at a glance: one line each with an ellipsis,
    and the clock only where the column can spare it (the frame's threshold
    was 160px on the block; inside the block's padding that is 144px here).

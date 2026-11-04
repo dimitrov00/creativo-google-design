@@ -278,6 +278,7 @@ import {
   UiCouponCard,
   UiListGroup,
   UiListRow,
+  UiMarkedText,
   UiMenuTrigger,
   UiSheetActionBar,
   UiSheetHeadline,
@@ -1314,6 +1315,7 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     UiMaterialDirective,
     UiListGroup,
     UiListRow,
+    UiMarkedText,
     UiMenuTrigger,
     UiPhoneField,
     UiRadiusDirective,
@@ -3978,13 +3980,13 @@ export class StaffVisitEditor {
     // The number in front of the phone field as E.164 by the shop's own
     // dial code — the field validates for real. Too few digits are not a
     // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
-    const [international] = ClientQuerySystem.phoneInternationalDigits(
-      parsed,
+    const [international] = PhoneSystem.searchDigitsOf(
+      parsed.phoneTyped,
       PhoneSystem.callingCodeOr(
         this.deployment.defaultCountry,
         ClientQuerySystem.DEFAULT_CALLING_CODE,
       ),
-    );
+    ).phoneReadingCandidates;
     this.newClient.set({
       name: parsed.name,
       phone:

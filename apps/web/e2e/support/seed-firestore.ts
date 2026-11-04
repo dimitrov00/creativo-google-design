@@ -242,12 +242,42 @@ export async function seedUpcomingAppointment(
   id: string,
   ownerUserId: string,
   startsAt: string,
+  barberId?: string,
 ): Promise<void> {
   const customerId = await seedCustomerRecord(ownerUserId);
   await getFirestore(adminApp())
     .collection(Collections.Appointments)
     .doc(id)
-    .set(upcomingAppointmentBody(id, ownerUserId, customerId, startsAt));
+    .set(
+      upcomingAppointmentBody(id, ownerUserId, customerId, startsAt, barberId),
+    );
+}
+
+/**
+ * Gives a seeded visit the contact the desk typed for it — the name and the
+ * number a search reads (`contactName`, `contactPhone`; the seeded body
+ * carries none), and the e-mail and note when given. Root fields, as every
+ * write targets them (Law 5).
+ */
+export async function setVisitContact(
+  id: string,
+  contact: {
+    readonly name: string;
+    readonly phone: string;
+    readonly email?: string;
+    readonly note?: string;
+  },
+): Promise<void> {
+  const phone = sure(PhoneSystem.parse(contact.phone, null), contact.phone);
+  await getFirestore(adminApp())
+    .collection(Collections.Appointments)
+    .doc(id)
+    .update({
+      contactName: contact.name,
+      contactPhone: phone.e164,
+      ...(contact.email === undefined ? {} : { contactEmail: contact.email }),
+      ...(contact.note === undefined ? {} : { contactNote: contact.note }),
+    });
 }
 
 /**

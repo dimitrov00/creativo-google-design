@@ -1,10 +1,9 @@
-import { ClientQueryShape } from '@core/components';
+import { ClientQueryShape, type TextSegment } from '@core/components';
 import type { DraftPersonKey } from '@core/primitives';
 import {
   ClientQuerySystem,
   type ParsedClientQuery,
   PhoneSystem,
-  type TextSegment,
 } from '@core/systems';
 import type {
   StaffEventLine,
@@ -121,10 +120,10 @@ export function searchGlyphOf(shape: ClientQueryShape): UiIconName {
  * formatter, fed the international form.
  */
 function phoneAsTyped(parsed: ParsedClientQuery, callingCode: string): string {
-  const [international] = ClientQuerySystem.phoneInternationalDigits(
-    parsed,
+  const [international] = PhoneSystem.searchDigitsOf(
+    parsed.phoneTyped,
     callingCode,
-  );
+  ).phoneReadingCandidates;
   if (international === undefined) return parsed.phoneTyped;
   return PhoneSystem.formatDraft(`+${international}`, null).formatted;
 }

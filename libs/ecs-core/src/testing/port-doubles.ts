@@ -371,16 +371,28 @@ export function memoryAppointmentReadPorts(
         nextBeforeUtcMs: page.cursor,
       });
     },
-    searchAppointmentWindow: async (nowUtcMs, limitPerSide) => {
-      const past = appointments
+    searchAppointmentWindow: async (
+      fromUtcMs,
+      toUtcMs,
+      nowUtcMs,
+      capPerSide,
+    ) => {
+      const inRange = appointments.filter(
+        (entry) => entry.utcEpochMs >= fromUtcMs && entry.utcEpochMs <= toUtcMs,
+      );
+      const pastAll = inRange
         .filter((entry) => entry.utcEpochMs < nowUtcMs)
-        .sort((a, b) => earliestFirst(b, a))
-        .slice(0, limitPerSide);
-      const upcoming = appointments
+        .sort((a, b) => earliestFirst(b, a));
+      const upcomingAll = inRange
         .filter((entry) => entry.utcEpochMs >= nowUtcMs)
-        .sort(earliestFirst)
-        .slice(0, limitPerSide);
-      return Result.ok([...past, ...upcoming].sort(earliestFirst));
+        .sort(earliestFirst);
+      return Result.ok({
+        appointments: [
+          ...pastAll.slice(0, capPerSide),
+          ...upcomingAll.slice(0, capPerSide),
+        ].sort(earliestFirst),
+        capped: pastAll.length > capPerSide || upcomingAll.length > capPerSide,
+      });
     },
   };
 }

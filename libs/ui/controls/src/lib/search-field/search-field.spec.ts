@@ -1,7 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { UiSearchField } from './search-field';
+import { UiSearchField, type UiSearchFieldToken } from './search-field';
 
 @Component({
   imports: [UiSearchField],
@@ -14,6 +14,8 @@ import { UiSearchField } from './search-field';
       [uiBusy]="busy()"
       uiBusyTestId="probe-busy"
       uiClearLabel="Изчисти търсенето"
+      [uiTokens]="tokens()"
+      (uiTokenRemove)="removed.push($event)"
       (uiInput)="value.set($event)"
       (uiFocusChange)="focused.set($event)"
       (uiSubmit)="submitted = submitted + 1"
@@ -26,6 +28,8 @@ class Host {
   readonly value = signal('');
   readonly busy = signal(false);
   readonly focused = signal(false);
+  readonly tokens = signal<readonly UiSearchFieldToken[]>([]);
+  readonly removed: string[] = [];
   submitted = 0;
   navigated = 0;
 }
@@ -100,5 +104,90 @@ describe('UiSearchField', () => {
     host.busy.set(true);
     fixture.detectChanges();
     expect(el('[data-testid="probe-busy"]')?.tagName).toBe('UI-PROGRESS-VIEW');
+  });
+
+  describe('tokens', () => {
+    const NIKOLAY: UiSearchFieldToken = {
+      id: 'barber-nikolay',
+      label: 'Николай',
+      removeLabel: 'Махни филтъра Николай',
+    };
+    const FADE: UiSearchFieldToken = {
+      id: 'service-fade',
+      label: 'Фейд',
+      removeLabel: 'Махни филтъра Фейд',
+    };
+    const chips = () =>
+      Array.from(
+        fixture.nativeElement.querySelectorAll('.ui-search-field__token'),
+      ) as HTMLButtonElement[];
+
+    it('has none by default: no chips, no token hook on the host', () => {
+      expect(chips()).toEqual([]);
+      expect(el('ui-search-field')?.hasAttribute('data-has-tokens')).toBe(
+        false,
+      );
+    });
+
+    it('draws a removable chip per token before the input, named by what pressing it does', () => {
+      fixture.componentInstance.tokens.set([NIKOLAY, FADE]);
+      fixture.detectChanges();
+      expect(chips().map((chip) => chip.textContent?.trim())).toEqual([
+        'Николай',
+        'Фейд',
+      ]);
+      expect(chips()[0]?.getAttribute('aria-label')).toBe(
+        'Махни филтъра Николай',
+      );
+      expect(chips()[0]?.getAttribute('aria-pressed')).toBeNull();
+      expect(el('ui-search-field')?.hasAttribute('data-has-tokens')).toBe(true);
+      const input = el('[data-testid="probe"]') as HTMLInputElement;
+      const lastChip = chips()[1] as HTMLElement;
+      expect(
+        lastChip.compareDocumentPosition(input) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('removes a token when its chip is pressed, and keeps the focus in the field', () => {
+      fixture.componentInstance.tokens.set([NIKOLAY, FADE]);
+      fixture.detectChanges();
+      chips()[1]?.click();
+      expect(fixture.componentInstance.removed).toEqual(['service-fade']);
+      expect(document.activeElement).toBe(el('[data-testid="probe"]'));
+    });
+
+    it('takes the last chip off on Backspace in an empty field, and says so', () => {
+      fixture.componentInstance.tokens.set([NIKOLAY, FADE]);
+      fixture.detectChanges();
+      const input = el('[data-testid="probe"]') as HTMLInputElement;
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
+      );
+      fixture.detectChanges();
+      expect(fixture.componentInstance.removed).toEqual(['service-fade']);
+      expect(el('[data-testid="probe-announce"]')?.textContent?.trim()).toBe(
+        'Махни филтъра Фейд',
+      );
+    });
+
+    it('leaves the chips alone on Backspace while there is text to delete', () => {
+      fixture.componentInstance.tokens.set([NIKOLAY]);
+      fixture.componentInstance.value.set('иван');
+      fixture.detectChanges();
+      const input = el('[data-testid="probe"]') as HTMLInputElement;
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
+      );
+      expect(fixture.componentInstance.removed).toEqual([]);
+    });
+
+    it('does nothing on Backspace with no tokens', () => {
+      const input = el('[data-testid="probe"]') as HTMLInputElement;
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
+      );
+      expect(fixture.componentInstance.removed).toEqual([]);
+    });
   });
 });

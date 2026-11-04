@@ -713,6 +713,10 @@ describe('StaffDashboard', () => {
    * when a case pools its own; `null` is the one Георги visit.
    */
   let searchPool: readonly Appointment[] | null = null;
+  /** Whether the search window stopped at its cap (the sheet's truncated footnote). */
+  let searchCapped = false;
+  /** The next window read fails (the sheet's out-of-date footnote). */
+  let searchWindowFails = false;
 
   /**
    * The whole fixture, with the CLOCK as the one dial worth turning.
@@ -795,14 +799,19 @@ describe('StaffDashboard', () => {
             pageClientHistory: async () =>
               PortResult.ok({ appointments: [], nextBeforeUtcMs: null }),
             searchAppointmentWindow: async () =>
-              PortResult.ok(
-                searchPool ?? [
-                  appointment('appointment-1', '2026-08-05T10:00:00', {
-                    name: 'Георги Петров',
-                    phone: '+359 88 123 4567',
+              searchWindowFails
+                ? PortResult.err(
+                    RepositoryError.readFailed('appointments', null),
+                  )
+                : PortResult.ok({
+                    appointments: searchPool ?? [
+                      appointment('appointment-1', '2026-08-05T10:00:00', {
+                        name: 'Георги Петров',
+                        phone: '+359 88 123 4567',
+                      }),
+                    ],
+                    capped: searchCapped,
                   }),
-                ],
-              ),
           } satisfies AppointmentReadPorts,
         },
         {
@@ -4097,7 +4106,15 @@ describe('StaffDashboard', () => {
     expect(trigger.querySelector('ui-avatar')).not.toBeNull();
   });
 
-  it('searches name, phone digits and service across past and upcoming', async () => {
+  /** The search sheet's typing pause (80 ms) has passed and the window is scanned. */
+  const afterTypingPause = async (): Promise<void> => {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const openSearchSheet = async (): Promise<HTMLInputElement> => {
     (
       host().querySelector(
         '[data-testid="staff-search-open"]',
@@ -4106,42 +4123,54 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-
-    const input = host().querySelector(
+    return host().querySelector(
       '[data-testid="staff-search-input"]',
     ) as HTMLInputElement;
-    input.value = 'георги';
+  };
+
+  const typeInSearch = async (
+    input: HTMLInputElement,
+    text: string,
+  ): Promise<void> => {
+    input.value = text;
     input.dispatchEvent(new Event('input'));
     fixture.detectChanges();
+    await afterTypingPause();
+  };
 
-    const hits = host().querySelectorAll('[data-testid="staff-search-hit"]');
-    expect(hits.length).toBe(1);
+  it('searches the window by name and shows the visit as an event card, the typed run marked', async () => {
+    const input = await openSearchSheet();
+    await typeInSearch(input, 'георги');
+
+    const cards = host().querySelectorAll(
+      'lib-staff-search-sheet lib-visit-row',
+    );
+    expect(cards.length).toBe(1);
     // The matching run is MARKED, and the original casing survives it.
-    const mark = hits[0]?.querySelector('.staff-search__mark');
-    expect(mark?.textContent).toBe('Георги');
+    expect(cards[0]?.querySelector('mark')?.textContent).toBe('Георги');
   });
 
   it("finds a phone by bare digits, across the formatter's spaces", async () => {
-    (
-      host().querySelector(
-        '[data-testid="staff-search-open"]',
-      ) as HTMLButtonElement
-    ).click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const input = host().querySelector(
-      '[data-testid="staff-search-input"]',
-    ) as HTMLInputElement;
+    const input = await openSearchSheet();
     // Nobody types a number with the formatter's spaces in it.
-    input.value = '359881234567';
-    input.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
+    await typeInSearch(input, '359881234567');
 
     expect(
-      host().querySelectorAll('[data-testid="staff-search-hit"]').length,
+      host().querySelectorAll('lib-staff-search-sheet lib-visit-row').length,
     ).toBe(1);
+    expect(
+      host().querySelector('[data-testid="staff-search-phone-row"]'),
+    ).not.toBeNull();
+  });
+
+  it('shows the recent searches and the filters on offer before anything is typed', async () => {
+    await openSearchSheet();
+    expect(
+      host().querySelector('[data-testid="staff-search-suggestions"]'),
+    ).not.toBeNull();
+    expect(
+      host().querySelectorAll('[data-testid="staff-search-suggestion"]').length,
+    ).toBeGreaterThan(0);
   });
 
   it('advertises no write it cannot actually perform', () => {
@@ -5433,6 +5462,49 @@ describe('StaffDashboard', () => {
     }
   });
 
+  describe('the search sheet’s footnotes', () => {
+    afterEach(() => {
+      searchCapped = false;
+      searchWindowFails = false;
+    });
+
+    const openSheet = async (): Promise<void> => {
+      (
+        host().querySelector(
+          '[data-testid="staff-search-open"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('says nothing while the window is whole and fresh', async () => {
+      await openSheet();
+      expect(
+        host().querySelector('[data-testid="staff-search-footnote"]'),
+      ).toBeNull();
+    });
+
+    it('says it shows the nearest visits when the window stopped at its cap', async () => {
+      searchCapped = true;
+      await openSheet();
+      expect(
+        host().querySelector('[data-testid="staff-search-footnote"]')
+          ?.textContent,
+      ).toContain('staff.day.searchTruncated');
+    });
+
+    it('says the results may be out of date when the window could not be read', async () => {
+      searchWindowFails = true;
+      await openSheet();
+      expect(
+        host().querySelector('[data-testid="staff-search-footnote"]')
+          ?.textContent,
+      ).toContain('staff.day.searchStale');
+    });
+  });
+
   it("gives the day search the sheets' one search grammar: the head folds, the DS field is pinned, ↓ reaches the hits", async () => {
     (
       host().querySelector(
@@ -5463,6 +5535,7 @@ describe('StaffDashboard', () => {
     input.dispatchEvent(new Event('input'));
     input.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
+    await afterTypingPause();
     // A query standing keeps it folded, keyboard or not.
     expect(head()?.hasAttribute('data-folded')).toBe(true);
 
@@ -5470,9 +5543,11 @@ describe('StaffDashboard', () => {
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
     );
     fixture.detectChanges();
-    expect(document.activeElement?.getAttribute('data-testid')).toBe(
-      'staff-search-hit',
-    );
+    // ↓ lands on the first card, a control inside the results list.
+    expect(
+      document.activeElement?.closest('lib-staff-search-sheet lib-visit-list'),
+    ).not.toBeNull();
+    expect(document.activeElement?.tagName).toBe('BUTTON');
   });
 
   it('hands the omnibox the book — everyone in the loaded days, as their last booking wrote them', async () => {
@@ -8968,63 +9043,6 @@ describe('StaffDashboard', () => {
         expect(
           host().querySelector('ul[aria-labelledby="agenda-time-600"]'),
         ).not.toBeNull();
-      });
-
-      it("judges, orders and words a pooled hit on its own shop's clock (DEP-6)", async () => {
-        // Sofia 09:00 is London 07:00. A London cut at 08:30 on ITS clock
-        // has not begun there: not past, and the soonest future hit — ahead
-        // of Sofia's 10:00, printed 08:30 (was: past by the Sofia reading of
-        // its end, ordered after Sofia's by instant, printed 10:30).
-        const sofia = ivanVisit(
-          'appointment-sofia',
-          '2026-08-05T10:00:00',
-          30,
-          'Мира Софийска',
-        );
-        const london = inLondon(
-          ivanVisit(
-            'appointment-london',
-            '2026-08-05T08:30:00',
-            30,
-            'Мира Лондонска',
-          ),
-        );
-        catalogShops = of(PortResult.ok([SHOP_LOCATION, LONDON_LOCATION]));
-        searchPool = [sofia, london];
-        TestBed.resetTestingModule();
-        await build('2026-08-05T09:00:00.000+03:00');
-        await page().store.openSearch();
-        page().store.setTerm('мира');
-        const hits = page().searchResults();
-        expect(hits.map((hit) => hit.id)).toEqual([
-          'appointment-london',
-          'appointment-sofia',
-        ]);
-        expect(hits.map((hit) => hit.past)).toEqual([false, false]);
-        expect(hits[0]?.whenLabel).toContain('08:30');
-        expect(hits[1]?.whenLabel).toContain('10:00');
-      });
-
-      it('calls no hit past and words none before any zone is known (DEP-6, pre-zone pin)', async () => {
-        catalogShops = new ReplaySubject<
-          PortResult<readonly ShopLocation[], RepositoryError>
-        >(1);
-        defaultShop = new Promise(() => undefined);
-        // Ended at 08:30 — past, once a zone says so; nothing is, before.
-        searchPool = [
-          ivanVisit('appointment-gone', '2026-08-05T08:00:00', 30, 'Мира'),
-        ];
-        TestBed.resetTestingModule();
-        await build('2026-08-05T09:00:00.000+03:00');
-        await page().store.openSearch();
-        page().store.setTerm('мира');
-        expect(page().searchResults()).toEqual([
-          expect.objectContaining({
-            id: 'appointment-gone',
-            past: false,
-            whenLabel: '',
-          }),
-        ]);
       });
 
       describe('«Скорошни» (DEP-7)', () => {
