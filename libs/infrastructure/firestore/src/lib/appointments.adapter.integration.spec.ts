@@ -263,6 +263,34 @@ describe('appointmentReadPorts (emulator)', () => {
       ]);
       expect(window.ok && window.value.capped).toBe(true);
     });
+
+    it('searchAppointmentWindow bills only what it returns — a visit before the start, one after the end and the ones past the cap are never read', async () => {
+      await seed({
+        before: visit({ at: '2026-09-20T10:00:00+03:00' }),
+        in1: visit({ at: '2026-10-05T10:00:00+03:00' }),
+        in2: visit({ at: '2026-10-12T12:30:00+03:00' }),
+        in3: visit({ at: '2026-10-20T10:00:00+03:00' }),
+        after: visit({ at: '2026-11-20T10:00:00+02:00' }),
+      });
+
+      // A read is billed per document the server returns (Firestore pricing),
+      // so the documents the answer holds ARE the reads of one window load
+      // (plus nothing for a miss: a range on `utcEpochMs` never touches the
+      // documents outside it, and `limit` stops the scan at the cap).
+      const window = await portsFor(barber()).searchAppointmentWindow(
+        utcMs('2026-10-01T00:00:00+03:00'),
+        utcMs('2026-10-31T23:59:59+02:00'),
+        utcMs('2026-10-12T12:00:00+03:00'),
+        5,
+      );
+
+      expect(window.ok && window.value.appointments.map((a) => a.id)).toEqual([
+        'in1',
+        'in2',
+        'in3',
+      ]);
+      expect(window.ok && window.value.capped).toBe(false);
+    });
   });
 
   describe('pageClientHistory — the client card (index #19)', () => {

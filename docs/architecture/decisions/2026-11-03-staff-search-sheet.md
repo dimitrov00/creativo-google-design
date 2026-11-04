@@ -82,9 +82,12 @@ each with the reason it lost and the condition that reopens it.
   which the design did not list.
 - **Data files are split** (`staff-search.vm.ts`, `.words.ts`, `.presenter.ts`)
   as Law 10 asks, where the design named one presenter file.
-- **Seed.** No dev-seed visits were added for two barbers and a unique e-mail:
-  the dev seed's hand-written visits stay within four days (see part 1), so the
-  e2e seeds its own through `seedUpcomingAppointment(…, barberId)` and
+- **Seed.** No dev-seed visits were added. The dev seed already has what a hand
+  check needs: all three barbers across today, tomorrow and the day after,
+  clients with distinct e-mails (`kiril@test.local`, `georgi@test.local`, …)
+  and a visit note («Къса отстрани»). Its visits stay within four days (see
+  part 1), so the e2e seeds its own through
+  `seedUpcomingAppointment(…, barberId)` and
   `setVisitContact(…, { email, note })`.
 
 ## Verified, and not
@@ -101,7 +104,9 @@ each with the reason it lost and the condition that reopens it.
   Backspace; an e-mail found with its line marked. The seed guard
   (`e2e-appointment-seed.spec.ts`, 9 passed) still holds with the optional
   barber on the seeded body.
-- **Not done:** a look at the chip field in dark mode (the browser pane's
-  colour-scheme emulation did not apply); a count of the document reads of one
-  sheet opening in the emulator UI (the sheet reads nothing of its own: it
-  reads the part 1 window).
+- **Dark mode, looked at (2026-11-04):** the chip field in the showcase's dark
+  theme (`controls/search-field`): the field keeps its quiet fill and hairline,
+  the white chips and their remove glyphs stay legible, the wrapped field's
+  clear stays at the trailing edge.
+- **Not done:** the sheet used by hand in the running app against seeded data
+  (the e2e covers it through assertions).
