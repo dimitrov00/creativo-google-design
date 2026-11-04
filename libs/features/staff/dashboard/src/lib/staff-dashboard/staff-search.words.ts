@@ -24,9 +24,6 @@ export interface StaffSearchWords {
   /** The note token's value and its key row: «има» · «С бележка». */
   readonly hasNote: string;
   readonly withNote: string;
-  /** The dropdown: «Филтри», «Филтрирай по», «Предложения». */
-  readonly dropdownLabel: string;
-  readonly filterBy: string;
   readonly matches: string;
   readonly pickDay: string;
   readonly pickRange: string;
@@ -87,8 +84,6 @@ export function staffSearchWordsOf(
     noteKey: translate('staff.search.key.note'),
     hasNote: translate('staff.search.hasNote'),
     withNote: translate('staff.search.withNote'),
-    dropdownLabel: translate('staff.search.dropdownLabel'),
-    filterBy: translate('staff.search.filterBy'),
     matches: translate('staff.search.matches'),
     pickDay: translate('staff.search.pickDay'),
     pickRange: translate('staff.search.pickRange'),

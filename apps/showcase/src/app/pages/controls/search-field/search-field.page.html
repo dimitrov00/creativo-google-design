@@ -40,12 +40,13 @@
 
   <sc-demo scTitle="A token being built">
     <ng-container scAbout>
-      A token with no value yet is its key alone — the half-built filter of a
-      key picked from the dropdown, waiting for its value.
+      A token with no value yet is already both segments: its key, and the value
+      segment holding <code>uiTokenPlaceholder</code> — the half-built filter of
+      a key just picked, waiting for its value.
     </ng-container>
     <ui-search-field
-      uiPlaceholder="Търси…"
       uiClearLabel="Изчисти търсенето"
+      uiTokenPlaceholder="избери…"
       [uiValue]="''"
       [uiTokens]="building()"
       (uiTokenRemove)="remove(building, $event)"
@@ -67,6 +68,30 @@
         (uiTokenRemove)="remove(lots, $event)"
       />
     </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="With chips above and a ✕ beside">
+    <ng-container scAbout>
+      The floor's anatomy (iOS 26 Mail and Photos): content projected with
+      <code>uiSearchAccessory</code> rides above the field, and
+      <code>uiDismissLabel</code> puts the ✕ that ends the search beside it.
+      With <code>uiPinned</code> and <code>uiPinEdge="bottom"</code> the band
+      sticks to a sheet's floor, over the keyboard — the schedule search.
+    </ng-container>
+    <ui-search-field
+      uiPlaceholder="Търси…"
+      uiClearLabel="Изчисти търсенето"
+      uiDismissLabel="Затвори"
+      [uiValue]="docked()"
+      (uiInput)="docked.set($event)"
+      (uiDismiss)="docked.set('')"
+    >
+      <ui-scroll-row uiSearchAccessory uiSpacing="compact" uiSnap="none">
+        <button type="button" uiChip [uiToggle]="false">Кога</button>
+        <button type="button" uiChip [uiToggle]="false">Бръснар</button>
+        <button type="button" uiChip [uiToggle]="false">Услуга</button>
+      </ui-scroll-row>
+    </ui-search-field>
   </sc-demo>
 
   <sc-demo scTitle="With a dropdown">

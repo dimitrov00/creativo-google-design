@@ -1,6 +1,6 @@
-# Schedule search — keyed filter tokens and the filter dropdown
+# Schedule search — keyed filter tokens, searched at the thumb
 
-Status: built 2026-11-04 · Supersedes part of
+Status: built 2026-11-04, moved to the bottom bar 2026-11-05 · Supersedes part of
 [`staff-search-spotlight.md`](./staff-search-spotlight.md): decision B1
 (“suggestions and chips only”), the removable-chip anatomy and the
 «Предложения» section of the idle sheet.
@@ -38,8 +38,7 @@ the filter as stored:
   ink. Both fills are translucent and stack over the field's own fill.
 - Up to two values are named, then «+N». Barbers lead with their faces
   (`ui-avatar`, overlapping).
-- The whole token is one button. Pressing it opens the dropdown on that
-  kind's values: each has a check mark, a press toggles it, and a destructive
+- The whole token is one button. Pressing it opens that kind's values: each has a check mark, a press toggles it, and a destructive
   «Махни филтъра» row sits last. **There is no ✕ on a token.** Backspace in an
   empty field still removes the last token, and says so.
 - Tokens stand in the order their filters were added (`SearchQuery.withFilter`
@@ -53,52 +52,80 @@ the filter as stored:
 ### The field grows instead of squeezing
 
 Tokens and the text wrap together, and the field grows a line. The text run
-keeps a minimum width (6 em), so it drops to its own line rather than
+keeps a minimum width (4 em since 2026-11-05, so a half-built token fits beside it in a field that shares its row with the ✕), so it drops to its own line rather than
 shrinking to a few letters. With tokens in the field the placeholder shortens
 to «Търси…», which fits that width.
 
-### The dropdown (≙ GitLab filtered search)
+### The search at the thumb (≙ iOS 26 Mail and Photos, 2026-11-05)
 
-While focus is in the field or in the dropdown, a list hangs under the field
-on the elevated surface, opaque. The menu's thick material was tried first
-and dropped: the pinned band already blurs what is behind it, which makes it
-a backdrop root, so a blur nested inside it samples only the band and the
-results read straight through. The list covers the results and leaves the
-field where it was. It has three modes:
+The first build hung a GitLab-style dropdown under a field pinned at the top
+of the sheet. The owner asked to move search to the bottom bar, "like Apple
+Photos and Apple Mail", with the filter options as Photos shows its
+suggestions and the suggestions as Mail lists them. The dropdown is gone from
+this sheet (it stays a `ui-search-field` capability, shown in the showcase).
 
-| Mode      | When                             | Rows                                                                                                                                                               |
-| --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `FIELDS`  | nothing typed, no key chosen     | «Филтрирай по»: Кога, Бръснар, Услуга, Статус, С бележка — only the kinds that still narrow (`SearchFilterSystem.suggestions`)                                     |
-| `VALUES`  | a key chosen, or a token pressed | that kind's values, faces for barbers; typing filters them; ✓ on chosen values; «Махни филтъра» when the kind is held                                              |
-| `MATCHES` | text typed, no key chosen        | the values with a word starting with the text (at most five), each with its key as detail («Нико Димов · Бръснар»), then the keys the text names («бръ» → Бръснар) |
+**The entry.** On a phone (the bottom bar under 600px wide) a field-shaped
+button fills the bar between its leading controls and ＋, as Mail's search
+field sits between the filter and compose: magnifier and «Търсене» in the
+placeholder ink, a capsule. From 600px the toolbar's own search button
+carries it instead, as Mail on an iPad keeps search at the top; each bar's
+own width shows one (container queries, the same 600px the view segments
+switch at). The bar's new `uiFill` slot (`ui-page-action-bar`) is what lets
+a child take the room between.
 
-- Picking a key in `FIELDS` puts a half-built token before the caret: the
-  key, and a value segment that says «избери…» in placeholder ink, so the
-  token already has the shape it will keep. The text beside it shows no
-  placeholder of its own. The list switches to the key's values, and
-  Backspace on the empty text drops the half-built token.
-- Picking a value from a half-built token adds the filter and returns to
-  `FIELDS`. Picking it from a pressed token toggles it and keeps the list open.
+**The sheet.**
+
+```
+ Търсене                         ← large title, stays (Photos' «Search»)
+ Търси в предстоящи и минали…
+ ПРЕДЛОЖЕНИЯ                     ← what the text names (Mail's Suggestions)
+ (НД) Нико Димов        Бръснар
+ Днес …                          ← the results
+ ─────────────────────────────
+ (Кога)(Бръснар)(Услуга)(Ста…    ← the keys as chips (Photos), sliding
+ [🔍 Бръснар │ избери… ____] (✕) ← the field on the floor, Mail's ✕
+```
+
+- The DS field is pinned to the sheet's FLOOR (`uiPinEdge="bottom"`): the
+  body's last child, floored by an auto top margin in a column, as a docked
+  action bar is (`ui-modal-sheet` turns its scroller into a column for it).
+  It lifts over the on-screen keyboard by what the visual viewport lost
+  (`--ui-search-keyboard-inset`). The header is bare: the ✕ beside the field
+  (`uiDismissLabel`) ends the search, and the grabber, Escape and the scrim
+  still dismiss.
+- The large title no longer folds: the field is not under it any more.
+
+**What is suggested where.** Same three modes, laid out differently:
+
+| Mode      | When                           | Chips over the field                                                   | Rows above the results                                                                                                             |
+| --------- | ------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `FIELDS`  | nothing typed, no key open     | Кога, Бръснар, Услуга, Статус, С бележка — the kinds that still narrow | none (the recents, or the results)                                                                                                 |
+| `VALUES`  | a key open, or a token pressed | none                                                                   | that kind's values, faces for barbers; typing filters them; ✓ on chosen values; «Махни филтъра» when held — the results step aside |
+| `MATCHES` | text typed, no key open        | only the keys the text names («бръ» → Бръснар)                         | «Предложения»: the values a word of whose name starts with the text (at most five), each with its key                              |
+
+- Picking a key puts a half-built token before the caret: the key, and a
+  value segment that says «избери…» in placeholder ink, so the token already
+  has the shape it will keep. The text beside it shows no placeholder of its
+  own. Backspace on the empty text drops the half-built token.
+- Picking a value from a half-built token adds the filter and closes the key.
+  Picking it from a pressed token toggles it and keeps the values open.
 - «С бележка» has no values: picking the key adds the filter.
 - Pressing a token while text is typed PARKS the search: the input empties,
   the text typed then narrows the token's values, and the search comes back
-  when the values close (Escape, a press outside, the filter removed). The
-  visits under the list do not jump while a filter is being changed.
-- Typing narrows the list rather than standing beside it (owner, 2026-11-05:
-  "when you type the filters below should disappear"). Only the values and
-  the keys whose name the text starts a word of stay; a text that names
-  nothing leaves no list, and the results are all there is. Picking a matched
-  value or key TAKES the text, because the text was naming it, so what is
-  offered is what would narrow the search without the text. A value is
-  matched where a word of its name starts (the add-client page's rule), so
-  «ни» offers «Нико», not «Потвърдени». To add a filter after typing a
-  search, type the key's name, or clear the text.
-- The list hangs a clear gap (`--sys-space-compact`) under the field, so it
-  reads as its own surface and not as the field's lower half.
-- Escape closes the month first, then the open key, then the list; a press
-  outside or opening a card closes it. ↓ from the field lands on its first
-  row; with the list closed, on the first card. Return with a key open picks
-  its first value.
+  when the values close (a pick, Escape, the filter removed).
+- Typing narrows the suggestions rather than standing beside them (owner,
+  2026-11-05: "when you type the filters below should disappear"). A text
+  that names nothing suggests nothing, and the results are all there is.
+  Picking a matched value or key TAKES the text, because the text was naming
+  it, so what is offered is what would narrow the search without the text. A
+  value is matched where a word of its name starts (the add-client page's
+  rule), so «ни» offers «Нико», not «Потвърдени». To add a filter after
+  typing a search, type the key's name, or clear the text.
+- A press on a chip or a suggestion keeps the keyboard up (the press does
+  not take the focus).
+- Escape closes the month first, then the open key (`uiEscapeClaimed`), then
+  reaches the sheet, which ends the search. ↓ from the field lands on the
+  first suggestion or card. Return with a key open picks its first value.
 
 ### «Кога»: preset, day or range
 
@@ -106,7 +133,7 @@ field where it was. It has three modes:
 Тази седмица (today and the next six days) and Последните 7 дни (the six days
 before today and today). Two more rows sit under the presets:
 
-- «Конкретна дата…» opens the month picker inside the list. One press sets the
+- «Конкретна дата…» opens the month picker over the values. One press sets the
   span to that day.
 - «Период…» opens the same picker. The first press sets one end, the second
   sets the other, and the earlier day becomes the start. The caption under the
@@ -118,16 +145,16 @@ and `presetOf` know them, so a token reads «Вчера» only while it is yeste
 ### The chip fill (design system)
 
 `ui-chip` painted the opaque `--sys-color-surface-secondary`. On a sheet it
-read pasted on, and on the elevated dropdown it nearly vanished (the two
+read pasted on, and on the elevated dropdown of the first build it nearly vanished (the two
 greys are a step apart in dark). It now paints the translucent control fill
 (`--sys-color-fill`), as every field does since 2026-09-17. This changes every
 unselected chip in the app, not only the search's.
 
 ### The idle sheet
 
-The «Предложения» section leaves the sheet body, because the dropdown is now
-where filters come from. The idle body keeps «Скорошни». The field takes focus
-when the sheet opens, so the keys show at once, as Spotlight does.
+The old «Предложения» section of filter chips leaves the idle body: the keys
+ride over the field now. The idle body keeps «Скорошни». The field takes
+focus when the sheet opens.
 
 ## Not done (on purpose)
 
@@ -143,16 +170,22 @@ when the sheet opens, so the keys show at once, as Spotlight does.
   month without a selected day).
 - **The e2e journeys** (`apps/web/e2e/staff-search-sheet.spec.ts`) are
   updated, but not run locally while the dev server was up; CI runs them.
+- **The keyboard lift on a real iPhone.** The band follows
+  `visualViewport` and was checked in a desktop browser only; iOS Safari's
+  panning when an input near the bottom takes focus has not been tried on a
+  device.
 
 ## Where it lives
 
-| Layer      | File                                                                       | Change                                                                                                                                                                                         |
-| ---------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| components | `search-when-preset.data.ts`                                               | `YESTERDAY`, `PAST_WEEK`                                                                                                                                                                       |
-| systems    | `search-filter.system.ts`                                                  | the two presets in `whenOf`, `presetOf`, `suggestions`; `spanOf` (two picked days → a span)                                                                                                    |
-| DS         | `ui-search-field`                                                          | segmented tokens (`key`, `value`, `faces`), `uiTokenActivate`, `uiActiveToken`, the dropdown slot (`uiDropdownOpen`), focus reported for the whole field, `aria-controls` from the input, wrap |
-| feature    | `staff-search.vm.ts`, `staff-search.presenter.ts`, `staff-search.words.ts` | `TokenVm`, `SearchDropdownVm` with its three modes, the calendar state; the body suggestions removed                                                                                           |
-| feature    | `staff-search-sheet.*`                                                     | the open key, the calendar mode, the dropdown template, autofocus                                                                                                                              |
-| i18n       | `bg.json`, `en.json`                                                       | the key words, the dropdown headings, the new presets, the calendar captions                                                                                                                   |
-| DS         | `ui-chip`                                                                  | the rest fill is the translucent `--sys-color-fill`                                                                                                                                            |
-| showcase   | `pages/controls/search-field`                                              | keyed tokens, a token being built, wrapping, a dropdown                                                                                                                                        |
+| Layer      | File                                                                       | Change                                                                                                                                                                                                                           |
+| ---------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| components | `search-when-preset.data.ts`                                               | `YESTERDAY`, `PAST_WEEK`                                                                                                                                                                                                         |
+| systems    | `search-filter.system.ts`                                                  | the two presets in `whenOf`, `presetOf`, `suggestions`; `spanOf` (two picked days → a span)                                                                                                                                      |
+| DS         | `ui-search-field`                                                          | segmented tokens (`key`, `value`, `faces`, `uiTokenPlaceholder`), `uiTokenActivate`, `uiActiveToken`, the dropdown slot, wrap; the floor (`uiPinEdge`, keyboard inset), `uiSearchAccessory`, `uiDismissLabel`, `uiEscapeClaimed` |
+| DS         | `ui-page-action-bar`, `ui-modal-sheet`                                     | the `uiFill` slot; a scroller that floors a bottom-pinned search field                                                                                                                                                           |
+| feature    | `staff-search.vm.ts`, `staff-search.presenter.ts`, `staff-search.words.ts` | `TokenVm`, `SearchSuggestionsVm` (its three modes, the key chips, the rows, the calendar state)                                                                                                                                  |
+| feature    | `staff-search-sheet.*`                                                     | the open key, the calendar mode, the field on the floor, the chips and suggestion rows, autofocus                                                                                                                                |
+| feature    | `staff-dashboard.html`, `staff-dashboard.chrome.css`                       | the field-shaped entry in the bottom bar on a phone; the toolbar button from 600px                                                                                                                                               |
+| i18n       | `bg.json`, `en.json`                                                       | the key words, the suggestion headings, the new presets, the calendar captions, «избери…»                                                                                                                                        |
+| DS         | `ui-chip`                                                                  | the rest fill is the translucent `--sys-color-fill`                                                                                                                                                                              |
+| showcase   | `pages/controls/search-field`                                              | keyed tokens, a token being built, wrapping, chips above and a ✕ beside, a dropdown                                                                                                                                              |

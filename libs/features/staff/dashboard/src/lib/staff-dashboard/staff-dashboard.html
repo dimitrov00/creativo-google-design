@@ -155,7 +155,8 @@
             <!-- Search sits between the two pickers and the person — the
                trailing cluster runs view · find · who, which is the order
                HIG puts a toolbar in: what you are looking at, how you find
-               something in it, then whose it is. -->
+               something in it, then whose it is. From 600px of bar only: a
+               phone finds it at the thumb, in the bottom bar (Mail's). -->
             <button
               type="button"
               uiButton
@@ -163,7 +164,7 @@
               uiTint="neutral"
               uiControlSize="regular"
               [uiIconOnly]="true"
-              class="staff-cluster__item"
+              class="staff-cluster__item staff-search-open"
               [attr.aria-label]="t('staff.day.searchLabel')"
               data-testid="staff-search-open"
               (click)="store.openSearch()"
@@ -827,7 +828,10 @@
          (the grid does), and `sticky` has nothing to stick to — `pane` pins
          the bar to this positioned column instead, which is the case its own
          docs describe. The list scrolls the page, so it keeps `page`. -->
-    <ui-page-action-bar [uiAnchor]="isGrid() ? 'pane' : 'page'">
+    <ui-page-action-bar
+      class="staff-bar"
+      [uiAnchor]="isGrid() ? 'pane' : 'page'"
+    >
       <!-- WHAT THE CARDS CARRY, in the bar rather than buried in the view
            menu: it is a property of this screen, it is reached often while
            reading, and the bar is where this surface's own controls live.
@@ -893,6 +897,27 @@
         </button>
       </div>
       }
+      <!-- THE SEARCH AT THE THUMB (≙ iOS 26 Mail's bottom bar, 2026-11-05):
+           field-shaped, filling the room between the bar's leading controls
+           and ＋, on a phone; from 600px of bar the toolbar's own search
+           button carries it, as Mail on an iPad keeps its search at the top.
+           It opens the search sheet, whose field sits on the same floor. -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="large"
+        uiFill
+        class="staff-search-entry"
+        data-testid="staff-search-entry"
+        (click)="store.openSearch()"
+      >
+        <ui-icon uiName="action.search" uiScale="medium" aria-hidden="true" />
+        <span class="staff-search-entry__label"
+          >{{ t('staff.day.searchLabel') }}</span
+        >
+      </button>
       <!-- `uiPrimary` on the HOST: the bar docks its primary child trailing
            by that marker, and the prominent button sits inside this menu
            host, not as the bar's own child. Without it the ＋ clustered

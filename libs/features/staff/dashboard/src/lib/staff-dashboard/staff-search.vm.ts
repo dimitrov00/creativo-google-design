@@ -9,8 +9,8 @@ import type { VisitSectionVm } from '@creativo/features/shared/visits';
 
 /*
  * THE SEARCH SHEET'S DISPLAY MODEL (Law 10.3): types only. The sheet is one
- * of three states; the tokens, the recents, the dropdown and the result
- * groups are plain structs. A token, a dropdown row or a recent carries the
+ * of three states; the tokens, the recents, the suggestions and the result
+ * groups are plain structs. A token, a suggestion or a recent carries the
  * DATA its press acts on (`searchFilterField`, `filter`, `query`) so the
  * sheet never parses a label or an id. `staff-search.presenter.ts` fills it.
  */
@@ -27,8 +27,8 @@ export const SearchSheetState = {
 export type SearchSheetState =
   (typeof SearchSheetState)[keyof typeof SearchSheetState];
 
-/** What the dropdown under the field lists — the field `dropdownMode`. */
-export const DropdownMode = {
+/** What the suggestions offer — the field `suggestMode`. */
+export const SuggestMode = {
   /** Nothing typed, no key open: the keys a filter can be made of. */
   Fields: 'FIELDS',
   /** A key open (a token being built, or a token pressed): its values. */
@@ -36,10 +36,10 @@ export const DropdownMode = {
   /** Text typed, no key open: the values and the keys the text names. */
   Matches: 'MATCHES',
 } as const;
-export type DropdownMode = (typeof DropdownMode)[keyof typeof DropdownMode];
+export type SuggestMode = (typeof SuggestMode)[keyof typeof SuggestMode];
 
-/** What pressing a dropdown row does — the field `dropdownAction`. */
-export const DropdownAction = {
+/** What pressing a suggestion does — the field `suggestAction`. */
+export const SuggestAction = {
   /** A key: open its values (a key with no values adds its filter instead). */
   OpenField: 'OPEN_FIELD',
   /** A value: add it, and close the key. */
@@ -53,10 +53,9 @@ export const DropdownAction = {
   /** «Период…»: the month opens for two days. */
   PickRange: 'PICK_RANGE',
 } as const;
-export type DropdownAction =
-  (typeof DropdownAction)[keyof typeof DropdownAction];
+export type SuggestAction = (typeof SuggestAction)[keyof typeof SuggestAction];
 
-/** How the month in the dropdown is being picked — the field `calendarMode`. */
+/** How the month in the suggestions is being picked — the field `calendarMode`. */
 export const CalendarMode = {
   Day: 'DAY',
   Range: 'RANGE',
@@ -84,8 +83,8 @@ export interface TokenVm {
   readonly removeLabel: string;
 }
 
-/** One row of the dropdown; pressing it does `dropdownAction`. */
-export interface DropdownRowVm {
+/** One suggestion — a key chip over the field, or a row above the results; pressing it does `suggestAction`. */
+export interface SuggestionRowVm {
   /** `FIELD:BARBER`, `BARBER:ivan`, `REMOVE:BARBER`, `CALENDAR:DAY` — `data-suggestion`. */
   readonly id: string;
   readonly label: string;
@@ -96,21 +95,21 @@ export interface DropdownRowVm {
   /** A value of a held filter: whether it is chosen; null for any other row. */
   readonly checked: boolean | null;
   readonly destructive: boolean;
-  readonly dropdownAction: DropdownAction;
+  readonly suggestAction: SuggestAction;
   readonly searchFilterField: SearchFilterField;
   /** The single value it adds or toggles; null for a key, a removal, a calendar row. */
   readonly filter: SearchFilter | null;
 }
 
-export interface DropdownSectionVm {
+export interface SuggestionSectionVm {
   readonly id: string;
-  /** «Филтрирай по», «Бръснар»; null for a section that needs none. */
+  /** «Предложения», «Бръснар»; null for a section that needs none. */
   readonly heading: string | null;
-  readonly rows: readonly DropdownRowVm[];
+  readonly rows: readonly SuggestionRowVm[];
 }
 
-/** The month inside the dropdown, while a day or a span is being picked. */
-export interface DropdownCalendarVm {
+/** The month in the suggestions, while a day or a span is being picked. */
+export interface SuggestionCalendarVm {
   readonly calendarMode: CalendarMode;
   /** The day picked so far (a span's first end), or the held one-day filter. */
   readonly selected: LocalDate | null;
@@ -119,11 +118,18 @@ export interface DropdownCalendarVm {
   readonly caption: string;
 }
 
-/** The list under the field. Nothing to show (no section, no month) is a closed dropdown. */
-export interface SearchDropdownVm {
-  readonly dropdownMode: DropdownMode;
-  readonly sections: readonly DropdownSectionVm[];
-  readonly calendar: DropdownCalendarVm | null;
+/**
+ * What the sheet suggests (≙ iOS 26 Photos and Mail): the KEYS a filter can
+ * be made of as chips over the field, and the rows above the results — the
+ * values the typed text names, or an open key's values.
+ */
+export interface SearchSuggestionsVm {
+  readonly suggestMode: SuggestMode;
+  /** The keys over the field: every one that still narrows, or those the typed text names; none while a key is open. */
+  readonly keys: readonly SuggestionRowVm[];
+  /** The rows above the results. */
+  readonly sections: readonly SuggestionSectionVm[];
+  readonly calendar: SuggestionCalendarVm | null;
 }
 
 /** A recent search; pressing it runs it again. */
@@ -143,7 +149,7 @@ export interface SearchSheetVm {
   /** «избери…» — the value segment of a token still being built. */
   readonly tokenPlaceholder: string;
   readonly tokens: readonly TokenVm[];
-  readonly dropdown: SearchDropdownVm;
+  readonly suggestions: SearchSuggestionsVm;
   readonly recents: readonly RecentVm[];
   /** «Телефон +359 88 333…» — only when the text reads as a number. */
   readonly phoneRow: string | null;

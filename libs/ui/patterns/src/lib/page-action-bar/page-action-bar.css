@@ -106,6 +106,14 @@
     flex: 0 0 auto;
   }
 
+  /* The fill (Mail's bottom search field): the room between the leading
+     controls and the primary. Two attribute matches, so it outranks the
+     intrinsic-box rule above. */
+  .ui-page-action-bar > [uifill][uifill] {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
   /* ── Stacked variant — the Setup-Assistant completion anatomy: primary
      on top, quiet link beneath, both centered (project the primary
      first). The horizontal slot contract's trailing-dock margin must not

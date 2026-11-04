@@ -8,6 +8,9 @@ import { UiSearchField, type UiSearchFieldToken } from './search-field';
   template: `
     <ui-search-field
       [uiPinned]="pinned()"
+      [uiPinEdge]="edge()"
+      [uiDismissLabel]="dismissLabel()"
+      [uiEscapeClaimed]="claimed()"
       [uiValue]="value()"
       uiPlaceholder="Търси услуга…"
       uiTestId="probe"
@@ -26,16 +29,26 @@ import { UiSearchField, type UiSearchFieldToken } from './search-field';
       (uiFocusChange)="focused.set($event)"
       (uiSubmit)="submitted = submitted + 1"
       (uiNavigate)="navigated = navigated + 1"
+      (uiDismiss)="dismissed = dismissed + 1"
     >
       <div uiSearchDropdown>
         <button type="button" data-testid="row">Бръснар</button>
       </div>
+      @if (accessory()) {
+        <div uiSearchAccessory data-testid="accessory">
+          <button type="button" data-testid="chip">Кога</button>
+        </div>
+      }
     </ui-search-field>
     <button type="button" data-testid="outside">outside</button>
   `,
 })
 class Host {
   readonly pinned = signal(false);
+  readonly edge = signal<'top' | 'bottom'>('top');
+  readonly dismissLabel = signal('');
+  readonly claimed = signal(false);
+  readonly accessory = signal(false);
   readonly value = signal('');
   readonly busy = signal(false);
   readonly focused = signal(false);
@@ -47,6 +60,7 @@ class Host {
   escaped = 0;
   submitted = 0;
   navigated = 0;
+  dismissed = 0;
 }
 
 describe('UiSearchField', () => {
@@ -70,6 +84,66 @@ describe('UiSearchField', () => {
     expect(input.getAttribute('autocomplete')).toBe('off');
     expect(input.getAttribute('spellcheck')).toBe('false');
     expect(el('[data-testid="probe-glyph"]')?.tagName).toBe('UI-ICON');
+  });
+
+  describe('the floor (Mail and Photos)', () => {
+    it('pins to the bottom edge when asked, and only while pinned', () => {
+      const host = () => el('ui-search-field') as HTMLElement;
+      fixture.componentInstance.edge.set('bottom');
+      fixture.detectChanges();
+      expect(host().hasAttribute('data-pin-edge')).toBe(false);
+      fixture.componentInstance.pinned.set(true);
+      fixture.detectChanges();
+      expect(host().getAttribute('data-pin-edge')).toBe('bottom');
+    });
+
+    it('puts the ✕ beside the field only with a name, and asks the owner to end the search', () => {
+      expect(el('[data-testid="probe-dismiss"]')).toBeNull();
+      fixture.componentInstance.dismissLabel.set('Затвори');
+      fixture.detectChanges();
+      const dismiss = el('[data-testid="probe-dismiss"]') as HTMLButtonElement;
+      expect(dismiss.getAttribute('aria-label')).toBe('Затвори');
+      expect(el('ui-search-field')?.hasAttribute('data-has-dismiss')).toBe(
+        true,
+      );
+      dismiss.click();
+      expect(fixture.componentInstance.dismissed).toBe(1);
+    });
+
+    it('carries the accessory above the field, and keeps the focus on a press in it', () => {
+      fixture.componentInstance.accessory.set(true);
+      fixture.detectChanges();
+      const accessory = el('.ui-search-field__accessory') as HTMLElement;
+      const frame = el('.ui-search-field__frame') as HTMLElement;
+      expect(accessory.querySelector('[data-testid="chip"]')).not.toBeNull();
+      expect(
+        accessory.compareDocumentPosition(frame) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const press = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+      });
+      el('[data-testid="chip"]')?.dispatchEvent(press);
+      expect(press.defaultPrevented).toBe(true);
+    });
+
+    it('keeps Escape for the owner while it claims it, and lets it pass otherwise', () => {
+      const escape = () => {
+        const event = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          cancelable: true,
+        });
+        el('[data-testid="probe"]')?.dispatchEvent(event);
+        return event;
+      };
+      expect(escape().defaultPrevented).toBe(false);
+      expect(fixture.componentInstance.escaped).toBe(0);
+      fixture.componentInstance.claimed.set(true);
+      fixture.detectChanges();
+      expect(escape().defaultPrevented).toBe(true);
+      expect(fixture.componentInstance.escaped).toBe(1);
+    });
   });
 
   it('pins as a band of the regular material only when asked', () => {

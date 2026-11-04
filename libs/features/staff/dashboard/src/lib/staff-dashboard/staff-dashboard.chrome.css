@@ -312,6 +312,39 @@
   }
 }
 
+/* SEARCH: AT THE THUMB ON A PHONE, IN THE TOOLBAR FROM 600px (2026-11-05).
+ * ≙ iOS 26 Mail: on an iPhone the search field fills the bottom bar between
+ * the filter and compose; on an iPad it stays at the top. The same 600px the
+ * view segments switch at, each read off its own bar's width. */
+@container staff-toolbar (width < 37.5rem) {
+  .staff-search-open {
+    display: none;
+  }
+}
+
+.staff-bar {
+  container: staff-bar / inline-size;
+}
+
+@container staff-bar (width >= 37.5rem) {
+  .staff-search-entry {
+    display: none;
+  }
+}
+
+/* Field-shaped, as Mail's is: the glyph and the word lead in the quiet ink
+   a placeholder wears, the capsule fills the room between. */
+.staff-search-entry {
+  justify-content: flex-start;
+  color: var(--sys-color-secondary-label);
+}
+
+.staff-search-entry__label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* The period pill may SHRINK before the cluster does — its own stylesheet
    says how (`staff-day-pill.css`: the label ellipsises, the ring stays
    clear); this sheet is scoped and could not reach inside it anyway. */

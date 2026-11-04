@@ -44,14 +44,14 @@ import { formatWallClock } from '@creativo/ui/wall-clock';
 import { searchGlyphOf } from '../visit-editor/visit-client-row.presenter';
 import {
   CalendarMode,
-  DropdownAction,
-  type DropdownCalendarVm,
-  DropdownMode,
-  type DropdownRowVm,
-  type DropdownSectionVm,
+  SuggestAction,
+  type SuggestionCalendarVm,
+  SuggestMode,
+  type SuggestionRowVm,
+  type SuggestionSectionVm,
   type FaceVm,
   type RecentVm,
-  type SearchDropdownVm,
+  type SearchSuggestionsVm,
   SearchSheetState,
   type SearchSheetVm,
   type TokenVm,
@@ -63,7 +63,7 @@ import type { StaffSearchWords } from './staff-search.words';
  * narrow, which names hold the typed text, how the visits group under their
  * days and what the numbers read as are the systems' (`SearchFilterSystem`,
  * `TextMatchSystem`, `VisitListSystem.dayGroups`, `PhoneSystem`); this words
- * them — the keyed tokens, the dropdown's keys and values, headings, the
+ * them — the keyed tokens, the suggested keys and values, headings, the
  * event cards' matched lines — and marks the runs `TextMatchSystem` found.
  */
 
@@ -91,11 +91,11 @@ export interface SearchSheetInput {
   readonly unnamedClient: string;
   readonly capped: boolean;
   readonly stale: boolean;
-  /** The key whose values the dropdown lists — a token being built or pressed; null for none. */
+  /** The key whose values are suggested — a token being built or pressed; null for none. */
   readonly openField: SearchFilterField | null;
   /** The text as typed: with a key open, what narrows its values. */
-  readonly dropdownText: string;
-  /** The month open in the dropdown for a day or a span; null for none. */
+  readonly typedText: string;
+  /** The month open in the suggestions for a day or a span; null for none. */
   readonly calendarMode: CalendarMode | null;
   /** A span's first picked end; null before it. */
   readonly rangeStart: LocalDate | null;
@@ -194,7 +194,7 @@ const FIELD_ORDER: readonly SearchFilterField[] = [
 const NAMED_VALUES = 2;
 /** The faces a barber token leads with. */
 const TOKEN_FACES = 3;
-/** The matched values the dropdown lists under typed text. */
+/** The matched values suggested under typed text. */
 const MATCHED_VALUES = 5;
 
 function glyphOf(field: SearchFilterField): UiIconName {
@@ -333,9 +333,9 @@ function valueRow(
   shape: {
     readonly checked: boolean | null;
     readonly detail: string | null;
-    readonly dropdownAction: DropdownAction;
+    readonly suggestAction: SuggestAction;
   },
-): DropdownRowVm {
+): SuggestionRowVm {
   return {
     id: filterKey(filter),
     label: labelOf(filter, input),
@@ -347,7 +347,7 @@ function valueRow(
         : null,
     checked: shape.checked,
     destructive: false,
-    dropdownAction: shape.dropdownAction,
+    suggestAction: shape.suggestAction,
     searchFilterField: filter.searchFilterField,
     filter,
   };
@@ -357,7 +357,7 @@ function keyRow(
   field: SearchFilterField,
   query: SearchQuery,
   input: SearchSheetInput,
-): DropdownRowVm {
+): SuggestionRowVm {
   const held = heldOf(query, field);
   const note = field === SearchFilterField.Note;
   return {
@@ -369,7 +369,7 @@ function keyRow(
     checked: null,
     destructive: false,
     // A note has no values: its key IS the filter.
-    dropdownAction: note ? DropdownAction.AddValue : DropdownAction.OpenField,
+    suggestAction: note ? SuggestAction.AddValue : SuggestAction.OpenField,
     searchFilterField: field,
     filter: note ? SearchFilter.note() : null,
   };
@@ -416,7 +416,7 @@ function keyRowsOf(
   offered: SearchSuggestions,
   query: SearchQuery,
   input: SearchSheetInput,
-): readonly DropdownRowVm[] {
+): readonly SuggestionRowVm[] {
   const offers = (field: SearchFilterField): boolean => {
     switch (field) {
       case SearchFilterField.When:
@@ -444,7 +444,7 @@ function keyRowsOf(
 function calendarOf(
   query: SearchQuery,
   input: SearchSheetInput,
-): DropdownCalendarVm | null {
+): SuggestionCalendarVm | null {
   const mode = input.calendarMode;
   if (mode === null || input.openField !== SearchFilterField.When) return null;
   const held = heldOf(query, SearchFilterField.When);
@@ -477,7 +477,7 @@ function calendarOf(
 function calendarRow(
   calendarMode: CalendarMode,
   input: SearchSheetInput,
-): DropdownRowVm {
+): SuggestionRowVm {
   const day = calendarMode === CalendarMode.Day;
   return {
     id: `CALENDAR:${calendarMode}`,
@@ -488,25 +488,30 @@ function calendarRow(
     face: null,
     checked: null,
     destructive: false,
-    dropdownAction: day ? DropdownAction.PickDay : DropdownAction.PickRange,
+    suggestAction: day ? SuggestAction.PickDay : SuggestAction.PickRange,
     searchFilterField: SearchFilterField.When,
     filter: null,
   };
 }
 
 /** The open key's values: ✓ on the held ones, the typed text narrowing them. */
-function valuesDropdown(
+function valueSuggestions(
   field: SearchFilterField,
   offered: SearchSuggestions,
   query: SearchQuery,
   input: SearchSheetInput,
-): SearchDropdownVm {
+): SearchSuggestionsVm {
   const calendar = calendarOf(query, input);
   if (calendar !== null) {
-    return { dropdownMode: DropdownMode.Values, sections: [], calendar };
+    return {
+      suggestMode: SuggestMode.Values,
+      keys: [],
+      sections: [],
+      calendar,
+    };
   }
   const held = heldOf(query, field);
-  const text = input.dropdownText.trim();
+  const text = input.typedText.trim();
   // A span replaces the held one and closes the key; a list kind toggles in place.
   const toggles = held !== null && field !== SearchFilterField.When;
   const rows = valuesOf(field, offered, query, input)
@@ -514,9 +519,9 @@ function valuesDropdown(
       valueRow(filter, input, {
         checked: held === null ? null : isHeldValue(filter, query),
         detail: null,
-        dropdownAction: toggles
-          ? DropdownAction.ToggleValue
-          : DropdownAction.AddValue,
+        suggestAction: toggles
+          ? SuggestAction.ToggleValue
+          : SuggestAction.AddValue,
       }),
     )
     .filter((row) => namesText(row.label, text));
@@ -526,7 +531,7 @@ function valuesDropdown(
       calendarRow(CalendarMode.Range, input),
     );
   }
-  const sections: DropdownSectionVm[] = [
+  const sections: SuggestionSectionVm[] = [
     {
       id: `VALUES:${field}`,
       heading: keyOf(field, input.words),
@@ -546,30 +551,37 @@ function valuesDropdown(
           face: null,
           checked: null,
           destructive: true,
-          dropdownAction: DropdownAction.RemoveFilter,
+          suggestAction: SuggestAction.RemoveFilter,
           searchFilterField: field,
           filter: null,
         },
       ],
     });
   }
-  return { dropdownMode: DropdownMode.Values, sections, calendar: null };
+  return {
+    suggestMode: SuggestMode.Values,
+    keys: [],
+    sections,
+    calendar: null,
+  };
 }
 
 /**
- * The list under the field. With a key open, its values. With nothing typed,
- * the keys. With text typed, the values whose name holds it (each with its
- * key), then the keys it names — the rest leave, as in Mail and GitLab.
+ * What the sheet suggests. With a key open, its values (rows above the
+ * results). With nothing typed, every key as a chip over the field (Photos).
+ * With text typed, the values whose name holds it, each with its key (Mail's
+ * «Suggestions» above the results), and only the keys it names — the rest
+ * leave, so typing narrows the suggestions rather than standing beside them.
  */
-function dropdownOf(
+function suggestionsOf(
   query: SearchQuery,
   offered: SearchSuggestions,
   input: SearchSheetInput,
-): SearchDropdownVm {
+): SearchSuggestionsVm {
   if (input.openField !== null) {
-    return valuesDropdown(input.openField, offered, query, input);
+    return valueSuggestions(input.openField, offered, query, input);
   }
-  const text = input.dropdownText.trim();
+  const text = input.typedText.trim();
   // Under typed text a pick TAKES the text (it named the value or the key),
   // so what is offered is what narrows the search without it.
   const bare =
@@ -584,18 +596,13 @@ function dropdownOf(
   const keys = keyRowsOf(bare, query, input);
   if (text === '') {
     return {
-      dropdownMode: DropdownMode.Fields,
-      sections: [
-        {
-          id: 'FIELDS',
-          heading: input.words.filterBy,
-          rows: keys,
-        },
-      ],
+      suggestMode: SuggestMode.Fields,
+      keys,
+      sections: [],
       calendar: null,
     };
   }
-  const matched: DropdownRowVm[] = [];
+  const matched: SuggestionRowVm[] = [];
   for (const field of FIELD_ORDER) {
     for (const filter of valuesOf(field, bare, SearchQuery.empty(), input)) {
       if (matched.length === MATCHED_VALUES) break;
@@ -603,12 +610,12 @@ function dropdownOf(
       const row = valueRow(filter, input, {
         checked: null,
         detail: keyOf(field, input.words),
-        dropdownAction: DropdownAction.AddValue,
+        suggestAction: SuggestAction.AddValue,
       });
       if (namesText(row.label, text)) matched.push(row);
     }
   }
-  const sections: DropdownSectionVm[] = [];
+  const sections: SuggestionSectionVm[] = [];
   if (matched.length > 0) {
     sections.push({
       id: 'MATCHES',
@@ -616,18 +623,13 @@ function dropdownOf(
       rows: matched,
     });
   }
-  // Only the keys the text names stay («бръ» → Бръснар); the rest leave, so
-  // typing narrows the list rather than standing beside it. Nothing named
-  // is an empty list, which the field draws as closed.
-  const namedKeys = keys.filter((row) => namesText(row.label, text));
-  if (namedKeys.length > 0) {
-    sections.push({
-      id: 'FIELDS',
-      heading: input.words.filterBy,
-      rows: namedKeys,
-    });
-  }
-  return { dropdownMode: DropdownMode.Matches, sections, calendar: null };
+  return {
+    suggestMode: SuggestMode.Matches,
+    // Only the keys the text names stay («бръ» → Бръснар).
+    keys: keys.filter((row) => namesText(row.label, text)),
+    sections,
+    calendar: null,
+  };
 }
 
 /** Does a name hold the typed text at the start of one of its words (the add-client page's rule)? */
@@ -777,7 +779,7 @@ function groupsOf(
   );
 }
 
-/** The sheet, worded: the tokens and recents, the dropdown, and the cards under their days. */
+/** The sheet, worded: the tokens and recents, the suggestions, and the cards under their days. */
 export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
   const query = input.query;
   const read = SearchQuerySystem.read(query.searchText, input.callingCode);
@@ -789,7 +791,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     query.searchFilters,
     input.shopNow,
   );
-  const dropdown = dropdownOf(query, offered, input);
+  const suggestions = suggestionsOf(query, offered, input);
   const glyph = searchGlyphOf(
     ClientQuerySystem.parse(query.searchText).clientQueryShape,
   );
@@ -820,7 +822,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
       placeholder,
       tokenPlaceholder: input.words.tokenPlaceholder,
       tokens,
-      dropdown,
+      suggestions,
       recents: recentsOf(input),
       phoneRow,
       groups: [],
@@ -842,7 +844,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     placeholder,
     tokenPlaceholder: input.words.tokenPlaceholder,
     tokens,
-    dropdown,
+    suggestions,
     recents: [],
     phoneRow,
     groups: groupsOf(visits, read, input),

@@ -303,12 +303,18 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
  * 2026-09-15: "why is this not fixed bottom?"). Scoped by `:has()` to the
  * sheets that carry such a bar, so every other sheet's block flow stays
  * exactly as it was; the sticky chrome keeps its row at the top. */
-.modal-sheet__scroll:has(> * > .ui-sheet-action-bar[data-anchor='scroll']) {
+.modal-sheet__scroll:is(
+  :has(> * > .ui-sheet-action-bar[data-anchor='scroll']),
+  :has(> * > .ui-search-field[data-pin-edge='bottom'])
+) {
   display: flex;
   flex-direction: column;
 }
 
-.modal-sheet__scroll:has(> * > .ui-sheet-action-bar[data-anchor='scroll'])
+.modal-sheet__scroll:is(
+    :has(> * > .ui-sheet-action-bar[data-anchor='scroll']),
+    :has(> * > .ui-search-field[data-pin-edge='bottom'])
+  )
   > .modal-sheet__chrome {
   flex: 0 0 auto;
 }

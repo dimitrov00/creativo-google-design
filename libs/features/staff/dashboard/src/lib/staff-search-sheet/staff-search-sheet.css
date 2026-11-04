@@ -1,11 +1,10 @@
 /* The sheet's body keeps the house padding of its siblings
-   (`.staff-cancel__body` is the dashboard's, unreachable from here). */
+   (`.staff-cancel__body` is the dashboard's, unreachable from here), and
+   fills the scroller's column so the field it ends with lands on the floor.
+   The field's band pads the bottom itself. */
 .staff-search-sheet__body {
+  flex: 1 0 auto;
   padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
-  padding-block-end: var(
-    --ui-sheet-action-bar-clearance,
-    var(--sys-space-spacious)
-  );
 }
 
 /* Chips wrap in a flow: recents are short words. */
@@ -15,26 +14,13 @@
   gap: var(--sys-space-compact);
 }
 
-/* THE DROPDOWN's sections: a quiet heading over its rows, a hairline of
-   space between sections. The rows are the DS list row; the surface is the
-   field's. */
-.staff-search-sheet__dropdown {
-  display: grid;
-  gap: var(--sys-space-tight);
-}
-
+/* THE SUGGESTIONS above the results: a quiet heading over DS list rows. */
 .staff-search-sheet__section {
   display: grid;
 }
 
-.staff-search-sheet__section + .staff-search-sheet__section {
-  padding-block-start: var(--sys-space-tight);
-  border-block-start: 1px solid var(--sys-color-separator);
-}
-
 .staff-search-sheet__heading {
-  padding: var(--sys-space-compact) var(--sys-space-compact)
-    var(--sys-space-tight);
+  padding-block-end: var(--sys-space-tight);
 }
 
 .staff-search-sheet__row {

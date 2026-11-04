@@ -51,6 +51,10 @@ export type UiPageActionBarAnchor = 'page' | 'pane';
  *   (thumb-side) edge at EVERY viewport — SwiftUI bottom-bar trailing
  *   placement; no full-width spread (owner ruling 2026-07-25).
  * - **Everything else → leading**, intrinsic box, projection order.
+ * - **`uiFill` → the room between.** One child marked `uiFill` takes the
+ *   row's free space between the leading controls and the primary — iOS 26
+ *   Mail's bottom bar, whose search field sits between the filter and
+ *   compose. It may shrink to nothing before a control does.
  *
  * Chrome: NONE — no material, no fill, no hairline (the sheet-action-bar's
  * chromeless philosophy, adopted here 2026-07-25). The projected controls

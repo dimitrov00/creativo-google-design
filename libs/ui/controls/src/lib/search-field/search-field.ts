@@ -1,8 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   ViewEncapsulation,
+  afterNextRender,
   booleanAttribute,
   inject,
   input,
@@ -13,6 +15,7 @@ import {
 import { UiIcon } from '@creativo/ui/icons';
 import type { UiIconName } from '@creativo/ui/icons';
 import { UiAvatar } from '../avatar/avatar';
+import { UiButton } from '../button/button';
 import { UiProgressView } from '../progress-view/progress-view';
 import { UiTextField } from '../text-field/text-field';
 
@@ -43,6 +46,9 @@ export interface UiSearchFieldToken {
 }
 
 let nextDropdownId = 0;
+
+/** Which edge of the scroller a pinned field's band sticks to. */
+export type UiSearchFieldPinEdge = 'top' | 'bottom';
 
 /**
  * ≙ SwiftUI `.searchable` — the ONE search field (2026-09-24).
@@ -99,14 +105,29 @@ let nextDropdownId = 0;
  * the focus of the WHOLE field — the text, its tokens and the dropdown — so
  * moving from the text into the list is no blur. Escape emits `uiEscape`.
  *
+ * THE BOTTOM EDGE (2026-11-05, ≙ iOS 26 Mail and Photos). `uiPinEdge="bottom"`
+ * sticks the band to the scroller's FLOOR instead — the body's last child,
+ * floored by an auto top margin in a column, as a docked action bar is —
+ * and lifts it over the on-screen keyboard (the visual viewport's lost
+ * height, `--ui-search-keyboard-inset`). Content projected with
+ * `uiSearchAccessory` rides the band ABOVE the field (Photos' suggestion
+ * chips); `uiDismissLabel` puts the ✕ beside it that ends the search
+ * (`uiDismiss`), Mail's. `uiEscapeClaimed` says the owner has something of
+ * its own open that Escape closes first (a key's values listed beside the
+ * field): Escape then emits `uiEscape` instead of reaching the sheet.
+ *
  * WHAT IT DOES NOT DO. It does not fold the page's large title — that is
  * the page's (`ui-sheet-headline`), told by the focus this reports — and it
  * holds no query of its own: the owner's value is the value.
  */
 @Component({
   selector: 'ui-search-field',
-  imports: [UiAvatar, UiIcon, UiProgressView, UiTextField],
+  imports: [UiAvatar, UiButton, UiIcon, UiProgressView, UiTextField],
   template: `
+    <!-- Above the field (Photos' chips). A press keeps the field's focus. -->
+    <div class="ui-search-field__accessory" (mousedown)="keepFocus($event)">
+      <ng-content select="[uiSearchAccessory]" />
+    </div>
     <span class="ui-search-field__frame">
       <!-- The glyph may say what the typing was taken for (a handset for a
            number, an envelope for a mail) — detection the reader can see,
@@ -214,6 +235,23 @@ let nextDropdownId = 0;
         />
       }
     </span>
+    @if (uiDismissLabel()) {
+      <!-- Ends the search, beside the field (Mail's ✕). -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        class="ui-search-field__dismiss"
+        [attr.aria-label]="uiDismissLabel()"
+        [attr.data-testid]="uiTestId() ? uiTestId() + '-dismiss' : null"
+        (click)="uiDismiss.emit()"
+      >
+        <ui-icon uiName="sheet.close" />
+      </button>
+    }
     <!-- THE DROPDOWN: mounted while open, under the field, over the list. A
          press inside keeps the focus where it was; Escape inside closes it. -->
     @if (uiDropdownOpen()) {
@@ -238,6 +276,8 @@ let nextDropdownId = 0;
   host: {
     class: 'ui-search-field',
     '[attr.data-pinned]': 'uiPinned() ? "" : null',
+    '[attr.data-pin-edge]': 'uiPinned() ? uiPinEdge() : null',
+    '[attr.data-has-dismiss]': 'uiDismissLabel() ? "" : null',
     '[attr.data-has-value]': 'uiValue() ? "" : null',
     '[attr.data-has-tokens]': 'uiTokens().length > 0 ? "" : null',
     '[attr.data-dropdown-open]': 'uiDropdownOpen() ? "" : null',
@@ -264,6 +304,12 @@ export class UiSearchField {
   readonly uiTestId = input<string | null>(null);
   /** The band that sticks under a sheet's chrome while the list scrolls. */
   readonly uiPinned = input(false, { transform: booleanAttribute });
+  /** The edge the pinned band sticks to: under the chrome, or on the floor over the keyboard. */
+  readonly uiPinEdge = input<UiSearchFieldPinEdge>('top');
+  /** The ✕ beside the field that ends the search; without a name there is none. */
+  readonly uiDismissLabel = input('');
+  /** The owner has something open that Escape closes before the sheet does. */
+  readonly uiEscapeClaimed = input(false);
   /** The clear control's name; without one there is no clear control. */
   readonly uiClearLabel = input('');
   /** The filters before the text — none by default. */
@@ -288,8 +334,10 @@ export class UiSearchField {
   readonly uiTokenRemove = output<string>();
   /** A token pressed: the owner opens its values. */
   readonly uiTokenActivate = output<string>();
-  /** Escape while the dropdown is open: the owner closes it. */
+  /** Escape while the dropdown is open, or the owner claims it: the owner closes its thing. */
   readonly uiEscape = output<void>();
+  /** The ✕ beside the field: the owner ends the search. */
+  readonly uiDismiss = output<void>();
 
   /** The live region's text: the last token Backspace removed. */
   protected readonly announcement = signal('');
@@ -299,6 +347,31 @@ export class UiSearchField {
   private readonly field = viewChild('field', { read: ElementRef });
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private focused = false;
+
+  constructor() {
+    // THE KEYBOARD'S HEIGHT, for a band on the floor: what the visual
+    // viewport lost at the bottom of the layout one. Browsers that resize
+    // the layout viewport instead report none, and the band simply rides it.
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      const viewport = window.visualViewport;
+      if (!this.uiPinned() || this.uiPinEdge() !== 'bottom' || !viewport) {
+        return;
+      }
+      const publish = () =>
+        this.host.nativeElement.style.setProperty(
+          '--ui-search-keyboard-inset',
+          `${Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`,
+        );
+      publish();
+      viewport.addEventListener('resize', publish);
+      viewport.addEventListener('scroll', publish);
+      destroyRef.onDestroy(() => {
+        viewport.removeEventListener('resize', publish);
+        viewport.removeEventListener('scroll', publish);
+      });
+    });
+  }
 
   /** Puts the caret in the text — the owner's way back into the field. */
   focus(): void {
@@ -322,16 +395,16 @@ export class UiSearchField {
     this.uiTokenRemove.emit(last.id);
   }
 
-  /** Escape closes the dropdown first; with none open it is the sheet's. */
+  /** Escape closes the dropdown, or what the owner claims, first; with neither it is the sheet's. */
   protected escape(event: KeyboardEvent): void {
-    if (!this.uiDropdownOpen()) return;
+    if (!this.uiDropdownOpen() && !this.uiEscapeClaimed()) return;
     event.preventDefault();
     event.stopPropagation();
     this.uiEscape.emit();
     this.focus();
   }
 
-  /** A press in the dropdown keeps the focus where it is, unless it lands on a text input. */
+  /** A press in the dropdown or the accessory keeps the focus where it is, unless it lands on a text input. */
   protected keepFocus(event: MouseEvent): void {
     if (event.target instanceof HTMLInputElement) return;
     event.preventDefault();

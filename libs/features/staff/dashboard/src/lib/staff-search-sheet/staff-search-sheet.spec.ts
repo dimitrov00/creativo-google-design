@@ -177,17 +177,27 @@ describe('StaffSearchSheet', () => {
   const token = (id: string) =>
     el<HTMLButtonElement>(`[data-testid="staff-search-input-token-${id}"]`);
 
-  it('opens on the caret with the keys under it', async () => {
+  it('opens on the caret, the field on the floor with the ✕ beside it and the keys over it', async () => {
     await mount();
     expect(document.activeElement).toBe(field());
     expect(
-      all('[data-testid="staff-search-suggestion"]').map((row) =>
-        row.getAttribute('data-suggestion'),
-      ),
+      field().closest('ui-search-field')?.getAttribute('data-pin-edge'),
+    ).toBe('bottom');
+    expect(el('[data-testid="staff-search-input-dismiss"]')).not.toBeNull();
+    expect(
+      all(
+        '[data-testid="staff-search-keys"] [data-testid="staff-search-suggestion"]',
+      ).map((row) => row.getAttribute('data-suggestion')),
     ).toEqual(['FIELD:WHEN', 'FIELD:BARBER', 'FIELD:SERVICE', 'FIELD:STATUS']);
   });
 
-  it('builds a key │ value token from the dropdown', async () => {
+  it('ends the search on the ✕ beside the field', async () => {
+    await mount();
+    press('[data-testid="staff-search-input-dismiss"]');
+    expect(store.closeSearch).toHaveBeenCalled();
+  });
+
+  it('builds a key │ value token from the suggestions', async () => {
     await mount();
     press('[data-suggestion="FIELD:BARBER"]');
     expect(token('BARBER')?.hasAttribute('data-building')).toBe(true);
@@ -206,9 +216,10 @@ describe('StaffSearchSheet', () => {
     expect(cards()).toHaveLength(1);
 
     press('[data-testid="staff-search-input-token-BARBER"]');
-    // The text now narrows the values; the cards under the list stay put.
+    // The text now narrows the values, which are the page meanwhile.
     expect(field().value).toBe('');
-    expect(cards()).toHaveLength(1);
+    expect(cards()).toHaveLength(0);
+    expect(el('[data-suggestion="BARBER:b-niko"]')).not.toBeNull();
 
     press('[data-suggestion="BARBER:b-ivan"]');
     field().dispatchEvent(
@@ -316,16 +327,26 @@ describe('StaffSearchSheet', () => {
     expect(all('.ui-search-field__token')).toHaveLength(0);
   });
 
-  it('closes the dropdown on Escape, and opens it again on typing', async () => {
+  it('keeps Escape while a key is open, closing the key, and lets it reach the sheet after', async () => {
     await mount();
-    expect(el('[data-testid="staff-search-input-dropdown"]')).not.toBeNull();
-    field().dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
-    );
-    fixture.detectChanges();
-    expect(el('[data-testid="staff-search-input-dropdown"]')).toBeNull();
-    type('и');
-    expect(el('[data-testid="staff-search-input-dropdown"]')).not.toBeNull();
+    press('[data-suggestion="FIELD:BARBER"]');
+    const escape = () => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      field().dispatchEvent(event);
+      fixture.detectChanges();
+      return event;
+    };
+    escape();
+    expect(token('BARBER')).toBeNull();
+    expect(el('[data-testid="staff-search-keys"]')).not.toBeNull();
+    expect(store.closeSearch).not.toHaveBeenCalled();
+    // Nothing open: Escape is the sheet's, which ends the search.
+    escape();
+    expect(store.closeSearch).toHaveBeenCalled();
   });
 
   it('keeps the search as a recent when a card is opened, jumps to its day and closes', async () => {

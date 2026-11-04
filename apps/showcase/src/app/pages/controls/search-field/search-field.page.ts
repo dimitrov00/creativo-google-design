@@ -1,6 +1,10 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
-import { UiSearchField, type UiSearchFieldToken } from '@creativo/ui/controls';
-import { UiStack } from '@creativo/ui/layout';
+import {
+  UiChip,
+  UiSearchField,
+  type UiSearchFieldToken,
+} from '@creativo/ui/controls';
+import { UiScrollRow, UiStack } from '@creativo/ui/layout';
 import { ScDemo } from '@showcase/shared/demo';
 import { ScPage } from '@showcase/shared/page';
 
@@ -24,7 +28,7 @@ function token(
 @Component({
   selector: 'cr-search-field-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ScDemo, ScPage, UiSearchField, UiStack],
+  imports: [ScDemo, ScPage, UiChip, UiScrollRow, UiSearchField, UiStack],
   templateUrl: './search-field.page.html',
   styleUrl: './search-field.page.css',
 })
@@ -33,6 +37,7 @@ export class SearchFieldPage {
   protected readonly withTokens = signal('иван');
   protected readonly many = signal('');
   protected readonly dropped = signal('');
+  protected readonly docked = signal('');
 
   private readonly all: readonly UiSearchFieldToken[] = [
     token('BARBER', 'Бръснар', 'Николай, Иван', [

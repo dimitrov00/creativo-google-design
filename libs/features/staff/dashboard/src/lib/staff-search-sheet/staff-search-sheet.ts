@@ -47,7 +47,7 @@ import {
   UiMonthPicker,
   UiSearchField,
 } from '@creativo/ui/controls';
-import { UiStack } from '@creativo/ui/layout';
+import { UiScrollRow, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiTextDirective,
@@ -61,8 +61,8 @@ import { guestLabelOf } from '../staff-dashboard/staff-day-guest.words';
 import { searchSheetVm } from '../staff-dashboard/staff-search.presenter';
 import {
   CalendarMode,
-  DropdownAction,
-  type DropdownRowVm,
+  SuggestAction,
+  type SuggestionRowVm,
   type RecentVm,
   SearchSheetState,
 } from '../staff-dashboard/staff-search.vm';
@@ -95,18 +95,17 @@ function deviceStorage(): Storage | null {
 }
 
 /**
- * THE SCHEDULE SEARCH SHEET — a Spotlight-style sheet (docs/designs/
- * staff-search-spotlight.md, its filters keyed in staff-search-tokens.md).
- * The DS field pinned under the bar, with the chosen filters as key │ value
- * tokens inside it and, while it is focused, the filter dropdown under it
- * (≙ GitLab's filtered search): the keys, a key's values, the values the
- * typed text names. Before anything is typed the recent searches; while
- * typing the visits as event cards under their days, the lines the query
- * found marked.
+ * THE SCHEDULE SEARCH SHEET (docs/designs/staff-search-spotlight.md, its
+ * filters keyed in staff-search-tokens.md, at the thumb since 2026-11-05).
+ * ≙ iOS 26 Mail and Photos: the DS field on the sheet's floor with the
+ * chosen filters as key │ value tokens inside it and the ✕ that ends the
+ * search beside it; the keys over it as chips; what the typed text names,
+ * or an open key's values, above the results. Before anything is typed the
+ * recent searches; while typing the visits as event cards under their days,
+ * the lines the query found marked.
  *
- * A key opened from the dropdown or a pressed token PARKS the typed search
- * (`heldText`): the text typed then narrows the key's values, and the search
- * comes back when the key closes — the visits under the list do not jump.
+ * A pressed token PARKS the typed search (`heldText`): the text typed then
+ * narrows the key's values, and the search comes back when the key closes.
  *
  * It owns the query (the field's text and the filters), the open key and the
  * device's recents; the window it searches is the store's (`pool`, `searchCapped`,
@@ -126,6 +125,7 @@ function deviceStorage(): Storage | null {
     UiListRow,
     UiModalSheet,
     UiMonthPicker,
+    UiScrollRow,
     UiSearchField,
     UiSectionHeader,
     UiSheetHeadline,
@@ -170,27 +170,16 @@ export class StaffSearchSheet {
   private readonly filters = signal<SearchQuery>(SearchQuery.empty());
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  /** The key whose values the dropdown lists — a token being built or pressed. */
+  /** The key whose values are listed — a token being built or pressed. */
   protected readonly openField = signal<SearchFilterField | null>(null);
   /** The search parked while a key is open; null while none is. */
   private readonly heldText = signal<string | null>(null);
-  /** The month open in the dropdown, and a span's first picked end. */
+  /** The month open over the values, and a span's first picked end. */
   private readonly calendarMode = signal<CalendarMode | null>(null);
   private readonly rangeStart = signal<LocalDate | null>(null);
-  /** Escape closed the dropdown; typing or a new focus opens it again. */
-  private readonly dismissed = signal(false);
 
   protected readonly query = computed(() =>
     SearchQuery.withText(this.filters(), this.heldText() ?? this.committed()),
-  );
-
-  /** The field (its text, tokens or dropdown) is focused: the head folds, the bar is told. */
-  protected readonly focused = signal(false);
-  protected readonly engaged = computed(
-    () =>
-      this.focused() ||
-      this.typed().trim().length > 0 ||
-      this.filters().searchFilters.length > 0,
   );
 
   private readonly field = viewChild(UiSearchField);
@@ -269,22 +258,16 @@ export class StaffSearchSheet {
       capped: this.store.searchCapped(),
       stale: this.store.searchStale(),
       openField: this.openField(),
-      dropdownText: this.typed(),
+      typedText: this.typed(),
       calendarMode: this.calendarMode(),
       rangeStart: this.rangeStart(),
     });
   });
 
-  /** The dropdown shows while the field is focused and has something to list. */
-  protected readonly dropdownOpen = computed(() => {
-    const dropdown = this.vm().dropdown;
-    return (
-      this.focused() &&
-      !this.dismissed() &&
-      (dropdown.calendar !== null ||
-        dropdown.sections.some((section) => section.rows.length > 0))
-    );
-  });
+  /** Escape closes the month, then the open key, before it reaches the sheet. */
+  protected readonly escapeClaimed = computed(
+    () => this.calendarMode() !== null || this.openField() !== null,
+  );
 
   /** The pressed token wears the ring while its values are open. */
   protected readonly activeToken = computed(() => {
@@ -296,7 +279,7 @@ export class StaffSearchSheet {
     this.destroyRef.onDestroy(() => {
       if (this.timer !== null) clearTimeout(this.timer);
     });
-    // Spotlight's grammar: the sheet opens on the caret, the keys under it.
+    // Spotlight's grammar: the sheet opens on the caret, the keys over it.
     // One frame on: the sheet hands its surface the focus in the frame after
     // it opens (`UiSheetBehavior`), and the field must come after that.
     afterNextRender(() => requestAnimationFrame(() => this.field()?.focus()));
@@ -306,7 +289,6 @@ export class StaffSearchSheet {
 
   protected typeText(text: string): void {
     this.typed.set(text);
-    this.dismissed.set(false);
     // With a key open the text narrows its values, at once; the search is parked.
     if (this.openField() !== null) return;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -322,12 +304,6 @@ export class StaffSearchSheet {
     this.timer = null;
     this.typed.set(text);
     this.committed.set(text);
-  }
-
-  protected focusChange(focused: boolean): void {
-    this.focused.set(focused);
-    this.dismissed.set(false);
-    if (!focused) this.closeKey();
   }
 
   private heldFilter(field: SearchFilterField): boolean {
@@ -347,7 +323,6 @@ export class StaffSearchSheet {
     this.openField.set(field);
     this.calendarMode.set(null);
     this.rangeStart.set(null);
-    this.dismissed.set(false);
   }
 
   /** The key closed: the parked search comes back as it was. */
@@ -379,27 +354,25 @@ export class StaffSearchSheet {
     if (this.openField() === id) this.closeKey();
   }
 
-  /** Escape: the month first, then the open key, then the dropdown itself. */
+  /** Escape: the month first, then the open key; with neither it is the sheet's. */
   protected escape(): void {
     if (this.calendarMode() !== null) {
       this.calendarMode.set(null);
       this.rangeStart.set(null);
-    } else if (this.openField() !== null) {
-      this.closeKey();
     } else {
-      this.dismissed.set(true);
+      this.closeKey();
     }
   }
 
-  protected pickRow(row: DropdownRowVm): void {
-    switch (row.dropdownAction) {
-      case DropdownAction.OpenField:
+  protected pickRow(row: SuggestionRowVm): void {
+    switch (row.suggestAction) {
+      case SuggestAction.OpenField:
         // A key the typed text named («бръ» → Бръснар) takes the text with it.
         if (this.openField() === null && this.typed() !== '')
           this.commitNow('');
         this.openKey(row.searchFilterField);
         return;
-      case DropdownAction.AddValue: {
+      case SuggestAction.AddValue: {
         const filter = row.filter;
         if (filter === null) return;
         this.filters.update((held) => SearchQuery.withFilter(held, filter));
@@ -408,7 +381,7 @@ export class StaffSearchSheet {
         else this.commitNow('');
         return;
       }
-      case DropdownAction.ToggleValue: {
+      case SuggestAction.ToggleValue: {
         const filter = row.filter;
         if (filter === null) return;
         this.filters.update((held) =>
@@ -419,17 +392,17 @@ export class StaffSearchSheet {
         if (!this.heldFilter(row.searchFilterField)) this.closeKey();
         return;
       }
-      case DropdownAction.RemoveFilter:
+      case SuggestAction.RemoveFilter:
         this.filters.update((held) =>
           SearchQuery.withoutFilter(held, row.searchFilterField),
         );
         this.closeKey();
         return;
-      case DropdownAction.PickDay:
+      case SuggestAction.PickDay:
         this.calendarMode.set(CalendarMode.Day);
         this.rangeStart.set(null);
         return;
-      case DropdownAction.PickRange:
+      case SuggestAction.PickRange:
         this.calendarMode.set(CalendarMode.Range);
         this.rangeStart.set(null);
         return;
@@ -470,7 +443,7 @@ export class StaffSearchSheet {
   /** Return: with a key open, its first value; else the search is kept as a recent. */
   protected submit(): void {
     if (this.openField() !== null) {
-      const first = this.vm().dropdown.sections[0]?.rows[0];
+      const first = this.vm().suggestions.sections[0]?.rows[0];
       if (first !== undefined) this.pickRow(first);
       return;
     }
@@ -509,7 +482,6 @@ export class StaffSearchSheet {
 
   protected close(): void {
     this.closeKey();
-    this.focused.set(false);
     this.store.closeSearch();
   }
 }

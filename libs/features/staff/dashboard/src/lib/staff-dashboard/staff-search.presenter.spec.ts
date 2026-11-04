@@ -39,8 +39,8 @@ import { VisitPerspective } from '@creativo/features/shared/visits';
 import { type SearchSheetInput, searchSheetVm } from './staff-search.presenter';
 import {
   CalendarMode,
-  DropdownAction,
-  DropdownMode,
+  SuggestAction,
+  SuggestMode,
   type SearchSheetVm,
   SearchSheetState,
 } from './staff-search.vm';
@@ -166,7 +166,7 @@ function input(
     capped: false,
     stale: false,
     openField: null,
-    dropdownText: '',
+    typedText: '',
     calendarMode: null,
     rangeStart: null,
     ...overrides,
@@ -177,13 +177,14 @@ const text = (searchText: string) =>
   SearchQuery.withText(SearchQuery.empty(), searchText);
 const rowIds = (vm: ReturnType<typeof searchSheetVm>) =>
   vm.groups.flatMap((group) => group.rows.map((row) => row.id as string));
-const dropdownRows = (vm: SearchSheetVm) =>
-  vm.dropdown.sections.flatMap((section) => section.rows);
-const dropdownLabels = (vm: SearchSheetVm) =>
-  dropdownRows(vm).map((row) => row.label);
+const suggestionRows = (vm: SearchSheetVm) =>
+  vm.suggestions.sections.flatMap((section) => section.rows);
+const suggestionLabels = (vm: SearchSheetVm) =>
+  suggestionRows(vm).map((row) => row.label);
+const keyIds = (vm: SearchSheetVm) => vm.suggestions.keys.map((row) => row.id);
 
 describe('searchSheetVm — idle', () => {
-  it('shows the recents and, in the dropdown, the keys a filter is made of — no cards', () => {
+  it('shows the recents and, over the field, the keys a filter is made of — no cards', () => {
     const recents = [
       text('петър'),
       SearchQuery.withFilter(text('фейд'), SearchFilter.note()),
@@ -195,11 +196,9 @@ describe('searchSheetVm — idle', () => {
       'петър',
       'фейд · С бележка',
     ]);
-    expect(vm.dropdown.dropdownMode).toBe(DropdownMode.Fields);
-    expect(vm.dropdown.sections.map((s) => s.heading)).toEqual([
-      'Филтрирай по',
-    ]);
-    expect(dropdownRows(vm).map((row) => [row.id, row.label])).toEqual([
+    expect(vm.suggestions.suggestMode).toBe(SuggestMode.Fields);
+    expect(vm.suggestions.sections).toEqual([]);
+    expect(vm.suggestions.keys.map((row) => [row.id, row.label])).toEqual([
       ['FIELD:WHEN', 'Кога'],
       ['FIELD:BARBER', 'Бръснар'],
       ['FIELD:SERVICE', 'Услуга'],
@@ -207,17 +206,16 @@ describe('searchSheetVm — idle', () => {
       ['FIELD:NOTE', 'С бележка'],
     ]);
     // A note has no values: its key adds the filter itself.
-    expect(dropdownRows(vm).at(-1)?.dropdownAction).toBe(
-      DropdownAction.AddValue,
+    expect(vm.suggestions.keys.at(-1)?.suggestAction).toBe(
+      SuggestAction.AddValue,
     );
-    expect(dropdownRows(vm).at(-1)?.filter).toEqual(SearchFilter.note());
+    expect(vm.suggestions.keys.at(-1)?.filter).toEqual(SearchFilter.note());
     expect(vm.placeholder).toBe('Име, телефон, имейл, услуга…');
   });
 
   it('says the same in English', () => {
     const vm = searchSheetVm(input('en', SearchQuery.empty()));
-    expect(vm.dropdown.sections[0]?.heading).toBe('Filter by');
-    expect(dropdownLabels(vm)).toEqual([
+    expect(vm.suggestions.keys.map((row) => row.label)).toEqual([
       'When',
       'Barber',
       'Service',
@@ -503,21 +501,23 @@ describe('searchSheetVm — the dropdown', () => {
     const open = searchSheetVm(
       input('bg', SearchQuery.empty(), { openField: SearchFilterField.Barber }),
     );
-    expect(open.dropdown.dropdownMode).toBe(DropdownMode.Values);
-    expect(open.dropdown.sections.map((s) => s.heading)).toEqual(['Бръснар']);
-    expect(dropdownRows(open).map((r) => [r.id, r.checked])).toEqual([
+    expect(open.suggestions.suggestMode).toBe(SuggestMode.Values);
+    expect(open.suggestions.sections.map((s) => s.heading)).toEqual([
+      'Бръснар',
+    ]);
+    expect(suggestionRows(open).map((r) => [r.id, r.checked])).toEqual([
       ['BARBER:b-ivan', null],
       ['BARBER:b-niko', null],
     ]);
-    expect(dropdownRows(open)[0]?.dropdownAction).toBe(DropdownAction.AddValue);
-    expect(dropdownRows(open)[0]?.face).toEqual({ src: null, name: 'Иван' });
+    expect(suggestionRows(open)[0]?.suggestAction).toBe(SuggestAction.AddValue);
+    expect(suggestionRows(open)[0]?.face).toEqual({ src: null, name: 'Иван' });
     const narrowed = searchSheetVm(
       input('bg', SearchQuery.empty(), {
         openField: SearchFilterField.Barber,
-        dropdownText: 'ни',
+        typedText: 'ни',
       }),
     );
-    expect(dropdownLabels(narrowed)).toEqual(['Нико']);
+    expect(suggestionLabels(narrowed)).toEqual(['Нико']);
   });
 
   it('marks a pressed token’s held values, toggles them, and offers to remove the filter last', () => {
@@ -528,25 +528,25 @@ describe('searchSheetVm — the dropdown', () => {
     const vm = searchSheetVm(
       input('bg', held, { openField: SearchFilterField.Barber }),
     );
-    expect(dropdownRows(vm).map((r) => [r.id, r.checked])).toEqual([
+    expect(suggestionRows(vm).map((r) => [r.id, r.checked])).toEqual([
       ['BARBER:b-niko', true],
       ['BARBER:b-ivan', false],
       ['REMOVE:BARBER', null],
     ]);
-    expect(dropdownRows(vm)[0]?.dropdownAction).toBe(
-      DropdownAction.ToggleValue,
+    expect(suggestionRows(vm)[0]?.suggestAction).toBe(
+      SuggestAction.ToggleValue,
     );
-    const remove = dropdownRows(vm).at(-1);
+    const remove = suggestionRows(vm).at(-1);
     expect(remove?.label).toBe('Махни филтъра');
     expect(remove?.destructive).toBe(true);
-    expect(remove?.dropdownAction).toBe(DropdownAction.RemoveFilter);
+    expect(remove?.suggestAction).toBe(SuggestAction.RemoveFilter);
   });
 
   it('offers the date presets the window reaches, then a day and a span', () => {
     const vm = searchSheetVm(
       input('en', SearchQuery.empty(), { openField: SearchFilterField.When }),
     );
-    expect(dropdownLabels(vm)).toEqual([
+    expect(suggestionLabels(vm)).toEqual([
       'Today',
       'Tomorrow',
       'This week',
@@ -554,8 +554,8 @@ describe('searchSheetVm — the dropdown', () => {
       'A specific day…',
       'A date range…',
     ]);
-    expect(dropdownRows(vm).at(-1)?.dropdownAction).toBe(
-      DropdownAction.PickRange,
+    expect(suggestionRows(vm).at(-1)?.suggestAction).toBe(
+      SuggestAction.PickRange,
     );
   });
 
@@ -566,8 +566,8 @@ describe('searchSheetVm — the dropdown', () => {
         calendarMode: CalendarMode.Range,
       }),
     );
-    expect(first.dropdown.sections).toEqual([]);
-    expect(first.dropdown.calendar).toEqual({
+    expect(first.suggestions.sections).toEqual([]);
+    expect(first.suggestions.calendar).toEqual({
       calendarMode: CalendarMode.Range,
       selected: null,
       today: FIXTURE_TODAY,
@@ -580,33 +580,33 @@ describe('searchSheetVm — the dropdown', () => {
         rangeStart: day(2),
       }),
     );
-    expect(last.dropdown.calendar?.selected).toBe(day(2));
-    expect(last.dropdown.calendar?.caption).toMatch(
+    expect(last.suggestions.calendar?.selected).toBe(day(2));
+    expect(last.suggestions.calendar?.caption).toMatch(
       /^От .+ · избери последния ден$/,
     );
   });
 
-  it('under typed text lists the values whose name holds it with their key, and only the keys it names', () => {
-    const vm = searchSheetVm(input('bg', text('ни'), { dropdownText: 'ни' }));
-    expect(vm.dropdown.dropdownMode).toBe(DropdownMode.Matches);
-    expect(vm.dropdown.sections.map((s) => s.heading)).toEqual(['Предложения']);
-    expect(
-      vm.dropdown.sections[0]?.rows.map((r) => [r.label, r.detail]),
-    ).toEqual([['Нико', 'Бръснар']]);
-    const key = searchSheetVm(
-      input('bg', text('бръ'), { dropdownText: 'бръ' }),
-    );
-    expect(key.dropdown.sections.map((s) => s.heading)).toEqual([
-      'Филтрирай по',
+  it('under typed text suggests the values whose name holds it with their key, and keeps only the keys it names', () => {
+    const vm = searchSheetVm(input('bg', text('ни'), { typedText: 'ни' }));
+    expect(vm.suggestions.suggestMode).toBe(SuggestMode.Matches);
+    expect(vm.suggestions.sections.map((s) => s.heading)).toEqual([
+      'Предложения',
     ]);
-    expect(dropdownRows(key).map((r) => r.id)).toEqual(['FIELD:BARBER']);
+    expect(
+      vm.suggestions.sections[0]?.rows.map((r) => [r.label, r.detail]),
+    ).toEqual([['Нико', 'Бръснар']]);
+    expect(keyIds(vm)).toEqual([]);
+    const key = searchSheetVm(input('bg', text('бръ'), { typedText: 'бръ' }));
+    expect(key.suggestions.sections).toEqual([]);
+    expect(keyIds(key)).toEqual(['FIELD:BARBER']);
   });
 
   it('lists nothing when the typed text names no value and no key', () => {
     const vm = searchSheetVm(
-      input('bg', text('zzzz-no-such'), { dropdownText: 'zzzz-no-such' }),
+      input('bg', text('zzzz-no-such'), { typedText: 'zzzz-no-such' }),
     );
-    expect(vm.dropdown.sections).toEqual([]);
+    expect(vm.suggestions.sections).toEqual([]);
+    expect(keyIds(vm)).toEqual([]);
   });
 
   it('does not offer a value that is already held', () => {
@@ -614,15 +614,15 @@ describe('searchSheetVm — the dropdown', () => {
       input(
         'bg',
         SearchQuery.withFilter(text('и'), SearchFilter.barber([IVAN])),
-        { dropdownText: 'иван' },
+        { typedText: 'иван' },
       ),
     );
-    expect(dropdownLabels(vm)).not.toContain('Иван');
+    expect(suggestionLabels(vm)).not.toContain('Иван');
   });
 
   it('offers no key whose values would keep no visit', () => {
     const vm = searchSheetVm(input('bg', text('zzzz-no-such')));
-    expect(dropdownRows(vm).map((r) => r.id)).toEqual(['FIELD:WHEN']);
+    expect(keyIds(vm)).toEqual(['FIELD:WHEN']);
   });
 });
 

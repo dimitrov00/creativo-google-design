@@ -108,6 +108,43 @@
       var(--ui-sheet-inset, var(--sys-space-regular));
   }
 
+  /* THE FLOOR (≙ iOS 26 Mail and Photos): the band sticks to the scroller's
+     bottom edge, lifted over the on-screen keyboard by what the visual
+     viewport lost, clear of the home indicator. Floored like a docked bar —
+     the body's last child, its auto top margin eating a COLUMN's free space
+     (ui-modal-sheet turns its scroller into one for this band). */
+  .ui-search-field[data-pin-edge='bottom'] {
+    inset-block-start: auto;
+    inset-block-end: var(--ui-search-keyboard-inset, 0px);
+    margin-block-start: auto;
+    padding-block: var(--sys-space-compact)
+      max(var(--sys-space-compact), env(safe-area-inset-bottom));
+  }
+
+  /* ABOVE THE FIELD: the owner's accessory row (Photos' chips). Nothing
+     projected, no row. */
+  .ui-search-field__accessory {
+    min-inline-size: 0;
+    margin-block-end: var(--sys-space-compact);
+  }
+
+  .ui-search-field__accessory:empty {
+    display: none;
+  }
+
+  /* THE ✕ BESIDE THE FIELD (Mail's): the field takes the row, the ✕ hugs
+     its end; the accessory spans both. */
+  .ui-search-field[data-has-dismiss] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--sys-space-compact);
+    align-items: end;
+  }
+
+  .ui-search-field[data-has-dismiss] .ui-search-field__accessory {
+    grid-column: 1 / -1;
+  }
+
   /* TOKENS: with chips in it the FRAME is the field (the fill, the hairline,
      the radius and the focus glow of a text field) and the input inside it
      is a bare flexible run after the last chip — chips and text wrap
@@ -156,9 +193,11 @@
      own and the field grows, as a text area does, rather than leaving the
      placeholder clipped to a few letters beside the tokens. */
   .ui-search-field[data-has-tokens] .ui-search-field__native {
-    flex: 1 1 6em;
+    /* 4em: «Търси…» fits, and so does a key │ «избери…» token beside the
+       glyph in a field that shares its row with the ✕. */
+    flex: 1 1 4em;
     inline-size: auto;
-    min-inline-size: 6em;
+    min-inline-size: 4em;
     min-block-size: calc(var(--control-size-small));
     padding-inline: 0;
     border: 0;
@@ -341,6 +380,13 @@
     inset-block-start: calc(
       100% - var(--sys-space-tight) + var(--sys-space-compact)
     );
+  }
+
+  /* On the floor the dropdown opens upward, over what is above the band. */
+  .ui-search-field[data-pin-edge='bottom'] .ui-search-field__dropdown {
+    inset-block-start: auto;
+    inset-block-end: 100%;
+    transform-origin: bottom center;
   }
 
   @keyframes ui-search-field-drop {

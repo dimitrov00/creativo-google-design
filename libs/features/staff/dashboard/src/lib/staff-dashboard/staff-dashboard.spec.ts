@@ -4163,17 +4163,12 @@ describe('StaffDashboard', () => {
     ).not.toBeNull();
   });
 
-  it('offers the keys a filter is made of under the field once it is focused, before anything is typed', async () => {
+  it('offers the keys a filter is made of over the field, before anything is typed', async () => {
     await openSearchSheet();
-    (
-      host().querySelector('[data-testid="staff-search-input"]') as HTMLElement
-    ).dispatchEvent(new Event('focus'));
-    fixture.detectChanges();
     expect(
-      host().querySelector('[data-testid="staff-search-input-dropdown"]'),
-    ).not.toBeNull();
-    expect(
-      host().querySelectorAll('[data-testid="staff-search-suggestion"]').length,
+      host().querySelectorAll(
+        '[data-testid="staff-search-keys"] [data-testid="staff-search-suggestion"]',
+      ).length,
     ).toBeGreaterThan(0);
   });
 
@@ -5509,43 +5504,45 @@ describe('StaffDashboard', () => {
     });
   });
 
-  it("gives the day search the sheets' one search grammar: the head folds, the DS field is pinned, ↓ reaches the hits", async () => {
-    (
-      host().querySelector(
-        '[data-testid="staff-search-open"]',
-      ) as HTMLButtonElement
-    ).click();
+  it("opens the search from the bottom bar onto a field on the sheet's floor, the ✕ beside it, and ↓ reaches the hits", async () => {
+    // Mail's bottom bar: on a phone the field-shaped entry fills the room
+    // between the bar's controls and ＋ (the toolbar's button is the wide
+    // screen's; the bar's width shows one — no container queries in jsdom).
+    expect(
+      host().querySelector('[data-testid="staff-search-open"]'),
+    ).not.toBeNull();
+    const entry = host().querySelector(
+      'ui-page-action-bar [data-testid="staff-search-entry"]',
+    ) as HTMLButtonElement;
+    expect(entry.hasAttribute('uifill')).toBe(true);
+    entry.click();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    const head = () =>
-      host().querySelector('[data-testid="staff-search-headline"]');
-    const header = () =>
-      host().querySelector(
-        '[data-testid="staff-search-sheet"] .ui-sheet-header',
-      );
     const input = host().querySelector(
       '[data-testid="staff-search-input"]',
     ) as HTMLInputElement;
-    expect(input.closest('ui-search-field[data-pinned]')).not.toBeNull();
-    expect(head()?.hasAttribute('data-folded')).toBe(false);
-
-    input.dispatchEvent(new Event('focus'));
-    fixture.detectChanges();
-    expect(head()?.hasAttribute('data-folded')).toBe(true);
-    expect(header()?.hasAttribute('data-collapsed')).toBe(true);
+    expect(
+      input.closest('ui-search-field[data-pinned][data-pin-edge="bottom"]'),
+    ).not.toBeNull();
+    expect(
+      host().querySelector('[data-testid="staff-search-input-dismiss"]'),
+    ).not.toBeNull();
+    // The large title stays, as Photos' «Search» does; the header is bare.
+    expect(
+      host()
+        .querySelector('[data-testid="staff-search-headline"]')
+        ?.hasAttribute('data-folded'),
+    ).toBe(false);
 
     input.value = 'георги';
     input.dispatchEvent(new Event('input'));
-    input.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
     await afterTypingPause();
-    // A query standing keeps it folded, keyboard or not.
-    expect(head()?.hasAttribute('data-folded')).toBe(true);
 
-    // Text that names no filter leaves no dropdown open…
+    // Text that names no filter leaves no suggestion and no key…
     expect(
-      host().querySelector('[data-testid="staff-search-input-dropdown"]'),
+      host().querySelector('[data-testid="staff-search-suggestion"]'),
     ).toBeNull();
     input.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),

@@ -1,25 +1,22 @@
 <ng-container>
-  <!-- THE SHEETS' ONE SEARCH GRAMMAR: the head, its scope as the line under
-       the title, the DS field pinned under the bar with the chosen filters
-       as keyed tokens inside it, and the head folding while the search is engaged
-       (the bar is told, because a folded title never scrolls under it). The
-       read in flight is the field's own quiet ring. -->
+  <!-- THE SEARCH AT THE THUMB (≙ iOS 26 Mail and Photos, 2026-11-05): the
+       large title at the top, the DS field on the FLOOR of the sheet with
+       the chosen filters as keyed tokens inside it and the ✕ that ends the
+       search beside it, lifted over the keyboard. The keys a filter can be
+       made of ride over the field as chips (Photos); what the typed text
+       names, or an open key's values, sit above the results (Mail's
+       «Suggestions»). The header is bare: the ✕ is the field's. -->
   <ui-modal-sheet
     sheetId="staff-search-sheet"
     labelledBy="staff-search-title"
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
-    [titleCollapsed]="engaged() ? true : undefined"
+    [bareHeader]="true"
     data-testid="staff-search-sheet"
     (dismissed)="close()"
   >
-    <span sheet-title>{{ t('staff.day.searchLabel') }}</span>
-
     <ui-stack uiSpacing="comfortable" class="staff-search-sheet__body">
-      <ui-sheet-headline
-        [uiFolded]="engaged()"
-        data-testid="staff-search-headline"
-      >
+      <ui-sheet-headline data-testid="staff-search-headline">
         <h2
           id="staff-search-title"
           uiSheetLargeTitle
@@ -33,111 +30,6 @@
         </p>
       </ui-sheet-headline>
 
-      <!-- The filters are key │ value tokens; while the field is focused the
-           dropdown hangs under it: the keys, an open key's values (✓ on the
-           held ones, «Махни филтъра» last), or the values and keys the typed
-           text names. -->
-      <ui-search-field
-        uiPinned
-        [uiValue]="typed()"
-        [uiIcon]="vm().glyph"
-        [uiPlaceholder]="vm().placeholder"
-        [uiLabel]="t('staff.day.searchPlaceholder')"
-        [uiBusy]="store.searchLoading()"
-        uiBusyTestId="staff-search-loading"
-        uiTestId="staff-search-input"
-        [uiClearLabel]="t('staff.day.searchClear')"
-        [uiTokens]="vm().tokens"
-        [uiTokenPlaceholder]="vm().tokenPlaceholder"
-        [uiActiveToken]="activeToken()"
-        [uiDropdownOpen]="dropdownOpen()"
-        [uiDropdownLabel]="t('staff.search.dropdownLabel')"
-        (uiInput)="typeText($event)"
-        (uiTokenActivate)="activateToken($event)"
-        (uiTokenRemove)="removeToken($event)"
-        (uiFocusChange)="focusChange($event)"
-        (uiEscape)="escape()"
-        (uiSubmit)="submit()"
-        (uiNavigate)="focusFirst($event)"
-      >
-        <div
-          uiSearchDropdown
-          class="staff-search-sheet__dropdown"
-          [attr.data-dropdown-mode]="vm().dropdown.dropdownMode"
-        >
-          @for (section of vm().dropdown.sections; track section.id) { @if
-          (section.rows.length > 0) {
-          <div class="staff-search-sheet__section">
-            @if (section.heading; as heading) {
-            <p
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-search-sheet__heading"
-            >
-              {{ heading }}
-            </p>
-            } @for (row of section.rows; track row.id) {
-            <button
-              type="button"
-              uiListRow
-              uiSize="regular"
-              [uiInteractive]="true"
-              [uiRole]="row.destructive ? 'destructive' : null"
-              class="staff-search-sheet__row"
-              data-search-focusable
-              data-testid="staff-search-suggestion"
-              [attr.data-suggestion]="row.id"
-              [attr.aria-pressed]="row.checked"
-              (click)="pickRow(row)"
-            >
-              @if (row.face; as face) {
-              <ui-avatar
-                uiLeading
-                uiControlSize="small"
-                [uiSrc]="face.src"
-                [uiName]="face.name"
-              />
-              } @else if (row.glyph; as glyph) {
-              <span uiLeading>
-                <ui-icon [uiName]="glyph" aria-hidden="true" />
-              </span>
-              } {{ row.label }} @if (row.checked === true) {
-              <ui-icon
-                uiTrailing
-                uiName="checklist.done"
-                class="staff-search-sheet__check"
-                aria-hidden="true"
-              />
-              } @else if (row.detail; as detail) {
-              <span uiTrailing>{{ detail }}</span>
-              }
-            </button>
-            }
-          </div>
-          } } @if (vm().dropdown.calendar; as calendar) {
-          <div class="staff-search-sheet__section">
-            <p
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-search-sheet__heading"
-              data-testid="staff-search-calendar-caption"
-            >
-              {{ calendar.caption }}
-            </p>
-            <ui-month-picker
-              [uiSelected]="calendar.selected ?? calendar.today"
-              [uiToday]="calendar.today"
-              [uiLocale]="locale()"
-              data-testid="staff-search-calendar"
-              (uiPicked)="pickDay($event)"
-            />
-          </div>
-          }
-        </div>
-      </ui-search-field>
-
       @if (vm().phoneRow; as phone) {
       <!-- The text reads as a number: said, never rewritten under the caret. -->
       <p
@@ -148,7 +40,90 @@
       >
         {{ phone }}
       </p>
-      } @switch (vm().searchSheetState) { @case (SearchSheetState.Results) {
+      }
+
+      <!-- THE SUGGESTIONS above the results: what the typed text names, each
+           with its key, or the open key's values (✓ on the held ones,
+           «Махни филтъра» last) and its month. A press keeps the keyboard. -->
+      @for (section of vm().suggestions.sections; track section.id) { @if
+      (section.rows.length > 0) {
+      <section
+        class="staff-search-sheet__section"
+        [attr.data-suggest-mode]="vm().suggestions.suggestMode"
+      >
+        @if (section.heading; as heading) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-search-sheet__heading"
+        >
+          {{ heading }}
+        </p>
+        } @for (row of section.rows; track row.id) {
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          [uiRole]="row.destructive ? 'destructive' : null"
+          class="staff-search-sheet__row"
+          data-search-focusable
+          data-testid="staff-search-suggestion"
+          [attr.data-suggestion]="row.id"
+          [attr.aria-pressed]="row.checked"
+          (mousedown)="$event.preventDefault()"
+          (click)="pickRow(row)"
+        >
+          @if (row.face; as face) {
+          <ui-avatar
+            uiLeading
+            uiControlSize="small"
+            [uiSrc]="face.src"
+            [uiName]="face.name"
+          />
+          } @else if (row.glyph; as glyph) {
+          <span uiLeading>
+            <ui-icon [uiName]="glyph" aria-hidden="true" />
+          </span>
+          } {{ row.label }} @if (row.checked === true) {
+          <ui-icon
+            uiTrailing
+            uiName="checklist.done"
+            class="staff-search-sheet__check"
+            aria-hidden="true"
+          />
+          } @else if (row.detail; as detail) {
+          <span uiTrailing>{{ detail }}</span>
+          }
+        </button>
+        }
+      </section>
+      } } @if (vm().suggestions.calendar; as calendar) {
+      <section class="staff-search-sheet__section">
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-search-sheet__heading"
+          data-testid="staff-search-calendar-caption"
+        >
+          {{ calendar.caption }}
+        </p>
+        <ui-month-picker
+          [uiSelected]="calendar.selected ?? calendar.today"
+          [uiToday]="calendar.today"
+          [uiLocale]="locale()"
+          data-testid="staff-search-calendar"
+          (uiPicked)="pickDay($event)"
+        />
+      </section>
+      }
+
+      <!-- The results — set aside while a key's values are open, which are
+           then the page. -->
+      @if (openField() === null) { @switch (vm().searchSheetState) { @case
+      (SearchSheetState.Results) {
       <lib-visit-list
         [sections]="vm().groups"
         [perspective]="VisitPerspective.Staff"
@@ -208,7 +183,7 @@
           }
         </div>
       </section>
-      } } } @for (note of vm().footnotes; track note) {
+      } } } } @for (note of vm().footnotes; track note) {
       <p
         uiText
         uiFont="footnote"
@@ -218,6 +193,59 @@
         {{ note }}
       </p>
       }
+
+      <!-- THE FIELD, on the floor: the body's last child. -->
+      <ui-search-field
+        uiPinned
+        uiPinEdge="bottom"
+        [uiValue]="typed()"
+        [uiIcon]="vm().glyph"
+        [uiPlaceholder]="vm().placeholder"
+        [uiLabel]="t('staff.day.searchPlaceholder')"
+        [uiBusy]="store.searchLoading()"
+        uiBusyTestId="staff-search-loading"
+        uiTestId="staff-search-input"
+        [uiClearLabel]="t('staff.day.searchClear')"
+        [uiDismissLabel]="t('staff.day.cancelDismiss')"
+        [uiTokens]="vm().tokens"
+        [uiTokenPlaceholder]="vm().tokenPlaceholder"
+        [uiActiveToken]="activeToken()"
+        [uiEscapeClaimed]="escapeClaimed()"
+        (uiInput)="typeText($event)"
+        (uiTokenActivate)="activateToken($event)"
+        (uiTokenRemove)="removeToken($event)"
+        (uiEscape)="escape()"
+        (uiDismiss)="close()"
+        (uiSubmit)="submit()"
+        (uiNavigate)="focusFirst($event)"
+      >
+        @if (vm().suggestions.keys.length > 0) {
+        <!-- THE KEYS over the field, as Photos offers its suggestions: one
+             sliding row of chips. -->
+        <ui-scroll-row
+          uiSearchAccessory
+          uiSpacing="compact"
+          uiSnap="none"
+          [uiLabel]="t('staff.search.filterBy')"
+          data-testid="staff-search-keys"
+        >
+          @for (row of vm().suggestions.keys; track row.id) {
+          <button
+            type="button"
+            uiChip
+            [uiToggle]="false"
+            data-testid="staff-search-suggestion"
+            [attr.data-suggestion]="row.id"
+            (click)="pickRow(row)"
+          >
+            @if (row.glyph; as glyph) {
+            <ui-icon [uiName]="glyph" aria-hidden="true" />
+            } {{ row.label }}
+          </button>
+          }
+        </ui-scroll-row>
+        }
+      </ui-search-field>
     </ui-stack>
   </ui-modal-sheet>
 </ng-container>
