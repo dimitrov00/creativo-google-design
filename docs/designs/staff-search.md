@@ -1,7 +1,7 @@
 # Schedule search, part 1: one highlighter, phone reading and a window that reaches and stays fresh
 
 - **Author:** Dimitar Dimitrov
-- **Status:** Proposed
+- **Status:** Built (2026-11-04). What was decided and where the build differs from this design: [`docs/architecture/decisions/2026-11-03-staff-search.md`](../architecture/decisions/2026-11-03-staff-search.md).
 - **Date:** 2026-11-03
 - **Part 2:** [staff-search-spotlight.md](./staff-search-spotlight.md) (filters, recents, the Spotlight-style sheet). It builds on this part.
 

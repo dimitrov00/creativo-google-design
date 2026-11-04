@@ -1,7 +1,7 @@
 # Schedule search, part 2: filters, recents and a Spotlight-style sheet
 
 - **Author:** Dimitar Dimitrov
-- **Status:** Proposed
+- **Status:** Built (2026-11-04). What was decided and where the build differs from this design: [`docs/architecture/decisions/2026-11-03-staff-search-sheet.md`](../architecture/decisions/2026-11-03-staff-search-sheet.md).
 - **Date:** 2026-11-03
 - **Part 1:** [staff-search.md](./staff-search.md) (one highlighter, phone reading, a window that reaches and stays fresh). This part builds on it and does not start before part 1's stages 1 to 3 have merged.
 
