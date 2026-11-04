@@ -104,4 +104,79 @@
     padding: var(--sys-space-tight)
       var(--ui-sheet-inset, var(--sys-space-regular));
   }
+
+  /* TOKENS: with chips in it the FRAME is the field (the fill, the hairline,
+     the radius and the focus glow of a text field) and the input inside it
+     is a bare flexible run after the last chip — chips and text wrap
+     together, the clear and the ring trail. A field without tokens keeps its
+     one grid cell and its own input chrome, untouched. */
+  .ui-search-field[data-has-tokens] .ui-search-field__frame {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    box-sizing: border-box;
+    min-block-size: var(--control-size-regular);
+    /* One row of small chips fills the regular field exactly: the field's
+       height minus a chip's, less the hairline, split above and below. */
+    padding-block: calc(
+      (var(--control-size-regular) - var(--control-size-small) - 2px) / 2
+    );
+    padding-inline: var(--sys-space-compact);
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-fill);
+    transition:
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+
+  .ui-search-field[data-has-tokens] .ui-search-field__frame:focus-within {
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+
+  .ui-search-field[data-has-tokens] .ui-search-field__glyph {
+    position: static;
+    flex: none;
+    margin-inline-start: 0;
+  }
+
+  .ui-search-field[data-has-tokens] .ui-search-field__token {
+    flex: none;
+  }
+
+  .ui-search-field[data-has-tokens] .ui-search-field__native {
+    flex: 1 1 6em;
+    inline-size: auto;
+    min-inline-size: 4em;
+    min-block-size: calc(var(--control-size-small));
+    padding-inline: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+  }
+
+  .ui-search-field[data-has-tokens] .ui-search-field__clear,
+  .ui-search-field[data-has-tokens] .ui-search-field__busy {
+    position: static;
+    flex: none;
+    margin-inline: 0;
+  }
+
+  /* The clear rides the chips' rung, so one row stays the regular field. */
+  .ui-search-field[data-has-tokens] .ui-search-field__clear {
+    margin-inline-start: auto;
+    inline-size: var(--control-size-small);
+    block-size: var(--control-size-small);
+  }
 }

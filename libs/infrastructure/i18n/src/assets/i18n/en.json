@@ -1179,6 +1179,29 @@
       },
       "daySummaryTips": "{{amount}} in tips"
     },
+    "search": {
+      "recents": "Recent",
+      "clearRecents": "Clear",
+      "suggestions": "Suggestions",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "thisWeek": "This week",
+      "earlier": "Earlier",
+      "withNote": "With a note",
+      "barberGroup": "Barber",
+      "serviceGroup": "Service",
+      "clearFilters": "Clear filters",
+      "chipRemove": "Remove filter {{label}}",
+      "phoneRow": "Phone {{number}}",
+      "moreThanShown": "Showing the first {{count}} results. Narrow the search.",
+      "status": {
+        "pending": "Requested",
+        "confirmed": "Confirmed",
+        "completed": "Completed",
+        "noShow": "No-shows",
+        "cancelled": "Cancelled"
+      }
+    },
     "block": {
       "title": "Block",
       "allDay": "All day",

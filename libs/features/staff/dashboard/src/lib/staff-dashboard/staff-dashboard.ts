@@ -145,7 +145,6 @@ import {
   UiIcon,
   type UiIconName,
   UiModalSheet,
-  UiSearchField,
   UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
@@ -168,7 +167,6 @@ import {
 import {
   UiListGroup,
   UiListRow,
-  UiMarkedText,
   UiMenu,
   UiAlert,
   type UiAlertAction,
@@ -270,8 +268,7 @@ import {
   visitEditorWords,
   whenWords,
 } from './staff-day.presenter';
-import { searchHits } from './staff-search.presenter';
-import type { SearchHitVm } from './staff-search.vm';
+import { StaffSearchSheet } from '../staff-search-sheet/staff-search-sheet';
 
 export { AgendaRow, type DayRowVm } from './staff-day.vm';
 
@@ -520,6 +517,7 @@ function minuteRangeOf(
     UiChoiceLeading,
     UiChoiceMenu,
     UiSegmentedControl,
+    StaffSearchSheet,
     StaffTimeGrid,
     StaffVisitEditor,
     StaffEventHead,
@@ -535,7 +533,6 @@ function minuteRangeOf(
     UiInteractiveDirective,
     UiListGroup,
     UiListRow,
-    UiMarkedText,
     UiMenu,
     UiMenuItem,
     UiMenuTrigger,
@@ -545,7 +542,6 @@ function minuteRangeOf(
     UiScrollRow,
     UiSheetActionBar,
     UiSheetHeadline,
-    UiSearchField,
     UiToast,
     UiSwitch,
     StaffBlockEditor,
@@ -1016,65 +1012,6 @@ export class StaffDashboard {
   private stampWall(atUtcMs: UtcEpochMs) {
     const zone = this.store.zone();
     return zone === null ? null : ZonedTimeSystem.toLocal(atUtcMs, zone);
-  }
-
-  // ── Search ──────────────────────────────────────────────────────────
-
-  /**
-   * Results for the current term, matched in memory against the window the
-   * store loaded once (`searchHits`: Firestore cannot substring-match).
-   */
-  protected readonly searchResults = computed<readonly SearchHitVm[]>(() =>
-    searchHits({
-      term: this.store.term(),
-      pool: this.store.pool(),
-      // Each visit is judged on ITS shop's wall clock (the physical chair
-      // invariant, Law 7.2): one `ShopNow` per zone per tick, read at the
-      // store's edge (`shopNowAt`, pass D D-6.2).
-      shopNowAt: this.store.shopNowAt(),
-      names: this.catalogNames,
-      zoneKnown: this.store.zone() !== null,
-      locale: this.content.locale(),
-      callingCode: this.shopCallingCode,
-      companionNames: this.companionNames(),
-      unnamedClient: this.dayWords().unnamedClient,
-    }),
-  );
-
-  /** Jump the sheet to the day a hit lives on, and close the search. */
-  protected openHit(hit: SearchHitVm): void {
-    this.store.goToDay(hit.dayKey);
-    this.closeSearchSheet();
-  }
-
-  /*
-   * THE SEARCH SHEET'S FOLD (2026-09-24): the head folds while the search
-   * is engaged — the field focused, or a query standing — the visit
-   * sheet's own grammar, told to the bar the same way.
-   */
-  protected readonly searchFieldFocused = signal(false);
-  /** Is the standing term long enough to search (`termSearchable`)? */
-  protected readonly searchTermSearchable = computed(() =>
-    SearchFieldsSystem.termSearchable(this.store.term().trim()),
-  );
-  protected readonly searchSheetEngaged = computed(
-    () => this.searchFieldFocused() || this.store.term().trim().length > 0,
-  );
-
-  /** A field taken away while focused reports no blur; the sheet resets it. */
-  protected closeSearchSheet(): void {
-    this.searchFieldFocused.set(false);
-    this.store.closeSearch();
-  }
-
-  /** ↓ from the field lands on the first hit, as the visit sheet's lists do. */
-  protected focusFirstHit(event: KeyboardEvent): void {
-    const first = this.host.nativeElement.querySelector<HTMLElement>(
-      '[data-testid="staff-search-hit"]',
-    );
-    if (first === null) return;
-    event.preventDefault();
-    first.focus();
   }
 
   // ── The date picker ─────────────────────────────────────────────────
@@ -3975,7 +3912,7 @@ export class StaffDashboard {
   protected readonly visitClientSearching = signal(false);
   private readonly deployment = inject(AUTH_DEPLOYMENT_PORTS).authDeployment;
   /** The shop's dial code, the query's own default when its country has none. */
-  private readonly shopCallingCode = PhoneSystem.callingCodeOr(
+  protected readonly shopCallingCode = PhoneSystem.callingCodeOr(
     this.deployment.defaultCountry,
     ClientQuerySystem.DEFAULT_CALLING_CODE,
   );

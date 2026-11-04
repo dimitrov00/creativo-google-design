@@ -8,7 +8,10 @@ import type {
   WaitlistRequestId,
 } from '@core/primitives';
 import type { UiIconName } from '@creativo/ui/controls';
-import type { StaffEventLine } from './event-head/staff-event-line';
+import type {
+  StaffEventLine,
+  StaffEventRun,
+} from './event-head/staff-event-line';
 
 /*
  * ONE VISITS LIST, TWO PERSPECTIVES (client-card redesign §5.3, D5).
@@ -208,6 +211,11 @@ export interface VisitRowFields {
    */
   readonly lines: readonly StaffEventLine[];
   /**
+   * The title as runs, the matched ones marked — a search row whose service
+   * name was what the query found. Absent draws the plain `title`.
+   */
+  readonly titleParts?: readonly StaffEventRun[];
+  /**
    * The client's own words, already in the locale's quotation marks
    * (`visits.quote`) — only where this subject booked the visit.
    */
@@ -230,6 +238,16 @@ export interface VisitRowFields {
    */
   readonly accessibleName: string;
   readonly testId: string;
+}
+
+/**
+ * What a search found in a visit, to set on its row: the typed words to mark
+ * in the title (a service name that matched) and the lines the search adds
+ * (client, phone, e-mail, note), each with its own marked runs.
+ */
+export interface VisitRowMatch {
+  readonly titleTerms: readonly string[];
+  readonly matchLines: readonly StaffEventLine[];
 }
 
 /** An appointment's row: its id is the appointment's (`data-appointment-id`). */

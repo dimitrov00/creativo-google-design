@@ -153,6 +153,13 @@ function pushOnce<T>(into: T[], value: T): void {
  */
 export const SearchFilterSystem = {
   /**
+   * The most result cards the sheet draws: a card is a rich row, and a filter
+   * alone ("Confirmed") can match thousands. The list is ordered outward from
+   * now, so the visits left off are the farthest.
+   */
+  RESULT_LIMIT: 200,
+
+  /**
    * The window positions that satisfy the typed text (every term, in any
    * field; the number against the phone), then every filter — ascending, in
    * one pass. An empty query keeps every visit.
@@ -226,6 +233,28 @@ export const SearchFilterSystem = {
       whenPresets: PRESET_ORDER.filter((preset) => reached.has(preset)),
       hasNote,
     };
+  },
+
+  /**
+   * Which preset a date filter IS on the shop's own today — the span a preset
+   * built — or `null` for any other span (a recent saved last week). The
+   * chip says «Днес» only while it is today.
+   */
+  presetOf(
+    filter: SearchFilter.When,
+    shopNow: ShopNow,
+  ): SearchWhenPreset | null {
+    for (let i = 0; i < PRESET_ORDER.length; i++) {
+      const preset = PRESET_ORDER[i] as SearchWhenPreset;
+      const built = SearchFilterSystem.whenOf(preset, shopNow);
+      if (
+        built.filterFromDate === filter.filterFromDate &&
+        built.filterToDate === filter.filterToDate
+      ) {
+        return preset;
+      }
+    }
+    return null;
   },
 
   /**

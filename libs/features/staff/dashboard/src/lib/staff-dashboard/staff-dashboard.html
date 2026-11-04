@@ -307,135 +307,16 @@
     />
 
     @if (store.searching()) {
-    <!-- THE SHEETS' ONE SEARCH GRAMMAR (owner, 2026-09-24: "I like how the
-         client sheet on input focus collapses the title — this should be
-         done in adding a service and other places"): the page's head, its
-         scope as the line under the title, the DS field pinned under the
-         bar, and the head folding while the search is engaged — the bar
-         is told, because a folded title never scrolls under it. The read
-         in flight is the field's own quiet ring. -->
-    <ui-modal-sheet
-      sheetId="staff-search-sheet"
-      labelledBy="staff-search-title"
-      [closeLabel]="t('staff.day.cancelDismiss')"
-      [open]="true"
-      [titleCollapsed]="searchSheetEngaged() ? true : undefined"
-      data-testid="staff-search-sheet"
-      (dismissed)="closeSearchSheet()"
-    >
-      <span sheet-title>{{ t('staff.day.searchLabel') }}</span>
-
-      <!-- COMFORTABLE, the visit sheet's pages' own gap: the one search
-           grammar spaces its head, field and answers alike everywhere. -->
-      <ui-stack uiSpacing="comfortable" class="staff-cancel__body">
-        <ui-sheet-headline
-          [uiFolded]="searchSheetEngaged()"
-          data-testid="staff-search-headline"
-        >
-          <h2
-            id="staff-search-title"
-            uiSheetLargeTitle
-            uiText
-            uiFont="largeTitle"
-          >
-            {{ t('staff.day.searchLabel') }}
-          </h2>
-          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-            {{ t('staff.day.searchScope') }}
-          </p>
-        </ui-sheet-headline>
-        <ui-search-field
-          uiPinned
-          [uiValue]="store.term()"
-          [uiPlaceholder]="t('staff.day.searchPlaceholder')"
-          [uiBusy]="store.searchLoading()"
-          uiBusyTestId="staff-search-loading"
-          uiTestId="staff-search-input"
-          [uiClearLabel]="t('staff.day.searchClear')"
-          (uiInput)="store.setTerm($event)"
-          (uiFocusChange)="searchFieldFocused.set($event)"
-          (uiNavigate)="focusFirstHit($event)"
-        />
-
-        @if (store.searchLoading()) {
-        <!-- The ring in the field says it; nothing below until it lands. -->
-        } @else if (searchTermSearchable()) { @if (searchResults(); as hits) {
-        @if (hits.length === 0) {
-        <p
-          uiText
-          uiFont="footnote"
-          uiForegroundStyle="secondary"
-          data-testid="staff-search-empty"
-        >
-          {{ t('staff.day.searchEmpty') }}
-        </p>
-        } @else {
-        <ul uiListGroup>
-          @for (hit of hits; track hit.id) {
-          <li class="staff-search__item">
-            <!-- A BUTTON, not a clickable `li`: the row is an action, so it
-                 owes focusability and Enter/Space for free rather than a
-                 hand-rolled keydown handler. -->
-            <button
-              type="button"
-              uiListRow
-              uiSize="large"
-              [attr.data-past]="hit.past ? '' : null"
-              data-testid="staff-search-hit"
-              (click)="openHit(hit)"
-            >
-              <ui-stack uiSpacing="none">
-                <span uiText uiFont="body">
-                  <ui-marked-text [uiRuns]="hit.titleParts" />
-                </span>
-                <!-- EVERY field that earned the hit, with the matching run
-                   marked — a phone search must show the number it matched,
-                   not just the name sitting above it. -->
-                @for (match of hit.matches; track $index) {
-                <span
-                  uiText
-                  uiFont="footnote"
-                  uiForegroundStyle="secondary"
-                  class="staff-search__match"
-                >
-                  <ui-marked-text [uiRuns]="match.parts" />
-                </span>
-                }
-              </ui-stack>
-              <span
-                uiTrailing
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                class="staff-search__when"
-              >
-                {{ hit.whenLabel }}
-              </span>
-            </button>
-          </li>
-          }
-        </ul>
-        } } } @if (store.searchCapped()) {
-        <p
-          uiText
-          uiFont="footnote"
-          uiForegroundStyle="secondary"
-          data-testid="staff-search-truncated"
-        >
-          {{ t('staff.day.searchTruncated') }}
-        </p>
-        } @if (store.searchStale()) {
-        <p
-          uiText
-          uiFont="footnote"
-          uiForegroundStyle="secondary"
-          data-testid="staff-search-stale"
-        >
-          {{ t('staff.day.searchStale') }}
-        </p>
-        }
-      </ui-stack>
-    </ui-modal-sheet>
+    <!-- THE SCHEDULE SEARCH: a Spotlight-style sheet that owns its query, its
+         chips and the device's recents, and searches the window the store
+         holds (docs/designs/staff-search-spotlight.md). -->
+    <lib-staff-search-sheet
+      [catalog]="clientCardCatalog()"
+      [companionNames]="companionNames()"
+      [unnamedClient]="dayWords().unnamedClient"
+      [callingCode]="shopCallingCode"
+      [locale]="content.locale()"
+    />
     } @if (isGrid()) { @if (dayHealth().length > 0) {
     <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the
          agenda's all-day strip opens with — a chair the sheet could not read

@@ -2,6 +2,7 @@ import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
   CancelledSide,
   type DayWindows,
+  MatchMode,
   type Seat,
   type ShopNow,
   type VisitGrain,
@@ -24,6 +25,7 @@ import {
 } from '@core/primitives';
 import {
   type SubjectStory,
+  TextMatchSystem,
   VisitListSystem,
   VisitStorySystem,
   WaitlistSystem,
@@ -44,6 +46,7 @@ import {
   StatusFactTone,
   TrailingFactFace,
   type VisitRowMark,
+  type VisitRowMatch,
   VisitRowEntry,
   type VisitRowVm,
   type VisitTrailing,
@@ -158,6 +161,8 @@ export interface VisitRowOptions {
   readonly locale: string;
   /** The visit's photos, counted (`countPhotosByAppointment`): a row's mark. */
   readonly photoCount?: number;
+  /** What a search found in this visit; absent (every list but the search) changes nothing. */
+  readonly matched?: VisitRowMatch;
   readonly words: VisitBuilderWords;
   /**
    * False withholds the client's own words from a viewer who may not read
@@ -281,8 +286,32 @@ export function visitZoneOf(
     : (lookup.locationTimeZone?.(locationId) ?? null);
 }
 
-/** One appointment as a row of either list. */
+/**
+ * One appointment as a row of either list. A search sets what it found on
+ * the row (`options.matched`): the title's marked runs, and the matched
+ * lines after the usual ones. Without it the row is exactly the plain one.
+ */
 export function visitRowOf(
+  appointment: Appointment,
+  options: VisitRowOptions,
+  lookup: VisitLookup,
+): AppointmentRowVm {
+  const row = plainRowOf(appointment, options, lookup);
+  const matched = options.matched;
+  if (matched === undefined) return row;
+  const titleParts = TextMatchSystem.segmentsAny(
+    row.title,
+    matched.titleTerms,
+    MatchMode.Anywhere,
+  );
+  return {
+    ...row,
+    lines: [...row.lines, ...matched.matchLines],
+    ...(titleParts.some((part) => part.hit) ? { titleParts } : {}),
+  };
+}
+
+function plainRowOf(
   appointment: Appointment,
   options: VisitRowOptions,
   lookup: VisitLookup,

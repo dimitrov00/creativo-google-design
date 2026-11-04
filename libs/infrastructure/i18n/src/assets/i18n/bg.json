@@ -1179,6 +1179,29 @@
       },
       "daySummaryTips": "{{amount}} бакшиши"
     },
+    "search": {
+      "recents": "Скорошни",
+      "clearRecents": "Изчисти",
+      "suggestions": "Предложения",
+      "today": "Днес",
+      "tomorrow": "Утре",
+      "thisWeek": "Тази седмица",
+      "earlier": "По-рано",
+      "withNote": "С бележка",
+      "barberGroup": "Бръснар",
+      "serviceGroup": "Услуга",
+      "clearFilters": "Махни филтрите",
+      "chipRemove": "Махни филтъра {{label}}",
+      "phoneRow": "Телефон {{number}}",
+      "moreThanShown": "Показани са първите {{count}} резултата. Стесни търсенето.",
+      "status": {
+        "pending": "Заявени",
+        "confirmed": "Потвърдени",
+        "completed": "Приключени",
+        "noShow": "Не са дошли",
+        "cancelled": "Отказани"
+      }
+    },
     "block": {
       "title": "Блок",
       "allDay": "Цял ден",

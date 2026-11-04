@@ -46,9 +46,12 @@ async function openSearch(page: Page): Promise<void> {
   });
 }
 
-/** The hits whose text holds this attempt's name. */
+/** The result cards whose text holds this attempt's name. */
 function hitsOf(page: Page, run: string) {
-  return page.getByTestId('staff-search-hit').filter({ hasText: run });
+  return page
+    .getByTestId('staff-search-list')
+    .locator('[data-appointment-id]')
+    .filter({ hasText: run });
 }
 
 /** Seeds a visit of this attempt's, with the contact a desk would have typed. */
@@ -96,7 +99,10 @@ test.describe('the schedule search — part 1', () => {
     }
 
     // The phone line carries the washed run — painted, not just present.
-    const wash = hitsOf(page, run).locator('mark').first();
+    const wash = hitsOf(page, run)
+      .getByTestId('staff-search-line-phone')
+      .locator('mark')
+      .first();
     await expect(wash).toBeVisible();
     const paint = await wash.evaluate((mark) => {
       const style = getComputedStyle(mark);
@@ -129,6 +135,6 @@ test.describe('the schedule search — part 1', () => {
     await page.getByTestId('staff-search-input').fill(run);
 
     await expect(hitsOf(page, run)).toHaveCount(1, { timeout: 30_000 });
-    await expect(page.getByTestId('staff-search-stale')).toHaveCount(0);
+    await expect(page.getByTestId('staff-search-footnote')).toHaveCount(0);
   });
 });

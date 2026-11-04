@@ -213,6 +213,13 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'controls/search-field',
+    loadComponent: () =>
+      import('./pages/controls/search-field/search-field.page').then(
+        (m) => m.SearchFieldPage,
+      ),
+  },
+  {
     path: 'controls/marked-text',
     loadComponent: () =>
       import('./pages/controls/marked-text/marked-text.page').then(
