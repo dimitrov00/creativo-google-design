@@ -415,7 +415,7 @@ describe('the grid’s blocks', () => {
         false,
         BG,
       ).statusIcon,
-    ).toBe('checklist.done');
+    ).toBe('visit.completed');
   });
 
   it('names a carve-out by what and when, on a key the page resolves', () => {

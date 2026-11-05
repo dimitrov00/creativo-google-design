@@ -645,6 +645,16 @@ describe('searchSheetVm — the chosen filters over the field', () => {
 });
 
 describe('searchSheetVm — the suggestions', () => {
+  it('marks each state with its own glyph, the calendar’s', () => {
+    const vm = searchSheetVm(
+      input('bg', SearchQuery.empty(), { openField: SearchFilterField.Status }),
+    );
+    // The fixture's window offers the confirmed visits only.
+    expect(suggestionRows(vm).map((r) => [r.id, r.glyph])).toEqual([
+      ['STATUS:CONFIRMED', 'visit.confirmed'],
+    ]);
+  });
+
   it('lists an open key’s values for a key being picked, the typed text narrowing them', () => {
     const open = searchSheetVm(
       input('bg', SearchQuery.empty(), { openField: SearchFilterField.Barber }),

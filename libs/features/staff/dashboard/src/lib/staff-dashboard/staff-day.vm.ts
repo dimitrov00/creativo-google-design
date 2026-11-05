@@ -492,6 +492,19 @@ export interface LaneVm {
 }
 
 /**
+ * Every booking state's glyph — the ONE table, so a state wears the same
+ * mark on a calendar block, a sheet and a search row. Completed is the
+ * registry's «done» (a filled end), never the bare tick a selection draws.
+ */
+export const BOOKING_STATUS_ICONS = {
+  [BookingStatus.Pending]: 'visit.pending',
+  [BookingStatus.Confirmed]: 'visit.confirmed',
+  [BookingStatus.Completed]: 'visit.completed',
+  [BookingStatus.NoShow]: 'visit.noShow',
+  [BookingStatus.Cancelled]: 'visit.cancelled',
+} as const satisfies Record<BookingStatus, UiIconName>;
+
+/**
  * The glyph that doubles a TERMINAL state on a calendar block.
  *
  * Live states get none: a block that is simply filled and unmarked is the
@@ -499,9 +512,9 @@ export interface LaneVm {
  * happened yet".
  */
 export const STATUS_ICONS: Partial<Record<BookingStatus, UiIconName>> = {
-  [BookingStatus.Completed]: 'checklist.done',
-  [BookingStatus.NoShow]: 'visit.noShow',
+  [BookingStatus.Completed]: BOOKING_STATUS_ICONS[BookingStatus.Completed],
+  [BookingStatus.NoShow]: BOOKING_STATUS_ICONS[BookingStatus.NoShow],
   // It was missing (found 2026-09-24): a cancelled block drew no glyph at
   // all while the card's face and the sheet carried one.
-  [BookingStatus.Cancelled]: 'visit.cancelled',
+  [BookingStatus.Cancelled]: BOOKING_STATUS_ICONS[BookingStatus.Cancelled],
 };

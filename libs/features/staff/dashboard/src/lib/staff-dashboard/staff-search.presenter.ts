@@ -43,6 +43,7 @@ import {
 } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
 import { formatWallClock } from '@creativo/ui/wall-clock';
+import { BOOKING_STATUS_ICONS } from './staff-day.vm';
 import {
   phoneAsTyped,
   searchGlyphOf,
@@ -414,7 +415,11 @@ function valueRow(
     label,
     parts: plainRuns(label),
     detail: shape.detail,
-    glyph: null,
+    // A state wears its own mark (the calendar's), a barber their face.
+    glyph:
+      filter.searchFilterField === SearchFilterField.Status
+        ? BOOKING_STATUS_ICONS[filter.filterBookingStatuses[0] as BookingStatus]
+        : null,
     face:
       filter.searchFilterField === SearchFilterField.Barber
         ? faceOf(filter.filterBarberIds[0] as BarberId, input)
