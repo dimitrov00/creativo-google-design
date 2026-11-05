@@ -32,6 +32,8 @@ import {
   type CustomerId,
   LocalDate,
   type LocationId,
+  MinuteCount,
+  type MinuteOfDay,
   OperationId,
   Result,
   Tag,
@@ -75,7 +77,6 @@ import type {
   ShopLocation,
 } from '@core/entities';
 import {
-  AvailabilitySystem,
   ClientIssueSystem,
   CouponGrantSystem,
   GridLayoutSystem,
@@ -245,8 +246,20 @@ interface DayGeometryCell {
   readonly dayKey: LocalDate;
   readonly lanes: readonly (Omit<BarberDayLane, 'gaps'> & {
     readonly holes: readonly MinuteRange[];
+    /** What occupied the chair, unpadded — what a hole's bookable start reads. */
+    readonly occupied: readonly MinuteRange[];
+    readonly turnaround: MinuteCount;
   })[];
 }
+
+/**
+ * A hole as the staff day carries it: the chair's real empty time
+ * (`LaneGap`) and the first minute of it a NEW client can take
+ * (`GridLayoutSystem.bookableFrom`) — where «Нов час» from it starts.
+ */
+export type StaffLaneGap = LaneGap & {
+  readonly bookableFromMinutes: MinuteOfDay;
+};
 
 /** The same grant ids, in the same order — a sheet re-probing one visit reads nothing again. */
 function sameIds(
@@ -315,11 +328,21 @@ export interface LaneGeometry {
   readonly rostered: readonly MinuteRange[];
   /** The carve-outs — a break, an admin hour — clipped to worked time. */
   readonly blocks: readonly MinuteRange[];
-  /** The busy projection's spans, padded by the barber's turnaround. */
+  /**
+   * The busy projection's spans, UNPADDED (owner, 2026-11-05: free time
+   * starts when the chair empties). The turnaround rides beside them.
+   */
   readonly busy: readonly MinuteRange[];
+  /** The reset an unrelated client waits out after a visit. */
+  readonly turnaround: MinuteCount;
 }
 
-const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
+const NO_GEOMETRY: LaneGeometry = {
+  rostered: [],
+  blocks: [],
+  busy: [],
+  turnaround: MinuteCount.ZERO,
+};
 
 /**
  * ONE CHAIR'S DAY, derived (F1-10, blueprint §4.2) — the availability the
@@ -334,9 +357,12 @@ const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
  *   the grid unclamped;
  * - the blocks are `RosterSystem.offeredCarveOuts`, the same inputs' second
  *   question — the windows say what is left, these say what was blocked;
- * - the busy spans are the projection's, padded by the schedule's
- *   turnaround (`AvailabilitySystem.paddedBusy`). Busy is location-agnostic
- *   on purpose: a barber booked at the other shop is not free here either.
+ * - the busy spans are the projection's as stored, UNPADDED: a hole is
+ *   the time the chair is really empty (owner, 2026-11-05: "the free time
+ *   start is incorrect" — 11:45 after a cut ending 11:35). The schedule's
+ *   turnaround rides beside them, for the first minute a new client can
+ *   take (`GridLayoutSystem.bookableFrom`). Busy is location-agnostic on
+ *   purpose: a barber booked at the other shop is not free here either.
  *
  * A barber with no schedule, or no window that day, has no geometry at all
  * — not rostered, and nothing of theirs to draw. Exported for its spec
@@ -363,7 +389,8 @@ export function laneGeometryOf(
   return {
     rostered,
     blocks: RosterSystem.offeredCarveOuts(input),
-    busy: AvailabilitySystem.paddedBusy(barberId, busyDay, schedule, []),
+    busy: busyDay === null ? [] : busyDay.blocks,
+    turnaround: schedule.turnaroundMinutes,
   };
 }
 
@@ -397,12 +424,13 @@ export interface BarberDayLane {
    */
   readonly blocks: readonly MinuteRange[];
   /**
-   * EVERY hole inside those windows, already padded by turnaround — the
+   * EVERY hole inside those windows — the chair's real empty time, the
    * elapsed ones as well as the sellable ones, split at the shop's clock
    * and distinguished by `LaneGap.sellable` (`GridLayoutSystem.sellableAt`,
-   * in the lane day's minutes).
+   * in the lane day's minutes), each with the first minute a new client
+   * can take after the turnaround (`bookableFromMinutes`).
    */
-  readonly gaps: readonly LaneGap[];
+  readonly gaps: readonly StaffLaneGap[];
   /**
    * The chair's day could not be read at all (OR-2) — a refused listen, or
    * a day whose every stored visit the read-time guard refused. Such a lane
@@ -1649,17 +1677,15 @@ export class StaffDayStore {
         // The lane carries the roster's own minutes of its shop day — the
         // windows, the blocks and the holes as `MinuteRange`s (Law 7.3:
         // zero inbound mapping); the drawing reads them as they are.
+        const occupied = occupiedOn(dayKey, appointments, barber.id, geo.busy);
         return {
           barberId: barber.id,
           appointments,
           rostered: geo.rostered,
           blocks: geo.blocks,
-          holes: failed
-            ? []
-            : GridLayoutSystem.holes(
-                geo.rostered,
-                occupiedOn(dayKey, appointments, barber.id, geo.busy),
-              ),
+          holes: failed ? [] : GridLayoutSystem.holes(geo.rostered, occupied),
+          occupied,
+          turnaround: geo.turnaround,
           failed,
           rosterRead,
           unreadable: result?.ok ? result.value.unreadableCount : 0,
@@ -1682,9 +1708,18 @@ export class StaffDayStore {
     if (now === null) return [];
     return this.dayGeometry().map((cell) => ({
       dayKey: cell.dayKey,
-      lanes: cell.lanes.map(({ holes, ...lane }) => ({
+      lanes: cell.lanes.map(({ holes, occupied, turnaround, ...lane }) => ({
         ...lane,
-        gaps: GridLayoutSystem.sellableAt(holes, now, cell.dayKey),
+        gaps: GridLayoutSystem.sellableAt(holes, now, cell.dayKey).map(
+          (gap) => ({
+            ...gap,
+            bookableFromMinutes: GridLayoutSystem.bookableFrom(
+              gap,
+              occupied,
+              turnaround,
+            ),
+          }),
+        ),
       })),
     }));
   });

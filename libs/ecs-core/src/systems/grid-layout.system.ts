@@ -291,6 +291,34 @@ export const GridLayoutSystem = {
     return out;
   },
 
+  /**
+   * The first minute of a hole a NEW client can take (owner, 2026-11-05:
+   * free time starts when the chair empties). The hole is the chair's real
+   * empty time, from its UNPADDED occupation; an unrelated client still
+   * waits out the barber's turnaround after the visit before it — the reset
+   * the commit pads every busy span with (`AvailabilitySystem.paddedBusy`).
+   * `occupied` is normalized (sorted, disjoint). When the turnaround would
+   * take the whole hole, the hole's own start: staff may place there and
+   * acknowledge the overlap.
+   */
+  bookableFrom(
+    gap: MinuteRun,
+    occupied: readonly MinuteRange[],
+    turnaround: MinuteCount,
+  ): MinuteOfDay {
+    let previousEnd: number | null = null;
+    for (let i = 0; i < occupied.length; i++) {
+      const run = occupied[i] as MinuteRange;
+      if (run.endMinutes > gap.startMinutes) break;
+      previousEnd = run.endMinutes;
+    }
+    if (previousEnd === null) return gap.startMinutes;
+    const from = previousEnd + turnaround;
+    return from <= gap.startMinutes || from >= gap.endMinutes
+      ? gap.startMinutes
+      : MinuteOfDay.ofProven(from);
+  },
+
   /** {@link holes} then {@link sellableAt} — the legacy one-call form. */
   laneGaps(
     rostered: readonly MinuteRange[],

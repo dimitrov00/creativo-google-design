@@ -414,8 +414,14 @@ export interface GapRowVm {
   readonly spanLabel: string;
   /** Where the hole begins on the shop's wall clock — the run's order. */
   readonly startMinutes: MinuteOfDay;
-  /** Where it ends — a press offers to book or block from its start. */
+  /** Where it ends — a block from it takes the whole hole. */
   readonly endMinutes: EndMinute;
+  /**
+   * Where «Нов час» from it starts: the first minute a new client can take
+   * after the barber's turnaround (`GridLayoutSystem.bookableFrom`) — 11:45
+   * in a hole that opens at 11:35 behind a 10-minute reset.
+   */
+  readonly bookableFromMinutes: MinuteOfDay;
   /** The chair it is free on — what a booking or a block from it seats. */
   readonly barberId: BarberId;
   /**

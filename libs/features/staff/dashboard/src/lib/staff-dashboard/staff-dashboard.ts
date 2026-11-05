@@ -10,6 +10,7 @@ import {
   minuteRangeOf,
   startMinuteOf,
 } from './staff-day-save';
+import { settleStripOnWeek } from './week-strip';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -902,34 +903,6 @@ export class StaffDashboard {
   protected readonly datePickerOpen = signal(false);
 
   /**
-   * Park the strip on a week, and keep asking until it lands.
-   *
-   * Deliberately arithmetic rather than `scrollIntoView`: every week is
-   * exactly one scrollport wide, so the target is `index x clientWidth` and
-   * there is nothing to measure. `scrollIntoView` also walks every scrollable
-   * ancestor, which on first paint scrolled the PAGE as a side effect.
-   *
-   * The retry is the same shape as `settleOnNow` and for the same reason: on
-   * a cold load the strip is laid out over several frames, and a scroll
-   * against a zero-width box clamps silently to nothing.
-   */
-  private settleOnWeek(index: number, framesLeft: number): void {
-    if (framesLeft <= 0) return;
-    const strip = this.host.nativeElement.querySelector<HTMLElement>(
-      '[data-testid="staff-week-strip"]',
-    );
-    const page = strip?.clientWidth ?? 0;
-    if (page === 0) {
-      requestAnimationFrame(() => this.settleOnWeek(index, framesLeft - 1));
-      return;
-    }
-    const target = index * page;
-    if (Math.abs(strip!.scrollLeft - target) < 1) return;
-    strip!.scrollTo({ left: target, behavior: 'instant' });
-    requestAnimationFrame(() => this.settleOnWeek(index, framesLeft - 1));
-  }
-
-  /**
    * A day from the week strip is a TURN; one from the month popover is a
    * JUMP (2026-09-23, §6). Both show the day; only the jump asks the
    * calendar to reveal its working hours again — a turn keeps the reader's
@@ -941,6 +914,10 @@ export class StaffDashboard {
     if (jump) this.store.jumpToDay(dayKey);
     else this.store.goToDay(dayKey);
     this.datePickerOpen.set(false);
+    // A JUMP parks the strip on the picked week even when the shown week did
+    // not change — «Днес» after the strip was swiped elsewhere must slide it
+    // home (owner, 2026-11-05). `followWeek` moves it only on a week change.
+    if (jump) this.parkStrip(LocalDate.startOfWeek(dayKey));
 
     // TAPPING TODAY MEANS "TAKE ME TO NOW".
     //
@@ -1682,20 +1659,36 @@ export class StaffDashboard {
    * `scrollIntoView` on the week element rather than a computed offset: the
    * browser already knows where its own snap points are.
    */
-  private readonly strippedWeek = signal<LocalDate | null>(null);
+  private readonly strippedWeek = signal<string | null>(null);
 
   protected readonly followWeek = effect(() => {
     const week = this.selectedWeek();
     // No day yet (the shop's zone is resolving): nothing to follow.
     if (week === null) return;
-    if (untracked(() => this.strippedWeek()) === week) return;
-    this.strippedWeek.set(week);
-    const first = untracked(() => this.weekCalendar())[0]?.key ?? week;
+    // No strip yet either. A `?day=` names the shown week before the shop's
+    // today is known, and with no weeks the index used to fall back to 0:
+    // the strip "landed" on October, the week was marked as followed, and
+    // nothing — «Днес» in that same week included — moved it again
+    // (owner, 2026-11-05: "even if I click go to today it doesn't slide").
+    const first = this.weekCalendar()[0]?.key;
+    if (first === undefined) return;
+    // Followed per week AND per strip: a strip that turns over at midnight
+    // starts on another Monday, so the same week sits at another index.
+    if (untracked(() => this.strippedWeek()) === `${first}|${week}`) return;
+    untracked(() => this.parkStrip(week));
+  });
+
+  /** Slide the strip to `week` once it is laid out, and remember it was. */
+  private parkStrip(week: LocalDate): void {
+    const first = this.weekCalendar()[0]?.key;
+    if (first === undefined) return;
+    this.strippedWeek.set(`${first}|${week}`);
     const index = Math.round(LocalDate.daysBetween(first, week) / 7);
-    afterNextRender(() => this.settleOnWeek(index, ANCHOR_FRAMES), {
+    const host = this.host.nativeElement;
+    afterNextRender(() => settleStripOnWeek(host, index, ANCHOR_FRAMES), {
       injector: this.injector,
     });
-  });
+  }
 
   /**
    * Which group the run should OPEN on.
@@ -3549,8 +3542,9 @@ export class StaffDashboard {
     this.gapMenu.set(null);
     // No day before the shop's zone is known (4A-11): nothing to author on.
     if (!this.store.ready()) return;
-    // From a free-time row (owner, 2026-11-05): its chair, and its start —
-    // a block takes the whole hole.
+    // From a free-time row (owner, 2026-11-05): its chair; a block takes the
+    // whole hole, a booking starts where a new client fits after the
+    // turnaround.
     const chair = gap?.barberId ?? this.createChair();
     if (chair === null) return;
     if (createIntent === CreateIntent.Block) {
@@ -3565,7 +3559,7 @@ export class StaffDashboard {
     this.visitClientOptions.set([]);
     this.createVisit.set({
       barberId: chair,
-      startMinute: gap?.startMinutes ?? this.nowSnapped(),
+      startMinute: gap?.bookableFromMinutes ?? this.nowSnapped(),
       nonce: ++this.createSeq,
     });
   }
@@ -4443,6 +4437,11 @@ export class StaffDashboard {
     } else {
       this.store.jumpToToday();
     }
+    // The strip comes home too, even from a day in today's own week, which
+    // `followWeek` never re-parks (owner, 2026-11-05: "even if I click go
+    // to today it doesn't slide to today").
+    const today = this.store.todayKey();
+    if (today !== null) this.parkStrip(LocalDate.startOfWeek(today));
     // The button removes itself once the present is back in view; the
     // keyboard lands on the region it just scrolled, not on the body
     // (found in review, 2026-09-23).

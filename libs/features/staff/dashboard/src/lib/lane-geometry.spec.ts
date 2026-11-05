@@ -15,6 +15,7 @@ import {
 } from '@core/primitives';
 import {
   at,
+  barberBusyDayFixture,
   barberScheduleFixture,
   locationFixture,
   scheduleExceptionFixture,
@@ -41,6 +42,46 @@ function asClock(ranges: readonly MinuteRange[]): readonly string[] {
 }
 
 describe('laneGeometryOf', () => {
+  // Owner, 2026-11-05: "the free time start is incorrect" — a hole began at
+  // 11:45 after a cut ending 11:35, because the busy spans arrived padded by
+  // the turnaround. The geometry carries them as stored and the turnaround
+  // beside them; a new client's first minute is `bookableFrom`'s answer.
+  it('keeps the busy spans unpadded and hands the turnaround over beside them', () => {
+    const schedule = barberScheduleFixture({
+      id: IVAN,
+      turnaroundMinutes: unwrapOk(MinuteCount.of(10)),
+      versions: [
+        {
+          seq: 1,
+          effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
+          effectiveToLocalDate: null,
+          segments: [ShiftSegment.of(Weekday.Mon, CENTER, at(8), until(18))],
+        },
+      ],
+    });
+    const listed = [
+      locationFixture({
+        id: CENTER,
+        openingHours: Array.from({ length: 7 }, () =>
+          DayHours.open(at(8), until(20)),
+        ),
+      }),
+    ];
+    const busyDay = barberBusyDayFixture({ barberId: IVAN, localDate: MONDAY });
+
+    const geometry = laneGeometryOf(
+      IVAN,
+      MONDAY,
+      schedule,
+      busyDay,
+      null,
+      listed,
+    );
+
+    expect(asClock(geometry.busy)).toEqual(['10:00–10:30']);
+    expect(geometry.turnaround).toBe(10);
+  });
+
   // The staff day draws only the shops the catalogue offers: a segment at a
   // hidden shop, or at one with no document, has no window — and the block
   // an exception carved out of that segment goes with it. A block drawn

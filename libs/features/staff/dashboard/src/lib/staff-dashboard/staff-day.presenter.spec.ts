@@ -990,6 +990,7 @@ describe('gapRowVm — a hole, attributed', () => {
   const gap = {
     startMinutes: MinuteOfDay.ofProven(840),
     endMinutes: EndMinute.ofProven(950),
+    bookableFromMinutes: MinuteOfDay.ofProven(850),
     minutes: 110 as never,
     sellable: true,
   };
@@ -1011,6 +1012,9 @@ describe('gapRowVm — a hole, attributed', () => {
       past: false,
       sellable: true,
       barberName: 'Иван',
+      // The clock says when the chair empties; a booking from it starts
+      // where a new client fits after the turnaround.
+      bookableFromMinutes: 850,
     });
     expect(
       gapRowVm(gap, chair, FIXTURE_TODAY, { locale: 'en', words: EN })

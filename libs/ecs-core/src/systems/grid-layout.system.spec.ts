@@ -633,6 +633,47 @@ describe('the sweep against the per-block scan', () => {
   });
 });
 
+describe('GridLayoutSystem.bookableFrom — a new client waits out the turnaround', () => {
+  // Ivan's chair: a cut 11:00–11:35, a 10-minute turnaround. The hole is
+  // the chair's empty time from 11:35; a new client fits from 11:45.
+  const occupied = deepFreeze([
+    MinuteRange.of(minute(540), endMinute(600)),
+    MinuteRange.of(minute(660), endMinute(695)),
+  ]);
+  const ten = unwrapOk(MinuteCount.of(10));
+  const hole = (start: number, end: number): MinuteRun => ({
+    startMinutes: minute(start),
+    endMinutes: endMinute(end),
+  });
+
+  it('starts after the turnaround that follows the visit before the hole', () => {
+    expect(S.bookableFrom(hole(695, 960), occupied, ten)).toBe(705);
+  });
+
+  it('starts at the hole when nothing came before it, or no turnaround is kept', () => {
+    expect(S.bookableFrom(hole(480, 540), occupied, ten)).toBe(480);
+    expect(S.bookableFrom(hole(695, 960), occupied, MinuteCount.ZERO)).toBe(
+      695,
+    );
+  });
+
+  it('starts at the hole once the turnaround is behind it — a piece cut at now', () => {
+    expect(S.bookableFrom(hole(720, 960), occupied, ten)).toBe(720);
+    expect(S.bookableFrom(hole(700, 960), occupied, ten)).toBe(705);
+  });
+
+  it('keeps the hole’s start when the turnaround would take all of it', () => {
+    expect(S.bookableFrom(hole(600, 605), occupied, ten)).toBe(600);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const gap = deepFreeze(hole(695, 960));
+    expect(S.bookableFrom(gap, occupied, ten)).toBe(
+      S.bookableFrom(gap, occupied, ten),
+    );
+  });
+});
+
 describe('GridLayoutSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const events = deepFreeze([

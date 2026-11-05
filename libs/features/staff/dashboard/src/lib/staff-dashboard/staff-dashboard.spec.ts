@@ -3567,6 +3567,40 @@ describe('StaffDashboard', () => {
     });
   });
 
+  it('brings the strip home on «Днес», even from a day in today’s own week', async () => {
+    // Owner, 2026-11-05: "even if I click go to today it doesn't slide to
+    // today". The strip follows the shown day only when its WEEK changes, so
+    // a strip swiped elsewhere stayed there when «Днес» came back from a day
+    // of the same week. The suite's today is Wed 2026-08-05; the strip
+    // opens four weeks back, so today's week is the fifth page.
+    const strip = host().querySelector<HTMLElement>(
+      '[data-testid="staff-week-strip"]',
+    );
+    if (!strip) throw new Error('the week strip did not render');
+    Object.defineProperty(strip, 'clientWidth', { value: 300 });
+    const scrolled: number[] = [];
+    strip.scrollTo = ((options: ScrollToOptions) => {
+      scrolled.push(options.left ?? 0);
+    }) as typeof strip.scrollTo;
+
+    const component = fixture.componentInstance as unknown as {
+      store: { goToDay: (day: string) => void };
+    };
+    component.store.goToDay('2026-08-07');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    scrolled.length = 0;
+
+    (
+      host().querySelector('[data-testid="staff-day-today"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(scrolled).toContain(4 * 300);
+  });
+
   it('slides the week strip a WHOLE week, in CSS, with nothing to press', () => {
     // The gesture is the browser's: `ui-scroll-row` supplies
     // `scroll-snap-type: x mandatory` and `scroll-snap-align: start` on each

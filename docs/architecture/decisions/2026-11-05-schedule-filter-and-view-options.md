@@ -80,8 +80,19 @@
    head's new `quiet` state sets the word in the facts' ink at the regular
    weight, so names still lead the run. This overturns the earlier choice
    to leave a hole's start to its group heading: the heading reads one
-   minute for several chairs, and a turnaround hid in it — a chair free
-   from 11:45 after a visit ending 11:35 now shows the jump on its own row.
+   minute for several chairs.
+10. **A hole is the chair's real empty time; «Нов час» waits out the
+    turnaround** (owner: "the free time start is incorrect" — a hole drawn
+    from 11:45 after a cut ending 11:35; C, U). The lane's busy spans were
+    padded by the barber's turnaround before the roster was cut by them,
+    so every hole lost the reset on both sides. They now arrive as stored
+    (`laneGeometryOf` hands the turnaround over beside them): Иван's chair
+    reads 10:00–11:00 and 11:35–16:00. The turnaround still binds a NEW
+    client, so «Нов час» from a hole starts at
+    `GridLayoutSystem.bookableFrom` — 11:45 there — where the commit's
+    padded check (`AvailabilitySystem.paddedBusy`) will take it; a block
+    still takes the whole hole. The day's free total now counts the
+    reset minutes as free: they are empty chair time.
 
 ## Not done
 
