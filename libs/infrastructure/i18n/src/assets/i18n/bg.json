@@ -1144,7 +1144,7 @@
       "statusFilterTitle": "Кои посещения да се виждат",
       "statusFilterLede": "Скритите статуси не се показват в графика. Пази се на това устройство.",
       "statusFilterShowAll": "Покажи всички",
-      "fieldsMenuItem": "Полета на картите…",
+      "viewSettings": "Настройки",
       "fieldsCount": "{{count}} от {{total}}",
       "field": {
         "avatar": "Аватар на клиента",

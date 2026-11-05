@@ -47,8 +47,8 @@
 5. **It names the HIDDEN states** (R). A state added later is drawn until
    somebody hides it; a stored list from an older build cannot hide it.
 6. **Card fields move under the view menu** (U, M). A second group under
-   the four renderings, «Полета на картите…» (`calendar.cardFields`, the
-   `tune` sliders), list view only — a calendar block has no card. The
+   the four renderings, «Настройки» (`calendar.cardFields`, the `tune`
+   sliders; owner: "it could be just settings"), list view only — a calendar block has no card. The
    view menu still holds no ACT (the 2026-09-23 ruling): fields are how the
    day is drawn, like the rendering above them.
 

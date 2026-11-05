@@ -1144,7 +1144,7 @@
       "statusFilterTitle": "Which visits to show",
       "statusFilterLede": "Hidden states stay off the schedule. Kept on this device.",
       "statusFilterShowAll": "Show all",
-      "fieldsMenuItem": "Card fields…",
+      "viewSettings": "Settings",
       "fieldsCount": "{{count}} of {{total}}",
       "field": {
         "avatar": "Client avatar",
