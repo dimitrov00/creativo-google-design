@@ -591,18 +591,56 @@ describe('searchSheetVm — the suggestions', () => {
     const vm = searchSheetVm(
       input('bg', held, { openField: SearchFilterField.Barber }),
     );
+    // The window's own order: a held value keeps its place.
     expect(suggestionRows(vm).map((r) => [r.id, r.checked])).toEqual([
-      ['BARBER:b-niko', true],
       ['BARBER:b-ivan', false],
+      ['BARBER:b-niko', true],
       ['REMOVE:BARBER', null],
     ]);
-    expect(suggestionRows(vm)[0]?.suggestAction).toBe(
+    expect(suggestionRows(vm)[1]?.suggestAction).toBe(
       SuggestAction.ToggleValue,
     );
     const remove = suggestionRows(vm).at(-1);
     expect(remove?.label).toBe('Махни филтъра');
     expect(remove?.destructive).toBe(true);
     expect(remove?.suggestAction).toBe(SuggestAction.RemoveFilter);
+  });
+
+  it('keeps a held preset where it stands, and puts a held day the window does not offer after the presets', () => {
+    const preset = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(
+          SearchQuery.empty(),
+          SearchFilter.when(day(1), day(1)),
+        ),
+        { openField: SearchFilterField.When },
+      ),
+    );
+    expect(suggestionLabels(preset).slice(0, 2)).toEqual(['Днес', 'Утре']);
+    const custom = searchSheetVm(
+      input(
+        'en',
+        SearchQuery.withFilter(
+          SearchQuery.empty(),
+          SearchFilter.when(day(30), day(30)),
+        ),
+        { openField: SearchFilterField.When },
+      ),
+    );
+    const labels = suggestionLabels(custom);
+    expect(labels.slice(0, 4)).toEqual([
+      'Today',
+      'Tomorrow',
+      'This week',
+      'Past 7 days',
+    ]);
+    expect(suggestionRows(custom)[4]?.checked).toBe(true);
+    expect(labels.slice(5)).toEqual([
+      'A specific day…',
+      'A date range…',
+      'Remove filter',
+    ]);
   });
 
   it('offers the date presets the window reaches, then a day and a span', () => {

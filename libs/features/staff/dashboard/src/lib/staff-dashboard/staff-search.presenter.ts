@@ -394,7 +394,13 @@ function keyRow(
   };
 }
 
-/** The single values of a kind the window still offers, the held ones first. */
+/**
+ * The single values of a kind the window still offers, in the order it
+ * offers them — a pick never reorders the list under the thumb (owner,
+ * 2026-11-05) — then any held value the window no longer offers (a day
+ * picked from the month, a barber with nothing left in it), so it can
+ * still be taken off.
+ */
 function valuesOf(
   field: SearchFilterField,
   offered: SearchSuggestions,
@@ -402,7 +408,7 @@ function valuesOf(
   input: SearchSheetInput,
 ): readonly SearchFilter[] {
   const held = heldOf(query, field);
-  const out: SearchFilter[] = held === null ? [] : [...singleValues(held)];
+  const out: SearchFilter[] = [];
   const add = (filter: SearchFilter): void => {
     if (!out.some((value) => filterKey(value) === filterKey(filter))) {
       out.push(filter);
@@ -427,6 +433,7 @@ function valuesOf(
     case SearchFilterField.Note:
       break;
   }
+  if (held !== null) for (const value of singleValues(held)) add(value);
   return out;
 }
 
