@@ -34,7 +34,7 @@
           [uiOn]="row.shown"
           [attr.aria-label]="row.label"
           [attr.data-testid]="'staff-status-' + row.bookingStatus"
-          (uiOnChange)="filter.toggle(row.bookingStatus)"
+          (uiOnChange)="toggle(row.bookingStatus)"
         ></button>
       </ui-list-row>
       }
@@ -49,18 +49,18 @@
         <button
           uiSwitch
           uiTrailing
-          [uiOn]="filter.blocksShown()"
+          [uiOn]="!blocksHidden()"
           [attr.aria-label]="t('staff.day.statusFilterBlocks')"
           data-testid="staff-status-blocks"
-          (uiOnChange)="filter.toggleBlocks()"
+          (uiOnChange)="blocksHidden.set(!blocksHidden())"
         ></button>
       </ui-list-row>
     </ui-list-group>
   </ui-stack>
 
-  <!-- «Покажи всички» only while something is hidden — a "show all" over a
-       list that already shows all is a control that cannot act. -->
-  @if (filter.filtering()) {
+  <!-- RESET · APPLY (Zocdoc, Beli, Insight Timer): the quiet reset on the
+       leading side, greyed while nothing is hidden; the primary on the
+       thumb side, hugging its word. ✕ leaves the schedule as it was. -->
   <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
     <button
       type="button"
@@ -68,11 +68,22 @@
       uiButtonStyle="bordered"
       uiTint="neutral"
       uiControlSize="large"
-      data-testid="staff-status-show-all"
-      (click)="filter.showAll()"
+      [disabled]="!resettable()"
+      data-testid="staff-status-reset"
+      (click)="reset()"
     >
-      {{ t('staff.day.statusFilterShowAll') }}
+      {{ t('staff.day.statusFilterReset') }}
+    </button>
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      uiPrimary
+      data-testid="staff-status-apply"
+      (click)="apply()"
+    >
+      {{ t('staff.day.statusFilterApply') }}
     </button>
   </ui-sheet-action-bar>
-  }
 </ui-modal-sheet>

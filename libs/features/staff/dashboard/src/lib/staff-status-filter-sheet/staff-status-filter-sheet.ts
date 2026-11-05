@@ -4,8 +4,10 @@ import {
   computed,
   inject,
   output,
+  signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import type { BookingStatus } from '@core/primitives';
 import { TranslocoService } from '@jsverse/transloco';
 import {
   UiButton,
@@ -35,8 +37,13 @@ import { staffSearchWordsOf } from '../staff-dashboard/staff-search.words';
  * THE SCHEDULE'S STATUS FILTER (owner, 2026-11-05) — which booking states
  * the schedule draws, in every view: a row per state with the calendar's
  * own mark for it and a switch (≙ the «Status» show-list of Cursor's and
- * Luma's filters). A switch acts at once; «Покажи всички» rides the sheet's
- * bar only while something is hidden, as the card fields' reset does.
+ * Luma's filters), and blocked time in a group of its own.
+ *
+ * The switches edit a DRAFT (owner, 2026-11-05: "apply and reset"): the
+ * bar's «Приложи» takes it to the schedule and closes, ✕ leaves the
+ * schedule as it was, and «Нулирай» sets the draft back to everything
+ * drawn — Zocdoc's «Clear all» · «Show results», Insight Timer's switches
+ * over the same pair.
  */
 @Component({
   selector: 'lib-staff-status-filter-sheet',
@@ -70,6 +77,12 @@ export class StaffStatusFilterSheet {
     return this.transloco.translate<string>(key);
   };
 
+  // ── The draft, seeded from what the schedule draws now ──────────────
+  private readonly hidden = signal<readonly BookingStatus[]>(
+    this.filter.hidden(),
+  );
+  protected readonly blocksHidden = signal(!this.filter.blocksShown());
+
   protected readonly rows = computed(() => {
     this.copyTable();
     const words = staffSearchWordsOf((key, params) =>
@@ -77,8 +90,31 @@ export class StaffStatusFilterSheet {
     );
     return statusFilterRowsVm({
       statuses: SCHEDULE_STATUSES,
-      hidden: this.filter.hidden(),
+      hidden: this.hidden(),
       statusWord: words.statusWord,
     });
   });
+
+  /** Something in the draft is hidden — «Нулирай» has work to do. */
+  protected readonly resettable = computed(
+    () => this.hidden().length > 0 || this.blocksHidden(),
+  );
+
+  protected toggle(status: BookingStatus): void {
+    this.hidden.update((held) =>
+      held.includes(status)
+        ? held.filter((state) => state !== status)
+        : [...held, status],
+    );
+  }
+
+  protected reset(): void {
+    this.hidden.set([]);
+    this.blocksHidden.set(false);
+  }
+
+  protected apply(): void {
+    this.filter.apply(this.hidden(), this.blocksHidden());
+    this.closed.emit();
+  }
 }

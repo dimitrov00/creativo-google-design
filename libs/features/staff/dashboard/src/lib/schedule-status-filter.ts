@@ -98,8 +98,13 @@ export class ScheduleStatusFilter {
 
   /** Every state, and blocked time, drawn again. */
   showAll(): void {
-    this.commit([]);
-    this.commitBlocks(false);
+    this.apply([], false);
+  }
+
+  /** The sheet's «Приложи»: the draft it was edited as, in one act. */
+  apply(hidden: readonly BookingStatus[], blocksHidden: boolean): void {
+    this.commit(hidden);
+    this.commitBlocks(blocksHidden);
   }
 
   private commitBlocks(hidden: boolean): void {
