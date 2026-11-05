@@ -1139,6 +1139,12 @@
       "fieldsTitle": "What to show",
       "fieldsLede": "Choose what each card carries. Kept on this device.",
       "fieldsReset": "Reset to defaults",
+      "statusFilterLabel": "Filter",
+      "statusFilterLabelOn": "Filter, on",
+      "statusFilterTitle": "Which visits to show",
+      "statusFilterLede": "Hidden states stay off the schedule. Kept on this device.",
+      "statusFilterShowAll": "Show all",
+      "fieldsMenuItem": "Card fields…",
       "fieldsCount": "{{count}} of {{total}}",
       "field": {
         "avatar": "Client avatar",

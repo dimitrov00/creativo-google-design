@@ -202,6 +202,7 @@ import {
   StaffDashboard,
 } from './staff-dashboard';
 import { reversibleSave } from './staff-day-save';
+import { ScheduleStatusFilter } from '../schedule-status-filter';
 import {
   StaffVisitEditor,
   snapshotCommitOf,
@@ -2597,6 +2598,25 @@ describe('StaffDashboard', () => {
         blocks.find((block) => block.id === 'appointment-party#ivan')?.detail,
       ).not.toBe('appointments.status.cancelled');
       component.store.setView('agenda');
+      fixture.detectChanges();
+
+      // THE STATUS FILTER (owner, 2026-11-05) hides a chair by its OWN
+      // state: the cancelled seat goes, the live chair of the same party
+      // stays, and the bar's funnel turns accent while anything is hidden.
+      const statusFilter = TestBed.inject(ScheduleStatusFilter);
+      const funnel = () =>
+        host().querySelector('[data-testid="staff-status-filter-open"]');
+      expect(funnel()?.hasAttribute('data-filtering')).toBe(false);
+      statusFilter.toggle(BookingStatus.Cancelled);
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-row-id="appointment-party#niko"]'),
+      ).toBeNull();
+      expect(
+        host().querySelector('[data-row-id="appointment-party#ivan"]'),
+      ).not.toBeNull();
+      expect(funnel()?.hasAttribute('data-filtering')).toBe(true);
+      statusFilter.showAll();
       fixture.detectChanges();
 
       // Opened, the cancelled chair offers no cancel and no no-show — only
@@ -7628,6 +7648,39 @@ describe('StaffDashboard', () => {
     expect(
       host().querySelector('[data-testid="staff-add-block"]'),
     ).not.toBeNull();
+  });
+
+  it('keeps what the cards carry under the view menu, and the bar’s funnel for the states', () => {
+    // Owner, 2026-11-05: the bar's control filters by status; the card's
+    // fields ride with how the day is drawn, under the four readings.
+    (
+      host().querySelector(
+        '[data-testid="staff-view-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-fields-open"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-fields-sheet"]'),
+    ).not.toBeNull();
+
+    (
+      host().querySelector(
+        '[data-testid="staff-status-filter-open"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-status-filter-sheet"]'),
+    ).not.toBeNull();
+    expect(
+      host().querySelectorAll('[data-testid^="staff-status-"][uiswitch]'),
+    ).toHaveLength(5);
   });
   it('prints the contact details the owner asked for, behind their fields', () => {
     // REVERSED, deliberately. An earlier ruling kept digits out of the run

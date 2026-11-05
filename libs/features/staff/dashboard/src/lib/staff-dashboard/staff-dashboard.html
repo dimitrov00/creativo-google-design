@@ -144,12 +144,27 @@
               >
                 <ui-icon [uiName]="currentViewIcon()" />
               </button>
-              <!-- VIEWS ONLY (owner, 2026-09-23). «Блокирай време» rode
-                   here as a second row under the four readings, and a
-                   picker that chooses how the day is DRAWN must not also
-                   DO something to it — HIG's pull-down menus hold one kind
-                   of item. Blocking time is an act, and it lives with the
-                   other acts under ＋. -->
+              <!-- HOW THE DAY IS DRAWN, and nothing it DOES (owner,
+                   2026-09-23: «Блокирай време» left for ＋). Under the four
+                   readings, the list's card fields (owner, 2026-11-05: "the
+                   view select should be like settings") — Files' «View
+                   Options» under its layouts. List view only: a calendar
+                   block has no card to configure. -->
+              @if (!isGrid()) {
+              <ui-list-group>
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  data-testid="staff-fields-open"
+                  (click)="openFields()"
+                >
+                  <ui-icon uiLeading uiName="calendar.cardFields" />
+                  {{ t('staff.day.fieldsMenuItem') }}
+                </button>
+              </ui-list-group>
+              }
             </ui-choice-menu>
 
             <!-- Search sits between the two pickers and the person — the
@@ -835,29 +850,34 @@
       class="staff-bar"
       [uiAnchor]="isGrid() ? 'pane' : 'page'"
     >
-      <!-- WHAT THE CARDS CARRY, in the bar rather than buried in the view
-           menu: it is a property of this screen, it is reached often while
-           reading, and the bar is where this surface's own controls live.
-           Agenda only — a calendar block has no card to configure. -->
-      @if (!isGrid()) {
+      <!-- WHICH STATES ARE DRAWN (owner, 2026-11-05): the funnel narrows
+           what the schedule draws, in every view, and stays in the accent for
+           as long as a state is hidden, so a filtered day says so. What each
+           card CARRIES lives under the view menu, with how the day is drawn. -->
       <div class="staff-cluster">
         <button
           type="button"
           uiButton
           uiButtonStyle="bordered"
-          uiTint="neutral"
+          [uiTint]="statusFilter.filtering() ? undefined : 'neutral'"
           uiControlSize="large"
           [uiIconOnly]="true"
           class="staff-cluster__item"
-          [attr.aria-label]="t('staff.day.fieldsLabel')"
-          [title]="t('staff.day.fieldsLabel')"
-          data-testid="staff-fields-open"
-          (click)="openFields()"
+          [attr.aria-label]="
+            t(
+              statusFilter.filtering()
+                ? 'staff.day.statusFilterLabelOn'
+                : 'staff.day.statusFilterLabel'
+            )
+          "
+          [title]="t('staff.day.statusFilterLabel')"
+          [attr.data-filtering]="statusFilter.filtering() ? '' : null"
+          data-testid="staff-status-filter-open"
+          (click)="statusFilterOpen.set(true)"
         >
           <ui-icon uiName="action.filter" uiScale="medium" />
         </button>
       </div>
-      }
       <!-- Back to today, in the bar rather than the header — the same
            anatomy and the same glyph the appointments calendar uses, so the
            two calendars answer "take me back" identically. Leading, because
@@ -1048,7 +1068,9 @@
        One fixed card serves whichever of those the designer imagined and
        taxes the other two on every glance — so the ANATOMY is fixed and the
        CONTENTS are chosen. Per device, like the theme. -->
-  @if (fieldsOpen()) {
+  @if (statusFilterOpen()) {
+  <lib-staff-status-filter-sheet (closed)="statusFilterOpen.set(false)" />
+  } @if (fieldsOpen()) {
   <ui-modal-sheet
     sheetId="staff-fields-sheet"
     labelledBy="staff-fields-title"

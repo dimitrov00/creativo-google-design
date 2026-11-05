@@ -1,0 +1,61 @@
+<ui-modal-sheet
+  sheetId="staff-status-filter-sheet"
+  labelledBy="staff-status-filter-title"
+  [closeLabel]="t('staff.day.cancelDismiss')"
+  [open]="true"
+  data-testid="staff-status-filter-sheet"
+  (dismissed)="closed.emit()"
+>
+  <span sheet-title>{{ t('staff.day.statusFilterTitle') }}</span>
+
+  <ui-stack uiSpacing="loose" class="staff-status-filter__body">
+    <ui-sheet-headline class="staff-status-filter__headline">
+      <h2
+        id="staff-status-filter-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.day.statusFilterTitle') }}
+      </h2>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('staff.day.statusFilterLede') }}
+      </p>
+    </ui-sheet-headline>
+
+    <ui-list-group>
+      @for (row of rows(); track row.bookingStatus) {
+      <ui-list-row uiSize="large">
+        <span uiLeading><ui-icon [uiName]="row.glyph" /></span>
+        {{ row.label }}
+        <button
+          uiSwitch
+          uiTrailing
+          [uiOn]="row.shown"
+          [attr.aria-label]="row.label"
+          [attr.data-testid]="'staff-status-' + row.bookingStatus"
+          (uiOnChange)="filter.toggle(row.bookingStatus)"
+        ></button>
+      </ui-list-row>
+      }
+    </ui-list-group>
+  </ui-stack>
+
+  <!-- «Покажи всички» only while something is hidden — a "show all" over a
+       list that already shows all is a control that cannot act. -->
+  @if (filter.filtering()) {
+  <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      data-testid="staff-status-show-all"
+      (click)="filter.showAll()"
+    >
+      {{ t('staff.day.statusFilterShowAll') }}
+    </button>
+  </ui-sheet-action-bar>
+  }
+</ui-modal-sheet>

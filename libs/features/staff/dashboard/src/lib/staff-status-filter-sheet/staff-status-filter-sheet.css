@@ -1,0 +1,14 @@
+/* The body on the sheet system's own gutters, clear of the bar's «Покажи
+   всички» (the dashboard's `.staff-cancel__body`, unreachable from here). */
+.staff-status-filter__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
+  padding-block-end: var(
+    --ui-sheet-action-bar-clearance,
+    var(--sys-space-spacious)
+  );
+}
+
+/* A head in a body spaced `loose`: the fold takes THAT gap with it. */
+.staff-status-filter__headline {
+  --ui-sheet-headline-gap: var(--sys-space-loose);
+}

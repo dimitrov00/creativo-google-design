@@ -376,6 +376,9 @@ export const UI_ICON_REGISTRY = {
   'calendar.viewThreeDay': 'view_column',
   /** A Monday-first week. */
   'calendar.viewWeek': 'calendar_view_week',
+  /** Which facts each agenda card carries — several dials, the sliders
+   *  (distinct from `action.filter`'s funnel, which narrows WHAT is drawn). */
+  'calendar.cardFields': 'tune',
 
   /* ── Locations ──────────────────────────────────────────────────── */
   /** Place/address identity glyph on location cards and sheet rows. */

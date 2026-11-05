@@ -78,7 +78,6 @@ import {
 import {
   AppointmentLifecycleSystem,
   BarberToneSystem,
-  BillingSystem,
   ClientQuerySystem,
   GridLayoutSystem,
   IntervalSetSystem,
@@ -86,6 +85,7 @@ import {
   PhoneSystem,
   RosterSystem,
   ScheduleExceptionSystem,
+  ScheduleFilterSystem,
   SearchFieldsSystem,
   type SideWrites,
   StaffEditPlanSystem,
@@ -253,7 +253,7 @@ import {
   allDayEntriesOf,
   bookClientOption,
   daySummaryWords,
-  dayTipsWords,
+  dayTipsLine,
   exceptionWord,
   footShown,
   gridBlockEvent,
@@ -271,6 +271,8 @@ import {
   whenWords,
 } from './staff-day.presenter';
 import { StaffSearchSheet } from '../staff-search-sheet/staff-search-sheet';
+import { StaffStatusFilterSheet } from '../staff-status-filter-sheet/staff-status-filter-sheet';
+import { ScheduleStatusFilter } from '../schedule-status-filter';
 
 export { AgendaRow, type DayRowVm } from './staff-day.vm';
 
@@ -416,6 +418,7 @@ function minuteRangeOf(
     UiChoiceMenu,
     UiSegmentedControl,
     StaffSearchSheet,
+    StaffStatusFilterSheet,
     StaffTimeGrid,
     StaffVisitEditor,
     StaffEventHead,
@@ -1315,13 +1318,11 @@ export class StaffDashboard {
   ): readonly GridEvent[] {
     const words = this.dayWords();
     const context = this.rowContext();
-    const visits = lane.appointments.map((appointment) =>
-      gridVisitEvent(
+    const visits = this.drawn(
+      lane.appointments.map((appointment) =>
         dayRowVm(appointment, lane.barberId, context),
-        attribute,
-        words,
       ),
-    );
+    ).map((row) => gridVisitEvent(row, attribute, words));
     // NO gap blocks on the grid.
     //
     // A proportional canvas already draws a hole as a hole — empty space IS
@@ -1451,8 +1452,10 @@ export class StaffDashboard {
     return this.store.workingLanes().map((lane) => {
       const vm = vmById.get(lane.barberId);
 
-      const visits = lane.appointments.map((appointment) =>
-        dayRowVm(appointment, lane.barberId, context),
+      const visits = this.drawn(
+        lane.appointments.map((appointment) =>
+          dayRowVm(appointment, lane.barberId, context),
+        ),
       );
       const barberName = vm ? this.content.text(vm.name) : lane.barberId;
       const gaps: GapRowVm[] = lane.gaps.map((gap) =>
@@ -1751,6 +1754,14 @@ export class StaffDashboard {
   }
   protected readonly fieldsOpen = signal(false);
 
+  // ── Which states are drawn (the bar's filter) ─────────────────────────
+  protected readonly statusFilter = inject(ScheduleStatusFilter);
+  protected readonly statusFilterOpen = signal(false);
+  /** The rows the schedule draws — each chair by its OWN state, so a party's cancelled seat goes with the rest. */
+  private drawn<T extends DayRowVm>(rows: readonly T[]): readonly T[] {
+    return ScheduleFilterSystem.shown(rows, this.statusFilter.hidden());
+  }
+
   protected openFields(): void {
     this.presentOnly();
     this.fieldsOpen.set(true);
@@ -1792,32 +1803,14 @@ export class StaffDashboard {
     return daySummaryWords(freeMinutes, this.dayWords());
   });
 
-  /**
-   * WHAT THE DAY WAS TIPPED, at whatever scope is being looked at.
-   *
-   * Summed from the SEATS rather than from the rows, because the seat is
-   * where a tip is recorded and the seat is what names the barber. Walking
-   * each lane and taking only that lane's own seats means a party split
-   * between two chairs contributes each half to the barber who earned it,
-   * and nothing is counted twice.
-   *
-   * `null` when the day has no recording at all — an empty figure is worse
-   * than no line, and `0,00 €` would claim every visit had been settled.
-   */
-  protected readonly dayTips = computed<string | null>(() => {
-    const seats: Seat[] = [];
-    for (const lane of this.store.lanes()) {
-      for (const appointment of lane.appointments) {
-        seats.push(...Seat.ofChair(appointment.seats, lane.barberId));
-      }
-    }
-    // Strict: nothing recorded, or a mixed-currency day — a data error, not
-    // a feature — is no figure (`BillingSystem.recordedTipsTotal`).
-    const total = BillingSystem.recordedTipsTotal(seats);
-    return total === null
-      ? null
-      : dayTipsWords(total, this.transloco.getActiveLang(), this.dayWords());
-  });
+  /** What the day was tipped, at the scope looked at (`dayTipsLine`). */
+  protected readonly dayTips = computed(() =>
+    dayTipsLine(
+      this.store.lanes(),
+      this.transloco.getActiveLang(),
+      this.dayWords(),
+    ),
+  );
 
   /**
    * Barbers with neither a window nor a booking — an ALL-DAY EVENT each.

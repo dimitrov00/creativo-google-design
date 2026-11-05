@@ -504,6 +504,15 @@ export const BOOKING_STATUS_ICONS = {
   [BookingStatus.Cancelled]: 'visit.cancelled',
 } as const satisfies Record<BookingStatus, UiIconName>;
 
+/** One state in the schedule's status filter: its mark, its word, and whether it is drawn. */
+export interface StatusFilterRowVm {
+  readonly bookingStatus: BookingStatus;
+  readonly glyph: UiIconName;
+  /** «Отказани». */
+  readonly label: string;
+  readonly shown: boolean;
+}
+
 /**
  * The glyph that doubles a TERMINAL state on a calendar block.
  *

@@ -1336,6 +1336,39 @@ export function dayTipsWords(
   );
 }
 
+/**
+ * WHAT THE DAY WAS TIPPED, at whatever scope is being looked at.
+ *
+ * Summed from the SEATS rather than from the rows, because the seat is
+ * where a tip is recorded and the seat is what names the barber. Walking
+ * each lane and taking only that lane's own seats means a party split
+ * between two chairs contributes each half to the barber who earned it,
+ * and nothing is counted twice. Every visit counts, whatever the status
+ * filter draws: a total is a fact, not a view.
+ *
+ * `null` when the day has no recording at all — an empty figure is worse
+ * than no line, and `0,00 €` would claim every visit had been settled.
+ */
+export function dayTipsLine(
+  lanes: readonly {
+    readonly barberId: BarberId;
+    readonly appointments: readonly Appointment[];
+  }[],
+  lang: string,
+  words: StaffDayWords,
+): string | null {
+  const seats: Seat[] = [];
+  for (const lane of lanes) {
+    for (const appointment of lane.appointments) {
+      seats.push(...Seat.ofChair(appointment.seats, lane.barberId));
+    }
+  }
+  // Strict: nothing recorded, or a mixed-currency day — a data error, not
+  // a feature — is no figure (`BillingSystem.recordedTipsTotal`).
+  const total = BillingSystem.recordedTipsTotal(seats);
+  return total === null ? null : dayTipsWords(total, lang, words);
+}
+
 // ── The sheets' words ─────────────────────────────────────────────────
 
 /**

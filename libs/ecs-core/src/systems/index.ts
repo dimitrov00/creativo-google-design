@@ -72,6 +72,7 @@ export * from './rhythm-draft.system';
 export * from './role-assignment.system';
 export * from './roster.system';
 export * from './schedule-exception.system';
+export * from './schedule-filter.system';
 export * from './search-fields.system';
 export * from './search-filter.system';
 export * from './search-index.system';
