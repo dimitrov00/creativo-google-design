@@ -1,13 +1,18 @@
 import type { BookingCall } from '@core/components';
-import { CouponValue } from '@core/components';
+import { CouponValue, MinuteRange } from '@core/components';
 import {
   PipelineError,
   PipelineErrorCode,
   StaffEditErrorCode,
 } from '@core/errors';
-import type { BookingStatus } from '@core/primitives';
+import {
+  type BookingStatus,
+  EndMinute,
+  MinuteOfDay,
+  type TrackMinute,
+} from '@core/primitives';
 import { AppointmentEditSystem } from '@core/systems';
-import type { DayRowVm } from './staff-day.vm';
+import { AgendaRow, type DayRowVm, type RunEntryVm } from './staff-day.vm';
 
 /*
  * THE SCHEDULE'S SAVE, ITS REFUSALS AND ITS WAY BACK — the rules the
@@ -118,4 +123,26 @@ export function rowShape(row: DayRowVm): string {
     vouchers: row.vouchers.map((voucher) => voucher.code),
     tip: row.tipCents,
   });
+}
+
+/** Where an entry of the run begins on the shop's wall clock — a visit's chair start, a hole's start. */
+export function startMinuteOf(entry: RunEntryVm): MinuteOfDay {
+  return entry.agendaRow === AgendaRow.Visit
+    ? entry.startMinute
+    : entry.startMinutes;
+}
+
+/**
+ * A block's span on the shop's wall clock — a start in `[0, 1440)` and a
+ * later end in `(0, 1440]` — or `null` for anything that is not one: the
+ * block sheet's draft runs on the frame's anchored axis (`TrackMinute`).
+ */
+export function minuteRangeOf(
+  startMinute: TrackMinute,
+  endMinute: TrackMinute,
+): MinuteRange | null {
+  const start = MinuteOfDay.of(startMinute);
+  const end = EndMinute.of(endMinute);
+  if (!start.ok || !end.ok || end.value <= start.value) return null;
+  return MinuteRange.of(start.value, end.value);
 }

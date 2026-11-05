@@ -37,7 +37,8 @@ import { staffSearchWordsOf } from '../staff-dashboard/staff-search.words';
  * THE SCHEDULE'S STATUS FILTER (owner, 2026-11-05) — which booking states
  * the schedule draws, in every view: a row per state with the calendar's
  * own mark for it and a switch (≙ the «Status» show-list of Cursor's and
- * Luma's filters), and blocked time in a group of its own.
+ * Luma's filters), and the time that is not a visit — free and blocked —
+ * in a group of its own.
  *
  * The switches edit a DRAFT (owner, 2026-11-05: "apply and reset"): the
  * bar's «Приложи» takes it to the schedule and closes, ✕ leaves the
@@ -82,6 +83,7 @@ export class StaffStatusFilterSheet {
     this.filter.hidden(),
   );
   protected readonly blocksHidden = signal(!this.filter.blocksShown());
+  protected readonly freeTimeShown = signal(this.filter.freeTimeShown());
 
   protected readonly rows = computed(() => {
     this.copyTable();
@@ -95,9 +97,10 @@ export class StaffStatusFilterSheet {
     });
   });
 
-  /** Something in the draft is hidden — «Нулирай» has work to do. */
+  /** The draft is off the defaults — «Нулирай» has work to do. */
   protected readonly resettable = computed(
-    () => this.hidden().length > 0 || this.blocksHidden(),
+    () =>
+      this.hidden().length > 0 || this.blocksHidden() || this.freeTimeShown(),
   );
 
   protected toggle(status: BookingStatus): void {
@@ -108,13 +111,19 @@ export class StaffStatusFilterSheet {
     );
   }
 
+  /** Back to the defaults: every state and blocked time drawn, free time not. */
   protected reset(): void {
     this.hidden.set([]);
     this.blocksHidden.set(false);
+    this.freeTimeShown.set(false);
   }
 
   protected apply(): void {
-    this.filter.apply(this.hidden(), this.blocksHidden());
+    this.filter.apply({
+      hidden: this.hidden(),
+      blocksHidden: this.blocksHidden(),
+      freeTimeShown: this.freeTimeShown(),
+    });
     this.closed.emit();
   }
 }

@@ -98,7 +98,6 @@ const FLAGS: AgendaFlags = {
   timeRelative: true,
   price: false,
   party: true,
-  freeTime: false,
 };
 const NOTHING_ON = Object.fromEntries(
   Object.keys(FLAGS).map((id) => [id, false]),

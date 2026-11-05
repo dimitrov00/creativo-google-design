@@ -62,6 +62,16 @@
    `blockRowVm`): the grid block's word, length and neutral rail on the
    hole's line, its id the grid block's, so a press opens the block editor
    through the same `openBlock`. Hiding it takes the grid's blocks too.
+8. **Free time joins blocked time in the filter, and a hole is a door**
+   (owner: "free time as an option, as blocked time … on click the same
+   menu as ＋"). «Свободно време» (`booking.slot`) moved from the card's
+   fields to the filter's second group, OFF by default as before, read
+   once from a device's old `staff-agenda-fields` choice. Showing it draws
+   MORE, so it never lights the funnel; «Нулирай» returns to the defaults.
+   A sellable hole in the list is the trigger of the ＋'s own menu, «Нов
+   час · Блокирай време», on that hole's chair: a booking starts at the
+   hole's start, a block takes the whole hole (`openCreate(intent, gap)`).
+   The grid draws no holes — its empty space already is the free time.
 
 ## Not done
 

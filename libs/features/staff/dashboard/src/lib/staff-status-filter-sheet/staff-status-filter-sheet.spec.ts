@@ -61,12 +61,15 @@ describe('StaffStatusFilterSheet', () => {
     const filter = await mount();
     press('staff-status-CANCELLED');
     press('staff-status-blocks');
+    press('staff-status-free-time');
     expect(filter.hidden()).toEqual([]);
     expect(filter.blocksShown()).toBe(true);
+    expect(filter.freeTimeShown()).toBe(false);
 
     press('staff-status-apply');
     expect(filter.hidden()).toEqual([BookingStatus.Cancelled]);
     expect(filter.blocksShown()).toBe(false);
+    expect(filter.freeTimeShown()).toBe(true);
     expect(fixture.componentInstance.open()).toBe(false);
   });
 

@@ -732,6 +732,8 @@ export function gapRowVm(
     minutes: gap.minutes,
     spanLabel: spanWords(gap.minutes, context.words.span),
     startMinutes: gap.startMinutes,
+    endMinutes: gap.endMinutes,
+    barberId: chair.barberId,
     past: !gap.sellable,
     sellable: gap.sellable,
     barberName: chair.barberName,

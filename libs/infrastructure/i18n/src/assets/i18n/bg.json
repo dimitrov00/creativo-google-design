@@ -1142,10 +1142,11 @@
       "statusFilterLabel": "Филтър",
       "statusFilterLabelOn": "Филтър, включен",
       "statusFilterTitle": "Кои посещения да се виждат",
-      "statusFilterLede": "Скритите статуси и блокираното време не се показват в графика. Пази се на това устройство.",
+      "statusFilterLede": "Избери кое се вижда в графика. Пази се на това устройство.",
       "statusFilterReset": "Нулирай",
       "statusFilterApply": "Приложи",
       "statusFilterBlocks": "Блокирано време",
+      "statusFilterFreeTime": "Свободно време",
       "viewSettings": "Настройки",
       "fieldsCount": "{{count}} от {{total}}",
       "field": {
@@ -1160,8 +1161,7 @@
         "timeEnd": "Край",
         "timeRelative": "Относително време",
         "price": "Цена",
-        "party": "Група",
-        "freeTime": "Свободно време"
+        "party": "Група"
       },
       "agendaFree": "Свободно",
       "agendaEmpty": "Нищо в графика за този ден.",

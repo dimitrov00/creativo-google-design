@@ -22,6 +22,10 @@ import { BookingStatus, Tag } from '@core/primitives';
 const STORAGE_KEY = 'staff-schedule-hidden-statuses';
 /** Blocked time hidden — its own key: a block is time, not a booking state. */
 const BLOCKS_KEY = 'staff-schedule-hide-blocks';
+/** Free time drawn — its own key, OFF by default (see `freeTimeShown`). */
+const FREE_TIME_KEY = 'staff-schedule-show-free-time';
+/** Where free time's switch lived before (`agenda-fields.ts`), read once. */
+const LEGACY_FIELDS_KEY = 'staff-agenda-fields';
 
 /** The states in the sheet's order: the lifecycle's, live first. */
 export const SCHEDULE_STATUSES: readonly BookingStatus[] = [
@@ -50,6 +54,13 @@ function load(): readonly BookingStatus[] {
   }
 }
 
+/** What the filter sheet edits and «Приложи» applies. */
+export interface ScheduleFilterDraft {
+  readonly hidden: readonly BookingStatus[];
+  readonly blocksHidden: boolean;
+  readonly freeTimeShown: boolean;
+}
+
 function loadBlocksHidden(): boolean {
   if (typeof localStorage === 'undefined') return false;
   try {
@@ -59,10 +70,41 @@ function loadBlocksHidden(): boolean {
   }
 }
 
+function loadFreeTimeShown(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    const stored = localStorage.getItem(FREE_TIME_KEY);
+    if (stored !== null) return stored === 'true';
+    // A device that had switched free time on under the card's fields keeps
+    // it on: the switch moved, the choice did not.
+    const legacy: unknown = JSON.parse(
+      localStorage.getItem(LEGACY_FIELDS_KEY) ?? 'null',
+    );
+    return (
+      typeof legacy === 'object' &&
+      legacy !== null &&
+      (legacy as Record<string, unknown>)['freeTime'] === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** One write per switch; private mode, quota or a kiosk keep it for the session. */
+function store(key: string, value: string): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // The choice simply does not outlive the session.
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class ScheduleStatusFilter {
   private readonly state = signal<readonly BookingStatus[]>(load());
   private readonly blocksHidden = signal(loadBlocksHidden());
+  private readonly freeTime = signal(loadFreeTimeShown());
 
   /** The states the schedule leaves out — what `ScheduleFilterSystem.shown` takes. */
   readonly hidden = this.state.asReadonly();
@@ -73,6 +115,16 @@ export class ScheduleStatusFilter {
    * until hidden, as every state is.
    */
   readonly blocksShown = computed(() => !this.blocksHidden());
+
+  /**
+   * FREE TIME is drawn as rows in the list (owner, 2026-11-05: "free time as
+   * an option, as blocked time"). OFF by default, and showing it is not a
+   * filter — it draws MORE — so it never lights the funnel. On a quiet
+   * Tuesday every unsold minute is a row and the run is mostly holes; the
+   * day's total free time is still said above the run. The grid draws none:
+   * its empty space already is the free time.
+   */
+  readonly freeTimeShown = this.freeTime.asReadonly();
 
   /** Something is hidden: the bar's filter control says so in the accent. */
   readonly filtering = computed(
@@ -92,39 +144,35 @@ export class ScheduleStatusFilter {
     );
   }
 
+  toggleFreeTime(): void {
+    this.freeTime.set(!this.freeTime());
+    store(FREE_TIME_KEY, String(this.freeTime()));
+  }
+
   toggleBlocks(): void {
     this.commitBlocks(!this.blocksHidden());
   }
 
-  /** Every state, and blocked time, drawn again. */
+  /** Back to the defaults: every state and blocked time drawn, free time not. */
   showAll(): void {
-    this.apply([], false);
+    this.apply({ hidden: [], blocksHidden: false, freeTimeShown: false });
   }
 
   /** The sheet's «Приложи»: the draft it was edited as, in one act. */
-  apply(hidden: readonly BookingStatus[], blocksHidden: boolean): void {
-    this.commit(hidden);
-    this.commitBlocks(blocksHidden);
+  apply(draft: ScheduleFilterDraft): void {
+    this.commit(draft.hidden);
+    this.commitBlocks(draft.blocksHidden);
+    this.freeTime.set(draft.freeTimeShown);
+    store(FREE_TIME_KEY, String(draft.freeTimeShown));
   }
 
   private commitBlocks(hidden: boolean): void {
     this.blocksHidden.set(hidden);
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(BLOCKS_KEY, String(hidden));
-    } catch {
-      // As below: the choice simply does not outlive the session.
-    }
+    store(BLOCKS_KEY, String(hidden));
   }
 
   private commit(next: readonly BookingStatus[]): void {
     this.state.set(next);
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Private mode, quota, a locked-down kiosk — the choice simply does
-      // not outlive the session. Not worth failing the switch over.
-    }
+    store(STORAGE_KEY, JSON.stringify(next));
   }
 }

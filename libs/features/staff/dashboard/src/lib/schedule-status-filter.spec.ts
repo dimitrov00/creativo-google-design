@@ -59,14 +59,34 @@ describe('ScheduleStatusFilter', () => {
     expect(fresh().blocksShown()).toBe(false);
   });
 
+  it('draws free time only when asked — showing more is not a filter', () => {
+    const filter = fresh();
+    expect(filter.freeTimeShown()).toBe(false);
+    filter.toggleFreeTime();
+    expect(filter.freeTimeShown()).toBe(true);
+    expect(filter.filtering()).toBe(false);
+    expect(fresh().freeTimeShown()).toBe(true);
+  });
+
+  it('keeps a device’s free time on when it was switched on among the card’s fields', () => {
+    localStorage.setItem(
+      'staff-agenda-fields',
+      JSON.stringify({ avatar: true, freeTime: true }),
+    );
+    expect(fresh().freeTimeShown()).toBe(true);
+  });
+
   it('shows everything again in one act, blocked time included', () => {
     const filter = fresh();
     filter.toggle(BookingStatus.NoShow);
     filter.toggle(BookingStatus.Cancelled);
     filter.toggleBlocks();
+    filter.toggleFreeTime();
     filter.showAll();
     expect(filter.hidden()).toEqual([]);
     expect(filter.blocksShown()).toBe(true);
+    // Back to the defaults: free time is off again.
+    expect(filter.freeTimeShown()).toBe(false);
     expect(fresh().hidden()).toEqual([]);
     expect(fresh().blocksShown()).toBe(true);
   });

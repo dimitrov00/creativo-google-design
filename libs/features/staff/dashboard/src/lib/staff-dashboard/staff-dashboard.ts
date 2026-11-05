@@ -7,6 +7,8 @@ import {
   isStaleRefusal,
   rowShape,
   sidesMovedError,
+  minuteRangeOf,
+  startMinuteOf,
 } from './staff-day-save';
 import {
   ChangeDetectionStrategy,
@@ -336,13 +338,6 @@ export const CreateIntent = {
 } as const;
 export type CreateIntent = (typeof CreateIntent)[keyof typeof CreateIntent];
 
-/** Where an entry of the run begins on the shop's wall clock — a visit's chair start, a hole's start. */
-function startMinuteOf(entry: RunEntryVm): MinuteOfDay {
-  return entry.agendaRow === AgendaRow.Visit
-    ? entry.startMinute
-    : entry.startMinutes;
-}
-
 /**
  * What a sheet's frame is drawn ABOUT (`frameDayFor`, OR-3): the visit it
  * edits — `null` for one not booked yet, which excludes nobody — and the
@@ -374,21 +369,6 @@ function transitionOf(
   seatId: SeatId | null,
 ): BookingCall.TransitionIntent {
   return { appointmentId, toBookingStatus, cancellationReason, seatId };
-}
-
-/**
- * A block's span on the shop's wall clock — a start in `[0, 1440)` and a
- * later end in `(0, 1440]` — or `null` for anything that is not one: the
- * block sheet's draft runs on the frame's anchored axis (`TrackMinute`).
- */
-function minuteRangeOf(
-  startMinute: TrackMinute,
-  endMinute: TrackMinute,
-): MinuteRange | null {
-  const start = MinuteOfDay.of(startMinute);
-  const end = EndMinute.of(endMinute);
-  if (!start.ok || !end.ok || end.value <= start.value) return null;
-  return MinuteRange.of(start.value, end.value);
 }
 
 /**
@@ -1548,7 +1528,7 @@ export class StaffDashboard {
      * where a total belongs anyway.
      */
     const wholeShop = this.store.scope() === null;
-    const freeTime = this.fields.isOn(AgendaField.FreeTime);
+    const freeTime = this.statusFilter.freeTimeShown();
     const items = this.lanes()
       .flatMap((lane) => lane.entries)
       .filter((entry) => {
@@ -3564,24 +3544,33 @@ export class StaffDashboard {
    * front of the barber, and the frame moves it anywhere; the walk-in is
    * one tap in the people group.
    */
-  protected openCreate(createIntent: CreateIntent): void {
+  protected openCreate(createIntent: CreateIntent, gap?: GapRowVm): void {
     this.createMenu.set(false);
+    this.gapMenu.set(null);
     // No day before the shop's zone is known (4A-11): nothing to author on.
     if (!this.store.ready()) return;
-    const chair = this.createChair();
+    // From a free-time row (owner, 2026-11-05): its chair, and its start —
+    // a block takes the whole hole.
+    const chair = gap?.barberId ?? this.createChair();
     if (chair === null) return;
     if (createIntent === CreateIntent.Block) {
-      this.openBlockSheet(chair);
+      const range = gap && {
+        startMinute: gap.startMinutes,
+        endMinute: gap.endMinutes,
+      };
+      this.openBlockSheet(chair, range);
       return;
     }
     this.presentOnly();
     this.visitClientOptions.set([]);
     this.createVisit.set({
       barberId: chair,
-      startMinute: this.nowSnapped(),
+      startMinute: gap?.startMinutes ?? this.nowSnapped(),
       nonce: ++this.createSeq,
     });
   }
+  /** The free-time row whose «Нов час · Блокирай време» menu is open. */
+  protected readonly gapMenu = signal<string | null>(null);
 
   protected closeCreateSheet(): void {
     this.createVisit.set(null);

@@ -951,12 +951,10 @@ describe('StaffDashboard', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  /** Free time is a switch, and it ships OFF — see `agenda-fields`. */
+  /** Free time is the filter's switch, and it ships OFF — see `schedule-status-filter`. */
   function showFreeTime(): void {
-    const component = fixture.componentInstance as unknown as {
-      fields: { toggle: (id: string) => void; isOn: (id: string) => boolean };
-    };
-    if (!component.fields.isOn('freeTime')) component.fields.toggle('freeTime');
+    const filter = TestBed.inject(ScheduleStatusFilter);
+    if (!filter.freeTimeShown()) filter.toggleFreeTime();
     fixture.detectChanges();
   }
 
@@ -1646,6 +1644,70 @@ describe('StaffDashboard', () => {
       'staff-visit-row',
       'staff-gap-row',
     ]);
+  });
+
+  it('offers the ＋’s two acts from a sellable hole, at its start on its chair', () => {
+    // Owner, 2026-11-05: a press on free time opens the add menu, and the
+    // chosen sheet starts where the hole does.
+    showFreeTime();
+    const page = fixture.componentInstance as unknown as {
+      lanes: () => readonly {
+        readonly entries: readonly {
+          readonly agendaRow: string;
+          readonly sellable?: boolean;
+          readonly barberId?: string;
+          readonly startMinutes?: number;
+          readonly endMinutes?: number;
+        }[];
+      }[];
+      createVisit: {
+        (): { barberId: string; startMinute: number } | null;
+        set: (value: null) => void;
+      };
+      blockEdit: () => {
+        barberIds: readonly string[];
+        startMinute: number;
+        endMinute: number;
+      } | null;
+    };
+    const hole = page
+      .lanes()
+      .flatMap((lane) => lane.entries)
+      .find((entry) => entry.agendaRow === 'GAP' && entry.sellable);
+    const press = () => {
+      (
+        host().querySelector('[data-testid="staff-gap-press"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+    };
+
+    press();
+    (
+      host().querySelector('[data-testid="staff-gap-booking"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    expect(page.createVisit()).toEqual(
+      expect.objectContaining({
+        barberId: hole?.barberId,
+        startMinute: hole?.startMinutes,
+      }),
+    );
+    page.createVisit.set(null);
+    fixture.detectChanges();
+
+    press();
+    (
+      host().querySelector('[data-testid="staff-gap-block"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    // A block takes the whole hole.
+    expect(page.blockEdit()).toEqual(
+      expect.objectContaining({
+        barberIds: [hole?.barberId],
+        startMinute: hole?.startMinutes,
+        endMinute: hole?.endMinutes,
+      }),
+    );
   });
 
   it('carries NO act on the card — the card opens the act instead', () => {
@@ -7678,10 +7740,10 @@ describe('StaffDashboard', () => {
     expect(
       host().querySelector('[data-testid="staff-status-filter-sheet"]'),
     ).not.toBeNull();
-    // Five states and blocked time.
+    // Five states, free time and blocked time.
     expect(
       host().querySelectorAll('[data-testid^="staff-status-"][uiswitch]'),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
   });
   it('prints the contact details the owner asked for, behind their fields', () => {
     // REVERSED, deliberately. An earlier ruling kept digits out of the run

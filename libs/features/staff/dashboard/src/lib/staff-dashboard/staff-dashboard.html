@@ -561,7 +561,69 @@
 
               <!-- A HOLE is one line: the word at the leading edge and how
                    long it runs at the trailing one. No client, no facts, no
-                   marks — there is nobody in it. -->
+                   marks — there is nobody in it. A hole that can still be
+                   sold is a press (owner, 2026-11-05): the ＋'s own menu,
+                   «Нов час · Блокирай време», from its start on its chair. -->
+              @if (entry.sellable) {
+              <ui-menu
+                class="agenda-card__gap-menu"
+                [uiPresented]="gapMenu() === entry.id"
+                uiAlignment="leading"
+                [uiLabel]="t('staff.day.fab.open')"
+                (uiDismissed)="gapMenu.set(null)"
+              >
+                <button
+                  type="button"
+                  uiMenuTrigger
+                  uiInteractive
+                  class="agenda-card__hole agenda-card__hole--press"
+                  [attr.aria-expanded]="gapMenu() === entry.id"
+                  data-testid="staff-gap-press"
+                  (click)="gapMenu.set(gapMenu() === entry.id ? null : entry.id)"
+                >
+                  <span
+                    class="agenda-card__hole-word"
+                    uiText
+                    uiFont="callout"
+                    uiForegroundStyle="secondary"
+                  >
+                    {{ t('staff.day.agendaFree') }}
+                  </span>
+                  <span
+                    class="agenda-card__gap-span"
+                    uiText
+                    uiFont="footnote"
+                    uiForegroundStyle="secondary"
+                  >
+                    {{ entry.spanLabel }}
+                  </span>
+                </button>
+                <ui-list-group>
+                  <button
+                    type="button"
+                    uiMenuItem
+                    uiListRow
+                    [uiInteractive]="true"
+                    data-testid="staff-gap-booking"
+                    (click)="openCreate(CreateIntent.Booking, entry)"
+                  >
+                    <span uiLeading><ui-icon uiName="appointment.book" /></span>
+                    {{ t('staff.day.fab.booking') }}
+                  </button>
+                  <button
+                    type="button"
+                    uiMenuItem
+                    uiListRow
+                    [uiInteractive]="true"
+                    data-testid="staff-gap-block"
+                    (click)="openCreate(CreateIntent.Block, entry)"
+                  >
+                    <span uiLeading><ui-icon uiName="booking.blocked" /></span>
+                    {{ t('staff.day.fab.block') }}
+                  </button>
+                </ui-list-group>
+              </ui-menu>
+              } @else {
               <div class="agenda-card__hole">
                 <span
                   class="agenda-card__hole-word"
@@ -580,6 +642,7 @@
                   {{ entry.spanLabel }}
                 </span>
               </div>
+              }
             </li>
             } @else if (entry.agendaRow === AgendaRow.Block) {
             <!-- BLOCKED TIME (owner, 2026-11-05: visible in the list too, the

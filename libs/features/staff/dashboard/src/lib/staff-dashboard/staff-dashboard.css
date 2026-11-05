@@ -721,6 +721,28 @@
   min-inline-size: 0;
 }
 
+/* A sellable hole is the trigger of its own «Нов час · Блокирай време»
+   menu: the menu host takes the hole's place in the card, and the button
+   inside it is the hole's line, unstyled as a control. */
+.agenda-card__gap-menu {
+  grid-area: body;
+  display: block;
+  min-inline-size: 0;
+}
+
+.agenda-card__hole--press {
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
 .agenda-card__hole-word {
   /* Type and ink come from `uiText` on the element — see the template.
      Feature CSS is UNLAYERED and therefore beats `@layer sys-components`

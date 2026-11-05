@@ -1142,10 +1142,11 @@
       "statusFilterLabel": "Filter",
       "statusFilterLabelOn": "Filter, on",
       "statusFilterTitle": "Which visits to show",
-      "statusFilterLede": "Hidden states and blocked time stay off the schedule. Kept on this device.",
+      "statusFilterLede": "Choose what the schedule shows. Kept on this device.",
       "statusFilterReset": "Reset",
       "statusFilterApply": "Apply",
       "statusFilterBlocks": "Blocked time",
+      "statusFilterFreeTime": "Free time",
       "viewSettings": "Settings",
       "fieldsCount": "{{count}} of {{total}}",
       "field": {
@@ -1160,8 +1161,7 @@
         "timeEnd": "End",
         "timeRelative": "Relative time",
         "price": "Price",
-        "party": "Party",
-        "freeTime": "Free time"
+        "party": "Party"
       },
       "agendaFree": "Free",
       "agendaEmpty": "Nothing scheduled for this day.",

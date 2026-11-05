@@ -414,6 +414,10 @@ export interface GapRowVm {
   readonly spanLabel: string;
   /** Where the hole begins on the shop's wall clock — the run's order. */
   readonly startMinutes: MinuteOfDay;
+  /** Where it ends — a press offers to book or block from its start. */
+  readonly endMinutes: EndMinute;
+  /** The chair it is free on — what a booking or a block from it seats. */
+  readonly barberId: BarberId;
   /**
    * Already elapsed — the run's one definition of past, shared with visits.
    *
