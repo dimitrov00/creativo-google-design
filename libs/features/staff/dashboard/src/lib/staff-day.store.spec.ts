@@ -907,6 +907,39 @@ describe('StaffDayStore — the search window reaches the horizon and stays fres
     expect(reads).toHaveLength(2);
   });
 
+  it('reads again at once when a visit is written while the search is open, so the results say it', async () => {
+    const before = [appointmentFixture()];
+    const after = [appointmentFixture({ id: AppointmentId.of('visit-2') })];
+    const { store, reads, answerWith } = await windowed({
+      answer: Result.ok({ appointments: before, capped: false }),
+      script: {
+        [Callables.TransitionAppointment]: () => Result.ok(undefined as never),
+      },
+    });
+    await store.openSearch();
+    answerWith(Result.ok({ appointments: after, capped: false }));
+
+    await store.transition(intent);
+    await vi.waitFor(() => expect(store.pool()).toEqual(after));
+
+    expect(reads).toHaveLength(2);
+  });
+
+  it('only marks the window when a visit is written with the search closed', async () => {
+    const { store, reads } = await windowed({
+      script: {
+        [Callables.TransitionAppointment]: () => Result.ok(undefined as never),
+      },
+    });
+    await store.openSearch();
+    store.closeSearch();
+
+    await store.transition(intent);
+    expect(reads).toHaveLength(1);
+    await store.openSearch();
+    expect(reads).toHaveLength(2);
+  });
+
   it('keeps the window and says it may be out of date when a refresh fails', async () => {
     const first = [appointmentFixture()];
     const { store, advanceMinutes, answerWith } = await windowed({

@@ -1848,10 +1848,17 @@ export class StaffDayStore {
 
   /**
    * This device wrote a visit (booked, moved, cancelled…): the window it
-   * holds is out of date, so the next opening of the search reads it again.
+   * holds is out of date, so the next opening of the search reads it again
+   * — and, with the search OPEN (a visit opened from its results is changed
+   * in the sheet over it), it reads it now, so the results say what was just
+   * written. A read already out began before the write, so the window is
+   * read once more after it.
    */
   invalidateSearchWindow(): void {
     this.windowInvalidated = true;
+    if (untracked(this._searching)) {
+      void this.reloadSearchPool().then(() => this.ensureWindow());
+    }
   }
 
   /**
