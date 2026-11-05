@@ -68,7 +68,59 @@
            are one segmented list (the block editor's Repeat page grammar):
            a held value wears the app's one selection — the wash and the
            rounder corner — plus the ✓. A press keeps the keyboard. -->
-      @for (section of vm().suggestions.sections; track section.id) { @if
+      @if (vm().suggestions.serviceRows.length > 0) {
+      <!-- A SERVICE's values as cover cards (the booking catalogue's card,
+           its corner ring the checkbox), three across, the name under each
+           cover, the service leading and the variant quieter: services
+           without variants flow together in one grid; a service with
+           variants cuts it and stands in a grid of its own (a fitness
+           library's rows); the plain ones after it start the next grid. -->
+      <section
+        class="staff-search-sheet__section"
+        [attr.data-suggest-mode]="vm().suggestions.suggestMode"
+      >
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-search-sheet__heading"
+        >
+          {{ t('staff.search.key.service') }}
+        </p>
+        <ui-stack
+          uiSpacing="comfortable"
+          data-testid="staff-search-service-grid"
+        >
+          @for (row of vm().suggestions.serviceRows; track row.id) {
+          <ui-grid
+            [uiColumns]="3"
+            uiSpacing="regular"
+            data-testid="staff-search-service-row"
+            [attr.data-service]="row.id"
+          >
+            @for (tile of row.tiles; track tile.id) {
+            <cr-service-card
+              class="staff-search-sheet__tile"
+              [attr.data-suggestion]="tile.id"
+              [attr.data-checked]="tile.checked ? '' : null"
+              [uiServiceId]="tile.serviceId"
+              [uiName]="tile.name"
+              [uiMeta]="tile.meta"
+              [uiCoverUrl]="tile.coverSrc"
+              uiCaption="below"
+              uiRatio="3 / 4"
+              [uiSelectedCount]="tile.checked ? 1 : 0"
+              [uiShowDetails]="false"
+              uiSelectionIndicator="always"
+              (mousedown)="$event.preventDefault()"
+              (uiPressed)="pickRow(tile.row)"
+            />
+            }
+          </ui-grid>
+          }
+        </ui-stack>
+      </section>
+      } @for (section of vm().suggestions.sections; track section.id) { @if
       (section.rows.length > 0) {
       <section
         class="staff-search-sheet__section"
@@ -129,59 +181,7 @@
           }
         </ul>
       </section>
-      } } @if (vm().suggestions.serviceRows.length > 0) {
-      <!-- A SERVICE's values as cover cards (the booking catalogue's card,
-           its corner ring the checkbox), three across, the name under each
-           cover, the service leading and the variant quieter: services
-           without variants flow together in one grid; a service with
-           variants cuts it and stands in a grid of its own (a fitness
-           library's rows); the plain ones after it start the next grid. -->
-      <section
-        class="staff-search-sheet__section"
-        [attr.data-suggest-mode]="vm().suggestions.suggestMode"
-      >
-        <p
-          uiText
-          uiFont="footnote"
-          uiForegroundStyle="secondary"
-          class="staff-search-sheet__heading"
-        >
-          {{ t('staff.search.key.service') }}
-        </p>
-        <ui-stack
-          uiSpacing="comfortable"
-          data-testid="staff-search-service-grid"
-        >
-          @for (row of vm().suggestions.serviceRows; track row.id) {
-          <ui-grid
-            [uiColumns]="3"
-            uiSpacing="regular"
-            data-testid="staff-search-service-row"
-            [attr.data-service]="row.id"
-          >
-            @for (tile of row.tiles; track tile.id) {
-            <cr-service-card
-              class="staff-search-sheet__tile"
-              [attr.data-suggestion]="tile.id"
-              [attr.data-checked]="tile.checked ? '' : null"
-              [uiServiceId]="tile.serviceId"
-              [uiName]="tile.name"
-              [uiMeta]="tile.meta"
-              [uiCoverUrl]="tile.coverSrc"
-              uiCaption="below"
-              uiRatio="3 / 4"
-              [uiSelectedCount]="tile.checked ? 1 : 0"
-              [uiShowDetails]="false"
-              uiSelectionIndicator="always"
-              (mousedown)="$event.preventDefault()"
-              (uiPressed)="pickRow(tile.row)"
-            />
-            }
-          </ui-grid>
-          }
-        </ui-stack>
-      </section>
-      } @if (vm().suggestions.calendar; as calendar) {
+      } } @if (vm().suggestions.calendar; as calendar) {
       <section class="staff-search-sheet__section">
         <p
           uiText

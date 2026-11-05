@@ -278,6 +278,24 @@ describe('StaffSearchSheet', () => {
     expect(all('.ui-search-field__token')).toHaveLength(0);
   });
 
+  it('lays «Услуга» out as cover cards, «Махни филтъра» after the last of them', async () => {
+    await mount();
+    press(
+      '[data-testid="staff-search-keys"] [data-suggestion="FIELD:SERVICE"]',
+    );
+    press('cr-service-card[data-suggestion="SERVICE:svc-fade"] button');
+    applySet();
+    press('[data-testid="staff-search-filter"][data-filter="SERVICE"]');
+    const grid = el('[data-testid="staff-search-service-grid"]') as HTMLElement;
+    const remove = el('[data-suggestion="REMOVE:SERVICE"]') as HTMLElement;
+    expect(grid).not.toBeNull();
+    expect(remove).not.toBeNull();
+    // The removal comes LAST, after the cards, as on every other key.
+    expect(
+      grid.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('lets a set that was not applied go on Escape', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
