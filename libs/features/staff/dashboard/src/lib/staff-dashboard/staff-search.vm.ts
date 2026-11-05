@@ -157,15 +157,15 @@ export interface SearchSuggestionsVm {
   /** The rows above the results. */
   readonly sections: readonly SuggestionSectionVm[];
   readonly calendar: SuggestionCalendarVm | null;
-  /** A service's values as cover cards, ONE ROW PER SERVICE, its variants side by side; none for any other key. */
+  /** A service's values as grids of cover cards: plain services together, each service with variants in a grid of its own; none for any other key. */
   readonly serviceRows: readonly ServiceRowVm[];
   /** «Приложи (2)» — the bar's primary while a many-valued key's set is being picked; null otherwise. */
   readonly apply: SuggestionApplyVm | null;
 }
 
-/** One service's row of cover cards. */
+/** One grid of cover cards: a run of services without variants, or one service's variants. */
 export interface ServiceRowVm {
-  /** The service's id. */
+  /** The service's id for a service's variants; `PLAIN:<n>` for a run of plain services. */
   readonly id: string;
   readonly tiles: readonly ServiceTileVm[];
 }

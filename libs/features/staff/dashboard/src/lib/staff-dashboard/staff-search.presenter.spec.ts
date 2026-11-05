@@ -734,7 +734,7 @@ describe('searchSheetVm — the suggestions', () => {
     ]);
   });
 
-  it('lays a service’s values out as cover cards, one row per service, its variants side by side', () => {
+  it('lays a service’s values out as cover cards: plain services share a grid, a service with variants cuts it for its own', () => {
     const pool = [
       visit('long', 1, {}, IVAN, CUT),
       visit('fade', 2, {}, NIKO, FADE),
@@ -768,7 +768,8 @@ describe('searchSheetVm — the suggestions', () => {
     );
     // Tiles, not rows: no values section, «Махни филтъра» still last.
     expect(vm.suggestions.sections.map((s) => s.id)).toEqual(['REMOVE']);
-    // One row per service; the service leads every card, a variant under it.
+    // A service with variants in a grid of its own, the service leading every
+    // card and the variant under it; plain services share a grid.
     expect(
       vm.suggestions.serviceRows.map((row) => [
         row.id,
@@ -787,7 +788,8 @@ describe('searchSheetVm — the suggestions', () => {
           ],
         ],
       ],
-      ['svc-fade', [['SERVICE:svc-fade', 'Фейд', '', 'fade.jpg', false]]],
+      // A plain service after it starts the next shared grid.
+      ['PLAIN:1', [['SERVICE:svc-fade', 'Фейд', '', 'fade.jpg', false]]],
     ]);
     // The chip names the variant with its service.
     expect(vm.filters[0]?.label).toBe('Класическо · Дълга коса');

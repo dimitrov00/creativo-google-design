@@ -818,17 +818,29 @@ function serviceTileOf(
   };
 }
 
-/** The tiles one row per service — its variants side by side — in the order they came. */
+/**
+ * The tiles as grids (owner, 2026-11-05): services WITHOUT variants flow
+ * together, three across; a service WITH variants cuts that grid and stands
+ * in one of its own, its variants side by side; the plain services after it
+ * start the next shared grid. In the order the tiles came.
+ */
 function rowsByService(
   tiles: readonly ServiceTileVm[],
 ): readonly ServiceRowVm[] {
   const rows: { id: string; tiles: ServiceTileVm[] }[] = [];
   for (const tile of tiles) {
+    const variant =
+      (tile.row.filter as SearchFilter.Service).filterVariants.length > 0;
+    const id = variant ? tile.serviceId : 'PLAIN';
     const last = rows[rows.length - 1];
-    if (last !== undefined && last.id === tile.serviceId) last.tiles.push(tile);
-    else rows.push({ id: tile.serviceId, tiles: [tile] });
+    if (last !== undefined && last.id === id) last.tiles.push(tile);
+    else rows.push({ id, tiles: [tile] });
   }
-  return rows;
+  return rows.map((row, at) => ({
+    ...row,
+    // A run of plain services is named by its place, so two runs stay apart.
+    id: row.id === 'PLAIN' ? `PLAIN:${at}` : row.id,
+  }));
 }
 
 /** A label as one unmarked run. */

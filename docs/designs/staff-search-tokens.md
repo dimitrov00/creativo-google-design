@@ -304,8 +304,10 @@ variantId }` (new component). The service filter holds services whole
   Mobbin) — the cover PORTRAIT (3:4), and the name UNDER it, the service
   leading and the variant quieter (`cr-service-card` gains `uiCaption:
 'overlay' | 'below'` and `uiRatio`; below, the selection ring outlines the
-  cover only). A plain service is a row of one card; whether plain services
-  should share a row instead is open.
+  cover only). Then (owner): services WITHOUT variants flow together in
+  one grid; a service WITH variants cuts it and stands in a grid of its
+  own; the plain services after it start the next shared grid. The gaps
+  grew: `regular` between cards, `comfortable` between grids.
 
 ### «Кога»: preset, day or range
 
