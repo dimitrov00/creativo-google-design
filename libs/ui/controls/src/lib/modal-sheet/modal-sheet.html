@@ -7,6 +7,7 @@
   #sheetBehavior="uiSheetBehavior"
   class="modal-sheet"
   [uiPresentationSizing]="uiPresentationSizing()"
+  [uiFullScreen]="fullScreen()"
   uiMaterial="thin"
   [attr.id]="sheetId()"
   [uiIsPresented]="open()"
@@ -39,10 +40,10 @@
         [attr.data-bare]="bareHeader() ? '' : null"
         [attr.data-title-always]="titleAlwaysVisible() ? '' : null"
         [uiCollapsed]="titleCollapsed()"
-        (pointerdown)="sheetBehavior.onDragStart($event)"
-        (pointermove)="sheetBehavior.onDragMove($event)"
-        (pointerup)="sheetBehavior.onDragEnd($event)"
-        (pointercancel)="sheetBehavior.onDragEnd($event)"
+        (pointerdown)="fullScreen() || sheetBehavior.onDragStart($event)"
+        (pointermove)="fullScreen() || sheetBehavior.onDragMove($event)"
+        (pointerup)="fullScreen() || sheetBehavior.onDragEnd($event)"
+        (pointercancel)="fullScreen() || sheetBehavior.onDragEnd($event)"
       >
         <!-- Compact-title reveal is ui-sheet-header's own behavior now:
              consumers label their in-content large title `uiSheetLargeTitle`

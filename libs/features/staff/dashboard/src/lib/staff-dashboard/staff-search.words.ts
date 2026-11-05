@@ -15,13 +15,13 @@ export interface StaffSearchWords {
   readonly thisWeek: string;
   readonly pastWeek: string;
   readonly earlier: string;
-  /** The keys a token is made of: «Кога», «Бръснар», «Услуга», «Статус», «Бележка». */
+  /** The keys a filter is made of: «Кога», «Бръснар», «Услуга», «Статус», «Бележка». */
   readonly whenKey: string;
   readonly barberKey: string;
   readonly serviceKey: string;
   readonly statusKey: string;
   readonly noteKey: string;
-  /** The note token's value and its key row: «има» · «С бележка». */
+  /** The note filter's value beside its key, and alone: «има» · «С бележка». */
   readonly hasNote: string;
   readonly withNote: string;
   readonly matches: string;
@@ -33,23 +33,21 @@ export interface StaffSearchWords {
   /** «От 5 ноем. · избери последния ден» — `{{from}}` is already formatted. */
   readonly rangeLastCaption: (from: string) => string;
   readonly placeholder: string;
-  /** The placeholder beside tokens: «Търси…». */
+  /** The placeholder with filters chosen: «Търси…». */
   readonly placeholderShort: string;
-  /** «избери…» — the value segment of a token still being built. */
-  readonly tokenPlaceholder: string;
+  /** «Търси в „Бръснар“…» — the placeholder while a key's values are open. */
+  readonly scopedPlaceholder: (key: string) => string;
   readonly empty: string;
   readonly clearFilters: string;
   readonly truncated: string;
   readonly stale: string;
   /** «Телефон +359 88 333» — `{{number}}` is already formatted. */
   readonly phoneRow: (number: string) => string;
-  /** «Махни филтъра Бръснар». */
-  readonly chipRemove: (label: string) => string;
   /** «Бръснар: Иван, Стефан. Промени филтъра». */
   readonly tokenLabel: (key: string, value: string) => string;
-  /** «Бръснар: избери стойност» — a token still being built. */
+  /** «Бръснар: избери стойност» — a key still being picked. */
   readonly tokenBuilding: (key: string) => string;
-  /** «+2» — the values a token does not name. */
+  /** «+2» — the values a chip does not name. */
   readonly moreValues: (count: number) => string;
   /** «Показани са първите 200 резултата» — `{{count}}`. */
   readonly moreThanShown: (count: number) => string;
@@ -94,13 +92,13 @@ export function staffSearchWordsOf(
       translate('staff.search.rangeLastCaption', { from }),
     placeholder: translate('staff.day.searchPlaceholder'),
     placeholderShort: translate('staff.search.placeholderShort'),
-    tokenPlaceholder: translate('staff.search.tokenPlaceholder'),
+    scopedPlaceholder: (key) =>
+      translate('staff.search.scopedPlaceholder', { key }),
     empty: translate('staff.day.searchEmpty'),
     clearFilters: translate('staff.search.clearFilters'),
     truncated: translate('staff.day.searchTruncated'),
     stale: translate('staff.day.searchStale'),
     phoneRow: (number) => translate('staff.search.phoneRow', { number }),
-    chipRemove: (label) => translate('staff.search.chipRemove', { label }),
     tokenLabel: (key, value) =>
       translate('staff.search.tokenLabel', { key, value }),
     tokenBuilding: (key) => translate('staff.search.tokenBuilding', { key }),

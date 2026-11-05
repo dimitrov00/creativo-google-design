@@ -417,3 +417,19 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
     padding-block: 0;
   }
 }
+
+/* FULL SCREEN (`fullScreen`, ≙ `.fullScreenCover`): the scroller IS the
+   screen — the surface pads nothing, so nothing is cancelled; no cap, no
+   rounding, the top safe area under the chrome. The grabber goes with the
+   drag it stood for. */
+ui-sheet.modal-sheet[data-full-screen] .modal-sheet__scroll {
+  margin: 0;
+  block-size: 100%;
+  max-block-size: none;
+  border-radius: 0;
+  padding-block-start: env(safe-area-inset-top);
+}
+
+ui-sheet.modal-sheet[data-full-screen] .ui-sheet-header__grabber {
+  display: none;
+}

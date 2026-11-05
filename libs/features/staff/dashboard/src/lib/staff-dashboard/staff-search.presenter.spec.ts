@@ -184,7 +184,7 @@ const suggestionLabels = (vm: SearchSheetVm) =>
 const keyIds = (vm: SearchSheetVm) => vm.suggestions.keys.map((row) => row.id);
 
 describe('searchSheetVm — idle', () => {
-  it('shows the recents and, over the field, the keys a filter is made of — no cards', () => {
+  it('shows the starters, the recents and, over the field, the keys a filter is made of — no cards', () => {
     const recents = [
       text('петър'),
       SearchQuery.withFilter(text('фейд'), SearchFilter.note()),
@@ -197,7 +197,20 @@ describe('searchSheetVm — idle', () => {
       'фейд · С бележка',
     ]);
     expect(vm.suggestions.suggestMode).toBe(SuggestMode.Fields);
-    expect(vm.suggestions.sections).toEqual([]);
+    // Mail's «Suggestions» before anything is typed: today, tomorrow, the barbers.
+    expect(vm.suggestions.sections.map((s) => s.heading)).toEqual([
+      'Предложения',
+    ]);
+    expect(
+      suggestionRows(vm).map((r) => [r.label, r.detail, r.suggestAction]),
+    ).toEqual([
+      ['Днес', 'Кога', SuggestAction.AddValue],
+      ['Утре', 'Кога', SuggestAction.AddValue],
+      ['Иван', 'Бръснар', SuggestAction.AddValue],
+      ['Нико', 'Бръснар', SuggestAction.AddValue],
+    ]);
+    expect(suggestionRows(vm)[2]?.face).toEqual({ src: null, name: 'Иван' });
+    expect(vm.filters).toEqual([]);
     expect(vm.suggestions.keys.map((row) => [row.id, row.label])).toEqual([
       ['FIELD:WHEN', 'Кога'],
       ['FIELD:BARBER', 'Бръснар'],
@@ -406,30 +419,46 @@ describe('searchSheetVm — each visit on its own shop’s clock (DEP-6)', () =>
   });
 });
 
-describe('searchSheetVm — tokens', () => {
+describe('searchSheetVm — the chosen filters over the field', () => {
   const withBarber = SearchQuery.withFilter(
     text('иван'),
     SearchFilter.barber([IVAN, NIKO]),
   );
 
-  it('draws one key │ value token per held kind, faces leading a barber’s', () => {
+  it('draws one selected chip per chosen kind, saying its value, faces leading a barber’s', () => {
     const vm = searchSheetVm(
       input(
         'bg',
         SearchQuery.withFilter(withBarber, SearchFilter.when(day(0), day(6))),
       ),
     );
-    expect(vm.tokens.map((t) => [t.id, t.key, t.value])).toEqual([
-      ['BARBER', 'Бръснар', 'Иван, Нико'],
-      ['WHEN', 'Кога', 'Тази седмица'],
+    expect(vm.filters.map((c) => [c.id, c.label, c.glyph])).toEqual([
+      ['BARBER', 'Иван, Нико', 'contact.person'],
+      ['WHEN', 'Тази седмица', 'visit.calendar'],
     ]);
-    expect(vm.tokens[0]?.faces).toEqual([
+    expect(vm.filters[0]?.faces).toEqual([
       { src: null, name: 'Иван' },
       { src: null, name: 'Нико' },
     ]);
-    expect(vm.tokens[0]?.label).toBe('Бръснар: Иван, Нико. Промени филтъра');
-    expect(vm.tokens[0]?.removeLabel).toBe('Махни филтъра Бръснар');
+    expect(vm.filters[0]?.accessibleLabel).toBe(
+      'Бръснар: Иван, Нико. Промени филтъра',
+    );
+    expect(vm.filters.some((c) => c.active)).toBe(false);
     expect(vm.placeholder).toBe('Търси…');
+  });
+
+  it('leaves a chosen key out of the free keys', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(
+          SearchQuery.empty(),
+          SearchFilter.barber([NIKO]),
+        ),
+      ),
+    );
+    expect(keyIds(vm)).not.toContain('FIELD:BARBER');
+    expect(keyIds(vm)[0]).toBe('FIELD:WHEN');
   });
 
   it('names two values and counts the rest', () => {
@@ -446,36 +475,64 @@ describe('searchSheetVm — tokens', () => {
         ),
       ),
     );
-    expect(vm.tokens[0]?.value).toBe('Потвърдени, Отказани +1');
+    expect(vm.filters[0]?.label).toBe('Потвърдени, Отказани +1');
   });
 
-  it('draws the token being built last, its value waiting on the placeholder, the text quiet', () => {
+  it('says «С бележка» for the note filter, never its bare value', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      ),
+    );
+    expect(vm.filters[0]?.label).toBe('С бележка');
+  });
+
+  it('stands the key being picked last, saying its key, ringed, and scopes the placeholder to it', () => {
     const vm = searchSheetVm(
       input('bg', withBarber, { openField: SearchFilterField.Service }),
     );
-    expect(vm.tokens.map((t) => [t.id, t.value])).toEqual([
-      ['BARBER', 'Иван, Нико'],
-      ['SERVICE', ''],
+    expect(vm.filters.map((c) => [c.id, c.label, c.active])).toEqual([
+      ['BARBER', 'Иван, Нико', false],
+      ['SERVICE', 'Услуга', true],
     ]);
-    expect(vm.tokens[1]?.label).toBe('Услуга: избери стойност');
-    expect(vm.tokenPlaceholder).toBe('избери…');
-    expect(vm.placeholder).toBe('');
+    expect(vm.filters[1]?.accessibleLabel).toBe('Услуга: избери стойност');
+    expect(vm.placeholder).toBe('Търси в „Услуга“…');
+    expect(keyIds(vm)).toEqual([]);
     expect(
       searchSheetVm(
         input('en', SearchQuery.empty(), { openField: SearchFilterField.When }),
-      ).tokenPlaceholder,
-    ).toBe('choose…');
+      ).placeholder,
+    ).toBe('Search in “When”…');
   });
 
-  it('stands the tokens in the order their filters were added', () => {
+  it('rings a chosen filter while its values are open', () => {
+    const vm = searchSheetVm(
+      input('bg', withBarber, { openField: SearchFilterField.Barber }),
+    );
+    expect(vm.filters.map((c) => [c.id, c.active])).toEqual([['BARBER', true]]);
+    expect(vm.placeholder).toBe('Търси в „Бръснар“…');
+  });
+
+  it('stands the chips in the order their filters were added', () => {
     const query = SearchQuery.withFilter(
       SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
       SearchFilter.barber([IVAN]),
     );
-    expect(searchSheetVm(input('bg', query)).tokens.map((t) => t.id)).toEqual([
+    expect(searchSheetVm(input('bg', query)).filters.map((c) => c.id)).toEqual([
       SearchFilterField.Note,
       SearchFilterField.Barber,
     ]);
+  });
+
+  it('offers no starters once a filter is chosen', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      ),
+    );
+    expect(vm.suggestions.sections).toEqual([]);
   });
 
   it('says Today for the span that is today, Yesterday for yesterday, and the dates for any other', () => {
@@ -488,7 +545,7 @@ describe('searchSheetVm — tokens', () => {
             SearchFilter.when(from, to),
           ),
         ),
-      ).tokens[0]?.value;
+      ).filters[0]?.label;
     expect(one(day(0), day(0))).toBe('Днес');
     expect(one(day(-1), day(-1))).toBe('Вчера');
     expect(one(day(-6), day(0))).toBe('Последните 7 дни');
@@ -496,8 +553,8 @@ describe('searchSheetVm — tokens', () => {
   });
 });
 
-describe('searchSheetVm — the dropdown', () => {
-  it('lists an open key’s values for a token being built, the typed text narrowing them', () => {
+describe('searchSheetVm — the suggestions', () => {
+  it('lists an open key’s values for a key being picked, the typed text narrowing them', () => {
     const open = searchSheetVm(
       input('bg', SearchQuery.empty(), { openField: SearchFilterField.Barber }),
     );
@@ -520,7 +577,7 @@ describe('searchSheetVm — the dropdown', () => {
     expect(suggestionLabels(narrowed)).toEqual(['Нико']);
   });
 
-  it('marks a pressed token’s held values, toggles them, and offers to remove the filter last', () => {
+  it('marks a pressed filter’s held values, toggles them, and offers to remove the filter last', () => {
     const held = SearchQuery.withFilter(
       SearchQuery.empty(),
       SearchFilter.barber([NIKO]),
@@ -627,7 +684,7 @@ describe('searchSheetVm — the dropdown', () => {
 });
 
 describe('searchSheetVm — the edges', () => {
-  it('says nothing matches, and offers to clear the filters only when there are chips', () => {
+  it('says nothing matches, and offers to clear the filters only when some are chosen', () => {
     const plain = searchSheetVm(input('bg', text('zzzz-no-such')));
     expect(plain.searchSheetState).toBe(SearchSheetState.Empty);
     expect(plain.clearFilters).toBeNull();

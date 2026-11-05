@@ -128,7 +128,10 @@ export type UiSearchFieldPinEdge = 'top' | 'bottom';
     <div class="ui-search-field__accessory" (mousedown)="keepFocus($event)">
       <ng-content select="[uiSearchAccessory]" />
     </div>
-    <span class="ui-search-field__frame">
+    <span
+      class="ui-search-field__frame"
+      [style.view-transition-name]="uiTransitionName()"
+    >
       <!-- The glyph may say what the typing was taken for (a handset for a
            number, an envelope for a mail) — detection the reader can see,
            never a mode to pick. -->
@@ -310,6 +313,12 @@ export class UiSearchField {
   readonly uiDismissLabel = input('');
   /** The owner has something open that Escape closes before the sheet does. */
   readonly uiEscapeClaimed = input(false);
+  /**
+   * A `view-transition-name` for the field's capsule, so a view transition
+   * can grow another element sharing the name — a bar's search button —
+   * into it and back. None by default.
+   */
+  readonly uiTransitionName = input<string | null>(null);
   /** The clear control's name; without one there is no clear control. */
   readonly uiClearLabel = input('');
   /** The filters before the text — none by default. */

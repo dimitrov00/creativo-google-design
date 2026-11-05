@@ -238,6 +238,39 @@ export const SearchFilterSystem = {
     };
   },
 
+  /** The most filters an untouched search offers to start from. */
+  STARTER_LIMIT: 5,
+
+  /**
+   * What an untouched search offers to start from (≙ Mail's «Suggestions»
+   * before anything is typed): today and tomorrow while the window reaches
+   * them, then the barbers with visits in it, in the order the window offers
+   * them — at most {@link SearchFilterSystem.STARTER_LIMIT}. Each is a
+   * single-value filter, ready to add.
+   */
+  starters(
+    offered: SearchSuggestions,
+    shopNow: ShopNow,
+  ): readonly SearchFilter[] {
+    const out: SearchFilter[] = [];
+    const days = [SearchWhenPreset.Today, SearchWhenPreset.Tomorrow];
+    for (let i = 0; i < days.length; i++) {
+      const preset = days[i] as SearchWhenPreset;
+      if (offered.whenPresets.includes(preset)) {
+        out.push(SearchFilterSystem.whenOf(preset, shopNow));
+      }
+    }
+    for (
+      let b = 0;
+      b < offered.barberIds.length &&
+      out.length < SearchFilterSystem.STARTER_LIMIT;
+      b++
+    ) {
+      out.push(SearchFilter.barber([offered.barberIds[b] as BarberId]));
+    }
+    return out;
+  },
+
   /**
    * Which preset a date filter IS on the shop's own today — the span a preset
    * built — or `null` for any other span (a recent saved last week). The

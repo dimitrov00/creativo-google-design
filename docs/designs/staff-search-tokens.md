@@ -127,6 +127,47 @@ a child take the room between.
   reaches the sheet, which ends the search. ↓ from the field lands on the
   first suggestion or card. Return with a key open picks its first value.
 
+### Full screen, a capsule, and the filters out of the field (2026-11-05, later)
+
+The owner used the floor build and asked for five changes. Looked up on
+Mobbin first (iOS 26 Photos «Search», Mail search):
+
+1. **A capsule field with a bigger glyph.** iOS 26 draws every search field
+   as a capsule, the magnifier at the size of the ✕ beside it. `ui-search-field`
+   is a capsule everywhere now (this changes the add-client page's field
+   too), and its glyph is the control-glyph rung (20 px, `--ui-icon-medium`),
+   the same one the ✕ button draws.
+2. **Full screen, grown from the bar.** Photos' search is a page, not a
+   sheet: the bar's search button grows into the field and the page comes
+   up around it. `ui-modal-sheet` gains `fullScreen` (≙ `.fullScreenCover`,
+   on `ui-sheet` as `uiFullScreen`): the surface fills the viewport, has no
+   scrim, no rounding, no grabber and no drag, and its content owns its
+   edges. The search opens and closes inside `runViewTransition` (the
+   helper the frame's full screen and the view switch use), and the bar's
+   entry and the page's field share the name `staff-search-field`, so the
+   capsule GROWS into the field and back. The entry gives the name up while
+   the search is open, so the two never hold it at once. On a wide screen
+   the page keeps a drawer-wide column, centred.
+3. **The filters float over the field, with their values.** The key │ value
+   tokens leave the field (the DS keeps them for other screens). The chosen
+   filters lead the chip row over the field, selected (the accent wash, the
+   glyph orange, the words ink), each saying its VALUE — «10.11»,
+   «(И) Иван, Стефан», «Потвърдени» — with the key's glyph; the keys still
+   free follow, plain. Pressing a chosen filter opens its values, as the
+   token did; the open one wears the ring. A key being picked stands in the
+   row selected, saying its key, until a value is picked. Backspace no
+   longer removes a filter: there is no token before the caret to remove.
+4. **«Търси в „Бръснар“…».** With a key open the field's placeholder names
+   it (Mail scopes a search the same way), and what is typed narrows that
+   key's values. The matched rows under typed text keep their key beside
+   them («Нико Димов · Бръснар», Mail's "via").
+5. **The idle page offers before anything is typed.** Mail opens on
+   «Suggestions» and «Recent Searches»; the page now opens on
+   «Предложения» — Днес and Утре while the window reaches them, then the
+   barbers who have visits in it, five rows at most
+   (`SearchFilterSystem.starters`) — and «Скорошни» as rows with a history
+   glyph.
+
 ### «Кога»: preset, day or range
 
 `VALUES` for «Кога» lists the presets that reach a visit: Днес, Утре, Вчера,
@@ -170,6 +211,8 @@ focus when the sheet opens.
   month without a selected day).
 - **The e2e journeys** (`apps/web/e2e/staff-search-sheet.spec.ts`) are
   updated, but not run locally while the dev server was up; CI runs them.
+- **Backspace removing a filter.** The filters are not before the caret any
+  more; a chosen filter comes off from its own values («Махни филтъра»).
 - **The keyboard lift on a real iPhone.** The band follows
   `visualViewport` and was checked in a desktop browser only; iOS Safari's
   panning when an input near the bottom takes focus has not been tried on a
@@ -180,10 +223,12 @@ focus when the sheet opens.
 | Layer      | File                                                                       | Change                                                                                                                                                                                                                           |
 | ---------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | components | `search-when-preset.data.ts`                                               | `YESTERDAY`, `PAST_WEEK`                                                                                                                                                                                                         |
-| systems    | `search-filter.system.ts`                                                  | the two presets in `whenOf`, `presetOf`, `suggestions`; `spanOf` (two picked days → a span)                                                                                                                                      |
+| systems    | `search-filter.system.ts`                                                  | the two presets in `whenOf`, `presetOf`, `suggestions`; `spanOf` (two picked days → a span); `starters` (an untouched search's offers)                                                                                           |
 | DS         | `ui-search-field`                                                          | segmented tokens (`key`, `value`, `faces`, `uiTokenPlaceholder`), `uiTokenActivate`, `uiActiveToken`, the dropdown slot, wrap; the floor (`uiPinEdge`, keyboard inset), `uiSearchAccessory`, `uiDismissLabel`, `uiEscapeClaimed` |
-| DS         | `ui-page-action-bar`, `ui-modal-sheet`                                     | the `uiFill` slot; a scroller that floors a bottom-pinned search field                                                                                                                                                           |
-| feature    | `staff-search.vm.ts`, `staff-search.presenter.ts`, `staff-search.words.ts` | `TokenVm`, `SearchSuggestionsVm` (its three modes, the key chips, the rows, the calendar state)                                                                                                                                  |
+| DS         | `ui-page-action-bar`, `ui-modal-sheet`, `ui-sheet`                         | the `uiFill` slot; a scroller that floors a bottom-pinned search field; `fullScreen` / `uiFullScreen` (≙ `.fullScreenCover`)                                                                                                     |
+| DS         | `ui-search-field`                                                          | a capsule everywhere, the 20 px magnifier; `uiTransitionName` on the capsule                                                                                                                                                     |
+| feature    | `staff-day.store.ts`, `apps/web/src/styles.css`                            | the search opens and closes inside `runViewTransition`; the grow's timing (the pseudo-elements live on the root)                                                                                                                 |
+| feature    | `staff-search.vm.ts`, `staff-search.presenter.ts`, `staff-search.words.ts` | `FilterChipVm` (was `TokenVm`), `SearchSuggestionsVm` (its three modes, the free key chips, the rows, the starters, the calendar state), the scoped placeholder                                                                  |
 | feature    | `staff-search-sheet.*`                                                     | the open key, the calendar mode, the field on the floor, the chips and suggestion rows, autofocus                                                                                                                                |
 | feature    | `staff-dashboard.html`, `staff-dashboard.chrome.css`                       | the field-shaped entry in the bottom bar on a phone; the toolbar button from 600px                                                                                                                                               |
 | i18n       | `bg.json`, `en.json`                                                       | the key words, the suggestion headings, the new presets, the calendar captions, «избери…»                                                                                                                                        |

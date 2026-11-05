@@ -150,11 +150,35 @@ describe('StaffSearchSheet', () => {
     localStorage.clear();
   });
 
-  it('opens idle: no cards, the field pinned and named', async () => {
+  it('opens idle and full screen: no cards, the field pinned and named, the starters above it', async () => {
     await mount();
     expect(cards()).toHaveLength(0);
     expect(el('ui-search-field[data-pinned]')).not.toBeNull();
+    expect(el('ui-sheet[data-full-screen]')).not.toBeNull();
     expect(el('[data-testid="staff-search-recents"]')).toBeNull();
+    // Mail's «Suggestions» before anything is typed: tomorrow, the barbers.
+    expect(
+      all('[data-suggest-mode] [data-testid="staff-search-suggestion"]').map(
+        (row) => row.getAttribute('data-suggestion'),
+      ),
+    ).toEqual([
+      `WHEN:${LocalDate.addDays(FIXTURE_TODAY, 1)}..${LocalDate.addDays(FIXTURE_TODAY, 1)}`,
+      'BARBER:b-ivan',
+      'BARBER:b-niko',
+    ]);
+    // The field's capsule shares the bar entry's view-transition name.
+    expect(
+      el<HTMLElement>('.ui-search-field__frame')?.style.viewTransitionName,
+    ).toBe('staff-search-field');
+  });
+
+  it('adds a starter as a filter, and the starters leave', async () => {
+    await mount();
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(chipIds()).toEqual(['BARBER']);
+    expect(chip('BARBER')?.textContent).toContain('Нико');
+    expect(cards()).toHaveLength(2);
+    expect(el('[data-suggest-mode]')).toBeNull();
   });
 
   it('scans the window only after the 80 ms typing pause', async () => {
@@ -174,8 +198,15 @@ describe('StaffSearchSheet', () => {
     el<HTMLInputElement>(
       '[data-testid="staff-search-input"]',
     ) as HTMLInputElement;
-  const token = (id: string) =>
-    el<HTMLButtonElement>(`[data-testid="staff-search-input-token-${id}"]`);
+  /** A chosen filter's chip over the field (or a key being picked). */
+  const chip = (id: string) =>
+    el<HTMLButtonElement>(
+      `[data-testid="staff-search-filter"][data-filter="${id}"]`,
+    );
+  const chipIds = () =>
+    all('[data-testid="staff-search-filter"]').map((c) =>
+      c.getAttribute('data-filter'),
+    );
 
   it('opens on the caret, the field on the floor with the ✕ beside it and the keys over it', async () => {
     await mount();
@@ -197,25 +228,34 @@ describe('StaffSearchSheet', () => {
     expect(store.closeSearch).toHaveBeenCalled();
   });
 
-  it('builds a key │ value token from the suggestions', async () => {
+  it('picks a key, then a value: the key stands as a chip until the value replaces its word', async () => {
     await mount();
-    press('[data-suggestion="FIELD:BARBER"]');
-    expect(token('BARBER')?.hasAttribute('data-building')).toBe(true);
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(true);
+    expect(chip('BARBER')?.textContent).toContain('staff.search.key.barber');
+    // The free keys leave while a key is open; the placeholder names it.
+    expect(
+      el('[data-testid="staff-search-keys"] [data-suggestion]'),
+    ).toBeNull();
+    expect(field().placeholder).toContain('staff.search.scopedPlaceholder');
     press('[data-suggestion="BARBER:b-niko"]');
-    expect(token('BARBER')?.textContent).toContain('Нико');
-    expect(token('BARBER')?.hasAttribute('data-building')).toBe(false);
+    expect(chip('BARBER')?.textContent).toContain('Нико');
+    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(false);
+    expect(chip('BARBER')?.getAttribute('data-selected')).toBe('');
     expect(cards()).toHaveLength(2);
+    // No token in the field any more: the filters float over it.
+    expect(all('.ui-search-field__token')).toHaveLength(0);
   });
 
-  it('parks the typed search while a pressed token’s values are open, and brings it back', async () => {
+  it('parks the typed search while a pressed filter’s values are open, and brings it back', async () => {
     await mount();
-    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
     type('иван');
     after(100);
     expect(cards()).toHaveLength(1);
 
-    press('[data-testid="staff-search-input-token-BARBER"]');
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
     // The text now narrows the values, which are the page meanwhile.
     expect(field().value).toBe('');
     expect(cards()).toHaveLength(0);
@@ -230,29 +270,14 @@ describe('StaffSearchSheet', () => {
     expect(cards()).toHaveLength(2);
   });
 
-  it('draws a token being built as both segments, its value saying «избери…»', async () => {
-    await mount();
-    press('[data-suggestion="FIELD:SERVICE"]');
-    expect(
-      token('SERVICE')?.querySelector('.ui-search-field__token-value')
-        ?.textContent,
-    ).toContain('staff.search.tokenPlaceholder');
-    expect(field().placeholder).toBe('');
-  });
-
-  it('keeps the tokens in the order they were added', async () => {
+  it('keeps the chips in the order their filters were added', async () => {
     await mount();
     // Barber, then When — the reverse of the order the keys are listed in.
-    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
     press('[data-suggestion="FIELD:WHEN"]');
     press('[data-suggestion^="WHEN:"]');
-    expect(
-      all('.ui-search-field__token').map((t) => t.getAttribute('data-testid')),
-    ).toEqual([
-      'staff-search-input-token-BARBER',
-      'staff-search-input-token-WHEN',
-    ]);
+    expect(chipIds()).toEqual(['BARBER', 'WHEN']);
   });
 
   it('lets the keys the typed text does not name leave the list, and opens a named key without the text', async () => {
@@ -269,18 +294,19 @@ describe('StaffSearchSheet', () => {
       ),
     ).toEqual(['FIELD:BARBER']);
     press('[data-suggestion="FIELD:BARBER"]');
-    expect(token('BARBER')?.hasAttribute('data-building')).toBe(true);
+    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(true);
     press('[data-suggestion="BARBER:b-niko"]');
     expect(field().value).toBe('');
     expect(cards()).toHaveLength(2);
   });
 
-  it('opens a pressed token on its values: ✓ on the held one, a toggle, and «Махни филтъра» last', async () => {
+  it('opens a pressed filter on its values: ✓ on the held one, a toggle, and «Махни филтъра» last', async () => {
     await mount();
-    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
-    press('[data-testid="staff-search-input-token-BARBER"]');
-    expect(token('BARBER')?.hasAttribute('data-active')).toBe(true);
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(true);
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     expect(
       el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
     ).toBe('true');
@@ -290,12 +316,22 @@ describe('StaffSearchSheet', () => {
 
     // A toggle keeps the values open.
     press('[data-suggestion="BARBER:b-ivan"]');
-    expect(token('BARBER')?.textContent).toContain('Нико, Иван');
+    expect(chip('BARBER')?.textContent).toContain('Нико, Иван');
     expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
 
     press('[data-suggestion="REMOVE:BARBER"]');
-    expect(token('BARBER')).toBeNull();
+    expect(chip('BARBER')).toBeNull();
     expect(el('[data-suggestion="FIELD:BARBER"]')).not.toBeNull();
+  });
+
+  it('closes a pressed filter’s values on a second press', async () => {
+    await mount();
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).toBeNull();
+    expect(cards()).toHaveLength(2);
   });
 
   it('adds a value the typed text names, taking the text with it', async () => {
@@ -303,33 +339,14 @@ describe('StaffSearchSheet', () => {
     type('ни');
     after(100);
     press('[data-suggestion="BARBER:b-niko"]');
-    expect(token('BARBER')?.textContent).toContain('Нико');
+    expect(chip('BARBER')?.textContent).toContain('Нико');
     expect(field().value).toBe('');
     expect(cards()).toHaveLength(2);
   });
 
-  it('takes the token being built, then the last token, off on Backspace in an empty field', async () => {
-    await mount();
-    press('[data-suggestion="FIELD:BARBER"]');
-    press('[data-suggestion="BARBER:b-niko"]');
-    press('[data-suggestion="FIELD:SERVICE"]');
-    expect(all('.ui-search-field__token')).toHaveLength(2);
-    const backspace = () => {
-      field().dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
-      );
-      fixture.detectChanges();
-    };
-    backspace();
-    expect(all('.ui-search-field__token')).toHaveLength(1);
-    expect(token('BARBER')).not.toBeNull();
-    backspace();
-    expect(all('.ui-search-field__token')).toHaveLength(0);
-  });
-
   it('keeps Escape while a key is open, closing the key, and lets it reach the sheet after', async () => {
     await mount();
-    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     const escape = () => {
       const event = new KeyboardEvent('keydown', {
         key: 'Escape',
@@ -341,7 +358,7 @@ describe('StaffSearchSheet', () => {
       return event;
     };
     escape();
-    expect(token('BARBER')).toBeNull();
+    expect(chip('BARBER')).toBeNull();
     expect(el('[data-testid="staff-search-keys"]')).not.toBeNull();
     expect(store.closeSearch).not.toHaveBeenCalled();
     // Nothing open: Escape is the sheet's, which ends the search.

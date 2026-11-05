@@ -166,6 +166,7 @@
               [uiIconOnly]="true"
               class="staff-cluster__item staff-search-open"
               [attr.aria-label]="t('staff.day.searchLabel')"
+              [attr.data-searching]="store.searching() ? '' : null"
               data-testid="staff-search-open"
               (click)="store.openSearch()"
             >
@@ -901,7 +902,8 @@
            field-shaped, filling the room between the bar's leading controls
            and ＋, on a phone; from 600px of bar the toolbar's own search
            button carries it, as Mail on an iPad keeps its search at the top.
-           It opens the search sheet, whose field sits on the same floor. -->
+           It GROWS into the full-screen search, whose field sits on the
+           same floor (the two share a view-transition name). -->
       <button
         type="button"
         uiButton
@@ -910,6 +912,7 @@
         uiControlSize="large"
         uiFill
         class="staff-search-entry"
+        [attr.data-searching]="store.searching() ? '' : null"
         data-testid="staff-search-entry"
         (click)="store.openSearch()"
       >

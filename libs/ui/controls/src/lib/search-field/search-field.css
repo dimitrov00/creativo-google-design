@@ -14,23 +14,28 @@
     align-items: center;
   }
 
-  .ui-search-field__glyph {
+  /* THE MAGNIFIER at the control-glyph rung (20px), the size the ✕ button
+     beside a field draws (≙ iOS 26, 2026-11-05) — set on the host, as a
+     button's tier does, so the glyph's 1em reads it. */
+  .ui-search-field .ui-search-field__glyph {
     grid-area: 1 / 1;
     justify-self: start;
     z-index: 1;
-    margin-inline-start: var(--sys-space-compact);
+    margin-inline-start: calc(var(--sys-space-unit) * 3);
+    font-size: var(--ui-icon-medium);
     color: var(--sys-color-secondary-label);
     pointer-events: none;
   }
 
-  /* Room for the glyph — its inset, its width and a gap, measured against
-     the icon the field's body size draws. Two classes, so the text field's
-     own inline padding (one class and a size attribute, same layer) never
-     wins on source order. */
+  /* A CAPSULE (≙ iOS 26: every search field is one). Room for the glyph —
+     its inset, its width and a gap. Two classes, so the text field's own
+     inline padding and radius (one class and a size attribute, same layer)
+     never win on source order. */
   .ui-search-field .ui-search-field__native {
     grid-area: 1 / 1;
     inline-size: 100%;
-    padding-inline-start: calc(var(--sys-space-unit) * 9);
+    padding-inline-start: calc(var(--sys-space-unit) * 10);
+    border-radius: var(--control-radius-capsule);
   }
 
   /* The engine's own ✕ goes (a blue glyph in one browser, none in
@@ -162,9 +167,9 @@
     padding-block: calc(
       (var(--control-size-regular) - var(--control-size-small) - 2px) / 2
     );
-    padding-inline: var(--sys-space-compact);
+    padding-inline: calc(var(--sys-space-unit) * 3) var(--sys-space-compact);
     border: 1px solid var(--sys-color-separator);
-    border-radius: var(--control-radius-regular);
+    border-radius: calc(var(--control-size-regular) / 2);
     background: var(--sys-color-fill);
     transition:
       border-color var(--sys-motion-duration-regular)
@@ -186,6 +191,7 @@
   .ui-search-field[data-has-tokens] .ui-search-field__glyph {
     position: static;
     flex: none;
+    /* The field's inline pad is the inset now. */
     margin-inline-start: 0;
   }
 

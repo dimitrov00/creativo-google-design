@@ -1,16 +1,18 @@
 <ng-container>
-  <!-- THE SEARCH AT THE THUMB (≙ iOS 26 Mail and Photos, 2026-11-05): the
-       large title at the top, the DS field on the FLOOR of the sheet with
-       the chosen filters as keyed tokens inside it and the ✕ that ends the
-       search beside it, lifted over the keyboard. The keys a filter can be
-       made of ride over the field as chips (Photos); what the typed text
-       names, or an open key's values, sit above the results (Mail's
-       «Suggestions»). The header is bare: the ✕ is the field's. -->
+  <!-- THE SEARCH AT THE THUMB (≙ iOS 26 Mail and Photos, 2026-11-05): a
+       FULL-SCREEN page the bar's search capsule grows into (a view
+       transition, the store's), the large title at the top, the DS capsule
+       field on the FLOOR with the ✕ that ends the search beside it, lifted
+       over the keyboard. The chosen filters float over the field as selected
+       chips saying their values, the free keys after them (Photos); the
+       starters, what the typed text names, or an open key's values sit
+       above the results (Mail's «Suggestions»). -->
   <ui-modal-sheet
     sheetId="staff-search-sheet"
     labelledBy="staff-search-title"
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
+    [fullScreen]="true"
     [bareHeader]="true"
     data-testid="staff-search-sheet"
     (dismissed)="close()"
@@ -42,9 +44,10 @@
       </p>
       }
 
-      <!-- THE SUGGESTIONS above the results: what the typed text names, each
-           with its key, or the open key's values (✓ on the held ones,
-           «Махни филтъра» last) and its month. A press keeps the keyboard. -->
+      <!-- THE SUGGESTIONS above the results: the starters of an untouched
+           search or what the typed text names, each with its key, or the
+           open key's values (✓ on the held ones, «Махни филтъра» last) and
+           its month. A press keeps the keyboard. -->
       @for (section of vm().suggestions.sections; track section.id) { @if
       (section.rows.length > 0) {
       <section
@@ -153,7 +156,11 @@
         {{ clear }}
       </button>
       } } @case (SearchSheetState.Idle) { @if (vm().recents.length > 0) {
-      <section data-testid="staff-search-recents">
+      <!-- Mail's «Recent Searches»: rows, each run again by a press. -->
+      <section
+        class="staff-search-sheet__section"
+        data-testid="staff-search-recents"
+      >
         <ui-section-header uiHeaderProminence="increased">
           <h3 uiTitle>{{ t('staff.search.recents') }}</h3>
           <button
@@ -168,20 +175,24 @@
             {{ t('staff.search.clearRecents') }}
           </button>
         </ui-section-header>
-        <div class="staff-search-sheet__chips">
-          @for (recent of vm().recents; track recent.id) {
-          <button
-            type="button"
-            uiChip
-            [uiToggle]="false"
-            data-search-focusable
-            data-testid="staff-search-recent"
-            (click)="runRecent(recent)"
-          >
-            {{ recent.label }}
-          </button>
-          }
-        </div>
+        @for (recent of vm().recents; track recent.id) {
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          class="staff-search-sheet__row"
+          data-search-focusable
+          data-testid="staff-search-recent"
+          (mousedown)="$event.preventDefault()"
+          (click)="runRecent(recent)"
+        >
+          <span uiLeading>
+            <ui-icon uiName="search.recent" aria-hidden="true" />
+          </span>
+          {{ recent.label }}
+        </button>
+        }
       </section>
       } } } } @for (note of vm().footnotes; track note) {
       <p
@@ -194,7 +205,9 @@
       </p>
       }
 
-      <!-- THE FIELD, on the floor: the body's last child. -->
+      <!-- THE FIELD, on the floor: the body's last child. Its frame and the
+           bar's search capsule share a view-transition name, so one grows
+           into the other. -->
       <ui-search-field
         uiPinned
         uiPinEdge="bottom"
@@ -207,21 +220,19 @@
         uiTestId="staff-search-input"
         [uiClearLabel]="t('staff.day.searchClear')"
         [uiDismissLabel]="t('staff.day.cancelDismiss')"
-        [uiTokens]="vm().tokens"
-        [uiTokenPlaceholder]="vm().tokenPlaceholder"
-        [uiActiveToken]="activeToken()"
         [uiEscapeClaimed]="escapeClaimed()"
+        uiTransitionName="staff-search-field"
         (uiInput)="typeText($event)"
-        (uiTokenActivate)="activateToken($event)"
-        (uiTokenRemove)="removeToken($event)"
         (uiEscape)="escape()"
         (uiDismiss)="close()"
         (uiSubmit)="submit()"
         (uiNavigate)="focusFirst($event)"
       >
-        @if (vm().suggestions.keys.length > 0) {
-        <!-- THE KEYS over the field, as Photos offers its suggestions: one
-             sliding row of chips. -->
+        @if (vm().filters.length > 0 || vm().suggestions.keys.length > 0) {
+        <!-- OVER THE FIELD, floating (Photos): the chosen filters first,
+             selected and saying their values — a press opens a filter's
+             values, the open one ringed — then the free keys, plain. One
+             sliding row. -->
         <ui-scroll-row
           uiSearchAccessory
           uiSpacing="compact"
@@ -229,13 +240,43 @@
           [uiLabel]="t('staff.search.filterBy')"
           data-testid="staff-search-keys"
         >
-          @for (row of vm().suggestions.keys; track row.id) {
+          @for (chip of vm().filters; track chip.id) {
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="true"
+            [uiToggle]="false"
+            data-tint="accent"
+            class="staff-search-sheet__filter"
+            data-testid="staff-search-filter"
+            [attr.data-filter]="chip.id"
+            [attr.data-active]="chip.active ? '' : null"
+            [attr.aria-expanded]="chip.active"
+            [attr.aria-label]="chip.accessibleLabel"
+            (mousedown)="$event.preventDefault()"
+            (click)="activateFilter(chip.id)"
+          >
+            @if (chip.faces[0]; as face) {
+            <ui-avatar
+              uiControlSize="small"
+              [uiSrc]="face.src"
+              [uiName]="face.name"
+            />
+            } @else {
+            <ui-icon [uiName]="chip.glyph" aria-hidden="true" />
+            }
+            <span class="staff-search-sheet__filter-label"
+              >{{ chip.label }}</span
+            >
+          </button>
+          } @for (row of vm().suggestions.keys; track row.id) {
           <button
             type="button"
             uiChip
             [uiToggle]="false"
             data-testid="staff-search-suggestion"
             [attr.data-suggestion]="row.id"
+            (mousedown)="$event.preventDefault()"
             (click)="pickRow(row)"
           >
             @if (row.glyph; as glyph) {

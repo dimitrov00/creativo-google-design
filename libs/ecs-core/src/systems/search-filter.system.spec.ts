@@ -391,6 +391,82 @@ describe('SearchFilterSystem.spanOf — two picked days', () => {
   });
 });
 
+describe('SearchFilterSystem.starters — what an untouched search offers', () => {
+  const offered = (
+    whenPresets: readonly SearchWhenPreset[],
+    barberIds: readonly BarberId[],
+  ) => ({
+    barberIds,
+    serviceIds: [],
+    bookingStatuses: [],
+    whenPresets,
+    hasNote: false,
+  });
+  const [ivan, stefan, niko, petar, georgi] = [
+    'ivan',
+    'stefan',
+    'niko',
+    'petar',
+    'georgi',
+  ] as BarberId[];
+
+  it('offers today and tomorrow first, then the barbers, five at most', () => {
+    const starters = SearchFilterSystem.starters(
+      offered(
+        [
+          SearchWhenPreset.Today,
+          SearchWhenPreset.Tomorrow,
+          SearchWhenPreset.ThisWeek,
+        ],
+        [ivan, stefan, niko, petar] as BarberId[],
+      ),
+      NOW,
+    );
+    expect(starters).toEqual([
+      SearchFilterSystem.whenOf(SearchWhenPreset.Today, NOW),
+      SearchFilterSystem.whenOf(SearchWhenPreset.Tomorrow, NOW),
+      SearchFilter.barber([ivan as BarberId]),
+      SearchFilter.barber([stefan as BarberId]),
+      SearchFilter.barber([niko as BarberId]),
+    ]);
+    expect(starters).toHaveLength(SearchFilterSystem.STARTER_LIMIT);
+  });
+
+  it('skips a day the window does not reach, and the barbers fill the room', () => {
+    const starters = SearchFilterSystem.starters(
+      offered([SearchWhenPreset.Tomorrow], [
+        ivan,
+        stefan,
+        niko,
+        petar,
+        georgi,
+      ] as BarberId[]),
+      NOW,
+    );
+    expect(starters[0]).toEqual(
+      SearchFilterSystem.whenOf(SearchWhenPreset.Tomorrow, NOW),
+    );
+    expect(starters.slice(1)).toEqual(
+      [ivan, stefan, niko, petar].map((id) =>
+        SearchFilter.barber([id as BarberId]),
+      ),
+    );
+  });
+
+  it('offers nothing from an empty window', () => {
+    expect(SearchFilterSystem.starters(offered([], []), NOW)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(
+      offered([SearchWhenPreset.Today], [ivan, stefan] as BarberId[]),
+    );
+    expect(SearchFilterSystem.starters(input, NOW)).toEqual(
+      SearchFilterSystem.starters(input, NOW),
+    );
+  });
+});
+
 describe('SearchFilterSystem.presetOf — which preset a span is, today', () => {
   it('names the span a preset built, on the shop’s own today', () => {
     for (const preset of Object.values(SearchWhenPreset)) {

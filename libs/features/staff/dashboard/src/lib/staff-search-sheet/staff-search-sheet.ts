@@ -22,7 +22,6 @@ import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
   type LocalDate,
-  Tag,
   type TimeZone,
 } from '@core/primitives';
 import {
@@ -95,16 +94,17 @@ function deviceStorage(): Storage | null {
 }
 
 /**
- * THE SCHEDULE SEARCH SHEET (docs/designs/staff-search-spotlight.md, its
- * filters keyed in staff-search-tokens.md, at the thumb since 2026-11-05).
- * ≙ iOS 26 Mail and Photos: the DS field on the sheet's floor with the
- * chosen filters as key │ value tokens inside it and the ✕ that ends the
- * search beside it; the keys over it as chips; what the typed text names,
- * or an open key's values, above the results. Before anything is typed the
- * recent searches; while typing the visits as event cards under their days,
- * the lines the query found marked.
+ * THE SCHEDULE SEARCH (docs/designs/staff-search-spotlight.md, its filters
+ * keyed in staff-search-tokens.md, at the thumb and full screen since
+ * 2026-11-05). ≙ iOS 26 Mail and Photos: a full-screen page with the DS
+ * capsule field on its floor and the ✕ that ends the search beside it; the
+ * chosen filters floating over the field as selected chips that say their
+ * values, the free keys after them; the starters, what the typed text names,
+ * or an open key's values above the results. Before anything is typed the
+ * starters and the recent searches; while typing the visits as event cards
+ * under their days, the lines the query found marked.
  *
- * A pressed token PARKS the typed search (`heldText`): the text typed then
+ * A pressed filter PARKS the typed search (`heldText`): the text typed then
  * narrows the key's values, and the search comes back when the key closes.
  *
  * It owns the query (the field's text and the filters), the open key and the
@@ -170,7 +170,7 @@ export class StaffSearchSheet {
   private readonly filters = signal<SearchQuery>(SearchQuery.empty());
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  /** The key whose values are listed — a token being built or pressed. */
+  /** The key whose values are listed — being picked, or a chosen filter pressed. */
   protected readonly openField = signal<SearchFilterField | null>(null);
   /** The search parked while a key is open; null while none is. */
   private readonly heldText = signal<string | null>(null);
@@ -269,12 +269,6 @@ export class StaffSearchSheet {
     () => this.calendarMode() !== null || this.openField() !== null,
   );
 
-  /** The pressed token wears the ring while its values are open. */
-  protected readonly activeToken = computed(() => {
-    const field = this.openField();
-    return field !== null && this.heldFilter(field) ? field : null;
-  });
-
   constructor() {
     this.destroyRef.onDestroy(() => {
       if (this.timer !== null) clearTimeout(this.timer);
@@ -336,22 +330,10 @@ export class StaffSearchSheet {
     this.commitNow(held);
   }
 
-  /** A token pressed opens its values; pressed again, it closes them. */
-  protected activateToken(id: string): void {
-    if (!Tag.has(SearchFilterField, id)) return;
-    if (this.openField() === id) this.closeKey();
-    else this.openKey(id);
-  }
-
-  /** Backspace on an empty field: the token being built goes, else the last filter. */
-  protected removeToken(id: string): void {
-    if (!Tag.has(SearchFilterField, id)) return;
-    if (this.openField() === id && !this.heldFilter(id)) {
-      this.closeKey();
-      return;
-    }
-    this.filters.update((held) => SearchQuery.withoutFilter(held, id));
-    if (this.openField() === id) this.closeKey();
+  /** A filter chip pressed opens its values; pressed again, it closes them. */
+  protected activateFilter(field: SearchFilterField): void {
+    if (this.openField() === field) this.closeKey();
+    else this.openKey(field);
   }
 
   /** Escape: the month first, then the open key; with neither it is the sheet's. */

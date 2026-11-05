@@ -9,15 +9,15 @@ import type { VisitSectionVm } from '@creativo/features/shared/visits';
 
 /*
  * THE SEARCH SHEET'S DISPLAY MODEL (Law 10.3): types only. The sheet is one
- * of three states; the tokens, the recents, the suggestions and the result
- * groups are plain structs. A token, a suggestion or a recent carries the
+ * of three states; the filter chips, the recents, the suggestions and the
+ * result groups are plain structs. A chip, a suggestion or a recent carries the
  * DATA its press acts on (`searchFilterField`, `filter`, `query`) so the
  * sheet never parses a label or an id. `staff-search.presenter.ts` fills it.
  */
 
 /** What the sheet shows — the field `searchSheetState`. */
 export const SearchSheetState = {
-  /** Nothing typed and no token: the recents. */
+  /** Nothing typed and no filter: the starters and the recents. */
   Idle: 'IDLE',
   /** At least one visit matches: the result groups. */
   Results: 'RESULTS',
@@ -31,7 +31,7 @@ export type SearchSheetState =
 export const SuggestMode = {
   /** Nothing typed, no key open: the keys a filter can be made of. */
   Fields: 'FIELDS',
-  /** A key open (a token being built, or a token pressed): its values. */
+  /** A key open (being picked, or a chosen filter pressed): its values. */
   Values: 'VALUES',
   /** Text typed, no key open: the values and the keys the text names. */
   Matches: 'MATCHES',
@@ -62,25 +62,28 @@ export const CalendarMode = {
 } as const;
 export type CalendarMode = (typeof CalendarMode)[keyof typeof CalendarMode];
 
-/** A face a token or a row leads with — a barber. */
+/** A face a filter chip or a row leads with — a barber. */
 export interface FaceVm {
   readonly src: string | null;
   readonly name: string;
 }
 
-/** A filter in the field: its key and its value, ≙ `UiSearchFieldToken`. */
-export interface TokenVm {
-  /** The kind it filters — one token per kind. */
+/**
+ * A chosen filter, floating over the field as a selected chip (≙ iOS 26
+ * Photos): the key's glyph or the barbers' faces, and its VALUE. A key being
+ * picked stands as its own chip, saying the key, until a value is picked.
+ */
+export interface FilterChipVm {
+  /** The kind it filters — one chip per kind. */
   readonly id: SearchFilterField;
-  /** «Бръснар». */
-  readonly key: string;
-  /** «Иван, Стефан +1»; '' while the token is still being built. */
-  readonly value: string;
-  readonly faces: readonly FaceVm[];
-  /** «Бръснар: Иван, Стефан. Промени филтъра». */
+  /** «10.11», «Иван, Стефан +1», «С бележка»; the key («Бръснар») while it is being picked. */
   readonly label: string;
-  /** «Махни филтъра Бръснар» — what Backspace says. */
-  readonly removeLabel: string;
+  readonly glyph: UiIconName;
+  readonly faces: readonly FaceVm[];
+  /** «Бръснар: Иван, Стефан. Промени филтъра» · «Бръснар: избери стойност». */
+  readonly accessibleLabel: string;
+  /** Its values are open: the chip wears the ring. */
+  readonly active: boolean;
 }
 
 /** One suggestion — a key chip over the field, or a row above the results; pressing it does `suggestAction`. */
@@ -119,13 +122,14 @@ export interface SuggestionCalendarVm {
 }
 
 /**
- * What the sheet suggests (≙ iOS 26 Photos and Mail): the KEYS a filter can
- * be made of as chips over the field, and the rows above the results — the
- * values the typed text names, or an open key's values.
+ * What the sheet suggests (≙ iOS 26 Photos and Mail): the free KEYS a filter
+ * can be made of as chips over the field, and the rows above the results —
+ * the starters of an untouched search, the values the typed text names, or
+ * an open key's values.
  */
 export interface SearchSuggestionsVm {
   readonly suggestMode: SuggestMode;
-  /** The keys over the field: every one that still narrows, or those the typed text names; none while a key is open. */
+  /** The free keys over the field, after the chosen filters: every one that still narrows, or those the typed text names; none while a key is open. */
   readonly keys: readonly SuggestionRowVm[];
   /** The rows above the results. */
   readonly sections: readonly SuggestionSectionVm[];
@@ -144,18 +148,17 @@ export interface SearchSheetVm {
   readonly searchSheetState: SearchSheetState;
   /** The field's leading glyph: what the text was taken for. */
   readonly glyph: UiIconName;
-  /** «Име, телефон, имейл, услуга…», «Търси…» beside tokens, '' beside one being built. */
+  /** «Име, телефон, имейл, услуга…»; «Търси…» with filters chosen; «Търси в „Бръснар“…» with a key open. */
   readonly placeholder: string;
-  /** «избери…» — the value segment of a token still being built. */
-  readonly tokenPlaceholder: string;
-  readonly tokens: readonly TokenVm[];
+  /** The chosen filters over the field, in the order they were added, then a key being picked. */
+  readonly filters: readonly FilterChipVm[];
   readonly suggestions: SearchSuggestionsVm;
   readonly recents: readonly RecentVm[];
   /** «Телефон +359 88 333…» — only when the text reads as a number. */
   readonly phoneRow: string | null;
   /** The result groups: a heading and its event cards. */
   readonly groups: readonly VisitSectionVm[];
-  /** «Махни филтрите» on an empty result with tokens; else null. */
+  /** «Махни филтрите» on an empty result with filters; else null. */
   readonly clearFilters: string | null;
   /** The quiet notes under the sheet: capped, out of date, more than shown. */
   readonly footnotes: readonly string[];

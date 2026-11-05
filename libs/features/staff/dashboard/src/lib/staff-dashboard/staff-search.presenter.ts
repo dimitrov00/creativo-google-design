@@ -54,7 +54,7 @@ import {
   type SearchSuggestionsVm,
   SearchSheetState,
   type SearchSheetVm,
-  type TokenVm,
+  type FilterChipVm,
 } from './staff-search.vm';
 import type { StaffSearchWords } from './staff-search.words';
 
@@ -63,7 +63,7 @@ import type { StaffSearchWords } from './staff-search.words';
  * narrow, which names hold the typed text, how the visits group under their
  * days and what the numbers read as are the systems' (`SearchFilterSystem`,
  * `TextMatchSystem`, `VisitListSystem.dayGroups`, `PhoneSystem`); this words
- * them — the keyed tokens, the suggested keys and values, headings, the
+ * them — the chosen filters as chips, the suggested keys and values, headings, the
  * event cards' matched lines — and marks the runs `TextMatchSystem` found.
  */
 
@@ -91,7 +91,7 @@ export interface SearchSheetInput {
   readonly unnamedClient: string;
   readonly capped: boolean;
   readonly stale: boolean;
-  /** The key whose values are suggested — a token being built or pressed; null for none. */
+  /** The key whose values are suggested — being picked, or a chosen filter pressed; null for none. */
   readonly openField: SearchFilterField | null;
   /** The text as typed: with a key open, what narrows its values. */
   readonly typedText: string;
@@ -181,7 +181,7 @@ function filterKey(filter: SearchFilter): string {
   }
 }
 
-/** The kinds of filter, in the order a token and a key row stand in. */
+/** The kinds of filter, in the order the key chips stand in. */
 const FIELD_ORDER: readonly SearchFilterField[] = [
   SearchFilterField.When,
   SearchFilterField.Barber,
@@ -190,10 +190,10 @@ const FIELD_ORDER: readonly SearchFilterField[] = [
   SearchFilterField.Note,
 ];
 
-/** The values a token names before it says «+N». */
+/** The values a chip names before it says «+N». */
 const NAMED_VALUES = 2;
-/** The faces a barber token leads with. */
-const TOKEN_FACES = 3;
+/** The faces a barber chip leads with. */
+const CHIP_FACES = 3;
 /** The matched values suggested under typed text. */
 const MATCHED_VALUES = 5;
 
@@ -271,52 +271,57 @@ function valueOf(filter: SearchFilter, input: SearchSheetInput): string {
     : named;
 }
 
-function tokenOf(
+function filterChipOf(
   field: SearchFilterField,
   held: SearchFilter | null,
   input: SearchSheetInput,
-): TokenVm {
+): FilterChipVm {
   const key = keyOf(field, input.words);
+  const active = input.openField === field;
   if (held === null) {
     return {
       id: field,
-      key,
-      value: '',
+      label: key,
+      glyph: glyphOf(field),
       faces: [],
-      label: input.words.tokenBuilding(key),
-      removeLabel: input.words.chipRemove(key),
+      accessibleLabel: input.words.tokenBuilding(key),
+      active,
     };
   }
   const value = valueOf(held, input);
   return {
     id: field,
-    key,
-    value,
+    // A note's value («има») reads only beside its key; alone it is «С бележка».
+    label:
+      held.searchFilterField === SearchFilterField.Note
+        ? input.words.withNote
+        : value,
+    glyph: glyphOf(field),
     faces:
       held.searchFilterField === SearchFilterField.Barber
         ? held.filterBarberIds
-            .slice(0, TOKEN_FACES)
+            .slice(0, CHIP_FACES)
             .map((id) => faceOf(id, input))
         : [],
-    label: input.words.tokenLabel(key, value),
-    removeLabel: input.words.chipRemove(key),
+    accessibleLabel: input.words.tokenLabel(key, value),
+    active,
   };
 }
 
-/** One token per held filter, in the order they were added, then the one still being built. */
-function tokensOf(
+/** One chip per chosen filter, in the order they were added, then the key being picked. */
+function filterChipsOf(
   query: SearchQuery,
   openField: SearchFilterField | null,
   input: SearchSheetInput,
-): readonly TokenVm[] {
-  const tokens: TokenVm[] = [];
+): readonly FilterChipVm[] {
+  const chips: FilterChipVm[] = [];
   for (const held of query.searchFilters) {
-    tokens.push(tokenOf(held.searchFilterField, held, input));
+    chips.push(filterChipOf(held.searchFilterField, held, input));
   }
   if (openField !== null && heldOf(query, openField) === null) {
-    tokens.push(tokenOf(openField, null, input));
+    chips.push(filterChipOf(openField, null, input));
   }
-  return tokens;
+  return chips;
 }
 
 /** Is this single value one the held filter of its kind holds? */
@@ -355,15 +360,13 @@ function valueRow(
 
 function keyRow(
   field: SearchFilterField,
-  query: SearchQuery,
   input: SearchSheetInput,
 ): SuggestionRowVm {
-  const held = heldOf(query, field);
   const note = field === SearchFilterField.Note;
   return {
     id: `FIELD:${field}`,
     label: note ? input.words.withNote : keyOf(field, input.words),
-    detail: held === null || note ? null : valueOf(held, input),
+    detail: null,
     glyph: glyphOf(field),
     face: null,
     checked: null,
@@ -411,7 +414,7 @@ function valuesOf(
   return out;
 }
 
-/** The keys a filter can be made of: those that still narrow, and the held ones. */
+/** The FREE keys a filter can be made of — those that still narrow, none chosen or being picked (those are chips of their own). */
 function keyRowsOf(
   offered: SearchSuggestions,
   query: SearchQuery,
@@ -429,16 +432,15 @@ function keyRowsOf(
       case SearchFilterField.Status:
         return offered.bookingStatuses.length > 0;
       case SearchFilterField.Note:
-        return (
-          offered.hasNote && heldOf(query, SearchFilterField.Note) === null
-        );
+        return offered.hasNote;
     }
   };
   return FIELD_ORDER.filter(
     (field) =>
-      offers(field) ||
-      (field !== SearchFilterField.Note && heldOf(query, field) !== null),
-  ).map((field) => keyRow(field, query, input));
+      offers(field) &&
+      heldOf(query, field) === null &&
+      field !== input.openField,
+  ).map((field) => keyRow(field, input));
 }
 
 function calendarOf(
@@ -568,7 +570,8 @@ function valueSuggestions(
 
 /**
  * What the sheet suggests. With a key open, its values (rows above the
- * results). With nothing typed, every key as a chip over the field (Photos).
+ * results). With nothing typed, every free key as a chip over the field
+ * (Photos) and, on an untouched search, the starters above the recents.
  * With text typed, the values whose name holds it, each with its key (Mail's
  * «Suggestions» above the results), and only the keys it names — the rest
  * leave, so typing narrows the suggestions rather than standing beside them.
@@ -595,10 +598,23 @@ function suggestionsOf(
         );
   const keys = keyRowsOf(bare, query, input);
   if (text === '') {
+    // An untouched search opens on what it can start from (Mail's «Suggestions»).
+    const starters = SearchQuery.isEmpty(query)
+      ? SearchFilterSystem.starters(offered, input.shopNow).map((filter) =>
+          valueRow(filter, input, {
+            checked: null,
+            detail: keyOf(filter.searchFilterField, input.words),
+            suggestAction: SuggestAction.AddValue,
+          }),
+        )
+      : [];
     return {
       suggestMode: SuggestMode.Fields,
       keys,
-      sections: [],
+      sections:
+        starters.length > 0
+          ? [{ id: 'STARTERS', heading: input.words.matches, rows: starters }]
+          : [],
       calendar: null,
     };
   }
@@ -646,12 +662,7 @@ function recentsOf(input: SearchSheetInput): readonly RecentVm[] {
   return input.recents.map((query, index) => {
     const parts = [
       query.searchText.trim(),
-      ...tokensOf(query, null, input).map((token) =>
-        // A note's value («има») reads only beside its key; alone it is «С бележка».
-        token.id === SearchFilterField.Note
-          ? input.words.withNote
-          : token.value,
-      ),
+      ...filterChipsOf(query, null, input).map((chip) => chip.label),
     ].filter((part) => part.length > 0);
     return { id: `recent-${index}`, label: parts.join(' · '), query };
   });
@@ -779,11 +790,11 @@ function groupsOf(
   );
 }
 
-/** The sheet, worded: the tokens and recents, the suggestions, and the cards under their days. */
+/** The sheet, worded: the filter chips and recents, the suggestions, and the cards under their days. */
 export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
   const query = input.query;
   const read = SearchQuerySystem.read(query.searchText, input.callingCode);
-  const tokens = tokensOf(query, input.openField, input);
+  const filters = filterChipsOf(query, input.openField, input);
   const idle = SearchQuery.isEmpty(query);
   const offered = SearchFilterSystem.suggestions(
     input.index,
@@ -795,13 +806,13 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
   const glyph = searchGlyphOf(
     ClientQuerySystem.parse(query.searchText).clientQueryShape,
   );
-  // A token being built already says what it waits for; the text says nothing.
-  const building = tokens.some((token) => token.value === '');
-  const placeholder = building
-    ? ''
-    : tokens.length > 0
-      ? input.words.placeholderShort
-      : input.words.placeholder;
+  // With a key open the text narrows its values, and the field says so.
+  const placeholder =
+    input.openField !== null
+      ? input.words.scopedPlaceholder(keyOf(input.openField, input.words))
+      : filters.length > 0
+        ? input.words.placeholderShort
+        : input.words.placeholder;
   const phoneRow =
     read.queryPhone.phoneReadingKind === PhoneReadingKind.None
       ? null
@@ -820,8 +831,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
       searchSheetState: SearchSheetState.Idle,
       glyph,
       placeholder,
-      tokenPlaceholder: input.words.tokenPlaceholder,
-      tokens,
+      filters,
       suggestions,
       recents: recentsOf(input),
       phoneRow,
@@ -842,8 +852,7 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
       kept.length === 0 ? SearchSheetState.Empty : SearchSheetState.Results,
     glyph,
     placeholder,
-    tokenPlaceholder: input.words.tokenPlaceholder,
-    tokens,
+    filters,
     suggestions,
     recents: [],
     phoneRow,

@@ -345,6 +345,17 @@
   text-overflow: ellipsis;
 }
 
+/* THE GROW (2026-11-05, ≙ Photos): whichever entry shows shares its name
+   with the full-screen search's field (`uiTransitionName` on it), so the
+   store's view transition grows the capsule into the field and back. It
+   gives the name up while the search is open — two holders at once and the
+   platform skips the transition — and the hidden entry is never captured.
+   The grow's timing is in the app's global stylesheet: the pseudo-elements
+   hang off the root, where a scoped sheet never reaches. */
+:is(.staff-search-entry, .staff-search-open):not([data-searching]) {
+  view-transition-name: staff-search-field;
+}
+
 /* The period pill may SHRINK before the cluster does — its own stylesheet
    says how (`staff-day-pill.css`: the label ellipsises, the ring stays
    clear); this sheet is scoped and could not reach inside it anyway. */

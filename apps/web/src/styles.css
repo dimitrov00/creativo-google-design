@@ -212,6 +212,14 @@
   animation-timing-function: var(--sys-motion-ease-standard);
 }
 
+/* The schedule's search capsule growing into the full-screen search and
+   back (staff-search-tokens.md, 2026-11-05): the root's own tier, on the
+   emphasized curve a presentation rides. */
+::view-transition-group(staff-search-field) {
+  animation-duration: var(--sys-motion-duration-deliberate);
+  animation-timing-function: var(--sys-motion-ease-emphasized);
+}
+
 /* Defense in depth alongside app.config.ts's onViewTransitionCreated check
    — covers any future document.startViewTransition() call this app makes
    outside the router (which onViewTransitionCreated can't see). */

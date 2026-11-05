@@ -1,6 +1,7 @@
 import {
   DestroyRef,
   Injectable,
+  Injector,
   computed,
   effect,
   inject,
@@ -18,7 +19,10 @@ import {
   of,
   switchMap,
 } from 'rxjs';
-import { settledViewTransition } from './shared/view-transition';
+import {
+  runViewTransition,
+  settledViewTransition,
+} from './shared/view-transition';
 import {
   type AppointmentId,
   BarberId,
@@ -461,6 +465,7 @@ export class StaffDayStore {
   /** That read failed (or found no default location) — see {@link retryZone}. */
   private readonly defaultZoneFailed = this.shopZones.defaultZoneFailed();
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
   private readonly route = inject(ActivatedRoute);
 
   /**
@@ -1812,13 +1817,20 @@ export class StaffDayStore {
     { initialValue: BookingPolicy.DEFAULT },
   );
 
+  /**
+   * The search opens and closes as ONE animated state change (2026-11-05):
+   * the bar's search capsule and the page's field share a view-transition
+   * name, so the capsule grows into the full-screen search and back
+   * (staff-search-tokens.md). A plain switch where the platform has none or
+   * motion is reduced.
+   */
   async openSearch(): Promise<void> {
-    this._searching.set(true);
+    runViewTransition(() => this._searching.set(true), this.injector);
     await this.ensureWindow();
   }
 
   closeSearch(): void {
-    this._searching.set(false);
+    runViewTransition(() => this._searching.set(false), this.injector);
   }
 
   /** The window as last read — the add-client page's «Скорошни» read it too. */

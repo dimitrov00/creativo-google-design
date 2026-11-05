@@ -11,6 +11,7 @@ import { UiSearchField, type UiSearchFieldToken } from './search-field';
       [uiPinEdge]="edge()"
       [uiDismissLabel]="dismissLabel()"
       [uiEscapeClaimed]="claimed()"
+      [uiTransitionName]="transitionName()"
       [uiValue]="value()"
       uiPlaceholder="Търси услуга…"
       uiTestId="probe"
@@ -48,6 +49,7 @@ class Host {
   readonly edge = signal<'top' | 'bottom'>('top');
   readonly dismissLabel = signal('');
   readonly claimed = signal(false);
+  readonly transitionName = signal<string | null>(null);
   readonly accessory = signal(false);
   readonly value = signal('');
   readonly busy = signal(false);
@@ -87,6 +89,14 @@ describe('UiSearchField', () => {
   });
 
   describe('the floor (Mail and Photos)', () => {
+    it('names the capsule for a view transition only when asked', () => {
+      const frame = () => el('.ui-search-field__frame') as HTMLElement;
+      expect(frame().style.viewTransitionName).toBe('');
+      fixture.componentInstance.transitionName.set('probe-field');
+      fixture.detectChanges();
+      expect(frame().style.viewTransitionName).toBe('probe-field');
+    });
+
     it('pins to the bottom edge when asked, and only while pinned', () => {
       const host = () => el('ui-search-field') as HTMLElement;
       fixture.componentInstance.edge.set('bottom');

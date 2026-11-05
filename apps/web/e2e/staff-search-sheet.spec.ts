@@ -17,8 +17,8 @@ import { signInAs } from './support/sign-in';
  * CUJ 1 — a name and a number in one line narrow to one visit, the matched
  * runs washed. CUJ 2 — the sheet opens on what it remembers (the device's
  * recents) and what can still narrow it (the offered filters); a picked card
- * is kept as a recent. CUJ 3 — a barber filter becomes a chip in the field,
- * narrows the cards and comes off again. CUJ 4 — a typed e-mail finds the
+ * is kept as a recent. CUJ 3 — a barber filter becomes a chip over the
+ * field, narrows the cards and comes off again. CUJ 4 — a typed e-mail finds the
  * visit and prints the e-mail line.
  *
  * Every visit is this attempt's own (`attemptKey`), with a name, a number and
@@ -157,7 +157,7 @@ test.describe('the schedule search sheet — part 2', () => {
     await expect(page.getByTestId('staff-search-recents')).toHaveCount(0);
   });
 
-  test('CUJ 3: a barber becomes a key │ value token, narrows the cards, comes off', async ({
+  test('CUJ 3: a barber becomes a chip over the field, narrows the cards, comes off', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -179,35 +179,27 @@ test.describe('the schedule search sheet — part 2', () => {
     await openSearch(page);
     const input = page.getByTestId('staff-search-input');
 
-    // The key first, from the list on the empty field; then the text.
+    // The key first, from the chips over the empty field; then the text.
     await page.locator('[data-suggestion="FIELD:BARBER"]').click();
-    const token = page.getByTestId('staff-search-input-token-BARBER');
-    await expect(token).toBeVisible();
+    const chip = page.locator(
+      '[data-testid="staff-search-filter"][data-filter="BARBER"]',
+    );
+    await expect(chip).toBeVisible();
     const niko = page.locator('[data-suggestion="BARBER:niko"]');
     await niko.click();
-    await expect(token).toContainText('Нико');
+    await expect(chip).toContainText('Нико');
     await input.fill(run);
     await expect(cardsOf(page, run)).toHaveCount(1, { timeout: 30_000 });
 
-    // The token opens on its values, the typed search parked meanwhile;
+    // The chip opens on its values, the typed search parked meanwhile;
     // removing lives there, not on a ✕, and the search comes back.
-    await token.click();
+    await chip.click();
     await expect(input).toHaveValue('');
     await expect(niko).toHaveAttribute('aria-pressed', 'true');
     await page.locator('[data-suggestion="REMOVE:BARBER"]').click();
-    await expect(token).toHaveCount(0);
+    await expect(chip).toHaveCount(0);
     await expect(input).toHaveValue(run);
     await expect(cardsOf(page, run)).toHaveCount(2);
-
-    await input.fill('');
-
-    // Backspace on an empty field takes the last token off too.
-    await page.locator('[data-suggestion="FIELD:BARBER"]').click();
-    await niko.click();
-    await expect(token).toContainText('Нико');
-    await input.fill('');
-    await input.press('Backspace');
-    await expect(token).toHaveCount(0);
   });
 
   test('CUJ 4: a typed e-mail finds the visit and prints the e-mail line', async ({
