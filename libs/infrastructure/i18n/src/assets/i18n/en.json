@@ -1220,6 +1220,8 @@
       "chipPhone": "{{number}}…",
       "textChipLabel": "Search: {{text}}. Back to the field",
       "commit": "Add as a filter",
+      "seeAll": "All options",
+      "seeAllOf": "All options: {{key}}",
       "moreThanShown": "Showing the first {{count}} results. Narrow the search.",
       "status": {
         "pending": "Requested",

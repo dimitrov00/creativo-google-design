@@ -338,6 +338,17 @@ The old «Предложения» section of filter chips leaves the idle body:
 ride over the field now. The idle body keeps «Скорошни». The field takes
 focus when the sheet opens.
 
+### «Всички опции ›» on a short group (2026-11-05, seventh pass)
+
+The starters and the matches show a few of a key's values, so a reader could
+not tell more exist. Every such group is headed like «Скорошни»
+(`ui-section-header` `increased`), and a group that leaves values out carries
+«Всички опции ›», which opens that key's whole list. Whether it leaves values
+out is `SearchFilterSystem.offersBeyond`: «Кога» always does (a day or a span
+can be picked); a barber, service, variant, status or the note offered and
+not shown does. A group that already lists every value carries no action.
+«Всички» alone was rejected: it reads as "all visits".
+
 ## Not done (on purpose)
 
 - **A client key** (`Клиент: …`). Typed text already finds a client by every

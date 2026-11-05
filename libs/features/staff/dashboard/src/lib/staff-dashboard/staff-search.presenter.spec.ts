@@ -232,6 +232,17 @@ describe('searchSheetVm — idle', () => {
       ['Кога', ['Днес', 'Утре']],
       ['Бръснар', ['Иван', 'Нико']],
     ]);
+    // A group that leaves some of its key's values out says so: «Всички
+    // опции ›» opens the key's whole list. Both barbers are shown already, so
+    // theirs needs none; «Кога» can always pick a day or a span.
+    expect(vm.suggestions.sections.map((s) => s.seeAll)).toEqual([
+      {
+        searchFilterField: SearchFilterField.When,
+        label: 'Всички опции',
+        accessibleLabel: 'Всички опции: Кога',
+      },
+      null,
+    ]);
     expect(suggestionRows(vm).map((r) => [r.detail, r.suggestAction])).toEqual(
       Array(4).fill([null, SuggestAction.AddValue]),
     );
@@ -265,6 +276,11 @@ describe('searchSheetVm — idle', () => {
       'Status',
       'With a note',
     ]);
+    expect(vm.suggestions.sections[0]?.seeAll).toEqual({
+      searchFilterField: SearchFilterField.When,
+      label: 'All options',
+      accessibleLabel: 'All options: When',
+    });
   });
 
   it('carries the recent’s query, so pressing it runs it as it was', () => {
@@ -635,6 +651,8 @@ describe('searchSheetVm — the suggestions', () => {
     expect(open.suggestions.sections.map((s) => s.heading)).toEqual([
       'Бръснар',
     ]);
+    // The whole list is already open: nothing more to see.
+    expect(open.suggestions.sections.map((s) => s.seeAll)).toEqual([null]);
     // A barber key is picked as a set: every value a tick, none ticked yet,
     // «Приложи» in the bar.
     expect(suggestionRows(open).map((r) => [r.id, r.checked])).toEqual([
@@ -843,6 +861,9 @@ describe('searchSheetVm — the suggestions', () => {
     const vm = searchSheetVm(input('bg', text('ни'), { typedText: 'ни' }));
     expect(vm.suggestions.suggestMode).toBe(SuggestMode.Matches);
     expect(vm.suggestions.sections.map((s) => s.heading)).toEqual(['Бръснар']);
+    expect(vm.suggestions.sections[0]?.seeAll?.searchFilterField).toBe(
+      SearchFilterField.Barber,
+    );
     expect(vm.suggestions.sections[0]?.rows.map((r) => r.parts)).toEqual([
       [
         { text: 'Ни', hit: true },

@@ -546,6 +546,97 @@ describe('SearchFilterSystem.starters — what an untouched search offers', () =
   });
 });
 
+describe('SearchFilterSystem.offersBeyond — whether a short group has more', () => {
+  const [ivan, niko] = ['ivan', 'niko'] as BarberId[];
+  const [cut, beard] = ['cut', 'beard'] as ServiceId[];
+  const short = ServiceVariantId.of('short');
+  const long = ServiceVariantId.of('long');
+  const offered = {
+    barberIds: [ivan, niko] as readonly BarberId[],
+    serviceIds: [cut, beard] as readonly ServiceId[],
+    variants: [
+      ServiceVariantPick.of(cut as ServiceId, short),
+      ServiceVariantPick.of(cut as ServiceId, long),
+    ],
+    bookingStatuses: [BookingStatus.Confirmed, BookingStatus.Cancelled],
+    whenPresets: [SearchWhenPreset.Today],
+    hasNote: true,
+  };
+
+  it('always has more of «Кога»: a day or a span can be picked', () => {
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.When, offered, [
+        SearchFilterSystem.whenOf(SearchWhenPreset.Today, NOW),
+      ]),
+    ).toBe(true);
+  });
+
+  it('has more barbers only while one is offered and not shown', () => {
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, offered, [
+        SearchFilter.barber([ivan as BarberId]),
+      ]),
+    ).toBe(true);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, offered, [
+        SearchFilter.barber([ivan as BarberId]),
+        SearchFilter.barber([niko as BarberId]),
+      ]),
+    ).toBe(false);
+  });
+
+  it('counts a service and each of its variants', () => {
+    const shortCut = SearchFilter.service(
+      [],
+      [ServiceVariantPick.of(cut as ServiceId, short)],
+    );
+    const longCut = SearchFilter.service(
+      [],
+      [ServiceVariantPick.of(cut as ServiceId, long)],
+    );
+    const beardOnly = SearchFilter.service([beard as ServiceId], []);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Service, offered, [
+        shortCut,
+        beardOnly,
+      ]),
+    ).toBe(true);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Service, offered, [
+        shortCut,
+        longCut,
+        beardOnly,
+      ]),
+    ).toBe(false);
+  });
+
+  it('has more statuses, or the note, only while one is not shown', () => {
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Status, offered, [
+        SearchFilter.bookingStatuses([BookingStatus.Confirmed]),
+      ]),
+    ).toBe(true);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Note, offered, [
+        SearchFilter.note(),
+      ]),
+    ).toBe(false);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Note, offered, []),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(offered);
+    const shown = deepFreeze([SearchFilter.barber([ivan as BarberId])]);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, input, shown),
+    ).toBe(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, input, shown),
+    );
+  });
+});
+
 describe('SearchFilterSystem.presetOf — which preset a span is, today', () => {
   it('names the span a preset built, on the shop’s own today', () => {
     for (const preset of Object.values(SearchWhenPreset)) {

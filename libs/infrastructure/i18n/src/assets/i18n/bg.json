@@ -1220,6 +1220,8 @@
       "chipPhone": "{{number}}…",
       "textChipLabel": "Търсене: {{text}}. Върни в полето",
       "commit": "Добави като филтър",
+      "seeAll": "Всички опции",
+      "seeAllOf": "Всички опции: {{key}}",
       "moreThanShown": "Показани са първите {{count}} резултата. Стесни търсенето.",
       "status": {
         "pending": "Заявени",

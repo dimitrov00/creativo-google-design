@@ -164,12 +164,18 @@ describe('StaffSearchSheet', () => {
     expect(el('ui-sheet[data-full-screen]')).not.toBeNull();
     expect(el('[data-testid="staff-search-recents"]')).toBeNull();
     // Mail's «Suggestions» before anything is typed — tomorrow, the barbers —
-    // under their keys.
+    // under their keys; «Кога» says it has more («Всички опции ›»), the
+    // barbers, all shown, do not.
     expect(
-      all('[data-suggest-mode] .staff-search-sheet__heading').map((h) =>
+      all('[data-suggest-mode] ui-section-header [uiTitle]').map((h) =>
         h.textContent?.trim(),
       ),
     ).toEqual(['staff.search.key.when', 'staff.search.key.barber']);
+    expect(
+      all('[data-testid="staff-search-see-all"]').map((b) =>
+        b.getAttribute('data-field'),
+      ),
+    ).toEqual(['WHEN']);
     expect(
       all('[data-suggest-mode] [data-testid="staff-search-suggestion"]').map(
         (row) => row.getAttribute('data-suggestion'),
@@ -192,6 +198,14 @@ describe('StaffSearchSheet', () => {
     expect(chip('BARBER')?.textContent).toContain('Нико');
     expect(cards()).toHaveLength(2);
     expect(el('[data-suggest-mode]')).toBeNull();
+  });
+
+  it('opens a key’s whole list from its group’s «Всички опции»', async () => {
+    await mount();
+    press('[data-testid="staff-search-see-all"][data-field="WHEN"]');
+    expect(el('[data-suggest-mode="VALUES"]')).not.toBeNull();
+    expect(el('[data-testid="staff-search-see-all"]')).toBeNull();
+    expect(chipIds()).toEqual(['WHEN']);
   });
 
   it('scans the window only after the 80 ms typing pause', async () => {

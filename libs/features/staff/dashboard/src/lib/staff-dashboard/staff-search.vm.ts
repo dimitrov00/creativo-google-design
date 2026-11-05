@@ -132,6 +132,19 @@ export interface SuggestionSectionVm {
   /** The key its rows belong to («Кога», «Бръснар»); null for a section that needs none. */
   readonly heading: string | null;
   readonly rows: readonly SuggestionRowVm[];
+  /** A group of the page's own suggestions (the starters, the matches): headed like «Скорошни», not as a quiet list label. */
+  readonly prominent: boolean;
+  /** «Всички опции ›» on a group that leaves some of its key's values out: opens the key's whole list; null otherwise. */
+  readonly seeAll: SeeAllVm | null;
+}
+
+/** A heading's «Всички ›»: which key it opens, and its words. */
+export interface SeeAllVm {
+  readonly searchFilterField: SearchFilterField;
+  /** «Всички». */
+  readonly label: string;
+  /** «Всички: Кога». */
+  readonly accessibleLabel: string;
 }
 
 /** The month in the suggestions, while a day or a span is being picked. */

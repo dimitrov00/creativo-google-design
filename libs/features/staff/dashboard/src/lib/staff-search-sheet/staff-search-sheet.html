@@ -126,7 +126,31 @@
         class="staff-search-sheet__section"
         [attr.data-suggest-mode]="vm().suggestions.suggestMode"
       >
-        @if (section.heading; as heading) {
+        @if (section.prominent && section.heading) {
+        <!-- The page's own suggestions, headed like «Скорошни»; a group that
+             leaves some of its key's values out opens the rest (Mail's and
+             Photos' «See All»). -->
+        <ui-section-header uiHeaderProminence="increased">
+          <h3 uiTitle>{{ section.heading }}</h3>
+          @if (section.seeAll; as seeAll) {
+          <button
+            uiSectionAction
+            type="button"
+            uiButton
+            uiButtonStyle="plain"
+            uiControlSize="small"
+            data-testid="staff-search-see-all"
+            [attr.data-field]="seeAll.searchFilterField"
+            [attr.aria-label]="seeAll.accessibleLabel"
+            (mousedown)="$event.preventDefault()"
+            (click)="activateFilter(seeAll.searchFilterField)"
+          >
+            {{ seeAll.label }}
+            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+          </button>
+          }
+        </ui-section-header>
+        } @else if (section.heading; as heading) {
         <p
           uiText
           uiFont="footnote"

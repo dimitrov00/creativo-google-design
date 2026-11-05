@@ -299,6 +299,80 @@ export const SearchFilterSystem = {
   },
 
   /**
+   * Whether a key offers a value the shown ones leave out — what decides
+   * whether a short group of its values (the starters, the matches) points
+   * on to the key's whole list. A day or a span can always be picked, so
+   * «Кога» always offers more; the others offer more while a barber, a
+   * service, a variant, a status or the note is offered and not shown.
+   */
+  offersBeyond(
+    field: SearchFilterField,
+    offered: SearchSuggestions,
+    shown: readonly SearchFilter[],
+  ): boolean {
+    switch (field) {
+      case SearchFilterField.When:
+        return true;
+      case SearchFilterField.Barber: {
+        const seen = new Set<BarberId>();
+        for (let i = 0; i < shown.length; i++) {
+          const filter = shown[i] as SearchFilter;
+          if (filter.searchFilterField === SearchFilterField.Barber) {
+            for (const id of filter.filterBarberIds) seen.add(id);
+          }
+        }
+        for (let i = 0; i < offered.barberIds.length; i++) {
+          if (!seen.has(offered.barberIds[i] as BarberId)) return true;
+        }
+        return false;
+      }
+      case SearchFilterField.Service: {
+        const services = new Set<ServiceId>();
+        const picks = new Set<string>();
+        for (let i = 0; i < shown.length; i++) {
+          const filter = shown[i] as SearchFilter;
+          if (filter.searchFilterField === SearchFilterField.Service) {
+            for (const id of filter.filterServiceIds) services.add(id);
+            for (const pick of filter.filterVariants) {
+              services.add(pick.serviceId);
+              picks.add(ServiceVariantPick.keyOf(pick));
+            }
+          }
+        }
+        for (let i = 0; i < offered.serviceIds.length; i++) {
+          if (!services.has(offered.serviceIds[i] as ServiceId)) return true;
+        }
+        for (let i = 0; i < offered.variants.length; i++) {
+          const pick = offered.variants[i] as ServiceVariantPick;
+          if (!picks.has(ServiceVariantPick.keyOf(pick))) return true;
+        }
+        return false;
+      }
+      case SearchFilterField.Status: {
+        const seen = new Set<BookingStatus>();
+        for (let i = 0; i < shown.length; i++) {
+          const filter = shown[i] as SearchFilter;
+          if (filter.searchFilterField === SearchFilterField.Status) {
+            for (const status of filter.filterBookingStatuses) seen.add(status);
+          }
+        }
+        for (let i = 0; i < offered.bookingStatuses.length; i++) {
+          if (!seen.has(offered.bookingStatuses[i] as BookingStatus))
+            return true;
+        }
+        return false;
+      }
+      case SearchFilterField.Note:
+        return (
+          offered.hasNote &&
+          !shown.some(
+            (filter) => filter.searchFilterField === SearchFilterField.Note,
+          )
+        );
+    }
+  },
+
+  /**
    * Which preset a date filter IS on the shop's own today — the span a preset
    * built — or `null` for any other span (a recent saved last week). The
    * chip says «Днес» only while it is today.

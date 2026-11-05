@@ -61,6 +61,7 @@ import {
   type SearchSheetVm,
   type FilterChipVm,
   type CommitRowVm,
+  type SeeAllVm,
   type ServiceRowVm,
   type ServiceTileVm,
   type TextChipVm,
@@ -647,12 +648,16 @@ function valueSuggestions(
             id: `VALUES:${field}`,
             heading: keyOf(field, input.words),
             rows,
+            prominent: false,
+            seeAll: null,
           },
         ];
   if (held !== null) {
     sections.push({
       id: 'REMOVE',
       heading: null,
+      prominent: false,
+      seeAll: null,
       rows: [
         {
           id: `REMOVE:${field}`,
@@ -730,7 +735,7 @@ function suggestionsOf(
     return {
       suggestMode: SuggestMode.Fields,
       keys,
-      sections: byKey('STARTERS', starters, input),
+      sections: byKey('STARTERS', starters, offered, input),
       calendar: null,
       serviceRows: [],
       apply: null,
@@ -755,7 +760,7 @@ function suggestionsOf(
     keys: keys
       .filter((row) => namesText(row.label, text))
       .map((row) => marked(row, text)),
-    sections: byKey('MATCHES', matched, input),
+    sections: byKey('MATCHES', matched, bare, input),
     calendar: null,
     serviceRows: [],
     apply: null,
@@ -769,10 +774,16 @@ function suggestionsOf(
 function byKey(
   prefix: string,
   rows: readonly SuggestionRowVm[],
+  offered: SearchSuggestions,
   input: SearchSheetInput,
 ): readonly SuggestionSectionVm[] {
-  const sections: { id: string; heading: string; rows: SuggestionRowVm[] }[] =
-    [];
+  const sections: {
+    id: string;
+    heading: string;
+    rows: SuggestionRowVm[];
+    prominent: true;
+    seeAll: SeeAllVm | null;
+  }[] = [];
   for (const row of rows) {
     const last = sections[sections.length - 1];
     if (
@@ -781,14 +792,34 @@ function byKey(
     ) {
       last.rows.push(row);
     } else {
+      const key = keyOf(row.searchFilterField, input.words);
       sections.push({
         id: `${prefix}:${row.searchFilterField}`,
-        heading: keyOf(row.searchFilterField, input.words),
+        heading: key,
         rows: [row],
+        prominent: true,
+        seeAll: null,
       });
     }
   }
-  return sections;
+  // A group that leaves some of its key's values out points on to them.
+  return sections.map((section) => {
+    const field = section.rows[0]?.searchFilterField;
+    if (field === undefined) return section;
+    const shown: SearchFilter[] = [];
+    for (const row of section.rows)
+      if (row.filter !== null) shown.push(row.filter);
+    return SearchFilterSystem.offersBeyond(field, offered, shown)
+      ? {
+          ...section,
+          seeAll: {
+            searchFilterField: field,
+            label: input.words.seeAll,
+            accessibleLabel: input.words.seeAllOf(section.heading),
+          },
+        }
+      : section;
+  });
 }
 
 /** A service value as a cover tile: the service's name, and a variant's under it. */

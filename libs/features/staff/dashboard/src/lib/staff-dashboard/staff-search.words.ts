@@ -56,6 +56,10 @@ export interface StaffSearchWords {
   readonly textChipLabel: (text: string) => string;
   /** «Добави като филтър» — the ✓ beside the ✕. */
   readonly commit: string;
+  /** «Всички» — a group heading's way to its key's whole list. */
+  readonly seeAll: string;
+  /** «Всички: Кога». */
+  readonly seeAllOf: (key: string) => string;
   /** «Бръснар: Иван, Стефан. Промени филтъра». */
   readonly tokenLabel: (key: string, value: string) => string;
   /** «Бръснар: „ни“» — the open chip, with what is typed into it. */
@@ -120,6 +124,8 @@ export function staffSearchWordsOf(
     chipPhone: (number) => translate('staff.search.chipPhone', { number }),
     textChipLabel: (text) => translate('staff.search.textChipLabel', { text }),
     commit: translate('staff.search.commit'),
+    seeAll: translate('staff.search.seeAll'),
+    seeAllOf: (key) => translate('staff.search.seeAllOf', { key }),
     tokenLabel: (key, value) =>
       translate('staff.search.tokenLabel', { key, value }),
     tokenBuilding: (key) => translate('staff.search.tokenBuilding', { key }),
