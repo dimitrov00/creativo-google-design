@@ -46,7 +46,7 @@ import {
   UiMonthPicker,
   UiSearchField,
 } from '@creativo/ui/controls';
-import { UiScrollRow, UiStack } from '@creativo/ui/layout';
+import { UiFlow, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiTextDirective,
@@ -124,6 +124,7 @@ function deviceStorage(): Storage | null {
     UiAvatar,
     UiButton,
     UiChip,
+    UiFlow,
     UiForegroundStyleDirective,
     UiIcon,
     UiListGroup,
@@ -132,7 +133,6 @@ function deviceStorage(): Storage | null {
     UiModalSheet,
     UiMonthPicker,
     UiPageActionBar,
-    UiScrollRow,
     UiSearchField,
     UiSectionHeader,
     UiSheetHeadline,

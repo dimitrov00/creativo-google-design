@@ -239,12 +239,16 @@
       >
         @if (vm().filters.length > 0) {
         <!-- OVER THE FIELD, floating (Photos): the chosen filters, selected
-             and saying their values; a press opens a filter's values. -->
-        <ui-scroll-row
+             and saying their values; a press opens a filter's values. They
+             WRAP onto another line rather than sliding out of sight: every
+             filter that narrows the search stays in view (owner,
+             2026-11-05). -->
+        <ui-flow
           uiSearchAccessory
           uiSpacing="compact"
-          uiSnap="none"
-          [uiLabel]="t('staff.search.filters')"
+          uiAlignment="leading"
+          role="group"
+          [attr.aria-label]="t('staff.search.filters')"
           data-testid="staff-search-filters"
         >
           @for (chip of vm().filters; track chip.id) {
@@ -276,7 +280,7 @@
             >
           </button>
           }
-        </ui-scroll-row>
+        </ui-flow>
         }
         <!-- THE CARD over the field while it has the focus (Photos' floating
              suggestions): the free keys, one under another, the typed run

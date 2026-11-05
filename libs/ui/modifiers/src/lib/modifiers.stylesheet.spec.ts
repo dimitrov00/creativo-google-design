@@ -55,3 +55,39 @@ describe('modifiers.css · the interactive surface’s press', () => {
     ).toBeGreaterThan(css.indexOf(`${LIVE}:active { transform: scale`));
   });
 });
+
+describe('modifiers.css · floating chrome (a bar lends its controls a backdrop)', () => {
+  it('sets the backdrop on the bars content scrolls under, at the thin tier, at zero specificity', () => {
+    expect(block(':where(.ui-page-action-bar, .ui-sheet-action-bar) {')).toBe(
+      '--ui-control-backdrop: blur(var(--sys-material-thin-blur)) saturate(var(--sys-material-saturation));',
+    );
+  });
+
+  it('resets it on a popover, which is a material of its own', () => {
+    expect(block(':where([data-popover-surface]) {')).toBe(
+      '--ui-control-backdrop: none;',
+    );
+  });
+
+  it('is read by the translucent fill controls only, and is none outside a bar', () => {
+    const readers = css.slice(
+      css.indexOf(":where(.ui-button[data-button-style='bordered'],"),
+    );
+    const selector = readers.slice(0, readers.indexOf('{'));
+    for (const control of [
+      ".ui-button[data-button-style='bordered']",
+      '.ui-chip',
+      '.ui-text-field',
+      '.ui-segmented-control__track',
+      '.ui-search-field[data-has-tokens] .ui-search-field__frame',
+    ]) {
+      expect(selector).toContain(control);
+    }
+    // Opaque and fill-less controls have nothing to see through.
+    expect(selector).not.toContain('borderedProminent');
+    expect(selector).not.toContain("'plain'");
+    expect(block(":where(.ui-button[data-button-style='bordered'],")).toBe(
+      '-webkit-backdrop-filter: var(--ui-control-backdrop, none); backdrop-filter: var(--ui-control-backdrop, none);',
+    );
+  });
+});

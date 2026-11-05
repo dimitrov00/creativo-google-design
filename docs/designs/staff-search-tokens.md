@@ -207,6 +207,30 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
    accent law) — and the open one needs no second mark: its values are the
    page.
 
+### Glass under a bar's controls, and the filters wrap (2026-11-05, fourth pass)
+
+- **A bar lends its controls a backdrop (design system).** The chips, the
+  field and the ✕ painted their translucent fills straight over the
+  results scrolling beneath, so letters read through them. A bar that
+  content scrolls under (`ui-page-action-bar`, `ui-sheet-action-bar`) now
+  sets `--ui-control-backdrop` (the thin material tier: blur and
+  saturation), and the translucent FILL controls read it as their
+  backdrop — bordered buttons, chips, text fields, the segmented track, a
+  tokens frame (`modifiers.css`, «Floating chrome»). Their fills are
+  unchanged, so the contrast each was tuned for holds. It is an
+  environment, not a per-screen fix: the schedule's own bottom bar (the
+  search capsule, the filter) gets it too, and every page and sheet bar
+  after it.
+- **Why only there.** A backdrop filter is a compositing layer re-sampled
+  each frame the content under it moves, priced by area: worth it for the
+  few 36–52px controls of a bar, wasted on a field in a form, where nothing
+  moves behind it. Opaque (prominent, filled) and fill-less (plain)
+  controls read nothing; a popover resets it (it is a material and a
+  backdrop root of its own); a control's own material (`glass`,
+  `uiMaterial`) wins (zero specificity).
+- **The chosen filters wrap** (`ui-flow`) instead of sliding in a scroll
+  row: every filter that narrows the search stays in view.
+
 ### «Кога»: preset, day or range
 
 `VALUES` for «Кога» lists the presets that reach a visit: Днес, Утре, Вчера,
