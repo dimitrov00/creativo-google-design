@@ -93,6 +93,17 @@
     padded check (`AvailabilitySystem.paddedBusy`) will take it; a block
     still takes the whole hole. The day's free total now counts the
     reset minutes as free: they are empty chair time.
+11. **The clock never cuts a hole; it decides what opens from one**
+    (owner: "the free time shown should not depend on now … when opening
+    to block time and schedule an appointment it should depend on now, and
+    if passed makes no sense to be interactive"; C, U). A hole that
+    straddles now is ONE row with its whole range — 13:00–15:00 at two
+    o'clock as at nine (`GridLayoutSystem.sellableAt` no longer splits).
+    It stays a press while at least the 20-minute floor of it is ahead;
+    after that it is an elapsed line with no menu. What opens from it
+    starts at `GridLayoutSystem.openFrom` — the hole's start, or the next
+    5-minute tick of now — a block running to the hole's end and a
+    booking also after the turnaround (`bookableFrom`).
 
 ## Not done
 

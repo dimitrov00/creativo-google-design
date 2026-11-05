@@ -3542,14 +3542,14 @@ export class StaffDashboard {
     this.gapMenu.set(null);
     // No day before the shop's zone is known (4A-11): nothing to author on.
     if (!this.store.ready()) return;
-    // From a free-time row (owner, 2026-11-05): its chair; a block takes the
-    // whole hole, a booking starts where a new client fits after the
-    // turnaround.
+    // From a free-time row (owner, 2026-11-05): its chair; a block runs from
+    // the hole's start (or now's tick) to its end, a booking starts where a
+    // new client fits after the turnaround.
     const chair = gap?.barberId ?? this.createChair();
     if (chair === null) return;
     if (createIntent === CreateIntent.Block) {
       const range = gap && {
-        startMinute: gap.startMinutes,
+        startMinute: gap.openFromMinutes,
         endMinute: gap.endMinutes,
       };
       this.openBlockSheet(chair, range);

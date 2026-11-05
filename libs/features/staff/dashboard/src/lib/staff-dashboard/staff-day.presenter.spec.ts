@@ -990,6 +990,7 @@ describe('gapRowVm — a hole, attributed', () => {
   const gap = {
     startMinutes: MinuteOfDay.ofProven(840),
     endMinutes: EndMinute.ofProven(950),
+    openFromMinutes: MinuteOfDay.ofProven(840),
     bookableFromMinutes: MinuteOfDay.ofProven(850),
     minutes: 110 as never,
     sellable: true,

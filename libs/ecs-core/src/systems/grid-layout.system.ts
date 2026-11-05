@@ -17,6 +17,7 @@ import {
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import { IntervalSetSystem } from './interval-set.system';
+import { VisitDraftSystem } from './visit-draft.system';
 
 /**
  * The shortest hole the staff run calls a gap (`staff-day.store.ts:126`).
@@ -249,15 +250,17 @@ export const GridLayoutSystem = {
   },
 
   /**
-   * The holes of the lane's shop day `localDate`, SPLIT AT NOW and then
-   * floored — never the other way round: flooring first would let a
-   * 105-minute hole with five minutes left on it emit a "5 min free" gap.
-   * Pieces under {@link SHORTEST_SELLABLE_MINUTES} are dropped, not drawn
-   * quieter. Only time still ahead can be filled, so a piece ending at or
-   * before now is a record (`sellable: false`), drawn so an idle morning is
-   * not mistaken for a booked one. "Now" is the shop's (`now.localDate` +
+   * The holes of the lane's shop day `localDate`, WHOLE — the clock never
+   * cuts one (owner, 2026-11-05: "the free time shown should not depend on
+   * now"): a hole says how much free time the chair really has, 13:00–15:00
+   * at two o'clock as at nine. Holes under {@link SHORTEST_SELLABLE_MINUTES}
+   * are dropped, not drawn quieter. What the clock decides is whether the
+   * hole can still be FILLED (`sellable`): when at least the floor of it is
+   * still ahead — never a "5 min free" offer from a hole that is nearly
+   * over. One that cannot is a record, drawn so an idle morning is not
+   * mistaken for a booked one. "Now" is the shop's (`now.localDate` +
    * `now.currentMinute`, T1): a day before today is wholly past, a day after
-   * it wholly ahead, and today splits at the current minute.
+   * it wholly ahead.
    */
   sellableAt(
     holes: readonly MinuteRange[],
@@ -266,29 +269,41 @@ export const GridLayoutSystem = {
   ): readonly LaneGap[] {
     const day = LocalDate.compare(localDate, now.localDate);
     const out: LaneGap[] = [];
-    const push = (start: number, end: number): void => {
-      const startMinutes = MinuteOfDay.ofProven(start);
-      const endMinutes = EndMinute.ofProven(end);
-      const minutes = MinuteCount.span(startMinutes, endMinutes);
-      if (minutes < SHORTEST_SELLABLE_MINUTES) return;
-      out.push({
-        startMinutes,
-        endMinutes,
-        minutes,
-        sellable: day > 0 || (day === 0 && end > now.currentMinute),
-      });
-    };
     for (let i = 0; i < holes.length; i++) {
       const hole = holes[i] as MinuteRange;
-      const cut = now.currentMinute;
-      if (day === 0 && hole.startMinutes < cut && cut < hole.endMinutes) {
-        push(hole.startMinutes, cut);
-        push(cut, hole.endMinutes);
-      } else {
-        push(hole.startMinutes, hole.endMinutes);
-      }
+      const minutes = MinuteCount.span(hole.startMinutes, hole.endMinutes);
+      if (minutes < SHORTEST_SELLABLE_MINUTES) continue;
+      const ahead =
+        day > 0
+          ? minutes
+          : day < 0
+            ? 0
+            : hole.endMinutes - Math.max(hole.startMinutes, now.currentMinute);
+      out.push({
+        startMinutes: hole.startMinutes,
+        endMinutes: EndMinute.ofProven(hole.endMinutes),
+        minutes,
+        sellable: ahead >= SHORTEST_SELLABLE_MINUTES,
+      });
     }
     return out;
+  },
+
+  /**
+   * Where something opened FROM a hole may start (owner, 2026-11-05: "when
+   * opening to block time and schedule an appointment it should depend on
+   * now"): the hole's start, or — on today, in a hole the clock is inside —
+   * the next tick of the draft's grain, never a minute already gone.
+   */
+  openFrom(gap: MinuteRun, now: ShopNow, localDate: LocalDate): MinuteOfDay {
+    if (LocalDate.compare(localDate, now.localDate) !== 0) {
+      return gap.startMinutes;
+    }
+    const grain = VisitDraftSystem.GRAIN_MINUTES;
+    const tick = Math.ceil(now.currentMinute / grain) * grain;
+    return tick > gap.startMinutes && tick < gap.endMinutes
+      ? MinuteOfDay.ofProven(tick)
+      : gap.startMinutes;
   },
 
   /**
@@ -299,23 +314,27 @@ export const GridLayoutSystem = {
    * the commit pads every busy span with (`AvailabilitySystem.paddedBusy`).
    * `occupied` is normalized (sorted, disjoint). When the turnaround would
    * take the whole hole, the hole's own start: staff may place there and
-   * acknowledge the overlap.
+   * acknowledge the overlap. Never before {@link openFrom}: a booking opened
+   * from a hole the clock is inside starts at the next tick.
    */
   bookableFrom(
     gap: MinuteRun,
     occupied: readonly MinuteRange[],
     turnaround: MinuteCount,
+    now: ShopNow,
+    localDate: LocalDate,
   ): MinuteOfDay {
+    const open = GridLayoutSystem.openFrom(gap, now, localDate);
     let previousEnd: number | null = null;
     for (let i = 0; i < occupied.length; i++) {
       const run = occupied[i] as MinuteRange;
       if (run.endMinutes > gap.startMinutes) break;
       previousEnd = run.endMinutes;
     }
-    if (previousEnd === null) return gap.startMinutes;
+    if (previousEnd === null) return open;
     const from = previousEnd + turnaround;
-    return from <= gap.startMinutes || from >= gap.endMinutes
-      ? gap.startMinutes
+    return from <= open || from >= gap.endMinutes
+      ? open
       : MinuteOfDay.ofProven(from);
   },
 

@@ -708,6 +708,7 @@ export function gapRowVm(
   gap: {
     readonly startMinutes: MinuteOfDay;
     readonly endMinutes: EndMinute;
+    readonly openFromMinutes: MinuteOfDay;
     readonly bookableFromMinutes: MinuteOfDay;
     readonly minutes: MinuteCount;
     readonly sellable: boolean;
@@ -734,6 +735,7 @@ export function gapRowVm(
     spanLabel: spanWords(gap.minutes, context.words.span),
     startMinutes: gap.startMinutes,
     endMinutes: gap.endMinutes,
+    openFromMinutes: gap.openFromMinutes,
     bookableFromMinutes: gap.bookableFromMinutes,
     barberId: chair.barberId,
     past: !gap.sellable,

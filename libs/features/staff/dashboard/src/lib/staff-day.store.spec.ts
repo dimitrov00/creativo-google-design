@@ -504,13 +504,12 @@ describe('StaffDayStore — the lanes carry the roster’s own minutes', () => {
       lane?.rostered.map((range) => [range.startMinutes, range.endMinutes]),
     ).toEqual([[210, 720]]);
     expect(lane?.blocks).toEqual([]);
-    // The holes are the system's, split at the shop's clock (09:00).
+    // The hole is the system's, WHOLE whatever the shop's clock (09:00 —
+    // owner, 2026-11-05); what opens from it starts at now's tick.
     expect(lane?.gaps.map((gap) => [gap.startMinutes, gap.endMinutes])).toEqual(
-      [
-        [210, 540],
-        [540, 720],
-      ],
+      [[210, 720]],
     );
+    expect(lane?.gaps[0]?.openFromMinutes).toBe(540);
   });
 });
 

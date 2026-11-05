@@ -253,11 +253,14 @@ interface DayGeometryCell {
 }
 
 /**
- * A hole as the staff day carries it: the chair's real empty time
- * (`LaneGap`) and the first minute of it a NEW client can take
- * (`GridLayoutSystem.bookableFrom`) — where «Нов час» from it starts.
+ * A hole as the staff day carries it: the chair's real empty time, whole
+ * whatever the clock (`LaneGap`), and where what opens from it starts —
+ * a block at the hole's start or the next tick of now
+ * (`GridLayoutSystem.openFrom`), a booking also after the turnaround
+ * (`GridLayoutSystem.bookableFrom`).
  */
 export type StaffLaneGap = LaneGap & {
+  readonly openFromMinutes: MinuteOfDay;
   readonly bookableFromMinutes: MinuteOfDay;
 };
 
@@ -424,11 +427,11 @@ export interface BarberDayLane {
    */
   readonly blocks: readonly MinuteRange[];
   /**
-   * EVERY hole inside those windows — the chair's real empty time, the
-   * elapsed ones as well as the sellable ones, split at the shop's clock
-   * and distinguished by `LaneGap.sellable` (`GridLayoutSystem.sellableAt`,
-   * in the lane day's minutes), each with the first minute a new client
-   * can take after the turnaround (`bookableFromMinutes`).
+   * EVERY hole inside those windows — the chair's real empty time, whole
+   * whatever the clock, the elapsed ones as well as the fillable ones
+   * (`LaneGap.sellable`, `GridLayoutSystem.sellableAt`, in the lane day's
+   * minutes), each with where a block from it starts (`openFromMinutes`)
+   * and where a new client can (`bookableFromMinutes`).
    */
   readonly gaps: readonly StaffLaneGap[];
   /**
@@ -1713,10 +1716,13 @@ export class StaffDayStore {
         gaps: GridLayoutSystem.sellableAt(holes, now, cell.dayKey).map(
           (gap) => ({
             ...gap,
+            openFromMinutes: GridLayoutSystem.openFrom(gap, now, cell.dayKey),
             bookableFromMinutes: GridLayoutSystem.bookableFrom(
               gap,
               occupied,
               turnaround,
+              now,
+              cell.dayKey,
             ),
           }),
         ),

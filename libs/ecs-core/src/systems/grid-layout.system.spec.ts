@@ -101,22 +101,25 @@ describe('laneGaps', () => {
   it('draws the ELAPSED hole, which used to be discarded entirely', () => {
     // A hole that has already passed is not sellable, but it is a fact: the
     // chair sat empty and nobody filled it. Hiding it made an idle morning
-    // and a fully booked one render identically. With a 10:00 cut done and
-    // the clock at 17:00 the rest of the day is one elapsed hole and one
-    // sellable hour.
-    const gaps = laneGaps(rostered, [hours(9, 10)], nowAt(17));
-    expect(gaps.length).toBe(2);
-    expect(gaps[0]).toMatchObject({ sellable: false, startMinutes: at(10) });
-    expect(gaps[1]).toMatchObject({ sellable: true, startMinutes: at(17) });
+    // and a fully booked one render identically.
+    const gaps = laneGaps(rostered, [hours(9, 10), hours(12, 18)], nowAt(17));
+    expect(gaps).toEqual([
+      expect.objectContaining({ sellable: false, startMinutes: at(10) }),
+    ]);
   });
 
-  it('splits a hole that straddles the clock, and floors each piece AFTER', () => {
-    // 10:00–18:00 free with now at 17:00 is seven elapsed hours and one
-    // sellable one — two different facts that must not be one card.
+  it('keeps a hole that straddles the clock WHOLE, and still fillable', () => {
+    // Owner, 2026-11-05: "the free time shown should not depend on now". A
+    // chair free 09:00–18:00 says nine hours at noon as at eight; the clock
+    // decides only whether it can still be filled — six hours of it can.
     const wide = laneGaps(rostered, [], nowAt(12));
-    expect(wide.length).toBe(2);
-    expect(wide[0]).toMatchObject({ sellable: false, minutes: 3 * 60 });
-    expect(wide[1]).toMatchObject({ sellable: true, minutes: 6 * 60 });
+    expect(wide).toEqual([
+      expect.objectContaining({
+        startMinutes: at(9),
+        minutes: 9 * 60,
+        sellable: true,
+      }),
+    ]);
   });
 
   it('never emits a sellable sliver from a mostly-elapsed hole', () => {
@@ -607,10 +610,12 @@ describe('the sweep against the per-block scan', () => {
         fc.integer({ min: 0, max: 120 }).map((n) => nowAt((n * 15) / 60)),
         (rostered, busy, now) => {
           const gaps = laneGaps(rostered, busy, now);
-          // Ahead of the clock: a later day, or today past the minute.
-          const ahead = (end: number): boolean =>
+          // Fillable: a later day, or today with the floor still ahead.
+          const ahead = (start: number, end: number): boolean =>
             DAY > now.localDate ||
-            (DAY === now.localDate && end > now.currentMinute);
+            (DAY === now.localDate &&
+              end - Math.max(start, now.currentMinute) >=
+                S.SHORTEST_SELLABLE_MINUTES);
           for (const gap of gaps) {
             expect(gap.minutes).toBeGreaterThanOrEqual(
               S.SHORTEST_SELLABLE_MINUTES,
@@ -618,7 +623,7 @@ describe('the sweep against the per-block scan', () => {
             const day = IntervalSetSystem.normalize(rostered);
             expect(day.some((r) => MinuteRange.contains(r, gap))).toBe(true);
             expect(busy.some((b) => MinuteRange.overlaps(b, gap))).toBe(false);
-            expect(gap.sellable).toBe(ahead(gap.endMinutes));
+            expect(gap.sellable).toBe(ahead(gap.startMinutes, gap.endMinutes));
           }
           for (let i = 1; i < gaps.length; i++) {
             expect(
@@ -647,29 +652,52 @@ describe('GridLayoutSystem.bookableFrom — a new client waits out the turnaroun
   });
 
   it('starts after the turnaround that follows the visit before the hole', () => {
-    expect(S.bookableFrom(hole(695, 960), occupied, ten)).toBe(705);
+    expect(S.bookableFrom(hole(695, 960), occupied, ten, nowAt(0), DAY)).toBe(
+      705,
+    );
   });
 
   it('starts at the hole when nothing came before it, or no turnaround is kept', () => {
-    expect(S.bookableFrom(hole(480, 540), occupied, ten)).toBe(480);
-    expect(S.bookableFrom(hole(695, 960), occupied, MinuteCount.ZERO)).toBe(
+    expect(S.bookableFrom(hole(480, 540), occupied, ten, nowAt(0), DAY)).toBe(
+      480,
+    );
+    expect(
+      S.bookableFrom(hole(695, 960), occupied, MinuteCount.ZERO, nowAt(0), DAY),
+    ).toBe(695);
+  });
+
+  it('starts at the hole once the turnaround is behind it — a piece cut at now', () => {
+    expect(S.bookableFrom(hole(720, 960), occupied, ten, nowAt(0), DAY)).toBe(
+      720,
+    );
+    expect(S.bookableFrom(hole(700, 960), occupied, ten, nowAt(0), DAY)).toBe(
+      705,
+    );
+  });
+
+  it('never opens before now: on today a hole the clock is inside opens at the next tick', () => {
+    // Owner, 2026-11-05: what opens from a hole depends on now; the hole
+    // itself does not. 11:52 rounds up to 11:55 — past the 11:45 reset.
+    const noon = nowAt(11 + 52 / 60);
+    expect(S.openFrom(hole(695, 960), noon, DAY)).toBe(715);
+    expect(S.bookableFrom(hole(695, 960), occupied, ten, noon, DAY)).toBe(715);
+    // Before the hole, or another day: the hole's own start.
+    expect(S.openFrom(hole(695, 960), nowAt(9), DAY)).toBe(695);
+    expect(S.openFrom(hole(695, 960), noon, LocalDate.addDays(DAY, 1))).toBe(
       695,
     );
   });
 
-  it('starts at the hole once the turnaround is behind it — a piece cut at now', () => {
-    expect(S.bookableFrom(hole(720, 960), occupied, ten)).toBe(720);
-    expect(S.bookableFrom(hole(700, 960), occupied, ten)).toBe(705);
-  });
-
   it('keeps the hole’s start when the turnaround would take all of it', () => {
-    expect(S.bookableFrom(hole(600, 605), occupied, ten)).toBe(600);
+    expect(S.bookableFrom(hole(600, 605), occupied, ten, nowAt(0), DAY)).toBe(
+      600,
+    );
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
     const gap = deepFreeze(hole(695, 960));
-    expect(S.bookableFrom(gap, occupied, ten)).toBe(
-      S.bookableFrom(gap, occupied, ten),
+    expect(S.bookableFrom(gap, occupied, ten, nowAt(0), DAY)).toBe(
+      S.bookableFrom(gap, occupied, ten, nowAt(0), DAY),
     );
   });
 });

@@ -414,8 +414,13 @@ export interface GapRowVm {
   readonly spanLabel: string;
   /** Where the hole begins on the shop's wall clock — the run's order. */
   readonly startMinutes: MinuteOfDay;
-  /** Where it ends — a block from it takes the whole hole. */
+  /** Where it ends — a block from it runs to here. */
   readonly endMinutes: EndMinute;
+  /**
+   * Where a block from it starts: the hole's start, or the next tick of now
+   * in a hole the clock is inside (`GridLayoutSystem.openFrom`).
+   */
+  readonly openFromMinutes: MinuteOfDay;
   /**
    * Where «Нов час» from it starts: the first minute a new client can take
    * after the barber's turnaround (`GridLayoutSystem.bookableFrom`) — 11:45
