@@ -95,7 +95,9 @@ export type UiSearchFieldDropdownPlacement = 'below' | 'above';
  * value.
  *
  * THE DROPDOWN (2026-11-04). Content projected with `uiSearchDropdown` hangs
- * under the field on the menu's thick material while `uiDropdownOpen` — the
+ * under the field while `uiDropdownOpen` — a `ui-list-group` projected as
+ * the dropdown itself wears the popover list recipe `ui-menu` wears (the
+ * surface is marked `data-popover-surface`) — the
  * suggestions of a filtered search, ≙ GitLab's and Jira's. It covers what
  * is under the field and never moves it. A press inside it keeps the focus
  * where it was (Safari focuses no button on a press, so the field's focus
@@ -262,6 +264,7 @@ export type UiSearchFieldDropdownPlacement = 'below' | 'above';
     @if (uiDropdownOpen()) {
       <div
         class="ui-search-field__dropdown"
+        data-popover-surface
         role="region"
         [id]="dropdownId"
         [attr.aria-label]="uiDropdownLabel() || null"

@@ -352,12 +352,13 @@
   }
 
   /* THE DROPDOWN — the suggestions of a filtered search, hung under the
-     field on the ELEVATED surface, opaque. The menu's thick material cannot
-     work here: a pinned band already blurs what is behind it, which makes it
-     a backdrop root — a blur nested inside it samples only the band, so the
-     results under the list read straight through a translucent fill. It
-     covers the list under the field and never moves it; it scrolls inside
-     itself, stopping at its own edge. */
+     field on the ELEVATED surface, opaque. A `ui-list-group` projected as
+     the dropdown takes the popover list recipe instead — the segmented run
+     on the regular material, the ＋ menu's look (list-group.css, keyed on
+     `data-popover-surface`). Not under a PINNED band: the band's own blur
+     makes it a backdrop root, and a blur nested inside it samples only the
+     band. It covers the list under the field and never moves it; it scrolls
+     inside itself, stopping at its own edge. */
   .ui-search-field__dropdown {
     position: absolute;
     inset-inline: 0;

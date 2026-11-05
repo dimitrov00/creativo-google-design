@@ -52,6 +52,7 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import {
+  UiListGroup,
   UiListRow,
   UiMarkedText,
   UiPageActionBar,
@@ -125,6 +126,7 @@ function deviceStorage(): Storage | null {
     UiChip,
     UiForegroundStyleDirective,
     UiIcon,
+    UiListGroup,
     UiListRow,
     UiMarkedText,
     UiModalSheet,

@@ -186,7 +186,13 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
    ABOVE the field (`uiDropdownPlacement="above"`) and hugging its rows at
    the leading edge, while the field has the focus. Escape puts the card
    away (after the month and an open key); typing or a new focus brings it
-   back. The chosen filters stay as chips over the field.
+   back. The chosen filters stay as chips over the field. The card is the
+   ＋ menu's segmented list (`ui-list-group` on the same popover recipe,
+   which moved from `menu.css` into `list-group.css`, keyed on
+   `data-popover-surface`) — but not a `ui-menu`: a menu is modal, takes
+   the focus on open (the iPhone keyboard would close mid-typing) and
+   swallows touches and scrolling behind it, where suggestions must let the
+   results scroll while you type.
 4. **Grouped by key.** The starters and the matched values stand under the
    key they belong to («Кога»: Днес, Утре · «Бръснар»: Иван, Нико), in the
    order the system gave them, instead of one «Предложения» list with the

@@ -280,28 +280,25 @@
         }
         <!-- THE CARD over the field while it has the focus (Photos' floating
              suggestions): the free keys, one under another, the typed run
-             marked. -->
-        <div uiSearchDropdown data-testid="staff-search-keys">
+             marked — the segmented list of the ＋ menu, on the same popover
+             recipe (the group IS the dropdown's content). -->
+        <ui-list-group uiSearchDropdown data-testid="staff-search-keys">
           @for (row of vm().suggestions.keys; track row.id) {
           <button
             type="button"
             uiListRow
-            uiSize="regular"
             [uiInteractive]="true"
-            class="staff-search-sheet__row"
             data-testid="staff-search-suggestion"
             [attr.data-suggestion]="row.id"
             (click)="pickRow(row)"
           >
             @if (row.glyph; as glyph) {
-            <span uiLeading>
-              <ui-icon [uiName]="glyph" aria-hidden="true" />
-            </span>
+            <span uiLeading><ui-icon [uiName]="glyph" /></span>
             }
             <ui-marked-text [uiRuns]="row.parts" />
           </button>
           }
-        </div>
+        </ui-list-group>
       </ui-search-field>
     </ui-page-action-bar>
   </ui-modal-sheet>
