@@ -13,35 +13,52 @@
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
     [fullScreen]="true"
-    [bareHeader]="true"
+    [titleAlwaysVisible]="true"
+    [closeControl]="false"
     data-testid="staff-search-sheet"
     (dismissed)="close()"
   >
+    <!-- THE BAR'S TITLE from the start (the sheets' compact title, owner
+         2026-11-05): a top bar the page can put its own buttons in, whose
+         chrome fades in as the results scroll under it, as every sheet's.
+         No ✕ up there — the search ends from the ✕ beside its field. -->
+    <span sheet-title data-testid="staff-search-bar-title"
+      >{{ t('staff.day.searchLabel') }}</span
+    >
     <ui-stack uiSpacing="comfortable" class="staff-search-sheet__body">
-      <ui-sheet-headline data-testid="staff-search-headline">
-        <h2
-          id="staff-search-title"
-          uiSheetLargeTitle
-          uiText
-          uiFont="largeTitle"
-        >
-          {{ t('staff.day.searchLabel') }}
-        </h2>
-        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-          {{ t('staff.day.searchScope') }}
-        </p>
-      </ui-sheet-headline>
-
-      @if (vm().phoneRow; as phone) {
-      <!-- The text reads as a number: said, never rewritten under the caret. -->
+      <!-- The bar's title is decoration to assistive tech; this names the page. -->
+      <h2 id="staff-search-title" data-visually-hidden>
+        {{ t('staff.day.searchLabel') }}
+      </h2>
       <p
         uiText
         uiFont="footnote"
         uiForegroundStyle="secondary"
-        data-testid="staff-search-phone-row"
+        data-testid="staff-search-scope"
       >
-        {{ phone }}
+        {{ t('staff.day.searchScope') }}
       </p>
+
+      @if (vm().commitRow; as commit) {
+      <!-- THE TYPED TEXT, offered as a filter (Mail's «Subject contains …»):
+           a number reads «Телефонът започва с „+359 88 77“». A press — or
+           Return, or the ✓ — takes it as a chip and frees the field. -->
+      <ul uiListGroup data-testid="staff-search-commit-group">
+        <li>
+          <button
+            type="button"
+            uiListRow
+            [uiInteractive]="true"
+            data-search-focusable
+            data-testid="staff-search-commit-row"
+            (mousedown)="$event.preventDefault()"
+            (click)="commitText()"
+          >
+            <span uiLeading><ui-icon [uiName]="commit.glyph" /></span>
+            {{ commit.label }}
+          </button>
+        </li>
+      </ul>
       }
 
       <!-- THE SUGGESTIONS above the results, under their keys: the starters
@@ -248,7 +265,7 @@
         (uiSubmit)="submit()"
         (uiNavigate)="focusFirst($event)"
       >
-        @if (vm().filters.length > 0) {
+        @if (vm().texts.length > 0 || vm().filters.length > 0) {
         <!-- OVER THE FIELD, floating (Photos): the chosen filters, selected
              and saying their values; a press opens a filter's values. They
              WRAP onto another line rather than sliding out of sight: every
@@ -262,7 +279,26 @@
           [attr.aria-label]="t('staff.search.filters')"
           data-testid="staff-search-filters"
         >
-          @for (chip of vm().filters; track chip.id) {
+          <!-- The taken texts first, in the order taken; a press puts one
+               back in the field to be changed. -->
+          @for (text of vm().texts; track text.id; let at = $index) {
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="true"
+            [uiToggle]="false"
+            data-tint="accent"
+            data-testid="staff-search-text"
+            [attr.aria-label]="text.accessibleLabel"
+            (mousedown)="$event.preventDefault()"
+            (click)="editText(at)"
+          >
+            <ui-icon [uiName]="text.glyph" aria-hidden="true" />
+            <span class="staff-search-sheet__filter-label"
+              >{{ text.label }}</span
+            >
+          </button>
+          } @for (chip of vm().filters; track chip.id) {
           <button
             type="button"
             uiChip
@@ -331,7 +367,23 @@
           }
         </ui-list-group>
       </ui-search-field>
-      @if (vm().suggestions.apply; as applyVm) {
+      @if (vm().commitRow) {
+      <!-- ✓ beside the ✕: take the typed text as a filter (Return's twin). -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [uiIconOnly]="true"
+        uiPrimary
+        [attr.aria-label]="t('staff.search.commit')"
+        data-testid="staff-search-commit"
+        (mousedown)="$event.preventDefault()"
+        (click)="commitText()"
+      >
+        <ui-icon uiName="action.apply" />
+      </button>
+      } @else if (vm().suggestions.apply; as applyVm) {
       <!-- A many-valued key's set, applied once: the bar's primary (the
            visit sheet's dock grammar, «Приложи …»), in the ✕'s place while
            the set is being picked — a picking mode has one way on; the

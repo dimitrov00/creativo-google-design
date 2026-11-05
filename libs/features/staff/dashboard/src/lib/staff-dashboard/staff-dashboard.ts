@@ -1,6 +1,14 @@
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import { runViewTransition } from '../shared/view-transition';
 import {
+  BUSY_SETTLE_MS,
+  ROW_WAIT_MS,
+  isOverlapOffer,
+  isStaleRefusal,
+  rowShape,
+  sidesMovedError,
+} from './staff-day-save';
+import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
@@ -45,12 +53,7 @@ import {
   type UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import {
-  BookingErrorCode,
-  PipelineError,
-  PipelineErrorCode,
-  StaffEditErrorCode,
-} from '@core/errors';
+import { BookingErrorCode, PipelineError } from '@core/errors';
 import {
   BookingCall,
   CancellationReason,
@@ -73,7 +76,6 @@ import {
   WallTime,
 } from '@core/components';
 import {
-  AppointmentEditSystem,
   AppointmentLifecycleSystem,
   BarberToneSystem,
   BillingSystem,
@@ -311,110 +313,6 @@ const CLOSING = EndMinute.ofProven(24 * 60);
 /** The block sheet's default range, 12:00–13:00 — two minutes of every day. */
 const NOON = MinuteOfDay.ofProven(12 * 60);
 const ONE_PM = EndMinute.ofProven(13 * 60);
-
-/**
- * The stale refusal a write earns on THIS device, before anything is sent:
- * the note or the tip it carries moved under the draft. The server's own
- * stale refusal (`BOOKING_STAFF_EDIT_STALE`) is the same sentence and the
- * same reload, so it is spoken in the server's code.
- */
-function sidesMovedError(): PipelineError {
-  return PipelineError.of(
-    PipelineErrorCode.InvalidRequest,
-    StaffEditErrorCode.Stale,
-    null,
-    null,
-  );
-}
-
-/**
- * How long an undone save waits for the listener — for the save to reach
- * the row before the way back is computed, and for the way back to reach
- * it before the sheet re-seeds. The listener delivers in well under a
- * second; this is the ceiling, not the expectation.
- */
-const ROW_WAIT_MS = 5000;
-
-/**
- * Whether a save has a way back through the same callable — the server's
- * rule (`AppointmentEditSystem.undoable`), read on the ROOT appointment's
- * status: a seat added to a FINISHED visit is worked the moment it is
- * written (the after-the-cut flow, owner 2026-09-09) and the server keeps
- * history, so its `removeSeat` would be refused every time and that save's
- * receipt carries no «Отмени» (found in review). The caller hands the root
- * (`DayRowVm.rootBookingStatus`), never the chair's summary (DEP-3).
- *
- * Since OR-4 every save reads it off its own plan
- * (`StaffEditPlanSystem.savePlan`, `reversible` — the same rule on the
- * same root); this is that rule on its own, as the page's specs pin it.
- */
-export function reversibleSave(
-  root: { readonly bookingStatus: BookingStatus } | null,
-  commands: readonly BookingCall.EditCommand[],
-): boolean {
-  return AppointmentEditSystem.undoable(root?.bookingStatus ?? null, commands);
-}
-
-/** How long an undone save gives the busy projection before its one retry. */
-const BUSY_SETTLE_MS = 1500;
-
-/**
- * The server's overlap OFFER — a lost slot naming its own code
- * (`BOOKING_STAFF_EDIT_OVERLAPS`) — as opposed to any other refusal. The
- * store's docblock on `staffEdit` names it; the sheet answers it with
- * «Запази въпреки застъпването», and an undone save answers it with one
- * more try.
- */
-function isOverlapOffer(error: PipelineError | null): boolean {
-  return error?.serverErrorCode === StaffEditErrorCode.Overlaps;
-}
-
-/**
- * The visit moved on under the sheet — somebody else saved it since the
- * draft was drawn (`BOOKING_STAFF_EDIT_STALE`, round 5). Never retried and
- * never written over: the sheet reloads the visit as it now stands.
- */
-function isStaleRefusal(error: PipelineError | null): boolean {
-  return error?.serverErrorCode === StaffEditErrorCode.Stale;
-}
-
-/**
- * The stored facts a save can change, as one string — what an undone save
- * compares the live row against to know the server has caught up.
- */
-function rowShape(row: DayRowVm): string {
-  return JSON.stringify({
-    location: row.locationId,
-    // The chair's span on the shop's wall clock (Law 7.3) — its day, its
-    // start and its end, as stored.
-    day: row.localDate,
-    start: row.startMinute,
-    end: row.endMinute,
-    legs: row.legs.map((leg) => [
-      leg.seatId,
-      leg.serviceId,
-      leg.variantId,
-      leg.durationMinutes,
-      leg.barberId,
-      // The price as cents in its currency, never re-read off a label (D-10.3).
-      leg.priceCents,
-      leg.currency,
-    ]),
-    discounts: row.discounts
-      .map((discount) =>
-        JSON.stringify([
-          discount.discountSource,
-          discount.grantId,
-          discount.code,
-          // The value as stored — exactly its variant's fields.
-          CouponValue.sliceOf(discount),
-        ]),
-      )
-      .sort(),
-    vouchers: row.vouchers.map((voucher) => voucher.code),
-    tip: row.tipCents,
-  });
-}
 
 /** One question per typed name, not one per keystroke. */
 const CLIENT_SEARCH_DEBOUNCE_MS = 220;
@@ -915,6 +813,7 @@ export class StaffDashboard {
 
   constructor() {
     this.destroyRef.onDestroy(() => this.rowWatch()?.settle());
+    effect(() => this.openFoundWhenDrawn());
     // The URL is an INPUT here and an OUTPUT of the store, so the echo of the
     // store's own write must not be mistaken for the user asking for a day —
     // that bounced every chevron press straight back to today. Comparing
@@ -2565,6 +2464,36 @@ export class StaffDashboard {
         this.savingVisitId() === row.appointmentId,
     };
   });
+
+  /**
+   * A search hit waiting for its day's rows: the store went to the visit's
+   * day, and its sheet opens over the search once the row is drawn. Let go
+   * when the search ends first.
+   */
+  private readonly foundVisit = signal<AppointmentId | null>(null);
+  private openFoundWhenDrawn(): void {
+    const id = this.foundVisit();
+    if (id === null) return;
+    if (!this.store.searching()) {
+      untracked(() => this.foundVisit.set(null));
+      return;
+    }
+    const row = this.lanes()
+      .flatMap((lane) => lane.entries)
+      .find(
+        (entry): entry is DayRowVm =>
+          entry.agendaRow === AgendaRow.Visit && entry.appointmentId === id,
+      );
+    if (row === undefined) return;
+    untracked(() => {
+      this.foundVisit.set(null);
+      this.openVisitSheet(row);
+    });
+  }
+
+  protected openFoundVisit(id: AppointmentId): void {
+    this.foundVisit.set(id);
+  }
 
   protected openVisitSheet(row: DayRowVm): void {
     this.presentOnly();

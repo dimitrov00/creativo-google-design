@@ -449,8 +449,12 @@ describe('StaffSearchSheet', () => {
     expect(store.closeSearch).toHaveBeenCalled();
   });
 
-  it('keeps the search as a recent when a card is opened, jumps to its day and closes', async () => {
+  it('keeps the search as a recent when a card is opened, moves the schedule to its day and asks for its sheet, staying open', async () => {
     await mount();
+    const picked: string[] = [];
+    fixture.debugElement
+      .query(By.directive(StaffSearchSheet))
+      .componentInstance.visitPicked.subscribe((id: string) => picked.push(id));
     type('иван');
     after(100);
     (cards()[0]?.querySelector('button') as HTMLButtonElement).click();
@@ -458,10 +462,50 @@ describe('StaffSearchSheet', () => {
     expect(store.goToDay).toHaveBeenCalledWith(
       LocalDate.addDays(FIXTURE_TODAY, 1),
     );
-    expect(store.closeSearch).toHaveBeenCalled();
+    expect(picked).toEqual(['a']);
+    // The visit's sheet opens OVER the search; closing it comes back here.
+    expect(store.closeSearch).not.toHaveBeenCalled();
     expect(loadRecents(localStorage).map((q) => q.searchText)).toEqual([
       'иван',
     ]);
+  });
+
+  it('takes the typed text as a chip on the ✓, and on Return, freeing the field', async () => {
+    await mount();
+    type('иван');
+    after(100);
+    expect(
+      el('[data-testid="staff-search-commit-row"]')?.textContent,
+    ).toContain('staff.search.commitText');
+    press('button[data-testid="staff-search-commit"]');
+    expect(
+      all('[data-testid="staff-search-text"]').map((c) =>
+        c.textContent?.trim(),
+      ),
+    ).toEqual(['иван']);
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
+
+    // The next word narrows on top of the chip; Return takes it too.
+    type('петров');
+    after(100);
+    expect(cards()).toHaveLength(1);
+    field().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    fixture.detectChanges();
+    expect(all('[data-testid="staff-search-text"]')).toHaveLength(2);
+    expect(cards()).toHaveLength(1);
+    expect(el('button[data-testid="staff-search-commit"]')).toBeNull();
+  });
+
+  it('puts a taken text back in the field when its chip is pressed', async () => {
+    await mount();
+    type('иван');
+    after(100);
+    press('button[data-testid="staff-search-commit"]');
+    press('[data-testid="staff-search-text"]');
+    expect(all('[data-testid="staff-search-text"]')).toHaveLength(0);
+    expect(field().value).toBe('иван');
+    expect(cards()).toHaveLength(2);
   });
 
   it('keeps the search as a recent on Return, once however often it is pressed', async () => {

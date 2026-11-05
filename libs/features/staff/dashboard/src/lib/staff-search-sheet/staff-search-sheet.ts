@@ -7,6 +7,7 @@ import {
   computed,
   inject,
   input,
+  output,
   signal,
   viewChild,
 } from '@angular/core';
@@ -58,7 +59,6 @@ import {
   UiMarkedText,
   UiPageActionBar,
   UiSectionHeader,
-  UiSheetHeadline,
 } from '@creativo/ui/patterns';
 import { guestLabelOf } from '../staff-dashboard/staff-day-guest.words';
 import { searchSheetVm } from '../staff-dashboard/staff-search.presenter';
@@ -137,7 +137,6 @@ function deviceStorage(): Storage | null {
     UiPageActionBar,
     UiSearchField,
     UiSectionHeader,
-    UiSheetHeadline,
     UiStack,
     UiTextDirective,
     VisitList,
@@ -157,6 +156,8 @@ export class StaffSearchSheet {
   readonly callingCode = input.required<string>();
   /** The reader's locale (`en-GB`, `bg-BG`) for dates. */
   readonly locale = input.required<string>();
+  /** A card pressed: the page opens that visit's sheet OVER the search, as the schedule does. */
+  readonly visitPicked = output<AppointmentId>();
 
   protected readonly store = inject(StaffDayStore);
   private readonly transloco = inject(TranslocoService);
@@ -181,6 +182,8 @@ export class StaffSearchSheet {
 
   /** The key whose values are listed — being picked, or a chosen filter pressed. */
   protected readonly openField = signal<SearchFilterField | null>(null);
+  /** The texts taken as filters (Return or ✓), in the order taken; the query reads them before what is typed. */
+  protected readonly committedTexts = signal<readonly string[]>([]);
   /** The set being picked for an open many-valued key, until «Приложи»; null for none ticked. */
   private readonly draft = signal<SearchFilter | null>(null);
   /** The search parked while a key is open; null while none is. */
@@ -190,7 +193,12 @@ export class StaffSearchSheet {
   private readonly rangeStart = signal<LocalDate | null>(null);
 
   protected readonly query = computed(() =>
-    SearchQuery.withText(this.filters(), this.heldText() ?? this.committed()),
+    SearchQuery.withText(
+      this.filters(),
+      [...this.committedTexts(), this.heldText() ?? this.committed()]
+        .filter((text) => text.trim() !== '')
+        .join(' '),
+    ),
   );
 
   private readonly field = viewChild(UiSearchField);
@@ -271,6 +279,7 @@ export class StaffSearchSheet {
       openField: this.openField(),
       typedText: this.typed(),
       draft: this.draft(),
+      committedTexts: this.committedTexts(),
       calendarMode: this.calendarMode(),
       rangeStart: this.rangeStart(),
     });
@@ -448,10 +457,12 @@ export class StaffSearchSheet {
   protected clearFilters(): void {
     this.closeKey();
     this.filters.set(SearchQuery.empty());
+    this.committedTexts.set([]);
   }
 
   protected runRecent(recent: RecentVm): void {
     this.closeKey();
+    this.committedTexts.set([]);
     this.filters.set(SearchQuery.withText(recent.query, ''));
     this.commitNow(recent.query.searchText);
   }
@@ -459,6 +470,33 @@ export class StaffSearchSheet {
   protected clearAllRecents(): void {
     this.recents.set([]);
     clearRecents(this.storage);
+  }
+
+  /**
+   * Return or the ✓: the typed text is TAKEN as a filter (Mail's «Subject
+   * contains …» token, owner 2026-11-05) — a chip before the filters — and
+   * the field is free for the next word or a key. The search is kept.
+   */
+  protected commitText(): void {
+    const text = this.typed().trim();
+    if (text === '' || this.openField() !== null) return;
+    this.committedTexts.update((texts) => [...texts, text]);
+    this.commitNow('');
+    this.keepRecent();
+  }
+
+  /** A taken text pressed: back into the field to be changed (what is typed there now is taken first). */
+  protected editText(at: number): void {
+    const texts = this.committedTexts();
+    const text = texts[at];
+    if (text === undefined) return;
+    const current = this.typed().trim();
+    this.committedTexts.set([
+      ...texts.filter((_, index) => index !== at),
+      ...(current === '' ? [] : [current]),
+    ]);
+    this.commitNow(text);
+    this.field()?.focus();
   }
 
   /** «Приложи»: the set picked replaces the key's filter where it stands (none ticked takes it off). */
@@ -482,13 +520,22 @@ export class StaffSearchSheet {
       if (first !== undefined) this.pickRow(first);
       return;
     }
+    if (this.typed().trim() !== '') {
+      this.commitText();
+      return;
+    }
     this.keepRecent();
   }
 
   private keepRecent(): void {
     const next = pushRecent(
       this.recents(),
-      SearchQuery.withText(this.filters(), this.heldText() ?? this.typed()),
+      SearchQuery.withText(
+        this.filters(),
+        [...this.committedTexts(), this.heldText() ?? this.typed()]
+          .filter((text) => text.trim() !== '')
+          .join(' '),
+      ),
     );
     this.recents.set(next);
     saveRecents(this.storage, next);
@@ -506,13 +553,19 @@ export class StaffSearchSheet {
 
   // ── The cards ─────────────────────────────────────────────────────────
 
-  /** A card pressed: the schedule goes to its day, the search is kept, the sheet closes. */
+  /**
+   * A card pressed: its visit's sheet opens over the search (owner,
+   * 2026-11-05: "open the event details sheet just like in the staff
+   * view"), and closing it comes back to these results, as a message opened
+   * from Mail's search does. The schedule behind moves to the visit's day,
+   * whose row the sheet is drawn from; the search is kept as a recent.
+   */
   protected openHit(id: AppointmentId): void {
     const visit = this.store.pool().find((held) => held.id === id);
     if (visit === undefined) return;
     this.keepRecent();
     this.store.goToDay(visit.localDate);
-    this.close();
+    this.visitPicked.emit(id);
   }
 
   protected close(): void {

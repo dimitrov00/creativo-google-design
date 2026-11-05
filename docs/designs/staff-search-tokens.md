@@ -253,6 +253,33 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
 - **Several barbers are one group of faces** in the chip (`ui-avatar-group`,
   «+N» past three), the chip's face seat extended to a group in the DS.
 
+### The bar's title, a found visit's sheet, and typed text as a filter (2026-11-05, fifth pass)
+
+- **The title is the bar's.** The search page has the sheets' compact bar
+  title from the start (`titleAlwaysVisible`), no large title: a top bar the
+  page can put its own buttons in later, whose chrome fades in as the
+  results scroll under it, as every sheet's. No ✕ up there
+  (`ui-modal-sheet`'s new `closeControl`): the search ends from the ✕ beside
+  its field.
+- **A card opens its visit's sheet, over the search** (Mail: a message opened
+  from search, closed back to the results). The schedule behind moves to
+  the visit's day — the sheet is drawn from that day's row — and the
+  dashboard opens it once the row is drawn (`openFoundVisit`; let go if the
+  search ends first). The search stays as it was under it. (The page's save
+  helpers moved to `staff-day-save.ts` to make the room; the component's
+  line cap went DOWN to 4546.)
+- **Typed text is taken as a filter** (Mail's «Subject contains …» token).
+  While text is typed (no key open) the first row offers it, worded by what
+  it reads as (`ClientQuerySystem`, the add-client page's reading):
+  «Телефонът започва с „+359 88 77“», «Имейлът съдържа „ivan@“»,
+  «Съдържа „иван“». The row, Return, or the ✓ beside the ✕ (`action.apply`)
+  takes it as a chip before the filters («+359 88 77…» with the handset,
+  «иван» with the magnifier) and frees the field: the next word or a key
+  narrows on top (every taken text and the typed one are read together,
+  terms ANDed). Pressing a taken chip puts it back in the field. The field's
+  glyph reads only what is in the field. ↓ from the field lands on the
+  offer first.
+
 ### «Кога»: preset, day or range
 
 `VALUES` for «Кога» lists the presets that reach a visit: Днес, Утре, Вчера,

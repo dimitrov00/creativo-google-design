@@ -27,6 +27,27 @@ describe('UiModalSheet', () => {
     ).not.toBeNull();
   });
 
+  it('drops the bar’s ✕ on request and keeps the bar', async () => {
+    await TestBed.configureTestingModule({
+      imports: [UiModalSheet],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(UiModalSheet);
+    fixture.componentRef.setInput('sheetId', 'test-sheet');
+    fixture.componentRef.setInput('labelledBy', 'test-title');
+    fixture.componentRef.setInput('closeLabel', 'Close details');
+    fixture.componentRef.setInput('open', true);
+    fixture.componentRef.setInput('closeControl', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const host: HTMLElement = fixture.nativeElement;
+
+    expect(host.querySelector('button[aria-label="Close details"]')).toBeNull();
+    expect(
+      host.querySelector('.modal-sheet__toolbar [uititle]'),
+    ).not.toBeNull();
+  });
+
   it('presents full screen on request: the sheet says so, and its bar does not drag it', async () => {
     await TestBed.configureTestingModule({
       imports: [UiModalSheet],

@@ -168,6 +168,7 @@ function input(
     openField: null,
     typedText: '',
     draft: null,
+    committedTexts: [],
     calendarMode: null,
     rangeStart: null,
     ...overrides,
@@ -313,8 +314,14 @@ describe('searchSheetVm — results', () => {
   });
 
   it('adds a phone line, the matched digits washed through the spaces, when a number was typed', () => {
-    const vm = searchSheetVm(input('bg', text('088 777')));
-    expect(vm.phoneRow).toBe('Телефон +359 88 777');
+    const vm = searchSheetVm(
+      input('bg', text('088 777'), { typedText: '088 777' }),
+    );
+    // Offered as a filter, read as it would be dialled (Mail's «… contains»).
+    expect(vm.commitRow).toEqual({
+      label: 'Телефонът започва с „+359 88 777“',
+      glyph: 'contact.phone',
+    });
     const phone = vm.groups[0]?.rows[0]?.lines.find(
       (l) => l.testId === 'staff-search-line-phone',
     );
@@ -324,10 +331,43 @@ describe('searchSheetVm — results', () => {
     ]);
   });
 
-  it('reads the phone row in English', () => {
-    expect(searchSheetVm(input('en', text('088 777'))).phoneRow).toBe(
-      'Phone +359 88 777',
+  it('offers the typed text as a filter, in the reader’s words, and none with a key open', () => {
+    expect(
+      searchSheetVm(input('en', text('088 777'), { typedText: '088 777' }))
+        .commitRow?.label,
+    ).toBe('Phone starts with “+359 88 777”');
+    expect(
+      searchSheetVm(input('bg', text('иван'), { typedText: 'иван' })).commitRow,
+    ).toEqual({ label: 'Съдържа „иван“', glyph: 'action.search' });
+    expect(
+      searchSheetVm(input('bg', text('ivan@'), { typedText: 'ivan@' }))
+        .commitRow?.label,
+    ).toBe('Имейлът съдържа „ivan@“');
+    expect(
+      searchSheetVm(
+        input('bg', SearchQuery.empty(), {
+          typedText: 'ни',
+          openField: SearchFilterField.Barber,
+        }),
+      ).commitRow,
+    ).toBeNull();
+    expect(
+      searchSheetVm(input('bg', SearchQuery.empty())).commitRow,
+    ).toBeNull();
+  });
+
+  it('draws the taken texts as chips before the filters, each with its reading', () => {
+    const vm = searchSheetVm(
+      input('bg', text('088 777 иван'), {
+        committedTexts: ['088 777', 'иван'],
+      }),
     );
+    expect(vm.texts.map((t) => [t.id, t.label, t.glyph])).toEqual([
+      ['TEXT:0', '+359 88 777…', 'contact.phone'],
+      ['TEXT:1', 'иван', 'action.search'],
+    ]);
+    expect(vm.texts[1]?.accessibleLabel).toBe('Търсене: иван. Върни в полето');
+    expect(vm.placeholder).toBe('Търси…');
   });
 
   it('reads a name beside a number as both: the word marks the name, the number the phone', () => {
@@ -361,15 +401,18 @@ describe('searchSheetVm — results', () => {
   });
 
   it('keeps the glyph for what the text was taken for', () => {
-    expect(searchSheetVm(input('bg', text('иван'))).glyph).toBe(
-      'action.search',
-    );
-    expect(searchSheetVm(input('bg', text('088 777'))).glyph).toBe(
-      'contact.phone',
-    );
-    expect(searchSheetVm(input('bg', text('ivan@'))).glyph).toBe(
-      'contact.email',
-    );
+    const glyphOf = (typed: string, committedTexts: string[] = []) =>
+      searchSheetVm(
+        input('bg', text([...committedTexts, typed].join(' ')), {
+          typedText: typed,
+          committedTexts,
+        }),
+      ).glyph;
+    expect(glyphOf('иван')).toBe('action.search');
+    expect(glyphOf('088 777')).toBe('contact.phone');
+    expect(glyphOf('ivan@')).toBe('contact.email');
+    // The FIELD's text only: a taken number wears its own glyph on its chip.
+    expect(glyphOf('', ['088 777'])).toBe('action.search');
   });
 });
 

@@ -104,6 +104,13 @@ export class UiModalSheet {
    */
   readonly bareHeader = input(false);
   /**
+   * Whether the bar carries its ✕. Off for a page whose dismiss lives
+   * elsewhere — a full-screen search ends from the ✕ beside its field on the
+   * floor (≙ Photos) — while the bar keeps its title and its leading slot.
+   * Escape still dismisses.
+   */
+  readonly closeControl = input(true);
+  /**
    * Size the sheet to its CONTENT rather than to the viewport.
    *
    * The default height is unconditional, so a two-line confirmation drew the

@@ -1214,7 +1214,12 @@
       "tokenBuilding": "{{key}}: избери стойност",
       "chipTyped": "{{key}}: „{{text}}“",
       "moreValues": "+{{count}}",
-      "phoneRow": "Телефон {{number}}",
+      "commitPhone": "Телефонът започва с „{{number}}“",
+      "commitEmail": "Имейлът съдържа „{{text}}“",
+      "commitText": "Съдържа „{{text}}“",
+      "chipPhone": "{{number}}…",
+      "textChipLabel": "Търсене: {{text}}. Върни в полето",
+      "commit": "Добави като филтър",
       "moreThanShown": "Показани са първите {{count}} резултата. Стесни търсенето.",
       "status": {
         "pending": "Заявени",

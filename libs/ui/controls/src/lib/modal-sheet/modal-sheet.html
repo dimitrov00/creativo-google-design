@@ -57,7 +57,7 @@
         <div uiTitle aria-hidden="true">
           <ng-content select="[sheet-title]" />
         </div>
-        } @if (!bareHeader()) {
+        } @if (!bareHeader() && closeControl()) {
         <button
           uiTrailing
           type="button"

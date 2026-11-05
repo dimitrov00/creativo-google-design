@@ -119,7 +119,10 @@ export function searchGlyphOf(shape: ClientQueryShape): UiIconName {
  * number prints the way the profile prints it. The kernel's as-you-type
  * formatter, fed the international form.
  */
-function phoneAsTyped(parsed: ParsedClientQuery, callingCode: string): string {
+export function phoneAsTyped(
+  parsed: ParsedClientQuery,
+  callingCode: string,
+): string {
   const [international] = PhoneSystem.searchDigitsOf(
     parsed.phoneTyped,
     callingCode,

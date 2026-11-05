@@ -107,7 +107,7 @@ test.describe('the schedule search sheet — part 2', () => {
     await expect(cardsOf(page, run)).toHaveCount(1, { timeout: 30_000 });
     const card = cardsOf(page, run);
     await expect(card.getByTestId('staff-search-line-phone')).toBeVisible();
-    await expect(page.getByTestId('staff-search-phone-row')).toBeVisible();
+    await expect(page.getByTestId('staff-search-commit-row')).toBeVisible();
 
     // The matched runs are painted, not just present.
     const wash = card.locator('mark').first();
@@ -140,7 +140,19 @@ test.describe('the schedule search sheet — part 2', () => {
 
     await page.getByTestId('staff-search-input').fill(run);
     await expect(cardsOf(page, run)).toHaveCount(1, { timeout: 30_000 });
+    // A card opens its visit's sheet OVER the search; closing it comes back
+    // to the results, and the ✕ beside the field ends the search.
     await cardsOf(page, run).click();
+    await expect(
+      page.locator('ui-sheet#staff-visit-sheet[data-presented]'),
+    ).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.keyboard.press('Escape');
+    await expect(
+      page.locator('ui-sheet#staff-visit-sheet[data-presented]'),
+    ).toHaveCount(0);
+    await page.getByTestId('staff-search-input-dismiss').click();
     await expect(page.getByTestId('staff-search-sheet')).toBeHidden();
 
     // The picked search is kept on this device, one press away.

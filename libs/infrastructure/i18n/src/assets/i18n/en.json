@@ -1214,7 +1214,12 @@
       "tokenBuilding": "{{key}}: pick a value",
       "chipTyped": "{{key}}: “{{text}}”",
       "moreValues": "+{{count}}",
-      "phoneRow": "Phone {{number}}",
+      "commitPhone": "Phone starts with “{{number}}”",
+      "commitEmail": "Email contains “{{text}}”",
+      "commitText": "Contains “{{text}}”",
+      "chipPhone": "{{number}}…",
+      "textChipLabel": "Search: {{text}}. Back to the field",
+      "commit": "Add as a filter",
       "moreThanShown": "Showing the first {{count}} results. Narrow the search.",
       "status": {
         "pending": "Requested",

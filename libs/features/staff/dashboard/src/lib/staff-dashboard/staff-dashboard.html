@@ -318,6 +318,7 @@
       [unnamedClient]="dayWords().unnamedClient"
       [callingCode]="shopCallingCode"
       [locale]="content.locale()"
+      (visitPicked)="openFoundVisit($event)"
     />
     } @if (isGrid()) { @if (dayHealth().length > 0) {
     <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the

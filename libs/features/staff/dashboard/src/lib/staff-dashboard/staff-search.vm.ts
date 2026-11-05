@@ -90,6 +90,23 @@ export interface FilterChipVm {
   readonly active: boolean;
 }
 
+/** A typed text taken as a filter (Mail's «Subject contains …» token): its reading's glyph and its words. */
+export interface TextChipVm {
+  /** `TEXT:0` — its place among the taken texts. */
+  readonly id: string;
+  /** «+359 88 777…» · «ivan@» · «иван». */
+  readonly label: string;
+  readonly glyph: UiIconName;
+  /** «Търсене: иван. Върни в полето». */
+  readonly accessibleLabel: string;
+}
+
+/** The typed text, offered as a filter before it is taken. */
+export interface CommitRowVm {
+  readonly label: string;
+  readonly glyph: UiIconName;
+}
+
 /** One suggestion — a key chip over the field, or a row above the results; pressing it does `suggestAction`. */
 export interface SuggestionRowVm {
   /** `FIELD:BARBER`, `BARBER:ivan`, `REMOVE:BARBER`, `CALENDAR:DAY` — `data-suggestion`. */
@@ -167,8 +184,10 @@ export interface SearchSheetVm {
   readonly filters: readonly FilterChipVm[];
   readonly suggestions: SearchSuggestionsVm;
   readonly recents: readonly RecentVm[];
-  /** «Телефон +359 88 333…» — only when the text reads as a number. */
-  readonly phoneRow: string | null;
+  /** The texts taken as filters (Return or ✓), as chips before the filters, in the order taken. */
+  readonly texts: readonly TextChipVm[];
+  /** «Телефонът започва с „+359 88 777“» — the typed text, offered to be taken as a filter; null with nothing typed or a key open. */
+  readonly commitRow: CommitRowVm | null;
   /** The result groups: a heading and its event cards. */
   readonly groups: readonly VisitSectionVm[];
   /** «Махни филтрите» on an empty result with filters; else null. */

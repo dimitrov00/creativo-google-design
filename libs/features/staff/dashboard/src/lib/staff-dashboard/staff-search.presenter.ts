@@ -1,7 +1,7 @@
 import {
+  ClientQueryShape,
   DayBucket,
   MatchMode,
-  PhoneReadingKind,
   SearchFilter,
   SearchFilterField,
   SearchQuery,
@@ -41,7 +41,10 @@ import {
 } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
 import { formatWallClock } from '@creativo/ui/wall-clock';
-import { searchGlyphOf } from '../visit-editor/visit-client-row.presenter';
+import {
+  phoneAsTyped,
+  searchGlyphOf,
+} from '../visit-editor/visit-client-row.presenter';
 import {
   CalendarMode,
   SuggestAction,
@@ -55,6 +58,8 @@ import {
   SearchSheetState,
   type SearchSheetVm,
   type FilterChipVm,
+  type CommitRowVm,
+  type TextChipVm,
 } from './staff-search.vm';
 import type { StaffSearchWords } from './staff-search.words';
 
@@ -97,6 +102,8 @@ export interface SearchSheetInput {
   readonly typedText: string;
   /** The set being picked for an open many-valued key, before «Приложи»; null when none is ticked. */
   readonly draft: SearchFilter | null;
+  /** The texts taken as filters (Return or ✓), in the order taken. */
+  readonly committedTexts: readonly string[];
   /** The month open in the suggestions for a day or a span; null for none. */
   readonly calendarMode: CalendarMode | null;
   /** A span's first picked end; null before it. */
@@ -755,6 +762,73 @@ function namesText(label: string, text: string): boolean {
   );
 }
 
+/**
+ * How a text reads — the add-client page's reading (`ClientQuerySystem`): a
+ * number shown as it would be dialled («088 77» → «+359 88 77»), an
+ * e-mail or words as typed — and the glyph that says which.
+ */
+function readingOf(
+  text: string,
+  input: SearchSheetInput,
+): {
+  readonly shape: ClientQueryShape;
+  readonly shown: string;
+  readonly glyph: UiIconName;
+} {
+  const parsed = ClientQuerySystem.parse(text);
+  const shape = parsed.clientQueryShape;
+  return {
+    shape,
+    shown:
+      shape === ClientQueryShape.Phone
+        ? phoneAsTyped(parsed, input.callingCode)
+        : text,
+    glyph: searchGlyphOf(shape),
+  };
+}
+
+/** The taken texts as chips, in the order taken. */
+function textChipsOf(input: SearchSheetInput): readonly TextChipVm[] {
+  return input.committedTexts.map((text, at) => {
+    const reading = readingOf(text, input);
+    const label =
+      reading.shape === ClientQueryShape.Phone
+        ? input.words.chipPhone(reading.shown)
+        : reading.shown;
+    return {
+      id: `TEXT:${at}`,
+      label,
+      glyph: reading.glyph,
+      accessibleLabel: input.words.textChipLabel(label),
+    };
+  });
+}
+
+/** The typed text, offered to be taken as a filter (Mail's «Subject contains …»). */
+function commitRowOf(input: SearchSheetInput): CommitRowVm | null {
+  const text = input.typedText.trim();
+  if (text === '' || input.openField !== null) return null;
+  const reading = readingOf(text, input);
+  switch (reading.shape) {
+    case ClientQueryShape.Phone:
+      return {
+        label: input.words.commitPhone(reading.shown),
+        glyph: reading.glyph,
+      };
+    case ClientQueryShape.Email:
+      return {
+        label: input.words.commitEmail(reading.shown),
+        glyph: reading.glyph,
+      };
+    case ClientQueryShape.Name:
+    case ClientQueryShape.Empty:
+      return {
+        label: input.words.commitText(reading.shown),
+        glyph: reading.glyph,
+      };
+  }
+}
+
 function recentsOf(input: SearchSheetInput): readonly RecentVm[] {
   return input.recents.map((query, index) => {
     const parts = [
@@ -900,25 +974,19 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     input.shopNow,
   );
   const suggestions = suggestionsOf(query, offered, input);
+  // What the FIELD's text reads as — the taken texts wear their own glyphs.
   const glyph = searchGlyphOf(
-    ClientQuerySystem.parse(query.searchText).clientQueryShape,
+    ClientQuerySystem.parse(input.typedText).clientQueryShape,
   );
   // With a key open the text narrows its values, and the field says so.
   const placeholder =
     input.openField !== null
       ? input.words.scopedPlaceholder(keyOf(input.openField, input.words))
-      : filters.length > 0
+      : filters.length > 0 || input.committedTexts.length > 0
         ? input.words.placeholderShort
         : input.words.placeholder;
-  const phoneRow =
-    read.queryPhone.phoneReadingKind === PhoneReadingKind.None
-      ? null
-      : input.words.phoneRow(
-          PhoneSystem.formatDraft(
-            `+${read.queryPhone.phoneReadingCandidates[0] as string}`,
-            null,
-          ).formatted,
-        );
+  const texts = textChipsOf(input);
+  const commitRow = commitRowOf(input);
   const footnotes: string[] = [];
   if (input.capped) footnotes.push(input.words.truncated);
   if (input.stale) footnotes.push(input.words.stale);
@@ -931,7 +999,8 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
       filters,
       suggestions,
       recents: recentsOf(input),
-      phoneRow,
+      texts,
+      commitRow,
       groups: [],
       clearFilters: null,
       footnotes,
@@ -952,7 +1021,8 @@ export function searchSheetVm(input: SearchSheetInput): SearchSheetVm {
     filters,
     suggestions,
     recents: [],
-    phoneRow,
+    texts,
+    commitRow,
     groups: groupsOf(visits, read, input),
     clearFilters:
       kept.length === 0 && query.searchFilters.length > 0

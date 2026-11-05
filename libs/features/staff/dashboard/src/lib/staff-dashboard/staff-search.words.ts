@@ -44,8 +44,18 @@ export interface StaffSearchWords {
   readonly clearFilters: string;
   readonly truncated: string;
   readonly stale: string;
-  /** «Телефон +359 88 333» — `{{number}}` is already formatted. */
-  readonly phoneRow: (number: string) => string;
+  /** «Телефонът започва с „+359 88 333“» — `{{number}}` is already formatted. */
+  readonly commitPhone: (number: string) => string;
+  /** «Имейлът съдържа „ivan@“». */
+  readonly commitEmail: (text: string) => string;
+  /** «Съдържа „иван“». */
+  readonly commitText: (text: string) => string;
+  /** «+359 88 333…» — a taken number reads as a start. */
+  readonly chipPhone: (number: string) => string;
+  /** «Търсене: иван. Върни в полето». */
+  readonly textChipLabel: (text: string) => string;
+  /** «Добави като филтър» — the ✓ beside the ✕. */
+  readonly commit: string;
   /** «Бръснар: Иван, Стефан. Промени филтъра». */
   readonly tokenLabel: (key: string, value: string) => string;
   /** «Бръснар: „ни“» — the open chip, with what is typed into it. */
@@ -104,7 +114,12 @@ export function staffSearchWordsOf(
     clearFilters: translate('staff.search.clearFilters'),
     truncated: translate('staff.day.searchTruncated'),
     stale: translate('staff.day.searchStale'),
-    phoneRow: (number) => translate('staff.search.phoneRow', { number }),
+    commitPhone: (number) => translate('staff.search.commitPhone', { number }),
+    commitEmail: (text) => translate('staff.search.commitEmail', { text }),
+    commitText: (text) => translate('staff.search.commitText', { text }),
+    chipPhone: (number) => translate('staff.search.chipPhone', { number }),
+    textChipLabel: (text) => translate('staff.search.textChipLabel', { text }),
+    commit: translate('staff.search.commit'),
     tokenLabel: (key, value) =>
       translate('staff.search.tokenLabel', { key, value }),
     tokenBuilding: (key) => translate('staff.search.tokenBuilding', { key }),

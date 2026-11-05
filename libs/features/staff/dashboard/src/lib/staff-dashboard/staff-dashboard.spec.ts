@@ -200,8 +200,8 @@ import {
   type DayRowVm,
   DiscardTarget,
   StaffDashboard,
-  reversibleSave,
 } from './staff-dashboard';
+import { reversibleSave } from './staff-day-save';
 import {
   StaffVisitEditor,
   snapshotCommitOf,
@@ -4150,6 +4150,26 @@ describe('StaffDashboard', () => {
     expect(cards[0]?.querySelector('mark')?.textContent).toBe('Георги');
   });
 
+  it('opens a found visit’s sheet OVER the search, and closing it comes back to the results', async () => {
+    const input = await openSearchSheet();
+    await typeInSearch(input, 'георги');
+    (
+      host().querySelector(
+        'lib-staff-search-sheet lib-visit-row button',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('ui-sheet#staff-visit-sheet[data-presented]'),
+    ).not.toBeNull();
+    expect(host().querySelector('lib-staff-search-sheet')).not.toBeNull();
+    expect(
+      host().querySelectorAll('lib-staff-search-sheet lib-visit-row').length,
+    ).toBe(1);
+  });
+
   it("finds a phone by bare digits, across the formatter's spaces", async () => {
     const input = await openSearchSheet();
     // Nobody types a number with the formatter's spaces in it.
@@ -4159,7 +4179,7 @@ describe('StaffDashboard', () => {
       host().querySelectorAll('lib-staff-search-sheet lib-visit-row').length,
     ).toBe(1);
     expect(
-      host().querySelector('[data-testid="staff-search-phone-row"]'),
+      host().querySelector('[data-testid="staff-search-commit-row"]'),
     ).not.toBeNull();
   });
 
@@ -5537,31 +5557,33 @@ describe('StaffDashboard', () => {
     expect(
       host().querySelector('[data-testid="staff-search-input-dismiss"]'),
     ).not.toBeNull();
-    // The large title stays, as Photos' «Search» does; the header is bare.
+    // The bar's compact title from the start (the sheets' own), no ✕ up
+    // there: the search ends from the ✕ beside its field.
     expect(
-      host()
-        .querySelector('[data-testid="staff-search-headline"]')
-        ?.hasAttribute('data-folded'),
-    ).toBe(false);
+      host().querySelector('[data-testid="staff-search-bar-title"]'),
+    ).not.toBeNull();
 
     input.value = 'георги';
     input.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     await afterTypingPause();
 
-    // Text that names no filter leaves no suggestion and no key…
+    // Text that names no filter leaves no suggestion and no key — only the
+    // offer to take the text itself as a filter (Mail's «… contains»)…
     expect(
       host().querySelector('[data-testid="staff-search-suggestion"]'),
     ).toBeNull();
+    expect(
+      host().querySelector('[data-testid="staff-search-commit-row"]'),
+    ).not.toBeNull();
     input.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
     );
     fixture.detectChanges();
-    // …and ↓ lands on the first card, a control inside the results list.
-    expect(
-      document.activeElement?.closest('lib-staff-search-sheet lib-visit-list'),
-    ).not.toBeNull();
-    expect(document.activeElement?.tagName).toBe('BUTTON');
+    // …and ↓ lands on it, the first thing to press above the cards.
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-search-commit-row',
+    );
   });
 
   it('hands the omnibox the book — everyone in the loaded days, as their last booking wrote them', async () => {

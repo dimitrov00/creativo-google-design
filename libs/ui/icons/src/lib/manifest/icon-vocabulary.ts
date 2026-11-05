@@ -241,6 +241,8 @@ export const UI_ICON_REGISTRY = {
    *  Distinct from `calendar.flexible`'s `manage_search`, which promises a
    *  search ACROSS DAYS rather than a plain lookup. */
   'action.search': 'search',
+  /** Take what is typed as it stands — the search's ✓ beside its ✕, Return's twin. */
+  'action.apply': 'check',
   /** A search run before, offered to run again — Mail's «Recent Searches» rows. */
   'search.recent': 'history',
 
