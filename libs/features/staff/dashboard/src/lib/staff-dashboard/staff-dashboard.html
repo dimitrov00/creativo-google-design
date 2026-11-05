@@ -318,6 +318,7 @@
       [unnamedClient]="dayWords().unnamedClient"
       [callingCode]="shopCallingCode"
       [locale]="content.locale()"
+      [services]="catalog.serviceVms()"
       (visitPicked)="openFoundVisit($event)"
     />
     } @if (isGrid()) { @if (dayHealth().length > 0) {

@@ -4,6 +4,7 @@ import type {
   LocalDate,
   ServiceId,
 } from '@core/primitives';
+import { ServiceVariantPick } from './service-variant-pick.data';
 
 /**
  * Which kind a schedule-search filter is — the discriminator
@@ -37,6 +38,33 @@ function union<T>(a: readonly T[], b: readonly T[]): readonly T[] {
   return out;
 }
 
+/** The picks of `a` and `b`, by key (first seen first). */
+function unionPicks(
+  a: readonly ServiceVariantPick[],
+  b: readonly ServiceVariantPick[],
+): readonly ServiceVariantPick[] {
+  const out: ServiceVariantPick[] = [...a];
+  const keys = a.map(ServiceVariantPick.keyOf);
+  for (let i = 0; i < b.length; i++) {
+    const pick = b[i] as ServiceVariantPick;
+    const key = ServiceVariantPick.keyOf(pick);
+    if (!keys.includes(key)) {
+      out.push(pick);
+      keys.push(key);
+    }
+  }
+  return out;
+}
+
+/** The picks of `a` not in `b`, by key. */
+function withoutPicks(
+  a: readonly ServiceVariantPick[],
+  b: readonly ServiceVariantPick[],
+): readonly ServiceVariantPick[] {
+  const gone = b.map(ServiceVariantPick.keyOf);
+  return a.filter((pick) => !gone.includes(ServiceVariantPick.keyOf(pick)));
+}
+
 function without<T>(a: readonly T[], b: readonly T[]): readonly T[] {
   const out: T[] = [];
   for (let i = 0; i < a.length; i++) {
@@ -50,8 +78,20 @@ export const SearchFilter = {
   barber(filterBarberIds: readonly BarberId[]): SearchFilter.Barber {
     return { searchFilterField: SearchFilterField.Barber, filterBarberIds };
   },
-  service(filterServiceIds: readonly ServiceId[]): SearchFilter.Service {
-    return { searchFilterField: SearchFilterField.Service, filterServiceIds };
+  /**
+   * Services, whole, and service VARIANTS (a variant of a service is picked
+   * on its own — «Подстрижка с ножица · Дълга»): a visit matches when one of
+   * its seats is one of the services, or one of the variants of its service.
+   */
+  service(
+    filterServiceIds: readonly ServiceId[],
+    filterVariants: readonly ServiceVariantPick[],
+  ): SearchFilter.Service {
+    return {
+      searchFilterField: SearchFilterField.Service,
+      filterServiceIds,
+      filterVariants,
+    };
   },
   bookingStatuses(
     filterBookingStatuses: readonly BookingStatus[],
@@ -106,6 +146,7 @@ export const SearchFilter = {
     ) {
       return SearchFilter.service(
         union(current.filterServiceIds, next.filterServiceIds),
+        unionPicks(current.filterVariants, next.filterVariants),
       );
     }
     if (
@@ -137,8 +178,17 @@ export const SearchFilter = {
       current.searchFilterField === SearchFilterField.Service &&
       removed.searchFilterField === SearchFilterField.Service
     ) {
-      const left = without(current.filterServiceIds, removed.filterServiceIds);
-      return left.length === 0 ? null : SearchFilter.service(left);
+      const services = without(
+        current.filterServiceIds,
+        removed.filterServiceIds,
+      );
+      const variants = withoutPicks(
+        current.filterVariants,
+        removed.filterVariants,
+      );
+      return services.length === 0 && variants.length === 0
+        ? null
+        : SearchFilter.service(services, variants);
     }
     if (
       current.searchFilterField === SearchFilterField.Status &&
@@ -163,6 +213,7 @@ export namespace SearchFilter {
   export type Service = {
     readonly searchFilterField: typeof SearchFilterField.Service;
     readonly filterServiceIds: readonly ServiceId[];
+    readonly filterVariants: readonly ServiceVariantPick[];
   };
   export type Status = {
     readonly searchFilterField: typeof SearchFilterField.Status;

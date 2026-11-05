@@ -247,6 +247,7 @@ export * from './service-status.data';
 export * from './service-terms-input.data';
 export * from './service-terms.data';
 export * from './service-variant.data';
+export * from './service-variant-pick.data';
 export * from './session-kind.data';
 export * from './session-readiness.data';
 export * from './settled-verdict.data';

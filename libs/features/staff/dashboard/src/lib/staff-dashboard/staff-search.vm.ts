@@ -4,7 +4,7 @@ import type {
   SearchQuery,
   TextSegment,
 } from '@core/components';
-import type { LocalDate } from '@core/primitives';
+import type { LocalDate, ServiceId } from '@core/primitives';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { VisitSectionVm } from '@creativo/features/shared/visits';
 
@@ -157,8 +157,26 @@ export interface SearchSuggestionsVm {
   /** The rows above the results. */
   readonly sections: readonly SuggestionSectionVm[];
   readonly calendar: SuggestionCalendarVm | null;
+  /** A service's values as a grid of covers (variants inline, grouped by service); none for any other key. */
+  readonly tiles: readonly ServiceTileVm[];
   /** «Приложи (2)» — the bar's primary while a many-valued key's set is being picked; null otherwise. */
   readonly apply: SuggestionApplyVm | null;
+}
+
+/** One service value as a cover tile (the booking catalogue's `cr-service-card`), ticked like a checkbox. */
+export interface ServiceTileVm {
+  /** `SERVICE:…` / `VARIANT:…` — `data-suggestion`. */
+  readonly id: string;
+  /** The service the cover is of. */
+  readonly serviceId: ServiceId;
+  /** «Дълга» for a variant, the service's own name otherwise. */
+  readonly name: string;
+  /** The service a variant belongs to («Подстрижка с ножица»); '' for a plain service. */
+  readonly meta: string;
+  readonly coverSrc: string | null;
+  readonly checked: boolean;
+  /** The row it stands for — what pressing it does. */
+  readonly row: SuggestionRowVm;
 }
 
 /** The bar's «Приложи» for the set being picked. */

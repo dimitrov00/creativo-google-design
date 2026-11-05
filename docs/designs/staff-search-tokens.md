@@ -280,6 +280,26 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
   glyph reads only what is in the field. ↓ from the field lands on the
   offer first.
 
+### Services as a gallery, variants inline (2026-11-05, sixth pass)
+
+- **«Услуга»'s values are a grid of covers, three across** — the booking
+  catalogue's own card (`cr-service-card`: the cover, the placeholder glyph
+  when there is none, the corner ring as the checkbox), ticked into the set
+  «Приложи» applies. Grouped by service: a service offered at variants
+  stands as its VARIANTS («Дълга коса», its service under it), one after
+  another, then the next service; a plain service stands as itself.
+- **A variant is filtered as itself, with its service.** Variant ids are
+  unique only within their service (the seed's cuts each have `short` and
+  `long`), so a pick is the pair `ServiceVariantPick { serviceId,
+variantId }` (new component). The service filter holds services whole
+  and variant picks (`filterServiceIds`, `filterVariants`; one may be empty,
+  never both); the index folds each visit's picks and their keys; a visit
+  matches a service picked whole or one of its seats' service-and-variant
+  pairs; the window offers the pairs it reaches. The chip and a matched row
+  name a variant with its service («Подстрижка с ножица · Дълга коса»).
+- The catalogue reaches the sheet as the dashboard's `catalog.serviceVms()`
+  (covers, variants), read once per change into lookups.
+
 ### «Кога»: preset, day or range
 
 `VALUES` for «Кога» lists the presets that reach a visit: Днес, Утре, Вчера,

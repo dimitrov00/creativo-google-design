@@ -9,6 +9,7 @@ import {
   SearchFilter,
   SearchFilterField,
   SearchQuery,
+  ServiceVariantPick,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import {
@@ -16,6 +17,7 @@ import {
   BookingStatus,
   LocalDate,
   ServiceId,
+  ServiceVariantId,
 } from '@core/primitives';
 import { SearchIndexSystem, ZonedTimeSystem } from '@core/systems';
 import {
@@ -36,7 +38,11 @@ import {
   type VisitLookup,
 } from '@creativo/features/shared/visits';
 import { VisitPerspective } from '@creativo/features/shared/visits';
-import { type SearchSheetInput, searchSheetVm } from './staff-search.presenter';
+import {
+  type SearchServiceArt,
+  type SearchSheetInput,
+  searchSheetVm,
+} from './staff-search.presenter';
 import {
   CalendarMode,
   SuggestAction,
@@ -95,6 +101,21 @@ const LOOKUP: VisitLookup = {
   barberAvatarSrc: () => null,
   locationName: () => null,
   locationCount: 1,
+};
+
+const SHORT = ServiceVariantId.of('short');
+const LONG = ServiceVariantId.of('long');
+
+/** The catalogue's art: the classic cut is offered short and long; the fade has a cover and no variants. */
+const ART: SearchServiceArt = {
+  coverSrc: (id) => (id === FADE ? 'fade.jpg' : null),
+  variantsOf: (id) => (id === CUT ? [SHORT, LONG] : []),
+  variantName: (pick) =>
+    pick.serviceId === CUT
+      ? pick.variantId === SHORT
+        ? 'Къса коса'
+        : 'Дълга коса'
+      : null,
 };
 
 const day = (offset: number): LocalDate =>
@@ -159,6 +180,7 @@ function input(
     locale: lang === 'bg' ? 'bg-BG' : 'en-GB',
     callingCode: '359',
     lookup: LOOKUP,
+    serviceArt: ART,
     rowWords: visitWordsOf(translate, lang, VisitPerspective.Staff),
     words: staffSearchWordsOf(translate),
     clientNames: (v) => (v.contactName === null ? [] : [v.contactName]),
@@ -710,6 +732,56 @@ describe('searchSheetVm — the suggestions', () => {
       'A date range…',
       'Remove filter',
     ]);
+  });
+
+  it('lays a service’s values out as cover tiles, a service with variants as its variants, then the next service', () => {
+    const pool = [
+      visit('long', 1, {}, IVAN, CUT),
+      visit('fade', 2, {}, NIKO, FADE),
+    ].map((v, at) =>
+      at === 0
+        ? {
+            ...v,
+            seats: [
+              seatFixture({ barberId: IVAN, serviceId: CUT, variantId: LONG }),
+            ],
+          }
+        : v,
+    );
+    const index = SearchIndexSystem.build(pool, {
+      ...LABELS,
+      clientNames: (v) => (v.contactName === null ? [] : [v.contactName]),
+      serviceName: LOOKUP.serviceName.bind(LOOKUP),
+      barberName: LOOKUP.barberName.bind(LOOKUP),
+    });
+    const held = SearchQuery.withFilter(
+      SearchQuery.empty(),
+      SearchFilter.service([], [ServiceVariantPick.of(CUT, LONG)]),
+    );
+    const vm = searchSheetVm(
+      input('bg', held, {
+        pool,
+        index,
+        openField: SearchFilterField.Service,
+        draft: SearchFilter.service([], [ServiceVariantPick.of(CUT, LONG)]),
+      }),
+    );
+    // Tiles, not rows: no values section, «Махни филтъра» still last.
+    expect(vm.suggestions.sections.map((s) => s.id)).toEqual(['REMOVE']);
+    expect(
+      vm.suggestions.tiles.map((t) => [
+        t.id,
+        t.name,
+        t.meta,
+        t.coverSrc,
+        t.checked,
+      ]),
+    ).toEqual([
+      ['VARIANT:svc-classic-cut/long', 'Дълга коса', 'Класическо', null, true],
+      ['SERVICE:svc-fade', 'Фейд', '', 'fade.jpg', false],
+    ]);
+    // The chip names the variant with its service.
+    expect(vm.filters[0]?.label).toBe('Класическо · Дълга коса');
   });
 
   it('offers the date presets the window reaches, then a day and a span', () => {

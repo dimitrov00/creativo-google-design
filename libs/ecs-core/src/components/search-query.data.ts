@@ -4,10 +4,12 @@ import {
   LocalDate,
   Result,
   ServiceId,
+  ServiceVariantId,
   Tag,
 } from '@core/primitives';
 import { SearchQueryError } from '@core/errors';
 import { SearchFilter, SearchFilterField } from './search-filter.data';
+import { ServiceVariantPick } from './service-variant-pick.data';
 
 /**
  * A schedule search as data: the text as typed and the filters chosen. A
@@ -52,7 +54,7 @@ function keyOfFilter(filter: SearchFilter): string {
     case SearchFilterField.Barber:
       return `B:${sorted(filter.filterBarberIds)}`;
     case SearchFilterField.Service:
-      return `S:${sorted(filter.filterServiceIds)}`;
+      return `S:${sorted(filter.filterServiceIds)}|${sorted(filter.filterVariants.map(ServiceVariantPick.keyOf))}`;
     case SearchFilterField.Status:
       return `T:${sorted(filter.filterBookingStatuses)}`;
     case SearchFilterField.When:
@@ -77,8 +79,9 @@ function idsOf<T>(
   raw: unknown,
   path: string,
   parse: (id: string) => Result<T, unknown>,
+  mayBeEmpty = false,
 ): Result<readonly T[], SearchQueryError> {
-  if (!Array.isArray(raw) || raw.length === 0) {
+  if (!Array.isArray(raw) || (raw.length === 0 && !mayBeEmpty)) {
     return Result.err(SearchQueryError.invalid(path));
   }
   const out: T[] = [];
@@ -89,6 +92,34 @@ function idsOf<T>(
       return Result.err(SearchQueryError.invalid(`${path}[${i}]`));
     }
     out.push(parsed.value);
+  }
+  return Result.ok(out);
+}
+
+/** A stored list of variant picks — each `{ serviceId, variantId }` — possibly empty. */
+function picksOf(
+  raw: unknown,
+  path: string,
+): Result<readonly ServiceVariantPick[], SearchQueryError> {
+  if (!Array.isArray(raw)) return Result.err(SearchQueryError.invalid(path));
+  const out: ServiceVariantPick[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const pick: unknown = raw[i];
+    if (!isRecord(pick)) {
+      return Result.err(SearchQueryError.invalid(`${path}[${i}]`));
+    }
+    const service =
+      typeof pick['serviceId'] === 'string'
+        ? ServiceId.parse(pick['serviceId'])
+        : null;
+    const variant =
+      typeof pick['variantId'] === 'string'
+        ? ServiceVariantId.parse(pick['variantId'])
+        : null;
+    if (service === null || !service.ok || variant === null || !variant.ok) {
+      return Result.err(SearchQueryError.invalid(`${path}[${i}]`));
+    }
+    out.push(ServiceVariantPick.of(service.value, variant.value));
   }
   return Result.ok(out);
 }
@@ -106,12 +137,19 @@ function filterOf(
     return ids.ok ? Result.ok(SearchFilter.barber(ids.value)) : ids;
   }
   if (field === SearchFilterField.Service) {
+    // Services whole and variants, either list empty — never both.
     const ids = idsOf(
       raw['filterServiceIds'],
       `${path}.filterServiceIds`,
       (id) => ServiceId.parse(id),
+      true,
     );
-    return ids.ok ? Result.ok(SearchFilter.service(ids.value)) : ids;
+    if (!ids.ok) return ids;
+    const variants = picksOf(raw['filterVariants'], `${path}.filterVariants`);
+    if (!variants.ok) return variants;
+    return ids.value.length === 0 && variants.value.length === 0
+      ? Result.err(SearchQueryError.invalid(`${path}.filterServiceIds`))
+      : Result.ok(SearchFilter.service(ids.value, variants.value));
   }
   if (field === SearchFilterField.Status) {
     const statuses = raw['filterBookingStatuses'];

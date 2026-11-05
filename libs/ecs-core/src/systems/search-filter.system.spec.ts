@@ -4,6 +4,7 @@ import {
   SearchFilter,
   SearchFilterField,
   SearchWhenPreset,
+  ServiceVariantPick,
   type ShopNow,
 } from '@core/components';
 import {
@@ -11,6 +12,7 @@ import {
   BookingStatus,
   LocalDate,
   type ServiceId,
+  ServiceVariantId,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
 import {
@@ -18,8 +20,10 @@ import {
   FIXTURE_TODAY,
   SEARCH_BARBERS,
   SEARCH_SERVICES,
+  appointmentFixture,
   deepFreeze,
   searchWindowFixture,
+  seatFixture,
 } from '@core/testing';
 import { PhoneSystem } from './phone.system';
 import { SearchFilterSystem } from './search-filter.system';
@@ -63,8 +67,15 @@ function bruteKeep(
             filter.filterBarberIds.includes(id),
           );
         case SearchFilterField.Service:
-          return visit.seats.some((seat) =>
-            filter.filterServiceIds.includes(seat.serviceId),
+          return visit.seats.some(
+            (seat) =>
+              filter.filterServiceIds.includes(seat.serviceId) ||
+              (seat.variantId !== null &&
+                filter.filterVariants.some(
+                  (pick) =>
+                    pick.serviceId === seat.serviceId &&
+                    pick.variantId === seat.variantId,
+                )),
           );
         case SearchFilterField.Status:
           return filter.filterBookingStatuses.includes(visit.bookingStatus);
@@ -155,7 +166,7 @@ describe('SearchFilterSystem.keep — the scan', () => {
     );
     const filter = fc.constantFrom<SearchFilter>(
       SearchFilter.barber([IVAN]),
-      SearchFilter.service([SEARCH_SERVICES[1]!.id]),
+      SearchFilter.service([SEARCH_SERVICES[1]!.id], []),
       SearchFilter.bookingStatuses([BookingStatus.Completed]),
       SearchFilter.note(),
       SearchFilter.when(FIXTURE_TODAY, LocalDate.addDays(FIXTURE_TODAY, 30)),
@@ -285,7 +296,7 @@ describe('SearchFilterSystem.suggestions — what can still narrow the search', 
       expect(
         SearchFilterSystem.keep(index, read('петър'), [
           ...filters,
-          SearchFilter.service([id as ServiceId]),
+          SearchFilter.service([id as ServiceId], []),
         ]).length,
       ).toBeGreaterThan(0);
     }
@@ -324,6 +335,7 @@ describe('SearchFilterSystem.suggestions — what can still narrow the search', 
     expect(none).toEqual({
       barberIds: [],
       serviceIds: [],
+      variants: [],
       bookingStatuses: [],
       whenPresets: [],
       hasNote: false,
@@ -391,6 +403,72 @@ describe('SearchFilterSystem.spanOf — two picked days', () => {
   });
 });
 
+describe('SearchFilterSystem — a service’s variants', () => {
+  const CUT = 'svc-cut' as ServiceId;
+  const CLASSIC = 'svc-classic' as ServiceId;
+  const LONG = ServiceVariantId.of('long');
+  const SHORT = ServiceVariantId.of('short');
+  const visits = [
+    appointmentFixture({
+      id: 'v-long' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CUT, variantId: LONG })],
+    }),
+    appointmentFixture({
+      id: 'v-short' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CUT, variantId: SHORT })],
+    }),
+    appointmentFixture({
+      id: 'v-plain' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CUT, variantId: null })],
+    }),
+    // Another service with a variant of the SAME id: never the cut's «long».
+    appointmentFixture({
+      id: 'v-classic-long' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CLASSIC, variantId: LONG })],
+    }),
+  ];
+  const folded = SearchIndexSystem.build(visits, {
+    clientNames: () => [],
+    serviceName: () => 'Подстрижка',
+    barberName: () => null,
+  });
+  const cutLong = ServiceVariantPick.of(CUT, LONG);
+  const cutShort = ServiceVariantPick.of(CUT, SHORT);
+
+  it('keeps a visit booked at a picked variant OF ITS SERVICE, and every visit of a service picked whole', () => {
+    expect(
+      SearchFilterSystem.keep(folded, read(''), [
+        SearchFilter.service([], [cutLong]),
+      ]),
+    ).toEqual([0]);
+    expect(
+      SearchFilterSystem.keep(folded, read(''), [
+        SearchFilter.service([], [cutLong, cutShort]),
+      ]),
+    ).toEqual([0, 1]);
+    expect(
+      SearchFilterSystem.keep(folded, read(''), [
+        SearchFilter.service([CUT], []),
+      ]),
+    ).toEqual([0, 1, 2]);
+  });
+
+  it('offers the variants the matching visits were booked at, each with its service, a picked one not hiding the others', () => {
+    const offered = SearchFilterSystem.suggestions(
+      folded,
+      read(''),
+      [SearchFilter.service([], [cutLong])],
+      NOW,
+    );
+    expect(offered.variants).toEqual([
+      cutLong,
+      cutShort,
+      ServiceVariantPick.of(CLASSIC, LONG),
+    ]);
+    expect(offered.serviceIds).toEqual([CUT, CLASSIC]);
+  });
+});
+
 describe('SearchFilterSystem.starters — what an untouched search offers', () => {
   const offered = (
     whenPresets: readonly SearchWhenPreset[],
@@ -398,6 +476,7 @@ describe('SearchFilterSystem.starters — what an untouched search offers', () =
   ) => ({
     barberIds,
     serviceIds: [],
+    variants: [],
     bookingStatuses: [],
     whenPresets,
     hasNote: false,

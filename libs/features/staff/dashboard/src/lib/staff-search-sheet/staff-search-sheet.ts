@@ -14,15 +14,21 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
 import {
+  LocalizedText,
   SearchFilter,
   SearchFilterField,
   SearchQuery,
+  ServiceVariantPick,
   type ShopNow,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
   type LocalDate,
+  Locale,
+  type ServiceId,
+  type ServiceVariantId,
+  Tag,
   type TimeZone,
 } from '@core/primitives';
 import {
@@ -48,7 +54,11 @@ import {
   UiMonthPicker,
   UiSearchField,
 } from '@creativo/ui/controls';
-import { UiFlow, UiStack } from '@creativo/ui/layout';
+import { UiFlow, UiGrid, UiStack } from '@creativo/ui/layout';
+import {
+  ServiceCardComponent,
+  type ServiceVm,
+} from '@creativo/features/shared/catalog';
 import {
   UiForegroundStyleDirective,
   UiTextDirective,
@@ -61,7 +71,10 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { guestLabelOf } from '../staff-dashboard/staff-day-guest.words';
-import { searchSheetVm } from '../staff-dashboard/staff-search.presenter';
+import {
+  type SearchServiceArt,
+  searchSheetVm,
+} from '../staff-dashboard/staff-search.presenter';
 import {
   CalendarMode,
   SuggestAction,
@@ -127,6 +140,8 @@ function deviceStorage(): Storage | null {
     UiButton,
     UiChip,
     UiFlow,
+    UiGrid,
+    ServiceCardComponent,
     UiForegroundStyleDirective,
     UiIcon,
     UiListGroup,
@@ -156,6 +171,8 @@ export class StaffSearchSheet {
   readonly callingCode = input.required<string>();
   /** The reader's locale (`en-GB`, `bg-BG`) for dates. */
   readonly locale = input.required<string>();
+  /** The catalogue's services (covers, variants) — the service grid's art. */
+  readonly services = input<readonly ServiceVm[]>([]);
   /** A card pressed: the page opens that visit's sheet OVER the search, as the schedule does. */
   readonly visitPicked = output<AppointmentId>();
 
@@ -242,6 +259,39 @@ export class StaffSearchSheet {
     };
   });
 
+  /** The catalogue read once per change into lookups the presenter asks per tile. */
+  private readonly serviceArt = computed<SearchServiceArt>(() => {
+    this.copyTable();
+    // The active language read at the edge as a Locale (exact match).
+    const active = this.transloco.getActiveLang();
+    const lang = Tag.has(Locale, active) ? active : Locale.Bg;
+    const covers = new Map<ServiceId, string>();
+    const variants = new Map<ServiceId, readonly ServiceVariantId[]>();
+    const variantNames = new Map<string, string>();
+    for (const service of this.services()) {
+      if (service.coverSrc !== undefined)
+        covers.set(service.id, service.coverSrc);
+      variants.set(
+        service.id,
+        service.variants.map((variant) => variant.id),
+      );
+      for (const variant of service.variants) {
+        variantNames.set(
+          ServiceVariantPick.keyOf(
+            ServiceVariantPick.of(service.id, variant.id),
+          ),
+          LocalizedText.pick(variant.name, lang),
+        );
+      }
+    }
+    return {
+      coverSrc: (id) => covers.get(id) ?? null,
+      variantsOf: (id) => variants.get(id) ?? [],
+      variantName: (pick) =>
+        variantNames.get(ServiceVariantPick.keyOf(pick)) ?? null,
+    };
+  });
+
   /** The window folded once, whenever it is replaced — never per keystroke. */
   private readonly index = computed(() =>
     SearchIndexSystem.build(this.store.pool(), this.labels()),
@@ -270,6 +320,7 @@ export class StaffSearchSheet {
       locale: this.locale(),
       callingCode: this.callingCode(),
       lookup: this.catalog(),
+      serviceArt: this.serviceArt(),
       rowWords: this.rowWords(),
       words: this.words(),
       clientNames: labels.clientNames,

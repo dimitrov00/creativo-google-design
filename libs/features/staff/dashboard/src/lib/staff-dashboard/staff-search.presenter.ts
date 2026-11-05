@@ -6,6 +6,7 @@ import {
   SearchFilterField,
   SearchQuery,
   SearchWhenPreset,
+  ServiceVariantPick,
   type ShopNow,
   type TextSegment,
 } from '@core/components';
@@ -15,6 +16,7 @@ import {
   type BookingStatus,
   type LocalDate,
   type ServiceId,
+  type ServiceVariantId,
   type TimeZone,
 } from '@core/primitives';
 import {
@@ -59,6 +61,7 @@ import {
   type SearchSheetVm,
   type FilterChipVm,
   type CommitRowVm,
+  type ServiceTileVm,
   type TextChipVm,
 } from './staff-search.vm';
 import type { StaffSearchWords } from './staff-search.words';
@@ -71,6 +74,16 @@ import type { StaffSearchWords } from './staff-search.words';
  * them — the chosen filters as chips, the suggested keys and values, headings, the
  * event cards' matched lines — and marks the runs `TextMatchSystem` found.
  */
+
+/** The catalogue's covers and variants, for the service grid (built from the catalogue's service view models). */
+export interface SearchServiceArt {
+  /** The service's cover, or null for the placeholder. */
+  readonly coverSrc: (id: ServiceId) => string | null;
+  /** The variants a service is offered at, in the catalogue's order; none for a plain service. */
+  readonly variantsOf: (id: ServiceId) => readonly ServiceVariantId[];
+  /** «Дълга коса» — a variant's name, by its service AND its id. */
+  readonly variantName: (pick: ServiceVariantPick) => string | null;
+}
 
 /** What the sheet is worded from. */
 export interface SearchSheetInput {
@@ -88,6 +101,7 @@ export interface SearchSheetInput {
   /** The shop's dial code: `088…` is read as `359 88…`. */
   readonly callingCode: string;
   readonly lookup: VisitLookup;
+  readonly serviceArt: SearchServiceArt;
   readonly rowWords: VisitBuilderWords;
   readonly words: StaffSearchWords;
   /** Every name a visit is findable by as a client (contact, guests, companions). */
@@ -116,7 +130,10 @@ function singleValues(filter: SearchFilter): readonly SearchFilter[] {
     case SearchFilterField.Barber:
       return filter.filterBarberIds.map((id) => singleBarber(id));
     case SearchFilterField.Service:
-      return filter.filterServiceIds.map((id) => singleService(id));
+      return [
+        ...filter.filterServiceIds.map((id) => singleService(id)),
+        ...filter.filterVariants.map((pick) => singleVariant(pick)),
+      ];
     case SearchFilterField.Status:
       return filter.filterBookingStatuses.map((status) => singleStatus(status));
     case SearchFilterField.When:
@@ -129,10 +146,10 @@ const singleBarber = (id: BarberId): SearchFilter => ({
   searchFilterField: SearchFilterField.Barber,
   filterBarberIds: [id],
 });
-const singleService = (id: ServiceId): SearchFilter => ({
-  searchFilterField: SearchFilterField.Service,
-  filterServiceIds: [id],
-});
+const singleService = (id: ServiceId): SearchFilter =>
+  SearchFilter.service([id], []);
+const singleVariant = (pick: ServiceVariantPick): SearchFilter =>
+  SearchFilter.service([], [pick]);
 const singleStatus = (status: BookingStatus): SearchFilter => ({
   searchFilterField: SearchFilterField.Status,
   filterBookingStatuses: [status],
@@ -158,11 +175,23 @@ function labelOf(filter: SearchFilter, input: SearchSheetInput): string {
         input.lookup.barberName(filter.filterBarberIds[0] as BarberId) ??
         input.rowWords.barberRole
       );
-    case SearchFilterField.Service:
-      return (
-        input.lookup.serviceName(filter.filterServiceIds[0] as ServiceId) ??
-        input.rowWords.unknownService
-      );
+    case SearchFilterField.Service: {
+      const variant = filter.filterVariants[0];
+      if (variant === undefined) {
+        return (
+          input.lookup.serviceName(filter.filterServiceIds[0] as ServiceId) ??
+          input.rowWords.unknownService
+        );
+      }
+      // A variant names its service too: «Подстрижка с ножица · Дълга».
+      const serviceName =
+        input.lookup.serviceName(variant.serviceId) ??
+        input.rowWords.unknownService;
+      const variantName = input.serviceArt.variantName(variant);
+      return variantName === null
+        ? serviceName
+        : `${serviceName} · ${variantName}`;
+    }
     case SearchFilterField.Status:
       return input.words.statusWord(
         filter.filterBookingStatuses[0] as BookingStatus,
@@ -180,7 +209,9 @@ function filterKey(filter: SearchFilter): string {
     case SearchFilterField.Barber:
       return `BARBER:${filter.filterBarberIds[0]}`;
     case SearchFilterField.Service:
-      return `SERVICE:${filter.filterServiceIds[0]}`;
+      return filter.filterVariants[0] === undefined
+        ? `SERVICE:${filter.filterServiceIds[0]}`
+        : `VARIANT:${ServiceVariantPick.keyOf(filter.filterVariants[0])}`;
     case SearchFilterField.Status:
       return `STATUS:${filter.filterBookingStatuses[0]}`;
     case SearchFilterField.When:
@@ -441,7 +472,20 @@ function valuesOf(
       for (const id of offered.barberIds) add(singleBarber(id));
       break;
     case SearchFilterField.Service:
-      for (const id of offered.serviceIds) add(singleService(id));
+      // Grouped by service: a service offered at variants stands as its
+      // variants, one after another, then the next service.
+      for (const id of offered.serviceIds) {
+        const picks = input.serviceArt
+          .variantsOf(id)
+          .filter((variant) =>
+            offered.variants.some(
+              (pick) => pick.serviceId === id && pick.variantId === variant,
+            ),
+          )
+          .map((variant) => ServiceVariantPick.of(id, variant));
+        if (picks.length === 0) add(singleService(id));
+        else for (const pick of picks) add(singleVariant(pick));
+      }
       break;
     case SearchFilterField.Status:
       for (const status of offered.bookingStatuses) add(singleStatus(status));
@@ -557,6 +601,7 @@ function valueSuggestions(
       keys: [],
       sections: [],
       calendar,
+      tiles: [],
       apply: null,
     };
   }
@@ -587,13 +632,22 @@ function valueSuggestions(
       calendarRow(CalendarMode.Range, input),
     );
   }
-  const sections: SuggestionSectionVm[] = [
-    {
-      id: `VALUES:${field}`,
-      heading: keyOf(field, input.words),
-      rows,
-    },
-  ];
+  // A service's values are a GRID of covers (the booking catalogue's card),
+  // not rows; the key still heads them.
+  const tiles =
+    field === SearchFilterField.Service
+      ? rows.map((row) => serviceTileOf(row, input))
+      : [];
+  const sections: SuggestionSectionVm[] =
+    tiles.length > 0 || field === SearchFilterField.Service
+      ? []
+      : [
+          {
+            id: `VALUES:${field}`,
+            heading: keyOf(field, input.words),
+            rows,
+          },
+        ];
   if (held !== null) {
     sections.push({
       id: 'REMOVE',
@@ -621,6 +675,7 @@ function valueSuggestions(
     keys: [],
     sections,
     calendar: null,
+    tiles,
     apply: many
       ? {
           label:
@@ -676,6 +731,7 @@ function suggestionsOf(
       keys,
       sections: byKey('STARTERS', starters, input),
       calendar: null,
+      tiles: [],
       apply: null,
     };
   }
@@ -700,6 +756,7 @@ function suggestionsOf(
       .map((row) => marked(row, text)),
     sections: byKey('MATCHES', matched, input),
     calendar: null,
+    tiles: [],
     apply: null,
   };
 }
@@ -731,6 +788,32 @@ function byKey(
     }
   }
   return sections;
+}
+
+/** A service value as a cover tile: a variant names itself over its service, a plain service just itself. */
+function serviceTileOf(
+  row: SuggestionRowVm,
+  input: SearchSheetInput,
+): ServiceTileVm {
+  const filter = row.filter as SearchFilter.Service;
+  const variant = filter.filterVariants[0];
+  const service =
+    variant === undefined
+      ? (filter.filterServiceIds[0] as ServiceId)
+      : variant.serviceId;
+  const serviceName =
+    input.lookup.serviceName(service) ?? input.rowWords.unknownService;
+  const variantName =
+    variant === undefined ? null : input.serviceArt.variantName(variant);
+  return {
+    id: row.id,
+    serviceId: service,
+    name: variantName ?? serviceName,
+    meta: variantName === null ? '' : serviceName,
+    coverSrc: input.serviceArt.coverSrc(service),
+    checked: row.checked === true,
+    row,
+  };
 }
 
 /** A label as one unmarked run. */

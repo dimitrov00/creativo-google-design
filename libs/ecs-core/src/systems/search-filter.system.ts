@@ -3,6 +3,7 @@ import {
   SearchFilter,
   SearchFilterField,
   SearchWhenPreset,
+  ServiceVariantPick,
   type ShopNow,
 } from '@core/components';
 import {
@@ -25,6 +26,8 @@ import type { SearchIndex } from './search-index.system';
 export type SearchSuggestions = {
   readonly barberIds: readonly BarberId[];
   readonly serviceIds: readonly ServiceId[];
+  /** The variants the matching visits were booked at, with their services — a service's own values, offered on their own. */
+  readonly variants: readonly ServiceVariantPick[];
   readonly bookingStatuses: readonly BookingStatus[];
   readonly whenPresets: readonly SearchWhenPreset[];
   /** Some matching visit has a note. */
@@ -44,6 +47,7 @@ const PRESET_ORDER: readonly SearchWhenPreset[] = [
 type Chosen = {
   readonly barberIds: readonly BarberId[] | null;
   readonly serviceIds: readonly ServiceId[] | null;
+  readonly variantKeys: readonly string[];
   readonly bookingStatuses: readonly BookingStatus[] | null;
   readonly fromDate: LocalDate | null;
   readonly toDate: LocalDate | null;
@@ -53,6 +57,7 @@ type Chosen = {
 function chosenOf(filters: readonly SearchFilter[]): Chosen {
   let barberIds: readonly BarberId[] | null = null;
   let serviceIds: readonly ServiceId[] | null = null;
+  let variantKeys: readonly string[] = [];
   let bookingStatuses: readonly BookingStatus[] | null = null;
   let fromDate: LocalDate | null = null;
   let toDate: LocalDate | null = null;
@@ -65,6 +70,7 @@ function chosenOf(filters: readonly SearchFilter[]): Chosen {
         break;
       case SearchFilterField.Service:
         serviceIds = filter.filterServiceIds;
+        variantKeys = filter.filterVariants.map(ServiceVariantPick.keyOf);
         break;
       case SearchFilterField.Status:
         bookingStatuses = filter.filterBookingStatuses;
@@ -78,7 +84,15 @@ function chosenOf(filters: readonly SearchFilter[]): Chosen {
         break;
     }
   }
-  return { barberIds, serviceIds, bookingStatuses, fromDate, toDate, hasNote };
+  return {
+    barberIds,
+    serviceIds,
+    variantKeys,
+    bookingStatuses,
+    fromDate,
+    toDate,
+    hasNote,
+  };
 }
 
 /** One bit per kind, set when a visit FAILS that kind's filter. */
@@ -125,9 +139,12 @@ function failsOf(index: SearchIndex, chosen: Chosen, at: number): number {
   ) {
     fails |= FAILS_BARBER;
   }
+  // A service filter is its services whole OR its variants: a visit passes
+  // on either.
   if (
     chosen.serviceIds !== null &&
-    !anyIn(index.serviceIds[at] as readonly ServiceId[], chosen.serviceIds)
+    !anyIn(index.serviceIds[at] as readonly ServiceId[], chosen.serviceIds) &&
+    !anyIn(index.variantKeys[at] as readonly string[], chosen.variantKeys)
   ) {
     fails |= FAILS_SERVICE;
   }
@@ -201,6 +218,8 @@ export const SearchFilterSystem = {
     });
     const barberIds: BarberId[] = [];
     const serviceIds: ServiceId[] = [];
+    const variants: ServiceVariantPick[] = [];
+    const variantKeys: string[] = [];
     const bookingStatuses: BookingStatus[] = [];
     const reached = new Set<SearchWhenPreset>();
     let hasNote = false;
@@ -216,6 +235,13 @@ export const SearchFilterSystem = {
         const held = index.serviceIds[at] as readonly ServiceId[];
         for (let s = 0; s < held.length; s++)
           pushOnce(serviceIds, held[s] as ServiceId);
+        const picks = index.variants[at] as readonly ServiceVariantPick[];
+        const keys = index.variantKeys[at] as readonly string[];
+        for (let v = 0; v < picks.length; v++) {
+          if (variantKeys.includes(keys[v] as string)) continue;
+          variantKeys.push(keys[v] as string);
+          variants.push(picks[v] as ServiceVariantPick);
+        }
       }
       if ((fails & ~FAILS_STATUS) === 0) {
         pushOnce(bookingStatuses, index.bookingStatus[at] as BookingStatus);
@@ -232,6 +258,7 @@ export const SearchFilterSystem = {
     return {
       barberIds,
       serviceIds,
+      variants,
       bookingStatuses,
       whenPresets: PRESET_ORDER.filter((preset) => reached.has(preset)),
       hasNote,
