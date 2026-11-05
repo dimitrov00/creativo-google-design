@@ -70,28 +70,43 @@
     </ui-stack>
   </sc-demo>
 
-  <sc-demo scTitle="With chips above and a ✕ beside">
+  <sc-demo scTitle="On the floor: chips above, a ✕ beside, a card over it">
     <ng-container scAbout>
-      The floor's anatomy (iOS 26 Mail and Photos): content projected with
-      <code>uiSearchAccessory</code> rides above the field, and
-      <code>uiDismissLabel</code> puts the ✕ that ends the search beside it.
-      With <code>uiPinned</code> and <code>uiPinEdge="bottom"</code> the band
-      sticks to a sheet's floor, over the keyboard — the schedule search.
+      The floor's anatomy (iOS 26 Mail and Photos). The field does not dock
+      itself: it rides a <code>ui-page-action-bar</code> as its
+      <code>uiFill</code>, at <code>uiControlSize="large"</code> beside the
+      bar's other controls. Content projected with
+      <code>uiSearchAccessory</code> rides above the field,
+      <code>uiDismissLabel</code> puts the ✕ that ends the search beside it, and
+      <code>uiDropdownPlacement="above"</code> opens the dropdown over it,
+      hugging its rows — here while the field is focused.
     </ng-container>
-    <ui-search-field
-      uiPlaceholder="Търси…"
-      uiClearLabel="Изчисти търсенето"
-      uiDismissLabel="Затвори"
-      [uiValue]="docked()"
-      (uiInput)="docked.set($event)"
-      (uiDismiss)="docked.set('')"
-    >
-      <ui-scroll-row uiSearchAccessory uiSpacing="compact" uiSnap="none">
-        <button type="button" uiChip [uiToggle]="false">Кога</button>
-        <button type="button" uiChip [uiToggle]="false">Бръснар</button>
-        <button type="button" uiChip [uiToggle]="false">Услуга</button>
-      </ui-scroll-row>
-    </ui-search-field>
+    <div class="search-field__dropdown-demo search-field__floor-demo">
+      <ui-search-field
+        uiControlSize="large"
+        uiPlaceholder="Търси…"
+        uiClearLabel="Изчисти търсенето"
+        uiDismissLabel="Затвори"
+        uiDropdownLabel="Филтри"
+        uiDropdownPlacement="above"
+        [uiValue]="docked()"
+        [uiDropdownOpen]="dockedFocused()"
+        (uiInput)="docked.set($event)"
+        (uiFocusChange)="dockedFocused.set($event)"
+        (uiEscape)="dockedFocused.set(false)"
+        (uiDismiss)="docked.set('')"
+      >
+        <ui-scroll-row uiSearchAccessory uiSpacing="compact" uiSnap="none">
+          <button type="button" uiChip [uiSelected]="true" [uiToggle]="false">
+            Днес
+          </button>
+        </ui-scroll-row>
+        <div uiSearchDropdown class="search-field__dropdown-rows">
+          <button type="button">Бръснар</button>
+          <button type="button">Услуга</button>
+        </div>
+      </ui-search-field>
+    </div>
   </sc-demo>
 
   <sc-demo scTitle="With a dropdown">

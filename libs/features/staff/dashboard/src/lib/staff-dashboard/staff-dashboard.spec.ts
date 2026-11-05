@@ -4163,8 +4163,14 @@ describe('StaffDashboard', () => {
     ).not.toBeNull();
   });
 
-  it('offers the keys a filter is made of over the field, before anything is typed', async () => {
+  it('offers the keys a filter is made of in a card over the field while it has the focus', async () => {
     await openSearchSheet();
+    (
+      host().querySelector(
+        '[data-testid="staff-search-input"]',
+      ) as HTMLInputElement
+    ).focus();
+    fixture.detectChanges();
     expect(
       host().querySelectorAll(
         '[data-testid="staff-search-keys"] [data-testid="staff-search-suggestion"]',
@@ -5522,8 +5528,11 @@ describe('StaffDashboard', () => {
     const input = host().querySelector(
       '[data-testid="staff-search-input"]',
     ) as HTMLInputElement;
+    // The field rides the page's own bottom bar, at its rung.
     expect(
-      input.closest('ui-search-field[data-pinned][data-pin-edge="bottom"]'),
+      input.closest(
+        'ui-page-action-bar[data-avoids-keyboard] > ui-search-field[data-control-size="large"]',
+      ),
     ).not.toBeNull();
     expect(
       host().querySelector('[data-testid="staff-search-input-dismiss"]'),

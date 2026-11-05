@@ -302,10 +302,13 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
  * content stopped, mid-screen, with empty sheet beneath it (owner,
  * 2026-09-15: "why is this not fixed bottom?"). Scoped by `:has()` to the
  * sheets that carry such a bar, so every other sheet's block flow stays
- * exactly as it was; the sticky chrome keeps its row at the top. */
+ * exactly as it was; the sticky chrome keeps its row at the top. A
+ * full-screen sheet that is a page (the schedule search, 2026-11-05) docks
+ * the PAGE's bar instead, `ui-page-action-bar`, as the scroller's own last
+ * child — the bar the page it grew from wears. */
 .modal-sheet__scroll:is(
   :has(> * > .ui-sheet-action-bar[data-anchor='scroll']),
-  :has(> * > .ui-search-field[data-pin-edge='bottom'])
+  :has(> .ui-page-action-bar)
 ) {
   display: flex;
   flex-direction: column;
@@ -313,7 +316,7 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
 
 .modal-sheet__scroll:is(
     :has(> * > .ui-sheet-action-bar[data-anchor='scroll']),
-    :has(> * > .ui-search-field[data-pin-edge='bottom'])
+    :has(> .ui-page-action-bar)
   )
   > .modal-sheet__chrome {
   flex: 0 0 auto;
@@ -432,4 +435,10 @@ ui-sheet.modal-sheet[data-full-screen] .modal-sheet__scroll {
 
 ui-sheet.modal-sheet[data-full-screen] .ui-sheet-header__grabber {
   display: none;
+}
+
+/* A page's own bar on a full-screen sheet (a search at the thumb): its fade
+   rises from the sheet's surface, not the page background beneath. */
+.modal-sheet .ui-page-action-bar {
+  --ui-action-bar-scrim: var(--sys-color-surface);
 }

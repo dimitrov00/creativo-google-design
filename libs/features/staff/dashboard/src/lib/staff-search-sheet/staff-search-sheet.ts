@@ -53,6 +53,8 @@ import {
 } from '@creativo/ui/modifiers';
 import {
   UiListRow,
+  UiMarkedText,
+  UiPageActionBar,
   UiSectionHeader,
   UiSheetHeadline,
 } from '@creativo/ui/patterns';
@@ -96,13 +98,14 @@ function deviceStorage(): Storage | null {
 /**
  * THE SCHEDULE SEARCH (docs/designs/staff-search-spotlight.md, its filters
  * keyed in staff-search-tokens.md, at the thumb and full screen since
- * 2026-11-05). ≙ iOS 26 Mail and Photos: a full-screen page with the DS
- * capsule field on its floor and the ✕ that ends the search beside it; the
+ * 2026-11-05). ≙ iOS 26 Mail and Photos: a full-screen page whose own
+ * bottom bar holds the DS capsule field and the ✕ that ends the search; the
  * chosen filters floating over the field as selected chips that say their
- * values, the free keys after them; the starters, what the typed text names,
- * or an open key's values above the results. Before anything is typed the
- * starters and the recent searches; while typing the visits as event cards
- * under their days, the lines the query found marked.
+ * values; while the field has the focus, the free keys in a card over it;
+ * the starters, what the typed text names, or an open key's values above the
+ * results, under their keys, the typed run marked. Before anything is typed
+ * the starters and the recent searches; while typing the visits as event
+ * cards under their days, the lines the query found marked.
  *
  * A pressed filter PARKS the typed search (`heldText`): the text typed then
  * narrows the key's values, and the search comes back when the key closes.
@@ -123,8 +126,10 @@ function deviceStorage(): Storage | null {
     UiForegroundStyleDirective,
     UiIcon,
     UiListRow,
+    UiMarkedText,
     UiModalSheet,
     UiMonthPicker,
+    UiPageActionBar,
     UiScrollRow,
     UiSearchField,
     UiSectionHeader,
@@ -264,6 +269,17 @@ export class StaffSearchSheet {
     });
   });
 
+  /** The field has the focus — the card of keys shows only then (Photos). */
+  private readonly focused = signal(false);
+  /** Escape put the card away; typing or a new focus brings it back. */
+  private readonly cardDismissed = signal(false);
+  protected readonly cardOpen = computed(
+    () =>
+      this.focused() &&
+      !this.cardDismissed() &&
+      this.vm().suggestions.keys.length > 0,
+  );
+
   /** Escape closes the month, then the open key, before it reaches the sheet. */
   protected readonly escapeClaimed = computed(
     () => this.calendarMode() !== null || this.openField() !== null,
@@ -281,8 +297,14 @@ export class StaffSearchSheet {
 
   // ── The field ─────────────────────────────────────────────────────────
 
+  protected focusChange(focused: boolean): void {
+    this.focused.set(focused);
+    this.cardDismissed.set(false);
+  }
+
   protected typeText(text: string): void {
     this.typed.set(text);
+    this.cardDismissed.set(false);
     // With a key open the text narrows its values, at once; the search is parked.
     if (this.openField() !== null) return;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -336,13 +358,15 @@ export class StaffSearchSheet {
     else this.openKey(field);
   }
 
-  /** Escape: the month first, then the open key; with neither it is the sheet's. */
+  /** Escape: the month first, then the open key, then the card; with none it is the sheet's. */
   protected escape(): void {
     if (this.calendarMode() !== null) {
       this.calendarMode.set(null);
       this.rangeStart.set(null);
-    } else {
+    } else if (this.openField() !== null) {
       this.closeKey();
+    } else {
+      this.cardDismissed.set(true);
     }
   }
 

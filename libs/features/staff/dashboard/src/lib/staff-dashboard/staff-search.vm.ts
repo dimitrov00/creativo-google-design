@@ -2,6 +2,7 @@ import type {
   SearchFilter,
   SearchFilterField,
   SearchQuery,
+  TextSegment,
 } from '@core/components';
 import type { LocalDate } from '@core/primitives';
 import type { UiIconName } from '@creativo/ui/controls';
@@ -76,7 +77,7 @@ export interface FaceVm {
 export interface FilterChipVm {
   /** The kind it filters — one chip per kind. */
   readonly id: SearchFilterField;
-  /** «10.11», «Иван, Стефан +1», «С бележка»; the key («Бръснар») while it is being picked. */
+  /** «10.11», «Иван, Стефан +1», «С бележка»; the key («Бръснар») while it is being picked; «Бръснар: „ни“» while text is typed into it. */
   readonly label: string;
   readonly glyph: UiIconName;
   readonly faces: readonly FaceVm[];
@@ -91,7 +92,9 @@ export interface SuggestionRowVm {
   /** `FIELD:BARBER`, `BARBER:ivan`, `REMOVE:BARBER`, `CALENDAR:DAY` — `data-suggestion`. */
   readonly id: string;
   readonly label: string;
-  /** The key a matched value belongs to («Бръснар»), or a held key's value. */
+  /** The label as runs, the typed one marked (`ui-marked-text`). */
+  readonly parts: readonly TextSegment[];
+  /** A trailing note; none since the suggestions stand under their keys. */
   readonly detail: string | null;
   readonly glyph: UiIconName | null;
   readonly face: FaceVm | null;
@@ -106,7 +109,7 @@ export interface SuggestionRowVm {
 
 export interface SuggestionSectionVm {
   readonly id: string;
-  /** «Предложения», «Бръснар»; null for a section that needs none. */
+  /** The key its rows belong to («Кога», «Бръснар»); null for a section that needs none. */
   readonly heading: string | null;
   readonly rows: readonly SuggestionRowVm[];
 }
@@ -129,7 +132,7 @@ export interface SuggestionCalendarVm {
  */
 export interface SearchSuggestionsVm {
   readonly suggestMode: SuggestMode;
-  /** The free keys over the field, after the chosen filters: every one that still narrows, or those the typed text names; none while a key is open. */
+  /** The free keys in the card over the field (on focus): every one that still narrows, or those the typed text names; none while a key is open. */
   readonly keys: readonly SuggestionRowVm[];
   /** The rows above the results. */
   readonly sections: readonly SuggestionSectionVm[];

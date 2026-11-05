@@ -150,13 +150,26 @@ describe('StaffSearchSheet', () => {
     localStorage.clear();
   });
 
-  it('opens idle and full screen: no cards, the field pinned and named, the starters above it', async () => {
+  it('opens idle and full screen: no cards, the field in the page’s own bar, the starters above it', async () => {
     await mount();
     expect(cards()).toHaveLength(0);
-    expect(el('ui-search-field[data-pinned]')).not.toBeNull();
+    // The page's bottom bar holds the field (its fade, its floor, the
+    // keyboard) at the bar's rung; the field draws no band of its own.
+    expect(
+      el(
+        'ui-page-action-bar[data-avoids-keyboard] > ui-search-field[data-control-size="large"]',
+      ),
+    ).not.toBeNull();
+    expect(el('ui-search-field[data-pinned]')).toBeNull();
     expect(el('ui-sheet[data-full-screen]')).not.toBeNull();
     expect(el('[data-testid="staff-search-recents"]')).toBeNull();
-    // Mail's «Suggestions» before anything is typed: tomorrow, the barbers.
+    // Mail's «Suggestions» before anything is typed — tomorrow, the barbers —
+    // under their keys.
+    expect(
+      all('[data-suggest-mode] .staff-search-sheet__heading').map((h) =>
+        h.textContent?.trim(),
+      ),
+    ).toEqual(['staff.search.key.when', 'staff.search.key.barber']);
     expect(
       all('[data-suggest-mode] [data-testid="staff-search-suggestion"]').map(
         (row) => row.getAttribute('data-suggestion'),
@@ -208,12 +221,14 @@ describe('StaffSearchSheet', () => {
       c.getAttribute('data-filter'),
     );
 
-  it('opens on the caret, the field on the floor with the ✕ beside it and the keys over it', async () => {
+  it('opens on the caret, the ✕ beside the field and the keys in a card over it', async () => {
     await mount();
     expect(document.activeElement).toBe(field());
     expect(
-      field().closest('ui-search-field')?.getAttribute('data-pin-edge'),
-    ).toBe('bottom');
+      field()
+        .closest('ui-search-field')
+        ?.getAttribute('data-dropdown-placement'),
+    ).toBe('above');
     expect(el('[data-testid="staff-search-input-dismiss"]')).not.toBeNull();
     expect(
       all(
@@ -231,7 +246,7 @@ describe('StaffSearchSheet', () => {
   it('picks a key, then a value: the key stands as a chip until the value replaces its word', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
-    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(true);
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     expect(chip('BARBER')?.textContent).toContain('staff.search.key.barber');
     // The free keys leave while a key is open; the placeholder names it.
     expect(
@@ -240,7 +255,7 @@ describe('StaffSearchSheet', () => {
     expect(field().placeholder).toContain('staff.search.scopedPlaceholder');
     press('[data-suggestion="BARBER:b-niko"]');
     expect(chip('BARBER')?.textContent).toContain('Нико');
-    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(false);
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('false');
     expect(chip('BARBER')?.getAttribute('data-selected')).toBe('');
     expect(cards()).toHaveLength(2);
     // No token in the field any more: the filters float over it.
@@ -294,7 +309,7 @@ describe('StaffSearchSheet', () => {
       ),
     ).toEqual(['FIELD:BARBER']);
     press('[data-suggestion="FIELD:BARBER"]');
-    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(true);
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     press('[data-suggestion="BARBER:b-niko"]');
     expect(field().value).toBe('');
     expect(cards()).toHaveLength(2);
@@ -305,7 +320,7 @@ describe('StaffSearchSheet', () => {
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
     press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
-    expect(chip('BARBER')?.hasAttribute('data-active')).toBe(true);
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     expect(
       el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
@@ -344,7 +359,19 @@ describe('StaffSearchSheet', () => {
     expect(cards()).toHaveLength(2);
   });
 
-  it('keeps Escape while a key is open, closing the key, and lets it reach the sheet after', async () => {
+  it('shows the card of keys only while the field has the focus', async () => {
+    await mount();
+    const card = () => el('.ui-search-field__dropdown');
+    expect(card()).not.toBeNull();
+    field().blur();
+    fixture.detectChanges();
+    expect(card()).toBeNull();
+    field().focus();
+    fixture.detectChanges();
+    expect(card()).not.toBeNull();
+  });
+
+  it('keeps Escape while a key is open, closing the key, then the card, and lets it reach the sheet after', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     const escape = () => {
@@ -361,7 +388,11 @@ describe('StaffSearchSheet', () => {
     expect(chip('BARBER')).toBeNull();
     expect(el('[data-testid="staff-search-keys"]')).not.toBeNull();
     expect(store.closeSearch).not.toHaveBeenCalled();
-    // Nothing open: Escape is the sheet's, which ends the search.
+    // The card is the next thing Escape puts away…
+    escape();
+    expect(el('.ui-search-field__dropdown')).toBeNull();
+    expect(store.closeSearch).not.toHaveBeenCalled();
+    // …and with nothing open it is the sheet's, which ends the search.
     escape();
     expect(store.closeSearch).toHaveBeenCalled();
   });

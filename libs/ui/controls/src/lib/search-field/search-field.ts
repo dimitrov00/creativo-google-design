@@ -1,10 +1,8 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
   ElementRef,
   ViewEncapsulation,
-  afterNextRender,
   booleanAttribute,
   inject,
   input,
@@ -15,7 +13,7 @@ import {
 import { UiIcon } from '@creativo/ui/icons';
 import type { UiIconName } from '@creativo/ui/icons';
 import { UiAvatar } from '../avatar/avatar';
-import { UiButton } from '../button/button';
+import { UiButton, type UiControlSize } from '../button/button';
 import { UiProgressView } from '../progress-view/progress-view';
 import { UiTextField } from '../text-field/text-field';
 
@@ -47,8 +45,8 @@ export interface UiSearchFieldToken {
 
 let nextDropdownId = 0;
 
-/** Which edge of the scroller a pinned field's band sticks to. */
-export type UiSearchFieldPinEdge = 'top' | 'bottom';
+/** Where the dropdown opens: under the field, or over it (Photos' card, for a field on the floor). */
+export type UiSearchFieldDropdownPlacement = 'below' | 'above';
 
 /**
  * ≙ SwiftUI `.searchable` — the ONE search field (2026-09-24).
@@ -105,16 +103,18 @@ export type UiSearchFieldPinEdge = 'top' | 'bottom';
  * the focus of the WHOLE field — the text, its tokens and the dropdown — so
  * moving from the text into the list is no blur. Escape emits `uiEscape`.
  *
- * THE BOTTOM EDGE (2026-11-05, ≙ iOS 26 Mail and Photos). `uiPinEdge="bottom"`
- * sticks the band to the scroller's FLOOR instead — the body's last child,
- * floored by an auto top margin in a column, as a docked action bar is —
- * and lifts it over the on-screen keyboard (the visual viewport's lost
- * height, `--ui-search-keyboard-inset`). Content projected with
- * `uiSearchAccessory` rides the band ABOVE the field (Photos' suggestion
- * chips); `uiDismissLabel` puts the ✕ beside it that ends the search
- * (`uiDismiss`), Mail's. `uiEscapeClaimed` says the owner has something of
- * its own open that Escape closes first (a key's values listed beside the
- * field): Escape then emits `uiEscape` instead of reaching the sheet.
+ * ON THE FLOOR (2026-11-05, ≙ iOS 26 Mail and Photos). The field does not
+ * dock itself: a bottom search rides the page's own bar
+ * (`ui-page-action-bar`, as its `uiFill`), which owns the fade, the floor,
+ * the safe area and the keyboard. There, `uiControlSize="large"` sizes the
+ * field and its ✕ as the bar's other controls; content projected with
+ * `uiSearchAccessory` rides ABOVE the field (Photos' chips);
+ * `uiDismissLabel` puts the ✕ beside it that ends the search (`uiDismiss`),
+ * Mail's; and `uiDropdownPlacement="above"` opens the dropdown OVER the
+ * field, hugging its rows at the leading edge — Photos' floating card.
+ * `uiEscapeClaimed` says the owner has something of its own open that
+ * Escape closes first (a key's values listed beside the field): Escape then
+ * emits `uiEscape` instead of reaching the sheet.
  *
  * WHAT IT DOES NOT DO. It does not fold the page's large title — that is
  * the page's (`ui-sheet-headline`), told by the focus this reports — and it
@@ -190,6 +190,7 @@ export type UiSearchFieldPinEdge = 'top' | 'bottom';
       <input
         #field
         uiTextField
+        [uiControlSize]="uiControlSize()"
         type="search"
         class="ui-search-field__native"
         autocomplete="off"
@@ -245,7 +246,7 @@ export type UiSearchFieldPinEdge = 'top' | 'bottom';
         uiButton
         uiButtonStyle="bordered"
         uiTint="neutral"
-        uiControlSize="regular"
+        [uiControlSize]="uiControlSize()"
         [uiIconOnly]="true"
         class="ui-search-field__dismiss"
         [attr.aria-label]="uiDismissLabel()"
@@ -255,8 +256,9 @@ export type UiSearchFieldPinEdge = 'top' | 'bottom';
         <ui-icon uiName="sheet.close" />
       </button>
     }
-    <!-- THE DROPDOWN: mounted while open, under the field, over the list. A
-         press inside keeps the focus where it was; Escape inside closes it. -->
+    <!-- THE DROPDOWN: mounted while open, under the field (or over it), over
+         the list. A press inside keeps the focus where it was; Escape inside
+         closes it. -->
     @if (uiDropdownOpen()) {
       <div
         class="ui-search-field__dropdown"
@@ -279,7 +281,8 @@ export type UiSearchFieldPinEdge = 'top' | 'bottom';
   host: {
     class: 'ui-search-field',
     '[attr.data-pinned]': 'uiPinned() ? "" : null',
-    '[attr.data-pin-edge]': 'uiPinned() ? uiPinEdge() : null',
+    '[attr.data-control-size]': 'uiControlSize()',
+    '[attr.data-dropdown-placement]': 'uiDropdownPlacement()',
     '[attr.data-has-dismiss]': 'uiDismissLabel() ? "" : null',
     '[attr.data-has-value]': 'uiValue() ? "" : null',
     '[attr.data-has-tokens]': 'uiTokens().length > 0 ? "" : null',
@@ -307,8 +310,8 @@ export class UiSearchField {
   readonly uiTestId = input<string | null>(null);
   /** The band that sticks under a sheet's chrome while the list scrolls. */
   readonly uiPinned = input(false, { transform: booleanAttribute });
-  /** The edge the pinned band sticks to: under the chrome, or on the floor over the keyboard. */
-  readonly uiPinEdge = input<UiSearchFieldPinEdge>('top');
+  /** The field's rung and its ✕'s — `large` beside a bottom bar's other controls. */
+  readonly uiControlSize = input<UiControlSize>('regular');
   /** The ✕ beside the field that ends the search; without a name there is none. */
   readonly uiDismissLabel = input('');
   /** The owner has something open that Escape closes before the sheet does. */
@@ -331,6 +334,8 @@ export class UiSearchField {
   readonly uiDropdownOpen = input(false);
   /** The dropdown's accessible name («Филтри»). */
   readonly uiDropdownLabel = input('');
+  /** Under the field (the default), or over it, hugging its rows — a field on the floor. */
+  readonly uiDropdownPlacement = input<UiSearchFieldDropdownPlacement>('below');
 
   readonly uiInput = output<string>();
   /** Focus into and out of the whole field — the text, its tokens, its dropdown. */
@@ -356,31 +361,6 @@ export class UiSearchField {
   private readonly field = viewChild('field', { read: ElementRef });
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private focused = false;
-
-  constructor() {
-    // THE KEYBOARD'S HEIGHT, for a band on the floor: what the visual
-    // viewport lost at the bottom of the layout one. Browsers that resize
-    // the layout viewport instead report none, and the band simply rides it.
-    const destroyRef = inject(DestroyRef);
-    afterNextRender(() => {
-      const viewport = window.visualViewport;
-      if (!this.uiPinned() || this.uiPinEdge() !== 'bottom' || !viewport) {
-        return;
-      }
-      const publish = () =>
-        this.host.nativeElement.style.setProperty(
-          '--ui-search-keyboard-inset',
-          `${Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`,
-        );
-      publish();
-      viewport.addEventListener('resize', publish);
-      viewport.addEventListener('scroll', publish);
-      destroyRef.onDestroy(() => {
-        viewport.removeEventListener('resize', publish);
-        viewport.removeEventListener('scroll', publish);
-      });
-    });
-  }
 
   /** Puts the caret in the text — the owner's way back into the field. */
   focus(): void {

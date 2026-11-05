@@ -45,6 +45,11 @@
      reads while real content sits under the bar and dissolves away at
      scroll end on its own. Sticky+z-index make the bar a stacking
      context, so z-index -1 paints under the projected controls. */
+  /* Riding the keyboard: the bar's floor is the keyboard's top edge. */
+  .ui-page-action-bar[data-avoids-keyboard] {
+    inset-block-end: var(--ui-keyboard-inset, 0px);
+  }
+
   /* `pane` anchoring: a screen with no scroll has nothing for `sticky` to
      stick to, so the bar pins to its positioned ancestor's bottom edge
      instead. Everything else — geometry, safe areas, the scrim — is shared,

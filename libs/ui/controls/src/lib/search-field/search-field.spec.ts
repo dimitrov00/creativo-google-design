@@ -8,7 +8,8 @@ import { UiSearchField, type UiSearchFieldToken } from './search-field';
   template: `
     <ui-search-field
       [uiPinned]="pinned()"
-      [uiPinEdge]="edge()"
+      [uiControlSize]="size()"
+      [uiDropdownPlacement]="placement()"
       [uiDismissLabel]="dismissLabel()"
       [uiEscapeClaimed]="claimed()"
       [uiTransitionName]="transitionName()"
@@ -46,7 +47,8 @@ import { UiSearchField, type UiSearchFieldToken } from './search-field';
 })
 class Host {
   readonly pinned = signal(false);
-  readonly edge = signal<'top' | 'bottom'>('top');
+  readonly size = signal<'regular' | 'large'>('regular');
+  readonly placement = signal<'below' | 'above'>('below');
   readonly dismissLabel = signal('');
   readonly claimed = signal(false);
   readonly transitionName = signal<string | null>(null);
@@ -97,14 +99,26 @@ describe('UiSearchField', () => {
       expect(frame().style.viewTransitionName).toBe('probe-field');
     });
 
-    it('pins to the bottom edge when asked, and only while pinned', () => {
+    it('takes the bar’s rung for the field and its ✕ when asked', () => {
       const host = () => el('ui-search-field') as HTMLElement;
-      fixture.componentInstance.edge.set('bottom');
+      fixture.componentInstance.dismissLabel.set('Затвори');
+      fixture.componentInstance.size.set('large');
       fixture.detectChanges();
-      expect(host().hasAttribute('data-pin-edge')).toBe(false);
-      fixture.componentInstance.pinned.set(true);
+      expect(host().getAttribute('data-control-size')).toBe('large');
+      expect(
+        el('[data-testid="probe"]')?.getAttribute('data-control-size'),
+      ).toBe('large');
+      expect(
+        el('[data-testid="probe-dismiss"]')?.getAttribute('data-control-size'),
+      ).toBe('large');
+    });
+
+    it('says where the dropdown opens: under the field, or over it', () => {
+      const host = () => el('ui-search-field') as HTMLElement;
+      expect(host().getAttribute('data-dropdown-placement')).toBe('below');
+      fixture.componentInstance.placement.set('above');
       fixture.detectChanges();
-      expect(host().getAttribute('data-pin-edge')).toBe('bottom');
+      expect(host().getAttribute('data-dropdown-placement')).toBe('above');
     });
 
     it('puts the ✕ beside the field only with a name, and asks the owner to end the search', () => {

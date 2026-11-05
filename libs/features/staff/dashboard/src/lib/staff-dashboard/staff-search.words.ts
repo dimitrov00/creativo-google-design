@@ -24,7 +24,6 @@ export interface StaffSearchWords {
   /** The note filter's value beside its key, and alone: «има» · «С бележка». */
   readonly hasNote: string;
   readonly withNote: string;
-  readonly matches: string;
   readonly pickDay: string;
   readonly pickRange: string;
   readonly removeFilter: string;
@@ -45,6 +44,8 @@ export interface StaffSearchWords {
   readonly phoneRow: (number: string) => string;
   /** «Бръснар: Иван, Стефан. Промени филтъра». */
   readonly tokenLabel: (key: string, value: string) => string;
+  /** «Бръснар: „ни“» — the open chip, with what is typed into it. */
+  readonly chipTyped: (key: string, text: string) => string;
   /** «Бръснар: избери стойност» — a key still being picked. */
   readonly tokenBuilding: (key: string) => string;
   /** «+2» — the values a chip does not name. */
@@ -82,7 +83,6 @@ export function staffSearchWordsOf(
     noteKey: translate('staff.search.key.note'),
     hasNote: translate('staff.search.hasNote'),
     withNote: translate('staff.search.withNote'),
-    matches: translate('staff.search.matches'),
     pickDay: translate('staff.search.pickDay'),
     pickRange: translate('staff.search.pickRange'),
     removeFilter: translate('staff.search.removeFilter'),
@@ -102,6 +102,8 @@ export function staffSearchWordsOf(
     tokenLabel: (key, value) =>
       translate('staff.search.tokenLabel', { key, value }),
     tokenBuilding: (key) => translate('staff.search.tokenBuilding', { key }),
+    chipTyped: (key, text) =>
+      translate('staff.search.chipTyped', { key, text }),
     moreValues: (count) => translate('staff.search.moreValues', { count }),
     moreThanShown: (count) =>
       translate('staff.search.moreThanShown', { count }),

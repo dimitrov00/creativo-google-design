@@ -197,17 +197,23 @@ describe('searchSheetVm — idle', () => {
       'фейд · С бележка',
     ]);
     expect(vm.suggestions.suggestMode).toBe(SuggestMode.Fields);
-    // Mail's «Suggestions» before anything is typed: today, tomorrow, the barbers.
-    expect(vm.suggestions.sections.map((s) => s.heading)).toEqual([
-      'Предложения',
-    ]);
+    // Mail's «Suggestions» before anything is typed — today, tomorrow, the
+    // barbers — under the key each belongs to.
     expect(
-      suggestionRows(vm).map((r) => [r.label, r.detail, r.suggestAction]),
+      vm.suggestions.sections.map((s) => [
+        s.heading,
+        s.rows.map((r) => r.label),
+      ]),
     ).toEqual([
-      ['Днес', 'Кога', SuggestAction.AddValue],
-      ['Утре', 'Кога', SuggestAction.AddValue],
-      ['Иван', 'Бръснар', SuggestAction.AddValue],
-      ['Нико', 'Бръснар', SuggestAction.AddValue],
+      ['Кога', ['Днес', 'Утре']],
+      ['Бръснар', ['Иван', 'Нико']],
+    ]);
+    expect(suggestionRows(vm).map((r) => [r.detail, r.suggestAction])).toEqual(
+      Array(4).fill([null, SuggestAction.AddValue]),
+    );
+    // Nothing typed, nothing marked.
+    expect(suggestionRows(vm)[0]?.parts).toEqual([
+      { text: 'Днес', hit: false },
     ]);
     expect(suggestionRows(vm)[2]?.face).toEqual({ src: null, name: 'Иван' });
     expect(vm.filters).toEqual([]);
@@ -643,19 +649,48 @@ describe('searchSheetVm — the suggestions', () => {
     );
   });
 
-  it('under typed text suggests the values whose name holds it with their key, and keeps only the keys it names', () => {
+  it('under typed text suggests the values whose name holds it under their key, the run marked, and keeps only the keys it names', () => {
     const vm = searchSheetVm(input('bg', text('ни'), { typedText: 'ни' }));
     expect(vm.suggestions.suggestMode).toBe(SuggestMode.Matches);
-    expect(vm.suggestions.sections.map((s) => s.heading)).toEqual([
-      'Предложения',
+    expect(vm.suggestions.sections.map((s) => s.heading)).toEqual(['Бръснар']);
+    expect(vm.suggestions.sections[0]?.rows.map((r) => r.parts)).toEqual([
+      [
+        { text: 'Ни', hit: true },
+        { text: 'ко', hit: false },
+      ],
     ]);
-    expect(
-      vm.suggestions.sections[0]?.rows.map((r) => [r.label, r.detail]),
-    ).toEqual([['Нико', 'Бръснар']]);
     expect(keyIds(vm)).toEqual([]);
     const key = searchSheetVm(input('bg', text('бръ'), { typedText: 'бръ' }));
     expect(key.suggestions.sections).toEqual([]);
     expect(keyIds(key)).toEqual(['FIELD:BARBER']);
+    expect(key.suggestions.keys[0]?.parts).toEqual([
+      { text: 'Бръ', hit: true },
+      { text: 'снар', hit: false },
+    ]);
+  });
+
+  it('marks the typed run in an open key’s values, and says it in the open chip', () => {
+    const vm = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        openField: SearchFilterField.When,
+        typedText: 'ут',
+      }),
+    );
+    expect(suggestionRows(vm)[0]?.parts).toEqual([
+      { text: 'Ут', hit: true },
+      { text: 'ре', hit: false },
+    ]);
+    expect(vm.filters.map((c) => [c.label, c.active])).toEqual([
+      ['Кога: „ут“', true],
+    ]);
+    expect(
+      searchSheetVm(
+        input('en', SearchQuery.empty(), {
+          openField: SearchFilterField.When,
+          typedText: 'to',
+        }),
+      ).filters[0]?.label,
+    ).toBe('When: “to”');
   });
 
   it('lists nothing when the typed text names no value and no key', () => {

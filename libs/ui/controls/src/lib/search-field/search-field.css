@@ -49,6 +49,19 @@
     padding-inline-end: var(--control-size-regular);
   }
 
+  /* LARGE: the field beside a bottom bar's other controls (52). The text
+     field's own large rung pads both ends (a class and a size attribute),
+     so the glyph's room is restated at that weight. The clear keeps the
+     regular reach. */
+  .ui-search-field[data-control-size='large'] .ui-search-field__native {
+    padding-inline-start: calc(var(--sys-space-unit) * 10);
+  }
+
+  .ui-search-field[data-control-size='large'][data-has-value]
+    .ui-search-field__native {
+    padding-inline-end: var(--control-size-large);
+  }
+
   /* THE CLEAR: the circled ✕ in secondary ink at the trailing edge, a full
      control's reach for the thumb; hover and the ungated press darken it. */
   .ui-search-field__clear {
@@ -111,19 +124,6 @@
     margin-inline: calc(-1 * var(--ui-sheet-inset, var(--sys-space-regular)));
     padding: var(--sys-space-tight)
       var(--ui-sheet-inset, var(--sys-space-regular));
-  }
-
-  /* THE FLOOR (≙ iOS 26 Mail and Photos): the band sticks to the scroller's
-     bottom edge, lifted over the on-screen keyboard by what the visual
-     viewport lost, clear of the home indicator. Floored like a docked bar —
-     the body's last child, its auto top margin eating a COLUMN's free space
-     (ui-modal-sheet turns its scroller into one for this band). */
-  .ui-search-field[data-pin-edge='bottom'] {
-    inset-block-start: auto;
-    inset-block-end: var(--ui-search-keyboard-inset, 0px);
-    margin-block-start: auto;
-    padding-block: var(--sys-space-compact)
-      max(var(--sys-space-compact), env(safe-area-inset-bottom));
   }
 
   /* ABOVE THE FIELD: the owner's accessory row (Photos' chips). Nothing
@@ -388,11 +388,16 @@
     );
   }
 
-  /* On the floor the dropdown opens upward, over what is above the band. */
-  .ui-search-field[data-pin-edge='bottom'] .ui-search-field__dropdown {
+  /* OVER THE FIELD (Photos' card, for a field on the floor): it opens
+     upward from the top of the host — over the accessory too — hugging its
+     rows at the leading edge rather than spanning the row. */
+  .ui-search-field[data-dropdown-placement='above'] .ui-search-field__dropdown {
     inset-block-start: auto;
-    inset-block-end: 100%;
-    transform-origin: bottom center;
+    inset-block-end: calc(100% + var(--sys-space-compact));
+    inset-inline-end: auto;
+    inline-size: max-content;
+    max-inline-size: 100%;
+    transform-origin: bottom left;
   }
 
   @keyframes ui-search-field-drop {

@@ -1,7 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
+  ElementRef,
   ViewEncapsulation,
+  afterNextRender,
+  booleanAttribute,
+  inject,
   input,
 } from '@angular/core';
 
@@ -62,6 +67,13 @@ export type UiPageActionBarAnchor = 'page' | 'pane';
  * separation deliberately gets no cue. Safe-area floors on all three
  * anchored edges.
  *
+ * ### `uiAvoidsKeyboard`
+ * ≙ SwiftUI's keyboard avoidance for a bottom bar that holds a field (a
+ * search at the thumb, 2026-11-05): the bar rides the on-screen keyboard,
+ * lifted by what the visual viewport lost at the bottom of the layout one
+ * (`--ui-keyboard-inset`). Browsers that resize the layout viewport instead
+ * report none, and the bar simply rides it.
+ *
  * ### Stacked variant (`uiStacked`)
  * The Setup-Assistant completion anatomy (owner ruling 2026-07-27): ONE
  * centered filled primary with the quiet plain link stacked BENEATH it —
@@ -90,9 +102,33 @@ export type UiPageActionBarAnchor = 'page' | 'pane';
     class: 'ui-page-action-bar',
     '[attr.data-layout]': "uiStacked() ? 'stacked' : null",
     '[attr.data-anchor]': 'uiAnchor()',
+    '[attr.data-avoids-keyboard]': "uiAvoidsKeyboard() ? '' : null",
   },
 })
 export class UiPageActionBar {
   readonly uiStacked = input(false);
   readonly uiAnchor = input<UiPageActionBarAnchor>('page');
+  /** Ride the on-screen keyboard — a bar that holds a field. */
+  readonly uiAvoidsKeyboard = input(false, { transform: booleanAttribute });
+
+  constructor() {
+    const host = inject<ElementRef<HTMLElement>>(ElementRef);
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      const viewport = window.visualViewport;
+      if (!this.uiAvoidsKeyboard() || !viewport) return;
+      const publish = () =>
+        host.nativeElement.style.setProperty(
+          '--ui-keyboard-inset',
+          `${Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`,
+        );
+      publish();
+      viewport.addEventListener('resize', publish);
+      viewport.addEventListener('scroll', publish);
+      destroyRef.onDestroy(() => {
+        viewport.removeEventListener('resize', publish);
+        viewport.removeEventListener('scroll', publish);
+      });
+    });
+  }
 }

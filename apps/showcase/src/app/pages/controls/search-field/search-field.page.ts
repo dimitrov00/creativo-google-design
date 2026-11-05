@@ -38,6 +38,7 @@ export class SearchFieldPage {
   protected readonly many = signal('');
   protected readonly dropped = signal('');
   protected readonly docked = signal('');
+  protected readonly dockedFocused = signal(false);
 
   private readonly all: readonly UiSearchFieldToken[] = [
     token('BARBER', 'Бръснар', 'Николай, Иван', [

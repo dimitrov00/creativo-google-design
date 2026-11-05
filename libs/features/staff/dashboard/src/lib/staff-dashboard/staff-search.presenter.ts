@@ -278,6 +278,18 @@ function filterChipOf(
 ): FilterChipVm {
   const key = keyOf(field, input.words);
   const active = input.openField === field;
+  // The open chip says what is being typed into it (Mail: «From: “ни”»).
+  const typed = active ? input.typedText.trim() : '';
+  if (typed !== '') {
+    return {
+      id: field,
+      label: input.words.chipTyped(key, typed),
+      glyph: glyphOf(field),
+      faces: [],
+      accessibleLabel: input.words.chipTyped(key, typed),
+      active,
+    };
+  }
   if (held === null) {
     return {
       id: field,
@@ -341,9 +353,11 @@ function valueRow(
     readonly suggestAction: SuggestAction;
   },
 ): SuggestionRowVm {
+  const label = labelOf(filter, input);
   return {
     id: filterKey(filter),
-    label: labelOf(filter, input),
+    label,
+    parts: plainRuns(label),
     detail: shape.detail,
     glyph: null,
     face:
@@ -363,9 +377,11 @@ function keyRow(
   input: SearchSheetInput,
 ): SuggestionRowVm {
   const note = field === SearchFilterField.Note;
+  const label = note ? input.words.withNote : keyOf(field, input.words);
   return {
     id: `FIELD:${field}`,
-    label: note ? input.words.withNote : keyOf(field, input.words),
+    label,
+    parts: plainRuns(label),
     detail: null,
     glyph: glyphOf(field),
     face: null,
@@ -481,9 +497,11 @@ function calendarRow(
   input: SearchSheetInput,
 ): SuggestionRowVm {
   const day = calendarMode === CalendarMode.Day;
+  const label = day ? input.words.pickDay : input.words.pickRange;
   return {
     id: `CALENDAR:${calendarMode}`,
-    label: day ? input.words.pickDay : input.words.pickRange,
+    label,
+    parts: plainRuns(label),
     detail: null,
     // No glyph: it lines up with the presets above it, words all.
     glyph: null,
@@ -526,7 +544,8 @@ function valueSuggestions(
           : SuggestAction.AddValue,
       }),
     )
-    .filter((row) => namesText(row.label, text));
+    .filter((row) => namesText(row.label, text))
+    .map((row) => marked(row, text));
   if (field === SearchFilterField.When) {
     rows.push(
       calendarRow(CalendarMode.Day, input),
@@ -548,6 +567,7 @@ function valueSuggestions(
         {
           id: `REMOVE:${field}`,
           label: input.words.removeFilter,
+          parts: plainRuns(input.words.removeFilter),
           detail: null,
           glyph: 'action.remove',
           face: null,
@@ -570,11 +590,12 @@ function valueSuggestions(
 
 /**
  * What the sheet suggests. With a key open, its values (rows above the
- * results). With nothing typed, every free key as a chip over the field
- * (Photos) and, on an untouched search, the starters above the recents.
- * With text typed, the values whose name holds it, each with its key (Mail's
- * «Suggestions» above the results), and only the keys it names — the rest
- * leave, so typing narrows the suggestions rather than standing beside them.
+ * results). With nothing typed, every free key (the card over the field,
+ * Photos') and, on an untouched search, the starters above the recents,
+ * under their keys. With text typed, the values whose name holds it, under
+ * their keys (Mail's «Suggestions» above the results), and only the keys it
+ * names — the rest leave, so typing narrows the suggestions rather than
+ * standing beside them. The typed run is marked wherever it was found.
  */
 function suggestionsOf(
   query: SearchQuery,
@@ -603,7 +624,7 @@ function suggestionsOf(
       ? SearchFilterSystem.starters(offered, input.shopNow).map((filter) =>
           valueRow(filter, input, {
             checked: null,
-            detail: keyOf(filter.searchFilterField, input.words),
+            detail: null,
             suggestAction: SuggestAction.AddValue,
           }),
         )
@@ -611,10 +632,7 @@ function suggestionsOf(
     return {
       suggestMode: SuggestMode.Fields,
       keys,
-      sections:
-        starters.length > 0
-          ? [{ id: 'STARTERS', heading: input.words.matches, rows: starters }]
-          : [],
+      sections: byKey('STARTERS', starters, input),
       calendar: null,
     };
   }
@@ -625,27 +643,69 @@ function suggestionsOf(
       if (isHeldValue(filter, query)) continue;
       const row = valueRow(filter, input, {
         checked: null,
-        detail: keyOf(field, input.words),
+        detail: null,
         suggestAction: SuggestAction.AddValue,
       });
-      if (namesText(row.label, text)) matched.push(row);
+      if (namesText(row.label, text)) matched.push(marked(row, text));
     }
-  }
-  const sections: SuggestionSectionVm[] = [];
-  if (matched.length > 0) {
-    sections.push({
-      id: 'MATCHES',
-      heading: input.words.matches,
-      rows: matched,
-    });
   }
   return {
     suggestMode: SuggestMode.Matches,
-    // Only the keys the text names stay («бръ» → Бръснар).
-    keys: keys.filter((row) => namesText(row.label, text)),
-    sections,
+    // Only the keys the text names stay («бръ» → Бръснар), the run marked.
+    keys: keys
+      .filter((row) => namesText(row.label, text))
+      .map((row) => marked(row, text)),
+    sections: byKey('MATCHES', matched, input),
     calendar: null,
   };
+}
+
+/**
+ * The rows under the key they belong to («Кога»: Днес, Утре · «Бръснар»: …),
+ * one section per run of a kind, in the order the rows came.
+ */
+function byKey(
+  prefix: string,
+  rows: readonly SuggestionRowVm[],
+  input: SearchSheetInput,
+): readonly SuggestionSectionVm[] {
+  const sections: { id: string; heading: string; rows: SuggestionRowVm[] }[] =
+    [];
+  for (const row of rows) {
+    const last = sections[sections.length - 1];
+    if (
+      last !== undefined &&
+      last.id === `${prefix}:${row.searchFilterField}`
+    ) {
+      last.rows.push(row);
+    } else {
+      sections.push({
+        id: `${prefix}:${row.searchFilterField}`,
+        heading: keyOf(row.searchFilterField, input.words),
+        rows: [row],
+      });
+    }
+  }
+  return sections;
+}
+
+/** A label as one unmarked run. */
+function plainRuns(label: string): readonly TextSegment[] {
+  return [{ text: label, hit: false }];
+}
+
+/** The row with the typed run marked where a word of its label starts with it. */
+function marked(row: SuggestionRowVm, text: string): SuggestionRowVm {
+  return text === ''
+    ? row
+    : {
+        ...row,
+        parts: TextMatchSystem.segmentsAny(
+          row.label,
+          [text],
+          MatchMode.WordStart,
+        ),
+      };
 }
 
 /** Does a name hold the typed text at the start of one of its words (the add-client page's rule)? */

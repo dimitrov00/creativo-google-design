@@ -1,9 +1,8 @@
 /* The page's body keeps the house padding of its siblings
    (`.staff-cancel__body` is the dashboard's, unreachable from here), and
-   fills the scroller's column so the field it ends with lands on the floor.
-   The field's band pads the bottom itself. Full screen on a wide display it
-   keeps a drawer-wide column, centred: the rows were drawn at a phone's
-   width. */
+   fills the scroller's column so the bar after it lands on the floor. Full
+   screen on a wide display it keeps a drawer-wide column, centred: the rows
+   were drawn at a phone's width. */
 .staff-search-sheet__body {
   flex: 1 0 auto;
   box-sizing: border-box;
@@ -13,19 +12,22 @@
   padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
 }
 
+/* The bar keeps the body's column on a wide display, so the field does not
+   stretch across a desktop; on a phone it is the screen's width. */
+.staff-search-sheet__bar {
+  max-inline-size: var(--sys-container-drawer);
+  margin-inline: auto;
+}
+
 /* A chosen filter: the DS chip's tinted selection (the accent wash, the
-   glyph orange, the words ink). Its value ellipsizes rather than widening
-   the row past a thumb's reach; the one whose values are open is ringed. */
+   glyph orange, the words ink — HIG: an applied filter reads as selected;
+   its words stay ink). Its value ellipsizes rather than widening the row
+   past a thumb's reach. No ring: the open one's values ARE the page. */
 .staff-search-sheet__filter-label {
   max-inline-size: 12rem;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.staff-search-sheet__filter[data-active] {
-  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
-  outline-offset: calc(-1 * var(--sys-focus-ring-width));
 }
 
 /* THE SUGGESTIONS above the results: a quiet heading over DS list rows. */

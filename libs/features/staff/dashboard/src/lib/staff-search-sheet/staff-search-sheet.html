@@ -44,10 +44,11 @@
       </p>
       }
 
-      <!-- THE SUGGESTIONS above the results: the starters of an untouched
-           search or what the typed text names, each with its key, or the
-           open key's values (✓ on the held ones, «Махни филтъра» last) and
-           its month. A press keeps the keyboard. -->
+      <!-- THE SUGGESTIONS above the results, under their keys: the starters
+           of an untouched search or what the typed text names, or the open
+           key's values (✓ on the held ones, «Махни филтъра» last) and its
+           month. The typed run is marked as on the cards. A press keeps the
+           keyboard. -->
       @for (section of vm().suggestions.sections; track section.id) { @if
       (section.rows.length > 0) {
       <section
@@ -89,7 +90,9 @@
           <span uiLeading>
             <ui-icon [uiName]="glyph" aria-hidden="true" />
           </span>
-          } {{ row.label }} @if (row.checked === true) {
+          }
+          <ui-marked-text [uiRuns]="row.parts" />
+          @if (row.checked === true) {
           <ui-icon
             uiTrailing
             uiName="checklist.done"
@@ -204,13 +207,15 @@
         {{ note }}
       </p>
       }
-
-      <!-- THE FIELD, on the floor: the body's last child. Its frame and the
-           bar's search capsule share a view-transition name, so one grows
-           into the other. -->
+    </ui-stack>
+    <!-- THE FIELD, on the floor: the page's own bottom bar (its fade, its
+         floor, the keyboard) holds it as its fill, at the bar's rung. Its
+         frame and the schedule bar's search capsule share a
+         view-transition name, so one grows into the other. -->
+    <ui-page-action-bar uiAvoidsKeyboard class="staff-search-sheet__bar">
       <ui-search-field
-        uiPinned
-        uiPinEdge="bottom"
+        uiFill
+        uiControlSize="large"
         [uiValue]="typed()"
         [uiIcon]="vm().glyph"
         [uiPlaceholder]="vm().placeholder"
@@ -221,24 +226,26 @@
         [uiClearLabel]="t('staff.day.searchClear')"
         [uiDismissLabel]="t('staff.day.cancelDismiss')"
         [uiEscapeClaimed]="escapeClaimed()"
+        [uiDropdownOpen]="cardOpen()"
+        uiDropdownPlacement="above"
+        [uiDropdownLabel]="t('staff.search.filterBy')"
         uiTransitionName="staff-search-field"
         (uiInput)="typeText($event)"
+        (uiFocusChange)="focusChange($event)"
         (uiEscape)="escape()"
         (uiDismiss)="close()"
         (uiSubmit)="submit()"
         (uiNavigate)="focusFirst($event)"
       >
-        @if (vm().filters.length > 0 || vm().suggestions.keys.length > 0) {
-        <!-- OVER THE FIELD, floating (Photos): the chosen filters first,
-             selected and saying their values — a press opens a filter's
-             values, the open one ringed — then the free keys, plain. One
-             sliding row. -->
+        @if (vm().filters.length > 0) {
+        <!-- OVER THE FIELD, floating (Photos): the chosen filters, selected
+             and saying their values; a press opens a filter's values. -->
         <ui-scroll-row
           uiSearchAccessory
           uiSpacing="compact"
           uiSnap="none"
-          [uiLabel]="t('staff.search.filterBy')"
-          data-testid="staff-search-keys"
+          [uiLabel]="t('staff.search.filters')"
+          data-testid="staff-search-filters"
         >
           @for (chip of vm().filters; track chip.id) {
           <button
@@ -250,7 +257,6 @@
             class="staff-search-sheet__filter"
             data-testid="staff-search-filter"
             [attr.data-filter]="chip.id"
-            [attr.data-active]="chip.active ? '' : null"
             [attr.aria-expanded]="chip.active"
             [attr.aria-label]="chip.accessibleLabel"
             (mousedown)="$event.preventDefault()"
@@ -269,24 +275,34 @@
               >{{ chip.label }}</span
             >
           </button>
-          } @for (row of vm().suggestions.keys; track row.id) {
-          <button
-            type="button"
-            uiChip
-            [uiToggle]="false"
-            data-testid="staff-search-suggestion"
-            [attr.data-suggestion]="row.id"
-            (mousedown)="$event.preventDefault()"
-            (click)="pickRow(row)"
-          >
-            @if (row.glyph; as glyph) {
-            <ui-icon [uiName]="glyph" aria-hidden="true" />
-            } {{ row.label }}
-          </button>
           }
         </ui-scroll-row>
         }
+        <!-- THE CARD over the field while it has the focus (Photos' floating
+             suggestions): the free keys, one under another, the typed run
+             marked. -->
+        <div uiSearchDropdown data-testid="staff-search-keys">
+          @for (row of vm().suggestions.keys; track row.id) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            class="staff-search-sheet__row"
+            data-testid="staff-search-suggestion"
+            [attr.data-suggestion]="row.id"
+            (click)="pickRow(row)"
+          >
+            @if (row.glyph; as glyph) {
+            <span uiLeading>
+              <ui-icon [uiName]="glyph" aria-hidden="true" />
+            </span>
+            }
+            <ui-marked-text [uiRuns]="row.parts" />
+          </button>
+          }
+        </div>
       </ui-search-field>
-    </ui-stack>
+    </ui-page-action-bar>
   </ui-modal-sheet>
 </ng-container>

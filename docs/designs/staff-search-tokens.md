@@ -168,6 +168,39 @@ Mobbin first (iOS 26 Photos «Search», Mail search):
    (`SearchFilterSystem.starters`) — and «Скорошни» as rows with a history
    glyph.
 
+### The bar's own floor, a card on focus, the typed run marked (2026-11-05, third pass)
+
+The owner's third look, checked again against Photos and Mail on Mobbin:
+
+1. **The floor is the page's bar, not a band of the field's.** The field
+   drew its own pinned band on a translucent material. It now rides
+   `ui-page-action-bar` — the bar the schedule's bottom row is — as its
+   `uiFill`, the scroller's own last child: the house fade from the
+   sheet's surface, no blur, no slab, the safe area, and the keyboard
+   (`uiAvoidsKeyboard`, the visual viewport's lost height, moved out of the
+   field into the bar). `ui-search-field` loses `uiPinEdge` and its band.
+2. **The bar's rung.** The field and its ✕ are `uiControlSize="large"`,
+   52 like the schedule bar's search capsule, filter and ＋.
+3. **The keys are a card over the field, on focus (Photos).** Not a sliding
+   row: a vertical stack of rows in the DS field's own dropdown, opened
+   ABOVE the field (`uiDropdownPlacement="above"`) and hugging its rows at
+   the leading edge, while the field has the focus. Escape puts the card
+   away (after the month and an open key); typing or a new focus brings it
+   back. The chosen filters stay as chips over the field.
+4. **Grouped by key.** The starters and the matched values stand under the
+   key they belong to («Кога»: Днес, Утре · «Бръснар»: Иван, Нико), in the
+   order the system gave them, instead of one «Предложения» list with the
+   key trailing each row.
+5. **The typed run is marked** in every suggestion — an open key's values,
+   the matched values, the keys in the card — with `ui-marked-text`, the
+   wash the result cards use.
+6. **The open chip says what is typed into it**: «Кога: „ут“» (Mail scopes
+   a search the same way).
+7. **No ring on the chip.** HIG: an applied filter reads as selected — the
+   tinted capsule (the accent wash, the glyph orange, the words ink, per the
+   accent law) — and the open one needs no second mark: its values are the
+   page.
+
 ### «Кога»: preset, day or range
 
 `VALUES` for «Кога» lists the presets that reach a visit: Днес, Утре, Вчера,
@@ -226,7 +259,8 @@ focus when the sheet opens.
 | systems    | `search-filter.system.ts`                                                  | the two presets in `whenOf`, `presetOf`, `suggestions`; `spanOf` (two picked days → a span); `starters` (an untouched search's offers)                                                                                           |
 | DS         | `ui-search-field`                                                          | segmented tokens (`key`, `value`, `faces`, `uiTokenPlaceholder`), `uiTokenActivate`, `uiActiveToken`, the dropdown slot, wrap; the floor (`uiPinEdge`, keyboard inset), `uiSearchAccessory`, `uiDismissLabel`, `uiEscapeClaimed` |
 | DS         | `ui-page-action-bar`, `ui-modal-sheet`, `ui-sheet`                         | the `uiFill` slot; a scroller that floors a bottom-pinned search field; `fullScreen` / `uiFullScreen` (≙ `.fullScreenCover`)                                                                                                     |
-| DS         | `ui-search-field`                                                          | a capsule everywhere, the 20 px magnifier; `uiTransitionName` on the capsule                                                                                                                                                     |
+| DS         | `ui-search-field`                                                          | a capsule everywhere, the 20 px magnifier; `uiTransitionName` on the capsule; `uiControlSize`; `uiDropdownPlacement` (`above` hugs); the floor band (`uiPinEdge`) removed                                                        |
+| DS         | `ui-page-action-bar`                                                       | `uiAvoidsKeyboard` (`--ui-keyboard-inset`)                                                                                                                                                                                       |
 | feature    | `staff-day.store.ts`, `apps/web/src/styles.css`                            | the search opens and closes inside `runViewTransition`; the grow's timing (the pseudo-elements live on the root)                                                                                                                 |
 | feature    | `staff-search.vm.ts`, `staff-search.presenter.ts`, `staff-search.words.ts` | `FilterChipVm` (was `TokenVm`), `SearchSuggestionsVm` (its three modes, the free key chips, the rows, the starters, the calendar state), the scoped placeholder                                                                  |
 | feature    | `staff-search-sheet.*`                                                     | the open key, the calendar mode, the field on the floor, the chips and suggestion rows, autofocus                                                                                                                                |

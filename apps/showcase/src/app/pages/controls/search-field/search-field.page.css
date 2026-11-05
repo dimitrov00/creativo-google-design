@@ -11,6 +11,13 @@
   min-block-size: 14rem;
 }
 
+/* On the floor the card opens upward: the field sits at the demo's foot. */
+.search-field__floor-demo {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
 .search-field__dropdown-rows {
   display: grid;
 }
