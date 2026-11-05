@@ -235,6 +235,16 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
   wearing the app's one selection (`uiSelected`: the wash and the rounder
   corner) plus the ✓, «Махни филтъра» a group of its own, the recents one
   too.
+- **A key's values keep their order**: a pick never moves a row under the
+  thumb; a held value the window no longer offers follows the offered ones.
+- **Every tap on a value applies and closes** (owner, 2026-11-05: "toggle
+  for multiple, or apply on tap?"). As an iOS menu does even for its ✓
+  items: an unticked value is added, a ticked one taken off, and the values
+  close. Several barbers stay possible — the chip pressed again and another
+  tapped — without a second rule for the same tap (the first pick used to
+  close the list and later ones keep it open).
+- **Several barbers are one group of faces** in the chip (`ui-avatar-group`,
+  «+N» past three), the chip's face seat extended to a group in the DS.
 
 ### «Кога»: preset, day or range
 

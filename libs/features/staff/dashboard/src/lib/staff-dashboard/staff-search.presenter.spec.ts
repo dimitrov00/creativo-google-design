@@ -446,6 +446,7 @@ describe('searchSheetVm — the chosen filters over the field', () => {
       { src: null, name: 'Иван' },
       { src: null, name: 'Нико' },
     ]);
+    expect(vm.filters[0]?.facesOverflow).toBe(0);
     expect(vm.filters[0]?.accessibleLabel).toBe(
       'Бръснар: Иван, Нико. Промени филтъра',
     );

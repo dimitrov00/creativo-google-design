@@ -39,6 +39,7 @@ import {
 } from '@creativo/features/shared/visits';
 import {
   UiAvatar,
+  UiAvatarGroup,
   UiButton,
   UiChip,
   UiIcon,
@@ -122,6 +123,7 @@ function deviceStorage(): Storage | null {
   selector: 'lib-staff-search-sheet',
   imports: [
     UiAvatar,
+    UiAvatarGroup,
     UiButton,
     UiChip,
     UiFlow,
@@ -324,12 +326,6 @@ export class StaffSearchSheet {
     this.committed.set(text);
   }
 
-  private heldFilter(field: SearchFilterField): boolean {
-    return this.filters().searchFilters.some(
-      (held) => held.searchFilterField === field,
-    );
-  }
-
   /** A key opened: the search is parked and the text narrows the key's values. */
   private openKey(field: SearchFilterField): void {
     if (this.openField() === null) {
@@ -397,7 +393,10 @@ export class StaffSearchSheet {
             ? SearchQuery.withoutFilterValue(held, filter)
             : SearchQuery.withFilter(held, filter),
         );
-        if (!this.heldFilter(row.searchFilterField)) this.closeKey();
+        // ONE rule for a tap (owner, 2026-11-05: toggle, or apply on tap?):
+        // it applies and closes, as an iOS menu does even for its ✓ items.
+        // A second barber is the chip pressed again and another tapped.
+        this.closeKey();
         return;
       }
       case SuggestAction.RemoveFilter:

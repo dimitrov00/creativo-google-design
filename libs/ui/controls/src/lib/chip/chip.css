@@ -51,8 +51,10 @@
      inset, not the label's regular one), one compact gap from the name.
      The consumer picks the disc one rung under the chip — `small` in a
      `regular` chip — so it clears the block padding; the avatar's own
-     monogram and ink ride the chip's colours, selected or not. */
-  .ui-chip:has(> .ui-avatar:first-child) {
+     monogram and ink ride the chip's colours, selected or not. SEVERAL
+     people (2026-11-05): a `ui-avatar-group` first takes the same seat. */
+  .ui-chip:has(> .ui-avatar:first-child),
+  .ui-chip:has(> .ui-avatar-group:first-child) {
     padding-inline-start: var(--sys-space-tight);
     gap: var(--sys-space-compact);
   }

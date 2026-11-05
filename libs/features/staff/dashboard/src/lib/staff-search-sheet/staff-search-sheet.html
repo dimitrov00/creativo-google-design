@@ -275,7 +275,23 @@
             (mousedown)="$event.preventDefault()"
             (click)="activateFilter(chip.id)"
           >
-            @if (chip.faces[0]; as face) {
+            @if (chip.faces.length > 1) {
+            <!-- Several barbers: one overlapping group (the DS's), the
+                 names in the words beside it. -->
+            <ui-avatar-group
+              uiControlSize="small"
+              [uiOverflow]="chip.facesOverflow"
+              aria-hidden="true"
+            >
+              @for (face of chip.faces; track $index) {
+              <ui-avatar
+                uiControlSize="small"
+                [uiSrc]="face.src"
+                [uiName]="face.name"
+              />
+              }
+            </ui-avatar-group>
+            } @else if (chip.faces[0]; as face) {
             <ui-avatar
               uiControlSize="small"
               [uiSrc]="face.src"

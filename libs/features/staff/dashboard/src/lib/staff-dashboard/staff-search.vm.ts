@@ -45,7 +45,7 @@ export const SuggestAction = {
   OpenField: 'OPEN_FIELD',
   /** A value: add it, and close the key. */
   AddValue: 'ADD_VALUE',
-  /** A value of a held filter: add or take it off, the key stays open. */
+  /** A value of a held filter: add it (✓) or take it off, and close the key — every tap applies. */
   ToggleValue: 'TOGGLE_VALUE',
   /** The held filter of the open key, taken off whole. */
   RemoveFilter: 'REMOVE_FILTER',
@@ -80,7 +80,10 @@ export interface FilterChipVm {
   /** «10.11», «Иван, Стефан +1», «С бележка»; the key («Бръснар») while it is being picked; «Бръснар: „ни“» while text is typed into it. */
   readonly label: string;
   readonly glyph: UiIconName;
+  /** The barbers it holds, as faces — one disc, or a group of overlapping ones. */
   readonly faces: readonly FaceVm[];
+  /** How many more barbers than the faces drawn (the group's «+N»); 0 for none. */
+  readonly facesOverflow: number;
   /** «Бръснар: Иван, Стефан. Промени филтъра» · «Бръснар: избери стойност». */
   readonly accessibleLabel: string;
   /** Its values are open: the chip wears the ring. */

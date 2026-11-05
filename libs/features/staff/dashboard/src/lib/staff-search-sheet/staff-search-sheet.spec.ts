@@ -315,7 +315,7 @@ describe('StaffSearchSheet', () => {
     expect(cards()).toHaveLength(2);
   });
 
-  it('opens a pressed filter on its values: ✓ on the held one, a toggle, and «Махни филтъра» last', async () => {
+  it('opens a pressed filter on its values: ✓ on the held one, every tap applying and closing, «Махни филтъра» last', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
@@ -329,11 +329,23 @@ describe('StaffSearchSheet', () => {
       el('[data-suggestion="BARBER:b-ivan"]')?.getAttribute('aria-pressed'),
     ).toBe('false');
 
-    // A toggle keeps the values open.
+    // Every tap applies and closes: a second barber joins the filter, the
+    // values go, and the chip says both with a group of faces.
     press('[data-suggestion="BARBER:b-ivan"]');
     expect(chip('BARBER')?.textContent).toContain('Нико, Иван');
-    expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('false');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).toBeNull();
+    expect(
+      chip('BARBER')?.querySelectorAll('ui-avatar-group ui-avatar'),
+    ).toHaveLength(2);
 
+    // A ticked value tapped comes off, and closes too.
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    press('[data-suggestion="BARBER:b-ivan"]');
+    expect(chip('BARBER')?.textContent).not.toContain('Иван');
+    expect(chip('BARBER')?.querySelector('ui-avatar-group')).toBeNull();
+
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
     press('[data-suggestion="REMOVE:BARBER"]');
     expect(chip('BARBER')).toBeNull();
     expect(el('[data-suggestion="FIELD:BARBER"]')).not.toBeNull();

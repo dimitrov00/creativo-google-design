@@ -286,6 +286,7 @@ function filterChipOf(
       label: input.words.chipTyped(key, typed),
       glyph: glyphOf(field),
       faces: [],
+      facesOverflow: 0,
       accessibleLabel: input.words.chipTyped(key, typed),
       active,
     };
@@ -296,6 +297,7 @@ function filterChipOf(
       label: key,
       glyph: glyphOf(field),
       faces: [],
+      facesOverflow: 0,
       accessibleLabel: input.words.tokenBuilding(key),
       active,
     };
@@ -315,6 +317,10 @@ function filterChipOf(
             .slice(0, CHIP_FACES)
             .map((id) => faceOf(id, input))
         : [],
+    facesOverflow:
+      held.searchFilterField === SearchFilterField.Barber
+        ? Math.max(0, held.filterBarberIds.length - CHIP_FACES)
+        : 0,
     accessibleLabel: input.words.tokenLabel(key, value),
     active,
   };
