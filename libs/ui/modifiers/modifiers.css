@@ -472,7 +472,10 @@
      reset on a popover, which is already a material of its own (and a
      backdrop root: a blur nested inside one samples only the popover).
      Opaque controls (prominent, filled) and fill-less ones (plain) read
-     nothing: there is nothing to see through. Zero specificity, so a
+     nothing: there is nothing to see through. A search field's FRAME reads
+     it, not only its input: an `<input>`'s own backdrop is not drawn in
+     every engine (the bar's ✕ and chips frosted, the field beside them
+     showed the text under it, 2026-11-05). Zero specificity, so a
      control's own material (`glass`, `uiMaterial`) always wins. */
   :where(.ui-page-action-bar, .ui-sheet-action-bar) {
     --ui-control-backdrop: blur(var(--sys-material-thin-blur))
@@ -488,7 +491,7 @@
     .ui-chip,
     .ui-text-field,
     .ui-segmented-control__track,
-    .ui-search-field[data-has-tokens] .ui-search-field__frame
+    .ui-search-field .ui-search-field__frame
   ) {
     -webkit-backdrop-filter: var(--ui-control-backdrop, none);
     backdrop-filter: var(--ui-control-backdrop, none);

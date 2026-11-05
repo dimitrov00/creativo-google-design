@@ -79,7 +79,7 @@ describe('modifiers.css · floating chrome (a bar lends its controls a backdrop)
       '.ui-chip',
       '.ui-text-field',
       '.ui-segmented-control__track',
-      '.ui-search-field[data-has-tokens] .ui-search-field__frame',
+      '.ui-search-field .ui-search-field__frame',
     ]) {
       expect(selector).toContain(control);
     }

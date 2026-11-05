@@ -12,6 +12,9 @@
   .ui-search-field__frame {
     display: grid;
     align-items: center;
+    /* The capsule's own corners, so a backdrop the frame carries (a bar's
+       floating chrome, modifiers.css) is the field's shape, not a box. */
+    border-radius: var(--control-radius-capsule);
   }
 
   /* THE MAGNIFIER at the control-glyph rung (20px), the size the ✕ button
@@ -36,6 +39,23 @@
     inline-size: 100%;
     padding-inline-start: calc(var(--sys-space-unit) * 10);
     border-radius: var(--control-radius-capsule);
+  }
+
+  /* NO HAIRLINE (owner, 2026-11-05: "no border, so it matches the other
+     elements"): the capsule is its fill alone, as a chip and the ✕ beside it
+     are — at rest and under the pointer. The keyboard's focus keeps the
+     text field's accent edge and glow. */
+  .ui-search-field .ui-search-field__native:not(:focus-visible) {
+    border-color: transparent;
+  }
+
+  @media (hover: hover) {
+    .ui-search-field
+      .ui-search-field__native.ui-text-field:hover:not(:focus-visible):not(
+        :disabled
+      ) {
+      border-color: transparent;
+    }
   }
 
   /* The engine's own ✕ goes (a blue glyph in one browser, none in
@@ -168,7 +188,7 @@
       (var(--control-size-regular) - var(--control-size-small) - 2px) / 2
     );
     padding-inline: calc(var(--sys-space-unit) * 3) var(--sys-space-compact);
-    border: 1px solid var(--sys-color-separator);
+    border: 1px solid transparent;
     border-radius: calc(var(--control-size-regular) / 2);
     background: var(--sys-color-fill);
     transition:
