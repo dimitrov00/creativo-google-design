@@ -61,6 +61,7 @@ import {
   type SearchSheetVm,
   type FilterChipVm,
   type CommitRowVm,
+  type ServiceRowVm,
   type ServiceTileVm,
   type TextChipVm,
 } from './staff-search.vm';
@@ -601,7 +602,7 @@ function valueSuggestions(
       keys: [],
       sections: [],
       calendar,
-      tiles: [],
+      serviceRows: [],
       apply: null,
     };
   }
@@ -634,12 +635,12 @@ function valueSuggestions(
   }
   // A service's values are a GRID of covers (the booking catalogue's card),
   // not rows; the key still heads them.
-  const tiles =
+  const serviceRows =
     field === SearchFilterField.Service
-      ? rows.map((row) => serviceTileOf(row, input))
+      ? rowsByService(rows.map((row) => serviceTileOf(row, input)))
       : [];
   const sections: SuggestionSectionVm[] =
-    tiles.length > 0 || field === SearchFilterField.Service
+    field === SearchFilterField.Service
       ? []
       : [
           {
@@ -675,7 +676,7 @@ function valueSuggestions(
     keys: [],
     sections,
     calendar: null,
-    tiles,
+    serviceRows,
     apply: many
       ? {
           label:
@@ -731,7 +732,7 @@ function suggestionsOf(
       keys,
       sections: byKey('STARTERS', starters, input),
       calendar: null,
-      tiles: [],
+      serviceRows: [],
       apply: null,
     };
   }
@@ -756,7 +757,7 @@ function suggestionsOf(
       .map((row) => marked(row, text)),
     sections: byKey('MATCHES', matched, input),
     calendar: null,
-    tiles: [],
+    serviceRows: [],
     apply: null,
   };
 }
@@ -790,7 +791,7 @@ function byKey(
   return sections;
 }
 
-/** A service value as a cover tile: a variant names itself over its service, a plain service just itself. */
+/** A service value as a cover tile: the service's name, and a variant's under it. */
 function serviceTileOf(
   row: SuggestionRowVm,
   input: SearchSheetInput,
@@ -808,12 +809,26 @@ function serviceTileOf(
   return {
     id: row.id,
     serviceId: service,
-    name: variantName ?? serviceName,
-    meta: variantName === null ? '' : serviceName,
+    // The SERVICE leads (owner, 2026-11-05); a variant says which, quieter.
+    name: serviceName,
+    meta: variantName ?? '',
     coverSrc: input.serviceArt.coverSrc(service),
     checked: row.checked === true,
     row,
   };
+}
+
+/** The tiles one row per service — its variants side by side — in the order they came. */
+function rowsByService(
+  tiles: readonly ServiceTileVm[],
+): readonly ServiceRowVm[] {
+  const rows: { id: string; tiles: ServiceTileVm[] }[] = [];
+  for (const tile of tiles) {
+    const last = rows[rows.length - 1];
+    if (last !== undefined && last.id === tile.serviceId) last.tiles.push(tile);
+    else rows.push({ id: tile.serviceId, tiles: [tile] });
+  }
+  return rows;
 }
 
 /** A label as one unmarked run. */

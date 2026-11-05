@@ -74,6 +74,27 @@
     border-color: var(--sys-color-accent);
   }
 
+  /* CAPTION BELOW: the name and meta under the cover, in the page's ink,
+     and the selection ring around the COVER alone — never the words. */
+  .cr-service-card__below {
+    display: grid;
+    gap: 2px;
+    padding-block-start: var(--sys-space-compact);
+    padding-inline: 2px;
+    color: var(--sys-color-foreground);
+  }
+
+  .cr-service-card[data-caption='below'] .cr-service-card__select::after {
+    content: none;
+  }
+
+  /* Just OUTSIDE the cover: the photo paints over an inset ring, and a
+     grid's compact gap leaves the room. */
+  .cr-service-card[data-caption='below'][data-selected] .ui-media-card {
+    outline: 2px solid var(--sys-color-accent);
+    outline-offset: 2px;
+  }
+
   /* BLOCKED — the WHOLE card mutes, and that is the entire signal.
      Previously a warning capsule sat across the leading corner shouting the
      word while the art stayed at full strength; the badge competed with the

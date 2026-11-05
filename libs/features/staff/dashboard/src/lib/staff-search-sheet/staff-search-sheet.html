@@ -129,11 +129,11 @@
           }
         </ul>
       </section>
-      } } @if (vm().suggestions.tiles.length > 0) {
-      <!-- A SERVICE's values as a gallery of covers, three across (the
-           booking catalogue's card, its corner ring the checkbox): a
-           service with variants stands as its variants, one after another,
-           then the next service. The placeholder when there is no cover. -->
+      } } @if (vm().suggestions.serviceRows.length > 0) {
+      <!-- A SERVICE's values as cover cards (the booking catalogue's card,
+           its corner ring the checkbox), ONE ROW PER SERVICE — a fitness
+           library's rows: its variants side by side, three across, the name
+           under each cover, the service leading and the variant quieter. -->
       <section
         class="staff-search-sheet__section"
         [attr.data-suggest-mode]="vm().suggestions.suggestMode"
@@ -146,28 +146,35 @@
         >
           {{ t('staff.search.key.service') }}
         </p>
-        <ui-grid
-          [uiColumns]="3"
-          uiSpacing="compact"
-          data-testid="staff-search-service-grid"
-        >
-          @for (tile of vm().suggestions.tiles; track tile.id) {
-          <cr-service-card
-            class="staff-search-sheet__tile"
-            [attr.data-suggestion]="tile.id"
-            [attr.data-checked]="tile.checked ? '' : null"
-            [uiServiceId]="tile.serviceId"
-            [uiName]="tile.name"
-            [uiMeta]="tile.meta"
-            [uiCoverUrl]="tile.coverSrc"
-            [uiSelectedCount]="tile.checked ? 1 : 0"
-            [uiShowDetails]="false"
-            uiSelectionIndicator="always"
-            (mousedown)="$event.preventDefault()"
-            (uiPressed)="pickRow(tile.row)"
-          />
+        <ui-stack uiSpacing="regular" data-testid="staff-search-service-grid">
+          @for (row of vm().suggestions.serviceRows; track row.id) {
+          <ui-grid
+            [uiColumns]="3"
+            uiSpacing="compact"
+            data-testid="staff-search-service-row"
+            [attr.data-service]="row.id"
+          >
+            @for (tile of row.tiles; track tile.id) {
+            <cr-service-card
+              class="staff-search-sheet__tile"
+              [attr.data-suggestion]="tile.id"
+              [attr.data-checked]="tile.checked ? '' : null"
+              [uiServiceId]="tile.serviceId"
+              [uiName]="tile.name"
+              [uiMeta]="tile.meta"
+              [uiCoverUrl]="tile.coverSrc"
+              uiCaption="below"
+              uiRatio="3 / 4"
+              [uiSelectedCount]="tile.checked ? 1 : 0"
+              [uiShowDetails]="false"
+              uiSelectionIndicator="always"
+              (mousedown)="$event.preventDefault()"
+              (uiPressed)="pickRow(tile.row)"
+            />
+            }
+          </ui-grid>
           }
-        </ui-grid>
+        </ui-stack>
       </section>
       } @if (vm().suggestions.calendar; as calendar) {
       <section class="staff-search-sheet__section">

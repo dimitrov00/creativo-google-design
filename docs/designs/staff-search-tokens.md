@@ -299,6 +299,13 @@ variantId }` (new component). The service filter holds services whole
   name a variant with its service («Подстрижка с ножица · Дълга коса»).
 - The catalogue reaches the sheet as the dashboard's `catalog.serviceVms()`
   (covers, variants), read once per change into lookups.
+- **Revised the same day (owner):** one ROW PER SERVICE — its variants side
+  by side, three across, a fitness library's rows (pliability, Open on
+  Mobbin) — the cover PORTRAIT (3:4), and the name UNDER it, the service
+  leading and the variant quieter (`cr-service-card` gains `uiCaption:
+'overlay' | 'below'` and `uiRatio`; below, the selection ring outlines the
+  cover only). A plain service is a row of one card; whether plain services
+  should share a row instead is open.
 
 ### «Кога»: preset, day or range
 

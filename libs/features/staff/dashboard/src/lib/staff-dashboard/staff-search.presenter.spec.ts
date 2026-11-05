@@ -734,7 +734,7 @@ describe('searchSheetVm — the suggestions', () => {
     ]);
   });
 
-  it('lays a service’s values out as cover tiles, a service with variants as its variants, then the next service', () => {
+  it('lays a service’s values out as cover cards, one row per service, its variants side by side', () => {
     const pool = [
       visit('long', 1, {}, IVAN, CUT),
       visit('fade', 2, {}, NIKO, FADE),
@@ -768,17 +768,26 @@ describe('searchSheetVm — the suggestions', () => {
     );
     // Tiles, not rows: no values section, «Махни филтъра» still last.
     expect(vm.suggestions.sections.map((s) => s.id)).toEqual(['REMOVE']);
+    // One row per service; the service leads every card, a variant under it.
     expect(
-      vm.suggestions.tiles.map((t) => [
-        t.id,
-        t.name,
-        t.meta,
-        t.coverSrc,
-        t.checked,
+      vm.suggestions.serviceRows.map((row) => [
+        row.id,
+        row.tiles.map((t) => [t.id, t.name, t.meta, t.coverSrc, t.checked]),
       ]),
     ).toEqual([
-      ['VARIANT:svc-classic-cut/long', 'Дълга коса', 'Класическо', null, true],
-      ['SERVICE:svc-fade', 'Фейд', '', 'fade.jpg', false],
+      [
+        'svc-classic-cut',
+        [
+          [
+            'VARIANT:svc-classic-cut/long',
+            'Класическо',
+            'Дълга коса',
+            null,
+            true,
+          ],
+        ],
+      ],
+      ['svc-fade', [['SERVICE:svc-fade', 'Фейд', '', 'fade.jpg', false]]],
     ]);
     // The chip names the variant with its service.
     expect(vm.filters[0]?.label).toBe('Класическо · Дълга коса');
