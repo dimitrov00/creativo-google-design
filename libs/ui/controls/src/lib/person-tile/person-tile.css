@@ -75,9 +75,12 @@
     box-sizing: border-box;
     border: 2px solid var(--sys-color-background);
     border-radius: var(--control-radius-capsule);
-    /* The scrim, not the control fill: a translucent fill vanishes over a
-       dark photo, and the ring must read over any face. */
-    background: var(--sys-color-scrim);
+    /* SOLID, never a film: a translucent fill took the photo's colour under
+       it and read as a smudge. The ground's own colour with a quiet stroke
+       inside it — iOS's empty selection circle — reads the same over any
+       face. */
+    background: var(--sys-color-background);
+    box-shadow: inset 0 0 0 1.5px var(--sys-color-tertiary-label);
     color: transparent;
     font-size: 0.875rem;
     pointer-events: none;
@@ -88,6 +91,7 @@
   }
 
   .ui-person-tile__check[data-selected] {
+    box-shadow: none;
     background: var(--sys-color-accent);
     color: var(--sys-color-on-accent);
   }
