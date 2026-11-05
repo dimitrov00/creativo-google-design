@@ -1142,8 +1142,9 @@
       "statusFilterLabel": "Filter",
       "statusFilterLabelOn": "Filter, on",
       "statusFilterTitle": "Which visits to show",
-      "statusFilterLede": "Hidden states stay off the schedule. Kept on this device.",
+      "statusFilterLede": "Hidden states and blocked time stay off the schedule. Kept on this device.",
       "statusFilterShowAll": "Show all",
+      "statusFilterBlocks": "Blocked time",
       "viewSettings": "Settings",
       "fieldsCount": "{{count}} of {{total}}",
       "field": {

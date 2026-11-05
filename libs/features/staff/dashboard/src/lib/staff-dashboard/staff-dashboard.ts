@@ -253,6 +253,7 @@ import {
   allDayEntriesOf,
   bookClientOption,
   daySummaryWords,
+  blockRowVm,
   dayTipsLine,
   exceptionWord,
   footShown,
@@ -1335,30 +1336,20 @@ export class StaffDashboard {
     // A CARVE-OUT is the opposite case and does get drawn. It is not empty
     // space — it is time somebody took, and the only non-visit thing on this
     // surface a person is meant to be able to move or lift.
-    return [...visits, ...this.blocksFor(lane, localDate, shopNow, attribute)];
-  }
-
-  /** A lane's breaks and admin hours, as blocks the grid can draw. */
-  private blocksFor(
-    lane: BarberDayLane,
-    localDate: LocalDate,
-    shopNow: ShopNow | null,
-    attribute: boolean,
-  ): readonly GridEvent[] {
-    const words = this.dayWords();
-    return lane.blocks.map((interval) =>
-      gridBlockEvent(
-        interval,
-        {
-          barberId: lane.barberId,
-          barberName: this.barberNameOf(lane.barberId),
-          localDate,
-          shopNow,
-          attribute,
-        },
-        words,
-      ),
-    );
+    // A lane's breaks and admin hours, unless the filter hides blocked time.
+    if (!this.statusFilter.blocksShown()) return visits;
+    const barberName = this.barberNameOf(lane.barberId);
+    const facts = {
+      barberId: lane.barberId,
+      barberName,
+      localDate,
+      shopNow,
+      attribute,
+    };
+    return [
+      ...visits,
+      ...lane.blocks.map((block) => gridBlockEvent(block, facts, words)),
+    ];
   }
 
   /**
@@ -1458,24 +1449,25 @@ export class StaffDashboard {
         ),
       );
       const barberName = vm ? this.content.text(vm.name) : lane.barberId;
+      const chair = {
+        barberId: lane.barberId,
+        barberName,
+        barberAvatarSrc: vm?.avatarSrc ?? null,
+        barberTone: this.toneOf(lane.barberId),
+      };
       const gaps: GapRowVm[] = lane.gaps.map((gap) =>
-        gapRowVm(
-          gap,
-          {
-            barberId: lane.barberId,
-            barberName,
-            barberAvatarSrc: vm?.avatarSrc ?? null,
-            barberTone: this.toneOf(lane.barberId),
-          },
-          localDate,
-          context,
-        ),
+        gapRowVm(gap, chair, localDate, context),
       );
-
+      const blocks =
+        localDate === null
+          ? []
+          : lane.blocks.map((block) =>
+              blockRowVm(block, chair, localDate, shopNow, context),
+            );
       // One run in clock order, on the shop's wall clock (one shop day per
-      // lane). A gap and a visit never share a start minute — a hole holds
-      // no visit's start — so the stable sort is total without a tiebreak.
-      const clockOrder: RunEntryVm[] = [...visits, ...gaps].sort(
+      // lane). A gap, a block and a visit never share a start minute — a
+      // hole or a block holds no visit's start — so the stable sort is total.
+      const clockOrder: RunEntryVm[] = [...visits, ...gaps, ...blocks].sort(
         (a, b) => startMinuteOf(a) - startMinuteOf(b),
       );
 
@@ -1560,6 +1552,9 @@ export class StaffDashboard {
     const items = this.lanes()
       .flatMap((lane) => lane.entries)
       .filter((entry) => {
+        if (entry.agendaRow === AgendaRow.Block) {
+          return this.statusFilter.blocksShown();
+        }
         if (entry.agendaRow !== AgendaRow.Gap) return true;
         // Holes are a SECOND question — off unless someone is asking it.
         if (!freeTime) return false;

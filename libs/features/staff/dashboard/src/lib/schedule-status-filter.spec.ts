@@ -50,12 +50,24 @@ describe('ScheduleStatusFilter', () => {
     expect(fresh().hidden()).toEqual([]);
   });
 
-  it('shows everything again in one act', () => {
+  it('hides blocked time on its own switch, kept on the device, and says it filters', () => {
+    const filter = fresh();
+    expect(filter.blocksShown()).toBe(true);
+    filter.toggleBlocks();
+    expect(filter.blocksShown()).toBe(false);
+    expect(filter.filtering()).toBe(true);
+    expect(fresh().blocksShown()).toBe(false);
+  });
+
+  it('shows everything again in one act, blocked time included', () => {
     const filter = fresh();
     filter.toggle(BookingStatus.NoShow);
     filter.toggle(BookingStatus.Cancelled);
+    filter.toggleBlocks();
     filter.showAll();
     expect(filter.hidden()).toEqual([]);
+    expect(filter.blocksShown()).toBe(true);
     expect(fresh().hidden()).toEqual([]);
+    expect(fresh().blocksShown()).toBe(true);
   });
 });

@@ -581,6 +581,45 @@
                 </span>
               </div>
             </li>
+            } @else if (entry.agendaRow === AgendaRow.Block) {
+            <!-- BLOCKED TIME (owner, 2026-11-05: visible in the list too, the
+                 filter's «Блокирано време» switch): the hole's line with the
+                 grid block's mark and word, its rail neutral like the grid's.
+                 A press opens it in the block editor, as the grid's does. -->
+            <li
+              class="agenda-card agenda-card--gap"
+              [class.agenda-card--idle]="entry.past"
+              uiInteractive
+              tabindex="0"
+              role="button"
+              [attr.aria-label]="entry.accessibleName"
+              [attr.data-past]="entry.past ? '' : null"
+              [attr.data-row-id]="entry.id"
+              data-testid="staff-block-row"
+              (click)="openBlock(entry.id)"
+              (keydown.enter)="openBlock(entry.id)"
+            >
+              <span class="agenda-card__rail" aria-hidden="true"></span>
+              <div class="agenda-card__hole">
+                <span
+                  class="agenda-card__hole-word"
+                  uiText
+                  uiFont="callout"
+                  uiForegroundStyle="secondary"
+                >
+                  <ui-icon uiName="booking.blocked" aria-hidden="true" />
+                  {{ entry.label }}
+                </span>
+                <span
+                  class="agenda-card__gap-span"
+                  uiText
+                  uiFont="footnote"
+                  uiForegroundStyle="secondary"
+                >
+                  {{ entry.spanLabel }}
+                </span>
+              </div>
+            </li>
             } @else {
             <!-- A VISIT — ONE ROW, three columns.
                  ===============================================================

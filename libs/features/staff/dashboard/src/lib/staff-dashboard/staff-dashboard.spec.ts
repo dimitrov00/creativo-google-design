@@ -7678,9 +7678,10 @@ describe('StaffDashboard', () => {
     expect(
       host().querySelector('[data-testid="staff-status-filter-sheet"]'),
     ).not.toBeNull();
+    // Five states and blocked time.
     expect(
       host().querySelectorAll('[data-testid^="staff-status-"][uiswitch]'),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
   });
   it('prints the contact details the owner asked for, behind their fields', () => {
     // REVERSED, deliberately. An earlier ruling kept digits out of the run
@@ -9360,6 +9361,41 @@ describe('StaffDashboard', () => {
         expect(page().blockEdit()).toEqual(
           expect.objectContaining({ startMinute: 720, endMinute: 780 }),
         );
+      });
+
+      it('draws a block in the list as well as the grid, opens it from either, and hides both behind the filter', async () => {
+        blockOn('2026-08-05', wallAt(12), until(13));
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        const row = () =>
+          host().querySelector<HTMLElement>(
+            '[data-testid="staff-block-row"][data-row-id="block:ivan:2026-08-05:720"]',
+          );
+        // The list's own block row, worded like the grid's block…
+        expect(row()?.getAttribute('aria-label')).toContain('12:00');
+        // …and a press opens it in the block editor, as the grid's does.
+        row()?.click();
+        expect(page().blockEdit()).toEqual(
+          expect.objectContaining({ startMinute: 720, endMinute: 780 }),
+        );
+        (
+          fixture.componentInstance as unknown as {
+            blockEdit: { set: (edit: null) => void };
+          }
+        ).blockEdit.set(null);
+        fixture.detectChanges();
+
+        // The filter's «Блокирано време» hides it in the list and the grid.
+        TestBed.inject(ScheduleStatusFilter).toggleBlocks();
+        fixture.detectChanges();
+        expect(row()).toBeNull();
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        expect(
+          page()
+            .gridColumns()
+            .flatMap((column) => column.events.map((event) => event.id)),
+        ).not.toContain('block:ivan:2026-08-05:720');
+        TestBed.inject(ScheduleStatusFilter).showAll();
       });
 
       describe('an edited block (B6)', () => {

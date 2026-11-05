@@ -78,6 +78,7 @@ import {
   ALL_DAY_MORE_KEY,
   type AgendaCardVm,
   AgendaRow,
+  type BlockRowVm,
   type DayRowVm,
   type FrameNeighbour,
   type GapRowVm,
@@ -735,6 +736,38 @@ export function gapRowVm(
     sellable: gap.sellable,
     barberName: chair.barberName,
     barberAvatarSrc: chair.barberAvatarSrc,
+    barberTone: chair.barberTone,
+  };
+}
+
+/** A chair's block, as the run prints it — the grid block's words in a line. */
+export function blockRowVm(
+  interval: MinuteRange,
+  chair: GapChair,
+  localDate: LocalDate,
+  shopNow: ShopNow | null,
+  context: Pick<DayRowContext, 'locale' | 'words'>,
+): BlockRowVm {
+  const from = wallClockLabel(localDate, interval.startMinutes, context.locale);
+  const to = wallClockLabel(localDate, interval.endMinutes, context.locale);
+  return {
+    agendaRow: AgendaRow.Block,
+    // The grid block's own id, so a press opens it through `openBlock`.
+    id: `block:${chair.barberId}:${localDate}:${interval.startMinutes}`,
+    startMinutes: interval.startMinutes,
+    label: context.words.blocked,
+    spanLabel: spanWords(
+      MinuteCount.span(interval.startMinutes, interval.endMinutes),
+      context.words.span,
+    ),
+    accessibleName: `${context.words.blocked}, ${from}–${to}`,
+    past:
+      shopNow !== null &&
+      VisitStorySystem.hasEnded(
+        { localDate, minute: interval.endMinutes },
+        shopNow,
+      ),
+    barberName: chair.barberName,
     barberTone: chair.barberTone,
   };
 }

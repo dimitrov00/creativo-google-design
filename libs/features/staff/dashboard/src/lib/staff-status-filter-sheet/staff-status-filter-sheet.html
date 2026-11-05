@@ -39,6 +39,23 @@
       </ui-list-row>
       }
     </ui-list-group>
+
+    <!-- BLOCKED TIME, its own group: time a chair took off the book is not
+         a booking state, but it is drawn on the same schedule. -->
+    <ui-list-group>
+      <ui-list-row uiSize="large">
+        <span uiLeading><ui-icon uiName="booking.blocked" /></span>
+        {{ t('staff.day.statusFilterBlocks') }}
+        <button
+          uiSwitch
+          uiTrailing
+          [uiOn]="filter.blocksShown()"
+          [attr.aria-label]="t('staff.day.statusFilterBlocks')"
+          data-testid="staff-status-blocks"
+          (uiOnChange)="filter.toggleBlocks()"
+        ></button>
+      </ui-list-row>
+    </ui-list-group>
   </ui-stack>
 
   <!-- «Покажи всички» only while something is hidden — a "show all" over a

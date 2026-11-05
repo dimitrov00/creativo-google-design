@@ -20,6 +20,8 @@ import { BookingStatus, Tag } from '@core/primitives';
  * desk and a barber's phone are read by different people.
  */
 const STORAGE_KEY = 'staff-schedule-hidden-statuses';
+/** Blocked time hidden — its own key: a block is time, not a booking state. */
+const BLOCKS_KEY = 'staff-schedule-hide-blocks';
 
 /** The states in the sheet's order: the lifecycle's, live first. */
 export const SCHEDULE_STATUSES: readonly BookingStatus[] = [
@@ -48,15 +50,34 @@ function load(): readonly BookingStatus[] {
   }
 }
 
+function loadBlocksHidden(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(BLOCKS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class ScheduleStatusFilter {
   private readonly state = signal<readonly BookingStatus[]>(load());
+  private readonly blocksHidden = signal(loadBlocksHidden());
 
   /** The states the schedule leaves out — what `ScheduleFilterSystem.shown` takes. */
   readonly hidden = this.state.asReadonly();
 
+  /**
+   * BLOCKED TIME is drawn (owner, 2026-11-05: "blocked blocks should be
+   * able to be visible") — the grid's blocks and the list's block rows. On
+   * until hidden, as every state is.
+   */
+  readonly blocksShown = computed(() => !this.blocksHidden());
+
   /** Something is hidden: the bar's filter control says so in the accent. */
-  readonly filtering = computed(() => this.state().length > 0);
+  readonly filtering = computed(
+    () => this.state().length > 0 || this.blocksHidden(),
+  );
 
   isShown(status: BookingStatus): boolean {
     return !this.state().includes(status);
@@ -71,9 +92,24 @@ export class ScheduleStatusFilter {
     );
   }
 
-  /** Every state drawn again. */
+  toggleBlocks(): void {
+    this.commitBlocks(!this.blocksHidden());
+  }
+
+  /** Every state, and blocked time, drawn again. */
   showAll(): void {
     this.commit([]);
+    this.commitBlocks(false);
+  }
+
+  private commitBlocks(hidden: boolean): void {
+    this.blocksHidden.set(hidden);
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(BLOCKS_KEY, String(hidden));
+    } catch {
+      // As below: the choice simply does not outlive the session.
+    }
   }
 
   private commit(next: readonly BookingStatus[]): void {

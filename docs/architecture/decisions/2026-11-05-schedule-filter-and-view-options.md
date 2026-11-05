@@ -51,6 +51,14 @@
    sliders; owner: "it could be just settings"), list view only — a calendar block has no card. The
    view menu still holds no ACT (the 2026-09-23 ruling): fields are how the
    day is drawn, like the rendering above them.
+7. **Blocked time is filterable too, and the list draws it** (owner:
+   "blocked blocks should be able to be visible"). A second group in the
+   sheet, «Блокирано време» (`booking.blocked`), its own stored switch
+   (`staff-schedule-hide-blocks`), on by default. The list, which drew only
+   visits and free time, gains a BLOCK row (`AgendaRow.Block`,
+   `blockRowVm`): the grid block's word, length and neutral rail on the
+   hole's line, its id the grid block's, so a press opens the block editor
+   through the same `openBlock`. Hiding it takes the grid's blocks too.
 
 ## Not done
 
