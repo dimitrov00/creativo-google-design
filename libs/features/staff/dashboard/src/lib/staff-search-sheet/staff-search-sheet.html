@@ -47,8 +47,10 @@
       <!-- THE SUGGESTIONS above the results, under their keys: the starters
            of an untouched search or what the typed text names, or the open
            key's values (✓ on the held ones, «Махни филтъра» last) and its
-           month. The typed run is marked as on the cards. A press keeps the
-           keyboard. -->
+           month. The typed run is marked as on the cards. Each key's rows
+           are one segmented list (the block editor's Repeat page grammar):
+           a held value wears the app's one selection — the wash and the
+           rounder corner — plus the ✓. A press keeps the keyboard. -->
       @for (section of vm().suggestions.sections; track section.id) { @if
       (section.rows.length > 0) {
       <section
@@ -64,46 +66,51 @@
         >
           {{ heading }}
         </p>
-        } @for (row of section.rows; track row.id) {
-        <button
-          type="button"
-          uiListRow
-          uiSize="regular"
-          [uiInteractive]="true"
-          [uiRole]="row.destructive ? 'destructive' : null"
-          class="staff-search-sheet__row"
-          data-search-focusable
-          data-testid="staff-search-suggestion"
-          [attr.data-suggestion]="row.id"
-          [attr.aria-pressed]="row.checked"
-          (mousedown)="$event.preventDefault()"
-          (click)="pickRow(row)"
-        >
-          @if (row.face; as face) {
-          <ui-avatar
-            uiLeading
-            uiControlSize="small"
-            [uiSrc]="face.src"
-            [uiName]="face.name"
-          />
-          } @else if (row.glyph; as glyph) {
-          <span uiLeading>
-            <ui-icon [uiName]="glyph" aria-hidden="true" />
-          </span>
-          }
-          <ui-marked-text [uiRuns]="row.parts" />
-          @if (row.checked === true) {
-          <ui-icon
-            uiTrailing
-            uiName="checklist.done"
-            class="staff-search-sheet__check"
-            aria-hidden="true"
-          />
-          } @else if (row.detail; as detail) {
-          <span uiTrailing>{{ detail }}</span>
-          }
-        </button>
         }
+        <ul uiListGroup [attr.aria-label]="section.heading">
+          @for (row of section.rows; track row.id) {
+          <li>
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              [uiSelected]="row.checked === true"
+              [uiRole]="row.destructive ? 'destructive' : null"
+              data-search-focusable
+              data-testid="staff-search-suggestion"
+              [attr.data-suggestion]="row.id"
+              [attr.aria-pressed]="row.checked"
+              (mousedown)="$event.preventDefault()"
+              (click)="pickRow(row)"
+            >
+              @if (row.face; as face) {
+              <ui-avatar
+                uiLeading
+                uiControlSize="small"
+                [uiSrc]="face.src"
+                [uiName]="face.name"
+              />
+              } @else if (row.glyph; as glyph) {
+              <span uiLeading>
+                <ui-icon [uiName]="glyph" aria-hidden="true" />
+              </span>
+              }
+              <ui-marked-text [uiRuns]="row.parts" />
+              @if (row.checked === true) {
+              <span uiTrailing>
+                <ui-icon
+                  uiName="checklist.done"
+                  uiForegroundStyle="accent"
+                  aria-hidden="true"
+                />
+              </span>
+              } @else if (row.detail; as detail) {
+              <span uiTrailing>{{ detail }}</span>
+              }
+            </button>
+          </li>
+          }
+        </ul>
       </section>
       } } @if (vm().suggestions.calendar; as calendar) {
       <section class="staff-search-sheet__section">
@@ -178,24 +185,26 @@
             {{ t('staff.search.clearRecents') }}
           </button>
         </ui-section-header>
-        @for (recent of vm().recents; track recent.id) {
-        <button
-          type="button"
-          uiListRow
-          uiSize="regular"
-          [uiInteractive]="true"
-          class="staff-search-sheet__row"
-          data-search-focusable
-          data-testid="staff-search-recent"
-          (mousedown)="$event.preventDefault()"
-          (click)="runRecent(recent)"
-        >
-          <span uiLeading>
-            <ui-icon uiName="search.recent" aria-hidden="true" />
-          </span>
-          {{ recent.label }}
-        </button>
-        }
+        <ul uiListGroup [attr.aria-label]="t('staff.search.recents')">
+          @for (recent of vm().recents; track recent.id) {
+          <li>
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              data-search-focusable
+              data-testid="staff-search-recent"
+              (mousedown)="$event.preventDefault()"
+              (click)="runRecent(recent)"
+            >
+              <span uiLeading>
+                <ui-icon uiName="search.recent" aria-hidden="true" />
+              </span>
+              {{ recent.label }}
+            </button>
+          </li>
+          }
+        </ul>
       </section>
       } } } } @for (note of vm().footnotes; track note) {
       <p

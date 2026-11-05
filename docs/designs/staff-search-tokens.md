@@ -230,6 +230,11 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
   `uiMaterial`) wins (zero specificity).
 - **The chosen filters wrap** (`ui-flow`) instead of sliding in a scroll
   row: every filter that narrows the search stays in view.
+- **The rows above the results are segmented lists** (`ul[uiListGroup]`,
+  the block editor's Repeat page grammar): one group per key, a held value
+  wearing the app's one selection (`uiSelected`: the wash and the rounder
+  corner) plus the ✓, «Махни филтъра» a group of its own, the recents one
+  too.
 
 ### «Кога»: preset, day or range
 

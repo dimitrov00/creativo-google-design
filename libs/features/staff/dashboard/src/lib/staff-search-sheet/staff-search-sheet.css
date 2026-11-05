@@ -30,20 +30,11 @@
   text-overflow: ellipsis;
 }
 
-/* THE SUGGESTIONS above the results: a quiet heading over DS list rows. */
+/* THE SUGGESTIONS above the results: a quiet heading over a segmented list. */
 .staff-search-sheet__section {
   display: grid;
 }
 
 .staff-search-sheet__heading {
   padding-block-end: var(--sys-space-tight);
-}
-
-.staff-search-sheet__row {
-  border-radius: var(--control-radius-small, var(--control-radius-regular));
-}
-
-/* The held value's mark: the accent as a glyph, the word stays ink. */
-.staff-search-sheet__check {
-  color: var(--sys-color-accent);
 }
