@@ -47,6 +47,7 @@ import {
 import {
   UiAvatar,
   UiAvatarGroup,
+  UiPersonTile,
   UiButton,
   UiChip,
   UiIcon,
@@ -137,6 +138,7 @@ function deviceStorage(): Storage | null {
   imports: [
     UiAvatar,
     UiAvatarGroup,
+    UiPersonTile,
     UiButton,
     UiChip,
     UiFlow,

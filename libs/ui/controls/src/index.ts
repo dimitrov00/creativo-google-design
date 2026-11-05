@@ -14,6 +14,7 @@ export * from './lib/switch/switch';
 export * from './lib/badge/badge';
 export * from './lib/avatar/avatar';
 export * from './lib/avatar-group/avatar-group';
+export * from './lib/person-tile/person-tile';
 export * from './lib/progress-view/progress-view';
 export * from './lib/skeleton/skeleton';
 export * from './lib/otp-field/otp-field';

@@ -649,6 +649,7 @@ function valueSuggestions(
             heading: keyOf(field, input.words),
             rows,
             prominent: false,
+            faces: field === SearchFilterField.Barber,
             seeAll: null,
           },
         ];
@@ -657,6 +658,7 @@ function valueSuggestions(
       id: 'REMOVE',
       heading: null,
       prominent: false,
+      faces: false,
       seeAll: null,
       rows: [
         {
@@ -782,6 +784,7 @@ function byKey(
     heading: string;
     rows: SuggestionRowVm[];
     prominent: true;
+    faces: boolean;
     seeAll: SeeAllVm | null;
   }[] = [];
   for (const row of rows) {
@@ -798,6 +801,7 @@ function byKey(
         heading: key,
         rows: [row],
         prominent: true,
+        faces: row.searchFilterField === SearchFilterField.Barber,
         seeAll: null,
       });
     }

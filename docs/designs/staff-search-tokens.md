@@ -349,6 +349,18 @@ can be picked); a barber, service, variant, status or the note offered and
 not shown does. A group that already lists every value carries no action.
 «Всички» alone was rejected: it reads as "all visits".
 
+### Barbers as faces (2026-11-05, eighth pass)
+
+A barber group (the starters, the matches, the «Бръснар» values) is a grid
+of three `ui-person-tile`s — a 64 face over the name, centred, two balanced
+lines at most — instead of list rows (Photos' «People», Messages' pinned
+conversations): a face reads as a person before a word is read, and a shop's
+barbers fit one row. While the key is ticked as a set, each face carries an
+empty ring on its foot, and a ticked one the accent check plus the accent
+ring round the face, the service card's grammar. The tile is the design
+system's (`libs/ui/controls/src/lib/person-tile`), on the avatar's new
+`tile` rung (`--control-size-tile`).
+
 ## Not done (on purpose)
 
 - **A client key** (`Клиент: …`). Typed text already finds a client by every

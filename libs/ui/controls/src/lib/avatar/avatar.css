@@ -44,6 +44,15 @@
     block-size: var(--ui-avatar-disc);
     font: var(--sys-font-title3);
   }
+  /* The TILE face: 64, the person tile's disc (a face over its name in a
+     grid). The rung the action and choice tiles stand on, so a grid of
+     people and a run of verbs share one disc. */
+  .ui-avatar[data-control-size='tile'] {
+    --ui-avatar-disc: var(--control-size-tile);
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
+    font: var(--sys-font-title2);
+  }
   .ui-avatar[data-control-size='extraLarge'] {
     /* The PORTRAIT rung: 112, the disc a page is about. It was this rule's
        own literal (28 units) while the avatar alone drew at that scale;

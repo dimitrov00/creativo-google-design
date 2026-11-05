@@ -134,6 +134,8 @@ export interface SuggestionSectionVm {
   readonly rows: readonly SuggestionRowVm[];
   /** A group of the page's own suggestions (the starters, the matches): headed like «Скорошни», not as a quiet list label. */
   readonly prominent: boolean;
+  /** Its rows are people (the barbers): a grid of faces over their names, not a list. */
+  readonly faces: boolean;
   /** «Всички опции ›» on a group that leaves some of its key's values out: opens the key's whole list; null otherwise. */
   readonly seeAll: SeeAllVm | null;
 }

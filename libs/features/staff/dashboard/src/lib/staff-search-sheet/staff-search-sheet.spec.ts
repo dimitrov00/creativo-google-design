@@ -176,6 +176,17 @@ describe('StaffSearchSheet', () => {
         b.getAttribute('data-field'),
       ),
     ).toEqual(['WHEN']);
+    // The barbers are faces over their names, a plain press each.
+    const faces = all(
+      '[data-testid="staff-search-faces"] button.ui-person-tile',
+    );
+    expect(faces.map((tile) => tile.getAttribute('data-suggestion'))).toEqual([
+      'BARBER:b-ivan',
+      'BARBER:b-niko',
+    ]);
+    expect(faces.every((tile) => !tile.hasAttribute('aria-pressed'))).toBe(
+      true,
+    );
     expect(
       all('[data-suggest-mode] [data-testid="staff-search-suggestion"]').map(
         (row) => row.getAttribute('data-suggestion'),

@@ -159,7 +159,33 @@
         >
           {{ heading }}
         </p>
-        }
+        } @if (section.faces) {
+        <!-- People as faces over their names (Photos' «People»): a grid of
+             three, each press the row's own. -->
+        <ui-grid
+          [uiColumns]="3"
+          uiSpacing="regular"
+          role="group"
+          data-testid="staff-search-faces"
+          [attr.aria-label]="section.heading"
+        >
+          @for (row of section.rows; track row.id) {
+          <button
+            uiPersonTile
+            [uiSrc]="row.face?.src ?? null"
+            [uiName]="row.face?.name ?? row.label"
+            [uiSelected]="row.checked"
+            data-search-focusable
+            data-testid="staff-search-suggestion"
+            [attr.data-suggestion]="row.id"
+            (mousedown)="$event.preventDefault()"
+            (click)="pickRow(row)"
+          >
+            <ui-marked-text [uiRuns]="row.parts" />
+          </button>
+          }
+        </ui-grid>
+        } @else {
         <ul uiListGroup [attr.aria-label]="section.heading">
           @for (row of section.rows; track row.id) {
           <li>
@@ -204,6 +230,7 @@
           </li>
           }
         </ul>
+        }
       </section>
       } } @if (vm().suggestions.calendar; as calendar) {
       <section class="staff-search-sheet__section">

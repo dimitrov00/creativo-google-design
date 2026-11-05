@@ -243,6 +243,8 @@ describe('searchSheetVm — idle', () => {
       },
       null,
     ]);
+    // The barbers are people: a grid of faces, not a list.
+    expect(vm.suggestions.sections.map((s) => s.faces)).toEqual([false, true]);
     expect(suggestionRows(vm).map((r) => [r.detail, r.suggestAction])).toEqual(
       Array(4).fill([null, SuggestAction.AddValue]),
     );
@@ -651,8 +653,10 @@ describe('searchSheetVm — the suggestions', () => {
     expect(open.suggestions.sections.map((s) => s.heading)).toEqual([
       'Бръснар',
     ]);
-    // The whole list is already open: nothing more to see.
+    // The whole list is already open: nothing more to see. The barbers are
+    // faces, ticked as a set.
     expect(open.suggestions.sections.map((s) => s.seeAll)).toEqual([null]);
+    expect(open.suggestions.sections.map((s) => s.faces)).toEqual([true]);
     // A barber key is picked as a set: every value a tick, none ticked yet,
     // «Приложи» in the bar.
     expect(suggestionRows(open).map((r) => [r.id, r.checked])).toEqual([
