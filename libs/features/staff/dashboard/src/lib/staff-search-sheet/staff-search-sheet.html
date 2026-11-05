@@ -13,31 +13,37 @@
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
     [fullScreen]="true"
-    [titleAlwaysVisible]="true"
     [closeControl]="false"
     data-testid="staff-search-sheet"
     (dismissed)="close()"
   >
-    <!-- THE BAR'S TITLE from the start (the sheets' compact title, owner
-         2026-11-05): a top bar the page can put its own buttons in, whose
-         chrome fades in as the results scroll under it, as every sheet's.
-         No ✕ up there — the search ends from the ✕ beside its field. -->
+    <!-- THE BAR'S COMPACT TITLE, landing as the large title scrolls under
+         the bar (every sheet's collapse, owner 2026-11-05). No ✕ up there —
+         the search ends from the ✕ beside its field. -->
     <span sheet-title data-testid="staff-search-bar-title"
       >{{ t('staff.day.searchLabel') }}</span
     >
     <ui-stack uiSpacing="comfortable" class="staff-search-sheet__body">
-      <!-- The bar's title is decoration to assistive tech; this names the page. -->
-      <h2 id="staff-search-title" data-visually-hidden>
-        {{ t('staff.day.searchLabel') }}
-      </h2>
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        data-testid="staff-search-scope"
-      >
-        {{ t('staff.day.searchScope') }}
-      </p>
+      <!-- THE LARGE TITLE and what the search reaches, the sheets' one head;
+           it folds into the bar as the page scrolls. -->
+      <ui-sheet-headline>
+        <h2
+          uiSheetLargeTitle
+          id="staff-search-title"
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('staff.day.searchLabel') }}
+        </h2>
+        <p
+          uiText
+          uiFont="subheadline"
+          uiForegroundStyle="secondary"
+          data-testid="staff-search-scope"
+        >
+          {{ t('staff.day.searchScope') }}
+        </p>
+      </ui-sheet-headline>
 
       @if (vm().commitRow; as commit) {
       <!-- THE TYPED TEXT, offered as a filter (Mail's «Subject contains …»):

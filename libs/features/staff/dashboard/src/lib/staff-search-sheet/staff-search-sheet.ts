@@ -70,6 +70,7 @@ import {
   UiMarkedText,
   UiPageActionBar,
   UiSectionHeader,
+  UiSheetHeadline,
 } from '@creativo/ui/patterns';
 import { guestLabelOf } from '../staff-dashboard/staff-day-guest.words';
 import {
@@ -154,6 +155,7 @@ function deviceStorage(): Storage | null {
     UiPageActionBar,
     UiSearchField,
     UiSectionHeader,
+    UiSheetHeadline,
     UiStack,
     UiTextDirective,
     VisitList,
@@ -621,7 +623,9 @@ export class StaffSearchSheet {
     this.visitPicked.emit(id);
   }
 
+  /** ✕ (or Escape): the search as it stands is kept as a recent, then the page goes. */
   protected close(): void {
+    this.keepRecent();
     this.closeKey();
     this.store.closeSearch();
   }

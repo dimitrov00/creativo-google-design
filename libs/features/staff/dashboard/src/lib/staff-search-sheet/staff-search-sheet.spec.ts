@@ -563,6 +563,19 @@ describe('StaffSearchSheet', () => {
     expect(loadRecents(localStorage)).toHaveLength(1);
   });
 
+  it('keeps a search built from filters as a recent when the ✕ ends it, and an empty one not at all', async () => {
+    await mount();
+    press('[data-testid="staff-search-input-dismiss"]');
+    expect(loadRecents(localStorage)).toEqual([]);
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-testid="staff-search-input-dismiss"]');
+    expect(
+      loadRecents(localStorage).map((recent) =>
+        recent.searchFilters.map((filter) => filter.searchFilterField),
+      ),
+    ).toEqual([['BARBER']]);
+  });
+
   it('shows the device’s recents when idle, runs one again, and clears them', async () => {
     localStorage.setItem(
       SEARCH_RECENTS_KEY,
