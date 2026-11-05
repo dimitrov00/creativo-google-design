@@ -28,7 +28,11 @@
     z-index: var(--sys-layer-header);
     inline-size: 100%;
     display: flex;
-    align-items: center;
+    /* The controls share the row's FLOOR: a fill that grows upward (a search
+       field with chips over it) keeps the controls beside it on its own
+       baseline row instead of centred against its height. Controls of one
+       height sit exactly as they did centred. */
+    align-items: flex-end;
     justify-content: flex-start;
     gap: var(--sys-space-compact);
     padding-block: var(--sys-space-compact)
@@ -100,6 +104,11 @@
   .ui-page-action-bar > [data-button-style='borderedProminent'],
   .ui-page-action-bar > [uiprimary] {
     margin-inline-start: auto;
+    /* The primary keeps its label whole: beside a fill it is the fill that
+       gives way, never the action (a squeezed «Приложи (2)» wrapped onto
+       two lines). */
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .ui-page-action-bar

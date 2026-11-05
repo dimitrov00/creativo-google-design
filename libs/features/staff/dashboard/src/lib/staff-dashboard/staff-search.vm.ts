@@ -43,9 +43,9 @@ export type SuggestMode = (typeof SuggestMode)[keyof typeof SuggestMode];
 export const SuggestAction = {
   /** A key: open its values (a key with no values adds its filter instead). */
   OpenField: 'OPEN_FIELD',
-  /** A value: add it, and close the key. */
+  /** A value of a single-valued key, a starter or a match: add it, and close the key. */
   AddValue: 'ADD_VALUE',
-  /** A value of a held filter: add it (✓) or take it off, and close the key — every tap applies. */
+  /** A value of a many-valued key: tick or untick it in the set being picked; «Приложи» applies the set. */
   ToggleValue: 'TOGGLE_VALUE',
   /** The held filter of the open key, taken off whole. */
   RemoveFilter: 'REMOVE_FILTER',
@@ -140,6 +140,13 @@ export interface SearchSuggestionsVm {
   /** The rows above the results. */
   readonly sections: readonly SuggestionSectionVm[];
   readonly calendar: SuggestionCalendarVm | null;
+  /** «Приложи (2)» — the bar's primary while a many-valued key's set is being picked; null otherwise. */
+  readonly apply: SuggestionApplyVm | null;
+}
+
+/** The bar's «Приложи» for the set being picked. */
+export interface SuggestionApplyVm {
+  readonly label: string;
 }
 
 /** A recent search; pressing it runs it again. */

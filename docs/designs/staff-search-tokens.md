@@ -237,12 +237,19 @@ The owner's third look, checked again against Photos and Mail on Mobbin:
   too.
 - **A key's values keep their order**: a pick never moves a row under the
   thumb; a held value the window no longer offers follows the offered ones.
-- **Every tap on a value applies and closes** (owner, 2026-11-05: "toggle
-  for multiple, or apply on tap?"). As an iOS menu does even for its ✓
-  items: an unticked value is added, a ticked one taken off, and the values
-  close. Several barbers stay possible — the chip pressed again and another
-  tapped — without a second rule for the same tap (the first pick used to
-  close the list and later ones keep it open).
+- **A many-valued key is ticked as a set, then applied** (owner,
+  2026-11-05: "toggle or check to enable multiple selection plus apply when
+  done"). «Бръснар», «Услуга» and «Статус» hold several values matched with
+  OR (`SearchFilter.holdsMany`): opening one starts a set from what it
+  holds; a tap ticks or unticks a row (the selection wash and the ✓) and
+  the values stay; «Приложи (2)» — the bar's primary, in the ✕'s place
+  while the set is picked — replaces the key's filter where it stands
+  (`SearchQuery.withFilterReplaced`; none ticked takes it off). Escape or
+  the chip pressed again lets the set go. «Кога» holds one span: a tap
+  applies it. A starter or a matched value outside a key adds itself on a
+  tap, as before. The bar now floors its controls and never squeezes its
+  primary (`ui-page-action-bar`), so «Приложи (2)» sits on the field's row
+  on one line.
 - **Several barbers are one group of faces** in the chip (`ui-avatar-group`,
   «+N» past three), the chip's face seat extended to a group in the DS.
 

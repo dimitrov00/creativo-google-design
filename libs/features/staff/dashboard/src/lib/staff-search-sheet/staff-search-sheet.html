@@ -233,7 +233,9 @@
         uiBusyTestId="staff-search-loading"
         uiTestId="staff-search-input"
         [uiClearLabel]="t('staff.day.searchClear')"
-        [uiDismissLabel]="t('staff.day.cancelDismiss')"
+        [uiDismissLabel]="
+          vm().suggestions.apply ? '' : t('staff.day.cancelDismiss')
+        "
         [uiEscapeClaimed]="escapeClaimed()"
         [uiDropdownOpen]="cardOpen()"
         uiDropdownPlacement="above"
@@ -329,6 +331,25 @@
           }
         </ui-list-group>
       </ui-search-field>
+      @if (vm().suggestions.apply; as applyVm) {
+      <!-- A many-valued key's set, applied once: the bar's primary (the
+           visit sheet's dock grammar, «Приложи …»), in the ✕'s place while
+           the set is being picked — a picking mode has one way on; the
+           chip pressed again or Escape lets the set go. A press keeps the
+           keyboard. -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        uiPrimary
+        data-testid="staff-search-apply"
+        (mousedown)="$event.preventDefault()"
+        (click)="apply()"
+      >
+        {{ applyVm.label }}
+      </button>
+      }
     </ui-page-action-bar>
   </ui-modal-sheet>
 </ng-container>

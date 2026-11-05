@@ -181,6 +181,8 @@ export class StaffSearchSheet {
 
   /** The key whose values are listed — being picked, or a chosen filter pressed. */
   protected readonly openField = signal<SearchFilterField | null>(null);
+  /** The set being picked for an open many-valued key, until «Приложи»; null for none ticked. */
+  private readonly draft = signal<SearchFilter | null>(null);
   /** The search parked while a key is open; null while none is. */
   private readonly heldText = signal<string | null>(null);
   /** The month open over the values, and a span's first picked end. */
@@ -268,6 +270,7 @@ export class StaffSearchSheet {
       stale: this.store.searchStale(),
       openField: this.openField(),
       typedText: this.typed(),
+      draft: this.draft(),
       calendarMode: this.calendarMode(),
       rangeStart: this.rangeStart(),
     });
@@ -337,12 +340,21 @@ export class StaffSearchSheet {
     this.openField.set(field);
     this.calendarMode.set(null);
     this.rangeStart.set(null);
+    // A many-valued key is picked as a set, from what it holds now.
+    this.draft.set(
+      SearchFilter.holdsMany(field)
+        ? (this.filters().searchFilters.find(
+            (held) => held.searchFilterField === field,
+          ) ?? null)
+        : null,
+    );
   }
 
-  /** The key closed: the parked search comes back as it was. */
+  /** The key closed: the parked search comes back as it was; a set not applied is let go. */
   private closeKey(): void {
     const held = this.heldText();
     this.openField.set(null);
+    this.draft.set(null);
     this.calendarMode.set(null);
     this.rangeStart.set(null);
     if (held === null) return;
@@ -386,17 +398,19 @@ export class StaffSearchSheet {
         return;
       }
       case SuggestAction.ToggleValue: {
+        // A many-valued key is ticked as a set and applied once (owner,
+        // 2026-11-05: "toggle for multiple selection plus apply when done").
         const filter = row.filter;
         if (filter === null) return;
-        this.filters.update((held) =>
+        this.draft.update((draft) =>
           row.checked === true
-            ? SearchQuery.withoutFilterValue(held, filter)
-            : SearchQuery.withFilter(held, filter),
+            ? draft === null
+              ? null
+              : SearchFilter.subtract(draft, filter)
+            : draft === null
+              ? filter
+              : SearchFilter.merge(draft, filter),
         );
-        // ONE rule for a tap (owner, 2026-11-05: toggle, or apply on tap?):
-        // it applies and closes, as an iOS menu does even for its ✓ items.
-        // A second barber is the chip pressed again and another tapped.
-        this.closeKey();
         return;
       }
       case SuggestAction.RemoveFilter:
@@ -447,8 +461,22 @@ export class StaffSearchSheet {
     clearRecents(this.storage);
   }
 
-  /** Return: with a key open, its first value; else the search is kept as a recent. */
+  /** «Приложи»: the set picked replaces the key's filter where it stands (none ticked takes it off). */
+  protected apply(): void {
+    const field = this.openField();
+    if (field === null) return;
+    this.filters.update((held) =>
+      SearchQuery.withFilterReplaced(held, field, this.draft()),
+    );
+    this.closeKey();
+  }
+
+  /** Return: a set being picked is applied; with a key open, its first value; else the search is kept as a recent. */
   protected submit(): void {
+    if (this.vm().suggestions.apply !== null) {
+      this.apply();
+      return;
+    }
     if (this.openField() !== null) {
       const first = this.vm().suggestions.sections[0]?.rows[0];
       if (first !== undefined) this.pickRow(first);

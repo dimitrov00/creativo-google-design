@@ -186,7 +186,9 @@ test.describe('the schedule search sheet — part 2', () => {
     );
     await expect(chip).toBeVisible();
     const niko = page.locator('[data-suggestion="BARBER:niko"]');
+    // A barber key is ticked as a set and applied once.
     await niko.click();
+    await page.getByTestId('staff-search-apply').click();
     await expect(chip).toContainText('Нико');
     await input.fill(run);
     await expect(cardsOf(page, run)).toHaveCount(1, { timeout: 30_000 });

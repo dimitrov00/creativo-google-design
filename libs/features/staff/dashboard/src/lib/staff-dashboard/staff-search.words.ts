@@ -27,6 +27,10 @@ export interface StaffSearchWords {
   readonly pickDay: string;
   readonly pickRange: string;
   readonly removeFilter: string;
+  /** «Приложи» — the bar's primary for a set being picked, with nothing ticked. */
+  readonly apply: string;
+  /** «Приложи (2)». */
+  readonly applyCount: (count: number) => string;
   readonly pickDayCaption: string;
   readonly rangeFirstCaption: string;
   /** «От 5 ноем. · избери последния ден» — `{{from}}` is already formatted. */
@@ -86,6 +90,8 @@ export function staffSearchWordsOf(
     pickDay: translate('staff.search.pickDay'),
     pickRange: translate('staff.search.pickRange'),
     removeFilter: translate('staff.search.removeFilter'),
+    apply: translate('staff.search.apply'),
+    applyCount: (count) => translate('staff.search.applyCount', { count }),
     pickDayCaption: translate('staff.search.pickDayCaption'),
     rangeFirstCaption: translate('staff.search.rangeFirstCaption'),
     rangeLastCaption: (from) =>

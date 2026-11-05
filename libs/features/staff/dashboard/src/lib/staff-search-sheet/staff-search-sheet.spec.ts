@@ -243,7 +243,10 @@ describe('StaffSearchSheet', () => {
     expect(store.closeSearch).toHaveBeenCalled();
   });
 
-  it('picks a key, then a value: the key stands as a chip until the value replaces its word', async () => {
+  /** «Приложи» in the bar: the set being picked is applied. */
+  const applySet = () => press('[data-testid="staff-search-apply"]');
+
+  it('picks a key, ticks a value, applies: the key stands as a chip until «Приложи» replaces its word', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
@@ -253,19 +256,45 @@ describe('StaffSearchSheet', () => {
       el('[data-testid="staff-search-keys"] [data-suggestion]'),
     ).toBeNull();
     expect(field().placeholder).toContain('staff.search.scopedPlaceholder');
+    // A tick is not yet a filter: the values stay, «Приложи» counts the set
+    // and stands where the ✕ was.
     press('[data-suggestion="BARBER:b-niko"]');
+    expect(
+      el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(chip('BARBER')?.textContent).toContain('staff.search.key.barber');
+    expect(el('[data-testid="staff-search-apply"]')?.textContent).toContain(
+      'staff.search.applyCount',
+    );
+    expect(el('[data-testid="staff-search-input-dismiss"]')).toBeNull();
+    applySet();
     expect(chip('BARBER')?.textContent).toContain('Нико');
     expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('false');
     expect(chip('BARBER')?.getAttribute('data-selected')).toBe('');
+    expect(el('[data-testid="staff-search-apply"]')).toBeNull();
+    expect(el('[data-testid="staff-search-input-dismiss"]')).not.toBeNull();
     expect(cards()).toHaveLength(2);
     // No token in the field any more: the filters float over it.
     expect(all('.ui-search-field__token')).toHaveLength(0);
+  });
+
+  it('lets a set that was not applied go on Escape', async () => {
+    await mount();
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    field().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
+    );
+    fixture.detectChanges();
+    expect(chip('BARBER')).toBeNull();
+    expect(el('[data-testid="staff-search-apply"]')).toBeNull();
   });
 
   it('parks the typed search while a pressed filter’s values are open, and brings it back', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
     type('иван');
     after(100);
     expect(cards()).toHaveLength(1);
@@ -277,10 +306,7 @@ describe('StaffSearchSheet', () => {
     expect(el('[data-suggestion="BARBER:b-niko"]')).not.toBeNull();
 
     press('[data-suggestion="BARBER:b-ivan"]');
-    field().dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
-    );
-    fixture.detectChanges();
+    applySet();
     expect(field().value).toBe('иван');
     expect(cards()).toHaveLength(2);
   });
@@ -290,7 +316,9 @@ describe('StaffSearchSheet', () => {
     // Barber, then When — the reverse of the order the keys are listed in.
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
     press('[data-suggestion="FIELD:WHEN"]');
+    // «Кога» holds one span: a tap applies it.
     press('[data-suggestion^="WHEN:"]');
     expect(chipIds()).toEqual(['BARBER', 'WHEN']);
   });
@@ -311,16 +339,17 @@ describe('StaffSearchSheet', () => {
     press('[data-suggestion="FIELD:BARBER"]');
     expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
     expect(field().value).toBe('');
     expect(cards()).toHaveLength(2);
   });
 
-  it('opens a pressed filter on its values: ✓ on the held one, every tap applying and closing, «Махни филтъра» last', async () => {
+  it('opens a pressed filter on its held set: ticks to change it, «Приложи» to apply, «Махни филтъра» last', async () => {
     await mount();
     press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
     press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
     press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
-    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
     expect(
       el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
@@ -329,22 +358,33 @@ describe('StaffSearchSheet', () => {
       el('[data-suggestion="BARBER:b-ivan"]')?.getAttribute('aria-pressed'),
     ).toBe('false');
 
-    // Every tap applies and closes: a second barber joins the filter, the
-    // values go, and the chip says both with a group of faces.
+    // A second tick joins the set; the values stay until it is applied, and
+    // then the chip says both with a group of faces.
     press('[data-suggestion="BARBER:b-ivan"]');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
+    expect(chip('BARBER')?.textContent).not.toContain('Иван');
+    applySet();
     expect(chip('BARBER')?.textContent).toContain('Нико, Иван');
-    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('false');
-    expect(el('[data-suggestion="REMOVE:BARBER"]')).toBeNull();
     expect(
       chip('BARBER')?.querySelectorAll('ui-avatar-group ui-avatar'),
     ).toHaveLength(2);
 
-    // A ticked value tapped comes off, and closes too.
+    // A tick taken off, applied: one barber again.
     press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
     press('[data-suggestion="BARBER:b-ivan"]');
+    applySet();
     expect(chip('BARBER')?.textContent).not.toContain('Иван');
     expect(chip('BARBER')?.querySelector('ui-avatar-group')).toBeNull();
 
+    // Every tick off, applied: the filter goes.
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    expect(chip('BARBER')).toBeNull();
+
+    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
     press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
     press('[data-suggestion="REMOVE:BARBER"]');
     expect(chip('BARBER')).toBeNull();

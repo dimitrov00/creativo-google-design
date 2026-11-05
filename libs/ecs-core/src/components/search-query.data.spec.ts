@@ -134,12 +134,54 @@ describe('SearchQuery — the companion', () => {
     ).toBe(false);
   });
 
+  it('replaces a kind’s filter where it stands, appends a new kind, and takes the kind off on null', () => {
+    const held = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.barber([IVAN])),
+      SearchFilter.note(),
+    );
+    const replaced = SearchQuery.withFilterReplaced(
+      held,
+      SearchFilterField.Barber,
+      SearchFilter.barber([NIKO]),
+    );
+    // In place: the barbers stay first, and Ivan is gone, not merged.
+    expect(replaced.searchFilters.map((f) => f.searchFilterField)).toEqual([
+      SearchFilterField.Barber,
+      SearchFilterField.Note,
+    ]);
+    expect(barberIds(replaced)).toEqual([NIKO]);
+    expect(
+      SearchQuery.withFilterReplaced(
+        held,
+        SearchFilterField.Service,
+        SearchFilter.service([FADE]),
+      ).searchFilters.map((f) => f.searchFilterField),
+    ).toEqual([
+      SearchFilterField.Barber,
+      SearchFilterField.Note,
+      SearchFilterField.Service,
+    ]);
+    expect(
+      SearchQuery.withFilterReplaced(held, SearchFilterField.Barber, null)
+        .searchFilters,
+    ).toEqual([SearchFilter.note()]);
+  });
+
+  it('says which kinds hold several values', () => {
+    expect(SearchFilter.holdsMany(SearchFilterField.Barber)).toBe(true);
+    expect(SearchFilter.holdsMany(SearchFilterField.Service)).toBe(true);
+    expect(SearchFilter.holdsMany(SearchFilterField.Status)).toBe(true);
+    expect(SearchFilter.holdsMany(SearchFilterField.When)).toBe(false);
+    expect(SearchFilter.holdsMany(SearchFilterField.Note)).toBe(false);
+  });
+
   it('does not change the query it was given', () => {
     const query = deepFreeze(
       SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.barber([IVAN])),
     );
     SearchQuery.withFilter(query, SearchFilter.barber([NIKO]));
     SearchQuery.withoutFilterValue(query, SearchFilter.barber([IVAN]));
+    SearchQuery.withFilterReplaced(query, SearchFilterField.Barber, null);
     expect(barberIds(query)).toEqual([IVAN]);
   });
 });

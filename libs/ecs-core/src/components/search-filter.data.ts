@@ -74,6 +74,19 @@ export const SearchFilter = {
   },
 
   /**
+   * Does a kind hold SEVERAL values (barbers, services, statuses — matched
+   * with OR), rather than one span or one flag? A many-valued kind is picked
+   * as a set and applied once; a single-valued one by one tap.
+   */
+  holdsMany(field: SearchFilterField): boolean {
+    return (
+      field === SearchFilterField.Barber ||
+      field === SearchFilterField.Service ||
+      field === SearchFilterField.Status
+    );
+  },
+
+  /**
    * `next` added to `current`, both of one kind: the ids of a list kind are
    * united (first seen first), a date span or the note flag is replaced.
    * Two filters of different kinds are not merged — `next` is answered.

@@ -1202,6 +1202,8 @@
       "pickDay": "A specific day…",
       "pickRange": "A date range…",
       "removeFilter": "Remove filter",
+      "apply": "Apply",
+      "applyCount": "Apply ({{count}})",
       "pickDayCaption": "Pick a day",
       "rangeFirstCaption": "Pick the first day",
       "rangeLastCaption": "From {{from}} · pick the last day",

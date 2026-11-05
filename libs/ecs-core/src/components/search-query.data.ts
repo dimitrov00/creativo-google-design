@@ -189,6 +189,31 @@ export const SearchQuery = {
     return { searchText: query.searchText, searchFilters: filters };
   },
 
+  /**
+   * The filter of a kind REPLACED where it stands (a set picked and applied
+   * at once): a held filter of that kind gives way to `next` in its place,
+   * a kind not held yet goes last, and `null` takes the kind off.
+   */
+  withFilterReplaced(
+    query: SearchQuery,
+    field: SearchFilterField,
+    next: SearchFilter | null,
+  ): SearchQuery {
+    let replaced = false;
+    const filters: SearchFilter[] = [];
+    for (let i = 0; i < query.searchFilters.length; i++) {
+      const held = query.searchFilters[i] as SearchFilter;
+      if (held.searchFilterField !== field) {
+        filters.push(held);
+        continue;
+      }
+      replaced = true;
+      if (next !== null) filters.push(next);
+    }
+    if (!replaced && next !== null) filters.push(next);
+    return { searchText: query.searchText, searchFilters: filters };
+  },
+
   /** Every filter of a kind taken off. */
   withoutFilter(query: SearchQuery, field: SearchFilterField): SearchQuery {
     return {

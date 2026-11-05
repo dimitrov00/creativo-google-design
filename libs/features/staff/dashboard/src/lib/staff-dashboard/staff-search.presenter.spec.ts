@@ -167,6 +167,7 @@ function input(
     stale: false,
     openField: null,
     typedText: '',
+    draft: null,
     calendarMode: null,
     rangeStart: null,
     ...overrides,
@@ -569,11 +570,16 @@ describe('searchSheetVm — the suggestions', () => {
     expect(open.suggestions.sections.map((s) => s.heading)).toEqual([
       'Бръснар',
     ]);
+    // A barber key is picked as a set: every value a tick, none ticked yet,
+    // «Приложи» in the bar.
     expect(suggestionRows(open).map((r) => [r.id, r.checked])).toEqual([
-      ['BARBER:b-ivan', null],
-      ['BARBER:b-niko', null],
+      ['BARBER:b-ivan', false],
+      ['BARBER:b-niko', false],
     ]);
-    expect(suggestionRows(open)[0]?.suggestAction).toBe(SuggestAction.AddValue);
+    expect(suggestionRows(open)[0]?.suggestAction).toBe(
+      SuggestAction.ToggleValue,
+    );
+    expect(open.suggestions.apply).toEqual({ label: 'Приложи' });
     expect(suggestionRows(open)[0]?.face).toEqual({ src: null, name: 'Иван' });
     const narrowed = searchSheetVm(
       input('bg', SearchQuery.empty(), {
@@ -584,15 +590,19 @@ describe('searchSheetVm — the suggestions', () => {
     expect(suggestionLabels(narrowed)).toEqual(['Нико']);
   });
 
-  it('marks a pressed filter’s held values, toggles them, and offers to remove the filter last', () => {
+  it('ticks the set being picked, offers «Приложи» with its count, and removing the filter last', () => {
     const held = SearchQuery.withFilter(
       SearchQuery.empty(),
       SearchFilter.barber([NIKO]),
     );
     const vm = searchSheetVm(
-      input('bg', held, { openField: SearchFilterField.Barber }),
+      input('bg', held, {
+        openField: SearchFilterField.Barber,
+        draft: SearchFilter.barber([NIKO]),
+      }),
     );
-    // The window's own order: a held value keeps its place.
+    // The window's own order: a held value keeps its place. The ticks are
+    // the set being picked (opened from what is held).
     expect(suggestionRows(vm).map((r) => [r.id, r.checked])).toEqual([
       ['BARBER:b-ivan', false],
       ['BARBER:b-niko', true],
@@ -605,6 +615,21 @@ describe('searchSheetVm — the suggestions', () => {
     expect(remove?.label).toBe('Махни филтъра');
     expect(remove?.destructive).toBe(true);
     expect(remove?.suggestAction).toBe(SuggestAction.RemoveFilter);
+    expect(vm.suggestions.apply).toEqual({ label: 'Приложи (1)' });
+    // Ticked but not applied: the chip still says what is held.
+    const ticked = searchSheetVm(
+      input('en', held, {
+        openField: SearchFilterField.Barber,
+        draft: SearchFilter.barber([NIKO, IVAN]),
+      }),
+    );
+    expect(suggestionRows(ticked).map((r) => r.checked)).toEqual([
+      true,
+      true,
+      null,
+    ]);
+    expect(ticked.suggestions.apply).toEqual({ label: 'Apply (2)' });
+    expect(ticked.filters[0]?.label).toBe('Нико');
   });
 
   it('keeps a held preset where it stands, and puts a held day the window does not offer after the presets', () => {

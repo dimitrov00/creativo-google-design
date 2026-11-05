@@ -95,6 +95,8 @@ export interface SearchSheetInput {
   readonly openField: SearchFilterField | null;
   /** The text as typed: with a key open, what narrows its values. */
   readonly typedText: string;
+  /** The set being picked for an open many-valued key, before «Приложи»; null when none is ticked. */
+  readonly draft: SearchFilter | null;
   /** The month open in the suggestions for a day or a span; null for none. */
   readonly calendarMode: CalendarMode | null;
   /** A span's first picked end; null before it. */
@@ -342,6 +344,13 @@ function filterChipsOf(
   return chips;
 }
 
+/** Is this single value one the draft holds? */
+function isInDraft(filter: SearchFilter, draft: SearchFilter | null): boolean {
+  if (draft === null) return false;
+  const key = filterKey(filter);
+  return singleValues(draft).some((value) => filterKey(value) === key);
+}
+
 /** Is this single value one the held filter of its kind holds? */
 function isHeldValue(filter: SearchFilter, query: SearchQuery): boolean {
   const held = heldOf(query, filter.searchFilterField);
@@ -541,18 +550,24 @@ function valueSuggestions(
       keys: [],
       sections: [],
       calendar,
+      apply: null,
     };
   }
   const held = heldOf(query, field);
   const text = input.typedText.trim();
-  // A span replaces the held one and closes the key; a list kind toggles in place.
-  const toggles = held !== null && field !== SearchFilterField.When;
+  // A many-valued kind is ticked as a set and applied once («Приложи»); a
+  // span replaces the held one on a tap and closes the key.
+  const many = SearchFilter.holdsMany(field);
   const rows = valuesOf(field, offered, query, input)
     .map((filter) =>
       valueRow(filter, input, {
-        checked: held === null ? null : isHeldValue(filter, query),
+        checked: many
+          ? isInDraft(filter, input.draft)
+          : held === null
+            ? null
+            : isHeldValue(filter, query),
         detail: null,
-        suggestAction: toggles
+        suggestAction: many
           ? SuggestAction.ToggleValue
           : SuggestAction.AddValue,
       }),
@@ -593,11 +608,18 @@ function valueSuggestions(
       ],
     });
   }
+  const ticked = input.draft === null ? 0 : singleValues(input.draft).length;
   return {
     suggestMode: SuggestMode.Values,
     keys: [],
     sections,
     calendar: null,
+    apply: many
+      ? {
+          label:
+            ticked === 0 ? input.words.apply : input.words.applyCount(ticked),
+        }
+      : null,
   };
 }
 
@@ -647,6 +669,7 @@ function suggestionsOf(
       keys,
       sections: byKey('STARTERS', starters, input),
       calendar: null,
+      apply: null,
     };
   }
   const matched: SuggestionRowVm[] = [];
@@ -670,6 +693,7 @@ function suggestionsOf(
       .map((row) => marked(row, text)),
     sections: byKey('MATCHES', matched, input),
     calendar: null,
+    apply: null,
   };
 }
 
