@@ -30,8 +30,11 @@
 1. **The bar's funnel filters by STATE** (U, T). It opens a sheet
    (`lib-staff-status-filter-sheet`) with a row per booking state — the
    calendar's own mark (`BOOKING_STATUS_ICONS`), the search's word, a
-   switch — acting at once, «Покажи всички» in the sheet's bar only while
-   something is hidden. It applies in EVERY view (list and grid), so the
+   switch. The switches edit a DRAFT (owner: "apply and reset"): the bar's
+   «Нулирай» (leading, greyed while nothing is hidden) sets it back to
+   everything drawn, «Приложи» (trailing, the primary) takes it to the
+   schedule and closes, ✕ leaves the schedule as it was — the Zocdoc,
+   Beli and Insight Timer bar. It applies in EVERY view (list and grid), so the
    control shows in every view. Per device, like the card fields
    (`ScheduleStatusFilter`, `staff-schedule-hidden-statuses`).
 2. **It hides by each chair's OWN state** (C). The rows are built first and
