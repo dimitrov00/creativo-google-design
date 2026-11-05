@@ -711,13 +711,11 @@
   background-image: none;
 }
 
-/* A HOLE is one line — the word leading, how long it runs trailing. */
+/* A HOLE (and a block) is the event's head (owner, 2026-11-05: "the same
+   range as the events"): the word and how long it runs on the left, start
+   over end on the right — the head lays itself out; the card only seats it. */
 .agenda-card__hole {
   grid-area: body;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sys-space-compact);
   min-inline-size: 0;
 }
 
@@ -738,23 +736,6 @@
   color: inherit;
   font: inherit;
   text-align: start;
-}
-
-.agenda-card__hole-word {
-  /* Type and ink come from `uiText` on the element — see the template.
-     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
-     where the directives live, so declaring them here did not merely
-     duplicate the system, it silently overruled it. */
-}
-
-.agenda-card__gap-span {
-  flex: 0 0 auto;
-  /* Type and ink come from `uiText` on the element — see the template.
-     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
-     where the directives live, so declaring them here did not merely
-     duplicate the system, it silently overruled it. */
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* An ELAPSED hole is a line, not a card: one is a thing to fill and is

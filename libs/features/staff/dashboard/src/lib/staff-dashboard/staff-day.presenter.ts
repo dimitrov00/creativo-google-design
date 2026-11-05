@@ -757,6 +757,8 @@ export function blockRowVm(
     // The grid block's own id, so a press opens it through `openBlock`.
     id: `block:${chair.barberId}:${localDate}:${interval.startMinutes}`,
     startMinutes: interval.startMinutes,
+    startLabel: from,
+    endLabel: to,
     label: context.words.blocked,
     spanLabel: spanWords(
       MinuteCount.span(interval.startMinutes, interval.endMinutes),

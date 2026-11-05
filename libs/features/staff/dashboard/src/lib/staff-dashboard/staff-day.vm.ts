@@ -450,6 +450,9 @@ export interface BlockRowVm {
   readonly agendaRow: typeof AgendaRow.Block;
   readonly id: string;
   readonly startMinutes: MinuteOfDay;
+  /** The clock, as a visit's: start over end on the trailing side. */
+  readonly startLabel: string;
+  readonly endLabel: string;
   /** «Блокирано». */
   readonly label: string;
   /** «1 ч». */

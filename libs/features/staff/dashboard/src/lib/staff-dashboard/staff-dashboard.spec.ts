@@ -1646,6 +1646,20 @@ describe('StaffDashboard', () => {
     ]);
   });
 
+  it('gives a hole the event’s clock — start over end, its length beside its word', () => {
+    // Owner, 2026-11-05: free time reads "the same range as the events", so
+    // a chair free from 11:45 after a visit ending 11:35 shows the jump.
+    showFreeTime();
+    const gap = host().querySelector('[data-testid="staff-gap-row"]');
+    const start = gap?.querySelector('.staff-event-head__start')?.textContent;
+    const end = gap?.querySelector('.staff-event-head__end')?.textContent;
+    expect(start?.trim()).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(end?.trim()).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(
+      gap?.querySelector('.staff-event-head')?.hasAttribute('data-quiet'),
+    ).toBe(true);
+  });
+
   it('offers the ＋’s two acts from a sellable hole, at its start on its chair', () => {
     // Owner, 2026-11-05: a press on free time opens the add menu, and the
     // chosen sheet starts where the hole does.
@@ -9434,6 +9448,14 @@ describe('StaffDashboard', () => {
           );
         // The list's own block row, worded like the grid's block…
         expect(row()?.getAttribute('aria-label')).toContain('12:00');
+        // …with the event's clock, start over end (owner, 2026-11-05: "the
+        // same range as the events").
+        expect(
+          row()?.querySelector('.staff-event-head__start')?.textContent?.trim(),
+        ).toBe('12:00');
+        expect(
+          row()?.querySelector('.staff-event-head__end')?.textContent?.trim(),
+        ).toBe('13:00');
         // …and a press opens it in the block editor, as the grid's does.
         row()?.click();
         expect(page().blockEdit()).toEqual(

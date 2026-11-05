@@ -23,6 +23,7 @@ import type { StaffEventLine } from './staff-event-line';
       [timesDecorative]="decorative()"
       [struck]="struck()"
       [receded]="receded()"
+      [quiet]="quiet()"
       [quote]="quote()"
       [truncateLines]="truncateLines()"
       timesTestId="times"
@@ -44,6 +45,7 @@ class Host {
   readonly decorative = signal(false);
   readonly struck = signal(false);
   readonly receded = signal(false);
+  readonly quiet = signal(false);
   readonly quote = signal<string | null>(null);
   readonly truncateLines = signal(false);
 }
@@ -154,6 +156,16 @@ describe('StaffEventHead', () => {
     expect(hollowStatus(BookingStatus.Confirmed)).toBe(false);
     expect(hollowStatus(BookingStatus.Pending)).toBe(false);
     expect(hollowStatus(null)).toBe(false);
+  });
+
+  it('stamps quiet for time nobody holds — a hole or a block wears the clock, its word not a name', async () => {
+    const { fixture, q } = await render();
+    const head = q('.staff-event-head');
+    if (!head) throw new Error('the event head did not render');
+    expect(head.hasAttribute('data-quiet')).toBe(false);
+    fixture.componentInstance.quiet.set(true);
+    fixture.detectChanges();
+    expect(head.hasAttribute('data-quiet')).toBe(true);
   });
   /*
    * STRUCK, NEVER GREYED (review r5, a11y). An hour that did not happen is

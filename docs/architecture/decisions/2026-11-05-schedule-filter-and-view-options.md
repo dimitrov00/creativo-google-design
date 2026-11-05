@@ -72,6 +72,16 @@
    час · Блокирай време», on that hole's chair: a booking starts at the
    hole's start, a block takes the whole hole (`openCreate(intent, gap)`).
    The grid draws no holes — its empty space already is the free time.
+9. **Free and blocked rows carry the event's clock** (owner: "the same
+   range as the events … start and end time, not just duration"; U, T).
+   Both mount the visit card's own head (`lib-staff-event-head`): the word
+   and the length on the left (the length led by the filter's glyph,
+   `booking.slot` / `booking.blocked`), start over end on the right. The
+   head's new `quiet` state sets the word in the facts' ink at the regular
+   weight, so names still lead the run. This overturns the earlier choice
+   to leave a hole's start to its group heading: the heading reads one
+   minute for several chairs, and a turnaround hid in it — a chair free
+   from 11:45 after a visit ending 11:35 now shows the jump on its own row.
 
 ## Not done
 
