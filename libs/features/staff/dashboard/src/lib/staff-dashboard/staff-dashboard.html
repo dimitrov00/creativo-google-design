@@ -548,23 +548,20 @@
                  difference that matters is whether it can still be sold, and
                  that is carried in FORM: a sellable hole is a card the full
                  height of a booking, an elapsed one is a line. -->
+            <!-- A HOLE is one line: the word at the leading edge and how long
+                 it runs at the trailing one. No client, no facts, no marks —
+                 there is nobody in it. A hole that can still be sold is a
+                 press (owner, 2026-11-05): the ＋'s own menu, «Нов час ·
+                 Блокирай време», from its start on its chair. The menu's
+                 TRIGGER is the card, so the state layer fills the whole card
+                 as it does on a visit or a block — on a line inside it, the
+                 hover lit only the words. -->
+            @if (entry.sellable) {
             <li
-              class="agenda-card agenda-card--gap"
-              [class.agenda-card--idle]="!entry.sellable"
+              class="agenda-card__gap-item"
               [attr.data-barber-tone]="entry.barberTone"
-              [attr.data-past]="entry.past ? '' : null"
-              [attr.data-testid]="
-                entry.sellable ? 'staff-gap-row' : 'staff-idle-row'
-              "
+              data-testid="staff-gap-row"
             >
-              <span class="agenda-card__rail" aria-hidden="true"></span>
-
-              <!-- A HOLE is one line: the word at the leading edge and how
-                   long it runs at the trailing one. No client, no facts, no
-                   marks — there is nobody in it. A hole that can still be
-                   sold is a press (owner, 2026-11-05): the ＋'s own menu,
-                   «Нов час · Блокирай време», from its start on its chair. -->
-              @if (entry.sellable) {
               <ui-menu
                 class="agenda-card__gap-menu"
                 [uiPresented]="gapMenu() === entry.id"
@@ -576,26 +573,29 @@
                   type="button"
                   uiMenuTrigger
                   uiInteractive
-                  class="agenda-card__hole agenda-card__hole--press"
+                  class="agenda-card agenda-card--gap agenda-card__gap-press"
                   [attr.aria-expanded]="gapMenu() === entry.id"
                   data-testid="staff-gap-press"
                   (click)="gapMenu.set(gapMenu() === entry.id ? null : entry.id)"
                 >
-                  <span
-                    class="agenda-card__hole-word"
-                    uiText
-                    uiFont="callout"
-                    uiForegroundStyle="secondary"
-                  >
-                    {{ t('staff.day.agendaFree') }}
-                  </span>
-                  <span
-                    class="agenda-card__gap-span"
-                    uiText
-                    uiFont="footnote"
-                    uiForegroundStyle="secondary"
-                  >
-                    {{ entry.spanLabel }}
+                  <span class="agenda-card__rail" aria-hidden="true"></span>
+                  <span class="agenda-card__hole">
+                    <span
+                      class="agenda-card__hole-word"
+                      uiText
+                      uiFont="callout"
+                      uiForegroundStyle="secondary"
+                    >
+                      {{ t('staff.day.agendaFree') }}
+                    </span>
+                    <span
+                      class="agenda-card__gap-span"
+                      uiText
+                      uiFont="footnote"
+                      uiForegroundStyle="secondary"
+                    >
+                      {{ entry.spanLabel }}
+                    </span>
                   </span>
                 </button>
                 <ui-list-group>
@@ -623,7 +623,15 @@
                   </button>
                 </ui-list-group>
               </ui-menu>
-              } @else {
+            </li>
+            } @else {
+            <li
+              class="agenda-card agenda-card--gap agenda-card--idle"
+              [attr.data-barber-tone]="entry.barberTone"
+              [attr.data-past]="entry.past ? '' : null"
+              data-testid="staff-idle-row"
+            >
+              <span class="agenda-card__rail" aria-hidden="true"></span>
               <div class="agenda-card__hole">
                 <span
                   class="agenda-card__hole-word"
@@ -642,9 +650,8 @@
                   {{ entry.spanLabel }}
                 </span>
               </div>
-              }
             </li>
-            } @else if (entry.agendaRow === AgendaRow.Block) {
+            } } @else if (entry.agendaRow === AgendaRow.Block) {
             <!-- BLOCKED TIME (owner, 2026-11-05: visible in the list too, the
                  filter's «Блокирано време» switch): the hole's line with the
                  grid block's mark and word, its rail neutral like the grid's.
