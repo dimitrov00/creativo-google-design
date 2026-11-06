@@ -50,6 +50,21 @@
    person, so it leaves the chips and docks beside the ✓ at its size — the
    client page's «Нов клиент» beside its ✓.
 
+8. **The page opens on what the person HAS** (owner: "it should have
+   pre-checked the service that is already applied"). This REVERSES the
+   2026-09-10 ruling that nothing is marked as already on the visit — its
+   worry, that a service may be wanted twice, is the card's stepper now. The
+   person's seats open ticked at their count (`picksOf`); each person's ticks
+   are kept as the chips switch; the dock sets the services to the ticks —
+   «Добави N услуги» while it only adds, «Приложи» once it also takes off
+   (the newest seat of a service first), the ✓ while nothing changed.
+9. **The visit's own list stays ROWS** (owner: "grid in here, or keep it
+   simple as rows?"). Fresha's appointment details list the booked services
+   as rows — name, then duration — inside the overview; a cover grid on the
+   sheet would push the client, the time and the bill a screen down for
+   pictures of services the barber already knows. Covers are for CHOOSING
+   (the catalogue page); rows are for READING what is booked.
+
 ## Not done
 
 - Moving a seated service from one person to another — the ladder's «За

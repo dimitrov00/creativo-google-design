@@ -85,6 +85,8 @@ export type VisitEditorWords = {
   readonly noAccount: string;
   readonly newClient: string;
   readonly servicesAddOne: string;
+  /** «Приложи» — the service page's act when it also takes services off. */
+  readonly servicesApply: string;
   /* The discount page. */
   readonly alone: string;
   readonly stacks: string;

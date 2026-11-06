@@ -1,4 +1,9 @@
-import { type FrameInterval, withFrame } from './frame-draft';
+import {
+  type FrameInterval,
+  readableShiftOf,
+  shiftOf,
+  withFrame,
+} from './frame-draft';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
@@ -150,6 +155,12 @@ import {
   canTakeFocus,
   editorCardPages,
 } from './editor-tables';
+import {
+  type ServicePicks,
+  pickDiffOf,
+  picksOf,
+  withoutPicks,
+} from './service-picks';
 import { coverRowsOf } from '../shared/cover-rows';
 import {
   type ClientRowVm,
@@ -1006,41 +1017,6 @@ export interface VisitEditorShopOption {
   readonly address: string;
   readonly lat: number;
   readonly lng: number;
-}
-
-/**
- * THE CHAIR'S SHIFT, or `null` when the roster cannot say.
- *
- * One reading, shared by the window, the closed-hour shading and the
- * outside-the-shift verdict, because three different readings of the same
- * two numbers is how a frame ends up drawn shut over a visit it is happily
- * editing. `null` means "no usable shift": an end at or below the start,
- * which is what a shift closing at midnight becomes when it is read as a
- * wall-clock minute without being anchored to the day.
- */
-function shiftOf(
-  day: Pick<VisitEditorFrameDay, 'rosterStartMinute' | 'rosterEndMinute'>,
-): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
-  return day.rosterEndMinute > day.rosterStartMinute
-    ? { startMinute: day.rosterStartMinute, endMinute: day.rosterEndMinute }
-    : null;
-}
-
-/**
- * The shift as ONE shop day's range — the frame verdict's edge parse:
- * `null` for a pair `shiftOf` cannot read (inverted, empty) or one off the
- * day's clock (a start outside `MinuteOfDay`, an end outside `EndMinute`) —
- * no roster a visit can be OUTSIDE of.
- */
-function readableShiftOf(
-  day: Pick<VisitEditorFrameDay, 'rosterStartMinute' | 'rosterEndMinute'>,
-): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
-  const shift = shiftOf(day);
-  return shift !== null &&
-    MinuteOfDay.of(shift.startMinute).ok &&
-    EndMinute.of(shift.endMinute).ok
-    ? shift
-    : null;
 }
 
 /**
@@ -3032,7 +3008,7 @@ export class StaffVisitEditor {
    */
   private leavePage(page: EditorStackPage): void {
     if (page.editorPage === EditorPage.Service) {
-      this.servicePicks.set(new Map());
+      this.servicePicksBy.set(new Map());
     }
     if (page.editorPage === EditorPage.Discount) this.resetDiscountEntry();
     if (page.editorPage === EditorPage.Library) {
@@ -3395,86 +3371,105 @@ export class StaffVisitEditor {
     }));
   }
 
-  /* ── THE PICKS ON THE SERVICE PAGE (owner, 2026-09-17: "make it animated
-   * like select — in place of a check, a stepper should animate, expand";
-   * later that day: "adding a service → push sheet / page") ──
-   * A row's tap PICKS the service rather than seating it: the row takes
-   * the selection wash and its stepper unfolds to `− 1 +`, so a second of
-   * the same is one more press there, not a second trip through the page
-   * (a service may be wanted twice; owner, 2026-09-10). The DOCK's
-   * «Добави» — «Добави 2 услуги» — seats every pick and pops the page;
-   * the ‹ and the ✓ let the picks go. */
+  /* ── THE PICKS ON THE SERVICE PAGE (owner, 2026-09-17: "animated like
+   * select — a stepper expands"; 2026-11-06: "pre-checked the service that
+   * already is applied") ── The page opens on the person's OWN services
+   * ticked (`picksOf`): a tap turns a card on or off, its stepper counts a
+   * second of the same, and each person's ticks are kept as the chips
+   * switch between them. The DOCK's act sets the services to the ticks —
+   * «Добави N услуги» when it only adds, «Приложи» when it also takes off —
+   * and pops; the ‹ and the ✓ let the changes go. */
 
-  /** What is picked on the page and not seated yet: the option's id → how many. */
-  private readonly servicePicks = signal<ReadonlyMap<string, number>>(
+  /** The ticks a person was given on this page, by their key — untouched ones read their seats. */
+  private readonly servicePicksBy = signal<ReadonlyMap<string, ServicePicks>>(
     new Map(),
   );
 
-  /** A row's count on the page — its stepper's figure, its selection when above zero. */
+  /** Whose services the page sets: its subject, else the first person. */
+  private readonly servicePerson = computed<string>(
+    () =>
+      this.page()?.subjectId ??
+      this.draft().clients[0]?.id ??
+      DraftPersonKey.PLACEHOLDER,
+  );
+
+  private readonly currentPicks = computed<ServicePicks>(
+    () =>
+      this.servicePicksBy().get(this.servicePerson()) ??
+      picksOf(this.draft().legs, this.servicePerson()),
+  );
+
+  /** A card's count — its stepper's figure, its tick when above zero. */
   protected serviceCount(id: string): number {
-    return this.servicePicks().get(id) ?? 0;
+    return this.currentPicks().get(id) ?? 0;
   }
 
   /**
    * The pick's tap: on, or off again. ANY service, beside any other (owner,
    * 2026-09-17: "a staff account could do whatever he wants"): the
-   * catalogue's "does not combine" rule is the client's self-booking
-   * rule, and the shop's own book is not bound by it — the server does
-   * not refuse the shop either.
+   * catalogue's "does not combine" rule is the client's self-booking rule.
    */
   protected pickService(option: VisitEditorServiceOption): void {
     this.countService(option, this.serviceCount(option.id) > 0 ? 0 : 1);
   }
 
-  /** The stepper's answer: so many of this one; none takes the pick off. */
+  /** The stepper's answer: so many of this one; none takes the tick off. */
   protected countService(
     option: VisitEditorServiceOption,
     count: number,
   ): void {
-    this.servicePicks.update((picks) => {
-      const next = new Map(picks);
-      if (count <= 0) next.delete(option.id);
-      else next.set(option.id, count);
-      return next;
-    });
+    const next = new Map(this.currentPicks());
+    if (count <= 0) next.delete(option.id);
+    else next.set(option.id, count);
+    this.servicePicksBy.update((by) =>
+      new Map(by).set(this.servicePerson(), next),
+    );
   }
 
-  private readonly servicePickTotal = computed(() =>
-    [...this.servicePicks().values()].reduce((sum, count) => sum + count, 0),
+  /** Every person's ticks against their seats — what the dock's act changes. */
+  private readonly serviceDiffs = computed(() =>
+    [...this.servicePicksBy()].map(([person, picked]) => ({
+      person,
+      diff: pickDiffOf(picksOf(this.draft().legs, person), picked),
+    })),
   );
 
   /** The dock's promise on the service page (`serviceApplyVm`), while it is up. */
-  protected readonly serviceApply = computed<ServiceApplyVm | null>(() =>
-    this.page()?.editorPage === EditorPage.Service
-      ? serviceApplyVm(this.servicePickTotal(), this.words())
-      : null,
-  );
+  protected readonly serviceApply = computed<ServiceApplyVm | null>(() => {
+    if (this.page()?.editorPage !== EditorPage.Service) return null;
+    const diffs = this.serviceDiffs().map((entry) => entry.diff);
+    const sum = (key: 'added' | 'removed') =>
+      diffs.reduce((total, diff) => total + diff[key], 0);
+    return serviceApplyVm(sum('added'), sum('removed'), this.words());
+  });
 
   /**
-   * The dock's act: every pick seated, in the order it was picked and as
-   * many times as its stepper says, and the page pops — the focus back on
-   * the add row.
+   * The dock's act: each person's services set to their ticks — the new
+   * seats added in the order picked, the ones ticked off taken (the newest
+   * first) — and the page pops, the focus back on the add row.
    */
   protected applyServices(): void {
     const options = new Map(
       this.serviceOptions().map((option) => [option.id, option] as const),
     );
-    // Seated for the person the page opened for, else for the first. The
-    // page's subject is a draft key this sheet minted (`openServicePage`).
-    const subjectId = this.page()?.subjectId ?? null;
-    const forClientId =
-      subjectId === null ? null : DraftPersonKey.of(subjectId);
-    for (const [id, count] of this.servicePicks()) {
-      const option = options.get(id);
-      if (!option) continue;
-      for (let seat = 0; seat < count; seat += 1) {
-        this.addServiceLeg(option, forClientId);
+    for (const { person, diff } of this.serviceDiffs()) {
+      this.draft.update((draft) => ({
+        ...draft,
+        legs: withoutPicks(draft.legs, person, diff.remove),
+        durationOverride: null,
+      }));
+      for (const [id, count] of diff.add) {
+        const option = options.get(id);
+        for (let seat = 0; option && seat < count; seat += 1) {
+          this.addServiceLeg(option, DraftPersonKey.of(person));
+        }
       }
     }
-    this.servicePicks.set(new Map());
-    this.pop();
     // A page opened for someone hands on to whoever is still waiting.
-    if (forClientId !== null) this.serveNext();
+    const forSomeone = this.page()?.subjectId != null;
+    this.servicePicksBy.set(new Map());
+    this.pop();
+    if (forSomeone) this.serveNext();
   }
 
   /** Seats minted by this sheet, so two picks in one tick differ. */
@@ -3501,7 +3496,7 @@ export class StaffVisitEditor {
    * is typed.
    */
   protected openServicePage(forClientId: DraftPersonKey | null = null): void {
-    this.servicePicks.set(new Map());
+    this.servicePicksBy.set(new Map());
     this.push(EditorPage.Service, forClientId, 'staff-visit-add-service');
   }
 
@@ -5735,7 +5730,7 @@ export class StaffVisitEditor {
     this.noteOpen.set(false);
     this.page.set(null);
     this.resetDiscountEntry();
-    this.servicePicks.set(new Map());
+    this.servicePicksBy.set(new Map());
     this.tipOpen.set(false);
     this.tipOtherOpen.set(false);
     this.shopOpen.set(false);

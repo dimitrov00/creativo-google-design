@@ -356,13 +356,16 @@ describe('the services’ rows', () => {
   });
 
   it('promises the picks, or nothing', () => {
-    expect(serviceApplyVm(0, BG)).toBeNull();
-    expect(serviceApplyVm(1, BG)).toEqual({ count: 1, label: 'Добави' });
-    expect(serviceApplyVm(3, BG)).toEqual({
+    expect(serviceApplyVm(0, 0, BG)).toBeNull();
+    expect(serviceApplyVm(1, 0, BG)).toEqual({ count: 1, label: 'Добави' });
+    expect(serviceApplyVm(3, 0, BG)).toEqual({
       count: 3,
       label: 'Добави 3 услуги',
     });
-    expect(serviceApplyVm(3, EN)?.label).toBe('Add 3 services');
+    expect(serviceApplyVm(3, 0, EN)?.label).toBe('Add 3 services');
+    // Ticking one off is a change, not an add (owner, 2026-11-06).
+    expect(serviceApplyVm(1, 1, BG)).toEqual({ count: 2, label: 'Приложи' });
+    expect(serviceApplyVm(0, 1, EN)?.label).toBe('Apply');
   });
 
   it('chips the visit’s people, the one the picks seat for selected', () => {

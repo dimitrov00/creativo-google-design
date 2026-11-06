@@ -103,6 +103,7 @@ export function visitEditorWordsOf(
     noAccount: copy('staff.client.noAccount'),
     newClient: copy('staff.visit.newClient'),
     servicesAddOne: copy('staff.visit.servicesAddOne'),
+    servicesApply: copy('staff.visit.servicesApply'),
     alone: copy('staff.visit.alone'),
     stacks: copy('staff.visit.stacks'),
     discountAmount: copy('staff.visit.discountAmount'),
@@ -676,13 +677,17 @@ export function servicePeopleVm(
  * only being read.
  */
 export function serviceApplyVm(
-  count: number,
+  added: number,
+  removed: number,
   words: VisitEditorWords,
 ): ServiceApplyVm | null {
+  const count = added + removed;
   if (count === 0) return null;
+  // Taking a service off is a change, not an add: one word for both then.
+  if (removed > 0) return { count, label: words.servicesApply };
   return {
     count,
-    label: count === 1 ? words.servicesAddOne : words.servicesAddCount(count),
+    label: added === 1 ? words.servicesAddOne : words.servicesAddCount(added),
   };
 }
 

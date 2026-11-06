@@ -176,6 +176,7 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.serviceMore': 'Още една',
       'staff.visit.serviceLess': 'Махни една',
       'staff.visit.servicesAddOne': 'Добави',
+      'staff.visit.servicesApply': 'Приложи',
       'staff.visit.servicesAddCount': 'Добави {{count}} услуги',
       'staff.visit.removeService': 'Премахни услугата',
       'staff.visit.addClient': 'Добави клиент',
@@ -1437,12 +1438,16 @@ describe('StaffVisitEditor', () => {
 
       // Each service a COVER CARD, the search sheet's (owner, 2026-11-06):
       // the service's name under the cover and its variant beneath — no
-      // minutes, no price — the ring empty. No stepper until a card is
-      // picked, and the dock's ✓ with no promise.
+      // minutes, no price. The person's OWN services open ticked, each with
+      // its stepper (owner, 2026-11-06: "pre-checked the service that is
+      // already applied"); nothing has changed, so the dock's ✓ stays.
       const items = [...host.querySelectorAll(PICKS)];
       expect(items.length).toBe(CATALOGUE.length);
-      expect(items[0]?.hasAttribute('data-picked')).toBe(false);
-      expect(host.querySelector('[data-testid$="-count"]')).toBeNull();
+      const ticked = host.querySelectorAll(`${PICKS}[data-picked]`).length;
+      expect(ticked).toBeGreaterThan(0);
+      expect(host.querySelectorAll('[data-testid$="-count"]').length).toBe(
+        ticked,
+      );
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.serviceLabel ?? '');
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.variantLabel ?? '');
       expect(items[0]?.textContent).not.toContain(CATALOGUE[0]?.label);
@@ -1521,39 +1526,43 @@ describe('StaffVisitEditor', () => {
       expect(page(host)).toBeNull();
       expect(host.hasAttribute('data-dirty')).toBe(true);
 
-      // Next time, NOTHING is marked as already on the visit (owner,
-      // 2026-09-10): a service may be wanted twice — the stepper counts
-      // it — and a check would read as done; nothing is picked either.
+      // Next time the page opens on what the person HAS (owner,
+      // 2026-11-06: "pre-checked the service that is already applied"): the
+      // wash ticked at «1», and with nothing changed the dock keeps its ✓.
       click(host, 'staff-visit-add-service');
       expect(onPage(host)).toBe(true);
-      expect(
-        host.querySelector('[data-testid^="staff-visit-seated-"]'),
-      ).toBeNull();
-      expect(wash()?.hasAttribute('data-picked')).toBe(false);
+      expect(wash()?.hasAttribute('data-picked')).toBe(true);
       expect(find(host, 'staff-visit-service-apply')).toBeNull();
-      // Two of one and one of another, seated together in the order picked.
+      // Two fades and a second wash, seated together.
+      const plus = (id: string) => {
+        find(host, `staff-visit-service-${id}-count`)
+          ?.querySelectorAll<HTMLElement>('.ui-count-stepper__step')[1]
+          ?.click();
+        fixture.detectChanges();
+      };
       click(host, 'staff-visit-service-fade');
-      click(host, 'staff-visit-service-wash');
-      await new Promise((resolve) => setTimeout(resolve, 650));
-      fixture.detectChanges();
-      find(host, 'staff-visit-service-fade-count')
-        ?.querySelectorAll<HTMLElement>('.ui-count-stepper__step')[1]
-        ?.click();
-      fixture.detectChanges();
+      plus('fade');
+      plus('wash');
       expect(text(host, 'staff-visit-service-apply')).toBe('Добави 3 услуги');
       click(host, 'staff-visit-service-apply');
       expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 4);
       expect(page(host)).toBeNull();
 
-      // Picks not seated go with the page: the shell's ‹ leaves the
+      // Changes not applied go with the page: the shell's ‹ leaves the
       // ladder as it was.
       click(host, 'staff-visit-add-service');
       click(host, 'staff-visit-service-wash');
       back();
       expect(page(host)).toBeNull();
       expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 4);
+
+      // A card ticked OFF takes its seats off: «Приложи», not «Добави».
       click(host, 'staff-visit-add-service');
-      expect(wash()?.hasAttribute('data-picked')).toBe(false);
+      expect(wash()?.hasAttribute('data-picked')).toBe(true);
+      click(host, 'staff-visit-service-wash');
+      expect(text(host, 'staff-visit-service-apply')).toBe('Приложи');
+      click(host, 'staff-visit-service-apply');
+      expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 2);
     });
 
     it('takes a letter typed anywhere into its search while the page is up — and stops listening once it is gone', () => {
@@ -6784,8 +6793,12 @@ describe('StaffVisitEditor', () => {
       click(host, 'staff-visit-service-cut:short');
       click(host, 'staff-visit-service-apply');
       expect(rows().length).toBe(1);
+      // The page opens on it ticked; its stepper takes a second.
       click(host, 'staff-visit-add-service');
-      click(host, 'staff-visit-service-cut:short');
+      find(host, 'staff-visit-service-cut:short-count')
+        ?.querySelectorAll<HTMLElement>('.ui-count-stepper__step')[1]
+        ?.click();
+      fixture.detectChanges();
       click(host, 'staff-visit-service-apply');
       expect(rows().length).toBe(2);
       expect(

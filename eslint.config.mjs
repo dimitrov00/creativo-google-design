@@ -694,6 +694,6 @@ export default [
     files: [
       'libs/features/staff/dashboard/src/lib/visit-editor/staff-visit-editor.ts',
     ],
-    rules: { 'max-lines': ['error', { max: 6649 }] },
+    rules: { 'max-lines': ['error', { max: 6644 }] },
   },
 ];

@@ -1,5 +1,10 @@
 import { type DraftLegMinutes, VisitDraftSystem } from '@core/systems';
-import type { DurationMinutes, TrackMinute } from '@core/primitives';
+import {
+  type DurationMinutes,
+  EndMinute,
+  MinuteOfDay,
+  type TrackMinute,
+} from '@core/primitives';
 
 /** A frame's interval — a drag in the sheet's frame, or one dropped on the page grid. */
 export interface FrameInterval {
@@ -45,4 +50,45 @@ export function withFrame<
     startMinute: frame.startMinute,
     durationOverride: overrideNow,
   };
+}
+
+/** The chair's rostered window on the frame's day, as the frame reads it. */
+export interface RosterDay {
+  readonly rosterStartMinute: TrackMinute;
+  readonly rosterEndMinute: TrackMinute;
+}
+
+/**
+ * THE CHAIR'S SHIFT, or `null` when the roster cannot say.
+ *
+ * One reading, shared by the window, the closed-hour shading and the
+ * outside-the-shift verdict, because three different readings of the same
+ * two numbers is how a frame ends up drawn shut over a visit it is happily
+ * editing. `null` means "no usable shift": an end at or below the start,
+ * which is what a shift closing at midnight becomes when it is read as a
+ * wall-clock minute without being anchored to the day.
+ */
+export function shiftOf(
+  day: RosterDay,
+): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
+  return day.rosterEndMinute > day.rosterStartMinute
+    ? { startMinute: day.rosterStartMinute, endMinute: day.rosterEndMinute }
+    : null;
+}
+
+/**
+ * The shift as ONE shop day's range — the frame verdict's edge parse:
+ * `null` for a pair `shiftOf` cannot read (inverted, empty) or one off the
+ * day's clock (a start outside `MinuteOfDay`, an end outside `EndMinute`) —
+ * no roster a visit can be OUTSIDE of.
+ */
+export function readableShiftOf(
+  day: RosterDay,
+): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
+  const shift = shiftOf(day);
+  return shift !== null &&
+    MinuteOfDay.of(shift.startMinute).ok &&
+    EndMinute.of(shift.endMinute).ok
+    ? shift
+    : null;
 }
