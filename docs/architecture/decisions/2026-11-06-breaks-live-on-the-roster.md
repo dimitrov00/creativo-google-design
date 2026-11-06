@@ -127,11 +127,16 @@ None of them shows any sign of writing a separate record for each future day.
    - `RecurrenceEnd.NEVER`;
    - `BlockSeriesFlow`'s series lookups. The scope question stays, now
      answered by the roster.
-5. **A weekly hours editor with «＋ Почивка» per weekday** (Timely, 7shifts)
-   — OPEN: the app has no hours editor at all (the roster is seeded; rules
-   close it to clients). Until one exists, the block sheet's «Без край» is
-   how a break is made. The seed's split shift (Иван 9–13, 14–18) becomes 9–18 with a 13:00
-   lunch break, so the break shows as a named block.
+5. **A weekly hours editor with «＋ Почивка» per weekday** (Timely, 7shifts,
+   Turo, Swarm) — BUILT (owner: "do this task here"). The ＋ menu's
+   «Работно време» opens the scoped chair's week: one row per weekday (its
+   shifts or «Почивен», its breaks under the name), «Бръснар» and «В сила
+   от». A row pushes the weekday's page — «Работи», the shifts with
+   «＋ Добави часове», the breaks with «＋ Почивка», «Същите часове и за»
+   (weekday discs) — and «Запази» writes the whole week from «В сила от» on
+   as ONE roster write (`setRosterWeek`). The seed's split shift (Иван 9–13,
+   14–18) became 9–18 with a 13:00 lunch break, so the break shows as a
+   named block.
 
 ## The day's own breaks
 
@@ -197,3 +202,21 @@ same day, and the grid would lose the break's name.
 - **Deploy.** Rules (`dayBreakRanges` key), the `dayBreakRanges` index
   override and the functions (the new callable) ship together; there is no
   scheduled job and no new collection.
+
+### The hours editor (built)
+
+- **Domain.** `RosterWeekSystem` (`weekOn`, `dayOf`, `withDay` keeping each
+  shift's shop, `copyDay`, `validate` — shifts via `ShiftSegment.validate`
+  with a 30-minute walk between shops, every break inside a shift of its
+  weekday, `SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT` — `setFrom`, `nextShift`,
+  `nextBreak`, `endOf`); `ScheduleVersion.replaceFrom` (the week from a day
+  on: the version in force closed the day before, later versions dropped,
+  earlier weeks kept).
+- **Write.** The callable `setRosterWeek` (`set-roster-week.pipeline.ts`,
+  `decodeSetRosterWeek`): one transaction reads the roster and the shop for
+  «today», refuses a past day, writes the roster whole; a chair with none
+  starts one.
+- **Sheet.** `lib-staff-hours-sheet` (`staff-hours-sheet/`), its words in
+  `staff-hours.presenter.ts`; the draft lives in the sheet until «Запази».
+  The store streams the chair's roster (`rosterOf`) and saves through one
+  roster-callable writer it shares with `amendBreaks`.

@@ -1077,6 +1077,21 @@
           <span uiLeading><ui-icon uiName="booking.blocked" /></span>
           {{ t('staff.day.fab.block') }}
         </button>
+        <!-- A chair's weekly hours and breaks — from the ＋ alone: a slot
+             or a free-time row is a moment, not the week. -->
+        @if (from === undefined) {
+        <button
+          type="button"
+          uiMenuItem
+          uiListRow
+          [uiInteractive]="true"
+          [attr.data-testid]="testId + '-hours'"
+          (click)="createMenu.set(false); hoursOpen.set(true)"
+        >
+          <span uiLeading><ui-icon uiName="service.duration" /></span>
+          {{ t('staff.day.fab.hours') }}
+        </button>
+        }
       </ui-list-group>
     </ng-template>
 
@@ -1180,7 +1195,20 @@
        One fixed card serves whichever of those the designer imagined and
        taxes the other two on every glance — so the ANATOMY is fixed and the
        CONTENTS are chosen. Per device, like the theme. -->
-  @if (statusFilterOpen()) {
+  <!-- A CHAIR'S WEEKLY HOURS (the ＋'s «Работно време»): the scoped chair,
+       else the first. -->
+  @if (hoursOpen() && store.todayKey(); as today) { @let chairId = store.scope()
+  ?? barberOptions()[0]?.id; @if (chairId) {
+  <lib-staff-hours-sheet
+    [uiChairs]="barberOptions()"
+    [uiChairId]="chairId"
+    [uiToday]="today"
+    [uiLocale]="content.locale()"
+    [uiHomeOf]="homeOf"
+    (saved)="setNotice(t('staff.hours.saved'))"
+    (closed)="hoursOpen.set(false)"
+  />
+  } } @if (statusFilterOpen()) {
   <lib-staff-status-filter-sheet (closed)="statusFilterOpen.set(false)" />
   } @if (fieldsOpen() && isGrid()) {
   <!-- In the calendar views «Настройки» is the time scale (owner,

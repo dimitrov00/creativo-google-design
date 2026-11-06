@@ -31,7 +31,8 @@ import type { PipelineError } from '@core/errors';
  * export (WS-C), and `previewClientErasure` / `eraseClient`, the admin's
  * erasure (WS-D); security hardening adds `setRoles`, the admin's roles
  * change (S-WS-E); the break pass adds `amendRosterBreaks`, the desk's one
- * door to a chair's roster (2026-11-06). Triggers and schedules are never dialled, so they are
+ * door to a chair's roster, and `setRosterWeek`, the hours editor's
+ * (2026-11-06). Triggers and schedules are never dialled, so they are
  * not here.
  */
 export const Callables = {
@@ -60,6 +61,7 @@ export const Callables = {
   EraseClient: 'eraseClient',
   SetRoles: 'setRoles',
   AmendRosterBreaks: 'amendRosterBreaks',
+  SetRosterWeek: 'setRosterWeek',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -201,6 +203,11 @@ export type CallableWire = {
     readonly input: RosterCall;
     readonly answer: RosterCall.Amended;
   };
+  /** A chair's whole week from a day on — the hours editor's one roster write. */
+  readonly [Callables.SetRosterWeek]: {
+    readonly input: RosterCall.Week;
+    readonly answer: RosterCall.Amended;
+  };
 };
 
 /**
@@ -247,6 +254,7 @@ export const OPERATION_ID_FIELD: {
   [Callables.EraseClient]: 'operationId',
   [Callables.SetRoles]: 'operationId',
   [Callables.AmendRosterBreaks]: 'operationId',
+  [Callables.SetRosterWeek]: 'operationId',
 };
 
 /**
@@ -289,6 +297,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.EraseClient]: AppCheckTokenUse.LimitedUse,
   [Callables.SetRoles]: AppCheckTokenUse.LimitedUse,
   [Callables.AmendRosterBreaks]: AppCheckTokenUse.Standard,
+  [Callables.SetRosterWeek]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -351,4 +360,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.EraseClient]: ClientPrivacyCall.decodeErasure,
   [Callables.SetRoles]: RolesCall.decodeChanged,
   [Callables.AmendRosterBreaks]: RosterCall.decodeAmended,
+  [Callables.SetRosterWeek]: RosterCall.decodeAmended,
 };

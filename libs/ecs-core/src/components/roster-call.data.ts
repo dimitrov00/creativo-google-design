@@ -9,6 +9,8 @@ import {
 import type { PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import type { MinuteRange } from './minute-range.data';
+import type { RosterBreak } from './roster-break.data';
+import type { ShiftSegment } from './shift-segment.data';
 
 /**
  * THE ROSTER WIRE — `amendRosterBreaks` (owner, 2026-11-06): a chair's
@@ -44,4 +46,18 @@ export const RosterCall = {
 export namespace RosterCall {
   /** The chair whose roster now carries the change. */
   export type Amended = { readonly barberId: BarberId };
+  /**
+   * `setRosterWeek` — the hours editor's save: the chair's whole week, its
+   * shifts and the breaks inside them, standing from `fromLocalDate` on (a
+   * day of the shop `locationId`, whose clock says what «today» is).
+   */
+  export type Week = {
+    readonly barberId: BarberId;
+    readonly locationId: LocationId;
+    readonly fromLocalDate: LocalDate;
+    readonly segments: readonly ShiftSegment[];
+    readonly breaks: readonly RosterBreak[];
+    /** The act's name — the web mints one per save (WS-4.1). */
+    readonly operationId: ClientOperationId;
+  };
 }

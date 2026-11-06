@@ -1,0 +1,306 @@
+<ui-modal-sheet
+  sheetId="staff-hours-sheet"
+  labelledBy="staff-hours-title"
+  [titleAlwaysVisible]="openDay() === null"
+  uiPresentationSizing="automatic"
+  [closeLabel]="t('staff.day.cancelDismiss')"
+  [open]="true"
+  data-testid="staff-hours-sheet"
+  (dismissed)="closed.emit()"
+>
+  <!-- THE WAY BACK from a weekday's page — the block sheet's own ‹, in the
+       bar opposite the ✕; it keeps the day, as «Готово» does. -->
+  @if (openDay() !== null) {
+  <button
+    sheet-leading
+    type="button"
+    uiButton
+    uiButtonStyle="bordered"
+    uiTint="neutral"
+    uiControlSize="regular"
+    [uiIconOnly]="true"
+    [attr.aria-label]="t('staff.visit.back')"
+    data-testid="staff-hours-back"
+    (click)="done()"
+  >
+    <ui-icon uiName="nav.back" />
+  </button>
+  }
+  <span sheet-title id="staff-hours-title"
+    >{{ dayTitle() ?? t('staff.hours.title') }}</span
+  >
+
+  <div class="staff-visit__body staff-hours__body">
+    @if (openDay() === null) {
+    <!-- ─────────────────────────── THE WEEK ─────────────────────────── -->
+    <ui-sheet-headline>
+      <h2 uiSheetLargeTitle uiText uiFont="largeTitle">
+        {{ t('staff.hours.title') }}
+      </h2>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('staff.hours.lede') }}
+      </p>
+    </ui-sheet-headline>
+
+    <ul uiListGroup class="staff-visit__group">
+      @if (uiChairs().length > 1) {
+      <li uiListRow uiSize="regular">
+        {{ t('staff.hours.chair') }}
+        <span uiTrailing>
+          <ui-choice-menu
+            uiAlignment="trailing"
+            [uiOptions]="chairOptions()"
+            [uiSelectedId]="chairId()"
+            [uiLabel]="t('staff.hours.chair')"
+            [(uiPresented)]="chairMenu"
+            (uiPicked)="pickChair($event)"
+          >
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              uiMenuTrigger
+              [attr.aria-label]="t('staff.hours.chair') + ': ' + chairLabel()"
+              data-testid="staff-hours-chair"
+              (click)="chairMenu.set(true)"
+            >
+              <span>{{ chairLabel() }}</span>
+              <ui-icon uiTrailing uiName="field.popUp" />
+            </button>
+          </ui-choice-menu>
+        </span>
+      </li>
+      }
+      <li uiListRow uiSize="regular">
+        {{ t('staff.hours.from') }}
+        <span uiTrailing>
+          <lib-staff-day-pill
+            uiAlignment="trailing"
+            uiControlSize="small"
+            [uiDayKey]="fromDay()"
+            [uiTodayKey]="uiToday()"
+            [uiLocale]="uiLocale()"
+            [uiMin]="uiToday()"
+            [uiPreviousLabel]="t('staff.visit.monthPrevious')"
+            [uiNextLabel]="t('staff.visit.monthNext')"
+            uiTestId="staff-hours-from"
+            uiCalendarTestId="staff-hours-from-calendar"
+            [(uiPresented)]="fromOpen"
+            (uiPicked)="pickFrom($event)"
+          />
+        </span>
+      </li>
+    </ul>
+
+    <!-- ONE ROW PER WEEKDAY (Swarm, Calendly): the shifts or «Почивен» as
+         the value, the breaks under the name; a row pushes its day. -->
+    <ul
+      uiListGroup
+      class="staff-visit__group"
+      [attr.aria-label]="t('staff.hours.title')"
+      data-testid="staff-hours-week"
+    >
+      @for (day of days(); track day.weekday) {
+      <li>
+        <button
+          uiListRow
+          uiSize="large"
+          type="button"
+          [uiInteractive]="true"
+          [uiAlignment]="day.breaks ? 'leading' : 'center'"
+          [attr.aria-label]="day.accessibleName"
+          [attr.data-testid]="'staff-hours-day-' + day.weekday"
+          (click)="openWeekday(day.weekday)"
+        >
+          <ui-stack uiSpacing="none">
+            <span>{{ day.name }}</span>
+            @if (day.breaks; as breaks) {
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-visit__figures staff-visit__row-line"
+              >{{ breaks }}</span
+            >
+            }
+          </ui-stack>
+          <span uiTrailing class="staff-visit__row-value">
+            <span
+              class="staff-visit__figures"
+              [uiForegroundStyle]="day.off ? 'secondary' : 'primary'"
+              >{{ day.hours }}</span
+            >
+            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+          </span>
+        </button>
+      </li>
+      }
+    </ul>
+    @if (weekError() ?? (store.absenceError() ? t('staff.hours.failed') : null);
+    as error) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="destructive"
+      role="alert"
+      data-testid="staff-hours-error"
+    >
+      {{ error }}
+    </p>
+    } } @else {
+    <!-- ────────────────────────── A WEEKDAY ──────────────────────────
+         Turo's «Edit Sunday hours»: whether the chair works, its shifts,
+         the breaks inside them, and the days the same hours apply to. -->
+    <section class="staff-visit__page" data-testid="staff-hours-page">
+      <ui-sheet-headline>
+        <h2 uiSheetLargeTitle uiText uiFont="largeTitle">{{ dayTitle() }}</h2>
+      </ui-sheet-headline>
+      <ul uiListGroup class="staff-visit__group">
+        <li uiListRow uiSize="large">
+          {{ t('staff.hours.working') }}
+          <button
+            uiSwitch
+            uiTrailing
+            [uiOn]="shifts().length > 0"
+            (uiOnChange)="setWorking($event)"
+            [attr.aria-label]="t('staff.hours.working')"
+            data-testid="staff-hours-working"
+          ></button>
+        </li>
+      </ul>
+
+      @if (shifts().length > 0) { @for (list of lists; track list) {
+      <!-- A heading over each list, never a label in its rows: a row holds
+           the two times and its −, and nothing else fits a phone. -->
+      <ui-section-header uiHeaderProminence="standard">
+        <h3 uiTitle>{{ t('staff.hours.' + list) }}</h3>
+      </ui-section-header>
+      <ul
+        uiListGroup
+        class="staff-visit__group"
+        [attr.aria-label]="t('staff.hours.' + list)"
+        [attr.data-testid]="'staff-hours-' + list"
+      >
+        @for (range of list === 'shifts' ? shifts() : breaks(); track $index) {
+        @let at = list + '-' + $index;
+        <li uiListRow uiSize="regular">
+          <span class="staff-hours__range">
+            <span class="staff-sheet__pill staff-visit__figures">
+              <ui-time-field
+                [uiValue]="clock(range.startMinutes)"
+                [uiLabel]="t('staff.hours.start')"
+                [uiTestId]="'staff-hours-' + at + '-start'"
+                (uiValueChange)="setStart(list, $index, $event)"
+              />
+            </span>
+            <span aria-hidden="true">–</span>
+            <span class="staff-sheet__pill staff-visit__figures">
+              <ui-time-field
+                [uiValue]="clock(range.endMinutes)"
+                [uiLabel]="t('staff.hours.end')"
+                [uiTestId]="'staff-hours-' + at + '-end'"
+                (uiValueChange)="setEnd(list, $index, $event)"
+              />
+            </span>
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="small"
+              [uiIconOnly]="true"
+              [attr.aria-label]="t('staff.hours.remove')"
+              [attr.data-testid]="'staff-hours-' + at + '-remove'"
+              (click)="remove(list, $index)"
+            >
+              <ui-icon uiName="action.remove" />
+            </button>
+          </span>
+        </li>
+        }
+        <li>
+          <button
+            uiListRow
+            uiSize="large"
+            type="button"
+            [uiInteractive]="true"
+            [attr.data-testid]="'staff-hours-add-' + list"
+            (click)="add(list)"
+          >
+            <span uiLeading>
+              <ui-icon uiName="action.add" aria-hidden="true" />
+            </span>
+            {{ t(list === 'shifts' ? 'staff.hours.addShift' :
+            'staff.hours.addBreak') }}
+          </button>
+        </li>
+      </ul>
+      } }
+
+      <!-- «Приложи и за» (Turo): the same day on other weekdays, at «Готово». -->
+      <ui-section-header uiHeaderProminence="standard">
+        <h3 uiTitle>{{ t('staff.hours.copyTo') }}</h3>
+      </ui-section-header>
+      <ul
+        uiListGroup
+        class="staff-visit__group"
+        [attr.aria-label]="t('staff.hours.copyTo')"
+      >
+        <li uiListRow uiSize="regular">
+          <ui-weekday-picker
+            [uiSelected]="copyTo()"
+            [uiLocale]="uiLocale()"
+            [uiLabel]="t('staff.hours.copyTo')"
+            uiTestId="staff-hours-copy"
+            (uiSelectedChange)="copyTo.set($event)"
+          />
+        </li>
+      </ul>
+      @if (dayError(); as error) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="destructive"
+        role="alert"
+        data-testid="staff-hours-day-error"
+      >
+        {{ error }}
+      </p>
+      }
+    </section>
+    }
+  </div>
+
+  <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+    @if (openDay() === null) {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      uiPrimary
+      [disabled]="!dirty() || weekError() !== null || home() === null"
+      [uiLoading]="store.absencePending()"
+      data-testid="staff-hours-save"
+      (click)="save()"
+    >
+      {{ t('staff.hours.save') }}
+    </button>
+    } @else {
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      uiPrimary
+      [disabled]="dayError() !== null"
+      data-testid="staff-hours-done"
+      (click)="done()"
+    >
+      {{ t('staff.hours.done') }}
+    </button>
+    }
+  </ui-sheet-action-bar>
+</ui-modal-sheet>

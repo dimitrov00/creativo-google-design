@@ -100,6 +100,8 @@ export const SchedulingErrorCode = {
   RosterBreakInPast: 'SCHEDULING_ROSTER_BREAK_IN_PAST',
   /** A chair with no roster has no breaks to change. */
   RosterMissing: 'SCHEDULING_ROSTER_MISSING',
+  /** A break the weekly hours do not hold — it lies outside every shift of its weekday. */
+  RosterBreakOutsideShift: 'SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT',
   /** `amendRosterBreaks` with no signed-in caller. */
   RosterUnauthenticated: 'SCHEDULING_ROSTER_UNAUTHENTICATED',
   /** `amendRosterBreaks` from a caller who does not work the book. */
@@ -151,6 +153,7 @@ export type SchedulingError =
   | SchedulingError.StaffScheduleOverlappingVersions
   | SchedulingError.RosterBreakInPast
   | SchedulingError.RosterMissing
+  | SchedulingError.RosterBreakOutsideShift
   | SchedulingError.RosterUnauthenticated
   | SchedulingError.RosterForbidden
   | SchedulingError.RosterInvalidInput
@@ -442,6 +445,19 @@ export const SchedulingError = {
   rosterMissing(barberId: BarberId): SchedulingError.RosterMissing {
     return { errorCode: C.RosterMissing, barberId };
   },
+  /** A break on `weekday` outside every shift of that weekday. */
+  rosterBreakOutsideShift(
+    weekday: Weekday,
+    startMinutes: MinuteOfDay,
+    endMinutes: EndMinute,
+  ): SchedulingError.RosterBreakOutsideShift {
+    return {
+      errorCode: C.RosterBreakOutsideShift,
+      weekday,
+      startMinutes,
+      endMinutes,
+    };
+  },
   rosterUnauthenticated(): SchedulingError.RosterUnauthenticated {
     return { errorCode: C.RosterUnauthenticated };
   },
@@ -471,6 +487,12 @@ export namespace SchedulingError {
   export type RosterMissing = {
     readonly errorCode: typeof SchedulingErrorCode.RosterMissing;
     readonly barberId: BarberId;
+  };
+  export type RosterBreakOutsideShift = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterBreakOutsideShift;
+    readonly weekday: Weekday;
+    readonly startMinutes: MinuteOfDay;
+    readonly endMinutes: EndMinute;
   };
   export type RosterUnauthenticated = {
     readonly errorCode: typeof SchedulingErrorCode.RosterUnauthenticated;

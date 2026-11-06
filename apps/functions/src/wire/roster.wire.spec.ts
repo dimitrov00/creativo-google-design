@@ -1,6 +1,6 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import { SchedulingErrorCode } from '@core/errors';
-import { decodeAmendRosterBreaks } from './roster.wire';
+import { decodeAmendRosterBreaks, decodeSetRosterWeek } from './roster.wire';
 
 /*
  * `amendRosterBreaks`' wire: a caller who works the book, every field read
@@ -70,5 +70,71 @@ describe('decodeAmendRosterBreaks', () => {
       ok: false,
       error: { errorCode: SchedulingErrorCode.RosterInvalidInput, field },
     });
+  });
+});
+
+describe('decodeSetRosterWeek', () => {
+  const week = {
+    barberId: 'b-ivan',
+    locationId: 'loc-center',
+    fromLocalDate: '2026-11-16',
+    segments: [
+      {
+        weekday: 1,
+        locationId: 'loc-center',
+        startMinutes: 540,
+        endMinutes: 1080,
+      },
+    ],
+    breaks: [{ weekday: 1, ...LUNCH }],
+    operationId: 'operation-0123456789ab',
+  };
+
+  it('reads the whole week, shops and breaks', () => {
+    expect(decodeSetRosterWeek(callable(week))).toEqual({
+      ok: true,
+      value: {
+        barberId: 'b-ivan',
+        locationId: 'loc-center',
+        fromLocalDate: '2026-11-16',
+        segments: week.segments,
+        breaks: week.breaks,
+      },
+    });
+  });
+
+  it('reads an empty week — every day off', () => {
+    const decoded = decodeSetRosterWeek(
+      callable({ ...week, segments: [], breaks: [] }),
+    );
+    expect(decoded.ok).toBe(true);
+  });
+
+  it.each([
+    [
+      'segments',
+      { segments: [{ weekday: 9, locationId: 'loc-center', ...LUNCH }] },
+    ],
+    ['segments', { segments: [{ weekday: 1, ...LUNCH }] }],
+    [
+      'breaks',
+      { breaks: [{ weekday: 1, startMinutes: 900, endMinutes: 800 }] },
+    ],
+    [
+      'segments',
+      { segments: Array.from({ length: 43 }, () => week.segments[0]) },
+    ],
+  ])('names the unreadable field %s', (field, broken) => {
+    expect(decodeSetRosterWeek(callable({ ...week, ...broken }))).toEqual({
+      ok: false,
+      error: { errorCode: SchedulingErrorCode.RosterInvalidInput, field },
+    });
+  });
+
+  it('refuses a caller who does not work the book', () => {
+    const decoded = decodeSetRosterWeek(callable(week, ['client']));
+    expect(decoded.ok ? null : decoded.error.errorCode).toBe(
+      SchedulingErrorCode.RosterForbidden,
+    );
   });
 });

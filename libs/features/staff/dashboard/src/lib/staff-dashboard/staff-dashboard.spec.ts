@@ -5586,6 +5586,33 @@ describe('StaffDashboard', () => {
   // The «Нов час» sheet never forwarded the fold (found 2026-09-24): its
   // client search folded the large title and the bar never landed the
   // compact one, so the page lost its name.
+  it("opens a chair's weekly hours from the ＋ alone — never from a slot (owner, 2026-11-06)", async () => {
+    (
+      host().querySelector(
+        '[data-testid="staff-add-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-add-hours"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-hours-sheet"]'),
+    ).not.toBeNull();
+    // Ivan's roster: 09:00–18:00 every day.
+    expect(
+      host()
+        .querySelector('[data-testid="staff-hours-day-1"]')
+        ?.getAttribute('aria-label'),
+    ).toContain('09:00–18:00');
+    expect(host().querySelector('[data-testid="staff-slot-hours"]')).toBeNull();
+  });
+
   it('lands the compact title on the new-visit sheet too, while its searches are engaged', () => {
     (
       host().querySelector(

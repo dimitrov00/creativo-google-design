@@ -1,5 +1,9 @@
 {
   "errors": {
+    "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "A break has to sit inside the day's hours.",
+    "SCHEDULING_ROSTER_BREAK_IN_PAST": "A change can't start on a past day.",
+    "SCHEDULING_TIME_RANGE_INVALID": "The end has to come after the start, with no overlap.",
+    "SCHEDULING_SHIFT_SEGMENT_IMPOSSIBLE_TRANSFER": "Two shops need at least half an hour between them.",
     "DST_GAP_INVALID_TIME": "{{wallClock}} doesn't exist in {{timeZone}} — the clocks jump past it. Pick another time.",
     "TIME_INVALID_DATE_TIME": "\"{{rawValue}}\" is not a valid date and time.",
     "TIME_INVALID_TIME_ZONE": "\"{{rawZone}}\" is not a valid time zone.",
@@ -1010,6 +1014,36 @@
     "countOne": "1 visit"
   },
   "staff": {
+    "hours": {
+      "title": "Working hours",
+      "lede": "The barber's weekly hours and breaks.",
+      "chair": "Barber",
+      "from": "Starting",
+      "off": "Day off",
+      "breakLine": "Break {{ranges}}",
+      "working": "Working",
+      "shifts": "Hours",
+      "breaks": "Breaks",
+      "start": "From",
+      "end": "To",
+      "remove": "Remove",
+      "addShift": "Add hours",
+      "addBreak": "Break",
+      "copyTo": "Same hours on",
+      "save": "Save",
+      "done": "Done",
+      "saved": "Working hours saved",
+      "failed": "The working hours didn't save. Try again.",
+      "weekday": {
+        "monday": "Monday",
+        "tuesday": "Tuesday",
+        "wednesday": "Wednesday",
+        "thursday": "Thursday",
+        "friday": "Friday",
+        "saturday": "Saturday",
+        "sunday": "Sunday"
+      }
+    },
     "day": {
       "title": "Schedule",
       "previous": "Previous day",
@@ -1100,7 +1134,8 @@
         "open": "Add",
         "close": "Close",
         "booking": "Add booking",
-        "block": "Block time"
+        "block": "Block time",
+        "hours": "Working hours"
       },
       "searchLabel": "Search",
       "searchPlaceholder": "Name, phone, email, service…",

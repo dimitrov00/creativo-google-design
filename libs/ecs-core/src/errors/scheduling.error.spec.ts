@@ -143,6 +143,11 @@ describe('SchedulingError factories', () => {
         localDate('2026-02-01'),
       ),
       SchedulingError.rosterMissing(BarberId.of('ivan')),
+      SchedulingError.rosterBreakOutsideShift(
+        Weekday.Mon,
+        minute(780),
+        endMinute(840),
+      ),
       SchedulingError.rosterUnauthenticated(),
       SchedulingError.rosterForbidden(),
       SchedulingError.rosterInvalidInput('weekdays'),

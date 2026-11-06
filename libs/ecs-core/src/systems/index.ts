@@ -71,6 +71,7 @@ export * from './reward.system';
 export * from './rhythm-draft.system';
 export * from './role-assignment.system';
 export * from './roster-break.system';
+export * from './roster-week.system';
 export * from './roster.system';
 export * from './schedule-exception.system';
 export * from './schedule-filter.system';

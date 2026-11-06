@@ -64,7 +64,11 @@ import {
   VisitEditWriteOutcome,
   VoucherCode,
 } from '@core/components';
-import { type BarberDayRead, Callables } from '@core/ports';
+import {
+  type BarberDayRead,
+  Callables,
+  type ObserveSchedule,
+} from '@core/ports';
 import type {
   Appointment,
   AppointmentPhoto,
@@ -100,6 +104,7 @@ import {
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
   type AmendRosterBreaksCommand,
+  type SetRosterWeekCommand,
   clearScheduleBlock,
   moveScheduleBlock,
   type ScheduleBlocksCommand,
@@ -2257,6 +2262,38 @@ export class StaffDayStore {
    * roster's listener redraws every day it reaches.
    */
   async amendBreaks(change: AmendRosterBreaksCommand): Promise<boolean> {
+    return this.rosterWrite((operationId) =>
+      this.gateway.callableClient(Callables.AmendRosterBreaks)({
+        ...change,
+        operationId,
+      }),
+    );
+  }
+
+  /** A chair's roster, live — the hours sheet's source, whichever chair it opens on. */
+  rosterOf(barberId: BarberId): ReturnType<ObserveSchedule> {
+    return this.scheduling.observeSchedule(barberId);
+  }
+
+  /**
+   * The hours sheet's save: a chair's whole week, shifts and breaks, from a
+   * day on — `setRosterWeek`, ONE roster write on the server.
+   */
+  async setRosterWeek(week: SetRosterWeekCommand): Promise<boolean> {
+    return this.rosterWrite((operationId) =>
+      this.gateway.callableClient(Callables.SetRosterWeek)({
+        ...week,
+        operationId,
+      }),
+    );
+  }
+
+  /** A roster callable, named and in flight once — its refusal kept for the sheet. */
+  private async rosterWrite(
+    dial: (
+      operationId: ClientOperationId,
+    ) => Promise<Result<unknown, PipelineError>>,
+  ): Promise<boolean> {
     if (this._absencePending()) return false;
     const operationId = ClientOperationId.parse(this.ids.nextId());
     if (!operationId.ok) {
@@ -2268,9 +2305,7 @@ export class StaffDayStore {
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await this.gateway.callableClient(
-        Callables.AmendRosterBreaks,
-      )({ ...change, operationId: operationId.value });
+      const result = await dial(operationId.value);
       if (!result.ok) {
         this._absenceError.set(result.error);
         return false;

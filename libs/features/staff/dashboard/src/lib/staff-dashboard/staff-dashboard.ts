@@ -212,6 +212,7 @@ import {
   slotTimeLabel,
 } from './create-from';
 import { type BreakEdit, BreakFlow } from './break-flow';
+import { StaffHoursSheet } from '../staff-hours-sheet/staff-hours-sheet';
 import {
   blockDropOf,
   blockKeyOf,
@@ -444,6 +445,7 @@ function transitionOf(
     UiToast,
     UiSwitch,
     StaffBlockEditor,
+    StaffHoursSheet,
     UiSpacer,
     UiStack,
     UiTextDirective,
@@ -1274,7 +1276,7 @@ export class StaffDashboard {
 
   /** A roster break dropped on the grid: it asks how far the move reaches, then lands. */
   private async dropBreak(commit: GridCommit): Promise<void> {
-    const edit = this.breakFlow.moveOf(commit, (id) => this.shopOfChair(id));
+    const edit = this.breakFlow.moveOf(commit, this.homeOf);
     if (edit === null) return this.putDown();
     this.grid()?.setDown();
     if (!(await this.runBreak(edit))) this.grid()?.releaseLift();
@@ -1725,6 +1727,8 @@ export class StaffDashboard {
   // ── Which states are drawn (the bar's filter) ─────────────────────────
   protected readonly statusFilter = inject(ScheduleStatusFilter);
   protected readonly statusFilterOpen = signal(false);
+  /** The weekly hours sheet (the ＋'s «Работно време»). */
+  protected readonly hoursOpen = signal(false);
   /** The rows the schedule draws — each chair by its OWN state, so a party's cancelled seat goes with the rest. */
   private drawn<T extends DayRowVm>(rows: readonly T[]): readonly T[] {
     return ScheduleFilterSystem.shown(rows, this.statusFilter.hidden());
@@ -2061,7 +2065,7 @@ export class StaffDashboard {
   });
 
   /** A notice that is not a refusal (a receipt, or none): no reference. */
-  private setNotice(message: string | null): void {
+  protected setNotice(message: string | null): void {
     this.noticeReference.set(null);
     this.notice.set(message);
   }
@@ -2872,25 +2876,15 @@ export class StaffDashboard {
     this.visitReseedMark.update(({ n }) => ({ appointmentId, n: n + 1 }));
   }
 
-  /**
-   * A row by its own name — on the shown day first, then on any loaded day
-   * — and, failing that, by the SEATS it held: a save that restaffed the
-   * chair moved the visit to another lane and renamed its row, and its
-   * undo must still find it there (found in review). `seatIds` empty means
-   * by name alone.
-   */
-  private rowFor(
-    rowId: string,
-    seatIds: readonly SeatId[] = [],
-  ): DayRowVm | null {
-    return rowOf(
+  /** A row by its name, or by the seats it held once a save restaffed it (`rowOf`). */
+  private readonly rowFor = (rowId: string, seatIds: readonly SeatId[] = []) =>
+    rowOf(
       rowId,
       seatIds,
       this.lanes(),
       this.store.dayCells(),
       this.rowContext(),
     );
-  }
 
   /* ── Waiting on the live row, and the sheet's re-seed ──────────────── */
 
@@ -4102,7 +4096,7 @@ export class StaffDashboard {
    * and minute is not the one tapped (DEP-11).
    */
   protected openBlock(blockId: string): void {
-    const edit = this.breakFlow.editOf(blockId, (id) => this.shopOfChair(id));
+    const edit = this.breakFlow.editOf(blockId, this.homeOf);
     if (edit !== null) {
       // A tapped break asks to come off — that day, or from it on.
       this.presentOnly();
@@ -4166,7 +4160,7 @@ export class StaffDashboard {
       if (lift !== null && from !== undefined) {
         if (!(await this.store.clearBlock(from, lift, shownDay))) return;
       }
-      if (await this.breakFlow.stand(commit, (id) => this.shopOfChair(id))) {
+      if (await this.breakFlow.stand(commit, this.homeOf)) {
         this.closeBlockSheet();
       }
       return;
@@ -4183,6 +4177,7 @@ export class StaffDashboard {
     if (await this.store.saveBlocks(plan)) this.closeBlockSheet();
   }
 
+  protected readonly homeOf = (id: BarberId) => this.shopOfChair(id);
   /** Where a chair's new visit starts and its block is filed (`homeOrFirst`). */
   private shopOfChair(barberId: BarberId): LocationId | null {
     const barber = this.catalog

@@ -1,4 +1,4 @@
-import { MinuteRange } from '@core/components';
+import { MinuteRange, RosterBreak, ShiftSegment } from '@core/components';
 import { SchedulingError } from '@core/errors';
 import {
   BarberId,
@@ -10,7 +10,10 @@ import {
   StoredFields,
   Weekday,
 } from '@core/primitives';
-import type { AmendRosterBreaksCommand } from '@core/pipelines';
+import type {
+  AmendRosterBreaksCommand,
+  SetRosterWeekCommand,
+} from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerUserId, callerWorksTheBook } from '../lib/booking/caller-roles';
 import {
@@ -100,4 +103,85 @@ export function decodeAmendRosterBreaks(
     before,
     after,
   });
+}
+
+/** A week holds at most this many shifts, and as many breaks — a handful a day. */
+const WEEK_ENTRIES_MAX = 42;
+
+/** `{ weekday, startMinutes, endMinutes }` as a weekday and a real range, else `null`. */
+function weekdayRangeOf(
+  raw: unknown,
+): { readonly weekday: Weekday; readonly range: MinuteRange } | null {
+  if (!isRecord(raw)) return null;
+  const weekday = StoredFields.field(raw, 'weekday');
+  const range = rangeOf(raw);
+  return Weekday.is(weekday) && range !== null && range !== undefined
+    ? { weekday, range }
+    : null;
+}
+
+/**
+ * `setRosterWeek` `{ barberId, locationId, fromLocalDate, segments:
+ * [{ weekday, locationId, startMinutes, endMinutes }], breaks: [{ weekday,
+ * startMinutes, endMinutes }], operationId }` → `{ barberId }` — the hours
+ * editor's save. The same door as `amendRosterBreaks`: a signed-in caller
+ * who works the book, every field re-read, the first unreadable one named.
+ * Whether the week holds (overlaps, breaks inside shifts) is the system's
+ * question, not the wire's.
+ */
+export function decodeSetRosterWeek(
+  request: WireRequest,
+): Result<SetRosterWeekCommand, EdgeError> {
+  if (callerUserId(request) === null) {
+    return Result.err(SchedulingError.rosterUnauthenticated());
+  }
+  if (!callerWorksTheBook(request)) {
+    return Result.err(SchedulingError.rosterForbidden());
+  }
+  const payload = payloadOf(request);
+  const invalid = (field: string) =>
+    Result.err(SchedulingError.rosterInvalidInput(field));
+  const barberId = idOf(
+    StoredFields.field(payload, 'barberId'),
+    BarberId.parse,
+  );
+  if (barberId === null) return invalid('barberId');
+  const locationId = idOf(
+    StoredFields.field(payload, 'locationId'),
+    LocationId.parse,
+  );
+  if (locationId === null) return invalid('locationId');
+  const fromLocalDate = idOf(
+    StoredFields.field(payload, 'fromLocalDate'),
+    LocalDate.parse,
+  );
+  if (fromLocalDate === null) return invalid('fromLocalDate');
+  const rawSegments = listOf(payload, 'segments');
+  if (rawSegments.length > WEEK_ENTRIES_MAX) return invalid('segments');
+  const segments: ShiftSegment[] = [];
+  for (const raw of rawSegments) {
+    const read = weekdayRangeOf(raw);
+    const shop = idOf(StoredFields.field(raw, 'locationId'), LocationId.parse);
+    if (read === null || shop === null) return invalid('segments');
+    segments.push(
+      ShiftSegment.of(
+        read.weekday,
+        shop,
+        read.range.startMinutes,
+        read.range.endMinutes,
+      ),
+    );
+  }
+  const rawBreaks = listOf(payload, 'breaks');
+  if (rawBreaks.length > WEEK_ENTRIES_MAX) return invalid('breaks');
+  const breaks: RosterBreak[] = [];
+  for (const raw of rawBreaks) {
+    const read = weekdayRangeOf(raw);
+    if (read === null) return invalid('breaks');
+    breaks.push(RosterBreak.of(read.weekday, read.range));
+  }
+  if (operationIdOf(payload, 'operationId') === null) {
+    return invalid('operationId');
+  }
+  return Result.ok({ barberId, locationId, fromLocalDate, segments, breaks });
 }

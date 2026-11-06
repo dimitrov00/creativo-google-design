@@ -1,5 +1,9 @@
 {
   "errors": {
+    "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "Почивката трябва да е в работните часове на деня.",
+    "SCHEDULING_ROSTER_BREAK_IN_PAST": "Промяната не може да започва от минал ден.",
+    "SCHEDULING_TIME_RANGE_INVALID": "Краят трябва да е след началото, без застъпване.",
+    "SCHEDULING_SHIFT_SEGMENT_IMPOSSIBLE_TRANSFER": "Между два салона трябва да има поне половин час.",
     "DST_GAP_INVALID_TIME": "{{wallClock}} не съществува в {{timeZone}} — часовникът го прескача. Избери друг час.",
     "TIME_INVALID_DATE_TIME": "„{{rawValue}}“ не е валидна дата и час.",
     "TIME_INVALID_TIME_ZONE": "„{{rawZone}}“ не е валидна часова зона.",
@@ -1010,6 +1014,36 @@
     "countOne": "1 посещение"
   },
   "staff": {
+    "hours": {
+      "title": "Работно време",
+      "lede": "Седмичните часове и почивките на бръснаря.",
+      "chair": "Бръснар",
+      "from": "В сила от",
+      "off": "Почивен",
+      "breakLine": "Почивка {{ranges}}",
+      "working": "Работи",
+      "shifts": "Часове",
+      "breaks": "Почивки",
+      "start": "От",
+      "end": "До",
+      "remove": "Премахни",
+      "addShift": "Добави часове",
+      "addBreak": "Почивка",
+      "copyTo": "Същите часове и за",
+      "save": "Запази",
+      "done": "Готово",
+      "saved": "Работното време е запазено",
+      "failed": "Работното време не се запази. Опитай пак.",
+      "weekday": {
+        "monday": "Понеделник",
+        "tuesday": "Вторник",
+        "wednesday": "Сряда",
+        "thursday": "Четвъртък",
+        "friday": "Петък",
+        "saturday": "Събота",
+        "sunday": "Неделя"
+      }
+    },
     "day": {
       "title": "График",
       "previous": "Предишен ден",
@@ -1100,7 +1134,8 @@
         "open": "Добави",
         "close": "Затвори",
         "booking": "Нов час",
-        "block": "Блокирай време"
+        "block": "Блокирай време",
+        "hours": "Работно време"
       },
       "searchLabel": "Търсене",
       "searchPlaceholder": "Име, телефон, имейл, услуга…",

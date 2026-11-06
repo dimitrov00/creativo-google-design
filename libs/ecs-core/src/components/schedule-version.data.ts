@@ -185,6 +185,46 @@ export const ScheduleVersion = {
     return revised;
   },
 
+  /**
+   * The week from `fromLocalDate` on is `segments` and `breaks` — the hours
+   * editor's save: the versions that end before it are kept, the one in
+   * force on it is closed the day before (replaced when it begins that
+   * very day), and any version that begins later is dropped — the new week
+   * stands open-ended. Days before `fromLocalDate` never change. `history`
+   * is sorted (see {@link history}).
+   */
+  replaceFrom(
+    history: readonly ScheduleVersion[],
+    fromLocalDate: LocalDate,
+    segments: readonly ShiftSegment[],
+    breaks: readonly RosterBreak[],
+  ): readonly ScheduleVersion[] {
+    const kept: ScheduleVersion[] = [];
+    let seq = 0;
+    for (let i = 0; i < history.length; i++) {
+      const version = history[i] as ScheduleVersion;
+      seq = Math.max(seq, version.seq + 1);
+      if (version.effectiveFromLocalDate >= fromLocalDate) continue;
+      kept.push(
+        version.effectiveToLocalDate !== null &&
+          version.effectiveToLocalDate < fromLocalDate
+          ? version
+          : ScheduleVersion.closedAt(
+              version,
+              LocalDate.addDays(fromLocalDate, -1),
+            ),
+      );
+    }
+    kept.push({
+      seq,
+      effectiveFromLocalDate: fromLocalDate,
+      effectiveToLocalDate: null,
+      segments,
+      breaks,
+    });
+    return kept;
+  },
+
   /** Every shop any version rosters the barber at, distinct, sorted. */
   locations(versions: readonly ScheduleVersion[]): readonly LocationId[] {
     const seen: LocationId[] = [];
