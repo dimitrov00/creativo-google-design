@@ -1181,7 +1181,11 @@
        CONTENTS are chosen. Per device, like the theme. -->
   @if (statusFilterOpen()) {
   <lib-staff-status-filter-sheet (closed)="statusFilterOpen.set(false)" />
-  } @if (fieldsOpen()) {
+  } @if (fieldsOpen() && isGrid()) {
+  <!-- In the calendar views «Настройки» is the time scale (owner,
+       2026-11-06), drafted and applied from its own bar. -->
+  <lib-staff-time-scale-sheet (closed)="fieldsOpen.set(false)" />
+  } @else if (fieldsOpen()) {
   <ui-modal-sheet
     sheetId="staff-fields-sheet"
     labelledBy="staff-fields-title"
@@ -1190,10 +1194,7 @@
     data-testid="staff-fields-sheet"
     (dismissed)="fieldsOpen.set(false)"
   >
-    <span sheet-title
-      >{{ t(isGrid() ? 'staff.day.scaleTitle' : 'staff.day.fieldsTitle')
-      }}</span
-    >
+    <span sheet-title>{{ t('staff.day.fieldsTitle') }}</span>
 
     <ui-stack uiSpacing="loose" class="staff-cancel__body">
       <ui-sheet-headline class="staff-sheet__headline">
@@ -1203,39 +1204,13 @@
           uiText
           uiFont="largeTitle"
         >
-          {{ t(isGrid() ? 'staff.day.scaleTitle' : 'staff.day.fieldsTitle') }}
+          {{ t('staff.day.fieldsTitle') }}
         </h2>
         <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-          {{ t(isGrid() ? 'staff.day.scaleLede' : 'staff.day.fieldsLede') }}
+          {{ t('staff.day.fieldsLede') }}
         </p>
       </ui-sheet-headline>
 
-      @if (isGrid()) {
-      <!-- THE TIME SCALE (owner, 2026-11-06, Outlook's «Time scale»): how
-           many minutes a row of the calendar holds. A tap is the answer. -->
-      <ui-list-group>
-        @for (scale of timeScales; track scale) { @let chosen =
-        timeScale.minutes() === scale;
-        <button
-          type="button"
-          uiListRow
-          [uiInteractive]="true"
-          [uiSelected]="chosen"
-          [attr.aria-pressed]="chosen"
-          [attr.data-testid]="'staff-scale-' + scale"
-          (click)="timeScale.set(scale)"
-        >
-          {{ t('staff.day.scale.' + scale) }} @if (chosen) {
-          <ui-icon
-            uiTrailing
-            uiName="checklist.done"
-            uiForegroundStyle="accent"
-          />
-          }
-        </button>
-        }
-      </ui-list-group>
-      } @else {
       <ui-list-group>
         @for (field of agendaFieldIds; track field) {
         <ui-list-row uiSize="large">
@@ -1251,13 +1226,12 @@
         </ui-list-row>
         }
       </ui-list-group>
-      }
     </ui-stack>
 
     <!-- Reset lives in the sheet's own bar, and only once there is something
          to reset — a permanent "restore defaults" under a list nobody has
          touched is a control that cannot act. -->
-    @if (!isGrid() && !fields.isDefault()) {
+    @if (!fields.isDefault()) {
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
       <!-- A cluster of ONE, the same recipe every other icon-only control on
            this surface wears. Without it the button was a bare glyph: the DS

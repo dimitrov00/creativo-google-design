@@ -1,0 +1,64 @@
+<ui-modal-sheet
+  sheetId="staff-time-scale-sheet"
+  labelledBy="staff-time-scale-title"
+  [closeLabel]="t('staff.day.cancelDismiss')"
+  [open]="true"
+  data-testid="staff-time-scale-sheet"
+  (dismissed)="closed.emit()"
+>
+  <span sheet-title>{{ t('staff.day.scaleTitle') }}</span>
+
+  <ui-stack uiSpacing="loose" class="staff-time-scale__body">
+    <ui-sheet-headline class="staff-time-scale__headline">
+      <h2
+        id="staff-time-scale-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('staff.day.scaleTitle') }}
+      </h2>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('staff.day.scaleLede') }}
+      </p>
+    </ui-sheet-headline>
+
+    <ui-list-group>
+      @for (scale of scales; track scale) { @let picked = chosen() === scale;
+      <button
+        type="button"
+        uiListRow
+        [uiInteractive]="true"
+        [uiSelected]="picked"
+        [attr.aria-pressed]="picked"
+        [attr.data-testid]="'staff-scale-' + scale"
+        (click)="chosen.set(scale)"
+      >
+        {{ t('staff.day.scale.' + scale) }} @if (picked) {
+        <ui-icon
+          uiTrailing
+          uiName="checklist.done"
+          uiForegroundStyle="accent"
+        />
+        }
+      </button>
+      }
+    </ui-list-group>
+  </ui-stack>
+
+  <!-- «Приложи» on the thumb side, the filter sheet's bar; ✕ leaves the
+       calendar as it was. -->
+  <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      uiPrimary
+      data-testid="staff-scale-apply"
+      (click)="apply()"
+    >
+      {{ t('staff.day.scaleApply') }}
+    </button>
+  </ui-sheet-action-bar>
+</ui-modal-sheet>

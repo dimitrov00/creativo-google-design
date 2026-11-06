@@ -211,7 +211,8 @@ import {
   movableIdsOf,
   slotTimeLabel,
 } from './create-from';
-import { GridTimeScale, TIME_SCALES } from '../grid-time-scale';
+import { GridTimeScale } from '../grid-time-scale';
+import { StaffTimeScaleSheet } from '../staff-time-scale-sheet/staff-time-scale-sheet';
 import {
   type BlockEditorCommit,
   type BlockEditorLane,
@@ -410,6 +411,7 @@ function transitionOf(
     StaffSearchSheet,
     StaffStatusFilterSheet,
     StaffTimeGrid,
+    StaffTimeScaleSheet,
     StaffVisitEditor,
     StaffEventHead,
     TranslocoDirective,
@@ -1649,9 +1651,7 @@ export class StaffDashboard {
     ) as AgendaFlags;
   }
   protected readonly fieldsOpen = signal(false);
-  /** The calendar views' time scale (owner, 2026-11-06), per device. */
   protected readonly timeScale = inject(GridTimeScale);
-  protected readonly timeScales = TIME_SCALES;
 
   // ── Which states are drawn (the bar's filter) ─────────────────────────
   protected readonly statusFilter = inject(ScheduleStatusFilter);

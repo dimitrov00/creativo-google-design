@@ -41,7 +41,10 @@
    (two lines need the half-hour's height at the default), and a new scale
    keeps the reader's hour. It lives under the view menu's «Настройки», now
    shown in every view: the list's sheet holds the card fields, the grid's the
-   scale.
+   scale (`lib-staff-time-scale-sheet`). A row picks a DRAFT and the bar's
+   «Приложи» applies it and closes (owner: "there should be an apply button
+   at the bottom toolbar") — the filter sheet's bar; ✕ leaves the calendar
+   as it was.
 4. **A hold lifts a block** (U, T). A held finger, a held mouse, or a mouse
    past the threshold lifts a visit whose story is not over (`movableIdsOf`)
    — from then it is the grid's editable block, drawn by minute, with the

@@ -1140,6 +1140,7 @@
       "fieldsLede": "Choose what each card carries. Kept on this device.",
       "scaleTitle": "Time scale",
       "scaleLede": "How much time one row of the calendar holds. Kept on this device.",
+      "scaleApply": "Apply",
       "scale": {
         "10": "10 min",
         "15": "15 min",
