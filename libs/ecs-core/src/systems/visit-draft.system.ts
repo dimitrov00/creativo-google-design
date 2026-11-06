@@ -826,9 +826,9 @@ export const VisitDraftSystem = {
   },
 
   /**
-   * How the series ends, switched between «На дата» and «След брой пъти» —
-   * WITHOUT changing its days where it has any: the date becomes the last
-   * day's, the count becomes how many there are. The same struct back when
+   * How the series ends, switched between «Без край», «На дата» and «След
+   * брой пъти» — WITHOUT changing its days where it has any: the date
+   * becomes the last day's, the count becomes how many there are. The same struct back when
    * the kind is unchanged.
    */
   ruleForEndKind(
@@ -839,7 +839,9 @@ export const VisitDraftSystem = {
     if (rule.recurrenceEnd === recurrenceEnd) return rule;
     const series = RecurrenceSystem.series(startLocalDate, rule);
     let end: RecurrenceEndRule;
-    if (recurrenceEnd === RecurrenceEnd.Count) {
+    if (recurrenceEnd === RecurrenceEnd.Never) {
+      end = RecurrenceEndRule.never();
+    } else if (recurrenceEnd === RecurrenceEnd.Count) {
       end = RecurrenceEndRule.count(
         series.ok ? series.value.localDates.length : DEFAULT_COUNT,
       );

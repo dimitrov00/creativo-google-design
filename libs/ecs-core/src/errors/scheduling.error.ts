@@ -20,6 +20,7 @@
  * `WaitlistStatus`, `ExceptionEffect`), so only a real tag fits it.
  */
 import type {
+  BlockSeriesId,
   AttendanceState,
   BarberId,
   BookingStatus,
@@ -95,6 +96,7 @@ export const SchedulingErrorCode = {
   ScheduleExceptionEmptyRanges: 'SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES',
   /** A block saved where no shop exists to file it at, not even a first one. */
   BlockChairWithoutHome: 'SCHEDULING_BLOCK_CHAIR_WITHOUT_HOME',
+  BlockSeriesMoved: 'SCHEDULING_BLOCK_SERIES_MOVED',
 } as const;
 export type SchedulingErrorCode =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
@@ -143,7 +145,8 @@ export type SchedulingError =
   | SchedulingError.WaitlistEmptyCart
   | SchedulingError.WaitlistInvalidTransition
   | SchedulingError.ScheduleExceptionEmptyRanges
-  | SchedulingError.BlockChairWithoutHome;
+  | SchedulingError.BlockChairWithoutHome
+  | SchedulingError.BlockSeriesMoved;
 
 const C = SchedulingErrorCode;
 
@@ -414,6 +417,13 @@ export const SchedulingError = {
   ): SchedulingError.BlockChairWithoutHome {
     return { errorCode: C.BlockChairWithoutHome, barberId };
   },
+  /**
+   * A repeating block changed since this screen read it — another device
+   * moved, cut or lifted it — or is gone: nothing was written.
+   */
+  blockSeriesMoved(seriesId: BlockSeriesId): SchedulingError.BlockSeriesMoved {
+    return { errorCode: C.BlockSeriesMoved, seriesId };
+  },
 
   /** Narrows an error to one code — `SchedulingError.is(e, SchedulingErrorCode.FlexibleWhenFull)`. */
   is<K extends SchedulingErrorCode>(
@@ -614,6 +624,10 @@ export namespace SchedulingError {
   export type BlockChairWithoutHome = {
     readonly errorCode: typeof SchedulingErrorCode.BlockChairWithoutHome;
     readonly barberId: BarberId;
+  };
+  export type BlockSeriesMoved = {
+    readonly errorCode: typeof SchedulingErrorCode.BlockSeriesMoved;
+    readonly seriesId: BlockSeriesId;
   };
 }
 

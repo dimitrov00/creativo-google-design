@@ -9,11 +9,14 @@
 import type {
   BookingCart,
   ExceptionEffectRule,
+  RecurrenceRule,
   FlexibleWhen,
   WaitlistLifecycle,
 } from '@core/components';
+import { RecurrenceEnd } from '@core/components';
 import { ExceptionEffect, WaitlistStatus } from '@core/primitives';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
+import type { BlockSeries, BlockSeriesMeta } from './block-series.entity';
 import type {
   ScheduleException,
   ScheduleExceptionMeta,
@@ -51,6 +54,24 @@ export const closedHasNoRanges: unknown =
 export const noEffect: unknown = exception.effect;
 // @ts-expect-error — no zone on a temporal entity (Law 7.2)
 export const noZone: unknown = exception.zone;
+
+/* ── BlockSeries = BlockSeriesMeta & RecurrenceRule ── */
+
+export const blockSeriesNotNever: IsNever<BlockSeries> = false;
+export const blockSeriesFlat: EveryVariantFlat<BlockSeries> = true;
+export const blockSeriesDisjoint: Disjoint<BlockSeriesMeta, RecurrenceRule> =
+  true;
+declare const blockSeries: BlockSeries;
+// The end narrows at the root: «Без край» carries no date.
+export const seriesUntil: unknown =
+  blockSeries.recurrenceEnd === RecurrenceEnd.Until
+    ? blockSeries.untilLocalDate
+    : null;
+export const neverHasNoDate: unknown =
+  blockSeries.recurrenceEnd === RecurrenceEnd.Never
+    ? // @ts-expect-error — a series that never ends has no last day
+      blockSeries.untilLocalDate
+    : null;
 
 /* ── WaitlistRequest = Meta & BookingCart & FlexibleWhen & WaitlistLifecycle ── */
 

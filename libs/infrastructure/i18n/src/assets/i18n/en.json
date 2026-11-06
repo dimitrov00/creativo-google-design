@@ -78,6 +78,7 @@
     "SCHEDULING_RECURRENCE_ENDS_BEFORE_START": "The end is before the start.",
     "SCHEDULING_RECURRENCE_NEVER_OCCURS": "No day falls before the end.",
     "SCHEDULING_RECURRENCE_TOO_LONG": "At most {{max}} times — choose an earlier end.",
+    "SCHEDULING_BLOCK_SERIES_MOVED": "The repeating block was changed on another device. Open it again.",
     "IDENTITY_IDENTIFIER_INVALID": "Enter a valid phone number or email address.",
     "IDENTITY_IDENTIFIER_MISSING": "We couldn't find your phone number or email. Sign in again.",
     "IDENTITY_OTP_CODE_INVALID": "Enter the 6-digit code.",

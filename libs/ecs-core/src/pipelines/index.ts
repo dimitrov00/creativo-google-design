@@ -1,4 +1,5 @@
 export * from './audit-document-change.pipeline';
+export * from './block-series.pipeline';
 export * from './book-appointment.pipeline';
 export * from './booking-read-set.pipeline';
 export * from './cancel-appointment.pipeline';

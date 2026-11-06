@@ -15,6 +15,7 @@ import {
   ParsedIdentifier,
   PhotoOrigin,
   Principal,
+  RecurrenceEnd,
   type RegistrationFields,
   ServiceStatus,
   SessionKind,
@@ -69,6 +70,7 @@ import {
   type LoyaltyCatalogParts,
   type Otp,
   type Position,
+  type BlockSeries,
   type ScheduleException,
   type SeasonProgress,
   type ServiceCategory,
@@ -120,6 +122,9 @@ import type {
   PositionWritePorts,
   ProfilePorts,
   ProgramsPorts,
+  BlockSeriesStreamPorts,
+  BlockSeriesWritePorts,
+  EndlessBlockSeriesPorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
   ShopEventReadPorts,
@@ -281,6 +286,58 @@ export function memoryScheduleExceptionPorts(
       });
       return Result.ok(undefined);
     },
+  };
+}
+
+/**
+ * The in-memory series writer and stream (`BlockSeriesWritePorts`,
+ * `BlockSeriesStreamPorts`, `EndlessBlockSeriesPorts`): the days and the
+ * series read, decided and written together, as the adapter's one
+ * transaction does — a refusal writes nothing. The arrays are the store.
+ */
+export function memoryBlockSeriesPorts(
+  exceptions: ScheduleException[],
+  series: BlockSeries[],
+): BlockSeriesWritePorts & BlockSeriesStreamPorts & EndlessBlockSeriesPorts {
+  const put = <T extends { readonly id: string }>(
+    into: T[],
+    id: string,
+    next: T | null,
+  ): void => {
+    const at = into.findIndex((entry) => entry.id === id);
+    if (next === null) {
+      if (at >= 0) into.splice(at, 1);
+    } else if (at >= 0) {
+      into.splice(at, 1, next);
+    } else {
+      into.push(next);
+    }
+  };
+  return {
+    writeBlockSeries: async (keys, seriesIds, decide) => {
+      const decided = decide({
+        exceptions: keys.map(
+          (key) => exceptions.find((entry) => keyOf(entry) === key) ?? null,
+        ),
+        series: seriesIds.map(
+          (id) => series.find((entry) => entry.id === id) ?? null,
+        ),
+      });
+      if (!decided.ok) return decided;
+      keys.forEach((key, i) => {
+        put(exceptions, key, decided.value.exceptions[i] ?? null);
+      });
+      seriesIds.forEach((id, i) => {
+        put(series, id, decided.value.series[i] ?? null);
+      });
+      return Result.ok(undefined);
+    },
+    observeBlockSeries: (barberId) =>
+      of(Result.ok(series.filter((entry) => entry.barberId === barberId))),
+    listEndlessBlockSeries: async () =>
+      Result.ok(
+        series.filter((entry) => entry.recurrenceEnd === RecurrenceEnd.Never),
+      ),
   };
 }
 

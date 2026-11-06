@@ -78,6 +78,7 @@
     "SCHEDULING_RECURRENCE_ENDS_BEFORE_START": "Краят е преди началото.",
     "SCHEDULING_RECURRENCE_NEVER_OCCURS": "До края не се пада нито един ден.",
     "SCHEDULING_RECURRENCE_TOO_LONG": "Най-много {{max}} пъти — избери по-ранен край.",
+    "SCHEDULING_BLOCK_SERIES_MOVED": "Повтарящият се блок беше променен от друго устройство. Отвори го отново.",
     "IDENTITY_IDENTIFIER_INVALID": "Въведи валиден телефонен номер или имейл адрес.",
     "IDENTITY_IDENTIFIER_MISSING": "Не намерихме телефонния ти номер или имейл. Влез отново.",
     "IDENTITY_OTP_CODE_INVALID": "Въведи 6-цифрения код.",

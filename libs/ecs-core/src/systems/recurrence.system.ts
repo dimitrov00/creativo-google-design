@@ -89,6 +89,8 @@ function walk(
   from: number,
   until: number,
   limit: number,
+  /** The day the rule's periods count from — `from` unless the walk resumes a series. */
+  origin: number = from,
 ): readonly number[] {
   const wanted =
     rule.recurrenceEnd === RecurrenceEnd.Count
@@ -108,12 +110,12 @@ function walk(
   const step = rule.recurrenceInterval;
   switch (rule.recurrenceFrequency) {
     case RecurrenceFrequency.Daily: {
-      let day = from;
+      let day = origin;
       while (!take(day)) day += step;
       break;
     }
     case RecurrenceFrequency.Weekly: {
-      const monday = from - (weekdayOfEpochDay(from) - 1);
+      const monday = origin - (weekdayOfEpochDay(origin) - 1);
       const weekdays = rule.recurrenceWeekdays;
       walking: for (let week = monday; week <= until; week += 7 * step) {
         for (let i = 0; i < weekdays.length; i++) {
@@ -123,10 +125,10 @@ function walk(
       break;
     }
     case RecurrenceFrequency.Monthly: {
-      const origin = LocalDate.parts(LocalDate.fromEpochDay(from));
+      const first = LocalDate.parts(LocalDate.fromEpochDay(origin));
       for (let period = 0; period < PERIOD_GUARD; period++) {
-        const index = origin.month - 1 + period * step;
-        const year = origin.year + Math.floor(index / 12);
+        const index = first.month - 1 + period * step;
+        const year = first.year + Math.floor(index / 12);
         const month = (index % 12) + 1;
         if (LocalDate.epochDayOf(year, month, 1) > until) break;
         if (rule.monthlyAnchor === MonthlyAnchor.Date) {
@@ -141,9 +143,9 @@ function walk(
       break;
     }
     case RecurrenceFrequency.Yearly: {
-      const origin = LocalDate.parts(LocalDate.fromEpochDay(from));
+      const first = LocalDate.parts(LocalDate.fromEpochDay(origin));
       for (let period = 0; period < PERIOD_GUARD; period++) {
-        const year = origin.year + period * step;
+        const year = first.year + period * step;
         if (LocalDate.epochDayOf(year, 1, 1) > until) break;
         if (rule.yearlyDate > LocalDate.daysInMonth(year, rule.yearlyMonth)) {
           continue;
@@ -348,6 +350,32 @@ export const RecurrenceSystem = {
   },
 
   /**
+   * The days a series that started on `startLocalDate` selects from
+   * `fromLocalDate` to `toLocalDate` (both inclusive), in order — the walk
+   * keeps the SERIES' rhythm (every second week counts from its start, not
+   * from `fromLocalDate`), so a series written ahead day by day lands on the
+   * days it always would have. Bounded like {@link occurrences}: by the
+   * rule's own end and by {@link RecurrenceRule.MAX_OCCURRENCES} days kept.
+   */
+  occurrencesFrom(
+    rule: RecurrenceRule,
+    startLocalDate: LocalDate,
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
+  ): readonly LocalDate[] {
+    const start = LocalDate.toEpochDay(startLocalDate);
+    return toLocalDates(
+      walk(
+        rule,
+        Math.max(start, LocalDate.toEpochDay(fromLocalDate)),
+        Math.min(endEpochDay(rule), LocalDate.toEpochDay(toLocalDate)),
+        RecurrenceRule.MAX_OCCURRENCES,
+        start,
+      ),
+    );
+  },
+
+  /**
    * Bind `rule` to the day it starts on (`RecurrenceSeries.create`,
    * `recurrence-rule.ts:501-526`). The limits live here because only here
    * are they knowable, each a refusal rather than a silently truncated write:
@@ -373,11 +401,17 @@ export const RecurrenceSystem = {
         ),
       );
     }
+    // A series that never ends is written to a rolling horizon, never
+    // refused for its length: the daily job writes the rest.
+    const never = rule.recurrenceEnd === RecurrenceEnd.Never;
+    const start = LocalDate.toEpochDay(startLocalDate);
     const found = walk(
       rule,
-      LocalDate.toEpochDay(startLocalDate),
-      endEpochDay(rule),
-      RecurrenceRule.MAX_OCCURRENCES + 1,
+      start,
+      never ? start + RecurrenceRule.WRITE_AHEAD_DAYS : endEpochDay(rule),
+      never
+        ? RecurrenceRule.MAX_OCCURRENCES
+        : RecurrenceRule.MAX_OCCURRENCES + 1,
     );
     if (found.length > RecurrenceRule.MAX_OCCURRENCES) {
       return Result.err(

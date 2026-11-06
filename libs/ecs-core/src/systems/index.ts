@@ -13,6 +13,7 @@ export * from './backfill-plan.system';
 export * from './badge.system';
 export * from './barber-tone.system';
 export * from './billing.system';
+export * from './block-series.system';
 export * from './booking-cart.system';
 export * from './booking-decision.system';
 export * from './booking-flow.system';

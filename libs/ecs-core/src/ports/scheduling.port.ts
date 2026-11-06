@@ -3,6 +3,7 @@ import type { BookingPolicy, LivePolicyLine } from '@core/components';
 import type {
   AppointmentId,
   BarberId,
+  BlockSeriesId,
   BusyKey,
   CapacityMonthId,
   CustomerId,
@@ -16,6 +17,7 @@ import type { PipelineError, RepositoryError } from '@core/errors';
 import type {
   Appointment,
   BarberBusyDay,
+  BlockSeries,
   BarberLeadTimeSample,
   BarberSchedule,
   CapacityMonth,
@@ -271,6 +273,35 @@ export type WriteScheduleException = <E>(
   ) => Result<readonly (ScheduleException | null)[], E>,
 ) => Promise<Result<void, E | RepositoryError>>;
 
+/** A chair's repeating blocks — `blockSeries` whose `barberId` is the chair (staff-only). */
+export type ObserveBlockSeries = (
+  barberId: BarberId,
+) => Observable<Result<readonly BlockSeries[], RepositoryError>>;
+
+/** What a series write reads and answers: each day's exception, each named series, in order. */
+export type BlockSeriesState = {
+  readonly exceptions: readonly (ScheduleException | null)[];
+  readonly series: readonly (BlockSeries | null)[];
+};
+
+/**
+ * A repeating block's write — the days' exceptions AND the series documents
+ * read, handed to the pure `decide` and written in ONE transaction, so a
+ * series never lists a day its write did not land on (nor the reverse). A
+ * `null` answer deletes that document; a decision that refuses writes
+ * nothing.
+ */
+export type WriteBlockSeries = <E>(
+  keys: readonly BusyKey[],
+  seriesIds: readonly BlockSeriesId[],
+  decide: (stored: BlockSeriesState) => Result<BlockSeriesState, E>,
+) => Promise<Result<void, E | RepositoryError>>;
+
+/** Every series that never ends — the daily write-ahead's list (`recurrenceEnd == NEVER`). */
+export type ListEndlessBlockSeries = () => Promise<
+  Result<readonly BlockSeries[], RepositoryError>
+>;
+
 // ── The web's callable gateway ────────────────────────────────────────────
 
 /** One server pipeline as the web calls it: a payload in, a typed answer or a `PipelineError` out. */
@@ -413,6 +444,21 @@ export type SchedulingReadPorts = ShopDayStreamPorts &
 /** The staff schedule-exception command — `SCHEDULE_EXCEPTION_PORTS`. */
 export type ScheduleExceptionPorts = {
   readonly writeScheduleException: WriteScheduleException;
+};
+
+/** A chair's repeating blocks, live — the staff day's series. */
+export type BlockSeriesStreamPorts = {
+  readonly observeBlockSeries: ObserveBlockSeries;
+};
+
+/** A repeating block's one transaction over its days and its series. */
+export type BlockSeriesWritePorts = {
+  readonly writeBlockSeries: WriteBlockSeries;
+};
+
+/** The series the daily job writes ahead. */
+export type EndlessBlockSeriesPorts = {
+  readonly listEndlessBlockSeries: ListEndlessBlockSeries;
 };
 
 /** One visit, a barber's day and the staff search window. */

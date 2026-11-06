@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BlockSeriesId,
   AttendanceState,
   BarberId,
   BookingStatus,
@@ -138,6 +139,7 @@ describe('SchedulingError factories', () => {
       ),
       SchedulingError.scheduleExceptionEmptyRanges(ExceptionEffect.Hours),
       SchedulingError.blockChairWithoutHome(BarberId.of('ivan')),
+      SchedulingError.blockSeriesMoved(BlockSeriesId.of('series-1')),
     ];
     // One factory per code, each code reached once.
     expect(errors.map((error) => error.errorCode).sort()).toEqual(

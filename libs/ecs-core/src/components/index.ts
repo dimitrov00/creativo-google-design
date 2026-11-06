@@ -35,6 +35,7 @@ export * from './barber-status.data';
 export * from './bill-pending.data';
 export * from './birth-date.data';
 export * from './birthday-moment.data';
+export * from './block-series-scope.data';
 export * from './booking-call.data';
 export * from './booking-cart.data';
 export * from './booking-confirmation.data';
