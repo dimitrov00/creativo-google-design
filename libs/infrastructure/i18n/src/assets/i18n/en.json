@@ -1388,7 +1388,7 @@
       "confirm": "Done",
       "peopleCount": "Clients: {{count}}",
       "newClientTitle": "New client",
-      "optional": "optional",
+      "optional": "(optional)",
       "clientName": "Name",
       "clientPhone": "Phone",
       "clientEmail": "Email",

@@ -398,22 +398,19 @@
          the same order, with the DS's composite phone control — so the
          number the desk types obeys the same E.164 contract as one a client
          types. What the search had in it is already in the right field.
-         NOTHING IS OWED (owner, 2026-11-06): each label says «по желание»
-         at its trailing end, where the eye already is — a subtitle above
-         the fields goes unread — and the name's blank shows what a
-         nameless walk-in is seated as. -->
+         NOTHING IS OWED (owner, 2026-11-06): each label says «(по
+         желание)» right after its word, where the eye already is — a
+         subtitle above the fields goes unread — and the name's blank shows
+         what a nameless walk-in is seated as. -->
     <ui-stack uiSpacing="regular" class="staff-visit__form">
       <label>
         <ui-stack uiSpacing="tight">
-          <ui-stack uiAxis="horizontal" uiSpacing="compact">
-            <span uiText uiFont="footnote"
-              >{{ t('staff.visit.clientName') }}</span
-            >
-            <ui-spacer />
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          <span uiText uiFont="footnote"
+            >{{ t('staff.visit.clientName') }}
+            <span uiForegroundStyle="secondary"
               >{{ t('staff.visit.optional') }}</span
-            >
-          </ui-stack>
+            ></span
+          >
           <input
             type="text"
             uiTextField
@@ -443,15 +440,12 @@
       />
       <label>
         <ui-stack uiSpacing="tight">
-          <ui-stack uiAxis="horizontal" uiSpacing="compact">
-            <span uiText uiFont="footnote"
-              >{{ t('staff.visit.clientEmail') }}</span
-            >
-            <ui-spacer />
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          <span uiText uiFont="footnote"
+            >{{ t('staff.visit.clientEmail') }}
+            <span uiForegroundStyle="secondary"
               >{{ t('staff.visit.optional') }}</span
-            >
-          </ui-stack>
+            ></span
+          >
           <input
             type="email"
             uiTextField

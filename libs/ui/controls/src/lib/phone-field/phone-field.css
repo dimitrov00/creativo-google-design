@@ -32,13 +32,11 @@
     gap: var(--sys-space-tight);
   }
   .ui-phone-field__label {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--sys-space-compact);
     font: var(--sys-font-footnote);
     color: var(--sys-color-foreground);
   }
-  /* The note rides the label's trailing end in secondary ink. */
+  /* The note follows the label's word in secondary ink — «Телефон (по
+     желание)». */
   .ui-phone-field__label-note {
     color: var(--sys-color-secondary-label);
   }

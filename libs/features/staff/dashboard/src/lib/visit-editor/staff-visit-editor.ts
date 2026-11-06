@@ -286,13 +286,7 @@ import {
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
 import { formatCentsFigure, formatCurrencyUnit } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
-import {
-  UiFlow,
-  UiGrid,
-  UiScrollColumn,
-  UiSpacer,
-  UiStack,
-} from '@creativo/ui/layout';
+import { UiFlow, UiGrid, UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
   UiMaterialDirective,
   UiForegroundStyleDirective,
@@ -1285,7 +1279,6 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     UiGrid,
     ServiceCardComponent,
     UiScrollColumn,
-    UiSpacer,
     UiStack,
     UiTextDirective,
     UiCodeField,

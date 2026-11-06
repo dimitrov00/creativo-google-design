@@ -1391,7 +1391,7 @@
       "confirm": "Потвърди",
       "peopleCount": "Клиенти: {{count}}",
       "newClientTitle": "Нов клиент",
-      "optional": "по желание",
+      "optional": "(по желание)",
       "clientName": "Име",
       "clientPhone": "Телефон",
       "clientEmail": "Имейл",

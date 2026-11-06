@@ -19,13 +19,18 @@
 1. **Every field is optional** (U, C). The ✓ seats whoever is in the chair:
    a name, a number, a mail, any of them or none. A mail, once typed, must be
    one (OR-26 — what was typed never vanishes on the way to the record).
-2. **Every label says it, where the eye is** (U). Each label wears
-   «по желание» at its trailing end in secondary ink (Co–Star), and the
-   phone field takes it as `labelNote` (`ui-phone-field`), read with the
-   label. A first build said it ONCE in a subtitle under the title; the
-   owner: "no one reads the subtitle" — the label is what a barber reads
-   while typing, so the mark goes there and the subtitle went.
-3. **The blank says what it becomes** (U, T). The name field's placeholder
+2. **Every label says it, where the eye is** (U). Each label is followed
+   by «(по желание)» in secondary ink — «Име (по желание)» — and the phone
+   field takes it as `labelNote` (`ui-phone-field`), read with the label.
+   A first build said it ONCE in a subtitle under the title; the owner:
+   "no one reads the subtitle". A second put it at the label row's trailing
+   end; the owner asked for it next to the word.
+3. **The name is optional too** (U, C). This is the desk's form, not the
+   client's: a walk-in who gives no name, or a barber with clippers in hand,
+   must never be stopped by a required field — a forced name becomes «аз»
+   or «х» in the client book, where an honest «Случаен клиент» can be
+   renamed later.
+4. **The blank says what it becomes** (U, T). The name field's placeholder
    is the name a nameless person is seated under — «Случаен клиент», then
    «Случаен клиент 2» past the visit's own people — the save's own walk-in
    numbering (`VisitDraftSystem.walkInLabels`, `walkInFallbackOf`), so the
