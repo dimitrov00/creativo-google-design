@@ -62,6 +62,10 @@
    no sense — you cannot book the same service twice; another of the same is
    another client"): the stepper under a ticked card is gone; a second of a
    service is a second person, the dock's add-client button.
+   **The dock's act is the ✓, always** (owner: "the check icon is enough —
+   it does not cause shrinks"): «Добави 3 услуги» and «Приложи» are its
+   accessible name, never its face, so the field beside it keeps its width
+   as cards are ticked.
 9. **The visit's own list stays ROWS** (owner: "grid in here, or keep it
    simple as rows?"). Fresha's appointment details list the booked services
    as rows — name, then duration — inside the overview; a cover grid on the

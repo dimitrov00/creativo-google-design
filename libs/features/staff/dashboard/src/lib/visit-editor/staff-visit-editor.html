@@ -2887,8 +2887,8 @@
     <!-- THE SEARCH AT THE THUMB, as the search sheet's (owner, 2026-11-06):
          the field fills the dock, and over it — Photos' chips — the visit's
          people, the one the picks seat for selected. Then another person,
-         and «Добави», «Добави 3 услуги» — every pick seated at once — or the
-         ✓ while the page is only read. -->
+         and the ✓ — the same glyph whether it applies the ticks or only
+         closes a page that was read. -->
     <ui-search-field
       uiFill
       uiControlSize="large"
@@ -2956,15 +2956,22 @@
       <ui-icon uiName="party.addGuest" />
     </button>
     @if (serviceApply(); as apply) {
+    <!-- THE ✓ THAT APPLIES (owner, 2026-11-06: "the check icon is enough —
+         it does not cause shrinks"): the page's own ✓, glyph and rung, so
+         the field beside it never jumps as cards are ticked; what it does
+         — «Добави 3 услуги», «Приложи» — is its accessible name. -->
     <button
       type="button"
       uiButton
       uiButtonStyle="borderedProminent"
       uiControlSize="large"
+      [uiIconOnly]="true"
+      [attr.aria-label]="apply.label"
+      [title]="apply.label"
       data-testid="staff-visit-service-apply"
       (click)="applyServices()"
     >
-      {{ apply.label }}
+      <ui-icon uiName="checklist.done" />
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />

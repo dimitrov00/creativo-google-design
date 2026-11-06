@@ -591,6 +591,9 @@ describe('StaffVisitEditor', () => {
    * the elements so the assertions stay about copy rather than about glyphs
    * whatever the rendering becomes.
    */
+  /** What the service page's ✓ does — its accessible name (2026-11-06: the glyph alone shows). */
+  const applyName = (host: HTMLElement) =>
+    find(host, 'staff-visit-service-apply')?.getAttribute('aria-label') ?? '';
   /** Whose picks the service page seats — its selected person chip (2026-11-06). */
   const servedFor = (host: HTMLElement) =>
     host
@@ -1477,12 +1480,17 @@ describe('StaffVisitEditor', () => {
       expect(wash()?.hasAttribute('data-picked')).toBe(true);
       expect(wash()?.hasAttribute('data-selected')).toBe(true);
       expect(host.querySelector('ui-count-stepper')).toBeNull();
-      expect(text(host, 'staff-visit-service-apply')).toBe('Добави');
+      expect(applyName(host)).toBe('Добави');
       expect(
         find(host, 'staff-visit-service-apply')?.getAttribute(
           'data-button-style',
         ),
       ).toBe('borderedProminent');
+      // The ✓ itself, never a label that grows (owner, 2026-11-06: "the
+      // check icon is enough — it does not cause shrinks").
+      expect(
+        find(host, 'staff-visit-service-apply')?.hasAttribute('data-icon-only'),
+      ).toBe(true);
       expect(find(host, 'staff-visit-page-done')).toBeNull();
       // (The ladder is behind the page; nothing is seated until the act.)
       expect(host.hasAttribute('data-dirty')).toBe(false);
@@ -1510,7 +1518,7 @@ describe('StaffVisitEditor', () => {
       // Two more, seated together.
       click(host, 'staff-visit-service-fade');
       click(host, 'staff-visit-service-cut:long');
-      expect(text(host, 'staff-visit-service-apply')).toBe('Добави 2 услуги');
+      expect(applyName(host)).toBe('Добави 2 услуги');
       click(host, 'staff-visit-service-apply');
       expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 3);
 
@@ -1526,7 +1534,7 @@ describe('StaffVisitEditor', () => {
       click(host, 'staff-visit-add-service');
       expect(wash()?.hasAttribute('data-picked')).toBe(true);
       click(host, 'staff-visit-service-wash');
-      expect(text(host, 'staff-visit-service-apply')).toBe('Приложи');
+      expect(applyName(host)).toBe('Приложи');
       click(host, 'staff-visit-service-apply');
       expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 2);
     });
