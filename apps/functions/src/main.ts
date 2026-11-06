@@ -64,6 +64,7 @@ import {
   startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
+  topUpBlockSeries,
   transitionAppointment as transitionAppointmentPipeline,
   updateProfile as updateProfilePipeline,
   verifyOtp,
@@ -974,6 +975,18 @@ export const sampleBarberLeadTimeDaily = onSchedule(
   { schedule: 'every day 04:00', timeZone: CRON_TIME_ZONE, retryCount: 3 },
   async () => {
     failOnRefusal(await sampleLeadTime(root.ports())());
+  },
+);
+
+/**
+ * 02:30 — the repeating blocks that never end (a lunch every weekday)
+ * written one day further ahead, before the capacity sweep reads the days
+ * (`topUpBlockSeries`, owner 2026-11-06).
+ */
+export const topUpBlockSeriesDaily = onSchedule(
+  { schedule: 'every day 02:30', timeZone: CRON_TIME_ZONE, retryCount: 3 },
+  async () => {
+    failOnRefusal(await topUpBlockSeries(root.ports())());
   },
 );
 

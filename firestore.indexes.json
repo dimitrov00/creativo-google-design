@@ -359,6 +359,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "blockSeries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startLocalDate",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -967,6 +981,11 @@
       "collectionGroup": "barberLeadTimeSamples",
       "fieldPath": "purgeAt",
       "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "blockSeries",
+      "fieldPath": "localDates",
       "indexes": []
     }
   ]

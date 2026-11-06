@@ -1,5 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type {
+  BlockSeriesWritePorts,
+  EndlessBlockSeriesPorts,
   AccountContactPorts,
   AdminBatchPorts,
   AuditPorts,
@@ -38,6 +40,7 @@ import { firestoreLeadTimePorts } from './firestore-lead-time.adapter';
 import { firestoreNotificationPorts } from './firestore-notifications.adapter';
 import { firestoreOtpPorts } from './firestore-otps.adapter';
 import { firestoreSchedulePorts } from './firestore-schedules.adapter';
+import { firestoreBlockSeriesPorts } from './firestore-block-series.adapter';
 import { firestoreSettingsPorts } from './firestore-settings.adapter';
 import { firestoreTriggerFailurePorts } from './firestore-trigger-failures.adapter';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
@@ -119,7 +122,10 @@ export type FirestorePorts = TxPorts &
   // firestoreUserPorts
   UserLookupPorts &
   // firestoreTriggerFailurePorts (audit-hardening WS-6)
-  TriggerFailurePorts;
+  TriggerFailurePorts &
+  // firestoreBlockSeriesPorts (the daily write-ahead, 2026-11-06)
+  BlockSeriesWritePorts &
+  EndlessBlockSeriesPorts;
 
 export const firestorePorts = (
   db: Firestore,
@@ -143,4 +149,5 @@ export const firestorePorts = (
   ...firestoreOtpPorts(db),
   ...firestoreUserPorts(db),
   ...firestoreTriggerFailurePorts(db),
+  ...firestoreBlockSeriesPorts(db),
 });

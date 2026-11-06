@@ -614,6 +614,22 @@ service cloud.firestore {
       allow delete: if mayEditRoster();
     }
 
+    match /blockSeries/{seriesId} {
+      // A chair's repeating block — a lunch break, an admin hour — and the
+      // days it wrote (`BlockSeries`, owner 2026-11-06). Staff memory only:
+      // clients read the days' effect on `scheduleExceptions`, never this.
+      // Written beside those days in one transaction (`blockSeriesPorts`),
+      // by the same roster editors; every key the rule's variants may carry
+      // (pinned by rules-key-parity.rules-text.spec.ts), zero reads.
+      allow read: if worksTheBook();
+      allow create, update: if mayEditRoster()
+        && request.resource.data.keys().hasOnly(['barberId', 'endMinutes', 'localDates', 'locationId', 'monthlyAnchor', 'monthlyDate', 'monthlyWeek', 'monthlyWeekday', 'occurrenceCount', 'recurrenceEnd', 'recurrenceFrequency', 'recurrenceInterval', 'recurrenceWeekdays', 'startLocalDate', 'startMinutes', 'untilLocalDate', 'yearlyDate', 'yearlyMonth'])
+        && request.resource.data.barberId is string
+        && request.resource.data.localDates is list
+        && request.resource.data.localDates.size() <= 366;
+      allow delete: if mayEditRoster();
+    }
+
     match /capacity/{monthId} {
       // The calendar's month rollup — free minutes per day/barber/shop,
       // trigger-maintained (Admin SDK). Same PII posture as barberBusy:

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   AppointmentNote,
   AppointmentPhoto,
+  BlockSeries,
   ScheduleException,
 } from '@core/entities';
 import { blockOf, occurrences, rulesCode } from '@core/testing';
@@ -74,6 +75,28 @@ const EXCEPTION_KEYS: KeyTable<ScheduleException> = {
   utcEpochMs: true,
 };
 
+/** Over every rule variant: each pattern's and end's own fields, and the series' identity. */
+const SERIES_KEYS: KeyTable<BlockSeries> = {
+  barberId: true,
+  endMinutes: true,
+  localDates: true,
+  locationId: true,
+  monthlyAnchor: true,
+  monthlyDate: true,
+  monthlyWeek: true,
+  monthlyWeekday: true,
+  occurrenceCount: true,
+  recurrenceEnd: true,
+  recurrenceFrequency: true,
+  recurrenceInterval: true,
+  recurrenceWeekdays: true,
+  startLocalDate: true,
+  startMinutes: true,
+  untilLocalDate: true,
+  yearlyDate: true,
+  yearlyMonth: true,
+};
+
 /** A key table's keys in code-unit order — the order the rules lists are written in. */
 const sortedKeys = (table: Readonly<Record<string, true>>): string[] =>
   Object.keys(table).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -86,6 +109,7 @@ describe('firestore.rules — the book’s key lists match the entities (S-DEP-5
     ['/appointmentNotes/{appointmentId}', NOTE_KEYS],
     ['/appointmentPhotos/{photoId}', PHOTO_KEYS],
     ['/scheduleExceptions/{dayDocId}', EXCEPTION_KEYS],
+    ['/blockSeries/{seriesId}', SERIES_KEYS],
   ] as const)(
     '%s lists exactly its entity’s stored keys, once',
     (path, table) => {

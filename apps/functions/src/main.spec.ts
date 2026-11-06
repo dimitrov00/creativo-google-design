@@ -59,6 +59,7 @@ const seam = vi.hoisted(() => {
     'rescheduleAppointment',
     'runBackfill',
     'sampleLeadTime',
+    'topUpBlockSeries',
     'setRoles',
     'startImpersonation',
     'startPolicyRecompute',
@@ -318,6 +319,7 @@ const ENDPOINTS = {
   rebuildCapacityOnSettingsChange: written('settings/{docId}', true),
   sweepCapacityDaily: daily('every day 03:00'),
   sampleBarberLeadTimeDaily: daily('every day 04:00'),
+  topUpBlockSeriesDaily: daily('every day 02:30'),
   requestWaitlist: tracedCallable,
   cancelWaitlist: tracedCallable,
   matchWaitlistOnBusyChange: written('barberBusy/{docId}', true),
@@ -826,6 +828,13 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ written: 0 }),
     expected: undefined,
   },
+  topUpBlockSeriesDaily: {
+    pipeline: 'topUpBlockSeries',
+    input: tick,
+    command: undefined,
+    answer: ok({ written: 0, failed: [] }),
+    expected: undefined,
+  },
   requestWaitlist: {
     pipeline: 'requestWaitlist',
     input: request(
@@ -1145,7 +1154,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 51 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair and Phase 4’s roles change', () => {
+  it('exports exactly the 52 functions — today’s 31 (the repeating blocks’ write-ahead among them), Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair and Phase 4’s roles change', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1191,7 +1200,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(51);
+    expect(FLIPPED_EXPORTS).toHaveLength(52);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
