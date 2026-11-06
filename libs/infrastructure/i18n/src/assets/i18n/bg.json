@@ -1391,6 +1391,7 @@
       "confirm": "Потвърди",
       "peopleCount": "Клиенти: {{count}}",
       "newClientTitle": "Нов клиент",
+      "newClientLede": "Всичко е по желание. С телефон или имейл ще го намериш пак.",
       "clientName": "Име",
       "clientPhone": "Телефон",
       "clientEmail": "Имейл",

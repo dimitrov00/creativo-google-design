@@ -289,6 +289,7 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.confirm': 'Потвърди',
       'staff.visit.peopleCount': 'Клиенти: {{count}}',
       'staff.visit.walkIn': 'Случаен клиент',
+      'staff.visit.walkInNumbered': 'Случаен клиент {{number}}',
       'staff.visit.newClient': 'Нов клиент',
       'staff.visit.exactMatch': 'Вече е клиент',
       'staff.client.noAccount': 'Без профил',
@@ -6626,11 +6627,15 @@ describe('StaffVisitEditor', () => {
       expect(
         (find(host, 'staff-visit-new-name') as HTMLInputElement).value,
       ).toBe('');
-      // Nothing to seat without a name.
+      // Nothing is owed (owner, 2026-11-06): the ✓ stands ready on a
+      // blank name, and the blank says what the person will be called.
       expect(
         (find(host, 'staff-visit-new-client-save') as HTMLButtonElement)
           .disabled,
-      ).toBe(true);
+      ).toBe(false);
+      expect(
+        (find(host, 'staff-visit-new-name') as HTMLInputElement).placeholder,
+      ).toBe('Случаен клиент');
       const name = find(host, 'staff-visit-new-name') as HTMLInputElement;
       name.value = 'Петър Нов';
       name.dispatchEvent(new Event('input'));
@@ -6672,6 +6677,33 @@ describe('StaffVisitEditor', () => {
           email: 'ivan@mail.bg',
         },
       ]);
+    });
+
+    it('seats a walk-in with no name as «Случаен клиент», numbered past the visit', () => {
+      // A walk-in may give nothing, or only a number (owner, 2026-11-06).
+      const host = render(fresh());
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-add-client');
+      click(host, 'staff-visit-new-client-dock');
+      click(host, 'staff-visit-new-client-save');
+      click(host, 'staff-visit-service-fade');
+      click(host, 'staff-visit-service-apply');
+      click(host, 'staff-visit-save');
+      expect(commits[0]?.clients).toEqual([
+        {
+          id: expect.stringMatching(/^guest-[0-9a-z]+-\d+$/),
+          label: 'Случаен клиент',
+          phone: null,
+          email: null,
+        },
+      ]);
+      // The next blank is not the first one's twin.
+      click(host, 'staff-visit-add-client');
+      click(host, 'staff-visit-new-client-dock');
+      expect(
+        (find(host, 'staff-visit-new-name') as HTMLInputElement).placeholder,
+      ).toBe('Случаен клиент 2');
     });
 
     it('never hands a new guest an id already on the visit', () => {

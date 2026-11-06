@@ -393,11 +393,24 @@
       >
         {{ t('staff.visit.newClientTitle') }}
       </h2>
+      <!-- NOTHING IS OWED, SAID ONCE (owner, 2026-11-06: "it's not clear
+           that name and/or phone and/or email are optional"): every field
+           is optional, so no field wears a mark — the line says so, and
+           why a number or a mail is worth asking for. -->
+      <p
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+        data-testid="staff-visit-new-lede"
+      >
+        {{ t('staff.visit.newClientLede') }}
+      </p>
     </ui-sheet-headline>
     <!-- The same three fields the client's own contact sheet asks for, in
          the same order, with the DS's composite phone control — so the
          number the desk types obeys the same E.164 contract as one a client
-         types. What the search had in it is already in the right field. -->
+         types. What the search had in it is already in the right field.
+         The name's blank shows what a nameless walk-in is seated as. -->
     <ui-stack uiSpacing="regular" class="staff-visit__form">
       <label>
         <ui-stack uiSpacing="tight">
@@ -410,6 +423,7 @@
             uiControlSize="large"
             autocomplete="off"
             data-testid="staff-visit-new-name"
+            [placeholder]="newClientFallback()"
             [value]="newClient().name"
             (input)="setNewClientName($any($event.target).value)"
           />

@@ -163,6 +163,12 @@ import {
 } from './service-picks';
 import { coverRowsOf } from '../shared/cover-rows';
 import {
+  EMPTY_NEW_CLIENT,
+  type NewClientForm,
+  prefilledNewClient,
+  walkInFallbackOf,
+} from './new-client-form';
+import {
   type ClientRowVm,
   type DiscountApplyVm,
   DiscountCodeState,
@@ -3882,11 +3888,7 @@ export class StaffVisitEditor {
    * `@` becomes the mail, anything else the name, so the form opens with
    * the barber's work already in the right field.
    */
-  protected readonly newClient = signal<{
-    readonly name: string;
-    readonly phone: string | null;
-    readonly email: string;
-  }>({ name: '', phone: null, email: '' });
+  protected readonly newClient = signal<NewClientForm>(EMPTY_NEW_CLIENT);
   /**
    * THE SHOP'S OWN COUNTRY (2026-09-22): the same tenant default the login
    * flow, onboarding and the booking contact sheet hand the phone field —
@@ -3924,34 +3926,27 @@ export class StaffVisitEditor {
    */
   protected readonly newClientMailLeft = signal(false);
 
-  /** A person needs a name; the number and the mail are welcome — a mail that is one. */
+  /**
+   * NOTHING IS OWED (owner, 2026-11-06: "there might be walk-ins … name
+   * and/or phone and/or email are optional"): the ✓ seats whoever is in
+   * the chair — a mail, when one is typed, must be one.
+   */
   protected readonly newClientReady = computed(
-    () =>
-      this.newClient().name.trim().length > 0 && !this.newClientMailInvalid(),
+    () => !this.newClientMailInvalid(),
+  );
+
+  /** A nameless person's name (`walkInFallbackOf`) — the name field's placeholder. */
+  protected readonly newClientFallback = computed(() =>
+    walkInFallbackOf(
+      this.draft().clients.map((client) => client.label),
+      this.words(),
+    ),
   );
 
   protected openNewClient(): void {
-    // EVERY PART, where it belongs (2026-09-18): «Мария 088 765 4321
-    // maria@mail.bg» opens the form with all three fields filled.
-    const parsed = this.parsedQuery();
-    // The number in front of the phone field as E.164 by the shop's own
-    // dial code — the field validates for real. Too few digits are not a
-    // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
-    const [international] = PhoneSystem.searchDigitsOf(
-      parsed.phoneTyped,
-      PhoneSystem.callingCodeOr(
-        this.deployment.defaultCountry,
-        ClientQuerySystem.DEFAULT_CALLING_CODE,
-      ),
-    ).phoneReadingCandidates;
-    this.newClient.set({
-      name: parsed.name,
-      phone:
-        international !== undefined && ClientQuerySystem.prefillsPhone(parsed)
-          ? `+${international}`
-          : null,
-      email: parsed.email,
-    });
+    this.newClient.set(
+      prefilledNewClient(this.parsedQuery(), this.deployment.defaultCountry),
+    );
     this.newClientMailLeft.set(false);
     this.newClientCountry.set(this.deployment.defaultCountry);
     // The form REPLACES the search at the same depth — the query stays
@@ -3976,7 +3971,7 @@ export class StaffVisitEditor {
   protected saveNewClient(): void {
     if (!this.newClientReady()) return;
     const { name, phone } = this.newClient();
-    const label = name.trim();
+    const label = name.trim() || this.newClientFallback();
     const email = this.newClientMail();
     // NEVER A REUSED ID (found in review): `guest-${length}` handed a third
     // guest the id of one already unticked, and the flow then took the

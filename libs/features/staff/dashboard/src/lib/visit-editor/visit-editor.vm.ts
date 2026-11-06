@@ -129,6 +129,7 @@ export type VisitEditorWords = {
   readonly minutes: (minutes: number) => string;
   readonly catalogMinutes: (minutes: number) => string;
   readonly cancelFor: (names: string) => string;
+  readonly walkInNumbered: (number: number) => string;
   readonly servicesAddCount: (count: number) => string;
   readonly applyDiscount: (what: string) => string;
   readonly discountApplied: (count: number) => string;

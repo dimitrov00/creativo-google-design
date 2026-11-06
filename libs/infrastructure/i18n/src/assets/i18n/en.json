@@ -1388,6 +1388,7 @@
       "confirm": "Done",
       "peopleCount": "Clients: {{count}}",
       "newClientTitle": "New client",
+      "newClientLede": "Everything is optional. A phone or email lets you find them again.",
       "clientName": "Name",
       "clientPhone": "Phone",
       "clientEmail": "Email",

@@ -142,6 +142,8 @@ export function visitEditorWordsOf(
     catalogMinutes: (minutes) =>
       translate('staff.visit.catalogMinutes', { minutes }),
     cancelFor: (names) => translate('staff.visit.cancelFor', { names }),
+    walkInNumbered: (number) =>
+      translate('staff.visit.walkInNumbered', { number }),
     servicesAddCount: (count) =>
       translate('staff.visit.servicesAddCount', { count }),
     applyDiscount: (what) => translate('staff.visit.applyDiscount', { what }),
