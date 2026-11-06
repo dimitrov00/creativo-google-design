@@ -72,8 +72,10 @@
    The SHEET opens instead, the move drafted (`uiDropped` → `withFrame`), for
    what a drag cannot say (`dropRouteOf`): a span that runs into another
    visit or blocked time, or leaves the chair's shift (the frame's own
-   verdict), and a chair of a party, whose other chairs a move of this one
-   may part from. A drop that moved nothing goes back down. Reversibility
+   verdict). A chair of a party saves like any other (owner, the same day:
+   "it still opens the sheet?" — the first cut sent every party chair to
+   the sheet, which only saved that chair the same way): a party's chairs
+   keep times of their own. A drop that moved nothing goes back down. Reversibility
    (R) is the receipt's: the first build put every drop through the sheet
    for it, before the save had a whole-save undo.
 6. **The page draws every block at its own minutes** (owner: "the one

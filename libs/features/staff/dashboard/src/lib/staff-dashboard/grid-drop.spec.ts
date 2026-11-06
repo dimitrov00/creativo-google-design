@@ -97,7 +97,7 @@ describe('dropRouteOf — where a block dropped on the grid goes', () => {
     expect(dropRouteOf(visit(), [], frame(1065, 1095))).toBe(DropRoute.Sheet);
   });
 
-  it('asks the sheet for a chair of a party, whose other chairs a move may part from', () => {
+  it('saves a chair of a party like any other — its chairs keep times of their own', () => {
     const party = visit({
       peers: [
         {
@@ -109,6 +109,6 @@ describe('dropRouteOf — where a block dropped on the grid goes', () => {
         },
       ],
     });
-    expect(dropRouteOf(party, [], frame(630, 660))).toBe(DropRoute.Sheet);
+    expect(dropRouteOf(party, [], frame(630, 660))).toBe(DropRoute.Save);
   });
 });

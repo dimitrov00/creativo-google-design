@@ -24,8 +24,9 @@ export type DropRoute = (typeof DropRoute)[keyof typeof DropRoute];
  * Отмени» the way back. The sheet opens only for what a drag cannot say:
  * a span that runs into another visit or blocked time, or leaves the
  * chair's shift (`GridLayoutSystem.frameVerdict`, the sheet frame's own
- * verdict — its line then says which), and a chair of a party, whose other
- * chairs a move of this one may part from.
+ * verdict — its line then says which). A chair of a party saves like any
+ * other (owner, 2026-11-06: "it still opens the sheet?"): its chairs keep
+ * times of their own, and the sheet would save this one the same way.
  */
 export function dropRouteOf(
   vm: VisitEditorVm,
@@ -38,7 +39,6 @@ export function dropRouteOf(
   ) {
     return DropRoute.Stay;
   }
-  if (vm.peers.length > 0) return DropRoute.Sheet;
   const occupied = [
     ...vm.neighbours,
     ...blocks.map((block) => ({
