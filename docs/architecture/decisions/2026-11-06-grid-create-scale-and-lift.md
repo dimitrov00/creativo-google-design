@@ -65,6 +65,13 @@
    since 2026-09-23. Collisions, parties and the turnaround are the sheet's
    verdicts, as for any other edit.
 
+6. **The page draws every block at its own minutes** (owner: "the one
+   barber finishes at 11:35 but the block reads 11:45, the group's end — he
+   could take another appointment in the meantime"; C). The page grid rounded
+   a block OUTWARD to the quarter hour, so a party chair ending 11:35 drew to
+   11:45 and hid the gap. It now places by minute (`uiPlacement=
+"proportional"`), as the sheet's frame and a lifted block already did.
+
 ## Not done
 
 - Moving a block ACROSS columns (to another chair or date) — the gesture is

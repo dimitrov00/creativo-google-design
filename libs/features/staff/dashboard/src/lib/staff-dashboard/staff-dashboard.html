@@ -353,6 +353,7 @@
         #grid
         [columns]="gridColumns()"
         [uiColumnKind]="store.view() === StaffView.Day ? 'chairs' : 'dates'"
+        uiPlacement="proportional"
         [uiRevealKey]="store.revealKey()"
         [uiRegionLabel]="regionLabel()"
         [rosterStartMinute]="rosterExtent().start"

@@ -759,10 +759,10 @@ export class StaffTimeGrid {
    * of the extent instead, the same mechanism the now-line uses, so 10:05 is
    * drawn at 10:05.
    *
-   * The default is `slots` and the page grid is not migrating in this pass:
-   * proportional placement touches lane packing, the closed runs, the hour
-   * gradient and the reveal scroll on the surface four people use all day,
-   * and that is its own change with its own screenshots.
+   * The default stays `slots`, but the PAGE grid draws `proportional` too
+   * since 2026-11-06 (owner: a party chair finishing at 11:35 drew to 11:45,
+   * read as the party's end, and hid ten minutes a walk-in could take). A
+   * schedule that rounds a booking outward misstates when a chair frees.
    */
   readonly uiPlacement = input<Placement>(Placement.Slots);
 

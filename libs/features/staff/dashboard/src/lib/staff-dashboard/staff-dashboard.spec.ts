@@ -9126,6 +9126,26 @@ describe('StaffDashboard', () => {
 
       const page = () => fixture.componentInstance as unknown as WallClockPage;
 
+      it('draws a page block at its own minutes, never rounded out to the quarter hour (owner, 2026-11-06)', async () => {
+        // A party's chair that finishes at 11:35 drew to 11:45 — the
+        // party's end, as it read — and hid ten minutes a walk-in could
+        // take. The page now places every block by minute.
+        const visit = ivanVisit('appointment-short', '2026-08-05T11:00:00', 35);
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          '2026-08-05T09:00:00.000+03:00',
+        );
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const block = host().querySelector<HTMLElement>(
+          '[data-testid="staff-grid-event"][data-event-id^="appointment-short"]',
+        );
+        expect(block?.dataset['placement']).toBe('proportional');
+        expect(
+          Number(block?.style.getPropertyValue('--staff-event-height')),
+        ).toBeCloseTo(35 / 1440, 5);
+      });
+
       it('opens the ＋’s sheets from a grid slot on its date, and a dropped block drafts its move (owner, 2026-11-06)', async () => {
         const visit = ivanVisit('appointment-drop', '2026-08-05T11:00:00');
         await buildWith(
