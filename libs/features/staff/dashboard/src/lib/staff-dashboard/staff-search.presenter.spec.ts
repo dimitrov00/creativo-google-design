@@ -108,6 +108,9 @@ const LONG = ServiceVariantId.of('long');
 
 /** The catalogue's art: the classic cut is offered short and long; the fade has a cover and no variants. */
 const ART: SearchServiceArt = {
+  // No catalogue order: the values keep the order the bookings named them
+  // in (an unlisted service keeps its place); one spec below sets it.
+  catalogue: [],
   coverSrc: (id) => (id === FADE ? 'fade.jpg' : null),
   variantsOf: (id) => (id === CUT ? [SHORT, LONG] : []),
   variantName: (pick) =>
@@ -825,6 +828,34 @@ describe('searchSheetVm — the suggestions', () => {
     ]);
     // The chip names the variant with its service.
     expect(vm.filters[0]?.label).toBe('Класическо · Дълга коса');
+  });
+
+  it('lists a service’s values in the catalogue’s order, not the bookings’', () => {
+    // Owner, 2026-11-06: the search and the visit sheet's «Добави услуга»
+    // put a service in the same place. The classic cut was booked first;
+    // the catalogue lists the fade first.
+    const pool = [
+      visit('long', 1, {}, IVAN, CUT),
+      visit('fade', 2, {}, NIKO, FADE),
+    ];
+    const index = SearchIndexSystem.build(pool, {
+      ...LABELS,
+      clientNames: (v) => (v.contactName === null ? [] : [v.contactName]),
+      serviceName: LOOKUP.serviceName.bind(LOOKUP),
+      barberName: LOOKUP.barberName.bind(LOOKUP),
+    });
+    const vm = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        pool,
+        index,
+        openField: SearchFilterField.Service,
+        serviceArt: { ...ART, catalogue: [FADE, CUT] },
+      }),
+    );
+    // Both booked plain, so they share one grid — the fade first.
+    expect(
+      vm.suggestions.serviceRows.flatMap((row) => row.tiles.map((t) => t.id)),
+    ).toEqual(['SERVICE:svc-fade', 'SERVICE:svc-classic-cut']);
   });
 
   it('offers the date presets the window reaches, then a day and a span', () => {

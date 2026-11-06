@@ -11,7 +11,7 @@ import {
   type BarberId,
   BookingStatus,
   LocalDate,
-  type ServiceId,
+  ServiceId,
   ServiceVariantId,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
@@ -661,5 +661,26 @@ describe('SearchFilterSystem.presetOf — which preset a span is, today', () => 
     const lastWeek: ShopNow = { ...NOW, localDate: twoDaysAgo };
     const stale = SearchFilterSystem.whenOf(SearchWhenPreset.Today, lastWeek);
     expect(SearchFilterSystem.presetOf(stale, NOW)).toBeNull();
+  });
+});
+
+describe('SearchFilterSystem.inCatalogueOrder', () => {
+  const a = ServiceId.of('a');
+  const b = ServiceId.of('b');
+  const c = ServiceId.of('c');
+  const gone = ServiceId.of('gone');
+
+  it('lists the offered services in the catalogue’s order, an unlisted one last', () => {
+    expect(
+      SearchFilterSystem.inCatalogueOrder([gone, c, a], [a, b, c]),
+    ).toEqual([a, c, gone]);
+  });
+
+  it('keeps the bookings’ order with no catalogue, and is pure', () => {
+    const offered = deepFreeze([c, a]);
+    expect(SearchFilterSystem.inCatalogueOrder(offered, [])).toEqual([c, a]);
+    expect(SearchFilterSystem.inCatalogueOrder(offered, [a, c])).toEqual(
+      SearchFilterSystem.inCatalogueOrder(offered, [a, c]),
+    );
   });
 });

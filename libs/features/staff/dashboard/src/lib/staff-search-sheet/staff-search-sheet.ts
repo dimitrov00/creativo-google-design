@@ -289,6 +289,7 @@ export class StaffSearchSheet {
       }
     }
     return {
+      catalogue: this.services().map((service) => service.id),
       coverSrc: (id) => covers.get(id) ?? null,
       variantsOf: (id) => variants.get(id) ?? [],
       variantName: (pick) =>

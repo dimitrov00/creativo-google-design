@@ -87,6 +87,8 @@ export interface SearchServiceArt {
   readonly variantsOf: (id: ServiceId) => readonly ServiceVariantId[];
   /** «Дълга коса» — a variant's name, by its service AND its id. */
   readonly variantName: (pick: ServiceVariantPick) => string | null;
+  /** The catalogue's services, in its order — the order a service's values take. */
+  readonly catalogue: readonly ServiceId[];
 }
 
 /** What the sheet is worded from. */
@@ -480,9 +482,13 @@ function valuesOf(
       for (const id of offered.barberIds) add(singleBarber(id));
       break;
     case SearchFilterField.Service:
-      // Grouped by service: a service offered at variants stands as its
-      // variants, one after another, then the next service.
-      for (const id of offered.serviceIds) {
+      // Grouped by service, in the CATALOGUE's order (the visit sheet's own):
+      // a service offered at variants stands as its variants, one after
+      // another, then the next service.
+      for (const id of SearchFilterSystem.inCatalogueOrder(
+        offered.serviceIds,
+        input.serviceArt.catalogue,
+      )) {
         const picks = input.serviceArt
           .variantsOf(id)
           .filter((variant) =>

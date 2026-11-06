@@ -299,6 +299,27 @@ export const SearchFilterSystem = {
   },
 
   /**
+   * The offered services in the CATALOGUE's order (owner, 2026-11-06: the
+   * search and the visit sheet's «Добави услуга» list a service in the
+   * same place) — the order the bookings first named them in only breaks
+   * ties for a service the catalogue no longer lists, which comes last.
+   */
+  inCatalogueOrder(
+    serviceIds: readonly ServiceId[],
+    catalogue: readonly ServiceId[],
+  ): readonly ServiceId[] {
+    const rank = new Map<ServiceId, number>();
+    for (let i = 0; i < catalogue.length; i++) {
+      rank.set(catalogue[i] as ServiceId, i);
+    }
+    const unlisted = catalogue.length;
+    return serviceIds
+      .map((id, at) => ({ id, at, rank: rank.get(id) ?? unlisted }))
+      .sort((a, b) => a.rank - b.rank || a.at - b.at)
+      .map((entry) => entry.id);
+  },
+
+  /**
    * Whether a key offers a value the shown ones leave out — what decides
    * whether a short group of its values (the starters, the matches) points
    * on to the key's whole list. A day or a span can always be picked, so

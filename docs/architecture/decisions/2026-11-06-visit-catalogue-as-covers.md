@@ -26,8 +26,8 @@
 4. **The visit's people over the field** (U). Photos' chips over the search:
    one chip per person on the visit, the one the picks seat for selected in
    the accent (the page's subject, else the first — `servicePeopleVm`), a tap
-   moving the picks to another person; a glyph chip («Добави клиент», named
-   for the ear) pushes the client search. A long name gives way with an
+   moving the picks to another person; «Добави клиент» pushes the client
+   search (see 7). A long name gives way with an
    ellipsis so the row stays one line beside «Добави». The «За …» line under
    the title is gone: the selected chip says it.
 
@@ -39,6 +39,16 @@
    „Услуга“…», the search's scoped placeholder. Beside a fill the dock sits
    on its floor — the ✓ level with the field, never floating between the
    chips and it (`ui-sheet-action-bar`, and the editor's own dock rule).
+
+6. **One order, the catalogue's** (owner: "yes, catalogue order"). The
+   search listed a service where the bookings first named it; it now lists
+   them as «Добави услуга» does, in the catalogue's order
+   (`SearchFilterSystem.inCatalogueOrder`) — a service the catalogue no
+   longer lists comes last.
+7. **Another person is a dock button** (owner: "the add client button
+   should be next to the apply button and the same size"): an act, not a
+   person, so it leaves the chips and docks beside the ✓ at its size — the
+   client page's «Нов клиент» beside its ✓.
 
 ## Not done
 

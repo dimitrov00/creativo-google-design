@@ -2897,10 +2897,9 @@
     } } @else if (dockPage === EditorPage.Service) {
     <!-- THE SEARCH AT THE THUMB, as the search sheet's (owner, 2026-11-06):
          the field fills the dock, and over it — Photos' chips — the visit's
-         people, the one the picks seat for selected, and «＋ Добави клиент»
-         to bring another person onto the visit. Then «Добави», «Добави 3
-         услуги» — every pick seated at once — or the ✓ while the page is
-         only read. -->
+         people, the one the picks seat for selected. Then another person,
+         and «Добави», «Добави 3 услуги» — every pick seated at once — or the
+         ✓ while the page is only read. -->
     <ui-search-field
       uiFill
       uiControlSize="large"
@@ -2946,20 +2945,27 @@
           <span class="staff-visit__person-chip-label">{{ person.label }}</span>
         </button>
         }
-        <!-- A glyph, named for the ear: the people's chips keep the line. -->
-        <button
-          type="button"
-          uiChip
-          [attr.aria-label]="t('staff.visit.addClient')"
-          [title]="t('staff.visit.addClient')"
-          data-testid="staff-visit-service-add-client"
-          (mousedown)="$event.preventDefault()"
-          (click)="push(EditorPage.ClientSearch, null, 'staff-visit-service-add-client')"
-        >
-          <ui-icon uiName="party.addGuest" aria-hidden="true" />
-        </button>
       </ui-flow>
     </ui-search-field>
+    <!-- ANOTHER PERSON, beside the ✓ at its size (owner, 2026-11-06: "next
+         to the apply button and the same size"): an act, not a person, so
+         it rides the dock's buttons rather than the people's chips — the
+         client page docks «Нов клиент» beside its ✓ the same way. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      [uiIconOnly]="true"
+      class="staff-visit__dock-aside"
+      [attr.aria-label]="t('staff.visit.addClient')"
+      [title]="t('staff.visit.addClient')"
+      data-testid="staff-visit-service-add-client"
+      (click)="push(EditorPage.ClientSearch, null, 'staff-visit-service-add-client')"
+    >
+      <ui-icon uiName="party.addGuest" />
+    </button>
     @if (serviceApply(); as apply) {
     <button
       type="button"
