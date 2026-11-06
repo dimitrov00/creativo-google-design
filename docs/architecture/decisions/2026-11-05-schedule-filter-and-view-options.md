@@ -42,9 +42,12 @@
    party's cancelled seat leaves with the rest while its live chair stays.
 3. **It decides what is DRAWN, never what is true** (C). Free time, the
    day's tips (`dayTipsLine`), sheet frames and the search read every visit.
-4. **A filtered schedule says so** (U). The funnel wears the accent tint
-   (`bordered`, no `neutral`) and an accessible «Филтър, включен» while any
-   state is hidden — the answer to `agenda-fields.ts`'s worry that hiding
+4. **A filtered schedule says so** (U). The funnel wears an accent DOT on
+   its corner (`uiDotBadge`, the DS button's `.badge()` mark — owner,
+   2026-11-06: "a dot indicator like other apps"; Canva's filter count,
+   said as a dot) while its own tint stays `neutral`, and an accessible
+   «Филтър, включен» while any state is hidden. It used to wear the whole
+   accent tint, which read as a pressed or primary control — the answer to `agenda-fields.ts`'s worry that hiding
    «ОТКАЗАН» is "a way to miss a cancellation": that was a silent field on
    a drawn card; this is a whole-card choice behind a lit control.
 5. **It names the HIDDEN states** (R). A state added later is drawn until

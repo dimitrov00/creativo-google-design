@@ -943,9 +943,10 @@
           type="button"
           uiButton
           uiButtonStyle="bordered"
-          [uiTint]="statusFilter.filtering() ? undefined : 'neutral'"
+          uiTint="neutral"
           uiControlSize="large"
           [uiIconOnly]="true"
+          [uiDotBadge]="statusFilter.filtering()"
           class="staff-cluster__item"
           [attr.aria-label]="
             t(
@@ -955,7 +956,6 @@
             )
           "
           [title]="t('staff.day.statusFilterLabel')"
-          [attr.data-filtering]="statusFilter.filtering() ? '' : null"
           data-testid="staff-status-filter-open"
           (click)="statusFilterOpen.set(true)"
         >

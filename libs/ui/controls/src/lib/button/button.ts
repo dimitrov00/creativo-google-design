@@ -89,6 +89,7 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
     '[attr.data-icon-only]': "uiIconOnly() ? '' : null",
     '[attr.data-multiline]': "uiMultiline() ? '' : null",
     '[attr.data-selected]': "uiSelected() ? '' : null",
+    '[attr.data-dot-badge]': "uiDotBadge() ? '' : null",
     '[attr.aria-pressed]': 'uiSelected() ?? null',
     '[attr.aria-busy]': 'uiLoading() || null',
   },
@@ -125,4 +126,10 @@ export class UiButton {
   /** Wrapping label (`.lineLimit(nil)`): height GROWS from the size
    *  tier's min-block-size — the one sanctioned block padding. */
   readonly uiMultiline = input(false);
+  /** SwiftUI `.badge()` as a mark, not a number: an accent DOT on the
+   *  glyph's top-trailing corner — "something here is on" (a filter that
+   *  hides rows). The control keeps its own tint; colour is the shape
+   *  (the accent law). Say the state in the accessible name too: the dot
+   *  is decoration. */
+  readonly uiDotBadge = input(false);
 }

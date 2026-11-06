@@ -2678,11 +2678,13 @@ describe('StaffDashboard', () => {
 
       // THE STATUS FILTER (owner, 2026-11-05) hides a chair by its OWN
       // state: the cancelled seat goes, the live chair of the same party
-      // stays, and the bar's funnel turns accent while anything is hidden.
+      // stays, and the bar's funnel wears a DOT while anything is hidden —
+      // its own tint stays neutral (owner, 2026-11-06: "a dot indicator").
       const statusFilter = TestBed.inject(ScheduleStatusFilter);
       const funnel = () =>
         host().querySelector('[data-testid="staff-status-filter-open"]');
-      expect(funnel()?.hasAttribute('data-filtering')).toBe(false);
+      expect(funnel()?.hasAttribute('data-dot-badge')).toBe(false);
+      expect(funnel()?.getAttribute('data-tint')).toBe('neutral');
       statusFilter.toggle(BookingStatus.Cancelled);
       fixture.detectChanges();
       expect(
@@ -2691,7 +2693,11 @@ describe('StaffDashboard', () => {
       expect(
         host().querySelector('[data-row-id="appointment-party#ivan"]'),
       ).not.toBeNull();
-      expect(funnel()?.hasAttribute('data-filtering')).toBe(true);
+      expect(funnel()?.hasAttribute('data-dot-badge')).toBe(true);
+      expect(funnel()?.getAttribute('data-tint')).toBe('neutral');
+      expect(funnel()?.getAttribute('aria-label')).toBe(
+        'staff.day.statusFilterLabelOn',
+      );
       statusFilter.showAll();
       fixture.detectChanges();
 
