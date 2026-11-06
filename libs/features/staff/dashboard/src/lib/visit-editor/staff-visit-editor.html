@@ -490,34 +490,15 @@
       </figcaption>
     </figure>
     } @else {
-    <ui-stack
-      uiSpacing="comfortable"
+    <!-- The shared picker grid (`cr-service-cover-grid`), the search
+         sheet's and the rhythm rule's too. -->
+    <cr-service-cover-grid
       role="group"
       [attr.aria-label]="t('staff.visit.addService')"
       data-testid="staff-visit-service-list"
-    >
-      @for (grid of serviceGrids(); track grid.id) {
-      <ui-grid [uiColumns]="3" uiSpacing="regular">
-        @for (row of grid.tiles; track row.option.id) { @let option =
-        row.option; @let count = serviceCount(option.id);
-        <cr-service-card
-          [uiServiceId]="option.serviceId"
-          [uiName]="option.serviceLabel ?? option.label"
-          [uiMeta]="option.variantLabel ?? ''"
-          [uiCoverUrl]="option.coverSrc ?? null"
-          uiCaption="below"
-          uiRatio="3 / 4"
-          [uiSelectedCount]="count"
-          [uiShowDetails]="false"
-          uiSelectionIndicator="always"
-          [attr.data-testid]="'staff-visit-service-' + option.id"
-          [attr.data-picked]="count > 0 ? '' : null"
-          (click)="pickService(option)"
-        />
-        }
-      </ui-grid>
-      }
-    </ui-stack>
+      [uiGrids]="serviceGrids()"
+      (uiPicked)="pickService($event.option)"
+    />
     } } @case (EditorPage.Discount) {
     <!-- THE DISCOUNT PAGE (owner, 2026-09-17: "adding a discount → push
          sheet / page; the bottom toolbar for applying goes to the main

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ServiceId } from '@core/primitives';
-import { coverRowsOf } from './cover-rows';
+import { coverRowsOf } from './service-cover-grid';
 
 const tile = (service: string, variant: boolean) => ({
   serviceId: ServiceId.of(service),

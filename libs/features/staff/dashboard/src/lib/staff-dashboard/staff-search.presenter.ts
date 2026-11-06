@@ -10,7 +10,7 @@ import {
   type ShopNow,
   type TextSegment,
 } from '@core/components';
-import { coverRowsOf } from '../shared/cover-rows';
+import { coverRowsOf } from '@creativo/features/shared/catalog';
 import type { Appointment } from '@core/entities';
 import {
   type BarberId,

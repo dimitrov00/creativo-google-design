@@ -308,7 +308,7 @@ describe('StaffSearchSheet', () => {
     press(
       '[data-testid="staff-search-keys"] [data-suggestion="FIELD:SERVICE"]',
     );
-    press('cr-service-card[data-suggestion="SERVICE:svc-fade"] button');
+    press('cr-service-card[data-tile="SERVICE:svc-fade"] button');
     applySet();
     press('[data-testid="staff-search-filter"][data-filter="SERVICE"]');
     const grid = el('[data-testid="staff-search-service-grid"]') as HTMLElement;

@@ -72,6 +72,17 @@
    sheet would push the client, the time and the bill a screen down for
    pictures of services the barber already knows. Covers are for CHOOSING
    (the catalogue page); rows are for READING what is booked.
+10. **One picker grid, everywhere a service is picked** (owner: "services
+    should look the same as the others, the grid view, made reusable the
+    DOD way"; T, M). `cr-service-cover-grid` (shared catalog lib) draws a
+    picker's services: plain `ServiceCoverTile` structs laid out by the
+    pure `coverRowsOf` (moved there from the dashboard), the pressed tile
+    handed back whole with the picker's own fields beside it (the option,
+    the suggestion row). The schedule search's «Услуга», this page and the
+    admin «Ритъм» sheet's «Услуги» all mount it — the rhythm sheet now shows
+    covers under each category (the catalogue's own cover cache, resolved on
+    the page), a rule counting a service, never a variant. A card's state
+    hook is `data-checked`, its key `data-tile`.
 
 ## Not done
 

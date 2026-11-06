@@ -13,6 +13,7 @@ import {
 } from '@core/primitives';
 import { AppointmentLifecycleSystem, TextMatchSystem } from '@core/systems';
 import type { UiChoiceOption, UiSegment } from '@creativo/ui/controls';
+import type { ServiceCoverTile } from '@creativo/features/shared/catalog';
 import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ROW_VERB_WORD } from '../row-verb';
 import type {
@@ -622,6 +623,32 @@ export function serviceOptionLine(
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
+}
+
+/** A catalogue option as the shared picker grid's tile, the option beside it. */
+export type ServiceCoverTileVm = ServiceCoverTile & {
+  readonly option: VisitEditorServiceOption;
+};
+
+/**
+ * The page's options as cover tiles (`cr-service-cover-grid`, the search
+ * sheet's and the rhythm rule's grid): the service's name, its variant under
+ * it, ticked while the person holds it (`picks`, by option key).
+ */
+export function serviceCoverTilesOf(
+  rows: readonly { readonly option: VisitEditorServiceOption }[],
+  picks: ReadonlyMap<string, number>,
+): readonly ServiceCoverTileVm[] {
+  return rows.map(({ option }) => ({
+    id: option.id,
+    serviceId: option.serviceId,
+    name: option.serviceLabel ?? option.label,
+    meta: option.variantLabel ?? '',
+    coverSrc: option.coverSrc ?? null,
+    checked: (picks.get(option.id) ?? 0) > 0,
+    testId: `staff-visit-service-${option.id}`,
+    option,
+  }));
 }
 
 /**

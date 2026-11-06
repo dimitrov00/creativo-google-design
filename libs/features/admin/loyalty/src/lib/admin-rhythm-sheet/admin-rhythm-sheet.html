@@ -43,29 +43,10 @@
           >
             {{ group.name }}
           </h3>
-          <ui-list-group>
-            @for (service of group.services; track service.id) { @let chosen =
-            chosenServices().has(service.id);
-            <button
-              type="button"
-              uiListRow
-              uiSize="regular"
-              [uiInteractive]="true"
-              [uiSelected]="chosen"
-              [attr.aria-pressed]="chosen"
-              [attr.data-testid]="'admin-rhythm-service-' + service.id"
-              (click)="toggleService(service.id)"
-            >
-              <ui-marked-text [uiRuns]="service.nameRuns" /> @if (chosen) {
-              <ui-icon
-                uiTrailing
-                uiName="checklist.done"
-                uiForegroundStyle="accent"
-              />
-              }
-            </button>
-            }
-          </ui-list-group>
+          <cr-service-cover-grid
+            [uiGrids]="group.grids"
+            (uiPicked)="toggleService($event.serviceId)"
+          />
         </ui-stack>
         }
       </ui-stack>

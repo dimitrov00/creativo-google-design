@@ -93,38 +93,14 @@
         >
           {{ t('staff.search.key.service') }}
         </p>
-        <ui-stack
-          uiSpacing="comfortable"
+        <!-- The shared picker grid (`cr-service-cover-grid`), the visit
+             sheet's and the rhythm rule's too. -->
+        <cr-service-cover-grid
           data-testid="staff-search-service-grid"
-        >
-          @for (row of vm().suggestions.serviceRows; track row.id) {
-          <ui-grid
-            [uiColumns]="3"
-            uiSpacing="regular"
-            data-testid="staff-search-service-row"
-            [attr.data-service]="row.id"
-          >
-            @for (tile of row.tiles; track tile.id) {
-            <cr-service-card
-              class="staff-search-sheet__tile"
-              [attr.data-suggestion]="tile.id"
-              [attr.data-checked]="tile.checked ? '' : null"
-              [uiServiceId]="tile.serviceId"
-              [uiName]="tile.name"
-              [uiMeta]="tile.meta"
-              [uiCoverUrl]="tile.coverSrc"
-              uiCaption="below"
-              uiRatio="3 / 4"
-              [uiSelectedCount]="tile.checked ? 1 : 0"
-              [uiShowDetails]="false"
-              uiSelectionIndicator="always"
-              (mousedown)="$event.preventDefault()"
-              (uiPressed)="pickRow(tile.row)"
-            />
-            }
-          </ui-grid>
-          }
-        </ui-stack>
+          uiGridTestId="staff-search-service-row"
+          [uiGrids]="vm().suggestions.serviceRows"
+          (uiPicked)="pickRow($event.row)"
+        />
       </section>
       } @for (section of vm().suggestions.sections; track section.id) { @if
       (section.rows.length > 0) {

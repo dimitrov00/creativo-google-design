@@ -57,7 +57,7 @@ import {
 } from '@creativo/ui/controls';
 import { UiFlow, UiGrid, UiStack } from '@creativo/ui/layout';
 import {
-  ServiceCardComponent,
+  ServiceCoverGridComponent,
   type ServiceVm,
 } from '@creativo/features/shared/catalog';
 import {
@@ -144,7 +144,7 @@ function deviceStorage(): Storage | null {
     UiChip,
     UiFlow,
     UiGrid,
-    ServiceCardComponent,
+    ServiceCoverGridComponent,
     UiForegroundStyleDirective,
     UiIcon,
     UiListGroup,

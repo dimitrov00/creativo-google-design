@@ -137,6 +137,7 @@ import {
   removeClientName,
   resolutionHeadOf,
   serviceApplyVm,
+  serviceCoverTilesOf,
   serviceRowVm,
   servicePeopleVm,
   sheetTitleOf,
@@ -161,7 +162,6 @@ import {
   picksOf,
   withoutPicks,
 } from './service-picks';
-import { coverRowsOf } from '../shared/cover-rows';
 import {
   EMPTY_NEW_CLIENT,
   type NewClientForm,
@@ -203,7 +203,8 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import { LoadState } from '@creativo/shared/view-state';
 import {
-  ServiceCardComponent,
+  coverRowsOf,
+  ServiceCoverGridComponent,
   ShowcaseGalleryComponent,
 } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
@@ -1277,7 +1278,7 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     UiChip,
     UiFlow,
     UiGrid,
-    ServiceCardComponent,
+    ServiceCoverGridComponent,
     UiScrollColumn,
     UiStack,
     UiTextDirective,
@@ -2603,12 +2604,12 @@ export class StaffVisitEditor {
       .map((option) => serviceRowVm(option, query, words));
   });
 
-  /** Those rows as the search sheet's cover grids (`coverRowsOf`). */
+  /** Those rows as the shared picker grid's tiles, laid out (`coverRowsOf`). */
   protected readonly serviceGrids = computed(() =>
     coverRowsOf(
-      this.serviceRows(),
-      (row) => row.option.serviceId,
-      (row) => row.option.variantId !== null,
+      serviceCoverTilesOf(this.serviceRows(), this.currentPicks()),
+      (tile) => tile.serviceId,
+      (tile) => tile.option.variantId !== null,
     ),
   );
 
@@ -3404,18 +3405,13 @@ export class StaffVisitEditor {
       picksOf(this.draft().legs, this.servicePerson()),
   );
 
-  /** A card's count — its stepper's figure, its tick when above zero. */
-  protected serviceCount(id: string): number {
-    return this.currentPicks().get(id) ?? 0;
-  }
-
   /**
    * The pick's tap: on, or off again. ANY service, beside any other (owner,
    * 2026-09-17: "a staff account could do whatever he wants"): the
    * catalogue's "does not combine" rule is the client's self-booking rule.
    */
   protected pickService(option: VisitEditorServiceOption): void {
-    this.countService(option, this.serviceCount(option.id) > 0 ? 0 : 1);
+    this.countService(option, this.currentPicks().has(option.id) ? 0 : 1);
   }
 
   /** The stepper's answer: so many of this one; none takes the tick off. */

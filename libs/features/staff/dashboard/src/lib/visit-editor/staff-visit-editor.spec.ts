@@ -1449,7 +1449,7 @@ describe('StaffVisitEditor', () => {
       const items = [...host.querySelectorAll(PICKS)];
       expect(items.length).toBe(CATALOGUE.length);
       expect(
-        host.querySelectorAll(`${PICKS}[data-picked]`).length,
+        host.querySelectorAll(`${PICKS}[data-checked]`).length,
       ).toBeGreaterThan(0);
       expect(host.querySelector('ui-count-stepper')).toBeNull();
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.serviceLabel ?? '');
@@ -1478,7 +1478,7 @@ describe('StaffVisitEditor', () => {
       // Ticked, not seated: the card's ring is a ✓, no stepper under it,
       // the dock promises «Добави», the ladder waits.
       expect(onPage(host)).toBe(true);
-      expect(wash()?.hasAttribute('data-picked')).toBe(true);
+      expect(wash()?.hasAttribute('data-checked')).toBe(true);
       expect(wash()?.hasAttribute('data-selected')).toBe(true);
       expect(host.querySelector('ui-count-stepper')).toBeNull();
       expect(applyName(host)).toBe('Добави');
@@ -1498,7 +1498,7 @@ describe('StaffVisitEditor', () => {
 
       // A second tap takes the tick off: the card plain, the dock's ✓ back.
       click(host, 'staff-visit-service-wash');
-      expect(wash()?.hasAttribute('data-picked')).toBe(false);
+      expect(wash()?.hasAttribute('data-checked')).toBe(false);
       expect(find(host, 'staff-visit-service-apply')).toBeNull();
       expect(find(host, 'staff-visit-page-done')).not.toBeNull();
 
@@ -1514,7 +1514,7 @@ describe('StaffVisitEditor', () => {
       // 2026-11-06: "pre-checked the service that is already applied"): the
       // wash ticked, and with nothing changed the dock keeps its ✓.
       click(host, 'staff-visit-add-service');
-      expect(wash()?.hasAttribute('data-picked')).toBe(true);
+      expect(wash()?.hasAttribute('data-checked')).toBe(true);
       expect(find(host, 'staff-visit-service-apply')).toBeNull();
       // Two more, seated together.
       click(host, 'staff-visit-service-fade');
@@ -1533,7 +1533,7 @@ describe('StaffVisitEditor', () => {
 
       // A card ticked OFF takes its seat off: «Приложи», not «Добави».
       click(host, 'staff-visit-add-service');
-      expect(wash()?.hasAttribute('data-picked')).toBe(true);
+      expect(wash()?.hasAttribute('data-checked')).toBe(true);
       click(host, 'staff-visit-service-wash');
       expect(applyName(host)).toBe('Приложи');
       click(host, 'staff-visit-service-apply');
@@ -6810,7 +6810,7 @@ describe('StaffVisitEditor', () => {
       click(host, 'staff-visit-add-service');
       expect(
         find(host, 'staff-visit-service-cut:short')?.hasAttribute(
-          'data-picked',
+          'data-checked',
         ),
       ).toBe(true);
       expect(host.querySelector('ui-count-stepper')).toBeNull();
