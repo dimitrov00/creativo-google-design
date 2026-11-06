@@ -81,6 +81,7 @@ import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.direc
 import { StaffTimeline } from '../timeline/staff-timeline';
 
 import {
+  RECURRENCE_END_KEY,
   RECURRENCE_END_WORD,
   RECURRENCE_FREQUENCY_WORD,
   REPEAT_PRESET_WORD,
@@ -199,6 +200,12 @@ export interface BlockEditorCommit {
    * counted, so the write and the sentence cannot disagree.
    */
   readonly days: readonly LocalDate[];
+  /**
+   * The rule the days came from — `null` for one day. A new repeating
+   * block is STORED as a series (owner, 2026-11-06), so an edit of one of
+   * its days can reach «this and the following».
+   */
+  readonly repeat: RecurrenceRule | null;
   readonly allDay: boolean;
   readonly startMinute: TrackMinute;
   readonly endMinute: TrackMinute;
@@ -239,8 +246,13 @@ const PRESET_LABEL = {
 const CUSTOM_REPEAT = 'CUSTOM';
 type RepeatRowId = RepeatPreset | typeof CUSTOM_REPEAT;
 
-/** The two ways a series ends, in the menu's order. */
+/**
+ * The ways a series ends, in the menu's order — «Без край» first (Monzo's
+ * «Never», the end a lunch break has; owner, 2026-11-06), then a day, then
+ * a count.
+ */
 const END_KINDS: readonly RecurrenceEnd[] = [
+  RecurrenceEnd.Never,
   RecurrenceEnd.Until,
   RecurrenceEnd.Count,
 ];
@@ -773,11 +785,7 @@ export class StaffBlockEditor {
   protected readonly endOptions = computed<readonly UiChoiceOption[]>(() =>
     END_KINDS.map((kind) => ({
       id: kind,
-      label: this.rawCopy(
-        kind === RecurrenceEnd.Until
-          ? 'staff.block.repeatEndOn'
-          : 'staff.block.repeatEndAfter',
-      ),
+      label: this.rawCopy(RECURRENCE_END_KEY[kind]),
       testId: `staff-block-repeat-end-${RECURRENCE_END_WORD[kind]}`,
     })),
   );
@@ -871,6 +879,18 @@ export class StaffBlockEditor {
     const first = days[0] ?? series.value.startLocalDate;
     const last = days[count - 1] ?? first;
     const locale = this.locale();
+    // A series that never ends has no count to say: from when, and that it goes on.
+    if (rule.recurrenceEnd === RecurrenceEnd.Never) {
+      return [
+        this.daysPhrase(rule),
+        this.transloco.translate('staff.block.repeatFrom', {
+          day: formatDayPill(first, locale),
+        }),
+        this.rawCopy('staff.block.repeatEndless'),
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' · ');
+    }
     return [
       this.daysPhrase(rule),
       this.transloco.translate(
@@ -1242,6 +1262,7 @@ export class StaffBlockEditor {
       barberIds: draft.barberIds,
       dayKey: draft.dayKey,
       days: this.writeDays(),
+      repeat: draft.repeat,
       allDay: draft.allDay,
       startMinute: draft.startMinute,
       endMinute: draft.endMinute,

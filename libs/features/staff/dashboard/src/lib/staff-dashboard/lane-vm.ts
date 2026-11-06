@@ -1,7 +1,7 @@
-import { WallTime } from '@core/components';
-import type { LocalDate } from '@core/primitives';
+import { Seat, WallTime } from '@core/components';
+import type { LocalDate, SeatId } from '@core/primitives';
 import { VisitListSystem } from '@core/systems';
-import type { BarberDayLane } from '../staff-day.store';
+import type { BarberDayLane, StaffDayCell } from '../staff-day.store';
 import { startMinuteOf } from './staff-day-save';
 import {
   blockRowVm,
@@ -86,4 +86,52 @@ export function laneVmOf(
     rostered: lane.rostered.length > 0,
     failed: lane.failed,
   };
+}
+
+/**
+ * A row by its own name — on the shown day first, then on any loaded day —
+ * and, failing that, by the SEATS it held: a save that restaffed the chair
+ * moved the visit to another lane and renamed its row, and its undo must
+ * still find it there (found in review). `seatIds` empty means by name
+ * alone.
+ */
+export function rowOf(
+  rowId: string,
+  seatIds: readonly SeatId[],
+  lanes: readonly LaneVm[],
+  dayCells: readonly StaffDayCell[],
+  context: DayRowContext,
+): DayRowVm | null {
+  const hash = rowId.lastIndexOf('#');
+  const appointmentId = hash < 0 ? rowId : rowId.slice(0, hash);
+  const barberId = hash < 0 ? '' : rowId.slice(hash + 1);
+  const holds = (ids: readonly SeatId[]) =>
+    ids.some((id) => seatIds.includes(id));
+  const shown = lanes.flatMap((lane) =>
+    lane.entries.filter(
+      (entry): entry is DayRowVm => entry.agendaRow === AgendaRow.Visit,
+    ),
+  );
+  const named = shown.find((entry) => entry.id === rowId);
+  if (named !== undefined) return named;
+  const bySeat = shown.find(
+    (entry) => entry.appointmentId === appointmentId && holds(entry.seatIds),
+  );
+  if (bySeat !== undefined) return bySeat;
+
+  for (const cell of dayCells) {
+    for (const lane of cell.lanes) {
+      const appointment = lane.appointments.find(
+        (entry) => entry.id === appointmentId,
+      );
+      if (appointment === undefined) continue;
+      const here = Seat.ofChair(appointment.seats, lane.barberId).map(
+        (seat) => seat.seatId,
+      );
+      if (lane.barberId === barberId || holds(here)) {
+        return dayRowVm(appointment, lane.barberId, context);
+      }
+    }
+  }
+  return null;
 }

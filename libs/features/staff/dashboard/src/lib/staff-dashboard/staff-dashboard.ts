@@ -214,7 +214,8 @@ import {
 } from './create-from';
 import { blockDropOf, blockKeyOf, DropRoute, dropRouteOf } from './grid-drop';
 import { editorVmOf } from './editor-vm';
-import { laneVmOf } from './lane-vm';
+import { laneVmOf, rowOf } from './lane-vm';
+import { BlockSeriesFlow } from './block-series-flow';
 import { GridTimeScale } from '../grid-time-scale';
 import { StaffTimeScaleSheet } from '../staff-time-scale-sheet/staff-time-scale-sheet';
 import {
@@ -446,7 +447,7 @@ function transitionOf(
     UiVisuallyHiddenDirective,
     UiWeightDirective,
   ],
-  providers: [StaffDayStore, StaffWeekStrip],
+  providers: [StaffDayStore, StaffWeekStrip, BlockSeriesFlow],
   templateUrl: './staff-dashboard.html',
   styleUrls: ['./staff-dashboard.css', './staff-dashboard.chrome.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -1281,8 +1282,17 @@ export class StaffDashboard {
     if (drop?.route === DropRoute.Refuse) {
       this.setNotice(this.transloco.translate('staff.day.blockOnBlock'));
     }
-    if (drop?.move && drop.back) void this.saveBlockDrop(drop.move, drop.back);
-    else this.putDown();
+    // A day of a repeating block: how far the move reaches is asked.
+    const release = (saved: boolean) => saved || this.grid()?.releaseLift();
+    const at = { ...(from ?? commit), blockId: commit.id };
+    const save = drop?.route === DropRoute.Save;
+    if (save && this.seriesFlow.askEdit(at, null, commit, release)) {
+      this.grid()?.setDown();
+    } else if (drop?.move && drop.back) {
+      void this.saveBlockDrop(drop.move, drop.back);
+    } else {
+      this.putDown();
+    }
   }
 
   private async saveBlockDrop(
@@ -1681,6 +1691,7 @@ export class StaffDashboard {
   }
   protected readonly fieldsOpen = signal(false);
   protected readonly timeScale = inject(GridTimeScale);
+  protected readonly seriesFlow = inject(BlockSeriesFlow);
 
   // ── Which states are drawn (the bar's filter) ─────────────────────────
   protected readonly statusFilter = inject(ScheduleStatusFilter);
@@ -2843,38 +2854,13 @@ export class StaffDashboard {
     rowId: string,
     seatIds: readonly SeatId[] = [],
   ): DayRowVm | null {
-    const hash = rowId.lastIndexOf('#');
-    const appointmentId = hash < 0 ? rowId : rowId.slice(0, hash);
-    const barberId = hash < 0 ? '' : rowId.slice(hash + 1);
-    const holds = (ids: readonly SeatId[]) =>
-      ids.some((id) => seatIds.includes(id));
-    const shown = this.lanes().flatMap((lane) =>
-      lane.entries.filter(
-        (entry): entry is DayRowVm => entry.agendaRow === AgendaRow.Visit,
-      ),
+    return rowOf(
+      rowId,
+      seatIds,
+      this.lanes(),
+      this.store.dayCells(),
+      this.rowContext(),
     );
-    const named = shown.find((entry) => entry.id === rowId);
-    if (named !== undefined) return named;
-    const bySeat = shown.find(
-      (entry) => entry.appointmentId === appointmentId && holds(entry.seatIds),
-    );
-    if (bySeat !== undefined) return bySeat;
-
-    for (const cell of this.store.dayCells()) {
-      for (const lane of cell.lanes) {
-        const appointment = lane.appointments.find(
-          (entry) => entry.id === appointmentId,
-        );
-        if (appointment === undefined) continue;
-        const here = Seat.ofChair(appointment.seats, lane.barberId).map(
-          (seat) => seat.seatId,
-        );
-        if (lane.barberId === barberId || holds(here)) {
-          return dayRowVm(appointment, lane.barberId, this.rowContext());
-        }
-      }
-    }
-    return null;
   }
 
   /* ── Waiting on the live row, and the sheet's re-seed ──────────────── */
@@ -4173,6 +4159,17 @@ export class StaffDashboard {
     if (edit === null) return;
     const shownDay = this.store.dayKey();
     if (shownDay === null) return;
+    // A REPEATING block is a stored series (owner, 2026-11-06): a new one
+    // is written per chair; an edited day of one asks how far it reaches.
+    const range = minuteRangeOf(commit.startMinute, commit.endMinute);
+    const close = (saved: boolean) => saved && this.closeBlockSheet();
+    const home = (barberId: BarberId) => this.shopOfChair(barberId);
+    if (edit.blockId === null && commit.repeat !== null && range !== null) {
+      close(await this.seriesFlow.create(commit, range, home));
+      return;
+    }
+    if (range && this.seriesFlow.askEdit(edit, commit.dayKey, range, close))
+      return;
     const plan = ScheduleExceptionSystem.blockSavePlan({
       editing: edit.blockId !== null,
       opened: edit,
@@ -4221,8 +4218,9 @@ export class StaffDashboard {
     }
     const range = minuteRangeOf(edit.startMinute, edit.endMinute);
     if (range === null) return;
-    const done = await this.store.clearBlock(barberId, range, dayKey);
-    if (done) this.closeBlockSheet();
+    const close = (saved: boolean) => saved && this.closeBlockSheet();
+    if (this.seriesFlow.askEdit(edit, dayKey, null, close)) return;
+    close(await this.store.clearBlock(barberId, range, dayKey));
   }
 
   /**

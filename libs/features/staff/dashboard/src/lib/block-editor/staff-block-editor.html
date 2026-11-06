@@ -252,7 +252,8 @@
           />
         </span>
       </li>
-      } @else {
+      } @else if (countFigure() !== '') {
+      <!-- «Без край» has no row of its own: nothing to set beyond it. -->
       <li uiListRow uiSize="regular">
         <label for="staff-block-repeat-count"
           >{{ t('staff.block.repeatEndCount') }}</label

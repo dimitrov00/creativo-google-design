@@ -42,12 +42,17 @@ import {
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
   PROFILE_PORTS,
+  BLOCK_SERIES_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   USER_SEARCH_PORTS,
   CUSTOMER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
+  BlockSeriesScope,
+  RecurrenceEndRule,
+  RecurrencePattern,
+  RecurrenceRule,
   AppliedOperation,
   BookingCall,
   BookingContact,
@@ -89,6 +94,7 @@ import type {
   BarberBusyDay,
   BarberSchedule,
   Barber,
+  BlockSeries,
   Coupon,
   ScheduleException,
   Service,
@@ -96,6 +102,7 @@ import type {
   User,
 } from '@core/entities';
 import {
+  BlockSeriesId,
   AppointmentId,
   BarberBusyDayId,
   BarberId,
@@ -146,6 +153,7 @@ import {
   type UpdateAppointmentNote,
 } from '@core/ports';
 import {
+  BlockSeriesSystem,
   AppointmentIndexSystem,
   type HeldGrant,
   type StaffEditRowFacts,
@@ -154,6 +162,7 @@ import {
 import { CatalogWording } from '@creativo/features/shared/catalog';
 import { relativeTime } from '@creativo/infrastructure/i18n';
 import {
+  memoryBlockSeriesPorts,
   FIXTURE_TIME_ZONE,
   appointmentFixture,
   at as wallAt,
@@ -649,6 +658,8 @@ describe('StaffDashboard', () => {
   const exceptions: ScheduleException[] = [];
   /** The days a case has stored changes on before the page comes up — `build()` lays them in. */
   let seededExceptions: readonly ScheduleException[] = [];
+  /** The chairs' repeating blocks the series double starts with. */
+  let blockSeriesSeed: BlockSeries[] = [];
   const writeScheduleException = vi.fn(
     memoryScheduleExceptionPorts(exceptions).writeScheduleException,
   );
@@ -864,6 +875,10 @@ describe('StaffDashboard', () => {
         {
           provide: SCHEDULE_EXCEPTION_PORTS,
           useValue: { writeScheduleException },
+        },
+        {
+          provide: BLOCK_SERIES_PORTS,
+          useValue: memoryBlockSeriesPorts([], blockSeriesSeed),
         },
         {
           // The signed-in principal — a barber who also holds the keys, so
@@ -8957,6 +8972,7 @@ describe('StaffDashboard', () => {
         defaultShop = null;
         searchPool = null;
         seededExceptions = [];
+        blockSeriesSeed = [];
       });
 
       /** One self-booked visit in Ivan's chair at `startsAt` (a wall-clock reading) for `minutes`. */
@@ -9669,6 +9685,98 @@ describe('StaffDashboard', () => {
         expect(grid.notice()).toBe('staff.day.blockOnBlock');
       });
 
+      it('asks how far a dragged day of a repeating block reaches, and «Този и следващите» moves the rest of the series (owner, 2026-11-06)', async () => {
+        const lunch = MinuteRange.of(wallAt(12), until(13));
+        blockOn('2026-08-05', wallAt(12), until(13));
+        blockSeriesSeed = [
+          unwrapOk(
+            BlockSeriesSystem.create({
+              id: BlockSeriesId.of('lunch'),
+              barberId: BarberId.of('ivan'),
+              locationId: SHOP,
+              range: lunch,
+              startLocalDate: unwrapOk(LocalDate.parse('2026-08-05')),
+              rule: unwrapOk(
+                RecurrenceRule.create(
+                  RecurrencePattern.daily(),
+                  1,
+                  RecurrenceEndRule.until(
+                    unwrapOk(LocalDate.parse('2026-08-07')),
+                  ),
+                ),
+              ),
+            }),
+          ),
+        ];
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const grid = fixture.componentInstance as unknown as {
+          dropOnGrid: (commit: unknown) => void;
+          seriesFlow: {
+            question: () => unknown;
+            pick: (id: string) => Promise<void>;
+          };
+        };
+        grid.dropOnGrid({
+          id: 'block:ivan:2026-08-05:720',
+          startMinute: 780,
+          endMinute: 840,
+          editCommand: 'MOVE',
+        });
+        fixture.detectChanges();
+        // A series day never moves without saying how far.
+        expect(grid.seriesFlow.question()).not.toBeNull();
+        expect(
+          host().querySelector('[data-testid="staff-series-scope"]'),
+        ).not.toBeNull();
+        await grid.seriesFlow.pick(BlockSeriesScope.Following);
+        // Cut at its first day: the old series is gone, the new minutes
+        // carry every day.
+        expect(blockSeriesSeed.map((series) => series.id)).not.toContain(
+          'lunch',
+        );
+        expect(blockSeriesSeed).toHaveLength(1);
+        expect(blockSeriesSeed[0]).toMatchObject({
+          startMinutes: 780,
+          endMinutes: 840,
+        });
+        expect(blockSeriesSeed[0]?.localDates).toHaveLength(3);
+      });
+
+      it('saves a new repeating block as a series, on its chair', async () => {
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        const page = fixture.componentInstance as unknown as {
+          openBlockSheet: (barberId: BarberId) => void;
+          commitBlock: (commit: unknown) => Promise<void>;
+          blockEdit: () => unknown;
+        };
+        page.openBlockSheet(BarberId.of('ivan'));
+        const day = unwrapOk(LocalDate.parse('2026-08-05'));
+        await page.commitBlock({
+          barberIds: [BarberId.of('ivan')],
+          dayKey: day,
+          days: [day],
+          repeat: unwrapOk(
+            RecurrenceRule.create(
+              RecurrencePattern.daily(),
+              1,
+              RecurrenceEndRule.never(),
+            ),
+          ),
+          allDay: false,
+          startMinute: 13 * 60,
+          endMinute: 14 * 60,
+        });
+        expect(blockSeriesSeed).toHaveLength(1);
+        expect(blockSeriesSeed[0]).toMatchObject({
+          barberId: 'ivan',
+          startMinutes: 780,
+          recurrenceEnd: 'NEVER',
+        });
+        expect(page.blockEdit()).toBeNull();
+      });
+
       it('draws a block in the list as well as the grid, opens it from either, and hides both behind the filter', async () => {
         blockOn('2026-08-05', wallAt(12), until(13));
         await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
@@ -9718,6 +9826,7 @@ describe('StaffDashboard', () => {
           barberIds: [BarberId.of('ivan')],
           dayKey: DAY,
           days: [DAY],
+          repeat: null,
           allDay: false,
           startMinute: 14 * 60,
           endMinute: 15 * 60,

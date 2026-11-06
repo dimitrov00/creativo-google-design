@@ -52,6 +52,7 @@ import {
   StaffEditErrorCode,
 } from '@core/errors';
 import {
+  type BlockSeriesScope,
   type BookingCall,
   BookingPolicy,
   ClientIssueKind,
@@ -59,6 +60,7 @@ import {
   CouponValue,
   type MinuteRange,
   Principal,
+  type RecurrenceRule,
   type ShopNow,
   type VisitEditWrite,
   VisitEditWriteOutcome,
@@ -70,6 +72,7 @@ import type {
   AppointmentPhoto,
   BarberBusyDay,
   BarberSchedule,
+  BlockSeries,
   Coupon,
   CouponGrant,
   GiftVoucher,
@@ -100,6 +103,8 @@ import {
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
   clearScheduleBlock,
+  createBlockSeries,
+  editBlockSeries,
   moveScheduleBlock,
   type ScheduleBlocksCommand,
   loadHeldGrants,
@@ -115,6 +120,7 @@ import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
+  BLOCK_SERIES_PORTS,
   CLIENT_ISSUE_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
@@ -482,6 +488,8 @@ export class StaffDayStore {
   /** The raw availability streams the lanes' geometry is derived from (F1-10). */
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   private readonly exceptions = inject(SCHEDULE_EXCEPTION_PORTS);
+  /** The chairs' repeating blocks — a lunch every weekday (owner, 2026-11-06). */
+  private readonly seriesPorts = inject(BLOCK_SERIES_PORTS);
   /** The one typed callable client — every write of the day goes through it. */
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly clock = inject(CLOCK_PORTS);
@@ -1509,6 +1517,45 @@ export class StaffDayStore {
   }));
 
   /**
+   * THE SCOPED CHAIRS' REPEATING BLOCKS, live — the series a block on the
+   * day may belong to (`BlockSeriesSystem.memberOf`), which is what makes
+   * an edit of it ask how far it reaches. Keyed by the chairs alone: a day
+   * step keeps the listeners. A chair whose read fails has none, as if it
+   * repeated nothing — its blocks still move one day at a time.
+   */
+  private readonly seriesChairs = computed(() =>
+    this.laneInputs().barbers.join(' '),
+  );
+  private readonly seriesResult = toSignal<
+    readonly BlockSeries[],
+    readonly BlockSeries[]
+  >(
+    toObservable(this.seriesChairs).pipe(
+      switchMap((chairs): Observable<readonly (readonly BlockSeries[])[]> =>
+        chairs === ''
+          ? of([])
+          : combineLatest(
+              chairs
+                .split(' ')
+                .map((barberId) =>
+                  this.seriesPorts
+                    .observeBlockSeries(BarberId.of(barberId))
+                    .pipe(
+                      map((result): readonly BlockSeries[] =>
+                        result.ok ? result.value : [],
+                      ),
+                    ),
+                ),
+            ),
+      ),
+      map((lists): readonly BlockSeries[] => lists.flat()),
+    ),
+    { initialValue: [] },
+  );
+  /** Every scoped chair's repeating blocks — what `BlockSeriesSystem.memberOf` reads. */
+  readonly repeatingBlocks = computed(() => this.seriesResult());
+
+  /**
    * The appointments of one chair on one shop day — `busyKeys
    * array-contains` — and how many of them could not be read (OR-2).
    */
@@ -2170,6 +2217,79 @@ export class StaffDayStore {
         localDate: day,
         range,
       });
+      if (!result.ok) {
+        this._absenceError.set(result.error);
+        return false;
+      }
+      return true;
+    } finally {
+      this._absencePending.set(false);
+    }
+  }
+
+  /**
+   * A NEW REPEATING BLOCK on one chair (`createBlockSeries`): its days and
+   * its series in one write, read in the shop's zone. Same in-flight and
+   * refusal handling as every other roster write.
+   */
+  async createSeries(cmd: {
+    readonly barberId: BarberId;
+    readonly locationId: LocationId;
+    readonly range: MinuteRange;
+    readonly startLocalDate: LocalDate;
+    readonly rule: RecurrenceRule;
+  }): Promise<boolean> {
+    const timeZone = untracked(this.zoneAt)(cmd.locationId);
+    if (timeZone === null) {
+      this._absenceError.set(CatalogError.locationZoneUnknown(cmd.locationId));
+      return false;
+    }
+    return this.seriesWrite(() =>
+      createBlockSeries({ ...this.seriesPorts, ...this.ids })({
+        ...cmd,
+        timeZone,
+      }),
+    );
+  }
+
+  /**
+   * An edit of a repeating block's day, as far as `scope` reaches
+   * (`editBlockSeries`): moved, resized, or lifted (`range` `null`). A
+   * series another device changed since this one read it is refused, said.
+   */
+  async editSeries(
+    series: BlockSeries,
+    localDate: LocalDate,
+    scope: BlockSeriesScope,
+    range: MinuteRange | null,
+  ): Promise<boolean> {
+    const timeZone = untracked(this.zoneAt)(series.locationId);
+    if (timeZone === null) {
+      this._absenceError.set(
+        CatalogError.locationZoneUnknown(series.locationId),
+      );
+      return false;
+    }
+    return this.seriesWrite(() =>
+      editBlockSeries({ ...this.seriesPorts, ...this.ids })({
+        series,
+        localDate,
+        scope,
+        range,
+        timeZone,
+      }),
+    );
+  }
+
+  /** One series write under the roster's in-flight flag, its refusal kept for the toast. */
+  private async seriesWrite(
+    run: () => Promise<Result<unknown, SchedulingError | RepositoryError>>,
+  ): Promise<boolean> {
+    if (this._absencePending()) return false;
+    this._absencePending.set(true);
+    this._absenceError.set(null);
+    try {
+      const result = await run();
       if (!result.ok) {
         this._absenceError.set(result.error);
         return false;
