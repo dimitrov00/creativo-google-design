@@ -165,6 +165,7 @@ import { coverRowsOf } from '../shared/cover-rows';
 import {
   EMPTY_NEW_CLIENT,
   type NewClientForm,
+  newClientPerson,
   prefilledNewClient,
   walkInFallbackOf,
 } from './new-client-form';
@@ -285,7 +286,13 @@ import {
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
 import { formatCentsFigure, formatCurrencyUnit } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
-import { UiFlow, UiGrid, UiScrollColumn, UiStack } from '@creativo/ui/layout';
+import {
+  UiFlow,
+  UiGrid,
+  UiScrollColumn,
+  UiSpacer,
+  UiStack,
+} from '@creativo/ui/layout';
 import {
   UiMaterialDirective,
   UiForegroundStyleDirective,
@@ -1278,6 +1285,7 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     UiGrid,
     ServiceCardComponent,
     UiScrollColumn,
+    UiSpacer,
     UiStack,
     UiTextDirective,
     UiCodeField,
@@ -3970,9 +3978,6 @@ export class StaffVisitEditor {
   /** The dock's ✓ — the person joins the visit, and the sheet returns to the ladder. */
   protected saveNewClient(): void {
     if (!this.newClientReady()) return;
-    const { name, phone } = this.newClient();
-    const label = name.trim() || this.newClientFallback();
-    const email = this.newClientMail();
     // NEVER A REUSED ID (found in review): `guest-${length}` handed a third
     // guest the id of one already unticked, and the flow then took the
     // newcomer for served — the seat-id rule, `minted`, applies to people
@@ -3986,17 +3991,12 @@ export class StaffVisitEditor {
       ...draft,
       clients: [
         ...draft.clients,
-        {
+        newClientPerson(
           id,
-          label,
-          phone,
-          phoneHref: phone,
-          // THE MAIL IS THE PERSON'S (OR-26): it rides the save beside the
-          // number, so the walk-in's record keeps it — no longer only the
-          // person's line (`meta`), which still prints it on their page.
-          meta: email,
-          email,
-        },
+          this.newClient(),
+          this.newClientMail(),
+          this.newClientFallback(),
+        ),
       ],
       legs: VisitDraftSystem.adoptPlaceholderLegs(
         draft.clients.length,

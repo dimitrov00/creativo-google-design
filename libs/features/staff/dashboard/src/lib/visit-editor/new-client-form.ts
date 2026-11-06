@@ -1,5 +1,5 @@
 import { DraftPersonKey } from '@core/primitives';
-import type { CountryIso2 } from '@core/components';
+import type { CountryIso2, Email } from '@core/components';
 import {
   ClientQuerySystem,
   PhoneSystem,
@@ -63,4 +63,26 @@ export function walkInFallbackOf(
     (number) => (number === null ? words.walkIn : words.walkInNumbered(number)),
   );
   return walkIn?.label ?? words.walkIn;
+}
+
+/**
+ * The person the form seats: the name typed, else `fallback` (a walk-in's,
+ * `walkInFallbackOf`). THE MAIL IS THE PERSON'S (OR-26): it rides the save
+ * beside the number, so the walk-in's record keeps it — no longer only the
+ * person's line (`meta`), which still prints it on their page.
+ */
+export function newClientPerson(
+  id: DraftPersonKey,
+  form: NewClientForm,
+  email: Email | null,
+  fallback: string,
+) {
+  return {
+    id,
+    label: form.name.trim() || fallback,
+    phone: form.phone,
+    phoneHref: form.phone,
+    meta: email,
+    email,
+  };
 }

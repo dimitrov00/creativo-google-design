@@ -32,8 +32,15 @@
     gap: var(--sys-space-tight);
   }
   .ui-phone-field__label {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sys-space-compact);
     font: var(--sys-font-footnote);
     color: var(--sys-color-foreground);
+  }
+  /* The note rides the label's trailing end in secondary ink. */
+  .ui-phone-field__label-note {
+    color: var(--sys-color-secondary-label);
   }
   .ui-phone-field__hint,
   .ui-phone-field__error {
