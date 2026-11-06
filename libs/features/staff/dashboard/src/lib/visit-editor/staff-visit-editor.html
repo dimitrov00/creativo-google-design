@@ -156,33 +156,6 @@
         {{ t('staff.visit.addClient') }}
       </h2>
     </ui-sheet-headline>
-    <!-- THE SEARCH, PINNED (owner, 2026-09-09): it sticks under the bar
-         while the list scrolls — the sheet's `.searchable` grammar — and
-         leads with the glyph that says what it is. The sheet's accessory
-         slot belongs to the shell, not to this content; a sticky band with
-         the same material is the same thing from the inside. -->
-    <!-- THE SEARCH, PINNED (owner, 2026-09-09): the DS search field
-         (2026-09-24) sticks under the bar while the list scrolls — the
-         sheet's `.searchable` grammar — and its glyph says what the field
-         took the typing for: the magnifier for a name, the handset for a
-         number, the envelope for a mail — detection the desk can see,
-         never a mode to pick. -->
-    <ui-search-field
-      uiPinned
-      [uiValue]="query()"
-      [uiPlaceholder]="t('staff.visit.searchClient')"
-      [uiIcon]="searchGlyph()"
-      [uiIconKind]="clientQueryShapeWords[parsedQuery().clientQueryShape]"
-      uiAutocapitalize="words"
-      [uiBusy]="uiClientSearching()"
-      uiBusyTestId="staff-visit-client-searching"
-      uiTestId="staff-visit-client-query"
-      [uiClearLabel]="t('staff.day.searchClear')"
-      (uiInput)="onQuery($event)"
-      (uiFocusChange)="searchFocused.set($event)"
-      (uiSubmit)="onSearchEnter($event)"
-      (uiNavigate)="focusFirstResult($event)"
-    />
     <!-- THE PICKED, AS A GROUP OF THEIR OWN (the HIG revisit, 2026-09-22):
          «На посещението» — the same person rows the suggestions are made
          of, selected, first under the field — the sheet's own «Клиенти»
@@ -238,11 +211,10 @@
               uiControlSize="small"
             />
           </span>
-          <!-- THE EVENT'S HEAD (owner, 2026-09-22): the name, then the mail,
-               the number and the last visit each on its own glyph-led line
-               — the agenda card's recipe, so a person reads the same on
-               every staff surface. The typed run is marked in the name and
-               in the lines (Spotlight's grammar: what matched is primary). -->
+          <!-- THE NAME OVER ONE CONTACT (2026-11-06, `clientRowVm`): the
+               event head's own recipe — a fact on its own glyph-led line —
+               cut to the one that tells two Ивановци apart. The typed run
+               is marked (Spotlight's grammar: what matched is primary). -->
           <lib-staff-event-head
             size="regular"
             [truncate]="true"
@@ -261,6 +233,15 @@
             >
             } @if (option.selected) {
             <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
+            } @else if (!option.exact && option.detail; as detail) {
+            <!-- The last visit, quiet at the edge — the search sheet's
+                 detail; the ✓ takes its place once they are picked. -->
+            <span
+              uiText
+              uiFont="footnote"
+              [attr.data-testid]="'staff-visit-client-detail-' + option.id"
+              >{{ detail }}</span
+            >
             }
           </span>
         </button>
@@ -2710,33 +2691,36 @@
       {{ t('staff.visit.chooseService') }}
     </button>
     } } @else if (dockPage === EditorPage.ClientSearch) {
-    <!-- THE COUNT of the picked (2026-09-18), in the bill's own dress —
-         the gallery page's grammar — leading; «Нов клиент» hugs the ✓ on
-         the thumb rail (owner ruling 2026-09-22, back from the list's first
-         row where Pass 28 had put it): the root docks its call beside
-         «Запази» the same way, and Contacts keeps its «+» in the bar. -->
-    @if (pickedClients().length > 0) {
-    <ui-stack
-      uiSpacing="none"
-      uiAlignment="leading"
-      class="staff-visit__total"
-      data-testid="staff-visit-clients-count"
-    >
-      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-        >{{ t('staff.visit.photosSelected') }}</span
-      >
-      <span class="staff-visit__total-line">
-        <span
-          uiText
-          uiFont="headline"
-          uiWeight="semibold"
-          class="staff-visit__figures"
-          data-testid="staff-visit-clients-count-figure"
-          >{{ pickedClients().length }}</span
-        >
-      </span>
-    </ui-stack>
-    }
+    <!-- THE SEARCH AT THE THUMB (owner, 2026-11-06: "the same UI and
+         vocabulary — the search moves to the bottom toolbar"): the
+         service page's dock, field for field — the field fills the dock,
+         «Нов клиент» hugs the ✓ beside it at its size. Who is picked
+         reads in «На посещението» on the page, so the dock keeps no
+         count. The field's glyph says what it took the typing for: the
+         magnifier for a name, the handset for a number, the envelope for
+         a mail — detection the desk can see, never a mode to pick. -->
+    <ui-search-field
+      uiFill
+      uiControlSize="large"
+      [uiValue]="query()"
+      [uiPlaceholder]="
+        t('staff.search.scopedPlaceholder', {
+          key: t('staff.search.key.client'),
+        })
+      "
+      [uiLabel]="t('staff.visit.searchClient')"
+      [uiIcon]="searchGlyph()"
+      [uiIconKind]="clientQueryShapeWords[parsedQuery().clientQueryShape]"
+      uiAutocapitalize="words"
+      [uiBusy]="uiClientSearching()"
+      uiBusyTestId="staff-visit-client-searching"
+      uiTestId="staff-visit-client-query"
+      [uiClearLabel]="t('staff.day.searchClear')"
+      (uiInput)="onQuery($event)"
+      (uiFocusChange)="searchFocused.set($event)"
+      (uiSubmit)="onSearchEnter($event)"
+      (uiNavigate)="focusFirstResult($event)"
+    />
     <button
       type="button"
       uiButton

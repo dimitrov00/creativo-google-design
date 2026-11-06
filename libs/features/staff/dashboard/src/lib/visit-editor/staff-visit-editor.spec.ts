@@ -3569,12 +3569,15 @@ describe('StaffVisitEditor', () => {
           '[data-testid="staff-visit-client-user-petar"]',
         ),
       ).not.toBeNull();
-      // The owner's own line rides its glyph under the number.
+      // The owner's own word rides the row's trailing edge (2026-11-06).
+      expect(text(host, 'staff-visit-client-detail-user-petar')).toBe(
+        '11 посещения',
+      );
+      // The search is the dock's, as on the service page; no count there.
       expect(
-        find(host, 'staff-visit-client-user-petar')
-          ?.querySelector('.staff-event-head__line:last-child ui-icon')
-          ?.getAttribute('data-name'),
-      ).toBe('visit.last');
+        find(host, 'staff-visit-client-query')?.closest('ui-sheet-action-bar'),
+      ).not.toBeNull();
+      expect(find(host, 'staff-visit-clients-count')).toBeNull();
       const recent = find(host, 'staff-visit-clients-recent');
       // Мартин is on the visit already: a selected row of «На посещението»,
       // the group under the field, and NOT a row in «Скорошни» — a person
@@ -3596,7 +3599,9 @@ describe('StaffVisitEditor', () => {
           ?.querySelector('.ui-avatar__fallback')
           ?.textContent?.trim(),
       ).toBe('МИ');
-      expect(text(host, 'staff-visit-clients-count-figure')).toBe('1');
+      expect(
+        host.querySelectorAll('[data-testid^="staff-visit-picked-"]').length,
+      ).toBe(1);
       expect(find(host, 'staff-visit-search-hint')).toBeNull();
       // No «Няма съвпадение» for a search nobody ran.
       expect(host.textContent).not.toContain('Няма съвпадение');
@@ -3640,7 +3645,9 @@ describe('StaffVisitEditor', () => {
           'aria-checked',
         ),
       ).toBe('true');
-      expect(text(host, 'staff-visit-clients-count-figure')).toBe('2');
+      expect(
+        host.querySelectorAll('[data-testid^="staff-visit-picked-"]').length,
+      ).toBe(2);
       click(host, 'staff-visit-picked-user-petar');
       expect(find(host, 'staff-visit-picked-user-petar')).toBeNull();
       expect(
@@ -3648,7 +3655,9 @@ describe('StaffVisitEditor', () => {
           'aria-checked',
         ),
       ).toBe('false');
-      expect(text(host, 'staff-visit-clients-count-figure')).toBe('1');
+      expect(
+        host.querySelectorAll('[data-testid^="staff-visit-picked-"]').length,
+      ).toBe(1);
     });
 
     it("shows a person's own portrait when they have one, and reads a typed number as the new client's", () => {
@@ -3969,8 +3978,8 @@ describe('StaffVisitEditor', () => {
           ) ?? []),
         ].map((node) => node.textContent),
       ).toEqual(['359 88 765 4321']);
-      // EVERY FACT ON ITS OWN GLYPH-LED LINE (owner, 2026-09-22) — the mail,
-      // then the number, the agenda card's order — never one dotted string.
+      // ONE CONTACT ON ITS OWN GLYPH-LED LINE (2026-11-06) — the one the
+      // typing matched, never one dotted string.
       const lines = () =>
         [
           ...(find(host, 'staff-visit-client-user-marto')?.querySelectorAll(
@@ -3983,7 +3992,6 @@ describe('StaffVisitEditor', () => {
             ?.textContent?.trim(),
         }));
       expect(lines()).toEqual([
-        { icon: 'contact.email', text: 'martin@test.local' },
         { icon: 'contact.phone', text: '+359 88 765 4321' },
       ]);
       // A mail found by its own letters is marked on ITS line.
@@ -4051,9 +4059,8 @@ describe('StaffVisitEditor', () => {
           row.getAttribute('data-testid')?.replace('staff-visit-client-', ''),
         );
       expect([...ids()].sort()).toEqual(['guest-cus_walkin', 'user-ivo']);
-      // The mark is the LAST fact, after the mail and the number.
+      // The mark is the LAST fact, after the one contact.
       expect(lines('staff-visit-client-guest-cus_walkin')).toEqual([
-        { icon: 'contact.email', text: 'ivan@mail.bg' },
         { icon: 'contact.phone', text: '+359 88 812 3123' },
         { icon: 'account.anonymous', text: 'Без профил' },
       ]);

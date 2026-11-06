@@ -1210,6 +1210,7 @@
         "when": "When",
         "barber": "Barber",
         "service": "Service",
+        "client": "Client",
         "status": "Status",
         "note": "Note"
       },

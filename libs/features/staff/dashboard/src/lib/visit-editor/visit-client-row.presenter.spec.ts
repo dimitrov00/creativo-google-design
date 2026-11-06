@@ -57,17 +57,27 @@ describe('a person row', () => {
     );
   });
 
-  it('reads the mail, the number and the last visit, each on its own glyph-led line', () => {
+  it('reads the name over ONE contact — the number — and the last visit at the edge', () => {
     const vm = row();
     expect(vm.lines.map((line) => [line.icon, line.text])).toEqual([
-      ['contact.email', 'martin@mail.bg'],
       ['contact.phone', '+359 88 123 4567'],
-      ['visit.last', 'посл. 22.09'],
     ]);
+    expect(vm.detail).toBe('посл. 22.09');
     expect(vm.selected).toBe(true);
     expect(vm.exact).toBe(false);
     expect(vm.titleParts).toBeNull();
     expect(vm.lines[0]?.parts).toBeUndefined();
+  });
+
+  it('shows the contact the typing matched, else the mail when there is no number', () => {
+    const typed = row('martin@');
+    expect(typed.lines.map((line) => line.icon)).toEqual(['contact.email']);
+    expect(typed.lines[0]?.parts?.some((run) => 'hit' in run && run.hit)).toBe(
+      true,
+    );
+    expect(
+      row('', { ...martin, phone: null }).lines.map((line) => line.icon),
+    ).toEqual(['contact.email']);
   });
 
   it('marks the typed run in the name, while some run is the typed one', () => {
@@ -77,11 +87,7 @@ describe('a person row', () => {
   });
 
   it('drops a meta that only repeats the mail', () => {
-    const vm = row('', { ...martin, meta: 'martin@mail.bg' });
-    expect(vm.lines.map((line) => line.icon)).toEqual([
-      'contact.email',
-      'contact.phone',
-    ]);
+    expect(row('', { ...martin, meta: 'martin@mail.bg' }).detail).toBeNull();
   });
 
   it('says a walk-in’s record has no profile, last, under its own test id', () => {

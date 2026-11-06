@@ -592,8 +592,10 @@ export type ClientRowVm = VisitEditorClientOption & {
   readonly exact: boolean;
   /** The name as runs, only while some run is the typed one. */
   readonly titleParts: readonly StaffEventRun[] | null;
-  /** The facts under the name — the mail, the number, the last visit. */
+  /** The one contact under the name (and «Без профил» for a walk-in's record). */
   readonly lines: readonly StaffEventLine[];
+  /** The last visit, at the trailing edge — «посл. 22.09» — or nothing. */
+  readonly detail: string | null;
 };
 
 /** One detected part of what was typed, as the create row shows it. */
