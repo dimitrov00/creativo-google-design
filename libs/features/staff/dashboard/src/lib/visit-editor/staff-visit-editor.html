@@ -465,11 +465,12 @@
          "the same way as in the search services"): cover cards, three
          across, the service's name under each cover and its variant under
          that — no minutes, no price: the card names WHAT, the ladder's row
-         says how long and how much — services without variants flow
+         says how long and how much. A card is a TICK, never a count (owner,
+         2026-11-06: one person cannot take a service twice; another of the
+         same is another client) — services without variants flow
          together, a service with variants stands in a grid of its own
-         (`coverRowsOf`, shared with the search). A tap PICKS a card (its
-         ring turns to a ✓, a second tap takes it off); a picked card
-         unfolds the DS stepper under its caption for a second of the same.
+         (`coverRowsOf`, shared with the search). A tap ticks a card (its
+         ring turns to a ✓) and a second tap takes it off.
          The search and whose picks these are ride the DOCK, as the search
          sheet's field does. The title folds while the field is engaged. -->
     <ui-sheet-headline [uiFolded]="searchEngaged()">
@@ -505,32 +506,20 @@
       <ui-grid [uiColumns]="3" uiSpacing="regular">
         @for (row of grid.tiles; track row.option.id) { @let option =
         row.option; @let count = serviceCount(option.id);
-        <ui-stack uiSpacing="tight" class="staff-visit__service-tile">
-          <cr-service-card
-            [uiServiceId]="option.serviceId"
-            [uiName]="option.serviceLabel ?? option.label"
-            [uiMeta]="option.variantLabel ?? ''"
-            [uiCoverUrl]="option.coverSrc ?? null"
-            uiCaption="below"
-            uiRatio="3 / 4"
-            [uiSelectedCount]="count"
-            [uiShowDetails]="false"
-            uiSelectionIndicator="always"
-            [attr.data-testid]="'staff-visit-service-' + option.id"
-            [attr.data-picked]="count > 0 ? '' : null"
-            (click)="pickService(option)"
-          />
-          @if (count > 0) {
-          <ui-count-stepper
-            [uiValue]="count"
-            [uiLabel]="option.serviceLabel ?? option.label"
-            [uiAddLabel]="t('staff.visit.serviceMore')"
-            [uiRemoveLabel]="t('staff.visit.serviceLess')"
-            [attr.data-testid]="'staff-visit-service-' + option.id + '-count'"
-            (uiValueChange)="countService(option, $event)"
-          />
-          }
-        </ui-stack>
+        <cr-service-card
+          [uiServiceId]="option.serviceId"
+          [uiName]="option.serviceLabel ?? option.label"
+          [uiMeta]="option.variantLabel ?? ''"
+          [uiCoverUrl]="option.coverSrc ?? null"
+          uiCaption="below"
+          uiRatio="3 / 4"
+          [uiSelectedCount]="count"
+          [uiShowDetails]="false"
+          uiSelectionIndicator="always"
+          [attr.data-testid]="'staff-visit-service-' + option.id"
+          [attr.data-picked]="count > 0 ? '' : null"
+          (click)="pickService(option)"
+        />
         }
       </ui-grid>
       }

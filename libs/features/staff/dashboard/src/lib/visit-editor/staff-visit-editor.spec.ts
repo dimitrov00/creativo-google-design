@@ -1440,14 +1440,14 @@ describe('StaffVisitEditor', () => {
       // the service's name under the cover and its variant beneath — no
       // minutes, no price. The person's OWN services open ticked, each with
       // its stepper (owner, 2026-11-06: "pre-checked the service that is
-      // already applied"); nothing has changed, so the dock's ✓ stays.
+      // already applied"), a tick each and never a count (owner,
+      // 2026-11-06); nothing has changed, so the dock's ✓ stays.
       const items = [...host.querySelectorAll(PICKS)];
       expect(items.length).toBe(CATALOGUE.length);
-      const ticked = host.querySelectorAll(`${PICKS}[data-picked]`).length;
-      expect(ticked).toBeGreaterThan(0);
-      expect(host.querySelectorAll('[data-testid$="-count"]').length).toBe(
-        ticked,
-      );
+      expect(
+        host.querySelectorAll(`${PICKS}[data-picked]`).length,
+      ).toBeGreaterThan(0);
+      expect(host.querySelector('ui-count-stepper')).toBeNull();
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.serviceLabel ?? '');
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.variantLabel ?? '');
       expect(items[0]?.textContent).not.toContain(CATALOGUE[0]?.label);
@@ -1459,25 +1459,24 @@ describe('StaffVisitEditor', () => {
       expect(page(host)).toBeNull();
     });
 
-    it('picks on tap — the row selects and its stepper unfolds — counts a second of the same, and the dock seats the picks', async () => {
-      // Owner, 2026-09-17: "animated like select — in place of a check, a
-      // stepper should animate, expand"; select, then the dock applies.
+    it('ticks on tap — one seat per service per person, no counter — and the dock sets the ticks', () => {
+      // Owner, 2026-11-06: "the counter makes no sense — you cannot book the
+      // same service twice; another of the same is another client". A card
+      // is a TICK: on, or off again; the dock applies.
       const host = render();
       const LEG_ROWS = 'li[data-testid^="staff-visit-leg-"]';
       const legsBefore = host.querySelectorAll(LEG_ROWS).length;
       const wash = () => find(host, 'staff-visit-service-wash');
-      const row = wash;
-      const stepper = () => find(host, 'staff-visit-service-wash-count');
 
       click(host, 'staff-visit-add-service');
       if (!wash()) throw new Error('no wash in the catalogue');
       click(host, 'staff-visit-service-wash');
-      // Picked, not seated: the card's ring is a ✓ and its stepper has
-      // unfolded under it, the dock promises «Добави», the ladder waits.
+      // Ticked, not seated: the card's ring is a ✓, no stepper under it,
+      // the dock promises «Добави», the ladder waits.
       expect(onPage(host)).toBe(true);
       expect(wash()?.hasAttribute('data-picked')).toBe(true);
-      expect(row()?.hasAttribute('data-selected')).toBe(true);
-      expect(stepper()?.getAttribute('data-count')).toBe('1');
+      expect(wash()?.hasAttribute('data-selected')).toBe(true);
+      expect(host.querySelector('ui-count-stepper')).toBeNull();
       expect(text(host, 'staff-visit-service-apply')).toBe('Добави');
       expect(
         find(host, 'staff-visit-service-apply')?.getAttribute(
@@ -1488,38 +1487,14 @@ describe('StaffVisitEditor', () => {
       // (The ladder is behind the page; nothing is seated until the act.)
       expect(host.hasAttribute('data-dirty')).toBe(false);
 
-      // «− 1 +» under the card: one more of the same is a press there, and
-      // the dock counts it.
-      expect(stepper()?.querySelector('.ui-count-stepper__add')).toBeNull();
-      expect(
-        stepper()
-          ?.querySelector('.ui-count-stepper__count')
-          ?.textContent?.trim(),
-      ).toBe('1');
-      const steps = stepper()?.querySelectorAll<HTMLElement>(
-        '.ui-count-stepper__step',
-      );
-      steps?.[1]?.click();
-      fixture.detectChanges();
-      expect(stepper()?.getAttribute('data-count')).toBe('2');
-      expect(text(host, 'staff-visit-service-apply')).toBe('Добави 2 услуги');
-      // Down to none: the pick is off, the card plain and its stepper
-      // folded away, the dock's ✓ back.
-      steps?.[0]?.click();
-      fixture.detectChanges();
-      steps?.[0]?.click();
-      fixture.detectChanges();
-      expect(stepper()).toBeNull();
+      // A second tap takes the tick off: the card plain, the dock's ✓ back.
+      click(host, 'staff-visit-service-wash');
       expect(wash()?.hasAttribute('data-picked')).toBe(false);
-      expect(row()?.hasAttribute('data-selected')).toBe(false);
       expect(find(host, 'staff-visit-service-apply')).toBeNull();
       expect(find(host, 'staff-visit-page-done')).not.toBeNull();
 
-      // Picked again, and «Добави» seats it: the seat is on the ladder, the
-      // page is gone; a tap on a picked row takes the pick off.
-      click(host, 'staff-visit-service-wash');
-      click(host, 'staff-visit-service-wash');
-      expect(wash()?.hasAttribute('data-picked')).toBe(false);
+      // Ticked again, and «Добави» seats it: the seat is on the ladder, the
+      // page is gone.
       click(host, 'staff-visit-service-wash');
       click(host, 'staff-visit-service-apply');
       expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 1);
@@ -1528,25 +1503,16 @@ describe('StaffVisitEditor', () => {
 
       // Next time the page opens on what the person HAS (owner,
       // 2026-11-06: "pre-checked the service that is already applied"): the
-      // wash ticked at «1», and with nothing changed the dock keeps its ✓.
+      // wash ticked, and with nothing changed the dock keeps its ✓.
       click(host, 'staff-visit-add-service');
-      expect(onPage(host)).toBe(true);
       expect(wash()?.hasAttribute('data-picked')).toBe(true);
       expect(find(host, 'staff-visit-service-apply')).toBeNull();
-      // Two fades and a second wash, seated together.
-      const plus = (id: string) => {
-        find(host, `staff-visit-service-${id}-count`)
-          ?.querySelectorAll<HTMLElement>('.ui-count-stepper__step')[1]
-          ?.click();
-        fixture.detectChanges();
-      };
+      // Two more, seated together.
       click(host, 'staff-visit-service-fade');
-      plus('fade');
-      plus('wash');
-      expect(text(host, 'staff-visit-service-apply')).toBe('Добави 3 услуги');
+      click(host, 'staff-visit-service-cut:long');
+      expect(text(host, 'staff-visit-service-apply')).toBe('Добави 2 услуги');
       click(host, 'staff-visit-service-apply');
-      expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 4);
-      expect(page(host)).toBeNull();
+      expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 3);
 
       // Changes not applied go with the page: the shell's ‹ leaves the
       // ladder as it was.
@@ -1554,9 +1520,9 @@ describe('StaffVisitEditor', () => {
       click(host, 'staff-visit-service-wash');
       back();
       expect(page(host)).toBeNull();
-      expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 4);
+      expect(host.querySelectorAll(LEG_ROWS).length).toBe(legsBefore + 3);
 
-      // A card ticked OFF takes its seats off: «Приложи», not «Добави».
+      // A card ticked OFF takes its seat off: «Приложи», not «Добави».
       click(host, 'staff-visit-add-service');
       expect(wash()?.hasAttribute('data-picked')).toBe(true);
       click(host, 'staff-visit-service-wash');
@@ -6778,9 +6744,10 @@ describe('StaffVisitEditor', () => {
       expect(commits[0]?.legs.map((leg) => leg.barberId)).toEqual(['stefan']);
     });
 
-    it('puts the same service on a visit twice — two rows — and takes one off again', () => {
-      // Owner, 2026-09-10: no fold and no counter. Each seat is a row with
-      // its own chips; the dropdown marks nothing.
+    it('seats a service once for a person — a tick, never a count — and re-takes one seat’s variant', () => {
+      // Owner, 2026-11-06: one person cannot take the same service twice;
+      // another of the same is another client. The page opens on the seat
+      // ticked, with no stepper to add a second.
       const host = render(fresh());
       const rows = () =>
         host.querySelectorAll<HTMLElement>(
@@ -6793,23 +6760,19 @@ describe('StaffVisitEditor', () => {
       click(host, 'staff-visit-service-cut:short');
       click(host, 'staff-visit-service-apply');
       expect(rows().length).toBe(1);
-      // The page opens on it ticked; its stepper takes a second.
       click(host, 'staff-visit-add-service');
-      find(host, 'staff-visit-service-cut:short-count')
-        ?.querySelectorAll<HTMLElement>('.ui-count-stepper__step')[1]
-        ?.click();
-      fixture.detectChanges();
-      click(host, 'staff-visit-service-apply');
-      expect(rows().length).toBe(2);
       expect(
-        host.querySelector('[data-testid^="staff-visit-leg-count-"]'),
-      ).toBeNull();
+        find(host, 'staff-visit-service-cut:short')?.hasAttribute(
+          'data-picked',
+        ),
+      ).toBe(true);
+      expect(host.querySelector('ui-count-stepper')).toBeNull();
+      back();
 
-      // The variant chip re-takes the variant for THIS seat alone.
+      // The variant chip re-takes the variant for the seat.
       click(host, `staff-visit-leg-variant-${seatOf(0)}`);
       pickOpen(host, 'staff-visit-variant-pick-long');
       expect(rows()[0]?.textContent).toContain('Дълга коса');
-      expect(rows()[1]?.textContent).toContain('Къса коса');
       const commits: { legs: { serviceId: string; variantId: string }[] }[] =
         [];
       fixture.componentInstance.committed.subscribe((c) =>
@@ -6818,12 +6781,9 @@ describe('StaffVisitEditor', () => {
       click(host, 'staff-visit-save');
       expect(
         commits[0]?.legs.map((leg) => `${leg.serviceId}@${leg.variantId}`),
-      ).toEqual(['cut@long', 'cut@short']);
+      ).toEqual(['cut@long']);
 
-      // «−» takes one row; the other stays. «−» again, and none.
-      click(host, `staff-visit-remove-leg-${seatOf(0)}`);
-      expect(rows().length).toBe(1);
-      expect(rows()[0]?.textContent).toContain('Къса коса');
+      // «−» takes the row off.
       click(host, `staff-visit-remove-leg-${seatOf(0)}`);
       expect(rows().length).toBe(0);
     });
