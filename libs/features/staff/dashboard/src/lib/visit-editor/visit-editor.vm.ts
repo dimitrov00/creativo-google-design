@@ -427,6 +427,17 @@ export type ServiceRowVm = {
   readonly option: VisitEditorServiceOption;
   readonly titleRuns: readonly StaffEventRun[];
   readonly lineRuns: readonly StaffEventRun[];
+  /** «Къса коса · 35 мин · 14,50 €» — the cover card's meta line. */
+  readonly line: string;
+};
+
+/** A person on the visit, as the service page's chips name them — whose picks these are. */
+export type ServicePersonVm = {
+  readonly id: string;
+  readonly label: string;
+  readonly avatarSrc: string | null;
+  /** The person the picks seat for — the page's subject, else the first. */
+  readonly selected: boolean;
 };
 
 /** The dock's promise on the service page. */

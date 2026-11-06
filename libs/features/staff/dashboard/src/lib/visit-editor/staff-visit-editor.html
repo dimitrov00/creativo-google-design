@@ -461,8 +461,15 @@
          visit (owner, 2026-09-10): a service may be wanted twice, and a
          check reads as "done" — the stepper counts instead. Opens on the
          whole catalogue every time, nothing picked. -->
-    <!-- The client search's own grammar (2026-09-24): the title folds
-         while the search is engaged and the field rises under the bar. -->
+    <!-- THE CATALOGUE AS THE SEARCH SHEET DRAWS IT (owner, 2026-11-06:
+         "the same way as in the search services"): cover cards, three
+         across, the name under each cover — services without variants flow
+         together, a service with variants stands in a grid of its own
+         (`coverRowsOf`, shared with the search). A tap PICKS a card (its
+         ring turns to a ✓, a second tap takes it off); a picked card
+         unfolds the DS stepper under its caption for a second of the same.
+         The search and whose picks these are ride the DOCK, as the search
+         sheet's field does. The title folds while the field is engaged. -->
     <ui-sheet-headline [uiFolded]="searchEngaged()">
       <h2
         uiSheetLargeTitle
@@ -472,31 +479,7 @@
       >
         {{ t('staff.visit.addService') }}
       </h2>
-      @if (serviceFor(); as name) {
-      <!-- FOR WHOM (owner, 2026-09-24): the catalogue pushed for a person
-           without a service names them under its title, and its picks seat
-           for them — no chip to move afterwards. -->
-      <p
-        uiText
-        uiFont="subheadline"
-        uiForegroundStyle="secondary"
-        data-testid="staff-visit-services-for"
-      >
-        {{ t('staff.visit.servicesFor', { name }) }}
-      </p>
-      }
     </ui-sheet-headline>
-    <ui-search-field
-      uiPinned
-      [uiValue]="query()"
-      [uiPlaceholder]="t('staff.visit.searchService')"
-      uiTestId="staff-visit-service-query"
-      [uiClearLabel]="t('staff.day.searchClear')"
-      (uiInput)="onQuery($event)"
-      (uiFocusChange)="searchFocused.set($event)"
-      (uiSubmit)="leaveSearch($event)"
-      (uiNavigate)="focusFirstResult($event)"
-    />
     @if (serviceRows().length === 0) {
     <!-- NOTHING MATCHED: the client search's own quiet figure — the
          glyph over one line — never a bare footnote at a row's inset. -->
@@ -510,66 +493,46 @@
       </figcaption>
     </figure>
     } @else {
-    <ul
-      uiListGroup
+    <ui-stack
+      uiSpacing="comfortable"
+      role="group"
       [attr.aria-label]="t('staff.visit.addService')"
       data-testid="staff-visit-service-list"
     >
-      @for (row of serviceRows(); track row.option.id) { @let option =
-      row.option;
-      <!-- A ROW WITH TWO CONTROLS (owner, 2026-09-17: "animated like
-           select — in place of a check, a stepper should animate, expand"):
-           the PICK, a checkbox button that IS the row's label, and the DS
-           count stepper trailing. The tap picks — the row takes the
-           selection wash, the stepper's square turns to a ✓ and unfolds
-           into «− 1 +» — and the foot seats what is picked. -->
-      <li>
-        <ui-list-row
-          uiSize="large"
-          uiAlignment="leading"
-          class="staff-visit__service-row"
-          [uiInteractive]="true"
-          [uiSelected]="serviceCount(option.id) > 0"
-        >
-          <button
-            type="button"
-            role="checkbox"
-            class="staff-visit__service-pick"
-            [attr.aria-checked]="serviceCount(option.id) > 0"
+      @for (grid of serviceGrids(); track grid.id) {
+      <ui-grid [uiColumns]="3" uiSpacing="regular">
+        @for (row of grid.tiles; track row.option.id) { @let option =
+        row.option; @let count = serviceCount(option.id);
+        <ui-stack uiSpacing="tight" class="staff-visit__service-tile">
+          <cr-service-card
+            [uiServiceId]="option.serviceId"
+            [uiName]="option.serviceLabel ?? option.label"
+            [uiMeta]="row.line"
+            [uiCoverUrl]="option.coverSrc ?? null"
+            uiCaption="below"
+            uiRatio="3 / 4"
+            [uiSelectedCount]="count"
+            [uiShowDetails]="false"
+            uiSelectionIndicator="always"
             [attr.data-testid]="'staff-visit-service-' + option.id"
+            [attr.data-picked]="count > 0 ? '' : null"
             (click)="pickService(option)"
-          >
-            <!-- The variant is a description here too (owner, 2026-09-10) —
-                 the row's second line, ahead of the minutes and the price,
-                 never welded to the name. -->
-            <ui-stack uiSpacing="none">
-              <span uiText uiFont="callout" uiWeight="medium">
-                <ui-marked-text [uiRuns]="row.titleRuns" />
-              </span>
-              <span
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                class="staff-visit__figures"
-              >
-                <ui-marked-text [uiRuns]="row.lineRuns" />
-              </span>
-            </ui-stack>
-          </button>
-          <span uiTrailing class="staff-visit__service-count">
-            <ui-count-stepper
-              [uiValue]="serviceCount(option.id)"
-              [uiLabel]="option.serviceLabel ?? option.label"
-              [uiAddLabel]="t('staff.visit.serviceMore')"
-              [uiRemoveLabel]="t('staff.visit.serviceLess')"
-              [attr.data-testid]="'staff-visit-service-' + option.id + '-count'"
-              (uiValueChange)="countService(option, $event)"
-            />
-          </span>
-        </ui-list-row>
-      </li>
+          />
+          @if (count > 0) {
+          <ui-count-stepper
+            [uiValue]="count"
+            [uiLabel]="option.serviceLabel ?? option.label"
+            [uiAddLabel]="t('staff.visit.serviceMore')"
+            [uiRemoveLabel]="t('staff.visit.serviceLess')"
+            [attr.data-testid]="'staff-visit-service-' + option.id + '-count'"
+            (uiValueChange)="countService(option, $event)"
+          />
+          }
+        </ui-stack>
+        }
+      </ui-grid>
       }
-    </ul>
+    </ui-stack>
     } } @case (EditorPage.Discount) {
     <!-- THE DISCOUNT PAGE (owner, 2026-09-17: "adding a discount → push
          sheet / page; the bottom toolbar for applying goes to the main
@@ -2930,8 +2893,67 @@
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
     } } @else if (dockPage === EditorPage.Service) {
-    <!-- «Добави», «Добави 3 услуги» — every pick seated at once — while
-         something is picked; the ✓ while the page is only read. -->
+    <!-- THE SEARCH AT THE THUMB, as the search sheet's (owner, 2026-11-06):
+         the field fills the dock, and over it — Photos' chips — the visit's
+         people, the one the picks seat for selected, and «＋ Добави клиент»
+         to bring another person onto the visit. Then «Добави», «Добави 3
+         услуги» — every pick seated at once — or the ✓ while the page is
+         only read. -->
+    <ui-search-field
+      uiFill
+      uiControlSize="large"
+      [uiValue]="query()"
+      [uiPlaceholder]="t('staff.visit.searchService')"
+      [uiLabel]="t('staff.visit.searchService')"
+      uiTestId="staff-visit-service-query"
+      [uiClearLabel]="t('staff.day.searchClear')"
+      (uiInput)="onQuery($event)"
+      (uiFocusChange)="searchFocused.set($event)"
+      (uiSubmit)="leaveSearch($event)"
+      (uiNavigate)="focusFirstResult($event)"
+    >
+      <ui-flow
+        uiSearchAccessory
+        uiSpacing="compact"
+        uiAlignment="leading"
+        role="group"
+        [attr.aria-label]="t('staff.visit.forWhom')"
+        data-testid="staff-visit-service-people"
+      >
+        @for (person of servicePeople(); track person.id) {
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="person.selected"
+          [attr.data-tint]="person.selected ? 'accent' : null"
+          [attr.aria-pressed]="person.selected"
+          data-testid="staff-visit-service-person"
+          [attr.data-person]="person.id"
+          (mousedown)="$event.preventDefault()"
+          (click)="serveFor(person.id)"
+        >
+          <ui-avatar
+            uiControlSize="small"
+            [uiSrc]="person.avatarSrc"
+            [uiName]="person.label"
+          />
+          <span class="staff-visit__person-chip-label">{{ person.label }}</span>
+        </button>
+        }
+        <!-- A glyph, named for the ear: the people's chips keep the line. -->
+        <button
+          type="button"
+          uiChip
+          [attr.aria-label]="t('staff.visit.addClient')"
+          [title]="t('staff.visit.addClient')"
+          data-testid="staff-visit-service-add-client"
+          (mousedown)="$event.preventDefault()"
+          (click)="push(EditorPage.ClientSearch, null, 'staff-visit-service-add-client')"
+        >
+          <ui-icon uiName="party.addGuest" aria-hidden="true" />
+        </button>
+      </ui-flow>
+    </ui-search-field>
     @if (serviceApply(); as apply) {
     <button
       type="button"

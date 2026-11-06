@@ -33,7 +33,7 @@ import {
   serviceApplyVm,
   serviceOptionLine,
   serviceRowVm,
-  servicePersonOf,
+  servicePeopleVm,
   sheetTitleOf,
   shopReadoutOf,
   shopRowName,
@@ -365,10 +365,20 @@ describe('the services’ rows', () => {
     expect(serviceApplyVm(3, EN)?.label).toBe('Add 3 services');
   });
 
-  it('finds the person a catalogue page is for', () => {
-    const clients = [{ id: MARTIN, label: 'Мартин' }];
-    expect(servicePersonOf(clients, 'guest-martin')).toBe('Мартин');
-    expect(servicePersonOf(clients, 'nobody')).toBeNull();
+  it('chips the visit’s people, the one the picks seat for selected', () => {
+    const clients = [
+      { id: MARTIN, label: 'Мартин', avatarSrc: 'm.jpg' },
+      { id: 'guest-petar', label: 'Петър' },
+    ];
+    // The page's subject, else the first — whom an unaddressed pick seats for.
+    expect(servicePeopleVm(clients, null)).toEqual([
+      { id: MARTIN, label: 'Мартин', avatarSrc: 'm.jpg', selected: true },
+      { id: 'guest-petar', label: 'Петър', avatarSrc: null, selected: false },
+    ]);
+    expect(
+      servicePeopleVm(clients, 'guest-petar').map((chip) => chip.selected),
+    ).toEqual([false, true]);
+    expect(servicePeopleVm([], null)).toEqual([]);
   });
 });
 

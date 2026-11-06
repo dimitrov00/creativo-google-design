@@ -133,7 +133,7 @@ import {
   resolutionHeadOf,
   serviceApplyVm,
   serviceRowVm,
-  servicePersonOf,
+  servicePeopleVm,
   sheetTitleOf,
   shopReadoutOf,
   shopRowName,
@@ -145,6 +145,12 @@ import {
   visitEditorWordsOf,
   visitExitsVm,
 } from './visit-editor.presenter';
+import {
+  WALLET_TILE_WORDS,
+  canTakeFocus,
+  editorCardPages,
+} from './editor-tables';
+import { coverRowsOf } from '../shared/cover-rows';
 import {
   type ClientRowVm,
   type DiscountApplyVm,
@@ -178,7 +184,10 @@ import {
   FLAGS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { LoadState } from '@creativo/shared/view-state';
-import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
+import {
+  ServiceCardComponent,
+  ShowcaseGalleryComponent,
+} from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import {
   ChangeDetectionStrategy,
@@ -210,7 +219,6 @@ import {
   type ClientCardContext,
   type ClientCardGrant,
   type ClientCardLeg,
-  ClientCardPage,
   ClientCardStore,
   type ClientCardSubject,
   type ClientCardViewer,
@@ -248,6 +256,7 @@ import {
   UiTextField,
   UiTimeField,
   UiUnitField,
+  UiChip,
 } from '@creativo/ui/controls';
 import { catalogNoteWords, catalogTagWords } from '../shared/catalog-tag.words';
 import {
@@ -260,7 +269,7 @@ import {
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
 import { formatCentsFigure, formatCurrencyUnit } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
-import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
+import { UiFlow, UiGrid, UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
   UiMaterialDirective,
   UiForegroundStyleDirective,
@@ -659,6 +668,8 @@ export interface VisitEditorServiceOption {
   readonly currency: Currency;
   /** The price as the owner worded it — display only, never parsed back. */
   readonly priceLabel: string | null;
+  /** The service's cover, as the catalogue shows it — the card's art. */
+  readonly coverSrc?: string | null;
 }
 
 /**
@@ -915,35 +926,6 @@ interface VisitDraft {
   readonly drawn: VisitSides;
 }
 
-/**
- * The card's own pages, as the client card's store titles them
- * (`ClientCardStore.barTitle`) — the editor's page kinds the card names.
- */
-const editorCardPages = {
-  [EditorPage.Client]: ClientCardPage.Client,
-  [EditorPage.Photo]: ClientCardPage.Photo,
-  [EditorPage.ClientLoyalty]: ClientCardPage.ClientLoyalty,
-  [EditorPage.ClientLedger]: ClientCardPage.ClientLedger,
-  [EditorPage.ClientAchievements]: ClientCardPage.ClientAchievements,
-  [EditorPage.ClientRecords]: ClientCardPage.ClientRecords,
-  [EditorPage.AchievementCategory]: ClientCardPage.AchievementCategory,
-  [EditorPage.AchievementDetail]: ClientCardPage.AchievementDetail,
-  [EditorPage.ClientHistory]: ClientCardPage.ClientHistory,
-} as const satisfies Partial<Record<EditorPage, ClientCardPage>>;
-
-/**
- * Each wallet section's tile on the glance, as its test id names it
- * (`client-loyalty-<word>`, the push's origin): the catalogue's section is
- * the points tile's.
- */
-const WALLET_TILE_WORDS = {
-  [WalletAnchor.Catalog]: 'points',
-  [WalletAnchor.Stamps]: 'stamps',
-  [WalletAnchor.Rhythm]: 'rhythm',
-  [WalletAnchor.Wallet]: 'wallet',
-  [WalletAnchor.Status]: 'status',
-} as const satisfies Record<WalletAnchor, string>;
-
 /** How deep the client stack goes; a push past it replaces the top page (§2.2). */
 const MAX_PAGE_DEPTH = 4;
 
@@ -958,19 +940,6 @@ const PageArrival = {
   Section: 'SECTION',
 } as const;
 type PageArrival = Tag<typeof PageArrival>;
-
-/**
- * Whether a landing may focus this element: a control, a link, or a box
- * that asked for it (`tabindex`) and is not disabled. A static article or
- * a plain span is as good as gone for the focus.
- */
-function canTakeFocus(element: HTMLElement): boolean {
-  return (
-    element.matches(
-      'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]',
-    ) && !element.matches(':disabled')
-  );
-}
 
 /** The sum's ruler steps by half a euro, a euro a tick, five the taller. */
 const AMOUNT_SLIDER_STEP_MINOR = 50;
@@ -1324,6 +1293,10 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     UiCouponCard,
     UiCodeScanner,
     UiCountStepper,
+    UiChip,
+    UiFlow,
+    UiGrid,
+    ServiceCardComponent,
     UiScrollColumn,
     UiStack,
     UiTextDirective,
@@ -2648,6 +2621,15 @@ export class StaffVisitEditor {
       .filter((service) => TextMatchSystem.matches(service.label, query))
       .map((option) => serviceRowVm(option, query, words));
   });
+
+  /** Those rows as the search sheet's cover grids (`coverRowsOf`). */
+  protected readonly serviceGrids = computed(() =>
+    coverRowsOf(
+      this.serviceRows(),
+      (row) => row.option.serviceId,
+      (row) => row.option.variantId !== null,
+    ),
+  );
 
   /**
    * WHAT WAS TYPED, read for every part at once (2026-09-18): the words
@@ -5711,14 +5693,18 @@ export class StaffVisitEditor {
     if (next !== null) this.openServicePage(next.id);
   }
 
-  /** «За Мартин» under the catalogue's title, when the page is for someone. */
-  protected readonly serviceFor = computed<string | null>(() => {
+  /** The visit's people over the service page's field, whose picks these are selected. */
+  protected readonly servicePeople = computed(() => {
     const page = this.page();
-    if (page?.editorPage !== EditorPage.Service || page.subjectId === null) {
-      return null;
-    }
-    return servicePersonOf(this.draft().clients, page.subjectId);
+    return page?.editorPage === EditorPage.Service
+      ? servicePeopleVm(this.draft().clients, page.subjectId)
+      : [];
   });
+
+  /** A person's chip: the picks seat for them now (the page's subject). */
+  protected serveFor(personId: string): void {
+    this.page.update((page) => page && { ...page, subjectId: personId });
+  }
 
   /**
    * WHAT A NEW VISIT WILL COST, BY THE CATALOGUE (2026-09-18): the drafted

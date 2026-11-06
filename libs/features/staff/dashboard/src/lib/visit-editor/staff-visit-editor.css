@@ -411,3 +411,14 @@
    the row constructions in `staff-visit-editor.rows.css` — both shared
    with the block sheet — and the visit's own rows and pages in
    `staff-visit-editor.visit.css`. */
+
+/* THE PEOPLE OVER THE SERVICE PAGE'S FIELD (2026-11-06): a long name gives
+   way before the line does — beside «Добави» the field is narrow, and two
+   chips that wrap push the field's accessory over the cards. The whole
+   name is the chip's accessible text. */
+.staff-visit__person-chip-label {
+  max-inline-size: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

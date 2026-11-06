@@ -115,6 +115,7 @@ export function serviceOptionsOf(
   services: readonly {
     readonly id: ServiceId;
     readonly name: LocalizedText;
+    readonly coverSrc?: string;
   }[],
   barberId: BarberId,
   names: ServiceOptionNames,
@@ -128,6 +129,7 @@ export function serviceOptionsOf(
     return OfferingPriceSystem.offersOf(service, barberId).map(
       ({ variant, terms }): VisitEditorServiceOption => {
         const priced = {
+          coverSrc: vm.coverSrc ?? null,
           minutes: terms.durationMinutes,
           priceCents: terms.priceCents,
           currency: terms.currency,

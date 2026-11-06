@@ -33,6 +33,7 @@ import {
   type ResolutionHeadVm,
   ResolutionWord,
   type ServiceApplyVm,
+  type ServicePersonVm,
   type ServiceRowVm,
   ShopView,
   TimingMode,
@@ -643,7 +644,31 @@ export function serviceRowVm(
       ...TextMatchSystem.segments(variant, query),
       ...TextMatchSystem.segments(line.slice(variant.length), ''),
     ],
+    line,
   };
+}
+
+/**
+ * THE VISIT'S PEOPLE over the service page's field (owner, 2026-11-06:
+ * "in the toolbar the clients should be visible, to add more or change
+ * whose booking"): each a chip, the one the picks seat for selected — the
+ * page's subject, else the first, whom an unaddressed pick seats for.
+ */
+export function servicePeopleVm(
+  clients: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly avatarSrc?: string | null;
+  }[],
+  subjectId: string | null,
+): readonly ServicePersonVm[] {
+  const chosen = subjectId ?? clients[0]?.id ?? null;
+  return clients.map((client) => ({
+    id: client.id,
+    label: client.label,
+    avatarSrc: client.avatarSrc ?? null,
+    selected: client.id === chosen,
+  }));
 }
 
 /**
@@ -660,17 +685,6 @@ export function serviceApplyVm(
     count,
     label: count === 1 ? words.servicesAddOne : words.servicesAddCount(count),
   };
-}
-
-/** The person a catalogue page is for, by the page's subject — their label, or none. */
-export function servicePersonOf(
-  clients: readonly {
-    readonly id: DraftPersonKey;
-    readonly label: string;
-  }[],
-  subjectId: string,
-): string | null {
-  return clients.find((client) => client.id === subjectId)?.label ?? null;
 }
 
 /* ── The bar ───────────────────────────────────────────────────────────── */
