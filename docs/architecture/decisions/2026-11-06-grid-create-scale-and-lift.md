@@ -1,0 +1,64 @@
+# The calendar grid as a place to work — ruling (2026-11-06)
+
+> **Status: RULED and BUILT (2026-11-06).** The owner asked for three things
+> on the day / 3-day / week grid: blank time that books "like Apple Calendar,
+> Fresha", with "tap and move in empty space" drawing the new event's range;
+> a time-scale setting "like Teams / Outlook — 30, 15, 60 min"; and "tap and
+> hold on an event to move it and/or expand it — what the sheet already
+> does". Rubric of `2026-10-26-owner-rulings.md`: **C** correctness · **T**
+> one source of truth · **U** UX · **M** simplicity · **R** reversibility.
+
+## References (Mobbin, iOS)
+
+- **Google Calendar** — a tap on blank time drops a draft block with grab
+  handles; **monday.com** draws it dashed («Draft»).
+- **Microsoft Outlook**, **Toggl Track** — a selected event wears round
+  handles on opposite corners; dragging them resizes, dragging the body moves.
+- **Mammoth** — a short list of durations (5 / 15 / 30 min, 1 h), not a free
+  picker, is how a time step is chosen.
+
+## Ruling
+
+1. **Blank time is a target** (U, T). A tap on a column's blank space drops a
+   dashed accent draft block at the slot it landed in (floored to the time
+   scale's row, at most 30 minutes) with the ＋'s own menu open on it —
+   «Нов час · Блокирай време», the one `#createActs` template the ＋ and the
+   list's free-time rows use. A chair column seats the create on that chair;
+   a date column (3-day, week) on that date, at the chair a create aims at
+   (`createFromSlot`). Pointer-only: the ＋ is the keyboard's door to the same
+   two sheets.
+2. **Press and drag on blank time draws the range** (owner: "tap and move …
+   should create an event with that time"; U). A mouse draws past 4px, as
+   Google and Outlook do; a finger holds 250ms first (Apple's), because a
+   travelling finger is the frame's scroll. The end follows the finger to the
+   nearest snap; the release opens the same menu for the drawn range, and a
+   booking from it drafts that length.
+3. **The time scale is Outlook's** (U, M). «Мащаб на времето» says how many
+   minutes a row of the calendar holds — **10 · 15 (default) · 30 мин · 1 ч**
+   (`GridTimeScale`, per device, `staff-schedule-time-scale`). 5 minutes is
+   left out: 288 rows is a scroll, not a calendar. The page's slot height is
+   zoomed by `15 / scale`; a block is SHORT by its height, not its minutes
+   (two lines need the half-hour's height at the default), and a new scale
+   keeps the reader's hour. It lives under the view menu's «Настройки», now
+   shown in every view: the list's sheet holds the card fields, the grid's the
+   scale.
+4. **A hold lifts a block** (U, T). A held finger, a held mouse, or a mouse
+   past the threshold lifts a visit whose story is not over (`movableIdsOf`)
+   — from then it is the grid's editable block, drawn by minute, with the
+   sheet frame's own handles. A drag moves it by the snap; a lifted block
+   released unmoved stays up for a resize (Outlook's select); a tap on blank
+   time puts it down. The page grid and the sheet's frame share ONE gesture
+   machine (`staff-time-grid.ts`).
+5. **A drop is a draft, never a write** (C, R). A move or resize released on
+   the grid opens that visit's sheet with the new time already in its draft
+   (`uiDropped` → `withFrame`): «Запази» keeps it, ✕ asks before dropping it
+   and the block goes home — the footing a drag in the sheet's frame has had
+   since 2026-09-23. Collisions, parties and the turnaround are the sheet's
+   verdicts, as for any other edit.
+
+## Not done
+
+- Moving a block ACROSS columns (to another chair or date) — the gesture is
+  along the minute axis only; the sheet's chair row and day pill do it.
+- Dragging blocked time — a block opens its editor on a tap, as before.
+- A pinch to change the scale — the setting is the one door for now.

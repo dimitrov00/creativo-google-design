@@ -1,3 +1,4 @@
+import { type FrameInterval, withFrame } from './frame-draft';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
@@ -1528,6 +1529,9 @@ export class StaffVisitEditor {
 
   readonly uiFrameDay = input<VisitEditorFrameDay | null>(null);
 
+  /** A move or resize dropped on the page grid — seeded into the draft (`withFrame`). */
+  readonly uiDropped = input<FrameInterval | null>(null);
+
   readonly uiServices = input<readonly VisitEditorServiceOption[]>([]);
   /** Known people, for the pushed add-client page. */
   readonly uiClients = input<readonly VisitEditorClientOption[]>([]);
@@ -1823,10 +1827,14 @@ export class StaffVisitEditor {
      * beside it was identical. Comparing `previous.source` is what turns the
      * intent ("reseed on a new subject") into the behaviour.
      */
-    computation: (appointmentId, previous) =>
-      previous !== undefined && previous.source === appointmentId
-        ? previous.value
-        : seedDraft(untracked(() => this.vm())),
+    computation: (appointmentId, previous) => {
+      if (previous !== undefined && previous.source === appointmentId) {
+        return previous.value;
+      }
+      const seeded = seedDraft(untracked(() => this.vm()));
+      const dropped = untracked(() => this.uiDropped());
+      return dropped === null ? seeded : withFrame(seeded, dropped);
+    },
   });
 
   private readonly seed = computed(() => seedDraft(this.vm()));
@@ -3252,33 +3260,7 @@ export class StaffVisitEditor {
    * snap is what keeps the two pictures identical while the finger is down.
    */
   protected onFrameDraft(draft: GridDraft): void {
-    // Floored at one grain, never snapped: the grid drew on the grain
-    // (`VisitDraftSystem.floorSpan`).
-    const span = VisitDraftSystem.floorSpan(
-      draft.endMinute - draft.startMinute,
-    );
-    this.draft.update((current) => {
-      // ⚠ There is no `endMinute` FIELD to write. The end is derived from
-      // `durationOverride ?? legs`, so a resize pins the duration and a
-      // move leaves it alone — writing a phantom field made every resize
-      // snap back to the services' sum and re-emit from the grid. Which
-      // span pins is the frame's rule (`VisitDraftSystem.overrideFor`).
-      const overrideNow = VisitDraftSystem.overrideFor(span, current.legs);
-
-      // No-op when nothing actually moved. A redundant write is a redundant
-      // render, and a redundant render mid-gesture is how a loop starts.
-      if (
-        current.startMinute === draft.startMinute &&
-        current.durationOverride === overrideNow
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        startMinute: draft.startMinute,
-        durationOverride: overrideNow,
-      };
-    });
+    this.draft.update((current) => withFrame(current, draft));
   }
 
   /**

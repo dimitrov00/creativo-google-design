@@ -148,9 +148,8 @@
                    2026-09-23: «Блокирай време» left for ＋). Under the four
                    readings, the list's card fields (owner, 2026-11-05: "the
                    view select should be like settings") — Files' «View
-                   Options» under its layouts. List view only: a calendar
-                   block has no card to configure. -->
-              @if (!isGrid()) {
+                   Options» under its layouts. In the calendar views the same
+                   row holds the time scale (owner, 2026-11-06). -->
               <ui-list-group>
                 <button
                   type="button"
@@ -164,7 +163,6 @@
                   {{ t('staff.day.viewSettings') }}
                 </button>
               </ui-list-group>
-              }
             </ui-choice-menu>
 
             <!-- Search sits between the two pickers and the person — the
@@ -269,7 +267,7 @@
           class="staff-weeks"
           data-testid="staff-week-strip"
         >
-          @for (week of weekStrip(); track week.key) {
+          @for (week of strip.weeks(); track week.key) {
           <div
             class="staff-weeks__week"
             [attr.data-week]="week.key"
@@ -363,6 +361,14 @@
         [allDay]="allDay()"
         [allDayAlways]="true"
         [allDayLabel]="t('staff.day.allDay')"
+        [uiSlotPickable]="true"
+        [uiScaleMinutes]="timeScale.minutes()"
+        [uiSlotSnapMinutes]="timeScale.minutes() > 30 ? 30 : timeScale.minutes()"
+        [uiPendingSlot]="pendingSlot()"
+        [uiPendingTemplate]="slotMenu"
+        (slotPicked)="pickSlot($event)"
+        [uiMovable]="movableIds()"
+        (draftCommitted)="dropOnGrid($event)"
         (zonePicked)="explainZone()"
         data-testid="staff-grid"
         (eventPicked)="openVisit($event)"
@@ -591,30 +597,10 @@
                     [quiet]="true"
                   />
                 </button>
-                <ui-list-group>
-                  <button
-                    type="button"
-                    uiMenuItem
-                    uiListRow
-                    [uiInteractive]="true"
-                    data-testid="staff-gap-booking"
-                    (click)="openCreate(CreateIntent.Booking, entry)"
-                  >
-                    <span uiLeading><ui-icon uiName="appointment.book" /></span>
-                    {{ t('staff.day.fab.booking') }}
-                  </button>
-                  <button
-                    type="button"
-                    uiMenuItem
-                    uiListRow
-                    [uiInteractive]="true"
-                    data-testid="staff-gap-block"
-                    (click)="openCreate(CreateIntent.Block, entry)"
-                  >
-                    <span uiLeading><ui-icon uiName="booking.blocked" /></span>
-                    {{ t('staff.day.fab.block') }}
-                  </button>
-                </ui-list-group>
+                <ng-container
+                  [ngTemplateOutlet]="createActs"
+                  [ngTemplateOutletContext]="{ $implicit: entry, testId: 'staff-gap' }"
+                />
               </ui-menu>
             </li>
             } @else {
@@ -1056,32 +1042,73 @@
         <!-- THE KIND PICKER (owner review 2026-09-08): what you are making,
              as a menu — five chips in 340px looked bad, and this is the
              grammar every other choice on the sheet already uses. -->
-        <ui-list-group>
-          <button
-            type="button"
-            uiMenuItem
-            uiListRow
-            [uiInteractive]="true"
-            data-testid="staff-add-booking"
-            (click)="openCreate(CreateIntent.Booking)"
-          >
-            <span uiLeading><ui-icon uiName="appointment.book" /></span>
-            {{ t('staff.day.fab.booking') }}
-          </button>
-          <button
-            type="button"
-            uiMenuItem
-            uiListRow
-            [uiInteractive]="true"
-            data-testid="staff-add-block"
-            (click)="openCreate(CreateIntent.Block)"
-          >
-            <span uiLeading><ui-icon uiName="booking.blocked" /></span>
-            {{ t('staff.day.fab.block') }}
-          </button>
-        </ui-list-group>
+        <ng-container
+          [ngTemplateOutlet]="createActs"
+          [ngTemplateOutletContext]="{ $implicit: undefined, testId: 'staff-add' }"
+        />
       </ui-menu>
     </ui-page-action-bar>
+
+    <!-- THE ＋'S TWO ACTS, one template for its three doors: the ＋ itself,
+         a free-time row of the list, and a slot tapped on the grid (owner,
+         2026-11-05/06). `from` says where the create starts; none is now. -->
+    <ng-template #createActs let-from let-testId="testId">
+      <ui-list-group>
+        <button
+          type="button"
+          uiMenuItem
+          uiListRow
+          [uiInteractive]="true"
+          [attr.data-testid]="testId + '-booking'"
+          (click)="openCreate(CreateIntent.Booking, from)"
+        >
+          <span uiLeading><ui-icon uiName="appointment.book" /></span>
+          {{ t('staff.day.fab.booking') }}
+        </button>
+        <button
+          type="button"
+          uiMenuItem
+          uiListRow
+          [uiInteractive]="true"
+          [attr.data-testid]="testId + '-block'"
+          (click)="openCreate(CreateIntent.Block, from)"
+        >
+          <span uiLeading><ui-icon uiName="booking.blocked" /></span>
+          {{ t('staff.day.fab.block') }}
+        </button>
+      </ui-list-group>
+    </ng-template>
+
+    <!-- A GRID SLOT'S MENU, drawn inside the grid's dashed draft block: the
+         block is its trigger, and the menu opens the moment it lands. -->
+    <ng-template #slotMenu>
+      @if (pendingSlot(); as slot) {
+      <ui-menu
+        class="staff-slot-menu"
+        [uiPresented]="true"
+        uiAlignment="leading"
+        [uiLabel]="t('staff.day.fab.open')"
+        (uiDismissed)="pendingSlot.set(null)"
+      >
+        <button
+          type="button"
+          uiMenuTrigger
+          class="staff-slot-menu__trigger"
+          [attr.aria-label]="t('staff.day.fab.open') + ', ' + slotTime(slot)"
+          data-testid="staff-slot-trigger"
+          (click)="pendingSlot.set(null)"
+        >
+          <span uiText uiFont="footnote" uiWeight="semibold"
+            >{{ slotTime(slot) }}</span
+          >
+        </button>
+        <ng-container
+          [ngTemplateOutlet]="createActs"
+          [ngTemplateOutletContext]="{ $implicit: slot.from, testId: 'staff-slot' }"
+        />
+      </ui-menu>
+      }
+    </ng-template>
   </main>
 
   <!-- THE DAY'S HEALTH ROWS (OR-2) — one per chair the sheet could not read
@@ -1163,7 +1190,10 @@
     data-testid="staff-fields-sheet"
     (dismissed)="fieldsOpen.set(false)"
   >
-    <span sheet-title>{{ t('staff.day.fieldsTitle') }}</span>
+    <span sheet-title
+      >{{ t(isGrid() ? 'staff.day.scaleTitle' : 'staff.day.fieldsTitle')
+      }}</span
+    >
 
     <ui-stack uiSpacing="loose" class="staff-cancel__body">
       <ui-sheet-headline class="staff-sheet__headline">
@@ -1173,13 +1203,39 @@
           uiText
           uiFont="largeTitle"
         >
-          {{ t('staff.day.fieldsTitle') }}
+          {{ t(isGrid() ? 'staff.day.scaleTitle' : 'staff.day.fieldsTitle') }}
         </h2>
         <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-          {{ t('staff.day.fieldsLede') }}
+          {{ t(isGrid() ? 'staff.day.scaleLede' : 'staff.day.fieldsLede') }}
         </p>
       </ui-sheet-headline>
 
+      @if (isGrid()) {
+      <!-- THE TIME SCALE (owner, 2026-11-06, Outlook's «Time scale»): how
+           many minutes a row of the calendar holds. A tap is the answer. -->
+      <ui-list-group>
+        @for (scale of timeScales; track scale) { @let chosen =
+        timeScale.minutes() === scale;
+        <button
+          type="button"
+          uiListRow
+          [uiInteractive]="true"
+          [uiSelected]="chosen"
+          [attr.aria-pressed]="chosen"
+          [attr.data-testid]="'staff-scale-' + scale"
+          (click)="timeScale.set(scale)"
+        >
+          {{ t('staff.day.scale.' + scale) }} @if (chosen) {
+          <ui-icon
+            uiTrailing
+            uiName="checklist.done"
+            uiForegroundStyle="accent"
+          />
+          }
+        </button>
+        }
+      </ui-list-group>
+      } @else {
       <ui-list-group>
         @for (field of agendaFieldIds; track field) {
         <ui-list-row uiSize="large">
@@ -1195,12 +1251,13 @@
         </ui-list-row>
         }
       </ui-list-group>
+      }
     </ui-stack>
 
     <!-- Reset lives in the sheet's own bar, and only once there is something
          to reset — a permanent "restore defaults" under a list nobody has
          touched is a control that cannot act. -->
-    @if (!fields.isDefault()) {
+    @if (!isGrid() && !fields.isDefault()) {
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
       <!-- A cluster of ONE, the same recipe every other icon-only control on
            this surface wears. Without it the button was a bare glyph: the DS
@@ -1290,6 +1347,7 @@
     <lib-staff-visit-editor
       #visitEditor
       [vm]="editorVm"
+      [uiDropped]="droppedTime()"
       [uiBarbers]="barberOptions()"
       [uiShops]="shopOptions()"
       [uiServices]="visitServiceOptions()"

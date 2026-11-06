@@ -1134,6 +1134,36 @@ export function gridVisitEvent(
   };
 }
 
+/**
+ * A chair's day as grid blocks: its drawn visits and — while the filter
+ * shows blocked time — its carve-outs.
+ *
+ * NO gap blocks. A proportional canvas already draws a hole as a hole —
+ * empty space IS the gap, which is the same argument the list's gap ROW
+ * rests on inverted: a list has no empty space to read, so it needs the
+ * row, and a grid has nothing but empty space, so the row is chrome over a
+ * fact the eye already has. Drawing both filled the calendar with boxes
+ * saying "nothing here". (The empty space answers a tap instead, 2026-11-06.)
+ *
+ * A CARVE-OUT is the opposite case and does get drawn. It is not empty
+ * space — it is time somebody took, and the only non-visit thing on this
+ * surface a person is meant to be able to move or lift.
+ */
+export function gridLaneEvents(
+  rows: readonly DayRowVm[],
+  blocks: readonly MinuteRange[] | null,
+  facts: GridBlockFacts,
+  words: StaffDayWords,
+): readonly GridEvent[] {
+  const visits = rows.map((row) => gridVisitEvent(row, facts.attribute, words));
+  return blocks === null
+    ? visits
+    : [
+        ...visits,
+        ...blocks.map((block) => gridBlockEvent(block, facts, words)),
+      ];
+}
+
 /** Whose carve-out a block is, and on which day. */
 export interface GridBlockFacts {
   readonly barberId: BarberId;

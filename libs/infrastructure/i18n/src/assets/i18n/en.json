@@ -1138,6 +1138,14 @@
       "fieldsLabel": "Fields",
       "fieldsTitle": "What to show",
       "fieldsLede": "Choose what each card carries. Kept on this device.",
+      "scaleTitle": "Time scale",
+      "scaleLede": "How much time one row of the calendar holds. Kept on this device.",
+      "scale": {
+        "10": "10 min",
+        "15": "15 min",
+        "30": "30 min",
+        "60": "1 hour"
+      },
       "fieldsReset": "Reset to defaults",
       "statusFilterLabel": "Filter",
       "statusFilterLabelOn": "Filter, on",

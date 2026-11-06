@@ -914,3 +914,27 @@
 /* The page around the run — the write actions, the toolbar and the week
    strip, the barber picker, the all-day band and the toast — continues in
    `staff-dashboard.chrome.css`. */
+
+/* A GRID SLOT'S MENU (owner, 2026-11-06) — drawn inside the grid's dashed
+   draft block, which its trigger fills: the block IS the control, the
+   menu hangs off its edge. The time reads in ink (the accent law). */
+.staff-slot-menu {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.staff-slot-menu__trigger {
+  display: flex;
+  align-items: flex-start;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 2px var(--sys-space-tight);
+  border: 0;
+  background: none;
+  color: var(--sys-color-foreground);
+  text-align: start;
+  cursor: pointer;
+}

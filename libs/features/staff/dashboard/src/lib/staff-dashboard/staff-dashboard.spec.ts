@@ -9126,6 +9126,74 @@ describe('StaffDashboard', () => {
 
       const page = () => fixture.componentInstance as unknown as WallClockPage;
 
+      it('opens the ＋’s sheets from a grid slot on its date, and a dropped block drafts its move (owner, 2026-11-06)', async () => {
+        const visit = ivanVisit('appointment-drop', '2026-08-05T11:00:00');
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          '2026-08-05T09:00:00.000+03:00',
+        );
+        const grid = fixture.componentInstance as unknown as {
+          pickSlot: (pick: unknown) => void;
+          pendingSlot: () => { readonly from: unknown } | null;
+          openCreate: (intent: string, from?: unknown) => void;
+          createVm: () => {
+            readonly dayKey: string;
+            readonly startMinute: number;
+            readonly endMinute: number;
+          } | null;
+          closeCreateSheet: () => void;
+          dropOnGrid: (commit: unknown) => void;
+          droppedTime: () => unknown;
+          visitSheetId: () => string | null;
+          closeVisitSheet: () => void;
+          gridColumns: () => readonly {
+            readonly events: readonly { readonly id: string }[];
+          }[];
+        };
+        // A slot drawn on FRIDAY's column of the week: the sheet opens on
+        // Friday, at the slot's start, for the drawn hour.
+        page().store.setView(StaffView.Week);
+        fixture.detectChanges();
+        grid.pickSlot({
+          columnId: '2026-08-07',
+          startMinute: 780,
+          endMinute: 840,
+        });
+        const slot = grid.pendingSlot();
+        if (slot === null) throw new Error('no pending slot');
+        grid.openCreate('BOOKING', slot.from);
+        expect(grid.pendingSlot()).toBeNull();
+        expect(grid.createVm()).toEqual(
+          expect.objectContaining({
+            dayKey: '2026-08-07',
+            startMinute: 780,
+            endMinute: 840,
+          }),
+        );
+        grid.closeCreateSheet();
+
+        // A block dropped an hour later opens its visit with the move
+        // drafted; closing puts it back.
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const id = grid
+          .gridColumns()
+          .flatMap((column) => column.events.map((event) => event.id))
+          .find((eventId) => eventId.startsWith('appointment-drop'));
+        if (id === undefined) throw new Error('the visit is not on the grid');
+        const commit = {
+          id,
+          startMinute: 720,
+          endMinute: 750,
+          editCommand: 'MOVE',
+        };
+        grid.dropOnGrid(commit);
+        expect(grid.visitSheetId()).toBe(id);
+        expect(grid.droppedTime()).toEqual(commit);
+        grid.closeVisitSheet();
+        expect(grid.droppedTime()).toBeNull();
+      });
+
       it('keeps a visit LIVE in the second pass of the fall-back hour (DEP-1)', async () => {
         const visit = ivanVisit('appointment-repeat', `${FALL_BACK}T03:00:00`);
         // The FIRST 03:10 (EEST): in the chair — before and after.

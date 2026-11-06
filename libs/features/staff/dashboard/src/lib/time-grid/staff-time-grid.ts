@@ -4,6 +4,7 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  type TemplateRef,
   ViewEncapsulation,
   computed,
   effect,
@@ -288,6 +289,25 @@ export interface GridDraft {
  * resizes, and the toast, the announcement and the server command all differ
  * by which one the barber actually performed.
  */
+/**
+ * A tap on a column's EMPTY time (owner, 2026-11-06: "make the empty grid
+ * clickable … like Apple Calendar, Fresha"): which column, and the minute it
+ * landed on, floored to the grid's snap.
+ */
+export interface GridSlotPick {
+  readonly columnId: string;
+  readonly startMinute: TrackMinute;
+  /** Where a DRAG on blank time ended — absent for a plain tap. */
+  readonly endMinute?: TrackMinute;
+}
+
+/** The slot a tap proposed, drawn as a draft block until the caller acts. */
+export interface GridPendingSlot {
+  readonly columnId: string;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
+}
+
 export interface GridCommit extends GridDraft {
   readonly editCommand: typeof EditCommand.Move | typeof EditCommand.Resize;
 }
@@ -479,6 +499,8 @@ interface DragState {
   hold: ReturnType<typeof setTimeout> | null;
   /** Past the threshold. A handle is armed on `pointerdown`; a body is not. */
   armed: boolean;
+  /** A page block LIFTED by this gesture — it becomes the editable one as it arms. */
+  readonly lift: boolean;
 }
 
 const MINUTES_PER_SLOT = 15;
@@ -812,6 +834,43 @@ export class StaffTimeGrid {
   /** The words the handles, the block and the readout say. See the type. */
   readonly uiDragCopy = input<GridDragCopy>(NO_DRAG_COPY);
 
+  /**
+   * EMPTY TIME IS A TARGET (owner, 2026-11-06) — page only, and only while
+   * blocks are targets: a tap on a column's blank space emits
+   * {@link slotPicked}. A sheet's frame keeps its blank space a picture.
+   */
+  readonly uiSlotPickable = input(false);
+  /**
+   * THE TIME SCALE (owner, 2026-11-06, Outlook's «Time scale»): how many
+   * minutes one 15-minute row's height holds on the page — 15 draws today's
+   * scale, 30 a day half as tall, 10 one half again as tall. The frame
+   * keeps its own minute scale.
+   */
+  readonly uiScaleMinutes = input(15);
+  /** The page's zoom on the slot height — 1 at the default scale. */
+  protected readonly zoom = computed(() =>
+    this.framed() ? 1 : MINUTES_PER_SLOT / this.uiScaleMinutes(),
+  );
+  /** The minutes a picked slot snaps to — the time scale's row, at most 30. */
+  readonly uiSlotSnapMinutes = input(15);
+  /**
+   * The slot the caller is offering to fill — a dashed draft block, the
+   * Google Calendar / monday.com placeholder, with `uiPendingTemplate`
+   * drawn inside it (the caller's «Нов час · Блокирай време» menu).
+   */
+  readonly uiPendingSlot = input<GridPendingSlot | null>(null);
+  readonly uiPendingTemplate = input<TemplateRef<unknown> | null>(null);
+  readonly slotPicked = output<GridSlotPick>();
+  /**
+   * THE BLOCKS A PAGE GESTURE MAY LIFT (owner, 2026-11-06: "on tap and hold
+   * on an event, move it and/or expand it — what the sheet already does"):
+   * a held finger, or a mouse past the threshold, lifts one of these, and
+   * from then it is the editable block — drawn by minute, with the sheet
+   * frame's handles. Its release emits {@link draftCommitted}; the lift
+   * holds until {@link releaseLift} or a tap on blank time.
+   */
+  readonly uiMovable = input<ReadonlySet<string> | null>(null);
+
   readonly zonePicked = output<void>();
   readonly eventPicked = output<string>();
   readonly gapPicked = output<string>();
@@ -999,7 +1058,23 @@ export class StaffTimeGrid {
                   }
                 : event,
             );
-      const laid = empty ? [] : place(events, start, end, minutes, placement);
+      // A block is SHORT by its height, not its minutes: two lines need the
+      // half-hour's height at the default scale, so a coarser scale needs
+      // proportionally more minutes for the same box.
+      const shortMinutes = SHORT_BLOCK_MINUTES / this.zoom();
+      // The EDITABLE block is drawn by minute even on the slot-placed page:
+      // its handles and a five-minute snap need it where its minutes are.
+      const laid = empty
+        ? []
+        : place(
+            events,
+            start,
+            end,
+            minutes,
+            placement,
+            shortMinutes,
+            editableId,
+          );
       // The clock only qualifies a column that is actually TODAY — yesterday's
       // ten o'clock is wholly past and tomorrow's wholly ahead, and neither is
       // a booking half-run.
@@ -1187,6 +1262,206 @@ export class StaffTimeGrid {
     if (day.ok) this.dayPicked.emit(day.value);
   }
 
+  /* ── Drawing a new event on blank time ─────────────────────────────── */
+
+  /**
+   * PRESS AND DRAG ON BLANK TIME draws the new event's range (owner,
+   * 2026-11-06: "tap and move in empty space should create an event with
+   * that time — Apple, Google, Microsoft"). A mouse draws past 4px, as
+   * Google and Outlook do; a finger holds first (250ms, Apple's), because
+   * a travelling finger is the frame's scroll. The release proposes the
+   * range through {@link slotPicked}.
+   *
+   * A press released WITHOUT travel is a tap on blank time: it puts a
+   * lifted block down if one is up (Google's own: a tap away deselects
+   * before it creates anything), and otherwise proposes the slot it landed
+   * in. Pointer-only by design — the ＋ is the keyboard's way to the same
+   * two sheets.
+   */
+  private creating: {
+    readonly columnId: string;
+    readonly column: HTMLElement;
+    readonly pointerId: number;
+    readonly x0: number;
+    readonly y0: number;
+    readonly anchor: number;
+    readonly touch: boolean;
+    hold: ReturnType<typeof setTimeout> | null;
+    armed: boolean;
+    detach: () => void;
+  } | null = null;
+
+  /** The range a live draw proposes — drawn in place of the caller's slot. */
+  protected readonly drawnSlot = signal<GridPendingSlot | null>(null);
+
+  protected onColumnDown(event: PointerEvent, column: GridColumn): void {
+    if (!this.slotsPickable() || event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, [data-pending]')) return;
+    const element = event.currentTarget as HTMLElement;
+    const anchor = this.minuteAt(element, event.clientY);
+    if (anchor === null) return;
+    const move = (e: PointerEvent) => this.onCreateMove(e);
+    const up = (e: PointerEvent) => this.onCreateUp(e);
+    // The browser took the touch for a scroll: no tap, no draw.
+    const cancel = () => this.endCreate();
+    const refuse = (e: TouchEvent) => {
+      if (this.creating?.armed && e.cancelable) e.preventDefault();
+    };
+    const doc = this.document;
+    doc.addEventListener('pointermove', move);
+    doc.addEventListener('pointerup', up);
+    doc.addEventListener('pointercancel', cancel);
+    doc.addEventListener('touchmove', refuse, { passive: false });
+    const touch = event.pointerType === 'touch';
+    this.creating = {
+      columnId: column.id,
+      column: element,
+      pointerId: event.pointerId,
+      x0: event.clientX,
+      y0: event.clientY,
+      anchor,
+      touch,
+      hold: touch ? setTimeout(() => this.armCreate(), HOLD_MS) : null,
+      armed: false,
+      detach: () => {
+        doc.removeEventListener('pointermove', move);
+        doc.removeEventListener('pointerup', up);
+        doc.removeEventListener('pointercancel', cancel);
+        doc.removeEventListener('touchmove', refuse);
+      },
+    };
+  }
+
+  private armCreate(): void {
+    const draw = this.creating;
+    if (draw === null || draw.armed) return;
+    draw.armed = true;
+    if (draw.hold !== null) clearTimeout(draw.hold);
+    draw.hold = null;
+    capturePointer(draw.column, draw.pointerId);
+    buzz(10);
+    this.drawTo(draw.y0);
+  }
+
+  private onCreateMove(event: PointerEvent): void {
+    const draw = this.creating;
+    if (draw === null || event.pointerId !== draw.pointerId) return;
+    if (!draw.armed) {
+      const dx = Math.abs(event.clientX - draw.x0);
+      const dy = Math.abs(event.clientY - draw.y0);
+      // A finger that travels before its hold is a scroll, for good.
+      if (draw.touch) {
+        if (dx >= HOLD_SLOP_PX || dy >= HOLD_SLOP_PX) this.endCreate();
+        return;
+      }
+      if (dy < DRAG_THRESHOLD_PX) return;
+      this.armCreate();
+    }
+    if (event.cancelable) event.preventDefault();
+    this.drawTo(event.clientY);
+  }
+
+  /** The range from the anchor to the finger, a snap at the least, either way. */
+  private drawTo(clientY: number): void {
+    const draw = this.creating;
+    if (draw === null) return;
+    // Down from the anchor the END follows the finger to the NEAREST snap
+    // (a drag to 14:00 ends at 14:00); up from it the START is the slot the
+    // finger is in. Either way at least one snap long.
+    const snap = this.slotSnap();
+    const { end } = this.extent();
+    const at = this.minuteAt(draw.column, clientY, Math.round) ?? draw.anchor;
+    const above = at < draw.anchor;
+    const start = above
+      ? (this.minuteAt(draw.column, clientY) ?? draw.anchor)
+      : draw.anchor;
+    const stop = Math.min(
+      end,
+      above ? draw.anchor + snap : Math.max(at, draw.anchor + snap),
+    );
+    this.drawnSlot.set({
+      columnId: draw.columnId,
+      startMinute: TrackMinute.ofProven(start),
+      endMinute: TrackMinute.ofProven(stop),
+    });
+  }
+
+  private onCreateUp(event: PointerEvent): void {
+    const draw = this.creating;
+    if (draw === null || event.pointerId !== draw.pointerId) return;
+    const drawn = draw.armed ? this.drawnSlot() : null;
+    this.endCreate();
+    if (!draw.armed) {
+      if (this.liftedId() !== null) this.releaseLift();
+      else {
+        this.slotPicked.emit({
+          columnId: draw.columnId,
+          startMinute: TrackMinute.ofProven(draw.anchor),
+        });
+      }
+      return;
+    }
+    if (drawn === null) return;
+    // A draw is never also a tap.
+    this.swallowNextClick();
+    buzz(12);
+    this.slotPicked.emit({
+      columnId: drawn.columnId,
+      startMinute: drawn.startMinute,
+      endMinute: drawn.endMinute,
+    });
+  }
+
+  private endCreate(): void {
+    const draw = this.creating;
+    if (draw === null) return;
+    if (draw.hold !== null) clearTimeout(draw.hold);
+    draw.detach();
+    releasePointer(draw.column, draw.pointerId);
+    this.creating = null;
+    this.drawnSlot.set(null);
+  }
+
+  /** The snap a picked or drawn slot keeps to. */
+  private slotSnap(): number {
+    return Math.max(5, this.uiSlotSnapMinutes());
+  }
+
+  /** The minute under `clientY` in a column, floored to the snap and kept on the day. */
+  private minuteAt(
+    column: HTMLElement,
+    clientY: number,
+    toSnap: (value: number) => number = Math.floor,
+  ): number | null {
+    const box = column.getBoundingClientRect();
+    const { start, end, minutes } = this.extent();
+    if (box.height <= 0 || minutes <= 0) return null;
+    const snap = this.slotSnap();
+    const at = start + ((clientY - box.top) / box.height) * minutes;
+    return Math.min(Math.max(toSnap(at / snap) * snap, start), end - snap);
+  }
+
+  /** Blank space is a target on the page while its blocks are. */
+  protected readonly slotsPickable = computed(
+    () => this.uiSlotPickable() && !this.framed() && this.uiPickable(),
+  );
+
+  /** The pending slot's box in `column`, as fractions of the extent — or `null`. */
+  protected pendingIn(column: GridColumn): {
+    readonly top: number;
+    readonly height: number;
+  } | null {
+    const slot = this.drawnSlot() ?? this.uiPendingSlot();
+    if (slot === null || slot.columnId !== column.id) return null;
+    const { start, minutes } = this.extent();
+    if (minutes <= 0) return null;
+    return {
+      top: fraction((slot.startMinute - start) / minutes),
+      height: fraction((slot.endMinute - slot.startMinute) / minutes),
+    };
+  }
+
   protected pick(event: GridEvent): void {
     if (event.gridEvent === GridEventTag.Gap) {
       this.gapPicked.emit(event.id);
@@ -1249,8 +1524,17 @@ export class StaffTimeGrid {
 
   /** The block that takes handles — `null` unless the caller opted in. */
   protected readonly editableId = computed(() =>
-    this.uiEditable() ? this.uiEditableEventId() : null,
+    this.uiEditable() ? this.uiEditableEventId() : this.liftedId(),
   );
+
+  /** The page block a gesture lifted, if any (`uiMovable`). */
+  protected readonly liftedId = signal<string | null>(null);
+
+  /** Put a lifted block down: its handles go, and so does any draft it held. */
+  releaseLift(): void {
+    this.liftedId.set(null);
+    this.draftState.set(null);
+  }
 
   protected readonly minMinutes = computed(() =>
     Math.max(1, Math.round(this.uiMinMinutes())),
@@ -1594,7 +1878,13 @@ export class StaffTimeGrid {
     // Only the block under edit drags, and only where it is drawn by minute:
     // a slot-placed block rounds to the quarter hour and could not honour a
     // five-minute snap if it wanted to.
-    if (block.id !== this.editableId()) return;
+    if (block.id !== this.editableId()) {
+      // A page block that may move LIFTS: a held finger or a mouse past the
+      // threshold makes it the editable one (owner, 2026-11-06).
+      if (this.framed() || !this.uiMovable()?.has(block.id)) return;
+      this.beginDrag(event, EditCommand.Move, block, false, true);
+      return;
+    }
     if (this.editableBlock()?.top === null) return;
     this.beginDrag(event, EditCommand.Move, block, false);
   }
@@ -1604,6 +1894,7 @@ export class StaffTimeGrid {
     dragGesture: DragGesture,
     block: GridDraft,
     armed: boolean,
+    lift = false,
   ): void {
     // Non-primary buttons open menus; they do not drag.
     if (event.button !== 0) return;
@@ -1625,6 +1916,7 @@ export class StaffTimeGrid {
       pxPerMinute: this.measurePxPerMinute(),
       target,
       armed: false,
+      lift,
     };
     this.listenForPointer();
 
@@ -1642,6 +1934,9 @@ export class StaffTimeGrid {
       this.drag.hold = setTimeout(() => this.arm(), HOLD_MS);
       return;
     }
+    // A mouse held STILL on a page block lifts it too — Outlook's select:
+    // released unmoved, it stays up with its handles for a resize.
+    if (lift) this.drag.hold = setTimeout(() => this.arm(), HOLD_MS);
     if (armed) this.arm(event);
   }
 
@@ -1659,6 +1954,7 @@ export class StaffTimeGrid {
     if (drag === null || drag.armed) return;
     drag.armed = true;
     this.clearHold(drag);
+    if (drag.lift) this.liftedId.set(drag.id);
     event?.preventDefault();
     // Belt and braces. The sheet already bails on a button, and the frame
     // wants the scroll it is not getting from a captured pointer anyway.
@@ -2045,6 +2341,13 @@ export class StaffTimeGrid {
       const extentPx = element.getBoundingClientRect().height / height;
       if (extentPx > 0 && minutes > 0) return extentPx / minutes;
     }
+    // Nothing editable yet (a page block about to lift): the column IS the
+    // extent, at whatever the time scale makes it.
+    const column = this.host.nativeElement.querySelector<HTMLElement>(
+      '.staff-grid__column',
+    );
+    const columnPx = column?.getBoundingClientRect().height ?? 0;
+    if (columnPx > 0 && minutes > 0) return columnPx / minutes;
     return FALLBACK_PX_PER_MINUTE;
   }
 
@@ -2157,6 +2460,25 @@ export class StaffTimeGrid {
   }
 
   private readonly frame = viewChild<ElementRef<HTMLElement>>('frame');
+
+  /**
+   * A new time scale keeps the reader's HOUR: the day grows or shrinks
+   * under them, so the scroll scales with it — without this a coarser
+   * scale left the frame at the same pixel, hours later in the day.
+   */
+  private lastZoom: number | null = null;
+  protected readonly keepHourOnZoom = effect(() => {
+    const zoom = this.zoom();
+    const previous = this.lastZoom;
+    this.lastZoom = zoom;
+    if (previous === null || previous === zoom) return;
+    const frame = untracked(() => this.frame()?.nativeElement);
+    if (frame === undefined) return;
+    const top = frame.scrollTop;
+    requestAnimationFrame(() => {
+      frame.scrollTop = top * (zoom / previous);
+    });
+  });
   private readonly body = viewChild<ElementRef<HTMLElement>>('body');
 
   /**
@@ -2484,6 +2806,8 @@ function place(
   endMinute: number,
   extentMinutes: number,
   placement: Placement,
+  shortMinutes: number = SHORT_BLOCK_MINUTES,
+  minuteDrawnId: string | null = null,
 ): readonly LaidEvent[] {
   const proportional = placement === Placement.Proportional;
   // Under a clamped window a block can sit entirely outside the drawn hours.
@@ -2506,12 +2830,12 @@ function place(
     const slot = slots.at(index) as LaneSlot;
     return {
       ...event,
-      ...(proportional
+      ...(proportional || event.id === minuteDrawnId
         ? proportionalBox(event, originMinute, extentMinutes)
         : slotBox(event, originMinute)),
       lane: slot.lane,
       lanes: slot.lanes,
-      short: event.endMinute - event.startMinute < SHORT_BLOCK_MINUTES,
+      short: event.endMinute - event.startMinute < shortMinutes,
     };
   });
   /*

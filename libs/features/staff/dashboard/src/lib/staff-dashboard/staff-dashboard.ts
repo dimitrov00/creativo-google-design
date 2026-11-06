@@ -10,7 +10,7 @@ import {
   minuteRangeOf,
   startMinuteOf,
 } from './staff-day-save';
-import { settleStripOnWeek } from './week-strip';
+import { StaffWeekStrip } from './week-strip';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -41,7 +41,6 @@ import {
   BarberId,
   BookingStatus,
   type ClientOperationId,
-  Currency,
   DraftPersonKey,
   DurationMinutes,
   EndMinute,
@@ -198,10 +197,21 @@ import type {
 import {
   type AllDayEntry,
   type GridColumn,
+  type GridCommit,
   type GridEvent,
+  type GridPendingSlot,
+  type GridSlotPick,
   type OpenWindow,
   StaffTimeGrid,
 } from '../time-grid/staff-time-grid';
+import {
+  type CreateFrom,
+  NEW_VISIT_BLANKS,
+  createFromSlot,
+  movableIdsOf,
+  slotTimeLabel,
+} from './create-from';
+import { GridTimeScale, TIME_SCALES } from '../grid-time-scale';
 import {
   type BlockEditorCommit,
   type BlockEditorLane,
@@ -240,7 +250,6 @@ import {
   type StaffCatalogNames,
   viewChoicesOf,
   viewSegmentsOf,
-  weekCalendarOf,
   zoneActionsOf,
   zoneLabelOf,
 } from './staff-day-chrome.presenter';
@@ -260,8 +269,7 @@ import {
   dayTipsLine,
   exceptionWord,
   footShown,
-  gridBlockEvent,
-  gridVisitEvent,
+  gridLaneEvents,
   occupantNeighbours,
   occupyingRows,
   peerRowOf,
@@ -436,7 +444,7 @@ function transitionOf(
     UiVisuallyHiddenDirective,
     UiWeightDirective,
   ],
-  providers: [StaffDayStore],
+  providers: [StaffDayStore, StaffWeekStrip],
   templateUrl: './staff-dashboard.html',
   styleUrls: ['./staff-dashboard.css', './staff-dashboard.chrome.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -917,7 +925,7 @@ export class StaffDashboard {
     // A JUMP parks the strip on the picked week even when the shown week did
     // not change — «Днес» after the strip was swiped elsewhere must slide it
     // home (owner, 2026-11-05). `followWeek` moves it only on a week change.
-    if (jump) this.parkStrip(LocalDate.startOfWeek(dayKey));
+    if (jump) this.strip.park(LocalDate.startOfWeek(dayKey));
 
     // TAPPING TODAY MEANS "TAKE ME TO NOW".
     //
@@ -1205,6 +1213,31 @@ export class StaffDashboard {
     if (row) this.openVisitSheet(row);
   }
 
+  /** The grid blocks a hold may lift (`movableIdsOf`). */
+  protected readonly movableIds = computed(() =>
+    movableIdsOf(this.gridColumns()),
+  );
+
+  /** A move or resize dropped on the grid — the sheet it opens drafts it. */
+  protected readonly droppedTime = signal<GridCommit | null>(null);
+
+  /**
+   * A block DROPPED on the grid opens its visit with the new time in the
+   * draft: «Запази» keeps it, ✕ asks first — a drag on the page is an
+   * edit like a drag in the sheet's frame (2026-09-23), never a silent write.
+   */
+  protected dropOnGrid(commit: GridCommit): void {
+    this.droppedTime.set(commit);
+    this.openVisit(commit.id);
+    if (this.visitSheetId() === null) this.putDown();
+  }
+
+  /** The grid's lifted block goes back where the server has it. */
+  private putDown(): void {
+    this.droppedTime.set(null);
+    this.grid()?.releaseLift();
+  }
+
   /**
    * The zone abbreviation every time on this surface is stated in — "EEST"
    * in summer, "EET" in winter, resolved rather than hardcoded so it stays
@@ -1274,39 +1307,21 @@ export class StaffDashboard {
     shopNow: ShopNow | null,
     attribute: boolean,
   ): readonly GridEvent[] {
-    const words = this.dayWords();
     const context = this.rowContext();
-    const visits = this.drawn(
-      lane.appointments.map((appointment) =>
-        dayRowVm(appointment, lane.barberId, context),
+    return gridLaneEvents(
+      this.drawn(
+        lane.appointments.map((a) => dayRowVm(a, lane.barberId, context)),
       ),
-    ).map((row) => gridVisitEvent(row, attribute, words));
-    // NO gap blocks on the grid.
-    //
-    // A proportional canvas already draws a hole as a hole — empty space IS
-    // the gap, which is the same argument the list's gap ROW rests on
-    // inverted: a list has no empty space to read, so it needs the row, and a
-    // grid has nothing but empty space, so the row is chrome over a fact the
-    // eye already has. Drawing both filled the calendar with boxes saying
-    // "nothing here".
-    //
-    // A CARVE-OUT is the opposite case and does get drawn. It is not empty
-    // space — it is time somebody took, and the only non-visit thing on this
-    // surface a person is meant to be able to move or lift.
-    // A lane's breaks and admin hours, unless the filter hides blocked time.
-    if (!this.statusFilter.blocksShown()) return visits;
-    const barberName = this.barberNameOf(lane.barberId);
-    const facts = {
-      barberId: lane.barberId,
-      barberName,
-      localDate,
-      shopNow,
-      attribute,
-    };
-    return [
-      ...visits,
-      ...lane.blocks.map((block) => gridBlockEvent(block, facts, words)),
-    ];
+      this.statusFilter.blocksShown() ? lane.blocks : null,
+      {
+        barberId: lane.barberId,
+        barberName: this.barberNameOf(lane.barberId),
+        localDate,
+        shopNow,
+        attribute,
+      },
+      this.dayWords(),
+    );
   }
 
   /**
@@ -1599,96 +1614,9 @@ export class StaffDashboard {
   // Each child is exactly one week wide, which is what makes a flick advance
   // by a week rather than by a day.
   //
-  // The window is BOUNDED and anchored to today rather than to the selection:
-  // 4 weeks back for looking up what happened, 8 forward for the booking
-  // horizon. Anchoring to the selection instead would re-key every week on
-  // every tap, and `@for` would rebuild the strip under the user's thumb.
-
-  /**
-   * The strip's CELLS — thirteen weeks of them, and not one of them depends
-   * on which day is SHOWN.
-   *
-   * This used to live inside `weekStrip`, which reads `dayKey()`. So every
-   * tap rebuilt all ninety-one cells and, inside the loop, constructed a
-   * hundred and eighty-two `Intl.DateTimeFormat`s to re-derive labels that
-   * had not changed — constructing a formatter resolves locale data and is
-   * the expensive half of `Intl` by a wide margin. Measured, that was ~33ms
-   * between the tap and the disc starting to move: two frames of dead air
-   * that no easing curve can hide, because the transition cannot begin until
-   * change detection lets go.
-   *
-   * Split out, the skeleton recomputes only when the DATE or the LOCALE
-   * turns over, and the two faces come from the shared, cached formatters
-   * (`formatWallClock`) instead of two built per cell.
-   */
-  private readonly weekCalendar = computed(() =>
-    weekCalendarOf(this.store.todayKey(), this.content.locale()),
-  );
-
-  /**
-   * The strip, with the selection laid over it.
-   *
-   * Only the marker's column is derived here. Whether a given day is the
-   * shown one is a comparison the template makes against `store.dayKey()`
-   * directly — the same idiom the date picker already uses — so `week.days`
-   * keeps its identity from `weekCalendar` and a tap allocates thirteen
-   * objects rather than a hundred and four.
-   */
-  protected readonly weekStrip = computed(() => {
-    const selected = this.store.dayKey();
-    return this.weekCalendar().map((week) => ({
-      ...week,
-      // Which column the marker parks in, or -1 when the shown day is not in
-      // this week. The marker is per-week and slides between columns, so the
-      // week has to own the index rather than the day owning a flag.
-      selectedIndex: week.days.findIndex((day) => day.key === selected),
-    }));
-  });
-
-  /** Which week holds the shown day — the one the strip scrolls to. */
-  protected readonly selectedWeek = computed(() => {
-    const day = this.store.dayKey();
-    return day === null ? null : LocalDate.startOfWeek(day);
-  });
-
-  /**
-   * Keep the strip on the shown day's week.
-   *
-   * Only when the day moves to a DIFFERENT week — tapping a day inside the
-   * visible week must not re-scroll under the thumb that just tapped it.
-   * `scrollIntoView` on the week element rather than a computed offset: the
-   * browser already knows where its own snap points are.
-   */
-  private readonly strippedWeek = signal<string | null>(null);
-
-  protected readonly followWeek = effect(() => {
-    const week = this.selectedWeek();
-    // No day yet (the shop's zone is resolving): nothing to follow.
-    if (week === null) return;
-    // No strip yet either. A `?day=` names the shown week before the shop's
-    // today is known, and with no weeks the index used to fall back to 0:
-    // the strip "landed" on October, the week was marked as followed, and
-    // nothing — «Днес» in that same week included — moved it again
-    // (owner, 2026-11-05: "even if I click go to today it doesn't slide").
-    const first = this.weekCalendar()[0]?.key;
-    if (first === undefined) return;
-    // Followed per week AND per strip: a strip that turns over at midnight
-    // starts on another Monday, so the same week sits at another index.
-    if (untracked(() => this.strippedWeek()) === `${first}|${week}`) return;
-    untracked(() => this.parkStrip(week));
-  });
-
-  /** Slide the strip to `week` once it is laid out, and remember it was. */
-  private parkStrip(week: LocalDate): void {
-    const first = this.weekCalendar()[0]?.key;
-    if (first === undefined) return;
-    this.strippedWeek.set(`${first}|${week}`);
-    const index = Math.round(LocalDate.daysBetween(first, week) / 7);
-    const host = this.host.nativeElement;
-    afterNextRender(() => settleStripOnWeek(host, index, ANCHOR_FRAMES), {
-      injector: this.injector,
-    });
-  }
+  // The window is BOUNDED and anchored to today rather than to the selection
+  // (`StaffWeekStrip`, which also keeps the strip on the shown day's week).
+  protected readonly strip = inject(StaffWeekStrip);
 
   /**
    * Which group the run should OPEN on.
@@ -1721,6 +1649,9 @@ export class StaffDashboard {
     ) as AgendaFlags;
   }
   protected readonly fieldsOpen = signal(false);
+  /** The calendar views' time scale (owner, 2026-11-06), per device. */
+  protected readonly timeScale = inject(GridTimeScale);
+  protected readonly timeScales = TIME_SCALES;
 
   // ── Which states are drawn (the bar's filter) ─────────────────────────
   protected readonly statusFilter = inject(ScheduleStatusFilter);
@@ -2529,6 +2460,7 @@ export class StaffDashboard {
   );
 
   protected closeVisitSheet(): void {
+    this.putDown();
     const id = this.visitSheetId();
     this.visitSheetId.set(null);
     this.visitTrail.set([]);
@@ -3381,6 +3313,8 @@ export class StaffDashboard {
 
   protected readonly createVisit = signal<{
     readonly barberId: BarberId;
+    /** The day it opens on, when not the shown one (a grid slot's date). */
+    readonly dayKey?: LocalDate;
     /**
      * Where the draft starts — a minute of the shop day, never the closing
      * midnight (OR-1): what the frame draws is what the server accepts.
@@ -3419,8 +3353,9 @@ export class StaffDashboard {
   protected readonly createVm = computed<VisitEditorVm | null>(() => {
     const create = this.createVisit();
     if (create === null) return null;
-    // A create opens only once the day is known (`openCreate`'s `ready`).
-    const dayKey = this.store.dayKey();
+    // A create opens only once the day is known (`openCreate`'s `ready`);
+    // one from a grid slot of another date opens on that date.
+    const dayKey = create.dayKey ?? this.store.dayKey();
     if (dayKey === null) return null;
     const lane = this.lanes().find(
       (entry) => entry.barberId === create.barberId,
@@ -3438,13 +3373,12 @@ export class StaffDashboard {
     // rostered at — and the «Салон» row may move it before the save.
     const locationId = this.shopOfChair(create.barberId);
     return {
-      // Not saved yet: no id (the sheet's «new» visit).
-      appointmentId: null,
+      // Not saved yet: no id, nothing priced, paid or decided.
+      ...NEW_VISIT_BLANKS,
       rowId: `new-${create.nonce}`,
       locationId,
       // The shop's own zone, else the day's (`StaffDayStore.zoneAt`).
       timeZone: this.store.zoneAt()(locationId),
-      peers: [],
       dayKey,
       dayLabel: formatDayPill(dayKey, this.transloco.getActiveLang()),
       startMinute: create.startMinute,
@@ -3458,29 +3392,9 @@ export class StaffDashboard {
       // unless it is a rebooking, which starts with last time's client.
       clientLabel: create.client?.label ?? '',
       clientUserId: create.client?.id ?? null,
-      // No client record yet: it is the save that names one.
-      clientCustomerId: null,
       phone: create.client?.phone ?? null,
       phoneHref: create.client?.phone ?? null,
-      clientMeta: null,
-      note: null,
-      teamNote: null,
-      priceLabel: null,
-      priceCents: null,
-      // Nothing is priced yet: the shop's one currency.
-      currency: Currency.EUR,
-      tipLabel: null,
-      tipCents: null,
-      // A visit the server has not seen cannot be discounted or paid yet:
-      // the rows wait for the first save, like the tip's.
-      discounts: [],
-      vouchers: [],
-      // Nothing has happened to a visit that does not exist yet.
-      resolution: null,
-      // Not booked yet: no stored tag (the sheet's «new» visit).
-      bookingStatus: null,
       statusLabel: this.dayWords().newVisitTitle,
-      arrivedMinute: null,
       chairId: create.barberId,
       chairName: chair?.name ?? this.barberNameOf(create.barberId),
       chairTone: chair?.tone ?? this.toneOf(create.barberId),
@@ -3488,8 +3402,6 @@ export class StaffDashboard {
       rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
       rosterEndMinute: roster?.endMinutes ?? CLOSING,
       now: this.store.shopNow(),
-      primaryVerb: null,
-      overflowVerbs: [],
       acting: this.store.creating(),
     };
   });
@@ -3537,34 +3449,76 @@ export class StaffDashboard {
    * front of the barber, and the frame moves it anywhere; the walk-in is
    * one tap in the people group.
    */
-  protected openCreate(createIntent: CreateIntent, gap?: GapRowVm): void {
+  protected openCreate(createIntent: CreateIntent, from?: CreateFrom): void {
     this.createMenu.set(false);
     this.gapMenu.set(null);
+    this.pendingSlot.set(null);
     // No day before the shop's zone is known (4A-11): nothing to author on.
     if (!this.store.ready()) return;
-    // From a free-time row (owner, 2026-11-05): its chair; a block runs from
-    // the hole's start (or now's tick) to its end, a booking starts where a
-    // new client fits after the turnaround.
-    const chair = gap?.barberId ?? this.createChair();
+    // From a free-time row or a grid slot (owner, 2026-11-05/06): its chair
+    // and day; a block runs from its start (or now's tick) to its end, a
+    // booking starts where a new client fits after the turnaround.
+    const chair = from?.barberId ?? this.createChair();
     if (chair === null) return;
+    const dayKey = from?.dayKey;
+    const otherDay = dayKey !== undefined && dayKey !== this.store.dayKey();
     if (createIntent === CreateIntent.Block) {
-      const range = gap && {
-        startMinute: gap.openFromMinutes,
-        endMinute: gap.endMinutes,
+      const range = from && {
+        startMinute: from.openFromMinutes,
+        endMinute: from.endMinutes,
       };
       this.openBlockSheet(chair, range);
+      if (otherDay) {
+        this.blockEdit.update((edit) => edit && { ...edit, dayKey });
+        this.onBlockDayChanged(dayKey);
+      }
       return;
     }
     this.presentOnly();
     this.visitClientOptions.set([]);
     this.createVisit.set({
       barberId: chair,
-      startMinute: gap?.bookableFromMinutes ?? this.nowSnapped(),
+      dayKey,
+      startMinute: from?.bookableFromMinutes ?? this.nowSnapped(),
+      minutes: from?.minutes,
       nonce: ++this.createSeq,
     });
+    if (otherDay) this.onCreateDayChanged(dayKey);
   }
   /** The free-time row whose «Нов час · Блокирай време» menu is open. */
   protected readonly gapMenu = signal<string | null>(null);
+
+  /**
+   * THE GRID'S PENDING SLOT (owner, 2026-11-06: "make the empty grid
+   * clickable … like Apple Calendar, Fresha"): a tap on blank time drops a
+   * draft block there with the ＋'s own menu open on it.
+   */
+  protected readonly pendingSlot = signal<
+    (GridPendingSlot & { readonly from: CreateFrom }) | null
+  >(null);
+
+  protected readonly slotTime = slotTimeLabel;
+
+  protected pickSlot(pick: GridSlotPick): void {
+    const shownDay = this.store.dayKey();
+    if (shownDay === null) return;
+    const from = createFromSlot(
+      pick,
+      this.store.view() === StaffView.Day ? 'chairs' : 'dates',
+      shownDay,
+      this.createChair(),
+      pick.endMinute === undefined
+        ? VisitDraftSystem.DEFAULT_SPAN_MINUTES
+        : VisitDraftSystem.floorSpan(pick.endMinute - pick.startMinute),
+    );
+    if (from === null) return;
+    this.pendingSlot.set({
+      columnId: pick.columnId,
+      startMinute: pick.startMinute,
+      endMinute: from.endMinutes,
+      from,
+    });
+  }
 
   protected closeCreateSheet(): void {
     this.createVisit.set(null);
@@ -4441,7 +4395,7 @@ export class StaffDashboard {
     // `followWeek` never re-parks (owner, 2026-11-05: "even if I click go
     // to today it doesn't slide to today").
     const today = this.store.todayKey();
-    if (today !== null) this.parkStrip(LocalDate.startOfWeek(today));
+    if (today !== null) this.strip.park(LocalDate.startOfWeek(today));
     // The button removes itself once the present is back in view; the
     // keyboard lands on the region it just scrolled, not on the body
     // (found in review, 2026-09-23).

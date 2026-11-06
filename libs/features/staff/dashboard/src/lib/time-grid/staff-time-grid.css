@@ -57,7 +57,10 @@
      same property: a custom property takes any token stream, so a later
      `round()` would always win the cascade and, on an engine without it,
      turn every consumer invalid at computed-value time. */
-  --staff-slot-height: calc(var(--sys-space-unit) * 6);
+  /* × the time scale's zoom (`uiScaleMinutes`, 15 / scale): 1 by default. */
+  --staff-slot-height: calc(
+    var(--sys-space-unit) * 6 * var(--staff-grid-zoom, 1)
+  );
   /* THE RAIL: 12 units, the width the sheets' frame and the timeline already
      give the same thing, plus the notch on a phone held sideways — folded
      INTO the gutter because a sticky inset resolves against the scrollport
@@ -88,7 +91,10 @@
    draws its rules a hair soft. */
 @supports (width: round(1px, 1px)) {
   .staff-grid__frame {
-    --staff-slot-height: round(calc(var(--sys-space-unit) * 6), 1px);
+    --staff-slot-height: round(
+      calc(var(--sys-space-unit) * 6 * var(--staff-grid-zoom, 1)),
+      1px
+    );
   }
 }
 
