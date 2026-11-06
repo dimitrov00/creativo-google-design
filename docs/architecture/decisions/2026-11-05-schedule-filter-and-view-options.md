@@ -107,6 +107,15 @@
     starts at `GridLayoutSystem.openFrom` — the hole's start, or the next
     5-minute tick of now — a block running to the hole's end and a
     booking also after the turnaround (`bookableFrom`).
+12. **A switch says where it works** (owner, 2026-11-06: "the free time
+    filter makes no sense in the other views — or if they are global, say
+    which views they affect"). The states and blocked time filter EVERY
+    view; free time is a row of the list alone (a grid draws it as the
+    empty space between blocks). So the free-time row carries the settings
+    row's subtitle, «Само в изгледа „Списък“» (`statusFilterFreeTimeNote`,
+    the view's own name), and the switches that filter everywhere say
+    nothing. The row stays in every view: the filter is one device-wide
+    setting, and a switch that vanished per view would hide what it holds.
 
 ## Not done
 

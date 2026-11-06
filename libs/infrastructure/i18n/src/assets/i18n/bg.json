@@ -1157,6 +1157,7 @@
       "statusFilterApply": "Приложи",
       "statusFilterBlocks": "Блокирано време",
       "statusFilterFreeTime": "Свободно време",
+      "statusFilterFreeTimeNote": "Само в изгледа „{{view}}“",
       "viewSettings": "Настройки",
       "fieldsCount": "{{count}} от {{total}}",
       "field": {

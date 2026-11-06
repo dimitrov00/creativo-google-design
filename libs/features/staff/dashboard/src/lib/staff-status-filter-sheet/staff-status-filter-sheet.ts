@@ -85,6 +85,15 @@ export class StaffStatusFilterSheet {
   protected readonly blocksHidden = signal(!this.filter.blocksShown());
   protected readonly freeTimeShown = signal(this.filter.freeTimeShown());
 
+  /** Where the free-time switch works: the list alone, by the view's own name. */
+  protected readonly freeTimeNote = computed(() => {
+    this.copyTable();
+    return this.transloco.translate<string>(
+      'staff.day.statusFilterFreeTimeNote',
+      { view: this.transloco.translate<string>('staff.day.view.agenda') },
+    );
+  });
+
   protected readonly rows = computed(() => {
     this.copyTable();
     const words = staffSearchWordsOf((key, params) =>

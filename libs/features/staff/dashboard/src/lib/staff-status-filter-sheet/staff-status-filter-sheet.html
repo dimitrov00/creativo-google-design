@@ -41,11 +41,24 @@
     </ui-list-group>
 
     <!-- THE TIME THAT IS NOT A VISIT, its own group: free time (off by
-         default — the run would be mostly holes) and blocked time. -->
+         default — the run would be mostly holes) and blocked time. The
+         states and blocked time filter EVERY view; free time is a row of
+         the list alone — a grid draws it as the empty space between blocks
+         — so its row says where it works (owner, 2026-11-06), the settings
+         row's subtitle under the name. -->
     <ui-list-group>
-      <ui-list-row uiSize="large">
+      <ui-list-row uiSize="large" uiAlignment="leading">
         <span uiLeading><ui-icon uiName="booking.slot" /></span>
-        {{ t('staff.day.statusFilterFreeTime') }}
+        <ui-stack uiSpacing="none">
+          <span>{{ t('staff.day.statusFilterFreeTime') }}</span>
+          <span
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            data-testid="staff-status-free-time-note"
+            >{{ freeTimeNote() }}</span
+          >
+        </ui-stack>
         <button
           uiSwitch
           uiTrailing

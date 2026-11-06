@@ -57,6 +57,20 @@ describe('StaffStatusFilterSheet', () => {
     fixture.detectChanges();
   };
 
+  it('says where free time works — the list alone — and nothing on the switches that filter every view', async () => {
+    await mount();
+    const note = el('staff-status-free-time-note');
+    expect(note?.textContent).toBe('staff.day.statusFilterFreeTimeNote');
+    expect(
+      note?.closest('ui-list-row')?.contains(el('staff-status-free-time')),
+    ).toBe(true);
+    expect(
+      el('staff-status-blocks')
+        ?.closest('ui-list-row')
+        ?.querySelector('[uifont="footnote"]'),
+    ).toBeNull();
+  });
+
   it('edits a draft: the schedule changes only on «Приложи», which closes the sheet', async () => {
     const filter = await mount();
     press('staff-status-CANCELLED');
