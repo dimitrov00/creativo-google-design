@@ -201,6 +201,7 @@
       "lede": "Book and manage your salon appointments.",
       "ledeBooking": "Sign in to hold your slot.",
       "emailLabel": "Email",
+      "emailPlaceholder": "name@example.com",
       "phoneLabel": "Phone number",
       "emailHint": "We'll email you a 6-digit code to sign in.",
       "phoneHint": "We'll text you a 6-digit code to sign in.",

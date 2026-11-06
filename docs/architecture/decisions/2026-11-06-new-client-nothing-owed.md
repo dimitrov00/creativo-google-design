@@ -40,4 +40,5 @@
 
 - No «Случаен клиент» shortcut on the search page itself: the empty form's
   ✓ is one tap from the dock's ＋ already.
-- An email placeholder: no email field in the app shows an example.
+- (Built after: every email field — this page, the booking contact sheet,
+  sign-in — shows «ivan@example.com», `auth.identify.emailPlaceholder`.)
