@@ -37,6 +37,13 @@
    «Без профил» stays the walk-in's last line (OR-26). Measured on a 370 pt
    sheet at rest: seven people on screen, where the three-line rows showed
    four.
+4. **Every picker's search rides its dock** (T). The admin «Ритъм»
+   sheet's «Услуги» picker takes the same dock — the field filling it, the
+   ✓ beside it (the sheet's «Готово» as its accessible name), the
+   placeholder «Търси в „Услуга“…» — and its shell lands the compact title
+   while the headline is folded (`titleCollapsed`), as the visit sheet's
+   does. Left at the top: the phone field's country picker, a system
+   picker clients see too.
 
 ## Not done
 
