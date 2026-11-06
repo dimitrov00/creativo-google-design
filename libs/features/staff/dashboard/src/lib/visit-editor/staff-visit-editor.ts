@@ -162,6 +162,7 @@ import {
   picksOf,
   withoutPicks,
 } from './service-picks';
+import { parsePriceInput } from './price-input';
 import {
   EMPTY_NEW_CLIENT,
   type NewClientForm,
@@ -1194,10 +1195,14 @@ function draftCommitLegsOf(
  * been pressed on it untouched. Every leg carries its STORED price as its
  * typed figure, so a seat the save repriced can be priced back — the live
  * draft only carries a price somebody typed. The price is the seat's cents
- * (pass D, D-10.3), never its label read back.
+ * (pass D, D-10.3), never its label read back. With a `frame`, the same
+ * seed with a grid drop laid on it (`withFrame`) — the drop's own save.
  */
-export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
-  const seed = seedDraft(vm);
+export function snapshotCommitOf(
+  vm: VisitEditorVm,
+  frame: FrameInterval | null = null,
+): VisitEditorCommit {
+  const seed = frame ? withFrame(seedDraft(vm), frame) : seedDraft(vm);
   const legs = seedLegsOf(vm, seed.clients).map((leg) =>
     commitLegOf(leg, leg.barberId, leg.priceCents),
   );
@@ -6577,6 +6582,7 @@ function manualDiscountOf(
 
 // The spec and the barrel name it from here, as they always have.
 export { nameSaysRule } from './visit-discount.presenter';
+export { parsePriceInput } from './price-input';
 
 /** A line's identity on the ladder — the promise, never a stored id. */
 function discountKey(discount: VisitEditorDiscount): string {
@@ -6602,25 +6608,3 @@ function discountKey(discount: VisitEditorDiscount): string {
  */
 /** The bento is four cells across: two large round-ups side by side, four regular tiles a row. */
 const TIP_TILE_COLUMNS = 4;
-
-/**
- * Typed money → minor units, or `null` for anything that is not money.
- *
- * Takes what a phone keypad and a formatted label both produce: `18`,
- * `18,5`, `18.50`, `1.234,50`, `28,00 €`. The LAST separator is the decimal
- * one and may carry at most two digits; every other separator groups
- * thousands. Currency signs, spaces and letters are noise. Negative money
- * does not exist here, and neither does an empty answer.
- */
-export function parsePriceInput(raw: string): number | null {
-  const cleaned = raw.replace(/[^\d.,]/g, '');
-  if (cleaned === '') return null;
-  const last = Math.max(cleaned.lastIndexOf(','), cleaned.lastIndexOf('.'));
-  const major =
-    last === -1 ? cleaned : cleaned.slice(0, last).replace(/[.,]/g, '');
-  const minor = last === -1 ? '' : cleaned.slice(last + 1);
-  if (!/^\d*$/.test(major) || !/^\d{0,2}$/.test(minor)) return null;
-  if (major === '' && minor === '') return null;
-  const cents = Number(major || '0') * 100 + Number((minor + '00').slice(0, 2));
-  return Number.isSafeInteger(cents) ? cents : null;
-}

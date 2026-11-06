@@ -1558,6 +1558,16 @@ export class StaffTimeGrid {
     this.draftState.set(null);
   }
 
+  /**
+   * Set a dropped block down WHERE IT WAS DROPPED while its save is on the
+   * way (owner, 2026-11-06: a drop applies itself): the handles go, the
+   * draft stays drawn until the caller's own time answers it — the save
+   * lands and the row moves under it, or {@link releaseLift} takes it home.
+   */
+  setDown(): void {
+    this.liftedId.set(null);
+  }
+
   protected readonly minMinutes = computed(() =>
     Math.max(1, Math.round(this.uiMinMinutes())),
   );

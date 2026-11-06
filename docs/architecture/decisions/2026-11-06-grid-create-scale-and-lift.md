@@ -58,13 +58,24 @@
    released unmoved stays up for a resize (Outlook's select); a tap on blank
    time puts it down. The page grid and the sheet's frame share ONE gesture
    machine (`staff-time-grid.ts`).
-5. **A drop is a draft, never a write** (C, R). A move or resize released on
-   the grid opens that visit's sheet with the new time already in its draft
-   (`uiDropped` → `withFrame`): «Запази» keeps it, ✕ asks before dropping it
-   and the block goes home — the footing a drag in the sheet's frame has had
-   since 2026-09-23. Collisions, parties and the turnaround are the sheet's
-   verdicts, as for any other edit.
-
+5. **A drop applies itself; the sheet opens only for a decision** (U, R —
+   SUPERSEDES the first build's "a drop is a draft, never a write"; owner,
+   2026-11-06: "auto applying is the most common sense"). A move or resize
+   released on the grid is SAVED where it landed — Google Calendar's, Apple
+   Calendar's, Outlook's — and the save's receipt «Промените са запазени ·
+   Отмени» is the way back, the same whole-save undo «Запази» raises. Its
+   commit is the sheet's own seed with the drop laid on it
+   (`snapshotCommitOf(vm, frame)`, the VM built by `editorVmOf`), so it
+   carries exactly what «Запази» on an untouched sheet would, and no side
+   field it never loaded. The block stays where it was dropped while the
+   save travels (`setDown`); refused, it goes home with the refusal's toast.
+   The SHEET opens instead, the move drafted (`uiDropped` → `withFrame`), for
+   what a drag cannot say (`dropRouteOf`): a span that runs into another
+   visit or blocked time, or leaves the chair's shift (the frame's own
+   verdict), and a chair of a party, whose other chairs a move of this one
+   may part from. A drop that moved nothing goes back down. Reversibility
+   (R) is the receipt's: the first build put every drop through the sheet
+   for it, before the save had a whole-save undo.
 6. **The page draws every block at its own minutes** (owner: "the one
    barber finishes at 11:35 but the block reads 11:45, the group's end — he
    could take another appointment in the meantime"; C). The page grid rounded

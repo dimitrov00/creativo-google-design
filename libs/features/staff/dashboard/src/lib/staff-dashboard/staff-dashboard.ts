@@ -211,6 +211,8 @@ import {
   movableIdsOf,
   slotTimeLabel,
 } from './create-from';
+import { DropRoute, dropRouteOf } from './grid-drop';
+import { editorVmOf } from './editor-vm';
 import { GridTimeScale } from '../grid-time-scale';
 import { StaffTimeScaleSheet } from '../staff-time-scale-sheet/staff-time-scale-sheet';
 import {
@@ -273,14 +275,12 @@ import {
   gridLaneEvents,
   occupantNeighbours,
   occupyingRows,
-  peerRowOf,
   recentClientOption,
   restingChairs,
   rowMarks,
   rowName,
   rowStateNote,
   staffDayWordsOf,
-  visitEditorWords,
   whenWords,
 } from './staff-day.presenter';
 import { StaffSearchSheet } from '../staff-search-sheet/staff-search-sheet';
@@ -1220,18 +1220,56 @@ export class StaffDashboard {
     movableIdsOf(this.gridColumns()),
   );
 
-  /** A move or resize dropped on the grid — the sheet it opens drafts it. */
+  /** A drop the sheet must decide — the sheet it opens drafts it. */
   protected readonly droppedTime = signal<GridCommit | null>(null);
 
   /**
-   * A block DROPPED on the grid opens its visit with the new time in the
-   * draft: «Запази» keeps it, ✕ asks first — a drag on the page is an
-   * edit like a drag in the sheet's frame (2026-09-23), never a silent write.
+   * A block DROPPED on the grid applies itself (owner, 2026-11-06,
+   * `dropRouteOf`): saved where it landed, the receipt's «Отмени» the way
+   * back. One that runs into a neighbour or blocked time, leaves the shift,
+   * or is a party's chair opens its sheet with the new time in the draft
+   * instead — «Запази» keeps it, ✕ asks first.
    */
   protected dropOnGrid(commit: GridCommit): void {
-    this.droppedTime.set(commit);
-    this.openVisit(commit.id);
-    if (this.visitSheetId() === null) this.putDown();
+    const row = this.lanes()
+      .flatMap((lane) => lane.entries)
+      .find(
+        (entry): entry is DayRowVm =>
+          entry.agendaRow === AgendaRow.Visit && entry.id === commit.id,
+      );
+    const vm = row === undefined ? null : this.editorVmOf(row);
+    const blocks =
+      this.store.lanes().find((lane) => lane.barberId === vm?.chairId)
+        ?.blocks ?? [];
+    const route =
+      vm === null ? DropRoute.Stay : dropRouteOf(vm, blocks, commit);
+    if (row === undefined || vm === null || route === DropRoute.Stay) {
+      this.putDown();
+    } else if (route === DropRoute.Save) {
+      void this.saveDrop(row, vm, commit);
+    } else {
+      this.droppedTime.set(commit);
+      this.openVisitSheet(row);
+    }
+  }
+
+  /** The drop's own save: the block stays where it landed while it goes. */
+  private async saveDrop(
+    row: DayRowVm,
+    vm: VisitEditorVm,
+    commit: GridCommit,
+  ): Promise<void> {
+    this.grid()?.setDown();
+    this.savingVisitId.set(row.appointmentId);
+    try {
+      const saved = snapshotCommitOf(vm, commit);
+      // Refused, it goes home; landed, the row moves under the held block.
+      if (!(await this.saveFromEditor(row.appointmentId, saved, row, vm))) {
+        this.grid()?.releaseLift();
+      }
+    } finally {
+      this.savingVisitId.set(null);
+    }
   }
 
   /** The grid's lifted block goes back where the server has it. */
@@ -2225,137 +2263,30 @@ export class StaffDashboard {
    */
   protected readonly visitEditorVm = computed<VisitEditorVm | null>(() => {
     const row = this.visitSheetRow();
-    if (row === null) return null;
-    // A row is drawn only on a shown day, so the day is known here.
-    const dayKey = this.store.dayKey();
-    if (dayKey === null) return null;
+    return row === null ? null : this.editorVmOf(row);
+  });
 
-    // The agenda lane holds the neighbours; the STORE lane holds the roster
-    // windows. `LaneVm.rostered` is a boolean — "does this chair work today" —
-    // and the intervals it is named after live one layer down.
-    const lane = this.lanes().find((entry) =>
-      entry.entries.some(
-        (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
-      ),
-    );
-    const storeLane = this.store
-      .lanes()
-      .find((entry) => entry.barberId === lane?.barberId);
-
-    // What occupies the chair: the visits beside this one whose ROOT is
-    // live — the server's overlap rule (`BusySystem.chairOccupants`, DEP-2).
-    const neighbours = occupyingRows(
-      lane,
-      storeLane?.appointments ?? [],
-      row.appointmentId,
-    );
-
-    const roster = IntervalSetSystem.hull(storeLane?.rostered ?? []);
-    const editorWords = visitEditorWords(row, this.dayWords());
-
-    return {
-      appointmentId: row.appointmentId,
-      rowId: row.id,
-      // The revision the sheet's draft is drawn from — what «Запази» claims.
-      revision: row.revision,
-      locationId: row.locationId,
-      // The shop's own zone, else the day's (`StaffDayStore.zoneAt`).
-      timeZone: this.store.zoneAt()(row.locationId),
-      /*
-       * THE REST OF THE BOOKING.
-       *
-       * Every row of the same appointment that is not this one — which on an
-       * ordinary visit is none, and on a split party is the other chair. The
-       * sheet frames one chair's share; this is what stops that framing from
-       * reading as the whole visit, and it is the only way to reach the other
-       * half without going back to the day and hunting for a second card at
-       * the same minute.
-       */
-      peers: this.lanes()
-        .flatMap((lane) => lane.entries)
-        .filter(
-          (entry): entry is DayRowVm =>
-            entry.agendaRow === AgendaRow.Visit &&
-            entry.appointmentId === row.appointmentId &&
-            entry.id !== row.id,
-        )
-        .map(peerRowOf),
-      /*
-       * ⚠ THE APPOINTMENT'S OWN DAY, never the drafted one.
-       *
-       * This VM is the BASELINE: `seedDraft` copies it into the draft and
-       * `dirty` compares the draft back against it, so NOTHING the draft can
-       * change may be fed from the draft. Pointing these at the drafted day
-       * closed a loop — draft → `dayChanged` → the parent's signal → this VM
-       * → `seedDraft` → draft — and cost two bugs before the shape was
-       * right: the draft reseeded on every step, snapping the pill back
-       * while the frame moved without it; and `dirty` went blind to the day,
-       * because the seed moved with the very value it was measuring.
-       *
-       * The frame still follows the pill — through `visitFrameDay`, a
-       * SEPARATE input carrying only what is drawn and never seeded.
-       */
-      dayKey,
-      dayLabel: formatDayPill(dayKey, this.transloco.getActiveLang()),
-      // The chair's own wall clock, as stored (Law 7.3).
-      startMinute: row.startMinute,
-      endMinute: row.endMinute,
-      legs: row.legs,
-      clientLabel: row.contactLabel,
-      people: row.people,
-      clientUserId: row.ownerUserId,
-      clientCustomerId: row.ownerCustomerId,
-      phone: row.phone,
-      phoneHref: row.phoneHref,
-      // `rebooked` is the one durable fact the shop holds about a person here:
-      // a client who came back. Anything richer needs a history read the sheet
-      // does not have, so it says the true thing or nothing.
-      clientMeta: editorWords.clientMeta,
-      note: row.note,
+  /** One visit as the sheet seeds it — the open sheet's, or a block dropped on the grid (`dropOnGrid`). */
+  private editorVmOf(row: DayRowVm): VisitEditorVm | null {
+    return editorVmOf(row, {
+      dayKey: this.store.dayKey(),
+      lanes: this.lanes(),
+      storeLanes: this.store.lanes(),
+      zoneAt: this.store.zoneAt(),
+      dayWords: this.dayWords(),
+      lang: this.transloco.getActiveLang(),
       teamNote: this.store.teamNote(),
       photos: this.store
         .visitPhotos()
         .map((photo) => this.toEditorPhoto(photo)),
       photoBusy: this.store.photoBusy(),
-      priceLabel: row.priceLabel,
-      priceCents: row.priceCents,
-      currency: row.currency,
-      tipLabel: row.tipLabel,
-      tipCents: row.tipCents,
-      discounts: row.discounts,
-      vouchers: row.vouchers,
-      resolution: row.resolution,
-      // The chair's stored tag; the sheet prints its word where it shows one.
-      bookingStatus: row.bookingStatus,
-      statusLabel: editorWords.statusLabel,
-      // The arrival STAMP read onto the shop's wall clock (the opening
-      // midnight while no zone is known, as it always read then).
-      arrivedMinute:
-        row.arrivedAtUtcMs === null
-          ? null
-          : (this.stampWall(row.arrivedAtUtcMs)?.minute ?? MIDNIGHT),
-      chairId: lane?.barberId ?? null,
-      chairName: row.barberName,
-      chairTone: row.barberTone,
-      neighbours,
-      rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
-      rosterEndMinute: roster?.endMinutes ?? CLOSING,
-      // The store's `ShopNow` — the sheet reads "today" and "now" off it
-      // (pass D D-10.5).
       now: this.store.shopNow(),
-      // Regime A, carried through unchanged. `offeredVerbs` already decided
-      // what is legal and `leadVerb` already decided what leads; the editor
-      // renders that decision rather than re-taking it.
-      primaryVerb: editorWords.primaryVerb,
-      overflowVerbs: editorWords.overflowVerbs,
-      // Busy while the store holds the visit, or while a save of it is
-      // under way here — a note or a tip alone never touches the store's
-      // pending set, and «Запази» must turn its ring for those too.
+      stampWall: (atUtcMs) => this.stampWall(atUtcMs),
       acting:
         this.store.isPending(row.appointmentId) ||
         this.savingVisitId() === row.appointmentId,
-    };
-  });
+    });
+  }
 
   /**
    * A search hit waiting for its day's rows: the store went to the visit's
@@ -2600,10 +2531,10 @@ export class StaffDashboard {
     appointmentId: AppointmentId,
     commit: VisitEditorCommit,
     row: DayRowVm | null,
-  ): Promise<void> {
-    // The snapshot, taken BEFORE the write from the seed the sheet holds —
-    // the row as the server last said it, with the note beside it.
-    const vm = this.visitEditorVm();
+    vm: VisitEditorVm | null = this.visitEditorVm(),
+  ): Promise<boolean> {
+    // The snapshot, taken BEFORE the write from the seed the sheet holds (a
+    // drop's: the dropped visit's) — the row as the server last said it.
     const before =
       row !== null && vm !== null && vm.appointmentId === appointmentId
         ? snapshotCommitOf(vm)
@@ -2665,7 +2596,7 @@ export class StaffDashboard {
       if (!VisitEditWrite.batchLanded(landed) && isStaleRefusal(error)) {
         void this.reloadStale(appointmentId, row, error);
       }
-      return;
+      return false;
     }
     if (before !== null && row !== null && plan.reversible) {
       this.setNotice(null);
@@ -2677,7 +2608,7 @@ export class StaffDashboard {
         plan.shapeNeutral,
         { note: commit.note, tipCents: commit.tipCents },
       );
-      return;
+      return true;
     }
     /*
      * THE RECEIPT WITHOUT A WAY BACK: a seat added after the cut is worked
@@ -2686,6 +2617,7 @@ export class StaffDashboard {
      */
     this.undo.set(null);
     this.setNotice(this.transloco.translate('staff.day.undo.saved'));
+    return true;
   }
 
   /**

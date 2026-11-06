@@ -9146,7 +9146,7 @@ describe('StaffDashboard', () => {
         ).toBeCloseTo(35 / 1440, 5);
       });
 
-      it('opens the ＋’s sheets from a grid slot on its date, and a dropped block drafts its move (owner, 2026-11-06)', async () => {
+      it('opens the ＋’s sheets from a grid slot on its date; a dropped block saves itself, or asks the sheet (owner, 2026-11-06)', async () => {
         const visit = ivanVisit('appointment-drop', '2026-08-05T11:00:00');
         await buildWith(
           new Map([['ivan', [visit]]]),
@@ -9164,6 +9164,10 @@ describe('StaffDashboard', () => {
           closeCreateSheet: () => void;
           dropOnGrid: (commit: unknown) => void;
           droppedTime: () => unknown;
+          undo: () => { message: string } | null;
+          store: {
+            staffEdit: (request: unknown) => Promise<boolean>;
+          };
           visitSheetId: () => string | null;
           closeVisitSheet: () => void;
           gridColumns: () => readonly {
@@ -9192,8 +9196,9 @@ describe('StaffDashboard', () => {
         );
         grid.closeCreateSheet();
 
-        // A block dropped an hour later opens its visit with the move
-        // drafted; closing puts it back.
+        // A block dropped an hour later, into free time inside the shift,
+        // SAVES where it landed: no sheet, the receipt's «Отмени» the way
+        // back (Google Calendar's, Apple Calendar's).
         page().store.setView(StaffView.Day);
         fixture.detectChanges();
         const id = grid
@@ -9201,15 +9206,39 @@ describe('StaffDashboard', () => {
           .flatMap((column) => column.events.map((event) => event.id))
           .find((eventId) => eventId.startsWith('appointment-drop'));
         if (id === undefined) throw new Error('the visit is not on the grid');
-        const commit = {
+        const edits: SentEdit[] = [];
+        grid.store.staffEdit = async (request) => {
+          edits.push(request as SentEdit);
+          return true;
+        };
+        grid.dropOnGrid({
           id,
           startMinute: 720,
           endMinute: 750,
           editCommand: 'MOVE',
+        });
+        // The save is the page's own promise: let it land.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(grid.visitSheetId()).toBeNull();
+        expect(edits).toHaveLength(1);
+        expect(
+          commandOf(edits[0]?.commands ?? [], EditCommand.Move),
+        ).toBeDefined();
+        expect(grid.undo()?.message).toBe('staff.day.undo.saved');
+
+        // One dropped past the shift (Ivan works 09:00–18:00) needs a
+        // decision: its sheet opens with the move drafted, and closing puts
+        // it back.
+        const late = {
+          id,
+          startMinute: 1110,
+          endMinute: 1140,
+          editCommand: 'MOVE',
         };
-        grid.dropOnGrid(commit);
+        grid.dropOnGrid(late);
+        expect(edits).toHaveLength(1);
         expect(grid.visitSheetId()).toBe(id);
-        expect(grid.droppedTime()).toEqual(commit);
+        expect(grid.droppedTime()).toEqual(late);
         grid.closeVisitSheet();
         expect(grid.droppedTime()).toBeNull();
       });
