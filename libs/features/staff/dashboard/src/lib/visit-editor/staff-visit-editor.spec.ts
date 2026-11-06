@@ -1436,9 +1436,9 @@ describe('StaffVisitEditor', () => {
       expect(document.activeElement).not.toBe(field);
 
       // Each service a COVER CARD, the search sheet's (owner, 2026-11-06):
-      // the service's name under the cover, its variant, minutes and price
-      // beneath, the ring empty. No stepper until a card is picked, and the
-      // dock's ✓ with no promise.
+      // the service's name under the cover and its variant beneath — no
+      // minutes, no price — the ring empty. No stepper until a card is
+      // picked, and the dock's ✓ with no promise.
       const items = [...host.querySelectorAll(PICKS)];
       expect(items.length).toBe(CATALOGUE.length);
       expect(items[0]?.hasAttribute('data-picked')).toBe(false);
@@ -1446,7 +1446,7 @@ describe('StaffVisitEditor', () => {
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.serviceLabel ?? '');
       expect(items[0]?.textContent).toContain(CATALOGUE[0]?.variantLabel ?? '');
       expect(items[0]?.textContent).not.toContain(CATALOGUE[0]?.label);
-      expect(items[0]?.textContent).toContain('мин');
+      expect(items[0]?.textContent).not.toContain('мин');
       expect(find(host, 'staff-visit-service-apply')).toBeNull();
       expect(find(host, 'staff-visit-page-done')).not.toBeNull();
       // The ✓ pops the page.

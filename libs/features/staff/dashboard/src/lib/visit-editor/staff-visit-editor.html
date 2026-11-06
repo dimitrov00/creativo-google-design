@@ -463,7 +463,9 @@
          whole catalogue every time, nothing picked. -->
     <!-- THE CATALOGUE AS THE SEARCH SHEET DRAWS IT (owner, 2026-11-06:
          "the same way as in the search services"): cover cards, three
-         across, the name under each cover — services without variants flow
+         across, the service's name under each cover and its variant under
+         that — no minutes, no price: the card names WHAT, the ladder's row
+         says how long and how much — services without variants flow
          together, a service with variants stands in a grid of its own
          (`coverRowsOf`, shared with the search). A tap PICKS a card (its
          ring turns to a ✓, a second tap takes it off); a picked card
@@ -507,7 +509,7 @@
           <cr-service-card
             [uiServiceId]="option.serviceId"
             [uiName]="option.serviceLabel ?? option.label"
-            [uiMeta]="row.line"
+            [uiMeta]="option.variantLabel ?? ''"
             [uiCoverUrl]="option.coverSrc ?? null"
             uiCaption="below"
             uiRatio="3 / 4"
@@ -2903,7 +2905,11 @@
       uiFill
       uiControlSize="large"
       [uiValue]="query()"
-      [uiPlaceholder]="t('staff.visit.searchService')"
+      [uiPlaceholder]="
+        t('staff.search.scopedPlaceholder', {
+          key: t('staff.search.key.service'),
+        })
+      "
       [uiLabel]="t('staff.visit.searchService')"
       uiTestId="staff-visit-service-query"
       [uiClearLabel]="t('staff.day.searchClear')"

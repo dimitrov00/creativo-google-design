@@ -31,6 +31,15 @@
    ellipsis so the row stays one line beside «Добави». The «За …» line under
    the title is gone: the selected chip says it.
 
+5. **The card names WHAT, the field says WHERE** (owner: "why the minutes
+   and the price here, not just the service and the variant? … the
+   placeholder the same as the search's … the confirm the same way as in
+   the search"). A card's meta is the variant alone, as the search's; the
+   ladder's row says how long and how much. The field reads «Търси в
+   „Услуга“…», the search's scoped placeholder. Beside a fill the dock sits
+   on its floor — the ✓ level with the field, never floating between the
+   chips and it (`ui-sheet-action-bar`, and the editor's own dock rule).
+
 ## Not done
 
 - Moving a seated service from one person to another — the ladder's «За

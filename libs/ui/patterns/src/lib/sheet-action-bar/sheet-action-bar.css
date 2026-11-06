@@ -186,6 +186,12 @@
     flex: 1 1 auto;
     min-inline-size: 0;
   }
+  /* Beside a fill the row sits on its FLOOR, as the page bar's does: a
+     field carrying chips over it is taller than a button, and centred the
+     button floated between the chips and the field. */
+  .ui-sheet-action-bar:has(> [uifill]) {
+    align-items: flex-end;
+  }
   .ui-sheet-action-bar:has(> [uifill])
     > [data-button-style='borderedProminent'],
   .ui-sheet-action-bar:has(> [uifill]) > [uiprimary] {

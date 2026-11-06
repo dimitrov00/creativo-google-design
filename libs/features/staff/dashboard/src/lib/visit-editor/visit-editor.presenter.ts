@@ -644,7 +644,6 @@ export function serviceRowVm(
       ...TextMatchSystem.segments(variant, query),
       ...TextMatchSystem.segments(line.slice(variant.length), ''),
     ],
-    line,
   };
 }
 
