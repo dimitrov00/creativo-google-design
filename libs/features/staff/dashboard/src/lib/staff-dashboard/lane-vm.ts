@@ -42,9 +42,14 @@ export function laneVmOf(
   const blocks =
     localDate === null
       ? []
-      : lane.blocks.map((block) =>
-          blockRowVm(block, chair, localDate, shopNow, context),
-        );
+      : [
+          ...lane.blocks.map((block) =>
+            blockRowVm(block, chair, localDate, shopNow, context),
+          ),
+          ...lane.breaks.map((entry) =>
+            blockRowVm(entry, chair, localDate, shopNow, context, true),
+          ),
+        ];
   // One run in clock order, on the shop's wall clock (one shop day per
   // lane). A gap, a block and a visit never share a start minute — a
   // hole or a block holds no visit's start — so the stable sort is total.

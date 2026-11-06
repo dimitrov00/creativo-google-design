@@ -209,7 +209,7 @@
           <ui-choice-menu
             uiAlignment="trailing"
             [uiOptions]="endOptions()"
-            [uiSelectedId]="rule.recurrenceEnd"
+            [uiSelectedId]="endSelectedId()"
             [uiLabel]="t('staff.block.repeatEnd')"
             [(uiPresented)]="endMenu"
             (uiPicked)="setEndKind($event)"
@@ -231,7 +231,9 @@
           </ui-choice-menu>
         </span>
       </li>
-      @if (untilKey(); as until) {
+      @if (standing() !== null) {
+      <!-- «Без край»: a break of the weekly roster — no last day, no count. -->
+      } @else if (untilKey(); as until) {
       <li uiListRow uiSize="regular">
         {{ t('staff.block.repeatEndDate') }}
         <span uiTrailing>
@@ -252,8 +254,7 @@
           />
         </span>
       </li>
-      } @else if (countFigure() !== '') {
-      <!-- «Без край» has no row of its own: nothing to set beyond it. -->
+      } @else {
       <li uiListRow uiSize="regular">
         <label for="staff-block-repeat-count"
           >{{ t('staff.block.repeatEndCount') }}</label

@@ -20,10 +20,15 @@ import { SchedulingError } from '@core/errors';
 export type ExceptionEffectRule =
   | ExceptionEffectRule.Closed
   | ExceptionEffectRule.Hours
-  | ExceptionEffectRule.Blocked;
+  | ExceptionEffectRule.Blocked
+  | ExceptionEffectRule.Rostered;
 
 const CLOSED: ExceptionEffectRule.Closed = {
   exceptionEffect: ExceptionEffect.Closed,
+};
+
+const ROSTERED: ExceptionEffectRule.Rostered = {
+  exceptionEffect: ExceptionEffect.Rostered,
 };
 
 function withRanges<K extends ExceptionEffectRule.Ranged['exceptionEffect']>(
@@ -64,6 +69,11 @@ export const ExceptionEffectRule = {
     return withRanges(ExceptionEffect.Blocked, ranges);
   },
 
+  /** The roster stands — a day that changes only its breaks (`DayBreaks`). */
+  rostered(): ExceptionEffectRule.Rostered {
+    return ROSTERED;
+  },
+
   /** The barber is off for the whole day. */
   isWholeDay(rule: ExceptionEffectRule): boolean {
     return rule.exceptionEffect === ExceptionEffect.Closed;
@@ -86,6 +96,9 @@ export namespace ExceptionEffectRule {
   export type Blocked = {
     readonly exceptionEffect: typeof ExceptionEffect.Blocked;
     readonly exceptionRanges: readonly MinuteRange[];
+  };
+  export type Rostered = {
+    readonly exceptionEffect: typeof ExceptionEffect.Rostered;
   };
   /** The two range-bearing effects. */
   export type Ranged = Hours | Blocked;

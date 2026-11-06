@@ -52,6 +52,7 @@ export function scheduleExceptionFixture(
     utcEpochMs: ZonedTimeSystem.startOfLocalDay(TODAY, SHOP_ZONE),
     locationId: LOCATION,
     ...ExceptionEffectRule.closed(),
+    dayBreakRanges: null,
     ...overrides,
   } as ScheduleException;
 }

@@ -1,15 +1,12 @@
 import type { LocalDate } from '@core/primitives';
 
 /**
- * How a series stops — iCalendar's `UNTIL` (inclusive) or `COUNT`, or never
- * (an RRULE with neither, Monzo's «Never»: a stored series written ahead a
- * rolling horizon, `RecurrenceRule.WRITE_AHEAD_DAYS`); named after the field
- * it types (`recurrenceEnd`).
+ * How a series stops — iCalendar's `UNTIL` (inclusive) or `COUNT`; named
+ * after the field it types (`recurrenceEnd`).
  */
 export const RecurrenceEnd = {
   Until: 'UNTIL',
   Count: 'COUNT',
-  Never: 'NEVER',
 } as const;
 export type RecurrenceEnd = (typeof RecurrenceEnd)[keyof typeof RecurrenceEnd];
 
@@ -20,7 +17,7 @@ export type RecurrenceEnd = (typeof RecurrenceEnd)[keyof typeof RecurrenceEnd];
  * dictionary of its own field.
  */
 export type RecurrenceEndRule =
-  RecurrenceEndRule.Until | RecurrenceEndRule.Count | RecurrenceEndRule.Never;
+  RecurrenceEndRule.Until | RecurrenceEndRule.Count;
 
 export const RecurrenceEndRule = {
   until(untilLocalDate: LocalDate): RecurrenceEndRule.Until {
@@ -29,26 +26,15 @@ export const RecurrenceEndRule = {
   count(occurrenceCount: number): RecurrenceEndRule.Count {
     return { recurrenceEnd: RecurrenceEnd.Count, occurrenceCount };
   },
-  never(): RecurrenceEndRule.Never {
-    return { recurrenceEnd: RecurrenceEnd.Never };
-  },
 
   /** The end slice of anything that carries one (a whole rule), as a fresh struct. */
   sliceOf<T extends RecurrenceEndRule>(end: T): RecurrenceEndRule {
-    switch (end.recurrenceEnd) {
-      case RecurrenceEnd.Until:
-        return RecurrenceEndRule.until(end.untilLocalDate);
-      case RecurrenceEnd.Count:
-        return RecurrenceEndRule.count(end.occurrenceCount);
-      case RecurrenceEnd.Never:
-        return RecurrenceEndRule.never();
-    }
+    return end.recurrenceEnd === RecurrenceEnd.Until
+      ? RecurrenceEndRule.until(end.untilLocalDate)
+      : RecurrenceEndRule.count(end.occurrenceCount);
   },
 
   equals(a: RecurrenceEndRule, b: RecurrenceEndRule): boolean {
-    if (a.recurrenceEnd === RecurrenceEnd.Never) {
-      return b.recurrenceEnd === RecurrenceEnd.Never;
-    }
     if (a.recurrenceEnd === RecurrenceEnd.Until) {
       return (
         b.recurrenceEnd === RecurrenceEnd.Until &&
@@ -70,8 +56,5 @@ export namespace RecurrenceEndRule {
   export type Count = {
     readonly recurrenceEnd: typeof RecurrenceEnd.Count;
     readonly occurrenceCount: number;
-  };
-  export type Never = {
-    readonly recurrenceEnd: typeof RecurrenceEnd.Never;
   };
 }

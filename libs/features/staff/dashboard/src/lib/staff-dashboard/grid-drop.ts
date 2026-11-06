@@ -67,7 +67,21 @@ export function dropRouteOf(
 export function blockKeyOf(
   id: string,
 ): { readonly barberId: BarberId; readonly localDate: LocalDate } | null {
-  if (!id.startsWith('block:')) return null;
+  return keyOf(id, 'block:');
+}
+
+/** A roster break's chair and day, off its grid key (`break:<chair>:<day>:<start>`). */
+export function breakKeyOf(
+  id: string,
+): { readonly barberId: BarberId; readonly localDate: LocalDate } | null {
+  return keyOf(id, 'break:');
+}
+
+function keyOf(
+  id: string,
+  prefix: string,
+): { readonly barberId: BarberId; readonly localDate: LocalDate } | null {
+  if (!id.startsWith(prefix)) return null;
   const parts = id.split(':');
   const day = LocalDate.parse(parts.at(-2) ?? '');
   const chair = parts.slice(1, -2).join(':');

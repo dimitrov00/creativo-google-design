@@ -206,10 +206,6 @@ export const CapacityMonthId = idCompanion('CapacityMonthId');
 export type ScheduleExceptionId = Brand<string, 'ScheduleExceptionId'>;
 export const ScheduleExceptionId = idCompanion('ScheduleExceptionId');
 
-/** A chair's repeating block — a break, an admin hour (`blockSeries/{id}`, staff-only). */
-export type BlockSeriesId = Brand<string, 'BlockSeriesId'>;
-export const BlockSeriesId = idCompanion('BlockSeriesId');
-
 /** A waitlist request (`waitlistRequests/{id}`). */
 export type WaitlistRequestId = Brand<string, 'WaitlistRequestId'>;
 export const WaitlistRequestId = idCompanion('WaitlistRequestId');

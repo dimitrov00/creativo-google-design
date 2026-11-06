@@ -1107,6 +1107,7 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
               seq: 1,
               effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
               effectiveToLocalDate: null,
+              breaks: [],
               segments: [
                 ShiftSegment.of(
                   Weekday.Thu,

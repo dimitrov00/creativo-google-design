@@ -40,16 +40,8 @@ export const RECURRENCE_FREQUENCY_WORD = {
 
 /** How a series ends, as its word — the `staff-block-repeat-end-<word>` test id. */
 export const RECURRENCE_END_WORD = {
-  [RecurrenceEnd.Never]: 'never',
   [RecurrenceEnd.Until]: 'until',
   [RecurrenceEnd.Count]: 'count',
-} as const satisfies Record<RecurrenceEnd, string>;
-
-/** Each end's own words — the end menu's rows (`staff.block.repeatEnd…`). */
-export const RECURRENCE_END_KEY = {
-  [RecurrenceEnd.Never]: 'staff.block.repeatEndNever',
-  [RecurrenceEnd.Until]: 'staff.block.repeatEndOn',
-  [RecurrenceEnd.Count]: 'staff.block.repeatEndAfter',
 } as const satisfies Record<RecurrenceEnd, string>;
 
 /**

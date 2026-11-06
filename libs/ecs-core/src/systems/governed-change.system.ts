@@ -106,6 +106,7 @@ const PHOTO_KEYS: KeyTable<AppointmentPhoto> = {
 
 const EXCEPTION_KEYS: KeyTable<ScheduleException> = {
   barberId: true,
+  dayBreakRanges: true,
   exceptionEffect: true,
   exceptionRanges: true,
   localDate: true,

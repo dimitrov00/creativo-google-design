@@ -1,8 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  DayBreaks,
   ExceptionEffectRule,
   MinuteRange,
+  RosterBreak,
   DayHours,
   type RosterWindow,
   ShopDayHours,
@@ -129,7 +131,7 @@ const blocked = (...ranges: readonly MinuteRange[]): ExceptionEffectRule =>
   unwrap(ExceptionEffectRule.blocked(ranges));
 
 function exception(effect: ExceptionEffectRule, onDay: string): DayException {
-  return { localDate: key(onDay), ...effect };
+  return { localDate: key(onDay), ...effect, dayBreakRanges: null };
 }
 
 /** One shop's published hours for a day, as the per-shop list. */
@@ -1052,21 +1054,22 @@ describe('atWork — the day the chairs are at work', () => {
   it('merges overlapping shifts across lanes', () => {
     expect(
       RosterSystem.atWork([
-        { rostered: [range(540, 720)], blocks: [] },
-        { rostered: [range(660, 900)], blocks: [] },
+        { rostered: [range(540, 720)], blocks: [], breaks: [] },
+        { rostered: [range(660, 900)], blocks: [], breaks: [] },
       ]),
     ).toEqual([range(540, 900)]);
   });
 
-  it('counts a block as at work, inside the roster and outside it', () => {
+  it('counts a block and a break as at work, inside the roster and outside it', () => {
     expect(
       RosterSystem.atWork([
         {
           rostered: [range(540, 600), range(660, 720)],
           blocks: [range(600, 660), range(800, 830)],
+          breaks: [range(720, 780)],
         },
       ]),
-    ).toEqual([range(540, 720), range(800, 830)]);
+    ).toEqual([range(540, 780), range(800, 830)]);
   });
 
   it('answers nothing for no lanes', () => {
@@ -1075,13 +1078,15 @@ describe('atWork — the day the chairs are at work', () => {
 
   it('holds a shift to the closing midnight', () => {
     expect(
-      RosterSystem.atWork([{ rostered: [range(1200, 1440)], blocks: [] }]),
+      RosterSystem.atWork([
+        { rostered: [range(1200, 1440)], blocks: [], breaks: [] },
+      ]),
     ).toEqual([range(1200, 1440)]);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
     const lanes = deepFreeze([
-      { rostered: [range(540, 720)], blocks: [range(800, 830)] },
+      { rostered: [range(540, 720)], blocks: [range(800, 830)], breaks: [] },
     ]);
     expect(RosterSystem.atWork(lanes)).toEqual(RosterSystem.atWork(lanes));
   });
@@ -1449,5 +1454,117 @@ describe('RosterSystem — the minute-set model (property)', () => {
       ),
       { numRuns: 200 },
     );
+  });
+});
+
+describe("breaks — the roster's weekday lunch, and a day that departs from it", () => {
+  /** Every weekday 09:00–18:00 at the centre, lunch 13:00–14:00 on Wednesdays. 2026-07-29 is a Wednesday. */
+  const withLunch = (): readonly ScheduleVersion[] =>
+    ScheduleVersion.startingWith(
+      ALL_WEEKDAYS.map((weekday) =>
+        ShiftSegment.of(weekday, CENTER, at('09:00'), until('18:00')),
+      ),
+      key('2026-01-01'),
+      [RosterBreak.of(Weekday.Wed, range('13:00', '14:00'))],
+    );
+  const dayWith = (
+    effect: ExceptionEffectRule,
+    breaks: DayBreaks,
+  ): DayException => ({ localDate: key('2026-07-29'), ...effect, ...breaks });
+
+  it('subtracts the weekday lunch from the bookable windows, and draws it as a break', () => {
+    const day = input('2026-07-29', withLunch());
+    expect(asClock(windowsOf(day))).toEqual(['09:00–13:00', '14:00–18:00']);
+    expect(asClock(RosterSystem.buildDayBreaks(day))).toEqual(['13:00–14:00']);
+    expect(carveOutsOf(day)).toEqual([]);
+  });
+
+  it("leaves another weekday whole — the break is the Wednesday's", () => {
+    const thursday = input('2026-07-30', withLunch());
+    expect(asClock(windowsOf(thursday))).toEqual(['09:00–18:00']);
+    expect(RosterSystem.buildDayBreaks(thursday)).toEqual([]);
+  });
+
+  it('opens the lunch to booking on a day that skips it («Само този ден», [])', () => {
+    const skipped = input('2026-07-29', withLunch(), {
+      exceptions: [dayWith(ExceptionEffectRule.rostered(), DayBreaks.of([]))],
+    });
+    expect(asClock(windowsOf(skipped))).toEqual(['09:00–18:00']);
+    expect(RosterSystem.buildDayBreaks(skipped)).toEqual([]);
+  });
+
+  it("moves the lunch for one day, keeping the day's blocks", () => {
+    const moved = input('2026-07-29', withLunch(), {
+      exceptions: [
+        dayWith(
+          unwrap(ExceptionEffectRule.blocked([range('10:00', '10:30')])),
+          DayBreaks.of([range('12:00', '13:00')]),
+        ),
+      ],
+    });
+    expect(asClock(windowsOf(moved))).toEqual([
+      '09:00–10:00',
+      '10:30–12:00',
+      '13:00–18:00',
+    ]);
+    expect(asClock(RosterSystem.buildDayBreaks(moved))).toEqual([
+      '12:00–13:00',
+    ]);
+    expect(asClock(carveOutsOf(moved))).toEqual(['10:00–10:30']);
+  });
+
+  it('draws no break under a block, outside the worked time, or on a day off', () => {
+    const covered = input('2026-07-29', withLunch(), {
+      exceptions: [
+        dayWith(
+          unwrap(ExceptionEffectRule.blocked([range('12:30', '13:30')])),
+          DayBreaks.roster(),
+        ),
+      ],
+    });
+    expect(asClock(RosterSystem.buildDayBreaks(covered))).toEqual([
+      '13:30–14:00',
+    ]);
+    const late = input('2026-07-29', withLunch(), {
+      exceptions: [
+        dayWith(
+          unwrap(ExceptionEffectRule.hours([range('15:00', '18:00')])),
+          DayBreaks.roster(),
+        ),
+      ],
+    });
+    expect(RosterSystem.buildDayBreaks(late)).toEqual([]);
+    const off = input('2026-07-29', withLunch(), {
+      exceptions: [dayWith(ExceptionEffectRule.closed(), DayBreaks.roster())],
+    });
+    expect(RosterSystem.buildDayBreaks(off)).toEqual([]);
+    expect(windowsOf(off)).toEqual([]);
+  });
+
+  it("names the roster's own break whatever the day says", () => {
+    expect(RosterSystem.rosterBreaksOn(withLunch(), key('2026-07-29'))).toEqual(
+      [range('13:00', '14:00')],
+    );
+    expect(RosterSystem.rosterBreaksOn(withLunch(), key('2026-07-30'))).toEqual(
+      [],
+    );
+    expect(RosterSystem.rosterBreaksOn([], key('2026-07-29'))).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const day = deepFreeze(
+      input('2026-07-29', withLunch(), {
+        exceptions: [
+          dayWith(
+            ExceptionEffectRule.rostered(),
+            DayBreaks.of([range('12:00', '12:30')]),
+          ),
+        ],
+      }),
+    );
+    expect(RosterSystem.buildDayBreaks(day)).toEqual(
+      RosterSystem.buildDayBreaks(day),
+    );
+    expect(windowsOf(day)).toEqual(windowsOf(day));
   });
 });

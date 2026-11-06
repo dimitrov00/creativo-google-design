@@ -175,6 +175,7 @@ function schedule(
       ShiftSegment.of(Weekday.Mon, atShop, at(9), until(18)),
       ShiftSegment.of(Weekday.Tue, atShop, at(9), until(18)),
     ],
+    breaks: [],
   };
   return {
     id: BarberId.of(barber),
@@ -550,6 +551,7 @@ describe('decide — availability is re-checked, not trusted', () => {
             barberId: ivan,
             localDate: AUG_3,
             ...ExceptionEffectRule.closed(),
+            dayBreakRanges: null,
           },
         ],
       }),

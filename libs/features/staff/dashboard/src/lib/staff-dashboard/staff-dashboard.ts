@@ -62,7 +62,6 @@ import {
   ClientQueryShape,
   Combinability,
   CouponValue,
-  MinuteRange,
   Principal,
   Registration,
   type Role,
@@ -212,15 +211,21 @@ import {
   movableIdsOf,
   slotTimeLabel,
 } from './create-from';
-import { blockDropOf, blockKeyOf, DropRoute, dropRouteOf } from './grid-drop';
+import { type BreakEdit, BreakFlow } from './break-flow';
+import {
+  blockDropOf,
+  blockKeyOf,
+  breakKeyOf,
+  DropRoute,
+  dropRouteOf,
+} from './grid-drop';
 import { editorVmOf } from './editor-vm';
+import { blockLaneOf } from './block-lane';
 import { laneVmOf, rowOf } from './lane-vm';
-import { BlockSeriesFlow } from './block-series-flow';
 import { GridTimeScale } from '../grid-time-scale';
 import { StaffTimeScaleSheet } from '../staff-time-scale-sheet/staff-time-scale-sheet';
 import {
   type BlockEditorCommit,
-  type BlockEditorLane,
   type BlockEditorRange,
   type BlockEditorVm,
   StaffBlockEditor,
@@ -447,7 +452,7 @@ function transitionOf(
     UiVisuallyHiddenDirective,
     UiWeightDirective,
   ],
-  providers: [StaffDayStore, StaffWeekStrip, BlockSeriesFlow],
+  providers: [StaffDayStore, StaffWeekStrip, BreakFlow],
   templateUrl: './staff-dashboard.html',
   styleUrls: ['./staff-dashboard.css', './staff-dashboard.chrome.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -791,6 +796,7 @@ export class StaffDashboard {
     };
   });
   protected readonly store = inject(StaffDayStore);
+  protected readonly breakFlow = inject(BreakFlow);
 
   /**
    * `?day=YYYY-MM-DD`, bound from the route. Absent means today — a link that
@@ -1242,11 +1248,18 @@ export class StaffDashboard {
       this.dropBlock(commit, key);
       return;
     }
+    if (breakKeyOf(commit.id) !== null) {
+      void this.dropBreak(commit);
+      return;
+    }
     const row = this.visitRowOf(commit.id);
     const vm = row === undefined ? null : this.editorVmOf(row);
-    const blocks =
-      this.store.lanes().find((lane) => lane.barberId === vm?.chairId)
-        ?.blocks ?? [];
+    const lane = this.store
+      .lanes()
+      .find((entry) => entry.barberId === vm?.chairId);
+    // A break is time taken, like a block: a visit dropped into one asks
+    // first, and a day without its break takes the drop at once.
+    const blocks = lane === undefined ? [] : [...lane.blocks, ...lane.breaks];
     const route =
       vm === null ? DropRoute.Stay : dropRouteOf(vm, blocks, commit);
     if (row === undefined || vm === null || route === DropRoute.Stay) {
@@ -1257,6 +1270,31 @@ export class StaffDashboard {
       this.droppedTime.set(commit);
       this.openVisitSheet(row);
     }
+  }
+
+  /** A roster break dropped on the grid: it asks how far the move reaches, then lands. */
+  private async dropBreak(commit: GridCommit): Promise<void> {
+    const edit = this.breakFlow.moveOf(commit, (id) => this.shopOfChair(id));
+    if (edit === null) return this.putDown();
+    this.grid()?.setDown();
+    if (!(await this.runBreak(edit))) this.grid()?.releaseLift();
+  }
+
+  /** A break edit answered: saved, «Отмени» the way back. */
+  private async runBreak(edit: BreakEdit): Promise<boolean> {
+    const answer = await this.breakFlow.edit(edit);
+    if (!answer.saved && this.store.absenceError() !== null) {
+      this.setNotice(this.transloco.translate('staff.day.blockFailed'));
+    }
+    if (answer.saved && answer.undo !== null) {
+      this.offerUndoOf(
+        this.transloco.translate(
+          edit.to === null ? 'staff.day.breakRemoved' : 'staff.day.undo.saved',
+        ),
+        answer.undo,
+      );
+    }
+    return answer.saved;
   }
 
   /** Blocked time dropped on the grid (`blockDropOf`): saved, «Отмени» the way back. */
@@ -1282,17 +1320,8 @@ export class StaffDashboard {
     if (drop?.route === DropRoute.Refuse) {
       this.setNotice(this.transloco.translate('staff.day.blockOnBlock'));
     }
-    // A day of a repeating block: how far the move reaches is asked.
-    const release = (saved: boolean) => saved || this.grid()?.releaseLift();
-    const at = { ...(from ?? commit), blockId: commit.id };
-    const save = drop?.route === DropRoute.Save;
-    if (save && this.seriesFlow.askEdit(at, null, commit, release)) {
-      this.grid()?.setDown();
-    } else if (drop?.move && drop.back) {
-      void this.saveBlockDrop(drop.move, drop.back);
-    } else {
-      this.putDown();
-    }
+    if (drop?.move && drop.back) void this.saveBlockDrop(drop.move, drop.back);
+    else this.putDown();
   }
 
   private async saveBlockDrop(
@@ -1417,6 +1446,7 @@ export class StaffDashboard {
         attribute,
       },
       this.dayWords(),
+      lane.breaks,
     );
   }
 
@@ -1691,7 +1721,6 @@ export class StaffDashboard {
   }
   protected readonly fieldsOpen = signal(false);
   protected readonly timeScale = inject(GridTimeScale);
-  protected readonly seriesFlow = inject(BlockSeriesFlow);
 
   // ── Which states are drawn (the bar's filter) ─────────────────────────
   protected readonly statusFilter = inject(ScheduleStatusFilter);
@@ -3870,7 +3899,16 @@ export class StaffDashboard {
       startMinute: edit.startMinute,
       endMinute: edit.endMinute,
       lanes: this.scopeOptions().map((option) =>
-        this.blockLaneFor(option.id, frameDay, shownDay),
+        blockLaneOf({
+          barberId: option.id,
+          frameDay,
+          shownDay,
+          lanes: this.lanes(),
+          storeLanes: this.store.lanes(),
+          cell: this.store.cellFor(frameDay),
+          tone: this.toneOf(option.id),
+          words: this.dayWords(),
+        }),
       ),
       // The store's `ShopNow` — the sheet reads "today" and "now" off it.
       now: this.store.shopNow(),
@@ -3881,54 +3919,6 @@ export class StaffDashboard {
       acting: this.store.absencePending(),
     };
   });
-
-  /**
-   * One chair's real day for the block sheet's frame: the agenda's own rows
-   * on the shown day, the probe's documents on any other — the same two
-   * sources `visitFrameDay` reads, for the same reason.
-   */
-  private blockLaneFor(
-    barberId: BarberId,
-    frameDay: LocalDate,
-    shownDay: LocalDate,
-  ): BlockEditorLane {
-    const windows = (rostered: readonly MinuteRange[]) => {
-      const roster = IntervalSetSystem.hull(rostered);
-      // NO ROSTER IS A SHUT DAY, not an open one. This fell back to the
-      // civil day, so a chair standing down all day — the case the block
-      // sheet now opens on — drew as a chair free from midnight to midnight.
-      // An empty window (midnight to midnight) is what the frame shades.
-      return {
-        rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
-        rosterEndMinute: roster?.endMinutes ?? MIDNIGHT,
-      };
-    };
-    if (frameDay === shownDay) {
-      const lane = this.lanes().find((entry) => entry.barberId === barberId);
-      const storeLane = this.store
-        .lanes()
-        .find((entry) => entry.barberId === barberId);
-      return {
-        barberId,
-        // What occupies the chair — the server's rule (DEP-2).
-        neighbours: occupyingRows(lane, storeLane?.appointments ?? [], null),
-        ...windows(storeLane?.rostered ?? []),
-      };
-    }
-    const cell = this.store.cellFor(frameDay);
-    const draftLane = cell?.lanes.find((entry) => entry.barberId === barberId);
-    return {
-      barberId,
-      neighbours: occupantNeighbours(
-        draftLane?.appointments ?? [],
-        barberId,
-        null,
-        this.toneOf(barberId),
-        this.dayWords(),
-      ),
-      ...windows(draftLane?.rostered ?? []),
-    };
-  }
 
   protected openBlockSheet(
     barberId: BarberId,
@@ -4112,6 +4102,13 @@ export class StaffDashboard {
    * and minute is not the one tapped (DEP-11).
    */
   protected openBlock(blockId: string): void {
+    const edit = this.breakFlow.editOf(blockId, (id) => this.shopOfChair(id));
+    if (edit !== null) {
+      // A tapped break asks to come off — that day, or from it on.
+      this.presentOnly();
+      void this.runBreak(edit);
+      return;
+    }
     const key = blockKeyOf(blockId);
     if (key === null || key.localDate !== this.store.dayKey()) return;
     const start = MinuteOfDay.of(Number(blockId.split(':').at(-1)));
@@ -4159,17 +4156,21 @@ export class StaffDashboard {
     if (edit === null) return;
     const shownDay = this.store.dayKey();
     if (shownDay === null) return;
-    // A REPEATING block is a stored series (owner, 2026-11-06): a new one
-    // is written per chair; an edited day of one asks how far it reaches.
-    const range = minuteRangeOf(commit.startMinute, commit.endMinute);
-    const close = (saved: boolean) => saved && this.closeBlockSheet();
-    const home = (barberId: BarberId) => this.shopOfChair(barberId);
-    if (edit.blockId === null && commit.repeat !== null && range !== null) {
-      close(await this.seriesFlow.create(commit, range, home));
+    if (commit.standing !== null) {
+      // An edited block becomes the break: its old range is lifted first.
+      const lift =
+        edit.blockId === null
+          ? null
+          : minuteRangeOf(edit.startMinute, edit.endMinute);
+      const from = edit.barberIds[0];
+      if (lift !== null && from !== undefined) {
+        if (!(await this.store.clearBlock(from, lift, shownDay))) return;
+      }
+      if (await this.breakFlow.stand(commit, (id) => this.shopOfChair(id))) {
+        this.closeBlockSheet();
+      }
       return;
     }
-    if (range && this.seriesFlow.askEdit(edit, commit.dayKey, range, close))
-      return;
     const plan = ScheduleExceptionSystem.blockSavePlan({
       editing: edit.blockId !== null,
       opened: edit,
@@ -4218,9 +4219,8 @@ export class StaffDashboard {
     }
     const range = minuteRangeOf(edit.startMinute, edit.endMinute);
     if (range === null) return;
-    const close = (saved: boolean) => saved && this.closeBlockSheet();
-    if (this.seriesFlow.askEdit(edit, dayKey, null, close)) return;
-    close(await this.store.clearBlock(barberId, range, dayKey));
+    const done = await this.store.clearBlock(barberId, range, dayKey);
+    if (done) this.closeBlockSheet();
   }
 
   /**

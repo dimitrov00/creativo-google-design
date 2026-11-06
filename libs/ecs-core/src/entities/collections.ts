@@ -33,11 +33,6 @@ export const Collections = {
   Capacity: 'capacity',
   /** `ScheduleException`, keyed by the same `BusyKey` as the busy day. */
   ScheduleExceptions: 'scheduleExceptions',
-  /**
-   * `BlockSeries` — a chair's repeating block and the days it wrote;
-   * staff-only. The days' public effect stays on `scheduleExceptions`.
-   */
-  BlockSeries: 'blockSeries',
   /** `BarberSchedule`, keyed by the barber id. */
   BarberSchedules: 'barberSchedules',
   /** `BarberLeadTimeSample`, keyed by `{barberId}__{localDate}`; TTL `purgeAt`. */

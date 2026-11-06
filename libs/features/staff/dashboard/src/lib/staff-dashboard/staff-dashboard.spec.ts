@@ -42,17 +42,12 @@ import {
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
   PROFILE_PORTS,
-  BLOCK_SERIES_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   USER_SEARCH_PORTS,
   CUSTOMER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
-  BlockSeriesScope,
-  RecurrenceEndRule,
-  RecurrencePattern,
-  RecurrenceRule,
   AppliedOperation,
   BookingCall,
   BookingContact,
@@ -85,6 +80,7 @@ import {
   SeatLabel,
   SeatOccupant,
   SeatOutcome,
+  RosterBreak,
   ShiftSegment,
   SubjectRelationship,
 } from '@core/components';
@@ -94,7 +90,6 @@ import type {
   BarberBusyDay,
   BarberSchedule,
   Barber,
-  BlockSeries,
   Coupon,
   ScheduleException,
   Service,
@@ -102,7 +97,6 @@ import type {
   User,
 } from '@core/entities';
 import {
-  BlockSeriesId,
   AppointmentId,
   BarberBusyDayId,
   BarberId,
@@ -153,7 +147,6 @@ import {
   type UpdateAppointmentNote,
 } from '@core/ports';
 import {
-  BlockSeriesSystem,
   AppointmentIndexSystem,
   type HeldGrant,
   type StaffEditRowFacts,
@@ -162,7 +155,6 @@ import {
 import { CatalogWording } from '@creativo/features/shared/catalog';
 import { relativeTime } from '@creativo/infrastructure/i18n';
 import {
-  memoryBlockSeriesPorts,
   FIXTURE_TIME_ZONE,
   appointmentFixture,
   at as wallAt,
@@ -305,6 +297,9 @@ const SHOP_LOCATION = locationFixture({
  * stub answered for any day asked. Niko has none: not rostered at all,
  * which is what separates "off today" from "free day".
  */
+/** Ivan's roster breaks — none unless a case lays one in (the break cases). */
+let ivanBreaks: readonly RosterBreak[] = [];
+
 function rosterOf(barberId: string): BarberSchedule | null {
   if (barberId !== 'ivan') return null;
   const days: readonly Weekday[] = [
@@ -324,6 +319,7 @@ function rosterOf(barberId: string): BarberSchedule | null {
         seq: 1,
         effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
         effectiveToLocalDate: null,
+        breaks: ivanBreaks,
         segments: days.map((day) =>
           ShiftSegment.of(day, SHOP, wallAt(9), until(18)),
         ),
@@ -658,8 +654,6 @@ describe('StaffDashboard', () => {
   const exceptions: ScheduleException[] = [];
   /** The days a case has stored changes on before the page comes up — `build()` lays them in. */
   let seededExceptions: readonly ScheduleException[] = [];
-  /** The chairs' repeating blocks the series double starts with. */
-  let blockSeriesSeed: BlockSeries[] = [];
   const writeScheduleException = vi.fn(
     memoryScheduleExceptionPorts(exceptions).writeScheduleException,
   );
@@ -875,10 +869,6 @@ describe('StaffDashboard', () => {
         {
           provide: SCHEDULE_EXCEPTION_PORTS,
           useValue: { writeScheduleException },
-        },
-        {
-          provide: BLOCK_SERIES_PORTS,
-          useValue: memoryBlockSeriesPorts([], blockSeriesSeed),
         },
         {
           // The signed-in principal — a barber who also holds the keys, so
@@ -3893,6 +3883,7 @@ describe('StaffDashboard', () => {
         FIXTURE_TIME_ZONE,
       ),
       locationId: SHOP,
+      dayBreakRanges: null,
       ...lunch,
     });
     openBlockDoor();
@@ -8738,11 +8729,13 @@ describe('StaffDashboard', () => {
         } | null;
         createVisit: { set: (create: unknown) => void };
         createVm: () => VisitEditorVm | null;
-        blockLaneFor: (
-          barberId: string,
-          frameDay: string,
-          shownDay: string,
-        ) => { readonly neighbours: readonly { readonly name: string }[] };
+        openBlockSheet: (barberId: BarberId) => void;
+        blockEditorVm: () => {
+          readonly lanes: readonly {
+            readonly barberId: string;
+            readonly neighbours: readonly { readonly name: string }[];
+          }[];
+        } | null;
       };
       // …but what occupies the chair is the server's rule — the ROOT's
       // status (`BusySystem.chairOccupants`): the party is live, so its seat
@@ -8751,10 +8744,13 @@ describe('StaffDashboard', () => {
         (component.visitEditorVm()?.neighbours ?? []).map((n) => n.name),
       ).toContain('Разделена Група');
       // The create and block frames on the shown day read the same rule.
+      component.openBlockSheet(BarberId.of('ivan'));
       expect(
-        component
-          .blockLaneFor('ivan', '2026-08-05', '2026-08-05')
-          .neighbours.map((n) => n.name),
+        (
+          component
+            .blockEditorVm()
+            ?.lanes.find((lane) => lane.barberId === 'ivan')?.neighbours ?? []
+        ).map((n) => n.name),
       ).toContain('Разделена Група');
       component.createVisit.set({
         barberId: 'ivan',
@@ -8972,7 +8968,6 @@ describe('StaffDashboard', () => {
         defaultShop = null;
         searchPool = null;
         seededExceptions = [];
-        blockSeriesSeed = [];
       });
 
       /** One self-booked visit in Ivan's chair at `startsAt` (a wall-clock reading) for `minutes`. */
@@ -9038,6 +9033,7 @@ describe('StaffDashboard', () => {
               FIXTURE_TIME_ZONE,
             ),
             locationId: SHOP,
+            dayBreakRanges: null,
             ...unwrapOk(
               ExceptionEffectRule.blocked([
                 MinuteRange.of(from, to),
@@ -9091,6 +9087,7 @@ describe('StaffDashboard', () => {
                           LocalDate.parse('2026-01-01'),
                         ),
                         effectiveToLocalDate: null,
+                        breaks: [],
                         segments: days.map((day) =>
                           ShiftSegment.of(day, SHOP, from, until(24)),
                         ),
@@ -9620,6 +9617,120 @@ describe('StaffDashboard', () => {
         );
       });
 
+      describe('a roster break — drawn, taken off and moved day by day (owner, 2026-11-06)', () => {
+        const LUNCH = MinuteRange.of(wallAt(13), until(14));
+        type BreakPage = {
+          store: { setView: (view: StaffView) => void };
+          gridColumns: () => readonly {
+            readonly events: readonly {
+              readonly id: string;
+              readonly title: string;
+            }[];
+          }[];
+          openBlock: (id: string) => void;
+          dropOnGrid: (commit: unknown) => void;
+          undo: () => { message: string } | null;
+          breakFlow: {
+            question: () => unknown;
+            pick: (id: string) => Promise<void>;
+          };
+        };
+        const breakPage = () =>
+          fixture.componentInstance as unknown as BreakPage;
+        const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+        const ID = 'break:ivan:2026-08-05:780';
+
+        beforeEach(async () => {
+          // 2026-08-05 is a Wednesday: Ivan's lunch that weekday.
+          ivanBreaks = [RosterBreak.of(Weekday.Wed, LUNCH)];
+          await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+          breakPage().store.setView(StaffView.Day);
+          fixture.detectChanges();
+        });
+        afterEach(() => {
+          ivanBreaks = [];
+        });
+
+        it('draws the lunch as «Почивка», a block of its own, with no document stored', () => {
+          const lunch = breakPage()
+            .gridColumns()
+            .flatMap((column) => column.events)
+            .find((event) => event.id === ID);
+          expect(lunch?.title).toBe('staff.day.breakLabel');
+          expect(exceptions).toEqual([]);
+        });
+
+        it('takes it off THIS day alone: one document, the roster untouched, «Отмени» the way back', async () => {
+          breakPage().openBlock(ID);
+          expect(breakPage().breakFlow.question()).not.toBeNull();
+          writeScheduleException.mockClear();
+          await breakPage().breakFlow.pick('THIS_DAY');
+          await settle();
+          expect(writeScheduleException).toHaveBeenCalledTimes(1);
+          expect(exceptions).toEqual([
+            expect.objectContaining({
+              localDate: '2026-08-05',
+              exceptionEffect: ExceptionEffect.Rostered,
+              dayBreakRanges: [],
+            }),
+          ]);
+          expect(
+            gatewayCalls.filter(
+              (call) => call.callable === Callables.AmendRosterBreaks,
+            ),
+          ).toEqual([]);
+          expect(breakPage().undo()?.message).toBe('staff.day.breakRemoved');
+        });
+
+        it('takes it off from this day on as ONE roster change — no document per day', async () => {
+          gateway[Callables.AmendRosterBreaks] = () =>
+            PortResult.ok({ barberId: BarberId.of('ivan') });
+          breakPage().openBlock(ID);
+          writeScheduleException.mockClear();
+          await breakPage().breakFlow.pick('FOLLOWING');
+          await settle();
+          expect(writeScheduleException).not.toHaveBeenCalled();
+          expect(
+            gatewayCalls
+              .filter((call) => call.callable === Callables.AmendRosterBreaks)
+              .map((call) => call.input),
+          ).toEqual([
+            expect.objectContaining({
+              barberId: 'ivan',
+              fromLocalDate: '2026-08-05',
+              weekdays: [Weekday.Wed],
+              before: LUNCH,
+              after: null,
+            }),
+          ]);
+        });
+
+        it('moves it for one day on a drag, and «Отказ» changes nothing', async () => {
+          breakPage().dropOnGrid({
+            id: ID,
+            startMinute: 720,
+            endMinute: 780,
+            editCommand: 'MOVE',
+          });
+          await breakPage().breakFlow.pick('CANCEL');
+          await settle();
+          expect(exceptions).toEqual([]);
+          breakPage().dropOnGrid({
+            id: ID,
+            startMinute: 720,
+            endMinute: 780,
+            editCommand: 'MOVE',
+          });
+          await breakPage().breakFlow.pick('THIS_DAY');
+          await settle();
+          expect(exceptions).toEqual([
+            expect.objectContaining({
+              dayBreakRanges: [MinuteRange.of(wallAt(12), until(13))],
+            }),
+          ]);
+        });
+      });
+
       it('moves blocked time dropped on the grid in one write, «Отмени» moving it back; never onto other blocked time (owner, 2026-11-06)', async () => {
         // One day holds one exception document: both ranges in it.
         blockOn('2026-08-05', wallAt(12), until(13), [wallAt(16), until(17)]);
@@ -9685,98 +9796,6 @@ describe('StaffDashboard', () => {
         expect(grid.notice()).toBe('staff.day.blockOnBlock');
       });
 
-      it('asks how far a dragged day of a repeating block reaches, and «Този и следващите» moves the rest of the series (owner, 2026-11-06)', async () => {
-        const lunch = MinuteRange.of(wallAt(12), until(13));
-        blockOn('2026-08-05', wallAt(12), until(13));
-        blockSeriesSeed = [
-          unwrapOk(
-            BlockSeriesSystem.create({
-              id: BlockSeriesId.of('lunch'),
-              barberId: BarberId.of('ivan'),
-              locationId: SHOP,
-              range: lunch,
-              startLocalDate: unwrapOk(LocalDate.parse('2026-08-05')),
-              rule: unwrapOk(
-                RecurrenceRule.create(
-                  RecurrencePattern.daily(),
-                  1,
-                  RecurrenceEndRule.until(
-                    unwrapOk(LocalDate.parse('2026-08-07')),
-                  ),
-                ),
-              ),
-            }),
-          ),
-        ];
-        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
-        page().store.setView(StaffView.Day);
-        fixture.detectChanges();
-        const grid = fixture.componentInstance as unknown as {
-          dropOnGrid: (commit: unknown) => void;
-          seriesFlow: {
-            question: () => unknown;
-            pick: (id: string) => Promise<void>;
-          };
-        };
-        grid.dropOnGrid({
-          id: 'block:ivan:2026-08-05:720',
-          startMinute: 780,
-          endMinute: 840,
-          editCommand: 'MOVE',
-        });
-        fixture.detectChanges();
-        // A series day never moves without saying how far.
-        expect(grid.seriesFlow.question()).not.toBeNull();
-        expect(
-          host().querySelector('[data-testid="staff-series-scope"]'),
-        ).not.toBeNull();
-        await grid.seriesFlow.pick(BlockSeriesScope.Following);
-        // Cut at its first day: the old series is gone, the new minutes
-        // carry every day.
-        expect(blockSeriesSeed.map((series) => series.id)).not.toContain(
-          'lunch',
-        );
-        expect(blockSeriesSeed).toHaveLength(1);
-        expect(blockSeriesSeed[0]).toMatchObject({
-          startMinutes: 780,
-          endMinutes: 840,
-        });
-        expect(blockSeriesSeed[0]?.localDates).toHaveLength(3);
-      });
-
-      it('saves a new repeating block as a series, on its chair', async () => {
-        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
-        const page = fixture.componentInstance as unknown as {
-          openBlockSheet: (barberId: BarberId) => void;
-          commitBlock: (commit: unknown) => Promise<void>;
-          blockEdit: () => unknown;
-        };
-        page.openBlockSheet(BarberId.of('ivan'));
-        const day = unwrapOk(LocalDate.parse('2026-08-05'));
-        await page.commitBlock({
-          barberIds: [BarberId.of('ivan')],
-          dayKey: day,
-          days: [day],
-          repeat: unwrapOk(
-            RecurrenceRule.create(
-              RecurrencePattern.daily(),
-              1,
-              RecurrenceEndRule.never(),
-            ),
-          ),
-          allDay: false,
-          startMinute: 13 * 60,
-          endMinute: 14 * 60,
-        });
-        expect(blockSeriesSeed).toHaveLength(1);
-        expect(blockSeriesSeed[0]).toMatchObject({
-          barberId: 'ivan',
-          startMinutes: 780,
-          recurrenceEnd: 'NEVER',
-        });
-        expect(page.blockEdit()).toBeNull();
-      });
-
       it('draws a block in the list as well as the grid, opens it from either, and hides both behind the filter', async () => {
         blockOn('2026-08-05', wallAt(12), until(13));
         await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
@@ -9826,10 +9845,10 @@ describe('StaffDashboard', () => {
           barberIds: [BarberId.of('ivan')],
           dayKey: DAY,
           days: [DAY],
-          repeat: null,
           allDay: false,
           startMinute: 14 * 60,
           endMinute: 15 * 60,
+          standing: null,
         };
         const commitBlock = (commit: unknown): Promise<void> =>
           (

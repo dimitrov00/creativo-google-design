@@ -1266,6 +1266,7 @@ describe('firestore.rules', () => {
         utcEpochMs: utcMs(`${day}T00:00:00.000+03:00`),
         locationId: LocationId.of('loc-center'),
         ...ExceptionEffectRule.closed(),
+        dayBreakRanges: null,
       }) satisfies Omit<ScheduleException, 'id'>;
 
     it('lets an anonymous visitor read an exception, and a client not write one', async () => {

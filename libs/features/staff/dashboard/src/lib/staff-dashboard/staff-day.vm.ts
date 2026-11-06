@@ -69,6 +69,8 @@ export interface StaffDayWords {
   readonly partyOf: (count: number) => string;
   /** «Блокирано» — `staff.day.blockedLabel`. */
   readonly blocked: string;
+  /** «Почивка» — `staff.day.breakLabel`, a roster break. */
+  readonly breakLabel: string;
   /** «45 мин», «1 ч», «6 ч 30 мин» — `staff.day.span*`. */
   readonly span: SpanWords;
   /** «2 ч свободни» — `staff.day.daySummaryFree`. */
@@ -464,7 +466,7 @@ export interface BlockRowVm {
   /** The clock, as a visit's: start over end on the trailing side. */
   readonly startLabel: string;
   readonly endLabel: string;
-  /** «Блокирано». */
+  /** «Блокирано», or «Почивка» for a roster break. */
   readonly label: string;
   /** «1 ч». */
   readonly spanLabel: string;

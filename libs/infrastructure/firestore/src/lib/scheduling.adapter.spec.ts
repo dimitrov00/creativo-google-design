@@ -63,6 +63,7 @@ function blocked(
     locationId: LocationId.of('loc-center'),
     exceptionEffect: ExceptionEffect.Blocked,
     exceptionRanges: ranges,
+    dayBreakRanges: null,
   };
 }
 

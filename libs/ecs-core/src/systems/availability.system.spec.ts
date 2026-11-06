@@ -2656,7 +2656,7 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     const ivan = barberDay({
       id: IVAN,
       roster: [['09:00', '18:00']],
-      exceptions: [{ localDate: DAY, ...lunch.value }],
+      exceptions: [{ localDate: DAY, ...lunch.value, dayBreakRanges: null }],
     });
 
     const starts = composed([line('l1', 35)], [ivan]).map((option) =>
@@ -2729,7 +2729,13 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     const ivan = barberDay({
       id: IVAN,
       roster: [['09:00', '18:00']],
-      exceptions: [{ localDate: DAY, ...ExceptionEffectRule.closed() }],
+      exceptions: [
+        {
+          localDate: DAY,
+          ...ExceptionEffectRule.closed(),
+          dayBreakRanges: null,
+        },
+      ],
     });
     expect(ivan.windows).toEqual([]);
     expect(composed([line('l1', 35)], [ivan])).toEqual([]);

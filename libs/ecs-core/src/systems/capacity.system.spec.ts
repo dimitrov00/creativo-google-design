@@ -88,6 +88,7 @@ function schedule(
         ),
       ),
     ),
+    breaks: [],
   };
   return { versions: [version], turnaroundMinutes: m(turnaroundMinutes) };
 }
@@ -178,7 +179,11 @@ describe('planBarberCapacity', () => {
   it('deletes the entry for a day a published exception closes', () => {
     const planned = plan({
       exceptions: [
-        { localDate: k('2026-08-03'), ...ExceptionEffectRule.closed() },
+        {
+          localDate: k('2026-08-03'),
+          ...ExceptionEffectRule.closed(),
+          dayBreakRanges: null,
+        },
       ],
     });
     expect(contributionOn(planned, '2026-08-03')).toBeNull();
@@ -191,6 +196,7 @@ describe('planBarberCapacity', () => {
         {
           localDate: k('2026-08-03'),
           ...unwrapOk(ExceptionEffectRule.hours([busy(600, 720)])),
+          dayBreakRanges: null,
         },
       ],
     });

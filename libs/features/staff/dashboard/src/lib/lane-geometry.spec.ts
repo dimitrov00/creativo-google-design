@@ -55,6 +55,7 @@ describe('laneGeometryOf', () => {
           seq: 1,
           effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
           effectiveToLocalDate: null,
+          breaks: [],
           segments: [ShiftSegment.of(Weekday.Mon, CENTER, at(8), until(18))],
         },
       ],
@@ -95,6 +96,7 @@ describe('laneGeometryOf', () => {
           seq: 1,
           effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
           effectiveToLocalDate: null,
+          breaks: [],
           segments: [
             ShiftSegment.of(Weekday.Mon, CENTER, at(8), until(12)),
             ShiftSegment.of(Weekday.Mon, MLADOST, at(14), until(18)),
@@ -152,6 +154,7 @@ describe('laneGeometryOf', () => {
           seq: 1,
           effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
           effectiveToLocalDate: null,
+          breaks: [],
           segments: [
             ShiftSegment.of(Weekday.Sun, CENTER, at(3, 30), until(12)),
           ],

@@ -31,6 +31,7 @@ describe('scheduleExceptionFixture', () => {
       utcEpochMs: utcMs('2026-09-28T00:00:00+03:00'),
       locationId: FIXTURE_IDS.location,
       exceptionEffect: 'CLOSED',
+      dayBreakRanges: null,
     });
     // No zone on a temporal entity: the instant is the shop day's first.
     expect(exception).not.toHaveProperty('zone');

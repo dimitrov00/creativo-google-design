@@ -33,8 +33,6 @@ import type {
   ProfilePorts,
   ProgramsPorts,
   RolesAdminPorts,
-  BlockSeriesStreamPorts,
-  BlockSeriesWritePorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
   ShopEventReadPorts,
@@ -65,11 +63,6 @@ export const SCHEDULING_READ_PORTS = new InjectionToken<SchedulingReadPorts>(
 /** The staff schedule-exception command (`ScheduleExceptionPorts`). */
 export const SCHEDULE_EXCEPTION_PORTS =
   new InjectionToken<ScheduleExceptionPorts>('SCHEDULE_EXCEPTION_PORTS');
-
-/** A chair's repeating blocks, live, and their one write (`BlockSeriesStreamPorts & BlockSeriesWritePorts`). */
-export const BLOCK_SERIES_PORTS = new InjectionToken<
-  BlockSeriesStreamPorts & BlockSeriesWritePorts
->('BLOCK_SERIES_PORTS');
 
 /** The appointment readers and the staff search window (`AppointmentReadPorts`). */
 export const APPOINTMENT_READ_PORTS = new InjectionToken<AppointmentReadPorts>(

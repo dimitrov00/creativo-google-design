@@ -16,7 +16,6 @@ import {
   ID_PORTS,
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
-  BLOCK_SERIES_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -75,7 +74,6 @@ import {
 } from '@core/ports';
 import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
-  memoryBlockSeriesPorts,
   FIXTURE_TIME_ZONE,
   type GatewayCall,
   type GatewayScript,
@@ -236,10 +234,6 @@ async function build(
       {
         provide: SCHEDULE_EXCEPTION_PORTS,
         useValue: memoryScheduleExceptionPorts([]),
-      },
-      {
-        provide: BLOCK_SERIES_PORTS,
-        useValue: memoryBlockSeriesPorts([], []),
       },
       { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
       {
@@ -496,6 +490,7 @@ describe('StaffDayStore — the lanes carry the roster’s own minutes', () => {
               seq: 1,
               effectiveFromLocalDate: localDate('2026-01-01'),
               effectiveToLocalDate: null,
+              breaks: [],
               segments: [
                 ShiftSegment.of(Weekday.Sun, CENTER, at(3, 30), until(12)),
               ],
@@ -529,6 +524,7 @@ describe('StaffDayStore — a chair whose day was not read in full (OR-2)', () =
           seq: 1,
           effectiveFromLocalDate: localDate('2026-01-01'),
           effectiveToLocalDate: null,
+          breaks: [],
           segments: [ShiftSegment.of(Weekday.Wed, CENTER, at(9), until(18))],
         },
       ],

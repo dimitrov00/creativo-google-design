@@ -95,14 +95,9 @@ function keys(
 }
 
 function endKey(end: RecurrenceEndRule): string {
-  switch (end.recurrenceEnd) {
-    case RecurrenceEnd.Until:
-      return end.untilLocalDate;
-    case RecurrenceEnd.Count:
-      return `×${end.occurrenceCount}`;
-    case RecurrenceEnd.Never:
-      return '∞';
-  }
+  return end.recurrenceEnd === RecurrenceEnd.Until
+    ? end.untilLocalDate
+    : `×${end.occurrenceCount}`;
 }
 
 function withRule(

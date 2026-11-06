@@ -601,32 +601,16 @@ service cloud.firestore {
       // Its id is the day's busy key (`BusyKey.of`: `<barberId>__<localDate>`,
       // which the booking transaction reads by), so a write must BE the day
       // its id names — the body's barber and date-shaped day — and hold only
-      // the six keys (`ScheduleException`, pinned by
+      // the seven keys (`ScheduleException`, pinned by
       // rules-key-parity.rules-text.spec.ts): zero reads, since a multi-day
       // block writes many days in one transaction — security hardening
       // S-DEP-5. A delete needs neither.
       allow create, update: if mayEditRoster()
-        && request.resource.data.keys().hasOnly(['barberId', 'exceptionEffect', 'exceptionRanges', 'localDate', 'locationId', 'utcEpochMs'])
+        && request.resource.data.keys().hasOnly(['barberId', 'dayBreakRanges', 'exceptionEffect', 'exceptionRanges', 'localDate', 'locationId', 'utcEpochMs'])
         && request.resource.data.barberId is string
         && request.resource.data.localDate is string
         && request.resource.data.localDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && dayDocId == request.resource.data.barberId + '__' + request.resource.data.localDate;
-      allow delete: if mayEditRoster();
-    }
-
-    match /blockSeries/{seriesId} {
-      // A chair's repeating block — a lunch break, an admin hour — and the
-      // days it wrote (`BlockSeries`, owner 2026-11-06). Staff memory only:
-      // clients read the days' effect on `scheduleExceptions`, never this.
-      // Written beside those days in one transaction (`blockSeriesPorts`),
-      // by the same roster editors; every key the rule's variants may carry
-      // (pinned by rules-key-parity.rules-text.spec.ts), zero reads.
-      allow read: if worksTheBook();
-      allow create, update: if mayEditRoster()
-        && request.resource.data.keys().hasOnly(['barberId', 'endMinutes', 'localDates', 'locationId', 'monthlyAnchor', 'monthlyDate', 'monthlyWeek', 'monthlyWeekday', 'occurrenceCount', 'recurrenceEnd', 'recurrenceFrequency', 'recurrenceInterval', 'recurrenceWeekdays', 'startLocalDate', 'startMinutes', 'untilLocalDate', 'yearlyDate', 'yearlyMonth'])
-        && request.resource.data.barberId is string
-        && request.resource.data.localDates is list
-        && request.resource.data.localDates.size() <= 366;
       allow delete: if mayEditRoster();
     }
 

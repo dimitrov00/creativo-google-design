@@ -45,12 +45,14 @@ describe('ScheduleVersion — the roster history', () => {
           effectiveFromLocalDate: '2026-01-01',
           effectiveToLocalDate: '2026-02-28',
           segments: WEEK,
+          breaks: [],
         },
         {
           seq: 1,
           effectiveFromLocalDate: '2026-03-01',
           effectiveToLocalDate: null,
           segments: LATER_WEEK,
+          breaks: [],
         },
       ],
     });
@@ -120,12 +122,14 @@ describe('ScheduleVersion — the roster history', () => {
         effectiveFromLocalDate: day('2026-01-01'),
         effectiveToLocalDate: day('2026-02-15'),
         segments: WEEK,
+        breaks: [],
       },
       {
         seq: 1,
         effectiveFromLocalDate: day('2026-02-01'),
         effectiveToLocalDate: null,
         segments: WEEK,
+        breaks: [],
       },
     ];
     expect(ScheduleVersion.history(overlapping)).toEqual({
@@ -145,12 +149,14 @@ describe('ScheduleVersion — the roster history', () => {
         effectiveFromLocalDate: day('2026-03-01'),
         effectiveToLocalDate: null,
         segments: WEEK,
+        breaks: [],
       },
       {
         seq: 0,
         effectiveFromLocalDate: day('2026-01-01'),
         effectiveToLocalDate: null,
         segments: WEEK,
+        breaks: [],
       },
     ];
     expect(ScheduleVersion.history(openThenMore).ok).toBe(false);
@@ -163,12 +169,14 @@ describe('ScheduleVersion — the roster history', () => {
         effectiveFromLocalDate: day('2026-02-01'),
         effectiveToLocalDate: null,
         segments: LATER_WEEK,
+        breaks: [],
       },
       {
         seq: 0,
         effectiveFromLocalDate: day('2026-01-01'),
         effectiveToLocalDate: day('2026-01-31'),
         segments: WEEK,
+        breaks: [],
       },
     ];
     const result = ScheduleVersion.history(adjacent);
@@ -182,12 +190,14 @@ describe('ScheduleVersion — the roster history', () => {
         effectiveFromLocalDate: day('2026-01-01'),
         effectiveToLocalDate: day('2026-01-31'),
         segments: [seg(Weekday.Mon, 540, 600, MLADOST)],
+        breaks: [],
       },
       {
         seq: 1,
         effectiveFromLocalDate: day('2026-02-01'),
         effectiveToLocalDate: null,
         segments: WEEK,
+        breaks: [],
       },
     ];
     expect(ScheduleVersion.locations(versions)).toEqual([

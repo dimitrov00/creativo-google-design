@@ -10,7 +10,6 @@ import {
 
 const MAX_INTERVAL = 99;
 const MAX_OCCURRENCES = 366;
-const WRITE_AHEAD_DAYS = 182;
 
 const ISO_WEEK: readonly Weekday[] = [
   Weekday.Mon,
@@ -114,12 +113,6 @@ export const RecurrenceRule = {
   MAX_INTERVAL,
   /** The most days one series may write — a year of them. */
   MAX_OCCURRENCES,
-  /**
-   * How far ahead a series that never ends is written — 26 weeks, the
-   * booking horizon's own reach; a daily job writes the next day as the
-   * horizon moves (`BlockSeriesSystem.topUp`).
-   */
-  WRITE_AHEAD_DAYS,
 
   /**
    * The edge guard and the canonicaliser: an interval of `1…MAX_INTERVAL`

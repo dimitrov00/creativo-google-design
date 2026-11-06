@@ -1,9 +1,9 @@
 # Blocked time moves like a visit; a break series — ruling (2026-11-06)
 
-> **Status: RULED and BUILT (2026-11-06), all four rulings.** Ruling 4 adds
-> the `blockSeries` collection, its rules, the `(barberId, startLocalDate
-desc)` index and the `topUpBlockSeriesDaily` schedule: deploy the rules,
-> the indexes and the functions together.
+> **Status: rulings 1–3 RULED and BUILT (2026-11-06); ruling 4 (the stored
+> series) was built, then WITHDRAWN the same day and reverted — superseded by
+> `2026-11-06-breaks-live-on-the-roster.md`: a weekly break lives on the
+> roster, never as a document per day.**
 > The owner: "should breaks be event blocks or shift related? … a block and a
 > break are the same, no? … build it, and revisit the recurrence — a lunch
 > break is a recurring blocker." Rubric of `2026-10-26-owner-rulings.md`:
@@ -42,7 +42,8 @@ desc)` index and the `topUpBlockSeriesDaily` schedule: deploy the rules,
 3. **Today a dragged series day moves alone** (C). A series is written day
    by day and no series is stored (§9 D16(b)), so nothing knows which days
    belong together: a drag edits the one day it is on.
-4. **The series is stored, and an edit asks how far it reaches** (U, C):
+4. **The series is stored, and an edit asks how far it reaches** (U, C — NOT
+   BUILT):
    - A staff-only `blockSeries/{seriesId}` document: the chair, the shop,
      the rule, the range's minutes, the reason and the paid flag, and the
      days it has written. The public exception document is unchanged (the
@@ -63,21 +64,3 @@ desc)` index and the `topUpBlockSeriesDaily` schedule: deploy the rules,
      the custom page is Notion's: interval, weekday discs, start, end
      («Без край · На дата · След N пъти»), with the rule said back in one
      line above the dock («Повтаря се всеки делничен ден, без край»).
-
-## As built
-
-- `BlockSeries` (`block-series.entity.ts`), `RecurrenceEnd.NEVER`, the
-  scope dictionary (`BlockSeriesScope`) and `BlockSeriesSystem` (`memberOf`,
-  `create`, `edit`, `topUp`, `stands`); `RecurrenceSystem.occurrencesFrom`
-  keeps a series' rhythm when it is written ahead.
-- `createBlockSeries`, `editBlockSeries` (refuses a series another device
-  changed, `SCHEDULING_BLOCK_SERIES_MOVED`) and `topUpBlockSeries` over
-  `writeBlockSeries`, ONE transaction for the days and the series.
-- The desk: `BlockSeriesFlow` asks «Само този ден · Този и следващите ·
-  Отказ» from the block sheet's «Запази» and «Премахни» and from a drag on
-  the grid; a new repeating block is saved as a series per chair. The
-  repeat page's end menu leads with «Без край», which says «от пн, 9.11 ·
-  без край» instead of a count.
-- Found while testing: a chair whose weekly hours already split at lunch
-  (Иван 9–13, 14–18) shows no 13:00 block — the gap is closed time. That is
-  ruling 1's line between the two kinds of break, seen live.

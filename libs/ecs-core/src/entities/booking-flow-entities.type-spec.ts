@@ -8,15 +8,13 @@
  */
 import type {
   BookingCart,
+  DayBreaks,
   ExceptionEffectRule,
-  RecurrenceRule,
   FlexibleWhen,
   WaitlistLifecycle,
 } from '@core/components';
-import { RecurrenceEnd } from '@core/components';
 import { ExceptionEffect, WaitlistStatus } from '@core/primitives';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
-import type { BlockSeries, BlockSeriesMeta } from './block-series.entity';
 import type {
   ScheduleException,
   ScheduleExceptionMeta,
@@ -30,14 +28,15 @@ type IsNever<T> = [T] extends [never] ? true : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
 type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 
-/* ── ScheduleException = ScheduleExceptionMeta & ExceptionEffectRule ── */
+/* ── ScheduleException = ScheduleExceptionMeta & ExceptionEffectRule & DayBreaks ── */
 
 export const scheduleExceptionNotNever: IsNever<ScheduleException> = false;
 export const scheduleExceptionFlat: EveryVariantFlat<ScheduleException> = true;
-export const scheduleExceptionDisjoint: Disjoint<
-  ScheduleExceptionMeta,
-  ExceptionEffectRule
-> = true;
+export const scheduleExceptionDisjoint: [
+  Disjoint<ScheduleExceptionMeta, ExceptionEffectRule>,
+  Disjoint<ScheduleExceptionMeta, DayBreaks>,
+  Disjoint<ExceptionEffectRule, DayBreaks>,
+] = [true, true, true];
 
 declare const exception: ScheduleException;
 // The effect sits at the root and narrows on its own discriminator.
@@ -50,28 +49,17 @@ export const closedHasNoRanges: unknown =
     ? // @ts-expect-error — a closed day has no ranges
       exception.exceptionRanges
     : null;
+export const rosteredHasNoRanges: unknown =
+  exception.exceptionEffect === ExceptionEffect.Rostered
+    ? // @ts-expect-error — a day that keeps the roster has no ranges of its own
+      exception.exceptionRanges
+    : null;
+// Every day may say its own breaks, whatever its effect.
+export const dayBreaks: unknown = exception.dayBreakRanges;
 // @ts-expect-error — the effect is flat, never nested under `effect`
 export const noEffect: unknown = exception.effect;
 // @ts-expect-error — no zone on a temporal entity (Law 7.2)
 export const noZone: unknown = exception.zone;
-
-/* ── BlockSeries = BlockSeriesMeta & RecurrenceRule ── */
-
-export const blockSeriesNotNever: IsNever<BlockSeries> = false;
-export const blockSeriesFlat: EveryVariantFlat<BlockSeries> = true;
-export const blockSeriesDisjoint: Disjoint<BlockSeriesMeta, RecurrenceRule> =
-  true;
-declare const blockSeries: BlockSeries;
-// The end narrows at the root: «Без край» carries no date.
-export const seriesUntil: unknown =
-  blockSeries.recurrenceEnd === RecurrenceEnd.Until
-    ? blockSeries.untilLocalDate
-    : null;
-export const neverHasNoDate: unknown =
-  blockSeries.recurrenceEnd === RecurrenceEnd.Never
-    ? // @ts-expect-error — a series that never ends has no last day
-      blockSeries.untilLocalDate
-    : null;
 
 /* ── WaitlistRequest = Meta & BookingCart & FlexibleWhen & WaitlistLifecycle ── */
 

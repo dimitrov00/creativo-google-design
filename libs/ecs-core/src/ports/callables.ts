@@ -8,6 +8,7 @@ import {
   IdentityCall,
   InvitationCall,
   RolesCall,
+  RosterCall,
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
@@ -29,7 +30,8 @@ import type { PipelineError } from '@core/errors';
  * audit-hardening Phase 3 adds `exportClientData`, the admin's data-subject
  * export (WS-C), and `previewClientErasure` / `eraseClient`, the admin's
  * erasure (WS-D); security hardening adds `setRoles`, the admin's roles
- * change (S-WS-E). Triggers and schedules are never dialled, so they are
+ * change (S-WS-E); the break pass adds `amendRosterBreaks`, the desk's one
+ * door to a chair's roster (2026-11-06). Triggers and schedules are never dialled, so they are
  * not here.
  */
 export const Callables = {
@@ -57,6 +59,7 @@ export const Callables = {
   PreviewClientErasure: 'previewClientErasure',
   EraseClient: 'eraseClient',
   SetRoles: 'setRoles',
+  AmendRosterBreaks: 'amendRosterBreaks',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -190,6 +193,14 @@ export type CallableWire = {
     readonly input: RolesCall;
     readonly answer: RolesCall.Changed;
   };
+  /**
+   * A chair's standing breaks changed from a day on — one roster write;
+   * the act's operation id rides the payload ({@link OPERATION_ID_FIELD}).
+   */
+  readonly [Callables.AmendRosterBreaks]: {
+    readonly input: RosterCall;
+    readonly answer: RosterCall.Amended;
+  };
 };
 
 /**
@@ -235,6 +246,7 @@ export const OPERATION_ID_FIELD: {
   [Callables.PreviewClientErasure]: 'operationId',
   [Callables.EraseClient]: 'operationId',
   [Callables.SetRoles]: 'operationId',
+  [Callables.AmendRosterBreaks]: 'operationId',
 };
 
 /**
@@ -276,6 +288,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.PreviewClientErasure]: AppCheckTokenUse.LimitedUse,
   [Callables.EraseClient]: AppCheckTokenUse.LimitedUse,
   [Callables.SetRoles]: AppCheckTokenUse.LimitedUse,
+  [Callables.AmendRosterBreaks]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -337,4 +350,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.PreviewClientErasure]: ClientPrivacyCall.decodeErasurePreview,
   [Callables.EraseClient]: ClientPrivacyCall.decodeErasure,
   [Callables.SetRoles]: RolesCall.decodeChanged,
+  [Callables.AmendRosterBreaks]: RosterCall.decodeAmended,
 };

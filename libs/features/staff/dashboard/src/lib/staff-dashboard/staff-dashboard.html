@@ -1628,16 +1628,17 @@
        and its two answers — the platform's centred dialog, the destructive
        one red, the safe one bold and last. Mounted always, so its exit can
        play; it draws nothing until asked. -->
-  <!-- HOW FAR AN EDIT OF A REPEATING BLOCK REACHES (owner, 2026-11-06):
-       Apple Calendar's question, the smaller act preferred. -->
+  <!-- HOW FAR A BREAK EDIT REACHES (owner, 2026-11-06): a tapped or
+       dragged roster break — Apple Calendar's question, the smaller act
+       preferred. -->
   <ui-alert
-    [uiPresented]="seriesFlow.question() !== null"
-    [uiTitle]="t('staff.day.seriesTitle')"
-    [uiMessage]="seriesFlow.message()"
-    [uiActions]="seriesFlow.actions()"
-    data-testid="staff-series-scope"
-    (uiPicked)="seriesFlow.pick($event)"
-    (uiDismissed)="seriesFlow.pick('CANCEL')"
+    [uiPresented]="breakFlow.question() !== null"
+    [uiTitle]="t('staff.day.breakTitle')"
+    [uiMessage]="breakFlow.message()"
+    [uiActions]="breakFlow.actions()"
+    data-testid="staff-break-scope"
+    (uiPicked)="breakFlow.pick($event)"
+    (uiDismissed)="breakFlow.pick('CANCEL')"
   />
 
   <ui-alert

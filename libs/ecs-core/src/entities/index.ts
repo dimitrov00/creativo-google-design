@@ -10,7 +10,6 @@ export * from './barber-busy-day.entity';
 export * from './barber-lead-time-sample.entity';
 export * from './barber-schedule.entity';
 export * from './barber.entity';
-export * from './block-series.entity';
 export * from './booking-policy-settings.entity';
 export * from './capacity-month.entity';
 export * from './client-money-stats.entity';

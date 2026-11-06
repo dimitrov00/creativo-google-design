@@ -23,11 +23,7 @@ describe('the repeat page', () => {
       'monthly',
       'yearly',
     ]);
-    expect(Object.values(RECURRENCE_END_WORD)).toEqual([
-      'never',
-      'until',
-      'count',
-    ]);
+    expect(Object.values(RECURRENCE_END_WORD)).toEqual(['until', 'count']);
     expect(Object.values(WEEKDAY_WORD)).toEqual([
       'monday',
       'tuesday',

@@ -5,7 +5,8 @@ import {
   RequestedSubjectRole,
   BookingLifecycle,
   BookingPolicy,
-  type ExceptionEffectRule,
+  type DayBreaks,
+  ExceptionEffectRule,
   MinuteRange,
   type DayHours,
   type E164,
@@ -107,7 +108,8 @@ export type DecisionException = Pick<
   ScheduleException,
   'barberId' | 'localDate'
 > &
-  ExceptionEffectRule;
+  ExceptionEffectRule &
+  DayBreaks;
 
 /**
  * Everything the decision reads, loaded INSIDE the transaction so the commit

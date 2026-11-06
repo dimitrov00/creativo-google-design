@@ -641,6 +641,10 @@ const SCHEDULING_WIRE = uniform(
     [SchedulingErrorCode.BookingPolicyInvalid]: fields(S.Internal),
     [SchedulingErrorCode.ClientStatsPolicyInvalid]: fields(S.Internal),
     [SchedulingErrorCode.FlexibleWhenFull]: fields(S.FailedPrecondition),
+    [SchedulingErrorCode.RosterBreakInPast]: fields(S.FailedPrecondition),
+    [SchedulingErrorCode.RosterMissing]: fields(S.FailedPrecondition),
+    [SchedulingErrorCode.RosterUnauthenticated]: fields(S.Unauthenticated),
+    [SchedulingErrorCode.RosterForbidden]: fields(S.PermissionDenied),
     [SchedulingErrorCode.StaffScheduleRetroactiveAmendment]: fields(
       S.FailedPrecondition,
     ),

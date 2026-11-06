@@ -7,6 +7,7 @@ import {
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import {
+  DayBreaks,
   ExceptionEffectRule,
   type ExceptionDetail,
   ExceptionReason,
@@ -197,7 +198,10 @@ export const ScheduleExceptionSystem = {
     ) {
       return null;
     }
-    const current = existing === null ? [] : existing.exceptionRanges;
+    const current =
+      existing === null || existing.exceptionEffect === ExceptionEffect.Rostered
+        ? []
+        : existing.exceptionRanges;
     return ExceptionEffectRule.blocked(
       ScheduleExceptionSystem.merge(current, add),
     );
@@ -236,8 +240,10 @@ export const ScheduleExceptionSystem = {
    *
    * `ok(null)` means KEEP the stored document unchanged (a whole-day
    * `CLOSED` already covers every minute asked for); any other `ok` is the
-   * day's new body under `meta`. A merge with no range left refuses
-   * (`SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES`) and nothing is written.
+   * day's new body under `meta`, keeping the day's own breaks
+   * (`dayBreakRanges`) — a day stood down whole has none. A merge with no
+   * range left refuses (`SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES`) and
+   * nothing is written.
    */
   block(
     existing: ScheduleException | null,
@@ -250,7 +256,11 @@ export const ScheduleExceptionSystem = {
         : ScheduleExceptionSystem.addRanges(existing, ranges);
     if (effect === null) return Result.ok(null);
     if (!effect.ok) return effect;
-    return Result.ok({ ...meta, ...effect.value });
+    const breaks =
+      ranges.length === 0 || existing === null
+        ? DayBreaks.roster()
+        : { dayBreakRanges: existing.dayBreakRanges };
+    return Result.ok({ ...meta, ...effect.value, ...breaks });
   },
 
   /**
@@ -262,13 +272,29 @@ export const ScheduleExceptionSystem = {
    * on `CLOSED`) and the day-wide lift is the honest path. Otherwise the
    * range is removed by its edges ({@link withoutRange}) and the day keeps
    * its effect — `HOURS` stays `HOURS`, `BLOCKED` stays `BLOCKED` — under
-   * its stored identity.
+   * its stored identity. A day that says its own breaks keeps them: with no
+   * range left it becomes `ROSTERED` rather than deleted.
    */
   unblock(
     existing: ScheduleException | null,
     range: MinuteRange | null,
   ): Result<ScheduleException | null, SchedulingError> {
-    if (range === null || existing === null) return Result.ok(null);
+    if (existing === null) return Result.ok(null);
+    const breaks = { dayBreakRanges: existing.dayBreakRanges };
+    const keepBreaks: ScheduleException | null =
+      existing.dayBreakRanges === null
+        ? null
+        : {
+            ...metaOfStored(existing),
+            ...ExceptionEffectRule.rostered(),
+            ...breaks,
+          };
+    if (
+      range === null ||
+      existing.exceptionEffect === ExceptionEffect.Rostered
+    ) {
+      return Result.ok(range === null ? keepBreaks : existing);
+    }
     if (existing.exceptionEffect === ExceptionEffect.Closed) {
       return Result.err(
         SchedulingError.scheduleExceptionEmptyRanges(ExceptionEffect.Closed),
@@ -278,12 +304,47 @@ export const ScheduleExceptionSystem = {
       existing.exceptionRanges,
       range,
     );
-    if (left.length === 0) return Result.ok(null);
+    if (left.length === 0) return Result.ok(keepBreaks);
     const effect =
       existing.exceptionEffect === ExceptionEffect.Hours
         ? ExceptionEffectRule.hours(left)
         : ExceptionEffectRule.blocked(left);
     if (!effect.ok) return effect;
-    return Result.ok({ ...metaOfStored(existing), ...effect.value });
+    return Result.ok({ ...metaOfStored(existing), ...effect.value, ...breaks });
+  },
+
+  /**
+   * What ONE barber-day becomes when its BREAKS are said for that day alone
+   * («Само този ден», owner 2026-11-06): `ranges` are the day's breaks
+   * instead of the roster's (`[]`: no break that day), `null` hands the day
+   * back to the roster's. Whatever else the day holds — its blocks, its
+   * changed hours — stays. A day off whole has no breaks to change and is
+   * kept as it is. `ok(null)` means the day holds nothing any more: delete
+   * its document. The answer is the day's whole next body, never "keep".
+   */
+  withDayBreaks(
+    existing: ScheduleException | null,
+    ranges: readonly MinuteRange[] | null,
+    meta: ScheduleExceptionMeta,
+  ): ScheduleException | null {
+    if (
+      existing !== null &&
+      existing.exceptionEffect === ExceptionEffect.Closed
+    ) {
+      return existing;
+    }
+    const breaks = ranges === null ? DayBreaks.roster() : DayBreaks.of(ranges);
+    if (existing === null) {
+      return breaks.dayBreakRanges === null
+        ? null
+        : { ...meta, ...ExceptionEffectRule.rostered(), ...breaks };
+    }
+    if (
+      existing.exceptionEffect === ExceptionEffect.Rostered &&
+      breaks.dayBreakRanges === null
+    ) {
+      return null;
+    }
+    return { ...existing, ...breaks };
   },
 } as const;

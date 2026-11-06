@@ -359,20 +359,6 @@
           "order": "DESCENDING"
         }
       ]
-    },
-    {
-      "collectionGroup": "blockSeries",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "barberId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "startLocalDate",
-          "order": "DESCENDING"
-        }
-      ]
     }
   ],
   "fieldOverrides": [
@@ -424,6 +410,11 @@
     {
       "collectionGroup": "scheduleExceptions",
       "fieldPath": "exceptionRanges",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "scheduleExceptions",
+      "fieldPath": "dayBreakRanges",
       "indexes": []
     },
     {
@@ -981,11 +972,6 @@
       "collectionGroup": "barberLeadTimeSamples",
       "fieldPath": "purgeAt",
       "ttl": true,
-      "indexes": []
-    },
-    {
-      "collectionGroup": "blockSeries",
-      "fieldPath": "localDates",
       "indexes": []
     }
   ]

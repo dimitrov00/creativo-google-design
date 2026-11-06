@@ -52,7 +52,6 @@ import {
   StaffEditErrorCode,
 } from '@core/errors';
 import {
-  type BlockSeriesScope,
   type BookingCall,
   BookingPolicy,
   ClientIssueKind,
@@ -60,7 +59,6 @@ import {
   CouponValue,
   type MinuteRange,
   Principal,
-  type RecurrenceRule,
   type ShopNow,
   type VisitEditWrite,
   VisitEditWriteOutcome,
@@ -72,7 +70,6 @@ import type {
   AppointmentPhoto,
   BarberBusyDay,
   BarberSchedule,
-  BlockSeries,
   Coupon,
   CouponGrant,
   GiftVoucher,
@@ -102,9 +99,8 @@ import {
   adoptVisitPhoto,
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
+  type AmendRosterBreaksCommand,
   clearScheduleBlock,
-  createBlockSeries,
-  editBlockSeries,
   moveScheduleBlock,
   type ScheduleBlocksCommand,
   loadHeldGrants,
@@ -112,6 +108,7 @@ import {
   type SaveVisitEditCommand,
   saveVisitEdit,
   type VisitPhotoSubject,
+  writeDayBreaks,
   writeScheduleBlocks,
 } from '@core/pipelines';
 import { downscaleImage } from '@creativo/infrastructure/storage';
@@ -120,7 +117,6 @@ import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
-  BLOCK_SERIES_PORTS,
   CLIENT_ISSUE_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
@@ -335,8 +331,18 @@ function occupiedOn(
 export interface LaneGeometry {
   /** The BOOKABLE windows — roster ∩ shop hours − blocks, at the shops the day offers. */
   readonly rostered: readonly MinuteRange[];
-  /** The carve-outs — a break, an admin hour — clipped to worked time. */
+  /** The carve-outs — an admin hour, a one-off — clipped to worked time. */
   readonly blocks: readonly MinuteRange[];
+  /** The day's breaks as drawn — the roster's lunch, or the day's own — clipped to worked time. */
+  readonly breaks: readonly MinuteRange[];
+  /**
+   * The day's breaks as the day KEEPS them, unclipped: its own
+   * (`dayBreakRanges`) when it says them, else the roster's for the weekday
+   * — what a «Само този ден» edit starts from.
+   */
+  readonly dayBreaks: readonly MinuteRange[];
+  /** The day says its own breaks: an edit of one is that day's alone. */
+  readonly breaksOwn: boolean;
   /**
    * The busy projection's spans, UNPADDED (owner, 2026-11-05: free time
    * starts when the chair empties). The turnaround rides beside them.
@@ -349,6 +355,9 @@ export interface LaneGeometry {
 const NO_GEOMETRY: LaneGeometry = {
   rostered: [],
   blocks: [],
+  breaks: [],
+  dayBreaks: [],
+  breaksOwn: false,
   busy: [],
   turnaround: MinuteCount.ZERO,
 };
@@ -395,9 +404,13 @@ export function laneGeometryOf(
   };
   const rostered = RosterSystem.offeredWindows(input);
   if (rostered.length === 0) return NO_GEOMETRY;
+  const own = exception?.dayBreakRanges ?? null;
   return {
     rostered,
     blocks: RosterSystem.offeredCarveOuts(input),
+    breaks: RosterSystem.offeredBreaks(input),
+    dayBreaks: own ?? RosterSystem.rosterBreaksOn(schedule.versions, localDate),
+    breaksOwn: own !== null,
     busy: busyDay === null ? [] : busyDay.blocks,
     turnaround: schedule.turnaroundMinutes,
   };
@@ -432,6 +445,16 @@ export interface BarberDayLane {
    * Wall-clock minutes, like `rostered`.
    */
   readonly blocks: readonly MinuteRange[];
+  /**
+   * The chair's BREAKS that day — its lunch — drawn apart from the blocks
+   * because they are the roster's: an edit of one asks how far it reaches
+   * («Само този ден · Този и следващите»). Wall-clock minutes.
+   */
+  readonly breaks: readonly MinuteRange[];
+  /** The day's breaks as kept, unclipped ({@link LaneGeometry.dayBreaks}). */
+  readonly dayBreaks: readonly MinuteRange[];
+  /** The day says its own breaks ({@link LaneGeometry.breaksOwn}). */
+  readonly breaksOwn: boolean;
   /**
    * EVERY hole inside those windows — the chair's real empty time, whole
    * whatever the clock, the elapsed ones as well as the fillable ones
@@ -488,8 +511,6 @@ export class StaffDayStore {
   /** The raw availability streams the lanes' geometry is derived from (F1-10). */
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   private readonly exceptions = inject(SCHEDULE_EXCEPTION_PORTS);
-  /** The chairs' repeating blocks — a lunch every weekday (owner, 2026-11-06). */
-  private readonly seriesPorts = inject(BLOCK_SERIES_PORTS);
   /** The one typed callable client — every write of the day goes through it. */
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly clock = inject(CLOCK_PORTS);
@@ -1517,45 +1538,6 @@ export class StaffDayStore {
   }));
 
   /**
-   * THE SCOPED CHAIRS' REPEATING BLOCKS, live — the series a block on the
-   * day may belong to (`BlockSeriesSystem.memberOf`), which is what makes
-   * an edit of it ask how far it reaches. Keyed by the chairs alone: a day
-   * step keeps the listeners. A chair whose read fails has none, as if it
-   * repeated nothing — its blocks still move one day at a time.
-   */
-  private readonly seriesChairs = computed(() =>
-    this.laneInputs().barbers.join(' '),
-  );
-  private readonly seriesResult = toSignal<
-    readonly BlockSeries[],
-    readonly BlockSeries[]
-  >(
-    toObservable(this.seriesChairs).pipe(
-      switchMap((chairs): Observable<readonly (readonly BlockSeries[])[]> =>
-        chairs === ''
-          ? of([])
-          : combineLatest(
-              chairs
-                .split(' ')
-                .map((barberId) =>
-                  this.seriesPorts
-                    .observeBlockSeries(BarberId.of(barberId))
-                    .pipe(
-                      map((result): readonly BlockSeries[] =>
-                        result.ok ? result.value : [],
-                      ),
-                    ),
-                ),
-            ),
-      ),
-      map((lists): readonly BlockSeries[] => lists.flat()),
-    ),
-    { initialValue: [] },
-  );
-  /** Every scoped chair's repeating blocks — what `BlockSeriesSystem.memberOf` reads. */
-  readonly repeatingBlocks = computed(() => this.seriesResult());
-
-  /**
    * The appointments of one chair on one shop day — `busyKeys
    * array-contains` — and how many of them could not be read (OR-2).
    */
@@ -1733,6 +1715,9 @@ export class StaffDayStore {
           appointments,
           rostered: geo.rostered,
           blocks: geo.blocks,
+          breaks: geo.breaks,
+          dayBreaks: geo.dayBreaks,
+          breaksOwn: geo.breaksOwn,
           holes: failed ? [] : GridLayoutSystem.holes(geo.rostered, occupied),
           occupied,
           turnaround: geo.turnaround,
@@ -2228,68 +2213,64 @@ export class StaffDayStore {
   }
 
   /**
-   * A NEW REPEATING BLOCK on one chair (`createBlockSeries`): its days and
-   * its series in one write, read in the shop's zone. Same in-flight and
-   * refusal handling as every other roster write.
+   * A chair's breaks said for ONE day alone (owner, 2026-11-06: «Само този
+   * ден» — "no lunch breaks for some specific days, removed day by day"):
+   * `ranges` instead of the roster's (`[]`: none that day), `null` hands the
+   * day back to the roster. One exception document (`writeDayBreaks`); the
+   * day's blocks stay. The day is read in its shop's zone (Law 7.2).
    */
-  async createSeries(cmd: {
-    readonly barberId: BarberId;
-    readonly locationId: LocationId;
-    readonly range: MinuteRange;
-    readonly startLocalDate: LocalDate;
-    readonly rule: RecurrenceRule;
-  }): Promise<boolean> {
-    const timeZone = untracked(this.zoneAt)(cmd.locationId);
-    if (timeZone === null) {
-      this._absenceError.set(CatalogError.locationZoneUnknown(cmd.locationId));
-      return false;
-    }
-    return this.seriesWrite(() =>
-      createBlockSeries({ ...this.seriesPorts, ...this.ids })({
-        ...cmd,
-        timeZone,
-      }),
-    );
-  }
-
-  /**
-   * An edit of a repeating block's day, as far as `scope` reaches
-   * (`editBlockSeries`): moved, resized, or lifted (`range` `null`). A
-   * series another device changed since this one read it is refused, said.
-   */
-  async editSeries(
-    series: BlockSeries,
+  async setDayBreaks(
+    barberId: BarberId,
+    locationId: LocationId,
     localDate: LocalDate,
-    scope: BlockSeriesScope,
-    range: MinuteRange | null,
-  ): Promise<boolean> {
-    const timeZone = untracked(this.zoneAt)(series.locationId);
-    if (timeZone === null) {
-      this._absenceError.set(
-        CatalogError.locationZoneUnknown(series.locationId),
-      );
-      return false;
-    }
-    return this.seriesWrite(() =>
-      editBlockSeries({ ...this.seriesPorts, ...this.ids })({
-        series,
-        localDate,
-        scope,
-        range,
-        timeZone,
-      }),
-    );
-  }
-
-  /** One series write under the roster's in-flight flag, its refusal kept for the toast. */
-  private async seriesWrite(
-    run: () => Promise<Result<unknown, SchedulingError | RepositoryError>>,
+    ranges: readonly MinuteRange[] | null,
   ): Promise<boolean> {
     if (this._absencePending()) return false;
+    const timeZone = untracked(this.zoneAt)(locationId);
+    if (timeZone === null) {
+      this._absenceError.set(CatalogError.locationZoneUnknown(locationId));
+      return false;
+    }
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await run();
+      const result = await writeDayBreaks(this.exceptions)({
+        barberId,
+        locationId,
+        timeZone,
+        localDate,
+        ranges,
+      });
+      if (!result.ok) {
+        this._absenceError.set(result.error);
+        return false;
+      }
+      return true;
+    } finally {
+      this._absencePending.set(false);
+    }
+  }
+
+  /**
+   * A chair's standing breaks changed «from this day on» — `amendRosterBreaks`,
+   * ONE roster write on the server (the roster has no client writer). The
+   * roster's listener redraws every day it reaches.
+   */
+  async amendBreaks(change: AmendRosterBreaksCommand): Promise<boolean> {
+    if (this._absencePending()) return false;
+    const operationId = ClientOperationId.parse(this.ids.nextId());
+    if (!operationId.ok) {
+      this._absenceError.set(
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      );
+      return false;
+    }
+    this._absencePending.set(true);
+    this._absenceError.set(null);
+    try {
+      const result = await this.gateway.callableClient(
+        Callables.AmendRosterBreaks,
+      )({ ...change, operationId: operationId.value });
       if (!result.ok) {
         this._absenceError.set(result.error);
         return false;

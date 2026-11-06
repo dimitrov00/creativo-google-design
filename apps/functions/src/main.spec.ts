@@ -34,6 +34,7 @@ import { hmacSha256Hex } from './adapters/crypto.adapter';
  */
 const seam = vi.hoisted(() => {
   const PIPELINES = [
+    'amendRosterBreaks',
     'auditDocumentChange',
     'bookAppointment',
     'cancelAppointment',
@@ -59,7 +60,6 @@ const seam = vi.hoisted(() => {
     'rescheduleAppointment',
     'runBackfill',
     'sampleLeadTime',
-    'topUpBlockSeries',
     'setRoles',
     'startImpersonation',
     'startPolicyRecompute',
@@ -308,6 +308,7 @@ const ENDPOINTS = {
   rescheduleAppointment: tracedCallable,
   transitionAppointment: tracedCallable,
   markArrived: tracedCallable,
+  amendRosterBreaks: tracedCallable,
   clearArrival: tracedCallable,
   recordSeatTip: tracedCallable,
   staffEditAppointment: walkInCallable,
@@ -319,7 +320,6 @@ const ENDPOINTS = {
   rebuildCapacityOnSettingsChange: written('settings/{docId}', true),
   sweepCapacityDaily: daily('every day 03:00'),
   sampleBarberLeadTimeDaily: daily('every day 04:00'),
-  topUpBlockSeriesDaily: daily('every day 02:30'),
   requestWaitlist: tracedCallable,
   cancelWaitlist: tracedCallable,
   matchWaitlistOnBusyChange: written('barberBusy/{docId}', true),
@@ -712,6 +712,31 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ appointmentId: 'a-1', unchanged: false }),
     expected: { appointmentId: 'a-1', alreadyArrived: false },
   },
+  amendRosterBreaks: {
+    pipeline: 'amendRosterBreaks',
+    input: request(
+      {
+        barberId: 'b-1',
+        locationId: 'loc-1',
+        fromLocalDate: '2026-11-16',
+        weekdays: [5, 1, 1],
+        before: null,
+        after: { startMinutes: 780, endMinutes: 840 },
+        operationId: 'operation-0123456789ab',
+      },
+      STAFF,
+    ),
+    command: {
+      barberId: 'b-1',
+      locationId: 'loc-1',
+      fromLocalDate: '2026-11-16',
+      weekdays: [1, 5],
+      before: null,
+      after: { startMinutes: 780, endMinutes: 840 },
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
+  },
   clearArrival: {
     pipeline: 'markArrival',
     input: request(
@@ -826,13 +851,6 @@ const FLIPPED: { readonly [name: string]: Case } = {
     input: tick,
     command: undefined,
     answer: ok({ written: 0 }),
-    expected: undefined,
-  },
-  topUpBlockSeriesDaily: {
-    pipeline: 'topUpBlockSeries',
-    input: tick,
-    command: undefined,
-    answer: ok({ written: 0, failed: [] }),
     expected: undefined,
   },
   requestWaitlist: {
@@ -1154,7 +1172,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 52 functions — today’s 31 (the repeating blocks’ write-ahead among them), Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair and Phase 4’s roles change', () => {
+  it('exports exactly the 52 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change and the break pass’s roster door', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 

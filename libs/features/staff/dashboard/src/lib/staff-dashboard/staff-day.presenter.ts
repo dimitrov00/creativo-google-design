@@ -121,6 +121,7 @@ export function staffDayWordsOf(
     verb: (key) => translate(key),
     partyOf: (count) => translate('staff.day.partyOf', { count }),
     blocked: translate('staff.day.blockedLabel'),
+    breakLabel: translate('staff.day.breakLabel'),
     span: spanCopyOf(translate),
     daySummaryFree: (span) => translate('staff.day.daySummaryFree', { span }),
     daySummaryTips: (amount) =>
@@ -746,29 +747,31 @@ export function gapRowVm(
   };
 }
 
-/** A chair's block, as the run prints it — the grid block's words in a line. */
+/** A chair's block, as the run prints it — the grid block's words in a line. A roster break («Почивка») when `rosterBreak`. */
 export function blockRowVm(
   interval: MinuteRange,
   chair: GapChair,
   localDate: LocalDate,
   shopNow: ShopNow | null,
   context: Pick<DayRowContext, 'locale' | 'words'>,
+  rosterBreak = false,
 ): BlockRowVm {
   const from = wallClockLabel(localDate, interval.startMinutes, context.locale);
   const to = wallClockLabel(localDate, interval.endMinutes, context.locale);
+  const label = rosterBreak ? context.words.breakLabel : context.words.blocked;
   return {
     agendaRow: AgendaRow.Block,
     // The grid block's own id, so a press opens it through `openBlock`.
-    id: `block:${chair.barberId}:${localDate}:${interval.startMinutes}`,
+    id: `${rosterBreak ? 'break' : 'block'}:${chair.barberId}:${localDate}:${interval.startMinutes}`,
     startMinutes: interval.startMinutes,
     startLabel: from,
     endLabel: to,
-    label: context.words.blocked,
+    label,
     spanLabel: spanWords(
       MinuteCount.span(interval.startMinutes, interval.endMinutes),
       context.words.span,
     ),
-    accessibleName: `${context.words.blocked}, ${from}–${to}`,
+    accessibleName: `${label}, ${from}–${to}`,
     past:
       shopNow !== null &&
       VisitStorySystem.hasEnded(
@@ -1154,6 +1157,7 @@ export function gridLaneEvents(
   blocks: readonly MinuteRange[] | null,
   facts: GridBlockFacts,
   words: StaffDayWords,
+  breaks: readonly MinuteRange[] = [],
 ): readonly GridEvent[] {
   const visits = rows.map((row) => gridVisitEvent(row, facts.attribute, words));
   return blocks === null
@@ -1161,6 +1165,7 @@ export function gridLaneEvents(
     : [
         ...visits,
         ...blocks.map((block) => gridBlockEvent(block, facts, words)),
+        ...breaks.map((entry) => gridBlockEvent(entry, facts, words, true)),
       ];
 }
 
@@ -1173,15 +1178,17 @@ export interface GridBlockFacts {
   readonly attribute: boolean;
 }
 
-/** A lane's break or admin hour, as a block the grid can draw. */
+/** A lane's admin hour — or, `rosterBreak`, its roster break («Почивка») — as a block the grid can draw. */
 export function gridBlockEvent(
   interval: MinuteRange,
   facts: GridBlockFacts,
   words: StaffDayWords,
+  rosterBreak = false,
 ): GridEvent {
   const { barberId, localDate, shopNow } = facts;
   const from = nameClock(localDate, interval.startMinutes);
   const to = nameClock(localDate, interval.endMinutes);
+  const title = rosterBreak ? words.breakLabel : words.blocked;
   return {
     // Stable across a re-render, and unique per lane and DAY: a
     // barber's day holds at most one exception document, so the chair,
@@ -1189,13 +1196,14 @@ export function gridBlockEvent(
     // an id the store cannot resolve back to anything — and the day
     // keeps a block of another visible date from answering for the
     // shown day's (`openBlock`, DEP-11).
-    id: `block:${barberId}:${localDate}:${interval.startMinutes}`,
+    // A roster break is `break:…` — its edit asks how far it reaches.
+    id: `${rosterBreak ? 'break' : 'block'}:${barberId}:${localDate}:${interval.startMinutes}`,
     gridEvent: GridEventTag.Block,
     // The store's own wall-clock minutes — a block that closes at
     // midnight ends at 1440, anchored on its day.
     startMinute: interval.startMinutes,
     endMinute: interval.endMinutes,
-    title: words.blocked,
+    title,
     detail: null,
     // A carve-out is the opposite of a booking; identity is not its
     // business, and the rail stays neutral (the grid's own ruling).
@@ -1210,7 +1218,7 @@ export function gridBlockEvent(
         shopNow,
       ),
     // Says WHAT it is and WHEN — the channel the shading never had.
-    accessibleName: `${words.blocked}, ${from}–${to}`,
+    accessibleName: `${title}, ${from}–${to}`,
     statusIcon: 'booking.blocked',
     // A carve-out is time, not a booking — there is no party to be part of.
     partyLabel: null,

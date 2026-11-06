@@ -22,7 +22,6 @@ export * from './appointment-notes.adapter';
 export * from './appointments.adapter';
 export * from './audit.adapter';
 export * from './catalog.adapter';
-export * from './block-series.adapter';
 export * from './client-stats.adapter';
 export * from './coupons-vouchers.adapter';
 export * from './customers.adapter';

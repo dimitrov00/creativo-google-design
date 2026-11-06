@@ -36,6 +36,7 @@ import {
   StoredDocumentSystem,
 } from '@core/systems';
 import {
+  amendRosterBreaks as amendRosterBreaksPipeline,
   auditDocumentChange,
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
@@ -64,7 +65,6 @@ import {
   startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
-  topUpBlockSeries,
   transitionAppointment as transitionAppointmentPipeline,
   updateProfile as updateProfilePipeline,
   verifyOtp,
@@ -178,6 +178,7 @@ import {
   projectionReport,
   settleAttempt,
 } from './wire/triggers.wire';
+import { decodeAmendRosterBreaks } from './wire/roster.wire';
 import {
   decodeCancelWaitlist,
   decodeRequestWaitlist,
@@ -820,6 +821,22 @@ export const markArrived = onCall(
   ),
 );
 
+/**
+ * A chair's standing breaks changed «from this day on» (owner, 2026-11-06):
+ * one roster write, the roster's one door from the desk. Its capacity
+ * rebuild and its audit row ride the roster's own triggers.
+ */
+export const amendRosterBreaks = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.AmendRosterBreaks, null),
+    root.ports,
+    decodeAmendRosterBreaks,
+    (ports, cmd) => amendRosterBreaksPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
 export const clearArrival = onCall(
   LOG_DIGEST_SECRETS,
   wiredCallable(
@@ -975,18 +992,6 @@ export const sampleBarberLeadTimeDaily = onSchedule(
   { schedule: 'every day 04:00', timeZone: CRON_TIME_ZONE, retryCount: 3 },
   async () => {
     failOnRefusal(await sampleLeadTime(root.ports())());
-  },
-);
-
-/**
- * 02:30 — the repeating blocks that never end (a lunch every weekday)
- * written one day further ahead, before the capacity sweep reads the days
- * (`topUpBlockSeries`, owner 2026-11-06).
- */
-export const topUpBlockSeriesDaily = onSchedule(
-  { schedule: 'every day 02:30', timeZone: CRON_TIME_ZONE, retryCount: 3 },
-  async () => {
-    failOnRefusal(await topUpBlockSeries(root.ports())());
   },
 );
 

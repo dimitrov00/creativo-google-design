@@ -43,15 +43,39 @@ export {
   closedDayBody,
 };
 
-/** A roster's segments for a `Weekday` (1 = Monday … 7 = Sunday), in week order. */
+/**
+ * A roster's WORKED stretches for a `Weekday` (1 = Monday … 7 = Sunday), in
+ * week order: its segments with the weekday's breaks cut out — a lunch is
+ * worked time nobody books, as `RosterSystem` reads it.
+ */
 function rosteredOn(barberId, weekday) {
   const schedule = SCHEDULES.find((entry) => entry.id === barberId);
   // One open-ended version per roster: the seed's history is placed by the
   // pattern, as the roster has read since the shop opened.
   const [version] = schedule?.body.versions ?? [];
-  return (version?.segments ?? []).filter(
-    (segment) => segment.weekday === weekday,
+  const breaks = (version?.breaks ?? []).filter(
+    (entry) => entry.weekday === weekday,
   );
+  return (version?.segments ?? [])
+    .filter((segment) => segment.weekday === weekday)
+    .flatMap((segment) => {
+      let pieces = [segment];
+      for (const cut of breaks) {
+        pieces = pieces.flatMap((piece) =>
+          [
+            {
+              ...piece,
+              endMinutes: Math.min(piece.endMinutes, cut.startMinutes),
+            },
+            {
+              ...piece,
+              startMinutes: Math.max(piece.startMinutes, cut.endMinutes),
+            },
+          ].filter((part) => part.startMinutes < part.endMinutes),
+        );
+      }
+      return pieces;
+    });
 }
 
 /**
