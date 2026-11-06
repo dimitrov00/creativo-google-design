@@ -61,7 +61,7 @@ import {
 import {
   BookingStatus,
   LocalDate,
-  type MinuteCount,
+  MinuteCount,
   type MinuteOfDay,
   type Tag,
   TrackMinute,
@@ -851,6 +851,8 @@ export class StaffTimeGrid {
   protected readonly zoom = computed(() =>
     this.framed() ? 1 : MINUTES_PER_SLOT / this.uiScaleMinutes(),
   );
+  /** How long a TAP's slot runs — the default visit (`VisitDraftSystem.DEFAULT_SPAN_MINUTES`). */
+  readonly uiSlotMinutes = input(30);
   /** The minutes a picked slot snaps to — the time scale's row, at most 30. */
   readonly uiSlotSnapMinutes = input(15);
   /**
@@ -1284,7 +1286,9 @@ export class StaffTimeGrid {
     readonly pointerId: number;
     readonly x0: number;
     readonly y0: number;
-    readonly anchor: number;
+    /** The minute pressed, and what the range must stay clear of (`drawnRange`). */
+    readonly press: MinuteOfDay;
+    readonly occupied: readonly MinuteRun[];
     readonly touch: boolean;
     hold: ReturnType<typeof setTimeout> | null;
     armed: boolean;
@@ -1299,8 +1303,17 @@ export class StaffTimeGrid {
     const target = event.target as HTMLElement | null;
     if (target?.closest('button, [data-pending]')) return;
     const element = event.currentTarget as HTMLElement;
-    const anchor = this.minuteAt(element, event.clientY);
-    if (anchor === null) return;
+    const press = this.minuteAt(element, event.clientY);
+    if (press === null) return;
+    // What a new range must not run into: the column's visits — a
+    // cancelled one gave the chair back — and its blocked time.
+    const occupied = column.events
+      .filter(
+        (e) =>
+          e.gridEvent !== GridEventTag.Gap &&
+          e.bookingStatus !== BookingStatus.Cancelled,
+      )
+      .map(toMinuteRun);
     const move = (e: PointerEvent) => this.onCreateMove(e);
     const up = (e: PointerEvent) => this.onCreateUp(e);
     // The browser took the touch for a scroll: no tap, no draw.
@@ -1320,7 +1333,8 @@ export class StaffTimeGrid {
       pointerId: event.pointerId,
       x0: event.clientX,
       y0: event.clientY,
-      anchor,
+      press,
+      occupied,
       touch,
       hold: touch ? setTimeout(() => this.armCreate(), HOLD_MS) : null,
       armed: false,
@@ -1362,29 +1376,43 @@ export class StaffTimeGrid {
     this.drawTo(event.clientY);
   }
 
-  /** The range from the anchor to the finger, a snap at the least, either way. */
+  /** The range from the press to the finger, inside its neighbours. */
   private drawTo(clientY: number): void {
     const draw = this.creating;
     if (draw === null) return;
-    // Down from the anchor the END follows the finger to the NEAREST snap
-    // (a drag to 14:00 ends at 14:00); up from it the START is the slot the
-    // finger is in. Either way at least one snap long.
-    const snap = this.slotSnap();
-    const { end } = this.extent();
-    const at = this.minuteAt(draw.column, clientY, Math.round) ?? draw.anchor;
-    const above = at < draw.anchor;
-    const start = above
-      ? (this.minuteAt(draw.column, clientY) ?? draw.anchor)
-      : draw.anchor;
-    const stop = Math.min(
-      end,
-      above ? draw.anchor + snap : Math.max(at, draw.anchor + snap),
+    const range = this.rangeOf(draw, this.minuteAt(draw.column, clientY));
+    if (range !== null) this.drawnSlot.set(range);
+  }
+
+  /**
+   * A tap's slot (`finger` null) or a drag's range, kept inside the free
+   * stretch the press began in — never across a neighbour (owner,
+   * 2026-11-06: "it should know about its neighbours"). The rule is the
+   * system's (`GridLayoutSystem.drawnRange`).
+   */
+  private rangeOf(
+    draw: NonNullable<StaffTimeGrid['creating']>,
+    finger: MinuteOfDay | null,
+  ): GridPendingSlot | null {
+    const grain = MinuteCount.of(this.slotSnap());
+    const span = MinuteCount.of(this.uiSlotMinutes());
+    if (!grain.ok || !span.ok) return null;
+    const { start, end } = this.extent();
+    const run = GridLayoutSystem.drawnRange(
+      draw.press,
+      finger,
+      draw.occupied,
+      toMinuteRun({ startMinute: start, endMinute: end }),
+      grain.value,
+      span.value,
     );
-    this.drawnSlot.set({
-      columnId: draw.columnId,
-      startMinute: TrackMinute.ofProven(start),
-      endMinute: TrackMinute.ofProven(stop),
-    });
+    return run === null
+      ? null
+      : {
+          columnId: draw.columnId,
+          startMinute: TrackMinute.ofProven(run.startMinutes),
+          endMinute: TrackMinute.ofProven(run.endMinutes),
+        };
   }
 
   private onCreateUp(event: PointerEvent): void {
@@ -1393,13 +1421,12 @@ export class StaffTimeGrid {
     const drawn = draw.armed ? this.drawnSlot() : null;
     this.endCreate();
     if (!draw.armed) {
-      if (this.liftedId() !== null) this.releaseLift();
-      else {
-        this.slotPicked.emit({
-          columnId: draw.columnId,
-          startMinute: TrackMinute.ofProven(draw.anchor),
-        });
+      if (this.liftedId() !== null) {
+        this.releaseLift();
+        return;
       }
+      const slot = this.rangeOf(draw, null);
+      if (slot !== null) this.slotPicked.emit(slot);
       return;
     }
     if (drawn === null) return;
@@ -1428,18 +1455,13 @@ export class StaffTimeGrid {
     return Math.max(5, this.uiSlotSnapMinutes());
   }
 
-  /** The minute under `clientY` in a column, floored to the snap and kept on the day. */
-  private minuteAt(
-    column: HTMLElement,
-    clientY: number,
-    toSnap: (value: number) => number = Math.floor,
-  ): number | null {
+  /** The minute under `clientY` in a column, kept on the day — the system snaps it. */
+  private minuteAt(column: HTMLElement, clientY: number): MinuteOfDay | null {
     const box = column.getBoundingClientRect();
-    const { start, end, minutes } = this.extent();
+    const { start, minutes } = this.extent();
     if (box.height <= 0 || minutes <= 0) return null;
-    const snap = this.slotSnap();
     const at = start + ((clientY - box.top) / box.height) * minutes;
-    return Math.min(Math.max(toSnap(at / snap) * snap, start), end - snap);
+    return trackStart(TrackMinute.ofProven(Math.max(0, Math.floor(at))));
   }
 
   /** Blank space is a target on the page while its blocks are. */

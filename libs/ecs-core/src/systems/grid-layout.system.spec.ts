@@ -89,6 +89,12 @@ function nowAt(h: number): ShopNow {
   return ZonedTimeSystem.shopNow(instant, FIXTURE_TIME_ZONE);
 }
 
+/** A run of the lane's day, `[from, to)` in minutes. */
+const runAt = (from: number, to: number): MinuteRun => ({
+  startMinutes: minute(from),
+  endMinutes: endMinute(to),
+});
+
 const laneGaps = (
   rostered: readonly MinuteRange[],
   occupied: readonly MinuteRange[],
@@ -699,6 +705,63 @@ describe('GridLayoutSystem.bookableFrom — a new client waits out the turnaroun
     expect(S.bookableFrom(gap, occupied, ten, nowAt(0), DAY)).toBe(
       S.bookableFrom(gap, occupied, ten, nowAt(0), DAY),
     );
+  });
+});
+
+describe('GridLayoutSystem.drawnRange — blank time, inside its neighbours', () => {
+  // A chair: a cut 11:00–11:35 and another 12:10–13:00, the day 09:00–18:00,
+  // a quarter-hour grain, a half-hour tap.
+  const occupied = deepFreeze([runAt(660, 695), runAt(730, 780)]);
+  const day = runAt(540, 1080);
+  const grain = unwrapOk(MinuteCount.of(15));
+  const span = unwrapOk(MinuteCount.of(30));
+  const draw = (press: number, finger: number | null) =>
+    S.drawnRange(
+      minute(press),
+      finger === null ? null : minute(finger),
+      occupied,
+      day,
+      grain,
+      span,
+    );
+  const clock = (run: MinuteRun | null) =>
+    run === null ? null : [run.startMinutes, run.endMinutes];
+
+  it('runs a tap’s span from its slot, up to the next neighbour', () => {
+    expect(clock(draw(605, null))).toEqual([600, 630]);
+    // 12:00 + 30 would run into the 12:10 cut: it stops there.
+    expect(clock(draw(722, null))).toEqual([720, 730]);
+  });
+
+  it('begins where a neighbour ends when the press lands in its last minutes', () => {
+    // 11:40 floors to 11:30, inside the cut that ends 11:35.
+    expect(clock(draw(700, null))).toEqual([695, 725]);
+  });
+
+  it('caps a drag DOWN at the next neighbour’s start', () => {
+    expect(clock(draw(700, 760))).toEqual([695, 730]);
+    expect(clock(draw(905, 963))).toEqual([900, 960]);
+  });
+
+  it('caps a drag UP at the previous neighbour’s end', () => {
+    // From 12:05 up to 10:00: no earlier than the 11:35 end, no later than
+    // the 12:10 start.
+    expect(clock(draw(725, 600))).toEqual([695, 730]);
+    expect(clock(draw(900, 845))).toEqual([840, 915]);
+  });
+
+  it('steps past touching neighbours, and has no range where the day has no room', () => {
+    const touching = [runAt(660, 720), runAt(720, 780)];
+    expect(
+      clock(S.drawnRange(minute(700), null, touching, day, grain, span)),
+    ).toEqual([780, 810]);
+    expect(
+      S.drawnRange(minute(700), null, [runAt(660, 1080)], day, grain, span),
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    expect(draw(700, 760)).toEqual(draw(700, 760));
   });
 });
 

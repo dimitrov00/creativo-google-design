@@ -338,6 +338,58 @@ export const GridLayoutSystem = {
       : MinuteOfDay.ofProven(from);
   },
 
+  /**
+   * The range a tap or a press-and-drag on blank time proposes, KEPT INSIDE
+   * THE FREE STRETCH it began in (owner, 2026-11-06: "it should know about
+   * its neighbours — cap it at the appointment's end or start, depending on
+   * where I drag").
+   *
+   * The stretch is the one around `press` between the `occupied` runs (any
+   * order, may overlap) and the `day`; a press that lands inside a run —
+   * the grain floors 11:40 into a visit that ends at 11:35 — begins where
+   * that run ends. A TAP (`finger` null) runs `span` from the press's slot;
+   * a drag DOWN ends at the finger's nearest grain, a drag UP starts at the
+   * grain the finger is in and ends a grain after the press — at least one
+   * grain either way, and never past a neighbour. `null` when the stretch
+   * has no room at all.
+   */
+  drawnRange(
+    press: MinuteOfDay,
+    finger: MinuteOfDay | null,
+    occupied: readonly MinuteRun[],
+    day: MinuteRun,
+    grain: MinuteCount,
+    span: MinuteCount,
+  ): MinuteRun | null {
+    const runs = [...occupied].sort((a, b) => a.startMinutes - b.startMinutes);
+    let at: number = press;
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i] as MinuteRun;
+      if (run.startMinutes <= at && at < run.endMinutes) at = run.endMinutes;
+    }
+    let lo: number = day.startMinutes;
+    let hi: number = day.endMinutes;
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i] as MinuteRun;
+      if (run.endMinutes <= at) lo = Math.max(lo, run.endMinutes);
+      else if (run.startMinutes >= at) hi = Math.min(hi, run.startMinutes);
+    }
+    if (at >= hi) return null;
+    const anchor = Math.max(lo, Math.floor(at / grain) * grain);
+    let start = anchor;
+    let end: number;
+    if (finger === null) {
+      end = anchor + span;
+    } else if (finger >= at) {
+      end = Math.max(Math.round(finger / grain) * grain, anchor + grain);
+    } else {
+      start = Math.max(lo, Math.floor(finger / grain) * grain);
+      end = anchor + grain;
+    }
+    end = Math.min(end, hi);
+    return end > start ? runOf(start, end) : null;
+  },
+
   /** {@link holes} then {@link sellableAt} — the legacy one-call form. */
   laneGaps(
     rostered: readonly MinuteRange[],

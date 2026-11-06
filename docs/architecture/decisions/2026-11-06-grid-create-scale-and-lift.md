@@ -32,7 +32,13 @@
    Google and Outlook do; a finger holds 250ms first (Apple's), because a
    travelling finger is the frame's scroll. The end follows the finger to the
    nearest snap; the release opens the same menu for the drawn range, and a
-   booking from it drafts that length.
+   booking from it drafts that length. **A tap or a draw stays inside its
+   neighbours** (owner: "it should know about its neighbours — cap it at the
+   appointment's end or start, depending on where I drag";
+   `GridLayoutSystem.drawnRange`): a press in a visit's last minutes begins
+   at its end, a tap's half hour and a drag down stop at the next visit's
+   start, a drag up at the previous one's end. A cancelled visit gave the
+   chair back and is no neighbour; blocked time is.
 3. **The time scale is Outlook's** (U, M). «Мащаб на времето» says how many
    minutes a row of the calendar holds — **10 · 15 (default) · 30 мин · 1 ч**
    (`GridTimeScale`, per device, `staff-schedule-time-scale`). 5 minutes is

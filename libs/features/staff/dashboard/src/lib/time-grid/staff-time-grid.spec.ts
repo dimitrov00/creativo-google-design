@@ -2424,7 +2424,38 @@ describe('StaffTimeGrid — blank time, the scale and lifted blocks', () => {
     const picked = picks();
     columnOf(host).dispatchEvent(mouse('pointerdown', 607));
     document.dispatchEvent(mouse('pointerup', 607));
-    expect(picked).toEqual([{ columnId: 'ivan', startMinute: 600 }]);
+    expect(picked).toEqual([
+      { columnId: 'ivan', startMinute: 600, endMinute: 630 },
+    ]);
+  });
+
+  it('keeps a tap and a drag inside the neighbours around them', () => {
+    // A cut 11:00–11:35 and another from 12:10 (owner, 2026-11-06: "it
+    // should know about its neighbours").
+    const host = page([
+      event({
+        id: 'a',
+        startMinute: trackMinute(660),
+        endMinute: trackMinute(695),
+      }),
+      event({
+        id: 'b',
+        startMinute: trackMinute(730),
+        endMinute: trackMinute(780),
+      }),
+    ]);
+    const picked = picks();
+    // A tap at 11:40 starts where the first cut ends and stops at the next.
+    columnOf(host).dispatchEvent(mouse('pointerdown', 700));
+    document.dispatchEvent(mouse('pointerup', 700));
+    // A drag down from 11:40 past 12:30 stops at 12:10.
+    columnOf(host).dispatchEvent(mouse('pointerdown', 700));
+    document.dispatchEvent(mouse('pointermove', 760));
+    document.dispatchEvent(mouse('pointerup', 760));
+    expect(picked).toEqual([
+      { columnId: 'ivan', startMinute: 695, endMinute: 725 },
+      { columnId: 'ivan', startMinute: 695, endMinute: 730 },
+    ]);
   });
 
   it('leaves a tap on a block to the block', () => {
