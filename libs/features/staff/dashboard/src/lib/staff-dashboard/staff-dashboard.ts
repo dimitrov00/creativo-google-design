@@ -1203,16 +1203,21 @@ export class StaffDashboard {
 
   /** Tapping a block in the grid opens the row it stands for. */
   protected openVisit(rowId: string): void {
-    const row = this.lanes()
+    // The visit SHEET, not the row popover this used to open — that surface
+    // was removed with the row's overflow, so a tap on a calendar block had
+    // quietly become a no-op.
+    const row = this.visitRowOf(rowId);
+    if (row) this.openVisitSheet(row);
+  }
+
+  /** A visit's row on the shown day, by its own name. */
+  private visitRowOf(rowId: string): DayRowVm | undefined {
+    return this.lanes()
       .flatMap((lane) => lane.entries)
       .find(
         (entry): entry is DayRowVm =>
           entry.agendaRow === AgendaRow.Visit && entry.id === rowId,
       );
-    // The visit SHEET, not the row popover this used to open — that surface
-    // was removed with the row's overflow, so a tap on a calendar block had
-    // quietly become a no-op.
-    if (row) this.openVisitSheet(row);
   }
 
   /** The grid blocks a hold may lift (`movableIdsOf`). */
@@ -1231,12 +1236,7 @@ export class StaffDashboard {
    * instead — «Запази» keeps it, ✕ asks first.
    */
   protected dropOnGrid(commit: GridCommit): void {
-    const row = this.lanes()
-      .flatMap((lane) => lane.entries)
-      .find(
-        (entry): entry is DayRowVm =>
-          entry.agendaRow === AgendaRow.Visit && entry.id === commit.id,
-      );
+    const row = this.visitRowOf(commit.id);
     const vm = row === undefined ? null : this.editorVmOf(row);
     const blocks =
       this.store.lanes().find((lane) => lane.barberId === vm?.chairId)
@@ -2241,15 +2241,7 @@ export class StaffDashboard {
 
   protected readonly visitSheetRow = computed<DayRowVm | null>(() => {
     const id = this.visitSheetId();
-    if (id === null) return null;
-    for (const lane of this.lanes()) {
-      for (const entry of lane.entries) {
-        if (entry.agendaRow === AgendaRow.Visit && entry.id === id) {
-          return entry;
-        }
-      }
-    }
-    return null;
+    return id === null ? null : (this.visitRowOf(id) ?? null);
   });
 
   /**
@@ -3061,7 +3053,12 @@ export class StaffDashboard {
     const row = this.visitSheetRow();
     this.savingVisitId.set(appointmentId);
     try {
-      await this.saveFromEditor(appointmentId, commit, row);
+      // SAVED IS DONE (owner, 2026-11-06): the sheet goes, «Отмени» stays on
+      // the day; a refusal keeps the draft, another visit's sheet stays.
+      const landed = await this.saveFromEditor(appointmentId, commit, row);
+      if (landed && row !== null && this.visitSheetId() === row.id) {
+        this.closeVisitSheet();
+      }
     } finally {
       this.savingVisitId.set(null);
     }

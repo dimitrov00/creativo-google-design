@@ -5806,7 +5806,7 @@ describe('StaffDashboard', () => {
   });
 
   // The owner, 2026-09-23: "build the save receipt with whole-save undo".
-  it('offers the receipt after a save, and its undo maps the visit back in one batch, then re-seeds the sheet', async () => {
+  it('closes the sheet on a save that lands, offers the receipt, and its undo maps the visit back in one batch', async () => {
     const component = fixture.componentInstance as unknown as {
       store: { staffEdit: (request: unknown) => Promise<boolean> };
       visitSheetRow: () => { appointmentId: string } | null;
@@ -5854,6 +5854,8 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     expect(edits).toHaveLength(1);
     expect(component.undo()?.message).toBe('staff.day.undo.saved');
+    // Saved is done (owner, 2026-11-06): the sheet goes, the receipt stays.
+    expect(component.visitSheetRow()).toBeNull();
 
     await component.runUndo();
     expect(edits).toHaveLength(2);
@@ -5875,8 +5877,7 @@ describe('StaffDashboard', () => {
     expect(component.undo()).toBeNull();
 
     // The store under test never moved the row, so it already agrees with
-    // the snapshot: the sheet on THIS visit is asked to re-seed, and the
-    // drag the save carried is gone from the draft.
+    // the snapshot: a sheet on THIS visit would be asked to re-seed.
     await fixture.whenStable();
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -5885,7 +5886,6 @@ describe('StaffDashboard', () => {
       appointmentId: 'appointment-1',
       n: 1,
     });
-    expect(editor.dirty()).toBe(false);
   });
 
   /*
