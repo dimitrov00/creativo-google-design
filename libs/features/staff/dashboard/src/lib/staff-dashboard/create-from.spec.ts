@@ -81,7 +81,7 @@ describe('the grid’s create helpers', () => {
     ).toBe('10:30 – 11:00');
   });
 
-  it('lets a hold lift only visits whose story is not over', () => {
+  it('lets a hold lift a visit whose story is not over, and blocked time not yet past', () => {
     const base = {
       startMinute: trackMinute(600),
       endMinute: trackMinute(630),
@@ -123,10 +123,18 @@ describe('the grid’s create helpers', () => {
             gridEvent: GridEventTag.Block,
             terminal: false,
           },
+          {
+            ...base,
+            id: 'old-break',
+            gridEvent: GridEventTag.Block,
+            terminal: false,
+            past: true,
+          },
         ],
       },
     ]);
-    expect([...ids]).toEqual(['live']);
+    // A break moves like a visit (owner, 2026-11-06); one already past does not.
+    expect([...ids]).toEqual(['live', 'break']);
   });
 
   it('starts a new visit with nothing booked, priced or decided', () => {

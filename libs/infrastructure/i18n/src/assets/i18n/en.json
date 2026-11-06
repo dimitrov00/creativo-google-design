@@ -1157,6 +1157,7 @@
       "statusFilterApply": "Apply",
       "statusFilterBlocks": "Blocked time",
       "statusFilterFreeTime": "Free time",
+      "blockOnBlock": "Blocked time can't overlap other blocked time.",
       "statusFilterFreeTimeNote": "Only in the {{view}} view",
       "viewSettings": "Settings",
       "fieldsCount": "{{count}} of {{total}}",

@@ -82,9 +82,13 @@ export function movableIdsOf(
   const ids = new Set<string>();
   for (const column of columns) {
     for (const event of column.events) {
-      if (event.gridEvent === GridEventTag.Visit && !event.terminal) {
-        ids.add(event.id);
-      }
+      // A visit whose story is not over, and blocked time not yet past
+      // (owner, 2026-11-06: a break moves like a visit).
+      const live =
+        event.gridEvent === GridEventTag.Visit
+          ? !event.terminal
+          : event.gridEvent === GridEventTag.Block && !event.past;
+      if (live) ids.add(event.id);
     }
   }
   return ids;

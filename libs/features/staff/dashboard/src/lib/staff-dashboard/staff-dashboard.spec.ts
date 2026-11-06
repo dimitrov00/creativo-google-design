@@ -9002,7 +9002,12 @@ describe('StaffDashboard', () => {
       }
 
       /** A stored block on Ivan's day, laid in before the page comes up. */
-      function blockOn(day: string, from: MinuteOfDay, to: EndMinute): void {
+      function blockOn(
+        day: string,
+        from: MinuteOfDay,
+        to: EndMinute,
+        ...more: readonly (readonly [MinuteOfDay, EndMinute])[]
+      ): void {
         const localDate = unwrapOk(LocalDate.parse(day));
         seededExceptions = [
           ...seededExceptions,
@@ -9018,7 +9023,10 @@ describe('StaffDashboard', () => {
             ),
             locationId: SHOP,
             ...unwrapOk(
-              ExceptionEffectRule.blocked([MinuteRange.of(from, to)]),
+              ExceptionEffectRule.blocked([
+                MinuteRange.of(from, to),
+                ...more.map(([start, end]) => MinuteRange.of(start, end)),
+              ]),
             ),
           },
         ];
@@ -9594,6 +9602,71 @@ describe('StaffDashboard', () => {
         expect(page().blockEdit()).toEqual(
           expect.objectContaining({ startMinute: 720, endMinute: 780 }),
         );
+      });
+
+      it('moves blocked time dropped on the grid in one write, «Отмени» moving it back; never onto other blocked time (owner, 2026-11-06)', async () => {
+        // One day holds one exception document: both ranges in it.
+        blockOn('2026-08-05', wallAt(12), until(13), [wallAt(16), until(17)]);
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const grid = fixture.componentInstance as unknown as {
+          movableIds: () => ReadonlySet<string>;
+          dropOnGrid: (commit: unknown) => void;
+          undo: () => {
+            message: string;
+            inverse: () => Promise<boolean>;
+          } | null;
+          notice: () => string | null;
+          store: { saveBlocks: (plan: unknown) => Promise<boolean> };
+        };
+        const id = 'block:ivan:2026-08-05:720';
+        // A break moves like a visit: the hold lifts it.
+        expect(grid.movableIds().has(id)).toBe(true);
+        const plans: {
+          lift: { range: { startMinutes: number; endMinutes: number } };
+          writes: { ranges: { startMinutes: number; endMinutes: number }[] }[];
+        }[] = [];
+        grid.store.saveBlocks = async (plan) => {
+          plans.push(plan as (typeof plans)[number]);
+          return true;
+        };
+        // An hour later, into free time: lift 12:00–13:00, write 13:00–14:00.
+        grid.dropOnGrid({
+          id,
+          startMinute: 780,
+          endMinute: 840,
+          editCommand: 'MOVE',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plans).toHaveLength(1);
+        expect(plans[0]?.lift.range).toEqual({
+          startMinutes: 720,
+          endMinutes: 780,
+        });
+        expect(plans[0]?.writes[0]?.ranges).toEqual([
+          { startMinutes: 780, endMinutes: 840 },
+        ]);
+        expect(grid.undo()?.message).toBe('staff.day.undo.saved');
+        // The way back is the same move reversed.
+        await grid.undo()?.inverse();
+        expect(plans[1]?.lift.range).toEqual({
+          startMinutes: 780,
+          endMinutes: 840,
+        });
+        expect(plans[1]?.writes[0]?.ranges).toEqual([
+          { startMinutes: 720, endMinutes: 780 },
+        ]);
+        // Onto the 16:00 block it would merge with: back down, said.
+        grid.dropOnGrid({
+          id,
+          startMinute: 930,
+          endMinute: 990,
+          editCommand: 'MOVE',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plans).toHaveLength(2);
+        expect(grid.notice()).toBe('staff.day.blockOnBlock');
       });
 
       it('draws a block in the list as well as the grid, opens it from either, and hides both behind the filter', async () => {

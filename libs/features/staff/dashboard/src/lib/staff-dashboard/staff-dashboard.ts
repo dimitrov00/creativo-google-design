@@ -87,6 +87,7 @@ import {
   PhoneSystem,
   RosterSystem,
   ScheduleExceptionSystem,
+  type BlockSavePlan,
   ScheduleFilterSystem,
   SearchFieldsSystem,
   type SideWrites,
@@ -211,8 +212,9 @@ import {
   movableIdsOf,
   slotTimeLabel,
 } from './create-from';
-import { DropRoute, dropRouteOf } from './grid-drop';
+import { blockDropOf, blockKeyOf, DropRoute, dropRouteOf } from './grid-drop';
 import { editorVmOf } from './editor-vm';
+import { laneVmOf } from './lane-vm';
 import { GridTimeScale } from '../grid-time-scale';
 import { StaffTimeScaleSheet } from '../staff-time-scale-sheet/staff-time-scale-sheet';
 import {
@@ -262,13 +264,11 @@ import {
   chairMinutesOf,
   type DayRowContext,
   dayRowVm,
-  gapRowVm,
   wallClockLabel,
   agendaCardVm,
   allDayEntriesOf,
   bookClientOption,
   daySummaryWords,
-  blockRowVm,
   dayTipsLine,
   exceptionWord,
   footShown,
@@ -1236,6 +1236,11 @@ export class StaffDashboard {
    * instead — «Запази» keeps it, ✕ asks first.
    */
   protected dropOnGrid(commit: GridCommit): void {
+    const key = blockKeyOf(commit.id);
+    if (key !== null) {
+      this.dropBlock(commit, key);
+      return;
+    }
     const row = this.visitRowOf(commit.id);
     const vm = row === undefined ? null : this.editorVmOf(row);
     const blocks =
@@ -1250,6 +1255,47 @@ export class StaffDashboard {
     } else {
       this.droppedTime.set(commit);
       this.openVisitSheet(row);
+    }
+  }
+
+  /** Blocked time dropped on the grid (`blockDropOf`): saved, «Отмени» the way back. */
+  private dropBlock(
+    commit: GridCommit,
+    key: NonNullable<ReturnType<typeof blockKeyOf>>,
+  ): void {
+    const events = this.gridColumns().flatMap((column) => column.events);
+    const from = events.find((event) => event.id === commit.id);
+    const day = `block:${key.barberId}:${key.localDate}:`;
+    const drop =
+      from === undefined
+        ? null
+        : blockDropOf({
+            ...key,
+            from,
+            to: commit,
+            others: events.filter(
+              (event) => event.id !== commit.id && event.id.startsWith(day),
+            ),
+            locationId: this.shopOfChair(key.barberId),
+          });
+    if (drop?.route === DropRoute.Refuse) {
+      this.setNotice(this.transloco.translate('staff.day.blockOnBlock'));
+    }
+    if (drop?.move && drop.back) void this.saveBlockDrop(drop.move, drop.back);
+    else this.putDown();
+  }
+
+  private async saveBlockDrop(
+    move: BlockSavePlan,
+    back: BlockSavePlan,
+  ): Promise<void> {
+    this.grid()?.setDown();
+    if (await this.store.saveBlocks(move)) {
+      this.offerUndoOf(this.transloco.translate('staff.day.undo.saved'), () =>
+        this.store.saveBlocks(back),
+      );
+    } else {
+      this.grid()?.releaseLift();
     }
   }
 
@@ -1448,75 +1494,20 @@ export class StaffDashboard {
       this.catalog.barberVms().map((vm) => [vm.id, vm] as const),
     );
     const context = this.rowContext();
-    const shopNow = context.shopNow;
     // The lanes are the shown day's (`workingLanes`).
     const localDate = this.store.dayKey();
 
     return this.store.workingLanes().map((lane) => {
       const vm = vmById.get(lane.barberId);
-
-      const visits = this.drawn(
-        lane.appointments.map((appointment) =>
-          dayRowVm(appointment, lane.barberId, context),
-        ),
-      );
-      const barberName = vm ? this.content.text(vm.name) : lane.barberId;
       const chair = {
         barberId: lane.barberId,
-        barberName,
+        barberName: vm ? this.content.text(vm.name) : lane.barberId,
         barberAvatarSrc: vm?.avatarSrc ?? null,
         barberTone: this.toneOf(lane.barberId),
       };
-      const gaps: GapRowVm[] = lane.gaps.map((gap) =>
-        gapRowVm(gap, chair, localDate, context),
+      return laneVmOf(lane, chair, localDate, context, (rows) =>
+        this.drawn(rows),
       );
-      const blocks =
-        localDate === null
-          ? []
-          : lane.blocks.map((block) =>
-              blockRowVm(block, chair, localDate, shopNow, context),
-            );
-      // One run in clock order, on the shop's wall clock (one shop day per
-      // lane). A gap, a block and a visit never share a start minute — a
-      // hole or a block holds no visit's start — so the stable sort is total.
-      const clockOrder: RunEntryVm[] = [...visits, ...gaps, ...blocks].sort(
-        (a, b) => startMinuteOf(a) - startMinuteOf(b),
-      );
-
-      // ── The present tense ──────────────────────────────────────────────
-      //
-      // The run had none: nothing separated a cut finished at ten from one
-      // three hours out, and the screen opened at 09:00 on a day already
-      // half over. The chair's next unstarted visit is the row the eye
-      // should find first; the NOW hairline is where the day actually is.
-      // The FIRST in the lane's own order (the envelope order the day's
-      // reader delivers) that has not begun on the shop's wall clock
-      // (`VisitListSystem.hasStarted`).
-      const next =
-        shopNow === null
-          ? null
-          : VisitListSystem.firstOpenInChair(
-              visits,
-              (row) => ({
-                bookingStatus: row.bookingStatus,
-                start: WallTime.of(row.localDate, row.startMinute),
-              }),
-              shopNow,
-            );
-      const entries: RunEntryVm[] = clockOrder.map((entry) =>
-        entry.agendaRow === AgendaRow.Visit && entry.id === next?.id
-          ? { ...entry, isNext: true }
-          : entry,
-      );
-
-      return {
-        barberId: lane.barberId,
-        barberName,
-        avatarSrc: vm?.avatarSrc ?? null,
-        entries,
-        rostered: lane.rostered.length > 0,
-        failed: lane.failed,
-      };
     });
   });
 
@@ -4135,15 +4126,13 @@ export class StaffDashboard {
    * and minute is not the one tapped (DEP-11).
    */
   protected openBlock(blockId: string): void {
-    const parts = blockId.split(':');
-    const dayRaw = parts.at(-2);
-    const barberRaw = parts.slice(1, -2).join(':');
-    if (dayRaw === undefined || dayRaw !== this.store.dayKey()) return;
-    const start = MinuteOfDay.of(Number(parts.at(-1)));
+    const key = blockKeyOf(blockId);
+    if (key === null || key.localDate !== this.store.dayKey()) return;
+    const start = MinuteOfDay.of(Number(blockId.split(':').at(-1)));
     if (!start.ok) return;
     const lane = this.store
       .lanes()
-      .find((entry) => entry.barberId === barberRaw);
+      .find((entry) => entry.barberId === key.barberId);
     const interval = lane?.blocks.find(
       (block) => block.startMinutes === start.value,
     );
