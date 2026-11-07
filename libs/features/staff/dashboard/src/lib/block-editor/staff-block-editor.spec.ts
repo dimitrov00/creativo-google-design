@@ -1,4 +1,5 @@
 import { Injectable, type EnvironmentProviders } from '@angular/core';
+import { SHEET_STAGED } from '../staged-render';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   type Translation,
@@ -177,7 +178,11 @@ describe('StaffBlockEditor', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StaffBlockEditor],
-      providers: [provideTestI18n()],
+      providers: [
+        // The ladder at once; the staging has its own case.
+        { provide: SHEET_STAGED, useValue: false },
+        provideTestI18n(),
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(StaffBlockEditor);
   });
@@ -631,5 +636,38 @@ describe('StaffBlockEditor', () => {
     fixture.componentInstance.committed.subscribe((c) => commits.push(c));
     click(host, 'staff-block-save');
     expect(commits[0]?.dayKey).toBe('2026-09-10');
+  });
+});
+
+describe('StaffBlockEditor · staged', () => {
+  beforeEach(async () => {
+    // SHEET_STAGED at its default, as in the app.
+    await TestBed.configureTestingModule({
+      imports: [StaffBlockEditor],
+      providers: [provideTestI18n()],
+    }).compileComponents();
+  });
+
+  const nextFrame = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  it('draws the chrome in the tap’s frame and the ladder two frames on', async () => {
+    const fixture = TestBed.createComponent(StaffBlockEditor);
+    fixture.componentRef.setInput('vm', vm());
+    fixture.componentRef.setInput('uiBarbers', BARBERS);
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    const has = (testId: string) =>
+      host.querySelector(`[data-testid="${testId}"]`) !== null;
+    expect(has('staff-block-root')).toBe(true);
+    expect(has('staff-block-barbers')).toBe(false);
+    expect(has('staff-block-frame')).toBe(false);
+
+    await nextFrame();
+    await nextFrame();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(has('staff-block-barbers')).toBe(true);
+    expect(has('staff-block-frame')).toBe(true);
   });
 });

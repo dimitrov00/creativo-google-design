@@ -86,6 +86,10 @@ class HostComponent {
 })
 class NestedHostComponent {}
 
+/** One animation frame: the header starts observing after the first. */
+const nextFrame = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
 describe('UiSheetHeader', () => {
   let fixture: ComponentFixture<HostComponent>;
 
@@ -151,6 +155,8 @@ describe('UiSheetHeader', () => {
     it('observes the uiSheetLargeTitle sentinel inside the nearest scroller, minus the bar height', async () => {
       fixture.detectChanges();
       await fixture.whenStable();
+      // The header observes a frame after its first render.
+      await nextFrame();
 
       const observer = FakeIntersectionObserver.instances.at(-1);
       expect(observer).toBeDefined();
@@ -168,6 +174,8 @@ describe('UiSheetHeader', () => {
     it('collapses when the large title exits above the bar and expands when it returns', async () => {
       fixture.detectChanges();
       await fixture.whenStable();
+      // The header observes a frame after its first render.
+      await nextFrame();
       const observer = FakeIntersectionObserver.instances.at(-1);
 
       observer?.emit({
@@ -222,6 +230,8 @@ describe('UiSheetHeader', () => {
       const nested = TestBed.createComponent(NestedHostComponent);
       nested.detectChanges();
       await nested.whenStable();
+      // The header observes a frame after its first render.
+      await nextFrame();
       const root: HTMLElement = nested.nativeElement;
 
       const observer = FakeIntersectionObserver.instances.at(-1);
@@ -254,6 +264,8 @@ describe('UiSheetHeader', () => {
       const before = FakeIntersectionObserver.instances.length;
       fixture.detectChanges();
       await fixture.whenStable();
+      // The header observes a frame after its first render.
+      await nextFrame();
       expect(FakeIntersectionObserver.instances).toHaveLength(before);
       expect(header().hasAttribute('data-collapsed')).toBe(false);
     });
@@ -262,6 +274,8 @@ describe('UiSheetHeader', () => {
       fixture.componentInstance.showSentinel.set(false);
       fixture.detectChanges();
       await fixture.whenStable();
+      // The header observes a frame after its first render.
+      await nextFrame();
       // The MutationObserver re-sync is async — flush it.
       await new Promise((resolve) => setTimeout(resolve));
 

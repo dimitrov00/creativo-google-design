@@ -306,6 +306,10 @@
   </section>
   } @else {
   <div class="staff-visit__body" data-testid="staff-block-root">
+    <!-- STAGED (staged-render.ts): the tap's frame draws the sheet's chrome,
+         so its slide starts at once; the ladder comes two frames later,
+         while the sheet is still low. -->
+    @if (stage() >= 1) {
     <!-- ── БРЪСНАРИ — first, and SEVERAL (owner, 2026-09-09: "no option to
          add it for multiple barbers?"), DISCRETELY (owner, same hour: "what
          if there are 20 barbers — be discrete like Apple, add a barber
@@ -721,7 +725,7 @@
     >
       {{ t('staff.day.blockLiftWarning') }}
     </p>
-    } }
+    } } }
   </div>
   }
 

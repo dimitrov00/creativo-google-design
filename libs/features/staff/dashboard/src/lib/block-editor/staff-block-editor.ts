@@ -14,6 +14,7 @@ import {
   viewChild,
   ElementRef,
 } from '@angular/core';
+import { SHEET_STAGED, climbStages } from '../staged-render';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   BarberId,
@@ -371,6 +372,11 @@ export class StaffBlockEditor {
   private readonly injector = inject(Injector);
   private readonly transloco = inject(TranslocoService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /**
+   * 0 is the sheet's chrome and dock, 1 the ladder (`SHEET_STAGED`): built
+   * two frames after the tap's, so the sheet's slide starts first.
+   */
+  protected readonly stage = signal(inject(SHEET_STAGED) ? 0 : 1);
 
   readonly vm = input.required<BlockEditorVm>();
   readonly uiBarbers = input<readonly BlockEditorBarberOption[]>([]);
@@ -384,6 +390,7 @@ export class StaffBlockEditor {
   readonly dayChanged = output<LocalDate>();
 
   constructor() {
+    if (this.stage() === 0) climbStages(this.stage, 1, this.injector);
     afterNextRender(
       () => {
         this.dragCopy.set({
