@@ -51,6 +51,7 @@ export * from './log-digest.system';
 export * from './loyalty-catalog.system';
 export * from './loyalty-pass.system';
 export * from './media.system';
+export * from './money-allocation.system';
 export * from './move.system';
 export * from './notification.system';
 export * from './offering-price.system';
