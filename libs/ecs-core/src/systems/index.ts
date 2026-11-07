@@ -88,6 +88,7 @@ export * from './service-conflict.system';
 export * from './session-access.system';
 export * from './shop-reach.system';
 export * from './shop-zone.system';
+export * from './staff-analytics.system';
 export * from './staff-edit-plan.system';
 export * from './staff-intent.system';
 export * from './standing.system';
