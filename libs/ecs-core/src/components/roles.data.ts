@@ -81,6 +81,22 @@ export const Roles = {
   SPEND: [Role.Admin],
 
   /**
+   * The roles that read their OWN staff analytics — a barber, for the barber
+   * record their account is linked to (`docs/designs/staff-analytics.md`,
+   * Visibility). Used by the analytics route guard, the menu and the
+   * callable's wire. Reading billed takings is not `MONEY`, which is about
+   * spending the shop's money (discounts, vouchers).
+   */
+  ANALYTICS_SELF: [Role.Barber],
+
+  /**
+   * The roles that read EVERY barber's analytics and the shop's — the admin
+   * alone; not the sysadmin, the vendor's support role, as `SPEND` keeps it
+   * from a client's spend.
+   */
+  ANALYTICS_SHOP: [Role.Admin],
+
+  /**
    * The roles that may act on a person's data as a DATA-SUBJECT REQUEST —
    * the client export and erasure callables (audit-hardening Phase 3,
    * P3-RU-13): the shop's admin ONLY. An irreversible or wholesale act on a
@@ -197,6 +213,18 @@ export const Roles = {
    */
   assignsRoles(roles: readonly string[]): boolean {
     return anyIn(Roles.ASSIGN, roles);
+  },
+
+  /**
+   * Whether a role set may open staff analytics at all — its own
+   * (`ANALYTICS_SELF`) or the shop's (`ANALYTICS_SHOP`): the route guard's,
+   * the menu's and the wire's first gate. Claims-tolerant like `mayBook`;
+   * the pipeline judges the stored roles after it.
+   */
+  readsAnalytics(roles: readonly string[]): boolean {
+    return (
+      anyIn(Roles.ANALYTICS_SELF, roles) || anyIn(Roles.ANALYTICS_SHOP, roles)
+    );
   },
 
   /**
