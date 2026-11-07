@@ -180,8 +180,9 @@ function expiresOnIn(grant: CouponGrant, timeZone: TimeZone): LocalDate | null {
  *
  * - `DAY` — one column per chair. The counter's comparison view.
  * - `THREE_DAY` / `WEEK` — one column per DAY. Five chairs across seven days
- *   is thirty-five columns and unreadable, so these narrow to one chair by
- *   default and merge with attribution when the shop asks for all of them.
+ *   is thirty-five columns and unreadable, so they open on every chair
+ *   merged with attribution, and narrow to one when a chair is picked (the
+ *   chair lives in links only; see `_view`).
  *
  * Values: external contract — the `?view=` query value, the device's
  * stored `staff.schedule.view`, the page's `data-view` hook and the
@@ -1098,8 +1099,8 @@ export class StaffDayStore {
    * One per (barber, day). A week of five chairs is thirty-five tiny
    * single-field-indexed queries — more than the original day sheet's five,
    * and still cheaper than inventing a composite index and a zoned-ISO range
-   * query whose ordering breaks across DST. It is also why the multi-day
-   * views default to one chair.
+   * query whose ordering breaks across DST. It is also why a multi-day view
+   * narrowed to one chair is cheaper.
    */
   /**
    * A day the screen is NOT showing but something on it needs live.

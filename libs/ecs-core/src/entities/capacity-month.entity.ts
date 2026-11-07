@@ -7,7 +7,8 @@ import { CapacityMonthId } from '@core/primitives';
  * `LocalDate.monthKey`. One cold read per month view, a linear scan, no
  * dynamic map keys. A projection rebuilt inside ONE transaction by dropping
  * every entry in the plan's scope and writing the full sorted array — never
- * `arrayUnion`, never a merge, never one barber's plan alone.
+ * `arrayUnion`, never a merge, never one barber's plan alone. A month whose
+ * entries did not change is not written at all (`CapacitySystem.monthUnchanged`).
  *
  * No `rebuiltAtMs`: none is stored, nothing reads one, and a wall-clock stamp
  * would make an otherwise deterministic rebuild non-deterministic

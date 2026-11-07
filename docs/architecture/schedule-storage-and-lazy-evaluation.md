@@ -1,6 +1,6 @@
 # Schedule storage, memory and cost — what to store, what to work out when read
 
-> Status: READY TO BUILD (2026-11-07), after two review rounds:
+> Status: PHASE 1 BUILT (2026-11-07); Phase 2 waits for the owner. Reviewed in two rounds:
 > [`review/schedule-storage/consolidated_review_report.md`](review/schedule-storage/consolidated_review_report.md)
 > (round 1) and
 > [`review/schedule-storage/round-2/consolidated_review_report.md`](review/schedule-storage/round-2/consolidated_review_report.md)
@@ -399,6 +399,11 @@ the evidence list (§9).
   is wrong is rewritten.
 
 - **`capacityWrites`** skips the `set` when `monthUnchanged` is true.
+- **The fold starts from the planned month.** `capacityWrites` hands
+  `applyPlan` the stored entries under `monthPlan.month`, not the stored
+  document's own `month`. `applyPlan` drops plan entries of any other month,
+  so a document whose `month` field was wrong used to be "repaired" into an
+  empty month (found while building Phase 1).
 
 _Saves:_ most of the Sweep's 40 writes a night and the unchanged months of
 every Roster rebuild. That is about 1,200 writes a month, or about $0.002;
@@ -606,7 +611,7 @@ Add these two functions to the `CapacitySystem` companion, beside
 ```ts
 sameEntries(a: readonly CapacityEntry[], b: readonly CapacityEntry[]): boolean
 monthUnchanged(
-  stored: CapacityMonth | null,
+  stored: Pick<CapacityMonth, 'month' | 'entries'> | null,
   month: CapacityMonthId,
   entries: readonly CapacityEntry[],
 ): boolean
@@ -712,12 +717,12 @@ Comments only.
 
 #### Step 10. Modify `docs/architecture/performance-cost-audit.md`
 
-| Location                                                 | Change                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.4 table, "Staff grid, week view" row (about line 260) | "about 300" becomes "about 850 (7 × (10 + 1 + 1) + 1 per chair at 10 appointments a barber-day)"                                                                                                                                                                                                                                                           |
-| F-14 (about lines 292–296)                               | Change "about 130 KB at 30 barbers" to "about 100–200 KB at 30 barbers (about 110 bytes an entry, one or two shops each)". Change the citation `:194-202` to `:196-204`. Replace "and the nightly sweep writes 4 months per barber even when nothing changed." with "Since 2026-11 (schedule storage C1) a rebuild no longer rewrites an unchanged month." |
-| F-25 (about lines 397–404)                               | Change `staff-day.store.ts:940` to `staff-day.store.ts:1032`. Replace "the comment's 'default to one chair' is not enforced" with "the store opens every chair, as the 2026-09-23 ruling intends (its comments were corrected in 2026-11)".                                                                                                                |
-| "Waits for evidence" (about lines 569–571)               | **F-14:** "the shared document; its sweep point is done". **F-25:** replace "although `staff-day.store.ts` says it does" with "by design". Then add one bullet: "Schedule storage §9: day-change range queries, dropping the staff busy-day listeners, an appointments week query, capacity per barber; each with its trigger there."                      |
+| Location                                                 | Change                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §5.4 table, "Staff grid, week view" row (about line 260) | "about 300" becomes "about 850 (7 × (10 + 1 + 1) + 1 per chair at 10 appointments a barber-day)"                                                                                                                                                                                                                                                                                                   |
+| F-14 (about lines 292–296)                               | Change "about 130 KB at 30 barbers" to "about 100–200 KB at 30 barbers (about 110 bytes an entry, one or two shops each)". Change the citation `:194-202` to the write loop's new lines (`:201-212` once built). Replace "and the nightly sweep writes 4 months per barber even when nothing changed." with "Since 2026-11 (schedule storage C1) a rebuild no longer rewrites an unchanged month." |
+| F-25 (about lines 397–404)                               | Change `staff-day.store.ts:940` to `staff-day.store.ts:1032`. Replace "the comment's 'default to one chair' is not enforced" with "the store opens every chair, as the 2026-09-23 ruling intends (its comments were corrected in 2026-11)".                                                                                                                                                        |
+| "Waits for evidence" (about lines 569–571)               | **F-14:** "the shared document; its sweep point is done". **F-25:** replace "although `staff-day.store.ts` says it does" with "by design". Then add one bullet: "Schedule storage §9: day-change range queries, dropping the staff busy-day listeners, an appointments week query, capacity per barber; each with its trigger there."                                                              |
 
 Prettier runs on `*.md` when you commit and will re-pad the table; expect
 that in the diff.

@@ -325,8 +325,8 @@ export const RecurrenceSystem = {
    * inclusive), in order — bounded by `toLocalDate`, by the rule's own end
    * (its `untilLocalDate` or its `occurrenceCount`, counted from
    * `fromLocalDate`) AND by {@link RecurrenceRule.MAX_OCCURRENCES}, so no
-   * call materialises more than a year of days. `[]` when nothing lands (or
-   * `toLocalDate` precedes `fromLocalDate`).
+   * call materialises more than that many days, however far apart they fall.
+   * `[]` when nothing lands (or `toLocalDate` precedes `fromLocalDate`).
    */
   occurrences(
     rule: RecurrenceRule,

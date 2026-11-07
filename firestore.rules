@@ -640,9 +640,11 @@ service cloud.firestore {
 
     match /barberBusy/{dayDocId} {
       allow read: if true;
-      // Written ONLY by the `commitBooking` transaction (Admin SDK, which
-      // bypasses rules). A client that could widen its own busy projection
-      // could hide a barber's free time from everyone else.
+      // Written only by Cloud Functions (Admin SDK, which bypasses rules): the
+      // booking callables merge into it inside their transactions, and
+      // `rebuildBusyOnAppointmentChange` recomputes it. A client that could
+      // widen its own busy projection could hide a barber's free time from
+      // everyone else.
       allow write: if false;
     }
 

@@ -512,3 +512,111 @@ describe('freeMinutesByDay — the booking calendar’s markers', () => {
     expect(frozen).toEqual(ENTRIES);
   });
 });
+
+describe('sameEntries — does a rebuilt month equal the stored one', () => {
+  const ivan = BarberId.of('ivan');
+  const stefan = BarberId.of('stefan');
+  /** Two separate arrays every time: equality is by field, never by reference. */
+  const list = () => [
+    CapacityEntry.of(k('2026-08-03'), ivan, LOC_A, m(100)),
+    CapacityEntry.of(k('2026-08-03'), stefan, LOC_A, m(50)),
+    CapacityEntry.of(k('2026-08-04'), ivan, LOC_B, m(30)),
+  ];
+  const withSecond = (entry: CapacityEntry) => {
+    const out = list();
+    out[1] = entry;
+    return out;
+  };
+
+  it('is true for separate arrays whose entries match on all four fields', () => {
+    expect(CapacitySystem.sameEntries(list(), list())).toBe(true);
+  });
+
+  it('is true for two empty lists', () => {
+    expect(CapacitySystem.sameEntries([], [])).toBe(true);
+  });
+
+  it('is false when the lengths differ, an empty list against a full one included', () => {
+    expect(CapacitySystem.sameEntries(list(), list().slice(0, 2))).toBe(false);
+    expect(CapacitySystem.sameEntries([], list())).toBe(false);
+    expect(CapacitySystem.sameEntries(list(), [])).toBe(false);
+  });
+
+  it('is false when one entry differs in any one field', () => {
+    const differing = [
+      CapacityEntry.of(k('2026-08-05'), stefan, LOC_A, m(50)),
+      CapacityEntry.of(k('2026-08-03'), BarberId.of('petar'), LOC_A, m(50)),
+      CapacityEntry.of(k('2026-08-03'), stefan, LOC_B, m(50)),
+      CapacityEntry.of(k('2026-08-03'), stefan, LOC_A, m(51)),
+    ];
+    for (const entry of differing) {
+      expect(CapacitySystem.sameEntries(list(), withSecond(entry))).toBe(false);
+    }
+  });
+
+  it('is false for the same entries in another order — the comparison is by position', () => {
+    expect(CapacitySystem.sameEntries(list(), [...list()].reverse())).toBe(
+      false,
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const a = deepFreeze(list());
+    const b = deepFreeze(list());
+    expect(CapacitySystem.sameEntries(a, b)).toBe(true);
+    expect(CapacitySystem.sameEntries(a, b)).toBe(true);
+  });
+});
+
+describe('monthUnchanged — may a rebuild skip writing this month', () => {
+  const ivan = BarberId.of('ivan');
+  const entries = () => [
+    CapacityEntry.of(k('2026-08-03'), ivan, LOC_A, m(100)),
+  ];
+  const stored = (raw = '2026-08', list = entries()) => ({
+    month: month(raw),
+    entries: list,
+  });
+
+  it('skips a month never stored whose rebuild holds nothing', () => {
+    expect(CapacitySystem.monthUnchanged(null, month('2026-08'), [])).toBe(
+      true,
+    );
+  });
+
+  it('writes a month never stored whose rebuild holds entries', () => {
+    expect(
+      CapacitySystem.monthUnchanged(null, month('2026-08'), entries()),
+    ).toBe(false);
+  });
+
+  it('skips a stored month of the same id and equal entries', () => {
+    expect(
+      CapacitySystem.monthUnchanged(stored(), month('2026-08'), entries()),
+    ).toBe(true);
+  });
+
+  it('writes a stored month whose entries changed', () => {
+    expect(
+      CapacitySystem.monthUnchanged(stored(), month('2026-08'), [
+        CapacityEntry.of(k('2026-08-03'), ivan, LOC_A, m(90)),
+      ]),
+    ).toBe(false);
+  });
+
+  it('writes a stored month whose `month` field is wrong — the TTL is stamped from it', () => {
+    expect(
+      CapacitySystem.monthUnchanged(
+        stored('2026-07'),
+        month('2026-08'),
+        entries(),
+      ),
+    ).toBe(false);
+  });
+
+  it('writes a stored month that the rebuild empties', () => {
+    expect(CapacitySystem.monthUnchanged(stored(), month('2026-08'), [])).toBe(
+      false,
+    );
+  });
+});

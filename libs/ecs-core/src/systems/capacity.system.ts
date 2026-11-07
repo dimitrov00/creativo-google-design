@@ -292,6 +292,51 @@ export const CapacitySystem = {
   },
 
   /**
+   * Do two sorted month lists hold the same entries? Compared by position on
+   * all four fields — both lists are sorted by {@link CapacityEntry.compare},
+   * which orders on three of them and ignores `freeMinutes`, so it cannot
+   * answer this. One linear scan, no allocation.
+   */
+  sameEntries(
+    a: readonly CapacityEntry[],
+    b: readonly CapacityEntry[],
+  ): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      const x = a[i] as CapacityEntry;
+      const y = b[i] as CapacityEntry;
+      if (
+        x.localDate !== y.localDate ||
+        x.barberId !== y.barberId ||
+        x.locationId !== y.locationId ||
+        x.freeMinutes !== y.freeMinutes
+      ) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * May a rebuild skip writing `month`? Yes when the month was never stored
+   * and its rebuilt `entries` are empty (a missing month reads as empty), or
+   * when the stored document already says exactly this: the same `month` —
+   * its TTL is stamped from that field — and the same entries. A field added
+   * to the month document must join this check.
+   */
+  monthUnchanged(
+    stored: Pick<CapacityMonth, 'month' | 'entries'> | null,
+    month: CapacityMonthId,
+    entries: readonly CapacityEntry[],
+  ): boolean {
+    if (stored === null) return entries.length === 0;
+    return (
+      stored.month === month &&
+      CapacitySystem.sameEntries(stored.entries, entries)
+    );
+  },
+
+  /**
    * THE REPLACE-NOT-MERGE FOLD (§3.6): a month document's sorted `entries[]`
    * with every entry in the plan's `(barberId, localDate)` scope dropped and the
    * plan's own entries for this month merged in at their key position. A

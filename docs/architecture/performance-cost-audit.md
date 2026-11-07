@@ -251,16 +251,16 @@ uses `startMinutes`. The root cause is the differing field name and coordinate.
 S services, B barbers, L shops, K barbers on a booking, V live visits on that
 barber-day, H a client's total visits.
 
-| Action                            | Reads                                    | Writes | At planning scale  |
-| --------------------------------- | ---------------------------------------- | ------ | ------------------ |
-| Open `/book` to the calendar      | S+B+L + 1 + 2–3, then 3B for exact days  | 0      | about 76           |
-| Pick a day                        | up to 3B for new targets                 | 0      | up to 30           |
-| Book, one seat, with all triggers | 9 + (1+V) + (L+5) + 3 + (H+3)            | 7–9    | 43 reads, 7 writes |
-| Staff grid, day view              | S+B+L+C+E + 3B + max(ΣV, B)              | 0      | about 140          |
-| Staff grid, week view             | adds B + 14B + max(ΣV, 7B)               | 0      | about 300          |
-| Staff search pool                 | up to 600, per dashboard mount when used | 0      | 600                |
-| Client card opened                | about 120 plus catalog                   | 0      | about 160          |
-| Admin rhythm preview              | up to 1,005 per visit                    | 0      | up to 1,005        |
+| Action                            | Reads                                    | Writes | At planning scale                                                          |
+| --------------------------------- | ---------------------------------------- | ------ | -------------------------------------------------------------------------- |
+| Open `/book` to the calendar      | S+B+L + 1 + 2–3, then 3B for exact days  | 0      | about 76                                                                   |
+| Pick a day                        | up to 3B for new targets                 | 0      | up to 30                                                                   |
+| Book, one seat, with all triggers | 9 + (1+V) + (L+5) + 3 + (H+3)            | 7–9    | 43 reads, 7 writes                                                         |
+| Staff grid, day view              | S+B+L+C+E + 3B + max(ΣV, B)              | 0      | about 140                                                                  |
+| Staff grid, week view             | adds B + 14B + max(ΣV, 7B)               | 0      | about 850 (7 × (10 + 1 + 1) + 1 per chair at 10 appointments a barber-day) |
+| Staff search pool                 | up to 600, per dashboard mount when used | 0      | 600                                                                        |
+| Client card opened                | about 120 plus catalog                   | 0      | about 160                                                                  |
+| Admin rhythm preview              | up to 1,005 per visit                    | 0      | up to 1,005                                                                |
 
 **Daily total (order of magnitude, estimated):** about 150,000 reads and 1,000
 writes, most of the reads from `/book` visitors. After the free allowance that is
@@ -291,9 +291,9 @@ what the check needs, as `dispatchSubjects` already does for stats.
 
 **F-14 🟡 `capacity/{YYYY-MM}` is one shared document.** _Confirmed; size
 estimated._ Every open schedule step re-reads the whole document on each write
-anywhere in the deployment (about 130 KB at 30 barbers, estimated). A K-seat party
-fires K contending transactions on it (`rebuild-capacity.pipeline.ts:194-202`), and
-the nightly sweep writes 4 months per barber even when nothing changed.
+anywhere in the deployment (about 100–200 KB at 30 barbers, estimated: about 110 bytes an entry, one or two shops each). A K-seat party
+fires K contending transactions on it (`rebuild-capacity.pipeline.ts:201-212`).
+Since 2026-11 (schedule storage C1) a rebuild no longer rewrites an unchanged month.
 
 **F-15 🟢 `matchWaitlist` reads before it can skip.** _Confirmed._
 `match-waitlist.pipeline.ts:427-442` reads zone and policy first, about 3 reads on
@@ -396,8 +396,9 @@ static closure of five areas despite the lazy phone field.
 
 **F-25 🟡 Staff listeners are rebuilt on every day tap.** _Confirmed in source; cost
 estimated, needs a trace._ At 10 chairs, the day view holds 40 listeners and the
-week view 220, because `_scope` starts as `null` (`staff-day.store.ts:940`) and
-the comment's "default to one chair" is not enforced. `switchMap` unsubscribes
+week view 220, because `_scope` starts as `null` (`staff-day.store.ts:1032`): the
+store opens every chair, as the 2026-09-23 ruling intends (its comments were
+corrected in 2026-11). `switchMap` unsubscribes
 before resubscribing, so Firestore cannot reuse identical targets, and schedules
 are rewired although a day change does not touch them. Estimated at hundreds of
 milliseconds of async work per tap on a phone. Billed reads on rewiring were not
@@ -567,8 +568,11 @@ Merged: PRs #8 to #14, and F-08's wording in its own PR. Nothing else is left.
 ### Waits for evidence
 
 - **F-12, F-14, F-15, F-16, F-25:** Firestore and listener costs, worth cents today. Act on
-  real billing or trace data. F-25 also found that the week view does not default to one
-  chair, although `staff-day.store.ts` says it does.
+  real billing or trace data. F-14 is the shared document; its sweep point is done. F-25
+  also found that the week view does not default to one chair, by design.
+- **Schedule storage §9** (`schedule-storage-and-lazy-evaluation.md`): day-change range
+  queries, dropping the staff busy-day listeners, an appointments week query, capacity per
+  barber; each with its trigger there.
 
 ### Backlog, as files are touched
 

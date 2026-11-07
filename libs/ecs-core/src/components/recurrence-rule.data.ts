@@ -111,7 +111,7 @@ function normalize(
 export const RecurrenceRule = {
   /** Every 1…99 periods. Apple's wheel stops at 999; a shop's has no use past 99. */
   MAX_INTERVAL,
-  /** The most days one series may write — a year of them. */
+  /** The most days one series may write: 366 occurrences, with no limit on span. */
   MAX_OCCURRENCES,
 
   /**
