@@ -323,7 +323,12 @@ test.describe('booking core (flip 1) — live', () => {
       `[data-testid="staff-grid-column"][data-column="${DEV_CHAIR.barberId}"]`,
     );
     await expect(column).toBeVisible({ timeout: 30_000 });
-    await expect(column.getByTestId('staff-grid-block')).toHaveCount(0);
+    // Blocked time only: the roster's 13:00 lunch draws as a block too
+    // (`break:…`, since breaks live on the roster), and it is not this case's.
+    const blocks = column.locator(
+      '[data-testid="staff-grid-block"]:not([data-event-id^="break:"])',
+    );
+    await expect(blocks).toHaveCount(0);
 
     await page.getByTestId('staff-add-trigger').click();
     await page.getByTestId('staff-add-block').click();
@@ -337,7 +342,7 @@ test.describe('booking core (flip 1) — live', () => {
     await expect(sheet).toHaveCount(0, { timeout: 20_000 });
     await expect(page.getByTestId('staff-block-error')).toHaveCount(0);
 
-    await expect(column.getByTestId('staff-grid-block')).toHaveCount(1, {
+    await expect(blocks).toHaveCount(1, {
       timeout: 20_000,
     });
 
@@ -354,6 +359,8 @@ test.describe('booking core (flip 1) — live', () => {
         utcEpochMs: expect.any(Number),
         exceptionEffect: 'BLOCKED',
         exceptionRanges: [{ startMinutes: 12 * 60, endMinutes: 13 * 60 }],
+        // The day keeps its roster's breaks (DayBreaks).
+        dayBreakRanges: null,
       });
   });
 
