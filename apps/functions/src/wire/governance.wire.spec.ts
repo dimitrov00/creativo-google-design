@@ -1,5 +1,6 @@
 import { ImpersonationScope } from '@core/components';
 import {
+  BarberId,
   OperationId,
   PrimitiveErrorCode,
   type Result,
@@ -287,6 +288,8 @@ describe('decodeSetRoles (security hardening S-WS-E)', () => {
       adminRoles: ['barber', 'admin'],
       targetUserId: 'u-client',
       roles: ['barber', 'client'],
+      barberLinkChange: 'KEEP',
+      linkedBarberId: null,
       operationId: null,
     });
     // An empty set and the sysadmin are the SYSTEM's refusals: they pass the wire.
@@ -297,6 +300,74 @@ describe('decodeSetRoles (security hardening S-WS-E)', () => {
       valueOf(decodeSetRoles(admin({ ...ROLES_CALL, roles: ['sysadmin'] })))
         .roles,
     ).toEqual(['sysadmin']);
+  });
+
+  it('decodes the barber link: absent is KEEP (an older client never unlinks), CLEAR, and SET with its record', () => {
+    const linkOf = (data: object) => {
+      const cmd = valueOf(decodeSetRoles(admin({ ...ROLES_CALL, ...data })));
+      return {
+        barberLinkChange: cmd.barberLinkChange,
+        linkedBarberId: cmd.linkedBarberId,
+      };
+    };
+    expect(linkOf({})).toEqual({
+      barberLinkChange: 'KEEP',
+      linkedBarberId: null,
+    });
+    // A record named beside KEEP or CLEAR is ignored; absent is never a clear.
+    expect(linkOf({ linkedBarberId: 'ivan' })).toEqual({
+      barberLinkChange: 'KEEP',
+      linkedBarberId: null,
+    });
+    expect(
+      linkOf({ barberLinkChange: 'KEEP', linkedBarberId: 'ivan' }),
+    ).toEqual({ barberLinkChange: 'KEEP', linkedBarberId: null });
+    expect(
+      linkOf({ barberLinkChange: 'CLEAR', linkedBarberId: 'ivan' }),
+    ).toEqual({ barberLinkChange: 'CLEAR', linkedBarberId: null });
+    expect(linkOf({ barberLinkChange: 'SET', linkedBarberId: 'ivan' })).toEqual(
+      {
+        barberLinkChange: 'SET',
+        linkedBarberId: BarberId.of('ivan'),
+      },
+    );
+  });
+
+  it('refuses a SET naming no record as the id’s own refusal, and an unknown link change as GOVERNANCE_ROLES_INVALID', () => {
+    for (const linkedBarberId of [undefined, null, '', 42]) {
+      expect(
+        wire(
+          decodeSetRoles(
+            admin({ ...ROLES_CALL, barberLinkChange: 'SET', linkedBarberId }),
+          ),
+        ),
+      ).toEqual({
+        code: 'invalid-argument',
+        details: { errorCode: PrimitiveErrorCode.IdEmpty },
+      });
+    }
+    expect(
+      wire(
+        decodeSetRoles(
+          admin({
+            ...ROLES_CALL,
+            barberLinkChange: 'SET',
+            linkedBarberId: 'a/b',
+          }),
+        ),
+      ),
+    ).toEqual({
+      code: 'invalid-argument',
+      details: { errorCode: PrimitiveErrorCode.IdHasSlash },
+    });
+    for (const barberLinkChange of [null, 'set', 'UNLINK', 1, ['SET']]) {
+      expect(
+        wire(decodeSetRoles(admin({ ...ROLES_CALL, barberLinkChange }))),
+      ).toEqual({
+        code: 'invalid-argument',
+        details: { errorCode: GovernanceErrorCode.RolesInvalid },
+      });
+    }
   });
 
   it('refuses a target that is no uid as the id’s own refusal', () => {
@@ -351,6 +422,13 @@ describe('decodeSetRoles (security hardening S-WS-E)', () => {
       [GovernanceError.rolesTargetNotRegistered(target), 'failed-precondition'],
       [GovernanceError.rolesTargetSysadmin(target), 'failed-precondition'],
       [GovernanceError.rolesSessionsNotRevoked(target), 'unavailable'],
+      [GovernanceError.rolesBarberLinkRequired(target), 'invalid-argument'],
+      [GovernanceError.rolesBarberUnknown(BarberId.of('niko')), 'not-found'],
+      [GovernanceError.rolesLinkWithoutBarber(target), 'invalid-argument'],
+      [
+        GovernanceError.rolesBarberAlreadyLinked(BarberId.of('ivan')),
+        'failed-precondition',
+      ],
     ] as const) {
       expect(refusalOf(refusal)).toEqual(refusal);
       expect(toHttpsError(refusalOf(refusal))).toMatchObject({

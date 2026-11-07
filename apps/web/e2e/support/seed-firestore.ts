@@ -29,6 +29,7 @@ import {
   PolicyPassStamp,
   RegistrationState,
   Role,
+  StaffLink,
   WriteProvenance,
 } from '@core/components';
 import {
@@ -137,6 +138,7 @@ export async function seedUserProfile(
     birthDate,
     profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(firstName, lastName, phone, null),
+    ...StaffLink.NONE,
   } satisfies Omit<User, 'id'>;
   await getFirestore(adminApp())
     .collection(Collections.Users)

@@ -16,6 +16,7 @@ import {
   Roles,
   type Seat,
   SeatSubject,
+  StaffLink,
   SubjectRelationship,
   EditCommand,
   WriteOp,
@@ -204,7 +205,8 @@ export type ProfileChange = {
  * then the block's `blockReason` and `blockedUntilUtcMs` (next pass,
  * 2026-11-03: names only — the reason is a closed tag and the expiry an
  * instant, but the row keeps no value of either, as it keeps none of a
- * name's).
+ * name's), then `linkedBarberId` (staff analytics: an Admin-SDK or seed
+ * write of the link is audited too; `setRoles` audits its own).
  * `completeRegistration`'s `Set` writes the roles with no row of its own,
  * no callable writes the status, and the Admin SDK or the console can
  * change either — so the trigger audits them; the one callable that writes
@@ -222,14 +224,17 @@ const AUDITED_PROFILE_FIELDS: readonly AuditedProfileField[] = [
   AuditedProfileField.AccountStatus,
   AuditedProfileField.BlockReason,
   AuditedProfileField.BlockedUntilUtcMs,
+  AuditedProfileField.LinkedBarberId,
 ];
 
-/** A profile row's tag fields when neither `roles` nor `accountStatus` changed. */
+/** A profile row's tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAG_DELTA: ProfileTagDelta = {
   profileRolesFrom: null,
   profileRolesTo: null,
   profileAccountStatusFrom: null,
   profileAccountStatusTo: null,
+  profileLinkedBarberIdFrom: null,
+  profileLinkedBarberIdTo: null,
 };
 
 /** A Firebase uid as this app mints and accepts them (the commit path's shape). */
@@ -699,7 +704,9 @@ export const AuditSystem = {
    * `profileRolesFrom/To` are each side's known roles (`Roles.known`; an
    * absent side holds none) when `roles` changed, `profileAccountStatusFrom/To`
    * each side's known status (`null` for an absent or unknown one) when
-   * `accountStatus` changed; an unchanged field leaves its pair `null`.
+   * `accountStatus` changed, `profileLinkedBarberIdFrom/To` each side's
+   * barber link (`StaffLink.of`: absent or malformed is `null`) when
+   * `linkedBarberId` changed; an unchanged field leaves its pair `null`.
    * "Changed" is {@link AuditSystem.changedProfileFields}'s rule (an empty
    * list is no value), so a pair is set iff its name is in `profileFields`.
    */
@@ -710,7 +717,10 @@ export const AuditSystem = {
     const statusChanged =
       comparable(before[AuditedProfileField.AccountStatus]) !==
       comparable(after[AuditedProfileField.AccountStatus]);
-    if (!rolesChanged && !statusChanged) return NO_TAG_DELTA;
+    const linkChanged =
+      comparable(before[AuditedProfileField.LinkedBarberId]) !==
+      comparable(after[AuditedProfileField.LinkedBarberId]);
+    if (!rolesChanged && !statusChanged && !linkChanged) return NO_TAG_DELTA;
     return {
       profileRolesFrom: rolesChanged
         ? rolesOf(before[AuditedProfileField.Roles])
@@ -723,6 +733,12 @@ export const AuditSystem = {
         : null,
       profileAccountStatusTo: statusChanged
         ? accountStatusOf(after[AuditedProfileField.AccountStatus])
+        : null,
+      profileLinkedBarberIdFrom: linkChanged
+        ? StaffLink.of(before).linkedBarberId
+        : null,
+      profileLinkedBarberIdTo: linkChanged
+        ? StaffLink.of(after).linkedBarberId
         : null,
     };
   },
@@ -864,12 +880,16 @@ export const AuditSystem = {
    * (security hardening S-WS-E, S-RU-9, S-RU-12):
    * `PROFILE_ROLES_CHANGED`, credited to `actor` (the pipeline's
    * `Actor.forCaller` over the caller's STORED roles, never the token's),
-   * `profileFields: ['roles']` and the roles before / after as tags
-   * (closed vocabularies, never a name — R36), stamped with the instant the
+   * `profileFields` naming what changed (`roles`, then `linkedBarberId`),
+   * the roles before / after as tags (closed vocabularies, never a name —
+   * R36) when they changed and the barber link before / after when it
+   * changed (each pair `null` otherwise), stamped with the instant the
    * `users` update stamps, naming `users/<uid>`, targeted at the account,
    * with the call's transport operation id (`null` without one, RU-21); its
-   * id basis keyed by {@link AuditSystem.changeKey.rolesChanged}. An
-   * unchanged set writes no row: planning one is a programmer defect.
+   * id basis keyed by {@link AuditSystem.changeKey.rolesChanged}. A
+   * link-only change is this row too (`setRoles` carries the link). An
+   * unchanged set AND link writes no row: planning one is a programmer
+   * defect.
    */
   planRolesChanged(
     targetUserId: UserId,
@@ -878,22 +898,32 @@ export const AuditSystem = {
     recordedAtUtcMs: UtcEpochMs,
     operationId: OperationId | null,
   ): AuditRowPlan {
-    if (!assignment.rolesChanged) {
-      return defect('an unchanged role set writes no row (S-L-15)');
+    const { rolesChanged, linkChanged } = assignment;
+    if (!rolesChanged && !linkChanged) {
+      return defect('an unchanged role set and link writes no row (S-L-15)');
     }
     const action = AuditAction.ProfileRolesChanged;
     const resourceId = AuditResourceId.forUser(targetUserId);
+    const fields: AuditedProfileField[] = [];
+    if (rolesChanged) fields.push(AuditedProfileField.Roles);
+    if (linkChanged) fields.push(AuditedProfileField.LinkedBarberId);
     return {
       row: {
         recordedAtUtcMs,
         resourceId,
         auditOperationId: operationId,
         ...actor,
-        ...AuditContext.profileWithTags(action, [AuditedProfileField.Roles], {
-          profileRolesFrom: assignment.rolesFrom,
-          profileRolesTo: assignment.rolesTo,
+        ...AuditContext.profileWithTags(action, fields, {
+          profileRolesFrom: rolesChanged ? assignment.rolesFrom : null,
+          profileRolesTo: rolesChanged ? assignment.rolesTo : null,
           profileAccountStatusFrom: null,
           profileAccountStatusTo: null,
+          profileLinkedBarberIdFrom: linkChanged
+            ? assignment.linkedBarberIdFrom
+            : null,
+          profileLinkedBarberIdTo: linkChanged
+            ? assignment.linkedBarberIdTo
+            : null,
         }),
         ...AuditTargetRef.user(targetUserId),
       },

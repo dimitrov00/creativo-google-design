@@ -49,6 +49,7 @@ import {
 import type { IdPorts } from '@core/ports';
 import { completeClientErasure } from '@core/pipelines';
 import {
+  BarberLinkRequest,
   type ClientPrivacyCall,
   type ErasureStatus,
   FlagName,
@@ -2089,8 +2090,14 @@ export class ClientCardStore {
       return kept;
     }
     const operationId = ClientOperationId.parse(ids.nextId());
+    // The link is the barber picker's (a later step): this call leaves it as stored.
     this.rolesCall = operationId.ok
-      ? { targetUserId, roles, operationId: operationId.value }
+      ? {
+          targetUserId,
+          roles,
+          ...BarberLinkRequest.KEEP,
+          operationId: operationId.value,
+        }
       : null;
     return this.rolesCall;
   }

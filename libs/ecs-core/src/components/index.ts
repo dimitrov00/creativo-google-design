@@ -264,6 +264,7 @@ export * from './shop-reach.data';
 export * from './staff-edit-action.data';
 export * from './staff-edit-delta.data';
 export * from './staff-edit-draft.data';
+export * from './staff-link.data';
 export * from './staff-terms-override.data';
 export * from './staff-verb.data';
 export * from './standing-seat.data';

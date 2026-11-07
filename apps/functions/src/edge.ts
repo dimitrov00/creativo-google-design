@@ -547,6 +547,10 @@ const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
   [GovernanceErrorCode.RolesTargetErased]: fields(S.FailedPrecondition),
   [GovernanceErrorCode.RolesTargetSysadmin]: fields(S.FailedPrecondition),
   [GovernanceErrorCode.RolesSessionsNotRevoked]: fields(S.Unavailable),
+  [GovernanceErrorCode.RolesBarberLinkRequired]: fields(S.InvalidArgument),
+  [GovernanceErrorCode.RolesBarberUnknown]: fields(S.NotFound),
+  [GovernanceErrorCode.RolesLinkWithoutBarber]: fields(S.InvalidArgument),
+  [GovernanceErrorCode.RolesBarberAlreadyLinked]: fields(S.FailedPrecondition),
 };
 
 const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {

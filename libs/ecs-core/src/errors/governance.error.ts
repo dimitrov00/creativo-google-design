@@ -1,4 +1,8 @@
-import type { ImpersonationSessionId, UserId } from '@core/primitives';
+import type {
+  BarberId,
+  ImpersonationSessionId,
+  UserId,
+} from '@core/primitives';
 import type { EngagementError } from './engagement.error';
 import type { RepositoryError } from './repository.error';
 
@@ -84,6 +88,14 @@ export const GovernanceErrorCode = {
    * (S-RU-10) — retryable: the same act sent again re-revokes.
    */
   RolesSessionsNotRevoked: 'GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED',
+  /** `setRoles` grants the barber role without naming the barber record the account is. */
+  RolesBarberLinkRequired: 'GOVERNANCE_ROLES_BARBER_LINK_REQUIRED',
+  /** `setRoles` named a barber record that does not exist. */
+  RolesBarberUnknown: 'GOVERNANCE_ROLES_BARBER_UNKNOWN',
+  /** `setRoles` asked for a barber link on an account that will not hold the barber role. */
+  RolesLinkWithoutBarber: 'GOVERNANCE_ROLES_LINK_WITHOUT_BARBER',
+  /** The barber record's lock (`barbers/{id}/restricted/link`) names another account. */
+  RolesBarberAlreadyLinked: 'GOVERNANCE_ROLES_BARBER_ALREADY_LINKED',
 } as const;
 export type GovernanceErrorCode =
   (typeof GovernanceErrorCode)[keyof typeof GovernanceErrorCode];
@@ -113,7 +125,11 @@ export type GovernanceError =
   | GovernanceError.RolesTargetNotRegistered
   | GovernanceError.RolesTargetErased
   | GovernanceError.RolesTargetSysadmin
-  | GovernanceError.RolesSessionsNotRevoked;
+  | GovernanceError.RolesSessionsNotRevoked
+  | GovernanceError.RolesBarberLinkRequired
+  | GovernanceError.RolesBarberUnknown
+  | GovernanceError.RolesLinkWithoutBarber
+  | GovernanceError.RolesBarberAlreadyLinked;
 
 export const GovernanceError = {
   auditEntryEmptyAction(): GovernanceError.AuditEntryEmptyAction {
@@ -260,6 +276,33 @@ export const GovernanceError = {
       targetUserId,
     };
   },
+  rolesBarberLinkRequired(
+    targetUserId: UserId,
+  ): GovernanceError.RolesBarberLinkRequired {
+    return {
+      errorCode: GovernanceErrorCode.RolesBarberLinkRequired,
+      targetUserId,
+    };
+  },
+  rolesBarberUnknown(barberId: BarberId): GovernanceError.RolesBarberUnknown {
+    return { errorCode: GovernanceErrorCode.RolesBarberUnknown, barberId };
+  },
+  rolesLinkWithoutBarber(
+    targetUserId: UserId,
+  ): GovernanceError.RolesLinkWithoutBarber {
+    return {
+      errorCode: GovernanceErrorCode.RolesLinkWithoutBarber,
+      targetUserId,
+    };
+  },
+  rolesBarberAlreadyLinked(
+    barberId: BarberId,
+  ): GovernanceError.RolesBarberAlreadyLinked {
+    return {
+      errorCode: GovernanceErrorCode.RolesBarberAlreadyLinked,
+      barberId,
+    };
+  },
 
   /** Narrows an error to one code — `GovernanceError.is(e, GovernanceErrorCode.ImpersonationSelf)`. */
   is<C extends GovernanceErrorCode>(
@@ -374,6 +417,26 @@ export namespace GovernanceError {
     readonly errorCode: typeof GovernanceErrorCode.RolesSessionsNotRevoked;
     /** The account whose roles were committed but whose sessions live on. */
     readonly targetUserId: UserId;
+  };
+  export type RolesBarberLinkRequired = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesBarberLinkRequired;
+    /** The account the barber role was granted to with no barber record. */
+    readonly targetUserId: UserId;
+  };
+  export type RolesBarberUnknown = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesBarberUnknown;
+    /** The barber record the call named — no `barbers/{id}` document. */
+    readonly barberId: BarberId;
+  };
+  export type RolesLinkWithoutBarber = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesLinkWithoutBarber;
+    /** The account that would hold a link but not the barber role. */
+    readonly targetUserId: UserId;
+  };
+  export type RolesBarberAlreadyLinked = {
+    readonly errorCode: typeof GovernanceErrorCode.RolesBarberAlreadyLinked;
+    /** The barber record whose lock names another account. */
+    readonly barberId: BarberId;
   };
 }
 

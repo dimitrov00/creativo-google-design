@@ -1,9 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Result, UserId, UtcEpochMs } from '@core/primitives';
+import { BarberId, Result, UserId, UtcEpochMs } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
-import { AccountLifecycle, BlockReason, Role, Roles } from '@core/components';
-import type { User } from '@core/entities';
+import {
+  AccountLifecycle,
+  BarberLinkRequest,
+  BlockReason,
+  Role,
+  Roles,
+} from '@core/components';
+import { BARBER_LINK_DOC, type BarberLink, type User } from '@core/entities';
 import {
   deepFreeze,
   provisionedUserFixture,
@@ -13,6 +19,7 @@ import {
   utcMs,
 } from '@core/testing';
 import {
+  type BarberLinkFacts,
   type RoleChange,
   RoleAssignmentSystem,
 } from './role-assignment.system';
@@ -36,16 +43,69 @@ const adminUser = (overrides: Partial<User> = {}): User =>
 const targetUser = (overrides: Partial<User> = {}): User =>
   registeredUserFixture({ id: TARGET_ID, roles: [Role.Client], ...overrides });
 
-type DecideInput = Parameters<typeof RoleAssignmentSystem.decide>[0];
-const input = (overrides: Partial<DecideInput> = {}): DecideInput => ({
-  callerUserId: ADMIN_ID,
-  caller: adminUser(),
-  target: targetUser(),
-  targetUserId: TARGET_ID,
-  requestedRoles: [Role.Client, Role.Barber],
-  nowUtcMs: NOW,
-  ...overrides,
+const IVAN = BarberId.of('ivan');
+const NIKO = BarberId.of('niko');
+const OTHER_ID = UserId.of('u-other');
+
+/** A lock naming `linkedUserId` — `barbers/{id}/restricted/link`. */
+const lockOf = (linkedUserId: UserId): BarberLink => ({
+  id: BARBER_LINK_DOC,
+  linkedUserId,
 });
+/** A SET's record exists and is free; the target is linked nowhere. */
+const FREE: BarberLinkFacts = {
+  requestedBarberExists: true,
+  requestedLock: null,
+  currentLock: null,
+};
+/** The link half of an admitted change that leaves the link as it was (none). */
+const NO_LINK_CHANGE = {
+  linkedBarberIdFrom: null,
+  linkedBarberIdTo: null,
+  linkChanged: false,
+  lockReleased: null,
+  lockTaken: null,
+} as const;
+/** The link half of a first link to `ivan`. */
+const LINKED_IVAN = {
+  linkedBarberIdFrom: null,
+  linkedBarberIdTo: IVAN,
+  linkChanged: true,
+  lockReleased: null,
+  lockTaken: IVAN,
+} as const;
+
+/**
+ * The link request a roles-only case sends: a `SET` to the free record
+ * `ivan` when the call grants the barber role (the role needs a record),
+ * else `KEEP` — so the role cases keep their own intent.
+ */
+const linkFor = (
+  target: User | null,
+  requestedRoles: readonly Role[],
+): BarberLinkRequest =>
+  requestedRoles.includes(Role.Barber) &&
+  !(target?.roles ?? []).includes(Role.Barber)
+    ? BarberLinkRequest.set(IVAN)
+    : BarberLinkRequest.KEEP;
+
+type DecideInput = Parameters<typeof RoleAssignmentSystem.decide>[0];
+const input = (overrides: Partial<DecideInput> = {}): DecideInput => {
+  const target =
+    overrides.target === undefined ? targetUser() : overrides.target;
+  const requestedRoles = overrides.requestedRoles ?? [Role.Client, Role.Barber];
+  return {
+    callerUserId: ADMIN_ID,
+    caller: adminUser(),
+    target,
+    targetUserId: TARGET_ID,
+    requestedRoles,
+    linkRequest: linkFor(target, requestedRoles),
+    linkFacts: FREE,
+    nowUtcMs: NOW,
+    ...overrides,
+  };
+};
 const codeOf = (overrides: Partial<DecideInput>): string =>
   unwrapErr(RoleAssignmentSystem.decide(input(overrides))).errorCode;
 
@@ -56,6 +116,7 @@ describe('RoleAssignmentSystem.decide — admitted changes', () => {
         rolesFrom: ['client'],
         rolesTo: ['client', 'barber'],
         rolesChanged: true,
+        ...LINKED_IVAN,
       }),
     );
   });
@@ -93,6 +154,7 @@ describe('RoleAssignmentSystem.decide — admitted changes', () => {
       rolesFrom: ['barber', 'client'],
       rolesTo: ['client', 'barber'],
       rolesChanged: false,
+      ...NO_LINK_CHANGE,
     });
   });
 
@@ -108,6 +170,7 @@ describe('RoleAssignmentSystem.decide — admitted changes', () => {
       rolesFrom: ['barber', 'admin'],
       rolesTo: ['barber'],
       rolesChanged: true,
+      ...NO_LINK_CHANGE,
     });
     expect(
       unwrapOk(
@@ -139,6 +202,7 @@ describe('RoleAssignmentSystem.decide — admitted changes', () => {
         rolesFrom: ['receptionist'],
         rolesTo: ['barber', 'receptionist'],
         rolesChanged: true,
+        ...LINKED_IVAN,
       }),
     );
   });
@@ -343,6 +407,8 @@ describe('RoleAssignmentSystem — the last-admin invariant (S-RU-11, property)'
             target: self ? caller : target,
             targetUserId,
             requestedRoles,
+            linkRequest: linkFor(self ? caller : target, requestedRoles),
+            linkFacts: FREE,
             nowUtcMs: NOW,
           });
           if (!decided.ok) return;
@@ -360,6 +426,311 @@ describe('RoleAssignmentSystem — the last-admin invariant (S-RU-11, property)'
           expect(targetUserId).not.toBe(ADMIN_ID);
         },
       ),
+    );
+  });
+});
+
+describe('RoleAssignmentSystem.decide — the barber link (staff analytics, the setRoles table)', () => {
+  /** A barber as stored, linked to `linked` (or not). */
+  const barber = (
+    linked: BarberId | null,
+    roles: readonly Role[] = [Role.Barber],
+  ): User => targetUser({ roles, linkedBarberId: linked });
+  const decided = (overrides: Partial<DecideInput>) =>
+    unwrapOk(RoleAssignmentSystem.decide(input(overrides)));
+
+  it('roles unchanged + link unchanged → nothing to do (a retry of a committed link included)', () => {
+    expect(
+      decided({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.KEEP,
+        linkFacts: { ...FREE, currentLock: lockOf(TARGET_ID) },
+      }),
+    ).toMatchObject({
+      rolesChanged: false,
+      linkedBarberIdFrom: IVAN,
+      linkedBarberIdTo: IVAN,
+      linkChanged: false,
+      lockReleased: null,
+      lockTaken: null,
+    });
+    // The same SET sent again finds its own lock: nothing to do.
+    const own = lockOf(TARGET_ID);
+    expect(
+      decided({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.set(IVAN),
+        linkFacts: {
+          requestedBarberExists: true,
+          requestedLock: own,
+          currentLock: own,
+        },
+      }),
+    ).toMatchObject({
+      rolesChanged: false,
+      linkChanged: false,
+      lockTaken: null,
+    });
+  });
+
+  it('roles unchanged + link set → link changed: the new lock taken', () => {
+    expect(
+      decided({
+        target: barber(null),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.set(IVAN),
+      }),
+    ).toEqual({
+      rolesFrom: ['barber'],
+      rolesTo: ['barber'],
+      rolesChanged: false,
+      ...LINKED_IVAN,
+    });
+  });
+
+  it('roles unchanged + link changed (a relink) → the old lock released, the new one taken', () => {
+    expect(
+      decided({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.set(NIKO),
+        linkFacts: {
+          requestedBarberExists: true,
+          requestedLock: null,
+          currentLock: lockOf(TARGET_ID),
+        },
+      }),
+    ).toMatchObject({
+      rolesChanged: false,
+      linkedBarberIdFrom: IVAN,
+      linkedBarberIdTo: NIKO,
+      linkChanged: true,
+      lockReleased: IVAN,
+      lockTaken: NIKO,
+    });
+  });
+
+  it('roles unchanged + link cleared (barber kept) → link changed: barber, not linked', () => {
+    expect(
+      decided({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.CLEAR,
+        linkFacts: { ...FREE, currentLock: lockOf(TARGET_ID) },
+      }),
+    ).toMatchObject({
+      rolesTo: ['barber'],
+      rolesChanged: false,
+      linkedBarberIdFrom: IVAN,
+      linkedBarberIdTo: null,
+      linkChanged: true,
+      lockReleased: IVAN,
+      lockTaken: null,
+    });
+  });
+
+  it('barber added + link set → roles and link changed', () => {
+    expect(
+      decided({
+        target: targetUser(),
+        requestedRoles: [Role.Client, Role.Barber],
+        linkRequest: BarberLinkRequest.set(IVAN),
+      }),
+    ).toEqual({
+      rolesFrom: ['client'],
+      rolesTo: ['client', 'barber'],
+      rolesChanged: true,
+      ...LINKED_IVAN,
+    });
+  });
+
+  it('barber added without a link (KEEP or CLEAR) → GOVERNANCE_ROLES_BARBER_LINK_REQUIRED, naming the account', () => {
+    for (const linkRequest of [
+      BarberLinkRequest.KEEP,
+      BarberLinkRequest.CLEAR,
+    ]) {
+      expect(
+        unwrapErr(
+          RoleAssignmentSystem.decide(
+            input({ requestedRoles: [Role.Client, Role.Barber], linkRequest }),
+          ),
+        ),
+      ).toEqual({
+        errorCode: GovernanceErrorCode.RolesBarberLinkRequired,
+        targetUserId: TARGET_ID,
+      });
+    }
+  });
+
+  it('a link to a record that does not exist → GOVERNANCE_ROLES_BARBER_UNKNOWN (barber added or kept)', () => {
+    const missing = { ...FREE, requestedBarberExists: false };
+    for (const target of [targetUser(), barber(null)]) {
+      expect(
+        unwrapErr(
+          RoleAssignmentSystem.decide(
+            input({
+              target,
+              requestedRoles: [Role.Barber],
+              linkRequest: BarberLinkRequest.set(NIKO),
+              linkFacts: missing,
+            }),
+          ),
+        ),
+      ).toEqual({
+        errorCode: GovernanceErrorCode.RolesBarberUnknown,
+        barberId: NIKO,
+      });
+    }
+  });
+
+  it('a link on an account that will not hold the barber role → GOVERNANCE_ROLES_LINK_WITHOUT_BARBER (a removal included)', () => {
+    for (const target of [targetUser(), barber(IVAN)]) {
+      expect(
+        unwrapErr(
+          RoleAssignmentSystem.decide(
+            input({
+              target,
+              requestedRoles: [Role.Client],
+              linkRequest: BarberLinkRequest.set(IVAN),
+            }),
+          ),
+        ),
+      ).toEqual({
+        errorCode: GovernanceErrorCode.RolesLinkWithoutBarber,
+        targetUserId: TARGET_ID,
+      });
+    }
+  });
+
+  it('barber removed → roles changed and the link cleared, its lock released (KEEP or CLEAR)', () => {
+    for (const linkRequest of [
+      BarberLinkRequest.KEEP,
+      BarberLinkRequest.CLEAR,
+    ]) {
+      expect(
+        decided({
+          target: barber(IVAN, [Role.Client, Role.Barber]),
+          requestedRoles: [Role.Client],
+          linkRequest,
+          linkFacts: { ...FREE, currentLock: lockOf(TARGET_ID) },
+        }),
+      ).toEqual({
+        rolesFrom: ['client', 'barber'],
+        rolesTo: ['client'],
+        rolesChanged: true,
+        linkedBarberIdFrom: IVAN,
+        linkedBarberIdTo: null,
+        linkChanged: true,
+        lockReleased: IVAN,
+        lockTaken: null,
+      });
+    }
+  });
+
+  it('other roles changed + link unchanged → roles changed only', () => {
+    expect(
+      decided({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber, Role.Receptionist],
+        linkRequest: BarberLinkRequest.KEEP,
+        linkFacts: { ...FREE, currentLock: lockOf(TARGET_ID) },
+      }),
+    ).toMatchObject({
+      rolesChanged: true,
+      linkedBarberIdTo: IVAN,
+      linkChanged: false,
+      lockReleased: null,
+      lockTaken: null,
+    });
+  });
+
+  it('a record locked to another account → GOVERNANCE_ROLES_BARBER_ALREADY_LINKED — the lock decides', () => {
+    for (const target of [targetUser(), barber(null), barber(NIKO)]) {
+      expect(
+        unwrapErr(
+          RoleAssignmentSystem.decide(
+            input({
+              target,
+              requestedRoles: [Role.Barber],
+              linkRequest: BarberLinkRequest.set(IVAN),
+              linkFacts: {
+                requestedBarberExists: true,
+                requestedLock: lockOf(OTHER_ID),
+                currentLock: null,
+              },
+            }),
+          ),
+        ),
+      ).toEqual({
+        errorCode: GovernanceErrorCode.RolesBarberAlreadyLinked,
+        barberId: IVAN,
+      });
+    }
+  });
+
+  it('never releases a lock that names another account (an inconsistent current lock is left alone)', () => {
+    expect(
+      decided({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.set(NIKO),
+        linkFacts: {
+          requestedBarberExists: true,
+          requestedLock: null,
+          currentLock: lockOf(OTHER_ID),
+        },
+      }),
+    ).toMatchObject({ linkChanged: true, lockReleased: null, lockTaken: NIKO });
+  });
+
+  it('reads an account written before the link existed as not linked (StaffLink.of)', () => {
+    const older = Object.fromEntries(
+      Object.entries(barber(null)).filter(([key]) => key !== 'linkedBarberId'),
+    ) as unknown as User;
+    expect(
+      decided({
+        target: older,
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.KEEP,
+      }),
+    ).toMatchObject({ linkedBarberIdFrom: null, linkChanged: false });
+  });
+
+  it('the self-target refusal and the role rules come before every link rule', () => {
+    expect(
+      codeOf({
+        target: adminUser(),
+        targetUserId: ADMIN_ID,
+        linkRequest: BarberLinkRequest.set(IVAN),
+        linkFacts: { ...FREE, requestedBarberExists: false },
+      }),
+    ).toBe(GovernanceErrorCode.RolesSelf);
+    expect(
+      codeOf({
+        requestedRoles: [],
+        linkRequest: BarberLinkRequest.set(IVAN),
+        linkFacts: { ...FREE, requestedBarberExists: false },
+      }),
+    ).toBe(GovernanceErrorCode.RolesInvalid);
+  });
+
+  it('is pure: same input, same answer, inputs unchanged', () => {
+    const frozen = deepFreeze(
+      input({
+        target: barber(IVAN),
+        requestedRoles: [Role.Barber],
+        linkRequest: BarberLinkRequest.set(NIKO),
+        linkFacts: {
+          requestedBarberExists: true,
+          requestedLock: null,
+          currentLock: lockOf(TARGET_ID),
+        },
+      }),
+    );
+    expect(RoleAssignmentSystem.decide(frozen)).toEqual(
+      RoleAssignmentSystem.decide(frozen),
     );
   });
 });

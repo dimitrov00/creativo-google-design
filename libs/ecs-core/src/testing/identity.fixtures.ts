@@ -94,6 +94,7 @@ export function userFixture(overrides: Partial<User> = {}): User {
     profileEditedAtUtcMs: null,
     searchName: 'maria petrova',
     searchPrefixes: ['m', 'ma', 'mar', 'p', 'pe', 'pet'],
+    linkedBarberId: null,
   };
   // A spread of a partial union is wider than the union; the override is the
   // spec's own choice of variant (a block passes its `blockReason` too).

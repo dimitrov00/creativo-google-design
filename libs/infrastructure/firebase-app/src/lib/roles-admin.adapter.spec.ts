@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Role, type RolesCall } from '@core/components';
+import { BarberLinkRequest, Role, type RolesCall } from '@core/components';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Callables } from '@core/ports';
 import { ClientOperationId, Result, UserId } from '@core/primitives';
@@ -16,6 +16,7 @@ import { rolesAdminPorts } from './roles-admin.adapter';
 const CALL: RolesCall & { readonly operationId: ClientOperationId } = {
   targetUserId: UserId.of('dev-client-1'),
   roles: [Role.Client, Role.Barber],
+  ...BarberLinkRequest.KEEP,
   operationId: unwrapOk(ClientOperationId.parse('op-card-roles-0001')),
 };
 
@@ -23,6 +24,8 @@ const CHANGED: RolesCall.Changed = {
   targetUserId: CALL.targetUserId,
   roles: [Role.Client, Role.Barber],
   rolesChanged: true,
+  linkedBarberId: null,
+  linkChanged: false,
 };
 
 describe('rolesAdminPorts (security hardening S-WS-E)', () => {

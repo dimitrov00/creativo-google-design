@@ -7,6 +7,7 @@ export * from './badge-category.entity';
 export * from './badge-progress.entity';
 export * from './badge-series.entity';
 export * from './barber-busy-day.entity';
+export * from './barber-link.entity';
 export * from './barber-lead-time-sample.entity';
 export * from './barber-schedule.entity';
 export * from './barber.entity';

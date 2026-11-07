@@ -14,6 +14,7 @@ import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AccountLifecycle,
+  BarberLinkChange,
   BirthDate,
   ClientPrivacyCall,
   CouponOccasion,
@@ -2870,6 +2871,8 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
       targetUserId: UserId.of(GEORGI),
       roles,
       rolesChanged: true,
+      linkedBarberId: null,
+      linkChanged: false,
     });
 
   function rolesRig(
@@ -3022,6 +3025,8 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
       {
         targetUserId: UserId.of(GEORGI),
         roles: [Role.Client, Role.Barber],
+        barberLinkChange: BarberLinkChange.Keep,
+        linkedBarberId: null,
         operationId: 'op-card-roles-0001',
       },
     ]);
@@ -3100,6 +3105,8 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
         targetUserId: UserId.of(GEORGI),
         roles: [Role.Client, Role.Barber],
         rolesChanged: false,
+        linkedBarberId: null,
+        linkChanged: false,
       }),
     );
     const ids = rolesIds();
@@ -3117,6 +3124,8 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     expect(admin.calls[1]).toEqual({
       targetUserId: UserId.of(GEORGI),
       roles: [Role.Client, Role.Barber],
+      barberLinkChange: BarberLinkChange.Keep,
+      linkedBarberId: null,
       operationId: 'op-card-roles-0001',
     });
     expect(ids.minted).toEqual(['op-card-roles-0001']);
@@ -3203,6 +3212,8 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
         targetUserId: UserId.of(GEORGI),
         roles: [Role.Client, Role.Barber],
         rolesChanged: false,
+        linkedBarberId: null,
+        linkChanged: false,
       }),
     );
     const ids = rolesIds();
@@ -3244,6 +3255,8 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     expect(admin.calls[1]).toEqual({
       targetUserId: UserId.of(GEORGI),
       roles: [Role.Client, Role.Barber],
+      barberLinkChange: BarberLinkChange.Keep,
+      linkedBarberId: null,
       operationId: 'op-card-roles-0001',
     });
     expect(ids.minted).toEqual(['op-card-roles-0001']);

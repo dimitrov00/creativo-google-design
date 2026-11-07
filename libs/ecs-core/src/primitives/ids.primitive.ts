@@ -408,6 +408,14 @@ export const ClientMoneyStatsId = {
   FIXED: 'money' as ClientMoneyStatsId,
 } as const;
 
+/** The barber record's account lock (`barbers/{barberId}/restricted/link`). */
+export type BarberLinkId = Brand<string, 'BarberLinkId'>;
+export const BarberLinkId = {
+  ...idCompanion('BarberLinkId'),
+  /** The one document id there is (`BARBER_LINK_DOC`). */
+  FIXED: 'link' as BarberLinkId,
+} as const;
+
 /** A request id of a streak publish (today `StreakDefinitionVersion.requestId`). */
 export type PublishRequestId = Brand<string, 'PublishRequestId'>;
 export const PublishRequestId = idCompanion('PublishRequestId');

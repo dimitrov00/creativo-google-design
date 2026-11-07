@@ -22,9 +22,10 @@ import {
   RegistrationState,
   Role,
 } from '@core/components';
-import type { User } from '@core/entities';
+import type { BarberLink, User } from '@core/entities';
+import { UserId } from '@core/primitives';
 import { PhoneSystem, SearchFieldsSystem } from '@core/systems';
-import { type Body, present, sure } from './catalog.fixtures';
+import { type Body, IVAN, present, sure } from './catalog.fixtures';
 import type { SeedClientContact } from './customers.fixtures';
 
 /**
@@ -67,6 +68,8 @@ export function registeredAccountBody(
       phone,
       email,
     ),
+    // No barber link — only `setRoles` sets one; the staff account below is linked.
+    linkedBarberId: null,
   } satisfies Body<User>;
 }
 
@@ -83,17 +86,33 @@ export function clientUserBody(
 
 /**
  * The STAFF account, so /staff is reachable in dev at all: Иван Колев,
- * `barber` + `admin`, signing in as `staff@test.local`. Only this document
+ * `barber` + `admin`, signing in as `staff@test.local`, linked to the
+ * barber record `ivan` (`linkedBarberId`, held by {@link staffBarberLinkBody}). Only this document
  * matters — `verifyOtpChallenge` finds the account by its e-mail and mints
  * the roles read off it; the Auth user appears on the first sign-in.
  */
-export const staffAccountBody: Body<User> = registeredAccountBody(
-  {
-    firstName: 'Иван',
-    lastName: 'Колев',
-    phone: '+35943012399',
-    email: 'staff@test.local',
-  },
-  [Role.Barber, Role.Admin],
-  null,
-);
+export const staffAccountBody: Body<User> = {
+  ...registeredAccountBody(
+    {
+      firstName: 'Иван',
+      lastName: 'Колев',
+      phone: '+35943012399',
+      email: 'staff@test.local',
+    },
+    [Role.Barber, Role.Admin],
+    null,
+  ),
+  linkedBarberId: IVAN,
+};
+
+/** The staff account's uid — `tools/seed-dev-catalog.mjs` writes {@link staffAccountBody} there. */
+export const STAFF_ACCOUNT_UID = 'dev-staff-ivan';
+
+/**
+ * `barbers/ivan/restricted/link` — the lock {@link staffAccountBody}'s link
+ * holds (`BarberLink` minus its fixed id), so `setRoles` refuses to link
+ * the record to a second account.
+ */
+export const staffBarberLinkBody: Body<BarberLink> = {
+  linkedUserId: UserId.of(STAFF_ACCOUNT_UID),
+};

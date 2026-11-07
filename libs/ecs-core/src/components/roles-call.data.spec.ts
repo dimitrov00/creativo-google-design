@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { PipelineErrorCode } from '@core/errors';
-import { UserId } from '@core/primitives';
+import { BarberId, UserId } from '@core/primitives';
 import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { Role } from './role.data';
-import { RolesCall } from './roles-call.data';
+import {
+  BarberLinkChange,
+  BarberLinkRequest,
+  RolesCall,
+} from './roles-call.data';
 
 /*
  * The roles-change wire (security hardening S-WS-E): `setRoles`' answer
@@ -17,6 +21,8 @@ const ANSWER = deepFreeze({
   targetUserId: 'u-target',
   roles: ['client', 'barber'],
   rolesChanged: true,
+  linkedBarberId: 'ivan',
+  linkChanged: true,
 });
 
 describe('RolesCall — the setRoles call', () => {
@@ -24,8 +30,30 @@ describe('RolesCall — the setRoles call', () => {
     const call: RolesCall = {
       targetUserId: UserId.of('u-target'),
       roles: [Role.Client, Role.Barber],
+      ...BarberLinkRequest.KEEP,
     };
-    expect(Object.keys(call).sort()).toEqual(['roles', 'targetUserId']);
+    expect(Object.keys(call).sort()).toEqual([
+      'barberLinkChange',
+      'linkedBarberId',
+      'roles',
+      'targetUserId',
+    ]);
+  });
+
+  it('names a barber record only when it sets the link — every variant shares one shape', () => {
+    expect(BarberLinkRequest.KEEP).toEqual({
+      barberLinkChange: BarberLinkChange.Keep,
+      linkedBarberId: null,
+    });
+    expect(BarberLinkRequest.CLEAR).toEqual({
+      barberLinkChange: BarberLinkChange.Clear,
+      linkedBarberId: null,
+    });
+    expect(BarberLinkRequest.set(BarberId.of('ivan'))).toEqual({
+      barberLinkChange: BarberLinkChange.Set,
+      linkedBarberId: 'ivan',
+    });
+    expect(Object.values(BarberLinkChange)).toEqual(['KEEP', 'SET', 'CLEAR']);
   });
 });
 
@@ -35,7 +63,18 @@ describe('RolesCall.decodeChanged', () => {
       targetUserId: 'u-target',
       roles: ['client', 'barber'],
       rolesChanged: true,
+      linkedBarberId: 'ivan',
+      linkChanged: true,
     });
+    expect(
+      unwrapOk(
+        RolesCall.decodeChanged({
+          ...ANSWER,
+          linkedBarberId: null,
+          linkChanged: false,
+        }),
+      ),
+    ).toMatchObject({ linkedBarberId: null, linkChanged: false });
     expect(
       unwrapOk(RolesCall.decodeChanged({ ...ANSWER, rolesChanged: false }))
         .rolesChanged,
@@ -59,6 +98,12 @@ describe('RolesCall.decodeChanged', () => {
       { ...ANSWER, roles: 'client' },
       { targetUserId: 'u-target', roles: ANSWER.roles },
       { ...ANSWER, rolesChanged: 'yes' },
+      { ...ANSWER, linkedBarberId: undefined },
+      { ...ANSWER, linkedBarberId: '' },
+      { ...ANSWER, linkedBarberId: 'a/b' },
+      { ...ANSWER, linkedBarberId: 7 },
+      { ...ANSWER, linkChanged: undefined },
+      { ...ANSWER, linkChanged: 'no' },
     ];
     for (const raw of broken) {
       expect(unwrapErr(RolesCall.decodeChanged(raw)).errorCode).toBe(

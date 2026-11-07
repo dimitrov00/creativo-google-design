@@ -11,6 +11,7 @@ import {
   AuditedProfileField,
   AuditTarget,
   AuditTargetRef,
+  BarberLinkRequest,
   EndReasonFields,
   GovernedCollection,
   ImpersonationScope,
@@ -773,6 +774,38 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
     ).toEqual(['email', 'roles', 'accountStatus']);
   });
 
+  it('names a barber link change last, and fills the link pair — an absent link reads as none (staff analytics)', () => {
+    expect(
+      AuditSystem.changedProfileFields(
+        { linkedBarberId: null },
+        { linkedBarberId: 'ivan', roles: ['barber'] },
+      ),
+    ).toEqual(['roles', 'linkedBarberId']);
+    // A document written before the link existed is no change to `null`.
+    expect(
+      AuditSystem.changedProfileFields({}, { linkedBarberId: null }),
+    ).toEqual([]);
+    expect(
+      AuditSystem.profileTagDelta(
+        { linkedBarberId: 'ivan' },
+        { linkedBarberId: 'niko' },
+      ),
+    ).toEqual({
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: 'ivan',
+      profileLinkedBarberIdTo: 'niko',
+    });
+    expect(
+      AuditSystem.profileTagDelta({}, { linkedBarberId: 'ivan' }),
+    ).toMatchObject({
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: 'ivan',
+    });
+  });
+
   it('never lets a value into the row context, whatever the profile held — the tags carry closed vocabularies only', () => {
     const FIELDS = ['firstName', 'lastName', 'phone', 'email', 'birthDate'];
     const AUDITED = [
@@ -884,6 +917,8 @@ describe('AuditSystem.profileTagDelta — the role and status tags, before and a
       profileRolesTo: null,
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
     // An empty list is "no value" on both sides.
     expect(
@@ -902,6 +937,8 @@ describe('AuditSystem.profileTagDelta — the role and status tags, before and a
       profileRolesTo: ['barber', 'admin'],
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
     // Registration sets the stub's empty list: from nothing to a role.
     expect(
@@ -924,6 +961,8 @@ describe('AuditSystem.profileTagDelta — the role and status tags, before and a
       profileRolesTo: null,
       profileAccountStatusFrom: 'ACTIVE',
       profileAccountStatusTo: 'BLOCKED',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
     // The provisioned stub's creation: nothing before, ACTIVE after.
     expect(
@@ -933,6 +972,8 @@ describe('AuditSystem.profileTagDelta — the role and status tags, before and a
       profileRolesTo: null,
       profileAccountStatusFrom: null,
       profileAccountStatusTo: 'ACTIVE',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
     expect(
       AuditSystem.profileTagDelta(
@@ -942,6 +983,8 @@ describe('AuditSystem.profileTagDelta — the role and status tags, before and a
     ).toMatchObject({
       profileAccountStatusFrom: null,
       profileAccountStatusTo: 'ACTIVE',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 
@@ -1039,6 +1082,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     profileRolesTo: null,
     profileAccountStatusFrom: null,
     profileAccountStatusTo: null,
+    profileLinkedBarberIdFrom: null,
+    profileLinkedBarberIdTo: null,
   };
 
   it('keys the row by the event id, so a redelivery lands on the same document', () => {
@@ -1077,6 +1122,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
       profileRolesTo: null,
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 
@@ -1094,6 +1141,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
           profileRolesTo: rolesTo,
           profileAccountStatusFrom: AccountStatus.Active,
           profileAccountStatusTo: AccountStatus.Blocked,
+          profileLinkedBarberIdFrom: null,
+          profileLinkedBarberIdTo: null,
         },
         AT,
       ),
@@ -1109,6 +1158,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
       profileRolesTo: ['barber'],
       profileAccountStatusFrom: 'ACTIVE',
       profileAccountStatusTo: 'BLOCKED',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 
@@ -1279,6 +1330,8 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
       profileRolesTo: null,
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
@@ -1318,15 +1371,32 @@ describe('AuditSystem.planRolesChanged — the row setRoles writes itself (secur
     lastName: 'Quixotic',
     email: Email.of('zebulon.quixotic@example.test'),
   });
+  const IVAN_RECORD = BarberId.of('ivan');
   const promotion: RoleAssignment = {
     rolesFrom: [Role.Client],
     rolesTo: [Role.Client, Role.Barber],
     rolesChanged: true,
+    linkedBarberIdFrom: null,
+    linkedBarberIdTo: IVAN_RECORD,
+    linkChanged: true,
+    lockReleased: null,
+    lockTaken: IVAN_RECORD,
+  };
+  /** A link-only change: the barber `ivan` relinked to `niko`, the roles kept. */
+  const relink: RoleAssignment = {
+    rolesFrom: [Role.Barber],
+    rolesTo: [Role.Barber],
+    rolesChanged: false,
+    linkedBarberIdFrom: IVAN_RECORD,
+    linkedBarberIdTo: BarberId.of('niko'),
+    linkChanged: true,
+    lockReleased: IVAN_RECORD,
+    lockTaken: BarberId.of('niko'),
   };
   /** The token said admin AND barber; the stored roles say admin alone — the row credits the stored. */
   const admin = Actor.forCaller(UserId.of('ivan'), [Role.Admin]);
 
-  it('credits the admin, names `roles` alone and carries the set before and after as tags', () => {
+  it('credits the admin, names `roles` then `linkedBarberId` and carries both pairs before and after as tags', () => {
     const plan = AuditSystem.planRolesChanged(
       TARGET,
       promotion,
@@ -1341,15 +1411,58 @@ describe('AuditSystem.planRolesChanged — the row setRoles writes itself (secur
       actorRole: 'ADMIN',
       actorAdminUserId: 'ivan',
       auditAction: 'PROFILE_ROLES_CHANGED',
-      profileFields: ['roles'],
+      profileFields: ['roles', 'linkedBarberId'],
       profileRolesFrom: ['client'],
       profileRolesTo: ['client', 'barber'],
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: 'ivan',
       auditTarget: 'USER',
       targetUserId: 'maria',
     });
     expect(plan.row.resourceId).toBe(AuditResourceId.forUser(TARGET));
+  });
+
+  it('a link-only change is ONE row too — `linkedBarberId` alone, the link pair set, the roles pair null', () => {
+    const plan = AuditSystem.planRolesChanged(
+      TARGET,
+      relink,
+      admin,
+      CHANGED_AT,
+      OP,
+    );
+    expect(plan.row).toEqual({
+      recordedAtUtcMs: CHANGED_AT,
+      resourceId: 'users/maria',
+      auditOperationId: OP,
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'ivan',
+      auditAction: 'PROFILE_ROLES_CHANGED',
+      profileFields: ['linkedBarberId'],
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: 'ivan',
+      profileLinkedBarberIdTo: 'niko',
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+    });
+    // A cleared link names the side it left.
+    expect(
+      AuditSystem.planRolesChanged(
+        TARGET,
+        { ...relink, linkedBarberIdTo: null, lockTaken: null },
+        admin,
+        CHANGED_AT,
+        OP,
+      ).row,
+    ).toMatchObject({
+      profileFields: ['linkedBarberId'],
+      profileLinkedBarberIdFrom: 'ivan',
+      profileLinkedBarberIdTo: null,
+    });
   });
 
   it('credits whatever actor the pipeline built from the STORED roles (Actor.forCaller)', () => {
@@ -1427,6 +1540,12 @@ describe('AuditSystem.planRolesChanged — the row setRoles writes itself (secur
         }),
         targetUserId: TARGET,
         requestedRoles: [Role.Receptionist, Role.Barber],
+        linkRequest: BarberLinkRequest.set(IVAN_RECORD),
+        linkFacts: {
+          requestedBarberExists: true,
+          requestedLock: null,
+          currentLock: null,
+        },
         nowUtcMs: CHANGED_AT,
       }),
     );
@@ -1469,7 +1588,7 @@ describe('AuditSystem.planRolesChanged — the row setRoles writes itself (secur
     }
   });
 
-  it('an unchanged set writes no row — planning one is a programmer defect', () => {
+  it('an unchanged set and link writes no row — planning one is a programmer defect', () => {
     expect(() =>
       AuditSystem.planRolesChanged(
         TARGET,
@@ -1477,12 +1596,17 @@ describe('AuditSystem.planRolesChanged — the row setRoles writes itself (secur
           rolesFrom: [Role.Client],
           rolesTo: [Role.Client],
           rolesChanged: false,
+          linkedBarberIdFrom: null,
+          linkedBarberIdTo: null,
+          linkChanged: false,
+          lockReleased: null,
+          lockTaken: null,
         },
         admin,
         CHANGED_AT,
         OP,
       ),
-    ).toThrow(/unchanged role set/);
+    ).toThrow(/unchanged role set and link/);
   });
 
   it('is pure: same input → same plan, the assignment untouched', () => {
