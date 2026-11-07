@@ -20,6 +20,19 @@
 | cd-2-8                    | Rostered time uses active locations only, as the schedule does; inactive ones are read for time zones                                                                                   |
 | ir-2-8 (part)             | The visibility table has nine rows; an admin opens on the shop, with their own linked record first in the picker («Аз»)                                                                 |
 
+## Closed in the account-link PR (branch `feat/barber-account-link`)
+
+| Id                           | How                                                                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| cd-2-1 (link part)           | Every consumer of `User`, `RolesCall` and the audit context changed in the same commit: registration, the user fixtures and seeds, `decodeSetRoles` / `decodeChanged`, the edge rows, the client card's call |
+| cd-2-2                       | `RolesCall` carries no optional field: a link request tagged `barberLinkChange` (`KEEP` / `SET` / `CLEAR`), an absent wire field read as `KEEP`; the answer carries `linkedBarberId` and `linkChanged`       |
+| cd-2-3                       | `BarberLinkId` with `FIXED: 'link'`, `BARBER_LINK_DOC`, one field name (`linkedUserId`), exported from `@core/entities`                                                                                      |
+| cd-2-4                       | `AuditedProfileField.LinkedBarberId`; the link pair on `AuditContext.Profile`; a link-only change stamps `profileEditedAtUtcMs`; two `fieldOverrides`                                                        |
+| ir-2-3                       | The decision table in `RoleAssignmentSystem.linkOf` (reads `barbers/{id}`, refuses an unknown record and a link without the role); S-L-15 kept (every call revokes)                                          |
+| ir-2-11 (card part), ir-2-12 | The card's picker reads the catalogue's `barberIds()`, now provided by the dashboard and the visit editor; `RoleAssignmentSystem.cardLinkOf` decides the request; `client-card.html` names the tiles         |
+| ir-2-17                      | `StaffLink.of` reads an absent or malformed field as `null`                                                                                                                                                  |
+| ir-2-13 (part)               | The roles e2e links a record per theme after releasing its lock and checks the stored link and lock                                                                                                          |
+
 ## Open — settle in code, by plan step
 
 | Step                    | Ids                                                                                                     | Subject                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
