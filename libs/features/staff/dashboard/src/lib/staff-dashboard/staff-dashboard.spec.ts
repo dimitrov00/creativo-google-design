@@ -2275,8 +2275,8 @@ describe('StaffDashboard', () => {
     // the bookings beside it; the other already happened and, on a quiet
     // morning, outnumbers them. Form carries it — never a second word.
     showFreeTime();
-    const idle = host().querySelector('[data-testid="staff-idle-row"]');
-    const sellable = host().querySelector('[data-testid="staff-gap-row"]');
+    const idle = host().querySelector('[data-testid="staff-idle-press"]');
+    const sellable = host().querySelector('[data-testid="staff-gap-press"]');
     expect(sellable?.classList.contains('agenda-card--idle')).toBe(false);
     if (idle) expect(idle.classList.contains('agenda-card--idle')).toBe(true);
     // And ONE word for both — "Незаето" is gone.
@@ -2287,53 +2287,53 @@ describe('StaffDashboard', () => {
     }
   });
 
-  it('drops elapsed holes entirely when every chair is in scope', async () => {
-    // Five lanes times every twenty-minute hole is a screenful of things
-    // that already happened and that nobody can act on, filed between the
-    // bookings the screen is open for. The STORE still computes them —
-    // lane-gaps.spec.ts rules that it must — and the summary reads its
-    // total off them. What is settled here is only whether each earns a row.
+  it('shows elapsed holes at every scope, and each one opens the create menu', async () => {
+    // Owner, 2026-11-07: staff see the holes they HAD, not only the ones
+    // they have, and can still enter a visit into one after the fact. The
+    // free-time switch is off by default, so this is a screen somebody
+    // asked for.
     //
     // The suite's clock stands at 09:00, the first rostered minute, so
-    // NOTHING has elapsed and asserting zero rows there would pass against
-    // an empty day. The clock is moved to mid-afternoon first, which is when
-    // this rule has anything to decide at all.
+    // NOTHING has elapsed there; the clock is moved to mid-afternoon first.
     TestBed.resetTestingModule();
     await build('2026-08-05T14:20:00.000+03:00');
     showFreeTime();
 
     const component = fixture.componentInstance as unknown as {
-      store: { scope: (() => string | null) & { set?: unknown } };
-      setScope?: unknown;
+      store: {
+        scope: () => string | null;
+        workingLanes: () => readonly {
+          gaps: readonly { sellable: boolean }[];
+        }[];
+      };
     };
     expect(component.store.scope()).toBeNull();
 
     // The day HAS elapsed holes — otherwise this proves nothing.
-    const store = component.store as unknown as {
-      workingLanes: () => readonly { gaps: readonly { sellable: boolean }[] }[];
-      setScope: (id: string | null) => void;
-    };
-    const elapsed = store
+    const elapsed = component.store
       .workingLanes()
       .flatMap((lane) => lane.gaps)
       .filter((gap) => !gap.sellable);
     expect(elapsed.length).toBeGreaterThan(0);
 
-    // ...and none of them is a row while the whole shop is in scope.
-    expect(
-      host().querySelectorAll('[data-testid="staff-idle-row"]').length,
-    ).toBe(0);
-
-    // Narrowed to one chair, they come back — as lines, not cards.
-    store.setScope('ivan');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    // Every one is a row while the whole shop is in scope — as lines.
     const rows = host().querySelectorAll('[data-testid="staff-idle-row"]');
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row.classList.contains('agenda-card--idle')).toBe(true);
+    expect(rows.length).toBe(elapsed.length);
+    const presses = host().querySelectorAll<HTMLElement>(
+      '[data-testid="staff-idle-press"]',
+    );
+    expect(presses.length).toBe(elapsed.length);
+    for (const press of presses) {
+      expect(press.classList.contains('agenda-card--idle')).toBe(true);
     }
+
+    // A press opens the ＋'s menu on it: «Нов час · Блокирай време».
+    (presses[0] as HTMLElement).click();
+    fixture.detectChanges();
+    expect(presses[0]?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      host().querySelector('[data-testid="staff-gap-booking"]'),
+    ).not.toBeNull();
   });
 
   it('puts WHEN beside the body, and says STATUS only when there is some', () => {
