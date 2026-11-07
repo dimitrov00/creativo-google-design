@@ -9,7 +9,9 @@ import {
   WriteOp,
 } from '@core/components';
 import {
+  BarberBusyDayId,
   BarberId,
+  BusyKey,
   CapacityMonthId,
   type LocalDate,
   LocationId,
@@ -42,7 +44,7 @@ import { rebuildCapacity } from './rebuild-capacity.pipeline';
  * one barber's span in ONE transaction whose read set is the ACTIVE shops,
  * the roster, the busy and exception ranges and the month documents, and
  * whose plan is the FULL sorted `entries[]` of every month it touches —
- * replace, never merge. The window math is `CapacitySystem`'s spec; this one
+ * replace, never merge — and none for a month whose document would not change. The window math is `CapacitySystem`'s spec; this one
  * asserts the read set, the plan that reached the commit and the guards.
  */
 
@@ -256,7 +258,7 @@ describe('rebuildCapacity — one (barber, day)', () => {
     expect(tx.transactions).toEqual([]);
   });
 
-  it('is idempotent — a redelivered busy write rebuilds the identical plan and leaves the identical month document (edge-hardening D-5)', async () => {
+  it('is idempotent — a redelivered busy write plans no second write and leaves the identical month document (edge-hardening D-5)', async () => {
     const busy = barberBusyDayFixture();
     const { store, tx, run } = rig(
       seeded([
@@ -275,7 +277,7 @@ describe('rebuildCapacity — one (barber, day)', () => {
     const second = await run(today);
     expect(second).toEqual(first);
     expect(tx.plans).toHaveLength(2);
-    expect(tx.plans[1]).toEqual(tx.plans[0]);
+    expect(tx.plans[1]).toEqual([]);
     expect(store.get(MONTH_PATH.join('/'))).toEqual(monthAfterFirst);
     expect(monthAfterFirst).toEqual({
       month: MONTH,
@@ -405,5 +407,55 @@ describe('rebuildCapacity — a horizon', () => {
         ),
       },
     });
+  });
+});
+
+describe('rebuildCapacity — a month whose document would not change is not written', () => {
+  const sweep = { capacityTrigger: CapacityTrigger.Sweep } as const;
+  const OCTOBER = CapacityMonthId.of('2026-10');
+
+  it('returns no capacity WriteOp for a Sweep over a store it already rebuilt', async () => {
+    const { store, tx, run } = rig();
+    await run(sweep);
+    const rebuilt = new Map(store);
+    expect(tx.plans).toHaveLength(1);
+    expect(tx.plans[0]?.length).toBeGreaterThan(0);
+    await run(sweep);
+    expect(tx.plans).toHaveLength(2);
+    expect(tx.plans[1]).toEqual([]);
+    expect(new Map(store)).toEqual(rebuilt);
+  });
+
+  it('writes only the month a changed busy day falls in', async () => {
+    const { store, tx, run } = rig();
+    await run(sweep);
+    const day = localDate('2026-10-05');
+    const busy = barberBusyDayFixture({
+      id: BarberBusyDayId.of(BusyKey.of(IVAN, day)),
+      localDate: day,
+    });
+    store.set([Collections.BarberBusy, busy.id].join('/'), bodyOf(busy));
+    await run(sweep);
+    expect(tx.plans[1]?.map((op) => op.path)).toEqual([
+      [Collections.Capacity, OCTOBER],
+    ]);
+  });
+
+  it('does not write a month never stored whose rebuild holds nothing', async () => {
+    const { tx, run } = rig();
+    // A Saturday: the fixture roster works Monday to Friday.
+    await run({ ...today, localDate: localDate('2026-10-03') });
+    expect(tx.plans).toEqual([[]]);
+  });
+
+  it('rewrites a stored month whose `month` field is wrong — the TTL is stamped from it', async () => {
+    const first = rig();
+    await first.run(today);
+    const rebuilt = first.store.get(MONTH_PATH.join('/'));
+    const { tx, run } = rig(
+      seeded([{ path: MONTH_PATH, body: { ...rebuilt, month: '2026-08' } }]),
+    );
+    await run(today);
+    expect(tx.plans).toEqual([[WriteOp.set(MONTH_PATH, rebuilt as DocBody)]]);
   });
 });

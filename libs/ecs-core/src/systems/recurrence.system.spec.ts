@@ -298,7 +298,7 @@ describe('RecurrenceSystem.series — which days', () => {
     ]);
   });
 
-  it('refuses an end before the start, a rule that never lands, and more than a year of days', () => {
+  it('refuses an end before the start, a rule that never lands, and more than 366 days', () => {
     expect(days('2026-09-24', rule(DAILY, until('2026-09-23')))).toBe(
       SchedulingErrorCode.RecurrenceEndsBeforeStart,
     );

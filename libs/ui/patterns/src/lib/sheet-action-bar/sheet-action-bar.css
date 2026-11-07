@@ -177,6 +177,28 @@
     flex: 0 0 auto;
   }
 
+  /* The fill — the page bar's slot, the same contract (a search at the
+     thumb in a sheet's page, 2026-11-06): the room between the leading
+     controls and the primary, two attribute matches so it outranks the
+     intrinsic-box rule above. Beside it the primary keeps its label whole:
+     it is the fill that gives way. */
+  .ui-sheet-action-bar > [uifill][uifill] {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  /* Beside a fill the row sits on its FLOOR, as the page bar's does: a
+     field carrying chips over it is taller than a button, and centred the
+     button floated between the chips and the field. */
+  .ui-sheet-action-bar:has(> [uifill]) {
+    align-items: flex-end;
+  }
+  .ui-sheet-action-bar:has(> [uifill])
+    > [data-button-style='borderedProminent'],
+  .ui-sheet-action-bar:has(> [uifill]) > [uiprimary] {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
   /* Regular-width presentation (the centered desktop dialog): the docked
      thumb-side geometry loses its meaning without a thumb, so the whole
      action cluster centers and hugs its content instead of spanning the

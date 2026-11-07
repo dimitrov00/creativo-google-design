@@ -73,6 +73,8 @@ function styleUrls(componentPath: string): string[] {
 
 const VISIT_EDITOR = 'visit-editor/staff-visit-editor.ts';
 const BLOCK_EDITOR = 'block-editor/staff-block-editor.ts';
+/** The weekly hours sheet — the block sheet's rows, then its own. */
+const HOURS_SHEET = 'staff-hours-sheet/staff-hours-sheet.ts';
 
 const MAIN = 'visit-editor/staff-visit-editor.css';
 const SECTIONS = 'visit-editor/staff-visit-editor.sections.css';
@@ -91,6 +93,7 @@ describe('the visit editor split (shared with the block sheet)', () => {
 
   it('lists the shared sheets main, sections, rows — in that order, in both', () => {
     expect(styleUrls(BLOCK_EDITOR)).toEqual([MAIN, SECTIONS, ROWS]);
+    expect(styleUrls(HOURS_SHEET).slice(0, 3)).toEqual([MAIN, SECTIONS, ROWS]);
     expect(styleUrls(VISIT_EDITOR).slice(0, 3)).toEqual([MAIN, SECTIONS, ROWS]);
   });
 
@@ -128,6 +131,7 @@ describe('every split family keeps the one file’s order', () => {
     expect(loaders.sort()).toEqual(
       [
         BLOCK_EDITOR,
+        HOURS_SHEET,
         VISIT_EDITOR,
         'staff-dashboard/staff-dashboard.ts',
         'time-grid/staff-time-grid.ts',

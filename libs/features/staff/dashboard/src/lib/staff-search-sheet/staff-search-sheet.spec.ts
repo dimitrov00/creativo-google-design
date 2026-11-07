@@ -121,6 +121,8 @@ describe('StaffSearchSheet', () => {
     fixture = TestBed.createComponent(Host);
     fixture.detectChanges();
     await fixture.whenStable();
+    // The frame the sheet focuses its surface in, and the field's after it.
+    vi.advanceTimersByTime(40);
     fixture.detectChanges();
   }
 
@@ -148,14 +150,73 @@ describe('StaffSearchSheet', () => {
     localStorage.clear();
   });
 
-  it('opens idle: the filters on offer, no cards, the field pinned and named', async () => {
+  it('opens idle and full screen: no cards, the field in the page’s own bar, the starters above it', async () => {
     await mount();
     expect(cards()).toHaveLength(0);
+    // The page's bottom bar holds the field (its fade, its floor, the
+    // keyboard) at the bar's rung; the field draws no band of its own.
     expect(
-      all('[data-testid="staff-search-suggestion"]').length,
-    ).toBeGreaterThan(0);
-    expect(el('ui-search-field[data-pinned]')).not.toBeNull();
+      el(
+        'ui-page-action-bar[data-avoids-keyboard] > ui-search-field[data-control-size="large"]',
+      ),
+    ).not.toBeNull();
+    expect(el('ui-search-field[data-pinned]')).toBeNull();
+    expect(el('ui-sheet[data-full-screen]')).not.toBeNull();
     expect(el('[data-testid="staff-search-recents"]')).toBeNull();
+    // Mail's «Suggestions» before anything is typed — tomorrow, the barbers —
+    // under their keys; «Кога» says it has more («Всички опции ›»), the
+    // barbers, all shown, do not.
+    expect(
+      all('[data-suggest-mode] ui-section-header [uiTitle]').map((h) =>
+        h.textContent?.trim(),
+      ),
+    ).toEqual(['staff.search.key.when', 'staff.search.key.barber']);
+    expect(
+      all('[data-testid="staff-search-see-all"]').map((b) =>
+        b.getAttribute('data-field'),
+      ),
+    ).toEqual(['WHEN']);
+    // The barbers are faces over their names, a plain press each.
+    const faces = all(
+      '[data-testid="staff-search-faces"] button.ui-person-tile',
+    );
+    expect(faces.map((tile) => tile.getAttribute('data-suggestion'))).toEqual([
+      'BARBER:b-ivan',
+      'BARBER:b-niko',
+    ]);
+    expect(faces.every((tile) => !tile.hasAttribute('aria-pressed'))).toBe(
+      true,
+    );
+    expect(
+      all('[data-suggest-mode] [data-testid="staff-search-suggestion"]').map(
+        (row) => row.getAttribute('data-suggestion'),
+      ),
+    ).toEqual([
+      `WHEN:${LocalDate.addDays(FIXTURE_TODAY, 1)}..${LocalDate.addDays(FIXTURE_TODAY, 1)}`,
+      'BARBER:b-ivan',
+      'BARBER:b-niko',
+    ]);
+    // The field's capsule shares the bar entry's view-transition name.
+    expect(
+      el<HTMLElement>('.ui-search-field__frame')?.style.viewTransitionName,
+    ).toBe('staff-search-field');
+  });
+
+  it('adds a starter as a filter, and the starters leave', async () => {
+    await mount();
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(chipIds()).toEqual(['BARBER']);
+    expect(chip('BARBER')?.textContent).toContain('Нико');
+    expect(cards()).toHaveLength(2);
+    expect(el('[data-suggest-mode]')).toBeNull();
+  });
+
+  it('opens a key’s whole list from its group’s «Всички опции»', async () => {
+    await mount();
+    press('[data-testid="staff-search-see-all"][data-field="WHEN"]');
+    expect(el('[data-suggest-mode="VALUES"]')).not.toBeNull();
+    expect(el('[data-testid="staff-search-see-all"]')).toBeNull();
+    expect(chipIds()).toEqual(['WHEN']);
   });
 
   it('scans the window only after the 80 ms typing pause', async () => {
@@ -167,45 +228,276 @@ describe('StaffSearchSheet', () => {
     expect(cards()).toHaveLength(2);
   });
 
-  it('adds a chip when a suggestion is pressed, narrows the cards, and takes it off when the chip is pressed', async () => {
-    await mount();
-    type('иван');
-    after(100);
-    const niko = el<HTMLButtonElement>(
-      '[data-suggestion="BARBER:b-niko"]',
-    ) as HTMLButtonElement;
-    niko.click();
+  const press = (selector: string) => {
+    (el<HTMLButtonElement>(selector) as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(cards()).toHaveLength(1);
-    const chip = el<HTMLButtonElement>(
-      '.ui-search-field__token',
-    ) as HTMLButtonElement;
-    expect(chip.textContent).toContain('Нико');
-    // A chosen value is no longer on offer.
-    expect(el('[data-suggestion="BARBER:b-niko"]')).toBeNull();
-    chip.click();
-    fixture.detectChanges();
-    expect(cards()).toHaveLength(2);
-    expect(el('.ui-search-field__token')).toBeNull();
-  });
-
-  it('takes the last chip off on Backspace in an empty field', async () => {
-    await mount();
-    el<HTMLButtonElement>('[data-suggestion="BARBER:b-niko"]')?.click();
-    fixture.detectChanges();
-    expect(all('.ui-search-field__token')).toHaveLength(1);
-    const input = el<HTMLInputElement>(
+  };
+  const field = () =>
+    el<HTMLInputElement>(
       '[data-testid="staff-search-input"]',
     ) as HTMLInputElement;
-    input.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }),
+  /** A chosen filter's chip over the field (or a key being picked). */
+  const chip = (id: string) =>
+    el<HTMLButtonElement>(
+      `[data-testid="staff-search-filter"][data-filter="${id}"]`,
     );
-    fixture.detectChanges();
+  const chipIds = () =>
+    all('[data-testid="staff-search-filter"]').map((c) =>
+      c.getAttribute('data-filter'),
+    );
+
+  it('opens on the caret, the ✕ beside the field and the keys in a card over it', async () => {
+    await mount();
+    expect(document.activeElement).toBe(field());
+    expect(
+      field()
+        .closest('ui-search-field')
+        ?.getAttribute('data-dropdown-placement'),
+    ).toBe('above');
+    expect(el('[data-testid="staff-search-input-dismiss"]')).not.toBeNull();
+    expect(
+      all(
+        '[data-testid="staff-search-keys"] [data-testid="staff-search-suggestion"]',
+      ).map((row) => row.getAttribute('data-suggestion')),
+    ).toEqual(['FIELD:WHEN', 'FIELD:BARBER', 'FIELD:SERVICE', 'FIELD:STATUS']);
+  });
+
+  it('ends the search on the ✕ beside the field', async () => {
+    await mount();
+    press('[data-testid="staff-search-input-dismiss"]');
+    expect(store.closeSearch).toHaveBeenCalled();
+  });
+
+  /** «Приложи» in the bar: the set being picked is applied. */
+  const applySet = () => press('[data-testid="staff-search-apply"]');
+
+  it('picks a key, ticks a value, applies: the key stands as a chip until «Приложи» replaces its word', async () => {
+    await mount();
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
+    expect(chip('BARBER')?.textContent).toContain('staff.search.key.barber');
+    // The free keys leave while a key is open; the placeholder names it.
+    expect(
+      el('[data-testid="staff-search-keys"] [data-suggestion]'),
+    ).toBeNull();
+    expect(field().placeholder).toContain('staff.search.scopedPlaceholder');
+    // A tick is not yet a filter: the values stay, «Приложи» counts the set
+    // and stands where the ✕ was.
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(
+      el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(chip('BARBER')?.textContent).toContain('staff.search.key.barber');
+    expect(el('[data-testid="staff-search-apply"]')?.textContent).toContain(
+      'staff.search.applyCount',
+    );
+    expect(el('[data-testid="staff-search-input-dismiss"]')).toBeNull();
+    applySet();
+    expect(chip('BARBER')?.textContent).toContain('Нико');
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('false');
+    expect(chip('BARBER')?.getAttribute('data-selected')).toBe('');
+    expect(el('[data-testid="staff-search-apply"]')).toBeNull();
+    expect(el('[data-testid="staff-search-input-dismiss"]')).not.toBeNull();
+    expect(cards()).toHaveLength(2);
+    // No token in the field any more: the filters float over it.
     expect(all('.ui-search-field__token')).toHaveLength(0);
   });
 
-  it('keeps the search as a recent when a card is opened, jumps to its day and closes', async () => {
+  it('lays «Услуга» out as cover cards, «Махни филтъра» after the last of them', async () => {
     await mount();
+    press(
+      '[data-testid="staff-search-keys"] [data-suggestion="FIELD:SERVICE"]',
+    );
+    press('cr-service-card[data-tile="SERVICE:svc-fade"] button');
+    applySet();
+    press('[data-testid="staff-search-filter"][data-filter="SERVICE"]');
+    const grid = el('[data-testid="staff-search-service-grid"]') as HTMLElement;
+    const remove = el('[data-suggestion="REMOVE:SERVICE"]') as HTMLElement;
+    expect(grid).not.toBeNull();
+    expect(remove).not.toBeNull();
+    // The removal comes LAST, after the cards, as on every other key.
+    expect(
+      grid.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('lets a set that was not applied go on Escape', async () => {
+    await mount();
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    field().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
+    );
+    fixture.detectChanges();
+    expect(chip('BARBER')).toBeNull();
+    expect(el('[data-testid="staff-search-apply"]')).toBeNull();
+  });
+
+  it('parks the typed search while a pressed filter’s values are open, and brings it back', async () => {
+    await mount();
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    type('иван');
+    after(100);
+    expect(cards()).toHaveLength(1);
+
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    // The text now narrows the values, which are the page meanwhile.
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(0);
+    expect(el('[data-suggestion="BARBER:b-niko"]')).not.toBeNull();
+
+    press('[data-suggestion="BARBER:b-ivan"]');
+    applySet();
+    expect(field().value).toBe('иван');
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('keeps the chips in the order their filters were added', async () => {
+    await mount();
+    // Barber, then When — the reverse of the order the keys are listed in.
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    press('[data-suggestion="FIELD:WHEN"]');
+    // «Кога» holds one span: a tap applies it.
+    press('[data-suggestion^="WHEN:"]');
+    expect(chipIds()).toEqual(['BARBER', 'WHEN']);
+  });
+
+  it('lets the keys the typed text does not name leave the list, and opens a named key without the text', async () => {
+    await mount();
+    type('ни');
+    after(100);
+    expect(el('[data-suggestion^="FIELD:"]')).toBeNull();
+    // Untranslated here, a key reads as its catalogue path.
+    type('staff.search.key.barber');
+    after(100);
+    expect(
+      all('[data-testid="staff-search-suggestion"]').map((row) =>
+        row.getAttribute('data-suggestion'),
+      ),
+    ).toEqual(['FIELD:BARBER']);
+    press('[data-suggestion="FIELD:BARBER"]');
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('opens a pressed filter on its held set: ticks to change it, «Приложи» to apply, «Махни филтъра» last', async () => {
+    await mount();
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    expect(chip('BARBER')?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      el('[data-suggestion="BARBER:b-niko"]')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      el('[data-suggestion="BARBER:b-ivan"]')?.getAttribute('aria-pressed'),
+    ).toBe('false');
+
+    // A second tick joins the set; the values stay until it is applied, and
+    // then the chip says both with a group of faces.
+    press('[data-suggestion="BARBER:b-ivan"]');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
+    expect(chip('BARBER')?.textContent).not.toContain('Иван');
+    applySet();
+    expect(chip('BARBER')?.textContent).toContain('Нико, Иван');
+    expect(
+      chip('BARBER')?.querySelectorAll('ui-avatar-group ui-avatar'),
+    ).toHaveLength(2);
+
+    // A tick taken off, applied: one barber again.
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    press('[data-suggestion="BARBER:b-ivan"]');
+    applySet();
+    expect(chip('BARBER')?.textContent).not.toContain('Иван');
+    expect(chip('BARBER')?.querySelector('ui-avatar-group')).toBeNull();
+
+    // Every tick off, applied: the filter goes.
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    expect(chip('BARBER')).toBeNull();
+
+    press('[data-suggestion="FIELD:BARBER"]');
+    press('[data-suggestion="BARBER:b-niko"]');
+    applySet();
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    press('[data-suggestion="REMOVE:BARBER"]');
+    expect(chip('BARBER')).toBeNull();
+    expect(el('[data-suggestion="FIELD:BARBER"]')).not.toBeNull();
+  });
+
+  it('closes a pressed filter’s values on a second press', async () => {
+    await mount();
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).not.toBeNull();
+    press('[data-testid="staff-search-filter"][data-filter="BARBER"]');
+    expect(el('[data-suggestion="REMOVE:BARBER"]')).toBeNull();
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('adds a value the typed text names, taking the text with it', async () => {
+    await mount();
+    type('ни');
+    after(100);
+    press('[data-suggestion="BARBER:b-niko"]');
+    expect(chip('BARBER')?.textContent).toContain('Нико');
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('shows the card of keys only while the field has the focus', async () => {
+    await mount();
+    const card = () => el('.ui-search-field__dropdown');
+    expect(card()).not.toBeNull();
+    field().blur();
+    fixture.detectChanges();
+    expect(card()).toBeNull();
+    field().focus();
+    fixture.detectChanges();
+    expect(card()).not.toBeNull();
+  });
+
+  it('keeps Escape while a key is open, closing the key, then the card, and lets it reach the sheet after', async () => {
+    await mount();
+    press('[data-testid="staff-search-keys"] [data-suggestion="FIELD:BARBER"]');
+    const escape = () => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      field().dispatchEvent(event);
+      fixture.detectChanges();
+      return event;
+    };
+    escape();
+    expect(chip('BARBER')).toBeNull();
+    expect(el('[data-testid="staff-search-keys"]')).not.toBeNull();
+    expect(store.closeSearch).not.toHaveBeenCalled();
+    // The card is the next thing Escape puts away…
+    escape();
+    expect(el('.ui-search-field__dropdown')).toBeNull();
+    expect(store.closeSearch).not.toHaveBeenCalled();
+    // …and with nothing open it is the sheet's, which ends the search.
+    escape();
+    expect(store.closeSearch).toHaveBeenCalled();
+  });
+
+  it('keeps the search as a recent when a card is opened, moves the schedule to its day and asks for its sheet, staying open', async () => {
+    await mount();
+    const picked: string[] = [];
+    fixture.debugElement
+      .query(By.directive(StaffSearchSheet))
+      .componentInstance.visitPicked.subscribe((id: string) => picked.push(id));
     type('иван');
     after(100);
     (cards()[0]?.querySelector('button') as HTMLButtonElement).click();
@@ -213,10 +505,50 @@ describe('StaffSearchSheet', () => {
     expect(store.goToDay).toHaveBeenCalledWith(
       LocalDate.addDays(FIXTURE_TODAY, 1),
     );
-    expect(store.closeSearch).toHaveBeenCalled();
+    expect(picked).toEqual(['a']);
+    // The visit's sheet opens OVER the search; closing it comes back here.
+    expect(store.closeSearch).not.toHaveBeenCalled();
     expect(loadRecents(localStorage).map((q) => q.searchText)).toEqual([
       'иван',
     ]);
+  });
+
+  it('takes the typed text as a chip on the ✓, and on Return, freeing the field', async () => {
+    await mount();
+    type('иван');
+    after(100);
+    expect(
+      el('[data-testid="staff-search-commit-row"]')?.textContent,
+    ).toContain('staff.search.commitText');
+    press('button[data-testid="staff-search-commit"]');
+    expect(
+      all('[data-testid="staff-search-text"]').map((c) =>
+        c.textContent?.trim(),
+      ),
+    ).toEqual(['иван']);
+    expect(field().value).toBe('');
+    expect(cards()).toHaveLength(2);
+
+    // The next word narrows on top of the chip; Return takes it too.
+    type('петров');
+    after(100);
+    expect(cards()).toHaveLength(1);
+    field().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    fixture.detectChanges();
+    expect(all('[data-testid="staff-search-text"]')).toHaveLength(2);
+    expect(cards()).toHaveLength(1);
+    expect(el('button[data-testid="staff-search-commit"]')).toBeNull();
+  });
+
+  it('puts a taken text back in the field when its chip is pressed', async () => {
+    await mount();
+    type('иван');
+    after(100);
+    press('button[data-testid="staff-search-commit"]');
+    press('[data-testid="staff-search-text"]');
+    expect(all('[data-testid="staff-search-text"]')).toHaveLength(0);
+    expect(field().value).toBe('иван');
+    expect(cards()).toHaveLength(2);
   });
 
   it('keeps the search as a recent on Return, once however often it is pressed', async () => {
@@ -229,6 +561,19 @@ describe('StaffSearchSheet', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     expect(loadRecents(localStorage)).toHaveLength(1);
+  });
+
+  it('keeps a search built from filters as a recent when the ✕ ends it, and an empty one not at all', async () => {
+    await mount();
+    press('[data-testid="staff-search-input-dismiss"]');
+    expect(loadRecents(localStorage)).toEqual([]);
+    press('[data-suggestion="BARBER:b-niko"]');
+    press('[data-testid="staff-search-input-dismiss"]');
+    expect(
+      loadRecents(localStorage).map((recent) =>
+        recent.searchFilters.map((filter) => filter.searchFilterField),
+      ),
+    ).toEqual([['BARBER']]);
   });
 
   it('shows the device’s recents when idle, runs one again, and clears them', async () => {

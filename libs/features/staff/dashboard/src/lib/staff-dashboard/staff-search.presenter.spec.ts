@@ -7,7 +7,9 @@ import {
   E164,
   Email,
   SearchFilter,
+  SearchFilterField,
   SearchQuery,
+  ServiceVariantPick,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import {
@@ -15,6 +17,7 @@ import {
   BookingStatus,
   LocalDate,
   ServiceId,
+  ServiceVariantId,
 } from '@core/primitives';
 import { SearchIndexSystem, ZonedTimeSystem } from '@core/systems';
 import {
@@ -35,8 +38,18 @@ import {
   type VisitLookup,
 } from '@creativo/features/shared/visits';
 import { VisitPerspective } from '@creativo/features/shared/visits';
-import { type SearchSheetInput, searchSheetVm } from './staff-search.presenter';
-import { SearchSheetState } from './staff-search.vm';
+import {
+  type SearchServiceArt,
+  type SearchSheetInput,
+  searchSheetVm,
+} from './staff-search.presenter';
+import {
+  CalendarMode,
+  SuggestAction,
+  SuggestMode,
+  type SearchSheetVm,
+  SearchSheetState,
+} from './staff-search.vm';
 import { staffSearchWordsOf } from './staff-search.words';
 
 // The sheet is worded from the app's own catalogue, so a key the words name
@@ -88,6 +101,24 @@ const LOOKUP: VisitLookup = {
   barberAvatarSrc: () => null,
   locationName: () => null,
   locationCount: 1,
+};
+
+const SHORT = ServiceVariantId.of('short');
+const LONG = ServiceVariantId.of('long');
+
+/** The catalogue's art: the classic cut is offered short and long; the fade has a cover and no variants. */
+const ART: SearchServiceArt = {
+  // No catalogue order: the values keep the order the bookings named them
+  // in (an unlisted service keeps its place); one spec below sets it.
+  catalogue: [],
+  coverSrc: (id) => (id === FADE ? 'fade.jpg' : null),
+  variantsOf: (id) => (id === CUT ? [SHORT, LONG] : []),
+  variantName: (pick) =>
+    pick.serviceId === CUT
+      ? pick.variantId === SHORT
+        ? 'Къса коса'
+        : 'Дълга коса'
+      : null,
 };
 
 const day = (offset: number): LocalDate =>
@@ -152,12 +183,19 @@ function input(
     locale: lang === 'bg' ? 'bg-BG' : 'en-GB',
     callingCode: '359',
     lookup: LOOKUP,
+    serviceArt: ART,
     rowWords: visitWordsOf(translate, lang, VisitPerspective.Staff),
     words: staffSearchWordsOf(translate),
     clientNames: (v) => (v.contactName === null ? [] : [v.contactName]),
     unnamedClient: lang === 'bg' ? 'Клиент без име' : 'Unnamed client',
     capped: false,
     stale: false,
+    openField: null,
+    typedText: '',
+    draft: null,
+    committedTexts: [],
+    calendarMode: null,
+    rangeStart: null,
     ...overrides,
   };
 }
@@ -166,9 +204,14 @@ const text = (searchText: string) =>
   SearchQuery.withText(SearchQuery.empty(), searchText);
 const rowIds = (vm: ReturnType<typeof searchSheetVm>) =>
   vm.groups.flatMap((group) => group.rows.map((row) => row.id as string));
+const suggestionRows = (vm: SearchSheetVm) =>
+  vm.suggestions.sections.flatMap((section) => section.rows);
+const suggestionLabels = (vm: SearchSheetVm) =>
+  suggestionRows(vm).map((row) => row.label);
+const keyIds = (vm: SearchSheetVm) => vm.suggestions.keys.map((row) => row.id);
 
 describe('searchSheetVm — idle', () => {
-  it('shows the recents and the filters on offer, and no cards', () => {
+  it('shows the starters, the recents and, over the field, the keys a filter is made of — no cards', () => {
     const recents = [
       text('петър'),
       SearchQuery.withFilter(text('фейд'), SearchFilter.note()),
@@ -180,47 +223,69 @@ describe('searchSheetVm — idle', () => {
       'петър',
       'фейд · С бележка',
     ]);
-    expect(vm.suggestions.map((g) => g.suggestionGroupKind)).toEqual([
-      'WHEN',
-      'STATUS',
-      'NOTE',
-      'BARBER',
-      'SERVICE',
-    ]);
-    const labels = vm.suggestions.flatMap((g) =>
-      g.suggestions.map((s) => s.label),
-    );
-    expect(labels).toEqual(
-      expect.arrayContaining([
-        'Днес',
-        'Утре',
-        'Тази седмица',
-        'Потвърдени',
-        'С бележка',
-        'Иван',
-        'Нико',
-        'Фейд',
+    expect(vm.suggestions.suggestMode).toBe(SuggestMode.Fields);
+    // Mail's «Suggestions» before anything is typed — today, tomorrow, the
+    // barbers — under the key each belongs to.
+    expect(
+      vm.suggestions.sections.map((s) => [
+        s.heading,
+        s.rows.map((r) => r.label),
       ]),
+    ).toEqual([
+      ['Кога', ['Днес', 'Утре']],
+      ['Бръснар', ['Иван', 'Нико']],
+    ]);
+    // A group that leaves some of its key's values out says so: «Всички
+    // опции ›» opens the key's whole list. Both barbers are shown already, so
+    // theirs needs none; «Кога» can always pick a day or a span.
+    expect(vm.suggestions.sections.map((s) => s.seeAll)).toEqual([
+      {
+        searchFilterField: SearchFilterField.When,
+        label: 'Всички опции',
+        accessibleLabel: 'Всички опции: Кога',
+      },
+      null,
+    ]);
+    // The barbers are people: a grid of faces, not a list.
+    expect(vm.suggestions.sections.map((s) => s.faces)).toEqual([false, true]);
+    expect(suggestionRows(vm).map((r) => [r.detail, r.suggestAction])).toEqual(
+      Array(4).fill([null, SuggestAction.AddValue]),
     );
+    // Nothing typed, nothing marked.
+    expect(suggestionRows(vm)[0]?.parts).toEqual([
+      { text: 'Днес', hit: false },
+    ]);
+    expect(suggestionRows(vm)[2]?.face).toEqual({ src: null, name: 'Иван' });
+    expect(vm.filters).toEqual([]);
+    expect(vm.suggestions.keys.map((row) => [row.id, row.label])).toEqual([
+      ['FIELD:WHEN', 'Кога'],
+      ['FIELD:BARBER', 'Бръснар'],
+      ['FIELD:SERVICE', 'Услуга'],
+      ['FIELD:STATUS', 'Статус'],
+      ['FIELD:NOTE', 'С бележка'],
+    ]);
+    // A note has no values: its key adds the filter itself.
+    expect(vm.suggestions.keys.at(-1)?.suggestAction).toBe(
+      SuggestAction.AddValue,
+    );
+    expect(vm.suggestions.keys.at(-1)?.filter).toEqual(SearchFilter.note());
+    expect(vm.placeholder).toBe('Име, телефон, имейл, услуга…');
   });
 
   it('says the same in English', () => {
     const vm = searchSheetVm(input('en', SearchQuery.empty()));
-    const labels = vm.suggestions.flatMap((g) =>
-      g.suggestions.map((s) => s.label),
-    );
-    expect(labels).toEqual(
-      expect.arrayContaining([
-        'Today',
-        'Tomorrow',
-        'This week',
-        'Confirmed',
-        'With a note',
-      ]),
-    );
-    expect(
-      vm.suggestions.find((g) => g.suggestionGroupKind === 'BARBER')?.heading,
-    ).toBe('Barber');
+    expect(vm.suggestions.keys.map((row) => row.label)).toEqual([
+      'When',
+      'Barber',
+      'Service',
+      'Status',
+      'With a note',
+    ]);
+    expect(vm.suggestions.sections[0]?.seeAll).toEqual({
+      searchFilterField: SearchFilterField.When,
+      label: 'All options',
+      accessibleLabel: 'All options: When',
+    });
   });
 
   it('carries the recent’s query, so pressing it runs it as it was', () => {
@@ -292,8 +357,14 @@ describe('searchSheetVm — results', () => {
   });
 
   it('adds a phone line, the matched digits washed through the spaces, when a number was typed', () => {
-    const vm = searchSheetVm(input('bg', text('088 777')));
-    expect(vm.phoneRow).toBe('Телефон +359 88 777');
+    const vm = searchSheetVm(
+      input('bg', text('088 777'), { typedText: '088 777' }),
+    );
+    // Offered as a filter, read as it would be dialled (Mail's «… contains»).
+    expect(vm.commitRow).toEqual({
+      label: 'Телефонът започва с „+359 88 777“',
+      glyph: 'contact.phone',
+    });
     const phone = vm.groups[0]?.rows[0]?.lines.find(
       (l) => l.testId === 'staff-search-line-phone',
     );
@@ -303,10 +374,43 @@ describe('searchSheetVm — results', () => {
     ]);
   });
 
-  it('reads the phone row in English', () => {
-    expect(searchSheetVm(input('en', text('088 777'))).phoneRow).toBe(
-      'Phone +359 88 777',
+  it('offers the typed text as a filter, in the reader’s words, and none with a key open', () => {
+    expect(
+      searchSheetVm(input('en', text('088 777'), { typedText: '088 777' }))
+        .commitRow?.label,
+    ).toBe('Phone starts with “+359 88 777”');
+    expect(
+      searchSheetVm(input('bg', text('иван'), { typedText: 'иван' })).commitRow,
+    ).toEqual({ label: 'Съдържа „иван“', glyph: 'action.search' });
+    expect(
+      searchSheetVm(input('bg', text('ivan@'), { typedText: 'ivan@' }))
+        .commitRow?.label,
+    ).toBe('Имейлът съдържа „ivan@“');
+    expect(
+      searchSheetVm(
+        input('bg', SearchQuery.empty(), {
+          typedText: 'ни',
+          openField: SearchFilterField.Barber,
+        }),
+      ).commitRow,
+    ).toBeNull();
+    expect(
+      searchSheetVm(input('bg', SearchQuery.empty())).commitRow,
+    ).toBeNull();
+  });
+
+  it('draws the taken texts as chips before the filters, each with its reading', () => {
+    const vm = searchSheetVm(
+      input('bg', text('088 777 иван'), {
+        committedTexts: ['088 777', 'иван'],
+      }),
     );
+    expect(vm.texts.map((t) => [t.id, t.label, t.glyph])).toEqual([
+      ['TEXT:0', '+359 88 777…', 'contact.phone'],
+      ['TEXT:1', 'иван', 'action.search'],
+    ]);
+    expect(vm.texts[1]?.accessibleLabel).toBe('Търсене: иван. Върни в полето');
+    expect(vm.placeholder).toBe('Търси…');
   });
 
   it('reads a name beside a number as both: the word marks the name, the number the phone', () => {
@@ -340,15 +444,18 @@ describe('searchSheetVm — results', () => {
   });
 
   it('keeps the glyph for what the text was taken for', () => {
-    expect(searchSheetVm(input('bg', text('иван'))).glyph).toBe(
-      'action.search',
-    );
-    expect(searchSheetVm(input('bg', text('088 777'))).glyph).toBe(
-      'contact.phone',
-    );
-    expect(searchSheetVm(input('bg', text('ivan@'))).glyph).toBe(
-      'contact.email',
-    );
+    const glyphOf = (typed: string, committedTexts: string[] = []) =>
+      searchSheetVm(
+        input('bg', text([...committedTexts, typed].join(' ')), {
+          typedText: typed,
+          committedTexts,
+        }),
+      ).glyph;
+    expect(glyphOf('иван')).toBe('action.search');
+    expect(glyphOf('088 777')).toBe('contact.phone');
+    expect(glyphOf('ivan@')).toBe('contact.email');
+    // The FIELD's text only: a taken number wears its own glyph on its chip.
+    expect(glyphOf('', ['088 777'])).toBe('action.search');
   });
 });
 
@@ -405,66 +512,470 @@ describe('searchSheetVm — each visit on its own shop’s clock (DEP-6)', () =>
   });
 });
 
-describe('searchSheetVm — chips and suggestions', () => {
+describe('searchSheetVm — the chosen filters over the field', () => {
   const withBarber = SearchQuery.withFilter(
     text('иван'),
     SearchFilter.barber([IVAN, NIKO]),
   );
 
-  it('draws one chip per value, named by what pressing it does, carrying its single filter', () => {
-    const vm = searchSheetVm(input('bg', withBarber));
-    expect(vm.chips.map((c) => [c.label, c.removeLabel])).toEqual([
-      ['Иван', 'Махни филтъра Иван'],
-      ['Нико', 'Махни филтъра Нико'],
+  it('draws one selected chip per chosen kind, saying its value, faces leading a barber’s', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(withBarber, SearchFilter.when(day(0), day(6))),
+      ),
+    );
+    expect(vm.filters.map((c) => [c.id, c.label, c.glyph])).toEqual([
+      ['BARBER', 'Иван, Нико', 'contact.person'],
+      ['WHEN', 'Тази седмица', 'visit.calendar'],
     ]);
-    expect(vm.chips[0]?.filter).toEqual(SearchFilter.barber([IVAN]));
+    expect(vm.filters[0]?.faces).toEqual([
+      { src: null, name: 'Иван' },
+      { src: null, name: 'Нико' },
+    ]);
+    expect(vm.filters[0]?.facesOverflow).toBe(0);
+    expect(vm.filters[0]?.accessibleLabel).toBe(
+      'Бръснар: Иван, Нико. Промени филтъра',
+    );
+    expect(vm.filters.some((c) => c.active)).toBe(false);
+    expect(vm.placeholder).toBe('Търси…');
   });
 
-  it('says Today for the span that is today, and the dates for any other', () => {
-    const today = searchSheetVm(
+  it('leaves a chosen key out of the free keys', () => {
+    const vm = searchSheetVm(
       input(
         'bg',
         SearchQuery.withFilter(
           SearchQuery.empty(),
-          SearchFilter.when(day(0), day(0)),
+          SearchFilter.barber([NIKO]),
         ),
       ),
     );
-    expect(today.chips[0]?.label).toBe('Днес');
-    const stale = searchSheetVm(
+    expect(keyIds(vm)).not.toContain('FIELD:BARBER');
+    expect(keyIds(vm)[0]).toBe('FIELD:WHEN');
+  });
+
+  it('names two values and counts the rest', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(
+          SearchQuery.empty(),
+          SearchFilter.bookingStatuses([
+            BookingStatus.Confirmed,
+            BookingStatus.Cancelled,
+            BookingStatus.Completed,
+          ]),
+        ),
+      ),
+    );
+    expect(vm.filters[0]?.label).toBe('Потвърдени, Отказани +1');
+  });
+
+  it('says «С бележка» for the note filter, never its bare value', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      ),
+    );
+    expect(vm.filters[0]?.label).toBe('С бележка');
+  });
+
+  it('stands the key being picked last, saying its key, ringed, and scopes the placeholder to it', () => {
+    const vm = searchSheetVm(
+      input('bg', withBarber, { openField: SearchFilterField.Service }),
+    );
+    expect(vm.filters.map((c) => [c.id, c.label, c.active])).toEqual([
+      ['BARBER', 'Иван, Нико', false],
+      ['SERVICE', 'Услуга', true],
+    ]);
+    expect(vm.filters[1]?.accessibleLabel).toBe('Услуга: избери стойност');
+    expect(vm.placeholder).toBe('Търси в „Услуга“…');
+    expect(keyIds(vm)).toEqual([]);
+    expect(
+      searchSheetVm(
+        input('en', SearchQuery.empty(), { openField: SearchFilterField.When }),
+      ).placeholder,
+    ).toBe('Search in “When”…');
+  });
+
+  it('rings a chosen filter while its values are open', () => {
+    const vm = searchSheetVm(
+      input('bg', withBarber, { openField: SearchFilterField.Barber }),
+    );
+    expect(vm.filters.map((c) => [c.id, c.active])).toEqual([['BARBER', true]]);
+    expect(vm.placeholder).toBe('Търси в „Бръснар“…');
+  });
+
+  it('stands the chips in the order their filters were added', () => {
+    const query = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      SearchFilter.barber([IVAN]),
+    );
+    expect(searchSheetVm(input('bg', query)).filters.map((c) => c.id)).toEqual([
+      SearchFilterField.Note,
+      SearchFilterField.Barber,
+    ]);
+  });
+
+  it('offers no starters once a filter is chosen', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      ),
+    );
+    expect(vm.suggestions.sections).toEqual([]);
+  });
+
+  it('says Today for the span that is today, Yesterday for yesterday, and the dates for any other', () => {
+    const one = (from: LocalDate, to: LocalDate, lang: 'bg' | 'en' = 'bg') =>
+      searchSheetVm(
+        input(
+          lang,
+          SearchQuery.withFilter(
+            SearchQuery.empty(),
+            SearchFilter.when(from, to),
+          ),
+        ),
+      ).filters[0]?.label;
+    expect(one(day(0), day(0))).toBe('Днес');
+    expect(one(day(-1), day(-1))).toBe('Вчера');
+    expect(one(day(-6), day(0))).toBe('Последните 7 дни');
+    expect(one(day(-9), day(-3), 'en')).toMatch(/–/);
+  });
+});
+
+describe('searchSheetVm — the suggestions', () => {
+  it('marks each state with its own glyph, the calendar’s', () => {
+    const vm = searchSheetVm(
+      input('bg', SearchQuery.empty(), { openField: SearchFilterField.Status }),
+    );
+    // The fixture's window offers the confirmed visits only.
+    expect(suggestionRows(vm).map((r) => [r.id, r.glyph])).toEqual([
+      ['STATUS:CONFIRMED', 'visit.confirmed'],
+    ]);
+  });
+
+  it('lists an open key’s values for a key being picked, the typed text narrowing them', () => {
+    const open = searchSheetVm(
+      input('bg', SearchQuery.empty(), { openField: SearchFilterField.Barber }),
+    );
+    expect(open.suggestions.suggestMode).toBe(SuggestMode.Values);
+    expect(open.suggestions.sections.map((s) => s.heading)).toEqual([
+      'Бръснар',
+    ]);
+    // The whole list is already open: nothing more to see. The barbers are
+    // faces, ticked as a set.
+    expect(open.suggestions.sections.map((s) => s.seeAll)).toEqual([null]);
+    expect(open.suggestions.sections.map((s) => s.faces)).toEqual([true]);
+    // A barber key is picked as a set: every value a tick, none ticked yet,
+    // «Приложи» in the bar.
+    expect(suggestionRows(open).map((r) => [r.id, r.checked])).toEqual([
+      ['BARBER:b-ivan', false],
+      ['BARBER:b-niko', false],
+    ]);
+    expect(suggestionRows(open)[0]?.suggestAction).toBe(
+      SuggestAction.ToggleValue,
+    );
+    expect(open.suggestions.apply).toEqual({ label: 'Приложи' });
+    expect(suggestionRows(open)[0]?.face).toEqual({ src: null, name: 'Иван' });
+    const narrowed = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        openField: SearchFilterField.Barber,
+        typedText: 'ни',
+      }),
+    );
+    expect(suggestionLabels(narrowed)).toEqual(['Нико']);
+  });
+
+  it('ticks the set being picked, offers «Приложи» with its count, and removing the filter last', () => {
+    const held = SearchQuery.withFilter(
+      SearchQuery.empty(),
+      SearchFilter.barber([NIKO]),
+    );
+    const vm = searchSheetVm(
+      input('bg', held, {
+        openField: SearchFilterField.Barber,
+        draft: SearchFilter.barber([NIKO]),
+      }),
+    );
+    // The window's own order: a held value keeps its place. The ticks are
+    // the set being picked (opened from what is held).
+    expect(suggestionRows(vm).map((r) => [r.id, r.checked])).toEqual([
+      ['BARBER:b-ivan', false],
+      ['BARBER:b-niko', true],
+      ['REMOVE:BARBER', null],
+    ]);
+    expect(suggestionRows(vm)[1]?.suggestAction).toBe(
+      SuggestAction.ToggleValue,
+    );
+    const remove = suggestionRows(vm).at(-1);
+    expect(remove?.label).toBe('Махни филтъра');
+    expect(remove?.destructive).toBe(true);
+    expect(remove?.suggestAction).toBe(SuggestAction.RemoveFilter);
+    expect(vm.suggestions.apply).toEqual({ label: 'Приложи (1)' });
+    // Ticked but not applied: the chip still says what is held.
+    const ticked = searchSheetVm(
+      input('en', held, {
+        openField: SearchFilterField.Barber,
+        draft: SearchFilter.barber([NIKO, IVAN]),
+      }),
+    );
+    expect(suggestionRows(ticked).map((r) => r.checked)).toEqual([
+      true,
+      true,
+      null,
+    ]);
+    expect(ticked.suggestions.apply).toEqual({ label: 'Apply (2)' });
+    expect(ticked.filters[0]?.label).toBe('Нико');
+  });
+
+  it('keeps a held preset where it stands, and puts a held day the window does not offer after the presets', () => {
+    const preset = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(
+          SearchQuery.empty(),
+          SearchFilter.when(day(1), day(1)),
+        ),
+        { openField: SearchFilterField.When },
+      ),
+    );
+    expect(suggestionLabels(preset).slice(0, 2)).toEqual(['Днес', 'Утре']);
+    const custom = searchSheetVm(
       input(
         'en',
         SearchQuery.withFilter(
           SearchQuery.empty(),
-          SearchFilter.when(day(-9), day(-3)),
+          SearchFilter.when(day(30), day(30)),
         ),
+        { openField: SearchFilterField.When },
       ),
     );
-    expect(stale.chips[0]?.label).toMatch(/–/);
+    const labels = suggestionLabels(custom);
+    expect(labels.slice(0, 4)).toEqual([
+      'Today',
+      'Tomorrow',
+      'This week',
+      'Past 7 days',
+    ]);
+    expect(suggestionRows(custom)[4]?.checked).toBe(true);
+    expect(labels.slice(5)).toEqual([
+      'A specific day…',
+      'A date range…',
+      'Remove filter',
+    ]);
   });
 
-  it('does not offer what is already a chip', () => {
-    const vm = searchSheetVm(input('bg', withBarber));
-    const barbers = vm.suggestions.find(
-      (g) => g.suggestionGroupKind === 'BARBER',
+  it('lays a service’s values out as cover cards: plain services share a grid, a service with variants cuts it for its own', () => {
+    const pool = [
+      visit('long', 1, {}, IVAN, CUT),
+      visit('fade', 2, {}, NIKO, FADE),
+    ].map((v, at) =>
+      at === 0
+        ? {
+            ...v,
+            seats: [
+              seatFixture({ barberId: IVAN, serviceId: CUT, variantId: LONG }),
+            ],
+          }
+        : v,
     );
-    expect(barbers?.suggestions.map((s) => s.label) ?? []).not.toContain(
-      'Иван',
+    const index = SearchIndexSystem.build(pool, {
+      ...LABELS,
+      clientNames: (v) => (v.contactName === null ? [] : [v.contactName]),
+      serviceName: LOOKUP.serviceName.bind(LOOKUP),
+      barberName: LOOKUP.barberName.bind(LOOKUP),
+    });
+    const held = SearchQuery.withFilter(
+      SearchQuery.empty(),
+      SearchFilter.service([], [ServiceVariantPick.of(CUT, LONG)]),
+    );
+    const vm = searchSheetVm(
+      input('bg', held, {
+        pool,
+        index,
+        openField: SearchFilterField.Service,
+        draft: SearchFilter.service([], [ServiceVariantPick.of(CUT, LONG)]),
+      }),
+    );
+    // Tiles, not rows: no values section, «Махни филтъра» still last.
+    expect(vm.suggestions.sections.map((s) => s.id)).toEqual(['REMOVE']);
+    // A service with variants in a grid of its own, the service leading every
+    // card and the variant under it; plain services share a grid.
+    expect(
+      vm.suggestions.serviceRows.map((row) => [
+        row.id,
+        row.tiles.map((t) => [t.id, t.name, t.meta, t.coverSrc, t.checked]),
+      ]),
+    ).toEqual([
+      [
+        'svc-classic-cut',
+        [
+          [
+            'VARIANT:svc-classic-cut/long',
+            'Класическо',
+            'Дълга коса',
+            null,
+            true,
+          ],
+        ],
+      ],
+      // A plain service after it starts the next shared grid.
+      ['PLAIN:1', [['SERVICE:svc-fade', 'Фейд', '', 'fade.jpg', false]]],
+    ]);
+    // The chip names the variant with its service.
+    expect(vm.filters[0]?.label).toBe('Класическо · Дълга коса');
+  });
+
+  it('lists a service’s values in the catalogue’s order, not the bookings’', () => {
+    // Owner, 2026-11-06: the search and the visit sheet's «Добави услуга»
+    // put a service in the same place. The classic cut was booked first;
+    // the catalogue lists the fade first.
+    const pool = [
+      visit('long', 1, {}, IVAN, CUT),
+      visit('fade', 2, {}, NIKO, FADE),
+    ];
+    const index = SearchIndexSystem.build(pool, {
+      ...LABELS,
+      clientNames: (v) => (v.contactName === null ? [] : [v.contactName]),
+      serviceName: LOOKUP.serviceName.bind(LOOKUP),
+      barberName: LOOKUP.barberName.bind(LOOKUP),
+    });
+    const vm = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        pool,
+        index,
+        openField: SearchFilterField.Service,
+        serviceArt: { ...ART, catalogue: [FADE, CUT] },
+      }),
+    );
+    // Both booked plain, so they share one grid — the fade first.
+    expect(
+      vm.suggestions.serviceRows.flatMap((row) => row.tiles.map((t) => t.id)),
+    ).toEqual(['SERVICE:svc-fade', 'SERVICE:svc-classic-cut']);
+  });
+
+  it('offers the date presets the window reaches, then a day and a span', () => {
+    const vm = searchSheetVm(
+      input('en', SearchQuery.empty(), { openField: SearchFilterField.When }),
+    );
+    expect(suggestionLabels(vm)).toEqual([
+      'Today',
+      'Tomorrow',
+      'This week',
+      'Past 7 days',
+      'A specific day…',
+      'A date range…',
+    ]);
+    expect(suggestionRows(vm).at(-1)?.suggestAction).toBe(
+      SuggestAction.PickRange,
     );
   });
 
-  it('offers nothing that would keep no visit', () => {
-    const vm = searchSheetVm(input('bg', text('георги')));
-    const labels = vm.suggestions.flatMap((g) =>
-      g.suggestions.map((s) => s.label),
+  it('opens the month for a span, asking for the first day and then the last', () => {
+    const first = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        openField: SearchFilterField.When,
+        calendarMode: CalendarMode.Range,
+      }),
     );
-    expect(labels).toContain('Нико');
-    expect(labels).not.toContain('Иван');
+    expect(first.suggestions.sections).toEqual([]);
+    expect(first.suggestions.calendar).toEqual({
+      calendarMode: CalendarMode.Range,
+      selected: null,
+      today: FIXTURE_TODAY,
+      caption: 'Избери първия ден',
+    });
+    const last = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        openField: SearchFilterField.When,
+        calendarMode: CalendarMode.Range,
+        rangeStart: day(2),
+      }),
+    );
+    expect(last.suggestions.calendar?.selected).toBe(day(2));
+    expect(last.suggestions.calendar?.caption).toMatch(
+      /^От .+ · избери последния ден$/,
+    );
+  });
+
+  it('under typed text suggests the values whose name holds it under their key, the run marked, and keeps only the keys it names', () => {
+    const vm = searchSheetVm(input('bg', text('ни'), { typedText: 'ни' }));
+    expect(vm.suggestions.suggestMode).toBe(SuggestMode.Matches);
+    expect(vm.suggestions.sections.map((s) => s.heading)).toEqual(['Бръснар']);
+    expect(vm.suggestions.sections[0]?.seeAll?.searchFilterField).toBe(
+      SearchFilterField.Barber,
+    );
+    expect(vm.suggestions.sections[0]?.rows.map((r) => r.parts)).toEqual([
+      [
+        { text: 'Ни', hit: true },
+        { text: 'ко', hit: false },
+      ],
+    ]);
+    expect(keyIds(vm)).toEqual([]);
+    const key = searchSheetVm(input('bg', text('бръ'), { typedText: 'бръ' }));
+    expect(key.suggestions.sections).toEqual([]);
+    expect(keyIds(key)).toEqual(['FIELD:BARBER']);
+    expect(key.suggestions.keys[0]?.parts).toEqual([
+      { text: 'Бръ', hit: true },
+      { text: 'снар', hit: false },
+    ]);
+  });
+
+  it('marks the typed run in an open key’s values, and says it in the open chip', () => {
+    const vm = searchSheetVm(
+      input('bg', SearchQuery.empty(), {
+        openField: SearchFilterField.When,
+        typedText: 'ут',
+      }),
+    );
+    expect(suggestionRows(vm)[0]?.parts).toEqual([
+      { text: 'Ут', hit: true },
+      { text: 'ре', hit: false },
+    ]);
+    expect(vm.filters.map((c) => [c.label, c.active])).toEqual([
+      ['Кога: „ут“', true],
+    ]);
+    expect(
+      searchSheetVm(
+        input('en', SearchQuery.empty(), {
+          openField: SearchFilterField.When,
+          typedText: 'to',
+        }),
+      ).filters[0]?.label,
+    ).toBe('When: “to”');
+  });
+
+  it('lists nothing when the typed text names no value and no key', () => {
+    const vm = searchSheetVm(
+      input('bg', text('zzzz-no-such'), { typedText: 'zzzz-no-such' }),
+    );
+    expect(vm.suggestions.sections).toEqual([]);
+    expect(keyIds(vm)).toEqual([]);
+  });
+
+  it('does not offer a value that is already held', () => {
+    const vm = searchSheetVm(
+      input(
+        'bg',
+        SearchQuery.withFilter(text('и'), SearchFilter.barber([IVAN])),
+        { typedText: 'иван' },
+      ),
+    );
+    expect(suggestionLabels(vm)).not.toContain('Иван');
+  });
+
+  it('offers no key whose values would keep no visit', () => {
+    const vm = searchSheetVm(input('bg', text('zzzz-no-such')));
+    expect(keyIds(vm)).toEqual(['FIELD:WHEN']);
   });
 });
 
 describe('searchSheetVm — the edges', () => {
-  it('says nothing matches, and offers to clear the filters only when there are chips', () => {
+  it('says nothing matches, and offers to clear the filters only when some are chosen', () => {
     const plain = searchSheetVm(input('bg', text('zzzz-no-such')));
     expect(plain.searchSheetState).toBe(SearchSheetState.Empty);
     expect(plain.clearFilters).toBeNull();

@@ -6,8 +6,8 @@
      (button.css glyph tiers, list rows) plumb onto the SAME three
      numbers instead of restating them. */
   :root {
-    --ui-icon-small: 1rem; /* 16px — trailing/status accessories */
-    --ui-icon-medium: 1.25rem; /* 20px — control glyphs (compact/regular) */
+    --ui-icon-small: 1rem; /* 16px — status marks beside small text */
+    --ui-icon-medium: 1.25rem; /* 20px — control glyphs and a row's leading/trailing marks */
     --ui-icon-large: 1.5rem; /* 24px — prominent-control glyphs */
   }
 

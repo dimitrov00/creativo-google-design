@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId, BookingStatus, ServiceId } from '@core/primitives';
+import {
+  BarberId,
+  BookingStatus,
+  ServiceId,
+  ServiceVariantId,
+} from '@core/primitives';
 import { SearchQueryErrorCode } from '@core/errors';
 import { deepFreeze, localDate, unwrapOk } from '@core/testing';
 import { SearchFilter, SearchFilterField } from './search-filter.data';
 import { SearchQuery } from './search-query.data';
+import { ServiceVariantPick } from './service-variant-pick.data';
 
 const IVAN = BarberId.of('ivan');
 const NIKO = BarberId.of('niko');
@@ -44,18 +50,31 @@ describe('SearchQuery — the companion', () => {
     expect(barberIds(query)).toEqual([IVAN, NIKO]);
   });
 
-  it('keeps one filter per kind, always in kind order', () => {
+  it('keeps one filter per kind, in the order the kinds were added', () => {
     let query = SearchQuery.withFilter(
       SearchQuery.empty(),
       SearchFilter.note(),
     );
-    query = SearchQuery.withFilter(query, SearchFilter.service([FADE]));
+    query = SearchQuery.withFilter(query, SearchFilter.service([FADE], []));
     query = SearchQuery.withFilter(query, SearchFilter.barber([IVAN]));
+    query = SearchQuery.withFilter(query, SearchFilter.service([FADE], []));
     expect(query.searchFilters.map((f) => f.searchFilterField)).toEqual([
-      SearchFilterField.Barber,
-      SearchFilterField.Service,
       SearchFilterField.Note,
+      SearchFilterField.Service,
+      SearchFilterField.Barber,
     ]);
+  });
+
+  it('is the same search whatever order its filters were added in', () => {
+    const a = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.note()),
+      SearchFilter.barber([IVAN]),
+    );
+    const b = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.barber([IVAN])),
+      SearchFilter.note(),
+    );
+    expect(SearchQuery.equals(a, b)).toBe(true);
   });
 
   it('replaces a date span and the note flag, not merges them', () => {
@@ -121,12 +140,92 @@ describe('SearchQuery — the companion', () => {
     ).toBe(false);
   });
 
+  it('replaces a kind’s filter where it stands, appends a new kind, and takes the kind off on null', () => {
+    const held = SearchQuery.withFilter(
+      SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.barber([IVAN])),
+      SearchFilter.note(),
+    );
+    const replaced = SearchQuery.withFilterReplaced(
+      held,
+      SearchFilterField.Barber,
+      SearchFilter.barber([NIKO]),
+    );
+    // In place: the barbers stay first, and Ivan is gone, not merged.
+    expect(replaced.searchFilters.map((f) => f.searchFilterField)).toEqual([
+      SearchFilterField.Barber,
+      SearchFilterField.Note,
+    ]);
+    expect(barberIds(replaced)).toEqual([NIKO]);
+    expect(
+      SearchQuery.withFilterReplaced(
+        held,
+        SearchFilterField.Service,
+        SearchFilter.service([FADE], []),
+      ).searchFilters.map((f) => f.searchFilterField),
+    ).toEqual([
+      SearchFilterField.Barber,
+      SearchFilterField.Note,
+      SearchFilterField.Service,
+    ]);
+    expect(
+      SearchQuery.withFilterReplaced(held, SearchFilterField.Barber, null)
+        .searchFilters,
+    ).toEqual([SearchFilter.note()]);
+  });
+
+  it('keeps a service filter’s variants beside its services, through merge, subtract and a stored round trip', () => {
+    const LONG = ServiceVariantPick.of(FADE, ServiceVariantId.of('long'));
+    const query = SearchQuery.withFilter(
+      SearchQuery.withFilter(
+        SearchQuery.empty(),
+        SearchFilter.service([FADE], []),
+      ),
+      SearchFilter.service([], [LONG]),
+    );
+    expect(query.searchFilters).toEqual([SearchFilter.service([FADE], [LONG])]);
+    // The same pick twice is one pick.
+    expect(
+      SearchQuery.withFilter(query, SearchFilter.service([], [{ ...LONG }]))
+        .searchFilters,
+    ).toEqual([SearchFilter.service([FADE], [LONG])]);
+    expect(
+      SearchQuery.withoutFilterValue(query, SearchFilter.service([FADE], []))
+        .searchFilters,
+    ).toEqual([SearchFilter.service([], [LONG])]);
+    const stored = unwrapOk(
+      SearchQuery.parse(JSON.parse(JSON.stringify(query))),
+    );
+    expect(stored).toEqual(query);
+    // A service filter with neither services nor variants is refused.
+    expect(
+      SearchQuery.parse({
+        searchText: '',
+        searchFilters: [
+          {
+            searchFilterField: 'SERVICE',
+            filterServiceIds: [],
+            filterVariants: [],
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('says which kinds hold several values', () => {
+    expect(SearchFilter.holdsMany(SearchFilterField.Barber)).toBe(true);
+    expect(SearchFilter.holdsMany(SearchFilterField.Service)).toBe(true);
+    expect(SearchFilter.holdsMany(SearchFilterField.Status)).toBe(true);
+    expect(SearchFilter.holdsMany(SearchFilterField.When)).toBe(false);
+    expect(SearchFilter.holdsMany(SearchFilterField.Note)).toBe(false);
+  });
+
   it('does not change the query it was given', () => {
     const query = deepFreeze(
       SearchQuery.withFilter(SearchQuery.empty(), SearchFilter.barber([IVAN])),
     );
     SearchQuery.withFilter(query, SearchFilter.barber([NIKO]));
     SearchQuery.withoutFilterValue(query, SearchFilter.barber([IVAN]));
+    SearchQuery.withFilterReplaced(query, SearchFilterField.Barber, null);
     expect(barberIds(query)).toEqual([IVAN]);
   });
 });
@@ -134,7 +233,7 @@ describe('SearchQuery — the companion', () => {
 describe('SearchQuery.parse — the guard of a stored search', () => {
   const full: SearchQuery = [
     SearchFilter.barber([IVAN, NIKO]),
-    SearchFilter.service([FADE]),
+    SearchFilter.service([FADE], []),
     SearchFilter.bookingStatuses([
       BookingStatus.Cancelled,
       BookingStatus.NoShow,

@@ -138,6 +138,19 @@ describe('SchedulingError factories', () => {
       ),
       SchedulingError.scheduleExceptionEmptyRanges(ExceptionEffect.Hours),
       SchedulingError.blockChairWithoutHome(BarberId.of('ivan')),
+      SchedulingError.rosterBreakInPast(
+        localDate('2026-01-01'),
+        localDate('2026-02-01'),
+      ),
+      SchedulingError.rosterMissing(BarberId.of('ivan')),
+      SchedulingError.rosterBreakOutsideShift(
+        Weekday.Mon,
+        minute(780),
+        endMinute(840),
+      ),
+      SchedulingError.rosterUnauthenticated(),
+      SchedulingError.rosterForbidden(),
+      SchedulingError.rosterInvalidInput('weekdays'),
     ];
     // One factory per code, each code reached once.
     expect(errors.map((error) => error.errorCode).sort()).toEqual(

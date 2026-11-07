@@ -110,80 +110,10 @@
         var(--sys-motion-duration-instant) allow-discrete;
   }
 
-  /*
-   * A picker's segmented run keeps the surface UNDER it — the selected row's
-   * fill is a translucent accent mix, and over a bare popover it would show
-   * the photograph the sheet sits on straight through the selection.
-   *
-   * The surface's corners are the group's outer corners PLUS the rim, so the
-   * two curves are concentric instead of two unrelated roundings, and the
-   * fill steps down to the REGULAR material — the same glass ladder the
-   * trigger that opened it is on (owner ruling 2026-07-31).
-   */
-  /*
-   * The segments go translucent in here. On a page a grouped list is opaque
-   * `surface-secondary` and that is right — it sits ON the background. Over a
-   * material popover it is not: the SELECTED row's fill is a translucent
-   * accent mix, so leaving its neighbours opaque made one row show the
-   * photograph through it and the rest read as solid blocks (owner ruling
-   * 2026-07-31). systemFill layers them all on the same glass.
-   */
-  .ui-menu__surface .ui-list-group > .ui-list-row:not([data-selected]),
-  .ui-menu__surface
-    .ui-list-group
-    > :not(.ui-list-row)
-    > .ui-list-row:not([data-selected]) {
-    background: var(--sys-color-fill);
-  }
-
-  /*
-   * A PICKER's two columns, held open by the MENU rather than by each
-   * consumer's stylesheet.
-   *
-   * Both were solved twice before landing here — once in the booking bag,
-   * once in the staff toolbar — which is one recipe with two definitions and
-   * exactly the drift the "reuse, never copy" ruling exists to stop.
-   *
-   * Leading: only when portraits are in the run. A row WITHOUT a face in a
-   * run that has them still owes the same rail, or every name below it steps
-   * sideways (HIG — list rows keep one leading rail). A run of plain glyphs
-   * wants no such rail, which is why this is gated on `:has()` rather than
-   * applied to every menu row.
-   */
-  .ui-menu__surface .ui-list-group:has(.ui-avatar) .ui-list-row > [uileading] {
-    inline-size: var(--control-size-regular);
-    block-size: var(--control-size-regular);
-  }
-
-  /* Trailing: the state marker's column stays open whether or not this row is
-     the chosen one, so picking a different option doesn't shift every label
-     in the menu. */
-  .ui-menu__surface .ui-list-row > [uitrailing] {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-inline-size: var(--ui-icon-medium);
-  }
-
-  /* TWO GROUPS IN ONE MENU are two SECTIONS — the picks, then the typed
-     «Друго» — and iOS parts sections with a seam thicker than the rows'
-     own. A compact space, so the second run reads as its own thing rather
-     than as one more row of the first (owner, 2026-09-10). */
-  .ui-menu__surface > .ui-list-group + .ui-list-group {
-    margin-block-start: var(--sys-space-compact);
-  }
-
-  .ui-menu__surface:has(> .ui-list-group) {
-    padding: var(--sys-space-tight);
-    border-radius: calc(
-      var(--control-radius-prominent) + var(--sys-space-tight)
-    );
-    background-color: var(--sys-material-fill);
-    -webkit-backdrop-filter: blur(var(--sys-material-regular-blur))
-      saturate(var(--sys-material-saturation));
-    backdrop-filter: blur(var(--sys-material-regular-blur))
-      saturate(var(--sys-material-saturation));
-  }
+  /* A segmented run on this surface (a picker, the ＋ menu) takes the
+     popover's list recipe — ui-list-group's own stylesheet, keyed on the
+     `data-popover-surface` this surface carries, so the search field's card
+     wears the same one. */
 
   .ui-menu__surface[data-open] {
     visibility: visible;

@@ -165,7 +165,15 @@
      the glyph still wins. The wrapped form (`span[uiLeading] > ui-icon`,
      the visit sheet's exits) is the same glyph. */
   .ui-list-row > .ui-icon[uileading],
-  .ui-list-row > [uileading] > .ui-icon:only-child {
+  .ui-list-row > [uileading] > .ui-icon:only-child,
+  /* …and so does the TRAILING mark that says what the row does — the
+     pop-up's ⌃⌄, the disclosure ›, the expand ⌄ (owner, 2026-11-06: the
+     chair row's ⌃⌄ read at 14 beside the 20 of the remove button under
+     it). One box for every glyph in a row; the hierarchy is the INK — an
+     accessory is secondary (the slot's rule below), an action keeps the
+     label's — never a smaller glyph. */
+  .ui-list-row > .ui-icon[uitrailing],
+  .ui-list-row > [uitrailing]:not(.ui-button) > .ui-icon {
     font-size: var(--ui-icon-medium);
   }
 

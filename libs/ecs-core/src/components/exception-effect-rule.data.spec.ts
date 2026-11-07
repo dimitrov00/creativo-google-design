@@ -8,13 +8,17 @@ const r = (start: number, end: number): MinuteRange =>
   MinuteRange.of(minute(start), endMinute(end));
 
 describe('ExceptionEffectRule — the public face, never the reason', () => {
-  it('has exactly three effects, no field a reason could ride in', () => {
+  it('has exactly four effects, no field a reason could ride in', () => {
     expect(Object.values(ExceptionEffect).sort()).toEqual([
       'BLOCKED',
       'CLOSED',
       'HOURS',
+      'ROSTERED',
     ]);
     expect(ExceptionEffectRule.closed()).toEqual({ exceptionEffect: 'CLOSED' });
+    expect(ExceptionEffectRule.rostered()).toEqual({
+      exceptionEffect: 'ROSTERED',
+    });
   });
 
   it('normalizes the ranges of HOURS and BLOCKED effects', () => {

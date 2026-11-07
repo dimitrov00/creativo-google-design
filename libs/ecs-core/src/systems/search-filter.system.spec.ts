@@ -4,13 +4,15 @@ import {
   SearchFilter,
   SearchFilterField,
   SearchWhenPreset,
+  ServiceVariantPick,
   type ShopNow,
 } from '@core/components';
 import {
   type BarberId,
   BookingStatus,
   LocalDate,
-  type ServiceId,
+  ServiceId,
+  ServiceVariantId,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
 import {
@@ -18,8 +20,10 @@ import {
   FIXTURE_TODAY,
   SEARCH_BARBERS,
   SEARCH_SERVICES,
+  appointmentFixture,
   deepFreeze,
   searchWindowFixture,
+  seatFixture,
 } from '@core/testing';
 import { PhoneSystem } from './phone.system';
 import { SearchFilterSystem } from './search-filter.system';
@@ -63,8 +67,15 @@ function bruteKeep(
             filter.filterBarberIds.includes(id),
           );
         case SearchFilterField.Service:
-          return visit.seats.some((seat) =>
-            filter.filterServiceIds.includes(seat.serviceId),
+          return visit.seats.some(
+            (seat) =>
+              filter.filterServiceIds.includes(seat.serviceId) ||
+              (seat.variantId !== null &&
+                filter.filterVariants.some(
+                  (pick) =>
+                    pick.serviceId === seat.serviceId &&
+                    pick.variantId === seat.variantId,
+                )),
           );
         case SearchFilterField.Status:
           return filter.filterBookingStatuses.includes(visit.bookingStatus);
@@ -155,7 +166,7 @@ describe('SearchFilterSystem.keep — the scan', () => {
     );
     const filter = fc.constantFrom<SearchFilter>(
       SearchFilter.barber([IVAN]),
-      SearchFilter.service([SEARCH_SERVICES[1]!.id]),
+      SearchFilter.service([SEARCH_SERVICES[1]!.id], []),
       SearchFilter.bookingStatuses([BookingStatus.Completed]),
       SearchFilter.note(),
       SearchFilter.when(FIXTURE_TODAY, LocalDate.addDays(FIXTURE_TODAY, 30)),
@@ -285,7 +296,7 @@ describe('SearchFilterSystem.suggestions — what can still narrow the search', 
       expect(
         SearchFilterSystem.keep(index, read('петър'), [
           ...filters,
-          SearchFilter.service([id as ServiceId]),
+          SearchFilter.service([id as ServiceId], []),
         ]).length,
       ).toBeGreaterThan(0);
     }
@@ -310,7 +321,9 @@ describe('SearchFilterSystem.suggestions — what can still narrow the search', 
       [
         SearchWhenPreset.Today,
         SearchWhenPreset.Tomorrow,
+        SearchWhenPreset.Yesterday,
         SearchWhenPreset.ThisWeek,
+        SearchWhenPreset.PastWeek,
       ].filter((preset) => offered.whenPresets.includes(preset)),
     );
     const none = SearchFilterSystem.suggestions(
@@ -322,6 +335,7 @@ describe('SearchFilterSystem.suggestions — what can still narrow the search', 
     expect(none).toEqual({
       barberIds: [],
       serviceIds: [],
+      variants: [],
       bookingStatuses: [],
       whenPresets: [],
       hasNote: false,
@@ -346,6 +360,17 @@ describe('SearchFilterSystem.whenOf — the date presets', () => {
     );
   });
 
+  it('builds yesterday and the six days before today through today', () => {
+    const today = NOW.localDate;
+    const yesterday = LocalDate.addDays(today, -1);
+    expect(SearchFilterSystem.whenOf(SearchWhenPreset.Yesterday, NOW)).toEqual(
+      SearchFilter.when(yesterday, yesterday),
+    );
+    expect(SearchFilterSystem.whenOf(SearchWhenPreset.PastWeek, NOW)).toEqual(
+      SearchFilter.when(LocalDate.addDays(today, -6), today),
+    );
+  });
+
   it('crosses a month end', () => {
     const when = SearchFilterSystem.whenOf(SearchWhenPreset.ThisWeek, {
       ...NOW,
@@ -362,13 +387,259 @@ describe('SearchFilterSystem.whenOf — the date presets', () => {
   });
 });
 
+describe('SearchFilterSystem.spanOf — two picked days', () => {
+  it('starts at the earlier day whichever was picked first; one day twice is that day', () => {
+    const today = NOW.localDate;
+    const later = LocalDate.addDays(today, 3);
+    expect(SearchFilterSystem.spanOf(later, today)).toEqual(
+      SearchFilter.when(today, later),
+    );
+    expect(SearchFilterSystem.spanOf(today, later)).toEqual(
+      SearchFilter.when(today, later),
+    );
+    expect(SearchFilterSystem.spanOf(today, today)).toEqual(
+      SearchFilter.when(today, today),
+    );
+  });
+});
+
+describe('SearchFilterSystem — a service’s variants', () => {
+  const CUT = 'svc-cut' as ServiceId;
+  const CLASSIC = 'svc-classic' as ServiceId;
+  const LONG = ServiceVariantId.of('long');
+  const SHORT = ServiceVariantId.of('short');
+  const visits = [
+    appointmentFixture({
+      id: 'v-long' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CUT, variantId: LONG })],
+    }),
+    appointmentFixture({
+      id: 'v-short' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CUT, variantId: SHORT })],
+    }),
+    appointmentFixture({
+      id: 'v-plain' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CUT, variantId: null })],
+    }),
+    // Another service with a variant of the SAME id: never the cut's «long».
+    appointmentFixture({
+      id: 'v-classic-long' as Appointment['id'],
+      seats: [seatFixture({ serviceId: CLASSIC, variantId: LONG })],
+    }),
+  ];
+  const folded = SearchIndexSystem.build(visits, {
+    clientNames: () => [],
+    serviceName: () => 'Подстрижка',
+    barberName: () => null,
+  });
+  const cutLong = ServiceVariantPick.of(CUT, LONG);
+  const cutShort = ServiceVariantPick.of(CUT, SHORT);
+
+  it('keeps a visit booked at a picked variant OF ITS SERVICE, and every visit of a service picked whole', () => {
+    expect(
+      SearchFilterSystem.keep(folded, read(''), [
+        SearchFilter.service([], [cutLong]),
+      ]),
+    ).toEqual([0]);
+    expect(
+      SearchFilterSystem.keep(folded, read(''), [
+        SearchFilter.service([], [cutLong, cutShort]),
+      ]),
+    ).toEqual([0, 1]);
+    expect(
+      SearchFilterSystem.keep(folded, read(''), [
+        SearchFilter.service([CUT], []),
+      ]),
+    ).toEqual([0, 1, 2]);
+  });
+
+  it('offers the variants the matching visits were booked at, each with its service, a picked one not hiding the others', () => {
+    const offered = SearchFilterSystem.suggestions(
+      folded,
+      read(''),
+      [SearchFilter.service([], [cutLong])],
+      NOW,
+    );
+    expect(offered.variants).toEqual([
+      cutLong,
+      cutShort,
+      ServiceVariantPick.of(CLASSIC, LONG),
+    ]);
+    expect(offered.serviceIds).toEqual([CUT, CLASSIC]);
+  });
+});
+
+describe('SearchFilterSystem.starters — what an untouched search offers', () => {
+  const offered = (
+    whenPresets: readonly SearchWhenPreset[],
+    barberIds: readonly BarberId[],
+  ) => ({
+    barberIds,
+    serviceIds: [],
+    variants: [],
+    bookingStatuses: [],
+    whenPresets,
+    hasNote: false,
+  });
+  const [ivan, stefan, niko, petar, georgi] = [
+    'ivan',
+    'stefan',
+    'niko',
+    'petar',
+    'georgi',
+  ] as BarberId[];
+
+  it('offers today and tomorrow first, then the barbers, five at most', () => {
+    const starters = SearchFilterSystem.starters(
+      offered(
+        [
+          SearchWhenPreset.Today,
+          SearchWhenPreset.Tomorrow,
+          SearchWhenPreset.ThisWeek,
+        ],
+        [ivan, stefan, niko, petar] as BarberId[],
+      ),
+      NOW,
+    );
+    expect(starters).toEqual([
+      SearchFilterSystem.whenOf(SearchWhenPreset.Today, NOW),
+      SearchFilterSystem.whenOf(SearchWhenPreset.Tomorrow, NOW),
+      SearchFilter.barber([ivan as BarberId]),
+      SearchFilter.barber([stefan as BarberId]),
+      SearchFilter.barber([niko as BarberId]),
+    ]);
+    expect(starters).toHaveLength(SearchFilterSystem.STARTER_LIMIT);
+  });
+
+  it('skips a day the window does not reach, and the barbers fill the room', () => {
+    const starters = SearchFilterSystem.starters(
+      offered([SearchWhenPreset.Tomorrow], [
+        ivan,
+        stefan,
+        niko,
+        petar,
+        georgi,
+      ] as BarberId[]),
+      NOW,
+    );
+    expect(starters[0]).toEqual(
+      SearchFilterSystem.whenOf(SearchWhenPreset.Tomorrow, NOW),
+    );
+    expect(starters.slice(1)).toEqual(
+      [ivan, stefan, niko, petar].map((id) =>
+        SearchFilter.barber([id as BarberId]),
+      ),
+    );
+  });
+
+  it('offers nothing from an empty window', () => {
+    expect(SearchFilterSystem.starters(offered([], []), NOW)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(
+      offered([SearchWhenPreset.Today], [ivan, stefan] as BarberId[]),
+    );
+    expect(SearchFilterSystem.starters(input, NOW)).toEqual(
+      SearchFilterSystem.starters(input, NOW),
+    );
+  });
+});
+
+describe('SearchFilterSystem.offersBeyond — whether a short group has more', () => {
+  const [ivan, niko] = ['ivan', 'niko'] as BarberId[];
+  const [cut, beard] = ['cut', 'beard'] as ServiceId[];
+  const short = ServiceVariantId.of('short');
+  const long = ServiceVariantId.of('long');
+  const offered = {
+    barberIds: [ivan, niko] as readonly BarberId[],
+    serviceIds: [cut, beard] as readonly ServiceId[],
+    variants: [
+      ServiceVariantPick.of(cut as ServiceId, short),
+      ServiceVariantPick.of(cut as ServiceId, long),
+    ],
+    bookingStatuses: [BookingStatus.Confirmed, BookingStatus.Cancelled],
+    whenPresets: [SearchWhenPreset.Today],
+    hasNote: true,
+  };
+
+  it('always has more of «Кога»: a day or a span can be picked', () => {
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.When, offered, [
+        SearchFilterSystem.whenOf(SearchWhenPreset.Today, NOW),
+      ]),
+    ).toBe(true);
+  });
+
+  it('has more barbers only while one is offered and not shown', () => {
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, offered, [
+        SearchFilter.barber([ivan as BarberId]),
+      ]),
+    ).toBe(true);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, offered, [
+        SearchFilter.barber([ivan as BarberId]),
+        SearchFilter.barber([niko as BarberId]),
+      ]),
+    ).toBe(false);
+  });
+
+  it('counts a service and each of its variants', () => {
+    const shortCut = SearchFilter.service(
+      [],
+      [ServiceVariantPick.of(cut as ServiceId, short)],
+    );
+    const longCut = SearchFilter.service(
+      [],
+      [ServiceVariantPick.of(cut as ServiceId, long)],
+    );
+    const beardOnly = SearchFilter.service([beard as ServiceId], []);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Service, offered, [
+        shortCut,
+        beardOnly,
+      ]),
+    ).toBe(true);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Service, offered, [
+        shortCut,
+        longCut,
+        beardOnly,
+      ]),
+    ).toBe(false);
+  });
+
+  it('has more statuses, or the note, only while one is not shown', () => {
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Status, offered, [
+        SearchFilter.bookingStatuses([BookingStatus.Confirmed]),
+      ]),
+    ).toBe(true);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Note, offered, [
+        SearchFilter.note(),
+      ]),
+    ).toBe(false);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Note, offered, []),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = deepFreeze(offered);
+    const shown = deepFreeze([SearchFilter.barber([ivan as BarberId])]);
+    expect(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, input, shown),
+    ).toBe(
+      SearchFilterSystem.offersBeyond(SearchFilterField.Barber, input, shown),
+    );
+  });
+});
+
 describe('SearchFilterSystem.presetOf — which preset a span is, today', () => {
   it('names the span a preset built, on the shop’s own today', () => {
-    for (const preset of [
-      SearchWhenPreset.Today,
-      SearchWhenPreset.Tomorrow,
-      SearchWhenPreset.ThisWeek,
-    ]) {
+    for (const preset of Object.values(SearchWhenPreset)) {
       expect(
         SearchFilterSystem.presetOf(
           SearchFilterSystem.whenOf(preset, NOW),
@@ -379,12 +650,37 @@ describe('SearchFilterSystem.presetOf — which preset a span is, today', () => 
   });
 
   it('is nothing for another span, or for a preset built on another day', () => {
-    const yesterday = LocalDate.addDays(NOW.localDate, -1);
+    const twoDaysAgo = LocalDate.addDays(NOW.localDate, -2);
     expect(
-      SearchFilterSystem.presetOf(SearchFilter.when(yesterday, yesterday), NOW),
+      SearchFilterSystem.presetOf(
+        SearchFilter.when(twoDaysAgo, twoDaysAgo),
+        NOW,
+      ),
     ).toBeNull();
-    const lastWeek: ShopNow = { ...NOW, localDate: yesterday };
+    // «Днес» saved two days ago is no preset now (yesterday's would be «Вчера»).
+    const lastWeek: ShopNow = { ...NOW, localDate: twoDaysAgo };
     const stale = SearchFilterSystem.whenOf(SearchWhenPreset.Today, lastWeek);
     expect(SearchFilterSystem.presetOf(stale, NOW)).toBeNull();
+  });
+});
+
+describe('SearchFilterSystem.inCatalogueOrder', () => {
+  const a = ServiceId.of('a');
+  const b = ServiceId.of('b');
+  const c = ServiceId.of('c');
+  const gone = ServiceId.of('gone');
+
+  it('lists the offered services in the catalogue’s order, an unlisted one last', () => {
+    expect(
+      SearchFilterSystem.inCatalogueOrder([gone, c, a], [a, b, c]),
+    ).toEqual([a, c, gone]);
+  });
+
+  it('keeps the bookings’ order with no catalogue, and is pure', () => {
+    const offered = deepFreeze([c, a]);
+    expect(SearchFilterSystem.inCatalogueOrder(offered, [])).toEqual([c, a]);
+    expect(SearchFilterSystem.inCatalogueOrder(offered, [a, c])).toEqual(
+      SearchFilterSystem.inCatalogueOrder(offered, [a, c]),
+    );
   });
 });

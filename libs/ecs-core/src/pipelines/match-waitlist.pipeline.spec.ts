@@ -141,6 +141,7 @@ function tuesdayRoster(
     effectiveFromLocalDate: localDate('2026-01-01'),
     effectiveToLocalDate: null,
     segments,
+    breaks: [],
   };
   return {
     id: barberId,

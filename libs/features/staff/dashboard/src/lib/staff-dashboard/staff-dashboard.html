@@ -144,18 +144,32 @@
               >
                 <ui-icon [uiName]="currentViewIcon()" />
               </button>
-              <!-- VIEWS ONLY (owner, 2026-09-23). «Блокирай време» rode
-                   here as a second row under the four readings, and a
-                   picker that chooses how the day is DRAWN must not also
-                   DO something to it — HIG's pull-down menus hold one kind
-                   of item. Blocking time is an act, and it lives with the
-                   other acts under ＋. -->
+              <!-- HOW THE DAY IS DRAWN, and nothing it DOES (owner,
+                   2026-09-23: «Блокирай време» left for ＋). Under the four
+                   readings, the list's card fields (owner, 2026-11-05: "the
+                   view select should be like settings") — Files' «View
+                   Options» under its layouts. In the calendar views the same
+                   row holds the time scale (owner, 2026-11-06). -->
+              <ui-list-group>
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  data-testid="staff-fields-open"
+                  (click)="openFields()"
+                >
+                  <ui-icon uiLeading uiName="calendar.cardFields" />
+                  {{ t('staff.day.viewSettings') }}
+                </button>
+              </ui-list-group>
             </ui-choice-menu>
 
             <!-- Search sits between the two pickers and the person — the
                trailing cluster runs view · find · who, which is the order
                HIG puts a toolbar in: what you are looking at, how you find
-               something in it, then whose it is. -->
+               something in it, then whose it is. From 600px of bar only: a
+               phone finds it at the thumb, in the bottom bar (Mail's). -->
             <button
               type="button"
               uiButton
@@ -163,8 +177,9 @@
               uiTint="neutral"
               uiControlSize="regular"
               [uiIconOnly]="true"
-              class="staff-cluster__item"
+              class="staff-cluster__item staff-search-open"
               [attr.aria-label]="t('staff.day.searchLabel')"
+              [attr.data-searching]="store.searching() ? '' : null"
               data-testid="staff-search-open"
               (click)="store.openSearch()"
             >
@@ -252,7 +267,7 @@
           class="staff-weeks"
           data-testid="staff-week-strip"
         >
-          @for (week of weekStrip(); track week.key) {
+          @for (week of strip.weeks(); track week.key) {
           <div
             class="staff-weeks__week"
             [attr.data-week]="week.key"
@@ -306,7 +321,8 @@
       (uiDismissed)="zoneNoticeOpen.set(false)"
     />
 
-    @if (store.searching()) {
+    @defer (when store.searching(); prefetch on idle) { @if (store.searching())
+    {
     <!-- THE SCHEDULE SEARCH: a Spotlight-style sheet that owns its query, its
          chips and the device's recents, and searches the window the store
          holds (docs/designs/staff-search-spotlight.md). -->
@@ -316,8 +332,10 @@
       [unnamedClient]="dayWords().unnamedClient"
       [callingCode]="shopCallingCode"
       [locale]="content.locale()"
+      [services]="catalog.serviceVms()"
+      (visitPicked)="openFoundVisit($event)"
     />
-    } @if (isGrid()) { @if (dayHealth().length > 0) {
+    } } @if (isGrid()) { @if (dayHealth().length > 0) {
     <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the
          agenda's all-day strip opens with — a chair the sheet could not read
          in full is said before any column is read. -->
@@ -336,6 +354,7 @@
         #grid
         [columns]="gridColumns()"
         [uiColumnKind]="store.view() === StaffView.Day ? 'chairs' : 'dates'"
+        uiPlacement="proportional"
         [uiRevealKey]="store.revealKey()"
         [uiRegionLabel]="regionLabel()"
         [rosterStartMinute]="rosterExtent().start"
@@ -344,6 +363,14 @@
         [allDay]="allDay()"
         [allDayAlways]="true"
         [allDayLabel]="t('staff.day.allDay')"
+        [uiSlotPickable]="true"
+        [uiScaleMinutes]="timeScale.minutes()"
+        [uiSlotSnapMinutes]="timeScale.minutes() > 30 ? 30 : timeScale.minutes()"
+        [uiPendingSlot]="pendingSlot()"
+        [uiPendingTemplate]="slotMenu"
+        (slotPicked)="pickSlot($event)"
+        [uiMovable]="movableIds()"
+        (draftCommitted)="dropOnGrid($event)"
         (zonePicked)="explainZone()"
         data-testid="staff-grid"
         (eventPicked)="openVisit($event)"
@@ -529,38 +556,102 @@
                  difference that matters is whether it can still be sold, and
                  that is carried in FORM: a sellable hole is a card the full
                  height of a booking, an elapsed one is a line. -->
+            <!-- A HOLE wears the event's head (owner, 2026-11-05: "the same
+                 range as the events"): the word and how long it runs on the
+                 left, start over end on the right — so a chair free from 11:45
+                 after a visit ending 11:35 shows its turnaround's jump rather
+                 than hiding it in a heading. No client, no marks — there is
+                 nobody in it. A hole that can still be sold is a
+                 press (owner, 2026-11-05): the ＋'s own menu, «Нов час ·
+                 Блокирай време», from its start on its chair. The menu's
+                 TRIGGER is the card, so the state layer fills the whole card
+                 as it does on a visit or a block — on a line inside it, the
+                 hover lit only the words. -->
+            @if (entry.sellable) {
             <li
-              class="agenda-card agenda-card--gap"
-              [class.agenda-card--idle]="!entry.sellable"
+              class="agenda-card__gap-item"
+              [attr.data-barber-tone]="entry.barberTone"
+              data-testid="staff-gap-row"
+            >
+              <ui-menu
+                class="agenda-card__gap-menu"
+                [uiPresented]="gapMenu() === entry.id"
+                uiAlignment="leading"
+                [uiLabel]="t('staff.day.fab.open')"
+                (uiDismissed)="gapMenu.set(null)"
+              >
+                <button
+                  type="button"
+                  uiMenuTrigger
+                  uiInteractive
+                  class="agenda-card agenda-card--gap agenda-card__gap-press"
+                  [attr.aria-expanded]="gapMenu() === entry.id"
+                  data-testid="staff-gap-press"
+                  (click)="gapMenu.set(gapMenu() === entry.id ? null : entry.id)"
+                >
+                  <span class="agenda-card__rail" aria-hidden="true"></span>
+                  <lib-staff-event-head
+                    class="agenda-card__hole"
+                    [title]="t('staff.day.agendaFree')"
+                    [lines]="[{ icon: 'booking.slot', text: entry.spanLabel }]"
+                    [start]="entry.startLabel"
+                    [end]="entry.endLabel"
+                    [quiet]="true"
+                  />
+                </button>
+                <ng-container
+                  [ngTemplateOutlet]="createActs"
+                  [ngTemplateOutletContext]="{ $implicit: entry, testId: 'staff-gap' }"
+                />
+              </ui-menu>
+            </li>
+            } @else {
+            <li
+              class="agenda-card agenda-card--gap agenda-card--idle"
               [attr.data-barber-tone]="entry.barberTone"
               [attr.data-past]="entry.past ? '' : null"
-              [attr.data-testid]="
-                entry.sellable ? 'staff-gap-row' : 'staff-idle-row'
-              "
+              data-testid="staff-idle-row"
             >
               <span class="agenda-card__rail" aria-hidden="true"></span>
-
-              <!-- A HOLE is one line: the word at the leading edge and how
-                   long it runs at the trailing one. No client, no facts, no
-                   marks — there is nobody in it. -->
-              <div class="agenda-card__hole">
-                <span
-                  class="agenda-card__hole-word"
-                  uiText
-                  uiFont="callout"
-                  uiForegroundStyle="secondary"
-                >
-                  {{ t('staff.day.agendaFree') }}
-                </span>
-                <span
-                  class="agenda-card__gap-span"
-                  uiText
-                  uiFont="footnote"
-                  uiForegroundStyle="secondary"
-                >
-                  {{ entry.spanLabel }}
-                </span>
-              </div>
+              <lib-staff-event-head
+                class="agenda-card__hole"
+                [title]="t('staff.day.agendaFree')"
+                [lines]="[{ icon: 'booking.slot', text: entry.spanLabel }]"
+                [start]="entry.startLabel"
+                [end]="entry.endLabel"
+                [quiet]="true"
+                [receded]="entry.past"
+              />
+            </li>
+            } } @else if (entry.agendaRow === AgendaRow.Block) {
+            <!-- BLOCKED TIME (owner, 2026-11-05: visible in the list too, the
+                 filter's «Блокирано време» switch): the hole's head with the
+                 grid block's mark and word, its rail neutral like the grid's.
+                 A press opens it in the block editor, as the grid's does. -->
+            <li
+              class="agenda-card agenda-card--gap"
+              [class.agenda-card--idle]="entry.past"
+              uiInteractive
+              tabindex="0"
+              role="button"
+              [attr.aria-label]="entry.accessibleName"
+              [attr.data-past]="entry.past ? '' : null"
+              [attr.data-row-id]="entry.id"
+              data-testid="staff-block-row"
+              (click)="openBlock(entry.id)"
+              (keydown.enter)="openBlock(entry.id)"
+            >
+              <span class="agenda-card__rail" aria-hidden="true"></span>
+              <lib-staff-event-head
+                class="agenda-card__hole"
+                [title]="entry.label"
+                [lines]="[{ icon: 'booking.blocked', text: entry.spanLabel }]"
+                [start]="entry.startLabel"
+                [end]="entry.endLabel"
+                [quiet]="true"
+                [receded]="entry.past"
+                [timesDecorative]="true"
+              />
             </li>
             } @else {
             <!-- A VISIT — ONE ROW, three columns.
@@ -827,12 +918,14 @@
          (the grid does), and `sticky` has nothing to stick to — `pane` pins
          the bar to this positioned column instead, which is the case its own
          docs describe. The list scrolls the page, so it keeps `page`. -->
-    <ui-page-action-bar [uiAnchor]="isGrid() ? 'pane' : 'page'">
-      <!-- WHAT THE CARDS CARRY, in the bar rather than buried in the view
-           menu: it is a property of this screen, it is reached often while
-           reading, and the bar is where this surface's own controls live.
-           Agenda only — a calendar block has no card to configure. -->
-      @if (!isGrid()) {
+    <ui-page-action-bar
+      class="staff-bar"
+      [uiAnchor]="isGrid() ? 'pane' : 'page'"
+    >
+      <!-- WHICH STATES ARE DRAWN (owner, 2026-11-05): the funnel narrows
+           what the schedule draws, in every view, and stays in the accent for
+           as long as a state is hidden, so a filtered day says so. What each
+           card CARRIES lives under the view menu, with how the day is drawn. -->
       <div class="staff-cluster">
         <button
           type="button"
@@ -841,16 +934,22 @@
           uiTint="neutral"
           uiControlSize="large"
           [uiIconOnly]="true"
+          [uiDotBadge]="statusFilter.filtering()"
           class="staff-cluster__item"
-          [attr.aria-label]="t('staff.day.fieldsLabel')"
-          [title]="t('staff.day.fieldsLabel')"
-          data-testid="staff-fields-open"
-          (click)="openFields()"
+          [attr.aria-label]="
+            t(
+              statusFilter.filtering()
+                ? 'staff.day.statusFilterLabelOn'
+                : 'staff.day.statusFilterLabel'
+            )
+          "
+          [title]="t('staff.day.statusFilterLabel')"
+          data-testid="staff-status-filter-open"
+          (click)="statusFilterOpen.set(true)"
         >
           <ui-icon uiName="action.filter" uiScale="medium" />
         </button>
       </div>
-      }
       <!-- Back to today, in the bar rather than the header — the same
            anatomy and the same glyph the appointments calendar uses, so the
            two calendars answer "take me back" identically. Leading, because
@@ -893,6 +992,29 @@
         </button>
       </div>
       }
+      <!-- THE SEARCH AT THE THUMB (≙ iOS 26 Mail's bottom bar, 2026-11-05):
+           field-shaped, filling the room between the bar's leading controls
+           and ＋, on a phone; from 600px of bar the toolbar's own search
+           button carries it, as Mail on an iPad keeps its search at the top.
+           It GROWS into the full-screen search, whose field sits on the
+           same floor (the two share a view-transition name). -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="large"
+        uiFill
+        class="staff-search-entry"
+        [attr.data-searching]="store.searching() ? '' : null"
+        data-testid="staff-search-entry"
+        (click)="store.openSearch()"
+      >
+        <ui-icon uiName="action.search" uiScale="medium" aria-hidden="true" />
+        <span class="staff-search-entry__label"
+          >{{ t('staff.day.searchLabel') }}</span
+        >
+      </button>
       <!-- `uiPrimary` on the HOST: the bar docks its primary child trailing
            by that marker, and the prominent button sits inside this menu
            host, not as the bar's own child. Without it the ＋ clustered
@@ -922,32 +1044,88 @@
         <!-- THE KIND PICKER (owner review 2026-09-08): what you are making,
              as a menu — five chips in 340px looked bad, and this is the
              grammar every other choice on the sheet already uses. -->
-        <ui-list-group>
-          <button
-            type="button"
-            uiMenuItem
-            uiListRow
-            [uiInteractive]="true"
-            data-testid="staff-add-booking"
-            (click)="openCreate(CreateIntent.Booking)"
-          >
-            <span uiLeading><ui-icon uiName="appointment.book" /></span>
-            {{ t('staff.day.fab.booking') }}
-          </button>
-          <button
-            type="button"
-            uiMenuItem
-            uiListRow
-            [uiInteractive]="true"
-            data-testid="staff-add-block"
-            (click)="openCreate(CreateIntent.Block)"
-          >
-            <span uiLeading><ui-icon uiName="booking.blocked" /></span>
-            {{ t('staff.day.fab.block') }}
-          </button>
-        </ui-list-group>
+        <ng-container
+          [ngTemplateOutlet]="createActs"
+          [ngTemplateOutletContext]="{ $implicit: undefined, testId: 'staff-add' }"
+        />
       </ui-menu>
     </ui-page-action-bar>
+
+    <!-- THE ＋'S TWO ACTS, one template for its three doors: the ＋ itself,
+         a free-time row of the list, and a slot tapped on the grid (owner,
+         2026-11-05/06). `from` says where the create starts; none is now. -->
+    <ng-template #createActs let-from let-testId="testId">
+      <ui-list-group>
+        <button
+          type="button"
+          uiMenuItem
+          uiListRow
+          [uiInteractive]="true"
+          [attr.data-testid]="testId + '-booking'"
+          (click)="openCreate(CreateIntent.Booking, from)"
+        >
+          <span uiLeading><ui-icon uiName="appointment.book" /></span>
+          {{ t('staff.day.fab.booking') }}
+        </button>
+        <button
+          type="button"
+          uiMenuItem
+          uiListRow
+          [uiInteractive]="true"
+          [attr.data-testid]="testId + '-block'"
+          (click)="openCreate(CreateIntent.Block, from)"
+        >
+          <span uiLeading><ui-icon uiName="booking.blocked" /></span>
+          {{ t('staff.day.fab.block') }}
+        </button>
+        <!-- A chair's weekly hours and breaks — from the ＋ alone: a slot
+             or a free-time row is a moment, not the week. -->
+        @if (from === undefined) {
+        <button
+          type="button"
+          uiMenuItem
+          uiListRow
+          [uiInteractive]="true"
+          [attr.data-testid]="testId + '-hours'"
+          (click)="createMenu.set(false); hoursOpen.set(true)"
+        >
+          <span uiLeading><ui-icon uiName="service.duration" /></span>
+          {{ t('staff.day.fab.hours') }}
+        </button>
+        }
+      </ui-list-group>
+    </ng-template>
+
+    <!-- A GRID SLOT'S MENU, drawn inside the grid's dashed draft block: the
+         block is its trigger, and the menu opens the moment it lands. -->
+    <ng-template #slotMenu>
+      @if (pendingSlot(); as slot) {
+      <ui-menu
+        class="staff-slot-menu"
+        [uiPresented]="true"
+        uiAlignment="leading"
+        [uiLabel]="t('staff.day.fab.open')"
+        (uiDismissed)="pendingSlot.set(null)"
+      >
+        <button
+          type="button"
+          uiMenuTrigger
+          class="staff-slot-menu__trigger"
+          [attr.aria-label]="t('staff.day.fab.open') + ', ' + slotTime(slot)"
+          data-testid="staff-slot-trigger"
+          (click)="pendingSlot.set(null)"
+        >
+          <span uiText uiFont="footnote" uiWeight="semibold"
+            >{{ slotTime(slot) }}</span
+          >
+        </button>
+        <ng-container
+          [ngTemplateOutlet]="createActs"
+          [ngTemplateOutletContext]="{ $implicit: slot.from, testId: 'staff-slot' }"
+        />
+      </ui-menu>
+      }
+    </ng-template>
   </main>
 
   <!-- THE DAY'S HEALTH ROWS (OR-2) — one per chair the sheet could not read
@@ -1018,7 +1196,29 @@
        One fixed card serves whichever of those the designer imagined and
        taxes the other two on every glance — so the ANATOMY is fixed and the
        CONTENTS are chosen. Per device, like the theme. -->
-  @if (fieldsOpen()) {
+  <!-- A CHAIR'S WEEKLY HOURS (the ＋'s «Работно време»): the scoped chair,
+       else the first. -->
+  @defer (when hoursOpen(); prefetch on idle) { @if (hoursOpen() &&
+  store.todayKey(); as today) { @let chairId = store.scope() ??
+  barberOptions()[0]?.id; @if (chairId) {
+  <lib-staff-hours-sheet
+    [uiChairs]="barberOptions()"
+    [uiChairId]="chairId"
+    [uiToday]="today"
+    [uiLocale]="content.locale()"
+    [uiHomeOf]="homeOf"
+    (saved)="setNotice(t('staff.hours.saved'))"
+    (closed)="hoursOpen.set(false)"
+  />
+  } } } @defer (when statusFilterOpen(); prefetch on idle) { @if
+  (statusFilterOpen()) {
+  <lib-staff-status-filter-sheet (closed)="statusFilterOpen.set(false)" />
+  } } @defer (when fieldsOpen() && isGrid(); prefetch on idle) { @if
+  (fieldsOpen() && isGrid()) {
+  <!-- In the calendar views «Настройки» is the time scale (owner,
+       2026-11-06), drafted and applied from its own bar. -->
+  <lib-staff-time-scale-sheet (closed)="fieldsOpen.set(false)" />
+  } } @if (fieldsOpen() && !isGrid()) {
   <ui-modal-sheet
     sheetId="staff-fields-sheet"
     labelledBy="staff-fields-title"
@@ -1099,7 +1299,8 @@
        the page keeps one sheet-at-a-time in one place alongside the cancel,
        zone and search sheets. Spec:
        docs/design-research/staff-visit-editor-design.md -->
-  @if (visitEditorVm(); as editorVm) {
+  @defer (when visitEditorVm() !== null; prefetch on idle) { @if
+  (visitEditorVm(); as editorVm) {
   <!-- ⚠ The standard sheet chrome — a title and a close button, like every
        other sheet on this page (owner ruling 2026-08-26, reversing the
        `bareHeader` pass). The editor's own pinned summary strip is gone with
@@ -1154,6 +1355,7 @@
     <lib-staff-visit-editor
       #visitEditor
       [vm]="editorVm"
+      [uiDropped]="droppedTime()"
       [uiBarbers]="barberOptions()"
       [uiShops]="shopOptions()"
       [uiServices]="visitServiceOptions()"
@@ -1199,14 +1401,15 @@
       >{{ visitEditor.sheetTitle() }}</span
     >
   </ui-modal-sheet>
-  }
+  } }
 
   <!-- THE CREATE SHEET — the visit editor drafting a visit that does not
        exist yet (owner review 2026-09-08). Same component, empty
        `appointmentId`; `Запази` becomes one `commitBooking` placed by the
        shop. Client search is the app's user search, run here as the barber
        types. -->
-  @if (createVm(); as newVm) {
+  @defer (when createVm() !== null; prefetch on idle) { @if (createVm(); as
+  newVm) {
   <ui-modal-sheet
     sheetId="staff-create-sheet"
     labelledBy="staff-create-title"
@@ -1263,14 +1466,15 @@
       >{{ createEditor.sheetTitle() }}</span
     >
   </ui-modal-sheet>
-  }
+  } }
 
   <!-- Blocking time. The sheet asks only WHAT the effect is, never why: the
        document it writes is structurally reason-free, because `/book` reads
        it anonymously and a sick day is Art. 9 data. The kind picker that
        would record a reason needs a staff-only sibling collection and an
        owner ruling (Q4) before it can exist at all. -->
-  @if (blockEditorVm(); as blockVm) {
+  @defer (when blockEditorVm() !== null; prefetch on idle) { @if
+  (blockEditorVm(); as blockVm) {
   <!-- THE BLOCK EDITOR — the visit sheet's chrome and ladder, for time a
        barber takes out of the day (owner review 2026-09-08). Create and edit
        are one sheet; a tapped block on the grid, a tapped free gap, the lane
@@ -1329,7 +1533,7 @@
     </p>
     }
   </ui-modal-sheet>
-  }
+  } }
 
   <!-- The cancel sheet: the one verb that needs words, because the audit
        row and the freed slot's waitlist notification both carry them. -->
@@ -1459,6 +1663,19 @@
        and its two answers — the platform's centred dialog, the destructive
        one red, the safe one bold and last. Mounted always, so its exit can
        play; it draws nothing until asked. -->
+  <!-- HOW FAR A BREAK EDIT REACHES (owner, 2026-11-06): a tapped or
+       dragged roster break — Apple Calendar's question, the smaller act
+       preferred. -->
+  <ui-alert
+    [uiPresented]="breakFlow.question() !== null"
+    [uiTitle]="t('staff.day.breakTitle')"
+    [uiMessage]="breakFlow.message()"
+    [uiActions]="breakFlow.actions()"
+    data-testid="staff-break-scope"
+    (uiPicked)="breakFlow.pick($event)"
+    (uiDismissed)="breakFlow.pick('CANCEL')"
+  />
+
   <ui-alert
     [uiPresented]="discardPending() !== null"
     [uiTitle]="t('staff.visit.discardTitle')"

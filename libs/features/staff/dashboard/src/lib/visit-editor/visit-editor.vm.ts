@@ -85,6 +85,8 @@ export type VisitEditorWords = {
   readonly noAccount: string;
   readonly newClient: string;
   readonly servicesAddOne: string;
+  /** «Приложи» — the service page's act when it also takes services off. */
+  readonly servicesApply: string;
   /* The discount page. */
   readonly alone: string;
   readonly stacks: string;
@@ -127,6 +129,7 @@ export type VisitEditorWords = {
   readonly minutes: (minutes: number) => string;
   readonly catalogMinutes: (minutes: number) => string;
   readonly cancelFor: (names: string) => string;
+  readonly walkInNumbered: (number: number) => string;
   readonly servicesAddCount: (count: number) => string;
   readonly applyDiscount: (what: string) => string;
   readonly discountApplied: (count: number) => string;
@@ -429,6 +432,15 @@ export type ServiceRowVm = {
   readonly lineRuns: readonly StaffEventRun[];
 };
 
+/** A person on the visit, as the service page's chips name them — whose picks these are. */
+export type ServicePersonVm = {
+  readonly id: string;
+  readonly label: string;
+  readonly avatarSrc: string | null;
+  /** The person the picks seat for — the page's subject, else the first. */
+  readonly selected: boolean;
+};
+
 /** The dock's promise on the service page. */
 export type ServiceApplyVm = {
   readonly label: string;
@@ -580,8 +592,10 @@ export type ClientRowVm = VisitEditorClientOption & {
   readonly exact: boolean;
   /** The name as runs, only while some run is the typed one. */
   readonly titleParts: readonly StaffEventRun[] | null;
-  /** The facts under the name — the mail, the number, the last visit. */
+  /** The one contact under the name (and «Без профил» for a walk-in's record). */
   readonly lines: readonly StaffEventLine[];
+  /** The last visit, at the trailing edge — «посл. 22.09» — or nothing. */
+  readonly detail: string | null;
 };
 
 /** One detected part of what was typed, as the create row shows it. */

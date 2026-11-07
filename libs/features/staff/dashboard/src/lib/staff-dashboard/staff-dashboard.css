@@ -711,31 +711,31 @@
   background-image: none;
 }
 
-/* A HOLE is one line — the word leading, how long it runs trailing. */
+/* A HOLE (and a block) is the event's head (owner, 2026-11-05: "the same
+   range as the events"): the word and how long it runs on the left, start
+   over end on the right — the head lays itself out; the card only seats it. */
 .agenda-card__hole {
   grid-area: body;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sys-space-compact);
   min-inline-size: 0;
 }
 
-.agenda-card__hole-word {
-  /* Type and ink come from `uiText` on the element — see the template.
-     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
-     where the directives live, so declaring them here did not merely
-     duplicate the system, it silently overruled it. */
+/* A sellable hole is the trigger of its own «Нов час · Блокирай време»
+   menu, and the trigger IS the card: the list item and the menu host are
+   bare boxes around it, so `uiInteractive`'s state layer fills the card
+   edge to edge, as on a visit or a block. */
+.agenda-card__gap-menu {
+  display: block;
+  min-inline-size: 0;
 }
 
-.agenda-card__gap-span {
-  flex: 0 0 auto;
-  /* Type and ink come from `uiText` on the element — see the template.
-     Feature CSS is UNLAYERED and therefore beats `@layer sys-components`
-     where the directives live, so declaring them here did not merely
-     duplicate the system, it silently overruled it. */
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.agenda-card__gap-press {
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
 }
 
 /* An ELAPSED hole is a line, not a card: one is a thing to fill and is
@@ -914,3 +914,27 @@
 /* The page around the run — the write actions, the toolbar and the week
    strip, the barber picker, the all-day band and the toast — continues in
    `staff-dashboard.chrome.css`. */
+
+/* A GRID SLOT'S MENU (owner, 2026-11-06) — drawn inside the grid's dashed
+   draft block, which its trigger fills: the block IS the control, the
+   menu hangs off its edge. The time reads in ink (the accent law). */
+.staff-slot-menu {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.staff-slot-menu__trigger {
+  display: flex;
+  align-items: flex-start;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 2px var(--sys-space-tight);
+  border: 0;
+  background: none;
+  color: var(--sys-color-foreground);
+  text-align: start;
+  cursor: pointer;
+}

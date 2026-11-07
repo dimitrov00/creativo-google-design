@@ -33,7 +33,7 @@ import {
   serviceApplyVm,
   serviceOptionLine,
   serviceRowVm,
-  servicePersonOf,
+  servicePeopleVm,
   sheetTitleOf,
   shopReadoutOf,
   shopRowName,
@@ -356,19 +356,32 @@ describe('the services’ rows', () => {
   });
 
   it('promises the picks, or nothing', () => {
-    expect(serviceApplyVm(0, BG)).toBeNull();
-    expect(serviceApplyVm(1, BG)).toEqual({ count: 1, label: 'Добави' });
-    expect(serviceApplyVm(3, BG)).toEqual({
+    expect(serviceApplyVm(0, 0, BG)).toBeNull();
+    expect(serviceApplyVm(1, 0, BG)).toEqual({ count: 1, label: 'Добави' });
+    expect(serviceApplyVm(3, 0, BG)).toEqual({
       count: 3,
       label: 'Добави 3 услуги',
     });
-    expect(serviceApplyVm(3, EN)?.label).toBe('Add 3 services');
+    expect(serviceApplyVm(3, 0, EN)?.label).toBe('Add 3 services');
+    // Ticking one off is a change, not an add (owner, 2026-11-06).
+    expect(serviceApplyVm(1, 1, BG)).toEqual({ count: 2, label: 'Приложи' });
+    expect(serviceApplyVm(0, 1, EN)?.label).toBe('Apply');
   });
 
-  it('finds the person a catalogue page is for', () => {
-    const clients = [{ id: MARTIN, label: 'Мартин' }];
-    expect(servicePersonOf(clients, 'guest-martin')).toBe('Мартин');
-    expect(servicePersonOf(clients, 'nobody')).toBeNull();
+  it('chips the visit’s people, the one the picks seat for selected', () => {
+    const clients = [
+      { id: MARTIN, label: 'Мартин', avatarSrc: 'm.jpg' },
+      { id: 'guest-petar', label: 'Петър' },
+    ];
+    // The page's subject, else the first — whom an unaddressed pick seats for.
+    expect(servicePeopleVm(clients, null)).toEqual([
+      { id: MARTIN, label: 'Мартин', avatarSrc: 'm.jpg', selected: true },
+      { id: 'guest-petar', label: 'Петър', avatarSrc: null, selected: false },
+    ]);
+    expect(
+      servicePeopleVm(clients, 'guest-petar').map((chip) => chip.selected),
+    ).toEqual([false, true]);
+    expect(servicePeopleVm([], null)).toEqual([]);
   });
 });
 

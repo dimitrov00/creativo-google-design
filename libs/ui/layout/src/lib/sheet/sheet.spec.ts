@@ -9,6 +9,7 @@ import { UiSheet } from './sheet';
     [uiClosing]="closing()"
     [uiPlacement]="'end'"
     [uiPresentationSizing]="sizing()"
+    [uiFullScreen]="fullScreen()"
     data-testid="sheet"
     >content</ui-sheet
   >`,
@@ -17,6 +18,7 @@ class HostComponent {
   open = signal(false);
   closing = signal(false);
   sizing = signal<'automatic' | 'page'>('automatic');
+  fullScreen = signal(false);
 }
 
 describe('UiSheet', () => {
@@ -66,6 +68,17 @@ describe('UiSheet', () => {
       '[data-testid="sheet"]',
     );
     expect(el.getAttribute('data-presentation-sizing')).toBe('page');
+  });
+
+  it('writes data-full-screen only for a full-screen cover', () => {
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="sheet"]',
+    );
+    expect(el.hasAttribute('data-full-screen')).toBe(false);
+    fixture.componentInstance.fullScreen.set(true);
+    fixture.detectChanges();
+    expect(el.hasAttribute('data-full-screen')).toBe(true);
   });
 
   it('keeps the modal environment active while uiClosing is true', () => {

@@ -1,0 +1,153 @@
+@layer sys-components {
+  /* THE TILE: a column, the face over the name, centred. The whole column
+     is the target and it paints nothing itself: no fill, no corner. What
+     answers the hand is the face (the quick action's grammar). */
+  .ui-person-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    margin: 0;
+    padding: var(--sys-space-tight) 0;
+    border: 0;
+    background: none;
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-subheadline);
+    text-align: center;
+    appearance: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* THE FACE: the avatar's tile rung (64), with the state layer and the
+     mark stacked on it and nowhere else. */
+  .ui-person-tile__face {
+    position: relative;
+    display: grid;
+    flex: none;
+    border-radius: var(--control-radius-capsule);
+    isolation: isolate;
+    transition: transform var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-person-tile__face::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: transparent;
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  /* THE NAME: the primary ink, centred, balanced over at most two lines,
+     so «Стефан Петров» in a narrow column breaks between the names and a
+     longer one ends in an ellipsis rather than a third line. */
+  .ui-person-tile__name {
+    display: -webkit-box;
+    max-inline-size: 100%;
+    overflow: hidden;
+    color: var(--sys-color-foreground);
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  /* THE MARK of a choice, on the face's trailing foot: an empty ring over
+     the photo while unticked (the service card's ring), the accent check
+     once ticked. Cut out of the face by a ring of the ground. */
+  .ui-person-tile__check {
+    position: absolute;
+    z-index: 1;
+    inset-block-end: calc(var(--sys-space-tight) * -0.5);
+    inset-inline-end: calc(var(--sys-space-tight) * -0.5);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    box-sizing: border-box;
+    border: 2px solid var(--sys-color-background);
+    border-radius: var(--control-radius-capsule);
+    /* SOLID, never a film: a translucent fill took the photo's colour under
+       it and read as a smudge. The ground's own colour with a quiet stroke
+       inside it — iOS's empty selection circle — reads the same over any
+       face. */
+    background: var(--sys-color-background);
+    box-shadow: inset 0 0 0 1.5px var(--sys-color-tertiary-label);
+    color: transparent;
+    font-size: 0.875rem;
+    pointer-events: none;
+    transition:
+      background-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  .ui-person-tile__check[data-selected] {
+    box-shadow: none;
+    background: var(--sys-color-accent);
+    color: var(--sys-color-on-accent);
+  }
+
+  /* CHOSEN: the accent ring round the face, just outside it (the photo
+     paints over an inset ring) — a service card's in a grid. */
+  .ui-person-tile[data-selected] .ui-person-tile__face {
+    outline: 2px solid var(--sys-color-accent);
+    outline-offset: 2px;
+  }
+
+  /* STATES. Hover is a pointer's; press is ungated, so a thumb sees it
+     too (mobile press parity). The layer is the foreground's own film at
+     the theme's ladder, over the face. */
+  @media (hover: hover) {
+    .ui-person-tile:not(:disabled):hover .ui-person-tile__face::after {
+      background: color-mix(
+        in srgb,
+        var(--sys-color-foreground) var(--sys-alpha-fill-hover),
+        transparent
+      );
+    }
+  }
+
+  .ui-person-tile:not(:disabled):active .ui-person-tile__face::after {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-foreground) var(--sys-alpha-press),
+      transparent
+    );
+    transition-duration: var(--sys-motion-duration-instant);
+  }
+
+  .ui-person-tile:not(:disabled):active .ui-person-tile__face {
+    transform: scale(var(--sys-press-scale-control));
+  }
+
+  /* The ring of the system, round the FACE: the column's own outline would
+     box a circle and a name together. */
+  .ui-person-tile:focus-visible {
+    outline: none;
+  }
+
+  .ui-person-tile:focus-visible .ui-person-tile__face {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
+  }
+
+  .ui-person-tile:disabled {
+    opacity: var(--sys-opacity-disabled);
+    cursor: not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-person-tile:not(:disabled):active .ui-person-tile__face {
+      transform: none;
+    }
+  }
+}

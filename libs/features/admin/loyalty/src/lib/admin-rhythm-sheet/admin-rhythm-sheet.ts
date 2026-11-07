@@ -18,7 +18,6 @@ import {
   StreakQualifier,
   StreakQualifierRule,
   StreakRule,
-  type TextSegment,
 } from '@core/components';
 import type { Service, ServiceCategory } from '@core/entities';
 import {
@@ -51,7 +50,12 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { UiMarkedText } from '@creativo/ui/patterns';
+import {
+  coverRowsOf,
+  ServiceCoverGridComponent,
+  type ServiceCoverGrid,
+  type ServiceCoverTile,
+} from '@creativo/features/shared/catalog';
 import { AdminRhythmStore } from '../admin-rhythm.store';
 import {
   type AdminRhythmContext,
@@ -112,18 +116,15 @@ const p9Rank = (excuse: StreakExcuse): number => {
   return rank < 0 ? P9_SHOP_EXCUSE_RANK.length : rank;
 };
 
-/** One service as the services sheet lists it. */
-interface ServiceRow {
-  readonly id: ServiceId;
-  readonly name: string;
-  /** The name cut into runs, what the search typed marked. */
-  readonly nameRuns: readonly TextSegment[];
-}
-
+/**
+ * One category of the services sheet: its name over its services as the
+ * shared picker grid's cover cards (`cr-service-cover-grid`, the visit
+ * sheet's «Добави услуга» and the schedule search's — owner, 2026-11-06).
+ */
 interface ServiceGroupVm {
   readonly id: ServiceCategoryId;
   readonly name: string;
-  readonly services: readonly ServiceRow[];
+  readonly grids: readonly ServiceCoverGrid<ServiceCoverTile>[];
 }
 
 let sequence = 0;
@@ -150,7 +151,7 @@ let sequence = 0;
     UiInteractiveDirective,
     UiListGroup,
     UiListRow,
-    UiMarkedText,
+    ServiceCoverGridComponent,
     UiMenuTrigger,
     UiModalSheet,
     UiMonthPicker,
@@ -178,6 +179,8 @@ export class AdminRhythmSheet {
   readonly sheet = input<RhythmSheet | null>(null);
   /** The catalogue's services under their categories; `null` while unread. */
   readonly services = input<readonly RhythmServiceGroup[] | null>(null);
+  /** Each service's cover, by id, as the catalogue resolved it; none yet is a plain card. */
+  readonly covers = input<ReadonlyMap<ServiceId, string>>(new Map());
   /** The sheet has closed (its exit finished): the owner clears `sheet`. */
   readonly closed = output<void>();
 
@@ -292,23 +295,36 @@ export class AdminRhythmSheet {
       const groups = this.services();
       if (groups === null) return null;
       const locale = localeFor(this.lang());
-      const query = this.query();
+      const [query, covers, chosen] = [
+        this.query(),
+        this.covers(),
+        this.chosenServices(),
+      ];
       return groups
-        .map((group) => ({
-          id: group.category.id,
-          name: LocalizedText.pick(group.category.name, locale),
-          services: group.services
-            .map((service) => {
-              const name = LocalizedText.pick(service.name, locale);
-              return {
-                id: service.id,
-                name,
-                nameRuns: TextMatchSystem.segments(name, query),
-              };
-            })
-            .filter((service) => TextMatchSystem.matches(service.name, query)),
-        }))
-        .filter((group) => group.services.length > 0);
+        .map((group) => {
+          const tiles = group.services
+            .map((service): ServiceCoverTile => ({
+              id: service.id,
+              serviceId: service.id,
+              name: LocalizedText.pick(service.name, locale),
+              meta: '',
+              coverSrc: covers.get(service.id) ?? null,
+              checked: chosen.has(service.id),
+              testId: `admin-rhythm-service-${service.id}`,
+            }))
+            .filter((tile) => TextMatchSystem.matches(tile.name, query));
+          // A rule counts a SERVICE, never a variant: one shared grid.
+          return {
+            id: group.category.id,
+            name: LocalizedText.pick(group.category.name, locale),
+            grids: coverRowsOf(
+              tiles,
+              (tile) => tile.serviceId,
+              () => false,
+            ),
+          };
+        })
+        .filter((group) => group.grids.length > 0);
     },
   );
 

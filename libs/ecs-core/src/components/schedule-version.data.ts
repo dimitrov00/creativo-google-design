@@ -1,5 +1,6 @@
 import { type LocationId, LocalDate, Result } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
+import type { RosterBreak } from './roster-break.data';
 import { ShiftSegment } from './shift-segment.data';
 
 /**
@@ -19,6 +20,12 @@ export type ScheduleVersion = {
   readonly effectiveFromLocalDate: LocalDate;
   readonly effectiveToLocalDate: LocalDate | null;
   readonly segments: readonly ShiftSegment[];
+  /**
+   * The standing breaks inside those segments, per weekday — a handful, a
+   * bounded 1-to-N array (`RosterBreak`), versioned WITH the segments so
+   * «this and the following» is one amendment and past weeks keep theirs.
+   */
+  readonly breaks: readonly RosterBreak[];
 };
 
 function byEffectiveFrom(a: ScheduleVersion, b: ScheduleVersion): number {
@@ -51,6 +58,7 @@ export const ScheduleVersion = {
   startingWith(
     segments: readonly ShiftSegment[],
     effectiveFromLocalDate: LocalDate,
+    breaks: readonly RosterBreak[] = [],
   ): readonly ScheduleVersion[] {
     return [
       {
@@ -58,6 +66,7 @@ export const ScheduleVersion = {
         effectiveFromLocalDate,
         effectiveToLocalDate: null,
         segments,
+        breaks,
       },
     ];
   },
@@ -127,8 +136,93 @@ export const ScheduleVersion = {
       effectiveFromLocalDate,
       effectiveToLocalDate: null,
       segments,
+      breaks: last.breaks,
     });
     return Result.ok(amended);
+  },
+
+  /**
+   * Every day from `fromLocalDate` on, revised — «this and the following»:
+   * the versions that end before it are kept as they are, the one in force
+   * on it is closed the day before and continued, revised, from it (revised
+   * in place when it begins that very day), and every later version is
+   * revised too, so a future amendment keeps the change. Days before
+   * `fromLocalDate` never change. `history` is sorted (see {@link history});
+   * a day no version covers gains nothing.
+   */
+  reviseFrom(
+    history: readonly ScheduleVersion[],
+    fromLocalDate: LocalDate,
+    revise: (version: ScheduleVersion) => ScheduleVersion,
+  ): readonly ScheduleVersion[] {
+    const revised: ScheduleVersion[] = [];
+    let seq = 0;
+    for (let i = 0; i < history.length; i++) {
+      seq = Math.max(seq, (history[i] as ScheduleVersion).seq + 1);
+    }
+    for (let i = 0; i < history.length; i++) {
+      const version = history[i] as ScheduleVersion;
+      if (
+        version.effectiveToLocalDate !== null &&
+        version.effectiveToLocalDate < fromLocalDate
+      ) {
+        revised.push(version);
+      } else if (version.effectiveFromLocalDate >= fromLocalDate) {
+        revised.push(revise(version));
+      } else {
+        revised.push(
+          ScheduleVersion.closedAt(
+            version,
+            LocalDate.addDays(fromLocalDate, -1),
+          ),
+        );
+        revised.push(
+          revise({ ...version, seq, effectiveFromLocalDate: fromLocalDate }),
+        );
+        seq += 1;
+      }
+    }
+    return revised;
+  },
+
+  /**
+   * The week from `fromLocalDate` on is `segments` and `breaks` — the hours
+   * editor's save: the versions that end before it are kept, the one in
+   * force on it is closed the day before (replaced when it begins that
+   * very day), and any version that begins later is dropped — the new week
+   * stands open-ended. Days before `fromLocalDate` never change. `history`
+   * is sorted (see {@link history}).
+   */
+  replaceFrom(
+    history: readonly ScheduleVersion[],
+    fromLocalDate: LocalDate,
+    segments: readonly ShiftSegment[],
+    breaks: readonly RosterBreak[],
+  ): readonly ScheduleVersion[] {
+    const kept: ScheduleVersion[] = [];
+    let seq = 0;
+    for (let i = 0; i < history.length; i++) {
+      const version = history[i] as ScheduleVersion;
+      seq = Math.max(seq, version.seq + 1);
+      if (version.effectiveFromLocalDate >= fromLocalDate) continue;
+      kept.push(
+        version.effectiveToLocalDate !== null &&
+          version.effectiveToLocalDate < fromLocalDate
+          ? version
+          : ScheduleVersion.closedAt(
+              version,
+              LocalDate.addDays(fromLocalDate, -1),
+            ),
+      );
+    }
+    kept.push({
+      seq,
+      effectiveFromLocalDate: fromLocalDate,
+      effectiveToLocalDate: null,
+      segments,
+      breaks,
+    });
+    return kept;
   },
 
   /** Every shop any version rosters the barber at, distinct, sorted. */

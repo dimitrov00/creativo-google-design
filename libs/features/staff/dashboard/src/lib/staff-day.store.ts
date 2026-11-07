@@ -1,6 +1,7 @@
 import {
   DestroyRef,
   Injectable,
+  Injector,
   computed,
   effect,
   inject,
@@ -18,7 +19,10 @@ import {
   of,
   switchMap,
 } from 'rxjs';
-import { settledViewTransition } from './shared/view-transition';
+import {
+  runViewTransition,
+  settledViewTransition,
+} from './shared/view-transition';
 import {
   type AppointmentId,
   BarberId,
@@ -28,6 +32,8 @@ import {
   type CustomerId,
   LocalDate,
   type LocationId,
+  MinuteCount,
+  type MinuteOfDay,
   OperationId,
   Result,
   Tag,
@@ -58,7 +64,11 @@ import {
   VisitEditWriteOutcome,
   VoucherCode,
 } from '@core/components';
-import { type BarberDayRead, Callables } from '@core/ports';
+import {
+  type BarberDayRead,
+  Callables,
+  type ObserveSchedule,
+} from '@core/ports';
 import type {
   Appointment,
   AppointmentPhoto,
@@ -71,7 +81,6 @@ import type {
   ShopLocation,
 } from '@core/entities';
 import {
-  AvailabilitySystem,
   ClientIssueSystem,
   CouponGrantSystem,
   GridLayoutSystem,
@@ -94,6 +103,8 @@ import {
   adoptVisitPhoto,
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
+  type AmendRosterBreaksCommand,
+  type SetRosterWeekCommand,
   clearScheduleBlock,
   moveScheduleBlock,
   type ScheduleBlocksCommand,
@@ -102,6 +113,7 @@ import {
   type SaveVisitEditCommand,
   saveVisitEdit,
   type VisitPhotoSubject,
+  writeDayBreaks,
   writeScheduleBlocks,
 } from '@core/pipelines';
 import { downscaleImage } from '@creativo/infrastructure/storage';
@@ -168,8 +180,9 @@ function expiresOnIn(grant: CouponGrant, timeZone: TimeZone): LocalDate | null {
  *
  * - `DAY` — one column per chair. The counter's comparison view.
  * - `THREE_DAY` / `WEEK` — one column per DAY. Five chairs across seven days
- *   is thirty-five columns and unreadable, so these narrow to one chair by
- *   default and merge with attribution when the shop asks for all of them.
+ *   is thirty-five columns and unreadable, so they open on every chair
+ *   merged with attribution, and narrow to one when a chair is picked (the
+ *   chair lives in links only; see `_view`).
  *
  * Values: external contract — the `?view=` query value, the device's
  * stored `staff.schedule.view`, the page's `data-view` hook and the
@@ -241,8 +254,23 @@ interface DayGeometryCell {
   readonly dayKey: LocalDate;
   readonly lanes: readonly (Omit<BarberDayLane, 'gaps'> & {
     readonly holes: readonly MinuteRange[];
+    /** What occupied the chair, unpadded — what a hole's bookable start reads. */
+    readonly occupied: readonly MinuteRange[];
+    readonly turnaround: MinuteCount;
   })[];
 }
+
+/**
+ * A hole as the staff day carries it: the chair's real empty time, whole
+ * whatever the clock (`LaneGap`), and where what opens from it starts —
+ * a block at the hole's start or the next tick of now
+ * (`GridLayoutSystem.openFrom`), a booking also after the turnaround
+ * (`GridLayoutSystem.bookableFrom`).
+ */
+export type StaffLaneGap = LaneGap & {
+  readonly openFromMinutes: MinuteOfDay;
+  readonly bookableFromMinutes: MinuteOfDay;
+};
 
 /** The same grant ids, in the same order — a sheet re-probing one visit reads nothing again. */
 function sameIds(
@@ -309,13 +337,36 @@ function occupiedOn(
 export interface LaneGeometry {
   /** The BOOKABLE windows — roster ∩ shop hours − blocks, at the shops the day offers. */
   readonly rostered: readonly MinuteRange[];
-  /** The carve-outs — a break, an admin hour — clipped to worked time. */
+  /** The carve-outs — an admin hour, a one-off — clipped to worked time. */
   readonly blocks: readonly MinuteRange[];
-  /** The busy projection's spans, padded by the barber's turnaround. */
+  /** The day's breaks as drawn — the roster's lunch, or the day's own — clipped to worked time. */
+  readonly breaks: readonly MinuteRange[];
+  /**
+   * The day's breaks as the day KEEPS them, unclipped: its own
+   * (`dayBreakRanges`) when it says them, else the roster's for the weekday
+   * — what a «Само този ден» edit starts from.
+   */
+  readonly dayBreaks: readonly MinuteRange[];
+  /** The day says its own breaks: an edit of one is that day's alone. */
+  readonly breaksOwn: boolean;
+  /**
+   * The busy projection's spans, UNPADDED (owner, 2026-11-05: free time
+   * starts when the chair empties). The turnaround rides beside them.
+   */
   readonly busy: readonly MinuteRange[];
+  /** The reset an unrelated client waits out after a visit. */
+  readonly turnaround: MinuteCount;
 }
 
-const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
+const NO_GEOMETRY: LaneGeometry = {
+  rostered: [],
+  blocks: [],
+  breaks: [],
+  dayBreaks: [],
+  breaksOwn: false,
+  busy: [],
+  turnaround: MinuteCount.ZERO,
+};
 
 /**
  * ONE CHAIR'S DAY, derived (F1-10, blueprint §4.2) — the availability the
@@ -330,9 +381,12 @@ const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
  *   the grid unclamped;
  * - the blocks are `RosterSystem.offeredCarveOuts`, the same inputs' second
  *   question — the windows say what is left, these say what was blocked;
- * - the busy spans are the projection's, padded by the schedule's
- *   turnaround (`AvailabilitySystem.paddedBusy`). Busy is location-agnostic
- *   on purpose: a barber booked at the other shop is not free here either.
+ * - the busy spans are the projection's as stored, UNPADDED: a hole is
+ *   the time the chair is really empty (owner, 2026-11-05: "the free time
+ *   start is incorrect" — 11:45 after a cut ending 11:35). The schedule's
+ *   turnaround rides beside them, for the first minute a new client can
+ *   take (`GridLayoutSystem.bookableFrom`). Busy is location-agnostic on
+ *   purpose: a barber booked at the other shop is not free here either.
  *
  * A barber with no schedule, or no window that day, has no geometry at all
  * — not rostered, and nothing of theirs to draw. Exported for its spec
@@ -356,10 +410,15 @@ export function laneGeometryOf(
   };
   const rostered = RosterSystem.offeredWindows(input);
   if (rostered.length === 0) return NO_GEOMETRY;
+  const own = exception?.dayBreakRanges ?? null;
   return {
     rostered,
     blocks: RosterSystem.offeredCarveOuts(input),
-    busy: AvailabilitySystem.paddedBusy(barberId, busyDay, schedule, []),
+    breaks: RosterSystem.offeredBreaks(input),
+    dayBreaks: own ?? RosterSystem.rosterBreaksOn(schedule.versions, localDate),
+    breaksOwn: own !== null,
+    busy: busyDay === null ? [] : busyDay.blocks,
+    turnaround: schedule.turnaroundMinutes,
   };
 }
 
@@ -393,12 +452,23 @@ export interface BarberDayLane {
    */
   readonly blocks: readonly MinuteRange[];
   /**
-   * EVERY hole inside those windows, already padded by turnaround — the
-   * elapsed ones as well as the sellable ones, split at the shop's clock
-   * and distinguished by `LaneGap.sellable` (`GridLayoutSystem.sellableAt`,
-   * in the lane day's minutes).
+   * The chair's BREAKS that day — its lunch — drawn apart from the blocks
+   * because they are the roster's: an edit of one asks how far it reaches
+   * («Само този ден · Този и следващите»). Wall-clock minutes.
    */
-  readonly gaps: readonly LaneGap[];
+  readonly breaks: readonly MinuteRange[];
+  /** The day's breaks as kept, unclipped ({@link LaneGeometry.dayBreaks}). */
+  readonly dayBreaks: readonly MinuteRange[];
+  /** The day says its own breaks ({@link LaneGeometry.breaksOwn}). */
+  readonly breaksOwn: boolean;
+  /**
+   * EVERY hole inside those windows — the chair's real empty time, whole
+   * whatever the clock, the elapsed ones as well as the fillable ones
+   * (`LaneGap.sellable`, `GridLayoutSystem.sellableAt`, in the lane day's
+   * minutes), each with where a block from it starts (`openFromMinutes`)
+   * and where a new client can (`bookableFromMinutes`).
+   */
+  readonly gaps: readonly StaffLaneGap[];
   /**
    * The chair's day could not be read at all (OR-2) — a refused listen, or
    * a day whose every stored visit the read-time guard refused. Such a lane
@@ -461,6 +531,7 @@ export class StaffDayStore {
   /** That read failed (or found no default location) — see {@link retryZone}. */
   private readonly defaultZoneFailed = this.shopZones.defaultZoneFailed();
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
   private readonly route = inject(ActivatedRoute);
 
   /**
@@ -1028,8 +1099,8 @@ export class StaffDayStore {
    * One per (barber, day). A week of five chairs is thirty-five tiny
    * single-field-indexed queries — more than the original day sheet's five,
    * and still cheaper than inventing a composite index and a zoned-ISO range
-   * query whose ordering breaks across DST. It is also why the multi-day
-   * views default to one chair.
+   * query whose ordering breaks across DST. It is also why a multi-day view
+   * narrowed to one chair is cheaper.
    */
   /**
    * A day the screen is NOT showing but something on it needs live.
@@ -1644,17 +1715,18 @@ export class StaffDayStore {
         // The lane carries the roster's own minutes of its shop day — the
         // windows, the blocks and the holes as `MinuteRange`s (Law 7.3:
         // zero inbound mapping); the drawing reads them as they are.
+        const occupied = occupiedOn(dayKey, appointments, barber.id, geo.busy);
         return {
           barberId: barber.id,
           appointments,
           rostered: geo.rostered,
           blocks: geo.blocks,
-          holes: failed
-            ? []
-            : GridLayoutSystem.holes(
-                geo.rostered,
-                occupiedOn(dayKey, appointments, barber.id, geo.busy),
-              ),
+          breaks: geo.breaks,
+          dayBreaks: geo.dayBreaks,
+          breaksOwn: geo.breaksOwn,
+          holes: failed ? [] : GridLayoutSystem.holes(geo.rostered, occupied),
+          occupied,
+          turnaround: geo.turnaround,
           failed,
           rosterRead,
           unreadable: result?.ok ? result.value.unreadableCount : 0,
@@ -1677,9 +1749,21 @@ export class StaffDayStore {
     if (now === null) return [];
     return this.dayGeometry().map((cell) => ({
       dayKey: cell.dayKey,
-      lanes: cell.lanes.map(({ holes, ...lane }) => ({
+      lanes: cell.lanes.map(({ holes, occupied, turnaround, ...lane }) => ({
         ...lane,
-        gaps: GridLayoutSystem.sellableAt(holes, now, cell.dayKey),
+        gaps: GridLayoutSystem.sellableAt(holes, now, cell.dayKey).map(
+          (gap) => ({
+            ...gap,
+            openFromMinutes: GridLayoutSystem.openFrom(gap, now, cell.dayKey),
+            bookableFromMinutes: GridLayoutSystem.bookableFrom(
+              gap,
+              occupied,
+              turnaround,
+              now,
+              cell.dayKey,
+            ),
+          }),
+        ),
       })),
     }));
   });
@@ -1812,13 +1896,20 @@ export class StaffDayStore {
     { initialValue: BookingPolicy.DEFAULT },
   );
 
+  /**
+   * The search opens and closes as ONE animated state change (2026-11-05):
+   * the bar's search capsule and the page's field share a view-transition
+   * name, so the capsule grows into the full-screen search and back
+   * (staff-search-tokens.md). A plain switch where the platform has none or
+   * motion is reduced.
+   */
   async openSearch(): Promise<void> {
-    this._searching.set(true);
+    runViewTransition(() => this._searching.set(true), this.injector);
     await this.ensureWindow();
   }
 
   closeSearch(): void {
-    this._searching.set(false);
+    runViewTransition(() => this._searching.set(false), this.injector);
   }
 
   /** The window as last read — the add-client page's «Скорошни» read it too. */
@@ -1836,10 +1927,17 @@ export class StaffDayStore {
 
   /**
    * This device wrote a visit (booked, moved, cancelled…): the window it
-   * holds is out of date, so the next opening of the search reads it again.
+   * holds is out of date, so the next opening of the search reads it again
+   * — and, with the search OPEN (a visit opened from its results is changed
+   * in the sheet over it), it reads it now, so the results say what was just
+   * written. A read already out began before the write, so the window is
+   * read once more after it.
    */
   invalidateSearchWindow(): void {
     this.windowInvalidated = true;
+    if (untracked(this._searching)) {
+      void this.reloadSearchPool().then(() => this.ensureWindow());
+    }
   }
 
   /**
@@ -2110,6 +2208,105 @@ export class StaffDayStore {
         localDate: day,
         range,
       });
+      if (!result.ok) {
+        this._absenceError.set(result.error);
+        return false;
+      }
+      return true;
+    } finally {
+      this._absencePending.set(false);
+    }
+  }
+
+  /**
+   * A chair's breaks said for ONE day alone (owner, 2026-11-06: «Само този
+   * ден» — "no lunch breaks for some specific days, removed day by day"):
+   * `ranges` instead of the roster's (`[]`: none that day), `null` hands the
+   * day back to the roster. One exception document (`writeDayBreaks`); the
+   * day's blocks stay. The day is read in its shop's zone (Law 7.2).
+   */
+  async setDayBreaks(
+    barberId: BarberId,
+    locationId: LocationId,
+    localDate: LocalDate,
+    ranges: readonly MinuteRange[] | null,
+  ): Promise<boolean> {
+    if (this._absencePending()) return false;
+    const timeZone = untracked(this.zoneAt)(locationId);
+    if (timeZone === null) {
+      this._absenceError.set(CatalogError.locationZoneUnknown(locationId));
+      return false;
+    }
+    this._absencePending.set(true);
+    this._absenceError.set(null);
+    try {
+      const result = await writeDayBreaks(this.exceptions)({
+        barberId,
+        locationId,
+        timeZone,
+        localDate,
+        ranges,
+      });
+      if (!result.ok) {
+        this._absenceError.set(result.error);
+        return false;
+      }
+      return true;
+    } finally {
+      this._absencePending.set(false);
+    }
+  }
+
+  /**
+   * A chair's standing breaks changed «from this day on» — `amendRosterBreaks`,
+   * ONE roster write on the server (the roster has no client writer). The
+   * roster's listener redraws every day it reaches.
+   */
+  async amendBreaks(change: AmendRosterBreaksCommand): Promise<boolean> {
+    return this.rosterWrite((operationId) =>
+      this.gateway.callableClient(Callables.AmendRosterBreaks)({
+        ...change,
+        operationId,
+      }),
+    );
+  }
+
+  /** A chair's roster, live — the hours sheet's source, whichever chair it opens on. */
+  rosterOf(barberId: BarberId): ReturnType<ObserveSchedule> {
+    return this.scheduling.observeSchedule(barberId);
+  }
+
+  /**
+   * The hours sheet's save: a chair's whole week, shifts and breaks, from a
+   * day on — `setRosterWeek`, ONE roster write on the server.
+   */
+  async setRosterWeek(week: SetRosterWeekCommand): Promise<boolean> {
+    return this.rosterWrite((operationId) =>
+      this.gateway.callableClient(Callables.SetRosterWeek)({
+        ...week,
+        operationId,
+      }),
+    );
+  }
+
+  /** A roster callable, named and in flight once — its refusal kept for the sheet. */
+  private async rosterWrite(
+    dial: (
+      operationId: ClientOperationId,
+    ) => Promise<Result<unknown, PipelineError>>,
+  ): Promise<boolean> {
+    if (this._absencePending()) return false;
+    const operationId = ClientOperationId.parse(this.ids.nextId());
+    if (!operationId.ok) {
+      this._absenceError.set(
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      );
+      return false;
+    }
+    this._absencePending.set(true);
+    this._absenceError.set(null);
+    try {
+      const result = await dial(operationId.value);
       if (!result.ok) {
         this._absenceError.set(result.error);
         return false;

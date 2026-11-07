@@ -601,12 +601,12 @@ service cloud.firestore {
       // Its id is the day's busy key (`BusyKey.of`: `<barberId>__<localDate>`,
       // which the booking transaction reads by), so a write must BE the day
       // its id names — the body's barber and date-shaped day — and hold only
-      // the six keys (`ScheduleException`, pinned by
+      // the seven keys (`ScheduleException`, pinned by
       // rules-key-parity.rules-text.spec.ts): zero reads, since a multi-day
       // block writes many days in one transaction — security hardening
       // S-DEP-5. A delete needs neither.
       allow create, update: if mayEditRoster()
-        && request.resource.data.keys().hasOnly(['barberId', 'exceptionEffect', 'exceptionRanges', 'localDate', 'locationId', 'utcEpochMs'])
+        && request.resource.data.keys().hasOnly(['barberId', 'dayBreakRanges', 'exceptionEffect', 'exceptionRanges', 'localDate', 'locationId', 'utcEpochMs'])
         && request.resource.data.barberId is string
         && request.resource.data.localDate is string
         && request.resource.data.localDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
@@ -640,9 +640,11 @@ service cloud.firestore {
 
     match /barberBusy/{dayDocId} {
       allow read: if true;
-      // Written ONLY by the `commitBooking` transaction (Admin SDK, which
-      // bypasses rules). A client that could widen its own busy projection
-      // could hide a barber's free time from everyone else.
+      // Written only by Cloud Functions (Admin SDK, which bypasses rules): the
+      // booking callables merge into it inside their transactions, and
+      // `rebuildBusyOnAppointmentChange` recomputes it. A client that could
+      // widen its own busy projection could hide a barber's free time from
+      // everyone else.
       allow write: if false;
     }
 

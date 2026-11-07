@@ -6,6 +6,8 @@ export * from './lib/content/media-url-cache';
 export * from './lib/content/catalog.presenter';
 export * from './lib/content/shop-name.format';
 export * from './lib/service-card/service-card.component';
+export * from './lib/service-card/service-cover-grid';
+export * from './lib/service-card/service-cover-grid.component';
 export * from './lib/service-sheet/service-detail-sheet.component';
 export * from './lib/service-sheet/service-row.component';
 export * from './lib/service-sheet/capsule-list.component';

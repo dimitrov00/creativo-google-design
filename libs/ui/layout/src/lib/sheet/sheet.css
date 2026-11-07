@@ -140,4 +140,28 @@
   .ui-sheet[data-presentation-sizing='page'] .ui-sheet__surface {
     max-inline-size: var(--sys-container-sheet-wide);
   }
+
+  /* FULL SCREEN (≙ `.fullScreenCover`, 2026-11-05): the surface is the
+     screen, at every width and placement — declared last so it wins the
+     placement and sizing rules at their own specificity. No scrim, no
+     shadow, no rounding, no entrance of its own: an owner that animates
+     the presentation (a view transition) does it. The content owns its
+     edges and the safe areas. */
+  .ui-sheet[data-full-screen] {
+    background: none;
+    transition: none;
+  }
+
+  .ui-sheet[data-full-screen] .ui-sheet__surface {
+    margin: 0;
+    inline-size: 100%;
+    max-inline-size: none;
+    block-size: 100%;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    transform: none;
+    opacity: 1;
+    transition: none;
+  }
 }

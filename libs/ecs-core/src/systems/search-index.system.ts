@@ -5,6 +5,7 @@ import type {
   ServiceId,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
+import { ServiceVariantPick } from '@core/components';
 import { TextMatchSystem } from './text-match.system';
 
 /**
@@ -40,6 +41,10 @@ export type SearchIndex = {
   readonly phoneDigits: readonly string[];
   readonly barberIds: readonly (readonly BarberId[])[];
   readonly serviceIds: readonly (readonly ServiceId[])[];
+  /** The variants its seats were booked at, with their services (a seat with none adds nothing), distinct. */
+  readonly variants: readonly (readonly ServiceVariantPick[])[];
+  /** The same picks as keys (`ServiceVariantPick.keyOf`), to match by. */
+  readonly variantKeys: readonly (readonly string[])[];
   readonly bookingStatus: readonly BookingStatus[];
   readonly localDate: readonly LocalDate[];
   readonly hasNote: readonly boolean[];
@@ -72,6 +77,8 @@ export const SearchIndexSystem = {
     const phoneDigits: string[] = [];
     const barberIds: (readonly BarberId[])[] = [];
     const serviceIds: (readonly ServiceId[])[] = [];
+    const variants: (readonly ServiceVariantPick[])[] = [];
+    const variantKeys: (readonly string[])[] = [];
     const bookingStatus: BookingStatus[] = [];
     const localDate: LocalDate[] = [];
     const hasNote: boolean[] = [];
@@ -79,16 +86,28 @@ export const SearchIndexSystem = {
       const visit = visits[i] as Appointment;
       clientText.push(joined(labels.clientNames(visit)));
       const services: ServiceId[] = [];
+      const picks: ServiceVariantPick[] = [];
+      const keys: string[] = [];
       const serviceNames: (string | null)[] = [];
       for (let s = 0; s < visit.seats.length; s++) {
-        const serviceId = (visit.seats[s] as Appointment['seats'][number])
-          .serviceId;
+        const seat = visit.seats[s] as Appointment['seats'][number];
+        const serviceId = seat.serviceId;
+        if (seat.variantId !== null) {
+          const pick = ServiceVariantPick.of(serviceId, seat.variantId);
+          const key = ServiceVariantPick.keyOf(pick);
+          if (!keys.includes(key)) {
+            picks.push(pick);
+            keys.push(key);
+          }
+        }
         if (services.includes(serviceId)) continue;
         services.push(serviceId);
         serviceNames.push(labels.serviceName(serviceId));
       }
       serviceText.push(joined(serviceNames));
       serviceIds.push(services);
+      variants.push(picks);
+      variantKeys.push(keys);
       const barberNames: (string | null)[] = [];
       for (let b = 0; b < visit.barberIds.length; b++) {
         barberNames.push(labels.barberName(visit.barberIds[b] as BarberId));
@@ -116,6 +135,8 @@ export const SearchIndexSystem = {
       phoneDigits,
       barberIds,
       serviceIds,
+      variants,
+      variantKeys,
       bookingStatus,
       localDate,
       hasNote,

@@ -1,66 +1,244 @@
 <ng-container>
-  <!-- THE SHEETS' ONE SEARCH GRAMMAR: the head, its scope as the line under
-       the title, the DS field pinned under the bar with the chosen filters
-       as chips inside it, and the head folding while the search is engaged
-       (the bar is told, because a folded title never scrolls under it). The
-       read in flight is the field's own quiet ring. -->
+  <!-- THE SEARCH AT THE THUMB (≙ iOS 26 Mail and Photos, 2026-11-05): a
+       FULL-SCREEN page the bar's search capsule grows into (a view
+       transition, the store's), the large title at the top, the DS capsule
+       field on the FLOOR with the ✕ that ends the search beside it, lifted
+       over the keyboard. The chosen filters float over the field as selected
+       chips saying their values, the free keys after them (Photos); the
+       starters, what the typed text names, or an open key's values sit
+       above the results (Mail's «Suggestions»). -->
   <ui-modal-sheet
     sheetId="staff-search-sheet"
     labelledBy="staff-search-title"
     [closeLabel]="t('staff.day.cancelDismiss')"
     [open]="true"
-    [titleCollapsed]="engaged() ? true : undefined"
+    [fullScreen]="true"
+    [closeControl]="false"
     data-testid="staff-search-sheet"
     (dismissed)="close()"
   >
-    <span sheet-title>{{ t('staff.day.searchLabel') }}</span>
-
+    <!-- THE BAR'S COMPACT TITLE, landing as the large title scrolls under
+         the bar (every sheet's collapse, owner 2026-11-05). No ✕ up there —
+         the search ends from the ✕ beside its field. -->
+    <span sheet-title data-testid="staff-search-bar-title"
+      >{{ t('staff.day.searchLabel') }}</span
+    >
     <ui-stack uiSpacing="comfortable" class="staff-search-sheet__body">
-      <ui-sheet-headline
-        [uiFolded]="engaged()"
-        data-testid="staff-search-headline"
-      >
+      <!-- THE LARGE TITLE and what the search reaches, the sheets' one head;
+           it folds into the bar as the page scrolls. -->
+      <ui-sheet-headline>
         <h2
-          id="staff-search-title"
           uiSheetLargeTitle
+          id="staff-search-title"
           uiText
           uiFont="largeTitle"
         >
           {{ t('staff.day.searchLabel') }}
         </h2>
-        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        <p
+          uiText
+          uiFont="subheadline"
+          uiForegroundStyle="secondary"
+          data-testid="staff-search-scope"
+        >
           {{ t('staff.day.searchScope') }}
         </p>
       </ui-sheet-headline>
 
-      <ui-search-field
-        uiPinned
-        [uiValue]="typed()"
-        [uiIcon]="vm().glyph"
-        [uiPlaceholder]="t('staff.day.searchPlaceholder')"
-        [uiBusy]="store.searchLoading()"
-        uiBusyTestId="staff-search-loading"
-        uiTestId="staff-search-input"
-        [uiClearLabel]="t('staff.day.searchClear')"
-        [uiTokens]="vm().chips"
-        (uiInput)="typeText($event)"
-        (uiTokenRemove)="removeChip($event)"
-        (uiFocusChange)="focused.set($event)"
-        (uiSubmit)="submit()"
-        (uiNavigate)="focusFirst($event)"
-      />
+      @if (vm().commitRow; as commit) {
+      <!-- THE TYPED TEXT, offered as a filter (Mail's «Subject contains …»):
+           a number reads «Телефонът започва с „+359 88 77“». A press — or
+           Return, or the ✓ — takes it as a chip and frees the field. -->
+      <ul uiListGroup data-testid="staff-search-commit-group">
+        <li>
+          <button
+            type="button"
+            uiListRow
+            [uiInteractive]="true"
+            data-search-focusable
+            data-testid="staff-search-commit-row"
+            (mousedown)="$event.preventDefault()"
+            (click)="commitText()"
+          >
+            <span uiLeading><ui-icon [uiName]="commit.glyph" /></span>
+            {{ commit.label }}
+          </button>
+        </li>
+      </ul>
+      }
 
-      @if (vm().phoneRow; as phone) {
-      <!-- The text reads as a number: said, never rewritten under the caret. -->
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        data-testid="staff-search-phone-row"
+      <!-- THE SUGGESTIONS above the results, under their keys: the starters
+           of an untouched search or what the typed text names, or the open
+           key's values (✓ on the held ones, «Махни филтъра» last) and its
+           month. The typed run is marked as on the cards. Each key's rows
+           are one segmented list (the block editor's Repeat page grammar):
+           a held value wears the app's one selection — the wash and the
+           rounder corner — plus the ✓. A press keeps the keyboard. -->
+      @if (vm().suggestions.serviceRows.length > 0) {
+      <!-- A SERVICE's values as cover cards (the booking catalogue's card,
+           its corner ring the checkbox), three across, the name under each
+           cover, the service leading and the variant quieter: services
+           without variants flow together in one grid; a service with
+           variants cuts it and stands in a grid of its own (a fitness
+           library's rows); the plain ones after it start the next grid. -->
+      <section
+        class="staff-search-sheet__section"
+        [attr.data-suggest-mode]="vm().suggestions.suggestMode"
       >
-        {{ phone }}
-      </p>
-      } @switch (vm().searchSheetState) { @case (SearchSheetState.Results) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-search-sheet__heading"
+        >
+          {{ t('staff.search.key.service') }}
+        </p>
+        <!-- The shared picker grid (`cr-service-cover-grid`), the visit
+             sheet's and the rhythm rule's too. -->
+        <cr-service-cover-grid
+          data-testid="staff-search-service-grid"
+          uiGridTestId="staff-search-service-row"
+          [uiGrids]="vm().suggestions.serviceRows"
+          (uiPicked)="pickRow($event.row)"
+        />
+      </section>
+      } @for (section of vm().suggestions.sections; track section.id) { @if
+      (section.rows.length > 0) {
+      <section
+        class="staff-search-sheet__section"
+        [attr.data-suggest-mode]="vm().suggestions.suggestMode"
+      >
+        @if (section.prominent && section.heading) {
+        <!-- The page's own suggestions, headed like «Скорошни»; a group that
+             leaves some of its key's values out opens the rest (Mail's and
+             Photos' «See All»). -->
+        <ui-section-header uiHeaderProminence="increased">
+          <h3 uiTitle>{{ section.heading }}</h3>
+          @if (section.seeAll; as seeAll) {
+          <button
+            uiSectionAction
+            type="button"
+            uiButton
+            uiButtonStyle="plain"
+            uiControlSize="small"
+            data-testid="staff-search-see-all"
+            [attr.data-field]="seeAll.searchFilterField"
+            [attr.aria-label]="seeAll.accessibleLabel"
+            (mousedown)="$event.preventDefault()"
+            (click)="activateFilter(seeAll.searchFilterField)"
+          >
+            {{ seeAll.label }}
+            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+          </button>
+          }
+        </ui-section-header>
+        } @else if (section.heading; as heading) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-search-sheet__heading"
+        >
+          {{ heading }}
+        </p>
+        } @if (section.faces) {
+        <!-- People as faces over their names (Photos' «People»): a grid of
+             three, each press the row's own. -->
+        <ui-grid
+          [uiColumns]="3"
+          uiSpacing="regular"
+          role="group"
+          data-testid="staff-search-faces"
+          [attr.aria-label]="section.heading"
+        >
+          @for (row of section.rows; track row.id) {
+          <button
+            uiPersonTile
+            [uiSrc]="row.face?.src ?? null"
+            [uiName]="row.face?.name ?? row.label"
+            [uiSelected]="row.checked"
+            data-search-focusable
+            data-testid="staff-search-suggestion"
+            [attr.data-suggestion]="row.id"
+            (mousedown)="$event.preventDefault()"
+            (click)="pickRow(row)"
+          >
+            <ui-marked-text [uiRuns]="row.parts" />
+          </button>
+          }
+        </ui-grid>
+        } @else {
+        <ul uiListGroup [attr.aria-label]="section.heading">
+          @for (row of section.rows; track row.id) {
+          <li>
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              [uiSelected]="row.checked === true"
+              [uiRole]="row.destructive ? 'destructive' : null"
+              data-search-focusable
+              data-testid="staff-search-suggestion"
+              [attr.data-suggestion]="row.id"
+              [attr.aria-pressed]="row.checked"
+              (mousedown)="$event.preventDefault()"
+              (click)="pickRow(row)"
+            >
+              @if (row.face; as face) {
+              <ui-avatar
+                uiLeading
+                uiControlSize="small"
+                [uiSrc]="face.src"
+                [uiName]="face.name"
+              />
+              } @else if (row.glyph; as glyph) {
+              <span uiLeading>
+                <ui-icon [uiName]="glyph" aria-hidden="true" />
+              </span>
+              }
+              <ui-marked-text [uiRuns]="row.parts" />
+              @if (row.checked === true) {
+              <span uiTrailing>
+                <ui-icon
+                  uiName="checklist.done"
+                  uiForegroundStyle="accent"
+                  aria-hidden="true"
+                />
+              </span>
+              } @else if (row.detail; as detail) {
+              <span uiTrailing>{{ detail }}</span>
+              }
+            </button>
+          </li>
+          }
+        </ul>
+        }
+      </section>
+      } } @if (vm().suggestions.calendar; as calendar) {
+      <section class="staff-search-sheet__section">
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-search-sheet__heading"
+          data-testid="staff-search-calendar-caption"
+        >
+          {{ calendar.caption }}
+        </p>
+        <ui-month-picker
+          [uiSelected]="calendar.selected ?? calendar.today"
+          [uiToday]="calendar.today"
+          [uiLocale]="locale()"
+          data-testid="staff-search-calendar"
+          (uiPicked)="pickDay($event)"
+        />
+      </section>
+      }
+
+      <!-- The results — set aside while a key's values are open, which are
+           then the page. -->
+      @if (openField() === null) { @switch (vm().searchSheetState) { @case
+      (SearchSheetState.Results) {
       <lib-visit-list
         [sections]="vm().groups"
         [perspective]="VisitPerspective.Staff"
@@ -90,7 +268,11 @@
         {{ clear }}
       </button>
       } } @case (SearchSheetState.Idle) { @if (vm().recents.length > 0) {
-      <section data-testid="staff-search-recents">
+      <!-- Mail's «Recent Searches»: rows, each run again by a press. -->
+      <section
+        class="staff-search-sheet__section"
+        data-testid="staff-search-recents"
+      >
         <ui-section-header uiHeaderProminence="increased">
           <h3 uiTitle>{{ t('staff.search.recents') }}</h3>
           <button
@@ -105,55 +287,28 @@
             {{ t('staff.search.clearRecents') }}
           </button>
         </ui-section-header>
-        <div class="staff-search-sheet__chips">
+        <ul uiListGroup [attr.aria-label]="t('staff.search.recents')">
           @for (recent of vm().recents; track recent.id) {
-          <button
-            type="button"
-            uiChip
-            [uiToggle]="false"
-            data-search-focusable
-            data-testid="staff-search-recent"
-            (click)="runRecent(recent)"
-          >
-            {{ recent.label }}
-          </button>
-          }
-        </div>
-      </section>
-      } } }
-
-      <!-- What can still narrow the search; each offer keeps a result. -->
-      @if (vm().suggestions.length > 0) {
-      <section data-testid="staff-search-suggestions">
-        <ui-section-header uiHeaderProminence="increased">
-          <h3 uiTitle>{{ t('staff.search.suggestions') }}</h3>
-        </ui-section-header>
-        @for (group of vm().suggestions; track group.suggestionGroupKind) {
-        <div class="staff-search-sheet__group">
-          @if (group.heading; as heading) {
-          <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-            {{ heading }}
-          </p>
-          }
-          <div class="staff-search-sheet__chips">
-            @for (suggestion of group.suggestions; track suggestion.id) {
+          <li>
             <button
               type="button"
-              uiChip
-              [uiToggle]="false"
+              uiListRow
+              [uiInteractive]="true"
               data-search-focusable
-              data-testid="staff-search-suggestion"
-              [attr.data-suggestion]="suggestion.id"
-              (click)="addSuggestion(suggestion)"
+              data-testid="staff-search-recent"
+              (mousedown)="$event.preventDefault()"
+              (click)="runRecent(recent)"
             >
-              {{ suggestion.label }}
+              <span uiLeading>
+                <ui-icon uiName="search.recent" aria-hidden="true" />
+              </span>
+              {{ recent.label }}
             </button>
-            }
-          </div>
-        </div>
-        }
+          </li>
+          }
+        </ul>
       </section>
-      } @for (note of vm().footnotes; track note) {
+      } } } } @for (note of vm().footnotes; track note) {
       <p
         uiText
         uiFont="footnote"
@@ -164,5 +319,174 @@
       </p>
       }
     </ui-stack>
+    <!-- THE FIELD, on the floor: the page's own bottom bar (its fade, its
+         floor, the keyboard) holds it as its fill, at the bar's rung. Its
+         frame and the schedule bar's search capsule share a
+         view-transition name, so one grows into the other. -->
+    <ui-page-action-bar uiAvoidsKeyboard class="staff-search-sheet__bar">
+      <ui-search-field
+        uiFill
+        uiControlSize="large"
+        [uiValue]="typed()"
+        [uiIcon]="vm().glyph"
+        [uiPlaceholder]="vm().placeholder"
+        [uiLabel]="t('staff.day.searchPlaceholder')"
+        [uiBusy]="store.searchLoading()"
+        uiBusyTestId="staff-search-loading"
+        uiTestId="staff-search-input"
+        [uiClearLabel]="t('staff.day.searchClear')"
+        [uiDismissLabel]="
+          vm().suggestions.apply ? '' : t('staff.day.cancelDismiss')
+        "
+        [uiEscapeClaimed]="escapeClaimed()"
+        [uiDropdownOpen]="cardOpen()"
+        uiDropdownPlacement="above"
+        [uiDropdownLabel]="t('staff.search.filterBy')"
+        uiTransitionName="staff-search-field"
+        (uiInput)="typeText($event)"
+        (uiFocusChange)="focusChange($event)"
+        (uiEscape)="escape()"
+        (uiDismiss)="close()"
+        (uiSubmit)="submit()"
+        (uiNavigate)="focusFirst($event)"
+      >
+        @if (vm().texts.length > 0 || vm().filters.length > 0) {
+        <!-- OVER THE FIELD, floating (Photos): the chosen filters, selected
+             and saying their values; a press opens a filter's values. They
+             WRAP onto another line rather than sliding out of sight: every
+             filter that narrows the search stays in view (owner,
+             2026-11-05). -->
+        <ui-flow
+          uiSearchAccessory
+          uiSpacing="compact"
+          uiAlignment="leading"
+          role="group"
+          [attr.aria-label]="t('staff.search.filters')"
+          data-testid="staff-search-filters"
+        >
+          <!-- The taken texts first, in the order taken; a press puts one
+               back in the field to be changed. -->
+          @for (text of vm().texts; track text.id; let at = $index) {
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="true"
+            [uiToggle]="false"
+            data-tint="accent"
+            data-testid="staff-search-text"
+            [attr.aria-label]="text.accessibleLabel"
+            (mousedown)="$event.preventDefault()"
+            (click)="editText(at)"
+          >
+            <ui-icon [uiName]="text.glyph" aria-hidden="true" />
+            <span class="staff-search-sheet__filter-label"
+              >{{ text.label }}</span
+            >
+          </button>
+          } @for (chip of vm().filters; track chip.id) {
+          <button
+            type="button"
+            uiChip
+            [uiSelected]="true"
+            [uiToggle]="false"
+            data-tint="accent"
+            class="staff-search-sheet__filter"
+            data-testid="staff-search-filter"
+            [attr.data-filter]="chip.id"
+            [attr.aria-expanded]="chip.active"
+            [attr.aria-label]="chip.accessibleLabel"
+            (mousedown)="$event.preventDefault()"
+            (click)="activateFilter(chip.id)"
+          >
+            @if (chip.faces.length > 1) {
+            <!-- Several barbers: one overlapping group (the DS's), the
+                 names in the words beside it. -->
+            <ui-avatar-group
+              uiControlSize="small"
+              [uiOverflow]="chip.facesOverflow"
+              aria-hidden="true"
+            >
+              @for (face of chip.faces; track $index) {
+              <ui-avatar
+                uiControlSize="small"
+                [uiSrc]="face.src"
+                [uiName]="face.name"
+              />
+              }
+            </ui-avatar-group>
+            } @else if (chip.faces[0]; as face) {
+            <ui-avatar
+              uiControlSize="small"
+              [uiSrc]="face.src"
+              [uiName]="face.name"
+            />
+            } @else {
+            <ui-icon [uiName]="chip.glyph" aria-hidden="true" />
+            }
+            <span class="staff-search-sheet__filter-label"
+              >{{ chip.label }}</span
+            >
+          </button>
+          }
+        </ui-flow>
+        }
+        <!-- THE CARD over the field while it has the focus (Photos' floating
+             suggestions): the free keys, one under another, the typed run
+             marked — the segmented list of the ＋ menu, on the same popover
+             recipe (the group IS the dropdown's content). -->
+        <ui-list-group uiSearchDropdown data-testid="staff-search-keys">
+          @for (row of vm().suggestions.keys; track row.id) {
+          <button
+            type="button"
+            uiListRow
+            [uiInteractive]="true"
+            data-testid="staff-search-suggestion"
+            [attr.data-suggestion]="row.id"
+            (click)="pickRow(row)"
+          >
+            @if (row.glyph; as glyph) {
+            <span uiLeading><ui-icon [uiName]="glyph" /></span>
+            }
+            <ui-marked-text [uiRuns]="row.parts" />
+          </button>
+          }
+        </ui-list-group>
+      </ui-search-field>
+      @if (vm().commitRow) {
+      <!-- ✓ beside the ✕: take the typed text as a filter (Return's twin). -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [uiIconOnly]="true"
+        uiPrimary
+        [attr.aria-label]="t('staff.search.commit')"
+        data-testid="staff-search-commit"
+        (mousedown)="$event.preventDefault()"
+        (click)="commitText()"
+      >
+        <ui-icon uiName="action.apply" />
+      </button>
+      } @else if (vm().suggestions.apply; as applyVm) {
+      <!-- A many-valued key's set, applied once: the bar's primary (the
+           visit sheet's dock grammar, «Приложи …»), in the ✕'s place while
+           the set is being picked — a picking mode has one way on; the
+           chip pressed again or Escape lets the set go. A press keeps the
+           keyboard. -->
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        uiPrimary
+        data-testid="staff-search-apply"
+        (mousedown)="$event.preventDefault()"
+        (click)="apply()"
+      >
+        {{ applyVm.label }}
+      </button>
+      }
+    </ui-page-action-bar>
   </ui-modal-sheet>
 </ng-container>

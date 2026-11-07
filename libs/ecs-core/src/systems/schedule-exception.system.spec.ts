@@ -392,7 +392,7 @@ const STORED_META: ScheduleExceptionMeta = {
 const storedDay = (
   effect: ExceptionEffectRule,
   meta: ScheduleExceptionMeta = STORED_META,
-): ScheduleException => ({ ...meta, ...effect });
+): ScheduleException => ({ ...meta, ...effect, dayBreakRanges: null });
 const blockedEffect = (...ranges: MinuteRange[]): ExceptionEffectRule =>
   unwrapOk(ExceptionEffectRule.blocked(ranges));
 const hoursEffect = (...ranges: MinuteRange[]): ExceptionEffectRule =>
@@ -405,6 +405,7 @@ describe('ScheduleExceptionSystem.block — what a barber-day becomes', () => {
     );
     expect(next).toEqual({
       ...META,
+      dayBreakRanges: null,
       exceptionEffect: ExceptionEffect.Blocked,
       exceptionRanges: [range('12:00', '13:00')],
     });
@@ -419,6 +420,7 @@ describe('ScheduleExceptionSystem.block — what a barber-day becomes', () => {
       ),
     ).toEqual({
       ...META,
+      dayBreakRanges: null,
       exceptionEffect: ExceptionEffect.Blocked,
       exceptionRanges: [range('12:00', '13:00'), range('15:00', '16:00')],
     });
@@ -436,6 +438,7 @@ describe('ScheduleExceptionSystem.block — what a barber-day becomes', () => {
       ),
     ).toEqual({
       ...META,
+      dayBreakRanges: null,
       exceptionEffect: ExceptionEffect.Blocked,
       exceptionRanges: [range('09:00', '15:00')],
     });
@@ -451,6 +454,7 @@ describe('ScheduleExceptionSystem.block — what a barber-day becomes', () => {
       const next = unwrapOk(ScheduleExceptionSystem.block(existing, [], META));
       expect(next).toEqual({
         ...META,
+        dayBreakRanges: null,
         exceptionEffect: ExceptionEffect.Closed,
       });
       expect(next).not.toHaveProperty('exceptionRanges');
@@ -540,6 +544,7 @@ describe('ScheduleExceptionSystem.unblock — lifting a block', () => {
       ),
     ).toEqual({
       ...STORED_META,
+      dayBreakRanges: null,
       exceptionEffect: ExceptionEffect.Blocked,
       exceptionRanges: [range('09:00', '10:00')],
     });
@@ -552,6 +557,7 @@ describe('ScheduleExceptionSystem.unblock — lifting a block', () => {
       ),
     ).toEqual({
       ...STORED_META,
+      dayBreakRanges: null,
       exceptionEffect: ExceptionEffect.Hours,
       exceptionRanges: [range('12:00', '13:00')],
     });
@@ -735,5 +741,68 @@ describe('ScheduleExceptionSystem.blockSavePlan — what a block sheet’s save 
     expect(ScheduleExceptionSystem.blockSavePlan(input)).toEqual(
       ScheduleExceptionSystem.blockSavePlan(input),
     );
+  });
+});
+
+describe("ScheduleExceptionSystem.withDayBreaks — a day's breaks said for that day alone", () => {
+  const LUNCH = range('13:00', '14:00');
+
+  it('files a skipped lunch on a day with nothing else as ROSTERED', () => {
+    expect(ScheduleExceptionSystem.withDayBreaks(null, [], META)).toEqual({
+      ...META,
+      exceptionEffect: ExceptionEffect.Rostered,
+      dayBreakRanges: [],
+    });
+  });
+
+  it("keeps the day's blocks beside its own breaks", () => {
+    const blocked = storedDay(blockedEffect(range('10:00', '11:00')));
+    expect(
+      ScheduleExceptionSystem.withDayBreaks(blocked, [LUNCH], META),
+    ).toEqual({ ...blocked, dayBreakRanges: [LUNCH] });
+  });
+
+  it('hands the day back to the roster, deleting a day that held only breaks', () => {
+    const own: ScheduleException = {
+      ...META,
+      ...ExceptionEffectRule.rostered(),
+      dayBreakRanges: [],
+    };
+    expect(ScheduleExceptionSystem.withDayBreaks(own, null, META)).toBeNull();
+    expect(ScheduleExceptionSystem.withDayBreaks(null, null, META)).toBeNull();
+  });
+
+  it('leaves a day off whole as it is', () => {
+    const off = storedDay(ExceptionEffectRule.closed());
+    expect(ScheduleExceptionSystem.withDayBreaks(off, [], META)).toBe(off);
+  });
+
+  it("keeps the day's breaks when its last block is lifted", () => {
+    const both: ScheduleException = {
+      ...storedDay(blockedEffect(range('10:00', '11:00'))),
+      dayBreakRanges: [],
+    };
+    expect(
+      unwrapOk(ScheduleExceptionSystem.unblock(both, range('10:00', '11:00'))),
+    ).toEqual({
+      ...STORED_META,
+      exceptionEffect: ExceptionEffect.Rostered,
+      dayBreakRanges: [],
+    });
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.block(both, [range('15:00', '16:00')], META),
+      )?.dayBreakRanges,
+    ).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const blocked = deepFreeze(
+      storedDay(blockedEffect(range('10:00', '11:00'))),
+    );
+    const ranges = deepFreeze([LUNCH]);
+    expect(
+      ScheduleExceptionSystem.withDayBreaks(blocked, ranges, META),
+    ).toEqual(ScheduleExceptionSystem.withDayBreaks(blocked, ranges, META));
   });
 });

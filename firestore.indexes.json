@@ -413,6 +413,11 @@
       "indexes": []
     },
     {
+      "collectionGroup": "scheduleExceptions",
+      "fieldPath": "dayBreakRanges",
+      "indexes": []
+    },
+    {
       "collectionGroup": "appointments",
       "fieldPath": "appliedOperations",
       "indexes": []

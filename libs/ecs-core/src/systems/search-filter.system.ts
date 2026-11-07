@@ -3,6 +3,7 @@ import {
   SearchFilter,
   SearchFilterField,
   SearchWhenPreset,
+  ServiceVariantPick,
   type ShopNow,
 } from '@core/components';
 import {
@@ -25,22 +26,28 @@ import type { SearchIndex } from './search-index.system';
 export type SearchSuggestions = {
   readonly barberIds: readonly BarberId[];
   readonly serviceIds: readonly ServiceId[];
+  /** The variants the matching visits were booked at, with their services — a service's own values, offered on their own. */
+  readonly variants: readonly ServiceVariantPick[];
   readonly bookingStatuses: readonly BookingStatus[];
   readonly whenPresets: readonly SearchWhenPreset[];
   /** Some matching visit has a note. */
   readonly hasNote: boolean;
 };
 
+/** The order presets are offered in: the single days nearest first, then the weeks. */
 const PRESET_ORDER: readonly SearchWhenPreset[] = [
   SearchWhenPreset.Today,
   SearchWhenPreset.Tomorrow,
+  SearchWhenPreset.Yesterday,
   SearchWhenPreset.ThisWeek,
+  SearchWhenPreset.PastWeek,
 ];
 
 /** The filters of a query, one slot per kind — `null` for a kind not chosen. */
 type Chosen = {
   readonly barberIds: readonly BarberId[] | null;
   readonly serviceIds: readonly ServiceId[] | null;
+  readonly variantKeys: readonly string[];
   readonly bookingStatuses: readonly BookingStatus[] | null;
   readonly fromDate: LocalDate | null;
   readonly toDate: LocalDate | null;
@@ -50,6 +57,7 @@ type Chosen = {
 function chosenOf(filters: readonly SearchFilter[]): Chosen {
   let barberIds: readonly BarberId[] | null = null;
   let serviceIds: readonly ServiceId[] | null = null;
+  let variantKeys: readonly string[] = [];
   let bookingStatuses: readonly BookingStatus[] | null = null;
   let fromDate: LocalDate | null = null;
   let toDate: LocalDate | null = null;
@@ -62,6 +70,7 @@ function chosenOf(filters: readonly SearchFilter[]): Chosen {
         break;
       case SearchFilterField.Service:
         serviceIds = filter.filterServiceIds;
+        variantKeys = filter.filterVariants.map(ServiceVariantPick.keyOf);
         break;
       case SearchFilterField.Status:
         bookingStatuses = filter.filterBookingStatuses;
@@ -75,7 +84,15 @@ function chosenOf(filters: readonly SearchFilter[]): Chosen {
         break;
     }
   }
-  return { barberIds, serviceIds, bookingStatuses, fromDate, toDate, hasNote };
+  return {
+    barberIds,
+    serviceIds,
+    variantKeys,
+    bookingStatuses,
+    fromDate,
+    toDate,
+    hasNote,
+  };
 }
 
 /** One bit per kind, set when a visit FAILS that kind's filter. */
@@ -122,9 +139,12 @@ function failsOf(index: SearchIndex, chosen: Chosen, at: number): number {
   ) {
     fails |= FAILS_BARBER;
   }
+  // A service filter is its services whole OR its variants: a visit passes
+  // on either.
   if (
     chosen.serviceIds !== null &&
-    !anyIn(index.serviceIds[at] as readonly ServiceId[], chosen.serviceIds)
+    !anyIn(index.serviceIds[at] as readonly ServiceId[], chosen.serviceIds) &&
+    !anyIn(index.variantKeys[at] as readonly string[], chosen.variantKeys)
   ) {
     fails |= FAILS_SERVICE;
   }
@@ -198,6 +218,8 @@ export const SearchFilterSystem = {
     });
     const barberIds: BarberId[] = [];
     const serviceIds: ServiceId[] = [];
+    const variants: ServiceVariantPick[] = [];
+    const variantKeys: string[] = [];
     const bookingStatuses: BookingStatus[] = [];
     const reached = new Set<SearchWhenPreset>();
     let hasNote = false;
@@ -213,6 +235,13 @@ export const SearchFilterSystem = {
         const held = index.serviceIds[at] as readonly ServiceId[];
         for (let s = 0; s < held.length; s++)
           pushOnce(serviceIds, held[s] as ServiceId);
+        const picks = index.variants[at] as readonly ServiceVariantPick[];
+        const keys = index.variantKeys[at] as readonly string[];
+        for (let v = 0; v < picks.length; v++) {
+          if (variantKeys.includes(keys[v] as string)) continue;
+          variantKeys.push(keys[v] as string);
+          variants.push(picks[v] as ServiceVariantPick);
+        }
       }
       if ((fails & ~FAILS_STATUS) === 0) {
         pushOnce(bookingStatuses, index.bookingStatus[at] as BookingStatus);
@@ -229,10 +258,139 @@ export const SearchFilterSystem = {
     return {
       barberIds,
       serviceIds,
+      variants,
       bookingStatuses,
       whenPresets: PRESET_ORDER.filter((preset) => reached.has(preset)),
       hasNote,
     };
+  },
+
+  /** The most filters an untouched search offers to start from. */
+  STARTER_LIMIT: 5,
+
+  /**
+   * What an untouched search offers to start from (≙ Mail's «Suggestions»
+   * before anything is typed): today and tomorrow while the window reaches
+   * them, then the barbers with visits in it, in the order the window offers
+   * them — at most {@link SearchFilterSystem.STARTER_LIMIT}. Each is a
+   * single-value filter, ready to add.
+   */
+  starters(
+    offered: SearchSuggestions,
+    shopNow: ShopNow,
+  ): readonly SearchFilter[] {
+    const out: SearchFilter[] = [];
+    const days = [SearchWhenPreset.Today, SearchWhenPreset.Tomorrow];
+    for (let i = 0; i < days.length; i++) {
+      const preset = days[i] as SearchWhenPreset;
+      if (offered.whenPresets.includes(preset)) {
+        out.push(SearchFilterSystem.whenOf(preset, shopNow));
+      }
+    }
+    for (
+      let b = 0;
+      b < offered.barberIds.length &&
+      out.length < SearchFilterSystem.STARTER_LIMIT;
+      b++
+    ) {
+      out.push(SearchFilter.barber([offered.barberIds[b] as BarberId]));
+    }
+    return out;
+  },
+
+  /**
+   * The offered services in the CATALOGUE's order (owner, 2026-11-06: the
+   * search and the visit sheet's «Добави услуга» list a service in the
+   * same place) — the order the bookings first named them in only breaks
+   * ties for a service the catalogue no longer lists, which comes last.
+   */
+  inCatalogueOrder(
+    serviceIds: readonly ServiceId[],
+    catalogue: readonly ServiceId[],
+  ): readonly ServiceId[] {
+    const rank = new Map<ServiceId, number>();
+    for (let i = 0; i < catalogue.length; i++) {
+      rank.set(catalogue[i] as ServiceId, i);
+    }
+    const unlisted = catalogue.length;
+    return serviceIds
+      .map((id, at) => ({ id, at, rank: rank.get(id) ?? unlisted }))
+      .sort((a, b) => a.rank - b.rank || a.at - b.at)
+      .map((entry) => entry.id);
+  },
+
+  /**
+   * Whether a key offers a value the shown ones leave out — what decides
+   * whether a short group of its values (the starters, the matches) points
+   * on to the key's whole list. A day or a span can always be picked, so
+   * «Кога» always offers more; the others offer more while a barber, a
+   * service, a variant, a status or the note is offered and not shown.
+   */
+  offersBeyond(
+    field: SearchFilterField,
+    offered: SearchSuggestions,
+    shown: readonly SearchFilter[],
+  ): boolean {
+    switch (field) {
+      case SearchFilterField.When:
+        return true;
+      case SearchFilterField.Barber: {
+        const seen = new Set<BarberId>();
+        for (let i = 0; i < shown.length; i++) {
+          const filter = shown[i] as SearchFilter;
+          if (filter.searchFilterField === SearchFilterField.Barber) {
+            for (const id of filter.filterBarberIds) seen.add(id);
+          }
+        }
+        for (let i = 0; i < offered.barberIds.length; i++) {
+          if (!seen.has(offered.barberIds[i] as BarberId)) return true;
+        }
+        return false;
+      }
+      case SearchFilterField.Service: {
+        const services = new Set<ServiceId>();
+        const picks = new Set<string>();
+        for (let i = 0; i < shown.length; i++) {
+          const filter = shown[i] as SearchFilter;
+          if (filter.searchFilterField === SearchFilterField.Service) {
+            for (const id of filter.filterServiceIds) services.add(id);
+            for (const pick of filter.filterVariants) {
+              services.add(pick.serviceId);
+              picks.add(ServiceVariantPick.keyOf(pick));
+            }
+          }
+        }
+        for (let i = 0; i < offered.serviceIds.length; i++) {
+          if (!services.has(offered.serviceIds[i] as ServiceId)) return true;
+        }
+        for (let i = 0; i < offered.variants.length; i++) {
+          const pick = offered.variants[i] as ServiceVariantPick;
+          if (!picks.has(ServiceVariantPick.keyOf(pick))) return true;
+        }
+        return false;
+      }
+      case SearchFilterField.Status: {
+        const seen = new Set<BookingStatus>();
+        for (let i = 0; i < shown.length; i++) {
+          const filter = shown[i] as SearchFilter;
+          if (filter.searchFilterField === SearchFilterField.Status) {
+            for (const status of filter.filterBookingStatuses) seen.add(status);
+          }
+        }
+        for (let i = 0; i < offered.bookingStatuses.length; i++) {
+          if (!seen.has(offered.bookingStatuses[i] as BookingStatus))
+            return true;
+        }
+        return false;
+      }
+      case SearchFilterField.Note:
+        return (
+          offered.hasNote &&
+          !shown.some(
+            (filter) => filter.searchFilterField === SearchFilterField.Note,
+          )
+        );
+    }
   },
 
   /**
@@ -259,7 +417,8 @@ export const SearchFilterSystem = {
 
   /**
    * The date filter of a preset, from the shop's own today (Law 7):
-   * `TODAY`, `TOMORROW`, and `THIS_WEEK` — today through the next six days.
+   * `TODAY`, `TOMORROW`, `YESTERDAY`, `THIS_WEEK` — today through the next
+   * six days — and `PAST_WEEK`, the six days before today through today.
    */
   whenOf(preset: SearchWhenPreset, shopNow: ShopNow): SearchFilter.When {
     const today = shopNow.localDate;
@@ -270,8 +429,24 @@ export const SearchFilterSystem = {
         const tomorrow = LocalDate.addDays(today, 1);
         return SearchFilter.when(tomorrow, tomorrow);
       }
+      case SearchWhenPreset.Yesterday: {
+        const yesterday = LocalDate.addDays(today, -1);
+        return SearchFilter.when(yesterday, yesterday);
+      }
       case SearchWhenPreset.ThisWeek:
         return SearchFilter.when(today, LocalDate.addDays(today, 6));
+      case SearchWhenPreset.PastWeek:
+        return SearchFilter.when(LocalDate.addDays(today, -6), today);
     }
+  },
+
+  /**
+   * The span two picked days make, whichever was picked first: the earlier
+   * day starts it. The same day twice is that one day.
+   */
+  spanOf(a: LocalDate, b: LocalDate): SearchFilter.When {
+    return LocalDate.compare(a, b) <= 0
+      ? SearchFilter.when(a, b)
+      : SearchFilter.when(b, a);
   },
 } as const;

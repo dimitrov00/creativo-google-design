@@ -23,6 +23,7 @@ import {
 import {
   clearScheduleBlock,
   moveScheduleBlock,
+  writeDayBreaks,
   writeScheduleBlocks,
 } from './schedule-blocks.pipeline';
 
@@ -60,7 +61,11 @@ const metaOf = (day: LocalDate) => ({
 const stored = (
   day: LocalDate,
   effect: ExceptionEffectRule,
-): ScheduleException => ({ ...metaOf(day), ...effect });
+): ScheduleException => ({
+  ...metaOf(day),
+  ...effect,
+  dayBreakRanges: null,
+});
 
 /** The in-memory writer, the keys of every call recorded. */
 function writer(exceptions: ScheduleException[]): {
@@ -328,5 +333,49 @@ describe('moveScheduleBlock — an edited block, in one write (B6)', () => {
     const { ports } = writer(exceptions);
     expect((await move(ports, [write([wall(14)])])).ok).toBe(true);
     expect(exceptions).toEqual([blocked(DAY, wall(14))]);
+  });
+});
+
+describe('writeDayBreaks — «Само този ден» on a roster break', () => {
+  const dayBreaks = (
+    ports: ScheduleExceptionPorts,
+    ranges: readonly MinuteRange[] | null,
+  ) =>
+    writeDayBreaks(ports)({
+      barberId: IVAN,
+      locationId: SHOP,
+      timeZone: FIXTURE_TIME_ZONE,
+      localDate: DAY,
+      ranges,
+    });
+
+  it('skips the lunch that one day in one document, and hands it back', async () => {
+    const exceptions: ScheduleException[] = [];
+    const { ports, keys } = writer(exceptions);
+    expect((await dayBreaks(ports, [])).ok).toBe(true);
+    expect(keys()).toEqual([['ivan__2026-08-05']]);
+    expect(exceptions).toEqual([
+      {
+        ...metaOf(DAY),
+        exceptionEffect: ExceptionEffect.Rostered,
+        dayBreakRanges: [],
+      },
+    ]);
+    expect((await dayBreaks(ports, null)).ok).toBe(true);
+    expect(exceptions).toEqual([]);
+  });
+
+  it("moves the lunch beside the day's blocks, keeping them", async () => {
+    const exceptions: ScheduleException[] = [
+      stored(DAY, unwrapOk(ExceptionEffectRule.blocked([wall(10)]))),
+    ];
+    const { ports } = writer(exceptions);
+    expect((await dayBreaks(ports, [wall(12)])).ok).toBe(true);
+    expect(exceptions).toEqual([
+      {
+        ...stored(DAY, unwrapOk(ExceptionEffectRule.blocked([wall(10)]))),
+        dayBreakRanges: [wall(12)],
+      },
+    ]);
   });
 });

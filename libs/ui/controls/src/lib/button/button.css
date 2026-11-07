@@ -503,6 +503,27 @@
     display: grid;
     place-items: center;
   }
+  /* THE DOT BADGE (`uiDotBadge`, SwiftUI `.badge()` as a mark): one accent
+     disc on the top-trailing corner, ringed in the page's ground so it
+     reads as cut out of the control rather than lying on it — the Canva
+     filter's count, said as a dot. Colour is the shape; the control keeps
+     its own tint (the accent law). It sits on the box's corner inset by the
+     capsule's own curve, so it lands on the rim of a round button. */
+  .ui-button[data-dot-badge] {
+    position: relative;
+  }
+  .ui-button[data-dot-badge]::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 14%;
+    inset-inline-end: 14%;
+    inline-size: var(--sys-size-dot);
+    block-size: var(--sys-size-dot);
+    border-radius: 50%;
+    background: var(--sys-color-accent);
+    box-shadow: 0 0 0 2px var(--sys-color-background);
+    pointer-events: none;
+  }
   .ui-button:focus-visible {
     outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
     outline-offset: var(--sys-focus-ring-offset);

@@ -288,7 +288,7 @@ export const appointmentReadPorts = (
      */
     observeBarberDay: (key) =>
       observeCountedQuery<Appointment>(
-        // unbounded-ok: one barber's one shop day: as many visits as fit in a day
+        // unbounded-ok: one barber's day at every shop, every status: the day's visits, cancelled ones included
         query(appointments, where('busyKeys', 'array-contains', key)),
         path,
         guard,

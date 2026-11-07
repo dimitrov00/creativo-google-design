@@ -67,6 +67,7 @@ const PHOTO_KEYS: KeyTable<AppointmentPhoto> = {
 /** Over the three effect variants: `CLOSED` stores no `exceptionRanges`, the ranged two do. */
 const EXCEPTION_KEYS: KeyTable<ScheduleException> = {
   barberId: true,
+  dayBreakRanges: true,
   exceptionEffect: true,
   exceptionRanges: true,
   localDate: true,

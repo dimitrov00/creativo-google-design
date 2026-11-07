@@ -15,8 +15,12 @@ import type { UiIconName } from '@creativo/ui/icons';
  * the large profile portrait (112px) used by detail sheets. It's avatar-only:
  * no button/chip ever renders at portrait scale.
  */
-/** Avatar's display tier ≙ .controlSize(.extraLarge). */
-export type UiAvatarSize = UiControlSize | 'extraLarge';
+/**
+ * Avatar's display tiers: `tile` (64, the face of a person tile in a grid —
+ * `--control-size-tile`, the rung the action and choice tiles stand on) and
+ * `extraLarge` (112, the portrait ≙ .controlSize(.extraLarge)).
+ */
+export type UiAvatarSize = UiControlSize | 'tile' | 'extraLarge';
 
 /**
  * Custom element — composes `ui-async-image` internally, mirroring SwiftUI

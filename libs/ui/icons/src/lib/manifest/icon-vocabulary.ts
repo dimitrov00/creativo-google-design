@@ -241,6 +241,10 @@ export const UI_ICON_REGISTRY = {
    *  Distinct from `calendar.flexible`'s `manage_search`, which promises a
    *  search ACROSS DAYS rather than a plain lookup. */
   'action.search': 'search',
+  /** Take what is typed as it stands — the search's ✓ beside its ✕, Return's twin. */
+  'action.apply': 'check',
+  /** A search run before, offered to run again — Mail's «Recent Searches» rows. */
+  'search.recent': 'history',
 
   /* ── A booked visit's own verbs and facts ───────────────────────────── */
   /** Put this visit in the device's calendar (an `.ics` hand-off). */
@@ -372,6 +376,9 @@ export const UI_ICON_REGISTRY = {
   'calendar.viewThreeDay': 'view_column',
   /** A Monday-first week. */
   'calendar.viewWeek': 'calendar_view_week',
+  /** Which facts each agenda card carries — several dials, the sliders
+   *  (distinct from `action.filter`'s funnel, which narrows WHAT is drawn). */
+  'calendar.cardFields': 'tune',
 
   /* ── Locations ──────────────────────────────────────────────────── */
   /** Place/address identity glyph on location cards and sheet rows. */

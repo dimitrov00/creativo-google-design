@@ -5,3 +5,29 @@
 .search-field__narrow {
   max-inline-size: 22rem;
 }
+
+/* Room under the field for the dropdown to hang into. */
+.search-field__dropdown-demo {
+  min-block-size: 14rem;
+}
+
+/* On the floor the card opens upward: the field sits at the demo's foot. */
+.search-field__floor-demo {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.search-field__dropdown-rows {
+  display: grid;
+}
+
+.search-field__dropdown-rows > button {
+  padding: var(--sys-space-compact) var(--sys-space-regular);
+  border: 0;
+  border-radius: var(--control-radius-regular);
+  background: none;
+  color: var(--sys-color-foreground);
+  font: var(--sys-font-body);
+  text-align: start;
+}

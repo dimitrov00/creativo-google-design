@@ -46,44 +46,36 @@ export type ClientRowInput = {
 };
 
 /**
- * A PERSON ROW IS THE EVENT'S HEAD (owner, 2026-09-22: "there should be
- * phone and email fields dedicated to themselves, not all the data
- * separated by a dot — this looks cheap"): the name, then every fact on
- * its own glyph-led line in the agenda card's order — the mail, the
- * number, when they were last here — the same recipe the card and the
- * frame's block already draw, so a person reads the same on every staff
- * surface. The typed run stays marked in the name and in the lines.
+ * A PERSON ROW, COMPACT (owner, 2026-11-06: "a full redesign … how customer
+ * rows look — the user experience super good"; Revolut, Granola, Luma,
+ * Outlook): the name, then ONE contact on its own glyph-led line — the one
+ * the typing matched, else the number, else the mail (the 2026-09-22 rule
+ * stands: a fact on a line of its own, never dot-joined) — and the last
+ * visit at the trailing edge, the search sheet's quiet detail. The typed
+ * run stays marked in the name and in the line.
  */
 export function clientRowVm(
   client: VisitEditorClientOption,
   input: ClientRowInput,
 ): ClientRowVm {
   const { parsed, chosen, exact, callingCode, words } = input;
-  const lines: StaffEventLine[] = [];
-  if (client.email) {
-    lines.push({
-      text: client.email,
-      icon: 'contact.email',
-      parts: markedRuns(ClientQuerySystem.emailSegments(client.email, parsed)),
-    });
-  }
-  if (client.phone) {
-    lines.push({
-      text: client.phone,
-      icon: 'contact.phone',
-      parts: markedRuns(
+  const mail = client.email
+    ? markedRuns(ClientQuerySystem.emailSegments(client.email, parsed))
+    : undefined;
+  const phone = client.phone
+    ? markedRuns(
         ClientQuerySystem.phoneSegments(client.phone, parsed, callingCode),
-      ),
-    });
-  }
-  // `meta` is the owner's own line — «посл. 22.09» — unless it only
-  // repeats the mail (the index's hits carry it in both).
-  if (client.meta && client.meta !== client.email) {
-    lines.push({ text: client.meta, icon: 'visit.last' });
+      )
+    : undefined;
+  const lines: StaffEventLine[] = [];
+  if (client.email && (mail !== undefined || !client.phone)) {
+    lines.push({ text: client.email, icon: 'contact.email', parts: mail });
+  } else if (client.phone) {
+    lines.push({ text: client.phone, icon: 'contact.phone', parts: phone });
   }
   // A WALK-IN'S RECORD (OR-26): found again by the number or the mail the
-  // desk typed once, and said to have no profile — the last fact, in ink
-  // like the others, never a badge competing with «Вече е клиент».
+  // desk typed once, and said to have no profile — a fact in ink like the
+  // others, never a badge competing with «Вече е клиент».
   if (client.noAccount) {
     lines.push({
       text: words.noAccount,
@@ -99,6 +91,9 @@ export function clientRowVm(
     titleParts:
       markedRuns(ClientQuerySystem.nameSegments(client.label, parsed)) ?? null,
     lines,
+    // `meta` is the owner's own word — «посл. 22.09» — unless it only
+    // repeats the mail (the index's hits carry it in both).
+    detail: client.meta && client.meta !== client.email ? client.meta : null,
   };
 }
 
@@ -119,7 +114,10 @@ export function searchGlyphOf(shape: ClientQueryShape): UiIconName {
  * number prints the way the profile prints it. The kernel's as-you-type
  * formatter, fed the international form.
  */
-function phoneAsTyped(parsed: ParsedClientQuery, callingCode: string): string {
+export function phoneAsTyped(
+  parsed: ParsedClientQuery,
+  callingCode: string,
+): string {
   const [international] = PhoneSystem.searchDigitsOf(
     parsed.phoneTyped,
     callingCode,

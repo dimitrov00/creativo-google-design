@@ -407,9 +407,10 @@ describe('«Услуги»', () => {
     expect(StreakQualifierRule.sliceOf(store.draft())).toEqual(
       services('fade'),
     );
-    expect(
-      byId(host, 'admin-rhythm-service-fade')?.getAttribute('aria-pressed'),
-    ).toBe('true');
+    // The shared picker grid's cover card, ticked (`cr-service-cover-grid`).
+    const fade = byId(host, 'admin-rhythm-service-fade');
+    expect(fade?.tagName.toLowerCase()).toBe('cr-service-card');
+    expect(fade?.hasAttribute('data-checked')).toBe(true);
     click(host, 'admin-rhythm-service-beard');
     await settle(fixture, 2);
     expect(StreakQualifierRule.sliceOf(store.draft())).toEqual(

@@ -70,6 +70,7 @@ import {
     '[attr.data-selected]': 'uiSelectedCount() > 0 ? "" : null',
     '[attr.data-blocked]': 'uiBlocked() ? "" : null',
     '[attr.data-cap-blocked]': 'uiCapBlocked() ? "" : null',
+    '[attr.data-caption]': 'uiCaption()',
   },
 })
 export class ServiceCardComponent {
@@ -78,6 +79,16 @@ export class ServiceCardComponent {
   /** Pre-formatted "45 мин · 15,00 €" line — locale work stays with the parent. */
   readonly uiMeta = input.required<string>();
   readonly uiCoverUrl = input<string | null>(null);
+  /**
+   * Where the name and meta sit: OVER the cover, on its scrim (the default,
+   * the catalogue's art-led card), or BELOW it, in the page's own ink (≙ a
+   * fitness library's row of cards, for a picker that reads names first —
+   * the schedule search's services, 2026-11-05). Below, the selection ring
+   * outlines the cover only.
+   */
+  readonly uiCaption = input<'overlay' | 'below'>('overlay');
+  /** The cover's aspect ratio (`ui-media-card`'s): square by default. */
+  readonly uiRatio = input('1 / 1');
 
   /** How many lines of this service the active seat holds. 0 ⇒ unselected. */
   readonly uiSelectedCount = input(0);

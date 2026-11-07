@@ -161,8 +161,10 @@
 
        Not a material: `uiMaterial` is chrome (sheets, toolbars, the map
        bar), where a blur samples a whole page behind it. Behind a 44px
-       input there is nothing to sample and the blur only buys a
-       compositing layer. */
+       input IN A FORM there is nothing to sample and the blur only buys a
+       compositing layer — in a bar that content scrolls under there is,
+       and the bar lends its fill controls a backdrop (modifiers.css,
+       «Floating chrome»). */
     --sys-color-fill: color-mix(
       in srgb,
       var(--sys-color-foreground) var(--sys-alpha-fill),

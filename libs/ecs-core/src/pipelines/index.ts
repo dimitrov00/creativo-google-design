@@ -1,3 +1,4 @@
+export * from './amend-roster-breaks.pipeline';
 export * from './audit-document-change.pipeline';
 export * from './book-appointment.pipeline';
 export * from './booking-read-set.pipeline';
@@ -39,6 +40,7 @@ export * from './update-profile.pipeline';
 export * from './upload-avatar.pipeline';
 export * from './verify-otp.pipeline';
 export * from './schedule-blocks.pipeline';
+export * from './set-roster-week.pipeline';
 export * from './load-held-grants.pipeline';
 export * from './append-team-note.pipeline';
 export * from './shop-day.pipeline';

@@ -90,8 +90,10 @@ BookingLifecycle & PaymentRecord;` where `AppointmentMeta` holds the id
   (`if (apt.bookingStatus === BookingStatus.Cancelled) apt.cancellationReason`).
 - Prefer linear `for` scans over flat struct arrays for collision and range
   work; sort once, scan once. No per-element allocations in hot loops.
-- Lazy evaluation: compute availability windows and derived views on demand
-  from intervals; never pre-generate or persist slot grids.
+- Lazy evaluation: compute availability windows, free times and other
+  derived views on demand from the stored pattern and its departures;
+  never pre-generate or persist slot grids. A derived value is stored only
+  as a Law 5 projection.
 - Every system has a spec that proves purity (same input → same output,
   inputs unchanged) and covers the boundary cases of its math.
 
@@ -136,6 +138,14 @@ cancelledAtUtcMs })`). Security rules and composite indexes query top-level
   `UtcEpochMs` instants (`*UtcMs`), `LocalDate` shop days, `MinuteOfDay`
   times of day (`*Minutes`), `DurationMinutes`, `PriceCents` with a
   `currency`, SCREAMING_SNAKE tags. Formatting happens in the UI.
+- **Truth is a pattern plus its departures** (added by the owner
+  2026-11-07, `docs/architecture/decisions/2026-11-07-truth-is-a-pattern.md`).
+  Store a repeating pattern once, plus one document per day that departs
+  from it; never write an open-ended repeat ahead day by day. A series with
+  an end date writes at most 366 days, once. A derived value is stored only
+  when a privacy boundary, a busy screen's read fan-out or a transaction's
+  conflict set requires it, and then as a projection that triggers rebuild
+  and a TTL expires.
 - **No unbounded dynamic map keys** inside a document (`Record<BarberId, …>`,
   `Record<DayKey, …>`). Sub-objects and arrays exist only for true 1-to-N
   relationships (`seats: Array<{ … }>`, `serviceIds: readonly string[]`) or a

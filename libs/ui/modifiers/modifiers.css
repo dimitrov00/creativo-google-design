@@ -453,6 +453,50 @@
     );
   }
 
+  /* ── Floating chrome — the environment a bar gives its controls ──
+     (2026-11-05, ≙ iOS 26: a control in a toolbar is glass.) A control's
+     translucent fill is drawn for a page, where the surface behind it is
+     still; in a bar that content SCROLLS UNDER, the letters passing beneath
+     read straight through it. A bar therefore sets
+     `--ui-control-backdrop`, and every translucent FILL control reads it as
+     its backdrop: the thin tier of the one material recipe (blur and
+     saturation — the fill on top is unchanged, so the contrast every control
+     was tuned for still holds). Outside a bar the variable is unset and the
+     backdrop is `none`.
+
+     COST. A backdrop filter is a compositing layer re-sampled every frame
+     the content under it moves, priced by its AREA. So it is scoped to the
+     chrome content passes under — a bar holds a handful of 36–52px controls
+     — and to the thin tier; never set on in-flow controls (a field in a form
+     has nothing moving behind it, the blur would only buy a layer), and
+     reset on a popover, which is already a material of its own (and a
+     backdrop root: a blur nested inside one samples only the popover).
+     Opaque controls (prominent, filled) and fill-less ones (plain) read
+     nothing: there is nothing to see through. A search field's FRAME reads
+     it, not only its input: an `<input>`'s own backdrop is not drawn in
+     every engine (the bar's ✕ and chips frosted, the field beside them
+     showed the text under it, 2026-11-05). Zero specificity, so a
+     control's own material (`glass`, `uiMaterial`) always wins. */
+  :where(.ui-page-action-bar, .ui-sheet-action-bar) {
+    --ui-control-backdrop: blur(var(--sys-material-thin-blur))
+      saturate(var(--sys-material-saturation));
+  }
+
+  :where([data-popover-surface]) {
+    --ui-control-backdrop: none;
+  }
+
+  :where(
+    .ui-button[data-button-style='bordered'],
+    .ui-chip,
+    .ui-text-field,
+    .ui-segmented-control__track,
+    .ui-search-field .ui-search-field__frame
+  ) {
+    -webkit-backdrop-filter: var(--ui-control-backdrop, none);
+    backdrop-filter: var(--ui-control-backdrop, none);
+  }
+
   [data-material='thin'] {
     --ui-material-blur: var(--sys-material-thin-blur);
   }

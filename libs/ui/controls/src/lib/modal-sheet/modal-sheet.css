@@ -302,13 +302,22 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
  * content stopped, mid-screen, with empty sheet beneath it (owner,
  * 2026-09-15: "why is this not fixed bottom?"). Scoped by `:has()` to the
  * sheets that carry such a bar, so every other sheet's block flow stays
- * exactly as it was; the sticky chrome keeps its row at the top. */
-.modal-sheet__scroll:has(> * > .ui-sheet-action-bar[data-anchor='scroll']) {
+ * exactly as it was; the sticky chrome keeps its row at the top. A
+ * full-screen sheet that is a page (the schedule search, 2026-11-05) docks
+ * the PAGE's bar instead, `ui-page-action-bar`, as the scroller's own last
+ * child — the bar the page it grew from wears. */
+.modal-sheet__scroll:is(
+  :has(> * > .ui-sheet-action-bar[data-anchor='scroll']),
+  :has(> .ui-page-action-bar)
+) {
   display: flex;
   flex-direction: column;
 }
 
-.modal-sheet__scroll:has(> * > .ui-sheet-action-bar[data-anchor='scroll'])
+.modal-sheet__scroll:is(
+    :has(> * > .ui-sheet-action-bar[data-anchor='scroll']),
+    :has(> .ui-page-action-bar)
+  )
   > .modal-sheet__chrome {
   flex: 0 0 auto;
 }
@@ -410,4 +419,26 @@ ui-sheet.modal-sheet:not([data-presented]):not([data-closing]) {
     min-block-size: calc(var(--sys-space-unit) * 4);
     padding-block: 0;
   }
+}
+
+/* FULL SCREEN (`fullScreen`, ≙ `.fullScreenCover`): the scroller IS the
+   screen — the surface pads nothing, so nothing is cancelled; no cap, no
+   rounding, the top safe area under the chrome. The grabber goes with the
+   drag it stood for. */
+ui-sheet.modal-sheet[data-full-screen] .modal-sheet__scroll {
+  margin: 0;
+  block-size: 100%;
+  max-block-size: none;
+  border-radius: 0;
+  padding-block-start: env(safe-area-inset-top);
+}
+
+ui-sheet.modal-sheet[data-full-screen] .ui-sheet-header__grabber {
+  display: none;
+}
+
+/* A page's own bar on a full-screen sheet (a search at the thumb): its fade
+   rises from the sheet's surface, not the page background beneath. */
+.modal-sheet .ui-page-action-bar {
+  --ui-action-bar-scrim: var(--sys-color-surface);
 }

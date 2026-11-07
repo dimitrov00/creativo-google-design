@@ -2344,3 +2344,225 @@ describe("the all-day chip's ink", () => {
     },
   );
 });
+
+/*
+ * ── THE PAGE GRID AS A PLACE TO WORK (owner, 2026-11-06) ────────────────
+ *
+ * "Make the empty grid clickable … like Apple Calendar, Fresha", "tap and
+ * move in empty space should create an event with that time", "configure
+ * the time scale", and "on tap and hold on an event, move it and/or expand
+ * it". jsdom has no layout, so each column is given a box one pixel a
+ * minute tall: a pointer at y = 600 is ten o'clock.
+ */
+describe('StaffTimeGrid — blank time, the scale and lifted blocks', () => {
+  let fixture: ComponentFixture<StaffTimeGrid>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [StaffTimeGrid],
+    }).compileComponents();
+    fixture = TestBed.createComponent(StaffTimeGrid);
+  });
+
+  // A finished gesture leaves one capture listener to eat the trailing
+  // click, cleared on a zero-delay timer; let it run between tests.
+  afterEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const minuteBox = () =>
+    ({
+      top: 0,
+      bottom: 1440,
+      height: 1440,
+      left: 0,
+      right: 120,
+      width: 120,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  function page(
+    events: readonly GridEvent[] = [],
+    movable: readonly string[] = [],
+  ): HTMLElement {
+    fixture.componentRef.setInput('uiSlotPickable', true);
+    fixture.componentRef.setInput('uiMovable', new Set(movable));
+    fixture.componentRef.setInput('columns', [column({ events })]);
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    for (const cell of host.querySelectorAll<HTMLElement>(
+      '.staff-grid__column',
+    )) {
+      cell.getBoundingClientRect = minuteBox;
+    }
+    return host;
+  }
+
+  const mouse = (type: string, clientY: number) =>
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      pointerId: 3,
+      pointerType: 'mouse',
+      clientY,
+    });
+
+  const columnOf = (host: HTMLElement) =>
+    host.querySelector<HTMLElement>('.staff-grid__column') as HTMLElement;
+
+  function picks() {
+    const out: unknown[] = [];
+    fixture.componentInstance.slotPicked.subscribe((pick) => out.push(pick));
+    return out;
+  }
+
+  it('proposes the slot a tap on blank time lands in, floored to the snap', () => {
+    const host = page();
+    const picked = picks();
+    columnOf(host).dispatchEvent(mouse('pointerdown', 607));
+    document.dispatchEvent(mouse('pointerup', 607));
+    expect(picked).toEqual([
+      { columnId: 'ivan', startMinute: 600, endMinute: 630 },
+    ]);
+  });
+
+  it('keeps a tap and a drag inside the neighbours around them', () => {
+    // A cut 11:00–11:35 and another from 12:10 (owner, 2026-11-06: "it
+    // should know about its neighbours").
+    const host = page([
+      event({
+        id: 'a',
+        startMinute: trackMinute(660),
+        endMinute: trackMinute(695),
+      }),
+      event({
+        id: 'b',
+        startMinute: trackMinute(730),
+        endMinute: trackMinute(780),
+      }),
+    ]);
+    const picked = picks();
+    // A tap at 11:40 starts where the first cut ends and stops at the next.
+    columnOf(host).dispatchEvent(mouse('pointerdown', 700));
+    document.dispatchEvent(mouse('pointerup', 700));
+    // A drag down from 11:40 past 12:30 stops at 12:10.
+    columnOf(host).dispatchEvent(mouse('pointerdown', 700));
+    document.dispatchEvent(mouse('pointermove', 760));
+    document.dispatchEvent(mouse('pointerup', 760));
+    expect(picked).toEqual([
+      { columnId: 'ivan', startMinute: 695, endMinute: 725 },
+      { columnId: 'ivan', startMinute: 695, endMinute: 730 },
+    ]);
+  });
+
+  it('leaves a tap on a block to the block', () => {
+    const host = page([event({ id: 'a' })]);
+    const picked = picks();
+    const block = host.querySelector<HTMLElement>('[data-event-id="a"]');
+    block?.dispatchEvent(mouse('pointerdown', 610));
+    document.dispatchEvent(mouse('pointerup', 610));
+    expect(picked).toEqual([]);
+  });
+
+  it('draws the range a press-and-drag covers, and proposes it on release', () => {
+    const host = page();
+    const picked = picks();
+    columnOf(host).dispatchEvent(mouse('pointerdown', 780));
+    document.dispatchEvent(mouse('pointermove', 820));
+    document.dispatchEvent(mouse('pointermove', 841));
+    fixture.detectChanges();
+    expect(
+      host.querySelector('[data-testid="staff-grid-pending"]'),
+    ).not.toBeNull();
+    document.dispatchEvent(mouse('pointerup', 841));
+    // From the slot pressed to the nearest snap of the release: 13:00–14:00.
+    expect(picked).toEqual([
+      { columnId: 'ivan', startMinute: 780, endMinute: 840 },
+    ]);
+  });
+
+  it('draws the slot it is offered as a dashed draft block, by minute', () => {
+    const host = page();
+    fixture.componentRef.setInput('uiPendingSlot', {
+      columnId: 'ivan',
+      startMinute: trackMinute(720),
+      endMinute: trackMinute(750),
+    });
+    fixture.detectChanges();
+    const pending = host.querySelector<HTMLElement>(
+      '[data-testid="staff-grid-pending"]',
+    );
+    expect(pending?.style.getPropertyValue('--staff-event-top')).toBe('0.5');
+  });
+
+  it('zooms the page by the time scale, and calls a block short by its height', () => {
+    fixture.componentRef.setInput('uiScaleMinutes', 30);
+    const host = page([
+      event({
+        id: 'a',
+        startMinute: trackMinute(600),
+        endMinute: trackMinute(645),
+      }),
+    ]);
+    const frame = host.querySelector<HTMLElement>('.staff-grid__frame');
+    expect(frame?.style.getPropertyValue('--staff-grid-zoom')).toBe('0.5');
+    // 45 minutes at half the height is a quarter-hour's box: one line.
+    expect(
+      host.querySelector('[data-event-id="a"]')?.hasAttribute('data-short'),
+    ).toBe(true);
+  });
+
+  it('lifts a movable block on a drag, moves it by the snap, and commits the move', () => {
+    const host = page([event({ id: 'a' })], ['a']);
+    const committed: GridCommit[] = [];
+    fixture.componentInstance.draftCommitted.subscribe((c) =>
+      committed.push(c),
+    );
+    const block = host.querySelector<HTMLElement>('[data-event-id="a"]');
+    block?.dispatchEvent(mouse('pointerdown', 610));
+    document.dispatchEvent(mouse('pointermove', 640));
+    fixture.detectChanges();
+    // Lifted: the editable block, drawn by minute, with the frame's handles.
+    expect(
+      host.querySelector('[data-event-id="a"]')?.hasAttribute('data-editable'),
+    ).toBe(true);
+    expect(
+      host.querySelector('[data-testid="staff-frame-handle-end"]'),
+    ).not.toBeNull();
+    document.dispatchEvent(mouse('pointerup', 640));
+    expect(committed).toEqual([
+      expect.objectContaining({
+        id: 'a',
+        startMinute: 630,
+        endMinute: 675,
+        editCommand: EditCommand.Move,
+      }),
+    ]);
+    // Put down: no handles, no held draft.
+    fixture.componentInstance.releaseLift();
+    fixture.detectChanges();
+    expect(
+      host.querySelector('[data-testid="staff-frame-handle-end"]'),
+    ).toBeNull();
+  });
+
+  it('never lifts a block it was not told may move', () => {
+    const host = page([event({ id: 'a', terminal: true })], []);
+    const committed: GridCommit[] = [];
+    fixture.componentInstance.draftCommitted.subscribe((c) =>
+      committed.push(c),
+    );
+    const block = host.querySelector<HTMLElement>('[data-event-id="a"]');
+    block?.dispatchEvent(mouse('pointerdown', 610));
+    document.dispatchEvent(mouse('pointermove', 660));
+    document.dispatchEvent(mouse('pointerup', 660));
+    fixture.detectChanges();
+    expect(committed).toEqual([]);
+    expect(
+      host.querySelector('[data-event-id="a"]')?.hasAttribute('data-editable'),
+    ).toBe(false);
+  });
+});

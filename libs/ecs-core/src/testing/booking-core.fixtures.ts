@@ -264,6 +264,7 @@ export function barberScheduleFixture(
     segments: workdays.map((day) =>
       ShiftSegment.of(day, IDS.location, at(9), until(18)),
     ),
+    breaks: [],
   };
   return {
     id: IDS.barber,

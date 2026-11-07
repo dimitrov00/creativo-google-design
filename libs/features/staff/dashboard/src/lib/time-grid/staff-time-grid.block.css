@@ -476,6 +476,36 @@
  * inside it, outlined and named. Never draggable — the frame edits the seat
  * it was opened at, and editing a sibling seat is a separate open.
  */
+/* THE PENDING SLOT — a tap on blank time (owner, 2026-11-06). Placed by
+   minute like a proportional block; a dashed accent outline over a light
+   wash of it, the draft placeholder of Google Calendar and monday.com.
+   Colour is the shape (the accent law): the words inside stay ink. */
+.staff-grid__pending {
+  --staff-event-extent: calc(
+    var(--staff-grid-slots, 1) * var(--staff-slot-height)
+  );
+
+  position: absolute;
+  inset-inline: 2px;
+  inset-block-start: calc(
+    var(--staff-event-top, 0) * var(--staff-event-extent)
+  );
+  block-size: max(
+    calc(var(--staff-event-height, 0) * var(--staff-event-extent)),
+    calc(var(--sys-space-unit) * 6)
+  );
+  z-index: 4;
+  display: flex;
+  border: 1.5px dashed var(--sys-color-accent);
+  border-radius: var(--control-radius-subtle);
+  background: color-mix(in srgb, var(--sys-color-accent) 10%, transparent);
+}
+
+/* Blank time that answers a tap says so to a pointer. */
+.staff-grid__column[data-slot-pickable] {
+  cursor: pointer;
+}
+
 .staff-grid__ghost {
   --staff-event-extent: calc(
     var(--staff-grid-slots, 1) * var(--staff-slot-height)

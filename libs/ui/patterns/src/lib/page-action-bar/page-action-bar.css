@@ -28,7 +28,11 @@
     z-index: var(--sys-layer-header);
     inline-size: 100%;
     display: flex;
-    align-items: center;
+    /* The controls share the row's FLOOR: a fill that grows upward (a search
+       field with chips over it) keeps the controls beside it on its own
+       baseline row instead of centred against its height. Controls of one
+       height sit exactly as they did centred. */
+    align-items: flex-end;
     justify-content: flex-start;
     gap: var(--sys-space-compact);
     padding-block: var(--sys-space-compact)
@@ -45,6 +49,11 @@
      reads while real content sits under the bar and dissolves away at
      scroll end on its own. Sticky+z-index make the bar a stacking
      context, so z-index -1 paints under the projected controls. */
+  /* Riding the keyboard: the bar's floor is the keyboard's top edge. */
+  .ui-page-action-bar[data-avoids-keyboard] {
+    inset-block-end: var(--ui-keyboard-inset, 0px);
+  }
+
   /* `pane` anchoring: a screen with no scroll has nothing for `sticky` to
      stick to, so the bar pins to its positioned ancestor's bottom edge
      instead. Everything else — geometry, safe areas, the scrim — is shared,
@@ -95,6 +104,11 @@
   .ui-page-action-bar > [data-button-style='borderedProminent'],
   .ui-page-action-bar > [uiprimary] {
     margin-inline-start: auto;
+    /* The primary keeps its label whole: beside a fill it is the fill that
+       gives way, never the action (a squeezed «Приложи (2)» wrapped onto
+       two lines). */
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .ui-page-action-bar
@@ -104,6 +118,14 @@
       [uiprimary]
     ) {
     flex: 0 0 auto;
+  }
+
+  /* The fill (Mail's bottom search field): the room between the leading
+     controls and the primary. Two attribute matches, so it outranks the
+     intrinsic-box rule above. */
+  .ui-page-action-bar > [uifill][uifill] {
+    flex: 1 1 auto;
+    min-inline-size: 0;
   }
 
   /* ── Stacked variant — the Setup-Assistant completion anatomy: primary

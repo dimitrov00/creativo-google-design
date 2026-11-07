@@ -73,6 +73,7 @@
               autocomplete="email"
               inputmode="email"
               data-testid="booking-contact-email"
+              [placeholder]="t('auth.identify.emailPlaceholder')"
               [readonly]="pending()"
               [value]="email()"
               (input)="email.set($any($event.target).value)"

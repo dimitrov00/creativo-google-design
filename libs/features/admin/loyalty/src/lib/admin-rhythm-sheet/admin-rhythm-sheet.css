@@ -1,5 +1,5 @@
 /* The page's sheets (client-card revision 3 §2.6.1a). The shell, the head,
-   the pinned search, the groups and the dock are the DS's; what is the
+   the groups and the dock (the services' search in it) are the DS's; what is the
    sheet's own: the body's inset under the bar, a category's quiet heading,
    and the value trigger of a choice row (the page's grammar, inside the
    sheet). */
@@ -8,9 +8,12 @@ lib-admin-rhythm-sheet {
   display: contents;
 }
 
-/* The head (the headline and the pinned search) sits on the sheet's inset,
-   a beat under the bar; the search keeps its own stickiness. */
+/* The head (the headline) sits on the sheet's inset, a beat under the bar.
+   It is no gapped stack, so a folded headline has no gap to take back
+   (`--ui-sheet-headline-gap`): what follows keeps its own beat under the
+   bar instead of sliding beneath its fade. */
 .admin-rhythm-sheet__head {
+  --ui-sheet-headline-gap: 0px;
   padding-inline: var(--ui-sheet-inset, var(--sys-space-regular));
   padding-block-start: var(--sys-space-compact);
 }

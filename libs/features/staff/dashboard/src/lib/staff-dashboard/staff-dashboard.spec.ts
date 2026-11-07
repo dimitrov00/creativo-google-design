@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  DeferBlockBehavior,
+  DeferBlockState,
+  TestBed,
+} from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import {
   Translation,
@@ -80,6 +85,7 @@ import {
   SeatLabel,
   SeatOccupant,
   SeatOutcome,
+  RosterBreak,
   ShiftSegment,
   SubjectRelationship,
 } from '@core/components';
@@ -200,15 +206,16 @@ import {
   type DayRowVm,
   DiscardTarget,
   StaffDashboard,
-  reversibleSave,
 } from './staff-dashboard';
+import { reversibleSave } from './staff-day-save';
+import { ScheduleStatusFilter } from '../schedule-status-filter';
 import {
   StaffVisitEditor,
-  snapshotCommitOf,
   type VisitEditorCommit,
   type VisitEditorLeg,
   type VisitEditorVm,
 } from '../visit-editor/staff-visit-editor';
+import { snapshotCommitOf } from '../visit-editor/visit-seed';
 import { StaffView } from '../staff-day.store';
 
 /** The shop the fixture's chairs work at — the one the catalogue lists. */
@@ -295,6 +302,9 @@ const SHOP_LOCATION = locationFixture({
  * stub answered for any day asked. Niko has none: not rostered at all,
  * which is what separates "off today" from "free day".
  */
+/** Ivan's roster breaks — none unless a case lays one in (the break cases). */
+let ivanBreaks: readonly RosterBreak[] = [];
+
 function rosterOf(barberId: string): BarberSchedule | null {
   if (barberId !== 'ivan') return null;
   const days: readonly Weekday[] = [
@@ -314,6 +324,7 @@ function rosterOf(barberId: string): BarberSchedule | null {
         seq: 1,
         effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
         effectiveToLocalDate: null,
+        breaks: ivanBreaks,
         segments: days.map((day) =>
           ShiftSegment.of(day, SHOP, wallAt(9), until(18)),
         ),
@@ -744,6 +755,9 @@ describe('StaffDashboard', () => {
     gatewayCalls = [];
     await TestBed.configureTestingModule({
       imports: [StaffDashboard],
+      // The sheets are deferred (prefetched on idle in the app); here every
+      // one is loaded before a case runs, as idle has passed by any tap.
+      deferBlockBehavior: DeferBlockBehavior.Manual,
       providers: [
         ...provideTestI18n(),
         // The store publishes the shown day into `?day=` so it can be pasted
@@ -940,6 +954,9 @@ describe('StaffDashboard', () => {
 
     fixture = TestBed.createComponent(StaffDashboard);
     fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -950,12 +967,10 @@ describe('StaffDashboard', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  /** Free time is a switch, and it ships OFF — see `agenda-fields`. */
+  /** Free time is the filter's switch, and it ships OFF — see `schedule-status-filter`. */
   function showFreeTime(): void {
-    const component = fixture.componentInstance as unknown as {
-      fields: { toggle: (id: string) => void; isOn: (id: string) => boolean };
-    };
-    if (!component.fields.isOn('freeTime')) component.fields.toggle('freeTime');
+    const filter = TestBed.inject(ScheduleStatusFilter);
+    if (!filter.freeTimeShown()) filter.toggleFreeTime();
     fixture.detectChanges();
   }
 
@@ -1645,6 +1660,84 @@ describe('StaffDashboard', () => {
       'staff-visit-row',
       'staff-gap-row',
     ]);
+  });
+
+  it('gives a hole the event’s clock — start over end, its length beside its word', () => {
+    // Owner, 2026-11-05: free time reads "the same range as the events", so
+    // a chair free from 11:45 after a visit ending 11:35 shows the jump.
+    showFreeTime();
+    const gap = host().querySelector('[data-testid="staff-gap-row"]');
+    const start = gap?.querySelector('.staff-event-head__start')?.textContent;
+    const end = gap?.querySelector('.staff-event-head__end')?.textContent;
+    expect(start?.trim()).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(end?.trim()).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(
+      gap?.querySelector('.staff-event-head')?.hasAttribute('data-quiet'),
+    ).toBe(true);
+  });
+
+  it('offers the ＋’s two acts from a sellable hole, at its start on its chair', () => {
+    // Owner, 2026-11-05: a press on free time opens the add menu, and the
+    // chosen sheet starts where the hole does.
+    showFreeTime();
+    const page = fixture.componentInstance as unknown as {
+      lanes: () => readonly {
+        readonly entries: readonly {
+          readonly agendaRow: string;
+          readonly sellable?: boolean;
+          readonly barberId?: string;
+          readonly startMinutes?: number;
+          readonly endMinutes?: number;
+        }[];
+      }[];
+      createVisit: {
+        (): { barberId: string; startMinute: number } | null;
+        set: (value: null) => void;
+      };
+      blockEdit: () => {
+        barberIds: readonly string[];
+        startMinute: number;
+        endMinute: number;
+      } | null;
+    };
+    const hole = page
+      .lanes()
+      .flatMap((lane) => lane.entries)
+      .find((entry) => entry.agendaRow === 'GAP' && entry.sellable);
+    const press = () => {
+      (
+        host().querySelector('[data-testid="staff-gap-press"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+    };
+
+    press();
+    (
+      host().querySelector('[data-testid="staff-gap-booking"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    expect(page.createVisit()).toEqual(
+      expect.objectContaining({
+        barberId: hole?.barberId,
+        startMinute: hole?.startMinutes,
+      }),
+    );
+    page.createVisit.set(null);
+    fixture.detectChanges();
+
+    press();
+    (
+      host().querySelector('[data-testid="staff-gap-block"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    // A block takes the whole hole.
+    expect(page.blockEdit()).toEqual(
+      expect.objectContaining({
+        barberIds: [hole?.barberId],
+        startMinute: hole?.startMinutes,
+        endMinute: hole?.endMinutes,
+      }),
+    );
   });
 
   it('carries NO act on the card — the card opens the act instead', () => {
@@ -2599,6 +2692,31 @@ describe('StaffDashboard', () => {
       component.store.setView('agenda');
       fixture.detectChanges();
 
+      // THE STATUS FILTER (owner, 2026-11-05) hides a chair by its OWN
+      // state: the cancelled seat goes, the live chair of the same party
+      // stays, and the bar's funnel wears a DOT while anything is hidden —
+      // its own tint stays neutral (owner, 2026-11-06: "a dot indicator").
+      const statusFilter = TestBed.inject(ScheduleStatusFilter);
+      const funnel = () =>
+        host().querySelector('[data-testid="staff-status-filter-open"]');
+      expect(funnel()?.hasAttribute('data-dot-badge')).toBe(false);
+      expect(funnel()?.getAttribute('data-tint')).toBe('neutral');
+      statusFilter.toggle(BookingStatus.Cancelled);
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-row-id="appointment-party#niko"]'),
+      ).toBeNull();
+      expect(
+        host().querySelector('[data-row-id="appointment-party#ivan"]'),
+      ).not.toBeNull();
+      expect(funnel()?.hasAttribute('data-dot-badge')).toBe(true);
+      expect(funnel()?.getAttribute('data-tint')).toBe('neutral');
+      expect(funnel()?.getAttribute('aria-label')).toBe(
+        'staff.day.statusFilterLabelOn',
+      );
+      statusFilter.showAll();
+      fixture.detectChanges();
+
       // Opened, the cancelled chair offers no cancel and no no-show — only
       // the next visit. (The agenda was drawn again: read the row anew.)
       (
@@ -3471,6 +3589,40 @@ describe('StaffDashboard', () => {
     });
   });
 
+  it('brings the strip home on «Днес», even from a day in today’s own week', async () => {
+    // Owner, 2026-11-05: "even if I click go to today it doesn't slide to
+    // today". The strip follows the shown day only when its WEEK changes, so
+    // a strip swiped elsewhere stayed there when «Днес» came back from a day
+    // of the same week. The suite's today is Wed 2026-08-05; the strip
+    // opens four weeks back, so today's week is the fifth page.
+    const strip = host().querySelector<HTMLElement>(
+      '[data-testid="staff-week-strip"]',
+    );
+    if (!strip) throw new Error('the week strip did not render');
+    Object.defineProperty(strip, 'clientWidth', { value: 300 });
+    const scrolled: number[] = [];
+    strip.scrollTo = ((options: ScrollToOptions) => {
+      scrolled.push(options.left ?? 0);
+    }) as typeof strip.scrollTo;
+
+    const component = fixture.componentInstance as unknown as {
+      store: { goToDay: (day: string) => void };
+    };
+    component.store.goToDay('2026-08-07');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    scrolled.length = 0;
+
+    (
+      host().querySelector('[data-testid="staff-day-today"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(scrolled).toContain(4 * 300);
+  });
+
   it('slides the week strip a WHOLE week, in CSS, with nothing to press', () => {
     // The gesture is the browser's: `ui-scroll-row` supplies
     // `scroll-snap-type: x mandatory` and `scroll-snap-align: start` on each
@@ -3742,6 +3894,7 @@ describe('StaffDashboard', () => {
         FIXTURE_TIME_ZONE,
       ),
       locationId: SHOP,
+      dayBreakRanges: null,
       ...lunch,
     });
     openBlockDoor();
@@ -4150,6 +4303,26 @@ describe('StaffDashboard', () => {
     expect(cards[0]?.querySelector('mark')?.textContent).toBe('Георги');
   });
 
+  it('opens a found visit’s sheet OVER the search, and closing it comes back to the results', async () => {
+    const input = await openSearchSheet();
+    await typeInSearch(input, 'георги');
+    (
+      host().querySelector(
+        'lib-staff-search-sheet lib-visit-row button',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('ui-sheet#staff-visit-sheet[data-presented]'),
+    ).not.toBeNull();
+    expect(host().querySelector('lib-staff-search-sheet')).not.toBeNull();
+    expect(
+      host().querySelectorAll('lib-staff-search-sheet lib-visit-row').length,
+    ).toBe(1);
+  });
+
   it("finds a phone by bare digits, across the formatter's spaces", async () => {
     const input = await openSearchSheet();
     // Nobody types a number with the formatter's spaces in it.
@@ -4159,17 +4332,22 @@ describe('StaffDashboard', () => {
       host().querySelectorAll('lib-staff-search-sheet lib-visit-row').length,
     ).toBe(1);
     expect(
-      host().querySelector('[data-testid="staff-search-phone-row"]'),
+      host().querySelector('[data-testid="staff-search-commit-row"]'),
     ).not.toBeNull();
   });
 
-  it('shows the recent searches and the filters on offer before anything is typed', async () => {
+  it('offers the keys a filter is made of in a card over the field while it has the focus', async () => {
     await openSearchSheet();
+    (
+      host().querySelector(
+        '[data-testid="staff-search-input"]',
+      ) as HTMLInputElement
+    ).focus();
+    fixture.detectChanges();
     expect(
-      host().querySelector('[data-testid="staff-search-suggestions"]'),
-    ).not.toBeNull();
-    expect(
-      host().querySelectorAll('[data-testid="staff-search-suggestion"]').length,
+      host().querySelectorAll(
+        '[data-testid="staff-search-keys"] [data-testid="staff-search-suggestion"]',
+      ).length,
     ).toBeGreaterThan(0);
   });
 
@@ -5419,6 +5597,33 @@ describe('StaffDashboard', () => {
   // The «Нов час» sheet never forwarded the fold (found 2026-09-24): its
   // client search folded the large title and the bar never landed the
   // compact one, so the page lost its name.
+  it("opens a chair's weekly hours from the ＋ alone — never from a slot (owner, 2026-11-06)", async () => {
+    (
+      host().querySelector(
+        '[data-testid="staff-add-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-add-hours"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-hours-sheet"]'),
+    ).not.toBeNull();
+    // Ivan's roster: 09:00–18:00 every day.
+    expect(
+      host()
+        .querySelector('[data-testid="staff-hours-day-1"]')
+        ?.getAttribute('aria-label'),
+    ).toContain('09:00–18:00');
+    expect(host().querySelector('[data-testid="staff-slot-hours"]')).toBeNull();
+  });
+
   it('lands the compact title on the new-visit sheet too, while its searches are engaged', () => {
     (
       host().querySelector(
@@ -5505,49 +5710,60 @@ describe('StaffDashboard', () => {
     });
   });
 
-  it("gives the day search the sheets' one search grammar: the head folds, the DS field is pinned, ↓ reaches the hits", async () => {
-    (
-      host().querySelector(
-        '[data-testid="staff-search-open"]',
-      ) as HTMLButtonElement
-    ).click();
+  it("opens the search from the bottom bar onto a field on the sheet's floor, the ✕ beside it, and ↓ reaches the hits", async () => {
+    // Mail's bottom bar: on a phone the field-shaped entry fills the room
+    // between the bar's controls and ＋ (the toolbar's button is the wide
+    // screen's; the bar's width shows one — no container queries in jsdom).
+    expect(
+      host().querySelector('[data-testid="staff-search-open"]'),
+    ).not.toBeNull();
+    const entry = host().querySelector(
+      'ui-page-action-bar [data-testid="staff-search-entry"]',
+    ) as HTMLButtonElement;
+    expect(entry.hasAttribute('uifill')).toBe(true);
+    entry.click();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    const head = () =>
-      host().querySelector('[data-testid="staff-search-headline"]');
-    const header = () =>
-      host().querySelector(
-        '[data-testid="staff-search-sheet"] .ui-sheet-header',
-      );
     const input = host().querySelector(
       '[data-testid="staff-search-input"]',
     ) as HTMLInputElement;
-    expect(input.closest('ui-search-field[data-pinned]')).not.toBeNull();
-    expect(head()?.hasAttribute('data-folded')).toBe(false);
-
-    input.dispatchEvent(new Event('focus'));
-    fixture.detectChanges();
-    expect(head()?.hasAttribute('data-folded')).toBe(true);
-    expect(header()?.hasAttribute('data-collapsed')).toBe(true);
+    // The field rides the page's own bottom bar, at its rung.
+    expect(
+      input.closest(
+        'ui-page-action-bar[data-avoids-keyboard] > ui-search-field[data-control-size="large"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      host().querySelector('[data-testid="staff-search-input-dismiss"]'),
+    ).not.toBeNull();
+    // The bar's compact title from the start (the sheets' own), no ✕ up
+    // there: the search ends from the ✕ beside its field.
+    expect(
+      host().querySelector('[data-testid="staff-search-bar-title"]'),
+    ).not.toBeNull();
 
     input.value = 'георги';
     input.dispatchEvent(new Event('input'));
-    input.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
     await afterTypingPause();
-    // A query standing keeps it folded, keyboard or not.
-    expect(head()?.hasAttribute('data-folded')).toBe(true);
 
+    // Text that names no filter leaves no suggestion and no key — only the
+    // offer to take the text itself as a filter (Mail's «… contains»)…
+    expect(
+      host().querySelector('[data-testid="staff-search-suggestion"]'),
+    ).toBeNull();
+    expect(
+      host().querySelector('[data-testid="staff-search-commit-row"]'),
+    ).not.toBeNull();
     input.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
     );
     fixture.detectChanges();
-    // ↓ lands on the first card, a control inside the results list.
-    expect(
-      document.activeElement?.closest('lib-staff-search-sheet lib-visit-list'),
-    ).not.toBeNull();
-    expect(document.activeElement?.tagName).toBe('BUTTON');
+    // …and ↓ lands on it, the first thing to press above the cards.
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'staff-search-commit-row',
+    );
   });
 
   it('hands the omnibox the book — everyone in the loaded days, as their last booking wrote them', async () => {
@@ -5634,7 +5850,7 @@ describe('StaffDashboard', () => {
   });
 
   // The owner, 2026-09-23: "build the save receipt with whole-save undo".
-  it('offers the receipt after a save, and its undo maps the visit back in one batch, then re-seeds the sheet', async () => {
+  it('closes the sheet on a save that lands, offers the receipt, and its undo maps the visit back in one batch', async () => {
     const component = fixture.componentInstance as unknown as {
       store: { staffEdit: (request: unknown) => Promise<boolean> };
       visitSheetRow: () => { appointmentId: string } | null;
@@ -5682,6 +5898,8 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
     expect(edits).toHaveLength(1);
     expect(component.undo()?.message).toBe('staff.day.undo.saved');
+    // Saved is done (owner, 2026-11-06): the sheet goes, the receipt stays.
+    expect(component.visitSheetRow()).toBeNull();
 
     await component.runUndo();
     expect(edits).toHaveLength(2);
@@ -5703,8 +5921,7 @@ describe('StaffDashboard', () => {
     expect(component.undo()).toBeNull();
 
     // The store under test never moved the row, so it already agrees with
-    // the snapshot: the sheet on THIS visit is asked to re-seed, and the
-    // drag the save carried is gone from the draft.
+    // the snapshot: a sheet on THIS visit would be asked to re-seed.
     await fixture.whenStable();
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -5713,7 +5930,6 @@ describe('StaffDashboard', () => {
       appointmentId: 'appointment-1',
       n: 1,
     });
-    expect(editor.dirty()).toBe(false);
   });
 
   /*
@@ -7593,6 +7809,40 @@ describe('StaffDashboard', () => {
       host().querySelector('[data-testid="staff-add-block"]'),
     ).not.toBeNull();
   });
+
+  it('keeps what the cards carry under the view menu, and the bar’s funnel for the states', () => {
+    // Owner, 2026-11-05: the bar's control filters by status; the card's
+    // fields ride with how the day is drawn, under the four readings.
+    (
+      host().querySelector(
+        '[data-testid="staff-view-trigger"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    (
+      host().querySelector(
+        '[data-testid="staff-fields-open"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-fields-sheet"]'),
+    ).not.toBeNull();
+
+    (
+      host().querySelector(
+        '[data-testid="staff-status-filter-open"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="staff-status-filter-sheet"]'),
+    ).not.toBeNull();
+    // Five states, free time and blocked time.
+    expect(
+      host().querySelectorAll('[data-testid^="staff-status-"][uiswitch]'),
+    ).toHaveLength(7);
+  });
   it('prints the contact details the owner asked for, behind their fields', () => {
     // REVERSED, deliberately. An earlier ruling kept digits out of the run
     // because this screen lies face-up on a counter and gets turned toward
@@ -8517,11 +8767,13 @@ describe('StaffDashboard', () => {
         } | null;
         createVisit: { set: (create: unknown) => void };
         createVm: () => VisitEditorVm | null;
-        blockLaneFor: (
-          barberId: string,
-          frameDay: string,
-          shownDay: string,
-        ) => { readonly neighbours: readonly { readonly name: string }[] };
+        openBlockSheet: (barberId: BarberId) => void;
+        blockEditorVm: () => {
+          readonly lanes: readonly {
+            readonly barberId: string;
+            readonly neighbours: readonly { readonly name: string }[];
+          }[];
+        } | null;
       };
       // …but what occupies the chair is the server's rule — the ROOT's
       // status (`BusySystem.chairOccupants`): the party is live, so its seat
@@ -8530,10 +8782,13 @@ describe('StaffDashboard', () => {
         (component.visitEditorVm()?.neighbours ?? []).map((n) => n.name),
       ).toContain('Разделена Група');
       // The create and block frames on the shown day read the same rule.
+      component.openBlockSheet(BarberId.of('ivan'));
       expect(
-        component
-          .blockLaneFor('ivan', '2026-08-05', '2026-08-05')
-          .neighbours.map((n) => n.name),
+        (
+          component
+            .blockEditorVm()
+            ?.lanes.find((lane) => lane.barberId === 'ivan')?.neighbours ?? []
+        ).map((n) => n.name),
       ).toContain('Разделена Група');
       component.createVisit.set({
         barberId: 'ivan',
@@ -8796,7 +9051,12 @@ describe('StaffDashboard', () => {
       }
 
       /** A stored block on Ivan's day, laid in before the page comes up. */
-      function blockOn(day: string, from: MinuteOfDay, to: EndMinute): void {
+      function blockOn(
+        day: string,
+        from: MinuteOfDay,
+        to: EndMinute,
+        ...more: readonly (readonly [MinuteOfDay, EndMinute])[]
+      ): void {
         const localDate = unwrapOk(LocalDate.parse(day));
         seededExceptions = [
           ...seededExceptions,
@@ -8811,8 +9071,12 @@ describe('StaffDashboard', () => {
               FIXTURE_TIME_ZONE,
             ),
             locationId: SHOP,
+            dayBreakRanges: null,
             ...unwrapOk(
-              ExceptionEffectRule.blocked([MinuteRange.of(from, to)]),
+              ExceptionEffectRule.blocked([
+                MinuteRange.of(from, to),
+                ...more.map(([start, end]) => MinuteRange.of(start, end)),
+              ]),
             ),
           },
         ];
@@ -8861,6 +9125,7 @@ describe('StaffDashboard', () => {
                           LocalDate.parse('2026-01-01'),
                         ),
                         effectiveToLocalDate: null,
+                        breaks: [],
                         segments: days.map((day) =>
                           ShiftSegment.of(day, SHOP, from, until(24)),
                         ),
@@ -8919,6 +9184,123 @@ describe('StaffDashboard', () => {
       };
 
       const page = () => fixture.componentInstance as unknown as WallClockPage;
+
+      it('draws a page block at its own minutes, never rounded out to the quarter hour (owner, 2026-11-06)', async () => {
+        // A party's chair that finishes at 11:35 drew to 11:45 — the
+        // party's end, as it read — and hid ten minutes a walk-in could
+        // take. The page now places every block by minute.
+        const visit = ivanVisit('appointment-short', '2026-08-05T11:00:00', 35);
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          '2026-08-05T09:00:00.000+03:00',
+        );
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const block = host().querySelector<HTMLElement>(
+          '[data-testid="staff-grid-event"][data-event-id^="appointment-short"]',
+        );
+        expect(block?.dataset['placement']).toBe('proportional');
+        expect(
+          Number(block?.style.getPropertyValue('--staff-event-height')),
+        ).toBeCloseTo(35 / 1440, 5);
+      });
+
+      it('opens the ＋’s sheets from a grid slot on its date; a dropped block saves itself, or asks the sheet (owner, 2026-11-06)', async () => {
+        const visit = ivanVisit('appointment-drop', '2026-08-05T11:00:00');
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          '2026-08-05T09:00:00.000+03:00',
+        );
+        const grid = fixture.componentInstance as unknown as {
+          pickSlot: (pick: unknown) => void;
+          pendingSlot: () => { readonly from: unknown } | null;
+          openCreate: (intent: string, from?: unknown) => void;
+          createVm: () => {
+            readonly dayKey: string;
+            readonly startMinute: number;
+            readonly endMinute: number;
+          } | null;
+          closeCreateSheet: () => void;
+          dropOnGrid: (commit: unknown) => void;
+          droppedTime: () => unknown;
+          undo: () => { message: string } | null;
+          store: {
+            staffEdit: (request: unknown) => Promise<boolean>;
+          };
+          visitSheetId: () => string | null;
+          closeVisitSheet: () => void;
+          gridColumns: () => readonly {
+            readonly events: readonly { readonly id: string }[];
+          }[];
+        };
+        // A slot drawn on FRIDAY's column of the week: the sheet opens on
+        // Friday, at the slot's start, for the drawn hour.
+        page().store.setView(StaffView.Week);
+        fixture.detectChanges();
+        grid.pickSlot({
+          columnId: '2026-08-07',
+          startMinute: 780,
+          endMinute: 840,
+        });
+        const slot = grid.pendingSlot();
+        if (slot === null) throw new Error('no pending slot');
+        grid.openCreate('BOOKING', slot.from);
+        expect(grid.pendingSlot()).toBeNull();
+        expect(grid.createVm()).toEqual(
+          expect.objectContaining({
+            dayKey: '2026-08-07',
+            startMinute: 780,
+            endMinute: 840,
+          }),
+        );
+        grid.closeCreateSheet();
+
+        // A block dropped an hour later, into free time inside the shift,
+        // SAVES where it landed: no sheet, the receipt's «Отмени» the way
+        // back (Google Calendar's, Apple Calendar's).
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const id = grid
+          .gridColumns()
+          .flatMap((column) => column.events.map((event) => event.id))
+          .find((eventId) => eventId.startsWith('appointment-drop'));
+        if (id === undefined) throw new Error('the visit is not on the grid');
+        const edits: SentEdit[] = [];
+        grid.store.staffEdit = async (request) => {
+          edits.push(request as SentEdit);
+          return true;
+        };
+        grid.dropOnGrid({
+          id,
+          startMinute: 720,
+          endMinute: 750,
+          editCommand: 'MOVE',
+        });
+        // The save is the page's own promise: let it land.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(grid.visitSheetId()).toBeNull();
+        expect(edits).toHaveLength(1);
+        expect(
+          commandOf(edits[0]?.commands ?? [], EditCommand.Move),
+        ).toBeDefined();
+        expect(grid.undo()?.message).toBe('staff.day.undo.saved');
+
+        // One dropped past the shift (Ivan works 09:00–18:00) needs a
+        // decision: its sheet opens with the move drafted, and closing puts
+        // it back.
+        const late = {
+          id,
+          startMinute: 1110,
+          endMinute: 1140,
+          editCommand: 'MOVE',
+        };
+        grid.dropOnGrid(late);
+        expect(edits).toHaveLength(1);
+        expect(grid.visitSheetId()).toBe(id);
+        expect(grid.droppedTime()).toEqual(late);
+        grid.closeVisitSheet();
+        expect(grid.droppedTime()).toBeNull();
+      });
 
       it('keeps a visit LIVE in the second pass of the fall-back hour (DEP-1)', async () => {
         const visit = ivanVisit('appointment-repeat', `${FALL_BACK}T03:00:00`);
@@ -9273,6 +9655,228 @@ describe('StaffDashboard', () => {
         );
       });
 
+      describe('a roster break — drawn, taken off and moved day by day (owner, 2026-11-06)', () => {
+        const LUNCH = MinuteRange.of(wallAt(13), until(14));
+        type BreakPage = {
+          store: { setView: (view: StaffView) => void };
+          gridColumns: () => readonly {
+            readonly events: readonly {
+              readonly id: string;
+              readonly title: string;
+            }[];
+          }[];
+          openBlock: (id: string) => void;
+          dropOnGrid: (commit: unknown) => void;
+          undo: () => { message: string } | null;
+          breakFlow: {
+            question: () => unknown;
+            pick: (id: string) => Promise<void>;
+          };
+        };
+        const breakPage = () =>
+          fixture.componentInstance as unknown as BreakPage;
+        const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+        const ID = 'break:ivan:2026-08-05:780';
+
+        beforeEach(async () => {
+          // 2026-08-05 is a Wednesday: Ivan's lunch that weekday.
+          ivanBreaks = [RosterBreak.of(Weekday.Wed, LUNCH)];
+          await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+          breakPage().store.setView(StaffView.Day);
+          fixture.detectChanges();
+        });
+        afterEach(() => {
+          ivanBreaks = [];
+        });
+
+        it('draws the lunch as «Почивка», a block of its own, with no document stored', () => {
+          const lunch = breakPage()
+            .gridColumns()
+            .flatMap((column) => column.events)
+            .find((event) => event.id === ID);
+          expect(lunch?.title).toBe('staff.day.breakLabel');
+          expect(exceptions).toEqual([]);
+        });
+
+        it('takes it off THIS day alone: one document, the roster untouched, «Отмени» the way back', async () => {
+          breakPage().openBlock(ID);
+          expect(breakPage().breakFlow.question()).not.toBeNull();
+          writeScheduleException.mockClear();
+          await breakPage().breakFlow.pick('THIS_DAY');
+          await settle();
+          expect(writeScheduleException).toHaveBeenCalledTimes(1);
+          expect(exceptions).toEqual([
+            expect.objectContaining({
+              localDate: '2026-08-05',
+              exceptionEffect: ExceptionEffect.Rostered,
+              dayBreakRanges: [],
+            }),
+          ]);
+          expect(
+            gatewayCalls.filter(
+              (call) => call.callable === Callables.AmendRosterBreaks,
+            ),
+          ).toEqual([]);
+          expect(breakPage().undo()?.message).toBe('staff.day.breakRemoved');
+        });
+
+        it('takes it off from this day on as ONE roster change — no document per day', async () => {
+          gateway[Callables.AmendRosterBreaks] = () =>
+            PortResult.ok({ barberId: BarberId.of('ivan') });
+          breakPage().openBlock(ID);
+          writeScheduleException.mockClear();
+          await breakPage().breakFlow.pick('FOLLOWING');
+          await settle();
+          expect(writeScheduleException).not.toHaveBeenCalled();
+          expect(
+            gatewayCalls
+              .filter((call) => call.callable === Callables.AmendRosterBreaks)
+              .map((call) => call.input),
+          ).toEqual([
+            expect.objectContaining({
+              barberId: 'ivan',
+              fromLocalDate: '2026-08-05',
+              weekdays: [Weekday.Wed],
+              before: LUNCH,
+              after: null,
+            }),
+          ]);
+        });
+
+        it('moves it for one day on a drag, and «Отказ» changes nothing', async () => {
+          breakPage().dropOnGrid({
+            id: ID,
+            startMinute: 720,
+            endMinute: 780,
+            editCommand: 'MOVE',
+          });
+          await breakPage().breakFlow.pick('CANCEL');
+          await settle();
+          expect(exceptions).toEqual([]);
+          breakPage().dropOnGrid({
+            id: ID,
+            startMinute: 720,
+            endMinute: 780,
+            editCommand: 'MOVE',
+          });
+          await breakPage().breakFlow.pick('THIS_DAY');
+          await settle();
+          expect(exceptions).toEqual([
+            expect.objectContaining({
+              dayBreakRanges: [MinuteRange.of(wallAt(12), until(13))],
+            }),
+          ]);
+        });
+      });
+
+      it('moves blocked time dropped on the grid in one write, «Отмени» moving it back; never onto other blocked time (owner, 2026-11-06)', async () => {
+        // One day holds one exception document: both ranges in it.
+        blockOn('2026-08-05', wallAt(12), until(13), [wallAt(16), until(17)]);
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        const grid = fixture.componentInstance as unknown as {
+          movableIds: () => ReadonlySet<string>;
+          dropOnGrid: (commit: unknown) => void;
+          undo: () => {
+            message: string;
+            inverse: () => Promise<boolean>;
+          } | null;
+          notice: () => string | null;
+          store: { saveBlocks: (plan: unknown) => Promise<boolean> };
+        };
+        const id = 'block:ivan:2026-08-05:720';
+        // A break moves like a visit: the hold lifts it.
+        expect(grid.movableIds().has(id)).toBe(true);
+        const plans: {
+          lift: { range: { startMinutes: number; endMinutes: number } };
+          writes: { ranges: { startMinutes: number; endMinutes: number }[] }[];
+        }[] = [];
+        grid.store.saveBlocks = async (plan) => {
+          plans.push(plan as (typeof plans)[number]);
+          return true;
+        };
+        // An hour later, into free time: lift 12:00–13:00, write 13:00–14:00.
+        grid.dropOnGrid({
+          id,
+          startMinute: 780,
+          endMinute: 840,
+          editCommand: 'MOVE',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plans).toHaveLength(1);
+        expect(plans[0]?.lift.range).toEqual({
+          startMinutes: 720,
+          endMinutes: 780,
+        });
+        expect(plans[0]?.writes[0]?.ranges).toEqual([
+          { startMinutes: 780, endMinutes: 840 },
+        ]);
+        expect(grid.undo()?.message).toBe('staff.day.undo.saved');
+        // The way back is the same move reversed.
+        await grid.undo()?.inverse();
+        expect(plans[1]?.lift.range).toEqual({
+          startMinutes: 780,
+          endMinutes: 840,
+        });
+        expect(plans[1]?.writes[0]?.ranges).toEqual([
+          { startMinutes: 720, endMinutes: 780 },
+        ]);
+        // Onto the 16:00 block it would merge with: back down, said.
+        grid.dropOnGrid({
+          id,
+          startMinute: 930,
+          endMinute: 990,
+          editCommand: 'MOVE',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plans).toHaveLength(2);
+        expect(grid.notice()).toBe('staff.day.blockOnBlock');
+      });
+
+      it('draws a block in the list as well as the grid, opens it from either, and hides both behind the filter', async () => {
+        blockOn('2026-08-05', wallAt(12), until(13));
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        const row = () =>
+          host().querySelector<HTMLElement>(
+            '[data-testid="staff-block-row"][data-row-id="block:ivan:2026-08-05:720"]',
+          );
+        // The list's own block row, worded like the grid's block…
+        expect(row()?.getAttribute('aria-label')).toContain('12:00');
+        // …with the event's clock, start over end (owner, 2026-11-05: "the
+        // same range as the events").
+        expect(
+          row()?.querySelector('.staff-event-head__start')?.textContent?.trim(),
+        ).toBe('12:00');
+        expect(
+          row()?.querySelector('.staff-event-head__end')?.textContent?.trim(),
+        ).toBe('13:00');
+        // …and a press opens it in the block editor, as the grid's does.
+        row()?.click();
+        expect(page().blockEdit()).toEqual(
+          expect.objectContaining({ startMinute: 720, endMinute: 780 }),
+        );
+        (
+          fixture.componentInstance as unknown as {
+            blockEdit: { set: (edit: null) => void };
+          }
+        ).blockEdit.set(null);
+        fixture.detectChanges();
+
+        // The filter's «Блокирано време» hides it in the list and the grid.
+        TestBed.inject(ScheduleStatusFilter).toggleBlocks();
+        fixture.detectChanges();
+        expect(row()).toBeNull();
+        page().store.setView(StaffView.Day);
+        fixture.detectChanges();
+        expect(
+          page()
+            .gridColumns()
+            .flatMap((column) => column.events.map((event) => event.id)),
+        ).not.toContain('block:ivan:2026-08-05:720');
+        TestBed.inject(ScheduleStatusFilter).showAll();
+      });
+
       describe('an edited block (B6)', () => {
         const DAY = unwrapOk(LocalDate.parse('2026-08-05'));
         const moved = {
@@ -9282,6 +9886,7 @@ describe('StaffDashboard', () => {
           allDay: false,
           startMinute: 14 * 60,
           endMinute: 15 * 60,
+          standing: null,
         };
         const commitBlock = (commit: unknown): Promise<void> =>
           (

@@ -168,6 +168,7 @@ export function hollowStatus(
     '[attr.data-size]': 'size()',
     '[attr.data-struck]': "struck() ? '' : null",
     '[attr.data-receded]': "receded() ? '' : null",
+    '[attr.data-quiet]': "quiet() ? '' : null",
     '[attr.data-truncate]': "truncate() ? '' : null",
     '[attr.data-truncate-lines]': "truncateLines() ? '' : null",
     '[attr.data-gloss-state]': "glossState() ? '' : null",
@@ -201,6 +202,13 @@ export class StaffEventHead {
   readonly struck = input(false);
   /** A past hour: the fact lines lift back over the contrast floor of a faded card. */
   readonly receded = input(false);
+  /**
+   * Time nobody holds — a free hole or a block in the agenda (owner,
+   * 2026-11-05: "the same range as the events"). It wears the event's clock,
+   * but its title is a word, not a person: secondary ink at the regular
+   * weight, so the run's names still lead.
+   */
+  readonly quiet = input(false);
   /** The host's accessible name already states the times: the clock is decoration. */
   readonly timesDecorative = input(false);
   /**

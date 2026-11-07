@@ -210,6 +210,9 @@ export class UiPhoneField {
   readonly defaultCountry = input<CountryIso2 | null>(null);
   /** Visible label above the frame (footnote convention). */
   readonly label = input('');
+  /** A quiet word right after the label — «(по желание)» on a field
+   *  nothing owes; read with the label. */
+  readonly labelNote = input<string | null>(null);
   /** Secondary helper line under the frame (e.g. the priming hint). */
   readonly hint = input<string | null>(null);
   /** Consumer-decided error copy — renders destructive + `role="alert"`. */

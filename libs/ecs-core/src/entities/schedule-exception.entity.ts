@@ -1,4 +1,4 @@
-import type { ExceptionEffectRule } from '@core/components';
+import type { DayBreaks, ExceptionEffectRule } from '@core/components';
 import type {
   BarberId,
   LocationId,
@@ -34,6 +34,10 @@ export type ScheduleExceptionMeta = {
  * and nothing reads one.
  *
  * Flat (Law 6): the identity slice intersected with the effect's variant
- * slice, so `exceptionEffect` and `exceptionRanges` sit at the root.
+ * slice and the day's breaks, so `exceptionEffect`, `exceptionRanges` and
+ * `dayBreakRanges` sit at the root. A day that only moves or skips its
+ * roster break is `ROSTERED` with its `dayBreakRanges`.
  */
-export type ScheduleException = ScheduleExceptionMeta & ExceptionEffectRule;
+export type ScheduleException = ScheduleExceptionMeta &
+  ExceptionEffectRule &
+  DayBreaks;

@@ -59,6 +59,7 @@ function blocked(
     locationId: LocationId.of('loc-center'),
     exceptionEffect: ExceptionEffect.Blocked,
     exceptionRanges: ranges,
+    dayBreakRanges: null,
   };
 }
 
@@ -276,6 +277,8 @@ describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
       locationId: SHOP,
       exceptionEffect: ExceptionEffect.Blocked,
       exceptionRanges: [range],
+      // A block keeps the day on its roster's breaks (DayBreaks).
+      dayBreakRanges: null,
     });
     const OLD_BODY = blockedBody(
       IVAN,

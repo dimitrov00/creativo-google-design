@@ -40,6 +40,7 @@ import type {
   Weekday,
 } from '@core/primitives';
 import type { CatalogError } from './catalog.error';
+import type { PipelineError } from './pipeline.error';
 import type { RepositoryError } from './repository.error';
 
 /** Error codes — the ONLY source of these strings; the UI translates them. */
@@ -95,6 +96,18 @@ export const SchedulingErrorCode = {
   ScheduleExceptionEmptyRanges: 'SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES',
   /** A block saved where no shop exists to file it at, not even a first one. */
   BlockChairWithoutHome: 'SCHEDULING_BLOCK_CHAIR_WITHOUT_HOME',
+  /** A roster's breaks changed from a day already past — past weeks are the record. */
+  RosterBreakInPast: 'SCHEDULING_ROSTER_BREAK_IN_PAST',
+  /** A chair with no roster has no breaks to change. */
+  RosterMissing: 'SCHEDULING_ROSTER_MISSING',
+  /** A break the weekly hours do not hold — it lies outside every shift of its weekday. */
+  RosterBreakOutsideShift: 'SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT',
+  /** `amendRosterBreaks` with no signed-in caller. */
+  RosterUnauthenticated: 'SCHEDULING_ROSTER_UNAUTHENTICATED',
+  /** `amendRosterBreaks` from a caller who does not work the book. */
+  RosterForbidden: 'SCHEDULING_ROSTER_FORBIDDEN',
+  /** `amendRosterBreaks` sent a field it cannot read. */
+  RosterInvalidInput: 'SCHEDULING_ROSTER_INVALID_INPUT',
 } as const;
 export type SchedulingErrorCode =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
@@ -138,6 +151,12 @@ export type SchedulingError =
   | SchedulingError.ShiftSegmentInvalidLocation
   | SchedulingError.ShiftSegmentImpossibleTransfer
   | SchedulingError.StaffScheduleOverlappingVersions
+  | SchedulingError.RosterBreakInPast
+  | SchedulingError.RosterMissing
+  | SchedulingError.RosterBreakOutsideShift
+  | SchedulingError.RosterUnauthenticated
+  | SchedulingError.RosterForbidden
+  | SchedulingError.RosterInvalidInput
   | SchedulingError.StaffScheduleRetroactiveAmendment
   | SchedulingError.WaitlistNoDays
   | SchedulingError.WaitlistEmptyCart
@@ -415,6 +434,41 @@ export const SchedulingError = {
     return { errorCode: C.BlockChairWithoutHome, barberId };
   },
 
+  /** Breaks changed from `fromLocalDate`, before the shop's `todayLocalDate`. */
+  rosterBreakInPast(
+    fromLocalDate: LocalDate,
+    todayLocalDate: LocalDate,
+  ): SchedulingError.RosterBreakInPast {
+    return { errorCode: C.RosterBreakInPast, fromLocalDate, todayLocalDate };
+  },
+  /** The chair has no roster to change. */
+  rosterMissing(barberId: BarberId): SchedulingError.RosterMissing {
+    return { errorCode: C.RosterMissing, barberId };
+  },
+  /** A break on `weekday` outside every shift of that weekday. */
+  rosterBreakOutsideShift(
+    weekday: Weekday,
+    startMinutes: MinuteOfDay,
+    endMinutes: EndMinute,
+  ): SchedulingError.RosterBreakOutsideShift {
+    return {
+      errorCode: C.RosterBreakOutsideShift,
+      weekday,
+      startMinutes,
+      endMinutes,
+    };
+  },
+  rosterUnauthenticated(): SchedulingError.RosterUnauthenticated {
+    return { errorCode: C.RosterUnauthenticated };
+  },
+  rosterForbidden(): SchedulingError.RosterForbidden {
+    return { errorCode: C.RosterForbidden };
+  },
+  /** The first field `amendRosterBreaks` could not read. */
+  rosterInvalidInput(field: string): SchedulingError.RosterInvalidInput {
+    return { errorCode: C.RosterInvalidInput, field };
+  },
+
   /** Narrows an error to one code — `SchedulingError.is(e, SchedulingErrorCode.FlexibleWhenFull)`. */
   is<K extends SchedulingErrorCode>(
     error: SchedulingError,
@@ -425,6 +479,31 @@ export const SchedulingError = {
 } as const;
 
 export namespace SchedulingError {
+  export type RosterBreakInPast = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterBreakInPast;
+    readonly fromLocalDate: LocalDate;
+    readonly todayLocalDate: LocalDate;
+  };
+  export type RosterMissing = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterMissing;
+    readonly barberId: BarberId;
+  };
+  export type RosterBreakOutsideShift = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterBreakOutsideShift;
+    readonly weekday: Weekday;
+    readonly startMinutes: MinuteOfDay;
+    readonly endMinutes: EndMinute;
+  };
+  export type RosterUnauthenticated = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterUnauthenticated;
+  };
+  export type RosterForbidden = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterForbidden;
+  };
+  export type RosterInvalidInput = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterInvalidInput;
+    readonly field: string;
+  };
   export type AppointmentEmptySeats = {
     readonly errorCode: typeof SchedulingErrorCode.AppointmentEmptySeats;
   };
@@ -621,8 +700,13 @@ export namespace SchedulingError {
  * Why a staff block write did not land (`StaffDayStore.absenceError`, pass D
  * §2.3/§2.9): the block pipelines' own answers as they answer
  * (`writeScheduleBlocks` / `clearScheduleBlock` — a scheduling refusal or a
- * repository failure), or `CATALOG_LOCATION_ZONE_UNKNOWN` when neither the
- * shop nor the day names a zone to read the block's day in.
+ * repository failure), `CATALOG_LOCATION_ZONE_UNKNOWN` when neither the
+ * shop nor the day names a zone to read the block's day in, or the
+ * `amendRosterBreaks` call's own failure (a break changed «from this day
+ * on»).
  */
 export type StaffBlockFailure =
-  SchedulingError | RepositoryError | CatalogError.LocationZoneUnknown;
+  | SchedulingError
+  | RepositoryError
+  | CatalogError.LocationZoneUnknown
+  | PipelineError;

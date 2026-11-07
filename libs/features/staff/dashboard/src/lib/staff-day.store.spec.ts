@@ -490,6 +490,7 @@ describe('StaffDayStore — the lanes carry the roster’s own minutes', () => {
               seq: 1,
               effectiveFromLocalDate: localDate('2026-01-01'),
               effectiveToLocalDate: null,
+              breaks: [],
               segments: [
                 ShiftSegment.of(Weekday.Sun, CENTER, at(3, 30), until(12)),
               ],
@@ -504,13 +505,12 @@ describe('StaffDayStore — the lanes carry the roster’s own minutes', () => {
       lane?.rostered.map((range) => [range.startMinutes, range.endMinutes]),
     ).toEqual([[210, 720]]);
     expect(lane?.blocks).toEqual([]);
-    // The holes are the system's, split at the shop's clock (09:00).
+    // The hole is the system's, WHOLE whatever the shop's clock (09:00 —
+    // owner, 2026-11-05); what opens from it starts at now's tick.
     expect(lane?.gaps.map((gap) => [gap.startMinutes, gap.endMinutes])).toEqual(
-      [
-        [210, 540],
-        [540, 720],
-      ],
+      [[210, 720]],
     );
+    expect(lane?.gaps[0]?.openFromMinutes).toBe(540);
   });
 });
 
@@ -524,6 +524,7 @@ describe('StaffDayStore — a chair whose day was not read in full (OR-2)', () =
           seq: 1,
           effectiveFromLocalDate: localDate('2026-01-01'),
           effectiveToLocalDate: null,
+          breaks: [],
           segments: [ShiftSegment.of(Weekday.Wed, CENTER, at(9), until(18))],
         },
       ],
@@ -904,6 +905,39 @@ describe('StaffDayStore — the search window reaches the horizon and stays fres
     await store.transition(intent);
     await store.openSearch();
 
+    expect(reads).toHaveLength(2);
+  });
+
+  it('reads again at once when a visit is written while the search is open, so the results say it', async () => {
+    const before = [appointmentFixture()];
+    const after = [appointmentFixture({ id: AppointmentId.of('visit-2') })];
+    const { store, reads, answerWith } = await windowed({
+      answer: Result.ok({ appointments: before, capped: false }),
+      script: {
+        [Callables.TransitionAppointment]: () => Result.ok(undefined as never),
+      },
+    });
+    await store.openSearch();
+    answerWith(Result.ok({ appointments: after, capped: false }));
+
+    await store.transition(intent);
+    await vi.waitFor(() => expect(store.pool()).toEqual(after));
+
+    expect(reads).toHaveLength(2);
+  });
+
+  it('only marks the window when a visit is written with the search closed', async () => {
+    const { store, reads } = await windowed({
+      script: {
+        [Callables.TransitionAppointment]: () => Result.ok(undefined as never),
+      },
+    });
+    await store.openSearch();
+    store.closeSearch();
+
+    await store.transition(intent);
+    expect(reads).toHaveLength(1);
+    await store.openSearch();
     expect(reads).toHaveLength(2);
   });
 

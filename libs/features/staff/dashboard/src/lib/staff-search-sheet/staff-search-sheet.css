@@ -1,22 +1,40 @@
-/* The sheet's body keeps the house padding of its siblings
-   (`.staff-cancel__body` is the dashboard's, unreachable from here). */
+/* The page's body keeps the house padding of its siblings
+   (`.staff-cancel__body` is the dashboard's, unreachable from here), and
+   fills the scroller's column so the bar after it lands on the floor. Full
+   screen on a wide display it keeps a drawer-wide column, centred: the rows
+   were drawn at a phone's width. */
 .staff-search-sheet__body {
+  flex: 1 0 auto;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--sys-container-drawer);
+  margin-inline: auto;
   padding-inline: var(--ui-sheet-inset, var(--sys-space-comfortable));
-  padding-block-end: var(
-    --ui-sheet-action-bar-clearance,
-    var(--sys-space-spacious)
-  );
 }
 
-/* Chips wrap in a flow: recents and suggestions are short words. */
-.staff-search-sheet__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sys-space-compact);
+/* The bar keeps the body's column on a wide display, so the field does not
+   stretch across a desktop; on a phone it is the screen's width. */
+.staff-search-sheet__bar {
+  max-inline-size: var(--sys-container-drawer);
+  margin-inline: auto;
 }
 
-.staff-search-sheet__group {
+/* A chosen filter: the DS chip's tinted selection (the accent wash, the
+   glyph orange, the words ink — HIG: an applied filter reads as selected;
+   its words stay ink). Its value ellipsizes rather than widening the row
+   past a thumb's reach. No ring: the open one's values ARE the page. */
+.staff-search-sheet__filter-label {
+  max-inline-size: 12rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* THE SUGGESTIONS above the results: a quiet heading over a segmented list. */
+.staff-search-sheet__section {
   display: grid;
-  gap: var(--sys-space-tight);
-  margin-block-start: var(--sys-space-compact);
+}
+
+.staff-search-sheet__heading {
+  padding-block-end: var(--sys-space-tight);
 }

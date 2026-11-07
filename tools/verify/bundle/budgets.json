@@ -1,9 +1,12 @@
 {
   "// routes": "Raw bytes to open a route, initial files included. About 5% above the build of 2026-11-02.",
+  "// routes 2026-11-07": "Raised, about 5% above that day's build: the staff schedule to 2.86 MB (built 2.72: the token search field, the weekly hours editor, the person tile) and admin loyalty to 1.71 MB (built 1.63: the shared token search field, person tile and service cover grid in the rhythm sheet).",
+  "// routes 2026-11-07, later": "The staff schedule lowered to 2.09 MB (built 1.99): its seven sheets load on demand (@defer, prefetched when idle), the visit editor with the client card in a chunk of its own.",
   "defaultRouteBytes": 1550000,
   "routes": {
-    "libs/features/staff/dashboard/src/index.ts": 2650000,
-    "libs/features/client/booking/src/index.ts": 1720000
+    "libs/features/staff/dashboard/src/index.ts": 2090000,
+    "libs/features/client/booking/src/index.ts": 1720000,
+    "libs/features/admin/loyalty/src/index.ts": 1710000
   },
   "// publicAssetBytes": "Any one file under apps/web/public. Today's largest is welcome.mp4, 4.37 MB; lower this when the videos are recompressed.",
   "publicAssetBytes": 4500000

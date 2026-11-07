@@ -31,12 +31,14 @@ class HostComponent {
     [uiButtonStyle]="'bordered'"
     [uiIconOnly]="true"
     [uiSelected]="selected"
+    [uiDotBadge]="dot"
   >
     close
   </button>`,
 })
 class ToggleHostComponent {
   selected = false;
+  dot = false;
 }
 
 describe('UiButton', () => {
@@ -132,6 +134,19 @@ describe('UiButton toggles (uiIconOnly / uiSelected)', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('button');
     expect(el.getAttribute('data-icon-only')).toBe('');
+  });
+
+  it('wears no dot badge until uiDotBadge is on', () => {
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('button');
+    expect(el.hasAttribute('data-dot-badge')).toBe(false);
+  });
+
+  it('stamps data-dot-badge as a bare attribute while uiDotBadge is on', () => {
+    fixture.componentInstance.dot = true;
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('button');
+    expect(el.getAttribute('data-dot-badge')).toBe('');
   });
 
   it('announces aria-pressed="false" while unselected once uiSelected is bound', () => {

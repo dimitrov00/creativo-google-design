@@ -1,7 +1,9 @@
 <div class="ui-phone-field__block">
   @if (label(); as fieldLabel) {
   <label class="ui-phone-field__label" [attr.for]="inputId">
-    {{ fieldLabel }}
+    {{ fieldLabel }} @if (labelNote(); as note) {
+    <span class="ui-phone-field__label-note">{{ note }}</span>
+    }
   </label>
   }
 

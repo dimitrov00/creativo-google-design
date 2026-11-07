@@ -20,6 +20,13 @@ export type Weekday = (typeof ISO_WEEKDAY)[keyof typeof ISO_WEEKDAY];
 export const Weekday = {
   ...ISO_WEEKDAY,
 
+  /** Foreign input as an ISO weekday — an integer `1…7` — or not. */
+  is(raw: unknown): raw is Weekday {
+    return (
+      typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 7
+    );
+  },
+
   isWeekend(day: Weekday): boolean {
     return day === ISO_WEEKDAY.Sat || day === ISO_WEEKDAY.Sun;
   },

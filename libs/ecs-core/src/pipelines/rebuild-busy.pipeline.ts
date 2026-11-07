@@ -103,7 +103,7 @@ export function liveOnBusyDay(key: BusyKey): QuerySpec {
       },
     ],
     orderBy: [],
-    // unbounded-ok: one barber's one shop day: as many visits as fit in a day
+    // unbounded-ok: one barber's day at every shop, live statuses only: as many visits as fit in a day
     limit: null,
   };
 }

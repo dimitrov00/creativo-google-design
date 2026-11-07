@@ -8,7 +8,12 @@
   [attr.data-testid]="'service-card-' + uiServiceId()"
   (click)="uiPressed.emit()"
 >
-  <ui-media-card uiRadius="prominent" uiRatio="1 / 1" [uiSrc]="uiCoverUrl()">
+  <ui-media-card
+    uiRadius="prominent"
+    [uiRatio]="uiRatio()"
+    [uiScrim]="uiCaption() === 'overlay'"
+    [uiSrc]="uiCoverUrl()"
+  >
     <span uiPlaceholder class="cr-service-card__fallback">
       <ui-icon
         uiName="service.placeholder"
@@ -17,13 +22,18 @@
     </span>
 
     <!-- Caption rhythm is the media card's own — both lines project into
-         its inset stack. -->
-    <span uiCaption uiText uiFont="callout" uiWeight="bold">{{
-      uiName()
-    }}</span>
-    <span uiCaption uiText uiFont="footnote" uiForegroundStyle="secondary">
-      {{ uiMeta() }}
-    </span>
+         its inset stack. One @if per line: a block projects into a named
+         slot only with a single root element. -->
+    @if (uiCaption() === 'overlay') {
+      <span uiCaption uiText uiFont="callout" uiWeight="bold">{{
+        uiName()
+      }}</span>
+    }
+    @if (uiCaption() === 'overlay') {
+      <span uiCaption uiText uiFont="footnote" uiForegroundStyle="secondary">
+        {{ uiMeta() }}
+      </span>
+    }
 
     <!--
       ONE corner slot carries the whole state.
@@ -55,6 +65,18 @@
       </span>
     }
   </ui-media-card>
+  @if (uiCaption() === 'below') {
+    <!-- BELOW the cover, in the page's ink: the name leads, the meta (a
+         variant, a duration) follows quieter. -->
+    <span class="cr-service-card__below">
+      <span uiText uiFont="subheadline" uiWeight="bold">{{ uiName() }}</span>
+      @if (uiMeta()) {
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary">{{
+          uiMeta()
+        }}</span>
+      }
+    </span>
+  }
 </button>
 
 @if (uiShowDetails()) {

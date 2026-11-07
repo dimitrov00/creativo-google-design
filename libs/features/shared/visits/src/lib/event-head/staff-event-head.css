@@ -332,6 +332,15 @@
   text-decoration-color: currentcolor;
 }
 
+/* QUIET — time nobody holds, a free hole or a block (owner, 2026-11-05:
+   "the same range as the events"). The clock is the event's; the title is
+   a word and not a person, so it takes the facts' ink at the regular
+   weight and the run's names still lead. */
+.staff-event-head[data-quiet] .staff-event-head__title {
+  font-weight: 400;
+  color: var(--sys-color-secondary-label);
+}
+
 /* RECEDED — a past card fades to 0.75, and the facts' own secondary ink
    would land under the 4.5:1 floor against the page showing through the
    card's stripes. Half way to the foreground is the compensation: over the

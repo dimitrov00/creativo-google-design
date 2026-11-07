@@ -38,6 +38,7 @@ import {
 import {
   GridLayoutSystem,
   RecurrenceSystem,
+  RosterBreakSystem,
   VisitDraftSystem,
 } from '@core/systems';
 import { pluralForm, translateCodedError } from '@creativo/infrastructure/i18n';
@@ -202,6 +203,12 @@ export interface BlockEditorCommit {
   readonly allDay: boolean;
   readonly startMinute: TrackMinute;
   readonly endMinute: TrackMinute;
+  /**
+   * A repeat with no end («Без край») — the weekdays it stands on as a
+   * break of the chairs' weekly roster from `dayKey` on (owner, 2026-11-06:
+   * no document per day); `days` is then empty. `null`: a block of days.
+   */
+  readonly standing: readonly Weekday[] | null;
 }
 
 interface BlockDraft {
@@ -244,6 +251,9 @@ const END_KINDS: readonly RecurrenceEnd[] = [
   RecurrenceEnd.Until,
   RecurrenceEnd.Count,
 ];
+
+/** The end menu's first row — no end: a break of the weekly roster. */
+const ENDLESS = 'ENDLESS';
 
 /** One row of the repeat page's shortcut list. */
 interface RepeatRow {
@@ -584,8 +594,25 @@ export class StaffBlockEditor {
     return series !== null && series.ok ? series.value.localDates : [];
   });
 
+  /**
+   * «Без край» picked — a weekly repeat that never ends is a BREAK of the
+   * roster (owner, 2026-11-06: "a lunch break is a recurring blocker … very
+   * DOD"), one roster write instead of a document per day.
+   */
+  private readonly endless = signal(false);
+
+  /** The weekdays the repeat stands on in the roster, or `null` — a repeat of days. */
+  protected readonly standing = computed<readonly Weekday[] | null>(() => {
+    const rule = this.draft().repeat;
+    return !this.endless() || rule === null || this.draft().allDay
+      ? null
+      : RosterBreakSystem.standingWeekdays(rule);
+  });
+
   protected readonly saveable = computed(
-    () => this.typedError() === null && this.writeDays().length > 0,
+    () =>
+      this.typedError() === null &&
+      (this.standing() !== null || this.writeDays().length > 0),
   );
 
   /** The shortcut the rule IS, read back off it — `null` for a rule of the user's own. */
@@ -770,27 +797,51 @@ export class StaffBlockEditor {
   protected readonly endMenu = signal(false);
   protected readonly untilOpen = signal(false);
 
-  protected readonly endOptions = computed<readonly UiChoiceOption[]>(() =>
-    END_KINDS.map((kind) => ({
-      id: kind,
-      label: this.rawCopy(
-        kind === RecurrenceEnd.Until
-          ? 'staff.block.repeatEndOn'
-          : 'staff.block.repeatEndAfter',
-      ),
-      testId: `staff-block-repeat-end-${RECURRENCE_END_WORD[kind]}`,
-    })),
+  protected readonly endOptions = computed<readonly UiChoiceOption[]>(() => {
+    const rule = this.draft().repeat;
+    // «Без край» only where the roster can hold it: a weekly pattern.
+    const weekly =
+      rule !== null &&
+      !this.draft().allDay &&
+      RosterBreakSystem.standingWeekdays(rule) !== null;
+    return [
+      ...(weekly
+        ? [
+            {
+              id: ENDLESS,
+              label: this.rawCopy('staff.block.repeatEndNever'),
+              testId: 'staff-block-repeat-end-never',
+            },
+          ]
+        : []),
+      ...END_KINDS.map((kind) => ({
+        id: kind,
+        label: this.rawCopy(
+          kind === RecurrenceEnd.Until
+            ? 'staff.block.repeatEndOn'
+            : 'staff.block.repeatEndAfter',
+        ),
+        testId: `staff-block-repeat-end-${RECURRENCE_END_WORD[kind]}`,
+      })),
+    ];
+  });
+
+  /** The end the menu shows picked — «Без край» while the repeat stands in the roster. */
+  protected readonly endSelectedId = computed(() =>
+    this.standing() !== null
+      ? ENDLESS
+      : (this.draft().repeat?.recurrenceEnd ?? null),
   );
 
   protected readonly endKindLabel = computed(
     () =>
-      this.endOptions().find(
-        (option) => option.id === this.draft().repeat?.recurrenceEnd,
-      )?.label ?? '',
+      this.endOptions().find((option) => option.id === this.endSelectedId())
+        ?.label ?? '',
   );
 
   protected setEndKind(id: string): void {
     this.endMenu.set(false);
+    this.endless.set(id === ENDLESS);
     const rule = this.draft().repeat;
     const start = this.startDay();
     const kind = END_KINDS.find((entry) => entry === id);
@@ -864,6 +915,17 @@ export class StaffBlockEditor {
     if (rule === null) return null;
     const error = this.repeatError();
     if (error !== null) return error;
+    if (this.standing() !== null) {
+      // No count and no last day: a break of the weekly roster from the day on.
+      return [
+        this.daysPhrase(rule),
+        this.transloco.translate('staff.block.repeatStanding', {
+          day: formatDayPill(this.startDay(), this.locale()),
+        }),
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' · ');
+    }
     const series = this.series();
     if (series === null || !series.ok) return null;
     const days = series.value.localDates;
@@ -1241,10 +1303,11 @@ export class StaffBlockEditor {
     this.committed.emit({
       barberIds: draft.barberIds,
       dayKey: draft.dayKey,
-      days: this.writeDays(),
+      days: this.standing() === null ? this.writeDays() : [],
       allDay: draft.allDay,
       startMinute: draft.startMinute,
       endMinute: draft.endMinute,
+      standing: this.standing(),
     });
   }
 

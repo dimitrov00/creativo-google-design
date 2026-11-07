@@ -104,6 +104,13 @@ export class UiModalSheet {
    */
   readonly bareHeader = input(false);
   /**
+   * Whether the bar carries its ✕. Off for a page whose dismiss lives
+   * elsewhere — a full-screen search ends from the ✕ beside its field on the
+   * floor (≙ Photos) — while the bar keeps its title and its leading slot.
+   * Escape still dismisses.
+   */
+  readonly closeControl = input(true);
+  /**
    * Size the sheet to its CONTENT rather than to the viewport.
    *
    * The default height is unconditional, so a two-line confirmation drew the
@@ -126,6 +133,13 @@ export class UiModalSheet {
    * its value 1,600px away (staff visit sheet, reviewed 2026-09-08).
    */
   readonly uiPresentationSizing = input<UiSheetPresentationSizing>('page');
+  /**
+   * ≙ `.fullScreenCover` (`ui-sheet`'s `uiFullScreen`): the sheet is the
+   * screen — the scroller fills it, with no rounding, no grabber and no
+   * drag-to-dismiss (Escape and the consumer's own control still dismiss).
+   * Pair with `bareHeader` and a dismiss control of the page's own.
+   */
+  readonly fullScreen = input(false);
   /** Opt out of the open-time scroll-to-top when the consumer positions the scroller itself. */
   readonly resetScrollOnOpen = input(true);
   /** Dismissal *request* (Escape / backdrop / drag / close control) —

@@ -332,10 +332,12 @@ describe('UiListRow · figure, wrapping label, leading glyph', () => {
     ).toBeGreaterThan(css.indexOf('.ui-list-row > [uitrailing] {'));
   });
 
-  it('sets a bare leading glyph on the ladder’s 20, bare or in its wrapper', () => {
+  it('sets a bare leading glyph and the trailing mark on the ladder’s 20, bare or in its wrapper', () => {
+    // One rule for every glyph in a row (2026-11-06): the leading glyph,
+    // bare or wrapped, and the trailing mark outside a button.
     expect(
       body(
-        '.ui-list-row > .ui-icon[uileading], .ui-list-row > [uileading] > .ui-icon:only-child',
+        '.ui-list-row > .ui-icon[uileading], .ui-list-row > [uileading] > .ui-icon:only-child, .ui-list-row > .ui-icon[uitrailing], .ui-list-row > [uitrailing]:not(.ui-button) > .ui-icon',
       ),
     ).toContain('font-size: var(--ui-icon-medium)');
   });

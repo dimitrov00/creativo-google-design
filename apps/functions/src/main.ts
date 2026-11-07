@@ -36,6 +36,7 @@ import {
   StoredDocumentSystem,
 } from '@core/systems';
 import {
+  amendRosterBreaks as amendRosterBreaksPipeline,
   auditDocumentChange,
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
@@ -61,6 +62,7 @@ import {
   runBackfill as runBackfillPipeline,
   sampleLeadTime,
   setRoles as setRolesPipeline,
+  setRosterWeek as setRosterWeekPipeline,
   startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
@@ -177,6 +179,10 @@ import {
   projectionReport,
   settleAttempt,
 } from './wire/triggers.wire';
+import {
+  decodeAmendRosterBreaks,
+  decodeSetRosterWeek,
+} from './wire/roster.wire';
 import {
   decodeCancelWaitlist,
   decodeRequestWaitlist,
@@ -816,6 +822,38 @@ export const markArrived = onCall(
     decodeMarkArrived,
     async (ports, cmd) => Result.map(await markArrival(ports)(cmd), arrivedOf),
     arrivalRefusal,
+  ),
+);
+
+/**
+ * A chair's standing breaks changed «from this day on» (owner, 2026-11-06):
+ * one roster write, the roster's one door from the desk. Its capacity
+ * rebuild and its audit row ride the roster's own triggers.
+ */
+export const amendRosterBreaks = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.AmendRosterBreaks, null),
+    root.ports,
+    decodeAmendRosterBreaks,
+    (ports, cmd) => amendRosterBreaksPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * A chair's whole week from a day on — the hours editor's save (owner,
+ * 2026-11-06): one roster write, its capacity rebuild and audit row on the
+ * roster's own triggers.
+ */
+export const setRosterWeek = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.SetRosterWeek, null),
+    root.ports,
+    decodeSetRosterWeek,
+    (ports, cmd) => setRosterWeekPipeline(ports)(cmd),
+    refusalOf,
   ),
 );
 

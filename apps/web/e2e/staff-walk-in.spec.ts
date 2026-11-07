@@ -126,7 +126,9 @@ test.describe('the staff visit sheet — a walk-in is kept (OR-26)', () => {
     );
     await expect(walkIn).toHaveCount(1, { timeout: 20_000 });
     await expect(walkIn).toContainText('Иван Тодоров');
-    await expect(walkIn).toContainText(mail);
+    // A person row carries ONE contact, the one the typing matched
+    // (2026-11-06): here the number, as the phone field prints it.
+    await expect(walkIn).toContainText(number.slice(-4));
     // No profile behind them — said in ink on the row — and the typed
     // number is theirs: badged, ahead of «Нов клиент».
     await expect(
@@ -135,6 +137,11 @@ test.describe('the staff visit sheet — a walk-in is kept (OR-26)', () => {
     await expect(
       walkIn.locator('[data-testid^="staff-visit-client-exact-"]'),
     ).toBeVisible();
+    // The mail was kept too: typed, it finds the same record, and it is the
+    // line the row shows.
+    await page.getByTestId('staff-visit-client-query').fill(mail);
+    await expect(walkIn).toHaveCount(1, { timeout: 20_000 });
+    await expect(walkIn).toContainText(mail);
 
     // On the visit, their card opens from their row.
     await walkIn.click();

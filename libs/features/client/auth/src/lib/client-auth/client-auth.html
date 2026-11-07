@@ -117,6 +117,7 @@
                   autocomplete="email"
                   inputmode="email"
                   data-testid="auth-identifier-input"
+                  [placeholder]="t('auth.identify.emailPlaceholder')"
                   aria-describedby="auth-identifier-hint"
                   [readonly]="store.pending()"
                   [attr.aria-invalid]="identifierError() ? true : null"

@@ -64,6 +64,8 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.block.repeatWeekdayGender.wednesday': 'feminine',
       'staff.block.repeatOnDayOfYear': 'на {{date}}',
       'staff.block.repeatEnd': 'Край',
+      'staff.block.repeatEndNever': 'Без край',
+      'staff.block.repeatStanding': 'почивка в графика от {{day}}',
       'staff.block.repeatEndOn': 'На дата',
       'staff.block.repeatEndAfter': 'След брой пъти',
       'staff.block.repeatEndDate': 'Дата',
@@ -501,6 +503,35 @@ describe('StaffBlockEditor', () => {
     ).toBe(true);
     click(host, 'ui-month-day-2026-09-23');
     expect(text(host, 'staff-block-repeat-summary')).toContain('3 пъти');
+  });
+
+  it('stands a weekday repeat with no end in the weekly roster — no day written (owner, 2026-11-06)', () => {
+    const host = render();
+    const commits = commitsOf();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-weekdays');
+    click(host, 'staff-block-repeat-end-kind');
+    click(host, 'staff-block-repeat-end-never');
+    expect(pill(host, 'staff-block-repeat-end-kind')).toBe('Без край');
+    // No last day and no count: a break of the hours from the day on.
+    expect(find(host, 'staff-block-until')).toBeNull();
+    expect(find(host, 'staff-block-repeat-count')).toBeNull();
+    expect(text(host, 'staff-block-repeat-summary')).toContain(
+      'почивка в графика от',
+    );
+    click(host, 'staff-block-page-done');
+    click(host, 'staff-block-save');
+    expect(commits[0]?.standing).toEqual([1, 2, 3, 4, 5]);
+    expect(commits[0]?.days).toEqual([]);
+  });
+
+  it('offers no «Без край» where the week cannot hold it — every other week', () => {
+    const host = render();
+    click(host, 'staff-block-repeat');
+    click(host, 'staff-block-repeat-custom');
+    typeInto(host, 'staff-block-repeat-interval', '2');
+    click(host, 'staff-block-repeat-end-kind');
+    expect(find(host, 'staff-block-repeat-end-never')).toBeNull();
   });
 
   it('refuses a series it cannot write — in words, and «Запази» says where to fix it', () => {

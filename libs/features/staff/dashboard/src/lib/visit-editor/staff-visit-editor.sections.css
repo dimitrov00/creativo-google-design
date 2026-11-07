@@ -319,6 +319,15 @@
   align-items: center;
 }
 
+/* …but a dock holding the service page's search sits on its FLOOR, as the
+   DS bar does beside a fill (and the search sheet's bar): the field carries
+   the visit's people over it, and centred the ✓ floated between the chips
+   and the field (owner, 2026-11-06: "the same way as in the search"). This
+   rule is unlayered and wins over the DS one, so it says it again. */
+.staff-visit__dock:has(> [uifill]) {
+  align-items: flex-end;
+}
+
 /* THE MEDAL PAGE'S VERB (revision 3 §5.2, DV-C): «Добави фейд», hugged
    beside the ✓ — and never past the column. The bar lays its children at
    `flex: 0 0 auto`; a long service name («Добави оформяне на брада» on a

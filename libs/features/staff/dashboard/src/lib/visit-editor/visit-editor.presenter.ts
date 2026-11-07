@@ -13,6 +13,7 @@ import {
 } from '@core/primitives';
 import { AppointmentLifecycleSystem, TextMatchSystem } from '@core/systems';
 import type { UiChoiceOption, UiSegment } from '@creativo/ui/controls';
+import type { ServiceCoverTile } from '@creativo/features/shared/catalog';
 import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ROW_VERB_WORD } from '../row-verb';
 import type {
@@ -33,6 +34,7 @@ import {
   type ResolutionHeadVm,
   ResolutionWord,
   type ServiceApplyVm,
+  type ServicePersonVm,
   type ServiceRowVm,
   ShopView,
   TimingMode,
@@ -102,6 +104,7 @@ export function visitEditorWordsOf(
     noAccount: copy('staff.client.noAccount'),
     newClient: copy('staff.visit.newClient'),
     servicesAddOne: copy('staff.visit.servicesAddOne'),
+    servicesApply: copy('staff.visit.servicesApply'),
     alone: copy('staff.visit.alone'),
     stacks: copy('staff.visit.stacks'),
     discountAmount: copy('staff.visit.discountAmount'),
@@ -140,6 +143,8 @@ export function visitEditorWordsOf(
     catalogMinutes: (minutes) =>
       translate('staff.visit.catalogMinutes', { minutes }),
     cancelFor: (names) => translate('staff.visit.cancelFor', { names }),
+    walkInNumbered: (number) =>
+      translate('staff.visit.walkInNumbered', { number }),
     servicesAddCount: (count) =>
       translate('staff.visit.servicesAddCount', { count }),
     applyDiscount: (what) => translate('staff.visit.applyDiscount', { what }),
@@ -620,6 +625,32 @@ export function serviceOptionLine(
     .join(' · ');
 }
 
+/** A catalogue option as the shared picker grid's tile, the option beside it. */
+export type ServiceCoverTileVm = ServiceCoverTile & {
+  readonly option: VisitEditorServiceOption;
+};
+
+/**
+ * The page's options as cover tiles (`cr-service-cover-grid`, the search
+ * sheet's and the rhythm rule's grid): the service's name, its variant under
+ * it, ticked while the person holds it (`picks`, by option key).
+ */
+export function serviceCoverTilesOf(
+  rows: readonly { readonly option: VisitEditorServiceOption }[],
+  picks: ReadonlyMap<string, number>,
+): readonly ServiceCoverTileVm[] {
+  return rows.map(({ option }) => ({
+    id: option.id,
+    serviceId: option.serviceId,
+    name: option.serviceLabel ?? option.label,
+    meta: option.variantLabel ?? '',
+    coverSrc: option.coverSrc ?? null,
+    checked: (picks.get(option.id) ?? 0) > 0,
+    testId: `staff-visit-service-${option.id}`,
+    option,
+  }));
+}
+
 /**
  * A CATALOGUE ROW FOR WHAT WAS TYPED (owner, 2026-11-03: "highlight the
  * matches, case-insensitive, as a background"): the title, and the line's
@@ -647,30 +678,46 @@ export function serviceRowVm(
 }
 
 /**
+ * THE VISIT'S PEOPLE over the service page's field (owner, 2026-11-06:
+ * "in the toolbar the clients should be visible, to add more or change
+ * whose booking"): each a chip, the one the picks seat for selected — the
+ * page's subject, else the first, whom an unaddressed pick seats for.
+ */
+export function servicePeopleVm(
+  clients: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly avatarSrc?: string | null;
+  }[],
+  subjectId: string | null,
+): readonly ServicePersonVm[] {
+  const chosen = subjectId ?? clients[0]?.id ?? null;
+  return clients.map((client) => ({
+    id: client.id,
+    label: client.label,
+    avatarSrc: client.avatarSrc ?? null,
+    selected: client.id === chosen,
+  }));
+}
+
+/**
  * THE DOCK'S PROMISE on the service page: «Добави» for one pick, «Добави
  * 3 услуги» for more — or nothing, and the dock keeps its ✓: the page is
  * only being read.
  */
 export function serviceApplyVm(
-  count: number,
+  added: number,
+  removed: number,
   words: VisitEditorWords,
 ): ServiceApplyVm | null {
+  const count = added + removed;
   if (count === 0) return null;
+  // Taking a service off is a change, not an add: one word for both then.
+  if (removed > 0) return { count, label: words.servicesApply };
   return {
     count,
-    label: count === 1 ? words.servicesAddOne : words.servicesAddCount(count),
+    label: added === 1 ? words.servicesAddOne : words.servicesAddCount(added),
   };
-}
-
-/** The person a catalogue page is for, by the page's subject — their label, or none. */
-export function servicePersonOf(
-  clients: readonly {
-    readonly id: DraftPersonKey;
-    readonly label: string;
-  }[],
-  subjectId: string,
-): string | null {
-  return clients.find((client) => client.id === subjectId)?.label ?? null;
 }
 
 /* ── The bar ───────────────────────────────────────────────────────────── */

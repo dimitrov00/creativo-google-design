@@ -9,8 +9,10 @@ import {
   MinuteOfDay,
 } from '@core/primitives';
 import {
+  type DayBreaks,
   type ExceptionEffectRule,
   MinuteRange,
+  RosterBreak,
   DayHours,
   OpeningState,
   RosterWindow,
@@ -31,7 +33,8 @@ import { IntervalSetSystem } from './interval-set.system';
  * given that falls on its day.
  */
 export type DayException = Pick<ScheduleException, 'localDate'> &
-  ExceptionEffectRule;
+  ExceptionEffectRule &
+  DayBreaks;
 
 /**
  * One shop's published hours for the day (`roster-window.ts:39`). The two
@@ -148,6 +151,28 @@ function carveOutsOn(
   return IntervalSetSystem.normalize(spans);
 }
 
+/**
+ * The day's breaks: the first exception that says its own
+ * (`dayBreakRanges`, `[]` none that day), else the roster's for the weekday.
+ */
+function breaksOn(
+  relevant: readonly DayException[],
+  version: ScheduleVersion,
+  weekday: Weekday,
+): readonly MinuteRange[] {
+  for (let i = 0; i < relevant.length; i++) {
+    const own = (relevant[i] as DayException).dayBreakRanges;
+    if (own !== null) return IntervalSetSystem.normalize(own);
+  }
+  return RosterBreak.rangesOn(version.breaks, weekday);
+}
+
+/** Which carve-outs a day's windows lose — both for what is bookable. */
+type Carve = { readonly blocks: boolean; readonly breaks: boolean };
+
+const CARVE_ALL: Carve = { blocks: true, breaks: true };
+const CARVE_NONE: Carve = { blocks: false, breaks: false };
+
 /** The weekday's segments of the version, in time order (a sorted copy). */
 function segmentsOn(
   segments: readonly ShiftSegment[],
@@ -220,6 +245,99 @@ function byStartThenLocation(a: RosterWindow, b: RosterWindow): number {
 
 function byStart(a: RosterWindow, b: RosterWindow): number {
   return a.startMinutes - b.startMinutes;
+}
+
+/**
+ * A barber's day as windows, losing the carve-outs `carve` names — the one
+ * implementation of the order of application ({@link
+ * RosterSystem.buildDayWindows} documents it); the drawing of blocks and
+ * breaks re-runs it with none.
+ */
+function windowsOf(
+  input: BuildDayWindowsInput,
+  carve: Carve,
+): readonly RosterWindow[] {
+  const relevant = exceptionsOn(input.exceptions, input.localDate);
+  if (hasWholeDayAbsence(relevant)) return [];
+
+  const version = RosterSystem.versionFor(input.versions, input.localDate);
+  if (version === null) return [];
+
+  const weekday = LocalDate.weekday(input.localDate);
+  const rostered = segmentsOn(version.segments, weekday);
+  const first = rostered[0];
+  if (first === undefined) return [];
+
+  const override = hoursOverride(relevant);
+  let segments = rostered;
+  if (override !== null) {
+    const replaced: ShiftSegment[] = [];
+    for (let i = 0; i < override.length; i++) {
+      const range = override[i] as MinuteRange;
+      replaced.push(
+        ShiftSegment.of(
+          weekday,
+          first.locationId,
+          MinuteOfDay.ofProven(range.startMinutes),
+          EndMinute.ofProven(range.endMinutes),
+        ),
+      );
+    }
+    segments = replaced;
+  }
+
+  const carveOuts = IntervalSetSystem.normalize([
+    ...(carve.blocks ? carveOutsOn(relevant) : []),
+    ...(carve.breaks ? breaksOn(relevant, version, weekday) : []),
+  ]);
+
+  const windows: RosterWindow[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i] as ShiftSegment;
+    const worked = [MinuteRange.of(segment.startMinutes, segment.endMinutes)];
+    const hours = hoursAt(input.shopHours, segment.locationId);
+    const bounded =
+      hours === null
+        ? worked
+        : IntervalSetSystem.intersect(worked, hoursAsRanges(hours));
+    const kept = IntervalSetSystem.subtract(bounded, carveOuts);
+    for (let k = 0; k < kept.length; k++) {
+      const range = kept[k] as MinuteRange;
+      windows.push(
+        RosterWindow.of(
+          input.barberId,
+          segment.locationId,
+          MinuteOfDay.ofProven(range.startMinutes),
+          EndMinute.ofProven(range.endMinutes),
+        ),
+      );
+    }
+  }
+  return windows.sort(byStartThenLocation);
+}
+
+/** The parts of `ranges` the worked windows cover, each at its window's shop. Sorted by start. */
+function coveredBy(
+  worked: readonly RosterWindow[],
+  ranges: readonly MinuteRange[],
+): readonly RosterWindow[] {
+  const covered: RosterWindow[] = [];
+  for (let i = 0; i < worked.length; i++) {
+    const window = worked[i] as RosterWindow;
+    const inside = IntervalSetSystem.intersect([window], ranges);
+    for (let k = 0; k < inside.length; k++) {
+      const range = inside[k] as MinuteRange;
+      covered.push(
+        RosterWindow.of(
+          window.barberId,
+          window.locationId,
+          MinuteOfDay.ofProven(range.startMinutes),
+          EndMinute.ofProven(range.endMinutes),
+        ),
+      );
+    }
+  }
+  return covered.sort(byStart);
 }
 
 /**
@@ -328,13 +446,15 @@ export const RosterSystem = {
 
   /**
    * THE DAY THE CHAIRS ARE AT WORK: rostered time AND the time carved out of
-   * it, normalized. Rostered alone is post-carve, so a blocked hour would read
-   * as "not working"; a block is working, but taken.
+   * it — blocks and breaks — normalized. Rostered alone is post-carve, so a
+   * blocked hour or a lunch would read as "not working"; both are working,
+   * but taken.
    */
   atWork(
     lanes: readonly {
       readonly rostered: readonly MinuteRange[];
       readonly blocks: readonly MinuteRange[];
+      readonly breaks: readonly MinuteRange[];
     }[],
   ): readonly MinuteRange[] {
     const ranges: MinuteRange[] = [];
@@ -345,6 +465,9 @@ export const RosterSystem = {
       }
       for (let k = 0; k < lane.blocks.length; k++) {
         ranges.push(lane.blocks[k] as MinuteRange);
+      }
+      for (let k = 0; k < lane.breaks.length; k++) {
+        ranges.push(lane.breaks[k] as MinuteRange);
       }
     }
     return IntervalSetSystem.normalize(ranges);
@@ -427,66 +550,16 @@ export const RosterSystem = {
    *    one-day tweak), and it cannot open a weekday the roster does not work;
    * 3. each segment intersected with ITS OWN shop's hours (no entry or
    *    `null`: no bound; `[]`: closed);
-   * 4. every `BLOCKED` range subtracted — from the windows, not merely
-   *    marked busy, so unpaid time never enters the capacity denominator.
+   * 4. every `BLOCKED` range and the day's breaks subtracted — the
+   *    roster's weekday breaks, or the day's own (`dayBreakRanges`) — from
+   *    the windows, not merely marked busy, so unpaid time never enters the
+   *    capacity denominator. A break removed for a day opens that time to
+   *    `/book` at once; staff may still place a visit over one.
    *
    * Sorted by start, then shop (code-unit order).
    */
   buildDayWindows(input: BuildDayWindowsInput): readonly RosterWindow[] {
-    const relevant = exceptionsOn(input.exceptions, input.localDate);
-    if (hasWholeDayAbsence(relevant)) return [];
-
-    const version = RosterSystem.versionFor(input.versions, input.localDate);
-    if (version === null) return [];
-
-    const weekday = LocalDate.weekday(input.localDate);
-    const rostered = segmentsOn(version.segments, weekday);
-    const first = rostered[0];
-    if (first === undefined) return [];
-
-    const override = hoursOverride(relevant);
-    let segments = rostered;
-    if (override !== null) {
-      const replaced: ShiftSegment[] = [];
-      for (let i = 0; i < override.length; i++) {
-        const range = override[i] as MinuteRange;
-        replaced.push(
-          ShiftSegment.of(
-            weekday,
-            first.locationId,
-            MinuteOfDay.ofProven(range.startMinutes),
-            EndMinute.ofProven(range.endMinutes),
-          ),
-        );
-      }
-      segments = replaced;
-    }
-
-    const carveOuts = carveOutsOn(relevant);
-
-    const windows: RosterWindow[] = [];
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i] as ShiftSegment;
-      const worked = [MinuteRange.of(segment.startMinutes, segment.endMinutes)];
-      const hours = hoursAt(input.shopHours, segment.locationId);
-      const bounded =
-        hours === null
-          ? worked
-          : IntervalSetSystem.intersect(worked, hoursAsRanges(hours));
-      const kept = IntervalSetSystem.subtract(bounded, carveOuts);
-      for (let k = 0; k < kept.length; k++) {
-        const range = kept[k] as MinuteRange;
-        windows.push(
-          RosterWindow.of(
-            input.barberId,
-            segment.locationId,
-            MinuteOfDay.ofProven(range.startMinutes),
-            EndMinute.ofProven(range.endMinutes),
-          ),
-        );
-      }
-    }
-    return windows.sort(byStartThenLocation);
+    return windowsOf(input, CARVE_ALL);
   },
 
   /**
@@ -504,39 +577,48 @@ export const RosterSystem = {
   buildDayCarveOuts(input: BuildDayWindowsInput): readonly RosterWindow[] {
     const relevant = exceptionsOn(input.exceptions, input.localDate);
     if (hasWholeDayAbsence(relevant)) return [];
-
     const carveOuts = carveOutsOn(relevant);
-    if (carveOuts.length === 0) return [];
+    return carveOuts.length === 0
+      ? []
+      : coveredBy(windowsOf(input, CARVE_NONE), carveOuts);
+  },
 
-    const unblocked: DayException[] = [];
-    for (let i = 0; i < relevant.length; i++) {
-      const exception = relevant[i] as DayException;
-      if (exception.exceptionEffect !== ExceptionEffect.Blocked) {
-        unblocked.push(exception);
-      }
-    }
-    const worked = RosterSystem.buildDayWindows({
-      ...input,
-      exceptions: unblocked,
-    });
+  /**
+   * The day's BREAKS as drawn — the roster's weekday breaks, or the day's
+   * own (`dayBreakRanges`) — clipped to the time that would otherwise be
+   * worked and to what no block already covers, so a break over hours
+   * nobody works, or under a block, draws nothing. Subtracted from the
+   * windows like a block ({@link buildDayWindows}); drawn apart from one,
+   * because a break is the roster's and an edit of it asks how far it
+   * reaches. Sorted by start.
+   */
+  buildDayBreaks(input: BuildDayWindowsInput): readonly RosterWindow[] {
+    const relevant = exceptionsOn(input.exceptions, input.localDate);
+    if (hasWholeDayAbsence(relevant)) return [];
+    const version = RosterSystem.versionFor(input.versions, input.localDate);
+    if (version === null) return [];
+    const breaks = IntervalSetSystem.subtract(
+      breaksOn(relevant, version, LocalDate.weekday(input.localDate)),
+      carveOutsOn(relevant),
+    );
+    return breaks.length === 0
+      ? []
+      : coveredBy(windowsOf(input, CARVE_NONE), breaks);
+  },
 
-    const blocks: RosterWindow[] = [];
-    for (let i = 0; i < worked.length; i++) {
-      const window = worked[i] as RosterWindow;
-      const covered = IntervalSetSystem.intersect([window], carveOuts);
-      for (let k = 0; k < covered.length; k++) {
-        const range = covered[k] as MinuteRange;
-        blocks.push(
-          RosterWindow.of(
-            window.barberId,
-            window.locationId,
-            MinuteOfDay.ofProven(range.startMinutes),
-            EndMinute.ofProven(range.endMinutes),
-          ),
-        );
-      }
-    }
-    return blocks.sort(byStart);
+  /**
+   * The roster's own breaks on a day's weekday, whatever the day says —
+   * what «this and the following» revises, and how a drawn break is known
+   * to be the roster's ({@link buildDayBreaks} draws the day's).
+   */
+  rosterBreaksOn(
+    versions: readonly ScheduleVersion[],
+    localDate: LocalDate,
+  ): readonly MinuteRange[] {
+    const version = RosterSystem.versionFor(versions, localDate);
+    return version === null
+      ? []
+      : RosterBreak.rangesOn(version.breaks, LocalDate.weekday(localDate));
   },
 
   /**
@@ -565,6 +647,11 @@ export const RosterSystem = {
       RosterSystem.buildDayCarveOuts(input),
       input.shopHours,
     );
+  },
+
+  /** The breaks at the OFFERED shops — as {@link offeredCarveOuts} keeps the blocks. */
+  offeredBreaks(input: BuildDayWindowsInput): readonly RosterWindow[] {
+    return atOfferedShops(RosterSystem.buildDayBreaks(input), input.shopHours);
   },
 
   /** Only the windows worked at one shop — what a booking at that shop may use. */

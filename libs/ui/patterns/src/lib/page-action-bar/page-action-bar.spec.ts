@@ -55,3 +55,49 @@ describe('UiPageActionBar', () => {
     expect(bar().getAttribute('aria-hidden')).toBeNull();
   });
 });
+
+@Component({
+  imports: [UiPageActionBar],
+  template: `<ui-page-action-bar data-testid="bar" [uiAvoidsKeyboard]="true">
+    <input data-testid="field" />
+  </ui-page-action-bar>`,
+})
+class KeyboardHostComponent {}
+
+describe('UiPageActionBar · riding the keyboard', () => {
+  const original = Object.getOwnPropertyDescriptor(window, 'visualViewport');
+  afterEach(() => {
+    if (original) Object.defineProperty(window, 'visualViewport', original);
+    else Reflect.deleteProperty(window, 'visualViewport');
+  });
+
+  it('publishes what the visual viewport lost as the keyboard inset, and says it rides it', async () => {
+    const listeners: Record<string, () => void> = {};
+    const viewport = {
+      height: window.innerHeight,
+      offsetTop: 0,
+      addEventListener: (type: string, fn: () => void) => {
+        listeners[type] = fn;
+      },
+      removeEventListener: () => undefined,
+    };
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: viewport,
+    });
+    await TestBed.configureTestingModule({
+      imports: [KeyboardHostComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(KeyboardHostComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const bar: HTMLElement = fixture.nativeElement.querySelector(
+      '[data-testid="bar"]',
+    );
+    expect(bar.hasAttribute('data-avoids-keyboard')).toBe(true);
+    expect(bar.style.getPropertyValue('--ui-keyboard-inset')).toBe('0px');
+    viewport.height = window.innerHeight - 300;
+    listeners['resize']?.();
+    expect(bar.style.getPropertyValue('--ui-keyboard-inset')).toBe('300px');
+  });
+});

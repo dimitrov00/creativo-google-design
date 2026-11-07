@@ -1,14 +1,14 @@
 <sc-page scTitle="Search field">
   <ng-container scLede>
     The one search field (<code>ui-search-field</code>): a glyph, a field, a
-    clear. It can hold removable chips before the text — the filters the owner
-    keeps beside what was typed. Pressing a chip, or Backspace in an empty
-    field, takes it off.
+    clear. It can hold keyed tokens before the text — the filters the owner
+    keeps beside what was typed, each a key and its value — and hang a dropdown
+    of suggestions under itself while it is focused.
   </ng-container>
 
   <sc-demo scTitle="Plain">
     <ng-container scAbout>
-      No chips: the field as the visit sheet's lists use it.
+      No tokens: the field as the visit sheet's lists use it.
     </ng-container>
     <ui-search-field
       uiPlaceholder="Търси…"
@@ -18,25 +18,45 @@
     />
   </sc-demo>
 
-  <sc-demo scTitle="With chips">
+  <sc-demo scTitle="With tokens">
     <ng-container scAbout>
-      Chips sit inside the frame before the text; the frame wears the field's
-      fill, hairline and focus glow. Press a chip to remove it.
+      Each token is a key on the plain fill and its value on the value pill's,
+      both translucent; a barber's value leads with faces. A token has no ✕:
+      pressing it asks the owner to open its values (here it only wears the
+      ring). Backspace in an empty field takes the last one off.
     </ng-container>
     <ui-search-field
       uiPlaceholder="Търси…"
-      uiTestId="showcase-chips"
+      uiTestId="showcase-tokens"
       uiClearLabel="Изчисти търсенето"
-      [uiValue]="withChips()"
-      [uiTokens]="chips()"
-      (uiInput)="withChips.set($event)"
-      (uiTokenRemove)="remove(chips, $event)"
+      [uiValue]="withTokens()"
+      [uiTokens]="tokens()"
+      [uiActiveToken]="active()"
+      (uiInput)="withTokens.set($event)"
+      (uiTokenActivate)="toggle($event)"
+      (uiTokenRemove)="remove(tokens, $event)"
     />
   </sc-demo>
 
-  <sc-demo scTitle="Chips that wrap">
+  <sc-demo scTitle="A token being built">
     <ng-container scAbout>
-      Chips and text wrap together; the clear stays at the trailing edge.
+      A token with no value yet is already both segments: its key, and the value
+      segment holding <code>uiTokenPlaceholder</code> — the half-built filter of
+      a key just picked, waiting for its value.
+    </ng-container>
+    <ui-search-field
+      uiClearLabel="Изчисти търсенето"
+      uiTokenPlaceholder="избери…"
+      [uiValue]="''"
+      [uiTokens]="building()"
+      (uiTokenRemove)="remove(building, $event)"
+    />
+  </sc-demo>
+
+  <sc-demo scTitle="Tokens that wrap">
+    <ng-container scAbout>
+      Tokens and text wrap together and the field grows a line; a wide value
+      ellipsizes beside the glyph; the clear stays at the trailing edge.
     </ng-container>
     <ui-stack uiSpacing="comfortable" class="search-field__narrow">
       <ui-search-field
@@ -48,5 +68,70 @@
         (uiTokenRemove)="remove(lots, $event)"
       />
     </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="On the floor: chips above, a ✕ beside, a card over it">
+    <ng-container scAbout>
+      The floor's anatomy (iOS 26 Mail and Photos). The field does not dock
+      itself: it rides a <code>ui-page-action-bar</code> as its
+      <code>uiFill</code>, at <code>uiControlSize="large"</code> beside the
+      bar's other controls. Content projected with
+      <code>uiSearchAccessory</code> rides above the field,
+      <code>uiDismissLabel</code> puts the ✕ that ends the search beside it, and
+      <code>uiDropdownPlacement="above"</code> opens the dropdown over it,
+      hugging its rows — here while the field is focused.
+    </ng-container>
+    <div class="search-field__dropdown-demo search-field__floor-demo">
+      <ui-search-field
+        uiControlSize="large"
+        uiPlaceholder="Търси…"
+        uiClearLabel="Изчисти търсенето"
+        uiDismissLabel="Затвори"
+        uiDropdownLabel="Филтри"
+        uiDropdownPlacement="above"
+        [uiValue]="docked()"
+        [uiDropdownOpen]="dockedFocused()"
+        (uiInput)="docked.set($event)"
+        (uiFocusChange)="dockedFocused.set($event)"
+        (uiEscape)="dockedFocused.set(false)"
+        (uiDismiss)="docked.set('')"
+      >
+        <ui-scroll-row uiSearchAccessory uiSpacing="compact" uiSnap="none">
+          <button type="button" uiChip [uiSelected]="true" [uiToggle]="false">
+            Днес
+          </button>
+        </ui-scroll-row>
+        <div uiSearchDropdown class="search-field__dropdown-rows">
+          <button type="button">Бръснар</button>
+          <button type="button">Услуга</button>
+        </div>
+      </ui-search-field>
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="With a dropdown">
+    <ng-container scAbout>
+      Content projected with <code>uiSearchDropdown</code> hangs under the field
+      while <code>uiDropdownOpen</code> — here, while it is focused. A press
+      inside keeps the focus; Escape closes it.
+    </ng-container>
+    <div class="search-field__dropdown-demo">
+      <ui-search-field
+        uiPlaceholder="Търси…"
+        uiClearLabel="Изчисти търсенето"
+        uiDropdownLabel="Филтри"
+        [uiValue]="dropped()"
+        [uiDropdownOpen]="dropdownFocused()"
+        (uiInput)="dropped.set($event)"
+        (uiFocusChange)="dropdownFocused.set($event)"
+        (uiEscape)="dropdownFocused.set(false)"
+      >
+        <div uiSearchDropdown class="search-field__dropdown-rows">
+          <button type="button">Кога</button>
+          <button type="button">Бръснар</button>
+          <button type="button">Услуга</button>
+        </div>
+      </ui-search-field>
+    </div>
   </sc-demo>
 </sc-page>

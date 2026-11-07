@@ -65,6 +65,7 @@ export type UiSheetPresentationSizing = 'automatic' | 'page';
     '[attr.data-presented]': "uiIsPresented() ? '' : null",
     '[attr.data-placement]': 'uiPlacement()',
     '[attr.data-presentation-sizing]': 'uiPresentationSizing()',
+    '[attr.data-full-screen]': "uiFullScreen() ? '' : null",
     '[attr.aria-modal]': 'uiIsPresented() || null',
     '[attr.data-stacked]': "stacked() ? '' : null",
     '[attr.popover]': "stacked() ? 'manual' : null",
@@ -90,6 +91,13 @@ export class UiSheet {
   readonly uiIsPresented = input(false);
   readonly uiPlacement = input<UiSheetPlacement>('bottom');
   readonly uiPresentationSizing = input<UiSheetPresentationSizing>('automatic');
+  /**
+   * ≙ SwiftUI `.fullScreenCover`: the surface IS the screen — no scrim, no
+   * rounding, no shadow, no entrance of its own (an owner that animates the
+   * presentation does it, e.g. with a view transition), and no padding: the
+   * content owns its edges and the safe areas.
+   */
+  readonly uiFullScreen = input(false);
   /**
    * The owner is playing its exit transition — forwarded to the behavior's
    * `closing` signal so the modal environment (scroll lock, `inert`, focus

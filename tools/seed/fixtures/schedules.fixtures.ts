@@ -20,6 +20,7 @@ import {
   ExceptionEffectRule,
   MinuteBlock,
   MinuteRange,
+  RosterBreak,
   type ScheduleVersion,
   ShiftSegment,
 } from '@core/components';
@@ -59,10 +60,20 @@ const segment = (
 ): ShiftSegment => ShiftSegment.of(weekday, locationId, at(from), until(to));
 
 /** A split shift at one shop — mornings, lunch, afternoons. */
+/** A day at one shop, 09:00–18:00 — its 13:00 lunch is a roster break ({@link lunchOn}). */
 const shiftAt = (weekday: Weekday, locationId: LocationId) => [
-  segment(weekday, locationId, 9, 13),
-  segment(weekday, locationId, 14, 18),
+  segment(weekday, locationId, 9, 18),
 ];
+
+/**
+ * The weekday lunch, 13:00–14:00 — a break of the roster, not a gap
+ * between two segments (owner, 2026-11-06): the grid draws it as «Почивка»,
+ * a drag moves it, and a day may skip it.
+ */
+const lunchOn = (...weekdays: readonly Weekday[]): readonly RosterBreak[] =>
+  weekdays.map((weekday) =>
+    RosterBreak.of(weekday, MinuteRange.of(at(13), until(14))),
+  );
 
 /** Twelve to eight at the Center. */
 const lateShift = (weekday: Weekday) => [segment(weekday, CENTER, 12, 20)];
@@ -70,12 +81,14 @@ const lateShift = (weekday: Weekday) => [segment(weekday, CENTER, 12, 20)];
 /** One open-ended version from the start of the year; `amend` closes it and appends the next. */
 const openEnded = (
   segments: readonly ShiftSegment[],
+  breaks: readonly RosterBreak[] = [],
 ): readonly ScheduleVersion[] => [
   {
     seq: 0,
     effectiveFromLocalDate: day('2026-01-01'),
     effectiveToLocalDate: null,
     segments,
+    breaks,
   },
 ];
 
@@ -92,18 +105,26 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
     id: IVAN,
     body: {
       turnaroundMinutes: minuteCount(10),
-      versions: openEnded([
-        ...shiftAt(Weekday.Mon, CENTER),
-        ...shiftAt(Weekday.Tue, CENTER),
-        ...shiftAt(Weekday.Wed, CENTER),
-        ...shiftAt(Weekday.Thu, CENTER),
-        // Ivan covers the Mladost chair on Fridays. Mladost opens 10:00, so
-        // the morning segment starts with the shop rather than at 09:00 —
-        // otherwise the first hour clips away and the roster reads as a lie.
-        segment(Weekday.Fri, MLADOST, 10, 13),
-        segment(Weekday.Fri, MLADOST, 14, 18),
-        segment(Weekday.Sat, CENTER, 10, 16),
-      ]),
+      versions: openEnded(
+        [
+          ...shiftAt(Weekday.Mon, CENTER),
+          ...shiftAt(Weekday.Tue, CENTER),
+          ...shiftAt(Weekday.Wed, CENTER),
+          ...shiftAt(Weekday.Thu, CENTER),
+          // Ivan covers the Mladost chair on Fridays. Mladost opens 10:00, so
+          // the morning segment starts with the shop rather than at 09:00 —
+          // otherwise the first hour clips away and the roster reads as a lie.
+          segment(Weekday.Fri, MLADOST, 10, 18),
+          segment(Weekday.Sat, CENTER, 10, 16),
+        ],
+        lunchOn(
+          Weekday.Mon,
+          Weekday.Tue,
+          Weekday.Wed,
+          Weekday.Thu,
+          Weekday.Fri,
+        ),
+      ),
     } satisfies Body<BarberSchedule>,
   },
   {
@@ -129,13 +150,16 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
     id: STEFAN,
     body: {
       turnaroundMinutes: minuteCount(15),
-      versions: openEnded([
-        ...shiftAt(Weekday.Mon, CENTER),
-        ...shiftAt(Weekday.Tue, CENTER),
-        ...shiftAt(Weekday.Thu, CENTER),
-        ...shiftAt(Weekday.Fri, CENTER),
-        segment(Weekday.Sat, CENTER, 9, 15),
-      ]),
+      versions: openEnded(
+        [
+          ...shiftAt(Weekday.Mon, CENTER),
+          ...shiftAt(Weekday.Tue, CENTER),
+          ...shiftAt(Weekday.Thu, CENTER),
+          ...shiftAt(Weekday.Fri, CENTER),
+          segment(Weekday.Sat, CENTER, 9, 15),
+        ],
+        lunchOn(Weekday.Mon, Weekday.Tue, Weekday.Thu, Weekday.Fri),
+      ),
     } satisfies Body<BarberSchedule>,
   },
 ];
@@ -170,6 +194,7 @@ export function closedDayBody(
     utcEpochMs: firstInstantOf(localDate, timeZoneOf(locationId)),
     locationId: LocationId.of(locationId),
     ...ExceptionEffectRule.closed(),
+    dayBreakRanges: null,
   } satisfies Body<ScheduleException>;
 }
 

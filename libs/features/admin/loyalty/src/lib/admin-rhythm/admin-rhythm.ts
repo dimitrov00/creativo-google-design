@@ -14,7 +14,11 @@ import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { combineLatest, of } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { CatalogContentService } from '@creativo/features/shared/catalog';
 import {
   LocalizedText,
   RhythmEffectiveChoice,
@@ -238,6 +242,12 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly RhythmEstimate = RhythmEstimate;
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CATALOG_PORTS, { optional: true });
+  /** The catalogue's own cover cache — none with no catalogue or media bound. */
+  private readonly content =
+    this.catalog !== null &&
+    inject(MEDIA_RESOLVE_PORTS, { optional: true }) !== null
+      ? inject(CatalogContentService)
+      : null;
 
   private readonly seq = ++sequence;
 
@@ -574,6 +584,20 @@ export class AdminRhythm implements AdminRhythmLeaving {
           ),
         ),
     { initialValue: null },
+  );
+
+  /** Each listed service's cover, by id, as the catalogue resolved it — the services sheet's cards. */
+  protected readonly serviceCovers = computed(
+    (): ReadonlyMap<ServiceId, string> => {
+      const covers = new Map<ServiceId, string>();
+      for (const group of this.serviceGroups() ?? []) {
+        for (const service of group.services) {
+          const url = this.content?.coverUrlOf(service);
+          if (url !== undefined) covers.set(service.id, url);
+        }
+      }
+      return covers;
+    },
   );
 
   // ── The alert ───────────────────────────────────────────────────────────

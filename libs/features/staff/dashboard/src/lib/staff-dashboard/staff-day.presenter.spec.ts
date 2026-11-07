@@ -98,7 +98,6 @@ const FLAGS: AgendaFlags = {
   timeRelative: true,
   price: false,
   party: true,
-  freeTime: false,
 };
 const NOTHING_ON = Object.fromEntries(
   Object.keys(FLAGS).map((id) => [id, false]),
@@ -415,7 +414,7 @@ describe('the grid’s blocks', () => {
         false,
         BG,
       ).statusIcon,
-    ).toBe('checklist.done');
+    ).toBe('visit.completed');
   });
 
   it('names a carve-out by what and when, on a key the page resolves', () => {
@@ -991,6 +990,8 @@ describe('gapRowVm — a hole, attributed', () => {
   const gap = {
     startMinutes: MinuteOfDay.ofProven(840),
     endMinutes: EndMinute.ofProven(950),
+    openFromMinutes: MinuteOfDay.ofProven(840),
+    bookableFromMinutes: MinuteOfDay.ofProven(850),
     minutes: 110 as never,
     sellable: true,
   };
@@ -1012,6 +1013,9 @@ describe('gapRowVm — a hole, attributed', () => {
       past: false,
       sellable: true,
       barberName: 'Иван',
+      // The clock says when the chair empties; a booking from it starts
+      // where a new client fits after the turnaround.
+      bookableFromMinutes: 850,
     });
     expect(
       gapRowVm(gap, chair, FIXTURE_TODAY, { locale: 'en', words: EN })

@@ -10,6 +10,11 @@ export const ExceptionEffect = {
   Hours: 'HOURS',
   /** Works the roster minus these ranges. */
   Blocked: 'BLOCKED',
+  /**
+   * Works the roster as it stands — the day changes only its breaks
+   * (`dayBreakRanges`): a lunch moved or skipped that one day.
+   */
+  Rostered: 'ROSTERED',
 } as const;
 export type ExceptionEffect =
   (typeof ExceptionEffect)[keyof typeof ExceptionEffect];

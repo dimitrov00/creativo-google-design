@@ -34,6 +34,7 @@ import { hmacSha256Hex } from './adapters/crypto.adapter';
  */
 const seam = vi.hoisted(() => {
   const PIPELINES = [
+    'amendRosterBreaks',
     'auditDocumentChange',
     'bookAppointment',
     'cancelAppointment',
@@ -60,6 +61,7 @@ const seam = vi.hoisted(() => {
     'runBackfill',
     'sampleLeadTime',
     'setRoles',
+    'setRosterWeek',
     'startImpersonation',
     'startPolicyRecompute',
     'sweepPolicyRecompute',
@@ -307,6 +309,8 @@ const ENDPOINTS = {
   rescheduleAppointment: tracedCallable,
   transitionAppointment: tracedCallable,
   markArrived: tracedCallable,
+  amendRosterBreaks: tracedCallable,
+  setRosterWeek: tracedCallable,
   clearArrival: tracedCallable,
   recordSeatTip: tracedCallable,
   staffEditAppointment: walkInCallable,
@@ -709,6 +713,68 @@ const FLIPPED: { readonly [name: string]: Case } = {
     command: { markArrivalAction: 'ARRIVE', appointmentId: 'a-1' },
     answer: ok({ appointmentId: 'a-1', unchanged: false }),
     expected: { appointmentId: 'a-1', alreadyArrived: false },
+  },
+  amendRosterBreaks: {
+    pipeline: 'amendRosterBreaks',
+    input: request(
+      {
+        barberId: 'b-1',
+        locationId: 'loc-1',
+        fromLocalDate: '2026-11-16',
+        weekdays: [5, 1, 1],
+        before: null,
+        after: { startMinutes: 780, endMinutes: 840 },
+        operationId: 'operation-0123456789ab',
+      },
+      STAFF,
+    ),
+    command: {
+      barberId: 'b-1',
+      locationId: 'loc-1',
+      fromLocalDate: '2026-11-16',
+      weekdays: [1, 5],
+      before: null,
+      after: { startMinutes: 780, endMinutes: 840 },
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
+  },
+  setRosterWeek: {
+    pipeline: 'setRosterWeek',
+    input: request(
+      {
+        barberId: 'b-1',
+        locationId: 'loc-1',
+        fromLocalDate: '2026-11-16',
+        segments: [
+          {
+            weekday: 1,
+            locationId: 'loc-1',
+            startMinutes: 540,
+            endMinutes: 1080,
+          },
+        ],
+        breaks: [{ weekday: 1, startMinutes: 780, endMinutes: 840 }],
+        operationId: 'operation-0123456789ab',
+      },
+      STAFF,
+    ),
+    command: {
+      barberId: 'b-1',
+      locationId: 'loc-1',
+      fromLocalDate: '2026-11-16',
+      segments: [
+        {
+          weekday: 1,
+          locationId: 'loc-1',
+          startMinutes: 540,
+          endMinutes: 1080,
+        },
+      ],
+      breaks: [{ weekday: 1, startMinutes: 780, endMinutes: 840 }],
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
   },
   clearArrival: {
     pipeline: 'markArrival',
@@ -1145,7 +1211,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 51 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair and Phase 4’s roles change', () => {
+  it('exports exactly the 53 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change and the break pass’s two roster doors', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1191,7 +1257,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(51);
+    expect(FLIPPED_EXPORTS).toHaveLength(53);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

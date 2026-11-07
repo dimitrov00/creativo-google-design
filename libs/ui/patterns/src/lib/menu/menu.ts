@@ -169,6 +169,7 @@ const SHEET_SURFACE_SELECTOR = '.ui-sheet__surface';
     <div
       #surface
       class="ui-menu__surface"
+      data-popover-surface
       tabindex="-1"
       popover="manual"
       [attr.role]="uiRole()"

@@ -21,7 +21,6 @@ describe('AgendaField', () => {
       'timeRelative',
       'price',
       'party',
-      'freeTime',
     ]);
   });
 

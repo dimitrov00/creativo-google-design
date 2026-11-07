@@ -39,6 +39,20 @@ export type ClearScheduleBlockCommand = {
  * Move a block: lift the range it was (`lift`, on one chair's one day) and
  * write where it now is (`writes`, one per chair).
  */
+/**
+ * One chair-day's breaks said for that day alone (owner, 2026-11-06:
+ * «Само този ден»): `ranges` instead of the roster's (`[]`: none that day),
+ * `null` hands the day back to the roster. The day's identity is the block
+ * commands' own — its shop files it, its zone stamps its first instant.
+ */
+export type DayBreaksCommand = {
+  readonly barberId: BarberId;
+  readonly locationId: LocationId;
+  readonly timeZone: TimeZone;
+  readonly localDate: LocalDate;
+  readonly ranges: readonly MinuteRange[] | null;
+};
+
 export type MoveScheduleBlockCommand = {
   readonly lift: ClearScheduleBlockCommand & { readonly range: MinuteRange };
   readonly writes: readonly ScheduleBlocksCommand[];
@@ -160,4 +174,33 @@ export const moveScheduleBlock =
       }
       return Result.ok(next);
     });
+  };
+
+/**
+ * A day's breaks said for that day alone — ONE exception document,
+ * whatever else it holds (`ScheduleExceptionSystem.withDayBreaks`): its
+ * blocks and changed hours stay; a day that holds nothing else afterwards
+ * is deleted. The capacity rebuild of that one day rides the document's
+ * trigger.
+ */
+export const writeDayBreaks =
+  (ports: ScheduleExceptionPorts) =>
+  (
+    cmd: DayBreaksCommand,
+  ): Promise<Result<void, SchedulingError | RepositoryError>> => {
+    const key = BusyKey.of(cmd.barberId, cmd.localDate);
+    return ports.writeScheduleException([key], (stored) =>
+      Result.ok([
+        ScheduleExceptionSystem.withDayBreaks(stored[0] ?? null, cmd.ranges, {
+          id: ScheduleExceptionId.of(key),
+          barberId: cmd.barberId,
+          localDate: cmd.localDate,
+          utcEpochMs: ZonedTimeSystem.startOfLocalDay(
+            cmd.localDate,
+            cmd.timeZone,
+          ),
+          locationId: cmd.locationId,
+        }),
+      ]),
+    );
   };

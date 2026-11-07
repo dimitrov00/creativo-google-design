@@ -17,6 +17,8 @@ import { ServiceCardComponent } from './service-card.component';
       [uiBlocked]="blocked()"
       [uiCapBlocked]="capBlocked()"
       [uiShowDetails]="showDetails()"
+      [uiCaption]="caption()"
+      [uiRatio]="ratio()"
       (uiPressed)="presses = presses + 1"
       (uiDetailsPressed)="detailPresses = detailPresses + 1"
     />
@@ -27,6 +29,8 @@ class HostComponent {
   readonly blocked = signal(false);
   readonly capBlocked = signal(false);
   readonly showDetails = signal(true);
+  readonly caption = signal<'overlay' | 'below'>('overlay');
+  readonly ratio = signal('1 / 1');
   presses = 0;
   detailPresses = 0;
 }
@@ -56,6 +60,28 @@ describe('ServiceCardComponent', () => {
     expect(
       card?.querySelector('.ui-media-card__caption')?.textContent?.trim(),
     ).toContain('Класическо подстригване');
+  });
+
+  it('puts the name and meta BELOW an unscrimmed cover of another ratio when asked', () => {
+    fixture.componentInstance.caption.set('below');
+    fixture.componentInstance.ratio.set('4 / 3');
+    fixture.detectChanges();
+    const card = host.querySelector('.cr-service-card__select ui-media-card');
+    expect(
+      card?.querySelector('ui-async-image')?.getAttribute('style'),
+    ).toContain('4 / 3');
+    expect(card?.querySelector('[data-overlay="scrim-media"]')).toBeNull();
+    expect(
+      card?.querySelector('.ui-media-card__caption')?.textContent?.trim(),
+    ).toBe('');
+    const below = host.querySelector(
+      '.cr-service-card__select > .cr-service-card__below',
+    );
+    expect(below?.textContent).toContain('Класическо подстригване');
+    expect(below?.textContent).toContain('45 мин · 30 лв.');
+    expect(
+      host.querySelector('cr-service-card')?.getAttribute('data-caption'),
+    ).toBe('below');
   });
 
   it('rides the card corner slot for the selection chip and flips it when selected', () => {

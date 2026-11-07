@@ -53,6 +53,11 @@ import { Tag } from '@core/primitives';
  * is a way to miss a cancellation. The word prints only for exceptions
  * anyway, so there was never an ordinary card it saved anything on.
  *
+ * `freeTime` was here and is not a field any more: whether the run draws
+ * its holes is what the schedule SHOWS, not what a card carries, so it moved
+ * to the bar's filter beside blocked time (`ScheduleStatusFilter`, owner
+ * 2026-11-05), which reads a device's old choice once.
+ *
  * `relative` was here and is not a field any more. A toggle that turns "in 6
  * hours" on for row fourteen at the same time as it turns "in 10 minutes" on
  * for the next cut is not a preference — it is one rule stated as two, and
@@ -78,7 +83,6 @@ export const AgendaField = {
   TimeRelative: 'timeRelative',
   Price: 'price',
   Party: 'party',
-  FreeTime: 'freeTime',
 } as const;
 export type AgendaField = Tag<typeof AgendaField>;
 
@@ -138,17 +142,6 @@ const DEFAULTS: Readonly<Record<AgendaField, boolean>> = {
   [AgendaField.Price]: false,
   /** `+N` on the client's disc, not a row. */
   [AgendaField.Party]: true,
-  /**
-   * FREE TIME — off.
-   *
-   * Every unsold minute is a card, and on the quiet Tuesday that is most of
-   * a shop's week that means the run is mostly holes. The screen's job is the
-   * bookings; the holes are a second question, asked when someone is actually
-   * trying to fill one. The day's total free time is still stated in words
-   * above the run, so turning this off never hides the FACT that the day was
-   * quiet — only the row-by-row inventory of it.
-   */
-  [AgendaField.FreeTime]: false,
 };
 
 const STORAGE_KEY = 'staff-agenda-fields';

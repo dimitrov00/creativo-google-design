@@ -61,7 +61,8 @@ import { readShopZone } from './shop-zone-read.pipeline';
  * busy range (#13), the exception range (#16) and the month documents, all
  * in its read set, so a booking landing mid-rebuild re-runs it — whose plan
  * is a full sorted `entries[]` `Set` per month (`CapacitySystem.applyPlan`:
- * REPLACE, never merge, never `arrayUnion`).
+ * REPLACE, never merge, never `arrayUnion`), and no `Set` for a month whose
+ * document would not change (`CapacitySystem.monthUnchanged`).
  *
  * "Today" is the default location's (F-4, Law 7.2: a capacity entry spans
  * every shop a barber works at, so no one location is in scope), read once
@@ -168,7 +169,11 @@ async function readCapacitySnapshot(
 
 /**
  * The month documents of one barber's plan: each month's sorted `entries[]`
- * with the plan's scope replaced (`CapacitySystem.applyPlan`), written whole.
+ * with the plan's scope replaced (`CapacitySystem.applyPlan`), written whole,
+ * and only when it differs from the stored document
+ * (`CapacitySystem.monthUnchanged`). The fold starts from the stored entries
+ * under the PLANNED month, so a document whose `month` field is wrong is
+ * repaired with its entries, not emptied.
  */
 function capacityWrites(
   barberId: BarberId,
@@ -196,9 +201,12 @@ function capacityWrites(
   for (const monthPlan of CapacitySystem.byMonth(plan)) {
     const stored = snapshot.monthDocs[months.indexOf(monthPlan.month)] ?? null;
     const entries: readonly CapacityEntry[] = CapacitySystem.applyPlan(
-      stored ?? { month: monthPlan.month, entries: [] },
+      { month: monthPlan.month, entries: stored?.entries ?? [] },
       monthPlan,
     );
+    if (CapacitySystem.monthUnchanged(stored, monthPlan.month, entries)) {
+      continue;
+    }
     const body: Omit<CapacityMonth, 'id'> = { month: monthPlan.month, entries };
     writes.push(WriteOp.set([Collections.Capacity, monthPlan.month], body));
   }

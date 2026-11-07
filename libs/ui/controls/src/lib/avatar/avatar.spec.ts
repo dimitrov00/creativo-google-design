@@ -141,6 +141,7 @@ const SIZES: readonly UiAvatarSize[] = [
   'small',
   'regular',
   'large',
+  'tile',
   'extraLarge',
 ];
 /** The AA floor plus the house margin, so a renderer's rounding cannot tip a number back under 4.5. */
@@ -291,7 +292,7 @@ describe('the monogram is legible', () => {
     );
   });
 
-  it('holds every tier to the small-text bar, the 112 portrait included', () => {
+  it('holds every tier to the small-text bar, the 64 face and the 112 portrait included', () => {
     const tokens = themeTokens('light'); // the type ladder is theme-free
     expect([...tiers().keys()]).toEqual(SIZES);
     for (const [size, font] of tiers()) {
@@ -299,9 +300,10 @@ describe('the monogram is legible', () => {
       const display =
         role.px >= LARGE_TEXT_PX ||
         (role.px >= LARGE_BOLD_TEXT_PX && role.weight >= 700);
-      // Only the portrait draws display type; the bar below is one for all.
+      // Only the tile face and the portrait draw display type; the bar
+      // below is one for all.
       expect(display, `${size} draws ${role.px}px at ${role.weight}`).toBe(
-        size === 'extraLarge',
+        size === 'tile' || size === 'extraLarge',
       );
     }
     expect(FLOOR).toBeGreaterThan(WCAG_AA_TEXT);

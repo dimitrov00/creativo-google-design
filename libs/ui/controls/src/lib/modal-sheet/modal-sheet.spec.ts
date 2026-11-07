@@ -27,6 +27,61 @@ describe('UiModalSheet', () => {
     ).not.toBeNull();
   });
 
+  it('drops the bar’s ✕ on request and keeps the bar', async () => {
+    await TestBed.configureTestingModule({
+      imports: [UiModalSheet],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(UiModalSheet);
+    fixture.componentRef.setInput('sheetId', 'test-sheet');
+    fixture.componentRef.setInput('labelledBy', 'test-title');
+    fixture.componentRef.setInput('closeLabel', 'Close details');
+    fixture.componentRef.setInput('open', true);
+    fixture.componentRef.setInput('closeControl', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const host: HTMLElement = fixture.nativeElement;
+
+    expect(host.querySelector('button[aria-label="Close details"]')).toBeNull();
+    expect(
+      host.querySelector('.modal-sheet__toolbar [uititle]'),
+    ).not.toBeNull();
+  });
+
+  it('presents full screen on request: the sheet says so, and its bar does not drag it', async () => {
+    await TestBed.configureTestingModule({
+      imports: [UiModalSheet],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(UiModalSheet);
+    fixture.componentRef.setInput('sheetId', 'test-sheet');
+    fixture.componentRef.setInput('labelledBy', 'test-title');
+    fixture.componentRef.setInput('closeLabel', 'Close');
+    fixture.componentRef.setInput('open', true);
+    fixture.componentRef.setInput('fullScreen', true);
+    fixture.componentRef.setInput('bareHeader', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const host: HTMLElement = fixture.nativeElement;
+    const sheet = host.querySelector<HTMLElement>('#test-sheet');
+    const surface = host.querySelector<HTMLElement>('.ui-sheet__surface');
+
+    expect(sheet?.hasAttribute('data-full-screen')).toBe(true);
+    host
+      .querySelector('.modal-sheet__toolbar')
+      ?.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, clientY: 10 }),
+      );
+    host
+      .querySelector('.modal-sheet__toolbar')
+      ?.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientY: 200 }),
+      );
+    fixture.detectChanges();
+    expect(sheet?.hasAttribute('data-dragging')).toBe(false);
+    expect(surface?.style.getPropertyValue('--ui-sheet-drag-y')).toBe('');
+  });
+
   describe('the chrome height the collapse timeline is inset by', () => {
     /** jsdom has no ResizeObserver; the shell only needs to be told once. */
     class FakeResizeObserver implements ResizeObserver {

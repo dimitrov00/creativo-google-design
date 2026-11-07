@@ -156,33 +156,6 @@
         {{ t('staff.visit.addClient') }}
       </h2>
     </ui-sheet-headline>
-    <!-- THE SEARCH, PINNED (owner, 2026-09-09): it sticks under the bar
-         while the list scrolls — the sheet's `.searchable` grammar — and
-         leads with the glyph that says what it is. The sheet's accessory
-         slot belongs to the shell, not to this content; a sticky band with
-         the same material is the same thing from the inside. -->
-    <!-- THE SEARCH, PINNED (owner, 2026-09-09): the DS search field
-         (2026-09-24) sticks under the bar while the list scrolls — the
-         sheet's `.searchable` grammar — and its glyph says what the field
-         took the typing for: the magnifier for a name, the handset for a
-         number, the envelope for a mail — detection the desk can see,
-         never a mode to pick. -->
-    <ui-search-field
-      uiPinned
-      [uiValue]="query()"
-      [uiPlaceholder]="t('staff.visit.searchClient')"
-      [uiIcon]="searchGlyph()"
-      [uiIconKind]="clientQueryShapeWords[parsedQuery().clientQueryShape]"
-      uiAutocapitalize="words"
-      [uiBusy]="uiClientSearching()"
-      uiBusyTestId="staff-visit-client-searching"
-      uiTestId="staff-visit-client-query"
-      [uiClearLabel]="t('staff.day.searchClear')"
-      (uiInput)="onQuery($event)"
-      (uiFocusChange)="searchFocused.set($event)"
-      (uiSubmit)="onSearchEnter($event)"
-      (uiNavigate)="focusFirstResult($event)"
-    />
     <!-- THE PICKED, AS A GROUP OF THEIR OWN (the HIG revisit, 2026-09-22):
          «На посещението» — the same person rows the suggestions are made
          of, selected, first under the field — the sheet's own «Клиенти»
@@ -238,11 +211,10 @@
               uiControlSize="small"
             />
           </span>
-          <!-- THE EVENT'S HEAD (owner, 2026-09-22): the name, then the mail,
-               the number and the last visit each on its own glyph-led line
-               — the agenda card's recipe, so a person reads the same on
-               every staff surface. The typed run is marked in the name and
-               in the lines (Spotlight's grammar: what matched is primary). -->
+          <!-- THE NAME OVER ONE CONTACT (2026-11-06, `clientRowVm`): the
+               event head's own recipe — a fact on its own glyph-led line —
+               cut to the one that tells two Ивановци apart. The typed run
+               is marked (Spotlight's grammar: what matched is primary). -->
           <lib-staff-event-head
             size="regular"
             [truncate]="true"
@@ -261,6 +233,15 @@
             >
             } @if (option.selected) {
             <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
+            } @else if (!option.exact && option.detail; as detail) {
+            <!-- The last visit, quiet at the edge — the search sheet's
+                 detail; the ✓ takes its place once they are picked. -->
+            <span
+              uiText
+              uiFont="footnote"
+              [attr.data-testid]="'staff-visit-client-detail-' + option.id"
+              >{{ detail }}</span
+            >
             }
           </span>
         </button>
@@ -397,12 +378,19 @@
     <!-- The same three fields the client's own contact sheet asks for, in
          the same order, with the DS's composite phone control — so the
          number the desk types obeys the same E.164 contract as one a client
-         types. What the search had in it is already in the right field. -->
+         types. What the search had in it is already in the right field.
+         NOTHING IS OWED (owner, 2026-11-06): each label says «(по
+         желание)» right after its word, where the eye already is — a
+         subtitle above the fields goes unread — and the name's blank shows
+         what a nameless walk-in is seated as. -->
     <ui-stack uiSpacing="regular" class="staff-visit__form">
       <label>
         <ui-stack uiSpacing="tight">
           <span uiText uiFont="footnote"
-            >{{ t('staff.visit.clientName') }}</span
+            >{{ t('staff.visit.clientName') }}
+            <span uiForegroundStyle="secondary"
+              >{{ t('staff.visit.optional') }}</span
+            ></span
           >
           <input
             type="text"
@@ -410,6 +398,7 @@
             uiControlSize="large"
             autocomplete="off"
             data-testid="staff-visit-new-name"
+            [placeholder]="newClientFallback()"
             [value]="newClient().name"
             (input)="setNewClientName($any($event.target).value)"
           />
@@ -418,6 +407,7 @@
       <ui-phone-field
         uiControlSize="large"
         [label]="t('staff.visit.clientPhone')"
+        [labelNote]="t('staff.visit.optional')"
         [locale]="locale()"
         [defaultCountry]="newClientCountry()"
         [pickerTitle]="t('auth.identify.countryPicker')"
@@ -432,7 +422,10 @@
       <label>
         <ui-stack uiSpacing="tight">
           <span uiText uiFont="footnote"
-            >{{ t('staff.visit.clientEmail') }}</span
+            >{{ t('staff.visit.clientEmail') }}
+            <span uiForegroundStyle="secondary"
+              >{{ t('staff.visit.optional') }}</span
+            ></span
           >
           <input
             type="email"
@@ -441,6 +434,7 @@
             autocomplete="off"
             inputmode="email"
             data-testid="staff-visit-new-email"
+            [placeholder]="t('auth.identify.emailPlaceholder')"
             [uiInvalid]="newClientMailLeft() && newClientMailInvalid()"
             [value]="newClient().email"
             (input)="setNewClientEmail($any($event.target).value)"
@@ -461,8 +455,18 @@
          visit (owner, 2026-09-10): a service may be wanted twice, and a
          check reads as "done" — the stepper counts instead. Opens on the
          whole catalogue every time, nothing picked. -->
-    <!-- The client search's own grammar (2026-09-24): the title folds
-         while the search is engaged and the field rises under the bar. -->
+    <!-- THE CATALOGUE AS THE SEARCH SHEET DRAWS IT (owner, 2026-11-06:
+         "the same way as in the search services"): cover cards, three
+         across, the service's name under each cover and its variant under
+         that — no minutes, no price: the card names WHAT, the ladder's row
+         says how long and how much. A card is a TICK, never a count (owner,
+         2026-11-06: one person cannot take a service twice; another of the
+         same is another client) — services without variants flow
+         together, a service with variants stands in a grid of its own
+         (`coverRowsOf`, shared with the search). A tap ticks a card (its
+         ring turns to a ✓) and a second tap takes it off.
+         The search and whose picks these are ride the DOCK, as the search
+         sheet's field does. The title folds while the field is engaged. -->
     <ui-sheet-headline [uiFolded]="searchEngaged()">
       <h2
         uiSheetLargeTitle
@@ -472,31 +476,7 @@
       >
         {{ t('staff.visit.addService') }}
       </h2>
-      @if (serviceFor(); as name) {
-      <!-- FOR WHOM (owner, 2026-09-24): the catalogue pushed for a person
-           without a service names them under its title, and its picks seat
-           for them — no chip to move afterwards. -->
-      <p
-        uiText
-        uiFont="subheadline"
-        uiForegroundStyle="secondary"
-        data-testid="staff-visit-services-for"
-      >
-        {{ t('staff.visit.servicesFor', { name }) }}
-      </p>
-      }
     </ui-sheet-headline>
-    <ui-search-field
-      uiPinned
-      [uiValue]="query()"
-      [uiPlaceholder]="t('staff.visit.searchService')"
-      uiTestId="staff-visit-service-query"
-      [uiClearLabel]="t('staff.day.searchClear')"
-      (uiInput)="onQuery($event)"
-      (uiFocusChange)="searchFocused.set($event)"
-      (uiSubmit)="leaveSearch($event)"
-      (uiNavigate)="focusFirstResult($event)"
-    />
     @if (serviceRows().length === 0) {
     <!-- NOTHING MATCHED: the client search's own quiet figure — the
          glyph over one line — never a bare footnote at a row's inset. -->
@@ -510,66 +490,15 @@
       </figcaption>
     </figure>
     } @else {
-    <ul
-      uiListGroup
+    <!-- The shared picker grid (`cr-service-cover-grid`), the search
+         sheet's and the rhythm rule's too. -->
+    <cr-service-cover-grid
+      role="group"
       [attr.aria-label]="t('staff.visit.addService')"
       data-testid="staff-visit-service-list"
-    >
-      @for (row of serviceRows(); track row.option.id) { @let option =
-      row.option;
-      <!-- A ROW WITH TWO CONTROLS (owner, 2026-09-17: "animated like
-           select — in place of a check, a stepper should animate, expand"):
-           the PICK, a checkbox button that IS the row's label, and the DS
-           count stepper trailing. The tap picks — the row takes the
-           selection wash, the stepper's square turns to a ✓ and unfolds
-           into «− 1 +» — and the foot seats what is picked. -->
-      <li>
-        <ui-list-row
-          uiSize="large"
-          uiAlignment="leading"
-          class="staff-visit__service-row"
-          [uiInteractive]="true"
-          [uiSelected]="serviceCount(option.id) > 0"
-        >
-          <button
-            type="button"
-            role="checkbox"
-            class="staff-visit__service-pick"
-            [attr.aria-checked]="serviceCount(option.id) > 0"
-            [attr.data-testid]="'staff-visit-service-' + option.id"
-            (click)="pickService(option)"
-          >
-            <!-- The variant is a description here too (owner, 2026-09-10) —
-                 the row's second line, ahead of the minutes and the price,
-                 never welded to the name. -->
-            <ui-stack uiSpacing="none">
-              <span uiText uiFont="callout" uiWeight="medium">
-                <ui-marked-text [uiRuns]="row.titleRuns" />
-              </span>
-              <span
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                class="staff-visit__figures"
-              >
-                <ui-marked-text [uiRuns]="row.lineRuns" />
-              </span>
-            </ui-stack>
-          </button>
-          <span uiTrailing class="staff-visit__service-count">
-            <ui-count-stepper
-              [uiValue]="serviceCount(option.id)"
-              [uiLabel]="option.serviceLabel ?? option.label"
-              [uiAddLabel]="t('staff.visit.serviceMore')"
-              [uiRemoveLabel]="t('staff.visit.serviceLess')"
-              [attr.data-testid]="'staff-visit-service-' + option.id + '-count'"
-              (uiValueChange)="countService(option, $event)"
-            />
-          </span>
-        </ui-list-row>
-      </li>
-      }
-    </ul>
+      [uiGrids]="serviceGrids()"
+      (uiPicked)="pickService($event.option)"
+    />
     } } @case (EditorPage.Discount) {
     <!-- THE DISCOUNT PAGE (owner, 2026-09-17: "adding a discount → push
          sheet / page; the bottom toolbar for applying goes to the main
@@ -2743,33 +2672,36 @@
       {{ t('staff.visit.chooseService') }}
     </button>
     } } @else if (dockPage === EditorPage.ClientSearch) {
-    <!-- THE COUNT of the picked (2026-09-18), in the bill's own dress —
-         the gallery page's grammar — leading; «Нов клиент» hugs the ✓ on
-         the thumb rail (owner ruling 2026-09-22, back from the list's first
-         row where Pass 28 had put it): the root docks its call beside
-         «Запази» the same way, and Contacts keeps its «+» in the bar. -->
-    @if (pickedClients().length > 0) {
-    <ui-stack
-      uiSpacing="none"
-      uiAlignment="leading"
-      class="staff-visit__total"
-      data-testid="staff-visit-clients-count"
-    >
-      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-        >{{ t('staff.visit.photosSelected') }}</span
-      >
-      <span class="staff-visit__total-line">
-        <span
-          uiText
-          uiFont="headline"
-          uiWeight="semibold"
-          class="staff-visit__figures"
-          data-testid="staff-visit-clients-count-figure"
-          >{{ pickedClients().length }}</span
-        >
-      </span>
-    </ui-stack>
-    }
+    <!-- THE SEARCH AT THE THUMB (owner, 2026-11-06: "the same UI and
+         vocabulary — the search moves to the bottom toolbar"): the
+         service page's dock, field for field — the field fills the dock,
+         «Нов клиент» hugs the ✓ beside it at its size. Who is picked
+         reads in «На посещението» on the page, so the dock keeps no
+         count. The field's glyph says what it took the typing for: the
+         magnifier for a name, the handset for a number, the envelope for
+         a mail — detection the desk can see, never a mode to pick. -->
+    <ui-search-field
+      uiFill
+      uiControlSize="large"
+      [uiValue]="query()"
+      [uiPlaceholder]="
+        t('staff.search.scopedPlaceholder', {
+          key: t('staff.search.key.client'),
+        })
+      "
+      [uiLabel]="t('staff.visit.searchClient')"
+      [uiIcon]="searchGlyph()"
+      [uiIconKind]="clientQueryShapeWords[parsedQuery().clientQueryShape]"
+      uiAutocapitalize="words"
+      [uiBusy]="uiClientSearching()"
+      uiBusyTestId="staff-visit-client-searching"
+      uiTestId="staff-visit-client-query"
+      [uiClearLabel]="t('staff.day.searchClear')"
+      (uiInput)="onQuery($event)"
+      (uiFocusChange)="searchFocused.set($event)"
+      (uiSubmit)="onSearchEnter($event)"
+      (uiNavigate)="focusFirstResult($event)"
+    />
     <button
       type="button"
       uiButton
@@ -2930,18 +2862,94 @@
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
     } } @else if (dockPage === EditorPage.Service) {
-    <!-- «Добави», «Добави 3 услуги» — every pick seated at once — while
-         something is picked; the ✓ while the page is only read. -->
+    <!-- THE SEARCH AT THE THUMB, as the search sheet's (owner, 2026-11-06):
+         the field fills the dock, and over it — Photos' chips — the visit's
+         people, the one the picks seat for selected. Then another person,
+         and the ✓ — the same glyph whether it applies the ticks or only
+         closes a page that was read. -->
+    <ui-search-field
+      uiFill
+      uiControlSize="large"
+      [uiValue]="query()"
+      [uiPlaceholder]="
+        t('staff.search.scopedPlaceholder', {
+          key: t('staff.search.key.service'),
+        })
+      "
+      [uiLabel]="t('staff.visit.searchService')"
+      uiTestId="staff-visit-service-query"
+      [uiClearLabel]="t('staff.day.searchClear')"
+      (uiInput)="onQuery($event)"
+      (uiFocusChange)="searchFocused.set($event)"
+      (uiSubmit)="leaveSearch($event)"
+      (uiNavigate)="focusFirstResult($event)"
+    >
+      <ui-flow
+        uiSearchAccessory
+        uiSpacing="compact"
+        uiAlignment="leading"
+        role="group"
+        [attr.aria-label]="t('staff.visit.forWhom')"
+        data-testid="staff-visit-service-people"
+      >
+        @for (person of servicePeople(); track person.id) {
+        <button
+          type="button"
+          uiChip
+          [uiSelected]="person.selected"
+          [attr.data-tint]="person.selected ? 'accent' : null"
+          [attr.aria-pressed]="person.selected"
+          data-testid="staff-visit-service-person"
+          [attr.data-person]="person.id"
+          (mousedown)="$event.preventDefault()"
+          (click)="serveFor(person.id)"
+        >
+          <ui-avatar
+            uiControlSize="small"
+            [uiSrc]="person.avatarSrc"
+            [uiName]="person.label"
+          />
+          <span class="staff-visit__person-chip-label">{{ person.label }}</span>
+        </button>
+        }
+      </ui-flow>
+    </ui-search-field>
+    <!-- ANOTHER PERSON, beside the ✓ at its size (owner, 2026-11-06: "next
+         to the apply button and the same size"): an act, not a person, so
+         it rides the dock's buttons rather than the people's chips — the
+         client page docks «Нов клиент» beside its ✓ the same way. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="large"
+      [uiIconOnly]="true"
+      class="staff-visit__dock-aside"
+      [attr.aria-label]="t('staff.visit.addClient')"
+      [title]="t('staff.visit.addClient')"
+      data-testid="staff-visit-service-add-client"
+      (click)="push(EditorPage.ClientSearch, null, 'staff-visit-service-add-client')"
+    >
+      <ui-icon uiName="party.addGuest" />
+    </button>
     @if (serviceApply(); as apply) {
+    <!-- THE ✓ THAT APPLIES (owner, 2026-11-06: "the check icon is enough —
+         it does not cause shrinks"): the page's own ✓, glyph and rung, so
+         the field beside it never jumps as cards are ticked; what it does
+         — «Добави 3 услуги», «Приложи» — is its accessible name. -->
     <button
       type="button"
       uiButton
       uiButtonStyle="borderedProminent"
       uiControlSize="large"
+      [uiIconOnly]="true"
+      [attr.aria-label]="apply.label"
+      [title]="apply.label"
       data-testid="staff-visit-service-apply"
       (click)="applyServices()"
     >
-      {{ apply.label }}
+      <ui-icon uiName="checklist.done" />
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />

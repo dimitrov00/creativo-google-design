@@ -9,6 +9,7 @@
   #frame
   class="staff-grid__frame"
   [style.--staff-grid-slots]="slotCount()"
+  [style.--staff-grid-zoom]="zoom()"
   [style.--staff-grid-columns]="placedColumns().length"
   [attr.data-viewport]="framed() ? 'framed' : null"
   [attr.data-columns]="framed() ? null : uiColumnKind()"
@@ -178,8 +179,27 @@
       class="staff-grid__column"
       [attr.data-today]="column.isToday ? '' : null"
       [attr.data-column]="column.id"
+      [attr.data-slot-pickable]="slotsPickable() ? '' : null"
       data-testid="staff-grid-column"
+      (pointerdown)="onColumnDown($event, column)"
     >
+      <!-- THE PENDING SLOT (owner, 2026-11-06): a tap on blank time drops a
+           dashed draft block there — Google Calendar's placeholder — and the
+           caller's template rides inside it (its «Нов час · Блокирай време»
+           menu). Drawn by minute, so any snap shows where it is. -->
+      @if (pendingIn(column); as pending) {
+      <div
+        class="staff-grid__pending"
+        data-pending
+        data-testid="staff-grid-pending"
+        [style.--staff-event-top]="pending.top"
+        [style.--staff-event-height]="pending.height"
+      >
+        @if (drawnSlot() === null) {
+        <ng-container [ngTemplateOutlet]="uiPendingTemplate()" />
+        }
+      </div>
+      }
       <!-- The hours this column is SHUT. Drawn under the blocks (they carry
            their own z-index) and translucent, so the hour rules keep running
            through them — a closed morning is quieter, not a different grid.
@@ -203,7 +223,11 @@
         [style.--staff-event-lane]="event.lane"
         [style.--staff-event-lanes]="event.lanes"
         [attr.data-placement]="event.row === null ? 'proportional' : null"
-        [attr.data-editable]="event.id === uiEditableEventId() ? '' : null"
+        [attr.data-editable]="
+          event.id === uiEditableEventId() || event.id === liftedId()
+            ? ''
+            : null
+        "
         [attr.data-event-id]="event.id"
         [attr.data-drag-owner]="event.id === editableId() ? '' : null"
         [attr.data-moving]="

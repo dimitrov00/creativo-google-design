@@ -69,6 +69,8 @@ export interface StaffDayWords {
   readonly partyOf: (count: number) => string;
   /** «Блокирано» — `staff.day.blockedLabel`. */
   readonly blocked: string;
+  /** «Почивка» — `staff.day.breakLabel`, a roster break. */
+  readonly breakLabel: string;
   /** «45 мин», «1 ч», «6 ч 30 мин» — `staff.day.span*`. */
   readonly span: SpanWords;
   /** «2 ч свободни» — `staff.day.daySummaryFree`. */
@@ -126,6 +128,8 @@ export const DiscardAnswer = {
 export const AgendaRow = {
   Visit: 'VISIT',
   Gap: 'GAP',
+  /** Time a chair took off the book — a break, an admin hour (owner, 2026-11-05: blocked time visible in the list too). */
+  Block: 'BLOCK',
 } as const;
 export type AgendaRow = (typeof AgendaRow)[keyof typeof AgendaRow];
 
@@ -412,6 +416,21 @@ export interface GapRowVm {
   readonly spanLabel: string;
   /** Where the hole begins on the shop's wall clock — the run's order. */
   readonly startMinutes: MinuteOfDay;
+  /** Where it ends — a block from it runs to here. */
+  readonly endMinutes: EndMinute;
+  /**
+   * Where a block from it starts: the hole's start, or the next tick of now
+   * in a hole the clock is inside (`GridLayoutSystem.openFrom`).
+   */
+  readonly openFromMinutes: MinuteOfDay;
+  /**
+   * Where «Нов час» from it starts: the first minute a new client can take
+   * after the barber's turnaround (`GridLayoutSystem.bookableFrom`) — 11:45
+   * in a hole that opens at 11:35 behind a 10-minute reset.
+   */
+  readonly bookableFromMinutes: MinuteOfDay;
+  /** The chair it is free on — what a booking or a block from it seats. */
+  readonly barberId: BarberId;
   /**
    * Already elapsed — the run's one definition of past, shared with visits.
    *
@@ -433,7 +452,33 @@ export interface GapRowVm {
   readonly barberTone: number;
 }
 
-export type RunEntryVm = DayRowVm | GapRowVm;
+/**
+ * A BLOCK in the run — time a chair took off the book, on the shop's wall
+ * clock. The grid's block said in a line: the word, how long, whose chair;
+ * a press opens it in the block editor, as the grid's does. Its id is the
+ * grid block's (`block:<chair>:<day>:<start minute>`), so both open it
+ * through one door.
+ */
+export interface BlockRowVm {
+  readonly agendaRow: typeof AgendaRow.Block;
+  readonly id: string;
+  readonly startMinutes: MinuteOfDay;
+  /** The clock, as a visit's: start over end on the trailing side. */
+  readonly startLabel: string;
+  readonly endLabel: string;
+  /** «Блокирано», or «Почивка» for a roster break. */
+  readonly label: string;
+  /** «1 ч». */
+  readonly spanLabel: string;
+  /** «Блокирано, 12:00–13:00». */
+  readonly accessibleName: string;
+  /** The block has ended on the shop's clock. */
+  readonly past: boolean;
+  readonly barberName: string;
+  readonly barberTone: number;
+}
+
+export type RunEntryVm = DayRowVm | GapRowVm | BlockRowVm;
 
 /**
  * WHAT A VISIT'S CARD PRINTS, as the agenda's switches and the clock leave it —
@@ -471,7 +516,7 @@ export interface AgendaCardVm {
 export type AgendaVisitVm = DayRowVm & { readonly card: AgendaCardVm };
 
 /** One entry of a time group. */
-export type AgendaItemVm = AgendaVisitVm | GapRowVm;
+export type AgendaItemVm = AgendaVisitVm | GapRowVm | BlockRowVm;
 
 /** One neighbour on a sheet's frame — a name, a span on its axis, a tone. */
 export interface FrameNeighbour {
@@ -492,6 +537,28 @@ export interface LaneVm {
 }
 
 /**
+ * Every booking state's glyph — the ONE table, so a state wears the same
+ * mark on a calendar block, a sheet and a search row. Completed is the
+ * registry's «done» (a filled end), never the bare tick a selection draws.
+ */
+export const BOOKING_STATUS_ICONS = {
+  [BookingStatus.Pending]: 'visit.pending',
+  [BookingStatus.Confirmed]: 'visit.confirmed',
+  [BookingStatus.Completed]: 'visit.completed',
+  [BookingStatus.NoShow]: 'visit.noShow',
+  [BookingStatus.Cancelled]: 'visit.cancelled',
+} as const satisfies Record<BookingStatus, UiIconName>;
+
+/** One state in the schedule's status filter: its mark, its word, and whether it is drawn. */
+export interface StatusFilterRowVm {
+  readonly bookingStatus: BookingStatus;
+  readonly glyph: UiIconName;
+  /** «Отказани». */
+  readonly label: string;
+  readonly shown: boolean;
+}
+
+/**
  * The glyph that doubles a TERMINAL state on a calendar block.
  *
  * Live states get none: a block that is simply filled and unmarked is the
@@ -499,9 +566,9 @@ export interface LaneVm {
  * happened yet".
  */
 export const STATUS_ICONS: Partial<Record<BookingStatus, UiIconName>> = {
-  [BookingStatus.Completed]: 'checklist.done',
-  [BookingStatus.NoShow]: 'visit.noShow',
+  [BookingStatus.Completed]: BOOKING_STATUS_ICONS[BookingStatus.Completed],
+  [BookingStatus.NoShow]: BOOKING_STATUS_ICONS[BookingStatus.NoShow],
   // It was missing (found 2026-09-24): a cancelled block drew no glyph at
   // all while the card's face and the sheet carried one.
-  [BookingStatus.Cancelled]: 'visit.cancelled',
+  [BookingStatus.Cancelled]: BOOKING_STATUS_ICONS[BookingStatus.Cancelled],
 };
