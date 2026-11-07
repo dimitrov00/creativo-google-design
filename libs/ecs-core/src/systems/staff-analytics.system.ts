@@ -1,17 +1,23 @@
 import {
   AttendanceState,
+  BookingStatus,
+  BusyKey,
+  ExceptionEffect,
   LocalDate,
   MinuteCount,
   PriceCents,
   Result,
   type AppointmentId,
   type BarberId,
+  type LocationId,
   type ServiceId,
+  type UtcEpochMs,
   type Weekday,
 } from '@core/primitives';
 import { AnalyticsError } from '@core/errors';
 import {
   ANALYTICS_DEFINITION_VERSION,
+  AccountLifecycle,
   AnalyticsFigure,
   AnalyticsPeriod,
   type AnalyticsCall,
@@ -23,15 +29,29 @@ import {
   Roles,
   type Seat,
   type ShopNow,
+  StaffLink,
 } from '@core/components';
-import type { Appointment } from '@core/entities';
-import type { ChairDay } from './chair-time.system';
+import type {
+  Appointment,
+  BarberSchedule,
+  ScheduleException,
+  ShopLocation,
+  User,
+} from '@core/entities';
+import {
+  type ChairDay,
+  type ChairVisit,
+  ChairTimeSystem,
+} from './chair-time.system';
 import { ClientStatsSystem } from './client-stats.system';
+import { IntervalSetSystem } from './interval-set.system';
 import {
   MoneyAllocation,
   MoneyAllocationSystem,
   type SeatNet,
 } from './money-allocation.system';
+import { PartyAdmissionSystem } from './party-admission.system';
+import { type BuildDayWindowsInput, RosterSystem } from './roster.system';
 
 /** The caller as the visibility table judges them — from their STORED user record. */
 export type AnalyticsCaller = {
@@ -85,6 +105,44 @@ export type AnalyticsInput = {
   readonly previousVisits: readonly AnalyticsVisit[];
   readonly followUps: readonly AnalyticsFollowUp[];
   readonly policy: ClientStatsPolicy;
+  readonly now: ShopNow;
+};
+
+/** A visit as a follow-up read answers it — an `Appointment` satisfies it as is. */
+export type FollowUpVisit = Pick<
+  Appointment,
+  | 'id'
+  | 'locationId'
+  | 'bookingStatus'
+  | 'bookedAtUtcMs'
+  | 'bookedFromAppointmentId'
+>;
+
+/** A follow-up the rebooking rule can judge: booked from a visit, at a known instant. */
+export type CountedFollowUp = FollowUpVisit & {
+  readonly bookedFromAppointmentId: AppointmentId;
+  readonly bookedAtUtcMs: UtcEpochMs;
+};
+
+/** One shop's clock at the call's instant — derived once per location at the pipeline's boundary. */
+export type ShopNowAt = ShopNow & {
+  readonly locationId: LocationId;
+};
+
+/**
+ * Everything a scope's barber-days are built from: the days, the rosters
+ * and departures as stored, every shop (the ACTIVE ones bound rostered time,
+ * as the schedule does), the visits of those days, and the clocks — each
+ * shop's, and the report's own for a day worked at no known shop.
+ */
+export type AnalyticsDaysInput = {
+  readonly barberIds: readonly BarberId[];
+  readonly localDates: readonly LocalDate[];
+  readonly rosters: readonly BarberSchedule[];
+  readonly departures: readonly ScheduleException[];
+  readonly locations: readonly ShopLocation[];
+  readonly visits: readonly AnalyticsVisit[];
+  readonly nowByLocation: readonly ShopNowAt[];
   readonly now: ShopNow;
 };
 
@@ -320,6 +378,35 @@ function timeOf(
   return t;
 }
 
+/** The next shop days the open-hours card reads: today and the six after it. */
+const AHEAD_DAYS = 7;
+
+/** The minutes `input`'s day would roster — its windows, blocks and breaks, normalized. */
+function rosteredMinutesOf(input: BuildDayWindowsInput): MinuteCount {
+  return IntervalSetSystem.totalMinutes(
+    IntervalSetSystem.normalize([
+      ...RosterSystem.offeredWindows(input),
+      ...RosterSystem.offeredCarveOuts(input),
+      ...RosterSystem.offeredBreaks(input),
+    ]),
+  );
+}
+
+/** The clock of the shop the day is worked at — its first offered stretch's — else the report's. */
+function nowOf(
+  stretches: readonly { readonly locationId: LocationId }[],
+  nowByLocation: readonly ShopNowAt[],
+  fallback: ShopNow,
+): ShopNow {
+  const first = stretches[0];
+  if (first === undefined) return fallback;
+  for (let i = 0; i < nowByLocation.length; i++) {
+    const at = nowByLocation[i] as ShopNowAt;
+    if (at.locationId === first.locationId) return at;
+  }
+  return fallback;
+}
+
 /**
  * STAFF ANALYTICS (`docs/designs/staff-analytics.md`, catalogue v1) — the
  * visibility table and the report, every value decided here so a presenter
@@ -327,6 +414,236 @@ function timeOf(
  */
 export const StaffAnalyticsSystem = {
   RATE_BASE,
+  AHEAD_DAYS,
+
+  /**
+   * The caller as the visibility table judges them, from their STORED user
+   * record: its roles, whether it is blocked at the call's instant (a T2
+   * expiry, `AccountLifecycle.isBlockedAt`) and its barber link
+   * (`StaffLink.of`, an absent or malformed field read as none). No record
+   * at all is `ANALYTICS_FORBIDDEN` — an account that never signed in has
+   * no roles to read.
+   */
+  callerOf(
+    user: User | null,
+    nowUtcMs: UtcEpochMs,
+  ): Result<AnalyticsCaller, AnalyticsError> {
+    if (user === null) return Result.err(AnalyticsError.forbidden());
+    return Result.ok({
+      callerRoles: user.roles,
+      callerBlocked: AccountLifecycle.isBlockedAt(user, nowUtcMs),
+      linkedBarberId: StaffLink.of(user).linkedBarberId,
+    });
+  },
+
+  /**
+   * The shop whose clock says what "today" is: the deployment's default
+   * shop when it is listed, else the first by id (any status — a zone is
+   * configuration); `null` with no shop at all.
+   */
+  clockLocationOf(
+    locations: readonly ShopLocation[],
+    defaultLocationId: LocationId,
+  ): ShopLocation | null {
+    let first: ShopLocation | null = null;
+    for (let i = 0; i < locations.length; i++) {
+      const location = locations[i] as ShopLocation;
+      if (location.id === defaultLocationId) return location;
+      if (first === null || location.id < first.id) first = location;
+    }
+    return first;
+  },
+
+  /** The barber records a scope reports on: the one, or every record of the shop by id. */
+  barbersInScope(
+    scopeBarberId: BarberId | null,
+    barberIds: readonly BarberId[],
+  ): readonly BarberId[] {
+    return scopeBarberId === null ? [...barberIds].sort() : [scopeBarberId];
+  },
+
+  /** The shop days the open-hours card reads: `today` and the six after it. */
+  aheadDaysOf(today: LocalDate): readonly LocalDate[] {
+    return LocalDate.range(today, LocalDate.addDays(today, AHEAD_DAYS - 1));
+  },
+
+  /** Every barber-day's busy key (`barberId__localDate`), barber by barber — what a visit read asks for. */
+  busyKeysOf(
+    barberIds: readonly BarberId[],
+    localDates: readonly LocalDate[],
+  ): readonly BusyKey[] {
+    const keys: BusyKey[] = [];
+    for (let b = 0; b < barberIds.length; b++) {
+      for (let d = 0; d < localDates.length; d++) {
+        keys.push(
+          BusyKey.of(barberIds[b] as BarberId, localDates[d] as LocalDate),
+        );
+      }
+    }
+    return keys;
+  },
+
+  /**
+   * Each appointment once, in first-read order — a party split across
+   * barbers holds a key of each, so it can come back from two queries.
+   */
+  mergeVisits<V extends { readonly id: AppointmentId }>(
+    visits: readonly V[],
+  ): readonly V[] {
+    const seen = new Set<AppointmentId>();
+    const out: V[] = [];
+    for (let i = 0; i < visits.length; i++) {
+      const visit = visits[i] as V;
+      if (seen.has(visit.id)) continue;
+      seen.add(visit.id);
+      out.push(visit);
+    }
+    return out;
+  },
+
+  /**
+   * The visits a barber's follow-ups are read by: those in the rebooking
+   * base — a `WORKED` seat of the barber, the window (its shop day and the
+   * next) ended before `today` — the only ones a follow-up can count for.
+   */
+  followUpSourcesOf(
+    visits: readonly AnalyticsVisit[],
+    barberId: BarberId,
+    today: LocalDate,
+  ): readonly AppointmentId[] {
+    const ids: AppointmentId[] = [];
+    for (let v = 0; v < visits.length; v++) {
+      const visit = visits[v] as AnalyticsVisit;
+      if (!(LocalDate.addDays(visit.localDate, 1) < today)) continue;
+      for (let s = 0; s < visit.seats.length; s++) {
+        const seat = visit.seats[s] as Seat;
+        if (
+          seat.barberId === barberId &&
+          seat.attendanceState === AttendanceState.Worked
+        ) {
+          ids.push(visit.id);
+          break;
+        }
+      }
+    }
+    return ids;
+  },
+
+  /**
+   * Whether a read visit is a follow-up the rebooking rule can judge:
+   * booked from another visit, at a known instant (a row stamped before
+   * `bookedAtUtcMs` existed is left out, as the catalogue says).
+   */
+  isCountedFollowUp(visit: FollowUpVisit): visit is CountedFollowUp {
+    return (
+      visit.bookedFromAppointmentId !== null && visit.bookedAtUtcMs !== null
+    );
+  },
+
+  /**
+   * A follow-up as the report reads it: the visit it was booked from, the
+   * shop day it was booked on (converted once, at the pipeline's boundary,
+   * on its shop's clock) and whether it is cancelled now.
+   */
+  followUpOf(
+    visit: CountedFollowUp,
+    bookedOnLocalDate: LocalDate,
+  ): AnalyticsFollowUp {
+    return {
+      bookedFromAppointmentId: visit.bookedFromAppointmentId,
+      bookedOnLocalDate,
+      followUpCancelled: visit.bookingStatus === BookingStatus.Cancelled,
+    };
+  },
+
+  /**
+   * THE SCOPE'S BARBER-DAYS, partitioned (`ChairTimeSystem.dayBreakdown`),
+   * barber by barber and day by day. Each day is the schedule's own: the
+   * roster in force, its departure, the hours of the ACTIVE shops
+   * (`PartyAdmissionSystem.shopListed` — the rule every booking surface
+   * and the capacity rebuild ask), read through `RosterSystem`'s offered
+   * windows, blocks and breaks; the day's clock is its shop's (the first
+   * offered stretch's), else the report's. A `CLOSED` day rosters nothing;
+   * its `closedDayMinutes` are what the roster would have given without
+   * the departure.
+   */
+  daysOf(input: AnalyticsDaysInput): readonly AnalyticsDay[] {
+    const active: ShopLocation[] = [];
+    for (let i = 0; i < input.locations.length; i++) {
+      const location = input.locations[i] as ShopLocation;
+      if (PartyAdmissionSystem.shopListed(location)) active.push(location);
+    }
+    const rosterOf = new Map<BarberId, BarberSchedule>();
+    for (let i = 0; i < input.rosters.length; i++) {
+      const roster = input.rosters[i] as BarberSchedule;
+      rosterOf.set(roster.id, roster);
+    }
+    const departuresOf = new Map<BarberId, ScheduleException[]>();
+    for (let i = 0; i < input.departures.length; i++) {
+      const departure = input.departures[i] as ScheduleException;
+      const list = departuresOf.get(departure.barberId);
+      if (list === undefined) departuresOf.set(departure.barberId, [departure]);
+      else list.push(departure);
+    }
+    const visitsOn = new Map<LocalDate, ChairVisit[]>();
+    for (let i = 0; i < input.visits.length; i++) {
+      const visit = input.visits[i] as AnalyticsVisit;
+      const list = visitsOn.get(visit.localDate);
+      if (list === undefined) visitsOn.set(visit.localDate, [visit]);
+      else list.push(visit);
+    }
+
+    const days: AnalyticsDay[] = [];
+    for (let b = 0; b < input.barberIds.length; b++) {
+      const barberId = input.barberIds[b] as BarberId;
+      const versions = rosterOf.get(barberId)?.versions ?? [];
+      const exceptions = departuresOf.get(barberId) ?? [];
+      for (let d = 0; d < input.localDates.length; d++) {
+        const localDate = input.localDates[d] as LocalDate;
+        const shopHours = RosterSystem.shopHoursOn(active, localDate);
+        const day: BuildDayWindowsInput = {
+          barberId,
+          localDate,
+          versions,
+          exceptions,
+          shopHours,
+        };
+        const windows = RosterSystem.offeredWindows(day);
+        const blocks = RosterSystem.offeredCarveOuts(day);
+        const breaks = RosterSystem.offeredBreaks(day);
+        const closed = exceptions.some(
+          (exception) =>
+            exception.localDate === localDate &&
+            exception.exceptionEffect === ExceptionEffect.Closed,
+        );
+        const chairDay = ChairTimeSystem.dayBreakdown({
+          barberId,
+          localDate,
+          windows,
+          blocks,
+          breaks,
+          visits: visitsOn.get(localDate) ?? [],
+          now: nowOf(
+            windows.length > 0 ? windows : [...blocks, ...breaks],
+            input.nowByLocation,
+            input.now,
+          ),
+        });
+        days.push({
+          ...chairDay,
+          closedDayMinutes: closed
+            ? rosteredMinutesOf({
+                ...day,
+                exceptions: exceptions.filter(
+                  (exception) => exception.localDate !== localDate,
+                ),
+              })
+            : MinuteCount.ZERO,
+        });
+      }
+    }
+    return days;
+  },
 
   /**
    * THE VISIBILITY TABLE, read top-down on the caller's STORED roles: a

@@ -72,11 +72,22 @@ export type LoadCallerRoles = (
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
-/** An account's own profile — live and once (web, `PROFILE_PORTS`). */
-export type ProfilePorts = {
+/** An account's own profile, live (web). */
+export type ProfileStreamPorts = {
   readonly observeProfile: ObserveProfile;
+};
+
+/**
+ * One account's stored profile, read once — the web's half of
+ * `PROFILE_PORTS` and the functions' `firestoreUserPorts` (the staff
+ * analytics caller read).
+ */
+export type ProfileLoadPorts = {
   readonly loadProfile: LoadProfile;
 };
+
+/** An account's own profile — live and once (web, `PROFILE_PORTS`). */
+export type ProfilePorts = ProfileStreamPorts & ProfileLoadPorts;
 
 /** The staff client search (web, `USER_SEARCH_PORTS`). */
 export type UserSearchPorts = {

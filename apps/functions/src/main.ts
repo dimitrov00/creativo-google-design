@@ -63,6 +63,7 @@ import {
   sampleLeadTime,
   setRoles as setRolesPipeline,
   setRosterWeek as setRosterWeekPipeline,
+  staffAnalytics as staffAnalyticsPipeline,
   startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
@@ -183,6 +184,7 @@ import {
   decodeAmendRosterBreaks,
   decodeSetRosterWeek,
 } from './wire/roster.wire';
+import { decodeStaffAnalytics } from './wire/analytics.wire';
 import {
   decodeCancelWaitlist,
   decodeRequestWaitlist,
@@ -247,7 +249,10 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * 512 MiB, the `runBackfill` idiom: its work budgeted by its timeout) —
  * both bound to the same two keys: 50 exports. Security hardening (S-WS-E,
  * S-DEP-6) added `setRoles`, the admin's audited roles change — bound to
- * the log digest key: 51 exports.
+ * the log digest key: 51 exports. The break pass added `amendRosterBreaks`
+ * and `setRosterWeek`, and staff analytics `staffAnalytics`, the read-only
+ * report — bound to the log digest key, on the larger instance (its read is
+ * the size of a shop-month).
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -853,6 +858,26 @@ export const setRosterWeek = onCall(
     root.ports,
     decodeSetRosterWeek,
     (ports, cmd) => setRosterWeekPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * A staff analytics report (`docs/designs/staff-analytics.md`) — read-only:
+ * the caller's stored record, the shop's rosters, departures and visits of
+ * the period read and computed into one report; nothing is written. On the
+ * larger instance: a shop-month reads ~11,500 documents. Its store failure
+ * leaves as the platform's bare INTERNAL (`failureCode: null`): the
+ * analytics codes name no repository failure, and the screen words every
+ * unexpected failure alike.
+ */
+export const staffAnalytics = onCall(
+  { ...LOG_DIGEST_SECRETS, memory: LARGE_MEMORY },
+  wiredCallable(
+    plain(Callables.StaffAnalytics, null),
+    root.ports,
+    decodeStaffAnalytics,
+    (ports, cmd) => staffAnalyticsPipeline(ports)(cmd),
     refusalOf,
   ),
 );

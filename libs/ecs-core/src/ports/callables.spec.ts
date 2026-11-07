@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ClientPrivacyCall, RolesCall } from '@core/components';
+import { AnalyticsCall, ClientPrivacyCall, RolesCall } from '@core/components';
 import { AppCheckTokenUse, Tag } from '@core/primitives';
 import {
   CALLABLE_ANSWER_DECODERS,
@@ -66,6 +66,17 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     expect(OPERATION_ID_FIELD[Callables.SetRoles]).toBe('operationId');
     expect(CALLABLE_ANSWER_DECODERS[Callables.SetRoles]).toBe(
       RolesCall.decodeChanged,
+    );
+  });
+
+  it('staff analytics, a read, rides `operationId` for correlation only, a standard token, the report’s decoder', () => {
+    expect(Callables.StaffAnalytics).toBe('staffAnalytics');
+    expect(OPERATION_ID_FIELD[Callables.StaffAnalytics]).toBe('operationId');
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.StaffAnalytics]).toBe(
+      AppCheckTokenUse.Standard,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.StaffAnalytics]).toBe(
+      AnalyticsCall.decodeReport,
     );
   });
 

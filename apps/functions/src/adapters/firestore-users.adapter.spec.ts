@@ -89,4 +89,18 @@ describe('firestoreUserPorts', () => {
       RepositoryErrorCode.ReadFailed,
     );
   });
+
+  it('loads an account by id as stored, `null` when absent', async () => {
+    const user = registeredUserFixture({ id: UserId.of('uid_2') });
+    const fake = createProjectionFirestore({ 'users/uid_2': bodyOf(user) });
+    const ports = firestoreUserPorts(fake.db as unknown as Firestore);
+    expect(await ports.loadProfile(UserId.of('uid_2'))).toEqual({
+      ok: true,
+      value: user,
+    });
+    expect(await ports.loadProfile(UserId.of('uid_none'))).toEqual({
+      ok: true,
+      value: null,
+    });
+  });
 });

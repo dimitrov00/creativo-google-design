@@ -14,9 +14,27 @@ import { FailureCodeSystem } from '@core/systems';
 /** Firestore's canonical name for gRPC 6, as `FailureCodeSystem.codeOf` reads it. */
 export const ALREADY_EXISTS = 'already-exists';
 
+/** Firestore's canonical name for gRPC 8 — what a read past its named bound answers. */
+export const RESOURCE_EXHAUSTED = 'resource-exhausted';
+
+/**
+ * Firestore's most values an `in` / `array-contains-any` query takes — the
+ * ONE chunk every adapter that splits an id or key list reads at.
+ */
+export const IN_CHUNK = 30;
+
 /** A read of `path` that threw — answered with the failure's canonical code. */
 export function readFailed(path: string, error: unknown): RepositoryError {
   return RepositoryError.readFailed(path, FailureCodeSystem.codeOf(error));
+}
+
+/**
+ * A read of `path` whose answer passed its named bound — refused, never
+ * truncated (a shorter list would answer a lie). The adapter reads at the
+ * bound + 1 to know.
+ */
+export function overBound(path: string): RepositoryError {
+  return RepositoryError.readFailed(path, RESOURCE_EXHAUSTED);
 }
 
 /** A write of `path` that threw — answered with the failure's canonical code. */

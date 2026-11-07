@@ -15,6 +15,8 @@
  * import (Law 8).
  */
 export const LogEvent = {
+  /** A staff analytics report answered (`staffAnalytics`): the caller, scope, period, counts and minutes per part — never money (logs are read by the vendor). */
+  AnalyticsReported: 'analytics.reported',
   /** The App Check switch held a non-empty value that is no mode — read as OFF, logged once per instance (security hardening S-RU-19). */
   AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
   AuditActorMissing: 'audit row has no verified actor',

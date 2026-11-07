@@ -82,6 +82,14 @@ describe('firestorePorts — the assembler', () => {
       'findUserByDestination',
       // audit-hardening WS-6: the retrying triggers' dead letter
       'writeTriggerFailure',
+      // staff analytics: the caller's record and the report's reads
+      'loadProfile',
+      'loadVisitsByBusyKeys',
+      'loadFollowUpsOf',
+      'loadFollowUpsBookedIn',
+      'loadDeparturesForBarber',
+      'listBarberRecordIds',
+      'listLocations',
     ] as const) {
       expect(typeof (ports as Record<string, unknown>)[member], member).toBe(
         'function',
@@ -157,6 +165,14 @@ describe('firestorePorts — the assembler', () => {
     expect(policy.ok && policy.value.cancellationWindowHours).toBe(6);
   });
 
+  it('reads an account by id through the same db (the analytics caller)', async () => {
+    const { fake, ports } = assemble();
+    const { id, ...body } = registeredUserFixture();
+    fake.docs.set(`users/${id}`, body);
+    const found = await ports.loadProfile(id);
+    expect(found.ok && found.value?.id).toBe(id);
+  });
+
   it('passes the stored-document guards and the telemetry log to every reader of the three collections (edge hardening D-7)', async () => {
     const fake = createProjectionFirestore();
     const telemetry = recordingTelemetry();
@@ -185,6 +201,7 @@ describe('firestorePorts — the assembler', () => {
       BusyKey.of(day.barberId, day.localDate),
     );
     const page = await ports.pageAppointments(null, 10);
+    const analytics = await ports.loadVisitsByBusyKeys(appointment.busyKeys);
 
     const malformed = (path: string, reason: string) => ({
       ok: false,
@@ -197,9 +214,13 @@ describe('firestorePorts — the assembler', () => {
     expect(page).toEqual(
       malformed(`appointments/${appointment.id}`, 'bookingStatus'),
     );
+    expect(analytics).toEqual(
+      malformed(`appointments/${appointment.id}`, 'bookingStatus'),
+    );
     expect(telemetry.lines.map((line) => line.fields)).toEqual([
       { path: `appointments/${appointment.id}`, field: 'bookingStatus' },
       { path: `barberBusy/${day.id}`, field: 'utcEpochMs' },
+      { path: `appointments/${appointment.id}`, field: 'bookingStatus' },
       { path: `appointments/${appointment.id}`, field: 'bookingStatus' },
     ]);
     expect(

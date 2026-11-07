@@ -1,3 +1,4 @@
+export * from './analytics-doubles';
 export * from './appointment.fixtures';
 export * from './booking-core.fixtures';
 export * from './booking-flow.fixtures';

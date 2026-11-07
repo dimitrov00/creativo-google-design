@@ -25,6 +25,7 @@ import {
 } from '@core/primitives';
 import {
   AccountsError,
+  AnalyticsErrorCode,
   BookingError,
   BookingErrorCode,
   CancellationRefusal,
@@ -433,7 +434,8 @@ describe('edge — the wire table', () => {
       }
       // `field` and `refusal` leave exactly where the legacy rows named them
       // — and, since audit-hardening Phase 3 (P3-DEP-9), where a privacy
-      // request names the payload field it refused.
+      // request names the payload field it refused; staff analytics'
+      // malformed request names its field the same way.
       const namedBy = (name: string) =>
         Object.entries(EDGE_WIRE)
           .filter(
@@ -451,6 +453,7 @@ describe('edge — the wire table', () => {
           StreakPublishErrorCode.InvalidInput,
           IdentityErrorCode.RegistrationFieldMissing,
           PrivacyErrorCode.InvalidInput,
+          AnalyticsErrorCode.InvalidInput,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([

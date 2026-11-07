@@ -10,6 +10,7 @@ import {
   CancellationReasonSet,
   CancelledBy,
   ClientStatsPolicy,
+  LocationStatus,
   Placement,
   Role,
   Seat,
@@ -19,24 +20,34 @@ import {
 import {
   AppointmentId,
   BarberId,
+  BusyKey,
   LocalDate,
+  LocationId,
   MinuteCount,
+  ScheduleExceptionId,
   SeatId,
   ServiceId,
+  UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
   appointmentFixture,
+  barberScheduleFixture,
+  blockedUserFixture,
   deepFreeze,
   localDate,
+  locationFixture,
   minute,
+  registeredUserFixture,
+  scheduleExceptionFixture,
   seatFixture,
   termsFixture,
 } from '@core/testing';
 import type { ChairDay } from './chair-time.system';
 import {
   type AnalyticsDay,
+  type AnalyticsDaysInput,
   type AnalyticsFollowUp,
   type AnalyticsInput,
   type AnalyticsVisit,
@@ -591,5 +602,213 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       }),
     );
     expect(S.report(frozen)).toEqual(S.report(frozen));
+  });
+});
+
+describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
+  const centre = LocationId.of('loc-center');
+  const mladost = LocationId.of('loc-mladost');
+
+  it('reads the caller off the stored record: roles, a block at the instant, the link', () => {
+    const linked = registeredUserFixture({
+      id: UserId.of('u-ivan'),
+      roles: [Role.Barber],
+      linkedBarberId: ivan,
+    });
+    expect(S.callerOf(linked, stamp)).toEqual({
+      ok: true,
+      value: {
+        callerRoles: [Role.Barber],
+        callerBlocked: false,
+        linkedBarberId: ivan,
+      },
+    });
+    const blocked = blockedUserFixture({ roles: [Role.Admin] });
+    expect(S.callerOf(blocked, stamp)).toMatchObject({
+      ok: true,
+      value: { callerBlocked: true, linkedBarberId: null },
+    });
+    // The block ran out: no longer blocked at a later instant.
+    const later = UtcEpochMs.plusDays(stamp, 400);
+    expect(S.callerOf(blocked, later)).toMatchObject({
+      value: { callerBlocked: false },
+    });
+    expect(S.callerOf(null, stamp)).toEqual({
+      ok: false,
+      error: { errorCode: 'ANALYTICS_FORBIDDEN' },
+    });
+  });
+
+  it('takes today from the default shop, else the first by id, else none', () => {
+    const a = locationFixture({ id: mladost });
+    const b = locationFixture({
+      id: centre,
+      locationStatus: LocationStatus.Hidden,
+    });
+    expect(S.clockLocationOf([a, b], centre)).toBe(b);
+    expect(S.clockLocationOf([a, b], LocationId.of('loc-x'))).toBe(b);
+    expect(S.clockLocationOf([], centre)).toBeNull();
+  });
+
+  it('scopes the shop to every record by id, a barber to the one', () => {
+    expect(S.barbersInScope(null, [niko, ivan])).toEqual([ivan, niko]);
+    expect(S.barbersInScope(niko, [niko, ivan])).toEqual([niko]);
+  });
+
+  it('reads the next 7 shop days from today, and every barber-day’s key', () => {
+    expect(S.aheadDaysOf(TODAY)).toEqual(
+      LocalDate.range(TODAY, LocalDate.addDays(TODAY, 6)),
+    );
+    expect(S.busyKeysOf([ivan, niko], [day(0), day(1)])).toEqual([
+      BusyKey.of(ivan, day(0)),
+      BusyKey.of(ivan, day(1)),
+      BusyKey.of(niko, day(0)),
+      BusyKey.of(niko, day(1)),
+    ]);
+  });
+
+  it('counts each appointment once, in first-read order', () => {
+    const a = visit('a', day(-3), [seat(ivan, 1000)]);
+    const b = visit('b', day(-3), [seat(ivan, 1000), seat(niko, 1000)]);
+    expect(S.mergeVisits([a, b, b, a])).toEqual([a, b]);
+  });
+
+  it('reads follow-ups only for the visits in the rebooking base', () => {
+    const ended = visit('ended', day(-2), [seat(ivan, 1000)]);
+    const open = visit('open', day(-1), [seat(ivan, 1000)]);
+    const others = visit('others', day(-5), [seat(niko, 1000)]);
+    const noShow = visit('no-show', day(-5), [
+      seat(ivan, 1000, SeatOutcome.noShow(stamp)),
+    ]);
+    expect(
+      S.followUpSourcesOf([ended, open, others, noShow], ivan, TODAY),
+    ).toEqual([ended.id]);
+  });
+
+  it('keeps a follow-up booked from a visit at a known instant, cancelled or not', () => {
+    const from = AppointmentId.of('a-from');
+    const booked = visit('f', day(3), [seat(ivan, 1000)], {
+      bookedFromAppointmentId: from,
+    } as Partial<AnalyticsVisit>) as unknown as Parameters<
+      typeof S.isCountedFollowUp
+    >[0];
+    expect(S.isCountedFollowUp(booked)).toBe(true);
+    expect(S.isCountedFollowUp({ ...booked, bookedAtUtcMs: null })).toBe(false);
+    expect(
+      S.isCountedFollowUp({ ...booked, bookedFromAppointmentId: null }),
+    ).toBe(false);
+    if (!S.isCountedFollowUp(booked)) throw new Error('unreachable');
+    expect(S.followUpOf(booked, day(-1))).toEqual({
+      bookedFromAppointmentId: from,
+      bookedOnLocalDate: day(-1),
+      followUpCancelled: false,
+    });
+    const cancelled = {
+      ...booked,
+      ...BookingLifecycle.sliceOf(
+        BookingLifecycle.cancel(
+          stamp,
+          CancellationReasonSet.of([CancellationReason.Other]),
+        ),
+      ),
+    } as typeof booked;
+    expect(S.followUpOf(cancelled, day(-1)).followUpCancelled).toBe(true);
+  });
+
+  describe('daysOf — the scope’s barber-days', () => {
+    // Monday 12 October: Ivan rostered 09:00–18:00 at the centre.
+    const monday = day(-2);
+    // The centre's clock: Wednesday the 14th, 14:00 — the 12th is past.
+    const centreNow: ShopNow = NOW;
+    const days = (overrides: Partial<AnalyticsDaysInput> = {}) =>
+      S.daysOf({
+        barberIds: [ivan],
+        localDates: [monday],
+        rosters: [barberScheduleFixture({ id: ivan })],
+        departures: [],
+        locations: [locationFixture()],
+        visits: [],
+        nowByLocation: [{ locationId: centre, ...centreNow }],
+        now: NOW,
+        ...overrides,
+      });
+
+    it('rosters the day as the schedule offers it, with its visits', () => {
+      const [only] = days({
+        visits: [visit('a', monday, [seat(ivan, 1000)])],
+      });
+      expect(only).toMatchObject({
+        barberId: ivan,
+        localDate: monday,
+        rosteredMinutes: 9 * 60,
+        workedMinutes: 30,
+        closedDayMinutes: 0,
+      });
+    });
+
+    it('offers nothing at a shop that is not ACTIVE', () => {
+      const [only] = days({
+        locations: [locationFixture({ locationStatus: LocationStatus.Hidden })],
+      });
+      expect(only?.rosteredMinutes).toBe(0);
+    });
+
+    it('keeps a CLOSED day’s would-be minutes beside its zero', () => {
+      const [only] = days({
+        departures: [
+          scheduleExceptionFixture({
+            id: ScheduleExceptionId.of(BusyKey.of(ivan, monday)),
+            barberId: ivan,
+            localDate: monday,
+          }),
+        ],
+      });
+      expect(only?.rosteredMinutes).toBe(0);
+      expect(only?.closedDayMinutes).toBe(9 * 60);
+    });
+
+    it('reads a day on its shop’s clock, and a day at no known shop on the report’s', () => {
+      // On the centre's clock the 12th is past: no open time.
+      const [past] = days();
+      expect(past?.openMinutes).toBe(0);
+      // A report clock that says the 12th is still ahead does not apply to a
+      // day worked at the centre…
+      const early: ShopNow = { ...NOW, localDate: day(-5) };
+      const [onCentre] = days({ now: early });
+      expect(onCentre?.openMinutes).toBe(0);
+      // …but does to a day whose shop has no clock of its own.
+      const [onFallback] = days({ now: early, nowByLocation: [] });
+      expect(onFallback?.openMinutes).toBe(9 * 60);
+    });
+
+    it('builds every barber × day, barber by barber', () => {
+      const built = days({
+        barberIds: [ivan, niko],
+        localDates: [monday, day(-1)],
+        rosters: [barberScheduleFixture({ id: ivan })],
+      });
+      expect(built.map((d) => [d.barberId, d.localDate])).toEqual([
+        [ivan, monday],
+        [ivan, day(-1)],
+        [niko, monday],
+        [niko, day(-1)],
+      ]);
+      // Niko has no roster: nothing rostered.
+      expect(built[2]?.rosteredMinutes).toBe(0);
+    });
+
+    it('is pure: same input → same output, inputs untouched', () => {
+      const frozen = deepFreeze({
+        barberIds: [ivan],
+        localDates: [monday],
+        rosters: [barberScheduleFixture({ id: ivan })],
+        departures: [],
+        locations: [locationFixture()],
+        visits: [visit('a', monday, [seat(ivan, 1000)])],
+        nowByLocation: [{ locationId: centre, ...centreNow }],
+        now: NOW,
+      });
+      expect(S.daysOf(frozen)).toEqual(S.daysOf(frozen));
+    });
   });
 });
