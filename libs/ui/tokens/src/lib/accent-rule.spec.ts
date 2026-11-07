@@ -698,6 +698,11 @@ const ON_ACCENT_ALLOWED: readonly Allowed[] = [
     reason: 'the chosen service’s check: a mark',
   },
   {
+    file: 'libs/ui/controls/src/lib/person-tile/person-tile.css',
+    selector: '.ui-person-tile__check[data-selected]',
+    reason: 'the chosen person’s check on the solid disc: a mark',
+  },
+  {
     file: 'libs/features/client/appointments/src/lib/client-appointments/client-appointments.css',
     selector: '.appointments__add.ui-button',
     reason: 'the round add button: a plus on the solid disc, a mark',
