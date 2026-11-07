@@ -1,11 +1,11 @@
 # Schedule storage, memory and cost — what to store, what to work out when read
 
-> Status: PHASE 1 BUILT (2026-11-07); Phase 2 waits for the owner. Reviewed in two rounds:
+> Status: PHASE 1 BUILT and PHASE 2 RULED (2026-11-07; the Law text is in `CLAUDE.md`,
+> [`decisions/2026-11-07-truth-is-a-pattern.md`](decisions/2026-11-07-truth-is-a-pattern.md)). Reviewed in two rounds:
 > [`review/schedule-storage/consolidated_review_report.md`](review/schedule-storage/consolidated_review_report.md)
 > (round 1) and
 > [`review/schedule-storage/round-2/consolidated_review_report.md`](review/schedule-storage/round-2/consolidated_review_report.md)
-> (round 2). Phase 1 needs no owner answer. Phase 2 (the Law text) waits
-> for one. Builds on
+> (round 2). Builds on
 > [`decisions/2026-11-06-breaks-live-on-the-roster.md`](decisions/2026-11-06-breaks-live-on-the-roster.md)
 > and [`performance-cost-audit.md`](performance-cost-audit.md).
 
@@ -283,7 +283,7 @@ opens are at least 100 a day, and storing wins by a wide margin.
 Busy days cannot be worked out when read at all: that would cross the
 privacy boundary.
 
-### Where the rule lives (Phase 2, for the owner)
+### Where the rule lives (Phase 2, ruled 2026-11-07)
 
 The rule is about storage, so it belongs mainly in Law 5. Law 3 keeps its
 own concrete words, which agents rely on, and points to Law 5.
@@ -736,13 +736,13 @@ that in the diff.
 - The first new case in step 3 shows a Sweep over an already-rebuilt store
   returning no capacity `WriteOp`.
 
-### Phase 2: the Law text, after the owner rules
+### Phase 2: the Law text (done 2026-11-07)
 
 On a yes to §12 question 3, do the following in one commit:
 
 - edit `CLAUDE.md` and `AGENTS.md` identically, with the Law 3 and Law 5
   text in §6;
-- add `docs/architecture/decisions/2026-11-xx-truth-is-a-pattern.md`,
+- add `docs/architecture/decisions/2026-11-07-truth-is-a-pattern.md`,
   recording the ruling and linking this document.
 
 Phase 2 is not part of Phase 1's commit.
