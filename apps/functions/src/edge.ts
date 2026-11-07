@@ -16,6 +16,7 @@ import {
 } from '@core/primitives';
 import {
   AccountsErrorCode,
+  AnalyticsErrorCode,
   AppCheckErrorCode,
   BookingErrorCode,
   BookingFlowErrorCode,
@@ -104,6 +105,7 @@ import { eventInstantOf, idOf, operationIdOf } from './wire/wire-read';
  */
 export const EDGE_DICTIONARIES = {
   AccountsErrorCode,
+  AnalyticsErrorCode,
   AppCheckErrorCode,
   PrimitiveErrorCode,
   BookingErrorCode,
@@ -135,6 +137,7 @@ export const EDGE_DICTIONARIES = {
 /** Every code the edge can put on the wire. */
 export type EdgeCode =
   | AccountsErrorCode
+  | AnalyticsErrorCode
   | AppCheckErrorCode
   | PrimitiveErrorCode
   | BookingErrorCode
@@ -417,6 +420,19 @@ const CLIENT_ISSUE_WIRE: WireTable<ClientIssueErrorCode> = {
  * `permission-denied` as "blocked"). Its code leaves alone: the outcome tag
  * stays on the outcome line, no `WIRE_PARAM_ALLOWLIST` row.
  */
+/**
+ * Staff analytics' refusals (`staffAnalytics`): the code alone — a barber
+ * id or a date on the wire would add nothing the screen needs to word it.
+ */
+const ANALYTICS_WIRE: WireTable<AnalyticsErrorCode> = {
+  [AnalyticsErrorCode.Unauthenticated]: fields(S.Unauthenticated),
+  [AnalyticsErrorCode.Forbidden]: fields(S.PermissionDenied),
+  [AnalyticsErrorCode.BarberNotLinked]: fields(S.FailedPrecondition),
+  [AnalyticsErrorCode.PeriodOutOfRange]: fields(S.InvalidArgument),
+  [AnalyticsErrorCode.ScopeUnknown]: fields(S.NotFound),
+  [AnalyticsErrorCode.InvalidInput]: fields(S.InvalidArgument),
+};
+
 const APP_CHECK_WIRE: WireTable<AppCheckErrorCode> = {
   [AppCheckErrorCode.Required]: fields(S.FailedPrecondition),
   [AppCheckErrorCode.Replayed]: fields(S.FailedPrecondition),
@@ -769,6 +785,7 @@ function withAllowlists<C extends string>(
 export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
   withAllowlists<EdgeCode>({
     ...ACCOUNTS_WIRE,
+    ...ANALYTICS_WIRE,
     ...APP_CHECK_WIRE,
     ...PRIMITIVE_WIRE,
     ...BOOKING_WIRE,

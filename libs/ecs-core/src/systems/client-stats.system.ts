@@ -896,6 +896,14 @@ function subjectsOf(side: AppointmentSide): readonly CustomerId[] {
 }
 
 export const ClientStatsSystem = {
+  /**
+   * Cents of a stored currency in euro cents — EUR as is, BGN at the fixed
+   * rate — or `null` when there is no honest rate. One home for the
+   * conversion: the client card's spend and analytics' seat nets
+   * (`MoneyAllocationSystem`) both read it.
+   */
+  inEuroCents,
+
   BGN_PER_EUR,
 
   /**
