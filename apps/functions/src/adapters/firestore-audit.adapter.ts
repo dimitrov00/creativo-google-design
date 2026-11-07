@@ -10,6 +10,7 @@ import type { AuditPorts, TelemetryPorts } from '@core/ports';
 import { FailureCodeSystem } from '@core/systems';
 import {
   ALREADY_EXISTS,
+  IN_CHUNK,
   bodyOf,
   readFailed,
   writeFailed,
@@ -49,9 +50,6 @@ import {
  * (audit-hardening WS-1, `AuditSystem.commitWrites` / `createsOf`) — they
  * land with the act or not at all.
  */
-
-/** Firestore's `in` takes at most 30 values per query. */
-const IN_CHUNK = 30;
 
 const isAlreadyExists = (error: unknown): boolean =>
   FailureCodeSystem.codeOf(error) === ALREADY_EXISTS;

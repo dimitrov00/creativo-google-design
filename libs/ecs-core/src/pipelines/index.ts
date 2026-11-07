@@ -33,6 +33,7 @@ export * from './set-roles.pipeline';
 export * from './shop-zone-read.pipeline';
 export * from './shop-today.pipeline';
 export * from './start-impersonation.pipeline';
+export * from './staff-analytics.pipeline';
 export * from './start-policy-recompute.pipeline';
 export * from './sweep-policy-recompute.pipeline';
 export * from './transition-appointment.pipeline';

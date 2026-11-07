@@ -32,7 +32,7 @@ import type {
 } from '@core/ports';
 import type { StoredDocument, StoredGuardOf } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
-import { readFailed } from './store-answer';
+import { IN_CHUNK, readFailed } from './store-answer';
 
 /**
  * The person's footprint, read by the admin's privacy callables over the
@@ -82,9 +82,6 @@ import { readFailed } from './store-answer';
  * runbook §4.10). A read that throws answers `RepositoryError.readFailed`
  * whose `reason` is the failure's canonical code — never its message.
  */
-
-/** The `in` operator's most values per query (Firestore's own bound). */
-const IN_CHUNK = 30;
 
 /**
  * The adapter-stamped TTL root field — the one Firestore `Timestamp` a

@@ -20,7 +20,7 @@ import type {
   Result,
   UserId,
 } from '@core/primitives';
-import type { LoadProfile } from './accounts.port';
+import type { ProfileLoadPorts } from './accounts.port';
 import type { Callable } from './scheduling.port';
 
 /*
@@ -41,7 +41,7 @@ import type { Callable } from './scheduling.port';
  * entities as stored (`{ id, ...data }`) — zero mapping (Law 5).
  *
  * Reused, not copied (Law 9, P3-RU-26): the account is read by the
- * EXISTING {@link LoadProfile} type; loyalty, statistics and the audit rows
+ * EXISTING {@link ProfileLoadPorts} bundle; loyalty, statistics and the audit rows
  * that target the person come through `LoyaltyAccountReadPorts`,
  * `ClientStatsLoadPorts` and `AuditTimelinePorts`.
  */
@@ -263,11 +263,9 @@ export type EraseClient = Callable<
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
-/** The person's footprint reads — `firestorePrivacyPorts(db, guardOf, log)` (functions). */
-export type ClientFootprintPorts = {
+/** The person's footprint lists and the client record — {@link ClientFootprintPorts} without the account read. */
+export type FootprintRecordPorts = {
   readonly loadClientRecord: LoadClientRecord;
-  /** The EXISTING account read (`accounts.port.ts`), never a copy. */
-  readonly loadProfile: LoadProfile;
   readonly listClientVisits: ListClientVisits;
   readonly listVisitsByContact: ListVisitsByContact;
   readonly loadVisitNotes: LoadVisitNotes;
@@ -282,6 +280,13 @@ export type ClientFootprintPorts = {
   readonly listAccountSessions: ListAccountSessions;
   readonly listOtpsByDestination: ListOtpsByDestination;
 };
+
+/**
+ * The person's footprint reads — `firestorePrivacyPorts(db, guardOf, log)`
+ * (functions): the EXISTING account read (`accounts.port.ts`'s
+ * `ProfileLoadPorts`, never a copy) and the footprint's own.
+ */
+export type ClientFootprintPorts = ProfileLoadPorts & FootprintRecordPorts;
 
 /**
  * The Auth user's claim roles — the preview's and the erasure's staff-account

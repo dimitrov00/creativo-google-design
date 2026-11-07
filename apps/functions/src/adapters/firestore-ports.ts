@@ -2,6 +2,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type {
   AccountContactPorts,
   AdminBatchPorts,
+  AnalyticsReadPorts,
   AuditPorts,
   BackfillJobPorts,
   BarberListPorts,
@@ -19,6 +20,7 @@ import type {
   OtpStorePorts,
   PolicyLinePorts,
   PolicyReadPorts,
+  ProfileLoadPorts,
   RecentNotificationPorts,
   ShopDayReadPorts,
   TelemetryPorts,
@@ -28,6 +30,7 @@ import type {
 } from '@core/ports';
 import { StoredDocumentSystem } from '@core/systems';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
+import { firestoreAnalyticsPorts } from './firestore-analytics.adapter';
 import { firestoreAuditPorts } from './firestore-audit.adapter';
 import { firestoreCapacityPorts } from './firestore-capacity.adapter';
 import { firestoreCatalogPorts } from './firestore-catalog.adapter';
@@ -62,10 +65,11 @@ import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
  * (`ClockPorts & HashPorts & IdPorts`, Law 9 — no local record).
  *
  * The read-time guards (edge hardening D-1, D-7): this is the ONLY
- * production construction site of the three adapters that read
+ * production construction site of the four adapters that read
  * `appointments`, `customers` or `barberBusy` — the transaction
- * (`firestoreCommitPlan`), the schedule singles (`firestoreSchedulePorts`)
- * and the backfill walk (`firestoreJobPorts`) — so each is handed the
+ * (`firestoreCommitPlan`), the schedule singles (`firestoreSchedulePorts`),
+ * the backfill walk (`firestoreJobPorts`) and staff analytics' reads
+ * (`firestoreAnalyticsPorts`) — so each is handed the
  * stored-document guard registry and the telemetry log here: no Firestore
  * read of the three collections is unguarded, and every refusal is logged
  * at the point of refusal (`'malformed document refused'`, `{ path, field }`)
@@ -118,6 +122,9 @@ export type FirestorePorts = TxPorts &
   OtpStorePorts &
   // firestoreUserPorts
   UserLookupPorts &
+  ProfileLoadPorts &
+  // firestoreAnalyticsPorts (staff analytics)
+  AnalyticsReadPorts &
   // firestoreTriggerFailurePorts (audit-hardening WS-6)
   TriggerFailurePorts;
 
@@ -142,5 +149,6 @@ export const firestorePorts = (
   ...firestoreJobPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
   ...firestoreOtpPorts(db),
   ...firestoreUserPorts(db),
+  ...firestoreAnalyticsPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
   ...firestoreTriggerFailurePorts(db),
 });

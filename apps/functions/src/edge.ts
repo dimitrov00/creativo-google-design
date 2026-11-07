@@ -422,7 +422,9 @@ const CLIENT_ISSUE_WIRE: WireTable<ClientIssueErrorCode> = {
  */
 /**
  * Staff analytics' refusals (`staffAnalytics`): the code alone — a barber
- * id or a date on the wire would add nothing the screen needs to word it.
+ * id or a date on the wire would add nothing the screen needs to word it —
+ * but a malformed request, which names its field as every `INVALID_INPUT`
+ * does (`withField`).
  */
 const ANALYTICS_WIRE: WireTable<AnalyticsErrorCode> = {
   [AnalyticsErrorCode.Unauthenticated]: fields(S.Unauthenticated),
@@ -430,7 +432,7 @@ const ANALYTICS_WIRE: WireTable<AnalyticsErrorCode> = {
   [AnalyticsErrorCode.BarberNotLinked]: fields(S.FailedPrecondition),
   [AnalyticsErrorCode.PeriodOutOfRange]: fields(S.InvalidArgument),
   [AnalyticsErrorCode.ScopeUnknown]: fields(S.NotFound),
-  [AnalyticsErrorCode.InvalidInput]: fields(S.InvalidArgument),
+  [AnalyticsErrorCode.InvalidInput]: withField(S.InvalidArgument),
 };
 
 const APP_CHECK_WIRE: WireTable<AppCheckErrorCode> = {

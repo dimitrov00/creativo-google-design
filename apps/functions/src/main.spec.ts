@@ -62,6 +62,7 @@ const seam = vi.hoisted(() => {
     'sampleLeadTime',
     'setRoles',
     'setRosterWeek',
+    'staffAnalytics',
     'startImpersonation',
     'startPolicyRecompute',
     'sweepPolicyRecompute',
@@ -281,7 +282,8 @@ const daily = (schedule: string) => ({
  * also `auditProfileChanges`', whose name is kept and whose path param
  * became `{docId}` (`users/{uid}` before). Security hardening (S-DEP-6)
  * added `setRoles`, the admin's audited roles change — a traced callable
- * declaring no other option.
+ * declaring no other option. Staff analytics added `staffAnalytics`, the
+ * read-only report — traced, on 512 MiB (a shop-month's read).
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
  * timeout, memory, instance cap, secret or schedule fails here.
  */
@@ -311,6 +313,7 @@ const ENDPOINTS = {
   markArrived: tracedCallable,
   amendRosterBreaks: tracedCallable,
   setRosterWeek: tracedCallable,
+  staffAnalytics: { ...tracedCallable, availableMemoryMb: 512 },
   clearArrival: tracedCallable,
   recordSeatTip: tracedCallable,
   staffEditAppointment: walkInCallable,
@@ -408,6 +411,17 @@ const PRIVACY_ADMIN = { uid: 'u-owner', roles: ['admin'] } as const;
 const OWNER_WITHOUT_ADMIN = {
   uid: 'u-owner',
   roles: ['barber', 'receptionist', 'content_manager', 'sysadmin'],
+} as const;
+
+/** A report as the pipeline answers it — the callable answers it as it is (a shape the seam never inspects). */
+const ANALYTICS_REPORT = {
+  reportDefinitionVersion: 1,
+  reportScopeBarberId: 'b-1',
+  reportAnalyticsSpan: 'MONTH',
+  reportFromLocalDate: '2026-11-01',
+  reportToLocalDate: '2026-11-30',
+  reportTakingsCents: 4500,
+  reportSeatRows: [],
 } as const;
 
 /** The eleven census counts an erasure answer carries — the residue after a call. */
@@ -775,6 +789,27 @@ const FLIPPED: { readonly [name: string]: Case } = {
     },
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },
+  },
+  staffAnalytics: {
+    pipeline: 'staffAnalytics',
+    input: request(
+      {
+        scopeBarberId: null,
+        fromLocalDate: '2026-11-01',
+        analyticsSpan: 'MONTH',
+        operationId: 'operation-0123456789ab',
+      },
+      STAFF,
+    ),
+    // The verified caller rides the command; the transport id stays at the edge.
+    command: {
+      callerUserId: 'u-staff',
+      scopeBarberId: null,
+      fromLocalDate: '2026-11-01',
+      analyticsSpan: 'MONTH',
+    },
+    answer: ok(ANALYTICS_REPORT),
+    expected: ANALYTICS_REPORT,
   },
   clearArrival: {
     pipeline: 'markArrival',
@@ -1211,7 +1246,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 53 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change and the break pass’s two roster doors', () => {
+  it('exports exactly the 54 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors and staff analytics’ report', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1257,7 +1292,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(53);
+    expect(FLIPPED_EXPORTS).toHaveLength(54);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

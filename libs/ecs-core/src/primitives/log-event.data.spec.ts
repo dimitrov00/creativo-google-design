@@ -8,6 +8,7 @@ import { LogEvent } from './log-event.data';
 describe('LogEvent', () => {
   it('keeps every existing message text byte for byte, beside the new dotted values', () => {
     expect(LogEvent).toEqual({
+      AnalyticsReported: 'analytics.reported',
       AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
       AuditActorMissing: 'audit row has no verified actor',
       AuditWriteFailed: 'audit write failed',
@@ -118,6 +119,11 @@ describe('LogEvent', () => {
     expect(LogEvent.RolesSessionsNotRevoked).not.toBe(
       LogEvent.RolesSessionsRevoked,
     );
+  });
+
+  it('spells the staff analytics value dotted and domain-prefixed', () => {
+    expect(LogEvent.AnalyticsReported).toBe('analytics.reported');
+    expect(LogEvent.AnalyticsReported).toMatch(/^[a-z]+\.[a-z_]+$/);
   });
 
   it('spells the App Check switch value dotted and edge-prefixed (security hardening S-RU-19)', () => {
