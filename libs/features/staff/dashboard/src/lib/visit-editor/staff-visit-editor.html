@@ -1092,6 +1092,10 @@
        for comes last — a walk-in has no name to give until the cut is
        agreed. The same order on a new visit and an old one. -->
   <div class="staff-visit__body" data-testid="staff-visit-root">
+    <!-- THE STAGES (staged-render.ts): the tap's frame draws the sheet's
+         chrome and dock, so its slide starts at once; the first screen comes
+         two frames later, while the sheet is still low; the rest two after. -->
+    @if (stage() >= 1) {
     <!-- ⚠ NO LARGE TITLE. The sheet's name lives in the BAR, always.
          (owner ruling 2026-09-04, reversing 2026-08-27)
 
@@ -1989,6 +1993,9 @@
     </ui-stack>
     }
 
+    <!-- THE LAST STAGE: everything below sits under the dock on the first
+         screen (`stage`, staged-render.ts). -->
+    @if (stage() >= 2) {
     <!-- ── САЛОН — UNDER THE PEOPLE ────────────────────────────────────
          (owner, 2026-09-18: "not one of the first items … maybe under the
          client section is best"): after the client, the client's own note
@@ -2561,7 +2568,7 @@
       </li>
       }
     </ul>
-    } }
+    } } } }
   </div>
   }
 
