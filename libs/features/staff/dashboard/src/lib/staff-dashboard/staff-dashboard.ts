@@ -1573,25 +1573,13 @@ export class StaffDashboard {
     const localDate = this.store.dayKey();
 
     /**
-     * ELAPSED HOLES, at the whole shop's scope, are not rows.
-     *
-     * `lane-gaps.spec.ts` rules that a hole which has passed is still a fact
-     * — the chair sat empty and nobody filled it — and that hiding it makes
-     * an idle morning and a booked one render identically. That ruling is
-     * about the STORE, and the store still computes every one of them: the
-     * `sellable: false` gaps are all there, and the day's summary line reads
-     * its total straight off them. What is settled here is only whether each
-     * one earns a card.
-     *
-     * At one chair it does: the barber between cuts is looking at their own
-     * morning and the holes in it are the subject. At five chairs it cannot
-     * — five lanes × every twenty-minute hole is a screenful of things that
-     * already happened and that nobody can act on, filed between the
-     * bookings that are the reason the screen is open. The fact the spec
-     * protects survives in the summary above the run, in words, which is
-     * where a total belongs anyway.
+     * EVERY HOLE IS A ROW once free time is asked for, elapsed ones too, at
+     * any scope (owner, 2026-11-07: "staff members should be able to see
+     * their holes in their schedule, how much free time they had/have for
+     * the day"). The switch is off by default, so a screen that shows them
+     * is one where somebody asked; and an elapsed hole is something to act
+     * on — a visit entered after the fact.
      */
-    const wholeShop = this.store.scope() === null;
     const freeTime = this.statusFilter.freeTimeShown();
     const items = this.lanes()
       .flatMap((lane) => lane.entries)
@@ -1601,8 +1589,7 @@ export class StaffDashboard {
         }
         if (entry.agendaRow !== AgendaRow.Gap) return true;
         // Holes are a SECOND question — off unless someone is asking it.
-        if (!freeTime) return false;
-        return !(wholeShop && !entry.sellable);
+        return freeTime;
       });
 
     if (localDate === null) return [];

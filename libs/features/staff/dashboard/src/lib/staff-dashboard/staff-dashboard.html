@@ -567,11 +567,15 @@
                  TRIGGER is the card, so the state layer fills the whole card
                  as it does on a visit or a block — on a line inside it, the
                  hover lit only the words. -->
-            @if (entry.sellable) {
+            <!-- AN ELAPSED HOLE PRESSES TOO (owner, 2026-11-07: "they should
+                 be able to still add appointment back in time
+                 retrospectively"). It keeps its line form — it already
+                 happened — but the same menu books or blocks it from its
+                 start, for the walk-in nobody entered at the time. -->
             <li
               class="agenda-card__gap-item"
               [attr.data-barber-tone]="entry.barberTone"
-              data-testid="staff-gap-row"
+              [attr.data-testid]="entry.sellable ? 'staff-gap-row' : 'staff-idle-row'"
             >
               <ui-menu
                 class="agenda-card__gap-menu"
@@ -585,8 +589,10 @@
                   uiMenuTrigger
                   uiInteractive
                   class="agenda-card agenda-card--gap agenda-card__gap-press"
+                  [class.agenda-card--idle]="!entry.sellable"
+                  [attr.data-past]="!entry.sellable && entry.past ? '' : null"
                   [attr.aria-expanded]="gapMenu() === entry.id"
-                  data-testid="staff-gap-press"
+                  [attr.data-testid]="entry.sellable ? 'staff-gap-press' : 'staff-idle-press'"
                   (click)="gapMenu.set(gapMenu() === entry.id ? null : entry.id)"
                 >
                   <span class="agenda-card__rail" aria-hidden="true"></span>
@@ -597,6 +603,7 @@
                     [start]="entry.startLabel"
                     [end]="entry.endLabel"
                     [quiet]="true"
+                    [receded]="!entry.sellable && entry.past"
                   />
                 </button>
                 <ng-container
@@ -605,25 +612,7 @@
                 />
               </ui-menu>
             </li>
-            } @else {
-            <li
-              class="agenda-card agenda-card--gap agenda-card--idle"
-              [attr.data-barber-tone]="entry.barberTone"
-              [attr.data-past]="entry.past ? '' : null"
-              data-testid="staff-idle-row"
-            >
-              <span class="agenda-card__rail" aria-hidden="true"></span>
-              <lib-staff-event-head
-                class="agenda-card__hole"
-                [title]="t('staff.day.agendaFree')"
-                [lines]="[{ icon: 'booking.slot', text: entry.spanLabel }]"
-                [start]="entry.startLabel"
-                [end]="entry.endLabel"
-                [quiet]="true"
-                [receded]="entry.past"
-              />
-            </li>
-            } } @else if (entry.agendaRow === AgendaRow.Block) {
+            } @else if (entry.agendaRow === AgendaRow.Block) {
             <!-- BLOCKED TIME (owner, 2026-11-05: visible in the list too, the
                  filter's «Блокирано време» switch): the hole's head with the
                  grid block's mark and word, its rail neutral like the grid's.
