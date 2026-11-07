@@ -808,7 +808,28 @@ export interface ClientRolesVm {
   readonly saveEnabled: boolean;
   /** «Ролите са запазени. …» or a refusal's words; `null` while idle or on its way. */
   readonly line: string | null;
+  /** The barber-record picker, while the set Save would send holds «Бръснар»; `null` otherwise. */
+  readonly barberPicker: ClientBarberPickerVm | null;
   /** `client-roles`. */
+  readonly testId: string;
+}
+
+/** «Кой бръснар е»: the shop's barber records as faces, the picked one ticked. */
+export interface ClientBarberPickerVm {
+  /** «Кой бръснар е». */
+  readonly label: string;
+  readonly tiles: readonly ClientBarberTileVm[];
+  /** «Избери кой бръснар е този профил.» while Save waits for a pick; `null` otherwise. */
+  readonly hint: string | null;
+}
+
+/** One barber record of the picker. */
+export interface ClientBarberTileVm {
+  readonly barberId: BarberId;
+  readonly name: string;
+  readonly src: string | null;
+  readonly selected: boolean;
+  /** `client-roles-barber-<barberId>`. */
   readonly testId: string;
 }
 

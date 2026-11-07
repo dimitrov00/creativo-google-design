@@ -56,6 +56,7 @@ function owner(overrides: Partial<User> = {}): User {
     email: Email.of('ip@abv.bg'),
     birthDate: BirthDate.of('1990-05-17'),
     profileEditedAtUtcMs: null,
+    linkedBarberId: null,
     ...SearchFieldsSystem.searchFields(
       'Ivan',
       'Petrov',

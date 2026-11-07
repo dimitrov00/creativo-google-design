@@ -213,7 +213,9 @@ service cloud.firestore {
       // The document is the flat `User` (`@core/entities`) minus `id`: every
       // key at the root in both states — `registrationState`, the contact
       // and names, `roles`, `accountStatus` (+ `blockReason`,
-      // `blockedUntilUtcMs` while BLOCKED) and the search keys.
+      // `blockedUntilUtcMs` while BLOCKED), the search keys and
+      // `linkedBarberId` (the barber record the account is, `null` unless
+      // `setRoles` linked one beside the record's `restricted/link` lock).
       // No client ever writes this document (Phase 4a 4A-3 (3)). Every
       // write is the Admin SDK's (which bypasses these rules): `verifyOtp`
       // creates the PROVISIONED stub (`RegistrationSystem.provision`: the
@@ -562,6 +564,21 @@ service cloud.firestore {
     match /barbers/{barberId} {
       allow read: if true;
       allow write: if false;
+
+      // `restricted/link` — the record's account lock (`BarberLink`:
+      // `{ linkedUserId }`), which account this barber is. `barbers/*` is
+      // public, so the uid lives here; rules do not cascade, so this match
+      // needs its own allow — and it allows nothing: callable-only, read
+      // and written by `setRoles` inside its transaction (Admin SDK). The
+      // link a signed-in barber reads is their own `users/{uid}`
+      // `linkedBarberId`. The one document is named (`link`, `BARBER_LINK_DOC`),
+      // not a wildcard: `restricted/` holds nothing else, the root deny
+      // covers any other id, and the role parity spec finds the spend's
+      // `/restricted/{docId}` by its shape, which a second wildcard would
+      // make ambiguous.
+      match /restricted/link {
+        allow read, write: if false;
+      }
     }
 
     match /locations/{locationId} {

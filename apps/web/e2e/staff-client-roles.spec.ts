@@ -8,6 +8,8 @@ import {
   readStoredBody,
   seedUpcomingAppointment,
   seedUserProfile,
+  readBarberLink,
+  releaseBarberLink,
 } from './support/seed-firestore';
 import { EVENING_VISIT_START } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
@@ -117,6 +119,11 @@ test.describe('client card — the roles (security hardening S-WS-E)', () => {
       const adminUid = `e2e-roles-admin-${run}`;
       const today = suiteDay();
       await seedClient(uid, today);
+      // «Кой бръснар е» links the account to a barber record of its own per
+      // theme — the two themes run side by side, and one record takes one
+      // account (its lock). Start it free: a retry may have linked it.
+      const record = theme === 'light' ? 'niko' : 'stefan';
+      await releaseBarberLink(record);
       // The admin's stored roles: `setRoles` judges the caller by these.
       await seedUserProfile(adminUid, {
         firstName: 'Админ',
@@ -141,9 +148,15 @@ test.describe('client card — the roles (security hardening S-WS-E)', () => {
       await expect(save).toBeDisabled();
       await expect(block.getByTestId('client-roles-status')).toHaveCount(0);
 
-      // Tick «Бръснар», save: the line says when the roles apply.
+      // Tick «Бръснар»: the card asks which barber the account is, and Save
+      // waits for the pick.
       await barber.click();
       await expect(barber).toHaveAttribute('aria-checked', 'true');
+      await expect(block.getByTestId('client-roles-barber-hint')).toBeVisible();
+      await expect(save).toBeDisabled();
+      const tile = block.getByTestId(`client-roles-barber-${record}`);
+      await tile.click();
+      await expect(tile).toHaveAttribute('aria-pressed', 'true');
       await expect(save).toBeEnabled();
       await save.click();
       await expect(block.getByTestId('client-roles-status')).toHaveText(
@@ -155,6 +168,9 @@ test.describe('client card — the roles (security hardening S-WS-E)', () => {
       // WHAT THE SERVER FILED: the stored set, in dictionary order ...
       const account = await readStoredBody(Collections.Users, uid);
       expect(account?.['roles']).toEqual([Role.Client, Role.Barber]);
+      // ... the account is that barber record, and the record's lock says so ...
+      expect(account?.['linkedBarberId']).toBe(record);
+      expect(await readBarberLink(record)).toBe(uid);
       // ... and ONE roles row about the account, in the same commit.
       const actions = await readAuditActionsFor(uid);
       expect(

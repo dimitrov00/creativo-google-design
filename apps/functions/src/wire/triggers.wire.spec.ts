@@ -495,6 +495,8 @@ describe('decodeDocumentChangeEvent — a users write (RU-40: the profile decode
       profileRolesTo: [],
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
       beforeProfileEditedAtUtcMs: null,
       afterProfileEditedAtUtcMs: null,
     });
@@ -562,6 +564,8 @@ describe('decodeDocumentChangeEvent — a users write (RU-40: the profile decode
       profileRolesTo: null,
       profileAccountStatusFrom: AccountStatus.Active,
       profileAccountStatusTo: AccountStatus.Blocked,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 });

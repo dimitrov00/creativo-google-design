@@ -684,6 +684,16 @@
     },
     {
       "collectionGroup": "auditLog",
+      "fieldPath": "profileLinkedBarberIdFrom",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "profileLinkedBarberIdTo",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
       "fieldPath": "impersonationExpiresAtUtcMs",
       "indexes": []
     },

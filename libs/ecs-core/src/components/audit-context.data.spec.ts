@@ -381,6 +381,8 @@ describe('AuditContext — one flat variant per verb family, every field present
       profileRolesTo: null,
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 
@@ -394,6 +396,8 @@ describe('AuditContext — one flat variant per verb family, every field present
         profileRolesTo: rolesTo,
         profileAccountStatusFrom: AccountStatus.Active,
         profileAccountStatusTo: AccountStatus.Blocked,
+        profileLinkedBarberIdFrom: null,
+        profileLinkedBarberIdTo: null,
       },
     );
     expect(context.profileRolesTo).toBe(rolesTo);
@@ -404,6 +408,8 @@ describe('AuditContext — one flat variant per verb family, every field present
       profileRolesTo: ['barber'],
       profileAccountStatusFrom: 'ACTIVE',
       profileAccountStatusTo: 'BLOCKED',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 

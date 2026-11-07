@@ -33,6 +33,7 @@ import {
   type Role,
   type SearchFields,
   type SessionKind,
+  type StaffLink,
   type StaffEditDelta,
   type TipDelta,
   type TransitionDelta,
@@ -40,6 +41,8 @@ import {
 } from '@core/components';
 import type {
   AttendanceState,
+  BarberId,
+  BarberLinkId,
   CustomerId,
   IdentifierChannel,
   ImpersonationSessionId,
@@ -55,6 +58,7 @@ import type {
   ImpersonationSession,
   ImpersonationSessionMeta,
 } from './impersonation-session.entity';
+import type { BarberLink } from './barber-link.entity';
 import type { Otp } from './otp.entity';
 import type { OwnerProfileFields, User, UserMeta } from './user.entity';
 
@@ -67,7 +71,7 @@ type Equals<A, B> =
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
 type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 
-/* ── User = Meta & AccountLifecycle & SearchFields ─────────────────────── */
+/* ── User = Meta & AccountLifecycle & SearchFields & StaffLink ──────────── */
 
 export const userNotNever: IsNever<User> = false;
 export const userFlat: EveryVariantFlat<User> = true;
@@ -75,7 +79,24 @@ export const userDisjoint: [
   Disjoint<UserMeta, AccountLifecycle>,
   Disjoint<UserMeta, SearchFields>,
   Disjoint<AccountLifecycle, SearchFields>,
-] = [true, true, true];
+  Disjoint<UserMeta, StaffLink>,
+  Disjoint<AccountLifecycle, StaffLink>,
+  Disjoint<SearchFields, StaffLink>,
+] = [true, true, true, true, true, true];
+/** The staff link is a root field, never optional: absent is `null` (the provisioned stub, every client). */
+export const userLinkIsRoot: Equals<User['linkedBarberId'], BarberId | null> =
+  true;
+
+/* ── BarberLink — `barbers/{barberId}/restricted/link` (the lock) ──────── */
+
+export const barberLinkNotNever: IsNever<BarberLink> = false;
+export const barberLinkFlat: EveryVariantFlat<BarberLink> = true;
+/** The lock's id is the fixed `link`, never the barber's id (Law 5: `{ id: snap.id, ...data }`). */
+export const barberLinkIdIsFixed: Equals<BarberLink['id'], BarberLinkId> = true;
+export const barberLinkNamesAnAccount: Equals<
+  BarberLink['linkedUserId'],
+  UserId
+> = true;
 
 declare const user: User;
 if (user.accountStatus === AccountStatus.Blocked) {

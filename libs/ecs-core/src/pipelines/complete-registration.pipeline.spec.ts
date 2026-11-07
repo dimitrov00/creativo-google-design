@@ -222,6 +222,7 @@ describe('completeRegistration', () => {
       profileEditedAtUtcMs: null,
       searchName: registered.searchName,
       searchPrefixes: registered.searchPrefixes,
+      linkedBarberId: null,
     });
     expect(stored(world, CUSTOMER_PATH)).toEqual(record);
     expect(minted(world)).toEqual([{ uid: UID, claims: CLIENT_CLAIMS }]);
@@ -260,6 +261,8 @@ describe('completeRegistration', () => {
       profileRolesTo: ['client'],
       profileAccountStatusFrom: null,
       profileAccountStatusTo: null,
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
 
     const withMore = memoryIdentityWorld({ users: [phoneStub()] });

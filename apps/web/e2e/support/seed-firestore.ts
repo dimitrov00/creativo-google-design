@@ -29,6 +29,7 @@ import {
   PolicyPassStamp,
   RegistrationState,
   Role,
+  StaffLink,
   WriteProvenance,
 } from '@core/components';
 import {
@@ -42,6 +43,7 @@ import {
   type InboxNotification,
   Profile,
   Subcollections,
+  BARBER_LINK_DOC,
   type User,
 } from '@core/entities';
 import {
@@ -137,6 +139,7 @@ export async function seedUserProfile(
     birthDate,
     profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(firstName, lastName, phone, null),
+    ...StaffLink.NONE,
   } satisfies Omit<User, 'id'>;
   await getFirestore(adminApp())
     .collection(Collections.Users)
@@ -869,6 +872,32 @@ type CollectionName = (typeof Collections)[keyof typeof Collections];
  * it is absent: what the server FILED (an erased record's tag, a kept
  * visit's cleared contact), which no screen shows as such.
  */
+/**
+ * Releases a barber record's account lock (`barbers/{id}/restricted/link`), so a
+ * test that links an account to that record starts from a free record — a run
+ * or a retry before it may have linked one.
+ */
+export async function releaseBarberLink(barberId: string): Promise<void> {
+  await getFirestore(adminApp())
+    .collection(Collections.Barbers)
+    .doc(barberId)
+    .collection(Subcollections.Restricted)
+    .doc(BARBER_LINK_DOC)
+    .delete();
+}
+
+/** The account a barber record's lock names, or `null` when the record is free. */
+export async function readBarberLink(barberId: string): Promise<string | null> {
+  const snapshot = await getFirestore(adminApp())
+    .collection(Collections.Barbers)
+    .doc(barberId)
+    .collection(Subcollections.Restricted)
+    .doc(BARBER_LINK_DOC)
+    .get();
+  const linked = snapshot.data()?.['linkedUserId'];
+  return typeof linked === 'string' ? linked : null;
+}
+
 export async function readStoredBody(
   collection: CollectionName,
   id: string,

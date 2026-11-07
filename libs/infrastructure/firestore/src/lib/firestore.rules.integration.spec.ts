@@ -166,6 +166,7 @@ function registeredUser(
       IVAN_PHONE,
       IVAN_EMAIL,
     ),
+    linkedBarberId: null,
   } satisfies Omit<User, 'id'>;
   return { ...body, ...overrides };
 }
@@ -2473,6 +2474,36 @@ describe('firestore.rules', () => {
           ),
         );
       }
+    });
+  });
+
+  describe('barbers/{barberId}/restricted — the account lock is callable-only (staff analytics)', () => {
+    const lockPath = 'barbers/ivan/restricted/link';
+
+    beforeEach(async () => {
+      await seed(lockPath, { linkedUserId: 'staff-1' });
+    });
+
+    /**
+     * `barbers/*` is public, and rules do not cascade: the record's public
+     * read never reaches its lock, so no uid is published — not even to the
+     * shop admin, who links accounts through `setRoles` alone.
+     */
+    it.each<[string, string]>([
+      ['staff-1', 'admin'],
+      ['staff-2', 'barber'],
+      ['staff-3', 'receptionist'],
+      ['staff-4', 'sysadmin'],
+      ['client-1', 'client'],
+    ])('refuses %s (%s) a read and a write', async (uid, role) => {
+      const db = signedIn(uid, role).firestore();
+      await assertFails(getDoc(doc(db, lockPath)));
+      await assertFails(setDoc(doc(db, lockPath), { linkedUserId: uid }));
+    });
+
+    it('refuses an anonymous visitor, who may read the barber record itself', async () => {
+      const anon = testEnv.unauthenticatedContext().firestore();
+      await assertFails(getDoc(doc(anon, lockPath)));
     });
   });
 

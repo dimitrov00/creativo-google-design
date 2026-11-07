@@ -1503,6 +1503,8 @@ export function rolesAdminPortsOf(
           targetUserId: call.targetUserId,
           roles: call.roles,
           rolesChanged: true,
+          linkedBarberId: null,
+          linkChanged: false,
         })
       );
     },

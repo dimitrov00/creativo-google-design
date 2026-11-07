@@ -79,6 +79,7 @@ describe('identity fixtures', () => {
       profileEditedAtUtcMs: null,
       searchName: null,
       searchPrefixes: [],
+      linkedBarberId: null,
     });
     expect(Registration.isRegistered(stub)).toBe(false);
   });

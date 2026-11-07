@@ -84,6 +84,8 @@ const USERS_CHANGE: ProfileChange = {
   profileRolesTo: ['client', 'barber'],
   profileAccountStatusFrom: null,
   profileAccountStatusTo: null,
+  profileLinkedBarberIdFrom: null,
+  profileLinkedBarberIdTo: null,
 };
 
 const DOCS = Tag.values(GovernedCollection).filter(

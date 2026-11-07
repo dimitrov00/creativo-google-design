@@ -1,12 +1,19 @@
 import {
+  BarberId,
   ImpersonationSessionId,
   Result,
   StoredFields,
+  Tag,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
-import { ImpersonationLifecycle, Roles } from '@core/components';
+import {
+  BarberLinkChange,
+  BarberLinkRequest,
+  ImpersonationLifecycle,
+  Roles,
+} from '@core/components';
 import {
   admitImpersonationCaller,
   admitRolesCaller,
@@ -113,6 +120,31 @@ export function decodeEndImpersonation(
   });
 }
 
+/**
+ * The link half of a `setRoles` payload (staff analytics): an absent
+ * `barberLinkChange` is `KEEP` — a client that knows nothing of links never
+ * unlinks anyone; `CLEAR` releases the link; `SET` names the record in
+ * `linkedBarberId`, refused as the id's own refusal when it is no id. Any
+ * other value is `GOVERNANCE_ROLES_INVALID`. Beside `KEEP` and `CLEAR` a
+ * sent `linkedBarberId` is ignored.
+ */
+function linkRequestOf(payload: unknown): Result<BarberLinkRequest, EdgeError> {
+  const change = StoredFields.field(payload, 'barberLinkChange');
+  if (change === undefined) return Result.ok(BarberLinkRequest.KEEP);
+  if (!Tag.has(BarberLinkChange, change)) {
+    return Result.err(GovernanceError.rolesInvalid());
+  }
+  if (change === BarberLinkChange.Keep)
+    return Result.ok(BarberLinkRequest.KEEP);
+  if (change === BarberLinkChange.Clear) {
+    return Result.ok(BarberLinkRequest.CLEAR);
+  }
+  const barberId = BarberId.parse(sentText(payload, 'linkedBarberId'));
+  return barberId.ok
+    ? Result.ok(BarberLinkRequest.set(barberId.value))
+    : Result.err(barberId.error);
+}
+
 export function decodeSetRoles(
   request: WireRequest,
 ): Result<SetRolesCommand, EdgeError> {
@@ -131,11 +163,14 @@ export function decodeSetRoles(
   if (!Array.isArray(roles) || !roles.every(Roles.isRole)) {
     return Result.err(GovernanceError.rolesInvalid());
   }
+  const link = linkRequestOf(payload);
+  if (!link.ok) return link;
   return Result.ok({
     adminUserId: admitted.value,
     adminRoles: callerKnownRoles(request),
     targetUserId: target.value,
     roles,
+    ...link.value,
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(payload, 'operationId'),
   });

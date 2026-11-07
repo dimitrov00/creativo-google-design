@@ -169,6 +169,10 @@
     "GOVERNANCE_ROLES_TARGET_NOT_REGISTERED": "Този човек още не е завършил регистрацията си.",
     "GOVERNANCE_ROLES_TARGET_ERASED": "Личните данни на този клиент са изтрити.",
     "GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED": "Ролите са запазени, но старите сесии не бяха прекратени. Опитай пак.",
+    "GOVERNANCE_ROLES_BARBER_LINK_REQUIRED": "Избери бръснар за този профил.",
+    "GOVERNANCE_ROLES_BARBER_UNKNOWN": "Няма такъв бръснар.",
+    "GOVERNANCE_ROLES_LINK_WITHOUT_BARBER": "Само бръснар може да има свързан бръснарски профил.",
+    "GOVERNANCE_ROLES_BARBER_ALREADY_LINKED": "Този бръснар вече е свързан с друг профил.",
     "APP_CHECK_REQUIRED": "Не успяхме да потвърдим това устройство. Презареди страницата.",
     "APP_CHECK_REPLAYED": "Не успяхме да потвърдим това устройство. Презареди страницата.",
     "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Опитай пак.",
@@ -2276,7 +2280,9 @@
         "admin": "Администратор"
       },
       "save": "Запази ролите",
-      "saved": "Ролите са запазени. Важат от следващото влизане."
+      "saved": "Ролите са запазени. Важат от следващото влизане.",
+      "barberLabel": "Кой бръснар е",
+      "barberMissing": "Избери кой бръснар е този профил."
     }
   },
   "visits": {

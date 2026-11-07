@@ -1,4 +1,6 @@
+import { type CardLinkChange } from '@core/systems';
 import { type Role, Roles } from '@core/components';
+import type { BarberId } from '@core/primitives';
 import { type PipelineError, PipelineErrorCode } from '@core/errors';
 import {
   type TranslateCode,
@@ -6,6 +8,7 @@ import {
 } from '@creativo/infrastructure/i18n';
 import type { ClientRolesWords } from './client-card.words';
 import {
+  type ClientBarberPickerVm,
   ClientRolesPhase,
   type ClientRoleToggleVm,
   type ClientRolesVm,
@@ -42,6 +45,19 @@ export interface ClientRolesInput {
   readonly rolesState: ClientRolesState;
   /** `errors.<code>` in the card's language, the code itself when the catalogue has none. */
   readonly translateCode: TranslateCode;
+  /** `RoleAssignmentSystem.cardLinkOf`'s answer — whether the picker shows and Save waits (Law 10.2). */
+  readonly link: CardLinkChange;
+  /** The record the picker shows ticked: the stored link until a tile is tapped. */
+  readonly picked: BarberId | null;
+  /** The shop's barber records, in the shop's order, with their names and faces. */
+  readonly barbers: readonly ClientRolesBarber[];
+}
+
+/** One barber record the picker offers. */
+export interface ClientRolesBarber {
+  readonly barberId: BarberId;
+  readonly name: string;
+  readonly src: string | null;
 }
 
 /**
@@ -69,7 +85,24 @@ export function clientRolesVm(input: ClientRolesInput): ClientRolesVm {
     saveLabel: words.save,
     saveEnabled: input.saveEnabled,
     line: lineOf(input),
+    barberPicker: barberPickerOf(input),
     testId: 'client-roles',
+  };
+}
+
+/** «Кой бръснар е» — the faces, while the system offers the picker. */
+function barberPickerOf(input: ClientRolesInput): ClientBarberPickerVm | null {
+  if (!input.link.linkOffered) return null;
+  return {
+    label: input.words.barberLabel,
+    tiles: input.barbers.map((barber) => ({
+      barberId: barber.barberId,
+      name: barber.name,
+      src: barber.src,
+      selected: barber.barberId === input.picked,
+      testId: `client-roles-barber-${barber.barberId}`,
+    })),
+    hint: input.link.linkMissing ? input.words.barberMissing : null,
   };
 }
 

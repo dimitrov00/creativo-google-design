@@ -46,6 +46,7 @@ import {
   type BackfillJobId,
   type PolicyRecomputeJobId,
   type ClientMoneyStatsId,
+  type BarberLinkId,
   type PublishRequestId,
   type CorrelationId,
   type CouponId,
@@ -147,6 +148,7 @@ type Brands = {
   readonly BackfillJobId: BackfillJobId;
   readonly PolicyRecomputeJobId: PolicyRecomputeJobId;
   readonly ClientMoneyStatsId: ClientMoneyStatsId;
+  readonly BarberLinkId: BarberLinkId;
   readonly PublishRequestId: PublishRequestId;
   readonly CorrelationId: CorrelationId;
   readonly CouponId: CouponId;

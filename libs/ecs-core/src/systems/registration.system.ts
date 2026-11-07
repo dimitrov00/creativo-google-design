@@ -11,6 +11,7 @@ import {
   type RegistrationFields,
   RegistrationState,
   Role,
+  StaffLink,
 } from '@core/components';
 import {
   IdentifierChannel,
@@ -195,7 +196,7 @@ export const RegistrationSystem = {
   /**
    * The `users/{uid}` stub of a first sign-in: only the login channel,
    * every other key present and empty — no names, no roles, `ACTIVE`, no
-   * search keys. `completeRegistration` writes the registered body over it.
+   * search keys, no staff link. `completeRegistration` writes the registered body over it.
    */
   provision(userId: UserId, parsed: ParsedIdentifier): User {
     const isPhone = parsed.identifierChannel === IdentifierChannel.Phone;
@@ -212,6 +213,7 @@ export const RegistrationSystem = {
       profileEditedAtUtcMs: null,
       searchName: null,
       searchPrefixes: [],
+      ...StaffLink.NONE,
     };
   },
 
@@ -258,7 +260,8 @@ export const RegistrationSystem = {
    * The registered body written over the standing document: the profile,
    * the `REGISTERED` tag and the search keys of the new names and contact
    * channels. The account lifecycle the document holds is kept — a re-run
-   * never lifts a pause.
+   * never lifts a pause — and so is its staff link (`StaffLink.of`: an
+   * absent field is written as `null`, so the body always carries the key).
    */
   register(user: User, profile: RegisteredProfile): User {
     const { searchName, searchPrefixes } = SearchFieldsSystem.searchFields(
@@ -278,6 +281,8 @@ export const RegistrationSystem = {
       birthDate: profile.birthDate,
       searchName,
       searchPrefixes,
+      // Kept as stored; a document written before the link existed reads as `null`.
+      ...StaffLink.of(user),
     };
   },
 } as const;

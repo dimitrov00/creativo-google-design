@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BackfillJobName, Party, SeatKey } from '@core/components';
 import {
   RecomputeJobName,
+  BARBER_LINK_DOC,
   BOOKING_POLICY_DOC,
   CLIENT_MONEY_DOC,
   Collections,
@@ -24,6 +25,7 @@ import {
   BookingPolicySettingsId,
   CartLineId,
   ClientMoneyStatsId,
+  BarberLinkId,
   ClientOperationId,
   OperationId,
   DraftPersonKey,
@@ -153,6 +155,8 @@ describe('the id companions (decision F-3)', () => {
     expect(BOOKING_POLICY_DOC).toBe(BookingPolicySettingsId.FIXED);
     expect(ClientMoneyStatsId.FIXED).toBe('money');
     expect(CLIENT_MONEY_DOC).toBe(ClientMoneyStatsId.FIXED);
+    expect(BarberLinkId.FIXED).toBe('link');
+    expect(BARBER_LINK_DOC).toBe(BarberLinkId.FIXED);
     expect(PolicyRecomputeJobId.FIXED).toBe('clientStatsPolicy');
     expect(POLICY_RECOMPUTE_DOC).toBe(PolicyRecomputeJobId.FIXED);
   });

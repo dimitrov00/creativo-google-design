@@ -1,6 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { CouponGrantId, CustomerId, Result, UserId } from '@core/primitives';
+import {
+  BarberId,
+  CouponGrantId,
+  CustomerId,
+  Result,
+  UserId,
+} from '@core/primitives';
 import {
   ClientPrivacyCall,
   CouponOccasion,
@@ -49,6 +55,7 @@ import {
   type RolesAdminDouble,
   rolesAdminPortsOf,
   subjectOf,
+  SHOP_CATALOG,
 } from '../../testing/client-card.fixtures';
 import {
   ALL_LOYALTY_FLAGS,
@@ -1484,7 +1491,14 @@ describe('lib-client-card — the admin’s roles block', () => {
 
   const asAdmin = (privacy = true) =>
     mount({
-      context: georgiContext({ viewer: ADMIN_VIEWER }),
+      context: georgiContext({
+        viewer: ADMIN_VIEWER,
+        // The shop's barber records, for «Кой бръснар е».
+        catalog: {
+          ...SHOP_CATALOG,
+          barberIds: () => [BarberId.of('ivan'), BarberId.of('niko')],
+        },
+      }),
       rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': privacy } },
     });
 
@@ -1543,6 +1557,19 @@ describe('lib-client-card — the admin’s roles block', () => {
     expect(must(byId('client-roles-barber')).getAttribute('aria-checked')).toBe(
       'true',
     );
+    // Granting «Бръснар» asks which barber the account is; Save waits.
+    expect(byId('client-roles-barbers')).not.toBeNull();
+    expect(text(must(byId('client-roles-barber-hint')))).toBe(
+      'Избери кой бръснар е този профил.',
+    );
+    expect(must(byId<HTMLButtonElement>('client-roles-save')).disabled).toBe(
+      true,
+    );
+    await click('client-roles-barber-ivan');
+    expect(
+      must(byId('client-roles-barber-ivan')).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(byId('client-roles-barber-hint')).toBeNull();
     expect(must(byId<HTMLButtonElement>('client-roles-save')).disabled).toBe(
       false,
     );
@@ -1554,6 +1581,8 @@ describe('lib-client-card — the admin’s roles block', () => {
     expect(admin.calls).toHaveLength(1);
     expect(admin.calls[0]?.targetUserId).toBe(UserId.of(GEORGI));
     expect(admin.calls[0]?.roles).toEqual([Role.Client, Role.Barber]);
+    expect(admin.calls[0]?.barberLinkChange).toBe('SET');
+    expect(admin.calls[0]?.linkedBarberId).toBe('ivan');
     const status = must(byId('client-roles-status'));
     // A status, announced when it appears.
     expect(status.matches('[role=status]')).toBe(true);

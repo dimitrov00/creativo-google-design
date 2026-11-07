@@ -1187,6 +1187,8 @@ describe('the «Роли» block’s words (security hardening S-WS-E)', () => {
       },
       save: 'Запази ролите',
       saved: 'Ролите са запазени. Важат от следващото влизане.',
+      barberLabel: 'Кой бръснар е',
+      barberMissing: 'Избери кой бръснар е този профил.',
     });
     expect(en.roles).toEqual({
       groupLabel: 'Roles',
@@ -1199,6 +1201,8 @@ describe('the «Роли» block’s words (security hardening S-WS-E)', () => {
       },
       save: 'Save roles',
       saved: 'Roles saved. They apply from the next sign-in.',
+      barberLabel: 'Which barber',
+      barberMissing: 'Pick which barber this account is.',
     });
   });
 });

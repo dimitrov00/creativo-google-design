@@ -17,7 +17,12 @@ import {
   RegistrationState,
   Role,
 } from '@core/components';
-import { IdentifierChannel, TenantId, UserId } from '@core/primitives';
+import {
+  BarberId,
+  IdentifierChannel,
+  TenantId,
+  UserId,
+} from '@core/primitives';
 import type { User } from '@core/entities';
 import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import {
@@ -276,6 +281,7 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
       firstName: 'Ada',
       lastName: 'Lovelace',
       profileEditedAtUtcMs: null,
+      linkedBarberId: null,
       ...lifecycle,
       searchName: 'ada lovelace',
       searchPrefixes: [],
@@ -449,6 +455,7 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
       profileEditedAtUtcMs: null,
       searchName: null,
       searchPrefixes: [],
+      linkedBarberId: null,
     });
   });
 
@@ -476,6 +483,33 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
       ).searchPrefixes,
     );
     expect(body.accountStatus).toBe(AccountStatus.Active);
+    expect(body.linkedBarberId).toBeNull();
+  });
+
+  it('keeps a stored barber link, and writes an absent one as null (StaffLink.of)', () => {
+    const stubUser = RegistrationSystem.provision(
+      UserId.of('uid_1'),
+      ParsedIdentifier.email(Email.of('client@example.com')),
+    );
+    const profile = {
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      phone: E164.of('+14155552671'),
+      email: Email.of('client@example.com'),
+      birthDate: null,
+      roles: [Role.Barber],
+    };
+    const linked = { ...stubUser, linkedBarberId: BarberId.of('ivan') };
+    expect(RegistrationSystem.register(linked, profile).linkedBarberId).toBe(
+      'ivan',
+    );
+    // A document written before the link existed carries no key at all.
+    const older = Object.fromEntries(
+      Object.entries(stubUser).filter(([key]) => key !== 'linkedBarberId'),
+    ) as unknown as User;
+    const body = RegistrationSystem.register(older, profile);
+    expect(Object.hasOwn(body, 'linkedBarberId')).toBe(true);
+    expect(body.linkedBarberId).toBeNull();
   });
 });
 

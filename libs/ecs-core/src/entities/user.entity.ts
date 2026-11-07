@@ -6,6 +6,7 @@ import type {
   RegistrationState,
   Role,
   SearchFields,
+  StaffLink,
 } from '@core/components';
 import type { UserId, UtcEpochMs } from '@core/primitives';
 
@@ -55,7 +56,8 @@ export type AccountContact = {
  * The archetype of `users/{uid}` — **flat** (Law 6): the identity slice, the
  * account lifecycle (`accountStatus`, a block's `blockReason` /
  * `blockedUntilUtcMs`, or the terminal erasure's `accountErasedAtUtcMs`, at
- * the root) and the clientele search keys. One type for both stored
+ * the root), the clientele search keys and the staff link
+ * (`linkedBarberId`, `null` unless `setRoles` linked a barber record). One type for both stored
  * states: the `PROVISIONED` stub (`verifyOtp`'s first sign-in,
  * `RegistrationSystem.provision`) is created with EVERY key present and
  * the `REGISTERED` body `completeRegistration` sets over it
@@ -63,7 +65,11 @@ export type AccountContact = {
  * `id`, byte for byte — the server's `WriteOp` plans and the web's
  * `snap.data()` read and write it as is, with no mapper.
  */
-export type User = UserMeta & AccountContact & AccountLifecycle & SearchFields;
+export type User = UserMeta &
+  AccountContact &
+  AccountLifecycle &
+  SearchFields &
+  StaffLink;
 
 /**
  * The owner-editable keys of `users/{uid}` — the rules' owner allowlist,

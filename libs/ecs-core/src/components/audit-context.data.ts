@@ -3,6 +3,7 @@ import type { StreakRuleParameter } from './streak-rule-parameter.data';
 import type { StreakTransition } from './streak-transition.data';
 import type { BackfillJobName } from './backfill-job-name.data';
 import {
+  type BarberId,
   type IdentifierChannel,
   type ImpersonationSessionId,
   type LocalDate,
@@ -92,7 +93,10 @@ export const AuditAction = {
   /**
    * An admin changed an account's roles through `setRoles` (security
    * hardening S-WS-E, S-RU-9): written inside the `users` commit, credited
-   * to the admin, the roles before / after as tags (`profileRolesFrom/To`).
+   * to the admin, the roles before / after as tags (`profileRolesFrom/To`)
+   * and the barber link before / after (`profileLinkedBarberIdFrom/To`),
+   * each pair set iff its field changed — a link-only change is this verb
+   * too, its `profileFields` naming only `linkedBarberId`.
    */
   ProfileRolesChanged: 'PROFILE_ROLES_CHANGED',
   /** An admin opened an impersonation session (no REVOKED verb: nothing revokes). */
@@ -185,12 +189,14 @@ export type AuditContext =
   | AuditContext.ClientExported
   | AuditContext.ClientErasure;
 
-/** A profile row's four tag fields when neither `roles` nor `accountStatus` changed. */
+/** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
   profileRolesFrom: null,
   profileRolesTo: null,
   profileAccountStatusFrom: null,
   profileAccountStatusTo: null,
+  profileLinkedBarberIdFrom: null,
+  profileLinkedBarberIdTo: null,
 };
 
 export const AuditContext = {
@@ -331,8 +337,9 @@ export const AuditContext = {
     };
   },
   /**
-   * A profile row that names no role or status change — the four tag pairs
-   * `null` (an owner's own edit never touches `roles` or `accountStatus`).
+   * A profile row that names no role, status or link change — the three tag
+   * pairs `null` (an owner's own edit never touches `roles`,
+   * `accountStatus` or `linkedBarberId`).
    * The field list is carried as given.
    */
   profile(
@@ -359,6 +366,8 @@ export const AuditContext = {
       profileRolesTo: tags.profileRolesTo,
       profileAccountStatusFrom: tags.profileAccountStatusFrom,
       profileAccountStatusTo: tags.profileAccountStatusTo,
+      profileLinkedBarberIdFrom: tags.profileLinkedBarberIdFrom,
+      profileLinkedBarberIdTo: tags.profileLinkedBarberIdTo,
     };
   },
   /** An impersonation session opened (audit-hardening WS-3): ids, the scope and the window's end. */
@@ -600,6 +609,13 @@ export namespace AuditContext {
     readonly profileRolesTo: readonly Role[] | null;
     readonly profileAccountStatusFrom: AccountStatus | null;
     readonly profileAccountStatusTo: AccountStatus | null;
+    /**
+     * The account's barber link before / after (staff analytics) — set iff
+     * `linkedBarberId` changed (a side with no link `null`), else both
+     * `null`. A barber record's id, never a person's data.
+     */
+    readonly profileLinkedBarberIdFrom: BarberId | null;
+    readonly profileLinkedBarberIdTo: BarberId | null;
   };
   /**
    * An admin opened an impersonation session (audit-hardening WS-3). Ids,

@@ -1,4 +1,5 @@
 import {
+  BarberLinkId,
   BookingPolicySettingsId,
   ClientMoneyStatsId,
   PolicyRecomputeJobId,
@@ -103,7 +104,10 @@ export const Collections = {
 export const Subcollections = {
   /** `users/{uid}/notifications` — owner-read, TTL-purged, never queried across users. */
   Notifications: 'notifications',
-  /** `clientStats/{customerId}/restricted/{docId}` — staff-only (`money`). */
+  /**
+   * `clientStats/{customerId}/restricted/{docId}` — staff-only (`money`);
+   * `barbers/{barberId}/restricted/{docId}` — callable-only (`link`).
+   */
   Restricted: 'restricted',
   /** `streakDefinitions/{id}/versions/{version:6}`. */
   Versions: 'versions',
@@ -120,6 +124,13 @@ export const BOOKING_POLICY_DOC = BookingPolicySettingsId.FIXED;
 
 /** `clientStats/{customerId}/restricted/money` — the staff-only money projection. */
 export const CLIENT_MONEY_DOC = ClientMoneyStatsId.FIXED;
+
+/**
+ * `barbers/{barberId}/restricted/link` — the account lock of a barber
+ * record (`BarberLink`): which account is this barber. Never public
+ * (`barbers/*` is), read and written only inside `setRoles`.
+ */
+export const BARBER_LINK_DOC = BarberLinkId.FIXED;
 
 /** `backfillJobs/clientStatsPolicy` — the policy-change recompute pass (`PolicyRecomputeJob`). */
 export const POLICY_RECOMPUTE_DOC = PolicyRecomputeJobId.FIXED;

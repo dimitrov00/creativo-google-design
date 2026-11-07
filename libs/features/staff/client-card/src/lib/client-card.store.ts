@@ -30,6 +30,7 @@ import {
   type AppointmentId,
   AppointmentPhotoId,
   BadgeSeriesId,
+  type BarberId,
   ClientOperationId,
   type CouponId,
   CustomerId,
@@ -49,13 +50,15 @@ import {
 import type { IdPorts } from '@core/ports';
 import { completeClientErasure } from '@core/pipelines';
 import {
+  BarberLinkChange,
+  type BarberLinkRequest,
   type ClientPrivacyCall,
   type ErasureStatus,
   FlagName,
   JournalFeed,
   LocalizedText,
   Registration,
-  type Role,
+  Role,
   Roles,
   type ShopNow,
   VisitFilter,
@@ -602,6 +605,14 @@ export class ClientCardStore {
    * profile's `roles`.
    */
   private readonly _rolesStored = signal<readonly Role[] | null>(null);
+  /**
+   * The barber picker's pick: `undefined` while untouched (the stored link
+   * shows), a record once a tile is tapped, `null` once the ticked tile is
+   * tapped again (staff analytics, "Which barber the caller is").
+   */
+  private readonly _linkDraft = signal<BarberId | null | undefined>(undefined);
+  /** The link as the last `setRoles` answer settled it; `undefined` — the profile's. */
+  private readonly _linkStored = signal<BarberId | null | undefined>(undefined);
   /**
    * The roles act not yet answered with the stored set — ONE call, minted
    * on its first Save and sent again verbatim by a retry of the same set;
@@ -1963,9 +1974,16 @@ export class ClientCardStore {
     return clientRolesVm({
       words: words.roles,
       roles: change.rolesTo,
-      saveEnabled: RoleAssignmentSystem.saveOf(change, this.revokePending()),
+      saveEnabled: RoleAssignmentSystem.saveOf(
+        change,
+        this.revokePending(),
+        this.linkChange(),
+      ),
       rolesState: this._roles(),
       translateCode,
+      link: this.linkChange(),
+      picked: this.pickedLink(),
+      barbers: this.linkBarbers(),
     });
   });
 
@@ -1978,6 +1996,41 @@ export class ClientCardStore {
   private readonly rolesChange = computed(() => {
     const stored = this.storedRoles();
     return RoleAssignmentSystem.changeOf(stored, this._rolesDraft() ?? stored);
+  });
+
+  /** The person's stored barber link: the last answer's, else the profile's. */
+  private readonly storedLink = computed((): BarberId | null => {
+    const answered = this._linkStored();
+    return answered !== undefined
+      ? answered
+      : (this.user()?.linkedBarberId ?? null);
+  });
+
+  /** The record the picker shows ticked: the pick, else the stored link. */
+  private readonly pickedLink = computed((): BarberId | null => {
+    const draft = this._linkDraft();
+    return draft !== undefined ? draft : this.storedLink();
+  });
+
+  /** The picker, decided (`RoleAssignmentSystem.cardLinkOf`): what Save would send for the link. */
+  private readonly linkChange = computed(() =>
+    RoleAssignmentSystem.cardLinkOf({
+      storedRoles: this.storedRoles(),
+      rolesTo: this.rolesChange().rolesTo,
+      storedLink: this.storedLink(),
+      picked: this.pickedLink(),
+    }),
+  );
+
+  /** The shop's barber records as the picker offers them, in the shop's order. */
+  private readonly linkBarbers = computed(() => {
+    const catalog = this._context()?.catalog ?? null;
+    if (catalog === null || catalog.barberIds === undefined) return [];
+    return catalog.barberIds().map((barberId) => ({
+      barberId,
+      name: catalog.barberName(barberId) ?? '',
+      src: catalog.barberAvatarSrc(barberId),
+    }));
   });
 
   /** This person's roles were committed but their sessions not revoked: Save re-sends the stored set (S-RU-10). */
@@ -2014,6 +2067,26 @@ export class ClientCardStore {
   }
 
   /**
+   * One barber record's tile: tick it (the account is that barber), or
+   * untick the ticked one. Only while the picker shows and no change is on
+   * its way; a saved line goes, as a role toggle's does.
+   */
+  toggleBarber(barberId: BarberId): void {
+    untracked(() => {
+      if (
+        !this.linkChange().linkOffered ||
+        this._roles().clientRolesPhase === ClientRolesPhase.Running
+      ) {
+        return;
+      }
+      this._linkDraft.set(this.pickedLink() === barberId ? null : barberId);
+      if (this._roles().clientRolesPhase === ClientRolesPhase.Saved) {
+        this._roles.set(ROLES_IDLE);
+      }
+    });
+  }
+
+  /**
    * «Запази ролите»: `setRoles` for the person's account with the set the
    * toggles show, under ONE operation id per act — minted on the act's
    * first Save and kept for its retry of the same set. A saved answer
@@ -2042,6 +2115,7 @@ export class ClientCardStore {
     const call = this.rolesCallFor(
       targetUserId,
       untracked(this.rolesChange).rolesTo,
+      untracked(this.linkChange).linkRequest,
       ids,
     );
     if (call === null) {
@@ -2058,9 +2132,11 @@ export class ClientCardStore {
     if (this.rolesCall !== call) return;
     if (!answer.ok) {
       if (this.isRevokeFailure(answer.error)) {
-        // The roles ARE committed: the stored set is the one sent.
+        // The roles ARE committed: the stored set is the one sent, and so
+        // is the link it asked for.
         this._rolesStored.set(call.roles);
         this._rolesDraft.set(null);
+        this.settleLink(call);
       }
       this._roles.set({
         clientRolesPhase: ClientRolesPhase.Refused,
@@ -2071,6 +2147,8 @@ export class ClientCardStore {
     this.rolesCall = null;
     this._rolesStored.set(answer.value.roles);
     this._rolesDraft.set(null);
+    this._linkStored.set(answer.value.linkedBarberId);
+    this._linkDraft.set(undefined);
     this._roles.set({ clientRolesPhase: ClientRolesPhase.Saved });
   }
 
@@ -2078,21 +2156,42 @@ export class ClientCardStore {
   private rolesCallFor(
     targetUserId: UserId,
     roles: readonly Role[],
+    link: BarberLinkRequest,
     ids: IdPorts,
   ): RolesAct | null {
     const kept = this.rolesCall;
     if (
       kept !== null &&
       kept.targetUserId === targetUserId &&
-      !RoleAssignmentSystem.changeOf(kept.roles, roles).rolesChanged
+      !RoleAssignmentSystem.changeOf(kept.roles, roles).rolesChanged &&
+      kept.barberLinkChange === link.barberLinkChange &&
+      kept.linkedBarberId === link.linkedBarberId
     ) {
       return kept;
     }
     const operationId = ClientOperationId.parse(ids.nextId());
     this.rolesCall = operationId.ok
-      ? { targetUserId, roles, operationId: operationId.value }
+      ? {
+          targetUserId,
+          roles,
+          ...link,
+          operationId: operationId.value,
+        }
       : null;
     return this.rolesCall;
+  }
+
+  /** The link a committed call left: a SET's record, none for a CLEAR or a set without the barber role, else as stored. */
+  private settleLink(call: RolesAct): void {
+    if (call.barberLinkChange === BarberLinkChange.Set) {
+      this._linkStored.set(call.linkedBarberId);
+    } else if (
+      call.barberLinkChange === BarberLinkChange.Clear ||
+      !call.roles.includes(Role.Barber)
+    ) {
+      this._linkStored.set(null);
+    }
+    this._linkDraft.set(undefined);
   }
 
   /** Whether a refusal is the failed revoke of committed roles (S-RU-10). */
@@ -2126,6 +2225,8 @@ export class ClientCardStore {
     const pending =
       uid === null ? undefined : untracked(this.revokes.pending).get(uid);
     this._rolesDraft.set(null);
+    this._linkDraft.set(undefined);
+    this._linkStored.set(undefined);
     if (pending === undefined) {
       this.rolesCall = null;
       this._rolesStored.set(null);
@@ -2134,6 +2235,7 @@ export class ClientCardStore {
     }
     this.rolesCall = pending.call;
     this._rolesStored.set(pending.call.roles);
+    this.settleLink(pending.call);
     this._roles.set({
       clientRolesPhase: ClientRolesPhase.Refused,
       rolesError: pending.error,

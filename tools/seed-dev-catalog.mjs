@@ -177,7 +177,7 @@ const {
 } = seed.catalog;
 const { appointmentPhotoBody } = seed.appointments;
 const { buildClientBook, seedNowOf, seedNowTextOf } = seed.book;
-const { staffAccountBody } = seed.users;
+const { STAFF_ACCOUNT_UID, staffAccountBody, staffBarberLinkBody } = seed.users;
 const { BOOKING_POLICY } = seed.settings;
 const { customerIdOf } = seed.customers;
 const {
@@ -528,11 +528,20 @@ if (CATALOG_ONLY) {
  * Auth user on first sign-in by itself. Sign in as staff@test.local; the
  * OTP prints to the emulator log like every dev sign-in. The body is the
  * flat registered `User` of `tools/seed/fixtures/users.fixtures.ts`
- * (`staffAccountBody`), its search keys `SearchFieldsSystem`'s.
+ * (`staffAccountBody`), its search keys `SearchFieldsSystem`'s, its barber
+ * link `ivan` with the record's lock beside it.
  */
-const STAFF_UID = 'dev-staff-ivan';
+const STAFF_UID = STAFF_ACCOUNT_UID;
 await db.doc(`users/${STAFF_UID}`).set(staffAccountBody);
-console.log('seeded staff account: staff@test.local (barber+admin)');
+// The account is linked to the barber record `ivan` (`linkedBarberId`); its
+// lock (`barbers/ivan/restricted/link`) names the account, as `setRoles`
+// would have written it.
+await db
+  .doc(`barbers/${staffAccountBody.linkedBarberId}/restricted/link`)
+  .set(staffBarberLinkBody);
+console.log(
+  'seeded staff account: staff@test.local (barber+admin, linked to ivan)',
+);
 
 /*
  * THE SEEDED CLIENTS get a profile document too (owner, 2026-09-09), so the

@@ -8,13 +8,14 @@ import {
   output,
 } from '@angular/core';
 import type { ClientPrivacyCall, Role, VisitLeg } from '@core/components';
-import type { CouponGrantId, CustomerId } from '@core/primitives';
+import type { BarberId, CouponGrantId, CustomerId } from '@core/primitives';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
   UiAvatar,
   UiBadge,
   UiButton,
+  UiPersonTile,
   UiCouponCard,
   UiFlow,
   UiGrid,
@@ -147,6 +148,7 @@ const PLACEHOLDER = {
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiGrid,
+    UiPersonTile,
     UiIcon,
     UiInteractiveDirective,
     UiListGroup,
@@ -386,6 +388,11 @@ export class ClientCard {
   /** «Роли» a role's row: on ⇄ off in the set Save would send. */
   protected toggleRole(role: Role): void {
     this.store.toggleRole(role);
+  }
+
+  /** «Кой бръснар е» a barber record's tile: tick it, or untick the ticked one. */
+  protected toggleBarber(barberId: BarberId): void {
+    this.store.toggleBarber(barberId);
   }
 
   /** «Запази ролите»: the store sends the set; its line follows the answer. */

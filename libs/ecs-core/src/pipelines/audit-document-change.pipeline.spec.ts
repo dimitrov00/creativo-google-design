@@ -69,6 +69,8 @@ function changeOf(overrides: Partial<ProfileChange> = {}): ProfileChange {
     profileRolesTo: null,
     profileAccountStatusFrom: null,
     profileAccountStatusTo: null,
+    profileLinkedBarberIdFrom: null,
+    profileLinkedBarberIdTo: null,
     ...overrides,
   };
 }
@@ -216,6 +218,8 @@ describe('auditDocumentChange — a users write carries its role and status tags
       profileRolesTo: ['barber'],
       profileAccountStatusFrom: 'ACTIVE',
       profileAccountStatusTo: 'BLOCKED',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
     const { written, run } = rig();
     await run(change);
@@ -236,6 +240,8 @@ describe('auditDocumentChange — a users write carries its role and status tags
       profileRolesTo: ['barber'],
       profileAccountStatusFrom: 'ACTIVE',
       profileAccountStatusTo: 'BLOCKED',
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: null,
     });
   });
 });

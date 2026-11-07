@@ -3,6 +3,7 @@ import {
   AccountLifecycle,
   Actor,
   AuditAction,
+  BarberLinkRequest,
   Email,
   type Role,
   Role as RoleTag,
@@ -10,6 +11,7 @@ import {
 } from '@core/components';
 import {
   AuditEntryId,
+  BarberId,
   LogEvent,
   OperationId,
   Result,
@@ -20,11 +22,17 @@ import {
   GovernanceErrorCode,
   RepositoryError,
 } from '@core/errors';
-import { Collections, type User } from '@core/entities';
+import {
+  BARBER_LINK_DOC,
+  Collections,
+  Subcollections,
+  type User,
+} from '@core/entities';
 import type { AuthSessionRevokePorts, CommitPlan } from '@core/ports';
 import { AuditSystem } from '@core/systems';
 import {
   auditRowsOf,
+  barberFixture,
   blockedUserFixture,
   bodyOf,
   contendedCommit,
@@ -58,6 +66,18 @@ import {
 const ADMIN = UserId.of('u-admin');
 const TARGET = UserId.of('u-client');
 const OP = OperationId.of('op-roles-1');
+const IVAN = BarberId.of('ivan');
+const NIKO = BarberId.of('niko');
+const OTHER = UserId.of('u-other');
+
+/** `barbers/{id}/restricted/link`, as a path. */
+const lockPath = (barberId: BarberId) => [
+  Collections.Barbers,
+  barberId,
+  Subcollections.Restricted,
+  BARBER_LINK_DOC,
+];
+const lockKey = (barberId: BarberId) => lockPath(barberId).join('/');
 
 /** The stored caller: a registered, active admin. */
 const STORED_ADMIN: User = registeredUserFixture({
@@ -83,17 +103,31 @@ type RigOptions = {
   readonly failingRevokes?: number;
   /** Wraps the commit (a contention re-run). */
   readonly commit?: (commit: CommitPlan) => CommitPlan;
+  /** The barber records stored (default `ivan` and `niko`). */
+  readonly barbers?: readonly BarberId[];
+  /** The record locks stored, each naming its account. */
+  readonly locks?: readonly (readonly [BarberId, UserId])[];
 };
 
 /** The ports over a store holding `caller` and `target` (`null`: no document). */
 function rig(options: RigOptions = {}) {
   const caller = options.caller === undefined ? STORED_ADMIN : options.caller;
   const target = options.target === undefined ? STORED_TARGET : options.target;
-  const seeded = [caller, target].flatMap((user) =>
-    user === null
-      ? []
-      : [{ path: [Collections.Users, user.id], body: bodyOf(user) }],
-  );
+  const seeded = [
+    ...[caller, target].flatMap((user) =>
+      user === null
+        ? []
+        : [{ path: [Collections.Users, user.id], body: bodyOf(user) }],
+    ),
+    ...(options.barbers ?? [IVAN, NIKO]).map((id) => ({
+      path: [Collections.Barbers, id],
+      body: bodyOf(barberFixture({ id, handle: id })),
+    })),
+    ...(options.locks ?? []).map(([barberId, linkedUserId]) => ({
+      path: lockPath(barberId),
+      body: { linkedUserId },
+    })),
+  ];
   const store = memoryStore(seeded);
   const tx = memoryTxPorts(store);
   const telemetry = recordingTelemetry();
@@ -118,14 +152,36 @@ function rig(options: RigOptions = {}) {
   return { store, tx, telemetry, revoke, asked, plansAtRevoke, run };
 }
 
-const call = (extra: Partial<SetRolesCommand> = {}): SetRolesCommand => ({
-  adminUserId: ADMIN,
-  adminRoles: [RoleTag.Admin],
-  targetUserId: TARGET,
-  roles: [RoleTag.Barber, RoleTag.Client],
-  operationId: OP,
-  ...extra,
-});
+/**
+ * The call: a `SET` to `ivan` when the set holds the barber role (granting
+ * it needs a record), else `KEEP` — so each roles case keeps its intent;
+ * a link case names its own request.
+ */
+const call = (
+  extra: Partial<SetRolesCommand> = {},
+  link: BarberLinkRequest | null = null,
+): SetRolesCommand => {
+  const roles = extra.roles ?? [RoleTag.Barber, RoleTag.Client];
+  return {
+    adminUserId: ADMIN,
+    adminRoles: [RoleTag.Admin],
+    targetUserId: TARGET,
+    roles,
+    operationId: OP,
+    ...(link ??
+      (roles.includes(RoleTag.Barber)
+        ? BarberLinkRequest.set(IVAN)
+        : BarberLinkRequest.KEEP)),
+    ...extra,
+  } as SetRolesCommand;
+};
+/** A stored barber, linked to `linked` (or not). */
+const storedBarber = (linked: BarberId | null): User =>
+  registeredUserFixture({
+    id: TARGET,
+    roles: [RoleTag.Barber],
+    linkedBarberId: linked,
+  });
 
 /** The plan a client → client + barber promotion commits, row under `hash(basis)`. */
 function promotionPlan(actor: Actor, operationId: OperationId | null) {
@@ -133,6 +189,11 @@ function promotionPlan(actor: Actor, operationId: OperationId | null) {
     rolesFrom: [RoleTag.Client],
     rolesTo: [RoleTag.Client, RoleTag.Barber],
     rolesChanged: true,
+    linkedBarberIdFrom: null,
+    linkedBarberIdTo: IVAN,
+    linkChanged: true,
+    lockReleased: null,
+    lockTaken: IVAN,
   } as const;
   const row = AuditSystem.planRolesChanged(
     TARGET,
@@ -144,8 +205,10 @@ function promotionPlan(actor: Actor, operationId: OperationId | null) {
   return [
     WriteOp.update([Collections.Users, TARGET], {
       roles: [RoleTag.Client, RoleTag.Barber],
+      linkedBarberId: IVAN,
       profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
     }),
+    WriteOp.set(lockPath(IVAN), { linkedUserId: TARGET }),
     WriteOp.create(
       [Collections.AuditLog, AuditEntryId.of(fixtureHash(row.idBasis))],
       row.row,
@@ -166,6 +229,8 @@ describe('setRoles', () => {
           targetUserId: TARGET,
           roles: [RoleTag.Client, RoleTag.Barber],
           rolesChanged: true,
+          linkedBarberId: IVAN,
+          linkChanged: true,
         }),
       );
       // The callable answers this value as it is: exactly the wire's keys.
@@ -173,6 +238,8 @@ describe('setRoles', () => {
         'targetUserId',
         'roles',
         'rolesChanged',
+        'linkedBarberId',
+        'linkChanged',
       ]);
       expect(tx.plans).toEqual([promotionPlan(Actor.admin(ADMIN), OP)]);
       expect(revoke.revoked).toEqual([TARGET]);
@@ -199,7 +266,9 @@ describe('setRoles', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         auditAction: AuditAction.ProfileRolesChanged,
-        profileFields: ['roles'],
+        profileFields: ['roles', 'linkedBarberId'],
+        profileLinkedBarberIdFrom: null,
+        profileLinkedBarberIdTo: IVAN,
         profileRolesFrom: [RoleTag.Client],
         profileRolesTo: [RoleTag.Client, RoleTag.Barber],
         auditOperationId: OP,
@@ -226,12 +295,21 @@ describe('setRoles', () => {
         {
           level: 'info',
           msg: LogEvent.RolesChanged,
-          fields: { targetUserId: TARGET, rolesCount: 2 },
+          fields: {
+            targetUserId: TARGET,
+            rolesCount: 2,
+            rolesChanged: true,
+            linkChanged: true,
+          },
         },
         {
           level: 'info',
           msg: LogEvent.RolesSessionsRevoked,
-          fields: { targetUserId: TARGET, rolesChanged: true },
+          fields: {
+            targetUserId: TARGET,
+            rolesChanged: true,
+            linkChanged: true,
+          },
         },
       ]);
       const serialised = JSON.stringify(telemetry.lines);
@@ -271,6 +349,8 @@ describe('setRoles', () => {
         targetUserId: TARGET,
         roles: [RoleTag.Client],
         rolesChanged: true,
+        linkedBarberId: null,
+        linkChanged: false,
       });
       expect(auditRowsOf(tx.plans)[0]).toMatchObject({
         // `rolesFrom` is the stored array as stored; `rolesTo` dictionary order.
@@ -289,6 +369,8 @@ describe('setRoles', () => {
           targetUserId: TARGET,
           roles: [RoleTag.Client],
           rolesChanged: false,
+          linkedBarberId: null,
+          linkChanged: false,
         }),
       );
       expect(tx.plans).toEqual([[]]);
@@ -298,7 +380,11 @@ describe('setRoles', () => {
         {
           level: 'info',
           msg: LogEvent.RolesSessionsRevoked,
-          fields: { targetUserId: TARGET, rolesChanged: false },
+          fields: {
+            targetUserId: TARGET,
+            rolesChanged: false,
+            linkChanged: false,
+          },
         },
       ]);
     });
@@ -331,7 +417,12 @@ describe('setRoles', () => {
         {
           level: 'info',
           msg: LogEvent.RolesChanged,
-          fields: { targetUserId: TARGET, rolesCount: 2 },
+          fields: {
+            targetUserId: TARGET,
+            rolesCount: 2,
+            rolesChanged: true,
+            linkChanged: true,
+          },
         },
         {
           level: 'error',
@@ -351,6 +442,8 @@ describe('setRoles', () => {
           targetUserId: TARGET,
           roles: [RoleTag.Client, RoleTag.Barber],
           rolesChanged: false,
+          linkedBarberId: IVAN,
+          linkChanged: false,
         }),
       );
       expect(auditRowsOf(tx.plans)).toHaveLength(1);
@@ -361,6 +454,208 @@ describe('setRoles', () => {
         LogEvent.RolesSessionsRevoked,
       ]);
     });
+  });
+
+  describe('the barber link (staff analytics, the setRoles table)', () => {
+    it('reads the target, the caller, the SET record and its lock in one round, then the current record’s lock', async () => {
+      const { tx, run } = rig({
+        target: storedBarber(IVAN),
+        locks: [[IVAN, TARGET]],
+      });
+      unwrapOk(
+        await run(
+          call({ roles: [RoleTag.Barber] }, BarberLinkRequest.set(NIKO)),
+        ),
+      );
+      expect(tx.transactions[0]?.reads).toEqual([
+        [Collections.Users, ADMIN],
+        [Collections.Users, TARGET],
+        [Collections.Barbers, NIKO],
+        lockPath(NIKO),
+        lockPath(IVAN),
+      ]);
+    });
+
+    it('a KEEP call reads no barber record and no lock when the target is unlinked', async () => {
+      const { tx, run } = rig();
+      unwrapOk(await run(call({ roles: [RoleTag.Client] })));
+      expect(tx.transactions[0]?.reads).toEqual([
+        [Collections.Users, ADMIN],
+        [Collections.Users, TARGET],
+      ]);
+    });
+
+    it('a link set (roles unchanged): the user field, the new lock and ONE row; the marker stamped; sessions revoked', async () => {
+      const { store, tx, revoke, run } = rig({ target: storedBarber(null) });
+      const answer = unwrapOk(
+        await run(
+          call({ roles: [RoleTag.Barber] }, BarberLinkRequest.set(IVAN)),
+        ),
+      );
+      expect(answer).toEqual({
+        targetUserId: TARGET,
+        roles: [RoleTag.Barber],
+        rolesChanged: false,
+        linkedBarberId: IVAN,
+        linkChanged: true,
+      });
+      const plan = tx.plans[0] ?? [];
+      expect(plan.slice(0, 2)).toEqual([
+        WriteOp.update([Collections.Users, TARGET], {
+          linkedBarberId: IVAN,
+          profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        }),
+        WriteOp.set(lockPath(IVAN), { linkedUserId: TARGET }),
+      ]);
+      const rows = auditRowsOf(tx.plans);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        auditAction: AuditAction.ProfileRolesChanged,
+        profileFields: ['linkedBarberId'],
+        profileRolesFrom: null,
+        profileRolesTo: null,
+        profileLinkedBarberIdFrom: null,
+        profileLinkedBarberIdTo: IVAN,
+      });
+      expect(store.get(lockKey(IVAN))).toEqual({ linkedUserId: TARGET });
+      expect(store.get(`${Collections.Users}/${TARGET}`)?.['roles']).toEqual([
+        RoleTag.Barber,
+      ]);
+      // S-L-15: setRoles revokes after every call, a link-only change included.
+      expect(revoke.revoked).toEqual([TARGET]);
+    });
+
+    it('a relink: the old lock released, the new one taken, the field moved', async () => {
+      const { store, tx, run } = rig({
+        target: storedBarber(IVAN),
+        locks: [[IVAN, TARGET]],
+      });
+      unwrapOk(
+        await run(
+          call({ roles: [RoleTag.Barber] }, BarberLinkRequest.set(NIKO)),
+        ),
+      );
+      expect((tx.plans[0] ?? []).slice(0, 3)).toEqual([
+        WriteOp.update([Collections.Users, TARGET], {
+          linkedBarberId: NIKO,
+          profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        }),
+        WriteOp.remove(lockPath(IVAN)),
+        WriteOp.set(lockPath(NIKO), { linkedUserId: TARGET }),
+      ]);
+      expect(store.get(lockKey(IVAN))).toBeUndefined();
+      expect(store.get(lockKey(NIKO))).toEqual({ linkedUserId: TARGET });
+      expect(
+        store.get(`${Collections.Users}/${TARGET}`)?.['linkedBarberId'],
+      ).toBe(NIKO);
+      expect(auditRowsOf(tx.plans)[0]).toMatchObject({
+        profileLinkedBarberIdFrom: IVAN,
+        profileLinkedBarberIdTo: NIKO,
+      });
+    });
+
+    it('removing the barber role clears the link and releases its lock', async () => {
+      const { store, tx, run } = rig({
+        target: registeredUserFixture({
+          id: TARGET,
+          roles: [RoleTag.Client, RoleTag.Barber],
+          linkedBarberId: IVAN,
+        }),
+        locks: [[IVAN, TARGET]],
+      });
+      const answer = unwrapOk(await run(call({ roles: [RoleTag.Client] })));
+      expect(answer).toMatchObject({
+        rolesChanged: true,
+        linkedBarberId: null,
+        linkChanged: true,
+      });
+      expect((tx.plans[0] ?? []).slice(0, 2)).toEqual([
+        WriteOp.update([Collections.Users, TARGET], {
+          roles: [RoleTag.Client],
+          linkedBarberId: null,
+          profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        }),
+        WriteOp.remove(lockPath(IVAN)),
+      ]);
+      expect(store.get(lockKey(IVAN))).toBeUndefined();
+      expect(auditRowsOf(tx.plans)[0]).toMatchObject({
+        profileFields: ['roles', 'linkedBarberId'],
+        profileLinkedBarberIdFrom: IVAN,
+        profileLinkedBarberIdTo: null,
+      });
+    });
+
+    it('a retry of a committed link finds nothing to do and answers as committed — still revoking (S-L-15)', async () => {
+      const { tx, revoke, run } = rig({ target: storedBarber(null) });
+      const link = BarberLinkRequest.set(IVAN);
+      unwrapOk(await run(call({ roles: [RoleTag.Barber] }, link)));
+      const retry = unwrapOk(
+        await run(call({ roles: [RoleTag.Barber] }, link)),
+      );
+      expect(retry).toEqual({
+        targetUserId: TARGET,
+        roles: [RoleTag.Barber],
+        rolesChanged: false,
+        linkedBarberId: IVAN,
+        linkChanged: false,
+      });
+      expect(tx.plans[1]).toEqual([]);
+      expect(auditRowsOf(tx.plans)).toHaveLength(1);
+      expect(revoke.revoked).toEqual([TARGET, TARGET]);
+    });
+
+    const linkRefusals: readonly {
+      readonly name: string;
+      readonly options: RigOptions;
+      readonly cmd: SetRolesCommand;
+      readonly code: GovernanceErrorCode;
+    }[] = [
+      {
+        name: 'the barber role granted without a link',
+        options: {},
+        cmd: call({}, BarberLinkRequest.KEEP),
+        code: GovernanceErrorCode.RolesBarberLinkRequired,
+      },
+      {
+        name: 'a link to a record that does not exist',
+        options: { barbers: [IVAN] },
+        cmd: call({}, BarberLinkRequest.set(NIKO)),
+        code: GovernanceErrorCode.RolesBarberUnknown,
+      },
+      {
+        name: 'a link on an account that will not be a barber',
+        options: {},
+        cmd: call({ roles: [RoleTag.Client] }, BarberLinkRequest.set(IVAN)),
+        code: GovernanceErrorCode.RolesLinkWithoutBarber,
+      },
+      {
+        name: 'a record whose lock names another account',
+        options: { locks: [[IVAN, OTHER]] },
+        cmd: call({}, BarberLinkRequest.set(IVAN)),
+        code: GovernanceErrorCode.RolesBarberAlreadyLinked,
+      },
+    ];
+
+    for (const refusal of linkRefusals) {
+      it(`${refusal.name} → ${refusal.code}: nothing committed, no revoke`, async () => {
+        const { store, tx, revoke, telemetry, run } = rig(refusal.options);
+        const answer = await run(refusal.cmd);
+        expect(answer.ok).toBe(false);
+        if (!answer.ok) expect(answer.error.errorCode).toBe(refusal.code);
+        expect(tx.plans).toEqual([]);
+        expect(revoke.revoked).toEqual([]);
+        expect(store.get(`${Collections.Users}/${TARGET}`)?.['roles']).toEqual([
+          RoleTag.Client,
+        ]);
+        expect(telemetry.lines).toEqual([
+          {
+            level: 'info',
+            msg: LogEvent.RolesChangeRefused,
+            fields: { errorCode: refusal.code },
+          },
+        ]);
+      });
+    }
   });
 
   describe('refusals commit nothing and never revoke', () => {

@@ -169,6 +169,10 @@
     "GOVERNANCE_ROLES_TARGET_NOT_REGISTERED": "This person hasn't finished signing up yet.",
     "GOVERNANCE_ROLES_TARGET_ERASED": "This client's personal data was erased.",
     "GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED": "The roles are saved, but the old sessions weren't ended. Try again.",
+    "GOVERNANCE_ROLES_BARBER_LINK_REQUIRED": "Choose a barber for this account.",
+    "GOVERNANCE_ROLES_BARBER_UNKNOWN": "There is no such barber.",
+    "GOVERNANCE_ROLES_LINK_WITHOUT_BARBER": "Only a barber can be linked to a barber record.",
+    "GOVERNANCE_ROLES_BARBER_ALREADY_LINKED": "This barber is already linked to another account.",
     "APP_CHECK_REQUIRED": "We couldn't verify this device. Reload the page.",
     "APP_CHECK_REPLAYED": "We couldn't verify this device. Reload the page.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
@@ -2273,7 +2277,9 @@
         "admin": "Admin"
       },
       "save": "Save roles",
-      "saved": "Roles saved. They apply from the next sign-in."
+      "saved": "Roles saved. They apply from the next sign-in.",
+      "barberLabel": "Which barber",
+      "barberMissing": "Pick which barber this account is."
     }
   },
   "visits": {

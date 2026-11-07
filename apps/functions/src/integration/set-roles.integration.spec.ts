@@ -7,20 +7,28 @@ import {
   Actor,
   AuditAction,
   AuditTargetRef,
+  BarberLinkRequest,
   GovernedCollection,
   Role,
 } from '@core/components';
 import {
   AuditResourceId,
+  BarberId,
   OperationId,
   TenantId,
   UserId,
 } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
-import { Collections, type User } from '@core/entities';
+import {
+  BARBER_LINK_DOC,
+  Collections,
+  Subcollections,
+  type User,
+} from '@core/entities';
 import { RegistrationSystem, StoredDocumentSystem } from '@core/systems';
 import { auditDocumentChange, setRoles } from '@core/pipelines';
 import {
+  barberFixture,
   bodyOf,
   FIXTURE_NOW_UTC_MS,
   pinnedNowUtcMs,
@@ -72,6 +80,9 @@ const ADMIN = UserId.of('u-admin');
 const TARGET = UserId.of('u-client');
 const OPERATION = OperationId.of('operation-0123456789ab');
 const TENANT = TenantId.of('creativo');
+/** The barber record the promotion links the account to. */
+const IVAN = BarberId.of('ivan');
+const IVAN_LOCK = `${Collections.Barbers}/${IVAN}/${Subcollections.Restricted}/${BARBER_LINK_DOC}`;
 /** The project the Auth emulator answers API-key REST calls from (`emulators:exec --project`). */
 const REST_PROJECT_ID = 'demo-creativo-test';
 const REST_APP = 'set-roles-sessions';
@@ -133,6 +144,9 @@ describe('setRoles (emulator)', () => {
     await db
       .doc(`${Collections.Users}/${ADMIN}`)
       .set(bodyOf(registeredUserFixture({ id: ADMIN, roles: [Role.Admin] })));
+    await db
+      .doc(`${Collections.Barbers}/${IVAN}`)
+      .set(bodyOf(barberFixture({ id: IVAN })));
   });
 
   /** The target's stored account — a registered client unless a case says otherwise. */
@@ -158,6 +172,8 @@ describe('setRoles (emulator)', () => {
       adminRoles: [Role.Admin],
       targetUserId,
       roles: [Role.Barber, Role.Client],
+      // Granting the barber role names the record the account is.
+      ...BarberLinkRequest.set(IVAN),
       operationId: OPERATION,
     });
   };
@@ -189,11 +205,18 @@ describe('setRoles (emulator)', () => {
         targetUserId: TARGET,
         roles: [Role.Client, Role.Barber],
         rolesChanged: true,
+        linkedBarberId: IVAN,
+        linkChanged: true,
       },
     });
     expect(after.data()).toMatchObject({
       roles: [Role.Client, Role.Barber],
+      linkedBarberId: IVAN,
       profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    // The record's lock names the account, in the same commit.
+    expect((await db.doc(IVAN_LOCK).get()).data()).toEqual({
+      linkedUserId: TARGET,
     });
 
     // Exactly ONE row, its ids matching the act: credited to the admin over
@@ -207,9 +230,11 @@ describe('setRoles (emulator)', () => {
       resourceId: AuditResourceId.forUser(TARGET),
       auditOperationId: OPERATION,
       recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
-      profileFields: ['roles'],
+      profileFields: ['roles', 'linkedBarberId'],
       profileRolesFrom: [Role.Client],
       profileRolesTo: [Role.Client, Role.Barber],
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: IVAN,
     });
     const serialised = JSON.stringify(rows);
     for (const value of ['Maria', 'Petrova']) {
@@ -326,6 +351,24 @@ describe('setRoles (emulator)', () => {
       GovernanceErrorCode.RolesTargetErased,
     );
     expect((await targetRef().get()).data()?.['roles']).toEqual([Role.Client]);
+    expect(await auditRows()).toEqual([]);
+    expect((await db.doc(IVAN_LOCK).get()).exists).toBe(false);
+  });
+
+  it('refuses a second account on a linked record — the lock decides, nothing written', async () => {
+    await seedTarget();
+    await db.doc(IVAN_LOCK).set({ linkedUserId: 'u-other' });
+    const answer = await run();
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      GovernanceErrorCode.RolesBarberAlreadyLinked,
+    );
+    expect((await targetRef().get()).data()).toMatchObject({
+      roles: [Role.Client],
+      linkedBarberId: null,
+    });
+    expect((await db.doc(IVAN_LOCK).get()).data()).toEqual({
+      linkedUserId: 'u-other',
+    });
     expect(await auditRows()).toEqual([]);
   });
 });
