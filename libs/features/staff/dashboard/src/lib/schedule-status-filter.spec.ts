@@ -68,14 +68,6 @@ describe('ScheduleStatusFilter', () => {
     expect(fresh().freeTimeShown()).toBe(true);
   });
 
-  it('keeps a device’s free time on when it was switched on among the card’s fields', () => {
-    localStorage.setItem(
-      'staff-agenda-fields',
-      JSON.stringify({ avatar: true, freeTime: true }),
-    );
-    expect(fresh().freeTimeShown()).toBe(true);
-  });
-
   it('shows everything again in one act, blocked time included', () => {
     const filter = fresh();
     filter.toggle(BookingStatus.NoShow);

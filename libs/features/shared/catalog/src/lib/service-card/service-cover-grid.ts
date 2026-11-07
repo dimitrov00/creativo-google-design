@@ -44,15 +44,18 @@ export function coverRowsOf<T>(
   serviceOf: (tile: T) => ServiceId,
   hasVariant: (tile: T) => boolean,
 ): readonly ServiceCoverGrid<T>[] {
-  const rows: { id: string; tiles: T[] }[] = [];
+  // A run of plain services shares the key `null`; a service's own grid is
+  // keyed by its id.
+  const rows: { serviceId: string | null; tiles: T[] }[] = [];
   for (const tile of tiles) {
-    const id = hasVariant(tile) ? serviceOf(tile) : 'PLAIN';
+    const serviceId = hasVariant(tile) ? serviceOf(tile) : null;
     const last = rows[rows.length - 1];
-    if (last !== undefined && last.id === id) last.tiles.push(tile);
-    else rows.push({ id, tiles: [tile] });
+    if (last !== undefined && last.serviceId === serviceId)
+      last.tiles.push(tile);
+    else rows.push({ serviceId, tiles: [tile] });
   }
   return rows.map((row, at) => ({
-    ...row,
-    id: row.id === 'PLAIN' ? `PLAIN:${at}` : row.id,
+    id: row.serviceId ?? `PLAIN:${at}`,
+    tiles: row.tiles,
   }));
 }

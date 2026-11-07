@@ -24,8 +24,6 @@ const STORAGE_KEY = 'staff-schedule-hidden-statuses';
 const BLOCKS_KEY = 'staff-schedule-hide-blocks';
 /** Free time drawn — its own key, OFF by default (see `freeTimeShown`). */
 const FREE_TIME_KEY = 'staff-schedule-show-free-time';
-/** Where free time's switch lived before (`agenda-fields.ts`), read once. */
-const LEGACY_FIELDS_KEY = 'staff-agenda-fields';
 
 /** The states in the sheet's order: the lifecycle's, live first. */
 export const SCHEDULE_STATUSES: readonly BookingStatus[] = [
@@ -73,18 +71,7 @@ function loadBlocksHidden(): boolean {
 function loadFreeTimeShown(): boolean {
   if (typeof localStorage === 'undefined') return false;
   try {
-    const stored = localStorage.getItem(FREE_TIME_KEY);
-    if (stored !== null) return stored === 'true';
-    // A device that had switched free time on under the card's fields keeps
-    // it on: the switch moved, the choice did not.
-    const legacy: unknown = JSON.parse(
-      localStorage.getItem(LEGACY_FIELDS_KEY) ?? 'null',
-    );
-    return (
-      typeof legacy === 'object' &&
-      legacy !== null &&
-      (legacy as Record<string, unknown>)['freeTime'] === true
-    );
+    return localStorage.getItem(FREE_TIME_KEY) === 'true';
   } catch {
     return false;
   }
