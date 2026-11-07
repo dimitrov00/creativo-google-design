@@ -20,6 +20,26 @@
 | cd-2-8                    | Rostered time uses active locations only, as the schedule does; inactive ones are read for time zones                                                                                   |
 | ir-2-8 (part)             | The visibility table has nine rows; an admin opens on the shop, with their own linked record first in the picker («Аз»)                                                                 |
 
+## Closed in PR A (the analytics core, branch `feat/analytics-core`)
+
+| Id            | How                                                                                                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| cd-2-6 (part) | Every report field and row type is declared in `analytics-report.data.ts`; the system inputs (`ChairDayInput`, `AnalyticsInput`, `AnalyticsVisit`, `AnalyticsFollowUp`, `AnalyticsDay`) in their systems                                                     |
+| cd-2-7        | `seatNets` returns a union tagged by `moneyAllocation` (`MoneyAllocation` dictionary); a currency with no euro rate is not evaluated; `ClientStatsSystem.inEuroCents` is the one exported conversion                                                         |
+| cd-2-9        | `AnalyticsCall` is flat; `AnalyticsPeriod.of` refuses a first day that is not a Monday or a 1st                                                                                                                                                              |
+| cd-2-17       | `Roles.readsAnalytics` (claims-tolerant), with `ANALYTICS_SELF` / `ANALYTICS_SHOP` pinned in `roles.data.spec.ts`                                                                                                                                            |
+| ir-2-5        | Worked time outside rostered hours is its own figure (minutes and seats); closed-day minutes arrive as an input of `AnalyticsDay`; a day wholly covered by blocks is rostered time made of blocks (the union of windows, blocks and breaks)                  |
+| ir-2-7        | The `laneGeometry` move is not needed: `ChairTimeSystem.dayBreakdown` takes `RosterSystem`'s offered windows, blocks and breaks directly and calls `GridLayoutSystem.occupiedIntervals` / `holes` / `sellableAt` unchanged; the schedule's code is untouched |
+| ir-2-8 (part) | `scopeOf(caller, request, barberIds)` — nine rows, each pinned in the spec; an admin who is also a barber is judged as admin                                                                                                                                 |
+| style-2-4     | "a cancelled seat on a visit that is not wholly cancelled" throughout                                                                                                                                                                                        |
+| (design)      | The partition is checked by a fast-check property over 300 generated days (parts sum to rostered; unsold + open equals the schedule's free time); the discount split by a property that it stays within one cent per worked seat of the client card          |
+
+**Moved:** the account ↔ barber link (`linkedBarberId`, the lock, `setRoles`, the
+audit fields, the governance refusals, the client-card picker) leaves PR A for a PR of its
+own, because it changes the user record's writers, the roles pipeline, the wire and the
+client card together. Its checklist items (cd-2-1's user/`RolesCall`/audit consumers,
+cd-2-2, cd-2-3, cd-2-4, ir-2-3, ir-2-11, ir-2-12, ir-2-17) move with it.
+
 ## Open — settle in code, by plan step
 
 | Step                    | Ids                                                                                                     | Subject                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
