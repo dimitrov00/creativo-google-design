@@ -5,6 +5,7 @@ import {
   withFrame,
 } from './frame-draft';
 import { commitOf, draftCommitLegsOf, seedDraft, spanOf } from './visit-seed';
+import { VISIT_SHEET_STAGED } from './staged-render';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
@@ -1228,6 +1229,15 @@ export class StaffVisitEditor {
    * minutes are the VM's shop wall clock.
    */
   private readonly clock = inject(CLOCK_PORTS);
+  /**
+   * How much of the ladder is built (`VISIT_SHEET_STAGED`): 0 is the
+   * sheet's chrome and dock only, 1 adds the first screen, 2 the rows under
+   * the dock (the shop, the team's note, the photos, the bill, the exits).
+   * It only climbs: a page's pop rebuilds the ladder whole and restores its
+   * scroll, which may sit on the last rows.
+   */
+  private readonly staged = inject(VISIT_SHEET_STAGED);
+  protected readonly stage = signal<0 | 1 | 2>(this.staged ? 0 : 2);
 
   readonly vm = input.required<VisitEditorVm>();
   /** The shop's catalogue, for the pushed add-service page. */
@@ -1434,7 +1444,25 @@ export class StaffVisitEditor {
    */
   readonly blockedInstead = output<void>();
 
+  /**
+   * One stage further, two frames after the last one was drawn: the first
+   * frame starts the sheet's slide, the second has handed it to the
+   * compositor, so the build that follows cannot hold the slide back.
+   */
+  private nextStage(): void {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const next = this.stage() === 0 ? 1 : 2;
+        this.stage.set(next);
+        if (next < 2) {
+          afterNextRender(() => this.nextStage(), { injector: this.injector });
+        }
+      }),
+    );
+  }
+
   constructor() {
+    if (this.staged) afterNextRender(() => this.nextStage());
     // The catalogue's keys: heard only while its page is up.
     effect(() => {
       const open = this.page()?.editorPage === EditorPage.Service;

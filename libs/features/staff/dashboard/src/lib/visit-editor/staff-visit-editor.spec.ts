@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { VISIT_SHEET_STAGED } from './staged-render';
 import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable, type Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -568,6 +569,8 @@ describe('StaffVisitEditor', () => {
     await TestBed.configureTestingModule({
       imports: [StaffVisitEditor],
       providers: [
+        // Every row at once; the staging has its own case.
+        { provide: VISIT_SHEET_STAGED, useValue: false },
         ...provideTestI18n(),
         { provide: CLOCK_PORTS, useValue: memoryClockPorts(EDITOR_NOW_MS) },
       ],
@@ -8029,6 +8032,8 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     await TestBed.configureTestingModule({
       imports: [StaffVisitEditor],
       providers: [
+        // Every row at once; the staging has its own case.
+        { provide: VISIT_SHEET_STAGED, useValue: false },
         ...provideTransloco({
           config: {
             availableLangs: ['bg', 'en'],
@@ -9243,5 +9248,63 @@ describe('nameSaysRule — whether a coupon’s name already says its rule', () 
     );
     expect(nameSaysRule('Fifth cut', 'Free service', 'en')).toBe(false);
     expect(nameSaysRule('Безплатно подстригване', '', 'bg')).toBe(false);
+  });
+});
+
+describe('StaffVisitEditor · built in two stages', () => {
+  beforeEach(async () => {
+    // VISIT_SHEET_STAGED at its default, as in the app.
+    await TestBed.configureTestingModule({
+      imports: [StaffVisitEditor],
+      providers: [
+        ...provideTestI18n(),
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts(EDITOR_NOW_MS) },
+      ],
+    }).compileComponents();
+  });
+
+  const nextFrame = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  it('builds the chrome in the tap’s frame, the first screen two frames on, the rows under the dock two after, and keeps them', async () => {
+    const fixture = TestBed.createComponent(StaffVisitEditor);
+    fixture.componentRef.setInput('vm', visit());
+    fixture.componentRef.setInput('uiServices', CATALOGUE);
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    const has = (testId: string) =>
+      host.querySelector(`[data-testid="${testId}"]`) !== null;
+    const twoFrames = async () => {
+      await nextFrame();
+      await nextFrame();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    // The tap's frame: the sheet's chrome and dock, an empty ladder.
+    expect(has('staff-visit-root')).toBe(true);
+    expect(has('staff-visit-total')).toBe(true);
+    expect(has('staff-visit-add-client')).toBe(false);
+    // Two frames on, the first screen: the ladder and its people.
+    await twoFrames();
+    expect(has('staff-visit-add-client')).toBe(true);
+    expect(has('staff-visit-money')).toBe(false);
+    expect(has('staff-visit-photos')).toBe(false);
+    // Two more, the rows under the dock.
+    await twoFrames();
+    expect(has('staff-visit-money')).toBe(true);
+    expect(has('staff-visit-photos')).toBe(true);
+
+    // A pushed page and its pop rebuild the ladder whole, at once: the
+    // scroll it restores may sit on these rows.
+    (
+      host.querySelector(
+        '[data-testid="staff-visit-add-client"]',
+      ) as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    expect(has('staff-visit-root')).toBe(false);
+    fixture.componentInstance.pop();
+    fixture.detectChanges();
+    expect(has('staff-visit-money')).toBe(true);
   });
 });

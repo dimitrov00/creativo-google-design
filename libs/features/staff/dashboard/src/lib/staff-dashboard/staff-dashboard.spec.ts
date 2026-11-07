@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { VISIT_SHEET_STAGED } from '../visit-editor/staged-render';
 import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import {
@@ -759,6 +760,8 @@ describe('StaffDashboard', () => {
       // one is loaded before a case runs, as idle has passed by any tap.
       deferBlockBehavior: DeferBlockBehavior.Manual,
       providers: [
+        // Every row at once; the staging has its own case.
+        { provide: VISIT_SHEET_STAGED, useValue: false },
         ...provideTestI18n(),
         // The store publishes the shown day into `?day=` so it can be pasted
         // into a staff chat; without a router that write throws on first read.
