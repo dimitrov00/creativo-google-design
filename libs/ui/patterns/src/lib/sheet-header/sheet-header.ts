@@ -107,6 +107,7 @@ export class UiSheetHeader {
   private scroller: HTMLElement | null = null;
   private sentinel: Element | null = null;
   private intersectionObserver: IntersectionObserver | undefined;
+  private destroyed = false;
 
   /** No-sentinel fallback: any scroll means content runs under the bar. */
   private readonly onScrollerScroll = (): void => {
@@ -116,15 +117,23 @@ export class UiSheetHeader {
 
   constructor() {
     // afterNextRender is browser-only, so no PLATFORM_ID guard is needed;
-    // projected content (including the sentinel) exists by then.
-    afterNextRender(() => this.observe());
+    // projected content (including the sentinel) exists by then. One frame
+    // later still (2026-11-07): `nearestScroller` reads computed styles, and
+    // in the render that inserts a sheet that read forced the browser to
+    // style the whole sheet on the spot (≈12 ms of a block sheet's open at
+    // 1×). After the first frame is drawn the styles are already known, and
+    // nothing has scrolled yet for the bar to answer.
+    afterNextRender(() => requestAnimationFrame(() => this.observe()));
     this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
       this.intersectionObserver?.disconnect();
       this.scroller?.removeEventListener('scroll', this.onScrollerScroll);
     });
   }
 
   private observe(): void {
+    // Closed within its first frame: nothing to collapse against.
+    if (this.destroyed) return;
     // Same availability guard as uiReveal: jsdom/older engines have no
     // IntersectionObserver — the header then keeps its resting chrome
     // (owners can still drive `uiCollapsed` / `data-visible`).

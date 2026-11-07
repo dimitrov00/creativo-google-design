@@ -10,6 +10,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { UiScrollbarWidth } from './scrollbar-width';
 
 /** Emitted on every scroll of the sheet's configured scroller. */
 export interface UiSheetScrollEvent {
@@ -85,6 +86,7 @@ export class UiSheetBehavior {
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly scrollbar = inject(UiScrollbarWidth);
 
   private readonly options = signal<UiSheetBehaviorOptions | null>(null);
   private previousBodyOverflow = '';
@@ -291,10 +293,10 @@ export class UiSheetBehavior {
       this.previousBodyOverflow = this.document.body.style.overflow;
       // Compensate the vanished scrollbar so the page doesn't shift sideways
       // while locked (scrollbar-gutter can't help here: the lock removes the
-      // scroll container's scrollbar entirely).
-      const scrollbarWidth =
-        (this.document.defaultView?.innerWidth ?? 0) -
-        this.document.documentElement.clientWidth;
+      // scroll container's scrollbar entirely). Its width is known before
+      // the open (`UiScrollbarWidth`): measuring it here forced a layout in
+      // the middle of the render.
+      const scrollbarWidth = this.scrollbar.width();
       this.previousBodyPaddingRight = this.document.body.style.paddingRight;
       if (scrollbarWidth > 0) {
         this.document.body.style.paddingRight = `${scrollbarWidth}px`;

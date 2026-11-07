@@ -1,4 +1,5 @@
 import { DOCUMENT } from '@angular/common';
+import { provideUiScrollbarWidth } from '@creativo/ui/layout';
 import { provideHttpClient } from '@angular/common/http';
 import {
   ApplicationConfig,
@@ -292,6 +293,9 @@ export const appConfig: ApplicationConfig = {
       const injector = inject(Injector);
       inject(CLIENT_ISSUE_REPORTER).connect(() => injector.get(GATEWAY_PORTS));
     }),
+    // The scrollbar a sheet's scroll lock pads for, watched from boot so an
+    // open never measures it mid-render (ui/layout `UiScrollbarWidth`).
+    provideUiScrollbarWidth(),
 
     // Firebase SDK singletons (raw SDK stays behind these tokens). Only the
     // eager ones: Firestore and Storage are created inside `firebaseData`.

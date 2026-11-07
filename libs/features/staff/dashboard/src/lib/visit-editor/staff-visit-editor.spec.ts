@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { VISIT_SHEET_STAGED } from './staged-render';
+import { SHEET_STAGED } from '../staged-render';
 import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable, type Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -570,7 +570,7 @@ describe('StaffVisitEditor', () => {
       imports: [StaffVisitEditor],
       providers: [
         // Every row at once; the staging has its own case.
-        { provide: VISIT_SHEET_STAGED, useValue: false },
+        { provide: SHEET_STAGED, useValue: false },
         ...provideTestI18n(),
         { provide: CLOCK_PORTS, useValue: memoryClockPorts(EDITOR_NOW_MS) },
       ],
@@ -8033,7 +8033,7 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
       imports: [StaffVisitEditor],
       providers: [
         // Every row at once; the staging has its own case.
-        { provide: VISIT_SHEET_STAGED, useValue: false },
+        { provide: SHEET_STAGED, useValue: false },
         ...provideTransloco({
           config: {
             availableLangs: ['bg', 'en'],
@@ -9253,7 +9253,7 @@ describe('nameSaysRule — whether a coupon’s name already says its rule', () 
 
 describe('StaffVisitEditor · built in two stages', () => {
   beforeEach(async () => {
-    // VISIT_SHEET_STAGED at its default, as in the app.
+    // SHEET_STAGED at its default, as in the app.
     await TestBed.configureTestingModule({
       imports: [StaffVisitEditor],
       providers: [
