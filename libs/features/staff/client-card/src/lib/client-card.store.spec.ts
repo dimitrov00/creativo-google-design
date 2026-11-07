@@ -53,6 +53,7 @@ import type {
 import {
   AppointmentId,
   BadgeSeriesId,
+  BarberId,
   ClientOperationId,
   CustomerId,
   DraftPersonKey,
@@ -3010,13 +3011,13 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
   });
 
   it('a toggle then Save sends the whole set once under the act’s ONE id; the answer refreshes the toggles', async () => {
-    const admin = rolesAdminPortsOf(changed([Role.Client, Role.Barber]));
+    const admin = rolesAdminPortsOf(changed([Role.Client, Role.Receptionist]));
     const ids = rolesIds();
     const { store } = rolesRig({ admin, ids });
     await openedAs(store, ADMIN_VIEWER);
 
-    store.toggleRole(Role.Barber);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    store.toggleRole(Role.Receptionist);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.saveEnabled).toBe(true);
 
     await store.saveRoles();
@@ -3024,18 +3025,18 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     expect(admin.calls).toEqual([
       {
         targetUserId: UserId.of(GEORGI),
-        roles: [Role.Client, Role.Barber],
+        roles: [Role.Client, Role.Receptionist],
         barberLinkChange: BarberLinkChange.Keep,
         linkedBarberId: null,
         operationId: 'op-card-roles-0001',
       },
     ]);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.saveEnabled).toBe(false);
     expect(store.roles()?.line).toBe(SAVED_LINE);
 
     // A new change is a new act: a new name.
-    store.toggleRole(Role.Receptionist);
+    store.toggleRole(Role.ContentManager);
     expect(store.roles()?.line).toBeNull();
     await store.saveRoles();
     expect(
@@ -3045,13 +3046,50 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     ).toEqual(['op-card-roles-0001', 'op-card-roles-0002']);
   });
 
-  it('follows the server’s answer, not the set it sent', async () => {
-    const admin = rolesAdminPortsOf(changed([Role.Barber]));
+  it('granting «Бръснар» waits for a barber record; the pick is sent as the link and the answer settles it', async () => {
+    const ivan = BarberId.of('ivan');
+    const admin = rolesAdminPortsOf(
+      CoreResult.ok({
+        targetUserId: UserId.of(GEORGI),
+        roles: [Role.Client, Role.Barber],
+        rolesChanged: true,
+        linkedBarberId: ivan,
+        linkChanged: true,
+      }),
+    );
     const { store } = rolesRig({ admin });
     await openedAs(store, ADMIN_VIEWER);
+
     store.toggleRole(Role.Barber);
+    expect(store.roles()?.barberPicker).not.toBeNull();
+    expect(store.roles()?.barberPicker?.hint).not.toBeNull();
+    expect(store.roles()?.saveEnabled).toBe(false);
+
+    store.toggleBarber(ivan);
+    expect(store.roles()?.barberPicker?.hint).toBeNull();
+    expect(store.roles()?.saveEnabled).toBe(true);
+
     await store.saveRoles();
-    expect(ticked(store)).toEqual([Role.Barber]);
+    expect(admin.calls).toHaveLength(1);
+    expect(admin.calls[0]).toMatchObject({
+      roles: [Role.Client, Role.Barber],
+      barberLinkChange: BarberLinkChange.Set,
+      linkedBarberId: ivan,
+    });
+    expect(store.roles()?.saveEnabled).toBe(false);
+
+    // Unticking the linked record of a barber who stays clears the link.
+    store.toggleBarber(ivan);
+    expect(store.roles()?.saveEnabled).toBe(true);
+  });
+
+  it('follows the server’s answer, not the set it sent', async () => {
+    const admin = rolesAdminPortsOf(changed([Role.Receptionist]));
+    const { store } = rolesRig({ admin });
+    await openedAs(store, ADMIN_VIEWER);
+    store.toggleRole(Role.Receptionist);
+    await store.saveRoles();
+    expect(ticked(store)).toEqual([Role.Receptionist]);
   });
 
   it('never offers Save for an empty set or the stored one, and sends nothing then', async () => {
@@ -3077,18 +3115,18 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     });
     const admin = rolesAdminPortsOf(
       CoreResult.err(forbidden),
-      changed([Role.Client, Role.Barber]),
+      changed([Role.Client, Role.Receptionist]),
     );
     const ids = rolesIds();
     const { store } = rolesRig({ admin, ids });
     await openedAs(store, ADMIN_VIEWER);
-    store.toggleRole(Role.Barber);
+    store.toggleRole(Role.Receptionist);
 
     await store.saveRoles();
     expect(store.roles()?.line).toBe(
       'Нямаш права за това. Влез отново или питай администратора.',
     );
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.saveEnabled).toBe(true);
 
     await store.saveRoles();
@@ -3103,7 +3141,7 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
       CoreResult.err(NOT_REVOKED),
       CoreResult.ok({
         targetUserId: UserId.of(GEORGI),
-        roles: [Role.Client, Role.Barber],
+        roles: [Role.Client, Role.Receptionist],
         rolesChanged: false,
         linkedBarberId: null,
         linkChanged: false,
@@ -3112,18 +3150,18 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     const ids = rolesIds();
     const { store } = rolesRig({ admin, ids });
     await openedAs(store, ADMIN_VIEWER);
-    store.toggleRole(Role.Barber);
+    store.toggleRole(Role.Receptionist);
 
     await store.saveRoles();
     expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.saveEnabled).toBe(true);
 
     await store.saveRoles();
     expect(admin.calls).toHaveLength(2);
     expect(admin.calls[1]).toEqual({
       targetUserId: UserId.of(GEORGI),
-      roles: [Role.Client, Role.Barber],
+      roles: [Role.Client, Role.Receptionist],
       barberLinkChange: BarberLinkChange.Keep,
       linkedBarberId: null,
       operationId: 'op-card-roles-0001',
@@ -3137,11 +3175,11 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     const admin = rolesAdminPortsOf(
       CoreResult.err(NOT_REVOKED),
       CoreResult.err(NOT_REVOKED),
-      changed([Role.Client, Role.Barber]),
+      changed([Role.Client, Role.Receptionist]),
     );
     const { store } = rolesRig({ admin });
     await openedAs(store, ADMIN_VIEWER);
-    store.toggleRole(Role.Barber);
+    store.toggleRole(Role.Receptionist);
     await store.saveRoles();
 
     // The same person again: the line and the retry stay.
@@ -3158,13 +3196,13 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     // Back to Георги: his retry comes back, the committed set ticked.
     await openedAs(store, ADMIN_VIEWER);
     expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     await store.saveRoles();
     expect(store.roles()?.line).toBe(NOT_REVOKED_LINE);
     await store.saveRoles();
     expect(admin.calls).toHaveLength(3);
     expect(new Set(admin.calls.map((call) => call.roles.join(',')))).toEqual(
-      new Set(['client,barber']),
+      new Set(['client,receptionist']),
     );
     expect(store.roles()?.line).toBe(SAVED_LINE);
 
@@ -3176,16 +3214,16 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
   it('keeps the draft and a refused act’s id through a re-open of the same person — only the line goes (review round 1, finding 1)', async () => {
     const admin = rolesAdminPortsOf(
       CoreResult.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
-      changed([Role.Client, Role.Barber]),
+      changed([Role.Client, Role.Receptionist]),
     );
     const ids = rolesIds();
     const { store } = rolesRig({ admin, ids });
     await openedAs(store, ADMIN_VIEWER);
 
     // An unsaved toggle survives a background re-open (the visit's key moved).
-    store.toggleRole(Role.Barber);
+    store.toggleRole(Role.Receptionist);
     await openedAs(store, ADMIN_VIEWER);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.saveEnabled).toBe(true);
 
     // A refused act (it may have committed): a re-open keeps its call and the
@@ -3193,7 +3231,7 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     await store.saveRoles();
     expect(store.roles()?.line).not.toBeNull();
     await openedAs(store, ADMIN_VIEWER);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.saveEnabled).toBe(true);
     expect(store.roles()?.line).toBeNull();
 
@@ -3210,7 +3248,7 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
       CoreResult.err(NOT_REVOKED),
       CoreResult.ok({
         targetUserId: UserId.of(GEORGI),
-        roles: [Role.Client, Role.Barber],
+        roles: [Role.Client, Role.Receptionist],
         rolesChanged: false,
         linkedBarberId: null,
         linkChanged: false,
@@ -3231,12 +3269,14 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
         root,
       );
     /** The committed set, as `users/{uid}` reads after the commit landed. */
-    const committed = [{ ...georgiUser(), roles: [Role.Client, Role.Barber] }];
+    const committed = [
+      { ...georgiUser(), roles: [Role.Client, Role.Receptionist] },
+    ];
 
     const first = sheet();
     const a = first.get(ClientCardStore);
     await openedAs(a, ADMIN_VIEWER);
-    a.toggleRole(Role.Barber);
+    a.toggleRole(Role.Receptionist);
     await a.saveRoles();
     expect(a.roles()?.line).toBe(NOT_REVOKED_LINE);
     // The sheet closes: its store goes with it.
@@ -3247,14 +3287,14 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     expect(b).not.toBe(a);
     await openedAs(b, ADMIN_VIEWER);
     expect(b.roles()?.line).toBe(NOT_REVOKED_LINE);
-    expect(ticked(b)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(b)).toEqual([Role.Client, Role.Receptionist]);
     expect(b.roles()?.saveEnabled).toBe(true);
     await b.saveRoles();
     expect(admin.calls).toHaveLength(2);
     expect(admin.calls[1]).toBe(admin.calls[0]);
     expect(admin.calls[1]).toEqual({
       targetUserId: UserId.of(GEORGI),
-      roles: [Role.Client, Role.Barber],
+      roles: [Role.Client, Role.Receptionist],
       barberLinkChange: BarberLinkChange.Keep,
       linkedBarberId: null,
       operationId: 'op-card-roles-0001',
@@ -3269,7 +3309,7 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
     await openedAs(c, ADMIN_VIEWER);
     expect(c.roles()?.line).toBeNull();
     expect(c.roles()?.saveEnabled).toBe(false);
-    expect(ticked(c)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(c)).toEqual([Role.Client, Role.Receptionist]);
     third.destroy();
   });
 
@@ -3280,19 +3320,20 @@ describe('ClientCardStore — the admin’s roles (security hardening S-WS-E)', 
       setRoles: (call) => {
         calls.push(call);
         return new Promise((resolve) => {
-          pending.release = () => resolve(changed([Role.Client, Role.Barber]));
+          pending.release = () =>
+            resolve(changed([Role.Client, Role.Receptionist]));
         });
       },
     };
     const { store } = rolesRig({ admin: held });
     await openedAs(store, ADMIN_VIEWER);
-    store.toggleRole(Role.Barber);
+    store.toggleRole(Role.Receptionist);
 
     const first = store.saveRoles();
     await store.saveRoles();
     store.toggleRole(Role.Admin);
     expect(calls).toHaveLength(1);
-    expect(ticked(store)).toEqual([Role.Client, Role.Barber]);
+    expect(ticked(store)).toEqual([Role.Client, Role.Receptionist]);
     expect(store.roles()?.line).toBeNull();
 
     open(store, subjectOf(MARTIN), martinContext({ viewer: ADMIN_VIEWER }));

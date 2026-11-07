@@ -1,7 +1,7 @@
 import {
   AccountLifecycle,
   BarberLinkChange,
-  type BarberLinkRequest,
+  BarberLinkRequest,
   Registration,
   Role,
   Roles,
@@ -71,6 +71,29 @@ export type RoleChange = {
   readonly rolesTo: readonly Role[];
   readonly rolesChanged: boolean;
   readonly rolesEmpty: boolean;
+};
+
+/**
+ * The barber link the staff client card's picker asks for, against the
+ * stored link and the set Save would send ({@link RoleAssignmentSystem.cardLinkOf}).
+ */
+export type CardLinkChange = {
+  /** What `setRoles` is sent for the link. */
+  readonly linkRequest: BarberLinkRequest;
+  /** The request changes the stored link. */
+  readonly linkChanged: boolean;
+  /** The barber role is being granted with no barber record picked — Save waits for one. */
+  readonly linkMissing: boolean;
+  /** The set Save would send holds the barber role, so the picker shows. */
+  readonly linkOffered: boolean;
+};
+
+/** No link asked for and none missing — a card that does not touch the link. */
+const NO_LINK_CHANGE: CardLinkChange = {
+  linkRequest: BarberLinkRequest.KEEP,
+  linkChanged: false,
+  linkMissing: false,
+  linkOffered: false,
 };
 
 /** Whether `value` is one of `list` — typed `string`, so a narrower list needs no cast. */
@@ -333,7 +356,62 @@ export const RoleAssignmentSystem = {
    * (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`), the unchanged stored set,
    * re-sent so the server re-revokes (S-RU-10, S-L-18). Never an empty set.
    */
-  saveOf(change: RoleChange, revokePending: boolean): boolean {
-    return !change.rolesEmpty && (change.rolesChanged || revokePending);
+  saveOf(
+    change: RoleChange,
+    revokePending: boolean,
+    link: CardLinkChange = NO_LINK_CHANGE,
+  ): boolean {
+    return (
+      !change.rolesEmpty &&
+      !link.linkMissing &&
+      (change.rolesChanged || link.linkChanged || revokePending)
+    );
+  },
+
+  /**
+   * The card's barber picker, decided (staff analytics, "Which barber the
+   * caller is"): `picked` is the record the picker shows — the stored link
+   * until the admin taps a tile, `null` once they untick it. While the set
+   * Save would send holds `barber`, the picker shows: the stored record
+   * again is `KEEP`; another record is `SET`; none at all is `CLEAR` for a
+   * barber who keeps the role, and MISSING for one being granted it (Save
+   * waits, as `setRoles` would refuse `GOVERNANCE_ROLES_BARBER_LINK_REQUIRED`).
+   * Without `barber`, nothing is asked: removing the role clears the link
+   * on the server.
+   */
+  cardLinkOf(input: {
+    readonly storedRoles: readonly Role[];
+    readonly rolesTo: readonly Role[];
+    readonly storedLink: BarberId | null;
+    readonly picked: BarberId | null;
+  }): CardLinkChange {
+    if (!holds(input.rolesTo, Role.Barber)) return NO_LINK_CHANGE;
+    const wasBarber = holds(input.storedRoles, Role.Barber);
+    if (input.picked === null) {
+      if (!wasBarber) {
+        return {
+          linkRequest: BarberLinkRequest.KEEP,
+          linkChanged: false,
+          linkMissing: true,
+          linkOffered: true,
+        };
+      }
+      return input.storedLink === null
+        ? { ...NO_LINK_CHANGE, linkOffered: true }
+        : {
+            linkRequest: BarberLinkRequest.CLEAR,
+            linkChanged: true,
+            linkMissing: false,
+            linkOffered: true,
+          };
+    }
+    return input.picked === input.storedLink
+      ? { ...NO_LINK_CHANGE, linkOffered: true }
+      : {
+          linkRequest: BarberLinkRequest.set(input.picked),
+          linkChanged: true,
+          linkMissing: false,
+          linkOffered: true,
+        };
   },
 } as const;

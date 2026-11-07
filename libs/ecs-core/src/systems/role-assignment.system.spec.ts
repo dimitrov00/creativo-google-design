@@ -867,3 +867,93 @@ describe('RoleAssignmentSystem.saveOf — may the card send', () => {
     expect(RoleAssignmentSystem.saveOf(empty, true)).toBe(false);
   });
 });
+
+describe('RoleAssignmentSystem.cardLinkOf — the client card’s barber picker', () => {
+  const link = RoleAssignmentSystem.cardLinkOf;
+  const barber = [Role.Barber];
+  const client = [Role.Client];
+
+  it('asks nothing while the set Save would send holds no barber role', () => {
+    expect(
+      link({
+        storedRoles: barber,
+        rolesTo: client,
+        storedLink: IVAN,
+        picked: IVAN,
+      }),
+    ).toEqual({
+      linkRequest: { barberLinkChange: 'KEEP', linkedBarberId: null },
+      linkChanged: false,
+      linkMissing: false,
+      linkOffered: false,
+    });
+  });
+
+  it('keeps the stored record, sets another, and clears an unticked one for a barber who stays', () => {
+    expect(
+      link({
+        storedRoles: barber,
+        rolesTo: barber,
+        storedLink: IVAN,
+        picked: IVAN,
+      }),
+    ).toMatchObject({ linkChanged: false, linkOffered: true });
+    expect(
+      link({
+        storedRoles: barber,
+        rolesTo: barber,
+        storedLink: IVAN,
+        picked: NIKO,
+      }),
+    ).toMatchObject({
+      linkRequest: { barberLinkChange: 'SET', linkedBarberId: NIKO },
+      linkChanged: true,
+    });
+    expect(
+      link({
+        storedRoles: barber,
+        rolesTo: barber,
+        storedLink: IVAN,
+        picked: null,
+      }),
+    ).toMatchObject({
+      linkRequest: { barberLinkChange: 'CLEAR', linkedBarberId: null },
+      linkChanged: true,
+      linkMissing: false,
+    });
+  });
+
+  it('waits for a record when the barber role is being granted with none picked', () => {
+    const granted = link({
+      storedRoles: client,
+      rolesTo: [Role.Client, Role.Barber],
+      storedLink: null,
+      picked: null,
+    });
+    expect(granted).toMatchObject({ linkMissing: true, linkOffered: true });
+    const change = RoleAssignmentSystem.changeOf(client, [
+      Role.Client,
+      Role.Barber,
+    ]);
+    expect(RoleAssignmentSystem.saveOf(change, false, granted)).toBe(false);
+    const picked = link({
+      storedRoles: client,
+      rolesTo: [Role.Client, Role.Barber],
+      storedLink: null,
+      picked: IVAN,
+    });
+    expect(RoleAssignmentSystem.saveOf(change, false, picked)).toBe(true);
+  });
+
+  it('lets a link-only change be saved with the role set unchanged', () => {
+    const unchanged = RoleAssignmentSystem.changeOf(barber, barber);
+    const relink = link({
+      storedRoles: barber,
+      rolesTo: barber,
+      storedLink: IVAN,
+      picked: NIKO,
+    });
+    expect(RoleAssignmentSystem.saveOf(unchanged, false)).toBe(false);
+    expect(RoleAssignmentSystem.saveOf(unchanged, false, relink)).toBe(true);
+  });
+});

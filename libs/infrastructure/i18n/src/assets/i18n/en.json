@@ -2277,7 +2277,9 @@
         "admin": "Admin"
       },
       "save": "Save roles",
-      "saved": "Roles saved. They apply from the next sign-in."
+      "saved": "Roles saved. They apply from the next sign-in.",
+      "barberLabel": "Which barber",
+      "barberMissing": "Pick which barber this account is."
     }
   },
   "visits": {

@@ -752,6 +752,47 @@
     </li>
     }
   </ul>
+  <!-- «Кой бръснар е» (staff analytics, "Which barber the caller is"):
+       while the set Save would send holds «Бръснар», the shop's barber
+       records as faces — a group of people offered as a choice is the
+       person-tile grid (Photos' «People»). One tick: the account IS that
+       barber. Granting the role waits for a pick (the hint says so). -->
+  @if (block.barberPicker; as picker) {
+  <ui-stack uiSpacing="compact" data-testid="client-roles-barbers">
+    <p uiText uiFont="footnote" uiForegroundStyle="secondary">
+      {{ picker.label }}
+    </p>
+    <ui-grid
+      [uiColumns]="3"
+      uiSpacing="regular"
+      role="group"
+      [attr.aria-label]="picker.label"
+    >
+      @for (tile of picker.tiles; track tile.barberId) {
+      <button
+        uiPersonTile
+        [uiSrc]="tile.src"
+        [uiName]="tile.name"
+        [uiSelected]="tile.selected"
+        [attr.data-testid]="tile.testId"
+        (click)="toggleBarber(tile.barberId)"
+      >
+        {{ tile.name }}
+      </button>
+      }
+    </ui-grid>
+    @if (picker.hint; as hint) {
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      data-testid="client-roles-barber-hint"
+    >
+      {{ hint }}
+    </p>
+    }
+  </ui-stack>
+  }
   <button
     uiButton
     uiButtonStyle="bordered"

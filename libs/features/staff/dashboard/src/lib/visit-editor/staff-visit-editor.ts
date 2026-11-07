@@ -5697,6 +5697,7 @@ export class StaffVisitEditor {
         barbers().find((barber) => barber.id === id)?.label ?? null,
       barberAvatarSrc: (id: string) =>
         barbers().find((barber) => barber.id === id)?.avatarSrc ?? null,
+      barberIds: () => barbers().map((barber) => barber.id),
       locationName: (id: string) =>
         shops().find((shop) => shop.id === id)?.label ?? null,
       locationCoverSrc: () => null,

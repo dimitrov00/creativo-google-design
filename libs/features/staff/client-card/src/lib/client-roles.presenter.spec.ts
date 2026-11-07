@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Role } from '@core/components';
+import { BarberId } from '@core/primitives';
+import { RoleAssignmentSystem } from '@core/systems';
 import {
   GovernanceErrorCode,
   HttpsStatus,
@@ -36,6 +38,14 @@ function inputOf(
     saveEnabled: false,
     rolesState: IDLE,
     translateCode: errorsOf(lang),
+    link: RoleAssignmentSystem.cardLinkOf({
+      storedRoles: [Role.Client],
+      rolesTo: [Role.Client],
+      storedLink: null,
+      picked: null,
+    }),
+    picked: null,
+    barbers: [],
     ...overrides,
   };
 }
@@ -47,6 +57,66 @@ const refusedWith = (errorCode: string, status: HttpsStatus) =>
   }) as const;
 
 describe('clientRolesVm — «Роли» (security hardening S-WS-E)', () => {
+  it('words the barber picker while the system offers it: faces, the pick ticked, the hint while Save waits', () => {
+    const ivan = BarberId.of('ivan');
+    const niko = BarberId.of('niko');
+    const barbers = [
+      { barberId: ivan, name: 'Иван', src: null },
+      { barberId: niko, name: 'Нико', src: '/n.jpg' },
+    ];
+    const waiting = clientRolesVm(
+      inputOf('bg', {
+        roles: [Role.Client, Role.Barber],
+        link: RoleAssignmentSystem.cardLinkOf({
+          storedRoles: [Role.Client],
+          rolesTo: [Role.Client, Role.Barber],
+          storedLink: null,
+          picked: null,
+        }),
+        barbers,
+      }),
+    );
+    expect(waiting.barberPicker).toEqual({
+      label: 'Кой бръснар е',
+      tiles: [
+        {
+          barberId: ivan,
+          name: 'Иван',
+          src: null,
+          selected: false,
+          testId: 'client-roles-barber-ivan',
+        },
+        {
+          barberId: niko,
+          name: 'Нико',
+          src: '/n.jpg',
+          selected: false,
+          testId: 'client-roles-barber-niko',
+        },
+      ],
+      hint: 'Избери кой бръснар е този профил.',
+    });
+    const picked = clientRolesVm(
+      inputOf('en', {
+        roles: [Role.Client, Role.Barber],
+        link: RoleAssignmentSystem.cardLinkOf({
+          storedRoles: [Role.Client],
+          rolesTo: [Role.Client, Role.Barber],
+          storedLink: null,
+          picked: niko,
+        }),
+        picked: niko,
+        barbers,
+      }),
+    );
+    expect(picked.barberPicker?.label).toBe('Which barber');
+    expect(picked.barberPicker?.hint).toBeNull();
+    expect(picked.barberPicker?.tiles.map((tile) => tile.selected)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
   it('words the group, the five assignable roles in dictionary order and Save, in bg', () => {
     expect(
       clientRolesVm(inputOf('bg', { roles: [Role.Client, Role.Barber] })),
@@ -87,6 +157,7 @@ describe('clientRolesVm — «Роли» (security hardening S-WS-E)', () => {
       saveLabel: 'Запази ролите',
       saveEnabled: false,
       line: null,
+      barberPicker: null,
       testId: 'client-roles',
     });
   });

@@ -1033,6 +1033,10 @@ export interface ClientRolesWords {
   readonly save: string;
   /** «Ролите са запазени. Важат от следващото влизане.» */
   readonly saved: string;
+  /** «Кой бръснар е» — the barber-record picker's heading, shown while the set holds «Бръснар». */
+  readonly barberLabel: string;
+  /** «Избери кой бръснар е този профил.» — Save waits for a pick when the barber role is being granted. */
+  readonly barberMissing: string;
 }
 
 /** The figures the erasure's alert prints — each a server census count, or the siblings' number. */
@@ -1798,6 +1802,8 @@ export function clientCardWordsOf(
       },
       save: translate('clientCard.roles.save'),
       saved: translate('clientCard.roles.saved'),
+      barberLabel: translate('clientCard.roles.barberLabel'),
+      barberMissing: translate('clientCard.roles.barberMissing'),
     },
   };
 }

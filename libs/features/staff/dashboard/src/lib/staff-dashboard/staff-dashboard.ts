@@ -781,6 +781,7 @@ export class StaffDashboard {
       },
       barberAvatarSrc: (id: BarberId) =>
         catalog.barberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
+      barberIds: () => catalog.barbers().map((entry) => entry.id),
       // A row's fact line names the shop without the brand every shop
       // carries: `Location.shortName` (its name when the catalogue has none).
       locationName: (id: LocationId) => {
