@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  DeferBlockBehavior,
+  DeferBlockState,
+  TestBed,
+} from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import {
   Translation,
@@ -206,11 +211,11 @@ import { reversibleSave } from './staff-day-save';
 import { ScheduleStatusFilter } from '../schedule-status-filter';
 import {
   StaffVisitEditor,
-  snapshotCommitOf,
   type VisitEditorCommit,
   type VisitEditorLeg,
   type VisitEditorVm,
 } from '../visit-editor/staff-visit-editor';
+import { snapshotCommitOf } from '../visit-editor/visit-seed';
 import { StaffView } from '../staff-day.store';
 
 /** The shop the fixture's chairs work at — the one the catalogue lists. */
@@ -750,6 +755,9 @@ describe('StaffDashboard', () => {
     gatewayCalls = [];
     await TestBed.configureTestingModule({
       imports: [StaffDashboard],
+      // The sheets are deferred (prefetched on idle in the app); here every
+      // one is loaded before a case runs, as idle has passed by any tap.
+      deferBlockBehavior: DeferBlockBehavior.Manual,
       providers: [
         ...provideTestI18n(),
         // The store publishes the shown day into `?day=` so it can be pasted
@@ -946,6 +954,9 @@ describe('StaffDashboard', () => {
 
     fixture = TestBed.createComponent(StaffDashboard);
     fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
     await fixture.whenStable();
     fixture.detectChanges();
   }

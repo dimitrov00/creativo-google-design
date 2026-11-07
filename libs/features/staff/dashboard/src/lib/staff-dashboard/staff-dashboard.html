@@ -321,7 +321,8 @@
       (uiDismissed)="zoneNoticeOpen.set(false)"
     />
 
-    @if (store.searching()) {
+    @defer (when store.searching(); prefetch on idle) { @if (store.searching())
+    {
     <!-- THE SCHEDULE SEARCH: a Spotlight-style sheet that owns its query, its
          chips and the device's recents, and searches the window the store
          holds (docs/designs/staff-search-spotlight.md). -->
@@ -334,7 +335,7 @@
       [services]="catalog.serviceVms()"
       (visitPicked)="openFoundVisit($event)"
     />
-    } @if (isGrid()) { @if (dayHealth().length > 0) {
+    } } @if (isGrid()) { @if (dayHealth().length > 0) {
     <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the
          agenda's all-day strip opens with — a chair the sheet could not read
          in full is said before any column is read. -->
@@ -1197,8 +1198,9 @@
        CONTENTS are chosen. Per device, like the theme. -->
   <!-- A CHAIR'S WEEKLY HOURS (the ＋'s «Работно време»): the scoped chair,
        else the first. -->
-  @if (hoursOpen() && store.todayKey(); as today) { @let chairId = store.scope()
-  ?? barberOptions()[0]?.id; @if (chairId) {
+  @defer (when hoursOpen(); prefetch on idle) { @if (hoursOpen() &&
+  store.todayKey(); as today) { @let chairId = store.scope() ??
+  barberOptions()[0]?.id; @if (chairId) {
   <lib-staff-hours-sheet
     [uiChairs]="barberOptions()"
     [uiChairId]="chairId"
@@ -1208,13 +1210,15 @@
     (saved)="setNotice(t('staff.hours.saved'))"
     (closed)="hoursOpen.set(false)"
   />
-  } } @if (statusFilterOpen()) {
+  } } } @defer (when statusFilterOpen(); prefetch on idle) { @if
+  (statusFilterOpen()) {
   <lib-staff-status-filter-sheet (closed)="statusFilterOpen.set(false)" />
-  } @if (fieldsOpen() && isGrid()) {
+  } } @defer (when fieldsOpen() && isGrid(); prefetch on idle) { @if
+  (fieldsOpen() && isGrid()) {
   <!-- In the calendar views «Настройки» is the time scale (owner,
        2026-11-06), drafted and applied from its own bar. -->
   <lib-staff-time-scale-sheet (closed)="fieldsOpen.set(false)" />
-  } @else if (fieldsOpen()) {
+  } } @if (fieldsOpen() && !isGrid()) {
   <ui-modal-sheet
     sheetId="staff-fields-sheet"
     labelledBy="staff-fields-title"
@@ -1295,7 +1299,8 @@
        the page keeps one sheet-at-a-time in one place alongside the cancel,
        zone and search sheets. Spec:
        docs/design-research/staff-visit-editor-design.md -->
-  @if (visitEditorVm(); as editorVm) {
+  @defer (when visitEditorVm() !== null; prefetch on idle) { @if
+  (visitEditorVm(); as editorVm) {
   <!-- ⚠ The standard sheet chrome — a title and a close button, like every
        other sheet on this page (owner ruling 2026-08-26, reversing the
        `bareHeader` pass). The editor's own pinned summary strip is gone with
@@ -1396,14 +1401,15 @@
       >{{ visitEditor.sheetTitle() }}</span
     >
   </ui-modal-sheet>
-  }
+  } }
 
   <!-- THE CREATE SHEET — the visit editor drafting a visit that does not
        exist yet (owner review 2026-09-08). Same component, empty
        `appointmentId`; `Запази` becomes one `commitBooking` placed by the
        shop. Client search is the app's user search, run here as the barber
        types. -->
-  @if (createVm(); as newVm) {
+  @defer (when createVm() !== null; prefetch on idle) { @if (createVm(); as
+  newVm) {
   <ui-modal-sheet
     sheetId="staff-create-sheet"
     labelledBy="staff-create-title"
@@ -1460,14 +1466,15 @@
       >{{ createEditor.sheetTitle() }}</span
     >
   </ui-modal-sheet>
-  }
+  } }
 
   <!-- Blocking time. The sheet asks only WHAT the effect is, never why: the
        document it writes is structurally reason-free, because `/book` reads
        it anonymously and a sick day is Art. 9 data. The kind picker that
        would record a reason needs a staff-only sibling collection and an
        owner ruling (Q4) before it can exist at all. -->
-  @if (blockEditorVm(); as blockVm) {
+  @defer (when blockEditorVm() !== null; prefetch on idle) { @if
+  (blockEditorVm(); as blockVm) {
   <!-- THE BLOCK EDITOR — the visit sheet's chrome and ladder, for time a
        barber takes out of the day (owner review 2026-09-08). Create and edit
        are one sheet; a tapped block on the grid, a tapped free gap, the lane
@@ -1526,7 +1533,7 @@
     </p>
     }
   </ui-modal-sheet>
-  }
+  } }
 
   <!-- The cancel sheet: the one verb that needs words, because the audit
        row and the freed slot's waitlist notification both carry them. -->

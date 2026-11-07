@@ -113,7 +113,6 @@ import {
   type VisitEditorBarberOption,
   type VisitEditorClientOption,
   type VisitEditorClientSection,
-  VisitEditorClientSectionId,
   type VisitEditorFrameDay,
   type VisitEditorLibraryImage,
   type VisitEditorPhoto,
@@ -123,8 +122,8 @@ import {
   type VisitEditorLeg,
   type VisitEditorVm,
   type VisitEditorCodeResult,
-  snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
+import * as VisitSeed from '../visit-editor/visit-seed';
 import {
   CatalogContentService,
   CatalogWording,
@@ -1349,7 +1348,7 @@ export class StaffDashboard {
     this.grid()?.setDown();
     this.savingVisitId.set(row.appointmentId);
     try {
-      const saved = snapshotCommitOf(vm, commit);
+      const saved = VisitSeed.snapshotCommitOf(vm, commit);
       // Refused, it goes home; landed, the row moves under the held block.
       if (!(await this.saveFromEditor(row.appointmentId, saved, row, vm))) {
         this.grid()?.releaseLift();
@@ -2564,7 +2563,7 @@ export class StaffDashboard {
     // drop's: the dropped visit's) — the row as the server last said it.
     const before =
       row !== null && vm !== null && vm.appointmentId === appointmentId
-        ? snapshotCommitOf(vm)
+        ? VisitSeed.snapshotCommitOf(vm)
         : null;
     /*
      * WHAT THE SIDE FIELDS WERE DRAWN FROM (round 5): the save writes only
@@ -3666,7 +3665,7 @@ export class StaffDashboard {
     this.visitClientBook.set(book);
     this.visitClientSections.set([
       {
-        id: VisitEditorClientSectionId.Recent,
+        id: VisitSeed.VisitEditorClientSectionId.Recent,
         title: words.recentClients,
         clients: recent,
       },
