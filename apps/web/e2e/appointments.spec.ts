@@ -198,7 +198,13 @@ test.describe('account appointments', () => {
     await expect(page.getByTestId('appointment-cancel-reason')).toHaveValue('');
 
     await page.getByTestId('appointment-cancel-confirm').click();
-    await expect(page.getByTestId('appointment-cancel-sheet')).toHaveCount(0);
+    // The sheet closes on the `cancelAppointment` callable's answer, and this
+    // is the run's first call to it: a cold Functions-emulator worker, whose
+    // start alone outlasted the default 5 s under a full run (2026-11-08).
+    // The suite's other callable-gated waits allow 20 s; so does this one.
+    await expect(page.getByTestId('appointment-cancel-sheet')).toHaveCount(0, {
+      timeout: 20_000,
+    });
 
     // The live listeners move the visit on their own — out of the upcoming
     // run and into the history, as cancelled — no manual UI removal.

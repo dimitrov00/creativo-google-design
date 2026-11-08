@@ -1,6 +1,8 @@
 import { execSync } from 'node:child_process';
 import { workspaceRoot } from '@nx/devkit';
+import type { FullConfig } from '@playwright/test';
 import { browserNowUtcMs, fixSuiteInstant } from './suite-clock';
+import { warmSignInCallables } from './warm-callables';
 
 /**
  * Seeds the dev catalogue (shops, services, barbers, rosters, the booking
@@ -49,8 +51,12 @@ import { browserNowUtcMs, fixSuiteInstant } from './suite-clock';
  * accident; see the settle's header). Without one the settle refuses, and
  * the run with it, rather than wait on the data alone (never
  * `--allow-data-only` here).
+ *
+ * LAST, THE SIGN-IN CALLABLES' WORKERS (`warm-callables.ts`): one per
+ * Playwright worker for each, started before the first test, so the auth
+ * specs that open the run never wait on a cold Functions-emulator worker.
  */
-export default function globalSetup(): void {
+export default async function globalSetup(config: FullConfig): Promise<void> {
   // The run's one instant, first: an `E2E_NOW` off the real shop day stops
   // the run before anything starts; every worker inherits the answer.
   fixSuiteInstant();
@@ -66,6 +72,11 @@ export default function globalSetup(): void {
   );
   // One line: how long the triggers took to go quiet.
   run(`node tools/seed/settle.mjs --since=${seededFrom}`, 'inherit');
+  // One line: how long the sign-in callables' workers took to start.
+  const warmedMs = await warmSignInCallables(config.workers);
+  console.log(
+    `warm: ${config.workers} worker(s) for each sign-in callable in ${warmedMs} ms`,
+  );
 }
 
 /** From the workspace root, stderr always shown. */

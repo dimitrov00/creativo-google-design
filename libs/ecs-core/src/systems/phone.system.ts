@@ -10,7 +10,13 @@ import {
   validatePhoneNumberLength,
   type CountryCode,
 } from 'libphonenumber-js';
-import examples from 'libphonenumber-js/examples.mobile.json';
+// The examples by their JS entry, never the `.json` specifier: the same data
+// (the package's `import` condition maps both to `examples.mobile.json.js`),
+// but the Angular dev server drops every `.json` specifier from Vite's
+// prebundle list. The first page to load this module then made Vite discover
+// it, re-optimise every dependency and reload every open tab — the e2e
+// suite's early timeouts (2026-11-08).
+import examples from 'libphonenumber-js/mobile/examples';
 import {
   CountryIso2,
   DialSource,

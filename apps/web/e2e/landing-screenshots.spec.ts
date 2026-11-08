@@ -38,7 +38,26 @@ async function gotoWithTheme(page: Page, theme: Theme): Promise<void> {
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await expect(page.getByTestId('landing-hero')).toBeVisible();
+  const hero = page.getByTestId('landing-hero');
+  await expect(hero).toBeVisible();
+  // THE HERO PAINTED, not just laid out (2026-11-08). The card has its size
+  // before it has anything in it: its copy waits on the translations
+  // (`*transloco`), the copy's fonts are only requested once that text is
+  // laid out, and the reduced-motion film is a poster image. Under a loaded
+  // run the box stood "visible" for two seconds as a white rectangle, and
+  // Playwright's own font wait ran before those fonts were even asked for —
+  // so a blank frame shot twice read as stable. Wait for each layer itself.
+  await expect(hero.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect
+    .poll(() =>
+      hero
+        .locator('.ui-ambient-video__poster')
+        .evaluate(
+          (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+        ),
+    )
+    .toBe(true);
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // Freeze animations + backdrop-filter for a deterministic capture —
   // byte-identical to the capture script's FREEZE_CSS.
   await page.addStyleTag({

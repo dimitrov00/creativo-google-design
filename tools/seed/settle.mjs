@@ -102,6 +102,13 @@ import { pathToFileURL } from 'node:url';
 const PROJECT_ID = 'demo-creativo-test';
 
 /**
+ * How long the emulator hub may take to list the emulators before
+ * {@link watchExecutions} gives up on it: thirty seconds, well inside the
+ * three-minute settle (see "A slow hub is not a missing one" there).
+ */
+export const HUB_PATIENCE_MS = 30_000;
+
+/**
  * Five seconds without a write or an execution, polled every 750 ms, for at
  * most three minutes; an execution still in flight thirty seconds past its
  * own declared timeout is lost.
@@ -376,8 +383,18 @@ function describeRunning({ tally, timeouts }, nowMs) {
  * named by FIREBASE_EMULATOR_HUB, 127.0.0.1:4400 by default, lists where
  * each emulator runs). Only what is logged from `sinceMs` on counts as a
  * change.
+ *
+ * A SLOW HUB IS NOT A MISSING ONE. The hub lives in the firebase-tools
+ * process that also runs the functions emulator and prints its every line,
+ * so under a full e2e run it can take seconds to list the emulators. A 2 s
+ * budget once read that wait as "no Logging emulator" and refused a spec's
+ * seed mid-run (2026-11-08). The listing now gets `hubPatienceMs`. A hub that
+ * is down still refuses its connection at once, and that is still `null`.
  */
-export async function watchExecutions({ sinceMs = Date.now() } = {}) {
+export async function watchExecutions({
+  sinceMs = Date.now(),
+  hubPatienceMs = HUB_PATIENCE_MS,
+} = {}) {
   const hub = local(process.env.FIREBASE_EMULATOR_HUB ?? '127.0.0.1:4400');
   const tally = createExecutionTally(sinceMs);
   let socket;
@@ -385,7 +402,7 @@ export async function watchExecutions({ sinceMs = Date.now() } = {}) {
   try {
     emulators = await (
       await fetch(`http://${hub}/emulators`, {
-        signal: AbortSignal.timeout(2_000),
+        signal: AbortSignal.timeout(hubPatienceMs),
       })
     ).json();
     const logging = emulators?.logging;
