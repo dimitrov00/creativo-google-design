@@ -421,6 +421,33 @@ const ANALYTICS_REPORT = {
   reportFromLocalDate: '2026-11-01',
   reportToLocalDate: '2026-11-30',
   reportTakingsCents: 4500,
+  // v2's chart fields (PR 2) ride the same answer, as they are.
+  reportBusiestWeekday: 2,
+  reportBusiestHour: 10,
+  reportEmptiestWeekday: null,
+  reportEmptiestHour: null,
+  reportSeries: [
+    {
+      localDate: '2026-11-01',
+      takingsCents: 4500,
+      comparisonTakingsCents: null,
+    },
+  ],
+  reportTimeSeries: [
+    {
+      localDate: '2026-11-01',
+      workedMinutes: 90,
+      noShowMinutes: 0,
+      unmarkedMinutes: 0,
+      blockedMinutes: 0,
+      unsoldMinutes: 30,
+      otherMinutes: 0,
+    },
+  ],
+  reportHourGrid: [
+    { weekday: 2, hour: 10, workedMinutes: 60, rosteredMinutes: 60 },
+  ],
+  reportAheadDays: [{ localDate: '2026-11-08', openMinutes: 120 }],
   reportSeatRows: [],
 } as const;
 

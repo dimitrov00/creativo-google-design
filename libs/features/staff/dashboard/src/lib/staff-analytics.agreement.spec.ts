@@ -70,15 +70,31 @@ afterEach(() => {
 describe('G5 — the schedule’s day-summary free time is the report’s unsold + open', () => {
   it('agrees on every barber-day of the fixture month, read through StaffDayStore', async () => {
     const expected = new Map<string, number>();
+    // The same figure through the v2 chart series (staff-analytics-v2 PR 2,
+    // plan item 38): a barber's month is one time point per day, whose
+    // `unsoldMinutes` is the day row's, so unsold (the series) + open (the
+    // row) is the same free time.
+    const viaSeries = new Map<string, number>();
     for (const barberId of BARBERS) {
-      for (const row of (await reportOf(barberId)).reportDayRows) {
+      const report = await reportOf(barberId);
+      const openByDay = new Map<string, number>();
+      for (const row of report.reportDayRows) {
         expected.set(
           BusyKey.of(barberId, row.localDate),
           row.unsoldMinutes + row.openMinutes,
         );
+        openByDay.set(row.localDate, row.openMinutes);
+      }
+      expect(report.reportTimeSeries).toHaveLength(report.reportDayRows.length);
+      for (const point of report.reportTimeSeries) {
+        viaSeries.set(
+          BusyKey.of(barberId, point.localDate),
+          point.unsoldMinutes + (openByDay.get(point.localDate) ?? 0),
+        );
       }
     }
     expect(expected.size).toBe(90);
+    expect(viaSeries).toEqual(expected);
 
     const { store } = await buildStaffDayStore({
       nowIso: '2026-09-28T09:00:00.000+03:00',

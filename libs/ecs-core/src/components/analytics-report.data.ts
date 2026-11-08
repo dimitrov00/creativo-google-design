@@ -2,6 +2,7 @@ import type {
   AppointmentId,
   AttendanceState,
   BarberId,
+  HourOfDay,
   LocalDate,
   MinuteCount,
   MinuteOfDay,
@@ -129,6 +130,32 @@ export type AnalyticsReport = {
   readonly reportBookableOpenMinutes: MinuteCount;
   readonly reportEmptiestLocalDate: LocalDate | null;
 
+  /**
+   * The heatmap's busiest cell (`AnalyticsHourSystem.peak`): the weekday and
+   * wall-clock hour with the highest `worked ÷ rostered` among the cells
+   * with rostered minutes, the earliest (weekday, then hour) on a tie;
+   * `null` under 7 rostered days in the period.
+   */
+  readonly reportBusiestWeekday: Weekday | null;
+  readonly reportBusiestHour: HourOfDay | null;
+  /** The emptiest cell — the lowest `worked ÷ rostered`, by the same rule and gate. */
+  readonly reportEmptiestWeekday: Weekday | null;
+  readonly reportEmptiestHour: HourOfDay | null;
+
+  /**
+   * The takings line's points, in order — one per day for a period of up to
+   * 93 days, one per ISO week beyond (the first point's `localDate` is the
+   * period's first day, every later one a Monday); their `takingsCents` sum
+   * to `reportTakingsCents`.
+   */
+  readonly reportSeries: readonly AnalyticsReport.SeriesPoint[];
+  /** The stacked time bars, at `reportSeries`' grain; each part sums to its `reportBar…` total. */
+  readonly reportTimeSeries: readonly AnalyticsReport.TimePoint[];
+  /** The heatmap: weekday × wall-clock hour over the period's days; only cells with minutes, so at most 168. */
+  readonly reportHourGrid: readonly AnalyticsReport.HourCell[];
+  /** The open-hours card's bars: today and the six days after it, their `openMinutes` summing to `reportBookableOpenMinutes`. */
+  readonly reportAheadDays: readonly AnalyticsReport.AheadDay[];
+
   readonly reportServices: readonly AnalyticsReport.ServiceRow[];
   readonly reportWeekdayFill: readonly AnalyticsReport.WeekdayFill[];
   readonly reportOrigins: readonly AnalyticsReport.OriginShare[];
@@ -140,6 +167,52 @@ export type AnalyticsReport = {
 };
 
 export namespace AnalyticsReport {
+  /**
+   * One point of the takings line: the bucket's first day, the net takings
+   * of the worked seats in it (the `reportTakingsCents` rule, per bucket),
+   * and the previous period's takings at the same position — `null` where
+   * the previous period, at the same grain, has no bucket there.
+   */
+  export type SeriesPoint = {
+    readonly localDate: LocalDate;
+    readonly takingsCents: PriceCents;
+    readonly comparisonTakingsCents: PriceCents | null;
+  };
+
+  /**
+   * One stacked time bar: the bucket's first day and the six bar parts up to
+   * the current minute — worked, no-show, unmarked, blocked (the past part),
+   * unsold, and other (held time plus short gaps, the past parts).
+   */
+  export type TimePoint = {
+    readonly localDate: LocalDate;
+    readonly workedMinutes: MinuteCount;
+    readonly noShowMinutes: MinuteCount;
+    readonly unmarkedMinutes: MinuteCount;
+    readonly blockedMinutes: MinuteCount;
+    readonly unsoldMinutes: MinuteCount;
+    readonly otherMinutes: MinuteCount;
+  };
+
+  /**
+   * One heatmap cell: the minutes of worked and of rostered time
+   * overlapping `[hour:00, hour+1:00)` on the wall clock, summed over the
+   * period's days of that weekday. Worked, not occupied: a no-show hour is
+   * not busy; worked time outside the rostered stretches is not counted.
+   */
+  export type HourCell = {
+    readonly weekday: Weekday;
+    readonly hour: HourOfDay;
+    readonly workedMinutes: MinuteCount;
+    readonly rosteredMinutes: MinuteCount;
+  };
+
+  /** One of the next seven shop days and its open (still bookable) minutes in scope. */
+  export type AheadDay = {
+    readonly localDate: LocalDate;
+    readonly openMinutes: MinuteCount;
+  };
+
   /** One service's worked seats. */
   export type ServiceRow = {
     readonly serviceId: ServiceId;

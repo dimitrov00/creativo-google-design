@@ -1,0 +1,83 @@
+<svg
+  #drawing
+  class="ui-bar-chart__drawing"
+  role="img"
+  [attr.aria-label]="uiLabel()"
+  [attr.viewBox]="viewBox()"
+  [attr.data-labels]="hasLabels() ? '' : null"
+>
+  <defs>
+    <pattern
+      id="ui-chart-hatch"
+      patternUnits="userSpaceOnUse"
+      width="6"
+      height="6"
+      patternTransform="rotate(45)"
+    >
+      <rect class="ui-chart-hatch__ground" width="6" height="6" />
+      <line class="ui-chart-hatch__line" x1="0" y1="0" x2="0" y2="6" />
+    </pattern>
+  </defs>
+  @for (mark of marks(); track mark.index; let position = $index) {
+  <g
+    class="ui-bar-chart__bar"
+    role="button"
+    [attr.tabindex]="tabIndex(position)"
+    [attr.aria-label]="mark.name"
+    [attr.data-index]="mark.index"
+    [attr.data-highlight]="mark.highlight ? '' : null"
+    (click)="pick(mark.index)"
+    (keydown)="onKeydown($event, position, mark.index)"
+  >
+    <rect
+      class="ui-bar-chart__hit"
+      [attr.x]="mark.hitX"
+      [attr.y]="mark.hitY"
+      [attr.width]="mark.hitWidth"
+      [attr.height]="mark.hitHeight"
+    />
+    <g class="ui-bar-chart__marks">
+      @for (segment of mark.segments; track segment.key) { @if (uiOrientation()
+      === 'horizontal') {
+      <rect
+        class="ui-bar-chart__segment"
+        [attr.data-part]="segment.part"
+        [attr.y]="mark.across"
+        [attr.height]="mark.thickness"
+        [style.--ui-bar-offset]="segment.offset + 'px'"
+        [style.--ui-bar-size]="segment.size + 'px'"
+      />
+      } @else {
+      <rect
+        class="ui-bar-chart__segment"
+        [attr.data-part]="segment.part"
+        [attr.x]="mark.across"
+        [attr.width]="mark.thickness"
+        [style.--ui-bar-offset]="segment.offset + 'px'"
+        [style.--ui-bar-size]="segment.size + 'px'"
+      />
+      } }
+    </g>
+    @if (mark.label) {
+    <text
+      class="ui-bar-chart__label"
+      aria-hidden="true"
+      [attr.x]="mark.labelX"
+      [attr.y]="mark.labelY"
+    >
+      {{ mark.label }}
+    </text>
+    } @if (uiOrientation() === 'horizontal' && mark.valueText) {
+    <text
+      class="ui-bar-chart__value"
+      aria-hidden="true"
+      [attr.x]="width()"
+      [attr.y]="mark.labelY"
+    >
+      {{ mark.valueText }}
+    </text>
+    }
+  </g>
+  }
+</svg>
+<div class="ui-bar-chart__legend"><ng-content select="[uiChartLegend]" /></div>

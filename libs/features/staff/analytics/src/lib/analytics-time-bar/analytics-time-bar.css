@@ -30,21 +30,6 @@
   border-radius: 50%;
 }
 
-[data-part='worked'] {
-  background: var(--sys-color-accent);
-}
-[data-part='no-show'] {
-  background: color-mix(in srgb, var(--sys-color-foreground) 72%, transparent);
-}
-[data-part='unmarked'] {
-  background: color-mix(in srgb, var(--sys-color-foreground) 50%, transparent);
-}
-[data-part='blocked'] {
-  background: color-mix(in srgb, var(--sys-color-foreground) 32%, transparent);
-}
-[data-part='unsold'] {
-  background: color-mix(in srgb, var(--sys-color-foreground) 18%, transparent);
-}
-[data-part='other'] {
-  background: color-mix(in srgb, var(--sys-color-foreground) 9%, transparent);
-}
+/* The parts' colours are the chart kit's (`@creativo/ui/charts`, charts.css):
+   `data-part` on a swatch is painted there, under one mapping for every
+   chart of the screen. */

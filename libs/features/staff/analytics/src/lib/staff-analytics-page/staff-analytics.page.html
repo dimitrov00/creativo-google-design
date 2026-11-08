@@ -203,7 +203,9 @@
     </ui-card>
     }
 
-    <!-- THE HERO: the takings, their change, the tips on their own line. -->
+    <!-- THE HERO: the takings, their change, the tips on their own line;
+         under them the takings line — a point per day, the previous period
+         in grey behind it, a dashed average. -->
     <section
       class="staff-analytics__module"
       aria-labelledby="analytics-hero-title"
@@ -278,6 +280,32 @@
           </button>
         </li>
       </ul>
+      <div class="staff-analytics__chart">
+        <ui-line-chart
+          [uiPoints]="body.series.points"
+          [uiAverage]="body.series.average"
+          [uiValueText]="body.series.valueText"
+          [uiAverageText]="body.series.averageText"
+          [uiLabel]="body.series.label"
+          data-testid="analytics-series"
+        />
+        @if (body.series.comparisonLegend; as legend) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="staff-analytics__legend-line"
+          data-testid="analytics-series-legend"
+        >
+          <span
+            class="ui-chart-swatch"
+            data-part="comparison"
+            aria-hidden="true"
+          ></span>
+          {{ legend }}
+        </p>
+        }
+      </div>
       @if (body.hero.excluded; as excluded) {
       <p
         uiText
@@ -291,7 +319,8 @@
       }
     </section>
 
-    <!-- THE TIME BAR: five parts and «Друго», each in words; what is still ahead. -->
+    <!-- THE TIME: a stacked bar per day of the six parts; the legend
+         beneath is the breakdown, each part in words; what is still ahead. -->
     <section
       class="staff-analytics__module"
       aria-labelledby="analytics-time-title"
@@ -312,11 +341,41 @@
           <ui-icon uiName="service.details" />
         </button>
       </ui-section-header>
-      <lib-analytics-time-bar
-        [segments]="body.time.segments"
-        [name]="body.time.barName"
-        data-testid="analytics-time-bar"
-      />
+      <ui-bar-chart
+        class="staff-analytics__chart"
+        [uiBars]="body.time.bars.bars"
+        [uiValueText]="body.time.bars.valueText"
+        [uiLabel]="body.time.bars.label"
+        data-testid="analytics-time-bars"
+      >
+        <ul
+          uiChartLegend
+          class="staff-analytics__legend"
+          [attr.aria-label]="body.time.barName"
+          data-testid="analytics-time-bar"
+        >
+          @for (segment of body.time.segments; track segment.part) {
+          <li
+            class="staff-analytics__legend-row"
+            [attr.data-testid]="segment.testId"
+          >
+            <span
+              class="ui-chart-swatch"
+              [attr.data-part]="segment.part"
+              aria-hidden="true"
+            ></span>
+            <span uiText uiFont="footnote">{{ segment.label }}</span>
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              class="staff-analytics__legend-value"
+              >{{ segment.value }}</span
+            >
+          </li>
+          }
+        </ul>
+      </ui-bar-chart>
       <ul uiListGroup>
         <li>
           <button
@@ -346,8 +405,53 @@
       </ul>
     </section>
 
-    <!-- THE OPEN HOURS: bookable time in the next 7 days; a tap opens the
-         emptiest day's agenda with free time drawn (CUJ 2). -->
+    <!-- WHEN THE CHAIR IS BUSY: weekday × hour, worked over rostered; one
+         sentence names the busiest and the emptiest hour. -->
+    @if (body.busy; as busy) {
+    <section
+      class="staff-analytics__module"
+      aria-labelledby="analytics-busy-title"
+      data-testid="analytics-busy"
+    >
+      <ui-section-header uiHeaderProminence="increased">
+        <h2 uiTitle id="analytics-busy-title">{{ busy.title }}</h2>
+        <button
+          uiSectionAction
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="vm.infoLabels[Topics.Busy]"
+          data-testid="analytics-info-BUSY"
+          (click)="openInfo(Topics.Busy)"
+        >
+          <ui-icon uiName="service.details" />
+        </button>
+      </ui-section-header>
+      <ui-heatmap
+        class="staff-analytics__chart"
+        [uiRows]="busy.rows"
+        [uiColumns]="busy.columns"
+        [uiCells]="busy.cells"
+        [uiLabel]="busy.label"
+        data-testid="analytics-heatmap"
+      />
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="staff-analytics__footnote"
+        data-testid="analytics-busy-sentence"
+      >
+        {{ busy.sentence }}
+      </p>
+    </section>
+    }
+
+    <!-- THE OPEN HOURS: bookable time in the next 7 days, a bar per day
+         with the emptiest in the accent; a tap opens the emptiest day's
+         agenda with free time drawn (CUJ 2). -->
     <section
       class="staff-analytics__module"
       aria-labelledby="analytics-open-title"
@@ -418,20 +522,57 @@
           >
         </ui-stack>
       </ng-template>
+      <ui-bar-chart
+        class="staff-analytics__chart"
+        uiStacking="single"
+        [uiBars]="body.open.bars.bars"
+        [uiHighlightIndex]="body.open.bars.highlightIndex"
+        [uiValueText]="body.open.bars.valueText"
+        [uiLabel]="body.open.bars.label"
+        data-testid="analytics-ahead-bars"
+      />
     </section>
 
-    <!-- SEATS BY SERVICE: count, takings per hour of service, a share bar. -->
-    <ng-container
-      *ngTemplateOutlet="
-        shares;
-        context: {
-          group: body.services,
-          topic: Topics.Services,
-          label: vm.infoLabels[Topics.Services],
-          id: 'services'
-        }
-      "
-    />
+    <!-- THE SERVICES RANKED: a bar per service, largest first — the name
+         and the takings per hour as its word, the takings and the count as
+         its figure; a tap opens the service's seats. -->
+    <section
+      class="staff-analytics__module"
+      aria-labelledby="analytics-services-title"
+      data-testid="analytics-services"
+    >
+      <ui-section-header uiHeaderProminence="increased">
+        <h2 uiTitle id="analytics-services-title">{{ body.services.title }}</h2>
+        <button
+          uiSectionAction
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="vm.infoLabels[Topics.Services]"
+          data-testid="analytics-info-SERVICES"
+          (click)="openInfo(Topics.Services)"
+        >
+          <ui-icon uiName="service.details" />
+        </button>
+      </ui-section-header>
+      @if (body.services.empty; as empty) {
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">{{ empty }}</p>
+      } @else {
+      <ui-bar-chart
+        class="staff-analytics__chart"
+        uiOrientation="horizontal"
+        uiStacking="single"
+        [uiRanked]="true"
+        [uiBars]="body.services.bars"
+        [uiValueText]="body.services.valueText"
+        [uiLabel]="body.services.label"
+        data-testid="analytics-services-bars"
+        (uiBarPicked)="openDrillOf(body.services.drills[$event] ?? null)"
+      />
+      }
+    </section>
 
     <!-- THE CLIENTS: rebooked, no-shows, late cancellations — a rate from
          its base of 20, else «3 от 9». Each tile opens its rows; its ⓘ
@@ -491,49 +632,16 @@
       }
     </section>
 
-    <!-- THE SHOP'S ALONE: fill by weekday and where bookings come from. -->
-    @if (body.fill; as fill) {
-    <ng-container
-      *ngTemplateOutlet="
-        shares;
-        context: {
-          group: fill,
-          topic: Topics.Fill,
-          label: vm.infoLabels[Topics.Fill],
-          id: 'fill'
-        }
-      "
-    />
-    } @if (body.origins; as origins) {
-    <ng-container
-      *ngTemplateOutlet="
-        shares;
-        context: {
-          group: origins,
-          topic: Topics.Origins,
-          label: vm.infoLabels[Topics.Origins],
-          id: 'origins'
-        }
-      "
-    />
-    } }
-  </div>
-
-  <!-- A group of rows with a share bar under each: services, fill, origins. -->
-  <ng-template
-    #shares
-    let-group="group"
-    let-topic="topic"
-    let-label="label"
-    let-id="id"
-  >
+    <!-- THE SHOP'S ALONE: where bookings come from — one stacked bar, a
+         row per origin with its swatch. -->
+    @if (body.origins; as origins) {
     <section
       class="staff-analytics__module"
-      [attr.aria-labelledby]="'analytics-' + id + '-title'"
-      [attr.data-testid]="'analytics-' + id"
+      aria-labelledby="analytics-origins-title"
+      data-testid="analytics-origins"
     >
       <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle [id]="'analytics-' + id + '-title'">{{ group.title }}</h2>
+        <h2 uiTitle id="analytics-origins-title">{{ origins.title }}</h2>
         <button
           uiSectionAction
           type="button"
@@ -541,61 +649,45 @@
           uiButtonStyle="plain"
           uiControlSize="small"
           [uiIconOnly]="true"
-          [attr.aria-label]="label"
-          [attr.data-testid]="'analytics-info-' + topic"
-          (click)="openInfo(topic)"
+          [attr.aria-label]="vm.infoLabels[Topics.Origins]"
+          data-testid="analytics-info-ORIGINS"
+          (click)="openInfo(Topics.Origins)"
         >
           <ui-icon uiName="service.details" />
         </button>
       </ui-section-header>
-      @if (group.empty; as empty) {
-      <p uiText uiFont="callout" uiForegroundStyle="secondary">{{ empty }}</p>
-      } @else {
-      <ul uiListGroup>
-        @for (row of group.rows; track row.id) { @if (row.drill; as drill) {
-        <li>
-          <button
-            type="button"
-            uiListRow
-            uiSize="large"
-            uiAlignment="leading"
-            [uiInteractive]="true"
-            [attr.data-testid]="row.testId"
-            (click)="openDrillOf(drill)"
-          >
-            <ng-container *ngTemplateOutlet="shareRow; context: { row: row }" />
-            <ng-container ngProjectAs="[uiTrailing]">
-              <span uiTrailing uiText uiFont="callout">{{ row.value }}</span>
-            </ng-container>
-          </button>
-        </li>
-        } @else {
-        <li
-          uiListRow
-          uiSize="large"
-          uiAlignment="leading"
-          [attr.data-testid]="row.testId"
-        >
-          <ng-container *ngTemplateOutlet="shareRow; context: { row: row }" />
-          <ng-container ngProjectAs="[uiTrailing]">
-            <span uiTrailing uiText uiFont="callout">{{ row.value }}</span>
-          </ng-container>
-        </li>
-        } }
-      </ul>
-      }
-    </section>
-  </ng-template>
-
-  <ng-template #shareRow let-row="row">
-    <ui-stack uiSpacing="tight" class="staff-analytics__share">
-      <span>{{ row.title }}</span>
-      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-        >{{ row.detail }}</span
+      <ui-bar-chart
+        class="staff-analytics__chart"
+        uiOrientation="horizontal"
+        [uiBars]="origins.bars"
+        [uiLabel]="origins.label"
+        data-testid="analytics-origins-bar"
       >
-      <ui-progress-view [uiValue]="row.share" aria-hidden="true" />
-    </ui-stack>
-  </ng-template>
+        <ul uiChartLegend class="staff-analytics__legend">
+          @for (row of origins.rows; track row.part) {
+          <li
+            class="staff-analytics__legend-row"
+            [attr.data-testid]="row.testId"
+          >
+            <span
+              class="ui-chart-swatch"
+              [attr.data-part]="row.part"
+              aria-hidden="true"
+            ></span>
+            <span uiText uiFont="footnote">{{ row.title }}</span>
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >{{ row.detail }}</span
+            >
+            <span uiText uiFont="footnote" class="staff-analytics__legend-value"
+              >{{ row.value }}</span
+            >
+          </li>
+          }
+        </ul>
+      </ui-bar-chart>
+    </section>
+    } }
+  </div>
   } @else {
   <div class="staff-analytics__modules" aria-busy="true">
     <ui-skeleton uiFrame uiFrameHeight="3rem" uiFrameWidth="12rem" />

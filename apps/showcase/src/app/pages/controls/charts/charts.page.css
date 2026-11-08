@@ -1,0 +1,34 @@
+:host {
+  display: block;
+}
+
+/* A phone's content column (390 − 2 × 16). */
+.charts__column {
+  max-inline-size: calc(var(--sys-space-unit) * 90);
+}
+
+/* The DAY card: one stacked bar in a column the width of a tile. */
+.charts__day {
+  inline-size: calc(var(--sys-space-unit) * 30);
+}
+
+/* The legend's rows: swatch, word, figure at the end. */
+.charts__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.charts__legend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.charts__legend-value {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}

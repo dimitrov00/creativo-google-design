@@ -14,9 +14,11 @@
  *    `libs/features/staff/analytics`), outside ecs-core, so it has no pair
  *    here; the report's own span is prefixed like every report field.
  */
+import type { HourOfDay, Weekday } from '@core/primitives';
 import {
   type AnalyticsBarSegment,
   type AnalyticsHeroChange,
+  type HourPeak,
   MoneyAllocation,
   type VisitNets,
 } from '@core/systems';
@@ -88,4 +90,16 @@ export type AnalyticsDictionaryFields = [
   Expect<Equals<AnalyticsBarSegment['analyticsBarPart'], AnalyticsBarPart>>, // systems/staff-analytics.system.ts
   Expect<Equals<AnalyticsHeroChange['heroChange'], HeroChange>>, // systems/staff-analytics.system.ts
   Expect<Equals<VisitNets['moneyAllocation'], MoneyAllocation>>, // systems/money-allocation.system.ts
+  Expect<Equals<AnalyticsReport.HourCell['weekday'], Weekday>>, // components/analytics-report.data.ts
+  Expect<Equals<HourPeak['weekday'], Weekday>>, // systems/analytics-hour.system.ts
+  Expect<Equals<AnalyticsReport['reportBusiestWeekday'], Weekday | null>>, // N15-exempt: the report's fields all carry the `report` prefix
+  Expect<Equals<AnalyticsReport['reportEmptiestWeekday'], Weekday | null>>, // N15-exempt: the report's fields all carry the `report` prefix
+];
+
+// The hour grid's hour is the `HourOfDay` tag — a plain number like `Weekday`, never a bare `number`.
+export type AnalyticsHourFields = [
+  Expect<Equals<AnalyticsReport.HourCell['hour'], HourOfDay>>, // N15-exempt: the design's row names the hour `hour`
+  Expect<Equals<HourPeak['hour'], HourOfDay>>, // N15-exempt: the design's row names the hour `hour`
+  Expect<Equals<AnalyticsReport['reportBusiestHour'], HourOfDay | null>>, // N15-exempt: the report's fields all carry the `report` prefix
+  Expect<Equals<AnalyticsReport['reportEmptiestHour'], HourOfDay | null>>, // N15-exempt: the report's fields all carry the `report` prefix
 ];

@@ -1,5 +1,6 @@
 export * from './achievements.system';
 export * from './age.system';
+export * from './analytics-hour.system';
 export * from './app-check.system';
 export * from './appointment-edit.system';
 export * from './appointment-index.system';

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { PipelineErrorCode } from '@core/errors';
 import { AppointmentId, BarberId, MinuteCount, SeatId } from '@core/primitives';
+import { MinuteRange } from './minute-range.data';
 import { type AnalyticsDay, StaffAnalyticsSystem } from '@core/systems';
 import {
   FIXTURE_NOW,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,
   appointmentFixture,
+  endMinute,
   localDate,
   minute,
   seatFixture,
@@ -44,6 +46,8 @@ function dayOf(barberId: BarberId, rostered: number): AnalyticsDay {
     outsideHoursMinutes: zero,
     outsideHoursSeatCount: 0,
     closedDayMinutes: zero,
+    // 09:00 on, for `rostered` minutes — the hour grid's stretch.
+    stretches: [MinuteRange.of(minute(540), endMinute(540 + rostered))],
   };
 }
 
@@ -96,6 +100,10 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
     expect(report.reportWeekdayFill.length).toBeGreaterThan(0);
     expect(report.reportOrigins.length).toBeGreaterThan(0);
     expect(report.reportDayRows.length).toBeGreaterThan(0);
+    expect(report.reportSeries.length).toBeGreaterThan(0);
+    expect(report.reportTimeSeries.length).toBeGreaterThan(0);
+    expect(report.reportHourGrid.length).toBeGreaterThan(0);
+    expect(report.reportAheadDays).toHaveLength(7);
     expect(AnalyticsCall.decodeReport(wire(report))).toEqual({
       ok: true,
       value: report,
@@ -118,6 +126,28 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
     expect(decoded.ok && decoded.value.reportSeatRows).toEqual([]);
   });
 
+  it('reads the peaks when the report names them, and their absence', () => {
+    const named = {
+      ...wire(reportOf(ivan)),
+      reportBusiestWeekday: 2,
+      reportBusiestHour: 10,
+      reportEmptiestWeekday: 5,
+      reportEmptiestHour: 0,
+    };
+    const decoded = AnalyticsCall.decodeReport(named);
+    expect(decoded.ok && decoded.value).toMatchObject({
+      reportBusiestWeekday: 2,
+      reportBusiestHour: 10,
+      reportEmptiestWeekday: 5,
+      reportEmptiestHour: 0,
+    });
+    const unnamed = AnalyticsCall.decodeReport(wire(reportOf(ivan)));
+    expect(unnamed.ok && unnamed.value).toMatchObject({
+      reportBusiestWeekday: null,
+      reportBusiestHour: null,
+    });
+  });
+
   it('refuses an answer that is no object', () => {
     for (const raw of [null, 'report', 42, []]) {
       expect(AnalyticsCall.decodeReport(raw)).toEqual(UNUSABLE);
@@ -138,6 +168,16 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       { ...good, reportDefinitionVersion: 0 },
       { ...good, reportEmptiestLocalDate: undefined },
       { ...good, reportDayRows: 'none' },
+      // v2's chart fields: absent (a v1 cached entry), or malformed.
+      { ...good, reportSeries: undefined },
+      { ...good, reportTimeSeries: undefined },
+      { ...good, reportHourGrid: undefined },
+      { ...good, reportAheadDays: undefined },
+      { ...good, reportBusiestWeekday: undefined },
+      { ...good, reportBusiestWeekday: 0 },
+      { ...good, reportBusiestHour: 24 },
+      { ...good, reportEmptiestWeekday: '2' },
+      { ...good, reportEmptiestHour: 9.5 },
     ]) {
       expect(AnalyticsCall.decodeReport(broken)).toEqual(UNUSABLE);
     }
@@ -177,6 +217,36 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       {
         ...good,
         reportDayRows: [{ ...first(good['reportDayRows']), barberId: null }],
+      },
+      {
+        ...good,
+        reportSeries: [
+          { ...first(good['reportSeries']), comparisonTakingsCents: -1 },
+        ],
+      },
+      {
+        ...good,
+        reportSeries: [{ ...first(good['reportSeries']), localDate: 'today' }],
+      },
+      {
+        ...good,
+        reportTimeSeries: [
+          { ...first(good['reportTimeSeries']), otherMinutes: undefined },
+        ],
+      },
+      {
+        ...good,
+        reportHourGrid: [{ ...first(good['reportHourGrid']), hour: 24 }],
+      },
+      {
+        ...good,
+        reportHourGrid: [{ ...first(good['reportHourGrid']), weekday: 8 }],
+      },
+      {
+        ...good,
+        reportAheadDays: [
+          { ...first(good['reportAheadDays']), openMinutes: -5 },
+        ],
       },
       {
         ...shop,

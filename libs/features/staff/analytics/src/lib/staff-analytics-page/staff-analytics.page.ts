@@ -35,12 +35,12 @@ import {
   UiMetric,
   UiNotice,
   UiPersonTile,
-  UiProgressView,
   UiSectionHeader,
   UiSegmentedControl,
   UiSkeleton,
   UiStack,
 } from '@creativo/ui/controls';
+import { UiBarChart, UiHeatmap, UiLineChart } from '@creativo/ui/charts';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
@@ -49,7 +49,6 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { AnalyticsRowsPage } from '../analytics-rows-page/analytics-rows-page';
-import { AnalyticsTimeBar } from '../analytics-time-bar/analytics-time-bar';
 import {
   type AnalyticsNames,
   analyticsDrillVm,
@@ -70,36 +69,40 @@ import { bindAnalyticsRouteInputs } from './route-inputs';
 const INFO_CLOSE = 'close';
 
 /**
- * THE «АНАЛИЗИ» SCREEN (`/staff/analytics`, `docs/designs/staff-analytics.md`
+ * THE «АНАЛИЗИ» SCREEN (`/staff/analytics`, `docs/designs/staff-analytics-v2.md`
  * «The screen») — a routed page on the house column: the period switcher,
- * the admin's scope picker, the hero, the time bar, the open-hours card,
- * the services, the clients' figures and, for the shop, fill by weekday and
- * booking origins; every figure with its ⓘ, every figure opening to its
- * rows on a pushed page (`lib-analytics-rows-page`, deferred). The store
- * holds the state, the presenter words it; this wires the two to the DS.
+ * the admin's scope picker, then the seven questions drawn with the chart
+ * kit — the hero and its takings line, the time's stacked day bars with
+ * their legend, when the chair is busy (the heatmap), the open-hours card
+ * with its seven bars, the services ranked, the clients' figures and, for
+ * the shop, where bookings come from; every figure with its ⓘ, every figure
+ * opening to its rows on a pushed page (`lib-analytics-rows-page`,
+ * deferred). The store holds the state, the presenter words it; this wires
+ * the two to the DS.
  */
 @Component({
   selector: 'lib-staff-analytics',
   imports: [
     AnalyticsRowsPage,
-    AnalyticsTimeBar,
     NgTemplateOutlet,
     RouterLink,
     UiAlert,
+    UiBarChart,
     UiButton,
     UiCard,
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiGrid,
+    UiHeatmap,
     UiIcon,
     UiInteractiveDirective,
+    UiLineChart,
     UiListGroup,
     UiListRow,
     UiMetric,
     UiNotice,
     UiPaddingDirective,
     UiPersonTile,
-    UiProgressView,
     UiSectionHeader,
     UiSegmentedControl,
     UiSkeleton,

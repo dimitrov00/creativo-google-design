@@ -2,6 +2,7 @@ import {
   AppointmentId,
   AttendanceState,
   BarberId,
+  HourOfDay,
   LocalDate,
   MinuteCount,
   MinuteOfDay,
@@ -49,6 +50,8 @@ type FieldReader = {
   readonly flagOrNull: (name: string) => boolean | null;
   readonly localDate: (name: string) => LocalDate;
   readonly localDateOrNull: (name: string) => LocalDate | null;
+  readonly weekdayOrNull: (name: string) => Weekday | null;
+  readonly hourOrNull: (name: string) => HourOfDay | null;
   readonly list: (name: string) => readonly unknown[];
   readonly field: (name: string) => unknown;
 };
@@ -97,6 +100,8 @@ function readerOf(source: unknown): FieldReader {
     flagOrNull: (name) => nullable(name, isFlag, false),
     localDate: (name) => guarded(name, LocalDate.is, NO_DATE),
     localDateOrNull: (name) => nullable(name, LocalDate.is, NO_DATE),
+    weekdayOrNull: (name) => nullable(name, Weekday.is, Weekday.Mon),
+    hourOrNull: (name) => nullable(name, HourOfDay.is, HourOfDay.ALL[0]),
     list: (name) => {
       const value = field(name);
       if (Array.isArray(value)) return value;
@@ -198,6 +203,52 @@ function dayRowOf(raw: unknown): AnalyticsReport.DayRow | null {
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }
 
+function seriesPointOf(raw: unknown): AnalyticsReport.SeriesPoint | null {
+  const r = readerOf(raw);
+  const row = {
+    localDate: r.localDate('localDate'),
+    takingsCents: r.cents('takingsCents'),
+    comparisonTakingsCents: r.centsOrNull('comparisonTakingsCents'),
+  };
+  return r.ok() ? row : null;
+}
+
+function timePointOf(raw: unknown): AnalyticsReport.TimePoint | null {
+  const r = readerOf(raw);
+  const row = {
+    localDate: r.localDate('localDate'),
+    workedMinutes: r.minutes('workedMinutes'),
+    noShowMinutes: r.minutes('noShowMinutes'),
+    unmarkedMinutes: r.minutes('unmarkedMinutes'),
+    blockedMinutes: r.minutes('blockedMinutes'),
+    unsoldMinutes: r.minutes('unsoldMinutes'),
+    otherMinutes: r.minutes('otherMinutes'),
+  };
+  return r.ok() ? row : null;
+}
+
+function hourCellOf(raw: unknown): AnalyticsReport.HourCell | null {
+  const r = readerOf(raw);
+  const weekday = r.field('weekday');
+  const hour = r.field('hour');
+  const row = {
+    workedMinutes: r.minutes('workedMinutes'),
+    rosteredMinutes: r.minutes('rosteredMinutes'),
+  };
+  return r.ok() && Weekday.is(weekday) && HourOfDay.is(hour)
+    ? { weekday, hour, ...row }
+    : null;
+}
+
+function aheadDayOf(raw: unknown): AnalyticsReport.AheadDay | null {
+  const r = readerOf(raw);
+  const row = {
+    localDate: r.localDate('localDate'),
+    openMinutes: r.minutes('openMinutes'),
+  };
+  return r.ok() ? row : null;
+}
+
 function seatRowOf(raw: unknown): AnalyticsReport.SeatRow | null {
   const r = readerOf(raw);
   const appointmentId = r.field('appointmentId');
@@ -235,7 +286,10 @@ export const AnalyticsCall = {
    * primitive's guard (`CallAnswer`, Law 7.4) and every row list entry by
    * entry; anything missing or malformed is `PIPELINE_UNKNOWN`, the whole
    * answer refused. A list may be empty — a shop report's seat rows always
-   * are, and so are a cached entry's (the cache keeps no seat rows).
+   * are, and so are a cached entry's (the cache keeps no seat rows). A
+   * cached v1 entry without the chart lists (`reportSeries`, …) is refused
+   * the same way: the catalogue version stays 1 until PR 4a, so the
+   * decoder's refusal is what drops it.
    */
   decodeReport(raw: unknown): Result<AnalyticsReport, PipelineError> {
     const r = readerOf(raw);
@@ -285,7 +339,16 @@ export const AnalyticsCall = {
 
       reportBookableOpenMinutes: r.minutes('reportBookableOpenMinutes'),
       reportEmptiestLocalDate: r.localDateOrNull('reportEmptiestLocalDate'),
+
+      reportBusiestWeekday: r.weekdayOrNull('reportBusiestWeekday'),
+      reportBusiestHour: r.hourOrNull('reportBusiestHour'),
+      reportEmptiestWeekday: r.weekdayOrNull('reportEmptiestWeekday'),
+      reportEmptiestHour: r.hourOrNull('reportEmptiestHour'),
     };
+    const series = rowsOf(r.list('reportSeries'), seriesPointOf);
+    const timeSeries = rowsOf(r.list('reportTimeSeries'), timePointOf);
+    const hourGrid = rowsOf(r.list('reportHourGrid'), hourCellOf);
+    const aheadDays = rowsOf(r.list('reportAheadDays'), aheadDayOf);
     const services = rowsOf(r.list('reportServices'), serviceRowOf);
     const weekdayFill = rowsOf(r.list('reportWeekdayFill'), weekdayFillOf);
     const origins = rowsOf(r.list('reportOrigins'), originShareOf);
@@ -300,6 +363,10 @@ export const AnalyticsCall = {
       !UtcEpochMs.is(computedAt) ||
       !Tag.has(AnalyticsSpan, span) ||
       (scope !== null && !BarberId.is(scope)) ||
+      series === null ||
+      timeSeries === null ||
+      hourGrid === null ||
+      aheadDays === null ||
       services === null ||
       weekdayFill === null ||
       origins === null ||
@@ -315,6 +382,10 @@ export const AnalyticsCall = {
       reportScopeBarberId: scope,
       reportAnalyticsSpan: span,
       ...figures,
+      reportSeries: series,
+      reportTimeSeries: timeSeries,
+      reportHourGrid: hourGrid,
+      reportAheadDays: aheadDays,
       reportServices: services,
       reportWeekdayFill: weekdayFill,
       reportOrigins: origins,

@@ -13,6 +13,7 @@ import {
   CancelledBy,
   ClientStatsPolicy,
   LocationStatus,
+  MinuteRange,
   Placement,
   Role,
   Seat,
@@ -31,6 +32,7 @@ import {
   ServiceId,
   UserId,
   UtcEpochMs,
+  Weekday,
 } from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -40,6 +42,7 @@ import {
   barberScheduleFixture,
   blockedUserFixture,
   deepFreeze,
+  endMinute,
   localDate,
   locationFixture,
   minute,
@@ -111,10 +114,12 @@ const dayOf = (
   barberId: BarberId,
   localDay: LocalDate,
   parts: Partial<Record<keyof ChairDay, number>> = {},
+  stretches: readonly MinuteRange[] = [],
 ): AnalyticsDay =>
   ({
     barberId,
     localDate: localDay,
+    stretches,
     rosteredMinutes: zero,
     workedMinutes: zero,
     noShowMinutes: zero,
@@ -543,6 +548,290 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(report.reportBookableOpenMinutes).toBe(330);
     expect(report.reportEmptiestLocalDate).toBe(day(2));
     expect(S.report(input()).reportEmptiestLocalDate).toBeNull();
+    // The card's bars: today and the six after it, summing to the total.
+    expect(report.reportAheadDays.map((row) => row.localDate)).toEqual(
+      S.aheadDaysOf(TODAY),
+    );
+    expect(report.reportAheadDays.map((row) => row.openMinutes)).toEqual([
+      0, 90, 120, 120, 0, 0, 0,
+    ]);
+    expect(
+      report.reportAheadDays.reduce((sum, row) => sum + row.openMinutes, 0),
+    ).toBe(report.reportBookableOpenMinutes);
+    expect(S.report(input()).reportAheadDays).toHaveLength(7);
+  });
+
+  describe('the charts (v2)', () => {
+    const stretch = (start: number, end: number): MinuteRange =>
+      MinuteRange.of(minute(start), endMinute(end));
+    const sum = <T>(rows: readonly T[], read: (row: T) => number): number =>
+      rows.reduce((total, row) => total + read(row), 0);
+
+    it('charts the takings and the time bars day by day, each series summing to its total', () => {
+      const report = S.report(
+        input({
+          visits: [
+            visit('a1', day(-3), [seat(ivan, 2000), seat(niko, 900)]),
+            visit('a2', day(-2), [
+              seat(ivan, 1500),
+              seat(ivan, 1000, SeatOutcome.noShow(stamp)),
+            ]),
+            visit('a3', TODAY, [seat(ivan, 500, undefined, cut, 13)]),
+          ],
+          days: [
+            dayOf(ivan, day(-3), {
+              rosteredMinutes: 600,
+              workedMinutes: 300,
+              noShowMinutes: 30,
+              unmarkedMinutes: 15,
+              blockedMinutes: 60,
+              pastBlockedMinutes: 60,
+              unsoldMinutes: 150,
+              heldMinutes: 30,
+              pastHeldMinutes: 30,
+              shortGapMinutes: 15,
+              pastShortGapMinutes: 15,
+            }),
+            dayOf(ivan, TODAY, {
+              rosteredMinutes: 600,
+              workedMinutes: 120,
+              unsoldMinutes: 60,
+              blockedMinutes: 60,
+              pastBlockedMinutes: 20,
+              openMinutes: 360,
+            }),
+            // Niko's day is out of scope.
+            dayOf(niko, day(-3), { rosteredMinutes: 600, workedMinutes: 600 }),
+          ],
+        }),
+      );
+      // October, day by day: 31 points, the visits' days carrying the money.
+      expect(report.reportSeries).toHaveLength(31);
+      expect(report.reportSeries.map((p) => p.localDate)).toEqual(
+        AnalyticsPeriod.days(OCTOBER),
+      );
+      const point = (localDay: LocalDate) =>
+        report.reportSeries.find((p) => p.localDate === localDay);
+      expect(point(day(-3))?.takingsCents).toBe(2000);
+      expect(point(day(-2))?.takingsCents).toBe(1500);
+      expect(point(TODAY)?.takingsCents).toBe(500);
+      expect(sum(report.reportSeries, (p) => p.takingsCents)).toBe(
+        report.reportTakingsCents,
+      );
+      // No previous visits: September's 30 points are 0; October's 31st has no counterpart.
+      expect(
+        report.reportSeries
+          .slice(0, 30)
+          .every((p) => p.comparisonTakingsCents === 0),
+      ).toBe(true);
+      expect(report.reportSeries[30]?.comparisonTakingsCents).toBeNull();
+
+      expect(report.reportTimeSeries).toHaveLength(31);
+      const bar = (localDay: LocalDate) =>
+        report.reportTimeSeries.find((p) => p.localDate === localDay);
+      expect(bar(day(-3))).toEqual({
+        localDate: day(-3),
+        workedMinutes: 300,
+        noShowMinutes: 30,
+        unmarkedMinutes: 15,
+        blockedMinutes: 60,
+        unsoldMinutes: 150,
+        otherMinutes: 45,
+      });
+      expect(bar(TODAY)?.blockedMinutes).toBe(20);
+      expect(sum(report.reportTimeSeries, (p) => p.workedMinutes)).toBe(
+        report.reportBarWorkedMinutes,
+      );
+      expect(sum(report.reportTimeSeries, (p) => p.noShowMinutes)).toBe(
+        report.reportBarNoShowMinutes,
+      );
+      expect(sum(report.reportTimeSeries, (p) => p.unmarkedMinutes)).toBe(
+        report.reportBarUnmarkedMinutes,
+      );
+      expect(sum(report.reportTimeSeries, (p) => p.blockedMinutes)).toBe(
+        report.reportBarBlockedMinutes,
+      );
+      expect(sum(report.reportTimeSeries, (p) => p.unsoldMinutes)).toBe(
+        report.reportBarUnsoldMinutes,
+      );
+      expect(sum(report.reportTimeSeries, (p) => p.otherMinutes)).toBe(
+        report.reportBarOtherMinutes,
+      );
+    });
+
+    it('switches to ISO weeks past 93 days: the first day, then every Monday', () => {
+      const quarter = {
+        analyticsSpan: AnalyticsSpan.Month,
+        fromLocalDate: localDate('2026-01-01'),
+        toLocalDate: localDate('2026-04-03'),
+      };
+      expect(AnalyticsPeriod.length(quarter)).toBe(93);
+      expect(S.seriesStartsOf(quarter)).toEqual(AnalyticsPeriod.days(quarter));
+      const longer = { ...quarter, toLocalDate: localDate('2026-04-04') };
+      const starts = S.seriesStartsOf(longer);
+      // Thursday 1 January, then the Mondays 5 January … 30 March.
+      expect(starts[0]).toBe('2026-01-01');
+      expect(starts[1]).toBe('2026-01-05');
+      expect(starts[starts.length - 1]).toBe('2026-03-30');
+      expect(starts).toHaveLength(14);
+      expect(starts.slice(1).every((d) => LocalDate.weekday(d) === 1)).toBe(
+        true,
+      );
+
+      const report = S.report(
+        input({
+          period: longer,
+          visits: [
+            visit('w0', localDate('2026-01-03'), [seat(ivan, 1000)]),
+            visit('w1', localDate('2026-01-05'), [seat(ivan, 2000)]),
+            visit('w1b', localDate('2026-01-11'), [seat(ivan, 500)]),
+            visit('wl', localDate('2026-04-04'), [seat(ivan, 300)]),
+          ],
+          days: [
+            dayOf(ivan, localDate('2026-01-03'), { workedMinutes: 30 }),
+            dayOf(ivan, localDate('2026-04-04'), { workedMinutes: 60 }),
+          ],
+        }),
+      );
+      expect(report.reportSeries.map((p) => p.takingsCents)).toEqual([
+        1000, 2500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 300,
+      ]);
+      expect(report.reportTimeSeries.map((p) => p.workedMinutes)).toEqual([
+        30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60,
+      ]);
+      expect(sum(report.reportSeries, (p) => p.takingsCents)).toBe(
+        report.reportTakingsCents,
+      );
+    });
+
+    it('aligns the comparison by position, null where the shorter previous period ends', () => {
+      // March 2026 against February: 31 points, 28 with a counterpart.
+      const march = AnalyticsPeriod.monthOf(localDate('2026-03-01'));
+      const report = S.report(
+        input({
+          period: march,
+          visits: [visit('m', localDate('2026-03-03'), [seat(ivan, 4000)])],
+          previousVisits: [
+            visit('f', localDate('2026-02-03'), [seat(ivan, 2500)]),
+            // A no-show adds nothing to the line.
+            visit('n', localDate('2026-02-04'), [
+              seat(ivan, 2500, SeatOutcome.noShow(stamp)),
+            ]),
+          ],
+        }),
+      );
+      expect(report.reportSeries).toHaveLength(31);
+      expect(report.reportSeries[2]).toEqual({
+        localDate: localDate('2026-03-03'),
+        takingsCents: 4000,
+        comparisonTakingsCents: 2500,
+      });
+      expect(report.reportSeries[3]?.comparisonTakingsCents).toBe(0);
+      expect(
+        report.reportSeries
+          .slice(0, 28)
+          .every((p) => p.comparisonTakingsCents !== null),
+      ).toBe(true);
+      expect(
+        report.reportSeries
+          .slice(28)
+          .every((p) => p.comparisonTakingsCents === null),
+      ).toBe(true);
+    });
+
+    it('builds the hour grid from each day’s stretches and worked seats, and names the peaks from 7 rostered days', () => {
+      // Monday 5 … Sunday 11 October, each rostered 09:00–12:00.
+      const week = LocalDate.range(day(-9), day(-3));
+      const morning = [stretch(540, 720)];
+      const days = week.map((d, i) =>
+        dayOf(
+          ivan,
+          d,
+          {
+            rosteredMinutes: 180,
+            workedMinutes: i === 0 ? 30 : i === 1 ? 60 : 0,
+          },
+          morning,
+        ),
+      );
+      const visits = [
+        // Monday 10:00–10:30.
+        visit('mon', day(-9), [seat(ivan, 1000)]),
+        // Tuesday 10:00–10:30 and 10:30–11:00: the hour is full.
+        visit('tue1', day(-8), [seat(ivan, 1000)]),
+        visit('tue2', day(-8), [
+          seatFixture({
+            seatId: SeatId.of('s-tue2'),
+            barberId: ivan,
+            serviceId: cut,
+            startMinutes: minute(630),
+            terms: Seat.termsOf(termsFixture(1000, 30, 0, 0), null),
+            outcome: SeatOutcome.worked(stamp),
+          }),
+        ]),
+        // A no-show on Wednesday: not busy.
+        visit('wed', day(-7), [seat(ivan, 1000, SeatOutcome.noShow(stamp))]),
+        // Niko's worked seat on Monday: out of scope.
+        visit('niko', day(-9), [seat(niko, 1000)]),
+      ];
+      const report = S.report(input({ days, visits }));
+      expect(report.reportHourGrid).toHaveLength(21);
+      const cell = (weekday: Weekday, hour: number) =>
+        report.reportHourGrid.find(
+          (c) => c.weekday === weekday && c.hour === hour,
+        );
+      expect(cell(Weekday.Mon, 10)).toEqual({
+        weekday: Weekday.Mon,
+        hour: 10,
+        workedMinutes: 30,
+        rosteredMinutes: 60,
+      });
+      expect(cell(Weekday.Tue, 10)?.workedMinutes).toBe(60);
+      expect(cell(Weekday.Wed, 10)?.workedMinutes).toBe(0);
+      expect(cell(Weekday.Mon, 12)).toBeUndefined();
+      expect(sum(report.reportHourGrid, (c) => c.workedMinutes)).toBe(
+        report.reportWorkedMinutes,
+      );
+      expect(sum(report.reportHourGrid, (c) => c.rosteredMinutes)).toBe(
+        report.reportRosteredMinutes,
+      );
+      expect(report.reportBusiestWeekday).toBe(Weekday.Tue);
+      expect(report.reportBusiestHour).toBe(10);
+      // Every other cell is empty: the earliest of them.
+      expect(report.reportEmptiestWeekday).toBe(Weekday.Mon);
+      expect(report.reportEmptiestHour).toBe(9);
+
+      // Six rostered days: a grid, but no peaks named.
+      const six = S.report(input({ days: days.slice(1), visits }));
+      expect(six.reportHourGrid.length).toBeGreaterThan(0);
+      expect(six.reportBusiestWeekday).toBeNull();
+      expect(six.reportBusiestHour).toBeNull();
+      expect(six.reportEmptiestWeekday).toBeNull();
+      expect(six.reportEmptiestHour).toBeNull();
+    });
+
+    it('a shop report sums its barbers’ days into the same cells', () => {
+      const monday = day(-9);
+      const report = S.report(
+        input({
+          scopeBarberId: null,
+          barberIds: [ivan, niko],
+          days: [
+            dayOf(ivan, monday, { rosteredMinutes: 60 }, [stretch(600, 660)]),
+            dayOf(niko, monday, { rosteredMinutes: 60 }, [stretch(600, 660)]),
+          ],
+          visits: [visit('m', monday, [seat(ivan, 1000), seat(niko, 1000)])],
+        }),
+      );
+      expect(report.reportHourGrid).toEqual([
+        {
+          weekday: Weekday.Mon,
+          hour: 10,
+          workedMinutes: 60,
+          rosteredMinutes: 120,
+        },
+      ]);
+    });
   });
 
   it('gives a shop report a per-barber list and no seat rows', () => {
@@ -748,6 +1037,27 @@ describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
         workedMinutes: 30,
         closedDayMinutes: 0,
       });
+      // The offered stretches: the rostered ranges the hour grid buckets.
+      expect(only?.stretches).toMatchObject([
+        { startMinutes: 9 * 60, endMinutes: 18 * 60 },
+      ]);
+    });
+
+    it('offers no stretch at a shop that is not ACTIVE, nor on a CLOSED day', () => {
+      const [hidden] = days({
+        locations: [locationFixture({ locationStatus: LocationStatus.Hidden })],
+      });
+      expect(hidden?.stretches).toEqual([]);
+      const [closed] = days({
+        departures: [
+          scheduleExceptionFixture({
+            id: ScheduleExceptionId.of(BusyKey.of(ivan, monday)),
+            barberId: ivan,
+            localDate: monday,
+          }),
+        ],
+      });
+      expect(closed?.stretches).toEqual([]);
     });
 
     it('offers nothing at a shop that is not ACTIVE', () => {
@@ -1043,3 +1353,24 @@ describe('StaffAnalyticsSystem — what the screen shows (Law 10: decided here, 
 });
 
 const NO_FILTER = { serviceId: null, localDate: null } as const;
+
+describe('StaffAnalyticsSystem.seriesAverageCentsOf — the line’s dashed rule', () => {
+  it('is the rounded mean of the series’ points, in whole cents', () => {
+    const report = deepFreeze(analyticsReportFixture());
+    const sum = report.reportSeries.reduce(
+      (acc, point) => acc + point.takingsCents,
+      0,
+    );
+    expect(StaffAnalyticsSystem.seriesAverageCentsOf(report)).toBe(
+      Math.round(sum / report.reportSeries.length),
+    );
+  });
+
+  it('is null with no points', () => {
+    const report = deepFreeze({
+      ...analyticsReportFixture(),
+      reportSeries: [],
+    });
+    expect(StaffAnalyticsSystem.seriesAverageCentsOf(report)).toBeNull();
+  });
+});

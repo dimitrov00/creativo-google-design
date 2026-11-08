@@ -733,6 +733,13 @@ distinguishability of each adjacent pair of parts — consecutive entries of `[w
 no-show, unmarked, blocked, unsold, other]` and `[online, staff, unknown]`, plus the
 comparison grey beside the accent — as the Euclidean distance in OKLab × 100 ≥ 8.
 
+**Measured in PR 2 (2026-11-08): the foreground ramp is 76 / 62 / 48 %, not 50 / 32 / 18 %.**
+On white the foreground has to be mixed at 46 % or more to clear 3:1 (32 % reads 2.09:1,
+18 % 1.48:1), so the lightest grey is 48 % and the other two step up by 14 — the design's
+direction kept (blocked heaviest, unsold lighter, other lightest), every adjacent pair ≥ 10.7
+in OKLab × 100 in both themes, the comparison line at the same 48 %. The spec pins the
+measured values (`libs/ui/charts/README.md` lists them).
+
 #### Freshness
 
 «Обновено преди N мин» is the presenter's formatting of `reportComputedAtUtcMs` with `now`

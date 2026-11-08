@@ -13,6 +13,7 @@ export * from './exception-effect.data';
 export * from './geo.primitive';
 export * from './grant-status.data';
 export * from './hour-count.primitive';
+export * from './hour-of-day.data';
 export * from './identifier-channel.data';
 export * from './ids.primitive';
 export * from './local-date.primitive';

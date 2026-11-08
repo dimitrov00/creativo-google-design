@@ -77,9 +77,42 @@
   text-wrap: pretty;
 }
 
-/* A row's share bar spans the row's words. */
-.staff-analytics__share {
-  inline-size: 100%;
+/* A chart sits on the module's column with the DS's side gutter, so its
+   baseline words align with the rows above and below it. */
+.staff-analytics__chart {
+  display: block;
+  padding-inline: var(--sys-space-regular);
+}
+
+/* The legend beneath a chart: a row per part — swatch, word, figure at the
+   trailing edge in tabular figures. */
+.staff-analytics__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  margin: var(--sys-space-compact) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-analytics__legend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  min-block-size: var(--control-size-small);
+}
+
+.staff-analytics__legend-value {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The line's one legend line — the grey comparison's swatch and word. */
+.staff-analytics__legend-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  margin: var(--sys-space-compact) 0 0;
 }
 
 /* THE CLIENTS' TILES: the figure is the tile's button; its ⓘ, a sibling,

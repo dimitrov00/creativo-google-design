@@ -1,0 +1,93 @@
+@import '../charts.css';
+
+@layer sys-components {
+  .ui-line-chart {
+    display: block;
+    min-inline-size: 0;
+  }
+
+  /* THE BOX IS 5 : 2 (line-chart.ts draws its viewBox at the same ratio
+     over the measured width), so the drawing's pixels are the page's. */
+  .ui-line-chart__drawing {
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 5 / 2;
+    overflow: visible;
+  }
+
+  /* THIS PERIOD: the one accent line, two points wide, round where it
+     turns. */
+  .ui-line-chart__path {
+    fill: none;
+    stroke: var(--sys-color-accent);
+    stroke-width: var(--sys-stroke-emphasis);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* THE COMPARISON: the hook's 32 % grey as a stroke, never a fill. */
+  .ui-line-chart__comparison[data-part] {
+    fill: none;
+    stroke: var(--ui-chart-paint);
+    stroke-width: var(--sys-stroke-emphasis);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* THE AVERAGE: a dashed rule in the palette's middle grey, one point wide. */
+  .ui-line-chart__average {
+    stroke: color-mix(in srgb, var(--sys-color-foreground) 62%, transparent);
+    stroke-width: 1px;
+    stroke-dasharray: 4 4;
+  }
+
+  /* The first and last points: an 8 px accent disc in a 2 px ring of the
+     surface, so it stands clear of the line under it. */
+  .ui-line-chart__marker {
+    fill: var(--sys-color-accent);
+    stroke: var(--sys-color-surface);
+    stroke-width: var(--sys-stroke-emphasis);
+  }
+
+  /* WORDS ARE INK: the right-edge figures in the caption role, tabular,
+     the quiet ink. */
+  .ui-line-chart__edge-label {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    fill: var(--sys-color-secondary-label);
+    text-anchor: start;
+  }
+
+  /* MOTION — a new series fades in over the old one fading out, after the
+     first frame only; the global switch (reduced-motion.css) and charts.css
+     hold both still under reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-line-chart[data-settled] .ui-line-chart__path[data-enter] {
+      animation: ui-line-chart-enter var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard);
+    }
+
+    .ui-line-chart[data-settled] .ui-line-chart__path[data-leave] {
+      animation: ui-line-chart-leave var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard) forwards;
+    }
+  }
+
+  @keyframes ui-line-chart-enter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ui-line-chart-leave {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

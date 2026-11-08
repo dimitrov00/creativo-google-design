@@ -1,5 +1,10 @@
-import { AnalyticsBarPart, AnalyticsFigure } from '@core/components';
+import {
+  AnalyticsBarPart,
+  AnalyticsFigure,
+  BookingOrigin,
+} from '@core/components';
 import type { BarberId, LocalDate, ServiceId } from '@core/primitives';
+import type { UiChartPart } from '@creativo/ui/charts';
 import type { UiSegment } from '@creativo/ui/controls';
 import type { VisitSectionVm } from '@creativo/features/shared/visits';
 
@@ -43,7 +48,8 @@ export const AnalyticsTopic = {
   Rebooked: 'REBOOKED',
   NoShows: 'NO_SHOWS',
   LateCancellations: 'LATE_CANCELLATIONS',
-  Fill: 'FILL',
+  /** When the chair is busy — the weekday × hour heatmap. */
+  Busy: 'BUSY',
   Origins: 'ORIGINS',
 } as const;
 export type AnalyticsTopic =
@@ -60,9 +66,10 @@ export const FIGURE_TOPICS = {
 } as const satisfies Record<AnalyticsFigure, AnalyticsTopic>;
 
 /**
- * Each time-bar part's CSS hook (`data-part`) — the shape it is drawn as
+ * Each time-bar part's chart part (`UiChartPart` of `@creativo/ui/charts`,
+ * the `data-part` hook `charts.css` colours) — the shape it is drawn as
  * (the accent law: colour is a shape; worked is the one orange, the rest
- * graded ink). Values: external contract, the stylesheet's selectors.
+ * graded ink). Values: external contract, the kit's vocabulary.
  */
 export const BAR_PART_HOOKS = {
   [AnalyticsBarPart.Worked]: 'worked',
@@ -71,7 +78,111 @@ export const BAR_PART_HOOKS = {
   [AnalyticsBarPart.Blocked]: 'blocked',
   [AnalyticsBarPart.Unsold]: 'unsold',
   [AnalyticsBarPart.Other]: 'other',
-} as const satisfies Record<AnalyticsBarPart, string>;
+} as const satisfies Record<AnalyticsBarPart, UiChartPart>;
+
+/** Each booking origin's chart part — the origins bar's three segments. */
+export const ORIGIN_PART_HOOKS = {
+  [BookingOrigin.Online]: 'online',
+  [BookingOrigin.Staff]: 'staff',
+  [BookingOrigin.Unknown]: 'unknown',
+} as const satisfies Record<BookingOrigin, UiChartPart>;
+
+/** One bar of the kit's `ui-bar-chart`: its label and its parts, each a chart part and a value. */
+export type AnalyticsChartBarVm = {
+  readonly label: string;
+  readonly parts: readonly {
+    readonly part: UiChartPart;
+    readonly value: number;
+  }[];
+};
+
+/** One point of the takings line: the bucket's figure and the comparison aligned by position. */
+export type AnalyticsLinePointVm = {
+  readonly label: string;
+  readonly value: number;
+  readonly comparison: number | null;
+};
+
+/** The takings line (`ui-line-chart`): one point per day of the period, the comparison in grey, a dashed average. */
+export type AnalyticsSeriesVm = {
+  readonly points: readonly AnalyticsLinePointVm[];
+  readonly average: number | null;
+  /** «28,00 €» per point. */
+  readonly valueText: readonly string[];
+  /** «средно 14,00 €» — `null` without points. */
+  readonly averageText: string | null;
+  /** «предходен период» — the grey line's legend; `null` without a previous period. */
+  readonly comparisonLegend: string | null;
+  readonly label: string;
+};
+
+/** The stacked time bars (`ui-bar-chart`): a bar per day of the six parts; the legend beneath is the breakdown table. */
+export type AnalyticsTimeSeriesVm = {
+  readonly bars: readonly AnalyticsChartBarVm[];
+  /** «6 ч 30 мин» per bar — its parts together. */
+  readonly valueText: readonly string[];
+  readonly label: string;
+};
+
+/** When the chair is busy (`ui-heatmap`): weekday × hour, worked over rostered. */
+export type AnalyticsBusyVm = {
+  readonly title: string;
+  readonly rows: readonly string[];
+  readonly columns: readonly string[];
+  readonly cells: readonly {
+    readonly row: number;
+    readonly column: number;
+    readonly value: number;
+    readonly max: number;
+  }[];
+  /** «Най-натоварено: вт в 10:00 · най-спокойно: пн в 17:00», or why there is no verdict yet. */
+  readonly sentence: string;
+  readonly label: string;
+};
+
+/** The open-hours card's seven bars, the emptiest day in the accent. */
+export type AnalyticsAheadVm = {
+  readonly bars: readonly AnalyticsChartBarVm[];
+  readonly highlightIndex: number | null;
+  readonly valueText: readonly string[];
+  readonly label: string;
+};
+
+/**
+ * The services ranked (`ui-bar-chart`, horizontal): one bar per service,
+ * largest first — its word the name and the takings per hour, its figure
+ * the takings and the count — each opening its seats.
+ */
+export type AnalyticsServicesVm = {
+  readonly title: string;
+  readonly bars: readonly AnalyticsChartBarVm[];
+  /** «28,00 € · 1 път» per bar. */
+  readonly valueText: readonly string[];
+  /** The seats a bar opens; `null` for a bar that opens nothing. */
+  readonly drills: readonly (AnalyticsDrill | null)[];
+  readonly label: string;
+  /** «Още няма отработени услуги.» — `null` while there are bars. */
+  readonly empty: string | null;
+};
+
+/** One origin's row under the origins bar: its swatch, name, visits and share. */
+export type AnalyticsOriginRowVm = {
+  readonly part: UiChartPart;
+  readonly title: string;
+  readonly detail: string;
+  /** «50%». */
+  readonly value: string;
+  readonly testId: string;
+};
+
+/** Where bookings come from: one horizontal stacked bar, and its three rows with swatches. */
+export type AnalyticsOriginsVm = {
+  readonly title: string;
+  /** The one bar, as the chart takes it. */
+  readonly bars: readonly AnalyticsChartBarVm[];
+  readonly label: string;
+  readonly rows: readonly AnalyticsOriginRowVm[];
+};
 
 /** A drill-down asked for: the figure, and the service that narrows it (`null` narrows nothing). */
 export type AnalyticsDrill = {
@@ -149,6 +260,9 @@ export type AnalyticsBarSegmentVm = {
 export type AnalyticsTimeVm = {
   readonly title: string;
   readonly barName: string;
+  /** The stacked bars, a bar per day. */
+  readonly bars: AnalyticsTimeSeriesVm;
+  /** The legend beneath the bars — each part with its minutes. */
   readonly segments: readonly AnalyticsBarSegmentVm[];
   /** «Предстои: 1 ч 30 мин записани · 50 мин свободни». */
   readonly ahead: string;
@@ -171,27 +285,9 @@ export type AnalyticsOpenVm = {
   /** «Най-много: вторник, 29.09» · «Няма свободни часове…». */
   readonly detail: string;
   readonly link: AnalyticsScheduleLink | null;
+  /** The seven days' open minutes as bars, the emptiest in the accent. */
+  readonly bars: AnalyticsAheadVm;
   readonly accessibleName: string;
-};
-
-/** A row with a share bar: a service, a weekday's fill, a booking origin. */
-export type AnalyticsShareRowVm = {
-  readonly id: string;
-  readonly title: string;
-  readonly detail: string;
-  readonly value: string;
-  /** `0…1` — the bar under the row. */
-  readonly share: number;
-  /** The service the row drills into; `null` for a row that opens nothing. */
-  readonly drill: AnalyticsDrill | null;
-  readonly testId: string;
-};
-
-export type AnalyticsShareGroupVm = {
-  readonly title: string;
-  readonly rows: readonly AnalyticsShareRowVm[];
-  /** «Още няма отработени услуги.» — `null` while there are rows. */
-  readonly empty: string | null;
 };
 
 /** One of the clients' figures: a rate from its base of 20, else «3 от 9». */
@@ -220,13 +316,16 @@ export type AnalyticsEmptyVm = {
 export type AnalyticsBodyVm = {
   readonly empty: AnalyticsEmptyVm | null;
   readonly hero: AnalyticsHeroVm;
+  /** The takings line under the hero. */
+  readonly series: AnalyticsSeriesVm;
   readonly time: AnalyticsTimeVm;
+  /** When the chair is busy — `null` while the period has no rostered hour. */
+  readonly busy: AnalyticsBusyVm | null;
   readonly open: AnalyticsOpenVm;
-  readonly services: AnalyticsShareGroupVm;
+  readonly services: AnalyticsServicesVm;
   readonly clients: AnalyticsClientsVm;
-  /** The shop's alone: fill by weekday, booking origins. */
-  readonly fill: AnalyticsShareGroupVm | null;
-  readonly origins: AnalyticsShareGroupVm | null;
+  /** The shop's alone: where bookings come from. */
+  readonly origins: AnalyticsOriginsVm | null;
 };
 
 /** Why there are no figures: a refusal, or a request that failed with nothing cached. */

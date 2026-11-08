@@ -1,0 +1,39 @@
+<div class="ui-heatmap__grid" role="img" [attr.aria-label]="uiLabel()">
+  <span class="ui-heatmap__corner"></span>
+  @for (column of uiColumns(); track $index) {
+  <span class="ui-heatmap__column">{{ column }}</span>
+  } @for (row of grid(); track $index) {
+  <span class="ui-heatmap__row">{{ row.label }}</span>
+  @for (cell of row.cells; track cell.key) {
+  <span
+    class="ui-heatmap__cell"
+    [attr.data-cell]="cell.strength === null ? null : ''"
+    [style.--ui-cell-strength]="cell.strength"
+  ></span>
+  } }
+</div>
+@if (grid().length > 0) {
+<table uiVisuallyHidden class="ui-heatmap__table">
+  <caption>
+    {{ uiLabel() }}
+  </caption>
+  <thead>
+    <tr>
+      <td></td>
+      @for (column of uiColumns(); track $index) {
+      <th scope="col">{{ column }}</th>
+      }
+    </tr>
+  </thead>
+  <tbody>
+    @for (row of grid(); track $index) {
+    <tr>
+      <th scope="row">{{ row.label }}</th>
+      @for (cell of row.cells; track cell.key) {
+      <td>{{ cell.value ?? '' }}</td>
+      }
+    </tr>
+    }
+  </tbody>
+</table>
+}

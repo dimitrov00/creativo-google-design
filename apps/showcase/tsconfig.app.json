@@ -17,6 +17,9 @@
       "path": "../../libs/ecs-core/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/ui/charts/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/ui/patterns/tsconfig.lib.json"
     },
     {

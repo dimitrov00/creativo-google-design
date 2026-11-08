@@ -1,0 +1,49 @@
+@import '../charts.css';
+
+@layer sys-components {
+  .ui-heatmap {
+    display: block;
+    min-inline-size: 0;
+  }
+
+  /* A words column, then one equal column per hour (`--ui-heatmap-columns`,
+     set by heatmap.ts); 2 px of surface between cells, as between a bar's
+     parts. */
+  .ui-heatmap__grid {
+    display: grid;
+    grid-template-columns: auto repeat(
+        var(--ui-heatmap-columns, 1),
+        minmax(0, 1fr)
+      );
+    gap: 2px;
+    align-items: center;
+  }
+
+  /* A cell is square, a touch rounded; without data it is the control
+     fill (the ramp for a cell with data lives in charts.css). */
+  .ui-heatmap__cell {
+    display: block;
+    aspect-ratio: 1;
+    border-radius: calc(var(--control-radius-subtle) / 2);
+    background: var(--sys-color-fill);
+  }
+
+  /* WORDS ARE INK: the caption role in the quiet ink — hours over their
+     columns, days before their rows, a compact rung off the cells. */
+  .ui-heatmap__column,
+  .ui-heatmap__row {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--sys-color-secondary-label);
+    white-space: nowrap;
+  }
+
+  .ui-heatmap__column {
+    text-align: center;
+    padding-block-end: var(--sys-space-tight);
+  }
+
+  .ui-heatmap__row {
+    padding-inline-end: var(--sys-space-compact);
+  }
+}
