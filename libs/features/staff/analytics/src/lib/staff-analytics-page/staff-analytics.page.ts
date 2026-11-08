@@ -45,7 +45,12 @@ import {
   UiSkeleton,
   UiStack,
 } from '@creativo/ui/controls';
-import { UiBarChart, UiHeatmap, UiLineChart } from '@creativo/ui/charts';
+import {
+  UiBarChart,
+  UiHeatmap,
+  UiLineChart,
+  UiRadar,
+} from '@creativo/ui/charts';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
@@ -110,6 +115,7 @@ const INFO_CLOSE = 'close';
     UiNotice,
     UiPaddingDirective,
     UiPersonTile,
+    UiRadar,
     UiSectionHeader,
     UiSegmentedControl,
     UiSkeleton,

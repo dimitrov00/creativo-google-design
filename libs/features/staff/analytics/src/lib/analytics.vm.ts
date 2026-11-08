@@ -51,6 +51,8 @@ export const AnalyticsTopic = {
   /** When the chair is busy — the weekday × hour heatmap. */
   Busy: 'BUSY',
   Origins: 'ORIGINS',
+  /** How each barber does — the admin's radars. */
+  Radars: 'RADARS',
 } as const;
 export type AnalyticsTopic =
   (typeof AnalyticsTopic)[keyof typeof AnalyticsTopic];
@@ -173,6 +175,39 @@ export type AnalyticsOriginRowVm = {
   /** «50%». */
   readonly value: string;
   readonly testId: string;
+};
+
+/** One axis of a barber's radar: its word, this period's value and the comparison's, both 0–100 or `null`. */
+export type AnalyticsRadarAxisVm = {
+  readonly label: string;
+  readonly value: number | null;
+  readonly comparison: number | null;
+};
+
+/** One barber's radar (`ui-radar`): five axes on the shop's base, in the barber's identity tone; a tap opens their scope. */
+export type AnalyticsRadarVm = {
+  readonly barberId: BarberId;
+  readonly name: string;
+  readonly avatarSrc: string | null;
+  /** `0…4` — `--sys-identity-N` in the catalogue's barber order. */
+  readonly tone: number;
+  readonly axes: readonly AnalyticsRadarAxisVm[];
+  /** «87» per axis; the kit prints the missing word for a `null`. */
+  readonly valueText: readonly string[];
+  readonly label: string;
+  readonly accessibleName: string;
+  readonly testId: string;
+};
+
+/** «Как се справя всеки» — the admin's radars, one per barber, and the base in words. */
+export type AnalyticsRadarsVm = {
+  readonly title: string;
+  /** «спрямо най-добрия в салона» · «твърде малко бръснари за сравнение». */
+  readonly subtitle: string;
+  readonly missingText: string;
+  /** «предходен период» — `null` when no radar carries a comparison. */
+  readonly comparisonLegend: string | null;
+  readonly radars: readonly AnalyticsRadarVm[];
 };
 
 /** Where bookings come from: one horizontal stacked bar, and its three rows with swatches. */
@@ -390,6 +425,8 @@ export type AnalyticsBodyVm = {
   readonly clients: AnalyticsClientsVm;
   /** The shop's alone: where bookings come from. */
   readonly origins: AnalyticsOriginsVm | null;
+  /** The admin's radars — the shop scope on MONTH, YEAR and CUSTOM; `null` elsewhere. */
+  readonly radars: AnalyticsRadarsVm | null;
 };
 
 /** Why there are no figures: a refusal, or a request that failed with nothing cached. */

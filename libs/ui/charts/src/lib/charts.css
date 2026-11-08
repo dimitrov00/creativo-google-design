@@ -74,6 +74,35 @@
     );
   }
 
+  /* ── the identity tones ────────────────────────────────────────────────
+     A series that is a PERSON — the admin's one radar per barber — carries
+     `data-tone` 0…4 on its host and paints in that barber's identity tone
+     (`--sys-identity-N`, the chair's colour in the schedule, in the
+     catalogue's barber order), never a part colour: the hook says WHOSE,
+     a part says WHAT. The host's descendants inherit the paint, so a
+     legend's `.ui-chart-swatch` with the same `data-tone` matches. These
+     are not pinned by chart-palette.spec.ts: identity tones are the
+     schedule's, not series parts, and already clear their own grounds. */
+  [data-tone='0'] {
+    --ui-chart-paint: var(--sys-identity-0);
+  }
+
+  [data-tone='1'] {
+    --ui-chart-paint: var(--sys-identity-1);
+  }
+
+  [data-tone='2'] {
+    --ui-chart-paint: var(--sys-identity-2);
+  }
+
+  [data-tone='3'] {
+    --ui-chart-paint: var(--sys-identity-3);
+  }
+
+  [data-tone='4'] {
+    --ui-chart-paint: var(--sys-identity-4);
+  }
+
   /* A mark in an SVG: the paint as its fill, and a hairline edge in the
      separator, so a quiet grey still has an outline on the card. */
   svg [data-part] {
@@ -138,7 +167,8 @@
      promise for a page that imports the kit without it. */
   @media (prefers-reduced-motion: reduce) {
     .ui-bar-chart__segment,
-    .ui-line-chart__path {
+    .ui-line-chart__path,
+    .ui-radar__polygon {
       transition: none;
       animation: none;
     }

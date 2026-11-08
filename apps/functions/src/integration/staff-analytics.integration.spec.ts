@@ -10,6 +10,7 @@ import {
   DiscountSource,
   ExceptionEffectRule,
   MinuteRange,
+  RadarBase,
   Role,
   Seat,
   SeatOutcome,
@@ -291,6 +292,14 @@ describe('staffAnalytics (emulator)', () => {
     );
     expect(niko.reportNoShowCount).toBe(1);
     expect(shop.reportRebookedCount).toBe(1);
+    // PR 5: the shop's MONTH carries a radar row per barber, every axis under
+    // the floors of this small fixture; a barber's report carries none.
+    expect(shop.reportRadarBase).toBe(RadarBase.BestOfShop);
+    expect(shop.reportRadars.map((row) => row.barberId)).toEqual([IVAN, NIKO]);
+    expect(shop.reportRadars[0]?.takingsPerHour).toBeNull();
+    expect(ivan.reportRadars).toEqual([]);
+    expect(ivan.reportRadarBase).toBe(RadarBase.TooFewBarbers);
+    expect(ivan.reportComparisonBarbers).toEqual([]);
   });
 
   it('refuses a period 13 months back', async () => {

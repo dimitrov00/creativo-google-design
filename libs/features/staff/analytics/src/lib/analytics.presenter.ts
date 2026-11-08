@@ -67,6 +67,7 @@ import {
   type AnalyticsOpenVm,
   type AnalyticsOriginsVm,
   type AnalyticsPeriodVm,
+  type AnalyticsRadarsVm,
   type AnalyticsRangeCheck,
   AnalyticsRangeRefusal,
   type AnalyticsRangeVm,
@@ -461,6 +462,86 @@ function bodyOf(
     services: servicesOf(input, report, screen),
     clients: clientsOf(input, report, screen),
     origins: screen.shopScope ? originsOf(input, report) : null,
+    radars: screen.shopScope ? radarsOf(input, report) : null,
+  };
+}
+
+// ── The admin's radars ────────────────────────────────────────────────────
+
+/** The identity tones, in the catalogue's barber order. */
+const IDENTITY_TONES = 5;
+
+/**
+ * «Как се справя всеки»: one radar per barber on the shop's base, the
+ * comparison period's polygon on the same base; `null` on a span the
+ * report carries no radars for (DAY, WEEK — the report's own rule: it
+ * answers none). With too few barbers the section holds the base's word
+ * alone.
+ */
+function radarsOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsRadarsVm | null {
+  const { words } = input;
+  const span = report.reportAnalyticsSpan;
+  if (span === AnalyticsSpan.Day || span === AnalyticsSpan.Week) return null;
+  const lang = words.lang;
+  const axisWords = [
+    words.radars.axis.takingsPerHour,
+    words.radars.axis.fill,
+    words.radars.axis.rebooking,
+    words.radars.axis.tipsRate,
+    words.radars.axis.reliability,
+  ];
+  const radars = report.reportRadars.map((row, i) => {
+    const values: readonly (number | null)[] = [
+      row.takingsPerHour,
+      row.fill,
+      row.rebooking,
+      row.tipsRate,
+      row.reliability,
+    ];
+    const comparisons: readonly (number | null)[] = [
+      row.comparisonTakingsPerHour,
+      row.comparisonFill,
+      row.comparisonRebooking,
+      row.comparisonTipsRate,
+      row.comparisonReliability,
+    ];
+    const name = input.names.barberName(row.barberId) ?? words.scope.barber;
+    const axes = axisWords.map((label, a) => ({
+      label,
+      value: values.at(a) ?? null,
+      comparison: comparisons.at(a) ?? null,
+    }));
+    return {
+      barberId: row.barberId,
+      name,
+      avatarSrc: input.names.barberAvatarSrc(row.barberId),
+      tone: i % IDENTITY_TONES,
+      axes,
+      valueText: axes.map((axis) =>
+        axis.value === null
+          ? words.radars.missing
+          : formatCount(Math.round(axis.value), lang),
+      ),
+      label: `${name}: ${axes
+        .map(
+          (axis) =>
+            `${axis.label} ${axis.value === null ? words.radars.missing : formatCount(Math.round(axis.value), lang)}`,
+        )
+        .join(', ')}`,
+      accessibleName: words.radars.open(name),
+      testId: `analytics-radar-${row.barberId}`,
+    };
+  });
+  return {
+    title: words.radars.title,
+    subtitle: words.radars.base[report.reportRadarBase],
+    missingText: words.radars.missing,
+    comparisonLegend:
+      report.reportHeroPreviousCents === null ? null : words.radars.comparison,
+    radars,
   };
 }
 

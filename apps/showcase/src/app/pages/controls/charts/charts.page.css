@@ -12,6 +12,24 @@
   inline-size: calc(var(--sys-space-unit) * 30);
 }
 
+/* The radars: a card per barber, as many across as fit a phone's column each. */
+.charts__radars {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc(var(--sys-space-unit) * 70), 1fr)
+  );
+  gap: var(--sys-space-regular);
+}
+
+/* The barber's name over their radar, their swatch before it. */
+.charts__radar-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  margin: 0;
+}
+
 /* The legend's rows: swatch, word, figure at the end. */
 .charts__legend {
   display: flex;

@@ -717,6 +717,87 @@
         </ul>
       </ui-bar-chart>
     </section>
+    }
+
+    <!-- THE ADMIN'S RADARS: one per barber on the shop's base, the previous
+         period as a grey outline; a tap opens that barber's scope (CUJ 5). -->
+    @if (body.radars; as radars) {
+    <section
+      class="staff-analytics__module"
+      aria-labelledby="analytics-radars-title"
+      data-testid="analytics-radars"
+    >
+      <ui-section-header uiHeaderProminence="increased">
+        <h2 uiTitle id="analytics-radars-title">{{ radars.title }}</h2>
+        <button
+          uiSectionAction
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="vm.infoLabels[Topics.Radars]"
+          data-testid="analytics-info-RADARS"
+          (click)="openInfo(Topics.Radars)"
+        >
+          <ui-icon uiName="service.details" />
+        </button>
+      </ui-section-header>
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="staff-analytics__footnote"
+        data-testid="analytics-radars-base"
+      >
+        {{ radars.subtitle }}
+      </p>
+      @if (radars.radars.length > 0) {
+      <!-- One radar a row: five Bulgarian axis words need the whole width. -->
+      <ui-grid [uiColumns]="1" uiSpacing="compact">
+        @for (radar of radars.radars; track radar.barberId) {
+        <button
+          uiCard
+          type="button"
+          uiTone="elevated"
+          uiPadding="regular"
+          [uiInteractive]="true"
+          class="staff-analytics__radar"
+          [attr.aria-label]="radar.accessibleName"
+          [attr.data-testid]="radar.testId"
+          (click)="pickScope(radar.barberId)"
+        >
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="callout" class="staff-analytics__radar-name"
+              >{{ radar.name }}</span
+            >
+            <ui-radar
+              [uiAxes]="radar.axes"
+              [uiValueText]="radar.valueText"
+              [uiMissingText]="radars.missingText"
+              [uiTone]="radar.tone"
+              [uiLabel]="radar.label"
+            />
+          </ui-stack>
+        </button>
+        }
+      </ui-grid>
+      @if (radars.comparisonLegend; as legend) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="staff-analytics__legend-line"
+      >
+        <span
+          class="ui-chart-swatch"
+          data-part="comparison"
+          aria-hidden="true"
+        ></span>
+        {{ legend }}
+      </p>
+      } }
+    </section>
     } }
   </div>
   <!-- THE CUSTOM RANGE: two dates and «Приложи», the store's verdict worded. -->

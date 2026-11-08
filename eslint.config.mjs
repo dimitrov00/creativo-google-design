@@ -661,6 +661,7 @@ export default [
             'libs/ui/patterns/src/lib/gauge/gauge.ts',
             'libs/ui/charts/src/lib/bar-chart/bar-chart.html',
             'libs/ui/charts/src/lib/line-chart/line-chart.html',
+            'libs/ui/charts/src/lib/radar/radar.html',
           ],
         },
       ],

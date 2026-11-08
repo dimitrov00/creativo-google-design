@@ -5,7 +5,9 @@ import {
   type AnalyticsReport,
   BookingOrigin,
   type DayRow,
+  RadarBase,
 } from '@core/components';
+import { AnalyticsRadarSystem } from '@core/systems';
 import {
   AppointmentId,
   AttendanceState,
@@ -263,6 +265,9 @@ export function analyticsReportFixture(
       { bookingOrigin: BookingOrigin.Unknown, visitCount: 0 },
     ],
     reportBarbers: [],
+    reportComparisonBarbers: [],
+    reportRadars: [],
+    reportRadarBase: RadarBase.TooFewBarbers,
     reportDayRows: [
       dayRow(ivan, '2026-09-14', 270),
       dayRow(ivan, '2026-09-15', 210),
@@ -292,35 +297,116 @@ export function analyticsReportFixture(
   };
 }
 
-/** The shop's September 2026: two barbers, their sums the shop's, no seat rows. */
-export function shopReportFixture(
-  overrides: Partial<AnalyticsReport> = {},
-): AnalyticsReport {
-  const barber = (
-    barberId: BarberId,
-    takings: number,
-  ): AnalyticsReport.BarberFigures => ({
+/** One barber's figures of a shop report — the minutes and money given, the counts over the radar's floors (below). */
+function barberFigures(
+  barberId: BarberId,
+  figures: {
+    rostered: number;
+    worked: number;
+    takings: number;
+    tips: number;
+    /** Σ the worked seats' durations — the hour of service the radar divides by. */
+    serviceMinutes: number;
+    workedSeats: number;
+    rosteredDays: number;
+    rebooked: readonly [count: number, base: number];
+    noShows: readonly [count: number, base: number];
+  },
+): AnalyticsReport.BarberFigures {
+  const [rebookedCount, rebookedBase] = figures.rebooked;
+  const [noShowCount, noShowBase] = figures.noShows;
+  return {
     barberId,
-    rosteredMinutes: m(540),
-    workedMinutes: m(240),
+    rosteredMinutes: m(figures.rostered),
+    workedMinutes: m(figures.worked),
     noShowMinutes: m(30),
     unmarkedMinutes: m(0),
     blockedMinutes: m(60),
     unsoldMinutes: m(100),
     openMinutes: m(25),
-    takingsCents: cents(takings),
-    tipsCents: cents(250),
-    rebookedCount: 1,
-    rebookedBase: 1,
-    rebookedRate: null,
-    noShowCount: 0,
-    noShowBase: 1,
-    noShowRate: null,
+    takingsCents: cents(figures.takings),
+    tipsCents: cents(figures.tips),
+    rebookedCount,
+    rebookedBase,
+    rebookedRate: rebookedCount / rebookedBase,
+    noShowCount,
+    noShowBase,
+    noShowRate: noShowCount / noShowBase,
     lateCancellationCount: 0,
-  });
+    serviceMinutes: m(figures.serviceMinutes),
+    workedSeatCount: figures.workedSeats,
+    rosteredDayCount: figures.rosteredDays,
+  };
+}
+
+/**
+ * The shop's September 2026: two barbers whose minutes and takings sum to
+ * the shop's (540 + 540 rostered, 240 + 240 worked, 28,00 € + 17,50 €), no
+ * seat rows — and, since v2 PR 5, the admin's radar over them. Each
+ * barber's counts clear every floor (24 and 21 worked seats, 8 and 7
+ * rostered days, 20 in the rebooking base, 25 and 24 in the no-show base),
+ * so each axis has a value:
+ *
+ * | axis (raw)         | ivan                 | niko                  | best    |
+ * | ------------------ | -------------------- | --------------------- | ------- |
+ * | € per service hour | 2800 ÷ 240 × 60 = 700 | 1750 ÷ 210 × 60 = 500 | 700     |
+ * | fill               | 240 ÷ 540 = 4⁄9       | 240 ÷ 540 = 4⁄9        | 4⁄9      |
+ * | rebooking          | 12 ÷ 20 = 0.6         | 8 ÷ 20 = 0.4           | 0.6     |
+ * | tips rate          | 250 ÷ 2800 = 5⁄56     | 250 ÷ 1750 = 1⁄7       | 1⁄7      |
+ * | reliability (abs.) | (1 − 1⁄25) × 100 = 96 | (1 − 3⁄24) × 100 = 87.5 | —     |
+ *
+ * so Ivan's radar reads 100 · 100 · 100 · 62.5 · 96 and Niko's ≈ 71.4 · 100
+ * · 66.7 · 100 · 87.5. Only Ivan has comparison figures (August: 35,00 €
+ * over 300 service minutes = 700 an hour → 100; 240 ÷ 600 = 0.4 → 90; 10 ÷
+ * 20 = 0.5 → 83.3; 300 ÷ 3500 = 3⁄35 → 60; (1 − 2⁄27) × 100 ≈ 92.6); Niko's
+ * comparison axes are all `null`. The rows are `AnalyticsRadarSystem.radarsOf`
+ * over these figures, so they can never drift from them.
+ */
+export function shopReportFixture(
+  overrides: Partial<AnalyticsReport> = {},
+): AnalyticsReport {
+  const shopBarbers: readonly AnalyticsReport.BarberFigures[] = [
+    barberFigures(ivan, {
+      rostered: 540,
+      worked: 240,
+      takings: 2800,
+      tips: 250,
+      serviceMinutes: 240,
+      workedSeats: 24,
+      rosteredDays: 8,
+      rebooked: [12, 20],
+      noShows: [1, 25],
+    }),
+    barberFigures(niko, {
+      rostered: 540,
+      worked: 240,
+      takings: 1750,
+      tips: 250,
+      serviceMinutes: 210,
+      workedSeats: 21,
+      rosteredDays: 7,
+      rebooked: [8, 20],
+      noShows: [3, 24],
+    }),
+  ];
+  const comparisonBarbers: readonly AnalyticsReport.BarberFigures[] = [
+    barberFigures(ivan, {
+      rostered: 600,
+      worked: 240,
+      takings: 3500,
+      tips: 300,
+      serviceMinutes: 300,
+      workedSeats: 25,
+      rosteredDays: 9,
+      rebooked: [10, 20],
+      noShows: [2, 27],
+    }),
+  ];
   return analyticsReportFixture({
     reportScopeBarberId: null,
-    reportBarbers: [barber(ivan, 2800), barber(niko, 1750)],
+    reportBarbers: shopBarbers,
+    reportComparisonBarbers: comparisonBarbers,
+    ...AnalyticsRadarSystem.radarsOf(shopBarbers, comparisonBarbers),
     reportDayRows: [
       dayRow(ivan, '2026-09-14', 270),
       dayRow(niko, '2026-09-14', 210),

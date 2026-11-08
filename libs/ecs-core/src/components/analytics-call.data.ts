@@ -18,7 +18,11 @@ import {
 } from '@core/primitives';
 import type { PipelineError } from '@core/errors';
 import { AnalyticsComparison, AnalyticsSpan } from './analytics-period.data';
-import { type AnalyticsReport, BookingOrigin } from './analytics-report.data';
+import {
+  type AnalyticsReport,
+  BookingOrigin,
+  RadarBase,
+} from './analytics-report.data';
 import { CallAnswer } from './call-answer.data';
 import type { DayRow } from './day-figures.data';
 
@@ -57,6 +61,8 @@ type FieldReader = {
   readonly centsOrNull: (name: string) => PriceCents | null;
   readonly count: (name: string) => number;
   readonly rate: (name: string) => number | null;
+  /** A radar axis: a finite value from 0 up — a comparison axis on this period's base may exceed 100 — or `null`. */
+  readonly axis: (name: string) => number | null;
   readonly flag: (name: string) => boolean;
   readonly flagOrNull: (name: string) => boolean | null;
   readonly localDate: (name: string) => LocalDate;
@@ -99,6 +105,8 @@ function readerOf(source: unknown): FieldReader {
     typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0;
   const isRate = (raw: unknown): raw is number =>
     typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 && raw <= 1;
+  const isAxis = (raw: unknown): raw is number =>
+    typeof raw === 'number' && Number.isFinite(raw) && raw >= 0;
   const isFlag = (raw: unknown): raw is boolean => typeof raw === 'boolean';
   return {
     ok: () => ok,
@@ -107,6 +115,7 @@ function readerOf(source: unknown): FieldReader {
     centsOrNull: (name) => nullable(name, PriceCents.is, PriceCents.ZERO),
     count: (name) => guarded(name, isCount, 0),
     rate: (name) => nullable(name, isRate, 0),
+    axis: (name) => nullable(name, isAxis, 0),
     flag: (name) => guarded(name, isFlag, false),
     flagOrNull: (name) => nullable(name, isFlag, false),
     localDate: (name) => guarded(name, LocalDate.is, NO_DATE),
@@ -189,6 +198,27 @@ function barberFiguresOf(raw: unknown): AnalyticsReport.BarberFigures | null {
     noShowBase: r.count('noShowBase'),
     noShowRate: r.rate('noShowRate'),
     lateCancellationCount: r.count('lateCancellationCount'),
+    serviceMinutes: r.minutes('serviceMinutes'),
+    workedSeatCount: r.count('workedSeatCount'),
+    rosteredDayCount: r.count('rosteredDayCount'),
+  };
+  return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
+}
+
+function radarRowOf(raw: unknown): AnalyticsReport.RadarRow | null {
+  const r = readerOf(raw);
+  const barberId = r.field('barberId');
+  const row = {
+    takingsPerHour: r.axis('takingsPerHour'),
+    fill: r.axis('fill'),
+    rebooking: r.axis('rebooking'),
+    tipsRate: r.axis('tipsRate'),
+    reliability: r.axis('reliability'),
+    comparisonTakingsPerHour: r.axis('comparisonTakingsPerHour'),
+    comparisonFill: r.axis('comparisonFill'),
+    comparisonRebooking: r.axis('comparisonRebooking'),
+    comparisonTipsRate: r.axis('comparisonTipsRate'),
+    comparisonReliability: r.axis('comparisonReliability'),
   };
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }
@@ -315,6 +345,7 @@ export const AnalyticsCall = {
     const span = r.field('reportAnalyticsSpan');
     const comparison = r.field('reportAnalyticsComparison');
     const scope = r.field('reportScopeBarberId');
+    const radarBase = r.field('reportRadarBase');
     const figures = {
       reportFromLocalDate: r.localDate('reportFromLocalDate'),
       reportToLocalDate: r.localDate('reportToLocalDate'),
@@ -378,6 +409,11 @@ export const AnalyticsCall = {
     const weekdayFill = rowsOf(r.list('reportWeekdayFill'), weekdayFillOf);
     const origins = rowsOf(r.list('reportOrigins'), originShareOf);
     const barbers = rowsOf(r.list('reportBarbers'), barberFiguresOf);
+    const comparisonBarbers = rowsOf(
+      r.list('reportComparisonBarbers'),
+      barberFiguresOf,
+    );
+    const radars = rowsOf(r.list('reportRadars'), radarRowOf);
     const dayRows = rowsOf(r.list('reportDayRows'), dayRowOf);
     const seatRows = rowsOf(r.list('reportSeatRows'), seatRowOf);
     if (
@@ -389,6 +425,7 @@ export const AnalyticsCall = {
       !Tag.has(AnalyticsSpan, span) ||
       !Tag.has(AnalyticsComparison, comparison) ||
       (scope !== null && !BarberId.is(scope)) ||
+      !Tag.has(RadarBase, radarBase) ||
       series === null ||
       timeSeries === null ||
       hourGrid === null ||
@@ -397,6 +434,8 @@ export const AnalyticsCall = {
       weekdayFill === null ||
       origins === null ||
       barbers === null ||
+      comparisonBarbers === null ||
+      radars === null ||
       dayRows === null ||
       seatRows === null
     ) {
@@ -417,6 +456,9 @@ export const AnalyticsCall = {
       reportWeekdayFill: weekdayFill,
       reportOrigins: origins,
       reportBarbers: barbers,
+      reportComparisonBarbers: comparisonBarbers,
+      reportRadars: radars,
+      reportRadarBase: radarBase,
       reportDayRows: dayRows,
       reportSeatRows: seatRows,
     });

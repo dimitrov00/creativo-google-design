@@ -12,11 +12,12 @@ import {
   localDate,
   minute,
   seatFixture,
+  shopReportFixture,
   termsFixture,
 } from '@core/testing';
 import { AnalyticsCall } from './analytics-call.data';
 import { AnalyticsComparison, AnalyticsPeriod } from './analytics-period.data';
-import type { AnalyticsReport } from './analytics-report.data';
+import { type AnalyticsReport, RadarBase } from './analytics-report.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';
 import { Seat } from './seat.data';
 import { SeatOutcome } from './seat-outcome.data';
@@ -114,13 +115,66 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
     });
   });
 
-  it('reads a shop report back, its barbers and its empty seat rows', () => {
+  it('reads a shop report back, its barbers, its radars and its empty seat rows', () => {
     const report = reportOf(null);
     expect(report.reportBarbers).toHaveLength(2);
     expect(report.reportSeatRows).toEqual([]);
+    // Two barbers of one seat each: a radar row apiece, every axis under its floor.
+    expect(report.reportRadarBase).toBe(RadarBase.BestOfShop);
+    expect(report.reportRadars.map((row) => row.barberId)).toEqual([
+      ivan,
+      niko,
+    ]);
+    expect(report.reportRadars[0]?.takingsPerHour).toBeNull();
     expect(AnalyticsCall.decodeReport(wire(report))).toEqual({
       ok: true,
       value: report,
+    });
+  });
+
+  it('reads the radars with values, the comparison barbers and the barber figures’ new fields back (v2 PR 5)', () => {
+    const report = shopReportFixture();
+    expect(report.reportRadars).toHaveLength(2);
+    expect(report.reportComparisonBarbers).toHaveLength(1);
+    expect(report.reportRadars[0]?.takingsPerHour).toBe(100);
+    // A comparison axis on this period's base may pass 100; a null axis stays null.
+    expect(report.reportRadars[1]?.comparisonFill).toBeNull();
+    const wired = wire({
+      ...report,
+      reportRadars: [
+        {
+          ...(report.reportRadars[0] as AnalyticsReport.RadarRow),
+          comparisonFill: 112.5,
+        },
+        report.reportRadars[1] as AnalyticsReport.RadarRow,
+      ],
+    });
+    const decoded = AnalyticsCall.decodeReport(wired);
+    expect(decoded.ok && decoded.value.reportRadars[0]?.comparisonFill).toBe(
+      112.5,
+    );
+    expect(decoded.ok && decoded.value.reportBarbers).toEqual(
+      report.reportBarbers,
+    );
+    expect(decoded.ok && decoded.value.reportComparisonBarbers).toEqual(
+      report.reportComparisonBarbers,
+    );
+    expect(decoded.ok && decoded.value.reportRadarBase).toBe(
+      RadarBase.BestOfShop,
+    );
+    expect(report.reportBarbers[0]).toMatchObject({
+      serviceMinutes: 240,
+      workedSeatCount: 24,
+      rosteredDayCount: 8,
+    });
+  });
+
+  it('reads a barber report’s empty radar: no rows, no comparison barbers, the base TOO_FEW_BARBERS', () => {
+    const decoded = AnalyticsCall.decodeReport(wire(reportOf(ivan)));
+    expect(decoded.ok && decoded.value).toMatchObject({
+      reportComparisonBarbers: [],
+      reportRadars: [],
+      reportRadarBase: RadarBase.TooFewBarbers,
     });
   });
 
@@ -209,6 +263,11 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       { ...good, reportBusiestHour: 24 },
       { ...good, reportEmptiestWeekday: '2' },
       { ...good, reportEmptiestHour: 9.5 },
+      // v2 PR 5: the radar fields, absent (a PR 4b cached entry) or malformed.
+      { ...good, reportComparisonBarbers: undefined },
+      { ...good, reportRadars: undefined },
+      { ...good, reportRadarBase: undefined },
+      { ...good, reportRadarBase: 'BEST_OF_SELF' },
     ]) {
       expect(AnalyticsCall.decodeReport(broken)).toEqual(UNUSABLE);
     }
@@ -282,6 +341,49 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       {
         ...shop,
         reportBarbers: [{ ...first(shop['reportBarbers']), tipsCents: -5 }],
+      },
+      // v2 PR 5: the barber figures' new fields, the comparison barbers, the radar rows.
+      {
+        ...shop,
+        reportBarbers: [
+          { ...first(shop['reportBarbers']), serviceMinutes: undefined },
+        ],
+      },
+      {
+        ...shop,
+        reportBarbers: [
+          { ...first(shop['reportBarbers']), workedSeatCount: -1 },
+        ],
+      },
+      {
+        ...shop,
+        reportBarbers: [
+          { ...first(shop['reportBarbers']), rosteredDayCount: 1.5 },
+        ],
+      },
+      {
+        ...shop,
+        reportComparisonBarbers: [
+          { ...first(shop['reportBarbers']), barberId: 3 },
+        ],
+      },
+      {
+        ...shop,
+        reportRadars: [{ ...first(shop['reportRadars']), barberId: '' }],
+      },
+      {
+        ...shop,
+        reportRadars: [{ ...first(shop['reportRadars']), fill: -1 }],
+      },
+      {
+        ...shop,
+        reportRadars: [
+          { ...first(shop['reportRadars']), comparisonReliability: undefined },
+        ],
+      },
+      {
+        ...shop,
+        reportRadars: [{ ...first(shop['reportRadars']), reliability: 'high' }],
       },
       { ...good, reportDayRows: [null] },
     ]) {

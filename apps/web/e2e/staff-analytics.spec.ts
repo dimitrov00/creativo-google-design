@@ -8,6 +8,7 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
   startAnalyticsRecompute,
+  waitForAnalyticsDay,
   waitForAnalyticsRecompute,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
@@ -109,6 +110,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const uid = `e2e-an-barber-${run}`;
     const client = `e2e-an-client-${run}`;
     await seedUserProfile(client, { firstName: 'Петър', lastName: 'Колев' });
+    const seededAt = Date.now();
     await seedWorkedAppointment(
       `${run}-cut`,
       client,
@@ -116,6 +118,8 @@ test.describe('«Анализи» — staff analytics', () => {
       DEV_CLASSIC_CUT,
     );
     await seedWorkedAppointment(`${run}-beard`, client, monthStartAt(12));
+    // A past day's figures come from its document: let the trigger catch up.
+    await waitForAnalyticsDay('ivan', monthStartAt(11).slice(0, 10), seededAt);
     await seedUserProfile(uid, {
       firstName: 'Иван',
       lastName: 'Бръснаров',
@@ -143,8 +147,10 @@ test.describe('«Анализи» — staff analytics', () => {
     );
     await reportReady(page);
 
-    // A barber has no scope picker: the report is their own record's.
+    // A barber has no scope picker: the report is their own record's — and
+    // no radars (the admin's alone, staff-analytics-v2 PR 5).
     await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
+    await expect(page.getByTestId('analytics-radars')).toHaveCount(0);
     await expect(takingsOf(page)).toHaveText(/\d/);
 
     // THE SEVEN QUESTIONS DRAWN (staff-analytics-v2 PR 2): the takings line
@@ -218,6 +224,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const adminUid = `e2e-an-admin-${run}`;
     const client = `e2e-an-niko-client-${run}`;
     await seedUserProfile(client, { firstName: 'Стефан', lastName: 'Донев' });
+    const seededAt = Date.now();
     await seedWorkedAppointment(
       `${run}-niko`,
       client,
@@ -225,6 +232,7 @@ test.describe('«Анализи» — staff analytics', () => {
       DEV_CLASSIC_CUT,
       'niko',
     );
+    await waitForAnalyticsDay('niko', monthStartAt(15).slice(0, 10), seededAt);
     await seedUserProfile(adminUid, {
       firstName: 'Админ',
       lastName: 'Салонов',
@@ -426,6 +434,22 @@ test.describe('«Анализи» — staff analytics', () => {
     await expect(page.getByTestId('analytics-comparison-chip')).toHaveText(
       'няма данни за сравнение',
     );
+    // THE ADMIN'S RADARS (PR 5): one per barber of the shop on the year,
+    // the base named; a tap opens that barber's scope.
+    const radars = page.getByTestId('analytics-radars');
+    await expect(radars).toBeVisible();
+    await expect(radars.getByTestId('analytics-radars-base')).toHaveText(
+      'спрямо най-добрия в салона',
+    );
+    await expect(radars.locator('ui-radar')).toHaveCount(3);
+    await radars.getByTestId('analytics-radar-ivan').click();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('barber'))
+      .toBe('ivan');
+    await reportReady(page);
+    await expect(page.getByTestId('analytics-radars')).toHaveCount(0);
+    await page.getByTestId('analytics-scope-shop').click();
+    await reportReady(page);
 
     // A custom range: the month's first day to the suite's day, typed into
     // the sheet's two fields, applied, named in the URL.

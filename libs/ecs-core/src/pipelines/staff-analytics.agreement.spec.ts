@@ -450,6 +450,18 @@ describe('G5 — every drill-down’s rows add up to its figure', () => {
         noShowBase: own.reportNoShowBase,
         noShowRate: own.reportNoShowRate,
         lateCancellationCount: own.reportLateCancellationCount,
+        // PR 5: the radar's bases — the service rows' seats and minutes, the day rows' rostered days.
+        serviceMinutes: own.reportServices.reduce(
+          (sum, row) => sum + row.serviceMinutes,
+          0,
+        ),
+        workedSeatCount: own.reportServices.reduce(
+          (sum, row) => sum + row.workedSeatCount,
+          0,
+        ),
+        rosteredDayCount: own.reportDayRows.filter(
+          (row) => row.dayRosteredMinutes > 0,
+        ).length,
       });
       sums.takings += entry.takingsCents;
       sums.tips += entry.tipsCents;
@@ -699,12 +711,24 @@ describe('P2 — stored days + live days === every day live, through the pipelin
     expect(live.reportMissingDays).toBe(26 * barbers);
     expect(stored.reportMissingDays).toBe(0);
     expect(half.reportMissingDays).toBe(13 * barbers);
-    // The seat rows: the live days' only once the past ones are stored.
-    expect(stored.reportSeatRows).toEqual(
-      live.reportSeatRows.filter((row) => row.localDate >= FIRST_LIVE_DAY),
+    // The seat rows (G4): every seat of the period whether its day is
+    // stored or live — the same rows in the same order; only the rebooking
+    // mark differs, `null` on a stored day (its follow-ups are the document's).
+    const unmarked = (rows: AnalyticsReport['reportSeatRows']) =>
+      rows.map((row) => ({ ...row, seatRebooked: null }));
+    expect(unmarked(stored.reportSeatRows)).toEqual(
+      unmarked(live.reportSeatRows),
     );
-    expect(half.reportSeatRows).toEqual(
-      live.reportSeatRows.filter((row) => row.localDate > '2026-09-13'),
+    expect(unmarked(half.reportSeatRows)).toEqual(
+      unmarked(live.reportSeatRows),
+    );
+    for (const row of stored.reportSeatRows) {
+      if (row.localDate < FIRST_LIVE_DAY) expect(row.seatRebooked).toBeNull();
+    }
+    expect(
+      stored.reportSeatRows.filter((row) => row.localDate >= FIRST_LIVE_DAY),
+    ).toEqual(
+      live.reportSeatRows.filter((row) => row.localDate >= FIRST_LIVE_DAY),
     );
     // Not vacuous: the stored half holds money, and so do the live days.
     expect(stored.reportTakingsCents).toBeGreaterThan(0);
