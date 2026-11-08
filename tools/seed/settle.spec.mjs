@@ -780,10 +780,19 @@ function textFrame(text) {
  * neither `--ui` nor START_LOGGING_EMULATOR=true — a Logging emulator that
  * sends `history` to each new connection, as the real one replays its own.
  */
-async function standInHub({ logging = true, history = [], listing } = {}) {
+async function standInHub({
+  logging = true,
+  history = [],
+  listing,
+  listingDelayMs = 0,
+} = {}) {
   const upgraded = new Set();
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
     const self = { host: '0.0.0.0', port: server.address().port };
+    // A hub busy elsewhere answers its listing late (`listingDelayMs`).
+    if (request.url === '/emulators' && listingDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, listingDelayMs));
+    }
     const body =
       request.url === '/emulators'
         ? { hub: self, functions: self, ...(logging ? { logging: self } : {}) }
@@ -883,6 +892,27 @@ describe('watchExecutions, against a stand-in hub', () => {
     } finally {
       watch.close();
     }
+  });
+
+  it('waits out a hub that lists its emulators late, rather than calling the Logging emulator missing', async () => {
+    // The e2e run's busy hub took more than the 2 s the listing once got,
+    // and a spec's seed refused "no Logging emulator" (2026-11-08).
+    hub = await standInHub({ listingDelayMs: 2_500 });
+    vi.stubEnv('FIREBASE_EMULATOR_HUB', hub.hub);
+    const watch = await watchExecutions({ sinceMs: SINCE });
+    try {
+      expect(watch).not.toBeNull();
+    } finally {
+      watch?.close();
+    }
+  }, 10_000);
+
+  it('answers null when the hub does not list its emulators within its patience', async () => {
+    hub = await standInHub({ listingDelayMs: 1_000 });
+    vi.stubEnv('FIREBASE_EMULATOR_HUB', hub.hub);
+    await expect(
+      watchExecutions({ sinceMs: SINCE, hubPatienceMs: 100 }),
+    ).resolves.toBeNull();
   });
 
   it('answers null when the hub lists no Logging emulator', async () => {

@@ -107,6 +107,14 @@ test.describe('auth + onboarding (email OTP)', () => {
     page,
     browser,
   }) => {
+    // Two whole sign-ins in one test — a registration, then a second sign-in
+    // in a fresh context with no HTTP cache (the dev bundle loads again): six
+    // callables and two cold app loads. With the guard's futile back-off
+    // gone and the sign-in callables warm, a full run on the owner's machine
+    // still measured 13 s for the first pass and 18 s for the second against
+    // the 30 s test budget (2026-11-08). `slow()` gives it the triple budget a
+    // double-length test needs; its assertions keep their own waits.
+    test.slow();
     const email = fakeEmail(test.info(), 'returning');
 
     // First pass: register.
