@@ -54,7 +54,7 @@ import {
   CouponId,
   CustomerId,
   JournalEntryId,
-  type LocalDate,
+  LocalDate,
   MinuteOfDay,
   UserId,
   WaitlistRequestId,
@@ -75,6 +75,7 @@ import {
   workedAppointmentBody,
 } from './appointment-seed-document';
 import { SHOP_TIME_ZONE, shopInstant, sure } from './shop-clock';
+import { suiteDay } from './suite-clock';
 
 const PROJECT_ID = 'demo-creativo-test';
 /** `environment.ts`'s bucket, and the dev seed's. */
@@ -1023,4 +1024,41 @@ export async function waitForAnalyticsRecompute(
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error('e2e: the analytics recompute did not finish in time');
+}
+
+/**
+ * THE DAY DOCUMENT CATCHING UP (staff-analytics-v2 PR 4b): a worked visit
+ * seeded on a PAST day is reflected in «Анализи» only once the appointment
+ * trigger has rewritten `analyticsDays/{barberId}__{localDate}` (the read
+ * path takes a past day's figures from its document, under the flag). A
+ * spec that seeds a past day and then reads the report waits here until the
+ * document's stamp is later than the seed; a live day (today, yesterday) has
+ * no document and is read from its visits, so nothing is waited for.
+ */
+export async function waitForAnalyticsDay(
+  barberId: string,
+  localDate: string,
+  seededAtUtcMs: number,
+  timeoutMs = 60_000,
+): Promise<void> {
+  const today = suiteDay();
+  if (LocalDate.daysBetween(localDate as LocalDate, today) < 2) return;
+  const ref = getFirestore(adminApp())
+    .collection(Collections.AnalyticsDays)
+    .doc(`${barberId}__${localDate}`);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const day = (await ref.get()).data();
+    if (
+      day !== undefined &&
+      typeof day['dayComputedAtUtcMs'] === 'number' &&
+      day['dayComputedAtUtcMs'] >= seededAtUtcMs
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(
+    `e2e: the day document ${barberId}__${localDate} did not catch up with the seed`,
+  );
 }

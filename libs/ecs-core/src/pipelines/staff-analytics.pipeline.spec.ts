@@ -748,6 +748,31 @@ describe('staffAnalytics — the stored days (v2, `analytics.storedDays`)', () =
     expect(monday).toEqual(DayFigures.rowOf(STORED_SOLO_DAY));
   });
 
+  it('a barber’s month reads every day’s visits so the drill-down keeps listing a stored day’s seats (G4); the shop reads the live days alone', async () => {
+    const own = world({}, { storedDays: [STORED_SOLO_DAY], flagsOn: STORED });
+    const report = unwrapOk(
+      await staffAnalytics(own.ports)(ask(IVAN_USER.id, null)),
+    );
+    // Ivan's 30 days are asked for, the stored 14th included …
+    const periodKeys = own.reads.visitQueries[0] ?? [];
+    expect(periodKeys).toHaveLength(30);
+    expect(periodKeys).toContain(BusyKey.of(IVAN, localDate('2026-09-14')));
+    // … so the stored day's seat is a row, while its figures stay the document's.
+    expect(
+      report.reportSeatRows.some((row) => row.localDate === '2026-09-14'),
+    ).toBe(true);
+    const monday = report.reportDayRows.find(
+      (row) => row.localDate === '2026-09-14',
+    );
+    expect(monday).toEqual(DayFigures.rowOf(STORED_SOLO_DAY));
+
+    const shop = world({}, { storedDays: [STORED_SOLO_DAY], flagsOn: STORED });
+    await staffAnalytics(shop.ports)(ask(ADMIN.id, null));
+    expect(shop.reads.visitQueries.slice(0, 2).flat()).not.toContain(
+      BusyKey.of(IVAN, localDate('2026-09-14')),
+    );
+  });
+
   it('reads follow-ups only for the past days computed live — a stored day’s rebooking is final', async () => {
     const { ports, reads } = world(
       {},
@@ -778,9 +803,10 @@ describe('staffAnalytics — the stored days (v2, `analytics.storedDays`)', () =
     );
     expect(reads.followUpQueries).toEqual([]);
     expect(reads.bookedInQueries).toEqual([]);
-    // Only the 27th to the 30th are read live: 4 keys, then August's 31, the 7 ahead.
+    // A barber's month reads every day's visits for the seat rows (G4),
+    // the 30 keys; then August's 30 and the counterpart, the 7 ahead.
     expect(reads.visitQueries.map((keys) => keys.length)).toEqual([
-      4, 30, 1, 7,
+      30, 30, 1, 7,
     ]);
     expect(report.reportMissingDays).toBe(0);
     // The party on the 15th sits in a zero document now: its money is not read.

@@ -8,6 +8,7 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
   startAnalyticsRecompute,
+  waitForAnalyticsDay,
   waitForAnalyticsRecompute,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
@@ -109,6 +110,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const uid = `e2e-an-barber-${run}`;
     const client = `e2e-an-client-${run}`;
     await seedUserProfile(client, { firstName: 'Петър', lastName: 'Колев' });
+    const seededAt = Date.now();
     await seedWorkedAppointment(
       `${run}-cut`,
       client,
@@ -116,6 +118,8 @@ test.describe('«Анализи» — staff analytics', () => {
       DEV_CLASSIC_CUT,
     );
     await seedWorkedAppointment(`${run}-beard`, client, monthStartAt(12));
+    // A past day's figures come from its document: let the trigger catch up.
+    await waitForAnalyticsDay('ivan', monthStartAt(11).slice(0, 10), seededAt);
     await seedUserProfile(uid, {
       firstName: 'Иван',
       lastName: 'Бръснаров',
@@ -218,6 +222,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const adminUid = `e2e-an-admin-${run}`;
     const client = `e2e-an-niko-client-${run}`;
     await seedUserProfile(client, { firstName: 'Стефан', lastName: 'Донев' });
+    const seededAt = Date.now();
     await seedWorkedAppointment(
       `${run}-niko`,
       client,
@@ -225,6 +230,7 @@ test.describe('«Анализи» — staff analytics', () => {
       DEV_CLASSIC_CUT,
       'niko',
     );
+    await waitForAnalyticsDay('niko', monthStartAt(15).slice(0, 10), seededAt);
     await seedUserProfile(adminUid, {
       firstName: 'Админ',
       lastName: 'Салонов',

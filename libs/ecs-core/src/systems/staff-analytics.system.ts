@@ -2175,9 +2175,13 @@ function seatRowsOf(
   const out: AnalyticsReport.SeatRow[] = [];
   for (let v = 0; v < input.visits.length; v++) {
     const visit = input.visits[v] as AnalyticsVisit;
-    if (!counting.live(barberId, visit.localDate)) continue;
+    // Every visit the pipeline read is a row (G4: the rows add up to the
+    // figure the user tapped). A visit of a day HELD as stored figures
+    // carries no rebooking mark: its follow-ups were not read — the
+    // document knows the count, not the visits.
+    const held = !counting.live(barberId, visit.localDate);
     const nets = MoneyAllocationSystem.seatNets(visit);
-    const inBase = past(barberId, visit.localDate);
+    const inBase = !held && past(barberId, visit.localDate);
     let rebookMarked = false;
     for (let s = 0; s < visit.seats.length; s++) {
       const seat = visit.seats[s] as Seat;

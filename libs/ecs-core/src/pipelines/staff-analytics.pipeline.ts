@@ -41,6 +41,7 @@ import type {
   ShopDayReadPorts,
 } from '@core/ports';
 import {
+  type AnalyticsVisit,
   type AnalyticsFollowUp,
   type ShopNowAt,
   StaffAnalyticsSystem,
@@ -165,6 +166,23 @@ function withKeys(
   const out = [...keys];
   for (const key of more) if (!out.includes(key)) out.push(key);
   return out;
+}
+
+/**
+ * The visits of the days computed live — a visit of a held (stored) day was
+ * read for the seat rows alone (G4), and its rebooking is the document's,
+ * so no follow-up of it is read.
+ */
+function liveVisitsOf(
+  visits: readonly AnalyticsVisit[],
+  liveKeys: readonly BusyKey[],
+): readonly AnalyticsVisit[] {
+  const live = new Set<BusyKey>(liveKeys);
+  return visits.filter((visit) =>
+    visit.seats.some((seat) =>
+      live.has(BusyKey.of(seat.barberId, visit.localDate)),
+    ),
+  );
 }
 
 export const staffAnalytics =
@@ -302,8 +320,20 @@ export const staffAnalytics =
     const counterpartKeys =
       counterpart === undefined ? [] : S.busyKeysOf(barberIds, [counterpart]);
     const liveKeys = S.liveKeysOf(barberIds, periodDays, pastDays);
+    // G4 FOR A BARBER'S DRILL-DOWN: the seat rows must list every worked
+    // seat of the period, stored days included, so a barber scope on a
+    // day-grained period (≤ DAY_GRAIN_MAX_DAYS) reads every day's visits —
+    // v1's own read, a few documents a day — while the figures still come
+    // from the documents (a stored day's seats are skipped by the system's
+    // one-source rule). A longer period, and the shop, read the live days
+    // alone: their drill-downs list days and barbers, not seats.
+    const periodKeys =
+      scope.value !== null &&
+      AnalyticsPeriod.length(period.value) <= S.DAY_GRAIN_MAX_DAYS
+        ? S.busyKeysOf(barberIds, periodDays)
+        : liveKeys;
     const [periodRows, previousRows, aheadRows] = await Promise.all([
-      ports.loadVisitsByBusyKeys(liveKeys),
+      ports.loadVisitsByBusyKeys(periodKeys),
       comparable
         ? ports.loadVisitsByBusyKeys(
             withKeys(
@@ -355,7 +385,11 @@ export const staffAnalytics =
               ),
             )
           : await ports.loadFollowUpsOf(
-              S.followUpSourcesOf(visits, scope.value, now.localDate),
+              S.followUpSourcesOf(
+                liveVisitsOf(visits, liveKeys),
+                scope.value,
+                now.localDate,
+              ),
             );
     if (!followUpRead.ok) return followUpRead;
     const followUps: AnalyticsFollowUp[] = [];
