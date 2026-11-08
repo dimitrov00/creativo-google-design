@@ -165,11 +165,32 @@
               </ui-list-group>
             </ui-choice-menu>
 
-            <!-- Search sits between the two pickers and the person — the
-               trailing cluster runs view · find · who, which is the order
-               HIG puts a toolbar in: what you are looking at, how you find
-               something in it, then whose it is. From 600px of bar only: a
-               phone finds it at the thumb, in the bottom bar (Mail's). -->
+            <!-- «Анализи» one tap from the day (staff-analytics-v2, «Entry
+               from the schedule»): the week of this day, this chair's figures
+               for an admin, their own for a barber. A plain navigation — the
+               router's own view transition carries it. At every width: the
+               cluster runs view · chart · find · who. -->
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              class="staff-cluster__item staff-analytics-open"
+              [attr.aria-label]="t('staff.day.analyticsLabel')"
+              data-testid="staff-analytics-open"
+              (click)="openAnalytics()"
+            >
+              <ui-icon uiName="analytics.chart" />
+            </button>
+
+            <!-- Search sits between the chart and the person — the trailing
+               cluster runs view · chart · find · who, which is the order HIG
+               puts a toolbar in: what you are looking at, how you read it,
+               how you find something in it, then whose it is. From 600px of
+               bar only: a phone finds it at the thumb, in the bottom bar
+               (Mail's). -->
             <button
               type="button"
               uiButton

@@ -14,12 +14,14 @@ import {
   type PriceCents,
   type ServiceId,
   type TimeZone,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   type AnalyticsScopeChoice,
   type AnalyticsScreen,
   StaffAnalyticsSystem,
 } from '@core/systems';
+import { relativeTime } from '@creativo/infrastructure/i18n';
 import {
   formatCents,
   formatCount,
@@ -91,6 +93,8 @@ export interface AnalyticsScreenInput {
   /** The default shop's zone — the clock "today" and a report's time are read on. */
   readonly zone: TimeZone;
   readonly today: LocalDate;
+  /** The clock the freshness line is read against — the store's, re-read every minute. */
+  readonly now: UtcEpochMs;
   readonly period: AnalyticsPeriod;
   readonly analyticsLoad: AnalyticsLoad;
   readonly report: AnalyticsReport | null;
@@ -143,7 +147,22 @@ export function analyticsInfoVm(
   };
 }
 
+/** The freshness line's ⓘ: how the figures come about. */
+export function analyticsFreshnessInfoVm(
+  words: AnalyticsWords,
+): AnalyticsInfoVm {
+  return {
+    title: words.title,
+    message: words.freshness.info,
+    closeLabel: words.info.close,
+  };
+}
+
 // ── The head ──────────────────────────────────────────────────────────────
+
+/** An age under this is «току-що»; under the hour it is a relative phrase. */
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
 
 function statusOf(input: AnalyticsScreenInput): AnalyticsStatusVm | null {
   const { words, report } = input;
@@ -153,22 +172,50 @@ function statusOf(input: AnalyticsScreenInput): AnalyticsStatusVm | null {
       ? {
           text: words.freshness.refreshing,
           retry: false,
+          info: words.freshness.info,
           testId: 'analytics-status',
         }
       : null;
   }
-  const time = computedTimeOf(input, report);
   return input.analyticsLoad === AnalyticsLoad.Failed
     ? {
-        text: words.freshness.failed(time),
+        text: words.freshness.failed(computedTimeOf(input, report)),
         retry: true,
+        info: words.freshness.info,
         testId: 'analytics-status-failed',
       }
     : {
-        text: words.freshness.asOf(time),
+        text: freshnessOf(input, report),
         retry: false,
+        info: words.freshness.info,
         testId: 'analytics-status',
       };
+}
+
+/**
+ * «Freshness» (staff-analytics-v2, The screen): the report's age against
+ * `now` — a staleness reading (Law 7 T2, display only) — worded in four
+ * steps: «току-що» under a minute (or a negative age, a server clock ahead
+ * of this one), «Обновено преди 5 мин» under the hour, «Обновено в 09:12»
+ * on the same shop day, «Обновено на 27.09, 18:40» on an earlier one.
+ */
+function freshnessOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): string {
+  const { words } = input;
+  const computedAt = report.reportComputedAtUtcMs;
+  const ageMs = UtcEpochMs.elapsedMs(computedAt, input.now);
+  if (ageMs < MINUTE_MS) return words.freshness.justNow;
+  if (ageMs < HOUR_MS) {
+    return words.freshness.updatedAgo(
+      relativeTime(computedAt, input.now, words.lang, 'short'),
+    );
+  }
+  const time = computedTimeOf(input, report);
+  return StaffAnalyticsSystem.computedOn(report, input.zone, input.today)
+    ? words.freshness.updatedAt(time)
+    : words.freshness.updatedOn(time);
 }
 
 /** «09:12» on the day it was computed, «27.09, 18:40» on an earlier one. */

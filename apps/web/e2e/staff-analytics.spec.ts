@@ -129,7 +129,10 @@ test.describe('«Анализи» — staff analytics', () => {
     const entry = page.getByTestId('menu-staff-analytics');
     await expect(entry).toBeVisible();
     await entry.click();
-    await expect(page).toHaveURL(/\/staff\/analytics$/);
+    // The store's first write-back states the month it opened on.
+    await expect(page).toHaveURL(
+      /\/staff\/analytics(\?span=MONTH&from=\d{4}-\d{2}-01)?$/,
+    );
     await reportReady(page);
 
     // A barber has no scope picker: the report is their own record's.
@@ -236,5 +239,97 @@ test.describe('«Анализи» — staff analytics', () => {
     await expect(page.getByTestId('staff-gap-row').first()).toBeVisible({
       timeout: 30_000,
     });
+  });
+
+  /**
+   * THE SCHEDULE'S CHART BUTTON (staff-analytics-v2, «Entry from the
+   * schedule», PR 1): the week that holds the day on screen, the chair an
+   * admin is viewing, and Back lands on the same day, view and chair.
+   */
+  test('the schedule’s chart button opens «Анализи» on this day’s week and chair, and Back restores the schedule', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await pinBrowserClock(page);
+    const adminUid = `e2e-an-entry-${attemptKey(test.info())}`;
+    await seedUserProfile(adminUid, {
+      firstName: 'Админ',
+      lastName: 'Вход',
+      roles: [Role.Admin],
+    });
+    await signInAs(page, adminUid, [Role.Admin]);
+
+    const day = suiteDay();
+    const monday = LocalDate.startOfWeek(day);
+    await page.goto(`/staff/schedule?day=${day}&view=agenda&barber=ivan`);
+    const button = page.getByTestId('staff-analytics-open');
+    await expect(button).toBeVisible({ timeout: 30_000 });
+    await button.click();
+
+    // The admin was viewing Ivan's chair: Ivan's figures, the week of the
+    // day. The store's first write-back states the week's first day.
+    await expect(page).toHaveURL(/\/staff\/analytics\?/);
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return {
+          span: url.searchParams.get('span'),
+          from: url.searchParams.get('from'),
+          barber: url.searchParams.get('barber'),
+        };
+      })
+      .toEqual({ span: 'WEEK', from: monday, barber: 'ivan' });
+    await reportReady(page);
+
+    // Back: the schedule, on the same day, view and chair. The schedule
+    // writes no `day` for today (its canonical URL), so the suite's day
+    // reads back as the absent parameter.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/staff\/schedule\?/);
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return {
+          day: url.searchParams.get('day') ?? day,
+          view: url.searchParams.get('view'),
+          barber: url.searchParams.get('barber'),
+        };
+      })
+      .toEqual({ day, view: 'agenda', barber: 'ivan' });
+    await expect(button).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('a barber’s chart button opens their own figures, whatever chair the book shows', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await pinBrowserClock(page);
+    const uid = `e2e-an-entry-barber-${attemptKey(test.info())}`;
+    await seedUserProfile(uid, {
+      firstName: 'Иван',
+      lastName: 'Вход',
+      roles: [Role.Barber],
+      linkedBarberId: 'ivan',
+    });
+    await lockBarberLink('ivan', uid);
+    await signInAs(page, uid, [Role.Barber]);
+
+    const day = suiteDay();
+    await page.goto(`/staff/schedule?day=${day}&view=agenda&barber=niko`);
+    const button = page.getByTestId('staff-analytics-open');
+    await expect(button).toBeVisible({ timeout: 30_000 });
+    await button.click();
+
+    // Niko's chair on the book, but a barber's figures are their own: no
+    // `barber` in the query (a colleague's would be refused).
+    await expect(page).toHaveURL(/\/staff\/analytics\?/);
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('barber'))
+      .toBeNull();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('span'))
+      .toBe('WEEK');
+    await reportReady(page);
+    await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
   });
 });

@@ -261,6 +261,10 @@ export const UI_ICON_REGISTRY = {
    * silently at build time, so any new value here has to be checked against
    * the installed set. `icon.spec.ts` now does that for every entry.
    */
+  /** The book's figures — «Анализи», a tap from the schedule's toolbar
+   *  (staff-analytics-v2). Bars, not a line: the screen leads with a
+   *  stacked bar of the day's time, and a line glyph reads as "trend". */
+  'analytics.chart': 'bar_chart',
   'staff.day': 'event_note',
   /** A chair standing empty ALL DAY — the barber is off. Not `visit.noShow`
    *  (that is a client who did not come) and not `visit.cancelled` (that is

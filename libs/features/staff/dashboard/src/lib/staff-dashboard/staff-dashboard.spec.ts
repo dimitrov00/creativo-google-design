@@ -4262,6 +4262,81 @@ describe('StaffDashboard', () => {
     expect(trigger.querySelector('ui-avatar')).not.toBeNull();
   });
 
+  describe('«Анализи» from the toolbar (staff-analytics-v2, PR 1)', () => {
+    const openAnalytics = (): void => {
+      (
+        host().querySelector(
+          '[data-testid="staff-analytics-open"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+    };
+
+    it('an admin viewing every chair opens the shop’s week of this day', () => {
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true);
+      openAnalytics();
+      expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
+        queryParams: { span: 'WEEK', from: '2026-08-05' },
+      });
+    });
+
+    it('an admin viewing one chair opens that barber’s', () => {
+      (
+        host().querySelector(
+          '[data-testid="staff-scope-trigger"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-testid="staff-scope-ivan"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true);
+      openAnalytics();
+      expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
+        queryParams: { span: 'WEEK', from: '2026-08-05', barber: 'ivan' },
+      });
+    });
+
+    it('a barber opens their own, whatever chair the book shows', () => {
+      principal$.next(
+        principalFixture.staff(AccountId.of('dev-staff-ivan'), [Role.Barber]),
+      );
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-testid="staff-scope-trigger"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-testid="staff-scope-ivan"]',
+        ) as HTMLButtonElement
+      ).click();
+      fixture.detectChanges();
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true);
+      openAnalytics();
+      expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
+        queryParams: { span: 'WEEK', from: '2026-08-05' },
+      });
+      principal$.next(
+        principalFixture.staff(AccountId.of('dev-staff-ivan'), [
+          Role.Barber,
+          Role.Admin,
+        ]),
+      );
+    });
+  });
+
   /** The search sheet's typing pause (80 ms) has passed and the window is scanned. */
   const afterTypingPause = async (): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 120));

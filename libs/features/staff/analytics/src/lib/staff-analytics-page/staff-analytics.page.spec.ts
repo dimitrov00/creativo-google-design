@@ -5,7 +5,7 @@ import {
   DeferBlockState,
   TestBed,
 } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import {
   type Translation,
   type TranslocoLoader,
@@ -13,7 +13,7 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Role } from '@core/components';
+import { type AnalyticsCall, Role } from '@core/components';
 import type { AnalyticsCallPorts } from '@core/ports';
 import { Result, UserId } from '@core/primitives';
 import {
@@ -51,12 +51,23 @@ async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
   fixture.detectChanges();
 }
 
-async function render() {
+/** The route's query, as `withComponentInputBinding` sets it on the page: absent is unset. */
+type RouteQuery = Partial<Record<'span' | 'from' | 'to' | 'barber', string>>;
+
+async function render(
+  options: { readonly query?: RouteQuery; readonly admin?: boolean } = {},
+) {
   const principal = signal(
-    principalFixture.staff(UserId.of('dev-staff-ivan'), [Role.Barber]),
+    options.admin
+      ? principalFixture.staff(UserId.of('dev-admin'), [Role.Admin])
+      : principalFixture.staff(UserId.of('dev-staff-ivan'), [Role.Barber]),
   );
+  const sent: AnalyticsCall[] = [];
   const calls: AnalyticsCallPorts = {
-    requestReport: async () => Result.ok(analyticsReportFixture()),
+    requestReport: async (call) => {
+      sent.push(call);
+      return Result.ok(analyticsReportFixture());
+    },
   };
   TestBed.configureTestingModule({
     imports: [StaffAnalyticsPage],
@@ -103,9 +114,17 @@ async function render() {
     ],
   });
   const fixture = TestBed.createComponent(StaffAnalyticsPage);
+  for (const [name, value] of Object.entries(options.query ?? {})) {
+    fixture.componentRef.setInput(name, value);
+  }
   await settle(fixture);
   await settle(fixture);
-  return { fixture, host: fixture.nativeElement as HTMLElement };
+  return {
+    fixture,
+    host: fixture.nativeElement as HTMLElement,
+    sent,
+    router: TestBed.inject(Router),
+  };
 }
 
 const byTestId = (host: HTMLElement, id: string) =>
@@ -126,7 +145,7 @@ describe('StaffAnalyticsPage', () => {
     );
     expect(byTestId(host, 'analytics-takings')?.textContent).toContain('45,50');
     expect(byTestId(host, 'analytics-status')?.textContent?.trim()).toBe(
-      'Към 09:00',
+      'току-що',
     );
     expect(byTestId(host, 'analytics-time-bar')).not.toBeNull();
     expect(byTestId(host, 'analytics-services')).not.toBeNull();
@@ -146,6 +165,17 @@ describe('StaffAnalyticsPage', () => {
     expect(href).toContain('view=agenda');
     expect(href).toContain('barber=ivan');
     expect(href).toContain('free=1');
+  });
+
+  it('opens the freshness line’s ⓘ: how the figures come about', async () => {
+    const { fixture, host } = await render();
+    byTestId(host, 'analytics-status-info')?.click();
+    await settle(fixture);
+    const alert = byTestId(host, 'analytics-info');
+    expect(alert?.textContent).toContain('Анализи');
+    expect(alert?.textContent).toContain(
+      'Цифрите се изчисляват при отваряне от записаните дни',
+    );
   });
 
   it('opens a figure’s definition on its ⓘ', async () => {
@@ -168,5 +198,70 @@ describe('StaffAnalyticsPage', () => {
     const total = byTestId(document.body, 'analytics-rows-total');
     expect(total?.textContent).toContain('Общо');
     expect(total?.textContent).toContain('45,50');
+  });
+});
+
+describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
+  it('?span=WEEK&from=<day> binds: the week that holds the day, asked for once, written back as its first day', async () => {
+    const { host, sent, router } = await render({
+      query: { span: 'WEEK', from: '2026-09-30' },
+    });
+    expect(byTestId(host, 'analytics-period')?.textContent).toContain('28.09');
+    expect(sent).toEqual([
+      {
+        scopeBarberId: null,
+        fromLocalDate: '2026-09-28',
+        analyticsSpan: 'WEEK',
+      },
+    ]);
+    // The first write-back: the period's first day, the span, no barber for a barber.
+    expect(router.url).toBe('/?span=WEEK&from=2026-09-28');
+  });
+
+  it('a silent URL is this month, written back once the request stands', async () => {
+    const { host, sent, router } = await render();
+    expect(byTestId(host, 'analytics-period')?.textContent).toContain(
+      'Септември 2026',
+    );
+    expect(sent).toHaveLength(1);
+    expect(router.url).toBe('/?span=MONTH&from=2026-09-01');
+  });
+
+  it('a barber’s ?barber= is ignored; an unknown span is a month', async () => {
+    const { sent, router } = await render({
+      query: { span: 'YEAR', barber: 'niko', to: '2026-09-30' },
+    });
+    expect(sent).toEqual([
+      {
+        scopeBarberId: null,
+        fromLocalDate: '2026-09-01',
+        analyticsSpan: 'MONTH',
+      },
+    ]);
+    // `to` is kept by the merge and ignored; the ignored barber is dropped.
+    expect(router.url).toBe('/?span=MONTH&from=2026-09-01');
+  });
+
+  it('an admin’s ?barber= is the scope, and a pick replaces the URL without a second request for the echo', async () => {
+    const { fixture, host, sent, router } = await render({
+      query: { span: 'WEEK', from: '2026-09-30', barber: 'ivan' },
+      admin: true,
+    });
+    expect(sent).toEqual([
+      {
+        scopeBarberId: 'ivan',
+        fromLocalDate: '2026-09-28',
+        analyticsSpan: 'WEEK',
+      },
+    ]);
+    expect(router.url).toBe('/?span=WEEK&from=2026-09-28&barber=ivan');
+
+    byTestId(host, 'analytics-previous')?.click();
+    await settle(fixture);
+    await settle(fixture);
+    expect(router.url).toBe('/?span=WEEK&from=2026-09-21&barber=ivan');
+    // The pick's request, and nothing for the URL's echo.
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.fromLocalDate).toBe('2026-09-21');
   });
 });

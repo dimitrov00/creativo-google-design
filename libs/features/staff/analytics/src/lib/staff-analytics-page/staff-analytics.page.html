@@ -41,6 +41,18 @@
         >
           {{ status.text }}
         </p>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="status.info"
+          data-testid="analytics-status-info"
+          (click)="openFreshnessInfo()"
+        >
+          <ui-icon uiName="service.details" />
+        </button>
         @if (status.retry) {
         <button
           type="button"

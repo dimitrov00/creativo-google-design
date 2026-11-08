@@ -262,7 +262,11 @@ One line each; the section named elaborates.
 - **`RouteReuseStrategy` for the schedule?** Decided by PR 1's Back measurement: if Back's
   re-mount of the schedule drops a frame over 16.7 ms at 4× CPU throttle on a production
   build, a detach/attach strategy for that one route (which also keeps scroll) is added;
-  otherwise not.
+  otherwise not. **Decided 2026-11-08 (PR 1): added** — Back re-mounted the schedule in one
+  52–64 ms task at 4× and re-issued five to eight reads; with the strategy Back issues none
+  (`docs/design-research/staff-analytics/perf/pr1-entry.md`). The morph was not kept: the
+  forward path's first render already exceeds the rule without it, so the root cross-fade
+  stays.
 
 ## Critical User Journeys (CUJs)
 
