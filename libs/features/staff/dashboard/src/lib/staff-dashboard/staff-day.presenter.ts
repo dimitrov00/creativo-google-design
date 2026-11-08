@@ -64,7 +64,7 @@ import {
 import type { AgendaField } from '../agenda-fields';
 import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
 import { catalogTagWords } from '../shared/catalog-tag.words';
-import { spanCopyOf, spanWords } from '../shared/span.words';
+import { spanCopyOf, spanWords } from '@creativo/features/shared/visits';
 import { fill } from '../time-grid/grid-gesture';
 import type { AllDayEntry, GridEvent } from '../time-grid/staff-time-grid';
 import type {

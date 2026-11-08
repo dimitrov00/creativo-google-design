@@ -99,6 +99,7 @@ import {
   until,
   utcMs,
 } from '@core/testing';
+import { ScheduleStatusFilter } from './schedule-status-filter';
 import { StaffDayStore, StaffView, parseView } from './staff-day.store';
 
 /*
@@ -351,6 +352,50 @@ describe('StaffDayStore — ?barber= read once at its edge', () => {
       expect(router.url).not.toContain('barber=');
     },
   );
+});
+
+describe('StaffDayStore — ?free=1 read once (staff-analytics CUJ 2)', () => {
+  it('draws free time for this visit, stores nothing, and takes the parameter out of the URL', async () => {
+    const { store, router } = await build({
+      url: '/?day=2026-08-07&view=agenda&barber=ivan&free=1',
+    });
+    const filter = TestBed.inject(ScheduleStatusFilter);
+    store.applyRouteDay('2026-08-07');
+    store.applyRouteBarber('ivan');
+    store.applyRouteFree('1');
+    expect(filter.freeTimeShown()).toBe(true);
+    expect(filter.storedFreeTimeShown()).toBe(false);
+    await settle();
+    expect(router.url).not.toContain('free=');
+    expect(router.url).toContain('day=2026-08-07');
+    expect(router.url).toContain('barber=ivan');
+    expect(localStorage.getItem('staff-schedule-show-free-time')).toBeNull();
+  });
+
+  it('takes any other value out of the URL too, drawing nothing more', async () => {
+    const { store, router } = await build({ url: '/?free=yes' });
+    store.applyRouteFree('yes');
+    expect(TestBed.inject(ScheduleStatusFilter).freeTimeShown()).toBe(false);
+    await settle();
+    expect(router.url).not.toContain('free=');
+  });
+
+  it('asks nothing when the URL is silent', async () => {
+    const { store, router } = await build({ url: '/?day=' });
+    store.applyRouteFree(null);
+    store.applyRouteFree(undefined);
+    await settle();
+    expect(router.url).toBe('/?day=');
+  });
+
+  it('ends the one-off when the schedule is left', async () => {
+    const { store } = await build();
+    const filter = TestBed.inject(ScheduleStatusFilter);
+    store.applyRouteFree('1');
+    expect(filter.freeTimeShown()).toBe(true);
+    TestBed.resetTestingModule();
+    expect(filter.freeTimeShown()).toBe(false);
+  });
 });
 
 describe('StaffDayStore — ?view= (the contract-spelled dictionary)', () => {

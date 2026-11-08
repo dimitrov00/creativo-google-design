@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
+  ANALYTICS_CACHE_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -17,9 +18,12 @@ import {
 } from '@core/components';
 import type { User } from '@core/entities';
 import type { StoredFile } from '@core/ports';
-import { Result, UserId } from '@core/primitives';
+import { BarberId, Result, UserId } from '@core/primitives';
 import { MediaError } from '@core/errors';
-import { registeredUserFixture } from '@core/testing';
+import {
+  memoryAnalyticsCachePorts,
+  registeredUserFixture,
+} from '@core/testing';
 import { SessionIdentityService } from './session-identity.service';
 
 type FindResult = Result<StoredFile | null, MediaError>;
@@ -92,6 +96,7 @@ function harness(
 ) {
   const principal = signal<Principal>(initial);
   const account = signal<User | null>(null);
+  const cache = memoryAnalyticsCachePorts();
   const find = vi.fn(
     (): Promise<FindResult> =>
       answers.shift() ?? Promise.resolve(Result.ok(null)),
@@ -116,6 +121,7 @@ function harness(
         },
       },
       { provide: AVATAR_PORTS, useValue: { findAvatar: find } },
+      { provide: ANALYTICS_CACHE_PORTS, useValue: cache },
     ],
   });
   const service = TestBed.inject(SessionIdentityService);
@@ -124,6 +130,12 @@ function harness(
   return {
     service,
     find,
+    cache,
+    account,
+    signOut: () => {
+      principal.set(ANONYMOUS_PRINCIPAL);
+      TestBed.tick();
+    },
     /** Queues the next `find` answer. */
     nextAnswer: (answer: Promise<FindResult>) => answers.push(answer),
     signIn: (uid: string, roles?: readonly string[]) => {
@@ -332,6 +344,65 @@ describe('SessionIdentityService', () => {
       );
 
       expect(service.identifierLabel()).toBe('');
+    });
+  });
+
+  describe('staff analytics (docs/designs/staff-analytics.md)', () => {
+    it('reads the linked barber record off the session’s own user document — none while it loads or when absent', () => {
+      const { service, account, signIn } = harness(ANONYMOUS_PRINCIPAL);
+      signIn('dev-staff-ivan', ['barber']);
+      expect(service.linkedBarberId()).toBeNull();
+
+      account.set({
+        ...user('dev-staff-ivan'),
+        linkedBarberId: BarberId.of('ivan'),
+      });
+      TestBed.tick();
+      expect(service.linkedBarberId()).toBe(BarberId.of('ivan'));
+
+      account.set({ ...user('dev-staff-ivan'), linkedBarberId: null });
+      TestBed.tick();
+      expect(service.linkedBarberId()).toBeNull();
+    });
+
+    it('flags the analytics readers off the token — a barber and the admin, never the receptionist or a client', () => {
+      const { service, signIn, signOut } = harness(ANONYMOUS_PRINCIPAL);
+      expect(service.readsAnalytics()).toBe(false);
+      signIn('b', ['barber']);
+      expect(service.readsAnalytics()).toBe(true);
+      signIn('a', ['admin']);
+      expect(service.readsAnalytics()).toBe(true);
+      signIn('r', ['receptionist']);
+      expect(service.readsAnalytics()).toBe(false);
+      signIn('s', ['sysadmin']);
+      expect(service.readsAnalytics()).toBe(false);
+      signIn('c', ['client']);
+      expect(service.readsAnalytics()).toBe(false);
+      signOut();
+      expect(service.readsAnalytics()).toBe(false);
+    });
+
+    it('clears the analytics cache on a sign-out and on a switch of account — never on a cold load or a refresh of the same one', () => {
+      const { cache, signIn, signOut } = harness(ANONYMOUS_PRINCIPAL);
+      signIn('user_1', ['barber']);
+      expect(cache.state.clears).toBe(0);
+      // The same account again (a token refresh) is no change.
+      signIn('user_1', ['barber']);
+      expect(cache.state.clears).toBe(0);
+
+      signIn('user_2', ['admin']);
+      expect(cache.state.clears).toBe(1);
+
+      signOut();
+      expect(cache.state.clears).toBe(2);
+      // Signed out to signed in is a new session, not a switch.
+      signIn('user_3', ['barber']);
+      expect(cache.state.clears).toBe(2);
+    });
+
+    it('a session restored already signed in clears nothing', () => {
+      const { cache } = harness(active('user_1', ['barber']));
+      expect(cache.state.clears).toBe(0);
     });
   });
 });

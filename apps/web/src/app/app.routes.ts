@@ -141,6 +141,20 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    // «Анализи» (docs/designs/staff-analytics.md, The screen): a barber's own
+    // figures, the admin's every barber and the shop — the two analytics
+    // role sets, which the callable re-judges on the STORED roles.
+    path: 'staff/analytics',
+    canActivate: [
+      activeGuard,
+      rolesGuard(...Roles.ANALYTICS_SELF, ...Roles.ANALYTICS_SHOP),
+    ],
+    loadComponent: () =>
+      import('@creativo/features/staff/analytics').then(
+        (m) => m.StaffAnalyticsPage,
+      ),
+  },
+  {
     // The old address, kept working. Deliberately UNGUARDED: the redirect
     // is not an authorization decision, and the target's own guards still
     // run afterwards — a client following a stale `/staff` link lands on

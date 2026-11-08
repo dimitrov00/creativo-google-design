@@ -11,6 +11,7 @@ import {
   startMinuteOf,
 } from './staff-day-save';
 import { StaffWeekStrip } from './week-strip';
+import { bindRouteInputs } from './route-inputs';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -814,51 +815,14 @@ export class StaffDashboard {
    */
   readonly view = input<string | null>(null);
   readonly barber = input<string | null>(null);
+  /** `?free=1`, read once: free time for this visit (staff-analytics CUJ 2). */
+  readonly free = input<string | null>(null);
 
   constructor() {
     this.destroyRef.onDestroy(() => this.rowWatch()?.settle());
     effect(() => this.openFoundWhenDrawn());
-    // The URL is an INPUT here and an OUTPUT of the store, so the echo of the
-    // store's own write must not be mistaken for the user asking for a day —
-    // that bounced every chevron press straight back to today. Comparing
-    // against what the store last published leaves only genuine external
-    // changes: the first load, and the back button.
-    effect(() => {
-      const requested = this.day() ?? null;
-      // `published` is read UNTRACKED: it changes as a RESULT of the day's
-      // navigation, so tracking it re-fires this effect with a stale `day()`
-      // and undoes the navigation that just happened. Only `day()` may wake
-      // this. The text is the URL's: the store parses it ONCE, at its edge
-      // (`applyRouteDay` → `LocalDate.parse`).
-      if (requested !== untracked(() => this.store.published().day)) {
-        untracked(() => this.store.applyRouteDay(requested));
-      }
-    });
-    // The same guard for the view and the chair. An ABSENT parameter reaches
-    // a route-bound input as `undefined`, not the input's `null` default —
-    // the binder sets every declared input from the route's data — so both
-    // are read as "silent" before the comparison. The view's published
-    // value starts UNDEFINED (never written) so the first look at a silent
-    // URL still reaches the store, which states the view the device
-    // restored; the store sends no navigation when nothing changes.
-    effect(() => {
-      const requested = this.view() ?? null;
-      const stated = untracked(() => this.store.published().view);
-      if (stated === undefined || requested !== (stated ?? null)) {
-        // UNTRACKED, like every store call from a route effect: the store
-        // reads the published record before it writes it, and a read inside
-        // this effect's own tracking would make the effect depend on the
-        // signal it changes — and re-run on its own write, forever (found
-        // live 2026-09-23 on the first silent URL after a remembered view).
-        untracked(() => this.store.applyRouteView(requested));
-      }
-    });
-    effect(() => {
-      const requested = this.barber() ?? null;
-      if (requested !== untracked(() => this.store.published().barber)) {
-        untracked(() => this.store.applyRouteBarber(requested));
-      }
-    });
+    // The URL's four parameters, each read at its edge (`route-inputs.ts`).
+    bindRouteInputs(this, this.store);
 
     // English, like every other page's title in this app (`Events ·`,
     // `Careers ·`, `Programs · Creativo Admin`). This one shipped as

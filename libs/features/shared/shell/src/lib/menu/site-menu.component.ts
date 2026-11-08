@@ -101,6 +101,10 @@ export class SiteMenuComponent {
    *  (client-card revision 3 §3.17). UI-only, like `isStaffMember`: the
    *  route's `rolesGuard` and firestore.rules' `isAdmin()` are the locks. */
   readonly isAdmin = input(false);
+  /** A reader of «Анализи» (`Roles.readsAnalytics`: a barber or the admin)
+   *  — the menu's analytics row under «График». UI-only, like the others:
+   *  the route's `rolesGuard` and the callable are the locks. */
+  readonly readsAnalytics = input(false);
   readonly closed = output();
 
   /** The onboarding link's `?phase=` word, for the template (D-8.2). */

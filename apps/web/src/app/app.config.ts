@@ -61,6 +61,8 @@ import {
   PROGRAMS_PORTS,
   ReportingErrorHandler,
   ROLES_ADMIN_PORTS,
+  ANALYTICS_CACHE_PORTS,
+  ANALYTICS_CALL_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   SHOP_EVENT_READ_PORTS,
@@ -81,6 +83,7 @@ import {
   provideFlags,
   provideLazyPort,
   rolesAdminPorts,
+  analyticsCallPorts,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
 import { Result } from '@core/primitives';
@@ -104,7 +107,10 @@ import {
 } from '@creativo/infrastructure/firebase-auth';
 import { loadFirestoreAdapters } from '@creativo/infrastructure/firestore';
 import { loadStorageAdapters } from '@creativo/infrastructure/storage';
-import { sessionStorageBookingDraftPorts } from '@creativo/infrastructure/web-storage';
+import {
+  localStorageAnalyticsCachePorts,
+  sessionStorageBookingDraftPorts,
+} from '@creativo/infrastructure/web-storage';
 import {
   browserClockPorts,
   browserIdPorts,
@@ -378,10 +384,20 @@ export const appConfig: ApplicationConfig = {
       provide: ROLES_ADMIN_PORTS,
       useFactory: () => rolesAdminPorts(inject(GATEWAY_PORTS)),
     },
-    // The device's storage: the `/book` draft per tab.
+    // The staff «Анализи» report, over the same callable client.
+    {
+      provide: ANALYTICS_CALL_PORTS,
+      useFactory: () => analyticsCallPorts(inject(GATEWAY_PORTS)),
+    },
+    // The device's storage: the `/book` draft per tab; the analytics
+    // reports per account (cleared by the session on sign-out and switch).
     {
       provide: BOOKING_DRAFT_PORTS,
       useFactory: sessionStorageBookingDraftPorts,
+    },
+    {
+      provide: ANALYTICS_CACHE_PORTS,
+      useFactory: localStorageAnalyticsCachePorts,
     },
 
     // ── Lazy ports: Firestore and Storage adapters (see `firebaseData`) ──

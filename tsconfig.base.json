@@ -50,6 +50,9 @@
       "@creativo/features/staff/dashboard": [
         "./libs/features/staff/dashboard/src/index.ts"
       ],
+      "@creativo/features/staff/analytics": [
+        "./libs/features/staff/analytics/src/index.ts"
+      ],
       "@creativo/features/staff/client-card": [
         "./libs/features/staff/client-card/src/index.ts"
       ],

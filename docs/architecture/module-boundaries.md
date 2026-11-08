@@ -211,7 +211,7 @@ and the lint-rule specs therefore name `@core/*` aliases freely (the deep
 relative-import half of Law 8 still covers them through the layering
 verifier).
 
-## Today's projects (45)
+## Today's projects (46)
 
 | Project                | Root                                 | Tags                                  |
 | ---------------------- | ------------------------------------ | ------------------------------------- |
@@ -236,6 +236,7 @@ verifier).
 | `shared-catalog`       | `libs/features/shared/catalog`       | `scope:app`, `type:feature`           |
 | `shared-shell`         | `libs/features/shared/shell`         | `scope:app`, `type:feature`           |
 | `shared-visits`        | `libs/features/shared/visits`        | `scope:app`, `type:feature`           |
+| `staff-analytics`      | `libs/features/staff/analytics`      | `scope:app`, `type:feature`           |
 | `staff-client-card`    | `libs/features/staff/client-card`    | `scope:app`, `type:feature`           |
 | `staff-dashboard`      | `libs/features/staff/dashboard`      | `scope:app`, `type:feature`           |
 | `clock`                | `libs/infrastructure/clock`          | `scope:shared`, `type:infrastructure` |

@@ -70,6 +70,8 @@ export class SiteHeaderComponent {
   protected readonly isStaffMember = this.identity.isStaffMember;
   /** The admin pair — the menu's «Лоялност» entry (client-card revision 3 §3.17). */
   protected readonly isAdmin = this.identity.isAdmin;
+  /** The menu's «Анализи» row — a barber or the admin (`Roles.readsAnalytics`). */
+  protected readonly readsAnalytics = this.identity.readsAnalytics;
 
   protected readonly menuOpen = signal(false);
   protected readonly isScrolled = signal(false);

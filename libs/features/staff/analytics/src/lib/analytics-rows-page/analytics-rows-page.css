@@ -1,0 +1,17 @@
+/* The drill-down's own: the head and the body on the sheet's inset (the
+   admin rhythm sheet's recipe); the shell, the rows and the list are the DS's. */
+
+:host {
+  display: contents;
+}
+
+.analytics-rows__head {
+  --ui-sheet-headline-gap: 0px;
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-regular));
+  padding-block-start: var(--sys-space-compact);
+}
+
+.analytics-rows__body {
+  padding-inline: var(--ui-sheet-inset, var(--sys-space-regular));
+  padding-block: var(--sys-space-regular) var(--sys-space-loose);
+}

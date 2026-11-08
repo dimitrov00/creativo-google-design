@@ -99,6 +99,7 @@ const bg: Translation = {
       openPositions: 'Отворени позиции',
       staffDay: 'График',
       loyaltyAdmin: 'Лоялност',
+      staffAnalytics: 'Анализи',
     },
     hero: { cta: 'Запази час' },
     footer: {
@@ -139,6 +140,8 @@ describe('SiteMenuComponent', () => {
     isStaffMember?: boolean;
     /** One of the admin pair — surfaces the «Лоялност» entry. */
     isAdmin?: boolean;
+    /** A barber or the admin — surfaces the «Анализи» row. */
+    readsAnalytics?: boolean;
     /** The account's live bookings — the bookings row counts those still to come. */
     upcoming?: readonly Appointment[];
     /** How many UNREAD notifications the inbox should report. */
@@ -241,6 +244,9 @@ describe('SiteMenuComponent', () => {
     }
     if (inputs.isAdmin !== undefined) {
       fixture.componentRef.setInput('isAdmin', inputs.isAdmin);
+    }
+    if (inputs.readsAnalytics !== undefined) {
+      fixture.componentRef.setInput('readsAnalytics', inputs.readsAnalytics);
     }
     // Several passes: the avatar URL travels principal signal → observable
     // → storage-lookup promise → signal, so the portrait's <img> only
@@ -989,6 +995,62 @@ describe('SiteMenuComponent', () => {
       const filled = host.querySelectorAll('[data-variant="prominent"]');
       expect(filled.length).toBe(1);
       expect(filled[0]!.getAttribute('data-testid')).toBe('menu-staff-day');
+    });
+  });
+
+  /**
+   * «Анализи» (staff-analytics, The screen): a row UNDER «График» for the
+   * analytics readers — UI-only; the route's `rolesGuard` and the callable
+   * are the locks.
+   */
+  describe('the analytics row', () => {
+    it('is absent for a staff session that reads no analytics', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-testid="menu-staff-analytics"]',
+        ),
+      ).toBeNull();
+    });
+
+    it('leads to /staff/analytics as «Анализи», right under «График», a quiet grouped row', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        readsAnalytics: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      const row = host.querySelector<HTMLAnchorElement>(
+        '[data-testid="menu-staff-analytics"]',
+      );
+      expect(row).not.toBeNull();
+      expect(row!.tagName).toBe('A');
+      expect(row!.getAttribute('href')).toBe('/staff/analytics');
+      expect(row!.textContent).toContain('Анализи');
+      expect(row!.getAttribute('data-variant')).toBe('plain');
+      const glyph = row!.firstElementChild;
+      expect(glyph?.getAttribute('uiname')).toBe('loyalty.category.rhythm');
+      expect(glyph?.getAttribute('data-scale')).toBe('medium');
+
+      // Under the schedule, before booking.
+      const schedule = host.querySelector('[data-testid="menu-staff-day"]')!;
+      const book = host.querySelector('[data-testid="menu-book"]')!;
+      expect(
+        schedule.compareDocumentPosition(row!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        row!.compareDocumentPosition(book) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // The schedule keeps the menu's one fill.
+      expect(host.querySelectorAll('[data-variant="prominent"]').length).toBe(
+        1,
+      );
     });
   });
 });

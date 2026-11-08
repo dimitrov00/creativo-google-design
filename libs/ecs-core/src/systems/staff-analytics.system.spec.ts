@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   type AnalyticsCall,
+  AnalyticsBarPart,
   AnalyticsFigure,
   AnalyticsPeriod,
   AnalyticsSpan,
+  HeroChange,
   BookingLifecycle,
   BookingOrigin,
   CancellationReason,
@@ -32,6 +34,8 @@ import {
 } from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
+  analyticsReportFixture,
   appointmentFixture,
   barberScheduleFixture,
   blockedUserFixture,
@@ -812,3 +816,230 @@ describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
     });
   });
 });
+
+describe('StaffAnalyticsSystem — what the screen shows (Law 10: decided here, worded by the presenter)', () => {
+  const report = deepFreeze(analyticsReportFixture());
+
+  it('heroChangeOf — none without a previous period, else the direction and the rate', () => {
+    expect(
+      S.heroChangeOf(analyticsReportFixture({ reportHeroPreviousCents: null })),
+    ).toEqual({ heroChange: HeroChange.None, heroChangeRate: null });
+    expect(S.heroChangeOf(report)).toEqual({
+      heroChange: HeroChange.Up,
+      heroChangeRate: (4550 - 3500) / 3500,
+    });
+    expect(
+      S.heroChangeOf(
+        analyticsReportFixture({
+          reportHeroCurrentCents: 1000 as never,
+          reportHeroPreviousCents: 2000 as never,
+        }),
+      ),
+    ).toEqual({ heroChange: HeroChange.Down, heroChangeRate: -0.5 });
+    expect(
+      S.heroChangeOf(
+        analyticsReportFixture({
+          reportHeroCurrentCents: 2000 as never,
+          reportHeroPreviousCents: 2000 as never,
+        }),
+      ).heroChange,
+    ).toBe(HeroChange.Flat);
+    // Up from nothing: a direction, no rate to divide by.
+    expect(
+      S.heroChangeOf(
+        analyticsReportFixture({ reportHeroPreviousCents: 0 as never }),
+      ),
+    ).toEqual({ heroChange: HeroChange.Up, heroChangeRate: null });
+  });
+
+  it('barSegmentsOf — the six parts in order, their shares summing to the whole', () => {
+    const segments = S.barSegmentsOf(report);
+    expect(segments.map((s) => s.analyticsBarPart)).toEqual([
+      AnalyticsBarPart.Worked,
+      AnalyticsBarPart.NoShow,
+      AnalyticsBarPart.Unmarked,
+      AnalyticsBarPart.Blocked,
+      AnalyticsBarPart.Unsold,
+      AnalyticsBarPart.Other,
+    ]);
+    expect(segments.map((s) => s.minutes)).toEqual([480, 60, 0, 120, 200, 20]);
+    expect(segments.reduce((sum, s) => sum + s.share, 0)).toBeCloseTo(1);
+    expect(segments[0]?.share).toBeCloseTo(480 / 880);
+    const empty = S.barSegmentsOf(
+      analyticsReportFixture({
+        reportBarWorkedMinutes: MinuteCount.ZERO,
+        reportBarNoShowMinutes: MinuteCount.ZERO,
+        reportBarBlockedMinutes: MinuteCount.ZERO,
+        reportBarUnsoldMinutes: MinuteCount.ZERO,
+        reportBarOtherMinutes: MinuteCount.ZERO,
+      }),
+    );
+    expect(empty.every((s) => s.share === 0)).toBe(true);
+  });
+
+  it('serviceSharesOf / originSharesOf — each row’s share of the whole, 0 with nothing', () => {
+    expect(S.serviceSharesOf(report)).toEqual([2800 / 4550, 1750 / 4550]);
+    expect(S.originSharesOf(report)).toEqual([0.5, 0.5, 0]);
+    expect(
+      S.serviceSharesOf(
+        analyticsReportFixture({
+          reportServices: report.reportServices.map((row) => ({
+            ...row,
+            takingsCents: 0 as never,
+          })),
+        }),
+      ),
+    ).toEqual([0, 0]);
+  });
+
+  it('screenOf — scope, empty period, small sample, the emptiest day, left-out visits', () => {
+    expect(S.screenOf(report)).toEqual({
+      shopScope: false,
+      drillsToSeats: true,
+      periodEmpty: false,
+      rostered: true,
+      smallSample: true,
+      opensEmptiestDay: true,
+      excludesVisits: false,
+    });
+    const shop = S.screenOf(
+      analyticsReportFixture({ reportScopeBarberId: null }),
+    );
+    expect(shop.shopScope).toBe(true);
+    expect(shop.drillsToSeats).toBe(false);
+    const empty = S.screenOf(
+      analyticsReportFixture({
+        reportWorkedMinutes: MinuteCount.ZERO,
+        reportNoShowMinutes: MinuteCount.ZERO,
+        reportBookedAheadMinutes: MinuteCount.ZERO,
+        reportTakingsCents: 0 as never,
+        reportNoShowCount: 0,
+        reportLateCancellationCount: 0,
+        reportRebookedBase: 0,
+        reportNoShowBase: 0,
+        reportEmptiestLocalDate: null,
+        reportExcludedVisitCount: 2,
+      }),
+    );
+    expect(empty).toMatchObject({
+      periodEmpty: true,
+      smallSample: false,
+      opensEmptiestDay: false,
+      excludesVisits: true,
+    });
+    // From the base of 20 up the rates show.
+    expect(
+      S.screenOf(
+        analyticsReportFixture({
+          reportRebookedRate: 0.5,
+          reportRebookedBase: 20,
+          reportNoShowRate: 0.05,
+          reportNoShowBase: 20,
+        }),
+      ).smallSample,
+    ).toBe(false);
+  });
+
+  it('computedOn — the shop day the report was computed on', () => {
+    expect(
+      S.computedOn(report, FIXTURE_TIME_ZONE, localDate('2026-09-28')),
+    ).toBe(true);
+    expect(
+      S.computedOn(report, FIXTURE_TIME_ZONE, localDate('2026-09-29')),
+    ).toBe(false);
+  });
+
+  it('stepsOf — back up to 12 months, never past today', () => {
+    const today = localDate('2026-10-14');
+    const october = AnalyticsPeriod.monthOf(today);
+    expect(S.stepsOf(october, today)).toEqual({
+      previous: AnalyticsPeriod.monthOf(localDate('2026-09-01')),
+      next: null,
+    });
+    const september = AnalyticsPeriod.monthOf(localDate('2026-09-01'));
+    expect(S.stepsOf(september, today).next).toEqual(october);
+    const earliest = AnalyticsPeriod.monthOf(localDate('2025-10-01'));
+    expect(S.stepsOf(earliest, today).previous).toBeNull();
+    const week = AnalyticsPeriod.weekOf(today);
+    expect(S.stepsOf(week, today)).toEqual({
+      previous: AnalyticsPeriod.weekOf(localDate('2026-10-05')),
+      next: null,
+    });
+    expect(
+      S.stepsOf(AnalyticsPeriod.weekOf(localDate('2026-10-05')), today).next,
+    ).toEqual(week);
+  });
+
+  it('periodInSpan — a switch lands on the period holding the last day, or today', () => {
+    const today = localDate('2026-10-14');
+    const october = AnalyticsPeriod.monthOf(today);
+    expect(S.periodInSpan(october, AnalyticsSpan.Week, today)).toEqual(
+      AnalyticsPeriod.weekOf(today),
+    );
+    expect(
+      S.periodInSpan(
+        AnalyticsPeriod.monthOf(localDate('2026-08-01')),
+        AnalyticsSpan.Week,
+        today,
+      ),
+    ).toEqual(AnalyticsPeriod.weekOf(localDate('2026-08-31')));
+    expect(
+      S.periodInSpan(
+        AnalyticsPeriod.weekOf(localDate('2026-08-31')),
+        AnalyticsSpan.Month,
+        today,
+      ),
+    ).toEqual(AnalyticsPeriod.monthOf(localDate('2026-09-01')));
+    expect(S.periodInSpan(october, AnalyticsSpan.Month, today)).toBe(october);
+    // A week at the reach's first days: its month would be out of reach.
+    const reach = AnalyticsPeriod.weekOf(localDate('2025-10-06'));
+    expect(S.periodInSpan(reach, AnalyticsSpan.Month, today)).toEqual(
+      AnalyticsPeriod.monthOf(localDate('2025-10-01')),
+    );
+  });
+
+  it('seatRowsTotalOf / rebookedCountOf — a drill-down’s footer equals its figure', () => {
+    const takings = S.seatRowsFor(report, AnalyticsFigure.Takings, NO_FILTER);
+    expect(S.seatRowsTotalOf(takings, AnalyticsFigure.Takings)).toEqual({
+      totalCents: report.reportTakingsCents,
+      rowCount: 2,
+    });
+    const tips = S.seatRowsFor(report, AnalyticsFigure.Tips, NO_FILTER);
+    expect(S.seatRowsTotalOf(tips, AnalyticsFigure.Tips).totalCents).toBe(
+      report.reportTipsCents,
+    );
+    const noShows = S.seatRowsFor(report, AnalyticsFigure.NoShows, NO_FILTER);
+    expect(S.seatRowsTotalOf(noShows, AnalyticsFigure.NoShows)).toEqual({
+      totalCents: 0,
+      rowCount: report.reportNoShowCount,
+    });
+    const rebooked = S.seatRowsFor(report, AnalyticsFigure.Rebooked, NO_FILTER);
+    expect(rebooked).toHaveLength(report.reportRebookedBase);
+    expect(S.rebookedCountOf(rebooked)).toBe(report.reportRebookedCount);
+  });
+
+  it('scopeChoicesOf — the shop, then the admin’s own record, then the others', () => {
+    expect(S.scopeChoicesOf([ivan, niko], niko)).toEqual([
+      { scopeBarberId: null, scopeMine: false },
+      { scopeBarberId: niko, scopeMine: true },
+      { scopeBarberId: ivan, scopeMine: false },
+    ]);
+    expect(S.scopeChoicesOf([ivan, niko], null)).toEqual([
+      { scopeBarberId: null, scopeMine: false },
+      { scopeBarberId: ivan, scopeMine: false },
+      { scopeBarberId: niko, scopeMine: false },
+    ]);
+  });
+
+  it('is pure — the report it reads is left as it was', () => {
+    const before = JSON.stringify(report);
+    S.barSegmentsOf(report);
+    S.screenOf(report);
+    S.heroChangeOf(report);
+    S.serviceSharesOf(report);
+    expect(JSON.stringify(report)).toBe(before);
+    expect(S.barSegmentsOf(report)).toEqual(S.barSegmentsOf(report));
+  });
+});
+
+const NO_FILTER = { serviceId: null, localDate: null } as const;

@@ -137,6 +137,7 @@ import type {
   VisitEditorPromoOption,
 } from './visit-editor/staff-visit-editor';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
+import { ScheduleStatusFilter } from './schedule-status-filter';
 
 /**
  * The refusal a staff intent earns BEFORE it is sent — a field the wire
@@ -531,6 +532,8 @@ export class StaffDayStore {
   /** That read failed (or found no default location) — see {@link retryZone}. */
   private readonly defaultZoneFailed = this.shopZones.defaultZoneFailed();
   private readonly router = inject(Router);
+  /** What the schedule draws — `?free=1` turns free time on for this visit. */
+  private readonly statusFilter = inject(ScheduleStatusFilter);
   private readonly injector = inject(Injector);
   private readonly route = inject(ActivatedRoute);
 
@@ -754,6 +757,8 @@ export class StaffDayStore {
       // page that is no longer showing.
       if (this.urlWrite !== null) clearTimeout(this.urlWrite);
       this.destroyed = true;
+      // A link's one-off free time (`?free=1`) ends with the schedule.
+      this.statusFilter.endFreeTimeOnce();
     });
 
     // THE FIRST TODAY (4A-11, R13): a cold load can construct the page before
@@ -923,7 +928,8 @@ export class StaffDayStore {
     if (
       next.day === current.day &&
       (next.view ?? null) === (current.view ?? null) &&
-      next.barber === current.barber
+      next.barber === current.barber &&
+      !this.freeInUrl
     ) {
       return;
     }
@@ -948,12 +954,16 @@ export class StaffDayStore {
       void settledViewTransition().then(() => {
         if (this.destroyed) return;
         const stated = this._published();
+        this.freeInUrl = false;
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: {
             day: stated.day ?? null,
             view: stated.view ?? null,
             barber: stated.barber ?? null,
+            // `?free=1` is read once and never carried on: every write
+            // states it gone, so `merge` cannot keep it.
+            free: null,
           },
           queryParamsHandling: 'merge',
           replaceUrl: true,
@@ -967,6 +977,24 @@ export class StaffDayStore {
 
   /** The pending address-bar write, if one is scheduled. */
   private urlWrite: ReturnType<typeof setTimeout> | null = null;
+
+  /** `?free=1` still stands in the address bar: the next write removes it. */
+  private freeInUrl = false;
+
+  /**
+   * `?free=1` — the analytics screen's open-hours card (staff-analytics
+   * CUJ 2): free time drawn for this visit of the schedule, the device's
+   * stored preference untouched (`ScheduleStatusFilter.showFreeTimeOnce`),
+   * and the parameter taken out of the address bar (`replaceUrl`, through
+   * the one deferred write), so a later `merge` never carries it on and a
+   * reload is the person's own view again. Any other value is nothing.
+   */
+  applyRouteFree(requested: string | null | undefined): void {
+    if (requested === null || requested === undefined) return;
+    if (requested === '1') this.statusFilter.showFreeTimeOnce();
+    this.freeInUrl = true;
+    this.publishQuery({});
+  }
 
   // ── What the sheet is showing ───────────────────────────────────────
 
