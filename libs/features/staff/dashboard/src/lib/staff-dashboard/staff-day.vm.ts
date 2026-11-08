@@ -17,7 +17,7 @@ import type {
 import type { CancellationReason, Email } from '@core/components';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { StaffEventLine } from '@creativo/features/shared/visits';
-import type { SpanWords } from '../shared/span.words';
+import type { SpanWords } from '@creativo/features/shared/visits';
 import type {
   VisitEditorClientOption,
   VisitEditorDiscount,

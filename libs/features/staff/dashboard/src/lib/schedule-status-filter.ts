@@ -92,6 +92,14 @@ export class ScheduleStatusFilter {
   private readonly state = signal<readonly BookingStatus[]>(load());
   private readonly blocksHidden = signal(loadBlocksHidden());
   private readonly freeTime = signal(loadFreeTimeShown());
+  /**
+   * Free time drawn for THIS visit of the schedule only — a link that asked
+   * for it (`?free=1`, the analytics screen's open-hours card, CUJ 2). Never
+   * stored, cleared when the schedule is left (`endFreeTimeOnce`) and by any
+   * choice the person makes themselves; the filter root-provided, so a
+   * one-off left set would outlive the page.
+   */
+  private readonly freeTimeOnce = signal(false);
 
   /** The states the schedule leaves out — what `ScheduleFilterSystem.shown` takes. */
   readonly hidden = this.state.asReadonly();
@@ -111,7 +119,16 @@ export class ScheduleStatusFilter {
    * day's total free time is still said above the run. The grid draws none:
    * its empty space already is the free time.
    */
-  readonly freeTimeShown = this.freeTime.asReadonly();
+  readonly freeTimeShown = computed(
+    () => this.freeTime() || this.freeTimeOnce(),
+  );
+
+  /**
+   * The person's OWN choice of free time, as stored — what the filter
+   * sheet's draft starts from, so «Приложи» never stores a one-off a link
+   * turned on.
+   */
+  readonly storedFreeTimeShown = this.freeTime.asReadonly();
 
   /** Something is hidden: the bar's filter control says so in the accent. */
   readonly filtering = computed(
@@ -132,8 +149,24 @@ export class ScheduleStatusFilter {
   }
 
   toggleFreeTime(): void {
-    this.freeTime.set(!this.freeTime());
-    store(FREE_TIME_KEY, String(this.freeTime()));
+    const shown = !this.freeTimeShown();
+    this.freeTimeOnce.set(false);
+    this.freeTime.set(shown);
+    store(FREE_TIME_KEY, String(shown));
+  }
+
+  /**
+   * Draws free time for this visit of the schedule WITHOUT storing it
+   * (`?free=1`, staff-analytics CUJ 2): the preference on the device stays
+   * what it was.
+   */
+  showFreeTimeOnce(): void {
+    this.freeTimeOnce.set(true);
+  }
+
+  /** The schedule is left: a one-off free-time view ends with it. */
+  endFreeTimeOnce(): void {
+    this.freeTimeOnce.set(false);
   }
 
   toggleBlocks(): void {
@@ -147,6 +180,8 @@ export class ScheduleStatusFilter {
 
   /** The sheet's «Приложи»: the draft it was edited as, in one act. */
   apply(draft: ScheduleFilterDraft): void {
+    // The person chose: their choice replaces a link's one-off.
+    this.freeTimeOnce.set(false);
     this.commit(draft.hidden);
     this.commitBlocks(draft.blocksHidden);
     this.freeTime.set(draft.freeTimeShown);

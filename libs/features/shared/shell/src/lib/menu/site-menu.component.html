@@ -272,6 +272,40 @@
               </div>
             }
 
+            @if (readsAnalytics()) {
+              <!-- «Анализи» — UNDER «График» (staff-analytics, The screen):
+                   the schedule is the day, this is how the weeks went. A
+                   plain grouped row on the account rows' recipe, so the
+                   schedule keeps the menu's one fill; the glyph is the
+                   registry's line-chart mark (`timeline`). UI-only:
+                   `rolesGuard` on the route and the callable's wire are
+                   the locks. -->
+              <div
+                class="cr-menu__section"
+                [uiReveal]="'fade-up'"
+                uiRevealTrigger="mount"
+                [uiRevealDelay]="110"
+              >
+                <ui-list-group>
+                  <a
+                    routerLink="/staff/analytics"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    data-testid="menu-staff-analytics"
+                    (click)="close()"
+                  >
+                    <ui-icon
+                      uiLeading
+                      uiName="loyalty.category.rhythm"
+                      uiScale="medium"
+                    />
+                    {{ t('landing.menu.staffAnalytics') }}
+                  </a>
+                </ui-list-group>
+              </div>
+            }
+
             <!-- Book now — the standalone CTA as a LIST ROW (owner ruling:
                  same shape as the rows below). `prominent` owns the fill,
                  on-primary ink, standalone radius and the 52px box; the

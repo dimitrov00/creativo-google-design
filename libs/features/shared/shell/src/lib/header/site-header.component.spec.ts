@@ -207,6 +207,7 @@ describe('SiteHeaderComponent', () => {
       expect(menu.isAuthed()).toBe(true);
       expect(menu.isStaffMember()).toBe(true);
       expect(menu.isAdmin()).toBe(true);
+      expect(menu.readsAnalytics()).toBe(true);
     });
 
     it('keeps a barber out of the pair', async () => {
@@ -215,6 +216,14 @@ describe('SiteHeaderComponent', () => {
       expect(menu.isAuthed()).toBe(true);
       expect(menu.isStaffMember()).toBe(true);
       expect(menu.isAdmin()).toBe(false);
+      // A barber reads their own analytics.
+      expect(menu.readsAnalytics()).toBe(true);
+    });
+
+    it('keeps a receptionist away from the analytics row', async () => {
+      const menu = await settled(await configure(active(['receptionist'])));
+      expect(menu.isStaffMember()).toBe(true);
+      expect(menu.readsAnalytics()).toBe(false);
     });
 
     it('hands a guest none of the three', async () => {
@@ -223,6 +232,7 @@ describe('SiteHeaderComponent', () => {
       expect(menu.isAuthed()).toBe(false);
       expect(menu.isStaffMember()).toBe(false);
       expect(menu.isAdmin()).toBe(false);
+      expect(menu.readsAnalytics()).toBe(false);
     });
 
     it('opens, on the trigger, a menu holding the admin entry for an admin', async () => {

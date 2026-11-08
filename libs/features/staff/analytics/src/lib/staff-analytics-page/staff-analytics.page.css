@@ -1,0 +1,102 @@
+/* «Анализи» (docs/designs/staff-analytics.md, The screen). Everything with a
+   DS answer rides the DS — the switcher, the faces, the rows, the groups,
+   the metric, the share bars, the notices, the alert. What is the page's
+   own: the column and its modules (the admin rhythm page's rhythm, 32
+   apart), the period's ‹ label › line, and the clients' tiles, whose ⓘ sits
+   in the tile's corner beside the figure it explains. */
+
+:host {
+  display: block;
+}
+
+.staff-analytics {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--sys-container-content);
+  min-block-size: 100dvh;
+  margin-inline: auto;
+  padding-block-start: var(--sys-space-regular);
+}
+
+.staff-analytics__bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--control-size-large);
+  margin-block-end: var(--sys-space-regular);
+}
+
+.staff-analytics__modules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  padding-block-end: var(--sys-space-spacious);
+}
+
+.staff-analytics__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+.staff-analytics__module--head {
+  gap: var(--sys-space-tight);
+}
+
+.staff-analytics__module--head h1,
+.staff-analytics__status p,
+.staff-analytics__footnote {
+  margin: 0;
+}
+
+/* The status line and its «Опитай пак», on one baseline. */
+.staff-analytics__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* ‹ the period › — the label centred between its two steps. */
+.staff-analytics__stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.staff-analytics__period {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+}
+
+.staff-analytics__footnote {
+  padding-inline: var(--sys-space-regular);
+  text-wrap: pretty;
+}
+
+/* A row's share bar spans the row's words. */
+.staff-analytics__share {
+  inline-size: 100%;
+}
+
+/* THE CLIENTS' TILES: the figure is the tile's button; its ⓘ, a sibling,
+   rides the top corner so the two never nest. */
+.staff-analytics__tile {
+  position: relative;
+}
+
+.staff-analytics__tile-figure {
+  inline-size: 100%;
+  block-size: 100%;
+  /* Room in the top corner for the ⓘ beside it. */
+  padding-block-start: var(--control-size-small);
+}
+
+.staff-analytics__tile-info {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+}

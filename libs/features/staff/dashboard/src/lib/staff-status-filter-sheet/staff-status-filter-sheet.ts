@@ -83,7 +83,8 @@ export class StaffStatusFilterSheet {
     this.filter.hidden(),
   );
   protected readonly blocksHidden = signal(!this.filter.blocksShown());
-  protected readonly freeTimeShown = signal(this.filter.freeTimeShown());
+  // The STORED choice: a link's one-off (`?free=1`) is never applied as one.
+  protected readonly freeTimeShown = signal(this.filter.storedFreeTimeShown());
 
   /** Where the free-time switch works: the list alone, by the view's own name. */
   protected readonly freeTimeNote = computed(() => {

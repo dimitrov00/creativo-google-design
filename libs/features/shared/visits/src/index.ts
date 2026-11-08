@@ -8,6 +8,9 @@ export * from './lib/photo-moment.vm';
 export * from './lib/photo-moment.presenter';
 export * from './lib/first-name';
 export * from './lib/day-range';
+// A length of time in words («6 ч 30 мин»): the schedule's day summary and
+// the staff analytics screen.
+export * from './lib/span.words';
 export * from './lib/event-head/staff-event-line';
 export * from './lib/event-head/staff-event-head';
 export * from './lib/visit-row/visit-row';

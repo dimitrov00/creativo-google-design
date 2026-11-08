@@ -21,6 +21,8 @@ import {
   formatInstant,
   formatMonthLong,
   formatMinutesRange,
+  formatPercent,
+  formatSignedPercent,
   formatZoneName,
   formatWallClockParts,
   formatWallClockRange,
@@ -592,5 +594,21 @@ describe('the house date forms (R59)', () => {
 
   it('says a month in words', () => {
     expect(formatMonthLong(day('2026-09-04'), 'bg')).toBe('септември');
+  });
+});
+
+describe('formatPercent / formatSignedPercent', () => {
+  it('prints a fraction as a whole percent in the locale’s form', () => {
+    expect(formatPercent(0.45, 'en')).toBe('45%');
+    expect(formatPercent(0.454, 'bg')).toBe(
+      new Intl.NumberFormat('bg', { style: 'percent' }).format(0.45),
+    );
+    expect(formatPercent(0, 'en')).toBe('0%');
+  });
+
+  it('signs a change, and leaves no change unsigned', () => {
+    expect(formatSignedPercent(0.3, 'en')).toBe('+30%');
+    expect(formatSignedPercent(-0.125, 'en')).toBe('-13%');
+    expect(formatSignedPercent(0, 'en')).toBe('0%');
   });
 });

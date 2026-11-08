@@ -1,0 +1,854 @@
+import {
+  AnalyticsFigure,
+  type AnalyticsPeriod,
+  type AnalyticsReport,
+  AnalyticsSpan,
+  HeroChange,
+  VisitGrain,
+} from '@core/components';
+import {
+  AppointmentId,
+  type BarberId,
+  Currency,
+  LocalDate,
+  type PriceCents,
+  type ServiceId,
+  type TimeZone,
+} from '@core/primitives';
+import {
+  type AnalyticsScopeChoice,
+  type AnalyticsScreen,
+  StaffAnalyticsSystem,
+} from '@core/systems';
+import {
+  formatCents,
+  formatCount,
+  formatDayShort,
+  formatInstant,
+  formatMinute,
+  formatPercent,
+  formatSignedPercent,
+  formatWallClock,
+  formatWeekdayLabels,
+} from '@creativo/ui/wall-clock';
+import {
+  type AppointmentRowVm,
+  TrailingFactFace,
+  StatusFactTone,
+  VisitRowEntry,
+  type VisitSectionVm,
+  sectionVisits,
+  spanWords,
+  visitSectionLabel,
+} from '@creativo/features/shared/visits';
+import type { AnalyticsWords } from './analytics.words';
+import {
+  AnalyticsLoad,
+  type AnalyticsBarberRowVm,
+  type AnalyticsBlockedVm,
+  type AnalyticsBodyVm,
+  type AnalyticsClientsVm,
+  type AnalyticsDayRowVm,
+  type AnalyticsDrill,
+  type AnalyticsDrillVm,
+  type AnalyticsHeroVm,
+  type AnalyticsInfoVm,
+  type AnalyticsOpenVm,
+  type AnalyticsPeriodVm,
+  type AnalyticsScopeVm,
+  type AnalyticsShareGroupVm,
+  type AnalyticsStatusVm,
+  type AnalyticsTimeVm,
+  AnalyticsTopic,
+  type AnalyticsVm,
+  BAR_PART_HOOKS,
+  DrillRows,
+  FIGURE_TOPICS,
+} from './analytics.vm';
+
+/*
+ * THE «АНАЛИЗИ» SCREEN'S PRESENTER (Law 10) — a report, the screen's state
+ * and the words in, the display struct out. It DECIDES NOTHING: which way
+ * the takings moved, the bar's shares, which sections show, the steps of
+ * the switcher, the scope picker's order and every footer total are
+ * `StaffAnalyticsSystem`'s; a rate or `null` (counts instead) is the
+ * report's own. This file only words them.
+ */
+
+/** The report's money is euro cents (`MoneyAllocationSystem.seatNets`, the catalogue's Takings row). */
+const REPORT_CURRENCY = Currency.EUR;
+
+/** What the screen names from the catalogue — services and barbers. */
+export interface AnalyticsNames {
+  serviceName(id: ServiceId): string | null;
+  barberName(id: BarberId): string | null;
+  barberAvatarSrc(id: BarberId): string | null;
+}
+
+/** Everything the screen is worded from. */
+export interface AnalyticsScreenInput {
+  readonly words: AnalyticsWords;
+  /** The default shop's zone — the clock "today" and a report's time are read on. */
+  readonly zone: TimeZone;
+  readonly today: LocalDate;
+  readonly period: AnalyticsPeriod;
+  readonly analyticsLoad: AnalyticsLoad;
+  readonly report: AnalyticsReport | null;
+  /** A refusal of the account, already worded (`errors.<code>`); `null` without one. */
+  readonly refusal: string | null;
+  /** The admin's scope picker (`StaffAnalyticsSystem.scopeChoicesOf`); `null` for a barber. */
+  readonly scopeChoices: readonly AnalyticsScopeChoice[] | null;
+  /** The scope chosen in the picker; `null` is the shop. */
+  readonly scopeBarberId: BarberId | null;
+  /** The barber asked for no longer exists: the shop is shown instead. */
+  readonly scopeGone: boolean;
+  /** The barber record the open-hours card opens the schedule on; `null` is everyone. */
+  readonly scheduleBarberId: BarberId | null;
+  readonly names: AnalyticsNames;
+}
+
+/** The whole screen. */
+export function analyticsVm(input: AnalyticsScreenInput): AnalyticsVm {
+  const { words, report } = input;
+  return {
+    title: words.title,
+    backLabel: words.back,
+    freshness: statusOf(input),
+    retryLabel: words.freshness.retry,
+    period: periodOf(input),
+    scope: scopeOf(input),
+    placeholder:
+      report === null && input.analyticsLoad === AnalyticsLoad.Loading,
+    blocked: blockedOf(input),
+    notice: input.scopeGone ? words.freshness.scopeGone : null,
+    body:
+      report === null || input.analyticsLoad === AnalyticsLoad.Refused
+        ? null
+        : bodyOf(input, report),
+    infoLabels: infoLabelsOf(words),
+  };
+}
+
+/** The ⓘ alert of one topic: its name and its definition in words. */
+export function analyticsInfoVm(
+  words: AnalyticsWords,
+  topic: AnalyticsTopic,
+): AnalyticsInfoVm {
+  return {
+    // eslint-disable-next-line security/detect-object-injection -- `topic` is a closed `AnalyticsTopic` literal.
+    title: words.figure[topic],
+    // eslint-disable-next-line security/detect-object-injection -- as above.
+    message: words.info.definition[topic],
+    closeLabel: words.info.close,
+  };
+}
+
+// ── The head ──────────────────────────────────────────────────────────────
+
+function statusOf(input: AnalyticsScreenInput): AnalyticsStatusVm | null {
+  const { words, report } = input;
+  if (input.analyticsLoad === AnalyticsLoad.Refused) return null;
+  if (report === null) {
+    return input.analyticsLoad === AnalyticsLoad.Loading
+      ? {
+          text: words.freshness.refreshing,
+          retry: false,
+          testId: 'analytics-status',
+        }
+      : null;
+  }
+  const time = computedTimeOf(input, report);
+  return input.analyticsLoad === AnalyticsLoad.Failed
+    ? {
+        text: words.freshness.failed(time),
+        retry: true,
+        testId: 'analytics-status-failed',
+      }
+    : {
+        text: words.freshness.asOf(time),
+        retry: false,
+        testId: 'analytics-status',
+      };
+}
+
+/** «09:12» on the day it was computed, «27.09, 18:40» on an earlier one. */
+function computedTimeOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): string {
+  const today = StaffAnalyticsSystem.computedOn(
+    report,
+    input.zone,
+    input.today,
+  );
+  return formatInstant(
+    report.reportComputedAtUtcMs,
+    input.zone,
+    input.words.lang,
+    today
+      ? { hour: '2-digit', minute: '2-digit' }
+      : {
+          day: 'numeric',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        },
+  );
+}
+
+function periodOf(input: AnalyticsScreenInput): AnalyticsPeriodVm {
+  const { words, period } = input;
+  const steps = StaffAnalyticsSystem.stepsOf(period, input.today);
+  return {
+    spanLabel: words.spanLabel,
+    spans: [AnalyticsSpan.Week, AnalyticsSpan.Month].map((span) => ({
+      id: span,
+      // eslint-disable-next-line security/detect-object-injection -- `span` is a closed `AnalyticsSpan` literal.
+      label: words.span[span],
+      testId: `analytics-span-${span.toLowerCase()}`,
+    })),
+    selectedSpan: period.analyticsSpan,
+    label: periodLabelOf(period, input),
+    previousLabel: words.previous,
+    previousEnabled: steps.previous !== null,
+    nextLabel: words.next,
+    nextEnabled: steps.next !== null,
+  };
+}
+
+/** «Септември 2026 г.» · «28.09 – 4.10». */
+function periodLabelOf(
+  period: AnalyticsPeriod,
+  input: AnalyticsScreenInput,
+): string {
+  const lang = input.words.lang;
+  return period.analyticsSpan === AnalyticsSpan.Month
+    ? visitSectionLabel(period.fromLocalDate.slice(0, 7), lang)
+    : input.words.range(
+        formatDayShort(period.fromLocalDate, input.today, lang),
+        formatDayShort(period.toLocalDate, input.today, lang),
+      );
+}
+
+function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
+  const { words, scopeChoices } = input;
+  if (scopeChoices === null) return null;
+  return {
+    label: words.scope.label,
+    tiles: scopeChoices.map((choice) => {
+      const id = choice.scopeBarberId;
+      return {
+        scopeBarberId: id,
+        name:
+          id === null
+            ? words.scope.shop
+            : choice.scopeMine
+              ? words.scope.me
+              : (input.names.barberName(id) ?? words.scope.barber),
+        avatarSrc: id === null ? null : input.names.barberAvatarSrc(id),
+        selected: id === input.scopeBarberId,
+        testId: `analytics-scope-${id ?? 'shop'}`,
+      };
+    }),
+  };
+}
+
+function blockedOf(input: AnalyticsScreenInput): AnalyticsBlockedVm | null {
+  if (input.analyticsLoad === AnalyticsLoad.Refused) {
+    return {
+      text: input.refusal ?? input.words.freshness.failedNoCache,
+      retry: false,
+      testId: 'analytics-refused',
+    };
+  }
+  if (input.report === null && input.analyticsLoad === AnalyticsLoad.Failed) {
+    return {
+      text: input.words.freshness.failedNoCache,
+      retry: true,
+      testId: 'analytics-failed',
+    };
+  }
+  return null;
+}
+
+function infoLabelsOf(
+  words: AnalyticsWords,
+): Readonly<Record<AnalyticsTopic, string>> {
+  const out = {} as Record<AnalyticsTopic, string>;
+  for (const topic of Object.values(AnalyticsTopic)) {
+    // eslint-disable-next-line security/detect-object-injection -- `topic` is a closed `AnalyticsTopic` literal.
+    out[topic] = words.info.label(words.figure[topic]);
+  }
+  return out;
+}
+
+// ── The figures ───────────────────────────────────────────────────────────
+
+function bodyOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsBodyVm {
+  const screen = StaffAnalyticsSystem.screenOf(report);
+  const { words } = input;
+  return {
+    empty: screen.periodEmpty
+      ? {
+          title: words.empty.title,
+          detail: screen.rostered
+            ? words.empty.rostered(
+                spanWords(report.reportRosteredMinutes, words.spanWords),
+              )
+            : words.empty.noRoster,
+        }
+      : null,
+    hero: heroOf(input, report, screen),
+    time: timeOf(input, report),
+    open: openOf(input, report, screen),
+    services: servicesOf(input, report, screen),
+    clients: clientsOf(input, report, screen),
+    fill: screen.shopScope ? fillOf(input, report) : null,
+    origins: screen.shopScope ? originsOf(input, report) : null,
+  };
+}
+
+function money(cents: PriceCents, lang: string): string {
+  return formatCents(cents, REPORT_CURRENCY, lang);
+}
+
+function heroOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+  screen: AnalyticsScreen,
+): AnalyticsHeroVm {
+  const { words } = input;
+  const lang = words.lang;
+  const change = StaffAnalyticsSystem.heroChangeOf(report);
+  const rate = change.heroChangeRate;
+  const value = money(report.reportTakingsCents, lang);
+  const delta =
+    rate === null || change.heroChange === HeroChange.Flat
+      ? null
+      : formatSignedPercent(rate, lang);
+  const comparison = comparisonOf(change.heroChange, rate, words);
+  const tipsValue = money(report.reportTipsCents, lang);
+  return {
+    caption: words.hero.caption,
+    value,
+    delta,
+    trend:
+      delta === null
+        ? null
+        : change.heroChange === HeroChange.Up
+          ? 'up'
+          : 'down',
+    comparison,
+    tipsLabel: words.hero.tips,
+    tipsValue,
+    excluded: screen.excludesVisits
+      ? words.hero.excluded(report.reportExcludedVisitCount)
+      : null,
+    accessibleName: [
+      `${words.hero.caption} ${value}`,
+      delta === null ? comparison : `${delta} ${comparison}`,
+      `${words.hero.tips} ${tipsValue}`,
+    ].join(', '),
+  };
+}
+
+function comparisonOf(
+  heroChange: HeroChange,
+  rate: number | null,
+  words: AnalyticsWords,
+): string {
+  switch (heroChange) {
+    case HeroChange.None:
+      return words.hero.noComparison;
+    case HeroChange.Flat:
+      return words.hero.flat;
+    case HeroChange.Up:
+    case HeroChange.Down:
+      return rate === null ? words.hero.fromNothing : words.hero.versus;
+  }
+}
+
+function timeOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsTimeVm {
+  const { words } = input;
+  const span = (minutes: number) => spanWords(minutes, words.spanWords);
+  return {
+    title: words.time.title,
+    barName: words.time.barName,
+    segments: StaffAnalyticsSystem.barSegmentsOf(report).map((segment) => ({
+      part: BAR_PART_HOOKS[segment.analyticsBarPart],
+      share: segment.share,
+      label: words.time.part[segment.analyticsBarPart],
+      value: span(segment.minutes),
+      testId: `analytics-bar-${BAR_PART_HOOKS[segment.analyticsBarPart]}`,
+    })),
+    ahead: words.time.ahead(
+      span(report.reportBookedAheadMinutes),
+      span(report.reportOpenMinutes),
+    ),
+    byDay: words.time.byDay,
+  };
+}
+
+/** «вторник, 29.09». */
+function dayWithWeekday(day: LocalDate, lang: string): string {
+  return formatWallClock(day, null, lang, {
+    weekday: 'long',
+    day: 'numeric',
+    month: '2-digit',
+  });
+}
+
+function openOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+  screen: AnalyticsScreen,
+): AnalyticsOpenVm {
+  const { words } = input;
+  const value = spanWords(report.reportBookableOpenMinutes, words.spanWords);
+  const emptiest = screen.opensEmptiestDay
+    ? report.reportEmptiestLocalDate
+    : null;
+  const dayName =
+    emptiest === null ? null : dayWithWeekday(emptiest, words.lang);
+  const detail =
+    dayName === null ? words.open.none : words.open.emptiest(dayName);
+  return {
+    title: words.open.title,
+    value,
+    caption: words.open.caption,
+    detail,
+    link:
+      emptiest === null
+        ? null
+        : {
+            day: emptiest,
+            view: 'agenda',
+            barber: input.scheduleBarberId,
+            free: '1',
+          },
+    accessibleName:
+      dayName === null
+        ? `${words.open.title} ${value} ${words.open.caption}, ${detail}`
+        : `${words.open.title} ${value} ${words.open.caption}, ${words.open.action(dayName)}`,
+  };
+}
+
+function servicesOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+  screen: AnalyticsScreen,
+): AnalyticsShareGroupVm {
+  const { words } = input;
+  const lang = words.lang;
+  const shares = StaffAnalyticsSystem.serviceSharesOf(report);
+  return {
+    title: words.services.title,
+    rows: report.reportServices.map((row, i) => {
+      const count = words.services.count(row.workedSeatCount);
+      return {
+        id: row.serviceId,
+        title: input.names.serviceName(row.serviceId) ?? words.unknownService,
+        detail:
+          row.takingsPerHourCents === null
+            ? count
+            : words.services.line(count, money(row.takingsPerHourCents, lang)),
+        value: money(row.takingsCents, lang),
+        share: shares.at(i) ?? 0,
+        drill: screen.drillsToSeats
+          ? {
+              analyticsFigure: AnalyticsFigure.Takings,
+              serviceId: row.serviceId,
+            }
+          : null,
+        testId: `analytics-service-${row.serviceId}`,
+      };
+    }),
+    empty: report.reportServices.length === 0 ? words.services.none : null,
+  };
+}
+
+function clientsOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+  screen: AnalyticsScreen,
+): AnalyticsClientsVm {
+  const { words } = input;
+  const lang = words.lang;
+  const rateOr = (rate: number | null, count: number, base: number): string =>
+    rate === null
+      ? words.clients.ofBase(formatCount(count, lang), formatCount(base, lang))
+      : formatPercent(rate, lang);
+  const drill = (analyticsFigure: AnalyticsFigure): AnalyticsDrill => ({
+    analyticsFigure,
+    serviceId: null,
+  });
+  return {
+    title: words.clients.title,
+    rows: [
+      {
+        topic: AnalyticsTopic.Rebooked,
+        label: words.figure[AnalyticsTopic.Rebooked],
+        value: rateOr(
+          report.reportRebookedRate,
+          report.reportRebookedCount,
+          report.reportRebookedBase,
+        ),
+        drill: drill(AnalyticsFigure.Rebooked),
+        testId: 'analytics-rebooked',
+      },
+      {
+        topic: AnalyticsTopic.NoShows,
+        label: words.figure[AnalyticsTopic.NoShows],
+        value: rateOr(
+          report.reportNoShowRate,
+          report.reportNoShowCount,
+          report.reportNoShowBase,
+        ),
+        drill: drill(AnalyticsFigure.NoShows),
+        testId: 'analytics-no-shows',
+      },
+      {
+        topic: AnalyticsTopic.LateCancellations,
+        label: words.figure[AnalyticsTopic.LateCancellations],
+        value: formatCount(report.reportLateCancellationCount, lang),
+        drill: drill(AnalyticsFigure.LateCancellations),
+        testId: 'analytics-late-cancellations',
+      },
+    ],
+    note: screen.smallSample ? words.smallSample : null,
+  };
+}
+
+function fillOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsShareGroupVm {
+  const { words } = input;
+  const lang = words.lang;
+  const weekdays = formatWeekdayLabels(lang);
+  const span = (minutes: number) => spanWords(minutes, words.spanWords);
+  return {
+    title: words.fill.title,
+    rows: report.reportWeekdayFill.map((row) => ({
+      id: String(row.weekday),
+      title: weekdays[row.weekday - 1] ?? String(row.weekday),
+      detail: words.fill.line(
+        span(row.filledMinutes),
+        span(row.capacityMinutes),
+      ),
+      value: row.fillRate === null ? '—' : formatPercent(row.fillRate, lang),
+      share: row.fillRate ?? 0,
+      drill: null,
+      testId: `analytics-fill-${row.weekday}`,
+    })),
+    empty: report.reportWeekdayFill.length === 0 ? words.fill.none : null,
+  };
+}
+
+function originsOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsShareGroupVm {
+  const { words } = input;
+  const lang = words.lang;
+  const shares = StaffAnalyticsSystem.originSharesOf(report);
+  return {
+    title: words.origins.title,
+    rows: report.reportOrigins.map((row, i) => ({
+      id: row.bookingOrigin,
+      title: words.origins.origin[row.bookingOrigin],
+      detail: words.origins.visits(row.visitCount),
+      value: formatPercent(shares.at(i) ?? 0, lang),
+      share: shares.at(i) ?? 0,
+      drill: null,
+      testId: `analytics-origin-${row.bookingOrigin.toLowerCase()}`,
+    })),
+    empty: null,
+  };
+}
+
+// ── The drill-down ────────────────────────────────────────────────────────
+
+/** What a drill-down page is worded from. */
+export interface AnalyticsDrillInput {
+  readonly words: AnalyticsWords;
+  readonly today: LocalDate;
+  readonly report: AnalyticsReport;
+  readonly drill: AnalyticsDrill;
+  /** The report is the callable's answer, its seat rows held — a cached one keeps none. */
+  readonly seatRowsHeld: boolean;
+  readonly names: AnalyticsNames;
+}
+
+/** The drill-down page of one figure: its rows, and a footer equal to the figure. */
+export function analyticsDrillVm(input: AnalyticsDrillInput): AnalyticsDrillVm {
+  const { words, report, drill } = input;
+  const screen = StaffAnalyticsSystem.screenOf(report);
+  const topic = FIGURE_TOPICS[drill.analyticsFigure];
+  const serviceName =
+    drill.serviceId === null
+      ? null
+      : (input.names.serviceName(drill.serviceId) ?? words.unknownService);
+  const base = {
+    // eslint-disable-next-line security/detect-object-injection -- `topic` is a closed `AnalyticsTopic` literal.
+    title: serviceName ?? words.figure[topic],
+    // eslint-disable-next-line security/detect-object-injection -- as above.
+    lede: words.info.definition[topic],
+    footerLabel: words.drill.total,
+    closeLabel: words.info.close,
+    sections: [] as readonly VisitSectionVm[],
+    days: [] as readonly AnalyticsDayRowVm[],
+    barbers: [] as readonly AnalyticsBarberRowVm[],
+    waiting: null,
+  };
+  if (screen.shopScope) {
+    const barbers = report.reportBarbers.map((row) =>
+      barberRowOf(row, drill.analyticsFigure, input),
+    );
+    return {
+      ...base,
+      drillRows: DrillRows.Barbers,
+      barbers,
+      empty: barbers.length === 0 ? words.drill.empty : null,
+      footerValue: figureValueOf(report, drill.analyticsFigure, input),
+    };
+  }
+  if (drill.analyticsFigure === AnalyticsFigure.Time) {
+    const days = StaffAnalyticsSystem.dayRowsFor(report, {
+      serviceId: null,
+      localDate: null,
+    }).map((row) => dayRowOf(row, input));
+    return {
+      ...base,
+      drillRows: DrillRows.Days,
+      days,
+      empty: days.length === 0 ? words.drill.empty : null,
+      footerValue: spanWords(report.reportWorkedMinutes, words.spanWords),
+    };
+  }
+  const rows = StaffAnalyticsSystem.seatRowsFor(report, drill.analyticsFigure, {
+    serviceId: drill.serviceId,
+    localDate: null,
+  });
+  const total = StaffAnalyticsSystem.seatRowsTotalOf(
+    rows,
+    drill.analyticsFigure,
+  );
+  const lang = words.lang;
+  return {
+    ...base,
+    drillRows: DrillRows.Seats,
+    sections: sectionVisits(
+      rows.map((row) => seatRowOf(row, drill.analyticsFigure, input)),
+      {
+        grain: VisitGrain.Month,
+        labels: {
+          upcoming: '',
+          section: (key) => visitSectionLabel(key, lang),
+        },
+        testIdPrefix: 'analytics-seats',
+      },
+    ),
+    waiting: input.seatRowsHeld ? null : words.drill.seatsLater,
+    empty: input.seatRowsHeld && rows.length === 0 ? words.drill.empty : null,
+    footerValue:
+      drill.analyticsFigure === AnalyticsFigure.Takings ||
+      drill.analyticsFigure === AnalyticsFigure.Tips
+        ? money(total.totalCents, lang)
+        : drill.analyticsFigure === AnalyticsFigure.Rebooked
+          ? words.drill.rebookedTotal(
+              formatCount(StaffAnalyticsSystem.rebookedCountOf(rows), lang),
+              formatCount(total.rowCount, lang),
+            )
+          : words.drill.count(total.rowCount),
+  };
+}
+
+/** The figure itself, as the shop drill-down's footer says it. */
+function figureValueOf(
+  report: AnalyticsReport,
+  figure: AnalyticsFigure,
+  input: AnalyticsDrillInput,
+): string {
+  const { words } = input;
+  const lang = words.lang;
+  switch (figure) {
+    case AnalyticsFigure.Takings:
+      return money(report.reportTakingsCents, lang);
+    case AnalyticsFigure.Tips:
+      return money(report.reportTipsCents, lang);
+    case AnalyticsFigure.NoShows:
+      return words.drill.count(report.reportNoShowCount);
+    case AnalyticsFigure.LateCancellations:
+      return words.drill.count(report.reportLateCancellationCount);
+    case AnalyticsFigure.Rebooked:
+      return words.drill.rebookedTotal(
+        formatCount(report.reportRebookedCount, lang),
+        formatCount(report.reportRebookedBase, lang),
+      );
+    case AnalyticsFigure.Time:
+      return spanWords(report.reportWorkedMinutes, words.spanWords);
+  }
+}
+
+function barberRowOf(
+  row: AnalyticsReport.BarberFigures,
+  figure: AnalyticsFigure,
+  input: AnalyticsDrillInput,
+): AnalyticsBarberRowVm {
+  const { words } = input;
+  const lang = words.lang;
+  const name = input.names.barberName(row.barberId) ?? words.scope.barber;
+  const span = (minutes: number) => spanWords(minutes, words.spanWords);
+  const value = ((): string => {
+    switch (figure) {
+      case AnalyticsFigure.Takings:
+        return money(row.takingsCents, lang);
+      case AnalyticsFigure.Tips:
+        return money(row.tipsCents, lang);
+      case AnalyticsFigure.NoShows:
+        return formatCount(row.noShowCount, lang);
+      case AnalyticsFigure.LateCancellations:
+        return formatCount(row.lateCancellationCount, lang);
+      case AnalyticsFigure.Rebooked:
+        return row.rebookedRate === null
+          ? words.clients.ofBase(
+              formatCount(row.rebookedCount, lang),
+              formatCount(row.rebookedBase, lang),
+            )
+          : formatPercent(row.rebookedRate, lang);
+      case AnalyticsFigure.Time:
+        return span(row.workedMinutes);
+    }
+  })();
+  const detail =
+    figure === AnalyticsFigure.Time
+      ? words.drill.barberLine(
+          span(row.workedMinutes),
+          span(row.rosteredMinutes),
+        )
+      : null;
+  return {
+    barberId: row.barberId,
+    name,
+    avatarSrc: input.names.barberAvatarSrc(row.barberId),
+    detail,
+    value,
+    accessibleName: `${words.drill.openBarber(name)}, ${value}`,
+    testId: `analytics-barber-${row.barberId}`,
+  };
+}
+
+function dayRowOf(
+  row: AnalyticsReport.DayRow,
+  input: AnalyticsDrillInput,
+): AnalyticsDayRowVm {
+  const { words } = input;
+  const span = (minutes: number) => spanWords(minutes, words.spanWords);
+  return {
+    id: `${row.barberId}__${row.localDate}`,
+    title: formatWallClock(row.localDate, null, words.lang, {
+      weekday: 'short',
+      day: 'numeric',
+      month: '2-digit',
+    }),
+    detail: words.drill.dayLine(
+      span(row.rosteredMinutes),
+      span(row.unsoldMinutes),
+    ),
+    value: span(row.workedMinutes),
+    testId: `analytics-day-${row.localDate}`,
+  };
+}
+
+/**
+ * One seat as a row of the shared visits list (`lib-visit-list`, ir-2-11):
+ * the date tile, the service, the time, and the figure's own fact at the
+ * end of the line — the seat's net, its tip, or its outcome in words. The
+ * row id is the seat's within its visit, so two seats of one party are two
+ * rows.
+ */
+function seatRowOf(
+  row: AnalyticsReport.SeatRow,
+  figure: AnalyticsFigure,
+  input: AnalyticsDrillInput,
+): AppointmentRowVm {
+  const { words } = input;
+  const lang = words.lang;
+  const title = input.names.serviceName(row.serviceId) ?? words.unknownService;
+  const time = formatMinute(row.startMinutes, lang);
+  const day = LocalDate.parts(row.localDate);
+  const fact = ((): AppointmentRowVm['trailingFact'] => {
+    switch (figure) {
+      case AnalyticsFigure.Takings:
+        return amountFact(money(row.netCents, lang));
+      case AnalyticsFigure.Tips:
+        return amountFact(money(row.tipCents, lang));
+      case AnalyticsFigure.NoShows:
+        return statusFact('visit.noShow', words.drill.noShow, true);
+      case AnalyticsFigure.LateCancellations:
+        return statusFact('visit.cancelled', words.drill.late, true);
+      case AnalyticsFigure.Rebooked:
+        return row.seatRebooked === true
+          ? statusFact('visit.repeat', words.drill.rebookedYes, false)
+          : statusFact('visit.last', words.drill.rebookedNo, false);
+      case AnalyticsFigure.Time:
+        return null;
+    }
+  })();
+  const factText = fact === null ? '' : `, ${fact.text}`;
+  const dayName = formatDayShort(row.localDate, input.today, lang);
+  return {
+    id: AppointmentId.of(`${row.appointmentId}~${row.seatId}`),
+    visitRowEntry: VisitRowEntry.Visit,
+    localDate: row.localDate,
+    startMinutes: row.startMinutes,
+    sectionKey: row.localDate.slice(0, 7),
+    upcoming: false,
+    tile: {
+      caption: formatWallClock(row.localDate, null, lang, { weekday: 'short' }),
+      day: day.day,
+      tone: 'past',
+    },
+    leadingIcon: null,
+    title,
+    struck: false,
+    lines: [{ text: time }],
+    quote: null,
+    trailing: null,
+    trailingFact: fact,
+    marks: [],
+    outcome: null,
+    bookingStatus: null,
+    accessibleName: `${title}, ${dayName} ${time}${factText}`,
+    testId: `analytics-seat-${row.seatId}`,
+  };
+}
+
+function amountFact(text: string): AppointmentRowVm['trailingFact'] {
+  return {
+    trailingFactFace: TrailingFactFace.Amount,
+    text,
+    emphasis: 'primary',
+    struck: false,
+  };
+}
+
+function statusFact(
+  icon: 'visit.noShow' | 'visit.cancelled' | 'visit.repeat' | 'visit.last',
+  text: string,
+  warning: boolean,
+): AppointmentRowVm['trailingFact'] {
+  return {
+    trailingFactFace: TrailingFactFace.Status,
+    icon,
+    text,
+    tone: warning ? StatusFactTone.Warning : StatusFactTone.Neutral,
+  };
+}

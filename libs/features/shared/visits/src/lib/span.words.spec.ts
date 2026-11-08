@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { spanCopyOf, spanWords } from './span.words';
-import { catalogueTranslate } from '../staff-dashboard/catalogue.spec-support';
+import { appCatalogue } from './testing/app-catalogue';
+import { catalogueTranslator } from './testing/visit-fixtures';
 
-const BG = spanCopyOf(catalogueTranslate('bg'));
-const EN = spanCopyOf(catalogueTranslate('en'));
+const BG = spanCopyOf(catalogueTranslator(appCatalogue('bg')));
+const EN = spanCopyOf(catalogueTranslator(appCatalogue('en')));
 
 describe('spanWords — a length of time, never a bare minute count', () => {
   it('says minutes under an hour', () => {

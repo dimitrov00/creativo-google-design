@@ -1,6 +1,8 @@
 import { InjectionToken, inject } from '@angular/core';
 import { AuthDeployment, FeatureFlags } from '@core/components';
 import type {
+  AnalyticsCachePorts,
+  AnalyticsCallPorts,
   AppointmentNotePorts,
   AppointmentPhotoPorts,
   AppointmentReadPorts,
@@ -225,6 +227,25 @@ export const CLIENT_PRIVACY_PORTS =
  */
 export const ROLES_ADMIN_PORTS = new InjectionToken<RolesAdminPorts>(
   'ROLES_ADMIN_PORTS',
+);
+
+/**
+ * The staff «Анализи» screen's report (`AnalyticsCallPorts`,
+ * `docs/designs/staff-analytics.md`): `requestReport`, the
+ * `staffAnalytics` callable over the one typed client — eager, like every
+ * callable bundle.
+ */
+export const ANALYTICS_CALL_PORTS = new InjectionToken<AnalyticsCallPorts>(
+  'ANALYTICS_CALL_PORTS',
+);
+
+/**
+ * The device's cache of analytics reports (`AnalyticsCachePorts`) —
+ * `localStorage`, figures and day rows only, keyed by account; the session
+ * clears it on sign-out and on an account switch, the screen on a refusal.
+ */
+export const ANALYTICS_CACHE_PORTS = new InjectionToken<AnalyticsCachePorts>(
+  'ANALYTICS_CACHE_PORTS',
 );
 
 /**

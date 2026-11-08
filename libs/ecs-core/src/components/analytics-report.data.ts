@@ -45,6 +45,30 @@ export const AnalyticsFigure = {
 export type AnalyticsFigure =
   (typeof AnalyticsFigure)[keyof typeof AnalyticsFigure];
 
+/** One segment of the time bar — the field `analyticsBarPart`, in the bar's order. */
+export const AnalyticsBarPart = {
+  Worked: 'WORKED',
+  NoShow: 'NO_SHOW',
+  Unmarked: 'UNMARKED',
+  Blocked: 'BLOCKED',
+  Unsold: 'UNSOLD',
+  /** Held time plus short gaps. */
+  Other: 'OTHER',
+} as const;
+export type AnalyticsBarPart =
+  (typeof AnalyticsBarPart)[keyof typeof AnalyticsBarPart];
+
+/** Which way the hero's takings moved against the compared days of the previous period — the field `heroChange`. */
+export const HeroChange = {
+  /** No previous period to compare with. */
+  None: 'NONE',
+  Up: 'UP',
+  Down: 'DOWN',
+  /** The same takings. */
+  Flat: 'FLAT',
+} as const;
+export type HeroChange = (typeof HeroChange)[keyof typeof HeroChange];
+
 /**
  * A staff analytics report (`docs/designs/staff-analytics.md`, the metric
  * catalogue) — every value already decided, so a presenter only words it

@@ -173,6 +173,12 @@
     "GOVERNANCE_ROLES_BARBER_UNKNOWN": "There is no such barber.",
     "GOVERNANCE_ROLES_LINK_WITHOUT_BARBER": "Only a barber can be linked to a barber record.",
     "GOVERNANCE_ROLES_BARBER_ALREADY_LINKED": "This barber is already linked to another account.",
+    "ANALYTICS_UNAUTHENTICATED": "Sign in again to see the analytics.",
+    "ANALYTICS_FORBIDDEN": "You have no access to these analytics.",
+    "ANALYTICS_BARBER_NOT_LINKED": "Your account is not linked to a barber yet. Ask the owner to link it.",
+    "ANALYTICS_PERIOD_OUT_OF_RANGE": "This period is out of range.",
+    "ANALYTICS_SCOPE_UNKNOWN": "This barber no longer exists.",
+    "ANALYTICS_INVALID_INPUT": "The request is not valid.",
     "APP_CHECK_REQUIRED": "We couldn't verify this device. Reload the page.",
     "APP_CHECK_REPLAYED": "We couldn't verify this device. Reload the page.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
@@ -618,7 +624,8 @@
       "openPositions": "Open positions",
       "signOut": "Sign out",
       "staffDay": "Schedule",
-      "loyaltyAdmin": "Loyalty"
+      "loyaltyAdmin": "Loyalty",
+      "staffAnalytics": "Analytics"
     },
     "prefs": {
       "language": "Language",
@@ -2616,5 +2623,143 @@
   "operation": {
     "reference": "Reference: {{ref}}",
     "referenceCopied": "Reference copied."
+  },
+  "staffAnalytics": {
+    "title": "Analytics",
+    "unknownService": "Service",
+    "back": "To the schedule",
+    "span": {
+      "label": "Period",
+      "WEEK": "Week",
+      "MONTH": "Month"
+    },
+    "previous": "Previous period",
+    "next": "Next period",
+    "range": "{{from}} – {{to}}",
+    "scope": {
+      "label": "Whose figures",
+      "shop": "Shop",
+      "me": "Me",
+      "barber": "Barber"
+    },
+    "status": {
+      "asOf": "As of {{time}}",
+      "refreshing": "Updating…",
+      "failed": "We could not update. Figures as of {{time}}.",
+      "failedNoCache": "The analytics did not load.",
+      "retry": "Try again",
+      "scopeGone": "This barber no longer exists. Showing the whole shop."
+    },
+    "empty": {
+      "title": "No visits in this period",
+      "rostered": "Rostered: {{span}}",
+      "noRoster": "No working hours in this period."
+    },
+    "smallSample": "Rates show from 20 up.",
+    "hero": {
+      "caption": "Takings",
+      "versus": "against the previous period",
+      "noComparison": "No previous period to compare with yet",
+      "flat": "the same as the previous period",
+      "fromNothing": "from €0 in the previous period",
+      "tips": "Tips",
+      "excluded": {
+        "one": "{{count}} visit whose bill could not be read is left out",
+        "other": "{{count}} visits whose bills could not be read are left out"
+      }
+    },
+    "time": {
+      "title": "Time",
+      "barName": "Working time so far",
+      "part": {
+        "WORKED": "Worked",
+        "NO_SHOW": "No-shows",
+        "UNMARKED": "Unmarked",
+        "BLOCKED": "Blocked",
+        "UNSOLD": "Unsold",
+        "OTHER": "Other"
+      },
+      "byDay": "By day",
+      "ahead": "Still ahead: {{booked}} booked · {{open}} open"
+    },
+    "open": {
+      "title": "Open hours",
+      "caption": "in the next 7 days",
+      "emptiest": "Most on {{day}}",
+      "none": "No open hours in the next 7 days",
+      "action": "Open {{day}} in the schedule"
+    },
+    "services": {
+      "title": "Services",
+      "line": "{{count}} · {{perHour}} an hour",
+      "count": {
+        "one": "{{count}} time",
+        "other": "{{count}} times"
+      },
+      "none": "No worked services yet."
+    },
+    "clients": {
+      "title": "Clients",
+      "ofBase": "{{count}} of {{base}}"
+    },
+    "fill": {
+      "title": "Fill by weekday",
+      "line": "{{filled}} of {{capacity}}",
+      "none": "No past working days yet."
+    },
+    "origins": {
+      "title": "Where bookings come from",
+      "ONLINE": "Online",
+      "STAFF": "By the shop",
+      "UNKNOWN": "Unknown",
+      "visits": {
+        "one": "{{count}} visit",
+        "other": "{{count}} visits"
+      }
+    },
+    "figure": {
+      "TAKINGS": "Takings",
+      "TIPS": "Tips",
+      "TIME": "Time",
+      "OPEN": "Open hours",
+      "SERVICES": "Services",
+      "REBOOKED": "Rebooked",
+      "NO_SHOWS": "No-shows",
+      "LATE_CANCELLATIONS": "Late cancellations",
+      "FILL": "Fill",
+      "ORIGINS": "Bookings"
+    },
+    "info": {
+      "label": "What “{{figure}}” means",
+      "close": "Got it",
+      "TAKINGS": "The worked services after their share of the bill's discount. Tips are not included. A voucher-paid service counts in full.",
+      "TIPS": "The tips on worked services.",
+      "TIME": "How the working time went so far: worked, no-shows, unmarked visits, blocked and unsold time. “Other” is time held by cancelled services and gaps under 20 minutes. Breaks and days off are not included.",
+      "OPEN": "The free time in the next 7 days the schedule still offers — at least 20 minutes at a time.",
+      "SERVICES": "Worked services by kind: how many, their takings and the takings per hour of service, setup and cleanup left out.",
+      "REBOOKED": "Of the visits with a worked service: how many booked their next visit from it (“Book again”) by the end of the next day. A visit booked later or on its own does not count.",
+      "NO_SHOWS": "The services the client did not come to. The rate is of worked and no-show services.",
+      "LATE_CANCELLATIONS": "Client cancellations after the cancellation deadline.",
+      "FILL": "Busy time — worked, no-shows, unmarked — of the working time without breaks, past days only.",
+      "ORIGINS": "Visits with a worked service by who booked them: the client online, or the shop."
+    },
+    "drill": {
+      "total": "Total",
+      "count": {
+        "one": "{{count}} entry",
+        "other": "{{count}} entries"
+      },
+      "rebookedTotal": "{{count}} of {{base}} rebooked",
+      "empty": "Nothing in this period.",
+      "seatsLater": "The visits show once the figures update.",
+      "rebookedYes": "Rebooked",
+      "rebookedNo": "No next visit",
+      "noShow": "No-show",
+      "late": "Late cancellation",
+      "dayLine": "{{rostered}} rostered · {{unsold}} unsold",
+      "barberLine": "{{worked}} worked of {{rostered}}",
+      "barbers": "By barber",
+      "openBarber": "See {{name}}"
+    }
   }
 }

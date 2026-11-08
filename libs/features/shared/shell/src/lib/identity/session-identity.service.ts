@@ -9,13 +9,24 @@ import {
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { from, of, startWith, switchMap } from 'rxjs';
 import {
+  ANALYTICS_CACHE_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { E164, OnboardingFlowStep, Principal, Roles } from '@core/components';
+import {
+  E164,
+  OnboardingFlowStep,
+  Principal,
+  Roles,
+  StaffLink,
+} from '@core/components';
 import { Profile } from '@core/entities';
-import { IdentifierChannel, type UserId } from '@core/primitives';
+import {
+  type BarberId,
+  IdentifierChannel,
+  type UserId,
+} from '@core/primitives';
 import { OnboardingFlowSystem, ProfileCompletionSystem } from '@core/systems';
 import { OnboardingStepHint } from './onboarding-link';
 
@@ -45,8 +56,55 @@ export class SessionIdentityService {
   private readonly session = inject(AUTH_SESSION_PORTS);
   private readonly avatars = inject(AVATAR_PORTS);
   private readonly accountState = inject(AccountStateService);
+  /**
+   * The device's analytics report cache — optional, so a host that binds
+   * none (a test bed, the showcase) is no session without one.
+   */
+  private readonly analyticsCache = inject(ANALYTICS_CACHE_PORTS, {
+    optional: true,
+  });
 
   readonly principal = this.accountState.principal;
+
+  /**
+   * Whose session this is — the account's uid while signed in (onboarding
+   * included), `null` signed out. Equal by value, so a token refresh for
+   * the same account is no change.
+   */
+  readonly userId = computed<UserId | null>(() => {
+    const principal = this.principal();
+    return 'userId' in principal ? principal.userId : null;
+  });
+
+  /**
+   * The barber record this account is linked to (`StaffLink`,
+   * `docs/designs/staff-analytics.md` «Which barber the caller is») — read
+   * off the session's OWN `users/{uid}` snapshot, never a token claim;
+   * `null` while it loads, for an account with no link and for a document
+   * written before the link existed (`StaffLink.of`). The «Анализи» screen's
+   * barber scope; nothing security-bearing: the callable judges the stored
+   * record itself.
+   */
+  readonly linkedBarberId = computed<BarberId | null>(() => {
+    const account = this.accountState.account();
+    return account === null ? null : StaffLink.of(account).linkedBarberId;
+  });
+
+  /**
+   * Readers of the analytics menu row — `Roles.readsAnalytics` over the
+   * token's claims (a barber, or the admin): the route's guard and the
+   * callable's wire use the same rule, and the callable then judges the
+   * stored roles.
+   */
+  readonly readsAnalytics = computed(() => {
+    const principal = this.principal();
+    return (
+      Principal.isActive(principal) && Roles.readsAnalytics(principal.roles)
+    );
+  });
+
+  /** The uid the cache-clearing effect last saw; `undefined` before its first run. */
+  private cacheOwner: UserId | null | undefined = undefined;
 
   /** Onboarded — a client or a staff member (`Principal.isActive`). */
   readonly isAuthed = computed(() => Principal.isActive(this.principal()));
@@ -125,6 +183,17 @@ export class SessionIdentityService {
   });
 
   constructor() {
+    // The analytics cache is keyed by uid, and still never outlives its
+    // account on this device (staff-analytics, Cache): a sign-out or a
+    // switch to another account clears every cached report. The first look
+    // only remembers who is signed in — a cold load is no change of account.
+    effect(() => {
+      const owner = this.userId();
+      const before = this.cacheOwner;
+      this.cacheOwner = owner;
+      if (before === undefined || before === null || before === owner) return;
+      untracked(() => this.analyticsCache?.clearCachedReports());
+    });
     // A phone session needs the formatter: start loading it as soon as one
     // is signed in, so the label is ready before the menu opens.
     effect(() => {

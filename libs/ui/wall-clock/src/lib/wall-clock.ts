@@ -426,3 +426,30 @@ export function formatMinutesRange(
 export function formatCount(value: number, locale: string): string {
   return numberFormat(locale, COUNT).format(value);
 }
+
+const PERCENT: Intl.NumberFormatOptions = {
+  style: 'percent',
+  maximumFractionDigits: 0,
+};
+const SIGNED_PERCENT: Intl.NumberFormatOptions = {
+  ...PERCENT,
+  signDisplay: 'exceptZero',
+};
+
+/**
+ * «45 %» · «45%» — a share or a rate (a FRACTION, `0.45`) as a whole percent
+ * in the locale's own form (`Intl`'s percent style, its spacing included).
+ * The fraction is a system's answer; this only prints it. Cached per locale.
+ */
+export function formatPercent(fraction: number, locale: string): string {
+  return numberFormat(locale, PERCENT).format(fraction);
+}
+
+/**
+ * «+30 %» · «−12 %» — a change as a whole percent with its sign («0 %»
+ * unsigned): the hero's change against the previous period. Cached per
+ * locale.
+ */
+export function formatSignedPercent(fraction: number, locale: string): string {
+  return numberFormat(locale, SIGNED_PERCENT).format(fraction);
+}

@@ -11,6 +11,7 @@ import {
   type BarberId,
   type LocationId,
   type ServiceId,
+  type TimeZone,
   type UtcEpochMs,
   type Weekday,
 } from '@core/primitives';
@@ -18,8 +19,11 @@ import { AnalyticsError } from '@core/errors';
 import {
   ANALYTICS_DEFINITION_VERSION,
   AccountLifecycle,
+  AnalyticsBarPart,
   AnalyticsFigure,
   AnalyticsPeriod,
+  AnalyticsSpan,
+  HeroChange,
   type AnalyticsCall,
   type AnalyticsReport,
   BookingOrigin,
@@ -52,6 +56,7 @@ import {
 } from './money-allocation.system';
 import { PartyAdmissionSystem } from './party-admission.system';
 import { type BuildDayWindowsInput, RosterSystem } from './roster.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /** The caller as the visibility table judges them — from their STORED user record. */
 export type AnalyticsCaller = {
@@ -150,6 +155,57 @@ export type AnalyticsDaysInput = {
 export type AnalyticsRowFilter = {
   readonly serviceId: ServiceId | null;
   readonly localDate: LocalDate | null;
+};
+
+/** The hero's comparison: which way, and by how much when there is a base to divide by. */
+export type AnalyticsHeroChange = {
+  readonly heroChange: HeroChange;
+  /** `(current − previous) ÷ previous`; `null` with no previous period or a previous of 0. */
+  readonly heroChangeRate: number | null;
+};
+
+/** One segment of the time bar: its minutes and its share of the bar. */
+export type AnalyticsBarSegment = {
+  readonly analyticsBarPart: AnalyticsBarPart;
+  readonly minutes: MinuteCount;
+  /** `minutes ÷` the bar's whole; `0` for an empty bar. */
+  readonly share: number;
+};
+
+/** What the screen shows of a report — every "which sections" answer, decided here. */
+export type AnalyticsScreen = {
+  /** A shop report: fill by weekday, booking origins, and per-barber drill-downs. */
+  readonly shopScope: boolean;
+  /** A barber report: its figures open to their seats. */
+  readonly drillsToSeats: boolean;
+  /** Nothing booked, worked or cancelled in the period — the empty state. */
+  readonly periodEmpty: boolean;
+  /** The period holds rostered time — the empty state names it. */
+  readonly rostered: boolean;
+  /** A count rate sits under its base of 20, so it shows as "n of m" (design G6). */
+  readonly smallSample: boolean;
+  /** The open-hours card leads to a day in the schedule. */
+  readonly opensEmptiestDay: boolean;
+  /** The hero leaves some visits out (their bill could not be evaluated). */
+  readonly excludesVisits: boolean;
+};
+
+/** The periods either side of one, `null` where the screen may not go (design: 12 months back, never past today). */
+export type AnalyticsSteps = {
+  readonly previous: AnalyticsPeriod | null;
+  readonly next: AnalyticsPeriod | null;
+};
+
+/** One choice of the admin's scope picker: the shop (`null`) or a barber record, and whether it is the admin's own. */
+export type AnalyticsScopeChoice = {
+  readonly scopeBarberId: BarberId | null;
+  readonly scopeMine: boolean;
+};
+
+/** What a drill-down's rows add up to: their money (the figure's) and how many they are. */
+export type AnalyticsRowsTotal = {
+  readonly totalCents: PriceCents;
+  readonly rowCount: number;
 };
 
 /** The base a count rate needs before it is shown as a rate (design G6). */
@@ -821,7 +877,205 @@ export const StaffAnalyticsSystem = {
           (row) => row.localDate === filter.localDate,
         );
   },
+  /**
+   * The hero's change (design, «Comparison»): `NONE` with no previous
+   * period, else the direction of the compared days' takings, and the rate
+   * of change when the previous takings are not 0.
+   */
+  heroChangeOf(report: AnalyticsReport): AnalyticsHeroChange {
+    const previous = report.reportHeroPreviousCents;
+    if (previous === null) {
+      return { heroChange: HeroChange.None, heroChangeRate: null };
+    }
+    const current = report.reportHeroCurrentCents;
+    const heroChange =
+      current > previous
+        ? HeroChange.Up
+        : current < previous
+          ? HeroChange.Down
+          : HeroChange.Flat;
+    return {
+      heroChange,
+      heroChangeRate: previous > 0 ? (current - previous) / previous : null,
+    };
+  },
+
+  /**
+   * The time bar up to now, in its order — worked, no-show, unmarked,
+   * blocked, unsold, other — each with its share of the bar's whole. Every
+   * segment is listed, an empty one at 0, so the legend keeps its rows.
+   */
+  barSegmentsOf(report: AnalyticsReport): readonly AnalyticsBarSegment[] {
+    const parts: readonly (readonly [AnalyticsBarPart, MinuteCount])[] = [
+      [AnalyticsBarPart.Worked, report.reportBarWorkedMinutes],
+      [AnalyticsBarPart.NoShow, report.reportBarNoShowMinutes],
+      [AnalyticsBarPart.Unmarked, report.reportBarUnmarkedMinutes],
+      [AnalyticsBarPart.Blocked, report.reportBarBlockedMinutes],
+      [AnalyticsBarPart.Unsold, report.reportBarUnsoldMinutes],
+      [AnalyticsBarPart.Other, report.reportBarOtherMinutes],
+    ];
+    let whole = 0;
+    for (let i = 0; i < parts.length; i++)
+      whole += (parts[i] as readonly [AnalyticsBarPart, MinuteCount])[1];
+    return parts.map(([analyticsBarPart, partMinutes]) => ({
+      analyticsBarPart,
+      minutes: partMinutes,
+      share: whole > 0 ? partMinutes / whole : 0,
+    }));
+  },
+
+  /** Each service row's share of the services' takings, in the report's order; `0` each when nothing was taken. */
+  serviceSharesOf(report: AnalyticsReport): readonly number[] {
+    return sharesOf(report.reportServices.map((row) => row.takingsCents));
+  },
+
+  /** Each origin's share of the counted visits, in the report's order; `0` each with none. */
+  originSharesOf(report: AnalyticsReport): readonly number[] {
+    return sharesOf(report.reportOrigins.map((row) => row.visitCount));
+  },
+
+  /** Which sections and states the screen shows for `report`. */
+  screenOf(report: AnalyticsReport): AnalyticsScreen {
+    const shopScope = report.reportScopeBarberId === null;
+    return {
+      shopScope,
+      drillsToSeats: !shopScope,
+      periodEmpty:
+        report.reportWorkedMinutes +
+          report.reportNoShowMinutes +
+          report.reportUnmarkedMinutes +
+          report.reportBookedAheadMinutes +
+          report.reportHeldMinutes ===
+          0 &&
+        report.reportTakingsCents === 0 &&
+        report.reportNoShowCount === 0 &&
+        report.reportLateCancellationCount === 0,
+      rostered: report.reportRosteredMinutes > 0,
+      smallSample:
+        (report.reportRebookedRate === null && report.reportRebookedBase > 0) ||
+        (report.reportNoShowRate === null && report.reportNoShowBase > 0),
+      opensEmptiestDay: report.reportEmptiestLocalDate !== null,
+      excludesVisits: report.reportExcludedVisitCount > 0,
+    };
+  },
+
+  /**
+   * The admin's scope picker, in its order (design, «Which barber the
+   * caller is»): the shop first — an admin opens on it — then the admin's
+   * own linked record («Аз»), then every other record as listed.
+   */
+  scopeChoicesOf(
+    barberIds: readonly BarberId[],
+    linkedBarberId: BarberId | null,
+  ): readonly AnalyticsScopeChoice[] {
+    const out: AnalyticsScopeChoice[] = [
+      { scopeBarberId: null, scopeMine: false },
+    ];
+    if (linkedBarberId !== null) {
+      out.push({ scopeBarberId: linkedBarberId, scopeMine: true });
+    }
+    for (let i = 0; i < barberIds.length; i++) {
+      const barberId = barberIds[i] as BarberId;
+      if (barberId !== linkedBarberId) {
+        out.push({ scopeBarberId: barberId, scopeMine: false });
+      }
+    }
+    return out;
+  },
+
+  /** Whether the report was computed on `today` of the shop in `timeZone` — its time alone then says when. */
+  computedOn(
+    report: AnalyticsReport,
+    timeZone: TimeZone,
+    today: LocalDate,
+  ): boolean {
+    return (
+      ZonedTimeSystem.shopNow(report.reportComputedAtUtcMs, timeZone)
+        .localDate === today
+    );
+  },
+
+  /**
+   * The period before and after `period` of its span, each only when it may
+   * be asked for on `today` (`AnalyticsPeriod.isWithinRange`): the switcher
+   * never offers what the callable refuses.
+   */
+  stepsOf(period: AnalyticsPeriod, today: LocalDate): AnalyticsSteps {
+    const previous = AnalyticsPeriod.previous(period);
+    const next = AnalyticsPeriod.of(
+      period.analyticsSpan,
+      LocalDate.addDays(period.toLocalDate, 1),
+    );
+    return {
+      previous: AnalyticsPeriod.isWithinRange(previous, today)
+        ? previous
+        : null,
+      next:
+        next.ok && AnalyticsPeriod.isWithinRange(next.value, today)
+          ? next.value
+          : null,
+    };
+  },
+
+  /**
+   * The period of `span` a switch from `period` lands on: the one holding
+   * `period`'s last day, or today when that is later — so a past month
+   * switches to its last week, the current one to this week — and this
+   * span's current period when that one is out of reach.
+   */
+  periodInSpan(
+    period: AnalyticsPeriod,
+    span: AnalyticsSpan,
+    today: LocalDate,
+  ): AnalyticsPeriod {
+    if (span === period.analyticsSpan) return period;
+    const day = period.toLocalDate < today ? period.toLocalDate : today;
+    const ofSpan = (localDate: LocalDate): AnalyticsPeriod =>
+      span === AnalyticsSpan.Week
+        ? AnalyticsPeriod.weekOf(localDate)
+        : AnalyticsPeriod.monthOf(localDate);
+    const landed = ofSpan(day);
+    return AnalyticsPeriod.isWithinRange(landed, today)
+      ? landed
+      : ofSpan(today);
+  },
+
+  /**
+   * What a drill-down's seat rows add up to for `figure` — the footer: their
+   * nets for `TAKINGS`, their tips for `TIPS`, no money for the counts.
+   */
+  seatRowsTotalOf(
+    rows: readonly AnalyticsReport.SeatRow[],
+    figure: AnalyticsFigure,
+  ): AnalyticsRowsTotal {
+    let total = PriceCents.ZERO;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] as AnalyticsReport.SeatRow;
+      if (figure === AnalyticsFigure.Takings) {
+        total = PriceCents.add(total, row.netCents);
+      } else if (figure === AnalyticsFigure.Tips) {
+        total = PriceCents.add(total, row.tipCents);
+      }
+    }
+    return { totalCents: total, rowCount: rows.length };
+  },
+
+  /** The rebooked rows among a `REBOOKED` drill-down's — its footer's «n of m». */
+  rebookedCountOf(rows: readonly AnalyticsReport.SeatRow[]): number {
+    let count = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if ((rows[i] as AnalyticsReport.SeatRow).seatRebooked === true) count++;
+    }
+    return count;
+  },
 } as const;
+
+/** Each value's share of their sum; `0` each when the sum is 0. */
+function sharesOf(values: readonly number[]): readonly number[] {
+  let whole = 0;
+  for (let i = 0; i < values.length; i++) whole += values[i] as number;
+  return values.map((value) => (whole > 0 ? value / whole : 0));
+}
 
 function seatRowCounts(
   row: AnalyticsReport.SeatRow,

@@ -23,10 +23,10 @@
       "path": "../../libs/ui/modifiers/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/ui/layout/tsconfig.lib.json"
+      "path": "../../libs/features/admin/programs/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/features/admin/programs/tsconfig.lib.json"
+      "path": "../../libs/features/staff/analytics/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/staff/dashboard/tsconfig.lib.json"
@@ -81,6 +81,9 @@
     },
     {
       "path": "../../libs/infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/ui/layout/tsconfig.lib.json"
     },
     {
       "path": "../../libs/infrastructure/storage/tsconfig.lib.json"

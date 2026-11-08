@@ -4,14 +4,17 @@ import type {
   BusyKey,
   LocalDate,
   Result,
+  UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
+import type { AnalyticsCall, AnalyticsReport } from '@core/components';
 import type {
   Appointment,
   ScheduleException,
   ShopLocation,
 } from '@core/entities';
+import type { Callable } from './scheduling.port';
 
 /**
  * STAFF ANALYTICS' READS (`docs/designs/staff-analytics.md`, Reads and cost)
@@ -100,4 +103,64 @@ export type AnalyticsReadPorts = {
   readonly loadDeparturesForBarber: LoadDeparturesForBarber;
   readonly listBarberRecordIds: ListBarberRecordIds;
   readonly listLocations: ListLocations;
+};
+
+// ── The web's side (the «Анализи» screen) ─────────────────────────────────
+
+/**
+ * One report asked of the `staffAnalytics` callable — the scope and the
+ * period as `AnalyticsCall` names them (`scopeBarberId: null` is the shop
+ * for an admin, the caller's own record for a barber); the answer the
+ * report, every figure decided, or the callable's one `PipelineError`
+ * (a refusal's `serverErrorCode` is an `AnalyticsErrorCode`).
+ */
+export type RequestAnalyticsReport = Callable<AnalyticsCall, AnalyticsReport>;
+
+/**
+ * Which cached report — the account it was computed for and the request
+ * it answered. The adapter spells the storage key from it
+ * (`creativo.analytics/<definitionVersion>/<uid>/<scope>/<period>`); the
+ * catalogue's version is the adapter's own constant, so a report of an
+ * older definition is never read back.
+ */
+export type AnalyticsCacheKey = AnalyticsCall & {
+  readonly userId: UserId;
+};
+
+/**
+ * The report cached for `key` — figures and day rows only (its
+ * `reportSeatRows` always empty: seat rows are never stored); `null` when
+ * there is none. A stored value that is no report of this definition is
+ * deleted and answers `REPOSITORY_MALFORMED`; a storage that cannot be read
+ * answers `REPOSITORY_READ_FAILED` — the screen reads both as "no cache".
+ * Synchronous, like the storage under it, so the screen paints it in the
+ * tap's first frame.
+ */
+export type ReadCachedReport = (
+  key: AnalyticsCacheKey,
+) => Result<AnalyticsReport | null, RepositoryError>;
+
+/**
+ * Keeps `report` for `key`, its seat rows dropped — at most a handful of
+ * entries, the least recently written dropped first. A full or disabled
+ * storage answers a `RepositoryError` the screen ignores.
+ */
+export type WriteCachedReport = (
+  key: AnalyticsCacheKey,
+  report: AnalyticsReport,
+) => Result<void, RepositoryError>;
+
+/** Deletes every cached report on this device — sign-out, an account switch, a refusal. */
+export type ClearCachedReports = () => Result<void, RepositoryError>;
+
+/** The `staffAnalytics` callable — `ANALYTICS_CALL_PORTS` (web), `analyticsCallPorts(gateway)`. */
+export type AnalyticsCallPorts = {
+  readonly requestReport: RequestAnalyticsReport;
+};
+
+/** The device's report cache — `ANALYTICS_CACHE_PORTS` (web), `localStorageAnalyticsCachePorts()`. */
+export type AnalyticsCachePorts = {
+  readonly readCachedReport: ReadCachedReport;
+  readonly writeCachedReport: WriteCachedReport;
+  readonly clearCachedReports: ClearCachedReports;
 };
