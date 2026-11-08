@@ -2631,8 +2631,13 @@
     "back": "To the schedule",
     "span": {
       "label": "Period",
+      "DAY": "Day",
       "WEEK": "Week",
       "MONTH": "Month"
+    },
+    "comparison": {
+      "previous": "against the previous period",
+      "none": "no comparison data"
     },
     "previous": "Previous period",
     "next": "Next period",

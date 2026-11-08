@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  AnalyticsComparison,
   AnalyticsPeriod,
   AnalyticsSpan,
   type AnalyticsReport,
@@ -58,6 +59,7 @@ async function reportOf(barberId: BarberId): Promise<AnalyticsReport> {
       scopeBarberId: barberId,
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+      analyticsComparison: AnalyticsComparison.Previous,
     }),
   );
 }

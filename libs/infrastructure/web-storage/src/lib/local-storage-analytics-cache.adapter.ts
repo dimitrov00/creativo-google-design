@@ -22,13 +22,14 @@ const SHOP_SCOPE = 'shop';
 /**
  * The storage key of one cached report —
  * `creativo.analytics/<definitionVersion>/<uid>/<scope>/<period>`: the
- * scope a barber id or `shop`, the period its span and first day
- * (`MONTH-2026-09-01`). Each segment URI-encoded, so no id can reach into
+ * scope a barber id or `shop`, the period its span, first day and
+ * comparison (`MONTH-2026-09-01-PREVIOUS` — the design's cache key encodes
+ * the comparison too). Each segment URI-encoded, so no id can reach into
  * another segment.
  */
 export function analyticsCacheStorageKey(key: AnalyticsCacheKey): string {
   const scope = key.scopeBarberId ?? SHOP_SCOPE;
-  const period = `${key.analyticsSpan}-${key.fromLocalDate}`;
+  const period = `${key.analyticsSpan}-${key.fromLocalDate}-${key.analyticsComparison}`;
   return `${VERSION_PREFIX}${[key.userId, scope, period]
     .map(encodeURIComponent)
     .join('/')}`;

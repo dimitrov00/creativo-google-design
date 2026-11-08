@@ -20,6 +20,7 @@ import {
   ANALYTICS_DEFINITION_VERSION,
   AccountLifecycle,
   AnalyticsBarPart,
+  type AnalyticsComparison,
   AnalyticsFigure,
   AnalyticsPeriod,
   AnalyticsSpan,
@@ -108,13 +109,19 @@ export type AnalyticsInput = {
   /** The barber records in scope: the one, or every one of the shop. */
   readonly barberIds: readonly BarberId[];
   readonly period: AnalyticsPeriod;
+  /** The comparison the call asked for — stated on the report as it is. */
+  readonly analyticsComparison: AnalyticsComparison;
   /** The scope's barber-days of the period. */
   readonly days: readonly AnalyticsDay[];
   /** The scope's barber-days of the next 7 shop days from today. */
   readonly aheadDays: readonly ChairDay[];
   /** The period's visits with a seat in scope, each once. */
   readonly visits: readonly AnalyticsVisit[];
-  /** The previous period's visits with a seat in scope — for the hero only. */
+  /**
+   * The comparison period's visits with a seat in scope — the hero's and
+   * the line's comparison; empty (never read) when the period is not
+   * comparable (`AnalyticsPeriod.isComparable`).
+   */
   readonly previousVisits: readonly AnalyticsVisit[];
   readonly followUps: readonly AnalyticsFollowUp[];
   readonly policy: ClientStatsPolicy;
@@ -543,19 +550,26 @@ function takingsByBucket(
   return out;
 }
 
-/** The takings line: this period's buckets against the previous period's at the same position. */
+/**
+ * The takings line: this period's buckets against the comparison period's
+ * at the same position — every comparison `null` when the period is not
+ * comparable (`previous` is then `null`).
+ */
 function seriesOf(
   input: AnalyticsInput,
   inScope: (barberId: BarberId) => boolean,
   grain: SeriesGrain,
-  previous: AnalyticsPeriod,
+  previous: AnalyticsPeriod | null,
 ): readonly AnalyticsReport.SeriesPoint[] {
   const current = takingsByBucket(input.visits, inScope, grain);
-  const compared = takingsByBucket(
-    input.previousVisits,
-    inScope,
-    grainOf(previous.fromLocalDate, previous.toLocalDate, grain.weekly),
-  );
+  const compared =
+    previous === null
+      ? []
+      : takingsByBucket(
+          input.previousVisits,
+          inScope,
+          grainOf(previous.fromLocalDate, previous.toLocalDate, grain.weekly),
+        );
   const out: AnalyticsReport.SeriesPoint[] = [];
   for (let i = 0; i < grain.starts.length; i++) {
     out.push({
@@ -1013,20 +1027,22 @@ export const StaffAnalyticsSystem = {
     const figures = figuresOf(input.visits, inScope, rebooked, input);
     const time = timeOf(input.days, inScope);
 
-    // The hero: the compared days of this period against the previous one.
+    // The hero: the compared days of this period against the comparison
+    // period's — the same elapsed days, the counterpart day (a DAY's whole
+    // comparison) cut at the current minute while the period runs. No
+    // comparison at all when the period is not comparable (its comparison
+    // period would start before the reach).
     const period = input.period;
-    const previous = AnalyticsPeriod.previous(period);
     const today = input.now.localDate;
+    const previous = AnalyticsPeriod.isComparable(period, today)
+      ? AnalyticsPeriod.previous(period)
+      : null;
     const running =
       period.fromLocalDate <= today && today <= period.toLocalDate;
     const length = AnalyticsPeriod.length(period);
     const compared = running
       ? LocalDate.daysBetween(period.fromLocalDate, today) + 1
       : length;
-    const previousCompared = Math.min(
-      compared,
-      AnalyticsPeriod.length(previous),
-    );
     const cutIndex = running ? compared - 1 : null;
     const heroCurrent = heroTakings(
       input.visits,
@@ -1036,23 +1052,30 @@ export const StaffAnalyticsSystem = {
       cutIndex,
       input.now.currentMinute,
     );
-    const hadPrevious = input.previousVisits.some((visit) =>
-      visit.seats.some(
-        (seat) =>
-          inScope(seat.barberId) &&
-          seat.attendanceState === AttendanceState.Worked,
-      ),
-    );
-    const heroPrevious = hadPrevious
-      ? heroTakings(
-          input.previousVisits,
-          inScope,
-          previous.fromLocalDate,
-          previousCompared,
-          cutIndex !== null && cutIndex < previousCompared ? cutIndex : null,
-          input.now.currentMinute,
-        )
-      : null;
+    const hadPrevious =
+      previous !== null &&
+      input.previousVisits.some((visit) =>
+        visit.seats.some(
+          (seat) =>
+            inScope(seat.barberId) &&
+            seat.attendanceState === AttendanceState.Worked,
+        ),
+      );
+    const previousCompared =
+      previous === null
+        ? 0
+        : Math.min(compared, AnalyticsPeriod.length(previous));
+    const heroPrevious =
+      previous !== null && hadPrevious
+        ? heroTakings(
+            input.previousVisits,
+            inScope,
+            previous.fromLocalDate,
+            previousCompared,
+            cutIndex !== null && cutIndex < previousCompared ? cutIndex : null,
+            input.now.currentMinute,
+          )
+        : null;
 
     // The charts: the period cut into buckets, the hour grid and its peaks.
     const grain = grainOf(
@@ -1075,6 +1098,11 @@ export const StaffAnalyticsSystem = {
       reportAnalyticsSpan: period.analyticsSpan,
       reportFromLocalDate: period.fromLocalDate,
       reportToLocalDate: period.toLocalDate,
+      reportAnalyticsComparison: input.analyticsComparison,
+      reportComparisonFromLocalDate:
+        previous === null ? null : previous.fromLocalDate,
+      reportComparisonToLocalDate:
+        previous === null ? null : previous.toLocalDate,
 
       reportRosteredMinutes: minutes(time.rostered),
       reportWorkedMinutes: minutes(time.worked),
@@ -1308,13 +1336,19 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * The period before and after `period` of its span, each only when it may
-   * be asked for on `today` (`AnalyticsPeriod.isWithinRange`): the switcher
+   * The period before and after `period` of its span — the week or month
+   * before and after, the day before and after (a `DAY` steps by one day;
+   * its COMPARISON is a week back, `AnalyticsPeriod.previous`) — each only
+   * when it may be asked for on `today` (`AnalyticsPeriod.isWithinRange`:
+   * back no further than the reach, forward never past today): the switcher
    * never offers what the callable refuses.
    */
   stepsOf(period: AnalyticsPeriod, today: LocalDate): AnalyticsSteps {
-    const previous = AnalyticsPeriod.previous(period);
-    const next = AnalyticsPeriod.of(
+    const previous = AnalyticsPeriod.holding(
+      period.analyticsSpan,
+      LocalDate.addDays(period.fromLocalDate, -1),
+    );
+    const next = AnalyticsPeriod.holding(
       period.analyticsSpan,
       LocalDate.addDays(period.toLocalDate, 1),
     );
@@ -1322,18 +1356,17 @@ export const StaffAnalyticsSystem = {
       previous: AnalyticsPeriod.isWithinRange(previous, today)
         ? previous
         : null,
-      next:
-        next.ok && AnalyticsPeriod.isWithinRange(next.value, today)
-          ? next.value
-          : null,
+      next: AnalyticsPeriod.isWithinRange(next, today) ? next : null,
     };
   },
 
   /**
-   * The period of `span` a switch from `period` lands on: the one holding
-   * `period`'s last day, or today when that is later — so a past month
-   * switches to its last week, the current one to this week — and this
-   * span's current period when that one is out of reach.
+   * The period of `span` a switch from `period` lands on. To a `DAY`: today
+   * when `period` holds it, else `period`'s first day. To a `WEEK` or a
+   * `MONTH`: the one holding `period`'s last day, or today when that is
+   * later — so a past month switches to its last week, the current one to
+   * this week, a day to the week or month holding it — and this span's
+   * current period when the one landed on is out of reach.
    */
   periodInSpan(
     period: AnalyticsPeriod,
@@ -1341,15 +1374,20 @@ export const StaffAnalyticsSystem = {
     today: LocalDate,
   ): AnalyticsPeriod {
     if (span === period.analyticsSpan) return period;
-    const day = period.toLocalDate < today ? period.toLocalDate : today;
-    const ofSpan = (localDate: LocalDate): AnalyticsPeriod =>
-      span === AnalyticsSpan.Week
-        ? AnalyticsPeriod.weekOf(localDate)
-        : AnalyticsPeriod.monthOf(localDate);
-    const landed = ofSpan(day);
+    const running =
+      period.fromLocalDate <= today && today <= period.toLocalDate;
+    const day =
+      span === AnalyticsSpan.Day
+        ? running
+          ? today
+          : period.fromLocalDate
+        : period.toLocalDate < today
+          ? period.toLocalDate
+          : today;
+    const landed = AnalyticsPeriod.holding(span, day);
     return AnalyticsPeriod.isWithinRange(landed, today)
       ? landed
-      : ofSpan(today);
+      : AnalyticsPeriod.holding(span, today);
   },
 
   /**

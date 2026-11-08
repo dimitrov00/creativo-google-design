@@ -1,7 +1,7 @@
 import {
   AnalyticsBarPart,
   AnalyticsFigure,
-  type AnalyticsPeriod,
+  AnalyticsPeriod,
   type AnalyticsReport,
   AnalyticsSpan,
   HeroChange,
@@ -256,29 +256,42 @@ function computedTimeOf(
 function periodOf(input: AnalyticsScreenInput): AnalyticsPeriodVm {
   const { words, period } = input;
   const steps = StaffAnalyticsSystem.stepsOf(period, input.today);
+  // The comparison period is the component's rule (Terms): read when it
+  // starts within the reach, otherwise not read and the chip says so.
+  const comparable = AnalyticsPeriod.isComparable(period, input.today);
   return {
     spanLabel: words.spanLabel,
-    spans: [AnalyticsSpan.Week, AnalyticsSpan.Month].map((span) => ({
-      id: span,
-      // eslint-disable-next-line security/detect-object-injection -- `span` is a closed `AnalyticsSpan` literal.
-      label: words.span[span],
-      testId: `analytics-span-${span.toLowerCase()}`,
-    })),
+    spans: [AnalyticsSpan.Day, AnalyticsSpan.Week, AnalyticsSpan.Month].map(
+      (span) => ({
+        id: span,
+        // eslint-disable-next-line security/detect-object-injection -- `span` is a closed `AnalyticsSpan` literal.
+        label: words.span[span],
+        testId: `analytics-span-${span.toLowerCase()}`,
+      }),
+    ),
     selectedSpan: period.analyticsSpan,
     label: periodLabelOf(period, input),
     previousLabel: words.previous,
     previousEnabled: steps.previous !== null,
     nextLabel: words.next,
     nextEnabled: steps.next !== null,
+    comparison: {
+      text: comparable ? words.comparison.previous : words.comparison.none,
+      comparable,
+      testId: 'analytics-comparison-chip',
+    },
   };
 }
 
-/** «Септември 2026 г.» · «28.09 – 4.10». */
+/** «Септември 2026 г.» · «28.09 – 4.10» · «вторник, 29.09». */
 function periodLabelOf(
   period: AnalyticsPeriod,
   input: AnalyticsScreenInput,
 ): string {
   const lang = input.words.lang;
+  if (period.analyticsSpan === AnalyticsSpan.Day) {
+    return dayWithWeekday(period.fromLocalDate, lang);
+  }
   return period.analyticsSpan === AnalyticsSpan.Month
     ? visitSectionLabel(period.fromLocalDate.slice(0, 7), lang)
     : input.words.range(
@@ -359,9 +372,17 @@ function bodyOf(
         }
       : null,
     hero: heroOf(input, report, screen),
-    series: seriesOf(input, report),
+    // On DAY the hero and its delta stand alone and the day's one bar is the
+    // time's whole story (v2, «The seven questions»): no line, no heatmap.
+    series:
+      report.reportAnalyticsSpan === AnalyticsSpan.Day
+        ? null
+        : seriesOf(input, report),
     time: timeOf(input, report),
-    busy: busyOf(input, report),
+    busy:
+      report.reportAnalyticsSpan === AnalyticsSpan.Day
+        ? null
+        : busyOf(input, report),
     open: openOf(input, report, screen),
     services: servicesOf(input, report, screen),
     clients: clientsOf(input, report, screen),
@@ -391,6 +412,8 @@ function axisLabels(
   span: AnalyticsSpan,
   lang: string,
 ): readonly string[] {
+  // A day's one bar carries no word: the period's label names the day.
+  if (span === AnalyticsSpan.Day) return points.map(() => '');
   if (span === AnalyticsSpan.Week) {
     return points.map((point) => weekdayShort(point.localDate, lang));
   }

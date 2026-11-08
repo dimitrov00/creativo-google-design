@@ -7,15 +7,15 @@ import type { BarberId, LocalDate } from '@core/primitives';
 
 /** The query the chart button opens «Анализи» with. */
 export type AnalyticsEntryQuery = {
-  readonly span: 'WEEK';
+  readonly span: 'DAY';
   readonly from: LocalDate;
   readonly barber?: BarberId;
 };
 
 /**
  * THE SCHEDULE'S WAY INTO «АНАЛИЗИ» (staff-analytics-v2, «Entry from the
- * schedule», PR 1): the week that holds the day on screen — `DAY` once PR 3
- * lets the analytics store accept it — and whose figures:
+ * schedule», PR 1; the `DAY` span since PR 3): the day on screen, and whose
+ * figures:
  *
  * - an admin (`Roles.ANALYTICS_SHOP`) viewing ONE chair opens that barber's;
  * - an admin viewing every chair opens the shop's (no `barber`);
@@ -56,6 +56,6 @@ export function analyticsEntryQueryOf(
     principal !== undefined &&
     Principal.hasAnyRole(principal, Roles.ANALYTICS_SHOP);
   return readsShop && scope !== null
-    ? { span: 'WEEK', from: day, barber: scope }
-    : { span: 'WEEK', from: day };
+    ? { span: 'DAY', from: day, barber: scope }
+    : { span: 'DAY', from: day };
 }

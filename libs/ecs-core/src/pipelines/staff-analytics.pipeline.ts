@@ -14,6 +14,7 @@ import {
 } from '@core/errors';
 import {
   AnalyticsPeriod,
+  AnalyticsSpan,
   type AnalyticsCall,
   type AnalyticsReport,
   ClientStatsPolicy,
@@ -50,7 +51,8 @@ import {
  *    link (`StaffAnalyticsSystem.callerOf`); no record →
  *    `ANALYTICS_FORBIDDEN`.
  * 2. **The period** — rebuilt with `AnalyticsPeriod.of` (a first day that
- *    is not a Monday or a 1st → `ANALYTICS_INVALID_INPUT`).
+ *    is not its span's first — any day for a `DAY`, a Monday, a 1st →
+ *    `ANALYTICS_INVALID_INPUT`).
  * 3. **The shop** — every barber record and every location. "Today" is the
  *    default shop's (else the first's) clock at the call's instant, derived
  *    ONCE; a period outside `AnalyticsPeriod.isWithinRange` →
@@ -61,13 +63,22 @@ import {
  *    one barber, or every record of the shop.
  * 5. **The scope's reads**, in parallel: each barber's roster, the period's
  *    and the next 7 days' departures, the policy, and the visits of the
- *    period, the previous period (the hero's comparison) and the next 7
- *    days by busy key — each list merged by appointment id, so a party split
- *    across barbers is counted once.
+ *    period, the comparison period (`AnalyticsPeriod.previous` — the hero's
+ *    and the line's comparison; for a `DAY` the same weekday a week earlier,
+ *    its counterpart day) and the next 7 days by busy key — each list merged
+ *    by appointment id, so a party split across barbers is counted once.
+ *    The comparison read is skipped entirely when the period is not
+ *    comparable (`AnalyticsPeriod.isComparable`: its comparison would start
+ *    before the reach) — the report's comparison fields are `null` then.
  * 6. **The follow-ups** — one barber's by the visits in their rebooking
  *    base (`bookedFromAppointmentId in`), the shop's by one `bookedAtUtcMs`
  *    range (the period's first instant to the end of the day after its
  *    last); each one's booking day converted once, on its shop's clock.
+ *    **On a `DAY` nothing beyond the day, its counterpart and the next 7
+ *    days is read** (design v2, `staffAnalytics` step 5): no follow-ups and
+ *    no other comparison-period visits — until the day documents of PR 4a
+ *    carry a past day's rebooking figures, a `DAY` report's
+ *    `reportRebookedCount` is 0 over its base.
  * 7. **Compute** — the barber-days (`daysOf`) and the report (`report`).
  * 8. **Log** `LogEvent.AnalyticsReported`: the caller, scope, period,
  *    version, visit count, duration and minutes per part — never money.
@@ -90,6 +101,11 @@ export type StaffAnalyticsPorts = AnalyticsReadPorts &
   LogPorts;
 
 const S = StaffAnalyticsSystem;
+
+/** What a skipped visit read answers — nothing, read from nowhere. */
+const NO_VISITS: Result<readonly Appointment[], RepositoryError> = Result.ok(
+  [],
+);
 
 /** Every read's answer, or the first failure. */
 function allOk<T>(
@@ -163,7 +179,11 @@ export const staffAnalytics =
     if (!scope.ok) return scope;
     const barberIds = S.barbersInScope(scope.value, records.value);
 
-    // 5. The scope's reads.
+    // 5. The scope's reads — the comparison's only when it is in reach.
+    const comparable = AnalyticsPeriod.isComparable(
+      period.value,
+      now.localDate,
+    );
     const previous = AnalyticsPeriod.previous(period.value);
     const periodDays = AnalyticsPeriod.days(period.value);
     const aheadDays = S.aheadDaysOf(now.localDate);
@@ -188,9 +208,11 @@ export const staffAnalytics =
         ports.loadPolicy(),
         Promise.all([
           ports.loadVisitsByBusyKeys(S.busyKeysOf(barberIds, periodDays)),
-          ports.loadVisitsByBusyKeys(
-            S.busyKeysOf(barberIds, AnalyticsPeriod.days(previous)),
-          ),
+          comparable
+            ? ports.loadVisitsByBusyKeys(
+                S.busyKeysOf(barberIds, AnalyticsPeriod.days(previous)),
+              )
+            : Promise.resolve(NO_VISITS),
           ports.loadVisitsByBusyKeys(S.busyKeysOf(barberIds, aheadDays)),
         ]),
       ]);
@@ -212,22 +234,25 @@ export const staffAnalytics =
       if (schedule !== null) roster.push(schedule);
     }
 
-    // 6. The follow-ups, each booking day read once on its shop's clock.
+    // 6. The follow-ups, each booking day read once on its shop's clock —
+    //    none on a DAY.
     const followUpRead =
-      scope.value === null
-        ? await ports.loadFollowUpsBookedIn(
-            ZonedTimeSystem.startOfLocalDay(
-              period.value.fromLocalDate,
-              clock.timeZone,
-            ),
-            ZonedTimeSystem.startOfLocalDay(
-              LocalDate.addDays(period.value.toLocalDate, 2),
-              clock.timeZone,
-            ),
-          )
-        : await ports.loadFollowUpsOf(
-            S.followUpSourcesOf(visits, scope.value, now.localDate),
-          );
+      period.value.analyticsSpan === AnalyticsSpan.Day
+        ? NO_VISITS
+        : scope.value === null
+          ? await ports.loadFollowUpsBookedIn(
+              ZonedTimeSystem.startOfLocalDay(
+                period.value.fromLocalDate,
+                clock.timeZone,
+              ),
+              ZonedTimeSystem.startOfLocalDay(
+                LocalDate.addDays(period.value.toLocalDate, 2),
+                clock.timeZone,
+              ),
+            )
+          : await ports.loadFollowUpsOf(
+              S.followUpSourcesOf(visits, scope.value, now.localDate),
+            );
     if (!followUpRead.ok) return followUpRead;
     const followUps: AnalyticsFollowUp[] = [];
     for (const visit of followUpRead.value) {
@@ -253,6 +278,7 @@ export const staffAnalytics =
       scopeBarberId: scope.value,
       barberIds,
       period: period.value,
+      analyticsComparison: cmd.analyticsComparison,
       days: S.daysOf({
         ...daysInput,
         localDates: periodDays,

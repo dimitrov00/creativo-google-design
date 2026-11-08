@@ -12,9 +12,9 @@ const BARBER = principalFixture.staff(UserId.of('dev-staff-ivan'), [
 ]);
 
 describe('analyticsEntryQueryOf', () => {
-  it('an admin viewing one chair opens that barber’s week', () => {
+  it('an admin viewing one chair opens that barber’s day', () => {
     expect(analyticsEntryQueryOf(ADMIN, IVAN, DAY)).toEqual({
-      span: 'WEEK',
+      span: 'DAY',
       from: DAY,
       barber: IVAN,
     });
@@ -22,21 +22,21 @@ describe('analyticsEntryQueryOf', () => {
 
   it('an admin viewing every chair opens the shop (no barber)', () => {
     expect(analyticsEntryQueryOf(ADMIN, null, DAY)).toEqual({
-      span: 'WEEK',
+      span: 'DAY',
       from: DAY,
     });
   });
 
   it('a barber opens their own, whatever chair the book shows', () => {
     expect(analyticsEntryQueryOf(BARBER, IVAN, DAY)).toEqual({
-      span: 'WEEK',
+      span: 'DAY',
       from: DAY,
     });
   });
 
   it('a principal not yet known reads as a barber', () => {
     expect(analyticsEntryQueryOf(undefined, IVAN, DAY)).toEqual({
-      span: 'WEEK',
+      span: 'DAY',
       from: DAY,
     });
   });

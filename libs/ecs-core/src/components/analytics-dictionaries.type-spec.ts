@@ -23,7 +23,11 @@ import {
   type VisitNets,
 } from '@core/systems';
 import type { AnalyticsCall } from './analytics-call.data';
-import { type AnalyticsPeriod, AnalyticsSpan } from './analytics-period.data';
+import {
+  AnalyticsComparison,
+  type AnalyticsPeriod,
+  AnalyticsSpan,
+} from './analytics-period.data';
 import {
   AnalyticsBarPart,
   AnalyticsFigure,
@@ -55,6 +59,7 @@ declare function dictionary(checked: unknown): void;
 
 // (1) satisfies — every dictionary's values are of its type.
 dictionary(AnalyticsSpan satisfies Dictionary<AnalyticsSpan>);
+dictionary(AnalyticsComparison satisfies Dictionary<AnalyticsComparison>);
 dictionary(BookingOrigin satisfies Dictionary<BookingOrigin>);
 dictionary(AnalyticsFigure satisfies Dictionary<AnalyticsFigure>);
 dictionary(AnalyticsBarPart satisfies Dictionary<AnalyticsBarPart>);
@@ -64,6 +69,7 @@ dictionary(MoneyAllocation satisfies Dictionary<MoneyAllocation>);
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type AnalyticsDictionariesHold = [
   Expect<Holds<typeof AnalyticsSpan, AnalyticsSpan>>, // components/analytics-period.data.ts
+  Expect<Holds<typeof AnalyticsComparison, AnalyticsComparison>>, // components/analytics-period.data.ts
   Expect<Holds<typeof BookingOrigin, BookingOrigin>>, // components/analytics-report.data.ts
   Expect<Holds<typeof AnalyticsFigure, AnalyticsFigure>>, // components/analytics-report.data.ts
   Expect<Holds<typeof AnalyticsBarPart, AnalyticsBarPart>>, // components/analytics-report.data.ts
@@ -74,6 +80,7 @@ export type AnalyticsDictionariesHold = [
 // (3) SCREAMING values.
 export type AnalyticsScreamingChecks = [
   Expect<Screaming<AnalyticsSpan>>,
+  Expect<Screaming<AnalyticsComparison>>,
   Expect<Screaming<BookingOrigin>>,
   Expect<Screaming<AnalyticsFigure>>,
   Expect<Screaming<AnalyticsBarPart>>,
@@ -86,6 +93,10 @@ export type AnalyticsDictionaryFields = [
   Expect<Equals<AnalyticsPeriod['analyticsSpan'], AnalyticsSpan>>, // components/analytics-period.data.ts
   Expect<Equals<AnalyticsCall['analyticsSpan'], AnalyticsSpan>>, // components/analytics-call.data.ts
   Expect<Equals<AnalyticsReport['reportAnalyticsSpan'], AnalyticsSpan>>, // N15-exempt: the report's fields all carry the `report` prefix
+  Expect<Equals<AnalyticsCall['analyticsComparison'], AnalyticsComparison>>, // components/analytics-call.data.ts
+  Expect<
+    Equals<AnalyticsReport['reportAnalyticsComparison'], AnalyticsComparison>
+  >, // N15-exempt: the report's fields all carry the `report` prefix
   Expect<Equals<AnalyticsReport.OriginShare['bookingOrigin'], BookingOrigin>>, // components/analytics-report.data.ts
   Expect<Equals<AnalyticsBarSegment['analyticsBarPart'], AnalyticsBarPart>>, // systems/staff-analytics.system.ts
   Expect<Equals<AnalyticsHeroChange['heroChange'], HeroChange>>, // systems/staff-analytics.system.ts

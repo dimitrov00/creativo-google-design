@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type AnalyticsCall,
   AnalyticsBarPart,
+  AnalyticsComparison,
   AnalyticsFigure,
   AnalyticsPeriod,
   AnalyticsSpan,
@@ -145,6 +146,7 @@ function input(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
     scopeBarberId: ivan,
     barberIds: [ivan],
     period: OCTOBER,
+    analyticsComparison: AnalyticsComparison.Previous,
     days: [],
     aheadDays: [],
     visits: [],
@@ -212,6 +214,7 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
     scopeBarberId,
     fromLocalDate: OCTOBER.fromLocalDate,
     analyticsSpan: AnalyticsSpan.Month,
+    analyticsComparison: AnalyticsComparison.Previous,
   });
   const known = [ivan, niko];
   const caller = (
@@ -425,7 +428,92 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
   });
 
   it('says there is no previous period when it held no worked seat in scope', () => {
-    expect(S.report(input()).reportHeroPreviousCents).toBeNull();
+    const report = S.report(input());
+    expect(report.reportHeroPreviousCents).toBeNull();
+    // The comparison period is still named: October is comparable.
+    expect(report.reportAnalyticsComparison).toBe(AnalyticsComparison.Previous);
+    expect(report.reportComparisonFromLocalDate).toBe('2026-09-01');
+    expect(report.reportComparisonToLocalDate).toBe('2026-09-30');
+  });
+
+  it('reports a DAY: one point, one bar, the hero against the same weekday a week earlier up to now', () => {
+    // Today, Wednesday the 14th at 14:00, against Wednesday the 7th.
+    const report = S.report(
+      input({
+        period: AnalyticsPeriod.dayOf(TODAY),
+        visits: [
+          // 10:00, ended: in the takings and the hero.
+          visit('d1', TODAY, [seat(ivan, 3000)]),
+          // 15:00, marked worked early, not yet ended: takings, not the hero.
+          visit('d2', TODAY, [seat(ivan, 500, undefined, cut, 15)]),
+        ],
+        previousVisits: [
+          visit('p1', day(-7), [seat(ivan, 2000)]),
+          // The counterpart day at 15:00: past the cut minute — the line
+          // counts it, the hero does not.
+          visit('p2', day(-7), [seat(ivan, 700, undefined, cut, 15)]),
+          // Another day: outside the counterpart.
+          visit('p3', day(-6), [seat(ivan, 9000)]),
+        ],
+        days: [dayOf(ivan, TODAY, { rosteredMinutes: 540, workedMinutes: 60 })],
+      }),
+    );
+    expect(report.reportAnalyticsSpan).toBe(AnalyticsSpan.Day);
+    expect(report.reportFromLocalDate).toBe(TODAY);
+    expect(report.reportToLocalDate).toBe(TODAY);
+    expect(report.reportComparisonFromLocalDate).toBe(day(-7));
+    expect(report.reportComparisonToLocalDate).toBe(day(-7));
+    expect(report.reportSeries).toEqual([
+      { localDate: TODAY, takingsCents: 3500, comparisonTakingsCents: 2700 },
+    ]);
+    expect(report.reportTimeSeries).toHaveLength(1);
+    expect(report.reportTimeSeries[0]).toMatchObject({
+      localDate: TODAY,
+      workedMinutes: 60,
+    });
+    expect(report.reportTakingsCents).toBe(3500);
+    expect(report.reportHeroCurrentCents).toBe(3000);
+    expect(report.reportHeroPreviousCents).toBe(2000);
+
+    // A past day: whole against whole.
+    const past = S.report(
+      input({
+        period: AnalyticsPeriod.dayOf(day(-3)),
+        visits: [visit('q1', day(-3), [seat(ivan, 500, undefined, cut, 15)])],
+        previousVisits: [
+          visit('q2', day(-10), [seat(ivan, 700, undefined, cut, 15)]),
+        ],
+      }),
+    );
+    expect(past.reportHeroCurrentCents).toBe(500);
+    expect(past.reportHeroPreviousCents).toBe(700);
+    expect(past.reportSeries).toHaveLength(1);
+  });
+
+  it('states no comparison when the comparison period starts before the reach', () => {
+    // On 14 October 2026 the reach starts 1 October 2025: October 2025 is
+    // in range, its comparison (September) is not.
+    const edge = AnalyticsPeriod.monthOf(localDate('2025-10-01'));
+    const report = S.report(
+      input({
+        period: edge,
+        visits: [visit('e', localDate('2025-10-03'), [seat(ivan, 1000)])],
+        // Handed in by mistake: never counted.
+        previousVisits: [
+          visit('x', localDate('2025-09-03'), [seat(ivan, 500)]),
+        ],
+      }),
+    );
+    expect(report.reportAnalyticsComparison).toBe(AnalyticsComparison.Previous);
+    expect(report.reportComparisonFromLocalDate).toBeNull();
+    expect(report.reportComparisonToLocalDate).toBeNull();
+    expect(report.reportHeroPreviousCents).toBeNull();
+    expect(report.reportHeroCurrentCents).toBe(1000);
+    expect(report.reportSeries).toHaveLength(31);
+    expect(
+      report.reportSeries.every((p) => p.comparisonTakingsCents === null),
+    ).toBe(true);
+    expect(S.heroChangeOf(report).heroChange).toBe(HeroChange.None);
   });
 
   it('ranks services by takings and states takings per hour of service', () => {
@@ -1306,6 +1394,65 @@ describe('StaffAnalyticsSystem — what the screen shows (Law 10: decided here, 
     expect(S.periodInSpan(reach, AnalyticsSpan.Month, today)).toEqual(
       AnalyticsPeriod.monthOf(localDate('2025-10-01')),
     );
+  });
+
+  it('stepsOf — a DAY steps by one day, never past today, never before the reach', () => {
+    const today = localDate('2026-10-14');
+    expect(S.stepsOf(AnalyticsPeriod.dayOf(today), today)).toEqual({
+      previous: AnalyticsPeriod.dayOf(localDate('2026-10-13')),
+      next: null,
+    });
+    expect(
+      S.stepsOf(AnalyticsPeriod.dayOf(localDate('2026-10-13')), today).next,
+    ).toEqual(AnalyticsPeriod.dayOf(today));
+    // The reach's first day.
+    expect(
+      S.stepsOf(AnalyticsPeriod.dayOf(localDate('2025-10-01')), today),
+    ).toEqual({
+      previous: null,
+      next: AnalyticsPeriod.dayOf(localDate('2025-10-02')),
+    });
+  });
+
+  it('periodInSpan — to a DAY: today when inside the period, else its first day; from a DAY: the week or month holding it', () => {
+    const today = localDate('2026-10-14');
+    const october = AnalyticsPeriod.monthOf(today);
+    expect(S.periodInSpan(october, AnalyticsSpan.Day, today)).toEqual(
+      AnalyticsPeriod.dayOf(today),
+    );
+    expect(
+      S.periodInSpan(AnalyticsPeriod.weekOf(today), AnalyticsSpan.Day, today),
+    ).toEqual(AnalyticsPeriod.dayOf(today));
+    expect(
+      S.periodInSpan(
+        AnalyticsPeriod.monthOf(localDate('2026-08-01')),
+        AnalyticsSpan.Day,
+        today,
+      ),
+    ).toEqual(AnalyticsPeriod.dayOf(localDate('2026-08-01')));
+    expect(
+      S.periodInSpan(
+        AnalyticsPeriod.weekOf(localDate('2026-08-31')),
+        AnalyticsSpan.Day,
+        today,
+      ),
+    ).toEqual(AnalyticsPeriod.dayOf(localDate('2026-08-31')));
+    // Back: Wednesday 2 September lands in its week and its month.
+    const wednesday = AnalyticsPeriod.dayOf(localDate('2026-09-02'));
+    expect(S.periodInSpan(wednesday, AnalyticsSpan.Week, today)).toEqual(
+      AnalyticsPeriod.weekOf(localDate('2026-08-31')),
+    );
+    expect(S.periodInSpan(wednesday, AnalyticsSpan.Month, today)).toEqual(
+      AnalyticsPeriod.monthOf(localDate('2026-09-01')),
+    );
+    expect(S.periodInSpan(wednesday, AnalyticsSpan.Day, today)).toBe(wednesday);
+    // Today's day lands on this week and this month.
+    expect(
+      S.periodInSpan(AnalyticsPeriod.dayOf(today), AnalyticsSpan.Week, today),
+    ).toEqual(AnalyticsPeriod.weekOf(today));
+    expect(
+      S.periodInSpan(AnalyticsPeriod.dayOf(today), AnalyticsSpan.Month, today),
+    ).toEqual(october);
   });
 
   it('seatRowsTotalOf / rebookedCountOf — a drill-down’s footer equals its figure', () => {

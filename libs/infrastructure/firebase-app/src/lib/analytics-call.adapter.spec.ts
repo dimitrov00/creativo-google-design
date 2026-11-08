@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { type AnalyticsCall, AnalyticsSpan } from '@core/components';
+import {
+  type AnalyticsCall,
+  AnalyticsComparison,
+  AnalyticsSpan,
+} from '@core/components';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Callables } from '@core/ports';
 import { BarberId, LocalDate, Result } from '@core/primitives';
@@ -18,6 +22,7 @@ const CALL: AnalyticsCall = {
   scopeBarberId: null,
   fromLocalDate: unwrapOk(LocalDate.parse('2026-09-01')),
   analyticsSpan: AnalyticsSpan.Month,
+  analyticsComparison: AnalyticsComparison.Previous,
 };
 
 describe('analyticsCallPorts (staff analytics, the screen)', () => {

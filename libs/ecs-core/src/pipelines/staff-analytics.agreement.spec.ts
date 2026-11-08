@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AnalyticsComparison,
   AnalyticsFigure,
   AnalyticsSpan,
   type AnalyticsReport,
@@ -74,6 +75,7 @@ async function reportOf(
       scopeBarberId,
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+      analyticsComparison: AnalyticsComparison.Previous,
     }),
   );
 }

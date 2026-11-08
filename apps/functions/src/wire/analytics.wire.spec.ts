@@ -22,6 +22,7 @@ const sent = {
   scopeBarberId: 'b-ivan',
   fromLocalDate: '2026-09-01',
   analyticsSpan: 'MONTH',
+  analyticsComparison: 'PREVIOUS',
   operationId: 'operation-0123456789ab',
 };
 
@@ -39,6 +40,7 @@ describe('decodeStaffAnalytics', () => {
         scopeBarberId: 'b-ivan',
         fromLocalDate: '2026-09-01',
         analyticsSpan: 'MONTH',
+        analyticsComparison: 'PREVIOUS',
       },
     });
   });
@@ -46,7 +48,11 @@ describe('decodeStaffAnalytics', () => {
   it('reads a `null` or absent scope as the default scope', () => {
     for (const data of [
       { ...sent, scopeBarberId: null },
-      { fromLocalDate: '2026-09-28', analyticsSpan: 'WEEK' },
+      {
+        fromLocalDate: '2026-09-28',
+        analyticsSpan: 'WEEK',
+        analyticsComparison: 'PREVIOUS',
+      },
     ]) {
       const decoded = decodeStaffAnalytics(callable(data));
       expect(decoded.ok && decoded.value.scopeBarberId).toBeNull();
@@ -85,6 +91,9 @@ describe('decodeStaffAnalytics', () => {
     ['fromLocalDate', { fromLocalDate: undefined }],
     ['analyticsSpan', { analyticsSpan: 'YEAR' }],
     ['analyticsSpan', { analyticsSpan: undefined }],
+    ['analyticsComparison', { analyticsComparison: 'SAME_LAST_YEAR' }],
+    ['analyticsComparison', { analyticsComparison: 'previous' }],
+    ['analyticsComparison', { analyticsComparison: undefined }],
   ])('names the malformed field %s', (field, change) => {
     expect(refusalOf({ ...sent, ...change })).toEqual({
       errorCode: AnalyticsErrorCode.InvalidInput,

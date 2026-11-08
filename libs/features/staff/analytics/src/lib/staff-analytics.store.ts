@@ -12,6 +12,7 @@ import {
   type AnalyticsCall,
   AnalyticsPeriod,
   type AnalyticsReport,
+  AnalyticsComparison,
   AnalyticsSpan,
   Principal,
   Roles,
@@ -51,7 +52,8 @@ function sameCall(a: AnalyticsRequest, b: AnalyticsRequest): boolean {
     a.userId === b.userId &&
     a.call.scopeBarberId === b.call.scopeBarberId &&
     a.call.analyticsSpan === b.call.analyticsSpan &&
-    a.call.fromLocalDate === b.call.fromLocalDate
+    a.call.fromLocalDate === b.call.fromLocalDate &&
+    a.call.analyticsComparison === b.call.analyticsComparison
   );
 }
 
@@ -83,9 +85,11 @@ function routedPeriodOf(
 ): AnalyticsPeriod {
   const anchor = from ?? today;
   const ofSpan = (day: LocalDate): AnalyticsPeriod =>
-    span === AnalyticsSpan.Week
-      ? AnalyticsPeriod.weekOf(day)
-      : AnalyticsPeriod.monthOf(day);
+    span === AnalyticsSpan.Day
+      ? AnalyticsPeriod.dayOf(day)
+      : span === AnalyticsSpan.Week
+        ? AnalyticsPeriod.weekOf(day)
+        : AnalyticsPeriod.monthOf(day);
   const landed = ofSpan(anchor);
   // A day the switcher could never reach — past the reach, or ahead of
   // today — lands on the span's current period, as `periodInSpan` does.
@@ -245,6 +249,8 @@ export class StaffAnalyticsStore {
       scopeBarberId: shop ? this.pickedScope() : null,
       fromLocalDate: period.fromLocalDate,
       analyticsSpan: period.analyticsSpan,
+      // The constant until a second value is enabled (v2, State and URL).
+      analyticsComparison: AnalyticsComparison.Previous,
     };
     const cacheScope = shop ? this.pickedScope() : this.linkedBarberId();
     return {
@@ -326,10 +332,10 @@ export class StaffAnalyticsStore {
   // ── The URL ───────────────────────────────────────────────────────────
 
   /**
-   * `?span=` read ONCE at its edge (`Tag.has`): `WEEK` or `MONTH` applies;
-   * anything else — absent, empty, a span a later PR brings (`DAY`, `YEAR`,
-   * `CUSTOM`), a typo — reads as the current month (v2, State and URL). A
-   * route change outranks an earlier pick: the URL is the newer ask.
+   * `?span=` read ONCE at its edge (`Tag.has`): `DAY`, `WEEK` or `MONTH`
+   * applies; anything else — absent, empty, a span a later PR brings
+   * (`YEAR`, `CUSTOM`), a typo — reads as the current month (v2, State and
+   * URL). A route change outranks an earlier pick: the URL is the newer ask.
    */
   applyRouteSpan(raw: string | null): void {
     const span = Tag.has(AnalyticsSpan, raw) ? raw : null;

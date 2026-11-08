@@ -15,7 +15,7 @@ import {
   termsFixture,
 } from '@core/testing';
 import { AnalyticsCall } from './analytics-call.data';
-import { AnalyticsPeriod } from './analytics-period.data';
+import { AnalyticsComparison, AnalyticsPeriod } from './analytics-period.data';
 import type { AnalyticsReport } from './analytics-report.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';
 import { Seat } from './seat.data';
@@ -72,6 +72,7 @@ function reportOf(scopeBarberId: BarberId | null): AnalyticsReport {
     scopeBarberId,
     barberIds: scopeBarberId === null ? [ivan, niko] : [scopeBarberId],
     period: AnalyticsPeriod.monthOf(FIXTURE_TODAY),
+    analyticsComparison: AnalyticsComparison.Previous,
     days: [dayOf(ivan, 540), dayOf(niko, 480)],
     aheadDays: [],
     visits: [visit],
@@ -148,6 +149,25 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
     });
   });
 
+  it('reads a report that is not comparable: its comparison range and hero previous null', () => {
+    const report = reportOf(ivan);
+    expect(report.reportComparisonFromLocalDate).toBe('2026-08-01');
+    expect(report.reportComparisonToLocalDate).toBe('2026-08-31');
+    const uncomparable = {
+      ...wire(report),
+      reportComparisonFromLocalDate: null,
+      reportComparisonToLocalDate: null,
+      reportHeroPreviousCents: null,
+    };
+    const decoded = AnalyticsCall.decodeReport(uncomparable);
+    expect(decoded.ok && decoded.value).toMatchObject({
+      reportAnalyticsComparison: AnalyticsComparison.Previous,
+      reportComparisonFromLocalDate: null,
+      reportComparisonToLocalDate: null,
+      reportHeroPreviousCents: null,
+    });
+  });
+
   it('refuses an answer that is no object', () => {
     for (const raw of [null, 'report', 42, []]) {
       expect(AnalyticsCall.decodeReport(raw)).toEqual(UNUSABLE);
@@ -162,6 +182,10 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       { ...good, reportWorkedMinutes: 1.5 },
       { ...good, reportNoShowRate: 1.2 },
       { ...good, reportAnalyticsSpan: 'YEAR' },
+      { ...good, reportAnalyticsComparison: 'YEARLY' },
+      { ...good, reportAnalyticsComparison: undefined },
+      { ...good, reportComparisonFromLocalDate: undefined },
+      { ...good, reportComparisonToLocalDate: '2026-13-01' },
       { ...good, reportFromLocalDate: '2026-13-01' },
       { ...good, reportScopeBarberId: 7 },
       { ...good, reportComputedAtUtcMs: 'now' },

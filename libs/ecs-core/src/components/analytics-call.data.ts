@@ -16,21 +16,25 @@ import {
   Weekday,
 } from '@core/primitives';
 import type { PipelineError } from '@core/errors';
-import { AnalyticsSpan } from './analytics-period.data';
+import { AnalyticsComparison, AnalyticsSpan } from './analytics-period.data';
 import { type AnalyticsReport, BookingOrigin } from './analytics-report.data';
 import { CallAnswer } from './call-answer.data';
 
 /**
- * What the `staffAnalytics` callable is asked for — flat (Law 6): the scope
- * and the period's first day and span. `scopeBarberId: null` is the shop for
- * an admin and the caller's own barber record for a barber; the period is
- * rebuilt with `AnalyticsPeriod.of`, which refuses a first day that is not a
- * Monday or a 1st.
+ * What the `staffAnalytics` callable is asked for — flat (Law 6): the
+ * scope, the period's first day and span, and the comparison.
+ * `scopeBarberId: null` is the shop for an admin and the caller's own barber
+ * record for a barber; the period is rebuilt with `AnalyticsPeriod.of`,
+ * which refuses a first day that is not its span's first (any day for a
+ * `DAY`, a Monday, a 1st). `analyticsComparison` is `PREVIOUS` in v2 —
+ * `SAME_LAST_YEAR` is named by the contract and refused by the wire
+ * (`docs/designs/staff-analytics-v2.md`, The callable v2 contract).
  */
 export type AnalyticsCall = {
   readonly scopeBarberId: BarberId | null;
   readonly fromLocalDate: LocalDate;
   readonly analyticsSpan: AnalyticsSpan;
+  readonly analyticsComparison: AnalyticsComparison;
 };
 
 /**
@@ -296,10 +300,17 @@ export const AnalyticsCall = {
     const version = r.field('reportDefinitionVersion');
     const computedAt = r.field('reportComputedAtUtcMs');
     const span = r.field('reportAnalyticsSpan');
+    const comparison = r.field('reportAnalyticsComparison');
     const scope = r.field('reportScopeBarberId');
     const figures = {
       reportFromLocalDate: r.localDate('reportFromLocalDate'),
       reportToLocalDate: r.localDate('reportToLocalDate'),
+      reportComparisonFromLocalDate: r.localDateOrNull(
+        'reportComparisonFromLocalDate',
+      ),
+      reportComparisonToLocalDate: r.localDateOrNull(
+        'reportComparisonToLocalDate',
+      ),
 
       reportRosteredMinutes: r.minutes('reportRosteredMinutes'),
       reportWorkedMinutes: r.minutes('reportWorkedMinutes'),
@@ -362,6 +373,7 @@ export const AnalyticsCall = {
       version < 1 ||
       !UtcEpochMs.is(computedAt) ||
       !Tag.has(AnalyticsSpan, span) ||
+      !Tag.has(AnalyticsComparison, comparison) ||
       (scope !== null && !BarberId.is(scope)) ||
       series === null ||
       timeSeries === null ||
@@ -381,6 +393,7 @@ export const AnalyticsCall = {
       reportComputedAtUtcMs: computedAt,
       reportScopeBarberId: scope,
       reportAnalyticsSpan: span,
+      reportAnalyticsComparison: comparison,
       ...figures,
       reportSeries: series,
       reportTimeSeries: timeSeries,

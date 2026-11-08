@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import {
   type AppliedDiscount,
+  AnalyticsComparison,
   AnalyticsSpan,
   Combinability,
   DiscountMethod,
@@ -251,6 +252,7 @@ describe('staffAnalytics (emulator)', () => {
     scopeBarberId,
     fromLocalDate,
     analyticsSpan: AnalyticsSpan.Month,
+    analyticsComparison: AnalyticsComparison.Previous,
   });
 
   it('answers the linked barber their own month — the discount split, the block, the rebooking', async () => {

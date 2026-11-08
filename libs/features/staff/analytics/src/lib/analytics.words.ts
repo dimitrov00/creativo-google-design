@@ -33,6 +33,13 @@ export interface AnalyticsWords {
   readonly previous: string;
   readonly next: string;
   readonly range: (from: string, to: string) => string;
+  /** The comparison chip under the period (staff-analytics-v2 «Sections in order» 3). */
+  readonly comparison: {
+    /** «спрямо предходния период». */
+    readonly previous: string;
+    /** «няма данни за сравнение» — the comparison period starts before the reach. */
+    readonly none: string;
+  };
   readonly scope: {
     readonly label: string;
     readonly shop: string;
@@ -190,12 +197,17 @@ export function analyticsWordsOf(
     back: t('back'),
     spanLabel: t('span.label'),
     span: {
+      [AnalyticsSpan.Day]: t('span.DAY'),
       [AnalyticsSpan.Week]: t('span.WEEK'),
       [AnalyticsSpan.Month]: t('span.MONTH'),
     },
     previous: t('previous'),
     next: t('next'),
     range: (from, to) => t('range', { from, to }),
+    comparison: {
+      previous: t('comparison.previous'),
+      none: t('comparison.none'),
+    },
     scope: {
       label: t('scope.label'),
       shop: t('scope.shop'),

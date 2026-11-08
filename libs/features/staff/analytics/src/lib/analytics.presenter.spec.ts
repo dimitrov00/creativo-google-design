@@ -3,6 +3,7 @@ import {
   AnalyticsFigure,
   AnalyticsPeriod,
   type AnalyticsReport,
+  AnalyticsSpan,
 } from '@core/components';
 import {
   LocalDate,
@@ -83,6 +84,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       testId: 'analytics-status',
     });
     expect(vm.period.spans.map((span) => span.label)).toEqual([
+      'Ден',
       'Седмица',
       'Месец',
     ]);
@@ -160,6 +162,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
 
   it('draws the takings line: a point per day, the comparison aligned by position, the average rule', () => {
     const series = body.series;
+    if (series === null) throw new Error('no series on a month');
     expect(series.label).toBe('Оборот по дни');
     expect(series.points).toHaveLength(30);
     // A month numbers every seventh day along the axis.
@@ -312,6 +315,7 @@ describe('analyticsVm — the same month in English', () => {
       'The figures are computed when you open the screen, from the stored days',
     );
     expect(vm.period.spans.map((span) => span.label)).toEqual([
+      'Day',
       'Week',
       'Month',
     ]);
@@ -338,9 +342,9 @@ describe('analyticsVm — the same month in English', () => {
     expect(body.open.detail).toBe('Most on Tuesday, 09/29');
     expect(body.services.bars[0]?.label).toBe('Подстригване · €42.00 an hour');
     expect(body.services.valueText[0]).toBe('€28.00 · 1 time');
-    expect(body.series.label).toBe('Takings by day');
-    expect(body.series.averageText).toBe('average €1.52');
-    expect(body.series.comparisonLegend).toBe('previous period');
+    expect(body.series?.label).toBe('Takings by day');
+    expect(body.series?.averageText).toBe('average €1.52');
+    expect(body.series?.comparisonLegend).toBe('previous period');
     expect(body.time.bars.label).toBe('Working time by day');
     expect(body.busy?.title).toBe('When it is busy');
     expect(body.busy?.rows).toEqual(['Mon', 'Tue']);
@@ -595,7 +599,7 @@ describe('analyticsVm — the screen states', () => {
         }),
       }),
     );
-    expect(body.series.points.map((point) => point.label)).toEqual([
+    expect(body.series?.points.map((point) => point.label)).toEqual([
       'пн',
       'вт',
       'ср',
@@ -613,6 +617,76 @@ describe('analyticsVm — the screen states', () => {
       'сб',
       'нд',
     ]);
+  });
+});
+
+describe('analyticsVm — a DAY (staff-analytics-v2 PR 3)', () => {
+  const TUESDAY = localDate('2026-09-15');
+  const day = AnalyticsPeriod.dayOf(TUESDAY);
+  /** The fixture month cut to one day: Tuesday the 15th, compared with Tuesday the 8th. */
+  const dayReport = () => {
+    const report = analyticsReportFixture();
+    return deepFreeze({
+      ...report,
+      reportAnalyticsSpan: AnalyticsSpan.Day,
+      reportFromLocalDate: TUESDAY,
+      reportToLocalDate: TUESDAY,
+      reportComparisonFromLocalDate: localDate('2026-09-08'),
+      reportComparisonToLocalDate: localDate('2026-09-08'),
+      reportSeries: report.reportSeries.slice(14, 15),
+      reportTimeSeries: report.reportTimeSeries.slice(14, 15),
+    });
+  };
+  const input = inputOf('bg', { period: day, report: dayReport() });
+  const vm = analyticsVm(input);
+  const body = bodyOf(input);
+
+  it('offers the three spans, names the day, and the chip says what it is compared with', () => {
+    expect(vm.period.spans.map((span) => span.label)).toEqual([
+      'Ден',
+      'Седмица',
+      'Месец',
+    ]);
+    expect(vm.period.selectedSpan).toBe('DAY');
+    expect(vm.period.label).toBe('вторник, 15.09');
+    expect(vm.period.comparison).toEqual({
+      text: 'спрямо предходния период',
+      comparable: true,
+      testId: 'analytics-comparison-chip',
+    });
+  });
+
+  it('shows the hero and its delta alone — no line, no heatmap — and the day as one bar with no word', () => {
+    expect(body.series).toBeNull();
+    expect(body.busy).toBeNull();
+    expect(body.time.bars.bars).toHaveLength(1);
+    expect(body.time.bars.bars[0]?.label).toBe('');
+    expect(body.time.bars.bars[0]?.parts[0]).toEqual({
+      part: 'worked',
+      value: 210,
+    });
+    expect(body.time.bars.valueText).toEqual(['6 ч 50 мин']);
+    // The open-hours card and the services keep their charts.
+    expect(body.open.bars.bars).toHaveLength(7);
+    expect(body.services.bars).toHaveLength(2);
+  });
+
+  it('says there is no comparison when the comparison period starts before the reach', () => {
+    const edge = AnalyticsPeriod.dayOf(localDate('2025-09-03'));
+    const vm = analyticsVm(
+      inputOf('bg', { period: edge, report: dayReport() }),
+    );
+    expect(AnalyticsPeriod.isComparable(edge, FIXTURE_TODAY)).toBe(false);
+    expect(vm.period.comparison).toEqual({
+      text: 'няма данни за сравнение',
+      comparable: false,
+      testId: 'analytics-comparison-chip',
+    });
+    const en = analyticsVm(
+      inputOf('en', { period: edge, report: dayReport() }),
+    );
+    expect(en.period.comparison.text).toBe('no comparison data');
+    expect(en.period.spans[0]?.label).toBe('Day');
   });
 });
 
