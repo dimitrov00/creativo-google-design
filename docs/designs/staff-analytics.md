@@ -1,7 +1,7 @@
 # Staff Analytics
 
 - **Author:** Dimitar Dimitrov (owner) with Claude
-- **Status:** Reviewed (2026-11-07). Open code-level findings: [implementation_checklist.md](../design-research/staff-analytics/review/implementation_checklist.md)
+- **Status:** Implemented (2026-11-08) in PRs A (the analytics core), the link (the account ↔ barber link), B (the server), C (the screen) and D (the agreement specs, the e2e test and the record). Decisions: [2026-11-08-staff-analytics.md](../architecture/decisions/2026-11-08-staff-analytics.md). Review findings, all settled: [implementation_checklist.md](../design-research/staff-analytics/review/implementation_checklist.md)
 - **Date:** 2026-11-07
 - **Predecessor:** [concepts_brief.md](../design-research/staff-analytics/concepts_brief.md)
 
@@ -167,7 +167,7 @@ split. A screen built on that state would print numbers that disagree with the s
 - **One free-time number for `capacity`.** The `capacity` projection keeps its own figure: it is
   the public "can a client book" number, padded by the turnaround and limited to the booking
   horizon. Analytics reports how the barber's time was used. No screen shows the two side by side.
-- **Changing the roster permission.** `mayEditRoster` (`firestore.rules:63`) stays as it is in v1.
+- **Changing the roster permission.** `mayEditRoster` (`firestore.rules:72`) stays as it is in v1.
 - **Later stages** — see [Future Improvements](#future-improvements).
 - **Push notifications, retail sales, marketing campaigns, an AI chat over the data, a data
   warehouse, client-facing analytics.**
@@ -260,7 +260,7 @@ The pipeline merges every read by appointment id before computing, so a party sp
 barbers is counted once. For a
 single-barber scope the report carries its own seat rows and day rows, so a drill-down filters
 rows already on the device and always adds up to the figure it came from. A shop-scope report
-carries a bounded per-barber list (`barbers: readonly BarberFigures[]`, one entry per barber
+carries a bounded per-barber list (`reportBarbers: readonly AnalyticsReport.BarberFigures[]`, one entry per barber
 record) with every figure for each barber, so choosing a barber shows their figures at once.
 
 ```text
@@ -388,20 +388,25 @@ period.
   and calls `occupiedIntervals`, `holes` and `sellableAt` unchanged for the holes; the occupied
   parts (worked, no-show, unmarked, booked ahead, held) come from its own sweep over each seat's
   `Seat.chairTime`, since `occupiedIntervals` returns merged ranges without the seat.
-- **`MoneyAllocationSystem`** — `seatNets(appointment): readonly SeatNet[]`: the pro-rata,
-  largest-remainder split above, reading the bill through `BillingSystem`. It serves analytics
+- **`MoneyAllocationSystem`** — `seatNets(visit): VisitNets`, a union tagged by
+  `moneyAllocation`: `ALLOCATED` with every seat's `SeatNet`, or `NOT_EVALUATED` (no bill, mixed
+  currencies, or a currency with no euro rate). The nets are the pro-rata, largest-remainder
+  split above, reading the bill through `BillingSystem`. It serves analytics
   only. `ClientStatsSystem`'s private `moneyOf` keeps its own pro-rata split, rounded per visit,
   and its stored projection is unchanged; the two agree to within one cent per worked seat, which the
   agreement spec checks. `moneyOf` moves onto the shared split the next time the client card
   changes.
-- **`StaffAnalyticsSystem`** — `report(input, now): AnalyticsReport` turns `ChairDay`s and
+- **`StaffAnalyticsSystem`** — `report(input): AnalyticsReport` (the input carries the shop's
+  `now`; `daysOf` builds each barber-day on its own shop's `ShopNow`, from `nowByLocation`) turns `ChairDay`s and
   `SeatNet`s into every catalogue figure for the period and the hero's comparison, applies the
   base-20 rate gate, and attaches the rows. The report carries every decided value so the
   presenter only words it (Law 10): each rate (`null` below its base), the bar's segments for the
   past part of the period, fill per weekday, the hero's current and previous takings, and the
   emptiest day. The rows:
-  day rows (≤ 31) always, seat rows for a single-barber scope. `rowsFor(report, figure, filter)`
-  returns exactly the rows that sum to a figure; the presenter calls it on the device.
+  day rows (≤ 31 per barber) always, seat rows for a single-barber scope.
+  `seatRowsFor(report, figure, filter)` and `dayRowsFor(report, filter)` return exactly the rows
+  that sum to a figure, and `seatRowsTotalOf(rows, figure)` their footer; the presenter calls
+  them on the device.
 
 Each system has a spec with the purity case and the boundary cases (DST days, overlapping seats,
 a seat across a block, a seat over a break, a seat outside hours, a cancelled seat in a live
@@ -411,16 +416,17 @@ spec that the partition always sums.
 ### Which barber the caller is
 
 The link lives on the **user** record. `barbers/*` is publicly readable
-(`firestore.rules:562-565`), so an account id stored there would publish every staff uid;
+(`match /barbers/{barberId}` in `firestore.rules`), so an account id stored there would publish every staff uid;
 `users/{uid}` is readable by its owner and by the roles that work the book, and written only by
 audited callables.
 
 - A flat slice `StaffLink = { linkedBarberId: BarberId | null }` joins the `User` intersection.
   The writers that create a user document (the provisioning stub, complete-registration, the dev
-  seed) write it as `null`; `setRoles` and erasure change it; a partial profile update does not
-  touch it. Greenfield, so there is no backfill.
-- **`setRoles` carries the link.** `RolesCall` gains `linkedBarberId`. A non-public lock document,
-  `barbers/{barberId}/restricted/link = { userId }`, is read and written in the same transaction
+  seed) write it as `null`; only `setRoles` changes it (erasure refuses staff accounts, below);
+  a partial profile update does not touch it. Greenfield, so there is no backfill.
+- **`setRoles` carries the link.** `RolesCall` gains a link request tagged `barberLinkChange`
+  (`KEEP` / `SET` / `CLEAR`). A non-public lock document,
+  `barbers/{barberId}/restricted/link = { linkedUserId }`, is read and written in the same transaction
   as the user's field, so two accounts can never hold one barber record — two admins linking at
   once would otherwise show one barber's figures to two accounts; the lock costs one document
   read and write per role change. `RoleAssignmentSystem.decide`
@@ -542,14 +548,17 @@ signal to build stored per-day figures (Alternative C) is the time budget, not t
   - A new `?free=1` URL parameter, read once in the dashboard's route inputs, turns free time on
     for this page load through a new non-persisting `ScheduleStatusFilter.showFreeTimeOnce()`,
     then leaves the URL ([CUJ 2](#cuj-2-a-barber-fills-an-empty-afternoon)).
-  - The pure part of the store's `laneGeometryOf` (rostered windows, carve-outs, breaks,
-    occupied time for a barber-day) moves into `GridLayoutSystem.laneGeometry`, so the schedule
-    and `ChairTimeSystem` compute holes from one function.
+  - No move of `laneGeometryOf` was needed (ir-2-7): `ChairTimeSystem` takes `RosterSystem`'s
+    offered windows, blocks and breaks and calls `GridLayoutSystem.occupiedIntervals`, `holes`
+    and `sellableAt` unchanged — the functions the store's `laneGeometryOf` and `dayGeometry`
+    call — so the schedule's code is untouched.
 
-  The day summary keeps summing its gap rows (`GridLayoutSystem.totalMinutes`); because both
-  use the same holes, that sum equals unsold + open for the day. The agreement spec, in the
-  dashboard library, checks it through the store's own path, including a day at a shop the
-  schedule does not offer.
+  The day summary (`StaffDashboard.daySummary`) keeps summing its gap rows
+  (`GridLayoutSystem.totalMinutes`); because both use the same holes, that sum equals unsold +
+  open for the day. Two agreement specs check it over one fixture month, a day at a shop the
+  schedule does not offer included: `staff-analytics.agreement.spec.ts` in ecs-core reproduces
+  the store's chain, and the spec of the same name in the dashboard library runs
+  `StaffDayStore` itself.
 
 - **The client card is unchanged.** Its lifetime spend and analytics' seat nets agree to within
   one cent per worked seat (G5).
@@ -632,7 +641,7 @@ join the governance errors of `setRoles`. The UI words each as `errors.<errorCod
   made later is not in the token until the next sign-in; and the callable reads the caller's user
   document anyway for the stored roles.
 - **Reason for Rejection**: no v1 rule needs it. Revisit when the roster rule's self-or-manager
-  TODO (`firestore.rules:63`) is narrowed.
+  TODO (above `mayEditRoster`, `firestore.rules:72`) is narrowed.
 
 ### Alternative F: Make money a security boundary now
 
@@ -664,7 +673,7 @@ join the governance errors of `setRoles`. The UI words each as `errors.<errorCod
 - **Cons**: every booking made from a visit would also write that older visit inside the booking
   transaction, growing its conflict set.
 - **Reason for Rejection**: the follow-up reads cost ≤ 30 small `in` queries for a barber-month
-  and 2 range queries (~4,000 results) for a shop-month.
+  and one range query (~2,000 results) for a shop-month.
 
 ### Alternative J: A named league table between barbers, or matching Fresha report for report
 
@@ -714,8 +723,9 @@ join the governance errors of `setRoles`. The UI words each as `errors.<errorCod
   16.7 ms at 4× CPU throttle on a production build; callable p95 ≤ 1.5 s for a barber-month and
   ≤ 4 s for a shop-month; callable server memory 512 MiB.
 - **Rollout & Rollback**: a new route and menu row behind the role guards. Rollback removes the
-  route and the row. What stays: `linkedBarberId` on user documents and the lock documents
-  (unread once the route is gone) and device caches (ignored).
+  route and the row. What stays: `staffAnalytics`, deployed but uncalled; `setRoles`, which keeps
+  requiring and writing the link and its lock (`linkedBarberId` on user documents, the lock
+  documents); and device caches (ignored).
 
 ## Additional Resources
 
@@ -730,6 +740,10 @@ join the governance errors of `setRoles`. The UI words each as `errors.<errorCod
   demand in v1, a per-day figure set later). Dropped: the paid/unpaid and reason taxonomy
   (D16(b)).
 - Review reports: [review/](../design-research/staff-analytics/review/).
+- The decision record: [2026-11-08-staff-analytics.md](../architecture/decisions/2026-11-08-staff-analytics.md)
+  — computed on demand and its upgrade path, the account link and its lock, rebooking on shop
+  dates, the visibility rule, the client card's rounding, the device cache, and what §4 of the
+  earlier statistics design is kept, replaced or dropped.
 
 ## Future Improvements
 
@@ -746,10 +760,18 @@ join the governance errors of `setRoles`. The UI words each as `errors.<errorCod
 ## Detailed Implementation Plan
 
 Eight steps, in order: **1** core data, **2** core systems, **3** ports and pipelines, **4** server,
-**5** rules and seed, **6** web, **7** the two schedule changes, **8** agreement, budgets, e2e,
-rollout and the record. Every consumer of a changed type changes in the same step as the type,
+**5** rules and seed, **6** web, **7** the free-time query parameter, **8** agreement, budgets,
+e2e, rollout and the ADR. Every consumer of a changed type changes in the same step as the type,
 so each step is green on its own: `pnpm nx run-many -t typecheck test lint -p <touched projects>`
 and `pnpm nx run verify-tools:layering`.
+
+**As built.** The steps below are the plan the build started from. Where an item's names or
+signatures differ from the code, the code is what landed, and the
+[implementation checklist](../design-research/staff-analytics/review/implementation_checklist.md)'s
+"Closed in …" tables say how, PR by PR (for example: `RolesCall` carries a `barberLinkChange` tag,
+not an optional field; `AnalyticsCall` is flat; `seatNets` answers a `moneyAllocation` union; the
+`laneGeometry` move of item 15 was not needed; the ports are `LoadFollowUpsOf` and
+`ListBarberRecordIds`). The specification above is kept current with the code.
 
 ### Target Files to Create/Modify
 
@@ -761,16 +783,18 @@ and `pnpm nx run verify-tools:layering`.
      `ANALYTICS_PERIOD_OUT_OF_RANGE` (context `fromLocalDate`), `ANALYTICS_SCOPE_UNKNOWN`
      (context `barberId`), `ANALYTICS_INVALID_INPUT` (context `field`); the flat union
      `AnalyticsError` and its factory companion. The spec pins every code and shape.
-2. **`libs/ecs-core/src/errors/governance.error.ts`** (Modify) + spec — `SetRolesError` gains
+2. **`libs/ecs-core/src/errors/governance.error.ts`** (Modify) + spec — `SetRolesError`
+   (`GovernanceError | RepositoryError`) gains, through `GovernanceErrorCode`, the
+   `GovernanceError` union, its namespace and its factories,
    `GOVERNANCE_ROLES_BARBER_LINK_REQUIRED` (context `targetUserId`),
    `GOVERNANCE_ROLES_BARBER_UNKNOWN`, `GOVERNANCE_ROLES_LINK_WITHOUT_BARBER` and
    `GOVERNANCE_ROLES_BARBER_ALREADY_LINKED` (context
-   `barberId`). Same step: **`apps/functions/src/edge.ts`** maps both (failed-precondition), and the
+   `barberId`). Same step: **`apps/functions/src/edge.ts`** maps all four (failed-precondition), and the
    edge refusal table spec gains their rows.
 3. **`libs/ecs-core/src/errors/index.ts`** (Modify) — re-export item 1.
-4. **`libs/ecs-core/src/components/staff-link.data.ts`** (Create) + spec — `StaffLink =
-{ linkedBarberId: BarberId | null }`, `StaffLink.NONE`, a guard that reads an absent field as
-   `null` (older documents).
+4. **`libs/ecs-core/src/components/staff-link.data.ts`** (Create) + spec —
+   `StaffLink = { linkedBarberId: BarberId | null }`, `StaffLink.NONE`, a guard that reads an
+   absent field as `null` (older documents).
 5. **`libs/ecs-core/src/entities/user.entity.ts`** (Modify) — `User` gains `StaffLink`. Same step,
    every consumer of the `User` shape:
    - **`libs/ecs-core/src/entities/identity-entities.type-spec.ts`** — the slice in the not-`never`
@@ -782,8 +806,9 @@ and `pnpm nx run verify-tools:layering`.
    - **`tools/seed/fixtures/users.fixtures.ts`**, **`apps/web/e2e/support/seed-firestore.ts`**,
      **`tools/verify/p0/verify-p0.mjs`** — every seeded user body gains `linkedBarberId`
      (`'ivan'` for `dev-staff-ivan`, `null` otherwise).
-6. **`libs/ecs-core/src/entities/barber-link.entity.ts`** (Create) — `BarberLink = { id: BarberId;
-linkedUserId: UserId }`, the lock at `barbers/{id}/restricted/link`;
+6. **`libs/ecs-core/src/entities/barber-link.entity.ts`** (Create) —
+   `BarberLink = { id: BarberId; linkedUserId: UserId }`, the lock at
+   `barbers/{id}/restricted/link`;
    **`entities/collections.ts`** (Modify) — `BARBER_LINK_DOC = 'link'`.
 7. **`libs/ecs-core/src/components/roles.data.ts`** (Modify) + `roles.data.spec.ts` —
    `Roles.ANALYTICS_SELF = [Role.Barber]`, `Roles.ANALYTICS_SHOP = [Role.Admin]`; JSDoc: "used by
@@ -800,29 +825,30 @@ linkedUserId: UserId }`, the lock at `barbers/{id}/restricted/link`;
 10. **`libs/ecs-core/src/components/analytics-period.data.ts`** (Create) + spec —
     `AnalyticsPeriod = DateRange & { analyticsSpan: AnalyticsSpan }` (`'WEEK' | 'MONTH'`);
     companion `weekOf` / `monthOf` on `LocalDate.startOfWeek` / `startOfMonth`, `previous`,
-    `isWithinRange(period, today)` — `fromLocalDate ≥ startOfMonth(today) − 12 months` and
-    `fromLocalDate ≤ today`.
+    `isWithinRange(period, today)` — `fromLocalDate` at or after
+    `LocalDate.addMonths(LocalDate.startOfMonth(today), -12)` and at or before `today`.
 11. **`libs/ecs-core/src/components/analytics-report.data.ts`** (Create) + type-spec — root
     `AnalyticsReport`, flat with prefixed fields: `reportDefinitionVersion`,
     `reportComputedAtUtcMs`, `reportScopeBarberId` (`BarberId | null` for the shop),
     `reportFromLocalDate`, `reportToLocalDate`, the ten partition minutes
     (`reportWorkedMinutes`, … `reportOpenMinutes`), `reportClosedDayMinutes`,
-    `reportOutsideHoursMinutes`, `reportOutsideHoursSeats`, `reportTakingsCents`,
+    `reportOutsideHoursMinutes`, `reportOutsideHoursSeatCount`, `reportTakingsCents`,
     `reportTipsCents`, `reportExcludedVisitCount`, `reportHeroCurrentCents`,
     `reportHeroPreviousCents | null` (`null` = no previous period), `reportRebookedRate | null`,
     `reportNoShowRate | null` (`null` below the base of 20), the past-only bar segments
     (`reportBarWorkedMinutes`, `reportBarNoShowMinutes`, `reportBarUnmarkedMinutes`,
     `reportBarBlockedMinutes`, `reportBarUnsoldMinutes`, `reportBarOtherMinutes`),
     `reportRebookedCount`, `reportRebookedBase`, `reportNoShowCount`, `reportNoShowBase`,
-    `reportLateCancelCount`, `reportBookableOpenMinutes`, `reportEmptiestLocalDate | null`; 1-to-N
+    `reportLateCancellationCount`, `reportBookableOpenMinutes`, `reportEmptiestLocalDate | null`; 1-to-N
     lists `reportServices: ServiceRow[]`, `reportWeekdayFill: WeekdayFill[]`,
-    `reportOrigins: OriginShare[]`, `reportBarbers: BarberFigures[]`, `reportDayRows:
-AnalyticsDayRow[]`, `reportSeatRows: AnalyticsSeatRow[]`. One namespace declares each row type
+    `reportOrigins: OriginShare[]`, `reportBarbers: BarberFigures[]`,
+    `reportDayRows: AnalyticsDayRow[]`, `reportSeatRows: AnalyticsSeatRow[]`. One namespace declares each row type
     with its fields once; the `AnalyticsFigure` dictionary names each drillable figure. The
     type-spec proves no field collides.
 12. **`libs/ecs-core/src/components/analytics-call.data.ts`** (Create) + spec — `AnalyticsCall`
-    with namespace `AnalyticsCall.Request = { scopeBarberId: BarberId | null; period:
-AnalyticsPeriod }` and its guard; the answer is `AnalyticsReport`.
+    with namespace
+    `AnalyticsCall.Request = { scopeBarberId: BarberId | null; period: AnalyticsPeriod }` and its
+    guard; the answer is `AnalyticsReport`.
 13. **`libs/ecs-core/src/components/index.ts`** (Modify) — re-export items 4, 10–12.
 14. **`libs/ecs-core/src/primitives/log-event.data.ts`** (Modify) — `LogEvent.AnalyticsReported`.
 
@@ -839,11 +865,13 @@ AnalyticsPeriod }` and its guard; the answer is `AnalyticsReport`.
       carved windows (blocks and breaks out), no busy projection — then `sellableAt` with the
       seat's location's `ShopNow`. Rule 1, occupied parts: one sorted sweep over each seat's
       `Seat.chairTime`, a minute taking the first of worked → no-show → unmarked → booked ahead →
-      held (a cancelled seat on a visit that is not wholly cancelled). Rule 2, on the remaining
-      rostered minutes: blocked, then break. Rostered time from `laneGeometry`'s uncarved union.
+      held (a cancelled seat on a visit that is not wholly cancelled). Rules 2 and 3, on the
+      remaining rostered minutes: blocked, then break. Rostered time is the union of the offered
+      windows, blocks and breaks.
     - **Spec**: purity; the ten parts sum to rostered time (fast-check property over generated
       days); boundary cases — DST days, overlapping seats, a seat across a block, a seat over a
-      break, a seat outside hours, a cancelled seat on a completed visit, a `CLOSED` day, a hole
+      break, a seat outside hours, a cancelled seat on a visit that is not wholly cancelled, a
+      `CLOSED` day, a hole
       with under 20 minutes left (unsold), a 19-minute hole (short gap).
 17. **`money-allocation.system.ts`** (Create) + spec — `seatNets(appointment)` returns
     `{ allocation: 'ALLOCATED'; nets: readonly SeatNet[] } | { allocation: 'NOT_EVALUATED' }`,
@@ -856,14 +884,14 @@ AnalyticsPeriod }` and its guard; the answer is `AnalyticsReport`.
     table, all nine rows), `daysOf(period)`, `report(input, nowByLocation)` (every catalogue
     figure; `nowByLocation: readonly ShopNowAt[]`, `ShopNowAt = { locationId } & ShopNow`, a seat
     using its visit's location), `barSegments(report)` (the five segments and "other"),
-    `rowsFor(report, figure, filter: AnalyticsRowFilter)` with `AnalyticsRowFilter =
-{ serviceId: ServiceId | null; localDate: LocalDate | null; barberId: BarberId | null }`.
+    `rowsFor(report, figure, filter: AnalyticsRowFilter)` with
+    `AnalyticsRowFilter = { serviceId: ServiceId | null; localDate: LocalDate | null; barberId: BarberId | null }`.
     Late cancellations through `ClientStatsSystem.clientCaused` and
     `ClientStatsPolicy.isLateCancellation`. `DEFINITION_VERSION = 1`. Spec: purity; each
     catalogue row hand-computed; the rate gate at 19/20; rebooked with an open window; the hero
     comparison on day 1, on 31 March and with an unfinished seat; `rowsFor` sums to every figure.
 19. **`role-assignment.system.ts`** (Modify) + spec — `decide` takes the current link, the
-    requested link and the involved locks, and returns the outcomes of the decision table in the
+    requested link and the new and the old lock, and returns the outcomes of the decision table in the
     specification; `changeOf` / `saveOf` handle a link-only change.
 20. **`audit.system.ts`** (Modify) + spec — `planRolesChanged` accepts a link-only change and
     fills the two profile link fields; an unchanged roles-and-link pair stays a defect.
@@ -883,13 +911,13 @@ AnalyticsPeriod }` and its guard; the answer is `AnalyticsReport`.
     `OPERATION_ID_FIELD` entry `null` (a read); App Check entry `Standard`; answer decoder.
 24. **`ports/index.ts`** (Modify) — export item 22.
 25. **`pipelines/staff-analytics.pipeline.ts`** (Create) + spec — dependency type
-    `AnalyticsReadPorts & ProfileReadPorts & RosterReadPorts & PolicyReadPorts & ClockPorts &
-LogPorts` (the bundles that hold `LoadProfile`, the roster read and the policy read). Steps:
+    `AnalyticsReadPorts & ProfileReadPorts & RosterReadPorts & PolicyReadPorts & ClockPorts & LogPorts`
+    (the bundles that hold `LoadProfile`, the roster read and the policy read). Steps:
     read the caller → `StaffAnalyticsSystem.scopeOf`; `AnalyticsPeriod.isWithinRange`; read
     barber records and locations; read visits by keys in chunks of 30 (the previous period's for
     the hero); read the next 7 days' visits and departures; merge visits by appointment id; read
-    follow-ups (`in` chunks for a barber, one range for the shop) and keep those with a
-    `bookedFromAppointmentId` in memory; derive `ShopNowAt` per location and the follow-ups'
+    follow-ups (`in` chunks for a barber, one range for the shop) and filter in memory to those
+    with a `bookedFromAppointmentId`; derive `ShopNowAt` per location and the follow-ups'
     booking shop dates with `ZonedTimeSystem` once; call `report`; log `AnalyticsReported` with
     `uid, scope, periodFrom, periodTo, definitionVersion, visitCount, durationMs` and the minutes
     per part — no money. Spec: in-memory ports; every visibility row; chunking at 30; a party
@@ -902,22 +930,35 @@ LogPorts` (the bundles that hold `LoadProfile`, the roster read and the policy r
 
 #### Step 4 — Server (`apps/functions/src`)
 
-28. **`adapters/firestore-analytics.adapter.ts`** (Create) + spec — `firestoreAnalyticsPorts(db,
-guardOf, log): AnalyticsReadPorts`. Every appointment read passes the stored-document guard
-    (as `firestoreSchedulePorts` does). Each query is bounded: visit chunks `limit(keys × 60)`;
+28. **`adapters/firestore-analytics.adapter.ts`** (Create) + spec —
+    `firestoreAnalyticsPorts(db, guardOf, log): AnalyticsReadPorts`. Every appointment read passes
+    the stored-document guard (as `firestoreSchedulePorts` does). Each query is bounded: visit chunks `limit(keys × 60)`;
     follow-up chunks `limit(30 × 5)`; the shop's follow-up range `limit(20_000)` with a comment
     naming the tenant ceiling; departures `limit(31)`; barber records and locations carry the
     unbounded-ok comment (tenant-sized). Bodies spread, never mapped; failures through
     `store-answer.ts`.
 29. **`adapters/firestore-ports.ts`** (Modify) — construct it there, the only production site,
     with the guard registry and the log.
-30. **`wire/analytics.wire.ts`** (Create) + spec — signed in, token role in `ANALYTICS_SELF ∪
-ANALYTICS_SHOP`, payload through the `AnalyticsCall.Request` guard
+30. **`wire/analytics.wire.ts`** (Create) + spec — signed in, token role in
+    `ANALYTICS_SELF ∪ ANALYTICS_SHOP`, payload through the `AnalyticsCall.Request` guard
     (`ANALYTICS_INVALID_INPUT`).
-31. **`main.ts`** (Modify) — `export const staffAnalytics = onCall({ …, memory: LARGE_MEMORY },
-wiredCallable(plain(Callables.StaffAnalytics, null), root.ports, decodeStaffAnalytics, (ports,
-cmd, caller) => staffAnalyticsPipeline(ports)(cmd, caller), refusalOf))`.
+31. **`main.ts`** (Modify) — the export, as built:
+
+    ```ts
+    export const staffAnalytics = onCall(
+      { ...LOG_DIGEST_SECRETS, memory: LARGE_MEMORY },
+      wiredCallable(
+        plain(Callables.StaffAnalytics, null),
+        root.ports,
+        decodeStaffAnalytics,
+        (ports, cmd) => staffAnalyticsPipeline(ports)(cmd),
+        refusalOf,
+      ),
+    );
+    ```
+
     **`main.spec.ts`** — the export list gains `staffAnalytics`.
+
 32. **`edge.ts`** (Modify) — the refusal table maps every `AnalyticsErrorCode`
     (unauthenticated, permission-denied, failed-precondition for not-linked, invalid-argument for
     period, not-found for scope, invalid-argument for input).
@@ -929,19 +970,23 @@ cmd, caller) => staffAnalyticsPipeline(ports)(cmd, caller), refusalOf))`.
 
 #### Step 5 — Rules and seed
 
-34. **`firestore.rules`** (Modify) — in `match /barbers/{barberId}`, a nested
-    `match /restricted/{doc} { allow read, write: if false; }` with a comment;
-    `linkedBarberId` added to the documented user key list. **The rules-unit spec** gains a case
-    that a client read and a client write of `barbers/{id}/restricted/link` are denied.
-35. **`tools/seed-dev-catalog.mjs`** (Modify) — the lock `barbers/ivan/restricted/link =
-{ linkedUserId: 'dev-staff-ivan' }`.
+34. **`firestore.rules`** (Modify) — in `match /barbers/{barberId}`, a nested, NAMED
+    `match /restricted/link { allow read, write: if false; }` with a comment (named, not a
+    wildcard: the root deny covers any other id, and `role.rules-parity.spec.ts` finds the
+    spend's `/restricted/{docId}` by its text); the comment listing the user document's keys
+    gains `linkedBarberId`. **`libs/infrastructure/firestore/src/lib/firestore.rules.integration.spec.ts`**
+    gains a case that a client read and a client write of `barbers/{id}/restricted/link` are
+    denied.
+35. **`tools/seed-dev-catalog.mjs`** (Modify) — the lock
+    `barbers/ivan/restricted/link = { linkedUserId: 'dev-staff-ivan' }`.
 
 #### Step 6 — Web
 
 36. **`libs/features/staff/analytics/`** (Create with the `nx-generate` Angular library
     generator; tags `scope:app`, `type:feature`; alias `@creativo/features/staff/analytics`)
     - `staff-analytics.page.ts|html|css` — period switcher, admin scope picker, hero, time bar,
-      open-hours card, by-service rows, rates, admin weekday fill and origins, every state of the
+      open-hours card, seats by service, rebooked, no-shows, late cancellations, admin weekday
+      fill and origins, every state of the
       states table; the route exported with `loadComponent`.
     - `staff-analytics.store.ts` — scope, period, report, load state; reads the cache, calls
       `requestReport` on every open, after painting the cache; deletes the cache on a refusal; the
@@ -976,70 +1021,105 @@ cmd, caller) => staffAnalyticsPipeline(ports)(cmd, caller), refusalOf))`.
     linked record shown on the row; `setRoles` sends `linkedBarberId`.
     **`apps/web/e2e/staff-client-roles.spec.ts`** (Modify) — ticking «Бръснар» now needs a record.
 45. **`libs/infrastructure/i18n/src/assets/i18n/bg.json`, `en.json`** (Modify) — the screen's
-    words, every figure's title and ⓘ definition, `errors.ANALYTICS_*`, the two governance codes.
+    words, every figure's title and ⓘ definition, `errors.ANALYTICS_*`, and the governance codes
+    `GOVERNANCE_ROLES_BARBER_LINK_REQUIRED`, `GOVERNANCE_ROLES_BARBER_UNKNOWN`,
+    `GOVERNANCE_ROLES_LINK_WITHOUT_BARBER` and `GOVERNANCE_ROLES_BARBER_ALREADY_LINKED`.
 
-#### Step 7 — The two schedule changes
+#### Step 7 — The free-time query parameter
 
 46. **`libs/features/staff/dashboard/src/lib/schedule-status-filter.ts`** (Modify) + spec —
     `showFreeTimeOnce()`: turns free time on without writing the stored preference.
 47. **`libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts`** (Modify) +
-    spec — the route inputs (`staff-dashboard.ts:806-815`) read `free=1` once, call
+    spec — the route inputs (`bindRouteInputs`, `staff-dashboard/route-inputs.ts`) read `free=1` once, call
     `showFreeTimeOnce()`, and navigate with `free` removed (`replaceUrl`), so
     `queryParamsHandling: 'merge'` does not carry it on.
 
-(The `laneGeometry` move is item 15.)
+(Item 15's `laneGeometry` move was not needed: see the as-built note above.)
 
-#### Step 8 — Agreement, budgets, e2e, rollout, record
+#### Step 8 — Agreement, budgets, e2e, rollout, the ADR
 
 48. **`libs/ecs-core/src/testing/analytics.fixtures.ts`** (Create) and **`testing/index.ts`**
-    (Modify) — one fixture month: three barbers at two locations, a party split across two, a
-    cancelled seat on a completed visit, a discount with an odd cent, a no-show, a block, a break,
-    a seat over a break, an unmarked past visit, a follow-up, a day at a location the schedule
-    does not offer.
-49. **`libs/features/staff/dashboard/src/lib/staff-analytics.agreement.spec.ts`** (Create) — over
-    the fixture, through the store's own path: day-summary minutes equal unsold + open per
-    barber-day; seat nets and `ClientStatsSystem` spend agree within one cent per worked seat (the fixture includes a client with three seats on
-    one visit and a BGN visit);
-    `rowsFor` totals equal their figures.
+    (Modify) — one fixture month (September 2026 at the pinned now, the 28th at 09:00): three
+    barbers at two locations, a party split across two barbers, a cancelled seat on a visit that
+    is not wholly cancelled, a discount with an odd cent, a no-show, a block, a break, a seat over
+    a break, an unmarked past visit, a follow-up, a day at a location the schedule does not offer,
+    a client with three worked seats on one visit, a BGN visit, a closed day and a late client
+    cancellation; `analyticsFixturePorts()` (the pipeline's ports over it) and
+    `analyticsFixtureBusyDays()` (its busy projection, as `BusySystem.rebuild` writes it).
+49. **The agreement specs (G5)** (Create) — over that fixture:
+    - **`libs/ecs-core/src/pipelines/staff-analytics.agreement.spec.ts`** — for each of the 90
+      barber-days, the schedule's day-summary free minutes, by the dashboard's own chain
+      (`laneGeometryOf` → `GridLayoutSystem.occupiedIntervals` → `holes` → `sellableAt` →
+      `totalMinutes`, reproduced with a comment naming each function), equal the report's
+      unsold + open; every client's `ClientStatsSystem` lifetime spend and their worked seats'
+      `MoneyAllocationSystem.seatNets` differ by at most one cent per worked seat; for every
+      `AnalyticsFigure`, the `seatRowsFor` / `dayRowsFor` rows' totals equal the figure, for each
+      barber's report and the shop's (whose per-barber figures are each barber's own report).
+    - **`libs/features/staff/dashboard/src/lib/staff-analytics.agreement.spec.ts`** — the same
+      90 barber-days through `StaffDayStore` itself (its harness,
+      `staff-day-store.spec-support.ts`, shared with `staff-day.store.spec.ts`): each lane's gaps
+      sum to the report's unsold + open.
 50. **`tools/verify/bundle/budgets.json`** (Modify) — a route ceiling for
-    `libs/features/staff/analytics/src/index.ts`, ~5% above its first production build, dated.
-51. **`apps/web/e2e/staff-analytics.spec.ts`** (Create) — Ivan opens «Анализи» from the menu and
-    sees the footer of takings equal the figure; an unlinked barber sees the not-linked state; the
-    admin links a barber on the client card and sees their figures; the open-hours card opens the
-    agenda with free rows.
-52. **Rollout** — deploy order: `firestore.rules` and functions first (the callable and the
-    `setRoles` change), then the web app; an older web app ignores `linkedBarberId`. **Rollback**:
-    remove the route and the menu row; the callable and the field stay unread.
-53. **`docs/architecture/decisions/2026-11-07-staff-analytics.md`** (Create) — the ADR: computed
-    on demand, the user-side link and its lock, the `setRoles` decision table, rebooking on shop
-    dates, the visibility rule as a product rule, the client card on its own split for now, and
-    what §4 of the earlier statistics design is kept, replaced or dropped.
+    `libs/features/staff/analytics/src/index.ts`, about 5% above its first production build, with
+    the date it was set (landed in PR C: 1.68 MB, set 2026-11-08).
+51. **`apps/web/e2e/staff-analytics.spec.ts`** (Create) — a linked barber (stored roles
+    `[barber]`, `linkedBarberId: 'ivan'`, Ivan's lock naming the account) opens «Анализи» from
+    the menu, opens the takings figure and sees the footer total equal it, their seeded seats
+    among the rows; an account holding the barber role with no link sees the not-linked state;
+    the admin opens on the shop, switches the scope picker to Niko and sees Niko's figures and
+    seat; the open-hours card, in Stefan's scope, links to `/staff/schedule` with `view=agenda`,
+    `barber=stefan`, `free=1` and the emptiest day, and the agenda shows free rows. Each test
+    seeds its own accounts and visits (`seedUserProfile`, `lockBarberLink`,
+    `seedWorkedAppointment`); only Ivan's record is linked, since the roles e2e links Niko's and
+    Stefan's through the client card.
+52. **Rollout** — deploy order: `firestore.rules`, `firestore.indexes.json` (the link's two
+    `fieldOverrides`) and the functions first (the callable and the `setRoles` change), then the
+    web app. Between the two deploys an older client card that grants the barber role sends no
+    link and is refused `GOVERNANCE_ROLES_BARBER_LINK_REQUIRED`; grant the role after the web
+    deploy. **Rollback**: remove the route and the menu row; `staffAnalytics` stays deployed but
+    uncalled, and `setRoles` keeps requiring and writing the link and its lock.
+53. **`docs/architecture/decisions/2026-11-08-staff-analytics.md`** (Create) — the ADR: computed
+    on demand (and the per-day figure set as the upgrade path, with its trigger), the user-side
+    link and its lock, the `setRoles` decision table, rebooking on shop dates, the visibility
+    rule as a product rule, the client card on its own rounding, the device cache, and what §4 of
+    the earlier statistics design is kept, replaced or dropped.
 
 ### Verification Plan
 
 - **Compilation/Build**: `pnpm nx run-many -t typecheck`; `pnpm nx build web` (templates are only
   checked here); `pnpm nx build functions`.
-- **Unit Tests**: `pnpm nx run ecs-core:test` (items 1–27, 48), `pnpm nx run functions:test`
-  (items 2, 8, 28–32), `pnpm nx run staff-analytics:test`, `staff-dashboard:test` (items 15,
-  46–47, 49), `client-card:test`, `shell:test`, `firebase-app:test`, `web-storage:test`.
+- **Unit Tests**: `pnpm nx run ecs-core:test` (items 1–27, 48–49), `pnpm nx run functions:test`
+  (items 2, 8, 28–32), `pnpm nx run staff-analytics:test`, `pnpm nx run staff-dashboard:test`
+  (items 46–47, 49), `pnpm nx run staff-client-card:test`, `pnpm nx run shared-shell:test`,
+  `pnpm nx run firebase-app:test`, `pnpm nx run web-storage:test`, `pnpm nx run i18n:test`
+  (item 45), `pnpm nx run lint-rules:test`, `pnpm nx run verify-tools:test` (it audits item 9's
+  `fieldOverrides`).
 - **Static Analysis & Linting**: `pnpm nx run-many -t lint` — includes `creativo/no-sliced-ports`,
   `creativo/presenter-purity`, the query-limit rule and the tier import restrictions;
   `pnpm nx run verify-tools:layering` — the tier hierarchy, runtime cycles, barrel contents and
   one home per exported name.
 - **Test Coverage Requirement**: every catalogue formula has a hand-computed case;
-  `ChairTimeSystem` has the sum property; `rowsFor` sums to every figure; every visibility row
+  `ChairTimeSystem` has the sum property; the rows sum to every figure; every visibility row
   and every row of the `setRoles` decision table has a case.
-- **E2E/Integration**: item 33 (`pnpm nx run functions:test-integration` against the emulators)
-  and item 51 (`pnpm nx run web:e2e`), run alone, never in parallel with `run-many -t test`. The
-  emulator does not enforce composite indexes; every new query uses an existing or default index
-  (item 9 adds only `fieldOverrides`).
+- **E2E/Integration** (the emulators; run alone, never in parallel with `run-many -t test`):
+  `pnpm run test:emulator` runs every `test-integration` target — item 33
+  (`functions:test-integration`) and item 34's rules case (`firestore:test-integration`);
+  `pnpm run e2e:web` runs the Playwright suite, item 51 among it (one spec alone:
+  `pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true pnpm exec firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test "pnpm nx e2e web -- staff-analytics"`);
+  `pnpm run verify:p0`, because item 5 edits `verify-p0.mjs`. The emulator does not enforce
+  composite indexes; every new query uses an existing or default index (item 9 adds only
+  `fieldOverrides`).
 - **Performance**: open «Анализи» on the `web:build:csp-smoke` production build at 390×844 with 4×
   CPU throttle — first frame from cache within the tap's frame, no frame over 16.7 ms; if it
   misses, stage the lower sections with the schedule's `SHEET_STAGED` / `climbStages` helpers
-  (moved then to `libs/ui/layout`). Callable p95 for a barber-month and a shop-month from the
-  `AnalyticsReported` `durationMs` field, in the emulator and after the first deploy.
-- **Correctness gate before v2**: one month of takings + tips − voucher draws against the shop's
-  cash + card totals, within 2%, every difference above €20 explained.
+  (moved then to `libs/ui/layout`). Callable p95 from the `AnalyticsReported` `durationMs`
+  field, in the emulator and after the first deploy: at most 1.5 s for a barber-month and 4 s for
+  a shop-month (the [budgets](#non-functional-requirements)).
+- **Reconciliation gate before earnings** (the success measure of [Goals](#goals); owner: the
+  shop's owner, the admin who keeps the till): for one month, takings + tips − voucher draws
+  within 2% of the shop's own cash + card total, every difference above €20 explained. Voucher
+  draws are the amounts paid from gift-voucher balances (`voucherRedemptions` on the visits):
+  the seat nets count a voucher-funded seat in full, but the till never received that money.
 
 ---
 

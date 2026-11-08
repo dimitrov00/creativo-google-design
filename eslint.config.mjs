@@ -343,8 +343,10 @@ export default [
     // replaced, never merged, by a later block, so this restates the layer
     // half without the testing one. `*.type-spec.ts` (compile-time
     // assertions, type-checked by their lib's tsconfig.spec.json) are specs
-    // too: libs/ecs-core's take their fixtures from `@core/testing`.
-    files: ['**/*.spec.ts', '**/*.type-spec.ts'],
+    // too: libs/ecs-core's take their fixtures from `@core/testing`. A
+    // `*.spec-support.ts` (a harness several specs of one library share,
+    // excluded from its tsconfig.lib.json) is compiled only with them.
+    files: ['**/*.spec.ts', '**/*.type-spec.ts', '**/*.spec-support.ts'],
     rules: {
       'no-restricted-imports': ['error', LAYER_IMPORT_RESTRICTIONS],
     },

@@ -1,27 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  APPOINTMENT_NOTE_PORTS,
-  APPOINTMENT_PHOTO_PORTS,
-  APPOINTMENT_READ_PORTS,
-  AUTH_SESSION_PORTS,
-  CATALOG_PORTS,
-  CLIENT_ISSUE_PORTS,
-  CLOCK_PORTS,
-  COUPON_VOUCHER_PORTS,
-  DEFAULT_LOCATION_PORTS,
-  GATEWAY_PORTS,
-  ID_PORTS,
-  LOCATION_LOAD_PORTS,
-  MEDIA_RESOLVE_PORTS,
-  SCHEDULE_EXCEPTION_PORTS,
-  SCHEDULING_READ_PORTS,
-} from '@creativo/infrastructure/firebase-app';
+import {} from '@creativo/infrastructure/firebase-app';
 import {
   AppointmentId,
-  BarberId,
   BookingStatus,
   CouponGrantId,
   CouponId,
@@ -48,28 +30,18 @@ import {
   CouponExpiryRule,
   CouponStatus,
   CouponValue,
-  DayHours,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
   ShiftSegment,
 } from '@core/components';
-import type {
-  AppointmentNote,
-  BarberSchedule,
-  Coupon,
-  CouponGrant,
-  ShopLocation,
-} from '@core/entities';
+import type { AppointmentNote, Coupon, CouponGrant } from '@core/entities';
 import {
   type AppointmentNotePorts,
   type AppointmentReadPorts,
   Callables,
   type ClientIssuePorts,
-  type ClockPorts,
-  type CouponVoucherPorts,
   type IdPorts,
-  type MediaResolvePorts,
   type ObserveBarberDay,
 } from '@core/ports';
 import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
@@ -79,28 +51,24 @@ import {
   type GatewayScript,
   appointmentFixture,
   at,
-  barberFixture,
   barberScheduleFixture,
   localDate,
   locationFixture,
-  memoryAppointmentPhotoPorts,
-  memoryAuthSessionPorts,
-  memoryCatalogReadPorts,
-  memoryClockPorts,
   memoryCouponVoucherPorts,
-  memoryDefaultLocationPorts,
-  memoryLocationLoadPorts,
-  memoryProgramsWorld,
-  memoryScheduleExceptionPorts,
-  memorySchedulingReadPorts,
   recordingClientIssuePorts,
-  scriptedGatewayPorts,
   unwrapOk,
   until,
   utcMs,
 } from '@core/testing';
 import { ScheduleStatusFilter } from './schedule-status-filter';
-import { StaffDayStore, StaffView, parseView } from './staff-day.store';
+import { type StaffDayStore, StaffView, parseView } from './staff-day.store';
+import {
+  CENTER,
+  CENTER_SHOP,
+  IVAN,
+  buildStaffDayStore as build,
+  settleStaffDayStore as settle,
+} from './staff-day-store.spec-support';
 
 /*
  * THE STAFF DAY STORE, at its own edges (pass D) — the route's `?day=`,
@@ -111,165 +79,8 @@ import { StaffDayStore, StaffView, parseView } from './staff-day.store';
  * Clocks are pinned (`memoryClockPorts`), never the wall clock.
  */
 
-const CENTER = LocationId.of('loc-center');
 const LONDON = LocationId.of('loc-london');
-const IVAN = BarberId.of('ivan');
 const LONDON_ZONE = unwrapOk(ZonedTimeSystem.checkZone('Europe/London'));
-
-/** The fixture's shop, open around the clock so no roster is clamped here. */
-const CENTER_SHOP = locationFixture({
-  id: CENTER,
-  openingHours: Array.from({ length: 7 }, () =>
-    DayHours.open(at(0), until(24)),
-  ),
-});
-
-interface Harness {
-  readonly store: StaffDayStore;
-  readonly router: Router;
-}
-
-async function settle(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    TestBed.tick();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  TestBed.tick();
-}
-
-async function build(
-  options: {
-    readonly nowIso?: string;
-    readonly shops?: readonly ShopLocation[];
-    readonly defaultShops?: readonly ShopLocation[];
-    readonly schedules?: readonly BarberSchedule[];
-    readonly storedView?: string;
-    readonly url?: string;
-    readonly notes?: AppointmentNotePorts;
-    /** The chairs' days as the read port answers them — every chair empty and clean by default. */
-    readonly barberDay?: ObserveBarberDay;
-    readonly couponsVouchers?: CouponVoucherPorts;
-    /** The id source each act's `operationId` is minted from — one fixed name by default. */
-    readonly ids?: IdPorts;
-    /** Every callable the store dialled, in order (each answers `PIPELINE_UNKNOWN`). */
-    readonly calls?: GatewayCall[];
-    /** The callables that succeed, by name (the rest answer `PIPELINE_UNKNOWN`). */
-    readonly script?: GatewayScript;
-    /** The instant the store reads — pinned at `nowIso` by default. */
-    readonly clock?: ClockPorts;
-    /** The search window's read port — an empty, uncapped window by default. */
-    readonly searchWindow?: AppointmentReadPorts['searchAppointmentWindow'];
-    /** The client issue sink — a recording one by default (`issues.reported`). */
-    readonly issues?: ClientIssuePorts;
-  } = {},
-): Promise<Harness> {
-  localStorage.clear();
-  if (options.storedView !== undefined) {
-    localStorage.setItem('staff.schedule.view', options.storedView);
-  }
-  const shops = options.shops ?? [CENTER_SHOP];
-  TestBed.configureTestingModule({
-    providers: [
-      StaffDayStore,
-      provideRouter([]),
-      {
-        provide: CLOCK_PORTS,
-        useValue:
-          options.clock ??
-          memoryClockPorts(
-            utcMs(options.nowIso ?? '2026-08-05T09:00:00.000+03:00'),
-          ),
-      },
-      {
-        provide: ID_PORTS,
-        useValue: options.ids ?? { nextId: () => 'operation-000000000001' },
-      },
-      {
-        provide: CLIENT_ISSUE_PORTS,
-        useValue: options.issues ?? recordingClientIssuePorts().ports,
-      },
-      {
-        provide: LOCATION_LOAD_PORTS,
-        useValue: memoryLocationLoadPorts(
-          memoryProgramsWorld({ locations: options.defaultShops ?? shops }),
-        ),
-      },
-      {
-        provide: DEFAULT_LOCATION_PORTS,
-        useValue: memoryDefaultLocationPorts(CENTER),
-      },
-      {
-        provide: APPOINTMENT_READ_PORTS,
-        useValue: {
-          observeAppointment: () => of(Result.ok(null)),
-          observeBarberDay:
-            options.barberDay ??
-            (() => of(Result.ok({ appointments: [], unreadableCount: 0 }))),
-          observeUpcoming: () => of(Result.ok([])),
-          observeHistory: () => of(Result.ok([])),
-          pageClientHistory: async () =>
-            Result.ok({ appointments: [], nextBeforeUtcMs: null }),
-          searchAppointmentWindow:
-            options.searchWindow ??
-            (async () => Result.ok({ appointments: [], capped: false })),
-        } satisfies AppointmentReadPorts,
-      },
-      {
-        provide: GATEWAY_PORTS,
-        useValue: scriptedGatewayPorts(options.script ?? {}, options.calls),
-      },
-      {
-        provide: CATALOG_PORTS,
-        useValue: memoryCatalogReadPorts({
-          barbers: [barberFixture({ id: IVAN, locationIds: [CENTER] })],
-          locations: shops,
-        }),
-      },
-      {
-        provide: SCHEDULING_READ_PORTS,
-        useValue: memorySchedulingReadPorts({
-          locations: shops,
-          schedules: options.schedules ?? [],
-        }),
-      },
-      {
-        provide: SCHEDULE_EXCEPTION_PORTS,
-        useValue: memoryScheduleExceptionPorts([]),
-      },
-      { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
-      {
-        provide: APPOINTMENT_NOTE_PORTS,
-        useValue:
-          options.notes ??
-          ({
-            observeAppointmentNote: () => of(Result.ok(null)),
-            saveAppointmentNote: async () => Result.ok(undefined),
-            updateAppointmentNote: async (_appointmentId, decide) =>
-              Result.ok(decide(null)),
-          } satisfies AppointmentNotePorts),
-      },
-      {
-        provide: APPOINTMENT_PHOTO_PORTS,
-        useValue: memoryAppointmentPhotoPorts([]),
-      },
-      {
-        provide: COUPON_VOUCHER_PORTS,
-        useValue: options.couponsVouchers ?? memoryCouponVoucherPorts(),
-      },
-      {
-        provide: MEDIA_RESOLVE_PORTS,
-        useValue: {
-          resolveMedia: async () => Result.ok([]),
-        } satisfies MediaResolvePorts,
-      },
-    ],
-  });
-  const router = TestBed.inject(Router);
-  if (options.url !== undefined) await router.navigateByUrl(options.url);
-  const store = TestBed.inject(StaffDayStore);
-  await settle();
-  return { store, router };
-}
 
 afterEach(() => {
   TestBed.resetTestingModule();

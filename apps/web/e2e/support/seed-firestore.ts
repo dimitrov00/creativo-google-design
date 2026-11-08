@@ -116,6 +116,8 @@ export async function seedUserProfile(
     phone?: string;
     birthDate?: string | null;
     roles?: readonly Role[];
+    /** The barber record the account is linked to (`StaffLink`) — none by default; {@link lockBarberLink} writes the record's side. */
+    linkedBarberId?: string | null;
   } = {},
 ): Promise<void> {
   const firstName = overrides.firstName ?? 'Ada';
@@ -139,7 +141,9 @@ export async function seedUserProfile(
     birthDate,
     profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(firstName, lastName, phone, null),
-    ...StaffLink.NONE,
+    ...(overrides.linkedBarberId == null
+      ? StaffLink.NONE
+      : { linkedBarberId: BarberId.of(overrides.linkedBarberId) }),
   } satisfies Omit<User, 'id'>;
   await getFirestore(adminApp())
     .collection(Collections.Users)
@@ -289,19 +293,29 @@ export async function setVisitContact(
  * `startsAt` — the body {@link workedAppointmentBody} builds — and the
  * owner's client record. The visit a client repeats with `/book?repeat=`.
  * Its one seat sells the chair's beard trim unless `service` names another
- * of Ivan's services.
+ * of Ivan's services, in Ivan's chair unless `barberId` names another.
  */
 export async function seedWorkedAppointment(
   id: string,
   ownerUserId: string,
   startsAt: string,
   service: ChairService = DEV_CHAIR,
+  barberId?: string,
 ): Promise<void> {
   const customerId = await seedCustomerRecord(ownerUserId);
   await getFirestore(adminApp())
     .collection(Collections.Appointments)
     .doc(id)
-    .set(workedAppointmentBody(id, ownerUserId, customerId, startsAt, service));
+    .set(
+      workedAppointmentBody(
+        id,
+        ownerUserId,
+        customerId,
+        startsAt,
+        service,
+        barberId,
+      ),
+    );
 }
 
 /**
@@ -884,6 +898,25 @@ export async function releaseBarberLink(barberId: string): Promise<void> {
     .collection(Subcollections.Restricted)
     .doc(BARBER_LINK_DOC)
     .delete();
+}
+
+/**
+ * Writes a barber record's account lock (`barbers/{id}/restricted/link`) for
+ * `uid` — the record's side of a link `setRoles` would have made; the
+ * account's side is {@link seedUserProfile}'s `linkedBarberId`. Pick a record
+ * no other spec links through the card (the roles e2e links `niko` and
+ * `stefan`), so two specs never contend for one lock.
+ */
+export async function lockBarberLink(
+  barberId: string,
+  uid: string,
+): Promise<void> {
+  await getFirestore(adminApp())
+    .collection(Collections.Barbers)
+    .doc(barberId)
+    .collection(Subcollections.Restricted)
+    .doc(BARBER_LINK_DOC)
+    .set({ linkedUserId: uid });
 }
 
 /** The account a barber record's lock names, or `null` when the record is free. */

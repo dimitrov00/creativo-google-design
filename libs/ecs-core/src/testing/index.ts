@@ -1,5 +1,6 @@
 export * from './analytics-doubles';
 export * from './analytics-report.fixtures';
+export * from './analytics.fixtures';
 export * from './appointment.fixtures';
 export * from './booking-core.fixtures';
 export * from './booking-flow.fixtures';
