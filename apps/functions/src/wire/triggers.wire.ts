@@ -4,6 +4,7 @@ import {
   BusyKey,
   CustomerId,
   defect,
+  LocalDate,
   LogEvent,
   type PrimitiveError,
   Result,
@@ -19,7 +20,12 @@ import {
   GovernedCollection,
   PreciseInstant,
 } from '@core/components';
-import { POLICY_RECOMPUTE_DOC, type PolicyRecomputeJob } from '@core/entities';
+import {
+  ANALYTICS_RECOMPUTE_DOC,
+  type AnalyticsRecomputeJob,
+  POLICY_RECOMPUTE_DOC,
+  type PolicyRecomputeJob,
+} from '@core/entities';
 import {
   type AppointmentSide,
   type AttemptFailure,
@@ -34,13 +40,18 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  AnalyticsDaySource,
   type AuditDocumentChangeAnswer,
+  type ContinueAnalyticsRecomputeCommand,
   type ContinuePolicyRecomputeCommand,
   type MatchWaitlistCommand,
   type ProjectClientStatsCommand,
+  type RebuildBusyAnswer,
   type RebuildBusyCommand,
   type RebuildCapacityCommand,
   type StartPolicyRecomputeCommand,
+  type WriteAnalyticsDayAnswer,
+  type WriteAnalyticsDayCommand,
 } from '@core/pipelines';
 import {
   attemptEventOf,
@@ -69,6 +80,12 @@ import { eventInstantOf, isStoreFailure } from './wire-read';
  * - `decodePolicyRecomputeEvent` / `decodePolicyStepEvent` /
  *   `decodePolicySweepRun` — the policy pass's settings write, job write and
  *   daily tick;
+ * - `decodeAnalyticsDayEvent` / `decodeAnalyticsStepEvent` — the day
+ *   writer's departure write (its one busy key) and the analytics
+ *   recompute's job write (staff analytics v2); the appointment trigger
+ *   hands the writer the SAME decoded `RebuildBusyCommand` the busy rebuild
+ *   takes, as its `'APPOINTMENT'` command, and `combinedReport` joins the
+ *   two answers;
  * - `decodeDocumentChangeEvent` — a write of `users` or of one of the
  *   thirteen governed collections (audit-hardening WS-3, RU-40: ONE decoder
  *   for all fourteen audit triggers), its writer from the auth context and
@@ -332,6 +349,47 @@ export function decodePolicyStepEvent(
   };
 }
 
+/**
+ * A `scheduleExceptions/{docId}` write as the day writer's `'DEPARTURE'`
+ * command — the one busy key the document's id IS (`BusyKey.of(barberId,
+ * localDate)`), else the key either side's `barberId` and `localDate`
+ * spell; `null` when neither names a day (nothing to rewrite).
+ */
+export function decodeAnalyticsDayEvent(
+  event: DocumentWriteEvent<{ readonly docId: string }>,
+): WriteAnalyticsDayCommand | null {
+  const key =
+    BusyKey.parse(event.params.docId) ??
+    keyOfSide(event.data?.after) ??
+    keyOfSide(event.data?.before);
+  return key === null
+    ? null
+    : { analyticsDaySource: AnalyticsDaySource.Departure, keys: [key] };
+}
+
+/** The busy key a stored departure's own fields spell, `null` when absent or unreadable. */
+function keyOfSide(snapshot: StoredSnapshot | undefined): BusyKey | null {
+  if (snapshot?.exists !== true) return null;
+  const body = rawBodyOf(snapshot);
+  const barberId = StoredFields.field(body, 'barberId');
+  const localDate = StoredFields.field(body, 'localDate');
+  return BarberId.is(barberId) && LocalDate.is(localDate)
+    ? BusyKey.of(barberId, localDate)
+    : null;
+}
+
+/** A `backfillJobs/analyticsRecompute` write as the step it fires (on the policy step's model). */
+export function decodeAnalyticsStepEvent(
+  event: DocumentWriteEvent<Record<string, string>>,
+): ContinueAnalyticsRecomputeCommand {
+  return {
+    fired: entityOf<AnalyticsRecomputeJob>(
+      event.data?.after,
+      ANALYTICS_RECOMPUTE_DOC,
+    ),
+  };
+}
+
 /** The daily sweep's tick as the delivery its attempt line names. */
 export function decodePolicySweepRun(
   tick: ScheduledTick,
@@ -521,6 +579,34 @@ export function projectionReport(
     attemptFailure: result.ok
       ? result.value.attemptFailure
       : TriggerAttemptSystem.repositoryFailure(result.error),
+    survivedFailure: null,
+  };
+}
+
+/** An answer's failures: each collected one, or the refusal of the whole as one. */
+function failuresOf(
+  result: Result<{ readonly failures: readonly unknown[] }, RepositoryError>,
+): readonly unknown[] {
+  return result.ok ? result.value.failures : [result.error];
+}
+
+/**
+ * The appointment trigger's two answers as ONE attempt report (staff
+ * analytics v2, «Failure semantics»): the busy rebuild's and the day
+ * writer's failures judged together — `TriggerAttemptSystem
+ * .decisiveFailure` over both lists, transient when any one is (the
+ * redelivery re-runs both, each idempotent), else the first; no survived
+ * failure. The writer runs whatever the busy rebuild answered.
+ */
+export function combinedReport(
+  busy: Result<RebuildBusyAnswer, RepositoryError>,
+  day: Result<WriteAnalyticsDayAnswer, RepositoryError>,
+): AttemptReport {
+  return {
+    attemptFailure: TriggerAttemptSystem.decisiveFailure([
+      ...failuresOf(busy),
+      ...failuresOf(day),
+    ]),
     survivedFailure: null,
   };
 }

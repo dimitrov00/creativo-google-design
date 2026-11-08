@@ -1,6 +1,7 @@
 export * from './achievements.system';
 export * from './age.system';
 export * from './analytics-hour.system';
+export * from './analytics-recompute-job.system';
 export * from './app-check.system';
 export * from './appointment-edit.system';
 export * from './appointment-index.system';
@@ -34,6 +35,7 @@ export * from './client-query.system';
 export * from './client-stats.system';
 export * from './coupon-grant.system';
 export * from './customer-record.system';
+export * from './day-figures.system';
 export * from './decision-input.system';
 export * from './discount.system';
 export * from './failure-code.system';

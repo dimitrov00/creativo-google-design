@@ -18,6 +18,7 @@ const PARAM_NAMES = {
   'client.privacy': 'CLIENT_PRIVACY',
   'referrals.invitations': 'REFERRALS_INVITATIONS',
   'discounts.grants': 'DISCOUNTS_GRANTS',
+  'analytics.storedDays': 'ANALYTICS_STORED_DAYS',
 } as const;
 
 describe('FLAG_PARAMS', () => {

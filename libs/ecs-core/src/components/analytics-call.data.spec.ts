@@ -48,6 +48,7 @@ function dayOf(barberId: BarberId, rostered: number): AnalyticsDay {
     closedDayMinutes: zero,
     // 09:00 on, for `rostered` minutes — the hour grid's stretch.
     stretches: [MinuteRange.of(minute(540), endMinute(540 + rostered))],
+    pastDay: true,
   };
 }
 

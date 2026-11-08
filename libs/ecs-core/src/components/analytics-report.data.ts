@@ -16,9 +16,15 @@ import type {
   AnalyticsComparison,
   AnalyticsSpan,
 } from './analytics-period.data';
+import type { DayRow } from './day-figures.data';
 
-/** The catalogue's version — raised whenever a formula changes, so cached reports are dropped. */
-export const ANALYTICS_DEFINITION_VERSION = 1;
+/**
+ * The catalogue's version — raised whenever a formula changes, so cached
+ * reports are dropped and every stored day (`dayDefinitionVersion`) becomes
+ * eligible for the recompute. 2 since staff analytics v2 PR 4a: the day
+ * rows are `DayRow`s (the `day*` fields, the money per day).
+ */
+export const ANALYTICS_DEFINITION_VERSION = 2;
 
 /** Where a visit was booked — the field `bookingOrigin`. */
 export const BookingOrigin = {
@@ -174,7 +180,12 @@ export type AnalyticsReport = {
   readonly reportOrigins: readonly AnalyticsReport.OriginShare[];
   /** One entry per barber record in a shop report; empty for one barber. */
   readonly reportBarbers: readonly AnalyticsReport.BarberFigures[];
-  readonly reportDayRows: readonly AnalyticsReport.DayRow[];
+  /**
+   * One row per barber-day in scope (the `TIME` drill-down), date then
+   * barber: `DayFigures.rowOf` of the day's figures — the parts and the
+   * money per day, as a stored day carries them.
+   */
+  readonly reportDayRows: readonly DayRow[];
   /** The scoped barber's seats; empty in a shop report. */
   readonly reportSeatRows: readonly AnalyticsReport.SeatRow[];
 };
@@ -274,24 +285,6 @@ export namespace AnalyticsReport {
     readonly noShowBase: number;
     readonly noShowRate: number | null;
     readonly lateCancellationCount: number;
-  };
-
-  /** One barber-day's parts (the `TIME` drill-down). */
-  export type DayRow = {
-    readonly barberId: BarberId;
-    readonly localDate: LocalDate;
-    readonly rosteredMinutes: MinuteCount;
-    readonly workedMinutes: MinuteCount;
-    readonly noShowMinutes: MinuteCount;
-    readonly unmarkedMinutes: MinuteCount;
-    readonly bookedAheadMinutes: MinuteCount;
-    readonly heldMinutes: MinuteCount;
-    readonly blockedMinutes: MinuteCount;
-    readonly breakMinutes: MinuteCount;
-    readonly shortGapMinutes: MinuteCount;
-    readonly unsoldMinutes: MinuteCount;
-    readonly openMinutes: MinuteCount;
-    readonly closedDayMinutes: MinuteCount;
   };
 
   /** One seat of the scoped barber (the money and count drill-downs). */

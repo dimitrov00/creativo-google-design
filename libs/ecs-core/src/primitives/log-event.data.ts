@@ -15,6 +15,23 @@
  * import (Law 8).
  */
 export const LogEvent = {
+  /**
+   * One past barber-day's figures written (`writeAnalyticsDay`, staff
+   * analytics v2): `barberId`, `localDate`, `source` (the command — an
+   * appointment, a departure, the recompute), `visitCount`, `durationMs`
+   * — never money.
+   */
+  AnalyticsDayWritten: 'analytics.day_written',
+  /** A day document could not be written and a redelivery cannot help: the busy `key` and the canonical failure `code` — what an oncall answers "which day is stale and why" from. */
+  AnalyticsDayWriteFailed: 'analytics.day_write_failed',
+  /** The recompute's pass ran off the end of its extent: `barbers`, `checked`, `written`, `failed`, `steps`. */
+  AnalyticsRecomputeDone: 'analytics.recompute_done',
+  /** A step of the recompute could not record its stall on the job (best effort): the job and the canonical `code`. */
+  AnalyticsRecomputeStallNotRecorded: 'analytics.recompute_stall_not_recorded',
+  /** One step of the recompute advanced: the `cursor`, keys `checked`, `eligible`, `written`, `skipped` (not past), `kept` (a newer document), `failed`, and the pass's `steps`. */
+  AnalyticsRecomputeStep: 'analytics.recompute_step',
+  /** The 04:30 sweep wrote the job: its `outcome` (started or nudged), the window (`fullReach`, `fromLocalDate`, `toLocalDate`), `barbers`, the `cursor` kept and the stall's `lastFailureCode`. */
+  AnalyticsRecomputeSwept: 'analytics.recompute_swept',
   /** A staff analytics report answered (`staffAnalytics`): the caller, scope, period, counts and minutes per part — never money (logs are read by the vendor). */
   AnalyticsReported: 'analytics.reported',
   /** The App Check switch held a non-empty value that is no mode — read as OFF, logged once per instance (security hardening S-RU-19). */

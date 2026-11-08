@@ -22,6 +22,8 @@ import {
 import { GovernanceError, RepositoryError } from '@core/errors';
 import type { TriggerFailurePorts } from '@core/ports';
 import {
+  ANALYTICS_RECOMPUTE_DOC,
+  type AnalyticsRecomputeJob,
   type Appointment,
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
@@ -41,6 +43,9 @@ import { retryingTrigger } from '../edge';
 import {
   attemptThrowable,
   CapacitySource,
+  combinedReport,
+  decodeAnalyticsDayEvent,
+  decodeAnalyticsStepEvent,
   decodeCapacityEvent,
   decodeDispatchProjectionsEvent,
   decodeMatchWaitlistEvent,
@@ -453,6 +458,59 @@ describe('decodePolicyStepEvent / decodePolicySweepRun', () => {
         'sweepClientStatsPolicyDaily',
       ).id,
     ).toBe('sweepClientStatsPolicyDaily@2026-09-28T00:30:00Z');
+  });
+});
+
+describe('decodeAnalyticsDayEvent / decodeAnalyticsStepEvent (staff analytics v2)', () => {
+  it('reads a departure write as the day writer’s one key — the document id — on a create, an update and a delete', () => {
+    const body = { barberId: FIXTURE_IDS.barber, localDate: FIXTURE_TODAY };
+    const expected = {
+      analyticsDaySource: 'DEPARTURE',
+      keys: [TODAY_KEY],
+    };
+    expect(
+      decodeAnalyticsDayEvent(writeEvent({ docId: TODAY_KEY }, null, body)),
+    ).toEqual(expected);
+    expect(
+      decodeAnalyticsDayEvent(writeEvent({ docId: TODAY_KEY }, body, body)),
+    ).toEqual(expected);
+    expect(
+      decodeAnalyticsDayEvent(writeEvent({ docId: TODAY_KEY }, body, null)),
+    ).toEqual(expected);
+  });
+
+  it('falls back to the key either side spells when the id is no busy key, and decodes nothing when neither names a day', () => {
+    const body = { barberId: FIXTURE_IDS.barber, localDate: FIXTURE_TODAY };
+    expect(
+      decodeAnalyticsDayEvent(writeEvent({ docId: 'legacy-id' }, null, body)),
+    ).toEqual({ analyticsDaySource: 'DEPARTURE', keys: [TODAY_KEY] });
+    expect(
+      decodeAnalyticsDayEvent(writeEvent({ docId: 'legacy-id' }, body, null)),
+    ).toEqual({ analyticsDaySource: 'DEPARTURE', keys: [TODAY_KEY] });
+    expect(
+      decodeAnalyticsDayEvent(
+        writeEvent({ docId: 'legacy-id' }, null, {
+          barberId: FIXTURE_IDS.barber,
+          localDate: 'not a day',
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      decodeAnalyticsDayEvent(writeEvent({ docId: 'legacy-id' }, null, null)),
+    ).toBeNull();
+  });
+
+  it('reads the analytics job a write left as the step it fires — a deleted one as none', () => {
+    const job = { jobCursor: null, jobSteps: 0 };
+    expect(decodeAnalyticsStepEvent(writeEvent({}, null, job))).toEqual({
+      fired: {
+        id: ANALYTICS_RECOMPUTE_DOC,
+        ...job,
+      } as unknown as AnalyticsRecomputeJob,
+    });
+    expect(decodeAnalyticsStepEvent(writeEvent({}, job, null))).toEqual({
+      fired: null,
+    });
   });
 });
 
@@ -941,6 +999,72 @@ describe('attempts — today’s line and redelivery', () => {
     ).toMatchObject({
       failureCode: 'data-loss',
       attemptOutcome: AttemptOutcome.Permanent,
+    });
+  });
+
+  it('joins the busy rebuild’s and the day writer’s answers as ONE report (staff analytics v2): transient when either is, else the first, nothing survived', () => {
+    const quietBusy = Result.ok({
+      rebuiltKeys: [TODAY_KEY],
+      failures: [],
+      attemptFailure: null,
+    });
+    const quietDay = Result.ok({
+      writtenKeys: [TODAY_KEY],
+      skippedKeys: [],
+      keptKeys: [],
+      failedKeys: [],
+      failures: [],
+      attemptFailure: null,
+    });
+    expect(combinedReport(quietBusy, quietDay)).toEqual({
+      attemptFailure: null,
+      survivedFailure: null,
+    });
+    const denied = RepositoryError.writeFailed(
+      `analyticsDays/${TODAY_KEY}`,
+      'permission-denied',
+    );
+    const aborted = TriggerAttemptSystem.attemptFailure({ code: 10 });
+    // A permanent day failure beside a quiet rebuild: the first, permanent.
+    expect(
+      combinedReport(
+        quietBusy,
+        Result.ok({
+          ...quietDay.value,
+          failedKeys: [TODAY_KEY],
+          failures: [denied],
+          attemptFailure: TriggerAttemptSystem.repositoryFailure(denied),
+        }),
+      ).attemptFailure,
+    ).toMatchObject({
+      error: denied,
+      attemptOutcome: AttemptOutcome.Permanent,
+    });
+    // A transient busy failure wins over the permanent day failure.
+    expect(
+      combinedReport(
+        Result.ok({
+          rebuiltKeys: [],
+          failures: [denied, aborted.error],
+          attemptFailure: aborted,
+        }),
+        Result.ok({
+          ...quietDay.value,
+          failures: [denied],
+          attemptFailure: TriggerAttemptSystem.repositoryFailure(denied),
+        }),
+      ).attemptFailure,
+    ).toMatchObject({
+      error: aborted.error,
+      attemptOutcome: AttemptOutcome.Transient,
+    });
+    // A refusal of the whole on either side counts as one failure.
+    const malformed = RepositoryError.malformed(PATH, 'busyKeys');
+    expect(
+      combinedReport(Result.err(malformed), Result.err(malformed)),
+    ).toEqual({
+      attemptFailure: TriggerAttemptSystem.repositoryFailure(malformed),
+      survivedFailure: null,
     });
   });
 

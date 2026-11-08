@@ -3,11 +3,12 @@ import type { LocalDate, UtcEpochMs } from '@core/primitives';
 /**
  * The TTL groups (pass C, P-34; `firestore-layout.md`: TTL on `purgeAt` for
  * `barberBusy`, `capacity`, `waitlistRequests`, `notifications`,
- * `barberLeadTimeSamples`, `otps`, `impersonationSessions`) — one per
- * collection the TTL service purges, the ONLY source of these strings, the
- * field `retentionGroup` ({@link RetentionAnchor}'s discriminator). Which
- * collection a document path names is the TTL adapter's to read; the
- * retention arithmetic is `RetentionSystem.purgeAtUtcMs`.
+ * `barberLeadTimeSamples`, `otps`, `impersonationSessions`, `analyticsDays`)
+ * — one per collection the TTL service purges, the ONLY source of these
+ * strings, the field `retentionGroup` ({@link RetentionAnchor}'s
+ * discriminator). Which collection a document path names is the TTL
+ * adapter's to read; the retention arithmetic is
+ * `RetentionSystem.purgeAtUtcMs`.
  */
 export const RetentionGroup = {
   /** `barberBusy/{barberId__localDate}` — kept past its day. */
@@ -24,6 +25,8 @@ export const RetentionGroup = {
   Otps: 'OTPS',
   /** `impersonationSessions/{id}` — kept past its end, else its window. */
   ImpersonationSessions: 'IMPERSONATION_SESSIONS',
+  /** `analyticsDays/{barberId__localDate}` — kept 13 months past its day (staff analytics v2). */
+  AnalyticsDays: 'ANALYTICS_DAYS',
 } as const;
 export type RetentionGroup =
   (typeof RetentionGroup)[keyof typeof RetentionGroup];
@@ -41,7 +44,8 @@ export type RetentionAnchor =
   | RetentionAnchor.Notifications
   | RetentionAnchor.LeadTimeSamples
   | RetentionAnchor.Otps
-  | RetentionAnchor.ImpersonationSessions;
+  | RetentionAnchor.ImpersonationSessions
+  | RetentionAnchor.AnalyticsDays;
 
 export const RetentionAnchor = {
   barberBusy(localDate: LocalDate): RetentionAnchor.BarberBusy {
@@ -85,6 +89,11 @@ export const RetentionAnchor = {
       expiresAtUtcMs,
     };
   },
+
+  /** A stored analytics day: its shop day — so a rebuild never extends its life. */
+  analyticsDays(localDate: LocalDate): RetentionAnchor.AnalyticsDays {
+    return { retentionGroup: RetentionGroup.AnalyticsDays, localDate };
+  },
 } as const;
 
 export namespace RetentionAnchor {
@@ -123,5 +132,10 @@ export namespace RetentionAnchor {
     readonly retentionGroup: typeof RetentionGroup.ImpersonationSessions;
     readonly endedAtUtcMs: UtcEpochMs | null;
     readonly expiresAtUtcMs: UtcEpochMs | null;
+  };
+  /** A stored analytics day: its shop day. */
+  export type AnalyticsDays = {
+    readonly retentionGroup: typeof RetentionGroup.AnalyticsDays;
+    readonly localDate: LocalDate;
   };
 }

@@ -8,14 +8,17 @@ import type {
 } from '@core/primitives';
 
 /**
- * The policy pass's job tag — the ONLY source of this string, the job's own
- * field `recomputeJobName` (N15). A different job from the
- * `BackfillJobName`s, though it lives one document over in the same
- * `backfillJobs/` collection (document id `PolicyRecomputeJobId.FIXED`,
- * the tag string kept as a stable path key by flip (1) — OQ-9).
+ * The recompute passes' job tags — the ONLY source of these strings, each
+ * job's own field `recomputeJobName` (N15). Different jobs from the
+ * `BackfillJobName`s, though they live one document over in the same
+ * `backfillJobs/` collection (document ids `PolicyRecomputeJobId.FIXED` and
+ * `AnalyticsRecomputeJobId.FIXED`, the tag strings kept as stable path keys
+ * by flip (1) — OQ-9).
  */
 export const RecomputeJobName = {
   ClientStatsPolicy: 'CLIENT_STATS_POLICY',
+  /** The analytics-days recompute (`AnalyticsRecomputeJob`, staff analytics v2). */
+  AnalyticsDays: 'ANALYTICS_DAYS',
 } as const;
 export type RecomputeJobName =
   (typeof RecomputeJobName)[keyof typeof RecomputeJobName];
@@ -39,7 +42,7 @@ export type RecomputeJobName =
  */
 export type PolicyRecomputeJob = {
   readonly id: PolicyRecomputeJobId;
-  readonly recomputeJobName: RecomputeJobName;
+  readonly recomputeJobName: typeof RecomputeJobName.ClientStatsPolicy;
   /** The settings write this pass answers — its event id (or a `sweep:` generation). */
   readonly generation: string;
   /** That write's time, whole seconds (D17). */

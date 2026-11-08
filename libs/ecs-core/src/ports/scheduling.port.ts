@@ -324,6 +324,17 @@ export type LoadSchedule = (
 ) => Promise<Result<BarberSchedule | null, RepositoryError>>;
 
 /**
+ * `appointments/{appointmentId}` as stored, read OUTSIDE a transaction
+ * through the stored-document guard (edge hardening D-3) — `null` when
+ * absent, the guard's refusal when malformed. The day writer's one read by
+ * id (staff analytics v2): the visit a follow-up was booked from, whose
+ * past day the follow-up's write rebuilds.
+ */
+export type LoadAppointment = (
+  appointmentId: AppointmentId,
+) => Promise<Result<Appointment | null, RepositoryError>>;
+
+/**
  * Every open request naming `localDate` — open status, `localDates
  * array-contains` (index #14, `firestore-waitlist-store.ts:94-95`): what a
  * freed day has to consider.
@@ -474,6 +485,11 @@ export type ShopDayReadPorts = {
   readonly loadBusyDay: LoadBusyDay;
   readonly loadScheduleException: LoadScheduleException;
   readonly loadSchedule: LoadSchedule;
+};
+
+/** One visit by id, guarded — `firestoreSchedulePorts` (functions), beside the shop day's singles. */
+export type AppointmentLoadPorts = {
+  readonly loadAppointment: LoadAppointment;
 };
 
 /** The tenant's barbers. */

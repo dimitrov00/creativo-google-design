@@ -13,6 +13,8 @@ import { type Appointment, Collections } from '@core/entities';
 import type { Log } from '@core/ports';
 import { StoredDocumentSystem } from '@core/systems';
 import {
+  ANALYTICS_FIXTURE_BARBERS,
+  analyticsFixtureDayDocuments,
   FIXTURE_NOW_UTC_MS,
   appointmentFixture,
   barberFixture,
@@ -23,7 +25,10 @@ import {
   unguarded,
 } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
-import { firestoreAnalyticsPorts } from './firestore-analytics.adapter';
+import {
+  firestoreAnalyticsDayPorts,
+  firestoreAnalyticsPorts,
+} from './firestore-analytics.adapter';
 import { bodyOf } from './store-answer';
 
 /*
@@ -276,5 +281,171 @@ describe('firestoreAnalyticsPorts — the shop', () => {
         'unavailable',
       ),
     });
+  });
+});
+
+describe('firestoreAnalyticsDayPorts — the stored days (staff analytics v2)', () => {
+  const DAYS = analyticsFixtureDayDocuments();
+  const { ivan, maria } = ANALYTICS_FIXTURE_BARBERS;
+  const dayOf = (barber: BarberId, day: string) =>
+    DAYS.find((d) => String(d.id) === BusyKey.of(barber, localDate(day)));
+
+  function seededDays(extra: Record<string, Data> = {}) {
+    const docs: Record<string, Data> = {};
+    for (const day of DAYS) {
+      docs[`${Collections.AnalyticsDays}/${day.id}`] = bodyOf(day);
+    }
+    // `extra` overrides a fixture day of the same key.
+    return createProjectionFirestore({ ...docs, ...extra });
+  }
+
+  const dayPorts = (
+    fake: ReturnType<typeof createProjectionFirestore>,
+    log: Log = NO_LOG,
+  ) => firestoreAnalyticsDayPorts(fake.db as unknown as Firestore, log);
+
+  it('reads one barber’s days over an inclusive date range — the composite’s shape — bodies as stored', async () => {
+    const ports = dayPorts(seededDays());
+    const answer = await ports.loadAnalyticsDays(
+      [ivan],
+      localDate('2026-09-14'),
+      localDate('2026-09-15'),
+    );
+    expect(answer).toEqual({
+      ok: true,
+      value: [dayOf(ivan, '2026-09-14'), dayOf(ivan, '2026-09-15')],
+    });
+  });
+
+  it('reads the shop as one date range over the collection, keeping the barbers asked for', async () => {
+    const ports = dayPorts(seededDays());
+    const answer = await ports.loadAnalyticsDays(
+      [ivan, maria],
+      localDate('2026-09-15'),
+      localDate('2026-09-15'),
+    );
+    expect(answer.ok && answer.value.map((d) => d.id).sort()).toEqual([
+      BusyKey.of(ivan, localDate('2026-09-15')),
+      BusyKey.of(maria, localDate('2026-09-15')),
+    ]);
+    expect(
+      await ports.loadAnalyticsDays(
+        [],
+        localDate('2026-09-01'),
+        localDate('2026-09-30'),
+      ),
+    ).toEqual({ ok: true, value: [] });
+  });
+
+  it('refuses a range past 366 days a barber instead of truncating it, and drops a malformed body with one line', async () => {
+    const crowd: Record<string, Data> = {};
+    for (let i = 0; i < 367; i++) {
+      crowd[`${Collections.AnalyticsDays}/crowd-${i}`] = {
+        ...bodyOf(dayOf(ivan, '2026-09-14') as (typeof DAYS)[number]),
+        localDate: '2026-09-14',
+      };
+    }
+    const over = dayPorts(createProjectionFirestore(crowd));
+    expect(
+      await over.loadAnalyticsDays(
+        [ivan],
+        localDate('2026-09-14'),
+        localDate('2026-09-14'),
+      ),
+    ).toEqual({
+      ok: false,
+      error: RepositoryError.readFailed(
+        Collections.AnalyticsDays,
+        'resource-exhausted',
+      ),
+    });
+
+    const telemetry = recordingTelemetry();
+    const broken = dayPorts(
+      seededDays({
+        [`${Collections.AnalyticsDays}/${BusyKey.of(ivan, localDate('2026-09-16'))}`]:
+          {
+            ...bodyOf(dayOf(ivan, '2026-09-16') as (typeof DAYS)[number]),
+            dayHourWorked: [1, 2, 3],
+          },
+      }),
+      telemetry.log,
+    );
+    const answer = await broken.loadAnalyticsDays(
+      [ivan],
+      localDate('2026-09-15'),
+      localDate('2026-09-17'),
+    );
+    expect(answer.ok && answer.value.map((d) => d.localDate)).toEqual([
+      '2026-09-15',
+      '2026-09-17',
+    ]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: 'malformed document refused',
+        fields: {
+          path: `${Collections.AnalyticsDays}/${BusyKey.of(ivan, localDate('2026-09-16'))}`,
+          field: 'dayFigures',
+        },
+      },
+    ]);
+  });
+
+  it('reads days by key with `getAll`: one answer per key in order, `null` where none or malformed', async () => {
+    const telemetry = recordingTelemetry();
+    const ports = dayPorts(
+      seededDays({
+        [`${Collections.AnalyticsDays}/${BusyKey.of(ivan, localDate('2026-09-16'))}`]:
+          {
+            odd: true,
+          },
+      }),
+      telemetry.log,
+    );
+    const keys = [
+      BusyKey.of(ivan, localDate('2026-09-14')),
+      BusyKey.of(ivan, localDate('2026-09-27')),
+      BusyKey.of(ivan, localDate('2026-09-16')),
+      BusyKey.of(maria, localDate('2026-09-15')),
+    ];
+    expect(await ports.loadAnalyticsDaysByKeys(keys)).toEqual({
+      ok: true,
+      value: [
+        dayOf(ivan, '2026-09-14'),
+        null,
+        null,
+        dayOf(maria, '2026-09-15'),
+      ],
+    });
+    expect(telemetry.lines).toHaveLength(1);
+    expect(await ports.loadAnalyticsDaysByKeys([])).toEqual({
+      ok: true,
+      value: [],
+    });
+  });
+
+  it('answers a read that throws as a value, the canonical code its reason', async () => {
+    const fake = seededDays();
+    vi.spyOn(fake.db, 'collection').mockImplementation(() => {
+      throw Object.assign(new Error('14 UNAVAILABLE'), { code: 14 });
+    });
+    const ports = dayPorts(fake);
+    const down = RepositoryError.readFailed(
+      Collections.AnalyticsDays,
+      'unavailable',
+    );
+    expect(
+      await ports.loadAnalyticsDays(
+        [ivan],
+        localDate('2026-09-01'),
+        localDate('2026-09-30'),
+      ),
+    ).toEqual({ ok: false, error: down });
+    expect(
+      await ports.loadAnalyticsDaysByKeys([
+        BusyKey.of(ivan, localDate('2026-09-14')),
+      ]),
+    ).toEqual({ ok: false, error: down });
   });
 });

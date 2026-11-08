@@ -16,7 +16,7 @@ import { RetentionSystem } from '@core/systems';
  * The group is matched by the LAST COLLECTION SEGMENT of the path
  * (`users/u1/notifications/n1` → `notifications`); any other group answers
  * `null` — no stamp. This adapter reads and parses the fields the group's
- * formula reads into a branded {@link RetentionAnchor}; the seven formulas
+ * formula reads into a branded {@link RetentionAnchor}; the eight formulas
  * (runbook §2.1) are `RetentionSystem.purgeAtUtcMs`'s (pass C, P-34), and
  * the instant it answers becomes the `Timestamp`.
  *
@@ -121,6 +121,10 @@ function anchorOf(path: DocPath, body: DocBody): RetentionAnchor | null {
     }
     case Collections.ImpersonationSessions:
       return impersonationAnchorOf(body);
+    case Collections.AnalyticsDays: {
+      const day = localDateOf(StoredFields.field(body, 'localDate'));
+      return day === null ? null : RetentionAnchor.analyticsDays(day);
+    }
     default:
       return null;
   }

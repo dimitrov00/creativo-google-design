@@ -400,6 +400,22 @@ export const PolicyRecomputeJobId = {
   FIXED: 'clientStatsPolicy' as PolicyRecomputeJobId,
 } as const;
 
+/**
+ * A stored past barber-day's figures (`analyticsDays/{id}`, staff analytics
+ * v2): the id's text IS the day's `BusyKey` (`{barberId}__{localDate}`),
+ * as a busy day's is.
+ */
+export type BarberAnalyticsDayId = Brand<string, 'BarberAnalyticsDayId'>;
+export const BarberAnalyticsDayId = idCompanion('BarberAnalyticsDayId');
+
+/** The analytics-days recompute job (`backfillJobs/analyticsRecompute`, staff analytics v2). */
+export type AnalyticsRecomputeJobId = Brand<string, 'AnalyticsRecomputeJobId'>;
+export const AnalyticsRecomputeJobId = {
+  ...idCompanion('AnalyticsRecomputeJobId'),
+  /** The one document id there is (`ANALYTICS_RECOMPUTE_DOC`) — a stable path key beside the policy job's. */
+  FIXED: 'analyticsRecompute' as AnalyticsRecomputeJobId,
+} as const;
+
 /** The client-money record (`clientStats/{uid}/restricted/money`). */
 export type ClientMoneyStatsId = Brand<string, 'ClientMoneyStatsId'>;
 export const ClientMoneyStatsId = {

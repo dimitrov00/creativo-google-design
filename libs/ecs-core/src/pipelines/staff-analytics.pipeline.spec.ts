@@ -517,13 +517,13 @@ describe('staffAnalytics — the reads', () => {
     const row = report.reportDayRows.find(
       (day) => day.localDate === localDate('2026-09-16'),
     );
-    expect(row?.rosteredMinutes).toBe(0);
-    expect(row?.closedDayMinutes).toBe(9 * 60);
+    expect(row?.dayRosteredMinutes).toBe(0);
+    expect(row?.dayClosedDayMinutes).toBe(9 * 60);
     const monday = report.reportDayRows.find(
       (day) => day.localDate === localDate('2026-09-14'),
     );
-    expect(monday?.rosteredMinutes).toBe(9 * 60);
-    expect(monday?.workedMinutes).toBe(30);
+    expect(monday?.dayRosteredMinutes).toBe(9 * 60);
+    expect(monday?.dayWorkedMinutes).toBe(30);
     // 22 weekdays in September, one of them closed.
     expect(report.reportRosteredMinutes).toBe(21 * 9 * 60);
     expect(report.reportClosedDayMinutes).toBe(9 * 60);
@@ -561,7 +561,7 @@ describe('staffAnalytics — the log line', () => {
       scope: IVAN,
       periodFrom: '2026-09-01',
       periodTo: '2026-09-30',
-      definitionVersion: 1,
+      definitionVersion: 2,
       visitCount: 2,
       durationMs: 0,
       rosteredMinutes: report.reportRosteredMinutes,

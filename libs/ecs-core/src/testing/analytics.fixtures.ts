@@ -1,10 +1,12 @@
 import {
+  AnalyticsPeriod,
   type AppliedDiscount,
   BookingLifecycle,
   BookingPolicy,
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
+  ClientStatsPolicy,
   Combinability,
   DayHours,
   DiscountMethod,
@@ -23,6 +25,7 @@ import {
 } from '@core/components';
 import type {
   Appointment,
+  BarberAnalyticsDay,
   BarberBusyDay,
   BarberSchedule,
   ScheduleException,
@@ -33,6 +36,7 @@ import type { StaffAnalyticsPorts } from '@core/pipelines';
 import {
   AppliedDiscountId,
   AppointmentId,
+  BarberAnalyticsDayId,
   BarberBusyDayId,
   BarberId,
   BusyKey,
@@ -49,7 +53,15 @@ import {
   type UtcEpochMs,
   Weekday,
 } from '@core/primitives';
-import { BusySystem, ZonedTimeSystem } from '@core/systems';
+import {
+  type AnalyticsDay,
+  type AnalyticsFollowUp,
+  BusySystem,
+  DayFiguresSystem,
+  type ShopNowAt,
+  StaffAnalyticsSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   memoryAnalyticsReadPorts,
   memoryProfileLoadPorts,
@@ -640,4 +652,78 @@ export function analyticsFixtureBusyDays(): readonly BarberBusyDay[] {
     } as BarberBusyDay);
   }
   return days;
+}
+
+/* ── The day documents (staff analytics v2, PR 4a) ──────────────────────── */
+
+/** Every shop's clock at the pinned now — every fixture shop reads `FIXTURE_TIME_ZONE`. */
+function analyticsFixtureNowByLocation(): readonly ShopNowAt[] {
+  const now = ZonedTimeSystem.shopNow(FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE);
+  return ANALYTICS_FIXTURE_LOCATIONS.map((location) => ({
+    locationId: location.id,
+    ...now,
+  }));
+}
+
+/**
+ * Every barber-day of the fixture month, as `StaffAnalyticsSystem.daysOf`
+ * cuts it at the pinned now (Monday the 28th, 09:00): the 1st to the 26th
+ * are PAST, the 27th to the 30th live.
+ */
+export function analyticsFixtureDays(): readonly AnalyticsDay[] {
+  const now = ZonedTimeSystem.shopNow(FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE);
+  return StaffAnalyticsSystem.daysOf({
+    barberIds: [ivan, maria, niko],
+    localDates: AnalyticsPeriod.days(
+      AnalyticsPeriod.monthOf(ANALYTICS_FIXTURE_MONTH),
+    ),
+    rosters: ANALYTICS_FIXTURE_ROSTERS,
+    departures: ANALYTICS_FIXTURE_DEPARTURES,
+    locations: ANALYTICS_FIXTURE_LOCATIONS,
+    visits: ANALYTICS_FIXTURE_VISITS,
+    nowByLocation: analyticsFixtureNowByLocation(),
+    now,
+  });
+}
+
+/** The fixture world's follow-ups, each booking day read once on the fixture zone — as the pipeline reads them. */
+export function analyticsFixtureFollowUps(): readonly AnalyticsFollowUp[] {
+  const out: AnalyticsFollowUp[] = [];
+  for (const visit of ANALYTICS_FIXTURE_VISITS) {
+    if (!StaffAnalyticsSystem.isCountedFollowUp(visit)) continue;
+    out.push(
+      StaffAnalyticsSystem.followUpOf(
+        visit,
+        ZonedTimeSystem.toLocal(visit.bookedAtUtcMs, FIXTURE_TIME_ZONE)
+          .localDate,
+      ),
+    );
+  }
+  return out;
+}
+
+/**
+ * The day documents of the fixture month — `DayFiguresSystem.fold` over its
+ * PAST barber-days (the 1st to the 26th, 78 documents, zeros included),
+ * keyed by busy key and stamped at the pinned now: what the recompute would
+ * have written, for the pipelines' reads.
+ */
+export function analyticsFixtureDayDocuments(): readonly BarberAnalyticsDay[] {
+  const followUps = analyticsFixtureFollowUps();
+  const policy = ClientStatsPolicy.forBooking(BookingPolicy.DEFAULT);
+  const out: BarberAnalyticsDay[] = [];
+  for (const day of analyticsFixtureDays()) {
+    if (!day.pastDay) continue;
+    out.push({
+      id: BarberAnalyticsDayId.of(BusyKey.of(day.barberId, day.localDate)),
+      ...DayFiguresSystem.fold({
+        day,
+        visits: ANALYTICS_FIXTURE_VISITS,
+        followUps,
+        policy,
+        computedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      }),
+    });
+  }
+  return out;
 }

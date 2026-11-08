@@ -1,7 +1,7 @@
 // node --test tools/verify/ops/retention.spec.mjs
 //
 // The retention policy (runbook §2.5, audit-hardening WS-6), as declared in
-// firestore.indexes.json: exactly the seven TTL groups of runbook §2.1 carry
+// firestore.indexes.json: exactly the eight TTL groups of runbook §2.1 carry
 // a `purgeAt` TTL, and the records the policy keeps indefinitely — the audit
 // trail (`auditLog`), the trigger dead letters (`triggerFailures`) and the
 // client journal (`clientJournal`) — carry none.
@@ -16,8 +16,9 @@ const INDEXES = JSON.parse(
   ),
 );
 
-/** Runbook §2.1's seven groups. */
+/** Runbook §2.1's eight groups. */
 const TTL_GROUPS = [
+  'analyticsDays',
   'barberBusy',
   'barberLeadTimeSamples',
   'capacity',
@@ -35,7 +36,7 @@ describe('retention — the TTL groups of firestore.indexes.json', () => {
     (override) => override.ttl === true,
   );
 
-  it('holds exactly the seven purgeAt policies of runbook §2.1', () => {
+  it('holds exactly the eight purgeAt policies of runbook §2.1', () => {
     assert.deepEqual(
       ttl.map((override) => override.collectionGroup).sort(),
       TTL_GROUPS,

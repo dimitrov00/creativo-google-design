@@ -4,11 +4,13 @@ import {
   ANALYTICS_DEFINITION_VERSION,
   type AnalyticsReport,
   BookingOrigin,
+  type DayRow,
 } from '@core/components';
 import {
   AppointmentId,
   AttendanceState,
   BarberId,
+  Currency,
   type HourOfDay,
   LocalDate,
   MinuteCount,
@@ -118,26 +120,26 @@ function aheadDays(): readonly AnalyticsReport.AheadDay[] {
   }));
 }
 
-function dayRow(
-  barberId: BarberId,
-  day: string,
-  worked: number,
-): AnalyticsReport.DayRow {
+/** One day row (`DayRow`, v2): the parts, and the day's money — 10 cents a worked minute, a 3,00 € tip. */
+function dayRow(barberId: BarberId, day: string, worked: number): DayRow {
   return {
     barberId,
     localDate: localDate(day),
-    rosteredMinutes: m(540),
-    workedMinutes: m(worked),
-    noShowMinutes: m(30),
-    unmarkedMinutes: m(0),
-    bookedAheadMinutes: m(0),
-    heldMinutes: m(0),
-    blockedMinutes: m(60),
-    breakMinutes: m(30),
-    shortGapMinutes: m(10),
-    unsoldMinutes: m(540 - worked - 30 - 60 - 30 - 10),
-    openMinutes: m(0),
-    closedDayMinutes: m(0),
+    dayRosteredMinutes: m(540),
+    dayWorkedMinutes: m(worked),
+    dayNoShowMinutes: m(30),
+    dayUnmarkedMinutes: m(0),
+    dayBookedAheadMinutes: m(0),
+    dayHeldMinutes: m(0),
+    dayBlockedMinutes: m(60),
+    dayBreakMinutes: m(30),
+    dayShortGapMinutes: m(10),
+    dayUnsoldMinutes: m(540 - worked - 30 - 60 - 30 - 10),
+    dayOpenMinutes: m(0),
+    dayClosedDayMinutes: m(0),
+    dayTakingsCents: cents(worked * 10),
+    dayTipsCents: cents(300),
+    currency: Currency.EUR,
   };
 }
 

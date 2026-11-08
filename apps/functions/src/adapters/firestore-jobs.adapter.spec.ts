@@ -3,7 +3,12 @@ import { vi } from 'vitest';
 import { BackfillJobName, Role } from '@core/components';
 import { AppointmentId, BackfillJobId, UserId } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
-import { type BackfillJob, Collections } from '@core/entities';
+import {
+  ANALYTICS_RECOMPUTE_DOC,
+  type AnalyticsRecomputeJob,
+  type BackfillJob,
+  Collections,
+} from '@core/entities';
 import type { Log } from '@core/ports';
 import {
   appointmentFixture,
@@ -11,7 +16,13 @@ import {
   recordingTelemetry,
   unguarded,
 } from '@core/testing';
-import { StoredDocumentSystem } from '@core/systems';
+import {
+  AnalyticsRecomputeJobSystem,
+  StoredDocumentSystem,
+} from '@core/systems';
+import { AnalyticsPeriod } from '@core/components';
+import { localDate } from '@core/testing';
+import { BarberId } from '@core/primitives';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreJobPorts } from './firestore-jobs.adapter';
 import { bodyOf } from './store-answer';
@@ -80,6 +91,38 @@ describe('firestoreJobPorts', () => {
     expect(await ports.loadBackfillJob(JOB_ID)).toEqual({
       ok: true,
       value: job,
+    });
+  });
+
+  it('reads the analytics recompute’s job as stored — `null` before its first sweep (staff analytics v2)', async () => {
+    const fake = seeded();
+    const ports = firestoreJobPorts(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
+    expect(await ports.loadAnalyticsRecomputeJob()).toEqual({
+      ok: true,
+      value: null,
+    });
+    const pass: AnalyticsRecomputeJob = AnalyticsRecomputeJobSystem.start(
+      AnalyticsRecomputeJobSystem.extentOf(
+        null,
+        localDate('2026-09-28'),
+        null,
+        [BarberId.of('b-ivan')],
+      ),
+      FIXTURE_NOW_UTC_MS,
+    );
+    expect(pass.jobWindowFromLocalDate).toBe(
+      AnalyticsPeriod.earliestOn(localDate('2026-09-28')),
+    );
+    await fake.db
+      .doc(`${Collections.BackfillJobs}/${ANALYTICS_RECOMPUTE_DOC}`)
+      .set(bodyOf(pass));
+    expect(await ports.loadAnalyticsRecomputeJob()).toEqual({
+      ok: true,
+      value: pass,
     });
   });
 

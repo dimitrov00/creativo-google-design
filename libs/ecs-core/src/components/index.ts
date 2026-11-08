@@ -82,6 +82,7 @@ export * from './course-input.data';
 export * from './customer-origin.data';
 export * from './date-range.data';
 export * from './day-bucket.data';
+export * from './day-figures.data';
 export * from './day-hours-input.data';
 export * from './day-windows.data';
 export * from './daypart.data';

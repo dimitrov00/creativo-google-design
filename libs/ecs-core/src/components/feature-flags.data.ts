@@ -23,6 +23,12 @@ export const FlagName = {
   ClientPrivacy: 'client.privacy',
   ReferralsInvitations: 'referrals.invitations',
   DiscountsGrants: 'discounts.grants',
+  /**
+   * Staff analytics v2 (PR 4a): on, the callable reads the stored day
+   * documents (`analyticsDays`) for the past days; off, every past day is
+   * computed live and `loadAnalyticsDays` is never called.
+   */
+  AnalyticsStoredDays: 'analytics.storedDays',
 } as const;
 export type FlagName = (typeof FlagName)[keyof typeof FlagName];
 
@@ -49,6 +55,7 @@ const ALL_OFF: FeatureFlags = {
   [FlagName.ClientPrivacy]: false,
   [FlagName.ReferralsInvitations]: false,
   [FlagName.DiscountsGrants]: false,
+  [FlagName.AnalyticsStoredDays]: false,
 };
 
 export const FeatureFlags = {

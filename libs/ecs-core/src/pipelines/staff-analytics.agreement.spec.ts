@@ -4,6 +4,11 @@ import {
   AnalyticsFigure,
   AnalyticsSpan,
   type AnalyticsReport,
+  BookingOrigin,
+  BookingPolicy,
+  ClientStatsPolicy,
+  DayFigures,
+  type DayRow,
   type Seat,
   SeatSubject,
 } from '@core/components';
@@ -18,8 +23,10 @@ import {
   type UserId,
 } from '@core/primitives';
 import {
+  AnalyticsHourSystem,
   ChairTimeSystem,
   ClientStatsSystem,
+  DayFiguresSystem,
   GridLayoutSystem,
   MoneyAllocation,
   MoneyAllocationSystem,
@@ -40,6 +47,9 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   analyticsFixtureBusyDays,
+  analyticsFixtureDayDocuments,
+  analyticsFixtureDays,
+  analyticsFixtureFollowUps,
   analyticsFixturePorts,
   localDate,
   unwrapOk,
@@ -163,7 +173,7 @@ describe('G5 — the schedule’s free time is unsold + open, every barber-day',
         ).toEqual({
           barberId,
           localDate: row.localDate,
-          free: row.unsoldMinutes + row.openMinutes,
+          free: row.dayUnsoldMinutes + row.dayOpenMinutes,
         });
         checked++;
         free += schedule;
@@ -191,10 +201,10 @@ describe('G5 — the schedule’s free time is unsold + open, every barber-day',
           })),
           now: NOW,
         })[0];
-        expect(day?.unsoldMinutes).toBe(row.unsoldMinutes);
-        expect(day?.openMinutes).toBe(row.openMinutes);
+        expect(day?.unsoldMinutes).toBe(row.dayUnsoldMinutes);
+        expect(day?.openMinutes).toBe(row.dayOpenMinutes);
         expect(day === undefined ? -1 : ChairTimeSystem.partsTotal(day)).toBe(
-          row.rosteredMinutes,
+          row.dayRosteredMinutes,
         );
       }
     }
@@ -207,18 +217,18 @@ describe('G5 — the schedule’s free time is unsold + open, every barber-day',
         (entry) => entry.localDate === localDate(day),
       );
     // Ivan's Friday the 18th: 2 h blocked out of his 9-hour day.
-    expect(row(ivan, '2026-09-18')?.blockedMinutes).toBe(120);
+    expect(row(ivan, '2026-09-18')?.dayBlockedMinutes).toBe(120);
     // Monday the 14th: the beard over the 13:00 break is worked, the break gone.
-    expect(row(ivan, '2026-09-14')?.breakMinutes).toBe(0);
-    expect(row(ivan, '2026-09-14')?.workedMinutes).toBe(60);
+    expect(row(ivan, '2026-09-14')?.dayBreakMinutes).toBe(0);
+    expect(row(ivan, '2026-09-14')?.dayWorkedMinutes).toBe(60);
     // Niko's closed Friday rosters nothing and keeps what it would have.
-    expect(row(niko, '2026-09-04')?.rosteredMinutes).toBe(0);
-    expect(row(niko, '2026-09-04')?.closedDayMinutes).toBe(540);
+    expect(row(niko, '2026-09-04')?.dayRosteredMinutes).toBe(0);
+    expect(row(niko, '2026-09-04')?.dayClosedDayMinutes).toBe(540);
     // Maria's Saturday at the hidden shop: no rostered time, nothing free.
-    expect(row(maria, '2026-09-19')?.rosteredMinutes).toBe(0);
+    expect(row(maria, '2026-09-19')?.dayRosteredMinutes).toBe(0);
     expect(scheduleFreeMinutes(maria, localDate('2026-09-19'))).toBe(0);
     // Today is cut at 09:00: Ivan's free time ahead of now is open.
-    expect(row(ivan, '2026-09-28')?.openMinutes).toBeGreaterThan(0);
+    expect(row(ivan, '2026-09-28')?.dayOpenMinutes).toBeGreaterThan(0);
   });
 });
 
@@ -275,21 +285,21 @@ describe('G5 — every drill-down’s rows add up to its figure', () => {
   /** `TIME`: the day rows' parts sum to the report's. */
   function expectDayRowsAgree(report: AnalyticsReport): void {
     const days = StaffAnalyticsSystem.dayRowsFor(report, none);
-    const sum = (part: keyof AnalyticsReport.DayRow): number =>
+    const sum = (part: keyof DayRow): number =>
       days.reduce((total, day) => total + (day[part] as number), 0);
     expect({
-      rostered: sum('rosteredMinutes'),
-      worked: sum('workedMinutes'),
-      noShow: sum('noShowMinutes'),
-      unmarked: sum('unmarkedMinutes'),
-      bookedAhead: sum('bookedAheadMinutes'),
-      held: sum('heldMinutes'),
-      blocked: sum('blockedMinutes'),
-      breaks: sum('breakMinutes'),
-      shortGap: sum('shortGapMinutes'),
-      unsold: sum('unsoldMinutes'),
-      open: sum('openMinutes'),
-      closed: sum('closedDayMinutes'),
+      rostered: sum('dayRosteredMinutes'),
+      worked: sum('dayWorkedMinutes'),
+      noShow: sum('dayNoShowMinutes'),
+      unmarked: sum('dayUnmarkedMinutes'),
+      bookedAhead: sum('dayBookedAheadMinutes'),
+      held: sum('dayHeldMinutes'),
+      blocked: sum('dayBlockedMinutes'),
+      breaks: sum('dayBreakMinutes'),
+      shortGap: sum('dayShortGapMinutes'),
+      unsold: sum('dayUnsoldMinutes'),
+      open: sum('dayOpenMinutes'),
+      closed: sum('dayClosedDayMinutes'),
     }).toEqual({
       rostered: report.reportRosteredMinutes,
       worked: report.reportWorkedMinutes,
@@ -449,5 +459,180 @@ describe('G5 — every drill-down’s rows add up to its figure', () => {
       late: shop.reportLateCancellationCount,
       rebooked: shop.reportRebookedCount,
     });
+  });
+});
+
+/*
+ * P1 — THE STORED DAYS SUM TO THE REPORT (staff analytics v2, PR 4a's
+ * gate): `sum(pastDays.map(fold)) + sum(liveDays.map(fold))` is the
+ * pipeline's report, figure by figure — minutes, money, counts, origins,
+ * the service rows (minus the derived ratio), the hour grid and the day
+ * rows — for the shop and for each barber, over the fixture month. The past
+ * days are the day documents (`analyticsFixtureDayDocuments`), the live
+ * days the 27th to the 30th folded at the pinned now.
+ */
+describe('P1 — sum(days.map(fold)) + live === report(visits), over the fixture month', () => {
+  const documents = analyticsFixtureDayDocuments();
+  const days = analyticsFixtureDays();
+  const followUps = analyticsFixtureFollowUps();
+  const policy = ClientStatsPolicy.forBooking(BookingPolicy.DEFAULT);
+
+  it('stores the 1st to the 26th — 78 past barber-days, zeros included — and leaves the 27th to the 30th live', () => {
+    expect(documents).toHaveLength(26 * 3);
+    expect(documents.every((day) => day.localDate <= '2026-09-26')).toBe(true);
+    expect(documents.every((day) => DayFigures.is(day))).toBe(true);
+    expect(
+      documents.every((day) => day.id === `${day.barberId}__${day.localDate}`),
+    ).toBe(true);
+    expect(
+      days.filter((day) => !day.pastDay).map((day) => day.localDate),
+    ).toEqual(
+      expect.arrayContaining([
+        '2026-09-27',
+        '2026-09-28',
+        '2026-09-29',
+        '2026-09-30',
+      ]),
+    );
+    expect(days.filter((day) => !day.pastDay)).toHaveLength(4 * 3);
+  });
+
+  async function expectP1(scopeBarberId: BarberId | null): Promise<void> {
+    const caller =
+      scopeBarberId === null
+        ? ANALYTICS_FIXTURE_USERS.admin.id
+        : USER_OF.get(scopeBarberId);
+    if (caller === undefined)
+      throw new Error(`no account for ${scopeBarberId}`);
+    const report = await reportOf(caller, scopeBarberId);
+    const inScope = (barberId: BarberId): boolean =>
+      scopeBarberId === null || barberId === scopeBarberId;
+    const live = days
+      .filter((day) => !day.pastDay && inScope(day.barberId))
+      .map((day) =>
+        DayFiguresSystem.fold({
+          day,
+          visits: ANALYTICS_FIXTURE_VISITS,
+          followUps,
+          policy,
+          computedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        }),
+      );
+    const stored = documents.filter((day) => inScope(day.barberId));
+    const total = DayFiguresSystem.sum(
+      [...stored, ...live],
+      ivan,
+      ANALYTICS_FIXTURE_MONTH,
+    );
+    expect(
+      {
+        rostered: total.dayRosteredMinutes,
+        worked: total.dayWorkedMinutes,
+        noShow: total.dayNoShowMinutes,
+        unmarked: total.dayUnmarkedMinutes,
+        bookedAhead: total.dayBookedAheadMinutes,
+        held: total.dayHeldMinutes,
+        blocked: total.dayBlockedMinutes,
+        breaks: total.dayBreakMinutes,
+        shortGap: total.dayShortGapMinutes,
+        unsold: total.dayUnsoldMinutes,
+        open: total.dayOpenMinutes,
+        closed: total.dayClosedDayMinutes,
+        outside: total.dayOutsideHoursMinutes,
+        outsideSeats: total.dayOutsideHoursSeatCount,
+        takings: total.dayTakingsCents,
+        tips: total.dayTipsCents,
+        excluded: total.dayExcludedVisitCount,
+        rebookedBase: total.dayRebookedBase,
+        rebookedCount: total.dayRebookedCount,
+        noShowCount: total.dayNoShowCount,
+        noShowBase: total.dayNoShowBase,
+        late: total.dayLateCancellationCount,
+        origins: [
+          {
+            bookingOrigin: BookingOrigin.Online,
+            visitCount: total.dayOnlineVisitCount,
+          },
+          {
+            bookingOrigin: BookingOrigin.Staff,
+            visitCount: total.dayStaffVisitCount,
+          },
+          {
+            bookingOrigin: BookingOrigin.Unknown,
+            visitCount: total.dayUnknownOriginVisitCount,
+          },
+        ],
+        services: [...total.dayServices].sort((a, b) =>
+          a.serviceId < b.serviceId ? -1 : 1,
+        ),
+      },
+      String(scopeBarberId),
+    ).toEqual({
+      rostered: report.reportRosteredMinutes,
+      worked: report.reportWorkedMinutes,
+      noShow: report.reportNoShowMinutes,
+      unmarked: report.reportUnmarkedMinutes,
+      bookedAhead: report.reportBookedAheadMinutes,
+      held: report.reportHeldMinutes,
+      blocked: report.reportBlockedMinutes,
+      breaks: report.reportBreakMinutes,
+      shortGap: report.reportShortGapMinutes,
+      unsold: report.reportUnsoldMinutes,
+      open: report.reportOpenMinutes,
+      closed: report.reportClosedDayMinutes,
+      outside: report.reportOutsideHoursMinutes,
+      outsideSeats: report.reportOutsideHoursSeatCount,
+      takings: report.reportTakingsCents,
+      tips: report.reportTipsCents,
+      excluded: report.reportExcludedVisitCount,
+      rebookedBase: report.reportRebookedBase,
+      rebookedCount: report.reportRebookedCount,
+      noShowCount: report.reportNoShowCount,
+      noShowBase: report.reportNoShowBase,
+      late: report.reportLateCancellationCount,
+      origins: report.reportOrigins,
+      services: report.reportServices
+        .map(
+          ({ serviceId, workedSeatCount, takingsCents, serviceMinutes }) => ({
+            serviceId,
+            workedSeatCount,
+            takingsCents,
+            serviceMinutes,
+          }),
+        )
+        .sort((a, b) => (a.serviceId < b.serviceId ? -1 : 1)),
+    });
+    expect(
+      AnalyticsHourSystem.grid(
+        [...stored, ...live].map((day) => ({
+          localDate: day.localDate,
+          worked: day.dayHourWorked,
+          rostered: day.dayHourRostered,
+        })),
+      ),
+    ).toEqual(report.reportHourGrid);
+    expect(report.reportDayRows).toEqual(
+      [...stored, ...live]
+        .map(DayFigures.rowOf)
+        .sort(
+          (a, b) =>
+            (a.localDate < b.localDate
+              ? -1
+              : a.localDate > b.localDate
+                ? 1
+                : 0) ||
+            (a.barberId < b.barberId ? -1 : a.barberId > b.barberId ? 1 : 0),
+        ),
+    );
+    // The month is not empty: the property is not vacuous.
+    expect(total.dayWorkedSeatCount).toBeGreaterThan(0);
+  }
+
+  it('holds for the shop', async () => {
+    await expectP1(null);
+  });
+
+  it('holds for each barber', async () => {
+    for (const barberId of BARBERS) await expectP1(barberId);
   });
 });

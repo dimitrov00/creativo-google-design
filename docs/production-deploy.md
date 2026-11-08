@@ -48,8 +48,8 @@ section below). Its ten checks are:
 | Check | Passes when                                                                                                       |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
 | P1    | `locations/loc-center` exists, the read guard admits it, and its `timeZone` is a canonical IANA zone              |
-| P2    | all 7 `purgeAt` TTL policies are `ACTIVE`                                                                         |
-| P3    | all 24 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates) |
+| P2    | all 8 `purgeAt` TTL policies are `ACTIVE`                                                                         |
+| P3    | all 25 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates) |
 | P4    | the built web bundle contains no `REPLACE_ME` and names the project id                                            |
 | P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host             |
 | P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project                      |
@@ -374,7 +374,7 @@ Source: `apps/functions/src/adapters/auth-claims.adapter.ts:62`;
 
 ### Data retention, backups, cost
 
-- [ ] **TTL policies.** No separate step: the 7 `purgeAt` policies are
+- [ ] **TTL policies.** No separate step: the 8 `purgeAt` policies are
       declared in `firestore.indexes.json` and created by the step-1 index
       deploy (section 3). They must read `ACTIVE` (P2) before functions deploy.
       Source: `docs/architecture/firestore-runbook.md` §2.2–§2.3.
@@ -662,14 +662,16 @@ Source: `config/app-check.json`; `apps/functions/src/lib/app-check.ts`
 
 ### Schedules and flags
 
-- [ ] **Check that `CRON_TIME_ZONE` matches the shop.** The three nightly jobs
+- [ ] **Check that `CRON_TIME_ZONE` matches the shop.** The four nightly jobs
       (`sweepCapacityDaily` 03:00, `sweepClientStatsPolicyDaily` 03:30,
-      `sampleBarberLeadTimeDaily` 04:00, each with `retryCount: 3`) fire on
+      `sampleBarberLeadTimeDaily` 04:00, `sweepAnalyticsDaysDaily` 04:30 — the
+      analytics recompute, staff-analytics-v2 PR 4a — each with
+      `retryCount: 3`) fire on
       `'Europe/Sofia'`, a deploy-time constant. If `loc-center.timeZone` is a
       different zone, edit the constant before deploying functions.
       Source: `apps/functions/src/lib/cron-zone.ts:11`;
       `apps/functions/src/main.ts:877-887`, `:996-998` (the `onSchedule` jobs).
-- [ ] **Review the production feature-flag map.** All 13 flags in
+- [ ] **Review the production feature-flag map.** All 14 flags in
       `config/feature-flags.json` → `production` are `false` today, so loyalty,
       the client profile, pause, support, merge, privacy, referrals and
       discount grants ship dark. `client.privacy` gates the admin's GDPR
@@ -687,6 +689,18 @@ Source: `config/app-check.json`; `apps/functions/src/lib/app-check.ts`
       `apps/functions/src/lib/flags.ts:4-16` (callables refuse with
       `feature.off` while a param is off; enable a param before its web flag,
       disable it after).
+- [ ] **The analytics day documents (staff-analytics-v2 PR 4a).** The
+      `analytics.storedDays` flag ships `false`: `staffAnalytics` computes
+      every past day live until it is lit (a manifest edit and a functions
+      redeploy, never a runtime toggle). The write path runs regardless —
+      `rebuildBusyOnAppointmentChange` and `writeAnalyticsDayOnExceptionChange`
+      write `analyticsDays/{barberId}__{localDate}` on every past-day edit,
+      and `sweepAnalyticsDaysDaily` (04:30) starts the recompute whose steps
+      `continueAnalyticsRecomputeOnJobWrite` runs off `backfillJobs/analyticsRecompute`.
+      After the first deploy, let one night pass (or run the sweep by hand)
+      and check the job document reads `jobFinishedAtUtcMs` set with
+      `jobFailed: 0` before lighting the flag; the `analyticsDays` TTL (P2)
+      and composite (P3) must be `ACTIVE`/`READY` first.
 
 ---
 
@@ -848,7 +862,8 @@ firebase deploy --only firestore:indexes --project "$PROJECT_ID"
 
 - [ ] Answer **No** to every offer to delete indexes or field overrides. Code
       that is still running may query them.
-- [ ] Wait until P3 is PASS (all 24 composites `READY`). A query that runs
+- [ ] Wait until P3 is PASS (all 25 composites `READY`; `analyticsDays`
+      `(barberId, localDate)` is the 25th, staff-analytics-v2 PR 4a). A query that runs
       before its composite is ready fails with `FAILED_PRECONDITION`, and only
       in production. Fallback:
 
@@ -856,9 +871,9 @@ firebase deploy --only firestore:indexes --project "$PROJECT_ID"
 gcloud firestore indexes composite list --project="$PROJECT_ID" --format="table(name.basename(),collectionGroup,state)"
 ```
 
-- [ ] Wait until P2 is PASS (7 of 7 TTL policies `ACTIVE`: `otps`,
+- [ ] Wait until P2 is PASS (8 of 8 TTL policies `ACTIVE`: `otps`,
       `notifications`, `waitlistRequests`, `barberBusy`, `capacity`,
-      `impersonationSessions`, `barberLeadTimeSamples`). `CREATING` means
+      `impersonationSessions`, `barberLeadTimeSamples`, `analyticsDays`). `CREATING` means
       wait. Fallback:
 
 ```bash

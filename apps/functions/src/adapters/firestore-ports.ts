@@ -2,7 +2,10 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type {
   AccountContactPorts,
   AdminBatchPorts,
+  AnalyticsDayReadPorts,
   AnalyticsReadPorts,
+  AnalyticsRecomputeJobPorts,
+  AppointmentLoadPorts,
   AuditPorts,
   BackfillJobPorts,
   BarberListPorts,
@@ -30,7 +33,10 @@ import type {
 } from '@core/ports';
 import { StoredDocumentSystem } from '@core/systems';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
-import { firestoreAnalyticsPorts } from './firestore-analytics.adapter';
+import {
+  firestoreAnalyticsDayPorts,
+  firestoreAnalyticsPorts,
+} from './firestore-analytics.adapter';
 import { firestoreAuditPorts } from './firestore-audit.adapter';
 import { firestoreCapacityPorts } from './firestore-capacity.adapter';
 import { firestoreCatalogPorts } from './firestore-catalog.adapter';
@@ -104,6 +110,7 @@ export type FirestorePorts = TxPorts &
   // firestoreSchedulePorts
   BarberListPorts &
   ShopDayReadPorts &
+  AppointmentLoadPorts &
   // firestoreCapacityPorts
   CapacityReadPorts &
   // firestoreLeadTimePorts
@@ -118,6 +125,7 @@ export type FirestorePorts = TxPorts &
   // firestoreJobPorts
   BackfillJobPorts &
   CallerRolesPorts &
+  AnalyticsRecomputeJobPorts &
   // firestoreOtpPorts
   OtpStorePorts &
   // firestoreUserPorts
@@ -125,6 +133,8 @@ export type FirestorePorts = TxPorts &
   ProfileLoadPorts &
   // firestoreAnalyticsPorts (staff analytics)
   AnalyticsReadPorts &
+  // firestoreAnalyticsDayPorts (staff analytics v2 — the stored days)
+  AnalyticsDayReadPorts &
   // firestoreTriggerFailurePorts (audit-hardening WS-6)
   TriggerFailurePorts;
 
@@ -150,5 +160,6 @@ export const firestorePorts = (
   ...firestoreOtpPorts(db),
   ...firestoreUserPorts(db),
   ...firestoreAnalyticsPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
+  ...firestoreAnalyticsDayPorts(db, telemetry.log),
   ...firestoreTriggerFailurePorts(db),
 });

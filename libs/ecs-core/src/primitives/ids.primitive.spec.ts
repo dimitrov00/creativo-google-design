@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BackfillJobName, Party, SeatKey } from '@core/components';
 import {
   RecomputeJobName,
+  ANALYTICS_RECOMPUTE_DOC,
   BARBER_LINK_DOC,
   BOOKING_POLICY_DOC,
   CLIENT_MONEY_DOC,
@@ -15,13 +16,17 @@ import {
   fixtureHash,
   fixtureKeyedHash,
   fixtureWalkInHash,
+  localDate,
   unwrapErr,
   unwrapOk,
 } from '@core/testing';
+import { BusyKey } from './busy-key.primitive';
 import * as Ids from './ids.primitive';
 import {
+  AnalyticsRecomputeJobId,
   AppointmentId,
   AuditResourceId,
+  BarberAnalyticsDayId,
   BookingPolicySettingsId,
   CartLineId,
   ClientMoneyStatsId,
@@ -159,6 +164,20 @@ describe('the id companions (decision F-3)', () => {
     expect(BARBER_LINK_DOC).toBe(BarberLinkId.FIXED);
     expect(PolicyRecomputeJobId.FIXED).toBe('clientStatsPolicy');
     expect(POLICY_RECOMPUTE_DOC).toBe(PolicyRecomputeJobId.FIXED);
+    expect(AnalyticsRecomputeJobId.FIXED).toBe('analyticsRecompute');
+    expect(ANALYTICS_RECOMPUTE_DOC).toBe(AnalyticsRecomputeJobId.FIXED);
+    expect(AnalyticsRecomputeJobId.FIXED).not.toBe(PolicyRecomputeJobId.FIXED);
+  });
+
+  it('a stored analytics day is keyed by its busy key (staff analytics v2)', () => {
+    const key = BusyKey.of(
+      unwrapOk(Ids.BarberId.parse('b-ivan')),
+      localDate('2026-09-14'),
+    );
+    expect(BarberAnalyticsDayId.is(key)).toBe(true);
+    expect(BarberAnalyticsDayId.of(key)).toBe('b-ivan__2026-09-14');
+    expect(unwrapOk(BarberAnalyticsDayId.parse(key))).toBe(key);
+    expect(BarberAnalyticsDayId.is('a/b')).toBe(false);
   });
 
   it('the policy pass lives beside the backfill jobs under its own tag', () => {

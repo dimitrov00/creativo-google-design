@@ -2,7 +2,7 @@ import { RetentionGroup, type RetentionAnchor } from '@core/components';
 import { LocalDate, UtcEpochMs } from '@core/primitives';
 
 /**
- * THE RETENTION POLICY (pass C, P-34 — the seven formulas of
+ * THE RETENTION POLICY (pass C, P-34 — the eight formulas of
  * `firestore-ttl.adapter.ts`, homed here; runbook §2.1): when the TTL
  * service may purge a document, from the anchor its group reads. The TTL
  * adapter keeps the SDK side — which group a path names, reading and
@@ -18,6 +18,7 @@ import { LocalDate, UtcEpochMs } from '@core/primitives';
  * | `LEAD_TIME_SAMPLES`      | UTC midnight of `localDate` + 400 d           |
  * | `OTPS`                   | `expiresAtUtcMs` + 24 h                       |
  * | `IMPERSONATION_SESSIONS` | (`endedAtUtcMs` ?? `expiresAtUtcMs`) + 30 d   |
+ * | `ANALYTICS_DAYS`         | UTC midnight of `localDate` + 400 d           |
  *
  * A TTL is an elapsed-time rule (flatten-spec §2.3 T2): every addition goes
  * through `UtcEpochMs.plusDays` / `plusHours`. A `LocalDate` anchor is that
@@ -45,6 +46,12 @@ const LEAD_TIME_KEEP_DAYS = 400;
 const OTP_KEEP_HOURS = 24;
 /** Days an impersonation session is kept past its end (else its window's expiry). */
 const IMPERSONATION_KEEP_DAYS = 30;
+/**
+ * Days a stored analytics day is kept past its shop day — 13 months, one
+ * past the 12-month reach a report may start in (staff analytics v2);
+ * anchored on `localDate`, so a rebuild never extends it.
+ */
+const ANALYTICS_DAYS_KEEP_DAYS = 400;
 
 /** The floor a waitlist request watching no day is anchored on — epoch day 0. */
 const EPOCH_FLOOR_DAY: LocalDate = LocalDate.fromEpochDay(0);
@@ -82,6 +89,7 @@ export const RetentionSystem = {
   LEAD_TIME_KEEP_DAYS,
   OTP_KEEP_HOURS,
   IMPERSONATION_KEEP_DAYS,
+  ANALYTICS_DAYS_KEEP_DAYS,
   EPOCH_FLOOR_DAY,
 
   /**
@@ -113,6 +121,8 @@ export const RetentionSystem = {
           ? null
           : UtcEpochMs.plusDays(anchorAt, IMPERSONATION_KEEP_DAYS);
       }
+      case RetentionGroup.AnalyticsDays:
+        return daysAfter(anchor.localDate, ANALYTICS_DAYS_KEEP_DAYS);
     }
   },
 } as const;

@@ -71,6 +71,18 @@ describe('purgeAtFor — the one purgeAt stamp (F1-7)', () => {
     ).toBe(utcMidnight('2026-10-07') + 400 * DAY);
   });
 
+  it('analyticsDays: the shop day’s UTC midnight + 400 days, read off `localDate` (staff analytics v2)', () => {
+    expect(
+      millisOf(
+        purgeAtFor(['analyticsDays', 'b-ivan__2026-09-14'], {
+          barberId: 'b-ivan',
+          localDate: '2026-09-14',
+          dayComputedAtUtcMs: utcMidnight('2026-11-08'),
+        }),
+      ),
+    ).toBe(utcMidnight('2026-09-14') + 400 * DAY);
+  });
+
   it('otps: expiresAtUtcMs + 24 hours (the pre-flip OTP repository’s formula, F2-11)', () => {
     const expiresAtUtcMs = Date.UTC(2026, 9, 7, 9, 5);
     expect(

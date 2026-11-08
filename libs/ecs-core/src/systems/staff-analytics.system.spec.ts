@@ -121,6 +121,8 @@ const dayOf = (
     barberId,
     localDate: localDay,
     stretches,
+    // One shop, one clock: past two days back (Terms, «Past day»).
+    pastDay: LocalDate.addDays(localDay, 1) < TODAY,
     rosteredMinutes: zero,
     workedMinutes: zero,
     noShowMinutes: zero,
@@ -623,6 +625,55 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(report.reportBarOtherMinutes).toBe(40);
     expect(report.reportOpenMinutes).toBe(360);
     expect(report.reportDayRows).toHaveLength(2);
+    // v2: the rows carry the `day*` parts, as a stored day does.
+    expect(report.reportDayRows[0]).toMatchObject({
+      barberId: ivan,
+      localDate: day(-1),
+      dayRosteredMinutes: 600,
+      dayWorkedMinutes: 300,
+      dayUnsoldMinutes: 200,
+      dayOpenMinutes: 0,
+    });
+    expect(report.reportDayRows[1]?.dayOpenMinutes).toBe(360);
+  });
+
+  it('carries each day’s money on its row (v2): the rows’ takings and tips sum to the report’s', () => {
+    const report = S.report(
+      input({
+        days: [dayOf(ivan, day(-3)), dayOf(ivan, day(-2))],
+        visits: [
+          visit('a1', day(-3), [seat(ivan, 2000, undefined, cut, 10, 300)]),
+          visit('a2', day(-2), [
+            seat(ivan, 1750, undefined, beard, 11, 100),
+            seat(niko, 5000),
+          ]),
+          visit('a3', day(-2), [seat(ivan, 1000, SeatOutcome.noShow(stamp))]),
+        ],
+      }),
+    );
+    expect(
+      report.reportDayRows.map((row) => [
+        row.localDate,
+        row.dayTakingsCents,
+        row.dayTipsCents,
+        row.currency,
+      ]),
+    ).toEqual([
+      [day(-3), 2000, 300, 'EUR'],
+      [day(-2), 1750, 100, 'EUR'],
+    ]);
+    const takings = report.reportDayRows.reduce(
+      (sum, row) => sum + row.dayTakingsCents,
+      0,
+    );
+    const tips = report.reportDayRows.reduce(
+      (sum, row) => sum + row.dayTipsCents,
+      0,
+    );
+    expect(takings).toBe(report.reportTakingsCents);
+    expect(tips).toBe(report.reportTipsCents);
+    expect(S.VISITS_PER_BARBER_DAY).toBe(60);
+    expect(S.FOLLOW_UPS_PER_VISIT).toBe(5);
   });
 
   it('states the bookable hours ahead and the emptiest day, the earliest on a tie', () => {
@@ -1181,6 +1232,40 @@ describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
       // …but does to a day whose shop has no clock of its own.
       const [onFallback] = days({ now: early, nowByLocation: [] });
       expect(onFallback?.openMinutes).toBe(9 * 60);
+    });
+
+    it('marks a day PAST two days back on every stretch shop’s clock — two locations, and a stretch-less day on the report’s (v2, Terms)', () => {
+      const mladost = LocationId.of('loc-mladost');
+      // The centre says the 14th; Mladost's clock is a day behind.
+      const clocks = [
+        { locationId: centre, ...NOW },
+        { locationId: mladost, ...NOW, localDate: day(-1) },
+      ];
+      const at = (locationId: LocationId) => [{ locationId }];
+      // The 12th: past at the centre (13 < 14), not at Mladost (13 < 13 fails).
+      expect(S.isPastDay(day(-2), clocks, at(centre), NOW)).toBe(true);
+      expect(S.isPastDay(day(-2), clocks, at(mladost), NOW)).toBe(false);
+      expect(
+        S.isPastDay(day(-2), clocks, [...at(centre), ...at(mladost)], NOW),
+      ).toBe(false);
+      // The 11th is past everywhere; yesterday nowhere.
+      expect(
+        S.isPastDay(day(-3), clocks, [...at(centre), ...at(mladost)], NOW),
+      ).toBe(true);
+      expect(S.isPastDay(day(-1), clocks, at(centre), NOW)).toBe(false);
+      // No stretch at any shop: the default clock judges.
+      expect(S.isPastDay(day(-2), clocks, [], NOW)).toBe(true);
+      expect(
+        S.isPastDay(day(-2), clocks, [], { ...NOW, localDate: day(-1) }),
+      ).toBe(false);
+      // A shop whose clock was not read reads as the default clock.
+      expect(S.isPastDay(day(-2), [], at(mladost), NOW)).toBe(true);
+      // Through daysOf: the day carries the verdict.
+      expect(days()[0]?.pastDay).toBe(true);
+      expect(days({ localDates: [day(-1)] })[0]?.pastDay).toBe(false);
+      expect(
+        days({ nowByLocation: clocks, localDates: [monday] })[0]?.pastDay,
+      ).toBe(true);
     });
 
     it('builds every barber × day, barber by barber', () => {

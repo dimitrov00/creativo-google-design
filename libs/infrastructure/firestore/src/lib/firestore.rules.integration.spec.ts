@@ -1170,6 +1170,65 @@ describe('firestore.rules', () => {
     });
   });
 
+  describe('analyticsDays — server-only, no client read (staff-analytics-v2 PR 4a)', () => {
+    const dayId = 'ivan__2026-08-05';
+
+    async function seedDay(): Promise<void> {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'analyticsDays', dayId), {
+          barberId: 'ivan',
+          localDate: '2026-08-05',
+          dayRosteredMinutes: 540,
+          dayWorkedMinutes: 270,
+          dayTakingsCents: 4550,
+          currency: 'EUR',
+        });
+      });
+    }
+
+    /**
+     * A past barber-day's figures carry a barber's money: only the
+     * `staffAnalytics` callable reads them, judging the caller's scope
+     * itself. Nobody reads the collection directly — a barber, an admin or
+     * a client with the key would otherwise read any colleague's takings.
+     */
+    it('denies every direct read — anonymous, client, barber and admin', async () => {
+      await seedDay();
+      await assertFails(
+        getDoc(
+          doc(
+            testEnv.unauthenticatedContext().firestore(),
+            'analyticsDays',
+            dayId,
+          ),
+        ),
+      );
+      for (const roles of [['client'], ['barber'], ['admin']]) {
+        const actor = testEnv.authenticatedContext(`reader-${roles[0]}`, {
+          roles,
+        });
+        await assertFails(
+          getDoc(doc(actor.firestore(), 'analyticsDays', dayId)),
+        );
+      }
+    });
+
+    it('refuses every client write, staff and admin included', async () => {
+      for (const roles of [['barber'], ['admin']]) {
+        const actor = testEnv.authenticatedContext(`writer-${roles[0]}`, {
+          roles,
+        });
+        await assertFails(
+          setDoc(doc(actor.firestore(), 'analyticsDays', 'ivan__2026-08-06'), {
+            barberId: 'ivan',
+            localDate: '2026-08-06',
+            dayTakingsCents: 0,
+          }),
+        );
+      }
+    });
+  });
+
   // ── the booking-critical rules the audit found untested (F26) ─────────
 
   // DEP-6 (pass E, E-16): the admin grant is closed — no client writes the

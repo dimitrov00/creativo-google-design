@@ -1,26 +1,100 @@
 import {
   type AppointmentId,
   type BarberId,
-  type BusyKey,
+  BusyKey,
   Result,
   type UserId,
 } from '@core/primitives';
 import type {
+  AnalyticsRecomputeJob,
   Appointment,
+  BarberAnalyticsDay,
   BarberSchedule,
   ScheduleException,
   ShopLocation,
   User,
 } from '@core/entities';
 import type {
+  AnalyticsDayReadPorts,
   AnalyticsReadPorts,
+  AnalyticsRecomputeJobPorts,
   ProfileLoadPorts,
   ShopDayReadPorts,
 } from '@core/ports';
-import { BackfillPlanSystem } from '@core/systems';
+import { AnalyticsRecomputeJobSystem, BackfillPlanSystem } from '@core/systems';
 
 /** Firestore's most values an `in` / `array-contains-any` query takes — the adapter's chunk. */
 const IN_CHUNK = 30;
+
+/** What `memoryAnalyticsDayPorts` holds; no day and no job when omitted. */
+export type AnalyticsDayState = {
+  readonly days?: readonly BarberAnalyticsDay[];
+  readonly job?: AnalyticsRecomputeJob | null;
+};
+
+/** The queries the day double ran, in call order — one entry per Firestore read the adapter would send. */
+export type AnalyticsDayReadLog = {
+  /** Each range read: `[barberIds, from, to]`. */
+  readonly rangeQueries: (readonly [readonly BarberId[], string, string])[];
+  /** Each `getAll` page's keys. */
+  readonly keyReads: (readonly BusyKey[])[];
+  /** How many times the job document was read. */
+  jobReads: number;
+};
+
+/**
+ * `AnalyticsDayReadPorts & AnalyticsRecomputeJobPorts` over plain arrays,
+ * answering as the Firestore adapters do: the range by `barberId` and an
+ * inclusive `localDate` range, the keys one page (≤ `PAGE_SIZE`) at a time
+ * with `null` where no day is stored, the job as held. `log` records every
+ * read.
+ */
+export function memoryAnalyticsDayPorts(state: AnalyticsDayState = {}): {
+  readonly ports: AnalyticsDayReadPorts & AnalyticsRecomputeJobPorts;
+  readonly log: AnalyticsDayReadLog;
+} {
+  const days = state.days ?? [];
+  const log: AnalyticsDayReadLog = {
+    rangeQueries: [],
+    keyReads: [],
+    jobReads: 0,
+  };
+  const ports: AnalyticsDayReadPorts & AnalyticsRecomputeJobPorts = {
+    loadAnalyticsDays: async (barberIds, fromLocalDate, toLocalDate) => {
+      log.rangeQueries.push([barberIds, fromLocalDate, toLocalDate]);
+      return Result.ok(
+        days.filter(
+          (day) =>
+            barberIds.includes(day.barberId) &&
+            day.localDate >= fromLocalDate &&
+            day.localDate <= toLocalDate,
+        ),
+      );
+    },
+    loadAnalyticsDaysByKeys: async (keys) => {
+      const rows: (BarberAnalyticsDay | null)[] = [];
+      for (const page of BackfillPlanSystem.chunk(
+        keys,
+        AnalyticsRecomputeJobSystem.PAGE_SIZE,
+      )) {
+        log.keyReads.push(page);
+        for (const key of page) {
+          rows.push(
+            days.find(
+              (day) => BusyKey.of(day.barberId, day.localDate) === key,
+            ) ?? null,
+          );
+        }
+      }
+      return Result.ok(rows);
+    },
+    loadAnalyticsRecomputeJob: async () => {
+      log.jobReads++;
+      return Result.ok(state.job ?? null);
+    },
+  };
+  return { ports, log };
+}
 
 /** What `memoryAnalyticsReadPorts` reads; every collection empty when omitted. */
 export type AnalyticsReadState = {

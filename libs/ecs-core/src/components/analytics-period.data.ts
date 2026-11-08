@@ -58,6 +58,13 @@ function earliestOn(today: LocalDate): LocalDate {
 }
 
 export const AnalyticsPeriod = {
+  /**
+   * The reach's first day on `today` — the 1st of the month
+   * {@link REACH_MONTHS} before this one: the earliest day a period may
+   * start, and the first day the recompute's full pass walks.
+   */
+  earliestOn,
+
   /** The one day `localDate`. */
   dayOf(localDate: LocalDate): AnalyticsPeriod {
     return {
