@@ -24,6 +24,7 @@
       "@creativo/shared/view-state": ["./libs/shared/view-state/src/index.ts"],
       "@creativo/ui/tokens": ["./libs/ui/tokens/src/index.ts"],
       "@creativo/ui/modifiers": ["./libs/ui/modifiers/src/index.ts"],
+      "@creativo/ui/charts": ["./libs/ui/charts/src/index.ts"],
       "@creativo/ui/controls": ["./libs/ui/controls/src/index.ts"],
       "@creativo/ui/layout": ["./libs/ui/layout/src/index.ts"],
       "@creativo/ui/patterns": ["./libs/ui/patterns/src/index.ts"],

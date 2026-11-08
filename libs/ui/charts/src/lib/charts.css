@@ -1,0 +1,146 @@
+/* THE CHART KIT'S SHARED SHEET — imported by every element's stylesheet.
+   Colour is CSS only: a mark carries `data-part` (chart-part.ts) and this
+   sheet maps each value to ONE token through `--ui-chart-paint`, which the
+   marks read as `fill` or `stroke` (never `color`: words are ink, marks are
+   shapes — the accent law). The greys are the foreground through
+   `color-mix`, so one declaration is right in both themes.
+   libs/ui/tokens/src/lib/chart-palette.spec.ts measures every paint here:
+   ≥ 3:1 on the page and the card (SC 1.4.11), and every adjacent pair of
+   parts ≥ 8 in OKLab × 100 — change a percentage and the spec says whether
+   it still holds. THE RAMP IS 76 / 62 / 48 %, not the design's 50 / 32 /
+   18: on white the foreground has to be mixed at 46 % or more to clear
+   3:1 (32 % reads 2.09:1, 18 % 1.48:1), so the lightest grey is 48 % and
+   the other two step up by 14 — each step ≥ 10.7 in OKLab in both themes.
+   The direction is the design's: blocked the heaviest, the time nobody
+   bought the lightest. The comparison takes the same 48 % for the same
+   reason. */
+
+/* The bar chart's two lengths, registered so a bar's size and its place in
+   the stack GLIDE between values (a plain custom property flips). Outside
+   the layer: a registration is global by nature. */
+@property --ui-bar-size {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --ui-bar-offset {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@layer sys-components {
+  /* ── the parts ─────────────────────────────────────────────────────── */
+  [data-part='worked'],
+  [data-part='online'] {
+    --ui-chart-paint: var(--sys-color-accent);
+  }
+
+  [data-part='no-show'] {
+    --ui-chart-paint: var(--sys-color-destructive);
+  }
+
+  /* Warning (hue ≈ 36°) sits beside the accent (≈ 21°) in every bar, so
+     the unmarked part wears a hatch over its fill: told apart by form. */
+  [data-part='unmarked'] {
+    --ui-chart-paint: var(--sys-color-warning);
+  }
+
+  [data-part='blocked'] {
+    --ui-chart-paint: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 76%,
+      transparent
+    );
+  }
+
+  [data-part='unsold'],
+  [data-part='staff'] {
+    --ui-chart-paint: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 62%,
+      transparent
+    );
+  }
+
+  [data-part='other'],
+  [data-part='unknown'],
+  [data-part='comparison'] {
+    --ui-chart-paint: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 48%,
+      transparent
+    );
+  }
+
+  /* A mark in an SVG: the paint as its fill, and a hairline edge in the
+     separator, so a quiet grey still has an outline on the card. */
+  svg [data-part] {
+    fill: var(--ui-chart-paint);
+    stroke: var(--sys-color-separator);
+    stroke-width: 1px;
+  }
+
+  /* The hatch is an SVG pattern each bar chart carries in its `<defs>`
+     (`#ui-chart-hatch`): the warning fill under diagonal lines in the
+     surface colour, 1.5 px every 6. */
+  svg [data-part='unmarked'] {
+    fill: url('#ui-chart-hatch');
+  }
+
+  .ui-chart-hatch__ground {
+    fill: var(--sys-color-warning);
+  }
+
+  .ui-chart-hatch__line {
+    stroke: var(--sys-color-surface);
+    stroke-width: 1.5px;
+  }
+
+  /* ── a legend's swatch ─────────────────────────────────────────────────
+     The same paint as a disc in HTML, for the rows under a chart. */
+  .ui-chart-swatch {
+    display: inline-block;
+    inline-size: calc(var(--sys-space-unit) * 3);
+    block-size: calc(var(--sys-space-unit) * 3);
+    border-radius: var(--control-radius-capsule);
+    box-shadow: inset 0 0 0 1px var(--sys-color-separator);
+    background: var(--ui-chart-paint);
+    vertical-align: middle;
+  }
+
+  .ui-chart-swatch[data-part='unmarked'] {
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        var(--sys-color-surface) 0 1.5px,
+        transparent 1.5px 6px
+      ),
+      var(--ui-chart-paint);
+  }
+
+  /* ── the heatmap's ramp ────────────────────────────────────────────────
+     A cell with data is the accent at 10 % + 90 % × its strength; a cell
+     with none is the control fill. */
+  .ui-heatmap__cell[data-cell] {
+    background: color-mix(
+      in srgb,
+      var(--sys-color-accent) calc(10% + var(--ui-cell-strength, 0) * 90%),
+      transparent
+    );
+  }
+
+  /* ── motion ──────────────────────────────────────────────────────────
+     Every glide here is a LIVE change after the first frame (`data-settled`
+     on the host); the global kill-switch (reduced-motion.css) shortens it
+     to 1 ms under prefers-reduced-motion, and these rules repeat the
+     promise for a page that imports the kit without it. */
+  @media (prefers-reduced-motion: reduce) {
+    .ui-bar-chart__segment,
+    .ui-line-chart__path {
+      transition: none;
+      animation: none;
+    }
+  }
+}

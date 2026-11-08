@@ -1,0 +1,194 @@
+<sc-page scTitle="Charts">
+  <ng-container scLede>
+    <code>@creativo/ui/charts</code> — the analytics screen's three drawings,
+    hand-drawn SVG and CSS over the DS tokens. Every input is a display struct a
+    presenter built: the kit decides nothing and formats no number. Colour is
+    CSS only — a mark carries <code>data-part</code> and
+    <code>charts.css</code> maps it to a token
+    (<code>fill</code>/<code>stroke</code>, never <code>color</code>); words are
+    ink. Each drawing is <code>role="img"</code> named by <code>uiLabel</code>,
+    with the figures reachable as text.
+  </ng-container>
+
+  <sc-demo scTitle="Where the time went — a bar per day">
+    <ng-container scAbout>
+      <code>ui-bar-chart</code>, vertical, stacked: the week's days along the
+      baseline, each bar's parts from the baseline out — worked in the accent,
+      no-show in the destructive red, unmarked in amber under a hatch, then the
+      greys 76 / 62 / 48 %. 4 px rounded data ends, 2 px of surface between
+      parts and bars, a hairline edge. The legend is the
+      <code>[uiChartLegend]</code> slot. A tap emits the bar's index; the bars
+      are one tab stop and the arrows walk them. «Друга седмица» swaps the data
+      so the bars glide.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="charts__column">
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-bar-chart
+          [uiBars]="weekBars()"
+          [uiValueText]="weekValueText()"
+          uiLabel="Времето по дни: най-зает петък, 7 ч 30 мин работа"
+          (uiBarPicked)="onPicked(weekBars(), $event)"
+          data-testid="charts-week"
+        >
+          <ul uiChartLegend class="charts__legend">
+            @for (row of weekLegend(); track row.part) {
+            <li class="charts__legend-row">
+              <span class="ui-chart-swatch" [attr.data-part]="row.part"></span>
+              <span uiText [uiFont]="'subheadline'">{{ row.word }}</span>
+              <span
+                uiText
+                [uiFont]="'subheadline'"
+                uiForegroundStyle="secondary"
+                class="charts__legend-value"
+                >{{ row.value }}</span
+              >
+            </li>
+            }
+          </ul>
+        </ui-bar-chart>
+      </ui-card>
+      <ui-flow uiSpacing="regular" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="toggle()"
+        >
+          Друга седмица
+        </button>
+        <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+          @if (picked(); as day) { Избрано: {{ day }} } @else { Докосни ден. }
+        </p>
+      </ui-flow>
+    </ui-stack>
+  </sc-demo>
+
+  <sc-demo scTitle="DAY — one stacked bar">
+    <ng-container scAbout>
+      The same element with a single bar, in a narrow column: the day's chair
+      time as one stack. No word under it (the card's title says the day); the
+      figure is in the accessible name.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__day">
+      <ui-bar-chart
+        [uiBars]="dayBars"
+        [uiValueText]="dayValueText"
+        uiLabel="Вторник: 7 ч работа, 30 мин неотбелязано, 30 мин непродадено"
+        data-testid="charts-day"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Which services sell — ranked rows">
+    <ng-container scAbout>
+      <code>uiOrientation="horizontal"</code> with <code>uiRanked</code>:
+      largest first, the word on the row's line and the figure
+      (<code>uiValueText</code>, € and count) at its end, the bar beneath across
+      the card. A pick reports the bar's index in <code>uiBars</code>, not its
+      row.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-bar-chart
+        [uiBars]="serviceBars"
+        [uiValueText]="serviceValueText"
+        uiOrientation="horizontal"
+        uiRanked
+        uiLabel="Услуги по оборот: най-много «Подстригване и брада», 1 260 €"
+        (uiBarPicked)="onPicked(serviceBars, $event)"
+        data-testid="charts-services"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Free time ahead — the emptiest in the accent">
+    <ng-container scAbout>
+      The open-hours card: seven bars of open minutes,
+      <code>uiStacking="single"</code>, and <code>uiHighlightIndex</code> on the
+      day with the most open time — that bar in the accent, the rest in the 48 %
+      grey. The presenter decided which; the chart only paints it.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-bar-chart
+        [uiBars]="openBars"
+        [uiValueText]="openValueText"
+        uiStacking="single"
+        [uiHighlightIndex]="emptiestDay"
+        uiLabel="Свободно време в следващите 7 дни: най-много в събота, 5 ч"
+        data-testid="charts-open"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Where bookings come from — one horizontal stack">
+    <ng-container scAbout>
+      One horizontal stacked bar: online in the accent, the staff's bookings in
+      the 62 % grey, unknown in the 48 %; three swatch rows under it. The
+      sources bar's parts are the second ordered list the palette spec pins.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-bar-chart
+        [uiBars]="sourceBars"
+        uiOrientation="horizontal"
+        uiLabel="Източник на записванията: 34 онлайн, 21 от салона, 5 неизвестни"
+        data-testid="charts-sources"
+      >
+        <ul uiChartLegend class="charts__legend">
+          @for (row of sourceLegend; track row.part) {
+          <li class="charts__legend-row">
+            <span class="ui-chart-swatch" [attr.data-part]="row.part"></span>
+            <span uiText [uiFont]="'subheadline'">{{ row.word }}</span>
+            <span
+              uiText
+              [uiFont]="'subheadline'"
+              uiForegroundStyle="secondary"
+              class="charts__legend-value"
+              >{{ row.value }}</span
+            >
+          </li>
+          }
+        </ul>
+      </ui-bar-chart>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="How much, and against the comparison — the line">
+    <ng-container scAbout>
+      <code>ui-line-chart</code>: this period's takings as the accent line, the
+      week before as the grey comparison (a <code>null</code> leaves a gap), a
+      dashed rule at the average, the first and last points marked. Labels at
+      the right edge only: the last value and the average
+      (<code>uiAverageText</code>). A changed series cross-fades; every point's
+      figure is in the hidden table.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-line-chart
+        [uiPoints]="takings()"
+        [uiAverage]="takingsAverage()"
+        [uiValueText]="takingsValueText()"
+        [uiAverageText]="takingsAverageText()"
+        uiLabel="Оборот по дни спрямо миналата седмица: най-висок петък"
+        data-testid="charts-line"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="When the chair is busy — the heatmap">
+    <ng-container scAbout>
+      <code>ui-heatmap</code>: weekdays × hours as a CSS grid, each cell with
+      data tinted on the accent at 10–100 % of <code>--ui-cell-strength</code>
+      (value over max), a cell without data in the control fill. Row and column
+      words in ink; the cells are a hidden table for a screen reader.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-heatmap
+        [uiRows]="heatRows"
+        [uiColumns]="hours"
+        [uiCells]="heatCells"
+        uiLabel="Заетост по ден и час: най-зает вторник в 11, най-свободен понеделник в 17"
+        data-testid="charts-heatmap"
+      />
+    </ui-card>
+  </sc-demo>
+</sc-page>

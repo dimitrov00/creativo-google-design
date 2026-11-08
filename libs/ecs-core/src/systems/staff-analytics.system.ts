@@ -28,10 +28,11 @@ import {
   type AnalyticsReport,
   BookingOrigin,
   ClientStatsPolicy,
+  type MinuteRange,
   Placement,
   type Role,
   Roles,
-  type Seat,
+  Seat,
   type ShopNow,
   StaffLink,
 } from '@core/components';
@@ -42,6 +43,7 @@ import type {
   ShopLocation,
   User,
 } from '@core/entities';
+import { AnalyticsHourSystem, type HourDay } from './analytics-hour.system';
 import {
   type ChairDay,
   type ChairVisit,
@@ -88,9 +90,15 @@ export type AnalyticsFollowUp = {
   readonly followUpCancelled: boolean;
 };
 
-/** A barber-day's parts, with the minutes a `CLOSED` day would have rostered. */
+/**
+ * A barber-day's parts, with the minutes a `CLOSED` day would have rostered
+ * and the day's offered stretches — the rostered ranges on the wall clock
+ * (the roster's offered windows, blocks and breaks at the ACTIVE shops,
+ * normalized: what `rosteredMinutes` totals), which the hour grid buckets.
+ */
 export type AnalyticsDay = ChairDay & {
   readonly closedDayMinutes: MinuteCount;
+  readonly stretches: readonly MinuteRange[];
 };
 
 /** Everything a report is computed from — read by the pipeline, nothing else. */
@@ -437,6 +445,247 @@ function timeOf(
 /** The next shop days the open-hours card reads: today and the six after it. */
 const AHEAD_DAYS = 7;
 
+/**
+ * The longest period charted day by day (a quarter); a longer one is charted
+ * per ISO week (design, `reportSeries`). Per month, for a `YEAR` span, comes
+ * with that span.
+ */
+const DAY_GRAIN_MAX_DAYS = 93;
+
+/** Days in an ISO week — the weekly grain's step. */
+const DAYS_PER_WEEK = 7;
+
+/**
+ * How a period is cut into chart buckets: the first day of each, and whether
+ * the buckets are weeks (else days). The weekly grain's first bucket runs
+ * from the period's first day to the Sunday of its ISO week; every later
+ * bucket starts on a Monday; the last ends with the period.
+ */
+type SeriesGrain = {
+  readonly fromLocalDate: LocalDate;
+  readonly toLocalDate: LocalDate;
+  readonly weekly: boolean;
+  readonly starts: readonly LocalDate[];
+};
+
+function grainOf(
+  fromLocalDate: LocalDate,
+  toLocalDate: LocalDate,
+  weekly: boolean,
+): SeriesGrain {
+  if (!weekly) {
+    return {
+      fromLocalDate,
+      toLocalDate,
+      weekly,
+      starts: LocalDate.range(fromLocalDate, toLocalDate),
+    };
+  }
+  const starts: LocalDate[] = [fromLocalDate];
+  let monday = LocalDate.addDays(
+    LocalDate.startOfWeek(fromLocalDate),
+    DAYS_PER_WEEK,
+  );
+  while (monday <= toLocalDate) {
+    starts.push(monday);
+    monday = LocalDate.addDays(monday, DAYS_PER_WEEK);
+  }
+  return { fromLocalDate, toLocalDate, weekly, starts };
+}
+
+/** The bucket `localDate` falls in, `-1` outside the grain's period. */
+function bucketIndexOf(grain: SeriesGrain, localDate: LocalDate): number {
+  if (localDate < grain.fromLocalDate || localDate > grain.toLocalDate) {
+    return -1;
+  }
+  return grain.weekly
+    ? Math.floor(
+        LocalDate.daysBetween(
+          LocalDate.startOfWeek(grain.fromLocalDate),
+          localDate,
+        ) / DAYS_PER_WEEK,
+      )
+    : LocalDate.daysBetween(grain.fromLocalDate, localDate);
+}
+
+/**
+ * The net takings of the WORKED seats in scope per bucket — the
+ * `reportTakingsCents` rule (an allocated bill's seat nets; a visit whose
+ * bill could not be evaluated adds nothing), cut by the visit's shop day.
+ */
+function takingsByBucket(
+  visits: readonly AnalyticsVisit[],
+  inScope: (barberId: BarberId) => boolean,
+  grain: SeriesGrain,
+): readonly PriceCents[] {
+  const out: PriceCents[] = [];
+  for (let i = 0; i < grain.starts.length; i++) out.push(PriceCents.ZERO);
+  for (let v = 0; v < visits.length; v++) {
+    const visit = visits[v] as AnalyticsVisit;
+    const index = bucketIndexOf(grain, visit.localDate);
+    if (index < 0) continue;
+    const nets = MoneyAllocationSystem.seatNets(visit);
+    if (nets.moneyAllocation !== MoneyAllocation.Allocated) continue;
+    for (let s = 0; s < visit.seats.length; s++) {
+      const seat = visit.seats[s] as Seat;
+      if (
+        seat.attendanceState !== AttendanceState.Worked ||
+        !inScope(seat.barberId)
+      ) {
+        continue;
+      }
+      out[index] = PriceCents.add(
+        out[index] as PriceCents,
+        (nets.nets[s] as SeatNet).netCents,
+      );
+    }
+  }
+  return out;
+}
+
+/** The takings line: this period's buckets against the previous period's at the same position. */
+function seriesOf(
+  input: AnalyticsInput,
+  inScope: (barberId: BarberId) => boolean,
+  grain: SeriesGrain,
+  previous: AnalyticsPeriod,
+): readonly AnalyticsReport.SeriesPoint[] {
+  const current = takingsByBucket(input.visits, inScope, grain);
+  const compared = takingsByBucket(
+    input.previousVisits,
+    inScope,
+    grainOf(previous.fromLocalDate, previous.toLocalDate, grain.weekly),
+  );
+  const out: AnalyticsReport.SeriesPoint[] = [];
+  for (let i = 0; i < grain.starts.length; i++) {
+    out.push({
+      localDate: grain.starts[i] as LocalDate,
+      takingsCents: current[i] as PriceCents,
+      comparisonTakingsCents:
+        i < compared.length ? (compared[i] as PriceCents) : null,
+    });
+  }
+  return out;
+}
+
+/** The six bar parts per bucket — each day's as the `reportBar…` totals count them. */
+function timeSeriesOf(
+  days: readonly AnalyticsDay[],
+  inScope: (barberId: BarberId) => boolean,
+  grain: SeriesGrain,
+): readonly AnalyticsReport.TimePoint[] {
+  const out: {
+    localDate: LocalDate;
+    workedMinutes: MinuteCount;
+    noShowMinutes: MinuteCount;
+    unmarkedMinutes: MinuteCount;
+    blockedMinutes: MinuteCount;
+    unsoldMinutes: MinuteCount;
+    otherMinutes: MinuteCount;
+  }[] = [];
+  for (let i = 0; i < grain.starts.length; i++) {
+    out.push({
+      localDate: grain.starts[i] as LocalDate,
+      workedMinutes: MinuteCount.ZERO,
+      noShowMinutes: MinuteCount.ZERO,
+      unmarkedMinutes: MinuteCount.ZERO,
+      blockedMinutes: MinuteCount.ZERO,
+      unsoldMinutes: MinuteCount.ZERO,
+      otherMinutes: MinuteCount.ZERO,
+    });
+  }
+  for (let d = 0; d < days.length; d++) {
+    const day = days[d] as AnalyticsDay;
+    if (!inScope(day.barberId)) continue;
+    const index = bucketIndexOf(grain, day.localDate);
+    if (index < 0) continue;
+    const point = out[index] as (typeof out)[number];
+    point.workedMinutes = MinuteCount.add(
+      point.workedMinutes,
+      day.workedMinutes,
+    );
+    point.noShowMinutes = MinuteCount.add(
+      point.noShowMinutes,
+      day.noShowMinutes,
+    );
+    point.unmarkedMinutes = MinuteCount.add(
+      point.unmarkedMinutes,
+      day.unmarkedMinutes,
+    );
+    point.blockedMinutes = MinuteCount.add(
+      point.blockedMinutes,
+      day.pastBlockedMinutes,
+    );
+    point.unsoldMinutes = MinuteCount.add(
+      point.unsoldMinutes,
+      day.unsoldMinutes,
+    );
+    point.otherMinutes = MinuteCount.add(
+      MinuteCount.add(point.otherMinutes, day.pastHeldMinutes),
+      day.pastShortGapMinutes,
+    );
+  }
+  return out;
+}
+
+/**
+ * Each in-scope barber-day's hour buckets: its offered stretches and the
+ * chair time of its WORKED seats (a wholly cancelled visit holds no chair,
+ * as `ChairTimeSystem` reads it). A day with neither is skipped — it has no
+ * cell to add to.
+ */
+function hourDaysOf(
+  days: readonly AnalyticsDay[],
+  visits: readonly AnalyticsVisit[],
+  inScope: (barberId: BarberId) => boolean,
+): readonly HourDay[] {
+  const seatsOn = new Map<BusyKey, MinuteRange[]>();
+  for (let v = 0; v < visits.length; v++) {
+    const visit = visits[v] as AnalyticsVisit;
+    if (visit.bookingStatus === BookingStatus.Cancelled) continue;
+    for (let s = 0; s < visit.seats.length; s++) {
+      const seat = visit.seats[s] as Seat;
+      if (
+        seat.attendanceState !== AttendanceState.Worked ||
+        !inScope(seat.barberId)
+      ) {
+        continue;
+      }
+      const key = BusyKey.of(seat.barberId, visit.localDate);
+      const list = seatsOn.get(key);
+      const chair = Seat.chairTime(seat);
+      if (list === undefined) seatsOn.set(key, [chair]);
+      else list.push(chair);
+    }
+  }
+  const out: HourDay[] = [];
+  for (let d = 0; d < days.length; d++) {
+    const day = days[d] as AnalyticsDay;
+    if (!inScope(day.barberId)) continue;
+    const seats = seatsOn.get(BusyKey.of(day.barberId, day.localDate));
+    if (day.stretches.length === 0 && seats === undefined) continue;
+    out.push(
+      AnalyticsHourSystem.bucketsOf(day.localDate, seats ?? [], day.stretches),
+    );
+  }
+  return out;
+}
+
+/** How many distinct shop days of the period roster any minute in scope — the heatmap sentence's base. */
+function rosteredDayCountOf(
+  days: readonly AnalyticsDay[],
+  inScope: (barberId: BarberId) => boolean,
+): number {
+  const dates = new Set<LocalDate>();
+  for (let d = 0; d < days.length; d++) {
+    const day = days[d] as AnalyticsDay;
+    if (inScope(day.barberId) && day.rosteredMinutes > 0) {
+      dates.add(day.localDate);
+    }
+  }
+  return dates.size;
+}
+
 /** The minutes `input`'s day would roster — its windows, blocks and breaks, normalized. */
 function rosteredMinutesOf(input: BuildDayWindowsInput): MinuteCount {
   return IntervalSetSystem.totalMinutes(
@@ -471,6 +720,22 @@ function nowOf(
 export const StaffAnalyticsSystem = {
   RATE_BASE,
   AHEAD_DAYS,
+  DAY_GRAIN_MAX_DAYS,
+
+  /**
+   * The first day of each bucket the charts cut `period` into
+   * (`reportSeries`, `reportTimeSeries`): every day for a period of up to
+   * {@link DAY_GRAIN_MAX_DAYS} days; beyond that the period's first day and
+   * then every Monday inside it — a partial first or last ISO week is a
+   * bucket of its own.
+   */
+  seriesStartsOf(period: AnalyticsPeriod): readonly LocalDate[] {
+    return grainOf(
+      period.fromLocalDate,
+      period.toLocalDate,
+      AnalyticsPeriod.length(period) > DAY_GRAIN_MAX_DAYS,
+    ).starts;
+  },
 
   /**
    * The caller as the visibility table judges them, from their STORED user
@@ -667,6 +932,11 @@ export const StaffAnalyticsSystem = {
         const windows = RosterSystem.offeredWindows(day);
         const blocks = RosterSystem.offeredCarveOuts(day);
         const breaks = RosterSystem.offeredBreaks(day);
+        const stretches = IntervalSetSystem.normalize([
+          ...windows,
+          ...blocks,
+          ...breaks,
+        ]);
         const closed = exceptions.some(
           (exception) =>
             exception.localDate === localDate &&
@@ -687,6 +957,7 @@ export const StaffAnalyticsSystem = {
         });
         days.push({
           ...chairDay,
+          stretches,
           closedDayMinutes: closed
             ? rosteredMinutesOf({
                 ...day,
@@ -783,6 +1054,20 @@ export const StaffAnalyticsSystem = {
         )
       : null;
 
+    // The charts: the period cut into buckets, the hour grid and its peaks.
+    const grain = grainOf(
+      period.fromLocalDate,
+      period.toLocalDate,
+      length > DAY_GRAIN_MAX_DAYS,
+    );
+    const hourGrid = AnalyticsHourSystem.grid(
+      hourDaysOf(input.days, input.visits, inScope),
+    );
+    const peaks = AnalyticsHourSystem.peak(
+      hourGrid,
+      rosteredDayCountOf(input.days, inScope),
+    );
+
     return {
       reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
       reportComputedAtUtcMs: input.now.utcEpochMs,
@@ -827,7 +1112,18 @@ export const StaffAnalyticsSystem = {
       reportNoShowRate: rateOf(figures.noShowCount, figures.noShowBase),
       reportLateCancellationCount: figures.lateCancellationCount,
 
-      ...bookableOf(input.aheadDays, inScope),
+      ...bookableOf(input.aheadDays, inScope, today),
+
+      reportBusiestWeekday:
+        peaks.busiest === null ? null : peaks.busiest.weekday,
+      reportBusiestHour: peaks.busiest === null ? null : peaks.busiest.hour,
+      reportEmptiestWeekday:
+        peaks.emptiest === null ? null : peaks.emptiest.weekday,
+      reportEmptiestHour: peaks.emptiest === null ? null : peaks.emptiest.hour,
+
+      reportSeries: seriesOf(input, inScope, grain, previous),
+      reportTimeSeries: timeSeriesOf(input.days, inScope, grain),
+      reportHourGrid: hourGrid,
 
       reportServices: servicesOf(input.visits, inScope),
       reportWeekdayFill: weekdayFillOf(input.days, inScope, today),
@@ -927,6 +1223,22 @@ export const StaffAnalyticsSystem = {
   /** Each service row's share of the services' takings, in the report's order; `0` each when nothing was taken. */
   serviceSharesOf(report: AnalyticsReport): readonly number[] {
     return sharesOf(report.reportServices.map((row) => row.takingsCents));
+  },
+
+  /**
+   * The takings line's dashed rule: the mean of
+   * {@link AnalyticsReport.reportSeries}' points, in whole cents (rounded);
+   * `null` with no points.
+   */
+  seriesAverageCentsOf(report: AnalyticsReport): PriceCents | null {
+    const points = report.reportSeries;
+    if (points.length === 0) return null;
+    let sum = 0;
+    for (let i = 0; i < points.length; i++) {
+      sum += (points[i] as AnalyticsReport.SeriesPoint).takingsCents;
+    }
+    const average = PriceCents.of(Math.round(sum / points.length));
+    return average.ok ? average.value : null;
   },
 
   /** Each origin's share of the counted visits, in the report's order; `0` each with none. */
@@ -1096,35 +1408,49 @@ function seatRowCounts(
   }
 }
 
+/**
+ * The open-hours card: today and the six days after it, each with the open
+ * (still bookable) minutes in scope; their total, and the emptiest — the day
+ * with the most open minutes, the earliest on a tie, `null` when none is
+ * open. One rule for the three, so the bars sum to the total.
+ */
 function bookableOf(
   aheadDays: readonly ChairDay[],
   inScope: (barberId: BarberId) => boolean,
+  today: LocalDate,
 ): {
   readonly reportBookableOpenMinutes: MinuteCount;
   readonly reportEmptiestLocalDate: LocalDate | null;
+  readonly reportAheadDays: readonly AnalyticsReport.AheadDay[];
 } {
-  const byDay = new Map<LocalDate, number>();
-  let total = 0;
+  const dates = StaffAnalyticsSystem.aheadDaysOf(today);
+  const open: MinuteCount[] = [];
+  for (let i = 0; i < dates.length; i++) open.push(MinuteCount.ZERO);
   for (let i = 0; i < aheadDays.length; i++) {
     const day = aheadDays[i] as ChairDay;
     if (!inScope(day.barberId)) continue;
-    total += day.openMinutes;
-    byDay.set(day.localDate, (byDay.get(day.localDate) ?? 0) + day.openMinutes);
+    const index = LocalDate.daysBetween(today, day.localDate);
+    if (index < 0 || index >= dates.length) continue;
+    open[index] = MinuteCount.add(open[index] as MinuteCount, day.openMinutes);
   }
+  const rows: AnalyticsReport.AheadDay[] = [];
+  let total = MinuteCount.ZERO;
   let emptiest: LocalDate | null = null;
   let most = 0;
-  const days = [...byDay.keys()].sort();
-  for (let i = 0; i < days.length; i++) {
-    const day = days[i] as LocalDate;
-    const open = byDay.get(day) ?? 0;
-    if (open > most) {
-      most = open;
-      emptiest = day;
+  for (let i = 0; i < dates.length; i++) {
+    const localDate = dates[i] as LocalDate;
+    const openMinutes = open[i] as MinuteCount;
+    rows.push({ localDate, openMinutes });
+    total = MinuteCount.add(total, openMinutes);
+    if (openMinutes > most) {
+      most = openMinutes;
+      emptiest = localDate;
     }
   }
   return {
-    reportBookableOpenMinutes: minutes(total),
+    reportBookableOpenMinutes: total,
     reportEmptiestLocalDate: emptiest,
+    reportAheadDays: rows,
   };
 }
 

@@ -1,4 +1,5 @@
 import {
+  AnalyticsBarPart,
   AnalyticsFigure,
   type AnalyticsPeriod,
   type AnalyticsReport,
@@ -10,11 +11,13 @@ import {
   AppointmentId,
   type BarberId,
   Currency,
+  HourOfDay,
   LocalDate,
   type PriceCents,
   type ServiceId,
   type TimeZone,
   UtcEpochMs,
+  type Weekday,
 } from '@core/primitives';
 import {
   type AnalyticsScopeChoice,
@@ -45,27 +48,34 @@ import {
 } from '@creativo/features/shared/visits';
 import type { AnalyticsWords } from './analytics.words';
 import {
-  AnalyticsLoad,
+  type AnalyticsAheadVm,
   type AnalyticsBarberRowVm,
   type AnalyticsBlockedVm,
   type AnalyticsBodyVm,
+  type AnalyticsBusyVm,
+  type AnalyticsChartBarVm,
   type AnalyticsClientsVm,
   type AnalyticsDayRowVm,
   type AnalyticsDrill,
   type AnalyticsDrillVm,
   type AnalyticsHeroVm,
   type AnalyticsInfoVm,
+  AnalyticsLoad,
   type AnalyticsOpenVm,
+  type AnalyticsOriginsVm,
   type AnalyticsPeriodVm,
   type AnalyticsScopeVm,
-  type AnalyticsShareGroupVm,
+  type AnalyticsSeriesVm,
+  type AnalyticsServicesVm,
   type AnalyticsStatusVm,
+  type AnalyticsTimeSeriesVm,
   type AnalyticsTimeVm,
   AnalyticsTopic,
   type AnalyticsVm,
   BAR_PART_HOOKS,
   DrillRows,
   FIGURE_TOPICS,
+  ORIGIN_PART_HOOKS,
 } from './analytics.vm';
 
 /*
@@ -349,12 +359,196 @@ function bodyOf(
         }
       : null,
     hero: heroOf(input, report, screen),
+    series: seriesOf(input, report),
     time: timeOf(input, report),
+    busy: busyOf(input, report),
     open: openOf(input, report, screen),
     services: servicesOf(input, report, screen),
     clients: clientsOf(input, report, screen),
-    fill: screen.shopScope ? fillOf(input, report) : null,
     origins: screen.shopScope ? originsOf(input, report) : null,
+  };
+}
+
+// ── The charts' labels ────────────────────────────────────────────────────
+
+/** The short weekday of a day — «пн». */
+function weekdayShort(day: LocalDate, lang: string): string {
+  return weekdayLabel(LocalDate.weekday(day), lang);
+}
+
+function weekdayLabel(weekday: Weekday, lang: string): string {
+  return formatWeekdayLabels(lang)[weekday - 1] ?? String(weekday);
+}
+
+/**
+ * The labels along a series' axis, by the period's grain: a week names
+ * its days; a month numbers every seventh day (1, 8, 15, 22, 29) so the
+ * axis breathes on a phone. Display layout, not a decision: every point is
+ * drawn, only the words are thinned.
+ */
+function axisLabels(
+  points: readonly { readonly localDate: LocalDate }[],
+  span: AnalyticsSpan,
+  lang: string,
+): readonly string[] {
+  if (span === AnalyticsSpan.Week) {
+    return points.map((point) => weekdayShort(point.localDate, lang));
+  }
+  return points.map((point, i) =>
+    i % 7 === 0 ? String(LocalDate.parts(point.localDate).day) : '',
+  );
+}
+
+/** «10:00» — a wall-clock hour. */
+function hourLabel(hour: HourOfDay, lang: string): string {
+  return formatMinute(HourOfDay.startMinute(hour), lang);
+}
+
+// ── The takings line ──────────────────────────────────────────────────────
+
+function seriesOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsSeriesVm {
+  const { words } = input;
+  const lang = words.lang;
+  const points = report.reportSeries;
+  const labels = axisLabels(points, report.reportAnalyticsSpan, lang);
+  const average = StaffAnalyticsSystem.seriesAverageCentsOf(report);
+  return {
+    points: points.map((point, i) => ({
+      label: labels.at(i) ?? '',
+      value: point.takingsCents,
+      comparison: point.comparisonTakingsCents,
+    })),
+    average,
+    valueText: points.map((point) => money(point.takingsCents, lang)),
+    averageText:
+      average === null ? null : words.charts.average(money(average, lang)),
+    // The report's own "there is a previous period" signal (the hero's).
+    comparisonLegend:
+      report.reportHeroPreviousCents === null ? null : words.charts.comparison,
+    label: words.charts.line,
+  };
+}
+
+// ── The time bars ─────────────────────────────────────────────────────────
+
+/** Each bar part's field of a time point — the stacked bar's six segments, in the legend's order. */
+const TIME_POINT_FIELDS = {
+  [AnalyticsBarPart.Worked]: 'workedMinutes',
+  [AnalyticsBarPart.NoShow]: 'noShowMinutes',
+  [AnalyticsBarPart.Unmarked]: 'unmarkedMinutes',
+  [AnalyticsBarPart.Blocked]: 'blockedMinutes',
+  [AnalyticsBarPart.Unsold]: 'unsoldMinutes',
+  [AnalyticsBarPart.Other]: 'otherMinutes',
+} as const satisfies Record<AnalyticsBarPart, keyof AnalyticsReport.TimePoint>;
+
+const TIME_PARTS: readonly AnalyticsBarPart[] = Object.values(AnalyticsBarPart);
+
+function timeBarsOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsTimeSeriesVm {
+  const { words } = input;
+  const points = report.reportTimeSeries;
+  const labels = axisLabels(points, report.reportAnalyticsSpan, words.lang);
+  const totals: number[] = [];
+  const bars: AnalyticsChartBarVm[] = points.map((point, i) => {
+    let total = 0;
+    const parts = TIME_PARTS.map((part) => {
+      // eslint-disable-next-line security/detect-object-injection -- `part` is a closed `AnalyticsBarPart` literal.
+      const value = point[TIME_POINT_FIELDS[part]];
+      total += value;
+      // eslint-disable-next-line security/detect-object-injection -- as above.
+      return { part: BAR_PART_HOOKS[part], value };
+    });
+    totals.push(total);
+    return { label: labels.at(i) ?? '', parts };
+  });
+  return {
+    bars,
+    valueText: totals.map((total) => spanWords(total, words.spanWords)),
+    label: words.charts.timeBars,
+  };
+}
+
+// ── When the chair is busy ────────────────────────────────────────────────
+
+function busyOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsBusyVm | null {
+  const cells = report.reportHourGrid;
+  if (cells.length === 0) return null;
+  const { words } = input;
+  const lang = words.lang;
+  // The grid's own axes: the weekdays and hours that have a cell, in order
+  // (the report lists cells weekday-then-hour, so each axis is the sorted
+  // distinct values).
+  const weekdays: Weekday[] = [];
+  const hours: HourOfDay[] = [];
+  for (const cell of cells) {
+    if (!weekdays.includes(cell.weekday)) weekdays.push(cell.weekday);
+    if (!hours.includes(cell.hour)) hours.push(cell.hour);
+  }
+  weekdays.sort((a, b) => a - b);
+  hours.sort((a, b) => a - b);
+  const at = (weekday: Weekday, hour: HourOfDay): string =>
+    words.busy.at(weekdayLabel(weekday, lang), hourLabel(hour, lang));
+  const busiest =
+    report.reportBusiestWeekday !== null && report.reportBusiestHour !== null
+      ? at(report.reportBusiestWeekday, report.reportBusiestHour)
+      : null;
+  const emptiest =
+    report.reportEmptiestWeekday !== null && report.reportEmptiestHour !== null
+      ? at(report.reportEmptiestWeekday, report.reportEmptiestHour)
+      : null;
+  return {
+    title: words.busy.title,
+    rows: weekdays.map((weekday) => weekdayLabel(weekday, lang)),
+    columns: hours.map((hour) => String(hour)),
+    cells: cells.map((cell) => ({
+      row: weekdays.indexOf(cell.weekday),
+      column: hours.indexOf(cell.hour),
+      value: cell.workedMinutes,
+      // A cell with no rostered minute is drawn at no strength.
+      max: Math.max(cell.rosteredMinutes, 1),
+    })),
+    sentence:
+      busiest === null || emptiest === null
+        ? words.busy.pending
+        : words.busy.sentence(busiest, emptiest),
+    label: words.busy.label,
+  };
+}
+
+// ── The open-hours card's bars ────────────────────────────────────────────
+
+function aheadBarsOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+  emptiest: LocalDate | null,
+): AnalyticsAheadVm {
+  const { words } = input;
+  const days = report.reportAheadDays;
+  const highlight =
+    emptiest === null
+      ? -1
+      : days.findIndex((day) => day.localDate === emptiest);
+  return {
+    bars: days.map((day) => ({
+      label: weekdayShort(day.localDate, words.lang),
+      parts: [
+        {
+          part: BAR_PART_HOOKS[AnalyticsBarPart.Worked],
+          value: day.openMinutes,
+        },
+      ],
+    })),
+    highlightIndex: highlight === -1 ? null : highlight,
+    valueText: days.map((day) => spanWords(day.openMinutes, words.spanWords)),
+    label: words.charts.ahead,
   };
 }
 
@@ -427,6 +621,7 @@ function timeOf(
   return {
     title: words.time.title,
     barName: words.time.barName,
+    bars: timeBarsOf(input, report),
     segments: StaffAnalyticsSystem.barSegmentsOf(report).map((segment) => ({
       part: BAR_PART_HOOKS[segment.analyticsBarPart],
       share: segment.share,
@@ -479,6 +674,7 @@ function openOf(
             barber: input.scheduleBarberId,
             free: '1',
           },
+    bars: aheadBarsOf(input, report, emptiest),
     accessibleName:
       dayName === null
         ? `${words.open.title} ${value} ${words.open.caption}, ${detail}`
@@ -486,37 +682,49 @@ function openOf(
   };
 }
 
+/** The services ranked: a horizontal bar per service in the report's order (largest first), each opening its seats. */
 function servicesOf(
   input: AnalyticsScreenInput,
   report: AnalyticsReport,
   screen: AnalyticsScreen,
-): AnalyticsShareGroupVm {
+): AnalyticsServicesVm {
   const { words } = input;
   const lang = words.lang;
-  const shares = StaffAnalyticsSystem.serviceSharesOf(report);
+  const rows = report.reportServices;
   return {
     title: words.services.title,
-    rows: report.reportServices.map((row, i) => {
-      const count = words.services.count(row.workedSeatCount);
+    bars: rows.map((row) => {
+      const name =
+        input.names.serviceName(row.serviceId) ?? words.unknownService;
       return {
-        id: row.serviceId,
-        title: input.names.serviceName(row.serviceId) ?? words.unknownService,
-        detail:
+        label:
           row.takingsPerHourCents === null
-            ? count
-            : words.services.line(count, money(row.takingsPerHourCents, lang)),
-        value: money(row.takingsCents, lang),
-        share: shares.at(i) ?? 0,
-        drill: screen.drillsToSeats
-          ? {
-              analyticsFigure: AnalyticsFigure.Takings,
-              serviceId: row.serviceId,
-            }
-          : null,
-        testId: `analytics-service-${row.serviceId}`,
+            ? name
+            : words.services.barLabel(
+                name,
+                money(row.takingsPerHourCents, lang),
+              ),
+        parts: [
+          {
+            part: BAR_PART_HOOKS[AnalyticsBarPart.Worked],
+            value: row.takingsCents,
+          },
+        ],
       };
     }),
-    empty: report.reportServices.length === 0 ? words.services.none : null,
+    valueText: rows.map((row) =>
+      words.services.barValue(
+        money(row.takingsCents, lang),
+        words.services.count(row.workedSeatCount),
+      ),
+    ),
+    drills: rows.map((row) =>
+      screen.drillsToSeats
+        ? { analyticsFigure: AnalyticsFigure.Takings, serviceId: row.serviceId }
+        : null,
+    ),
+    label: words.charts.services,
+    empty: rows.length === 0 ? words.services.none : null,
   };
 }
 
@@ -572,51 +780,34 @@ function clientsOf(
   };
 }
 
-function fillOf(
-  input: AnalyticsScreenInput,
-  report: AnalyticsReport,
-): AnalyticsShareGroupVm {
-  const { words } = input;
-  const lang = words.lang;
-  const weekdays = formatWeekdayLabels(lang);
-  const span = (minutes: number) => spanWords(minutes, words.spanWords);
-  return {
-    title: words.fill.title,
-    rows: report.reportWeekdayFill.map((row) => ({
-      id: String(row.weekday),
-      title: weekdays[row.weekday - 1] ?? String(row.weekday),
-      detail: words.fill.line(
-        span(row.filledMinutes),
-        span(row.capacityMinutes),
-      ),
-      value: row.fillRate === null ? '—' : formatPercent(row.fillRate, lang),
-      share: row.fillRate ?? 0,
-      drill: null,
-      testId: `analytics-fill-${row.weekday}`,
-    })),
-    empty: report.reportWeekdayFill.length === 0 ? words.fill.none : null,
-  };
-}
-
+/** Where bookings come from: one stacked bar of the three origins, and a row per origin with its swatch. */
 function originsOf(
   input: AnalyticsScreenInput,
   report: AnalyticsReport,
-): AnalyticsShareGroupVm {
+): AnalyticsOriginsVm {
   const { words } = input;
   const lang = words.lang;
   const shares = StaffAnalyticsSystem.originSharesOf(report);
   return {
     title: words.origins.title,
+    bars: [
+      {
+        // The section's header names the bar; no word of its own.
+        label: '',
+        parts: report.reportOrigins.map((row) => ({
+          part: ORIGIN_PART_HOOKS[row.bookingOrigin],
+          value: row.visitCount,
+        })),
+      },
+    ],
+    label: words.charts.origins,
     rows: report.reportOrigins.map((row, i) => ({
-      id: row.bookingOrigin,
+      part: ORIGIN_PART_HOOKS[row.bookingOrigin],
       title: words.origins.origin[row.bookingOrigin],
       detail: words.origins.visits(row.visitCount),
       value: formatPercent(shares.at(i) ?? 0, lang),
-      share: shares.at(i) ?? 0,
-      drill: null,
       testId: `analytics-origin-${row.bookingOrigin.toLowerCase()}`,
     })),
-    empty: null,
   };
 }
 

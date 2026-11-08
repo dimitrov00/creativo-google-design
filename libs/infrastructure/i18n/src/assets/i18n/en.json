@@ -2697,6 +2697,8 @@
     "services": {
       "title": "Services",
       "line": "{{count}} · {{perHour}} an hour",
+      "barLabel": "{{name}} · {{perHour}} an hour",
+      "barValue": "{{value}} · {{count}}",
       "count": {
         "one": "{{count}} time",
         "other": "{{count}} times"
@@ -2707,10 +2709,21 @@
       "title": "Clients",
       "ofBase": "{{count}} of {{base}}"
     },
-    "fill": {
-      "title": "Fill by weekday",
-      "line": "{{filled}} of {{capacity}}",
-      "none": "No past working days yet."
+    "charts": {
+      "line": "Takings by day",
+      "average": "average {{value}}",
+      "comparison": "previous period",
+      "timeBars": "Working time by day",
+      "ahead": "Open hours by day",
+      "services": "Services by takings",
+      "origins": "Bookings by origin"
+    },
+    "busy": {
+      "title": "When it is busy",
+      "label": "Busy time by weekday and hour",
+      "at": "{{day}} at {{hour}}",
+      "sentence": "Busiest: {{busiest}} · quietest: {{emptiest}}",
+      "pending": "The busiest hour shows after 7 working days."
     },
     "origins": {
       "title": "Where bookings come from",
@@ -2731,7 +2744,7 @@
       "REBOOKED": "Rebooked",
       "NO_SHOWS": "No-shows",
       "LATE_CANCELLATIONS": "Late cancellations",
-      "FILL": "Fill",
+      "BUSY": "Busy time",
       "ORIGINS": "Bookings"
     },
     "info": {
@@ -2745,7 +2758,7 @@
       "REBOOKED": "Of the visits with a worked service: how many booked their next visit from it (“Book again”) by the end of the next day. A visit booked later or on its own does not count.",
       "NO_SHOWS": "The services the client did not come to. The rate is of worked and no-show services.",
       "LATE_CANCELLATIONS": "Client cancellations after the cancellation deadline.",
-      "FILL": "Busy time — worked, no-shows, unmarked — of the working time without breaks, past days only.",
+      "BUSY": "The worked share of the working time, by weekday and hour; the busiest and quietest hours show after 7 working days.",
       "ORIGINS": "Visits with a worked service by who booked them: the client online, or the shop."
     },
     "drill": {

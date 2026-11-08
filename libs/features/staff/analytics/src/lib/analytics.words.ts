@@ -91,16 +91,44 @@ export interface AnalyticsWords {
     readonly title: string;
     readonly line: (count: string, perHour: string) => string;
     readonly count: (count: number) => string;
+    /** «Подстригване · 42,00 € на час» — a ranked bar's word. */
+    readonly barLabel: (name: string, perHour: string) => string;
+    /** «28,00 € · 1 път» — a ranked bar's figure. */
+    readonly barValue: (value: string, count: string) => string;
     readonly none: string;
   };
   readonly clients: {
     readonly title: string;
     readonly ofBase: (count: string, base: string) => string;
   };
-  readonly fill: {
+  /** The charts' accessible names and legend words (staff-analytics-v2 «Chart kit»). */
+  readonly charts: {
+    /** «Оборот по дни» — the takings line. */
+    readonly line: string;
+    /** «средно 14,00 €» — the dashed rule. */
+    readonly average: (value: string) => string;
+    /** «предходен период» — the grey line. */
+    readonly comparison: string;
+    /** «Работното време по дни» — the stacked bars. */
+    readonly timeBars: string;
+    /** «Свободни часове по дни» — the open-hours card's bars. */
+    readonly ahead: string;
+    /** «Услуги по оборот» — the ranked bars. */
+    readonly services: string;
+    /** «Записвания по произход» — the origins bar. */
+    readonly origins: string;
+  };
+  /** When the chair is busy — the heatmap and its sentence. */
+  readonly busy: {
     readonly title: string;
-    readonly line: (filled: string, capacity: string) => string;
-    readonly none: string;
+    /** «Заетост по ден и час» — the heatmap's accessible name. */
+    readonly label: string;
+    /** «вт в 10:00». */
+    readonly at: (day: string, hour: string) => string;
+    /** «Най-натоварено: вт в 10:00 · най-спокойно: пн в 17:00». */
+    readonly sentence: (busiest: string, emptiest: string) => string;
+    /** Under seven rostered days there is no verdict yet. */
+    readonly pending: string;
   };
   readonly origins: {
     readonly title: string;
@@ -226,16 +254,30 @@ export function analyticsWordsOf(
       title: t('services.title'),
       line: (count, perHour) => t('services.line', { count, perHour }),
       count: counted('services.count'),
+      barLabel: (name, perHour) => t('services.barLabel', { name, perHour }),
+      barValue: (value, count) => t('services.barValue', { value, count }),
       none: t('services.none'),
     },
     clients: {
       title: t('clients.title'),
       ofBase: (count, base) => t('clients.ofBase', { count, base }),
     },
-    fill: {
-      title: t('fill.title'),
-      line: (filled, capacity) => t('fill.line', { filled, capacity }),
-      none: t('fill.none'),
+    charts: {
+      line: t('charts.line'),
+      average: (value) => t('charts.average', { value }),
+      comparison: t('charts.comparison'),
+      timeBars: t('charts.timeBars'),
+      ahead: t('charts.ahead'),
+      services: t('charts.services'),
+      origins: t('charts.origins'),
+    },
+    busy: {
+      title: t('busy.title'),
+      label: t('busy.label'),
+      at: (day, hour) => t('busy.at', { day, hour }),
+      sentence: (busiest, emptiest) =>
+        t('busy.sentence', { busiest, emptiest }),
+      pending: t('busy.pending'),
     },
     origins: {
       title: t('origins.title'),

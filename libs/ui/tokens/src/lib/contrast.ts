@@ -60,3 +60,39 @@ export function contrastRatio(a: Srgb, b: Srgb): number {
   ) as [number, number];
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+/** An OKLab colour: lightness 0–1, and the two opponent axes. */
+export type Oklab = readonly [lightness: number, a: number, b: number];
+
+function linearSrgb(channel: number): number {
+  const c = channel / 255;
+  // The sRGB transfer knee itself (0.04045): OKLab is defined over it.
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+/**
+ * sRGB → OKLab (Björn Ottosson, 2020): a perceptual space in which the
+ * Euclidean distance between two colours tracks how different they LOOK,
+ * with neither lightness nor hue dominating. The chart palette pins the
+ * distance between adjacent parts in it.
+ */
+export function oklab([red, green, blue]: Srgb): Oklab {
+  const r = linearSrgb(red);
+  const g = linearSrgb(green);
+  const b = linearSrgb(blue);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** The Euclidean distance between two colours in OKLab, × 100 (so 8 is a readable step). */
+export function oklabDistance(a: Srgb, b: Srgb): number {
+  const [la, aa, ba] = oklab(a);
+  const [lb, ab, bb] = oklab(b);
+  return 100 * Math.hypot(la - lb, aa - ab, ba - bb);
+}

@@ -1,0 +1,172 @@
+import { Component, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { describe, expect, it } from 'vitest';
+import { UiLineChart, type UiChartLinePoint } from './line-chart';
+
+const WEEK: readonly UiChartLinePoint[] = [
+  { label: 'пн', value: 100, comparison: 80 },
+  { label: 'вт', value: 200, comparison: null },
+  { label: 'ср', value: 150, comparison: 120 },
+  { label: 'чт', value: 50, comparison: 60 },
+];
+
+@Component({
+  imports: [UiLineChart],
+  template: `
+    <ui-line-chart
+      [uiPoints]="points()"
+      [uiAverage]="average()"
+      [uiValueText]="valueText()"
+      [uiAverageText]="averageText()"
+      uiLabel="Оборот по дни, най-висок вторник"
+      data-testid="chart"
+    />
+  `,
+})
+class Host {
+  readonly points = signal<readonly UiChartLinePoint[]>(WEEK);
+  readonly average = signal<number | null>(125);
+  readonly valueText = signal<readonly string[]>([
+    '100 €',
+    '200 €',
+    '150 €',
+    '50 €',
+  ]);
+  readonly averageText = signal<string | null>('ср. 125 €');
+}
+
+function render(setup?: (host: Host) => void) {
+  TestBed.configureTestingModule({
+    imports: [Host],
+    errorOnUnknownElements: true,
+    errorOnUnknownProperties: true,
+  });
+  const fixture = TestBed.createComponent(Host);
+  setup?.(fixture.componentInstance);
+  fixture.detectChanges();
+  const chart = fixture.nativeElement.querySelector(
+    '[data-testid="chart"]',
+  ) as HTMLElement;
+  const one = (selector: string) => chart.querySelector(selector);
+  const all = (selector: string) =>
+    Array.from(chart.querySelectorAll(selector));
+  return { fixture, host: fixture.componentInstance, chart, one, all };
+}
+
+describe('UiLineChart', () => {
+  it('is a named image over a 5 : 2 box, with a hidden table of every point', () => {
+    const { one, all } = render();
+    const svg = one('svg');
+    expect(svg?.getAttribute('role')).toBe('img');
+    expect(svg?.getAttribute('aria-label')).toBe(
+      'Оборот по дни, най-висок вторник',
+    );
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 320 128');
+    const table = one('table');
+    expect(table?.hasAttribute('data-visually-hidden')).toBe(true);
+    expect(table?.querySelector('caption')?.textContent?.trim()).toBe(
+      'Оборот по дни, най-висок вторник',
+    );
+    expect(all('tbody th').map((th) => th.textContent)).toEqual([
+      'пн',
+      'вт',
+      'ср',
+      'чт',
+    ]);
+    expect(all('tbody td').map((td) => td.textContent)).toEqual([
+      '100 €',
+      '200 €',
+      '150 €',
+      '50 €',
+    ]);
+  });
+
+  it('draws the accent line through evenly spaced points on a zero-anchored scale', () => {
+    const { one } = render();
+    // Plot: x from 6 to 320 − 56 − 6 = 258 in three steps of 84; y: 0 → 122, 200 (the top) → 6.
+    expect(one('.ui-line-chart__path')?.getAttribute('d')).toBe(
+      'M6 64 L90 6 L174 35 L258 93',
+    );
+  });
+
+  it('draws the comparison in the 32 % grey hook, breaking at a null', () => {
+    const { one } = render();
+    const comparison = one('.ui-line-chart__comparison');
+    expect(comparison?.getAttribute('data-part')).toBe('comparison');
+    expect(comparison?.getAttribute('d')).toBe('M6 75.6 M174 52.4 L258 87.2');
+  });
+
+  it('rules the average across the plot, dashed, and labels the last value and the average at the right edge', () => {
+    const { one, all } = render();
+    const average = one('.ui-line-chart__average');
+    expect(average?.getAttribute('x1')).toBe('6');
+    expect(average?.getAttribute('x2')).toBe('258');
+    expect(average?.getAttribute('y1')).toBe('49.5');
+    const labels = all('.ui-line-chart__edge-label');
+    expect(labels.map((l) => l.textContent?.trim())).toEqual([
+      '50 €',
+      'ср. 125 €',
+    ]);
+    expect(labels.map((l) => l.getAttribute('x'))).toEqual(['270', '270']);
+    expect(labels.map((l) => l.getAttribute('y'))).toEqual(['97', '53.5']);
+  });
+
+  it('keeps the two edge labels a caption line apart', () => {
+    const { all } = render((host) => host.average.set(55));
+    const [value, average] = all('.ui-line-chart__edge-label');
+    expect(value?.getAttribute('y')).toBe('97');
+    // 55 → y 90.1, its label at 94.1: within 14 of 97 and above it, pushed up to 83.
+    expect(average?.getAttribute('y')).toBe('83');
+  });
+
+  it('marks the first and last points in a ringed disc, and takes no gutter without labels', () => {
+    const { all, one, host, fixture } = render();
+    const markers = all('.ui-line-chart__marker');
+    expect(markers.map((m) => m.getAttribute('cx'))).toEqual(['6', '258']);
+    expect(markers.map((m) => m.getAttribute('r'))).toEqual(['4', '4']);
+    host.valueText.set([]);
+    host.averageText.set(null);
+    fixture.detectChanges();
+    expect(all('.ui-line-chart__edge-label')).toEqual([]);
+    // The old path is still leaving; the new one spans the whole width.
+    expect(
+      one('.ui-line-chart__path:not([data-leave])')?.getAttribute('d'),
+    ).toBe('M6 64 L108.67 6 L211.33 35 L314 93');
+  });
+
+  it('cross-fades a changed path after the first frame and drops the old one when its fade ends', async () => {
+    const { all, host, fixture, chart } = render();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(chart.hasAttribute('data-settled')).toBe(true);
+    host.points.set(WEEK.map((p) => ({ ...p, value: p.value + 10 })));
+    fixture.detectChanges();
+    const paths = all('.ui-line-chart__path');
+    expect(paths).toHaveLength(2);
+    expect(paths[0]?.hasAttribute('data-leave')).toBe(true);
+    expect(paths[1]?.hasAttribute('data-enter')).toBe(true);
+    paths[0]?.dispatchEvent(new Event('animationend', { bubbles: true }));
+    fixture.detectChanges();
+    expect(all('.ui-line-chart__path')).toHaveLength(1);
+    expect(all('.ui-line-chart__path')[0]?.hasAttribute('data-leave')).toBe(
+      false,
+    );
+  });
+
+  it('draws one marker and no table rows for a single point, and nothing for none', () => {
+    const { all, one, host, fixture } = render((h) => {
+      h.points.set([{ label: 'пн', value: 10, comparison: null }]);
+      h.valueText.set(['10 €']);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    expect(all('.ui-line-chart__marker')).toHaveLength(1);
+    expect(one('.ui-line-chart__path')?.getAttribute('d')).toBe('M6 6');
+    host.points.set([]);
+    host.valueText.set([]);
+    fixture.detectChanges();
+    // Only the old path remains, leaving; nothing new is drawn.
+    expect(one('.ui-line-chart__path:not([data-leave])')).toBeNull();
+    expect(one('table')).toBeNull();
+  });
+});

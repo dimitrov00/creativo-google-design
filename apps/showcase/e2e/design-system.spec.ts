@@ -21,6 +21,7 @@ const CONTROL_ROUTES = [
   'controls/toolbar',
   'controls/sheet',
   'controls/card',
+  'controls/charts',
 ] as const;
 
 const THEMES = ['light', 'dark'] as const;

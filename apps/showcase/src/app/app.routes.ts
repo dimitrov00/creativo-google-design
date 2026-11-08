@@ -232,6 +232,11 @@ export const appRoutes: Route[] = [
       import('./pages/controls/gauge/gauge.page').then((m) => m.GaugePage),
   },
   {
+    path: 'controls/charts',
+    loadComponent: () =>
+      import('./pages/controls/charts/charts.page').then((m) => m.ChartsPage),
+  },
+  {
     path: 'controls/streak-track',
     loadComponent: () =>
       import('./pages/controls/streak-track/streak-track.page').then(

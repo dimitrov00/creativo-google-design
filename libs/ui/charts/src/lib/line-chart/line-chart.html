@@ -1,0 +1,62 @@
+<svg
+  #drawing
+  class="ui-line-chart__drawing"
+  role="img"
+  [attr.aria-label]="uiLabel()"
+  [attr.viewBox]="viewBox()"
+>
+  @if (comparisonPath()) {
+  <path
+    class="ui-line-chart__comparison"
+    [attr.data-part]="comparisonPart"
+    [attr.d]="comparisonPath()"
+  />
+  } @if (averageY() !== null) {
+  <line
+    class="ui-line-chart__average"
+    x1="6"
+    [attr.x2]="plotEnd()"
+    [attr.y1]="averageY()"
+    [attr.y2]="averageY()"
+  />
+  } @for (node of linePaths(); track node.key) { @if (node.d) {
+  <path
+    class="ui-line-chart__path"
+    [attr.d]="node.d"
+    [attr.data-leave]="node.leaving ? '' : null"
+    [attr.data-enter]="!node.leaving && linePaths().length > 1 ? '' : null"
+    (animationend)="dropLeaving()"
+  />
+  } } @for (marker of markers(); track $index) {
+  <circle
+    class="ui-line-chart__marker"
+    r="4"
+    [attr.cx]="marker.x"
+    [attr.cy]="marker.y"
+  />
+  } @for (label of edgeLabels(); track $index) {
+  <text
+    class="ui-line-chart__edge-label"
+    aria-hidden="true"
+    [attr.x]="label.x"
+    [attr.y]="label.y"
+  >
+    {{ label.text }}
+  </text>
+  }
+</svg>
+@if (rows().length > 0) {
+<table uiVisuallyHidden class="ui-line-chart__table">
+  <caption>
+    {{ uiLabel() }}
+  </caption>
+  <tbody>
+    @for (row of rows(); track $index) {
+    <tr>
+      <th scope="row">{{ row.label }}</th>
+      <td>{{ row.value }}</td>
+    </tr>
+    }
+  </tbody>
+</table>
+}

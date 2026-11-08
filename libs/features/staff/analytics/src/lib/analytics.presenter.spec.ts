@@ -4,7 +4,12 @@ import {
   AnalyticsPeriod,
   type AnalyticsReport,
 } from '@core/components';
-import { MinuteCount, type PriceCents, UtcEpochMs } from '@core/primitives';
+import {
+  LocalDate,
+  MinuteCount,
+  type PriceCents,
+  UtcEpochMs,
+} from '@core/primitives';
 import { StaffAnalyticsSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -134,18 +139,132 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     });
   });
 
-  it('words the services with their share bars, each opening its seats', () => {
-    expect(body.services.rows).toEqual([
-      expect.objectContaining({
-        title: 'Подстригване',
-        detail: '1 път · 42,00\u00a0€ на час',
-        value: nbsp('28,00 €'),
-        share: 2800 / 4550,
-        drill: { analyticsFigure: AnalyticsFigure.Takings, serviceId: HAIRCUT },
-      }),
-      expect.objectContaining({ title: 'Брада', value: nbsp('17,50 €') }),
+  it('words the services as ranked bars — the name and the takings an hour, the takings and the count — each opening its seats', () => {
+    expect(body.services.title).toBe('Услуги');
+    expect(body.services.label).toBe('Услуги по оборот');
+    expect(body.services.bars[0]).toEqual({
+      label: 'Подстригване · 42,00\u00a0€ на час',
+      parts: [{ part: 'worked', value: 2800 }],
+    });
+    expect(body.services.valueText).toEqual([
+      `${nbsp('28,00 €')} · 1 път`,
+      `${nbsp('17,50 €')} · 1 път`,
     ]);
+    expect(body.services.bars[1]?.label.startsWith('Брада')).toBe(true);
+    expect(body.services.drills[0]).toEqual({
+      analyticsFigure: AnalyticsFigure.Takings,
+      serviceId: HAIRCUT,
+    });
     expect(body.services.empty).toBeNull();
+  });
+
+  it('draws the takings line: a point per day, the comparison aligned by position, the average rule', () => {
+    const series = body.series;
+    expect(series.label).toBe('Оборот по дни');
+    expect(series.points).toHaveLength(30);
+    // A month numbers every seventh day along the axis.
+    expect(series.points.map((point) => point.label).slice(0, 8)).toEqual([
+      '1',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '8',
+    ]);
+    expect(series.points[13]).toEqual({
+      label: '',
+      value: 2800,
+      comparison: 3500,
+    });
+    expect(series.valueText[13]).toBe(nbsp('28,00 €'));
+    expect(series.average).toBe(Math.round(4550 / 30));
+    expect(series.averageText).toBe(`средно ${nbsp('1,52 €')}`);
+    expect(series.comparisonLegend).toBe('предходен период');
+  });
+
+  it('draws a stacked bar per day of the six parts, in the legend’s order, its figure the parts together', () => {
+    const bars = body.time.bars;
+    expect(bars.label).toBe('Работното време по дни');
+    expect(bars.bars).toHaveLength(30);
+    expect(bars.bars[13]?.parts).toEqual([
+      { part: 'worked', value: 270 },
+      { part: 'no-show', value: 30 },
+      { part: 'unmarked', value: 0 },
+      { part: 'blocked', value: 60 },
+      { part: 'unsold', value: 100 },
+      { part: 'other', value: 10 },
+    ]);
+    expect(bars.valueText[13]).toBe('7 ч 50 мин');
+    expect(bars.valueText[0]).toBe('0 мин');
+  });
+
+  it('draws when the chair is busy: the rostered weekdays by the rostered hours, worked over rostered', () => {
+    const busy = body.busy;
+    expect(busy?.title).toBe('Кога е заето');
+    expect(busy?.label).toBe('Заетост по ден и час');
+    expect(busy?.rows).toEqual(['пн', 'вт']);
+    expect(busy?.columns).toEqual([
+      '9',
+      '10',
+      '11',
+      '12',
+      '13',
+      '14',
+      '15',
+      '16',
+      '17',
+    ]);
+    expect(busy?.cells).toHaveLength(18);
+    expect(busy?.cells[0]).toEqual({ row: 0, column: 0, value: 30, max: 60 });
+    expect(busy?.cells[17]).toEqual({ row: 1, column: 8, value: 0, max: 60 });
+    // Two rostered days: under the base of seven, no verdict yet.
+    expect(busy?.sentence).toBe(
+      'Най-натовареният час се показва след 7 работни дни.',
+    );
+  });
+
+  it('names the busiest and the emptiest hour once the report has them', () => {
+    const busy = bodyOf(
+      inputOf('bg', {
+        report: deepFreeze({
+          ...analyticsReportFixture(),
+          reportBusiestWeekday: 2,
+          reportBusiestHour: 10,
+          reportEmptiestWeekday: 1,
+          reportEmptiestHour: 17,
+        }),
+      }),
+    ).busy;
+    expect(busy?.sentence).toBe(
+      'Най-натоварено: вт в 10:00 · най-спокойно: пн в 17:00',
+    );
+  });
+
+  it('draws the open hours as seven bars from today, the emptiest day in the accent', () => {
+    const bars = body.open.bars;
+    expect(bars.label).toBe('Свободни часове по дни');
+    expect(bars.bars.map((bar) => bar.label)).toEqual([
+      'пн',
+      'вт',
+      'ср',
+      'чт',
+      'пт',
+      'сб',
+      'нд',
+    ]);
+    expect(bars.bars[1]?.parts).toEqual([{ part: 'worked', value: 120 }]);
+    expect(bars.highlightIndex).toBe(1);
+    expect(bars.valueText).toEqual([
+      '0 мин',
+      '2 ч',
+      '1 ч 30 мин',
+      '1 ч',
+      '1 ч',
+      '30 мин',
+      '30 мин',
+    ]);
   });
 
   it('words the clients’ figures as counts under the base of 20, with the note', () => {
@@ -155,9 +274,9 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       ['Късни откази', '1'],
     ]);
     expect(body.clients.note).toBe('Процентите се показват от 20 нагоре.');
-    // The shop's sections are the shop's alone.
-    expect(body.fill).toBeNull();
+    // The origins are the shop's alone; the heatmap is everyone's.
     expect(body.origins).toBeNull();
+    expect(body.busy).not.toBeNull();
   });
 
   it('shows a rate from its base of 20', () => {
@@ -217,7 +336,18 @@ describe('analyticsVm — the same month in English', () => {
       'Still ahead: 1 h 30 min booked · 50 min open',
     );
     expect(body.open.detail).toBe('Most on Tuesday, 09/29');
-    expect(body.services.rows[0]?.detail).toBe('1 time · €42.00 an hour');
+    expect(body.services.bars[0]?.label).toBe('Подстригване · €42.00 an hour');
+    expect(body.services.valueText[0]).toBe('€28.00 · 1 time');
+    expect(body.series.label).toBe('Takings by day');
+    expect(body.series.averageText).toBe('average €1.52');
+    expect(body.series.comparisonLegend).toBe('previous period');
+    expect(body.time.bars.label).toBe('Working time by day');
+    expect(body.busy?.title).toBe('When it is busy');
+    expect(body.busy?.rows).toEqual(['Mon', 'Tue']);
+    expect(body.busy?.sentence).toBe(
+      'The busiest hour shows after 7 working days.',
+    );
+    expect(body.open.bars.label).toBe('Open hours by day');
     expect(body.clients.rows.map((row) => [row.label, row.value])).toEqual([
       ['Rebooked', '1 of 2'],
       ['No-shows', '1 of 3'],
@@ -247,7 +377,7 @@ describe('analyticsVm — the admin and the shop', () => {
     expect(vm.scope?.label).toBe('Чии данни');
   });
 
-  it('words the shop’s fill by weekday and booking origins; its services open nothing', () => {
+  it('words the shop’s booking origins as one stacked bar with its rows; its services open nothing', () => {
     const body = bodyOf(
       inputOf('bg', {
         report: shopReportFixture(),
@@ -255,23 +385,31 @@ describe('analyticsVm — the admin and the shop', () => {
         scheduleBarberId: null,
       }),
     );
-    expect(body.fill?.title).toBe('Запълване по дни');
-    expect(body.fill?.rows).toEqual([
-      expect.objectContaining({
-        title: 'пн',
-        detail: '4 ч 30 мин от 7 ч 30 мин',
-        value: '60%',
-        share: 0.6,
-      }),
+    expect(body.origins?.title).toBe('Откъде идват записванията');
+    expect(body.origins?.label).toBe('Записвания по произход');
+    expect(body.origins?.bars).toEqual([
+      {
+        label: '',
+        parts: [
+          { part: 'online', value: 1 },
+          { part: 'staff', value: 1 },
+          { part: 'unknown', value: 0 },
+        ],
+      },
     ]);
     expect(
-      body.origins?.rows.map((row) => [row.title, row.detail, row.value]),
+      body.origins?.rows.map((row) => [
+        row.part,
+        row.title,
+        row.detail,
+        row.value,
+      ]),
     ).toEqual([
-      ['Онлайн', '1 посещение', '50%'],
-      ['От салона', '1 посещение', '50%'],
-      ['Неизвестно', '0 посещения', '0%'],
+      ['online', 'Онлайн', '1 посещение', '50%'],
+      ['staff', 'От салона', '1 посещение', '50%'],
+      ['unknown', 'Неизвестно', '0 посещения', '0%'],
     ]);
-    expect(body.services.rows.every((row) => row.drill === null)).toBe(true);
+    expect(body.services.drills.every((drill) => drill === null)).toBe(true);
     // The schedule opens on everyone.
     expect(body.open.link?.barber).toBeNull();
   });
@@ -429,6 +567,52 @@ describe('analyticsVm — the screen states', () => {
     );
     expect(vm.period.label).toBe('28.09 – 4.10');
     expect(vm.period.selectedSpan).toBe('WEEK');
+  });
+
+  it('a week’s charts name their days along the axis', () => {
+    const week = AnalyticsPeriod.weekOf(FIXTURE_TODAY);
+    const monday = localDate('2026-09-28');
+    const report = analyticsReportFixture();
+    const body = bodyOf(
+      inputOf('bg', {
+        period: week,
+        report: deepFreeze({
+          ...report,
+          reportAnalyticsSpan: week.analyticsSpan,
+          reportFromLocalDate: week.fromLocalDate,
+          reportToLocalDate: week.toLocalDate,
+          reportSeries: report.reportAheadDays.map((day) => ({
+            localDate: day.localDate,
+            takingsCents: cents(day.openMinutes * 10),
+            comparisonTakingsCents: null,
+          })),
+          reportTimeSeries: report.reportTimeSeries
+            .slice(0, 7)
+            .map((point, i) => ({
+              ...point,
+              localDate: LocalDate.addDays(monday, i),
+            })),
+        }),
+      }),
+    );
+    expect(body.series.points.map((point) => point.label)).toEqual([
+      'пн',
+      'вт',
+      'ср',
+      'чт',
+      'пт',
+      'сб',
+      'нд',
+    ]);
+    expect(body.time.bars.bars.map((bar) => bar.label)).toEqual([
+      'пн',
+      'вт',
+      'ср',
+      'чт',
+      'пт',
+      'сб',
+      'нд',
+    ]);
   });
 });
 

@@ -8,6 +8,8 @@ import {
   AppointmentId,
   AttendanceState,
   BarberId,
+  type HourOfDay,
+  LocalDate,
   MinuteCount,
   type PriceCents,
   Result,
@@ -35,6 +37,85 @@ const beard = ServiceId.of('beard');
 
 const m = (raw: number): MinuteCount => raw as MinuteCount;
 const cents = (raw: number): PriceCents => raw as PriceCents;
+
+/** September 2026, day by day (the MONTH span's grain). */
+const SEPTEMBER_DAYS = LocalDate.range(
+  localDate('2026-09-01'),
+  localDate('2026-09-30'),
+);
+
+/**
+ * The takings line: 28,00 € on the 14th and 17,50 € on the 15th (the two
+ * worked seats), nothing else; August's takings at the same position — the
+ * hero's 35,00 € on the 14th's counterpart — so the points sum to the
+ * report's takings and the comparison line has a value at every position
+ * (August is the longer month).
+ */
+function seriesPoints(): readonly AnalyticsReport.SeriesPoint[] {
+  return SEPTEMBER_DAYS.map((day, index) => ({
+    localDate: day,
+    takingsCents: cents(
+      day === '2026-09-14' ? 2800 : day === '2026-09-15' ? 1750 : 0,
+    ),
+    comparisonTakingsCents: cents(index === 13 ? 3500 : 0),
+  }));
+}
+
+/**
+ * The time bars, day by day: the two worked days carry the bar's parts
+ * (worked 270 + 210, no-show 30 + 30, blocked 60 + 60, unsold 100 + 100,
+ * other 10 + 10 — the report's `reportBar…` totals), every other day is
+ * empty.
+ */
+function timePoints(): readonly AnalyticsReport.TimePoint[] {
+  return SEPTEMBER_DAYS.map((day) => {
+    const worked = day === '2026-09-14' ? 270 : day === '2026-09-15' ? 210 : 0;
+    const on = worked > 0;
+    return {
+      localDate: day,
+      workedMinutes: m(worked),
+      noShowMinutes: m(on ? 30 : 0),
+      unmarkedMinutes: m(0),
+      blockedMinutes: m(on ? 60 : 0),
+      unsoldMinutes: m(on ? 100 : 0),
+      otherMinutes: m(on ? 10 : 0),
+    };
+  });
+}
+
+/**
+ * The heatmap: the two rostered days, 09:00–18:00 each (9 cells of 60
+ * rostered minutes — 1080 in all, the report's rostered time); Monday's
+ * 270 worked minutes as 30 per hour, Tuesday's 210 as 30 per hour from 9 to
+ * 15 — 480 in all, the report's worked time. Two rostered days: under the
+ * base of 7, so the report names no busiest or emptiest hour.
+ */
+function hourCells(): readonly AnalyticsReport.HourCell[] {
+  const cells: AnalyticsReport.HourCell[] = [];
+  for (const [weekday, workedUntil] of [
+    [Weekday.Mon, 18],
+    [Weekday.Tue, 16],
+  ] as const) {
+    for (let hour = 9; hour < 18; hour++) {
+      cells.push({
+        weekday,
+        hour: hour as HourOfDay,
+        workedMinutes: m(hour < workedUntil ? 30 : 0),
+        rosteredMinutes: m(60),
+      });
+    }
+  }
+  return cells;
+}
+
+/** The seven days from `FIXTURE_TODAY` (28 September): 390 open minutes, the most on the 29th. */
+function aheadDays(): readonly AnalyticsReport.AheadDay[] {
+  const open = [0, 120, 90, 60, 60, 30, 30];
+  return open.map((minutes, index) => ({
+    localDate: LocalDate.addDays(localDate('2026-09-28'), index),
+    openMinutes: m(minutes),
+  }));
+}
 
 function dayRow(
   barberId: BarberId,
@@ -134,6 +215,16 @@ export function analyticsReportFixture(
 
     reportBookableOpenMinutes: m(390),
     reportEmptiestLocalDate: localDate('2026-09-29'),
+
+    reportBusiestWeekday: null,
+    reportBusiestHour: null,
+    reportEmptiestWeekday: null,
+    reportEmptiestHour: null,
+
+    reportSeries: seriesPoints(),
+    reportTimeSeries: timePoints(),
+    reportHourGrid: hourCells(),
+    reportAheadDays: aheadDays(),
 
     reportServices: [
       {

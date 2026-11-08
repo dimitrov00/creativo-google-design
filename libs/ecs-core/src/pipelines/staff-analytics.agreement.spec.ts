@@ -348,11 +348,46 @@ describe('G5 — every drill-down’s rows add up to its figure', () => {
     }
   }
 
+  /** The charts (v2): each series' points sum to the figure they chart. */
+  function expectChartsAgree(report: AnalyticsReport): void {
+    const sum = <T>(rows: readonly T[], read: (row: T) => number): number =>
+      rows.reduce((total, row) => total + read(row), 0);
+    expect(sum(report.reportSeries, (p) => p.takingsCents)).toBe(
+      report.reportTakingsCents,
+    );
+    expect({
+      worked: sum(report.reportTimeSeries, (p) => p.workedMinutes),
+      noShow: sum(report.reportTimeSeries, (p) => p.noShowMinutes),
+      unmarked: sum(report.reportTimeSeries, (p) => p.unmarkedMinutes),
+      blocked: sum(report.reportTimeSeries, (p) => p.blockedMinutes),
+      unsold: sum(report.reportTimeSeries, (p) => p.unsoldMinutes),
+      other: sum(report.reportTimeSeries, (p) => p.otherMinutes),
+    }).toEqual({
+      worked: report.reportBarWorkedMinutes,
+      noShow: report.reportBarNoShowMinutes,
+      unmarked: report.reportBarUnmarkedMinutes,
+      blocked: report.reportBarBlockedMinutes,
+      unsold: report.reportBarUnsoldMinutes,
+      other: report.reportBarOtherMinutes,
+    });
+    // The hour grid buckets the same worked and rostered minutes the parts count.
+    expect(sum(report.reportHourGrid, (c) => c.workedMinutes)).toBe(
+      report.reportWorkedMinutes,
+    );
+    expect(sum(report.reportHourGrid, (c) => c.rosteredMinutes)).toBe(
+      report.reportRosteredMinutes,
+    );
+    expect(sum(report.reportAheadDays, (d) => d.openMinutes)).toBe(
+      report.reportBookableOpenMinutes,
+    );
+  }
+
   it('holds for every figure of each barber’s report', async () => {
     const reports = await barberReports();
     for (const report of reports.values()) {
       expectDayRowsAgree(report);
       expectSeatRowsAgree(report);
+      expectChartsAgree(report);
     }
     // The fixture is not trivial: each figure has rows somewhere.
     const all = [...reports.values()];

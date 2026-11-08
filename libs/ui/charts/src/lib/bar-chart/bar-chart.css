@@ -1,0 +1,120 @@
+@import '../charts.css';
+
+@layer sys-components {
+  /* The chart owns no space around itself; the legend's rows follow the
+     drawing a regular rung below. */
+  .ui-bar-chart {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-regular);
+    min-inline-size: 0;
+  }
+
+  /* The viewBox is the drawing's own pixels (bar-chart.ts measures the
+     width), so the box's height follows the viewBox and the words never
+     stretch. */
+  .ui-bar-chart__drawing {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    overflow: visible;
+  }
+
+  .ui-bar-chart__bar {
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* The pointer target is the whole band or row; it paints nothing, and
+     draws the focus ring in the system's ring ink when the keyboard lands
+     on it. */
+  .ui-bar-chart__hit {
+    fill: transparent;
+    stroke: none;
+  }
+
+  .ui-bar-chart__bar:focus-visible .ui-bar-chart__hit {
+    stroke: var(--sys-color-ring);
+    stroke-width: var(--sys-stroke-emphasis);
+    rx: var(--control-radius-subtle);
+  }
+
+  /* THE DATA END — the marks of a bar are clipped together on their own
+     box, round at the end that moves and square on the baseline. */
+  .ui-bar-chart[data-orientation='vertical'] .ui-bar-chart__marks {
+    clip-path: inset(0 round 4px 4px 0 0) fill-box;
+  }
+
+  .ui-bar-chart[data-orientation='horizontal'] .ui-bar-chart__marks {
+    clip-path: inset(0 round 0 4px 4px 0) fill-box;
+  }
+
+  /* A segment's place and length along the axis come from the two
+     registered lengths bar-chart.ts sets on it; the cross-axis placement
+     is an attribute. Vertical grows UP from the baseline (`--ui-bar-base`,
+     the plot height, set on the host). */
+  .ui-bar-chart[data-orientation='vertical'] .ui-bar-chart__segment {
+    y: calc(var(--ui-bar-base) - var(--ui-bar-offset) - var(--ui-bar-size));
+    height: var(--ui-bar-size);
+  }
+
+  .ui-bar-chart[data-orientation='horizontal'] .ui-bar-chart__segment {
+    x: var(--ui-bar-offset);
+    width: var(--ui-bar-size);
+  }
+
+  /* A HIGHLIGHT: the one bar in the accent, every other in the palette's
+     lightest grey (the open-hours card's emptiest day). The hooks' own
+     paints yield. */
+  .ui-bar-chart[data-highlighting] .ui-bar-chart__segment {
+    fill: color-mix(in srgb, var(--sys-color-foreground) 48%, transparent);
+  }
+
+  .ui-bar-chart[data-highlighting]
+    .ui-bar-chart__bar[data-highlight]
+    .ui-bar-chart__segment {
+    fill: var(--sys-color-accent);
+  }
+
+  /* WORDS ARE INK: the caption role in the quiet ink under each bar
+     (centred on it) or at the row's start; a value at the row's end,
+     tabular. */
+  .ui-bar-chart__label,
+  .ui-bar-chart__value {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    fill: var(--sys-color-secondary-label);
+    pointer-events: none;
+  }
+
+  .ui-bar-chart[data-orientation='vertical'] .ui-bar-chart__label {
+    text-anchor: middle;
+  }
+
+  .ui-bar-chart[data-orientation='horizontal'] .ui-bar-chart__label {
+    text-anchor: start;
+    fill: var(--sys-color-foreground);
+  }
+
+  .ui-bar-chart__value {
+    text-anchor: end;
+  }
+
+  .ui-bar-chart__legend:empty {
+    display: none;
+  }
+
+  /* MOTION — a live change after the first frame glides a bar's length and
+     its place in the stack; the global switch (reduced-motion.css) and
+     charts.css hold it still under reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-bar-chart[data-settled] .ui-bar-chart__segment {
+      transition:
+        --ui-bar-size var(--sys-motion-duration-deliberate)
+          var(--sys-motion-ease-emphasized),
+        --ui-bar-offset var(--sys-motion-duration-deliberate)
+          var(--sys-motion-ease-emphasized),
+        fill var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+    }
+  }
+}

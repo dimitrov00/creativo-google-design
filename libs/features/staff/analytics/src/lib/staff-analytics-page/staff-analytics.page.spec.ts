@@ -154,7 +154,46 @@ describe('StaffAnalyticsPage', () => {
     );
     // A barber has no scope picker and no shop sections.
     expect(byTestId(host, 'analytics-scopes')).toBeNull();
-    expect(byTestId(host, 'analytics-fill')).toBeNull();
+    expect(byTestId(host, 'analytics-origins')).toBeNull();
+  });
+
+  it('draws the seven questions with the chart kit: the line, the day bars and their legend, the heatmap, the seven open bars, the ranked services', async () => {
+    const { host } = await render();
+    expect(
+      byTestId(host, 'analytics-series')?.querySelector('svg[role="img"]'),
+    ).not.toBeNull();
+    expect(byTestId(host, 'analytics-series-legend')?.textContent).toContain(
+      'предходен период',
+    );
+    const dayBars = byTestId(host, 'analytics-time-bars');
+    expect(dayBars?.querySelectorAll('svg .ui-bar-chart__bar').length).toBe(30);
+    expect(
+      dayBars?.querySelectorAll('[data-testid="analytics-time-bar"] li').length,
+    ).toBe(6);
+    expect(
+      byTestId(host, 'analytics-bar-worked')?.querySelector(
+        '.ui-chart-swatch[data-part="worked"]',
+      ),
+    ).not.toBeNull();
+    expect(byTestId(host, 'analytics-heatmap')).not.toBeNull();
+    expect(byTestId(host, 'analytics-busy-sentence')?.textContent).toContain(
+      'след 7 работни дни',
+    );
+    expect(
+      byTestId(host, 'analytics-ahead-bars')?.querySelectorAll(
+        'svg .ui-bar-chart__bar',
+      ).length,
+    ).toBe(7);
+    expect(
+      byTestId(host, 'analytics-ahead-bars')?.querySelector(
+        '.ui-bar-chart__bar[data-highlight]',
+      ),
+    ).not.toBeNull();
+    expect(
+      byTestId(host, 'analytics-services-bars')?.querySelectorAll(
+        'svg .ui-bar-chart__bar',
+      ).length,
+    ).toBe(2);
   });
 
   it('leads the open-hours card to the emptiest day’s agenda with free time drawn', async () => {

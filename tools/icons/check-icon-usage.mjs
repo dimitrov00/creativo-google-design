@@ -15,9 +15,9 @@
  *   - a static `uiName`/`uiIcon` or a literal in its binding that is not a
  *     key the vocabulary knows;
  *   - an <img> pointing at a logo file;
- *   - a hand-written <svg> outside INLINE_SVG_ALLOWED (the same four files
- *     the lint rule allows: a data ring, a countdown ring, a choreographed
- *     stroke, the gauge's circular arc).
+ *   - a hand-written <svg> outside INLINE_SVG_ALLOWED (the same files the
+ *     lint rule allows: a data ring, a countdown ring, a choreographed
+ *     stroke, the gauge's circular arc, the chart kit's two drawings).
  *
  * The codemod is deliberately narrow: it rewrites the shapes an icon-font
  * codebase actually has (`<span class="material-symbols-…">glyph</span>`,
@@ -92,6 +92,10 @@ export const INLINE_SVG_ALLOWED = [
   'libs/ui/patterns/src/lib/toast/toast.ts',
   'libs/ui/patterns/src/lib/reward-moment/reward-moment.ts',
   'libs/ui/patterns/src/lib/gauge/gauge.ts',
+  // The chart kit's drawings (staff-analytics-v2 «Chart kit»): hand-drawn
+  // SVG over the DS tokens, chosen by the chart-library survey.
+  'libs/ui/charts/src/lib/bar-chart/bar-chart.html',
+  'libs/ui/charts/src/lib/line-chart/line-chart.html',
 ];
 const INLINE_SVG = /<svg\b/g;
 

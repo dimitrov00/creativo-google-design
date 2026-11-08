@@ -39,6 +39,12 @@ import { pinBrowserClock, suiteDay } from './support/suite-clock';
  */
 
 /** The 1st of the suite's month at `hour` — inside the month the screen opens on. */
+/** How many days the suite's month has — a bar each. */
+function daysInSuiteMonth(): number {
+  const { year, month } = LocalDate.parts(suiteDay());
+  return LocalDate.daysInMonth(year, month);
+}
+
 function monthStartAt(hour: number): string {
   const first = LocalDate.startOfMonth(suiteDay());
   return `${first}T${String(hour).padStart(2, '0')}:00:00`;
@@ -138,10 +144,44 @@ test.describe('«Анализи» — staff analytics', () => {
     // A barber has no scope picker: the report is their own record's.
     await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
     await expect(takingsOf(page)).toHaveText(/\d/);
+
+    // THE SEVEN QUESTIONS DRAWN (staff-analytics-v2 PR 2): the takings line
+    // with its comparison legend, a stacked bar per day of the month with
+    // the six-part legend beneath, the seven open-hours bars, and a ranked
+    // bar per worked service — the two seeded ones.
+    await expect(
+      page.getByTestId('analytics-series').locator('svg[role="img"]'),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId('analytics-time-bars').locator('.ui-bar-chart__bar'),
+    ).toHaveCount(daysInSuiteMonth());
+    await expect(
+      page.getByTestId('analytics-time-bar').locator('li'),
+    ).toHaveCount(6);
+    await expect(
+      page.getByTestId('analytics-ahead-bars').locator('.ui-bar-chart__bar'),
+    ).toHaveCount(7);
+    const serviceBars = page
+      .getByTestId('analytics-services-bars')
+      .locator('.ui-bar-chart__bar');
+    await expect(serviceBars).toHaveCount(2);
+
     await expectTakingsRowsAddUp(page, [
       `${run}-cut-seat`,
       `${run}-beard-seat`,
     ]);
+    // The sheet is a native dialog: Escape closes it.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('analytics-rows')).toBeHidden();
+
+    // A service bar opens that service's seats alone, the footer its takings.
+    await serviceBars.first().click();
+    const sheet = page.getByTestId('analytics-rows');
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator('[data-testid^="analytics-seat-"]')).toHaveCount(
+      1,
+      { timeout: 20_000 },
+    );
   });
 
   test('an account holding the barber role with no link sees the not-linked state', async ({
