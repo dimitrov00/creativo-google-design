@@ -143,13 +143,13 @@ export const ANALYTICS_FIXTURE_CUSTOMERS =
 
 /* ── The shops ──────────────────────────────────────────────────────────── */
 
-const weekdays = (hours: DayHours): readonly DayHours[] => [
-  hours,
-  hours,
-  hours,
-  hours,
-  hours,
-  hours,
+const weekdays = (day: DayHours): readonly DayHours[] => [
+  day,
+  day,
+  day,
+  day,
+  day,
+  day,
   DayHours.closed(),
 ];
 
