@@ -39,8 +39,18 @@ export interface AnalyticsWords {
     readonly me: string;
     readonly barber: string;
   };
+  /** The freshness line (staff-analytics-v2 «Freshness»): how old the figures are, and the ⓘ. */
   readonly freshness: {
-    readonly asOf: (time: string) => string;
+    /** «току-що» — under a minute old, or computed on a clock ahead of this one. */
+    readonly justNow: string;
+    /** «Обновено преди 5 мин» — `age` is `relativeTime(…, 'short')`'s phrase. */
+    readonly updatedAgo: (age: string) => string;
+    /** «Обновено в 09:12» — an hour or more old, on the same shop day. */
+    readonly updatedAt: (time: string) => string;
+    /** «Обновено на 27.09, 18:40» — an earlier shop day. */
+    readonly updatedOn: (time: string) => string;
+    /** The ⓘ: «Цифрите се изчисляват при отваряне от записаните дни». */
+    readonly info: string;
     readonly refreshing: string;
     readonly failed: (time: string) => string;
     readonly failedNoCache: string;
@@ -165,7 +175,11 @@ export function analyticsWordsOf(
       barber: t('scope.barber'),
     },
     freshness: {
-      asOf: (time) => t('status.asOf', { time }),
+      justNow: t('status.justNow'),
+      updatedAgo: (age) => t('status.updatedAgo', { age }),
+      updatedAt: (time) => t('status.updatedAt', { time }),
+      updatedOn: (time) => t('status.updatedOn', { time }),
+      info: t('status.info'),
       refreshing: t('status.refreshing'),
       failed: (time) => t('status.failed', { time }),
       failedNoCache: t('status.failedNoCache'),

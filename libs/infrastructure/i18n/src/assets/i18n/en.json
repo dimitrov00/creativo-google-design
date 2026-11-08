@@ -1149,6 +1149,7 @@
         "hours": "Working hours"
       },
       "searchLabel": "Search",
+      "analyticsLabel": "Analytics",
       "searchPlaceholder": "Name, phone, email, service…",
       "searchClear": "Clear search",
       "searchScope": "Looks through upcoming and past visits.",
@@ -2643,7 +2644,11 @@
       "barber": "Barber"
     },
     "status": {
-      "asOf": "As of {{time}}",
+      "justNow": "just now",
+      "updatedAgo": "Updated {{age}}",
+      "updatedAt": "Updated at {{time}}",
+      "updatedOn": "Updated on {{time}}",
+      "info": "The figures are computed when you open the screen, from the stored days",
       "refreshing": "Updating…",
       "failed": "We could not update. Figures as of {{time}}.",
       "failedNoCache": "The analytics did not load.",

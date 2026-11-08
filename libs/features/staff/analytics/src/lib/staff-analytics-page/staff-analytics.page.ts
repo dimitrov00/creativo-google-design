@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -52,6 +53,7 @@ import { AnalyticsTimeBar } from '../analytics-time-bar/analytics-time-bar';
 import {
   type AnalyticsNames,
   analyticsDrillVm,
+  analyticsFreshnessInfoVm,
   analyticsInfoVm,
   analyticsVm,
 } from '../analytics.presenter';
@@ -62,6 +64,7 @@ import {
 } from '../analytics.vm';
 import { analyticsWordsOf } from '../analytics.words';
 import { StaffAnalyticsStore } from '../staff-analytics.store';
+import { bindAnalyticsRouteInputs } from './route-inputs';
 
 /** The ⓘ alert's one answer. */
 const INFO_CLOSE = 'close';
@@ -116,6 +119,18 @@ export class StaffAnalyticsPage {
 
   protected readonly Topics = Topics;
   protected readonly AnalyticsFigure = AnalyticsFigure;
+
+  /**
+   * `?span=`, `?from=`, `?to=` and `?barber=`, bound from the route
+   * (`withComponentInputBinding`; staff-analytics-v2, State and URL): the
+   * schedule arrives with the week of its day and, for an admin, its
+   * chair. Absent is `undefined` — this month, the shop. Each is the URL's
+   * text, parsed once by the store (`route-inputs.ts`).
+   */
+  readonly span = input<string | undefined>();
+  readonly from = input<string | undefined>();
+  readonly to = input<string | undefined>();
+  readonly barber = input<string | undefined>();
 
   /** The language the catalogue has loaded, once it has — every word is read in it. */
   private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
@@ -177,6 +192,7 @@ export class StaffAnalyticsPage {
       words,
       zone,
       today,
+      now: this.store.now(),
       period,
       analyticsLoad: this.store.analyticsLoad(),
       report: this.store.report(),
@@ -213,13 +229,15 @@ export class StaffAnalyticsPage {
   });
 
   protected readonly info = signal<AnalyticsTopic | null>(null);
+  /** The freshness line's ⓘ is open. */
+  protected readonly freshnessInfo = signal(false);
 
   protected readonly infoVm = computed(() => {
     const topic = this.info();
     const words = this.words();
-    return topic === null || words === null
-      ? null
-      : analyticsInfoVm(words, topic);
+    if (words === null) return null;
+    if (this.freshnessInfo()) return analyticsFreshnessInfoVm(words);
+    return topic === null ? null : analyticsInfoVm(words, topic);
   });
 
   protected readonly infoActions = computed<readonly UiAlertAction[]>(() => [
@@ -235,6 +253,8 @@ export class StaffAnalyticsPage {
   constructor() {
     // English, like every other page's title in this app.
     inject(Title).setTitle('Analytics · Creativo');
+    // The URL's four parameters, each read at its edge (`route-inputs.ts`).
+    bindAnalyticsRouteInputs(this, this.store);
   }
 
   protected pickSpan(id: string): void {
@@ -269,7 +289,12 @@ export class StaffAnalyticsPage {
     this.info.set(topic);
   }
 
+  protected openFreshnessInfo(): void {
+    this.freshnessInfo.set(true);
+  }
+
   protected closeInfo(): void {
     this.info.set(null);
+    this.freshnessInfo.set(false);
   }
 }

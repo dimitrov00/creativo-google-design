@@ -27,6 +27,7 @@ import {
   type AnalyticsDrillInput,
   type AnalyticsScreenInput,
   analyticsDrillVm,
+  analyticsFreshnessInfoVm,
   analyticsInfoVm,
   analyticsVm,
 } from './analytics.presenter';
@@ -43,6 +44,7 @@ function inputOf(
     words: wordsOf(lang),
     zone: FIXTURE_TIME_ZONE,
     today: FIXTURE_TODAY,
+    now: FIXTURE_NOW_UTC_MS,
     period: SEPTEMBER,
     analyticsLoad: AnalyticsLoad.Ready,
     report: deepFreeze(analyticsReportFixture()),
@@ -70,8 +72,9 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     expect(vm.title).toBe('Анализи');
     expect(vm.backLabel).toBe('Към графика');
     expect(vm.freshness).toEqual({
-      text: 'Към 09:00',
+      text: 'току-що',
       retry: false,
+      info: 'Цифрите се изчисляват при отваряне от записаните дни',
       testId: 'analytics-status',
     });
     expect(vm.period.spans.map((span) => span.label)).toEqual([
@@ -185,7 +188,10 @@ describe('analyticsVm — the same month in English', () => {
 
   it('words every section in English', () => {
     expect(vm.title).toBe('Analytics');
-    expect(vm.freshness?.text).toBe('As of 09:00 AM');
+    expect(vm.freshness?.text).toBe('just now');
+    expect(vm.freshness?.info).toBe(
+      'The figures are computed when you open the screen, from the stored days',
+    );
     expect(vm.period.spans.map((span) => span.label)).toEqual([
       'Week',
       'Month',
@@ -287,18 +293,7 @@ describe('analyticsVm — the screen states', () => {
     );
     expect(vm.placeholder).toBe(false);
     expect(vm.body).not.toBeNull();
-    expect(vm.freshness?.text).toBe('Към 09:00');
-  });
-
-  it('a report from an earlier day says the day too', () => {
-    const vm = analyticsVm(
-      inputOf('bg', {
-        report: analyticsReportFixture({
-          reportComputedAtUtcMs: UtcEpochMs.plusDays(FIXTURE_NOW_UTC_MS, -1),
-        }),
-      }),
-    );
-    expect(vm.freshness?.text).toBe('Към 27.09, 09:00');
+    expect(vm.freshness?.text).toBe('току-що');
   });
 
   it('call failed, cache shown: the figures stay, «could not update» with retry', () => {
@@ -308,6 +303,7 @@ describe('analyticsVm — the screen states', () => {
     expect(vm.freshness).toEqual({
       text: 'Не успяхме да обновим. Данните са към 09:00.',
       retry: true,
+      info: 'Цифрите се изчисляват при отваряне от записаните дни',
       testId: 'analytics-status-failed',
     });
     expect(vm.body).not.toBeNull();
@@ -433,6 +429,61 @@ describe('analyticsVm — the screen states', () => {
     );
     expect(vm.period.label).toBe('28.09 – 4.10');
     expect(vm.period.selectedSpan).toBe('WEEK');
+  });
+});
+
+describe('analyticsVm — freshness, the report’s age against now', () => {
+  /** The report computed at 09:00, read `minutes` later. */
+  const readAfter = (minutes: number, lang: 'bg' | 'en' = 'bg') =>
+    analyticsVm(
+      inputOf(lang, {
+        now: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, minutes * 60_000),
+      }),
+    ).freshness?.text;
+
+  it('under a minute — and a negative age, a server clock ahead — is «току-що»', () => {
+    expect(readAfter(0)).toBe('току-що');
+    expect(
+      analyticsVm(
+        inputOf('bg', {
+          now: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 59_999),
+        }),
+      ).freshness?.text,
+    ).toBe('току-що');
+    expect(readAfter(-5)).toBe('току-що');
+    expect(readAfter(-5, 'en')).toBe('just now');
+  });
+
+  it('under an hour is a relative phrase, in both languages', () => {
+    expect(readAfter(1)).toBe('Обновено преди 1 мин');
+    expect(readAfter(5)).toBe('Обновено преди 5 мин');
+    expect(readAfter(59)).toBe('Обновено преди 59 мин');
+    expect(readAfter(5, 'en')).toBe('Updated 5 min. ago');
+  });
+
+  it('an hour or more on the same shop day is the time', () => {
+    expect(readAfter(60)).toBe('Обновено в 09:00');
+    expect(readAfter(6 * 60)).toBe('Обновено в 09:00');
+    expect(readAfter(6 * 60, 'en')).toBe('Updated at 09:00 AM');
+  });
+
+  it('an earlier shop day is the date and the time', () => {
+    const vm = analyticsVm(
+      inputOf('bg', {
+        report: analyticsReportFixture({
+          reportComputedAtUtcMs: UtcEpochMs.plusDays(FIXTURE_NOW_UTC_MS, -1),
+        }),
+      }),
+    );
+    expect(vm.freshness?.text).toBe('Обновено на 27.09, 09:00');
+  });
+
+  it('the ⓘ names the screen and says how the figures come about', () => {
+    expect(analyticsFreshnessInfoVm(wordsOf('bg'))).toEqual({
+      title: 'Анализи',
+      message: 'Цифрите се изчисляват при отваряне от записаните дни',
+      closeLabel: 'Разбрах',
+    });
   });
 });
 

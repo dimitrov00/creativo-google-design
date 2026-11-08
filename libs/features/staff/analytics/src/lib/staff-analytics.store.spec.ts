@@ -17,6 +17,7 @@ import {
   type PriceCents,
   Result,
   UserId,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -74,10 +75,31 @@ function refusal(errorCode: string, status = 'permission-denied') {
   );
 }
 
+/** The URL's four parameters as the page's binder hands them to the store; absent is `null`. */
+type RouteText = {
+  readonly span?: string | null;
+  readonly from?: string | null;
+  readonly to?: string | null;
+  readonly barber?: string | null;
+};
+
+/** Lets the deferred URL write (`setTimeout(0)`) and the router run to rest. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    TestBed.tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  TestBed.tick();
+}
+
 function build(options: {
   readonly principal: Principal;
   readonly linkedBarberId?: BarberId | null;
   readonly cache?: ReturnType<typeof memoryAnalyticsCachePorts>;
+  /** What the URL says on arrival — silent by default, as the page's binder speaks for every parameter. */
+  readonly route?: RouteText;
+  /** The clock the store reads; pinned at `FIXTURE_NOW_UTC_MS` by default. */
+  readonly nowUtcMs?: () => UtcEpochMs;
 }) {
   const principal = signal<Principal>(options.principal);
   const linked: WritableSignal<BarberId | null> = signal(
@@ -93,7 +115,7 @@ function build(options: {
       { provide: ANALYTICS_CACHE_PORTS, useValue: cache },
       {
         provide: CLOCK_PORTS,
-        useValue: { nowUtcMs: () => FIXTURE_NOW_UTC_MS },
+        useValue: { nowUtcMs: options.nowUtcMs ?? (() => FIXTURE_NOW_UTC_MS) },
       },
       {
         provide: ShopZoneService,
@@ -120,7 +142,14 @@ function build(options: {
   });
   const store = TestBed.inject(StaffAnalyticsStore);
   TestBed.tick();
-  return { store, calls, cache, linked };
+  // The page's binder, in its first activation: every parameter spoken once.
+  const route = options.route ?? {};
+  store.applyRouteSpan(route.span ?? null);
+  store.applyRouteFrom(route.from ?? null);
+  store.applyRouteTo(route.to ?? null);
+  store.applyRouteBarber(route.barber ?? null);
+  TestBed.tick();
+  return { store, calls, cache, linked, router: TestBed.inject(Router) };
 }
 
 const barber = () => principalFixture.staff(BARBER_UID, [Role.Barber]);
@@ -372,5 +401,232 @@ describe('StaffAnalyticsStore — the admin', () => {
     expect(store.scopeBarberId()).toBeNull();
     expect(store.scopeGone()).toBe(true);
     expect(calls.calls.at(-1)?.scopeBarberId).toBeNull();
+  });
+});
+
+describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', () => {
+  it('?span=WEEK&from=<day> opens on the week that holds the day, with ONE call', () => {
+    const { store, calls } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+      route: { span: 'WEEK', from: '2026-09-30' },
+    });
+    expect(store.period()).toEqual(AnalyticsPeriod.weekOf(FIXTURE_TODAY));
+    expect(store.period()?.fromLocalDate).toBe('2026-09-28');
+    // Not this month first and the week after: nothing stands before the URL has spoken.
+    expect(calls.calls).toEqual([
+      {
+        scopeBarberId: null,
+        fromLocalDate: '2026-09-28',
+        analyticsSpan: AnalyticsSpan.Week,
+      },
+    ]);
+  });
+
+  it('?span=MONTH&from=<day> is the month that holds the day', () => {
+    const { store } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+      route: { span: 'MONTH', from: '2026-08-14' },
+    });
+    expect(store.period()?.fromLocalDate).toBe('2026-08-01');
+    expect(store.period()?.analyticsSpan).toBe(AnalyticsSpan.Month);
+  });
+
+  it.each(['YEAR', 'DAY', 'week', ''])(
+    'an unknown span (%s) reads as a month; absent from is this one',
+    (span) => {
+      const { store } = build({
+        principal: barber(),
+        linkedBarberId: IVAN,
+        route: { span },
+      });
+      expect(store.period()).toEqual(SEPTEMBER);
+    },
+  );
+
+  it.each(['2026-02-30', 'yesterday', '2027-01-05', '2020-01-01'])(
+    'a from that names no reachable day (%s) is this month',
+    (from) => {
+      const { store } = build({
+        principal: barber(),
+        linkedBarberId: IVAN,
+        route: { from },
+      });
+      expect(store.period()).toEqual(SEPTEMBER);
+    },
+  );
+
+  it('?to= is accepted and ignored in this PR', () => {
+    const { store } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+      route: { to: '2026-09-15' },
+    });
+    expect(store.period()).toEqual(SEPTEMBER);
+  });
+
+  it('a barber’s ?barber= is ignored: their own figures, no scope sent', () => {
+    const { store, calls } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+      route: { barber: 'niko' },
+    });
+    expect(store.scopeBarberId()).toBeNull();
+    expect(calls.calls).toHaveLength(1);
+    expect(calls.calls[0]?.scopeBarberId).toBeNull();
+  });
+
+  it('an admin’s ?barber= is the scope, asked for ONCE; one that names no id is the shop', () => {
+    const { store, calls } = build({
+      principal: admin(),
+      linkedBarberId: NIKO,
+      route: { barber: 'ivan' },
+    });
+    expect(store.scopeBarberId()).toBe(IVAN);
+    expect(calls.calls).toEqual([
+      {
+        scopeBarberId: IVAN,
+        fromLocalDate: SEPTEMBER.fromLocalDate,
+        analyticsSpan: AnalyticsSpan.Month,
+      },
+    ]);
+    TestBed.resetTestingModule();
+    const blank = build({ principal: admin(), route: { barber: ' ' } });
+    expect(blank.store.scopeBarberId()).toBeNull();
+  });
+
+  it('the first write-back states the period’s first day, the span and, for an admin, the scope', async () => {
+    const { store, router } = build({
+      principal: admin(),
+      linkedBarberId: NIKO,
+      route: { span: 'WEEK', from: '2026-09-30', barber: 'ivan' },
+    });
+    // Recorded at once, so the echo of the write compares equal…
+    expect(store.published()).toEqual({
+      span: AnalyticsSpan.Week,
+      from: '2026-09-28',
+      barber: IVAN,
+    });
+    // …and written on the next task, never inside the activation.
+    expect(router.url).toBe('/');
+    await settle();
+    expect(router.url).toBe('/?span=WEEK&from=2026-09-28&barber=ivan');
+  });
+
+  it('a barber’s write-back names no barber', async () => {
+    const { store, router } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+      route: { barber: 'niko' },
+    });
+    expect(store.published()).toEqual({
+      span: AnalyticsSpan.Month,
+      from: '2026-09-01',
+      barber: null,
+    });
+    await settle();
+    expect(router.url).toBe('/?span=MONTH&from=2026-09-01');
+  });
+
+  it('nothing is written before a request stands', async () => {
+    // No account yet: the request is null, the URL stays as it was.
+    const { store, router } = build({
+      principal: principalFixture.anonymous(),
+      route: { span: 'WEEK' },
+    });
+    expect(store.published()).toEqual({
+      span: undefined,
+      from: undefined,
+      barber: undefined,
+    });
+    await settle();
+    expect(router.url).toBe('/');
+  });
+
+  it('each pick replaces the URL (replaceUrl, merge) with the period’s first day', async () => {
+    const { store, router } = build({
+      principal: admin(),
+      linkedBarberId: NIKO,
+    });
+    await settle();
+    const navigate = vi.spyOn(router, 'navigate');
+    store.step('previous');
+    expect(store.published().from).toBe('2026-08-01');
+    store.pickSpan(AnalyticsSpan.Week);
+    await settle();
+    // Two picks in one task: one navigation with the final record.
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { span: 'WEEK', from: '2026-08-31', barber: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
+    expect(router.url).toBe('/?span=WEEK&from=2026-08-31');
+
+    store.pickScope(IVAN);
+    await settle();
+    expect(router.url).toBe('/?span=WEEK&from=2026-08-31&barber=ivan');
+    store.pickScope(null);
+    await settle();
+    expect(router.url).toBe('/?span=WEEK&from=2026-08-31');
+  });
+
+  it('the echo guard: what the URL says after a write is what the store published', async () => {
+    const { store, router, calls } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+    });
+    store.step('previous');
+    await settle();
+    const params = router.parseUrl(router.url).queryParams;
+    expect(params).toEqual({ span: 'MONTH', from: '2026-08-01' });
+    // The page's binder compares the URL's text against the record and
+    // hands nothing on; a route request would have cleared the pick.
+    expect(params['span']).toBe(store.published().span);
+    expect(params['from']).toBe(store.published().from);
+    expect(store.period()?.fromLocalDate).toBe('2026-08-01');
+    expect(calls.calls).toHaveLength(2);
+  });
+
+  it('a new route request outranks the pick', () => {
+    const { store } = build({ principal: barber(), linkedBarberId: IVAN });
+    store.step('previous');
+    TestBed.tick();
+    expect(store.period()?.fromLocalDate).toBe('2026-08-01');
+    store.applyRouteFrom('2026-09-15');
+    store.applyRouteSpan('WEEK');
+    TestBed.tick();
+    expect(store.period()?.fromLocalDate).toBe('2026-09-14');
+  });
+
+  it('re-reads now every 60 s while attached, and stops on destroy', () => {
+    vi.useFakeTimers();
+    try {
+      let now = FIXTURE_NOW_UTC_MS;
+      const { store } = build({
+        principal: barber(),
+        linkedBarberId: IVAN,
+        nowUtcMs: () => now,
+      });
+      expect(store.now()).toBe(FIXTURE_NOW_UTC_MS);
+      now = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 5 * 60_000);
+      vi.advanceTimersByTime(59_000);
+      expect(store.now()).toBe(FIXTURE_NOW_UTC_MS);
+      vi.advanceTimersByTime(1_000);
+      expect(store.now()).toBe(now);
+      // "Today" is read once, at the open.
+      expect(store.today()).toBe(FIXTURE_TODAY);
+
+      TestBed.resetTestingModule();
+      now = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 10 * 60_000);
+      vi.advanceTimersByTime(60_000);
+      expect(store.now()).not.toBe(now);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

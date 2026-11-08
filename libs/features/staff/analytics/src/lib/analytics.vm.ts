@@ -84,6 +84,8 @@ export type AnalyticsStatusVm = {
   readonly text: string;
   /** The request failed with figures still shown: the line carries «Опитай пак». */
   readonly retry: boolean;
+  /** The ⓘ beside the line: how the figures come about, in words. */
+  readonly info: string;
   readonly testId: string;
 };
 

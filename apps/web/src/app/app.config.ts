@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import {
   ActivatedRouteSnapshot,
+  RouteReuseStrategy,
   provideRouter,
   withComponentInputBinding,
   withViewTransitions,
@@ -118,6 +119,7 @@ import {
 } from '@creativo/infrastructure/clock';
 
 import { appRoutes } from './app.routes';
+import { ScheduleReuseStrategy } from './schedule-reuse.strategy';
 import { environment } from '../environments/environment';
 
 const emulators = environment.emulators.enabled
@@ -280,6 +282,12 @@ export const appConfig: ApplicationConfig = {
         },
       }),
     ),
+    // The schedule is parked, not destroyed, while «Анализи» is open, and
+    // re-attached on Back (staff-analytics-v2 PR 1's measurement; the
+    // strategy's own comment has the figures). Its own class as well, so the
+    // session hook can reach `drop()` through the one instance.
+    ScheduleReuseStrategy,
+    { provide: RouteReuseStrategy, useExisting: ScheduleReuseStrategy },
     // Never against the emulators: the CSP smoke's optimised build ships no
     // service worker (`web:build:csp-smoke`, OR-31), and a cached shell
     // would outlive the emulators' data anyway.

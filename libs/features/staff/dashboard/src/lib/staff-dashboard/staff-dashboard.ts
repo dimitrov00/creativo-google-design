@@ -12,6 +12,9 @@ import {
 } from './staff-day-save';
 import { StaffWeekStrip } from './week-strip';
 import { bindRouteInputs } from './route-inputs';
+import { analyticsEntryQueryOf, prefetchAnalytics } from './analytics-entry';
+import { transitionOf } from './transition-of';
+import { Router } from '@angular/router';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -373,22 +376,6 @@ const ANCHOR_FRAMES = 24;
 const ANCHOR_TOLERANCE = 2;
 
 /**
- * One lifecycle move as the call carries it — the whole party (`seatId`
- * `null`) or one seat; a reason only on a cancellation, and a CODE only
- * (D23): what the barber typed beside «Друго…» is the visit's note, written
- * once the cancel has landed (`confirmCancel`), never the call's. The
- * INTENT only: the store names each act (`operationId`, WS-4.1).
- */
-function transitionOf(
-  appointmentId: AppointmentId,
-  toBookingStatus: BookingStatus,
-  cancellationReason: CancellationReason | null,
-  seatId: SeatId | null,
-): BookingCall.TransitionIntent {
-  return { appointmentId, toBookingStatus, cancellationReason, seatId };
-}
-
-/**
  * `/staff` — the shop's day, one lane per chair.
  *
  * ### What this screen is for
@@ -697,6 +684,8 @@ export class StaffDashboard {
     inject(AUTH_SESSION_PORTS).observePrincipal(),
   );
 
+  private readonly router = inject(Router);
+
   /**
    * A barber may stretch his own time; he may not discount the shop's money
    * (design record, §3.8) — the same front-desk-and-admin list the rules
@@ -823,6 +812,7 @@ export class StaffDashboard {
     effect(() => this.openFoundWhenDrawn());
     // The URL's four parameters, each read at its edge (`route-inputs.ts`).
     bindRouteInputs(this, this.store);
+    prefetchAnalytics();
 
     // English, like every other page's title in this app (`Events ·`,
     // `Careers ·`, `Programs · Creativo Admin`). This one shipped as
@@ -1683,6 +1673,15 @@ export class StaffDashboard {
   /** The rows the schedule draws — each chair by its OWN state, so a party's cancelled seat goes with the rest. */
   private drawn<T extends DayRowVm>(rows: readonly T[]): readonly T[] {
     return ScheduleFilterSystem.shown(rows, this.statusFilter.hidden());
+  }
+
+  protected openAnalytics(): void {
+    const day = this.store.dayKey() ?? this.store.todayKey();
+    if (day === null) return;
+    const scope = this.store.scope();
+    void this.router.navigate(['/staff/analytics'], {
+      queryParams: analyticsEntryQueryOf(this.principal(), scope, day),
+    });
   }
 
   protected openFields(): void {
