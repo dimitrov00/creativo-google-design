@@ -232,7 +232,8 @@ export function upcomingAppointmentBody(
  * the chair freed and booked a week before — the visit a client repeats with
  * `/book?repeat=` (see {@link chairVisitBody}). Pick a start in the past.
  * The seat sells the chair's beard trim unless `service` names another of
- * Ivan's services.
+ * Ivan's services; the chair is Ivan's unless `barberId` names another of
+ * the catalogue's barbers.
  */
 export function workedAppointmentBody(
   id: string,
@@ -240,6 +241,7 @@ export function workedAppointmentBody(
   ownerCustomerId: CustomerId,
   startsAt: string,
   service: ChairService = DEV_CHAIR,
+  barberId: string = DEV_CHAIR.barberId,
 ): AppointmentBody {
   return chairVisitBody(
     id,
@@ -248,6 +250,6 @@ export function workedAppointmentBody(
     startsAt,
     'worked',
     service,
-    DEV_CHAIR.barberId,
+    barberId,
   );
 }
