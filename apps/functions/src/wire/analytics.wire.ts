@@ -15,18 +15,20 @@ import { idOf, payloadOf, type WireRequest } from './wire-read';
 /**
  * THE STAFF ANALYTICS WIRE (`docs/designs/staff-analytics-v2.md`, The
  * callable v2 contract) — `staffAnalytics` `{ scopeBarberId: string | null,
- * fromLocalDate, analyticsSpan: 'DAY' | 'WEEK' | 'MONTH', analyticsComparison:
- * 'PREVIOUS' }` → the report. A signed-in caller (`ANALYTICS_UNAUTHENTICATED`)
- * whose TOKEN claims a role that reads analytics (`Roles.readsAnalytics` —
- * the cheap first gate, else `ANALYTICS_FORBIDDEN`); the pipeline judges
- * the STORED roles after it, so a demoted or blocked account is refused
- * there whatever its token still says. Every field is re-read through its
- * smart constructor, the first unreadable one named
- * (`ANALYTICS_INVALID_INPUT`); `SAME_LAST_YEAR` is named by the contract
- * and refused the same way in v2, and so is an absent comparison (the web
- * always sends one); whether the first day is its span's first is the
- * pipeline's question (`AnalyticsPeriod.of`). The transport operation id
- * the web adds is not read: a report changes nothing.
+ * fromLocalDate, toLocalDate: string | null, analyticsSpan: 'DAY' | 'WEEK' |
+ * 'MONTH' | 'YEAR' | 'CUSTOM', analyticsComparison: 'PREVIOUS' }` → the
+ * report. A signed-in caller (`ANALYTICS_UNAUTHENTICATED`) whose TOKEN
+ * claims a role that reads analytics (`Roles.readsAnalytics` — the cheap
+ * first gate, else `ANALYTICS_FORBIDDEN`); the pipeline judges the STORED
+ * roles after it, so a demoted or blocked account is refused there whatever
+ * its token still says. Every field is re-read through its smart
+ * constructor, the first unreadable one named (`ANALYTICS_INVALID_INPUT`):
+ * `toLocalDate` is a day or `null` (an absent field reads as `null`) —
+ * whether a `to` belongs to the span, like whether the first day is its
+ * span's first, is the pipeline's question (`AnalyticsPeriod.of`);
+ * `SAME_LAST_YEAR` is named by the contract and refused the same way in v2,
+ * and so is an absent comparison (the web always sends one). The transport
+ * operation id the web adds is not read: a report changes nothing.
  */
 export function decodeStaffAnalytics(
   request: WireRequest,
@@ -54,6 +56,10 @@ export function decodeStaffAnalytics(
     LocalDate.parse,
   );
   if (fromLocalDate === null) return invalid('fromLocalDate');
+  // The last day: a `CUSTOM` range's; `null` (or absent) on every other span.
+  const sentTo = StoredFields.field(payload, 'toLocalDate') ?? null;
+  const toLocalDate = sentTo === null ? null : idOf(sentTo, LocalDate.parse);
+  if (sentTo !== null && toLocalDate === null) return invalid('toLocalDate');
   const analyticsSpan = StoredFields.field(payload, 'analyticsSpan');
   if (!Tag.has(AnalyticsSpan, analyticsSpan)) return invalid('analyticsSpan');
   const analyticsComparison = StoredFields.field(
@@ -70,6 +76,7 @@ export function decodeStaffAnalytics(
     callerUserId: caller,
     scopeBarberId,
     fromLocalDate,
+    toLocalDate,
     analyticsSpan,
     analyticsComparison,
   });

@@ -33,6 +33,28 @@ export interface AnalyticsWords {
   readonly previous: string;
   readonly next: string;
   readonly range: (from: string, to: string) => string;
+  /** The «…» pill and the custom-range sheet (staff-analytics-v2 «Sections in order» 3). */
+  readonly customRange: {
+    readonly pill: string;
+    readonly title: string;
+    readonly from: string;
+    readonly to: string;
+    readonly day: string;
+    readonly month: string;
+    readonly year: string;
+    readonly dayPlaceholder: string;
+    readonly monthPlaceholder: string;
+    readonly yearPlaceholder: string;
+    readonly apply: string;
+    readonly close: string;
+    /** «Въведете двете дати» — a field is empty or partial. */
+    readonly incomplete: string;
+    /** «Най-рано 1.11.2025» — the range starts before the reach. */
+    readonly beforeReach: (earliest: string) => string;
+    readonly afterToday: string;
+    /** «Най-много 366 дни». */
+    readonly tooLong: (days: number) => string;
+  };
   /** The comparison chip under the period (staff-analytics-v2 «Sections in order» 3). */
   readonly comparison: {
     /** «спрямо предходния период». */
@@ -200,6 +222,26 @@ export function analyticsWordsOf(
       [AnalyticsSpan.Day]: t('span.DAY'),
       [AnalyticsSpan.Week]: t('span.WEEK'),
       [AnalyticsSpan.Month]: t('span.MONTH'),
+      [AnalyticsSpan.Year]: t('span.YEAR'),
+      [AnalyticsSpan.Custom]: t('span.CUSTOM'),
+    },
+    customRange: {
+      pill: t('customRange.pill'),
+      title: t('customRange.title'),
+      from: t('customRange.from'),
+      to: t('customRange.to'),
+      day: t('customRange.day'),
+      month: t('customRange.month'),
+      year: t('customRange.year'),
+      dayPlaceholder: t('customRange.dayPlaceholder'),
+      monthPlaceholder: t('customRange.monthPlaceholder'),
+      yearPlaceholder: t('customRange.yearPlaceholder'),
+      apply: t('customRange.apply'),
+      close: t('customRange.close'),
+      incomplete: t('customRange.incomplete'),
+      beforeReach: (earliest) => t('customRange.beforeReach', { earliest }),
+      afterToday: t('customRange.afterToday'),
+      tooLong: (days) => t('customRange.tooLong', { days }),
     },
     previous: t('previous'),
     next: t('next'),

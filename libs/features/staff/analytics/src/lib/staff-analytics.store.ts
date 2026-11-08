@@ -24,6 +24,7 @@ import {
 } from '@core/errors';
 import type { AnalyticsCacheKey } from '@core/ports';
 import { BarberId, LocalDate, type UserId, Tag } from '@core/primitives';
+import type { UiDateFieldParts } from '@creativo/ui/controls';
 import {
   type AnalyticsScopeChoice,
   StaffAnalyticsSystem,
@@ -37,7 +38,12 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
-import { AnalyticsLoad } from './analytics.vm';
+import { partsToLocalDate } from './analytics.presenter';
+import {
+  AnalyticsLoad,
+  type AnalyticsRangeCheck,
+  AnalyticsRangeRefusal,
+} from './analytics.vm';
 
 /** The request the screen stands on: who asks, what is sent, and where its report is cached. */
 type AnalyticsRequest = {
@@ -53,6 +59,7 @@ function sameCall(a: AnalyticsRequest, b: AnalyticsRequest): boolean {
     a.call.scopeBarberId === b.call.scopeBarberId &&
     a.call.analyticsSpan === b.call.analyticsSpan &&
     a.call.fromLocalDate === b.call.fromLocalDate &&
+    a.call.toLocalDate === b.call.toLocalDate &&
     a.call.analyticsComparison === b.call.analyticsComparison
   );
 }
@@ -75,25 +82,51 @@ const NOW_TICK_MS = 60_000;
 type RouteRequest = {
   readonly span: AnalyticsSpan | null | undefined;
   readonly from: LocalDate | null | undefined;
+  /** `?to=` — read on `CUSTOM` only; absent on every other span. */
+  readonly to: LocalDate | null | undefined;
 };
 
-/** The period of `span` (this month's when none) that holds `from` (today when none). */
+/**
+ * The period of `span` (this month's when none) that holds `from` (today
+ * when none); a `CUSTOM` is `from`–`to` as the component admits it. A
+ * period the switcher could never reach — past the reach, ahead of today,
+ * a custom range the component refuses — lands on this month, as
+ * `periodInSpan` does.
+ */
 function routedPeriodOf(
   span: AnalyticsSpan | null,
   from: LocalDate | null,
+  to: LocalDate | null,
   today: LocalDate,
 ): AnalyticsPeriod {
-  const anchor = from ?? today;
-  const ofSpan = (day: LocalDate): AnalyticsPeriod =>
-    span === AnalyticsSpan.Day
-      ? AnalyticsPeriod.dayOf(day)
-      : span === AnalyticsSpan.Week
-        ? AnalyticsPeriod.weekOf(day)
-        : AnalyticsPeriod.monthOf(day);
-  const landed = ofSpan(anchor);
-  // A day the switcher could never reach — past the reach, or ahead of
-  // today — lands on the span's current period, as `periodInSpan` does.
-  return AnalyticsPeriod.isWithinRange(landed, today) ? landed : ofSpan(today);
+  const fallback = AnalyticsPeriod.monthOf(today);
+  if (span === AnalyticsSpan.Custom) {
+    if (from === null || to === null) return fallback;
+    const custom = AnalyticsPeriod.of(AnalyticsSpan.Custom, from, to);
+    return custom.ok && AnalyticsPeriod.isWithinRange(custom.value, today)
+      ? custom.value
+      : fallback;
+  }
+  const landed = AnalyticsPeriod.holding(
+    span ?? AnalyticsSpan.Month,
+    from ?? today,
+  );
+  return AnalyticsPeriod.isWithinRange(landed, today) ? landed : fallback;
+}
+
+/** `?to=` — the custom range's last day; absent on every other span. */
+function toParamOf(period: AnalyticsPeriod): LocalDate | null {
+  return period.analyticsSpan === AnalyticsSpan.Custom
+    ? period.toLocalDate
+    : null;
+}
+
+/** The sheet's two days in order — a `from` typed after `to` is the same range, the other way round. */
+function orderedRange(
+  a: LocalDate,
+  b: LocalDate,
+): { readonly from: LocalDate; readonly to: LocalDate } {
+  return a <= b ? { from: a, to: b } : { from: b, to: a };
 }
 
 /**
@@ -173,6 +206,7 @@ export class StaffAnalyticsStore {
   private readonly routed = signal<RouteRequest>({
     span: undefined,
     from: undefined,
+    to: undefined,
   });
 
   /**
@@ -184,11 +218,16 @@ export class StaffAnalyticsStore {
     const picked = this.pickedPeriod();
     if (picked !== null) return picked;
     const today = this.today();
-    const { span, from } = this.routed();
-    if (today === null || span === undefined || from === undefined) {
+    const { span, from, to } = this.routed();
+    if (
+      today === null ||
+      span === undefined ||
+      from === undefined ||
+      to === undefined
+    ) {
       return null;
     }
-    return routedPeriodOf(span, from, today);
+    return routedPeriodOf(span, from, to, today);
   });
 
   /**
@@ -200,8 +239,9 @@ export class StaffAnalyticsStore {
   private readonly _published = signal<{
     readonly span: AnalyticsSpan | null | undefined;
     readonly from: LocalDate | null | undefined;
+    readonly to: LocalDate | null | undefined;
     readonly barber: BarberId | null | undefined;
-  }>({ span: undefined, from: undefined, barber: undefined });
+  }>({ span: undefined, from: undefined, to: undefined, barber: undefined });
   readonly published = this._published.asReadonly();
 
   /** The admin's pick; `null` is the shop. A barber's is always their own. */
@@ -248,6 +288,11 @@ export class StaffAnalyticsStore {
       // A barber sends none: the callable reads their record off the stored user.
       scopeBarberId: shop ? this.pickedScope() : null,
       fromLocalDate: period.fromLocalDate,
+      // Named on `CUSTOM` alone (the callable's rule).
+      toLocalDate:
+        period.analyticsSpan === AnalyticsSpan.Custom
+          ? period.toLocalDate
+          : null,
       analyticsSpan: period.analyticsSpan,
       // The constant until a second value is enabled (v2, State and URL).
       analyticsComparison: AnalyticsComparison.Previous,
@@ -318,7 +363,92 @@ export class StaffAnalyticsStore {
     this.publishQuery({
       span: period.analyticsSpan,
       from: period.fromLocalDate,
+      to: toParamOf(period),
     });
+  }
+
+  // ── The custom range («…», the sheet) ──────────────────────────────────
+
+  private readonly _rangeOpen = signal(false);
+  /** The custom-range sheet is up. */
+  readonly rangeOpen = this._rangeOpen.asReadonly();
+  /** The sheet's two fields, as typed; `null` while empty or half-typed. */
+  readonly rangeFrom = signal<UiDateFieldParts | null>(null);
+  readonly rangeTo = signal<UiDateFieldParts | null>(null);
+
+  /**
+   * The component's verdict on the two fields, read by the sheet: the
+   * range the switcher would ask for, or why not — a field half-typed,
+   * a start before the reach, an end after today, more than
+   * `CUSTOM_MAX_DAYS`. A `from` typed after `to` is the same range the
+   * other way round (`orderedRange`). Nothing here decides: `of` and
+   * `isWithinRange` are `AnalyticsPeriod`'s.
+   */
+  readonly rangeCheck = computed<AnalyticsRangeCheck>(() => {
+    const today = this.today();
+    const from = partsToLocalDate(this.rangeFrom());
+    const to = partsToLocalDate(this.rangeTo());
+    if (today === null || from === null || to === null) {
+      return {
+        rangeRefusal: AnalyticsRangeRefusal.Incomplete,
+        fromLocalDate: from,
+        toLocalDate: to,
+      };
+    }
+    const ordered = orderedRange(from, to);
+    const refused = (rangeRefusal: Exclude<AnalyticsRangeRefusal, null>) => ({
+      rangeRefusal,
+      fromLocalDate: ordered.from,
+      toLocalDate: ordered.to,
+    });
+    if (ordered.to > today) return refused(AnalyticsRangeRefusal.AfterToday);
+    const period = AnalyticsPeriod.of(
+      AnalyticsSpan.Custom,
+      ordered.from,
+      ordered.to,
+    );
+    if (!period.ok) return refused(AnalyticsRangeRefusal.TooLong);
+    if (!AnalyticsPeriod.isWithinRange(period.value, today)) {
+      return refused(AnalyticsRangeRefusal.BeforeReach);
+    }
+    return {
+      rangeRefusal: null,
+      fromLocalDate: ordered.from,
+      toLocalDate: ordered.to,
+    };
+  });
+
+  /** The «…» pill: the sheet opens on the period on screen. */
+  openRange(): void {
+    const period = untracked(this.period);
+    if (period !== null) {
+      this.rangeFrom.set(LocalDate.parts(period.fromLocalDate));
+      this.rangeTo.set(LocalDate.parts(period.toLocalDate));
+    }
+    this._rangeOpen.set(true);
+  }
+
+  closeRange(): void {
+    this._rangeOpen.set(false);
+  }
+
+  /** «Приложи»: the range the check admits becomes the period; a refused one is ignored. */
+  applyRange(): void {
+    const check = untracked(this.rangeCheck);
+    if (check.rangeRefusal !== null) return;
+    const period = AnalyticsPeriod.of(
+      AnalyticsSpan.Custom,
+      check.fromLocalDate,
+      check.toLocalDate,
+    );
+    if (!period.ok) return;
+    // The sheet closes itself (its exit animates), then `closeRange`.
+    this.pickPeriod(period.value);
+  }
+
+  /** A month of a year's day rows opens that month (v2, «The callable v2 contract»). */
+  pickMonth(localDate: LocalDate): void {
+    this.pickPeriod(AnalyticsPeriod.monthOf(localDate));
   }
 
   /** The admin's scope picker: the shop (`null`) or a barber record. */
@@ -356,9 +486,16 @@ export class StaffAnalyticsStore {
     this.pickedPeriod.set(null);
   }
 
-  /** `?to=` — accepted and IGNORED until the `CUSTOM` span (PR 4b) gives it a meaning. */
+  /**
+   * `?to=` read ONCE at its edge (`LocalDate.parse`): the custom range's
+   * last day; on any other span it is ignored by `routedPeriodOf`.
+   * Absence, or anything that names no day, is `null`.
+   */
   applyRouteTo(raw: string | null): void {
-    void raw;
+    const parsed = raw ? LocalDate.parse(raw) : null;
+    const to = parsed !== null && parsed.ok ? parsed.value : null;
+    this.routed.update((request) => ({ ...request, to }));
+    this.pickedPeriod.set(null);
   }
 
   /**
@@ -388,6 +525,7 @@ export class StaffAnalyticsStore {
     this.publishQuery({
       span: period.analyticsSpan,
       from: period.fromLocalDate,
+      to: toParamOf(period),
       barber: this.readsShop() ? this.pickedScope() : null,
     });
   }
@@ -396,12 +534,13 @@ export class StaffAnalyticsStore {
    * The span, the period's first day and the admin's scope live in the URL
    * so a reading can be pasted and reopened. `replaceUrl`: Back leaves the
    * screen for the schedule, it does not walk back through the morning's
-   * picks. `to` is left as it is (`merge`) until a later PR writes it.
+   * picks. `to` is written on `CUSTOM` and cleared on every other span.
    */
   private publishQuery(
     patch: Partial<{
       readonly span: AnalyticsSpan | null;
       readonly from: LocalDate | null;
+      readonly to: LocalDate | null;
       readonly barber: BarberId | null;
     }>,
   ): void {
@@ -415,6 +554,7 @@ export class StaffAnalyticsStore {
     if (
       next.span === current.span &&
       next.from === current.from &&
+      next.to === current.to &&
       next.barber === current.barber
     ) {
       return;
@@ -435,6 +575,7 @@ export class StaffAnalyticsStore {
         queryParams: {
           span: stated.span ?? null,
           from: stated.from ?? null,
+          to: stated.to ?? null,
           barber: stated.barber ?? null,
         },
         queryParamsHandling: 'merge',
@@ -557,7 +698,7 @@ export class StaffAnalyticsStore {
         }
         // The day turned while the screen was open: back to this month —
         // the URL's ask included, or the same period would be asked again.
-        this.routed.set({ span: null, from: null });
+        this.routed.set({ span: null, from: null, to: null });
         this.pickedPeriod.set(null);
         return;
       }

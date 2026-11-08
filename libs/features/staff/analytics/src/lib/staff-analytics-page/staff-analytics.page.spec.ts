@@ -266,6 +266,7 @@ describe('StaffAnalyticsPage — a DAY (staff-analytics-v2 PR 3)', () => {
     });
     expect(sent.at(-1)).toMatchObject({
       analyticsSpan: 'DAY',
+      toLocalDate: null,
       fromLocalDate: '2026-09-15',
       analyticsComparison: 'PREVIOUS',
     });
@@ -299,6 +300,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
         scopeBarberId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
+        toLocalDate: null,
         analyticsComparison: 'PREVIOUS',
       },
     ]);
@@ -317,13 +319,14 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
 
   it('a barber’s ?barber= is ignored; an unknown span is a month', async () => {
     const { sent, router } = await render({
-      query: { span: 'YEAR', barber: 'niko', to: '2026-09-30' },
+      query: { span: 'QUARTER', barber: 'niko', to: '2026-09-30' },
     });
     expect(sent).toEqual([
       {
         scopeBarberId: null,
         fromLocalDate: '2026-09-01',
         analyticsSpan: 'MONTH',
+        toLocalDate: null,
         analyticsComparison: 'PREVIOUS',
       },
     ]);
@@ -341,6 +344,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
         scopeBarberId: 'ivan',
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
+        toLocalDate: null,
         analyticsComparison: 'PREVIOUS',
       },
     ]);

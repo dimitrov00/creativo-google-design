@@ -75,13 +75,31 @@
       class="staff-analytics__module"
       [attr.aria-label]="vm.period.spanLabel"
     >
-      <ui-segmented-control
-        [uiSegments]="vm.period.spans"
-        [uiSelectedId]="vm.period.selectedSpan"
-        [uiLabel]="vm.period.spanLabel"
-        data-testid="analytics-span"
-        (uiPicked)="pickSpan($event)"
-      />
+      <div class="staff-analytics__spans">
+        <ui-segmented-control
+          class="staff-analytics__segments"
+          [uiSegments]="vm.period.spans"
+          [uiSelectedId]="vm.period.selectedSpan"
+          [uiLabel]="vm.period.spanLabel"
+          data-testid="analytics-span"
+          (uiPicked)="pickSpan($event)"
+        />
+        <!-- «…»: any range of up to 366 days, through the sheet. -->
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          [attr.aria-label]="vm.period.range.pillLabel"
+          [attr.aria-pressed]="vm.period.customOn"
+          data-testid="analytics-custom-range"
+          (click)="openRange()"
+        >
+          <ui-icon uiName="action.more" />
+        </button>
+      </div>
       <div class="staff-analytics__stepper">
         <button
           type="button"
@@ -701,6 +719,17 @@
     </section>
     } }
   </div>
+  <!-- THE CUSTOM RANGE: two dates and «Приложи», the store's verdict worded. -->
+  <lib-analytics-range-sheet
+    [vm]="vm.period.range"
+    [open]="store.rangeOpen()"
+    [from]="store.rangeFrom()"
+    [to]="store.rangeTo()"
+    (fromChange)="store.rangeFrom.set($event)"
+    (toChange)="store.rangeTo.set($event)"
+    (applied)="applyRange()"
+    (closed)="closeRange()"
+  />
   } @else {
   <div class="staff-analytics__modules" aria-busy="true">
     <ui-skeleton uiFrame uiFrameHeight="3rem" uiFrameWidth="12rem" />
@@ -727,5 +756,6 @@
   [vm]="drillVm()"
   (closed)="closeDrill()"
   (openBarber)="openBarber($event)"
+  (openMonth)="openMonth($event)"
 />
 }

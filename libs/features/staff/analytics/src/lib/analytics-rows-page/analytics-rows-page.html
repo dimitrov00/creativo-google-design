@@ -54,7 +54,29 @@
       />
       } } @case (DrillRows.Days) { @if (page.days.length > 0) {
       <ul uiListGroup data-testid="analytics-rows-days">
-        @for (day of page.days; track day.id) {
+        @for (day of page.days; track day.id) { @if (day.month; as month) {
+        <li>
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [attr.data-testid]="day.testId"
+            (click)="openMonth.emit(month)"
+          >
+            <ui-stack uiSpacing="tight">
+              <span>{{ day.title }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ day.detail }}</span
+              >
+            </ui-stack>
+            <ng-container ngProjectAs="[uiTrailing]">
+              <span uiTrailing uiText uiFont="callout">{{ day.value }}</span>
+              <ui-icon uiTrailing uiName="nav.disclosure" uiScale="small" />
+            </ng-container>
+          </button>
+        </li>
+        } @else {
         <li uiListRow uiSize="regular" [attr.data-testid]="day.testId">
           <ui-stack uiSpacing="tight">
             <span>{{ day.title }}</span>
@@ -66,7 +88,7 @@
             <span uiTrailing uiText uiFont="callout">{{ day.value }}</span>
           </ng-container>
         </li>
-        }
+        } }
       </ul>
       } } @case (DrillRows.Barbers) { @if (page.barbers.length > 0) {
       <ul uiListGroup data-testid="analytics-rows-barbers">

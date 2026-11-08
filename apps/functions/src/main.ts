@@ -528,6 +528,19 @@ const rolesPorts = once(() => ({
   ...authSessionRevokePorts(auth()),
 }));
 
+/**
+ * The staff analytics report's ports (`staffAnalytics`, staff analytics v2
+ * PR 4b): the server ports — the analytics reads, the stored days
+ * (`AnalyticsDayReadPorts`), the rosters, the policy, the clock, the
+ * telemetry — and the build-time flags (`analytics.storedDays` decides
+ * whether the past days are read as documents or computed live). Built on
+ * first use, on the `streakPorts` precedent.
+ */
+const analyticsPorts = once(() => ({
+  ...serverPorts(),
+  ...paramFlagsPorts(),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -541,6 +554,7 @@ const root = {
   erasurePreview: previewPorts,
   erasure: erasurePorts,
   roles: rolesPorts,
+  analytics: analyticsPorts,
 } as const;
 
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
@@ -881,19 +895,20 @@ export const setRosterWeek = onCall(
 );
 
 /**
- * A staff analytics report (`docs/designs/staff-analytics.md`) — read-only:
- * the caller's stored record, the shop's rosters, departures and visits of
- * the period read and computed into one report; nothing is written. On the
- * larger instance: a shop-month reads ~11,500 documents. Its store failure
- * leaves as the platform's bare INTERNAL (`failureCode: null`): the
- * analytics codes name no repository failure, and the screen words every
- * unexpected failure alike.
+ * A staff analytics report (`docs/designs/staff-analytics-v2.md`) —
+ * read-only: the caller's stored record, the shop's rosters, departures,
+ * the period's stored day documents (with `analytics.storedDays` on) and
+ * the live days' visits read and computed into one report; nothing is
+ * written. On the larger instance: a shop-year reads ~5,000 documents. Its
+ * store failure leaves as the platform's bare INTERNAL (`failureCode:
+ * null`): the analytics codes name no repository failure, and the screen
+ * words every unexpected failure alike.
  */
 export const staffAnalytics = onCall(
   { ...LOG_DIGEST_SECRETS, memory: LARGE_MEMORY },
   wiredCallable(
     plain(Callables.StaffAnalytics, null),
-    root.ports,
+    root.analytics,
     decodeStaffAnalytics,
     (ports, cmd) => staffAnalyticsPipeline(ports)(cmd),
     refusalOf,

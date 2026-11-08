@@ -2633,11 +2633,31 @@
       "label": "Period",
       "DAY": "Day",
       "WEEK": "Week",
-      "MONTH": "Month"
+      "MONTH": "Month",
+      "YEAR": "Year",
+      "CUSTOM": "Custom range"
     },
     "comparison": {
       "previous": "against the previous period",
       "none": "no comparison data"
+    },
+    "customRange": {
+      "pill": "Custom range",
+      "title": "Custom range",
+      "from": "From",
+      "to": "To",
+      "day": "Day",
+      "month": "Month",
+      "year": "Year",
+      "dayPlaceholder": "DD",
+      "monthPlaceholder": "MM",
+      "yearPlaceholder": "YYYY",
+      "apply": "Apply",
+      "close": "Close",
+      "incomplete": "Enter both dates",
+      "beforeReach": "No earlier than {{earliest}}",
+      "afterToday": "No later than today",
+      "tooLong": "At most {{days}} days"
     },
     "previous": "Previous period",
     "next": "Next period",

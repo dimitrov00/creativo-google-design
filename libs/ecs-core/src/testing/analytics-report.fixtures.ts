@@ -182,6 +182,7 @@ export function analyticsReportFixture(
     reportAnalyticsComparison: AnalyticsComparison.Previous,
     reportComparisonFromLocalDate: localDate('2026-08-01'),
     reportComparisonToLocalDate: localDate('2026-08-31'),
+    reportMissingDays: 0,
 
     reportRosteredMinutes: m(1080),
     reportWorkedMinutes: m(480),
@@ -343,6 +344,7 @@ export function analyticsCacheKeyOf(key: AnalyticsCacheKey): string {
     key.scopeBarberId ?? '',
     key.analyticsSpan,
     key.fromLocalDate,
+    key.toLocalDate ?? '',
     key.analyticsComparison,
   ].join('|');
 }

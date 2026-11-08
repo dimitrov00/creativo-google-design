@@ -618,6 +618,16 @@ null; analyticsSpan: 'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM'; analyticsComp
 `ANALYTICS_INVALID_INPUT` in v2; an old functions deploy refuses the new fields the same
 way, so functions deploy before web. `ANALYTICS_DEFINITION_VERSION = 2` from PR 4a.
 
+**As built in PR 4b (2026-11-09):** a barber-day counts from exactly one source — its
+current day document when one exists, else live (the hero's cut day is always counted from
+visits up to the current minute); `reportMissingDays` counts the period's past days computed
+live. Under the flag a barber scope's `reportSeatRows` carry only the live and fallback days'
+seats — a stored day's visits are not read (Reads and cost), so the takings drill-down of a
+long span lists the live days' seats under the period's total; the drill-down of stored days
+is left to a later PR. From `YEAR` the switcher's `WEEK`/`MONTH` is the one holding 1 January;
+a custom range is never derived from a day (the sheet alone makes one). The switcher's «…»
+pill is a bordered icon button beside the four segments; `CUSTOM` is on when no segment is.
+
 Span changes on the screen (`StaffAnalyticsSystem.periodInSpan`, `stepsOf`): → `DAY`:
 today when inside the current period, else the period's first day; → `WEEK`/`MONTH`: the
 one holding the current period's first day; → `YEAR`: the year holding it; → `CUSTOM`: the

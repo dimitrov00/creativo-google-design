@@ -18,18 +18,22 @@ const ORDER_KEY = `${PREFIX}order`;
 export const ANALYTICS_CACHE_CAPACITY = 6;
 /** The scope segment of a shop report's key. */
 const SHOP_SCOPE = 'shop';
+/** The `to` segment of a period that names no last day — every span but `CUSTOM`. */
+const NO_TO = 'none';
 
 /**
  * The storage key of one cached report —
  * `creativo.analytics/<definitionVersion>/<uid>/<scope>/<period>`: the
- * scope a barber id or `shop`, the period its span, first day and
- * comparison (`MONTH-2026-09-01-PREVIOUS` — the design's cache key encodes
- * the comparison too). Each segment URI-encoded, so no id can reach into
- * another segment.
+ * scope a barber id or `shop`, the period its span, first day, last day
+ * (`none` unless `CUSTOM`) and comparison —
+ * `MONTH-2026-09-01-none-PREVIOUS`, `CUSTOM-2026-09-07-2026-09-20-PREVIOUS`
+ * (the design's cache key encodes the comparison and the `to` too, so two
+ * ranges from one day never share an entry). Each segment URI-encoded, so
+ * no id can reach into another segment.
  */
 export function analyticsCacheStorageKey(key: AnalyticsCacheKey): string {
   const scope = key.scopeBarberId ?? SHOP_SCOPE;
-  const period = `${key.analyticsSpan}-${key.fromLocalDate}-${key.analyticsComparison}`;
+  const period = `${key.analyticsSpan}-${key.fromLocalDate}-${key.toLocalDate ?? NO_TO}-${key.analyticsComparison}`;
   return `${VERSION_PREFIX}${[key.userId, scope, period]
     .map(encodeURIComponent)
     .join('/')}`;
@@ -49,7 +53,10 @@ export function analyticsCacheStorageKey(key: AnalyticsCacheKey): string {
  *   its own. A write also sweeps every entry of an older definition.
  * - **Read through the report's own decoder** (`AnalyticsCall.decodeReport`)
  *   and its definition version: a value that is no report of this
- *   definition is deleted and answers `REPOSITORY_MALFORMED`.
+ *   definition — a v1 entry, a PR 4a entry without `reportMissingDays`,
+ *   anything malformed — is deleted and answers `REPOSITORY_MALFORMED`;
+ *   `VERSION_PREFIX` keeps an older definition's entries from being read at
+ *   all, and a write sweeps them.
  * - **Every storage access is in a try/catch** — a private window, a quota
  *   or a disabled storage answers a `RepositoryError`, never a throw.
  */

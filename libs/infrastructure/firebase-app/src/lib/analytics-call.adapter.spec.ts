@@ -21,6 +21,7 @@ import { analyticsCallPorts } from './analytics-call.adapter';
 const CALL: AnalyticsCall = {
   scopeBarberId: null,
   fromLocalDate: unwrapOk(LocalDate.parse('2026-09-01')),
+  toLocalDate: null,
   analyticsSpan: AnalyticsSpan.Month,
   analyticsComparison: AnalyticsComparison.Previous,
 };

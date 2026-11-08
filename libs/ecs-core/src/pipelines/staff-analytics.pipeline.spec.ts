@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANALYTICS_DEFINITION_VERSION,
   AnalyticsComparison,
+  AnalyticsPeriod,
   AnalyticsSpan,
   BookingPolicy,
+  DayFigures,
+  FlagName,
   Role,
   Seat,
   SeatOutcome,
@@ -12,13 +16,16 @@ import {
   RepositoryError,
   RepositoryErrorCode,
 } from '@core/errors';
-import type { Appointment } from '@core/entities';
+import type { Appointment, BarberAnalyticsDay } from '@core/entities';
 import {
   AppointmentId,
+  BarberAnalyticsDayId,
   BarberId,
   BusyKey,
   LocalDate,
   LogEvent,
+  MinuteCount,
+  PriceCents,
   Result,
   ScheduleExceptionId,
   SeatId,
@@ -35,9 +42,11 @@ import {
   blockedUserFixture,
   localDate,
   locationFixture,
+  memoryAnalyticsDayPorts,
   memoryAnalyticsReadPorts,
   memoryClockPorts,
   memoryDefaultLocationPorts,
+  memoryFlagsPorts,
   memoryProfileLoadPorts,
   memoryShopDayReadPorts,
   minute,
@@ -58,12 +67,16 @@ import {
 /* The clock: Monday 28 September 2026, 09:00 in Sofia (FIXTURE_NOW). The
  * period: September 2026 — the 1st to the 30th, running; the previous one
  * August. Two barbers, Ivan and Niko, both rostered Mon–Fri 09:00–18:00 at
- * the one shop. */
+ * the one shop. The 1st to the 26th are PAST (two days back), the 27th to
+ * the 30th live. */
 
 const IVAN = FIXTURE_IDS.barber;
 const NIKO = BarberId.of('b-niko');
 const SEPTEMBER = localDate('2026-09-01');
 const stamp = FIXTURE_NOW_UTC_MS;
+const STORED = [FlagName.AnalyticsStoredDays] as const;
+const m = (raw: number): MinuteCount => raw as MinuteCount;
+const cents = (raw: number): PriceCents => raw as PriceCents;
 
 const ADMIN = registeredUserFixture({
   id: UserId.of('u-admin'),
@@ -173,23 +186,61 @@ const FOLLOW_UP = visitOn(
   },
 );
 
+/** A stored day of `barberId` on `day` — zeros unless overridden, of this definition. */
+function storedDay(
+  barberId: BarberId,
+  day: LocalDate,
+  overrides: Partial<DayFigures> = {},
+): BarberAnalyticsDay {
+  return {
+    id: BarberAnalyticsDayId.of(BusyKey.of(barberId, day)),
+    ...DayFigures.empty(barberId, day, stamp),
+    ...overrides,
+  };
+}
+
+/** Ivan's Monday the 14th as the writer would have stored it: 9 h rostered, the solo cut worked, rebooked. */
+const STORED_SOLO_DAY = storedDay(IVAN, localDate('2026-09-14'), {
+  dayRosteredMinutes: m(9 * 60),
+  dayWorkedMinutes: m(30),
+  dayUnsoldMinutes: m(9 * 60 - 30),
+  dayTakingsCents: cents(2000),
+  dayWorkedSeatCount: 1,
+  dayNoShowBase: 1,
+  dayRebookedBase: 1,
+  dayRebookedCount: 1,
+  dayStaffVisitCount: 1,
+});
+
+type WorldState = {
+  readonly storedDays?: readonly BarberAnalyticsDay[];
+  readonly flagsOn?: readonly FlagName[];
+};
+
 type World = {
   readonly ports: StaffAnalyticsPorts;
   readonly reads: ReturnType<typeof memoryAnalyticsReadPorts>['log'];
+  readonly dayReads: ReturnType<typeof memoryAnalyticsDayPorts>['log'];
   readonly lines: ReturnType<typeof recordingTelemetry>['lines'];
 };
 
-function world(overrides: Partial<StaffAnalyticsPorts> = {}): World {
+function world(
+  overrides: Partial<StaffAnalyticsPorts> = {},
+  state: WorldState = {},
+): World {
   const analytics = memoryAnalyticsReadPorts({
     visits: [SOLO, PARTY, FOLLOW_UP],
     departures: [],
     barberIds: [NIKO, IVAN],
     locations: [locationFixture()],
   });
+  const days = memoryAnalyticsDayPorts({ days: state.storedDays ?? [] });
   const telemetry = recordingTelemetry();
   return {
     ports: {
       ...analytics.ports,
+      ...days.ports,
+      ...memoryFlagsPorts(state.flagsOn ?? []),
       ...memoryProfileLoadPorts(USERS),
       ...memoryShopDayReadPorts([
         barberScheduleFixture({ id: IVAN }),
@@ -202,6 +253,7 @@ function world(overrides: Partial<StaffAnalyticsPorts> = {}): World {
       ...overrides,
     },
     reads: analytics.log,
+    dayReads: days.log,
     lines: telemetry.lines,
   };
 }
@@ -211,15 +263,22 @@ function ask(
   scopeBarberId: BarberId | null,
   fromLocalDate: LocalDate = SEPTEMBER,
   analyticsSpan: AnalyticsSpan = AnalyticsSpan.Month,
+  toLocalDate: LocalDate | null = null,
 ): StaffAnalyticsCommand {
   return {
     callerUserId: caller,
     scopeBarberId,
     fromLocalDate,
+    toLocalDate,
     analyticsSpan,
     analyticsComparison: AnalyticsComparison.Previous,
   };
 }
+
+const keysOf = (barberId: BarberId, from: string, to: string) =>
+  LocalDate.range(localDate(from), localDate(to)).map((day) =>
+    BusyKey.of(barberId, day),
+  );
 
 describe('staffAnalytics — the visibility table on the STORED record', () => {
   it('refuses a blocked account, whatever it holds', async () => {
@@ -364,6 +423,102 @@ describe('staffAnalytics — the period', () => {
       ),
     );
   });
+
+  it('accepts a YEAR from 1 January and a CUSTOM range with its last day (v2)', async () => {
+    const { ports } = world();
+    const year = unwrapOk(
+      await staffAnalytics(ports)(
+        ask(ADMIN.id, null, localDate('2026-01-01'), AnalyticsSpan.Year),
+      ),
+    );
+    expect(year).toMatchObject({
+      reportAnalyticsSpan: AnalyticsSpan.Year,
+      reportFromLocalDate: '2026-01-01',
+      reportToLocalDate: '2026-12-31',
+      // Last year starts before the reach: no comparison.
+      reportComparisonFromLocalDate: null,
+      reportHeroPreviousCents: null,
+    });
+    expect(year.reportSeries.map((p) => p.localDate)).toEqual(
+      LocalDate.range(localDate('2026-01-01'), localDate('2026-12-01')).filter(
+        (day) => day.endsWith('-01'),
+      ),
+    );
+    const custom = unwrapOk(
+      await staffAnalytics(ports)(
+        ask(
+          ADMIN.id,
+          null,
+          localDate('2026-09-07'),
+          AnalyticsSpan.Custom,
+          localDate('2026-09-20'),
+        ),
+      ),
+    );
+    expect(custom).toMatchObject({
+      reportAnalyticsSpan: AnalyticsSpan.Custom,
+      reportFromLocalDate: '2026-09-07',
+      reportToLocalDate: '2026-09-20',
+      reportComparisonFromLocalDate: '2026-08-24',
+      reportComparisonToLocalDate: '2026-09-06',
+      reportTakingsCents: 2000 + 2500 + 3000,
+    });
+  });
+
+  it('refuses a `to` off CUSTOM, none on CUSTOM, and a CUSTOM range over the cap (v2)', async () => {
+    const { ports } = world();
+    const to = unwrapErr(
+      await staffAnalytics(ports)(
+        ask(
+          ADMIN.id,
+          null,
+          SEPTEMBER,
+          AnalyticsSpan.Month,
+          localDate('2026-09-30'),
+        ),
+      ),
+    );
+    expect(to).toEqual({
+      errorCode: AnalyticsErrorCode.InvalidInput,
+      field: 'toLocalDate',
+    });
+    const none = unwrapErr(
+      await staffAnalytics(ports)(
+        ask(ADMIN.id, null, SEPTEMBER, AnalyticsSpan.Custom, null),
+      ),
+    );
+    expect(none).toEqual({
+      errorCode: AnalyticsErrorCode.InvalidInput,
+      field: 'toLocalDate',
+    });
+    const over = unwrapErr(
+      await staffAnalytics(ports)(
+        ask(
+          ADMIN.id,
+          null,
+          localDate('2025-09-01'),
+          AnalyticsSpan.Custom,
+          localDate('2026-09-02'),
+        ),
+      ),
+    );
+    expect(over).toEqual({
+      errorCode: AnalyticsErrorCode.PeriodOutOfRange,
+      fromLocalDate: localDate('2025-09-01'),
+    });
+    // 366 days is the cap, not over it.
+    unwrapOk(
+      await staffAnalytics(ports)(
+        ask(
+          ADMIN.id,
+          null,
+          localDate('2025-09-01'),
+          AnalyticsSpan.Custom,
+          localDate('2026-09-01'),
+        ),
+      ),
+    );
+  });
 });
 
 describe('staffAnalytics — the reads', () => {
@@ -423,6 +578,8 @@ describe('staffAnalytics — the reads', () => {
       reportComparisonToLocalDate: localDate('2026-09-08'),
       reportTakingsCents: 2500 + 3000,
       reportRebookedCount: 0,
+      // Two past barber-days, no document for either.
+      reportMissingDays: 2,
     });
     expect(report.reportSeries).toHaveLength(1);
     expect(report.reportTimeSeries).toHaveLength(1);
@@ -443,12 +600,16 @@ describe('staffAnalytics — the reads', () => {
   it('skips the comparison read when the comparison period starts before the reach', async () => {
     // On 28 September 2026 the reach starts 1 September 2025: September
     // 2025 may be asked for, its comparison (August 2025) is not read.
-    const { ports, reads } = world();
+    const { ports, reads, dayReads } = world({}, { flagsOn: STORED });
     const report = unwrapOk(
       await staffAnalytics(ports)(ask(ADMIN.id, null, localDate('2025-09-01'))),
     );
     // September 2025 × 2 barbers = 60 keys in two queries, no August, the next 7 days' 14.
     expect(reads.visitQueries.map((keys) => keys.length)).toEqual([30, 30, 14]);
+    // Nor its day documents — one range, the period's.
+    expect(dayReads.rangeQueries).toEqual([
+      [[IVAN, NIKO], '2025-09-01', '2025-09-30'],
+    ]);
     expect(report.reportComparisonFromLocalDate).toBeNull();
     expect(report.reportComparisonToLocalDate).toBeNull();
     expect(report.reportHeroPreviousCents).toBeNull();
@@ -546,8 +707,222 @@ describe('staffAnalytics — the reads', () => {
   });
 });
 
+describe('staffAnalytics — the stored days (v2, `analytics.storedDays`)', () => {
+  it('with the flag off never reads a day document: every past day is computed live and counted missing', async () => {
+    const { ports, reads, dayReads } = world(
+      {},
+      { storedDays: [STORED_SOLO_DAY] },
+    );
+    const report = unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, null)));
+    expect(dayReads.rangeQueries).toEqual([]);
+    expect(reads.visitQueries.map((keys) => keys.length)).toEqual([
+      30, 30, 30, 30, 2, 14,
+    ]);
+    // The 1st to the 26th are past, two days back: 26 × 2 barbers.
+    expect(report.reportMissingDays).toBe(26 * 2);
+  });
+
+  it('with the flag on reads the period’s and the comparison’s documents in one range each, and the visits of the other barber-days only', async () => {
+    const { ports, reads, dayReads } = world(
+      {},
+      { storedDays: [STORED_SOLO_DAY], flagsOn: STORED },
+    );
+    const report = unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, null)));
+    expect(dayReads.rangeQueries).toEqual([
+      [[IVAN, NIKO], '2026-09-01', '2026-09-30'],
+      [[IVAN, NIKO], '2026-08-01', '2026-08-31'],
+    ]);
+    // Ivan's 14th is held: 59 period keys (30 + 29), August's 62, the 14 ahead.
+    expect(reads.visitQueries.map((keys) => keys.length)).toEqual([
+      30, 29, 30, 30, 2, 14,
+    ]);
+    const periodKeys = reads.visitQueries.slice(0, 2).flat();
+    expect(periodKeys).not.toContain(BusyKey.of(IVAN, localDate('2026-09-14')));
+    expect(periodKeys).toContain(BusyKey.of(NIKO, localDate('2026-09-14')));
+    // The stored day's figures stand in for its visits: the same takings.
+    expect(report.reportTakingsCents).toBe(2000 + 2500 + 3000);
+    expect(report.reportMissingDays).toBe(26 * 2 - 1);
+    const monday = report.reportDayRows.find(
+      (row) => row.barberId === IVAN && row.localDate === '2026-09-14',
+    );
+    expect(monday).toEqual(DayFigures.rowOf(STORED_SOLO_DAY));
+  });
+
+  it('a barber’s month reads every day’s visits so the drill-down keeps listing a stored day’s seats (G4); the shop reads the live days alone', async () => {
+    const own = world({}, { storedDays: [STORED_SOLO_DAY], flagsOn: STORED });
+    const report = unwrapOk(
+      await staffAnalytics(own.ports)(ask(IVAN_USER.id, null)),
+    );
+    // Ivan's 30 days are asked for, the stored 14th included …
+    const periodKeys = own.reads.visitQueries[0] ?? [];
+    expect(periodKeys).toHaveLength(30);
+    expect(periodKeys).toContain(BusyKey.of(IVAN, localDate('2026-09-14')));
+    // … so the stored day's seat is a row, while its figures stay the document's.
+    expect(
+      report.reportSeatRows.some((row) => row.localDate === '2026-09-14'),
+    ).toBe(true);
+    const monday = report.reportDayRows.find(
+      (row) => row.localDate === '2026-09-14',
+    );
+    expect(monday).toEqual(DayFigures.rowOf(STORED_SOLO_DAY));
+
+    const shop = world({}, { storedDays: [STORED_SOLO_DAY], flagsOn: STORED });
+    await staffAnalytics(shop.ports)(ask(ADMIN.id, null));
+    expect(shop.reads.visitQueries.slice(0, 2).flat()).not.toContain(
+      BusyKey.of(IVAN, localDate('2026-09-14')),
+    );
+  });
+
+  it('reads follow-ups only for the past days computed live — a stored day’s rebooking is final', async () => {
+    const { ports, reads } = world(
+      {},
+      { storedDays: [STORED_SOLO_DAY], flagsOn: STORED },
+    );
+    const report = unwrapOk(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
+    );
+    // The solo cut's day is stored (rebooked 1 of 1); the party's is live.
+    expect(reads.followUpQueries).toEqual([[PARTY.id]]);
+    expect(report.reportRebookedBase).toBe(2);
+    expect(report.reportRebookedCount).toBe(1);
+  });
+
+  it('reads no follow-ups at all when every past day in scope is stored', async () => {
+    const stored = LocalDate.range(SEPTEMBER, localDate('2026-09-26')).map(
+      (day) =>
+        day === '2026-09-14'
+          ? STORED_SOLO_DAY
+          : storedDay(IVAN, day, {
+              dayRosteredMinutes:
+                LocalDate.weekday(day) <= 5 ? m(9 * 60) : MinuteCount.ZERO,
+            }),
+    );
+    const { ports, reads } = world({}, { storedDays: stored, flagsOn: STORED });
+    const report = unwrapOk(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
+    );
+    expect(reads.followUpQueries).toEqual([]);
+    expect(reads.bookedInQueries).toEqual([]);
+    // A barber's month reads every day's visits for the seat rows (G4),
+    // the 30 keys; then August's 30 and the counterpart, the 7 ahead.
+    expect(reads.visitQueries.map((keys) => keys.length)).toEqual([
+      30, 30, 1, 7,
+    ]);
+    expect(report.reportMissingDays).toBe(0);
+    // The party on the 15th sits in a zero document now: its money is not read.
+    expect(report.reportTakingsCents).toBe(2000);
+  });
+
+  it('computes a version-stale document’s day live, and counts it missing', async () => {
+    const stale = {
+      ...STORED_SOLO_DAY,
+      dayDefinitionVersion: ANALYTICS_DEFINITION_VERSION - 1,
+      dayTakingsCents: cents(99_999),
+    };
+    const { ports, reads } = world(
+      {},
+      { storedDays: [stale], flagsOn: STORED },
+    );
+    const report = unwrapOk(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
+    );
+    expect(reads.visitQueries[0]).toContain(
+      BusyKey.of(IVAN, localDate('2026-09-14')),
+    );
+    expect(report.reportTakingsCents).toBe(2000 + 2500);
+    expect(report.reportMissingDays).toBe(26);
+  });
+
+  it('reads the counterpart day’s visits for the hero even when a document holds it', async () => {
+    const counterpart = storedDay(IVAN, localDate('2026-08-28'), {
+      dayTakingsCents: cents(7000),
+      dayWorkedSeatCount: 1,
+    });
+    const { ports, reads } = world(
+      {},
+      { storedDays: [counterpart], flagsOn: STORED },
+    );
+    const report = unwrapOk(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
+    );
+    // August's 31 keys minus the 28th, plus the 28th again as the counterpart: 31.
+    const august = reads.visitQueries.slice(1, 3).flat();
+    expect(august).toHaveLength(31);
+    expect(august).toContain(BusyKey.of(IVAN, localDate('2026-08-28')));
+    // The counterpart is cut at 09:00 from its (absent) visits: nothing
+    // before 09:00 — the document's 70,00 € is not the hero's.
+    expect(report.reportHeroPreviousCents).toBe(0);
+    // The line, though, charts the document.
+    expect(
+      report.reportSeries.find((p) => p.localDate === '2026-09-28')
+        ?.comparisonTakingsCents,
+    ).toBe(7000);
+  });
+
+  it('answers the day read’s bound as the refusal — never a truncated report', async () => {
+    const refusal = RepositoryError.readFailed(
+      'analyticsDays',
+      'resource-exhausted',
+    );
+    const { ports, lines } = world(
+      { loadAnalyticsDays: async () => Result.err(refusal) },
+      { flagsOn: STORED },
+    );
+    const refused = unwrapErr(await staffAnalytics(ports)(ask(ADMIN.id, null)));
+    expect(refused).toEqual(refusal);
+    expect(lines).toEqual([]);
+    // And so a live fallback over the visit caps.
+    const exhausted = RepositoryError.readFailed(
+      'appointments',
+      'resource-exhausted',
+    );
+    const over = world({
+      loadVisitsByBusyKeys: async () => Result.err(exhausted),
+    });
+    expect(
+      unwrapErr(await staffAnalytics(over.ports)(ask(ADMIN.id, null))),
+    ).toEqual(exhausted);
+  });
+
+  it('reads a YEAR as one range of at most 366 documents per barber, its live days’ visits, and no comparison', async () => {
+    const stored: BarberAnalyticsDay[] = [];
+    for (const day of LocalDate.range(
+      localDate('2026-01-01'),
+      localDate('2026-09-26'),
+    )) {
+      stored.push(storedDay(IVAN, day), storedDay(NIKO, day));
+    }
+    const { ports, reads, dayReads } = world(
+      {},
+      { storedDays: stored, flagsOn: STORED },
+    );
+    const report = unwrapOk(
+      await staffAnalytics(ports)(
+        ask(ADMIN.id, null, localDate('2026-01-01'), AnalyticsSpan.Year),
+      ),
+    );
+    expect(dayReads.rangeQueries).toEqual([
+      [[IVAN, NIKO], '2026-01-01', '2026-12-31'],
+    ]);
+    expect(AnalyticsPeriod.length(AnalyticsPeriod.yearOf(SEPTEMBER))).toBe(365);
+    // The 27th of September to 31 December, both barbers: 96 × 2 keys; the 14 ahead.
+    const liveKeys = keysOf(IVAN, '2026-09-27', '2026-12-31').concat(
+      keysOf(NIKO, '2026-09-27', '2026-12-31'),
+    );
+    expect(reads.visitQueries.slice(0, -1).flat()).toEqual(liveKeys);
+    expect(reads.visitQueries[reads.visitQueries.length - 1]).toHaveLength(14);
+    expect(report.reportMissingDays).toBe(0);
+    expect(report.reportSeries).toHaveLength(12);
+    expect(report.reportDayRows.map((row) => row.localDate)).toEqual(
+      LocalDate.range(localDate('2026-01-01'), localDate('2026-12-01'))
+        .filter((day) => day.endsWith('-01'))
+        .flatMap((day) => [day, day]),
+    );
+  });
+});
+
 describe('staffAnalytics — the log line', () => {
-  it('logs the caller, scope, period, version, counts and minutes per part — and no money', async () => {
+  it('logs the caller, scope, period, span, comparison, version, counts and minutes per part — and no money', async () => {
     const { ports, lines } = world();
     const report = unwrapOk(
       await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
@@ -559,10 +934,13 @@ describe('staffAnalytics — the log line', () => {
     expect(line?.fields).toEqual({
       uid: IVAN_USER.id,
       scope: IVAN,
+      span: AnalyticsSpan.Month,
       periodFrom: '2026-09-01',
       periodTo: '2026-09-30',
+      comparison: AnalyticsComparison.Previous,
       definitionVersion: 2,
       visitCount: 2,
+      missingDays: 26,
       durationMs: 0,
       rosteredMinutes: report.reportRosteredMinutes,
       workedMinutes: report.reportWorkedMinutes,

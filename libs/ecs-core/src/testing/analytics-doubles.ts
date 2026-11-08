@@ -5,14 +5,16 @@ import {
   Result,
   type UserId,
 } from '@core/primitives';
-import type {
-  AnalyticsRecomputeJob,
-  Appointment,
-  BarberAnalyticsDay,
-  BarberSchedule,
-  ScheduleException,
-  ShopLocation,
-  User,
+import { RepositoryError } from '@core/errors';
+import {
+  type AnalyticsRecomputeJob,
+  type Appointment,
+  type BarberAnalyticsDay,
+  type BarberSchedule,
+  Collections,
+  type ScheduleException,
+  type ShopLocation,
+  type User,
 } from '@core/entities';
 import type {
   AnalyticsDayReadPorts,
@@ -25,6 +27,12 @@ import { AnalyticsRecomputeJobSystem, BackfillPlanSystem } from '@core/systems';
 
 /** Firestore's most values an `in` / `array-contains-any` query takes — the adapter's chunk. */
 const IN_CHUNK = 30;
+
+/** The most stored days one barber has in the reach — the adapter's range bound (`firestore-analytics.adapter.ts`). */
+const DAYS_PER_BARBER = 366;
+
+/** Firestore's canonical name for gRPC 8 — what the adapter answers a read past its bound with (`overBound`). */
+const RESOURCE_EXHAUSTED = 'resource-exhausted';
 
 /** What `memoryAnalyticsDayPorts` holds; no day and no job when omitted. */
 export type AnalyticsDayState = {
@@ -45,9 +53,10 @@ export type AnalyticsDayReadLog = {
 /**
  * `AnalyticsDayReadPorts & AnalyticsRecomputeJobPorts` over plain arrays,
  * answering as the Firestore adapters do: the range by `barberId` and an
- * inclusive `localDate` range, the keys one page (≤ `PAGE_SIZE`) at a time
- * with `null` where no day is stored, the job as held. `log` records every
- * read.
+ * inclusive `localDate` range — bounded at 366 × the barbers asked for,
+ * past it REFUSED (`resource-exhausted`), never truncated — the keys one
+ * page (≤ `PAGE_SIZE`) at a time with `null` where no day is stored, the
+ * job as held. `log` records every read.
  */
 export function memoryAnalyticsDayPorts(state: AnalyticsDayState = {}): {
   readonly ports: AnalyticsDayReadPorts & AnalyticsRecomputeJobPorts;
@@ -62,14 +71,20 @@ export function memoryAnalyticsDayPorts(state: AnalyticsDayState = {}): {
   const ports: AnalyticsDayReadPorts & AnalyticsRecomputeJobPorts = {
     loadAnalyticsDays: async (barberIds, fromLocalDate, toLocalDate) => {
       log.rangeQueries.push([barberIds, fromLocalDate, toLocalDate]);
-      return Result.ok(
-        days.filter(
-          (day) =>
-            barberIds.includes(day.barberId) &&
-            day.localDate >= fromLocalDate &&
-            day.localDate <= toLocalDate,
-        ),
+      const rows = days.filter(
+        (day) =>
+          barberIds.includes(day.barberId) &&
+          day.localDate >= fromLocalDate &&
+          day.localDate <= toLocalDate,
       );
+      return rows.length > DAYS_PER_BARBER * barberIds.length
+        ? Result.err(
+            RepositoryError.readFailed(
+              Collections.AnalyticsDays,
+              RESOURCE_EXHAUSTED,
+            ),
+          )
+        : Result.ok(rows);
     },
     loadAnalyticsDaysByKeys: async (keys) => {
       const rows: (BarberAnalyticsDay | null)[] = [];

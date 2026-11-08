@@ -9,6 +9,7 @@ import {
 import {
   UI_SHEET_HEADLINE,
   UiListGroup,
+  UiIcon,
   UiListRow,
   UiModalSheet,
   UiStack,
@@ -24,7 +25,7 @@ import {
   VisitListStyle,
   VisitPerspective,
 } from '@creativo/features/shared/visits';
-import type { BarberId } from '@core/primitives';
+import type { BarberId, LocalDate } from '@core/primitives';
 import { type AnalyticsDrillVm, DrillRows } from '../analytics.vm';
 
 /**
@@ -44,6 +45,7 @@ import { type AnalyticsDrillVm, DrillRows } from '../analytics.vm';
     UiForegroundStyleDirective,
     UiInteractiveDirective,
     UiListGroup,
+    UiIcon,
     UiListRow,
     UiModalSheet,
     UiStack,
@@ -61,6 +63,8 @@ export class AnalyticsRowsPage {
   readonly closed = output<void>();
   /** A barber's row of a shop drill-down: open that barber's report. */
   readonly openBarber = output<BarberId>();
+  /** A year's month row: the month to open (PR 4b). */
+  readonly openMonth = output<LocalDate>();
 
   protected readonly DrillRows = DrillRows;
   protected readonly VisitPerspective = VisitPerspective;

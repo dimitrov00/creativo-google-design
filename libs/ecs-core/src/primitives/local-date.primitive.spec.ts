@@ -190,8 +190,10 @@ describe('LocalDate civil arithmetic — immune to DST by construction', () => {
     expect(LocalDate.addMonths(d('2026-05-31'), -3)).toBe('2026-02-28');
   });
 
-  it('startOfMonth, monthKey and startOfWeek', () => {
+  it('startOfMonth, startOfYear, monthKey and startOfWeek', () => {
     expect(LocalDate.startOfMonth(d('2026-03-17'))).toBe('2026-03-01');
+    expect(LocalDate.startOfYear(d('2026-03-17'))).toBe('2026-01-01');
+    expect(LocalDate.startOfYear(d('2024-12-31'))).toBe('2024-01-01');
     expect(LocalDate.monthKey(d('2026-03-17'))).toBe('2026-03');
     expect(LocalDate.startOfWeek(d('2026-10-07'))).toBe('2026-10-05');
     expect(LocalDate.startOfWeek(d('2026-10-05'))).toBe('2026-10-05');

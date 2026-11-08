@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { UiChartPart } from '../chart-part';
 import {
+  fitLabel,
   UiBarChart,
   type UiBarChartOrientation,
   type UiBarChartStacking,
@@ -227,5 +228,20 @@ describe('UiBarChart', () => {
     const { bars, chart } = render((host) => host.bars.set([]));
     expect(bars()).toEqual([]);
     expect(chart.querySelector('#ui-chart-hatch')).not.toBeNull();
+  });
+});
+
+describe('fitLabel — a row’s word beside its figure', () => {
+  it('keeps a word that fits, and ellipsizes one that would run into the figure', () => {
+    expect(fitLabel('Фейд', '618,00 € · 36 пъти', 358)).toBe('Фейд');
+    const long = 'Класическа подстрижка · 21,98 € на час';
+    const fitted = fitLabel(long, '237,00 € · 22 пъти', 358);
+    expect(fitted.endsWith('…')).toBe(true);
+    expect(fitted.length).toBeLessThan(long.length);
+    expect(fitLabel(long, '', 358)).toBe(long);
+  });
+
+  it('leaves at least the ellipsis on a row too narrow for any word', () => {
+    expect(fitLabel('Фейд', '618,00 € · 36 пъти', 100)).toBe('…');
   });
 });

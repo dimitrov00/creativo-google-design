@@ -45,6 +45,29 @@ const ROW_TEXT = 18;
 const ROW_BAR = 12;
 const ROW_GAP = 8;
 const ROW_PITCH = ROW_TEXT + ROW_BAR + ROW_GAP;
+/**
+ * A caption glyph's width, near enough, for the one layout decision SVG
+ * cannot make itself: on a horizontal row the word and the figure share one
+ * line, so a word longer than the room the figure leaves is ellipsized
+ * (the accessible name keeps it whole). An estimate, not a measurement —
+ * the kit draws from numbers alone.
+ */
+const CHAR_WIDTH = 7;
+const TEXT_GAP = 12;
+
+/** The word as it fits beside its figure on a row of `width`. */
+export function fitLabel(
+  label: string,
+  valueText: string,
+  width: number,
+): string {
+  const room = Math.floor(
+    (width - valueText.length * CHAR_WIDTH - (valueText ? TEXT_GAP : 0)) /
+      CHAR_WIDTH,
+  );
+  if (label.length <= room) return label;
+  return room <= 1 ? '…' : `${label.slice(0, room - 1).trimEnd()}…`;
+}
 
 type BarSegment = {
   readonly key: number;
@@ -202,7 +225,7 @@ export class UiBarChart {
       const row = position * ROW_PITCH;
       const mark: BarMark = {
         index,
-        label: bar.label,
+        label: horizontal ? fitLabel(bar.label, valueText, width) : bar.label,
         valueText,
         name: valueText ? `${bar.label}, ${valueText}` : bar.label,
         highlight: highlight === index,

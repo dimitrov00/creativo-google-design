@@ -209,18 +209,72 @@ export type AnalyticsComparisonVm = {
   readonly testId: string;
 };
 
-/** The period switcher: Day | Week | Month, ‹ the period ›, and the comparison chip. */
+/**
+ * Why the custom-range sheet refuses its two fields — the field
+ * `rangeRefusal` of {@link AnalyticsRangeCheck}; `null` is a range the
+ * switcher may ask for.
+ */
+export const AnalyticsRangeRefusal = {
+  /** A field is empty or half-typed. */
+  Incomplete: 'INCOMPLETE',
+  /** The range starts before the reach (12 months back). */
+  BeforeReach: 'BEFORE_REACH',
+  /** The range ends after today. */
+  AfterToday: 'AFTER_TODAY',
+  /** Longer than `CUSTOM_MAX_DAYS`. */
+  TooLong: 'TOO_LONG',
+} as const;
+export type AnalyticsRangeRefusal =
+  (typeof AnalyticsRangeRefusal)[keyof typeof AnalyticsRangeRefusal];
+
+/** The store's verdict on the sheet's two fields, read by the presenter and the sheet. */
+export type AnalyticsRangeCheck =
+  | {
+      readonly rangeRefusal: null;
+      readonly fromLocalDate: LocalDate;
+      readonly toLocalDate: LocalDate;
+    }
+  | {
+      readonly rangeRefusal: Exclude<AnalyticsRangeRefusal, null>;
+      readonly fromLocalDate: LocalDate | null;
+      readonly toLocalDate: LocalDate | null;
+    };
+
+/** The custom-range sheet, worded. */
+export type AnalyticsRangeVm = {
+  readonly pillLabel: string;
+  readonly title: string;
+  readonly fromLabel: string;
+  readonly toLabel: string;
+  readonly dayLabel: string;
+  readonly monthLabel: string;
+  readonly yearLabel: string;
+  readonly dayPlaceholder: string;
+  readonly monthPlaceholder: string;
+  readonly yearPlaceholder: string;
+  readonly applyLabel: string;
+  readonly closeLabel: string;
+  /** Why «Приложи» is disabled — `null` when the range may be asked for. */
+  readonly refusal: string | null;
+  readonly applyEnabled: boolean;
+};
+
+/** The period switcher: Day | Week | Month | Year, the «…» pill, ‹ the period ›, and the comparison chip. */
 export type AnalyticsPeriodVm = {
   readonly spanLabel: string;
   readonly spans: readonly UiSegment[];
+  /** The segment on, or `CUSTOM` — which no segment names. */
   readonly selectedSpan: string;
-  /** «Септември 2026» · «28.09 – 4.10» · «вторник, 29.09». */
+  /** A custom range is on: the «…» pill reads pressed, no segment does. */
+  readonly customOn: boolean;
+  /** «Септември 2026» · «28.09 – 4.10» · «вторник, 29.09» · «2026 г.». */
   readonly label: string;
   readonly previousLabel: string;
   readonly previousEnabled: boolean;
   readonly nextLabel: string;
   readonly nextEnabled: boolean;
   readonly comparison: AnalyticsComparisonVm;
+  readonly range: AnalyticsRangeVm;
 };
 
 /** One tile of the admin's scope picker. */
@@ -370,10 +424,12 @@ export type AnalyticsInfoVm = {
   readonly closeLabel: string;
 };
 
-/** One day of the time drill-down. */
+/** One day of the time drill-down — or, on a year, one month, which opens the MONTH span. */
 export type AnalyticsDayRowVm = {
   readonly id: string;
   readonly title: string;
+  /** The month this row opens; `null` for a day. */
+  readonly month: LocalDate | null;
   readonly detail: string;
   readonly value: string;
   readonly testId: string;

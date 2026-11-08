@@ -13,6 +13,7 @@ import {
   CancellationReasonSet,
   CancelledBy,
   ClientStatsPolicy,
+  DayFigures,
   LocationStatus,
   MinuteRange,
   Placement,
@@ -28,6 +29,7 @@ import {
   LocalDate,
   LocationId,
   MinuteCount,
+  type PriceCents,
   ScheduleExceptionId,
   SeatId,
   ServiceId,
@@ -150,9 +152,11 @@ function input(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
     period: OCTOBER,
     analyticsComparison: AnalyticsComparison.Previous,
     days: [],
+    pastDays: [],
     aheadDays: [],
     visits: [],
     previousVisits: [],
+    previousPastDays: [],
     followUps: [],
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
@@ -178,14 +182,14 @@ describe('AnalyticsPeriod', () => {
 
   it('refuses a period whose first day is not a Monday or a 1st', () => {
     expect(
-      AnalyticsPeriod.of(AnalyticsSpan.Week, localDate('2026-10-12')).ok,
+      AnalyticsPeriod.of(AnalyticsSpan.Week, localDate('2026-10-12'), null).ok,
     ).toBe(true);
-    expect(AnalyticsPeriod.of(AnalyticsSpan.Week, TODAY)).toEqual({
+    expect(AnalyticsPeriod.of(AnalyticsSpan.Week, TODAY, null)).toEqual({
       ok: false,
       error: { errorCode: 'ANALYTICS_INVALID_INPUT', field: 'fromLocalDate' },
     });
     expect(
-      AnalyticsPeriod.of(AnalyticsSpan.Month, localDate('2026-10-02')).ok,
+      AnalyticsPeriod.of(AnalyticsSpan.Month, localDate('2026-10-02'), null).ok,
     ).toBe(false);
   });
 
@@ -215,6 +219,7 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
   const request = (scopeBarberId: BarberId | null): AnalyticsCall => ({
     scopeBarberId,
     fromLocalDate: OCTOBER.fromLocalDate,
+    toLocalDate: null,
     analyticsSpan: AnalyticsSpan.Month,
     analyticsComparison: AnalyticsComparison.Previous,
   });
@@ -1604,5 +1609,366 @@ describe('StaffAnalyticsSystem.seriesAverageCentsOf — the line’s dashed rule
       reportSeries: [],
     });
     expect(StaffAnalyticsSystem.seriesAverageCentsOf(report)).toBeNull();
+  });
+});
+
+/*
+ * STAFF ANALYTICS v2, PR 4b — the stored days beside the live ones, the
+ * YEAR and CUSTOM spans (`docs/designs/staff-analytics-v2.md`, Pipelines ·
+ * `staffAnalytics`; The callable v2 contract).
+ */
+describe('StaffAnalyticsSystem.report — stored days beside live days (v2)', () => {
+  const cents = (raw: number): PriceCents => raw as PriceCents;
+  const m = (raw: number): MinuteCount => raw as MinuteCount;
+  /** A stored day of `barberId` on `localDay` — zeros unless overridden. */
+  const stored = (
+    barberId: BarberId,
+    localDay: LocalDate,
+    overrides: Partial<DayFigures> = {},
+  ): DayFigures => ({
+    ...DayFigures.empty(barberId, localDay, stamp),
+    ...overrides,
+  });
+
+  it('counts a barber-day from its stored figures, never from its visits or its cut day too', () => {
+    const storedDay = stored(ivan, day(-5), {
+      dayRosteredMinutes: m(540),
+      dayWorkedMinutes: m(60),
+      dayUnsoldMinutes: m(480),
+      dayTakingsCents: cents(3000),
+      dayTipsCents: cents(200),
+      dayWorkedSeatCount: 1,
+      dayNoShowBase: 1,
+      dayRebookedBase: 1,
+      dayRebookedCount: 1,
+      dayStaffVisitCount: 1,
+      dayServices: [
+        {
+          serviceId: cut,
+          workedSeatCount: 1,
+          takingsCents: cents(3000),
+          serviceMinutes: m(60),
+        },
+      ],
+    });
+    const report = S.report(
+      input({
+        pastDays: [storedDay],
+        visits: [
+          // On the stored day: a visit the document already counts.
+          visit('held', day(-5), [seat(ivan, 9999)]),
+          // A live past day with no document, and today.
+          visit('live', day(-2), [seat(ivan, 2000, undefined, cut, 10, 100)]),
+          visit('now', TODAY, [seat(ivan, 500, undefined, beard, 10)]),
+        ],
+        days: [
+          // The stored day's cut day is not counted either.
+          dayOf(ivan, day(-5), { rosteredMinutes: 540, workedMinutes: 999 }),
+          dayOf(ivan, day(-2), { rosteredMinutes: 480, workedMinutes: 30 }),
+          dayOf(ivan, TODAY, { rosteredMinutes: 480, workedMinutes: 30 }),
+        ],
+      }),
+    );
+    expect(report.reportTakingsCents).toBe(3000 + 2000 + 500);
+    expect(report.reportTipsCents).toBe(200 + 100);
+    expect(report.reportRosteredMinutes).toBe(540 + 480 + 480);
+    expect(report.reportWorkedMinutes).toBe(60 + 30 + 30);
+    // The document's rebooking is final; the live past day joins the base.
+    expect(report.reportRebookedBase).toBe(2);
+    expect(report.reportRebookedCount).toBe(1);
+    expect(report.reportNoShowBase).toBe(3);
+    // The document's staff-booked visit, the two live online ones; the held visit not again.
+    expect(report.reportOrigins).toEqual([
+      { bookingOrigin: BookingOrigin.Online, visitCount: 2 },
+      { bookingOrigin: BookingOrigin.Staff, visitCount: 1 },
+      { bookingOrigin: BookingOrigin.Unknown, visitCount: 0 },
+    ]);
+    // The series: the document's day, the live days.
+    const point = (localDay: LocalDate) =>
+      report.reportSeries.find((p) => p.localDate === localDay);
+    expect(point(day(-5))?.takingsCents).toBe(3000);
+    expect(point(day(-2))?.takingsCents).toBe(2000);
+    expect(point(TODAY)?.takingsCents).toBe(500);
+    // The services merge the document's row with the live seats.
+    expect(report.reportServices).toEqual([
+      {
+        serviceId: cut,
+        workedSeatCount: 2,
+        takingsCents: 5000,
+        serviceMinutes: 90,
+        takingsPerHourCents: Math.round((5000 * 60) / 90),
+      },
+      {
+        serviceId: beard,
+        workedSeatCount: 1,
+        takingsCents: 500,
+        serviceMinutes: 30,
+        takingsPerHourCents: 1000,
+      },
+    ]);
+    // The rows: the document's as held, the live days' folds.
+    expect(report.reportDayRows.map((row) => row.localDate)).toEqual([
+      day(-5),
+      day(-2),
+      TODAY,
+    ]);
+    expect(report.reportDayRows[0]).toEqual(DayFigures.rowOf(storedDay));
+    expect(report.reportDayRows[1]?.dayTakingsCents).toBe(2000);
+    // One past day computed live — the one without a document.
+    expect(report.reportMissingDays).toBe(1);
+    // The hero: today cut at 14:00 (the 10:00 seat has ended), the rest as held.
+    expect(report.reportHeroCurrentCents).toBe(3000 + 2000 + 500);
+  });
+
+  it('cuts the counterpart day from its visits at the current minute, however the comparison period holds it', () => {
+    // October against September: today the 14th, its counterpart 14 September.
+    const counterpart = localDate('2026-09-14');
+    const report = S.report(
+      input({
+        previousPastDays: [
+          stored(ivan, counterpart, {
+            dayTakingsCents: cents(7000),
+            dayWorkedSeatCount: 1,
+          }),
+          stored(ivan, localDate('2026-09-13'), {
+            dayTakingsCents: cents(1000),
+            dayWorkedSeatCount: 1,
+          }),
+        ],
+        previousVisits: [
+          // Ended by 14:00 — counted; after it — not yet.
+          visit('p1', counterpart, [seat(ivan, 1500, undefined, cut, 10)]),
+          visit('p2', counterpart, [seat(ivan, 500, undefined, cut, 15)]),
+        ],
+      }),
+    );
+    // The 13th from its document, the 14th from its visits up to 14:00.
+    expect(report.reportHeroPreviousCents).toBe(1000 + 1500);
+    // The line charts the whole counterpart day as held.
+    expect(report.reportSeries[13]?.comparisonTakingsCents).toBe(7000);
+    expect(report.reportSeries[12]?.comparisonTakingsCents).toBe(1000);
+  });
+
+  it('is pure with stored days: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(
+      input({
+        pastDays: [stored(ivan, day(-5), { dayTakingsCents: cents(3000) })],
+        visits: [visit('a1', day(-2), [seat(ivan, 2000)])],
+        days: [dayOf(ivan, day(-2), { rosteredMinutes: 600 })],
+      }),
+    );
+    expect(S.report(frozen)).toEqual(S.report(frozen));
+  });
+});
+
+describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
+  const cents = (raw: number): PriceCents => raw as PriceCents;
+  const year = AnalyticsPeriod.yearOf(TODAY);
+  const quarterPlus = AnalyticsPeriod.customOf(
+    localDate('2026-01-01'),
+    localDate('2026-04-04'),
+  );
+  const fortnight = AnalyticsPeriod.customOf(
+    localDate('2026-09-07'),
+    localDate('2026-09-20'),
+  );
+
+  it('charts and lists a YEAR per month: twelve points, the comparison aligned by month, rows per barber-month', () => {
+    expect(S.seriesStartsOf(year)).toEqual(
+      LocalDate.range(localDate('2026-01-01'), localDate('2026-12-01')).filter(
+        (d) => d.endsWith('-01'),
+      ),
+    );
+    const report = S.report(
+      input({
+        period: year,
+        pastDays: [
+          {
+            ...DayFigures.empty(ivan, localDate('2026-03-10'), stamp),
+            dayTakingsCents: cents(3000),
+            dayWorkedMinutes: 60 as MinuteCount,
+          },
+          {
+            ...DayFigures.empty(ivan, localDate('2026-03-20'), stamp),
+            dayTakingsCents: cents(1000),
+          },
+        ],
+        visits: [visit('oct', day(-2), [seat(ivan, 2000)])],
+        days: [
+          dayOf(ivan, day(-2), { rosteredMinutes: 600, workedMinutes: 30 }),
+        ],
+        // Not comparable (2025 starts before the reach): no comparison at all.
+      }),
+    );
+    expect(report.reportSeries).toHaveLength(12);
+    expect(report.reportSeries[2]).toEqual({
+      localDate: localDate('2026-03-01'),
+      takingsCents: 4000,
+      comparisonTakingsCents: null,
+    });
+    expect(report.reportSeries[9]?.takingsCents).toBe(2000);
+    expect(report.reportTimeSeries).toHaveLength(12);
+    expect(report.reportTimeSeries[2]?.workedMinutes).toBe(60);
+    expect(report.reportTimeSeries[9]?.workedMinutes).toBe(30);
+    // The day rows: one per barber-month, filed under the month's first day.
+    expect(report.reportDayRows.map((row) => row.localDate)).toEqual([
+      localDate('2026-03-01'),
+      localDate('2026-10-01'),
+    ]);
+    expect(report.reportDayRows[0]).toMatchObject({
+      barberId: ivan,
+      dayTakingsCents: 4000,
+      dayWorkedMinutes: 60,
+    });
+    expect(report.reportDayRows[1]).toMatchObject({
+      barberId: ivan,
+      dayTakingsCents: 2000,
+      dayRosteredMinutes: 600,
+    });
+    expect(S.dayRowsAreMonths(report)).toBe(true);
+    expect(report.reportComparisonFromLocalDate).toBeNull();
+  });
+
+  it('charts a CUSTOM range per day up to 93 days and per ISO week beyond, the comparison aligned by position', () => {
+    expect(S.seriesStartsOf(fortnight)).toEqual(
+      AnalyticsPeriod.days(fortnight),
+    );
+    const starts = S.seriesStartsOf(quarterPlus);
+    expect(starts).toHaveLength(14);
+    expect(starts[0]).toBe('2026-01-01');
+    expect(starts.slice(1).every((d) => LocalDate.weekday(d) === 1)).toBe(true);
+    // Read on 10 April 2026, so the comparison (from 29 September 2025) is in reach.
+    const april = localDate('2026-04-10');
+    const report = S.report(
+      input({
+        period: quarterPlus,
+        now: { ...NOW, localDate: april },
+        visits: [visit('w0', localDate('2026-01-03'), [seat(ivan, 1000)])],
+        previousVisits: [
+          // The comparison: the 94 days ending 31 December 2025, cut into
+          // its own weeks — its first bucket runs from Monday 29 September.
+          visit('c0', localDate('2025-09-29'), [seat(ivan, 700)]),
+        ],
+        days: [dayOf(ivan, localDate('2026-01-03'), { workedMinutes: 30 })],
+      }),
+    );
+    expect(AnalyticsPeriod.previous(quarterPlus)).toEqual(
+      AnalyticsPeriod.customOf(
+        localDate('2025-09-29'),
+        localDate('2025-12-31'),
+      ),
+    );
+    expect(report.reportSeries[0]).toEqual({
+      localDate: localDate('2026-01-01'),
+      takingsCents: 1000,
+      comparisonTakingsCents: 700,
+    });
+    expect(report.reportSeries).toHaveLength(14);
+    expect(report.reportTimeSeries[0]?.workedMinutes).toBe(30);
+    // Rows per month beyond 93 days.
+    expect(report.reportDayRows.map((row) => row.localDate)).toEqual([
+      localDate('2026-01-01'),
+    ]);
+    expect(S.dayRowsAreMonths(report)).toBe(true);
+  });
+
+  it('dayRowsAreMonths — only past 93 days: false for a DAY, WEEK, MONTH and a short CUSTOM range', () => {
+    const of = (period: AnalyticsPeriod) =>
+      S.dayRowsAreMonths(S.report(input({ period })));
+    expect(of(AnalyticsPeriod.dayOf(TODAY))).toBe(false);
+    expect(of(AnalyticsPeriod.weekOf(TODAY))).toBe(false);
+    expect(of(OCTOBER)).toBe(false);
+    expect(of(fortnight)).toBe(false);
+    expect(
+      of(
+        AnalyticsPeriod.customOf(
+          localDate('2026-01-01'),
+          localDate('2026-04-03'),
+        ),
+      ),
+    ).toBe(false);
+    expect(of(quarterPlus)).toBe(true);
+    expect(of(year)).toBe(true);
+    // The rule reads the report's own range, not its span.
+    expect(
+      S.dayRowsAreMonths({
+        ...analyticsReportFixture(),
+        reportFromLocalDate: localDate('2026-01-01'),
+        reportToLocalDate: localDate('2026-04-04'),
+      }),
+    ).toBe(true);
+  });
+
+  it('stepsOf — a YEAR steps by a year inside the reach, a CUSTOM range by its own length', () => {
+    // 14 October 2026: last year starts before the reach, next year after today.
+    expect(S.stepsOf(year, TODAY)).toEqual({ previous: null, next: null });
+    // 15 January 2026: the reach is 1 January 2025, so 2025 is a step back.
+    const january = localDate('2026-01-15');
+    expect(S.stepsOf(AnalyticsPeriod.yearOf(january), january)).toEqual({
+      previous: AnalyticsPeriod.yearOf(localDate('2025-06-01')),
+      next: null,
+    });
+    expect(S.stepsOf(fortnight, TODAY)).toEqual({
+      previous: AnalyticsPeriod.customOf(
+        localDate('2026-08-24'),
+        localDate('2026-09-06'),
+      ),
+      next: AnalyticsPeriod.customOf(
+        localDate('2026-09-21'),
+        localDate('2026-10-04'),
+      ),
+    });
+    // Forward is disabled once the next range would start after today.
+    expect(
+      S.stepsOf(AnalyticsPeriod.customOf(localDate('2026-10-01'), TODAY), TODAY)
+        .next,
+    ).toBeNull();
+    // Backward is disabled once the previous range would start before the reach.
+    expect(
+      S.stepsOf(
+        AnalyticsPeriod.customOf(
+          localDate('2025-10-01'),
+          localDate('2025-10-14'),
+        ),
+        TODAY,
+      ).previous,
+    ).toBeNull();
+  });
+
+  it('periodInSpan — to a YEAR the year holding the first day; from a YEAR the week or month holding its first day; to CUSTOM nothing changes', () => {
+    expect(S.periodInSpan(OCTOBER, AnalyticsSpan.Year, TODAY)).toEqual(year);
+    expect(
+      S.periodInSpan(AnalyticsPeriod.dayOf(TODAY), AnalyticsSpan.Year, TODAY),
+    ).toEqual(year);
+    // A week straddling the year's edge: its first day's year is out of reach — this year.
+    expect(
+      S.periodInSpan(
+        AnalyticsPeriod.weekOf(localDate('2025-12-29')),
+        AnalyticsSpan.Year,
+        TODAY,
+      ),
+    ).toEqual(year);
+    expect(S.periodInSpan(year, AnalyticsSpan.Month, TODAY)).toEqual(
+      AnalyticsPeriod.monthOf(localDate('2026-01-01')),
+    );
+    expect(S.periodInSpan(year, AnalyticsSpan.Week, TODAY)).toEqual(
+      AnalyticsPeriod.weekOf(localDate('2026-01-01')),
+    );
+    // A running year to a DAY is today.
+    expect(S.periodInSpan(year, AnalyticsSpan.Day, TODAY)).toEqual(
+      AnalyticsPeriod.dayOf(TODAY),
+    );
+    // To CUSTOM: the sheet opens; the period changes only on «Приложи».
+    for (const period of [OCTOBER, year, AnalyticsPeriod.dayOf(TODAY)]) {
+      expect(S.periodInSpan(period, AnalyticsSpan.Custom, TODAY)).toBe(period);
+    }
+    // From a CUSTOM range: the week or month holding its last day, or today.
+    expect(S.periodInSpan(fortnight, AnalyticsSpan.Month, TODAY)).toEqual(
+      AnalyticsPeriod.monthOf(localDate('2026-09-01')),
+    );
+    expect(S.periodInSpan(fortnight, AnalyticsSpan.Week, TODAY)).toEqual(
+      AnalyticsPeriod.weekOf(localDate('2026-09-20')),
+    );
+    expect(S.periodInSpan(fortnight, AnalyticsSpan.Year, TODAY)).toEqual(year);
   });
 });

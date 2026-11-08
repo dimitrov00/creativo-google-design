@@ -7,6 +7,9 @@ import {
   lockBarberLink,
   seedUserProfile,
   seedWorkedAppointment,
+  startAnalyticsRecompute,
+  waitForAnalyticsDay,
+  waitForAnalyticsRecompute,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
 import { pinBrowserClock, suiteDay } from './support/suite-clock';
@@ -107,6 +110,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const uid = `e2e-an-barber-${run}`;
     const client = `e2e-an-client-${run}`;
     await seedUserProfile(client, { firstName: 'Петър', lastName: 'Колев' });
+    const seededAt = Date.now();
     await seedWorkedAppointment(
       `${run}-cut`,
       client,
@@ -114,6 +118,8 @@ test.describe('«Анализи» — staff analytics', () => {
       DEV_CLASSIC_CUT,
     );
     await seedWorkedAppointment(`${run}-beard`, client, monthStartAt(12));
+    // A past day's figures come from its document: let the trigger catch up.
+    await waitForAnalyticsDay('ivan', monthStartAt(11).slice(0, 10), seededAt);
     await seedUserProfile(uid, {
       firstName: 'Иван',
       lastName: 'Бръснаров',
@@ -216,6 +222,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const adminUid = `e2e-an-admin-${run}`;
     const client = `e2e-an-niko-client-${run}`;
     await seedUserProfile(client, { firstName: 'Стефан', lastName: 'Донев' });
+    const seededAt = Date.now();
     await seedWorkedAppointment(
       `${run}-niko`,
       client,
@@ -223,6 +230,7 @@ test.describe('«Анализи» — staff analytics', () => {
       DEV_CLASSIC_CUT,
       'niko',
     );
+    await waitForAnalyticsDay('niko', monthStartAt(15).slice(0, 10), seededAt);
     await seedUserProfile(adminUid, {
       firstName: 'Админ',
       lastName: 'Салонов',
@@ -383,5 +391,79 @@ test.describe('«Анализи» — staff analytics', () => {
       .toBe('DAY');
     await reportReady(page);
     await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
+  });
+
+  /**
+   * THE READ PATH (staff-analytics-v2 PR 4b): a year read from the day
+   * documents the recompute wrote (the flag is on under the emulators), the
+   * «няма данни за сравнение» chip on a year whose comparison year starts
+   * before the reach, and a custom range through the sheet.
+   */
+  test('the admin opens the year from its day documents, and a custom range through the sheet', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await pinBrowserClock(page);
+    const adminUid = `e2e-an-year-${attemptKey(test.info())}`;
+    await seedUserProfile(adminUid, {
+      firstName: 'Админ',
+      lastName: 'Година',
+      roles: [Role.Admin],
+    });
+    // The pass over the full reach: every past barber-day of the catalogue
+    // becomes a document before the year is read.
+    await startAnalyticsRecompute(`${suiteDay()}T10:00:00.000+02:00`);
+    await waitForAnalyticsRecompute();
+    await signInAs(page, adminUid, [Role.Admin]);
+
+    const day = suiteDay();
+    const january = `${day.slice(0, 4)}-01-01`;
+    await page.goto(`/staff/analytics?span=YEAR&from=${january}`);
+    await reportReady(page);
+    await expect(page.getByTestId('analytics-span')).toContainText('Година');
+    await expect(page.getByTestId('analytics-period')).toContainText(
+      day.slice(0, 4),
+    );
+    // The year's twelve months as bars (the months ahead empty); the
+    // previous year starts before the reach, so nothing is compared.
+    await expect(
+      page.getByTestId('analytics-time-bars').locator('.ui-bar-chart__bar'),
+    ).toHaveCount(12);
+    await expect(page.getByTestId('analytics-comparison-chip')).toHaveText(
+      'няма данни за сравнение',
+    );
+
+    // A custom range: the month's first day to the suite's day, typed into
+    // the sheet's two fields, applied, named in the URL.
+    const from = LocalDate.startOfMonth(day);
+    await page.getByTestId('analytics-custom-range').click();
+    const sheet = page.getByTestId('analytics-range-sheet');
+    await expect(sheet).toBeVisible();
+    const fill = async (field: string, date: string) => {
+      const inputs = page.getByTestId(field).locator('input');
+      await inputs.nth(0).fill(date.slice(8, 10));
+      await inputs.nth(1).fill(date.slice(5, 7));
+      await inputs.nth(2).fill(date.slice(0, 4));
+    };
+    await fill('analytics-range-from', from);
+    await fill('analytics-range-to', day);
+    const apply = page.getByTestId('analytics-range-apply');
+    await expect(apply).toBeEnabled();
+    await apply.click();
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return {
+          span: url.searchParams.get('span'),
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+        };
+      })
+      .toEqual({ span: 'CUSTOM', from, to: day });
+    await reportReady(page);
+    await expect(page.getByTestId('analytics-custom-range')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 });

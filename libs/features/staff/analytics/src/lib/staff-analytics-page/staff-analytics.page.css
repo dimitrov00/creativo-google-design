@@ -139,3 +139,15 @@
   margin: 0;
   text-align: center;
 }
+
+/* The four segments and the «…» pill on one line; the segments take the width. */
+.staff-analytics__spans {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.staff-analytics__segments {
+  flex: 1;
+  min-inline-size: 0;
+}

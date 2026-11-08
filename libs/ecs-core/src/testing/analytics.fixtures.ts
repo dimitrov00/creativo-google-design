@@ -12,6 +12,7 @@ import {
   DiscountMethod,
   DiscountSource,
   ExceptionEffectRule,
+  type FlagName,
   LocationStatus,
   MinuteRange,
   Role,
@@ -63,6 +64,7 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  memoryAnalyticsDayPorts,
   memoryAnalyticsReadPorts,
   memoryProfileLoadPorts,
   memoryShopDayReadPorts,
@@ -75,7 +77,11 @@ import {
 } from './booking-core.fixtures';
 import { appointmentFixture, seatFixture } from './appointment.fixtures';
 import { registeredUserFixture } from './identity.fixtures';
-import { memoryClockPorts, memoryDefaultLocationPorts } from './port-doubles';
+import {
+  memoryClockPorts,
+  memoryDefaultLocationPorts,
+  memoryFlagsPorts,
+} from './port-doubles';
 import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
@@ -607,20 +613,33 @@ export const ANALYTICS_FIXTURE_USERS = {
   }),
 } as const;
 
+/** What `analyticsFixturePorts` holds beside the fixture month: the day documents stored, and the flags on (none when omitted). */
+export type AnalyticsFixtureWorld = {
+  readonly storedDays?: readonly BarberAnalyticsDay[];
+  readonly flagsOn?: readonly FlagName[];
+};
+
 /**
  * `staffAnalytics`' ports over the fixture month, at the pinned now: the
- * reads answering as the Firestore adapter does (`memoryAnalyticsReadPorts`),
- * the default shop the centre, the policy the default one.
+ * reads answering as the Firestore adapters do (`memoryAnalyticsReadPorts`,
+ * `memoryAnalyticsDayPorts` over `world.storedDays`), the flags of
+ * `world.flagsOn` on (`analytics.storedDays` off by default — every day
+ * computed live), the default shop the centre, the policy the default one.
  */
-export function analyticsFixturePorts(): StaffAnalyticsPorts {
+export function analyticsFixturePorts(
+  world: AnalyticsFixtureWorld = {},
+): StaffAnalyticsPorts {
   const analytics = memoryAnalyticsReadPorts({
     visits: ANALYTICS_FIXTURE_VISITS,
     departures: ANALYTICS_FIXTURE_DEPARTURES,
     barberIds: [ivan, maria, niko],
     locations: ANALYTICS_FIXTURE_LOCATIONS,
   });
+  const days = memoryAnalyticsDayPorts({ days: world.storedDays ?? [] });
   return {
     ...analytics.ports,
+    ...days.ports,
+    ...memoryFlagsPorts(world.flagsOn ?? []),
     ...memoryProfileLoadPorts(Object.values(ANALYTICS_FIXTURE_USERS) as User[]),
     ...memoryShopDayReadPorts(ANALYTICS_FIXTURE_ROSTERS),
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
