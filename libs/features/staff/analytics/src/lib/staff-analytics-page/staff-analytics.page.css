@@ -133,3 +133,9 @@
   inset-block-start: 0;
   inset-inline-end: 0;
 }
+
+/* The comparison chip under the stepper, centred like the period's label. */
+.staff-analytics__comparison {
+  margin: 0;
+  text-align: center;
+}

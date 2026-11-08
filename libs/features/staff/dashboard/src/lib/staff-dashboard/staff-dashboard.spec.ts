@@ -4278,7 +4278,7 @@ describe('StaffDashboard', () => {
         .mockResolvedValue(true);
       openAnalytics();
       expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
-        queryParams: { span: 'WEEK', from: '2026-08-05' },
+        queryParams: { span: 'DAY', from: '2026-08-05' },
       });
     });
 
@@ -4300,7 +4300,7 @@ describe('StaffDashboard', () => {
         .mockResolvedValue(true);
       openAnalytics();
       expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
-        queryParams: { span: 'WEEK', from: '2026-08-05', barber: 'ivan' },
+        queryParams: { span: 'DAY', from: '2026-08-05', barber: 'ivan' },
       });
     });
 
@@ -4326,7 +4326,7 @@ describe('StaffDashboard', () => {
         .mockResolvedValue(true);
       openAnalytics();
       expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
-        queryParams: { span: 'WEEK', from: '2026-08-05' },
+        queryParams: { span: 'DAY', from: '2026-08-05' },
       });
       principal$.next(
         principalFixture.staff(AccountId.of('dev-staff-ivan'), [

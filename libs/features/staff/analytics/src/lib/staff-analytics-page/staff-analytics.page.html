@@ -121,6 +121,18 @@
           <ui-icon uiName="calendar.next" />
         </button>
       </div>
+      <!-- The comparison chip: what the figures are set against, or that the
+           comparison period lies before the reach. -->
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="staff-analytics__comparison"
+        [attr.data-comparable]="vm.period.comparison.comparable"
+        [attr.data-testid]="vm.period.comparison.testId"
+      >
+        {{ vm.period.comparison.text }}
+      </p>
     </section>
 
     <!-- THE ADMIN'S SCOPE: the shop, then «Аз», then every barber — people
@@ -280,16 +292,17 @@
           </button>
         </li>
       </ul>
+      @if (body.series; as series) {
       <div class="staff-analytics__chart">
         <ui-line-chart
-          [uiPoints]="body.series.points"
-          [uiAverage]="body.series.average"
-          [uiValueText]="body.series.valueText"
-          [uiAverageText]="body.series.averageText"
-          [uiLabel]="body.series.label"
+          [uiPoints]="series.points"
+          [uiAverage]="series.average"
+          [uiValueText]="series.valueText"
+          [uiAverageText]="series.averageText"
+          [uiLabel]="series.label"
           data-testid="analytics-series"
         />
-        @if (body.series.comparisonLegend; as legend) {
+        @if (series.comparisonLegend; as legend) {
         <p
           uiText
           uiFont="footnote"
@@ -306,7 +319,7 @@
         </p>
         }
       </div>
-      @if (body.hero.excluded; as excluded) {
+      } @if (body.hero.excluded; as excluded) {
       <p
         uiText
         uiFont="footnote"

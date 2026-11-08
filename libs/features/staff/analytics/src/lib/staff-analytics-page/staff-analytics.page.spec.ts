@@ -13,7 +13,7 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type AnalyticsCall, Role } from '@core/components';
+import { type AnalyticsCall, AnalyticsSpan, Role } from '@core/components';
 import type { AnalyticsCallPorts } from '@core/ports';
 import { Result, UserId } from '@core/primitives';
 import {
@@ -51,6 +51,25 @@ async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
   fixture.detectChanges();
 }
 
+/**
+ * The fixture report, answered in the call's span: a DAY is the fixture
+ * month cut to the day asked for (one series point, one time point).
+ */
+function reportFor(call: AnalyticsCall) {
+  const report = analyticsReportFixture();
+  if (call.analyticsSpan !== AnalyticsSpan.Day) return report;
+  const index = report.reportSeries.findIndex(
+    (point) => point.localDate === call.fromLocalDate,
+  );
+  return analyticsReportFixture({
+    reportAnalyticsSpan: AnalyticsSpan.Day,
+    reportFromLocalDate: call.fromLocalDate,
+    reportToLocalDate: call.fromLocalDate,
+    reportSeries: report.reportSeries.slice(index, index + 1),
+    reportTimeSeries: report.reportTimeSeries.slice(index, index + 1),
+  });
+}
+
 /** The route's query, as `withComponentInputBinding` sets it on the page: absent is unset. */
 type RouteQuery = Partial<Record<'span' | 'from' | 'to' | 'barber', string>>;
 
@@ -66,7 +85,7 @@ async function render(
   const calls: AnalyticsCallPorts = {
     requestReport: async (call) => {
       sent.push(call);
-      return Result.ok(analyticsReportFixture());
+      return Result.ok(reportFor(call));
     },
   };
   TestBed.configureTestingModule({
@@ -240,6 +259,35 @@ describe('StaffAnalyticsPage', () => {
   });
 });
 
+describe('StaffAnalyticsPage — a DAY (staff-analytics-v2 PR 3)', () => {
+  it('?span=DAY draws the day: three segments, the day named, the chip, one bar, no line and no heatmap', async () => {
+    const { host, sent, router } = await render({
+      query: { span: 'DAY', from: '2026-09-15' },
+    });
+    expect(sent.at(-1)).toMatchObject({
+      analyticsSpan: 'DAY',
+      fromLocalDate: '2026-09-15',
+      analyticsComparison: 'PREVIOUS',
+    });
+    expect(byTestId(host, 'analytics-span')?.textContent).toContain('Ден');
+    expect(byTestId(host, 'analytics-period')?.textContent).toContain(
+      'вторник, 15.09',
+    );
+    expect(
+      byTestId(host, 'analytics-comparison-chip')?.textContent?.trim(),
+    ).toBe('спрямо предходния период');
+    expect(byTestId(host, 'analytics-series')).toBeNull();
+    expect(byTestId(host, 'analytics-busy')).toBeNull();
+    expect(
+      byTestId(host, 'analytics-time-bars')?.querySelectorAll(
+        'svg .ui-bar-chart__bar',
+      ).length,
+    ).toBe(1);
+    expect(router.url).toContain('span=DAY');
+    expect(router.url).toContain('from=2026-09-15');
+  });
+});
+
 describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
   it('?span=WEEK&from=<day> binds: the week that holds the day, asked for once, written back as its first day', async () => {
     const { host, sent, router } = await render({
@@ -251,6 +299,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
         scopeBarberId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
+        analyticsComparison: 'PREVIOUS',
       },
     ]);
     // The first write-back: the period's first day, the span, no barber for a barber.
@@ -275,6 +324,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
         scopeBarberId: null,
         fromLocalDate: '2026-09-01',
         analyticsSpan: 'MONTH',
+        analyticsComparison: 'PREVIOUS',
       },
     ]);
     // `to` is kept by the merge and ignored; the ignored barber is dropped.
@@ -291,6 +341,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
         scopeBarberId: 'ivan',
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
+        analyticsComparison: 'PREVIOUS',
       },
     ]);
     expect(router.url).toBe('/?span=WEEK&from=2026-09-28&barber=ivan');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AnalyticsComparison,
   AnalyticsSpan,
   BookingPolicy,
   Role,
@@ -16,7 +17,7 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
-  type LocalDate,
+  LocalDate,
   LogEvent,
   Result,
   ScheduleExceptionId,
@@ -211,7 +212,13 @@ function ask(
   fromLocalDate: LocalDate = SEPTEMBER,
   analyticsSpan: AnalyticsSpan = AnalyticsSpan.Month,
 ): StaffAnalyticsCommand {
-  return { callerUserId: caller, scopeBarberId, fromLocalDate, analyticsSpan };
+  return {
+    callerUserId: caller,
+    scopeBarberId,
+    fromLocalDate,
+    analyticsSpan,
+    analyticsComparison: AnalyticsComparison.Previous,
+  };
 }
 
 describe('staffAnalytics — the visibility table on the STORED record', () => {
@@ -308,6 +315,17 @@ describe('staffAnalytics — the visibility table on the STORED record', () => {
 });
 
 describe('staffAnalytics — the period', () => {
+  it('accepts any day as a DAY', async () => {
+    const { ports } = world();
+    const report = unwrapOk(
+      await staffAnalytics(ports)(
+        ask(ADMIN.id, null, localDate('2026-09-02'), AnalyticsSpan.Day),
+      ),
+    );
+    expect(report.reportFromLocalDate).toBe('2026-09-02');
+    expect(report.reportToLocalDate).toBe('2026-09-02');
+  });
+
   it('refuses a first day that is not the 1st of the month or a Monday', async () => {
     const { ports } = world();
     const monthFrom2nd = unwrapErr(
@@ -366,6 +384,77 @@ describe('staffAnalytics — the reads', () => {
     const niko = report.reportBarbers.find((b) => b.barberId === NIKO);
     expect(ivan?.takingsCents).toBe(4500);
     expect(niko?.takingsCents).toBe(3000);
+  });
+
+  it('reads a DAY as the day, its counterpart a week earlier and the next 7 days — no follow-ups', async () => {
+    const { ports, reads } = world();
+    const tuesday = localDate('2026-09-15');
+    const report = unwrapOk(
+      await staffAnalytics(ports)(
+        ask(ADMIN.id, null, tuesday, AnalyticsSpan.Day),
+      ),
+    );
+    expect(reads.visitQueries).toEqual([
+      [BusyKey.of(IVAN, tuesday), BusyKey.of(NIKO, tuesday)],
+      [
+        BusyKey.of(IVAN, localDate('2026-09-08')),
+        BusyKey.of(NIKO, localDate('2026-09-08')),
+      ],
+      [IVAN, NIKO].flatMap((barber) =>
+        LocalDate.range(localDate('2026-09-28'), localDate('2026-10-04')).map(
+          (day) => BusyKey.of(barber, day),
+        ),
+      ),
+    ]);
+    expect(reads.followUpQueries).toEqual([]);
+    expect(reads.bookedInQueries).toEqual([]);
+    expect(reads.departureQueries).toEqual([
+      [IVAN, '2026-09-15', '2026-09-15'],
+      [NIKO, '2026-09-15', '2026-09-15'],
+      [IVAN, '2026-09-28', '2026-10-04'],
+      [NIKO, '2026-09-28', '2026-10-04'],
+    ]);
+    expect(report).toMatchObject({
+      reportAnalyticsSpan: AnalyticsSpan.Day,
+      reportFromLocalDate: tuesday,
+      reportToLocalDate: tuesday,
+      reportAnalyticsComparison: AnalyticsComparison.Previous,
+      reportComparisonFromLocalDate: localDate('2026-09-08'),
+      reportComparisonToLocalDate: localDate('2026-09-08'),
+      reportTakingsCents: 2500 + 3000,
+      reportRebookedCount: 0,
+    });
+    expect(report.reportSeries).toHaveLength(1);
+    expect(report.reportTimeSeries).toHaveLength(1);
+
+    // A barber's own day reads no follow-ups either.
+    const own = world();
+    unwrapOk(
+      await staffAnalytics(own.ports)(
+        ask(IVAN_USER.id, null, localDate('2026-09-14'), AnalyticsSpan.Day),
+      ),
+    );
+    expect(own.reads.followUpQueries).toEqual([]);
+    expect(own.reads.visitQueries.map((keys) => keys.length)).toEqual([
+      1, 1, 7,
+    ]);
+  });
+
+  it('skips the comparison read when the comparison period starts before the reach', async () => {
+    // On 28 September 2026 the reach starts 1 September 2025: September
+    // 2025 may be asked for, its comparison (August 2025) is not read.
+    const { ports, reads } = world();
+    const report = unwrapOk(
+      await staffAnalytics(ports)(ask(ADMIN.id, null, localDate('2025-09-01'))),
+    );
+    // September 2025 × 2 barbers = 60 keys in two queries, no August, the next 7 days' 14.
+    expect(reads.visitQueries.map((keys) => keys.length)).toEqual([30, 30, 14]);
+    expect(report.reportComparisonFromLocalDate).toBeNull();
+    expect(report.reportComparisonToLocalDate).toBeNull();
+    expect(report.reportHeroPreviousCents).toBeNull();
+    expect(
+      report.reportSeries.every((p) => p.comparisonTakingsCents === null),
+    ).toBe(true);
   });
 
   it('reads one barber’s follow-ups by the visits in their rebooking base', async () => {

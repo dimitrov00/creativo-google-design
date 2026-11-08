@@ -6,6 +6,7 @@ import {
   type AnalyticsCall,
   AnalyticsPeriod,
   type AnalyticsReport,
+  AnalyticsComparison,
   AnalyticsSpan,
   type Principal,
   Role,
@@ -171,6 +172,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
         cached,
@@ -194,6 +196,7 @@ describe('StaffAnalyticsStore — a barber', () => {
         scopeBarberId: null,
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
+        analyticsComparison: AnalyticsComparison.Previous,
       },
     ]);
     expect(store.scheduleBarberId()).toBe(IVAN);
@@ -209,6 +212,7 @@ describe('StaffAnalyticsStore — a barber', () => {
       userId: BARBER_UID,
       scopeBarberId: IVAN,
       analyticsSpan: AnalyticsSpan.Month,
+      analyticsComparison: AnalyticsComparison.Previous,
       fromLocalDate: SEPTEMBER.fromLocalDate,
     });
   });
@@ -232,6 +236,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
         cached,
@@ -252,6 +257,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
         analyticsReportFixture(),
@@ -292,6 +298,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
         cached,
@@ -419,6 +426,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
         scopeBarberId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: AnalyticsSpan.Week,
+        analyticsComparison: AnalyticsComparison.Previous,
       },
     ]);
   });
@@ -433,7 +441,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(store.period()?.analyticsSpan).toBe(AnalyticsSpan.Month);
   });
 
-  it.each(['YEAR', 'DAY', 'week', ''])(
+  it.each(['YEAR', 'CUSTOM', 'week', ''])(
     'an unknown span (%s) reads as a month; absent from is this one',
     (span) => {
       const { store } = build({
@@ -489,6 +497,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
         scopeBarberId: IVAN,
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
+        analyticsComparison: AnalyticsComparison.Previous,
       },
     ]);
     TestBed.resetTestingModule();

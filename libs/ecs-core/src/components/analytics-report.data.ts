@@ -12,7 +12,10 @@ import type {
   UtcEpochMs,
   Weekday,
 } from '@core/primitives';
-import type { AnalyticsSpan } from './analytics-period.data';
+import type {
+  AnalyticsComparison,
+  AnalyticsSpan,
+} from './analytics-period.data';
 
 /** The catalogue's version — raised whenever a formula changes, so cached reports are dropped. */
 export const ANALYTICS_DEFINITION_VERSION = 1;
@@ -86,6 +89,16 @@ export type AnalyticsReport = {
   readonly reportAnalyticsSpan: AnalyticsSpan;
   readonly reportFromLocalDate: LocalDate;
   readonly reportToLocalDate: LocalDate;
+  /** The comparison the call asked for — what the hero and the line compare with. */
+  readonly reportAnalyticsComparison: AnalyticsComparison;
+  /**
+   * The comparison period's first and last day (`AnalyticsPeriod.previous`);
+   * both `null` when the period is not comparable — its comparison would
+   * start before the reach — and then `reportHeroPreviousCents` and every
+   * `comparisonTakingsCents` are `null` too.
+   */
+  readonly reportComparisonFromLocalDate: LocalDate | null;
+  readonly reportComparisonToLocalDate: LocalDate | null;
 
   readonly reportRosteredMinutes: MinuteCount;
   readonly reportWorkedMinutes: MinuteCount;
@@ -116,7 +129,7 @@ export type AnalyticsReport = {
   readonly reportExcludedVisitCount: number;
   /** Takings over the compared days of this period (the hero). */
   readonly reportHeroCurrentCents: PriceCents;
-  /** Takings over the compared days of the previous period; `null` when there was none. */
+  /** Takings over the compared days of the comparison period; `null` when there was none, or the period is not comparable. */
   readonly reportHeroPreviousCents: PriceCents | null;
 
   readonly reportRebookedCount: number;
@@ -170,8 +183,9 @@ export namespace AnalyticsReport {
   /**
    * One point of the takings line: the bucket's first day, the net takings
    * of the worked seats in it (the `reportTakingsCents` rule, per bucket),
-   * and the previous period's takings at the same position — `null` where
-   * the previous period, at the same grain, has no bucket there.
+   * and the comparison period's takings at the same position — `null` where
+   * the comparison period, at the same grain, has no bucket there, and at
+   * every position when the period is not comparable. A `DAY` has one point.
    */
   export type SeriesPoint = {
     readonly localDate: LocalDate;

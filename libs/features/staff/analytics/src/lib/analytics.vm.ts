@@ -200,17 +200,27 @@ export type AnalyticsStatusVm = {
   readonly testId: string;
 };
 
-/** The period switcher: Week | Month, and ‹ the period › . */
+/** The comparison chip under the period: what the figures are compared with, or that nothing can be. */
+export type AnalyticsComparisonVm = {
+  /** «спрямо предходния период» · «няма данни за сравнение». */
+  readonly text: string;
+  /** The comparison period lies within the reach and is read. */
+  readonly comparable: boolean;
+  readonly testId: string;
+};
+
+/** The period switcher: Day | Week | Month, ‹ the period ›, and the comparison chip. */
 export type AnalyticsPeriodVm = {
   readonly spanLabel: string;
   readonly spans: readonly UiSegment[];
   readonly selectedSpan: string;
-  /** «Септември 2026» · «28.09 – 4.10». */
+  /** «Септември 2026» · «28.09 – 4.10» · «вторник, 29.09». */
   readonly label: string;
   readonly previousLabel: string;
   readonly previousEnabled: boolean;
   readonly nextLabel: string;
   readonly nextEnabled: boolean;
+  readonly comparison: AnalyticsComparisonVm;
 };
 
 /** One tile of the admin's scope picker. */
@@ -316,10 +326,10 @@ export type AnalyticsEmptyVm = {
 export type AnalyticsBodyVm = {
   readonly empty: AnalyticsEmptyVm | null;
   readonly hero: AnalyticsHeroVm;
-  /** The takings line under the hero. */
-  readonly series: AnalyticsSeriesVm;
+  /** The takings line under the hero — `null` on DAY, where the hero and its delta stand alone. */
+  readonly series: AnalyticsSeriesVm | null;
   readonly time: AnalyticsTimeVm;
-  /** When the chair is busy — `null` while the period has no rostered hour. */
+  /** When the chair is busy — `null` on DAY, and while the period has no rostered hour. */
   readonly busy: AnalyticsBusyVm | null;
   readonly open: AnalyticsOpenVm;
   readonly services: AnalyticsServicesVm;

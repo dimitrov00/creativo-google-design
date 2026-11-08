@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AnalyticsSpan, type AnalyticsReport } from '@core/components';
+import {
+  AnalyticsComparison,
+  AnalyticsSpan,
+  type AnalyticsReport,
+} from '@core/components';
 import { BarberId, LocalDate, UserId } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import type { AnalyticsCacheKey } from '@core/ports';
@@ -24,6 +28,7 @@ function keyOf(overrides: Partial<AnalyticsCacheKey> = {}): AnalyticsCacheKey {
     scopeBarberId: BarberId.of('ivan'),
     analyticsSpan: AnalyticsSpan.Month,
     fromLocalDate: SEPTEMBER,
+    analyticsComparison: AnalyticsComparison.Previous,
     ...overrides,
   };
 }
@@ -44,7 +49,7 @@ describe('localStorageAnalyticsCachePorts', () => {
 
   it('spells the key creativo.analytics/<version>/<uid>/<scope>/<period>, the shop as «shop»', () => {
     expect(analyticsCacheStorageKey(keyOf())).toBe(
-      'creativo.analytics/1/dev-staff-ivan/ivan/MONTH-2026-09-01',
+      'creativo.analytics/1/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS',
     );
     expect(
       analyticsCacheStorageKey(
@@ -54,10 +59,10 @@ describe('localStorageAnalyticsCachePorts', () => {
           fromLocalDate: unwrapOk(LocalDate.parse('2026-09-28')),
         }),
       ),
-    ).toBe('creativo.analytics/1/dev-staff-ivan/shop/WEEK-2026-09-28');
+    ).toBe('creativo.analytics/1/dev-staff-ivan/shop/WEEK-2026-09-28-PREVIOUS');
     // A segment can never reach into the next one.
     expect(analyticsCacheStorageKey(keyOf({ userId: UserId.of('a/b') }))).toBe(
-      'creativo.analytics/1/a%2Fb/ivan/MONTH-2026-09-01',
+      'creativo.analytics/1/a%2Fb/ivan/MONTH-2026-09-01-PREVIOUS',
     );
   });
 
@@ -158,13 +163,13 @@ describe('localStorageAnalyticsCachePorts', () => {
   it('sweeps an older definition’s entries on a write', () => {
     const ports = localStorageAnalyticsCachePorts();
     localStorage.setItem(
-      'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01',
+      'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS',
       '{}',
     );
     unwrapOk(ports.writeCachedReport(keyOf(), analyticsReportFixture()));
     expect(
       localStorage.getItem(
-        'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01',
+        'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS',
       ),
     ).toBeNull();
   });

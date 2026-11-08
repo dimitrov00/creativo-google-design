@@ -300,14 +300,13 @@ test.describe('«Анализи» — staff analytics', () => {
     await signInAs(page, adminUid, [Role.Admin]);
 
     const day = suiteDay();
-    const monday = LocalDate.startOfWeek(day);
     await page.goto(`/staff/schedule?day=${day}&view=agenda&barber=ivan`);
     const button = page.getByTestId('staff-analytics-open');
     await expect(button).toBeVisible({ timeout: 30_000 });
     await button.click();
 
-    // The admin was viewing Ivan's chair: Ivan's figures, the week of the
-    // day. The store's first write-back states the week's first day.
+    // The admin was viewing Ivan's chair: Ivan's figures, the day on
+    // screen (the DAY span since PR 3).
     await expect(page).toHaveURL(/\/staff\/analytics\?/);
     await expect
       .poll(() => {
@@ -318,8 +317,21 @@ test.describe('«Анализи» — staff analytics', () => {
           barber: url.searchParams.get('barber'),
         };
       })
-      .toEqual({ span: 'WEEK', from: monday, barber: 'ivan' });
+      .toEqual({ span: 'DAY', from: day, barber: 'ivan' });
     await reportReady(page);
+
+    // THE DAY SCREEN (staff-analytics-v2 PR 3): the hero and its delta stand
+    // alone (no line), the time is one stacked bar, there is no heatmap,
+    // and the comparison chip names the previous period.
+    await expect(page.getByTestId('analytics-span')).toContainText('Ден');
+    await expect(page.getByTestId('analytics-series')).toHaveCount(0);
+    await expect(page.getByTestId('analytics-busy')).toHaveCount(0);
+    await expect(
+      page.getByTestId('analytics-time-bars').locator('.ui-bar-chart__bar'),
+    ).toHaveCount(1);
+    await expect(page.getByTestId('analytics-comparison-chip')).toHaveText(
+      'спрямо предходния период',
+    );
 
     // Back: the schedule, on the same day, view and chair. The schedule
     // writes no `day` for today (its canonical URL), so the suite's day
@@ -368,7 +380,7 @@ test.describe('«Анализи» — staff analytics', () => {
       .toBeNull();
     await expect
       .poll(() => new URL(page.url()).searchParams.get('span'))
-      .toBe('WEEK');
+      .toBe('DAY');
     await reportReady(page);
     await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
   });

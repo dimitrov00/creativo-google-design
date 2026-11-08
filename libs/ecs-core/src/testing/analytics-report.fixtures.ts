@@ -1,4 +1,5 @@
 import {
+  AnalyticsComparison,
   AnalyticsSpan,
   ANALYTICS_DEFINITION_VERSION,
   type AnalyticsReport,
@@ -176,6 +177,9 @@ export function analyticsReportFixture(
     reportAnalyticsSpan: AnalyticsSpan.Month,
     reportFromLocalDate: localDate('2026-09-01'),
     reportToLocalDate: localDate('2026-09-30'),
+    reportAnalyticsComparison: AnalyticsComparison.Previous,
+    reportComparisonFromLocalDate: localDate('2026-08-01'),
+    reportComparisonToLocalDate: localDate('2026-08-31'),
 
     reportRosteredMinutes: m(1080),
     reportWorkedMinutes: m(480),
@@ -337,6 +341,7 @@ export function analyticsCacheKeyOf(key: AnalyticsCacheKey): string {
     key.scopeBarberId ?? '',
     key.analyticsSpan,
     key.fromLocalDate,
+    key.analyticsComparison,
   ].join('|');
 }
 
