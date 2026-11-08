@@ -20,11 +20,16 @@ export const AnalyticsErrorCode = {
   Forbidden: 'ANALYTICS_FORBIDDEN',
   /** A barber whose account no admin has linked to a barber record yet. */
   BarberNotLinked: 'ANALYTICS_BARBER_NOT_LINKED',
-  /** A period more than 12 months back, or starting after today. */
+  /** A period more than 12 months back, starting after today, or a `CUSTOM` range longer than `AnalyticsPeriod.CUSTOM_MAX_DAYS`. */
   PeriodOutOfRange: 'ANALYTICS_PERIOD_OUT_OF_RANGE',
   /** The requested scope names an id that is not a barber record. */
   ScopeUnknown: 'ANALYTICS_SCOPE_UNKNOWN',
-  /** A malformed request: a field missing, of the wrong type, or a period start that is not a week's or a month's first day. */
+  /**
+   * A malformed request: a field missing or of the wrong type, a period
+   * start that is not its span's first day, a `toLocalDate` on a span other
+   * than `CUSTOM` (or none on `CUSTOM`, or one before the start), or the
+   * refused `SAME_LAST_YEAR` comparison.
+   */
   InvalidInput: 'ANALYTICS_INVALID_INPUT',
 } as const;
 export type AnalyticsErrorCode =
@@ -71,7 +76,7 @@ export namespace AnalyticsError {
   };
   export type PeriodOutOfRange = {
     readonly errorCode: typeof AnalyticsErrorCode.PeriodOutOfRange;
-    /** The refused period's first day. */
+    /** The refused period's first day — before the reach, after today, or the start of a `CUSTOM` range over the cap. */
     readonly fromLocalDate: LocalDate;
   };
   export type ScopeUnknown = {
@@ -81,7 +86,7 @@ export namespace AnalyticsError {
   };
   export type InvalidInput = {
     readonly errorCode: typeof AnalyticsErrorCode.InvalidInput;
-    /** The request field at fault. */
+    /** The request field at fault: `scopeBarberId`, `fromLocalDate`, `toLocalDate`, `analyticsSpan` or `analyticsComparison`. */
     readonly field: string;
   };
 }

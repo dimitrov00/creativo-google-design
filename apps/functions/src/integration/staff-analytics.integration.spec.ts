@@ -40,6 +40,7 @@ import {
   fixtureHash,
   localDate,
   locationFixture,
+  memoryFlagsPorts,
   minute,
   pinnedNowUtcMs,
   recordingTelemetry,
@@ -239,6 +240,7 @@ describe('staffAnalytics (emulator)', () => {
         telemetry,
       ),
       ...telemetry,
+      ...memoryFlagsPorts(),
       defaultLocationId: CENTRE,
     })(cmd);
   }
@@ -251,6 +253,7 @@ describe('staffAnalytics (emulator)', () => {
     callerUserId,
     scopeBarberId,
     fromLocalDate,
+    toLocalDate: null,
     analyticsSpan: AnalyticsSpan.Month,
     analyticsComparison: AnalyticsComparison.Previous,
   });

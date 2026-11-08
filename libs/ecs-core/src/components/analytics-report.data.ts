@@ -105,6 +105,13 @@ export type AnalyticsReport = {
    */
   readonly reportComparisonFromLocalDate: LocalDate | null;
   readonly reportComparisonToLocalDate: LocalDate | null;
+  /**
+   * The period's PAST barber-days in scope computed live from their visits
+   * because no day document of this definition existed for them — the flag
+   * off, before the recompute's first pass, after a version bump (design,
+   * The callable v2 contract). The screen says nothing; the log counts them.
+   */
+  readonly reportMissingDays: number;
 
   readonly reportRosteredMinutes: MinuteCount;
   readonly reportWorkedMinutes: MinuteCount;
@@ -162,10 +169,14 @@ export type AnalyticsReport = {
   readonly reportEmptiestHour: HourOfDay | null;
 
   /**
-   * The takings line's points, in order — one per day for a period of up to
-   * 93 days, one per ISO week beyond (the first point's `localDate` is the
-   * period's first day, every later one a Monday); their `takingsCents` sum
-   * to `reportTakingsCents`.
+   * The takings line's points, in order, at the span's grain
+   * (`StaffAnalyticsSystem.seriesStartsOf`): one per day for a `DAY` (one
+   * point), a `WEEK`, a `MONTH` or a `CUSTOM` range of up to 93 days; one
+   * per ISO week for a longer `CUSTOM` range — a partial first week's
+   * `localDate` is the period's first day, every later one that week's
+   * Monday; one per month for a `YEAR` (the month's first day). Their
+   * `takingsCents` sum to `reportTakingsCents`; the comparison is aligned
+   * by position.
    */
   readonly reportSeries: readonly AnalyticsReport.SeriesPoint[];
   /** The stacked time bars, at `reportSeries`' grain; each part sums to its `reportBar…` total. */
@@ -181,9 +192,13 @@ export type AnalyticsReport = {
   /** One entry per barber record in a shop report; empty for one barber. */
   readonly reportBarbers: readonly AnalyticsReport.BarberFigures[];
   /**
-   * One row per barber-day in scope (the `TIME` drill-down), date then
-   * barber: `DayFigures.rowOf` of the day's figures — the parts and the
-   * money per day, as a stored day carries them.
+   * The `TIME` drill-down's rows, date then barber: for a period of up to
+   * 93 days one row per barber-day in scope — `DayFigures.rowOf` of the
+   * stored day's body, or of the live day's fold; beyond that
+   * (`StaffAnalyticsSystem.dayRowsAreMonths`: a `YEAR`, a longer `CUSTOM`
+   * range) one row per barber-month, `DayFigures.sum` of that month's days
+   * filed under the month's first day (a month in a `YEAR` opens the
+   * `MONTH` span).
    */
   readonly reportDayRows: readonly DayRow[];
   /** The scoped barber's seats; empty in a shop report. */

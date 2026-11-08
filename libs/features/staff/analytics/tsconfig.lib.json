@@ -39,6 +39,9 @@
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     },
     {
+      "path": "../../../ui/patterns/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/charts/tsconfig.lib.json"
     },
     {

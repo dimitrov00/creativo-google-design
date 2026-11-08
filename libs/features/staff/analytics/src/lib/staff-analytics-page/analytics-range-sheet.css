@@ -1,0 +1,21 @@
+/* The custom-range sheet: two date fields on the sheet's column, the
+   refusal line under them, «Приложи» on the action bar. */
+
+:host {
+  display: contents;
+}
+
+.analytics-range-sheet__head {
+  padding-inline: var(--sys-space-regular);
+}
+
+.analytics-range-sheet__fields {
+  padding-inline: var(--sys-space-regular);
+  padding-block: var(--sys-space-regular) var(--sys-space-spacious);
+}
+
+.analytics-range-sheet__refusal {
+  margin: 0;
+  min-block-size: 1.5em;
+  text-wrap: pretty;
+}

@@ -29,6 +29,7 @@ function keyOf(overrides: Partial<AnalyticsCacheKey> = {}): AnalyticsCacheKey {
     scopeBarberId: BarberId.of('ivan'),
     analyticsSpan: AnalyticsSpan.Month,
     fromLocalDate: SEPTEMBER,
+    toLocalDate: null,
     analyticsComparison: AnalyticsComparison.Previous,
     ...overrides,
   };
@@ -48,9 +49,9 @@ describe('localStorageAnalyticsCachePorts', () => {
     vi.restoreAllMocks();
   });
 
-  it('spells the key creativo.analytics/<version>/<uid>/<scope>/<period>, the shop as «shop»', () => {
+  it('spells the key creativo.analytics/<version>/<uid>/<scope>/<SPAN>-<from>-<to|none>-<COMPARISON>, the shop as «shop»', () => {
     expect(analyticsCacheStorageKey(keyOf())).toBe(
-      'creativo.analytics/2/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS',
+      'creativo.analytics/2/dev-staff-ivan/ivan/MONTH-2026-09-01-none-PREVIOUS',
     );
     expect(
       analyticsCacheStorageKey(
@@ -60,10 +61,34 @@ describe('localStorageAnalyticsCachePorts', () => {
           fromLocalDate: unwrapOk(LocalDate.parse('2026-09-28')),
         }),
       ),
-    ).toBe('creativo.analytics/2/dev-staff-ivan/shop/WEEK-2026-09-28-PREVIOUS');
+    ).toBe(
+      'creativo.analytics/2/dev-staff-ivan/shop/WEEK-2026-09-28-none-PREVIOUS',
+    );
+    // A CUSTOM range carries its last day, so two ranges from one day never share an entry.
+    expect(
+      analyticsCacheStorageKey(
+        keyOf({
+          analyticsSpan: AnalyticsSpan.Custom,
+          fromLocalDate: unwrapOk(LocalDate.parse('2026-09-07')),
+          toLocalDate: unwrapOk(LocalDate.parse('2026-09-20')),
+        }),
+      ),
+    ).toBe(
+      'creativo.analytics/2/dev-staff-ivan/ivan/CUSTOM-2026-09-07-2026-09-20-PREVIOUS',
+    );
+    expect(
+      analyticsCacheStorageKey(
+        keyOf({
+          analyticsSpan: AnalyticsSpan.Year,
+          fromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
+        }),
+      ),
+    ).toBe(
+      'creativo.analytics/2/dev-staff-ivan/ivan/YEAR-2026-01-01-none-PREVIOUS',
+    );
     // A segment can never reach into the next one.
     expect(analyticsCacheStorageKey(keyOf({ userId: UserId.of('a/b') }))).toBe(
-      'creativo.analytics/2/a%2Fb/ivan/MONTH-2026-09-01-PREVIOUS',
+      'creativo.analytics/2/a%2Fb/ivan/MONTH-2026-09-01-none-PREVIOUS',
     );
   });
 
@@ -107,6 +132,26 @@ describe('localStorageAnalyticsCachePorts', () => {
         ports.readCachedReport(keyOf({ analyticsSpan: AnalyticsSpan.Week })),
       ),
     ).toBeNull();
+    // Two CUSTOM ranges from the same first day are two entries.
+    const custom = (to: string) =>
+      keyOf({
+        analyticsSpan: AnalyticsSpan.Custom,
+        toLocalDate: unwrapOk(LocalDate.parse(to)),
+      });
+    unwrapOk(
+      ports.writeCachedReport(custom('2026-09-14'), analyticsReportFixture()),
+    );
+    expect(
+      unwrapOk(ports.readCachedReport(custom('2026-09-14'))),
+    ).not.toBeNull();
+    expect(unwrapOk(ports.readCachedReport(custom('2026-09-21')))).toBeNull();
+    expect(
+      unwrapOk(
+        ports.readCachedReport(
+          keyOf({ analyticsComparison: AnalyticsComparison.SameLastYear }),
+        ),
+      ),
+    ).toBeNull();
   });
 
   it(`keeps at most ${ANALYTICS_CACHE_CAPACITY} reports, the least recently written dropped first`, () => {
@@ -142,9 +187,15 @@ describe('localStorageAnalyticsCachePorts', () => {
     expect(unwrapOk(ports.readCachedReport(monthKey(9)))).toBeNull();
   });
 
-  it('deletes a stored value that is no report and answers REPOSITORY_MALFORMED', () => {
+  it('deletes a stored value that is no report of this definition and answers Result.err REPOSITORY_MALFORMED', () => {
     const ports = localStorageAnalyticsCachePorts();
     const storageKey = analyticsCacheStorageKey(keyOf());
+    // A PR 4a entry: version 2, but without the missing-days count.
+    const pr4a = Object.fromEntries(
+      Object.entries(analyticsReportFixture()).filter(
+        ([field]) => field !== 'reportMissingDays',
+      ),
+    );
     for (const raw of [
       '{not json',
       JSON.stringify({ reportTakingsCents: 'lots' }),
@@ -152,6 +203,7 @@ describe('localStorageAnalyticsCachePorts', () => {
         ...analyticsReportFixture(),
         reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION + 1,
       }),
+      JSON.stringify(pr4a),
     ]) {
       localStorage.setItem(storageKey, raw);
       expect(unwrapErr(ports.readCachedReport(keyOf())).errorCode).toBe(
@@ -161,18 +213,23 @@ describe('localStorageAnalyticsCachePorts', () => {
     }
   });
 
-  it('sweeps an older definition’s entries on a write', () => {
+  it('never reads a v1 entry (VERSION_PREFIX is this definition’s), and sweeps an older definition’s entries on a write', () => {
     const ports = localStorageAnalyticsCachePorts();
-    localStorage.setItem(
-      'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS',
-      '{}',
-    );
+    expect(ANALYTICS_DEFINITION_VERSION).toBe(2);
+    const v1 =
+      'creativo.analytics/1/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS';
+    const v0 =
+      'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS';
+    localStorage.setItem(v1, JSON.stringify(analyticsReportFixture()));
+    localStorage.setItem(v0, '{}');
+    // Nothing under this definition's prefix: no cache, whatever v1 held.
+    expect(unwrapOk(ports.readCachedReport(keyOf()))).toBeNull();
     unwrapOk(ports.writeCachedReport(keyOf(), analyticsReportFixture()));
+    expect(localStorage.getItem(v1)).toBeNull();
+    expect(localStorage.getItem(v0)).toBeNull();
     expect(
-      localStorage.getItem(
-        'creativo.analytics/0/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS',
-      ),
-    ).toBeNull();
+      localStorage.getItem(analyticsCacheStorageKey(keyOf())),
+    ).not.toBeNull();
   });
 
   it('clears every analytics entry and nothing else', () => {

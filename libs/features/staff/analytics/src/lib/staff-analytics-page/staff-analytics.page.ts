@@ -13,7 +13,12 @@ import { RouterLink } from '@angular/router';
 import { TranslocoService } from '@jsverse/transloco';
 import { AnalyticsFigure, AnalyticsSpan } from '@core/components';
 import { PipelineErrorCode } from '@core/errors';
-import { type BarberId, type ServiceId, Tag } from '@core/primitives';
+import {
+  type BarberId,
+  type LocalDate,
+  type ServiceId,
+  Tag,
+} from '@core/primitives';
 import {
   DEFAULT_LOCALE,
   loadedLanguage,
@@ -49,6 +54,7 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { AnalyticsRowsPage } from '../analytics-rows-page/analytics-rows-page';
+import { AnalyticsRangeSheet } from './analytics-range-sheet';
 import {
   type AnalyticsNames,
   analyticsDrillVm,
@@ -83,6 +89,7 @@ const INFO_CLOSE = 'close';
 @Component({
   selector: 'lib-staff-analytics',
   imports: [
+    AnalyticsRangeSheet,
     AnalyticsRowsPage,
     NgTemplateOutlet,
     RouterLink,
@@ -204,9 +211,31 @@ export class StaffAnalyticsPage {
       scopeBarberId: this.store.scopeBarberId(),
       scopeGone: this.store.scopeGone(),
       scheduleBarberId: this.store.scheduleBarberId(),
+      rangeCheck: this.store.rangeCheck(),
       names: this.names,
     });
   });
+
+  // ── The custom range and a year's months ───────────────────────────────
+
+  /** The «…» pill: the sheet, prefilled with the period on screen. */
+  protected openRange(): void {
+    this.store.openRange();
+  }
+
+  protected closeRange(): void {
+    this.store.closeRange();
+  }
+
+  protected applyRange(): void {
+    this.store.applyRange();
+  }
+
+  /** A month of a year's day rows opens that month, the drill-down closed. */
+  protected openMonth(localDate: LocalDate): void {
+    this.drill.set(null);
+    this.store.pickMonth(localDate);
+  }
 
   // ── The drill-down and the ⓘ ──────────────────────────────────────────
 

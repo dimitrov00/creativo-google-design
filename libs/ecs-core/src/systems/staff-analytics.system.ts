@@ -108,7 +108,17 @@ export type AnalyticsDay = ChairDay & {
   readonly pastDay: boolean;
 };
 
-/** Everything a report is computed from — read by the pipeline, nothing else. */
+/**
+ * Everything a report is computed from — read by the pipeline, nothing else
+ * (`docs/designs/staff-analytics-v2.md`, `staffAnalytics`). A barber-day of
+ * the period is counted ONCE, from exactly one source: its stored figures
+ * (`pastDays`, a day document of this definition) when it has them, else
+ * live — its cut day in `days` and its visits in `visits`. The same rule
+ * holds for the comparison period over `previousPastDays` and
+ * `previousVisits`; the hero's cut day (today's counterpart) is the one
+ * exception, counted from its visits up to the current minute even when a
+ * document holds it.
+ */
 export type AnalyticsInput = {
   /** The barber record reported on; `null` for the shop. */
   readonly scopeBarberId: BarberId | null;
@@ -117,18 +127,32 @@ export type AnalyticsInput = {
   readonly period: AnalyticsPeriod;
   /** The comparison the call asked for — stated on the report as it is. */
   readonly analyticsComparison: AnalyticsComparison;
-  /** The scope's barber-days of the period. */
+  /**
+   * The scope's barber-days of the period computed LIVE (`daysOf`): the
+   * live days, and the past days no current document exists for — those
+   * count in `reportMissingDays`. A day listed in `pastDays` too is read
+   * from its figures, never from here.
+   */
   readonly days: readonly AnalyticsDay[];
+  /**
+   * The stored figures of the period's PAST barber-days (the day documents
+   * of this definition, `DayFiguresSystem.fold` as the writer folded them);
+   * empty with the flag off.
+   */
+  readonly pastDays: readonly DayFigures[];
   /** The scope's barber-days of the next 7 shop days from today. */
   readonly aheadDays: readonly ChairDay[];
-  /** The period's visits with a seat in scope, each once. */
+  /** The visits of the period's live barber-days with a seat in scope, each once. */
   readonly visits: readonly AnalyticsVisit[];
   /**
-   * The comparison period's visits with a seat in scope — the hero's and
-   * the line's comparison; empty (never read) when the period is not
-   * comparable (`AnalyticsPeriod.isComparable`).
+   * The comparison period's visits with a seat in scope — its live
+   * barber-days' and, while the period runs, the counterpart day's (the
+   * hero's cut, read live however the day is held); empty (never read) when
+   * the period is not comparable (`AnalyticsPeriod.isComparable`).
    */
   readonly previousVisits: readonly AnalyticsVisit[];
+  /** The comparison period's stored past days, held like `pastDays`; empty when not comparable. */
+  readonly previousPastDays: readonly DayFigures[];
   readonly followUps: readonly AnalyticsFollowUp[];
   readonly policy: ClientStatsPolicy;
   readonly now: ShopNow;
@@ -268,6 +292,41 @@ function pastOf(days: readonly AnalyticsDay[], today: LocalDate): PastOf {
     LocalDate.addDays(localDate, 1) < today;
 }
 
+/**
+ * Which barber-days the report counts, and from where: `inScope` admits a
+ * barber's stored figures; `live` admits a barber-day's cut day and seats —
+ * in scope AND not held as stored figures, so a day is never counted twice.
+ */
+type Counting = {
+  readonly inScope: (barberId: BarberId) => boolean;
+  readonly live: (barberId: BarberId, localDate: LocalDate) => boolean;
+};
+
+function countingOf(
+  barberIds: readonly BarberId[],
+  pastDays: readonly DayFigures[],
+): Counting {
+  const scope = new Set<BarberId>(barberIds);
+  const stored = new Set<BusyKey>();
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    stored.add(BusyKey.of(day.barberId, day.localDate));
+  }
+  return {
+    inScope: (barberId) => scope.has(barberId),
+    live: (barberId, localDate) =>
+      scope.has(barberId) && !stored.has(BusyKey.of(barberId, localDate)),
+  };
+}
+
+/** `counting` narrowed to one barber — a shop report's per-barber figures. */
+function onlyOf(counting: Counting, barberId: BarberId): Counting {
+  return {
+    inScope: (id) => id === barberId,
+    live: (id, localDate) => id === barberId && counting.live(id, localDate),
+  };
+}
+
 function rateOf(count: number, base: number): number | null {
   return base >= RATE_BASE ? count / base : null;
 }
@@ -294,20 +353,20 @@ type Figures = {
 };
 
 /**
- * The distinct barbers in scope with a WORKED seat on `visit` — the figures
- * a visit earns per barber (the excluded count, the origin counts, the
- * rebooking pair) count once for each, so a stored day, which knows no
+ * The distinct barbers counted LIVE with a WORKED seat on `visit` — the
+ * figures a visit earns per barber (the excluded count, the origin counts,
+ * the rebooking pair) count once for each, so a stored day, which knows no
  * other barber's seats, sums to the report.
  */
 function workedBarbersOf(
   visit: AnalyticsVisit,
-  inScope: (barberId: BarberId) => boolean,
+  counting: Counting,
 ): ReadonlySet<BarberId> {
   const out = new Set<BarberId>();
   for (let s = 0; s < visit.seats.length; s++) {
     const seat = visit.seats[s] as Seat;
     if (
-      inScope(seat.barberId) &&
+      counting.live(seat.barberId, visit.localDate) &&
       seat.attendanceState === AttendanceState.Worked
     ) {
       out.add(seat.barberId);
@@ -316,9 +375,16 @@ function workedBarbersOf(
   return out;
 }
 
+/**
+ * The money and count figures: the stored days' sums (`DayFigures`, the
+ * same fields `DayFiguresSystem.sum` adds) plus the live days' seats under
+ * the catalogue's per-visit rules — one formula per figure, held together
+ * by property P1 (`sum(fold)` equals `report`).
+ */
 function figuresOf(
   visits: readonly AnalyticsVisit[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
   rebookedVisits: ReadonlySet<AppointmentId>,
   past: PastOf,
   policy: ClientStatsPolicy,
@@ -333,12 +399,24 @@ function figuresOf(
     noShowBase: 0,
     lateCancellationCount: 0,
   };
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (!counting.inScope(day.barberId)) continue;
+    out.takingsCents = PriceCents.add(out.takingsCents, day.dayTakingsCents);
+    out.tipsCents = PriceCents.add(out.tipsCents, day.dayTipsCents);
+    out.excludedVisitCount += day.dayExcludedVisitCount;
+    out.rebookedCount += day.dayRebookedCount;
+    out.rebookedBase += day.dayRebookedBase;
+    out.noShowCount += day.dayNoShowCount;
+    out.noShowBase += day.dayNoShowBase;
+    out.lateCancellationCount += day.dayLateCancellationCount;
+  }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
     const nets = MoneyAllocationSystem.seatNets(visit);
     for (let s = 0; s < visit.seats.length; s++) {
       const seat = visit.seats[s] as Seat;
-      if (!inScope(seat.barberId)) continue;
+      if (!counting.live(seat.barberId, visit.localDate)) continue;
       switch (seat.attendanceState) {
         case AttendanceState.Worked: {
           out.noShowBase++;
@@ -362,7 +440,7 @@ function figuresOf(
           break;
       }
     }
-    const workedBarbers = workedBarbersOf(visit, inScope);
+    const workedBarbers = workedBarbersOf(visit, counting);
     if (nets.moneyAllocation === MoneyAllocation.NotEvaluated) {
       out.excludedVisitCount += workedBarbers.size;
     }
@@ -378,31 +456,44 @@ function figuresOf(
   return out;
 }
 
-/** The hero's takings over the compared days of one period. */
+/**
+ * The hero's takings over the compared days of one period: a stored day's
+ * takings as held, a live day's from its seats — except the cut day (today,
+ * or its counterpart), counted from its visits up to `cutMinute` whether or
+ * not a document holds it.
+ */
 function heroTakings(
   visits: readonly AnalyticsVisit[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
   from: LocalDate,
   comparedDays: number,
   cutDayIndex: number | null,
   cutMinute: number,
 ): PriceCents {
   let sum = PriceCents.ZERO;
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    const index = LocalDate.daysBetween(from, day.localDate);
+    if (index < 0 || index >= comparedDays || index === cutDayIndex) continue;
+    if (!counting.inScope(day.barberId)) continue;
+    sum = PriceCents.add(sum, day.dayTakingsCents);
+  }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
     const index = LocalDate.daysBetween(from, visit.localDate);
     if (index < 0 || index >= comparedDays) continue;
+    const cut = index === cutDayIndex;
     const nets = MoneyAllocationSystem.seatNets(visit);
     if (nets.moneyAllocation !== MoneyAllocation.Allocated) continue;
     for (let s = 0; s < visit.seats.length; s++) {
       const seat = visit.seats[s] as Seat;
-      if (
-        seat.attendanceState !== AttendanceState.Worked ||
-        !inScope(seat.barberId)
-      ) {
-        continue;
-      }
-      if (index === cutDayIndex && seatEnd(seat) > cutMinute) continue;
+      if (seat.attendanceState !== AttendanceState.Worked) continue;
+      const counted = cut
+        ? counting.inScope(seat.barberId)
+        : counting.live(seat.barberId, visit.localDate);
+      if (!counted) continue;
+      if (cut && seatEnd(seat) > cutMinute) continue;
       sum = PriceCents.add(sum, (nets.nets[s] as SeatNet).netCents);
     }
   }
@@ -429,9 +520,15 @@ type TimeTotals = {
   pastShortGap: number;
 };
 
+/**
+ * The time parts: the live days' as `ChairTimeSystem` cut them, the stored
+ * days' as held — a stored day has wholly elapsed, so its blocked, held and
+ * short-gap minutes are all past ones.
+ */
 function timeOf(
   days: readonly AnalyticsDay[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
 ): TimeTotals {
   const t: TimeTotals = {
     rostered: 0,
@@ -452,9 +549,30 @@ function timeOf(
     pastHeld: 0,
     pastShortGap: 0,
   };
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (!counting.inScope(day.barberId)) continue;
+    t.rostered += day.dayRosteredMinutes;
+    t.worked += day.dayWorkedMinutes;
+    t.noShow += day.dayNoShowMinutes;
+    t.unmarked += day.dayUnmarkedMinutes;
+    t.bookedAhead += day.dayBookedAheadMinutes;
+    t.held += day.dayHeldMinutes;
+    t.blocked += day.dayBlockedMinutes;
+    t.breaks += day.dayBreakMinutes;
+    t.shortGap += day.dayShortGapMinutes;
+    t.unsold += day.dayUnsoldMinutes;
+    t.open += day.dayOpenMinutes;
+    t.closed += day.dayClosedDayMinutes;
+    t.outside += day.dayOutsideHoursMinutes;
+    t.outsideSeats += day.dayOutsideHoursSeatCount;
+    t.pastBlocked += day.dayBlockedMinutes;
+    t.pastHeld += day.dayHeldMinutes;
+    t.pastShortGap += day.dayShortGapMinutes;
+  }
   for (let i = 0; i < days.length; i++) {
     const day = days[i] as AnalyticsDay;
-    if (!inScope(day.barberId)) continue;
+    if (!counting.live(day.barberId, day.localDate)) continue;
     t.rostered += day.rosteredMinutes;
     t.worked += day.workedMinutes;
     t.noShow += day.noShowMinutes;
@@ -480,80 +598,93 @@ function timeOf(
 const AHEAD_DAYS = 7;
 
 /**
- * The longest period charted day by day (a quarter); a longer one is charted
- * per ISO week (design, `reportSeries`). Per month, for a `YEAR` span, comes
- * with that span.
+ * The longest period charted and listed day by day (a quarter); a longer
+ * `CUSTOM` range is charted per ISO week and listed per month, a `YEAR`
+ * charted and listed per month (design, `reportSeries`, `reportDayRows`).
  */
 const DAY_GRAIN_MAX_DAYS = 93;
 
 /** Days in an ISO week — the weekly grain's step. */
 const DAYS_PER_WEEK = 7;
 
+/** Is a period of `from … to` listed per month rather than per day — longer than {@link DAY_GRAIN_MAX_DAYS}. */
+function rowsPerMonth(from: LocalDate, to: LocalDate): boolean {
+  return LocalDate.daysBetween(from, to) + 1 > DAY_GRAIN_MAX_DAYS;
+}
+
 /**
- * How a period is cut into chart buckets: the first day of each, and whether
- * the buckets are weeks (else days). The weekly grain's first bucket runs
- * from the period's first day to the Sunday of its ISO week; every later
- * bucket starts on a Monday; the last ends with the period.
+ * How a period is cut into chart buckets: the first day of each, and the
+ * bucket every day of the period falls in. Per day for a period of up to
+ * {@link DAY_GRAIN_MAX_DAYS} days; per ISO week beyond — the first bucket
+ * runs from the period's first day to the Sunday of its ISO week, every
+ * later one starts on a Monday, the last ends with the period; per month
+ * for a `YEAR`.
  */
 type SeriesGrain = {
-  readonly fromLocalDate: LocalDate;
-  readonly toLocalDate: LocalDate;
-  readonly weekly: boolean;
   readonly starts: readonly LocalDate[];
+  readonly bucketOf: ReadonlyMap<LocalDate, number>;
 };
 
-function grainOf(
-  fromLocalDate: LocalDate,
-  toLocalDate: LocalDate,
-  weekly: boolean,
-): SeriesGrain {
-  if (!weekly) {
-    return {
-      fromLocalDate,
-      toLocalDate,
-      weekly,
-      starts: LocalDate.range(fromLocalDate, toLocalDate),
-    };
+function grainOf(period: AnalyticsPeriod): SeriesGrain {
+  const from = period.fromLocalDate;
+  const to = period.toLocalDate;
+  const starts: LocalDate[] = [];
+  if (period.analyticsSpan === AnalyticsSpan.Year) {
+    let first = from;
+    while (first <= to) {
+      starts.push(first);
+      first = LocalDate.addMonths(first, 1);
+    }
+  } else if (rowsPerMonth(from, to)) {
+    starts.push(from);
+    let monday = LocalDate.addDays(LocalDate.startOfWeek(from), DAYS_PER_WEEK);
+    while (monday <= to) {
+      starts.push(monday);
+      monday = LocalDate.addDays(monday, DAYS_PER_WEEK);
+    }
+  } else {
+    starts.push(...LocalDate.range(from, to));
   }
-  const starts: LocalDate[] = [fromLocalDate];
-  let monday = LocalDate.addDays(
-    LocalDate.startOfWeek(fromLocalDate),
-    DAYS_PER_WEEK,
-  );
-  while (monday <= toLocalDate) {
-    starts.push(monday);
-    monday = LocalDate.addDays(monday, DAYS_PER_WEEK);
+  const bucketOf = new Map<LocalDate, number>();
+  const days = LocalDate.range(from, to);
+  let bucket = 0;
+  for (let i = 0; i < days.length; i++) {
+    const day = days[i] as LocalDate;
+    while (
+      bucket + 1 < starts.length &&
+      (starts[bucket + 1] as LocalDate) <= day
+    ) {
+      bucket++;
+    }
+    bucketOf.set(day, bucket);
   }
-  return { fromLocalDate, toLocalDate, weekly, starts };
+  return { starts, bucketOf };
 }
 
 /** The bucket `localDate` falls in, `-1` outside the grain's period. */
 function bucketIndexOf(grain: SeriesGrain, localDate: LocalDate): number {
-  if (localDate < grain.fromLocalDate || localDate > grain.toLocalDate) {
-    return -1;
-  }
-  return grain.weekly
-    ? Math.floor(
-        LocalDate.daysBetween(
-          LocalDate.startOfWeek(grain.fromLocalDate),
-          localDate,
-        ) / DAYS_PER_WEEK,
-      )
-    : LocalDate.daysBetween(grain.fromLocalDate, localDate);
+  return grain.bucketOf.get(localDate) ?? -1;
 }
 
 /**
- * The net takings of the WORKED seats in scope per bucket — the
- * `reportTakingsCents` rule (an allocated bill's seat nets; a visit whose
- * bill could not be evaluated adds nothing), cut by the visit's shop day.
+ * The net takings per bucket — the `reportTakingsCents` rule (a stored
+ * day's takings as held; an allocated bill's seat nets on a live day; a
+ * visit whose bill could not be evaluated adds nothing), cut by the day.
  */
 function takingsByBucket(
   visits: readonly AnalyticsVisit[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
   grain: SeriesGrain,
 ): readonly PriceCents[] {
   const out: PriceCents[] = [];
   for (let i = 0; i < grain.starts.length; i++) out.push(PriceCents.ZERO);
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    const index = bucketIndexOf(grain, day.localDate);
+    if (index < 0 || !counting.inScope(day.barberId)) continue;
+    out[index] = PriceCents.add(out[index] as PriceCents, day.dayTakingsCents);
+  }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
     const index = bucketIndexOf(grain, visit.localDate);
@@ -564,7 +695,7 @@ function takingsByBucket(
       const seat = visit.seats[s] as Seat;
       if (
         seat.attendanceState !== AttendanceState.Worked ||
-        !inScope(seat.barberId)
+        !counting.live(seat.barberId, visit.localDate)
       ) {
         continue;
       }
@@ -584,18 +715,25 @@ function takingsByBucket(
  */
 function seriesOf(
   input: AnalyticsInput,
-  inScope: (barberId: BarberId) => boolean,
+  counting: Counting,
+  previousCounting: Counting,
   grain: SeriesGrain,
   previous: AnalyticsPeriod | null,
 ): readonly AnalyticsReport.SeriesPoint[] {
-  const current = takingsByBucket(input.visits, inScope, grain);
+  const current = takingsByBucket(
+    input.visits,
+    input.pastDays,
+    counting,
+    grain,
+  );
   const compared =
     previous === null
       ? []
       : takingsByBucket(
           input.previousVisits,
-          inScope,
-          grainOf(previous.fromLocalDate, previous.toLocalDate, grain.weekly),
+          input.previousPastDays,
+          previousCounting,
+          grainOf(previous),
         );
   const out: AnalyticsReport.SeriesPoint[] = [];
   for (let i = 0; i < grain.starts.length; i++) {
@@ -612,7 +750,8 @@ function seriesOf(
 /** The six bar parts per bucket — each day's as the `reportBar…` totals count them. */
 function timeSeriesOf(
   days: readonly AnalyticsDay[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
   grain: SeriesGrain,
 ): readonly AnalyticsReport.TimePoint[] {
   const out: {
@@ -635,34 +774,54 @@ function timeSeriesOf(
       otherMinutes: MinuteCount.ZERO,
     });
   }
+  const add = (
+    index: number,
+    worked: MinuteCount,
+    noShow: MinuteCount,
+    unmarked: MinuteCount,
+    blocked: MinuteCount,
+    unsold: MinuteCount,
+    held: MinuteCount,
+    shortGap: MinuteCount,
+  ): void => {
+    const point = out[index] as (typeof out)[number];
+    point.workedMinutes = MinuteCount.add(point.workedMinutes, worked);
+    point.noShowMinutes = MinuteCount.add(point.noShowMinutes, noShow);
+    point.unmarkedMinutes = MinuteCount.add(point.unmarkedMinutes, unmarked);
+    point.blockedMinutes = MinuteCount.add(point.blockedMinutes, blocked);
+    point.unsoldMinutes = MinuteCount.add(point.unsoldMinutes, unsold);
+    point.otherMinutes = MinuteCount.add(
+      MinuteCount.add(point.otherMinutes, held),
+      shortGap,
+    );
+  };
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    const index = bucketIndexOf(grain, day.localDate);
+    if (index < 0 || !counting.inScope(day.barberId)) continue;
+    add(
+      index,
+      day.dayWorkedMinutes,
+      day.dayNoShowMinutes,
+      day.dayUnmarkedMinutes,
+      day.dayBlockedMinutes,
+      day.dayUnsoldMinutes,
+      day.dayHeldMinutes,
+      day.dayShortGapMinutes,
+    );
+  }
   for (let d = 0; d < days.length; d++) {
     const day = days[d] as AnalyticsDay;
-    if (!inScope(day.barberId)) continue;
     const index = bucketIndexOf(grain, day.localDate);
-    if (index < 0) continue;
-    const point = out[index] as (typeof out)[number];
-    point.workedMinutes = MinuteCount.add(
-      point.workedMinutes,
+    if (index < 0 || !counting.live(day.barberId, day.localDate)) continue;
+    add(
+      index,
       day.workedMinutes,
-    );
-    point.noShowMinutes = MinuteCount.add(
-      point.noShowMinutes,
       day.noShowMinutes,
-    );
-    point.unmarkedMinutes = MinuteCount.add(
-      point.unmarkedMinutes,
       day.unmarkedMinutes,
-    );
-    point.blockedMinutes = MinuteCount.add(
-      point.blockedMinutes,
       day.pastBlockedMinutes,
-    );
-    point.unsoldMinutes = MinuteCount.add(
-      point.unsoldMinutes,
       day.unsoldMinutes,
-    );
-    point.otherMinutes = MinuteCount.add(
-      MinuteCount.add(point.otherMinutes, day.pastHeldMinutes),
+      day.pastHeldMinutes,
       day.pastShortGapMinutes,
     );
   }
@@ -670,16 +829,27 @@ function timeSeriesOf(
 }
 
 /**
- * Each in-scope barber-day's hour buckets: its offered stretches and the
- * chair time of its WORKED seats (a wholly cancelled visit holds no chair,
- * as `ChairTimeSystem` reads it). A day with neither is skipped — it has no
- * cell to add to.
+ * Each counted barber-day's hour buckets: a stored day's as held; a live
+ * day's from its offered stretches and the chair time of its WORKED seats
+ * (a wholly cancelled visit holds no chair, as `ChairTimeSystem` reads it).
+ * A live day with neither is skipped — it has no cell to add to.
  */
 function hourDaysOf(
   days: readonly AnalyticsDay[],
+  pastDays: readonly DayFigures[],
   visits: readonly AnalyticsVisit[],
-  inScope: (barberId: BarberId) => boolean,
+  counting: Counting,
 ): readonly HourDay[] {
+  const out: HourDay[] = [];
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (!counting.inScope(day.barberId)) continue;
+    out.push({
+      localDate: day.localDate,
+      worked: day.dayHourWorked,
+      rostered: day.dayHourRostered,
+    });
+  }
   const seatsOn = new Map<BusyKey, MinuteRange[]>();
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
@@ -688,7 +858,7 @@ function hourDaysOf(
       const seat = visit.seats[s] as Seat;
       if (
         seat.attendanceState !== AttendanceState.Worked ||
-        !inScope(seat.barberId)
+        !counting.live(seat.barberId, visit.localDate)
       ) {
         continue;
       }
@@ -699,10 +869,9 @@ function hourDaysOf(
       else list.push(chair);
     }
   }
-  const out: HourDay[] = [];
   for (let d = 0; d < days.length; d++) {
     const day = days[d] as AnalyticsDay;
-    if (!inScope(day.barberId)) continue;
+    if (!counting.live(day.barberId, day.localDate)) continue;
     const seats = seatsOn.get(BusyKey.of(day.barberId, day.localDate));
     if (day.stretches.length === 0 && seats === undefined) continue;
     out.push(
@@ -715,16 +884,63 @@ function hourDaysOf(
 /** How many distinct shop days of the period roster any minute in scope — the heatmap sentence's base. */
 function rosteredDayCountOf(
   days: readonly AnalyticsDay[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
 ): number {
   const dates = new Set<LocalDate>();
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (counting.inScope(day.barberId) && day.dayRosteredMinutes > 0) {
+      dates.add(day.localDate);
+    }
+  }
   for (let d = 0; d < days.length; d++) {
     const day = days[d] as AnalyticsDay;
-    if (inScope(day.barberId) && day.rosteredMinutes > 0) {
+    if (counting.live(day.barberId, day.localDate) && day.rosteredMinutes > 0) {
       dates.add(day.localDate);
     }
   }
   return dates.size;
+}
+
+/** The past barber-days in scope computed live — no current document held them. */
+function missingDaysOf(
+  days: readonly AnalyticsDay[],
+  counting: Counting,
+): number {
+  let count = 0;
+  for (let d = 0; d < days.length; d++) {
+    const day = days[d] as AnalyticsDay;
+    if (day.pastDay && counting.live(day.barberId, day.localDate)) count++;
+  }
+  return count;
+}
+
+/** Whether any counted barber-day of the comparison period holds a WORKED seat in scope — else there was no previous period to compare with. */
+function hadWorkedSeat(
+  visits: readonly AnalyticsVisit[],
+  pastDays: readonly DayFigures[],
+  counting: Counting,
+): boolean {
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (counting.inScope(day.barberId) && day.dayWorkedSeatCount > 0) {
+      return true;
+    }
+  }
+  for (let v = 0; v < visits.length; v++) {
+    const visit = visits[v] as AnalyticsVisit;
+    for (let s = 0; s < visit.seats.length; s++) {
+      const seat = visit.seats[s] as Seat;
+      if (
+        counting.inScope(seat.barberId) &&
+        seat.attendanceState === AttendanceState.Worked
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** The minutes `input`'s day would roster — its windows, blocks and breaks, normalized. */
@@ -763,9 +979,11 @@ function nowOf(
 }
 
 /**
- * STAFF ANALYTICS (`docs/designs/staff-analytics.md`, catalogue v1) — the
- * visibility table and the report, every value decided here so a presenter
- * only words it (Law 10).
+ * STAFF ANALYTICS (`docs/designs/staff-analytics.md`, catalogue v1;
+ * `docs/designs/staff-analytics-v2.md`) — the visibility table and the
+ * report, every value decided here so a presenter only words it (Law 10).
+ * A past day is read from its stored figures when a document holds them
+ * and computed live otherwise; one formula per figure, whichever the source.
  */
 export const StaffAnalyticsSystem = {
   RATE_BASE,
@@ -804,14 +1022,20 @@ export const StaffAnalyticsSystem = {
    * (`reportSeries`, `reportTimeSeries`): every day for a period of up to
    * {@link DAY_GRAIN_MAX_DAYS} days; beyond that the period's first day and
    * then every Monday inside it — a partial first or last ISO week is a
-   * bucket of its own.
+   * bucket of its own; for a `YEAR` the first day of each month.
    */
   seriesStartsOf(period: AnalyticsPeriod): readonly LocalDate[] {
-    return grainOf(
-      period.fromLocalDate,
-      period.toLocalDate,
-      AnalyticsPeriod.length(period) > DAY_GRAIN_MAX_DAYS,
-    ).starts;
+    return grainOf(period).starts;
+  },
+
+  /**
+   * Whether `report`'s day rows are per month rather than per barber-day —
+   * a period longer than {@link DAY_GRAIN_MAX_DAYS} days (a `YEAR`, a
+   * `CUSTOM` range over a quarter): the presenter titles such a row by its
+   * month and lets it open the `MONTH` span, and never re-derives the rule.
+   */
+  dayRowsAreMonths(report: AnalyticsReport): boolean {
+    return rowsPerMonth(report.reportFromLocalDate, report.reportToLocalDate);
   },
 
   /**
@@ -879,6 +1103,52 @@ export const StaffAnalyticsSystem = {
       }
     }
     return keys;
+  },
+
+  /**
+   * The busy keys of the barber-days computed LIVE — every `barberIds` ×
+   * `localDates` key no stored day in `stored` (`currentStoredOf`) holds,
+   * barber by barber: the keys the pipeline reads visits by; the past days
+   * among them are `reportMissingDays`.
+   */
+  liveKeysOf(
+    barberIds: readonly BarberId[],
+    localDates: readonly LocalDate[],
+    stored: readonly DayFigures[],
+  ): readonly BusyKey[] {
+    const held = new Set<BusyKey>();
+    for (let i = 0; i < stored.length; i++) {
+      const day = stored[i] as DayFigures;
+      held.add(BusyKey.of(day.barberId, day.localDate));
+    }
+    const out: BusyKey[] = [];
+    for (let b = 0; b < barberIds.length; b++) {
+      for (let d = 0; d < localDates.length; d++) {
+        const key = BusyKey.of(
+          barberIds[b] as BarberId,
+          localDates[d] as LocalDate,
+        );
+        if (!held.has(key)) out.push(key);
+      }
+    }
+    return out;
+  },
+
+  /**
+   * The stored days the report counts: those of `stored` folded under THIS
+   * definition (`dayDefinitionVersion`) — a document of an older definition
+   * is version-stale and left to the live path, as the design's `staffAnalytics`
+   * step 3 rules, until the recompute rewrites it.
+   */
+  currentStoredOf<D extends DayFigures>(stored: readonly D[]): readonly D[] {
+    const out: D[] = [];
+    for (let i = 0; i < stored.length; i++) {
+      const day = stored[i] as D;
+      if (day.dayDefinitionVersion === ANALYTICS_DEFINITION_VERSION) {
+        out.push(day);
+      }
+    }
+    return out;
   },
 
   /**
@@ -1090,8 +1360,13 @@ export const StaffAnalyticsSystem = {
   },
 
   report(input: AnalyticsInput): AnalyticsReport {
-    const scope = new Set<BarberId>(input.barberIds);
-    const inScope = (barberId: BarberId): boolean => scope.has(barberId);
+    // Which barber-days are held as stored figures — the period's and the
+    // comparison period's each on their own side.
+    const counting = countingOf(input.barberIds, input.pastDays);
+    const previousCounting = countingOf(
+      input.barberIds,
+      input.previousPastDays,
+    );
     const today = input.now.localDate;
     const past = pastOf(input.days, today);
     const rebooked = DayFiguresSystem.rebookedVisits(
@@ -1100,12 +1375,13 @@ export const StaffAnalyticsSystem = {
     );
     const figures = figuresOf(
       input.visits,
-      inScope,
+      input.pastDays,
+      counting,
       rebooked,
       past,
       input.policy,
     );
-    const time = timeOf(input.days, inScope);
+    const time = timeOf(input.days, input.pastDays, counting);
 
     // The hero: the compared days of this period against the comparison
     // period's — the same elapsed days, the counterpart day (a DAY's whole
@@ -1125,7 +1401,8 @@ export const StaffAnalyticsSystem = {
     const cutIndex = running ? compared - 1 : null;
     const heroCurrent = heroTakings(
       input.visits,
-      inScope,
+      input.pastDays,
+      counting,
       period.fromLocalDate,
       compared,
       cutIndex,
@@ -1133,12 +1410,10 @@ export const StaffAnalyticsSystem = {
     );
     const hadPrevious =
       previous !== null &&
-      input.previousVisits.some((visit) =>
-        visit.seats.some(
-          (seat) =>
-            inScope(seat.barberId) &&
-            seat.attendanceState === AttendanceState.Worked,
-        ),
+      hadWorkedSeat(
+        input.previousVisits,
+        input.previousPastDays,
+        previousCounting,
       );
     const previousCompared =
       previous === null
@@ -1148,7 +1423,8 @@ export const StaffAnalyticsSystem = {
       previous !== null && hadPrevious
         ? heroTakings(
             input.previousVisits,
-            inScope,
+            input.previousPastDays,
+            previousCounting,
             previous.fromLocalDate,
             previousCompared,
             cutIndex !== null && cutIndex < previousCompared ? cutIndex : null,
@@ -1157,17 +1433,13 @@ export const StaffAnalyticsSystem = {
         : null;
 
     // The charts: the period cut into buckets, the hour grid and its peaks.
-    const grain = grainOf(
-      period.fromLocalDate,
-      period.toLocalDate,
-      length > DAY_GRAIN_MAX_DAYS,
-    );
+    const grain = grainOf(period);
     const hourGrid = AnalyticsHourSystem.grid(
-      hourDaysOf(input.days, input.visits, inScope),
+      hourDaysOf(input.days, input.pastDays, input.visits, counting),
     );
     const peaks = AnalyticsHourSystem.peak(
       hourGrid,
-      rosteredDayCountOf(input.days, inScope),
+      rosteredDayCountOf(input.days, input.pastDays, counting),
     );
 
     return {
@@ -1182,6 +1454,7 @@ export const StaffAnalyticsSystem = {
         previous === null ? null : previous.fromLocalDate,
       reportComparisonToLocalDate:
         previous === null ? null : previous.toLocalDate,
+      reportMissingDays: missingDaysOf(input.days, counting),
 
       reportRosteredMinutes: minutes(time.rostered),
       reportWorkedMinutes: minutes(time.worked),
@@ -1219,7 +1492,7 @@ export const StaffAnalyticsSystem = {
       reportNoShowRate: rateOf(figures.noShowCount, figures.noShowBase),
       reportLateCancellationCount: figures.lateCancellationCount,
 
-      ...bookableOf(input.aheadDays, inScope, today),
+      ...bookableOf(input.aheadDays, counting, today),
 
       reportBusiestWeekday:
         peaks.busiest === null ? null : peaks.busiest.weekday,
@@ -1228,20 +1501,38 @@ export const StaffAnalyticsSystem = {
         peaks.emptiest === null ? null : peaks.emptiest.weekday,
       reportEmptiestHour: peaks.emptiest === null ? null : peaks.emptiest.hour,
 
-      reportSeries: seriesOf(input, inScope, grain, previous),
-      reportTimeSeries: timeSeriesOf(input.days, inScope, grain),
+      reportSeries: seriesOf(
+        input,
+        counting,
+        previousCounting,
+        grain,
+        previous,
+      ),
+      reportTimeSeries: timeSeriesOf(
+        input.days,
+        input.pastDays,
+        counting,
+        grain,
+      ),
       reportHourGrid: hourGrid,
 
-      reportServices: servicesOf(input.visits, inScope),
-      reportWeekdayFill: weekdayFillOf(input.days, inScope, today),
-      reportOrigins: originsOf(input.visits, inScope),
+      reportServices: servicesOf(input.visits, input.pastDays, counting),
+      reportWeekdayFill: weekdayFillOf(
+        input.days,
+        input.pastDays,
+        counting,
+        today,
+      ),
+      reportOrigins: originsOf(input.visits, input.pastDays, counting),
       reportBarbers:
-        input.scopeBarberId === null ? barbersOf(input, rebooked, past) : [],
-      reportDayRows: dayRowsOf(input, inScope),
+        input.scopeBarberId === null
+          ? barbersOf(input, rebooked, past, counting)
+          : [],
+      reportDayRows: dayRowsOf(input, counting),
       reportSeatRows:
         input.scopeBarberId === null
           ? []
-          : seatRowsOf(input, rebooked, past, input.scopeBarberId),
+          : seatRowsOf(input, rebooked, past, input.scopeBarberId, counting),
     };
   },
 
@@ -1415,22 +1706,29 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * The period before and after `period` of its span — the week or month
-   * before and after, the day before and after (a `DAY` steps by one day;
-   * its COMPARISON is a week back, `AnalyticsPeriod.previous`) — each only
-   * when it may be asked for on `today` (`AnalyticsPeriod.isWithinRange`:
-   * back no further than the reach, forward never past today): the switcher
-   * never offers what the callable refuses.
+   * The period before and after `period` of its span — the week, month or
+   * year before and after, the day before and after (a `DAY` steps by one
+   * day; its COMPARISON is a week back, `AnalyticsPeriod.previous`), a
+   * `CUSTOM` range shifted by its own length either way — each only when it
+   * may be asked for on `today` (`AnalyticsPeriod.isWithinRange`: back no
+   * further than the reach, forward never starting past today): the
+   * switcher never offers what the callable refuses.
    */
   stepsOf(period: AnalyticsPeriod, today: LocalDate): AnalyticsSteps {
-    const previous = AnalyticsPeriod.holding(
-      period.analyticsSpan,
-      LocalDate.addDays(period.fromLocalDate, -1),
-    );
-    const next = AnalyticsPeriod.holding(
-      period.analyticsSpan,
-      LocalDate.addDays(period.toLocalDate, 1),
-    );
+    const custom = period.analyticsSpan === AnalyticsSpan.Custom;
+    const previous = custom
+      ? AnalyticsPeriod.previous(period)
+      : AnalyticsPeriod.holding(
+          period.analyticsSpan,
+          LocalDate.addDays(period.fromLocalDate, -1),
+        );
+    const after = LocalDate.addDays(period.toLocalDate, 1);
+    const next = custom
+      ? AnalyticsPeriod.customOf(
+          after,
+          LocalDate.addDays(after, AnalyticsPeriod.length(period) - 1),
+        )
+      : AnalyticsPeriod.holding(period.analyticsSpan, after);
     return {
       previous: AnalyticsPeriod.isWithinRange(previous, today)
         ? previous
@@ -1440,19 +1738,25 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * The period of `span` a switch from `period` lands on. To a `DAY`: today
-   * when `period` holds it, else `period`'s first day. To a `WEEK` or a
-   * `MONTH`: the one holding `period`'s last day, or today when that is
-   * later — so a past month switches to its last week, the current one to
-   * this week, a day to the week or month holding it — and this span's
-   * current period when the one landed on is out of reach.
+   * The period of `span` a switch from `period` lands on (design, The
+   * callable v2 contract). To a `DAY`: today when `period` holds it, else
+   * `period`'s first day. To a `YEAR`: the year holding `period`'s first
+   * day. From a `YEAR` to a `WEEK` or a `MONTH`: the one holding the year's
+   * first day. Otherwise to a `WEEK` or a `MONTH`: the one holding `period`'s
+   * last day, or today when that is later — so a past month switches to its
+   * last week, the current one to this week, a day to the week or month
+   * holding it. The span's current period when the one landed on is out of
+   * reach. To `CUSTOM` the period stays as it is: the range sheet opens and
+   * the period changes only on «Приложи» (the store's job).
    */
   periodInSpan(
     period: AnalyticsPeriod,
     span: AnalyticsSpan,
     today: LocalDate,
   ): AnalyticsPeriod {
-    if (span === period.analyticsSpan) return period;
+    if (span === period.analyticsSpan || span === AnalyticsSpan.Custom) {
+      return period;
+    }
     const running =
       period.fromLocalDate <= today && today <= period.toLocalDate;
     const day =
@@ -1460,9 +1764,12 @@ export const StaffAnalyticsSystem = {
         ? running
           ? today
           : period.fromLocalDate
-        : period.toLocalDate < today
-          ? period.toLocalDate
-          : today;
+        : span === AnalyticsSpan.Year ||
+            period.analyticsSpan === AnalyticsSpan.Year
+          ? period.fromLocalDate
+          : period.toLocalDate < today
+            ? period.toLocalDate
+            : today;
     const landed = AnalyticsPeriod.holding(span, day);
     return AnalyticsPeriod.isWithinRange(landed, today)
       ? landed
@@ -1533,7 +1840,7 @@ function seatRowCounts(
  */
 function bookableOf(
   aheadDays: readonly ChairDay[],
-  inScope: (barberId: BarberId) => boolean,
+  counting: Counting,
   today: LocalDate,
 ): {
   readonly reportBookableOpenMinutes: MinuteCount;
@@ -1545,7 +1852,7 @@ function bookableOf(
   for (let i = 0; i < dates.length; i++) open.push(MinuteCount.ZERO);
   for (let i = 0; i < aheadDays.length; i++) {
     const day = aheadDays[i] as ChairDay;
-    if (!inScope(day.barberId)) continue;
+    if (!counting.inScope(day.barberId)) continue;
     const index = LocalDate.daysBetween(today, day.localDate);
     if (index < 0 || index >= dates.length) continue;
     open[index] = MinuteCount.add(open[index] as MinuteCount, day.openMinutes);
@@ -1571,14 +1878,49 @@ function bookableOf(
   };
 }
 
+/** A service row under construction — mutable inside one call only. */
+type ServiceTotals = { count: number; takings: PriceCents; minutes: number };
+
+/**
+ * The worked seats by service: a stored day's rows as held, a live day's
+ * seats as the fold would count them; the takings per hour of service
+ * derived here, never stored. Most takings first; a tie by service id, so
+ * the order is stable.
+ */
 function servicesOf(
   visits: readonly AnalyticsVisit[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
 ): readonly AnalyticsReport.ServiceRow[] {
-  const rows = new Map<
-    ServiceId,
-    { count: number; takings: PriceCents; minutes: number }
-  >();
+  const rows = new Map<ServiceId, ServiceTotals>();
+  const add = (
+    serviceId: ServiceId,
+    count: number,
+    takings: PriceCents,
+    serviceMinutes: number,
+  ): void => {
+    const row = rows.get(serviceId);
+    if (row === undefined) {
+      rows.set(serviceId, { count, takings, minutes: serviceMinutes });
+    } else {
+      row.count += count;
+      row.takings = PriceCents.add(row.takings, takings);
+      row.minutes += serviceMinutes;
+    }
+  };
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (!counting.inScope(day.barberId)) continue;
+    for (let s = 0; s < day.dayServices.length; s++) {
+      const row = day.dayServices[s] as DayFigures.ServiceRow;
+      add(
+        row.serviceId,
+        row.workedSeatCount,
+        row.takingsCents,
+        row.serviceMinutes,
+      );
+    }
+  }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
     const nets = MoneyAllocationSystem.seatNets(visit);
@@ -1586,24 +1928,18 @@ function servicesOf(
       const seat = visit.seats[s] as Seat;
       if (
         seat.attendanceState !== AttendanceState.Worked ||
-        !inScope(seat.barberId)
+        !counting.live(seat.barberId, visit.localDate)
       ) {
         continue;
       }
-      const row = rows.get(seat.serviceId) ?? {
-        count: 0,
-        takings: PriceCents.ZERO,
-        minutes: 0,
-      };
-      row.count++;
-      row.minutes += seat.durationMinutes;
-      if (nets.moneyAllocation === MoneyAllocation.Allocated) {
-        row.takings = PriceCents.add(
-          row.takings,
-          (nets.nets[s] as SeatNet).netCents,
-        );
-      }
-      rows.set(seat.serviceId, row);
+      add(
+        seat.serviceId,
+        1,
+        nets.moneyAllocation === MoneyAllocation.Allocated
+          ? (nets.nets[s] as SeatNet).netCents
+          : PriceCents.ZERO,
+        seat.durationMinutes,
+      );
     }
   }
   const out: AnalyticsReport.ServiceRow[] = [];
@@ -1619,7 +1955,6 @@ function servicesOf(
           : null,
     });
   }
-  // Most takings first; a tie by service id, so the order is stable.
   return out.sort(
     (a, b) =>
       b.takingsCents - a.takingsCents ||
@@ -1627,20 +1962,44 @@ function servicesOf(
   );
 }
 
+/** Fill by weekday over the period's days before today: (worked + no-show + unmarked) ÷ (rostered − break). */
 function weekdayFillOf(
   days: readonly AnalyticsDay[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
   today: LocalDate,
 ): readonly AnalyticsReport.WeekdayFill[] {
   const byWeekday = new Map<Weekday, { filled: number; capacity: number }>();
+  const add = (
+    localDate: LocalDate,
+    filled: number,
+    capacity: number,
+  ): void => {
+    const weekday = LocalDate.weekday(localDate);
+    const entry = byWeekday.get(weekday) ?? { filled: 0, capacity: 0 };
+    entry.filled += filled;
+    entry.capacity += capacity;
+    byWeekday.set(weekday, entry);
+  };
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (!counting.inScope(day.barberId) || day.localDate >= today) continue;
+    add(
+      day.localDate,
+      day.dayWorkedMinutes + day.dayNoShowMinutes + day.dayUnmarkedMinutes,
+      day.dayRosteredMinutes - day.dayBreakMinutes,
+    );
+  }
   for (let i = 0; i < days.length; i++) {
     const day = days[i] as AnalyticsDay;
-    if (!inScope(day.barberId) || day.localDate >= today) continue;
-    const weekday = LocalDate.weekday(day.localDate);
-    const entry = byWeekday.get(weekday) ?? { filled: 0, capacity: 0 };
-    entry.filled += day.workedMinutes + day.noShowMinutes + day.unmarkedMinutes;
-    entry.capacity += day.rosteredMinutes - day.breakMinutes;
-    byWeekday.set(weekday, entry);
+    if (!counting.live(day.barberId, day.localDate) || day.localDate >= today) {
+      continue;
+    }
+    add(
+      day.localDate,
+      day.workedMinutes + day.noShowMinutes + day.unmarkedMinutes,
+      day.rosteredMinutes - day.breakMinutes,
+    );
   }
   const out: AnalyticsReport.WeekdayFill[] = [];
   for (const [weekday, entry] of byWeekday) {
@@ -1655,20 +2014,29 @@ function weekdayFillOf(
 }
 
 /**
- * Visits by where they were booked — each counted once per barber in scope
- * with a worked seat on it (`workedBarbersOf`), so a shop's shares are the
- * sum of its barbers' and of its stored days'.
+ * Visits by where they were booked — a stored day's counts as held; a live
+ * visit counted once per barber in scope with a worked seat on it
+ * (`workedBarbersOf`), so a shop's shares are the sum of its barbers' and
+ * of its stored days'.
  */
 function originsOf(
   visits: readonly AnalyticsVisit[],
-  inScope: (barberId: BarberId) => boolean,
+  pastDays: readonly DayFigures[],
+  counting: Counting,
 ): readonly AnalyticsReport.OriginShare[] {
   let online = 0;
   let staff = 0;
   let unknown = 0;
+  for (let i = 0; i < pastDays.length; i++) {
+    const day = pastDays[i] as DayFigures;
+    if (!counting.inScope(day.barberId)) continue;
+    online += day.dayOnlineVisitCount;
+    staff += day.dayStaffVisitCount;
+    unknown += day.dayUnknownOriginVisitCount;
+  }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
-    const counts = workedBarbersOf(visit, inScope).size;
+    const counts = workedBarbersOf(visit, counting).size;
     if (counts === 0) continue;
     if (visit.placement === Placement.Self) online += counts;
     else if (visit.placement === Placement.Staff) staff += counts;
@@ -1685,13 +2053,21 @@ function barbersOf(
   input: AnalyticsInput,
   rebooked: ReadonlySet<AppointmentId>,
   past: PastOf,
+  counting: Counting,
 ): readonly AnalyticsReport.BarberFigures[] {
   const out: AnalyticsReport.BarberFigures[] = [];
   for (let b = 0; b < input.barberIds.length; b++) {
     const barberId = input.barberIds[b] as BarberId;
-    const only = (id: BarberId): boolean => id === barberId;
-    const figures = figuresOf(input.visits, only, rebooked, past, input.policy);
-    const time = timeOf(input.days, only);
+    const only = onlyOf(counting, barberId);
+    const figures = figuresOf(
+      input.visits,
+      input.pastDays,
+      only,
+      rebooked,
+      past,
+      input.policy,
+    );
+    const time = timeOf(input.days, input.pastDays, only);
     out.push({
       barberId,
       rosteredMinutes: minutes(time.rostered),
@@ -1715,16 +2091,33 @@ function barbersOf(
   return out;
 }
 
+/** Date, then barber — the order the day rows are listed in. */
+function byDateThenBarber(a: DayRow, b: DayRow): number {
+  return (
+    (a.localDate < b.localDate ? -1 : a.localDate > b.localDate ? 1 : 0) ||
+    (a.barberId < b.barberId ? -1 : a.barberId > b.barberId ? 1 : 0)
+  );
+}
+
 /**
- * One row per in-scope barber-day: `DayFigures.rowOf` of the day's fold
- * (`DayFiguresSystem.fold`, the same fold that writes a day document) over
- * the visits of its shop day — so the live rows the report computes and the
- * rows a stored day answers are spelt by one rule. Date, then barber.
+ * The `TIME` drill-down's rows: each counted barber-day's figures — a
+ * stored day's as held, a live day's `DayFiguresSystem.fold` (the same fold
+ * that writes a day document) over the visits of its shop day — so the
+ * live rows the report computes and the rows a stored day answers are spelt
+ * by one rule. One row per barber-day (`DayFigures.rowOf`) for a period of
+ * up to {@link DAY_GRAIN_MAX_DAYS} days; beyond that one per barber-month,
+ * `DayFiguresSystem.sum` of the month's days filed under its first day.
+ * Date, then barber.
  */
 function dayRowsOf(
   input: AnalyticsInput,
-  inScope: (barberId: BarberId) => boolean,
+  counting: Counting,
 ): readonly DayRow[] {
+  const figures: DayFigures[] = [];
+  for (let i = 0; i < input.pastDays.length; i++) {
+    const day = input.pastDays[i] as DayFigures;
+    if (counting.inScope(day.barberId)) figures.push(day);
+  }
   const visitsOn = new Map<LocalDate, AnalyticsVisit[]>();
   for (let v = 0; v < input.visits.length; v++) {
     const visit = input.visits[v] as AnalyticsVisit;
@@ -1732,27 +2125,44 @@ function dayRowsOf(
     if (list === undefined) visitsOn.set(visit.localDate, [visit]);
     else list.push(visit);
   }
-  const out: DayRow[] = [];
   for (let i = 0; i < input.days.length; i++) {
     const day = input.days[i] as AnalyticsDay;
-    if (!inScope(day.barberId)) continue;
-    out.push(
-      DayFigures.rowOf(
-        DayFiguresSystem.fold({
-          day,
-          visits: visitsOn.get(day.localDate) ?? [],
-          followUps: input.followUps,
-          policy: input.policy,
-          computedAtUtcMs: input.now.utcEpochMs,
-        }),
-      ),
+    if (!counting.live(day.barberId, day.localDate)) continue;
+    figures.push(
+      DayFiguresSystem.fold({
+        day,
+        visits: visitsOn.get(day.localDate) ?? [],
+        followUps: input.followUps,
+        policy: input.policy,
+        computedAtUtcMs: input.now.utcEpochMs,
+      }),
     );
   }
-  return out.sort(
-    (a, b) =>
-      (a.localDate < b.localDate ? -1 : a.localDate > b.localDate ? 1 : 0) ||
-      (a.barberId < b.barberId ? -1 : a.barberId > b.barberId ? 1 : 0),
-  );
+  const out: DayRow[] = [];
+  if (rowsPerMonth(input.period.fromLocalDate, input.period.toLocalDate)) {
+    const months = new Map<BusyKey, DayFigures[]>();
+    for (let i = 0; i < figures.length; i++) {
+      const day = figures[i] as DayFigures;
+      const key = BusyKey.of(
+        day.barberId,
+        LocalDate.startOfMonth(day.localDate),
+      );
+      const list = months.get(key);
+      if (list === undefined) months.set(key, [day]);
+      else list.push(day);
+    }
+    for (const [key, list] of months) {
+      const { barberId, localDate } = BusyKey.split(key);
+      out.push(
+        DayFigures.rowOf(DayFiguresSystem.sum(list, barberId, localDate)),
+      );
+    }
+  } else {
+    for (let i = 0; i < figures.length; i++) {
+      out.push(DayFigures.rowOf(figures[i] as DayFigures));
+    }
+  }
+  return out.sort(byDateThenBarber);
 }
 
 function seatRowsOf(
@@ -1760,10 +2170,12 @@ function seatRowsOf(
   rebooked: ReadonlySet<AppointmentId>,
   past: PastOf,
   barberId: BarberId,
+  counting: Counting,
 ): readonly AnalyticsReport.SeatRow[] {
   const out: AnalyticsReport.SeatRow[] = [];
   for (let v = 0; v < input.visits.length; v++) {
     const visit = input.visits[v] as AnalyticsVisit;
+    if (!counting.live(barberId, visit.localDate)) continue;
     const nets = MoneyAllocationSystem.seatNets(visit);
     const inBase = past(barberId, visit.localDate);
     let rebookMarked = false;

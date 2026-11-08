@@ -37,7 +37,12 @@ import {
   analyticsInfoVm,
   analyticsVm,
 } from './analytics.presenter';
-import { AnalyticsLoad, AnalyticsTopic, DrillRows } from './analytics.vm';
+import {
+  AnalyticsLoad,
+  AnalyticsRangeRefusal,
+  AnalyticsTopic,
+  DrillRows,
+} from './analytics.vm';
 
 const SEPTEMBER = AnalyticsPeriod.monthOf(FIXTURE_TODAY);
 const cents = (raw: number) => raw as PriceCents;
@@ -59,6 +64,11 @@ function inputOf(
     scopeBarberId: null,
     scopeGone: false,
     scheduleBarberId: IVAN,
+    rangeCheck: {
+      rangeRefusal: AnalyticsRangeRefusal.Incomplete,
+      fromLocalDate: null,
+      toLocalDate: null,
+    },
     names: NAMES,
     ...overrides,
   };
@@ -87,6 +97,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       'Ден',
       'Седмица',
       'Месец',
+      'Година',
     ]);
     expect(vm.period.selectedSpan).toBe('MONTH');
     expect(vm.period.label).toBe('Септември 2026\u202fг.');
@@ -318,6 +329,7 @@ describe('analyticsVm — the same month in English', () => {
       'Day',
       'Week',
       'Month',
+      'Year',
     ]);
     expect(vm.period.label).toBe('September 2026');
     expect(body.hero).toMatchObject({
@@ -641,11 +653,12 @@ describe('analyticsVm — a DAY (staff-analytics-v2 PR 3)', () => {
   const vm = analyticsVm(input);
   const body = bodyOf(input);
 
-  it('offers the three spans, names the day, and the chip says what it is compared with', () => {
+  it('offers the four spans, names the day, and the chip says what it is compared with', () => {
     expect(vm.period.spans.map((span) => span.label)).toEqual([
       'Ден',
       'Седмица',
       'Месец',
+      'Година',
     ]);
     expect(vm.period.selectedSpan).toBe('DAY');
     expect(vm.period.label).toBe('вторник, 15.09');

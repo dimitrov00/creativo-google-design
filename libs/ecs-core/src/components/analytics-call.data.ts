@@ -24,17 +24,22 @@ import type { DayRow } from './day-figures.data';
 
 /**
  * What the `staffAnalytics` callable is asked for — flat (Law 6): the
- * scope, the period's first day and span, and the comparison.
+ * scope, the period's first day, last day and span, and the comparison.
  * `scopeBarberId: null` is the shop for an admin and the caller's own barber
  * record for a barber; the period is rebuilt with `AnalyticsPeriod.of`,
  * which refuses a first day that is not its span's first (any day for a
- * `DAY`, a Monday, a 1st). `analyticsComparison` is `PREVIOUS` in v2 —
- * `SAME_LAST_YEAR` is named by the contract and refused by the wire
- * (`docs/designs/staff-analytics-v2.md`, The callable v2 contract).
+ * `DAY`, a Monday, a 1st, 1 January). `toLocalDate` is `null` unless the
+ * span is `CUSTOM` — a `to` on another span, or none on `CUSTOM`, is
+ * `ANALYTICS_INVALID_INPUT` on `toLocalDate`. `analyticsComparison` is
+ * `PREVIOUS` in v2 — `SAME_LAST_YEAR` is named by the contract and refused
+ * by the wire (`docs/designs/staff-analytics-v2.md`, The callable v2
+ * contract).
  */
 export type AnalyticsCall = {
   readonly scopeBarberId: BarberId | null;
   readonly fromLocalDate: LocalDate;
+  /** The `CUSTOM` range's last day; `null` on every other span. */
+  readonly toLocalDate: LocalDate | null;
   readonly analyticsSpan: AnalyticsSpan;
   readonly analyticsComparison: AnalyticsComparison;
 };
@@ -319,6 +324,7 @@ export const AnalyticsCall = {
       reportComparisonToLocalDate: r.localDateOrNull(
         'reportComparisonToLocalDate',
       ),
+      reportMissingDays: r.count('reportMissingDays'),
 
       reportRosteredMinutes: r.minutes('reportRosteredMinutes'),
       reportWorkedMinutes: r.minutes('reportWorkedMinutes'),

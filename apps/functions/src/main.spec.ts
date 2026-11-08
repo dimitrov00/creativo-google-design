@@ -879,6 +879,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
       callerUserId: 'u-staff',
       scopeBarberId: null,
       fromLocalDate: '2026-11-01',
+      toLocalDate: null,
       analyticsSpan: 'MONTH',
       analyticsComparison: 'PREVIOUS',
     },
@@ -2360,6 +2361,30 @@ describe('main.ts — the composition root', () => {
           wireStatus: 'internal',
         }),
       );
+    });
+  });
+
+  describe('the staff analytics ports (v2 PR 4b)', () => {
+    it('hands staffAnalytics the server ports and the build-time flags, built once — and no other read-only callable the flags', async () => {
+      const own = caseOf('staffAnalytics');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('staffAnalytics', own.input);
+      await run('staffAnalytics', own.input);
+      const [first, second] = seam.calls.map(
+        (call) => call.ports as Record<string, unknown>,
+      );
+      expect(second).toBe(first);
+      expect(first).toMatchObject({
+        sentinel: seam.BUNDLE.sentinel,
+        defaultLocationId: 'loc-center',
+      });
+      expect(typeof first?.['flagOn']).toBe('function');
+      expect(first).not.toHaveProperty('provisionAuthUser');
+      expect(first).not.toHaveProperty('walkInHash');
+      await run('cancelAppointment', caseOf('cancelAppointment').input);
+      const booking = seam.calls[2]?.ports as Record<string, unknown>;
+      expect(booking).not.toHaveProperty('flagOn');
+      expect(seam.built).toHaveLength(1);
     });
   });
 

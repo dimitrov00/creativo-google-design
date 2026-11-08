@@ -2636,11 +2636,31 @@
       "label": "Период",
       "DAY": "Ден",
       "WEEK": "Седмица",
-      "MONTH": "Месец"
+      "MONTH": "Месец",
+      "YEAR": "Година",
+      "CUSTOM": "Друг период"
     },
     "comparison": {
       "previous": "спрямо предходния период",
       "none": "няма данни за сравнение"
+    },
+    "customRange": {
+      "pill": "Друг период",
+      "title": "Друг период",
+      "from": "От",
+      "to": "До",
+      "day": "Ден",
+      "month": "Месец",
+      "year": "Година",
+      "dayPlaceholder": "ДД",
+      "monthPlaceholder": "ММ",
+      "yearPlaceholder": "ГГГГ",
+      "apply": "Приложи",
+      "close": "Затвори",
+      "incomplete": "Въведете двете дати",
+      "beforeReach": "Най-рано {{earliest}}",
+      "afterToday": "Не по-късно от днес",
+      "tooLong": "Най-много {{days}} дни"
     },
     "previous": "Предишен период",
     "next": "Следващ период",

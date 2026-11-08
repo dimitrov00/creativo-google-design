@@ -172,6 +172,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
@@ -196,6 +197,7 @@ describe('StaffAnalyticsStore — a barber', () => {
         scopeBarberId: null,
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
+        toLocalDate: null,
         analyticsComparison: AnalyticsComparison.Previous,
       },
     ]);
@@ -212,6 +214,7 @@ describe('StaffAnalyticsStore — a barber', () => {
       userId: BARBER_UID,
       scopeBarberId: IVAN,
       analyticsSpan: AnalyticsSpan.Month,
+      toLocalDate: null,
       analyticsComparison: AnalyticsComparison.Previous,
       fromLocalDate: SEPTEMBER.fromLocalDate,
     });
@@ -236,6 +239,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
@@ -257,6 +261,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
@@ -298,6 +303,7 @@ describe('StaffAnalyticsStore — a barber', () => {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
           analyticsSpan: AnalyticsSpan.Month,
+          toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
           fromLocalDate: SEPTEMBER.fromLocalDate,
         },
@@ -426,6 +432,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
         scopeBarberId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: AnalyticsSpan.Week,
+        toLocalDate: null,
         analyticsComparison: AnalyticsComparison.Previous,
       },
     ]);
@@ -441,7 +448,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(store.period()?.analyticsSpan).toBe(AnalyticsSpan.Month);
   });
 
-  it.each(['YEAR', 'CUSTOM', 'week', ''])(
+  it.each(['QUARTER', 'CUSTOM', 'week', ''])(
     'an unknown span (%s) reads as a month; absent from is this one',
     (span) => {
       const { store } = build({
@@ -497,6 +504,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
         scopeBarberId: IVAN,
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
+        toLocalDate: null,
         analyticsComparison: AnalyticsComparison.Previous,
       },
     ]);
@@ -515,6 +523,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(store.published()).toEqual({
       span: AnalyticsSpan.Week,
       from: '2026-09-28',
+      to: null,
       barber: IVAN,
     });
     // …and written on the next task, never inside the activation.
@@ -532,6 +541,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(store.published()).toEqual({
       span: AnalyticsSpan.Month,
       from: '2026-09-01',
+      to: null,
       barber: null,
     });
     await settle();
@@ -547,6 +557,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(store.published()).toEqual({
       span: undefined,
       from: undefined,
+      to: undefined,
       barber: undefined,
     });
     await settle();
@@ -569,7 +580,12 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(navigate).toHaveBeenCalledWith(
       [],
       expect.objectContaining({
-        queryParams: { span: 'WEEK', from: '2026-08-31', barber: null },
+        queryParams: {
+          span: 'WEEK',
+          from: '2026-08-31',
+          to: null,
+          barber: null,
+        },
         queryParamsHandling: 'merge',
         replaceUrl: true,
       }),

@@ -32,7 +32,9 @@ Content slot `[uiChartLegend]` under the drawing.
 
 Vertical: the words along the baseline, each bar `(width ÷ n) − 2 px` wide,
 the plot 120 px tall. Horizontal: a row per bar — the word and the value text
-on the line above the bar, the bar 12 px thick across the width. Marks: 4 px
+on the line above the bar, the bar 12 px thick across the width. A word
+longer than the room its figure leaves is ellipsized (`fitLabel`, an estimate of
+7 px a glyph); the accessible name keeps it whole. Marks: 4 px
 rounded data ends (`clip-path: inset(… round …)` on the bar's marks), 2 px of
 surface between parts and between bars, a 1 px `--sys-color-separator` edge. A
 bar's length and its place in the stack glide on the registered properties

@@ -1,0 +1,77 @@
+@let range = vm();
+<ui-modal-sheet
+  sheetId="analytics-range-sheet"
+  [labelledBy]="titleId"
+  [closeLabel]="range.closeLabel"
+  [open]="presented()"
+  [closing]="closing()"
+  [fitted]="true"
+  data-testid="analytics-range-sheet"
+  (dismissed)="requestClose()"
+  (closeFinished)="finishClose()"
+>
+  <span sheet-title>{{ range.title }}</span>
+
+  <div class="analytics-range-sheet__head">
+    <ui-sheet-headline>
+      <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+        {{ range.title }}
+      </h2>
+    </ui-sheet-headline>
+  </div>
+
+  <ui-stack uiSpacing="regular" class="analytics-range-sheet__fields">
+    <ui-date-field
+      uiControlSize="large"
+      [label]="range.fromLabel"
+      [dayLabel]="range.dayLabel"
+      [monthLabel]="range.monthLabel"
+      [yearLabel]="range.yearLabel"
+      [dayPlaceholder]="range.dayPlaceholder"
+      [monthPlaceholder]="range.monthPlaceholder"
+      [yearPlaceholder]="range.yearPlaceholder"
+      [value]="from()"
+      data-testid="analytics-range-from"
+      (valueChange)="fromChange.emit($event)"
+    />
+    <ui-date-field
+      uiControlSize="large"
+      [label]="range.toLabel"
+      [dayLabel]="range.dayLabel"
+      [monthLabel]="range.monthLabel"
+      [yearLabel]="range.yearLabel"
+      [dayPlaceholder]="range.dayPlaceholder"
+      [monthPlaceholder]="range.monthPlaceholder"
+      [yearPlaceholder]="range.yearPlaceholder"
+      [value]="to()"
+      data-testid="analytics-range-to"
+      (valueChange)="toChange.emit($event)"
+    />
+    <!-- Why «Приложи» is off, in words; an empty line keeps the sheet's
+         height when the range is fine. -->
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="analytics-range-sheet__refusal"
+      aria-live="polite"
+      data-testid="analytics-range-refusal"
+    >
+      {{ range.refusal ?? '' }}
+    </p>
+  </ui-stack>
+
+  <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [disabled]="!range.applyEnabled"
+      data-testid="analytics-range-apply"
+      (click)="apply()"
+    >
+      {{ range.applyLabel }}
+    </button>
+  </ui-sheet-action-bar>
+</ui-modal-sheet>

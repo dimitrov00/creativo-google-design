@@ -13,7 +13,7 @@
     "client.privacy": true,
     "referrals.invitations": false,
     "discounts.grants": false,
-    "analytics.storedDays": false
+    "analytics.storedDays": true
   },
   "staging": {
     "client.profile": false,
@@ -29,7 +29,7 @@
     "client.privacy": false,
     "referrals.invitations": false,
     "discounts.grants": false,
-    "analytics.storedDays": false
+    "analytics.storedDays": true
   },
   "production": {
     "client.profile": false,

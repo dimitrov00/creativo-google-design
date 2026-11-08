@@ -32,6 +32,7 @@ import {
   formatDayShort,
   formatInstant,
   formatMinute,
+  formatMonthLong,
   formatPercent,
   formatSignedPercent,
   formatWallClock,
@@ -47,6 +48,7 @@ import {
   spanWords,
   visitSectionLabel,
 } from '@creativo/features/shared/visits';
+import type { UiDateFieldParts } from '@creativo/ui/controls';
 import type { AnalyticsWords } from './analytics.words';
 import {
   type AnalyticsAheadVm,
@@ -65,6 +67,9 @@ import {
   type AnalyticsOpenVm,
   type AnalyticsOriginsVm,
   type AnalyticsPeriodVm,
+  type AnalyticsRangeCheck,
+  AnalyticsRangeRefusal,
+  type AnalyticsRangeVm,
   type AnalyticsScopeVm,
   type AnalyticsSeriesVm,
   type AnalyticsServicesVm,
@@ -119,6 +124,8 @@ export interface AnalyticsScreenInput {
   readonly scopeGone: boolean;
   /** The barber record the open-hours card opens the schedule on; `null` is everyone. */
   readonly scheduleBarberId: BarberId | null;
+  /** The store's verdict on the custom-range sheet's fields. */
+  readonly rangeCheck: AnalyticsRangeCheck;
   readonly names: AnalyticsNames;
 }
 
@@ -262,15 +269,19 @@ function periodOf(input: AnalyticsScreenInput): AnalyticsPeriodVm {
   const comparable = AnalyticsPeriod.isComparable(period, input.today);
   return {
     spanLabel: words.spanLabel,
-    spans: [AnalyticsSpan.Day, AnalyticsSpan.Week, AnalyticsSpan.Month].map(
-      (span) => ({
-        id: span,
-        // eslint-disable-next-line security/detect-object-injection -- `span` is a closed `AnalyticsSpan` literal.
-        label: words.span[span],
-        testId: `analytics-span-${span.toLowerCase()}`,
-      }),
-    ),
+    spans: [
+      AnalyticsSpan.Day,
+      AnalyticsSpan.Week,
+      AnalyticsSpan.Month,
+      AnalyticsSpan.Year,
+    ].map((span) => ({
+      id: span,
+      // eslint-disable-next-line security/detect-object-injection -- `span` is a closed `AnalyticsSpan` literal.
+      label: words.span[span],
+      testId: `analytics-span-${span.toLowerCase()}`,
+    })),
     selectedSpan: period.analyticsSpan,
+    customOn: period.analyticsSpan === AnalyticsSpan.Custom,
     label: periodLabelOf(period, input),
     previousLabel: words.previous,
     previousEnabled: steps.previous !== null,
@@ -281,7 +292,64 @@ function periodOf(input: AnalyticsScreenInput): AnalyticsPeriodVm {
       comparable,
       testId: 'analytics-comparison-chip',
     },
+    range: rangeOf(input),
   };
+}
+
+/** The sheet's two fields as a shop day — `null` while empty, half-typed or no calendar day. */
+export function partsToLocalDate(
+  parts: UiDateFieldParts | null,
+): LocalDate | null {
+  if (parts === null) return null;
+  const day = LocalDate.fromParts(parts.year, parts.month, parts.day);
+  return day.ok ? day.value : null;
+}
+
+/** The custom-range sheet's words, and why «Приложи» is off (the store's check, worded). */
+function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
+  const { words } = input;
+  const refusal = rangeRefusalOf(input.rangeCheck, input);
+  return {
+    pillLabel: words.customRange.pill,
+    title: words.customRange.title,
+    fromLabel: words.customRange.from,
+    toLabel: words.customRange.to,
+    dayLabel: words.customRange.day,
+    monthLabel: words.customRange.month,
+    yearLabel: words.customRange.year,
+    dayPlaceholder: words.customRange.dayPlaceholder,
+    monthPlaceholder: words.customRange.monthPlaceholder,
+    yearPlaceholder: words.customRange.yearPlaceholder,
+    applyLabel: words.customRange.apply,
+    closeLabel: words.customRange.close,
+    refusal,
+    applyEnabled: refusal === null,
+  };
+}
+
+function rangeRefusalOf(
+  check: AnalyticsRangeCheck,
+  input: AnalyticsScreenInput,
+): string | null {
+  const { words } = input;
+  switch (check.rangeRefusal) {
+    case null:
+      return null;
+    case AnalyticsRangeRefusal.Incomplete:
+      return words.customRange.incomplete;
+    case AnalyticsRangeRefusal.BeforeReach:
+      return words.customRange.beforeReach(
+        formatDayShort(
+          AnalyticsPeriod.earliestOn(input.today),
+          input.today,
+          words.lang,
+        ),
+      );
+    case AnalyticsRangeRefusal.AfterToday:
+      return words.customRange.afterToday;
+    case AnalyticsRangeRefusal.TooLong:
+      return words.customRange.tooLong(AnalyticsPeriod.CUSTOM_MAX_DAYS);
+  }
 }
 
 /** «Септември 2026 г.» · «28.09 – 4.10» · «вторник, 29.09». */
@@ -292,6 +360,11 @@ function periodLabelOf(
   const lang = input.words.lang;
   if (period.analyticsSpan === AnalyticsSpan.Day) {
     return dayWithWeekday(period.fromLocalDate, lang);
+  }
+  if (period.analyticsSpan === AnalyticsSpan.Year) {
+    return formatWallClock(period.fromLocalDate, null, lang, {
+      year: 'numeric',
+    });
   }
   return period.analyticsSpan === AnalyticsSpan.Month
     ? visitSectionLabel(period.fromLocalDate.slice(0, 7), lang)
@@ -415,8 +488,33 @@ function axisLabels(
 ): readonly string[] {
   // A day's one bar carries no word: the period's label names the day.
   if (span === AnalyticsSpan.Day) return points.map(() => '');
-  if (span === AnalyticsSpan.Week) {
+  if (
+    span === AnalyticsSpan.Week ||
+    (span === AnalyticsSpan.Custom && points.length <= 7)
+  ) {
     return points.map((point) => weekdayShort(point.localDate, lang));
+  }
+  // A year's points are its months; a custom range over 93 days is in
+  // weeks, each named by its first day.
+  if (span === AnalyticsSpan.Year) {
+    return points.map((point) =>
+      formatWallClock(point.localDate, null, lang, { month: 'short' }),
+    );
+  }
+  if (span === AnalyticsSpan.Custom && points.length > 0) {
+    const first = points[0]?.localDate;
+    const last = points[points.length - 1]?.localDate;
+    if (
+      first !== undefined &&
+      last !== undefined &&
+      LocalDate.daysBetween(first, last) + 1 > points.length
+    ) {
+      return points.map((point, i) =>
+        i % 4 === 0
+          ? formatDayShort(point.localDate, point.localDate, lang)
+          : '',
+      );
+    }
   }
   return points.map((point, i) =>
     i % 7 === 0 ? String(LocalDate.parts(point.localDate).day) : '',
@@ -1010,13 +1108,19 @@ function barberRowOf(
 function dayRowOf(row: DayRow, input: AnalyticsDrillInput): AnalyticsDayRowVm {
   const { words } = input;
   const span = (minutes: number) => spanWords(minutes, words.spanWords);
+  // Beyond 93 days the report's rows are months (the callable v2 contract);
+  // a month opens the MONTH span.
+  const monthly = StaffAnalyticsSystem.dayRowsAreMonths(input.report);
   return {
     id: `${row.barberId}__${row.localDate}`,
-    title: formatWallClock(row.localDate, null, words.lang, {
-      weekday: 'short',
-      day: 'numeric',
-      month: '2-digit',
-    }),
+    title: monthly
+      ? formatMonthLong(row.localDate, words.lang)
+      : formatWallClock(row.localDate, null, words.lang, {
+          weekday: 'short',
+          day: 'numeric',
+          month: '2-digit',
+        }),
+    month: monthly ? row.localDate : null,
     detail: words.drill.dayLine(
       span(row.dayRosteredMinutes),
       span(row.dayUnsoldMinutes),

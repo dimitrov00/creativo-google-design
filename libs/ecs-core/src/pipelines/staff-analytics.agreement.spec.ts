@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AnalyticsComparison,
   AnalyticsFigure,
@@ -9,6 +9,7 @@ import {
   ClientStatsPolicy,
   DayFigures,
   type DayRow,
+  FlagName,
   type Seat,
   SeatSubject,
 } from '@core/components';
@@ -37,6 +38,7 @@ import {
 } from '@core/systems';
 import {
   ANALYTICS_FIXTURE_BARBERS,
+  type AnalyticsFixtureWorld,
   ANALYTICS_FIXTURE_CUSTOMERS,
   ANALYTICS_FIXTURE_DEPARTURES,
   ANALYTICS_FIXTURE_LOCATIONS,
@@ -75,16 +77,19 @@ const USER_OF = new Map<BarberId, UserId>([
 const NOW = ZonedTimeSystem.shopNow(FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE);
 const BUSY: readonly BarberBusyDay[] = analyticsFixtureBusyDays();
 
+/** The fixture month's report through the pipeline — every day live unless `world` stores days and turns the flag on. */
 async function reportOf(
   callerUserId: UserId,
   scopeBarberId: BarberId | null,
+  world: AnalyticsFixtureWorld = {},
 ): Promise<AnalyticsReport> {
   return unwrapOk(
-    await staffAnalytics(analyticsFixturePorts())({
+    await staffAnalytics(analyticsFixturePorts(world))({
       callerUserId,
       scopeBarberId,
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+      toLocalDate: null,
       analyticsComparison: AnalyticsComparison.Previous,
     }),
   );
@@ -634,5 +639,122 @@ describe('P1 — sum(days.map(fold)) + live === report(visits), over the fixture
 
   it('holds for each barber', async () => {
     for (const barberId of BARBERS) await expectP1(barberId);
+  });
+});
+
+/*
+ * P2 — THE FLAG'S TWO SETTINGS AGREE (staff analytics v2, PR 4b's gate):
+ * through `staffAnalytics(ports)` over the fixture month, a report read
+ * with `analytics.storedDays` on — the 1st to the 26th from their day
+ * documents, the 27th to the 30th live — equals the report read with it
+ * off, every field but two: `reportComputedAtUtcMs` (the clock's, pinned
+ * here anyway) and `reportMissingDays` (what the flag changes: 26 past
+ * barber-days a scope computed live with it off, none with every document
+ * present). `reportSeatRows` is the one list the stored path cannot fill
+ * for a past day — its visits are not read — so it carries the live days'
+ * rows only (the design's non-goal: seat rows are read live from visits).
+ * A month with only half its documents agrees too: the missing half is
+ * computed live from its visits and counted.
+ */
+describe('P2 — stored days + live days === every day live, through the pipeline', () => {
+  const documents = analyticsFixtureDayDocuments();
+  const STORED = [FlagName.AnalyticsStoredDays] as const;
+  const FIRST_LIVE_DAY = localDate('2026-09-27');
+
+  /** The fields the flag may change, and the seat rows (asserted apart). */
+  const APART = new Set<keyof AnalyticsReport>([
+    'reportComputedAtUtcMs',
+    'reportMissingDays',
+    'reportSeatRows',
+  ]);
+
+  /** The report without the fields asserted apart. */
+  function comparable(report: AnalyticsReport): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(report).filter(
+        ([field]) => !APART.has(field as keyof AnalyticsReport),
+      ),
+    );
+  }
+
+  async function expectP2(scopeBarberId: BarberId | null): Promise<void> {
+    const caller =
+      scopeBarberId === null
+        ? ANALYTICS_FIXTURE_USERS.admin.id
+        : USER_OF.get(scopeBarberId);
+    if (caller === undefined)
+      throw new Error(`no account for ${scopeBarberId}`);
+    const barbers = scopeBarberId === null ? BARBERS.length : 1;
+    const live = await reportOf(caller, scopeBarberId);
+    const stored = await reportOf(caller, scopeBarberId, {
+      storedDays: documents,
+      flagsOn: STORED,
+    });
+    const half = await reportOf(caller, scopeBarberId, {
+      storedDays: documents.filter((day) => day.localDate <= '2026-09-13'),
+      flagsOn: STORED,
+    });
+    expect(comparable(stored), String(scopeBarberId)).toEqual(comparable(live));
+    expect(comparable(half), String(scopeBarberId)).toEqual(comparable(live));
+    expect(live.reportMissingDays).toBe(26 * barbers);
+    expect(stored.reportMissingDays).toBe(0);
+    expect(half.reportMissingDays).toBe(13 * barbers);
+    // The seat rows: the live days' only once the past ones are stored.
+    expect(stored.reportSeatRows).toEqual(
+      live.reportSeatRows.filter((row) => row.localDate >= FIRST_LIVE_DAY),
+    );
+    expect(half.reportSeatRows).toEqual(
+      live.reportSeatRows.filter((row) => row.localDate > '2026-09-13'),
+    );
+    // Not vacuous: the stored half holds money, and so do the live days.
+    expect(stored.reportTakingsCents).toBeGreaterThan(0);
+    expect(
+      stored.reportDayRows.some(
+        (row) => row.localDate <= '2026-09-26' && row.dayTakingsCents > 0,
+      ),
+    ).toBe(true);
+  }
+
+  it('holds for the shop', async () => {
+    await expectP2(null);
+  });
+
+  it('holds for each barber', async () => {
+    for (const barberId of BARBERS) await expectP2(barberId);
+  });
+
+  it('never reads a day document with the flag off, and reads the month’s and August’s in one range each with it on', async () => {
+    const off = analyticsFixturePorts({ storedDays: documents });
+    const on = analyticsFixturePorts({
+      storedDays: documents,
+      flagsOn: STORED,
+    });
+    const offDays = vi.fn(off.loadAnalyticsDays);
+    const onDays = vi.fn(on.loadAnalyticsDays);
+    unwrapOk(
+      await staffAnalytics({ ...off, loadAnalyticsDays: offDays })({
+        callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
+        scopeBarberId: null,
+        analyticsSpan: AnalyticsSpan.Month,
+        fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+        toLocalDate: null,
+        analyticsComparison: AnalyticsComparison.Previous,
+      }),
+    );
+    unwrapOk(
+      await staffAnalytics({ ...on, loadAnalyticsDays: onDays })({
+        callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
+        scopeBarberId: null,
+        analyticsSpan: AnalyticsSpan.Month,
+        fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+        toLocalDate: null,
+        analyticsComparison: AnalyticsComparison.Previous,
+      }),
+    );
+    expect(offDays).not.toHaveBeenCalled();
+    expect(onDays.mock.calls.map(([, from, to]) => [from, to])).toEqual([
+      ['2026-09-01', '2026-09-30'],
+      ['2026-08-01', '2026-08-31'],
+    ]);
   });
 });

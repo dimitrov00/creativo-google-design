@@ -253,6 +253,11 @@ export const LocalDate = {
     return `${d.slice(0, 8)}01` as LocalDate;
   },
 
+  /** 1 January of the day's year. */
+  startOfYear(d: LocalDate): LocalDate {
+    return `${d.slice(0, 4)}-01-01` as LocalDate;
+  },
+
   /** The day's month as `YYYY-MM` — the `capacity/{YYYY-MM}` document id. */
   monthKey(d: LocalDate): CapacityMonthId {
     return CapacityMonthId.of(d.slice(0, 7));

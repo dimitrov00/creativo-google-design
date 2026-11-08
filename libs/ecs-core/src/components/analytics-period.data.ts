@@ -10,6 +10,10 @@ export const AnalyticsSpan = {
   Week: 'WEEK',
   /** The 1st to the month's last day. */
   Month: 'MONTH',
+  /** 1 January to 31 December. */
+  Year: 'YEAR',
+  /** Any `from ≤ to` of at most {@link CUSTOM_MAX_DAYS} days — the range sheet's. */
+  Custom: 'CUSTOM',
 } as const;
 export type AnalyticsSpan = (typeof AnalyticsSpan)[keyof typeof AnalyticsSpan];
 
@@ -27,9 +31,9 @@ export type AnalyticsComparison =
   (typeof AnalyticsComparison)[keyof typeof AnalyticsComparison];
 
 /**
- * A day, a week or a month of shop days, both ends included — what the
- * analytics screen's switcher steps through
- * (`docs/designs/staff-analytics-v2.md`).
+ * A day, a week, a month, a year or a custom range of shop days, both ends
+ * included — what the analytics screen's switcher steps through
+ * (`docs/designs/staff-analytics-v2.md`, Terms · Span).
  */
 export type AnalyticsPeriod = DateRange & {
   readonly analyticsSpan: AnalyticsSpan;
@@ -41,20 +45,20 @@ const REACH_MONTHS = 12;
 /** The days of a week — a `DAY`'s comparison is the same weekday a week earlier. */
 const DAYS_PER_WEEK = 7;
 
-function lastDayOf(span: AnalyticsSpan, from: LocalDate): LocalDate {
-  switch (span) {
-    case AnalyticsSpan.Day:
-      return from;
-    case AnalyticsSpan.Week:
-      return LocalDate.addDays(from, 6);
-    case AnalyticsSpan.Month:
-      return LocalDate.addDays(LocalDate.addMonths(from, 1), -1);
-  }
-}
+/** The months of a year — a `YEAR` runs this many from 1 January. */
+const MONTHS_PER_YEAR = 12;
+
+/** The most days a `CUSTOM` range spans — a leap year's (design, Terms · Span). */
+const CUSTOM_MAX_DAYS = 366;
 
 /** The earliest day a period may start on `today`: the 1st of the month 12 months before this one. */
 function earliestOn(today: LocalDate): LocalDate {
   return LocalDate.addMonths(LocalDate.startOfMonth(today), -REACH_MONTHS);
+}
+
+/** The period's length in days. */
+function lengthOf(period: DateRange): number {
+  return LocalDate.daysBetween(period.fromLocalDate, period.toLocalDate) + 1;
 }
 
 export const AnalyticsPeriod = {
@@ -65,12 +69,15 @@ export const AnalyticsPeriod = {
    */
   earliestOn,
 
+  /** The most days a `CUSTOM` range spans; a longer one is `ANALYTICS_PERIOD_OUT_OF_RANGE`. */
+  CUSTOM_MAX_DAYS,
+
   /** The one day `localDate`. */
   dayOf(localDate: LocalDate): AnalyticsPeriod {
     return {
       analyticsSpan: AnalyticsSpan.Day,
       fromLocalDate: localDate,
-      toLocalDate: lastDayOf(AnalyticsSpan.Day, localDate),
+      toLocalDate: localDate,
     };
   },
 
@@ -80,7 +87,7 @@ export const AnalyticsPeriod = {
     return {
       analyticsSpan: AnalyticsSpan.Week,
       fromLocalDate: from,
-      toLocalDate: lastDayOf(AnalyticsSpan.Week, from),
+      toLocalDate: LocalDate.addDays(from, DAYS_PER_WEEK - 1),
     };
   },
 
@@ -90,11 +97,37 @@ export const AnalyticsPeriod = {
     return {
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: from,
-      toLocalDate: lastDayOf(AnalyticsSpan.Month, from),
+      toLocalDate: LocalDate.addDays(LocalDate.addMonths(from, 1), -1),
     };
   },
 
-  /** The period of `span` that holds `localDate`. */
+  /** The year that holds `localDate` — 1 January to 31 December. */
+  yearOf(localDate: LocalDate): AnalyticsPeriod {
+    const from = LocalDate.startOfYear(localDate);
+    return {
+      analyticsSpan: AnalyticsSpan.Year,
+      fromLocalDate: from,
+      toLocalDate: LocalDate.addDays(
+        LocalDate.addMonths(from, MONTHS_PER_YEAR),
+        -1,
+      ),
+    };
+  },
+
+  /**
+   * The custom range `fromLocalDate … toLocalDate`, as given — the unchecked
+   * builder a step or a comparison derives its neighbour with; a REQUEST
+   * goes through {@link of}, which refuses an inverted or over-long range.
+   */
+  customOf(fromLocalDate: LocalDate, toLocalDate: LocalDate): AnalyticsPeriod {
+    return { analyticsSpan: AnalyticsSpan.Custom, fromLocalDate, toLocalDate };
+  },
+
+  /**
+   * The period of `span` that holds `localDate`. A `CUSTOM` range is picked
+   * by the sheet, never derived from a day: the one holding `localDate` is
+   * the one-day range.
+   */
   holding(span: AnalyticsSpan, localDate: LocalDate): AnalyticsPeriod {
     switch (span) {
       case AnalyticsSpan.Day:
@@ -103,18 +136,43 @@ export const AnalyticsPeriod = {
         return AnalyticsPeriod.weekOf(localDate);
       case AnalyticsSpan.Month:
         return AnalyticsPeriod.monthOf(localDate);
+      case AnalyticsSpan.Year:
+        return AnalyticsPeriod.yearOf(localDate);
+      case AnalyticsSpan.Custom:
+        return AnalyticsPeriod.customOf(localDate, localDate);
     }
   },
 
   /**
-   * The period a request names — refused unless `fromLocalDate` is the first
-   * day of its span (any day for `DAY`, a Monday, or the 1st), so a request
-   * can never ask for a range wider than one day, one week or one month.
+   * The period a request names (design, The callable v2 contract).
+   * `toLocalDate` is `null` unless the span is `CUSTOM`: a `to` on another
+   * span, or none on `CUSTOM`, is `ANALYTICS_INVALID_INPUT` on
+   * `toLocalDate`. A fixed span is refused unless `fromLocalDate` is its
+   * first day (any day for `DAY`, a Monday, a 1st, 1 January), so a request
+   * can never ask for a range wider than its span; a `CUSTOM` range is
+   * refused when inverted (`toLocalDate`) and `ANALYTICS_PERIOD_OUT_OF_RANGE`
+   * when longer than {@link CUSTOM_MAX_DAYS}.
    */
   of(
     analyticsSpan: AnalyticsSpan,
     fromLocalDate: LocalDate,
-  ): Result<AnalyticsPeriod, AnalyticsError.InvalidInput> {
+    toLocalDate: LocalDate | null,
+  ): Result<
+    AnalyticsPeriod,
+    AnalyticsError.InvalidInput | AnalyticsError.PeriodOutOfRange
+  > {
+    if (analyticsSpan === AnalyticsSpan.Custom) {
+      if (toLocalDate === null || toLocalDate < fromLocalDate) {
+        return Result.err(AnalyticsError.invalidInput('toLocalDate'));
+      }
+      const custom = AnalyticsPeriod.customOf(fromLocalDate, toLocalDate);
+      return lengthOf(custom) > CUSTOM_MAX_DAYS
+        ? Result.err(AnalyticsError.periodOutOfRange(fromLocalDate))
+        : Result.ok(custom);
+    }
+    if (toLocalDate !== null) {
+      return Result.err(AnalyticsError.invalidInput('toLocalDate'));
+    }
     const period = AnalyticsPeriod.holding(analyticsSpan, fromLocalDate);
     return period.fromLocalDate === fromLocalDate
       ? Result.ok(period)
@@ -123,7 +181,8 @@ export const AnalyticsPeriod = {
 
   /**
    * The comparison period (design, Terms): for a `DAY` the same weekday a
-   * week earlier; for a `WEEK` or a `MONTH` the one just before this one.
+   * week earlier; for a `WEEK`, a `MONTH` or a `YEAR` the one just before
+   * this one; for a `CUSTOM` range the same length ending the day before.
    */
   previous(period: AnalyticsPeriod): AnalyticsPeriod {
     switch (period.analyticsSpan) {
@@ -139,12 +198,24 @@ export const AnalyticsPeriod = {
         return AnalyticsPeriod.monthOf(
           LocalDate.addMonths(period.fromLocalDate, -1),
         );
+      case AnalyticsSpan.Year:
+        return AnalyticsPeriod.yearOf(
+          LocalDate.addMonths(period.fromLocalDate, -MONTHS_PER_YEAR),
+        );
+      case AnalyticsSpan.Custom: {
+        const to = LocalDate.addDays(period.fromLocalDate, -1);
+        return AnalyticsPeriod.customOf(
+          LocalDate.addDays(to, 1 - lengthOf(period)),
+          to,
+        );
+      }
     }
   },
 
   /**
    * Whether the period may be asked for on `today`: it starts no earlier than
-   * the 1st of the month 12 months before this one, and no later than today.
+   * the 1st of the month 12 months before this one, and no later than today
+   * — its first day alone decides, a `CUSTOM` range's included.
    */
   isWithinRange(period: AnalyticsPeriod, today: LocalDate): boolean {
     return (
@@ -156,7 +227,8 @@ export const AnalyticsPeriod = {
    * Whether the period's comparison period may be read on `today`: it
    * starts no earlier than the reach (the same earliest day
    * `isWithinRange` admits). A period at the reach's edge is not
-   * comparable — its comparison fields are `null` and the chip says so.
+   * comparable — its comparison fields are `null` and the chip says so; a
+   * `YEAR` is comparable only while the year before starts inside the reach.
    */
   isComparable(period: AnalyticsPeriod, today: LocalDate): boolean {
     return AnalyticsPeriod.previous(period).fromLocalDate >= earliestOn(today);
@@ -168,7 +240,5 @@ export const AnalyticsPeriod = {
   },
 
   /** The period's length in days. */
-  length(period: AnalyticsPeriod): number {
-    return LocalDate.daysBetween(period.fromLocalDate, period.toLocalDate) + 1;
-  },
+  length: lengthOf,
 } as const;

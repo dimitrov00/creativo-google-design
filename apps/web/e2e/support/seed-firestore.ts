@@ -33,6 +33,7 @@ import {
   WriteProvenance,
 } from '@core/components';
 import {
+  ANALYTICS_RECOMPUTE_DOC,
   type AppointmentNote,
   type AppointmentPhoto,
   type ClientStatsRecord,
@@ -59,6 +60,7 @@ import {
   WaitlistRequestId,
 } from '@core/primitives';
 import {
+  AnalyticsRecomputeJobSystem,
   PhoneSystem,
   SearchFieldsSystem,
   ZonedTimeSystem,
@@ -72,7 +74,7 @@ import {
   upcomingAppointmentBody,
   workedAppointmentBody,
 } from './appointment-seed-document';
-import { shopInstant, sure } from './shop-clock';
+import { SHOP_TIME_ZONE, shopInstant, sure } from './shop-clock';
 
 const PROJECT_ID = 'demo-creativo-test';
 /** `environment.ts`'s bucket, and the dev seed's. */
@@ -978,4 +980,47 @@ export async function readAuditActionsFor(
     .where('targetUserId', '==', uid)
     .get();
   return snapshot.docs.map((doc) => String(doc.get('auditAction')));
+}
+
+/**
+ * A NEW FULL-REACH RECOMPUTE PASS (staff-analytics-v2 PR 4b, plan item 79):
+ * writes `backfillJobs/analyticsRecompute` through the Admin SDK with the
+ * body `startAnalyticsRecompute` writes — the barbers of the catalogue in
+ * their sorted order, the full reach on `nowIso`'s shop day — which fires
+ * `continueAnalyticsRecomputeOnJobWrite` in the functions emulator. No
+ * functions export, no `runJob` change.
+ */
+export async function startAnalyticsRecompute(nowIso: string): Promise<void> {
+  const db = getFirestore(adminApp());
+  const barbers = await db.collection(Collections.Barbers).get();
+  const barberIds = barbers.docs
+    .map((snapshot) => BarberId.of(snapshot.id))
+    .sort();
+  const nowUtcMs = sure(ZonedTimeSystem.parseOffsetIso(nowIso), 'now');
+  const today = ZonedTimeSystem.shopNow(nowUtcMs, SHOP_TIME_ZONE).localDate;
+  const extent = AnalyticsRecomputeJobSystem.extentOf(
+    null,
+    today,
+    null,
+    barberIds,
+  );
+  const { id, ...body } = AnalyticsRecomputeJobSystem.start(extent, nowUtcMs);
+  await db.collection(Collections.BackfillJobs).doc(id).set(body);
+}
+
+/** Waits for the pass to record `jobFinishedAtUtcMs` — the steps run in the functions emulator. */
+export async function waitForAnalyticsRecompute(
+  timeoutMs = 120_000,
+): Promise<void> {
+  const ref = getFirestore(adminApp())
+    .collection(Collections.BackfillJobs)
+    .doc(ANALYTICS_RECOMPUTE_DOC);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const snapshot = await ref.get();
+    const job = snapshot.data();
+    if (job !== undefined && job['jobFinishedAtUtcMs'] !== null) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error('e2e: the analytics recompute did not finish in time');
 }

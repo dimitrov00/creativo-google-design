@@ -59,6 +59,7 @@ async function reportOf(barberId: BarberId): Promise<AnalyticsReport> {
       scopeBarberId: barberId,
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+      toLocalDate: null,
       analyticsComparison: AnalyticsComparison.Previous,
     }),
   );
@@ -140,7 +141,7 @@ describe('G5 — the schedule’s day-summary free time is the report’s unsold
     });
 
     const period = unwrapOk(
-      AnalyticsPeriod.of(AnalyticsSpan.Month, ANALYTICS_FIXTURE_MONTH),
+      AnalyticsPeriod.of(AnalyticsSpan.Month, ANALYTICS_FIXTURE_MONTH, null),
     );
     const seen = new Map<string, number>();
     for (const day of AnalyticsPeriod.days(period)) {

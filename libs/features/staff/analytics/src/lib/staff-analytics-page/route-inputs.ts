@@ -48,11 +48,11 @@ export function bindAnalyticsRouteInputs(
       untracked(() => store.applyRouteFrom(requested));
     }
   });
-  // `?to=` is not written by this PR, so there is nothing to compare its
-  // echo against: every change is handed on, and the store ignores it.
   effect(() => {
     const requested = page.to() ?? null;
-    untracked(() => store.applyRouteTo(requested));
+    if (requested !== untracked(() => store.published().to)) {
+      untracked(() => store.applyRouteTo(requested));
+    }
   });
   effect(() => {
     const requested = page.barber() ?? null;
