@@ -665,6 +665,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /analyticsDays/{dayId} {
+      // One past barber-day's analytics figures (staff-analytics-v2, «The
+      // day document»): takings, chair time, counts, hour buckets. Written
+      // only by Cloud Functions (the appointment and departure triggers and
+      // the nightly recompute, Admin SDK) and read only by the
+      // `staffAnalytics` callable, which judges the caller's scope itself —
+      // a client read would hand a barber's money to anyone with the key.
+      allow read, write: if false;
+    }
+
     match /waitlistRequests/{requestId} {
       // A standing request to be told when a day opens up. The owner reads
       // their own; staff read all of them, because "who is waiting for

@@ -14,6 +14,7 @@
  *    `camelCase(Dictionary)`, and its type is exactly the dictionary.
  */
 import {
+  type AnalyticsRecomputeJob,
   type BackfillJob,
   type PolicyRecomputeJob,
   RecomputeJobName,
@@ -144,7 +145,13 @@ export type StatsOpsScreamingChecks = [
 export type StatsOpsDictionaryFields = [
   Expect<Equals<BackfillJob['backfillJobName'], BackfillJobName>>, // entities/backfill-job.entity.ts (N15: `BackfillJob` is the entity)
   Expect<Equals<BackfillRequest['backfillJobName'], BackfillJobName>>, // systems/backfill-plan.system.ts
-  Expect<Equals<PolicyRecomputeJob['recomputeJobName'], RecomputeJobName>>, // entities/policy-recompute-job.entity.ts
+  Expect<
+    Equals<
+      | PolicyRecomputeJob['recomputeJobName']
+      | AnalyticsRecomputeJob['recomputeJobName'],
+      RecomputeJobName
+    >
+  >, // entities/policy-recompute-job.entity.ts, entities/analytics-recompute-job.entity.ts
   Expect<Equals<BackfillPosition['backfillPhase'], BackfillPhase>>, // systems/backfill-plan.system.ts
   Expect<Equals<BackfillStartRequest['backfillStart'], BackfillStart>>, // components/backfill-start.data.ts
   Expect<

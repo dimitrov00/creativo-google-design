@@ -163,6 +163,20 @@
       ]
     },
     {
+      "collectionGroup": "analyticsDays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "localDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "waitlistRequests",
       "queryScope": "COLLECTION",
       "fields": [
@@ -470,6 +484,27 @@
     {
       "collectionGroup": "barberBusy",
       "fieldPath": "blocks",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analyticsDays",
+      "fieldPath": "dayServices",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analyticsDays",
+      "fieldPath": "dayHourWorked",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analyticsDays",
+      "fieldPath": "dayHourRostered",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analyticsDays",
+      "fieldPath": "purgeAt",
+      "ttl": true,
       "indexes": []
     },
     {

@@ -1,4 +1,5 @@
 import {
+  AnalyticsRecomputeJobId,
   BarberLinkId,
   BookingPolicySettingsId,
   ClientMoneyStatsId,
@@ -23,6 +24,12 @@ import {
 
 /** Top-level collections — `/{name}/{id}`. */
 export const Collections = {
+  /**
+   * `BarberAnalyticsDay`, keyed by `BusyKey` (`{barberId}__{localDate}`) —
+   * one past barber-day's figures (staff analytics v2); written by the
+   * triggers and the recompute, read by the callable only; TTL `purgeAt`.
+   */
+  AnalyticsDays: 'analyticsDays',
   /** `Appointment` — callable-only in the rules, staff included. */
   Appointments: 'appointments',
   /** `AppointmentNote`, keyed by the appointment id. */
@@ -90,7 +97,7 @@ export const Collections = {
   Events: 'events',
   /** Fixed-id tenant settings — today only `bookingPolicy`. */
   Settings: 'settings',
-  /** `BackfillJob` / `PolicyRecomputeJob`, keyed by the job. */
+  /** `BackfillJob` / `PolicyRecomputeJob` / `AnalyticsRecomputeJob`, keyed by the job. */
   BackfillJobs: 'backfillJobs',
   /**
    * `TriggerFailure`, keyed by the delivery's event id — the dead letter a
@@ -134,6 +141,9 @@ export const BARBER_LINK_DOC = BarberLinkId.FIXED;
 
 /** `backfillJobs/clientStatsPolicy` — the policy-change recompute pass (`PolicyRecomputeJob`). */
 export const POLICY_RECOMPUTE_DOC = PolicyRecomputeJobId.FIXED;
+
+/** `backfillJobs/analyticsRecompute` — the analytics-days recompute pass (`AnalyticsRecomputeJob`, staff analytics v2). */
+export const ANALYTICS_RECOMPUTE_DOC = AnalyticsRecomputeJobId.FIXED;
 
 /**
  * Firestore's own filter vocabulary (`WhereFilterOp`), verbatim — the ONE

@@ -1,13 +1,24 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { BarberId, type BusyKey, Result } from '@core/primitives';
+import {
+  type AppointmentId,
+  BarberId,
+  type BusyKey,
+  Result,
+} from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import {
+  type Appointment,
   type BarberBusyDay,
   type BarberSchedule,
   Collections,
   type ScheduleException,
 } from '@core/entities';
-import type { BarberListPorts, Log, ShopDayReadPorts } from '@core/ports';
+import type {
+  AppointmentLoadPorts,
+  BarberListPorts,
+  Log,
+  ShopDayReadPorts,
+} from '@core/ports';
 import type { StoredGuardOf } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
 import { readFailed } from './store-answer';
@@ -20,6 +31,9 @@ import { readFailed } from './store-answer';
  * - `loadBusyDay` — `barberBusy/{BusyKey}`, as stored (the caller pads it:
  *   `schedulingPortsContract`);
  * - `loadScheduleException` — `scheduleExceptions/{BusyKey}`, the same key;
+ * - `loadAppointment` — `appointments/{appointmentId}`, the day writer's
+ *   one read by id (staff analytics v2: the visit a follow-up was booked
+ *   from), through the appointment guard like every other single read;
  * - `listBarbers` — the ROSTERED barbers: the ids of `barberSchedules`,
  *   bodies not read (`select()`).
  *
@@ -70,7 +84,7 @@ export const firestoreSchedulePorts = (
   db: Firestore,
   guardOf: StoredGuardOf,
   log: Log,
-): BarberListPorts & ShopDayReadPorts => ({
+): BarberListPorts & ShopDayReadPorts & AppointmentLoadPorts => ({
   loadSchedule: (barberId) =>
     loadOne<BarberSchedule>(
       db,
@@ -88,6 +102,15 @@ export const firestoreSchedulePorts = (
       db,
       Collections.ScheduleExceptions,
       key,
+      guardOf,
+      log,
+    ),
+
+  loadAppointment: (appointmentId: AppointmentId) =>
+    loadOne<Appointment>(
+      db,
+      Collections.Appointments,
+      appointmentId,
       guardOf,
       log,
     ),

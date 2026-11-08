@@ -54,6 +54,10 @@ export const REFERRALS_INVITATIONS = flag(
   'Referral invitations',
 );
 export const DISCOUNTS_GRANTS = flag('DISCOUNTS_GRANTS', 'Discount grants');
+export const ANALYTICS_STORED_DAYS = flag(
+  'ANALYTICS_STORED_DAYS',
+  'Staff analytics reads the stored day documents (v2 PR 4a)',
+);
 
 /**
  * Exhaustive over the ONE flag vocabulary (`FlagName`, `@core/components`):
@@ -73,6 +77,7 @@ export const FLAG_PARAMS: Readonly<Record<FlagName, BooleanParam>> = {
   [FlagName.ClientPrivacy]: CLIENT_PRIVACY,
   [FlagName.ReferralsInvitations]: REFERRALS_INVITATIONS,
   [FlagName.DiscountsGrants]: DISCOUNTS_GRANTS,
+  [FlagName.AnalyticsStoredDays]: ANALYTICS_STORED_DAYS,
 };
 
 /**

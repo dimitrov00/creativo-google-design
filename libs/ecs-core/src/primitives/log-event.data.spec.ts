@@ -8,6 +8,13 @@ import { LogEvent } from './log-event.data';
 describe('LogEvent', () => {
   it('keeps every existing message text byte for byte, beside the new dotted values', () => {
     expect(LogEvent).toEqual({
+      AnalyticsDayWritten: 'analytics.day_written',
+      AnalyticsDayWriteFailed: 'analytics.day_write_failed',
+      AnalyticsRecomputeDone: 'analytics.recompute_done',
+      AnalyticsRecomputeStallNotRecorded:
+        'analytics.recompute_stall_not_recorded',
+      AnalyticsRecomputeStep: 'analytics.recompute_step',
+      AnalyticsRecomputeSwept: 'analytics.recompute_swept',
       AnalyticsReported: 'analytics.reported',
       AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
       AuditActorMissing: 'audit row has no verified actor',
@@ -121,9 +128,24 @@ describe('LogEvent', () => {
     );
   });
 
-  it('spells the staff analytics value dotted and domain-prefixed', () => {
+  it('spells the staff analytics values dotted and domain-prefixed', () => {
     expect(LogEvent.AnalyticsReported).toBe('analytics.reported');
-    expect(LogEvent.AnalyticsReported).toMatch(/^[a-z]+\.[a-z_]+$/);
+    for (const text of [
+      LogEvent.AnalyticsReported,
+      LogEvent.AnalyticsDayWritten,
+      LogEvent.AnalyticsDayWriteFailed,
+      LogEvent.AnalyticsRecomputeDone,
+      LogEvent.AnalyticsRecomputeStallNotRecorded,
+      LogEvent.AnalyticsRecomputeStep,
+      LogEvent.AnalyticsRecomputeSwept,
+    ]) {
+      expect(text).toMatch(/^[a-z]+\.[a-z_]+$/);
+      expect(text.startsWith('analytics.')).toBe(true);
+    }
+    // An oncall filters the stale-day question on the failed write's value alone.
+    expect(LogEvent.AnalyticsDayWriteFailed).not.toBe(
+      LogEvent.AnalyticsDayWritten,
+    );
   });
 
   it('spells the App Check switch value dotted and edge-prefixed (security hardening S-RU-19)', () => {

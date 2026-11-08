@@ -83,9 +83,9 @@ describe('G5 — the schedule’s day-summary free time is the report’s unsold
       for (const row of report.reportDayRows) {
         expected.set(
           BusyKey.of(barberId, row.localDate),
-          row.unsoldMinutes + row.openMinutes,
+          row.dayUnsoldMinutes + row.dayOpenMinutes,
         );
-        openByDay.set(row.localDate, row.openMinutes);
+        openByDay.set(row.localDate, row.dayOpenMinutes);
       }
       expect(report.reportTimeSeries).toHaveLength(report.reportDayRows.length);
       for (const point of report.reportTimeSeries) {

@@ -12,7 +12,8 @@
     "support.bulk": false,
     "client.privacy": true,
     "referrals.invitations": false,
-    "discounts.grants": false
+    "discounts.grants": false,
+    "analytics.storedDays": false
   },
   "staging": {
     "client.profile": false,
@@ -27,7 +28,8 @@
     "support.bulk": false,
     "client.privacy": false,
     "referrals.invitations": false,
-    "discounts.grants": false
+    "discounts.grants": false,
+    "analytics.storedDays": false
   },
   "production": {
     "client.profile": false,
@@ -42,6 +44,7 @@
     "support.bulk": false,
     "client.privacy": false,
     "referrals.invitations": false,
-    "discounts.grants": false
+    "discounts.grants": false,
+    "analytics.storedDays": false
   }
 }

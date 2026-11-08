@@ -59,6 +59,7 @@ export type RetentionGroupDictionaryHolds = [
       | 'LEAD_TIME_SAMPLES'
       | 'OTPS'
       | 'IMPERSONATION_SESSIONS'
+      | 'ANALYTICS_DAYS'
     >
   >,
   Expect<Screaming<RetentionGroup>>,
@@ -108,6 +109,12 @@ export type RetentionAnchorPairs = [
     Equals<
       keyof AnchorOf<typeof RetentionGroup.ImpersonationSessions>,
       'retentionGroup' | 'endedAtUtcMs' | 'expiresAtUtcMs'
+    >
+  >,
+  Expect<
+    Equals<
+      keyof AnchorOf<typeof RetentionGroup.AnalyticsDays>,
+      'retentionGroup' | 'localDate'
     >
   >,
   Expect<EveryVariantFlat<RetentionAnchor>>,

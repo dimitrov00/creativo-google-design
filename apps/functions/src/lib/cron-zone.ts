@@ -6,6 +6,6 @@
  * Cloud Scheduler needs it as a static string before any document exists,
  * so it cannot be read from a location. It is never a shop's clock: every
  * pipeline a schedule runs reads the default location's `timeZone` itself
- * (Law 7.2, F-4). Read by `main.ts`' three `onSchedule` options only.
+ * (Law 7.2, F-4). Read by `main.ts`' four `onSchedule` options only.
  */
 export const CRON_TIME_ZONE = 'Europe/Sofia';

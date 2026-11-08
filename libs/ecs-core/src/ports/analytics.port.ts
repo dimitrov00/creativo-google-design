@@ -10,7 +10,9 @@ import type {
 import type { RepositoryError } from '@core/errors';
 import type { AnalyticsCall, AnalyticsReport } from '@core/components';
 import type {
+  AnalyticsRecomputeJob,
   Appointment,
+  BarberAnalyticsDay,
   ScheduleException,
   ShopLocation,
 } from '@core/entities';
@@ -93,6 +95,40 @@ export type ListLocations = () => Promise<
   Result<readonly ShopLocation[], RepositoryError>
 >;
 
+/**
+ * The stored past barber-days of `barberIds` over `[fromLocalDate,
+ * toLocalDate]`, both included (staff analytics v2, «Ports»): for one
+ * barber `analyticsDays where barberId == … and localDate >= … and localDate
+ * <= …` over the `(barberId, localDate)` composite; for the shop one
+ * `localDate` range over the collection. Each body admitted by
+ * `DayFigures.is` first (a malformed one is dropped and logged). Bounded at
+ * 366 × `barberIds.length` + 1: past it the adapter answers
+ * `RepositoryError` `resource-exhausted` — a refused report, never a
+ * truncated one. A day with no document is simply absent; the caller
+ * computes it live.
+ */
+export type LoadAnalyticsDays = (
+  barberIds: readonly BarberId[],
+  fromLocalDate: LocalDate,
+  toLocalDate: LocalDate,
+) => Promise<Result<readonly BarberAnalyticsDay[], RepositoryError>>;
+
+/**
+ * The stored days of `keys`, by id — the Admin SDK's `getAll` over at most
+ * `AnalyticsRecomputeJobSystem.PAGE_SIZE` (100) references, one answer per
+ * key IN ORDER: the day, or `null` where no document exists (what the
+ * recompute's eligibility reads). A malformed body is `null` too, and
+ * logged.
+ */
+export type LoadAnalyticsDaysByKeys = (
+  keys: readonly BusyKey[],
+) => Promise<Result<readonly (BarberAnalyticsDay | null)[], RepositoryError>>;
+
+/** `backfillJobs/analyticsRecompute` as stored, `null` when there is none — the write goes through `CommitPorts`. */
+export type LoadAnalyticsRecomputeJob = () => Promise<
+  Result<AnalyticsRecomputeJob | null, RepositoryError>
+>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The analytics reads — `firestoreAnalyticsPorts(db, guardOf, log)` (functions). */
@@ -103,6 +139,17 @@ export type AnalyticsReadPorts = {
   readonly loadDeparturesForBarber: LoadDeparturesForBarber;
   readonly listBarberRecordIds: ListBarberRecordIds;
   readonly listLocations: ListLocations;
+};
+
+/** The stored days' reads — `firestoreAnalyticsDayPorts(db, log)` (functions); the writes are `CommitPorts`'. */
+export type AnalyticsDayReadPorts = {
+  readonly loadAnalyticsDays: LoadAnalyticsDays;
+  readonly loadAnalyticsDaysByKeys: LoadAnalyticsDaysByKeys;
+};
+
+/** The recompute's job document — `firestoreJobsPorts(db)` (functions), beside the policy job's bundle. */
+export type AnalyticsRecomputeJobPorts = {
+  readonly loadAnalyticsRecomputeJob: LoadAnalyticsRecomputeJob;
 };
 
 // ── The web's side (the «Анализи» screen) ─────────────────────────────────

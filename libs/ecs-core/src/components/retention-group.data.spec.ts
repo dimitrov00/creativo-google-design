@@ -18,6 +18,7 @@ describe('RetentionGroup', () => {
       'LEAD_TIME_SAMPLES',
       'OTPS',
       'IMPERSONATION_SESSIONS',
+      'ANALYTICS_DAYS',
     ]);
   });
 });
@@ -54,6 +55,10 @@ describe('RetentionAnchor — one plain anchor per group', () => {
       retentionGroup: 'IMPERSONATION_SESSIONS',
       endedAtUtcMs: null,
       expiresAtUtcMs: instant,
+    });
+    expect(RetentionAnchor.analyticsDays(day)).toEqual({
+      retentionGroup: 'ANALYTICS_DAYS',
+      localDate: day,
     });
   });
 

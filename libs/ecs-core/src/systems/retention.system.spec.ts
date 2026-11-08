@@ -104,7 +104,19 @@ describe('RetentionSystem.purgeAtUtcMs — the one purgeAt instant (F1-7)', () =
     ).toBeNull();
   });
 
-  it('keeps the seven retention figures (runbook §2.1)', () => {
+  it('ANALYTICS_DAYS: the shop day’s UTC midnight + 400 days — 13 months, one past the reach (staff analytics v2)', () => {
+    expect(
+      purgeAtUtcMs(RetentionAnchor.analyticsDays(localDate('2026-09-14'))),
+    ).toBe(utcMidnight('2026-09-14') + 400 * DAY);
+    // Anchored on the day, not on the write: a rebuild never extends it.
+    expect(
+      purgeAtUtcMs(RetentionAnchor.analyticsDays(localDate('2026-09-14'))),
+    ).toBe(
+      purgeAtUtcMs(RetentionAnchor.leadTimeSamples(localDate('2026-09-14'))),
+    );
+  });
+
+  it('keeps the eight retention figures (runbook §2.1)', () => {
     expect([
       RetentionSystem.BARBER_BUSY_KEEP_DAYS,
       RetentionSystem.CAPACITY_KEEP_DAYS,
@@ -113,7 +125,8 @@ describe('RetentionSystem.purgeAtUtcMs — the one purgeAt instant (F1-7)', () =
       RetentionSystem.LEAD_TIME_KEEP_DAYS,
       RetentionSystem.OTP_KEEP_HOURS,
       RetentionSystem.IMPERSONATION_KEEP_DAYS,
-    ]).toEqual([30, 40, 7, 90, 400, 24, 30]);
+      RetentionSystem.ANALYTICS_DAYS_KEEP_DAYS,
+    ]).toEqual([30, 40, 7, 90, 400, 24, 30, 400]);
   });
 });
 

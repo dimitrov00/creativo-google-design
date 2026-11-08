@@ -40,6 +40,7 @@ const seam = vi.hoisted(() => {
     'cancelAppointment',
     'cancelWaitlist',
     'completeRegistration',
+    'continueAnalyticsRecompute',
     'continuePolicyRecompute',
     'editAppointment',
     'endImpersonation',
@@ -64,12 +65,14 @@ const seam = vi.hoisted(() => {
     'setRosterWeek',
     'staffAnalytics',
     'startImpersonation',
+    'startAnalyticsRecompute',
     'startPolicyRecompute',
     'sweepPolicyRecompute',
     'transitionAppointment',
     'updateProfile',
     'verifyOtp',
     'withdrawStreakDefinition',
+    'writeAnalyticsDay',
   ] as const;
   type Call = {
     readonly pipeline: string;
@@ -342,6 +345,25 @@ const ENDPOINTS = {
     },
   },
   sweepClientStatsPolicyDaily: daily('every day 03:30'),
+  writeAnalyticsDayOnExceptionChange: written(
+    'scheduleExceptions/{docId}',
+    true,
+  ),
+  continueAnalyticsRecomputeOnJobWrite: {
+    ...PLATFORM,
+    availableMemoryMb: 512,
+    timeoutSeconds: 540,
+    eventTrigger: {
+      eventType: WRITTEN,
+      eventFilters: {
+        ...DATABASE,
+        document: 'backfillJobs/analyticsRecompute',
+      },
+      eventFilterPathPatterns: {},
+      retry: true,
+    },
+  },
+  sweepAnalyticsDaysDaily: daily('every day 04:30'),
   runBackfill: {
     ...tracedCallable,
     availableMemoryMb: 512,
@@ -415,7 +437,7 @@ const OWNER_WITHOUT_ADMIN = {
 
 /** A report as the pipeline answers it — the callable answers it as it is (a shape the seam never inspects). */
 const ANALYTICS_REPORT = {
-  reportDefinitionVersion: 1,
+  reportDefinitionVersion: 2,
   reportScopeBarberId: 'b-1',
   reportAnalyticsSpan: 'MONTH',
   reportFromLocalDate: '2026-11-01',
@@ -595,7 +617,27 @@ type Case = {
   readonly answer: (ports: unknown, args: readonly unknown[]) => unknown;
   /** What the export answers — `undefined` for a trigger. */
   readonly expected: unknown;
+  /**
+   * A second pipeline the export runs after the first, over the same ports
+   * (staff analytics v2: the appointment trigger runs the busy rebuild and
+   * the day writer) — its command and answer.
+   */
+  readonly also?: {
+    readonly pipeline: PipelineName;
+    readonly command: unknown;
+    readonly answer: (ports: unknown, args: readonly unknown[]) => unknown;
+  };
 };
+
+/** The day writer's quiet answer — nothing written, nothing failed. */
+const NO_DAYS = {
+  writtenKeys: [],
+  skippedKeys: [],
+  keptKeys: [],
+  failedKeys: [],
+  failures: [],
+  attemptFailure: null,
+} as const;
 
 const FLIPPED: { readonly [name: string]: Case } = {
   // ── flip 2: identity ──
@@ -901,6 +943,11 @@ const FLIPPED: { readonly [name: string]: Case } = {
     command: { before: null, after: null },
     answer: ok({ written: 0, failures: [], attemptFailure: null }),
     expected: undefined,
+    also: {
+      pipeline: 'writeAnalyticsDay',
+      command: { analyticsDaySource: 'APPOINTMENT', before: null, after: null },
+      answer: ok(NO_DAYS),
+    },
   },
   rebuildCapacityOnBusyChange: {
     pipeline: 'rebuildCapacity',
@@ -1016,6 +1063,27 @@ const FLIPPED: { readonly [name: string]: Case } = {
     input: tick,
     command: undefined,
     answer: ok({ policySweepOutcome: 'IDLE', ...NO_ATTEMPT }),
+    expected: undefined,
+  },
+  writeAnalyticsDayOnExceptionChange: {
+    pipeline: 'writeAnalyticsDay',
+    input: writeEvent({ docId: 'b-1__2026-10-12' }),
+    command: { analyticsDaySource: 'DEPARTURE', keys: ['b-1__2026-10-12'] },
+    answer: ok(NO_DAYS),
+    expected: undefined,
+  },
+  continueAnalyticsRecomputeOnJobWrite: {
+    pipeline: 'continueAnalyticsRecompute',
+    input: writeEvent({}),
+    command: { fired: null },
+    answer: ok({ analyticsStepOutcome: 'IDLE', ...NO_ATTEMPT }),
+    expected: undefined,
+  },
+  sweepAnalyticsDaysDaily: {
+    pipeline: 'startAnalyticsRecompute',
+    input: tick,
+    command: undefined,
+    answer: ok({ analyticsSweepOutcome: 'IDLE', ...NO_ATTEMPT }),
     expected: undefined,
   },
   runBackfill: {
@@ -1278,7 +1346,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 54 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors and staff analytics’ report', () => {
+  it('exports exactly the 57 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report and v2’s three day-writer triggers', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1324,7 +1392,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(54);
+    expect(FLIPPED_EXPORTS).toHaveLength(57);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
@@ -1333,12 +1401,24 @@ describe('main.ts — the composition root', () => {
       async (name) => {
         const own = caseOf(name);
         seam.answers.set(own.pipeline, own.answer);
+        if (own.also !== undefined) {
+          seam.answers.set(own.also.pipeline, own.also.answer);
+        }
         const answer = await run(name, own.input);
         expect(answer).toEqual(own.expected);
         // The answer's bytes — key order included: the wire JSON is the
         // pipeline's answer as it is, or its named projection.
         expect(JSON.stringify(answer)).toBe(JSON.stringify(own.expected));
-        expect(seam.calls.map((call) => call.pipeline)).toEqual([own.pipeline]);
+        const runs =
+          own.also === undefined
+            ? [own.pipeline]
+            : [own.pipeline, own.also.pipeline];
+        expect(seam.calls.map((call) => call.pipeline)).toEqual(runs);
+        if (own.also !== undefined) {
+          const second = seam.calls[1];
+          expect(second?.ports).toBe(seam.calls[0]?.ports);
+          expect(second?.args[0]).toMatchObject(own.also.command as object);
+        }
         const call = seam.calls[0];
         if (TELEMETRY_EXPORTS.has(name)) {
           // The sink reads and writes no document: the telemetry, nothing else.
@@ -1358,7 +1438,7 @@ describe('main.ts — the composition root', () => {
         if (own.command === undefined) expect(call?.args).toEqual([]);
         else expect(call?.args[0]).toMatchObject(own.command as object);
         for (const other of seam.PIPELINES) {
-          if (other !== own.pipeline) {
+          if (!runs.includes(other)) {
             expect(
               seam.pipelines[other],
               `${name} built ${other}`,
@@ -1769,6 +1849,7 @@ describe('main.ts — the composition root', () => {
       ['rebuildCapacityOnLocationChange', 'rebuildCapacity'],
       ['rebuildCapacityOnSettingsChange', 'rebuildCapacity'],
       ['matchWaitlistOnBusyChange', 'matchWaitlist'],
+      ['writeAnalyticsDayOnExceptionChange', 'writeAnalyticsDay'],
     ] as const;
 
     /** The `'trigger attempt failed'` lines the edge logged. */
@@ -1787,6 +1868,9 @@ describe('main.ts — the composition root', () => {
 
     beforeEach(() => {
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      // The appointment trigger's second pipeline answers quietly unless a
+      // case scripts it: these cases are about the busy rebuild's verdict.
+      seam.answers.set('writeAnalyticsDay', ok(NO_DAYS));
     });
 
     it.each(RETRIED)(
@@ -1867,6 +1951,7 @@ describe('main.ts — the composition root', () => {
     it.each([
       ['rebuildBusyOnAppointmentChange', 'rebuildBusy'],
       ['matchWaitlistOnBusyChange', 'matchWaitlist'],
+      ['writeAnalyticsDayOnExceptionChange', 'writeAnalyticsDay'],
     ] as const)(
       '%s reads its answer’s verdict: a transient item failure rejects, a permanent one resolves',
       async (name, pipeline) => {
@@ -1945,8 +2030,13 @@ describe('main.ts — the composition root', () => {
           `appointments/${visit.id}`,
           'busyKeys',
         );
-        // The pipeline's own rule (its spec): no day left → the refusal.
+        // The pipelines' own rule (their specs): no day left → the refusal,
+        // from the busy rebuild and the day writer alike.
         seam.answers.set('rebuildBusy', () => ({ ok: false, error: refused }));
+        seam.answers.set('writeAnalyticsDay', () => ({
+          ok: false,
+          error: refused,
+        }));
         const event = appointmentWrite(null, {
           ...bodyOf(visit),
           busyKeys: 'garbage',
@@ -1956,14 +2046,22 @@ describe('main.ts — the composition root', () => {
         ).resolves.toBeUndefined();
         expect(seam.calls.map((call) => call.pipeline)).toEqual([
           'rebuildBusy',
+          'writeAnalyticsDay',
         ]);
-        expect(seam.calls[0]?.args[0]).toEqual({
+        const decoded = {
           before: null,
           after: null,
           salvagedKeys: [],
           salvagedLocationId: visit.locationId,
           refusal: refused,
+        };
+        expect(seam.calls[0]?.args[0]).toEqual(decoded);
+        // The SAME decoded sides, as the writer's `'APPOINTMENT'` command.
+        expect(seam.calls[1]?.args[0]).toEqual({
+          analyticsDaySource: 'APPOINTMENT',
+          ...decoded,
         });
+        // Decoded once: ONE refusal line for the two pipelines.
         expect(refusalLines()).toEqual([
           { path: `appointments/${visit.id}`, field: 'busyKeys' },
         ]);
@@ -1973,6 +2071,64 @@ describe('main.ts — the composition root', () => {
             eventId: 'event-2',
             outcome: 'PERMANENT',
             errorCode: 'data-loss',
+          }),
+        ]);
+      });
+
+      it('rebuildBusyOnAppointmentChange: the day writer’s verdict joins the busy rebuild’s — a transient day failure redelivers the whole event, a permanent one settles (staff analytics v2)', async () => {
+        seam.answers.set(
+          'rebuildBusy',
+          ok({ rebuiltKeys: [], failures: [], attemptFailure: null }),
+        );
+        const aborted = TriggerAttemptSystem.attemptFailure(
+          Object.assign(new Error('10 ABORTED'), { code: 10 }),
+        );
+        seam.answers.set(
+          'writeAnalyticsDay',
+          ok({
+            ...NO_DAYS,
+            failedKeys: visit.busyKeys,
+            failures: [aborted.error],
+            attemptFailure: aborted,
+          }),
+        );
+        await expect(
+          run(
+            'rebuildBusyOnAppointmentChange',
+            appointmentWrite(null, bodyOf(visit)),
+          ),
+        ).rejects.toBe(aborted.error);
+        const denied = TriggerAttemptSystem.repositoryFailure(
+          RepositoryError.writeFailed(
+            `analyticsDays/${visit.busyKeys[0]}`,
+            'permission-denied',
+          ),
+        );
+        seam.answers.set(
+          'writeAnalyticsDay',
+          ok({
+            ...NO_DAYS,
+            failedKeys: visit.busyKeys,
+            failures: [denied.error],
+            attemptFailure: denied,
+          }),
+        );
+        await expect(
+          run(
+            'rebuildBusyOnAppointmentChange',
+            appointmentWrite(null, bodyOf(visit)),
+          ),
+        ).resolves.toBeUndefined();
+        expect(attemptLines()).toEqual([
+          expect.objectContaining({
+            fn: 'rebuildBusyOnAppointmentChange',
+            outcome: 'TRANSIENT',
+            errorCode: 'aborted',
+          }),
+          expect.objectContaining({
+            fn: 'rebuildBusyOnAppointmentChange',
+            outcome: 'PERMANENT',
+            errorCode: 'permission-denied',
           }),
         ]);
       });
@@ -1990,6 +2146,7 @@ describe('main.ts — the composition root', () => {
         ).resolves.toBeUndefined();
         expect(seam.calls.map((call) => call.pipeline)).toEqual([
           'rebuildBusy',
+          'writeAnalyticsDay',
         ]);
         expect(seam.calls[0]?.args[0]).toEqual({
           before: null,

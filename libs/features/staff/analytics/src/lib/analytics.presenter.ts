@@ -4,6 +4,7 @@ import {
   AnalyticsPeriod,
   type AnalyticsReport,
   AnalyticsSpan,
+  type DayRow,
   HeroChange,
   VisitGrain,
 } from '@core/components';
@@ -1006,10 +1007,7 @@ function barberRowOf(
   };
 }
 
-function dayRowOf(
-  row: AnalyticsReport.DayRow,
-  input: AnalyticsDrillInput,
-): AnalyticsDayRowVm {
+function dayRowOf(row: DayRow, input: AnalyticsDrillInput): AnalyticsDayRowVm {
   const { words } = input;
   const span = (minutes: number) => spanWords(minutes, words.spanWords);
   return {
@@ -1020,10 +1018,10 @@ function dayRowOf(
       month: '2-digit',
     }),
     detail: words.drill.dayLine(
-      span(row.rosteredMinutes),
-      span(row.unsoldMinutes),
+      span(row.dayRosteredMinutes),
+      span(row.dayUnsoldMinutes),
     ),
-    value: span(row.workedMinutes),
+    value: span(row.dayWorkedMinutes),
     testId: `analytics-day-${row.localDate}`,
   };
 }

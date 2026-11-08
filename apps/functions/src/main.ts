@@ -18,7 +18,11 @@ import {
   type StreakPublishCall,
   TenantConfig,
 } from '@core/components';
-import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
+import {
+  ANALYTICS_RECOMPUTE_DOC,
+  Collections,
+  POLICY_RECOMPUTE_DOC,
+} from '@core/entities';
 import {
   type CallableName,
   Callables,
@@ -37,11 +41,13 @@ import {
 } from '@core/systems';
 import {
   amendRosterBreaks as amendRosterBreaksPipeline,
+  AnalyticsDaySource,
   auditDocumentChange,
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
   cancelWaitlist as cancelWaitlistPipeline,
   completeRegistration as completeRegistrationPipeline,
+  continueAnalyticsRecompute,
   continuePolicyRecompute,
   editAppointment,
   endImpersonation as endImpersonationPipeline,
@@ -65,11 +71,13 @@ import {
   setRosterWeek as setRosterWeekPipeline,
   staffAnalytics as staffAnalyticsPipeline,
   startImpersonation as startImpersonationPipeline,
+  startAnalyticsRecompute,
   startPolicyRecompute,
   sweepPolicyRecompute,
   transitionAppointment as transitionAppointmentPipeline,
   updateProfile as updateProfilePipeline,
   verifyOtp,
+  writeAnalyticsDay,
 } from '@core/pipelines';
 import {
   authClaimsPorts,
@@ -165,6 +173,9 @@ import {
 } from './wire/privacy.wire';
 import {
   CapacitySource,
+  combinedReport,
+  decodeAnalyticsDayEvent,
+  decodeAnalyticsStepEvent,
   decodeCapacityEvent,
   decodeDispatchProjectionsEvent,
   decodeMatchWaitlistEvent,
@@ -252,7 +263,12 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * the log digest key: 51 exports. The break pass added `amendRosterBreaks`
  * and `setRosterWeek`, and staff analytics `staffAnalytics`, the read-only
  * report — bound to the log digest key, on the larger instance (its read is
- * the size of a shop-month).
+ * the size of a shop-month): 54 exports. Staff analytics v2 (PR 4a) added
+ * the day writer's departure trigger `writeAnalyticsDayOnExceptionChange`,
+ * the analytics recompute's step `continueAnalyticsRecomputeOnJobWrite`
+ * (the policy step's timeout and memory) and its 04:30 sweep
+ * `sweepAnalyticsDaysDaily`, and made `rebuildBusyOnAppointmentChange`
+ * run the day writer beside the busy rebuild: 57 exports.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -594,6 +610,8 @@ const LOCATION_DOC = `${Collections.Locations}/{locationId}` as const;
 const SETTINGS_DOC = `${Collections.Settings}/{docId}` as const;
 const POLICY_RECOMPUTE_JOB_DOC =
   `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}` as const;
+const ANALYTICS_RECOMPUTE_JOB_DOC =
+  `${Collections.BackfillJobs}/${ANALYTICS_RECOMPUTE_DOC}` as const;
 
 /**
  * The handlers whose input is the size of the book — or of one person's
@@ -936,20 +954,30 @@ const MATCH_WAITLIST_FN = 'matchWaitlistOnBusyChange';
 const logRefusedSide = (error: RepositoryError): void =>
   logRefusal(root.edge.log, error);
 
-/** Both sides of an appointment write re-derive the busy days they touch (a reschedule frees one, fills another). */
+/**
+ * Both sides of an appointment write re-derive the busy days they touch (a
+ * reschedule frees one, fills another) — and, since staff analytics v2,
+ * the stored figures of every PAST day they touch (`writeAnalyticsDay`,
+ * the same decoded sides as its `'APPOINTMENT'` command; the writer runs
+ * whatever the busy rebuild answered). The two answers settle as one
+ * attempt (`combinedReport`): transient when either is, both idempotent.
+ */
 export const rebuildBusyOnAppointmentChange = onDocumentWritten(
   { document: APPOINTMENT_DOC, retry: true },
   retryingTrigger(
     { fn: REBUILD_BUSY_FN, timeoutSeconds: null },
     root.edge,
     async (event: Parameters<typeof decodeRebuildBusyEvent>[0]) => {
-      const answer = await rebuildBusy(root.ports())(
-        decodeRebuildBusyEvent(event, logRefusedSide),
-      );
+      const cmd = decodeRebuildBusyEvent(event, logRefusedSide);
+      const busy = await rebuildBusy(root.ports())(cmd);
+      const day = await writeAnalyticsDay(root.ports())({
+        analyticsDaySource: AnalyticsDaySource.Appointment,
+        ...cmd,
+      });
       settleAttempt(
         REBUILD_BUSY_FN,
         event,
-        projectionReport(answer),
+        combinedReport(busy, day),
         root.edge,
       );
     },
@@ -1156,6 +1184,69 @@ export const sweepClientStatsPolicyDaily = onSchedule(
           settleAttempt(POLICY_SWEEP_FN, run, swept.value, root.edge);
       },
     )(decodePolicySweepRun(tick, POLICY_SWEEP_FN)),
+);
+
+// ── Staff analytics v2: the stored days (`docs/designs/staff-analytics-v2.md`) ──
+
+const WRITE_DAY_ON_EXCEPTION_FN = 'writeAnalyticsDayOnExceptionChange';
+const ANALYTICS_STEP_FN = 'continueAnalyticsRecomputeOnJobWrite';
+const ANALYTICS_SWEEP_FN = 'sweepAnalyticsDaysDaily';
+
+/** A departure's write rewrites its past day's stored figures — retried: the day is recomputed from its source, so a redelivery writes the same document. */
+export const writeAnalyticsDayOnExceptionChange = onDocumentWritten(
+  { document: EXCEPTION_DOC, retry: true },
+  retryingTrigger(
+    { fn: WRITE_DAY_ON_EXCEPTION_FN, timeoutSeconds: null },
+    root.edge,
+    async (event: Parameters<typeof decodeAnalyticsDayEvent>[0]) => {
+      const cmd = decodeAnalyticsDayEvent(event);
+      if (cmd === null) return;
+      settleAttempt(
+        WRITE_DAY_ON_EXCEPTION_FN,
+        event,
+        projectionReport(await writeAnalyticsDay(root.ports())(cmd)),
+        root.edge,
+      );
+    },
+  ),
+);
+
+/** The recompute itself, one page of busy keys per write of its job document — the policy step's timeout and memory. */
+export const continueAnalyticsRecomputeOnJobWrite = onDocumentWritten(
+  {
+    document: ANALYTICS_RECOMPUTE_JOB_DOC,
+    retry: true,
+    timeoutSeconds: POLICY_STEP_TIMEOUT_SECONDS,
+    memory: LARGE_MEMORY,
+  },
+  retryingTrigger(
+    { fn: ANALYTICS_STEP_FN, timeoutSeconds: POLICY_STEP_TIMEOUT_SECONDS },
+    root.edge,
+    async (event: Parameters<typeof decodeAnalyticsStepEvent>[0]) => {
+      const step = await continueAnalyticsRecompute(root.ports())(
+        decodeAnalyticsStepEvent(event),
+      );
+      if (step.ok) {
+        settleAttempt(ANALYTICS_STEP_FN, event, step.value, root.edge);
+      }
+    },
+  ),
+);
+
+/** 04:30 — after the lead-time sample: the night's pass over the eligible stored days started, a stalled one nudged. */
+export const sweepAnalyticsDaysDaily = onSchedule(
+  { schedule: 'every day 04:30', timeZone: CRON_TIME_ZONE, retryCount: 3 },
+  (tick) =>
+    retryingTrigger(
+      { fn: ANALYTICS_SWEEP_FN, timeoutSeconds: null },
+      root.edge,
+      async (run) => {
+        const swept = await startAnalyticsRecompute(root.ports())();
+        if (swept.ok) {
+          settleAttempt(ANALYTICS_SWEEP_FN, run, swept.value, root.edge);
+        }
+      },
+    )(decodePolicySweepRun(tick, ANALYTICS_SWEEP_FN)),
 );
 
 // ── Operations, loyalty, governance and referrals ─────────────────────────

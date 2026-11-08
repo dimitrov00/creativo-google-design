@@ -445,6 +445,14 @@ field-copying mapper.
 | `DayHours`               | `dayHourWorked`, `dayHourRostered`                                                                                                                                                                                                              | `readonly MinuteCount[]`                                                  | 24 entries each (Terms, "Hour buckets"); `fieldOverrides` `indexes: []` on both                                             |
 | (meta)                   | `dayDefinitionVersion`, `dayComputedAtUtcMs`                                                                                                                                                                                                    | number, `UtcEpochMs`                                                      | the version it was computed under; the writer's `sourceReadUtcMs`                                                           |
 
+**As built in PR 4a (2026-11-08):** the hours slice is named `DayHourBuckets` (the
+barrel already exports an opening-hours `DayHours`); `fold` takes no `nowByLocation` —
+past-ness is decided once by `daysOf` and carried as `AnalyticsDay.pastDay`, so the fold is
+zone-blind; and because a day document knows no other barber's seats, the shop's
+`reportExcludedVisitCount` and `reportOrigins` count a visit once **per barber in scope with
+a worked seat on it** (v1 counted a cross-barber party once) — property P1 forces it, and the
+shop's figure is now the sum of its barbers'. Single-barber scopes are unchanged.
+
 No client name, no seat row, no `locationId`: one document per barber-day across
 locations. A barber at two locations on one day has one document; "past" is judged at
 every stretch location (Terms), while the chair-time partition inside it keeps v1's

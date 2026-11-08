@@ -2,11 +2,18 @@ import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
 import { Roles } from '@core/components';
 import {
+  ANALYTICS_RECOMPUTE_DOC,
+  type AnalyticsRecomputeJob,
   type Appointment,
   type BackfillJob,
   Collections,
 } from '@core/entities';
-import type { BackfillJobPorts, CallerRolesPorts, Log } from '@core/ports';
+import type {
+  AnalyticsRecomputeJobPorts,
+  BackfillJobPorts,
+  CallerRolesPorts,
+  Log,
+} from '@core/ports';
 import type { StoredGuardOf } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
 import { readFailed, writeFailed } from './store-answer';
@@ -22,6 +29,9 @@ import { readFailed, writeFailed } from './store-answer';
  * - `pageAppointments` — the next page of appointments in document-id
  *   order, strictly after `afterId` (each row the backfill stamps is re-read
  *   in its own transaction, never written from this page);
+ * - `loadAnalyticsRecomputeJob` — `backfillJobs/analyticsRecompute`, the
+ *   analytics-days recompute's pass as stored (staff analytics v2), `null`
+ *   before its first sweep; its writes go through the commit plan;
  * - `loadCallerRoles` — the STORED roles of `users/{uid}`, the server's
  *   second check behind the token's `sysadmin` claim (a demoted sysadmin
  *   keeps the claim until the token refreshes); `[]` for an unknown uid, an
@@ -48,7 +58,7 @@ export const firestoreJobPorts = (
   db: Firestore,
   guardOf: StoredGuardOf,
   log: Log,
-): BackfillJobPorts & CallerRolesPorts => ({
+): BackfillJobPorts & CallerRolesPorts & AnalyticsRecomputeJobPorts => ({
   loadBackfillJob: async (id) => {
     const path = `${Collections.BackfillJobs}/${id}`;
     try {
@@ -69,6 +79,20 @@ export const firestoreJobPorts = (
       return Result.ok(undefined);
     } catch (error) {
       return Result.err(writeFailed(path, error));
+    }
+  },
+
+  loadAnalyticsRecomputeJob: async () => {
+    const path = `${Collections.BackfillJobs}/${ANALYTICS_RECOMPUTE_DOC}`;
+    try {
+      const snap = await db.doc(path).get();
+      return Result.ok(
+        snap.exists
+          ? ({ id: snap.id, ...snap.data() } as AnalyticsRecomputeJob)
+          : null,
+      );
+    } catch (error) {
+      return Result.err(readFailed(path, error));
     }
   },
 

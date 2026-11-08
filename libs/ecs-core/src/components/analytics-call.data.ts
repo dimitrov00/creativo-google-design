@@ -2,6 +2,7 @@ import {
   AppointmentId,
   AttendanceState,
   BarberId,
+  Currency,
   HourOfDay,
   LocalDate,
   MinuteCount,
@@ -19,6 +20,7 @@ import type { PipelineError } from '@core/errors';
 import { AnalyticsComparison, AnalyticsSpan } from './analytics-period.data';
 import { type AnalyticsReport, BookingOrigin } from './analytics-report.data';
 import { CallAnswer } from './call-answer.data';
+import type { DayRow } from './day-figures.data';
 
 /**
  * What the `staffAnalytics` callable is asked for — flat (Law 6): the
@@ -186,25 +188,31 @@ function barberFiguresOf(raw: unknown): AnalyticsReport.BarberFigures | null {
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }
 
-function dayRowOf(raw: unknown): AnalyticsReport.DayRow | null {
+/** A day row as the answer carries it (`DayRow`): the `day*` parts and the money per day. */
+function dayRowOf(raw: unknown): DayRow | null {
   const r = readerOf(raw);
   const barberId = r.field('barberId');
+  const currency = r.field('currency');
   const row = {
     localDate: r.localDate('localDate'),
-    rosteredMinutes: r.minutes('rosteredMinutes'),
-    workedMinutes: r.minutes('workedMinutes'),
-    noShowMinutes: r.minutes('noShowMinutes'),
-    unmarkedMinutes: r.minutes('unmarkedMinutes'),
-    bookedAheadMinutes: r.minutes('bookedAheadMinutes'),
-    heldMinutes: r.minutes('heldMinutes'),
-    blockedMinutes: r.minutes('blockedMinutes'),
-    breakMinutes: r.minutes('breakMinutes'),
-    shortGapMinutes: r.minutes('shortGapMinutes'),
-    unsoldMinutes: r.minutes('unsoldMinutes'),
-    openMinutes: r.minutes('openMinutes'),
-    closedDayMinutes: r.minutes('closedDayMinutes'),
+    dayRosteredMinutes: r.minutes('dayRosteredMinutes'),
+    dayWorkedMinutes: r.minutes('dayWorkedMinutes'),
+    dayNoShowMinutes: r.minutes('dayNoShowMinutes'),
+    dayUnmarkedMinutes: r.minutes('dayUnmarkedMinutes'),
+    dayBookedAheadMinutes: r.minutes('dayBookedAheadMinutes'),
+    dayHeldMinutes: r.minutes('dayHeldMinutes'),
+    dayBlockedMinutes: r.minutes('dayBlockedMinutes'),
+    dayBreakMinutes: r.minutes('dayBreakMinutes'),
+    dayShortGapMinutes: r.minutes('dayShortGapMinutes'),
+    dayUnsoldMinutes: r.minutes('dayUnsoldMinutes'),
+    dayOpenMinutes: r.minutes('dayOpenMinutes'),
+    dayClosedDayMinutes: r.minutes('dayClosedDayMinutes'),
+    dayTakingsCents: r.cents('dayTakingsCents'),
+    dayTipsCents: r.cents('dayTipsCents'),
   };
-  return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
+  return r.ok() && BarberId.is(barberId) && Currency.is(currency)
+    ? { barberId, currency, ...row }
+    : null;
 }
 
 function seriesPointOf(raw: unknown): AnalyticsReport.SeriesPoint | null {

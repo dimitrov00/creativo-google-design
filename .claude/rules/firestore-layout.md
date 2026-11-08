@@ -114,7 +114,7 @@ staff }`, a component bag itself).
 - Invariants that must not regress (2026-08 audit): appointments are
   callable-only in rules for everyone including staff; `capacity/{YYYY-MM}` is a month document holding a sorted `entries[]` array of `{ localDate, barberId, locationId, freeMinutes }` (`CapacityEntry`, D7) — rebuilt inside one transaction by dropping every entry in the plan's scope and writing the full sorted array, never `arrayUnion`, never `set({ merge: true })`, never one barber's plan alone; TTL on `purgeAt` for `otps`, `notifications`,
   `waitlistRequests`, `barberBusy`, `capacity`, `impersonationSessions`,
-  `barberLeadTimeSamples`. `purgeAt` is the one Firestore `Timestamp` in a
+  `barberLeadTimeSamples`, `analyticsDays` (UTC midnight of `localDate` + 400 d, the eighth group — staff analytics v2). `purgeAt` is the one Firestore `Timestamp` in a
   document (the TTL service requires it): an adapter-stamped root field
   outside the entity type, beside the entity's own `*UtcMs` instant.
 

@@ -1,16 +1,27 @@
 import type { Firestore, Query } from 'firebase-admin/firestore';
-import { BarberId, LocalDate, Result } from '@core/primitives';
-import type { RepositoryError } from '@core/errors';
+import { BarberId, type BusyKey, LocalDate, Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
+import { DayFigures } from '@core/components';
 import {
   type Appointment,
+  type BarberAnalyticsDay,
   Collections,
   QueryOp,
   type ScheduleException,
   type ShopLocation,
 } from '@core/entities';
-import type { AnalyticsReadPorts, Log } from '@core/ports';
-import { BackfillPlanSystem, type StoredGuardOf } from '@core/systems';
-import { admitStored } from './firestore-tx.adapter';
+import type {
+  AnalyticsDayReadPorts,
+  AnalyticsReadPorts,
+  Log,
+} from '@core/ports';
+import {
+  AnalyticsRecomputeJobSystem,
+  BackfillPlanSystem,
+  StaffAnalyticsSystem,
+  type StoredGuardOf,
+} from '@core/systems';
+import { admitStored, logRefusal } from './firestore-tx.adapter';
 import { IN_CHUNK, overBound, readFailed } from './store-answer';
 
 /**
@@ -47,14 +58,15 @@ import { IN_CHUNK, overBound, readFailed } from './store-answer';
  */
 
 /**
- * The most visits one barber-day holds — four times the ceiling's 15 seats
- * (cancelled visits keep their keys, so a churned day holds more rows than
- * seats).
+ * The most visits one barber-day holds and the most follow-ups booked from
+ * one visit — the system's caps (`StaffAnalyticsSystem`), the same ones the
+ * day writer's transaction queries read at (staff analytics v2, «Stamp
+ * ordering»).
  */
-const VISITS_PER_BARBER_DAY = 60;
+const { VISITS_PER_BARBER_DAY, FOLLOW_UPS_PER_VISIT } = StaffAnalyticsSystem;
 
-/** The most follow-ups booked from one visit — one per client of a small party, and a rebooking or two. */
-const FOLLOW_UPS_PER_VISIT = 5;
+/** The most stored days one barber has in the reach — a leap year's days. */
+const DAYS_PER_BARBER = 366;
 
 /**
  * The most visits booked in one shop range (a month and a day): five times
@@ -193,6 +205,98 @@ export const firestoreAnalyticsPorts = (
       } catch (error) {
         return Result.err(readFailed(Collections.Locations, error));
       }
+    },
+  };
+};
+
+/**
+ * The stored days' reads over the Admin SDK (`AnalyticsDayReadPorts`, staff
+ * analytics v2, «Ports»), outside any transaction:
+ *
+ * - `loadAnalyticsDays` — one barber: `analyticsDays where barberId == …
+ *   and localDate >= … and localDate <= …` over the `(barberId, localDate)`
+ *   composite; the shop (several barbers): one `localDate` range over the
+ *   collection, the rows of the barbers asked for kept. Bounded at
+ *   366 × the barbers + 1: past it the read is refused (`overBound`,
+ *   `resource-exhausted`), never truncated. A malformed body
+ *   (`DayFigures.is`) is dropped and logged — the caller computes that day
+ *   live.
+ * - `loadAnalyticsDaysByKeys` — the Admin SDK's `getAll` over at most
+ *   `PAGE_SIZE` (100) references a round trip, one answer per key in
+ *   order: the day, or `null` where no document exists or the body is
+ *   malformed (logged).
+ *
+ * The writes go through the commit plan (`firestoreCommitPlan`), which
+ * stamps the TTL `purgeAt` beside the body.
+ */
+export const firestoreAnalyticsDayPorts = (
+  db: Firestore,
+  log: Log,
+): AnalyticsDayReadPorts => {
+  /** The entity, or `null` for a body that is no day's figures — logged. */
+  const admitted = (id: string, data: unknown): BarberAnalyticsDay | null => {
+    if (DayFigures.is(data)) {
+      return { id, ...data } as BarberAnalyticsDay;
+    }
+    logRefusal(
+      log,
+      RepositoryError.malformed(
+        `${Collections.AnalyticsDays}/${id}`,
+        'dayFigures',
+      ),
+    );
+    return null;
+  };
+
+  return {
+    loadAnalyticsDays: async (barberIds, fromLocalDate, toLocalDate) => {
+      if (barberIds.length === 0) return Result.ok([]);
+      const cap = DAYS_PER_BARBER * barberIds.length;
+      let page;
+      try {
+        let query: Query = db
+          .collection(Collections.AnalyticsDays)
+          .where('localDate', QueryOp.Gte, fromLocalDate)
+          .where('localDate', QueryOp.Lte, toLocalDate);
+        if (barberIds.length === 1) {
+          query = query.where('barberId', QueryOp.Eq, barberIds[0]);
+        }
+        page = await query.limit(cap + 1).get();
+      } catch (error) {
+        return Result.err(readFailed(Collections.AnalyticsDays, error));
+      }
+      if (page.docs.length > cap) {
+        return Result.err(overBound(Collections.AnalyticsDays));
+      }
+      const rows: BarberAnalyticsDay[] = [];
+      for (const snap of page.docs) {
+        const day = admitted(snap.id, snap.data());
+        if (day !== null && barberIds.includes(day.barberId)) rows.push(day);
+      }
+      return Result.ok(rows);
+    },
+
+    loadAnalyticsDaysByKeys: async (keys) => {
+      const rows: (BarberAnalyticsDay | null)[] = [];
+      for (const chunk of BackfillPlanSystem.chunk(
+        keys,
+        AnalyticsRecomputeJobSystem.PAGE_SIZE,
+      )) {
+        let snaps;
+        try {
+          snaps = await db.getAll(
+            ...chunk.map((key: BusyKey) =>
+              db.collection(Collections.AnalyticsDays).doc(key),
+            ),
+          );
+        } catch (error) {
+          return Result.err(readFailed(Collections.AnalyticsDays, error));
+        }
+        for (const snap of snaps) {
+          rows.push(snap.exists ? admitted(snap.id, snap.data()) : null);
+        }
+      }
+      return Result.ok(rows);
     },
   };
 };

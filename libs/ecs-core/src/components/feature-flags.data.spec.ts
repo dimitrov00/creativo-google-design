@@ -40,6 +40,7 @@ describe('FlagName', () => {
         'client.privacy',
         'referrals.invitations',
         'discounts.grants',
+        'analytics.storedDays',
       ].sort(),
     );
     expect(new Set(FeatureFlags.NAMES).size).toBe(FeatureFlags.NAMES.length);

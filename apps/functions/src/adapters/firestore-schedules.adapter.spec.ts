@@ -1,10 +1,11 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
-import { BarberId, BusyKey } from '@core/primitives';
+import { AppointmentId, BarberId, BusyKey } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import type { Log } from '@core/ports';
 import {
+  appointmentFixture,
   barberBusyDayFixture,
   barberScheduleFixture,
   FIXTURE_IDS,
@@ -209,6 +210,39 @@ describe('firestoreSchedulePorts, guarded — a busy day is a SINGLE read (edge 
       value: null,
     });
     expect(telemetry.lines).toEqual([]);
+  });
+
+  it('reads a visit by id through the appointment guard — as stored, `null` when absent, refused when malformed (staff analytics v2)', async () => {
+    const visit = appointmentFixture();
+    const telemetry = recordingTelemetry();
+    const fake = createProjectionFirestore({
+      [`${Collections.Appointments}/${visit.id}`]: bodyOf(visit),
+      [`${Collections.Appointments}/broken`]: {
+        ...bodyOf(visit),
+        seats: [{ ...visit.seats[0], startMinutes: 'ten' }],
+      },
+    });
+    const ports = firestoreSchedulePorts(
+      fake.db as unknown as Firestore,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    );
+    expect(await ports.loadAppointment(visit.id)).toEqual({
+      ok: true,
+      value: visit,
+    });
+    expect(await ports.loadAppointment(AppointmentId.of('nobody'))).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(await ports.loadAppointment(AppointmentId.of('broken'))).toEqual({
+      ok: false,
+      error: RepositoryError.malformed(
+        `${Collections.Appointments}/broken`,
+        'seats[0].startMinutes',
+      ),
+    });
+    expect(telemetry.lines).toHaveLength(1);
   });
 
   it('leaves the unguarded collections as stored — a roster is read as it always was', async () => {
