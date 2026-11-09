@@ -34,6 +34,7 @@ import {
   type AnalyticsReport,
   BookingOrigin,
   HeroChange,
+  RadarBase,
 } from './analytics-report.data';
 
 /** A tag dictionary whose every value is a `T`. */
@@ -64,6 +65,7 @@ dictionary(BookingOrigin satisfies Dictionary<BookingOrigin>);
 dictionary(AnalyticsFigure satisfies Dictionary<AnalyticsFigure>);
 dictionary(AnalyticsBarPart satisfies Dictionary<AnalyticsBarPart>);
 dictionary(HeroChange satisfies Dictionary<HeroChange>);
+dictionary(RadarBase satisfies Dictionary<RadarBase>);
 dictionary(MoneyAllocation satisfies Dictionary<MoneyAllocation>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
@@ -74,6 +76,7 @@ export type AnalyticsDictionariesHold = [
   Expect<Holds<typeof AnalyticsFigure, AnalyticsFigure>>, // components/analytics-report.data.ts
   Expect<Holds<typeof AnalyticsBarPart, AnalyticsBarPart>>, // components/analytics-report.data.ts
   Expect<Holds<typeof HeroChange, HeroChange>>, // components/analytics-report.data.ts
+  Expect<Holds<typeof RadarBase, RadarBase>>, // components/analytics-report.data.ts
   Expect<Holds<typeof MoneyAllocation, MoneyAllocation>>, // systems/money-allocation.system.ts
 ];
 
@@ -85,6 +88,7 @@ export type AnalyticsScreamingChecks = [
   Expect<Screaming<AnalyticsFigure>>,
   Expect<Screaming<AnalyticsBarPart>>,
   Expect<Screaming<HeroChange>>,
+  Expect<Screaming<RadarBase>>,
   Expect<Screaming<MoneyAllocation>>,
 ];
 
@@ -98,6 +102,7 @@ export type AnalyticsDictionaryFields = [
     Equals<AnalyticsReport['reportAnalyticsComparison'], AnalyticsComparison>
   >, // N15-exempt: the report's fields all carry the `report` prefix
   Expect<Equals<AnalyticsReport.OriginShare['bookingOrigin'], BookingOrigin>>, // components/analytics-report.data.ts
+  Expect<Equals<AnalyticsReport['reportRadarBase'], RadarBase>>, // N15-exempt: the report's fields all carry the `report` prefix
   Expect<Equals<AnalyticsBarSegment['analyticsBarPart'], AnalyticsBarPart>>, // systems/staff-analytics.system.ts
   Expect<Equals<AnalyticsHeroChange['heroChange'], HeroChange>>, // systems/staff-analytics.system.ts
   Expect<Equals<VisitNets['moneyAllocation'], MoneyAllocation>>, // systems/money-allocation.system.ts

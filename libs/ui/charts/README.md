@@ -71,13 +71,46 @@ A CSS grid; each cell with data sets `--ui-cell-strength` (value ÷ max,
 0 … 1) and `charts.css` tints it on the accent at 10 % + 90 % × strength; a
 cell without data is the control fill. Row and column words are ink.
 
+### `ui-radar`
+
+| Input           | Type                                                                                   | Default  |
+| --------------- | -------------------------------------------------------------------------------------- | -------- |
+| `uiAxes`        | `readonly { label: string; value: number \| null; comparison: number \| null }[]`      | required |
+| `uiLabel`       | `string`                                                                               | required |
+| `uiValueText`   | `readonly string[]`, one pre-formatted figure per axis, printed outside its end        | `[]`     |
+| `uiMissingText` | `string` — the word printed in a `null` axis's value slot («малко данни»)              | `''`     |
+| `uiTone`        | `number \| null` — `0 … 4` paints the polygon in `--sys-identity-N`; `null` the accent | `null`   |
+
+One polygon over `n` axes (five in the design, any count drawn), the first
+axis straight up and the rest clockwise; a vertex at `value ÷ 100` of the
+radius (clamped to 0 … 100), a `null` axis collapsed to the centre with its
+axis hairline dotted and `uiMissingText` in its value slot. The polygon is
+its paint at 18 % (`color-mix`) under a 2 px solid stroke; the comparison
+is a dashed 1.5 px outline in the 48 % grey (`data-part="comparison"`),
+left out when no axis has one; the guide rings at 50 % and 100 % and the
+axes are 1 px `--sys-color-separator`. Each axis's word (ink) and its value
+text (quiet ink) sit 8 px past the axis's outer end — not on the moving
+vertex, so the words never collide with each other — anchored away from the
+centre (`text-anchor` start / middle / end; stacked upwards above the
+centre, hanging below it). The box is square (`aspect-ratio: 1`, the
+viewBox over the measured width); the words take a 60 px band off the
+radius, which never drops below a quarter of the width. A changed polygon
+cross-fades after the first frame. The hidden table prints each axis's
+word, its value text and its comparison figure as given (an index 0 … 100,
+not formatted). `uiValueText`, `uiMissingText` and `uiTone` are not in the
+design's table: the kit formats no number and has no words, and the design's
+«Colour» section asks for the identity tones per barber.
+
 ## Geometry
 
 `src/lib/geometry/`: `linearScale(domain, range)` (a flat domain maps to the
 range's start), `zeroExtent(values)` (`[0, max]`, nulls skipped), `px(value)`
 (a hundredth of a pixel), `linePath(points)` (straight segments, `null` breaks
 the line), `stackOffsets(values)` / `stackTotal(values)` (negatives count as
-0). Pure, over plain numbers, specified beside each file. The width comes
+0), `radarVertex(index, count, radius, centre)` (the first axis up, then
+clockwise), `polygonPoints(values, radius, centre)` (the SVG `points`, a
+`null` on the centre), `ringPoints`, `axisLines`, `axisAnchor` (which side
+of the centre an axis's words go). Pure, over plain numbers, specified beside each file. The width comes
 from `elementWidth()` in `@creativo/ui/layout` (`0` where `ResizeObserver` is
 absent; the kit then draws at 320).
 
@@ -99,6 +132,16 @@ the same disc in HTML for a legend row.
 
 Every SVG part has a 1 px `--sys-color-separator` edge. The heatmap's ramp is
 the accent at 10–100 %.
+
+**Identity tones.** A series that is a _person_ — the admin's one radar per
+barber — carries `data-tone` `0 … 4` on its host (`ui-radar`'s `uiTone`) and
+`charts.css` sets `--ui-chart-paint` to `--sys-identity-0..4`, the barber's
+chair colour in the schedule, in the catalogue's barber order; the radar's
+polygon reads it as the stroke and as an 18 % wash. The host's descendants
+inherit the paint, so a legend's `.ui-chart-swatch` with the same `data-tone`
+matches. The tones are not pinned by `chart-palette.spec.ts`: they are the
+schedule's identity colours, not series parts, and clear their own grounds
+there.
 
 **The ramp is 76 / 62 / 48 %, not the design's 50 / 32 / 18 %.** A mark has to
 clear 3:1 on the page and on the card (SC 1.4.11), and on white the

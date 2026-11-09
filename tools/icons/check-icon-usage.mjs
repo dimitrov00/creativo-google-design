@@ -17,7 +17,7 @@
  *   - an <img> pointing at a logo file;
  *   - a hand-written <svg> outside INLINE_SVG_ALLOWED (the same files the
  *     lint rule allows: a data ring, a countdown ring, a choreographed
- *     stroke, the gauge's circular arc, the chart kit's two drawings).
+ *     stroke, the gauge's circular arc, the chart kit's three drawings).
  *
  * The codemod is deliberately narrow: it rewrites the shapes an icon-font
  * codebase actually has (`<span class="material-symbols-…">glyph</span>`,
@@ -96,6 +96,7 @@ export const INLINE_SVG_ALLOWED = [
   // SVG over the DS tokens, chosen by the chart-library survey.
   'libs/ui/charts/src/lib/bar-chart/bar-chart.html',
   'libs/ui/charts/src/lib/line-chart/line-chart.html',
+  'libs/ui/charts/src/lib/radar/radar.html',
 ];
 const INLINE_SVG = /<svg\b/g;
 

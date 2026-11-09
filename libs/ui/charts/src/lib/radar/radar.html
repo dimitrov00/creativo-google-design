@@ -1,0 +1,70 @@
+<svg
+  #drawing
+  class="ui-radar__drawing"
+  role="img"
+  [attr.aria-label]="uiLabel()"
+  [attr.viewBox]="viewBox()"
+>
+  @for (ring of rings(); track $index) {
+  <polygon class="ui-radar__ring" [attr.points]="ring" />
+  } @for (axis of axes(); track $index) {
+  <line
+    class="ui-radar__axis"
+    [attr.data-missing]="axis.missing ? '' : null"
+    [attr.x1]="axis.x1"
+    [attr.y1]="axis.y1"
+    [attr.x2]="axis.x2"
+    [attr.y2]="axis.y2"
+  />
+  } @if (comparisonPoints(); as points) {
+  <polygon
+    class="ui-radar__comparison"
+    [attr.data-part]="comparisonPart"
+    [attr.points]="points"
+  />
+  } @for (node of polygons(); track node.key) { @if (node.points) {
+  <polygon
+    class="ui-radar__polygon"
+    [attr.points]="node.points"
+    [attr.data-leave]="node.leaving ? '' : null"
+    [attr.data-enter]="!node.leaving && polygons().length > 1 ? '' : null"
+    (animationend)="dropLeaving()"
+  />
+  } } @for (axis of axes(); track $index) {
+  <text
+    class="ui-radar__axis-label"
+    aria-hidden="true"
+    [attr.x]="axis.textX"
+    [attr.y]="axis.labelY"
+    [attr.text-anchor]="axis.textAnchor"
+  >
+    {{ axis.label }}
+  </text>
+  <text
+    class="ui-radar__axis-value"
+    aria-hidden="true"
+    [attr.data-missing]="axis.missing ? '' : null"
+    [attr.x]="axis.textX"
+    [attr.y]="axis.valueY"
+    [attr.text-anchor]="axis.textAnchor"
+  >
+    {{ axis.valueText }}
+  </text>
+  }
+</svg>
+@if (rows().length > 0) {
+<table uiVisuallyHidden class="ui-radar__table">
+  <caption>
+    {{ uiLabel() }}
+  </caption>
+  <tbody>
+    @for (row of rows(); track $index) {
+    <tr>
+      <th scope="row">{{ row.label }}</th>
+      <td>{{ row.value }}</td>
+      <td>{{ row.comparison ?? '' }}</td>
+    </tr>
+    }
+  </tbody>
+</table>
+}

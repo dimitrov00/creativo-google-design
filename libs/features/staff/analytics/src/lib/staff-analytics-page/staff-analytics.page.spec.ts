@@ -21,6 +21,7 @@ import {
   FIXTURE_TIME_ZONE,
   analyticsReportFixture,
   memoryAnalyticsCachePorts,
+  shopReportFixture,
   principalFixture,
 } from '@core/testing';
 import {
@@ -74,7 +75,12 @@ function reportFor(call: AnalyticsCall) {
 type RouteQuery = Partial<Record<'span' | 'from' | 'to' | 'barber', string>>;
 
 async function render(
-  options: { readonly query?: RouteQuery; readonly admin?: boolean } = {},
+  options: {
+    readonly query?: RouteQuery;
+    readonly admin?: boolean;
+    /** The shop's report answers the shop scope (the admin's radars). */
+    readonly shop?: boolean;
+  } = {},
 ) {
   const principal = signal(
     options.admin
@@ -85,7 +91,11 @@ async function render(
   const calls: AnalyticsCallPorts = {
     requestReport: async (call) => {
       sent.push(call);
-      return Result.ok(reportFor(call));
+      return Result.ok(
+        options.shop && call.scopeBarberId === null
+          ? shopReportFixture()
+          : reportFor(call),
+      );
     },
   };
   TestBed.configureTestingModule({
@@ -286,6 +296,26 @@ describe('StaffAnalyticsPage — a DAY (staff-analytics-v2 PR 3)', () => {
     ).toBe(1);
     expect(router.url).toContain('span=DAY');
     expect(router.url).toContain('from=2026-09-15');
+  });
+});
+
+describe('StaffAnalyticsPage — the admin’s radars (staff-analytics-v2 PR 5)', () => {
+  it('draws one radar per barber on the shop’s report, and a tap opens that barber’s scope', async () => {
+    const { host, sent, fixture } = await render({ admin: true, shop: true });
+    const radars = byTestId(host, 'analytics-radars');
+    expect(radars).not.toBeNull();
+    expect(byTestId(host, 'analytics-radars-base')?.textContent?.trim()).toBe(
+      'спрямо най-добрия в салона',
+    );
+    expect(radars?.querySelectorAll('ui-radar').length).toBe(2);
+    expect(radars?.querySelector('ui-radar')?.getAttribute('data-tone')).toBe(
+      '0',
+    );
+    byTestId(host, 'analytics-radar-niko')?.click();
+    await settle(fixture);
+    expect(sent.at(-1)?.scopeBarberId).toBe('niko');
+    // A barber's report carries no radars.
+    expect(byTestId(host, 'analytics-radars')).toBeNull();
   });
 });
 

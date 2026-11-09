@@ -1,0 +1,105 @@
+@import '../charts.css';
+
+@layer sys-components {
+  /* THE SERIES' PAINT: the accent, unless the host names a person — then
+     `data-tone` (charts.css) has set `--ui-chart-paint` to an identity
+     tone and the polygon reads that. */
+  .ui-radar {
+    display: block;
+    min-inline-size: 0;
+    --ui-radar-paint: var(--sys-color-accent);
+  }
+
+  .ui-radar[data-tone] {
+    --ui-radar-paint: var(--ui-chart-paint);
+  }
+
+  /* THE BOX IS SQUARE (radar.ts draws its viewBox at the same ratio over
+     the measured width), so the drawing's pixels are the page's; the words
+     may run past the box and stay visible. */
+  .ui-radar__drawing {
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 1;
+    overflow: visible;
+  }
+
+  /* THE BASE: guide rings at 50 % and 100 % and the axes, hairlines in the
+     separator. An axis without data is dotted. */
+  .ui-radar__ring,
+  .ui-radar__axis {
+    fill: none;
+    stroke: var(--sys-color-separator);
+    stroke-width: 1px;
+  }
+
+  .ui-radar__axis[data-missing] {
+    stroke-dasharray: 2 3;
+  }
+
+  /* THE COMPARISON: the hook's 48 % grey as a dashed outline, never a fill. */
+  .ui-radar__comparison[data-part] {
+    fill: none;
+    stroke: var(--ui-chart-paint);
+    stroke-width: var(--sys-stroke-mark);
+    stroke-dasharray: 4 4;
+    stroke-linejoin: round;
+  }
+
+  /* THIS PERIOD: the paint as a low wash with its solid edge. */
+  .ui-radar__polygon {
+    fill: color-mix(in srgb, var(--ui-radar-paint) 18%, transparent);
+    stroke: var(--ui-radar-paint);
+    stroke-width: var(--sys-stroke-emphasis);
+    stroke-linejoin: round;
+  }
+
+  /* WORDS ARE INK: the axis's word in the caption role, its figure under
+     it in the quiet ink, tabular. */
+  .ui-radar__axis-label,
+  .ui-radar__axis-value {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-radar__axis-label {
+    fill: var(--sys-color-foreground);
+  }
+
+  .ui-radar__axis-value {
+    fill: var(--sys-color-secondary-label);
+  }
+
+  /* MOTION — a new shape fades in over the old one fading out, after the
+     first frame only; the global switch (reduced-motion.css) and charts.css
+     hold both still under reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-radar[data-settled] .ui-radar__polygon[data-enter] {
+      animation: ui-radar-enter var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard);
+    }
+
+    .ui-radar[data-settled] .ui-radar__polygon[data-leave] {
+      animation: ui-radar-leave var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard) forwards;
+    }
+  }
+
+  @keyframes ui-radar-enter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ui-radar-leave {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

@@ -79,6 +79,15 @@ export const HeroChange = {
 } as const;
 export type HeroChange = (typeof HeroChange)[keyof typeof HeroChange];
 
+/** What the radars' normalised axes are drawn against — the field `reportRadarBase`. */
+export const RadarBase = {
+  /** Each axis `value ÷ best × 100`, the best among the shop's barbers meeting the floor. */
+  BestOfShop: 'BEST_OF_SHOP',
+  /** Fewer than two barbers in scope — nothing to compare against, no radar. */
+  TooFewBarbers: 'TOO_FEW_BARBERS',
+} as const;
+export type RadarBase = (typeof RadarBase)[keyof typeof RadarBase];
+
 /**
  * A staff analytics report (`docs/designs/staff-analytics.md`, the metric
  * catalogue) — every value already decided, so a presenter only words it
@@ -192,6 +201,24 @@ export type AnalyticsReport = {
   /** One entry per barber record in a shop report; empty for one barber. */
   readonly reportBarbers: readonly AnalyticsReport.BarberFigures[];
   /**
+   * The comparison period's figures per barber record of a shop report, in
+   * `reportBarbers`' order — the radars' grey outline; empty for one barber,
+   * and when the period is not comparable. Its time parts and rebooking
+   * pair come from the comparison period's stored days alone (the pipeline
+   * reads no roster or follow-up for it); its money, seats and counts from
+   * the stored days plus its live visits.
+   */
+  readonly reportComparisonBarbers: readonly AnalyticsReport.BarberFigures[];
+  /**
+   * The admin's radar (CUJ 5): one row per barber of a shop report on a
+   * `MONTH`, `YEAR` or `CUSTOM` span, in `reportBarbers`' order
+   * (`AnalyticsRadarSystem.radarsOf`); empty for one barber, on a `DAY` or
+   * a `WEEK`, and with fewer than two barbers.
+   */
+  readonly reportRadars: readonly AnalyticsReport.RadarRow[];
+  /** What `reportRadars` is normalised against; `TOO_FEW_BARBERS` whenever there are no rows. */
+  readonly reportRadarBase: RadarBase;
+  /**
    * The `TIME` drill-down's rows, date then barber: for a period of up to
    * 93 days one row per barber-day in scope — `DayFigures.rowOf` of the
    * stored day's body, or of the live day's fold; beyond that
@@ -300,6 +327,35 @@ export namespace AnalyticsReport {
     readonly noShowBase: number;
     readonly noShowRate: number | null;
     readonly lateCancellationCount: number;
+    /** Σ the worked seats' `durationMinutes` — as `ServiceRow.serviceMinutes` sums them; the hour of service the radar divides by. */
+    readonly serviceMinutes: MinuteCount;
+    /** The worked seats, whether or not their bill could be evaluated — the € per hour and tips rate floors' base. */
+    readonly workedSeatCount: number;
+    /** The distinct shop days of the period that roster any minute for the barber — the fill floor's base. */
+    readonly rosteredDayCount: number;
+  };
+
+  /**
+   * One barber's radar: the four axes normalised 0–100 against the shop's
+   * best barber meeting the floor — € per hour of service, fill, rebooking,
+   * tips rate — and reliability absolute (`(1 − noShowRate) × 100`); then
+   * the comparison period's five, on the SAME best (so a comparison axis may
+   * exceed 100). `null` is an axis under its floor, with no best, or — the
+   * comparison's — a barber with no comparison figures; the screen draws it
+   * as missing with a word.
+   */
+  export type RadarRow = {
+    readonly barberId: BarberId;
+    readonly takingsPerHour: number | null;
+    readonly fill: number | null;
+    readonly rebooking: number | null;
+    readonly tipsRate: number | null;
+    readonly reliability: number | null;
+    readonly comparisonTakingsPerHour: number | null;
+    readonly comparisonFill: number | null;
+    readonly comparisonRebooking: number | null;
+    readonly comparisonTipsRate: number | null;
+    readonly comparisonReliability: number | null;
   };
 
   /** One seat of the scoped barber (the money and count drill-downs). */

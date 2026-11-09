@@ -9,9 +9,11 @@ import {
   UiChartPart,
   UiHeatmap,
   UiLineChart,
+  UiRadar,
   type UiChartBar,
   type UiChartHeatCell,
   type UiChartLinePoint,
+  type UiChartRadarAxis,
 } from '@creativo/ui/charts';
 import { UiButton, UiCard } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
@@ -81,6 +83,73 @@ const TAKINGS_A = [120, 240, 180, 60, 300, 210, 0];
 const TAKINGS_B = [150, 180, 210, 120, 270, 240, 0];
 const TAKINGS_LAST = [100, 200, 160, 90, 250, 180, 0];
 
+/** The radar's five axes, in the design's order. */
+const RADAR_AXES = [
+  '€ / час',
+  'Запълване',
+  'Презаписване',
+  'Бакшиши',
+  'Надеждност',
+] as const;
+
+/** One barber's radar as the presenter would hand it over: the figures 0 … 100 and their words. */
+type RadarDemo = {
+  readonly name: string;
+  readonly tone: number;
+  readonly values: readonly (number | null)[];
+  readonly comparison: readonly (number | null)[];
+  readonly valueText: readonly string[];
+  readonly label: string;
+};
+
+const RADARS_A: readonly RadarDemo[] = [
+  {
+    name: 'Иван',
+    tone: 0,
+    values: [100, 82, 64, 70, 90],
+    comparison: [88, 76, 70, 62, 95],
+    valueText: ['38 €', '82 %', '64 %', '7,1 %', '1 закъснение'],
+    label:
+      'Иван: най-висок оборот на час, 82 % запълване, 64 % презаписване, 7,1 % бакшиши, 1 закъснение',
+  },
+  {
+    name: 'Мария',
+    tone: 1,
+    values: [76, 100, 100, null, 100],
+    comparison: [80, 92, 96, null, 100],
+    valueText: ['29 €', '96 %', '81 %', '', 'без закъснения'],
+    label:
+      'Мария: 29 € на час, най-пълен график и най-много презаписвания, малко данни за бакшишите, без закъснения',
+  },
+  {
+    name: 'Георги',
+    tone: 2,
+    values: [58, 61, 40, 100, 60],
+    comparison: [],
+    valueText: ['22 €', '50 %', '32 %', '11,4 %', '4 закъснения'],
+    label:
+      'Георги: 22 € на час, 50 % запълване, 32 % презаписване, най-много бакшиши, 4 закъснения',
+  },
+];
+
+const RADARS_B: readonly RadarDemo[] = [
+  {
+    ...(RADARS_A[0] as RadarDemo),
+    values: [92, 70, 80, 55, 80],
+    valueText: ['35 €', '70 %', '80 %', '5,6 %', '2 закъснения'],
+  },
+  {
+    ...(RADARS_A[1] as RadarDemo),
+    values: [100, 88, 90, 48, 100],
+    valueText: ['38 €', '88 %', '90 %', '4,9 %', 'без закъснения'],
+  },
+  {
+    ...(RADARS_A[2] as RadarDemo),
+    values: [63, 74, null, 100, 70],
+    valueText: ['24 €', '74 %', '', '10,2 %', '3 закъснения'],
+  },
+];
+
 @Component({
   selector: 'cr-charts-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -93,6 +162,7 @@ const TAKINGS_LAST = [100, 200, 160, 90, 250, 180, 0];
     UiFlow,
     UiHeatmap,
     UiLineChart,
+    UiRadar,
     UiStack,
     UiTextDirective,
   ],
@@ -236,6 +306,23 @@ export class ChartsPage {
       }),
     );
 
+  /** How each barber does: one radar per person in their identity tone, the month before as the grey outline. */
+  protected readonly radarAlternate = signal(false);
+
+  protected readonly radars = computed(() =>
+    (this.radarAlternate() ? RADARS_B : RADARS_A).map((radar) => ({
+      name: radar.name,
+      tone: radar.tone,
+      label: radar.label,
+      valueText: radar.valueText,
+      axes: RADAR_AXES.map((label, i): UiChartRadarAxis => ({
+        label,
+        value: radar.values.at(i) ?? null,
+        comparison: radar.comparison.at(i) ?? null,
+      })),
+    })),
+  );
+
   protected readonly picked = signal<string | null>(null);
 
   protected onPicked(bars: readonly UiChartBar[], index: number): void {
@@ -244,5 +331,9 @@ export class ChartsPage {
 
   protected toggle(): void {
     this.alternate.update((value) => !value);
+  }
+
+  protected toggleRadars(): void {
+    this.radarAlternate.update((value) => !value);
   }
 }

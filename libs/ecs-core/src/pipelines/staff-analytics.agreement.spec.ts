@@ -450,6 +450,18 @@ describe('G5 — every drill-down’s rows add up to its figure', () => {
         noShowBase: own.reportNoShowBase,
         noShowRate: own.reportNoShowRate,
         lateCancellationCount: own.reportLateCancellationCount,
+        // PR 5: the radar's bases — the service rows' seats and minutes, the day rows' rostered days.
+        serviceMinutes: own.reportServices.reduce(
+          (sum, row) => sum + row.serviceMinutes,
+          0,
+        ),
+        workedSeatCount: own.reportServices.reduce(
+          (sum, row) => sum + row.workedSeatCount,
+          0,
+        ),
+        rosteredDayCount: own.reportDayRows.filter(
+          (row) => row.dayRosteredMinutes > 0,
+        ).length,
       });
       sums.takings += entry.takingsCents;
       sums.tips += entry.tipsCents;

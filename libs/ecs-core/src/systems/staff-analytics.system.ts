@@ -33,6 +33,7 @@ import {
   type DayRow,
   type MinuteRange,
   Placement,
+  RadarBase,
   type Role,
   Roles,
   Seat,
@@ -47,6 +48,7 @@ import type {
   User,
 } from '@core/entities';
 import { AnalyticsHourSystem, type HourDay } from './analytics-hour.system';
+import { AnalyticsRadarSystem } from './analytics-radar.system';
 import {
   type ChairDay,
   type ChairVisit,
@@ -253,8 +255,8 @@ export type AnalyticsRowsTotal = {
   readonly rowCount: number;
 };
 
-/** The base a count rate needs before it is shown as a rate (design G6). */
-const RATE_BASE = 20;
+/** The base a count rate needs before it is shown as a rate (design G6) — declared with the radar's floors, which share it. */
+const RATE_BASE = AnalyticsRadarSystem.RATE_BASE;
 
 /**
  * The most visits one barber-day is read with (staff analytics v2, «Stamp
@@ -350,7 +352,17 @@ type Figures = {
   noShowCount: number;
   noShowBase: number;
   lateCancellationCount: number;
+  /** Every worked seat, its bill evaluated or not — what `dayWorkedSeatCount` and the service rows count. */
+  workedSeatCount: number;
+  /** Σ the worked seats' `durationMinutes` — what the service rows' `serviceMinutes` sum to. */
+  serviceMinutes: MinuteCount;
 };
+
+/** A visit is never in the rebooking base — the comparison period's live visits, whose follow-ups are not read. */
+const NEVER_PAST: PastOf = () => false;
+
+/** No visit rebooked — beside {@link NEVER_PAST}, which admits none to the base. */
+const NO_REBOOKED: ReadonlySet<AppointmentId> = new Set();
 
 /**
  * The distinct barbers counted LIVE with a WORKED seat on `visit` — the
@@ -398,6 +410,8 @@ function figuresOf(
     noShowCount: 0,
     noShowBase: 0,
     lateCancellationCount: 0,
+    workedSeatCount: 0,
+    serviceMinutes: MinuteCount.ZERO,
   };
   for (let i = 0; i < pastDays.length; i++) {
     const day = pastDays[i] as DayFigures;
@@ -410,6 +424,13 @@ function figuresOf(
     out.noShowCount += day.dayNoShowCount;
     out.noShowBase += day.dayNoShowBase;
     out.lateCancellationCount += day.dayLateCancellationCount;
+    out.workedSeatCount += day.dayWorkedSeatCount;
+    for (let s = 0; s < day.dayServices.length; s++) {
+      out.serviceMinutes = MinuteCount.add(
+        out.serviceMinutes,
+        (day.dayServices[s] as DayFigures.ServiceRow).serviceMinutes,
+      );
+    }
   }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
@@ -420,6 +441,11 @@ function figuresOf(
       switch (seat.attendanceState) {
         case AttendanceState.Worked: {
           out.noShowBase++;
+          out.workedSeatCount++;
+          out.serviceMinutes = MinuteCount.add(
+            out.serviceMinutes,
+            MinuteCount.fromDuration(seat.durationMinutes),
+          );
           if (nets.moneyAllocation === MoneyAllocation.Allocated) {
             const net = nets.nets[s] as SeatNet;
             out.takingsCents = PriceCents.add(out.takingsCents, net.netCents);
@@ -1442,6 +1468,20 @@ export const StaffAnalyticsSystem = {
       rosteredDayCountOf(input.days, input.pastDays, counting),
     );
 
+    // The shop's barbers, this period's and the comparison's, and the admin's
+    // radar over them on a MONTH, YEAR or CUSTOM span; a barber's report
+    // carries none of the three.
+    const shop = input.scopeBarberId === null;
+    const barbers = shop ? barbersOf(input, rebooked, past, counting) : [];
+    const comparisonBarbers =
+      shop && previous !== null
+        ? comparisonBarbersOf(input, previousCounting)
+        : [];
+    const radars =
+      shop && carriesRadar(period.analyticsSpan)
+        ? AnalyticsRadarSystem.radarsOf(barbers, comparisonBarbers)
+        : { reportRadars: [], reportRadarBase: RadarBase.TooFewBarbers };
+
     return {
       reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
       reportComputedAtUtcMs: input.now.utcEpochMs,
@@ -1524,10 +1564,10 @@ export const StaffAnalyticsSystem = {
         today,
       ),
       reportOrigins: originsOf(input.visits, input.pastDays, counting),
-      reportBarbers:
-        input.scopeBarberId === null
-          ? barbersOf(input, rebooked, past, counting)
-          : [],
+      reportBarbers: barbers,
+      reportComparisonBarbers: comparisonBarbers,
+      reportRadars: radars.reportRadars,
+      reportRadarBase: radars.reportRadarBase,
       reportDayRows: dayRowsOf(input, counting),
       reportSeatRows:
         input.scopeBarberId === null
@@ -2049,6 +2089,44 @@ function originsOf(
   ];
 }
 
+/** One barber's figures over one period's sources — the per-barber rows of a shop report, this period's and the comparison's. */
+function barberFiguresOf(
+  barberId: BarberId,
+  visits: readonly AnalyticsVisit[],
+  days: readonly AnalyticsDay[],
+  pastDays: readonly DayFigures[],
+  counting: Counting,
+  rebooked: ReadonlySet<AppointmentId>,
+  past: PastOf,
+  policy: ClientStatsPolicy,
+): AnalyticsReport.BarberFigures {
+  const only = onlyOf(counting, barberId);
+  const figures = figuresOf(visits, pastDays, only, rebooked, past, policy);
+  const time = timeOf(days, pastDays, only);
+  return {
+    barberId,
+    rosteredMinutes: minutes(time.rostered),
+    workedMinutes: minutes(time.worked),
+    noShowMinutes: minutes(time.noShow),
+    unmarkedMinutes: minutes(time.unmarked),
+    blockedMinutes: minutes(time.blocked),
+    unsoldMinutes: minutes(time.unsold),
+    openMinutes: minutes(time.open),
+    takingsCents: figures.takingsCents,
+    tipsCents: figures.tipsCents,
+    rebookedCount: figures.rebookedCount,
+    rebookedBase: figures.rebookedBase,
+    rebookedRate: rateOf(figures.rebookedCount, figures.rebookedBase),
+    noShowCount: figures.noShowCount,
+    noShowBase: figures.noShowBase,
+    noShowRate: rateOf(figures.noShowCount, figures.noShowBase),
+    lateCancellationCount: figures.lateCancellationCount,
+    serviceMinutes: figures.serviceMinutes,
+    workedSeatCount: figures.workedSeatCount,
+    rosteredDayCount: rosteredDayCountOf(days, pastDays, only),
+  };
+}
+
 function barbersOf(
   input: AnalyticsInput,
   rebooked: ReadonlySet<AppointmentId>,
@@ -2057,38 +2135,61 @@ function barbersOf(
 ): readonly AnalyticsReport.BarberFigures[] {
   const out: AnalyticsReport.BarberFigures[] = [];
   for (let b = 0; b < input.barberIds.length; b++) {
-    const barberId = input.barberIds[b] as BarberId;
-    const only = onlyOf(counting, barberId);
-    const figures = figuresOf(
-      input.visits,
-      input.pastDays,
-      only,
-      rebooked,
-      past,
-      input.policy,
+    out.push(
+      barberFiguresOf(
+        input.barberIds[b] as BarberId,
+        input.visits,
+        input.days,
+        input.pastDays,
+        counting,
+        rebooked,
+        past,
+        input.policy,
+      ),
     );
-    const time = timeOf(input.days, input.pastDays, only);
-    out.push({
-      barberId,
-      rosteredMinutes: minutes(time.rostered),
-      workedMinutes: minutes(time.worked),
-      noShowMinutes: minutes(time.noShow),
-      unmarkedMinutes: minutes(time.unmarked),
-      blockedMinutes: minutes(time.blocked),
-      unsoldMinutes: minutes(time.unsold),
-      openMinutes: minutes(time.open),
-      takingsCents: figures.takingsCents,
-      tipsCents: figures.tipsCents,
-      rebookedCount: figures.rebookedCount,
-      rebookedBase: figures.rebookedBase,
-      rebookedRate: rateOf(figures.rebookedCount, figures.rebookedBase),
-      noShowCount: figures.noShowCount,
-      noShowBase: figures.noShowBase,
-      noShowRate: rateOf(figures.noShowCount, figures.noShowBase),
-      lateCancellationCount: figures.lateCancellationCount,
-    });
   }
   return out;
+}
+
+/**
+ * The comparison period's figures per barber (the radars' grey outline),
+ * from what the pipeline reads of it: its stored days and its live visits
+ * (`previousPastDays`, `previousVisits`). No cut day and no follow-up is
+ * read for it, so its time parts and rostered days are the stored days'
+ * alone — a live comparison day adds no minutes — and its rebooking pair is
+ * the stored days' alone: a live visit enters no base ({@link NEVER_PAST}).
+ * Its money, worked seats, service minutes and the other counts come from
+ * both sources, as this period's do.
+ */
+function comparisonBarbersOf(
+  input: AnalyticsInput,
+  previousCounting: Counting,
+): readonly AnalyticsReport.BarberFigures[] {
+  const out: AnalyticsReport.BarberFigures[] = [];
+  for (let b = 0; b < input.barberIds.length; b++) {
+    out.push(
+      barberFiguresOf(
+        input.barberIds[b] as BarberId,
+        input.previousVisits,
+        [],
+        input.previousPastDays,
+        previousCounting,
+        NO_REBOOKED,
+        NEVER_PAST,
+        input.policy,
+      ),
+    );
+  }
+  return out;
+}
+
+/** Whether a span carries the admin's radar — a `MONTH`, a `YEAR` or a `CUSTOM` range (design, «The admin's radar»). */
+function carriesRadar(span: AnalyticsSpan): boolean {
+  return (
+    span === AnalyticsSpan.Month ||
+    span === AnalyticsSpan.Year ||
+    span === AnalyticsSpan.Custom
+  );
 }
 
 /** Date, then barber — the order the day rows are listed in. */

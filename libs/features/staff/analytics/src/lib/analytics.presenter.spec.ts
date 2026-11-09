@@ -4,6 +4,7 @@ import {
   AnalyticsPeriod,
   type AnalyticsReport,
   AnalyticsSpan,
+  RadarBase,
 } from '@core/components';
 import {
   LocalDate,
@@ -391,6 +392,82 @@ describe('analyticsVm — the admin and the shop', () => {
       ['Иван Колев', false],
     ]);
     expect(vm.scope?.label).toBe('Чии данни');
+  });
+
+  it('draws the admin’s radars: one per barber in its tone, five axes on the shop’s base, the comparison on the same base, a tap to the scope', () => {
+    const body = bodyOf(
+      inputOf('bg', {
+        report: shopReportFixture(),
+        scopeChoices: choices,
+        scheduleBarberId: null,
+      }),
+    );
+    const radars = body.radars;
+    expect(radars?.title).toBe('Как се справя всеки');
+    expect(radars?.subtitle).toBe('спрямо най-добрия в салона');
+    expect(radars?.missingText).toBe('малко данни');
+    expect(radars?.radars.map((radar) => [radar.name, radar.tone])).toEqual([
+      [NAMES.barberName(IVAN), 0],
+      [NAMES.barberName(NIKO), 1],
+    ]);
+    const ivan = radars?.radars[0];
+    expect(ivan?.barberId).toBe(IVAN);
+    expect(ivan?.axes.map((axis) => axis.label)).toEqual([
+      '€ на час',
+      'Запълване',
+      'Презаписване',
+      'Бакшиши',
+      'Надеждност',
+    ]);
+    expect(ivan?.axes.map((axis) => axis.value)).toEqual([
+      100, 100, 100, 62.5, 96,
+    ]);
+    expect(ivan?.valueText).toEqual(['100', '100', '100', '63', '96']);
+    expect(
+      ivan?.axes.map((axis) =>
+        axis.comparison === null ? null : Math.round(axis.comparison),
+      ),
+    ).toEqual([100, 90, 83, 60, 93]);
+    expect(ivan?.accessibleName).toBe(`Отвори ${NAMES.barberName(IVAN)}`);
+    expect(ivan?.testId).toBe('analytics-radar-ivan');
+    const niko = radars?.radars[1];
+    expect(niko?.axes.every((axis) => axis.comparison === null)).toBe(true);
+    expect(radars?.comparisonLegend).toBe('предходен период');
+  });
+
+  it('words a missing axis, and a shop of one barber has the base’s word and no radar', () => {
+    const report = shopReportFixture();
+    const few = bodyOf(
+      inputOf('bg', {
+        report: deepFreeze({
+          ...report,
+          reportRadars: [
+            {
+              ...(report.reportRadars[0] as AnalyticsReport.RadarRow),
+              tipsRate: null,
+            },
+          ],
+          reportRadarBase: RadarBase.TooFewBarbers,
+        }),
+        scopeChoices: choices,
+        scheduleBarberId: null,
+      }),
+    );
+    expect(few.radars?.subtitle).toBe('твърде малко бръснари за сравнение');
+    expect(few.radars?.radars[0]?.valueText[3]).toBe('малко данни');
+    // A barber's own report carries none; nor does a shop's week.
+    expect(bodyOf(inputOf('bg')).radars).toBeNull();
+    const week = bodyOf(
+      inputOf('bg', {
+        report: deepFreeze({
+          ...report,
+          reportAnalyticsSpan: AnalyticsSpan.Week,
+        }),
+        scopeChoices: choices,
+        scheduleBarberId: null,
+      }),
+    );
+    expect(week.radars).toBeNull();
   });
 
   it('words the shop’s booking origins as one stacked bar with its rows; its services open nothing', () => {

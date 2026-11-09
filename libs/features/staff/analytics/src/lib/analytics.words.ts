@@ -2,6 +2,7 @@ import {
   AnalyticsBarPart,
   AnalyticsSpan,
   BookingOrigin,
+  RadarBase,
 } from '@core/components';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import {
@@ -158,6 +159,25 @@ export interface AnalyticsWords {
     readonly sentence: (busiest: string, emptiest: string) => string;
     /** Under seven rostered days there is no verdict yet. */
     readonly pending: string;
+  };
+  /** The admin's radars — «Как се справя всеки» (staff-analytics-v2 CUJ 5). */
+  readonly radars: {
+    readonly title: string;
+    /** The subtitle naming the base: the best of the shop, or too few barbers. */
+    readonly base: Readonly<Record<RadarBase, string>>;
+    readonly axis: {
+      readonly takingsPerHour: string;
+      readonly fill: string;
+      readonly rebooking: string;
+      readonly tipsRate: string;
+      readonly reliability: string;
+    };
+    /** «малко данни» — an axis under its floor. */
+    readonly missing: string;
+    /** «предходен период» — the grey outline. */
+    readonly comparison: string;
+    /** «Отвори {{name}}» — a radar's accessible action. */
+    readonly open: (name: string) => string;
   };
   readonly origins: {
     readonly title: string;
@@ -332,6 +352,23 @@ export function analyticsWordsOf(
       sentence: (busiest, emptiest) =>
         t('busy.sentence', { busiest, emptiest }),
       pending: t('busy.pending'),
+    },
+    radars: {
+      title: t('radars.title'),
+      base: {
+        [RadarBase.BestOfShop]: t('radars.base.BEST_OF_SHOP'),
+        [RadarBase.TooFewBarbers]: t('radars.base.TOO_FEW_BARBERS'),
+      },
+      axis: {
+        takingsPerHour: t('radars.axis.takingsPerHour'),
+        fill: t('radars.axis.fill'),
+        rebooking: t('radars.axis.rebooking'),
+        tipsRate: t('radars.axis.tipsRate'),
+        reliability: t('radars.axis.reliability'),
+      },
+      missing: t('radars.missing'),
+      comparison: t('radars.comparison'),
+      open: (name) => t('radars.open', { name }),
     },
     origins: {
       title: t('origins.title'),

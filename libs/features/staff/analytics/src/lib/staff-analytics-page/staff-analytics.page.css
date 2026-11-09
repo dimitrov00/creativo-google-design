@@ -151,3 +151,15 @@
   flex: 1;
   min-inline-size: 0;
 }
+
+/* A radar's card: the name above the drawing, the whole card the tap. */
+.staff-analytics__radar {
+  inline-size: 100%;
+  text-align: start;
+}
+
+.staff-analytics__radar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

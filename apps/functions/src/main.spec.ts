@@ -473,6 +473,13 @@ const ANALYTICS_REPORT = {
     { weekday: 2, hour: 10, workedMinutes: 60, rosteredMinutes: 60 },
   ],
   reportAheadDays: [{ localDate: '2026-11-08', openMinutes: 120 }],
+  // v2's radar fields (PR 5): the per-barber figures with their bases, the
+  // comparison period's, and the normalised rows — a barber's report's are
+  // empty, its base TOO_FEW_BARBERS; a shop's rows carry each `number | null`.
+  reportBarbers: [],
+  reportComparisonBarbers: [],
+  reportRadars: [],
+  reportRadarBase: 'TOO_FEW_BARBERS',
   reportSeatRows: [],
 } as const;
 

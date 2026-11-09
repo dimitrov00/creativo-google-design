@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   type AnalyticsCall,
+  type AnalyticsReport,
   AnalyticsBarPart,
   AnalyticsComparison,
   AnalyticsFigure,
@@ -17,6 +18,7 @@ import {
   LocationStatus,
   MinuteRange,
   Placement,
+  RadarBase,
   Role,
   Seat,
   SeatOutcome,
@@ -54,6 +56,7 @@ import {
   seatFixture,
   termsFixture,
 } from '@core/testing';
+import { AnalyticsRadarSystem } from './analytics-radar.system';
 import type { ChairDay } from './chair-time.system';
 import {
   type AnalyticsDay,
@@ -994,6 +997,230 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       [niko, 1500],
     ]);
     expect(report.reportTakingsCents).toBe(3500);
+  });
+
+  describe('the admin’s radar (v2 PR 5)', () => {
+    const cents = (raw: number): PriceCents => raw as PriceCents;
+    const m = (raw: number): MinuteCount => raw as MinuteCount;
+    /** A stored day of `barberId` clearing the floors on its own: 20 seats over 200 service minutes, 20 in each base. */
+    const strongDay = (
+      barberId: BarberId,
+      localDay: LocalDate,
+      takings: number,
+      rebooked: number,
+      noShows: number,
+    ): DayFigures => ({
+      ...DayFigures.empty(barberId, localDay, stamp),
+      dayRosteredMinutes: m(480),
+      dayWorkedMinutes: m(200),
+      dayUnsoldMinutes: m(280),
+      dayTakingsCents: cents(takings),
+      dayTipsCents: cents(100),
+      dayWorkedSeatCount: 20,
+      dayNoShowBase: 20 + noShows,
+      dayNoShowCount: noShows,
+      dayRebookedBase: 20,
+      dayRebookedCount: rebooked,
+      dayServices: [
+        {
+          serviceId: cut,
+          workedSeatCount: 20,
+          takingsCents: cents(takings),
+          serviceMinutes: m(200),
+        },
+      ],
+    });
+    /** Seven rostered days each (the fill floor), one of them strong, the rest empty rosters. */
+    const sevenDays = (
+      barberId: BarberId,
+      strong: DayFigures,
+    ): DayFigures[] => [
+      strong,
+      ...[-9, -8, -7, -6, -5, -4].map((n) => ({
+        ...DayFigures.empty(barberId, day(n), stamp),
+        dayRosteredMinutes: m(480),
+        dayUnsoldMinutes: m(480),
+      })),
+    ];
+    const shop = (overrides: Partial<AnalyticsInput> = {}) =>
+      input({
+        scopeBarberId: null,
+        barberIds: [ivan, niko],
+        pastDays: [
+          ...sevenDays(ivan, strongDay(ivan, day(-10), 6000, 10, 0)),
+          ...sevenDays(niko, strongDay(niko, day(-10), 3000, 5, 4)),
+        ],
+        // The live day adds a seat and 30 service minutes to each.
+        visits: [visit('live', day(-2), [seat(ivan, 1200), seat(niko, 600)])],
+        days: [
+          dayOf(ivan, day(-2), { rosteredMinutes: 480, workedMinutes: 30 }),
+          dayOf(niko, day(-2), { rosteredMinutes: 480, workedMinutes: 30 }),
+        ],
+        ...overrides,
+      });
+
+    it('fills each barber’s service minutes, worked seats and rostered days from the stored days and the live seats', () => {
+      const report = S.report(shop());
+      expect(report.reportBarbers.map((b) => b.barberId)).toEqual([ivan, niko]);
+      expect(report.reportBarbers[0]).toMatchObject({
+        serviceMinutes: 230,
+        workedSeatCount: 21,
+        rosteredDayCount: 8,
+        takingsCents: 7200,
+        workedMinutes: 230,
+        rosteredMinutes: 480 * 8,
+      });
+      // The barbers' bases sum to the shop's service rows.
+      expect(
+        report.reportBarbers.reduce((sum, b) => sum + b.workedSeatCount, 0),
+      ).toBe(
+        report.reportServices.reduce(
+          (sum, row) => sum + row.workedSeatCount,
+          0,
+        ),
+      );
+      expect(
+        report.reportBarbers.reduce((sum, b) => sum + b.serviceMinutes, 0),
+      ).toBe(
+        report.reportServices.reduce((sum, row) => sum + row.serviceMinutes, 0),
+      );
+    });
+
+    it('draws the shop’s radars on a MONTH: one row per barber, normalised against the best, reliability absolute', () => {
+      const report = S.report(shop());
+      expect(report.reportRadarBase).toBe(RadarBase.BestOfShop);
+      expect(report.reportRadars.map((row) => row.barberId)).toEqual([
+        ivan,
+        niko,
+      ]);
+      // Ivan: 7200 ÷ 230 an hour — the best; 230 ÷ 3840 fill — the same as Niko's; 10 ÷ 20 rebooked — the best; 100 ÷ 7200 tips — half Niko's rate.
+      expect(report.reportRadars[0]).toMatchObject({
+        takingsPerHour: 100,
+        fill: 100,
+        rebooking: 100,
+        tipsRate: 50,
+        reliability: 100,
+      });
+      expect(report.reportRadars[1]).toMatchObject({
+        takingsPerHour: 50,
+        fill: 100,
+        rebooking: 50,
+        tipsRate: 100,
+        // The live seat joins the no-show base: 4 of 25.
+        reliability: 84,
+      });
+      // The maximum itself never leaves the server: no field of the report carries 7200 ÷ 230 × 60.
+      expect(JSON.stringify(report)).not.toContain(String((7200 / 230) * 60));
+      expect(S.report(shop()).reportRadars).toEqual(
+        AnalyticsRadarSystem.radarsOf(report.reportBarbers, []).reportRadars,
+      );
+    });
+
+    it('builds the comparison period’s barbers from its stored days and live visits, and draws them on this period’s best', () => {
+      const report = S.report(
+        shop({
+          previousPastDays: sevenDays(
+            ivan,
+            strongDay(ivan, localDate('2026-09-10'), 3000, 8, 2),
+          ),
+          // A live comparison visit: money and seats count, its day adds no minutes and enters no rebooking base.
+          previousVisits: [
+            visit('sept', localDate('2026-09-20'), [seat(ivan, 600)]),
+          ],
+        }),
+      );
+      expect(report.reportComparisonBarbers.map((b) => b.barberId)).toEqual([
+        ivan,
+        niko,
+      ]);
+      expect(report.reportComparisonBarbers[0]).toMatchObject({
+        takingsCents: 3600,
+        serviceMinutes: 230,
+        workedSeatCount: 21,
+        rosteredDayCount: 7,
+        rosteredMinutes: 480 * 7,
+        workedMinutes: 200,
+        rebookedBase: 20,
+        rebookedCount: 8,
+        rebookedRate: 0.4,
+        // The live seat joins the no-show base: 2 of 23.
+        noShowRate: 2 / 23,
+      });
+      expect(report.reportComparisonBarbers[1]).toMatchObject({
+        takingsCents: 0,
+        workedSeatCount: 0,
+        rosteredDayCount: 0,
+      });
+      // Ivan last month against this month's best: 3600 ÷ 230 an hour of
+      // 7200 ÷ 230 → 50; 200 ÷ 3360 of 230 ÷ 3840 → ≈ 99.4; 8 ÷ 20 rebooked
+      // of this month's 10 ÷ 21 (the live past day joined the base) → 84.
+      const ivanRow = report.reportRadars[0] as AnalyticsReport.RadarRow;
+      expect(ivanRow).toMatchObject({ comparisonTakingsPerHour: 50 });
+      expect(ivanRow.comparisonRebooking).toBeCloseTo(84, 10);
+      expect(ivanRow.comparisonFill).toBeCloseTo(
+        (200 / 3360 / (230 / 3840)) * 100,
+        10,
+      );
+      expect(ivanRow.comparisonReliability).toBeCloseTo((1 - 2 / 23) * 100, 10);
+      // Niko has no comparison figures over any floor: every comparison axis missing.
+      expect(report.reportRadars[1]).toMatchObject({
+        comparisonTakingsPerHour: null,
+        comparisonFill: null,
+        comparisonRebooking: null,
+        comparisonTipsRate: null,
+        comparisonReliability: null,
+      });
+    });
+
+    it('carries no comparison barbers when the period is not comparable', () => {
+      const report = S.report(
+        shop({
+          period: AnalyticsPeriod.yearOf(TODAY),
+          previousPastDays: [strongDay(ivan, localDate('2025-09-10'), 1, 1, 1)],
+        }),
+      );
+      expect(report.reportComparisonFromLocalDate).toBeNull();
+      expect(report.reportComparisonBarbers).toEqual([]);
+      expect(report.reportRadars[0]?.comparisonTakingsPerHour).toBeNull();
+    });
+
+    it('carries radars on a YEAR and a CUSTOM range, none on a DAY or a WEEK', () => {
+      expect(
+        S.report(shop({ period: AnalyticsPeriod.yearOf(TODAY) })).reportRadars,
+      ).toHaveLength(2);
+      expect(
+        S.report(
+          shop({
+            period: AnalyticsPeriod.customOf(day(-12), TODAY),
+          }),
+        ).reportRadars,
+      ).toHaveLength(2);
+      for (const period of [
+        AnalyticsPeriod.dayOf(day(-2)),
+        AnalyticsPeriod.weekOf(day(-2)),
+      ]) {
+        const report = S.report(shop({ period }));
+        expect(report.reportRadars).toEqual([]);
+        expect(report.reportRadarBase).toBe(RadarBase.TooFewBarbers);
+        // The barbers themselves stay, as on every span.
+        expect(report.reportBarbers).toHaveLength(2);
+      }
+    });
+
+    it('a barber’s report carries no radar, no barbers and no comparison barbers', () => {
+      const report = S.report(shop({ scopeBarberId: ivan, barberIds: [ivan] }));
+      expect(report.reportBarbers).toEqual([]);
+      expect(report.reportComparisonBarbers).toEqual([]);
+      expect(report.reportRadars).toEqual([]);
+      expect(report.reportRadarBase).toBe(RadarBase.TooFewBarbers);
+    });
+
+    it('a shop of one barber: the barber listed, no radar, TOO_FEW_BARBERS', () => {
+      const report = S.report(shop({ barberIds: [ivan] }));
+      expect(report.reportBarbers).toHaveLength(1);
+      expect(report.reportRadars).toEqual([]);
+      expect(report.reportRadarBase).toBe(RadarBase.TooFewBarbers);
+    });
   });
 
   it('lists the seat rows that add up to every money and count figure', () => {

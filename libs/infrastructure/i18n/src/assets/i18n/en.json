@@ -2750,6 +2750,23 @@
       "sentence": "Busiest: {{busiest}} · quietest: {{emptiest}}",
       "pending": "The busiest hour shows after 7 working days."
     },
+    "radars": {
+      "title": "How each barber does",
+      "base": {
+        "BEST_OF_SHOP": "against the best of the shop",
+        "TOO_FEW_BARBERS": "too few barbers to compare"
+      },
+      "axis": {
+        "takingsPerHour": "€ an hour",
+        "fill": "Fill",
+        "rebooking": "Rebooking",
+        "tipsRate": "Tips",
+        "reliability": "Reliability"
+      },
+      "missing": "little data",
+      "comparison": "previous period",
+      "open": "Open {{name}}"
+    },
     "origins": {
       "title": "Where bookings come from",
       "ONLINE": "Online",
@@ -2770,7 +2787,8 @@
       "NO_SHOWS": "No-shows",
       "LATE_CANCELLATIONS": "Late cancellations",
       "BUSY": "Busy time",
-      "ORIGINS": "Bookings"
+      "ORIGINS": "Bookings",
+      "RADARS": "How each barber does"
     },
     "info": {
       "label": "What “{{figure}}” means",
@@ -2784,7 +2802,8 @@
       "NO_SHOWS": "The services the client did not come to. The rate is of worked and no-show services.",
       "LATE_CANCELLATIONS": "Client cancellations after the cancellation deadline.",
       "BUSY": "The worked share of the working time, by weekday and hour; the busiest and quietest hours show after 7 working days.",
-      "ORIGINS": "Visits with a worked service by who booked them: the client online, or the shop."
+      "ORIGINS": "Visits with a worked service by who booked them: the client online, or the shop.",
+      "RADARS": "Five axes per barber: € an hour of service, fill, rebooking and tips against the best of the shop (100), reliability on its own; an axis under its floor reads «little data»."
     },
     "drill": {
       "total": "Total",

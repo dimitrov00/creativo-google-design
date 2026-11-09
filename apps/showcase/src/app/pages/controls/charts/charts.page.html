@@ -1,6 +1,6 @@
 <sc-page scTitle="Charts">
   <ng-container scLede>
-    <code>@creativo/ui/charts</code> — the analytics screen's three drawings,
+    <code>@creativo/ui/charts</code> — the analytics screen's four drawings,
     hand-drawn SVG and CSS over the DS tokens. Every input is a display struct a
     presenter built: the kit decides nothing and formats no number. Colour is
     CSS only — a mark carries <code>data-part</code> and
@@ -190,5 +190,61 @@
         data-testid="charts-heatmap"
       />
     </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="How each barber does — the radar">
+    <ng-container scAbout>
+      <code>ui-radar</code>: five axes, the first straight up, each vertex at
+      its value's share of the radius. One radar per person, so the polygon
+      wears the barber's identity tone (<code>uiTone</code> 0 … 4 →
+      <code>--sys-identity-N</code>, an 18 % wash under a solid edge) and the
+      same <code>data-tone</code> paints the swatch by the name; the month
+      before is the dashed grey comparison outline on the same base. An axis
+      under the sample floor is <code>null</code>: its vertex sits on the
+      centre, the axis is dotted and <code>uiMissingText</code> stands in for
+      the figure. Words and figures sit outside the axis ends; every axis is in
+      the hidden table. «Друг месец» swaps the figures so the polygons
+      cross-fade.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch">
+      <div class="charts__radars">
+        @for (radar of radars(); track radar.name) {
+        <ui-card uiTone="elevated" uiPadding="comfortable">
+          <ui-stack uiSpacing="compact" uiAlignment="stretch">
+            <p class="charts__radar-name">
+              <span
+                class="ui-chart-swatch"
+                [attr.data-tone]="radar.tone"
+              ></span>
+              <span uiText [uiFont]="'headline'">{{ radar.name }}</span>
+            </p>
+            <ui-radar
+              [uiAxes]="radar.axes"
+              [uiValueText]="radar.valueText"
+              [uiTone]="radar.tone"
+              [uiLabel]="radar.label"
+              uiMissingText="малко данни"
+              [attr.data-testid]="'charts-radar-' + radar.tone"
+            />
+          </ui-stack>
+        </ui-card>
+        }
+      </div>
+      <ui-flow uiSpacing="regular" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="toggleRadars()"
+        >
+          Друг месец
+        </button>
+        <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+          Нормирано спрямо най-добрия; надеждността е абсолютна.
+        </p>
+      </ui-flow>
+    </ui-stack>
   </sc-demo>
 </sc-page>

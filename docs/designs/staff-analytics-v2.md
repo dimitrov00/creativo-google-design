@@ -657,6 +657,15 @@ floor; reliability (`(1 − noShowRate) × 100`, base 20) absolute, never divide
 `null` axes are drawn as missing with the word «малко данни». A barber's report carries no
 radar.
 
+**As built in PR 5 (2026-11-09):** a comparison axis is not clamped by the system (a previous
+month better than this month's best reads over 100) — the element clamps the drawing to the
+ring; the radar's words and figures sit at each axis's outer end, not on the moving vertex;
+`RATE_BASE` lives on `AnalyticsRadarSystem` (the staff system imports it, the other way would
+cycle); the comparison barbers' time parts and `rosteredDayCount` come from the comparison's
+stored days alone (no roster is read for the comparison), so with the flag off their fill and
+rebooking read `null`; a shop of one barber has the base «твърде малко бръснари» and no
+radar; with two barbers under every floor the two radars show «малко данни» per axis.
+
 ### Visibility
 
 Unchanged ([v1's table](./staff-analytics.md#visibility)). Day documents and goals are
