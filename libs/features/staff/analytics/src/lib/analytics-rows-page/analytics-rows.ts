@@ -69,6 +69,12 @@ const PAGE = 20;
 })
 export class AnalyticsRows {
   readonly vm = input.required<AnalyticsDrillVm>();
+  /**
+   * The footer — what the rows add up to. The drill sheet keeps it; the
+   * card screen drops it, its figure already says so above (owner,
+   * 2026-11-09).
+   */
+  readonly showTotal = input(true);
   /** A barber's row of a shop's rows: open that barber's report. */
   readonly openBarber = output<BarberId>();
   /** A year's month row: the month to open. */

@@ -10,7 +10,13 @@
   [attr.data-load]="store.analyticsLoad()"
 >
   @if (vm(); as vm) {
-  <div class="analytics-card__bar">
+  <!-- THE BAR, pinned: the way back and the chart switch; once the large
+       figure has scrolled under it, the bar takes the material and the
+       figure in small between them (the sheets' collapsing title). -->
+  <div
+    class="analytics-card__bar"
+    [attr.data-collapsed]="collapsed() ? '' : null"
+  >
     <button
       type="button"
       uiButton
@@ -24,7 +30,18 @@
     >
       <ui-icon uiName="nav.back" />
     </button>
-    @if (vm.views.length > 0) {
+    @if (header(); as head) {
+    <p
+      class="analytics-card__bar-title"
+      [attr.aria-hidden]="collapsed() ? null : 'true'"
+      data-testid="analytics-card-bar-title"
+    >
+      <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+        >{{ vm.title }}</span
+      >
+      <span uiText uiFont="headline">{{ head.value }}</span>
+    </p>
+    } @if (vm.views.length > 0) {
     <ui-segmented-control
       class="analytics-card__views"
       uiControlSize="regular"
@@ -60,6 +77,7 @@
       @if (header(); as head) { @if (head.value; as value) {
       <!-- The figure opens its rows, which add up to it (v2's CUJ 8). -->
       <button
+        #figure
         type="button"
         class="analytics-card__figure-button"
         uiInteractive
@@ -601,6 +619,7 @@
       <h2 uiText uiFont="title3" id="analytics-rows-title">{{ rows.title }}</h2>
       <lib-analytics-rows
         [vm]="rows.vm"
+        [showTotal]="false"
         (openBarber)="openBarber($event)"
         (openMonth)="openMonth($event)"
       />

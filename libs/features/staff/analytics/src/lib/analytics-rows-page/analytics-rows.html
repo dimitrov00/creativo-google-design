@@ -103,7 +103,7 @@
   } } } @if (more()) {
   <!-- The end of the laid-out rows: within reach, the next page. -->
   <span #sentinel class="analytics-rows__sentinel" aria-hidden="true"></span>
-  }
+  } @if (showTotal()) {
   <!-- The footer: what the rows add up to, equal to the figure. -->
   <ul uiListGroup>
     <li
@@ -120,4 +120,5 @@
       </ng-container>
     </li>
   </ul>
+  }
 </ui-stack>

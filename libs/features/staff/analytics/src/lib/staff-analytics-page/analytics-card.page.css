@@ -18,13 +18,75 @@
   padding-block-start: var(--sys-space-regular);
 }
 
+/* THE BAR, pinned to the top, the page's width edge to edge: clear while
+   the large figure is on screen, then — folded (`data-collapsed`) — the
+   thick material of the DS's chrome with the figure small between ‹ and
+   the switch (the sheets' collapsing title). Its controls read the bar's
+   backdrop, as every bar content scrolls under lends them (modifiers.css,
+   «Floating chrome»). */
 .analytics-card__bar {
-  display: flex;
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--sys-space-compact);
   min-block-size: var(--control-size-large);
-  margin-block-end: var(--sys-space-regular);
+  margin-inline: calc(-1 * var(--sys-space-regular));
+  margin-block: calc(-1 * var(--sys-space-tight)) var(--sys-space-regular);
+  padding: var(--sys-space-tight) var(--sys-space-regular);
+  --ui-control-backdrop: blur(var(--sys-material-thin-blur))
+    saturate(var(--sys-material-saturation));
+  transition: background-color var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-standard);
+}
+
+.analytics-card__bar[data-collapsed] {
+  background-color: color-mix(
+    in srgb,
+    var(--sys-color-background) 92%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(var(--sys-material-thick-blur))
+    saturate(var(--sys-material-saturation));
+  backdrop-filter: blur(var(--sys-material-thick-blur))
+    saturate(var(--sys-material-saturation));
+}
+
+/* The switch keeps the trailing column whether or not there is a title. */
+.analytics-card__views {
+  grid-column: 3;
+}
+
+/* The figure, small: the topic over the value, centred, one line each;
+   it rises into place as the large one passes under the bar. */
+.analytics-card__bar-title {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
+    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+  pointer-events: none;
+}
+
+.analytics-card__bar-title > span {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analytics-card__bar[data-collapsed] .analytics-card__bar-title {
+  opacity: 1;
+  transform: none;
 }
 
 .analytics-card__modules {
@@ -145,10 +207,22 @@
 }
 
 /* THE RANGE ROW: the chips take the width, the «…» hugs the trailing edge. */
+/* THE RANGE ROW pins under the bar (Revolut's period switch): the
+   period stays one tap away while the rows under the chart scroll. Its
+   own band of the page's ground, edge to edge, so the rows pass under it. */
 .analytics-card__ranges {
+  position: sticky;
+  /* The bar's foot: its 52px box holds its inset (border-box). */
+  inset-block-start: var(--control-size-large);
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--sys-space-compact);
+  margin-inline: calc(-1 * var(--sys-space-regular));
+  padding: var(--sys-space-tight) var(--sys-space-regular);
+  background-color: var(--sys-color-background);
+  --ui-control-backdrop: blur(var(--sys-material-thin-blur))
+    saturate(var(--sys-material-saturation));
 }
 
 .analytics-card__range-chips {

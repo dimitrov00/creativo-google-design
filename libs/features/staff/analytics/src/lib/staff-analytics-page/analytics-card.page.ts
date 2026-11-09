@@ -1,10 +1,13 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
+  effect,
   inject,
   input,
   signal,
+  viewChild,
 } from '@angular/core';
 import { Location } from '@angular/common';
 import { Title } from '@angular/platform-browser';
@@ -67,6 +70,8 @@ import { bindAnalyticsRouteInputs } from './route-inputs';
 /** The ⓘ alert's one answer. */
 const INFO_CLOSE = 'close';
 
+/** The pinned bar's foot from the top of the screen — its 52px box (`--control-size-large`). */
+const BAR_FOLD_PX = 52;
 /**
  * A CARD'S OWN SCREEN (`/staff/analytics/:card`,
  * `docs/designs/staff-analytics-v3-revolut.md`) — Revolut's «Spent» screen
@@ -137,6 +142,18 @@ export class AnalyticsCardPage {
 
   /** The switch's pick; `null` is the card's first view. */
   private readonly view = signal<AnalyticsChartView | null>(null);
+
+  // ── The collapsing bar ──────────────────────────────────────────────────
+
+  private readonly figure = viewChild<ElementRef<HTMLElement>>('figure');
+  /**
+   * The large figure has scrolled up under the pinned bar: the bar takes
+   * the material and shows the figure small (owner, 2026-11-09: "this
+   * should become as a topbar like in the sheets when collapsible").
+   * Watched by an observer whose top edge sits at the bar's foot, so the
+   * fold lands as the figure passes under it.
+   */
+  protected readonly collapsed = signal(false);
 
   /** The locations whose line the toggles turned off; at least one stays on. */
   private readonly hiddenLocations = signal<readonly LocationId[]>([]);
@@ -235,6 +252,26 @@ export class AnalyticsCardPage {
   });
 
   constructor() {
+    effect((onCleanup) => {
+      const figure = this.figure()?.nativeElement;
+      if (figure === undefined || typeof IntersectionObserver === 'undefined') {
+        return;
+      }
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          // Folded only once it has left by the TOP — not when a short
+          // window simply has it below the fold.
+          this.collapsed.set(
+            entry !== undefined &&
+              !entry.isIntersecting &&
+              entry.boundingClientRect.top < BAR_FOLD_PX,
+          );
+        },
+        { rootMargin: `-${BAR_FOLD_PX}px 0px 0px 0px` },
+      );
+      observer.observe(figure);
+      onCleanup(() => observer.disconnect());
+    });
     inject(Title).setTitle('Analytics · Creativo');
     bindAnalyticsRouteInputs(this, this.store);
   }
