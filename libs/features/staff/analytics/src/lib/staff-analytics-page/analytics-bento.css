@@ -1,7 +1,9 @@
 /* A period's bento: two columns of cards 8 apart, the wide ones spanning
    both. A card stacks its word, its figure (the ring at the trailing edge
-   of the figure's line), the line under it and its graph, which sits at the
-   card's foot so the graphs of a row line up. */
+   of the figure's line), then the line under it and its graph at the
+   card's FOOT, so a row's graphs and lines align. The half cards are
+   square (Revolut's tiles, owner 2026-11-09: "closer to squares"): a card
+   with more to say grows taller rather than squash. */
 
 :host {
   display: block;
@@ -24,6 +26,17 @@
 
 .analytics-bento__card--wide {
   grid-column: 1 / -1;
+}
+
+.analytics-bento__card:not(.analytics-bento__card--wide) {
+  aspect-ratio: 1;
+}
+
+/* The foot: the line under the figure drops to the bottom of a square,
+   with its meter after it. */
+.analytics-bento__card:not(.analytics-bento__card--wide)
+  .analytics-bento__detail {
+  margin-block-start: auto;
 }
 
 .analytics-bento__title,
@@ -73,7 +86,7 @@
 }
 
 .analytics-bento__spark,
-.analytics-bento__bar {
+.analytics-bento__pace {
   margin-block-start: auto;
 }
 
@@ -137,4 +150,56 @@
 .analytics-bento__bone {
   display: block;
   border-radius: var(--control-radius-prominent);
+}
+
+/* THE PACE: the line over the period's two ends, then the legend — each
+   series' swatch (a shape: the accent dot, the dashed grey) beside its
+   word and its figure in ink. */
+.analytics-bento__pace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  padding-block-start: var(--sys-space-compact);
+}
+
+.analytics-bento__line {
+  --ui-spark-line-height: 4.5rem;
+}
+
+.analytics-bento__ends {
+  display: flex;
+  justify-content: space-between;
+}
+
+.analytics-bento__legend {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--sys-space-regular);
+  row-gap: var(--sys-space-tight);
+  margin-block-start: var(--sys-space-tight);
+}
+
+.analytics-bento__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-inline-size: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-bento__swatch {
+  flex: 0 0 auto;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+  background: var(--sys-color-accent);
+}
+
+.analytics-bento__key[data-series='previous'] .analytics-bento__swatch {
+  inline-size: 0.875rem;
+  block-size: 0;
+  border-radius: 0;
+  background: none;
+  border-block-start: 2px dashed
+    color-mix(in srgb, var(--sys-color-foreground) 48%, transparent);
 }

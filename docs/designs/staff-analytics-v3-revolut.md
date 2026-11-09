@@ -135,6 +135,13 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   (`uiTone="muted"`) in both themes, so a hover darkens it as a row does instead of
   greying a white card, and a page keeps room above and below its cards so the track's
   clip never cuts the last one.
+- **Owner review, 2026-11-09 (round 3)**: the half cards are square (`aspect-ratio: 1`, the
+  line under the figure at the foot), and the takings card draws its PACE instead of 30
+  daily bars: the running total to today (`ui-spark-line`, accent, a dot at today) beside
+  the previous period's running total dashed in grey, the period's first and last day
+  under it, and a legend that words both by the same day — «Този месец 35,00 €» · «Миналия
+  месец 44,00 €» (`AnalyticsCarouselSystem.paceOf`). A shorter previous period's line
+  stops at its last day; a day page has no line and keeps the comparison sentence.
 - **A service ring paints the top service in the accent and the rest in the chart's
   greys**; the identity tones stay the people's (the team).
 - **The card's figure opens its rows** (`analytics-card-figure`), which add up to it —

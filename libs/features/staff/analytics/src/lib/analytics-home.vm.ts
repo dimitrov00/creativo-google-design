@@ -43,6 +43,27 @@ export type AnalyticsSparkVm = {
   readonly label: string;
 };
 
+/**
+ * The takings card's PACE (`ui-spark-line`): this period's running total
+ * against the previous period's, and the legend that words both — what a
+ * barber reads as "where am I against last month by this day".
+ */
+export type AnalyticsPaceVm = {
+  /** The running total per bucket, in cents, up to today's. */
+  readonly values: readonly number[];
+  /** The previous period's, over every bucket; `null` draws none. */
+  readonly comparison: readonly number[] | null;
+  readonly slots: number;
+  /** The period's first and last day under the line's ends — «1.10» · «31.10». */
+  readonly startLabel: string;
+  readonly endLabel: string;
+  /** The legend: «Този месец» · «136,50 €», then «Миналия месец» · «92,30 €» by the same day. */
+  readonly currentLabel: string;
+  readonly currentValue: string;
+  readonly previousLabel: string | null;
+  readonly previousValue: string | null;
+};
+
 /** A card's meter (`ui-gauge`): a part of a whole, worded. */
 export type AnalyticsMeterVm = {
   readonly value: number;
@@ -61,6 +82,8 @@ export type AnalyticsBentoCardVm = {
   readonly trend: 'up' | 'down' | null;
   readonly detail: string | null;
   readonly spark: AnalyticsSparkVm | null;
+  /** The takings' pace — the takings card's line. */
+  readonly pace: AnalyticsPaceVm | null;
   /** A capacity bar (worked of rostered). */
   readonly bar: AnalyticsMeterVm | null;
   /** A ring (rebooked of base, no-shows of base). */

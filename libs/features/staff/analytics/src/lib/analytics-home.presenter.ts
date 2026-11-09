@@ -1,5 +1,5 @@
 import {
-  type AnalyticsPeriod,
+  AnalyticsPeriod,
   type AnalyticsReport,
   AnalyticsSpan,
 } from '@core/components';
@@ -14,6 +14,7 @@ import {
   bodyOf,
   money,
   periodLabelOf,
+  rangeDateText,
   scopeOf,
   shopNameOf,
   statusOf,
@@ -26,8 +27,8 @@ import {
   type AnalyticsBentoCardVm,
   type AnalyticsHomeVm,
   type AnalyticsMenuVm,
+  type AnalyticsPaceVm,
   type AnalyticsPageVm,
-  type AnalyticsSparkVm,
   type AnalyticsTeamCardVm,
   type AnalyticsToolRowVm,
 } from './analytics-home.vm';
@@ -224,29 +225,49 @@ function cardsOf(
     fields: Omit<AnalyticsBentoCardVm, 'accessibleName' | 'testId'>,
   ): AnalyticsBentoCardVm => ({
     ...fields,
-    accessibleName: [fields.title, fields.value, fields.delta, fields.detail]
+    accessibleName: [
+      fields.title,
+      fields.value,
+      fields.delta,
+      fields.detail,
+      fields.pace === null
+        ? null
+        : `${fields.pace.currentLabel} ${fields.pace.currentValue}`,
+      fields.pace?.previousLabel && fields.pace.previousValue
+        ? `${fields.pace.previousLabel} ${fields.pace.previousValue}`
+        : null,
+    ]
       .filter((part): part is string => part !== null && part !== '')
       .join(', '),
     testId: `analytics-card-${fields.card}`,
   });
 
-  // «Оборот»: the figure, its change, the buckets as bars, the average.
-  const series = body.series;
-  const average = StaffAnalyticsSystem.seriesAverageCentsOf(report);
-  const bucket = AnalyticsCarouselSystem.seriesBucketOf(report);
-  const takingsSpark: AnalyticsSparkVm | null =
-    series === null || series.points.length < 2
+  // «Оборот»: the figure, its change, and its PACE — the running total
+  // against the previous period's by the same day (a barber's "where am I
+  // against last month"); a lone bucket (a day) has no line to draw.
+  const pace = AnalyticsCarouselSystem.paceOf(report, input.today);
+  const previous = AnalyticsPeriod.previous(input.period);
+  const takingsPace: AnalyticsPaceVm | null =
+    pace.slots < 2
       ? null
       : {
-          values: series.points.map((point) => point.value),
-          highlight: AnalyticsCarouselSystem.latestBucketOf(
-            report,
-            input.today,
-          ),
-          average,
-          valueText: series.valueText,
-          labels: series.points.map((point) => point.label),
-          label: series.label,
+          values: pace.current,
+          comparison: pace.previous,
+          slots: pace.slots,
+          startLabel:
+            rangeDateText(input.period.fromLocalDate, input) ??
+            input.period.fromLocalDate,
+          endLabel:
+            rangeDateText(input.period.toLocalDate, input) ??
+            input.period.toLocalDate,
+          currentLabel: pageLabelOf(input.period, input),
+          currentValue: money(report.reportTakingsCents, lang),
+          previousLabel:
+            pace.previousSoFar === null ? null : pageLabelOf(previous, input),
+          previousValue:
+            pace.previousSoFar === null
+              ? null
+              : money(pace.previousSoFar, lang),
         };
 
   // «Работно време»: worked against the roster so far.
@@ -269,11 +290,9 @@ function cardsOf(
       value: body.hero.value,
       delta: body.hero.delta,
       trend: body.hero.trend,
-      detail:
-        takingsSpark === null || average === null
-          ? body.hero.comparison
-          : words.home.average[bucket](money(average, lang)),
-      spark: takingsSpark,
+      detail: takingsPace === null ? body.hero.comparison : null,
+      spark: null,
+      pace: takingsPace,
       bar: null,
       ring: null,
       wide: true,
@@ -286,6 +305,7 @@ function cardsOf(
       trend: null,
       detail: words.home.timeDetail(rostered),
       spark: null,
+      pace: null,
       bar: {
         value: report.reportWorkedMinutes,
         max: Math.max(rosteredSoFar, 1),
@@ -306,6 +326,7 @@ function cardsOf(
           ? words.home.tipsNone
           : words.home.tipsDetail(formatPercent(tipsShare, lang)),
       spark: null,
+      pace: null,
       bar: null,
       ring: null,
       wide: false,
@@ -318,6 +339,7 @@ function cardsOf(
       trend: null,
       detail: words.home.rebookedDetail,
       spark: null,
+      pace: null,
       bar: null,
       ring: {
         value: report.reportRebookedCount,
@@ -337,6 +359,7 @@ function cardsOf(
         formatCount(report.reportNoShowBase, lang),
       ),
       spark: null,
+      pace: null,
       bar: null,
       ring: {
         value: report.reportNoShowCount,

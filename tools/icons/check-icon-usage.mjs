@@ -98,6 +98,7 @@ export const INLINE_SVG_ALLOWED = [
   'libs/ui/charts/src/lib/line-chart/line-chart.html',
   'libs/ui/charts/src/lib/radar/radar.html',
   'libs/ui/charts/src/lib/spark-bars/spark-bars.html',
+  'libs/ui/charts/src/lib/spark-line/spark-line.html',
   'libs/ui/charts/src/lib/ring-chart/ring-chart.html',
 ];
 const INLINE_SVG = /<svg\b/g;

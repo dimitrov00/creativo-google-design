@@ -67,7 +67,9 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     ]);
     const takings = byTestId(host, 'analytics-card-takings');
     expect(takings?.textContent).toContain('45,50');
-    expect(takings?.querySelector('ui-spark-bars')).not.toBeNull();
+    // The pace line and its legend: this month against last by the same day.
+    expect(takings?.querySelector('ui-spark-line')).not.toBeNull();
+    expect(takings?.textContent).toContain('Миналия месец');
     // Each card opens its own screen on this page's period.
     expect(takings?.getAttribute('href')).toBe(
       '/staff/analytics/takings?span=MONTH&from=2026-09-01',

@@ -71,6 +71,48 @@
       [uiLabels]="spark.labels"
       [uiLabel]="spark.label"
     />
+    } @if (card.pace; as pace) {
+    <!-- THE PACE: this period's running total against the previous one's
+         by the same day — the line ends at today, the dashed one runs on. -->
+    <span class="analytics-bento__pace" aria-hidden="true">
+      <ui-spark-line
+        class="analytics-bento__line"
+        [uiValues]="pace.values"
+        [uiComparison]="pace.comparison"
+        [uiSlots]="pace.slots"
+        [uiLabel]="card.accessibleName"
+      />
+      <span class="analytics-bento__ends">
+        <span uiText uiFont="caption" uiForegroundStyle="secondary"
+          >{{ pace.startLabel }}</span
+        >
+        <span uiText uiFont="caption" uiForegroundStyle="secondary"
+          >{{ pace.endLabel }}</span
+        >
+      </span>
+      <span class="analytics-bento__legend">
+        <span class="analytics-bento__key" data-series="current">
+          <span class="analytics-bento__swatch"></span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ pace.currentLabel }}</span
+          >
+          <span uiText uiFont="footnote" uiWeight="semibold"
+            >{{ pace.currentValue }}</span
+          >
+        </span>
+        @if (pace.previousLabel; as previousLabel) {
+        <span class="analytics-bento__key" data-series="previous">
+          <span class="analytics-bento__swatch"></span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ previousLabel }}</span
+          >
+          <span uiText uiFont="footnote" uiWeight="semibold"
+            >{{ pace.previousValue }}</span
+          >
+        </span>
+        }
+      </span>
+    </span>
     } @if (card.bar; as bar) {
     <ui-gauge
       class="analytics-bento__bar"
@@ -126,10 +168,10 @@
   <!-- The bones of a page whose report is not here yet. -->
   <ui-skeleton
     uiFrame
-    uiFrameHeight="9.5rem"
+    uiFrameHeight="13rem"
     class="analytics-bento__bone analytics-bento__card--wide"
   />
   @for (bone of [1, 2, 3, 4]; track bone) {
-  <ui-skeleton uiFrame uiFrameHeight="7.5rem" class="analytics-bento__bone" />
+  <ui-skeleton uiFrame uiFrameHeight="11rem" class="analytics-bento__bone" />
   } }
 </div>

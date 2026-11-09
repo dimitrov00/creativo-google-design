@@ -249,9 +249,22 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     const [takings, time, tips, rebooked, noShows] = cards;
     expect(takings?.delta).toBe('+30%');
     expect(takings?.trend).toBe('up');
-    expect(takings?.detail).toBe(`средно ${nbsp('1,52 €')} на ден`);
-    expect(takings?.spark?.values).toHaveLength(30);
-    expect(takings?.spark?.highlight).toBe(27);
+    // The pace: the running total to today (the 28th) of the month's 30
+    // days, against last month's over all 30, worded in the legend.
+    expect(takings?.detail).toBeNull();
+    expect(takings?.spark).toBeNull();
+    expect(takings?.pace?.values).toHaveLength(28);
+    expect(takings?.pace?.values.at(-1)).toBe(4550);
+    expect(takings?.pace?.comparison).toHaveLength(30);
+    expect(takings?.pace?.slots).toBe(30);
+    expect(takings?.pace).toMatchObject({
+      startLabel: '1.09',
+      endLabel: '30.09',
+      currentLabel: 'Този месец',
+      currentValue: nbsp('45,50 €'),
+      previousLabel: 'Миналия месец',
+      previousValue: nbsp('35,00 €'),
+    });
     expect(takings?.wide).toBe(true);
     expect(time?.detail?.startsWith('от ')).toBe(true);
     expect(time?.bar?.value).toBe(480);
@@ -260,7 +273,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(rebooked?.ring).toMatchObject({ value: 1, max: 2 });
     expect(noShows?.detail).toBe('от 3 посещения');
     expect(takings?.accessibleName).toBe(
-      `Оборот, ${nbsp('45,50 €')}, +30%, средно ${nbsp('1,52 €')} на ден`,
+      `Оборот, ${nbsp('45,50 €')}, +30%, Този месец ${nbsp('45,50 €')}, Миналия месец ${nbsp('35,00 €')}`,
     );
     // A page without its report draws bones.
     expect(vm.pages[0]?.cards).toBeNull();

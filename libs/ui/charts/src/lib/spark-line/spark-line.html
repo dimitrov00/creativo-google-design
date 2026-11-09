@@ -1,0 +1,26 @@
+<svg
+  #drawing
+  class="ui-spark-line__drawing"
+  role="img"
+  [attr.aria-label]="uiLabel()"
+  [attr.viewBox]="viewBox()"
+>
+  @if (comparisonPath(); as comparison) {
+  <path
+    class="ui-spark-line__comparison"
+    [attr.data-part]="comparisonPart"
+    [attr.d]="comparison"
+  />
+  } @if (area(); as wash) {
+  <path class="ui-spark-line__area" [attr.d]="wash" />
+  } @if (line(); as path) {
+  <path class="ui-spark-line__line" [attr.d]="path" />
+  } @if (end(); as dot) {
+  <circle
+    class="ui-spark-line__dot"
+    [attr.cx]="dot.x"
+    [attr.cy]="dot.y"
+    r="4"
+  />
+  }
+</svg>

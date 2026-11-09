@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiSkeleton } from '@creativo/ui/controls';
-import { UiSparkBars } from '@creativo/ui/charts';
+import { UiSparkBars, UiSparkLine } from '@creativo/ui/charts';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
@@ -34,6 +34,7 @@ import type { AnalyticsPageVm } from '../analytics-home.vm';
     UiPaddingDirective,
     UiSkeleton,
     UiSparkBars,
+    UiSparkLine,
     UiTextDirective,
     UiWeightDirective,
   ],

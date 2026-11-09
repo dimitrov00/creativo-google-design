@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AnalyticsPeriod,
   AnalyticsRangePreset,
+  type AnalyticsReport,
   AnalyticsSpan,
 } from '@core/components';
 import { analyticsReportFixture, deepFreeze, localDate } from '@core/testing';
@@ -204,5 +205,69 @@ describe('AnalyticsCarouselSystem.tipsSeriesOf — tips per bucket', () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals', () => {
+  const point = (
+    day: string,
+    takings: number,
+    comparison: number | null,
+  ): AnalyticsReport.SeriesPoint => ({
+    localDate: localDate(day),
+    takingsCents: takings as PriceCents,
+    comparisonTakingsCents: comparison as PriceCents | null,
+  });
+  const report = (points: readonly AnalyticsReport.SeriesPoint[]) =>
+    deepFreeze(analyticsReportFixture({ reportSeries: points }));
+
+  it('runs the total up to the bucket holding today, the previous period over every bucket', () => {
+    const pace = C.paceOf(
+      report([
+        point('2026-11-07', 1000, 500),
+        point('2026-11-08', 0, 700),
+        point('2026-11-09', 2500, 0),
+        point('2026-11-10', 0, 900),
+      ]),
+      localDate('2026-11-09'),
+    );
+    expect(pace.current).toEqual([1000, 1000, 3500]);
+    expect(pace.previous).toEqual([500, 1200, 1200, 2100]);
+    expect(pace.slots).toBe(4);
+    // Last month by this day — the bucket holding today.
+    expect(pace.previousSoFar).toBe(1200);
+  });
+
+  it('runs a past period to its end; the comparison stops where a shorter previous period does, and is absent without a first', () => {
+    const past = C.paceOf(
+      report([point('2026-10-30', 400, 100), point('2026-10-31', 600, 300)]),
+      localDate('2026-11-09'),
+    );
+    expect(past.current).toEqual([400, 1000]);
+    expect(past.previousSoFar).toBe(400);
+    // October against September: the 31st has no counterpart.
+    const shorter = C.paceOf(
+      report([point('2026-10-30', 400, 100), point('2026-10-31', 600, null)]),
+      localDate('2026-11-09'),
+    );
+    expect(shorter.previous).toEqual([100]);
+    expect(shorter.previousSoFar).toBe(100);
+    const lone = C.paceOf(
+      report([point('2026-10-30', 400, null), point('2026-10-31', 600, 300)]),
+      localDate('2026-11-09'),
+    );
+    expect(lone.previous).toBeNull();
+    expect(lone.previousSoFar).toBeNull();
+    expect(C.paceOf(report([]), localDate('2026-11-09'))).toEqual({
+      current: [],
+      previous: null,
+      slots: 0,
+      previousSoFar: null,
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const input = report([point('2026-11-08', 300, 200)]);
+    expect(C.paceOf(input, TODAY)).toEqual(C.paceOf(input, TODAY));
   });
 });

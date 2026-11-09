@@ -4,7 +4,7 @@ import {
   type AnalyticsReport,
   AnalyticsSpan,
 } from '@core/components';
-import { LocalDate, MinuteCount } from '@core/primitives';
+import { LocalDate, MinuteCount, PriceCents } from '@core/primitives';
 import { StaffAnalyticsSystem } from './staff-analytics.system';
 
 /** The spans the home carousel pages through — every one but `CUSTOM`. */
@@ -24,6 +24,27 @@ const SIX_MONTHS_BACK = 5;
  * reach and the switcher's steps are `AnalyticsPeriod`'s and
  * `StaffAnalyticsSystem.stepsOf`'s.
  */
+/**
+ * The takings' PACE (the home's takings card): the running total of the
+ * period bucket by bucket — up to the bucket holding today while it runs —
+ * beside the previous period's running total over its whole length, so a
+ * barber reads "where am I against last month by this day".
+ */
+export type AnalyticsPace = {
+  /** Σ takings up to each bucket, through `latestBucketOf`'s. */
+  readonly current: readonly PriceCents[];
+  /**
+   * Σ the previous period's takings up to each bucket it has — it stops
+   * where the previous period ran out of days (September under October's
+   * 31st); `null` when there is no comparison at all.
+   */
+  readonly previous: readonly PriceCents[] | null;
+  /** How many buckets the period holds — the chart's width in buckets. */
+  readonly slots: number;
+  /** The previous period's running total at the current's last bucket; `null` without a comparison. */
+  readonly previousSoFar: PriceCents | null;
+};
+
 export const AnalyticsCarouselSystem = {
   /**
    * The carousel's pages for `span`: every period of the span the switcher
@@ -136,6 +157,48 @@ export const AnalyticsCarouselSystem = {
       }
     }
     return index;
+  },
+
+  /**
+   * THE PACE of `report`'s takings ({@link AnalyticsPace}): running totals
+   * of the series, the current one cut at the bucket holding `today` (the
+   * last on a past period), the comparison's over every bucket it covers
+   * — up to its first bucket without one, a shorter previous period's end
+   * — and absent when the first bucket has none (a period not comparable).
+   * The previous total "so far" is read at the current's last bucket, or
+   * at the previous period's own end when that came sooner.
+   */
+  paceOf(report: AnalyticsReport, today: LocalDate): AnalyticsPace {
+    const points = report.reportSeries;
+    const latest = AnalyticsCarouselSystem.latestBucketOf(report, today);
+    const current: PriceCents[] = [];
+    const previous: PriceCents[] = [];
+    let sum = PriceCents.ZERO;
+    let comparisonSum = PriceCents.ZERO;
+    let covered = true;
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i] as AnalyticsReport.SeriesPoint;
+      sum = PriceCents.add(sum, point.takingsCents);
+      if (latest !== null && i <= latest) current.push(sum);
+      if (point.comparisonTakingsCents === null) covered = false;
+      if (covered && point.comparisonTakingsCents !== null) {
+        comparisonSum = PriceCents.add(
+          comparisonSum,
+          point.comparisonTakingsCents,
+        );
+        previous.push(comparisonSum);
+      }
+    }
+    const comparable = previous.length > 0;
+    return {
+      current,
+      previous: comparable ? previous : null,
+      slots: points.length,
+      previousSoFar:
+        comparable && latest !== null
+          ? (previous[Math.min(latest, previous.length - 1)] ?? null)
+          : null,
+    };
   },
 
   /**
