@@ -201,3 +201,16 @@ contents move into the card screens: the heatmap and the stacked parts under «�
 - **The view switch is the regular rung** — 44 px like the back button and
   the range row; icon-only segments at that rung are 42 px wide with a
   20 px glyph.
+
+### Round 8 — the lift, and quicker motion (2026-11-09)
+
+- **Light mode never greys on hover, DS-wide.** The `[data-interactive]`
+  overlay casts a soft lift shadow instead of a wash (it rides `::after`,
+  so an accent card's ring or a chosen tile's ring survives); quiet buttons
+  (plain, outlined, neutral fill, glass) rise into a white pill with the
+  same lift. An unchosen segment shows a faint white ghost of the thumb;
+  the chosen one lifts the thumb. Dark is unchanged — a wash, no shadow.
+  Tokens: `--sys-hover-lift`, `--sys-hover-raise(-strong|-glass)`,
+  `--sys-surface-hover-layer`, `--sys-surface-press-layer`.
+- **The segmented glide is 200 ms** on the emphasized curve (was 480 ms, a
+  marketing tier); hover fades in at 150 ms.

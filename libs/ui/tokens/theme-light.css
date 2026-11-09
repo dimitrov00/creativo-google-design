@@ -160,6 +160,17 @@
     --sys-alpha-press: 9%;
     --sys-alpha-interactive: 7%;
     --sys-alpha-segment-selected: 14%;
+    /* THE LIFT (owner ruling 2026-11-09): on a light page, hover and press
+       never grey a surface — a grey wash on white reads as dirt. The
+       surface RISES instead: a soft two-step shadow under it, and a quiet
+       control (plain, outlined, neutral fill, glass) turns into a white
+       pill. Dark keeps the wash: a shadow does not read on a dark page. */
+    --sys-hover-lift: 0 6px 16px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+    --sys-hover-raise: var(--sys-color-surface);
+    --sys-hover-raise-strong: var(--sys-color-surface);
+    --sys-hover-raise-glass: var(--sys-color-surface);
+    --sys-surface-hover-layer: transparent;
+    --sys-surface-press-layer: transparent;
     /* THE MATCH WASH (2026-11-03: "highlight the matches as a background"):
        what was typed, marked in every search — the accent at twice the
        selection rung, so a picked (already washed) row still shows its

@@ -150,6 +150,26 @@
     --sys-alpha-press: 16%;
     --sys-alpha-interactive: 12%;
     --sys-alpha-segment-selected: 20%;
+    /* THE LIFT is light-only (theme-light.css): on dark, hover keeps the
+       state-layer wash and nothing casts a shadow. */
+    --sys-hover-lift: 0 0 #0000;
+    --sys-hover-raise: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-fill-hover),
+      transparent
+    );
+    --sys-hover-raise-strong: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      transparent
+    );
+    --sys-hover-raise-glass: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-fill-hover),
+      var(--sys-material-fill)
+    );
+    --sys-surface-hover-layer: var(--sys-state-layer-hover);
+    --sys-surface-press-layer: var(--sys-state-layer-press);
     /* THE MATCH WASH (2026-11-03: "highlight the matches as a background"):
        what was typed, marked in every search — the accent at twice the
        selection rung, so a picked (already washed) row still shows its

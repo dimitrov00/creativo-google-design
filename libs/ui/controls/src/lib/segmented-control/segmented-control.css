@@ -66,13 +66,44 @@
     box-shadow:
       0 3px 8px rgb(0 0 0 / 12%),
       0 3px 1px rgb(0 0 0 / 4%);
-    /* THE GLIDE: a long, decelerating slide — it leaves at once and
-       settles softly into the slot (the emphasized curve), so a tap reads
-       as the pill travelling, not jumping. */
+    /* THE GLIDE: a quick, decelerating slide — it leaves at once and
+       settles into the slot (the emphasized curve), so a tap reads as the
+       pill travelling, not jumping, without making the reader wait. */
     transition:
-      inset-inline-start var(--sys-motion-duration-slow)
+      inset-inline-start var(--sys-motion-duration-regular)
         var(--sys-motion-ease-emphasized),
+      box-shadow var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard),
       opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  /* HOVER — never a grey wash on the track (the lift grammar, 2026-11-09):
+     an unchosen segment shows a faint ghost of the thumb; the chosen one
+     lifts the thumb itself. The overlay's own lift stays off here — a
+     shadow around a see-through segment would outline the track. */
+  .ui-segmented-control
+    .ui-segmented-control__segment[data-interactive]:is(
+      :hover,
+      :active
+    )::after {
+    box-shadow: none;
+  }
+  .ui-segmented-control__segment {
+    transition: background-color var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+  }
+  @media (hover: hover) {
+    .ui-segmented-control__segment:not([data-selected]):hover {
+      background: color-mix(in srgb, var(--sys-hover-raise) 55%, transparent);
+    }
+    .ui-segmented-control__track:has(
+        .ui-segmented-control__segment[data-selected]:hover
+      )
+      .ui-segmented-control__thumb {
+      box-shadow:
+        0 4px 12px rgb(0 0 0 / 14%),
+        0 3px 1px rgb(0 0 0 / 4%);
+    }
   }
 
   .ui-segmented-control[data-empty] .ui-segmented-control__thumb {
