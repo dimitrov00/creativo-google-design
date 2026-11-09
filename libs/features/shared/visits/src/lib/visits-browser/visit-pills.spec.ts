@@ -260,14 +260,13 @@ describe('VisitPills · a pill', () => {
     expect(grammar).toMatch(
       /\[data-interactive\]::after \{[^}]*background: transparent;/,
     );
-    // …answers a hover only where a pointer can hover — the theme's
-    // surface layer (a wash in dark) and the lift (a shadow in light)…
+    // …fills on hover only where a pointer can hover…
     expect(grammar).toMatch(
-      /@media \(hover: hover\) \{ \[data-interactive\]:not\([^)]*\):hover::after \{ background: var\(--sys-surface-hover-layer\); box-shadow: var\(--sys-hover-lift\); \} \}/,
+      /@media \(hover: hover\) \{ \[data-interactive\]:not\([^)]*\):hover::after \{ background: var\(--sys-state-layer-hover\); \} \}/,
     );
     // …and on a press everywhere: the ungated mirror a thumb sees.
     const press =
-      /\[data-interactive\]:not\([^)]*\):active::after \{ background: var\(--sys-surface-press-layer\); box-shadow: var\(--sys-hover-lift\);/;
+      /\[data-interactive\]:not\([^)]*\):active::after \{ background: var\(--sys-state-layer-press\);/;
     expect(grammar).toMatch(press);
     const gated = [...grammar.matchAll(/@media \(hover: hover\) \{(.*?\}) \}/g)]
       .map(([, body]) => body)

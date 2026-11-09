@@ -234,11 +234,7 @@
      ≙ SwiftUI .hoverEffect(.highlight): THE one hover/press grammar for
      cards/rows/tiles — a state-layer overlay filling with currentColor at
      the theme alpha ladder. Surfaces never invent their own hover
-     treatments; ui-button/ui-chip carry per-variant tiers instead.
-     In LIGHT the wash is gone (2026-11-09): the overlay casts the lift
-     shadow instead, so the surface rises rather than greys. The shadow
-     rides the overlay, never the host, so a host's own ring or elevation
-     (an accent card, a chosen tile) is never replaced by it. */
+     treatments; ui-button/ui-chip carry per-variant tiers instead. */
   [data-interactive] {
     position: relative;
     cursor: pointer;
@@ -251,11 +247,8 @@
     border-radius: inherit;
     pointer-events: none;
     background: transparent;
-    transition:
-      background-color var(--sys-motion-duration-regular)
-        var(--sys-motion-ease-standard),
-      box-shadow var(--sys-motion-duration-instant)
-        var(--sys-motion-ease-standard);
+    transition: background-color var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
   }
 
   /* Every state below is gated on NOT being disabled.
@@ -273,8 +266,7 @@
         [aria-disabled='true'],
         [data-disabled]
       ):hover::after {
-      background: var(--sys-surface-hover-layer);
-      box-shadow: var(--sys-hover-lift);
+      background: var(--sys-state-layer-hover);
     }
   }
 
@@ -289,8 +281,7 @@
       [aria-disabled='true'],
       [data-disabled]
     ):active::after {
-    background: var(--sys-surface-press-layer);
-    box-shadow: var(--sys-hover-lift);
+    background: var(--sys-state-layer-press);
     transition-duration: var(--sys-motion-duration-instant);
   }
 

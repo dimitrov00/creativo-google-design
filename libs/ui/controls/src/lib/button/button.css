@@ -21,9 +21,7 @@
     cursor: pointer;
     text-decoration: none;
     transition:
-      background-color var(--sys-motion-duration-instant)
-        var(--sys-motion-ease-standard),
-      box-shadow var(--sys-motion-duration-instant)
+      background-color var(--sys-motion-duration-regular)
         var(--sys-motion-ease-standard),
       transform var(--sys-motion-duration-instant)
         var(--sys-motion-ease-standard);
@@ -195,8 +193,11 @@
     }
     .ui-button[data-button-style='strokedBorder']:hover:not(:disabled),
     .ui-button[data-button-style='plain']:hover:not(:disabled) {
-      background: var(--sys-hover-raise);
-      box-shadow: var(--sys-hover-lift);
+      background: color-mix(
+        in srgb,
+        currentColor var(--sys-alpha-fill-hover),
+        transparent
+      );
     }
     .ui-button[data-button-style='bordered']:hover:not(:disabled) {
       background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
@@ -204,8 +205,11 @@
     .ui-button[data-button-style='bordered'][data-tint='neutral']:hover:not(
         :disabled
       ) {
-      background: var(--sys-hover-raise-strong);
-      box-shadow: var(--sys-hover-lift);
+      background: color-mix(
+        in srgb,
+        currentColor var(--sys-alpha-press),
+        transparent
+      );
     }
     .ui-button[data-button-style='bordered'][data-role='destructive']:hover:not(
         :disabled
@@ -226,8 +230,11 @@
       );
     }
     .ui-button[data-button-style='glass']:hover:not(:disabled) {
-      background: var(--sys-hover-raise-glass);
-      box-shadow: var(--sys-hover-lift);
+      background: color-mix(
+        in srgb,
+        currentColor var(--sys-alpha-fill-hover),
+        var(--sys-material-fill)
+      );
     }
     .ui-button[data-button-style='glass'][data-on-media]:hover:not(:disabled) {
       background: color-mix(
@@ -235,17 +242,6 @@
         var(--sys-color-on-media) 20%,
         transparent
       );
-    }
-    /* An outlined control keeps its ring under the lift; over media there
-       is no lift at all — footage is no page for a shadow to fall on. */
-    .ui-button[data-button-style='strokedBorder']:hover:not(:disabled) {
-      box-shadow:
-        inset 0 0 0 1px color-mix(in srgb, currentColor 28%, transparent),
-        var(--sys-hover-lift);
-    }
-    .ui-button[data-button-style='glass'][data-on-media]:hover:not(:disabled) {
-      box-shadow: inset 0 0 0 1px
-        color-mix(in srgb, currentColor 28%, transparent);
     }
     .ui-button[data-button-style='borderedProminent'][data-on-media]:hover:not(
         :disabled
@@ -269,13 +265,11 @@
   }
   .ui-button[data-button-style='strokedBorder']:active:not(:disabled),
   .ui-button[data-button-style='plain']:active:not(:disabled) {
-    background: var(--sys-hover-raise);
-    box-shadow: var(--sys-hover-lift);
-  }
-  .ui-button[data-button-style='strokedBorder']:active:not(:disabled) {
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, currentColor 28%, transparent),
-      var(--sys-hover-lift);
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-fill-hover),
+      transparent
+    );
   }
   .ui-button[data-button-style='bordered']:active:not(:disabled) {
     background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
@@ -283,8 +277,11 @@
   .ui-button[data-button-style='bordered'][data-tint='neutral']:active:not(
       :disabled
     ) {
-    background: var(--sys-hover-raise-strong);
-    box-shadow: var(--sys-hover-lift);
+    background: color-mix(
+      in srgb,
+      currentColor var(--sys-alpha-press),
+      transparent
+    );
   }
   .ui-button[data-button-style='bordered'][data-role='destructive']:active:not(
       :disabled
