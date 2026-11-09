@@ -1,5 +1,6 @@
-/* The custom-range sheet: two date fields on the sheet's column, the
-   refusal line under them, «Приложи» on the action bar. */
+/* The custom period sheet: two collapsible rows, each with its date and a
+   chevron that turns when its calendar unfolds under it; the refusal line
+   under them; «Приложи» on the action bar. */
 
 :host {
   display: contents;
@@ -9,9 +10,33 @@
   padding-inline: var(--sys-space-regular);
 }
 
-.analytics-range-sheet__fields {
+.analytics-range-sheet__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
   padding-inline: var(--sys-space-regular);
   padding-block: var(--sys-space-regular) var(--sys-space-spacious);
+}
+
+.analytics-range-sheet__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-range-sheet__chevron {
+  transition: rotate var(--sys-motion-duration-quick, 150ms)
+    var(--sys-motion-ease-standard, ease);
+}
+
+.analytics-range-sheet__chevron[data-open] {
+  rotate: 180deg;
+}
+
+.analytics-range-sheet__calendar {
+  padding: var(--sys-space-compact) var(--sys-space-regular)
+    var(--sys-space-regular);
 }
 
 .analytics-range-sheet__refusal {

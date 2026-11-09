@@ -155,6 +155,19 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    // A card of «Анализи» on its own screen (docs/designs/
+    // staff-analytics-v3-revolut.md): the same role sets as the home.
+    path: 'staff/analytics/:card',
+    canActivate: [
+      activeGuard,
+      rolesGuard(...Roles.ANALYTICS_SELF, ...Roles.ANALYTICS_SHOP),
+    ],
+    loadComponent: () =>
+      import('@creativo/features/staff/analytics').then(
+        (m) => m.AnalyticsCardPage,
+      ),
+  },
+  {
     // The old address, kept working. Deliberately UNGUARDED: the redirect
     // is not an authorization decision, and the target's own guards still
     // run afterwards — a client following a stale `/staff` link lands on

@@ -1,0 +1,57 @@
+<div class="ui-ring-chart__frame">
+  <svg
+    #drawing
+    class="ui-ring-chart__drawing"
+    role="img"
+    [attr.aria-label]="uiLabel()"
+    [attr.viewBox]="viewBox()"
+  >
+    @if (empty()) {
+    <circle
+      class="ui-ring-chart__track"
+      [attr.cx]="centre()"
+      [attr.cy]="centre()"
+      [attr.r]="radius()"
+    />
+    } @for (node of nodes(); track node.key) {
+    <g
+      class="ui-ring-chart__segments"
+      [attr.data-leave]="node.leaving ? '' : null"
+      [attr.data-enter]="!node.leaving && nodes().length > 1 ? '' : null"
+      (animationend)="dropLeaving()"
+    >
+      @for (arc of node.arcs; track arc.index) {
+      <path
+        class="ui-ring-chart__segment"
+        [attr.d]="arc.d"
+        [attr.data-tone]="arc.tone"
+        [attr.data-part]="arc.part"
+      />
+      }
+    </g>
+    }
+  </svg>
+  <div class="ui-ring-chart__center">
+    <ng-content select="[uiRingCenter]" />
+  </div>
+</div>
+@if (rows().length > 0) {
+<!-- The hidden table sits in a hidden 1px box: a table treats its own
+     width as a minimum, so on the table itself the recipe would stretch
+     to the caption and push the page sideways. -->
+<div uiVisuallyHidden class="ui-ring-chart__a11y">
+  <table class="ui-ring-chart__table">
+    <caption>
+      {{ uiLabel() }}
+    </caption>
+    <tbody>
+      @for (row of rows(); track $index) {
+      <tr>
+        <th scope="row">{{ row.label }}</th>
+        <td>{{ row.value }}</td>
+      </tr>
+      }
+    </tbody>
+  </table>
+</div>
+}

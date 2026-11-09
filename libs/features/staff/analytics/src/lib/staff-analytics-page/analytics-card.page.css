@@ -1,0 +1,201 @@
+/* A card's own screen (staff-analytics-v3, «A card's screen»; Revolut's
+   «Spent»): the way back with the chart switch at the trailing edge; the
+   topic, the figure written large and the line under it; the chart; the
+   range row; then the sections. Everything with a DS answer rides the DS. */
+
+:host {
+  display: block;
+}
+
+.analytics-card {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--sys-container-content);
+  min-block-size: 100dvh;
+  margin-inline: auto;
+  padding-block-start: var(--sys-space-regular);
+}
+
+.analytics-card__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sys-space-compact);
+  min-block-size: var(--control-size-large);
+  margin-block-end: var(--sys-space-regular);
+}
+
+.analytics-card__modules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+  padding-block-end: var(--sys-space-spacious);
+}
+
+.analytics-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+}
+
+.analytics-card__head h1,
+.analytics-card__head p,
+.analytics-card__module h2,
+.analytics-card__module p {
+  margin: 0;
+}
+
+.analytics-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* The figure is a button onto its rows; the house press grammar
+   (`uiInteractive`) is its only chrome. */
+.analytics-card__figure-button {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  border-radius: var(--control-radius-regular);
+}
+
+/* THE FIGURE: written large, its change beside it — the figure in ink, the
+   direction a small triangle in the trend's paint. */
+.analytics-card__figure {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+}
+
+.analytics-card__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-card__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-card__trend {
+  inline-size: 0;
+  block-size: 0;
+  border-inline: 0.3125rem solid transparent;
+}
+
+.analytics-card__delta[data-trend='up'] .analytics-card__trend {
+  border-block-end: 0.375rem solid var(--sys-color-success);
+}
+
+.analytics-card__delta[data-trend='down'] .analytics-card__trend {
+  border-block-start: 0.375rem solid var(--sys-color-destructive);
+}
+
+/* THE CHART: the line and the bars take the column; the ring a centred
+   square under the width of a phone. */
+.analytics-card__chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  min-block-size: 12rem;
+}
+
+.analytics-card__ring {
+  inline-size: min(100%, 17.5rem);
+  margin-inline: auto;
+}
+
+.analytics-card__ring-centre {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-card__legend-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+/* THE RANGE ROW: the chips take the width, the «…» hugs the trailing edge. */
+.analytics-card__ranges {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.analytics-card__range-chips {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.analytics-card__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+  margin-block-start: var(--sys-space-compact);
+}
+
+/* A legend under a chart: swatch, word, figure at the trailing edge. */
+.analytics-card__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analytics-card__legend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  min-block-size: var(--control-size-small);
+}
+
+.analytics-card__legend-value,
+.analytics-card__team-value {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-card__row-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+/* THE CLIENTS' TILES: three across, a figure over its word. */
+.analytics-card__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sys-space-compact);
+}
+
+.analytics-card__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sys-space-tight);
+  text-align: start;
+}
+
+.analytics-card__radar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+}

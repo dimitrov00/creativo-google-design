@@ -12,6 +12,7 @@ import {
   type AnalyticsCall,
   AnalyticsGoal,
   AnalyticsPeriod,
+  AnalyticsRangePreset,
   type AnalyticsReport,
   AnalyticsComparison,
   AnalyticsSpan,
@@ -28,6 +29,8 @@ import type { AnalyticsCacheKey } from '@core/ports';
 import { BarberId, LocalDate, type UserId, Tag } from '@core/primitives';
 import type { UiDateFieldParts } from '@creativo/ui/controls';
 import {
+  type AnalyticsCarouselSpan,
+  AnalyticsCarouselSystem,
   type AnalyticsScopeChoice,
   StaffAnalyticsSystem,
   ZonedTimeSystem,
@@ -285,9 +288,14 @@ export class StaffAnalyticsStore {
 
   /** What the screen asks for now — `null` until the account and the period are known. */
   private readonly request = computed<AnalyticsRequest | null>(() => {
-    const userId = this.identity.userId();
     const period = this.period();
-    if (userId === null || period === null) return null;
+    return period === null ? null : this.requestFor(period);
+  });
+
+  /** The request for `period` on this account and scope — `null` before the account is known. */
+  private requestFor(period: AnalyticsPeriod): AnalyticsRequest | null {
+    const userId = this.identity.userId();
+    if (userId === null) return null;
     const shop = this.readsShop();
     const call: AnalyticsCall = {
       // A barber sends none: the callable reads their record off the stored user.
@@ -311,7 +319,92 @@ export class StaffAnalyticsStore {
           ? null
           : { ...call, scopeBarberId: cacheScope, userId },
     };
+  }
+
+  // ── The home carousel (staff-analytics-v3) ─────────────────────────────
+
+  /** Bumped when an answer is cached, so a neighbour page re-reads the device. */
+  private readonly cacheVersion = signal(0);
+
+  /**
+   * The carousel's pages: every period of the grain within reach, oldest
+   * first (`AnalyticsCarouselSystem.pagesOf`); a `CUSTOM` range is a page
+   * of its own.
+   */
+  readonly pages = computed<readonly AnalyticsPeriod[]>(() => {
+    const period = this.period();
+    const today = this.today();
+    if (period === null || today === null) return [];
+    return period.analyticsSpan === AnalyticsSpan.Custom
+      ? [period]
+      : AnalyticsCarouselSystem.pagesOf(period.analyticsSpan, today);
   });
+
+  /** The page on screen — the period's. */
+  readonly pageIndex = computed(() => {
+    const period = this.period();
+    if (period === null) return 0;
+    return Math.max(
+      0,
+      AnalyticsCarouselSystem.pageIndexOf(this.pages(), period),
+    );
+  });
+
+  /**
+   * Each page's report: the one on screen is the store's; its two
+   * neighbours are what the device cached for them (a swipe shows figures
+   * at once when it can); every other page is `null` and draws nothing.
+   */
+  readonly pageReports = computed<readonly (AnalyticsReport | null)[]>(() => {
+    const pages = this.pages();
+    const index = this.pageIndex();
+    const current = this._report();
+    this.cacheVersion();
+    return pages.map((page, i) => {
+      if (i === index) return current;
+      return Math.abs(i - index) === 1
+        ? untracked(() => this.cachedReportOf(page))
+        : null;
+    });
+  });
+
+  private cachedReportOf(period: AnalyticsPeriod): AnalyticsReport | null {
+    const request = this.requestFor(period);
+    if (request === null || request.cacheKey === null) return null;
+    const cached = this.cache.readCachedReport(request.cacheKey);
+    return cached.ok ? cached.value : null;
+  }
+
+  /**
+   * The home's grain menu: the carousel of `span`, opened on its current
+   * page — «Тази седмица», «Този месец» — whatever page was on screen.
+   */
+  pickGrain(span: AnalyticsCarouselSpan): void {
+    const today = untracked(this.today);
+    if (today === null) return;
+    this.pickPeriod(AnalyticsPeriod.holding(span, today));
+  }
+
+  /** A card screen's range chip: its period on today (`AnalyticsCarouselSystem.rangeOf`). */
+  pickRangePreset(preset: AnalyticsRangePreset): void {
+    const today = untracked(this.today);
+    if (today === null) return;
+    this.pickPeriod(AnalyticsCarouselSystem.rangeOf(preset, today));
+  }
+
+  /** A swipe settled on page `index`: it becomes the period (the URL replaced). */
+  pickPage(index: number): void {
+    const page = untracked(this.pages).at(index);
+    const period = untracked(this.period);
+    if (page === undefined || period === null) return;
+    if (
+      page.analyticsSpan === period.analyticsSpan &&
+      page.fromLocalDate === period.fromLocalDate
+    ) {
+      return;
+    }
+    this.pickPeriod(page);
+  }
 
   /** The request last sent; a change of the cache key alone does not send it again. */
   private sent: AnalyticsRequest | null = null;
@@ -753,6 +846,7 @@ export class StaffAnalyticsStore {
       },
       report,
     );
+    this.cacheVersion.update((version) => version + 1);
   }
 
   private refused(error: PipelineError): void {

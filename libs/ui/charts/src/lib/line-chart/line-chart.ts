@@ -4,6 +4,7 @@ import {
   ElementRef,
   ViewEncapsulation,
   afterNextRender,
+  booleanAttribute,
   computed,
   input,
   linkedSignal,
@@ -13,7 +14,12 @@ import {
 import { elementWidth } from '@creativo/ui/layout';
 import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
 import { UiChartPart } from '../chart-part';
-import { type ChartPoint, linePath } from '../geometry/line-path';
+import {
+  type ChartPoint,
+  areaPath,
+  linePath,
+  monotonePath,
+} from '../geometry/line-path';
 import { linearScale, px, zeroExtent } from '../geometry/linear-scale';
 
 /** One point: its word (for the hidden table), this period's value and the comparison's, if any. */
@@ -22,6 +28,16 @@ export type UiChartLinePoint = {
   readonly value: number;
   readonly comparison: number | null;
 };
+
+/**
+ * How the line runs between its points: `linear` straight segments,
+ * `smooth` a monotone cubic through every point that never overshoots
+ * between two of them (`monotonePath`).
+ */
+export type UiLineChartCurve = 'linear' | 'smooth';
+
+/** Each chart's area gradient needs an id of its own in the document. */
+let nextGradientId = 0;
 
 /** Where the chart draws before its width is known (jsdom, the first frame). */
 const FALLBACK_WIDTH = 320;
@@ -43,9 +59,16 @@ const MAX_GUTTER_SHARE = 0.4;
 /** Two right-edge labels never sit closer than a caption line. */
 const LABEL_CLEARANCE = 14;
 
+/** The current line and the area under it, drawn from the same points. */
+type LineShape = {
+  readonly d: string;
+  readonly area: string;
+};
+
 type LinePathNode = {
   readonly key: string;
   readonly d: string;
+  readonly area: string;
   readonly leaving: boolean;
 };
 
@@ -62,7 +85,11 @@ type EdgeLabel = {
  * average, and labels at the right edge only: the last value
  * (`uiValueText`'s last entry) and the average (`uiAverageText`, since the
  * kit formats no number). The first and last points carry an 8 px marker
- * in a 2 px ring of the surface. Straight segments, no smoothing.
+ * in a 2 px ring of the surface. Straight segments by default;
+ * `uiCurve="smooth"` draws both lines as monotone cubics through their
+ * points (never past them). `uiArea` fills under this period's line with
+ * its paint fading from 22 % at the top to nothing at the baseline (an SVG
+ * gradient with an id of its own per chart).
  *
  * The width is measured (`elementWidth`) and the box keeps a fixed 5 : 2
  * from the stylesheet, so the viewBox is the drawing's own pixels and the
@@ -94,8 +121,14 @@ export class UiLineChart {
   readonly uiAverageText = input<string | null>(null);
   /** The drawing's accessible name — one sentence the presenter writes. */
   readonly uiLabel = input.required<string>();
+  /** Straight segments, or a monotone curve through the points. */
+  readonly uiCurve = input<UiLineChartCurve>('linear');
+  /** Fill under this period's line with its paint, fading to the baseline. */
+  readonly uiArea = input(false, { transform: booleanAttribute });
 
   protected readonly comparisonPart = UiChartPart.Comparison;
+  protected readonly gradientId = `ui-line-chart-area-${nextGradientId++}`;
+  protected readonly areaFill = `url(#${this.gradientId})`;
 
   private readonly svg = viewChild<ElementRef<SVGSVGElement>>('drawing');
   private readonly measured = elementWidth(this.svg);
@@ -150,11 +183,24 @@ export class UiLineChart {
     return this.uiPoints().map((p, i) => ({ x: x(i), y: y(p.value) }));
   });
 
-  private readonly linePathD = computed(() => linePath(this.valuePoints()));
+  /** The `d` of a series in the chosen curve. */
+  private readonly pathOf = computed(() =>
+    this.uiCurve() === 'smooth' ? monotonePath : linePath,
+  );
+
+  private readonly lineShape = computed<LineShape>(
+    () => {
+      const points = this.valuePoints();
+      const d = this.pathOf()(points);
+      const area = this.uiArea() ? areaPath(d, points, this.scales().y(0)) : '';
+      return { d, area };
+    },
+    { equal: (a, b) => a.d === b.d && a.area === b.area },
+  );
 
   protected readonly comparisonPath = computed(() => {
     const { x, y } = this.scales();
-    return linePath(
+    return this.pathOf()(
       this.uiPoints().map((p, i) =>
         p.comparison === null ? null : { x: x(i), y: y(p.comparison) },
       ),
@@ -162,19 +208,26 @@ export class UiLineChart {
   });
 
   /**
-   * The line's path, keyed on its `d`: a change after the first frame keeps
-   * the old path a moment, leaving, under the new one, entering. The old
-   * one is dropped when its fade ends.
+   * The line's path (and the area under it), keyed on its `d`: a change
+   * after the first frame keeps the old path a moment, leaving, under the
+   * new one, entering. The old one is dropped when its fade ends.
    */
-  protected readonly linePaths = linkedSignal<string, readonly LinePathNode[]>({
-    source: this.linePathD,
-    computation: (d, previous) => {
-      const fresh = { key: d, d, leaving: false };
-      if (!this.settled() || previous === undefined || previous.source === d) {
+  protected readonly linePaths = linkedSignal<
+    LineShape,
+    readonly LinePathNode[]
+  >({
+    source: this.lineShape,
+    computation: (shape, previous) => {
+      const fresh = { key: shape.d, ...shape, leaving: false };
+      if (
+        !this.settled() ||
+        previous === undefined ||
+        previous.source.d === shape.d
+      ) {
         return [fresh];
       }
       return [
-        { key: previous.source, d: previous.source, leaving: true },
+        { key: previous.source.d, ...previous.source, leaving: true },
         fresh,
       ];
     },

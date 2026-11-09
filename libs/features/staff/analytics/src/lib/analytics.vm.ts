@@ -390,6 +390,14 @@ export type AnalyticsRangeVm = {
   /** Why «Приложи» is disabled — `null` when the range may be asked for. */
   readonly refusal: string | null;
   readonly applyEnabled: boolean;
+  /** «Избери» — a row with no date yet. */
+  readonly chooseLabel: string;
+  readonly previousMonthLabel: string;
+  readonly nextMonthLabel: string;
+  /** The calendars' language, today and the reach's first day. */
+  readonly locale: string;
+  readonly today: LocalDate;
+  readonly earliest: LocalDate;
 };
 
 /** The period switcher: Day | Week | Month | Year, the «…» pill, ‹ the period ›, and the comparison chip. */

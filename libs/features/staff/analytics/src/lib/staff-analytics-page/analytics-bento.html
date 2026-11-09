@@ -1,0 +1,135 @@
+@let p = page();
+<div class="analytics-bento">
+  @if (p.cards; as cards) { @for (card of cards; track card.card) {
+  <a
+    uiCard
+    uiTone="elevated"
+    uiPadding="regular"
+    [uiInteractive]="true"
+    class="analytics-bento__card"
+    [class.analytics-bento__card--wide]="card.wide"
+    [routerLink]="['/staff/analytics', card.card]"
+    [queryParams]="p.query"
+    [attr.aria-label]="card.accessibleName"
+    [attr.data-testid]="card.testId"
+  >
+    <span
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="analytics-bento__title"
+      >{{ card.title }}</span
+    >
+    <span class="analytics-bento__figure">
+      <span
+        uiText
+        uiFont="title2"
+        uiWeight="bold"
+        class="analytics-bento__value"
+        >{{ card.value }}</span
+      >
+      @if (card.delta; as delta) {
+      <span
+        uiText
+        uiFont="footnote"
+        class="analytics-bento__delta"
+        [attr.data-trend]="card.trend"
+      >
+        <span class="analytics-bento__trend" aria-hidden="true"></span>
+        {{ delta }}
+      </span>
+      } @if (card.ring; as ring) {
+      <ui-gauge
+        class="analytics-bento__ring"
+        uiGaugeStyle="circularCapacity"
+        uiControlSize="regular"
+        aria-hidden="true"
+        [uiValue]="ring.value"
+        [uiMin]="0"
+        [uiMax]="ring.max"
+        [uiLabel]="ring.label"
+        [uiValueText]="ring.valueText"
+      />
+      }
+    </span>
+    @if (card.detail; as detail) {
+    <span
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="analytics-bento__detail"
+      >{{ detail }}</span
+    >
+    } @if (card.spark; as spark) {
+    <ui-spark-bars
+      class="analytics-bento__spark"
+      aria-hidden="true"
+      [uiValues]="spark.values"
+      [uiHighlight]="spark.highlight"
+      [uiAverage]="spark.average"
+      [uiValueText]="spark.valueText"
+      [uiLabels]="spark.labels"
+      [uiLabel]="spark.label"
+    />
+    } @if (card.bar; as bar) {
+    <ui-gauge
+      class="analytics-bento__bar"
+      uiGaugeStyle="linearCapacity"
+      uiControlSize="small"
+      aria-hidden="true"
+      [uiValue]="bar.value"
+      [uiMin]="0"
+      [uiMax]="bar.max"
+      [uiLabel]="bar.label"
+      [uiValueText]="bar.valueText"
+    />
+    }
+  </a>
+  } @if (p.team; as team) {
+  <a
+    uiCard
+    uiTone="elevated"
+    uiPadding="regular"
+    [uiInteractive]="true"
+    class="analytics-bento__card analytics-bento__card--wide"
+    routerLink="/staff/analytics/team"
+    [queryParams]="p.query"
+    [attr.aria-label]="team.accessibleName"
+    [attr.data-testid]="team.testId"
+  >
+    <span
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="analytics-bento__title"
+      >{{ team.title }}</span
+    >
+    <span class="analytics-bento__team" aria-hidden="true">
+      @for (row of team.rows; track row.barberId) {
+      <span class="analytics-bento__member">
+        <span uiText uiFont="footnote" class="analytics-bento__member-name"
+          >{{ row.name }}</span
+        >
+        <span uiText uiFont="footnote" class="analytics-bento__member-value"
+          >{{ row.value }}</span
+        >
+        <span
+          class="analytics-bento__member-bar"
+          [attr.data-tone]="row.tone"
+          [style.--analytics-share]="row.share"
+        ></span>
+      </span>
+      }
+    </span>
+  </a>
+  } } @else {
+  <!-- The bones of a page whose report is not here yet. -->
+  <ui-skeleton
+    uiFrame
+    uiFrameHeight="9.5rem"
+    class="analytics-bento__bone analytics-bento__card--wide"
+  />
+  @for (bone of [1, 2, 3, 4]; track bone) {
+  <ui-skeleton uiFrame uiFrameHeight="7.5rem" class="analytics-bento__bone" />
+  } }
+</div>

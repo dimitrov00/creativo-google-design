@@ -168,7 +168,10 @@
   @media (prefers-reduced-motion: reduce) {
     .ui-bar-chart__segment,
     .ui-line-chart__path,
-    .ui-radar__polygon {
+    .ui-line-chart__area,
+    .ui-radar__polygon,
+    .ui-spark-bars__bars,
+    .ui-ring-chart__segments {
       transition: none;
       animation: none;
     }

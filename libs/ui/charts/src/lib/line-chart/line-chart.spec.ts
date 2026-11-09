@@ -1,7 +1,11 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { UiLineChart, type UiChartLinePoint } from './line-chart';
+import {
+  UiLineChart,
+  type UiChartLinePoint,
+  type UiLineChartCurve,
+} from './line-chart';
 
 const WEEK: readonly UiChartLinePoint[] = [
   { label: 'пн', value: 100, comparison: 80 },
@@ -18,6 +22,8 @@ const WEEK: readonly UiChartLinePoint[] = [
       [uiAverage]="average()"
       [uiValueText]="valueText()"
       [uiAverageText]="averageText()"
+      [uiCurve]="curve()"
+      [uiArea]="area()"
       uiLabel="Оборот по дни, най-висок вторник"
       data-testid="chart"
     />
@@ -33,6 +39,8 @@ class Host {
     '50 €',
   ]);
   readonly averageText = signal<string | null>('ср. 125 €');
+  readonly curve = signal<UiLineChartCurve>('linear');
+  readonly area = signal(false);
 }
 
 function render(setup?: (host: Host) => void) {
@@ -191,5 +199,78 @@ describe('UiLineChart', () => {
     // Only the old path remains, leaving; nothing new is drawn.
     expect(one('.ui-line-chart__path:not([data-leave])')).toBeNull();
     expect(one('table')).toBeNull();
+  });
+
+  it('draws no area and no gradient by default', () => {
+    const { one } = render();
+    expect(one('.ui-line-chart__area')).toBeNull();
+    expect(one('linearGradient')).toBeNull();
+  });
+
+  it('smooths both lines into monotone curves through the same points', () => {
+    const { one } = render((host) => host.curve.set('smooth'));
+    // A d3 curveMonotoneX port, run apart, over the straight line's points.
+    expect(one('.ui-line-chart__path')?.getAttribute('d')).toBe(
+      'M6 64 C32.56 35 59.11 6 85.67 6 C112.22 6 138.78 20.5 165.33 35 C191.89 49.5 218.44 71.25 245 93',
+    );
+    // The comparison's runs: a lone point, then two points drawn straight.
+    expect(one('.ui-line-chart__comparison')?.getAttribute('d')).toBe(
+      'M6 75.6 M165.33 52.4 L245 87.2',
+    );
+    // The markers stay on the first and last points.
+    const markers = Array.from(
+      one('svg')?.querySelectorAll('.ui-line-chart__marker') ?? [],
+    );
+    expect(markers.map((m) => m.getAttribute('cy'))).toEqual(['64', '93']);
+  });
+
+  it('fills under the line down to the zero baseline with its own gradient, straight or smooth', () => {
+    const { one, all, host, fixture } = render((h) => h.area.set(true));
+    const area = one('.ui-line-chart__area');
+    // The baseline is y(0): 128 − 6 = 122.
+    expect(area?.getAttribute('d')).toBe(
+      'M6 64 L85.67 6 L165.33 35 L245 93 L245 122 L6 122 Z',
+    );
+    const gradient = one('linearGradient');
+    const id = gradient?.getAttribute('id') ?? '';
+    expect(id).toMatch(/^ui-line-chart-area-\d+$/);
+    expect(area?.getAttribute('fill')).toBe(`url(#${id})`);
+    expect(
+      [gradient?.getAttribute('x1'), gradient?.getAttribute('y1')].join(),
+    ).toBe('0,0');
+    expect(
+      [gradient?.getAttribute('x2'), gradient?.getAttribute('y2')].join(),
+    ).toBe('0,1');
+    expect(all('stop').map((stop) => stop.getAttribute('offset'))).toEqual([
+      '0',
+      '1',
+    ]);
+    // The area sits under every line.
+    expect(one('svg > path')?.classList.contains('ui-line-chart__area')).toBe(
+      true,
+    );
+    host.curve.set('smooth');
+    fixture.detectChanges();
+    expect(
+      one('.ui-line-chart__area:not([data-leave])')?.getAttribute('d'),
+    ).toBe(
+      'M6 64 C32.56 35 59.11 6 85.67 6 C112.22 6 138.78 20.5 165.33 35 C191.89 49.5 218.44 71.25 245 93 L245 122 L6 122 Z',
+    );
+  });
+
+  it('gives every chart its own gradient id', () => {
+    const first = render((h) => h.area.set(true));
+    const firstId = first.one('linearGradient')?.getAttribute('id');
+    TestBed.resetTestingModule();
+    const second = render((h) => h.area.set(true));
+    expect(second.one('linearGradient')?.getAttribute('id')).not.toBe(firstId);
+  });
+
+  it('draws no area for a single point', () => {
+    const { one } = render((h) => {
+      h.area.set(true);
+      h.points.set([{ label: 'пн', value: 10, comparison: null }]);
+    });
+    expect(one('.ui-line-chart__area')).toBeNull();
   });
 });
