@@ -380,21 +380,25 @@
       data-testid="analytics-busy"
     >
       <h2 uiText uiFont="title3" id="analytics-busy-title">{{ busy.title }}</h2>
-      <ui-heatmap
-        [uiRows]="busy.rows"
-        [uiColumns]="busy.columns"
-        [uiCells]="busy.cells"
-        [uiLabel]="busy.label"
-        data-testid="analytics-heatmap"
-      />
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        data-testid="analytics-busy-sentence"
-      >
-        {{ busy.sentence }}
-      </p>
+      <!-- The grid and what it says, on one card like every other figure
+           of the screen (owner, 2026-11-09). -->
+      <ui-card uiTone="muted" uiPadding="regular" class="analytics-card__busy">
+        <ui-heatmap
+          [uiRows]="busy.rows"
+          [uiColumns]="busy.columns"
+          [uiCells]="busy.cells"
+          [uiLabel]="busy.label"
+          data-testid="analytics-heatmap"
+        />
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="analytics-busy-sentence"
+        >
+          {{ busy.sentence }}
+        </p>
+      </ui-card>
     </section>
     }
 

@@ -227,7 +227,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     expect(bars.valueText[0]).toBe('0 мин');
   });
 
-  it('draws when the chair is busy: the rostered weekdays by the rostered hours, worked over rostered', () => {
+  it('draws when the chair is busy: the rostered weekdays by the rostered hours, each hour against the busiest', () => {
     const busy = body.busy;
     expect(busy?.title).toBe('Кога е заето');
     expect(busy?.label).toBe('Заетост по ден и час');
@@ -244,8 +244,9 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       '17',
     ]);
     expect(busy?.cells).toHaveLength(18);
-    expect(busy?.cells[0]).toEqual({ row: 0, column: 0, value: 30, max: 60 });
-    expect(busy?.cells[17]).toEqual({ row: 1, column: 8, value: 0, max: 60 });
+    // 30 of 60 minutes worked is the grid's busiest hour: full strength.
+    expect(busy?.cells[0]).toEqual({ row: 0, column: 0, value: 1, max: 1 });
+    expect(busy?.cells[17]).toEqual({ row: 1, column: 8, value: 0, max: 1 });
     // Two rostered days: under the base of seven, no verdict yet.
     expect(busy?.sentence).toBe(
       'Най-натовареният час се показва след 7 работни дни.',

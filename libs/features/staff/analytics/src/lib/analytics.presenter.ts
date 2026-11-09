@@ -23,6 +23,7 @@ import {
   type Weekday,
 } from '@core/primitives';
 import {
+  AnalyticsCarouselSystem,
   type AnalyticsScopeMenu,
   type AnalyticsScreen,
   StaffAnalyticsSystem,
@@ -842,16 +843,17 @@ function busyOf(
     report.reportEmptiestWeekday !== null && report.reportEmptiestHour !== null
       ? at(report.reportEmptiestWeekday, report.reportEmptiestHour)
       : null;
+  // Each cell against the busiest hour — the system's scale.
+  const strengths = AnalyticsCarouselSystem.busyStrengthsOf(report);
   return {
     title: words.busy.title,
     rows: weekdays.map((weekday) => weekdayLabel(weekday, lang)),
     columns: hours.map((hour) => String(hour)),
-    cells: cells.map((cell) => ({
+    cells: cells.map((cell, i) => ({
       row: weekdays.indexOf(cell.weekday),
       column: hours.indexOf(cell.hour),
-      value: cell.workedMinutes,
-      // A cell with no rostered minute is drawn at no strength.
-      max: Math.max(cell.rosteredMinutes, 1),
+      value: strengths.at(i) ?? 0,
+      max: 1,
     })),
     sentence:
       busiest === null || emptiest === null

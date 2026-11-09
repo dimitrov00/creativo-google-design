@@ -342,6 +342,24 @@ describe('AnalyticsCarouselSystem — occupancy, free time and clients served', 
     });
   });
 
+  it('scales the heatmap to its busiest hour — each cell’s occupancy over the peak’s, 0 … 1; all zero with nothing worked', () => {
+    const cell = (worked: number, rostered: number) => ({
+      weekday: 1 as AnalyticsReport.HourCell['weekday'],
+      hour: 9 as AnalyticsReport.HourCell['hour'],
+      workedMinutes: worked as MinuteCount,
+      rosteredMinutes: rostered as MinuteCount,
+    });
+    // 3 % and 6 % of the hour worked: the 6 % is the grid's top.
+    const quiet = analyticsReportFixture({
+      reportHourGrid: [cell(3, 100), cell(6, 100), cell(0, 100), cell(0, 0)],
+    });
+    expect(C.busyStrengthsOf(quiet)).toEqual([0.5, 1, 0, 0]);
+    const idle = analyticsReportFixture({
+      reportHourGrid: [cell(0, 60), cell(0, 60)],
+    });
+    expect(C.busyStrengthsOf(idle)).toEqual([0, 0]);
+  });
+
   it('measures occupancy as worked over the rostered time so far, capped at 1, none with nothing rostered', () => {
     const report = analyticsReportFixture();
     const rostered = C.rosteredSoFarOf(report);

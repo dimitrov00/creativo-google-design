@@ -330,6 +330,29 @@ export const AnalyticsCarouselSystem = {
    * How full the roster was: worked time over the rostered time so far
    * ({@link rosteredSoFarOf}), `0 … 1`; `null` with nothing rostered yet.
    */
+  /**
+   * THE HEATMAP'S STRENGTHS, one per `reportHourGrid` cell in its order:
+   * each hour's occupancy (worked over rostered) over the BUSIEST hour's,
+   * `0 … 1` — the grid's own scale, so a quiet shop's peak still reads as
+   * its peak (owner, 2026-11-09: at 1–5 % on an absolute scale every cell
+   * was the same near-black). All zero when nothing was worked.
+   */
+  busyStrengthsOf(report: AnalyticsReport): readonly number[] {
+    const cells = report.reportHourGrid;
+    const rates: number[] = [];
+    let peak = 0;
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i] as AnalyticsReport.HourCell;
+      const rate =
+        cell.rosteredMinutes > 0
+          ? cell.workedMinutes / cell.rosteredMinutes
+          : 0;
+      rates.push(rate);
+      if (rate > peak) peak = rate;
+    }
+    return rates.map((rate) => (peak > 0 ? Math.min(rate / peak, 1) : 0));
+  },
+
   occupancyOf(report: AnalyticsReport): number | null {
     const rostered = AnalyticsCarouselSystem.rosteredSoFarOf(report);
     return rostered > 0
