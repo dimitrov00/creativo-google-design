@@ -42,13 +42,15 @@ bar's length and its place in the stack glide on the registered properties
 
 ### `ui-line-chart`
 
-| Input           | Type                                                                      | Default  |
-| --------------- | ------------------------------------------------------------------------- | -------- |
-| `uiPoints`      | `readonly { label: string; value: number; comparison: number \| null }[]` | required |
-| `uiAverage`     | `number \| null`                                                          | `null`   |
-| `uiValueText`   | `readonly string[]`, one per point; the last is printed at the right edge | `[]`     |
-| `uiAverageText` | `string \| null`, printed on the average rule at the right edge           | `null`   |
-| `uiLabel`       | `string`                                                                  | required |
+| Input           | Type                                                                      | Default    |
+| --------------- | ------------------------------------------------------------------------- | ---------- |
+| `uiPoints`      | `readonly { label: string; value: number; comparison: number \| null }[]` | required   |
+| `uiAverage`     | `number \| null`                                                          | `null`     |
+| `uiValueText`   | `readonly string[]`, one per point; the last is printed at the right edge | `[]`       |
+| `uiAverageText` | `string \| null`, printed on the average rule at the right edge           | `null`     |
+| `uiLabel`       | `string`                                                                  | required   |
+| `uiCurve`       | `'linear' \| 'smooth'` — `smooth` is a monotone cubic (`monotonePath`)    | `'linear'` |
+| `uiArea`        | `boolean` — a wash under this period's line, 22 % at the top to 0         | `false`    |
 
 One accent line (2 px, straight segments), the comparison as a grey line
 behind it (`data-part="comparison"`; a `null` breaks it), a dashed rule at the
@@ -57,6 +59,12 @@ right-edge labels only. The box is 5 : 2 (`aspect-ratio` in the stylesheet,
 the viewBox at the same ratio over the measured width). A changed path
 cross-fades after the first frame. `uiAverageText` is not in the design's
 table: the kit formats no number, and the design asks for the average's label.
+`uiCurve="smooth"` draws both lines as monotone cubics through their points
+(Fritsch–Carlson, d3's `curveMonotoneX`), so a curve never swings past a
+point; `uiArea` fills under this period's line with an SVG
+`<linearGradient>` (an id of its own per chart) from the line's paint at
+22 % to transparent at the zero baseline. At their defaults the chart draws
+exactly as before.
 
 ### `ui-heatmap`
 
@@ -101,6 +109,47 @@ not formatted). `uiValueText`, `uiMissingText` and `uiTone` are not in the
 design's table: the kit formats no number and has no words, and the design's
 «Colour» section asks for the identity tones per barber.
 
+### `ui-spark-bars`
+
+| Input         | Type                                                                            | Default  |
+| ------------- | ------------------------------------------------------------------------------- | -------- |
+| `uiValues`    | `readonly number[]` — zero-anchored, a negative counted as zero                 | required |
+| `uiHighlight` | `number \| null` — that bar keeps the series paint, every other the 48 % grey   | `null`   |
+| `uiAverage`   | `number \| null` — a dashed rule at that value in the comparison grey           | `null`   |
+| `uiLabel`     | `string`                                                                        | required |
+| `uiValueText` | `readonly string[]`, one figure per bar, for the hidden table only              | `[]`     |
+| `uiLabels`    | `readonly string[]`, one word per bar for the hidden table; `1 … n` when absent | `[]`     |
+
+A bento card's tiny graph: thin capsules (fully round ends) evenly spaced
+across the host's width, standing on the bottom of a box
+`--ui-spark-bars-height` tall (48 px by default; read once from the laid-out
+box after the first frame). A bar is 60 % of its slot, at most 8 px, and
+leaves at least 3 px of air; a zero still draws a 2 px stub. No axes, no
+words. The series paint is the accent, or `--ui-chart-paint` when the host
+carries `data-tone` or `data-part`; with no highlight every bar wears it.
+The average's rule raises the scale's top when it is over every bar. New
+values cross-fade; a resize or a moved highlight redraws in place.
+
+### `ui-ring-chart`
+
+| Input         | Type                                                                                                              | Default  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- | -------- |
+| `uiSegments`  | `readonly { value: number; part: UiChartPart \| null; tone: number \| null; label: string; valueText: string }[]` | required |
+| `uiLabel`     | `string`                                                                                                          | required |
+| `uiThickness` | `number` — the stroke, px                                                                                         | `14`     |
+
+Content slot `[uiRingCenter]`, laid over the hole as HTML and centred in the
+square inscribed in it (a caption, a big figure, a sub-line).
+
+A donut of shares: round-capped arcs from 12 o'clock clockwise, 4 px of air
+between two segments' caps (`ringArcs` takes the air plus the thickness,
+since a round cap reaches half the thickness past its arc); a share too
+short for its gap is a dot. Paint: `tone` 0 … 4 → `data-tone`, else `part` →
+`data-part`, else the accent. One share is the whole ring with no gap; a zero
+total draws the track alone in the control fill. The host is square (the
+measured width), the ring inset by half its thickness. New shares or paints
+cross-fade; a resize redraws in place.
+
 ## Geometry
 
 `src/lib/geometry/`: `linearScale(domain, range)` (a flat domain maps to the
@@ -110,7 +159,10 @@ the line), `stackOffsets(values)` / `stackTotal(values)` (negatives count as
 0), `radarVertex(index, count, radius, centre)` (the first axis up, then
 clockwise), `polygonPoints(values, radius, centre)` (the SVG `points`, a
 `null` on the centre), `ringPoints`, `axisLines`, `axisAnchor` (which side
-of the centre an axis's words go). Pure, over plain numbers, specified beside each file. The width comes
+of the centre an axis's words go), `monotonePath(points)` (a monotone cubic,
+`null` breaks it), `areaPath(line, points, baseline)`, `sparkBarRects(values,
+width, height, top)`, `ringPoint` / `arcPath` / `ringArcs(values, radius,
+centre, gap)`. Pure, over plain numbers, specified beside each file. The width comes
 from `elementWidth()` in `@creativo/ui/layout` (`0` where `ResizeObserver` is
 absent; the kit then draws at 320).
 
@@ -174,7 +226,7 @@ blocked · unsold 11.3 / 11.2; unsold · other 11.9 / 10.7; online · staff
 - A bar is `role="button"` named by its word and its value text; the bars
   are one tab stop (roving `tabindex`), Arrow keys / Home / End move between
   them, Enter and Space pick.
-- The line chart and the heatmap carry a `uiVisuallyHidden` table of every
+- The line chart, the heatmap, the radar, the spark bars and the ring carry a `uiVisuallyHidden` table of every
   point / cell (`@creativo/ui/modifiers`), since their figures are not
   printed beside the drawing.
 - Motion runs only after the first frame and never under

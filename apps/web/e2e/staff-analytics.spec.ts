@@ -16,20 +16,26 @@ import { signInAs } from './support/sign-in';
 import { pinBrowserClock, suiteDay } from './support/suite-clock';
 
 /**
- * «АНАЛИЗИ» END TO END (docs/designs/staff-analytics.md, plan item 51): the
- * screen asks the `staffAnalytics` callable for the month of the suite's day
- * and words its answer.
+ * «АНАЛИЗИ» END TO END — the Revolut layout (docs/designs/
+ * staff-analytics-v3-revolut.md) over v2's callable: the home asks the
+ * `staffAnalytics` callable for the period of the suite's day and draws it
+ * as a carousel page of bento cards; each card opens its own screen.
  *
  * - A LINKED barber — stored roles `[barber]`, `linkedBarberId` on the user
  *   record and the record's lock naming the account, as `setRoles` leaves
- *   them — opens «Анализи» from the menu, sees the month's takings, and the
- *   takings drill-down lists their seats with a footer equal to the figure.
+ *   them — opens «Анализи» from the menu, opens the takings card, switches
+ *   its chart, and the figure's rows add up to it; exports the month and
+ *   sets the month's goal from the tools.
  * - An account holding the barber role with NO link sees the not-linked
  *   refusal (CUJ 6).
- * - The admin opens on the shop and switches the scope picker to a barber:
- *   that barber's report, their seat in the drill-down.
- * - The open-hours card opens the schedule's agenda on the emptiest day,
- *   for that barber, with free time drawn (`?free=1`, CUJ 2).
+ * - The admin opens on the shop, sets the shop's goal, exports, and picks a
+ *   barber in the scope menu: that barber's figures, their seat in the rows.
+ * - «Предстои» opens the schedule's agenda on the emptiest day, for that
+ *   barber, with free time drawn (`?free=1`, CUJ 2).
+ * - The schedule's chart button opens the day and chair on screen; Back
+ *   restores the schedule.
+ * - The year from the day documents, the team card's screen with the
+ *   radars, and a custom range through the sheet's inline calendars.
  *
  * The callable reads the STORED user record (not the token), so each test
  * seeds its account with `seedUserProfile` before signing in. Only Ivan's
@@ -43,20 +49,14 @@ import { pinBrowserClock, suiteDay } from './support/suite-clock';
  */
 
 /** The 1st of the suite's month at `hour` — inside the month the screen opens on. */
-/** How many days the suite's month has — a bar each. */
-function daysInSuiteMonth(): number {
-  const { year, month } = LocalDate.parts(suiteDay());
-  return LocalDate.daysInMonth(year, month);
-}
-
 function monthStartAt(hour: number): string {
   const first = LocalDate.startOfMonth(suiteDay());
   return `${first}T${String(hour).padStart(2, '0')}:00:00`;
 }
 
-/** The page's report has arrived (not the cache, not the placeholder). */
+/** The screen's report has arrived (not the cache, not the placeholder) — the home's or a card's. */
 async function reportReady(page: Page): Promise<void> {
-  await expect(page.getByTestId('staff-analytics')).toHaveAttribute(
+  await expect(page.locator('main[data-load]')).toHaveAttribute(
     'data-load',
     'READY',
     { timeout: 45_000 },
@@ -68,25 +68,36 @@ async function textOf(locator: Locator): Promise<string> {
   return ((await locator.textContent()) ?? '').replace(/\s+/g, ' ').trim();
 }
 
-/** The hero's takings, as `ui-metric` paints them. */
-function takingsOf(page: Page): Locator {
-  return page
-    .getByTestId('analytics-takings')
-    .locator('.ui-metric__value .ui-metric__digits')
-    .first();
+/** The page on screen of the home's carousel. */
+function currentPage(page: Page): Locator {
+  return page.locator('.analytics-carousel__page[data-current]');
+}
+
+/** Opens a card of the page on screen and waits for its own screen's report. */
+async function openCard(page: Page, card: string): Promise<void> {
+  await currentPage(page).getByTestId(`analytics-card-${card}`).click();
+  await expect(page).toHaveURL(new RegExp(`/staff/analytics/${card}\\?`));
+  await reportReady(page);
+}
+
+/** Back from a card's screen to the home. */
+async function backHome(page: Page): Promise<void> {
+  await page.getByTestId('analytics-card-back').click();
+  await expect(page).toHaveURL(/\/staff\/analytics(\?|$)/);
+  await reportReady(page);
 }
 
 /**
- * Opens the takings drill-down and checks it: `seatIds` among its rows, and
- * its footer total the hero's figure.
+ * On the takings card's screen: the figure opens its rows — `seatIds` among
+ * them, the footer equal to the figure.
  */
 async function expectTakingsRowsAddUp(
   page: Page,
   seatIds: readonly string[],
 ): Promise<void> {
-  const hero = await textOf(takingsOf(page));
-  expect(hero).toMatch(/\d/);
-  await page.getByTestId('analytics-hero').click();
+  const figure = await textOf(page.getByTestId('analytics-card-value'));
+  expect(figure).toMatch(/\d/);
+  await page.getByTestId('analytics-card-figure').click();
   const sheet = page.getByTestId('analytics-rows');
   await expect(sheet).toBeVisible();
   for (const seatId of seatIds) {
@@ -98,7 +109,21 @@ async function expectTakingsRowsAddUp(
     .getByTestId('analytics-rows-total')
     .locator('[uiTrailing]')
     .first();
-  await expect.poll(async () => textOf(footer)).toBe(hero);
+  await expect.poll(async () => textOf(footer)).toBe(figure);
+  // The sheet is a native dialog: Escape closes it.
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+}
+
+/** Picks an option of a home menu by its test id. */
+async function pickFromMenu(
+  page: Page,
+  menu: string,
+  option: string,
+): Promise<void> {
+  await page.getByTestId(menu).click();
+  await page.getByTestId(option).click();
+  await reportReady(page);
 }
 
 /** The CSV's block 1 header (staff-analytics-v2 «Export (PR 7)»). */
@@ -120,18 +145,18 @@ async function withoutShareSheet(page: Page): Promise<void> {
   });
 }
 
-/** Taps «Експорт» and reads the downloaded file: its name and its lines (no BOM, no trailing CRLF). */
+/** Taps the tools' «Експорт» and reads the downloaded file: its name and its lines (no BOM, no trailing CRLF). */
 async function exportCsv(
   page: Page,
 ): Promise<{ name: string; lines: readonly string[] }> {
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByTestId('analytics-export').click(),
+    page.getByTestId('analytics-tool-export').click(),
   ]);
   const path = await download.path();
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- Playwright's own download path.
   const text = readFileSync(path, 'utf8');
-  expect(text.startsWith('\uFEFF')).toBe(true);
+  expect(text.startsWith('﻿')).toBe(true);
   expect(text.endsWith('\r\n')).toBe(true);
   return {
     name: download.suggestedFilename(),
@@ -140,16 +165,16 @@ async function exportCsv(
 }
 
 /**
- * Opens the goal sheet from «Задай цел» / «Промени целта», types the two
- * ends of the range in euro (whole figures), saves, and waits for the sheet
- * to leave — the store closes it once the callable has stored the range.
+ * Opens the goal sheet from the tools' «Задай цел» / «Промени целта», types
+ * the two ends of the range in euro (whole figures), saves, and waits for
+ * the sheet to leave — the store closes it once the callable has stored it.
  */
 async function setGoalThroughSheet(
   page: Page,
   low: string,
   high: string,
 ): Promise<void> {
-  await page.getByTestId('analytics-goal-set').click();
+  await page.getByTestId('analytics-tool-goal').click();
   const sheet = page.getByTestId('analytics-goal-sheet');
   await expect(sheet).toBeVisible();
   const lowField = page.getByTestId('analytics-goal-low');
@@ -165,10 +190,10 @@ async function setGoalThroughSheet(
 }
 
 test.describe('«Анализи» — staff analytics', () => {
-  test('a linked barber opens «Анализи» from the menu, and the takings drill-down adds up to the figure', async ({
+  test('a linked barber opens «Анализи» from the menu, the takings card’s screen switches its chart, and its rows add up to the figure', async ({
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(150_000);
     await pinBrowserClock(page);
     await withoutShareSheet(page);
     const run = attemptKey(test.info());
@@ -212,42 +237,37 @@ test.describe('«Анализи» — staff analytics', () => {
     );
     await reportReady(page);
 
-    // A barber has no scope picker: the report is their own record's — and
-    // no radars (the admin's alone, staff-analytics-v2 PR 5).
-    await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
-    await expect(page.getByTestId('analytics-radars')).toHaveCount(0);
-    await expect(takingsOf(page)).toHaveText(/\d/);
+    // THE HOME: the period button on this month, no scope menu for a
+    // barber, and the current page's five cards — no team (the shop's).
+    await expect(page.getByTestId('analytics-period')).toHaveText('Този месец');
+    await expect(page.getByTestId('analytics-scope-menu')).toHaveCount(0);
+    const cards = currentPage(page).locator('[data-testid^="analytics-card-"]');
+    await expect(cards).toHaveCount(5);
+    await expect(
+      currentPage(page).getByTestId('analytics-card-takings'),
+    ).toContainText(/\d/);
 
-    // THE SEVEN QUESTIONS DRAWN (staff-analytics-v2 PR 2): the takings line
-    // with its comparison legend, a stacked bar per day of the month with
-    // the six-part legend beneath, the seven open-hours bars, and a ranked
-    // bar per worked service — the two seeded ones.
-    await expect(
-      page.getByTestId('analytics-series').locator('svg[role="img"]'),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId('analytics-time-bars').locator('.ui-bar-chart__bar'),
-    ).toHaveCount(daysInSuiteMonth());
-    await expect(
-      page.getByTestId('analytics-time-bar').locator('li'),
-    ).toHaveCount(6);
-    await expect(
-      page.getByTestId('analytics-ahead-bars').locator('.ui-bar-chart__bar'),
-    ).toHaveCount(7);
+    // THE TAKINGS CARD'S SCREEN: the smooth line first, then the bars and
+    // the ring with the figure in its centre; the two seeded services.
+    await openCard(page, 'takings');
+    const chart = page.getByTestId('analytics-card-chart');
+    await expect(chart.locator('[data-view="LINE"]')).toBeVisible();
+    await page.getByTestId('analytics-view-BARS').click();
+    await expect(chart.locator('[data-view="BARS"]')).toBeVisible();
+    await page.getByTestId('analytics-view-RING').click();
+    await expect(chart.locator('[data-view="RING"]')).toBeVisible();
+    await expect(chart.locator('.analytics-card__ring-centre')).toContainText(
+      /\d/,
+    );
     const serviceBars = page
       .getByTestId('analytics-services-bars')
       .locator('.ui-bar-chart__bar');
     await expect(serviceBars).toHaveCount(2);
-
     await expectTakingsRowsAddUp(page, [
       `${run}-cut-seat`,
       `${run}-beard-seat`,
     ]);
-    // The sheet is a native dialog: Escape closes it.
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('analytics-rows')).toBeHidden();
-
-    // A service bar opens that service's seats alone, the footer its takings.
+    // A service bar opens that service's seats alone.
     await serviceBars.first().click();
     const sheet = page.getByTestId('analytics-rows');
     await expect(sheet).toBeVisible();
@@ -257,10 +277,12 @@ test.describe('«Анализи» — staff analytics', () => {
     );
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
+    await backHome(page);
 
-    // THE EXPORT (staff-analytics-v2 CUJ 7, PR 7): the dock's «Експорт»
-    // downloads the month — a row per day row (as many as the time
-    // drill-down lists), a blank line, a row per service — and no client.
+    // THE EXPORT (CUJ 7): the tools' «Експорт» downloads the month — a row
+    // per day row (as many as the working-time screen's days list), a blank
+    // line, a row per service — and no client.
+    await openCard(page, 'time');
     await page.getByTestId('analytics-time-days').click();
     const days = page
       .getByTestId('analytics-rows')
@@ -269,6 +291,7 @@ test.describe('«Анализи» — staff analytics', () => {
     const dayCount = await days.count();
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('analytics-rows')).toBeHidden();
+    await backHome(page);
     const csv = await exportCsv(page);
     expect(csv.name).toMatch(
       /^creativo-analytics-\d{4}-\d{2}-01-\d{4}-\d{2}-\d{2}\.csv$/,
@@ -281,10 +304,8 @@ test.describe('«Анализи» — staff analytics', () => {
     );
     expect(csv.lines.join('\n')).not.toContain('Петър');
 
-    // THE GOAL (staff-analytics-v2 CUJ 6, PR 6): on this month the barber
-    // is offered «Задай цел»; a range typed into the sheet's two sums and
-    // saved through `setAnalyticsGoal` comes back with the report as the
-    // ring and its pace sentence.
+    // THE GOAL (CUJ 6): the tools' «Задай цел»; the range comes back with
+    // the report as the goal card's ring and its pace.
     await setGoalThroughSheet(page, '1800', '2200');
     const ring = page.getByTestId('analytics-goal-ring');
     await expect(ring).toBeVisible({ timeout: 30_000 });
@@ -292,7 +313,7 @@ test.describe('«Анализи» — staff analytics', () => {
     await expect(page.getByTestId('analytics-goal-pace')).toHaveText(
       /работни дни|работен ден/,
     );
-    await expect(page.getByTestId('analytics-goal-set')).toHaveText(
+    await expect(page.getByTestId('analytics-tool-goal')).toContainText(
       'Промени целта',
     );
   });
@@ -317,13 +338,13 @@ test.describe('«Анализи» — staff analytics', () => {
     await expect(refused).toHaveText(
       /още не е свързан с бръснар|not linked to a barber yet/,
     );
-    await expect(page.getByTestId('analytics-hero')).toHaveCount(0);
+    await expect(page.getByTestId('analytics-carousel')).toHaveCount(0);
   });
 
-  test('the admin switches the scope picker to a barber and sees that barber’s figures', async ({
+  test('the admin sets the shop’s goal, exports the shop, and picks a barber in the scope menu', async ({
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(150_000);
     await pinBrowserClock(page);
     await withoutShareSheet(page);
     const run = attemptKey(test.info());
@@ -348,20 +369,22 @@ test.describe('«Анализи» — staff analytics', () => {
 
     await page.goto('/staff/analytics');
     await reportReady(page);
-    // The admin opens on the shop.
-    const shop = page.getByTestId('analytics-scope-shop');
-    await expect(shop).toHaveAttribute('aria-pressed', 'true');
+    // The admin opens on the shop: its page carries the team.
+    await expect(page.getByTestId('analytics-scope-menu')).toContainText(
+      'Салон',
+    );
+    await expect(
+      currentPage(page).getByTestId('analytics-card-team'),
+    ).toBeVisible();
 
-    // The shop's goal (CUJ 6): set on the shop scope, shown there as the
-    // ring; a barber's scope shows that barber's own, not the shop's.
+    // The shop's goal (CUJ 6), shown as the goal card's ring.
     await setGoalThroughSheet(page, '9000', '12000');
     const shopRing = page.getByTestId('analytics-goal-ring');
     await expect(shopRing).toBeVisible({ timeout: 30_000 });
     // Five figures take a thousands separator in Bulgarian («12 000,00 €»).
     await expect(shopRing).toContainText(/12.000,00/);
 
-    // The shop's export: the day rows per barber, the services the shop's
-    // own («Всички»), and no client in the file.
+    // The shop's export: the services the shop's own («Всички»), no client.
     const shopCsv = await exportCsv(page);
     expect(shopCsv.lines[0]).toBe(DAY_HEADER);
     expect(
@@ -369,19 +392,25 @@ test.describe('«Анализи» — staff analytics', () => {
     ).toBe(true);
     expect(shopCsv.lines.join('\n')).not.toContain('Донев');
 
-    const niko = page.getByTestId('analytics-scope-niko');
-    await niko.click();
-    await expect(niko).toHaveAttribute('aria-pressed', 'true');
-    await expect(shop).toHaveAttribute('aria-pressed', 'false');
-    await reportReady(page);
+    await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-niko');
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('barber'))
+      .toBe('niko');
     // A colleague's scope shows no goal of the shop's, and the admin is
     // offered none to set there: a barber's goal is the barber's alone.
     await expect(page.getByTestId('analytics-goal-ring')).toHaveCount(0);
-    await expect(page.getByTestId('analytics-goal-set')).toHaveCount(0);
+    await expect(page.getByTestId('analytics-tool-goal')).toHaveCount(0);
+    await expect(
+      currentPage(page).getByTestId('analytics-card-team'),
+    ).toHaveCount(0);
+    await openCard(page, 'takings');
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('barber'))
+      .toBe('niko');
     await expectTakingsRowsAddUp(page, [`${run}-niko-seat`]);
   });
 
-  test('the open-hours card opens the agenda on the emptiest day, for the barber, with free rows', async ({
+  test('«Предстои» opens the agenda on the emptiest day, for the barber, with free rows', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -396,12 +425,14 @@ test.describe('«Анализи» — staff analytics', () => {
 
     await page.goto('/staff/analytics');
     await reportReady(page);
-    await page.getByTestId('analytics-scope-stefan').click();
-    await reportReady(page);
+    await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-stefan');
 
     // The card is a link: the schedule, its agenda, the barber, free time on.
-    const open = page.getByTestId('analytics-open');
-    const href = await open.getAttribute('href');
+    const ahead = page.getByTestId('analytics-ahead');
+    await expect
+      .poll(async () => (await ahead.getAttribute('href')) ?? '')
+      .toContain('barber=stefan');
+    const href = await ahead.getAttribute('href');
     const target = new URL(href ?? '', 'http://localhost');
     expect(target.pathname).toBe('/staff/schedule');
     expect(target.searchParams.get('view')).toBe('agenda');
@@ -409,7 +440,7 @@ test.describe('«Анализи» — staff analytics', () => {
     expect(target.searchParams.get('free')).toBe('1');
     expect(target.searchParams.get('day')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-    await open.click();
+    await ahead.click();
     // `?free=` is read once and leaves the address bar; the rest stays.
     await expect(page).toHaveURL(/\/staff\/schedule\?.*view=agenda/);
     await expect(page).toHaveURL(/barber=stefan/);
@@ -420,10 +451,10 @@ test.describe('«Анализи» — staff analytics', () => {
 
   /**
    * THE SCHEDULE'S CHART BUTTON (staff-analytics-v2, «Entry from the
-   * schedule», PR 1): the week that holds the day on screen, the chair an
-   * admin is viewing, and Back lands on the same day, view and chair.
+   * schedule», PR 1): the day on screen and the chair an admin is viewing;
+   * Back lands on the same day, view and chair.
    */
-  test('the schedule’s chart button opens «Анализи» on this day’s week and chair, and Back restores the schedule', async ({
+  test('the schedule’s chart button opens «Анализи» on this day and chair, and Back restores the schedule', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -442,8 +473,7 @@ test.describe('«Анализи» — staff analytics', () => {
     await expect(button).toBeVisible({ timeout: 30_000 });
     await button.click();
 
-    // The admin was viewing Ivan's chair: Ivan's figures, the day on
-    // screen (the DAY span since PR 3).
+    // The admin was viewing Ivan's chair: Ivan's figures, the day on screen.
     await expect(page).toHaveURL(/\/staff\/analytics\?/);
     await expect
       .poll(() => {
@@ -457,18 +487,14 @@ test.describe('«Анализи» — staff analytics', () => {
       .toEqual({ span: 'DAY', from: day, barber: 'ivan' });
     await reportReady(page);
 
-    // THE DAY SCREEN (staff-analytics-v2 PR 3): the hero and its delta stand
-    // alone (no line), the time is one stacked bar, there is no heatmap,
-    // and the comparison chip names the previous period.
-    await expect(page.getByTestId('analytics-span')).toContainText('Ден');
-    await expect(page.getByTestId('analytics-series')).toHaveCount(0);
-    await expect(page.getByTestId('analytics-busy')).toHaveCount(0);
+    // THE DAY: the period button reads «Днес» (the suite's day is today),
+    // and a day's takings card has no bars — one bucket is no graph.
+    await expect(page.getByTestId('analytics-period')).toHaveText('Днес');
     await expect(
-      page.getByTestId('analytics-time-bars').locator('.ui-bar-chart__bar'),
-    ).toHaveCount(1);
-    await expect(page.getByTestId('analytics-comparison-chip')).toHaveText(
-      'спрямо предходния период',
-    );
+      currentPage(page)
+        .getByTestId('analytics-card-takings')
+        .locator('ui-spark-bars'),
+    ).toHaveCount(0);
 
     // Back: the schedule, on the same day, view and chair. The schedule
     // writes no `day` for today (its canonical URL), so the suite's day
@@ -519,16 +545,16 @@ test.describe('«Анализи» — staff analytics', () => {
       .poll(() => new URL(page.url()).searchParams.get('span'))
       .toBe('DAY');
     await reportReady(page);
-    await expect(page.getByTestId('analytics-scopes')).toHaveCount(0);
+    await expect(page.getByTestId('analytics-scope-menu')).toHaveCount(0);
   });
 
   /**
    * THE READ PATH (staff-analytics-v2 PR 4b): a year read from the day
-   * documents the recompute wrote (the flag is on under the emulators), the
-   * «няма данни за сравнение» chip on a year whose comparison year starts
-   * before the reach, and a custom range through the sheet.
+   * documents the recompute wrote (the flag is on under the emulators); the
+   * team card's screen with a radar per barber; and a custom range through
+   * the sheet's inline calendars (staff-analytics-v3).
    */
-  test('the admin opens the year from its day documents, and a custom range through the sheet', async ({
+  test('the admin opens the year from its day documents, the team’s radars, and a custom range through the sheet', async ({
     page,
   }) => {
     test.setTimeout(240_000);
@@ -546,52 +572,53 @@ test.describe('«Анализи» — staff analytics', () => {
     await signInAs(page, adminUid, [Role.Admin]);
 
     const day = suiteDay();
-    const january = `${day.slice(0, 4)}-01-01`;
-    await page.goto(`/staff/analytics?span=YEAR&from=${january}`);
+    await page.goto('/staff/analytics');
     await reportReady(page);
-    await expect(page.getByTestId('analytics-span')).toContainText('Година');
-    await expect(page.getByTestId('analytics-period')).toContainText(
-      day.slice(0, 4),
+    // The period menu's «Годишно»: this year's page.
+    await pickFromMenu(page, 'analytics-period-menu', 'analytics-grain-YEAR');
+    await expect(page.getByTestId('analytics-period')).toHaveText(
+      'Тази година',
     );
-    // The year's twelve months as bars (the months ahead empty); the
-    // previous year starts before the reach, so nothing is compared.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('from'))
+      .toBe(`${day.slice(0, 4)}-01-01`);
+
+    // The working time's screen: the year's twelve months as bars.
+    await openCard(page, 'time');
     await expect(
-      page.getByTestId('analytics-time-bars').locator('.ui-bar-chart__bar'),
+      page.getByTestId('analytics-card-chart').locator('.ui-bar-chart__bar'),
     ).toHaveCount(12);
-    await expect(page.getByTestId('analytics-comparison-chip')).toHaveText(
-      'няма данни за сравнение',
-    );
-    // THE ADMIN'S RADARS (PR 5): one per barber of the shop on the year,
-    // the base named; a tap opens that barber's scope.
+    await backHome(page);
+
+    // THE TEAM'S SCREEN (PR 5's radars): one per barber of the shop, the
+    // base named; a barber's row opens their figures on the home.
+    await openCard(page, 'team');
     const radars = page.getByTestId('analytics-radars');
     await expect(radars).toBeVisible();
     await expect(radars.getByTestId('analytics-radars-base')).toHaveText(
       'спрямо най-добрия в салона',
     );
     await expect(radars.locator('ui-radar')).toHaveCount(3);
-    await radars.getByTestId('analytics-radar-ivan').click();
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get('barber'))
-      .toBe('ivan');
-    await reportReady(page);
-    await expect(page.getByTestId('analytics-radars')).toHaveCount(0);
-    await page.getByTestId('analytics-scope-shop').click();
-    await reportReady(page);
 
-    // A custom range: the month's first day to the suite's day, typed into
-    // the sheet's two fields, applied, named in the URL.
+    // A custom range on the takings screen: «1М» first (the sheet opens on
+    // the period on screen), then «…» — «От» the month's first day, «До» the
+    // suite's day, picked in the inline calendars, applied, named in the URL.
+    await backHome(page);
+    await openCard(page, 'takings');
+    await page.getByTestId('analytics-range-MONTH').click();
+    await reportReady(page);
     const from = LocalDate.startOfMonth(day);
     await page.getByTestId('analytics-custom-range').click();
     const sheet = page.getByTestId('analytics-range-sheet');
     await expect(sheet).toBeVisible();
-    const fill = async (field: string, date: string) => {
-      const inputs = page.getByTestId(field).locator('input');
-      await inputs.nth(0).fill(date.slice(8, 10));
-      await inputs.nth(1).fill(date.slice(5, 7));
-      await inputs.nth(2).fill(date.slice(0, 4));
-    };
-    await fill('analytics-range-from', from);
-    await fill('analytics-range-to', day);
+    await page
+      .getByTestId('analytics-range-from-calendar')
+      .getByTestId(`ui-month-day-${from}`)
+      .click();
+    await page
+      .getByTestId('analytics-range-to-calendar')
+      .getByTestId(`ui-month-day-${day}`)
+      .click();
     const apply = page.getByTestId('analytics-range-apply');
     await expect(apply).toBeEnabled();
     await apply.click();

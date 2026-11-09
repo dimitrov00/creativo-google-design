@@ -1,9 +1,8 @@
-/* «Анализи» (docs/designs/staff-analytics.md, The screen). Everything with a
-   DS answer rides the DS — the switcher, the faces, the rows, the groups,
-   the metric, the share bars, the notices, the alert. What is the page's
-   own: the column and its modules (the admin rhythm page's rhythm, 32
-   apart), the period's ‹ label › line, and the clients' tiles, whose ⓘ sits
-   in the tile's corner beside the figure it explains. */
+/* «Анализи» — the Revolut layout (docs/designs/staff-analytics-v3-revolut.md).
+   Everything with a DS answer rides the DS — the menus, the cards, the
+   gauges, the rows, the notices, the alert. What is the page's own: the
+   column and its modules, the row of two menus, and the goal card's ring
+   beside its two lines. */
 
 :host {
   display: block;
@@ -30,7 +29,7 @@
 .staff-analytics__modules {
   display: flex;
   flex-direction: column;
-  gap: var(--sys-space-loose);
+  gap: var(--sys-space-regular);
   padding-block-end: var(--sys-space-spacious);
 }
 
@@ -39,15 +38,20 @@
   flex-direction: column;
   gap: var(--sys-space-compact);
   min-inline-size: 0;
+  margin-block-start: var(--sys-space-compact);
+}
+
+.staff-analytics__module h2 {
+  margin: 0;
 }
 
 .staff-analytics__module--head {
   gap: var(--sys-space-tight);
+  margin-block-start: 0;
 }
 
 .staff-analytics__module--head h1,
-.staff-analytics__status p,
-.staff-analytics__footnote {
+.staff-analytics__status p {
   margin: 0;
 }
 
@@ -59,120 +63,30 @@
   gap: var(--sys-space-tight);
 }
 
-/* ‹ the period › — the label centred between its two steps. */
-.staff-analytics__stepper {
+/* THE ROW OF TWO MENUS: whose figures leading, the period trailing — the
+   scope's word at the headline tier with its chevron, as Revolut's
+   «Personal ⌄». */
+.staff-analytics__menus {
   display: flex;
   align-items: center;
   gap: var(--sys-space-compact);
+  min-block-size: var(--control-size-regular);
 }
 
-.staff-analytics__period {
-  flex: 1;
-  margin: 0;
-  text-align: center;
+.staff-analytics__scope-trigger {
+  margin-inline-start: calc(-1 * var(--sys-space-compact));
 }
 
-.staff-analytics__footnote {
-  padding-inline: var(--sys-space-regular);
-  text-wrap: pretty;
-}
-
-/* A chart sits on the module's column with the DS's side gutter, so its
-   baseline words align with the rows above and below it. */
-.staff-analytics__chart {
-  display: block;
-  padding-inline: var(--sys-space-regular);
-}
-
-/* The legend beneath a chart: a row per part — swatch, word, figure at the
-   trailing edge in tabular figures. */
-.staff-analytics__legend {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sys-space-tight);
-  margin: var(--sys-space-compact) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.staff-analytics__legend-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-compact);
-  min-block-size: var(--control-size-small);
-}
-
-.staff-analytics__legend-value {
+.staff-analytics__period-menu {
   margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
 }
 
-/* The line's one legend line — the grey comparison's swatch and word. */
-.staff-analytics__legend-line {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-compact);
-  margin: var(--sys-space-compact) 0 0;
-}
-
-/* THE CLIENTS' TILES: the figure is the tile's button; its ⓘ, a sibling,
-   rides the top corner so the two never nest. */
-.staff-analytics__tile {
-  position: relative;
-}
-
-.staff-analytics__tile-figure {
-  inline-size: 100%;
-  block-size: 100%;
-  /* Room in the top corner for the ⓘ beside it. */
-  padding-block-start: var(--control-size-small);
-}
-
-.staff-analytics__tile-info {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-end: 0;
-}
-
-/* The comparison chip under the stepper, centred like the period's label. */
-.staff-analytics__comparison {
-  margin: 0;
-  text-align: center;
-}
-
-/* The four segments and the «…» pill on one line; the segments take the width. */
-.staff-analytics__spans {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-compact);
-}
-
-.staff-analytics__segments {
-  flex: 1;
-  min-inline-size: 0;
-}
-
-/* A radar's card: the name above the drawing, the whole card the tap. */
-.staff-analytics__radar {
-  inline-size: 100%;
-  text-align: start;
-}
-
-.staff-analytics__radar-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* THE GOAL RING: the ring beside its two lines — the range, the pace — on
-   the module's column with the DS's side gutter (the client card's
-   collection ring, the same bones). */
+/* THE GOAL CARD: the ring beside its two lines — the range, the pace. */
 .staff-analytics__goal {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: var(--sys-space-regular);
-  padding-inline: var(--sys-space-regular);
 }
 
 /* A ring that stands ALONE round a figure takes the heavier stroke. */
@@ -187,9 +101,25 @@
   min-inline-size: 0;
 }
 
-/* «Задай цел» hugs the trailing edge under the ring, as a card's action does. */
-.staff-analytics__goal-action {
+/* THE DAYS AHEAD: the hours, the line under them, the seven bars. */
+.staff-analytics__ahead {
   display: flex;
-  justify-content: flex-end;
-  padding-inline: var(--sys-space-regular);
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  color: inherit;
+  text-decoration: none;
+}
+
+.staff-analytics__ahead-bars {
+  display: block;
+  margin-block-start: var(--sys-space-compact);
+  --ui-spark-bars-height: 3.5rem;
+}
+
+/* A tool row's two lines: what it does, and what it gives. */
+.staff-analytics__tool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-inline-size: 0;
 }

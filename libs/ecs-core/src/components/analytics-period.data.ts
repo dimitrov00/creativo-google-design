@@ -31,6 +31,27 @@ export type AnalyticsComparison =
   (typeof AnalyticsComparison)[keyof typeof AnalyticsComparison];
 
 /**
+ * A card screen's range chip — the field `rangePreset`
+ * (`docs/designs/staff-analytics-v3-revolut.md`, «A card's screen»): the
+ * week, the month, six calendar months, the year, or the whole reach, each
+ * up to today (`AnalyticsCarouselSystem.rangeOf`).
+ */
+export const AnalyticsRangePreset = {
+  /** «1С» — the week holding today. */
+  Week: 'WEEK',
+  /** «1М» — the month holding today. */
+  Month: 'MONTH',
+  /** «6М» — the 1st of the month five months back to today. */
+  SixMonths: 'SIX_MONTHS',
+  /** «1Г» — the year holding today. */
+  Year: 'YEAR',
+  /** «МАКС» — the last 366 days, never before the reach. */
+  Max: 'MAX',
+} as const;
+export type AnalyticsRangePreset =
+  (typeof AnalyticsRangePreset)[keyof typeof AnalyticsRangePreset];
+
+/**
  * A day, a week, a month, a year or a custom range of shop days, both ends
  * included — what the analytics screen's switcher steps through
  * (`docs/designs/staff-analytics-v2.md`, Terms · Span).

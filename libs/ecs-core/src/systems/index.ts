@@ -1,5 +1,6 @@
 export * from './achievements.system';
 export * from './age.system';
+export * from './analytics-carousel.system';
 export * from './analytics-hour.system';
 export * from './analytics-radar.system';
 export * from './analytics-recompute-job.system';

@@ -199,7 +199,9 @@ export function analyticsFreshnessInfoVm(
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
-function statusOf(input: AnalyticsScreenInput): AnalyticsStatusVm | null {
+export function statusOf(
+  input: AnalyticsScreenInput,
+): AnalyticsStatusVm | null {
   const { words, report } = input;
   if (input.analyticsLoad === AnalyticsLoad.Refused) return null;
   if (report === null) {
@@ -323,7 +325,7 @@ export function partsToLocalDate(
 }
 
 /** The custom-range sheet's words, and why «Приложи» is off (the store's check, worded). */
-function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
+export function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
   const { words } = input;
   const refusal = rangeRefusalOf(input.rangeCheck, input);
   return {
@@ -341,7 +343,23 @@ function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
     closeLabel: words.customRange.close,
     refusal,
     applyEnabled: refusal === null,
+    chooseLabel: words.customRange.choose,
+    previousMonthLabel: words.customRange.previousMonth,
+    nextMonthLabel: words.customRange.nextMonth,
+    locale: words.lang,
+    today: input.today,
+    earliest: AnalyticsPeriod.earliestOn(input.today),
   };
+}
+
+/** A custom range row's date — «1.11.2026» — or `null` while the row has none. */
+export function rangeDateText(
+  date: LocalDate | null,
+  input: AnalyticsScreenInput,
+): string | null {
+  return date === null
+    ? null
+    : formatDayShort(date, input.today, input.words.lang);
 }
 
 function rangeRefusalOf(
@@ -370,7 +388,7 @@ function rangeRefusalOf(
 }
 
 /** «Септември 2026 г.» · «28.09 – 4.10» · «вторник, 29.09». */
-function periodLabelOf(
+export function periodLabelOf(
   period: AnalyticsPeriod,
   input: AnalyticsScreenInput,
 ): string {
@@ -391,7 +409,7 @@ function periodLabelOf(
       );
 }
 
-function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
+export function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
   const { words, scopeChoices } = input;
   if (scopeChoices === null) return null;
   return {
@@ -414,7 +432,9 @@ function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
   };
 }
 
-function blockedOf(input: AnalyticsScreenInput): AnalyticsBlockedVm | null {
+export function blockedOf(
+  input: AnalyticsScreenInput,
+): AnalyticsBlockedVm | null {
   if (input.analyticsLoad === AnalyticsLoad.Refused) {
     return {
       text: input.refusal ?? input.words.freshness.failedNoCache,
@@ -445,7 +465,7 @@ function infoLabelsOf(
 
 // ── The figures ───────────────────────────────────────────────────────────
 
-function bodyOf(
+export function bodyOf(
   input: AnalyticsScreenInput,
   report: AnalyticsReport,
 ): AnalyticsBodyVm {
@@ -873,7 +893,7 @@ function aheadBarsOf(
   };
 }
 
-function money(cents: PriceCents, lang: string): string {
+export function money(cents: PriceCents, lang: string): string {
   return formatCents(cents, REPORT_CURRENCY, lang);
 }
 

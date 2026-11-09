@@ -1,6 +1,8 @@
-<!-- «АНАЛИЗИ» — a ROUTED PAGE on the house column (the admin rhythm page's
-     shape): the icon-only way back, the large title and the line that says
-     when the figures are from, then the modules 32 apart. Every word is the
+<!-- «АНАЛИЗИ» — THE REVOLUT LAYOUT (docs/designs/staff-analytics-v3-revolut.md):
+     the icon-only way back and the large title; one row of two menus —
+     whose figures, and which period; the carousel of periods, each a bento
+     of cards that open their own screens; then what does not belong to a
+     period — the month's goal, the days ahead, the tools. Every word is the
      presenter's; every decision behind it a system's. -->
 <main
   class="staff-analytics"
@@ -69,116 +71,65 @@
       }
     </header>
 
-    <!-- THE PERIOD: Week | Month switch the view of the same figures; ‹ ›
-         step through them, never past today nor 12 months back. -->
-    <section
-      class="staff-analytics__module"
-      [attr.aria-label]="vm.period.spanLabel"
-    >
-      <div class="staff-analytics__spans">
-        <ui-segmented-control
-          class="staff-analytics__segments"
-          [uiSegments]="vm.period.spans"
-          [uiSelectedId]="vm.period.selectedSpan"
-          [uiLabel]="vm.period.spanLabel"
-          data-testid="analytics-span"
-          (uiPicked)="pickSpan($event)"
-        />
-        <!-- «…»: any range of up to 366 days, through the sheet. -->
+    <!-- THE ROW: whose figures (the admin's alone), and which period — its
+         word is the page on screen, its options the grain. -->
+    <div class="staff-analytics__menus">
+      @if (vm.scope; as scope) {
+      <ui-choice-menu
+        [uiOptions]="scope.options"
+        [uiSelectedId]="scope.selected"
+        [uiLabel]="scope.menuLabel"
+        [(uiPresented)]="scopeMenu"
+        (uiPicked)="pickScopeOption($event)"
+      >
         <button
           type="button"
           uiButton
-          uiButtonStyle="bordered"
+          uiButtonStyle="plain"
           uiTint="neutral"
           uiControlSize="regular"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.period.range.pillLabel"
-          [attr.aria-pressed]="vm.period.customOn"
-          data-testid="analytics-custom-range"
-          (click)="openRange()"
+          uiMenuTrigger
+          class="staff-analytics__scope-trigger"
+          [attr.aria-label]="scope.menuLabel + ': ' + scope.label"
+          [attr.data-testid]="scope.testId"
+          (click)="scopeMenu.set(true)"
         >
-          <ui-icon uiName="action.more" />
+          <span uiText uiFont="headline" uiForegroundStyle="primary"
+            >{{ scope.label }}</span
+          >
+          <ui-icon uiTrailing uiName="field.expand" />
         </button>
-      </div>
-      <div class="staff-analytics__stepper">
+      </ui-choice-menu>
+      }
+      <ui-choice-menu
+        class="staff-analytics__period-menu"
+        uiAlignment="trailing"
+        [uiOptions]="vm.period.options"
+        [uiSelectedId]="vm.period.selected"
+        [uiLabel]="vm.period.menuLabel"
+        [(uiPresented)]="periodMenu"
+        (uiPicked)="pickSpan($event)"
+      >
         <button
           type="button"
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
           uiControlSize="small"
-          [uiIconOnly]="true"
-          [disabled]="!vm.period.previousEnabled"
-          [attr.aria-label]="vm.period.previousLabel"
-          data-testid="analytics-previous"
-          (click)="store.step('previous')"
-        >
-          <ui-icon uiName="calendar.previous" />
-        </button>
-        <p
-          uiText
-          uiFont="headline"
-          class="staff-analytics__period"
+          uiMenuTrigger
           aria-live="polite"
-          data-testid="analytics-period"
+          [attr.aria-label]="vm.period.menuLabel + ': ' + vm.period.label"
+          [attr.data-testid]="vm.period.testId"
+          (click)="periodMenu.set(true)"
         >
-          {{ vm.period.label }}
-        </p>
-        <button
-          type="button"
-          uiButton
-          uiButtonStyle="bordered"
-          uiTint="neutral"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [disabled]="!vm.period.nextEnabled"
-          [attr.aria-label]="vm.period.nextLabel"
-          data-testid="analytics-next"
-          (click)="store.step('next')"
-        >
-          <ui-icon uiName="calendar.next" />
+          <span data-testid="analytics-period">{{ vm.period.label }}</span>
+          <ui-icon uiTrailing uiName="field.popUp" />
         </button>
-      </div>
-      <!-- The comparison chip: what the figures are set against, or that the
-           comparison period lies before the reach. -->
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__comparison"
-        [attr.data-comparable]="vm.period.comparison.comparable"
-        [attr.data-testid]="vm.period.comparison.testId"
-      >
-        {{ vm.period.comparison.text }}
-      </p>
-    </section>
+      </ui-choice-menu>
+    </div>
 
-    <!-- THE ADMIN'S SCOPE: the shop, then «Аз», then every barber — people
-         as faces (ui-person-tile), the chosen one ticked. -->
-    @if (vm.scope; as scope) {
-    <section class="staff-analytics__module" [attr.aria-label]="scope.label">
-      <ui-grid
-        [uiColumns]="3"
-        uiSpacing="regular"
-        data-testid="analytics-scopes"
-      >
-        @for (tile of scope.tiles; track tile.testId) {
-        <button
-          uiPersonTile
-          [uiSrc]="tile.avatarSrc"
-          [uiName]="tile.name"
-          [uiSelected]="tile.selected"
-          [attr.data-testid]="tile.testId"
-          (click)="pickScope(tile.scopeBarberId)"
-        >
-          {{ tile.name }}
-        </button>
-        }
-      </ui-grid>
-    </section>
-    } @if (vm.notice; as notice) {
+    @if (vm.notice; as notice) {
     <ui-notice
-      class="staff-analytics__module"
       uiTone="neutral"
       uiAnnounce="polite"
       data-testid="analytics-scope-gone"
@@ -187,7 +138,6 @@
     </ui-notice>
     } @if (vm.blocked; as blocked) {
     <ui-notice
-      class="staff-analytics__module"
       [uiTone]="blocked.retry ? 'destructive' : 'neutral'"
       uiAnnounce="polite"
       [attr.data-testid]="blocked.testId"
@@ -206,627 +156,28 @@
       </button>
       }
     </ui-notice>
-    } @if (vm.placeholder) {
-    <!-- FIRST OPEN, NOTHING CACHED: the layout with its figures to come. -->
-    <div
-      class="staff-analytics__module"
-      aria-busy="true"
-      data-testid="analytics-placeholder"
-    >
-      <ui-skeleton uiFrame uiFrameHeight="7.5rem" />
-      <ui-skeleton uiFrame uiFrameHeight="10rem" />
-      <ui-skeleton uiFrame uiFrameHeight="5rem" />
-      <ui-skeleton uiFrame uiFrameHeight="8rem" />
-    </div>
-    } @if (vm.body; as body) { @if (body.empty; as empty) {
-    <ui-card
-      uiTone="elevated"
-      class="staff-analytics__module"
-      data-testid="analytics-empty"
-    >
-      <ui-stack uiSpacing="tight">
-        <p uiText uiFont="headline">{{ empty.title }}</p>
-        <p uiText uiFont="callout" uiForegroundStyle="secondary">
-          {{ empty.detail }}
-        </p>
-      </ui-stack>
-    </ui-card>
+    } @else {
+    <!-- THE CAROUSEL: a page per period, the current one last; a swipe back
+         settles on the one before and relabels the period button. -->
+    <lib-analytics-carousel
+      [pages]="vm.pages"
+      [index]="vm.pageIndex"
+      (settled)="store.pickPage($event)"
+    />
     }
 
-    <!-- THE HERO: the takings, their change, the tips on their own line;
-         under them the takings line — a point per day, the previous period
-         in grey behind it, a dashed average. -->
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-hero-title"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-hero-title">{{ body.hero.caption }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Takings]"
-          data-testid="analytics-info-TAKINGS"
-          (click)="openInfo(Topics.Takings)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      <ul uiListGroup>
-        <li>
-          <button
-            type="button"
-            uiListRow
-            uiSize="large"
-            uiAlignment="leading"
-            uiLabelWraps
-            [uiInteractive]="true"
-            class="staff-analytics__hero"
-            [attr.aria-label]="body.hero.accessibleName"
-            data-testid="analytics-hero"
-            (click)="openDrill(AnalyticsFigure.Takings)"
-          >
-            <ui-stack uiSpacing="tight">
-              <ui-metric
-                uiControlSize="extraLarge"
-                [uiValue]="body.hero.value"
-                [uiDelta]="body.hero.delta"
-                [uiTrend]="body.hero.trend"
-                [uiLabel]="body.hero.accessibleName"
-                data-testid="analytics-takings"
-              />
-              <span
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                data-testid="analytics-comparison"
-                >{{ body.hero.comparison }}</span
-              >
-            </ui-stack>
-            <ng-container ngProjectAs="[uiTrailing]">
-              <ui-icon uiTrailing uiName="nav.disclosure" uiScale="small" />
-            </ng-container>
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            uiListRow
-            uiSize="regular"
-            [uiInteractive]="true"
-            data-testid="analytics-tips"
-            (click)="openDrill(AnalyticsFigure.Tips)"
-          >
-            {{ body.hero.tipsLabel }}
-            <ng-container ngProjectAs="[uiTrailing]">
-              <span uiTrailing uiText uiFont="callout"
-                >{{ body.hero.tipsValue }}</span
-              >
-            </ng-container>
-          </button>
-        </li>
-      </ul>
-      @if (body.series; as series) {
-      <div class="staff-analytics__chart">
-        <ui-line-chart
-          [uiPoints]="series.points"
-          [uiAverage]="series.average"
-          [uiValueText]="series.valueText"
-          [uiAverageText]="series.averageText"
-          [uiLabel]="series.label"
-          data-testid="analytics-series"
-        />
-        @if (series.comparisonLegend; as legend) {
-        <p
-          uiText
-          uiFont="footnote"
-          uiForegroundStyle="secondary"
-          class="staff-analytics__legend-line"
-          data-testid="analytics-series-legend"
-        >
-          <span
-            class="ui-chart-swatch"
-            data-part="comparison"
-            aria-hidden="true"
-          ></span>
-          {{ legend }}
-        </p>
-        }
-      </div>
-      } @if (body.hero.excluded; as excluded) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__footnote"
-        data-testid="analytics-excluded"
-      >
-        {{ excluded }}
-      </p>
-      }
-    </section>
-
-    <!-- THE TIME: a stacked bar per day of the six parts; the legend
-         beneath is the breakdown, each part in words; what is still ahead. -->
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-time-title"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-time-title">{{ body.time.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Time]"
-          data-testid="analytics-info-TIME"
-          (click)="openInfo(Topics.Time)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      <ui-bar-chart
-        class="staff-analytics__chart"
-        [uiBars]="body.time.bars.bars"
-        [uiValueText]="body.time.bars.valueText"
-        [uiLabel]="body.time.bars.label"
-        data-testid="analytics-time-bars"
-      >
-        <ul
-          uiChartLegend
-          class="staff-analytics__legend"
-          [attr.aria-label]="body.time.barName"
-          data-testid="analytics-time-bar"
-        >
-          @for (segment of body.time.segments; track segment.part) {
-          <li
-            class="staff-analytics__legend-row"
-            [attr.data-testid]="segment.testId"
-          >
-            <span
-              class="ui-chart-swatch"
-              [attr.data-part]="segment.part"
-              aria-hidden="true"
-            ></span>
-            <span uiText uiFont="footnote">{{ segment.label }}</span>
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="staff-analytics__legend-value"
-              >{{ segment.value }}</span
-            >
-          </li>
-          }
-        </ul>
-      </ui-bar-chart>
-      <ul uiListGroup>
-        <li>
-          <button
-            type="button"
-            uiListRow
-            uiSize="regular"
-            uiLabelWraps
-            [uiInteractive]="true"
-            data-testid="analytics-time-days"
-            (click)="openDrill(AnalyticsFigure.Time)"
-          >
-            <ui-stack uiSpacing="tight">
-              <span>{{ body.time.byDay }}</span>
-              <span
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                data-testid="analytics-ahead"
-                >{{ body.time.ahead }}</span
-              >
-            </ui-stack>
-            <ng-container ngProjectAs="[uiTrailing]">
-              <ui-icon uiTrailing uiName="nav.disclosure" uiScale="small" />
-            </ng-container>
-          </button>
-        </li>
-      </ul>
-    </section>
-
-    <!-- WHEN THE CHAIR IS BUSY: weekday × hour, worked over rostered; one
-         sentence names the busiest and the emptiest hour. -->
-    @if (body.busy; as busy) {
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-busy-title"
-      data-testid="analytics-busy"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-busy-title">{{ busy.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Busy]"
-          data-testid="analytics-info-BUSY"
-          (click)="openInfo(Topics.Busy)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      <ui-heatmap
-        class="staff-analytics__chart"
-        [uiRows]="busy.rows"
-        [uiColumns]="busy.columns"
-        [uiCells]="busy.cells"
-        [uiLabel]="busy.label"
-        data-testid="analytics-heatmap"
-      />
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__footnote"
-        data-testid="analytics-busy-sentence"
-      >
-        {{ busy.sentence }}
-      </p>
-    </section>
-    }
-
-    <!-- THE OPEN HOURS: bookable time in the next 7 days, a bar per day
-         with the emptiest in the accent; a tap opens the emptiest day's
-         agenda with free time drawn (CUJ 2). -->
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-open-title"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-open-title">{{ body.open.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Open]"
-          data-testid="analytics-info-OPEN"
-          (click)="openInfo(Topics.Open)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      <ul uiListGroup>
-        @if (body.open.link; as link) {
-        <li>
-          <a
-            uiListRow
-            uiSize="large"
-            uiAlignment="leading"
-            uiLabelWraps
-            [uiInteractive]="true"
-            routerLink="/staff/schedule"
-            [queryParams]="link"
-            [attr.aria-label]="body.open.accessibleName"
-            data-testid="analytics-open"
-          >
-            <ng-container *ngTemplateOutlet="open" />
-            <ng-container ngProjectAs="[uiTrailing]">
-              <ui-icon uiTrailing uiName="nav.disclosure" uiScale="small" />
-            </ng-container>
-          </a>
-        </li>
-        } @else {
-        <li
-          uiListRow
-          uiSize="large"
-          uiAlignment="leading"
-          uiLabelWraps
-          [attr.aria-label]="body.open.accessibleName"
-          data-testid="analytics-open"
-        >
-          <ng-container *ngTemplateOutlet="open" />
-        </li>
-        }
-      </ul>
-      <ng-template #open>
-        <ui-stack uiSpacing="tight">
-          <ui-metric
-            uiControlSize="large"
-            [uiValue]="body.open.value"
-            [uiCaption]="body.open.caption"
-            [uiLabel]="body.open.accessibleName"
-          />
-          <span
-            uiText
-            uiFont="footnote"
-            uiForegroundStyle="secondary"
-            data-testid="analytics-emptiest"
-            >{{ body.open.detail }}</span
-          >
-        </ui-stack>
-      </ng-template>
-      <ui-bar-chart
-        class="staff-analytics__chart"
-        uiStacking="single"
-        [uiBars]="body.open.bars.bars"
-        [uiHighlightIndex]="body.open.bars.highlightIndex"
-        [uiValueText]="body.open.bars.valueText"
-        [uiLabel]="body.open.bars.label"
-        data-testid="analytics-ahead-bars"
-      />
-    </section>
-
-    <!-- THE SERVICES RANKED: a bar per service, largest first — the name
-         and the takings per hour as its word, the takings and the count as
-         its figure; a tap opens the service's seats. -->
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-services-title"
-      data-testid="analytics-services"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-services-title">{{ body.services.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Services]"
-          data-testid="analytics-info-SERVICES"
-          (click)="openInfo(Topics.Services)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      @if (body.services.empty; as empty) {
-      <p uiText uiFont="callout" uiForegroundStyle="secondary">{{ empty }}</p>
-      } @else {
-      <ui-bar-chart
-        class="staff-analytics__chart"
-        uiOrientation="horizontal"
-        uiStacking="single"
-        [uiRanked]="true"
-        [uiBars]="body.services.bars"
-        [uiValueText]="body.services.valueText"
-        [uiLabel]="body.services.label"
-        data-testid="analytics-services-bars"
-        (uiBarPicked)="openDrillOf(body.services.drills[$event] ?? null)"
-      />
-      }
-    </section>
-
-    <!-- THE CLIENTS: rebooked, no-shows, late cancellations — a rate from
-         its base of 20, else «3 от 9». Each tile opens its rows; its ⓘ
-         says what it counts. -->
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-clients-title"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-clients-title">{{ body.clients.title }}</h2>
-      </ui-section-header>
-      <ui-grid [uiColumns]="3" uiSpacing="compact">
-        @for (row of body.clients.rows; track row.testId) {
-        <div class="staff-analytics__tile">
-          <button
-            uiCard
-            type="button"
-            uiTone="elevated"
-            uiPadding="regular"
-            [uiInteractive]="true"
-            class="staff-analytics__tile-figure"
-            [attr.data-testid]="row.testId"
-            (click)="openDrillOf(row.drill)"
-          >
-            <ui-metric
-              uiControlSize="regular"
-              [uiValue]="row.value"
-              [uiCaption]="row.label"
-            />
-          </button>
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="plain"
-            uiControlSize="small"
-            [uiIconOnly]="true"
-            class="staff-analytics__tile-info"
-            [attr.aria-label]="vm.infoLabels[row.topic]"
-            [attr.data-testid]="'analytics-info-' + row.topic"
-            (click)="openInfo(row.topic)"
-          >
-            <ui-icon uiName="service.details" />
-          </button>
-        </div>
-        }
-      </ui-grid>
-      @if (body.clients.note; as note) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__footnote"
-        data-testid="analytics-small-sample"
-      >
-        {{ note }}
-      </p>
-      }
-    </section>
-
-    <!-- THE SHOP'S ALONE: where bookings come from — one stacked bar, a
-         row per origin with its swatch. -->
-    @if (body.origins; as origins) {
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-origins-title"
-      data-testid="analytics-origins"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-origins-title">{{ origins.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Origins]"
-          data-testid="analytics-info-ORIGINS"
-          (click)="openInfo(Topics.Origins)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      <ui-bar-chart
-        class="staff-analytics__chart"
-        uiOrientation="horizontal"
-        [uiBars]="origins.bars"
-        [uiLabel]="origins.label"
-        data-testid="analytics-origins-bar"
-      >
-        <ul uiChartLegend class="staff-analytics__legend">
-          @for (row of origins.rows; track row.part) {
-          <li
-            class="staff-analytics__legend-row"
-            [attr.data-testid]="row.testId"
-          >
-            <span
-              class="ui-chart-swatch"
-              [attr.data-part]="row.part"
-              aria-hidden="true"
-            ></span>
-            <span uiText uiFont="footnote">{{ row.title }}</span>
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ row.detail }}</span
-            >
-            <span uiText uiFont="footnote" class="staff-analytics__legend-value"
-              >{{ row.value }}</span
-            >
-          </li>
-          }
-        </ul>
-      </ui-bar-chart>
-    </section>
-    }
-
-    <!-- THE ADMIN'S RADARS: one per barber on the shop's base, the previous
-         period as a grey outline; a tap opens that barber's scope (CUJ 5). -->
-    @if (body.radars; as radars) {
-    <section
-      class="staff-analytics__module"
-      aria-labelledby="analytics-radars-title"
-      data-testid="analytics-radars"
-    >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-radars-title">{{ radars.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Radars]"
-          data-testid="analytics-info-RADARS"
-          (click)="openInfo(Topics.Radars)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__footnote"
-        data-testid="analytics-radars-base"
-      >
-        {{ radars.subtitle }}
-      </p>
-      @if (radars.radars.length > 0) {
-      <!-- One radar a row: five Bulgarian axis words need the whole width. -->
-      <ui-grid [uiColumns]="1" uiSpacing="compact">
-        @for (radar of radars.radars; track radar.barberId) {
-        <button
-          uiCard
-          type="button"
-          uiTone="elevated"
-          uiPadding="regular"
-          [uiInteractive]="true"
-          class="staff-analytics__radar"
-          [attr.aria-label]="radar.accessibleName"
-          [attr.data-testid]="radar.testId"
-          (click)="pickScope(radar.barberId)"
-        >
-          <ui-stack uiSpacing="tight">
-            <span uiText uiFont="callout" class="staff-analytics__radar-name"
-              >{{ radar.name }}</span
-            >
-            <ui-radar
-              [uiAxes]="radar.axes"
-              [uiValueText]="radar.valueText"
-              [uiMissingText]="radars.missingText"
-              [uiTone]="radar.tone"
-              [uiLabel]="radar.label"
-            />
-          </ui-stack>
-        </button>
-        }
-      </ui-grid>
-      @if (radars.comparisonLegend; as legend) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__legend-line"
-      >
-        <span
-          class="ui-chart-swatch"
-          data-part="comparison"
-          aria-hidden="true"
-        ></span>
-        {{ legend }}
-      </p>
-      } }
-    </section>
-    }
-
-    <!-- THE MONTH'S GOAL (CUJ 6): the ring — the takings against the
-         range's high end, the pace under it — and «Задай цел» on a month
-         the callable takes one for. -->
-    @if (body.goal; as goal) {
+    <!-- UNDER THE CAROUSEL: what does not belong to the page on screen. -->
+    @if (vm.goal; as goal) { @if (goal.ring; as ring) {
     <section
       class="staff-analytics__module"
       aria-labelledby="analytics-goal-title"
       data-testid="analytics-goal"
     >
-      <ui-section-header uiHeaderProminence="increased">
-        <h2 uiTitle id="analytics-goal-title">{{ goal.title }}</h2>
-        <button
-          uiSectionAction
-          type="button"
-          uiButton
-          uiButtonStyle="plain"
-          uiControlSize="small"
-          [uiIconOnly]="true"
-          [attr.aria-label]="vm.infoLabels[Topics.Goal]"
-          data-testid="analytics-info-GOAL"
-          (click)="openInfo(Topics.Goal)"
-        >
-          <ui-icon uiName="service.details" />
-        </button>
-      </ui-section-header>
-      @if (goal.ring; as ring) {
+      <h2 uiText uiFont="title3" id="analytics-goal-title">{{ goal.title }}</h2>
       <div
+        uiCard
+        uiTone="elevated"
+        uiPadding="regular"
         class="staff-analytics__goal"
         [attr.data-pace]="ring.paceTag"
         data-testid="analytics-goal-ring"
@@ -856,67 +207,78 @@
           >
         </span>
       </div>
-      } @if (goal.prompt; as prompt) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="staff-analytics__footnote"
-        data-testid="analytics-goal-prompt"
-      >
-        {{ prompt }}
-      </p>
-      } @if (goal.setLabel; as setLabel) {
-      <div class="staff-analytics__goal-action">
-        <button
-          type="button"
-          uiButton
-          uiButtonStyle="bordered"
-          uiTint="neutral"
-          uiControlSize="regular"
-          data-testid="analytics-goal-set"
-          (click)="openGoal()"
-        >
-          {{ setLabel }}
-        </button>
-      </div>
-      }
     </section>
-    } }
-  </div>
-  <!-- THE DOCK: «Експорт» hugs the trailing edge at the thumb — the figures
-       on screen as a CSV, the share sheet on a phone, a download elsewhere. -->
-  @if (vm.exportLabel; as exportLabel) {
-  <ui-page-action-bar>
-    <button
-      type="button"
-      uiButton
-      uiButtonStyle="bordered"
-      uiTint="neutral"
-      uiControlSize="large"
-      uiPrimary
-      [uiLoading]="exporting()"
-      data-testid="analytics-export"
-      (click)="exportReport()"
+    } } @if (vm.ahead; as ahead) {
+    <section
+      class="staff-analytics__module"
+      aria-labelledby="analytics-ahead-title"
     >
-      {{ exportLabel }}
-    </button>
-  </ui-page-action-bar>
-  }
-  <!-- THE CUSTOM RANGE: two dates and «Приложи», the store's verdict worded. -->
-  <lib-analytics-range-sheet
-    [vm]="vm.period.range"
-    [open]="store.rangeOpen()"
-    [from]="store.rangeFrom()"
-    [to]="store.rangeTo()"
-    (fromChange)="store.rangeFrom.set($event)"
-    (toChange)="store.rangeTo.set($event)"
-    (applied)="applyRange()"
-    (closed)="closeRange()"
-  />
+      <h2 uiText uiFont="title3" id="analytics-ahead-title">
+        {{ ahead.title }}
+      </h2>
+      <a
+        uiCard
+        uiTone="elevated"
+        uiPadding="regular"
+        [uiInteractive]="true"
+        class="staff-analytics__ahead"
+        routerLink="/staff/schedule"
+        [queryParams]="ahead.link"
+        [attr.aria-label]="ahead.accessibleName"
+        data-testid="analytics-ahead"
+      >
+        <span uiText uiFont="title2" uiWeight="bold">{{ ahead.value }}</span>
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ ahead.detail }}</span
+        >
+        <ui-spark-bars
+          class="staff-analytics__ahead-bars"
+          aria-hidden="true"
+          [uiValues]="ahead.spark.values"
+          [uiHighlight]="ahead.spark.highlight"
+          [uiValueText]="ahead.spark.valueText"
+          [uiLabels]="ahead.spark.labels"
+          [uiLabel]="ahead.spark.label"
+        />
+      </a>
+    </section>
+    } @if (vm.tools.length > 0) {
+    <section
+      class="staff-analytics__module"
+      aria-labelledby="analytics-tools-title"
+    >
+      <h2 uiText uiFont="title3" id="analytics-tools-title">
+        {{ vm.toolsTitle }}
+      </h2>
+      <ul uiListGroup data-testid="analytics-tools">
+        @for (tool of vm.tools; track tool.tool) {
+        <li>
+          <button
+            type="button"
+            uiListRow
+            [uiInteractive]="true"
+            [disabled]="tool.tool === Tool.Export && exporting()"
+            [attr.data-testid]="tool.testId"
+            (click)="runTool(tool.tool)"
+          >
+            <span class="staff-analytics__tool">
+              <span>{{ tool.title }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ tool.detail }}</span
+              >
+            </span>
+            <ui-icon uiTrailing uiName="nav.disclosure" />
+          </button>
+        </li>
+        }
+      </ul>
+    </section>
+    }
+  </div>
+
   <!-- THE GOAL: two sums and «Запази»; the store closes it once the
        callable has stored the range. -->
-  @if (vm.body?.goal; as goal) {
+  @if (vm.goal; as goal) {
   <lib-analytics-goal-sheet
     [vm]="goal.sheet"
     [open]="store.goalOpen()"
@@ -930,11 +292,11 @@
   } } @else {
   <div class="staff-analytics__modules" aria-busy="true">
     <ui-skeleton uiFrame uiFrameHeight="3rem" uiFrameWidth="12rem" />
-    <ui-skeleton uiFrame uiFrameHeight="7.5rem" />
+    <ui-skeleton uiFrame uiFrameHeight="9.5rem" />
   </div>
   }
 
-  <!-- THE ⓘ: a figure's definition in words. -->
+  <!-- THE ⓘ: how the figures come about. -->
   <ui-alert
     [uiPresented]="infoVm() !== null"
     [uiTitle]="infoVm()?.title ?? ''"
@@ -945,14 +307,3 @@
     (uiDismissed)="closeInfo()"
   />
 </main>
-
-<!-- THE DRILL-DOWN, deferred and prefetched on idle: outside any @if, so
-     the prefetch runs and the first tap waits on nothing. -->
-@defer (when drill() !== null; prefetch on idle) {
-<lib-analytics-rows-page
-  [vm]="drillVm()"
-  (closed)="closeDrill()"
-  (openBarber)="openBarber($event)"
-  (openMonth)="openMonth($event)"
-/>
-}

@@ -22,6 +22,28 @@
   gap: var(--sys-space-regular);
 }
 
+/* The bento tiles: as many across as fit, each a phone column's half. */
+.charts__bento {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc(var(--sys-space-unit) * 40), 1fr)
+  );
+  gap: var(--sys-space-regular);
+}
+
+/* The detail card's title takes the row; the view switch hugs the end. */
+.charts__grow {
+  flex: 1;
+  margin: 0;
+}
+
+/* A ring at a phone's comfortable size, centred in its card. */
+.charts__ring {
+  inline-size: min(100%, calc(var(--sys-space-unit) * 60));
+  margin-inline: auto;
+}
+
 /* The barber's name over their radar, their swatch before it. */
 .charts__radar-name {
   display: flex;

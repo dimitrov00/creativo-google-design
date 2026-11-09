@@ -246,6 +246,18 @@ export const UI_ICON_REGISTRY = {
   /** A search run before, offered to run again — Mail's «Recent Searches» rows. */
   'search.recent': 'history',
 
+  /* ── A chart's views ────────────────────────────────────────────────── */
+  /** Show this figure as a LINE over time — the analytics detail's view
+   *  switch. Its own glyph; no other key shares it. */
+  'chart.line': 'show_chart',
+  /** Show this figure as BARS, one per period — the same switch. Shares
+   *  `bar_chart` with `analytics.chart` today: that one opens the whole
+   *  analytics screen, this one picks a drawing on it, and they may diverge. */
+  'chart.bars': 'bar_chart',
+  /** Show this figure as a RING of shares — the same switch's radial view.
+   *  Its own glyph; no other key shares it. */
+  'chart.ring': 'donut_large',
+
   /* ── A booked visit's own verbs and facts ───────────────────────────── */
   /** Put this visit in the device's calendar (an `.ics` hand-off). */
   'visit.calendar': 'event_available',

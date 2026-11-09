@@ -10,12 +10,20 @@ import {
   UiHeatmap,
   UiLineChart,
   UiRadar,
+  UiRingChart,
+  UiSparkBars,
   type UiChartBar,
   type UiChartHeatCell,
   type UiChartLinePoint,
   type UiChartRadarAxis,
+  type UiChartRingSegment,
 } from '@creativo/ui/charts';
-import { UiButton, UiCard } from '@creativo/ui/controls';
+import {
+  UiButton,
+  UiCard,
+  UiSegmentedControl,
+  type UiSegment,
+} from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { ScDemo } from '@showcase/shared/demo';
@@ -150,6 +158,168 @@ const RADARS_B: readonly RadarDemo[] = [
   },
 ];
 
+/** A bento tile as the presenter would hand it over: the words, the bars and the decisions. */
+type SparkTile = {
+  readonly id: string;
+  readonly caption: string;
+  readonly figure: string;
+  readonly sub: string;
+  readonly values: readonly number[];
+  readonly highlight: number | null;
+  readonly average: number | null;
+  readonly valueText: readonly string[];
+  readonly label: string;
+  /** A part hook on the host repaints the series (`no-show` → the destructive red). */
+  readonly part: UiChartPart | null;
+};
+
+const TAKINGS_WEEK = [180, 240, 0, 320, 410, 520, 90];
+const BOOKINGS_MONTH = [
+  6, 8, 7, 0, 9, 12, 11, 7, 9, 8, 0, 10, 13, 12, 8, 7, 9, 10, 0, 11, 14, 13, 9,
+  8, 10, 9, 0, 12, 15, 14,
+];
+const NO_SHOWS_WEEKS = [2, 1, 3, 0, 1, 2, 4, 1];
+
+const SPARK_TILES: readonly SparkTile[] = [
+  {
+    id: 'takings',
+    caption: 'Оборот',
+    figure: euro.format(1760),
+    sub: 'тази седмица',
+    values: TAKINGS_WEEK,
+    // The presenter's decision, hard-coded here: today is Saturday.
+    highlight: 5,
+    average: null,
+    valueText: TAKINGS_WEEK.map((value) => euro.format(value)),
+    label: 'Оборот тази седмица: 1 760 €, най-много в събота, 520 €',
+    part: null,
+  },
+  {
+    id: 'bookings',
+    caption: 'Записвания',
+    figure: '264',
+    sub: 'ноември · ср. 9 на ден',
+    values: BOOKINGS_MONTH,
+    highlight: null,
+    average: 9,
+    valueText: BOOKINGS_MONTH.map((value) => `${value}`),
+    label: 'Записвания по дни през ноември: 264, средно 9 на ден',
+    part: null,
+  },
+  {
+    id: 'no-shows',
+    caption: 'Неявявания',
+    figure: '14',
+    sub: 'последните 8 седмици',
+    values: NO_SHOWS_WEEKS,
+    highlight: null,
+    average: null,
+    valueText: NO_SHOWS_WEEKS.map((value) => `${value}`),
+    label: 'Неявявания по седмици: 14 за 8 седмици, най-много миналата',
+    part: UiChartPart.NoShow,
+  },
+];
+
+const MONTHS = ['яну', 'фев', 'мар', 'апр', 'май', 'юни'] as const;
+const TAKINGS_HALF = [1840, 2210, 1960, 2480, 2730, 2390];
+
+/** The detail screen's three views of one figure. */
+type DetailView = 'line' | 'bars' | 'ring';
+
+/** Takings by service over the same half year: one share each, the largest in the accent. */
+const SERVICE_SHARES: readonly UiChartRingSegment[] = [
+  {
+    label: 'Подстригване',
+    value: 6200,
+    part: UiChartPart.Worked,
+    tone: null,
+    valueText: euro.format(6200),
+  },
+  {
+    label: 'Подстригване и брада',
+    value: 3900,
+    part: UiChartPart.Blocked,
+    tone: null,
+    valueText: euro.format(3900),
+  },
+  {
+    label: 'Брада',
+    value: 2100,
+    part: UiChartPart.Unsold,
+    tone: null,
+    valueText: euro.format(2100),
+  },
+  {
+    label: 'Детско и бръснене',
+    value: 1410,
+    part: UiChartPart.Other,
+    tone: null,
+    valueText: euro.format(1410),
+  },
+];
+
+/** Takings by barber: a person is a tone, never a part. */
+const BARBER_SHARES_A: readonly UiChartRingSegment[] = [
+  {
+    label: 'Иван',
+    value: 5400,
+    part: null,
+    tone: 0,
+    valueText: euro.format(5400),
+  },
+  {
+    label: 'Мария',
+    value: 4700,
+    part: null,
+    tone: 1,
+    valueText: euro.format(4700),
+  },
+  {
+    label: 'Георги',
+    value: 3100,
+    part: null,
+    tone: 2,
+    valueText: euro.format(3100),
+  },
+  {
+    label: 'Ана',
+    value: 410,
+    part: null,
+    tone: 3,
+    valueText: euro.format(410),
+  },
+];
+const BARBER_SHARES_B: readonly UiChartRingSegment[] = [
+  {
+    label: 'Иван',
+    value: 4200,
+    part: null,
+    tone: 0,
+    valueText: euro.format(4200),
+  },
+  {
+    label: 'Мария',
+    value: 5100,
+    part: null,
+    tone: 1,
+    valueText: euro.format(5100),
+  },
+  {
+    label: 'Георги',
+    value: 3600,
+    part: null,
+    tone: 2,
+    valueText: euro.format(3600),
+  },
+  {
+    label: 'Ана',
+    value: 1300,
+    part: null,
+    tone: 3,
+    valueText: euro.format(1300),
+  },
+];
+
 @Component({
   selector: 'cr-charts-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -163,6 +333,9 @@ const RADARS_B: readonly RadarDemo[] = [
     UiHeatmap,
     UiLineChart,
     UiRadar,
+    UiRingChart,
+    UiSegmentedControl,
+    UiSparkBars,
     UiStack,
     UiTextDirective,
   ],
@@ -323,7 +496,60 @@ export class ChartsPage {
     })),
   );
 
+  /** The bento tiles: a figure over a bar sparkline each. */
+  protected readonly sparkTiles = SPARK_TILES;
+
+  /** The detail screen: one figure, its drawing switched between line, bars and ring. */
+  protected readonly detailView = signal<DetailView>('line');
+  protected readonly detailViews: readonly UiSegment[] = [
+    { id: 'line', label: 'Линия', icon: 'chart.line', iconOnly: true },
+    { id: 'bars', label: 'Стълбове', icon: 'chart.bars', iconOnly: true },
+    { id: 'ring', label: 'Кръг', icon: 'chart.ring', iconOnly: true },
+  ];
+  protected readonly halfYear: readonly UiChartLinePoint[] = TAKINGS_HALF.map(
+    (value, month) => ({
+      label: MONTHS.at(month) ?? '',
+      value,
+      comparison: null,
+    }),
+  );
+  protected readonly halfYearText = TAKINGS_HALF.map((value) =>
+    euro.format(value),
+  );
+  protected readonly halfYearBars: readonly UiChartBar[] = TAKINGS_HALF.map(
+    (value, month) => ({
+      label: MONTHS.at(month) ?? '',
+      parts: [{ part: UiChartPart.Worked, value }],
+    }),
+  );
+  protected readonly halfYearTotal = euro.format(
+    TAKINGS_HALF.reduce((sum, value) => sum + value, 0),
+  );
+  /** The presenter's decision, hard-coded here: May took the most. */
+  protected readonly halfYearBest = 4;
+  protected readonly serviceShares = SERVICE_SHARES;
+
+  /** Takings by barber as a ring, a second half swapped in so it cross-fades. */
+  protected readonly barberAlternate = signal(false);
+  protected readonly barberShares = computed(() =>
+    this.barberAlternate() ? BARBER_SHARES_B : BARBER_SHARES_A,
+  );
+  protected readonly barberTotal = computed(() =>
+    euro.format(
+      this.barberShares().reduce((sum, segment) => sum + segment.value, 0),
+    ),
+  );
+
   protected readonly picked = signal<string | null>(null);
+
+  protected pickView(id: string): void {
+    if (id === 'line' || id === 'bars' || id === 'ring')
+      this.detailView.set(id);
+  }
+
+  protected toggleBarbers(): void {
+    this.barberAlternate.update((value) => !value);
+  }
 
   protected onPicked(bars: readonly UiChartBar[], index: number): void {
     this.picked.set(bars.at(index)?.label || `#${index + 1}`);

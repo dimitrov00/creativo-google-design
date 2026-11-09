@@ -650,7 +650,7 @@ export default [
           // rather than a glyph: a progress ring, the toast's countdown ring,
           // the reward moment's draw-on stroke whose geometry IS the
           // animation, and the gauge's circular style (the arc round a medal
-          // or a face) — and the chart kit's two drawings (the design
+          // or a face) — and the chart kit's drawings (the design
           // docs/designs/staff-analytics-v2.md «Chart kit»: hand-drawn SVG
           // over the DS tokens, chosen by the chart-library survey). A new
           // entry here is a design decision, not a shortcut.
@@ -662,6 +662,8 @@ export default [
             'libs/ui/charts/src/lib/bar-chart/bar-chart.html',
             'libs/ui/charts/src/lib/line-chart/line-chart.html',
             'libs/ui/charts/src/lib/radar/radar.html',
+            'libs/ui/charts/src/lib/spark-bars/spark-bars.html',
+            'libs/ui/charts/src/lib/ring-chart/ring-chart.html',
           ],
         },
       ],

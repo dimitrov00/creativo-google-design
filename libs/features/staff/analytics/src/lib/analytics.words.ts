@@ -1,10 +1,12 @@
 import {
   AnalyticsBarPart,
+  AnalyticsRangePreset,
   AnalyticsSpan,
   BookingOrigin,
   GoalPaceTag,
   RadarBase,
 } from '@core/components';
+import type { AnalyticsCarouselSpan } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import {
   type SpanWords,
@@ -56,6 +58,10 @@ export interface AnalyticsWords {
     readonly afterToday: string;
     /** «Най-много 366 дни». */
     readonly tooLong: (days: number) => string;
+    /** «Избери» — a row with no date yet. */
+    readonly choose: string;
+    readonly previousMonth: string;
+    readonly nextMonth: string;
   };
   /** The comparison chip under the period (staff-analytics-v2 «Sections in order» 3). */
   readonly comparison: {
@@ -220,6 +226,64 @@ export interface AnalyticsWords {
       readonly failed: string;
     };
   };
+  /** The Revolut-layout home (staff-analytics-v3): the period button, the grain menu, the bento cards. */
+  readonly home: {
+    /** «Тази седмица» — the period holding today, by span. */
+    readonly now: Readonly<Record<AnalyticsCarouselSpan, string>>;
+    /** «Миналата седмица» — the one before it. */
+    readonly last: Readonly<Record<AnalyticsCarouselSpan, string>>;
+    /** The grain menu: its name and «Дневно» … «Годишно». */
+    readonly grainLabel: string;
+    readonly grain: Readonly<Record<AnalyticsCarouselSpan, string>>;
+    /** «средно 14,00 € на ден» — by the series' bucket. */
+    readonly average: Readonly<
+      Record<Exclude<AnalyticsCarouselSpan, 'YEAR'>, (value: string) => string>
+    >;
+    readonly takings: string;
+    readonly time: string;
+    /** «от 40 ч» — the roster so far. */
+    readonly timeDetail: (rostered: string) => string;
+    readonly tips: string;
+    /** «8% от оборота». */
+    readonly tipsDetail: (share: string) => string;
+    readonly tipsNone: string;
+    readonly rebooked: string;
+    /** «клиенти с нов час» — what the rebooked figure counts. */
+    readonly rebookedDetail: string;
+    readonly noShows: string;
+    /** «от 40 посещения». */
+    readonly noShowsDetail: (base: string) => string;
+    readonly team: string;
+    readonly ahead: string;
+    readonly aheadDetail: string;
+    readonly tools: string;
+    readonly exportDetail: string;
+    readonly goalNone: string;
+    /** «Отвори Оборот» — a card's accessible action. */
+    readonly open: (title: string) => string;
+    readonly loading: string;
+  };
+  /** A card's own screen (staff-analytics-v3): the chart switch, the range row, the ring's words. */
+  readonly card: {
+    readonly views: string;
+    readonly view: Readonly<Record<'LINE' | 'BARS' | 'RING', string>>;
+    readonly ranges: string;
+    /** «1С» … «МАКС» — the range chips. */
+    readonly range: Readonly<Record<AnalyticsRangePreset, string>>;
+    /** «Тази седмица» … «Цялата история» — a chip's period in words. */
+    readonly rangeName: Readonly<Record<AnalyticsRangePreset, string>>;
+    readonly custom: string;
+    readonly back: string;
+    /** «средно 14,00 € на ден · Този месец». */
+    readonly subline: (detail: string, range: string) => string;
+    readonly rest: string;
+    readonly attended: string;
+    readonly notRebooked: string;
+    readonly byBarber: string;
+    readonly workedLine: string;
+    readonly tipsLine: string;
+    readonly teamBars: string;
+  };
   /** The dock's «Експорт» and the CSV it hands over (staff-analytics-v2 «Export (PR 7)»). */
   readonly export: {
     /** «Експорт» — the dock's button. */
@@ -301,6 +365,24 @@ export function analyticsWordsOf(
       t(`${key}.${pluralForm(count, lang) === 'one' ? 'one' : 'other'}`, {
         count,
       });
+  /** One word per carousel span under `prefix` («home.now.DAY» …). */
+  const carouselWords = (
+    prefix: string,
+  ): Record<AnalyticsCarouselSpan, string> => ({
+    [AnalyticsSpan.Day]: t(`${prefix}.DAY`),
+    [AnalyticsSpan.Week]: t(`${prefix}.WEEK`),
+    [AnalyticsSpan.Month]: t(`${prefix}.MONTH`),
+    [AnalyticsSpan.Year]: t(`${prefix}.YEAR`),
+  });
+  /** One word per range chip under `prefix` («card.range.WEEK» …). */
+  const rangeWords = (prefix: string): Record<AnalyticsRangePreset, string> => {
+    const out = {} as Record<AnalyticsRangePreset, string>;
+    for (const preset of Object.values(AnalyticsRangePreset)) {
+      // eslint-disable-next-line security/detect-object-injection -- `preset` is a closed `AnalyticsRangePreset` literal.
+      out[preset] = t(`${prefix}.${preset}`);
+    }
+    return out;
+  };
   const byTopic = (prefix: string): Record<AnalyticsTopic, string> => {
     const out = {} as Record<AnalyticsTopic, string>;
     for (const topic of TOPICS) {
@@ -339,6 +421,9 @@ export function analyticsWordsOf(
       beforeReach: (earliest) => t('customRange.beforeReach', { earliest }),
       afterToday: t('customRange.afterToday'),
       tooLong: (days) => t('customRange.tooLong', { days }),
+      choose: t('customRange.choose'),
+      previousMonth: t('customRange.previousMonth'),
+      nextMonth: t('customRange.nextMonth'),
     },
     previous: t('previous'),
     next: t('next'),
@@ -484,6 +569,56 @@ export function analyticsWordsOf(
         invalid: t('goal.sheet.invalid'),
         failed: t('goal.sheet.failed'),
       },
+    },
+    home: {
+      now: carouselWords('home.now'),
+      last: carouselWords('home.last'),
+      grainLabel: t('home.grain.label'),
+      grain: carouselWords('home.grain'),
+      average: {
+        [AnalyticsSpan.Day]: (value) => t('home.average.DAY', { value }),
+        [AnalyticsSpan.Week]: (value) => t('home.average.WEEK', { value }),
+        [AnalyticsSpan.Month]: (value) => t('home.average.MONTH', { value }),
+      },
+      takings: t('home.takings'),
+      time: t('home.time'),
+      timeDetail: (rostered) => t('home.timeDetail', { rostered }),
+      tips: t('home.tips'),
+      tipsDetail: (share) => t('home.tipsDetail', { share }),
+      tipsNone: t('home.tipsNone'),
+      rebooked: t('home.rebooked'),
+      rebookedDetail: t('home.rebookedDetail'),
+      noShows: t('home.noShows'),
+      noShowsDetail: (base) => t('home.noShowsDetail', { base }),
+      team: t('home.team'),
+      ahead: t('home.ahead'),
+      aheadDetail: t('home.aheadDetail'),
+      tools: t('home.tools'),
+      exportDetail: t('home.exportDetail'),
+      goalNone: t('home.goalNone'),
+      open: (title) => t('home.open', { title }),
+      loading: t('home.loading'),
+    },
+    card: {
+      views: t('card.views'),
+      view: {
+        LINE: t('card.view.LINE'),
+        BARS: t('card.view.BARS'),
+        RING: t('card.view.RING'),
+      },
+      ranges: t('card.ranges'),
+      range: rangeWords('card.range'),
+      rangeName: rangeWords('card.rangeName'),
+      custom: t('card.custom'),
+      back: t('card.back'),
+      subline: (detail, range) => t('card.subline', { detail, range }),
+      rest: t('card.rest'),
+      attended: t('card.attended'),
+      notRebooked: t('card.notRebooked'),
+      byBarber: t('card.byBarber'),
+      workedLine: t('card.workedLine'),
+      tipsLine: t('card.tipsLine'),
+      teamBars: t('card.teamBars'),
     },
     export: {
       action: t('export.action'),

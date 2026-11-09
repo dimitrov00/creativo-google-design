@@ -5,7 +5,22 @@
   [attr.aria-label]="uiLabel()"
   [attr.viewBox]="viewBox()"
 >
-  @if (comparisonPath()) {
+  @if (uiArea()) {
+  <defs>
+    <linearGradient [attr.id]="gradientId" x1="0" y1="0" x2="0" y2="1">
+      <stop class="ui-line-chart__area-top" offset="0" />
+      <stop class="ui-line-chart__area-base" offset="1" />
+    </linearGradient>
+  </defs>
+  } @for (node of linePaths(); track node.key) { @if (node.area) {
+  <path
+    class="ui-line-chart__area"
+    [attr.d]="node.area"
+    [attr.fill]="areaFill"
+    [attr.data-leave]="node.leaving ? '' : null"
+    [attr.data-enter]="!node.leaving && linePaths().length > 1 ? '' : null"
+  />
+  } } @if (comparisonPath()) {
   <path
     class="ui-line-chart__comparison"
     [attr.data-part]="comparisonPart"

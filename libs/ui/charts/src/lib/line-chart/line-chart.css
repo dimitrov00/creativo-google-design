@@ -4,6 +4,7 @@
   .ui-line-chart {
     display: block;
     min-inline-size: 0;
+    --ui-line-chart-paint: var(--sys-color-accent);
   }
 
   /* THE BOX IS 5 : 2 (line-chart.ts draws its viewBox at the same ratio
@@ -19,10 +20,27 @@
      turns. */
   .ui-line-chart__path {
     fill: none;
-    stroke: var(--sys-color-accent);
+    stroke: var(--ui-line-chart-paint);
     stroke-width: var(--sys-stroke-emphasis);
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  /* THE AREA (uiArea): this period's paint as a wash under its line, 22 %
+     at the line's highest point fading to nothing on the baseline — the
+     gradient runs over the area's own box. No edge: the line is the edge. */
+  .ui-line-chart__area {
+    stroke: none;
+  }
+
+  .ui-line-chart__area-top {
+    stop-color: var(--ui-line-chart-paint);
+    stop-opacity: 0.22;
+  }
+
+  .ui-line-chart__area-base {
+    stop-color: var(--ui-line-chart-paint);
+    stop-opacity: 0;
   }
 
   /* THE COMPARISON: the hook's 32 % grey as a stroke, never a fill. */
@@ -44,7 +62,7 @@
   /* The first and last points: an 8 px accent disc in a 2 px ring of the
      surface, so it stands clear of the line under it. */
   .ui-line-chart__marker {
-    fill: var(--sys-color-accent);
+    fill: var(--ui-line-chart-paint);
     stroke: var(--sys-color-surface);
     stroke-width: var(--sys-stroke-emphasis);
   }
@@ -62,12 +80,14 @@
      first frame only; the global switch (reduced-motion.css) and charts.css
      hold both still under reduced motion. */
   @media (prefers-reduced-motion: no-preference) {
-    .ui-line-chart[data-settled] .ui-line-chart__path[data-enter] {
+    .ui-line-chart[data-settled] .ui-line-chart__path[data-enter],
+    .ui-line-chart[data-settled] .ui-line-chart__area[data-enter] {
       animation: ui-line-chart-enter var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard);
     }
 
-    .ui-line-chart[data-settled] .ui-line-chart__path[data-leave] {
+    .ui-line-chart[data-settled] .ui-line-chart__path[data-leave],
+    .ui-line-chart[data-settled] .ui-line-chart__area[data-leave] {
       animation: ui-line-chart-leave var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard) forwards;
     }

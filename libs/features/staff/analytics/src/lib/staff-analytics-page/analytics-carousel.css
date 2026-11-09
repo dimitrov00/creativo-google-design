@@ -1,0 +1,32 @@
+/* The carousel of periods: pages the column's width, snapping one at a
+   time, the scroll bar hidden (the swipe and the period menu move it). The
+   track bleeds into the column's side gutters so a page's cards keep the
+   page's own gutter while it slides. */
+
+:host {
+  display: block;
+  margin-inline: calc(-1 * var(--sys-space-regular));
+}
+
+.analytics-carousel__track {
+  display: flex;
+  align-items: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.analytics-carousel__track::-webkit-scrollbar {
+  display: none;
+}
+
+.analytics-carousel__page {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding-inline: var(--sys-space-regular);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
