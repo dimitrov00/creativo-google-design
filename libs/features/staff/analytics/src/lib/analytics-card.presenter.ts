@@ -495,12 +495,34 @@ function chartOf(
         );
       }
       if (view === AnalyticsChartView.Bars && series !== null) {
-        // A day's takings: every point of the daily series has a figure.
-        return bars(
+        // A bucket's takings, stacked BY SERVICE — each in its colour, the
+        // ring's and the «Услуги» bars' (owner, 2026-11-09) — from the
+        // first colour slot up, so a service sits at the same height of
+        // every column; one without a slot of its own on top, in grey.
+        const slot = (tone: number | null): number => tone ?? Number.MAX_VALUE;
+        const chart = bars(
           series.points.map((p) => p.value ?? 0),
           series.valueText,
           series.label,
         );
+        if (chart.chartView !== AnalyticsChartView.Bars) return chart;
+        return {
+          ...chart,
+          bars: chart.bars.map((bar, i) => {
+            const rows = report.reportSeries.at(i)?.serviceTakings ?? [];
+            if (rows.length === 0) return bar;
+            return {
+              ...bar,
+              parts: rows
+                .map((row) => ({
+                  part: 'other' as const,
+                  value: row.takingsCents,
+                  tone: serviceToneOf(input.names, row.serviceId),
+                }))
+                .sort((a, b) => slot(a.tone) - slot(b.tone)),
+            };
+          }),
+        };
       }
       const shares = report.reportServices;
       return ring(

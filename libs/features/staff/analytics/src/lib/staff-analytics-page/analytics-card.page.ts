@@ -46,6 +46,7 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import { UiCard, UiListGroup, UiListRow } from '@creativo/ui/patterns';
+import { AnalyticsRows } from '../analytics-rows-page/analytics-rows';
 import { AnalyticsRowsPage } from '../analytics-rows-page/analytics-rows-page';
 import { analyticsCardVm, cardTopicOf } from '../analytics-card.presenter';
 import { AnalyticsChartView } from '../analytics-card.vm';
@@ -80,6 +81,7 @@ const INFO_CLOSE = 'close';
   selector: 'lib-analytics-card-page',
   imports: [
     AnalyticsRangeSheet,
+    AnalyticsRows,
     AnalyticsRowsPage,
     RouterLink,
     UiAlert,
@@ -277,6 +279,37 @@ export class AnalyticsCardPage {
       seatRowsHeld: this.store.seatRowsHeld(),
       names: this.screen.names,
     });
+  });
+
+  /**
+   * THE ROWS UNDER THE CHART — the figure's own drill-down laid out in the
+   * screen, on the money cards (Revolut's transactions under its graph):
+   * a barber's visits by day, the shop's days or its barbers.
+   */
+  protected readonly rows = computed(() => {
+    const vm = this.vm();
+    const card = this.cardTag();
+    const words = this.screen.words();
+    const report = this.store.report();
+    const today = this.store.today();
+    if (
+      vm?.drill == null ||
+      (card !== AnalyticsCard.Takings && card !== AnalyticsCard.Tips) ||
+      words === null ||
+      report === null ||
+      today === null
+    ) {
+      return null;
+    }
+    const rowsVm = analyticsDrillVm({
+      words,
+      today,
+      report,
+      drill: vm.drill,
+      seatRowsHeld: this.store.seatRowsHeld(),
+      names: this.screen.names,
+    });
+    return { title: words.card.rows[rowsVm.drillRows], vm: rowsVm };
   });
 
   /** «По дни»: the working time's days. */

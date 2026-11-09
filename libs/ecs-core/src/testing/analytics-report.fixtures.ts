@@ -66,6 +66,13 @@ function seriesPoints(): readonly AnalyticsReport.SeriesPoint[] {
     ),
     // The two day rows' 3,00 € of tips each, on their days.
     tipsCents: cents(day === '2026-09-14' || day === '2026-09-15' ? 300 : 0),
+    // The haircut on the 14th, the beard on the 15th — the services' rows.
+    serviceTakings:
+      day === '2026-09-14'
+        ? [{ serviceId: cut, takingsCents: cents(2800) }]
+        : day === '2026-09-15'
+          ? [{ serviceId: beard, takingsCents: cents(1750) }]
+          : [],
     comparisonTakingsCents: cents(index === 13 ? 3500 : 0),
   }));
 }

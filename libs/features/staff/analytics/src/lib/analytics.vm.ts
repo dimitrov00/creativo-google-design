@@ -113,6 +113,8 @@ export type AnalyticsChartBarVm = {
   readonly parts: readonly {
     readonly part: UiChartPart;
     readonly value: number;
+    /** The part's own identity tone — a service's colour in a stacked column. */
+    readonly tone?: number | null;
   }[];
   /** A member's identity tone (`0…4`, the colour of its line and row), or none. */
   readonly tone: number | null;

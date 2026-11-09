@@ -284,13 +284,21 @@ function dayRowOf(raw: unknown): DayRow | null {
 
 function seriesPointOf(raw: unknown): AnalyticsReport.SeriesPoint | null {
   const r = readerOf(raw);
+  const serviceTakings = rowsOf(r.list('serviceTakings'), serviceTakingsOf);
   const row = {
     localDate: r.localDate('localDate'),
     takingsCents: r.cents('takingsCents'),
     tipsCents: r.cents('tipsCents'),
     comparisonTakingsCents: r.centsOrNull('comparisonTakingsCents'),
   };
-  return r.ok() ? row : null;
+  return r.ok() && serviceTakings !== null ? { ...row, serviceTakings } : null;
+}
+
+function serviceTakingsOf(raw: unknown): AnalyticsReport.ServiceTakings | null {
+  const r = readerOf(raw);
+  const serviceId = r.field('serviceId');
+  const takingsCents = r.cents('takingsCents');
+  return r.ok() && ServiceId.is(serviceId) ? { serviceId, takingsCents } : null;
 }
 
 function timePointOf(raw: unknown): AnalyticsReport.TimePoint | null {

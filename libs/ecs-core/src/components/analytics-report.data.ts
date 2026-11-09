@@ -320,7 +320,21 @@ export namespace AnalyticsReport {
      * than its buckets).
      */
     readonly tipsCents: PriceCents;
+    /**
+     * The bucket's takings by service, summed as its takings are (a stored
+     * day's service rows, a live visit's worked seats) — each service once,
+     * by id, only the ones that took something; together they make
+     * `takingsCents`. The takings bars stack them, each in its colour
+     * (owner, 2026-11-09).
+     */
+    readonly serviceTakings: readonly AnalyticsReport.ServiceTakings[];
     readonly comparisonTakingsCents: PriceCents | null;
+  };
+
+  /** One service's takings in a bucket of the series. */
+  export type ServiceTakings = {
+    readonly serviceId: ServiceId;
+    readonly takingsCents: PriceCents;
   };
 
   /**

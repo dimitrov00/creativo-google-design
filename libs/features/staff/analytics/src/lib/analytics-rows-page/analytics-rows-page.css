@@ -15,3 +15,8 @@
   padding-inline: var(--ui-sheet-inset, var(--sys-space-regular));
   padding-block: var(--sys-space-regular) var(--sys-space-loose);
 }
+
+/* The rows' own: the sentinel the next page waits on (analytics-rows.ts). */
+lib-analytics-rows {
+  display: block;
+}

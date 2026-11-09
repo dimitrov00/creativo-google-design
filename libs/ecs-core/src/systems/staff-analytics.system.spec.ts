@@ -644,7 +644,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(report.reportToLocalDate).toBe(TODAY);
     expect(report.reportComparisonFromLocalDate).toBe(day(-7));
     expect(report.reportComparisonToLocalDate).toBe(day(-7));
-    expect(report.reportSeries).toEqual([
+    expect(report.reportSeries).toMatchObject([
       {
         localDate: TODAY,
         takingsCents: 3500,
@@ -1080,6 +1080,16 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       expect(sum(report.reportSeries, (p) => p.tipsCents)).toBe(
         report.reportTipsCents,
       );
+      // Each point's takings by service make its takings, service by
+      // service — the stacked bars' parts.
+      for (const point of report.reportSeries) {
+        expect(sum(point.serviceTakings, (row) => row.takingsCents)).toBe(
+          point.takingsCents,
+        );
+      }
+      expect(
+        report.reportSeries[0]?.serviceTakings.map((row) => row.serviceId),
+      ).toEqual([cut]);
     });
 
     it('aligns the comparison by position, null where the shorter previous period ends', () => {
@@ -1099,7 +1109,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         }),
       );
       expect(report.reportSeries).toHaveLength(31);
-      expect(report.reportSeries[2]).toEqual({
+      expect(report.reportSeries[2]).toMatchObject({
         localDate: localDate('2026-03-03'),
         takingsCents: 4000,
         tipsCents: 0,
@@ -2293,7 +2303,7 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
       }),
     );
     expect(report.reportSeries).toHaveLength(12);
-    expect(report.reportSeries[2]).toEqual({
+    expect(report.reportSeries[2]).toMatchObject({
       localDate: localDate('2026-03-01'),
       takingsCents: 4000,
       tipsCents: 0,
@@ -2351,7 +2361,7 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
         localDate('2025-12-31'),
       ),
     );
-    expect(report.reportSeries[0]).toEqual({
+    expect(report.reportSeries[0]).toMatchObject({
       localDate: localDate('2026-01-01'),
       takingsCents: 1000,
       tipsCents: 0,

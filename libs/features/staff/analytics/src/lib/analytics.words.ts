@@ -312,6 +312,8 @@ export interface AnalyticsWords {
   };
   /** A card's own screen (staff-analytics-v3): the chart switch, the range row, the ring's words. */
   readonly card: {
+    /** The rows under a card's chart, by what they are: «Посещения», «По дни», «По бръснари». */
+    readonly rows: Readonly<Record<'SEATS' | 'DAYS' | 'BARBERS', string>>;
     readonly views: string;
     readonly view: Readonly<Record<'LINE' | 'BARS' | 'RING', string>>;
     readonly ranges: string;
@@ -697,6 +699,11 @@ export function analyticsWordsOf(
       loading: t('home.loading'),
     },
     card: {
+      rows: {
+        SEATS: t('card.rows.SEATS'),
+        DAYS: t('card.rows.DAYS'),
+        BARBERS: t('card.rows.BARBERS'),
+      },
       views: t('card.views'),
       view: {
         LINE: t('card.view.LINE'),

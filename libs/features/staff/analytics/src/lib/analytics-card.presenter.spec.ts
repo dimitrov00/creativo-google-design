@@ -107,6 +107,21 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     ]);
   });
 
+  it('stacks the takings bars by service — each part in its service’s colour, from the first colour slot up; a day of nothing stays empty', () => {
+    const chart = analyticsCardVm(
+      inputOf(AnalyticsCard.Takings, { view: AnalyticsChartView.Bars }),
+    ).chart;
+    if (chart?.chartView !== 'BARS') throw new Error('not bars');
+    const byDay = chart.bars.map((bar) =>
+      bar.parts.map((part) => [part.tone, part.value]),
+    );
+    // The 14th: the haircut (the catalogue's first); the 15th: the beard.
+    expect(byDay[13]).toEqual([[0, 2800]]);
+    expect(byDay[14]).toEqual([[1, 1750]]);
+    // A bar reads its day under a finger.
+    expect(chart.readouts[13]).toContain('14');
+  });
+
   it('draws the takings’ ring by service — each in its own colour, by its place in the catalogue, never its rank — the figure in its centre', () => {
     const vm = analyticsCardVm(
       inputOf(AnalyticsCard.Takings, { view: AnalyticsChartView.Ring }),

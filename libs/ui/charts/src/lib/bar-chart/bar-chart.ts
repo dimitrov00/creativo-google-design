@@ -21,6 +21,12 @@ import { stackOffsets, stackTotal } from '../geometry/stack-offsets';
 export type UiChartBarPart = {
   readonly part: UiChartPart;
   readonly value: number;
+  /**
+   * The part's own identity tone (`0 … 4`) — a column stacked by service,
+   * each in its colour; outranks the bar's `tone`. Absent or `null`, the
+   * bar's tone, else the part's hook, paints it.
+   */
+  readonly tone?: number | null;
 };
 
 /**
@@ -93,6 +99,8 @@ export function fitLabel(
 type BarSegment = {
   readonly key: number;
   readonly part: UiChartPart;
+  /** The part's own tone, or `null` for the bar's. */
+  readonly tone: number | null;
   /** Along the axis from the baseline, in px. */
   readonly offset: number;
   readonly size: number;
@@ -241,6 +249,7 @@ export class UiBarChart {
         segments.push({
           key: i,
           part: part.part,
+          tone: toneOf(part.tone),
           offset: px(start),
           size: px(Math.max(0, end - start)),
         });

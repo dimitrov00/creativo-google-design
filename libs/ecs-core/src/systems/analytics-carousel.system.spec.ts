@@ -210,6 +210,7 @@ describe('AnalyticsCarouselSystem — the locations compared', () => {
     localDate: localDate(d),
     takingsCents: 0 as PriceCents,
     tipsCents: 0 as PriceCents,
+    serviceTakings: [],
     comparisonTakingsCents: null,
   });
   const SERIES = [day('2026-11-08'), day('2026-11-09'), day('2026-11-10')];
@@ -274,6 +275,7 @@ describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals
     localDate: localDate(day),
     takingsCents: takings as PriceCents,
     tipsCents: 0 as PriceCents,
+    serviceTakings: [],
     comparisonTakingsCents: comparison as PriceCents | null,
   });
   const report = (points: readonly AnalyticsReport.SeriesPoint[]) =>

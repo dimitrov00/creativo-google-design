@@ -774,13 +774,27 @@ function moneyByBucket(
 ): {
   readonly takings: readonly PriceCents[];
   readonly tips: readonly PriceCents[];
+  readonly services: readonly (readonly AnalyticsReport.ServiceTakings[])[];
 } {
   const takings: PriceCents[] = [];
   const tips: PriceCents[] = [];
+  const byService: Map<ServiceId, PriceCents>[] = [];
   for (let i = 0; i < grain.starts.length; i++) {
     takings.push(PriceCents.ZERO);
     tips.push(PriceCents.ZERO);
+    byService.push(new Map());
   }
+  const addService = (
+    index: number,
+    serviceId: ServiceId,
+    cents: PriceCents,
+  ): void => {
+    const bucket = byService[index] as Map<ServiceId, PriceCents>;
+    bucket.set(
+      serviceId,
+      PriceCents.add(bucket.get(serviceId) ?? PriceCents.ZERO, cents),
+    );
+  };
   for (let i = 0; i < pastDays.length; i++) {
     const day = pastDays[i] as DayFigures;
     const index = bucketIndexOf(grain, day.localDate);
@@ -790,6 +804,10 @@ function moneyByBucket(
       day.dayTakingsCents,
     );
     tips[index] = PriceCents.add(tips[index] as PriceCents, day.dayTipsCents);
+    for (let r = 0; r < day.dayServices.length; r++) {
+      const row = day.dayServices[r] as DayFigures.ServiceRow;
+      addService(index, row.serviceId, row.takingsCents);
+    }
   }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
@@ -811,9 +829,18 @@ function moneyByBucket(
         net.netCents,
       );
       tips[index] = PriceCents.add(tips[index] as PriceCents, net.tipCents);
+      addService(index, seat.serviceId, net.netCents);
     }
   }
-  return { takings, tips };
+  // Each bucket's services by id — the order a report's arrays keep —
+  // and only the ones that took something.
+  const services = byService.map((bucket) =>
+    [...bucket.entries()]
+      .filter(([, cents]) => cents > 0)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([serviceId, takingsCents]) => ({ serviceId, takingsCents })),
+  );
+  return { takings, tips, services };
 }
 
 /**
@@ -844,6 +871,7 @@ function seriesOf(
       localDate: grain.starts[i] as LocalDate,
       takingsCents: current.takings[i] as PriceCents,
       tipsCents: current.tips[i] as PriceCents,
+      serviceTakings: current.services[i] ?? [],
       comparisonTakingsCents:
         i < compared.length ? (compared[i] as PriceCents) : null,
     });

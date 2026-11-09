@@ -2893,6 +2893,11 @@
       "loading": "Loading"
     },
     "card": {
+      "rows": {
+        "SEATS": "Visits",
+        "DAYS": "By day",
+        "BARBERS": "By barber"
+      },
       "views": "Show as",
       "view": {
         "LINE": "Line",

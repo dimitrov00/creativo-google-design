@@ -589,7 +589,23 @@
       </p>
       }
     </section>
-    } }
+    } } @if (rows(); as rows) {
+    <!-- THE ROWS BEHIND THE FIGURE (owner, 2026-11-09, Revolut's
+         transactions under the graph): the visits by day, the days or the
+         barbers — a page at a time as the end comes within reach. -->
+    <section
+      class="analytics-card__module"
+      aria-labelledby="analytics-rows-title"
+      data-testid="analytics-card-rows"
+    >
+      <h2 uiText uiFont="title3" id="analytics-rows-title">{{ rows.title }}</h2>
+      <lib-analytics-rows
+        [vm]="rows.vm"
+        (openBarber)="openBarber($event)"
+        (openMonth)="openMonth($event)"
+      />
+    </section>
+    }
   </div>
 
   <!-- THE CUSTOM PERIOD: «От» and «До» in collapsible rows with inline

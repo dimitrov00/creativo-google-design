@@ -676,6 +676,7 @@ describe('analyticsVm — the screen states', () => {
             localDate: day.localDate,
             takingsCents: cents(day.openMinutes * 10),
             tipsCents: cents(0),
+            serviceTakings: [],
             comparisonTakingsCents: null,
           })),
           reportTimeSeries: report.reportTimeSeries
