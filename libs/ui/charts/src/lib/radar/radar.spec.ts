@@ -60,7 +60,11 @@ describe('UiRadar', () => {
     );
     expect(svg?.getAttribute('viewBox')).toBe('0 0 320 320');
     const table = one('table');
-    expect(table?.hasAttribute('data-visually-hidden')).toBe(true);
+    // The recipe sits on a wrapper: a table would stretch past its 1px.
+    expect(table?.hasAttribute('data-visually-hidden')).toBe(false);
+    expect(table?.parentElement?.hasAttribute('data-visually-hidden')).toBe(
+      true,
+    );
     expect(table?.querySelector('caption')?.textContent?.trim()).toBe(
       'Иван: най-силен в оборота на час, слаб в надеждността',
     );

@@ -29,8 +29,17 @@ const FALLBACK_WIDTH = 320;
 const ASPECT = 2.5;
 /** Room for a marker and its ring at the plot's edges. */
 const PAD = 6;
-/** The right-edge labels' column, taken only when a label is printed. */
+/** The right-edge labels' column, taken only when a label is printed — at least this. */
 const LABEL_GUTTER = 56;
+/**
+ * A caption glyph's width, near enough: the column grows with the longer
+ * label («средно 1 234,56 €») so it never runs past the drawing into the
+ * page's side gutter — the radar's and the bar chart's estimate; the kit
+ * measures nothing.
+ */
+const CHAR_WIDTH = 7;
+/** The labels never take more than this share of the box: the line keeps the rest. */
+const MAX_GUTTER_SHARE = 0.4;
 /** Two right-edge labels never sit closer than a caption line. */
 const LABEL_CLEARANCE = 14;
 
@@ -106,11 +115,18 @@ export class UiLineChart {
     return count > 0 ? (texts[count - 1] ?? null) : null;
   });
 
-  private readonly gutter = computed(() =>
-    this.lastValueText() !== null || this.uiAverageText() !== null
-      ? LABEL_GUTTER
-      : 0,
-  );
+  /** The right-edge labels' column: none without a label, else as wide as the longer one needs. */
+  private readonly gutter = computed(() => {
+    const texts = [this.lastValueText(), this.uiAverageText()].filter(
+      (text): text is string => text !== null,
+    );
+    if (texts.length === 0) return 0;
+    const longest = texts.reduce((max, text) => Math.max(max, text.length), 0);
+    return Math.min(
+      Math.max(LABEL_GUTTER, longest * CHAR_WIDTH + PAD),
+      this.width() * MAX_GUTTER_SHARE,
+    );
+  });
 
   /** The plot's x of point `i` and y of a value. */
   private readonly scales = computed(() => {

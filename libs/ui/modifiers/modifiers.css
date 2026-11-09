@@ -614,7 +614,11 @@
 
   /* ── Visually hidden (uiVisuallyHidden → data-visually-hidden) ──
      ≙ .accessibilityLabel on hidden Text: the SR-only clip recipe, kept in
-     the accessibility tree while rendering as a 1px clipped box. */
+     the accessibility tree while rendering as a 1px clipped box.
+     Never on a <table>: a table treats its width as a minimum, so it would
+     grow to its unwrapped caption and widen the page's scroll area. Put the
+     recipe on a wrapping <div> and leave the table plain (the chart kit's
+     hidden data tables, 2026-11-09). */
   [data-visually-hidden] {
     position: absolute;
     inline-size: 1px;

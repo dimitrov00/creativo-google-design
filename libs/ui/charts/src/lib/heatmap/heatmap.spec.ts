@@ -85,7 +85,11 @@ describe('UiHeatmap', () => {
   it('lists every cell in a hidden table, empty where there is no data', () => {
     const { chart, all } = render();
     const table = chart.querySelector('table');
-    expect(table?.hasAttribute('data-visually-hidden')).toBe(true);
+    // The recipe sits on a wrapper: a table would stretch past its 1px.
+    expect(table?.hasAttribute('data-visually-hidden')).toBe(false);
+    expect(table?.parentElement?.hasAttribute('data-visually-hidden')).toBe(
+      true,
+    );
     expect(all('thead th').map((th) => th.textContent)).toEqual([
       '9',
       '10',
