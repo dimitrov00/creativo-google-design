@@ -144,7 +144,8 @@
 .staff-analytics__ahead-bars {
   display: block;
   margin-block-start: var(--sys-space-compact);
-  --ui-spark-bars-height: 3.5rem;
+  /* The bars' 56px plus the weekday line under them. */
+  --ui-spark-bars-height: 4.625rem;
 }
 
 /* A tool row's two lines: what it does, and what it gives. */

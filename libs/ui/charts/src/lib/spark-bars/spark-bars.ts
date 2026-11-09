@@ -4,6 +4,7 @@ import {
   ElementRef,
   ViewEncapsulation,
   afterNextRender,
+  booleanAttribute,
   computed,
   input,
   linkedSignal,
@@ -20,6 +21,8 @@ import { type SparkBarRect, sparkBarRects } from '../geometry/spark-bars';
 const FALLBACK_WIDTH = 160;
 /** `--ui-spark-bars-height`'s default — spark-bars.css says the same. */
 const FALLBACK_HEIGHT = 48;
+/** The words' band under the bars when `uiAxis` draws them: a caption line. */
+const AXIS_BAND = 18;
 
 type SparkBarMark = SparkBarRect & { readonly highlight: boolean };
 
@@ -82,6 +85,14 @@ export class UiSparkBars {
   readonly uiValueText = input<readonly string[]>([]);
   /** One word per bar for the hidden table («пн», «1 ноем.»); `1 … n` when absent. */
   readonly uiLabels = input<readonly string[]>([]);
+  /**
+   * Each bar's WHOLE on the same scale — the day's working time behind its
+   * free part — drawn as a faint track behind the bar (Liven's week of
+   * pills): the bar then reads as a share of something, not a bare height.
+   */
+  readonly uiTracks = input<readonly number[]>([]);
+  /** Prints `uiLabels` under the bars — a week's days on a card wide enough to name them. */
+  readonly uiAxis = input(false, { transform: booleanAttribute });
 
   protected readonly comparisonPart = UiChartPart.Comparison;
 
@@ -102,6 +113,22 @@ export class UiSparkBars {
   protected readonly viewBox = computed(
     () => `0 0 ${this.right()} ${px(this.height())}`,
   );
+  /** The bars' box: the drawing less the words' band when they are printed. */
+  private readonly plotHeight = computed(() =>
+    Math.max(1, this.height() - (this.uiAxis() ? AXIS_BAND : 0)),
+  );
+  /** The words under the bars: each centred on its slot, on the band's baseline. */
+  protected readonly axis = computed(() => {
+    if (!this.uiAxis()) return [];
+    const labels = this.uiLabels();
+    const count = this.uiValues().length;
+    const slot = count === 0 ? 0 : this.width() / count;
+    return labels.slice(0, count).map((text, index) => ({
+      text,
+      x: px(slot * index + slot / 2),
+      y: px(this.height() - 4),
+    }));
+  });
 
   /** The highlight, when it names a bar that exists. */
   protected readonly highlight = computed(() => {
@@ -114,22 +141,25 @@ export class UiSparkBars {
       : null;
   });
 
-  /** The scale's top: the largest value, or the average when it reaches higher. */
+  /** The scale's top: the largest value, track or average. */
   private readonly top = computed(
-    () => zeroExtent([...this.uiValues(), this.uiAverage()])[1],
+    () =>
+      zeroExtent([...this.uiValues(), ...this.uiTracks(), this.uiAverage()])[1],
   );
 
   private readonly shape = computed<SparkBarsShape>(() => {
     const values = this.uiValues();
     const highlight = this.highlight();
+    const tracks = this.uiTracks();
     const rects = sparkBarRects(
       values,
       this.width(),
-      this.height(),
+      this.plotHeight(),
       this.top(),
+      tracks,
     );
     return {
-      key: values.join(','),
+      key: `${values.join(',')}|${tracks.join(',')}`,
       bars: rects.map((rect, index) => ({
         ...rect,
         highlight: index === highlight,
@@ -165,7 +195,7 @@ export class UiSparkBars {
     const average = this.uiAverage();
     if (average === null) return null;
     const top = this.top();
-    const height = this.height();
+    const height = this.plotHeight();
     return px(
       top > 0 ? height - (Math.max(0, average) / top) * height : height,
     );

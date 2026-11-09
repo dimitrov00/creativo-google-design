@@ -12,7 +12,17 @@
     [attr.data-enter]="!node.leaving && nodes().length > 1 ? '' : null"
     (animationend)="dropLeaving()"
   >
-    @for (bar of node.bars; track $index) {
+    @for (bar of node.bars; track $index) { @if (bar.track; as track) {
+    <rect
+      class="ui-spark-bars__track"
+      [attr.x]="bar.x"
+      [attr.y]="track.y"
+      [attr.width]="bar.width"
+      [attr.height]="track.height"
+      [attr.rx]="bar.rx"
+      [attr.ry]="track.ry"
+    />
+    }
     <rect
       class="ui-spark-bars__bar"
       [attr.data-highlight]="bar.highlight ? '' : null"
@@ -25,6 +35,16 @@
     />
     }
   </g>
+  } @for (word of axis(); track $index) {
+  <text
+    class="ui-spark-bars__word"
+    aria-hidden="true"
+    text-anchor="middle"
+    [attr.x]="word.x"
+    [attr.y]="word.y"
+  >
+    {{ word.text }}
+  </text>
   } @if (averageY() !== null) {
   <line
     class="ui-spark-bars__average"

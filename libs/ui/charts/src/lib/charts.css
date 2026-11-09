@@ -55,7 +55,20 @@
     );
   }
 
-  [data-part='unsold'],
+  /* FREE TIME (the unsold part — rostered, nobody booked) is CAPACITY,
+     not a thing of its own: the worked hue, pale, so a column reads as
+     the chair's working time of which the solid part was used (Toggl's
+     billable over non-billable; owner, 2026-11-09: "so much monochrome").
+     A wash under 3:1 by design — it is named by the legend and the
+     table, never by colour alone (chart-palette.spec.ts, the washes). */
+  [data-part='unsold'] {
+    --ui-chart-paint: color-mix(
+      in srgb,
+      var(--sys-color-accent) 34%,
+      transparent
+    );
+  }
+
   [data-part='staff'] {
     --ui-chart-paint: color-mix(
       in srgb,

@@ -144,7 +144,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       ['Неявили се', '1 ч'],
       ['Неотбелязани', '0 мин'],
       ['Блокирано', '2 ч'],
-      ['Непродадено', '3 ч 20 мин'],
+      ['Свободно', '3 ч 20 мин'],
       ['Друго', '20 мин'],
     ]);
     expect(body.time.segments[0]?.part).toBe('worked');
@@ -358,7 +358,7 @@ describe('analyticsVm — the same month in English', () => {
       'No-shows',
       'Unmarked',
       'Blocked',
-      'Unsold',
+      'Free',
       'Other',
     ]);
     expect(body.time.ahead).toBe(
@@ -942,8 +942,8 @@ describe('analyticsDrillVm — a figure’s rows and a footer equal to it', () =
     expect(drill.drillRows).toBe(DrillRows.Days);
     expect(drill.days.map((day) => [day.title, day.detail, day.value])).toEqual(
       [
-        ['пн, 14.09', '9 ч по график · 2 ч 20 мин непродадено', '4 ч 30 мин'],
-        ['вт, 15.09', '9 ч по график · 3 ч 20 мин непродадено', '3 ч 30 мин'],
+        ['пн, 14.09', '9 ч по график · 2 ч 20 мин свободно', '4 ч 30 мин'],
+        ['вт, 15.09', '9 ч по график · 3 ч 20 мин свободно', '3 ч 30 мин'],
       ],
     );
     expect(drill.footerValue).toBe('8 ч');

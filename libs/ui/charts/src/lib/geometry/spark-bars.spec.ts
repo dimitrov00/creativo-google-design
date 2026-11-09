@@ -7,22 +7,40 @@ const box = (rect: SparkBarRect): string =>
   [rect.x, rect.y, rect.width, rect.height, rect.rx, rect.ry].join(' ');
 
 describe('sparkBarRects', () => {
-  it('centres an 8 px capsule in each of n even slots, standing on the bottom, zero-anchored', () => {
-    // 160 ÷ 7 = 22.86 a slot: 60 % of it is 13.71, capped at 8.
+  it('centres a bar in each of n even slots, 55 % of the slot, corners round to 6, standing on the bottom, zero-anchored', () => {
+    // 160 ÷ 7 = 22.86 a slot: 55 % of it is 12.57 (under the 24 cap).
     expect(sparkBarRects([3, 5, 0, 8, 2, 8, 4], 160, 48, 8).map(box)).toEqual([
-      '7.43 30 8 18 4 4',
-      '30.29 18 8 30 4 4',
+      '5.14 30 12.57 18 6 6',
+      '28 18 12.57 30 6 6',
       // A zero: a 2 px stub, round at both ends (ry is half its height).
-      '53.14 46 8 2 4 1',
-      '76 0 8 48 4 4',
-      '98.86 36 8 12 4 4',
-      '121.71 0 8 48 4 4',
-      '144.57 24 8 24 4 4',
+      '50.86 46 12.57 2 6 1',
+      '73.71 0 12.57 48 6 6',
+      '96.57 36 12.57 12 6 6',
+      '119.43 0 12.57 48 6 6',
+      '142.29 24 12.57 24 6 6',
     ]);
   });
 
+  it('caps a bar at 24 px however few, and draws each bar’s track — its whole — behind it on the same scale', () => {
+    // 345 ÷ 3 = 115 a slot: 55 % is 63.25, capped at 24.
+    const rects = sparkBarRects([2, 5, 0], 345, 56, 8, [4, 8, 0]);
+    expect(rects.map(box)).toEqual([
+      '45.5 42 24 14 6 6',
+      '160.5 21 24 35 6 6',
+      '275.5 54 24 2 6 1',
+    ]);
+    expect(rects.map((rect) => rect.track)).toEqual([
+      { y: 28, height: 28, ry: 6 },
+      { y: 0, height: 56, ry: 6 },
+      // A day with no working time has no track.
+      null,
+    ]);
+    // Without tracks, none.
+    expect(sparkBarRects([1], 40, 48, 1)[0]?.track).toBeNull();
+  });
+
   it('thins a crowded run so at least 3 px of air stays between bars', () => {
-    // 20 ÷ 4 = 5 a slot: 60 % is 3, but 5 − 3 leaves only 2.
+    // 20 ÷ 4 = 5 a slot: 55 % is 2.75, but 5 − 3 leaves only 2.
     expect(sparkBarRects([1, 0, -2, 1], 20, 30, 1).map(box)).toEqual([
       '1.5 0 2 30 1 1',
       '6.5 28 2 2 1 1',
@@ -40,12 +58,12 @@ describe('sparkBarRects', () => {
 
   it('draws a sliver as the stub, and every bar as a stub for a zero top', () => {
     expect(sparkBarRects([0.01, 4], 40, 48, 4).map(box)).toEqual([
-      '6 46 8 2 4 1',
-      '26 0 8 48 4 4',
+      '4.5 46 11 2 5.5 1',
+      '24.5 0 11 48 5.5 5.5',
     ]);
     expect(sparkBarRects([0, 0], 100, 48, 0).map(box)).toEqual([
-      '21 46 8 2 4 1',
-      '71 46 8 2 4 1',
+      '13 46 24 2 6 1',
+      '63 46 24 2 6 1',
     ]);
   });
 

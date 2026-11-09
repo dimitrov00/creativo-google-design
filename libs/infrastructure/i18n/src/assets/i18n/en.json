@@ -2728,7 +2728,7 @@
         "NO_SHOW": "No-shows",
         "UNMARKED": "Unmarked",
         "BLOCKED": "Blocked",
-        "UNSOLD": "Unsold",
+        "UNSOLD": "Free",
         "OTHER": "Other"
       },
       "byDay": "By day",
@@ -2981,7 +2981,7 @@
       "close": "Got it",
       "TAKINGS": "The worked services after their share of the bill's discount. Tips are not included. A voucher-paid service counts in full.",
       "TIPS": "The tips on worked services.",
-      "TIME": "How the working time went so far: worked, no-shows, unmarked visits, blocked and unsold time. “Other” is time held by cancelled services and gaps under 20 minutes. Breaks and days off are not included.",
+      "TIME": "How the working time went so far: worked, no-shows, unmarked visits, blocked and free time — working time with no client. “Other” is time held by cancelled services and gaps under 20 minutes. Breaks and days off are not included.",
       "OPEN": "The free time in the next 7 days the schedule still offers — at least 20 minutes at a time.",
       "SERVICES": "Worked services by kind: how many, their takings and the takings per hour of service, setup and cleanup left out.",
       "REBOOKED": "Of the visits with a worked service: how many booked their next visit from it (“Book again”) by the end of the next day. A visit booked later or on its own does not count.",
@@ -3005,7 +3005,7 @@
       "rebookedNo": "No next visit",
       "noShow": "No-show",
       "late": "Late cancellation",
-      "dayLine": "{{rostered}} rostered · {{unsold}} unsold",
+      "dayLine": "{{rostered}} rostered · {{unsold}} free",
       "barberLine": "{{worked}} worked of {{rostered}}",
       "barbers": "By barber",
       "openBarber": "See {{name}}"

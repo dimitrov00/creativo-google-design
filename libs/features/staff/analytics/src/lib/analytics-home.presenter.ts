@@ -661,6 +661,7 @@ function aheadOf(
       labels: bars.bars.map((bar) => bar.label),
       label: bars.label,
     },
+    tracks: report.reportAheadDays.map((day) => day.workingMinutes),
     link: body.open.link,
     accessibleName: [words.home.ahead, body.open.value, detail]
       .filter(Boolean)

@@ -31,10 +31,27 @@
     fill: var(--ui-spark-bars-paint);
   }
 
-  /* A HIGHLIGHT: the one bar keeps the paint, every other drops to the
-     ramp's lightest grey (the bar chart's open-hours highlight). */
+  /* A TRACK: the bar's whole (`uiTracks`) — a faint column the bar fills
+     from the bottom, quieter than any part of the ramp so it reads as the
+     ground the value stands in, never a value of its own. */
+  .ui-spark-bars__track {
+    fill: color-mix(in srgb, var(--sys-color-foreground) 12%, transparent);
+  }
+
+  /* THE WORDS under the bars (`uiAxis`): the caption in the quiet ink —
+     words are ink, the bars are the colour. */
+  .ui-spark-bars__word {
+    font: var(--sys-font-caption);
+    fill: var(--sys-color-secondary-label);
+  }
+
+  /* A HIGHLIGHT: the one bar keeps the paint, every other keeps its hue
+     but pales to a wash of it — the same series, quieter (owner,
+     2026-11-09: grey bars read "so much monochrome"). A wash under 3:1 by
+     design: the highlighted bar is the one told, the others are its
+     context, and the hidden table names every one. */
   .ui-spark-bars[data-highlighting] .ui-spark-bars__bar {
-    fill: color-mix(in srgb, var(--sys-color-foreground) 48%, transparent);
+    fill: color-mix(in srgb, var(--ui-spark-bars-paint) 40%, transparent);
   }
 
   .ui-spark-bars[data-highlighting] .ui-spark-bars__bar[data-highlight] {

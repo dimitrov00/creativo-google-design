@@ -1,15 +1,28 @@
 import { linearScale, px } from './linear-scale';
 
-/** The widest a spark bar gets, however few there are. */
-export const SPARK_BAR_MAX_WIDTH = 8;
+/**
+ * The widest a spark bar gets, however few there are — a week across a
+ * card is a row of real columns, not hairlines (owner, 2026-11-09: "those
+ * pillars very thin"; Fitbit's and Liven's week bars).
+ */
+export const SPARK_BAR_MAX_WIDTH = 24;
 /** The least air between two spark bars. */
 export const SPARK_BAR_MIN_GAP = 3;
 /** A bar takes at most this share of its slot; the rest is air. */
-export const SPARK_BAR_SHARE = 0.6;
+export const SPARK_BAR_SHARE = 0.55;
 /** The height a zero (or a sliver) still draws, so its slot reads. */
 export const SPARK_BAR_STUB = 2;
+/** A wide bar's corner: rounded, not a pill — a thin one stays a capsule. */
+export const SPARK_BAR_RADIUS = 6;
 
-/** One spark bar: its box in the drawing's pixels and the radii that make it a capsule. */
+/** A bar's TRACK: the whole it is a part of, drawn behind it on the same scale. */
+export type SparkBarTrack = {
+  readonly y: number;
+  readonly height: number;
+  readonly ry: number;
+};
+
+/** One spark bar: its box in the drawing's pixels, its corner radii, and its track when it has one. */
 export type SparkBarRect = {
   readonly x: number;
   readonly y: number;
@@ -17,6 +30,7 @@ export type SparkBarRect = {
   readonly height: number;
   readonly rx: number;
   readonly ry: number;
+  readonly track: SparkBarTrack | null;
 };
 
 /**
@@ -29,14 +43,19 @@ export type SparkBarRect = {
  * less than {@link SPARK_BAR_MIN_GAP} of air is left (a crowded run thins
  * to a pixel at the least). A negative value counts as zero; a zero, or a
  * value too small to show, still draws a {@link SPARK_BAR_STUB} tall stub.
- * The ends are fully round: `rx` is half the width, `ry` the same unless
- * the bar is shorter than it is wide.
+ * The corners are round to {@link SPARK_BAR_RADIUS} (a bar thinner than
+ * twice that is a capsule), `ry` no more than half the bar's height.
+ *
+ * `tracks`, when given, is each bar's WHOLE on the same scale — the day's
+ * working time behind its free part — drawn as a box from the bottom to
+ * that height; a missing or zero track draws none.
  */
 export function sparkBarRects(
   values: readonly number[],
   width: number,
   height: number,
   top: number,
+  tracks: readonly number[] = [],
 ): readonly SparkBarRect[] {
   const count = values.length;
   if (count === 0) return [];
@@ -55,7 +74,10 @@ export function sparkBarRects(
       height,
       Math.max(SPARK_BAR_STUB, length(Math.max(0, value))),
     );
-    const radius = barWidth / 2;
+    const radius = Math.min(barWidth / 2, SPARK_BAR_RADIUS);
+    const whole = tracks.at(index) ?? 0;
+    const trackHeight =
+      whole > 0 ? Math.min(height, length(Math.max(0, whole))) : 0;
     return {
       x: px(slot * index + (slot - barWidth) / 2),
       y: px(height - barHeight),
@@ -63,6 +85,14 @@ export function sparkBarRects(
       height: px(barHeight),
       rx: px(radius),
       ry: px(Math.min(radius, barHeight / 2)),
+      track:
+        trackHeight > 0
+          ? {
+              y: px(height - trackHeight),
+              height: px(trackHeight),
+              ry: px(Math.min(radius, trackHeight / 2)),
+            }
+          : null,
     };
   });
 }

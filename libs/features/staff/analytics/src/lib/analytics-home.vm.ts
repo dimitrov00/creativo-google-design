@@ -241,6 +241,12 @@ export type AnalyticsAheadCardVm = {
   readonly value: string;
   readonly detail: string;
   readonly spark: AnalyticsSparkVm;
+  /**
+   * Each day's working time still to come — the track its free bar fills
+   * (owner, 2026-11-09: free hours as a share of working hours, a day off
+   * an empty slot).
+   */
+  readonly tracks: readonly number[];
   readonly link: AnalyticsScheduleLink | null;
   readonly accessibleName: string;
 };

@@ -15,6 +15,8 @@ const WEEK_TEXT = ['3 €', '5 €', '0 €', '8 €', '2 €', '8 €', '4 €'
       [uiAverage]="average()"
       [uiValueText]="valueText()"
       [uiLabels]="labels()"
+      [uiTracks]="tracks()"
+      [uiAxis]="axis()"
       uiLabel="Похарчено тази седмица: най-много в четвъртък и събота"
       data-testid="spark"
     />
@@ -26,6 +28,8 @@ class Host {
   readonly average = signal<number | null>(null);
   readonly valueText = signal<readonly string[]>(WEEK_TEXT);
   readonly labels = signal<readonly string[]>([]);
+  readonly tracks = signal<readonly number[]>([]);
+  readonly axis = signal(false);
 }
 
 function render(setup?: (host: Host) => void) {
@@ -86,17 +90,17 @@ describe('UiSparkBars', () => {
     expect(all('svg text')).toEqual([]);
   });
 
-  it('draws one thin capsule per value on the bottom, a zero as a 2 px stub', () => {
+  it('draws one bar per value on the bottom, a zero as a 2 px stub', () => {
     const { boxes } = render();
     // 160 ÷ 7 a slot, 8 px bars; 8 is the top, 48 px tall.
     expect(boxes()).toEqual([
-      '7.43 30 8 18 4 4',
-      '30.29 18 8 30 4 4',
-      '53.14 46 8 2 4 1',
-      '76 0 8 48 4 4',
-      '98.86 36 8 12 4 4',
-      '121.71 0 8 48 4 4',
-      '144.57 24 8 24 4 4',
+      '5.14 30 12.57 18 6 6',
+      '28 18 12.57 30 6 6',
+      '50.86 46 12.57 2 6 1',
+      '73.71 0 12.57 48 6 6',
+      '96.57 36 12.57 12 6 6',
+      '119.43 0 12.57 48 6 6',
+      '142.29 24 12.57 24 6 6',
     ]);
   });
 
@@ -146,7 +150,7 @@ describe('UiSparkBars', () => {
     host.average.set(10);
     fixture.detectChanges();
     expect(one('.ui-spark-bars__average')?.getAttribute('y1')).toBe('0');
-    expect(boxes()[0]).toBe('7.43 33.6 8 14.4 4 4');
+    expect(boxes()[0]).toBe('5.14 33.6 12.57 14.4 6 6');
     host.average.set(null);
     fixture.detectChanges();
     expect(one('.ui-spark-bars__average')).toBeNull();
@@ -156,9 +160,9 @@ describe('UiSparkBars', () => {
     const { boxes } = render((h) => h.values.set([0, -3, 0]));
     // 160 ÷ 3 a slot: the bar capped at 8, centred.
     expect(boxes()).toEqual([
-      '22.67 46 8 2 4 1',
-      '76 46 8 2 4 1',
-      '129.33 46 8 2 4 1',
+      '14.67 46 24 2 6 1',
+      '68 46 24 2 6 1',
+      '121.33 46 24 2 6 1',
     ]);
   });
 
@@ -191,5 +195,28 @@ describe('UiSparkBars', () => {
     });
     expect(all('.ui-spark-bars__bar')).toEqual([]);
     expect(one('table')).toBeNull();
+  });
+  it('draws each bar’s whole as a track behind it, and the words under the bars when asked', () => {
+    const { all } = render((h) => {
+      h.values.set([2, 5, 0]);
+      h.tracks.set([4, 8, 0]);
+      h.labels.set(['пн', 'вт', 'ср']);
+      h.axis.set(true);
+    });
+    const tracks = all('.ui-spark-bars__track');
+    // A track per bar with a whole; a day with none draws no track.
+    expect(tracks).toHaveLength(2);
+    // The tracks share the bars' scale: the 8 track is the full plot (the
+    // drawing's 48 less the words' 18 band), the 4 track half of it.
+    expect(tracks.map((t) => t.getAttribute('height'))).toEqual(['15', '30']);
+    expect(
+      all('.ui-spark-bars__word').map((w) => w.textContent?.trim()),
+    ).toEqual(['пн', 'вт', 'ср']);
+  });
+
+  it('prints no words and no tracks unless asked', () => {
+    const { all } = render((h) => h.labels.set(['пн']));
+    expect(all('.ui-spark-bars__word')).toHaveLength(0);
+    expect(all('.ui-spark-bars__track')).toHaveLength(0);
   });
 });

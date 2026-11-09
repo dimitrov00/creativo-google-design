@@ -58,6 +58,14 @@ const TIME_PARTS = [
 /** The sources bar's parts. */
 const SOURCE_PARTS = ['online', 'staff', 'unknown'] as const;
 const EVERY_PART = [...TIME_PARTS, ...SOURCE_PARTS, 'comparison'] as const;
+/**
+ * The WASHES: a part that is capacity rather than a thing of its own — the
+ * free time, the worked hue pale (owner, 2026-11-09). Under 3:1 by design
+ * and so never told by colour alone: every chart naming it carries a
+ * legend and a table. Still ≥ DISTINCT from its neighbours, and from the
+ * solid accent it is a wash of.
+ */
+const WASHES: readonly string[] = ['unsold'];
 
 /** A readable step between two neighbouring marks, in OKLab × 100. */
 const DISTINCT = 8;
@@ -157,6 +165,7 @@ describe('the chart palette', () => {
 
       it('clears 3:1 on the page and on the card for every part', () => {
         for (const part of EVERY_PART) {
+          if (WASHES.includes(part)) continue;
           const { pageRatio, surfaceRatio, onPage } = at(part);
           expect(
             pageRatio,
@@ -179,6 +188,8 @@ describe('the chart palette', () => {
           ...consecutive(TIME_PARTS),
           ...consecutive(SOURCE_PARTS),
           ['comparison', 'worked'],
+          // A wash is told from the solid it is a wash of.
+          ...WASHES.map((wash) => [wash, 'worked'] as const),
         ];
         for (const [a, b] of pairs) {
           expect(
@@ -212,7 +223,6 @@ describe('the chart palette', () => {
 
       it('shares one paint between the parts the design pairs', () => {
         expect(at('online').onPage).toEqual(at('worked').onPage);
-        expect(at('staff').onPage).toEqual(at('unsold').onPage);
         expect(at('unknown').onPage).toEqual(at('other').onPage);
         expect(at('comparison').onPage).toEqual(at('other').onPage);
       });
@@ -224,12 +234,12 @@ describe('the chart palette', () => {
           theme === 'light'
             ? [
                 ['blocked', 8.74, 8.74],
-                ['unsold', 5.25, 5.25],
+                ['staff', 5.25, 5.25],
                 ['other', 3.31, 3.31],
               ]
             : [
                 ['blocked', 10.14, 9.2],
-                ['unsold', 6.83, 6.5],
+                ['staff', 6.83, 6.5],
                 ['other', 4.35, 4.4],
               ];
         for (const [part, page, surface] of recorded) {
