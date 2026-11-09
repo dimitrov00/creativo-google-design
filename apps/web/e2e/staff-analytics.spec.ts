@@ -369,9 +369,10 @@ test.describe('«Анализи» — staff analytics', () => {
 
     await page.goto('/staff/analytics');
     await reportReady(page);
-    // The admin opens on the shop: its page carries the team.
+    // The admin opens on the shop — every location of the dev catalogue's
+    // two, so the pill reads «Всички салони»: its page carries the team.
     await expect(page.getByTestId('analytics-scope-menu')).toContainText(
-      'Салон',
+      'Всички салони',
     );
     await expect(
       currentPage(page).getByTestId('analytics-card-team'),
