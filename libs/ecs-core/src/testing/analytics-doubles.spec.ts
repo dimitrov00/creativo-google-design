@@ -83,7 +83,8 @@ describe('the goal doubles (v2 PR 6)', () => {
     });
     expect(log.goals).toEqual([call]);
     const report = await ports.requestReport({
-      scopeBarberId: null,
+      scopeBarberIds: [],
+      scopeLocationIds: [],
       fromLocalDate: localDate('2026-11-01'),
       toLocalDate: null,
       analyticsSpan: 'MONTH',

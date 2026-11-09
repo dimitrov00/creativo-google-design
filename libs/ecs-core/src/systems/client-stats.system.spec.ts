@@ -47,6 +47,7 @@ import {
   MinuteCount,
   PriceCents,
   UtcEpochMs,
+  LocationId,
 } from '@core/primitives';
 import { RepositoryErrorCode, SchedulingErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
@@ -270,6 +271,7 @@ function build(visit: VisitSpec): BilledAppointment<Seat> {
       : Math.round((subtotal * visit.percentOff) / 100);
   return {
     id: AppointmentId.of(visit.id),
+    locationId: LocationId.of('loc-centre'),
     localDate: start.localDate,
     startMinutes: start.minute,
     endMinutes: unwrapOk(EndMinute.of(end)),
@@ -600,7 +602,7 @@ describe('stats — bounded instants and windows', () => {
 describe('stats — the visits a reader names', () => {
   it('names the first, the last and the next visit', () => {
     const result = stats([
-      solo('first', daysAgo(90), WORKED),
+      solo('first', daysAgo(90), WORKED, { barber: 'petar' }),
       {
         id: 'last',
         startMs: daysAgo(10),
@@ -624,6 +626,9 @@ describe('stats — the visits a reader names', () => {
     const first = wallOf(daysAgo(90));
     expect(result.firstVisitLocalDate).toBe(first.localDate);
     expect(result.firstVisitStartMinutes).toBe(first.minute);
+    // Whom and where the client first came to — staff analytics' new clients.
+    expect(result.firstVisitBarberIds).toEqual(['petar']);
+    expect(result.firstVisitLocationId).not.toBeNull();
     expect(result.lastVisitAppointmentId).toBe('last');
     expect(result.lastVisitLocalDate).toBe(wallOf(daysAgo(10)).localDate);
     expect(result.lastVisitServiceIds).toEqual(['cut', 'beard']);

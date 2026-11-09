@@ -4,14 +4,77 @@
   role="img"
   [attr.aria-label]="uiLabel()"
   [attr.viewBox]="viewBox()"
+  [attr.data-scrubbable]="uiScrubbable() ? '' : null"
+  [attr.data-scrubbing]="scrub() === null ? null : ''"
+  (pointerdown)="scrubStart($event)"
+  (pointermove)="scrubMove($event)"
+  (pointerup)="scrubEnd($event)"
+  (pointercancel)="scrubEnd($event)"
+  (pointerleave)="scrubEnd($event)"
 >
-  @if (comparisonPath()) {
+  <!-- THE GRID: a dotted rule at each round value, a faint guide up from
+       each named day — every line marks something the reader can read. -->
+  @for (rule of grid(); track $index) {
+  <line
+    class="ui-line-chart__grid"
+    [attr.x1]="rule.x1"
+    [attr.x2]="rule.x2"
+    [attr.y1]="rule.y"
+    [attr.y2]="rule.y"
+  />
+  } @for (tick of axis(); track $index) {
+  <line
+    class="ui-line-chart__guide"
+    [attr.x1]="tick.x"
+    [attr.x2]="tick.x"
+    [attr.y1]="axisTop()"
+    [attr.y2]="axisBottom()"
+  />
+  <text
+    class="ui-line-chart__axis-label"
+    aria-hidden="true"
+    [attr.x]="tick.x"
+    [attr.y]="axisTextY()"
+    [attr.text-anchor]="tick.anchor"
+  >
+    {{ tick.text }}
+  </text>
+  } @if (uiArea()) {
+  <defs>
+    <linearGradient [attr.id]="gradientId" x1="0" y1="0" x2="0" y2="1">
+      <stop class="ui-line-chart__area-top" offset="0" />
+      <stop class="ui-line-chart__area-base" offset="1" />
+    </linearGradient>
+  </defs>
+  } @for (node of linePaths(); track node.key) { @if (node.area) {
+  <path
+    class="ui-line-chart__area"
+    [attr.d]="node.area"
+    [attr.fill]="areaFill"
+    [attr.data-leave]="node.leaving ? '' : null"
+    [attr.data-enter]="!node.leaving && linePaths().length > 1 ? '' : null"
+  />
+  } } @if (comparisonPath()) {
   <path
     class="ui-line-chart__comparison"
     [attr.data-part]="comparisonPart"
     [attr.d]="comparisonPath()"
   />
-  } @if (averageY() !== null) {
+  } @for (line of seriesShapes(); track $index) { @if (line.d) {
+  <path
+    class="ui-line-chart__series"
+    [attr.data-tone]="line.tone"
+    [attr.d]="line.d"
+  />
+  } @if (line.end; as end) {
+  <circle
+    class="ui-line-chart__series-end"
+    [attr.data-tone]="line.tone"
+    r="3.5"
+    [attr.cx]="end.x"
+    [attr.cy]="end.y"
+  />
+  } } @if (averageY() !== null) {
   <line
     class="ui-line-chart__average"
     x1="6"
@@ -34,6 +97,48 @@
     [attr.cx]="marker.x"
     [attr.cy]="marker.y"
   />
+  } @if (scrub(); as at) {
+  <!-- THE SCRUB: the day under the finger — a hairline down the plot and
+       a dot on each line there (Revolut's, Apple Health's). -->
+  <line
+    class="ui-line-chart__scrub-line"
+    [attr.x1]="at.x"
+    [attr.x2]="at.x"
+    [attr.y1]="at.top"
+    [attr.y2]="at.bottom"
+  />
+  @if (at.comparisonY !== null) {
+  <circle
+    class="ui-line-chart__scrub-dot"
+    [attr.data-part]="comparisonPart"
+    r="4.5"
+    [attr.cx]="at.x"
+    [attr.cy]="at.comparisonY"
+  />
+  } @for (dot of at.series; track $index) {
+  <circle
+    class="ui-line-chart__scrub-dot ui-line-chart__series-dot"
+    [attr.data-tone]="dot.tone"
+    r="4.5"
+    [attr.cx]="at.x"
+    [attr.cy]="dot.y"
+  />
+  } @if (at.valueY !== null) {
+  <circle
+    class="ui-line-chart__scrub-dot"
+    r="5"
+    [attr.cx]="at.x"
+    [attr.cy]="at.valueY"
+  />
+  } } @for (label of tickLabels(); track $index) {
+  <text
+    class="ui-line-chart__tick-label"
+    aria-hidden="true"
+    [attr.x]="label.x"
+    [attr.y]="label.y"
+  >
+    {{ label.text }}
+  </text>
   } @for (label of edgeLabels(); track $index) {
   <text
     class="ui-line-chart__edge-label"

@@ -3,9 +3,13 @@
      the surface is MEASURED against this and placed in the top layer at the
      same viewport coordinates (see menu.ts), which is why no portal or
      floating-element library is needed. */
+  /* A menu is never wider than where it sits: a long trigger yields the
+     room and cuts its own words (its consumer's ellipsis). */
   .ui-menu {
     position: relative;
     display: inline-flex;
+    max-inline-size: 100%;
+    min-inline-size: 0;
   }
 
   /* HIG menu surface: a small vibrant card that grows out of the control

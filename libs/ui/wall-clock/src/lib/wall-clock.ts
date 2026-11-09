@@ -319,6 +319,35 @@ function moneyFormat(locale: string, currency: Currency): Intl.NumberFormat {
   return format;
 }
 
+const WHOLE_MONEY_FORMATS = new Map<string, Intl.NumberFormat>();
+
+/**
+ * «100 €» · «€100» — a WHOLE amount, without the minor units: a chart's
+ * round value (a grid rule's words), never a price — a price keeps its
+ * cents ({@link formatCents}). A fraction left over is rounded. Cached per
+ * locale + currency.
+ */
+export function formatCentsWhole(
+  amountCents: PriceCents,
+  currency: Currency,
+  locale: string,
+): string {
+  const key = `${locale}|${currency}`;
+  let format = WHOLE_MONEY_FORMATS.get(key);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+    WHOLE_MONEY_FORMATS.set(key, format);
+  }
+  return format.format(
+    amountCents / 10 ** exponentOf(moneyFormat(locale, currency)),
+  );
+}
+
 /**
  * A currency's own exponent — its minor-unit digits, read from `Intl`
  * (`2` for EUR and every other stored `Currency`), never a hard-coded `/100`.

@@ -59,6 +59,8 @@ export class AnalyticsGoalSheet {
   readonly highChange = output<number | null>();
   /** «Запази» — the owner sends the range; the sheet stays until `open` falls. */
   readonly saved = output<void>();
+  /** «Премахни целта» — the owner removes the month's goal. */
+  readonly removed = output<void>();
   /** The exit finished. */
   readonly closed = output<void>();
 

@@ -1,0 +1,96 @@
+@import '../charts.css';
+
+@layer sys-components {
+  /* The stroke's width (ring-chart.ts sets it on the host from
+     `uiThickness`) is the one length the ring, the track and the centre's
+     inset all read. */
+  .ui-ring-chart {
+    display: block;
+    min-inline-size: 0;
+    --ui-ring-chart-thickness: 14px;
+  }
+
+  /* THE BOX IS SQUARE (ring-chart.ts draws its viewBox over the measured
+     width, as tall), so the drawing's pixels are the page's; the centre
+     content is laid over it. */
+  .ui-ring-chart__frame {
+    position: relative;
+  }
+
+  .ui-ring-chart__drawing {
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 1;
+    overflow: visible;
+  }
+
+  /* NOTHING TO SHARE: the whole ring as a quiet track in the control fill. */
+  .ui-ring-chart__track {
+    fill: none;
+    stroke: var(--sys-color-fill);
+    stroke-width: var(--ui-ring-chart-thickness);
+  }
+
+  /* A SEGMENT: its paint as a round-capped stroke — the accent, or the
+     tone or part hook's `--ui-chart-paint`. The kit's `svg [data-part]`
+     fill and hairline edge yield: an arc is a stroke, not a shape. */
+  .ui-ring-chart__segment,
+  .ui-ring-chart__segment[data-part] {
+    fill: none;
+    stroke: var(--sys-color-accent);
+    stroke-width: var(--ui-ring-chart-thickness);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ui-ring-chart__segment[data-part],
+  .ui-ring-chart__segment[data-tone] {
+    stroke: var(--ui-chart-paint);
+  }
+
+  /* THE CENTRE: the projected words, centred in the square inscribed in
+     the hole — 50 % − (50 % − thickness) ÷ √2 in from every side. Words
+     are ink; the consumer's `uiText` roles set them. */
+  .ui-ring-chart__center {
+    position: absolute;
+    inset: calc(14.645% + var(--ui-ring-chart-thickness) * 0.7071);
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    text-align: center;
+    min-inline-size: 0;
+  }
+
+  /* MOTION — a new ring fades in over the old one fading out, after the
+     first frame only; the global switch (reduced-motion.css) and charts.css
+     hold both still under reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-ring-chart[data-settled] .ui-ring-chart__segments[data-enter] {
+      animation: ui-ring-chart-enter var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard);
+    }
+
+    .ui-ring-chart[data-settled] .ui-ring-chart__segments[data-leave] {
+      animation: ui-ring-chart-leave var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard) forwards;
+    }
+  }
+
+  @keyframes ui-ring-chart-enter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ui-ring-chart-leave {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

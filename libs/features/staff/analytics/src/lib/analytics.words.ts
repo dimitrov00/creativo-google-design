@@ -1,10 +1,12 @@
 import {
   AnalyticsBarPart,
+  AnalyticsRangePreset,
   AnalyticsSpan,
   BookingOrigin,
   GoalPaceTag,
   RadarBase,
 } from '@core/components';
+import type { AnalyticsCarouselSpan } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import {
   type SpanWords,
@@ -56,6 +58,10 @@ export interface AnalyticsWords {
     readonly afterToday: string;
     /** «Най-много 366 дни». */
     readonly tooLong: (days: number) => string;
+    /** «Избери» — a row with no date yet. */
+    readonly choose: string;
+    readonly previousMonth: string;
+    readonly nextMonth: string;
   };
   /** The comparison chip under the period (staff-analytics-v2 «Sections in order» 3). */
   readonly comparison: {
@@ -67,8 +73,25 @@ export interface AnalyticsWords {
   readonly scope: {
     readonly label: string;
     readonly shop: string;
+    /**
+     * The shop scope by how many locations it spans: «Салон» for one,
+     * «Всички салони» for several (the plural form of the count).
+     */
+    readonly shopOf: (shopCount: number) => string;
+    /** The scope menu's sections: «Салони» over the shop and its locations, «Екип» over the people. */
+    readonly shopsGroup: string;
+    readonly teamGroup: string;
     readonly me: string;
     readonly barber: string;
+    /** «Целият екип» — the team row with no barber ticked. */
+    readonly wholeTeam: string;
+    /** «2 салона» — several ticked, on the trigger. */
+    readonly shopsCount: (count: number) => string;
+    /** «3 бръснари». */
+    readonly barbersCount: (count: number) => string;
+    /** «Избери салони» · «Избери бръснари» — the chevrons' names. */
+    readonly pickShops: string;
+    readonly pickBarbers: string;
   };
   /** The freshness line (staff-analytics-v2 «Freshness»): how old the figures are, and the ⓘ. */
   readonly freshness: {
@@ -211,6 +234,8 @@ export interface AnalyticsWords {
       readonly decrease: string;
       readonly increase: string;
       readonly save: string;
+      /** «Премахни целта» — offered while a goal is set. */
+      readonly remove: string;
       readonly close: string;
       /** «Въведете двете суми». */
       readonly incomplete: string;
@@ -219,6 +244,105 @@ export interface AnalyticsWords {
       /** «Целта не се записа. Опитай пак.» */
       readonly failed: string;
     };
+  };
+  /** The Revolut-layout home (staff-analytics-v3): the period button, the grain menu, the bento cards. */
+  readonly home: {
+    /** «Тази седмица» — the period holding today, by span. */
+    readonly now: Readonly<Record<AnalyticsCarouselSpan, string>>;
+    /** «Миналата седмица» — the one before it. */
+    readonly last: Readonly<Record<AnalyticsCarouselSpan, string>>;
+    /** The grain menu: its name and «Дневно» … «Годишно». */
+    readonly grainLabel: string;
+    readonly grain: Readonly<Record<AnalyticsCarouselSpan, string>>;
+    /** «средно 14,00 € на ден» — by the series' bucket. */
+    readonly average: Readonly<
+      Record<Exclude<AnalyticsCarouselSpan, 'YEAR'>, (value: string) => string>
+    >;
+    readonly takings: string;
+    readonly time: string;
+    /** «от 40 ч» — the roster so far. */
+    readonly timeDetail: (rostered: string) => string;
+    readonly tips: string;
+    /** «8% от оборота». */
+    readonly tipsDetail: (share: string) => string;
+    readonly tipsNone: string;
+    /** «5% от 130 ч по график» — how full the roster was. */
+    readonly timeOccupancy: (share: string, rostered: string) => string;
+    /** «Свободно време» — unsold and still-open rostered time. */
+    readonly free: string;
+    /** «най-свободно: пн» — the weekday with the most free time. */
+    readonly freeDetail: (weekday: string) => string;
+    readonly freeNone: string;
+    /** «Свободно време по дни от седмицата» — the weekday bars' name. */
+    readonly freeWeek: string;
+    /** «Клиенти» — the clients served. */
+    readonly clients: string;
+    /** «2 не дойдоха» · «Всички дойдоха» — the no-shows beside them. */
+    readonly clientsMissed: (count: number) => string;
+    /** «1 нов» · «3 нови» — clients whose first visit fell in the period. */
+    readonly clientsNew: (count: number) => string;
+    /** «1 нов · 1 не дойде» — the two beside each other. */
+    readonly clientsDetail: (fresh: string, missed: string) => string;
+    readonly rebooked: string;
+    /** «клиенти с нов час» — what the rebooked figure counts. */
+    readonly rebookedDetail: string;
+    readonly noShows: string;
+    /** «от 40 посещения». */
+    readonly noShowsDetail: (base: string) => string;
+    readonly team: string;
+    /** «Салони» — the shop's locations compared. */
+    readonly locations: string;
+    readonly ahead: string;
+    readonly aheadDetail: string;
+    readonly tools: string;
+    readonly exportDetail: string;
+    readonly goalNone: string;
+    /** «Отвори Оборот» — a card's accessible action. */
+    readonly open: (title: string) => string;
+    readonly loading: string;
+  };
+  /** A card's own screen (staff-analytics-v3): the chart switch, the range row, the ring's words. */
+  readonly card: {
+    readonly views: string;
+    readonly view: Readonly<Record<'LINE' | 'BARS' | 'RING', string>>;
+    readonly ranges: string;
+    /** «1С» … «МАКС» — the range chips. */
+    readonly range: Readonly<Record<AnalyticsRangePreset, string>>;
+    /** «Тази седмица» … «Цялата история» — a chip's period in words. */
+    readonly rangeName: Readonly<Record<AnalyticsRangePreset, string>>;
+    readonly custom: string;
+    readonly back: string;
+    /** «средно 14,00 € на ден · Този месец». */
+    readonly subline: (detail: string, range: string) => string;
+    /** «Оборот с натрупване по дни» — the running total's name. */
+    readonly paceLabel: string;
+    /** A scrubbed day beside the previous period's: «5 ноември · предходен 60,00 €». */
+    readonly readoutVersus: (day: string, previous: string) => string;
+    readonly rest: string;
+    readonly attended: string;
+    readonly notRebooked: string;
+    readonly byBarber: string;
+    readonly workedLine: string;
+    readonly tipsLine: string;
+    readonly teamBars: string;
+    /** «По салони» — the locations' rows. */
+    readonly byLocation: string;
+    /** «Оборот с натрупване по салони» — the locations' lines. */
+    readonly locationsLine: string;
+    /** «Оборот по салони» — the locations' bars. */
+    readonly locationsBars: string;
+    /** «Салони на графиката» — the toggles that pick the lines. */
+    readonly locationPicks: string;
+    /** «72% заетост · 14 клиента · 3 нови» — a location's row. */
+    readonly locationDetail: (
+      occupancy: string,
+      clients: string,
+      fresh: string,
+    ) => string;
+    /** «1 клиент» · «14 клиента». */
+    readonly clientsCount: (count: number) => string;
+    /** A scrubbed day over several lines: «5 ноември · Център 82,00 € · Младост 60,00 €». */
+    readonly readoutList: (day: string, list: string) => string;
   };
   /** The dock's «Експорт» and the CSV it hands over (staff-analytics-v2 «Export (PR 7)»). */
   readonly export: {
@@ -301,6 +425,24 @@ export function analyticsWordsOf(
       t(`${key}.${pluralForm(count, lang) === 'one' ? 'one' : 'other'}`, {
         count,
       });
+  /** One word per carousel span under `prefix` («home.now.DAY» …). */
+  const carouselWords = (
+    prefix: string,
+  ): Record<AnalyticsCarouselSpan, string> => ({
+    [AnalyticsSpan.Day]: t(`${prefix}.DAY`),
+    [AnalyticsSpan.Week]: t(`${prefix}.WEEK`),
+    [AnalyticsSpan.Month]: t(`${prefix}.MONTH`),
+    [AnalyticsSpan.Year]: t(`${prefix}.YEAR`),
+  });
+  /** One word per range chip under `prefix` («card.range.WEEK» …). */
+  const rangeWords = (prefix: string): Record<AnalyticsRangePreset, string> => {
+    const out = {} as Record<AnalyticsRangePreset, string>;
+    for (const preset of Object.values(AnalyticsRangePreset)) {
+      // eslint-disable-next-line security/detect-object-injection -- `preset` is a closed `AnalyticsRangePreset` literal.
+      out[preset] = t(`${prefix}.${preset}`);
+    }
+    return out;
+  };
   const byTopic = (prefix: string): Record<AnalyticsTopic, string> => {
     const out = {} as Record<AnalyticsTopic, string>;
     for (const topic of TOPICS) {
@@ -339,6 +481,9 @@ export function analyticsWordsOf(
       beforeReach: (earliest) => t('customRange.beforeReach', { earliest }),
       afterToday: t('customRange.afterToday'),
       tooLong: (days) => t('customRange.tooLong', { days }),
+      choose: t('customRange.choose'),
+      previousMonth: t('customRange.previousMonth'),
+      nextMonth: t('customRange.nextMonth'),
     },
     previous: t('previous'),
     next: t('next'),
@@ -350,8 +495,16 @@ export function analyticsWordsOf(
     scope: {
       label: t('scope.label'),
       shop: t('scope.shop'),
+      shopOf: counted('scope.shops'),
+      shopsGroup: t('scope.shopsGroup'),
+      teamGroup: t('scope.teamGroup'),
       me: t('scope.me'),
       barber: t('scope.barber'),
+      wholeTeam: t('scope.wholeTeam'),
+      shopsCount: counted('scope.shopsCount'),
+      barbersCount: counted('scope.barbersCount'),
+      pickShops: t('scope.pickShops'),
+      pickBarbers: t('scope.pickBarbers'),
     },
     freshness: {
       justNow: t('status.justNow'),
@@ -479,11 +632,89 @@ export function analyticsWordsOf(
         decrease: t('goal.sheet.decrease'),
         increase: t('goal.sheet.increase'),
         save: t('goal.sheet.save'),
+        remove: t('goal.sheet.remove'),
         close: t('goal.sheet.close'),
         incomplete: t('goal.sheet.incomplete'),
         invalid: t('goal.sheet.invalid'),
         failed: t('goal.sheet.failed'),
       },
+    },
+    home: {
+      now: carouselWords('home.now'),
+      last: carouselWords('home.last'),
+      grainLabel: t('home.grain.label'),
+      grain: carouselWords('home.grain'),
+      average: {
+        [AnalyticsSpan.Day]: (value) => t('home.average.DAY', { value }),
+        [AnalyticsSpan.Week]: (value) => t('home.average.WEEK', { value }),
+        [AnalyticsSpan.Month]: (value) => t('home.average.MONTH', { value }),
+      },
+      takings: t('home.takings'),
+      time: t('home.time'),
+      timeDetail: (rostered) => t('home.timeDetail', { rostered }),
+      tips: t('home.tips'),
+      tipsDetail: (share) => t('home.tipsDetail', { share }),
+      tipsNone: t('home.tipsNone'),
+      timeOccupancy: (share, rostered) =>
+        t('home.timeOccupancy', { share, rostered }),
+      free: t('home.free'),
+      freeDetail: (weekday) => t('home.freeDetail', { weekday }),
+      freeNone: t('home.freeNone'),
+      freeWeek: t('home.freeWeek'),
+      clients: t('home.clients'),
+      // Nobody missed is its own sentence, not «0 не дойдоха».
+      clientsMissed: (count) =>
+        count === 0
+          ? t('home.clientsAllCame')
+          : counted('home.clientsMissed')(count),
+      clientsNew: counted('home.clientsNew'),
+      clientsDetail: (fresh, missed) =>
+        t('home.clientsDetail', { fresh, missed }),
+      rebooked: t('home.rebooked'),
+      rebookedDetail: t('home.rebookedDetail'),
+      noShows: t('home.noShows'),
+      noShowsDetail: (base) => t('home.noShowsDetail', { base }),
+      team: t('home.team'),
+      locations: t('home.locations'),
+      ahead: t('home.ahead'),
+      aheadDetail: t('home.aheadDetail'),
+      tools: t('home.tools'),
+      exportDetail: t('home.exportDetail'),
+      goalNone: t('home.goalNone'),
+      open: (title) => t('home.open', { title }),
+      loading: t('home.loading'),
+    },
+    card: {
+      views: t('card.views'),
+      view: {
+        LINE: t('card.view.LINE'),
+        BARS: t('card.view.BARS'),
+        RING: t('card.view.RING'),
+      },
+      ranges: t('card.ranges'),
+      range: rangeWords('card.range'),
+      rangeName: rangeWords('card.rangeName'),
+      custom: t('card.custom'),
+      back: t('card.back'),
+      subline: (detail, range) => t('card.subline', { detail, range }),
+      paceLabel: t('card.paceLabel'),
+      readoutVersus: (day, previous) =>
+        t('card.readoutVersus', { day, previous }),
+      rest: t('card.rest'),
+      attended: t('card.attended'),
+      notRebooked: t('card.notRebooked'),
+      byBarber: t('card.byBarber'),
+      workedLine: t('card.workedLine'),
+      tipsLine: t('card.tipsLine'),
+      teamBars: t('card.teamBars'),
+      byLocation: t('card.byLocation'),
+      locationsLine: t('card.locationsLine'),
+      locationsBars: t('card.locationsBars'),
+      locationPicks: t('card.locationPicks'),
+      locationDetail: (occupancy, clients, fresh) =>
+        t('card.locationDetail', { occupancy, clients, fresh }),
+      clientsCount: counted('card.clientsCount'),
+      readoutList: (day, list) => t('card.readoutList', { day, list }),
     },
     export: {
       action: t('export.action'),

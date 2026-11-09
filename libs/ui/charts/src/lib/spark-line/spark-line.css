@@ -1,0 +1,54 @@
+@import '../charts.css';
+
+@layer sys-components {
+  /* THE SERIES' PAINT: the accent, unless the host carries a part or an
+     identity tone — then charts.css has set `--ui-chart-paint` on it. */
+  .ui-spark-line {
+    display: block;
+    min-inline-size: 0;
+    --ui-spark-line-paint: var(--sys-color-accent);
+  }
+
+  .ui-spark-line[data-tone],
+  .ui-spark-line[data-part] {
+    --ui-spark-line-paint: var(--ui-chart-paint);
+  }
+
+  /* THE BOX: the host's width × `--ui-spark-line-height` (spark-line.ts
+     reads the laid-out height once and draws its viewBox over both). */
+  .ui-spark-line__drawing {
+    display: block;
+    inline-size: 100%;
+    block-size: var(--ui-spark-line-height, 64px);
+    overflow: visible;
+  }
+
+  .ui-spark-line__line {
+    fill: none;
+    stroke: var(--ui-spark-line-paint);
+    stroke-width: 2.5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* The wash under the line: the paint as a faint shape, never ink. */
+  .ui-spark-line__area {
+    fill: color-mix(in srgb, var(--ui-spark-line-paint) 16%, transparent);
+    stroke: none;
+  }
+
+  .ui-spark-line__dot {
+    fill: var(--ui-spark-line-paint);
+    stroke: var(--ui-spark-line-ring, var(--sys-color-surface-secondary));
+    stroke-width: 2px;
+  }
+
+  /* THE COMPARISON: the comparison grey, dashed, under the series. */
+  .ui-spark-line__comparison[data-part] {
+    fill: none;
+    stroke: var(--ui-chart-paint);
+    stroke-width: 1.5px;
+    stroke-dasharray: 4 4;
+    stroke-linecap: round;
+  }
+}

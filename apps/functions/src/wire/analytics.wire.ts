@@ -3,6 +3,7 @@ import { AnalyticsError } from '@core/errors';
 import {
   BarberId,
   LocalDate,
+  LocationId,
   MonthKey,
   PriceCents,
   Result,
@@ -15,11 +16,22 @@ import type {
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
-import { idOf, operationIdOf, payloadOf, type WireRequest } from './wire-read';
+import {
+  idOf,
+  idsOf,
+  operationIdOf,
+  payloadOf,
+  type WireRequest,
+} from './wire-read';
+
+/** At most this many barber records or locations in one scope — a shop's whole roster, with room. */
+const SCOPE_MAX = 64;
 
 /**
  * THE STAFF ANALYTICS WIRE (`docs/designs/staff-analytics-v2.md`, The
- * callable v2 contract) — `staffAnalytics` `{ scopeBarberId: string | null,
+ * callable v2 contract) — `staffAnalytics` `{ scopeBarberIds: string[],
+ * scopeLocationIds: string[] (sets since the owner's review 2026-11-09;
+ * absent reads as none, at most 64 each),
  * fromLocalDate, toLocalDate: string | null, analyticsSpan: 'DAY' | 'WEEK' |
  * 'MONTH' | 'YEAR' | 'CUSTOM', analyticsComparison: 'PREVIOUS' }` → the
  * report. A signed-in caller (`ANALYTICS_UNAUTHENTICATED`) whose TOKEN
@@ -48,14 +60,22 @@ export function decodeStaffAnalytics(
   const payload = payloadOf(request);
   const invalid = (field: string) =>
     Result.err(AnalyticsError.invalidInput(field));
-  // The shop (an admin) or the caller's own record (a barber) is `null`;
-  // an absent field reads as the same.
-  const sentScope = StoredFields.field(payload, 'scopeBarberId') ?? null;
-  const scopeBarberId =
-    sentScope === null ? null : idOf(sentScope, BarberId.parse);
-  if (sentScope !== null && scopeBarberId === null) {
-    return invalid('scopeBarberId');
-  }
+  // The barber records named — none is the shop (an admin) or the
+  // caller's own record (a barber); an absent field reads as none.
+  const scopeBarberIds = idsOf(
+    StoredFields.field(payload, 'scopeBarberIds'),
+    BarberId.parse,
+    SCOPE_MAX,
+  );
+  if (scopeBarberIds === null) return invalid('scopeBarberIds');
+  // The locations named (an admin's); whether the caller may name them is
+  // the pipeline's question (`locationScopeOf`).
+  const scopeLocationIds = idsOf(
+    StoredFields.field(payload, 'scopeLocationIds'),
+    LocationId.parse,
+    SCOPE_MAX,
+  );
+  if (scopeLocationIds === null) return invalid('scopeLocationIds');
   const fromLocalDate = idOf(
     StoredFields.field(payload, 'fromLocalDate'),
     LocalDate.parse,
@@ -79,7 +99,8 @@ export function decodeStaffAnalytics(
   }
   return Result.ok({
     callerUserId: caller,
-    scopeBarberId,
+    scopeBarberIds,
+    scopeLocationIds,
     fromLocalDate,
     toLocalDate,
     analyticsSpan,
@@ -125,10 +146,16 @@ export function decodeSetAnalyticsGoal(
     MonthKey.parse,
   );
   if (goalMonth === null) return invalid('goalMonth');
-  const goalLowCents = StoredFields.field(payload, 'goalLowCents');
-  if (!PriceCents.is(goalLowCents)) return invalid('goalLowCents');
-  const goalHighCents = StoredFields.field(payload, 'goalHighCents');
-  if (!PriceCents.is(goalHighCents)) return invalid('goalHighCents');
+  // Both `null` (or absent) removes the month's goal; the pipeline refuses
+  // one bound without the other.
+  const goalLowCents = StoredFields.field(payload, 'goalLowCents') ?? null;
+  if (goalLowCents !== null && !PriceCents.is(goalLowCents)) {
+    return invalid('goalLowCents');
+  }
+  const goalHighCents = StoredFields.field(payload, 'goalHighCents') ?? null;
+  if (goalHighCents !== null && !PriceCents.is(goalHighCents)) {
+    return invalid('goalHighCents');
+  }
   return Result.ok({
     callerUserId: caller,
     scopeBarberId,

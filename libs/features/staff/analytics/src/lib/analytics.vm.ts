@@ -108,7 +108,8 @@ export type AnalyticsChartBarVm = {
 /** One point of the takings line: the bucket's figure and the comparison aligned by position. */
 export type AnalyticsLinePointVm = {
   readonly label: string;
-  readonly value: number;
+  /** `null` past today on a running total — the line stops there. */
+  readonly value: number | null;
   readonly comparison: number | null;
 };
 
@@ -330,6 +331,8 @@ export type AnalyticsGoalSheetVm = {
   /** «€» — the fields' unit. */
   readonly unit: string;
   readonly saveLabel: string;
+  /** «Премахни целта» while a goal is set; `null` without one. */
+  readonly removeLabel: string | null;
   readonly closeLabel: string;
   /** Why «Запази» is off, or that the last save failed — `null` when the range may be saved. */
   readonly refusal: string | null;
@@ -390,6 +393,14 @@ export type AnalyticsRangeVm = {
   /** Why «Приложи» is disabled — `null` when the range may be asked for. */
   readonly refusal: string | null;
   readonly applyEnabled: boolean;
+  /** «Избери» — a row with no date yet. */
+  readonly chooseLabel: string;
+  readonly previousMonthLabel: string;
+  readonly nextMonthLabel: string;
+  /** The calendars' language, today and the reach's first day. */
+  readonly locale: string;
+  readonly today: LocalDate;
+  readonly earliest: LocalDate;
 };
 
 /** The period switcher: Day | Week | Month | Year, the «…» pill, ‹ the period ›, and the comparison chip. */
@@ -408,22 +419,6 @@ export type AnalyticsPeriodVm = {
   readonly nextEnabled: boolean;
   readonly comparison: AnalyticsComparisonVm;
   readonly range: AnalyticsRangeVm;
-};
-
-/** One tile of the admin's scope picker. */
-export type AnalyticsScopeTileVm = {
-  /** The barber record, or `null` for the shop. */
-  readonly scopeBarberId: BarberId | null;
-  readonly name: string;
-  readonly avatarSrc: string | null;
-  readonly selected: boolean;
-  readonly testId: string;
-};
-
-/** The admin's scope picker; `null` for a barber, who sees only themselves. */
-export type AnalyticsScopeVm = {
-  readonly label: string;
-  readonly tiles: readonly AnalyticsScopeTileVm[];
 };
 
 /** The hero: the takings, their change, the tips on their own line. */
@@ -554,7 +549,6 @@ export type AnalyticsVm = {
   readonly freshness: AnalyticsStatusVm | null;
   readonly retryLabel: string;
   readonly period: AnalyticsPeriodVm;
-  readonly scope: AnalyticsScopeVm | null;
   /** The placeholder layout: the first request is out, nothing cached. */
   readonly placeholder: boolean;
   readonly blocked: AnalyticsBlockedVm | null;

@@ -28,7 +28,8 @@ import { analyticsCallPorts } from './analytics-call.adapter';
 
 /** The store's request: Ivan's own September (a barber sends no scope). */
 const CALL: AnalyticsCall = {
-  scopeBarberId: null,
+  scopeBarberIds: [],
+  scopeLocationIds: [],
   fromLocalDate: unwrapOk(LocalDate.parse('2026-09-01')),
   toLocalDate: null,
   analyticsSpan: AnalyticsSpan.Month,
@@ -66,10 +67,13 @@ describe('analyticsCallPorts (staff analytics, the screen)', () => {
         calls,
       ),
     );
-    await ports.requestReport({ ...CALL, scopeBarberId: BarberId.of('niko') });
+    await ports.requestReport({
+      ...CALL,
+      scopeBarberIds: [BarberId.of('niko'), BarberId.of('ivan')],
+    });
     expect(calls[0]?.input).toEqual({
       ...CALL,
-      scopeBarberId: BarberId.of('niko'),
+      scopeBarberIds: [BarberId.of('niko'), BarberId.of('ivan')],
     });
   });
 

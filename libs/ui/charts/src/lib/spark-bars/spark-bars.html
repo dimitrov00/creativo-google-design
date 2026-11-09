@@ -1,0 +1,58 @@
+<svg
+  #drawing
+  class="ui-spark-bars__drawing"
+  role="img"
+  [attr.aria-label]="uiLabel()"
+  [attr.viewBox]="viewBox()"
+>
+  @for (node of nodes(); track node.key) {
+  <g
+    class="ui-spark-bars__bars"
+    [attr.data-leave]="node.leaving ? '' : null"
+    [attr.data-enter]="!node.leaving && nodes().length > 1 ? '' : null"
+    (animationend)="dropLeaving()"
+  >
+    @for (bar of node.bars; track $index) {
+    <rect
+      class="ui-spark-bars__bar"
+      [attr.data-highlight]="bar.highlight ? '' : null"
+      [attr.x]="bar.x"
+      [attr.y]="bar.y"
+      [attr.width]="bar.width"
+      [attr.height]="bar.height"
+      [attr.rx]="bar.rx"
+      [attr.ry]="bar.ry"
+    />
+    }
+  </g>
+  } @if (averageY() !== null) {
+  <line
+    class="ui-spark-bars__average"
+    [attr.data-part]="comparisonPart"
+    x1="0"
+    [attr.x2]="right()"
+    [attr.y1]="averageY()"
+    [attr.y2]="averageY()"
+  />
+  }
+</svg>
+@if (rows().length > 0) {
+<!-- The hidden table sits in a hidden 1px box: a table treats its own
+     width as a minimum, so on the table itself the recipe would stretch
+     to the caption and push the page sideways. -->
+<div uiVisuallyHidden class="ui-spark-bars__a11y">
+  <table class="ui-spark-bars__table">
+    <caption>
+      {{ uiLabel() }}
+    </caption>
+    <tbody>
+      @for (row of rows(); track $index) {
+      <tr>
+        <th scope="row">{{ row.label }}</th>
+        <td>{{ row.value }}</td>
+      </tr>
+      }
+    </tbody>
+  </table>
+</div>
+}

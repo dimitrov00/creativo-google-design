@@ -1,7 +1,13 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { UiLineChart, type UiChartLinePoint } from './line-chart';
+import {
+  UiLineChart,
+  type UiChartLinePoint,
+  type UiLineChartCurve,
+  type UiLineChartSeries,
+  type UiChartTick,
+} from './line-chart';
 
 const WEEK: readonly UiChartLinePoint[] = [
   { label: 'пн', value: 100, comparison: 80 },
@@ -18,6 +24,13 @@ const WEEK: readonly UiChartLinePoint[] = [
       [uiAverage]="average()"
       [uiValueText]="valueText()"
       [uiAverageText]="averageText()"
+      [uiCurve]="curve()"
+      [uiArea]="area()"
+      [uiScrubbable]="scrubbable()"
+      [uiSeries]="series()"
+      [uiTicks]="ticks()"
+      [uiAxis]="axis()"
+      (uiScrubbed)="scrubbed.push($event)"
       uiLabel="Оборот по дни, най-висок вторник"
       data-testid="chart"
     />
@@ -33,6 +46,13 @@ class Host {
     '50 €',
   ]);
   readonly averageText = signal<string | null>('ср. 125 €');
+  readonly curve = signal<UiLineChartCurve>('linear');
+  readonly area = signal(false);
+  readonly scrubbable = signal(false);
+  readonly series = signal<readonly UiLineChartSeries[]>([]);
+  readonly ticks = signal<readonly UiChartTick[]>([]);
+  readonly axis = signal(false);
+  readonly scrubbed: (number | null)[] = [];
 }
 
 function render(setup?: (host: Host) => void) {
@@ -162,7 +182,7 @@ describe('UiLineChart', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(chart.hasAttribute('data-settled')).toBe(true);
-    host.points.set(WEEK.map((p) => ({ ...p, value: p.value + 10 })));
+    host.points.set(WEEK.map((p) => ({ ...p, value: (p.value ?? 0) + 10 })));
     fixture.detectChanges();
     const paths = all('.ui-line-chart__path');
     expect(paths).toHaveLength(2);
@@ -191,5 +211,323 @@ describe('UiLineChart', () => {
     // Only the old path remains, leaving; nothing new is drawn.
     expect(one('.ui-line-chart__path:not([data-leave])')).toBeNull();
     expect(one('table')).toBeNull();
+  });
+
+  it('draws no area and no gradient by default', () => {
+    const { one } = render();
+    expect(one('.ui-line-chart__area')).toBeNull();
+    expect(one('linearGradient')).toBeNull();
+  });
+
+  it('smooths both lines into monotone curves through the same points', () => {
+    const { one } = render((host) => host.curve.set('smooth'));
+    // A d3 curveMonotoneX port, run apart, over the straight line's points.
+    expect(one('.ui-line-chart__path')?.getAttribute('d')).toBe(
+      'M6 64 C32.56 35 59.11 6 85.67 6 C112.22 6 138.78 20.5 165.33 35 C191.89 49.5 218.44 71.25 245 93',
+    );
+    // The comparison's runs: a lone point, then two points drawn straight.
+    expect(one('.ui-line-chart__comparison')?.getAttribute('d')).toBe(
+      'M6 75.6 M165.33 52.4 L245 87.2',
+    );
+    // The markers stay on the first and last points.
+    const markers = Array.from(
+      one('svg')?.querySelectorAll('.ui-line-chart__marker') ?? [],
+    );
+    expect(markers.map((m) => m.getAttribute('cy'))).toEqual(['64', '93']);
+  });
+
+  it('fills under the line down to the zero baseline with its own gradient, straight or smooth', () => {
+    const { one, all, host, fixture } = render((h) => h.area.set(true));
+    const area = one('.ui-line-chart__area');
+    // The baseline is y(0): 128 − 6 = 122.
+    expect(area?.getAttribute('d')).toBe(
+      'M6 64 L85.67 6 L165.33 35 L245 93 L245 122 L6 122 Z',
+    );
+    const gradient = one('linearGradient');
+    const id = gradient?.getAttribute('id') ?? '';
+    expect(id).toMatch(/^ui-line-chart-area-\d+$/);
+    expect(area?.getAttribute('fill')).toBe(`url(#${id})`);
+    expect(
+      [gradient?.getAttribute('x1'), gradient?.getAttribute('y1')].join(),
+    ).toBe('0,0');
+    expect(
+      [gradient?.getAttribute('x2'), gradient?.getAttribute('y2')].join(),
+    ).toBe('0,1');
+    expect(all('stop').map((stop) => stop.getAttribute('offset'))).toEqual([
+      '0',
+      '1',
+    ]);
+    // The area sits under every line.
+    expect(one('svg > path')?.classList.contains('ui-line-chart__area')).toBe(
+      true,
+    );
+    host.curve.set('smooth');
+    fixture.detectChanges();
+    expect(
+      one('.ui-line-chart__area:not([data-leave])')?.getAttribute('d'),
+    ).toBe(
+      'M6 64 C32.56 35 59.11 6 85.67 6 C112.22 6 138.78 20.5 165.33 35 C191.89 49.5 218.44 71.25 245 93 L245 122 L6 122 Z',
+    );
+  });
+
+  it('gives every chart its own gradient id', () => {
+    const first = render((h) => h.area.set(true));
+    const firstId = first.one('linearGradient')?.getAttribute('id');
+    TestBed.resetTestingModule();
+    const second = render((h) => h.area.set(true));
+    expect(second.one('linearGradient')?.getAttribute('id')).not.toBe(firstId);
+  });
+
+  it('draws no area for a single point', () => {
+    const { one } = render((h) => {
+      h.area.set(true);
+      h.points.set([{ label: 'пн', value: 10, comparison: null }]);
+    });
+    expect(one('.ui-line-chart__area')).toBeNull();
+  });
+});
+
+describe('UiLineChart — a running total that stops at today', () => {
+  it('draws the line up to its last figure, the comparison on, and labels the last drawn point', () => {
+    const { all } = render((host) => {
+      host.points.set([
+        { label: '1', value: 100, comparison: 80 },
+        { label: '2', value: 300, comparison: 160 },
+        { label: '3', value: null, comparison: 240 },
+        { label: '4', value: null, comparison: 320 },
+      ]);
+      host.valueText.set(['100 €', '300 €', '', '']);
+      host.average.set(null);
+      host.averageText.set(null);
+    });
+    const markers = all('.ui-line-chart__marker');
+    expect(markers).toHaveLength(2);
+    const labels = all('.ui-line-chart__edge-label, text').map((t) =>
+      t.textContent?.trim(),
+    );
+    expect(labels).toContain('300 €');
+    const comparison = all('.ui-line-chart__comparison')[0];
+    expect(
+      comparison?.getAttribute('d')?.split(/[ML]/).filter(Boolean),
+    ).toHaveLength(4);
+  });
+});
+
+describe('UiLineChart — tap and drag to read a point', () => {
+  /** A pointer event at `x` px into a 250 px-wide drawing (the 250-wide viewBox at 1 : 1). */
+  const pointer = (
+    svg: Element,
+    type: string,
+    x: number,
+    pointerType = 'touch',
+  ): void => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x });
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: pointerType },
+    });
+    svg.dispatchEvent(event);
+  };
+  const scrubbable = () => {
+    const view = render((h) => h.scrubbable.set(true));
+    const svg = view.one('svg') as SVGSVGElement;
+    const width = Number(svg.getAttribute('viewBox')?.split(' ')[2]);
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width, height: 100 }) as DOMRect;
+    return { ...view, svg, width };
+  };
+
+  it('reads nothing unless asked to', () => {
+    const { one, host } = render();
+    const svg = one('svg') as SVGSVGElement;
+    expect(svg.hasAttribute('data-scrubbable')).toBe(false);
+    pointer(svg, 'pointerdown', 10);
+    expect(host.scrubbed).toEqual([]);
+  });
+
+  it('marks the point nearest a finger, follows the drag and lets go on lift', () => {
+    const { svg, fixture, host, one, all, width } = scrubbable();
+    pointer(svg, 'pointerdown', 1);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0]);
+    expect(svg.hasAttribute('data-scrubbing')).toBe(true);
+    expect(one('.ui-line-chart__scrub-line')).not.toBeNull();
+    // The value dot and the comparison's: Monday has both.
+    expect(all('.ui-line-chart__scrub-dot')).toHaveLength(2);
+
+    pointer(svg, 'pointermove', width - 1);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0, 3]);
+    // Moving within the same point emits nothing new.
+    pointer(svg, 'pointermove', width - 2);
+    expect(host.scrubbed).toEqual([0, 3]);
+
+    pointer(svg, 'pointerup', width - 2);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0, 3, null]);
+    expect(svg.hasAttribute('data-scrubbing')).toBe(false);
+    expect(one('.ui-line-chart__scrub-line')).toBeNull();
+  });
+
+  it('reads on a mouse hover, but a finger only while it is down', () => {
+    const { svg, host } = scrubbable();
+    pointer(svg, 'pointermove', 1);
+    expect(host.scrubbed).toEqual([]);
+    pointer(svg, 'pointermove', 1, 'mouse');
+    expect(host.scrubbed).toEqual([0]);
+    pointer(svg, 'pointerleave', 1, 'mouse');
+    expect(host.scrubbed).toEqual([0, null]);
+  });
+
+  it('draws one dot on a point with no comparison', () => {
+    const { svg, fixture, host, all, width } = scrubbable();
+    // Drag right until Tuesday — the second point — which has no comparison.
+    pointer(svg, 'pointerdown', 0);
+    for (let x = 0; x < width && host.scrubbed.at(-1) !== 1; x += 1) {
+      pointer(svg, 'pointermove', x);
+    }
+    expect(host.scrubbed.at(-1)).toBe(1);
+    fixture.detectChanges();
+    expect(all('.ui-line-chart__scrub-dot')).toHaveLength(1);
+  });
+});
+
+describe('UiLineChart — members compared (uiSeries)', () => {
+  const POINTS: readonly UiChartLinePoint[] = WEEK.map((p) => ({
+    label: p.label,
+    value: null,
+    comparison: null,
+  }));
+  const MEMBERS: readonly UiLineChartSeries[] = [
+    { values: [100, 300, 450, 500], tone: 0 },
+    { values: [50, 80, null, null], tone: 1 },
+  ];
+
+  it('draws one line per member in its identity tone, a dot at each one’s last point, and no accent line', () => {
+    const { all } = render((h) => {
+      h.points.set(POINTS);
+      h.series.set(MEMBERS);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    const lines = all('.ui-line-chart__series');
+    expect(lines.map((line) => line.getAttribute('data-tone'))).toEqual([
+      '0',
+      '1',
+    ]);
+    // The second member stops after its second point.
+    expect(
+      lines[1]?.getAttribute('d')?.split(/[ML]/).filter(Boolean),
+    ).toHaveLength(2);
+    expect(all('.ui-line-chart__series-end')).toHaveLength(2);
+    expect(all('.ui-line-chart__path')).toHaveLength(0);
+    expect(all('.ui-line-chart__marker')).toHaveLength(0);
+  });
+
+  it('scales every member onto one axis — the higher one sets the top', () => {
+    const { all } = render((h) => {
+      h.points.set(POINTS);
+      h.series.set(MEMBERS);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    const ends = all('.ui-line-chart__series-end').map((dot) =>
+      Number(dot.getAttribute('cy')),
+    );
+    // 500 sits at the plot's top edge (PAD), 80 well under it.
+    expect(ends[0]).toBe(6);
+    expect(ends[1]).toBeGreaterThan(ends[0] as number);
+  });
+
+  it('marks each member under the finger, only where it has a value', () => {
+    const { one, all, fixture, host } = render((h) => {
+      h.points.set(POINTS);
+      h.series.set(MEMBERS);
+      h.scrubbable.set(true);
+    });
+    const svg = one('svg') as SVGSVGElement;
+    const width = Number(svg.getAttribute('viewBox')?.split(' ')[2]);
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width, height: 100 }) as DOMRect;
+    const down = new MouseEvent('pointerdown', { bubbles: true, clientX: 0 });
+    Object.defineProperties(down, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'touch' },
+    });
+    svg.dispatchEvent(down);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0]);
+    expect(
+      all('.ui-line-chart__series-dot').map((dot) =>
+        dot.getAttribute('data-tone'),
+      ),
+    ).toEqual(['0', '1']);
+    const move = new MouseEvent('pointermove', {
+      bubbles: true,
+      clientX: width - 1,
+    });
+    Object.defineProperties(move, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'touch' },
+    });
+    svg.dispatchEvent(move);
+    fixture.detectChanges();
+    // The last point: the second member has no value there.
+    expect(all('.ui-line-chart__series-dot')).toHaveLength(1);
+  });
+});
+
+describe('UiLineChart — the grid means something', () => {
+  const TICKS: readonly UiChartTick[] = [
+    { value: 100, text: '100 €' },
+    { value: 200, text: '200 €' },
+    { value: 300, text: '300 €' },
+  ];
+
+  it('rules each round value, its words in the labels’ column, the top rule on the plot’s top', () => {
+    const { all } = render((h) => {
+      h.ticks.set(TICKS);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    const rules = all('.ui-line-chart__grid');
+    expect(rules).toHaveLength(3);
+    // The scale reaches the highest tick (300 > the 200 drawn): the plot's top.
+    expect(rules[2]?.getAttribute('y1')).toBe('6');
+    const words = all('.ui-line-chart__tick-label').map((t) =>
+      t.textContent?.trim(),
+    );
+    // 200 € sits where the last value's figure (50 €) is not: all three
+    // print unless one would crowd a figure.
+    expect(words.length).toBeGreaterThanOrEqual(2);
+    expect(words).toContain('300 €');
+  });
+
+  it('draws no grid, no axis and no guides unless asked', () => {
+    const { all } = render();
+    expect(all('.ui-line-chart__grid')).toHaveLength(0);
+    expect(all('.ui-line-chart__guide')).toHaveLength(0);
+    expect(all('.ui-line-chart__axis-label')).toHaveLength(0);
+  });
+
+  it('names the points that carry a word under the plot, a guide up from each, the ends kept inside', () => {
+    const { all } = render((h) => {
+      h.axis.set(true);
+      h.points.set([
+        { label: '1', value: 10, comparison: null },
+        { label: '', value: 20, comparison: null },
+        { label: '8', value: 30, comparison: null },
+        { label: '15', value: 40, comparison: null },
+      ]);
+      h.valueText.set(['', '', '', '']);
+    });
+    const labels = all('.ui-line-chart__axis-label');
+    expect(labels.map((l) => l.textContent?.trim())).toEqual(['1', '8', '15']);
+    expect(labels.map((l) => l.getAttribute('text-anchor'))).toEqual([
+      'start',
+      'middle',
+      'end',
+    ]);
+    expect(all('.ui-line-chart__guide')).toHaveLength(3);
   });
 });

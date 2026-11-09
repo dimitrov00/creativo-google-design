@@ -56,7 +56,8 @@ async function reportOf(barberId: BarberId): Promise<AnalyticsReport> {
   return unwrapOk(
     await staffAnalytics(analyticsFixturePorts())({
       callerUserId: caller.id,
-      scopeBarberId: barberId,
+      scopeBarberIds: [barberId],
+      scopeLocationIds: [],
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
       toLocalDate: null,

@@ -21,11 +21,16 @@ import { CallAnswer } from './call-answer.data';
  * (`StaffAnalyticsSystem.goalMonthAllowed`); the wire reads each field
  * through its primitive's guard only.
  */
+/**
+ * What `setAnalyticsGoal` is asked: a scope's month and its range — or no
+ * range at all (both bounds `null`), which REMOVES the month's goal (owner,
+ * 2026-11-09). One bound without the other is refused.
+ */
 export type SetAnalyticsGoalCall = {
   readonly scopeBarberId: BarberId | null;
   readonly goalMonth: MonthKey;
-  readonly goalLowCents: PriceCents;
-  readonly goalHighCents: PriceCents;
+  readonly goalLowCents: PriceCents | null;
+  readonly goalHighCents: PriceCents | null;
 };
 
 export const SetAnalyticsGoalCall = {

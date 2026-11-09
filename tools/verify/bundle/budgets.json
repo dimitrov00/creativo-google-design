@@ -5,12 +5,13 @@
   "// routes 2026-11-08": "Client appointments given a ceiling of its own, about 5% above its build (1.55 MB, at the default): the shared callable answer-decoder registry gained the staffAnalytics report decoder and the analytics types, which every route that calls the server bundles.",
   "// routes 2026-11-08, later": "Staff analytics' first ceiling, about 5% above its first build (1.60 MB): 1.68 MB. Client appointments to 1.64 MB (from 1.63): +6 kB from the analytics cache adapter the session loads at start and the shell's session link and menu row.",
   "// routes 2026-11-09": "Staff analytics to 1.77 MB (built 1.69): the month's goal ring (the gauge), the goal sheet with two amount fields, and the setAnalyticsGoal call and its decoder.",
+  "// routes 2026-11-09, later": "Staff analytics to 1.87 MB (built 1.78): the Revolut home — the carousel and its page control, the card screens, the spark line and ring chart, the location scope, the free-time, occupancy and clients tiles, the goal removal. Loaded on demand (the route's own chunk); the initial chunk is unchanged.",
   "defaultRouteBytes": 1550000,
   "routes": {
     "libs/features/staff/dashboard/src/index.ts": 2090000,
     "libs/features/client/booking/src/index.ts": 1720000,
     "libs/features/admin/loyalty/src/index.ts": 1710000,
-    "libs/features/staff/analytics/src/index.ts": 1770000,
+    "libs/features/staff/analytics/src/index.ts": 1870000,
     "libs/features/client/appointments/src/index.ts": 1640000
   },
   "// publicAssetBytes": "Any one file under apps/web/public. Today's largest is welcome.mp4, 4.37 MB; lower this when the videos are recompressed.",

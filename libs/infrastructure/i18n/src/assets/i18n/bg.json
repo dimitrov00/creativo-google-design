@@ -180,6 +180,7 @@
     "ANALYTICS_GOAL_INVALID_RANGE": "Долната граница трябва да е до горната, и двете над нула; месецът — този или следващият.",
     "ANALYTICS_PERIOD_OUT_OF_RANGE": "Този период е извън обхвата.",
     "ANALYTICS_SCOPE_UNKNOWN": "Този бръснар вече не съществува.",
+    "ANALYTICS_LOCATION_UNKNOWN": "Този салон вече не съществува.",
     "ANALYTICS_INVALID_INPUT": "Заявката не е валидна.",
     "APP_CHECK_REQUIRED": "Не успяхме да потвърдим това устройство. Презареди страницата.",
     "APP_CHECK_REPLAYED": "Не успяхме да потвърдим това устройство. Презареди страницата.",
@@ -2662,7 +2663,10 @@
       "incomplete": "Въведете двете дати",
       "beforeReach": "Най-рано {{earliest}}",
       "afterToday": "Не по-късно от днес",
-      "tooLong": "Най-много {{days}} дни"
+      "tooLong": "Най-много {{days}} дни",
+      "choose": "Избери",
+      "previousMonth": "Предишен месец",
+      "nextMonth": "Следващ месец"
     },
     "previous": "Предишен период",
     "next": "Следващ период",
@@ -2670,8 +2674,25 @@
     "scope": {
       "label": "Чии данни",
       "shop": "Салон",
+      "shopsGroup": "Салони",
+      "teamGroup": "Екип",
+      "shops": {
+        "one": "Салон",
+        "other": "Всички салони"
+      },
       "me": "Аз",
-      "barber": "Бръснар"
+      "barber": "Бръснар",
+      "wholeTeam": "Целият екип",
+      "shopsCount": {
+        "one": "{{count}} салон",
+        "other": "{{count}} салона"
+      },
+      "barbersCount": {
+        "one": "{{count}} бръснар",
+        "other": "{{count}} бръснари"
+      },
+      "pickShops": "Избери салони",
+      "pickBarbers": "Избери бръснари"
     },
     "status": {
       "justNow": "току-що",
@@ -2804,11 +2825,118 @@
         "decrease": "По-малко",
         "increase": "Повече",
         "save": "Запази",
+        "remove": "Премахни целта",
         "close": "Затвори",
         "incomplete": "Въведете двете суми",
         "invalid": "Долната граница трябва да е до горната, и двете над нула",
         "failed": "Целта не се записа. Опитай пак."
       }
+    },
+    "home": {
+      "now": {
+        "DAY": "Днес",
+        "WEEK": "Тази седмица",
+        "MONTH": "Този месец",
+        "YEAR": "Тази година"
+      },
+      "last": {
+        "DAY": "Вчера",
+        "WEEK": "Миналата седмица",
+        "MONTH": "Миналия месец",
+        "YEAR": "Миналата година"
+      },
+      "grain": {
+        "label": "Период",
+        "DAY": "Дневно",
+        "WEEK": "Седмично",
+        "MONTH": "Месечно",
+        "YEAR": "Годишно"
+      },
+      "average": {
+        "DAY": "средно {{value}} на ден",
+        "WEEK": "средно {{value}} на седмица",
+        "MONTH": "средно {{value}} на месец"
+      },
+      "takings": "Оборот",
+      "time": "Работно време",
+      "timeDetail": "от {{rostered}}",
+      "tips": "Бакшиши",
+      "tipsDetail": "{{share}} от оборота",
+      "tipsNone": "Без оборот за сравнение",
+      "timeOccupancy": "{{share}} от {{rostered}} по график",
+      "free": "Свободно време",
+      "freeDetail": "най-свободно: {{weekday}}",
+      "freeNone": "Няма свободно време",
+      "freeWeek": "Свободно време по дни от седмицата",
+      "clients": "Клиенти",
+      "clientsAllCame": "Всички дойдоха",
+      "clientsNew": {
+        "one": "{{count}} нов",
+        "other": "{{count}} нови"
+      },
+      "clientsDetail": "{{fresh}} · {{missed}}",
+      "clientsMissed": {
+        "one": "{{count}} не дойде",
+        "other": "{{count}} не дойдоха"
+      },
+      "rebooked": "Презаписали",
+      "rebookedDetail": "клиенти с нов час",
+      "noShows": "Неявили се",
+      "noShowsDetail": "от {{base}} посещения",
+      "team": "Екипът",
+      "locations": "Салони",
+      "ahead": "Предстои",
+      "aheadDetail": "свободни в следващите 7 дни",
+      "tools": "Инструменти",
+      "exportDetail": "Дните и услугите като CSV",
+      "goalNone": "Задай оборот за месеца",
+      "open": "Отвори {{title}}",
+      "loading": "Зареждане"
+    },
+    "card": {
+      "views": "Покажи като",
+      "view": {
+        "LINE": "Линия",
+        "BARS": "Стълбове",
+        "RING": "Кръг"
+      },
+      "ranges": "Период",
+      "range": {
+        "WEEK": "1С",
+        "MONTH": "1М",
+        "SIX_MONTHS": "6М",
+        "YEAR": "1Г",
+        "MAX": "МАКС"
+      },
+      "rangeName": {
+        "WEEK": "Тази седмица",
+        "MONTH": "Този месец",
+        "SIX_MONTHS": "Последните 6 месеца",
+        "YEAR": "Тази година",
+        "MAX": "Цялата история"
+      },
+      "custom": "Друг период",
+      "back": "Към анализите",
+      "subline": "{{detail}} · {{range}}",
+      "paceLabel": "Оборот с натрупване по дни",
+      "readoutVersus": "{{day}} · предходен {{previous}}",
+      "rest": "Останалото",
+      "attended": "Дошли",
+      "notRebooked": "Без нов час",
+      "byBarber": "По бръснари",
+      "workedLine": "Работа по дни",
+      "tipsLine": "Бакшиши по дни",
+      "teamBars": "Оборот по бръснари",
+      "byLocation": "По салони",
+      "locationsLine": "Оборот с натрупване по салони",
+      "locationsBars": "Оборот по салони",
+      "locationPicks": "Салони на графиката",
+      "locationDetail": "{{occupancy}} заетост · {{clients}} · {{fresh}}",
+      "clientsCount": {
+        "one": "{{count}} клиент",
+        "other": "{{count}} клиента"
+      },
+      "readoutList": "{{day}} · {{list}}"
     },
     "export": {
       "action": "Експорт",

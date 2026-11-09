@@ -85,6 +85,27 @@ export function idOf<T>(
 }
 
 /**
+ * A list of ids from a payload — absent reads as none; else an array of at
+ * most `max` entries, each through `parse` — or `null` when it is no such
+ * list (the caller names the field it read).
+ */
+export function idsOf<T>(
+  raw: unknown,
+  parse: (value: string) => Result<T, unknown>,
+  max: number,
+): readonly T[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > max) return null;
+  const out: T[] = [];
+  for (const entry of raw as readonly unknown[]) {
+    const id = idOf(entry, parse);
+    if (id === null) return null;
+    out.push(id);
+  }
+  return out;
+}
+
+/**
  * The operation id a callable's payload carries in `field` (WS-4.1,
  * `OPERATION_ID_FIELD`), else `null`: the client-minted key's shape
  * (`ClientOperationId.inPayload` — an own property, `[A-Za-z0-9_-]{16,64}`)

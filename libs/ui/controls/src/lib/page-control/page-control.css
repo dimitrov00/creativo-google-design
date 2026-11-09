@@ -1,0 +1,44 @@
+@layer sys-components {
+  /* A row of dots, centred under the carousel. The dots take the host's
+     ink: the current one solid, the rest a faint film of it, so the
+     control reads on any surface in either theme. */
+  .ui-page-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--sys-space-unit) * 2);
+    min-block-size: calc(var(--sys-space-unit) * 5);
+  }
+
+  .ui-page-control[hidden] {
+    display: none;
+  }
+
+  .ui-page-control__dot {
+    flex: 0 0 auto;
+    inline-size: calc(var(--sys-space-unit) * 1.75);
+    block-size: calc(var(--sys-space-unit) * 1.75);
+    border-radius: 50%;
+    background: color-mix(in srgb, currentColor 22%, transparent);
+    transition:
+      background var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+
+  .ui-page-control__dot[data-current] {
+    background: currentColor;
+  }
+
+  /* More pages lie beyond this end of the window. */
+  .ui-page-control__dot[data-edge] {
+    transform: scale(0.6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-page-control__dot {
+      transition: none;
+    }
+  }
+}

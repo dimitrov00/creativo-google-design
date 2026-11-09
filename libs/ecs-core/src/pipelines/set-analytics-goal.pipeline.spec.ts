@@ -213,6 +213,55 @@ describe('setAnalyticsGoal — a barber’s own month goal (CUJ 6)', () => {
   });
 });
 
+describe('setAnalyticsGoal — removing a goal (owner 2026-11-09)', () => {
+  it('no range removes the month’s goal and writes ONE ANALYTICS_GOAL_CLEARED row, the key, scope and month', async () => {
+    const { store, tx, telemetry, run } = rig();
+    unwrapOk(await run(call()));
+    const key = AnalyticsGoalKey.of(IVAN, SEPTEMBER);
+    expect(
+      store.get(`${Collections.AnalyticsGoals}/${key}`),
+    ).not.toBeUndefined();
+    const answer = unwrapOk(
+      await run(call({ goalLowCents: null, goalHighCents: null })),
+    );
+    expect(answer).toEqual({
+      goalKey: key,
+      goalSetAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    expect(store.get(`${Collections.AnalyticsGoals}/${key}`)).toBeUndefined();
+    const rows = auditRowsOf(tx.plans.slice(1));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      auditAction: AuditAction.AnalyticsGoalCleared,
+      resourceId: 'analyticsGoals/b-ivan__2026-09',
+      goalKey: key,
+      goalScopeBarberId: IVAN,
+      goalMonth: SEPTEMBER,
+      auditOperationId: OP,
+    });
+    expect(
+      telemetry.lines.some(
+        (line) =>
+          line.msg === LogEvent.AnalyticsGoalCleared &&
+          line.fields?.['key'] === key,
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses one bound without the other, naming the missing one, writing nothing', async () => {
+    const { tx, run } = rig();
+    expect(unwrapErr(await run(call({ goalHighCents: null })))).toEqual({
+      errorCode: AnalyticsErrorCode.GoalInvalidRange,
+      field: 'goalHighCents',
+    });
+    expect(unwrapErr(await run(call({ goalLowCents: null })))).toEqual({
+      errorCode: AnalyticsErrorCode.GoalInvalidRange,
+      field: 'goalLowCents',
+    });
+    expect(tx.plans).toHaveLength(0);
+  });
+});
+
 describe('setAnalyticsGoal — the admin’s shop goal', () => {
   it('an admin naming no scope sets shop__{month}, credited as the admin', async () => {
     const { store, tx, run } = rig();

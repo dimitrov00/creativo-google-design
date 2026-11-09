@@ -4,6 +4,7 @@ import type {
   BarberId,
   HourOfDay,
   LocalDate,
+  LocationId,
   MinuteCount,
   MinuteOfDay,
   PriceCents,
@@ -22,9 +23,11 @@ import type { DayRow } from './day-figures.data';
  * The catalogue's version — raised whenever a formula changes, so cached
  * reports are dropped and every stored day (`dayDefinitionVersion`) becomes
  * eligible for the recompute. 2 since staff analytics v2 PR 4a: the day
- * rows are `DayRow`s (the `day*` fields, the money per day).
+ * rows are `DayRow`s (the `day*` fields, the money per day). 3 since the
+ * location scope (ADR 2026-11-09): a stored day says which locations it
+ * touched, with each one's share of a day split across shops.
  */
-export const ANALYTICS_DEFINITION_VERSION = 2;
+export const ANALYTICS_DEFINITION_VERSION = 3;
 
 /** Where a visit was booked — the field `bookingOrigin`. */
 export const BookingOrigin = {
@@ -115,8 +118,18 @@ export type GoalPaceTag = (typeof GoalPaceTag)[keyof typeof GoalPaceTag];
 export type AnalyticsReport = {
   readonly reportDefinitionVersion: number;
   readonly reportComputedAtUtcMs: UtcEpochMs;
-  /** The barber record reported on; `null` for the whole shop. */
+  /**
+   * The one barber record reported on — that barber's own report; `null`
+   * for the whole team or a part of it (`reportScopeBarberIds`).
+   */
   readonly reportScopeBarberId: BarberId | null;
+  /** The barber records the scope names; none is the whole team (owner review 2026-11-09). */
+  readonly reportScopeBarberIds: readonly BarberId[];
+  /**
+   * The locations reported on (ADR 2026-11-09; sets since 2026-11-09):
+   * counted only for what happened there; none is every location.
+   */
+  readonly reportScopeLocationIds: readonly LocationId[];
   readonly reportAnalyticsSpan: AnalyticsSpan;
   readonly reportFromLocalDate: LocalDate;
   readonly reportToLocalDate: LocalDate;
@@ -175,6 +188,12 @@ export type AnalyticsReport = {
   readonly reportRebookedRate: number | null;
   readonly reportNoShowCount: number;
   readonly reportNoShowBase: number;
+  /**
+   * The NEW clients: those whose first worked visit at the shop fell in the
+   * period — with the scope's barber, or at the scope's location — read
+   * off the client-stats projection (`StaffAnalyticsSystem.newClientCountOf`).
+   */
+  readonly reportNewClientCount: number;
   readonly reportNoShowRate: number | null;
   readonly reportLateCancellationCount: number;
 
@@ -225,6 +244,14 @@ export type AnalyticsReport = {
    * the stored days plus its live visits.
    */
   readonly reportComparisonBarbers: readonly AnalyticsReport.BarberFigures[];
+  /**
+   * How the shop's locations compete (owner review 2026-11-09): one row per
+   * location of a shop report over two or more locations, in the shop's
+   * location order — each one's figures as its own location report states
+   * them (`AnalyticsCarouselSystem.locationFiguresOf`). Empty for a barber, for
+   * one location's report, and for a shop with a single location.
+   */
+  readonly reportLocations: readonly AnalyticsReport.LocationFigures[];
   /**
    * The admin's radar (CUJ 5): one row per barber of a shop report on a
    * `MONTH`, `YEAR` or `CUSTOM` span, in `reportBarbers`' order
@@ -367,6 +394,31 @@ export namespace AnalyticsReport {
     readonly workedSeatCount: number;
     /** The distinct shop days of the period that roster any minute for the barber — the fill floor's base. */
     readonly rosteredDayCount: number;
+  };
+
+  /**
+   * One location's figures inside a shop report — what its own location
+   * report says: the takings and their pace against the comparison (the
+   * hero pair), the worked time and its occupancy, the clients served and
+   * new, the two rates, and its takings per bucket of `reportSeries`, in
+   * the same order.
+   */
+  export type LocationFigures = {
+    readonly locationId: LocationId;
+    readonly takingsCents: PriceCents;
+    readonly tipsCents: PriceCents;
+    readonly heroCurrentCents: PriceCents;
+    readonly heroPreviousCents: PriceCents | null;
+    readonly workedMinutes: MinuteCount;
+    /** Worked of the rostered time so far, `0 … 1`; `null` with nothing rostered. */
+    readonly occupancy: number | null;
+    /** Worked seats — the no-show base less the no-shows. */
+    readonly servedCount: number;
+    readonly newClientCount: number;
+    readonly rebookedRate: number | null;
+    readonly noShowRate: number | null;
+    /** Its takings per bucket of the shop's `reportSeries`, aligned by position. */
+    readonly seriesCents: readonly PriceCents[];
   };
 
   /**

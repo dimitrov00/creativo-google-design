@@ -20,33 +20,101 @@
     </ui-sheet-headline>
   </div>
 
-  <ui-stack uiSpacing="regular" class="analytics-range-sheet__fields">
-    <ui-date-field
-      uiControlSize="large"
-      [label]="range.fromLabel"
-      [dayLabel]="range.dayLabel"
-      [monthLabel]="range.monthLabel"
-      [yearLabel]="range.yearLabel"
-      [dayPlaceholder]="range.dayPlaceholder"
-      [monthPlaceholder]="range.monthPlaceholder"
-      [yearPlaceholder]="range.yearPlaceholder"
-      [value]="from()"
-      data-testid="analytics-range-from"
-      (valueChange)="fromChange.emit($event)"
-    />
-    <ui-date-field
-      uiControlSize="large"
-      [label]="range.toLabel"
-      [dayLabel]="range.dayLabel"
-      [monthLabel]="range.monthLabel"
-      [yearLabel]="range.yearLabel"
-      [dayPlaceholder]="range.dayPlaceholder"
-      [monthPlaceholder]="range.monthPlaceholder"
-      [yearPlaceholder]="range.yearPlaceholder"
-      [value]="to()"
-      data-testid="analytics-range-to"
-      (valueChange)="toChange.emit($event)"
-    />
+  <div class="analytics-range-sheet__rows">
+    <ul uiListGroup>
+      <!-- «От»: the row, and under it the calendar while it is unfolded. -->
+      <li>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          [attr.aria-expanded]="unfolded() === 'from'"
+          aria-controls="analytics-range-from-calendar"
+          data-testid="analytics-range-from"
+          (click)="toggle('from')"
+        >
+          {{ range.fromLabel }}
+          <span uiTrailing class="analytics-range-sheet__value">
+            <span
+              uiText
+              uiFont="body"
+              [uiForegroundStyle]="fromText() === null ? 'secondary' : 'primary'"
+              data-testid="analytics-range-from-value"
+              >{{ fromText() ?? range.chooseLabel }}</span
+            >
+            <ui-icon
+              class="analytics-range-sheet__chevron"
+              [attr.data-open]="unfolded() === 'from' ? '' : null"
+              uiName="field.expand"
+            />
+          </span>
+        </button>
+        @if (unfolded() === 'from') {
+        <div
+          id="analytics-range-from-calendar"
+          class="analytics-range-sheet__calendar"
+          data-testid="analytics-range-from-calendar"
+        >
+          <ui-month-picker
+            [uiSelected]="fromDate()"
+            [uiToday]="range.today"
+            [uiMin]="range.earliest"
+            [uiLocale]="range.locale"
+            [uiPreviousLabel]="range.previousMonthLabel"
+            [uiNextLabel]="range.nextMonthLabel"
+            (uiPicked)="pick('from', $event)"
+          />
+        </div>
+        }
+      </li>
+      <!-- «До». -->
+      <li>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          [attr.aria-expanded]="unfolded() === 'to'"
+          aria-controls="analytics-range-to-calendar"
+          data-testid="analytics-range-to"
+          (click)="toggle('to')"
+        >
+          {{ range.toLabel }}
+          <span uiTrailing class="analytics-range-sheet__value">
+            <span
+              uiText
+              uiFont="body"
+              [uiForegroundStyle]="toText() === null ? 'secondary' : 'primary'"
+              data-testid="analytics-range-to-value"
+              >{{ toText() ?? range.chooseLabel }}</span
+            >
+            <ui-icon
+              class="analytics-range-sheet__chevron"
+              [attr.data-open]="unfolded() === 'to' ? '' : null"
+              uiName="field.expand"
+            />
+          </span>
+        </button>
+        @if (unfolded() === 'to') {
+        <div
+          id="analytics-range-to-calendar"
+          class="analytics-range-sheet__calendar"
+          data-testid="analytics-range-to-calendar"
+        >
+          <ui-month-picker
+            [uiSelected]="toDate()"
+            [uiToday]="range.today"
+            [uiMin]="fromDate() ?? range.earliest"
+            [uiLocale]="range.locale"
+            [uiPreviousLabel]="range.previousMonthLabel"
+            [uiNextLabel]="range.nextMonthLabel"
+            (uiPicked)="pick('to', $event)"
+          />
+        </div>
+        }
+      </li>
+    </ul>
     <!-- Why «Приложи» is off, in words; an empty line keeps the sheet's
          height when the range is fine. -->
     <p
@@ -59,7 +127,7 @@
     >
       {{ range.refusal ?? '' }}
     </p>
-  </ui-stack>
+  </div>
 
   <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
     <button

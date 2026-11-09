@@ -15,6 +15,7 @@ import {
   Currency,
   HourOfDay,
   LocalDate,
+  type LocationId,
   type PriceCents,
   type ServiceId,
   type TimeZone,
@@ -22,7 +23,7 @@ import {
   type Weekday,
 } from '@core/primitives';
 import {
-  type AnalyticsScopeChoice,
+  type AnalyticsScopeMenu,
   type AnalyticsScreen,
   StaffAnalyticsSystem,
 } from '@core/systems';
@@ -78,7 +79,6 @@ import {
   type AnalyticsRangeCheck,
   AnalyticsRangeRefusal,
   type AnalyticsRangeVm,
-  type AnalyticsScopeVm,
   type AnalyticsSeriesVm,
   type AnalyticsServicesVm,
   type AnalyticsStatusVm,
@@ -104,11 +104,12 @@ import {
 /** The report's money is euro cents (`MoneyAllocationSystem.seatNets`, the catalogue's Takings row). */
 export const REPORT_CURRENCY = Currency.EUR;
 
-/** What the screen names from the catalogue — services and barbers. */
+/** What the screen names from the catalogue — services, barbers and locations. */
 export interface AnalyticsNames {
   serviceName(id: ServiceId): string | null;
   barberName(id: BarberId): string | null;
   barberAvatarSrc(id: BarberId): string | null;
+  locationName(id: LocationId): string | null;
 }
 
 /** Everything the screen is worded from. */
@@ -124,10 +125,20 @@ export interface AnalyticsScreenInput {
   readonly report: AnalyticsReport | null;
   /** A refusal of the account, already worded (`errors.<code>`); `null` without one. */
   readonly refusal: string | null;
-  /** The admin's scope picker (`StaffAnalyticsSystem.scopeChoicesOf`); `null` for a barber. */
-  readonly scopeChoices: readonly AnalyticsScopeChoice[] | null;
-  /** The scope chosen in the picker; `null` is the shop. */
+  /** The admin's scope menu (`StaffAnalyticsSystem.scopeMenuOf`); `null` for a barber. */
+  readonly scopeMenu: AnalyticsScopeMenu | null;
+  /** The barber records ticked (owner review 2026-11-09); none is the whole team. */
+  readonly scopeBarberIds: readonly BarberId[];
+  /** The one barber ticked — their own report; `null` for the team or a part of it. */
   readonly scopeBarberId: BarberId | null;
+  /** The locations ticked (ADR 2026-11-09; sets since 2026-11-09); none is every location. */
+  readonly scopeLocationIds: readonly LocationId[];
+  /**
+   * How many locations the shop has. A report's shop scope is every one of
+   * them (the day documents hold no location), so with two or more the
+   * shop option says so — «Всички салони».
+   */
+  readonly shopCount: number;
   /** The account's own barber record; `null` for an unlinked admin. */
   readonly linkedBarberId: BarberId | null;
   /** The barber asked for no longer exists: the shop is shown instead. */
@@ -156,7 +167,6 @@ export function analyticsVm(input: AnalyticsScreenInput): AnalyticsVm {
     freshness: statusOf(input),
     retryLabel: words.freshness.retry,
     period: periodOf(input),
-    scope: scopeOf(input),
     placeholder:
       report === null && input.analyticsLoad === AnalyticsLoad.Loading,
     blocked: blockedOf(input),
@@ -199,7 +209,9 @@ export function analyticsFreshnessInfoVm(
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
-function statusOf(input: AnalyticsScreenInput): AnalyticsStatusVm | null {
+export function statusOf(
+  input: AnalyticsScreenInput,
+): AnalyticsStatusVm | null {
   const { words, report } = input;
   if (input.analyticsLoad === AnalyticsLoad.Refused) return null;
   if (report === null) {
@@ -323,7 +335,7 @@ export function partsToLocalDate(
 }
 
 /** The custom-range sheet's words, and why «Приложи» is off (the store's check, worded). */
-function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
+export function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
   const { words } = input;
   const refusal = rangeRefusalOf(input.rangeCheck, input);
   return {
@@ -341,7 +353,23 @@ function rangeOf(input: AnalyticsScreenInput): AnalyticsRangeVm {
     closeLabel: words.customRange.close,
     refusal,
     applyEnabled: refusal === null,
+    chooseLabel: words.customRange.choose,
+    previousMonthLabel: words.customRange.previousMonth,
+    nextMonthLabel: words.customRange.nextMonth,
+    locale: words.lang,
+    today: input.today,
+    earliest: AnalyticsPeriod.earliestOn(input.today),
   };
+}
+
+/** A custom range row's date — «1.11.2026» — or `null` while the row has none. */
+export function rangeDateText(
+  date: LocalDate | null,
+  input: AnalyticsScreenInput,
+): string | null {
+  return date === null
+    ? null
+    : formatDayShort(date, input.today, input.words.lang);
 }
 
 function rangeRefusalOf(
@@ -370,7 +398,7 @@ function rangeRefusalOf(
 }
 
 /** «Септември 2026 г.» · «28.09 – 4.10» · «вторник, 29.09». */
-function periodLabelOf(
+export function periodLabelOf(
   period: AnalyticsPeriod,
   input: AnalyticsScreenInput,
 ): string {
@@ -391,30 +419,14 @@ function periodLabelOf(
       );
 }
 
-function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
-  const { words, scopeChoices } = input;
-  if (scopeChoices === null) return null;
-  return {
-    label: words.scope.label,
-    tiles: scopeChoices.map((choice) => {
-      const id = choice.scopeBarberId;
-      return {
-        scopeBarberId: id,
-        name:
-          id === null
-            ? words.scope.shop
-            : choice.scopeMine
-              ? words.scope.me
-              : (input.names.barberName(id) ?? words.scope.barber),
-        avatarSrc: id === null ? null : input.names.barberAvatarSrc(id),
-        selected: id === input.scopeBarberId,
-        testId: `analytics-scope-${id ?? 'shop'}`,
-      };
-    }),
-  };
+/** «Салон» — or «Всички салони» when the figures span several locations. */
+export function shopNameOf(input: AnalyticsScreenInput): string {
+  return input.words.scope.shopOf(input.shopCount);
 }
 
-function blockedOf(input: AnalyticsScreenInput): AnalyticsBlockedVm | null {
+export function blockedOf(
+  input: AnalyticsScreenInput,
+): AnalyticsBlockedVm | null {
   if (input.analyticsLoad === AnalyticsLoad.Refused) {
     return {
       text: input.refusal ?? input.words.freshness.failedNoCache,
@@ -445,7 +457,7 @@ function infoLabelsOf(
 
 // ── The figures ───────────────────────────────────────────────────────────
 
-function bodyOf(
+export function bodyOf(
   input: AnalyticsScreenInput,
   report: AnalyticsReport,
 ): AnalyticsBodyVm {
@@ -504,8 +516,9 @@ function goalOf(
   const offered =
     StaffAnalyticsSystem.goalMonthOffered(period, input.today) &&
     StaffAnalyticsSystem.goalScopeAllowed(
-      input.scopeBarberId,
+      input.scopeBarberIds,
       input.linkedBarberId,
+      input.scopeLocationIds,
     );
   const low = report.reportGoalLowCents;
   const high = report.reportGoalHighCents;
@@ -547,12 +560,15 @@ function goalOf(
     ring,
     setLabel: offered ? (stored ? words.goal.change : words.goal.set) : null,
     prompt: stored ? null : words.goal.prompt,
-    sheet: goalSheetOf(input),
+    sheet: goalSheetOf(input, stored),
   };
 }
 
 /** The goal sheet's words, and why «Запази» is off (the store's check, or a failed save). */
-function goalSheetOf(input: AnalyticsScreenInput): AnalyticsGoalSheetVm {
+function goalSheetOf(
+  input: AnalyticsScreenInput,
+  stored: boolean,
+): AnalyticsGoalSheetVm {
   const { words } = input;
   const sheet = words.goal.sheet;
   let refusal: string | null;
@@ -577,6 +593,7 @@ function goalSheetOf(input: AnalyticsScreenInput): AnalyticsGoalSheetVm {
     increaseLabel: sheet.increase,
     unit: '€',
     saveLabel: sheet.save,
+    removeLabel: stored ? sheet.remove : null,
     closeLabel: sheet.close,
     refusal,
     saveEnabled: input.goalCheck.goalRefusal === null && !saving,
@@ -873,7 +890,7 @@ function aheadBarsOf(
   };
 }
 
-function money(cents: PriceCents, lang: string): string {
+export function money(cents: PriceCents, lang: string): string {
   return formatCents(cents, REPORT_CURRENCY, lang);
 }
 

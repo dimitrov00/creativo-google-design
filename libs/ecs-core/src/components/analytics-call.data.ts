@@ -5,6 +5,7 @@ import {
   Currency,
   HourOfDay,
   LocalDate,
+  LocationId,
   MinuteCount,
   MinuteOfDay,
   PriceCents,
@@ -30,8 +31,12 @@ import type { DayRow } from './day-figures.data';
 /**
  * What the `staffAnalytics` callable is asked for — flat (Law 6): the
  * scope, the period's first day, last day and span, and the comparison.
- * `scopeBarberId: null` is the shop for an admin and the caller's own barber
- * record for a barber; the period is rebuilt with `AnalyticsPeriod.of`,
+ * The scope is two sets (owner review 2026-11-09): `scopeBarberIds` —
+ * none is the whole team for an admin and the caller's own record for a
+ * barber, one is that barber's report, several a part of the team — and
+ * `scopeLocationIds`, an admin's narrowing to some locations (ADR
+ * 2026-11-09), none for every one; the two may sit together (those
+ * barbers' work at those locations). The period is rebuilt with `AnalyticsPeriod.of`,
  * which refuses a first day that is not its span's first (any day for a
  * `DAY`, a Monday, a 1st, 1 January). `toLocalDate` is `null` unless the
  * span is `CUSTOM` — a `to` on another span, or none on `CUSTOM`, is
@@ -41,7 +46,8 @@ import type { DayRow } from './day-figures.data';
  * contract).
  */
 export type AnalyticsCall = {
-  readonly scopeBarberId: BarberId | null;
+  readonly scopeBarberIds: readonly BarberId[];
+  readonly scopeLocationIds: readonly LocationId[];
   readonly fromLocalDate: LocalDate;
   /** The `CUSTOM` range's last day; `null` on every other span. */
   readonly toLocalDate: LocalDate | null;
@@ -206,6 +212,31 @@ function barberFiguresOf(raw: unknown): AnalyticsReport.BarberFigures | null {
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }
 
+function locationFiguresOf(
+  raw: unknown,
+): AnalyticsReport.LocationFigures | null {
+  const r = readerOf(raw);
+  const locationId = r.field('locationId');
+  const seriesCents = rowsOf(r.list('seriesCents'), (cents) =>
+    PriceCents.is(cents) ? cents : null,
+  );
+  const row = {
+    takingsCents: r.cents('takingsCents'),
+    tipsCents: r.cents('tipsCents'),
+    heroCurrentCents: r.cents('heroCurrentCents'),
+    heroPreviousCents: r.centsOrNull('heroPreviousCents'),
+    workedMinutes: r.minutes('workedMinutes'),
+    occupancy: r.rate('occupancy'),
+    servedCount: r.count('servedCount'),
+    newClientCount: r.count('newClientCount'),
+    rebookedRate: r.rate('rebookedRate'),
+    noShowRate: r.rate('noShowRate'),
+  };
+  return r.ok() && LocationId.is(locationId) && seriesCents !== null
+    ? { locationId, ...row, seriesCents }
+    : null;
+}
+
 function radarRowOf(raw: unknown): AnalyticsReport.RadarRow | null {
   const r = readerOf(raw);
   const barberId = r.field('barberId');
@@ -347,6 +378,12 @@ export const AnalyticsCall = {
     const span = r.field('reportAnalyticsSpan');
     const comparison = r.field('reportAnalyticsComparison');
     const scope = r.field('reportScopeBarberId');
+    const scopeBarbers = rowsOf(r.list('reportScopeBarberIds'), (id) =>
+      BarberId.is(id) ? id : null,
+    );
+    const scopeLocations = rowsOf(r.list('reportScopeLocationIds'), (id) =>
+      LocationId.is(id) ? id : null,
+    );
     const radarBase = r.field('reportRadarBase');
     const goalPace = r.field('reportGoalPaceTag');
     const figures = {
@@ -393,6 +430,7 @@ export const AnalyticsCall = {
       reportRebookedRate: r.rate('reportRebookedRate'),
       reportNoShowCount: r.count('reportNoShowCount'),
       reportNoShowBase: r.count('reportNoShowBase'),
+      reportNewClientCount: r.count('reportNewClientCount'),
       reportNoShowRate: r.rate('reportNoShowRate'),
       reportLateCancellationCount: r.count('reportLateCancellationCount'),
 
@@ -422,6 +460,7 @@ export const AnalyticsCall = {
       r.list('reportComparisonBarbers'),
       barberFiguresOf,
     );
+    const locations = rowsOf(r.list('reportLocations'), locationFiguresOf);
     const radars = rowsOf(r.list('reportRadars'), radarRowOf);
     const dayRows = rowsOf(r.list('reportDayRows'), dayRowOf);
     const seatRows = rowsOf(r.list('reportSeatRows'), seatRowOf);
@@ -434,6 +473,8 @@ export const AnalyticsCall = {
       !Tag.has(AnalyticsSpan, span) ||
       !Tag.has(AnalyticsComparison, comparison) ||
       (scope !== null && !BarberId.is(scope)) ||
+      scopeBarbers === null ||
+      scopeLocations === null ||
       !Tag.has(RadarBase, radarBase) ||
       !Tag.has(GoalPaceTag, goalPace) ||
       series === null ||
@@ -445,6 +486,7 @@ export const AnalyticsCall = {
       origins === null ||
       barbers === null ||
       comparisonBarbers === null ||
+      locations === null ||
       radars === null ||
       dayRows === null ||
       seatRows === null
@@ -455,6 +497,8 @@ export const AnalyticsCall = {
       reportDefinitionVersion: version,
       reportComputedAtUtcMs: computedAt,
       reportScopeBarberId: scope,
+      reportScopeBarberIds: scopeBarbers,
+      reportScopeLocationIds: scopeLocations,
       reportAnalyticsSpan: span,
       reportAnalyticsComparison: comparison,
       ...figures,
@@ -467,6 +511,7 @@ export const AnalyticsCall = {
       reportOrigins: origins,
       reportBarbers: barbers,
       reportComparisonBarbers: comparisonBarbers,
+      reportLocations: locations,
       reportRadars: radars,
       reportRadarBase: radarBase,
       reportDayRows: dayRows,

@@ -14,6 +14,7 @@ import {
   formatClock,
   formatCents,
   formatCentsFigure,
+  formatCentsWhole,
   formatCurrencyUnit,
   formatCount,
   formatDayLong,
@@ -93,6 +94,20 @@ const normalise = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ');
  * over the dinero value object to `formatCents` over the stored pair — the
  * integer minor units beside their currency.
  */
+describe('formatCentsWhole — a chart rule’s round amount', () => {
+  it('drops the minor units: «100 €», «€50», rounding a stray fraction', () => {
+    expect(
+      normalise(formatCentsWhole(cents(10000), Currency.EUR, 'bg-BG')),
+    ).toBe('100 €');
+    expect(
+      normalise(formatCentsWhole(cents(5000), Currency.EUR, 'en-GB')),
+    ).toBe('€50');
+    expect(
+      normalise(formatCentsWhole(cents(1750), Currency.EUR, 'bg-BG')),
+    ).toBe('18 €');
+  });
+});
+
 describe('formatCents', () => {
   const eur = Currency.EUR;
 

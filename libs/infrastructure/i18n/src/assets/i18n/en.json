@@ -180,6 +180,7 @@
     "ANALYTICS_GOAL_INVALID_RANGE": "The low end must not exceed the high end, both above zero; the month this one or the next.",
     "ANALYTICS_PERIOD_OUT_OF_RANGE": "This period is out of range.",
     "ANALYTICS_SCOPE_UNKNOWN": "This barber no longer exists.",
+    "ANALYTICS_LOCATION_UNKNOWN": "This shop no longer exists.",
     "ANALYTICS_INVALID_INPUT": "The request is not valid.",
     "APP_CHECK_REQUIRED": "We couldn't verify this device. Reload the page.",
     "APP_CHECK_REPLAYED": "We couldn't verify this device. Reload the page.",
@@ -2659,7 +2660,10 @@
       "incomplete": "Enter both dates",
       "beforeReach": "No earlier than {{earliest}}",
       "afterToday": "No later than today",
-      "tooLong": "At most {{days}} days"
+      "tooLong": "At most {{days}} days",
+      "choose": "Choose",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month"
     },
     "previous": "Previous period",
     "next": "Next period",
@@ -2667,8 +2671,25 @@
     "scope": {
       "label": "Whose figures",
       "shop": "Shop",
+      "shopsGroup": "Shops",
+      "teamGroup": "Team",
+      "shops": {
+        "one": "Shop",
+        "other": "All shops"
+      },
       "me": "Me",
-      "barber": "Barber"
+      "barber": "Barber",
+      "wholeTeam": "Whole team",
+      "shopsCount": {
+        "one": "{{count}} shop",
+        "other": "{{count}} shops"
+      },
+      "barbersCount": {
+        "one": "{{count}} barber",
+        "other": "{{count}} barbers"
+      },
+      "pickShops": "Choose shops",
+      "pickBarbers": "Choose barbers"
     },
     "status": {
       "justNow": "just now",
@@ -2801,11 +2822,118 @@
         "decrease": "Less",
         "increase": "More",
         "save": "Save",
+        "remove": "Remove goal",
         "close": "Close",
         "incomplete": "Enter both sums",
         "invalid": "The low end must not exceed the high end, and both must be above zero",
         "failed": "The goal was not saved. Try again."
       }
+    },
+    "home": {
+      "now": {
+        "DAY": "Today",
+        "WEEK": "This week",
+        "MONTH": "This month",
+        "YEAR": "This year"
+      },
+      "last": {
+        "DAY": "Yesterday",
+        "WEEK": "Last week",
+        "MONTH": "Last month",
+        "YEAR": "Last year"
+      },
+      "grain": {
+        "label": "Period",
+        "DAY": "Daily",
+        "WEEK": "Weekly",
+        "MONTH": "Monthly",
+        "YEAR": "Yearly"
+      },
+      "average": {
+        "DAY": "{{value}} avg. per day",
+        "WEEK": "{{value}} avg. per week",
+        "MONTH": "{{value}} avg. per month"
+      },
+      "takings": "Takings",
+      "time": "Working time",
+      "timeDetail": "of {{rostered}}",
+      "tips": "Tips",
+      "tipsDetail": "{{share}} of takings",
+      "tipsNone": "No takings to compare",
+      "timeOccupancy": "{{share}} of {{rostered}} rostered",
+      "free": "Free time",
+      "freeDetail": "emptiest: {{weekday}}",
+      "freeNone": "No free time",
+      "freeWeek": "Free time by weekday",
+      "clients": "Clients",
+      "clientsAllCame": "Everyone came",
+      "clientsNew": {
+        "one": "{{count}} new",
+        "other": "{{count}} new"
+      },
+      "clientsDetail": "{{fresh}} · {{missed}}",
+      "clientsMissed": {
+        "one": "{{count}} didn’t come",
+        "other": "{{count}} didn’t come"
+      },
+      "rebooked": "Rebooked",
+      "rebookedDetail": "clients who booked again",
+      "noShows": "No-shows",
+      "noShowsDetail": "of {{base}} visits",
+      "team": "The team",
+      "locations": "Salons",
+      "ahead": "Coming up",
+      "aheadDetail": "free in the next 7 days",
+      "tools": "Tools",
+      "exportDetail": "The days and services as CSV",
+      "goalNone": "Set a takings goal for the month",
+      "open": "Open {{title}}",
+      "loading": "Loading"
+    },
+    "card": {
+      "views": "Show as",
+      "view": {
+        "LINE": "Line",
+        "BARS": "Bars",
+        "RING": "Ring"
+      },
+      "ranges": "Period",
+      "range": {
+        "WEEK": "1W",
+        "MONTH": "1M",
+        "SIX_MONTHS": "6M",
+        "YEAR": "1Y",
+        "MAX": "MAX"
+      },
+      "rangeName": {
+        "WEEK": "This week",
+        "MONTH": "This month",
+        "SIX_MONTHS": "The last 6 months",
+        "YEAR": "This year",
+        "MAX": "All history"
+      },
+      "custom": "Custom period",
+      "back": "Back to analytics",
+      "subline": "{{detail}} · {{range}}",
+      "paceLabel": "Running takings by day",
+      "readoutVersus": "{{day}} · previous {{previous}}",
+      "rest": "The rest",
+      "attended": "Came",
+      "notRebooked": "Not rebooked",
+      "byBarber": "By barber",
+      "workedLine": "Work by day",
+      "tipsLine": "Tips by day",
+      "teamBars": "Takings by barber",
+      "byLocation": "By salon",
+      "locationsLine": "Running takings by salon",
+      "locationsBars": "Takings by salon",
+      "locationPicks": "Salons on the chart",
+      "locationDetail": "{{occupancy}} occupied · {{clients}} · {{fresh}}",
+      "clientsCount": {
+        "one": "{{count}} client",
+        "other": "{{count}} clients"
+      },
+      "readoutList": "{{day}} · {{list}}"
     },
     "export": {
       "action": "Export",

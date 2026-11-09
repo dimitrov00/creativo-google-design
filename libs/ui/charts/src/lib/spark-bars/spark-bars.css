@@ -1,0 +1,85 @@
+@import '../charts.css';
+
+@layer sys-components {
+  /* THE SERIES' PAINT: the accent, unless the host carries a part or an
+     identity tone — then charts.css has set `--ui-chart-paint` on it and
+     the bars read that. */
+  .ui-spark-bars {
+    display: block;
+    min-inline-size: 0;
+    --ui-spark-bars-paint: var(--sys-color-accent);
+  }
+
+  .ui-spark-bars[data-tone],
+  .ui-spark-bars[data-part] {
+    --ui-spark-bars-paint: var(--ui-chart-paint);
+  }
+
+  /* THE BOX: the host's width × `--ui-spark-bars-height` (spark-bars.ts
+     reads the laid-out height once and draws its viewBox over both), so
+     the drawing's pixels are the page's and a capsule's ends stay round. */
+  .ui-spark-bars__drawing {
+    display: block;
+    inline-size: 100%;
+    block-size: var(--ui-spark-bars-height, 48px);
+    overflow: visible;
+  }
+
+  /* A BAR: the series paint, no edge — a capsule this thin has no room
+     for one. */
+  .ui-spark-bars__bar {
+    fill: var(--ui-spark-bars-paint);
+  }
+
+  /* A HIGHLIGHT: the one bar keeps the paint, every other drops to the
+     ramp's lightest grey (the bar chart's open-hours highlight). */
+  .ui-spark-bars[data-highlighting] .ui-spark-bars__bar {
+    fill: color-mix(in srgb, var(--sys-color-foreground) 48%, transparent);
+  }
+
+  .ui-spark-bars[data-highlighting] .ui-spark-bars__bar[data-highlight] {
+    fill: var(--ui-spark-bars-paint);
+  }
+
+  /* THE AVERAGE: the comparison hook's grey as a dashed hairline across
+     the whole box, never a fill. */
+  .ui-spark-bars__average[data-part] {
+    fill: none;
+    stroke: var(--ui-chart-paint);
+    stroke-width: 1px;
+    stroke-dasharray: 3 3;
+  }
+
+  /* MOTION — new values fade in over the old bars fading out, after the
+     first frame only; the global switch (reduced-motion.css) and charts.css
+     hold both still under reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-spark-bars[data-settled] .ui-spark-bars__bars[data-enter] {
+      animation: ui-spark-bars-enter var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard);
+    }
+
+    .ui-spark-bars[data-settled] .ui-spark-bars__bars[data-leave] {
+      animation: ui-spark-bars-leave var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard) forwards;
+    }
+  }
+
+  @keyframes ui-spark-bars-enter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ui-spark-bars-leave {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

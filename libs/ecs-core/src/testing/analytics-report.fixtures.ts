@@ -16,6 +16,7 @@ import {
   Currency,
   type HourOfDay,
   LocalDate,
+  LocationId,
   MinuteCount,
   type PriceCents,
   Result,
@@ -179,6 +180,8 @@ export function analyticsReportFixture(
     reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
     reportComputedAtUtcMs: FIXTURE_NOW_UTC_MS,
     reportScopeBarberId: ivan,
+    reportScopeBarberIds: [ivan],
+    reportScopeLocationIds: [],
     reportAnalyticsSpan: AnalyticsSpan.Month,
     reportFromLocalDate: localDate('2026-09-01'),
     reportToLocalDate: localDate('2026-09-30'),
@@ -220,6 +223,7 @@ export function analyticsReportFixture(
     reportRebookedRate: null,
     reportNoShowCount: 1,
     reportNoShowBase: 3,
+    reportNewClientCount: 1,
     reportNoShowRate: null,
     reportLateCancellationCount: 1,
 
@@ -267,6 +271,7 @@ export function analyticsReportFixture(
     ],
     reportBarbers: [],
     reportComparisonBarbers: [],
+    reportLocations: [],
     reportRadars: [],
     reportRadarBase: RadarBase.TooFewBarbers,
     // PR 6: the fixture month carries no goal — the screen's goal specs set one.
@@ -411,8 +416,10 @@ export function shopReportFixture(
   ];
   return analyticsReportFixture({
     reportScopeBarberId: null,
+    reportScopeBarberIds: [],
     reportBarbers: shopBarbers,
     reportComparisonBarbers: comparisonBarbers,
+    reportLocations: [],
     ...AnalyticsRadarSystem.radarsOf(shopBarbers, comparisonBarbers),
     reportDayRows: [
       dayRow(ivan, '2026-09-14', 270),
@@ -434,7 +441,8 @@ export type AnalyticsCacheState = {
 export function analyticsCacheKeyOf(key: AnalyticsCacheKey): string {
   return [
     key.userId,
-    key.scopeBarberId ?? '',
+    key.scopeBarberIds.join(','),
+    key.scopeLocationIds.join(','),
     key.analyticsSpan,
     key.fromLocalDate,
     key.toLocalDate ?? '',
@@ -474,4 +482,42 @@ export function memoryAnalyticsCachePorts(
       return Result.ok(undefined);
     },
   };
+}
+
+/**
+ * The shop's report compared across two locations (owner review
+ * 2026-11-09): Centre took Monday the 14th's 28,00 €, Mladost Tuesday the
+ * 15th's 17,50 € — each row as its own location report would project it.
+ */
+export function locationsReportFixture(
+  overrides: Partial<AnalyticsReport> = {},
+): AnalyticsReport {
+  const at = (
+    locationId: string,
+    day: string,
+    takings: number,
+    occupancy: number,
+    served: number,
+    fresh: number,
+  ): AnalyticsReport.LocationFigures => ({
+    locationId: LocationId.of(locationId),
+    takingsCents: cents(takings),
+    tipsCents: cents(0),
+    heroCurrentCents: cents(takings),
+    heroPreviousCents: null,
+    workedMinutes: m(Math.round(takings / 10)),
+    occupancy,
+    servedCount: served,
+    newClientCount: fresh,
+    rebookedRate: null,
+    noShowRate: null,
+    seriesCents: SEPTEMBER_DAYS.map((d) => cents(d === day ? takings : 0)),
+  });
+  return analyticsReportFixture({
+    reportLocations: [
+      at('loc-centre', '2026-09-14', 2800, 0.72, 14, 3),
+      at('loc-mladost', '2026-09-15', 1750, 0.4, 1, 1),
+    ],
+    ...overrides,
+  });
 }

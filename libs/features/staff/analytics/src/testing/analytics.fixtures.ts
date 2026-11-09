@@ -61,12 +61,17 @@ const BARBERS = new Map<string, string>([
   ['ivan', 'Иван Колев'],
   ['niko', 'Нико Петров'],
 ]);
+const LOCATIONS = new Map<string, string>([
+  ['loc-centre', 'Център'],
+  ['loc-mladost', 'Младост'],
+]);
 
-/** The shop's names: two services, two barbers, no portraits. */
+/** The shop's names: two services, two barbers, two locations, no portraits. */
 export const NAMES: AnalyticsNames = {
   serviceName: (id) => SERVICES.get(id) ?? null,
   barberName: (id) => BARBERS.get(id) ?? null,
   barberAvatarSrc: () => null,
+  locationName: (id) => LOCATIONS.get(id) ?? null,
 };
 
 export const IVAN = BarberId.of('ivan');

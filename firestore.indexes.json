@@ -503,6 +503,11 @@
     },
     {
       "collectionGroup": "analyticsDays",
+      "fieldPath": "dayLocations",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analyticsDays",
       "fieldPath": "purgeAt",
       "ttl": true,
       "indexes": []
@@ -935,6 +940,11 @@
     {
       "collectionGroup": "clientStats",
       "fieldPath": "lastVisitBarberIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "firstVisitBarberIds",
       "indexes": []
     },
     {

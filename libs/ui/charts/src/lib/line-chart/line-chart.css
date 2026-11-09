@@ -4,6 +4,7 @@
   .ui-line-chart {
     display: block;
     min-inline-size: 0;
+    --ui-line-chart-paint: var(--sys-color-accent);
   }
 
   /* THE BOX IS 5 : 2 (line-chart.ts draws its viewBox at the same ratio
@@ -19,10 +20,27 @@
      turns. */
   .ui-line-chart__path {
     fill: none;
-    stroke: var(--sys-color-accent);
+    stroke: var(--ui-line-chart-paint);
     stroke-width: var(--sys-stroke-emphasis);
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  /* THE AREA (uiArea): this period's paint as a wash under its line, 22 %
+     at the line's highest point fading to nothing on the baseline — the
+     gradient runs over the area's own box. No edge: the line is the edge. */
+  .ui-line-chart__area {
+    stroke: none;
+  }
+
+  .ui-line-chart__area-top {
+    stop-color: var(--ui-line-chart-paint);
+    stop-opacity: 0.22;
+  }
+
+  .ui-line-chart__area-base {
+    stop-color: var(--ui-line-chart-paint);
+    stop-opacity: 0;
   }
 
   /* THE COMPARISON: the hook's 32 % grey as a stroke, never a fill. */
@@ -32,6 +50,68 @@
     stroke-width: var(--sys-stroke-emphasis);
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  /* THE MEMBERS (uiSeries): one line per member of a set in its identity
+     tone — the colour follows the member, never its rank — with a ringed
+     dot at its last point, as this period's line ends. */
+  .ui-line-chart__series {
+    fill: none;
+    stroke: var(--ui-line-chart-series);
+    stroke-width: var(--sys-stroke-emphasis);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ui-line-chart__series-end {
+    fill: var(--ui-line-chart-series);
+    stroke: var(--sys-color-surface);
+    stroke-width: var(--sys-stroke-emphasis);
+  }
+
+  .ui-line-chart [data-tone='0'] {
+    --ui-line-chart-series: var(--sys-identity-0);
+  }
+  .ui-line-chart [data-tone='1'] {
+    --ui-line-chart-series: var(--sys-identity-1);
+  }
+  .ui-line-chart [data-tone='2'] {
+    --ui-line-chart-series: var(--sys-identity-2);
+  }
+  .ui-line-chart [data-tone='3'] {
+    --ui-line-chart-series: var(--sys-identity-3);
+  }
+  .ui-line-chart [data-tone='4'] {
+    --ui-line-chart-series: var(--sys-identity-4);
+  }
+
+  /* THE GRID: dotted rules at round values, in the separator's ink —
+     quiet enough that the lines stay the subject. */
+  .ui-line-chart__grid {
+    stroke: var(--sys-color-separator);
+    stroke-width: 1px;
+    stroke-dasharray: 2 3;
+  }
+
+  /* The day guides: fainter still, only at the named days. */
+  .ui-line-chart__guide {
+    stroke: var(--sys-color-separator);
+    stroke-opacity: 0.6;
+    stroke-width: 1px;
+    stroke-dasharray: 2 3;
+  }
+
+  /* WORDS ARE INK: the axis' days and the ticks' amounts in the caption
+     role, tabular, the tertiary ink — under the figures' secondary. */
+  .ui-line-chart__axis-label,
+  .ui-line-chart__tick-label {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    fill: var(--sys-color-tertiary-label);
+  }
+
+  .ui-line-chart__tick-label {
+    text-anchor: start;
   }
 
   /* THE AVERAGE: a dashed rule in the palette's middle grey, one point wide. */
@@ -44,7 +124,7 @@
   /* The first and last points: an 8 px accent disc in a 2 px ring of the
      surface, so it stands clear of the line under it. */
   .ui-line-chart__marker {
-    fill: var(--sys-color-accent);
+    fill: var(--ui-line-chart-paint);
     stroke: var(--sys-color-surface);
     stroke-width: var(--sys-stroke-emphasis);
   }
@@ -62,12 +142,14 @@
      first frame only; the global switch (reduced-motion.css) and charts.css
      hold both still under reduced motion. */
   @media (prefers-reduced-motion: no-preference) {
-    .ui-line-chart[data-settled] .ui-line-chart__path[data-enter] {
+    .ui-line-chart[data-settled] .ui-line-chart__path[data-enter],
+    .ui-line-chart[data-settled] .ui-line-chart__area[data-enter] {
       animation: ui-line-chart-enter var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard);
     }
 
-    .ui-line-chart[data-settled] .ui-line-chart__path[data-leave] {
+    .ui-line-chart[data-settled] .ui-line-chart__path[data-leave],
+    .ui-line-chart[data-settled] .ui-line-chart__area[data-leave] {
       animation: ui-line-chart-leave var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard) forwards;
     }
@@ -89,5 +171,45 @@
     to {
       opacity: 0;
     }
+  }
+
+  /* THE SCRUB: horizontal drags read the chart, vertical ones still scroll
+     the page; the marks of the point under the finger. */
+  .ui-line-chart__drawing[data-scrubbable] {
+    touch-action: pan-y;
+    cursor: crosshair;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .ui-line-chart__scrub-line {
+    stroke: var(--sys-color-foreground);
+    stroke-opacity: 0.4;
+    stroke-width: 1px;
+  }
+
+  /* While a point is read, its figure is the only one: the end markers and
+     the edge figures step back. */
+  .ui-line-chart__drawing[data-scrubbing]
+    :is(
+      .ui-line-chart__marker,
+      .ui-line-chart__series-end,
+      .ui-line-chart__edge-label
+    ) {
+    opacity: 0;
+  }
+
+  .ui-line-chart__scrub-dot {
+    fill: var(--ui-line-chart-paint, var(--sys-color-accent));
+    stroke: var(--sys-color-surface);
+    stroke-width: 2px;
+  }
+
+  .ui-line-chart__series-dot {
+    fill: var(--ui-line-chart-series);
+  }
+
+  .ui-line-chart__scrub-dot[data-part] {
+    fill: var(--ui-chart-paint);
   }
 }

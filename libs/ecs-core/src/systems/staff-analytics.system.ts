@@ -31,6 +31,7 @@ import {
   type AnalyticsReport,
   BookingOrigin,
   ClientStatsPolicy,
+  type DayBody,
   DayFigures,
   type DayRow,
   type MinuteRange,
@@ -38,6 +39,7 @@ import {
   RadarBase,
   type Role,
   Roles,
+  type RosterWindow,
   Seat,
   type ShopNow,
   StaffLink,
@@ -45,17 +47,14 @@ import {
 import type {
   Appointment,
   BarberSchedule,
+  ClientStatsRecord,
   ScheduleException,
   ShopLocation,
   User,
 } from '@core/entities';
 import { AnalyticsHourSystem, type HourDay } from './analytics-hour.system';
 import { AnalyticsRadarSystem } from './analytics-radar.system';
-import {
-  type ChairDay,
-  type ChairVisit,
-  ChairTimeSystem,
-} from './chair-time.system';
+import { type ChairDay, ChairTimeSystem } from './chair-time.system';
 import { DayFiguresSystem } from './day-figures.system';
 import { IntervalSetSystem } from './interval-set.system';
 import {
@@ -79,6 +78,7 @@ export type AnalyticsCaller = {
 export type AnalyticsVisit = Pick<
   Appointment,
   | 'id'
+  | 'locationId'
   | 'localDate'
   | 'startMinutes'
   | 'utcEpochMs'
@@ -104,12 +104,16 @@ export type AnalyticsFollowUp = {
  * normalized: what `rosteredMinutes` totals), which the hour grid buckets —
  * and whether the day is PAST (Terms, «Past day»: two days back at every
  * shop the barber has a stretch at on it, `isPastDay`), decided once here so
- * the fold and the report stay zone-blind.
+ * the fold and the report stay zone-blind. `locationIds` are the locations
+ * the day touched (ADR 2026-11-09): its offered windows, blocks and
+ * breaks, the roster a `CLOSED` day would have given, and every visit with
+ * a seat of the barber — sorted, each once.
  */
 export type AnalyticsDay = ChairDay & {
   readonly closedDayMinutes: MinuteCount;
   readonly stretches: readonly MinuteRange[];
   readonly pastDay: boolean;
+  readonly locationIds: readonly LocationId[];
 };
 
 /**
@@ -124,9 +128,22 @@ export type AnalyticsDay = ChairDay & {
  * document holds it.
  */
 export type AnalyticsInput = {
-  /** The barber record reported on; `null` for the shop. */
-  readonly scopeBarberId: BarberId | null;
-  /** The barber records in scope: the one, or every one of the shop. */
+  /**
+   * The barber records the scope names (owner review 2026-11-09, the
+   * scope as sets): none is the whole team, one is that barber's report
+   * (its seat rows, its goal), two or more a team of them — read like the
+   * shop's, over them alone.
+   */
+  readonly scopeBarberIds: readonly BarberId[];
+  /**
+   * The locations the scope names (ADR 2026-11-09, sets since 2026-11-09);
+   * none is every location. Every list below is already cut to them — the
+   * days by {@link StaffAnalyticsSystem.atLocations}, the stored days by
+   * {@link StaffAnalyticsSystem.storedAt}, the visits by
+   * {@link StaffAnalyticsSystem.visitsAt} — so the report only states them.
+   */
+  readonly scopeLocationIds: readonly LocationId[];
+  /** The barber records in scope: the named ones, or every one of the shop. */
   readonly barberIds: readonly BarberId[];
   readonly period: AnalyticsPeriod;
   /** The comparison the call asked for — stated on the report as it is. */
@@ -158,8 +175,20 @@ export type AnalyticsInput = {
   /** The comparison period's stored past days, held like `pastDays`; empty when not comparable. */
   readonly previousPastDays: readonly DayFigures[];
   readonly followUps: readonly AnalyticsFollowUp[];
+  /**
+   * The clients first seen in the period, shop-wide (the client-stats
+   * projection's records) — the report counts the scope's own.
+   */
+  readonly firstSeen: readonly AnalyticsFirstSeen[];
   readonly policy: ClientStatsPolicy;
   readonly now: ShopNow;
+  /**
+   * How the shop's locations compete — each location's figures from its
+   * own report (`AnalyticsCarouselSystem.locationFiguresOf`), computed by
+   * the pipeline for a shop report over two or more locations; empty
+   * otherwise. The report carries it as `reportLocations`.
+   */
+  readonly locationFigures: readonly AnalyticsReport.LocationFigures[];
   /**
    * The scope's goal for the period's month (PR 6, «Goals») — read on a
    * `MONTH` only; `null` off `MONTH` or without one. The report hands its
@@ -167,6 +196,15 @@ export type AnalyticsInput = {
    */
   readonly goal: AnalyticsGoal | null;
 };
+
+/** A client's first visit as the projection records it — a `ClientStatsRecord` satisfies it as is. */
+export type AnalyticsFirstSeen = Pick<
+  ClientStatsRecord,
+  | 'customerId'
+  | 'firstVisitLocalDate'
+  | 'firstVisitBarberIds'
+  | 'firstVisitLocationId'
+>;
 
 /** A visit as a follow-up read answers it — an `Appointment` satisfies it as is. */
 export type FollowUpVisit = Pick<
@@ -251,10 +289,32 @@ export type AnalyticsSteps = {
   readonly next: AnalyticsPeriod | null;
 };
 
-/** One choice of the admin's scope picker: the shop (`null`) or a barber record, and whether it is the admin's own. */
-export type AnalyticsScopeChoice = {
-  readonly scopeBarberId: BarberId | null;
+/**
+ * The admin's scope menu (owner review 2026-11-09): the locations to tick
+ * — none listed with fewer than two, where the one IS the shop — and the
+ * barber records, the admin's own first, each saying whether it is theirs.
+ */
+export type AnalyticsScopeMenu = {
+  readonly locationIds: readonly LocationId[];
+  readonly barbers: readonly AnalyticsScopeBarber[];
+};
+
+/** One barber record of the scope menu, and whether it is the admin's own. */
+export type AnalyticsScopeBarber = {
+  readonly barberId: BarberId;
   readonly scopeMine: boolean;
+};
+
+/**
+ * Everything one stored barber-day is folded from: the day's inputs as
+ * `daysOf` reads them (one barber, one date), its follow-ups, the policy
+ * and the writer's stamp.
+ */
+export type StoredDayInput = {
+  readonly dayInput: AnalyticsDaysInput;
+  readonly followUps: readonly AnalyticsFollowUp[];
+  readonly policy: ClientStatsPolicy;
+  readonly computedAtUtcMs: UtcEpochMs;
 };
 
 /** What a drill-down's rows add up to: their money (the figure's) and how many they are. */
@@ -1007,14 +1067,40 @@ function hadWorkedSeat(
 }
 
 /** The minutes `input`'s day would roster — its windows, blocks and breaks, normalized. */
-function rosteredMinutesOf(input: BuildDayWindowsInput): MinuteCount {
-  return IntervalSetSystem.totalMinutes(
-    IntervalSetSystem.normalize([
-      ...RosterSystem.offeredWindows(input),
-      ...RosterSystem.offeredCarveOuts(input),
-      ...RosterSystem.offeredBreaks(input),
-    ]),
-  );
+function offeredOf(input: BuildDayWindowsInput): readonly RosterWindow[] {
+  return [
+    ...RosterSystem.offeredWindows(input),
+    ...RosterSystem.offeredCarveOuts(input),
+    ...RosterSystem.offeredBreaks(input),
+  ];
+}
+
+/**
+ * The locations a barber-day touched: those of its stretches (offered, or
+ * what a `CLOSED` day would have offered) and of every visit with a seat of
+ * the barber — sorted, each once.
+ */
+function touchedOf(
+  stretches: readonly RosterWindow[],
+  visits: readonly AnalyticsVisit[] | undefined,
+  barberId: BarberId,
+): readonly LocationId[] {
+  const ids = new Set<LocationId>();
+  for (let i = 0; i < stretches.length; i++) {
+    ids.add((stretches[i] as RosterWindow).locationId);
+  }
+  if (visits !== undefined) {
+    for (let v = 0; v < visits.length; v++) {
+      const visit = visits[v] as AnalyticsVisit;
+      for (let s = 0; s < visit.seats.length; s++) {
+        if ((visit.seats[s] as Seat).barberId === barberId) {
+          ids.add(visit.locationId);
+          break;
+        }
+      }
+    }
+  }
+  return [...ids].sort();
 }
 
 /** One shop's clock among those read, else the report's own. */
@@ -1139,12 +1225,37 @@ export const StaffAnalyticsSystem = {
     return first;
   },
 
-  /** The barber records a scope reports on: the one, or every record of the shop by id. */
+  /** The barber records a scope reports on: the named ones, or every record of the shop by id. */
   barbersInScope(
-    scopeBarberId: BarberId | null,
+    scopeBarberIds: readonly BarberId[],
     barberIds: readonly BarberId[],
   ): readonly BarberId[] {
-    return scopeBarberId === null ? [...barberIds].sort() : [scopeBarberId];
+    return scopeBarberIds.length === 0 ? [...barberIds].sort() : scopeBarberIds;
+  },
+
+  /**
+   * A scope list's tick boxes (owner review 2026-11-09): none named shows
+   * every box ticked; a toggle flips one box — never the last ticked one
+   * off — and ticking every box is none named again (the whole list).
+   * Answers the scope sorted, each once.
+   */
+  scopeToggled<T extends string>(
+    named: readonly T[],
+    id: T,
+    all: readonly T[],
+  ): readonly T[] {
+    const ticked = named.length === 0 ? all : named;
+    const next = ticked.includes(id)
+      ? ticked.filter((entry) => entry !== id)
+      : [...ticked, id];
+    if (next.length === 0) return named;
+    if (all.every((entry) => next.includes(entry))) return [];
+    return [...new Set(next)].sort();
+  },
+
+  /** The one barber a scope names — a barber's own report — or `null` for the team or a part of it. */
+  soleBarberOf(scopeBarberIds: readonly BarberId[]): BarberId | null {
+    return scopeBarberIds.length === 1 ? (scopeBarberIds[0] as BarberId) : null;
   },
 
   /** The shop days the open-hours card reads: `today` and the six after it. */
@@ -1316,7 +1427,7 @@ export const StaffAnalyticsSystem = {
       if (list === undefined) departuresOf.set(departure.barberId, [departure]);
       else list.push(departure);
     }
-    const visitsOn = new Map<LocalDate, ChairVisit[]>();
+    const visitsOn = new Map<LocalDate, AnalyticsVisit[]>();
     for (let i = 0; i < input.visits.length; i++) {
       const visit = input.visits[i] as AnalyticsVisit;
       const list = visitsOn.get(visit.localDate);
@@ -1352,6 +1463,15 @@ export const StaffAnalyticsSystem = {
             exception.localDate === localDate &&
             exception.exceptionEffect === ExceptionEffect.Closed,
         );
+        // What a CLOSED day would have offered without its departure.
+        const wouldOffer = closed
+          ? offeredOf({
+              ...day,
+              exceptions: exceptions.filter(
+                (exception) => exception.localDate !== localDate,
+              ),
+            })
+          : [];
         const chairDay = ChairTimeSystem.dayBreakdown({
           barberId,
           localDate,
@@ -1375,13 +1495,15 @@ export const StaffAnalyticsSystem = {
             input.now,
           ),
           closedDayMinutes: closed
-            ? rosteredMinutesOf({
-                ...day,
-                exceptions: exceptions.filter(
-                  (exception) => exception.localDate !== localDate,
-                ),
-              })
+            ? IntervalSetSystem.totalMinutes(
+                IntervalSetSystem.normalize(wouldOffer),
+              )
             : MinuteCount.ZERO,
+          locationIds: touchedOf(
+            [...windows, ...blocks, ...breaks, ...wouldOffer],
+            visitsOn.get(localDate),
+            barberId,
+          ),
         });
       }
     }
@@ -1389,37 +1511,235 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
+   * A scope's days cut to the named locations (ADR 2026-11-09): only those
+   * shops' hours — the roster offers nothing at a shop it is not given
+   * (`RosterSystem.offeredWindows`) — and only the visits booked there.
+   * None is every location: the input as it is.
+   */
+  atLocations(
+    input: AnalyticsDaysInput,
+    locationIds: readonly LocationId[],
+  ): AnalyticsDaysInput {
+    if (locationIds.length === 0) return input;
+    const locations: ShopLocation[] = [];
+    for (let i = 0; i < input.locations.length; i++) {
+      const location = input.locations[i] as ShopLocation;
+      if (locationIds.includes(location.id)) locations.push(location);
+    }
+    return {
+      ...input,
+      locations,
+      visits: StaffAnalyticsSystem.visitsAt(input.visits, locationIds),
+    };
+  },
+
+  /**
+   * The locations a report compares (owner review 2026-11-09): the ones
+   * the scope names, or every location of the shop when it names none —
+   * when that is two or more, and only for an admin (a barber's scope
+   * names no location). Empty otherwise: one location IS its report.
+   */
+  comparedLocationsOf(
+    caller: AnalyticsCaller,
+    scopeLocationIds: readonly LocationId[],
+    locations: readonly ShopLocation[],
+  ): readonly LocationId[] {
+    if (!isShopReader(caller)) return [];
+    const ids =
+      scopeLocationIds.length > 0
+        ? scopeLocationIds
+        : locations.map((location) => location.id);
+    return ids.length > 1 ? ids : [];
+  },
+
+  /** The visits booked at one of `locationIds`; none keeps every one. */
+  visitsAt<V extends { readonly locationId: LocationId }>(
+    visits: readonly V[],
+    locationIds: readonly LocationId[],
+  ): readonly V[] {
+    if (locationIds.length === 0) return visits;
+    const out: V[] = [];
+    for (let i = 0; i < visits.length; i++) {
+      const visit = visits[i] as V;
+      if (locationIds.includes(visit.locationId)) out.push(visit);
+    }
+    return out;
+  },
+
+  /**
+   * The stored days as the named locations' figures: one per stored day,
+   * so every day stays held — each location's share
+   * (`DayFigures.atLocation`), summed when the scope names several
+   * (`DayFiguresSystem.sum`, under the day's own barber, date and stamp);
+   * a day that touched none of them answers an empty one. None keeps the
+   * days as they are.
+   */
+  storedAt<D extends DayFigures>(
+    days: readonly D[],
+    locationIds: readonly LocationId[],
+  ): readonly DayFigures[] {
+    if (locationIds.length === 0) return days;
+    const out: DayFigures[] = [];
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i] as D;
+      if (locationIds.length === 1) {
+        out.push(DayFigures.atLocation(day, locationIds[0] as LocationId));
+        continue;
+      }
+      const shares: DayFigures[] = [];
+      for (let l = 0; l < locationIds.length; l++) {
+        shares.push(DayFigures.atLocation(day, locationIds[l] as LocationId));
+      }
+      const sum = DayFiguresSystem.sum(shares, day.barberId, day.localDate);
+      out.push({
+        ...sum,
+        dayLocationIds: day.dayLocationIds.filter((id) =>
+          locationIds.includes(id),
+        ),
+        dayLocations: [],
+        dayDefinitionVersion: day.dayDefinitionVersion,
+        dayComputedAtUtcMs: day.dayComputedAtUtcMs,
+      });
+    }
+    return out;
+  },
+
+  /**
+   * ONE STORED BARBER-DAY (the writer's fold): the day's figures over every
+   * location, the locations it touched, and — when it touched two or more —
+   * each one's share, folded from the day cut to that location
+   * ({@link atLocation}), so a stored share and a live location day are
+   * spelt by one rule. `input.dayInput` names one barber and one date.
+   */
+  storedDayOf(input: StoredDayInput): DayFigures {
+    const day = StaffAnalyticsSystem.daysOf(input.dayInput)[0] as AnalyticsDay;
+    const shares: DayBody[] = [];
+    if (day.locationIds.length > 1) {
+      for (let i = 0; i < day.locationIds.length; i++) {
+        const cut = StaffAnalyticsSystem.atLocations(input.dayInput, [
+          day.locationIds[i] as LocationId,
+        ]);
+        shares.push(
+          DayFiguresSystem.body({
+            day: StaffAnalyticsSystem.daysOf(cut)[0] as AnalyticsDay,
+            visits: cut.visits,
+            followUps: input.followUps,
+            policy: input.policy,
+          }),
+        );
+      }
+    }
+    return DayFiguresSystem.fold({
+      day,
+      visits: input.dayInput.visits,
+      followUps: input.followUps,
+      policy: input.policy,
+      computedAtUtcMs: input.computedAtUtcMs,
+      locationShares: shares,
+    });
+  },
+
+  /**
+   * THE NEW CLIENTS of a scope's period: the clients whose first worked
+   * visit at the shop fell in it — with one of `scopeBarberIds` when the
+   * scope names barbers, at one of `scopeLocationIds` when it names
+   * locations, anywhere for the shop. Each record is one client, so a
+   * client counts once.
+   */
+  newClientCountOf(
+    firstSeen: readonly AnalyticsFirstSeen[],
+    scopeBarberIds: readonly BarberId[],
+    scopeLocationIds: readonly LocationId[],
+    period: AnalyticsPeriod,
+  ): number {
+    let count = 0;
+    for (let i = 0; i < firstSeen.length; i++) {
+      const record = firstSeen[i] as AnalyticsFirstSeen;
+      const day = record.firstVisitLocalDate;
+      if (
+        day === null ||
+        day < period.fromLocalDate ||
+        day > period.toLocalDate
+      ) {
+        continue;
+      }
+      if (
+        scopeBarberIds.length > 0 &&
+        !record.firstVisitBarberIds.some((id) => scopeBarberIds.includes(id))
+      ) {
+        continue;
+      }
+      if (
+        scopeLocationIds.length > 0 &&
+        (record.firstVisitLocationId === null ||
+          !scopeLocationIds.includes(record.firstVisitLocationId))
+      ) {
+        continue;
+      }
+      count++;
+    }
+    return count;
+  },
+
+  /**
+   * THE LOCATION SCOPE (ADR 2026-11-09; sets since 2026-11-09), beside
+   * {@link scopeOf}: none — every location — unless the request names
+   * some. Only an admin may, and only locations of the shop's; they may
+   * sit beside barbers (those barbers' work at those locations). Answers
+   * them sorted, each once.
+   */
+  locationScopeOf(
+    caller: AnalyticsCaller,
+    request: { readonly scopeLocationIds: readonly LocationId[] },
+    locations: readonly ShopLocation[],
+  ): Result<readonly LocationId[], AnalyticsError> {
+    const asked = request.scopeLocationIds;
+    if (asked.length === 0) return Result.ok([]);
+    if (!isShopReader(caller)) return Result.err(AnalyticsError.forbidden());
+    const known = new Set(locations.map((location) => location.id));
+    for (let i = 0; i < asked.length; i++) {
+      const locationId = asked[i] as LocationId;
+      if (!known.has(locationId)) {
+        return Result.err(AnalyticsError.locationUnknown(locationId));
+      }
+    }
+    return Result.ok([...new Set(asked)].sort());
+  },
+
+  /**
    * THE VISIBILITY TABLE, read top-down on the caller's STORED roles: a
-   * blocked account sees nothing; an admin sees the shop (`null`) or any
-   * known barber record; a barber sees only the record their account is
-   * linked to; every other role nothing. Answers the scope — a barber record
-   * or `null` for the shop.
+   * blocked account sees nothing; an admin sees the whole team (none
+   * named) or any known barber records, one or several; a barber sees only
+   * the record their account is linked to; every other role nothing.
+   * Answers the barber records the scope names — sorted, each once — none
+   * for the whole team.
    */
   scopeOf(
     caller: AnalyticsCaller,
-    request: { readonly scopeBarberId: BarberId | null },
+    request: { readonly scopeBarberIds: readonly BarberId[] },
     barberIds: readonly BarberId[],
-  ): Result<BarberId | null, AnalyticsError> {
+  ): Result<readonly BarberId[], AnalyticsError> {
     if (caller.callerBlocked) return Result.err(AnalyticsError.forbidden());
-    if (Roles.readsAnalytics(caller.callerRoles)) {
-      const isAdmin = caller.callerRoles.some((role) =>
-        (Roles.ANALYTICS_SHOP as readonly Role[]).includes(role),
-      );
-      if (isAdmin) {
-        if (request.scopeBarberId === null) return Result.ok(null);
-        return barberIds.includes(request.scopeBarberId)
-          ? Result.ok(request.scopeBarberId)
-          : Result.err(AnalyticsError.scopeUnknown(request.scopeBarberId));
-      }
-      if (caller.linkedBarberId === null) {
-        return Result.err(AnalyticsError.barberNotLinked());
-      }
-      return request.scopeBarberId === null ||
-        request.scopeBarberId === caller.linkedBarberId
-        ? Result.ok(caller.linkedBarberId)
-        : Result.err(AnalyticsError.forbidden());
+    if (!Roles.readsAnalytics(caller.callerRoles)) {
+      return Result.err(AnalyticsError.forbidden());
     }
-    return Result.err(AnalyticsError.forbidden());
+    const asked = request.scopeBarberIds;
+    if (isShopReader(caller)) {
+      for (let i = 0; i < asked.length; i++) {
+        const barberId = asked[i] as BarberId;
+        if (!barberIds.includes(barberId)) {
+          return Result.err(AnalyticsError.scopeUnknown(barberId));
+        }
+      }
+      return Result.ok([...new Set(asked)].sort());
+    }
+    if (caller.linkedBarberId === null) {
+      return Result.err(AnalyticsError.barberNotLinked());
+    }
+    const own = caller.linkedBarberId;
+    return asked.every((id) => id === own)
+      ? Result.ok([own])
+      : Result.err(AnalyticsError.forbidden());
   },
 
   report(input: AnalyticsInput): AnalyticsReport {
@@ -1511,7 +1831,8 @@ export const StaffAnalyticsSystem = {
     // The shop's barbers, this period's and the comparison's, and the admin's
     // radar over them on a MONTH, YEAR or CUSTOM span; a barber's report
     // carries none of the three.
-    const shop = input.scopeBarberId === null;
+    const sole = StaffAnalyticsSystem.soleBarberOf(input.scopeBarberIds);
+    const shop = sole === null;
     const barbers = shop ? barbersOf(input, rebooked, past, counting) : [];
     const comparisonBarbers =
       shop && previous !== null
@@ -1525,7 +1846,9 @@ export const StaffAnalyticsSystem = {
     return {
       reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
       reportComputedAtUtcMs: input.now.utcEpochMs,
-      reportScopeBarberId: input.scopeBarberId,
+      reportScopeBarberId: sole,
+      reportScopeBarberIds: input.scopeBarberIds,
+      reportScopeLocationIds: input.scopeLocationIds,
       reportAnalyticsSpan: period.analyticsSpan,
       reportFromLocalDate: period.fromLocalDate,
       reportToLocalDate: period.toLocalDate,
@@ -1569,6 +1892,12 @@ export const StaffAnalyticsSystem = {
       reportRebookedRate: rateOf(figures.rebookedCount, figures.rebookedBase),
       reportNoShowCount: figures.noShowCount,
       reportNoShowBase: figures.noShowBase,
+      reportNewClientCount: StaffAnalyticsSystem.newClientCountOf(
+        input.firstSeen,
+        input.scopeBarberIds,
+        input.scopeLocationIds,
+        period,
+      ),
       reportNoShowRate: rateOf(figures.noShowCount, figures.noShowBase),
       reportLateCancellationCount: figures.lateCancellationCount,
 
@@ -1606,13 +1935,12 @@ export const StaffAnalyticsSystem = {
       reportOrigins: originsOf(input.visits, input.pastDays, counting),
       reportBarbers: barbers,
       reportComparisonBarbers: comparisonBarbers,
+      reportLocations: input.locationFigures,
       reportRadars: radars.reportRadars,
       reportRadarBase: radars.reportRadarBase,
       reportDayRows: dayRowsOf(input, counting),
       reportSeatRows:
-        input.scopeBarberId === null
-          ? []
-          : seatRowsOf(input, rebooked, past, input.scopeBarberId, counting),
+        sole === null ? [] : seatRowsOf(input, rebooked, past, sole, counting),
 
       reportGoalLowCents: goal === null ? null : goal.goalLowCents,
       reportGoalHighCents: goal === null ? null : goal.goalHighCents,
@@ -1687,17 +2015,29 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * Whether the account linked to `linkedBarberId` may set `scopeBarberId`'s
-   * goal: the shop's (`null`), or its own record's — a barber record's goal
-   * is that barber's alone, so an admin on a colleague's scope reads it and
-   * sets none. `setAnalyticsGoal` refuses by this rule
-   * (`ANALYTICS_GOAL_FORBIDDEN`) and the screen offers «Задай цел» by it.
+   * Whether the account linked to `linkedBarberId` may set the goal of
+   * the scope naming `scopeBarberIds`: the shop's (none named), or its own
+   * record's — a barber record's goal is that barber's alone, so an admin
+   * on a colleague's scope reads it and sets none. A part of the team, or
+   * any named location, has no goal (ADR 2026-11-09, L5).
+   * `setAnalyticsGoal` refuses by this rule (`ANALYTICS_GOAL_FORBIDDEN`)
+   * and the screen offers «Задай цел» by it.
    */
   goalScopeAllowed(
-    scopeBarberId: BarberId | null,
+    scopeBarberIds: readonly BarberId[],
     linkedBarberId: BarberId | null,
+    scopeLocationIds: readonly LocationId[],
   ): boolean {
-    return scopeBarberId === null || scopeBarberId === linkedBarberId;
+    if (scopeLocationIds.length > 0 || scopeBarberIds.length > 1) return false;
+    return scopeBarberIds.length === 0 || scopeBarberIds[0] === linkedBarberId;
+  },
+
+  /** Whether the scope has a goal to read at all: the shop's or one barber's, at every location. */
+  scopeHasGoal(
+    scopeBarberIds: readonly BarberId[],
+    scopeLocationIds: readonly LocationId[],
+  ): boolean {
+    return scopeLocationIds.length === 0 && scopeBarberIds.length <= 1;
   },
 
   /**
@@ -1834,27 +2174,30 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * The admin's scope picker, in its order (design, «Which barber the
-   * caller is»): the shop first — an admin opens on it — then the admin's
-   * own linked record («Аз»), then every other record as listed.
+   * The admin's scope menu (owner review 2026-11-09): the locations to
+   * tick when there are two or more (with one, it IS the shop), then the
+   * barber records — the admin's own linked record first, then every
+   * other as listed.
    */
-  scopeChoicesOf(
+  scopeMenuOf(
     barberIds: readonly BarberId[],
     linkedBarberId: BarberId | null,
-  ): readonly AnalyticsScopeChoice[] {
-    const out: AnalyticsScopeChoice[] = [
-      { scopeBarberId: null, scopeMine: false },
-    ];
+    locationIds: readonly LocationId[],
+  ): AnalyticsScopeMenu {
+    const barbers: AnalyticsScopeBarber[] = [];
     if (linkedBarberId !== null) {
-      out.push({ scopeBarberId: linkedBarberId, scopeMine: true });
+      barbers.push({ barberId: linkedBarberId, scopeMine: true });
     }
     for (let i = 0; i < barberIds.length; i++) {
       const barberId = barberIds[i] as BarberId;
       if (barberId !== linkedBarberId) {
-        out.push({ scopeBarberId: barberId, scopeMine: false });
+        barbers.push({ barberId, scopeMine: false });
       }
     }
-    return out;
+    return {
+      locationIds: locationIds.length > 1 ? locationIds : [],
+      barbers,
+    };
   },
 
   /** Whether the report was computed on `today` of the shop in `timeZone` — its time alone then says when. */
@@ -2360,6 +2703,8 @@ function dayRowsOf(
         followUps: input.followUps,
         policy: input.policy,
         computedAtUtcMs: input.now.utcEpochMs,
+        // A drill-down row reads the root alone.
+        locationShares: [],
       }),
     );
   }
@@ -2445,5 +2790,15 @@ function seatRowsOf(
     (a, b) =>
       (a.localDate < b.localDate ? -1 : a.localDate > b.localDate ? 1 : 0) ||
       a.startMinutes - b.startMinutes,
+  );
+}
+
+/** An admin who may read the shop — any barber records, any locations — and is not blocked. */
+function isShopReader(caller: AnalyticsCaller): boolean {
+  return (
+    !caller.callerBlocked &&
+    caller.callerRoles.some((role) =>
+      (Roles.ANALYTICS_SHOP as readonly Role[]).includes(role),
+    )
   );
 }

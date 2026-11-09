@@ -5,7 +5,7 @@ import {
   AnalyticsSpan,
   type AnalyticsReport,
 } from '@core/components';
-import { BarberId, LocalDate, UserId } from '@core/primitives';
+import { BarberId, LocalDate, LocationId, UserId } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import type { AnalyticsCacheKey } from '@core/ports';
 import {
@@ -26,7 +26,8 @@ const SEPTEMBER = unwrapOk(LocalDate.parse('2026-09-01'));
 function keyOf(overrides: Partial<AnalyticsCacheKey> = {}): AnalyticsCacheKey {
   return {
     userId: IVAN,
-    scopeBarberId: BarberId.of('ivan'),
+    scopeBarberIds: [BarberId.of('ivan')],
+    scopeLocationIds: [],
     analyticsSpan: AnalyticsSpan.Month,
     fromLocalDate: SEPTEMBER,
     toLocalDate: null,
@@ -51,18 +52,43 @@ describe('localStorageAnalyticsCachePorts', () => {
 
   it('spells the key creativo.analytics/<version>/<uid>/<scope>/<SPAN>-<from>-<to|none>-<COMPARISON>, the shop as «shop»', () => {
     expect(analyticsCacheStorageKey(keyOf())).toBe(
-      'creativo.analytics/2/dev-staff-ivan/ivan/MONTH-2026-09-01-none-PREVIOUS',
+      'creativo.analytics/3/dev-staff-ivan/ivan/MONTH-2026-09-01-none-PREVIOUS',
     );
     expect(
       analyticsCacheStorageKey(
         keyOf({
-          scopeBarberId: null,
+          scopeBarberIds: [],
           analyticsSpan: AnalyticsSpan.Week,
           fromLocalDate: unwrapOk(LocalDate.parse('2026-09-28')),
         }),
       ),
     ).toBe(
-      'creativo.analytics/2/dev-staff-ivan/shop/WEEK-2026-09-28-none-PREVIOUS',
+      'creativo.analytics/3/dev-staff-ivan/shop/WEEK-2026-09-28-none-PREVIOUS',
+    );
+    // A location (ADR 2026-11-09) keys apart from the shop and every barber.
+    expect(
+      analyticsCacheStorageKey(
+        keyOf({
+          scopeBarberIds: [],
+          scopeLocationIds: [LocationId.of('loc-centre')],
+        }),
+      ),
+    ).toBe(
+      'creativo.analytics/3/dev-staff-ivan/shop%40location%3Aloc-centre/MONTH-2026-09-01-none-PREVIOUS',
+    );
+    // Sets key the same in any order: barbers and locations sorted.
+    expect(
+      analyticsCacheStorageKey(
+        keyOf({
+          scopeBarberIds: [BarberId.of('niko'), BarberId.of('ivan')],
+          scopeLocationIds: [
+            LocationId.of('loc-mladost'),
+            LocationId.of('loc-centre'),
+          ],
+        }),
+      ),
+    ).toBe(
+      'creativo.analytics/3/dev-staff-ivan/ivan%2Bniko%40location%3Aloc-centre%2Bloc-mladost/MONTH-2026-09-01-none-PREVIOUS',
     );
     // A CUSTOM range carries its last day, so two ranges from one day never share an entry.
     expect(
@@ -74,7 +100,7 @@ describe('localStorageAnalyticsCachePorts', () => {
         }),
       ),
     ).toBe(
-      'creativo.analytics/2/dev-staff-ivan/ivan/CUSTOM-2026-09-07-2026-09-20-PREVIOUS',
+      'creativo.analytics/3/dev-staff-ivan/ivan/CUSTOM-2026-09-07-2026-09-20-PREVIOUS',
     );
     expect(
       analyticsCacheStorageKey(
@@ -84,11 +110,11 @@ describe('localStorageAnalyticsCachePorts', () => {
         }),
       ),
     ).toBe(
-      'creativo.analytics/2/dev-staff-ivan/ivan/YEAR-2026-01-01-none-PREVIOUS',
+      'creativo.analytics/3/dev-staff-ivan/ivan/YEAR-2026-01-01-none-PREVIOUS',
     );
     // A segment can never reach into the next one.
     expect(analyticsCacheStorageKey(keyOf({ userId: UserId.of('a/b') }))).toBe(
-      'creativo.analytics/2/a%2Fb/ivan/MONTH-2026-09-01-none-PREVIOUS',
+      'creativo.analytics/3/a%2Fb/ivan/MONTH-2026-09-01-none-PREVIOUS',
     );
   });
 
@@ -125,7 +151,7 @@ describe('localStorageAnalyticsCachePorts', () => {
       unwrapOk(ports.readCachedReport(keyOf({ userId: UserId.of('other') }))),
     ).toBeNull();
     expect(
-      unwrapOk(ports.readCachedReport(keyOf({ scopeBarberId: null }))),
+      unwrapOk(ports.readCachedReport(keyOf({ scopeBarberIds: [] }))),
     ).toBeNull();
     expect(
       unwrapOk(
@@ -165,7 +191,7 @@ describe('localStorageAnalyticsCachePorts', () => {
     unwrapOk(ports.writeCachedReport(monthKey(6), report));
 
     const entries = Object.keys(localStorage).filter((key) =>
-      key.startsWith('creativo.analytics/2/'),
+      key.startsWith('creativo.analytics/3/'),
     );
     expect(entries).toHaveLength(ANALYTICS_CACHE_CAPACITY);
     // Month 1 back was the least recently written.
@@ -215,7 +241,7 @@ describe('localStorageAnalyticsCachePorts', () => {
 
   it('never reads a v1 entry (VERSION_PREFIX is this definition’s), and sweeps an older definition’s entries on a write', () => {
     const ports = localStorageAnalyticsCachePorts();
-    expect(ANALYTICS_DEFINITION_VERSION).toBe(2);
+    expect(ANALYTICS_DEFINITION_VERSION).toBe(3);
     const v1 =
       'creativo.analytics/1/dev-staff-ivan/ivan/MONTH-2026-09-01-PREVIOUS';
     const v0 =

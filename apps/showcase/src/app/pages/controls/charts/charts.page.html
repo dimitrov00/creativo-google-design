@@ -1,6 +1,6 @@
 <sc-page scTitle="Charts">
   <ng-container scLede>
-    <code>@creativo/ui/charts</code> — the analytics screen's four drawings,
+    <code>@creativo/ui/charts</code> — the analytics screen's drawings,
     hand-drawn SVG and CSS over the DS tokens. Every input is a display struct a
     presenter built: the kit decides nothing and formats no number. Colour is
     CSS only — a mark carries <code>data-part</code> and
@@ -172,6 +172,192 @@
         data-testid="charts-line"
       />
     </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Smooth, with an area — the line">
+    <ng-container scAbout>
+      The same <code>ui-line-chart</code> with <code>uiCurve="smooth"</code> and
+      <code>uiArea</code>: a monotone cubic through the points (it never swings
+      past a day it does not have) over a wash of its paint fading from 22 % at
+      the top to nothing on the baseline. The gradient carries an id of its own
+      per chart.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-line-chart
+        [uiPoints]="takings()"
+        [uiAverage]="takingsAverage()"
+        [uiValueText]="takingsValueText()"
+        [uiAverageText]="takingsAverageText()"
+        uiCurve="smooth"
+        uiArea
+        uiLabel="Оборот по дни спрямо миналата седмица: най-висок петък"
+        data-testid="charts-line-smooth"
+      />
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Bento tiles — the spark bars">
+    <ng-container scAbout>
+      <code>ui-spark-bars</code>: a card's tiny graph, no axes, no words on the
+      drawing. Thin capsules across the tile's width,
+      <code>--ui-spark-bars-height</code> tall (48 px); a zero is a 2 px stub so
+      its slot still reads. <code>uiHighlight</code> keeps one bar in the paint
+      and quiets the rest to the 48 % grey (today, on «Оборот»);
+      <code>uiAverage</code> rules a dashed line in the comparison grey
+      («Записвания»); a <code>data-part</code> on the host repaints the series
+      («Неявявания»). Each bar's figure is in the hidden table.
+    </ng-container>
+    <div class="charts__bento">
+      @for (tile of sparkTiles; track tile.id) {
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiSpacing="compact" uiAlignment="stretch">
+          <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+            {{ tile.caption }}
+          </p>
+          <p uiText [uiFont]="'title2'" uiWeight="bold">{{ tile.figure }}</p>
+          <p uiText [uiFont]="'caption'" uiForegroundStyle="secondary">
+            {{ tile.sub }}
+          </p>
+          <ui-spark-bars
+            [uiValues]="tile.values"
+            [uiHighlight]="tile.highlight"
+            [uiAverage]="tile.average"
+            [uiValueText]="tile.valueText"
+            [uiLabel]="tile.label"
+            [attr.data-part]="tile.part"
+            [attr.data-testid]="'charts-spark-' + tile.id"
+          />
+        </ui-stack>
+      </ui-card>
+      }
+    </div>
+  </sc-demo>
+
+  <sc-demo scTitle="One figure, three views — line, bars, ring">
+    <ng-container scAbout>
+      The detail screen's switch: an icon-only capsule
+      <code>ui-segmented-control</code> over the registry's
+      <code>chart.line</code>, <code>chart.bars</code> and
+      <code>chart.ring</code>, swapping the drawing of six months' takings. The
+      ring is <code>ui-ring-chart</code>: the half year by service, one
+      round-capped arc per share from 12 o'clock clockwise with air between the
+      caps, each painted by its part hook; the <code>[uiRingCenter]</code> slot
+      lays the caption, the big figure and the span over the hole as HTML.
+    </ng-container>
+    <ui-card uiTone="elevated" uiPadding="comfortable" class="charts__column">
+      <ui-stack uiSpacing="regular" uiAlignment="stretch">
+        <ui-flow uiSpacing="regular" uiAlignment="center">
+          <p uiText [uiFont]="'headline'" class="charts__grow">
+            Оборот · {{ halfYearTotal }}
+          </p>
+          <ui-segmented-control
+            [uiSegments]="detailViews"
+            [uiSelectedId]="detailView()"
+            uiShape="capsule"
+            uiLabel="Изглед"
+            (uiPicked)="pickView($event)"
+          />
+        </ui-flow>
+        @switch (detailView()) { @case ('line') {
+        <ui-line-chart
+          [uiPoints]="halfYear"
+          [uiValueText]="halfYearText"
+          uiCurve="smooth"
+          uiArea
+          uiLabel="Оборот по месеци, януари – юни: най-висок май, 2 730 €"
+          data-testid="charts-detail-line"
+        />
+        } @case ('bars') {
+        <ui-bar-chart
+          [uiBars]="halfYearBars"
+          [uiValueText]="halfYearText"
+          uiStacking="single"
+          [uiHighlightIndex]="halfYearBest"
+          uiLabel="Оборот по месеци, януари – юни: най-висок май, 2 730 €"
+          data-testid="charts-detail-bars"
+        />
+        } @case ('ring') {
+        <ui-ring-chart
+          [uiSegments]="serviceShares"
+          uiLabel="Оборот по услуги, януари – юни: най-много от подстригване"
+          class="charts__ring"
+          data-testid="charts-detail-ring"
+        >
+          <div uiRingCenter>
+            <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+              Оборот
+            </p>
+            <p uiText [uiFont]="'title'" uiWeight="bold">{{ halfYearTotal }}</p>
+            <p uiText [uiFont]="'caption'" uiForegroundStyle="secondary">
+              яну – юни
+            </p>
+          </div>
+        </ui-ring-chart>
+        } }
+      </ui-stack>
+    </ui-card>
+  </sc-demo>
+
+  <sc-demo scTitle="Shares by person — the ring in identity tones">
+    <ng-container scAbout>
+      A segment's <code>tone</code> (0 … 4) wins over its part: one barber per
+      share in their schedule colour, the same <code>data-tone</code> painting
+      the swatch in the legend. The smallest share is short enough to show the
+      gap's arithmetic. «Друго полугодие» swaps the figures so the ring
+      cross-fades. <code>uiThickness</code> is 20 here.
+    </ng-container>
+    <ui-stack uiSpacing="regular" uiAlignment="stretch" class="charts__column">
+      <ui-card uiTone="elevated" uiPadding="comfortable">
+        <ui-stack uiSpacing="regular" uiAlignment="stretch">
+          <ui-ring-chart
+            [uiSegments]="barberShares()"
+            [uiThickness]="20"
+            uiLabel="Оборот по бръснари за полугодието"
+            class="charts__ring"
+            data-testid="charts-ring-barbers"
+          >
+            <div uiRingCenter>
+              <p uiText [uiFont]="'footnote'" uiForegroundStyle="secondary">
+                Общо
+              </p>
+              <p uiText [uiFont]="'title2'" uiWeight="bold">
+                {{ barberTotal() }}
+              </p>
+            </div>
+          </ui-ring-chart>
+          <ul class="charts__legend">
+            @for (segment of barberShares(); track segment.label) {
+            <li class="charts__legend-row">
+              <span
+                class="ui-chart-swatch"
+                [attr.data-tone]="segment.tone"
+              ></span>
+              <span uiText [uiFont]="'subheadline'">{{ segment.label }}</span>
+              <span
+                uiText
+                [uiFont]="'subheadline'"
+                uiForegroundStyle="secondary"
+                class="charts__legend-value"
+                >{{ segment.valueText }}</span
+              >
+            </li>
+            }
+          </ul>
+        </ui-stack>
+      </ui-card>
+      <ui-flow uiSpacing="regular" uiAlignment="center">
+        <button
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="small"
+          type="button"
+          (click)="toggleBarbers()"
+        >
+          Друго полугодие
+        </button>
+      </ui-flow>
+    </ui-stack>
   </sc-demo>
 
   <sc-demo scTitle="When the chair is busy — the heatmap">

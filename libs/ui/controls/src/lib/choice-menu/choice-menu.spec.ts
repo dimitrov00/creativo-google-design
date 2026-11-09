@@ -17,6 +17,7 @@ import {
       uiLabel="Кой"
       [(uiPresented)]="open"
       (uiPicked)="picked.push($event); selected.set($event)"
+      (uiToggled)="toggled.push($event)"
     >
       <button
         type="button"
@@ -44,6 +45,7 @@ class Host {
   readonly open = signal(false);
   legend = false;
   picked: string[] = [];
+  toggled: { row: string; id: string }[] = [];
 }
 
 async function render(legend = false, options?: readonly UiChoiceOption[]) {
@@ -133,6 +135,52 @@ describe('UiChoiceMenu', () => {
       q('pick-none')?.querySelector('.ui-choice-menu__check-space'),
     ).toBeNull();
   });
+  it('parts the options into captioned sections at each change of group, each its own run', async () => {
+    const { host } = await render(false, [
+      {
+        id: 'shop',
+        label: 'Всички салони',
+        group: 'Салони',
+        testId: 'pick-shop',
+      },
+      { id: 'loc', label: 'Център', group: 'Салони', testId: 'pick-loc' },
+      {
+        id: 'ivan',
+        label: 'Иван',
+        avatarSrc: null,
+        group: 'Екип',
+        testId: 'pick-ivan',
+      },
+    ]);
+    const groups = Array.from(host.querySelectorAll('ui-list-group'));
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.getAttribute('aria-label'))).toEqual([
+      'Салони',
+      'Екип',
+    ]);
+    expect(groups.map((group) => group.getAttribute('role'))).toEqual([
+      'group',
+      'group',
+    ]);
+    expect(
+      groups.map((group) => group.querySelectorAll('[uiMenuItem]').length),
+    ).toEqual([2, 1]);
+    expect(
+      Array.from(host.querySelectorAll('.ui-choice-menu__section')).map((c) =>
+        c.textContent?.trim(),
+      ),
+    ).toEqual(['Салони', 'Екип']);
+  });
+
+  it('keeps one run with no caption when no option names a group', async () => {
+    const { host } = await render();
+    expect(host.querySelectorAll('ui-list-group')).toHaveLength(1);
+    expect(host.querySelector('.ui-choice-menu__section')).toBeNull();
+    expect(host.querySelector('ui-list-group')?.hasAttribute('role')).toBe(
+      false,
+    );
+  });
+
   it('states a description under the label when an option carries one', async () => {
     const { q } = await render(false, [
       {
@@ -156,5 +204,84 @@ describe('UiChoiceMenu', () => {
     expect(
       q('pick-pct')?.querySelector('.ui-choice-menu__description'),
     ).toBeNull();
+  });
+
+  it('a row with a submenu: its own pick, then a chevron that opens tick boxes in its place — a toggle keeps the menu up, back returns', async () => {
+    const options: readonly UiChoiceOption[] = [
+      {
+        id: 'team',
+        label: 'Целият екип',
+        icon: 'nav.team',
+        selected: true,
+        testId: 'team',
+        childrenTitle: 'Екип',
+        openLabel: 'Избери бръснари',
+        openTestId: 'team-open',
+        children: [
+          { id: 'ivan', label: 'Иван', checked: true, testId: 'box-ivan' },
+          { id: 'niko', label: 'Нико', checked: false, testId: 'box-niko' },
+        ],
+      },
+    ];
+    const { fixture, q } = await render(false, options);
+    q('trigger')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const row = q('team');
+    expect(row?.getAttribute('role')).toBe('menuitemradio');
+    expect(row?.getAttribute('aria-checked')).toBe('true');
+    const open = q('team-open');
+    expect(open?.getAttribute('aria-label')).toBe('Избери бръснари');
+    expect(open?.getAttribute('aria-haspopup')).toBe('menu');
+
+    open?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(q('team')).toBeNull();
+    expect(q('team-open-back')?.textContent).toContain('Екип');
+    const ivan = q('box-ivan');
+    expect(ivan?.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(ivan?.getAttribute('aria-checked')).toBe('true');
+    expect(q('box-niko')?.getAttribute('aria-checked')).toBe('false');
+
+    q('box-niko')?.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.toggled).toEqual([
+      { row: 'team', id: 'niko' },
+    ]);
+    expect(fixture.componentInstance.open()).toBe(true);
+
+    q('team-open-back')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(q('team')).not.toBeNull();
+
+    // The main part of the row picks it, and closes.
+    q('team')?.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.picked).toEqual(['team']);
+    expect(fixture.componentInstance.open()).toBe(false);
+  });
+
+  it('opens on the top level again after it closed on a submenu', async () => {
+    const options: readonly UiChoiceOption[] = [
+      {
+        id: 'team',
+        label: 'Целият екип',
+        testId: 'team',
+        openTestId: 'team-open',
+        children: [{ id: 'ivan', label: 'Иван', checked: true }],
+      },
+    ];
+    const { fixture, q } = await render(false, options);
+    q('trigger')?.click();
+    fixture.detectChanges();
+    q('team-open')?.click();
+    fixture.detectChanges();
+    fixture.componentInstance.open.set(false);
+    fixture.detectChanges();
+    fixture.componentInstance.open.set(true);
+    fixture.detectChanges();
+    expect(q('team')).not.toBeNull();
   });
 });

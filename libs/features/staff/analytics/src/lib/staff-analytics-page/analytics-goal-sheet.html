@@ -79,6 +79,22 @@
     >
       {{ goal.refusal ?? '' }}
     </p>
+    @if (goal.removeLabel; as removeLabel) {
+    <!-- A set goal can be taken back: the month then has none. -->
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="plain"
+      uiRole="destructive"
+      uiControlSize="regular"
+      class="analytics-goal-sheet__remove"
+      data-testid="analytics-goal-remove"
+      [disabled]="goal.saving"
+      (click)="removed.emit()"
+    >
+      {{ removeLabel }}
+    </button>
+    }
   </ui-stack>
 
   <ui-sheet-action-bar sheet-overlay [uiVisible]="true">

@@ -3,6 +3,7 @@ import {
   Currency,
   HourOfDay,
   LocalDate,
+  LocationId,
   MinuteCount,
   PriceCents,
   ServiceId,
@@ -21,6 +22,9 @@ import { ANALYTICS_DEFINITION_VERSION } from './analytics-report.data';
  * same flat layout in Firestore, on the wire and in this struct (Law 5).
  * Every figure is a `day`-prefixed integer: minutes on the shop's wall
  * clock, euro cents, counts — what `DayFiguresSystem` folds and sums.
+ * `DayLocations` says where the day happened, so one location's figures
+ * are read from the same document (ADR 2026-11-09, analytics location
+ * scope).
  */
 
 /**
@@ -106,12 +110,28 @@ export type DayStamp = {
   readonly dayComputedAtUtcMs: UtcEpochMs;
 };
 
+/**
+ * A barber-day's figures — every part, count, service row and hour bucket:
+ * the root of a stored day, and each location's share of one.
+ */
+export type DayBody = DayRow & DayCounts & DayServices & DayHourBuckets;
+
+/**
+ * Where the day happened (ADR 2026-11-09). `dayLocationIds`: every location
+ * the day touched — its offered windows, blocks and breaks, the roster a
+ * `CLOSED` day would have given, and every visit with a seat of the barber
+ * — sorted, each once. `dayLocations`: one body per id, in the same order,
+ * ONLY when the day touched two or more; with one, the root is that
+ * location's figures, and with none the day is nobody's. A true 1-to-N
+ * list, never queried (Law 5).
+ */
+export type DayLocations = {
+  readonly dayLocationIds: readonly LocationId[];
+  readonly dayLocations: readonly DayBody[];
+};
+
 /** The stored body of one past barber-day — `analyticsDays/{busyKey}` minus `id`. */
-export type DayFigures = DayRow &
-  DayCounts &
-  DayServices &
-  DayHourBuckets &
-  DayStamp;
+export type DayFigures = DayBody & DayLocations & DayStamp;
 
 /** Is `raw` a list of exactly 24 minute counts — one hour-bucket array. */
 function isHourBuckets(raw: unknown): raw is readonly MinuteCount[] {
@@ -131,6 +151,36 @@ function isServiceRow(raw: unknown): raw is DayFigures.ServiceRow {
     PriceCents.is(raw['takingsCents']) &&
     MinuteCount.is(raw['serviceMinutes'])
   );
+}
+
+/** Is `raw` a day's body — every figure field present and of its shape, read in place. */
+function isBody(raw: unknown): raw is DayBody {
+  if (!StoredFields.isRecord(raw)) return false;
+  if (!BarberId.is(raw['barberId']) || !LocalDate.is(raw['localDate'])) {
+    return false;
+  }
+  for (let i = 0; i < MINUTE_FIELDS.length; i++) {
+    if (!MinuteCount.is(raw[MINUTE_FIELDS[i] as string])) return false;
+  }
+  for (let i = 0; i < COUNT_FIELDS.length; i++) {
+    if (!StoredFields.isCount(raw[COUNT_FIELDS[i] as string])) return false;
+  }
+  return (
+    PriceCents.is(raw['dayTakingsCents']) &&
+    PriceCents.is(raw['dayTipsCents']) &&
+    Currency.is(raw['currency']) &&
+    StoredFields.isArrayOf(raw['dayServices'], isServiceRow) &&
+    isHourBuckets(raw['dayHourWorked']) &&
+    isHourBuckets(raw['dayHourRostered'])
+  );
+}
+
+/** Are `ids` sorted, each once — how a day lists the locations it touched. */
+function isSortedOnce(ids: readonly LocationId[]): boolean {
+  for (let i = 1; i < ids.length; i++) {
+    if ((ids[i - 1] as LocationId) >= (ids[i] as LocationId)) return false;
+  }
+  return true;
 }
 
 /** The fields of a day that are minute counts — checked and summed alike. */
@@ -220,6 +270,8 @@ export const DayFigures = {
       dayServices: [],
       dayHourWorked: zeroBuckets(),
       dayHourRostered: zeroBuckets(),
+      dayLocationIds: [],
+      dayLocations: [],
       dayDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
       dayComputedAtUtcMs: computedAtUtcMs,
     };
@@ -229,31 +281,53 @@ export const DayFigures = {
    * The read-time door (edge hardening D-1) of a stored day's body: every
    * field present and of its shape — the ids, the civil date, thirteen
    * minute counts, two amounts and a currency, eleven counts, the service
-   * rows, two 24-bucket arrays and the stamp. Read in place: no copy, no
-   * `Result`. A `false` is a malformed document, which a reader drops and
-   * logs, never a figure.
+   * rows, two 24-bucket arrays, the locations — sorted ids, and a body per
+   * id exactly when there are two or more — and the stamp. Read in place:
+   * no copy, no `Result`. A `false` is a malformed document, which a
+   * reader drops and logs, never a figure.
    */
   is(raw: unknown): raw is DayFigures {
     if (!StoredFields.isRecord(raw)) return false;
-    if (!BarberId.is(raw['barberId']) || !LocalDate.is(raw['localDate'])) {
-      return false;
-    }
-    for (let i = 0; i < MINUTE_FIELDS.length; i++) {
-      if (!MinuteCount.is(raw[MINUTE_FIELDS[i] as string])) return false;
-    }
-    for (let i = 0; i < COUNT_FIELDS.length; i++) {
-      if (!StoredFields.isCount(raw[COUNT_FIELDS[i] as string])) return false;
-    }
+    const ids = raw['dayLocationIds'];
+    const shares = raw['dayLocations'];
+    const version = raw['dayDefinitionVersion'];
+    const computedAt = raw['dayComputedAtUtcMs'];
     return (
-      PriceCents.is(raw['dayTakingsCents']) &&
-      PriceCents.is(raw['dayTipsCents']) &&
-      Currency.is(raw['currency']) &&
-      StoredFields.isArrayOf(raw['dayServices'], isServiceRow) &&
-      isHourBuckets(raw['dayHourWorked']) &&
-      isHourBuckets(raw['dayHourRostered']) &&
-      StoredFields.isCount(raw['dayDefinitionVersion']) &&
-      UtcEpochMs.is(raw['dayComputedAtUtcMs'])
+      isBody(raw) &&
+      StoredFields.isArrayOf(ids, LocationId.is) &&
+      isSortedOnce(ids) &&
+      StoredFields.isArrayOf(shares, isBody) &&
+      shares.length === (ids.length > 1 ? ids.length : 0) &&
+      StoredFields.isCount(version) &&
+      UtcEpochMs.is(computedAt)
     );
+  },
+
+  /**
+   * One location's figures of a stored day (ADR 2026-11-09): the day itself
+   * when it touched that location alone, that location's share when it
+   * touched several, and an empty day — still held, so never recomputed
+   * without its visits — when it never touched it. The answer lists only
+   * that location and carries the day's stamp.
+   */
+  atLocation(day: DayFigures, locationId: LocationId): DayFigures {
+    const index = day.dayLocationIds.indexOf(locationId);
+    if (index < 0) {
+      return DayFigures.empty(
+        day.barberId,
+        day.localDate,
+        day.dayComputedAtUtcMs,
+      );
+    }
+    const share = day.dayLocations[index];
+    if (share === undefined) return day;
+    return {
+      ...share,
+      dayLocationIds: [locationId],
+      dayLocations: [],
+      dayDefinitionVersion: day.dayDefinitionVersion,
+      dayComputedAtUtcMs: day.dayComputedAtUtcMs,
+    };
   },
 
   /**

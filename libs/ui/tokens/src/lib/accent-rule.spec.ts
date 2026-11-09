@@ -703,6 +703,11 @@ const ON_ACCENT_ALLOWED: readonly Allowed[] = [
     reason: 'the chosen person’s check on the solid disc: a mark',
   },
   {
+    file: 'libs/ui/controls/src/lib/choice-menu/choice-menu.css',
+    selector: '.ui-choice-menu .ui-choice-menu__box[data-checked] > .ui-icon',
+    reason: 'a ticked box’s check on the solid square: a mark',
+  },
+  {
     file: 'libs/features/client/appointments/src/lib/client-appointments/client-appointments.css',
     selector: '.appointments__add.ui-button',
     reason: 'the round add button: a plus on the solid disc, a mark',

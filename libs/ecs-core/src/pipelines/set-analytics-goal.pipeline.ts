@@ -48,7 +48,9 @@ import {
  *    goal is that barber's alone — a caller whose account is not linked to
  *    the record the scope resolved to (an admin naming a barber's record)
  *    → `ANALYTICS_GOAL_FORBIDDEN`; the shop's goal (`null`) is any admin's.
- * 2. **The range and the month** — `AnalyticsGoal.rangeOf` (both bounds
+ * 2. **The range and the month** — `AnalyticsGoal.rangeOrClearOf`: no
+ *    range at all REMOVES the month's goal (step 3 deletes the document
+ *    and writes an `ANALYTICS_GOAL_CLEARED` row); otherwise `rangeOf` (both bounds
  *    positive whole cents, low ≤ high; the field at fault named) and
  *    `StaffAnalyticsSystem.goalMonthAllowed`: the current or the next month
  *    on the default shop's clock (else the first shop's), derived ONCE from
@@ -115,14 +117,24 @@ export const setAnalyticsGoal =
     ]);
     if (!records.ok) return records;
     if (!listed.ok) return listed;
-    const scope = S.scopeOf(caller.value, cmd, records.value);
+    const scope = S.scopeOf(
+      caller.value,
+      { scopeBarberIds: cmd.scopeBarberId === null ? [] : [cmd.scopeBarberId] },
+      records.value,
+    );
     if (!scope.ok) return refused(scope.error);
-    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId)) {
+    // A goal call names no location: goals are the shop's or a barber's.
+    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId, [])) {
       return refused(AnalyticsError.goalForbidden());
     }
+    // The goal's scope: the one barber, or the shop (`null`).
+    const goalBarberId = S.soleBarberOf(scope.value);
 
     // 2. The range, and the month on the shop's clock.
-    const range = AnalyticsGoal.rangeOf(cmd.goalLowCents, cmd.goalHighCents);
+    const range = AnalyticsGoal.rangeOrClearOf(
+      cmd.goalLowCents,
+      cmd.goalHighCents,
+    );
     if (!range.ok) return refused(range.error);
     const clock = S.clockLocationOf(listed.value, ports.defaultLocationId);
     if (clock === null) {
@@ -138,10 +150,45 @@ export const setAnalyticsGoal =
       return refused(AnalyticsError.goalInvalidRange('goalMonth'));
     }
 
-    // 3. One transaction: the goal document and its audit row.
+    // 3. One transaction: the goal document and its audit row — or, with
+    //    no range, its removal and that row.
+    const actor = Actor.forCaller(cmd.callerUserId, profile.value?.roles ?? []);
+    if (range.value === null) {
+      const key = AnalyticsGoalKey.of(goalBarberId, cmd.goalMonth);
+      const cleared = await ports.commit(
+        async () => null,
+        (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
+          Result.ok({
+            writes: [
+              WriteOp.remove([Collections.AnalyticsGoals, key]),
+              ...AuditSystem.createsOf(
+                [
+                  AuditSystem.planAnalyticsGoalCleared(
+                    key,
+                    goalBarberId,
+                    cmd.goalMonth,
+                    actor,
+                    cmd.operationId,
+                    nowUtcMs,
+                  ),
+                ],
+                ports.hash,
+              ),
+            ],
+          }),
+      );
+      if (!cleared.ok) return cleared;
+      ports.log('info', LogEvent.AnalyticsGoalCleared, {
+        uid: cmd.callerUserId,
+        scope: goalBarberId,
+        month: cmd.goalMonth,
+        key,
+      });
+      return Result.ok({ goalKey: key, goalSetAtUtcMs: nowUtcMs });
+    }
     const goal: StoredAnalyticsGoal = {
-      id: AnalyticsGoalKey.of(scope.value, cmd.goalMonth),
-      barberId: scope.value,
+      id: AnalyticsGoalKey.of(goalBarberId, cmd.goalMonth),
+      barberId: goalBarberId,
       goalMonth: cmd.goalMonth,
       goalLowCents: range.value.goalLowCents,
       goalHighCents: range.value.goalHighCents,
@@ -150,7 +197,6 @@ export const setAnalyticsGoal =
       goalSetAtUtcMs: nowUtcMs,
     };
     const { id, ...body } = goal;
-    const actor = Actor.forCaller(cmd.callerUserId, profile.value?.roles ?? []);
     const committed = await ports.commit(
       async () => null,
       (): Result<{ readonly writes: readonly WriteOp[] }, never> =>

@@ -252,7 +252,8 @@ describe('staffAnalytics (emulator)', () => {
     fromLocalDate: LocalDate = SEPTEMBER,
   ): StaffAnalyticsCommand => ({
     callerUserId,
-    scopeBarberId,
+    scopeBarberIds: scopeBarberId === null ? [] : [scopeBarberId],
+    scopeLocationIds: [],
     fromLocalDate,
     toLocalDate: null,
     analyticsSpan: AnalyticsSpan.Month,

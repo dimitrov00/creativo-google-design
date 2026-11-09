@@ -246,6 +246,18 @@ export const UI_ICON_REGISTRY = {
   /** A search run before, offered to run again — Mail's «Recent Searches» rows. */
   'search.recent': 'history',
 
+  /* ── A chart's views ────────────────────────────────────────────────── */
+  /** Show this figure as a LINE over time — the analytics detail's view
+   *  switch. Its own glyph; no other key shares it. */
+  'chart.line': 'show_chart',
+  /** Show this figure as BARS, one per period — the same switch. Shares
+   *  `bar_chart` with `analytics.chart` today: that one opens the whole
+   *  analytics screen, this one picks a drawing on it, and they may diverge. */
+  'chart.bars': 'bar_chart',
+  /** Show this figure as a RING of shares — the same switch's radial view.
+   *  Its own glyph; no other key shares it. */
+  'chart.ring': 'donut_large',
+
   /* ── A booked visit's own verbs and facts ───────────────────────────── */
   /** Put this visit in the device's calendar (an `.ics` hand-off). */
   'visit.calendar': 'event_available',
@@ -396,6 +408,9 @@ export const UI_ICON_REGISTRY = {
   'location.recenter': 'arrow_upward',
   /** "Any location" — the booking flow's first-class "wherever is soonest". */
   'location.any': 'travel_explore',
+  /** The whole shop as an ANSWER — the analytics scope «Салон» / «Всички
+   *  салони», drawn in an avatar disc beside the barbers' faces. */
+  'location.shop': 'storefront',
 
   /* ── Galleries & layout toggles ─────────────────────────────────── */
   /* `gallery.grid` is an ALIAS of `layout.grid` — see UI_ICON_ALIASES. */

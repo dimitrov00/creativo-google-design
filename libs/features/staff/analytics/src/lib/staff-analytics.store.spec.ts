@@ -160,6 +160,7 @@ function build(options: {
         provide: CatalogContentService,
         useValue: {
           barbers: signal([{ id: IVAN }, { id: NIKO }]),
+          locations: signal([]),
         },
       },
     ],
@@ -193,7 +194,8 @@ describe('StaffAnalyticsStore — a barber', () => {
       [
         {
           userId: BARBER_UID,
-          scopeBarberId: IVAN,
+          scopeBarberIds: [IVAN],
+          scopeLocationIds: [],
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -210,14 +212,15 @@ describe('StaffAnalyticsStore — a barber', () => {
 
     expect(store.period()).toEqual(SEPTEMBER);
     expect(store.readsShop()).toBe(false);
-    expect(store.scopeChoices()).toBeNull();
+    expect(store.scopeMenu()).toBeNull();
     // The first frame: the cached figures, the request out.
     expect(store.report()).toBe(cached);
     expect(store.seatRowsHeld()).toBe(false);
     expect(store.analyticsLoad()).toBe(AnalyticsLoad.Refreshing);
     expect(calls.calls).toEqual([
       {
-        scopeBarberId: null,
+        scopeBarberIds: [],
+        scopeLocationIds: [],
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
         toLocalDate: null,
@@ -235,7 +238,8 @@ describe('StaffAnalyticsStore — a barber', () => {
     // Cached again under the report's own scope; the double drops seat rows as the adapter does.
     expect(cache.state.writes.at(-1)?.key).toEqual({
       userId: BARBER_UID,
-      scopeBarberId: IVAN,
+      scopeBarberIds: [IVAN],
+      scopeLocationIds: [],
       analyticsSpan: AnalyticsSpan.Month,
       toLocalDate: null,
       analyticsComparison: AnalyticsComparison.Previous,
@@ -260,7 +264,8 @@ describe('StaffAnalyticsStore — a barber', () => {
       [
         {
           userId: BARBER_UID,
-          scopeBarberId: IVAN,
+          scopeBarberIds: [IVAN],
+          scopeLocationIds: [],
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -282,7 +287,8 @@ describe('StaffAnalyticsStore — a barber', () => {
       [
         {
           userId: BARBER_UID,
-          scopeBarberId: IVAN,
+          scopeBarberIds: [IVAN],
+          scopeLocationIds: [],
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -324,7 +330,8 @@ describe('StaffAnalyticsStore — a barber', () => {
       [
         {
           userId: BARBER_UID,
-          scopeBarberId: IVAN,
+          scopeBarberIds: [IVAN],
+          scopeLocationIds: [],
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -400,8 +407,9 @@ describe('StaffAnalyticsStore — a barber', () => {
 
   it('a barber cannot pick another scope', () => {
     const { store } = build({ principal: barber(), linkedBarberId: IVAN });
-    store.pickScope(NIKO);
-    expect(store.scopeBarberId()).toBeNull();
+    store.pickBarber(NIKO);
+    store.toggleBarber(NIKO);
+    expect(store.scopeBarberIds()).toEqual([]);
   });
 });
 
@@ -522,7 +530,7 @@ describe('StaffAnalyticsStore — the month’s goal (staff-analytics-v2 CUJ 6)'
   it('the admin’s save names the scope on screen', async () => {
     const { store, calls } = build({ principal: admin() });
     await calls.answer(Result.ok(shopReportFixture()));
-    store.pickScope(NIKO);
+    store.pickBarber(NIKO);
     await calls.answer(Result.ok(analyticsReportFixture()));
     store.openGoal();
     store.goalLow.set(100_000);
@@ -533,37 +541,50 @@ describe('StaffAnalyticsStore — the month’s goal (staff-analytics-v2 CUJ 6)'
 });
 
 describe('StaffAnalyticsStore — the admin', () => {
-  it('opens on the shop, its picker the shop, «Аз» and the barbers; a pick asks for that barber', async () => {
+  it('opens on the shop, its menu «Аз» then the barbers; boxes toggle a part of the team, never the last off', async () => {
     const { store, calls, cache } = build({
       principal: admin(),
       linkedBarberId: NIKO,
     });
     expect(store.readsShop()).toBe(true);
-    expect(store.scopeChoices()).toEqual([
-      { scopeBarberId: null, scopeMine: false },
-      { scopeBarberId: NIKO, scopeMine: true },
-      { scopeBarberId: IVAN, scopeMine: false },
-    ]);
-    expect(calls.calls[0]?.scopeBarberId).toBeNull();
+    expect(store.scopeMenu()).toEqual({
+      locationIds: [],
+      barbers: [
+        { barberId: NIKO, scopeMine: true },
+        { barberId: IVAN, scopeMine: false },
+      ],
+    });
+    expect(calls.calls[0]?.scopeBarberIds).toEqual([]);
     await calls.answer(Result.ok(shopReportFixture()));
-    expect(cache.state.writes[0]?.key.scopeBarberId).toBeNull();
+    expect(cache.state.writes[0]?.key.scopeBarberIds).toEqual([]);
 
-    store.pickScope(IVAN);
+    // From the whole team, unticking Niko leaves Ivan's report.
+    store.toggleBarber(NIKO);
     TestBed.tick();
-    expect(calls.calls[1]?.scopeBarberId).toBe(IVAN);
+    expect(calls.calls[1]?.scopeBarberIds).toEqual([IVAN]);
+    expect(store.scopeBarberId()).toBe(IVAN);
     expect(store.scheduleBarberId()).toBe(IVAN);
+    // The last box stays ticked; ticking Niko back is the whole team.
+    store.toggleBarber(IVAN);
+    expect(store.scopeBarberIds()).toEqual([IVAN]);
+    store.toggleBarber(NIKO);
+    TestBed.tick();
+    expect(store.scopeBarberIds()).toEqual([]);
+    store.pickBarber(NIKO);
+    store.pickAllBarbers();
+    expect(store.scopeBarberIds()).toEqual([]);
   });
 
   it('a barber who no longer exists falls back to the shop and says so', async () => {
     const { store, calls } = build({ principal: admin() });
     await calls.answer(Result.ok(shopReportFixture()));
-    store.pickScope(IVAN);
+    store.pickBarber(IVAN);
     TestBed.tick();
     await calls.answer(refusal('ANALYTICS_SCOPE_UNKNOWN', 'not-found'));
     TestBed.tick();
-    expect(store.scopeBarberId()).toBeNull();
+    expect(store.scopeBarberIds()).toEqual([]);
     expect(store.scopeGone()).toBe(true);
-    expect(calls.calls.at(-1)?.scopeBarberId).toBeNull();
+    expect(calls.calls.at(-1)?.scopeBarberIds).toEqual([]);
   });
 });
 
@@ -579,7 +600,8 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     // Not this month first and the week after: nothing stands before the URL has spoken.
     expect(calls.calls).toEqual([
       {
-        scopeBarberId: null,
+        scopeBarberIds: [],
+        scopeLocationIds: [],
         fromLocalDate: '2026-09-28',
         analyticsSpan: AnalyticsSpan.Week,
         toLocalDate: null,
@@ -639,7 +661,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     });
     expect(store.scopeBarberId()).toBeNull();
     expect(calls.calls).toHaveLength(1);
-    expect(calls.calls[0]?.scopeBarberId).toBeNull();
+    expect(calls.calls[0]?.scopeBarberIds).toEqual([]);
   });
 
   it('an admin’s ?barber= is the scope, asked for ONCE; one that names no id is the shop', () => {
@@ -651,7 +673,8 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(store.scopeBarberId()).toBe(IVAN);
     expect(calls.calls).toEqual([
       {
-        scopeBarberId: IVAN,
+        scopeBarberIds: [IVAN],
+        scopeLocationIds: [],
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
         toLocalDate: null,
@@ -674,7 +697,8 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
       span: AnalyticsSpan.Week,
       from: '2026-09-28',
       to: null,
-      barber: IVAN,
+      barber: [IVAN],
+      location: [],
     });
     // …and written on the next task, never inside the activation.
     expect(router.url).toBe('/');
@@ -692,7 +716,8 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
       span: AnalyticsSpan.Month,
       from: '2026-09-01',
       to: null,
-      barber: null,
+      barber: [],
+      location: [],
     });
     await settle();
     expect(router.url).toBe('/?span=MONTH&from=2026-09-01');
@@ -709,6 +734,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
       from: undefined,
       to: undefined,
       barber: undefined,
+      location: undefined,
     });
     await settle();
     expect(router.url).toBe('/');
@@ -735,6 +761,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
           from: '2026-08-31',
           to: null,
           barber: null,
+          location: null,
         },
         queryParamsHandling: 'merge',
         replaceUrl: true,
@@ -742,10 +769,11 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     );
     expect(router.url).toBe('/?span=WEEK&from=2026-08-31');
 
-    store.pickScope(IVAN);
+    store.pickBarber(IVAN);
     await settle();
     expect(router.url).toBe('/?span=WEEK&from=2026-08-31&barber=ivan');
-    store.pickScope(null);
+    // Ticking the other box too is every box: the whole team, no parameter.
+    store.toggleBarber(NIKO);
     await settle();
     expect(router.url).toBe('/?span=WEEK&from=2026-08-31');
   });

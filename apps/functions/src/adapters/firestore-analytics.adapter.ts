@@ -4,6 +4,7 @@ import { RepositoryError } from '@core/errors';
 import { AnalyticsGoal, DayFigures } from '@core/components';
 import {
   type Appointment,
+  type ClientStatsRecord,
   type BarberAnalyticsDay,
   Collections,
   QueryOp,
@@ -40,7 +41,9 @@ import { IN_CHUNK, overBound, readFailed } from './store-answer';
  * - `loadDeparturesForBarber` — `scheduleExceptions where barberId == … and
  *   localDate` between (the `(barberId, localDate)` index, #16);
  * - `listBarberRecordIds` — the ids of `barbers`, bodies not read;
- * - `listLocations` — every `locations` document.
+ * - `listLocations` — every `locations` document;
+ * - `loadClientsFirstSeenIn` — `clientStats where firstVisitLocalDate`
+ *   between, one range (its single-field index).
  *
  * The queries' answers are concatenated in query order — no rule of the
  * adapter's: a party that holds keys of two chunks comes back twice, and
@@ -76,6 +79,13 @@ const DAYS_PER_BARBER = 366;
  * of the month falls inside.
  */
 const BOOKED_IN_RANGE = 20_000;
+
+/**
+ * The most clients first seen in one range (the reach, 366 days): the
+ * ceiling's ~4,000 visits a shop-month are mostly regulars, so even a year
+ * of every visit a first one stays under it.
+ */
+const FIRST_SEEN_IN_RANGE = 20_000;
 
 export const firestoreAnalyticsPorts = (
   db: Firestore,
@@ -158,6 +168,17 @@ export const firestoreAnalyticsPorts = (
         QueryOp.In,
         appointmentIds,
         FOLLOW_UPS_PER_VISIT,
+      ),
+
+    loadClientsFirstSeenIn: (fromLocalDate, toLocalDate) =>
+      bounded<ClientStatsRecord>(
+        Collections.ClientStats,
+        () =>
+          db
+            .collection(Collections.ClientStats)
+            .where('firstVisitLocalDate', QueryOp.Gte, fromLocalDate)
+            .where('firstVisitLocalDate', QueryOp.Lte, toLocalDate),
+        FIRST_SEEN_IN_RANGE,
       ),
 
     loadFollowUpsBookedIn: (fromUtcMs, toUtcMs) =>
