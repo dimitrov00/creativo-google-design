@@ -357,6 +357,17 @@ function pageOf(
   };
 }
 
+/** A span of hours in words — past ten hours the minutes are noise: «489 ч», not «489 ч 35 мин». */
+function hoursWords(
+  minutes: MinuteCount,
+  words: AnalyticsScreenInput['words'],
+): string {
+  return spanWords(
+    minutes >= TEN_HOURS ? MinuteCount.roundToHour(minutes) : minutes,
+    words.spanWords,
+  );
+}
+
 function cardsOf(
   input: AnalyticsScreenInput,
   body: AnalyticsBodyVm,
@@ -417,12 +428,7 @@ function cardsOf(
   const rosteredSoFar = AnalyticsCarouselSystem.rosteredSoFarOf(report);
   const worked = spanWords(report.reportWorkedMinutes, words.spanWords);
   // The roster's whole is said in hours past ten («от 131 ч»).
-  const rostered = spanWords(
-    rosteredSoFar >= TEN_HOURS
-      ? MinuteCount.roundToHour(rosteredSoFar)
-      : rosteredSoFar,
-    words.spanWords,
-  );
+  const rostered = hoursWords(rosteredSoFar, words);
 
   // «Бакшиши»: the tips and their share of the takings.
   const tipsShare = AnalyticsCarouselSystem.tipsShareOf(report);
@@ -431,7 +437,7 @@ function cardsOf(
   // «Работно време»: how full the roster was. «Свободно време»: what no
   // one booked or can still book, by weekday. «Клиенти»: who came.
   const occupancy = AnalyticsCarouselSystem.occupancyOf(report);
-  const free = AnalyticsCarouselSystem.freeMinutesOf(report);
+  const free = AnalyticsCarouselSystem.freeTimeOf(report);
   const freeWeek = AnalyticsCarouselSystem.freeWeekOf(report);
   const weekdayLabels = formatWeekdayLabels(lang);
   const served = AnalyticsCarouselSystem.servedOf(report);
@@ -477,19 +483,22 @@ function cardsOf(
       card: AnalyticsTile.Free,
       screen: AnalyticsCard.Time,
       title: words.home.free,
-      // Past ten hours the minutes are noise: «489 ч», not «489 ч 35 мин».
-      value: spanWords(
-        free >= TEN_HOURS ? MinuteCount.roundToHour(free) : free,
-        words.spanWords,
-      ),
+      // The figure is the free time SO FAR — beside the time card's «…ч
+      // по график», which counts so far too; what is still open to book
+      // reads under it while the period has any (owner, 2026-11-09).
+      value: hoursWords(free.soFarMinutes, words),
       delta: null,
       trend: null,
       detail:
-        freeWeek === null
-          ? null
-          : freeWeek.emptiest === null
-            ? words.home.freeNone
-            : words.home.freeDetail(weekdayLabels[freeWeek.emptiest - 1] ?? ''),
+        free.aheadMinutes > 0
+          ? words.home.freeAhead(hoursWords(free.aheadMinutes, words))
+          : freeWeek === null
+            ? null
+            : freeWeek.emptiest === null
+              ? words.home.freeNone
+              : words.home.freeDetail(
+                  weekdayLabels[freeWeek.emptiest - 1] ?? '',
+                ),
       spark:
         freeWeek === null
           ? null

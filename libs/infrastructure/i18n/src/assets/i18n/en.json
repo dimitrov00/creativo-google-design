@@ -2863,6 +2863,7 @@
       "free": "Free time",
       "freeDetail": "emptiest: {{weekday}}",
       "freeNone": "No free time",
+      "freeAhead": "{{time}} still open",
       "freeWeek": "Free time by weekday",
       "clients": "Clients",
       "clientsAllCame": "Everyone came",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AnalyticsPeriod, AnalyticsSpan } from '@core/components';
-import { LocationId } from '@core/primitives';
+import { LocationId, MinuteCount } from '@core/primitives';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -299,7 +299,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(cards.map((c) => [c.card, c.screen, c.title, c.value])).toEqual([
       ['takings', 'takings', 'Оборот', nbsp('45,50 €')],
       ['time', 'time', 'Работно време', '8 ч'],
-      ['free', 'time', 'Свободно време', '4 ч 10 мин'],
+      // The free time so far (the unsold), beside the time so far.
+      ['free', 'time', 'Свободно време', '3 ч 20 мин'],
       ['tips', 'tips', 'Бакшиши', nbsp('5,00 €')],
       ['clients', 'rebooked', 'Клиенти', '2'],
     ]);
@@ -326,8 +327,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     // How full the roster was, as a ring and a sentence.
     expect(time?.ring?.value).toBe(480);
     expect(time?.detail).toBe(`55% от 15 ч по график`);
-    // The free time by weekday, the emptiest day named and stressed.
-    expect(free?.detail).toBe('най-свободно: вт');
+    // What is still open to book reads under the figure while there is any.
+    expect(free?.detail).toBe('още 50 мин свободни');
     expect(free?.spark?.values).toHaveLength(7);
     expect(free?.spark?.labels).toEqual([
       'пн',
@@ -338,6 +339,22 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       'сб',
       'нд',
     ]);
+    // A period with nothing left to book names its emptiest weekday.
+    const done = analyticsReportFixture({
+      reportOpenMinutes: 0 as MinuteCount,
+    });
+    const closed = analyticsHomeVm(
+      inputOf('bg', {
+        report: done,
+        pageReports: PAGES.map((_, i) =>
+          i === PAGES.length - 1 ? done : null,
+        ),
+      }),
+    )
+      .pages.at(-1)
+      ?.cards?.find((c) => c.card === 'free');
+    expect(closed?.value).toBe('3 ч 20 мин');
+    expect(closed?.detail).toBe('най-свободно: вт');
     expect(tips?.detail).toBe('11% от оборота');
     // Who came of everyone booked, and who did not.
     // The new clients beside those who did not come.

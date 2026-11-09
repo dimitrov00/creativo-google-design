@@ -272,6 +272,8 @@ export interface AnalyticsWords {
     /** «най-свободно: пн» — the weekday with the most free time. */
     readonly freeDetail: (weekday: string) => string;
     readonly freeNone: string;
+    /** «още 352 ч свободни» — the free time still open before the period ends. */
+    readonly freeAhead: (time: string) => string;
     /** «Свободно време по дни от седмицата» — the weekday bars' name. */
     readonly freeWeek: string;
     /** «Клиенти» — the clients served. */
@@ -658,6 +660,7 @@ export function analyticsWordsOf(
       free: t('home.free'),
       freeDetail: (weekday) => t('home.freeDetail', { weekday }),
       freeNone: t('home.freeNone'),
+      freeAhead: (time) => t('home.freeAhead', { time }),
       freeWeek: t('home.freeWeek'),
       clients: t('home.clients'),
       // Nobody missed is its own sentence, not «0 не дойдоха».

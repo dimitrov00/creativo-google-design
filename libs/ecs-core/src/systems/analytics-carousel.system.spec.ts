@@ -331,11 +331,15 @@ describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals
 });
 
 describe('AnalyticsCarouselSystem — occupancy, free time and clients served', () => {
-  it('is the free time the schedule’s: unsold plus open', () => {
-    const report = analyticsReportFixture();
-    expect(C.freeMinutesOf(report)).toBe(
-      report.reportUnsoldMinutes + report.reportOpenMinutes,
-    );
+  it('splits the free time at now: the unsold so far, the open still ahead — together the schedule’s free', () => {
+    const report = analyticsReportFixture({
+      reportUnsoldMinutes: 330 as MinuteCount,
+      reportOpenMinutes: 1410 as MinuteCount,
+    });
+    expect(C.freeTimeOf(report)).toEqual({
+      soFarMinutes: 330,
+      aheadMinutes: 1410,
+    });
   });
 
   it('measures occupancy as worked over the rostered time so far, capped at 1, none with nothing rostered', () => {
@@ -355,7 +359,7 @@ describe('AnalyticsCarouselSystem — occupancy, free time and clients served', 
     expect(C.occupancyOf(empty)).toBeNull();
   });
 
-  it('sums the day rows’ free time by weekday, Monday first, naming the emptiest; none on rows per month', () => {
+  it('sums the day rows’ free time so far (the unsold) by weekday, Monday first, naming the emptiest; none on rows per month', () => {
     const base = analyticsReportFixture();
     const row = (day: string, unsold: number, open: number) => ({
       ...(base.reportDayRows[0] as AnalyticsReport['reportDayRows'][number]),
@@ -366,14 +370,15 @@ describe('AnalyticsCarouselSystem — occupancy, free time and clients served', 
     const week = C.freeWeekOf(
       analyticsReportFixture({
         reportDayRows: [
-          // Monday 7 Sep twice (two barbers), Wednesday 9 Sep.
+          // Monday 7 Sep twice (two barbers), Wednesday 9 Sep; the open
+          // minutes are still ahead and stay out of the week's bars.
           row('2026-09-07', 60, 0),
           row('2026-09-07', 30, 30),
-          row('2026-09-09', 0, 45),
+          row('2026-09-09', 15, 45),
         ],
       }),
     );
-    expect(week?.minutes).toEqual([120, 0, 45, 0, 0, 0, 0]);
+    expect(week?.minutes).toEqual([90, 0, 15, 0, 0, 0, 0]);
     expect(week?.emptiest).toBe(1);
     expect(
       C.freeWeekOf(analyticsReportFixture({ reportDayRows: [] }))?.emptiest,

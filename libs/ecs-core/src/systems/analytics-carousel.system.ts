@@ -53,9 +53,25 @@ export type AnalyticsPace = {
 };
 
 /**
+ * The free time of a period, split at now (owner, 2026-11-09: «490 ч»
+ * free beside «138 ч по график» read as counting time nobody works). Both
+ * parts are rostered working time only — the roster's windows with its
+ * breaks, blocks and closed days already out:
+ * - `soFarMinutes` — free time that is gone: rostered, never booked, and
+ *   past (or too near to book any more) — the schedule's unsold;
+ * - `aheadMinutes` — free time still open for booking before the period
+ *   ends — the schedule's open.
+ */
+export type AnalyticsFreeTime = {
+  readonly soFarMinutes: MinuteCount;
+  readonly aheadMinutes: MinuteCount;
+};
+
+/**
  * The free time by weekday (the home's free-time card): the minutes
- * nobody booked or can still book — unsold plus open — on each ISO
- * weekday, Monday first, and the weekday that holds the most.
+ * gone free so far (`AnalyticsFreeTime.soFarMinutes`, the unsold) on each
+ * ISO weekday, Monday first, and the weekday that holds the most — the
+ * same minutes the card's figure counts.
  */
 export type AnalyticsFreeWeek = {
   /** Seven entries, Monday … Sunday. */
@@ -299,14 +315,15 @@ export const AnalyticsCarouselSystem = {
   },
 
   /**
-   * The FREE TIME of `report` — the schedule's free (G5): rostered time
-   * nobody booked (unsold) and time still open for booking (open).
+   * The FREE TIME of `report`, split at now ({@link AnalyticsFreeTime}):
+   * the rostered time that went unbooked so far (unsold), and the time
+   * still open for booking (open). Their sum is the schedule's free (G5).
    */
-  freeMinutesOf(report: AnalyticsReport): MinuteCount {
-    return MinuteCount.add(
-      report.reportUnsoldMinutes,
-      report.reportOpenMinutes,
-    );
+  freeTimeOf(report: AnalyticsReport): AnalyticsFreeTime {
+    return {
+      soFarMinutes: report.reportUnsoldMinutes,
+      aheadMinutes: report.reportOpenMinutes,
+    };
   },
 
   /**
@@ -321,8 +338,8 @@ export const AnalyticsCarouselSystem = {
   },
 
   /**
-   * THE FREE WEEK ({@link AnalyticsFreeWeek}): the day rows' unsold and
-   * open minutes summed by their day's weekday. `null` where the rows are
+   * THE FREE WEEK ({@link AnalyticsFreeWeek}): the day rows' unsold
+   * minutes — the free time so far — summed by their day's weekday. `null` where the rows are
    * per month (a span over 93 days): a month has no weekday.
    */
   freeWeekOf(report: AnalyticsReport): AnalyticsFreeWeek | null {
@@ -334,7 +351,7 @@ export const AnalyticsCarouselSystem = {
       const index = LocalDate.weekday(row.localDate) - 1;
       minutes[index] = MinuteCount.add(
         minutes[index] as MinuteCount,
-        MinuteCount.add(row.dayUnsoldMinutes, row.dayOpenMinutes),
+        row.dayUnsoldMinutes,
       );
     }
     let emptiest: Weekday | null = null;
