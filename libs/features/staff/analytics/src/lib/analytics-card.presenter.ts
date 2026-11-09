@@ -8,6 +8,7 @@ import {
 import type { LocationId } from '@core/primitives';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import {
+  formatCentsWhole,
   formatCount,
   formatDayLong,
   formatMonthLong,
@@ -21,6 +22,7 @@ import {
   blockedOf,
   bodyOf,
   money,
+  REPORT_CURRENCY,
   statusOf,
 } from './analytics.presenter';
 import { locationsOf, pageLabelOf, teamOf } from './analytics-home.presenter';
@@ -371,6 +373,8 @@ function chartOf(
     averageText: string | null = null,
     /** Words a comparison point for the readout; `null` reads the figure alone. */
     comparisonText: ((value: V) => string) | null = null,
+    /** A money line rules round amounts (`moneyTicksOf`); minutes rule none. */
+    ruled = false,
   ): AnalyticsCardChartVm => ({
     chartView: AnalyticsChartView.Line,
     points: values.map((value, i) => ({
@@ -387,6 +391,7 @@ function chartOf(
         : null,
     label,
     series: [],
+    ticks: ruled ? ticksOf([...values, ...(comparison ?? [])]) : [],
     // What a tap or drag on the point reads under the figure: its day, and
     // the previous period's figure beside it when there is one.
     readouts: values.map((_, i) => {
@@ -397,6 +402,12 @@ function chartOf(
         : words.card.readoutVersus(day, comparisonText(previous));
     }),
   });
+  /** A money chart's grid: the system's round amounts, in words. */
+  const ticksOf = (values: readonly (number | null)[]) =>
+    AnalyticsCarouselSystem.moneyTicksOf(values).map((cents) => ({
+      value: cents,
+      text: formatCentsWhole(cents, REPORT_CURRENCY, lang),
+    }));
   const bars = (
     values: readonly number[],
     valueText: readonly string[],
@@ -450,6 +461,7 @@ function chartOf(
           null,
           null,
           (cents) => money(cents, lang),
+          true,
         );
       }
       if (view === AnalyticsChartView.Line && series !== null) {
@@ -460,6 +472,8 @@ function chartOf(
           series.points.map((p) => p.comparison),
           series.average,
           series.averageText,
+          null,
+          true,
         );
       }
       if (view === AnalyticsChartView.Bars && series !== null) {
@@ -527,7 +541,7 @@ function chartOf(
           money(cents as AnalyticsReport['reportTipsCents'], lang),
         );
         return view === AnalyticsChartView.Line
-          ? line(tips, text, words.card.tipsLine)
+          ? line(tips, text, words.card.tipsLine, null, null, null, null, true)
           : bars(tips, text, words.card.tipsLine);
       }
       return ring([
@@ -662,6 +676,7 @@ function chartOf(
             values: points.map((_, i) => pace[i] ?? null),
             tone: index % IDENTITY_TONES,
           })),
+          ticks: ticksOf(shown.flatMap(({ pace }) => pace)),
           readouts: points.map((_, i) => {
             const day = days.at(i) ?? labels.at(i) ?? '';
             const list = shown.flatMap(({ index, pace }) => {

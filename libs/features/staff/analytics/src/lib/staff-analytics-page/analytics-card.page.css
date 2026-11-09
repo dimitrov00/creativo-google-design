@@ -218,6 +218,27 @@
 
 .analytics-card__picks .ui-chart-swatch {
   margin-inline-end: var(--sys-space-tight);
+  transition: opacity var(--sys-motion-duration-instant)
+    var(--sys-motion-ease-standard);
+}
+
+/* A LEGEND, NOT A FILTER BAR (owner 2026-11-09: the solid primary pill
+   shouted): a shown salon keeps the quiet control fill and its tone's dot;
+   a hidden one goes hollow — no fill, a hairline, its words and dot
+   faded. The colour stays the line's, never the chip's. */
+.analytics-card__picks .ui-chip[data-selected] {
+  background: var(--sys-color-fill);
+  color: var(--sys-color-foreground);
+}
+
+.analytics-card__picks .ui-chip:not([data-selected]) {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--sys-color-separator);
+  color: var(--sys-color-tertiary-label);
+}
+
+.analytics-card__picks .ui-chip:not([data-selected]) .ui-chart-swatch {
+  opacity: 0.35;
 }
 
 /* A location's row: its name over its figures. */

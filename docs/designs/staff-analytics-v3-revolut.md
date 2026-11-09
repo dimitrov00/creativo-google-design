@@ -209,3 +209,22 @@ contents move into the card screens: the heatmap and the stacked parts under «�
 - A DS-wide light-mode "lift" hover (shadow instead of the wash, quiet
   buttons turning into white pills) was tried and REVERTED the same day:
   the owner found the buttons odd and preferred the cards' hover as it was.
+
+### Round 9 — «Салони», and a grid that means something (2026-11-09)
+
+- **«Салони»** — the shop's report over two or more salons carries
+  `reportLocations`: each salon's row from its own location report (no
+  extra read). Home: a «Салони» card under «Екипът». Its screen: a running
+  total per salon in its identity tone, salon toggles (a legend that hides
+  a line; never the last), bars by salon, and a row per salon —
+  «72% заетост · 14 клиента · 3 нови» — opening that salon's analytics.
+  Nested menus with checkboxes were weighed and declined: no room for a
+  side menu on a phone, and a subset of salons has no goal or comparison.
+- **The dot texture is gone from every chart.** In its place, on a card's
+  screen: dotted rules at round amounts (`AnalyticsCarouselSystem.moneyTicksOf`,
+  1/2/5 × 10ⁿ, never under 1 €) worded in whole euros at the right
+  («50 €», `formatCentsWhole`), and faint guides up from each named day
+  (a month's week starts, a week's days, a year's months) with the day
+  under the plot. A tick's word yields to a figure it would crowd.
+- **Salon toggles are quiet** — a shown salon keeps the control fill and
+  its dot; a hidden one goes hollow and faded. Never the solid primary pill.

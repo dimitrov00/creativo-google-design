@@ -1,5 +1,5 @@
 import type { BarberId, LocalDate, LocationId } from '@core/primitives';
-import type { UiChartPart } from '@creativo/ui/charts';
+import type { UiChartPart, UiChartTick } from '@creativo/ui/charts';
 import type { UiSegment } from '@creativo/ui/controls';
 import type {
   AnalyticsCard,
@@ -82,6 +82,8 @@ export type AnalyticsCardChartVm =
       readonly readouts: readonly string[];
       /** The compared members' lines — the locations'; empty for one line. */
       readonly series: readonly AnalyticsLineSeriesVm[];
+      /** The value grid: round amounts and their words; empty off money. */
+      readonly ticks: readonly UiChartTick[];
     }
   | {
       readonly chartView: typeof AnalyticsChartView.Bars;

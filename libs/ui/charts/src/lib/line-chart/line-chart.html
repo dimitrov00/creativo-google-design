@@ -12,43 +12,33 @@
   (pointercancel)="scrubEnd($event)"
   (pointerleave)="scrubEnd($event)"
 >
-  @if (uiTexture()) {
-  <!-- THE TEXTURE (Revolut's newer charts): dotted guides in the ink every
-       14 px behind the plot, full up to its upper third and fading out
-       only there — texture, never data, so it sits under every mark. -->
-  <defs>
-    <pattern
-      [attr.id]="textureIds.pattern"
-      patternUnits="userSpaceOnUse"
-      width="14"
-      height="10"
-    >
-      <line class="ui-chart-texture__line" x1="1" y1="1" x2="1" y2="11" />
-    </pattern>
-    <linearGradient [attr.id]="textureIds.fade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0" />
-      <stop offset="0.35" stop-color="#fff" stop-opacity="1" />
-      <stop offset="1" stop-color="#fff" stop-opacity="1" />
-    </linearGradient>
-    <mask [attr.id]="textureIds.mask">
-      <rect
-        [attr.x]="textureBox().x"
-        [attr.y]="textureBox().y"
-        [attr.width]="textureBox().width"
-        [attr.height]="textureBox().height"
-        [attr.fill]="'url(#' + textureIds.fade + ')'"
-      />
-    </mask>
-  </defs>
-  <rect
-    class="ui-chart-texture"
-    [attr.x]="textureBox().x"
-    [attr.y]="textureBox().y"
-    [attr.width]="textureBox().width"
-    [attr.height]="textureBox().height"
-    [attr.fill]="'url(#' + textureIds.pattern + ')'"
-    [attr.mask]="'url(#' + textureIds.mask + ')'"
+  <!-- THE GRID: a dotted rule at each round value, a faint guide up from
+       each named day — every line marks something the reader can read. -->
+  @for (rule of grid(); track $index) {
+  <line
+    class="ui-line-chart__grid"
+    [attr.x1]="rule.x1"
+    [attr.x2]="rule.x2"
+    [attr.y1]="rule.y"
+    [attr.y2]="rule.y"
   />
+  } @for (tick of axis(); track $index) {
+  <line
+    class="ui-line-chart__guide"
+    [attr.x1]="tick.x"
+    [attr.x2]="tick.x"
+    [attr.y1]="axisTop()"
+    [attr.y2]="axisBottom()"
+  />
+  <text
+    class="ui-line-chart__axis-label"
+    aria-hidden="true"
+    [attr.x]="tick.x"
+    [attr.y]="axisTextY()"
+    [attr.text-anchor]="tick.anchor"
+  >
+    {{ tick.text }}
+  </text>
   } @if (uiArea()) {
   <defs>
     <linearGradient [attr.id]="gradientId" x1="0" y1="0" x2="0" y2="1">
@@ -140,7 +130,16 @@
     [attr.cx]="at.x"
     [attr.cy]="at.valueY"
   />
-  } } @for (label of edgeLabels(); track $index) {
+  } } @for (label of tickLabels(); track $index) {
+  <text
+    class="ui-line-chart__tick-label"
+    aria-hidden="true"
+    [attr.x]="label.x"
+    [attr.y]="label.y"
+  >
+    {{ label.text }}
+  </text>
+  } @for (label of edgeLabels(); track $index) {
   <text
     class="ui-line-chart__edge-label"
     aria-hidden="true"

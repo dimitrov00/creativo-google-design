@@ -134,12 +134,13 @@
       (ChartView.Line) {
       <ui-line-chart
         class="analytics-card__bleed"
-        uiTexture
         [uiInset]="16"
         uiCurve="smooth"
         uiScrubbable
         (uiScrubbed)="scrubbed.set($event)"
         [uiSeries]="chart.series"
+        [uiTicks]="chart.ticks"
+        uiAxis
         [uiArea]="true"
         [uiPoints]="chart.points"
         [uiAverage]="chart.average"

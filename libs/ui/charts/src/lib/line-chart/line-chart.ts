@@ -15,7 +15,6 @@ import {
 import { elementWidth } from '@creativo/ui/layout';
 import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
 import { UiChartPart } from '../chart-part';
-import { chartTextureIds } from '../chart-texture';
 import {
   type ChartPoint,
   areaPath,
@@ -54,6 +53,12 @@ type SeriesShape = {
   readonly end: ChartPoint | null;
 };
 
+/** A value the grid rules, and its words (the kit formats no number). */
+export type UiChartTick = {
+  readonly value: number;
+  readonly text: string;
+};
+
 /**
  * How the line runs between its points: `linear` straight segments,
  * `smooth` a monotone cubic through every point that never overshoots
@@ -70,6 +75,8 @@ const FALLBACK_WIDTH = 320;
 const ASPECT = 2.5;
 /** Room for a marker and its ring at the plot's edges. */
 const PAD = 6;
+/** The day axis' band under the plot: a caption line. */
+const AXIS_BAND = 18;
 /** The right-edge labels' column, taken only when a label is printed — at least this. */
 const LABEL_GUTTER = 56;
 /**
@@ -184,7 +191,7 @@ export class UiLineChart {
     return {
       x: px(x(index)),
       top: px(PAD),
-      bottom: px(this.height() - PAD),
+      bottom: px(this.plotBottom()),
       valueY: point.value === null ? null : px(y(point.value)),
       comparisonY: point.comparison === null ? null : px(y(point.comparison)),
       series: this.uiSeries().flatMap((line) => {
@@ -242,20 +249,59 @@ export class UiLineChart {
     this.uiScrubbed.emit(index);
   }
 
-  /** Hairlines behind the plot, fading toward the top (Revolut's texture). */
-  readonly uiTexture = input(false, { transform: booleanAttribute });
+  /**
+   * THE VALUE GRID (Revolut's, Apple Health's): a dotted rule at each round
+   * value the presenter names, its words at the right edge — the reader
+   * measures the line against amounts, never a decoration. The scale
+   * reaches the highest tick, so the top rule sits on the plot's top.
+   */
+  readonly uiTicks = input<readonly UiChartTick[]>([]);
+  /**
+   * THE DAY AXIS: under the plot, each point's word that is not empty (a
+   * month's week starts, a week's days, a year's months) with a faint
+   * guide up from it — the vertical rules mark those days and nothing else.
+   */
+  readonly uiAxis = input(false, { transform: booleanAttribute });
 
-  protected readonly textureIds = chartTextureIds();
-  /** The plot's box — where the texture lies. */
-  protected readonly textureBox = computed(() => {
-    const { x0, x1 } = this.scales();
-    return {
-      x: px(x0),
-      y: px(PAD),
-      width: px(Math.max(x1 - x0, 0)),
-      height: px(Math.max(this.height() - 2 * PAD, 0)),
-    };
+  /** The plot's lowest y — above the day axis when it is drawn. */
+  private readonly plotBottom = computed(
+    () => this.height() - PAD - (this.uiAxis() ? AXIS_BAND : 0),
+  );
+
+  /** The value grid: each tick's rule from the plot's start to its end. */
+  protected readonly grid = computed(() => {
+    const { y, x0, x1 } = this.scales();
+    return this.uiTicks().map((tick) => ({
+      y: px(y(tick.value)),
+      x1: px(x0),
+      x2: px(x1),
+    }));
   });
+
+  /** The day axis: each named point's word under the plot, and its guide. */
+  protected readonly axis = computed(() => {
+    if (!this.uiAxis()) return [];
+    const { x } = this.scales();
+    const points = this.uiPoints();
+    const last = points.length - 1;
+    const out: {
+      x: number;
+      text: string;
+      anchor: 'start' | 'middle' | 'end';
+    }[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const text = (points[i] as UiChartLinePoint).label;
+      if (text === '') continue;
+      // The first and last words stay inside the box.
+      const anchor = i === 0 ? 'start' : i === last ? 'end' : 'middle';
+      out.push({ x: px(x(i)), text, anchor });
+    }
+    return out;
+  });
+
+  protected readonly axisTop = computed(() => px(PAD));
+  protected readonly axisBottom = computed(() => px(this.plotBottom()));
+  protected readonly axisTextY = computed(() => px(this.height() - PAD - 2));
 
   protected readonly comparisonPart = UiChartPart.Comparison;
   protected readonly gradientId = `ui-line-chart-area-${nextGradientId++}`;
@@ -287,9 +333,11 @@ export class UiLineChart {
 
   /** The right-edge labels' column: none without a label, else as wide as the longer one needs. */
   private readonly gutter = computed(() => {
-    const texts = [this.lastValueText(), this.uiAverageText()].filter(
-      (text): text is string => text !== null,
-    );
+    const texts = [
+      this.lastValueText(),
+      this.uiAverageText(),
+      ...this.uiTicks().map((tick) => tick.text),
+    ].filter((text): text is string => text !== null);
     if (texts.length === 0) return 0;
     const longest = texts.reduce((max, text) => Math.max(max, text.length), 0);
     return Math.min(
@@ -308,9 +356,10 @@ export class UiLineChart {
       ...points.map((p) => p.value),
       ...points.map((p) => p.comparison),
       ...this.uiSeries().flatMap((line) => line.values),
+      ...this.uiTicks().map((tick) => tick.value),
       average,
     ]);
-    const y = linearScale(domain, [this.height() - PAD, PAD]);
+    const y = linearScale(domain, [this.plotBottom(), PAD]);
     const step = points.length > 1 ? (x1 - x0) / (points.length - 1) : 0;
     const x = (index: number): number => x0 + index * step;
     return { x, y, x0, x1 };
@@ -434,6 +483,22 @@ export class UiLineChart {
       labels.push({ text: averageText, x: px(x), y: px(y) });
     }
     return labels;
+  });
+
+  /** The ticks' words in the labels' column, each dropped where a figure sits. */
+  protected readonly tickLabels = computed<readonly EdgeLabel[]>(() => {
+    const x = this.width() - this.gutter() + PAD - this.uiInset();
+    const { y } = this.scales();
+    const taken = this.edgeLabels();
+    const out: EdgeLabel[] = [];
+    for (const tick of this.uiTicks()) {
+      const at = y(tick.value) + 4;
+      if (taken.some((label) => Math.abs(label.y - at) < LABEL_CLEARANCE)) {
+        continue;
+      }
+      out.push({ text: tick.text, x: px(x), y: px(at) });
+    }
+    return out;
   });
 
   protected readonly rows = computed(() => {

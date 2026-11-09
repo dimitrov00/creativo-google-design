@@ -78,6 +78,10 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     ]);
     expect(vm.view).toBe(AnalyticsChartView.Line);
     expect(vm.chart?.chartView).toBe('LINE');
+    // A money line rules round amounts; the takings' run to 45,50 €.
+    const takings = vm.chart;
+    if (takings?.chartView !== 'LINE') throw new Error('not a line');
+    expect(takings.ticks.map((t) => t.value)).toEqual([2000, 4000, 6000]);
     expect(vm.services).not.toBeNull();
     expect(vm.time).toBeNull();
   });
@@ -223,6 +227,12 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     expect(line.label).toBe('Оборот с натрупване по салони');
     expect(line.points.every((p) => p.value === null)).toBe(true);
     expect(line.series.map((s) => s.tone)).toEqual([0, 1]);
+    // The grid: round amounts up to the higher salon's 28,00 € — in whole euros.
+    expect(line.ticks.map((t) => [t.value, t.text])).toEqual([
+      [1000, nbsp('10 €')],
+      [2000, nbsp('20 €')],
+      [3000, nbsp('30 €')],
+    ]);
     // Running totals up to today (the 28th), then nothing.
     expect(line.series[0]?.values.at(13)).toBe(2800);
     expect(line.series[1]?.values.at(14)).toBe(1750);

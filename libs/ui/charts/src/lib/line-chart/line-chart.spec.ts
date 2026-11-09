@@ -6,6 +6,7 @@ import {
   type UiChartLinePoint,
   type UiLineChartCurve,
   type UiLineChartSeries,
+  type UiChartTick,
 } from './line-chart';
 
 const WEEK: readonly UiChartLinePoint[] = [
@@ -27,6 +28,8 @@ const WEEK: readonly UiChartLinePoint[] = [
       [uiArea]="area()"
       [uiScrubbable]="scrubbable()"
       [uiSeries]="series()"
+      [uiTicks]="ticks()"
+      [uiAxis]="axis()"
       (uiScrubbed)="scrubbed.push($event)"
       uiLabel="Оборот по дни, най-висок вторник"
       data-testid="chart"
@@ -47,6 +50,8 @@ class Host {
   readonly area = signal(false);
   readonly scrubbable = signal(false);
   readonly series = signal<readonly UiLineChartSeries[]>([]);
+  readonly ticks = signal<readonly UiChartTick[]>([]);
+  readonly axis = signal(false);
   readonly scrubbed: (number | null)[] = [];
 }
 
@@ -469,5 +474,60 @@ describe('UiLineChart — members compared (uiSeries)', () => {
     fixture.detectChanges();
     // The last point: the second member has no value there.
     expect(all('.ui-line-chart__series-dot')).toHaveLength(1);
+  });
+});
+
+describe('UiLineChart — the grid means something', () => {
+  const TICKS: readonly UiChartTick[] = [
+    { value: 100, text: '100 €' },
+    { value: 200, text: '200 €' },
+    { value: 300, text: '300 €' },
+  ];
+
+  it('rules each round value, its words in the labels’ column, the top rule on the plot’s top', () => {
+    const { all } = render((h) => {
+      h.ticks.set(TICKS);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    const rules = all('.ui-line-chart__grid');
+    expect(rules).toHaveLength(3);
+    // The scale reaches the highest tick (300 > the 200 drawn): the plot's top.
+    expect(rules[2]?.getAttribute('y1')).toBe('6');
+    const words = all('.ui-line-chart__tick-label').map((t) =>
+      t.textContent?.trim(),
+    );
+    // 200 € sits where the last value's figure (50 €) is not: all three
+    // print unless one would crowd a figure.
+    expect(words.length).toBeGreaterThanOrEqual(2);
+    expect(words).toContain('300 €');
+  });
+
+  it('draws no grid, no axis and no guides unless asked', () => {
+    const { all } = render();
+    expect(all('.ui-line-chart__grid')).toHaveLength(0);
+    expect(all('.ui-line-chart__guide')).toHaveLength(0);
+    expect(all('.ui-line-chart__axis-label')).toHaveLength(0);
+  });
+
+  it('names the points that carry a word under the plot, a guide up from each, the ends kept inside', () => {
+    const { all } = render((h) => {
+      h.axis.set(true);
+      h.points.set([
+        { label: '1', value: 10, comparison: null },
+        { label: '', value: 20, comparison: null },
+        { label: '8', value: 30, comparison: null },
+        { label: '15', value: 40, comparison: null },
+      ]);
+      h.valueText.set(['', '', '', '']);
+    });
+    const labels = all('.ui-line-chart__axis-label');
+    expect(labels.map((l) => l.textContent?.trim())).toEqual(['1', '8', '15']);
+    expect(labels.map((l) => l.getAttribute('text-anchor'))).toEqual([
+      'start',
+      'middle',
+      'end',
+    ]);
+    expect(all('.ui-line-chart__guide')).toHaveLength(3);
   });
 });

@@ -212,6 +212,26 @@ describe('AnalyticsCarouselSystem.tipsSeriesOf — tips per bucket', () => {
   });
 });
 
+describe('AnalyticsCarouselSystem.moneyTicksOf — a money chart’s round amounts', () => {
+  it('steps 1, 2 or 5 × a power of ten up to the first at or over the top', () => {
+    // 136,50 € → steps of 50 €: 50, 100, 150.
+    expect(C.moneyTicksOf([4300, null, 13650])).toEqual([5000, 10000, 15000]);
+    // 35 € → steps of 20 €: 20, 40.
+    expect(C.moneyTicksOf([3500])).toEqual([2000, 4000]);
+    // Exactly on a step: it is the last rule.
+    expect(C.moneyTicksOf([6000])).toEqual([2000, 4000, 6000]);
+    // Never finer than 1 €.
+    expect(C.moneyTicksOf([150])).toEqual([100, 200]);
+  });
+
+  it('rules nothing when nothing above zero is drawn, and is pure', () => {
+    expect(C.moneyTicksOf([])).toEqual([]);
+    expect(C.moneyTicksOf([0, null])).toEqual([]);
+    const values = deepFreeze([1200, 900]);
+    expect(C.moneyTicksOf(values)).toEqual(C.moneyTicksOf(values));
+  });
+});
+
 describe('AnalyticsCarouselSystem — the locations compared', () => {
   const day = (d: string): AnalyticsReport.SeriesPoint => ({
     localDate: localDate(d),

@@ -64,6 +64,11 @@ export type AnalyticsFreeWeek = {
   readonly emptiest: Weekday | null;
 };
 
+/** About how many rules a money chart's grid draws. */
+const TICK_COUNT = 3;
+/** The grid's finest step: 1 €, in cents. */
+const ONE_EURO = 100;
+
 export const AnalyticsCarouselSystem = {
   /**
    * The carousel's pages for `span`: every period of the span the switcher
@@ -218,6 +223,33 @@ export const AnalyticsCarouselSystem = {
           ? (previous[Math.min(latest, previous.length - 1)] ?? null)
           : null,
     };
+  },
+
+  /**
+   * THE VALUE GRID of a money chart: round amounts — 1, 2 or 5 × a power
+   * of ten, never under 1 € — from one step up to the first at or over the
+   * highest value drawn, about three of them. Empty when nothing above
+   * zero is drawn. What a line chart rules, so the reader reads the line
+   * against amounts.
+   */
+  moneyTicksOf(values: readonly (number | null)[]): readonly PriceCents[] {
+    let top = 0;
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i];
+      if (value !== null && value !== undefined && value > top) top = value;
+    }
+    if (top <= 0) return [];
+    const rough = top / TICK_COUNT;
+    const magnitude = 10 ** Math.floor(Math.log10(rough));
+    const norm = rough / magnitude;
+    const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+    const step = Math.max(nice * magnitude, ONE_EURO);
+    const out: PriceCents[] = [];
+    for (let k = 1; k * step < top + step; k++) {
+      const tick = Math.round(k * step);
+      if (PriceCents.is(tick)) out.push(tick);
+    }
+    return out;
   },
 
   /**

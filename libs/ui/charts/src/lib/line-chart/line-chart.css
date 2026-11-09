@@ -85,6 +85,35 @@
     --ui-line-chart-series: var(--sys-identity-4);
   }
 
+  /* THE GRID: dotted rules at round values, in the separator's ink —
+     quiet enough that the lines stay the subject. */
+  .ui-line-chart__grid {
+    stroke: var(--sys-color-separator);
+    stroke-width: 1px;
+    stroke-dasharray: 2 3;
+  }
+
+  /* The day guides: fainter still, only at the named days. */
+  .ui-line-chart__guide {
+    stroke: var(--sys-color-separator);
+    stroke-opacity: 0.6;
+    stroke-width: 1px;
+    stroke-dasharray: 2 3;
+  }
+
+  /* WORDS ARE INK: the axis' days and the ticks' amounts in the caption
+     role, tabular, the tertiary ink — under the figures' secondary. */
+  .ui-line-chart__axis-label,
+  .ui-line-chart__tick-label {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    fill: var(--sys-color-tertiary-label);
+  }
+
+  .ui-line-chart__tick-label {
+    text-anchor: start;
+  }
+
   /* THE AVERAGE: a dashed rule in the palette's middle grey, one point wide. */
   .ui-line-chart__average {
     stroke: color-mix(in srgb, var(--sys-color-foreground) 62%, transparent);
