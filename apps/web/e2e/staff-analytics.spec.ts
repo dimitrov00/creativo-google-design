@@ -370,7 +370,7 @@ test.describe('«Анализи» — staff analytics', () => {
     await page.goto('/staff/analytics');
     await reportReady(page);
     // The admin opens on the shop — every location of the dev catalogue's
-    // two (ADR 2026-11-09): its page carries the team.
+    // two, so the pill reads «Всички салони»: its page carries the team.
     await expect(page.getByTestId('analytics-scope-menu')).toContainText(
       'Всички салони',
     );
