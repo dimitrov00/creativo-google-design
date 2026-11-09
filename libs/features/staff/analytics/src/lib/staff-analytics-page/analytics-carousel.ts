@@ -18,6 +18,33 @@ import { AnalyticsBento } from './analytics-bento';
 const SETTLE_MS = 140;
 
 /**
+ * How long the fingers or the wheel stay quiet before a swipe counts as
+ * over. A trackpad flick is a stream of wheel events, and its momentum
+ * keeps streaming after the carousel has already snapped and settled on
+ * the next page — the swipe is one gesture until the stream stops.
+ */
+const GESTURE_QUIET_MS = 350;
+
+/**
+ * ONE PAGE A SWIPE: where the track may stand while it scrolls — never past
+ * the page either side of `anchor`, the page it last settled on. A flick
+ * with momentum enough for three months lands on the next one, as
+ * Revolut's does; `scroll-snap-stop` asks the browser for the same, and
+ * this holds it where a trackpad's or a fast finger's momentum does not.
+ */
+export function heldScrollLeft(
+  scrollLeft: number,
+  pageWidth: number,
+  anchor: number,
+  pageCount: number,
+): number {
+  if (pageWidth <= 0 || pageCount < 1) return scrollLeft;
+  const min = Math.max(anchor - 1, 0) * pageWidth;
+  const max = Math.min(anchor + 1, pageCount - 1) * pageWidth;
+  return Math.min(Math.max(scrollLeft, min), max);
+}
+
+/**
  * THE CAROUSEL OF PERIODS (staff-analytics-v3, «The home screen» 3): one
  * page per period of the grain, oldest first, snapping one at a time, opened
  * on `index` — the current period, the last page. A swipe from left to right
@@ -40,6 +67,9 @@ const SETTLE_MS = 140;
       data-testid="analytics-carousel"
       (scroll)="scrolled()"
       (scrollend)="settle()"
+      (wheel)="gestured()"
+      (touchstart)="gestured()"
+      (touchend)="gestured()"
     >
       @for (page of pages(); track page.key; let i = $index) {
         <section
@@ -77,6 +107,9 @@ export class AnalyticsCarousel {
 
   private readonly track = viewChild.required<ElementRef<HTMLElement>>('track');
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** The page a swipe started on, held for the whole gesture; `null` between gestures. */
+  private gestureAnchor: number | null = null;
+  private gestureTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // The track follows `index` when the owner moves it (the opening page, a
@@ -93,6 +126,7 @@ export class AnalyticsCarousel {
     });
     inject(DestroyRef).onDestroy(() => {
       if (this.timer !== null) clearTimeout(this.timer);
+      if (this.gestureTimer !== null) clearTimeout(this.gestureTimer);
     });
   }
 
@@ -101,10 +135,36 @@ export class AnalyticsCarousel {
     return Math.abs(i - this.index()) <= 1;
   }
 
-  /** A browser without `scrollend` settles after a quiet moment. */
+  /**
+   * Holds the swipe to one page (`heldScrollLeft`); a browser without
+   * `scrollend` settles after a quiet moment.
+   */
   protected scrolled(): void {
+    const track = this.track().nativeElement;
+    const held = heldScrollLeft(
+      track.scrollLeft,
+      track.clientWidth,
+      this.gestureAnchor ?? this.index(),
+      this.pages().length,
+    );
+    // Setting it stops the momentum there; the page edge is a snap point.
+    if (Math.abs(held - track.scrollLeft) >= 1) track.scrollLeft = held;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = setTimeout(() => this.settle(), SETTLE_MS);
+  }
+
+  /**
+   * A wheel tick or a touch: the swipe goes on. Its first input anchors it
+   * on the page then settled; the anchor holds until the input has been
+   * quiet for {@link GESTURE_QUIET_MS}.
+   */
+  protected gestured(): void {
+    this.gestureAnchor ??= this.index();
+    if (this.gestureTimer !== null) clearTimeout(this.gestureTimer);
+    this.gestureTimer = setTimeout(() => {
+      this.gestureTimer = null;
+      this.gestureAnchor = null;
+    }, GESTURE_QUIET_MS);
   }
 
   protected settle(): void {
