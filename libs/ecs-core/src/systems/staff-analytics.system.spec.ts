@@ -884,6 +884,46 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(S.report(input()).reportAheadDays).toHaveLength(7);
   });
 
+  it('states the working time ahead the open hours are part of, and whose — breaks, blocks and days off are none of it', () => {
+    const report = S.report(
+      input({
+        scopeBarberIds: [],
+        barberIds: [ivan, niko],
+        aheadDays: [
+          // Tomorrow, Ivan: 2 h booked, 5 h open, 30 min of short gaps
+          // ahead (10 already past), a 60 min lunch and a 45 min block
+          // that are not working time.
+          dayOf(ivan, day(1), {
+            bookedAheadMinutes: 120,
+            openMinutes: 300,
+            shortGapMinutes: 40,
+            pastShortGapMinutes: 10,
+            breakMinutes: 60,
+            blockedMinutes: 45,
+          }),
+          // Niko works tomorrow too: 8 h, all open.
+          dayOf(niko, day(1), { openMinutes: 480 }),
+          // Niko's day off: nothing rostered, nothing ahead.
+          dayOf(niko, day(2), {}),
+        ],
+      }),
+    );
+    expect(report.reportAheadDays.map((row) => row.workingMinutes)).toEqual([
+      0,
+      120 + 300 + 30 + 480,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    expect(report.reportBookableWorkingMinutes).toBe(930);
+    expect(report.reportBookableOpenMinutes).toBe(780);
+    // Two barbers have working time ahead; whose hours the card adds up.
+    expect(report.reportAheadBarberCount).toBe(2);
+    expect(S.report(input()).reportAheadBarberCount).toBe(0);
+  });
+
   describe('the charts (v2)', () => {
     const stretch = (start: number, end: number): MinuteRange =>
       MinuteRange.of(minute(start), endMinute(end));

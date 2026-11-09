@@ -198,6 +198,15 @@ export type AnalyticsReport = {
   readonly reportLateCancellationCount: number;
 
   readonly reportBookableOpenMinutes: MinuteCount;
+  /**
+   * The working time still to come in the next seven days that the open
+   * minutes are part of (owner, 2026-11-09: «97 ч free? shouldn't this be
+   * only inside working hours and days?») — each `AheadDay.workingMinutes`
+   * summed.
+   */
+  readonly reportBookableWorkingMinutes: MinuteCount;
+  /** The barbers in scope with working time in the next seven days — whose hours the open-hours card adds up. */
+  readonly reportAheadBarberCount: number;
   readonly reportEmptiestLocalDate: LocalDate | null;
 
   /**
@@ -342,10 +351,15 @@ export namespace AnalyticsReport {
     readonly rosteredMinutes: MinuteCount;
   };
 
-  /** One of the next seven shop days and its open (still bookable) minutes in scope. */
+  /**
+   * One of the next seven shop days in scope: its open (still bookable)
+   * minutes, and the working time still to come they are part of — the
+   * roster's windows from now on, breaks, blocks and days off out.
+   */
   export type AheadDay = {
     readonly localDate: LocalDate;
     readonly openMinutes: MinuteCount;
+    readonly workingMinutes: MinuteCount;
   };
 
   /** One service's worked seats. */

@@ -449,7 +449,17 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
   it('under the carousel: the days ahead, and the tools — the goal, then the export', () => {
     const vm = analyticsHomeVm(inputOf('bg'));
     expect(vm.ahead?.title).toBe('Предстои');
-    expect(vm.ahead?.detail).toBe('свободни в следващите 7 дни');
+    // What the open hours are free OF: one barber's working time ahead…
+    expect(vm.ahead?.detail).toBe('свободни от 37 ч работно време за 7 дни');
+    // …and, for several barbers, whose hours add up.
+    const team = analyticsHomeVm(
+      inputOf('bg', {
+        report: analyticsReportFixture({ reportAheadBarberCount: 3 }),
+      }),
+    );
+    expect(team.ahead?.detail).toBe(
+      'свободни от 37 ч работно време на 3 бръснари за 7 дни',
+    );
     expect(vm.ahead?.spark.values).toHaveLength(7);
     expect(vm.tools.map((t) => [t.tool, t.title, t.detail])).toEqual([
       ['GOAL', 'Задай цел', 'Задай оборот за месеца'],

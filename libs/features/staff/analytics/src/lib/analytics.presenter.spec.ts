@@ -673,6 +673,7 @@ describe('analyticsVm — the screen states', () => {
           reportSeries: report.reportAheadDays.map((day) => ({
             localDate: day.localDate,
             takingsCents: cents(day.openMinutes * 10),
+            tipsCents: cents(0),
             comparisonTakingsCents: null,
           })),
           reportTimeSeries: report.reportTimeSeries

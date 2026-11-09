@@ -2362,28 +2362,41 @@ function bookableOf(
   today: LocalDate,
 ): {
   readonly reportBookableOpenMinutes: MinuteCount;
+  readonly reportBookableWorkingMinutes: MinuteCount;
+  readonly reportAheadBarberCount: number;
   readonly reportEmptiestLocalDate: LocalDate | null;
   readonly reportAheadDays: readonly AnalyticsReport.AheadDay[];
 } {
   const dates = StaffAnalyticsSystem.aheadDaysOf(today);
   const open: MinuteCount[] = [];
-  for (let i = 0; i < dates.length; i++) open.push(MinuteCount.ZERO);
+  const working: MinuteCount[] = [];
+  for (let i = 0; i < dates.length; i++) {
+    open.push(MinuteCount.ZERO);
+    working.push(MinuteCount.ZERO);
+  }
+  const barbers = new Set<BarberId>();
   for (let i = 0; i < aheadDays.length; i++) {
     const day = aheadDays[i] as ChairDay;
     if (!counting.inScope(day.barberId)) continue;
     const index = LocalDate.daysBetween(today, day.localDate);
     if (index < 0 || index >= dates.length) continue;
     open[index] = MinuteCount.add(open[index] as MinuteCount, day.openMinutes);
+    const ahead = workingAheadOf(day);
+    working[index] = MinuteCount.add(working[index] as MinuteCount, ahead);
+    if (ahead > 0) barbers.add(day.barberId);
   }
   const rows: AnalyticsReport.AheadDay[] = [];
   let total = MinuteCount.ZERO;
+  let workingTotal = MinuteCount.ZERO;
   let emptiest: LocalDate | null = null;
   let most = 0;
   for (let i = 0; i < dates.length; i++) {
     const localDate = dates[i] as LocalDate;
     const openMinutes = open[i] as MinuteCount;
-    rows.push({ localDate, openMinutes });
+    const workingMinutes = working[i] as MinuteCount;
+    rows.push({ localDate, openMinutes, workingMinutes });
     total = MinuteCount.add(total, openMinutes);
+    workingTotal = MinuteCount.add(workingTotal, workingMinutes);
     if (openMinutes > most) {
       most = openMinutes;
       emptiest = localDate;
@@ -2391,9 +2404,29 @@ function bookableOf(
   }
   return {
     reportBookableOpenMinutes: total,
+    reportBookableWorkingMinutes: workingTotal,
+    reportAheadBarberCount: barbers.size,
     reportEmptiestLocalDate: emptiest,
     reportAheadDays: rows,
   };
+}
+
+/**
+ * A barber-day's working time still to come: the parts of its rostered
+ * time that lie from now on — booked ahead, open, and the future share of
+ * held time and short gaps. Breaks and blocks are not working time, and a
+ * day off rosters nothing.
+ */
+function workingAheadOf(day: ChairDay): MinuteCount {
+  let total = MinuteCount.add(day.bookedAheadMinutes, day.openMinutes);
+  total = MinuteCount.add(
+    total,
+    MinuteCount.minus(day.heldMinutes, day.pastHeldMinutes),
+  );
+  return MinuteCount.add(
+    total,
+    MinuteCount.minus(day.shortGapMinutes, day.pastShortGapMinutes),
+  );
 }
 
 /** A service row under construction — mutable inside one call only. */

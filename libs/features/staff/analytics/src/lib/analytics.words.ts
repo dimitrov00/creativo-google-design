@@ -294,7 +294,13 @@ export interface AnalyticsWords {
     /** «Салони» — the shop's locations compared. */
     readonly locations: string;
     readonly ahead: string;
-    readonly aheadDetail: string;
+    /**
+     * Under the open hours: what they are free OF — «от 120 ч работно
+     * време за 7 дни» for one barber, «… на 3 бръснари за 7 дни» for
+     * several, whose hours add up (owner, 2026-11-09: «97 ч free?»).
+     */
+    readonly aheadDetail: (working: string) => string;
+    readonly aheadDetailTeam: (working: string, barbers: string) => string;
     readonly tools: string;
     readonly exportDetail: string;
     readonly goalNone: string;
@@ -678,7 +684,9 @@ export function analyticsWordsOf(
       team: t('home.team'),
       locations: t('home.locations'),
       ahead: t('home.ahead'),
-      aheadDetail: t('home.aheadDetail'),
+      aheadDetail: (working) => t('home.aheadDetail', { working }),
+      aheadDetailTeam: (working, barbers) =>
+        t('home.aheadDetailTeam', { working, barbers }),
       tools: t('home.tools'),
       exportDetail: t('home.exportDetail'),
       goalNone: t('home.goalNone'),

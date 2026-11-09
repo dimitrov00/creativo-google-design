@@ -639,10 +639,20 @@ function aheadOf(
 ): AnalyticsAheadCardVm {
   const { words } = input;
   const bars = body.open.bars;
+  // What the open hours are free OF: the working time still to come — and
+  // whose, when several barbers' hours add up.
+  const working = hoursWords(report.reportBookableWorkingMinutes, words);
+  const detail =
+    report.reportAheadBarberCount > 1
+      ? words.home.aheadDetailTeam(
+          working,
+          words.scope.barbersCount(report.reportAheadBarberCount),
+        )
+      : words.home.aheadDetail(working);
   return {
     title: words.home.ahead,
     value: body.open.value,
-    detail: words.home.aheadDetail,
+    detail,
     spark: {
       values: report.reportAheadDays.map((day) => day.openMinutes),
       highlight: bars.highlightIndex,
@@ -652,7 +662,7 @@ function aheadOf(
       label: bars.label,
     },
     link: body.open.link,
-    accessibleName: [words.home.ahead, body.open.value, words.home.aheadDetail]
+    accessibleName: [words.home.ahead, body.open.value, detail]
       .filter(Boolean)
       .join(', '),
   };

@@ -83,6 +83,10 @@ export const MinuteCount = {
   add(a: MinuteCount, b: MinuteCount): MinuteCount {
     return (a + b) as MinuteCount;
   },
+  /** What is left of `a` once `b` is taken from it — never below zero (a part of a whole). */
+  minus(a: MinuteCount, b: MinuteCount): MinuteCount {
+    return Math.max(a - b, 0) as MinuteCount;
+  },
 
   /** The minutes from `start` to `end` on one day's clock; `0` when empty or inverted. */
   span(start: MinuteOfDay, end: EndMinute): MinuteCount {

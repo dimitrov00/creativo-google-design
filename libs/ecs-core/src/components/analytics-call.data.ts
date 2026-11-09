@@ -325,6 +325,7 @@ function aheadDayOf(raw: unknown): AnalyticsReport.AheadDay | null {
   const row = {
     localDate: r.localDate('localDate'),
     openMinutes: r.minutes('openMinutes'),
+    workingMinutes: r.minutes('workingMinutes'),
   };
   return r.ok() ? row : null;
 }
@@ -436,6 +437,8 @@ export const AnalyticsCall = {
       reportLateCancellationCount: r.count('reportLateCancellationCount'),
 
       reportBookableOpenMinutes: r.minutes('reportBookableOpenMinutes'),
+      reportBookableWorkingMinutes: r.minutes('reportBookableWorkingMinutes'),
+      reportAheadBarberCount: r.count('reportAheadBarberCount'),
       reportEmptiestLocalDate: r.localDateOrNull('reportEmptiestLocalDate'),
 
       reportBusiestWeekday: r.weekdayOrNull('reportBusiestWeekday'),
