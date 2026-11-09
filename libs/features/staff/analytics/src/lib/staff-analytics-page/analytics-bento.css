@@ -198,9 +198,33 @@
   background: var(--sys-identity-4);
 }
 
+/* A BONE is a card's own frame — the same padding, the same lines, the
+   same square or floor — with its words hidden, and the skeleton laid
+   over the whole of it: its height is the card's by construction, never a
+   number kept in step by hand (a 13rem guess stood under a 176px card,
+   and the team and salon cards had no bones at all — owner, 2026-11-09:
+   "the loading animation doesn't match the actual"). */
 .analytics-bento__bone {
-  display: block;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight); /* the card's own */
+  visibility: hidden;
+}
+
+.analytics-bento__bone-fill {
+  position: absolute;
+  inset: 0;
+  visibility: visible;
   border-radius: var(--control-radius-prominent);
+}
+
+.analytics-bento__bone--takings {
+  min-block-size: 11rem;
+}
+
+.analytics-bento__bone--tile {
+  aspect-ratio: 1;
 }
 
 /* THE PACE: the line over the period's two ends, then the legend — each

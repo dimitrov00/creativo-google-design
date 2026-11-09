@@ -4,7 +4,6 @@ import { UiSkeleton } from '@creativo/ui/controls';
 import { UiSparkBars, UiSparkLine } from '@creativo/ui/charts';
 import {
   UiForegroundStyleDirective,
-  UiFrameDirective,
   UiInteractiveDirective,
   UiPaddingDirective,
   UiTextDirective,
@@ -28,7 +27,6 @@ import type { AnalyticsPageVm } from '../analytics-home.vm';
     RouterLink,
     UiCard,
     UiForegroundStyleDirective,
-    UiFrameDirective,
     UiGauge,
     UiInteractiveDirective,
     UiPaddingDirective,

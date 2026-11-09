@@ -169,6 +169,20 @@ export type AnalyticsPageVm = {
   readonly locations: AnalyticsLocationsCardVm | null;
   /** The card screens' query: this page's period and the scope. */
   readonly query: AnalyticsCardQuery;
+  /** What the page draws while its report is out (`cards` is `null`). */
+  readonly bones: AnalyticsBonesVm;
+};
+
+/**
+ * The bones of a page whose report is not here yet, in the SHAPE a loaded
+ * page of the same scope has — so a swipe lands on the layout the figures
+ * will fill, not on a different one that jumps when they arrive: a row of
+ * bones per barber of the team card and per salon of the locations card
+ * (none when that card does not show), each list an index to track by.
+ */
+export type AnalyticsBonesVm = {
+  readonly teamRows: readonly number[];
+  readonly locationRows: readonly number[];
 };
 
 /** What a card hands its screen in the URL. */

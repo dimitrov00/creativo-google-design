@@ -119,6 +119,7 @@ export class StaffAnalyticsPage {
       pages: this.store.pages(),
       pageIndex: this.store.pageIndex(),
       pageReports: this.store.pageReports(),
+      shapeReport: this.store.shapeReport(),
     });
   });
 

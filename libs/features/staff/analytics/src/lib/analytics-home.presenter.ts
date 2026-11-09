@@ -34,6 +34,7 @@ import {
   AnalyticsTool,
   type AnalyticsAheadCardVm,
   type AnalyticsBentoCardVm,
+  type AnalyticsBonesVm,
   type AnalyticsHomeVm,
   type AnalyticsLocationRowVm,
   type AnalyticsLocationsCardVm,
@@ -63,6 +64,8 @@ export interface AnalyticsHomeInput extends AnalyticsScreenInput {
   readonly pageIndex: number;
   /** Each page's report, in `pages`' order — `null` while not on the device. */
   readonly pageReports: readonly (AnalyticsReport | null)[];
+  /** The last report of the scope on screen (the store's `shapeReport`): the shape a loading page's bones take. */
+  readonly shapeReport: AnalyticsReport | null;
 }
 
 /** The grains the period menu offers, in its order. */
@@ -80,6 +83,7 @@ const IDENTITY_TONES = 5;
 export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
   const { words } = input;
   const current = input.report;
+  const bones = bonesOf(input);
   const body =
     current === null || input.analyticsLoad === AnalyticsLoad.Refused
       ? null
@@ -92,7 +96,7 @@ export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
     scope: scopeMenuOf(input),
     period: periodMenuOf(input),
     pages: input.pages.map((period, index) =>
-      pageOf(input, period, input.pageReports.at(index) ?? null),
+      pageOf(input, period, input.pageReports.at(index) ?? null, bones),
     ),
     pageIndex: input.pageIndex,
     blocked: blockedOf(input),
@@ -258,10 +262,38 @@ function periodMenuOf(input: AnalyticsHomeInput): AnalyticsMenuVm {
 
 // ── A page of the carousel ────────────────────────────────────────────────
 
+/** No loaded page to take the shape from (the first load): the cards' bones alone. */
+const NO_BONES: AnalyticsBonesVm = { teamRows: [], locationRows: [] };
+
+/** `[0 … n)`, the rows a list of bones tracks by. */
+const rowsOf = (n: number): readonly number[] =>
+  Array.from({ length: n }, (_, i) => i);
+
+/**
+ * The shape of a page still loading: the one the last report of this
+ * scope has — kept by the store while the carousel swipes past the
+ * pages it has, since they are dropped from `pageReports` — with the same rule that
+ * shows its team card (`screenOf(…).shopScope`) and its locations card (a
+ * report carries `reportLocations` only over two or more).
+ */
+function bonesOf(input: AnalyticsHomeInput): AnalyticsBonesVm {
+  const shape = input.shapeReport ?? input.report;
+  if (shape === null) return NO_BONES;
+  return {
+    teamRows: rowsOf(
+      StaffAnalyticsSystem.screenOf(shape).shopScope
+        ? shape.reportBarbers.length
+        : 0,
+    ),
+    locationRows: rowsOf(shape.reportLocations.length),
+  };
+}
+
 function pageOf(
   input: AnalyticsHomeInput,
   period: AnalyticsPeriod,
   report: AnalyticsReport | null,
+  bones: AnalyticsBonesVm,
 ): AnalyticsPageVm {
   const query = {
     span: period.analyticsSpan,
@@ -275,7 +307,15 @@ function pageOf(
   const key = `${period.analyticsSpan}-${period.fromLocalDate}`;
   const label = pageLabelOf(period, input);
   if (report === null) {
-    return { key, label, cards: null, team: null, locations: null, query };
+    return {
+      key,
+      label,
+      cards: null,
+      team: null,
+      locations: null,
+      query,
+      bones,
+    };
   }
   const pageInput: AnalyticsScreenInput = { ...input, period, report };
   const body = bodyOf(pageInput, report);
@@ -291,6 +331,7 @@ function pageOf(
     locations:
       report.reportLocations.length > 0 ? locationsOf(pageInput, report) : null,
     query,
+    bones,
   };
 }
 

@@ -75,6 +75,7 @@ function inputOf(
     pages: PAGES,
     pageIndex: PAGES.length - 1,
     pageReports: PAGES.map((_, i) => (i === PAGES.length - 1 ? report : null)),
+    shapeReport: report,
     ...overrides,
   };
 }
@@ -373,6 +374,45 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     ]);
     expect(locations?.testId).toBe('analytics-card-locations');
     expect(analyticsHomeVm(inputOf('bg')).pages.at(-1)?.locations).toBeNull();
+  });
+
+  it('draws a loading page’s bones in the shape the scope’s last report has — a row per barber and per salon — even with no page loaded', () => {
+    const shop = deepFreeze(locationsReportFixture());
+    const swiped = analyticsHomeVm(
+      inputOf('bg', {
+        // Swiped away from every loaded page: the screen's report is out
+        // and the carousel holds none, the scope's last one stays.
+        report: null,
+        pageReports: PAGES.map(() => null),
+        shapeReport: shop,
+      }),
+    );
+    expect(swiped.pages[0]?.cards).toBeNull();
+    expect(swiped.pages[0]?.bones).toEqual({
+      teamRows: shop.reportBarbers.map((_, i) => i),
+      locationRows: [0, 1],
+    });
+    // A barber's own report has no team card and no salons: tiles alone.
+    const own = deepFreeze(analyticsReportFixture());
+    expect(
+      analyticsHomeVm(
+        inputOf('bg', {
+          report: null,
+          pageReports: PAGES.map(() => null),
+          shapeReport: own,
+        }),
+      ).pages[0]?.bones,
+    ).toEqual({ teamRows: [], locationRows: [] });
+    // The first load knows no shape yet.
+    expect(
+      analyticsHomeVm(
+        inputOf('bg', {
+          report: null,
+          pageReports: PAGES.map(() => null),
+          shapeReport: null,
+        }),
+      ).pages[0]?.bones,
+    ).toEqual({ teamRows: [], locationRows: [] });
   });
 
   it('under the carousel: the days ahead, and the tools — the goal, then the export', () => {
