@@ -28,7 +28,8 @@ Top to bottom:
 1. The icon-only back and the large title «Анализи».
 2. **One row:** leading, the scope menu (`ui-choice-menu`): «Салон», «Аз» and every
    barber with their portrait — the admin's only; a barber has nothing to choose and sees no
-   menu. Trailing, the period menu in the accent ink (Revolut's «This month»): its label is
+   menu. Trailing, the period menu (Revolut's «This month»). Both triggers are the same
+   small bordered pill with the pop-up chevron. The period's label is
    the page on screen — «Днес», «Вчера», «Тази седмица», «Миналата седмица», «Този месец»,
    «Миналия месец», «Тази година», «Миналата година», older ones by name («Септември
    2026», «28.09 – 4.10», «вт, 29.09», «2025») — and its options are the grain: «Ден»,
