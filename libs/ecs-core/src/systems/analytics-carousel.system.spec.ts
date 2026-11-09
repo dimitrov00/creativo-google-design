@@ -185,33 +185,6 @@ describe('AnalyticsCarouselSystem — what a bento card measures', () => {
   });
 });
 
-describe('AnalyticsCarouselSystem.tipsSeriesOf — tips per bucket', () => {
-  it('sums each day row’s tips into the bucket its day falls in', () => {
-    const report = analyticsReportFixture();
-    const tips = C.tipsSeriesOf(report);
-    expect(tips).toHaveLength(report.reportSeries.length);
-    const index14 = report.reportSeries.findIndex(
-      (p) => p.localDate === '2026-09-14',
-    );
-    // The fixture's two day rows (14 and 15 Sep) carry 3,00 € of tips each.
-    expect(tips?.[index14]).toBe(300);
-    expect(tips?.[index14 + 1]).toBe(300);
-    expect(tips?.reduce((a, b) => a + b, 0)).toBe(600);
-  });
-
-  it('has none for a long range whose rows are per month against weekly buckets', () => {
-    expect(
-      C.tipsSeriesOf(
-        analyticsReportFixture({
-          reportAnalyticsSpan: AnalyticsSpan.Custom,
-          reportFromLocalDate: localDate('2026-01-01'),
-          reportToLocalDate: localDate('2026-09-30'),
-        }),
-      ),
-    ).toBeNull();
-  });
-});
-
 describe('AnalyticsCarouselSystem.moneyTicksOf — a money chart’s round amounts', () => {
   it('steps 1, 2 or 5 × a power of ten up to the first at or over the top', () => {
     // 136,50 € → steps of 50 €: 50, 100, 150.
@@ -236,6 +209,7 @@ describe('AnalyticsCarouselSystem — the locations compared', () => {
   const day = (d: string): AnalyticsReport.SeriesPoint => ({
     localDate: localDate(d),
     takingsCents: 0 as PriceCents,
+    tipsCents: 0 as PriceCents,
     comparisonTakingsCents: null,
   });
   const SERIES = [day('2026-11-08'), day('2026-11-09'), day('2026-11-10')];
@@ -299,6 +273,7 @@ describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals
   ): AnalyticsReport.SeriesPoint => ({
     localDate: localDate(day),
     takingsCents: takings as PriceCents,
+    tipsCents: 0 as PriceCents,
     comparisonTakingsCents: comparison as PriceCents | null,
   });
   const report = (points: readonly AnalyticsReport.SeriesPoint[]) =>

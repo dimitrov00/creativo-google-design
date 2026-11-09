@@ -287,6 +287,7 @@ function seriesPointOf(raw: unknown): AnalyticsReport.SeriesPoint | null {
   const row = {
     localDate: r.localDate('localDate'),
     takingsCents: r.cents('takingsCents'),
+    tipsCents: r.cents('tipsCents'),
     comparisonTakingsCents: r.centsOrNull('comparisonTakingsCents'),
   };
   return r.ok() ? row : null;

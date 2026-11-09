@@ -304,6 +304,13 @@ export namespace AnalyticsReport {
   export type SeriesPoint = {
     readonly localDate: LocalDate;
     readonly takingsCents: PriceCents;
+    /**
+     * The bucket's tips, summed exactly as its takings are — so the tips
+     * line has a point wherever the takings line does, at any range (a
+     * range's day rows may be per month; the series never is coarser
+     * than its buckets).
+     */
+    readonly tipsCents: PriceCents;
     readonly comparisonTakingsCents: PriceCents | null;
   };
 

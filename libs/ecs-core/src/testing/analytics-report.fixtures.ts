@@ -64,6 +64,8 @@ function seriesPoints(): readonly AnalyticsReport.SeriesPoint[] {
     takingsCents: cents(
       day === '2026-09-14' ? 2800 : day === '2026-09-15' ? 1750 : 0,
     ),
+    // The two day rows' 3,00 € of tips each, on their days.
+    tipsCents: cents(day === '2026-09-14' || day === '2026-09-15' ? 300 : 0),
     comparisonTakingsCents: cents(index === 13 ? 3500 : 0),
   }));
 }

@@ -86,6 +86,10 @@ const LABEL_GUTTER = 56;
  * measures nothing.
  */
 const CHAR_WIDTH = 7;
+/** A day-axis word's glyph width, near enough (the caption's 11px tabular figures). */
+const AXIS_CHAR_WIDTH = 6;
+/** The least air between two day-axis words. */
+const AXIS_WORD_GAP = 6;
 /** The labels never take more than this share of the box: the line keeps the rest. */
 const MAX_GUTTER_SHARE = 0.4;
 /** Two right-edge labels never sit closer than a caption line. */
@@ -278,25 +282,49 @@ export class UiLineChart {
     }));
   });
 
-  /** The day axis: each named point's word under the plot, and its guide. */
+  /**
+   * The day axis: each named point's word under the plot, and its guide —
+   * THINNED to the width it has: every k-th word, the smallest k at which
+   * no two kept words touch, so a long range (a year of weeks, 14 words
+   * under 340px) keeps an even rhythm instead of a smear of overlapping
+   * dates. The words' widths are estimated (the kit draws from numbers
+   * alone), at the caption's glyph width.
+   */
   protected readonly axis = computed(() => {
     if (!this.uiAxis()) return [];
     const { x } = this.scales();
     const points = this.uiPoints();
     const last = points.length - 1;
-    const out: {
+    type AxisWord = {
       x: number;
       text: string;
       anchor: 'start' | 'middle' | 'end';
-    }[] = [];
+    };
+    const named: AxisWord[] = [];
     for (let i = 0; i < points.length; i++) {
       const text = (points[i] as UiChartLinePoint).label;
       if (text === '') continue;
       // The first and last words stay inside the box.
       const anchor = i === 0 ? 'start' : i === last ? 'end' : 'middle';
-      out.push({ x: px(x(i)), text, anchor });
+      named.push({ x: px(x(i)), text, anchor });
     }
-    return out;
+    const span = (word: AxisWord): readonly [number, number] => {
+      const width = word.text.length * AXIS_CHAR_WIDTH;
+      if (word.anchor === 'start') return [word.x, word.x + width];
+      if (word.anchor === 'end') return [word.x - width, word.x];
+      return [word.x - width / 2, word.x + width / 2];
+    };
+    for (let step = 1; step <= named.length; step++) {
+      const kept = named.filter((_, i) => i % step === 0);
+      let clear = true;
+      for (let i = 1; i < kept.length && clear; i++) {
+        const before = span(kept[i - 1] as AxisWord);
+        const after = span(kept[i] as AxisWord);
+        clear = after[0] - before[1] >= AXIS_WORD_GAP;
+      }
+      if (clear) return kept;
+    }
+    return named.slice(0, 1);
   });
 
   protected readonly axisTop = computed(() => px(PAD));

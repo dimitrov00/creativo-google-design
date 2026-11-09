@@ -645,7 +645,12 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(report.reportComparisonFromLocalDate).toBe(day(-7));
     expect(report.reportComparisonToLocalDate).toBe(day(-7));
     expect(report.reportSeries).toEqual([
-      { localDate: TODAY, takingsCents: 3500, comparisonTakingsCents: 2700 },
+      {
+        localDate: TODAY,
+        takingsCents: 3500,
+        tipsCents: 0,
+        comparisonTakingsCents: 2700,
+      },
     ]);
     expect(report.reportTimeSeries).toHaveLength(1);
     expect(report.reportTimeSeries[0]).toMatchObject({
@@ -1000,10 +1005,16 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         input({
           period: longer,
           visits: [
-            visit('w0', localDate('2026-01-03'), [seat(ivan, 1000)]),
+            visit('w0', localDate('2026-01-03'), [
+              seat(ivan, 1000, undefined, cut, 10, 150),
+            ]),
             visit('w1', localDate('2026-01-05'), [seat(ivan, 2000)]),
-            visit('w1b', localDate('2026-01-11'), [seat(ivan, 500)]),
-            visit('wl', localDate('2026-04-04'), [seat(ivan, 300)]),
+            visit('w1b', localDate('2026-01-11'), [
+              seat(ivan, 500, undefined, cut, 10, 50),
+            ]),
+            visit('wl', localDate('2026-04-04'), [
+              seat(ivan, 300, undefined, cut, 10, 20),
+            ]),
           ],
           days: [
             dayOf(ivan, localDate('2026-01-03'), { workedMinutes: 30 }),
@@ -1019,6 +1030,15 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       ]);
       expect(sum(report.reportSeries, (p) => p.takingsCents)).toBe(
         report.reportTakingsCents,
+      );
+      // The tips share the takings' buckets — a range this long keeps its
+      // day rows per month, but its series never needs them (owner,
+      // 2026-11-09: tips over 6М / 1Г / МАКС had no line or bars).
+      expect(report.reportSeries.map((p) => p.tipsCents)).toEqual([
+        150, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20,
+      ]);
+      expect(sum(report.reportSeries, (p) => p.tipsCents)).toBe(
+        report.reportTipsCents,
       );
     });
 
@@ -1042,6 +1062,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       expect(report.reportSeries[2]).toEqual({
         localDate: localDate('2026-03-03'),
         takingsCents: 4000,
+        tipsCents: 0,
         comparisonTakingsCents: 2500,
       });
       expect(report.reportSeries[3]?.comparisonTakingsCents).toBe(0);
@@ -2235,6 +2256,7 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
     expect(report.reportSeries[2]).toEqual({
       localDate: localDate('2026-03-01'),
       takingsCents: 4000,
+      tipsCents: 0,
       comparisonTakingsCents: null,
     });
     expect(report.reportSeries[9]?.takingsCents).toBe(2000);
@@ -2292,6 +2314,7 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
     expect(report.reportSeries[0]).toEqual({
       localDate: localDate('2026-01-01'),
       takingsCents: 1000,
+      tipsCents: 0,
       comparisonTakingsCents: 700,
     });
     expect(report.reportSeries).toHaveLength(14);

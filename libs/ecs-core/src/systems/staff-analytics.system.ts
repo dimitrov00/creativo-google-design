@@ -761,23 +761,35 @@ function bucketIndexOf(grain: SeriesGrain, localDate: LocalDate): number {
 }
 
 /**
- * The net takings per bucket — the `reportTakingsCents` rule (a stored
- * day's takings as held; an allocated bill's seat nets on a live day; a
- * visit whose bill could not be evaluated adds nothing), cut by the day.
+ * The takings and the tips per bucket of `grain`, each summed the one way
+ * the report's totals are: the past days' stored figures, then each
+ * allocated worked seat of a live visit — the tips line and the takings
+ * line share their buckets at every range.
  */
-function takingsByBucket(
+function moneyByBucket(
   visits: readonly AnalyticsVisit[],
   pastDays: readonly DayFigures[],
   counting: Counting,
   grain: SeriesGrain,
-): readonly PriceCents[] {
-  const out: PriceCents[] = [];
-  for (let i = 0; i < grain.starts.length; i++) out.push(PriceCents.ZERO);
+): {
+  readonly takings: readonly PriceCents[];
+  readonly tips: readonly PriceCents[];
+} {
+  const takings: PriceCents[] = [];
+  const tips: PriceCents[] = [];
+  for (let i = 0; i < grain.starts.length; i++) {
+    takings.push(PriceCents.ZERO);
+    tips.push(PriceCents.ZERO);
+  }
   for (let i = 0; i < pastDays.length; i++) {
     const day = pastDays[i] as DayFigures;
     const index = bucketIndexOf(grain, day.localDate);
     if (index < 0 || !counting.inScope(day.barberId)) continue;
-    out[index] = PriceCents.add(out[index] as PriceCents, day.dayTakingsCents);
+    takings[index] = PriceCents.add(
+      takings[index] as PriceCents,
+      day.dayTakingsCents,
+    );
+    tips[index] = PriceCents.add(tips[index] as PriceCents, day.dayTipsCents);
   }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
@@ -793,13 +805,15 @@ function takingsByBucket(
       ) {
         continue;
       }
-      out[index] = PriceCents.add(
-        out[index] as PriceCents,
-        (nets.nets[s] as SeatNet).netCents,
+      const net = nets.nets[s] as SeatNet;
+      takings[index] = PriceCents.add(
+        takings[index] as PriceCents,
+        net.netCents,
       );
+      tips[index] = PriceCents.add(tips[index] as PriceCents, net.tipCents);
     }
   }
-  return out;
+  return { takings, tips };
 }
 
 /**
@@ -814,26 +828,22 @@ function seriesOf(
   grain: SeriesGrain,
   previous: AnalyticsPeriod | null,
 ): readonly AnalyticsReport.SeriesPoint[] {
-  const current = takingsByBucket(
-    input.visits,
-    input.pastDays,
-    counting,
-    grain,
-  );
+  const current = moneyByBucket(input.visits, input.pastDays, counting, grain);
   const compared =
     previous === null
       ? []
-      : takingsByBucket(
+      : moneyByBucket(
           input.previousVisits,
           input.previousPastDays,
           previousCounting,
           grainOf(previous),
-        );
+        ).takings;
   const out: AnalyticsReport.SeriesPoint[] = [];
   for (let i = 0; i < grain.starts.length; i++) {
     out.push({
       localDate: grain.starts[i] as LocalDate,
-      takingsCents: current[i] as PriceCents,
+      takingsCents: current.takings[i] as PriceCents,
+      tipsCents: current.tips[i] as PriceCents,
       comparisonTakingsCents:
         i < compared.length ? (compared[i] as PriceCents) : null,
     });

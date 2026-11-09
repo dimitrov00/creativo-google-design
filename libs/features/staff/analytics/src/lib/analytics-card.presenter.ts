@@ -321,10 +321,10 @@ function viewsOf(
       return series ? [Line, Bars, Ring] : [Ring];
     case AnalyticsCard.Time:
       return report.reportTimeSeries.length > 1 ? [Bars, Line, Ring] : [Ring];
-    case AnalyticsCard.Tips: {
-      const tips = AnalyticsCarouselSystem.tipsSeriesOf(report);
-      return series && tips !== null ? [Line, Bars, Ring] : [Ring];
-    }
+    case AnalyticsCard.Tips:
+      // Each bucket carries its tips beside its takings: the tips line
+      // exists wherever the takings line does, at any range.
+      return series ? [Line, Bars, Ring] : [Ring];
     case AnalyticsCard.Rebooked:
     case AnalyticsCard.NoShows:
       return shop && report.reportBarbers.length > 0 ? [Ring, Bars] : [Ring];
@@ -539,11 +539,9 @@ function chartOf(
       );
     }
     case AnalyticsCard.Tips: {
-      const tips = AnalyticsCarouselSystem.tipsSeriesOf(report);
-      if (tips !== null && view !== AnalyticsChartView.Ring) {
-        const text = tips.map((cents) =>
-          money(cents as AnalyticsReport['reportTipsCents'], lang),
-        );
+      if (view !== AnalyticsChartView.Ring) {
+        const tips = report.reportSeries.map((point) => point.tipsCents);
+        const text = tips.map((cents) => money(cents, lang));
         return view === AnalyticsChartView.Line
           ? line(tips, text, words.card.tipsLine, null, null, null, null, true)
           : bars(tips, text, words.card.tipsLine);

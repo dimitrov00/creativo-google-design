@@ -396,36 +396,6 @@ export const AnalyticsCarouselSystem = {
       : null;
   },
 
-  /**
-   * The tips per bucket of `report`'s series — the day rows' tips summed
-   * into the bucket each row's day falls in, aligned with
-   * `reportSeries`. `null` where the rows cannot be placed: a range over
-   * 93 days that is no `YEAR` keeps a row per barber-MONTH against weekly
-   * buckets.
-   */
-  tipsSeriesOf(report: AnalyticsReport): readonly number[] | null {
-    const points = report.reportSeries;
-    if (
-      report.reportAnalyticsSpan !== AnalyticsSpan.Year &&
-      StaffAnalyticsSystem.dayRowsAreMonths(report)
-    ) {
-      return null;
-    }
-    const out = points.map(() => 0);
-    for (const row of report.reportDayRows) {
-      let bucket = -1;
-      for (let i = 0; i < points.length; i++) {
-        if (
-          (points[i] as AnalyticsReport.SeriesPoint).localDate <= row.localDate
-        ) {
-          bucket = i;
-        }
-      }
-      if (bucket >= 0) out[bucket] = (out[bucket] as number) + row.dayTipsCents;
-    }
-    return out;
-  },
-
   /** The range chip `period` is on `today`, or `null` — a day, a past week, a range of the sheet's. */
   presetOf(
     period: AnalyticsPeriod,
