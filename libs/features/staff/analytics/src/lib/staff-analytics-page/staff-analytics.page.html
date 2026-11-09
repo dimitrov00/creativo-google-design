@@ -82,15 +82,16 @@
         [(uiPresented)]="scopeMenu"
         (uiPicked)="pickScopeOption($event)"
       >
-        <!-- The two triggers are one control: the same bordered pill, the
-             same size, the same chevron. The scope's leads with its disc —
-             the barber's face, or the shop's glyph. -->
+        <!-- The two triggers are one control: the same bordered pill at the
+             regular rung. The scope's leads with its disc — the barber's
+             face, or a shop's glyph — and keeps the chevron of a choice; the
+             period's word is the whole pill (Revolut's «This month»). -->
         <button
           type="button"
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
-          uiControlSize="small"
+          uiControlSize="regular"
           uiMenuTrigger
           class="staff-analytics__scope-trigger"
           [attr.aria-label]="scope.menuLabel + ': ' + scope.label"
@@ -125,7 +126,7 @@
           uiButton
           uiButtonStyle="bordered"
           uiTint="neutral"
-          uiControlSize="small"
+          uiControlSize="regular"
           uiMenuTrigger
           aria-live="polite"
           [attr.aria-label]="vm.period.menuLabel + ': ' + vm.period.label"
@@ -133,7 +134,6 @@
           (click)="periodMenu.set(true)"
         >
           <span data-testid="analytics-period">{{ vm.period.label }}</span>
-          <ui-icon uiTrailing uiName="field.popUp" />
         </button>
       </ui-choice-menu>
     </div>
@@ -186,7 +186,7 @@
       <h2 uiText uiFont="title3" id="analytics-goal-title">{{ goal.title }}</h2>
       <div
         uiCard
-        uiTone="elevated"
+        uiTone="muted"
         uiPadding="regular"
         class="staff-analytics__goal"
         [attr.data-pace]="ring.paceTag"
@@ -228,7 +228,7 @@
       </h2>
       <a
         uiCard
-        uiTone="elevated"
+        uiTone="muted"
         uiPadding="regular"
         [uiInteractive]="true"
         class="staff-analytics__ahead"

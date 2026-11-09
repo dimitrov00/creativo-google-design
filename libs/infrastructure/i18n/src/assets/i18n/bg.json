@@ -2674,6 +2674,8 @@
     "scope": {
       "label": "Чии данни",
       "shop": "Салон",
+      "shopsGroup": "Салони",
+      "teamGroup": "Екип",
       "shops": {
         "one": "Салон",
         "other": "Всички салони"

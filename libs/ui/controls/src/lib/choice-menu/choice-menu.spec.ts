@@ -133,6 +133,52 @@ describe('UiChoiceMenu', () => {
       q('pick-none')?.querySelector('.ui-choice-menu__check-space'),
     ).toBeNull();
   });
+  it('parts the options into captioned sections at each change of group, each its own run', async () => {
+    const { host } = await render(false, [
+      {
+        id: 'shop',
+        label: 'Всички салони',
+        group: 'Салони',
+        testId: 'pick-shop',
+      },
+      { id: 'loc', label: 'Център', group: 'Салони', testId: 'pick-loc' },
+      {
+        id: 'ivan',
+        label: 'Иван',
+        avatarSrc: null,
+        group: 'Екип',
+        testId: 'pick-ivan',
+      },
+    ]);
+    const groups = Array.from(host.querySelectorAll('ui-list-group'));
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.getAttribute('aria-label'))).toEqual([
+      'Салони',
+      'Екип',
+    ]);
+    expect(groups.map((group) => group.getAttribute('role'))).toEqual([
+      'group',
+      'group',
+    ]);
+    expect(
+      groups.map((group) => group.querySelectorAll('[uiMenuItem]').length),
+    ).toEqual([2, 1]);
+    expect(
+      Array.from(host.querySelectorAll('.ui-choice-menu__section')).map((c) =>
+        c.textContent?.trim(),
+      ),
+    ).toEqual(['Салони', 'Екип']);
+  });
+
+  it('keeps one run with no caption when no option names a group', async () => {
+    const { host } = await render();
+    expect(host.querySelectorAll('ui-list-group')).toHaveLength(1);
+    expect(host.querySelector('.ui-choice-menu__section')).toBeNull();
+    expect(host.querySelector('ui-list-group')?.hasAttribute('role')).toBe(
+      false,
+    );
+  });
+
   it('states a description under the label when an option carries one', async () => {
     const { q } = await render(false, [
       {

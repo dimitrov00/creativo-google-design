@@ -127,6 +127,14 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   carry it, it has no goal. The stored days say which locations each day touched and hold
   each one's share of a day split across shops (ADR
   `docs/architecture/decisions/2026-11-09-analytics-location-scope.md`, definition 3).
+- **Owner review, 2026-11-09 (round 2)**: both pills sit at the regular rung; the period
+  pill is its word alone, no chevron. The scope menu parts the shops («Салони», captioned
+  beside locations) from the people («Екип») as two sections (`UiChoiceOption.group`).
+  The carousel shows Revolut's dots (`ui-page-control`: a sliding window of seven, the
+  ends shrinking over a longer run). Every card wears the segmented list's fill
+  (`uiTone="muted"`) in both themes, so a hover darkens it as a row does instead of
+  greying a white card, and a page keeps room above and below its cards so the track's
+  clip never cuts the last one.
 - **A service ring paints the top service in the accent and the rest in the chart's
   greys**; the identity tones stay the people's (the team).
 - **The card's figure opens its rows** (`analytics-card-figure`), which add up to it —

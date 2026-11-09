@@ -2671,6 +2671,8 @@
     "scope": {
       "label": "Whose figures",
       "shop": "Shop",
+      "shopsGroup": "Shops",
+      "teamGroup": "Team",
       "shops": {
         "one": "Shop",
         "other": "All shops"

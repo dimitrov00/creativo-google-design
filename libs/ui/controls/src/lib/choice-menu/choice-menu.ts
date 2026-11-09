@@ -5,6 +5,7 @@ import {
   Directive,
   TemplateRef,
   ViewEncapsulation,
+  computed,
   contentChild,
   inject,
   input,
@@ -56,7 +57,20 @@ export interface UiChoiceOption {
   readonly description?: string;
   /** The row's `data-testid`, when a test needs to find this option. */
   readonly testId?: string;
+  /**
+   * The SECTION the option belongs to. Consecutive options of one group
+   * are one segmented run; a new group starts a new run, parted by the
+   * menu's section seam and captioned with this word when it is not empty
+   * («Салони» · «Екип») — HIG menu sections. Absent: one run, no caption.
+   */
+  readonly group?: string;
 }
+
+/** One section of a choice menu: its caption (or none) and its options. */
+type UiChoiceSection = {
+  readonly title: string;
+  readonly options: readonly UiChoiceOption[];
+};
 
 /** The consumer's own leading rail: `<ng-template uiChoiceLeading let-option>`. */
 @Directive({ selector: 'ng-template[uiChoiceLeading]' })
@@ -109,79 +123,94 @@ export class UiChoiceLeading {
       (uiDismissed)="uiPresented.set(false)"
     >
       <ng-content select="[uiMenuTrigger]" ngProjectAs="[uiMenuTrigger]" />
-      <ui-list-group>
-        @for (option of uiOptions(); track option.id) {
-          <button
-            type="button"
-            uiMenuItem
-            uiListRow
-            [uiInteractive]="true"
-            [uiSelected]="option.id === uiSelectedId()"
-            [disabled]="option.disabled ?? false"
-            [attr.data-testid]="option.testId ?? null"
-            (click)="pick(option)"
+      @for (section of sections(); track $index) {
+        @if (section.title) {
+          <span
+            class="ui-choice-menu__section"
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            aria-hidden="true"
+            >{{ section.title }}</span
           >
-            <!-- The leading rail is STATIC per branch — a slot that only
+        }
+        <ui-list-group
+          [attr.role]="section.title ? 'group' : null"
+          [attr.aria-label]="section.title || null"
+        >
+          @for (option of section.options; track option.id) {
+            <button
+              type="button"
+              uiMenuItem
+              uiListRow
+              [uiInteractive]="true"
+              [uiSelected]="option.id === uiSelectedId()"
+              [disabled]="option.disabled ?? false"
+              [attr.data-testid]="option.testId ?? null"
+              (click)="pick(option)"
+            >
+              <!-- The leading rail is STATIC per branch — a slot that only
                  exists inside a block is projected by that block's single
                  root, so each branch has exactly one. -->
-            @if (leading(); as slot) {
-              <span uiLeading>
-                <ng-container
-                  *ngTemplateOutlet="
-                    slot.template;
-                    context: { $implicit: option }
-                  "
-                />
-              </span>
-            } @else if (option.avatarSrc !== undefined) {
-              <span uiLeading>
-                <ui-avatar
-                  [uiSrc]="option.avatarSrc"
-                  [uiName]="option.label"
-                  [uiIcon]="option.icon ?? null"
-                  uiControlSize="regular"
-                />
-              </span>
-            } @else if (option.icon) {
-              <ui-icon uiLeading [uiName]="option.icon" />
-            }
-            @if (option.description) {
-              <span class="ui-choice-menu__lines">
-                <span>{{ option.label }}</span>
-                <span
-                  class="ui-choice-menu__description"
-                  uiText
-                  uiFont="footnote"
-                  uiForegroundStyle="secondary"
-                  >{{ option.description }}</span
-                >
-              </span>
-            } @else {
-              {{ option.label }}
-            }
-            <!-- The DETAIL reads muted on the chosen row too, and the check
+              @if (leading(); as slot) {
+                <span uiLeading>
+                  <ng-container
+                    *ngTemplateOutlet="
+                      slot.template;
+                      context: { $implicit: option }
+                    "
+                  />
+                </span>
+              } @else if (option.avatarSrc !== undefined) {
+                <span uiLeading>
+                  <ui-avatar
+                    [uiSrc]="option.avatarSrc"
+                    [uiName]="option.label"
+                    [uiIcon]="option.icon ?? null"
+                    uiControlSize="regular"
+                  />
+                </span>
+              } @else if (option.icon) {
+                <ui-icon uiLeading [uiName]="option.icon" />
+              }
+              @if (option.description) {
+                <span class="ui-choice-menu__lines">
+                  <span>{{ option.label }}</span>
+                  <span
+                    class="ui-choice-menu__description"
+                    uiText
+                    uiFont="footnote"
+                    uiForegroundStyle="secondary"
+                    >{{ option.description }}</span
+                  >
+                </span>
+              } @else {
+                {{ option.label }}
+              }
+              <!-- The DETAIL reads muted on the chosen row too, and the check
                  keeps its column on every row that carries a detail, so the
                  figures line up down the run. -->
-            <span uiTrailing class="ui-choice-menu__trailing">
-              @if (option.detail) {
-                <span
-                  class="ui-choice-menu__detail"
-                  uiForegroundStyle="secondary"
-                  >{{ option.detail }}</span
-                >
-              }
-              @if (option.id === uiSelectedId()) {
-                <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
-              } @else if (option.detail) {
-                <ui-icon
-                  class="ui-choice-menu__check-space"
-                  uiName="checklist.done"
-                />
-              }
-            </span>
-          </button>
-        }
-      </ui-list-group>
+              <span uiTrailing class="ui-choice-menu__trailing">
+                @if (option.detail) {
+                  <span
+                    class="ui-choice-menu__detail"
+                    uiForegroundStyle="secondary"
+                    >{{ option.detail }}</span
+                  >
+                }
+                @if (option.id === uiSelectedId()) {
+                  <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
+                } @else if (option.detail) {
+                  <ui-icon
+                    class="ui-choice-menu__check-space"
+                    uiName="checklist.done"
+                  />
+                }
+              </span>
+            </button>
+          }
+        </ui-list-group>
+      }
       <ng-content />
     </ui-menu>
   `,
@@ -198,6 +227,18 @@ export class UiChoiceMenu {
   /** The menu's accessible name — what the choice is OF. */
   readonly uiLabel = input('');
   readonly uiAlignment = input<UiMenuAlignment>('leading');
+
+  /** The options cut into sections at each change of `group`. */
+  protected readonly sections = computed<readonly UiChoiceSection[]>(() => {
+    const out: { title: string; options: UiChoiceOption[] }[] = [];
+    for (const option of this.uiOptions()) {
+      const title = option.group ?? '';
+      const last = out.at(-1);
+      if (last !== undefined && last.title === title) last.options.push(option);
+      else out.push({ title, options: [option] });
+    }
+    return out;
+  });
   readonly uiPresented = model(false);
   readonly uiPicked = output<string>();
 

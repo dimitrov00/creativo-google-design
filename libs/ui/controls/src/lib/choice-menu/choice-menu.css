@@ -24,4 +24,16 @@
   .ui-choice-menu__description {
     white-space: normal;
   }
+
+  /* A SECTION's caption: a footnote over its run, on the run's own inset,
+     the seam above it standing in for the gap the runs would keep. */
+  .ui-choice-menu__section {
+    display: block;
+    padding: var(--sys-space-compact) var(--sys-space-regular)
+      var(--sys-space-tight);
+  }
+
+  [data-popover-surface] > .ui-list-group + .ui-choice-menu__section {
+    margin-block-start: var(--sys-space-tight);
+  }
 }

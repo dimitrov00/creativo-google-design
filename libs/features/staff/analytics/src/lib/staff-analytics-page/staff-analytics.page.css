@@ -64,7 +64,8 @@
 }
 
 /* THE ROW OF TWO MENUS: whose figures leading, the period trailing — two
-   identical bordered pills, each its word and the pop-up chevron. */
+   bordered pills at the regular rung; the scope's carries its disc and
+   chevron, the period's is its word alone. */
 .staff-analytics__menus {
   display: flex;
   align-items: center;
@@ -81,7 +82,9 @@
 }
 
 .staff-analytics__scope-trigger .ui-avatar {
-  --ui-avatar-disc: calc(var(--control-size-small) - var(--sys-space-unit) * 3);
+  --ui-avatar-disc: calc(
+    var(--control-size-regular) - var(--sys-space-unit) * 3
+  );
 }
 
 .staff-analytics__period-menu {

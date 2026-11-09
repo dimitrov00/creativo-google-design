@@ -10,6 +10,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { UiPageControl } from '@creativo/ui/controls';
 import type { AnalyticsPageVm } from '../analytics-home.vm';
 import { AnalyticsBento } from './analytics-bento';
 
@@ -31,7 +32,7 @@ const SETTLE_MS = 140;
  */
 @Component({
   selector: 'lib-analytics-carousel',
-  imports: [AnalyticsBento],
+  imports: [AnalyticsBento, UiPageControl],
   template: `
     <div
       #track
@@ -55,6 +56,14 @@ const SETTLE_MS = 140;
         </section>
       }
     </div>
+    <!-- Where the carousel stands — Revolut's dots. The pages carry their
+         own names, so the dots stay decorative. -->
+    <ui-page-control
+      class="analytics-carousel__dots"
+      data-testid="analytics-page-dots"
+      [uiCount]="pages().length"
+      [uiIndex]="index()"
+    />
   `,
   styleUrl: './analytics-carousel.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

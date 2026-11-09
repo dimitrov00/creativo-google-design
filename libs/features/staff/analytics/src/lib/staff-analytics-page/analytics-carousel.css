@@ -26,7 +26,16 @@
   flex: 0 0 100%;
   box-sizing: border-box;
   min-inline-size: 0;
+  /* The track clips vertically (a horizontal scroller must), so a page
+     keeps a little room above and below its cards: a card's press and its
+     corners never meet the clip. */
+  padding-block: var(--sys-space-tight);
   padding-inline: var(--sys-space-regular);
   scroll-snap-align: start;
   scroll-snap-stop: always;
+}
+
+.analytics-carousel__dots {
+  margin-block-start: var(--sys-space-tight);
+  color: var(--sys-color-foreground);
 }

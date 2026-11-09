@@ -116,15 +116,26 @@ function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   if (scope === null) return null;
   const selected = scope.tiles.find((tile) => tile.selected);
   const label = selected?.name ?? shopNameOf(input);
+  const listsLocations = scope.tiles.some(
+    (tile) => tile.scopeLocationId !== null,
+  );
   return {
     label,
     menuLabel: scope.label,
-    // Every option is a disc: a face, a monogram, or a shop's glyph.
+    // Every option is a disc: a face, a monogram, or a shop's glyph. The
+    // shops and the people are two sections; the shops' is captioned only
+    // when it lists locations beside the whole.
     options: scope.tiles.map((tile): UiChoiceOption => ({
       id: optionIdOf(tile),
       label: tile.name,
       avatarSrc: tile.avatarSrc,
       ...(tile.scopeBarberId === null ? { icon: SHOP_GLYPH } : {}),
+      group:
+        tile.scopeBarberId !== null
+          ? input.words.scope.teamGroup
+          : listsLocations
+            ? input.words.scope.shopsGroup
+            : '',
       testId: tile.testId,
     })),
     selected: selected === undefined ? null : optionIdOf(selected),

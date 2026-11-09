@@ -137,6 +137,12 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       ['ivan', null],
     ]);
     expect(shop.period.leading).toBeNull();
+    // One shop: its section has no caption; the people's says «Екип».
+    expect(shop.scope?.options.map((o) => o.group)).toEqual([
+      '',
+      'Екип',
+      'Екип',
+    ]);
 
     const ivan = analyticsHomeVm(
       inputOf('bg', { scopeChoices: choices, scopeBarberId: IVAN }),
@@ -192,6 +198,13 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
         'analytics-scope-location-loc-mladost',
       ],
       ['ivan', 'Иван Колев', null, 'analytics-scope-ivan'],
+    ]);
+    // Two sections: the shops, captioned beside their locations, and the people.
+    expect(all.scope?.options.map((o) => o.group)).toEqual([
+      'Салони',
+      'Салони',
+      'Салони',
+      'Екип',
     ]);
     const atMladost = analyticsHomeVm(
       inputOf('bg', {

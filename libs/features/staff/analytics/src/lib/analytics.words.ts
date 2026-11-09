@@ -78,6 +78,9 @@ export interface AnalyticsWords {
      * «Всички салони» for several (the plural form of the count).
      */
     readonly shopOf: (shopCount: number) => string;
+    /** The scope menu's sections: «Салони» over the shop and its locations, «Екип» over the people. */
+    readonly shopsGroup: string;
+    readonly teamGroup: string;
     readonly me: string;
     readonly barber: string;
   };
@@ -441,6 +444,8 @@ export function analyticsWordsOf(
       label: t('scope.label'),
       shop: t('scope.shop'),
       shopOf: counted('scope.shops'),
+      shopsGroup: t('scope.shopsGroup'),
+      teamGroup: t('scope.teamGroup'),
       me: t('scope.me'),
       barber: t('scope.barber'),
     },
