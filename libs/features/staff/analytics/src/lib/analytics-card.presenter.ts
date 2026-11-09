@@ -415,11 +415,13 @@ function chartOf(
     barLabels: readonly string[] = labels,
     part: UiChartPart = 'worked',
     orientation: 'vertical' | 'horizontal' = 'vertical',
+    tones: readonly number[] = [],
   ): AnalyticsCardChartVm => ({
     chartView: AnalyticsChartView.Bars,
     bars: values.map((value, i): AnalyticsChartBarVm => ({
       label: barLabels.at(i) ?? '',
       parts: [{ part, value }],
+      tone: tones.at(i) ?? null,
     })),
     valueText,
     orientation,
@@ -439,6 +441,8 @@ function chartOf(
       ),
       'worked',
       'horizontal',
+      // Each barber in their own colour — the team card's and the radars'.
+      report.reportBarbers.map((_, i) => i % IDENTITY_TONES),
     );
 
   switch (card) {
@@ -698,6 +702,8 @@ function chartOf(
         names,
         'worked',
         'horizontal',
+        // Each salon in its own colour — its line's, its chip's, its row's.
+        rows.map((_, i) => i % IDENTITY_TONES),
       );
     }
   }

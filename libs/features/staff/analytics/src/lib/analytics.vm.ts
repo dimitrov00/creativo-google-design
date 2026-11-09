@@ -103,6 +103,8 @@ export type AnalyticsChartBarVm = {
     readonly part: UiChartPart;
     readonly value: number;
   }[];
+  /** A member's identity tone (`0…4`, the colour of its line and row), or none. */
+  readonly tone: number | null;
 };
 
 /** One point of the takings line: the bucket's figure and the comparison aligned by position. */

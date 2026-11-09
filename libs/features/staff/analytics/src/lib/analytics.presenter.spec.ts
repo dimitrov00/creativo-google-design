@@ -170,6 +170,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     expect(body.services.bars[0]).toEqual({
       label: 'Подстригване · 42,00\u00a0€ на час',
       parts: [{ part: 'worked', value: 2800 }],
+      tone: null,
     });
     expect(body.services.valueText).toEqual([
       `${nbsp('28,00 €')} · 1 път`,
@@ -482,6 +483,7 @@ describe('analyticsVm — the admin and the shop', () => {
           { part: 'staff', value: 1 },
           { part: 'unknown', value: 0 },
         ],
+        tone: null,
       },
     ]);
     expect(

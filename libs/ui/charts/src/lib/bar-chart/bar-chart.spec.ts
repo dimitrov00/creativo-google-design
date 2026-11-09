@@ -146,6 +146,26 @@ describe('UiBarChart', () => {
     expect(length(parts[0] as SVGRectElement)).toBe(112.5); // 450 of 480
   });
 
+  it('paints a member bar in its identity tone on every part; an unknown or absent tone paints by part', () => {
+    const { bars, segments } = render((host) =>
+      host.bars.set([
+        { label: 'Център', parts: [{ part: 'worked', value: 2 }], tone: 0 },
+        { label: 'Младост', parts: [{ part: 'worked', value: 1 }], tone: 1 },
+        { label: 'Стар', parts: [{ part: 'worked', value: 1 }], tone: 7 },
+        { label: 'Без', parts: [{ part: 'worked', value: 1 }] },
+      ]),
+    );
+    expect(
+      bars().map((bar) =>
+        segments(bar).map((rect) => rect.getAttribute('data-tone')),
+      ),
+    ).toEqual([['0'], ['1'], [null], [null]]);
+    // The part hook stays: the tone says WHOSE, the part still says WHAT.
+    expect(segments(bars()[0] as Element)[0]?.getAttribute('data-part')).toBe(
+      'worked',
+    );
+  });
+
   it('lays horizontal bars in rows, largest first when ranked, the figure at the row’s end, the index kept', () => {
     const { chart, bars, segments } = render((host) => {
       host.orientation.set('horizontal');

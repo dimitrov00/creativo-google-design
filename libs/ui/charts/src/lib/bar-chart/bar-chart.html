@@ -42,6 +42,7 @@
       <rect
         class="ui-bar-chart__segment"
         [attr.data-part]="segment.part"
+        [attr.data-tone]="mark.tone"
         [attr.y]="mark.across"
         [attr.height]="mark.thickness"
         [style.--ui-bar-offset]="segment.offset + 'px'"
@@ -51,6 +52,7 @@
       <rect
         class="ui-bar-chart__segment"
         [attr.data-part]="segment.part"
+        [attr.data-tone]="mark.tone"
         [attr.x]="mark.across"
         [attr.width]="mark.thickness"
         [style.--ui-bar-offset]="segment.offset + 'px'"

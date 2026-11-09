@@ -110,6 +110,12 @@
   min-block-size: 12rem;
 }
 
+/* A ranking of rows (each salon, each barber) is as tall as its rows: two
+   salons under a 12rem floor left a well of nothing under the bars. */
+.analytics-card__chart:has(> .ui-bar-chart[data-orientation='horizontal']) {
+  min-block-size: 0;
+}
+
 /* FULL BLEED (Revolut's detail charts): the line runs to the screen's
    edges; the chart keeps its right-edge figures inside the page's gutter
    (`[uiInset]`, the same 16 px). */

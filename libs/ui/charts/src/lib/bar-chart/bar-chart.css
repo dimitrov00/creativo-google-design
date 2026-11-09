@@ -76,6 +76,14 @@
     fill: var(--sys-color-accent);
   }
 
+  /* A MEMBER keeps its own colour when it is the one highlighted — the
+     accent would make it someone else. */
+  .ui-bar-chart[data-highlighting]
+    .ui-bar-chart__bar[data-highlight]
+    .ui-bar-chart__segment[data-tone] {
+    fill: var(--ui-chart-paint);
+  }
+
   /* WORDS ARE INK: the caption role in the quiet ink under each bar
      (centred on it) or at the row's start; a value at the row's end,
      tabular. */

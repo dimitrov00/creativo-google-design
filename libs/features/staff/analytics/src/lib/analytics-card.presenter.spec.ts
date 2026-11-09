@@ -203,6 +203,8 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
       'Иван Колев',
       'Нико Петров',
     ]);
+    // Each barber in their own colour — the team card's and the radars'.
+    expect(bars.bars.map((b) => b.tone)).toEqual([0, 1]);
   });
 
   it('«Екипът» on the shop: bars by barber first, a row per barber, the radars', () => {
@@ -264,7 +266,8 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     expect(one.readouts[14]).toBe(`15 септември · Младост ${nbsp('17,50 €')}`);
     expect(hidden.locationPicks?.map((p) => p.selected)).toEqual([false, true]);
 
-    // The bars: each salon's takings, in the shop's order; no toggles.
+    // The bars: each salon's takings, in the shop's order and in its own
+    // colour (its line's, its row's); no toggles.
     const bars = analyticsCardVm(
       inputOf(AnalyticsCard.Locations, {
         report,
@@ -273,6 +276,7 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     );
     if (bars.chart?.chartView !== 'BARS') throw new Error('not bars');
     expect(bars.chart.bars.map((b) => b.label)).toEqual(['Център', 'Младост']);
+    expect(bars.chart.bars.map((b) => b.tone)).toEqual([0, 1]);
     expect(bars.locationPicks).toBeNull();
   });
 

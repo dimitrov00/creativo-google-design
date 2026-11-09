@@ -802,7 +802,7 @@ function timeBarsOf(
       return { part: BAR_PART_HOOKS[part], value };
     });
     totals.push(total);
-    return { label: labels.at(i) ?? '', parts };
+    return { label: labels.at(i) ?? '', parts, tone: null };
   });
   return {
     bars,
@@ -883,6 +883,7 @@ function aheadBarsOf(
           value: day.openMinutes,
         },
       ],
+      tone: null,
     })),
     highlightIndex: highlight === -1 ? null : highlight,
     valueText: days.map((day) => spanWords(day.openMinutes, words.spanWords)),
@@ -1048,6 +1049,7 @@ function servicesOf(
             value: row.takingsCents,
           },
         ],
+        tone: null,
       };
     }),
     valueText: rows.map((row) =>
@@ -1136,6 +1138,7 @@ function originsOf(
           part: ORIGIN_PART_HOOKS[row.bookingOrigin],
           value: row.visitCount,
         })),
+        tone: null,
       },
     ],
     label: words.charts.origins,

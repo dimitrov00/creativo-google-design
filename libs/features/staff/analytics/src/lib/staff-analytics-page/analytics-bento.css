@@ -166,7 +166,14 @@
 .analytics-bento__member-bar {
   grid-column: 1 / -1;
   block-size: 0.375rem;
-  inline-size: max(0.375rem, calc(var(--analytics-share, 0) * 100%));
+  /* A small share still shows as a round dot; NOTHING shows as nothing — a
+     0,00 € row drew a coloured dot that read as a mark. `min(1, share ×
+     10⁶)` is 1 for any share above zero and 0 at zero, so the dot's floor
+     switches off exactly there. */
+  inline-size: max(
+    calc(0.375rem * min(1, var(--analytics-share, 0) * 1000000)),
+    calc(var(--analytics-share, 0) * 100%)
+  );
   border-radius: 999px;
   background: var(--sys-color-accent);
 }

@@ -23,10 +23,18 @@ export type UiChartBarPart = {
   readonly value: number;
 };
 
-/** One bar: its word along the baseline (or the row) and its parts, baseline first. */
+/**
+ * One bar: its word along the baseline (or the row) and its parts, baseline
+ * first. A bar that is a MEMBER of a set — a shop, a barber — carries its
+ * identity `tone` (`0 … 4`, `--sys-identity-N`), the same colour its line,
+ * swatch and row wear elsewhere: the tone then paints every part, because
+ * the hook says WHOSE before a part says WHAT. Absent or `null`, the parts
+ * paint.
+ */
 export type UiChartBar = {
   readonly label: string;
   readonly parts: readonly UiChartBarPart[];
+  readonly tone?: number | null;
 };
 
 export type UiBarChartOrientation = 'vertical' | 'horizontal';
@@ -54,6 +62,19 @@ const ROW_PITCH = ROW_TEXT + ROW_BAR + ROW_GAP;
  */
 const CHAR_WIDTH = 7;
 const TEXT_GAP = 12;
+/** The identity tones the stylesheet maps (`--sys-identity-0..4`). */
+const IDENTITY_TONES = 5;
+
+/** A tone the stylesheet knows, or none. */
+function toneOf(tone: number | null | undefined): number | null {
+  return tone !== null &&
+    tone !== undefined &&
+    Number.isInteger(tone) &&
+    tone >= 0 &&
+    tone < IDENTITY_TONES
+    ? tone
+    : null;
+}
 
 /** The word as it fits beside its figure on a row of `width`. */
 export function fitLabel(
@@ -84,6 +105,8 @@ type BarMark = {
   readonly valueText: string;
   readonly name: string;
   readonly highlight: boolean;
+  /** The member's identity tone — it paints every segment — or none. */
+  readonly tone: number | null;
   /** The pointer target: the whole band (vertical) or the whole row (horizontal). */
   readonly hitX: number;
   readonly hitY: number;
@@ -229,6 +252,7 @@ export class UiBarChart {
         valueText,
         name: valueText ? `${bar.label}, ${valueText}` : bar.label,
         highlight: highlight === index,
+        tone: toneOf(bar.tone),
         hitX: horizontal ? 0 : px(position * band),
         hitY: horizontal ? row : 0,
         hitWidth: horizontal ? px(width) : px(band),
