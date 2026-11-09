@@ -44,6 +44,22 @@ export function radarVertex(
 }
 
 /**
+ * WHERE A VALUE SITS on axis `index` of `count`: `radius × value ÷ 100`
+ * along it, the value clamped to 0 … 100 — the kit never draws past its
+ * outer ring. The polygon's vertex and the value's dot are this point.
+ */
+export function radarValuePoint(
+  index: number,
+  count: number,
+  value: number,
+  radius: number,
+  centre: ChartPoint,
+): ChartPoint {
+  const share = Math.min(1, Math.max(0, value / RADAR_FULL));
+  return radarVertex(index, count, radius * share, centre);
+}
+
+/**
  * THE `points` OF A RADAR POLYGON — one vertex per value, at
  * `radius × value ÷ 100` along its axis; a `null` (an axis without data)
  * sits on the centre, so the shape visibly collapses there instead of
@@ -59,9 +75,10 @@ export function polygonPoints(
   let points = '';
   for (let index = 0; index < count; index++) {
     const value = values.at(index) ?? null;
-    const share =
-      value === null ? 0 : Math.min(1, Math.max(0, value / RADAR_FULL));
-    const vertex = radarVertex(index, count, radius * share, centre);
+    const vertex =
+      value === null
+        ? centre
+        : radarValuePoint(index, count, value, radius, centre);
     points += `${points ? ' ' : ''}${px(vertex.x)},${px(vertex.y)}`;
   }
   return points;

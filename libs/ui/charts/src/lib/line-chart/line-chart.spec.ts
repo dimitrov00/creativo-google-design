@@ -63,7 +63,11 @@ describe('UiLineChart', () => {
     );
     expect(svg?.getAttribute('viewBox')).toBe('0 0 320 128');
     const table = one('table');
-    expect(table?.hasAttribute('data-visually-hidden')).toBe(true);
+    // The recipe sits on a wrapper: a table would stretch past its 1px.
+    expect(table?.hasAttribute('data-visually-hidden')).toBe(false);
+    expect(table?.parentElement?.hasAttribute('data-visually-hidden')).toBe(
+      true,
+    );
     expect(table?.querySelector('caption')?.textContent?.trim()).toBe(
       'Оборот по дни, най-висок вторник',
     );
@@ -83,9 +87,10 @@ describe('UiLineChart', () => {
 
   it('draws the accent line through evenly spaced points on a zero-anchored scale', () => {
     const { one } = render();
-    // Plot: x from 6 to 320 − 56 − 6 = 258 in three steps of 84; y: 0 → 122, 200 (the top) → 6.
+    // The labels' column fits «ср. 125 €»: 9 glyphs × 7 + 6 = 69. Plot: x from 6
+    // to 320 − 69 − 6 = 245 in three steps of 79.67; y: 0 → 122, 200 (the top) → 6.
     expect(one('.ui-line-chart__path')?.getAttribute('d')).toBe(
-      'M6 64 L90 6 L174 35 L258 93',
+      'M6 64 L85.67 6 L165.33 35 L245 93',
     );
   });
 
@@ -93,22 +98,40 @@ describe('UiLineChart', () => {
     const { one } = render();
     const comparison = one('.ui-line-chart__comparison');
     expect(comparison?.getAttribute('data-part')).toBe('comparison');
-    expect(comparison?.getAttribute('d')).toBe('M6 75.6 M174 52.4 L258 87.2');
+    expect(comparison?.getAttribute('d')).toBe(
+      'M6 75.6 M165.33 52.4 L245 87.2',
+    );
   });
 
   it('rules the average across the plot, dashed, and labels the last value and the average at the right edge', () => {
     const { one, all } = render();
     const average = one('.ui-line-chart__average');
     expect(average?.getAttribute('x1')).toBe('6');
-    expect(average?.getAttribute('x2')).toBe('258');
+    expect(average?.getAttribute('x2')).toBe('245');
     expect(average?.getAttribute('y1')).toBe('49.5');
     const labels = all('.ui-line-chart__edge-label');
     expect(labels.map((l) => l.textContent?.trim())).toEqual([
       '50 €',
       'ср. 125 €',
     ]);
-    expect(labels.map((l) => l.getAttribute('x'))).toEqual(['270', '270']);
+    expect(labels.map((l) => l.getAttribute('x'))).toEqual(['257', '257']);
     expect(labels.map((l) => l.getAttribute('y'))).toEqual(['97', '53.5']);
+  });
+
+  it('widens the labels’ column for a longer label, never past two fifths of the box', () => {
+    const { all, host, fixture } = render();
+    // «средно 1 234,56 €»: 17 glyphs × 7 + 6 = 125, under the cap of 128.
+    host.averageText.set('средно 1 234,56 €');
+    fixture.detectChanges();
+    expect(
+      all('.ui-line-chart__edge-label').map((l) => l.getAttribute('x')),
+    ).toEqual(['201', '201']);
+    // A label past the cap: the column stops at 320 × 0.4 = 128.
+    host.averageText.set('средно за периода 12 345,67 €');
+    fixture.detectChanges();
+    expect(
+      all('.ui-line-chart__edge-label').map((l) => l.getAttribute('x')),
+    ).toEqual(['198', '198']);
   });
 
   it('keeps the two edge labels a caption line apart', () => {
@@ -122,7 +145,7 @@ describe('UiLineChart', () => {
   it('marks the first and last points in a ringed disc, and takes no gutter without labels', () => {
     const { all, one, host, fixture } = render();
     const markers = all('.ui-line-chart__marker');
-    expect(markers.map((m) => m.getAttribute('cx'))).toEqual(['6', '258']);
+    expect(markers.map((m) => m.getAttribute('cx'))).toEqual(['6', '245']);
     expect(markers.map((m) => m.getAttribute('r'))).toEqual(['4', '4']);
     host.valueText.set([]);
     host.averageText.set(null);

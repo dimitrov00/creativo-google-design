@@ -30,7 +30,15 @@
     [attr.data-enter]="!node.leaving && polygons().length > 1 ? '' : null"
     (animationend)="dropLeaving()"
   />
-  } } @for (axis of axes(); track $index) {
+  } } @for (dot of dots(); track $index) {
+  <circle
+    class="ui-radar__dot"
+    r="4"
+    [attr.cx]="dot.x"
+    [attr.cy]="dot.y"
+    [attr.data-enter]="polygons().length > 1 ? '' : null"
+  />
+  } @for (axis of axes(); track $index) {
   <text
     class="ui-radar__axis-label"
     aria-hidden="true"
@@ -53,18 +61,23 @@
   }
 </svg>
 @if (rows().length > 0) {
-<table uiVisuallyHidden class="ui-radar__table">
-  <caption>
-    {{ uiLabel() }}
-  </caption>
-  <tbody>
-    @for (row of rows(); track $index) {
-    <tr>
-      <th scope="row">{{ row.label }}</th>
-      <td>{{ row.value }}</td>
-      <td>{{ row.comparison ?? '' }}</td>
-    </tr>
-    }
-  </tbody>
-</table>
+<!-- The hidden table sits in a hidden 1px box: a table treats its own
+     width as a minimum, so on the table itself the recipe would stretch
+     to the caption and push the page sideways. -->
+<div uiVisuallyHidden class="ui-radar__a11y">
+  <table class="ui-radar__table">
+    <caption>
+      {{ uiLabel() }}
+    </caption>
+    <tbody>
+      @for (row of rows(); track $index) {
+      <tr>
+        <th scope="row">{{ row.label }}</th>
+        <td>{{ row.value }}</td>
+        <td>{{ row.comparison ?? '' }}</td>
+      </tr>
+      }
+    </tbody>
+  </table>
+</div>
 }

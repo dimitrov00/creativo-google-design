@@ -13,27 +13,32 @@
   } }
 </div>
 @if (grid().length > 0) {
-<table uiVisuallyHidden class="ui-heatmap__table">
-  <caption>
-    {{ uiLabel() }}
-  </caption>
-  <thead>
-    <tr>
-      <td></td>
-      @for (column of uiColumns(); track $index) {
-      <th scope="col">{{ column }}</th>
+<!-- The hidden table sits in a hidden 1px box: a table treats its own
+     width as a minimum, so on the table itself the recipe would stretch
+     to the caption and push the page sideways. -->
+<div uiVisuallyHidden class="ui-heatmap__a11y">
+  <table class="ui-heatmap__table">
+    <caption>
+      {{ uiLabel() }}
+    </caption>
+    <thead>
+      <tr>
+        <td></td>
+        @for (column of uiColumns(); track $index) {
+        <th scope="col">{{ column }}</th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of grid(); track $index) {
+      <tr>
+        <th scope="row">{{ row.label }}</th>
+        @for (cell of row.cells; track cell.key) {
+        <td>{{ cell.value ?? '' }}</td>
+        }
+      </tr>
       }
-    </tr>
-  </thead>
-  <tbody>
-    @for (row of grid(); track $index) {
-    <tr>
-      <th scope="row">{{ row.label }}</th>
-      @for (cell of row.cells; track cell.key) {
-      <td>{{ cell.value ?? '' }}</td>
-      }
-    </tr>
-    }
-  </tbody>
-</table>
+    </tbody>
+  </table>
+</div>
 }

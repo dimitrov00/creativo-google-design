@@ -18,6 +18,7 @@ import { px } from '../geometry/linear-scale';
 import {
   axisAnchor,
   polygonPoints,
+  radarValuePoint,
   radarVertex,
   ringPoints,
   type RadarAnchor,
@@ -52,8 +53,44 @@ const LABEL_GAP = 8;
 /** A caption line, near enough, and its ascent over the baseline. */
 const LINE = 14;
 const ASCENT = 8;
+/** How far an 11 px caption's ink reaches above and below its baseline, near enough. */
+const GLYPH_ASCENT = 9;
+const GLYPH_DESCENT = 3;
+/** Air between the highest and lowest ink and the drawing's top and bottom. */
+const EDGE = 2;
 /** The identity tones the stylesheet maps (`--sys-identity-0..4`). */
 const IDENTITY_TONES = 5;
+
+/** Where an axis's two lines of words go: their anchor point and baselines. */
+type RadarWords = {
+  readonly at: ChartPoint;
+  readonly anchor: RadarAnchor;
+  readonly labelY: number;
+  readonly valueY: number;
+};
+
+/**
+ * Axis `index`'s words just outside its outer end: above the centre they
+ * stack upwards from the anchor, below it they hang from it, level with it
+ * they sit around it — the one placement both the drawing's height and the
+ * words themselves are read from.
+ */
+function wordsOf(
+  index: number,
+  count: number,
+  radius: number,
+  centre: ChartPoint,
+): RadarWords {
+  const at = radarVertex(index, count, radius + LABEL_GAP, centre);
+  const anchor = axisAnchor(index, count);
+  if (anchor.vertical === 'above') {
+    return { at, anchor, labelY: at.y - LINE, valueY: at.y };
+  }
+  if (anchor.vertical === 'below') {
+    return { at, anchor, labelY: at.y + ASCENT, valueY: at.y + ASCENT + LINE };
+  }
+  return { at, anchor, labelY: at.y - 2, valueY: at.y + LINE - 2 };
+}
 
 type RadarAxisMark = {
   readonly label: string;
@@ -96,10 +133,15 @@ type RadarRow = {
  * no number) sit outside the axis's outer end, anchored away from the
  * centre.
  *
- * The box is square (`aspect-ratio: 1` in the stylesheet, the viewBox over
- * the measured width), the words' band taken off the radius. A changed
- * polygon cross-fades after the first frame; nothing moves under reduced
- * motion.
+ * The box is as wide as its host and only as tall as its rings and words
+ * reach (the viewBox over the measured width, its height from the words'
+ * placement, the host's `aspect-ratio` set to match): a five-axis radar's
+ * lowest words sit well above where a square would end. The words' band
+ * is taken off the radius. Each axis with a value carries a dot at it in
+ * the paint, ringed in the surface (the line chart's marker), so a radar
+ * with one or two values still reads as figures, not as a stray line. A
+ * changed polygon cross-fades after the first frame, its dots with it;
+ * nothing moves under reduced motion.
  *
  * Accessibility: the `svg` is `role="img"` named by `uiLabel`; a visually
  * hidden table lists every axis's word, value text and comparison figure.
@@ -115,6 +157,7 @@ type RadarRow = {
     class: 'ui-radar',
     '[attr.data-tone]': 'tone()',
     '[attr.data-settled]': "settled() ? '' : null",
+    '[style.--ui-radar-aspect]': 'aspect()',
   },
 })
 export class UiRadar {
@@ -148,14 +191,40 @@ export class UiRadar {
   });
 
   protected readonly width = computed(() => this.measured() || FALLBACK_WIDTH);
+
+  /**
+   * The drawing's height and where its centre sits in it: the highest and
+   * lowest reach of the outer ring and of every axis's words, laid out
+   * around a centre at y 0, then shifted so the highest ink sits `EDGE`
+   * below the top.
+   */
+  private readonly frame = computed(() => {
+    const count = this.uiAxes().length;
+    const radius = this.radius();
+    const origin: ChartPoint = { x: this.width() / 2, y: 0 };
+    let top = 0;
+    let bottom = 0;
+    for (let index = 0; index < count; index++) {
+      const end = radarVertex(index, count, radius, origin);
+      const words = wordsOf(index, count, radius, origin);
+      top = Math.min(top, end.y, words.labelY - GLYPH_ASCENT);
+      bottom = Math.max(bottom, end.y, words.valueY + GLYPH_DESCENT);
+    }
+    return { centreY: EDGE - top, height: bottom - top + 2 * EDGE };
+  });
+
   protected readonly viewBox = computed(
-    () => `0 0 ${px(this.width())} ${px(this.width())}`,
+    () => `0 0 ${px(this.width())} ${px(this.frame().height)}`,
+  );
+  /** The host's box at the drawing's own ratio, so no band is left empty under it. */
+  protected readonly aspect = computed(
+    () => `${px(this.width())} / ${px(this.frame().height)}`,
   );
 
-  private readonly centre = computed<ChartPoint>(() => {
-    const half = this.width() / 2;
-    return { x: half, y: half };
-  });
+  private readonly centre = computed<ChartPoint>(() => ({
+    x: this.width() / 2,
+    y: this.frame().centreY,
+  }));
 
   /** The band the longest word or figure needs, never under {@link LABEL_ROOM}. */
   private readonly labelRoom = computed(() => {
@@ -191,21 +260,13 @@ export class UiRadar {
     const missingText = this.uiMissingText();
     return axes.map((axis, index) => {
       const end = radarVertex(index, count, radius, centre);
-      const at = radarVertex(index, count, radius + LABEL_GAP, centre);
-      const anchor = axisAnchor(index, count);
+      const { at, anchor, labelY, valueY } = wordsOf(
+        index,
+        count,
+        radius,
+        centre,
+      );
       const missing = axis.value === null;
-      let labelY: number;
-      let valueY: number;
-      if (anchor.vertical === 'above') {
-        valueY = at.y;
-        labelY = at.y - LINE;
-      } else if (anchor.vertical === 'below') {
-        labelY = at.y + ASCENT;
-        valueY = at.y + ASCENT + LINE;
-      } else {
-        labelY = at.y - 2;
-        valueY = at.y + LINE - 2;
-      }
       return {
         label: axis.label,
         valueText: missing ? missingText : (texts.at(index) ?? ''),
@@ -239,6 +300,22 @@ export class UiRadar {
       this.radius(),
       this.centre(),
     );
+  });
+
+  /** A dot at each axis that has a value, at that value — none for a `null`. */
+  protected readonly dots = computed<readonly ChartPoint[]>(() => {
+    const axes = this.uiAxes();
+    const count = axes.length;
+    const radius = this.radius();
+    const centre = this.centre();
+    const out: ChartPoint[] = [];
+    for (let index = 0; index < count; index++) {
+      const value = axes[index]?.value ?? null;
+      if (value === null) continue;
+      const point = radarValuePoint(index, count, value, radius, centre);
+      out.push({ x: px(point.x), y: px(point.y) });
+    }
+    return out;
   });
 
   /**
