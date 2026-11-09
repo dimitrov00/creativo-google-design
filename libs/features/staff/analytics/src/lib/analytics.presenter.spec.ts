@@ -170,7 +170,8 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     expect(body.services.bars[0]).toEqual({
       label: 'Подстригване · 42,00\u00a0€ на час',
       parts: [{ part: 'worked', value: 2800 }],
-      tone: null,
+      // The service's own colour — its place in the catalogue.
+      tone: 0,
     });
     expect(body.services.valueText).toEqual([
       `${nbsp('28,00 €')} · 1 път`,

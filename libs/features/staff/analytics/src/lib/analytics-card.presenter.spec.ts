@@ -107,15 +107,27 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     ]);
   });
 
-  it('draws the takings’ ring by service — the top one in the accent, the rest in the greys — the figure in its centre', () => {
+  it('draws the takings’ ring by service — each in its own colour, by its place in the catalogue, never its rank — the figure in its centre', () => {
     const vm = analyticsCardVm(
       inputOf(AnalyticsCard.Takings, { view: AnalyticsChartView.Ring }),
     );
     const chart = vm.chart;
     if (chart?.chartView !== 'RING') throw new Error('not a ring');
-    expect(chart.segments.map((s) => [s.label, s.part, s.valueText])).toEqual([
-      ['Подстригване', 'worked', nbsp('28,00 €')],
-      ['Брада', 'blocked', nbsp('17,50 €')],
+    expect(chart.segments.map((s) => [s.label, s.tone, s.valueText])).toEqual([
+      ['Подстригване', 0, nbsp('28,00 €')],
+      ['Брада', 1, nbsp('17,50 €')],
+    ]);
+    // A service past the fifth, or no longer in the catalogue: the grey.
+    const unlisted = analyticsCardVm(
+      inputOf(AnalyticsCard.Takings, {
+        view: AnalyticsChartView.Ring,
+        names: { ...NAMES, serviceOrder: () => null },
+      }),
+    ).chart;
+    if (unlisted?.chartView !== 'RING') throw new Error('not a ring');
+    expect(unlisted.segments.map((s) => [s.tone, s.part])).toEqual([
+      [null, 'other'],
+      [null, 'other'],
     ]);
     expect(chart.centreCaption).toBe('Оборот');
     expect(chart.centreValue).toBe(nbsp('45,50 €'));

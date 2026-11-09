@@ -107,8 +107,29 @@ import {
 export const REPORT_CURRENCY = Currency.EUR;
 
 /** What the screen names from the catalogue — services, barbers and locations. */
+/**
+ * A SERVICE'S COLOUR (owner, 2026-11-09: "each service should have also
+ * different color assigned to it not everything using our accent"): an
+ * identity tone (`0…4`) by its place in the catalogue — so it follows the
+ * service, never its rank in the period — and `null` (the chart's grey)
+ * for a service past the fifth or no longer in the catalogue, rather than
+ * a tone two services would share.
+ */
+export function serviceToneOf(
+  names: AnalyticsNames,
+  serviceId: ServiceId,
+): number | null {
+  const order = names.serviceOrder(serviceId);
+  return order !== null && order < SERVICE_TONES ? order : null;
+}
+
+/** The identity tones a service can take — beyond them, the grey. */
+const SERVICE_TONES = 5;
+
 export interface AnalyticsNames {
   serviceName(id: ServiceId): string | null;
+  /** The service's place in the shop's catalogue, `0 …`; `null` for one no longer in it. */
+  serviceOrder(id: ServiceId): number | null;
   barberName(id: BarberId): string | null;
   barberAvatarSrc(id: BarberId): string | null;
   locationName(id: LocationId): string | null;
@@ -1036,6 +1057,7 @@ function servicesOf(
     bars: rows.map((row) => {
       const name =
         input.names.serviceName(row.serviceId) ?? words.unknownService;
+      const tone = serviceToneOf(input.names, row.serviceId);
       return {
         label:
           row.takingsPerHourCents === null
@@ -1046,11 +1068,15 @@ function servicesOf(
               ),
         parts: [
           {
-            part: BAR_PART_HOOKS[AnalyticsBarPart.Worked],
+            // A service without a tone of its own is the chart's grey,
+            // as the ring draws it — never the accent.
+            part:
+              tone === null ? 'other' : BAR_PART_HOOKS[AnalyticsBarPart.Worked],
             value: row.takingsCents,
           },
         ],
-        tone: null,
+        // Each service in its own colour — the ring's too.
+        tone,
       };
     }),
     valueText: rows.map((row) =>

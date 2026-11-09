@@ -23,6 +23,7 @@ import {
   bodyOf,
   money,
   REPORT_CURRENCY,
+  serviceToneOf,
   statusOf,
 } from './analytics.presenter';
 import { locationsOf, pageLabelOf, teamOf } from './analytics-home.presenter';
@@ -96,14 +97,6 @@ const CARD_TOPICS = {
   // The locations compare their takings: the takings' definition.
   [AnalyticsCard.Locations]: AnalyticsTopic.Takings,
 } as const satisfies Record<AnalyticsCard, AnalyticsTopic>;
-
-/** A service ring's paints, in rank order: the accent, then the chart's greys. */
-const SERVICE_PARTS: readonly UiChartPart[] = [
-  'worked',
-  'blocked',
-  'unsold',
-  'other',
-];
 
 /** The identity tones the team paints with, in the catalogue's order. */
 const IDENTITY_TONES = 5;
@@ -511,12 +504,12 @@ function chartOf(
       }
       const shares = report.reportServices;
       return ring(
-        shares.map((row, i) => ({
+        shares.map((row) => ({
           value: row.takingsCents,
-          // Services are no people: the top one in the accent, the rest in
-          // the chart's greys, as the ranked bars draw them.
-          part: SERVICE_PARTS[i % SERVICE_PARTS.length] as UiChartPart,
-          tone: null,
+          // Each service in its own colour, the bars' too; one without a
+          // tone of its own in the chart's grey.
+          part: 'other',
+          tone: serviceToneOf(input.names, row.serviceId),
           label: input.names.serviceName(row.serviceId) ?? words.unknownService,
           valueText: money(row.takingsCents, lang),
         })),
