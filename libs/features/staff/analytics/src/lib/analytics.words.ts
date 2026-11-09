@@ -225,6 +225,8 @@ export interface AnalyticsWords {
       readonly decrease: string;
       readonly increase: string;
       readonly save: string;
+      /** «Премахни целта» — offered while a goal is set. */
+      readonly remove: string;
       readonly close: string;
       /** «Въведете двете суми». */
       readonly incomplete: string;
@@ -255,6 +257,19 @@ export interface AnalyticsWords {
     /** «8% от оборота». */
     readonly tipsDetail: (share: string) => string;
     readonly tipsNone: string;
+    /** «5% от 130 ч по график» — how full the roster was. */
+    readonly timeOccupancy: (share: string, rostered: string) => string;
+    /** «Свободно време» — unsold and still-open rostered time. */
+    readonly free: string;
+    /** «най-свободно: пн» — the weekday with the most free time. */
+    readonly freeDetail: (weekday: string) => string;
+    readonly freeNone: string;
+    /** «Свободно време по дни от седмицата» — the weekday bars' name. */
+    readonly freeWeek: string;
+    /** «Клиенти» — the clients served. */
+    readonly clients: string;
+    /** «2 не дойдоха» · «Всички дойдоха» — the no-shows beside them. */
+    readonly clientsMissed: (count: number) => string;
     readonly rebooked: string;
     /** «клиенти с нов час» — what the rebooked figure counts. */
     readonly rebookedDetail: string;
@@ -575,6 +590,7 @@ export function analyticsWordsOf(
         decrease: t('goal.sheet.decrease'),
         increase: t('goal.sheet.increase'),
         save: t('goal.sheet.save'),
+        remove: t('goal.sheet.remove'),
         close: t('goal.sheet.close'),
         incomplete: t('goal.sheet.incomplete'),
         invalid: t('goal.sheet.invalid'),
@@ -597,6 +613,18 @@ export function analyticsWordsOf(
       tips: t('home.tips'),
       tipsDetail: (share) => t('home.tipsDetail', { share }),
       tipsNone: t('home.tipsNone'),
+      timeOccupancy: (share, rostered) =>
+        t('home.timeOccupancy', { share, rostered }),
+      free: t('home.free'),
+      freeDetail: (weekday) => t('home.freeDetail', { weekday }),
+      freeNone: t('home.freeNone'),
+      freeWeek: t('home.freeWeek'),
+      clients: t('home.clients'),
+      // Nobody missed is its own sentence, not «0 не дойдоха».
+      clientsMissed: (count) =>
+        count === 0
+          ? t('home.clientsAllCame')
+          : counted('home.clientsMissed')(count),
       rebooked: t('home.rebooked'),
       rebookedDetail: t('home.rebookedDetail'),
       noShows: t('home.noShows'),

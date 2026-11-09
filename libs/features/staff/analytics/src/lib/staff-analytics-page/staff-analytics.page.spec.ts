@@ -61,9 +61,9 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     expect(cards).toEqual([
       'analytics-card-takings',
       'analytics-card-time',
+      'analytics-card-free',
       'analytics-card-tips',
-      'analytics-card-rebooked',
-      'analytics-card-no-shows',
+      'analytics-card-clients',
     ]);
     const takings = byTestId(host, 'analytics-card-takings');
     expect(takings?.textContent).toContain('45,50');
@@ -242,6 +242,23 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     );
     expect(byTestId(host, 'analytics-tool-goal')?.textContent).toContain(
       'Промени целта',
+    );
+    // «Премахни целта» — offered once a goal is set — sends no range, and
+    // the card goes back to offering one.
+    byTestId(host, 'analytics-tool-goal')?.click();
+    await settle(fixture);
+    byTestId(host, 'analytics-goal-remove')?.click();
+    await settle(fixture);
+    await settle(fixture);
+    expect(goals.at(-1)).toEqual({
+      scopeBarberId: null,
+      goalMonth: '2026-09',
+      goalLowCents: null,
+      goalHighCents: null,
+    });
+    expect(byTestId(host, 'analytics-goal-pace')).toBeNull();
+    expect(byTestId(host, 'analytics-tool-goal')?.textContent).toContain(
+      'Задай цел',
     );
   });
 

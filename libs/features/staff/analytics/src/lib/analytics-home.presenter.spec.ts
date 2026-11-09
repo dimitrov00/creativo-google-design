@@ -239,14 +239,14 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       location: null,
     });
     const cards = page?.cards ?? [];
-    expect(cards.map((c) => [c.card, c.title, c.value])).toEqual([
-      ['takings', 'Оборот', nbsp('45,50 €')],
-      ['time', 'Работно време', '8 ч'],
-      ['tips', 'Бакшиши', nbsp('5,00 €')],
-      ['rebooked', 'Презаписали', '1 от 2'],
-      ['no-shows', 'Неявили се', '1'],
+    expect(cards.map((c) => [c.card, c.screen, c.title, c.value])).toEqual([
+      ['takings', 'takings', 'Оборот', nbsp('45,50 €')],
+      ['time', 'time', 'Работно време', '8 ч'],
+      ['free', 'time', 'Свободно време', '4 ч 10 мин'],
+      ['tips', 'tips', 'Бакшиши', nbsp('5,00 €')],
+      ['clients', 'rebooked', 'Клиенти', '2'],
     ]);
-    const [takings, time, tips, rebooked, noShows] = cards;
+    const [takings, time, free, tips, clients] = cards;
     expect(takings?.delta).toBe('+30%');
     expect(takings?.trend).toBe('up');
     // The pace: the running total to today (the 28th) of the month's 30
@@ -266,12 +266,25 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       previousValue: nbsp('35,00 €'),
     });
     expect(takings?.wide).toBe(true);
-    expect(time?.detail?.startsWith('от ')).toBe(true);
-    expect(time?.bar?.value).toBe(480);
+    // How full the roster was, as a ring and a sentence.
+    expect(time?.ring?.value).toBe(480);
+    expect(time?.detail).toBe(`55% от 14 ч 40 мин по график`);
+    // The free time by weekday, the emptiest day named and stressed.
+    expect(free?.detail).toBe('най-свободно: вт');
+    expect(free?.spark?.values).toHaveLength(7);
+    expect(free?.spark?.labels).toEqual([
+      'пн',
+      'вт',
+      'ср',
+      'чт',
+      'пт',
+      'сб',
+      'нд',
+    ]);
     expect(tips?.detail).toBe('11% от оборота');
-    expect(rebooked?.detail).toBe('клиенти с нов час');
-    expect(rebooked?.ring).toMatchObject({ value: 1, max: 2 });
-    expect(noShows?.detail).toBe('от 3 посещения');
+    // Who came of everyone booked, and who did not.
+    expect(clients?.detail).toBe('1 не дойде');
+    expect(clients?.bar).toMatchObject({ value: 2, max: 3 });
     expect(takings?.accessibleName).toBe(
       `Оборот, ${nbsp('45,50 €')}, +30%, Този месец ${nbsp('45,50 €')}, Миналия месец ${nbsp('35,00 €')}`,
     );
@@ -327,9 +340,9 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(vm.pages.at(-1)?.cards?.map((c) => c.title)).toEqual([
       'Takings',
       'Working time',
+      'Free time',
       'Tips',
-      'Rebooked',
-      'No-shows',
+      'Clients',
     ]);
   });
 

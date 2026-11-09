@@ -262,6 +262,17 @@ describe('decodeSetAnalyticsGoal', () => {
     }
   });
 
+  it('reads no range as the goal removed: both bounds null or absent (owner 2026-11-09)', () => {
+    for (const data of [
+      { ...goalSent, goalLowCents: null, goalHighCents: null },
+      { scopeBarberId: null, goalMonth: goalSent.goalMonth },
+    ]) {
+      const decoded = decodeSetAnalyticsGoal(callable(data));
+      expect(decoded.ok && decoded.value.goalLowCents).toBeNull();
+      expect(decoded.ok && decoded.value.goalHighCents).toBeNull();
+    }
+  });
+
   it('names the first field its primitive refuses', () => {
     for (const [data, field] of [
       [{ ...goalSent, scopeBarberId: 'a/b' }, 'scopeBarberId'],
@@ -272,7 +283,6 @@ describe('decodeSetAnalyticsGoal', () => {
       [{ ...goalSent, goalLowCents: '180000' }, 'goalLowCents'],
       [{ ...goalSent, goalLowCents: -1 }, 'goalLowCents'],
       [{ ...goalSent, goalLowCents: 1.5 }, 'goalLowCents'],
-      [{ ...goalSent, goalHighCents: undefined }, 'goalHighCents'],
       [{ ...goalSent, goalHighCents: Number.NaN }, 'goalHighCents'],
       ['goal', 'goalMonth'],
     ] as const) {

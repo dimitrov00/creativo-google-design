@@ -142,6 +142,16 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   under it, and a legend that words both by the same day — «Този месец 35,00 €» · «Миналия
   месец 44,00 €» (`AnalyticsCarouselSystem.paceOf`). A shorter previous period's line
   stops at its last day; a day page has no line and keeps the comparison sentence.
+- **Owner review, 2026-11-09 (round 4)** — the home's tiles (`AnalyticsTile`), each opening a
+  card screen: «Оборот» split like Revolut's «Spent» (the figure and the legend on the
+  leading half, the pace line on the trailing); «Работно време» with a ring of how full
+  the roster was («55% от 14 ч 40 мин по график», `occupancyOf`); «Свободно време» — unsold
+  plus still-open time, whole hours past ten, seven weekday bars with the emptiest stressed
+  and named («най-свободно: вт», `freeWeekOf`), opening the time screen; «Бакшиши»; and
+  «Клиенти» — the clients served with an attendance bar and «1 не дойде» (`servedOf`),
+  opening the clients' screen, where the rebooking rate now lives. A set goal can be
+  removed («Премахни целта»: `setAnalyticsGoal` with no range deletes the month's goal and
+  writes an `ANALYTICS_GOAL_CLEARED` audit row).
 - **A service ring paints the top service in the accent and the rest in the chart's
   greys**; the identity tones stay the people's (the team).
 - **The card's figure opens its rows** (`analytics-card-figure`), which add up to it —

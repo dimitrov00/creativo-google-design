@@ -36,6 +36,8 @@ export const LogEvent = {
   AnalyticsReported: 'analytics.reported',
   /** A takings goal set (`setAnalyticsGoal`): the caller, the scope and the month — never the bounds (the audit row holds them). */
   AnalyticsGoalSet: 'analytics.goal_set',
+  /** A takings goal removed (`setAnalyticsGoal` with no range): the caller, the scope and the month. */
+  AnalyticsGoalCleared: 'analytics.goal_cleared',
   /** A goal refused (`setAnalyticsGoal`): the caller and the refusal's `errorCode`. */
   AnalyticsGoalRefused: 'analytics.goal_refused',
   /** The App Check switch held a non-empty value that is no mode — read as OFF, logged once per instance (security hardening S-RU-19). */

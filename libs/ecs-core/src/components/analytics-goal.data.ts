@@ -66,6 +66,27 @@ export const AnalyticsGoal = {
   },
 
   /**
+   * A goal call's intent: no range at all (both bounds `null`) REMOVES the
+   * month's goal and answers `null`; one bound without the other refuses
+   * the missing one; two bounds are {@link rangeOf}'s question.
+   */
+  rangeOrClearOf(
+    goalLowCents: number | null,
+    goalHighCents: number | null,
+  ): Result<AnalyticsGoalRange | null, AnalyticsError> {
+    if (goalLowCents === null && goalHighCents === null) {
+      return Result.ok(null);
+    }
+    if (goalLowCents === null) {
+      return Result.err(AnalyticsError.goalInvalidRange('goalLowCents'));
+    }
+    if (goalHighCents === null) {
+      return Result.err(AnalyticsError.goalInvalidRange('goalHighCents'));
+    }
+    return AnalyticsGoal.rangeOf(goalLowCents, goalHighCents);
+  },
+
+  /**
    * The read-time door (edge hardening D-1) for a stored body: every field
    * present and of its primitive's shape — the scope `null` or a barber id,
    * a `MonthKey`, two prices with the high one at least the low one and the

@@ -3,8 +3,9 @@ import {
   AnalyticsRangePreset,
   type AnalyticsReport,
   AnalyticsSpan,
+  type DayRow,
 } from '@core/components';
-import { LocalDate, MinuteCount, PriceCents } from '@core/primitives';
+import { LocalDate, MinuteCount, PriceCents, Weekday } from '@core/primitives';
 import { StaffAnalyticsSystem } from './staff-analytics.system';
 
 /** The spans the home carousel pages through — every one but `CUSTOM`. */
@@ -43,6 +44,18 @@ export type AnalyticsPace = {
   readonly slots: number;
   /** The previous period's running total at the current's last bucket; `null` without a comparison. */
   readonly previousSoFar: PriceCents | null;
+};
+
+/**
+ * The free time by weekday (the home's free-time card): the minutes
+ * nobody booked or can still book — unsold plus open — on each ISO
+ * weekday, Monday first, and the weekday that holds the most.
+ */
+export type AnalyticsFreeWeek = {
+  /** Seven entries, Monday … Sunday. */
+  readonly minutes: readonly MinuteCount[];
+  /** The weekday with the most free time; `null` with none at all. */
+  readonly emptiest: Weekday | null;
 };
 
 export const AnalyticsCarouselSystem = {
@@ -219,6 +232,63 @@ export const AnalyticsCarouselSystem = {
       total = MinuteCount.add(total, part);
     }
     return total;
+  },
+
+  /**
+   * The FREE TIME of `report` — the schedule's free (G5): rostered time
+   * nobody booked (unsold) and time still open for booking (open).
+   */
+  freeMinutesOf(report: AnalyticsReport): MinuteCount {
+    return MinuteCount.add(
+      report.reportUnsoldMinutes,
+      report.reportOpenMinutes,
+    );
+  },
+
+  /**
+   * How full the roster was: worked time over the rostered time so far
+   * ({@link rosteredSoFarOf}), `0 … 1`; `null` with nothing rostered yet.
+   */
+  occupancyOf(report: AnalyticsReport): number | null {
+    const rostered = AnalyticsCarouselSystem.rosteredSoFarOf(report);
+    return rostered > 0
+      ? Math.min(report.reportWorkedMinutes / rostered, 1)
+      : null;
+  },
+
+  /**
+   * THE FREE WEEK ({@link AnalyticsFreeWeek}): the day rows' unsold and
+   * open minutes summed by their day's weekday. `null` where the rows are
+   * per month (a span over 93 days): a month has no weekday.
+   */
+  freeWeekOf(report: AnalyticsReport): AnalyticsFreeWeek | null {
+    if (StaffAnalyticsSystem.dayRowsAreMonths(report)) return null;
+    const minutes: MinuteCount[] = [];
+    for (let i = 0; i < 7; i++) minutes.push(MinuteCount.ZERO);
+    for (let i = 0; i < report.reportDayRows.length; i++) {
+      const row = report.reportDayRows[i] as DayRow;
+      const index = LocalDate.weekday(row.localDate) - 1;
+      minutes[index] = MinuteCount.add(
+        minutes[index] as MinuteCount,
+        MinuteCount.add(row.dayUnsoldMinutes, row.dayOpenMinutes),
+      );
+    }
+    let emptiest: Weekday | null = null;
+    let most = 0;
+    for (let i = 0; i < 7; i++) {
+      const free = minutes[i] as MinuteCount;
+      const day = i + 1;
+      if (free > most && Weekday.is(day)) {
+        most = free;
+        emptiest = day;
+      }
+    }
+    return { minutes, emptiest };
+  },
+
+  /** The clients served — the worked seats: the no-show base less the no-shows. */
+  servedOf(report: AnalyticsReport): number {
+    return Math.max(report.reportNoShowBase - report.reportNoShowCount, 0);
   },
 
   /** The tips as a share of the takings, `0 … ∞`; `null` with no takings to compare. */

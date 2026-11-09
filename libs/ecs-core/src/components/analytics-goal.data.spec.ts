@@ -27,6 +27,30 @@ function goal(overrides: Partial<AnalyticsGoal> = {}): AnalyticsGoal {
   };
 }
 
+describe('AnalyticsGoal.rangeOrClearOf — a goal call’s intent', () => {
+  it('reads no range as the goal removed, refuses a lone bound, and asks rangeOf of two', () => {
+    expect(unwrapOk(AnalyticsGoal.rangeOrClearOf(null, null))).toBeNull();
+    expect(AnalyticsGoal.rangeOrClearOf(null, 220_000)).toEqual({
+      ok: false,
+      error: {
+        errorCode: 'ANALYTICS_GOAL_INVALID_RANGE',
+        field: 'goalLowCents',
+      },
+    });
+    expect(AnalyticsGoal.rangeOrClearOf(180_000, null)).toEqual({
+      ok: false,
+      error: {
+        errorCode: 'ANALYTICS_GOAL_INVALID_RANGE',
+        field: 'goalHighCents',
+      },
+    });
+    expect(unwrapOk(AnalyticsGoal.rangeOrClearOf(180_000, 220_000))).toEqual({
+      goalLowCents: 180_000,
+      goalHighCents: 220_000,
+    });
+  });
+});
+
 describe('AnalyticsGoal.rangeOf — the ONE range rule (PR 6)', () => {
   it('admits a positive low bound and a high bound at least as large — the same figure twice included', () => {
     expect(unwrapOk(AnalyticsGoal.rangeOf(180_000, 220_000))).toEqual({

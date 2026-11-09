@@ -6,7 +6,7 @@ import {
   AnalyticsSpan,
 } from '@core/components';
 import { analyticsReportFixture, deepFreeze, localDate } from '@core/testing';
-import type { PriceCents } from '@core/primitives';
+import type { MinuteCount, PriceCents } from '@core/primitives';
 import { AnalyticsCarouselSystem as C } from './analytics-carousel.system';
 
 /** A Monday in November: the reach starts on 1 November 2025. */
@@ -269,5 +269,70 @@ describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals
   it('is pure: same input → same output, inputs untouched', () => {
     const input = report([point('2026-11-08', 300, 200)]);
     expect(C.paceOf(input, TODAY)).toEqual(C.paceOf(input, TODAY));
+  });
+});
+
+describe('AnalyticsCarouselSystem — occupancy, free time and clients served', () => {
+  it('is the free time the schedule’s: unsold plus open', () => {
+    const report = analyticsReportFixture();
+    expect(C.freeMinutesOf(report)).toBe(
+      report.reportUnsoldMinutes + report.reportOpenMinutes,
+    );
+  });
+
+  it('measures occupancy as worked over the rostered time so far, capped at 1, none with nothing rostered', () => {
+    const report = analyticsReportFixture();
+    const rostered = C.rosteredSoFarOf(report);
+    expect(C.occupancyOf(report)).toBeCloseTo(
+      report.reportWorkedMinutes / rostered,
+    );
+    const empty = analyticsReportFixture({
+      reportBarWorkedMinutes: 0 as MinuteCount,
+      reportBarNoShowMinutes: 0 as MinuteCount,
+      reportBarUnmarkedMinutes: 0 as MinuteCount,
+      reportBarBlockedMinutes: 0 as MinuteCount,
+      reportBarUnsoldMinutes: 0 as MinuteCount,
+      reportBarOtherMinutes: 0 as MinuteCount,
+    });
+    expect(C.occupancyOf(empty)).toBeNull();
+  });
+
+  it('sums the day rows’ free time by weekday, Monday first, naming the emptiest; none on rows per month', () => {
+    const base = analyticsReportFixture();
+    const row = (day: string, unsold: number, open: number) => ({
+      ...(base.reportDayRows[0] as AnalyticsReport['reportDayRows'][number]),
+      localDate: localDate(day),
+      dayUnsoldMinutes: unsold as MinuteCount,
+      dayOpenMinutes: open as MinuteCount,
+    });
+    const week = C.freeWeekOf(
+      analyticsReportFixture({
+        reportDayRows: [
+          // Monday 7 Sep twice (two barbers), Wednesday 9 Sep.
+          row('2026-09-07', 60, 0),
+          row('2026-09-07', 30, 30),
+          row('2026-09-09', 0, 45),
+        ],
+      }),
+    );
+    expect(week?.minutes).toEqual([120, 0, 45, 0, 0, 0, 0]);
+    expect(week?.emptiest).toBe(1);
+    expect(
+      C.freeWeekOf(analyticsReportFixture({ reportDayRows: [] }))?.emptiest,
+    ).toBeNull();
+    const year = analyticsReportFixture({
+      reportAnalyticsSpan: AnalyticsSpan.Year,
+      reportFromLocalDate: localDate('2026-01-01'),
+      reportToLocalDate: localDate('2026-12-31'),
+    });
+    expect(C.freeWeekOf(year)).toBeNull();
+  });
+
+  it('counts the clients served as the worked seats', () => {
+    const report = analyticsReportFixture({
+      reportNoShowBase: 11,
+      reportNoShowCount: 2,
+    });
+    expect(C.servedOf(report)).toBe(9);
   });
 });

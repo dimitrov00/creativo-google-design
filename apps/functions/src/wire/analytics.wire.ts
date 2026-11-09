@@ -136,10 +136,16 @@ export function decodeSetAnalyticsGoal(
     MonthKey.parse,
   );
   if (goalMonth === null) return invalid('goalMonth');
-  const goalLowCents = StoredFields.field(payload, 'goalLowCents');
-  if (!PriceCents.is(goalLowCents)) return invalid('goalLowCents');
-  const goalHighCents = StoredFields.field(payload, 'goalHighCents');
-  if (!PriceCents.is(goalHighCents)) return invalid('goalHighCents');
+  // Both `null` (or absent) removes the month's goal; the pipeline refuses
+  // one bound without the other.
+  const goalLowCents = StoredFields.field(payload, 'goalLowCents') ?? null;
+  if (goalLowCents !== null && !PriceCents.is(goalLowCents)) {
+    return invalid('goalLowCents');
+  }
+  const goalHighCents = StoredFields.field(payload, 'goalHighCents') ?? null;
+  if (goalHighCents !== null && !PriceCents.is(goalHighCents)) {
+    return invalid('goalHighCents');
+  }
   return Result.ok({
     callerUserId: caller,
     scopeBarberId,

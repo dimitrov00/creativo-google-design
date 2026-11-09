@@ -29,6 +29,21 @@ export const AnalyticsCard = {
 } as const;
 export type AnalyticsCard = (typeof AnalyticsCard)[keyof typeof AnalyticsCard];
 
+/**
+ * The home's tiles (owner review 2026-11-09, round 4), each opening a
+ * card's screen: the takings, the working time, the FREE time (the time
+ * screen), the tips and the CLIENTS (the clients' screen). The value is
+ * the tile's test id's tail.
+ */
+export const AnalyticsTile = {
+  Takings: 'takings',
+  Time: 'time',
+  Free: 'free',
+  Tips: 'tips',
+  Clients: 'clients',
+} as const;
+export type AnalyticsTile = (typeof AnalyticsTile)[keyof typeof AnalyticsTile];
+
 /** A card's tiny bar graph (`ui-spark-bars`). */
 export type AnalyticsSparkVm = {
   readonly values: readonly number[];
@@ -74,7 +89,9 @@ export type AnalyticsMeterVm = {
 
 /** One bento card: a word, a figure, a line under it and one tiny graph. */
 export type AnalyticsBentoCardVm = {
-  readonly card: AnalyticsCard;
+  readonly card: AnalyticsTile;
+  /** The card screen a tap opens — its route segment. */
+  readonly screen: AnalyticsCard;
   readonly title: string;
   readonly value: string;
   /** The change against the previous period — «+30 %»; `null` without one. */

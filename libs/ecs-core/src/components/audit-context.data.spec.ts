@@ -133,7 +133,8 @@ describe('AuditAction', () => {
       | typeof AuditAction.IdentitySessionIssued
       | typeof AuditAction.IdentityRegistrationCompleted
       | typeof AuditAction.PrivacyClientExported
-      | typeof AuditAction.AnalyticsGoalSet;
+      | typeof AuditAction.AnalyticsGoalSet
+      | typeof AuditAction.AnalyticsGoalCleared;
     type Groups = [
       PlacementAction,
       TransitionAction,

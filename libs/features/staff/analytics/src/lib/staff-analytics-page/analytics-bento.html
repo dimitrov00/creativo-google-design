@@ -8,7 +8,8 @@
     [uiInteractive]="true"
     class="analytics-bento__card"
     [class.analytics-bento__card--wide]="card.wide"
-    [routerLink]="['/staff/analytics', card.card]"
+    [class.analytics-bento__card--split]="card.pace !== null"
+    [routerLink]="['/staff/analytics', card.screen]"
     [queryParams]="p.query"
     [attr.aria-label]="card.accessibleName"
     [attr.data-testid]="card.testId"
@@ -75,20 +76,22 @@
     <!-- THE PACE: this period's running total against the previous one's
          by the same day — the line ends at today, the dashed one runs on. -->
     <span class="analytics-bento__pace" aria-hidden="true">
-      <ui-spark-line
-        class="analytics-bento__line"
-        [uiValues]="pace.values"
-        [uiComparison]="pace.comparison"
-        [uiSlots]="pace.slots"
-        [uiLabel]="card.accessibleName"
-      />
-      <span class="analytics-bento__ends">
-        <span uiText uiFont="caption" uiForegroundStyle="secondary"
-          >{{ pace.startLabel }}</span
-        >
-        <span uiText uiFont="caption" uiForegroundStyle="secondary"
-          >{{ pace.endLabel }}</span
-        >
+      <span class="analytics-bento__chart">
+        <ui-spark-line
+          class="analytics-bento__line"
+          [uiValues]="pace.values"
+          [uiComparison]="pace.comparison"
+          [uiSlots]="pace.slots"
+          [uiLabel]="card.accessibleName"
+        />
+        <span class="analytics-bento__ends">
+          <span uiText uiFont="caption" uiForegroundStyle="secondary"
+            >{{ pace.startLabel }}</span
+          >
+          <span uiText uiFont="caption" uiForegroundStyle="secondary"
+            >{{ pace.endLabel }}</span
+          >
+        </span>
       </span>
       <span class="analytics-bento__legend">
         <span class="analytics-bento__key" data-series="current">

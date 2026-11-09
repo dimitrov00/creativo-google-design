@@ -331,6 +331,8 @@ export type AnalyticsGoalSheetVm = {
   /** «€» — the fields' unit. */
   readonly unit: string;
   readonly saveLabel: string;
+  /** «Премахни целта» while a goal is set; `null` without one. */
+  readonly removeLabel: string | null;
   readonly closeLabel: string;
   /** Why «Запази» is off, or that the last save failed — `null` when the range may be saved. */
   readonly refusal: string | null;

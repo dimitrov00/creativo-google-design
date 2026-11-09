@@ -3,8 +3,13 @@ import {
   type AnalyticsReport,
   AnalyticsSpan,
 } from '@core/components';
+import { MinuteCount } from '@core/primitives';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
-import { formatCount, formatPercent } from '@creativo/ui/wall-clock';
+import {
+  formatCount,
+  formatPercent,
+  formatWeekdayLabels,
+} from '@creativo/ui/wall-clock';
 import { spanWords } from '@creativo/features/shared/visits';
 import type { UiChoiceOption } from '@creativo/ui/controls';
 import type { UiIconName } from '@creativo/ui/icons';
@@ -22,6 +27,7 @@ import {
 import {
   AnalyticsCard,
   AnalyticsScopeOption,
+  AnalyticsTile,
   AnalyticsTool,
   type AnalyticsAheadCardVm,
   type AnalyticsBentoCardVm,
@@ -35,7 +41,6 @@ import {
 import {
   AnalyticsLoad,
   type AnalyticsScopeTileVm,
-  AnalyticsTopic,
   type AnalyticsBodyVm,
 } from './analytics.vm';
 
@@ -108,6 +113,9 @@ function optionIdOf(tile: AnalyticsScopeTileVm): string {
     ? AnalyticsScopeOption.Shop
     : `${AnalyticsScopeOption.LocationPrefix}${tile.scopeLocationId}`;
 }
+
+/** Past this many minutes a span is said in whole hours. */
+const TEN_HOURS = 600;
 
 /** The shop's disc — beside the barbers' faces in the scope menu and its trigger. */
 const SHOP_GLYPH = 'location.shop' satisfies UiIconName;
@@ -279,13 +287,18 @@ function cardsOf(
   const tipsShare = AnalyticsCarouselSystem.tipsShareOf(report);
 
   // The clients' two rates, as the v2 tiles word them.
-  const rebookedValue =
-    body.clients.rows.find((row) => row.topic === AnalyticsTopic.Rebooked)
-      ?.value ?? formatCount(report.reportRebookedCount, lang);
+  // «Работно време»: how full the roster was. «Свободно време»: what no
+  // one booked or can still book, by weekday. «Клиенти»: who came.
+  const occupancy = AnalyticsCarouselSystem.occupancyOf(report);
+  const free = AnalyticsCarouselSystem.freeMinutesOf(report);
+  const freeWeek = AnalyticsCarouselSystem.freeWeekOf(report);
+  const weekdayLabels = formatWeekdayLabels(lang);
+  const served = AnalyticsCarouselSystem.servedOf(report);
 
   return [
     card({
-      card: AnalyticsCard.Takings,
+      card: AnalyticsTile.Takings,
+      screen: AnalyticsCard.Takings,
       title: words.home.takings,
       value: body.hero.value,
       delta: body.hero.delta,
@@ -298,25 +311,66 @@ function cardsOf(
       wide: true,
     }),
     card({
-      card: AnalyticsCard.Time,
+      card: AnalyticsTile.Time,
+      screen: AnalyticsCard.Time,
       title: words.home.time,
       value: worked,
       delta: null,
       trend: null,
-      detail: words.home.timeDetail(rostered),
+      detail:
+        occupancy === null
+          ? words.home.timeDetail(rostered)
+          : words.home.timeOccupancy(formatPercent(occupancy, lang), rostered),
       spark: null,
       pace: null,
-      bar: {
+      bar: null,
+      ring: {
         value: report.reportWorkedMinutes,
         max: Math.max(rosteredSoFar, 1),
         label: words.home.time,
         valueText: `${worked} ${words.home.timeDetail(rostered)}`,
       },
+      wide: false,
+    }),
+    card({
+      card: AnalyticsTile.Free,
+      screen: AnalyticsCard.Time,
+      title: words.home.free,
+      // Past ten hours the minutes are noise: «489 ч», not «489 ч 35 мин».
+      value: spanWords(
+        free >= TEN_HOURS ? MinuteCount.roundToHour(free) : free,
+        words.spanWords,
+      ),
+      delta: null,
+      trend: null,
+      detail:
+        freeWeek === null
+          ? null
+          : freeWeek.emptiest === null
+            ? words.home.freeNone
+            : words.home.freeDetail(weekdayLabels[freeWeek.emptiest - 1] ?? ''),
+      spark:
+        freeWeek === null
+          ? null
+          : {
+              values: freeWeek.minutes,
+              highlight:
+                freeWeek.emptiest === null ? null : freeWeek.emptiest - 1,
+              average: null,
+              valueText: freeWeek.minutes.map((minutes) =>
+                spanWords(minutes, words.spanWords),
+              ),
+              labels: weekdayLabels,
+              label: words.home.freeWeek,
+            },
+      pace: null,
+      bar: null,
       ring: null,
       wide: false,
     }),
     card({
-      card: AnalyticsCard.Tips,
+      card: AnalyticsTile.Tips,
+      screen: AnalyticsCard.Tips,
       title: words.home.tips,
       value: body.hero.tipsValue,
       delta: null,
@@ -332,41 +386,23 @@ function cardsOf(
       wide: false,
     }),
     card({
-      card: AnalyticsCard.Rebooked,
-      title: words.home.rebooked,
-      value: rebookedValue,
+      card: AnalyticsTile.Clients,
+      screen: AnalyticsCard.Rebooked,
+      title: words.home.clients,
+      value: formatCount(served, lang),
       delta: null,
       trend: null,
-      detail: words.home.rebookedDetail,
+      detail: words.home.clientsMissed(report.reportNoShowCount),
       spark: null,
       pace: null,
-      bar: null,
-      ring: {
-        value: report.reportRebookedCount,
-        max: Math.max(report.reportRebookedBase, 1),
-        label: words.home.rebooked,
-        valueText: rebookedValue,
-      },
-      wide: false,
-    }),
-    card({
-      card: AnalyticsCard.NoShows,
-      title: words.home.noShows,
-      value: formatCount(report.reportNoShowCount, lang),
-      delta: null,
-      trend: null,
-      detail: words.home.noShowsDetail(
-        formatCount(report.reportNoShowBase, lang),
-      ),
-      spark: null,
-      pace: null,
-      bar: null,
-      ring: {
-        value: report.reportNoShowCount,
+      // Who came of everyone booked.
+      bar: {
+        value: served,
         max: Math.max(report.reportNoShowBase, 1),
-        label: words.home.noShows,
-        valueText: formatCount(report.reportNoShowCount, lang),
+        label: words.home.clients,
+        valueText: `${formatCount(served, lang)} · ${words.home.clientsMissed(report.reportNoShowCount)}`,
       },
+      ring: null,
       wide: false,
     }),
   ];

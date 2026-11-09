@@ -25,12 +25,14 @@ import {
   Result,
   type AnalyticsGoalKey,
   type AppointmentId,
+  type BarberId,
   AuditEntryId,
   AuditResourceId,
   type ClientOperationId,
   type CustomerId,
   defect,
   type ImpersonationSessionId,
+  type MonthKey,
   type OperationId,
   type OtpId,
   type PublishRequestId,
@@ -1029,6 +1031,43 @@ export const AuditSystem = {
           operationId,
           goal.goalSetAtUtcMs,
         ),
+      ),
+    };
+  },
+
+  /**
+   * The audit row of a REMOVED takings goal (`setAnalyticsGoal` with no
+   * range): the key, scope and month, credited to the caller, written in
+   * the removal's commit.
+   */
+  planAnalyticsGoalCleared(
+    goalKey: AnalyticsGoalKey,
+    goalScopeBarberId: BarberId | null,
+    goalMonth: MonthKey,
+    actor: Actor,
+    operationId: OperationId | null,
+    clearedAtUtcMs: UtcEpochMs,
+  ): AuditRowPlan {
+    const action = AuditAction.AnalyticsGoalCleared;
+    const resourceId = AuditResourceId.forAnalyticsGoal(goalKey);
+    return {
+      row: {
+        recordedAtUtcMs: clearedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.analyticsGoalCleared(
+          goalKey,
+          goalScopeBarberId,
+          goalMonth,
+        ),
+        ...AuditTargetRef.none(),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        null,
+        AuditSystem.changeKey.goalSet(goalKey, operationId, clearedAtUtcMs),
       ),
     };
   },

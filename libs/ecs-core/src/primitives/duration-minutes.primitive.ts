@@ -76,6 +76,10 @@ export const MinuteCount = {
   /** No minutes — the identity of {@link add}. */
   ZERO: 0 as MinuteCount,
 
+  /** `m` to the nearest whole hour — how a long span is said («489 ч»). */
+  roundToHour(m: MinuteCount): MinuteCount {
+    return (Math.round(m / 60) * 60) as MinuteCount;
+  },
   add(a: MinuteCount, b: MinuteCount): MinuteCount {
     return (a + b) as MinuteCount;
   },

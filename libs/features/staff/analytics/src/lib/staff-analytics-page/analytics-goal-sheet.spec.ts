@@ -12,6 +12,7 @@ const WORDS: AnalyticsGoalSheetVm = {
   increaseLabel: 'Повече',
   unit: '€',
   saveLabel: 'Запази',
+  removeLabel: null,
   closeLabel: 'Затвори',
   refusal: 'Въведете двете суми',
   saveEnabled: false,

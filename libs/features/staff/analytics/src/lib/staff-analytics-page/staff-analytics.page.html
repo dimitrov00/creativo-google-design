@@ -297,6 +297,7 @@
     (lowChange)="store.goalLow.set($event)"
     (highChange)="store.goalHigh.set($event)"
     (saved)="saveGoal()"
+    (removed)="store.removeGoal()"
     (closed)="closeGoal()"
   />
   } } @else {

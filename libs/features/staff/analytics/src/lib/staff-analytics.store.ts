@@ -653,6 +653,40 @@ export class StaffAnalyticsStore {
     });
   }
 
+  /**
+   * «Премахни целта» — the month's goal removed (a call with no range);
+   * like a save, the sheet closes and the report is asked for again, so
+   * the goal card goes back to its prompt. A failure keeps the sheet up.
+   */
+  removeGoal(): void {
+    const period = untracked(this.period);
+    const request = untracked(this.request);
+    if (
+      period === null ||
+      request === null ||
+      untracked(this._goalSave) === AnalyticsGoalSave.Saving
+    ) {
+      return;
+    }
+    this._goalSave.set(AnalyticsGoalSave.Saving);
+    const call: SetAnalyticsGoalCall = {
+      scopeBarberId: request.call.scopeBarberId,
+      goalMonth: LocalDate.monthKey(period.fromLocalDate),
+      goalLowCents: null,
+      goalHighCents: null,
+    };
+    void this.calls.setAnalyticsGoal(call).then((answer) => {
+      if (this.destroyed) return;
+      if (!answer.ok) {
+        this._goalSave.set(AnalyticsGoalSave.Failed);
+        return;
+      }
+      this._goalSave.set(AnalyticsGoalSave.Idle);
+      this._goalOpen.set(false);
+      this.refresh();
+    });
+  }
+
   /** The same request again, the report kept on screen while it is out. */
   private refresh(): void {
     const request = untracked(this.request);

@@ -146,6 +146,12 @@ export const AuditAction = {
    * act IS the figure.
    */
   AnalyticsGoalSet: 'ANALYTICS_GOAL_SET',
+  /**
+   * A month's takings goal removed (`setAnalyticsGoal` with no range,
+   * owner 2026-11-09): the key, scope and month — the bounds it had are
+   * on the set's row.
+   */
+  AnalyticsGoalCleared: 'ANALYTICS_GOAL_CLEARED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -199,7 +205,8 @@ export type AuditContext =
   | AuditContext.RegistrationCompleted
   | AuditContext.ClientExported
   | AuditContext.ClientErasure
-  | AuditContext.AnalyticsGoalSet;
+  | AuditContext.AnalyticsGoalSet
+  | AuditContext.AnalyticsGoalCleared;
 
 /** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -410,6 +417,19 @@ export const AuditContext = {
       goalMonth,
       goalLowCents,
       goalHighCents,
+    };
+  },
+  /** A takings goal removed — the key, its scope (`null` the shop) and month. */
+  analyticsGoalCleared(
+    goalKey: AnalyticsGoalKey,
+    goalScopeBarberId: BarberId | null,
+    goalMonth: MonthKey,
+  ): AuditContext.AnalyticsGoalCleared {
+    return {
+      auditAction: AuditAction.AnalyticsGoalCleared,
+      goalKey,
+      goalScopeBarberId,
+      goalMonth,
     };
   },
   /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
@@ -659,6 +679,13 @@ export namespace AuditContext {
     readonly goalMonth: MonthKey;
     readonly goalLowCents: PriceCents;
     readonly goalHighCents: PriceCents;
+  };
+  /** A takings goal removed — the document's key, its scope and month. */
+  export type AnalyticsGoalCleared = {
+    readonly auditAction: typeof AuditAction.AnalyticsGoalCleared;
+    readonly goalKey: AnalyticsGoalKey;
+    readonly goalScopeBarberId: BarberId | null;
+    readonly goalMonth: MonthKey;
   };
   export type ImpersonationStarted = {
     readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;

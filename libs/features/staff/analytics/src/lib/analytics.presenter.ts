@@ -591,12 +591,15 @@ function goalOf(
     ring,
     setLabel: offered ? (stored ? words.goal.change : words.goal.set) : null,
     prompt: stored ? null : words.goal.prompt,
-    sheet: goalSheetOf(input),
+    sheet: goalSheetOf(input, stored),
   };
 }
 
 /** The goal sheet's words, and why «Запази» is off (the store's check, or a failed save). */
-function goalSheetOf(input: AnalyticsScreenInput): AnalyticsGoalSheetVm {
+function goalSheetOf(
+  input: AnalyticsScreenInput,
+  stored: boolean,
+): AnalyticsGoalSheetVm {
   const { words } = input;
   const sheet = words.goal.sheet;
   let refusal: string | null;
@@ -621,6 +624,7 @@ function goalSheetOf(input: AnalyticsScreenInput): AnalyticsGoalSheetVm {
     increaseLabel: sheet.increase,
     unit: '€',
     saveLabel: sheet.save,
+    removeLabel: stored ? sheet.remove : null,
     closeLabel: sheet.close,
     refusal,
     saveEnabled: input.goalCheck.goalRefusal === null && !saving,
