@@ -2807,6 +2807,32 @@
         "failed": "The goal was not saved. Try again."
       }
     },
+    "export": {
+      "action": "Export",
+      "kind": {
+        "DAY": "DAY",
+        "MONTH": "MONTH",
+        "SERVICE": "SERVICE"
+      },
+      "everyone": "All",
+      "column": {
+        "kind": "kind",
+        "barber": "barber",
+        "date": "date",
+        "worked": "worked min",
+        "noShow": "no-show min",
+        "unmarked": "unmarked min",
+        "blocked": "blocked min",
+        "break": "break min",
+        "unsold": "unsold min",
+        "other": "other min",
+        "takings": "takings",
+        "tips": "tips",
+        "service": "service",
+        "visits": "visits",
+        "serviceMinutes": "service min"
+      }
+    },
     "figure": {
       "TAKINGS": "Takings",
       "TIPS": "Tips",

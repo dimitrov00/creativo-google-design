@@ -112,6 +112,7 @@ import {
 } from '../appointments.store';
 import type { ClientVisitVm } from '../visit.vm';
 import { buildVisitIcs } from '../visit-ics';
+import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 
 /**
  * The page's two readings: the list or the calendar. Values: external
@@ -882,15 +883,13 @@ export class ClientAppointments {
       nowUtcMs,
     );
 
+    // The app's one file hand-off: the share sheet where the device takes
+    // files («Добави в Календар» on a phone), else a download.
     const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `creativo-${visit.appointment.localDate}.ics`;
-    link.click();
-    // Freed on the next turn of the loop — revoking synchronously races the
-    // click the browser has not finished handling.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    void shareOrDownloadFile(
+      `creativo-${visit.appointment.localDate}.ics`,
+      blob,
+    );
   }
 
   /** Open a visit's sheet — by id, from a row (`openRow`) or a calendar day. */

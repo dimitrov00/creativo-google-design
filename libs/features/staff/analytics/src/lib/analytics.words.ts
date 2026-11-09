@@ -220,6 +220,21 @@ export interface AnalyticsWords {
       readonly failed: string;
     };
   };
+  /** The dock's «Експорт» and the CSV it hands over (staff-analytics-v2 «Export (PR 7)»). */
+  readonly export: {
+    /** «Експорт» — the dock's button. */
+    readonly action: string;
+    /** The `вид` column's three values: a day row, a per-month row, a service row. */
+    readonly kindDay: string;
+    readonly kindMonth: string;
+    readonly kindService: string;
+    /** «Всички» — the barber of a shop report's service rows. */
+    readonly everyone: string;
+    /** Block 1's twelve column names, in the file's order. */
+    readonly dayColumns: readonly string[];
+    /** Block 2's six column names, in the file's order. */
+    readonly serviceColumns: readonly string[];
+  };
   readonly figure: Readonly<Record<AnalyticsTopic, string>>;
   readonly info: {
     readonly label: (figure: string) => string;
@@ -245,6 +260,32 @@ export interface AnalyticsWords {
 }
 
 const TOPICS: readonly AnalyticsTopic[] = Object.values(AnalyticsTopic);
+
+/** The CSV's block 1 columns, in the file's order — the keys `export.column.<name>`. */
+const DAY_COLUMNS = [
+  'kind',
+  'barber',
+  'date',
+  'worked',
+  'noShow',
+  'unmarked',
+  'blocked',
+  'break',
+  'unsold',
+  'other',
+  'takings',
+  'tips',
+] as const;
+
+/** The CSV's block 2 columns, in the file's order. */
+const SERVICE_COLUMNS = [
+  'kind',
+  'barber',
+  'service',
+  'visits',
+  'takings',
+  'serviceMinutes',
+] as const;
 
 /** Every word of the screen from a host's `translate`, read once for `lang`. */
 export function analyticsWordsOf(
@@ -443,6 +484,17 @@ export function analyticsWordsOf(
         invalid: t('goal.sheet.invalid'),
         failed: t('goal.sheet.failed'),
       },
+    },
+    export: {
+      action: t('export.action'),
+      kindDay: t('export.kind.DAY'),
+      kindMonth: t('export.kind.MONTH'),
+      kindService: t('export.kind.SERVICE'),
+      everyone: t('export.everyone'),
+      dayColumns: DAY_COLUMNS.map((column) => t(`export.column.${column}`)),
+      serviceColumns: SERVICE_COLUMNS.map((column) =>
+        t(`export.column.${column}`),
+      ),
     },
     figure: byTopic('figure'),
     info: {

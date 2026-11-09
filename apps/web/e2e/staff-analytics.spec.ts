@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { Role } from '@core/components';
 import { LocalDate } from '@core/primitives';
@@ -100,6 +101,44 @@ async function expectTakingsRowsAddUp(
   await expect.poll(async () => textOf(footer)).toBe(hero);
 }
 
+/** The CSV's block 1 header (staff-analytics-v2 «Export (PR 7)»). */
+const DAY_HEADER =
+  'вид;бръснар;дата;работено мин;неявяване мин;немаркирано мин;блокирано мин;почивка мин;непродадено мин;друго мин;оборот;бакшиш';
+
+/**
+ * Takes the share sheet away before the app loads, so «Експорт» takes the
+ * download fallback a desktop browser takes — the file Playwright can read.
+ */
+async function withoutShareSheet(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    for (const name of ['share', 'canShare']) {
+      Object.defineProperty(Navigator.prototype, name, {
+        value: undefined,
+        configurable: true,
+      });
+    }
+  });
+}
+
+/** Taps «Експорт» and reads the downloaded file: its name and its lines (no BOM, no trailing CRLF). */
+async function exportCsv(
+  page: Page,
+): Promise<{ name: string; lines: readonly string[] }> {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('analytics-export').click(),
+  ]);
+  const path = await download.path();
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Playwright's own download path.
+  const text = readFileSync(path, 'utf8');
+  expect(text.startsWith('\uFEFF')).toBe(true);
+  expect(text.endsWith('\r\n')).toBe(true);
+  return {
+    name: download.suggestedFilename(),
+    lines: text.slice(1, -2).split('\r\n'),
+  };
+}
+
 /**
  * Opens the goal sheet from «Задай цел» / «Промени целта», types the two
  * ends of the range in euro (whole figures), saves, and waits for the sheet
@@ -131,6 +170,7 @@ test.describe('«Анализи» — staff analytics', () => {
   }) => {
     test.setTimeout(120_000);
     await pinBrowserClock(page);
+    await withoutShareSheet(page);
     const run = attemptKey(test.info());
     const uid = `e2e-an-barber-${run}`;
     const client = `e2e-an-client-${run}`;
@@ -218,6 +258,29 @@ test.describe('«Анализи» — staff analytics', () => {
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
 
+    // THE EXPORT (staff-analytics-v2 CUJ 7, PR 7): the dock's «Експорт»
+    // downloads the month — a row per day row (as many as the time
+    // drill-down lists), a blank line, a row per service — and no client.
+    await page.getByTestId('analytics-time-days').click();
+    const days = page
+      .getByTestId('analytics-rows')
+      .locator('[data-testid^="analytics-day-"]');
+    await expect(days.first()).toBeVisible();
+    const dayCount = await days.count();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('analytics-rows')).toBeHidden();
+    const csv = await exportCsv(page);
+    expect(csv.name).toMatch(
+      /^creativo-analytics-\d{4}-\d{2}-01-\d{4}-\d{2}-\d{2}\.csv$/,
+    );
+    expect(csv.lines[0]).toBe(DAY_HEADER);
+    expect(csv.lines).toHaveLength(dayCount + 2 + 3);
+    expect(csv.lines[dayCount + 1]).toBe('');
+    expect(csv.lines[dayCount + 2]).toBe(
+      'вид;бръснар;услуга;посещения;оборот;минути услуга',
+    );
+    expect(csv.lines.join('\n')).not.toContain('Петър');
+
     // THE GOAL (staff-analytics-v2 CUJ 6, PR 6): on this month the barber
     // is offered «Задай цел»; a range typed into the sheet's two sums and
     // saved through `setAnalyticsGoal` comes back with the report as the
@@ -262,6 +325,7 @@ test.describe('«Анализи» — staff analytics', () => {
   }) => {
     test.setTimeout(120_000);
     await pinBrowserClock(page);
+    await withoutShareSheet(page);
     const run = attemptKey(test.info());
     const adminUid = `e2e-an-admin-${run}`;
     const client = `e2e-an-niko-client-${run}`;
@@ -295,6 +359,15 @@ test.describe('«Анализи» — staff analytics', () => {
     await expect(shopRing).toBeVisible({ timeout: 30_000 });
     // Five figures take a thousands separator in Bulgarian («12 000,00 €»).
     await expect(shopRing).toContainText(/12.000,00/);
+
+    // The shop's export: the day rows per barber, the services the shop's
+    // own («Всички»), and no client in the file.
+    const shopCsv = await exportCsv(page);
+    expect(shopCsv.lines[0]).toBe(DAY_HEADER);
+    expect(
+      shopCsv.lines.some((line) => line.startsWith('УСЛУГА;Всички;')),
+    ).toBe(true);
+    expect(shopCsv.lines.join('\n')).not.toContain('Донев');
 
     const niko = page.getByTestId('analytics-scope-niko');
     await niko.click();

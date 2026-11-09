@@ -536,6 +536,17 @@ export type AnalyticsBlockedVm = {
   readonly testId: string;
 };
 
+/**
+ * The report as a CSV file (staff-analytics-v2 «Export (PR 7)»): its name
+ * and its text — the byte-order mark, block 1 (a row per day row), a blank
+ * line, block 2 (a row per service row), CRLF line ends.
+ */
+export type AnalyticsExportFile = {
+  /** `creativo-analytics-<from>-<to>.csv`. */
+  readonly fileName: string;
+  readonly text: string;
+};
+
 /** The whole screen. */
 export type AnalyticsVm = {
   readonly title: string;
@@ -550,6 +561,8 @@ export type AnalyticsVm = {
   /** «Този бръснар вече не съществува…» — the scope fell back to the shop. */
   readonly notice: string | null;
   readonly body: AnalyticsBodyVm | null;
+  /** The dock's «Експорт» — `null` while there are no figures to export. */
+  readonly exportLabel: string | null;
   /** The ⓘ buttons' accessible names, by topic. */
   readonly infoLabels: Readonly<Record<AnalyticsTopic, string>>;
 };

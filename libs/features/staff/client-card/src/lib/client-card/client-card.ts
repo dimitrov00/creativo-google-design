@@ -1,4 +1,4 @@
-import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -40,6 +40,7 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import { UiAlert } from '@creativo/ui/patterns';
+import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import { BirthdayCard } from '../birthday-card/birthday-card';
 import { ClientCardRegion, type WalletAnchor } from '../client-card.contracts';
 import { partedAtJoints } from '../client-card.format';
@@ -207,7 +208,6 @@ export class ClientCard {
   readonly removeClient = output<void>();
 
   private readonly store = inject(ClientCardStore);
-  private readonly document = inject(DOCUMENT);
   protected readonly words = this.store.words;
   protected readonly hero = this.store.hero;
   protected readonly overview = this.store.overview;
@@ -345,22 +345,19 @@ export class ClientCard {
   }
 
   /**
-   * The bundle as a file, byte for byte as the server decided it: a JSON
-   * blob behind a link clicked once, named by the record's id — no clock
-   * and no zone in the name.
+   * The bundle as a file, byte for byte as the server decided it, named by
+   * the record's id — no clock and no zone in the name — handed to the
+   * app's one file hand-off (`shareOrDownloadFile`): the share sheet where
+   * the device takes files, else a download.
    */
   private save(answer: ClientPrivacyCall.Exported): void {
     const blob = new Blob([answer.exportJson], {
       type: 'application/json;charset=utf-8',
     });
-    const url = URL.createObjectURL(blob);
-    const link = this.document.createElement('a');
-    link.href = url;
-    link.download = `creativo-client-${answer.exportedCustomerId}.json`;
-    link.click();
-    // Freed on the next turn of the loop — revoking synchronously races the
-    // click the browser has not finished handling.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    void shareOrDownloadFile(
+      `creativo-client-${answer.exportedCustomerId}.json`,
+      blob,
+    );
   }
 
   /** L «Изтрий личните данни»: the store previews the card's record; its census opens the alert. */

@@ -284,6 +284,16 @@ export const DayFigures = {
       currency: figures.currency,
     };
   },
+
+  /**
+   * The time bar's «Друго» part of a day row (the TIME ⓘ): the minutes held
+   * by cancelled services plus the gaps under 20 minutes — what the stacked
+   * bars and the CSV export's «друго мин» column print beside worked,
+   * no-show, unmarked, blocked and unsold.
+   */
+  otherMinutesOf(row: DayRow): MinuteCount {
+    return MinuteCount.add(row.dayHeldMinutes, row.dayShortGapMinutes);
+  },
 } as const;
 
 export namespace DayFigures {
