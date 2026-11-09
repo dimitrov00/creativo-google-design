@@ -28,6 +28,7 @@ import {
   statusOf,
 } from './analytics.presenter';
 import {
+  ANALYTICS_SCOPE_ALL,
   AnalyticsCard,
   AnalyticsScopeOption,
   AnalyticsTile,
@@ -120,13 +121,16 @@ const SHOP_GLYPH = 'location.shop' satisfies UiIconName;
 const TEAM_GLYPH = 'nav.team' satisfies UiIconName;
 
 /**
- * THE SCOPE MENU (owner review 2026-11-09): two rows — «Всички салони»
- * when the shop has two or more, then «Целият екип» — each picked whole by
- * its row (the row reads chosen while nothing in it is ticked), or
- * narrowed through its submenu: a box per location, a box per barber, the
- * admin's own first («Аз»). The trigger names what is ticked: «Център»,
- * «2 салона», «Нико Димов», «3 бръснари», the two joined by a dot; the
- * shop's name when nothing is.
+ * THE SCOPE MENU (owner review 2026-11-09, round 2: "the selection is
+ * either salons either barbers right?"): two FILTERS in force at once,
+ * never a choice between them — so neither row is "chosen". Each row is
+ * iOS's nested picker row: the dimension («Салони», «Екип»), its value
+ * under it («Всички», «Център», «Нико Димов, Аз») and a chevron. It opens
+ * its submenu: an «all» box alone at the head (ticked while nothing is
+ * narrowed — it picks the row whole), then a box per location or per
+ * barber, the admin's own first («Аз»). The trigger names what is
+ * narrowed: «Център», «2 салона», «Нико Димов», «3 бръснари», the two
+ * joined by a dot; the shop's name when nothing is.
  */
 function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   const menu = input.scopeMenu;
@@ -145,55 +149,73 @@ function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   if (menu.locationIds.length > 0) {
     options.push({
       id: AnalyticsScopeOption.Locations,
-      label:
+      label: words.scope.shopsGroup,
+      // The value: «Всички», or the salons ticked, in the shop's order.
+      description:
         locations.length === 0
-          ? shopNameOf(input)
-          : locations.length === 1
-            ? locationName(locations[0] as LocationId)
-            : words.scope.shopsCount(locations.length),
+          ? words.scope.all
+          : menu.locationIds
+              .filter((id) => locations.includes(id))
+              .map(locationName)
+              .join(', '),
       icon: SHOP_GLYPH,
       avatarSrc: null,
-      selected: locations.length === 0,
       testId: 'analytics-scope-shop',
       childrenTitle: words.scope.shopsGroup,
-      openLabel: words.scope.pickShops,
-      openTestId: 'analytics-scope-locations-open',
-      children: menu.locationIds.map((id): UiChoiceOption => ({
-        id,
-        label: locationName(id),
-        icon: SHOP_GLYPH,
-        avatarSrc: null,
-        checked: locations.length === 0 || locations.includes(id),
-        testId: `analytics-scope-location-${id}`,
-      })),
+      children: [
+        {
+          id: ANALYTICS_SCOPE_ALL,
+          label: words.scope.shopOf(menu.locationIds.length),
+          icon: SHOP_GLYPH,
+          avatarSrc: null,
+          all: true,
+          checked: locations.length === 0,
+          testId: 'analytics-scope-locations-all',
+        },
+        ...menu.locationIds.map((id): UiChoiceOption => ({
+          id,
+          label: locationName(id),
+          icon: SHOP_GLYPH,
+          avatarSrc: null,
+          checked: locations.includes(id),
+          testId: `analytics-scope-location-${id}`,
+        })),
+      ],
     });
   }
-  const soleRow = menu.barbers.find((row) => row.barberId === barbers[0]);
   options.push({
     id: AnalyticsScopeOption.Team,
-    label:
+    label: words.scope.teamGroup,
+    // The value: «Всички», or the barbers ticked, in the menu's order.
+    description:
       barbers.length === 0
-        ? words.scope.wholeTeam
-        : barbers.length === 1 && soleRow !== undefined
-          ? named(soleRow)
-          : words.scope.barbersCount(barbers.length),
+        ? words.scope.all
+        : menu.barbers
+            .filter((row) => barbers.includes(row.barberId))
+            .map(named)
+            .join(', '),
     icon: TEAM_GLYPH,
-    avatarSrc:
-      barbers.length === 1 && soleRow !== undefined
-        ? input.names.barberAvatarSrc(soleRow.barberId)
-        : null,
-    selected: barbers.length === 0,
+    avatarSrc: null,
     testId: 'analytics-scope-team',
     childrenTitle: words.scope.teamGroup,
-    openLabel: words.scope.pickBarbers,
-    openTestId: 'analytics-scope-team-open',
-    children: menu.barbers.map((row): UiChoiceOption => ({
-      id: row.barberId,
-      label: barberName(row),
-      avatarSrc: input.names.barberAvatarSrc(row.barberId),
-      checked: barbers.length === 0 || barbers.includes(row.barberId),
-      testId: `analytics-scope-${row.barberId}`,
-    })),
+    children: [
+      {
+        id: ANALYTICS_SCOPE_ALL,
+        label: words.scope.wholeTeam,
+        icon: TEAM_GLYPH,
+        avatarSrc: null,
+        all: true,
+        checked: barbers.length === 0,
+        testId: 'analytics-scope-team-all',
+      },
+      ...menu.barbers.map((row): UiChoiceOption => ({
+        id: row.barberId,
+        label: barberName(row),
+        avatarSrc: input.names.barberAvatarSrc(row.barberId),
+        checked: barbers.includes(row.barberId),
+        testId: `analytics-scope-${row.barberId}`,
+      })),
+    ],
   });
   const shopsPart =
     locations.length === 0

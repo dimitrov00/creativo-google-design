@@ -123,7 +123,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(vm.scope).toBeNull();
   });
 
-  it('the scope menu: «Целият екип» picked whole, its submenu a box per barber — the admin’s own first — every box ticked while none is named', () => {
+  it('the scope menu: «Екип» is a filter row — its value under it, no pick — its submenu «Целият екип» alone first, then a box per barber, the admin’s own first; «all» and the boxes either/or', () => {
     const menu = StaffAnalyticsSystem.scopeMenuOf([IVAN, NIKO], NIKO, []);
     const shop = analyticsHomeVm(
       inputOf('bg', { report: shopReportFixture(), scopeMenu: menu }),
@@ -134,18 +134,24 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       name: 'Салон',
       icon: 'location.shop',
     });
-    // One shop: no shops' row — the team's alone, chosen.
+    // One shop: no shops' row — the team's alone, a filter: no pick.
     expect(
-      shop.scope?.options.map((o) => [o.id, o.label, o.selected, o.icon]),
-    ).toEqual([['team', 'Целият екип', true, 'nav.team']]);
+      shop.scope?.options.map((o) => [
+        o.id,
+        o.label,
+        o.description,
+        o.selected,
+        o.icon,
+      ]),
+    ).toEqual([['team', 'Екип', 'Всички', undefined, 'nav.team']]);
     const team = shop.scope?.options[0];
     expect(team?.childrenTitle).toBe('Екип');
-    expect(team?.openLabel).toBe('Избери бръснари');
     expect(
-      team?.children?.map((o) => [o.id, o.label, o.checked, o.testId]),
+      team?.children?.map((o) => [o.id, o.label, o.all, o.checked, o.testId]),
     ).toEqual([
-      ['niko', 'Аз', true, 'analytics-scope-niko'],
-      ['ivan', 'Иван Колев', true, 'analytics-scope-ivan'],
+      ['all', 'Целият екип', true, true, 'analytics-scope-team-all'],
+      ['niko', 'Аз', undefined, false, 'analytics-scope-niko'],
+      ['ivan', 'Иван Колев', undefined, false, 'analytics-scope-ivan'],
     ]);
     expect(shop.period.leading).toBeNull();
 
@@ -164,9 +170,9 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       icon: null,
     });
     const row = ivan.scope?.options[0];
-    expect(row?.selected).toBe(false);
-    expect(row?.label).toBe('Иван Колев');
-    expect(row?.children?.map((o) => o.checked)).toEqual([false, true]);
+    expect(row?.label).toBe('Екип');
+    expect(row?.description).toBe('Иван Колев');
+    expect(row?.children?.map((o) => o.checked)).toEqual([false, false, true]);
     expect(ivan.pages.at(-1)?.query.barber).toBe('ivan');
 
     // Two ticked: a count, no face, and no goal to set.
@@ -174,6 +180,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       inputOf('bg', { scopeMenu: menu, scopeBarberIds: [IVAN, NIKO] }),
     );
     expect(pair.scope?.label).toBe('2 бръснари');
+    // The row's value names them, in the menu's order.
+    expect(pair.scope?.options[0]?.description).toBe('Аз, Иван Колев');
     expect(pair.scope?.leading?.icon).toBe('location.shop');
     expect(pair.pages.at(-1)?.query.barber).toBe('ivan,niko');
     expect(pair.tools.map((tool) => tool.tool)).not.toContain(
@@ -196,7 +204,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     ).toBe('Shop');
   });
 
-  it('with two or more shops: «Всички салони» first, its submenu a box per shop; ticked shops and barbers name the pill together (ADR 2026-11-09)', () => {
+  it('with two or more shops: «Салони» first, a filter row beside «Екип»; its submenu «Всички салони» alone, then a box per shop; ticked shops and barbers name the pill together (ADR 2026-11-09)', () => {
     const centre = LocationId.of('loc-centre');
     const mladost = LocationId.of('loc-mladost');
     const menu = StaffAnalyticsSystem.scopeMenuOf([IVAN], null, [
@@ -207,29 +215,35 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       inputOf('bg', { scopeMenu: menu, shopCount: 2 }),
     );
     expect(
-      all.scope?.options.map((o) => [o.id, o.label, o.selected, o.testId]),
+      all.scope?.options.map((o) => [o.id, o.label, o.description, o.testId]),
     ).toEqual([
-      ['locations', 'Всички салони', true, 'analytics-scope-shop'],
-      ['team', 'Целият екип', true, 'analytics-scope-team'],
+      ['locations', 'Салони', 'Всички', 'analytics-scope-shop'],
+      ['team', 'Екип', 'Всички', 'analytics-scope-team'],
     ]);
     const shops = all.scope?.options[0];
     expect(shops?.childrenTitle).toBe('Салони');
-    expect(shops?.openTestId).toBe('analytics-scope-locations-open');
     expect(
       shops?.children?.map((o) => [o.id, o.label, o.icon, o.checked, o.testId]),
     ).toEqual([
       [
+        'all',
+        'Всички салони',
+        'location.shop',
+        true,
+        'analytics-scope-locations-all',
+      ],
+      [
         centre,
         'Център',
         'location.shop',
-        true,
+        false,
         'analytics-scope-location-loc-centre',
       ],
       [
         mladost,
         'Младост',
         'location.shop',
-        true,
+        false,
         'analytics-scope-location-loc-mladost',
       ],
     ]);
@@ -242,10 +256,10 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       }),
     );
     expect(atMladost.scope?.label).toBe('Младост');
-    expect(atMladost.scope?.options[0]?.selected).toBe(false);
+    expect(atMladost.scope?.options[0]?.description).toBe('Младост');
     expect(
       atMladost.scope?.options[0]?.children?.map((o) => o.checked),
-    ).toEqual([false, true]);
+    ).toEqual([false, false, true]);
     expect(atMladost.scope?.leading).toEqual({
       avatarSrc: null,
       name: 'Младост',

@@ -541,7 +541,7 @@ describe('StaffAnalyticsStore — the month’s goal (staff-analytics-v2 CUJ 6)'
 });
 
 describe('StaffAnalyticsStore — the admin', () => {
-  it('opens on the shop, its menu «Аз» then the barbers; boxes toggle a part of the team, never the last off', async () => {
+  it('opens on the shop, its menu «Аз» then the barbers; from the whole team a box names that barber alone, the last off is the whole team', async () => {
     const { store, calls, cache } = build({
       principal: admin(),
       linkedBarberId: NIKO,
@@ -558,15 +558,17 @@ describe('StaffAnalyticsStore — the admin', () => {
     await calls.answer(Result.ok(shopReportFixture()));
     expect(cache.state.writes[0]?.key.scopeBarberIds).toEqual([]);
 
-    // From the whole team, unticking Niko leaves Ivan's report.
-    store.toggleBarber(NIKO);
+    // From the whole team, Ivan's box names him alone: his report.
+    store.toggleBarber(IVAN);
     TestBed.tick();
     expect(calls.calls[1]?.scopeBarberIds).toEqual([IVAN]);
     expect(store.scopeBarberId()).toBe(IVAN);
     expect(store.scheduleBarberId()).toBe(IVAN);
-    // The last box stays ticked; ticking Niko back is the whole team.
+    // Ivan's box off — the last one — is the whole team again.
     store.toggleBarber(IVAN);
-    expect(store.scopeBarberIds()).toEqual([IVAN]);
+    expect(store.scopeBarberIds()).toEqual([]);
+    // Every box ticked is the whole team too.
+    store.toggleBarber(IVAN);
     store.toggleBarber(NIKO);
     TestBed.tick();
     expect(store.scopeBarberIds()).toEqual([]);

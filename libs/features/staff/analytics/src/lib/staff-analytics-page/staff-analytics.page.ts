@@ -40,7 +40,11 @@ import {
 } from '@creativo/ui/patterns';
 import { analyticsExportFile } from '../analytics-export.presenter';
 import { analyticsHomeVm } from '../analytics-home.presenter';
-import { AnalyticsScopeOption, AnalyticsTool } from '../analytics-home.vm';
+import {
+  ANALYTICS_SCOPE_ALL,
+  AnalyticsScopeOption,
+  AnalyticsTool,
+} from '../analytics-home.vm';
 import { analyticsFreshnessInfoVm } from '../analytics.presenter';
 import { StaffAnalyticsStore } from '../staff-analytics.store';
 import { AnalyticsCarousel } from './analytics-carousel';
@@ -141,14 +145,18 @@ export class StaffAnalyticsPage {
     }
   }
 
-  /** The scope menu's rows: «Всички салони» and «Целият екип», each picked whole. */
-  protected pickScopeOption(id: string): void {
-    if (id === AnalyticsScopeOption.Locations) this.store.pickAllLocations();
-    if (id === AnalyticsScopeOption.Team) this.store.pickAllBarbers();
-  }
-
-  /** A box of the scope menu's submenus: a location, or a barber record. */
+  /**
+   * A box of the scope menu's submenus: its «all» box picks the row whole;
+   * any other is a location, or a barber record.
+   */
   protected toggleScope(toggle: UiChoiceToggle): void {
+    if (toggle.id === ANALYTICS_SCOPE_ALL) {
+      if (toggle.row === AnalyticsScopeOption.Locations) {
+        this.store.pickAllLocations();
+      }
+      if (toggle.row === AnalyticsScopeOption.Team) this.store.pickAllBarbers();
+      return;
+    }
     if (toggle.row === AnalyticsScopeOption.Locations) {
       const locationId = LocationId.parse(toggle.id);
       if (locationId.ok) this.store.toggleLocation(locationId.value);

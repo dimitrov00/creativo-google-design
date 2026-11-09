@@ -1234,21 +1234,22 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * A scope list's tick boxes (owner review 2026-11-09): none named shows
-   * every box ticked; a toggle flips one box — never the last ticked one
-   * off — and ticking every box is none named again (the whole list).
-   * Answers the scope sorted, each once.
+   * A scope list's tick boxes (owner review 2026-11-09, round 2: "either
+   * you choose salon within the submenus or all"): «all» and the boxes
+   * are either/or. From the whole list (none named) a box names that one
+   * alone; then a toggle flips one box; the last box off, or every box on,
+   * is the whole list again. Answers the scope sorted, each once.
    */
   scopeToggled<T extends string>(
     named: readonly T[],
     id: T,
     all: readonly T[],
   ): readonly T[] {
-    const ticked = named.length === 0 ? all : named;
-    const next = ticked.includes(id)
-      ? ticked.filter((entry) => entry !== id)
-      : [...ticked, id];
-    if (next.length === 0) return named;
+    if (named.length === 0)
+      return all.every((entry) => entry === id) ? [] : [id];
+    const next = named.includes(id)
+      ? named.filter((entry) => entry !== id)
+      : [...named, id];
     if (all.every((entry) => next.includes(entry))) return [];
     return [...new Set(next)].sort();
   },

@@ -1487,18 +1487,20 @@ describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
     expect(S.clockLocationOf([], centre)).toBeNull();
   });
 
-  it('scopeToggled: every box ticked when none is named; never the last off; every box ticked is none again', () => {
+  it('scopeToggled: «all» and the boxes are either/or — from the whole list a box names it alone; the last off or every one on is the whole list', () => {
     const tom = BarberId.of('tom');
     const all = [ivan, niko, tom];
-    // From the whole list: one box off leaves the others named.
-    expect(S.scopeToggled([], niko, all)).toEqual([ivan, tom]);
+    // From the whole list: the box tapped, alone.
+    expect(S.scopeToggled([], niko, all)).toEqual([niko]);
     // A box on, a box off.
-    expect(S.scopeToggled([ivan], niko, all)).toEqual([ivan, niko]);
+    expect(S.scopeToggled([niko], ivan, all)).toEqual([ivan, niko]);
     expect(S.scopeToggled([ivan, niko], ivan, all)).toEqual([niko]);
-    // The last ticked box stays.
-    expect(S.scopeToggled([ivan], ivan, all)).toEqual([ivan]);
+    // The last box off is the whole list again.
+    expect(S.scopeToggled([ivan], ivan, all)).toEqual([]);
     // Every box ticked is the whole list again.
     expect(S.scopeToggled([ivan, niko], tom, all)).toEqual([]);
+    // A list of one has nothing to narrow.
+    expect(S.scopeToggled([], ivan, [ivan])).toEqual([]);
     const frozen = deepFreeze([ivan]);
     expect(S.scopeToggled(frozen, niko, all)).toEqual(
       S.scopeToggled(frozen, niko, all),

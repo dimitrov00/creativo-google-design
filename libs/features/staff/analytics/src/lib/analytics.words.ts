@@ -89,9 +89,8 @@ export interface AnalyticsWords {
     readonly shopsCount: (count: number) => string;
     /** «3 бръснари». */
     readonly barbersCount: (count: number) => string;
-    /** «Избери салони» · «Избери бръснари» — the chevrons' names. */
-    readonly pickShops: string;
-    readonly pickBarbers: string;
+    /** «Всички» — a filter row's value while nothing in it is narrowed. */
+    readonly all: string;
   };
   /** The freshness line (staff-analytics-v2 «Freshness»): how old the figures are, and the ⓘ. */
   readonly freshness: {
@@ -503,8 +502,7 @@ export function analyticsWordsOf(
       wholeTeam: t('scope.wholeTeam'),
       shopsCount: counted('scope.shopsCount'),
       barbersCount: counted('scope.barbersCount'),
-      pickShops: t('scope.pickShops'),
-      pickBarbers: t('scope.pickBarbers'),
+      all: t('scope.all'),
     },
     freshness: {
       justNow: t('status.justNow'),

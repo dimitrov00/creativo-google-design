@@ -70,22 +70,26 @@ export interface UiChoiceOption {
    */
   readonly selected?: boolean;
   /**
-   * A SUBMENU of tick boxes (owner review 2026-11-09): the row keeps its
-   * own pick — its main part reports the row's id — and a hairline and a
-   * chevron at its trailing edge open these options in the menu's place
-   * (iOS's submenu on a phone: there is no room beside it), each a box
-   * that toggles (`uiToggled`) while the menu stays open, under a back
-   * row titled `childrenTitle`.
+   * A SUBMENU of tick boxes — a FILTER, not a choice (owner review
+   * 2026-11-09: "the selection is either salons either barbers right?").
+   * The row is then iOS's nested picker row: the dimension's name, its
+   * current value under it (`description`) and a chevron; it picks
+   * nothing and carries no check — two such rows are two filters in force
+   * at once. A tap opens these options in the menu's place (on a phone
+   * there is no room beside it), each a box that toggles (`uiToggled`)
+   * while the menu stays open, under a back row titled `childrenTitle`.
    */
   readonly children?: readonly UiChoiceOption[];
   /** The submenu's title on its back row — «Салони». */
   readonly childrenTitle?: string;
-  /** The chevron's accessible name — «Избери салони». */
-  readonly openLabel?: string;
-  /** The chevron's `data-testid`. */
-  readonly openTestId?: string;
   /** On a submenu's option: its box is ticked. */
   readonly checked?: boolean;
+  /**
+   * On a submenu's option: this box stands for EVERY other box («Всички
+   * салони») — it leads the submenu in a run of its own, so "all" and
+   * "these" never read as one more item of the list.
+   */
+  readonly all?: boolean;
   /**
    * The SECTION the option belongs to. Consecutive options of one group
    * are one segmented run; a new group starts a new run, parted by the
@@ -169,66 +173,68 @@ export class UiChoiceLeading {
             [uiInteractive]="true"
             class="ui-choice-menu__back"
             [uiKeepsOpen]="true"
-            [attr.data-testid]="(page.openTestId ?? page.id) + '-back'"
+            [attr.data-testid]="(page.testId ?? page.id) + '-back'"
             (click)="closePage()"
           >
             <ui-icon uiLeading uiName="nav.back" />
             {{ page.childrenTitle ?? page.label }}
           </button>
         </ui-list-group>
-        <ui-list-group
-          role="group"
-          [attr.aria-label]="page.childrenTitle ?? page.label"
-        >
-          @for (option of page.children ?? []; track option.id) {
-            <button
-              type="button"
-              uiMenuItem
-              uiListRow
-              [uiInteractive]="true"
-              [uiChecked]="option.checked ?? false"
-              [disabled]="option.disabled ?? false"
-              [attr.data-testid]="option.testId ?? null"
-              (click)="toggle(page, option)"
-            >
-              <!-- The leading rail is STATIC per branch — a slot that only
+        @for (run of submenuRuns(); track $index) {
+          <ui-list-group
+            role="group"
+            [attr.aria-label]="page.childrenTitle ?? page.label"
+          >
+            @for (option of run; track option.id) {
+              <button
+                type="button"
+                uiMenuItem
+                uiListRow
+                [uiInteractive]="true"
+                [uiChecked]="option.checked ?? false"
+                [disabled]="option.disabled ?? false"
+                [attr.data-testid]="option.testId ?? null"
+                (click)="toggle(page, option)"
+              >
+                <!-- The leading rail is STATIC per branch — a slot that only
                  exists inside a block is projected by that block's single root,
                  so each branch has exactly one. -->
-              @if (leading(); as slot) {
-                <span uiLeading>
-                  <ng-container
-                    *ngTemplateOutlet="
-                      slot.template;
-                      context: { $implicit: option }
-                    "
-                  />
-                </span>
-              } @else if (option.avatarSrc !== undefined) {
-                <span uiLeading>
-                  <ui-avatar
-                    [uiSrc]="option.avatarSrc"
-                    [uiName]="option.label"
-                    [uiIcon]="option.icon ?? null"
-                    uiControlSize="regular"
-                  />
-                </span>
-              } @else if (option.icon) {
-                <ui-icon uiLeading [uiName]="option.icon" />
-              }
-              {{ option.label }}
-              <span
-                uiTrailing
-                class="ui-choice-menu__box"
-                [attr.data-checked]="option.checked ? '' : null"
-                aria-hidden="true"
-              >
-                @if (option.checked) {
-                  <ui-icon uiName="checklist.done" />
+                @if (leading(); as slot) {
+                  <span uiLeading>
+                    <ng-container
+                      *ngTemplateOutlet="
+                        slot.template;
+                        context: { $implicit: option }
+                      "
+                    />
+                  </span>
+                } @else if (option.avatarSrc !== undefined) {
+                  <span uiLeading>
+                    <ui-avatar
+                      [uiSrc]="option.avatarSrc"
+                      [uiName]="option.label"
+                      [uiIcon]="option.icon ?? null"
+                      uiControlSize="regular"
+                    />
+                  </span>
+                } @else if (option.icon) {
+                  <ui-icon uiLeading [uiName]="option.icon" />
                 }
-              </span>
-            </button>
-          }
-        </ui-list-group>
+                {{ option.label }}
+                <span
+                  uiTrailing
+                  class="ui-choice-menu__box"
+                  [attr.data-checked]="option.checked ? '' : null"
+                  aria-hidden="true"
+                >
+                  @if (option.checked) {
+                    <ui-icon uiName="checklist.done" />
+                  }
+                </span>
+              </button>
+            }
+          </ui-list-group>
+        }
       } @else {
         @for (section of sections(); track $index) {
           @if (section.title) {
@@ -246,81 +252,64 @@ export class UiChoiceLeading {
             [attr.aria-label]="section.title || null"
           >
             @for (option of section.options; track option.id) {
-              @if (option.children; as children) {
-                <!-- A ROW WITH A SUBMENU: its own pick, then a hairline and a
-                   chevron that open the list's boxes. -->
-                <div class="ui-choice-menu__split">
-                  <button
-                    type="button"
-                    uiMenuItem
-                    uiListRow
-                    [uiInteractive]="true"
-                    [uiSelected]="isSelected(option)"
-                    [disabled]="option.disabled ?? false"
-                    [attr.data-testid]="option.testId ?? null"
-                    (click)="pick(option)"
-                  >
-                    <!-- The leading rail is STATIC per branch — a slot that only
-                     exists inside a block is projected by that block's single root,
-                     so each branch has exactly one. -->
-                    @if (leading(); as slot) {
-                      <span uiLeading>
-                        <ng-container
-                          *ngTemplateOutlet="
-                            slot.template;
-                            context: { $implicit: option }
-                          "
-                        />
-                      </span>
-                    } @else if (option.avatarSrc !== undefined) {
-                      <span uiLeading>
-                        <ui-avatar
-                          [uiSrc]="option.avatarSrc"
-                          [uiName]="option.label"
-                          [uiIcon]="option.icon ?? null"
-                          uiControlSize="regular"
-                        />
-                      </span>
-                    } @else if (option.icon) {
-                      <ui-icon uiLeading [uiName]="option.icon" />
-                    }
-                    @if (option.description) {
-                      <span class="ui-choice-menu__lines">
-                        <span>{{ option.label }}</span>
-                        <span
-                          class="ui-choice-menu__description"
-                          uiText
-                          uiFont="footnote"
-                          uiForegroundStyle="secondary"
-                          >{{ option.description }}</span
-                        >
-                      </span>
-                    } @else {
-                      {{ option.label }}
-                    }
-                    <span uiTrailing class="ui-choice-menu__trailing">
-                      @if (isSelected(option)) {
-                        <ui-icon
-                          uiName="checklist.done"
-                          uiForegroundStyle="accent"
-                        />
-                      }
+              @if (option.children) {
+                <!-- A SUBMENU ROW — a filter: the dimension, its value under
+                   it, a chevron. It opens the boxes; it picks nothing. -->
+                <button
+                  type="button"
+                  uiMenuItem
+                  uiListRow
+                  [uiInteractive]="true"
+                  [uiKeepsOpen]="true"
+                  class="ui-choice-menu__submenu"
+                  [disabled]="option.disabled ?? false"
+                  [attr.data-choice-open]="option.id"
+                  aria-haspopup="menu"
+                  [attr.data-testid]="option.testId ?? null"
+                  (click)="openPage(option)"
+                >
+                  <!-- The leading rail is STATIC per branch — a slot that only
+                   exists inside a block is projected by that block's single root,
+                   so each branch has exactly one. -->
+                  @if (leading(); as slot) {
+                    <span uiLeading>
+                      <ng-container
+                        *ngTemplateOutlet="
+                          slot.template;
+                          context: { $implicit: option }
+                        "
+                      />
                     </span>
-                  </button>
-                  <button
-                    type="button"
-                    uiMenuItem
-                    class="ui-choice-menu__open"
-                    [uiKeepsOpen]="true"
-                    [attr.data-choice-open]="option.id"
-                    [attr.aria-label]="option.openLabel ?? option.label"
-                    aria-haspopup="menu"
-                    [attr.data-testid]="option.openTestId ?? null"
-                    (click)="openPage(option)"
-                  >
-                    <ui-icon uiName="nav.disclosure" />
-                  </button>
-                </div>
+                  } @else if (option.avatarSrc !== undefined) {
+                    <span uiLeading>
+                      <ui-avatar
+                        [uiSrc]="option.avatarSrc"
+                        [uiName]="option.label"
+                        [uiIcon]="option.icon ?? null"
+                        uiControlSize="regular"
+                      />
+                    </span>
+                  } @else if (option.icon) {
+                    <ui-icon uiLeading [uiName]="option.icon" />
+                  }
+                  <span class="ui-choice-menu__lines">
+                    <span>{{ option.label }}</span>
+                    @if (option.description) {
+                      <span
+                        class="ui-choice-menu__value"
+                        uiText
+                        uiFont="footnote"
+                        uiForegroundStyle="secondary"
+                        >{{ option.description }}</span
+                      >
+                    }
+                  </span>
+                  <ui-icon
+                    uiTrailing
+                    class="ui-choice-menu__chevron"
+                    uiName="nav.disclosure"
+                  />
+                </button>
               } @else {
                 <button
                   type="button"
@@ -441,6 +430,15 @@ export class UiChoiceMenu {
     if (id === null || !this.uiPresented()) return null;
     return this.uiOptions().find((option) => option.id === id) ?? null;
   });
+  /** The submenu's runs: its «all» box alone first, then the list's boxes. */
+  protected readonly submenuRuns = computed<
+    readonly (readonly UiChoiceOption[])[]
+  >(() => {
+    const children = this.submenu()?.children ?? [];
+    const all = children.filter((option) => option.all === true);
+    const rest = children.filter((option) => option.all !== true);
+    return [all, rest].filter((run) => run.length > 0);
+  });
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -478,7 +476,7 @@ export class UiChoiceMenu {
 
   /**
    * Focus follows the page: its first item — or, back on the top level,
-   * the chevron the submenu was opened from — so the arrow keys and
+   * the row the submenu was opened from — so the arrow keys and
    * Escape keep a home.
    */
   private focusFirstItem(fromId: string | null = null): void {

@@ -738,8 +738,9 @@ export class StaffAnalyticsStore {
 
   /**
    * The admin's scope menu (owner review 2026-11-09): «Целият екип» names
-   * no barber; a barber's box toggles them (`scopeToggled` — never the last
-   * one off, every box ticked is the whole team again).
+   * no barber; a barber's box toggles them (`scopeToggled` — from the whole
+   * team it names that one alone; the last off, or every box on, is the
+   * whole team again).
    */
   pickAllBarbers(): void {
     this.pickBarbers([]);

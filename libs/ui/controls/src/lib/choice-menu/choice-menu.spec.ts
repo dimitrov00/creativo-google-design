@@ -206,20 +206,25 @@ describe('UiChoiceMenu', () => {
     ).toBeNull();
   });
 
-  it('a row with a submenu: its own pick, then a chevron that opens tick boxes in its place — a toggle keeps the menu up, back returns', async () => {
+  it('a submenu row is a filter: its name, its value under it and a chevron — no pick, no check; it opens tick boxes in its place, the «all» box in a run of its own; a toggle keeps the menu up, back returns', async () => {
     const options: readonly UiChoiceOption[] = [
       {
         id: 'team',
-        label: 'Целият екип',
+        label: 'Екип',
+        description: 'Нико',
         icon: 'nav.team',
-        selected: true,
         testId: 'team',
         childrenTitle: 'Екип',
-        openLabel: 'Избери бръснари',
-        openTestId: 'team-open',
         children: [
-          { id: 'ivan', label: 'Иван', checked: true, testId: 'box-ivan' },
-          { id: 'niko', label: 'Нико', checked: false, testId: 'box-niko' },
+          {
+            id: 'all',
+            label: 'Целият екип',
+            all: true,
+            checked: false,
+            testId: 'box-all',
+          },
+          { id: 'ivan', label: 'Иван', checked: false, testId: 'box-ivan' },
+          { id: 'niko', label: 'Нико', checked: true, testId: 'box-niko' },
         ],
       },
     ];
@@ -228,39 +233,48 @@ describe('UiChoiceMenu', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const row = q('team');
-    expect(row?.getAttribute('role')).toBe('menuitemradio');
-    expect(row?.getAttribute('aria-checked')).toBe('true');
-    const open = q('team-open');
-    expect(open?.getAttribute('aria-label')).toBe('Избери бръснари');
-    expect(open?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(row?.getAttribute('role')).toBe('menuitem');
+    expect(row?.getAttribute('aria-checked')).toBeNull();
+    expect(row?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(row?.querySelector('.ui-choice-menu__value')?.textContent).toContain(
+      'Нико',
+    );
+    expect(row?.querySelector('.ui-choice-menu__chevron')).not.toBeNull();
 
-    open?.click();
+    row?.click();
     fixture.detectChanges();
     await fixture.whenStable();
+    expect(fixture.componentInstance.picked).toEqual([]);
+    expect(fixture.componentInstance.open()).toBe(true);
     expect(q('team')).toBeNull();
-    expect(q('team-open-back')?.textContent).toContain('Екип');
-    const ivan = q('box-ivan');
-    expect(ivan?.getAttribute('role')).toBe('menuitemcheckbox');
-    expect(ivan?.getAttribute('aria-checked')).toBe('true');
-    expect(q('box-niko')?.getAttribute('aria-checked')).toBe('false');
+    expect(q('team-back')?.textContent).toContain('Екип');
+    // «all» leads in a run of its own; the list's boxes follow.
+    const runs = Array.from(
+      fixture.nativeElement.ownerDocument.querySelectorAll(
+        '.ui-choice-menu ui-list-group[role="group"]',
+      ) as NodeListOf<HTMLElement>,
+    ).map((group) =>
+      Array.from(group.querySelectorAll('[data-testid]')).map((el) =>
+        el.getAttribute('data-testid'),
+      ),
+    );
+    expect(runs).toEqual([['box-all'], ['box-ivan', 'box-niko']]);
+    const niko = q('box-niko');
+    expect(niko?.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(niko?.getAttribute('aria-checked')).toBe('true');
+    expect(q('box-ivan')?.getAttribute('aria-checked')).toBe('false');
 
-    q('box-niko')?.click();
+    q('box-ivan')?.click();
     fixture.detectChanges();
     expect(fixture.componentInstance.toggled).toEqual([
-      { row: 'team', id: 'niko' },
+      { row: 'team', id: 'ivan' },
     ]);
     expect(fixture.componentInstance.open()).toBe(true);
 
-    q('team-open-back')?.click();
+    q('team-back')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(q('team')).not.toBeNull();
-
-    // The main part of the row picks it, and closes.
-    q('team')?.click();
-    fixture.detectChanges();
-    expect(fixture.componentInstance.picked).toEqual(['team']);
-    expect(fixture.componentInstance.open()).toBe(false);
   });
 
   it('opens on the top level again after it closed on a submenu', async () => {
@@ -269,14 +283,13 @@ describe('UiChoiceMenu', () => {
         id: 'team',
         label: 'Целият екип',
         testId: 'team',
-        openTestId: 'team-open',
         children: [{ id: 'ivan', label: 'Иван', checked: true }],
       },
     ];
     const { fixture, q } = await render(false, options);
     q('trigger')?.click();
     fixture.detectChanges();
-    q('team-open')?.click();
+    q('team')?.click();
     fixture.detectChanges();
     fixture.componentInstance.open.set(false);
     fixture.detectChanges();

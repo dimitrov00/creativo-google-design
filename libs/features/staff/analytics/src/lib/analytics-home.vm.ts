@@ -201,6 +201,9 @@ export type AnalyticsCardQuery = {
  * the whole team — each picked whole by its row, or narrowed through its
  * submenu's boxes (the submenu's options are the location and barber ids).
  */
+/** The «all» box at the head of each scope submenu: it picks the row whole. */
+export const ANALYTICS_SCOPE_ALL = 'all';
+
 export const AnalyticsScopeOption = {
   Locations: 'locations',
   Team: 'team',

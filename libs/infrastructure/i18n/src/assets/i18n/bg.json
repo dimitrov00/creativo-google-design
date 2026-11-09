@@ -2691,8 +2691,7 @@
         "one": "{{count}} бръснар",
         "other": "{{count}} бръснари"
       },
-      "pickShops": "Избери салони",
-      "pickBarbers": "Избери бръснари"
+      "all": "Всички"
     },
     "status": {
       "justNow": "току-що",
