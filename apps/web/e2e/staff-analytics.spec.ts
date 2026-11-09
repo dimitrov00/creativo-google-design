@@ -323,7 +323,19 @@ test.describe('«Анализи» — staff analytics', () => {
       .getByTestId('analytics-rows')
       .locator('[data-testid^="analytics-day-"]');
     await expect(days.first()).toBeVisible();
-    const dayCount = await days.count();
+    // The rows arrive a page at a time as the list's end comes within
+    // reach: scroll to the end until no more days arrive, then count.
+    let dayCount = 0;
+    for (let shown = await days.count(); shown > dayCount;) {
+      dayCount = shown;
+      await days.last().scrollIntoViewIfNeeded();
+      await expect
+        .poll(async () => days.count(), { timeout: 2_000 })
+        .toBeGreaterThanOrEqual(dayCount)
+        .catch(() => undefined);
+      await page.waitForTimeout(400);
+      shown = await days.count();
+    }
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('analytics-rows')).toBeHidden();
     await backHome(page);
