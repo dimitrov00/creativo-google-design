@@ -88,6 +88,7 @@ import {
   AnalyticsTopic,
   type AnalyticsVm,
   BAR_PART_HOOKS,
+  TIME_POINT_FIELDS,
   DrillRows,
   FIGURE_TOPICS,
   ORIGIN_PART_HOOKS,
@@ -773,16 +774,6 @@ function seriesOf(
 
 // ── The time bars ─────────────────────────────────────────────────────────
 
-/** Each bar part's field of a time point — the stacked bar's six segments, in the legend's order. */
-const TIME_POINT_FIELDS = {
-  [AnalyticsBarPart.Worked]: 'workedMinutes',
-  [AnalyticsBarPart.NoShow]: 'noShowMinutes',
-  [AnalyticsBarPart.Unmarked]: 'unmarkedMinutes',
-  [AnalyticsBarPart.Blocked]: 'blockedMinutes',
-  [AnalyticsBarPart.Unsold]: 'unsoldMinutes',
-  [AnalyticsBarPart.Other]: 'otherMinutes',
-} as const satisfies Record<AnalyticsBarPart, keyof AnalyticsReport.TimePoint>;
-
 const TIME_PARTS: readonly AnalyticsBarPart[] = Object.values(AnalyticsBarPart);
 
 function timeBarsOf(
@@ -964,10 +955,18 @@ function timeOf(
     barName: words.time.barName,
     bars: timeBarsOf(input, report),
     segments: StaffAnalyticsSystem.barSegmentsOf(report).map((segment) => ({
+      analyticsBarPart: segment.analyticsBarPart,
       part: BAR_PART_HOOKS[segment.analyticsBarPart],
       share: segment.share,
+      // A part that is there never reads «0%»: under half a percent it is
+      // «<1%», as a rounded share would otherwise hide it.
+      shareText:
+        segment.share > 0 && segment.share < 0.005
+          ? words.time.shareUnderOne
+          : formatPercent(segment.share, words.lang),
       label: words.time.part[segment.analyticsBarPart],
       value: span(segment.minutes),
+      selected: false,
       testId: `analytics-bar-${BAR_PART_HOOKS[segment.analyticsBarPart]}`,
     })),
     ahead: words.time.ahead(

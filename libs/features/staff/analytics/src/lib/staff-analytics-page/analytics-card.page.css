@@ -110,9 +110,10 @@
   min-block-size: 12rem;
 }
 
-/* A ranking of rows (each salon, each barber) is as tall as its rows: two
-   salons under a 12rem floor left a well of nothing under the bars. */
-.analytics-card__chart:has(> .ui-bar-chart[data-orientation='horizontal']) {
+/* A drawn chart is as tall as its drawing: the 12rem floor holds the
+   loading bone's place only — under two salons' rows, or the 140px of a
+   column chart, it left a well of nothing. */
+.analytics-card__chart:has(> .ui-bar-chart, > .ui-line-chart) {
   min-block-size: 0;
 }
 
@@ -259,4 +260,31 @@
   display: flex;
   flex-direction: column;
   gap: var(--sys-space-regular);
+}
+
+/* The chart's key: the share in the quiet ink, then the time, both in
+   tabular figures so the column of times lines up down the run. */
+.analytics-card__key-figures {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sys-space-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-card__key-swatch {
+  flex: none;
+}
+
+/* Two columns of their own, both right-aligned, so the shares («<1%»,
+   «99%») and the times («0 мин», «3159 ч 50 мин») each line up down the
+   run whatever the other holds. */
+.analytics-card__key-share {
+  min-inline-size: 4ch;
+  text-align: end;
+}
+
+.analytics-card__key-figures .analytics-card__legend-value {
+  min-inline-size: 12ch;
+  margin-inline-start: 0;
+  text-align: end;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AnalyticsPeriod } from '@core/components';
+import { AnalyticsBarPart, AnalyticsPeriod } from '@core/components';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -61,6 +61,7 @@ function inputOf(
     card,
     view: null,
     hiddenLocationIds: [],
+    focusedPart: null,
     ...overrides,
   };
 }
@@ -166,6 +167,59 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     ]);
     expect(vm.time).not.toBeNull();
     expect(vm.busy).not.toBeNull();
+  });
+
+  it('«Време» is the chart’s key: each part’s share beside its time, and a focused part drawn alone — bars at its own scale, its line — its row selected', () => {
+    const all = analyticsCardVm(inputOf(AnalyticsCard.Time));
+    expect(all.time?.segments.map((s) => s.selected)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    // A part that is there never reads «0%»; one that is not does.
+    for (const segment of all.time?.segments ?? []) {
+      if (segment.share > 0) expect(segment.shareText).not.toBe('0%');
+      else expect(segment.shareText).toBe('0%');
+    }
+    const stacked = all.chart;
+    if (stacked?.chartView !== 'BARS') throw new Error('not bars');
+    expect(
+      new Set(stacked.bars.flatMap((bar) => bar.parts.map((p) => p.part))).size,
+    ).toBeGreaterThan(1);
+
+    const worked = analyticsCardVm(
+      inputOf(AnalyticsCard.Time, { focusedPart: AnalyticsBarPart.Worked }),
+    );
+    expect(
+      worked.time?.segments
+        .filter((s) => s.selected)
+        .map((s) => s.analyticsBarPart),
+    ).toEqual([AnalyticsBarPart.Worked]);
+    const alone = worked.chart;
+    if (alone?.chartView !== 'BARS') throw new Error('not bars');
+    expect(alone.label).toBe('Работа');
+    expect(
+      new Set(alone.bars.flatMap((bar) => bar.parts.map((p) => p.part))),
+    ).toEqual(new Set(['worked']));
+    // Each bar's figure is that part's time.
+    const workedTotal = alone.bars.reduce(
+      (sum, bar) => sum + bar.parts.reduce((s, p) => s + p.value, 0),
+      0,
+    );
+    expect(workedTotal).toBe(analyticsReportFixture().reportBarWorkedMinutes);
+
+    // The line view draws the focused part's line.
+    const noShows = analyticsCardVm(
+      inputOf(AnalyticsCard.Time, {
+        focusedPart: AnalyticsBarPart.NoShow,
+        view: AnalyticsChartView.Line,
+      }),
+    ).chart;
+    if (noShows?.chartView !== 'LINE') throw new Error('not a line');
+    expect(noShows.label).toBe('Неявили се');
   });
 
   it('«Бакшиши»: tips per day as a line, and the ring of tips against the takings', () => {

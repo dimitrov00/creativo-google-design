@@ -9,7 +9,11 @@ import {
 import { Location } from '@angular/common';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
-import { AnalyticsFigure, AnalyticsRangePreset } from '@core/components';
+import {
+  type AnalyticsBarPart,
+  AnalyticsFigure,
+  AnalyticsRangePreset,
+} from '@core/components';
 import {
   type BarberId,
   type LocalDate,
@@ -135,6 +139,9 @@ export class AnalyticsCardPage {
   /** The locations whose line the toggles turned off; at least one stays on. */
   private readonly hiddenLocations = signal<readonly LocationId[]>([]);
 
+  /** The «Време» row tapped: the chart draws that part alone; `null` stacks them all. */
+  private readonly focusedPart = signal<AnalyticsBarPart | null>(null);
+
   protected readonly vm = computed(() => {
     const screen = this.screen.input();
     if (screen === null) return null;
@@ -143,8 +150,20 @@ export class AnalyticsCardPage {
       card: this.cardTag(),
       view: this.view(),
       hiddenLocationIds: this.hiddenLocations(),
+      focusedPart: this.focusedPart(),
     });
   });
+
+  /**
+   * A «Време» row: the chart above draws that part alone — at its own
+   * scale, so the worked hours a stack of free time dwarfed read — and the
+   * same row again stacks every part back (Apple Health's category rows).
+   */
+  protected focusPart(part: AnalyticsBarPart): void {
+    this.focusedPart.update((focused) => (focused === part ? null : part));
+    // A scrub point belongs to the chart that was drawn.
+    this.scrubbed.set(null);
+  }
 
   /** A location's toggle: its line on or off — never the last line off. */
   protected toggleLocation(locationId: LocationId): void {

@@ -2735,6 +2735,7 @@
         "OTHER": "Друго"
       },
       "byDay": "По дни",
+      "shareUnderOne": "<1%",
       "ahead": "Предстои: {{booked}} записани · {{open}} свободни"
     },
     "open": {

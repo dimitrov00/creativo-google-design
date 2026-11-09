@@ -2732,6 +2732,7 @@
         "OTHER": "Other"
       },
       "byDay": "By day",
+      "shareUnderOne": "<1%",
       "ahead": "Still ahead: {{booked}} booked · {{open}} open"
     },
     "open": {

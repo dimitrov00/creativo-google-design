@@ -37,6 +37,7 @@ import {
 import {
   AnalyticsTopic,
   BAR_PART_HOOKS,
+  TIME_POINT_FIELDS,
   type AnalyticsBodyVm,
   type AnalyticsChartBarVm,
 } from './analytics.vm';
@@ -58,6 +59,12 @@ export interface AnalyticsCardInput extends AnalyticsScreenInput {
   readonly view: AnalyticsChartView | null;
   /** The locations whose line the screen's toggles turned off. */
   readonly hiddenLocationIds: readonly LocationId[];
+  /**
+   * The time part a tap on its «Време» row focused: the chart above draws
+   * it alone, at its own scale; `null` draws every part stacked (owner,
+   * 2026-11-09: the list "has to be somehow related to the upper one").
+   */
+  readonly focusedPart: AnalyticsBarPart | null;
 }
 
 /** Each view's glyph on the switch. */
@@ -165,7 +172,16 @@ export function analyticsCardVm(
     ranges: rangesOf(input, preset),
     services: card === AnalyticsCard.Takings ? (body?.services ?? null) : null,
     origins: card === AnalyticsCard.Takings ? (body?.origins ?? null) : null,
-    time: card === AnalyticsCard.Time ? (body?.time ?? null) : null,
+    time:
+      card === AnalyticsCard.Time && body !== null
+        ? {
+            ...body.time,
+            segments: body.time.segments.map((segment) => ({
+              ...segment,
+              selected: segment.analyticsBarPart === input.focusedPart,
+            })),
+          }
+        : null,
     busy: card === AnalyticsCard.Time ? (body?.busy ?? null) : null,
     clients:
       card === AnalyticsCard.Rebooked || card === AnalyticsCard.NoShows
@@ -502,22 +518,51 @@ function chartOf(
       );
     }
     case AnalyticsCard.Time: {
+      const focused = input.focusedPart;
       if (view === AnalyticsChartView.Bars) {
         const time = body.time.bars;
+        if (focused === null) {
+          return {
+            chartView: AnalyticsChartView.Bars,
+            bars: time.bars,
+            valueText: time.valueText,
+            orientation: 'vertical',
+            label: time.label,
+          };
+        }
+        // One part alone, each bar at its own height — the worked hours a
+        // stack of free time dwarfed become real columns.
+        // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
+        const hook = BAR_PART_HOOKS[focused];
+        const bars = time.bars.map((bar) => ({
+          ...bar,
+          parts: bar.parts.filter((part) => part.part === hook),
+        }));
         return {
           chartView: AnalyticsChartView.Bars,
-          bars: time.bars,
-          valueText: time.valueText,
+          bars,
+          valueText: bars.map((bar) =>
+            spanWords(
+              bar.parts.reduce((sum, part) => sum + part.value, 0),
+              words.spanWords,
+            ),
+          ),
           orientation: 'vertical',
-          label: time.label,
+          // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
+          label: words.time.part[focused],
         };
       }
       if (view === AnalyticsChartView.Line) {
+        // The focused part's line; the worked hours by default.
+        const field = TIME_POINT_FIELDS[focused ?? AnalyticsBarPart.Worked];
         const points = report.reportTimeSeries;
         return line(
-          points.map((p) => p.workedMinutes),
-          points.map((p) => spanWords(p.workedMinutes, words.spanWords)),
-          words.card.workedLine,
+          // eslint-disable-next-line security/detect-object-injection -- `field` is one of the table's six literal keys.
+          points.map((p) => p[field]),
+          // eslint-disable-next-line security/detect-object-injection -- as above.
+          points.map((p) => spanWords(p[field], words.spanWords)),
+          // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
+          focused === null ? words.card.workedLine : words.time.part[focused],
         );
       }
       const minutes = {

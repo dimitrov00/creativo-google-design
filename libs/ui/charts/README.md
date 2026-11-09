@@ -179,7 +179,7 @@ the same disc in HTML for a legend row.
 | `no-show`                        | `--sys-color-destructive`                                                       |
 | `unmarked`                       | `--sys-color-warning` under a diagonal hatch of the surface (`#ui-chart-hatch`) |
 | `blocked`                        | `color-mix(in srgb, var(--sys-color-foreground) 76%, transparent)`              |
-| `unsold`                         | `color-mix(in srgb, var(--sys-color-accent) 34%, transparent)` — a wash         |
+| `unsold`                         | `color-mix(in srgb, var(--sys-color-accent) 16%, transparent)` — a track        |
 | `staff`                          | `color-mix(…foreground…)` 62 %                                                  |
 | `other`, `unknown`, `comparison` | … 48 %                                                                          |
 
@@ -223,8 +223,9 @@ blocked · unsold 11.3 / 11.2; unsold · other 11.9 / 10.7; online · staff
 **The free time is a wash, the one part under 3:1** (owner, 2026-11-09: the
 time chart's grey columns read as dead time, "so much monochrome"). `unsold`
 — rostered time nobody booked — is capacity, not a thing of its own, so it
-wears the worked hue at 34 %: a column reads as the chair's working time,
-the solid foot the part that was used (Toggl's billable over non-billable).
+wears the worked hue at 16 %, a faint track: a column reads as the chair's
+working time, the solid foot the part that was used (a 34 % wash read as a
+muddy slab that buried that foot).
 Under 3:1 by design, it is never told by colour alone — every chart that
 draws it carries a legend and a table — and the spec still holds it ≥ 8
 apart from its neighbours and from the solid accent (`WASHES` in

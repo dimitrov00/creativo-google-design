@@ -132,6 +132,8 @@ export interface AnalyticsWords {
     readonly ahead: (booked: string, open: string) => string;
     /** «По дни» — the bar's way to its days. */
     readonly byDay: string;
+    /** «<1%» — a part that is there, too small to round to a whole percent. */
+    readonly shareUnderOne: string;
   };
   readonly open: {
     readonly title: string;
@@ -552,6 +554,7 @@ export function analyticsWordsOf(
       },
       ahead: (booked, open) => t('time.ahead', { booked, open }),
       byDay: t('time.byDay'),
+      shareUnderOne: t('time.shareUnderOne'),
     },
     open: {
       title: t('open.title'),
