@@ -31,6 +31,19 @@ export const AnalyticsErrorCode = {
    * refused `SAME_LAST_YEAR` comparison.
    */
   InvalidInput: 'ANALYTICS_INVALID_INPUT',
+  /**
+   * A goal set for a scope that is not the caller's own (PR 6): a barber's
+   * month goal is the barber's alone — an admin names the shop's, or, when
+   * their own account is linked to the record, their own.
+   */
+  GoalForbidden: 'ANALYTICS_GOAL_FORBIDDEN',
+  /**
+   * A goal range that is no range (PR 6): a bound that is not a positive
+   * whole number of cents, a high bound under the low one, or a month other
+   * than the current or the next on the shop's clock — `field` names the
+   * offending one (`goalLowCents`, `goalHighCents`, `goalMonth`).
+   */
+  GoalInvalidRange: 'ANALYTICS_GOAL_INVALID_RANGE',
 } as const;
 export type AnalyticsErrorCode =
   (typeof AnalyticsErrorCode)[keyof typeof AnalyticsErrorCode];
@@ -41,7 +54,9 @@ export type AnalyticsError =
   | AnalyticsError.BarberNotLinked
   | AnalyticsError.PeriodOutOfRange
   | AnalyticsError.ScopeUnknown
-  | AnalyticsError.InvalidInput;
+  | AnalyticsError.InvalidInput
+  | AnalyticsError.GoalForbidden
+  | AnalyticsError.GoalInvalidRange;
 
 export const AnalyticsError = {
   unauthenticated(): AnalyticsError.Unauthenticated {
@@ -61,6 +76,12 @@ export const AnalyticsError = {
   },
   invalidInput(field: string): AnalyticsError.InvalidInput {
     return { errorCode: AnalyticsErrorCode.InvalidInput, field };
+  },
+  goalForbidden(): AnalyticsError.GoalForbidden {
+    return { errorCode: AnalyticsErrorCode.GoalForbidden };
+  },
+  goalInvalidRange(field: string): AnalyticsError.GoalInvalidRange {
+    return { errorCode: AnalyticsErrorCode.GoalInvalidRange, field };
   },
 } as const;
 
@@ -87,6 +108,14 @@ export namespace AnalyticsError {
   export type InvalidInput = {
     readonly errorCode: typeof AnalyticsErrorCode.InvalidInput;
     /** The request field at fault: `scopeBarberId`, `fromLocalDate`, `toLocalDate`, `analyticsSpan` or `analyticsComparison`. */
+    readonly field: string;
+  };
+  export type GoalForbidden = {
+    readonly errorCode: typeof AnalyticsErrorCode.GoalForbidden;
+  };
+  export type GoalInvalidRange = {
+    readonly errorCode: typeof AnalyticsErrorCode.GoalInvalidRange;
+    /** The call field at fault: `goalLowCents`, `goalHighCents` or `goalMonth`. */
     readonly field: string;
   };
 }

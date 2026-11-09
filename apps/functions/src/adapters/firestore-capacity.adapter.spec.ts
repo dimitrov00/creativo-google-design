@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { CapacityEntry } from '@core/components';
-import { CapacityMonthId } from '@core/primitives';
+import { MonthKey } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { type CapacityMonth, Collections } from '@core/entities';
 import { FIXTURE_IDS, FIXTURE_TODAY, minuteCount } from '@core/testing';
@@ -13,8 +13,8 @@ import { firestoreCapacityPorts } from './firestore-capacity.adapter';
  * month documents in ONE `getAll`, positions preserved, bodies as stored.
  */
 
-const SEPTEMBER = CapacityMonthId.of('2026-09');
-const OCTOBER = CapacityMonthId.of('2026-10');
+const SEPTEMBER = MonthKey.of('2026-09');
+const OCTOBER = MonthKey.of('2026-10');
 
 const month: CapacityMonth = {
   id: SEPTEMBER,

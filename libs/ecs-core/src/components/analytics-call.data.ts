@@ -21,6 +21,7 @@ import { AnalyticsComparison, AnalyticsSpan } from './analytics-period.data';
 import {
   type AnalyticsReport,
   BookingOrigin,
+  GoalPaceTag,
   RadarBase,
 } from './analytics-report.data';
 import { CallAnswer } from './call-answer.data';
@@ -336,7 +337,8 @@ export const AnalyticsCall = {
    * are, and so are a cached entry's (the cache keeps no seat rows). A
    * cached v1 entry without the chart lists (`reportSeries`, …) is refused
    * the same way: the catalogue version stays 1 until PR 4a, so the
-   * decoder's refusal is what drops it.
+   * decoder's refusal is what drops it — as it drops a PR 5 entry without
+   * the goal fields (`reportGoalPaceTag`, …).
    */
   decodeReport(raw: unknown): Result<AnalyticsReport, PipelineError> {
     const r = readerOf(raw);
@@ -346,6 +348,7 @@ export const AnalyticsCall = {
     const comparison = r.field('reportAnalyticsComparison');
     const scope = r.field('reportScopeBarberId');
     const radarBase = r.field('reportRadarBase');
+    const goalPace = r.field('reportGoalPaceTag');
     const figures = {
       reportFromLocalDate: r.localDate('reportFromLocalDate'),
       reportToLocalDate: r.localDate('reportToLocalDate'),
@@ -400,6 +403,12 @@ export const AnalyticsCall = {
       reportBusiestHour: r.hourOrNull('reportBusiestHour'),
       reportEmptiestWeekday: r.weekdayOrNull('reportEmptiestWeekday'),
       reportEmptiestHour: r.hourOrNull('reportEmptiestHour'),
+
+      // PR 6: the month's goal and its pace.
+      reportGoalLowCents: r.centsOrNull('reportGoalLowCents'),
+      reportGoalHighCents: r.centsOrNull('reportGoalHighCents'),
+      reportGoalDaysSoFar: r.count('reportGoalDaysSoFar'),
+      reportGoalDaysInMonth: r.count('reportGoalDaysInMonth'),
     };
     const series = rowsOf(r.list('reportSeries'), seriesPointOf);
     const timeSeries = rowsOf(r.list('reportTimeSeries'), timePointOf);
@@ -426,6 +435,7 @@ export const AnalyticsCall = {
       !Tag.has(AnalyticsComparison, comparison) ||
       (scope !== null && !BarberId.is(scope)) ||
       !Tag.has(RadarBase, radarBase) ||
+      !Tag.has(GoalPaceTag, goalPace) ||
       series === null ||
       timeSeries === null ||
       hourGrid === null ||
@@ -461,6 +471,7 @@ export const AnalyticsCall = {
       reportRadarBase: radarBase,
       reportDayRows: dayRows,
       reportSeatRows: seatRows,
+      reportGoalPaceTag: goalPace,
     });
   },
 } as const;

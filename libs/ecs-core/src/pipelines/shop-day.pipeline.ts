@@ -2,7 +2,7 @@ import { type Observable, combineLatest, map, of } from 'rxjs';
 import type { CapacityStreamPorts, ShopDayStreamPorts } from '@core/ports';
 import type { ShopLocation } from '@core/entities';
 import type { CapacityEntry } from '@core/components';
-import { BusyKey, type CapacityMonthId, Result } from '@core/primitives';
+import { BusyKey, type MonthKey, Result } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type { BarberDayDocs, DayDocs, DayDocsKey } from '@core/systems';
 
@@ -89,7 +89,7 @@ export function observeDayDocs(
 /** The month documents' entries, live, in one list — `null` months (never rebuilt) hold nothing. */
 export function observeCapacityEntries(
   ports: CapacityStreamPorts,
-  months: readonly CapacityMonthId[],
+  months: readonly MonthKey[],
 ): Observable<Result<readonly CapacityEntry[], RepositoryError>> {
   if (months.length === 0) return of(Result.ok([]));
   return combineLatest(

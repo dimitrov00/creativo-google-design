@@ -65,7 +65,7 @@ describe('AuditAction', () => {
     );
     for (const action of AuditContext.ACTIONS) {
       expect(action).toMatch(
-        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY|PRIVACY)_[A-Z_]+$/,
+        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY|PRIVACY|ANALYTICS)_[A-Z_]+$/,
       );
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
@@ -132,7 +132,8 @@ describe('AuditAction', () => {
       | typeof AuditAction.IdentityOtpRefused
       | typeof AuditAction.IdentitySessionIssued
       | typeof AuditAction.IdentityRegistrationCompleted
-      | typeof AuditAction.PrivacyClientExported;
+      | typeof AuditAction.PrivacyClientExported
+      | typeof AuditAction.AnalyticsGoalSet;
     type Groups = [
       PlacementAction,
       TransitionAction,

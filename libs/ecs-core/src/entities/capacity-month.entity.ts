@@ -1,5 +1,5 @@
 import type { CapacityEntry } from '@core/components';
-import { CapacityMonthId } from '@core/primitives';
+import { MonthKey } from '@core/primitives';
 
 /**
  * The calendar's cost ceiling: one month of every barber's free minutes per
@@ -15,9 +15,9 @@ import { CapacityMonthId } from '@core/primitives';
  * (`purgeAt` is adapter-stamped).
  */
 export type CapacityMonth = {
-  readonly id: CapacityMonthId;
+  readonly id: MonthKey;
   /** `YYYY-MM`, the same as the id. */
-  readonly month: CapacityMonthId;
+  readonly month: MonthKey;
   /** Sorted by `(localDate, barberId, locationId)`, one entry per key (`CapacityEntry.compare`). */
   readonly entries: readonly CapacityEntry[];
 };

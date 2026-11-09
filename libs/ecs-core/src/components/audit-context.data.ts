@@ -3,11 +3,14 @@ import type { StreakRuleParameter } from './streak-rule-parameter.data';
 import type { StreakTransition } from './streak-transition.data';
 import type { BackfillJobName } from './backfill-job-name.data';
 import {
+  type AnalyticsGoalKey,
   type BarberId,
   type IdentifierChannel,
   type ImpersonationSessionId,
   type LocalDate,
   type LocationId,
+  type MonthKey,
+  type PriceCents,
   type SeatId,
   Tag,
   type UtcEpochMs,
@@ -135,6 +138,14 @@ export const AuditAction = {
   PrivacyClientErased: 'PRIVACY_CLIENT_ERASED',
   /** An erased record's sweep found residue and cleared it — the census BEFORE the sweep (P3-L-19). */
   PrivacyClientErasureReswept: 'PRIVACY_CLIENT_ERASURE_RESWEPT',
+  /**
+   * A takings goal set for a scope and a month (`setAnalyticsGoal`, staff
+   * analytics v2 PR 6): written inside the goal's commit, credited to the
+   * barber (their own) or the admin (the shop's), the key, scope, month and
+   * both bounds — the one place a money figure sits on an audit row, as the
+   * act IS the figure.
+   */
+  AnalyticsGoalSet: 'ANALYTICS_GOAL_SET',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -187,7 +198,8 @@ export type AuditContext =
   | AuditContext.SessionIssued
   | AuditContext.RegistrationCompleted
   | AuditContext.ClientExported
-  | AuditContext.ClientErasure;
+  | AuditContext.ClientErasure
+  | AuditContext.AnalyticsGoalSet;
 
 /** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -381,6 +393,23 @@ export const AuditContext = {
       impersonationSessionId,
       impersonationScope,
       impersonationExpiresAtUtcMs,
+    };
+  },
+  /** A takings goal set (PR 6): the goal document's key and its four facts, as written. */
+  analyticsGoalSet(
+    goalKey: AnalyticsGoalKey,
+    goalScopeBarberId: BarberId | null,
+    goalMonth: MonthKey,
+    goalLowCents: PriceCents,
+    goalHighCents: PriceCents,
+  ): AuditContext.AnalyticsGoalSet {
+    return {
+      auditAction: AuditAction.AnalyticsGoalSet,
+      goalKey,
+      goalScopeBarberId,
+      goalMonth,
+      goalLowCents,
+      goalHighCents,
     };
   },
   /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
@@ -622,6 +651,15 @@ export namespace AuditContext {
    * the scope and the window's end only — never the session's `reason`
    * (free text, T5 / R36). The row is never TTL'd, unlike the session.
    */
+  /** A takings goal set — the document's key, its scope (`null` the shop), month and bounds. */
+  export type AnalyticsGoalSet = {
+    readonly auditAction: typeof AuditAction.AnalyticsGoalSet;
+    readonly goalKey: AnalyticsGoalKey;
+    readonly goalScopeBarberId: BarberId | null;
+    readonly goalMonth: MonthKey;
+    readonly goalLowCents: PriceCents;
+    readonly goalHighCents: PriceCents;
+  };
   export type ImpersonationStarted = {
     readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;
     readonly impersonationSessionId: ImpersonationSessionId;

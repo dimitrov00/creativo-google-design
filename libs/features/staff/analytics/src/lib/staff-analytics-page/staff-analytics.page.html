@@ -798,6 +798,90 @@
       </p>
       } }
     </section>
+    }
+
+    <!-- THE MONTH'S GOAL (CUJ 6): the ring — the takings against the
+         range's high end, the pace under it — and «Задай цел» on a month
+         the callable takes one for. -->
+    @if (body.goal; as goal) {
+    <section
+      class="staff-analytics__module"
+      aria-labelledby="analytics-goal-title"
+      data-testid="analytics-goal"
+    >
+      <ui-section-header uiHeaderProminence="increased">
+        <h2 uiTitle id="analytics-goal-title">{{ goal.title }}</h2>
+        <button
+          uiSectionAction
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiIconOnly]="true"
+          [attr.aria-label]="vm.infoLabels[Topics.Goal]"
+          data-testid="analytics-info-GOAL"
+          (click)="openInfo(Topics.Goal)"
+        >
+          <ui-icon uiName="service.details" />
+        </button>
+      </ui-section-header>
+      @if (goal.ring; as ring) {
+      <div
+        class="staff-analytics__goal"
+        [attr.data-pace]="ring.paceTag"
+        data-testid="analytics-goal-ring"
+      >
+        <ui-gauge
+          class="staff-analytics__goal-ring"
+          uiGaugeStyle="circularCapacity"
+          uiControlSize="large"
+          [uiValue]="ring.value"
+          [uiMin]="ring.min"
+          [uiMax]="ring.max"
+          [uiLabel]="ring.label"
+          [uiValueText]="ring.accessibleName"
+        >
+          <span uiCurrentValueLabel>{{ ring.figure }}</span>
+        </ui-gauge>
+        <span class="staff-analytics__goal-lines" aria-hidden="true">
+          <span uiText uiFont="callout" uiWeight="semibold"
+            >{{ ring.rangeText }}</span
+          >
+          <span
+            uiText
+            uiFont="subheadline"
+            uiForegroundStyle="secondary"
+            data-testid="analytics-goal-pace"
+            >{{ ring.pace }}</span
+          >
+        </span>
+      </div>
+      } @if (goal.prompt; as prompt) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="staff-analytics__footnote"
+        data-testid="analytics-goal-prompt"
+      >
+        {{ prompt }}
+      </p>
+      } @if (goal.setLabel; as setLabel) {
+      <div class="staff-analytics__goal-action">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          data-testid="analytics-goal-set"
+          (click)="openGoal()"
+        >
+          {{ setLabel }}
+        </button>
+      </div>
+      }
+    </section>
     } }
   </div>
   <!-- THE CUSTOM RANGE: two dates and «Приложи», the store's verdict worded. -->
@@ -811,7 +895,20 @@
     (applied)="applyRange()"
     (closed)="closeRange()"
   />
-  } @else {
+  <!-- THE GOAL: two sums and «Запази»; the store closes it once the
+       callable has stored the range. -->
+  @if (vm.body?.goal; as goal) {
+  <lib-analytics-goal-sheet
+    [vm]="goal.sheet"
+    [open]="store.goalOpen()"
+    [low]="store.goalLow()"
+    [high]="store.goalHigh()"
+    (lowChange)="store.goalLow.set($event)"
+    (highChange)="store.goalHigh.set($event)"
+    (saved)="saveGoal()"
+    (closed)="closeGoal()"
+  />
+  } } @else {
   <div class="staff-analytics__modules" aria-busy="true">
     <ui-skeleton uiFrame uiFrameHeight="3rem" uiFrameWidth="12rem" />
     <ui-skeleton uiFrame uiFrameHeight="7.5rem" />

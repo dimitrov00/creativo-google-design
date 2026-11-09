@@ -586,6 +586,7 @@ function reportInput(
     followUps: world.followUps,
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
+    goal: null,
   };
 }
 

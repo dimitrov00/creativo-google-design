@@ -6,6 +6,8 @@ export * from './account-seat.data';
 export * from './account-status.data';
 export * from './actor.data';
 export * from './analytics-call.data';
+export * from './analytics-goal-call.data';
+export * from './analytics-goal.data';
 export * from './analytics-period.data';
 export * from './analytics-report.data';
 export * from './applied-discount.data';

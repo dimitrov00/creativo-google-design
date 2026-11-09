@@ -534,6 +534,31 @@
     },
     {
       "collectionGroup": "auditLog",
+      "fieldPath": "goalKey",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "goalScopeBarberId",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "goalMonth",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "goalLowCents",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "goalHighCents",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
       "fieldPath": "rescheduleFromLocalDate",
       "indexes": []
     },

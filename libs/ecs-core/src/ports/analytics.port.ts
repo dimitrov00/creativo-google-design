@@ -1,4 +1,5 @@
 import type {
+  AnalyticsGoalKey,
   AppointmentId,
   BarberId,
   BusyKey,
@@ -8,11 +9,16 @@ import type {
   UtcEpochMs,
 } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
-import type { AnalyticsCall, AnalyticsReport } from '@core/components';
+import type {
+  AnalyticsCall,
+  AnalyticsReport,
+  SetAnalyticsGoalCall,
+} from '@core/components';
 import type {
   AnalyticsRecomputeJob,
   Appointment,
   BarberAnalyticsDay,
+  StoredAnalyticsGoal,
   ScheduleException,
   ShopLocation,
 } from '@core/entities';
@@ -129,6 +135,17 @@ export type LoadAnalyticsRecomputeJob = () => Promise<
   Result<AnalyticsRecomputeJob | null, RepositoryError>
 >;
 
+/**
+ * `analyticsGoals/{key}` as stored (`{ id, ...data }`), `null` when there is
+ * none — the one extra read a `MONTH` report takes (staff analytics v2 PR 6,
+ * «Goals»); the body admitted by `AnalyticsGoal.is` first — a malformed one
+ * is `null`, and logged. The write goes through `CommitPorts`
+ * (`setAnalyticsGoal`'s transaction).
+ */
+export type LoadAnalyticsGoal = (
+  key: AnalyticsGoalKey,
+) => Promise<Result<StoredAnalyticsGoal | null, RepositoryError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The analytics reads — `firestoreAnalyticsPorts(db, guardOf, log)` (functions). */
@@ -152,6 +169,11 @@ export type AnalyticsRecomputeJobPorts = {
   readonly loadAnalyticsRecomputeJob: LoadAnalyticsRecomputeJob;
 };
 
+/** The month goal's read — `firestoreAnalyticsGoalPorts(db, log)` (functions); the write is `CommitPorts`'. */
+export type AnalyticsGoalPorts = {
+  readonly loadAnalyticsGoal: LoadAnalyticsGoal;
+};
+
 // ── The web's side (the «Анализи» screen) ─────────────────────────────────
 
 /**
@@ -162,6 +184,20 @@ export type AnalyticsRecomputeJobPorts = {
  * (a refusal's `serverErrorCode` is an `AnalyticsErrorCode`).
  */
 export type RequestAnalyticsReport = Callable<AnalyticsCall, AnalyticsReport>;
+
+/**
+ * One goal set through the `setAnalyticsGoal` callable (PR 6) — the scope,
+ * the month and the range as `SetAnalyticsGoalCall` names them (the sheet
+ * asks `AnalyticsGoal.rangeOf` before dialling, and
+ * `StaffAnalyticsSystem.goalMonthOffered` says which months it may offer);
+ * the answer the stored key and the set's stamp, or the callable's one
+ * `PipelineError` (a refusal's `serverErrorCode` is an `AnalyticsErrorCode`
+ * — `ANALYTICS_GOAL_FORBIDDEN`, `ANALYTICS_GOAL_INVALID_RANGE`, or v1's).
+ */
+export type SetAnalyticsGoal = Callable<
+  SetAnalyticsGoalCall,
+  SetAnalyticsGoalCall.Set
+>;
 
 /**
  * Which cached report — the account it was computed for and the request
@@ -200,9 +236,10 @@ export type WriteCachedReport = (
 /** Deletes every cached report on this device — sign-out, an account switch, a refusal. */
 export type ClearCachedReports = () => Result<void, RepositoryError>;
 
-/** The `staffAnalytics` callable — `ANALYTICS_CALL_PORTS` (web), `analyticsCallPorts(gateway)`. */
+/** The analytics callables — `ANALYTICS_CALL_PORTS` (web), `analyticsCallPorts(gateway)`: the report, and the goal (PR 6). */
 export type AnalyticsCallPorts = {
   readonly requestReport: RequestAnalyticsReport;
+  readonly setAnalyticsGoal: SetAnalyticsGoal;
 };
 
 /** The device's report cache — `ANALYTICS_CACHE_PORTS` (web), `localStorageAnalyticsCachePorts()`. */

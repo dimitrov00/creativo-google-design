@@ -1,4 +1,4 @@
-import { type CapacityMonthId, LocalDate, MinuteCount } from '@core/primitives';
+import { type MonthKey, LocalDate, MinuteCount } from '@core/primitives';
 import { CalendarGridSystem } from '@core/systems';
 import type { UiDateBadgeState } from '@creativo/ui/patterns';
 
@@ -54,7 +54,7 @@ export interface ScheduleMonthVm {
   /** The month's 1st. */
   readonly anchor: LocalDate;
   /** `YYYY-MM` — the month's own key (`LocalDate.monthKey`). */
-  readonly key: CapacityMonthId;
+  readonly key: MonthKey;
   readonly weeks: readonly (readonly (ScheduleDayVm | null)[])[];
 }
 
@@ -62,7 +62,7 @@ export interface AvailabilityMonth {
   /** The month's 1st. */
   readonly anchor: LocalDate;
   /** `YYYY-MM` — stable across rebuilds, so `@for` never re-creates a month. */
-  readonly key: CapacityMonthId;
+  readonly key: MonthKey;
   readonly weeks: readonly (readonly AvailabilityGridCell[])[];
 }
 

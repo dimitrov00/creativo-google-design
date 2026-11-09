@@ -1,0 +1,35 @@
+/* The goal sheet: the range's two ends, each a caption over a large sum
+   with its −/+ pair, the refusal line under them, «Запази» on the action
+   bar. */
+
+:host {
+  display: contents;
+}
+
+.analytics-goal-sheet__head {
+  padding-inline: var(--sys-space-regular);
+}
+
+.analytics-goal-sheet__fields {
+  padding-inline: var(--sys-space-regular);
+  padding-block: var(--sys-space-regular) var(--sys-space-spacious);
+}
+
+/* A caption centred over its sum: the field is one centred cluster. */
+.analytics-goal-sheet__field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+.analytics-goal-sheet__caption {
+  text-align: center;
+}
+
+.analytics-goal-sheet__refusal {
+  margin: 0;
+  min-block-size: 1.5em;
+  text-align: center;
+  text-wrap: pretty;
+}

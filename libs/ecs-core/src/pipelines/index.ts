@@ -34,6 +34,7 @@ export * from './set-roles.pipeline';
 export * from './shop-zone-read.pipeline';
 export * from './shop-today.pipeline';
 export * from './start-impersonation.pipeline';
+export * from './set-analytics-goal.pipeline';
 export * from './staff-analytics.pipeline';
 export * from './start-analytics-recompute.pipeline';
 export * from './start-policy-recompute.pipeline';

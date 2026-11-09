@@ -4,6 +4,7 @@ import {
   AnalyticsPeriod,
   type AnalyticsReport,
   AnalyticsSpan,
+  GoalPaceTag,
   RadarBase,
 } from '@core/components';
 import {
@@ -39,6 +40,8 @@ import {
   analyticsVm,
 } from './analytics.presenter';
 import {
+  AnalyticsGoalRefusal,
+  AnalyticsGoalSave,
   AnalyticsLoad,
   AnalyticsRangeRefusal,
   AnalyticsTopic,
@@ -63,6 +66,7 @@ function inputOf(
     refusal: null,
     scopeChoices: null,
     scopeBarberId: null,
+    linkedBarberId: IVAN,
     scopeGone: false,
     scheduleBarberId: IVAN,
     rangeCheck: {
@@ -70,6 +74,12 @@ function inputOf(
       fromLocalDate: null,
       toLocalDate: null,
     },
+    goalCheck: {
+      goalRefusal: AnalyticsGoalRefusal.Incomplete,
+      goalLowCents: null,
+      goalHighCents: null,
+    },
+    goalSave: AnalyticsGoalSave.Idle,
     names: NAMES,
     ...overrides,
   };
@@ -981,5 +991,174 @@ describe('analyticsDrillVm — a figure’s rows and a footer equal to it', () =
       names: NAMES,
     };
     expect(analyticsDrillVm(input)).toEqual(analyticsDrillVm(input));
+  });
+});
+
+describe('analyticsVm — the month’s goal (staff-analytics-v2 CUJ 6)', () => {
+  const stored = () =>
+    deepFreeze(
+      analyticsReportFixture({
+        reportGoalLowCents: cents(180_000),
+        reportGoalHighCents: cents(220_000),
+        reportGoalPaceTag: GoalPaceTag.OnTrack,
+        reportGoalDaysSoFar: 12,
+        reportGoalDaysInMonth: 22,
+      }),
+    );
+
+  it('draws the stored goal as the ring — the takings against the high end — with the range and the pace in words', () => {
+    const goal = bodyOf(inputOf('bg', { report: stored() })).goal;
+    expect(goal?.title).toBe('Цел за месеца');
+    expect(goal?.prompt).toBeNull();
+    expect(goal?.setLabel).toBe('Промени целта');
+    const ring = goal?.ring;
+    expect(ring?.value).toBe(4550);
+    expect(ring?.min).toBe(0);
+    expect(ring?.max).toBe(220_000);
+    expect(ring?.figure).toBe('2%');
+    expect(ring?.rangeText).toBe(`${nbsp('1800,00 €')} – ${nbsp('2200,00 €')}`);
+    expect(ring?.pace).toBe('12 от 22 работни дни · на път');
+    expect(ring?.paceTag).toBe(GoalPaceTag.OnTrack);
+    expect(ring?.label).toBe('Цел за месеца');
+    expect(ring?.accessibleName).toBe(
+      `${nbsp('45,50 €')} от целта ${nbsp('1800,00 €')} – ${nbsp('2200,00 €')}`,
+    );
+  });
+
+  it('words every pace, and a month without a working day yet', () => {
+    const paceOf = (tag: GoalPaceTag) =>
+      bodyOf(
+        inputOf('bg', {
+          report: deepFreeze(
+            analyticsReportFixture({
+              reportGoalLowCents: cents(180_000),
+              reportGoalHighCents: cents(220_000),
+              reportGoalPaceTag: tag,
+              reportGoalDaysSoFar: tag === GoalPaceTag.None ? 0 : 3,
+              reportGoalDaysInMonth: 22,
+            }),
+          ),
+        }),
+      ).goal?.ring?.pace;
+    expect(paceOf(GoalPaceTag.Ahead)).toBe('3 от 22 работни дни · пред плана');
+    expect(paceOf(GoalPaceTag.Behind)).toBe('3 от 22 работни дни · изоставане');
+    expect(paceOf(GoalPaceTag.None)).toBe('Още няма работен ден този месец');
+  });
+
+  it('offers «Задай цел» with the prompt on this month and the next without a goal, nothing on an earlier month, nothing off MONTH', () => {
+    const thisMonth = bodyOf(inputOf('bg')).goal;
+    expect(thisMonth?.ring).toBeNull();
+    expect(thisMonth?.setLabel).toBe('Задай цел');
+    expect(thisMonth?.prompt).toBe('Задай оборот за месеца и следи темпото.');
+
+    const next = bodyOf(
+      inputOf('bg', {
+        period: AnalyticsPeriod.monthOf(localDate('2026-10-05')),
+      }),
+    ).goal;
+    expect(next?.setLabel).toBe('Задай цел');
+
+    // The admin on a colleague's scope reads the goal and sets none; on the
+    // shop, or on their own record, they set it.
+    const colleague = bodyOf(
+      inputOf('bg', {
+        report: stored(),
+        scopeBarberId: NIKO,
+        linkedBarberId: IVAN,
+        scheduleBarberId: NIKO,
+      }),
+    ).goal;
+    expect(colleague?.ring).not.toBeNull();
+    expect(colleague?.setLabel).toBeNull();
+    expect(
+      bodyOf(
+        inputOf('bg', {
+          scopeBarberId: null,
+          linkedBarberId: null,
+          scheduleBarberId: null,
+        }),
+      ).goal?.setLabel,
+    ).toBe('Задай цел');
+    expect(
+      bodyOf(inputOf('bg', { scopeBarberId: IVAN, linkedBarberId: IVAN })).goal
+        ?.setLabel,
+    ).toBe('Задай цел');
+    expect(
+      bodyOf(inputOf('bg', { scopeBarberId: NIKO, linkedBarberId: IVAN })).goal,
+    ).toBeNull();
+
+    const august = AnalyticsPeriod.monthOf(localDate('2026-08-05'));
+    expect(bodyOf(inputOf('bg', { period: august })).goal).toBeNull();
+    // An earlier month's stored goal is shown, read-only.
+    const past = bodyOf(
+      inputOf('bg', { period: august, report: stored() }),
+    ).goal;
+    expect(past?.ring).not.toBeNull();
+    expect(past?.setLabel).toBeNull();
+
+    const week = bodyOf(
+      inputOf('bg', {
+        period: AnalyticsPeriod.weekOf(FIXTURE_TODAY),
+        report: stored(),
+      }),
+    ).goal;
+    expect(week).toBeNull();
+  });
+
+  it('words the sheet: the store’s refusal, a failed save, and the save under way', () => {
+    const sheetOf = (overrides: Partial<AnalyticsScreenInput>) =>
+      bodyOf(inputOf('bg', overrides)).goal?.sheet;
+    const incomplete = sheetOf({});
+    expect(incomplete?.title).toBe('Цел за месеца');
+    expect(incomplete?.lowLabel).toBe('Долна граница');
+    expect(incomplete?.highLabel).toBe('Горна граница');
+    expect(incomplete?.unit).toBe('€');
+    expect(incomplete?.saveLabel).toBe('Запази');
+    expect(incomplete?.refusal).toBe('Въведете двете суми');
+    expect(incomplete?.saveEnabled).toBe(false);
+
+    const invalid = sheetOf({
+      goalCheck: {
+        goalRefusal: AnalyticsGoalRefusal.InvalidRange,
+        goalLowCents: null,
+        goalHighCents: null,
+      },
+    });
+    expect(invalid?.refusal).toBe(
+      'Долната граница трябва да е до горната, и двете над нула',
+    );
+
+    const admitted = {
+      goalRefusal: null,
+      goalLowCents: cents(180_000),
+      goalHighCents: cents(220_000),
+    } as const;
+    const fine = sheetOf({ goalCheck: admitted });
+    expect(fine?.refusal).toBeNull();
+    expect(fine?.saveEnabled).toBe(true);
+    expect(fine?.saving).toBe(false);
+
+    const failed = sheetOf({
+      goalCheck: admitted,
+      goalSave: AnalyticsGoalSave.Failed,
+    });
+    expect(failed?.refusal).toBe('Целта не се записа. Опитай пак.');
+    expect(failed?.saveEnabled).toBe(true);
+
+    const saving = sheetOf({
+      goalCheck: admitted,
+      goalSave: AnalyticsGoalSave.Saving,
+    });
+    expect(saving?.saveEnabled).toBe(false);
+    expect(saving?.saving).toBe(true);
+  });
+
+  it('in English', () => {
+    const goal = bodyOf(inputOf('en', { report: stored() })).goal;
+    expect(goal?.title).toBe('Goal for the month');
+    expect(goal?.setLabel).toBe('Change the goal');
+    expect(goal?.ring?.pace).toBe('12 of 22 working days · on track');
+    expect(goal?.ring?.figure).toBe('2%');
+    expect(bodyOf(inputOf('en')).goal?.setLabel).toBe('Set a goal');
   });
 });

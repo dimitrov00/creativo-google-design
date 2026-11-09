@@ -176,6 +176,8 @@
     "ANALYTICS_UNAUTHENTICATED": "Sign in again to see the analytics.",
     "ANALYTICS_FORBIDDEN": "You have no access to these analytics.",
     "ANALYTICS_BARBER_NOT_LINKED": "Your account is not linked to a barber yet. Ask the owner to link it.",
+    "ANALYTICS_GOAL_FORBIDDEN": "A barber’s goal is set by that barber alone.",
+    "ANALYTICS_GOAL_INVALID_RANGE": "The low end must not exceed the high end, both above zero; the month this one or the next.",
     "ANALYTICS_PERIOD_OUT_OF_RANGE": "This period is out of range.",
     "ANALYTICS_SCOPE_UNKNOWN": "This barber no longer exists.",
     "ANALYTICS_INVALID_INPUT": "The request is not valid.",
@@ -2777,6 +2779,34 @@
         "other": "{{count}} visits"
       }
     },
+    "goal": {
+      "title": "Goal for the month",
+      "set": "Set a goal",
+      "change": "Change the goal",
+      "prompt": "Set a takings range for the month and follow the pace.",
+      "range": "{{low}} – {{high}}",
+      "days": "{{soFar}} of {{total}} working days · {{pace}}",
+      "noDays": "No working day this month yet",
+      "pace": {
+        "AHEAD": "ahead",
+        "ON_TRACK": "on track",
+        "BEHIND": "behind"
+      },
+      "label": "Goal for the month",
+      "valueText": "{{takings}} of the goal {{range}}",
+      "sheet": {
+        "title": "Goal for the month",
+        "low": "Low end",
+        "high": "High end",
+        "decrease": "Less",
+        "increase": "More",
+        "save": "Save",
+        "close": "Close",
+        "incomplete": "Enter both sums",
+        "invalid": "The low end must not exceed the high end, and both must be above zero",
+        "failed": "The goal was not saved. Try again."
+      }
+    },
     "figure": {
       "TAKINGS": "Takings",
       "TIPS": "Tips",
@@ -2788,7 +2818,8 @@
       "LATE_CANCELLATIONS": "Late cancellations",
       "BUSY": "Busy time",
       "ORIGINS": "Bookings",
-      "RADARS": "How each barber does"
+      "RADARS": "How each barber does",
+      "GOAL": "Goal for the month"
     },
     "info": {
       "label": "What “{{figure}}” means",
@@ -2803,7 +2834,8 @@
       "LATE_CANCELLATIONS": "Client cancellations after the cancellation deadline.",
       "BUSY": "The worked share of the working time, by weekday and hour; the busiest and quietest hours show after 7 working days.",
       "ORIGINS": "Visits with a worked service by who booked them: the client online, or the shop.",
-      "RADARS": "Five axes per barber: € an hour of service, fill, rebooking and tips against the best of the shop (100), reliability on its own; an axis under its floor reads «little data»."
+      "RADARS": "Five axes per barber: € an hour of service, fill, rebooking and tips against the best of the shop (100), reliability on its own; an axis under its floor reads «little data».",
+      "GOAL": "The goal is a takings range for the month. The pace compares the takings so far with what the working days gone by should have brought: ahead, on track or behind."
     },
     "drill": {
       "total": "Total",

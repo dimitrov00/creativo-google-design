@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { PipelineErrorCode } from '@core/errors';
-import { AppointmentId, BarberId, MinuteCount, SeatId } from '@core/primitives';
+import {
+  AppointmentId,
+  BarberId,
+  MinuteCount,
+  type PriceCents,
+  SeatId,
+} from '@core/primitives';
 import { MinuteRange } from './minute-range.data';
 import { type AnalyticsDay, StaffAnalyticsSystem } from '@core/systems';
 import {
@@ -17,7 +23,11 @@ import {
 } from '@core/testing';
 import { AnalyticsCall } from './analytics-call.data';
 import { AnalyticsComparison, AnalyticsPeriod } from './analytics-period.data';
-import { type AnalyticsReport, RadarBase } from './analytics-report.data';
+import {
+  type AnalyticsReport,
+  GoalPaceTag,
+  RadarBase,
+} from './analytics-report.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';
 import { Seat } from './seat.data';
 import { SeatOutcome } from './seat-outcome.data';
@@ -84,6 +94,7 @@ function reportOf(scopeBarberId: BarberId | null): AnalyticsReport {
     followUps: [],
     policy: ClientStatsPolicy.DEFAULT,
     now: FIXTURE_NOW,
+    goal: null,
   });
 }
 
@@ -166,6 +177,31 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       serviceMinutes: 240,
       workedSeatCount: 24,
       rosteredDayCount: 8,
+    });
+  });
+
+  it('reads the month goal’s fields back (v2 PR 6): the range, the pace and the two day counts, and their absence', () => {
+    const report = reportOf(ivan);
+    expect(report).toMatchObject({
+      reportGoalLowCents: null,
+      reportGoalHighCents: null,
+      reportGoalPaceTag: GoalPaceTag.None,
+    });
+    const withGoal = wire({
+      ...report,
+      reportGoalLowCents: 180_000 as PriceCents,
+      reportGoalHighCents: 220_000 as PriceCents,
+      reportGoalPaceTag: GoalPaceTag.OnTrack,
+      reportGoalDaysSoFar: 12,
+      reportGoalDaysInMonth: 22,
+    });
+    const decoded = AnalyticsCall.decodeReport(withGoal);
+    expect(decoded.ok && decoded.value).toMatchObject({
+      reportGoalLowCents: 180_000,
+      reportGoalHighCents: 220_000,
+      reportGoalPaceTag: GoalPaceTag.OnTrack,
+      reportGoalDaysSoFar: 12,
+      reportGoalDaysInMonth: 22,
     });
   });
 
@@ -268,6 +304,15 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       { ...good, reportRadars: undefined },
       { ...good, reportRadarBase: undefined },
       { ...good, reportRadarBase: 'BEST_OF_SELF' },
+      // v2 PR 6: the goal fields, absent (a PR 5 cached entry) or malformed.
+      { ...good, reportGoalPaceTag: undefined },
+      { ...good, reportGoalPaceTag: 'BEHIND_SCHEDULE' },
+      { ...good, reportGoalLowCents: undefined },
+      { ...good, reportGoalLowCents: -1 },
+      { ...good, reportGoalHighCents: 1.5 },
+      { ...good, reportGoalDaysSoFar: undefined },
+      { ...good, reportGoalDaysSoFar: -1 },
+      { ...good, reportGoalDaysInMonth: 2.5 },
     ]) {
       expect(AnalyticsCall.decodeReport(broken)).toEqual(UNUSABLE);
     }

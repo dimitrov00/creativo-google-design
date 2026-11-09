@@ -13,9 +13,15 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type AnalyticsCall, AnalyticsSpan, Role } from '@core/components';
+import {
+  type AnalyticsCall,
+  AnalyticsSpan,
+  GoalPaceTag,
+  Role,
+  type SetAnalyticsGoalCall,
+} from '@core/components';
 import type { AnalyticsCallPorts } from '@core/ports';
-import { Result, UserId } from '@core/primitives';
+import { AnalyticsGoalKey, Result, UserId } from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -88,14 +94,35 @@ async function render(
       : principalFixture.staff(UserId.of('dev-staff-ivan'), [Role.Barber]),
   );
   const sent: AnalyticsCall[] = [];
+  const goals: SetAnalyticsGoalCall[] = [];
   const calls: AnalyticsCallPorts = {
     requestReport: async (call) => {
       sent.push(call);
-      return Result.ok(
+      const report =
         options.shop && call.scopeBarberId === null
           ? shopReportFixture()
-          : reportFor(call),
+          : reportFor(call);
+      // A stored goal comes back with the next report, as the callable's does.
+      const goal = goals.at(-1);
+      return Result.ok(
+        goal === undefined
+          ? report
+          : {
+              ...report,
+              reportGoalLowCents: goal.goalLowCents,
+              reportGoalHighCents: goal.goalHighCents,
+              reportGoalPaceTag: GoalPaceTag.OnTrack,
+              reportGoalDaysSoFar: 12,
+              reportGoalDaysInMonth: 22,
+            },
       );
+    },
+    setAnalyticsGoal: async (call) => {
+      goals.push(call);
+      return Result.ok({
+        goalKey: AnalyticsGoalKey.of(call.scopeBarberId, call.goalMonth),
+        goalSetAtUtcMs: FIXTURE_NOW_UTC_MS,
+      });
     },
   };
   TestBed.configureTestingModule({
@@ -152,6 +179,7 @@ async function render(
     fixture,
     host: fixture.nativeElement as HTMLElement,
     sent,
+    goals,
     router: TestBed.inject(Router),
   };
 }
@@ -316,6 +344,69 @@ describe('StaffAnalyticsPage — the admin’s radars (staff-analytics-v2 PR 5)'
     expect(sent.at(-1)?.scopeBarberId).toBe('niko');
     // A barber's report carries no radars.
     expect(byTestId(host, 'analytics-radars')).toBeNull();
+  });
+});
+
+describe('StaffAnalyticsPage — the month’s goal (staff-analytics-v2 CUJ 6)', () => {
+  it('offers «Задай цел» on this month, saves the sheet’s range and draws the ring from the next report', async () => {
+    const { host, fixture, goals, sent } = await render();
+    const section = byTestId(host, 'analytics-goal');
+    expect(section).not.toBeNull();
+    expect(byTestId(host, 'analytics-goal-ring')).toBeNull();
+    expect(byTestId(host, 'analytics-goal-prompt')?.textContent?.trim()).toBe(
+      'Задай оборот за месеца и следи темпото.',
+    );
+    const set = byTestId(host, 'analytics-goal-set') as HTMLButtonElement;
+    expect(set.textContent?.trim()).toBe('Задай цел');
+    set.click();
+    await settle(fixture);
+    const sheet = byTestId(host, 'analytics-goal-sheet');
+    expect(sheet?.getAttribute('data-state')).toBe('open');
+    const save = byTestId(host, 'analytics-goal-save') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    const type = (id: string, raw: string) => {
+      const input = byTestId(host, id) as HTMLInputElement;
+      input.value = raw;
+      input.dispatchEvent(new Event('input'));
+      input.dispatchEvent(new Event('change'));
+    };
+    type('analytics-goal-low', '1800');
+    type('analytics-goal-high', '2200');
+    await settle(fixture);
+    expect(save.disabled).toBe(false);
+    const requests = sent.length;
+    save.click();
+    await settle(fixture);
+    await settle(fixture);
+    // The range went to the callable for the barber's own scope and month,
+    // the report was asked for again, and the ring shows the goal.
+    expect(goals).toEqual([
+      {
+        scopeBarberId: null,
+        goalMonth: '2026-09',
+        goalLowCents: 180_000,
+        goalHighCents: 220_000,
+      },
+    ]);
+    expect(sent.length).toBe(requests + 1);
+    expect(sheet?.getAttribute('data-state')).not.toBe('open');
+    expect(byTestId(host, 'analytics-goal-ring')).not.toBeNull();
+    expect(byTestId(host, 'analytics-goal-pace')?.textContent?.trim()).toBe(
+      '12 от 22 работни дни · на път',
+    );
+    expect(
+      (
+        byTestId(host, 'analytics-goal-set') as HTMLButtonElement
+      ).textContent?.trim(),
+    ).toBe('Промени целта');
+  });
+
+  it('has no goal section on a week', async () => {
+    const { host } = await render({
+      query: { span: 'WEEK', from: '2026-09-28' },
+    });
+    expect(byTestId(host, 'analytics-goal')).toBeNull();
   });
 });
 

@@ -1,11 +1,22 @@
 import {
+  AnalyticsGoalKey,
   type AppointmentId,
   type BarberId,
   BusyKey,
   Result,
   type UserId,
+  type UtcEpochMs,
 } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import {
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
+import type {
+  AnalyticsReport,
+  SetAnalyticsGoalCall,
+  AnalyticsCall,
+} from '@core/components';
 import {
   type AnalyticsRecomputeJob,
   type Appointment,
@@ -14,10 +25,13 @@ import {
   Collections,
   type ScheduleException,
   type ShopLocation,
+  type StoredAnalyticsGoal,
   type User,
 } from '@core/entities';
 import type {
+  AnalyticsCallPorts,
   AnalyticsDayReadPorts,
+  AnalyticsGoalPorts,
   AnalyticsReadPorts,
   AnalyticsRecomputeJobPorts,
   ProfileLoadPorts,
@@ -204,6 +218,84 @@ export function memoryAnalyticsReadPorts(state: AnalyticsReadState = {}): {
     listLocations: async () => Result.ok(state.locations ?? []),
   };
   return { ports, log };
+}
+
+/**
+ * `AnalyticsGoalPorts` over a plain list (staff analytics v2 PR 6): the goal
+ * whose `id` is the key asked for, `null` when none is held. `log` records
+ * every key read — one entry per `analyticsGoals/{key}` get the adapter
+ * would send, so a spec proves a `MONTH` reads the goal once and no other
+ * span reads it at all.
+ */
+export function memoryAnalyticsGoalPorts(
+  goals: readonly StoredAnalyticsGoal[],
+): {
+  readonly ports: AnalyticsGoalPorts;
+  readonly log: { readonly keyReads: AnalyticsGoalKey[] };
+} {
+  const log = { keyReads: [] as AnalyticsGoalKey[] };
+  const ports: AnalyticsGoalPorts = {
+    loadAnalyticsGoal: async (key) => {
+      log.keyReads.push(key);
+      return Result.ok(goals.find((goal) => goal.id === key) ?? null);
+    },
+  };
+  return { ports, log };
+}
+
+/** What `scriptedAnalyticsCallPorts` answers; a callable left unscripted answers `PIPELINE_UNKNOWN`. */
+export type AnalyticsCallScript = {
+  readonly report?: (
+    call: AnalyticsCall,
+  ) => Result<AnalyticsReport, PipelineError>;
+  readonly goal?: (
+    call: SetAnalyticsGoalCall,
+  ) => Result<SetAnalyticsGoalCall.Set, PipelineError>;
+};
+
+/** Every call the scripted bundle took, in order. */
+export type AnalyticsCallLog = {
+  readonly reports: AnalyticsCall[];
+  readonly goals: SetAnalyticsGoalCall[];
+};
+
+/**
+ * The web's `AnalyticsCallPorts` as a scripted double (PR 6): `requestReport`
+ * and `setAnalyticsGoal` answer what the script says — a decoded report, a
+ * decoded `{ goalKey, goalSetAtUtcMs }`, or a refusal — and `log` records
+ * every call as sent, so a store spec asserts the exact `SetAnalyticsGoalCall`
+ * the sheet dialled without a gateway. An unscripted callable answers the
+ * classification an unreachable one would (`PIPELINE_UNKNOWN`).
+ */
+export function scriptedAnalyticsCallPorts(script: AnalyticsCallScript = {}): {
+  readonly ports: AnalyticsCallPorts;
+  readonly log: AnalyticsCallLog;
+} {
+  const log: AnalyticsCallLog = { reports: [], goals: [] };
+  const unknown = <T>(): Result<T, PipelineError> =>
+    Result.err(PipelineError.bare(PipelineErrorCode.Unknown));
+  const ports: AnalyticsCallPorts = {
+    requestReport: async (call) => {
+      log.reports.push(call);
+      return script.report === undefined ? unknown() : script.report(call);
+    },
+    setAnalyticsGoal: async (call) => {
+      log.goals.push(call);
+      return script.goal === undefined ? unknown() : script.goal(call);
+    },
+  };
+  return { ports, log };
+}
+
+/** A `setAnalyticsGoal` answer as the callable gives it for `call` — the key of its scope and month, stamped `at`. */
+export function goalSetAnswerOf(
+  call: SetAnalyticsGoalCall,
+  at: UtcEpochMs,
+): SetAnalyticsGoalCall.Set {
+  return {
+    goalKey: AnalyticsGoalKey.of(call.scopeBarberId, call.goalMonth),
+    goalSetAtUtcMs: at,
+  };
 }
 
 /** `ProfileLoadPorts` — `users/{uid}` as stored, `null` when absent. */

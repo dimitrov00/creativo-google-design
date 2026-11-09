@@ -61,6 +61,7 @@ const seam = vi.hoisted(() => {
     'rescheduleAppointment',
     'runBackfill',
     'sampleLeadTime',
+    'setAnalyticsGoal',
     'setRoles',
     'setRosterWeek',
     'staffAnalytics',
@@ -317,6 +318,7 @@ const ENDPOINTS = {
   amendRosterBreaks: tracedCallable,
   setRosterWeek: tracedCallable,
   staffAnalytics: { ...tracedCallable, availableMemoryMb: 512 },
+  setAnalyticsGoal: tracedCallable,
   clearArrival: tracedCallable,
   recordSeatTip: tracedCallable,
   staffEditAppointment: walkInCallable,
@@ -481,6 +483,12 @@ const ANALYTICS_REPORT = {
   reportRadars: [],
   reportRadarBase: 'TOO_FEW_BARBERS',
   reportSeatRows: [],
+  // v2's goal fields (PR 6): the month's range, the pace and the formula's two day counts.
+  reportGoalLowCents: 180000,
+  reportGoalHighCents: 220000,
+  reportGoalPaceTag: 'ON_TRACK',
+  reportGoalDaysSoFar: 12,
+  reportGoalDaysInMonth: 22,
 } as const;
 
 /** The eleven census counts an erasure answer carries — the residue after a call. */
@@ -892,6 +900,30 @@ const FLIPPED: { readonly [name: string]: Case } = {
     },
     answer: ok(ANALYTICS_REPORT),
     expected: ANALYTICS_REPORT,
+  },
+  setAnalyticsGoal: {
+    pipeline: 'setAnalyticsGoal',
+    input: request(
+      {
+        scopeBarberId: null,
+        goalMonth: '2026-11',
+        goalLowCents: 180000,
+        goalHighCents: 220000,
+        operationId: 'operation-0123456789ab',
+      },
+      STAFF,
+    ),
+    // The verified caller and the act's transport id ride the command (the row is keyed by it).
+    command: {
+      callerUserId: 'u-staff',
+      scopeBarberId: null,
+      goalMonth: '2026-11',
+      goalLowCents: 180000,
+      goalHighCents: 220000,
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({ goalKey: 'b-1__2026-11', goalSetAtUtcMs: 1_762_700_000_000 }),
+    expected: { goalKey: 'b-1__2026-11', goalSetAtUtcMs: 1_762_700_000_000 },
   },
   clearArrival: {
     pipeline: 'markArrival',
@@ -1400,7 +1432,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(57);
+    expect(FLIPPED_EXPORTS).toHaveLength(58);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

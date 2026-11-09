@@ -5,6 +5,7 @@ import {
   type AnalyticsReport,
   AnalyticsSpan,
   type DayRow,
+  GoalPaceTag,
   HeroChange,
   VisitGrain,
 } from '@core/components';
@@ -61,6 +62,12 @@ import {
   type AnalyticsDayRowVm,
   type AnalyticsDrill,
   type AnalyticsDrillVm,
+  type AnalyticsGoalCheck,
+  AnalyticsGoalRefusal,
+  type AnalyticsGoalRingVm,
+  AnalyticsGoalSave,
+  type AnalyticsGoalSheetVm,
+  type AnalyticsGoalVm,
   type AnalyticsHeroVm,
   type AnalyticsInfoVm,
   AnalyticsLoad,
@@ -121,12 +128,18 @@ export interface AnalyticsScreenInput {
   readonly scopeChoices: readonly AnalyticsScopeChoice[] | null;
   /** The scope chosen in the picker; `null` is the shop. */
   readonly scopeBarberId: BarberId | null;
+  /** The account's own barber record; `null` for an unlinked admin. */
+  readonly linkedBarberId: BarberId | null;
   /** The barber asked for no longer exists: the shop is shown instead. */
   readonly scopeGone: boolean;
   /** The barber record the open-hours card opens the schedule on; `null` is everyone. */
   readonly scheduleBarberId: BarberId | null;
   /** The store's verdict on the custom-range sheet's fields. */
   readonly rangeCheck: AnalyticsRangeCheck;
+  /** The store's verdict on the goal sheet's two sums. */
+  readonly goalCheck: AnalyticsGoalCheck;
+  /** Where the goal's write stands. */
+  readonly goalSave: AnalyticsGoalSave;
   readonly names: AnalyticsNames;
 }
 
@@ -463,6 +476,108 @@ function bodyOf(
     clients: clientsOf(input, report, screen),
     origins: screen.shopScope ? originsOf(input, report) : null,
     radars: screen.shopScope ? radarsOf(input, report) : null,
+    goal: goalOf(input, report),
+  };
+}
+
+// ── The month's goal ──────────────────────────────────────────────────────
+
+/**
+ * «Цел за месеца» (CUJ 6): on MONTH, the stored goal as a ring — the
+ * takings against the range's high end, the pace sentence under it — and
+ * «Задай цел» on a month the callable takes one for
+ * (`StaffAnalyticsSystem.goalMonthOffered`: this month or the next) from
+ * this account (`goalScopeAllowed`: the shop's, or its own record's — both
+ * the pipeline's own rules). The pace (`reportGoalPaceTag`) and its day counts
+ * are the report's; this words them. `null` off MONTH, and on a month with
+ * neither a goal nor an offer.
+ */
+function goalOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsGoalVm | null {
+  const { words, period } = input;
+  if (period.analyticsSpan !== AnalyticsSpan.Month) return null;
+  const offered =
+    StaffAnalyticsSystem.goalMonthOffered(period, input.today) &&
+    StaffAnalyticsSystem.goalScopeAllowed(
+      input.scopeBarberId,
+      input.linkedBarberId,
+    );
+  const low = report.reportGoalLowCents;
+  const high = report.reportGoalHighCents;
+  const stored = low !== null && high !== null;
+  if (!stored && !offered) return null;
+  const lang = words.lang;
+  let ring: AnalyticsGoalRingVm | null = null;
+  if (stored) {
+    const rangeText = words.goal.range(
+      formatCents(low, REPORT_CURRENCY, lang),
+      formatCents(high, REPORT_CURRENCY, lang),
+    );
+    const takings = report.reportTakingsCents;
+    const paceTag = report.reportGoalPaceTag;
+    ring = {
+      value: takings,
+      min: 0,
+      max: high,
+      figure: formatPercent(takings / high, lang),
+      rangeText,
+      pace:
+        paceTag === GoalPaceTag.None
+          ? words.goal.noDays
+          : words.goal.days(
+              report.reportGoalDaysSoFar,
+              report.reportGoalDaysInMonth,
+              words.goal.pace[paceTag],
+            ),
+      paceTag,
+      label: words.goal.label,
+      accessibleName: words.goal.valueText(
+        formatCents(takings, REPORT_CURRENCY, lang),
+        rangeText,
+      ),
+    };
+  }
+  return {
+    title: words.goal.title,
+    ring,
+    setLabel: offered ? (stored ? words.goal.change : words.goal.set) : null,
+    prompt: stored ? null : words.goal.prompt,
+    sheet: goalSheetOf(input),
+  };
+}
+
+/** The goal sheet's words, and why «Запази» is off (the store's check, or a failed save). */
+function goalSheetOf(input: AnalyticsScreenInput): AnalyticsGoalSheetVm {
+  const { words } = input;
+  const sheet = words.goal.sheet;
+  let refusal: string | null;
+  switch (input.goalCheck.goalRefusal) {
+    case null:
+      refusal =
+        input.goalSave === AnalyticsGoalSave.Failed ? sheet.failed : null;
+      break;
+    case AnalyticsGoalRefusal.Incomplete:
+      refusal = sheet.incomplete;
+      break;
+    case AnalyticsGoalRefusal.InvalidRange:
+      refusal = sheet.invalid;
+      break;
+  }
+  const saving = input.goalSave === AnalyticsGoalSave.Saving;
+  return {
+    title: sheet.title,
+    lowLabel: sheet.low,
+    highLabel: sheet.high,
+    decreaseLabel: sheet.decrease,
+    increaseLabel: sheet.increase,
+    unit: '€',
+    saveLabel: sheet.save,
+    closeLabel: sheet.close,
+    refusal,
+    saveEnabled: input.goalCheck.goalRefusal === null && !saving,
+    saving,
   };
 }
 

@@ -4,7 +4,7 @@ import { BookingPolicy, MinuteRange } from '@core/components';
 import {
   BarberId,
   BusyKey,
-  CapacityMonthId,
+  MonthKey,
   ExceptionEffect,
   LocationId,
   Result,
@@ -118,9 +118,7 @@ describe('schedulingReadPorts — one document each, live, the body the entity',
     const exception = recorded(ports.observeExceptions(MONDAY));
     const schedule = recorded(ports.observeSchedule(IVAN));
     const shop = recorded(ports.observeLocation(LocationId.of('loc-center')));
-    const month = recorded(
-      ports.observeCapacityMonth(CapacityMonthId.of('2026-10')),
-    );
+    const month = recorded(ports.observeCapacityMonth(MonthKey.of('2026-10')));
 
     expect(exception.seen).toEqual([Result.ok(blocked(MONDAY))]);
     expect(schedule.seen).toEqual([

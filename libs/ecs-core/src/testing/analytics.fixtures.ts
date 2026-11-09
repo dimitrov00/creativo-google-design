@@ -31,6 +31,7 @@ import type {
   BarberSchedule,
   ScheduleException,
   ShopLocation,
+  StoredAnalyticsGoal,
   User,
 } from '@core/entities';
 import type { StaffAnalyticsPorts } from '@core/pipelines';
@@ -65,6 +66,7 @@ import {
 } from '@core/systems';
 import {
   memoryAnalyticsDayPorts,
+  memoryAnalyticsGoalPorts,
   memoryAnalyticsReadPorts,
   memoryProfileLoadPorts,
   memoryShopDayReadPorts,
@@ -617,6 +619,8 @@ export const ANALYTICS_FIXTURE_USERS = {
 export type AnalyticsFixtureWorld = {
   readonly storedDays?: readonly BarberAnalyticsDay[];
   readonly flagsOn?: readonly FlagName[];
+  /** The month goals stored (PR 6); none by default. */
+  readonly goals?: readonly StoredAnalyticsGoal[];
 };
 
 /**
@@ -639,6 +643,7 @@ export function analyticsFixturePorts(
   return {
     ...analytics.ports,
     ...days.ports,
+    ...memoryAnalyticsGoalPorts(world.goals ?? []).ports,
     ...memoryFlagsPorts(world.flagsOn ?? []),
     ...memoryProfileLoadPorts(Object.values(ANALYTICS_FIXTURE_USERS) as User[]),
     ...memoryShopDayReadPorts(ANALYTICS_FIXTURE_ROSTERS),

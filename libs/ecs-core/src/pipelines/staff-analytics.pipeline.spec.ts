@@ -7,6 +7,7 @@ import {
   BookingPolicy,
   DayFigures,
   FlagName,
+  GoalPaceTag,
   Role,
   Seat,
   SeatOutcome,
@@ -16,15 +17,22 @@ import {
   RepositoryError,
   RepositoryErrorCode,
 } from '@core/errors';
-import type { Appointment, BarberAnalyticsDay } from '@core/entities';
+import type {
+  Appointment,
+  BarberAnalyticsDay,
+  StoredAnalyticsGoal,
+} from '@core/entities';
 import {
+  AnalyticsGoalKey,
   AppointmentId,
   BarberAnalyticsDayId,
   BarberId,
   BusyKey,
+  Currency,
   LocalDate,
   LogEvent,
   MinuteCount,
+  MonthKey,
   PriceCents,
   Result,
   ScheduleExceptionId,
@@ -43,6 +51,7 @@ import {
   localDate,
   locationFixture,
   memoryAnalyticsDayPorts,
+  memoryAnalyticsGoalPorts,
   memoryAnalyticsReadPorts,
   memoryClockPorts,
   memoryDefaultLocationPorts,
@@ -215,12 +224,15 @@ const STORED_SOLO_DAY = storedDay(IVAN, localDate('2026-09-14'), {
 type WorldState = {
   readonly storedDays?: readonly BarberAnalyticsDay[];
   readonly flagsOn?: readonly FlagName[];
+  /** The month goals stored (PR 6). */
+  readonly goals?: readonly StoredAnalyticsGoal[];
 };
 
 type World = {
   readonly ports: StaffAnalyticsPorts;
   readonly reads: ReturnType<typeof memoryAnalyticsReadPorts>['log'];
   readonly dayReads: ReturnType<typeof memoryAnalyticsDayPorts>['log'];
+  readonly goalReads: ReturnType<typeof memoryAnalyticsGoalPorts>['log'];
   readonly lines: ReturnType<typeof recordingTelemetry>['lines'];
 };
 
@@ -235,11 +247,13 @@ function world(
     locations: [locationFixture()],
   });
   const days = memoryAnalyticsDayPorts({ days: state.storedDays ?? [] });
+  const goals = memoryAnalyticsGoalPorts(state.goals ?? []);
   const telemetry = recordingTelemetry();
   return {
     ports: {
       ...analytics.ports,
       ...days.ports,
+      ...goals.ports,
       ...memoryFlagsPorts(state.flagsOn ?? []),
       ...memoryProfileLoadPorts(USERS),
       ...memoryShopDayReadPorts([
@@ -254,7 +268,23 @@ function world(
     },
     reads: analytics.log,
     dayReads: days.log,
+    goalReads: goals.log,
     lines: telemetry.lines,
+  };
+}
+
+/** `barberId`'s (or the shop's) stored September goal, 1 800–2 200 €. */
+function storedGoal(barberId: BarberId | null): StoredAnalyticsGoal {
+  const goalMonth = MonthKey.of('2026-09');
+  return {
+    id: AnalyticsGoalKey.of(barberId, goalMonth),
+    barberId,
+    goalMonth,
+    goalLowCents: cents(180_000),
+    goalHighCents: cents(220_000),
+    currency: Currency.EUR,
+    goalSetByUserId: UserId.of('u-ivan'),
+    goalSetAtUtcMs: stamp,
   };
 }
 
@@ -967,5 +997,88 @@ describe('staffAnalytics — the log line', () => {
     const { ports, lines } = world();
     unwrapErr(await staffAnalytics(ports)(ask(IVAN_USER.id, NIKO)));
     expect(lines).toEqual([]);
+  });
+});
+
+describe('staffAnalytics — the month goal (v2 PR 6)', () => {
+  it('reads the scope’s goal by key on a MONTH — one read — and hands its range, the days and the pace to the report', async () => {
+    const { ports, goalReads } = world({}, { goals: [storedGoal(IVAN)] });
+    const report = unwrapOk(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
+    );
+    expect(goalReads.keyReads).toEqual(['b-ivan__2026-09']);
+    // Ivan is rostered Mon–Fri: 20 September weekdays (the 28th is a Monday) — 22 in all, 20 up to today.
+    expect(report).toMatchObject({
+      reportGoalLowCents: 180_000,
+      reportGoalHighCents: 220_000,
+      reportGoalDaysInMonth: 22,
+      reportGoalDaysSoFar: 20,
+      // 45,00 € against an expected 1 636,36–2 000,00 € — behind.
+      reportGoalPaceTag: GoalPaceTag.Behind,
+    });
+  });
+
+  it('reads the shop’s goal for an admin on the shop scope, and a barber’s on that barber’s', async () => {
+    const { ports, goalReads } = world(
+      {},
+      { goals: [storedGoal(null), storedGoal(NIKO)] },
+    );
+    const shop = unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, null)));
+    const niko = unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, NIKO)));
+    const ivan = unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, IVAN)));
+    expect(goalReads.keyReads).toEqual([
+      'shop__2026-09',
+      'b-niko__2026-09',
+      'b-ivan__2026-09',
+    ]);
+    expect(shop.reportGoalLowCents).toBe(180_000);
+    expect(niko.reportGoalLowCents).toBe(180_000);
+    // Ivan set none: the fields are empty, the days still counted.
+    expect(ivan).toMatchObject({
+      reportGoalLowCents: null,
+      reportGoalHighCents: null,
+      reportGoalPaceTag: GoalPaceTag.None,
+      reportGoalDaysInMonth: 22,
+    });
+  });
+
+  it('reads no goal off MONTH — a WEEK, a DAY, a YEAR, a CUSTOM range — and the report carries none', async () => {
+    const { ports, goalReads } = world({}, { goals: [storedGoal(IVAN)] });
+    const asks = [
+      ask(IVAN_USER.id, null, localDate('2026-09-21'), AnalyticsSpan.Week),
+      ask(IVAN_USER.id, null, localDate('2026-09-28'), AnalyticsSpan.Day),
+      ask(IVAN_USER.id, null, localDate('2026-01-01'), AnalyticsSpan.Year),
+      ask(
+        IVAN_USER.id,
+        null,
+        localDate('2026-09-01'),
+        AnalyticsSpan.Custom,
+        localDate('2026-09-30'),
+      ),
+    ];
+    for (const cmd of asks) {
+      const report = unwrapOk(await staffAnalytics(ports)(cmd));
+      expect(report).toMatchObject({
+        reportGoalLowCents: null,
+        reportGoalHighCents: null,
+        reportGoalPaceTag: GoalPaceTag.None,
+        reportGoalDaysSoFar: 0,
+        reportGoalDaysInMonth: 0,
+      });
+    }
+    expect(goalReads.keyReads).toEqual([]);
+  });
+
+  it('answers a failed goal read as the store failure it is', async () => {
+    const { ports } = world({
+      loadAnalyticsGoal: async () =>
+        Result.err(
+          RepositoryError.readFailed('analyticsGoals/x', 'unavailable'),
+        ),
+    });
+    const refused = unwrapErr(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, null)),
+    );
+    expect(refused.errorCode).toBe(RepositoryErrorCode.ReadFailed);
   });
 });

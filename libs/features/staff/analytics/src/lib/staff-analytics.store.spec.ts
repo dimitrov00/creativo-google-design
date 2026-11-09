@@ -10,11 +10,14 @@ import {
   AnalyticsSpan,
   type Principal,
   Role,
+  SetAnalyticsGoalCall,
 } from '@core/components';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import type { AnalyticsCallPorts } from '@core/ports';
 import {
+  AnalyticsGoalKey,
   type BarberId,
+  LocalDate,
   type PriceCents,
   Result,
   UserId,
@@ -38,7 +41,11 @@ import {
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { IVAN, NIKO } from '../testing/analytics.fixtures';
-import { AnalyticsLoad } from './analytics.vm';
+import {
+  AnalyticsGoalRefusal,
+  AnalyticsGoalSave,
+  AnalyticsLoad,
+} from './analytics.vm';
 import { StaffAnalyticsStore } from './staff-analytics.store';
 
 const BARBER_UID = UserId.of('dev-staff-ivan');
@@ -47,19 +54,35 @@ const SEPTEMBER = AnalyticsPeriod.monthOf(FIXTURE_TODAY);
 
 type Answer = Result<AnalyticsReport, PipelineError>;
 
+type GoalAnswer = Result<SetAnalyticsGoalCall.Set, PipelineError>;
+
 /** The callable, answered by hand: each request waits until the spec says. */
 function heldCalls() {
   const calls: AnalyticsCall[] = [];
+  const goals: SetAnalyticsGoalCall[] = [];
   const pending: ((answer: Answer) => void)[] = [];
+  const pendingGoals: ((answer: GoalAnswer) => void)[] = [];
   const ports: AnalyticsCallPorts = {
     requestReport: (call) => {
       calls.push(call);
       return new Promise<Answer>((resolve) => pending.push(resolve));
     },
+    setAnalyticsGoal: (call) => {
+      goals.push(call);
+      return new Promise<GoalAnswer>((resolve) => pendingGoals.push(resolve));
+    },
   };
   return {
     ports,
     calls,
+    goals,
+    /** Answers the oldest goal write still waiting, then lets the store settle. */
+    answerGoal: async (answer: GoalAnswer) => {
+      pendingGoals.shift()?.(answer);
+      await Promise.resolve();
+      await Promise.resolve();
+      TestBed.tick();
+    },
     /** Answers the oldest request still waiting, then lets the store settle. */
     answer: async (answer: Answer) => {
       pending.shift()?.(answer);
@@ -379,6 +402,133 @@ describe('StaffAnalyticsStore — a barber', () => {
     const { store } = build({ principal: barber(), linkedBarberId: IVAN });
     store.pickScope(NIKO);
     expect(store.scopeBarberId()).toBeNull();
+  });
+});
+
+describe('StaffAnalyticsStore — the month’s goal (staff-analytics-v2 CUJ 6)', () => {
+  it('opens the sheet on the stored goal, refuses an empty or an inverted range, admits one in cents', async () => {
+    const { store, calls } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+    });
+    await calls.answer(
+      Result.ok(
+        analyticsReportFixture({
+          reportGoalLowCents: 100_000 as PriceCents,
+          reportGoalHighCents: 150_000 as PriceCents,
+        }),
+      ),
+    );
+    store.openGoal();
+    expect(store.goalOpen()).toBe(true);
+    expect(store.goalLow()).toBe(100_000);
+    expect(store.goalHigh()).toBe(150_000);
+    expect(store.goalCheck().goalRefusal).toBeNull();
+
+    store.goalHigh.set(null);
+    expect(store.goalCheck().goalRefusal).toBe(AnalyticsGoalRefusal.Incomplete);
+    store.goalHigh.set(50_000);
+    expect(store.goalCheck().goalRefusal).toBe(
+      AnalyticsGoalRefusal.InvalidRange,
+    );
+    store.goalLow.set(0);
+    store.goalHigh.set(50_000);
+    expect(store.goalCheck().goalRefusal).toBe(
+      AnalyticsGoalRefusal.InvalidRange,
+    );
+    store.goalLow.set(180_000);
+    store.goalHigh.set(220_000);
+    expect(store.goalCheck()).toEqual({
+      goalRefusal: null,
+      goalLowCents: 180_000,
+      goalHighCents: 220_000,
+    });
+    store.closeGoal();
+    expect(store.goalOpen()).toBe(false);
+  });
+
+  it('saves the range for the period’s month and the request’s scope, closes the sheet and asks for the report again', async () => {
+    const { store, calls } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+    });
+    const first = analyticsReportFixture();
+    await calls.answer(Result.ok(first));
+    store.openGoal();
+    expect(store.goalCheck().goalRefusal).toBe(AnalyticsGoalRefusal.Incomplete);
+    // A refused range is not sent.
+    store.saveGoal();
+    expect(calls.goals).toEqual([]);
+
+    store.goalLow.set(180_000);
+    store.goalHigh.set(220_000);
+    store.saveGoal();
+    expect(store.goalSave()).toBe(AnalyticsGoalSave.Saving);
+    // A second «Запази» while the first is out sends nothing.
+    store.saveGoal();
+    expect(calls.goals).toEqual([
+      {
+        scopeBarberId: null,
+        goalMonth: '2026-09',
+        goalLowCents: 180_000,
+        goalHighCents: 220_000,
+      },
+    ]);
+    await calls.answerGoal(
+      Result.ok({
+        goalKey: AnalyticsGoalKey.of(
+          IVAN,
+          LocalDate.monthKey(SEPTEMBER.fromLocalDate),
+        ),
+        goalSetAtUtcMs: FIXTURE_NOW_UTC_MS,
+      }),
+    );
+    expect(store.goalSave()).toBe(AnalyticsGoalSave.Idle);
+    expect(store.goalOpen()).toBe(false);
+    // The report is asked for again, kept on screen meanwhile.
+    expect(calls.calls).toHaveLength(2);
+    expect(store.report()).toBe(first);
+    expect(store.analyticsLoad()).toBe(AnalyticsLoad.Refreshing);
+    const second = analyticsReportFixture({
+      reportGoalLowCents: 180_000 as PriceCents,
+      reportGoalHighCents: 220_000 as PriceCents,
+    });
+    await calls.answer(Result.ok(second));
+    expect(store.report()).toBe(second);
+    expect(store.analyticsLoad()).toBe(AnalyticsLoad.Ready);
+  });
+
+  it('a refused or failed save keeps the sheet up and says so; the next attempt clears it', async () => {
+    const { store, calls } = build({
+      principal: barber(),
+      linkedBarberId: IVAN,
+    });
+    await calls.answer(Result.ok(analyticsReportFixture()));
+    store.openGoal();
+    store.goalLow.set(180_000);
+    store.goalHigh.set(220_000);
+    store.saveGoal();
+    await calls.answerGoal(
+      refusal('ANALYTICS_GOAL_INVALID_RANGE', 'invalid-argument'),
+    );
+    expect(store.goalSave()).toBe(AnalyticsGoalSave.Failed);
+    expect(store.goalOpen()).toBe(true);
+    expect(calls.calls).toHaveLength(1);
+    store.saveGoal();
+    expect(store.goalSave()).toBe(AnalyticsGoalSave.Saving);
+    expect(calls.goals).toHaveLength(2);
+  });
+
+  it('the admin’s save names the scope on screen', async () => {
+    const { store, calls } = build({ principal: admin() });
+    await calls.answer(Result.ok(shopReportFixture()));
+    store.pickScope(NIKO);
+    await calls.answer(Result.ok(analyticsReportFixture()));
+    store.openGoal();
+    store.goalLow.set(100_000);
+    store.goalHigh.set(100_000);
+    store.saveGoal();
+    expect(calls.goals.at(-1)?.scopeBarberId).toBe(NIKO);
   });
 });
 

@@ -1,6 +1,6 @@
 import {
   type BarberId,
-  type CapacityMonthId,
+  type MonthKey,
   type LocalDate,
   LogEvent,
   Result,
@@ -149,7 +149,7 @@ async function readCapacitySnapshot(
   barberId: BarberId,
   from: LocalDate,
   to: LocalDate,
-  months: readonly CapacityMonthId[],
+  months: readonly MonthKey[],
 ): Promise<CapacitySnapshot> {
   const [locations, schedule, busy, exceptions, monthDocs] = await Promise.all([
     tx.query<ShopLocation>(ACTIVE_LOCATIONS),
@@ -178,7 +178,7 @@ async function readCapacitySnapshot(
 function capacityWrites(
   barberId: BarberId,
   localDates: readonly LocalDate[],
-  months: readonly CapacityMonthId[],
+  months: readonly MonthKey[],
   snapshot: CapacitySnapshot,
 ): readonly WriteOp[] {
   // Each shop counted by the rule every new-booking surface asks

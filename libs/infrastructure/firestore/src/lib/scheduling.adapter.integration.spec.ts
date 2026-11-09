@@ -17,7 +17,7 @@ import { BlockKind, BookingPolicy, MinuteRange } from '@core/components';
 import {
   BarberId,
   BusyKey,
-  CapacityMonthId,
+  MonthKey,
   ExceptionEffect,
   LocationId,
   Result,
@@ -135,7 +135,7 @@ describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
       ports.observeLocation(LocationId.of('loc-center')),
     );
     const month = await firstValueFrom(
-      ports.observeCapacityMonth(CapacityMonthId.of('2026-10')),
+      ports.observeCapacityMonth(MonthKey.of('2026-10')),
     );
 
     expect(busy).toEqual(Result.ok({ id: MONDAY, ...BUSY }));

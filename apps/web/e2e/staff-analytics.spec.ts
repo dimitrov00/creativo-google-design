@@ -100,6 +100,31 @@ async function expectTakingsRowsAddUp(
   await expect.poll(async () => textOf(footer)).toBe(hero);
 }
 
+/**
+ * Opens the goal sheet from «Задай цел» / «Промени целта», types the two
+ * ends of the range in euro (whole figures), saves, and waits for the sheet
+ * to leave — the store closes it once the callable has stored the range.
+ */
+async function setGoalThroughSheet(
+  page: Page,
+  low: string,
+  high: string,
+): Promise<void> {
+  await page.getByTestId('analytics-goal-set').click();
+  const sheet = page.getByTestId('analytics-goal-sheet');
+  await expect(sheet).toBeVisible();
+  const lowField = page.getByTestId('analytics-goal-low');
+  const highField = page.getByTestId('analytics-goal-high');
+  await lowField.fill(low);
+  await lowField.press('Tab');
+  await highField.fill(high);
+  await highField.press('Tab');
+  const save = page.getByTestId('analytics-goal-save');
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(sheet).toBeHidden({ timeout: 30_000 });
+}
+
 test.describe('«Анализи» — staff analytics', () => {
   test('a linked barber opens «Анализи» from the menu, and the takings drill-down adds up to the figure', async ({
     page,
@@ -190,6 +215,23 @@ test.describe('«Анализи» — staff analytics', () => {
       1,
       { timeout: 20_000 },
     );
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
+
+    // THE GOAL (staff-analytics-v2 CUJ 6, PR 6): on this month the barber
+    // is offered «Задай цел»; a range typed into the sheet's two sums and
+    // saved through `setAnalyticsGoal` comes back with the report as the
+    // ring and its pace sentence.
+    await setGoalThroughSheet(page, '1800', '2200');
+    const ring = page.getByTestId('analytics-goal-ring');
+    await expect(ring).toBeVisible({ timeout: 30_000 });
+    await expect(ring).toContainText('2200,00');
+    await expect(page.getByTestId('analytics-goal-pace')).toHaveText(
+      /работни дни|работен ден/,
+    );
+    await expect(page.getByTestId('analytics-goal-set')).toHaveText(
+      'Промени целта',
+    );
   });
 
   test('an account holding the barber role with no link sees the not-linked state', async ({
@@ -246,11 +288,23 @@ test.describe('«Анализи» — staff analytics', () => {
     const shop = page.getByTestId('analytics-scope-shop');
     await expect(shop).toHaveAttribute('aria-pressed', 'true');
 
+    // The shop's goal (CUJ 6): set on the shop scope, shown there as the
+    // ring; a barber's scope shows that barber's own, not the shop's.
+    await setGoalThroughSheet(page, '9000', '12000');
+    const shopRing = page.getByTestId('analytics-goal-ring');
+    await expect(shopRing).toBeVisible({ timeout: 30_000 });
+    // Five figures take a thousands separator in Bulgarian («12 000,00 €»).
+    await expect(shopRing).toContainText(/12.000,00/);
+
     const niko = page.getByTestId('analytics-scope-niko');
     await niko.click();
     await expect(niko).toHaveAttribute('aria-pressed', 'true');
     await expect(shop).toHaveAttribute('aria-pressed', 'false');
     await reportReady(page);
+    // A colleague's scope shows no goal of the shop's, and the admin is
+    // offered none to set there: a barber's goal is the barber's alone.
+    await expect(page.getByTestId('analytics-goal-ring')).toHaveCount(0);
+    await expect(page.getByTestId('analytics-goal-set')).toHaveCount(0);
     await expectTakingsRowsAddUp(page, [`${run}-niko-seat`]);
   });
 

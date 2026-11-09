@@ -3,14 +3,19 @@ import { AnalyticsError } from '@core/errors';
 import {
   BarberId,
   LocalDate,
+  MonthKey,
+  PriceCents,
   Result,
   StoredFields,
   Tag,
 } from '@core/primitives';
-import type { StaffAnalyticsCommand } from '@core/pipelines';
+import type {
+  SetAnalyticsGoalCommand,
+  StaffAnalyticsCommand,
+} from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
-import { idOf, payloadOf, type WireRequest } from './wire-read';
+import { idOf, operationIdOf, payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE STAFF ANALYTICS WIRE (`docs/designs/staff-analytics-v2.md`, The
@@ -79,5 +84,57 @@ export function decodeStaffAnalytics(
     toLocalDate,
     analyticsSpan,
     analyticsComparison,
+  });
+}
+
+/**
+ * THE GOAL WIRE (staff analytics v2 PR 6) — `setAnalyticsGoal`
+ * `{ scopeBarberId: string | null, goalMonth: 'YYYY-MM', goalLowCents,
+ * goalHighCents, operationId }` → `{ goalKey, goalSetAtUtcMs }`. The same
+ * two gates as the report's (signed in, a token role that reads analytics —
+ * the pipeline judges the STORED roles and the scope after it), then every
+ * field through its primitive's guard, the first unreadable one named
+ * (`ANALYTICS_INVALID_INPUT`): the month through `MonthKey.parse`, each
+ * bound a price (`PriceCents.is` — a whole number of cents, `0` included:
+ * whether the range IS a range is the pipeline's question,
+ * `AnalyticsGoal.rangeOf`, answered `ANALYTICS_GOAL_INVALID_RANGE`). The
+ * transport operation id is read (`operationIdOf`) — a goal is written and
+ * its audit row is keyed by it; absent or malformed is `null`, never refused.
+ */
+export function decodeSetAnalyticsGoal(
+  request: WireRequest,
+): Result<SetAnalyticsGoalCommand, EdgeError> {
+  const caller = callerUserId(request);
+  if (caller === null) {
+    return Result.err(AnalyticsError.unauthenticated());
+  }
+  if (!Roles.readsAnalytics(callerKnownRoles(request))) {
+    return Result.err(AnalyticsError.forbidden());
+  }
+  const payload = payloadOf(request);
+  const invalid = (field: string) =>
+    Result.err(AnalyticsError.invalidInput(field));
+  const sentScope = StoredFields.field(payload, 'scopeBarberId') ?? null;
+  const scopeBarberId =
+    sentScope === null ? null : idOf(sentScope, BarberId.parse);
+  if (sentScope !== null && scopeBarberId === null) {
+    return invalid('scopeBarberId');
+  }
+  const goalMonth = idOf(
+    StoredFields.field(payload, 'goalMonth'),
+    MonthKey.parse,
+  );
+  if (goalMonth === null) return invalid('goalMonth');
+  const goalLowCents = StoredFields.field(payload, 'goalLowCents');
+  if (!PriceCents.is(goalLowCents)) return invalid('goalLowCents');
+  const goalHighCents = StoredFields.field(payload, 'goalHighCents');
+  if (!PriceCents.is(goalHighCents)) return invalid('goalHighCents');
+  return Result.ok({
+    callerUserId: caller,
+    scopeBarberId,
+    goalMonth,
+    goalLowCents,
+    goalHighCents,
+    operationId: operationIdOf(payload, 'operationId'),
   });
 }

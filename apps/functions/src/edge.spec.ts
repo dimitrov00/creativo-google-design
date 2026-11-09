@@ -454,6 +454,7 @@ describe('edge — the wire table', () => {
           IdentityErrorCode.RegistrationFieldMissing,
           PrivacyErrorCode.InvalidInput,
           AnalyticsErrorCode.InvalidInput,
+          AnalyticsErrorCode.GoalInvalidRange,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([

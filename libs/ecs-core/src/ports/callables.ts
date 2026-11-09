@@ -11,6 +11,7 @@ import {
   InvitationCall,
   RolesCall,
   RosterCall,
+  SetAnalyticsGoalCall,
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
@@ -35,7 +36,8 @@ import type { PipelineError } from '@core/errors';
  * change (S-WS-E); the break pass adds `amendRosterBreaks`, the desk's one
  * door to a chair's roster, and `setRosterWeek`, the hours editor's
  * (2026-11-06); staff analytics adds `staffAnalytics`, the report a barber
- * or the admin reads (`docs/designs/staff-analytics.md`). Triggers and schedules are never dialled, so they are
+ * or the admin reads (`docs/designs/staff-analytics.md`), and v2 PR 6
+ * `setAnalyticsGoal`, a scope's month goal. Triggers and schedules are never dialled, so they are
  * not here.
  */
 export const Callables = {
@@ -66,6 +68,7 @@ export const Callables = {
   AmendRosterBreaks: 'amendRosterBreaks',
   SetRosterWeek: 'setRosterWeek',
   StaffAnalytics: 'staffAnalytics',
+  SetAnalyticsGoal: 'setAnalyticsGoal',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -220,6 +223,15 @@ export type CallableWire = {
     readonly input: AnalyticsCall;
     readonly answer: AnalyticsReport;
   };
+  /**
+   * A scope's takings goal for a month (staff analytics v2 PR 6): the scope,
+   * month and range in — the act's operation id rides the payload
+   * ({@link OPERATION_ID_FIELD}); the stored key and the set's stamp out.
+   */
+  readonly [Callables.SetAnalyticsGoal]: {
+    readonly input: SetAnalyticsGoalCall;
+    readonly answer: SetAnalyticsGoalCall.Set;
+  };
 };
 
 /**
@@ -271,6 +283,7 @@ export const OPERATION_ID_FIELD: {
   // transport's only — the web's client adds one and the outcome line
   // correlates by it; the decoder never requires it.
   [Callables.StaffAnalytics]: 'operationId',
+  [Callables.SetAnalyticsGoal]: 'operationId',
 };
 
 /**
@@ -315,6 +328,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.AmendRosterBreaks]: AppCheckTokenUse.Standard,
   [Callables.SetRosterWeek]: AppCheckTokenUse.Standard,
   [Callables.StaffAnalytics]: AppCheckTokenUse.Standard,
+  [Callables.SetAnalyticsGoal]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -379,4 +393,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.AmendRosterBreaks]: RosterCall.decodeAmended,
   [Callables.SetRosterWeek]: RosterCall.decodeAmended,
   [Callables.StaffAnalytics]: AnalyticsCall.decodeReport,
+  [Callables.SetAnalyticsGoal]: SetAnalyticsGoalCall.decodeSet,
 };

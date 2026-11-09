@@ -3,7 +3,7 @@ import { BookingPolicy, CapacityEntry } from '@core/components';
 import {
   BarberId,
   BarberLeadTimeSampleId,
-  type CapacityMonthId,
+  type MonthKey,
   type LocalDate,
   LocationId,
   MinuteCount,
@@ -64,7 +64,7 @@ function rig(
   entries: readonly CapacityEntry[],
   barbers: readonly BarberId[] = [IVAN],
 ) {
-  const asked: (readonly CapacityMonthId[])[] = [];
+  const asked: (readonly MonthKey[])[] = [];
   const written: BarberLeadTimeSample[] = [];
   const telemetry = recordingTelemetry();
   const run = sampleLeadTime({

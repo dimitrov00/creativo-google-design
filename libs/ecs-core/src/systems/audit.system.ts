@@ -23,6 +23,7 @@ import {
 } from '@core/components';
 import {
   Result,
+  type AnalyticsGoalKey,
   type AppointmentId,
   AuditEntryId,
   AuditResourceId,
@@ -46,6 +47,7 @@ import {
   type AuditEntryMeta,
   Collections,
   type ImpersonationSession,
+  type StoredAnalyticsGoal,
 } from '@core/entities';
 import { type EditCommandRequest } from './appointment-edit.system';
 import type { RoleAssignment } from './role-assignment.system';
@@ -560,6 +562,19 @@ export const AuditSystem = {
       return `impersonation-end:${sessionId}`;
     },
     /**
+     * A goal set (`setAnalyticsGoal`, staff analytics v2 PR 6): the goal
+     * document and the act's operation id — a retried call with the same id
+     * meets its own row (`REPOSITORY_ALREADY_EXISTS`, the tripwire) — or,
+     * when the call sent none, the instant the set stamped.
+     */
+    goalSet(
+      goalKey: AnalyticsGoalKey,
+      operationId: OperationId | null,
+      setAtUtcMs: UtcEpochMs,
+    ): string {
+      return `goal-set:${goalKey}:${operationId ?? setAtUtcMs}`;
+    },
+    /**
      * An owner's own edit through `updateProfile` (4A-16): the account and
      * the instant its transaction stamped — a retried call that re-commits
      * re-stamps, so each landed edit is its own change.
@@ -971,6 +986,49 @@ export const AuditSystem = {
         resourceId,
         session.targetUserId,
         AuditSystem.changeKey.impersonationStarted(session.id),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row a goal set writes inside its own commit (staff analytics v2
+   * PR 6): stamped with the goal's `goalSetAtUtcMs`, naming the goal
+   * document, credited to the caller (`Actor.forCaller` over the STORED
+   * roles), the key, scope, month and both bounds as written, under the
+   * call's operation id; untargeted — the row is the document's, not a
+   * person's (the setter is the actor).
+   */
+  planAnalyticsGoalSet(
+    goal: StoredAnalyticsGoal,
+    actor: Actor,
+    operationId: OperationId | null,
+  ): AuditRowPlan {
+    const action = AuditAction.AnalyticsGoalSet;
+    const resourceId = AuditResourceId.forAnalyticsGoal(goal.id);
+    return {
+      row: {
+        recordedAtUtcMs: goal.goalSetAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.analyticsGoalSet(
+          goal.id,
+          goal.barberId,
+          goal.goalMonth,
+          goal.goalLowCents,
+          goal.goalHighCents,
+        ),
+        ...AuditTargetRef.none(),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        null,
+        AuditSystem.changeKey.goalSet(
+          goal.id,
+          operationId,
+          goal.goalSetAtUtcMs,
+        ),
       ),
     };
   },

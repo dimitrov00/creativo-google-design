@@ -14,7 +14,7 @@ const day = (raw: string): LocalDate => {
 };
 
 describe('AnalyticsError', () => {
-  it('uses six SCREAMING codes, each with the ANALYTICS_ prefix', () => {
+  it('uses eight SCREAMING codes, each with the ANALYTICS_ prefix — v1’s six and the goal’s two (PR 6)', () => {
     expect(Object.values(AnalyticsErrorCode)).toEqual([
       'ANALYTICS_UNAUTHENTICATED',
       'ANALYTICS_FORBIDDEN',
@@ -22,7 +22,16 @@ describe('AnalyticsError', () => {
       'ANALYTICS_PERIOD_OUT_OF_RANGE',
       'ANALYTICS_SCOPE_UNKNOWN',
       'ANALYTICS_INVALID_INPUT',
+      'ANALYTICS_GOAL_FORBIDDEN',
+      'ANALYTICS_GOAL_INVALID_RANGE',
     ]);
+    expect(AnalyticsError.goalForbidden()).toEqual({
+      errorCode: 'ANALYTICS_GOAL_FORBIDDEN',
+    });
+    expect(AnalyticsError.goalInvalidRange('goalMonth')).toEqual({
+      errorCode: 'ANALYTICS_GOAL_INVALID_RANGE',
+      field: 'goalMonth',
+    });
     for (const code of Object.values(AnalyticsErrorCode)) {
       expect(code).toMatch(/^ANALYTICS_[A-Z_]+$/);
     }

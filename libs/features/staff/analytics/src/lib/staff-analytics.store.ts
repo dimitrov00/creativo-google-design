@@ -10,12 +10,14 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   type AnalyticsCall,
+  AnalyticsGoal,
   AnalyticsPeriod,
   type AnalyticsReport,
   AnalyticsComparison,
   AnalyticsSpan,
   Principal,
   Roles,
+  type SetAnalyticsGoalCall,
 } from '@core/components';
 import {
   AnalyticsErrorCode,
@@ -40,6 +42,9 @@ import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { partsToLocalDate } from './analytics.presenter';
 import {
+  type AnalyticsGoalCheck,
+  AnalyticsGoalRefusal,
+  AnalyticsGoalSave,
   AnalyticsLoad,
   type AnalyticsRangeCheck,
   AnalyticsRangeRefusal,
@@ -444,6 +449,101 @@ export class StaffAnalyticsStore {
     if (!period.ok) return;
     // The sheet closes itself (its exit animates), then `closeRange`.
     this.pickPeriod(period.value);
+  }
+
+  // ── The month's goal («Задай цел», the sheet) ───────────────────────────
+
+  private readonly _goalOpen = signal(false);
+  /** The goal sheet is up. */
+  readonly goalOpen = this._goalOpen.asReadonly();
+  /** The sheet's two sums, in cents, as typed; `null` while empty. */
+  readonly goalLow = signal<number | null>(null);
+  readonly goalHigh = signal<number | null>(null);
+  private readonly _goalSave = signal<AnalyticsGoalSave>(
+    AnalyticsGoalSave.Idle,
+  );
+  /** Where the goal's write stands. */
+  readonly goalSave = this._goalSave.asReadonly();
+
+  /**
+   * The sheet's two sums as the range the callable would store, or why
+   * not — a sum empty, or the range `AnalyticsGoal.rangeOf` refuses (the
+   * pipeline's own rule: both above zero, the low end up to the high).
+   * Nothing here decides.
+   */
+  readonly goalCheck = computed<AnalyticsGoalCheck>(() => {
+    const low = this.goalLow();
+    const high = this.goalHigh();
+    const refused = (goalRefusal: Exclude<AnalyticsGoalRefusal, null>) => ({
+      goalRefusal,
+      goalLowCents: null,
+      goalHighCents: null,
+    });
+    if (low === null || high === null) {
+      return refused(AnalyticsGoalRefusal.Incomplete);
+    }
+    const range = AnalyticsGoal.rangeOf(low, high);
+    return range.ok
+      ? { goalRefusal: null, ...range.value }
+      : refused(AnalyticsGoalRefusal.InvalidRange);
+  });
+
+  /** «Задай цел» / «Промени целта»: the sheet opens on the stored goal, if any. */
+  openGoal(): void {
+    const report = untracked(this._report);
+    this.goalLow.set(report?.reportGoalLowCents ?? null);
+    this.goalHigh.set(report?.reportGoalHighCents ?? null);
+    this._goalSave.set(AnalyticsGoalSave.Idle);
+    this._goalOpen.set(true);
+  }
+
+  closeGoal(): void {
+    this._goalOpen.set(false);
+  }
+
+  /**
+   * «Запази»: the range the check admits goes to `setAnalyticsGoal` for the
+   * period's month and the request's scope; on its answer the sheet
+   * closes and the report is asked for again, so the ring shows the goal.
+   * A refusal or a failure keeps the sheet up and says so.
+   */
+  saveGoal(): void {
+    const check = untracked(this.goalCheck);
+    const period = untracked(this.period);
+    const request = untracked(this.request);
+    if (
+      check.goalRefusal !== null ||
+      period === null ||
+      request === null ||
+      untracked(this._goalSave) === AnalyticsGoalSave.Saving
+    ) {
+      return;
+    }
+    this._goalSave.set(AnalyticsGoalSave.Saving);
+    const call: SetAnalyticsGoalCall = {
+      scopeBarberId: request.call.scopeBarberId,
+      goalMonth: LocalDate.monthKey(period.fromLocalDate),
+      goalLowCents: check.goalLowCents,
+      goalHighCents: check.goalHighCents,
+    };
+    void this.calls.setAnalyticsGoal(call).then((answer) => {
+      if (this.destroyed) return;
+      if (!answer.ok) {
+        this._goalSave.set(AnalyticsGoalSave.Failed);
+        return;
+      }
+      this._goalSave.set(AnalyticsGoalSave.Idle);
+      this._goalOpen.set(false);
+      this.refresh();
+    });
+  }
+
+  /** The same request again, the report kept on screen while it is out. */
+  private refresh(): void {
+    const request = untracked(this.request);
+    if (request === null) return;
+    this.sent = request;
+    this.send(request);
   }
 
   /** A month of a year's day rows opens that month (v2, «The callable v2 contract»). */
