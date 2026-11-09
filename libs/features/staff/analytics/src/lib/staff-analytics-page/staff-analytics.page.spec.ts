@@ -12,7 +12,8 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import {
   type AnalyticsCall,
   AnalyticsSpan,
@@ -20,6 +21,7 @@ import {
   Role,
   type SetAnalyticsGoalCall,
 } from '@core/components';
+import { PipelineError } from '@core/errors';
 import type { AnalyticsCallPorts } from '@core/ports';
 import { AnalyticsGoalKey, Result, UserId } from '@core/primitives';
 import {
@@ -43,6 +45,23 @@ import {
 } from '@creativo/features/shared/catalog';
 import { IVAN, catalogueOf } from '../../testing/analytics.fixtures';
 import { StaffAnalyticsPage } from './staff-analytics.page';
+
+// The app's file hand-off is a browser act: the spec records what the page
+// hands it instead of opening a share sheet or clicking a link.
+vi.mock('@creativo/infrastructure/web-storage', async (original) => ({
+  ...(await original<typeof import('@creativo/infrastructure/web-storage')>()),
+  shareOrDownloadFile: vi.fn(async () => 'DOWNLOADED'),
+}));
+
+/** A blob's text — jsdom's `Blob` has no `text()`; `FileReader` it has. */
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
 
 @Injectable()
 class CatalogueLoader implements TranslocoLoader {
@@ -86,6 +105,8 @@ async function render(
     readonly admin?: boolean;
     /** The shop's report answers the shop scope (the admin's radars). */
     readonly shop?: boolean;
+    /** The callable refuses the account: no figures. */
+    readonly refuse?: boolean;
   } = {},
 ) {
   const principal = signal(
@@ -98,6 +119,13 @@ async function render(
   const calls: AnalyticsCallPorts = {
     requestReport: async (call) => {
       sent.push(call);
+      if (options.refuse) {
+        return Result.err(
+          PipelineError.fromWire('functions/permission-denied', {
+            errorCode: 'ANALYTICS_FORBIDDEN',
+          }),
+        );
+      }
       const report =
         options.shop && call.scopeBarberId === null
           ? shopReportFixture()
@@ -344,6 +372,34 @@ describe('StaffAnalyticsPage — the admin’s radars (staff-analytics-v2 PR 5)'
     expect(sent.at(-1)?.scopeBarberId).toBe('niko');
     // A barber's report carries no radars.
     expect(byTestId(host, 'analytics-radars')).toBeNull();
+  });
+});
+
+describe('StaffAnalyticsPage — the dock’s «Експорт» (staff-analytics-v2 CUJ 7)', () => {
+  afterEach(() => vi.mocked(shareOrDownloadFile).mockClear());
+
+  it('hands the figures on screen to the file hand-off as the CSV, from the tap', async () => {
+    const { host, fixture } = await render();
+    const button = byTestId(host, 'analytics-export') as HTMLButtonElement;
+    expect(button.textContent?.trim()).toBe('Експорт');
+    expect(button.closest('ui-page-action-bar')).not.toBeNull();
+    button.click();
+    await settle(fixture);
+    const handed = vi.mocked(shareOrDownloadFile).mock.calls;
+    expect(handed).toHaveLength(1);
+    const [name, blob] = handed[0] as [string, Blob];
+    expect(name).toBe('creativo-analytics-2026-09-01-2026-09-30.csv');
+    expect(blob.type).toBe('text/csv;charset=utf-8');
+    const text = await blobText(blob);
+    // FileReader decodes the byte-order mark away; the presenter's spec pins it.
+    expect(text.split('\r\n')[0]).toBe(
+      'вид;бръснар;дата;работено мин;неявяване мин;немаркирано мин;блокирано мин;почивка мин;непродадено мин;друго мин;оборот;бакшиш',
+    );
+  });
+
+  it('offers nothing to export while there are no figures', async () => {
+    const { host } = await render({ refuse: true });
+    expect(byTestId(host, 'analytics-export')).toBeNull();
   });
 });
 

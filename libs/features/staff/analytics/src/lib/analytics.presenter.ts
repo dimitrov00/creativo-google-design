@@ -102,7 +102,7 @@ import {
  */
 
 /** The report's money is euro cents (`MoneyAllocationSystem.seatNets`, the catalogue's Takings row). */
-const REPORT_CURRENCY = Currency.EUR;
+export const REPORT_CURRENCY = Currency.EUR;
 
 /** What the screen names from the catalogue — services and barbers. */
 export interface AnalyticsNames {
@@ -146,6 +146,10 @@ export interface AnalyticsScreenInput {
 /** The whole screen. */
 export function analyticsVm(input: AnalyticsScreenInput): AnalyticsVm {
   const { words, report } = input;
+  const body =
+    report === null || input.analyticsLoad === AnalyticsLoad.Refused
+      ? null
+      : bodyOf(input, report);
   return {
     title: words.title,
     backLabel: words.back,
@@ -157,10 +161,9 @@ export function analyticsVm(input: AnalyticsScreenInput): AnalyticsVm {
       report === null && input.analyticsLoad === AnalyticsLoad.Loading,
     blocked: blockedOf(input),
     notice: input.scopeGone ? words.freshness.scopeGone : null,
-    body:
-      report === null || input.analyticsLoad === AnalyticsLoad.Refused
-        ? null
-        : bodyOf(input, report),
+    body,
+    // The figures on screen are what the file holds: none, nothing to export.
+    exportLabel: body === null ? null : words.export.action,
     infoLabels: infoLabelsOf(words),
   };
 }

@@ -6,7 +6,7 @@ import {
   PriceCents,
   ServiceId,
 } from '@core/primitives';
-import { deepFreeze, localDate, utcMs } from '@core/testing';
+import { deepFreeze, localDate, minuteCount, utcMs } from '@core/testing';
 import { ANALYTICS_DEFINITION_VERSION } from './analytics-report.data';
 import { DayFigures, type DayRow } from './day-figures.data';
 
@@ -159,5 +159,22 @@ describe('DayFigures.rowOf — the declared projection', () => {
     const figures = deepFreeze(DayFigures.empty(ivan, DAY, AT));
     expect(DayFigures.rowOf(figures)).toEqual(DayFigures.rowOf(figures));
     expect(figures).toEqual(DayFigures.empty(ivan, DAY, AT));
+  });
+});
+
+describe('DayFigures.otherMinutesOf — the time bar’s «Друго»', () => {
+  it('is the held minutes plus the short gaps, nothing else', () => {
+    const row = deepFreeze(
+      DayFigures.rowOf({
+        ...DayFigures.empty(ivan, DAY, AT),
+        dayHeldMinutes: minuteCount(25),
+        dayShortGapMinutes: minuteCount(15),
+        dayBlockedMinutes: minuteCount(60),
+        dayBreakMinutes: minuteCount(30),
+        dayUnsoldMinutes: minuteCount(45),
+      }),
+    );
+    expect(DayFigures.otherMinutesOf(row)).toBe(40);
+    expect(DayFigures.otherMinutesOf(DayFigures.empty(ivan, DAY, AT))).toBe(0);
   });
 });

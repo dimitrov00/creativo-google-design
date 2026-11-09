@@ -58,8 +58,10 @@ import {
   UiPaddingDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { UiGauge } from '@creativo/ui/patterns';
+import { UiGauge, UiPageActionBar } from '@creativo/ui/patterns';
+import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import { AnalyticsRowsPage } from '../analytics-rows-page/analytics-rows-page';
+import { analyticsExportFile } from '../analytics-export.presenter';
 import { AnalyticsGoalSheet } from './analytics-goal-sheet';
 import { AnalyticsRangeSheet } from './analytics-range-sheet';
 import {
@@ -89,7 +91,8 @@ const INFO_CLOSE = 'close';
  * their legend, when the chair is busy (the heatmap), the open-hours card
  * with its seven bars, the services ranked, the clients' figures and, for
  * the shop, where bookings come from, the admin's radars and, on a month,
- * the goal ring with its sheet; every figure with its ⓘ, every figure
+ * the goal ring with its sheet, and the dock's «Експорт» (the report as a
+ * CSV, `analytics-export.presenter.ts`); every figure with its ⓘ, every figure
  * opening to its rows on a pushed page (`lib-analytics-rows-page`,
  * deferred). The store holds the state, the presenter words it; this wires
  * the two to the DS.
@@ -118,6 +121,7 @@ const INFO_CLOSE = 'close';
     UiListRow,
     UiMetric,
     UiNotice,
+    UiPageActionBar,
     UiPaddingDirective,
     UiPersonTile,
     UiRadar,
@@ -229,6 +233,39 @@ export class StaffAnalyticsPage {
       names: this.names,
     });
   });
+
+  // ── The dock's «Експорт» ───────────────────────────────────────────────
+
+  /**
+   * The report on screen as the CSV — spelt only when read (a `computed`
+   * no template binds), so the file is built on the tap, never per frame.
+   */
+  private readonly exportFile = computed(() => {
+    const words = this.words();
+    const report = this.store.report();
+    if (words === null || report === null) return null;
+    this.catalog.barbers();
+    this.catalog.services();
+    return analyticsExportFile({ words, report, names: this.names });
+  });
+
+  /** The share sheet (or the download) is under way: a second tap waits. */
+  protected readonly exporting = signal(false);
+
+  /**
+   * «Експорт»: the figures on screen as `creativo-analytics-<from>-<to>.csv`,
+   * handed to the app's one file hand-off from the tap itself — before any
+   * `await`, so a phone's share sheet still has the tap's user activation.
+   */
+  protected exportReport(): void {
+    const file = this.exportFile();
+    if (file === null || this.exporting()) return;
+    this.exporting.set(true);
+    const blob = new Blob([file.text], { type: 'text/csv;charset=utf-8' });
+    void shareOrDownloadFile(file.fileName, blob).finally(() =>
+      this.exporting.set(false),
+    );
+  }
 
   // ── The month's goal ───────────────────────────────────────────────────
 

@@ -29,6 +29,9 @@
   ],
   "references": [
     {
+      "path": "../../../infrastructure/web-storage/tsconfig.lib.json"
+    },
+    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
@@ -59,10 +62,10 @@
       "path": "../../../shared/view-state/tsconfig.lib.json"
     },
     {
-      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]
 }

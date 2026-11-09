@@ -851,6 +851,34 @@ same helper. No port and no token, because a browser download has no domain mean
 log, because the server cannot verify a count the device reports and the client-issue
 channel is for defects.
 
+As built (2026-11-09):
+
+- **Fields are quoted where they need it**, not always: a field holding `;`, `"`, CR or LF
+  is quoted with its `"` doubled (RFC 4180); every other field is bare, so the header line
+  reads exactly as above. Line ends are CRLF and the file ends with one.
+- **A span over 93 days writes `вид = МЕСЕЦ`**: its day rows are per barber-month
+  (`StaffAnalyticsSystem.dayRowsAreMonths`), so the column says so instead of `ДЕН`.
+- **«друго мин» is `DayFigures.otherMinutesOf(row)`** — held minutes plus short gaps, the
+  time bar's «Друго» — added to the `DayFigures` companion so the presenter spells the
+  rule rather than restating it.
+- **Money is `formatCentsFigure`** (the locale's figure without its sign, with the locale's
+  grouping: `12 000,00` in Bulgarian); minutes are bare whole numbers. Every column name
+  and the three `вид` values come from the catalogue (`staffAnalytics.export.*`), so an
+  English reader gets `kind;barber;date;…` and `DAY` / `MONTH` / `SERVICE` / `All`.
+- **The presenter is `analytics-export.presenter.ts` → `{ fileName, text }`
+  (`AnalyticsExportFile`)**; the page builds it in a `computed` no template reads (spelt
+  on the tap, never per frame) and hands `new Blob([text], { type: 'text/csv;charset=utf-8' })`
+  to the helper from the click handler, before any `await`.
+- **The helper answers a `FileHandoff`** (`SHARED` / `DOWNLOADED` / `CANCELLED`) and takes
+  an optional third parameter, the `{ navigator, document }` it reaches (the page's
+  `window` by default; specs hand a stand-in).
+- **The dock** is `ui-page-action-bar` with one bordered, neutral, large «Експорт» marked
+  `uiPrimary` (trailing, hugged), busy (`uiLoading`) while the share sheet is open; it is
+  absent while the screen has no figures. No share glyph exists in the icon vocabulary,
+  so the label stands alone.
+- The client card's «Изтегли данните» keeps its «Файлът е изтеглен.» line on every
+  outcome; a phone's share sheet closed without a target is the one case it overstates.
+
 ### Reads and cost
 
 | Request (10 barbers, 15 seats a day) | v1                            | v2                                                                                                                                                        |
@@ -1669,9 +1697,12 @@ functions:test-integration`) — the appointment trigger writes a past day's doc
 100. `libs/features/staff/analytics/src/lib/analytics-export.presenter.ts` + `.spec.ts`
      (Create) — the two blocks' rows and text per the schema in "Export (PR 7)" (the shop's
      block 2 shop-wide with `бръснар = Всички`); pure.
-101. `libs/features/staff/analytics/src/lib/staff-analytics.store.ts`,
-     `staff-analytics-page/*`, `analytics.words.ts`, `bg.json`, `en.json` + the three specs
-     (Modify) — the dock (`ui-page-action-bar`) with «Експорт»; the page calls the helper.
+101. `staff-analytics-page/*`, `analytics.vm.ts` (`AnalyticsExportFile`, `exportLabel`),
+     `analytics.presenter.ts` (the dock's label), `analytics.words.ts`, `bg.json`, `en.json`
+     - the page spec (Modify) — the dock (`ui-page-action-bar`) with «Експорт»; the page
+       calls the helper. The store needs nothing: the file is the report on screen.
+       `libs/ecs-core/src/components/day-figures.data.ts` + spec (Modify) —
+       `DayFigures.otherMinutesOf`.
 102. `apps/web/e2e/staff-analytics.spec.ts` (Modify) — the download fallback produces a
      file whose first line is `вид;бръснар;дата;работено мин;неявяване мин;немаркирано
 мин;блокирано мин;почивка мин;непродадено мин;друго мин;оборот;бакшиш` and whose line
