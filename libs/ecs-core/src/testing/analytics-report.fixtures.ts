@@ -5,6 +5,7 @@ import {
   type AnalyticsReport,
   BookingOrigin,
   type DayRow,
+  GoalPaceTag,
   RadarBase,
 } from '@core/components';
 import { AnalyticsRadarSystem } from '@core/systems';
@@ -268,6 +269,12 @@ export function analyticsReportFixture(
     reportComparisonBarbers: [],
     reportRadars: [],
     reportRadarBase: RadarBase.TooFewBarbers,
+    // PR 6: the fixture month carries no goal — the screen's goal specs set one.
+    reportGoalLowCents: null,
+    reportGoalHighCents: null,
+    reportGoalPaceTag: GoalPaceTag.None,
+    reportGoalDaysSoFar: 0,
+    reportGoalDaysInMonth: 0,
     reportDayRows: [
       dayRow(ivan, '2026-09-14', 270),
       dayRow(ivan, '2026-09-15', 210),

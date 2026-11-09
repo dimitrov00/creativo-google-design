@@ -67,6 +67,7 @@ import {
   rescheduleAppointment as rescheduleAppointmentPipeline,
   runBackfill as runBackfillPipeline,
   sampleLeadTime,
+  setAnalyticsGoal as setAnalyticsGoalPipeline,
   setRoles as setRolesPipeline,
   setRosterWeek as setRosterWeekPipeline,
   staffAnalytics as staffAnalyticsPipeline,
@@ -195,7 +196,10 @@ import {
   decodeAmendRosterBreaks,
   decodeSetRosterWeek,
 } from './wire/roster.wire';
-import { decodeStaffAnalytics } from './wire/analytics.wire';
+import {
+  decodeSetAnalyticsGoal,
+  decodeStaffAnalytics,
+} from './wire/analytics.wire';
 import {
   decodeCancelWaitlist,
   decodeRequestWaitlist,
@@ -911,6 +915,24 @@ export const staffAnalytics = onCall(
     root.analytics,
     decodeStaffAnalytics,
     (ports, cmd) => staffAnalyticsPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * A scope's takings goal for a month (staff analytics v2 PR 6, CUJ 6): the
+ * barber's own, or the admin's shop goal — `analyticsGoals/{key}` and its
+ * `ANALYTICS_GOAL_SET` row in one commit, on the report's ports (the same
+ * bundle: the caller, the records and shops for the scope and the clock,
+ * and the commit).
+ */
+export const setAnalyticsGoal = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.SetAnalyticsGoal, null),
+    root.analytics,
+    decodeSetAnalyticsGoal,
+    (ports, cmd) => setAnalyticsGoalPipeline(ports)(cmd),
     refusalOf,
   ),
 );

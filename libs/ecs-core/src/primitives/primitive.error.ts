@@ -38,6 +38,8 @@ export const PrimitiveErrorCode = {
   ClientOperationIdInvalid: 'PRIMITIVE_CLIENT_OPERATION_ID_INVALID',
   /** Not a guest key (`[A-Za-z0-9_-]{1,64}`). */
   GuestKeyInvalid: 'PRIMITIVE_GUEST_KEY_INVALID',
+  /** Not a month key (`YYYY-MM`, the month `01`–`12`) — staff analytics v2 D11. */
+  MonthKeyInvalid: 'PRIMITIVE_MONTH_KEY_INVALID',
   /** A redirect that is not a same-origin path (`//`, `/\\`, a scheme). */
   RedirectPathUnsafe: 'PRIMITIVE_REDIRECT_PATH_UNSAFE',
 } as const;

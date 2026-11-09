@@ -3,13 +3,22 @@ import {
   type AnalyticsCall,
   AnalyticsComparison,
   AnalyticsSpan,
+  type SetAnalyticsGoalCall,
 } from '@core/components';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Callables } from '@core/ports';
-import { BarberId, LocalDate, Result } from '@core/primitives';
 import {
+  BarberId,
+  LocalDate,
+  MonthKey,
+  type PriceCents,
+  Result,
+} from '@core/primitives';
+import {
+  FIXTURE_NOW_UTC_MS,
   type GatewayCall,
   analyticsReportFixture,
+  goalSetAnswerOf,
   deepFreeze,
   scriptedGatewayPorts,
   unwrapErr,
@@ -85,5 +94,52 @@ describe('analyticsCallPorts (staff analytics, the screen)', () => {
     expect(unwrapErr(await ports.requestReport(CALL)).errorCode).toBe(
       PipelineErrorCode.Unknown,
     );
+  });
+
+  describe('setAnalyticsGoal (v2 PR 6)', () => {
+    /** The sheet's call: Ivan's own November, 1 800–2 200 €. */
+    const GOAL: SetAnalyticsGoalCall = {
+      scopeBarberId: null,
+      goalMonth: MonthKey.of('2026-11'),
+      goalLowCents: 180_000 as PriceCents,
+      goalHighCents: 220_000 as PriceCents,
+    };
+
+    it('dials setAnalyticsGoal with the call as built, answering the decoded key and stamp', async () => {
+      const calls: GatewayCall[] = [];
+      const answer = goalSetAnswerOf(
+        { ...GOAL, scopeBarberId: BarberId.of('ivan') },
+        FIXTURE_NOW_UTC_MS,
+      );
+      const ports = analyticsCallPorts(
+        scriptedGatewayPorts(
+          { [Callables.SetAnalyticsGoal]: () => Result.ok(answer) },
+          calls,
+        ),
+      );
+      const call = deepFreeze({ ...GOAL });
+
+      expect(unwrapOk(await ports.setAnalyticsGoal(call))).toBe(answer);
+      expect(calls).toEqual([
+        { callable: Callables.SetAnalyticsGoal, input: GOAL },
+      ]);
+      expect(calls[0]?.input).toBe(call);
+      expect(answer.goalKey).toBe('ivan__2026-11');
+    });
+
+    it('hands a goal refusal on as the one PipelineError, its analytics code kept', async () => {
+      const refused = PipelineError.fromWire('functions/invalid-argument', {
+        errorCode: 'ANALYTICS_GOAL_INVALID_RANGE',
+        field: 'goalMonth',
+      });
+      const ports = analyticsCallPorts(
+        scriptedGatewayPorts({
+          [Callables.SetAnalyticsGoal]: () => Result.err(refused),
+        }),
+      );
+      const error = unwrapErr(await ports.setAnalyticsGoal(GOAL));
+      expect(error).toBe(refused);
+      expect(error.serverErrorCode).toBe('ANALYTICS_GOAL_INVALID_RANGE');
+    });
   });
 });

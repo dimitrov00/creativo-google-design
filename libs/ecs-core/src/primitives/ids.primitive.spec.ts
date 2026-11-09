@@ -23,6 +23,7 @@ import {
 import { BusyKey } from './busy-key.primitive';
 import * as Ids from './ids.primitive';
 import {
+  AnalyticsGoalKey,
   AnalyticsRecomputeJobId,
   AppointmentId,
   AuditResourceId,
@@ -32,6 +33,7 @@ import {
   ClientMoneyStatsId,
   BarberLinkId,
   ClientOperationId,
+  MonthKey,
   OperationId,
   DraftPersonKey,
   GuestKey,
@@ -58,7 +60,9 @@ const ID_COMPANIONS: readonly (readonly [string, IdOf])[] = Object.entries(
   typeof companion === 'object' &&
   companion !== null &&
   'of' in companion &&
-  'parse' in companion
+  'parse' in companion &&
+  // A composite key's builder takes its halves (`AnalyticsGoalKey.of(scope, month)`), not one raw string.
+  (companion.of as (...args: unknown[]) => unknown).length === 1
     ? [[name, companion as IdOf] as const]
     : [],
 );
@@ -180,6 +184,57 @@ describe('the id companions (decision F-3)', () => {
     expect(BarberAnalyticsDayId.is('a/b')).toBe(false);
   });
 
+  it('a month key is exactly YYYY-MM (D11): the capacity month and a goal key’s month share the brand', () => {
+    const month = MonthKey.of('2026-11');
+    expect(MonthKey.is(month)).toBe(true);
+    expect(unwrapOk(MonthKey.parse('2026-11'))).toBe(month);
+    expect(localDate('2026-11-09').slice(0, 7)).toBe(month);
+    for (const raw of [
+      '2026-13',
+      '2026-00',
+      '2026-1',
+      '2026-11-09',
+      '',
+      'nov',
+      7,
+    ]) {
+      expect(MonthKey.is(raw)).toBe(false);
+    }
+    const refused = MonthKey.parse('2026-13');
+    expect(!refused.ok && refused.error.errorCode).toBe(
+      'PRIMITIVE_MONTH_KEY_INVALID',
+    );
+  });
+
+  it('an analytics goal is keyed by its scope and month — a barber record or `shop`, then the month (staff analytics v2 PR 6)', () => {
+    const ivan = unwrapOk(Ids.BarberId.parse('b-ivan'));
+    const month = MonthKey.of('2026-11');
+    expect(AnalyticsGoalKey.of(ivan, month)).toBe('b-ivan__2026-11');
+    expect(AnalyticsGoalKey.of(null, month)).toBe('shop__2026-11');
+    for (const key of [
+      AnalyticsGoalKey.of(ivan, month),
+      AnalyticsGoalKey.of(null, month),
+      // A barber id may itself hold `__`; the month is after the LAST one.
+      AnalyticsGoalKey.of(unwrapOk(Ids.BarberId.parse('a__b')), month),
+    ]) {
+      expect(AnalyticsGoalKey.is(key)).toBe(true);
+      expect(unwrapOk(AnalyticsGoalKey.parse(key))).toBe(key);
+    }
+    for (const raw of [
+      '__2026-11',
+      'shop__2026-13',
+      'shop_2026-11',
+      'b-ivan__2026-11-09',
+      'a/b__2026-11',
+      'shop__',
+      '',
+      7,
+    ]) {
+      expect(AnalyticsGoalKey.is(raw)).toBe(false);
+    }
+    expect(AnalyticsGoalKey.parse('shop__2026-13').ok).toBe(false);
+  });
+
   it('the policy pass lives beside the backfill jobs under its own tag', () => {
     expect(Object.values(BackfillJobName)).not.toContain(
       RecomputeJobName.ClientStatsPolicy,
@@ -284,6 +339,14 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
     const resource = AuditResourceId.forOtp(OtpId.of('otp_3'));
     expect(resource).toBe(`${Collections.Otps}/otp_3`);
     expect(resource).toBe('otps/otp_3');
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+  });
+
+  it('names an analytics goal by its collection path — the restated name is the registry’s (staff analytics v2 PR 6)', () => {
+    const key = AnalyticsGoalKey.of(null, MonthKey.of('2026-11'));
+    const resource = AuditResourceId.forAnalyticsGoal(key);
+    expect(resource).toBe(`${Collections.AnalyticsGoals}/${key}`);
+    expect(resource).toBe('analyticsGoals/shop__2026-11');
     expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
   });
 

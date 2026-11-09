@@ -10,6 +10,7 @@ import {
   type AppointmentId,
   type BarberId,
   type LocationId,
+  type MonthKey,
   type ServiceId,
   type TimeZone,
   type UtcEpochMs,
@@ -22,10 +23,11 @@ import {
   AnalyticsBarPart,
   type AnalyticsComparison,
   AnalyticsFigure,
+  type AnalyticsGoal,
   AnalyticsPeriod,
   AnalyticsSpan,
+  GoalPaceTag,
   HeroChange,
-  type AnalyticsCall,
   type AnalyticsReport,
   BookingOrigin,
   ClientStatsPolicy,
@@ -158,6 +160,12 @@ export type AnalyticsInput = {
   readonly followUps: readonly AnalyticsFollowUp[];
   readonly policy: ClientStatsPolicy;
   readonly now: ShopNow;
+  /**
+   * The scope's goal for the period's month (PR 6, «Goals») — read on a
+   * `MONTH` only; `null` off `MONTH` or without one. The report hands its
+   * range back and paces the takings against it ({@link StaffAnalyticsSystem.goalPaceOf}).
+   */
+  readonly goal: AnalyticsGoal | null;
 };
 
 /** A visit as a follow-up read answers it — an `Appointment` satisfies it as is. */
@@ -907,12 +915,16 @@ function hourDaysOf(
   return out;
 }
 
-/** How many distinct shop days of the period roster any minute in scope — the heatmap sentence's base. */
-function rosteredDayCountOf(
+/**
+ * The distinct shop days of the period that roster any minute in scope —
+ * a day with a stretch, counted from its stored figures or its live fold.
+ * On the shop scope a day counts ONCE when any barber has a stretch on it.
+ */
+function rosteredDatesOf(
   days: readonly AnalyticsDay[],
   pastDays: readonly DayFigures[],
   counting: Counting,
-): number {
+): ReadonlySet<LocalDate> {
   const dates = new Set<LocalDate>();
   for (let i = 0; i < pastDays.length; i++) {
     const day = pastDays[i] as DayFigures;
@@ -926,7 +938,32 @@ function rosteredDayCountOf(
       dates.add(day.localDate);
     }
   }
-  return dates.size;
+  return dates;
+}
+
+/** How many distinct shop days of the period roster any minute in scope — the heatmap sentence's base. */
+function rosteredDayCountOf(
+  days: readonly AnalyticsDay[],
+  pastDays: readonly DayFigures[],
+  counting: Counting,
+): number {
+  return rosteredDatesOf(days, pastDays, counting).size;
+}
+
+/** The goal formula's two day counts: the rostered days up to and including `today`, and all of them. */
+type GoalDays = {
+  readonly daysWorkedSoFar: number;
+  readonly daysRosteredInMonth: number;
+};
+
+/** What a report off `MONTH` carries — no days, so the pace is `NONE`. */
+const NO_GOAL_DAYS: GoalDays = { daysWorkedSoFar: 0, daysRosteredInMonth: 0 };
+
+/** The goal formula's counts over the month's rostered dates (PR 6): `daysWorkedSoFar` ≤ today, `daysRosteredInMonth` all. */
+function goalDaysOf(dates: ReadonlySet<LocalDate>, today: LocalDate): GoalDays {
+  let soFar = 0;
+  for (const date of dates) if (date <= today) soFar++;
+  return { daysWorkedSoFar: soFar, daysRosteredInMonth: dates.size };
 }
 
 /** The past barber-days in scope computed live — no current document held them. */
@@ -1360,7 +1397,7 @@ export const StaffAnalyticsSystem = {
    */
   scopeOf(
     caller: AnalyticsCaller,
-    request: AnalyticsCall,
+    request: { readonly scopeBarberId: BarberId | null },
     barberIds: readonly BarberId[],
   ): Result<BarberId | null, AnalyticsError> {
     if (caller.callerBlocked) return Result.err(AnalyticsError.forbidden());
@@ -1463,10 +1500,13 @@ export const StaffAnalyticsSystem = {
     const hourGrid = AnalyticsHourSystem.grid(
       hourDaysOf(input.days, input.pastDays, input.visits, counting),
     );
-    const peaks = AnalyticsHourSystem.peak(
-      hourGrid,
-      rosteredDayCountOf(input.days, input.pastDays, counting),
-    );
+    const rosteredDates = rosteredDatesOf(input.days, input.pastDays, counting);
+    const peaks = AnalyticsHourSystem.peak(hourGrid, rosteredDates.size);
+
+    // The month's goal and its pace (PR 6) — on a MONTH only.
+    const onMonth = period.analyticsSpan === AnalyticsSpan.Month;
+    const goal = onMonth ? input.goal : null;
+    const goalDays = onMonth ? goalDaysOf(rosteredDates, today) : NO_GOAL_DAYS;
 
     // The shop's barbers, this period's and the comparison's, and the admin's
     // radar over them on a MONTH, YEAR or CUSTOM span; a barber's report
@@ -1573,7 +1613,91 @@ export const StaffAnalyticsSystem = {
         input.scopeBarberId === null
           ? []
           : seatRowsOf(input, rebooked, past, input.scopeBarberId, counting),
+
+      reportGoalLowCents: goal === null ? null : goal.goalLowCents,
+      reportGoalHighCents: goal === null ? null : goal.goalHighCents,
+      reportGoalPaceTag: StaffAnalyticsSystem.goalPaceOf(
+        figures.takingsCents,
+        goal,
+        goalDays.daysWorkedSoFar,
+        goalDays.daysRosteredInMonth,
+      ),
+      reportGoalDaysSoFar: goalDays.daysWorkedSoFar,
+      reportGoalDaysInMonth: goalDays.daysRosteredInMonth,
     };
+  },
+
+  /**
+   * Where the month's takings stand against its goal (PR 6, the contract's
+   * formula): `expectedLow/High = goalLow/High × daysWorkedSoFar ÷
+   * daysRosteredInMonth` — the days with a stretch up to and including
+   * today over the month's; takings at or over the expected high are
+   * `AHEAD`, at or over the expected low `ON_TRACK`, under it `BEHIND`.
+   * `NONE` without a goal, and before the first rostered day is worked
+   * (`daysWorkedSoFar` 0 — nothing to pace yet; a report off `MONTH` hands
+   * no goal and no days). Integer cents compared against a rational
+   * expectation — no rounding decides a boundary.
+   */
+  goalPaceOf(
+    takingsCents: PriceCents,
+    goal: AnalyticsGoal | null,
+    daysWorkedSoFar: number,
+    daysRosteredInMonth: number,
+  ): GoalPaceTag {
+    if (goal === null || daysWorkedSoFar <= 0 || daysRosteredInMonth <= 0) {
+      return GoalPaceTag.None;
+    }
+    // `takings ≥ goal × soFar ÷ all` ⇔ `takings × all ≥ goal × soFar` — exact in integers.
+    const scaled = takingsCents * daysRosteredInMonth;
+    if (scaled >= goal.goalHighCents * daysWorkedSoFar)
+      return GoalPaceTag.Ahead;
+    if (scaled >= goal.goalLowCents * daysWorkedSoFar) {
+      return GoalPaceTag.OnTrack;
+    }
+    return GoalPaceTag.Behind;
+  },
+
+  /**
+   * The months a goal may be set for (PR 6, «Goals»): the current month or
+   * the next one on the shop's clock — `today`'s month and the month after
+   * it. The pipeline refuses every other month (`ANALYTICS_GOAL_INVALID_RANGE`
+   * on `goalMonth`); the screen offers «Задай цел» by the same rule.
+   */
+  goalMonthAllowed(month: MonthKey, today: LocalDate): boolean {
+    const first = LocalDate.startOfMonth(today);
+    return (
+      month === LocalDate.monthKey(first) ||
+      month === LocalDate.monthKey(LocalDate.addMonths(first, 1))
+    );
+  },
+
+  /**
+   * Whether the screen offers «Задай цел» on `period`: a `MONTH` whose
+   * month {@link goalMonthAllowed} admits — the current or the next. Never
+   * on another span, and never on a past or farther month.
+   */
+  goalMonthOffered(period: AnalyticsPeriod, today: LocalDate): boolean {
+    return (
+      period.analyticsSpan === AnalyticsSpan.Month &&
+      StaffAnalyticsSystem.goalMonthAllowed(
+        LocalDate.monthKey(period.fromLocalDate),
+        today,
+      )
+    );
+  },
+
+  /**
+   * Whether the account linked to `linkedBarberId` may set `scopeBarberId`'s
+   * goal: the shop's (`null`), or its own record's — a barber record's goal
+   * is that barber's alone, so an admin on a colleague's scope reads it and
+   * sets none. `setAnalyticsGoal` refuses by this rule
+   * (`ANALYTICS_GOAL_FORBIDDEN`) and the screen offers «Задай цел» by it.
+   */
+  goalScopeAllowed(
+    scopeBarberId: BarberId | null,
+    linkedBarberId: BarberId | null,
+  ): boolean {
+    return scopeBarberId === null || scopeBarberId === linkedBarberId;
   },
 
   /**

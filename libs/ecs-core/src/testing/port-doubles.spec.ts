@@ -52,7 +52,7 @@ import {
   OperationId,
   BarberId,
   BusyKey,
-  CapacityMonthId,
+  MonthKey,
   ClientMoneyStatsId,
   Currency,
   CouponGrantId,
@@ -224,8 +224,8 @@ describe('memorySchedulingReadPorts — the booking store’s raw streams', () =
     const schedule = barberScheduleFixture();
     const location = locationFixture();
     const month: CapacityMonth = {
-      id: CapacityMonthId.of('2026-09'),
-      month: CapacityMonthId.of('2026-09'),
+      id: MonthKey.of('2026-09'),
+      month: MonthKey.of('2026-09'),
       entries: [],
     };
     const ports = memorySchedulingReadPorts({
@@ -249,10 +249,10 @@ describe('memorySchedulingReadPorts — the booking store’s raw streams', () =
       null,
     );
     expect(
-      await first(ports.observeCapacityMonth(CapacityMonthId.of('2026-09'))),
+      await first(ports.observeCapacityMonth(MonthKey.of('2026-09'))),
     ).toBe(month);
     expect(
-      await first(ports.observeCapacityMonth(CapacityMonthId.of('2026-10'))),
+      await first(ports.observeCapacityMonth(MonthKey.of('2026-10'))),
     ).toBeNull();
   });
 

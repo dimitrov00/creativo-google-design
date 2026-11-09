@@ -3,6 +3,7 @@ import type {
   AccountContactPorts,
   AdminBatchPorts,
   AnalyticsDayReadPorts,
+  AnalyticsGoalPorts,
   AnalyticsReadPorts,
   AnalyticsRecomputeJobPorts,
   AppointmentLoadPorts,
@@ -35,6 +36,7 @@ import { StoredDocumentSystem } from '@core/systems';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
 import {
   firestoreAnalyticsDayPorts,
+  firestoreAnalyticsGoalPorts,
   firestoreAnalyticsPorts,
 } from './firestore-analytics.adapter';
 import { firestoreAuditPorts } from './firestore-audit.adapter';
@@ -135,6 +137,8 @@ export type FirestorePorts = TxPorts &
   AnalyticsReadPorts &
   // firestoreAnalyticsDayPorts (staff analytics v2 — the stored days)
   AnalyticsDayReadPorts &
+  // firestoreAnalyticsGoalPorts (staff analytics v2 PR 6 — the month goal)
+  AnalyticsGoalPorts &
   // firestoreTriggerFailurePorts (audit-hardening WS-6)
   TriggerFailurePorts;
 
@@ -161,5 +165,6 @@ export const firestorePorts = (
   ...firestoreUserPorts(db),
   ...firestoreAnalyticsPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
   ...firestoreAnalyticsDayPorts(db, telemetry.log),
+  ...firestoreAnalyticsGoalPorts(db, telemetry.log),
   ...firestoreTriggerFailurePorts(db),
 });

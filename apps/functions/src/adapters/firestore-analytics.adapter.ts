@@ -1,7 +1,7 @@
 import type { Firestore, Query } from 'firebase-admin/firestore';
 import { BarberId, type BusyKey, LocalDate, Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
-import { DayFigures } from '@core/components';
+import { AnalyticsGoal, DayFigures } from '@core/components';
 import {
   type Appointment,
   type BarberAnalyticsDay,
@@ -9,9 +9,11 @@ import {
   QueryOp,
   type ScheduleException,
   type ShopLocation,
+  type StoredAnalyticsGoal,
 } from '@core/entities';
 import type {
   AnalyticsDayReadPorts,
+  AnalyticsGoalPorts,
   AnalyticsReadPorts,
   Log,
 } from '@core/ports';
@@ -300,3 +302,34 @@ export const firestoreAnalyticsDayPorts = (
     },
   };
 };
+
+/**
+ * The month goal's read over the Admin SDK (`AnalyticsGoalPorts`, staff
+ * analytics v2 PR 6, «Goals»), outside any transaction: ONE
+ * `analyticsGoals/{key}` get — the body admitted by `AnalyticsGoal.is`
+ * first; a malformed one is `null` and logged (`REPOSITORY_MALFORMED`), so
+ * the report shows no goal rather than a wrong one. The write is
+ * `setAnalyticsGoal`'s commit plan (`firestoreCommitPlan`).
+ */
+export const firestoreAnalyticsGoalPorts = (
+  db: Firestore,
+  log: Log,
+): AnalyticsGoalPorts => ({
+  loadAnalyticsGoal: async (key) => {
+    const path = `${Collections.AnalyticsGoals}/${key}`;
+    let snap;
+    try {
+      snap = await db.collection(Collections.AnalyticsGoals).doc(key).get();
+    } catch (error) {
+      return Result.err(readFailed(path, error));
+    }
+    if (!snap.exists) return Result.ok(null);
+    const data = snap.data();
+    if (AnalyticsGoal.is(data)) {
+      const goal: StoredAnalyticsGoal = { id: key, ...data };
+      return Result.ok(goal);
+    }
+    logRefusal(log, RepositoryError.malformed(path, 'analyticsGoal'));
+    return Result.ok(null);
+  },
+});

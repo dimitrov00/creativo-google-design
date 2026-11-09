@@ -12,7 +12,7 @@ import {
   BarberBusyDayId,
   BarberId,
   BusyKey,
-  CapacityMonthId,
+  MonthKey,
   type LocalDate,
   LocationId,
   Result,
@@ -51,7 +51,7 @@ import { rebuildCapacity } from './rebuild-capacity.pipeline';
 const IVAN = FIXTURE_IDS.barber;
 const PETAR = BarberId.of('b-petar');
 const CENTRE = FIXTURE_IDS.location;
-const MONTH = CapacityMonthId.of('2026-09');
+const MONTH = MonthKey.of('2026-09');
 const MONTH_PATH = [Collections.Capacity, MONTH];
 
 const entry = (
@@ -412,7 +412,7 @@ describe('rebuildCapacity — a horizon', () => {
 
 describe('rebuildCapacity — a month whose document would not change is not written', () => {
   const sweep = { capacityTrigger: CapacityTrigger.Sweep } as const;
-  const OCTOBER = CapacityMonthId.of('2026-10');
+  const OCTOBER = MonthKey.of('2026-10');
 
   it('returns no capacity WriteOp for a Sweep over a store it already rebuilt', async () => {
     const { store, tx, run } = rig();

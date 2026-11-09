@@ -58,7 +58,9 @@ import {
   UiPaddingDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { UiGauge } from '@creativo/ui/patterns';
 import { AnalyticsRowsPage } from '../analytics-rows-page/analytics-rows-page';
+import { AnalyticsGoalSheet } from './analytics-goal-sheet';
 import { AnalyticsRangeSheet } from './analytics-range-sheet';
 import {
   type AnalyticsNames,
@@ -86,7 +88,8 @@ const INFO_CLOSE = 'close';
  * kit — the hero and its takings line, the time's stacked day bars with
  * their legend, when the chair is busy (the heatmap), the open-hours card
  * with its seven bars, the services ranked, the clients' figures and, for
- * the shop, where bookings come from; every figure with its ⓘ, every figure
+ * the shop, where bookings come from, the admin's radars and, on a month,
+ * the goal ring with its sheet; every figure with its ⓘ, every figure
  * opening to its rows on a pushed page (`lib-analytics-rows-page`,
  * deferred). The store holds the state, the presenter words it; this wires
  * the two to the DS.
@@ -94,6 +97,7 @@ const INFO_CLOSE = 'close';
 @Component({
   selector: 'lib-staff-analytics',
   imports: [
+    AnalyticsGoalSheet,
     AnalyticsRangeSheet,
     AnalyticsRowsPage,
     NgTemplateOutlet,
@@ -104,6 +108,7 @@ const INFO_CLOSE = 'close';
     UiCard,
     UiForegroundStyleDirective,
     UiFrameDirective,
+    UiGauge,
     UiGrid,
     UiHeatmap,
     UiIcon,
@@ -215,12 +220,30 @@ export class StaffAnalyticsPage {
       refusal: this.refusal(),
       scopeChoices: this.store.scopeChoices(),
       scopeBarberId: this.store.scopeBarberId(),
+      linkedBarberId: this.store.linkedBarberId(),
       scopeGone: this.store.scopeGone(),
       scheduleBarberId: this.store.scheduleBarberId(),
       rangeCheck: this.store.rangeCheck(),
+      goalCheck: this.store.goalCheck(),
+      goalSave: this.store.goalSave(),
       names: this.names,
     });
   });
+
+  // ── The month's goal ───────────────────────────────────────────────────
+
+  /** «Задай цел» / «Промени целта»: the sheet, prefilled with the stored goal. */
+  protected openGoal(): void {
+    this.store.openGoal();
+  }
+
+  protected saveGoal(): void {
+    this.store.saveGoal();
+  }
+
+  protected closeGoal(): void {
+    this.store.closeGoal();
+  }
 
   // ── The custom range and a year's months ───────────────────────────────
 

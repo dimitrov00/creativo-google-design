@@ -3,7 +3,12 @@ import {
   AnalyticsFigure,
   BookingOrigin,
 } from '@core/components';
-import type { BarberId, LocalDate, ServiceId } from '@core/primitives';
+import type {
+  BarberId,
+  LocalDate,
+  PriceCents,
+  ServiceId,
+} from '@core/primitives';
 import type { UiChartPart } from '@creativo/ui/charts';
 import type { UiSegment } from '@creativo/ui/controls';
 import type { VisitSectionVm } from '@creativo/features/shared/visits';
@@ -53,6 +58,8 @@ export const AnalyticsTopic = {
   Origins: 'ORIGINS',
   /** How each barber does — the admin's radars. */
   Radars: 'RADARS',
+  /** The month's goal and its pace — the ring. */
+  Goal: 'GOAL',
 } as const;
 export type AnalyticsTopic =
   (typeof AnalyticsTopic)[keyof typeof AnalyticsTopic];
@@ -275,6 +282,97 @@ export type AnalyticsRangeCheck =
       readonly toLocalDate: LocalDate | null;
     };
 
+/**
+ * Why the goal sheet refuses its two sums — the field `goalRefusal` of
+ * {@link AnalyticsGoalCheck}; `null` is a range the callable may be asked
+ * to store.
+ */
+export const AnalyticsGoalRefusal = {
+  /** A sum is empty. */
+  Incomplete: 'INCOMPLETE',
+  /** `AnalyticsGoal.rangeOf` refused: a sum not above zero, or the low end over the high. */
+  InvalidRange: 'INVALID_RANGE',
+} as const;
+export type AnalyticsGoalRefusal =
+  (typeof AnalyticsGoalRefusal)[keyof typeof AnalyticsGoalRefusal];
+
+/** The store's verdict on the goal sheet's two sums, read by the presenter and the sheet. */
+export type AnalyticsGoalCheck =
+  | {
+      readonly goalRefusal: null;
+      readonly goalLowCents: PriceCents;
+      readonly goalHighCents: PriceCents;
+    }
+  | {
+      readonly goalRefusal: Exclude<AnalyticsGoalRefusal, null>;
+      readonly goalLowCents: null;
+      readonly goalHighCents: null;
+    };
+
+/** Where the goal's write stands — the field `goalSave`. */
+export const AnalyticsGoalSave = {
+  Idle: 'IDLE',
+  /** `setAnalyticsGoal` is out; «Запази» waits. */
+  Saving: 'SAVING',
+  /** The callable refused or failed; the sheet says so and stays. */
+  Failed: 'FAILED',
+} as const;
+export type AnalyticsGoalSave =
+  (typeof AnalyticsGoalSave)[keyof typeof AnalyticsGoalSave];
+
+/** The goal sheet, worded: two sums and «Запази». */
+export type AnalyticsGoalSheetVm = {
+  readonly title: string;
+  readonly lowLabel: string;
+  readonly highLabel: string;
+  readonly decreaseLabel: string;
+  readonly increaseLabel: string;
+  /** «€» — the fields' unit. */
+  readonly unit: string;
+  readonly saveLabel: string;
+  readonly closeLabel: string;
+  /** Why «Запази» is off, or that the last save failed — `null` when the range may be saved. */
+  readonly refusal: string | null;
+  readonly saveEnabled: boolean;
+  readonly saving: boolean;
+};
+
+/** The month's goal ring: the takings against the range, and the pace in words. */
+export type AnalyticsGoalRingVm = {
+  /** The takings so far, in cents — the ring's value. */
+  readonly value: number;
+  readonly min: number;
+  /** The range's high end, in cents — the ring full. */
+  readonly max: number;
+  /** «68 %» — the centre: the takings' share of the high end. */
+  readonly figure: string;
+  /** «1 800,00 € – 2 200,00 €». */
+  readonly rangeText: string;
+  /** «12 от 22 работни дни · на път» · «Още няма работен ден този месец». */
+  readonly pace: string;
+  /** The pace tag — the ring's `data-pace` hook. */
+  readonly paceTag: string;
+  readonly label: string;
+  readonly accessibleName: string;
+};
+
+/**
+ * «Цел за месеца» — on MONTH alone: the ring when a goal is stored, and
+ * «Задай цел» on a month the callable accepts one for (this month or the
+ * next; `setLabel` is `null` on an earlier month, where a stored goal is
+ * read-only). `null` when there is neither a goal to show nor a month to
+ * set one on.
+ */
+export type AnalyticsGoalVm = {
+  readonly title: string;
+  readonly ring: AnalyticsGoalRingVm | null;
+  /** «Задай цел» · «Промени целта» — `null` when the month takes no goal. */
+  readonly setLabel: string | null;
+  /** «Задай оборот за месеца и следи темпото.» — `null` once a goal is shown. */
+  readonly prompt: string | null;
+  readonly sheet: AnalyticsGoalSheetVm;
+};
+
 /** The custom-range sheet, worded. */
 export type AnalyticsRangeVm = {
   readonly pillLabel: string;
@@ -427,6 +525,8 @@ export type AnalyticsBodyVm = {
   readonly origins: AnalyticsOriginsVm | null;
   /** The admin's radars — the shop scope on MONTH, YEAR and CUSTOM; `null` elsewhere. */
   readonly radars: AnalyticsRadarsVm | null;
+  /** The month's goal — MONTH alone; `null` elsewhere, and on a past month without one. */
+  readonly goal: AnalyticsGoalVm | null;
 };
 
 /** Why there are no figures: a refusal, or a request that failed with nothing cached. */

@@ -5,8 +5,10 @@ import {
   AnalyticsBarPart,
   AnalyticsComparison,
   AnalyticsFigure,
+  type AnalyticsGoal,
   AnalyticsPeriod,
   AnalyticsSpan,
+  GoalPaceTag,
   HeroChange,
   BookingLifecycle,
   BookingOrigin,
@@ -28,9 +30,11 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
+  Currency,
   LocalDate,
   LocationId,
   MinuteCount,
+  MonthKey,
   type PriceCents,
   ScheduleExceptionId,
   SeatId,
@@ -163,6 +167,7 @@ function input(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
     followUps: [],
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
+    goal: null,
     ...overrides,
   };
 }
@@ -2197,5 +2202,254 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
       AnalyticsPeriod.weekOf(localDate('2026-09-20')),
     );
     expect(S.periodInSpan(fortnight, AnalyticsSpan.Year, TODAY)).toEqual(year);
+  });
+});
+
+describe('StaffAnalyticsSystem — the month goal (v2 PR 6)', () => {
+  const cents = (raw: number): PriceCents => raw as PriceCents;
+  /** Ivan's October: 1 800–2 200 €. */
+  const GOAL: AnalyticsGoal = {
+    barberId: ivan,
+    goalMonth: MonthKey.of('2026-10'),
+    goalLowCents: cents(180_000),
+    goalHighCents: cents(220_000),
+    currency: Currency.EUR,
+    goalSetByUserId: UserId.of('u-ivan'),
+    goalSetAtUtcMs: stamp,
+  };
+  const rostered = { rosteredMinutes: 480, unsoldMinutes: 480 };
+  const nine = [MinuteRange.of(minute(540), endMinute(1020))];
+  /** `barberId` rostered on each of `dates` (a stretch 09:00–17:00). */
+  const rosteredDays = (barberId: BarberId, dates: readonly string[]) =>
+    dates.map((d) => dayOf(barberId, localDate(d), rostered, nine));
+
+  describe('goalPaceOf — the contract’s formula', () => {
+    it('is NONE without a goal, before the first rostered day is worked, and with no rostered day in the month', () => {
+      expect(S.goalPaceOf(cents(50_000), null, 10, 22)).toBe(GoalPaceTag.None);
+      expect(S.goalPaceOf(cents(50_000), GOAL, 0, 22)).toBe(GoalPaceTag.None);
+      expect(S.goalPaceOf(cents(50_000), GOAL, 0, 0)).toBe(GoalPaceTag.None);
+    });
+
+    it('paces the takings against the goal scaled by the days worked over the days rostered — the bounds inclusive', () => {
+      // 12 of 22 days: expected 98 181,8… – 120 000,0 cents.
+      expect(S.goalPaceOf(cents(120_000), GOAL, 12, 22)).toBe(
+        GoalPaceTag.Ahead,
+      );
+      expect(S.goalPaceOf(cents(119_999), GOAL, 12, 22)).toBe(
+        GoalPaceTag.OnTrack,
+      );
+      expect(S.goalPaceOf(cents(98_182), GOAL, 12, 22)).toBe(
+        GoalPaceTag.OnTrack,
+      );
+      expect(S.goalPaceOf(cents(98_181), GOAL, 12, 22)).toBe(
+        GoalPaceTag.Behind,
+      );
+      expect(S.goalPaceOf(cents(0), GOAL, 12, 22)).toBe(GoalPaceTag.Behind);
+      // Every day worked: the whole goal.
+      expect(S.goalPaceOf(cents(220_000), GOAL, 22, 22)).toBe(
+        GoalPaceTag.Ahead,
+      );
+      expect(S.goalPaceOf(cents(180_000), GOAL, 22, 22)).toBe(
+        GoalPaceTag.OnTrack,
+      );
+      expect(S.goalPaceOf(cents(179_999), GOAL, 22, 22)).toBe(
+        GoalPaceTag.Behind,
+      );
+    });
+
+    it('is pure: same input → same output, the goal untouched', () => {
+      const frozen = deepFreeze({ ...GOAL });
+      expect(S.goalPaceOf(cents(100_000), frozen, 12, 22)).toBe(
+        S.goalPaceOf(cents(100_000), frozen, 12, 22),
+      );
+      expect(frozen).toEqual(GOAL);
+    });
+  });
+
+  describe('goalScopeAllowed — the shop’s goal, or one’s own record’s', () => {
+    it('admits the shop and the account’s own record, refuses a colleague’s', () => {
+      expect(S.goalScopeAllowed(null, ivan)).toBe(true);
+      expect(S.goalScopeAllowed(null, null)).toBe(true);
+      expect(S.goalScopeAllowed(ivan, ivan)).toBe(true);
+      expect(S.goalScopeAllowed(niko, ivan)).toBe(false);
+      expect(S.goalScopeAllowed(niko, null)).toBe(false);
+    });
+  });
+
+  describe('goalMonthAllowed and goalMonthOffered — the current or the next month', () => {
+    it('admits today’s month and the one after it, no other', () => {
+      expect(S.goalMonthAllowed(MonthKey.of('2026-10'), TODAY)).toBe(true);
+      expect(S.goalMonthAllowed(MonthKey.of('2026-11'), TODAY)).toBe(true);
+      for (const month of ['2026-09', '2026-12', '2027-10', '2025-10']) {
+        expect(S.goalMonthAllowed(MonthKey.of(month), TODAY)).toBe(false);
+      }
+      // December's next month is next year's January.
+      expect(
+        S.goalMonthAllowed(MonthKey.of('2027-01'), localDate('2026-12-31')),
+      ).toBe(true);
+    });
+
+    it('offers «Задай цел» on the current and the next MONTH only — never another span, never a past or farther month', () => {
+      expect(S.goalMonthOffered(OCTOBER, TODAY)).toBe(true);
+      expect(
+        S.goalMonthOffered(
+          AnalyticsPeriod.monthOf(localDate('2026-11-01')),
+          TODAY,
+        ),
+      ).toBe(true);
+      expect(
+        S.goalMonthOffered(
+          AnalyticsPeriod.monthOf(localDate('2026-09-01')),
+          TODAY,
+        ),
+      ).toBe(false);
+      expect(
+        S.goalMonthOffered(
+          AnalyticsPeriod.monthOf(localDate('2026-12-01')),
+          TODAY,
+        ),
+      ).toBe(false);
+      expect(S.goalMonthOffered(AnalyticsPeriod.weekOf(TODAY), TODAY)).toBe(
+        false,
+      );
+      expect(S.goalMonthOffered(AnalyticsPeriod.dayOf(TODAY), TODAY)).toBe(
+        false,
+      );
+      expect(S.goalMonthOffered(AnalyticsPeriod.yearOf(TODAY), TODAY)).toBe(
+        false,
+      );
+      expect(
+        S.goalMonthOffered(
+          AnalyticsPeriod.customOf(
+            localDate('2026-10-01'),
+            localDate('2026-10-31'),
+          ),
+          TODAY,
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe('report — the goal fields', () => {
+    it('hands the goal’s range back on a MONTH with the days worked so far, the month’s rostered days and the pace', () => {
+      // Ivan rostered on 12 past-or-today weekdays and 10 later ones: 22 in all, 12 so far.
+      const soFar = [
+        '01',
+        '02',
+        '05',
+        '06',
+        '07',
+        '08',
+        '09',
+        '12',
+        '13',
+        '14',
+      ];
+      const later = [
+        '15',
+        '16',
+        '19',
+        '20',
+        '21',
+        '22',
+        '23',
+        '26',
+        '27',
+        '28',
+      ];
+      const dates = [...soFar, ...later].map((d) => `2026-10-${d}`);
+      const report = S.report(
+        input({
+          goal: GOAL,
+          days: rosteredDays(ivan, dates),
+          // 1 200,00 € worked — the expected high at 10 of 20 days is 1 100,00 €.
+          visits: [
+            visit('v-1', localDate('2026-10-05'), [seat(ivan, 120_000)]),
+          ],
+        }),
+      );
+      expect(report).toMatchObject({
+        reportGoalLowCents: 180_000,
+        reportGoalHighCents: 220_000,
+        reportGoalDaysSoFar: 10,
+        reportGoalDaysInMonth: 20,
+        reportGoalPaceTag: GoalPaceTag.Ahead,
+      });
+    });
+
+    it('counts a stored past day with rostered minutes beside the live days, and never a day without a stretch', () => {
+      const stored = {
+        ...DayFigures.empty(ivan, localDate('2026-10-01'), stamp),
+        dayRosteredMinutes: 480 as MinuteCount,
+      };
+      const report = S.report(
+        input({
+          goal: GOAL,
+          pastDays: [stored],
+          days: [
+            ...rosteredDays(ivan, ['2026-10-02', '2026-10-20']),
+            // A closed day: no stretch, no rostered minute — not a goal day.
+            dayOf(ivan, localDate('2026-10-03')),
+          ],
+        }),
+      );
+      expect(report.reportGoalDaysSoFar).toBe(2);
+      expect(report.reportGoalDaysInMonth).toBe(3);
+      // Nothing taken yet: behind the expected low.
+      expect(report.reportGoalPaceTag).toBe(GoalPaceTag.Behind);
+    });
+
+    it('on the shop scope a day counts ONCE when any barber has a stretch', () => {
+      const report = S.report(
+        input({
+          scopeBarberId: null,
+          barberIds: [ivan, niko],
+          goal: { ...GOAL, barberId: null },
+          days: [
+            ...rosteredDays(ivan, ['2026-10-05', '2026-10-06']),
+            ...rosteredDays(niko, ['2026-10-05', '2026-10-20']),
+          ],
+        }),
+      );
+      expect(report.reportGoalDaysSoFar).toBe(2);
+      expect(report.reportGoalDaysInMonth).toBe(3);
+    });
+
+    it('carries no goal — null bounds, NONE and zero days — without one, and off MONTH even when one is handed in', () => {
+      const none = S.report(
+        input({ days: rosteredDays(ivan, ['2026-10-05']) }),
+      );
+      expect(none).toMatchObject({
+        reportGoalLowCents: null,
+        reportGoalHighCents: null,
+        reportGoalPaceTag: GoalPaceTag.None,
+        reportGoalDaysSoFar: 1,
+        reportGoalDaysInMonth: 1,
+      });
+      for (const period of [
+        AnalyticsPeriod.weekOf(TODAY),
+        AnalyticsPeriod.dayOf(TODAY),
+        AnalyticsPeriod.yearOf(TODAY),
+        AnalyticsPeriod.customOf(
+          localDate('2026-10-01'),
+          localDate('2026-10-31'),
+        ),
+      ]) {
+        const report = S.report(
+          input({
+            period,
+            goal: GOAL,
+            days: rosteredDays(ivan, ['2026-10-05']),
+          }),
+        );
+        expect(report).toMatchObject({
+          reportGoalLowCents: null,
+          reportGoalHighCents: null,
+          reportGoalPaceTag: GoalPaceTag.None,
+          reportGoalDaysSoFar: 0,
+          reportGoalDaysInMonth: 0,
+        });
+      }
+    });
   });
 });

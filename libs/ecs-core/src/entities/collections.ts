@@ -30,6 +30,13 @@ export const Collections = {
    * triggers and the recompute, read by the callable only; TTL `purgeAt`.
    */
   AnalyticsDays: 'analyticsDays',
+  /**
+   * `AnalyticsGoal`, keyed by `AnalyticsGoalKey` (`{barberId|shop}__{YYYY-MM}`)
+   * — one scope's takings goal for one month (staff analytics v2 PR 6);
+   * written by `setAnalyticsGoal`, read by `staffAnalytics` only — never by
+   * a client (`allow read, write: if false`).
+   */
+  AnalyticsGoals: 'analyticsGoals',
   /** `Appointment` — callable-only in the rules, staff included. */
   Appointments: 'appointments',
   /** `AppointmentNote`, keyed by the appointment id. */

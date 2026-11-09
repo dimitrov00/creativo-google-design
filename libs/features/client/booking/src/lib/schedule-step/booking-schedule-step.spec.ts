@@ -17,7 +17,7 @@ import type {
 import { CapacityEntry, DayHours } from '@core/components';
 import {
   BarberId,
-  CapacityMonthId,
+  MonthKey,
   LocalDate,
   LocationId,
   MinuteCount,
@@ -130,13 +130,13 @@ function capacityMonths(
 ): readonly CapacityMonth[] {
   if (room === undefined) return [];
   return RUN_MONTHS.map((raw) =>
-    capacityMonth(CapacityMonthId.of(raw), room, barbers, shops),
+    capacityMonth(MonthKey.of(raw), room, barbers, shops),
   );
 }
 
 /** One month of {@link capacityMonths}. */
 function capacityMonth(
-  month: CapacityMonthId,
+  month: MonthKey,
   room: CapacityRoom,
   barbers: readonly Barber[],
   shops: readonly ShopLocation[],
@@ -209,7 +209,7 @@ async function renderShell(
         provide: SCHEDULING_READ_PORTS,
         useValue: {
           ...scheduling,
-          observeCapacityMonth: (month: CapacityMonthId) => {
+          observeCapacityMonth: (month: MonthKey) => {
             options.capacityReads?.push(month);
             return scheduling.observeCapacityMonth(month);
           },

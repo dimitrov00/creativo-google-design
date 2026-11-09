@@ -2,6 +2,7 @@ import {
   AnalyticsBarPart,
   AnalyticsSpan,
   BookingOrigin,
+  GoalPaceTag,
   RadarBase,
 } from '@core/components';
 import { pluralForm } from '@creativo/infrastructure/i18n';
@@ -183,6 +184,41 @@ export interface AnalyticsWords {
     readonly title: string;
     readonly origin: Readonly<Record<BookingOrigin, string>>;
     readonly visits: (count: number) => string;
+  };
+  /** The month's goal — the ring, «Задай цел» and the sheet (staff-analytics-v2 CUJ 6). */
+  readonly goal: {
+    readonly title: string;
+    readonly set: string;
+    readonly change: string;
+    /** «Задай оборот за месеца и следи темпото.» — under the title while there is no goal. */
+    readonly prompt: string;
+    /** «1 800,00 € – 2 200,00 €». */
+    readonly range: (low: string, high: string) => string;
+    /** «12 от 22 работни дни · на път». */
+    readonly days: (soFar: number, total: number, pace: string) => string;
+    /** «Още няма работен ден този месец» — the pace is `NONE` with a goal stored. */
+    readonly noDays: string;
+    /** The pace in words, by `GoalPaceTag` — `NONE` has `noDays`. */
+    readonly pace: Readonly<Record<GoalPaceTag, string>>;
+    /** The ring's accessible name. */
+    readonly label: string;
+    /** «45,50 € от целта 1 800,00 € – 2 200,00 €». */
+    readonly valueText: (takings: string, range: string) => string;
+    readonly sheet: {
+      readonly title: string;
+      readonly low: string;
+      readonly high: string;
+      readonly decrease: string;
+      readonly increase: string;
+      readonly save: string;
+      readonly close: string;
+      /** «Въведете двете суми». */
+      readonly incomplete: string;
+      /** «Долната граница трябва да е до горната, и двете над нула». */
+      readonly invalid: string;
+      /** «Целта не се записа. Опитай пак.» */
+      readonly failed: string;
+    };
   };
   readonly figure: Readonly<Record<AnalyticsTopic, string>>;
   readonly info: {
@@ -378,6 +414,35 @@ export function analyticsWordsOf(
         [BookingOrigin.Unknown]: t('origins.UNKNOWN'),
       },
       visits: counted('origins.visits'),
+    },
+    goal: {
+      title: t('goal.title'),
+      set: t('goal.set'),
+      change: t('goal.change'),
+      prompt: t('goal.prompt'),
+      range: (low, high) => t('goal.range', { low, high }),
+      days: (soFar, total, pace) => t('goal.days', { soFar, total, pace }),
+      noDays: t('goal.noDays'),
+      pace: {
+        [GoalPaceTag.Ahead]: t('goal.pace.AHEAD'),
+        [GoalPaceTag.OnTrack]: t('goal.pace.ON_TRACK'),
+        [GoalPaceTag.Behind]: t('goal.pace.BEHIND'),
+        [GoalPaceTag.None]: t('goal.noDays'),
+      },
+      label: t('goal.label'),
+      valueText: (takings, range) => t('goal.valueText', { takings, range }),
+      sheet: {
+        title: t('goal.sheet.title'),
+        low: t('goal.sheet.low'),
+        high: t('goal.sheet.high'),
+        decrease: t('goal.sheet.decrease'),
+        increase: t('goal.sheet.increase'),
+        save: t('goal.sheet.save'),
+        close: t('goal.sheet.close'),
+        incomplete: t('goal.sheet.incomplete'),
+        invalid: t('goal.sheet.invalid'),
+        failed: t('goal.sheet.failed'),
+      },
     },
     figure: byTopic('figure'),
     info: {

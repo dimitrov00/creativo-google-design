@@ -16,6 +16,8 @@ describe('LogEvent', () => {
       AnalyticsRecomputeStep: 'analytics.recompute_step',
       AnalyticsRecomputeSwept: 'analytics.recompute_swept',
       AnalyticsReported: 'analytics.reported',
+      AnalyticsGoalSet: 'analytics.goal_set',
+      AnalyticsGoalRefused: 'analytics.goal_refused',
       AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
       AuditActorMissing: 'audit row has no verified actor',
       AuditWriteFailed: 'audit write failed',
@@ -138,6 +140,8 @@ describe('LogEvent', () => {
       LogEvent.AnalyticsRecomputeStallNotRecorded,
       LogEvent.AnalyticsRecomputeStep,
       LogEvent.AnalyticsRecomputeSwept,
+      LogEvent.AnalyticsGoalSet,
+      LogEvent.AnalyticsGoalRefused,
     ]) {
       expect(text).toMatch(/^[a-z]+\.[a-z_]+$/);
       expect(text.startsWith('analytics.')).toBe(true);

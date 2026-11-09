@@ -89,6 +89,22 @@ export const RadarBase = {
 export type RadarBase = (typeof RadarBase)[keyof typeof RadarBase];
 
 /**
+ * Where the month's takings stand against its goal — the field
+ * `reportGoalPaceTag` (staff analytics v2 PR 6, `StaffAnalyticsSystem.goalPaceOf`):
+ * `expectedLow/High = goalLow/High × daysWorkedSoFar ÷ daysRosteredInMonth`;
+ * takings at or over the expected high are `AHEAD`, at or over the expected
+ * low `ON_TRACK`, under it `BEHIND`.
+ */
+export const GoalPaceTag = {
+  /** No goal, not a `MONTH`, or no rostered day worked yet. */
+  None: 'NONE',
+  Ahead: 'AHEAD',
+  OnTrack: 'ON_TRACK',
+  Behind: 'BEHIND',
+} as const;
+export type GoalPaceTag = (typeof GoalPaceTag)[keyof typeof GoalPaceTag];
+
+/**
  * A staff analytics report (`docs/designs/staff-analytics.md`, the metric
  * catalogue) — every value already decided, so a presenter only words it
  * (Law 10). Flat (Law 6): every 1-to-1 figure at the root under a `report`
@@ -230,6 +246,24 @@ export type AnalyticsReport = {
   readonly reportDayRows: readonly DayRow[];
   /** The scoped barber's seats; empty in a shop report. */
   readonly reportSeatRows: readonly AnalyticsReport.SeatRow[];
+
+  /**
+   * The month's goal (PR 6, «Goals»): the scope's `analyticsGoals` range for
+   * the period's month, read on a `MONTH` only — `null` off `MONTH` or
+   * without a goal.
+   */
+  readonly reportGoalLowCents: PriceCents | null;
+  readonly reportGoalHighCents: PriceCents | null;
+  /** The pace against the goal (`StaffAnalyticsSystem.goalPaceOf`); `NONE` without one. */
+  readonly reportGoalPaceTag: GoalPaceTag;
+  /**
+   * The formula's `daysWorkedSoFar`: the scope's days of the month with a
+   * stretch up to and including today — on the shop scope a day counts once
+   * when any barber has a stretch; `0` off `MONTH`.
+   */
+  readonly reportGoalDaysSoFar: number;
+  /** The formula's `daysRosteredInMonth`: the month's days with a stretch, by the same rule; `0` off `MONTH`. */
+  readonly reportGoalDaysInMonth: number;
 };
 
 export namespace AnalyticsReport {

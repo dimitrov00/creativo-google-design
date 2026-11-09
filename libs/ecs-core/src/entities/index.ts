@@ -1,3 +1,4 @@
+export * from './analytics-goal.entity';
 export * from './analytics-recompute-job.entity';
 export * from './appointment-note.entity';
 export * from './appointment-photo.entity';

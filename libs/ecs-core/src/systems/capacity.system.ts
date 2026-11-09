@@ -11,7 +11,7 @@ import type {
 import {
   type MinuteCount,
   type BarberId,
-  type CapacityMonthId,
+  type MonthKey,
   type LocationId,
   LocalDate,
 } from '@core/primitives';
@@ -69,7 +69,7 @@ export type CapacityPlan = {
 
 /** The part of a plan one month document takes. */
 export type CapacityMonthPlan = CapacityPlan & {
-  readonly month: CapacityMonthId;
+  readonly month: MonthKey;
 };
 
 /** What {@link CapacitySystem.localDatesBetween} walked, and whether it stopped at the cap. */
@@ -326,7 +326,7 @@ export const CapacitySystem = {
    */
   monthUnchanged(
     stored: Pick<CapacityMonth, 'month' | 'entries'> | null,
-    month: CapacityMonthId,
+    month: MonthKey,
     entries: readonly CapacityEntry[],
   ): boolean {
     if (stored === null) return entries.length === 0;

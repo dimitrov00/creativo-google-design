@@ -34,6 +34,10 @@ export const LogEvent = {
   AnalyticsRecomputeSwept: 'analytics.recompute_swept',
   /** A staff analytics report answered (`staffAnalytics`): the caller, scope, period, counts and minutes per part — never money (logs are read by the vendor). */
   AnalyticsReported: 'analytics.reported',
+  /** A takings goal set (`setAnalyticsGoal`): the caller, the scope and the month — never the bounds (the audit row holds them). */
+  AnalyticsGoalSet: 'analytics.goal_set',
+  /** A goal refused (`setAnalyticsGoal`): the caller and the refusal's `errorCode`. */
+  AnalyticsGoalRefused: 'analytics.goal_refused',
   /** The App Check switch held a non-empty value that is no mode — read as OFF, logged once per instance (security hardening S-RU-19). */
   AppCheckModeUnreadable: 'edge.app_check_mode_unreadable',
   AuditActorMissing: 'audit row has no verified actor',

@@ -4,7 +4,7 @@ import {
   MinuteCount,
   type BarberId,
   BarberLeadTimeSampleId,
-  type CapacityMonthId,
+  type MonthKey,
   LocalDate,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -88,8 +88,8 @@ export const LeadTimeSystem = {
   monthKeysBetween(
     fromLocalDate: LocalDate,
     toLocalDate: LocalDate,
-  ): readonly CapacityMonthId[] {
-    const keys: CapacityMonthId[] = [];
+  ): readonly MonthKey[] {
+    const keys: MonthKey[] = [];
     if (toLocalDate < fromLocalDate) return keys;
     const last = LocalDate.monthKey(toLocalDate);
     let cursor = LocalDate.startOfMonth(fromLocalDate);

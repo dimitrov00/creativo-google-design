@@ -1229,6 +1229,73 @@ describe('firestore.rules', () => {
     });
   });
 
+  describe('analyticsGoals — server-only, no client read or write (staff-analytics-v2 PR 6)', () => {
+    const goalId = 'ivan__2026-11';
+    const body = {
+      barberId: 'ivan',
+      goalMonth: '2026-11',
+      goalLowCents: 180000,
+      goalHighCents: 220000,
+      currency: 'EUR',
+      goalSetByUserId: 'u-ivan',
+      goalSetAtUtcMs: 1_762_700_000_000,
+    };
+
+    async function seedGoal(): Promise<void> {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'analyticsGoals', goalId), body);
+      });
+    }
+
+    /**
+     * A goal is a barber's money target: only the `staffAnalytics` callable
+     * reads it, judging the caller's scope itself — the barber whose record
+     * it is, or the admin on that barber's scope. Nobody reads the collection
+     * directly — a colleague with the key (the barber id and the month are
+     * public knowledge) would otherwise read another's goal.
+     */
+    it('denies every direct read — anonymous, client, barber (the owner included) and admin', async () => {
+      await seedGoal();
+      await assertFails(
+        getDoc(
+          doc(
+            testEnv.unauthenticatedContext().firestore(),
+            'analyticsGoals',
+            goalId,
+          ),
+        ),
+      );
+      for (const [uid, roles] of [
+        ['reader-client', ['client']],
+        ['u-ivan', ['barber']],
+        ['reader-admin', ['admin']],
+      ] as const) {
+        const actor = testEnv.authenticatedContext(uid, { roles });
+        await assertFails(
+          getDoc(doc(actor.firestore(), 'analyticsGoals', goalId)),
+        );
+      }
+    });
+
+    it('refuses every client write — the barber’s own goal included, and the admin’s', async () => {
+      for (const [uid, roles] of [
+        ['u-ivan', ['barber']],
+        ['writer-admin', ['admin']],
+      ] as const) {
+        const actor = testEnv.authenticatedContext(uid, { roles });
+        await assertFails(
+          setDoc(doc(actor.firestore(), 'analyticsGoals', goalId), body),
+        );
+        await assertFails(
+          setDoc(doc(actor.firestore(), 'analyticsGoals', 'shop__2026-11'), {
+            ...body,
+            barberId: null,
+          }),
+        );
+      }
+    });
+  });
+
   // ── the booking-critical rules the audit found untested (F26) ─────────
 
   // DEP-6 (pass E, E-16): the admin grant is closed — no client writes the

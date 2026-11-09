@@ -7,14 +7,24 @@
  * `@ts-expect-error` — IS the test; nothing here runs.
  */
 import type {
+  AnalyticsGoal,
   DayCounts,
   DayHourBuckets,
   DayRow,
   DayServices,
   DayStamp,
 } from '@core/components';
-import type { BusyKey, UtcEpochMs } from '@core/primitives';
+import type {
+  AnalyticsGoalKey,
+  BarberId,
+  BusyKey,
+  UtcEpochMs,
+} from '@core/primitives';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
+import type {
+  AnalyticsGoalMeta,
+  StoredAnalyticsGoal,
+} from './analytics-goal.entity';
 import type { AnalyticsRecomputeJob } from './analytics-recompute-job.entity';
 import type {
   BarberAnalyticsDay,
@@ -98,3 +108,26 @@ const notPolicy: typeof RecomputeJobName.ClientStatsPolicy =
 void notPolicy;
 // @ts-expect-error — the policy job's generation has no place here
 void job.generation;
+
+/* ── StoredAnalyticsGoal = Meta & AnalyticsGoal (PR 6) ───────────────────── */
+
+export const goalNotNever: IsNever<StoredAnalyticsGoal> = false;
+export const goalFlat: EveryVariantFlat<StoredAnalyticsGoal> = true;
+export const goalDisjoint: Disjoint<AnalyticsGoalMeta, AnalyticsGoal> = true;
+
+declare const goal: StoredAnalyticsGoal;
+const goalKey: AnalyticsGoalKey = goal.id;
+void goalKey;
+const goalScope: BarberId | null = goal.barberId;
+void goalScope;
+void goal.goalMonth;
+void goal.goalLowCents;
+void goal.goalHighCents;
+void goal.currency;
+void goal.goalSetByUserId;
+const goalStamp: UtcEpochMs = goal.goalSetAtUtcMs;
+void goalStamp;
+// @ts-expect-error — no time-zone field on a goal: a month is the shop calendar's (Law 7.2)
+void goal.timeZone;
+// @ts-expect-error — no pace on the document: the system derives it per report
+void goal.goalPaceTag;

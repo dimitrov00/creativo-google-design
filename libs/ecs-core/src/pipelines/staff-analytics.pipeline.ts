@@ -1,4 +1,5 @@
 import {
+  AnalyticsGoalKey,
   BusyKey,
   LocalDate,
   type LocationId,
@@ -28,9 +29,11 @@ import {
   Collections,
   type ScheduleException,
   type ShopLocation,
+  type StoredAnalyticsGoal,
 } from '@core/entities';
 import type {
   AnalyticsDayReadPorts,
+  AnalyticsGoalPorts,
   AnalyticsReadPorts,
   ClockPorts,
   DefaultLocationPorts,
@@ -99,6 +102,9 @@ import {
  *    `DAY` nothing beyond the day, its counterpart and the next 7 days is
  *    read** (design, step 5): no follow-ups, so a `DAY` computed live
  *    reports `reportRebookedCount` 0 over its base.
+ *    **The goal** (PR 6): on a `MONTH` the scope's `analyticsGoals/{key}`
+ *    for the period's month is read beside them (+1 read); on every other
+ *    span it is not read and the report's goal fields are `null` / `NONE`.
  * 7. **Compute** — the barber-days (`daysOf`) and the report (`report`).
  * 8. **Log** `LogEvent.AnalyticsReported`: the caller, scope, period, span,
  *    comparison, version, visit count, missing days, duration and minutes
@@ -115,6 +121,7 @@ export type StaffAnalyticsCommand = AnalyticsCall & {
 
 export type StaffAnalyticsPorts = AnalyticsReadPorts &
   AnalyticsDayReadPorts &
+  AnalyticsGoalPorts &
   FlagsPorts &
   ProfileLoadPorts &
   ShopDayReadPorts &
@@ -133,6 +140,10 @@ const NO_VISITS: Result<readonly Appointment[], RepositoryError> = Result.ok(
 /** What a skipped day-document read answers — none, read from nowhere. */
 const NO_DAYS: Result<readonly BarberAnalyticsDay[], RepositoryError> =
   Result.ok([]);
+
+/** What a skipped goal read answers (every span but `MONTH`) — none. */
+const NO_GOAL: Result<StoredAnalyticsGoal | null, RepositoryError> =
+  Result.ok(null);
 
 /** Every read's answer, or the first failure. */
 function allOk<T>(
@@ -257,6 +268,7 @@ export const staffAnalytics =
       policy,
       periodDocs,
       previousDocs,
+      goal,
     ] = await Promise.all([
       Promise.all(barberIds.map((id) => ports.loadSchedule(id))),
       Promise.all(
@@ -288,6 +300,15 @@ export const staffAnalytics =
             previous.toLocalDate,
           )
         : Promise.resolve(NO_DAYS),
+      // The month's goal (PR 6) — on a MONTH only, the scope's own key.
+      period.value.analyticsSpan === AnalyticsSpan.Month
+        ? ports.loadAnalyticsGoal(
+            AnalyticsGoalKey.of(
+              scope.value,
+              LocalDate.monthKey(period.value.fromLocalDate),
+            ),
+          )
+        : Promise.resolve(NO_GOAL),
     ]);
     const rosterRead = allOk<BarberSchedule | null>(rosters);
     if (!rosterRead.ok) return rosterRead;
@@ -299,6 +320,7 @@ export const staffAnalytics =
     if (!policy.ok) return policy;
     if (!periodDocs.ok) return periodDocs;
     if (!previousDocs.ok) return previousDocs;
+    if (!goal.ok) return goal;
     const pastDays = S.currentStoredOf(periodDocs.value);
     const previousPastDays = S.currentStoredOf(previousDocs.value);
     const roster: BarberSchedule[] = [];
@@ -424,6 +446,7 @@ export const staffAnalytics =
       followUps,
       policy: ClientStatsPolicy.forBooking(policy.value),
       now,
+      goal: goal.value,
     });
 
     // 8. The log line — counts and minutes, never money.

@@ -8,7 +8,7 @@ import {
   switchMap,
 } from 'rxjs';
 import { SCHEDULING_READ_PORTS } from '@creativo/infrastructure/firebase-app';
-import type { CapacityMonthId, Result } from '@core/primitives';
+import type { MonthKey, Result } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type { CapacityEntry } from '@core/components';
 import {
@@ -49,7 +49,7 @@ export class BookingDayStore {
    * is asked, or until the first answer.
    */
   capacityEntries(
-    months: Signal<readonly CapacityMonthId[] | null>,
+    months: Signal<readonly MonthKey[] | null>,
   ): Signal<CapacityEntriesResult | null> {
     return toSignal(
       toObservable(months).pipe(

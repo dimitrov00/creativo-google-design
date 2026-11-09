@@ -5,7 +5,7 @@ import type { BarberSchedule, ShopLocation } from '@core/entities';
 import { CapacityEntry } from '@core/components';
 import {
   BarberId,
-  CapacityMonthId,
+  MonthKey,
   LocationId,
   MinuteCount,
   Result,
@@ -137,13 +137,13 @@ describe('observeCapacityEntries — the calendar markers’ month documents', (
   ];
 
   it('collects the months’ entries, a month never rebuilt holding none', async () => {
-    const october = CapacityMonthId.of('2026-10');
+    const october = MonthKey.of('2026-10');
     const read = await firstValueFrom(
       observeCapacityEntries(
         memorySchedulingReadPorts({
           capacityMonths: [{ id: october, month: october, entries: ENTRIES }],
         }),
-        [CapacityMonthId.of('2026-09'), october],
+        [MonthKey.of('2026-09'), october],
       ),
     );
 

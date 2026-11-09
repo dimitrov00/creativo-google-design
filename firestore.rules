@@ -675,6 +675,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /analyticsGoals/{goalId} {
+      // One scope's takings goal for one month (staff-analytics-v2, «Goals»,
+      // PR 6): `{barberId|shop}__{YYYY-MM}` → the range in cents, who set it
+      // and when. Written only by the `setAnalyticsGoal` callable (Admin SDK,
+      // one commit with its audit row) and read only by the `staffAnalytics`
+      // callable on a MONTH, which judges the caller's scope itself — a
+      // client read would hand a barber's goal to any colleague with the key.
+      allow read, write: if false;
+    }
+
     match /waitlistRequests/{requestId} {
       // A standing request to be told when a day opens up. The owner reads
       // their own; staff read all of them, because "who is waiting for

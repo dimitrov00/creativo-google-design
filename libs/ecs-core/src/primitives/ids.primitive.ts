@@ -198,9 +198,88 @@ export const BookingPolicySettingsId = {
   FIXED: 'bookingPolicy' as BookingPolicySettingsId,
 } as const;
 
-/** A capacity month (`capacity/{YYYY-MM}`) — built by `LocalDate.monthKey`. */
-export type CapacityMonthId = Brand<string, 'CapacityMonthId'>;
-export const CapacityMonthId = idCompanion('CapacityMonthId');
+/** The shape of a month key: `YYYY-MM`, the month `01`–`12`. */
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * A calendar month, `YYYY-MM` — ONE brand for every month-keyed document
+ * (staff analytics v2 D11, was `CapacityMonthId`): the capacity month
+ * (`capacity/{YYYY-MM}`) and the month half of an analytics goal's key.
+ * Built by `LocalDate.monthKey`; foreign text (a callable payload's
+ * `goalMonth`) comes in through `parse`, which — unlike a plain id's —
+ * checks the shape, so `is` admits only a real `YYYY-MM`.
+ */
+export type MonthKey = Brand<string, 'MonthKey'>;
+export const MonthKey = {
+  ...idCompanion('MonthKey'),
+  /** The read-time door: a string of the shape `YYYY-MM`, the month `01`–`12`; `false` for anything else. No allocation. */
+  is(raw: unknown): raw is MonthKey {
+    return typeof raw === 'string' && MONTH_KEY.test(raw);
+  },
+  /** Foreign input: exactly `YYYY-MM`. */
+  parse(raw: string): Result<MonthKey, PrimitiveError> {
+    return MONTH_KEY.test(raw)
+      ? Result.ok(raw as MonthKey)
+      : Result.err(
+          PrimitiveError.of(
+            PrimitiveErrorCode.MonthKeyInvalid,
+            raw,
+            'MonthKey',
+          ),
+        );
+  },
+} as const;
+
+/** The scope half of a shop-wide analytics goal's key (`shop__{YYYY-MM}`) — no barber record is ever named `shop`-and-`__`, the separator is reserved (OR-44). */
+const GOAL_SHOP_SCOPE = 'shop';
+/** The separator of a composite key's halves — `BusyKey`'s spelling. */
+const GOAL_KEY_SEPARATOR = '__';
+
+/**
+ * An analytics goal's document id (`analyticsGoals/{key}`, staff analytics
+ * v2 «Goals»): `{barberId}__{YYYY-MM}` for a barber's month, or
+ * `shop__{YYYY-MM}` for the shop's — one document per scope and month, so
+ * a set is an overwrite and the callable reads the month's goal by key with
+ * no query. Built by {@link AnalyticsGoalKey.of} alone (the one cast site);
+ * a stored id is admitted through `is` — the last `__`, a scope before it
+ * (`shop` or a barber id) and a `MonthKey` after it.
+ */
+export type AnalyticsGoalKey = Brand<string, 'AnalyticsGoalKey'>;
+export const AnalyticsGoalKey = {
+  /** The only builder: the scope (a barber record, or `null` for the shop) and the month. */
+  of(scopeBarberId: BarberId | null, month: MonthKey): AnalyticsGoalKey {
+    return `${scopeBarberId ?? GOAL_SHOP_SCOPE}${GOAL_KEY_SEPARATOR}${month}` as AnalyticsGoalKey;
+  },
+  /**
+   * The read-time door (edge hardening D-1): the LAST `__`, a non-empty
+   * scope before it — `shop`, or a span `BarberId.isSpan` admits — and
+   * exactly a `MonthKey` after it. `false` for every other value. No slice,
+   * no `Result`.
+   */
+  is(raw: unknown): raw is AnalyticsGoalKey {
+    if (typeof raw !== 'string') return false;
+    const at = raw.lastIndexOf(GOAL_KEY_SEPARATOR);
+    if (at <= 0) return false;
+    const month = raw.slice(at + GOAL_KEY_SEPARATOR.length);
+    if (!MONTH_KEY.test(month)) return false;
+    return (
+      (at === GOAL_SHOP_SCOPE.length && raw.startsWith(GOAL_SHOP_SCOPE)) ||
+      BarberId.isSpan(raw, 0, at)
+    );
+  },
+  /** Foreign text (a stored document id): a key {@link is} admits, else the id refusal. */
+  parse(raw: string): Result<AnalyticsGoalKey, PrimitiveError> {
+    return AnalyticsGoalKey.is(raw)
+      ? Result.ok(raw)
+      : Result.err(
+          PrimitiveError.of(
+            PrimitiveErrorCode.IdReserved,
+            raw,
+            'AnalyticsGoalKey',
+          ),
+        );
+  },
+} as const;
 
 /** A barber's schedule exception (`scheduleExceptions/{id}`) — its raw text is a `BusyKey`. */
 export type ScheduleExceptionId = Brand<string, 'ScheduleExceptionId'>;
@@ -564,6 +643,9 @@ const OTPS = 'otps';
 /** `Collections.Customers` — restated likewise (spec-checked). */
 const CUSTOMERS = 'customers';
 
+/** `Collections.AnalyticsGoals` — restated likewise (spec-checked). */
+const ANALYTICS_GOALS = 'analyticsGoals';
+
 /**
  * The resource an audit row names — the one id whose text may hold ONE `/`
  * (`users/{uid}`, `streakDefinitions/{id}`, `impersonationSessions/{id}`,
@@ -613,6 +695,10 @@ export const AuditResourceId = {
   /** A data-subject row (an export, an erasure) names the client record, `customers/{id}` (audit-hardening Phase 3 WS-C). */
   forCustomer(id: CustomerId): AuditResourceId {
     return `${CUSTOMERS}/${id}` as AuditResourceId;
+  },
+  /** An analytics goal row names the goal document, `analyticsGoals/{key}` (staff analytics v2 PR 6). */
+  forAnalyticsGoal(key: AnalyticsGoalKey): AuditResourceId {
+    return `${ANALYTICS_GOALS}/${key}` as AuditResourceId;
   },
 } as const;
 

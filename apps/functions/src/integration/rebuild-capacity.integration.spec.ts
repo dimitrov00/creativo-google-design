@@ -13,7 +13,7 @@ import {
   BarberBusyDayId,
   BarberId,
   BusyKey,
-  CapacityMonthId,
+  MonthKey,
   type LocalDate,
   LocationId,
   Result,
@@ -63,7 +63,7 @@ const GONE = LocationId.of('loc-gone');
 /** Monday 3 August 2026, 08:00 on the shop's clock. */
 const NOW = utcMs('2026-08-03T08:00:00.000+03:00');
 const MONDAY = localDate('2026-08-03');
-const AUGUST = CapacityMonthId.of('2026-08');
+const AUGUST = MonthKey.of('2026-08');
 
 const entry = (
   day: LocalDate,
@@ -135,7 +135,7 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
     localDate: MONDAY,
   } as const;
 
-  async function month(id: CapacityMonthId) {
+  async function month(id: MonthKey) {
     return (await db.collection(Collections.Capacity).doc(id).get()).data();
   }
 

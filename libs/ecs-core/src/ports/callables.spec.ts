@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AnalyticsCall, ClientPrivacyCall, RolesCall } from '@core/components';
+import {
+  AnalyticsCall,
+  ClientPrivacyCall,
+  RolesCall,
+  SetAnalyticsGoalCall,
+} from '@core/components';
 import { AppCheckTokenUse, Tag } from '@core/primitives';
 import {
   CALLABLE_ANSWER_DECODERS,
@@ -77,6 +82,17 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
     expect(CALLABLE_ANSWER_DECODERS[Callables.StaffAnalytics]).toBe(
       AnalyticsCall.decodeReport,
+    );
+  });
+
+  it('a goal set (v2 PR 6) rides `operationId`, a standard token, the goal call’s decoder', () => {
+    expect(Callables.SetAnalyticsGoal).toBe('setAnalyticsGoal');
+    expect(OPERATION_ID_FIELD[Callables.SetAnalyticsGoal]).toBe('operationId');
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.SetAnalyticsGoal]).toBe(
+      AppCheckTokenUse.Standard,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.SetAnalyticsGoal]).toBe(
+      SetAnalyticsGoalCall.decodeSet,
     );
   });
 

@@ -1,6 +1,6 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import { AnalyticsErrorCode } from '@core/errors';
-import { decodeStaffAnalytics } from './analytics.wire';
+import { decodeSetAnalyticsGoal, decodeStaffAnalytics } from './analytics.wire';
 
 /*
  * `staffAnalytics`' wire: signed in, a token role that reads analytics (the
@@ -166,5 +166,105 @@ describe('decodeStaffAnalytics', () => {
       errorCode: AnalyticsErrorCode.InvalidInput,
       field: 'fromLocalDate',
     });
+  });
+});
+
+/*
+ * `setAnalyticsGoal`'s wire (v2 PR 6): the report's two gates, then the
+ * scope, the month and the two bounds through their guards; the operation id
+ * is read — the goal's audit row is keyed by it.
+ */
+const goalSent = {
+  scopeBarberId: null,
+  goalMonth: '2026-11',
+  goalLowCents: 180000,
+  goalHighCents: 220000,
+  operationId: 'operation-0123456789ab',
+};
+
+const goalRefusalOf = (data: unknown, roles?: readonly unknown[] | null) => {
+  const decoded = decodeSetAnalyticsGoal(callable(data, roles));
+  return decoded.ok ? null : decoded.error;
+};
+
+describe('decodeSetAnalyticsGoal', () => {
+  it('reads the call, the verified caller and the operation id', () => {
+    expect(decodeSetAnalyticsGoal(callable(goalSent))).toEqual({
+      ok: true,
+      value: {
+        callerUserId: 'u-ivan',
+        scopeBarberId: null,
+        goalMonth: '2026-11',
+        goalLowCents: 180000,
+        goalHighCents: 220000,
+        operationId: 'operation-0123456789ab',
+      },
+    });
+    const scoped = decodeSetAnalyticsGoal(
+      callable({ ...goalSent, scopeBarberId: 'b-ivan' }),
+    );
+    expect(scoped.ok && scoped.value.scopeBarberId).toBe('b-ivan');
+  });
+
+  it('reads an absent or malformed operation id as none — never refused', () => {
+    for (const data of [
+      { ...goalSent, operationId: undefined },
+      { ...goalSent, operationId: 'short' },
+      { ...goalSent, operationId: 7 },
+    ]) {
+      const decoded = decodeSetAnalyticsGoal(callable(data));
+      expect(decoded.ok && decoded.value.operationId).toBeNull();
+    }
+  });
+
+  it('passes a range that is no range through — the pipeline’s question (ANALYTICS_GOAL_INVALID_RANGE), not the wire’s', () => {
+    const decoded = decodeSetAnalyticsGoal(
+      callable({ ...goalSent, goalLowCents: 0, goalHighCents: 0 }),
+    );
+    expect(decoded.ok && decoded.value.goalLowCents).toBe(0);
+    const inverted = decodeSetAnalyticsGoal(
+      callable({ ...goalSent, goalLowCents: 220000, goalHighCents: 180000 }),
+    );
+    expect(inverted.ok).toBe(true);
+    // A past month too: which months are allowed is the pipeline's rule.
+    expect(
+      decodeSetAnalyticsGoal(callable({ ...goalSent, goalMonth: '2020-01' }))
+        .ok,
+    ).toBe(true);
+  });
+
+  it('refuses a caller who is not signed in, and a token with no analytics role', () => {
+    expect(goalRefusalOf(goalSent, null)).toEqual({
+      errorCode: AnalyticsErrorCode.Unauthenticated,
+    });
+    for (const roles of [['client'], ['receptionist'], []]) {
+      expect(goalRefusalOf(goalSent, roles)).toEqual({
+        errorCode: AnalyticsErrorCode.Forbidden,
+      });
+    }
+    for (const roles of [['barber'], ['admin']]) {
+      expect(goalRefusalOf(goalSent, roles)).toBeNull();
+    }
+  });
+
+  it('names the first field its primitive refuses', () => {
+    for (const [data, field] of [
+      [{ ...goalSent, scopeBarberId: 'a/b' }, 'scopeBarberId'],
+      [{ ...goalSent, scopeBarberId: 7 }, 'scopeBarberId'],
+      [{ ...goalSent, goalMonth: '2026-11-01' }, 'goalMonth'],
+      [{ ...goalSent, goalMonth: '2026-13' }, 'goalMonth'],
+      [{ ...goalSent, goalMonth: undefined }, 'goalMonth'],
+      [{ ...goalSent, goalLowCents: '180000' }, 'goalLowCents'],
+      [{ ...goalSent, goalLowCents: -1 }, 'goalLowCents'],
+      [{ ...goalSent, goalLowCents: 1.5 }, 'goalLowCents'],
+      [{ ...goalSent, goalHighCents: undefined }, 'goalHighCents'],
+      [{ ...goalSent, goalHighCents: Number.NaN }, 'goalHighCents'],
+      ['goal', 'goalMonth'],
+    ] as const) {
+      expect(goalRefusalOf(data)).toEqual({
+        errorCode: AnalyticsErrorCode.InvalidInput,
+        field,
+      });
+    }
   });
 });

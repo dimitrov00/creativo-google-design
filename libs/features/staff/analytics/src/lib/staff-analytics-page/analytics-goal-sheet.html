@@ -1,0 +1,98 @@
+@let goal = vm();
+<ui-modal-sheet
+  sheetId="analytics-goal-sheet"
+  [labelledBy]="titleId"
+  [closeLabel]="goal.closeLabel"
+  [open]="presented()"
+  [closing]="closing()"
+  [fitted]="true"
+  data-testid="analytics-goal-sheet"
+  (dismissed)="requestClose()"
+  (closeFinished)="finishClose()"
+>
+  <span sheet-title>{{ goal.title }}</span>
+
+  <div class="analytics-goal-sheet__head">
+    <ui-sheet-headline>
+      <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
+        {{ goal.title }}
+      </h2>
+    </ui-sheet-headline>
+  </div>
+
+  <ui-stack uiSpacing="regular" class="analytics-goal-sheet__fields">
+    <!-- Each end of the range: its word above the sum, written large, the
+         −/+ pair stepping by 50 €. -->
+    <div class="analytics-goal-sheet__field">
+      <span
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="analytics-goal-sheet__caption"
+        aria-hidden="true"
+        >{{ goal.lowLabel }}</span
+      >
+      <ui-amount-field
+        [uiValue]="low()"
+        [uiUnit]="goal.unit"
+        uiReserve="0 000,00"
+        [uiStep]="5000"
+        [uiLabel]="goal.lowLabel"
+        [uiDecreaseLabel]="goal.decreaseLabel"
+        [uiIncreaseLabel]="goal.increaseLabel"
+        uiTestId="analytics-goal-low"
+        (uiValueChange)="lowChange.emit($event)"
+        (uiSubmit)="save()"
+      />
+    </div>
+    <div class="analytics-goal-sheet__field">
+      <span
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="analytics-goal-sheet__caption"
+        aria-hidden="true"
+        >{{ goal.highLabel }}</span
+      >
+      <ui-amount-field
+        [uiValue]="high()"
+        [uiUnit]="goal.unit"
+        uiReserve="0 000,00"
+        [uiStep]="5000"
+        [uiLabel]="goal.highLabel"
+        [uiDecreaseLabel]="goal.decreaseLabel"
+        [uiIncreaseLabel]="goal.increaseLabel"
+        uiTestId="analytics-goal-high"
+        (uiValueChange)="highChange.emit($event)"
+        (uiSubmit)="save()"
+      />
+    </div>
+    <!-- Why «Запази» is off, or that the save failed; an empty line keeps
+         the sheet's height when the range is fine. -->
+    <p
+      uiText
+      uiFont="footnote"
+      uiForegroundStyle="secondary"
+      class="analytics-goal-sheet__refusal"
+      aria-live="polite"
+      data-testid="analytics-goal-refusal"
+    >
+      {{ goal.refusal ?? '' }}
+    </p>
+  </ui-stack>
+
+  <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+    <button
+      type="button"
+      uiButton
+      uiButtonStyle="borderedProminent"
+      uiControlSize="large"
+      [disabled]="!goal.saveEnabled"
+      [uiLoading]="goal.saving"
+      data-testid="analytics-goal-save"
+      (click)="save()"
+    >
+      {{ goal.saveLabel }}
+    </button>
+  </ui-sheet-action-bar>
+</ui-modal-sheet>

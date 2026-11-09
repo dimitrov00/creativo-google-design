@@ -11,7 +11,7 @@ import {
 import {
   Weekday,
   BarberId,
-  CapacityMonthId,
+  MonthKey,
   LocationId,
   LocalDate,
 } from '@core/primitives';
@@ -45,7 +45,7 @@ const LOC_B = LocationId.of('loc-b');
 const k = localDate;
 const m = minuteCount;
 /** A month document's id — `YYYY-MM`. */
-const month = (raw: string) => CapacityMonthId.of(raw);
+const month = (raw: string) => MonthKey.of(raw);
 
 /** Mon-first: open six days 09:00–17:00, closed Sunday. 2026-08-03 is a Monday. */
 function hours(opens = 9 * 60, closes = 17 * 60): readonly DayHours[] {

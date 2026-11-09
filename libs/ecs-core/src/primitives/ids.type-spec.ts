@@ -28,7 +28,8 @@ import {
   type BarberBusyDayId,
   type BarberLeadTimeSampleId,
   type BookingPolicySettingsId,
-  type CapacityMonthId,
+  type MonthKey,
+  type AnalyticsGoalKey,
   type ScheduleExceptionId,
   type WaitlistRequestId,
   type CartLineId,
@@ -130,7 +131,8 @@ type Brands = {
   readonly BarberBusyDayId: BarberBusyDayId;
   readonly BarberLeadTimeSampleId: BarberLeadTimeSampleId;
   readonly BookingPolicySettingsId: BookingPolicySettingsId;
-  readonly CapacityMonthId: CapacityMonthId;
+  readonly MonthKey: MonthKey;
+  readonly AnalyticsGoalKey: AnalyticsGoalKey;
   readonly ScheduleExceptionId: ScheduleExceptionId;
   readonly WaitlistRequestId: WaitlistRequestId;
   readonly CartLineId: CartLineId;

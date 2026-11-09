@@ -433,6 +433,9 @@ const ANALYTICS_WIRE: WireTable<AnalyticsErrorCode> = {
   [AnalyticsErrorCode.PeriodOutOfRange]: fields(S.InvalidArgument),
   [AnalyticsErrorCode.ScopeUnknown]: fields(S.NotFound),
   [AnalyticsErrorCode.InvalidInput]: withField(S.InvalidArgument),
+  // PR 6: a goal for another's scope, and a range or month that is no goal.
+  [AnalyticsErrorCode.GoalForbidden]: fields(S.PermissionDenied),
+  [AnalyticsErrorCode.GoalInvalidRange]: withField(S.InvalidArgument),
 };
 
 const APP_CHECK_WIRE: WireTable<AppCheckErrorCode> = {

@@ -163,3 +163,33 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* THE GOAL RING: the ring beside its two lines — the range, the pace — on
+   the module's column with the DS's side gutter (the client card's
+   collection ring, the same bones). */
+.staff-analytics__goal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sys-space-regular);
+  padding-inline: var(--sys-space-regular);
+}
+
+/* A ring that stands ALONE round a figure takes the heavier stroke. */
+.staff-analytics__goal-ring {
+  --ui-gauge-stroke: calc(var(--sys-space-unit) * 1.25);
+}
+
+.staff-analytics__goal-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
+/* «Задай цел» hugs the trailing edge under the ring, as a card's action does. */
+.staff-analytics__goal-action {
+  display: flex;
+  justify-content: flex-end;
+  padding-inline: var(--sys-space-regular);
+}

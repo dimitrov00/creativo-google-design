@@ -1,7 +1,7 @@
 import { Result } from './result.data';
 import type { Weekday } from './weekday.data';
 import type { Brand } from './brand';
-import { CapacityMonthId } from './ids.primitive';
+import { MonthKey } from './ids.primitive';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /**
@@ -258,9 +258,9 @@ export const LocalDate = {
     return `${d.slice(0, 4)}-01-01` as LocalDate;
   },
 
-  /** The day's month as `YYYY-MM` — the `capacity/{YYYY-MM}` document id. */
-  monthKey(d: LocalDate): CapacityMonthId {
-    return CapacityMonthId.of(d.slice(0, 7));
+  /** The day's month as `YYYY-MM` — the `capacity/{YYYY-MM}` document id, and a goal key's month (D11). */
+  monthKey(d: LocalDate): MonthKey {
+    return MonthKey.of(d.slice(0, 7));
   },
 
   /** The Monday of the day's ISO week. */

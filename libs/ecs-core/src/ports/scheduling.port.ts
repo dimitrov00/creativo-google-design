@@ -4,7 +4,7 @@ import type {
   AppointmentId,
   BarberId,
   BusyKey,
-  CapacityMonthId,
+  MonthKey,
   CustomerId,
   LocalDate,
   LocationId,
@@ -93,7 +93,7 @@ export type ObservePolicy = () => Observable<
  * the month's first rebuild.
  */
 export type ObserveCapacityMonth = (
-  month: CapacityMonthId,
+  month: MonthKey,
 ) => Observable<Result<CapacityMonth | null, RepositoryError>>;
 
 // ── Appointments ──────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ export type LoadOpenWaitlist = (
  * read once and shared by every barber (`sample-lead-time.ts:82-95`).
  */
 export type LoadCapacityMonths = (
-  months: readonly CapacityMonthId[],
+  months: readonly MonthKey[],
 ) => Promise<Result<readonly (CapacityMonth | null)[], RepositoryError>>;
 
 /**
