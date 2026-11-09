@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { UiLineChart } from '@creativo/ui/charts';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   byTestId,
@@ -50,6 +52,29 @@ describe('AnalyticsCardPage — a card’s own screen (staff-analytics-v3)', () 
     );
     // The figure broken down: the services, ranked.
     expect(byTestId(host, 'analytics-services-bars')).not.toBeNull();
+  });
+
+  it('a finger on the line reads that day in the header, the change hidden, and lets go back to the period', async () => {
+    const { fixture, host } = await render('takings');
+    const line = fixture.debugElement.query(By.directive(UiLineChart))
+      .componentInstance as UiLineChart;
+    const value = () =>
+      byTestId(host, 'analytics-card-value')?.textContent?.trim();
+    const subline = () => byTestId(host, 'analytics-card-subline');
+
+    line.uiScrubbed.emit(0);
+    await settle(fixture);
+    expect(subline()?.textContent).toContain('1 септември · предходен');
+    expect(subline()?.hasAttribute('data-scrubbing')).toBe(true);
+    expect(subline()?.getAttribute('aria-live')).toBe('off');
+    expect(host.querySelector('.analytics-card__delta')).toBeNull();
+
+    line.uiScrubbed.emit(null);
+    await settle(fixture);
+    expect(value()).toContain('45,50');
+    expect(subline()?.textContent).toContain('Този месец');
+    expect(subline()?.getAttribute('aria-live')).toBe('polite');
+    expect(host.querySelector('.analytics-card__delta')).not.toBeNull();
   });
 
   it('the range row: 1М on the month, and 6М asks for six calendar months up to today', async () => {

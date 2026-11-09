@@ -22,6 +22,7 @@ import {
   type Appointment,
   type BarberAnalyticsDay,
   type BarberSchedule,
+  type ClientStatsRecord,
   Collections,
   type ScheduleException,
   type ShopLocation,
@@ -131,6 +132,8 @@ export type AnalyticsReadState = {
   readonly departures?: readonly ScheduleException[];
   readonly barberIds?: readonly BarberId[];
   readonly locations?: readonly ShopLocation[];
+  /** The client-stats projections (`clientStats`), read by first visit. */
+  readonly clientStats?: readonly ClientStatsRecord[];
 };
 
 /** The queries the double ran, in call order — one entry per Firestore query the adapter would send. */
@@ -192,6 +195,15 @@ export function memoryAnalyticsReadPorts(state: AnalyticsReadState = {}): {
       }
       return Result.ok(rows);
     },
+    loadClientsFirstSeenIn: async (fromLocalDate, toLocalDate) =>
+      Result.ok(
+        (state.clientStats ?? []).filter(
+          (record) =>
+            record.firstVisitLocalDate !== null &&
+            record.firstVisitLocalDate >= fromLocalDate &&
+            record.firstVisitLocalDate <= toLocalDate,
+        ),
+      ),
     loadFollowUpsBookedIn: async (fromUtcMs, toUtcMs) => {
       log.bookedInQueries.push([fromUtcMs, toUtcMs]);
       return Result.ok(

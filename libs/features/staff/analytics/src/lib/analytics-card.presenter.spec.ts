@@ -80,6 +80,25 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     expect(vm.time).toBeNull();
   });
 
+  it('the takings line reads each day under a finger: the day, and the previous period’s total beside it', () => {
+    const readouts = (lang: 'bg' | 'en') => {
+      const chart = analyticsCardVm(
+        inputOf(AnalyticsCard.Takings, {}, lang),
+      ).chart;
+      if (chart?.chartView !== 'LINE') throw new Error('not a line');
+      expect(chart.readouts).toHaveLength(chart.points.length);
+      return [chart.readouts[0], chart.readouts.at(-1)];
+    };
+    expect(readouts('bg')).toEqual([
+      `1 септември · предходен ${nbsp('0,00 €')}`,
+      `30 септември · предходен ${nbsp('35,00 €')}`,
+    ]);
+    expect(readouts('en')).toEqual([
+      `September 1 · previous ${nbsp('€0.00')}`,
+      `September 30 · previous ${nbsp('€35.00')}`,
+    ]);
+  });
+
   it('draws the takings’ ring by service — the top one in the accent, the rest in the greys — the figure in its centre', () => {
     const vm = analyticsCardVm(
       inputOf(AnalyticsCard.Takings, { view: AnalyticsChartView.Ring }),

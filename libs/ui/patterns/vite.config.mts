@@ -23,6 +23,6 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../../coverage/libs/ui/patterns',
       provider: 'v8' as const,
-    }
+    },
   },
 }));

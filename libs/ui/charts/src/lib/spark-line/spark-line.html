@@ -5,7 +5,44 @@
   [attr.aria-label]="uiLabel()"
   [attr.viewBox]="viewBox()"
 >
-  @if (comparisonPath(); as comparison) {
+  @if (uiTexture()) {
+  <!-- THE TEXTURE (Revolut's newer charts): dotted guides in the ink every
+       14 px behind the plot, full up to its upper third and fading out
+       only there — texture, never data, so it sits under every mark. -->
+  <defs>
+    <pattern
+      [attr.id]="textureIds.pattern"
+      patternUnits="userSpaceOnUse"
+      width="14"
+      height="10"
+    >
+      <line class="ui-chart-texture__line" x1="1" y1="1" x2="1" y2="11" />
+    </pattern>
+    <linearGradient [attr.id]="textureIds.fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0" />
+      <stop offset="0.35" stop-color="#fff" stop-opacity="1" />
+      <stop offset="1" stop-color="#fff" stop-opacity="1" />
+    </linearGradient>
+    <mask [attr.id]="textureIds.mask">
+      <rect
+        [attr.x]="0"
+        [attr.y]="0"
+        [attr.width]="textureBox().width"
+        [attr.height]="textureBox().height"
+        [attr.fill]="'url(#' + textureIds.fade + ')'"
+      />
+    </mask>
+  </defs>
+  <rect
+    class="ui-chart-texture"
+    [attr.x]="0"
+    [attr.y]="0"
+    [attr.width]="textureBox().width"
+    [attr.height]="textureBox().height"
+    [attr.fill]="'url(#' + textureIds.pattern + ')'"
+    [attr.mask]="'url(#' + textureIds.mask + ')'"
+  />
+  } @if (comparisonPath(); as comparison) {
   <path
     class="ui-spark-line__comparison"
     [attr.data-part]="comparisonPart"

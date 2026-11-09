@@ -2856,6 +2856,11 @@
       "freeWeek": "Free time by weekday",
       "clients": "Clients",
       "clientsAllCame": "Everyone came",
+      "clientsNew": {
+        "one": "{{count}} new",
+        "other": "{{count}} new"
+      },
+      "clientsDetail": "{{fresh}} · {{missed}}",
       "clientsMissed": {
         "one": "{{count}} didn’t come",
         "other": "{{count}} didn’t come"
@@ -2898,6 +2903,8 @@
       "custom": "Custom period",
       "back": "Back to analytics",
       "subline": "{{detail}} · {{range}}",
+      "paceLabel": "Running takings by day",
+      "readoutVersus": "{{day}} · previous {{previous}}",
       "rest": "The rest",
       "attended": "Came",
       "notRebooked": "Not rebooked",

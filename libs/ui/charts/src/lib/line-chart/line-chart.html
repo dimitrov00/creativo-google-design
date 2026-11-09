@@ -4,8 +4,52 @@
   role="img"
   [attr.aria-label]="uiLabel()"
   [attr.viewBox]="viewBox()"
+  [attr.data-scrubbable]="uiScrubbable() ? '' : null"
+  [attr.data-scrubbing]="scrub() === null ? null : ''"
+  (pointerdown)="scrubStart($event)"
+  (pointermove)="scrubMove($event)"
+  (pointerup)="scrubEnd($event)"
+  (pointercancel)="scrubEnd($event)"
+  (pointerleave)="scrubEnd($event)"
 >
-  @if (uiArea()) {
+  @if (uiTexture()) {
+  <!-- THE TEXTURE (Revolut's newer charts): dotted guides in the ink every
+       14 px behind the plot, full up to its upper third and fading out
+       only there — texture, never data, so it sits under every mark. -->
+  <defs>
+    <pattern
+      [attr.id]="textureIds.pattern"
+      patternUnits="userSpaceOnUse"
+      width="14"
+      height="10"
+    >
+      <line class="ui-chart-texture__line" x1="1" y1="1" x2="1" y2="11" />
+    </pattern>
+    <linearGradient [attr.id]="textureIds.fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0" />
+      <stop offset="0.35" stop-color="#fff" stop-opacity="1" />
+      <stop offset="1" stop-color="#fff" stop-opacity="1" />
+    </linearGradient>
+    <mask [attr.id]="textureIds.mask">
+      <rect
+        [attr.x]="textureBox().x"
+        [attr.y]="textureBox().y"
+        [attr.width]="textureBox().width"
+        [attr.height]="textureBox().height"
+        [attr.fill]="'url(#' + textureIds.fade + ')'"
+      />
+    </mask>
+  </defs>
+  <rect
+    class="ui-chart-texture"
+    [attr.x]="textureBox().x"
+    [attr.y]="textureBox().y"
+    [attr.width]="textureBox().width"
+    [attr.height]="textureBox().height"
+    [attr.fill]="'url(#' + textureIds.pattern + ')'"
+    [attr.mask]="'url(#' + textureIds.mask + ')'"
+  />
+  } @if (uiArea()) {
   <defs>
     <linearGradient [attr.id]="gradientId" x1="0" y1="0" x2="0" y2="1">
       <stop class="ui-line-chart__area-top" offset="0" />
@@ -49,7 +93,32 @@
     [attr.cx]="marker.x"
     [attr.cy]="marker.y"
   />
-  } @for (label of edgeLabels(); track $index) {
+  } @if (scrub(); as at) {
+  <!-- THE SCRUB: the day under the finger — a hairline down the plot and
+       a dot on each line there (Revolut's, Apple Health's). -->
+  <line
+    class="ui-line-chart__scrub-line"
+    [attr.x1]="at.x"
+    [attr.x2]="at.x"
+    [attr.y1]="at.top"
+    [attr.y2]="at.bottom"
+  />
+  @if (at.comparisonY !== null) {
+  <circle
+    class="ui-line-chart__scrub-dot"
+    [attr.data-part]="comparisonPart"
+    r="4.5"
+    [attr.cx]="at.x"
+    [attr.cy]="at.comparisonY"
+  />
+  } @if (at.valueY !== null) {
+  <circle
+    class="ui-line-chart__scrub-dot"
+    r="5"
+    [attr.cx]="at.x"
+    [attr.cy]="at.valueY"
+  />
+  } } @for (label of edgeLabels(); track $index) {
   <text
     class="ui-line-chart__edge-label"
     aria-hidden="true"

@@ -281,7 +281,13 @@ function cardsOf(
   // «Работно време»: worked against the roster so far.
   const rosteredSoFar = AnalyticsCarouselSystem.rosteredSoFarOf(report);
   const worked = spanWords(report.reportWorkedMinutes, words.spanWords);
-  const rostered = spanWords(rosteredSoFar, words.spanWords);
+  // The roster's whole is said in hours past ten («от 131 ч»).
+  const rostered = spanWords(
+    rosteredSoFar >= TEN_HOURS
+      ? MinuteCount.roundToHour(rosteredSoFar)
+      : rosteredSoFar,
+    words.spanWords,
+  );
 
   // «Бакшиши»: the tips and their share of the takings.
   const tipsShare = AnalyticsCarouselSystem.tipsShareOf(report);
@@ -392,7 +398,10 @@ function cardsOf(
       value: formatCount(served, lang),
       delta: null,
       trend: null,
-      detail: words.home.clientsMissed(report.reportNoShowCount),
+      detail: words.home.clientsDetail(
+        words.home.clientsNew(report.reportNewClientCount),
+        words.home.clientsMissed(report.reportNoShowCount),
+      ),
       spark: null,
       pace: null,
       // Who came of everyone booked.

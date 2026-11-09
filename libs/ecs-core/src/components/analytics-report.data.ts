@@ -183,6 +183,12 @@ export type AnalyticsReport = {
   readonly reportRebookedRate: number | null;
   readonly reportNoShowCount: number;
   readonly reportNoShowBase: number;
+  /**
+   * The NEW clients: those whose first worked visit at the shop fell in the
+   * period — with the scope's barber, or at the scope's location — read
+   * off the client-stats projection (`StaffAnalyticsSystem.newClientCountOf`).
+   */
+  readonly reportNewClientCount: number;
   readonly reportNoShowRate: number | null;
   readonly reportLateCancellationCount: number;
 

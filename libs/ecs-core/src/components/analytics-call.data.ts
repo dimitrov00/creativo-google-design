@@ -398,6 +398,7 @@ export const AnalyticsCall = {
       reportRebookedRate: r.rate('reportRebookedRate'),
       reportNoShowCount: r.count('reportNoShowCount'),
       reportNoShowBase: r.count('reportNoShowBase'),
+      reportNewClientCount: r.count('reportNewClientCount'),
       reportNoShowRate: r.rate('reportNoShowRate'),
       reportLateCancellationCount: r.count('reportLateCancellationCount'),
 

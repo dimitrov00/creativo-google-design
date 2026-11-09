@@ -27,6 +27,7 @@
     @if (vm.views.length > 0) {
     <ui-segmented-control
       class="analytics-card__views"
+      uiControlSize="regular"
       uiShape="capsule"
       [uiSegments]="vm.views"
       [uiSelectedId]="vm.view"
@@ -56,7 +57,7 @@
           <ui-icon uiName="service.details" />
         </button>
       </div>
-      @if (vm.value; as value) {
+      @if (header(); as head) { @if (head.value; as value) {
       <!-- The figure opens its rows, which add up to it (v2's CUJ 8). -->
       <button
         type="button"
@@ -74,7 +75,7 @@
             data-testid="analytics-card-value"
             >{{ value }}</span
           >
-          @if (vm.delta; as delta) {
+          @if (vm.delta; as delta) { @if (!head.scrubbing) {
           <span
             uiText
             uiFont="callout"
@@ -84,21 +85,25 @@
             <span class="analytics-card__trend" aria-hidden="true"></span>
             {{ delta }}
           </span>
-          }
+          } }
         </p>
       </button>
       } @else {
       <ui-skeleton uiFrame uiFrameHeight="2.75rem" uiFrameWidth="10rem" />
       }
+      <!-- While a finger rests on the line, this line reads that day. -->
       <p
         uiText
         uiFont="footnote"
-        uiForegroundStyle="secondary"
-        aria-live="polite"
+        class="analytics-card__subline"
+        [uiForegroundStyle]="head.scrubbing ? 'primary' : 'secondary'"
+        [attr.data-scrubbing]="head.scrubbing || null"
+        [attr.aria-live]="head.scrubbing ? 'off' : 'polite'"
         data-testid="analytics-card-subline"
       >
-        {{ vm.subline }}
+        {{ head.subline }}
       </p>
+      }
     </header>
 
     @if (vm.blocked; as blocked) {
@@ -128,7 +133,12 @@
       @if (vm.chart; as chart) { @switch (chart.chartView) { @case
       (ChartView.Line) {
       <ui-line-chart
+        class="analytics-card__bleed"
+        uiTexture
+        [uiInset]="16"
         uiCurve="smooth"
+        uiScrubbable
+        (uiScrubbed)="scrubbed.set($event)"
         [uiArea]="true"
         [uiPoints]="chart.points"
         [uiAverage]="chart.average"
@@ -187,6 +197,8 @@
     <div class="analytics-card__ranges">
       <ui-segmented-control
         class="analytics-card__range-chips"
+        uiControlSize="regular"
+        uiShape="capsule"
         [uiSegments]="vm.ranges.segments"
         [uiSelectedId]="vm.ranges.selected"
         [uiLabel]="vm.ranges.label"

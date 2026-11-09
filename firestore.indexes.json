@@ -944,6 +944,11 @@
     },
     {
       "collectionGroup": "clientStats",
+      "fieldPath": "firstVisitBarberIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
       "fieldPath": "lastVisitLegs",
       "indexes": []
     },

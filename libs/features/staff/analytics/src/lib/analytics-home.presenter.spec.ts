@@ -268,7 +268,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(takings?.wide).toBe(true);
     // How full the roster was, as a ring and a sentence.
     expect(time?.ring?.value).toBe(480);
-    expect(time?.detail).toBe(`55% от 14 ч 40 мин по график`);
+    expect(time?.detail).toBe(`55% от 15 ч по график`);
     // The free time by weekday, the emptiest day named and stressed.
     expect(free?.detail).toBe('най-свободно: вт');
     expect(free?.spark?.values).toHaveLength(7);
@@ -283,7 +283,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     ]);
     expect(tips?.detail).toBe('11% от оборота');
     // Who came of everyone booked, and who did not.
-    expect(clients?.detail).toBe('1 не дойде');
+    // The new clients beside those who did not come.
+    expect(clients?.detail).toBe('1 нов · 1 не дойде');
     expect(clients?.bar).toMatchObject({ value: 2, max: 3 });
     expect(takings?.accessibleName).toBe(
       `Оборот, ${nbsp('45,50 €')}, +30%, Този месец ${nbsp('45,50 €')}, Миналия месец ${nbsp('35,00 €')}`,

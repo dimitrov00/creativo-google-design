@@ -55,6 +55,12 @@ export type AnalyticsCardChartVm =
       /** «предходен период» — `null` when no point has a comparison. */
       readonly comparisonLegend: string | null;
       readonly label: string;
+      /**
+       * The line under the figure while a finger rests on each point — its
+       * day, and the previous period's figure beside it: «5 ноември ·
+       * предходен 60,00 €». The figure itself is the point's `valueText`.
+       */
+      readonly readouts: readonly string[];
     }
   | {
       readonly chartView: typeof AnalyticsChartView.Bars;

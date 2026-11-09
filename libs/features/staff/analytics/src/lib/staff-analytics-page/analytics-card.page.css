@@ -110,6 +110,13 @@
   min-block-size: 12rem;
 }
 
+/* FULL BLEED (Revolut's detail charts): the line runs to the screen's
+   edges; the chart keeps its right-edge figures inside the page's gutter
+   (`[uiInset]`, the same 16 px). */
+.analytics-card__bleed {
+  margin-inline: calc(-1 * var(--sys-space-regular));
+}
+
 .analytics-card__ring {
   inline-size: min(100%, 17.5rem);
   margin-inline: auto;

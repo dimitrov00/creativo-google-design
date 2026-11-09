@@ -253,14 +253,15 @@
    ends on the trailing half, standing on the card's foot. */
 .analytics-bento__card--split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
     'title chart'
     'figure chart'
     'legend chart';
-  column-gap: var(--sys-space-regular);
-  row-gap: var(--sys-space-tight);
+  column-gap: var(--sys-space-comfortable);
+  row-gap: var(--sys-space-compact);
+  min-block-size: 11rem;
 }
 
 .analytics-bento__card--split .analytics-bento__title {
@@ -297,11 +298,12 @@
 }
 
 .analytics-bento__card--split .analytics-bento__line {
-  --ui-spark-line-height: 5.5rem;
+  --ui-spark-line-height: 6.5rem;
 }
 
-/* A key in the split card is two lines: the swatch and the period's word,
-   then its figure under the word. */
+/* The comparison under the figure: the dashed swatch, the previous
+   period's word and its figure by the same day — one quiet line, as
+   Revolut words its average; the figure above is this period's. */
 .analytics-bento__card--split .analytics-bento__key {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -309,6 +311,11 @@
   align-items: center;
 }
 
+/* The amount sits under the word, the swatch keeping its column. */
 .analytics-bento__card--split .analytics-bento__key > :last-child {
   grid-column: 2;
+}
+
+.analytics-bento__card--split .analytics-bento__key > * {
+  white-space: nowrap;
 }

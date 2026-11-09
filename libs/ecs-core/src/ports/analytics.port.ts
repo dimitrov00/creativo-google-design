@@ -18,6 +18,7 @@ import type {
   AnalyticsRecomputeJob,
   Appointment,
   BarberAnalyticsDay,
+  ClientStatsRecord,
   StoredAnalyticsGoal,
   ScheduleException,
   ShopLocation,
@@ -149,8 +150,20 @@ export type LoadAnalyticsGoal = (
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The analytics reads — `firestoreAnalyticsPorts(db, guardOf, log)` (functions). */
+/**
+ * The clients whose FIRST worked visit at the shop fell in `[fromLocalDate,
+ * toLocalDate]` — `clientStats where firstVisitLocalDate >= … and <= …`,
+ * one range on the projection (its single-field index): the period's new
+ * clients, whom and where they first came to on each record.
+ */
+export type LoadClientsFirstSeenIn = (
+  fromLocalDate: LocalDate,
+  toLocalDate: LocalDate,
+) => Promise<Result<readonly ClientStatsRecord[], RepositoryError>>;
+
 export type AnalyticsReadPorts = {
   readonly loadVisitsByBusyKeys: LoadVisitsByBusyKeys;
+  readonly loadClientsFirstSeenIn: LoadClientsFirstSeenIn;
   readonly loadFollowUpsOf: LoadFollowUpsOf;
   readonly loadFollowUpsBookedIn: LoadFollowUpsBookedIn;
   readonly loadDeparturesForBarber: LoadDeparturesForBarber;

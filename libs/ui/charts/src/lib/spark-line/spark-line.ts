@@ -1,4 +1,5 @@
 import {
+  booleanAttribute,
   ChangeDetectionStrategy,
   Component,
   ElementRef,
@@ -11,6 +12,7 @@ import {
 } from '@angular/core';
 import { elementWidth } from '@creativo/ui/layout';
 import { UiChartPart } from '../chart-part';
+import { chartTextureIds } from '../chart-texture';
 import { areaPath, linePath, monotonePath } from '../geometry/line-path';
 import { px, zeroExtent } from '../geometry/linear-scale';
 import { sparkLinePoints } from '../geometry/spark-line';
@@ -55,6 +57,10 @@ export class UiSparkLine {
   readonly uiSlots = input(0);
   /** The drawing's accessible name. */
   readonly uiLabel = input.required<string>();
+  /** Hairlines behind the line, fading toward the top (Revolut's texture). */
+  readonly uiTexture = input(false, { transform: booleanAttribute });
+
+  protected readonly textureIds = chartTextureIds();
 
   protected readonly comparisonPart = UiChartPart.Comparison;
 
@@ -66,6 +72,10 @@ export class UiSparkLine {
   private readonly height = computed(
     () => this.measuredHeight() || FALLBACK_HEIGHT,
   );
+  protected readonly textureBox = computed(() => ({
+    width: px(this.width()),
+    height: px(this.height()),
+  }));
   protected readonly viewBox = computed(
     () => `0 0 ${px(this.width())} ${px(this.height())}`,
   );

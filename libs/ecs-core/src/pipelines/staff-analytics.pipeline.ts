@@ -276,6 +276,7 @@ export const staffAnalytics =
       periodDocs,
       previousDocs,
       goal,
+      firstSeen,
     ] = await Promise.all([
       Promise.all(barberIds.map((id) => ports.loadSchedule(id))),
       Promise.all(
@@ -317,6 +318,12 @@ export const staffAnalytics =
             ),
           )
         : Promise.resolve(NO_GOAL),
+      // The clients first seen in the period, shop-wide — the report
+      // counts the scope's own (one range on the projection).
+      ports.loadClientsFirstSeenIn(
+        period.value.fromLocalDate,
+        period.value.toLocalDate,
+      ),
     ]);
     const rosterRead = allOk<BarberSchedule | null>(rosters);
     if (!rosterRead.ok) return rosterRead;
@@ -329,6 +336,7 @@ export const staffAnalytics =
     if (!periodDocs.ok) return periodDocs;
     if (!previousDocs.ok) return previousDocs;
     if (!goal.ok) return goal;
+    if (!firstSeen.ok) return firstSeen;
     const pastDays = S.storedAt(
       S.currentStoredOf(periodDocs.value),
       locationId,
@@ -470,6 +478,7 @@ export const staffAnalytics =
       previousVisits: S.visitsAt(S.mergeVisits(previousRows.value), locationId),
       previousPastDays,
       followUps,
+      firstSeen: firstSeen.value,
       policy: ClientStatsPolicy.forBooking(policy.value),
       now,
       goal: goal.value,

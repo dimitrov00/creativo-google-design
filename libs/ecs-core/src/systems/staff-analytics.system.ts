@@ -47,6 +47,7 @@ import {
 import type {
   Appointment,
   BarberSchedule,
+  ClientStatsRecord,
   ScheduleException,
   ShopLocation,
   User,
@@ -169,6 +170,11 @@ export type AnalyticsInput = {
   /** The comparison period's stored past days, held like `pastDays`; empty when not comparable. */
   readonly previousPastDays: readonly DayFigures[];
   readonly followUps: readonly AnalyticsFollowUp[];
+  /**
+   * The clients first seen in the period, shop-wide (the client-stats
+   * projection's records) — the report counts the scope's own.
+   */
+  readonly firstSeen: readonly AnalyticsFirstSeen[];
   readonly policy: ClientStatsPolicy;
   readonly now: ShopNow;
   /**
@@ -178,6 +184,15 @@ export type AnalyticsInput = {
    */
   readonly goal: AnalyticsGoal | null;
 };
+
+/** A client's first visit as the projection records it — a `ClientStatsRecord` satisfies it as is. */
+export type AnalyticsFirstSeen = Pick<
+  ClientStatsRecord,
+  | 'customerId'
+  | 'firstVisitLocalDate'
+  | 'firstVisitBarberIds'
+  | 'firstVisitLocationId'
+>;
 
 /** A visit as a follow-up read answers it — an `Appointment` satisfies it as is. */
 export type FollowUpVisit = Pick<
@@ -1543,6 +1558,46 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
+   * THE NEW CLIENTS of a scope's period: the clients whose first worked
+   * visit at the shop fell in it — with `scopeBarberId` when the scope is a
+   * barber, at `scopeLocationId` when it is a location, anywhere for the
+   * shop. Each record is one client, so a client counts once.
+   */
+  newClientCountOf(
+    firstSeen: readonly AnalyticsFirstSeen[],
+    scopeBarberId: BarberId | null,
+    scopeLocationId: LocationId | null,
+    period: AnalyticsPeriod,
+  ): number {
+    let count = 0;
+    for (let i = 0; i < firstSeen.length; i++) {
+      const record = firstSeen[i] as AnalyticsFirstSeen;
+      const day = record.firstVisitLocalDate;
+      if (
+        day === null ||
+        day < period.fromLocalDate ||
+        day > period.toLocalDate
+      ) {
+        continue;
+      }
+      if (
+        scopeBarberId !== null &&
+        !record.firstVisitBarberIds.includes(scopeBarberId)
+      ) {
+        continue;
+      }
+      if (
+        scopeLocationId !== null &&
+        record.firstVisitLocationId !== scopeLocationId
+      ) {
+        continue;
+      }
+      count++;
+    }
+    return count;
+  },
+
+  /**
    * THE LOCATION SCOPE (ADR 2026-11-09), beside {@link scopeOf}: `null`
    * (the whole shop, or the barber `scopeOf` answered) unless the request
    * names a location. Only an admin may, never beside a barber, and only a
@@ -1757,6 +1812,12 @@ export const StaffAnalyticsSystem = {
       reportRebookedRate: rateOf(figures.rebookedCount, figures.rebookedBase),
       reportNoShowCount: figures.noShowCount,
       reportNoShowBase: figures.noShowBase,
+      reportNewClientCount: StaffAnalyticsSystem.newClientCountOf(
+        input.firstSeen,
+        input.scopeBarberId,
+        input.scopeLocationId,
+        period,
+      ),
       reportNoShowRate: rateOf(figures.noShowCount, figures.noShowBase),
       reportLateCancellationCount: figures.lateCancellationCount,
 

@@ -152,6 +152,26 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   opening the clients' screen, where the rebooking rate now lives. A set goal can be
   removed («Премахни целта»: `setAnalyticsGoal` with no range deletes the month's goal and
   writes an `ANALYTICS_GOAL_CLEARED` audit row).
+- **New clients** («1 нов · 1 не дойде» on «Клиенти»): the clients whose FIRST worked visit
+  at the shop fell in the period — with the scope's barber, or at its location. The
+  client-stats projection now records whom and where a client first came to
+  (`firstVisitBarberIds`, `firstVisitLocationId` beside `firstVisitLocalDate`), and the
+  report reads `clientStats where firstVisitLocalDate` in the period — one range, as many
+  reads as new clients, no change to the stored days (`newClientCountOf`,
+  `reportNewClientCount`). Considered and set aside: a per-day stored count, which would
+  have read every visit's client record at each day's write and bumped the definition.
+- **The takings card, round 5**: the roomier padding and gaps, a taller line, one quiet
+  comparison under the figure (the dashed swatch, «Миналия месец», its figure by the same
+  day — the figure itself is this period's), and a faint dot grid behind the line that
+  fades toward its edges (texture, never data). The roster's whole and the free time are
+  said in whole hours past ten.
+- **Charts, round 6**: the line charts take a texture (`uiTexture` on `ui-spark-line` and
+  `ui-line-chart`): hairlines in the ink every 6 px behind the plot, fading out toward the
+  top. The card screen's line runs full bleed (`[uiInset]` keeps its figures in the page
+  gutter), and the takings line there is the same running total as the home card's
+  (`UiChartLinePoint.value` may be `null` past today). The range row is the regular-rung
+  capsule `ui-segmented-control` — 44 px like «…», a 4 px inset round its pill, no
+  hairlines in a capsule, and a slower emphasized glide.
 - **A service ring paints the top service in the accent and the rest in the chart's
   greys**; the identity tones stay the people's (the team).
 - **The card's figure opens its rows** (`analytics-card-figure`), which add up to it —
@@ -164,3 +184,20 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   `uiCurve="smooth"` and `uiArea`; glyphs `chart.line`, `chart.bars`, `chart.ring`.
 - **Fixed on the way**: the radars' hidden tables no longer widen the page; the line
   chart's label column grows with its longest label (PR #54, which this stacks on).
+
+### Round 7 — reading the line with a finger (2026-11-09)
+
+- **Tap and drag (Revolut, Apple Health)** — `ui-line-chart` gained
+  `uiScrubbable` and the `uiScrubbed` output (the index under the pointer,
+  `null` on lift). Native pointer events, no chart library: a hairline down
+  the plot and a ringed dot on each line mark the point; the end markers and
+  edge figures step back while one is read. `touch-action: pan-y` keeps a
+  vertical swipe scrolling the page; a mouse reads on hover.
+- **The header reads the point** — on a card's screen the big figure becomes
+  that day's running total and the line under it «19 ноември · предходен
+  104,50 €» (`card.readoutVersus`, one readout per point from the presenter);
+  the change chip hides and `aria-live` goes quiet while scrubbing. A day
+  past today keeps the period's figure and reads only the previous total.
+- **The view switch is the regular rung** — 44 px like the back button and
+  the range row; icon-only segments at that rung are 42 px wide with a
+  20 px glyph.

@@ -65,3 +65,32 @@ describe('UiSparkLine', () => {
     expect(host.querySelector('.ui-spark-line__dot')).not.toBeNull();
   });
 });
+
+@Component({
+  imports: [UiSparkLine],
+  template: `<ui-spark-line [uiValues]="[1, 2]" uiLabel="x" uiTexture />`,
+})
+class Textured {}
+
+describe('UiSparkLine — the texture', () => {
+  it('lays fading hairlines over the whole box, under the line, only when asked', () => {
+    const plain = TestBed.createComponent(Host);
+    plain.detectChanges();
+    expect(
+      (plain.nativeElement as HTMLElement).querySelector('.ui-chart-texture'),
+    ).toBeNull();
+    const fixture = TestBed.createComponent(Textured);
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    const texture = host.querySelector('.ui-chart-texture');
+    expect(texture?.getAttribute('fill')).toMatch(
+      /^url\(#ui-chart-texture-\d+\)$/,
+    );
+    expect(texture?.getAttribute('mask')).toMatch(
+      /^url\(#ui-chart-texture-mask-\d+\)$/,
+    );
+    // Drawn first: every mark lies above it.
+    const shapes = Array.from(host.querySelectorAll('svg > rect, svg > path'));
+    expect(shapes[0]?.classList.contains('ui-chart-texture')).toBe(true);
+  });
+});

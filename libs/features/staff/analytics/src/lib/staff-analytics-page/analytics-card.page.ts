@@ -135,6 +135,30 @@ export class AnalyticsCardPage {
     });
   });
 
+  /** The point a finger (or the pointer) rests on in the line; `null` at rest. */
+  protected readonly scrubbed = signal<number | null>(null);
+
+  /**
+   * The figure and the line under it: while a finger rests on the line
+   * (Revolut, Apple Health) they read that point — its figure, its day and
+   * the previous period's — else the period's own. A point with no figure
+   * of its own (past today on a running total) keeps the period's figure.
+   */
+  protected readonly header = computed(() => {
+    const vm = this.vm();
+    if (vm === null) return null;
+    const at = this.scrubbed();
+    const chart = vm.chart;
+    if (at === null || chart?.chartView !== AnalyticsChartView.Line) {
+      return { value: vm.value, subline: vm.subline, scrubbing: false };
+    }
+    return {
+      value: chart.valueText.at(at) || vm.value,
+      subline: chart.readouts.at(at) ?? vm.subline,
+      scrubbing: true,
+    };
+  });
+
   /** The custom period sheet's words and verdict. */
   protected readonly rangeVm = computed(() => {
     const screen = this.screen.input();

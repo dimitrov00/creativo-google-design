@@ -14,6 +14,8 @@ describe('ClientStats', () => {
       last365LateCancels: [],
       firstVisitLocalDate: null,
       firstVisitStartMinutes: null,
+      firstVisitBarberIds: [],
+      firstVisitLocationId: null,
       lastVisitAppointmentId: null,
       lastVisitLocalDate: null,
       lastVisitStartMinutes: null,

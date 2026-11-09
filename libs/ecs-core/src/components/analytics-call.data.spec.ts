@@ -94,6 +94,7 @@ function reportOf(scopeBarberId: BarberId | null): AnalyticsReport {
     previousVisits: [],
     previousPastDays: [],
     followUps: [],
+    firstSeen: [],
     policy: ClientStatsPolicy.DEFAULT,
     now: FIXTURE_NOW,
     goal: null,

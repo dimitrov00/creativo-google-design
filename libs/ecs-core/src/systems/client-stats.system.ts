@@ -133,6 +133,7 @@ export type StatsAppointment<S extends AccountSeat = AccountSeat> = Pick<
   | 'utcEpochMs'
   | 'bookedAtUtcMs'
   | 'placement'
+  | 'locationId'
 > & {
   readonly seats: readonly S[];
 };
@@ -775,6 +776,10 @@ function statsOf(
     ),
     firstVisitLocalDate: first === undefined ? null : first.localDate,
     firstVisitStartMinutes: first === undefined ? null : first.startMinutes,
+    firstVisitBarberIds:
+      first === undefined ? [] : refOf(first, AttendanceState.Worked).barberIds,
+    firstVisitLocationId:
+      first === undefined ? null : first.appointment.locationId,
     ...lastVisitOf(worked[worked.length - 1]),
     ...nextVisitOf(next),
     avgCadenceDays: cadenceOf(worked, shopCancelled),
@@ -829,6 +834,8 @@ function statsContent<S extends ClientStats>(stats: S): ClientStats {
     last365LateCancels: stats.last365LateCancels,
     firstVisitLocalDate: stats.firstVisitLocalDate,
     firstVisitStartMinutes: stats.firstVisitStartMinutes,
+    firstVisitBarberIds: stats.firstVisitBarberIds,
+    firstVisitLocationId: stats.firstVisitLocationId,
     lastVisitAppointmentId: stats.lastVisitAppointmentId,
     lastVisitLocalDate: stats.lastVisitLocalDate,
     lastVisitStartMinutes: stats.lastVisitStartMinutes,

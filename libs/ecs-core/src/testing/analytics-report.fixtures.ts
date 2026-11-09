@@ -221,6 +221,7 @@ export function analyticsReportFixture(
     reportRebookedRate: null,
     reportNoShowCount: 1,
     reportNoShowBase: 3,
+    reportNewClientCount: 1,
     reportNoShowRate: null,
     reportLateCancellationCount: 1,
 

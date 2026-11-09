@@ -590,6 +590,7 @@ function reportInput(
     previousVisits: [],
     previousPastDays: [],
     followUps: world.followUps,
+    firstSeen: [],
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
     goal: null,

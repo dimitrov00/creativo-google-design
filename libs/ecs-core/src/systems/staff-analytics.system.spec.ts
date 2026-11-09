@@ -42,6 +42,7 @@ import {
   UserId,
   UtcEpochMs,
   Weekday,
+  CustomerId,
 } from '@core/primitives';
 import {
   ANALYTICS_FIXTURE_LOCATIONS,
@@ -172,6 +173,7 @@ function input(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
     previousVisits: [],
     previousPastDays: [],
     followUps: [],
+    firstSeen: [],
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
     goal: null,
@@ -2578,5 +2580,43 @@ describe('StaffAnalyticsSystem — the month goal (v2 PR 6)', () => {
         });
       }
     });
+  });
+});
+
+describe('StaffAnalyticsSystem.newClientCountOf — the period’s new clients', () => {
+  const centre = LocationId.of('loc-centre');
+  const mladost = LocationId.of('loc-mladost');
+  const seen = (
+    id: string,
+    day: string | null,
+    barbers: readonly BarberId[],
+    location: LocationId | null,
+  ) => ({
+    customerId: CustomerId.of(id),
+    firstVisitLocalDate: day === null ? null : localDate(day),
+    firstVisitBarberIds: barbers,
+    firstVisitLocationId: location,
+  });
+  const records = [
+    seen('c-1', '2026-10-03', [ivan], centre),
+    seen('c-2', '2026-10-20', [niko], mladost),
+    seen('c-3', '2026-10-31', [ivan, niko], centre),
+    seen('c-4', '2026-09-30', [ivan], centre),
+    seen('c-5', null, [], null),
+  ];
+
+  it('counts each client first seen in the period: the shop’s all, a barber’s with them, a location’s there', () => {
+    expect(S.newClientCountOf(records, null, null, OCTOBER)).toBe(3);
+    expect(S.newClientCountOf(records, ivan, null, OCTOBER)).toBe(2);
+    expect(S.newClientCountOf(records, niko, null, OCTOBER)).toBe(2);
+    expect(S.newClientCountOf(records, null, mladost, OCTOBER)).toBe(1);
+    expect(S.newClientCountOf([], null, null, OCTOBER)).toBe(0);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(records);
+    expect(S.newClientCountOf(frozen, ivan, null, OCTOBER)).toBe(
+      S.newClientCountOf(frozen, ivan, null, OCTOBER),
+    );
   });
 });

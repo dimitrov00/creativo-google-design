@@ -6,7 +6,12 @@ import {
   AnalyticsSpan,
 } from '@core/components';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
-import { formatCount, formatPercent } from '@creativo/ui/wall-clock';
+import {
+  formatCount,
+  formatDayLong,
+  formatMonthLong,
+  formatPercent,
+} from '@creativo/ui/wall-clock';
 import { spanWords } from '@creativo/features/shared/visits';
 import type { UiChartPart } from '@creativo/ui/charts';
 import type { UiIconName, UiSegment } from '@creativo/ui/controls';
@@ -303,6 +308,13 @@ function chartOf(
   const { words } = input;
   const lang = words.lang;
   const labels = body.series?.points.map((point) => point.label) ?? [];
+  // A point's day in words, for the scrub readout — a year's points are
+  // its months.
+  const days = report.reportSeries.map((point) =>
+    report.reportAnalyticsSpan === AnalyticsSpan.Year
+      ? formatMonthLong(point.localDate, lang)
+      : formatDayLong(point.localDate, input.today, lang),
+  );
   const title = titleOf(card, input);
   const ring = (
     segments: readonly AnalyticsRingSegmentVm[],
@@ -314,13 +326,15 @@ function chartOf(
     centreDetail: figure.ringDetail,
     label: `${title}: ${segments.map((s) => `${s.label} ${s.valueText}`).join(', ')}`,
   });
-  const line = (
-    values: readonly number[],
+  const line = <V extends number>(
+    values: readonly (V | null)[],
     valueText: readonly string[],
     label: string,
-    comparison: readonly (number | null)[] | null = null,
+    comparison: readonly (V | null)[] | null = null,
     average: number | null = null,
     averageText: string | null = null,
+    /** Words a comparison point for the readout; `null` reads the figure alone. */
+    comparisonText: ((value: V) => string) | null = null,
   ): AnalyticsCardChartVm => ({
     chartView: AnalyticsChartView.Line,
     points: values.map((value, i) => ({
@@ -336,6 +350,15 @@ function chartOf(
         ? words.charts.comparison
         : null,
     label,
+    // What a tap or drag on the point reads under the figure: its day, and
+    // the previous period's figure beside it when there is one.
+    readouts: values.map((_, i) => {
+      const day = days.at(i) ?? labels.at(i) ?? '';
+      const previous = comparison?.at(i) ?? null;
+      return previous === null || comparisonText === null
+        ? day
+        : words.card.readoutVersus(day, comparisonText(previous));
+    }),
   });
   const bars = (
     values: readonly number[],
@@ -373,6 +396,25 @@ function chartOf(
   switch (card) {
     case AnalyticsCard.Takings: {
       const series = body.series;
+      // The line is the PACE, as on the home card: the running total to
+      // today against the previous period's over its whole length.
+      const pace = AnalyticsCarouselSystem.paceOf(report, input.today);
+      if (view === AnalyticsChartView.Line && pace.slots > 1) {
+        const at = <T>(list: readonly T[] | null, i: number): T | null =>
+          list?.at(i) ?? null;
+        const values = series?.points.map((_, i) => at(pace.current, i)) ?? [];
+        return line(
+          values,
+          values.map((value) =>
+            value === null ? '' : money(value, words.lang),
+          ),
+          words.card.paceLabel,
+          series?.points.map((_, i) => at(pace.previous, i)) ?? null,
+          null,
+          null,
+          (cents) => money(cents, lang),
+        );
+      }
       if (view === AnalyticsChartView.Line && series !== null) {
         return line(
           series.points.map((p) => p.value),
@@ -384,8 +426,9 @@ function chartOf(
         );
       }
       if (view === AnalyticsChartView.Bars && series !== null) {
+        // A day's takings: every point of the daily series has a figure.
         return bars(
-          series.points.map((p) => p.value),
+          series.points.map((p) => p.value ?? 0),
           series.valueText,
           series.label,
         );

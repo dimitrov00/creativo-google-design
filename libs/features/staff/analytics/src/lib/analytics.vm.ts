@@ -109,7 +109,8 @@ export type AnalyticsChartBarVm = {
 /** One point of the takings line: the bucket's figure and the comparison aligned by position. */
 export type AnalyticsLinePointVm = {
   readonly label: string;
-  readonly value: number;
+  /** `null` past today on a running total — the line stops there. */
+  readonly value: number | null;
   readonly comparison: number | null;
 };
 

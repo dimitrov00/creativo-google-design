@@ -176,4 +176,15 @@
       animation: none;
     }
   }
+
+  /* THE TEXTURE (`uiTexture`): dotted guides in the host's ink — a round
+     dot every 5 px down each line, the lines 14 px apart — faint, the mask
+     fading them out only in the plot's upper third. */
+  .ui-chart-texture__line {
+    stroke: currentColor;
+    stroke-opacity: 0.22;
+    stroke-width: 1.5px;
+    stroke-linecap: round;
+    stroke-dasharray: 0 5;
+  }
 }

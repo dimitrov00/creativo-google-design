@@ -110,4 +110,36 @@
       opacity: 0;
     }
   }
+
+  /* THE SCRUB: horizontal drags read the chart, vertical ones still scroll
+     the page; the marks of the point under the finger. */
+  .ui-line-chart__drawing[data-scrubbable] {
+    touch-action: pan-y;
+    cursor: crosshair;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .ui-line-chart__scrub-line {
+    stroke: var(--sys-color-foreground);
+    stroke-opacity: 0.4;
+    stroke-width: 1px;
+  }
+
+  /* While a point is read, its figure is the only one: the end markers and
+     the edge figures step back. */
+  .ui-line-chart__drawing[data-scrubbing]
+    :is(.ui-line-chart__marker, .ui-line-chart__edge-label) {
+    opacity: 0;
+  }
+
+  .ui-line-chart__scrub-dot {
+    fill: var(--ui-line-chart-paint, var(--sys-color-accent));
+    stroke: var(--sys-color-surface);
+    stroke-width: 2px;
+  }
+
+  .ui-line-chart__scrub-dot[data-part] {
+    fill: var(--ui-chart-paint);
+  }
 }

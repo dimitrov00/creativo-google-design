@@ -24,6 +24,8 @@ const WEEK: readonly UiChartLinePoint[] = [
       [uiAverageText]="averageText()"
       [uiCurve]="curve()"
       [uiArea]="area()"
+      [uiScrubbable]="scrubbable()"
+      (uiScrubbed)="scrubbed.push($event)"
       uiLabel="Оборот по дни, най-висок вторник"
       data-testid="chart"
     />
@@ -41,6 +43,8 @@ class Host {
   readonly averageText = signal<string | null>('ср. 125 €');
   readonly curve = signal<UiLineChartCurve>('linear');
   readonly area = signal(false);
+  readonly scrubbable = signal(false);
+  readonly scrubbed: (number | null)[] = [];
 }
 
 function render(setup?: (host: Host) => void) {
@@ -170,7 +174,7 @@ describe('UiLineChart', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(chart.hasAttribute('data-settled')).toBe(true);
-    host.points.set(WEEK.map((p) => ({ ...p, value: p.value + 10 })));
+    host.points.set(WEEK.map((p) => ({ ...p, value: (p.value ?? 0) + 10 })));
     fixture.detectChanges();
     const paths = all('.ui-line-chart__path');
     expect(paths).toHaveLength(2);
@@ -272,5 +276,110 @@ describe('UiLineChart', () => {
       h.points.set([{ label: 'пн', value: 10, comparison: null }]);
     });
     expect(one('.ui-line-chart__area')).toBeNull();
+  });
+});
+
+describe('UiLineChart — a running total that stops at today', () => {
+  it('draws the line up to its last figure, the comparison on, and labels the last drawn point', () => {
+    const { all } = render((host) => {
+      host.points.set([
+        { label: '1', value: 100, comparison: 80 },
+        { label: '2', value: 300, comparison: 160 },
+        { label: '3', value: null, comparison: 240 },
+        { label: '4', value: null, comparison: 320 },
+      ]);
+      host.valueText.set(['100 €', '300 €', '', '']);
+      host.average.set(null);
+      host.averageText.set(null);
+    });
+    const markers = all('.ui-line-chart__marker');
+    expect(markers).toHaveLength(2);
+    const labels = all('.ui-line-chart__edge-label, text').map((t) =>
+      t.textContent?.trim(),
+    );
+    expect(labels).toContain('300 €');
+    const comparison = all('.ui-line-chart__comparison')[0];
+    expect(
+      comparison?.getAttribute('d')?.split(/[ML]/).filter(Boolean),
+    ).toHaveLength(4);
+  });
+});
+
+describe('UiLineChart — tap and drag to read a point', () => {
+  /** A pointer event at `x` px into a 250 px-wide drawing (the 250-wide viewBox at 1 : 1). */
+  const pointer = (
+    svg: Element,
+    type: string,
+    x: number,
+    pointerType = 'touch',
+  ): void => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x });
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: pointerType },
+    });
+    svg.dispatchEvent(event);
+  };
+  const scrubbable = () => {
+    const view = render((h) => h.scrubbable.set(true));
+    const svg = view.one('svg') as SVGSVGElement;
+    const width = Number(svg.getAttribute('viewBox')?.split(' ')[2]);
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width, height: 100 }) as DOMRect;
+    return { ...view, svg, width };
+  };
+
+  it('reads nothing unless asked to', () => {
+    const { one, host } = render();
+    const svg = one('svg') as SVGSVGElement;
+    expect(svg.hasAttribute('data-scrubbable')).toBe(false);
+    pointer(svg, 'pointerdown', 10);
+    expect(host.scrubbed).toEqual([]);
+  });
+
+  it('marks the point nearest a finger, follows the drag and lets go on lift', () => {
+    const { svg, fixture, host, one, all, width } = scrubbable();
+    pointer(svg, 'pointerdown', 1);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0]);
+    expect(svg.hasAttribute('data-scrubbing')).toBe(true);
+    expect(one('.ui-line-chart__scrub-line')).not.toBeNull();
+    // The value dot and the comparison's: Monday has both.
+    expect(all('.ui-line-chart__scrub-dot')).toHaveLength(2);
+
+    pointer(svg, 'pointermove', width - 1);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0, 3]);
+    // Moving within the same point emits nothing new.
+    pointer(svg, 'pointermove', width - 2);
+    expect(host.scrubbed).toEqual([0, 3]);
+
+    pointer(svg, 'pointerup', width - 2);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0, 3, null]);
+    expect(svg.hasAttribute('data-scrubbing')).toBe(false);
+    expect(one('.ui-line-chart__scrub-line')).toBeNull();
+  });
+
+  it('reads on a mouse hover, but a finger only while it is down', () => {
+    const { svg, host } = scrubbable();
+    pointer(svg, 'pointermove', 1);
+    expect(host.scrubbed).toEqual([]);
+    pointer(svg, 'pointermove', 1, 'mouse');
+    expect(host.scrubbed).toEqual([0]);
+    pointer(svg, 'pointerleave', 1, 'mouse');
+    expect(host.scrubbed).toEqual([0, null]);
+  });
+
+  it('draws one dot on a point with no comparison', () => {
+    const { svg, fixture, host, all, width } = scrubbable();
+    // Drag right until Tuesday — the second point — which has no comparison.
+    pointer(svg, 'pointerdown', 0);
+    for (let x = 0; x < width && host.scrubbed.at(-1) !== 1; x += 1) {
+      pointer(svg, 'pointermove', x);
+    }
+    expect(host.scrubbed.at(-1)).toBe(1);
+    fixture.detectChanges();
+    expect(all('.ui-line-chart__scrub-dot')).toHaveLength(1);
   });
 });

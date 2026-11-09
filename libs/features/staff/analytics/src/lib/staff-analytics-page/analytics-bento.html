@@ -4,7 +4,7 @@
   <a
     uiCard
     uiTone="muted"
-    uiPadding="regular"
+    [uiPadding]="card.wide ? 'comfortable' : 'regular'"
     [uiInteractive]="true"
     class="analytics-bento__card"
     [class.analytics-bento__card--wide]="card.wide"
@@ -79,6 +79,7 @@
       <span class="analytics-bento__chart">
         <ui-spark-line
           class="analytics-bento__line"
+          uiTexture
           [uiValues]="pace.values"
           [uiComparison]="pace.comparison"
           [uiSlots]="pace.slots"
@@ -94,15 +95,6 @@
         </span>
       </span>
       <span class="analytics-bento__legend">
-        <span class="analytics-bento__key" data-series="current">
-          <span class="analytics-bento__swatch"></span>
-          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-            >{{ pace.currentLabel }}</span
-          >
-          <span uiText uiFont="footnote" uiWeight="semibold"
-            >{{ pace.currentValue }}</span
-          >
-        </span>
         @if (pace.previousLabel; as previousLabel) {
         <span class="analytics-bento__key" data-series="previous">
           <span class="analytics-bento__swatch"></span>

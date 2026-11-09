@@ -2,6 +2,7 @@ import type {
   AppointmentId,
   BarberId,
   LocalDate,
+  LocationId,
   MinuteOfDay,
   ServiceId,
   UtcEpochMs,
@@ -34,8 +35,9 @@ import type { VisitLeg } from './visit-leg.data';
  * is `ClientMoneyStats`, in its own admin-only document.
  *
  * Invariants of the nullable groups (N9, stated here and kept by the
- * companion and `ClientStatsSystem`): `firstVisitLocalDate` and
- * `firstVisitStartMinutes` are `null` together; `lastVisitAppointmentId`,
+ * companion and `ClientStatsSystem`): `firstVisitLocalDate`,
+ * `firstVisitStartMinutes` and `firstVisitLocationId` are `null` together,
+ * and then `firstVisitBarberIds` is `[]`; `lastVisitAppointmentId`,
  * `lastVisitLocalDate`, `lastVisitStartMinutes` and `lastVisitUtcMs` are `null` together, and
  * then `lastVisitServiceIds`, `lastVisitBarberIds` and `lastVisitLegs` are
  * `[]` (likewise every `nextVisit*`); `pauseSuggestedNoShows`,
@@ -58,6 +60,13 @@ export type ClientStats = {
   readonly last365LateCancels: readonly VisitFact[];
   readonly firstVisitLocalDate: LocalDate | null;
   readonly firstVisitStartMinutes: MinuteOfDay | null;
+  /**
+   * Whom and where the client first came to — the first worked visit's
+   * barbers (distinct, in seat order) and its location: what staff
+   * analytics counts as a barber's or a location's NEW clients.
+   */
+  readonly firstVisitBarberIds: readonly BarberId[];
+  readonly firstVisitLocationId: LocationId | null;
   readonly lastVisitAppointmentId: AppointmentId | null;
   readonly lastVisitLocalDate: LocalDate | null;
   readonly lastVisitStartMinutes: MinuteOfDay | null;
@@ -106,6 +115,8 @@ export const ClientStats = {
       last365LateCancels: [],
       firstVisitLocalDate: null,
       firstVisitStartMinutes: null,
+      firstVisitBarberIds: [],
+      firstVisitLocationId: null,
       ...LastVisit.NONE,
       ...NextVisit.NONE,
       avgCadenceDays: null,

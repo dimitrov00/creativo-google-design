@@ -270,6 +270,10 @@ export interface AnalyticsWords {
     readonly clients: string;
     /** «2 не дойдоха» · «Всички дойдоха» — the no-shows beside them. */
     readonly clientsMissed: (count: number) => string;
+    /** «1 нов» · «3 нови» — clients whose first visit fell in the period. */
+    readonly clientsNew: (count: number) => string;
+    /** «1 нов · 1 не дойде» — the two beside each other. */
+    readonly clientsDetail: (fresh: string, missed: string) => string;
     readonly rebooked: string;
     /** «клиенти с нов час» — what the rebooked figure counts. */
     readonly rebookedDetail: string;
@@ -299,6 +303,10 @@ export interface AnalyticsWords {
     readonly back: string;
     /** «средно 14,00 € на ден · Този месец». */
     readonly subline: (detail: string, range: string) => string;
+    /** «Оборот с натрупване по дни» — the running total's name. */
+    readonly paceLabel: string;
+    /** A scrubbed day beside the previous period's: «5 ноември · предходен 60,00 €». */
+    readonly readoutVersus: (day: string, previous: string) => string;
     readonly rest: string;
     readonly attended: string;
     readonly notRebooked: string;
@@ -625,6 +633,9 @@ export function analyticsWordsOf(
         count === 0
           ? t('home.clientsAllCame')
           : counted('home.clientsMissed')(count),
+      clientsNew: counted('home.clientsNew'),
+      clientsDetail: (fresh, missed) =>
+        t('home.clientsDetail', { fresh, missed }),
       rebooked: t('home.rebooked'),
       rebookedDetail: t('home.rebookedDetail'),
       noShows: t('home.noShows'),
@@ -651,6 +662,9 @@ export function analyticsWordsOf(
       custom: t('card.custom'),
       back: t('card.back'),
       subline: (detail, range) => t('card.subline', { detail, range }),
+      paceLabel: t('card.paceLabel'),
+      readoutVersus: (day, previous) =>
+        t('card.readoutVersus', { day, previous }),
       rest: t('card.rest'),
       attended: t('card.attended'),
       notRebooked: t('card.notRebooked'),

@@ -8,12 +8,14 @@ import {
   computed,
   input,
   linkedSignal,
+  output,
   signal,
   viewChild,
 } from '@angular/core';
 import { elementWidth } from '@creativo/ui/layout';
 import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
 import { UiChartPart } from '../chart-part';
+import { chartTextureIds } from '../chart-texture';
 import {
   type ChartPoint,
   areaPath,
@@ -25,7 +27,12 @@ import { linearScale, px, zeroExtent } from '../geometry/linear-scale';
 /** One point: its word (for the hidden table), this period's value and the comparison's, if any. */
 export type UiChartLinePoint = {
   readonly label: string;
-  readonly value: number;
+  /**
+   * The point's figure; `null` leaves it undrawn — a running total stops at
+   * today while the comparison runs on. Only a trailing run may be `null`
+   * (the line and the area are one run).
+   */
+  readonly value: number | null;
   readonly comparison: number | null;
 };
 
@@ -125,6 +132,102 @@ export class UiLineChart {
   readonly uiCurve = input<UiLineChartCurve>('linear');
   /** Fill under this period's line with its paint, fading to the baseline. */
   readonly uiArea = input(false, { transform: booleanAttribute });
+  /**
+   * Pixels kept clear at the right edge — a chart that runs to the screen's
+   * edges (full bleed) keeps its figures inside the page's own gutter.
+   */
+  readonly uiInset = input(0);
+  /**
+   * TAP AND DRAG to read a point (Revolut's, Apple Health's): the nearest
+   * point under the pointer is marked — a hairline down the plot, a dot on
+   * each line — and reported through `uiScrubbed`, `null` when the finger
+   * lifts. A drag across scrubs; a vertical swipe still scrolls the page.
+   */
+  readonly uiScrubbable = input(false, { transform: booleanAttribute });
+  /** The index of the point under the pointer; `null` when it lifts or leaves. */
+  readonly uiScrubbed = output<number | null>();
+
+  private readonly scrubIndex = signal<number | null>(null);
+  private scrubbing = false;
+
+  /** The marks of the scrubbed point, in the drawing's pixels. */
+  protected readonly scrub = computed(() => {
+    const index = this.scrubIndex();
+    const points = this.uiPoints();
+    const point = index === null ? undefined : points[index];
+    if (index === null || point === undefined) return null;
+    const { x, y } = this.scales();
+    return {
+      x: px(x(index)),
+      top: px(PAD),
+      bottom: px(this.height() - PAD),
+      valueY: point.value === null ? null : px(y(point.value)),
+      comparisonY: point.comparison === null ? null : px(y(point.comparison)),
+    };
+  });
+
+  protected scrubStart(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    this.scrubbing = true;
+    this.scrubAt(event);
+    // The drag keeps reading when the finger strays off the plot. A pointer
+    // that has already lifted (or a synthetic one) cannot be captured — the
+    // scrub still reads, it just ends at the plot's edge.
+    const target = event.currentTarget as Element | null;
+    try {
+      target?.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* no active pointer to capture */
+    }
+  }
+
+  protected scrubMove(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    // A mouse reads on hover; a finger or pen only while it is down.
+    if (this.scrubbing || event.pointerType === 'mouse') this.scrubAt(event);
+  }
+
+  protected scrubEnd(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    if (event.type === 'pointerleave' && this.scrubbing) return;
+    this.scrubbing = false;
+    this.setScrub(null);
+  }
+
+  /** The point nearest the pointer's x, in the plot's own slots. */
+  private scrubAt(event: PointerEvent): void {
+    const svg = this.svg()?.nativeElement;
+    const count = this.uiPoints().length;
+    if (svg === undefined || count === 0) return;
+    const box = svg.getBoundingClientRect();
+    if (box.width <= 0) return;
+    const at = ((event.clientX - box.left) * this.width()) / box.width;
+    const { x0, x1 } = this.scales();
+    const step = count > 1 ? (x1 - x0) / (count - 1) : 1;
+    const index = Math.round((at - x0) / step);
+    this.setScrub(Math.min(Math.max(index, 0), count - 1));
+  }
+
+  private setScrub(index: number | null): void {
+    if (index === this.scrubIndex()) return;
+    this.scrubIndex.set(index);
+    this.uiScrubbed.emit(index);
+  }
+
+  /** Hairlines behind the plot, fading toward the top (Revolut's texture). */
+  readonly uiTexture = input(false, { transform: booleanAttribute });
+
+  protected readonly textureIds = chartTextureIds();
+  /** The plot's box — where the texture lies. */
+  protected readonly textureBox = computed(() => {
+    const { x0, x1 } = this.scales();
+    return {
+      x: px(x0),
+      y: px(PAD),
+      width: px(Math.max(x1 - x0, 0)),
+      height: px(Math.max(this.height() - 2 * PAD, 0)),
+    };
+  });
 
   protected readonly comparisonPart = UiChartPart.Comparison;
   protected readonly gradientId = `ui-line-chart-area-${nextGradientId++}`;
@@ -142,10 +245,16 @@ export class UiLineChart {
     () => `0 0 ${px(this.width())} ${this.height()}`,
   );
 
+  /** The last DRAWN point's figure — a running total's, at today. */
   protected readonly lastValueText = computed(() => {
     const texts = this.uiValueText();
-    const count = this.uiPoints().length;
-    return count > 0 ? (texts[count - 1] ?? null) : null;
+    const points = this.uiPoints();
+    for (let i = points.length - 1; i >= 0; i--) {
+      if ((points[i] as UiChartLinePoint).value !== null) {
+        return texts[i] ?? null;
+      }
+    }
+    return null;
   });
 
   /** The right-edge labels' column: none without a label, else as wide as the longer one needs. */
@@ -166,7 +275,7 @@ export class UiLineChart {
     const points = this.uiPoints();
     const average = this.uiAverage();
     const x0 = PAD;
-    const x1 = this.width() - this.gutter() - PAD;
+    const x1 = this.width() - this.gutter() - PAD - this.uiInset();
     const domain = zeroExtent([
       ...points.map((p) => p.value),
       ...points.map((p) => p.comparison),
@@ -180,7 +289,13 @@ export class UiLineChart {
 
   private readonly valuePoints = computed<readonly ChartPoint[]>(() => {
     const { x, y } = this.scales();
-    return this.uiPoints().map((p, i) => ({ x: x(i), y: y(p.value) }));
+    const out: ChartPoint[] = [];
+    const points = this.uiPoints();
+    for (let i = 0; i < points.length; i++) {
+      const value = (points[i] as UiChartLinePoint).value;
+      if (value !== null) out.push({ x: x(i), y: y(value) });
+    }
+    return out;
   });
 
   /** The `d` of a series in the chosen curve. */
@@ -250,7 +365,7 @@ export class UiLineChart {
 
   /** The right-edge labels: the last value on its point, the average on its rule, kept apart. */
   protected readonly edgeLabels = computed<readonly EdgeLabel[]>(() => {
-    const x = this.width() - this.gutter() + PAD;
+    const x = this.width() - this.gutter() + PAD - this.uiInset();
     const labels: EdgeLabel[] = [];
     const last = this.valuePoints()[this.valuePoints().length - 1];
     const valueText = this.lastValueText();
