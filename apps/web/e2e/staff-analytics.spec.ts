@@ -329,11 +329,8 @@ test.describe('«Анализи» — staff analytics', () => {
     for (let shown = await days.count(); shown > dayCount;) {
       dayCount = shown;
       await days.last().scrollIntoViewIfNeeded();
-      await expect
-        .poll(async () => days.count(), { timeout: 2_000 })
-        .toBeGreaterThanOrEqual(dayCount)
-        .catch(() => undefined);
-      await page.waitForTimeout(400);
+      // The next page lays out once its sentinel comes within reach.
+      await page.waitForTimeout(500);
       shown = await days.count();
     }
     await page.keyboard.press('Escape');
