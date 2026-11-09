@@ -18,51 +18,24 @@
   padding-block-start: var(--sys-space-regular);
 }
 
-/* THE BAR, pinned to the top, the page's width edge to edge: clear while
-   the large figure is on screen, then — folded (`data-collapsed`) — the
-   thick material of the DS's chrome with the figure small between ‹ and
-   the switch (the sheets' collapsing title). Its controls read the bar's
-   backdrop, as every bar content scrolls under lends them (modifiers.css,
-   «Floating chrome»). */
+/* THE BAR is the DS's collapsing title (ui-sheet-header on a page): it
+   pins, folds the figure into its middle and lands with the house fade.
+   The page only runs it edge to edge — its own inset is the page's
+   gutter — and keeps the gap to the figure. */
 .analytics-card__bar {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 2;
-  /* Two equal outer columns, so the folded title sits on the screen's
-     centre whatever width the ‹ and the switch take. */
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--sys-space-compact);
-  min-block-size: var(--control-size-large);
   margin-inline: calc(-1 * var(--sys-space-regular));
-  margin-block: calc(-1 * var(--sys-space-tight)) var(--sys-space-regular);
-  padding: var(--sys-space-tight) var(--sys-space-regular);
-  --ui-control-backdrop: blur(var(--sys-material-thin-blur))
-    saturate(var(--sys-material-saturation));
-  transition: background-color var(--sys-motion-duration-instant)
-    var(--sys-motion-ease-standard);
+  margin-block-end: var(--sys-space-regular);
+  /* The chart switch is a wide pill: plain `1fr` sides would grow to hold
+     it and push the landed title off the screen's centre. Zero-floored,
+     the sides stay equal; the switch keeps its own width at the trailing
+     edge (and is gone while the title shows). */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
-.analytics-card__bar[data-collapsed] {
-  background-color: color-mix(
-    in srgb,
-    var(--sys-color-background) 92%,
-    transparent
-  );
-  -webkit-backdrop-filter: blur(var(--sys-material-thick-blur))
-    saturate(var(--sys-material-saturation));
-  backdrop-filter: blur(var(--sys-material-thick-blur))
-    saturate(var(--sys-material-saturation));
-}
-
-/* The switch keeps the trailing column whether or not there is a title —
-   and leaves it while the bar is folded: it switches the chart, and the
-   chart has scrolled away (owner, 2026-11-09). Folded, the bar is the way
-   back and the figure, an iOS navigation bar. */
+/* The chart switch leaves once the bar has landed: it switches the chart,
+   and the chart has scrolled away (owner, 2026-11-09) — landed, the bar
+   is the way back and the figure, an iOS navigation bar. */
 .analytics-card__views {
-  grid-column: 3;
-  justify-self: end;
   transition:
     opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
     visibility var(--sys-motion-duration-instant);
@@ -71,36 +44,6 @@
 .analytics-card__bar[data-collapsed] .analytics-card__views {
   opacity: 0;
   visibility: hidden;
-}
-
-/* The figure, small: the topic over the value, centred, one line each;
-   it rises into place as the large one passes under the bar. */
-.analytics-card__bar-title {
-  grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-inline-size: 0;
-  margin: 0;
-  text-align: center;
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateY(6px);
-  transition:
-    opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
-    transform var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
-  pointer-events: none;
-}
-
-.analytics-card__bar-title > span {
-  max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.analytics-card__bar[data-collapsed] .analytics-card__bar-title {
-  opacity: 1;
-  transform: none;
 }
 
 .analytics-card__modules {
@@ -366,9 +309,4 @@
   min-inline-size: 12ch;
   margin-inline-start: 0;
   text-align: end;
-}
-
-/* The way back holds the leading column's start. */
-.analytics-card__bar > [data-testid='analytics-card-back'] {
-  justify-self: start;
 }

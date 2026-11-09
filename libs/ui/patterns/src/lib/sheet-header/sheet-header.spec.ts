@@ -86,6 +86,21 @@ class HostComponent {
 })
 class NestedHostComponent {}
 
+/**
+ * A PAGE the document scrolls (the analytics card screen): no ancestor
+ * scrolls, the header heads its parent, the large title sits beside it.
+ */
+@Component({
+  imports: [UiSheetHeader],
+  template: `<main data-testid="page">
+    <ui-sheet-header data-testid="header">
+      <div uiTitle>Compact title</div>
+    </ui-sheet-header>
+    <h2 uiSheetLargeTitle>Large title</h2>
+  </main>`,
+})
+class PageHostComponent {}
+
 /** One animation frame: the header starts observing after the first. */
 const nextFrame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -169,6 +184,37 @@ describe('UiSheetHeader', () => {
       // Top rootMargin subtracts the sticky bar so the crossing means
       // "slid under the bar" (0px here — jsdom boxes have no layout).
       expect(observer?.rootMargin).toMatch(/^-\d+px 0px 0px 0px$/);
+    });
+
+    it('heads a page when no ancestor scrolls: marks itself data-page and watches its large title against the viewport', async () => {
+      const page = TestBed.createComponent(PageHostComponent);
+      page.detectChanges();
+      await page.whenStable();
+      await nextFrame();
+      page.detectChanges();
+      const bar = page.nativeElement.querySelector(
+        '[data-testid="header"]',
+      ) as HTMLElement;
+      expect(bar.hasAttribute('data-page')).toBe(true);
+      const observer = FakeIntersectionObserver.instances.at(-1);
+      expect(observer?.observed).toEqual([
+        page.nativeElement.querySelector('[uiSheetLargeTitle]'),
+      ]);
+      // The viewport is the root.
+      expect(observer?.root).toBeNull();
+      observer?.emit({
+        isIntersecting: false,
+        boundingClientRect: { bottom: 0 } as DOMRectReadOnly,
+        rootBounds: { top: 52 } as DOMRectReadOnly,
+      });
+      page.detectChanges();
+      expect(bar.hasAttribute('data-collapsed')).toBe(true);
+      // A sheet's header is no page.
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await nextFrame();
+      fixture.detectChanges();
+      expect(header().hasAttribute('data-page')).toBe(false);
     });
 
     it('collapses when the large title exits above the bar and expands when it returns', async () => {
@@ -256,18 +302,23 @@ describe('UiSheetHeader', () => {
       ).toBe(true);
     });
 
-    it('stays at rest where nothing above it scrolls: the page does, and the owner drives the bar', async () => {
+    it('where nothing above it scrolls, heads the page against the viewport — and the owner can still drive the bar', async () => {
       const scroller: HTMLElement = fixture.nativeElement.querySelector(
         '[data-testid="scroller"]',
       );
       scroller.style.overflowY = 'visible';
-      const before = FakeIntersectionObserver.instances.length;
       fixture.detectChanges();
       await fixture.whenStable();
       // The header observes a frame after its first render.
       await nextFrame();
-      expect(FakeIntersectionObserver.instances).toHaveLength(before);
+      fixture.detectChanges();
+      expect(header().hasAttribute('data-page')).toBe(true);
+      expect(FakeIntersectionObserver.instances.at(-1)?.root).toBeNull();
       expect(header().hasAttribute('data-collapsed')).toBe(false);
+      // The owner's flag still wins outright.
+      fixture.componentInstance.collapsed.set(true);
+      fixture.detectChanges();
+      expect(header().hasAttribute('data-collapsed')).toBe(true);
     });
 
     it('falls back to scroll-position collapse when no sentinel is labelled', async () => {

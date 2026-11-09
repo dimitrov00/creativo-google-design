@@ -269,4 +269,82 @@
       cursor: grab;
     }
   }
+
+  /* ── ON A PAGE (`data-page`, 2026-11-09) ─────────────────────────────
+     With no scrolling ancestor the header heads a PAGE (sheet-header.ts):
+     the analytics card screen's ‹ · title · switch. It keeps every rule
+     above — the 52px bar, the three columns, the compact title that
+     arrives as the large one leaves — and trades the sheet's parts for the
+     page's: no grabber and no drag (the page scrolls under the bar), and
+     the landed chrome is not the landing's surface slab + hairline but the
+     HOUSE FADE (owner: "it has NO solid background it uses a gradient
+     fade"), as the modal sheet's chrome draws it: the page's ground solid
+     through the bar, then the quintic smootherstep ramp over a 3rem
+     overhang — IDENTICAL ramp to the sheet chrome, ui-sheet-action-bar and
+     ui-page-action-bar, keyed to the PAGE background, as
+     ui-page-action-bar's is. Gated like the sheet's: hidden at rest, in
+     once the large title is under the bar. */
+  .ui-sheet-header[data-page] {
+    touch-action: auto;
+    cursor: auto;
+    /* Its controls ride a bar the page scrolls under (modifiers.css,
+       «Floating chrome»): the thin backdrop. */
+    --ui-control-backdrop: blur(var(--sys-material-thin-blur))
+      saturate(var(--sys-material-saturation));
+  }
+
+  .ui-sheet-header[data-page] > .ui-sheet-header__grabber {
+    display: none;
+  }
+
+  /* The landed chrome is the fade, never the slab — the scroll-linked
+     chrome animation included (an animation outranks the cascade). */
+  .ui-sheet-header[data-page],
+  .ui-sheet-header[data-page][data-collapsed],
+  .ui-sheet-header[data-page]:has(> [uititle][data-visible]) {
+    background-color: transparent;
+    border-block-end-color: transparent;
+    animation: none;
+  }
+
+  .ui-sheet-header[data-page]::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 -3rem;
+    z-index: -1;
+    background: linear-gradient(
+      to bottom,
+      var(--sys-color-background) calc(100% - 3rem),
+      color-mix(in srgb, var(--sys-color-background) 98%, transparent)
+        calc(100% - 3rem * 0.875),
+      color-mix(in srgb, var(--sys-color-background) 90%, transparent)
+        calc(100% - 3rem * 0.75),
+      color-mix(in srgb, var(--sys-color-background) 73%, transparent)
+        calc(100% - 3rem * 0.625),
+      color-mix(in srgb, var(--sys-color-background) 50%, transparent)
+        calc(100% - 3rem * 0.5),
+      color-mix(in srgb, var(--sys-color-background) 27%, transparent)
+        calc(100% - 3rem * 0.375),
+      color-mix(in srgb, var(--sys-color-background) 10%, transparent)
+        calc(100% - 3rem * 0.25),
+      color-mix(in srgb, var(--sys-color-background) 2%, transparent)
+        calc(100% - 3rem * 0.125),
+      transparent 100%
+    );
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-sheet-header[data-page][data-collapsed]::before,
+  .ui-sheet-header[data-page]:has(> [uititle][data-visible])::before {
+    opacity: 1;
+  }
+
+  /* The scroll-linked cross-fade's scope on a page: the page the header
+     heads — the common ancestor of the bar and its large title. */
+  :has(> .ui-sheet-header[data-page]) {
+    timeline-scope: --ui-sheet-headline;
+  }
 }
