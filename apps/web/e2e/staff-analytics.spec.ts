@@ -369,9 +369,10 @@ test.describe('«Анализи» — staff analytics', () => {
 
     await page.goto('/staff/analytics');
     await reportReady(page);
-    // The admin opens on the shop: its page carries the team.
+    // The admin opens on the shop — every location of the dev catalogue's
+    // two (ADR 2026-11-09): its page carries the team.
     await expect(page.getByTestId('analytics-scope-menu')).toContainText(
-      'Салон',
+      'Всички салони',
     );
     await expect(
       currentPage(page).getByTestId('analytics-card-team'),
@@ -392,10 +393,31 @@ test.describe('«Анализи» — staff analytics', () => {
     ).toBe(true);
     expect(shopCsv.lines.join('\n')).not.toContain('Донев');
 
+    // One location (ADR 2026-11-09): its figures, its name on the pill, the
+    // URL saying so, and no goal — a goal is the shop's or a barber's.
+    await pickFromMenu(
+      page,
+      'analytics-scope-menu',
+      'analytics-scope-location-loc-mladost',
+    );
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('location'))
+      .toBe('loc-mladost');
+    await reportReady(page);
+    await expect(page.getByTestId('analytics-scope-menu')).toContainText(
+      'Младост',
+    );
+    await expect(page.getByTestId('analytics-tool-goal')).toHaveCount(0);
+    await expect(
+      currentPage(page).getByTestId('analytics-card-team'),
+    ).toBeVisible();
+
     await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-niko');
     await expect
       .poll(() => new URL(page.url()).searchParams.get('barber'))
       .toBe('niko');
+    // A barber never stands beside a location.
+    expect(new URL(page.url()).searchParams.get('location')).toBeNull();
     // A colleague's scope shows no goal of the shop's, and the admin is
     // offered none to set there: a barber's goal is the barber's alone.
     await expect(page.getByTestId('analytics-goal-ring')).toHaveCount(0);
