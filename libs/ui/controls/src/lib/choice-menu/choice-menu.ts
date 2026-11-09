@@ -483,12 +483,14 @@ export class UiChoiceMenu {
     afterNextRender(
       () => {
         const root = this.host.nativeElement;
+        // Matched by dataset, not by a selector: an id is the consumer's
+        // own string and `CSS.escape` is not everywhere a test runs.
         const back =
           fromId === null
             ? null
-            : root.querySelector<HTMLElement>(
-                `[data-choice-open="${CSS.escape(fromId)}"]`,
-              );
+            : (Array.from(
+                root.querySelectorAll<HTMLElement>('[data-choice-open]'),
+              ).find((row) => row.dataset['choiceOpen'] === fromId) ?? null);
         const target =
           back ??
           root.querySelector<HTMLElement>('.ui-menu__item:not([disabled])');
