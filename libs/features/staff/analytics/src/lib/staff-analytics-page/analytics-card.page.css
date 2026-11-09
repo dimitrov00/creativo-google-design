@@ -206,3 +206,23 @@
   flex-direction: column;
   gap: var(--sys-space-tight);
 }
+
+/* The locations' toggles under their lines: chips that wrap, each with
+   its location's tone as a dot — the legend and the picker in one. */
+.analytics-card__picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sys-space-compact);
+  margin-block-start: var(--sys-space-compact);
+}
+
+.analytics-card__picks .ui-chart-swatch {
+  margin-inline-end: var(--sys-space-tight);
+}
+
+/* A location's row: its name over its figures. */
+.analytics-card__location {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}

@@ -240,6 +240,14 @@ export type AnalyticsReport = {
    */
   readonly reportComparisonBarbers: readonly AnalyticsReport.BarberFigures[];
   /**
+   * How the shop's locations compete (owner review 2026-11-09): one row per
+   * location of a shop report over two or more locations, in the shop's
+   * location order — each one's figures as its own location report states
+   * them (`AnalyticsCarouselSystem.locationFiguresOf`). Empty for a barber, for
+   * one location's report, and for a shop with a single location.
+   */
+  readonly reportLocations: readonly AnalyticsReport.LocationFigures[];
+  /**
    * The admin's radar (CUJ 5): one row per barber of a shop report on a
    * `MONTH`, `YEAR` or `CUSTOM` span, in `reportBarbers`' order
    * (`AnalyticsRadarSystem.radarsOf`); empty for one barber, on a `DAY` or
@@ -381,6 +389,31 @@ export namespace AnalyticsReport {
     readonly workedSeatCount: number;
     /** The distinct shop days of the period that roster any minute for the barber — the fill floor's base. */
     readonly rosteredDayCount: number;
+  };
+
+  /**
+   * One location's figures inside a shop report — what its own location
+   * report says: the takings and their pace against the comparison (the
+   * hero pair), the worked time and its occupancy, the clients served and
+   * new, the two rates, and its takings per bucket of `reportSeries`, in
+   * the same order.
+   */
+  export type LocationFigures = {
+    readonly locationId: LocationId;
+    readonly takingsCents: PriceCents;
+    readonly tipsCents: PriceCents;
+    readonly heroCurrentCents: PriceCents;
+    readonly heroPreviousCents: PriceCents | null;
+    readonly workedMinutes: MinuteCount;
+    /** Worked of the rostered time so far, `0 … 1`; `null` with nothing rostered. */
+    readonly occupancy: number | null;
+    /** Worked seats — the no-show base less the no-shows. */
+    readonly servedCount: number;
+    readonly newClientCount: number;
+    readonly rebookedRate: number | null;
+    readonly noShowRate: number | null;
+    /** Its takings per bucket of the shop's `reportSeries`, aligned by position. */
+    readonly seriesCents: readonly PriceCents[];
   };
 
   /**

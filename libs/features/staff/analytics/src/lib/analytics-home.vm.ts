@@ -26,6 +26,7 @@ export const AnalyticsCard = {
   Rebooked: 'rebooked',
   NoShows: 'no-shows',
   Team: 'team',
+  Locations: 'locations',
 } as const;
 export type AnalyticsCard = (typeof AnalyticsCard)[keyof typeof AnalyticsCard];
 
@@ -130,6 +131,33 @@ export type AnalyticsTeamCardVm = {
   readonly testId: string;
 };
 
+/**
+ * One location's row — the home card's and the locations screen's: its
+ * name, its takings, the bar's length against the best one, its identity
+ * tone (the shop's location order, never the rank) and, on the screen,
+ * the line of figures under it.
+ */
+export type AnalyticsLocationRowVm = {
+  readonly locationId: LocationId;
+  readonly name: string;
+  readonly value: string;
+  /** The bar's length, `0 … 1` of the best location's takings. */
+  readonly share: number;
+  /** `0…4` — `--sys-identity-N`, in the shop's location order. */
+  readonly tone: number;
+  /** «72% заетост · 14 клиента · 3 нови». */
+  readonly detail: string;
+  readonly testId: string;
+};
+
+/** The shop's locations compared: each one's takings as a bar. */
+export type AnalyticsLocationsCardVm = {
+  readonly title: string;
+  readonly rows: readonly AnalyticsLocationRowVm[];
+  readonly accessibleName: string;
+  readonly testId: string;
+};
+
 /** One page of the carousel: a period's bento, or `null` while its report is not here. */
 export type AnalyticsPageVm = {
   /** The period's first day and span — the track key. */
@@ -137,6 +165,8 @@ export type AnalyticsPageVm = {
   readonly label: string;
   readonly cards: readonly AnalyticsBentoCardVm[] | null;
   readonly team: AnalyticsTeamCardVm | null;
+  /** The shop's locations compared — on the shop over two or more locations. */
+  readonly locations: AnalyticsLocationsCardVm | null;
   /** The card screens' query: this page's period and the scope. */
   readonly query: AnalyticsCardQuery;
 };

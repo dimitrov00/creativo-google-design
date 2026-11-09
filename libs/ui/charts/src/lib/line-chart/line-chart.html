@@ -70,7 +70,21 @@
     [attr.data-part]="comparisonPart"
     [attr.d]="comparisonPath()"
   />
-  } @if (averageY() !== null) {
+  } @for (line of seriesShapes(); track $index) { @if (line.d) {
+  <path
+    class="ui-line-chart__series"
+    [attr.data-tone]="line.tone"
+    [attr.d]="line.d"
+  />
+  } @if (line.end; as end) {
+  <circle
+    class="ui-line-chart__series-end"
+    [attr.data-tone]="line.tone"
+    r="3.5"
+    [attr.cx]="end.x"
+    [attr.cy]="end.y"
+  />
+  } } @if (averageY() !== null) {
   <line
     class="ui-line-chart__average"
     x1="6"
@@ -110,6 +124,14 @@
     r="4.5"
     [attr.cx]="at.x"
     [attr.cy]="at.comparisonY"
+  />
+  } @for (dot of at.series; track $index) {
+  <circle
+    class="ui-line-chart__scrub-dot ui-line-chart__series-dot"
+    [attr.data-tone]="dot.tone"
+    r="4.5"
+    [attr.cx]="at.x"
+    [attr.cy]="dot.y"
   />
   } @if (at.valueY !== null) {
   <circle

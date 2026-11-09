@@ -10,7 +10,12 @@ import { Location } from '@angular/common';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
 import { AnalyticsFigure, AnalyticsRangePreset } from '@core/components';
-import { type BarberId, type LocalDate, Tag } from '@core/primitives';
+import {
+  type BarberId,
+  type LocalDate,
+  type LocationId,
+  Tag,
+} from '@core/primitives';
 import {
   UiBarChart,
   UiHeatmap,
@@ -22,6 +27,7 @@ import {
   type UiAlertAction,
   UiAlert,
   UiButton,
+  UiChip,
   UiIcon,
   UiNotice,
   UiSegmentedControl,
@@ -76,6 +82,7 @@ const INFO_CLOSE = 'close';
     UiBarChart,
     UiButton,
     UiCard,
+    UiChip,
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiHeatmap,
@@ -125,6 +132,9 @@ export class AnalyticsCardPage {
   /** The switch's pick; `null` is the card's first view. */
   private readonly view = signal<AnalyticsChartView | null>(null);
 
+  /** The locations whose line the toggles turned off; at least one stays on. */
+  private readonly hiddenLocations = signal<readonly LocationId[]>([]);
+
   protected readonly vm = computed(() => {
     const screen = this.screen.input();
     if (screen === null) return null;
@@ -132,8 +142,21 @@ export class AnalyticsCardPage {
       ...screen,
       card: this.cardTag(),
       view: this.view(),
+      hiddenLocationIds: this.hiddenLocations(),
     });
   });
+
+  /** A location's toggle: its line on or off — never the last line off. */
+  protected toggleLocation(locationId: LocationId): void {
+    const picks = this.vm()?.locationPicks ?? [];
+    const shown = picks.filter((pick) => pick.selected).length;
+    this.hiddenLocations.update((hidden) => {
+      if (hidden.includes(locationId)) {
+        return hidden.filter((id) => id !== locationId);
+      }
+      return shown > 1 ? [...hidden, locationId] : hidden;
+    });
+  }
 
   /** The point a finger (or the pointer) rests on in the line; `null` at rest. */
   protected readonly scrubbed = signal<number | null>(null);

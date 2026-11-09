@@ -7,6 +7,7 @@ import {
   analyticsReportFixture,
   deepFreeze,
   localDate,
+  locationsReportFixture,
   shopReportFixture,
 } from '@core/testing';
 import { NAMES, nbsp, wordsOf } from '../testing/analytics.fixtures';
@@ -58,6 +59,7 @@ function inputOf(
     names: NAMES,
     card,
     view: null,
+    hiddenLocationIds: [],
     ...overrides,
   };
 }
@@ -164,7 +166,7 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
   it('«Бакшиши»: tips per day as a line, and the ring of tips against the takings', () => {
     const line = analyticsCardVm(inputOf(AnalyticsCard.Tips)).chart;
     if (line?.chartView !== 'LINE') throw new Error('not a line');
-    expect(line.points.reduce((sum, p) => sum + p.value, 0)).toBe(600);
+    expect(line.points.reduce((sum, p) => sum + (p.value ?? 0), 0)).toBe(600);
     const ring = analyticsCardVm(
       inputOf(AnalyticsCard.Tips, { view: AnalyticsChartView.Ring }),
     ).chart;
@@ -208,6 +210,59 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
       'Нико Петров',
     ]);
     expect(vm.radars?.radars).toHaveLength(2);
+  });
+
+  it('«Салони»: the shop’s figure, a running total per salon in its tone, toggles to hide one, a row per salon', () => {
+    const report = deepFreeze(locationsReportFixture());
+    const vm = analyticsCardVm(inputOf(AnalyticsCard.Locations, { report }));
+    expect(vm.title).toBe('Салони');
+    expect(vm.value).toBe(nbsp('45,50 €'));
+    expect(vm.views.map((v) => v.id)).toEqual(['LINE', 'BARS']);
+    const line = vm.chart;
+    if (line?.chartView !== 'LINE') throw new Error('not a line');
+    expect(line.label).toBe('Оборот с натрупване по салони');
+    expect(line.points.every((p) => p.value === null)).toBe(true);
+    expect(line.series.map((s) => s.tone)).toEqual([0, 1]);
+    // Running totals up to today (the 28th), then nothing.
+    expect(line.series[0]?.values.at(13)).toBe(2800);
+    expect(line.series[1]?.values.at(14)).toBe(1750);
+    expect(line.series[1]?.values.at(27)).toBe(1750);
+    expect(line.series[1]?.values.at(28)).toBeNull();
+    expect(line.readouts[14]).toBe(
+      `15 септември · Център ${nbsp('28,00 €')} · Младост ${nbsp('17,50 €')}`,
+    );
+    expect(vm.locationPicks?.map((p) => [p.label, p.tone, p.selected])).toEqual(
+      [
+        ['Център', 0, true],
+        ['Младост', 1, true],
+      ],
+    );
+    expect(vm.locations?.map((row) => row.name)).toEqual(['Център', 'Младост']);
+    expect(vm.locationsTitle).toBe('По салони');
+
+    // A hidden salon leaves the chart and the readout; its toggle reads off.
+    const hidden = analyticsCardVm(
+      inputOf(AnalyticsCard.Locations, {
+        report,
+        hiddenLocationIds: [report.reportLocations[0]!.locationId],
+      }),
+    );
+    const one = hidden.chart;
+    if (one?.chartView !== 'LINE') throw new Error('not a line');
+    expect(one.series.map((s) => s.tone)).toEqual([1]);
+    expect(one.readouts[14]).toBe(`15 септември · Младост ${nbsp('17,50 €')}`);
+    expect(hidden.locationPicks?.map((p) => p.selected)).toEqual([false, true]);
+
+    // The bars: each salon's takings, in the shop's order; no toggles.
+    const bars = analyticsCardVm(
+      inputOf(AnalyticsCard.Locations, {
+        report,
+        view: AnalyticsChartView.Bars,
+      }),
+    );
+    if (bars.chart?.chartView !== 'BARS') throw new Error('not bars');
+    expect(bars.chart.bars.map((b) => b.label)).toEqual(['Център', 'Младост']);
+    expect(bars.locationPicks).toBeNull();
   });
 
   it('while the first report is out: no figure, no chart, the range alone under the title', () => {

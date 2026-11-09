@@ -3,12 +3,17 @@ import { PipelineErrorCode } from '@core/errors';
 import {
   AppointmentId,
   BarberId,
+  LocationId,
   MinuteCount,
   type PriceCents,
   SeatId,
 } from '@core/primitives';
 import { MinuteRange } from './minute-range.data';
-import { type AnalyticsDay, StaffAnalyticsSystem } from '@core/systems';
+import {
+  AnalyticsCarouselSystem,
+  type AnalyticsDay,
+  StaffAnalyticsSystem,
+} from '@core/systems';
 import {
   FIXTURE_NOW,
   FIXTURE_NOW_UTC_MS,
@@ -98,6 +103,7 @@ function reportOf(scopeBarberId: BarberId | null): AnalyticsReport {
     policy: ClientStatsPolicy.DEFAULT,
     now: FIXTURE_NOW,
     goal: null,
+    locationFigures: [],
   });
 }
 
@@ -144,6 +150,27 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       ok: true,
       value: report,
     });
+  });
+
+  it('reads the shop’s locations back — each one’s row from its own report — and refuses a malformed one', () => {
+    const shop = reportOf(null);
+    const centre = AnalyticsCarouselSystem.locationFiguresOf(
+      LocationId.of('loc-center'),
+      shop,
+    );
+    const report = { ...shop, reportLocations: [centre, centre] };
+    expect(centre.seriesCents).toHaveLength(shop.reportSeries.length);
+    expect(centre.servedCount).toBe(AnalyticsCarouselSystem.servedOf(shop));
+    expect(AnalyticsCall.decodeReport(wire(report))).toEqual({
+      ok: true,
+      value: report,
+    });
+    const broken = wire(report);
+    broken['reportLocations'] = [{ ...centre, seriesCents: [-1] }];
+    expect(AnalyticsCall.decodeReport(broken)).toEqual(UNUSABLE);
+    const missing = wire(shop);
+    delete missing['reportLocations'];
+    expect(AnalyticsCall.decodeReport(missing)).toEqual(UNUSABLE);
   });
 
   it('reads the radars with values, the comparison barbers and the barber figures’ new fields back (v2 PR 5)', () => {

@@ -281,6 +281,8 @@ export interface AnalyticsWords {
     /** «от 40 посещения». */
     readonly noShowsDetail: (base: string) => string;
     readonly team: string;
+    /** «Салони» — the shop's locations compared. */
+    readonly locations: string;
     readonly ahead: string;
     readonly aheadDetail: string;
     readonly tools: string;
@@ -314,6 +316,24 @@ export interface AnalyticsWords {
     readonly workedLine: string;
     readonly tipsLine: string;
     readonly teamBars: string;
+    /** «По салони» — the locations' rows. */
+    readonly byLocation: string;
+    /** «Оборот с натрупване по салони» — the locations' lines. */
+    readonly locationsLine: string;
+    /** «Оборот по салони» — the locations' bars. */
+    readonly locationsBars: string;
+    /** «Салони на графиката» — the toggles that pick the lines. */
+    readonly locationPicks: string;
+    /** «72% заетост · 14 клиента · 3 нови» — a location's row. */
+    readonly locationDetail: (
+      occupancy: string,
+      clients: string,
+      fresh: string,
+    ) => string;
+    /** «1 клиент» · «14 клиента». */
+    readonly clientsCount: (count: number) => string;
+    /** A scrubbed day over several lines: «5 ноември · Център 82,00 € · Младост 60,00 €». */
+    readonly readoutList: (day: string, list: string) => string;
   };
   /** The dock's «Експорт» and the CSV it hands over (staff-analytics-v2 «Export (PR 7)»). */
   readonly export: {
@@ -641,6 +661,7 @@ export function analyticsWordsOf(
       noShows: t('home.noShows'),
       noShowsDetail: (base) => t('home.noShowsDetail', { base }),
       team: t('home.team'),
+      locations: t('home.locations'),
       ahead: t('home.ahead'),
       aheadDetail: t('home.aheadDetail'),
       tools: t('home.tools'),
@@ -672,6 +693,14 @@ export function analyticsWordsOf(
       workedLine: t('card.workedLine'),
       tipsLine: t('card.tipsLine'),
       teamBars: t('card.teamBars'),
+      byLocation: t('card.byLocation'),
+      locationsLine: t('card.locationsLine'),
+      locationsBars: t('card.locationsBars'),
+      locationPicks: t('card.locationPicks'),
+      locationDetail: (occupancy, clients, fresh) =>
+        t('card.locationDetail', { occupancy, clients, fresh }),
+      clientsCount: counted('card.clientsCount'),
+      readoutList: (day, list) => t('card.readoutList', { day, list }),
     },
     export: {
       action: t('export.action'),

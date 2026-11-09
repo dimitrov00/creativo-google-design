@@ -37,6 +37,24 @@ export type UiChartLinePoint = {
 };
 
 /**
+ * One more line beside this period's (`uiSeries`) — a member of a set the
+ * chart compares (each shop of a business), in an identity tone
+ * (`--sys-identity-N`, `0…4`): colour follows the member, never its rank.
+ * Its values align with `uiPoints` by position; a `null` leaves a gap.
+ */
+export type UiLineChartSeries = {
+  readonly values: readonly (number | null)[];
+  readonly tone: number;
+};
+
+/** One drawn member line and the end dot on its last point. */
+type SeriesShape = {
+  readonly d: string;
+  readonly tone: number;
+  readonly end: ChartPoint | null;
+};
+
+/**
  * How the line runs between its points: `linear` straight segments,
  * `smooth` a monotone cubic through every point that never overshoots
  * between two of them (`monotonePath`).
@@ -144,6 +162,12 @@ export class UiLineChart {
    * lifts. A drag across scrubs; a vertical swipe still scrolls the page.
    */
   readonly uiScrubbable = input(false, { transform: booleanAttribute });
+  /**
+   * Further lines to compare, each in its identity tone (`UiLineChartSeries`)
+   * — with every `uiPoints` value `null`, the chart draws these alone: one
+   * line per member of a set, none of them the accent.
+   */
+  readonly uiSeries = input<readonly UiLineChartSeries[]>([]);
   /** The index of the point under the pointer; `null` when it lifts or leaves. */
   readonly uiScrubbed = output<number | null>();
 
@@ -163,6 +187,10 @@ export class UiLineChart {
       bottom: px(this.height() - PAD),
       valueY: point.value === null ? null : px(y(point.value)),
       comparisonY: point.comparison === null ? null : px(y(point.comparison)),
+      series: this.uiSeries().flatMap((line) => {
+        const value = line.values[index] ?? null;
+        return value === null ? [] : [{ y: px(y(value)), tone: line.tone }];
+      }),
     };
   });
 
@@ -279,6 +307,7 @@ export class UiLineChart {
     const domain = zeroExtent([
       ...points.map((p) => p.value),
       ...points.map((p) => p.comparison),
+      ...this.uiSeries().flatMap((line) => line.values),
       average,
     ]);
     const y = linearScale(domain, [this.height() - PAD, PAD]);
@@ -320,6 +349,23 @@ export class UiLineChart {
         p.comparison === null ? null : { x: x(i), y: y(p.comparison) },
       ),
     );
+  });
+
+  /** The member lines (`uiSeries`), each with a dot on its last drawn point. */
+  protected readonly seriesShapes = computed<readonly SeriesShape[]>(() => {
+    const { x, y } = this.scales();
+    const path = this.pathOf();
+    return this.uiSeries().map((line) => {
+      const points: (ChartPoint | null)[] = [];
+      let end: ChartPoint | null = null;
+      for (let i = 0; i < line.values.length; i++) {
+        const value = line.values[i] ?? null;
+        const point = value === null ? null : { x: x(i), y: y(value) };
+        points.push(point);
+        if (point !== null) end = point;
+      }
+      return { d: path(points), tone: line.tone, end };
+    });
   });
 
   /**

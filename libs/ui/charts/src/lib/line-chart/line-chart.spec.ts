@@ -5,6 +5,7 @@ import {
   UiLineChart,
   type UiChartLinePoint,
   type UiLineChartCurve,
+  type UiLineChartSeries,
 } from './line-chart';
 
 const WEEK: readonly UiChartLinePoint[] = [
@@ -25,6 +26,7 @@ const WEEK: readonly UiChartLinePoint[] = [
       [uiCurve]="curve()"
       [uiArea]="area()"
       [uiScrubbable]="scrubbable()"
+      [uiSeries]="series()"
       (uiScrubbed)="scrubbed.push($event)"
       uiLabel="Оборот по дни, най-висок вторник"
       data-testid="chart"
@@ -44,6 +46,7 @@ class Host {
   readonly curve = signal<UiLineChartCurve>('linear');
   readonly area = signal(false);
   readonly scrubbable = signal(false);
+  readonly series = signal<readonly UiLineChartSeries[]>([]);
   readonly scrubbed: (number | null)[] = [];
 }
 
@@ -381,5 +384,90 @@ describe('UiLineChart — tap and drag to read a point', () => {
     expect(host.scrubbed.at(-1)).toBe(1);
     fixture.detectChanges();
     expect(all('.ui-line-chart__scrub-dot')).toHaveLength(1);
+  });
+});
+
+describe('UiLineChart — members compared (uiSeries)', () => {
+  const POINTS: readonly UiChartLinePoint[] = WEEK.map((p) => ({
+    label: p.label,
+    value: null,
+    comparison: null,
+  }));
+  const MEMBERS: readonly UiLineChartSeries[] = [
+    { values: [100, 300, 450, 500], tone: 0 },
+    { values: [50, 80, null, null], tone: 1 },
+  ];
+
+  it('draws one line per member in its identity tone, a dot at each one’s last point, and no accent line', () => {
+    const { all } = render((h) => {
+      h.points.set(POINTS);
+      h.series.set(MEMBERS);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    const lines = all('.ui-line-chart__series');
+    expect(lines.map((line) => line.getAttribute('data-tone'))).toEqual([
+      '0',
+      '1',
+    ]);
+    // The second member stops after its second point.
+    expect(
+      lines[1]?.getAttribute('d')?.split(/[ML]/).filter(Boolean),
+    ).toHaveLength(2);
+    expect(all('.ui-line-chart__series-end')).toHaveLength(2);
+    expect(all('.ui-line-chart__path')).toHaveLength(0);
+    expect(all('.ui-line-chart__marker')).toHaveLength(0);
+  });
+
+  it('scales every member onto one axis — the higher one sets the top', () => {
+    const { all } = render((h) => {
+      h.points.set(POINTS);
+      h.series.set(MEMBERS);
+      h.average.set(null);
+      h.averageText.set(null);
+    });
+    const ends = all('.ui-line-chart__series-end').map((dot) =>
+      Number(dot.getAttribute('cy')),
+    );
+    // 500 sits at the plot's top edge (PAD), 80 well under it.
+    expect(ends[0]).toBe(6);
+    expect(ends[1]).toBeGreaterThan(ends[0] as number);
+  });
+
+  it('marks each member under the finger, only where it has a value', () => {
+    const { one, all, fixture, host } = render((h) => {
+      h.points.set(POINTS);
+      h.series.set(MEMBERS);
+      h.scrubbable.set(true);
+    });
+    const svg = one('svg') as SVGSVGElement;
+    const width = Number(svg.getAttribute('viewBox')?.split(' ')[2]);
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width, height: 100 }) as DOMRect;
+    const down = new MouseEvent('pointerdown', { bubbles: true, clientX: 0 });
+    Object.defineProperties(down, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'touch' },
+    });
+    svg.dispatchEvent(down);
+    fixture.detectChanges();
+    expect(host.scrubbed).toEqual([0]);
+    expect(
+      all('.ui-line-chart__series-dot').map((dot) =>
+        dot.getAttribute('data-tone'),
+      ),
+    ).toEqual(['0', '1']);
+    const move = new MouseEvent('pointermove', {
+      bubbles: true,
+      clientX: width - 1,
+    });
+    Object.defineProperties(move, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'touch' },
+    });
+    svg.dispatchEvent(move);
+    fixture.detectChanges();
+    // The last point: the second member has no value there.
+    expect(all('.ui-line-chart__series-dot')).toHaveLength(1);
   });
 });

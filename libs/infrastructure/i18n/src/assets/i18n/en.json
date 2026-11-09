@@ -2870,6 +2870,7 @@
       "noShows": "No-shows",
       "noShowsDetail": "of {{base}} visits",
       "team": "The team",
+      "locations": "Salons",
       "ahead": "Coming up",
       "aheadDetail": "free in the next 7 days",
       "tools": "Tools",
@@ -2911,7 +2912,17 @@
       "byBarber": "By barber",
       "workedLine": "Work by day",
       "tipsLine": "Tips by day",
-      "teamBars": "Takings by barber"
+      "teamBars": "Takings by barber",
+      "byLocation": "By salon",
+      "locationsLine": "Running takings by salon",
+      "locationsBars": "Takings by salon",
+      "locationPicks": "Salons on the chart",
+      "locationDetail": "{{occupancy}} occupied · {{clients}} · {{fresh}}",
+      "clientsCount": {
+        "one": "{{count}} client",
+        "other": "{{count}} clients"
+      },
+      "readoutList": "{{day}} · {{list}}"
     },
     "export": {
       "action": "Export",

@@ -44,6 +44,7 @@ import type {
   ShopDayReadPorts,
 } from '@core/ports';
 import {
+  AnalyticsCarouselSystem,
   type AnalyticsVisit,
   type AnalyticsFollowUp,
   type ShopNowAt,
@@ -454,7 +455,54 @@ export const staffAnalytics =
       );
     }
 
-    // 7b. Compute.
+    // 7b. Compute. For the shop over two or more locations, each location's
+    //     own report first — how they compete (owner review 2026-11-09) —
+    //     cut from what was read already: no extra read. A location's
+    //     figures need neither the next 7 days nor a goal.
+    const previousVisits = S.visitsAt(
+      S.mergeVisits(previousRows.value),
+      locationId,
+    );
+    const locationFigures = S.comparesLocations(
+      scope.value,
+      locationId,
+      locations.length,
+    )
+      ? locations.map((location) =>
+          AnalyticsCarouselSystem.locationFiguresOf(
+            location.id,
+            S.report({
+              scopeBarberId: null,
+              scopeLocationId: location.id,
+              barberIds,
+              period: period.value,
+              analyticsComparison: cmd.analyticsComparison,
+              days: S.daysOf(
+                S.atLocation(
+                  {
+                    ...daysInput,
+                    localDates: periodDays,
+                    departures: departureRead.value.flat(),
+                    visits,
+                  },
+                  location.id,
+                ),
+              ),
+              pastDays: S.storedAt(pastDays, location.id),
+              aheadDays: [],
+              visits: S.visitsAt(visits, location.id),
+              previousVisits: S.visitsAt(previousVisits, location.id),
+              previousPastDays: S.storedAt(previousPastDays, location.id),
+              followUps,
+              firstSeen: firstSeen.value,
+              policy: ClientStatsPolicy.forBooking(policy.value),
+              now,
+              goal: null,
+              locationFigures: [],
+            }),
+          ),
+        )
+      : [];
     const report = S.report({
       scopeBarberId: scope.value,
       scopeLocationId: locationId,
@@ -475,13 +523,14 @@ export const staffAnalytics =
         ),
       ),
       visits,
-      previousVisits: S.visitsAt(S.mergeVisits(previousRows.value), locationId),
+      previousVisits,
       previousPastDays,
       followUps,
       firstSeen: firstSeen.value,
       policy: ClientStatsPolicy.forBooking(policy.value),
       now,
       goal: goal.value,
+      locationFigures,
     });
 
     // 8. The log line — counts and minutes, never money.

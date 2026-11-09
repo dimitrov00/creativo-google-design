@@ -5,6 +5,7 @@ import {
   type AnalyticsReport,
   AnalyticsSpan,
 } from '@core/components';
+import type { LocationId } from '@core/primitives';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import {
   formatCount,
@@ -22,7 +23,7 @@ import {
   money,
   statusOf,
 } from './analytics.presenter';
-import { pageLabelOf, teamOf } from './analytics-home.presenter';
+import { locationsOf, pageLabelOf, teamOf } from './analytics-home.presenter';
 import { AnalyticsCard } from './analytics-home.vm';
 import {
   type AnalyticsCardChartVm,
@@ -53,6 +54,8 @@ export interface AnalyticsCardInput extends AnalyticsScreenInput {
   readonly card: AnalyticsCard;
   /** The switch's pick; `null` is the card's first view. */
   readonly view: AnalyticsChartView | null;
+  /** The locations whose line the screen's toggles turned off. */
+  readonly hiddenLocationIds: readonly LocationId[];
 }
 
 /** Each view's glyph on the switch. */
@@ -70,6 +73,7 @@ const CARD_FIGURES = {
   [AnalyticsCard.Rebooked]: AnalyticsFigure.Rebooked,
   [AnalyticsCard.NoShows]: AnalyticsFigure.NoShows,
   [AnalyticsCard.Team]: null,
+  [AnalyticsCard.Locations]: null,
 } as const satisfies Record<AnalyticsCard, AnalyticsFigure | null>;
 
 /** Each card's ⓘ topic — its definition. */
@@ -80,6 +84,8 @@ const CARD_TOPICS = {
   [AnalyticsCard.Rebooked]: AnalyticsTopic.Rebooked,
   [AnalyticsCard.NoShows]: AnalyticsTopic.NoShows,
   [AnalyticsCard.Team]: AnalyticsTopic.Radars,
+  // The locations compare their takings: the takings' definition.
+  [AnalyticsCard.Locations]: AnalyticsTopic.Takings,
 } as const satisfies Record<AnalyticsCard, AnalyticsTopic>;
 
 /** A service ring's paints, in rank order: the accent, then the chart's greys. */
@@ -169,6 +175,24 @@ export function analyticsCardVm(
         ? teamOf(input, report).rows
         : null,
     teamTitle: words.card.byBarber,
+    locationPicks:
+      card === AnalyticsCard.Locations &&
+      view === AnalyticsChartView.Line &&
+      report !== null
+        ? report.reportLocations.map((row, index) => ({
+            locationId: row.locationId,
+            label: input.names.locationName(row.locationId) ?? words.scope.shop,
+            tone: index % IDENTITY_TONES,
+            selected: !input.hiddenLocationIds.includes(row.locationId),
+            testId: `analytics-location-pick-${row.locationId}`,
+          }))
+        : null,
+    locationPicksLabel: words.card.locationPicks,
+    locations:
+      card === AnalyticsCard.Locations && report !== null
+        ? locationsOf(input, report).rows
+        : null,
+    locationsTitle: words.card.byLocation,
   };
 }
 
@@ -187,6 +211,8 @@ function titleOf(card: AnalyticsCard, input: AnalyticsScreenInput): string {
       return home.noShows;
     case AnalyticsCard.Team:
       return home.team;
+    case AnalyticsCard.Locations:
+      return home.locations;
   }
 }
 
@@ -267,6 +293,14 @@ function figureOf(
       );
     case AnalyticsCard.Team:
       return plain(body.hero.value);
+    case AnalyticsCard.Locations:
+      return {
+        value: body.hero.value,
+        delta: body.hero.delta,
+        trend: body.hero.trend,
+        subline: rangeText,
+        ringDetail: rangeText,
+      };
   }
 }
 
@@ -294,13 +328,15 @@ function viewsOf(
       return shop && report.reportBarbers.length > 0 ? [Ring, Bars] : [Ring];
     case AnalyticsCard.Team:
       return input.scopeBarberId === null ? [Bars, Ring] : [Ring];
+    case AnalyticsCard.Locations:
+      return series ? [Line, Bars] : [Bars];
   }
 }
 
 function chartOf(
   card: AnalyticsCard,
   view: AnalyticsChartView,
-  input: AnalyticsScreenInput,
+  input: AnalyticsCardInput,
   report: AnalyticsReport,
   body: AnalyticsBodyVm,
   figure: CardFigure,
@@ -350,6 +386,7 @@ function chartOf(
         ? words.charts.comparison
         : null,
     label,
+    series: [],
     // What a tap or drag on the point reads under the figure: its day, and
     // the previous period's figure beside it when there is one.
     readouts: values.map((_, i) => {
@@ -588,6 +625,64 @@ function chartOf(
           label: input.names.barberName(row.barberId) ?? words.scope.barber,
           valueText: money(row.takingsCents, lang),
         })),
+      );
+    }
+    case AnalyticsCard.Locations: {
+      const rows = report.reportLocations;
+      const names = rows.map(
+        (row) => input.names.locationName(row.locationId) ?? words.scope.shop,
+      );
+      if (view === AnalyticsChartView.Line) {
+        // One running total per location the toggles keep, in its tone —
+        // the colour follows the location, never its rank. The figure
+        // stays the shop's while a finger reads the day.
+        const paces = AnalyticsCarouselSystem.locationPacesOf(
+          report,
+          input.today,
+        );
+        const shown = rows.flatMap((row, index) =>
+          input.hiddenLocationIds.includes(row.locationId)
+            ? []
+            : [{ index, pace: paces[index] ?? [] }],
+        );
+        const points = labels.map((label) => ({
+          label,
+          value: null,
+          comparison: null,
+        }));
+        return {
+          chartView: AnalyticsChartView.Line,
+          points,
+          average: null,
+          valueText: points.map(() => ''),
+          averageText: null,
+          comparisonLegend: null,
+          label: words.card.locationsLine,
+          series: shown.map(({ index, pace }) => ({
+            values: points.map((_, i) => pace[i] ?? null),
+            tone: index % IDENTITY_TONES,
+          })),
+          readouts: points.map((_, i) => {
+            const day = days.at(i) ?? labels.at(i) ?? '';
+            const list = shown.flatMap(({ index, pace }) => {
+              const cents = pace[i];
+              return cents === undefined
+                ? []
+                : [`${names[index] ?? ''} ${money(cents, lang)}`];
+            });
+            return list.length === 0
+              ? day
+              : words.card.readoutList(day, list.join(' · '));
+          }),
+        };
+      }
+      return bars(
+        rows.map((row) => row.takingsCents),
+        rows.map((row) => money(row.takingsCents, lang)),
+        words.card.locationsBars,
+        names,
+        'worked',
+        'horizontal',
       );
     }
   }

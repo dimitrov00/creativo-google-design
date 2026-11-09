@@ -9,6 +9,7 @@ import {
   analyticsReportFixture,
   deepFreeze,
   localDate,
+  locationsReportFixture,
   shopReportFixture,
 } from '@core/testing';
 import {
@@ -309,6 +310,28 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       ['Иван Колев', nbsp('28,00 €'), 1, 0],
       ['Нико Петров', nbsp('17,50 €'), 0.625, 1],
     ]);
+  });
+
+  it('carries the salons compared on the shop’s page — each one’s takings as a bar in its own tone — and none without the comparison', () => {
+    const report = deepFreeze(locationsReportFixture());
+    const vm = analyticsHomeVm(
+      inputOf('bg', {
+        report,
+        pageReports: PAGES.map((_, i) =>
+          i === PAGES.length - 1 ? report : null,
+        ),
+      }),
+    );
+    const locations = vm.pages.at(-1)?.locations;
+    expect(locations?.title).toBe('Салони');
+    expect(
+      locations?.rows.map((r) => [r.name, r.value, r.share, r.tone, r.detail]),
+    ).toEqual([
+      ['Център', nbsp('28,00 €'), 1, 0, '72% заетост · 14 клиента · 3 нови'],
+      ['Младост', nbsp('17,50 €'), 0.625, 1, '40% заетост · 1 клиент · 1 нов'],
+    ]);
+    expect(locations?.testId).toBe('analytics-card-locations');
+    expect(analyticsHomeVm(inputOf('bg')).pages.at(-1)?.locations).toBeNull();
   });
 
   it('under the carousel: the days ahead, and the tools — the goal, then the export', () => {

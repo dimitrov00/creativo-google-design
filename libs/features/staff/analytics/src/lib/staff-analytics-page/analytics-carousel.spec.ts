@@ -48,6 +48,7 @@ class Host {
       label: `Месец ${i}`,
       cards: null,
       team: null,
+      locations: null,
       query: {
         span: 'MONTH',
         from: '2026-01-01' as AnalyticsPageVm['query']['from'],

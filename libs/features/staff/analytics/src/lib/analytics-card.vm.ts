@@ -1,7 +1,11 @@
-import type { BarberId, LocalDate } from '@core/primitives';
+import type { BarberId, LocalDate, LocationId } from '@core/primitives';
 import type { UiChartPart } from '@creativo/ui/charts';
 import type { UiSegment } from '@creativo/ui/controls';
-import type { AnalyticsCard, AnalyticsTeamRowVm } from './analytics-home.vm';
+import type {
+  AnalyticsCard,
+  AnalyticsLocationRowVm,
+  AnalyticsTeamRowVm,
+} from './analytics-home.vm';
 import type {
   AnalyticsBlockedVm,
   AnalyticsBusyVm,
@@ -44,6 +48,21 @@ export type AnalyticsRingSegmentVm = {
   readonly valueText: string;
 };
 
+/** One compared member's line (`ui-line-chart`'s `uiSeries`): its values and its identity tone. */
+export type AnalyticsLineSeriesVm = {
+  readonly values: readonly (number | null)[];
+  readonly tone: number;
+};
+
+/** A toggle picking whether a location's line is drawn — a chip with its tone's dot. */
+export type AnalyticsLocationPickVm = {
+  readonly locationId: LocationId;
+  readonly label: string;
+  readonly tone: number;
+  readonly selected: boolean;
+  readonly testId: string;
+};
+
 /** The screen's chart, in the view picked. */
 export type AnalyticsCardChartVm =
   | {
@@ -61,6 +80,8 @@ export type AnalyticsCardChartVm =
        * предходен 60,00 €». The figure itself is the point's `valueText`.
        */
       readonly readouts: readonly string[];
+      /** The compared members' lines — the locations'; empty for one line. */
+      readonly series: readonly AnalyticsLineSeriesVm[];
     }
   | {
       readonly chartView: typeof AnalyticsChartView.Bars;
@@ -130,4 +151,10 @@ export type AnalyticsCardScreenVm = {
   readonly radars: AnalyticsRadarsVm | null;
   readonly team: readonly AnalyticsTeamRowVm[] | null;
   readonly teamTitle: string;
+  /** The locations' toggles over the line — `null` off the locations' line. */
+  readonly locationPicks: readonly AnalyticsLocationPickVm[] | null;
+  readonly locationPicksLabel: string;
+  /** A row per location, opening its own figures — `null` off the locations' screen. */
+  readonly locations: readonly AnalyticsLocationRowVm[] | null;
+  readonly locationsTitle: string;
 };

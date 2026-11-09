@@ -32,6 +32,8 @@ import {
   type AnalyticsAheadCardVm,
   type AnalyticsBentoCardVm,
   type AnalyticsHomeVm,
+  type AnalyticsLocationRowVm,
+  type AnalyticsLocationsCardVm,
   type AnalyticsMenuVm,
   type AnalyticsPaceVm,
   type AnalyticsPageVm,
@@ -208,7 +210,9 @@ function pageOf(
   };
   const key = `${period.analyticsSpan}-${period.fromLocalDate}`;
   const label = pageLabelOf(period, input);
-  if (report === null) return { key, label, cards: null, team: null, query };
+  if (report === null) {
+    return { key, label, cards: null, team: null, locations: null, query };
+  }
   const pageInput: AnalyticsScreenInput = { ...input, period, report };
   const body = bodyOf(pageInput, report);
   return {
@@ -218,6 +222,10 @@ function pageOf(
     team: StaffAnalyticsSystem.screenOf(report).shopScope
       ? teamOf(pageInput, report)
       : null,
+    // The report carries the comparison only for the shop over two or
+    // more locations (`StaffAnalyticsSystem.comparesLocations`).
+    locations:
+      report.reportLocations.length > 0 ? locationsOf(pageInput, report) : null,
     query,
   };
 }
@@ -442,6 +450,47 @@ export function teamOf(
       ...rows.map((row) => `${row.name} ${row.value}`),
     ].join(', '),
     testId: `analytics-card-${AnalyticsCard.Team}`,
+  };
+}
+
+/**
+ * The shop's locations compared (owner review 2026-11-09): a row per
+ * location in the shop's order — its name, its takings, a bar against the
+ * best one, its identity tone and its figures in a line.
+ */
+export function locationsOf(
+  input: AnalyticsScreenInput,
+  report: AnalyticsReport,
+): AnalyticsLocationsCardVm {
+  const { words } = input;
+  const lang = words.lang;
+  const best = report.reportLocations.reduce(
+    (max, row) => Math.max(max, row.takingsCents),
+    0,
+  );
+  const rows = report.reportLocations.map(
+    (row, index): AnalyticsLocationRowVm => ({
+      locationId: row.locationId,
+      name: input.names.locationName(row.locationId) ?? words.scope.shop,
+      value: money(row.takingsCents, lang),
+      share: best > 0 ? row.takingsCents / best : 0,
+      tone: index % IDENTITY_TONES,
+      detail: words.card.locationDetail(
+        formatPercent(row.occupancy ?? 0, lang),
+        words.card.clientsCount(row.servedCount),
+        words.home.clientsNew(row.newClientCount),
+      ),
+      testId: `analytics-location-${row.locationId}`,
+    }),
+  );
+  return {
+    title: words.home.locations,
+    rows,
+    accessibleName: [
+      words.home.locations,
+      ...rows.map((row) => `${row.name} ${row.value}`),
+    ].join(', '),
+    testId: `analytics-card-${AnalyticsCard.Locations}`,
   };
 }
 

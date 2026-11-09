@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { LocationId } from '@core/primitives';
+import { locationFixture } from '@core/testing';
 import { UiLineChart } from '@creativo/ui/charts';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -75,6 +77,42 @@ describe('AnalyticsCardPage — a card’s own screen (staff-analytics-v3)', () 
     expect(subline()?.textContent).toContain('Този месец');
     expect(subline()?.getAttribute('aria-live')).toBe('polite');
     expect(host.querySelector('.analytics-card__delta')).not.toBeNull();
+  });
+
+  it('«Салони»: a line per salon, its toggle hides it — never the last — and a row per salon opening its figures', async () => {
+    const { fixture, host } = await render('locations', {
+      admin: true,
+      shop: true,
+      compareLocations: true,
+      locations: [
+        locationFixture({ id: LocationId.of('loc-centre') }),
+        locationFixture({ id: LocationId.of('loc-mladost') }),
+      ],
+    });
+    const lines = () => host.querySelectorAll('.ui-line-chart__series');
+    const pick = (id: string) =>
+      byTestId(host, `analytics-location-pick-${id}`) as HTMLButtonElement;
+    expect(lines()).toHaveLength(2);
+    pick('loc-centre').click();
+    await settle(fixture);
+    expect(lines()).toHaveLength(1);
+    expect(pick('loc-centre').getAttribute('aria-pressed')).toBe('false');
+    // The last line stays.
+    pick('loc-mladost').click();
+    await settle(fixture);
+    expect(lines()).toHaveLength(1);
+    expect(pick('loc-mladost').getAttribute('aria-pressed')).toBe('true');
+    pick('loc-centre').click();
+    await settle(fixture);
+    expect(lines()).toHaveLength(2);
+
+    const rows = byTestId(host, 'analytics-locations');
+    expect(rows?.querySelectorAll('a[uiListRow]')).toHaveLength(2);
+    expect(rows?.textContent).toContain('72% заетост · 14 клиента · 3 нови');
+    expect(rows?.textContent).toContain('40% заетост · 1 клиент · 1 нов');
+    expect(
+      byTestId(host, 'analytics-location-loc-mladost')?.getAttribute('href'),
+    ).toContain('location=loc-mladost');
   });
 
   it('the range row: 1М on the month, and 6М asks for six calendar months up to today', async () => {

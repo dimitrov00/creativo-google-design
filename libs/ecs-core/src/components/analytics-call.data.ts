@@ -210,6 +210,31 @@ function barberFiguresOf(raw: unknown): AnalyticsReport.BarberFigures | null {
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }
 
+function locationFiguresOf(
+  raw: unknown,
+): AnalyticsReport.LocationFigures | null {
+  const r = readerOf(raw);
+  const locationId = r.field('locationId');
+  const seriesCents = rowsOf(r.list('seriesCents'), (cents) =>
+    PriceCents.is(cents) ? cents : null,
+  );
+  const row = {
+    takingsCents: r.cents('takingsCents'),
+    tipsCents: r.cents('tipsCents'),
+    heroCurrentCents: r.cents('heroCurrentCents'),
+    heroPreviousCents: r.centsOrNull('heroPreviousCents'),
+    workedMinutes: r.minutes('workedMinutes'),
+    occupancy: r.rate('occupancy'),
+    servedCount: r.count('servedCount'),
+    newClientCount: r.count('newClientCount'),
+    rebookedRate: r.rate('rebookedRate'),
+    noShowRate: r.rate('noShowRate'),
+  };
+  return r.ok() && LocationId.is(locationId) && seriesCents !== null
+    ? { locationId, ...row, seriesCents }
+    : null;
+}
+
 function radarRowOf(raw: unknown): AnalyticsReport.RadarRow | null {
   const r = readerOf(raw);
   const barberId = r.field('barberId');
@@ -428,6 +453,7 @@ export const AnalyticsCall = {
       r.list('reportComparisonBarbers'),
       barberFiguresOf,
     );
+    const locations = rowsOf(r.list('reportLocations'), locationFiguresOf);
     const radars = rowsOf(r.list('reportRadars'), radarRowOf);
     const dayRows = rowsOf(r.list('reportDayRows'), dayRowOf);
     const seatRows = rowsOf(r.list('reportSeatRows'), seatRowOf);
@@ -453,6 +479,7 @@ export const AnalyticsCall = {
       origins === null ||
       barbers === null ||
       comparisonBarbers === null ||
+      locations === null ||
       radars === null ||
       dayRows === null ||
       seatRows === null
@@ -476,6 +503,7 @@ export const AnalyticsCall = {
       reportOrigins: origins,
       reportBarbers: barbers,
       reportComparisonBarbers: comparisonBarbers,
+      reportLocations: locations,
       reportRadars: radars,
       reportRadarBase: radarBase,
       reportDayRows: dayRows,

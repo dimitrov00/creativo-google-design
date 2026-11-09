@@ -6,7 +6,11 @@ import {
   AnalyticsSpan,
 } from '@core/components';
 import { analyticsReportFixture, deepFreeze, localDate } from '@core/testing';
-import type { MinuteCount, PriceCents } from '@core/primitives';
+import {
+  LocationId,
+  type MinuteCount,
+  type PriceCents,
+} from '@core/primitives';
 import { AnalyticsCarouselSystem as C } from './analytics-carousel.system';
 
 /** A Monday in November: the reach starts on 1 November 2025. */
@@ -205,6 +209,65 @@ describe('AnalyticsCarouselSystem.tipsSeriesOf — tips per bucket', () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('AnalyticsCarouselSystem — the locations compared', () => {
+  const day = (d: string): AnalyticsReport.SeriesPoint => ({
+    localDate: localDate(d),
+    takingsCents: 0 as PriceCents,
+    comparisonTakingsCents: null,
+  });
+  const SERIES = [day('2026-11-08'), day('2026-11-09'), day('2026-11-10')];
+  const row = (
+    locationId: string,
+    seriesCents: readonly number[],
+  ): AnalyticsReport.LocationFigures => ({
+    ...C.locationFiguresOf(
+      LocationId.of(locationId),
+      analyticsReportFixture({ reportSeries: SERIES }),
+    ),
+    seriesCents: seriesCents as readonly PriceCents[],
+  });
+
+  it('projects a location’s own report into its row: takings, pace pair, occupancy, served, new, rates and series', () => {
+    const report = deepFreeze(analyticsReportFixture());
+    const figures = C.locationFiguresOf(LocationId.of('loc-center'), report);
+    expect(figures).toEqual({
+      locationId: 'loc-center',
+      takingsCents: report.reportTakingsCents,
+      tipsCents: report.reportTipsCents,
+      heroCurrentCents: report.reportHeroCurrentCents,
+      heroPreviousCents: report.reportHeroPreviousCents,
+      workedMinutes: report.reportWorkedMinutes,
+      occupancy: C.occupancyOf(report),
+      servedCount: C.servedOf(report),
+      newClientCount: report.reportNewClientCount,
+      rebookedRate: report.reportRebookedRate,
+      noShowRate: report.reportNoShowRate,
+      seriesCents: report.reportSeries.map((p) => p.takingsCents),
+    });
+  });
+
+  it('runs each location’s total up to the bucket holding today, in the rows’ order', () => {
+    const report = deepFreeze(
+      analyticsReportFixture({
+        reportSeries: SERIES,
+        reportLocations: [row('a', [100, 200, 900]), row('b', [0, 50, 900])],
+      }),
+    );
+    const paces = C.locationPacesOf(report, localDate('2026-11-09'));
+    expect(paces).toEqual([
+      [100, 300],
+      [0, 50],
+    ]);
+    expect(C.locationPacesOf(report, localDate('2026-11-09'))).toEqual(paces);
+    expect(
+      C.locationPacesOf(
+        analyticsReportFixture({ reportSeries: SERIES }),
+        localDate('2026-11-09'),
+      ),
+    ).toEqual([]);
   });
 });
 

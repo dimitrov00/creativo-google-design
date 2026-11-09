@@ -2873,6 +2873,7 @@
       "noShows": "Неявили се",
       "noShowsDetail": "от {{base}} посещения",
       "team": "Екипът",
+      "locations": "Салони",
       "ahead": "Предстои",
       "aheadDetail": "свободни в следващите 7 дни",
       "tools": "Инструменти",
@@ -2914,7 +2915,17 @@
       "byBarber": "По бръснари",
       "workedLine": "Работа по дни",
       "tipsLine": "Бакшиши по дни",
-      "teamBars": "Оборот по бръснари"
+      "teamBars": "Оборот по бръснари",
+      "byLocation": "По салони",
+      "locationsLine": "Оборот с натрупване по салони",
+      "locationsBars": "Оборот по салони",
+      "locationPicks": "Салони на графиката",
+      "locationDetail": "{{occupancy}} заетост · {{clients}} · {{fresh}}",
+      "clientsCount": {
+        "one": "{{count}} клиент",
+        "other": "{{count}} клиента"
+      },
+      "readoutList": "{{day}} · {{list}}"
     },
     "export": {
       "action": "Експорт",

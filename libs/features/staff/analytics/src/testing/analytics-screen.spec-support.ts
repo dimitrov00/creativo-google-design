@@ -27,6 +27,7 @@ import {
   FIXTURE_TIME_ZONE,
   analyticsReportFixture,
   memoryAnalyticsCachePorts,
+  locationsReportFixture,
   shopReportFixture,
   principalFixture,
 } from '@core/testing';
@@ -103,6 +104,8 @@ export async function renderAnalyticsScreen<T>(
     readonly shop?: boolean;
     /** The callable refuses the account: no figures. */
     readonly refuse?: boolean;
+    /** The shop's report compares two locations (`locationsReportFixture`). */
+    readonly compareLocations?: boolean;
     /** The shop's locations in the catalogue; none by default. */
     readonly locations?: readonly ShopLocation[];
   } = {},
@@ -124,10 +127,16 @@ export async function renderAnalyticsScreen<T>(
           }),
         );
       }
-      const report =
+      const answered =
         options.shop && call.scopeBarberId === null
           ? shopReportFixture()
           : reportFor(call);
+      const report = options.compareLocations
+        ? {
+            ...answered,
+            reportLocations: locationsReportFixture().reportLocations,
+          }
+        : answered;
       // A stored goal comes back with the next report, as the callable's does.
       const goal = goals.at(-1);
       return Result.ok(

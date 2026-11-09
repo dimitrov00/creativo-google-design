@@ -139,6 +139,7 @@
         uiCurve="smooth"
         uiScrubbable
         (uiScrubbed)="scrubbed.set($event)"
+        [uiSeries]="chart.series"
         [uiArea]="true"
         [uiPoints]="chart.points"
         [uiAverage]="chart.average"
@@ -161,6 +162,33 @@
         ></span>
         {{ legend }}
       </p>
+      } @if (vm.locationPicks; as picks) {
+      <!-- The locations' toggles: each one's line on or off, its tone's
+           dot the legend — at least one line always stays. -->
+      <div
+        class="analytics-card__picks"
+        role="group"
+        [attr.aria-label]="vm.locationPicksLabel"
+        data-testid="analytics-location-picks"
+      >
+        @for (pick of picks; track pick.locationId) {
+        <button
+          type="button"
+          uiChip
+          uiControlSize="small"
+          [uiSelected]="pick.selected"
+          [attr.data-testid]="pick.testId"
+          (click)="toggleLocation(pick.locationId)"
+        >
+          <span
+            class="ui-chart-swatch"
+            [attr.data-tone]="pick.tone"
+            aria-hidden="true"
+          ></span>
+          {{ pick.label }}
+        </button>
+        }
+      </div>
       } } @case (ChartView.Bars) {
       <ui-bar-chart
         [uiOrientation]="chart.orientation"
@@ -411,6 +439,50 @@
       }
     </section>
     }
+
+    <!-- «ПО САЛОНИ»: a row per location — its figures in a line, opening
+         its own analytics. -->
+    @if (vm.locations; as locations) { @if (locations.length > 0) {
+    <section
+      class="analytics-card__module"
+      aria-labelledby="analytics-locations-title"
+      data-testid="analytics-locations"
+    >
+      <h2 uiText uiFont="title3" id="analytics-locations-title">
+        {{ vm.locationsTitle }}
+      </h2>
+      <ul uiListGroup>
+        @for (row of locations; track row.locationId) {
+        <li>
+          <a
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            routerLink="/staff/analytics"
+            [queryParams]="{ location: row.locationId }"
+            [attr.data-testid]="row.testId"
+          >
+            <span
+              uiLeading
+              class="ui-chart-swatch"
+              [attr.data-tone]="row.tone"
+              aria-hidden="true"
+            ></span>
+            <span class="analytics-card__location">
+              <span>{{ row.name }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ row.detail }}</span
+              >
+            </span>
+            <span uiTrailing class="analytics-card__team-value"
+              >{{ row.value }}</span
+            >
+          </a>
+        </li>
+        }
+      </ul>
+    </section>
+    } }
 
     <!-- «ЕКИПЪТ»: a row per barber opening their figures; the radars. -->
     @if (vm.team; as team) { @if (team.length > 0) {

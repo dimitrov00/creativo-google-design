@@ -52,6 +52,39 @@
     stroke-linejoin: round;
   }
 
+  /* THE MEMBERS (uiSeries): one line per member of a set in its identity
+     tone — the colour follows the member, never its rank — with a ringed
+     dot at its last point, as this period's line ends. */
+  .ui-line-chart__series {
+    fill: none;
+    stroke: var(--ui-line-chart-series);
+    stroke-width: var(--sys-stroke-emphasis);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ui-line-chart__series-end {
+    fill: var(--ui-line-chart-series);
+    stroke: var(--sys-color-surface);
+    stroke-width: var(--sys-stroke-emphasis);
+  }
+
+  .ui-line-chart [data-tone='0'] {
+    --ui-line-chart-series: var(--sys-identity-0);
+  }
+  .ui-line-chart [data-tone='1'] {
+    --ui-line-chart-series: var(--sys-identity-1);
+  }
+  .ui-line-chart [data-tone='2'] {
+    --ui-line-chart-series: var(--sys-identity-2);
+  }
+  .ui-line-chart [data-tone='3'] {
+    --ui-line-chart-series: var(--sys-identity-3);
+  }
+  .ui-line-chart [data-tone='4'] {
+    --ui-line-chart-series: var(--sys-identity-4);
+  }
+
   /* THE AVERAGE: a dashed rule in the palette's middle grey, one point wide. */
   .ui-line-chart__average {
     stroke: color-mix(in srgb, var(--sys-color-foreground) 62%, transparent);
@@ -129,7 +162,11 @@
   /* While a point is read, its figure is the only one: the end markers and
      the edge figures step back. */
   .ui-line-chart__drawing[data-scrubbing]
-    :is(.ui-line-chart__marker, .ui-line-chart__edge-label) {
+    :is(
+      .ui-line-chart__marker,
+      .ui-line-chart__series-end,
+      .ui-line-chart__edge-label
+    ) {
     opacity: 0;
   }
 
@@ -137,6 +174,10 @@
     fill: var(--ui-line-chart-paint, var(--sys-color-accent));
     stroke: var(--sys-color-surface);
     stroke-width: 2px;
+  }
+
+  .ui-line-chart__series-dot {
+    fill: var(--ui-line-chart-series);
   }
 
   .ui-line-chart__scrub-dot[data-part] {

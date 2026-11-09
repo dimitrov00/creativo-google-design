@@ -178,6 +178,13 @@ export type AnalyticsInput = {
   readonly policy: ClientStatsPolicy;
   readonly now: ShopNow;
   /**
+   * How the shop's locations compete — each location's figures from its
+   * own report (`AnalyticsCarouselSystem.locationFiguresOf`), computed by
+   * the pipeline for a shop report over two or more locations; empty
+   * otherwise. The report carries it as `reportLocations`.
+   */
+  readonly locationFigures: readonly AnalyticsReport.LocationFigures[];
+  /**
    * The scope's goal for the period's month (PR 6, «Goals») — read on a
    * `MONTH` only; `null` off `MONTH` or without one. The report hands its
    * range back and paces the takings against it ({@link StaffAnalyticsSystem.goalPaceOf}).
@@ -1490,6 +1497,20 @@ export const StaffAnalyticsSystem = {
     };
   },
 
+  /**
+   * Whether a request's report carries the shop's location comparison: the
+   * shop itself (no barber, no location) over two or more locations.
+   */
+  comparesLocations(
+    scopeBarberId: BarberId | null,
+    scopeLocationId: LocationId | null,
+    locationCount: number,
+  ): boolean {
+    return (
+      scopeBarberId === null && scopeLocationId === null && locationCount > 1
+    );
+  },
+
   /** The visits booked at `locationId`; `null` keeps every one. */
   visitsAt<V extends { readonly locationId: LocationId }>(
     visits: readonly V[],
@@ -1855,6 +1876,7 @@ export const StaffAnalyticsSystem = {
       reportOrigins: originsOf(input.visits, input.pastDays, counting),
       reportBarbers: barbers,
       reportComparisonBarbers: comparisonBarbers,
+      reportLocations: input.locationFigures,
       reportRadars: radars.reportRadars,
       reportRadarBase: radars.reportRadarBase,
       reportDayRows: dayRowsOf(input, counting),

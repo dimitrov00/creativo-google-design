@@ -442,11 +442,13 @@ export class ChartsPage {
     }));
   });
   protected readonly takingsValueText = computed(() =>
-    this.takings().map((point) => euro.format(point.value)),
+    this.takings().map((point) =>
+      point.value === null ? '' : euro.format(point.value),
+    ),
   );
   protected readonly takingsAverage = computed(() => {
     const points = this.takings();
-    const sum = points.reduce((total, point) => total + point.value, 0);
+    const sum = points.reduce((total, point) => total + (point.value ?? 0), 0);
     return Math.round(sum / points.length);
   });
   protected readonly takingsAverageText = computed(

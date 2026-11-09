@@ -25,6 +25,7 @@ import {
   type UserId,
 } from '@core/primitives';
 import {
+  AnalyticsCarouselSystem,
   AnalyticsHourSystem,
   ChairTimeSystem,
   ClientStatsSystem,
@@ -865,6 +866,42 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
       shop.reportRosteredMinutes,
     );
     expect(sum((r) => r.reportNoShowBase)).toBe(shop.reportNoShowBase);
+  });
+
+  it('the shop’s report compares its locations: each row is that location’s own report, and the rows add up to the shop', async () => {
+    const shop = await reportOf(ANALYTICS_FIXTURE_USERS.admin.id, null);
+    expect(shop.reportLocations.map((row) => row.locationId).sort()).toEqual(
+      [...SHOPS].sort(),
+    );
+    for (const row of shop.reportLocations) {
+      expect(row, row.locationId).toEqual(
+        AnalyticsCarouselSystem.locationFiguresOf(
+          row.locationId,
+          await reportAt(row.locationId),
+        ),
+      );
+      expect(row.seriesCents).toHaveLength(shop.reportSeries.length);
+    }
+    const total = shop.reportLocations.reduce(
+      (sum, row) => sum + row.takingsCents,
+      0,
+    );
+    expect(total).toBe(shop.reportTakingsCents);
+    // The same rows from the stored days as from the live ones.
+    const stored = await reportOf(ANALYTICS_FIXTURE_USERS.admin.id, null, {
+      storedDays: documents,
+      flagsOn: STORED,
+    });
+    expect(stored.reportLocations).toEqual(shop.reportLocations);
+  });
+
+  it('carries no location comparison on a location’s or a barber’s report', async () => {
+    expect(
+      (await reportAt(ANALYTICS_FIXTURE_SHOPS.centre)).reportLocations,
+    ).toEqual([]);
+    expect(
+      (await reportOf(ANALYTICS_FIXTURE_USERS.ivan.id, ivan)).reportLocations,
+    ).toEqual([]);
   });
 
   it('reads no goal for a location, and refuses a barber, a location beside a barber, and an unknown one', async () => {

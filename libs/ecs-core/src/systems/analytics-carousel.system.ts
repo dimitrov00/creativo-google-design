@@ -5,7 +5,13 @@ import {
   AnalyticsSpan,
   type DayRow,
 } from '@core/components';
-import { LocalDate, MinuteCount, PriceCents, Weekday } from '@core/primitives';
+import {
+  LocalDate,
+  type LocationId,
+  MinuteCount,
+  PriceCents,
+  Weekday,
+} from '@core/primitives';
 import { StaffAnalyticsSystem } from './staff-analytics.system';
 
 /** The spans the home carousel pages through — every one but `CUSTOM`. */
@@ -215,6 +221,32 @@ export const AnalyticsCarouselSystem = {
   },
 
   /**
+   * THE LOCATIONS' PACE — each location's running total of its takings
+   * over the series buckets, cut at the bucket holding `today` as
+   * {@link paceOf} cuts the shop's: one list per row of `reportLocations`,
+   * in its order. Empty without a comparison of locations.
+   */
+  locationPacesOf(
+    report: AnalyticsReport,
+    today: LocalDate,
+  ): readonly (readonly PriceCents[])[] {
+    const latest = AnalyticsCarouselSystem.latestBucketOf(report, today);
+    const out: PriceCents[][] = [];
+    for (let l = 0; l < report.reportLocations.length; l++) {
+      const row = report.reportLocations[l] as AnalyticsReport.LocationFigures;
+      const pace: PriceCents[] = [];
+      let sum = PriceCents.ZERO;
+      for (let i = 0; i < row.seriesCents.length; i++) {
+        if (latest === null || i > latest) break;
+        sum = PriceCents.add(sum, row.seriesCents[i] as PriceCents);
+        pace.push(sum);
+      }
+      out.push(pace);
+    }
+    return out;
+  },
+
+  /**
    * The rostered time up to now the working-time card measures worked
    * against: the time bar's six parts together (worked, no-show, unmarked,
    * blocked, unsold, other) — the roster less breaks, up to the minute.
@@ -289,6 +321,40 @@ export const AnalyticsCarouselSystem = {
   /** The clients served — the worked seats: the no-show base less the no-shows. */
   servedOf(report: AnalyticsReport): number {
     return Math.max(report.reportNoShowBase - report.reportNoShowCount, 0);
+  },
+
+  /**
+   * One location's row of the shop's comparison (owner review 2026-11-09)
+   * — a declared projection of that location's OWN report (its scope is
+   * the location): the takings and their hero pair, the worked time and
+   * its occupancy ({@link occupancyOf}), the clients served
+   * ({@link servedOf}) and new, the two rates and its takings per series
+   * bucket. Nothing is recomputed; the location's report decided.
+   */
+  locationFiguresOf(
+    locationId: LocationId,
+    report: AnalyticsReport,
+  ): AnalyticsReport.LocationFigures {
+    const seriesCents: PriceCents[] = [];
+    for (let i = 0; i < report.reportSeries.length; i++) {
+      seriesCents.push(
+        (report.reportSeries[i] as AnalyticsReport.SeriesPoint).takingsCents,
+      );
+    }
+    return {
+      locationId,
+      takingsCents: report.reportTakingsCents,
+      tipsCents: report.reportTipsCents,
+      heroCurrentCents: report.reportHeroCurrentCents,
+      heroPreviousCents: report.reportHeroPreviousCents,
+      workedMinutes: report.reportWorkedMinutes,
+      occupancy: AnalyticsCarouselSystem.occupancyOf(report),
+      servedCount: AnalyticsCarouselSystem.servedOf(report),
+      newClientCount: report.reportNewClientCount,
+      rebookedRate: report.reportRebookedRate,
+      noShowRate: report.reportNoShowRate,
+      seriesCents,
+    };
   },
 
   /** The tips as a share of the takings, `0 … ∞`; `null` with no takings to compare. */

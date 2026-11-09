@@ -594,6 +594,7 @@ function reportInput(
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
     goal: null,
+    locationFigures: [],
   };
 }
 

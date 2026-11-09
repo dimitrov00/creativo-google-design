@@ -177,6 +177,7 @@ function input(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
     policy: ClientStatsPolicy.DEFAULT,
     now: NOW,
     goal: null,
+    locationFigures: [],
     ...overrides,
   };
 }

@@ -159,6 +159,45 @@
       }
     </span>
   </a>
+  } @if (p.locations; as locations) {
+  <!-- «Салони»: how the shop's locations compete — each one's takings as a
+       bar in its own tone, opening the locations' screen. -->
+  <a
+    uiCard
+    uiTone="muted"
+    uiPadding="regular"
+    [uiInteractive]="true"
+    class="analytics-bento__card analytics-bento__card--wide"
+    routerLink="/staff/analytics/locations"
+    [queryParams]="p.query"
+    [attr.aria-label]="locations.accessibleName"
+    [attr.data-testid]="locations.testId"
+  >
+    <span
+      uiText
+      uiFont="subheadline"
+      uiForegroundStyle="secondary"
+      class="analytics-bento__title"
+      >{{ locations.title }}</span
+    >
+    <span class="analytics-bento__team" aria-hidden="true">
+      @for (row of locations.rows; track row.locationId) {
+      <span class="analytics-bento__member">
+        <span uiText uiFont="footnote" class="analytics-bento__member-name"
+          >{{ row.name }}</span
+        >
+        <span uiText uiFont="footnote" class="analytics-bento__member-value"
+          >{{ row.value }}</span
+        >
+        <span
+          class="analytics-bento__member-bar"
+          [attr.data-tone]="row.tone"
+          [style.--analytics-share]="row.share"
+        ></span>
+      </span>
+      }
+    </span>
+  </a>
   } } @else {
   <!-- The bones of a page whose report is not here yet. -->
   <ui-skeleton
