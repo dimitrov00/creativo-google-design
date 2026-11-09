@@ -3,6 +3,7 @@ import {
   axisAnchor,
   axisLines,
   polygonPoints,
+  radarValuePoint,
   radarVertex,
   ringPoints,
 } from './polygon-points';
@@ -27,6 +28,16 @@ describe('radarVertex', () => {
     expect(half.y).toBeCloseTo(110, 10);
     expect(radarVertex(0, 5, 0, CENTRE)).toEqual(CENTRE);
     expect(radarVertex(0, 0, 100, CENTRE)).toBe(CENTRE);
+  });
+});
+
+describe('radarValuePoint', () => {
+  it('puts a value at its share of the radius along its axis, clamped to the outer ring', () => {
+    // Four axes round (160, 160), radius 100: the first straight up, the second to the right.
+    expect(radarValuePoint(0, 4, 50, 100, CENTRE)).toEqual({ x: 160, y: 110 });
+    expect(radarValuePoint(1, 4, 100, 100, CENTRE).x).toBeCloseTo(260);
+    expect(radarValuePoint(0, 4, 150, 100, CENTRE)).toEqual({ x: 160, y: 60 });
+    expect(radarValuePoint(0, 4, -20, 100, CENTRE)).toEqual(CENTRE);
   });
 });
 

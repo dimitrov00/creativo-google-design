@@ -30,7 +30,15 @@
     [attr.data-enter]="!node.leaving && polygons().length > 1 ? '' : null"
     (animationend)="dropLeaving()"
   />
-  } } @for (axis of axes(); track $index) {
+  } } @for (dot of dots(); track $index) {
+  <circle
+    class="ui-radar__dot"
+    r="4"
+    [attr.cx]="dot.x"
+    [attr.cy]="dot.y"
+    [attr.data-enter]="polygons().length > 1 ? '' : null"
+  />
+  } @for (axis of axes(); track $index) {
   <text
     class="ui-radar__axis-label"
     aria-hidden="true"

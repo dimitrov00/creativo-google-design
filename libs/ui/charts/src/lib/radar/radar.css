@@ -14,13 +14,14 @@
     --ui-radar-paint: var(--ui-chart-paint);
   }
 
-  /* THE BOX IS SQUARE (radar.ts draws its viewBox at the same ratio over
-     the measured width), so the drawing's pixels are the page's; the words
-     may run past the box and stay visible. */
+  /* THE BOX IS AS TALL AS ITS INK (radar.ts sets --ui-radar-aspect to its
+     viewBox's ratio over the measured width), so the drawing's pixels are
+     the page's and no empty band sits under the lowest words; the words may
+     run past the box and stay visible. */
   .ui-radar__drawing {
     display: block;
     inline-size: 100%;
-    aspect-ratio: 1;
+    aspect-ratio: var(--ui-radar-aspect, 1);
     overflow: visible;
   }
 
@@ -54,6 +55,14 @@
     stroke-linejoin: round;
   }
 
+  /* A VALUE'S DOT: the paint, ringed in the surface — the line chart's
+     marker — so one or two values read as figures, not as a stray line. */
+  .ui-radar__dot {
+    fill: var(--ui-radar-paint);
+    stroke: var(--sys-color-surface);
+    stroke-width: var(--sys-stroke-emphasis);
+  }
+
   /* WORDS ARE INK: the axis's word in the caption role, its figure under
      it in the quiet ink, tabular. */
   .ui-radar__axis-label,
@@ -74,7 +83,8 @@
      first frame only; the global switch (reduced-motion.css) and charts.css
      hold both still under reduced motion. */
   @media (prefers-reduced-motion: no-preference) {
-    .ui-radar[data-settled] .ui-radar__polygon[data-enter] {
+    .ui-radar[data-settled] .ui-radar__polygon[data-enter],
+    .ui-radar[data-settled] .ui-radar__dot[data-enter] {
       animation: ui-radar-enter var(--sys-motion-duration-deliberate)
         var(--sys-motion-ease-standard);
     }
