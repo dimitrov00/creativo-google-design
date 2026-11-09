@@ -7,6 +7,7 @@ import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import { formatCount, formatPercent } from '@creativo/ui/wall-clock';
 import { spanWords } from '@creativo/features/shared/visits';
 import type { UiChoiceOption } from '@creativo/ui/controls';
+import type { UiIconName } from '@creativo/ui/icons';
 import {
   type AnalyticsScreenInput,
   blockedOf,
@@ -14,6 +15,7 @@ import {
   money,
   periodLabelOf,
   scopeOf,
+  shopNameOf,
   statusOf,
 } from './analytics.presenter';
 import {
@@ -96,21 +98,35 @@ export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
 
 // ── The top row ───────────────────────────────────────────────────────────
 
+/** The shop's disc — beside the barbers' faces in the scope menu and its trigger. */
+const SHOP_GLYPH = 'location.shop' satisfies UiIconName;
+
 function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   const scope = scopeOf(input);
   if (scope === null) return null;
   const selected = scope.tiles.find((tile) => tile.selected);
+  const label = selected?.name ?? shopNameOf(input);
   return {
-    label: selected?.name ?? input.words.scope.shop,
+    label,
     menuLabel: scope.label,
+    // Every option is a disc: a face, a monogram, or the shop's glyph.
     options: scope.tiles.map((tile): UiChoiceOption => ({
       id: tile.scopeBarberId ?? 'shop',
       label: tile.name,
       avatarSrc: tile.avatarSrc,
+      ...(tile.scopeBarberId === null ? { icon: SHOP_GLYPH } : {}),
       testId: tile.testId,
     })),
     selected:
       selected === undefined ? null : (selected.scopeBarberId ?? 'shop'),
+    leading: {
+      avatarSrc: selected?.avatarSrc ?? null,
+      name: label,
+      icon:
+        selected === undefined || selected.scopeBarberId === null
+          ? SHOP_GLYPH
+          : null,
+    },
     testId: 'analytics-scope-menu',
   };
 }
@@ -141,6 +157,7 @@ function periodMenuOf(input: AnalyticsHomeInput): AnalyticsMenuVm {
       testId: `analytics-grain-${grain}`,
     })),
     selected: span === AnalyticsSpan.Custom ? null : span,
+    leading: null,
     testId: 'analytics-period-menu',
   };
 }

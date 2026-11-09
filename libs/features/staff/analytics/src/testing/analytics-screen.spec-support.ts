@@ -186,6 +186,7 @@ export async function renderAnalyticsScreen<T>(
           barbers: signal([]),
           services: signal([]),
           barberVms: signal([]),
+          locations: signal([]),
           findService: () => undefined,
         },
       },

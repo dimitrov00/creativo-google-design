@@ -408,6 +408,9 @@ export const UI_ICON_REGISTRY = {
   'location.recenter': 'arrow_upward',
   /** "Any location" — the booking flow's first-class "wherever is soonest". */
   'location.any': 'travel_explore',
+  /** The whole shop as an ANSWER — the analytics scope «Салон» / «Всички
+   *  салони», drawn in an avatar disc beside the barbers' faces. */
+  'location.shop': 'storefront',
 
   /* ── Galleries & layout toggles ─────────────────────────────────── */
   /* `gallery.grid` is an ALIAS of `layout.grid` — see UI_ICON_ALIASES. */

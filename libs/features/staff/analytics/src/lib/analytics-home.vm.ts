@@ -1,5 +1,6 @@
 import type { BarberId, LocalDate } from '@core/primitives';
 import type { UiChoiceOption } from '@creativo/ui/controls';
+import type { UiIconName } from '@creativo/ui/icons';
 import type {
   AnalyticsBlockedVm,
   AnalyticsGoalVm,
@@ -115,7 +116,21 @@ export type AnalyticsMenuVm = {
   readonly menuLabel: string;
   readonly options: readonly UiChoiceOption[];
   readonly selected: string | null;
+  /** The disc leading the trigger — the scope's alone; `null` for none. */
+  readonly leading: AnalyticsMenuLeadingVm | null;
   readonly testId: string;
+};
+
+/**
+ * The scope trigger's disc, as Revolut's «Personal ⌄» carries the face: the
+ * chosen barber's portrait (their monogram without one), or the shop's
+ * glyph.
+ */
+export type AnalyticsMenuLeadingVm = {
+  readonly avatarSrc: string | null;
+  readonly name: string;
+  /** The glyph in place of a monogram — the shop's; `null` for a person. */
+  readonly icon: UiIconName | null;
 };
 
 /** «Предстои»: the next 7 days' open hours, opening the schedule. */

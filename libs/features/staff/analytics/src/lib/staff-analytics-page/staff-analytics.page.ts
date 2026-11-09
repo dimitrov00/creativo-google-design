@@ -15,6 +15,7 @@ import { UiSparkBars } from '@creativo/ui/charts';
 import {
   type UiAlertAction,
   UiAlert,
+  UiAvatar,
   UiButton,
   UiChoiceMenu,
   UiIcon,
@@ -66,6 +67,7 @@ const INFO_CLOSE = 'close';
     AnalyticsGoalSheet,
     RouterLink,
     UiAlert,
+    UiAvatar,
     UiButton,
     UiCard,
     UiChoiceMenu,

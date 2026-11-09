@@ -72,6 +72,18 @@
   min-block-size: var(--control-size-regular);
 }
 
+/* The scope's disc is INSET in its pill, the fill showing round it as a
+   ring (the staff schedule's scope trigger): the disc property, not a
+   width, so the shop's glyph scales with it. The leading padding matches
+   the inset so the disc sits concentric in the capsule's end. */
+.staff-analytics__scope-trigger {
+  padding-inline-start: calc(var(--sys-space-unit) * 1.5);
+}
+
+.staff-analytics__scope-trigger .ui-avatar {
+  --ui-avatar-disc: calc(var(--control-size-small) - var(--sys-space-unit) * 3);
+}
+
 .staff-analytics__period-menu {
   margin-inline-start: auto;
 }

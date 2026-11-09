@@ -138,6 +138,7 @@ export class UiChoiceLeading {
                 <ui-avatar
                   [uiSrc]="option.avatarSrc"
                   [uiName]="option.label"
+                  [uiIcon]="option.icon ?? null"
                   uiControlSize="regular"
                 />
               </span>

@@ -116,6 +116,14 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   · bars · ring (tips against takings) — line and bars only where day rows place in the
   buckets; rebooked and no-shows ring, plus bars by barber on the shop; the team bars ·
   ring by barber. A card with one view shows no switch.
+- **The scope pill leads with a disc**: the chosen barber's face (their monogram without a
+  photo), or the shop's storefront glyph (`location.shop`), inset 6 px in the 36 px pill
+  as the staff schedule's scope trigger does. The menu's shop row draws the same glyph
+  disc beside the faces (`ui-choice-menu` passes an avatar option's `icon` to its disc).
+- **Several locations**: a report's shop scope is every location — the day documents hold
+  one row per barber-day across locations, no `locationId` (v2) — so with two or more
+  locations the shop option reads «Всички салони» (the plural form of the location count).
+  Figures for one location need the day documents split by location; not built.
 - **A service ring paints the top service in the accent and the rest in the chart's
   greys**; the identity tones stay the people's (the team).
 - **The card's figure opens its rows** (`analytics-card-figure`), which add up to it —

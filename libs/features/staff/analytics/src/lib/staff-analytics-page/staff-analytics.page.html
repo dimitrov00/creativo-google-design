@@ -83,7 +83,8 @@
         (uiPicked)="pickScopeOption($event)"
       >
         <!-- The two triggers are one control: the same bordered pill, the
-             same size, the same chevron. -->
+             same size, the same chevron. The scope's leads with its disc —
+             the barber's face, or the shop's glyph. -->
         <button
           type="button"
           uiButton
@@ -91,10 +92,20 @@
           uiTint="neutral"
           uiControlSize="small"
           uiMenuTrigger
+          class="staff-analytics__scope-trigger"
           [attr.aria-label]="scope.menuLabel + ': ' + scope.label"
           [attr.data-testid]="scope.testId"
           (click)="scopeMenu.set(true)"
         >
+          @if (scope.leading; as leading) {
+          <ui-avatar
+            uiControlSize="small"
+            data-testid="analytics-menu-disc"
+            [uiSrc]="leading.avatarSrc"
+            [uiName]="leading.name"
+            [uiIcon]="leading.icon"
+          />
+          }
           <span>{{ scope.label }}</span>
           <ui-icon uiTrailing uiName="field.popUp" />
         </button>

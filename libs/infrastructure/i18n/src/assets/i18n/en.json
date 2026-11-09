@@ -2670,6 +2670,10 @@
     "scope": {
       "label": "Whose figures",
       "shop": "Shop",
+      "shops": {
+        "one": "Shop",
+        "other": "All shops"
+      },
       "me": "Me",
       "barber": "Barber"
     },

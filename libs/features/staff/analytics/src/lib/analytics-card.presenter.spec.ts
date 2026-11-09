@@ -41,6 +41,7 @@ function inputOf(
     scopeBarberId: null,
     linkedBarberId: null,
     scopeGone: false,
+    shopCount: 1,
     scheduleBarberId: null,
     rangeCheck: {
       rangeRefusal: AnalyticsRangeRefusal.Incomplete,

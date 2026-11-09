@@ -97,6 +97,8 @@ export function injectAnalyticsScreen(
     // Read here so a late catalogue re-words the names.
     catalog.barbers();
     catalog.services();
+    // Locations not read yet word as one shop, never as «all».
+    const shopCount = catalog.locations().length || 1;
     return {
       words: w,
       zone,
@@ -108,6 +110,7 @@ export function injectAnalyticsScreen(
       refusal: refusal(),
       scopeChoices: store.scopeChoices(),
       scopeBarberId: store.scopeBarberId(),
+      shopCount,
       linkedBarberId: store.linkedBarberId(),
       scopeGone: store.scopeGone(),
       scheduleBarberId: store.scheduleBarberId(),

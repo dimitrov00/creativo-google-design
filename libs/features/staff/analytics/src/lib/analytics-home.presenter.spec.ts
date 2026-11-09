@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AnalyticsPeriod, AnalyticsSpan } from '@core/components';
-import { AnalyticsCarouselSystem } from '@core/systems';
+import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -10,7 +10,13 @@ import {
   localDate,
   shopReportFixture,
 } from '@core/testing';
-import { NAMES, nbsp, wordsOf } from '../testing/analytics.fixtures';
+import {
+  IVAN,
+  NAMES,
+  NIKO,
+  nbsp,
+  wordsOf,
+} from '../testing/analytics.fixtures';
 import {
   type AnalyticsHomeInput,
   analyticsHomeVm,
@@ -47,6 +53,7 @@ function inputOf(
     scopeBarberId: null,
     linkedBarberId: null,
     scopeGone: false,
+    shopCount: 1,
     scheduleBarberId: null,
     rangeCheck: {
       rangeRefusal: AnalyticsRangeRefusal.Incomplete,
@@ -108,6 +115,51 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     ]);
     expect(vm.period.selected).toBe('MONTH');
     expect(vm.scope).toBeNull();
+  });
+
+  it('leads the scope pill with a disc — the shop’s glyph, or the chosen barber’s face — and offers the shop as a glyph disc', () => {
+    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO);
+    const shop = analyticsHomeVm(
+      inputOf('bg', { report: shopReportFixture(), scopeChoices: choices }),
+    );
+    expect(shop.scope?.label).toBe('Салон');
+    expect(shop.scope?.leading).toEqual({
+      avatarSrc: null,
+      name: 'Салон',
+      icon: 'location.shop',
+    });
+    expect(shop.scope?.options.map((o) => [o.id, o.icon ?? null])).toEqual([
+      ['shop', 'location.shop'],
+      ['niko', null],
+      ['ivan', null],
+    ]);
+    expect(shop.period.leading).toBeNull();
+
+    const ivan = analyticsHomeVm(
+      inputOf('bg', { scopeChoices: choices, scopeBarberId: IVAN }),
+    );
+    expect(ivan.scope?.label).toBe('Иван Колев');
+    expect(ivan.scope?.leading).toEqual({
+      avatarSrc: null,
+      name: 'Иван Колев',
+      icon: null,
+    });
+  });
+
+  it('names the shop scope «Всички салони» when its figures span several locations', () => {
+    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO);
+    const bg = analyticsHomeVm(
+      inputOf('bg', { scopeChoices: choices, shopCount: 2 }),
+    );
+    expect(bg.scope?.label).toBe('Всички салони');
+    expect(bg.scope?.options[0]?.label).toBe('Всички салони');
+    const en = analyticsHomeVm(
+      inputOf('en', { scopeChoices: choices, shopCount: 3 }),
+    );
+    expect(en.scope?.label).toBe('All shops');
+    expect(
+      analyticsHomeVm(inputOf('en', { scopeChoices: choices })).scope?.label,
+    ).toBe('Shop');
   });
 
   it('words a page’s five cards from its report — the figure, the change, the line under it and its graph', () => {

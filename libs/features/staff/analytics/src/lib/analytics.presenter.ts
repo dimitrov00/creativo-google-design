@@ -128,6 +128,12 @@ export interface AnalyticsScreenInput {
   readonly scopeChoices: readonly AnalyticsScopeChoice[] | null;
   /** The scope chosen in the picker; `null` is the shop. */
   readonly scopeBarberId: BarberId | null;
+  /**
+   * How many locations the shop has. A report's shop scope is every one of
+   * them (the day documents hold no location), so with two or more the
+   * shop option says so — «Всички салони».
+   */
+  readonly shopCount: number;
   /** The account's own barber record; `null` for an unlinked admin. */
   readonly linkedBarberId: BarberId | null;
   /** The barber asked for no longer exists: the shop is shown instead. */
@@ -420,7 +426,7 @@ export function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
         scopeBarberId: id,
         name:
           id === null
-            ? words.scope.shop
+            ? shopNameOf(input)
             : choice.scopeMine
               ? words.scope.me
               : (input.names.barberName(id) ?? words.scope.barber),
@@ -430,6 +436,11 @@ export function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
       };
     }),
   };
+}
+
+/** «Салон» — or «Всички салони» when the figures span several locations. */
+export function shopNameOf(input: AnalyticsScreenInput): string {
+  return input.words.scope.shopOf(input.shopCount);
 }
 
 export function blockedOf(
