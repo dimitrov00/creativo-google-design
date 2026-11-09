@@ -196,6 +196,8 @@
         [uiBars]="chart.bars"
         [uiValueText]="chart.valueText"
         [uiLabel]="chart.label"
+        uiScrubbable
+        (uiScrubbed)="scrubbed.set($event)"
         [attr.data-view]="chart.chartView"
       />
       } @case (ChartView.Ring) {
@@ -203,6 +205,8 @@
         class="analytics-card__ring"
         [uiSegments]="chart.segments"
         [uiLabel]="chart.label"
+        uiScrubbable
+        (uiScrubbed)="scrubbed.set($event)"
         [attr.data-view]="chart.chartView"
       >
         <span uiRingCenter class="analytics-card__ring-centre">

@@ -5,6 +5,12 @@
     role="img"
     [attr.aria-label]="uiLabel()"
     [attr.viewBox]="viewBox()"
+    [attr.data-scrubbable]="uiScrubbable() ? '' : null"
+    (pointerdown)="scrubStart($event)"
+    (pointermove)="scrubMove($event)"
+    (pointerup)="scrubEnd($event)"
+    (pointercancel)="scrubEnd($event)"
+    (pointerleave)="scrubEnd($event)"
   >
     @if (empty()) {
     <circle
@@ -26,6 +32,7 @@
         [attr.d]="arc.d"
         [attr.data-tone]="arc.tone"
         [attr.data-part]="arc.part"
+        [attr.data-scrubbed]="scrubIndex() === arc.index ? '' : null"
       />
       }
     </g>

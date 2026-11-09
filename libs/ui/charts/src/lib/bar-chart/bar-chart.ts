@@ -153,6 +153,7 @@ type BarMark = {
     '[attr.data-orientation]': 'uiOrientation()',
     '[attr.data-highlighting]': "uiHighlightIndex() === null ? null : ''",
     '[attr.data-settled]': "settled() ? '' : null",
+    '[attr.data-scrubbing]': "scrubIndex() === null ? null : ''",
     '[style.--ui-bar-base]': 'baseline()',
   },
 })
@@ -282,6 +283,72 @@ export class UiBarChart {
 
   protected pick(index: number): void {
     this.uiBarPicked.emit(index);
+  }
+
+  // ── The scrub (the line chart's grammar, owner 2026-11-09: "why other
+  // types of graphs … don't have those hover/tap animations?") ───────────
+
+  /**
+   * READ BY TOUCH: a finger down or dragging across the bars — a mouse on
+   * hover — reads the bar under it: that bar keeps its paint, every other
+   * dims, and its index goes out through `uiScrubbed` (`null` when the
+   * finger lifts or the mouse leaves), so the screen's figure can read it.
+   */
+  readonly uiScrubbable = input(false, { transform: booleanAttribute });
+  /** The index (in `uiBars`) of the bar under the pointer; `null` at rest. */
+  readonly uiScrubbed = output<number | null>();
+
+  protected readonly scrubIndex = signal<number | null>(null);
+  private scrubbing = false;
+
+  protected scrubStart(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    this.scrubbing = true;
+    this.scrubAt(event);
+    const target = event.currentTarget as Element | null;
+    try {
+      target?.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* no active pointer to capture */
+    }
+  }
+
+  protected scrubMove(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    // A mouse reads on hover; a finger or pen only while it is down.
+    if (this.scrubbing || event.pointerType === 'mouse') this.scrubAt(event);
+  }
+
+  protected scrubEnd(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    if (event.type === 'pointerleave' && this.scrubbing) return;
+    this.scrubbing = false;
+    this.setScrub(null);
+  }
+
+  /** The bar whose band (or row) holds the pointer, in display order. */
+  private scrubAt(event: PointerEvent): void {
+    const svg = this.svg()?.nativeElement;
+    const marks = this.marks();
+    if (svg === undefined || marks.length === 0) return;
+    const box = svg.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return;
+    const position =
+      this.uiOrientation() === 'horizontal'
+        ? Math.floor(
+            ((event.clientY - box.top) * this.height()) /
+              box.height /
+              ROW_PITCH,
+          )
+        : Math.floor(((event.clientX - box.left) * marks.length) / box.width);
+    const mark = marks[Math.min(Math.max(position, 0), marks.length - 1)];
+    this.setScrub(mark === undefined ? null : mark.index);
+  }
+
+  private setScrub(index: number | null): void {
+    if (index === this.scrubIndex()) return;
+    this.scrubIndex.set(index);
+    this.uiScrubbed.emit(index);
   }
 
   protected onKeydown(

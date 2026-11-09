@@ -442,6 +442,11 @@ function chartOf(
     valueText,
     orientation,
     label,
+    // A bar of the period reads its day; a barber's or a salon's, its name.
+    readouts:
+      barLabels === labels
+        ? values.map((_, i) => days.at(i) ?? labels.at(i) ?? '')
+        : barLabels,
   });
   const byBarber = (
     value: (row: AnalyticsReport.BarberFigures) => number,
@@ -528,6 +533,7 @@ function chartOf(
             valueText: time.valueText,
             orientation: 'vertical',
             label: time.label,
+            readouts: time.bars.map((bar, i) => days.at(i) ?? bar.label),
           };
         }
         // One part alone, each bar at its own height — the worked hours a
@@ -550,6 +556,7 @@ function chartOf(
           orientation: 'vertical',
           // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
           label: words.time.part[focused],
+          readouts: bars.map((bar, i) => days.at(i) ?? bar.label),
         };
       }
       if (view === AnalyticsChartView.Line) {

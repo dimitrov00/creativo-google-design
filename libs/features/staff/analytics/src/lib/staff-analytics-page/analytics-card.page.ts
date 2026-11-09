@@ -181,24 +181,39 @@ export class AnalyticsCardPage {
   protected readonly scrubbed = signal<number | null>(null);
 
   /**
-   * The figure and the line under it: while a finger rests on the line
-   * (Revolut, Apple Health) they read that point — its figure, its day and
-   * the previous period's — else the period's own. A point with no figure
-   * of its own (past today on a running total) keeps the period's figure.
+   * The figure and the line under it: while a finger rests on the chart
+   * (Revolut, Apple Health) they read what is under it — a point of the
+   * line or a bar (its figure and its day, or its barber's name), a share
+   * of the ring (its figure and its word) — else the period's own. A point
+   * with no figure of its own (past today on a running total) keeps the
+   * period's figure.
    */
   protected readonly header = computed(() => {
     const vm = this.vm();
     if (vm === null) return null;
     const at = this.scrubbed();
     const chart = vm.chart;
-    if (at === null || chart?.chartView !== AnalyticsChartView.Line) {
-      return { value: vm.value, subline: vm.subline, scrubbing: false };
+    const rest = { value: vm.value, subline: vm.subline, scrubbing: false };
+    if (at === null || chart === null) return rest;
+    switch (chart.chartView) {
+      case AnalyticsChartView.Line:
+      case AnalyticsChartView.Bars:
+        return {
+          value: chart.valueText.at(at) || vm.value,
+          subline: chart.readouts.at(at) ?? vm.subline,
+          scrubbing: true,
+        };
+      case AnalyticsChartView.Ring: {
+        const segment = chart.segments.at(at);
+        return segment === undefined
+          ? rest
+          : {
+              value: segment.valueText,
+              subline: segment.label,
+              scrubbing: true,
+            };
+      }
     }
-    return {
-      value: chart.valueText.at(at) || vm.value,
-      subline: chart.readouts.at(at) ?? vm.subline,
-      scrubbing: true,
-    };
   });
 
   /** The custom period sheet's words and verdict. */
@@ -232,7 +247,10 @@ export class AnalyticsCardPage {
   }
 
   protected pickView(id: string): void {
-    if (Tag.has(AnalyticsChartView, id)) this.view.set(id);
+    if (!Tag.has(AnalyticsChartView, id)) return;
+    this.view.set(id);
+    // A reading belongs to the chart it was read off.
+    this.scrubbed.set(null);
   }
 
   protected pickRange(id: string): void {

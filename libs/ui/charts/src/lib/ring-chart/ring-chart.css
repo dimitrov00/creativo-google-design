@@ -93,4 +93,23 @@
       opacity: 0;
     }
   }
+
+  /* READ BY TOUCH (uiScrubbable): a finger goes round the ring — the page
+     scrolls only up and down over it — and the share under it keeps its
+     paint while every other steps back. */
+  .ui-ring-chart__drawing[data-scrubbable] {
+    touch-action: pan-y;
+    cursor: crosshair;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .ui-ring-chart__segment {
+    transition: opacity var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-ring-chart[data-scrubbing] .ui-ring-chart__segment:not([data-scrubbed]) {
+    opacity: 0.28;
+  }
 }
