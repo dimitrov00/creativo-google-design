@@ -82,22 +82,21 @@
         [(uiPresented)]="scopeMenu"
         (uiPicked)="pickScopeOption($event)"
       >
+        <!-- The two triggers are one control: the same bordered pill, the
+             same size, the same chevron. -->
         <button
           type="button"
           uiButton
-          uiButtonStyle="plain"
+          uiButtonStyle="bordered"
           uiTint="neutral"
-          uiControlSize="regular"
+          uiControlSize="small"
           uiMenuTrigger
-          class="staff-analytics__scope-trigger"
           [attr.aria-label]="scope.menuLabel + ': ' + scope.label"
           [attr.data-testid]="scope.testId"
           (click)="scopeMenu.set(true)"
         >
-          <span uiText uiFont="headline" uiForegroundStyle="primary"
-            >{{ scope.label }}</span
-          >
-          <ui-icon uiTrailing uiName="field.expand" />
+          <span>{{ scope.label }}</span>
+          <ui-icon uiTrailing uiName="field.popUp" />
         </button>
       </ui-choice-menu>
       }

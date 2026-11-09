@@ -63,18 +63,13 @@
   gap: var(--sys-space-tight);
 }
 
-/* THE ROW OF TWO MENUS: whose figures leading, the period trailing — the
-   scope's word at the headline tier with its chevron, as Revolut's
-   «Personal ⌄». */
+/* THE ROW OF TWO MENUS: whose figures leading, the period trailing — two
+   identical bordered pills, each its word and the pop-up chevron. */
 .staff-analytics__menus {
   display: flex;
   align-items: center;
   gap: var(--sys-space-compact);
   min-block-size: var(--control-size-regular);
-}
-
-.staff-analytics__scope-trigger {
-  margin-inline-start: calc(-1 * var(--sys-space-compact));
 }
 
 .staff-analytics__period-menu {
