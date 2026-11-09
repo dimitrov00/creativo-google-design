@@ -6,7 +6,6 @@ import {
 import type {
   BarberId,
   LocalDate,
-  LocationId,
   PriceCents,
   ServiceId,
 } from '@core/primitives';
@@ -422,24 +421,6 @@ export type AnalyticsPeriodVm = {
   readonly range: AnalyticsRangeVm;
 };
 
-/** One tile of the admin's scope picker. */
-export type AnalyticsScopeTileVm = {
-  /** The barber record, or `null` for the shop or a location. */
-  readonly scopeBarberId: BarberId | null;
-  /** The location (ADR 2026-11-09), or `null` for the shop or a barber. */
-  readonly scopeLocationId: LocationId | null;
-  readonly name: string;
-  readonly avatarSrc: string | null;
-  readonly selected: boolean;
-  readonly testId: string;
-};
-
-/** The admin's scope picker; `null` for a barber, who sees only themselves. */
-export type AnalyticsScopeVm = {
-  readonly label: string;
-  readonly tiles: readonly AnalyticsScopeTileVm[];
-};
-
 /** The hero: the takings, their change, the tips on their own line. */
 export type AnalyticsHeroVm = {
   readonly caption: string;
@@ -568,7 +549,6 @@ export type AnalyticsVm = {
   readonly freshness: AnalyticsStatusVm | null;
   readonly retryLabel: string;
   readonly period: AnalyticsPeriodVm;
-  readonly scope: AnalyticsScopeVm | null;
   /** The placeholder layout: the first request is out, nothing cached. */
   readonly placeholder: boolean;
   readonly blocked: AnalyticsBlockedVm | null;

@@ -118,13 +118,18 @@ export type GoalPaceTag = (typeof GoalPaceTag)[keyof typeof GoalPaceTag];
 export type AnalyticsReport = {
   readonly reportDefinitionVersion: number;
   readonly reportComputedAtUtcMs: UtcEpochMs;
-  /** The barber record reported on; `null` for the whole shop or one location. */
-  readonly reportScopeBarberId: BarberId | null;
   /**
-   * The location reported on (ADR 2026-11-09): every barber, counted only
-   * for what happened there; `null` for the whole shop or a barber.
+   * The one barber record reported on — that barber's own report; `null`
+   * for the whole team or a part of it (`reportScopeBarberIds`).
    */
-  readonly reportScopeLocationId: LocationId | null;
+  readonly reportScopeBarberId: BarberId | null;
+  /** The barber records the scope names; none is the whole team (owner review 2026-11-09). */
+  readonly reportScopeBarberIds: readonly BarberId[];
+  /**
+   * The locations reported on (ADR 2026-11-09; sets since 2026-11-09):
+   * counted only for what happened there; none is every location.
+   */
+  readonly reportScopeLocationIds: readonly LocationId[];
   readonly reportAnalyticsSpan: AnalyticsSpan;
   readonly reportFromLocalDate: LocalDate;
   readonly reportToLocalDate: LocalDate;

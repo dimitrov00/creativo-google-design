@@ -87,8 +87,29 @@
   );
 }
 
+/* ONE LINE EACH (owner review 2026-11-09): a scope of shops and barbers
+   — «Младост · Нико Димов» — may run long; its pill yields the room and
+   cuts the words with an ellipsis, the period's keeps its whole word. */
+.staff-analytics__menus > :first-child {
+  min-inline-size: 0;
+}
+
+.staff-analytics__scope-trigger {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.staff-analytics__scope-label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .staff-analytics__period-menu {
+  flex-shrink: 0;
   margin-inline-start: auto;
+  white-space: nowrap;
 }
 
 /* THE GOAL CARD: the ring beside its two lines — the range, the pace. */

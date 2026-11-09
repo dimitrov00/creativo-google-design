@@ -161,8 +161,8 @@ const dayOf = (
 
 function input(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
   return {
-    scopeBarberId: ivan,
-    scopeLocationId: null,
+    scopeBarberIds: [ivan],
+    scopeLocationIds: [],
     barberIds: [ivan],
     period: OCTOBER,
     analyticsComparison: AnalyticsComparison.Previous,
@@ -234,9 +234,12 @@ describe('AnalyticsPeriod', () => {
 });
 
 describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
-  const request = (scopeBarberId: BarberId | null): AnalyticsCall => ({
-    scopeBarberId,
-    scopeLocationId: null,
+  const request = (
+    asked: BarberId | readonly BarberId[] | null,
+  ): AnalyticsCall => ({
+    scopeBarberIds:
+      asked === null ? [] : typeof asked === 'string' ? [asked] : asked,
+    scopeLocationIds: [],
     fromLocalDate: OCTOBER.fromLocalDate,
     toLocalDate: null,
     analyticsSpan: AnalyticsSpan.Month,
@@ -301,12 +304,31 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
       'ANALYTICS_FORBIDDEN',
     ],
     ['the sysadmin', caller([Role.Sysadmin]), null, 'ANALYTICS_FORBIDDEN'],
+    [
+      'an admin asking for a part of the team, named twice and out of order',
+      caller([Role.Admin]),
+      [niko, ivan, niko],
+      [ivan, niko],
+    ],
+    [
+      'a linked barber naming themselves and a colleague',
+      caller([Role.Barber], ivan),
+      [ivan, niko],
+      'ANALYTICS_FORBIDDEN',
+    ],
   ] as const)('%s', (_, who, asked, expected) => {
     const result = S.scopeOf(who, request(asked), known);
     if (typeof expected === 'string' && expected.startsWith('ANALYTICS_')) {
       expect(result.ok ? null : result.error.errorCode).toBe(expected);
     } else {
-      expect(result).toEqual({ ok: true, value: expected });
+      // The shop is none named; one record is that barber's own report.
+      const value =
+        expected === null
+          ? []
+          : typeof expected === 'string'
+            ? [expected]
+            : expected;
+      expect(result).toEqual({ ok: true, value });
     }
   });
 });
@@ -320,26 +342,23 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
     linkedBarberId: null,
   };
 
-  it('locationScopeOf: nothing named is no location; an admin may name a shop of the shop’s, never beside a barber', () => {
-    const ask = (
-      scopeBarberId: BarberId | null,
-      scopeLocationId: LocationId | null,
-    ) => ({ scopeBarberId, scopeLocationId });
+  it('locationScopeOf: none named is every location; an admin may name shops of the shop’s, beside barbers too', () => {
+    const ask = (...scopeLocationIds: LocationId[]) => ({ scopeLocationIds });
     const shops = ANALYTICS_FIXTURE_LOCATIONS;
-    expect(S.locationScopeOf(admin, ask(null, null), shops)).toEqual({
+    expect(S.locationScopeOf(admin, ask(), shops)).toEqual({
       ok: true,
-      value: null,
+      value: [],
     });
-    expect(S.locationScopeOf(admin, ask(null, centre), shops)).toEqual({
+    expect(S.locationScopeOf(admin, ask(centre), shops)).toEqual({
       ok: true,
-      value: centre,
+      value: [centre],
     });
-    expect(S.locationScopeOf(admin, ask(ivan, centre), shops)).toEqual({
-      ok: false,
-      error: { errorCode: 'ANALYTICS_INVALID_INPUT', field: 'scopeLocationId' },
-    });
+    // Sorted, each once.
+    expect(
+      S.locationScopeOf(admin, ask(mladost, centre, mladost), shops),
+    ).toEqual({ ok: true, value: [centre, mladost].sort() });
     const ghost = LocationId.of('loc-ghost');
-    expect(S.locationScopeOf(admin, ask(null, ghost), shops)).toEqual({
+    expect(S.locationScopeOf(admin, ask(centre, ghost), shops)).toEqual({
       ok: false,
       error: { errorCode: 'ANALYTICS_LOCATION_UNKNOWN', locationId: ghost },
     });
@@ -347,14 +366,32 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
       { ...admin, callerBlocked: true },
       { ...admin, callerRoles: [Role.Barber], linkedBarberId: ivan },
     ]) {
-      expect(S.locationScopeOf(who, ask(null, centre), shops)).toEqual({
+      expect(S.locationScopeOf(who, ask(centre), shops)).toEqual({
         ok: false,
         error: { errorCode: 'ANALYTICS_FORBIDDEN' },
       });
     }
   });
 
-  it('atLocation and visitsAt keep that shop’s hours and the visits booked there; null keeps everything', () => {
+  it('comparedLocationsOf: the named shops, or every one, when two or more — for an admin only', () => {
+    const shops = ANALYTICS_FIXTURE_LOCATIONS;
+    const all = shops.map((shop) => shop.id);
+    expect(S.comparedLocationsOf(admin, [], shops)).toEqual(all);
+    expect(S.comparedLocationsOf(admin, [centre, mladost], shops)).toEqual([
+      centre,
+      mladost,
+    ]);
+    expect(S.comparedLocationsOf(admin, [centre], shops)).toEqual([]);
+    expect(
+      S.comparedLocationsOf(
+        { ...admin, callerRoles: [Role.Barber], linkedBarberId: ivan },
+        [],
+        shops,
+      ),
+    ).toEqual([]);
+  });
+
+  it('atLocations and visitsAt keep those shops’ hours and the visits booked there; none keeps everything', () => {
     const at = (id: LocationId, n: string) =>
       appointmentFixture({ id: AppointmentId.of(n), locationId: id });
     const visits = [at(centre, 'a-1'), at(mladost, 'a-2')];
@@ -368,12 +405,16 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
       nowByLocation: [],
       now: NOW,
     };
-    expect(S.atLocation(input, null)).toBe(input);
-    const cut = S.atLocation(deepFreeze(input), mladost);
+    expect(S.atLocations(input, [])).toBe(input);
+    const cut = S.atLocations(deepFreeze(input), [mladost]);
     expect(cut.locations.map((l) => l.id)).toEqual([mladost]);
     expect(cut.visits.map((v) => v.id)).toEqual(['a-2']);
-    expect(S.visitsAt(visits, centre).map((v) => v.id)).toEqual(['a-1']);
-    expect(S.visitsAt(visits, null)).toBe(visits);
+    expect(S.visitsAt(visits, [centre]).map((v) => v.id)).toEqual(['a-1']);
+    expect(S.visitsAt(visits, [centre, mladost]).map((v) => v.id)).toEqual([
+      'a-1',
+      'a-2',
+    ]);
+    expect(S.visitsAt(visits, [])).toBe(visits);
   });
 
   it('a stored day lists the shops it touched, and a split day’s shares add up to it', () => {
@@ -394,9 +435,9 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
 
   it('storedAt answers one day per stored day — the share, the lone day, or an empty held day', () => {
     const documents = analyticsFixtureDayDocuments();
-    const at = S.storedAt(documents, mladost);
+    const at = S.storedAt(documents, [mladost]);
     expect(at).toHaveLength(documents.length);
-    expect(S.storedAt(documents, null)).toBe(documents);
+    expect(S.storedAt(documents, [])).toBe(documents);
     for (let i = 0; i < documents.length; i++) {
       const day = documents[i];
       const cut = at[i];
@@ -407,6 +448,20 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
         expect(cut.dayTakingsCents).toBe(0);
         expect(cut.dayRosteredMinutes).toBe(0);
       }
+    }
+  });
+
+  it('storedAt over several shops sums their shares — every shop named is the whole day', () => {
+    const documents = analyticsFixtureDayDocuments();
+    const both = S.storedAt(documents, Object.values(ANALYTICS_FIXTURE_SHOPS));
+    for (let i = 0; i < documents.length; i++) {
+      const day = documents[i];
+      const cut = both[i];
+      if (day === undefined || cut === undefined) throw new Error('length');
+      expect(cut.dayTakingsCents).toBe(day.dayTakingsCents);
+      expect(cut.dayWorkedMinutes).toBe(day.dayWorkedMinutes);
+      expect(cut.dayRosteredMinutes).toBe(day.dayRosteredMinutes);
+      expect(cut.dayComputedAtUtcMs).toBe(day.dayComputedAtUtcMs);
     }
   });
 });
@@ -1077,7 +1132,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       const monday = day(-9);
       const report = S.report(
         input({
-          scopeBarberId: null,
+          scopeBarberIds: [],
           barberIds: [ivan, niko],
           days: [
             dayOf(ivan, monday, { rosteredMinutes: 60 }, [stretch(600, 660)]),
@@ -1100,7 +1155,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
   it('gives a shop report a per-barber list and no seat rows', () => {
     const report = S.report(
       input({
-        scopeBarberId: null,
+        scopeBarberIds: [],
         barberIds: [ivan, niko],
         visits: [visit('a1', day(-2), [seat(ivan, 2000), seat(niko, 1500)])],
       }),
@@ -1160,7 +1215,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     ];
     const shop = (overrides: Partial<AnalyticsInput> = {}) =>
       input({
-        scopeBarberId: null,
+        scopeBarberIds: [],
         barberIds: [ivan, niko],
         pastDays: [
           ...sevenDays(ivan, strongDay(ivan, day(-10), 6000, 10, 0)),
@@ -1324,7 +1379,9 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     });
 
     it('a barber’s report carries no radar, no barbers and no comparison barbers', () => {
-      const report = S.report(shop({ scopeBarberId: ivan, barberIds: [ivan] }));
+      const report = S.report(
+        shop({ scopeBarberIds: [ivan], barberIds: [ivan] }),
+      );
       expect(report.reportBarbers).toEqual([]);
       expect(report.reportComparisonBarbers).toEqual([]);
       expect(report.reportRadars).toEqual([]);
@@ -1430,9 +1487,31 @@ describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
     expect(S.clockLocationOf([], centre)).toBeNull();
   });
 
-  it('scopes the shop to every record by id, a barber to the one', () => {
-    expect(S.barbersInScope(null, [niko, ivan])).toEqual([ivan, niko]);
-    expect(S.barbersInScope(niko, [niko, ivan])).toEqual([niko]);
+  it('scopeToggled: every box ticked when none is named; never the last off; every box ticked is none again', () => {
+    const tom = BarberId.of('tom');
+    const all = [ivan, niko, tom];
+    // From the whole list: one box off leaves the others named.
+    expect(S.scopeToggled([], niko, all)).toEqual([ivan, tom]);
+    // A box on, a box off.
+    expect(S.scopeToggled([ivan], niko, all)).toEqual([ivan, niko]);
+    expect(S.scopeToggled([ivan, niko], ivan, all)).toEqual([niko]);
+    // The last ticked box stays.
+    expect(S.scopeToggled([ivan], ivan, all)).toEqual([ivan]);
+    // Every box ticked is the whole list again.
+    expect(S.scopeToggled([ivan, niko], tom, all)).toEqual([]);
+    const frozen = deepFreeze([ivan]);
+    expect(S.scopeToggled(frozen, niko, all)).toEqual(
+      S.scopeToggled(frozen, niko, all),
+    );
+  });
+
+  it('scopes the shop to every record by id, named barbers to them, and knows a barber’s own report', () => {
+    expect(S.barbersInScope([], [niko, ivan])).toEqual([ivan, niko]);
+    expect(S.barbersInScope([niko], [niko, ivan])).toEqual([niko]);
+    expect(S.barbersInScope([ivan, niko], [niko, ivan])).toEqual([ivan, niko]);
+    expect(S.soleBarberOf([])).toBeNull();
+    expect(S.soleBarberOf([niko])).toBe(niko);
+    expect(S.soleBarberOf([ivan, niko])).toBeNull();
   });
 
   it('reads the next 7 shop days from today, and every barber-day’s key', () => {
@@ -1908,32 +1987,24 @@ describe('StaffAnalyticsSystem — what the screen shows (Law 10: decided here, 
     expect(S.rebookedCountOf(rebooked)).toBe(report.reportRebookedCount);
   });
 
-  it('scopeChoicesOf — the shop, then the admin’s own record, then the others', () => {
-    expect(S.scopeChoicesOf([ivan, niko], niko, [])).toEqual([
-      { scopeBarberId: null, scopeLocationId: null, scopeMine: false },
-      { scopeBarberId: niko, scopeLocationId: null, scopeMine: true },
-      { scopeBarberId: ivan, scopeLocationId: null, scopeMine: false },
-    ]);
-    expect(S.scopeChoicesOf([ivan, niko], null, [])).toEqual([
-      { scopeBarberId: null, scopeLocationId: null, scopeMine: false },
-      { scopeBarberId: ivan, scopeLocationId: null, scopeMine: false },
-      { scopeBarberId: niko, scopeLocationId: null, scopeMine: false },
-    ]);
-  });
-
-  it('scopeChoicesOf — each location after the shop when there are two or more, none with one (ADR 2026-11-09, L4)', () => {
+  it('scopeMenuOf — the admin’s own record first, then the others; the shops to tick when there are two or more', () => {
     const centre = LocationId.of('loc-centre');
     const mladost = LocationId.of('loc-mladost');
-    expect(S.scopeChoicesOf([ivan], null, [centre, mladost])).toEqual([
-      { scopeBarberId: null, scopeLocationId: null, scopeMine: false },
-      { scopeBarberId: null, scopeLocationId: centre, scopeMine: false },
-      { scopeBarberId: null, scopeLocationId: mladost, scopeMine: false },
-      { scopeBarberId: ivan, scopeLocationId: null, scopeMine: false },
-    ]);
-    expect(S.scopeChoicesOf([ivan], null, [centre])).toEqual([
-      { scopeBarberId: null, scopeLocationId: null, scopeMine: false },
-      { scopeBarberId: ivan, scopeLocationId: null, scopeMine: false },
-    ]);
+    expect(S.scopeMenuOf([ivan, niko], niko, [centre, mladost])).toEqual({
+      locationIds: [centre, mladost],
+      barbers: [
+        { barberId: niko, scopeMine: true },
+        { barberId: ivan, scopeMine: false },
+      ],
+    });
+    // With one shop, it IS the shop (ADR 2026-11-09, L4).
+    expect(S.scopeMenuOf([ivan, niko], null, [centre])).toEqual({
+      locationIds: [],
+      barbers: [
+        { barberId: ivan, scopeMine: false },
+        { barberId: niko, scopeMine: false },
+      ],
+    });
   });
 
   it('is pure — the report it reads is left as it was', () => {
@@ -2394,15 +2465,20 @@ describe('StaffAnalyticsSystem — the month goal (v2 PR 6)', () => {
 
   describe('goalScopeAllowed — the shop’s goal, or one’s own record’s', () => {
     it('admits the shop and the account’s own record, refuses a colleague’s', () => {
-      expect(S.goalScopeAllowed(null, ivan, null)).toBe(true);
-      expect(S.goalScopeAllowed(null, null, null)).toBe(true);
-      expect(S.goalScopeAllowed(ivan, ivan, null)).toBe(true);
-      expect(S.goalScopeAllowed(niko, ivan, null)).toBe(false);
-      expect(S.goalScopeAllowed(niko, null, null)).toBe(false);
-      // A location has no goal (ADR 2026-11-09, L5).
-      expect(S.goalScopeAllowed(null, ivan, LocationId.of('loc-centre'))).toBe(
+      expect(S.goalScopeAllowed([], ivan, [])).toBe(true);
+      expect(S.goalScopeAllowed([], null, [])).toBe(true);
+      expect(S.goalScopeAllowed([ivan], ivan, [])).toBe(true);
+      expect(S.goalScopeAllowed([niko], ivan, [])).toBe(false);
+      expect(S.goalScopeAllowed([niko], null, [])).toBe(false);
+      // A part of the team has no goal, nor does a location (ADR 2026-11-09, L5).
+      expect(S.goalScopeAllowed([ivan, niko], ivan, [])).toBe(false);
+      expect(S.goalScopeAllowed([], ivan, [LocationId.of('loc-centre')])).toBe(
         false,
       );
+      expect(S.scopeHasGoal([], [])).toBe(true);
+      expect(S.scopeHasGoal([ivan], [])).toBe(true);
+      expect(S.scopeHasGoal([ivan, niko], [])).toBe(false);
+      expect(S.scopeHasGoal([], [LocationId.of('loc-centre')])).toBe(false);
     });
   });
 
@@ -2532,7 +2608,7 @@ describe('StaffAnalyticsSystem — the month goal (v2 PR 6)', () => {
     it('on the shop scope a day counts ONCE when any barber has a stretch', () => {
       const report = S.report(
         input({
-          scopeBarberId: null,
+          scopeBarberIds: [],
           barberIds: [ivan, niko],
           goal: { ...GOAL, barberId: null },
           days: [
@@ -2607,17 +2683,20 @@ describe('StaffAnalyticsSystem.newClientCountOf — the period’s new clients',
   ];
 
   it('counts each client first seen in the period: the shop’s all, a barber’s with them, a location’s there', () => {
-    expect(S.newClientCountOf(records, null, null, OCTOBER)).toBe(3);
-    expect(S.newClientCountOf(records, ivan, null, OCTOBER)).toBe(2);
-    expect(S.newClientCountOf(records, niko, null, OCTOBER)).toBe(2);
-    expect(S.newClientCountOf(records, null, mladost, OCTOBER)).toBe(1);
-    expect(S.newClientCountOf([], null, null, OCTOBER)).toBe(0);
+    expect(S.newClientCountOf(records, [], [], OCTOBER)).toBe(3);
+    expect(S.newClientCountOf(records, [ivan], [], OCTOBER)).toBe(2);
+    expect(S.newClientCountOf(records, [niko], [], OCTOBER)).toBe(2);
+    expect(S.newClientCountOf(records, [ivan, niko], [], OCTOBER)).toBe(3);
+    expect(S.newClientCountOf(records, [], [mladost], OCTOBER)).toBe(1);
+    expect(S.newClientCountOf(records, [], [centre, mladost], OCTOBER)).toBe(3);
+    expect(S.newClientCountOf(records, [niko], [centre], OCTOBER)).toBe(1);
+    expect(S.newClientCountOf([], [], [], OCTOBER)).toBe(0);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
     const frozen = deepFreeze(records);
-    expect(S.newClientCountOf(frozen, ivan, null, OCTOBER)).toBe(
-      S.newClientCountOf(frozen, ivan, null, OCTOBER),
+    expect(S.newClientCountOf(frozen, [ivan], [], OCTOBER)).toBe(
+      S.newClientCountOf(frozen, [ivan], [], OCTOBER),
     );
   });
 });

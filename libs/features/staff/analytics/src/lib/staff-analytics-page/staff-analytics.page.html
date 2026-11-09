@@ -81,6 +81,7 @@
         [uiLabel]="scope.menuLabel"
         [(uiPresented)]="scopeMenu"
         (uiPicked)="pickScopeOption($event)"
+        (uiToggled)="toggleScope($event)"
       >
         <!-- The two triggers are one control: the same bordered pill at the
              regular rung. The scope's leads with its disc — the barber's
@@ -107,7 +108,7 @@
             [uiIcon]="leading.icon"
           />
           }
-          <span>{{ scope.label }}</span>
+          <span class="staff-analytics__scope-label">{{ scope.label }}</span>
           <ui-icon uiTrailing uiName="field.popUp" />
         </button>
       </ui-choice-menu>

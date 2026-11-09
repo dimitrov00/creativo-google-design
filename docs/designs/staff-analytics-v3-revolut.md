@@ -228,3 +228,14 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   under the plot. A tick's word yields to a figure it would crowd.
 - **Salon toggles are quiet** — a shown salon keeps the control fill and
   its dot; a hidden one goes hollow and faded. Never the solid primary pill.
+
+### Round 10 — the scope menu as submenus of tick boxes (2026-11-09)
+
+- The scope menu has two rows: «Всички салони» (two or more shops) and
+  «Целият екип». A row picks its list whole; a hairline and a chevron open
+  its submenu in the menu's place — «‹ Салони» / «‹ Екип», then a tick box
+  per shop or barber (`ui-choice-menu` `children`, `menuitemcheckbox`; a
+  box keeps the menu open). Shops and barbers combine: «Младост · Нико
+  Димов». The pill keeps one line and cuts with an ellipsis.
+- Reports, the URL, the cache key and the goal rules take the sets — see
+  the amendment in `docs/architecture/decisions/2026-11-09-analytics-location-scope.md`.

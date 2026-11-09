@@ -20,7 +20,7 @@ function callable(
 }
 
 const sent = {
-  scopeBarberId: 'b-ivan',
+  scopeBarberIds: ['b-ivan'],
   fromLocalDate: '2026-09-01',
   toLocalDate: null,
   analyticsSpan: 'MONTH',
@@ -39,8 +39,8 @@ describe('decodeStaffAnalytics', () => {
       ok: true,
       value: {
         callerUserId: 'u-ivan',
-        scopeBarberId: 'b-ivan',
-        scopeLocationId: null,
+        scopeBarberIds: ['b-ivan'],
+        scopeLocationIds: [],
         fromLocalDate: '2026-09-01',
         toLocalDate: null,
         analyticsSpan: 'MONTH',
@@ -49,9 +49,9 @@ describe('decodeStaffAnalytics', () => {
     });
   });
 
-  it('reads a `null` or absent scope as the default scope, and an absent `to` as none', () => {
+  it('reads an empty or absent scope as the default scope, and an absent `to` as none', () => {
     for (const data of [
-      { ...sent, scopeBarberId: null },
+      { ...sent, scopeBarberIds: [] },
       {
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
@@ -59,20 +59,48 @@ describe('decodeStaffAnalytics', () => {
       },
     ]) {
       const decoded = decodeStaffAnalytics(callable(data));
-      expect(decoded.ok && decoded.value.scopeBarberId).toBeNull();
+      expect(decoded.ok && decoded.value.scopeBarberIds).toEqual([]);
       expect(decoded.ok && decoded.value.toLocalDate).toBeNull();
     }
   });
 
-  it('reads an admin’s location scope, and refuses one that is no id (ADR 2026-11-09)', () => {
+  it('reads the scope as sets — several barbers, several locations — and refuses a list that is not one of ids', () => {
     const decoded = decodeStaffAnalytics(
-      callable({ ...sent, scopeBarberId: null, scopeLocationId: 'loc-centre' }),
+      callable({
+        ...sent,
+        scopeBarberIds: ['b-ivan', 'b-niko'],
+        scopeLocationIds: ['loc-centre', 'loc-mladost'],
+      }),
     );
-    expect(decoded.ok && decoded.value.scopeLocationId).toBe('loc-centre');
-    expect(decoded.ok && decoded.value.scopeBarberId).toBeNull();
-    expect(refusalOf({ ...sent, scopeLocationId: 42 })).toEqual({
+    expect(decoded.ok && decoded.value.scopeBarberIds).toEqual([
+      'b-ivan',
+      'b-niko',
+    ]);
+    expect(decoded.ok && decoded.value.scopeLocationIds).toEqual([
+      'loc-centre',
+      'loc-mladost',
+    ]);
+    expect(refusalOf({ ...sent, scopeLocationIds: [42] })).toEqual({
       errorCode: 'ANALYTICS_INVALID_INPUT',
-      field: 'scopeLocationId',
+      field: 'scopeLocationIds',
+    });
+    expect(refusalOf({ ...sent, scopeLocationIds: 'loc-centre' })).toEqual({
+      errorCode: 'ANALYTICS_INVALID_INPUT',
+      field: 'scopeLocationIds',
+    });
+    expect(refusalOf({ ...sent, scopeBarberIds: null })).toEqual({
+      errorCode: 'ANALYTICS_INVALID_INPUT',
+      field: 'scopeBarberIds',
+    });
+    // At most 64 of either.
+    expect(
+      refusalOf({
+        ...sent,
+        scopeBarberIds: Array.from({ length: 65 }, (_, i) => `b-${i}`),
+      }),
+    ).toEqual({
+      errorCode: 'ANALYTICS_INVALID_INPUT',
+      field: 'scopeBarberIds',
     });
   });
 
@@ -89,8 +117,8 @@ describe('decodeStaffAnalytics', () => {
       ok: true,
       value: {
         callerUserId: 'u-ivan',
-        scopeBarberId: 'b-ivan',
-        scopeLocationId: null,
+        scopeBarberIds: ['b-ivan'],
+        scopeLocationIds: [],
         fromLocalDate: '2026-01-01',
         toLocalDate: null,
         analyticsSpan: 'YEAR',
@@ -110,8 +138,8 @@ describe('decodeStaffAnalytics', () => {
       ok: true,
       value: {
         callerUserId: 'u-ivan',
-        scopeBarberId: 'b-ivan',
-        scopeLocationId: null,
+        scopeBarberIds: ['b-ivan'],
+        scopeLocationIds: [],
         fromLocalDate: '2026-09-07',
         toLocalDate: '2026-09-20',
         analyticsSpan: 'CUSTOM',
@@ -155,9 +183,9 @@ describe('decodeStaffAnalytics', () => {
   });
 
   it.each([
-    ['scopeBarberId', { scopeBarberId: '' }],
-    ['scopeBarberId', { scopeBarberId: 'a/b' }],
-    ['scopeBarberId', { scopeBarberId: 7 }],
+    ['scopeBarberIds', { scopeBarberIds: [''] }],
+    ['scopeBarberIds', { scopeBarberIds: ['a/b'] }],
+    ['scopeBarberIds', { scopeBarberIds: [7] }],
     ['fromLocalDate', { fromLocalDate: '2026-02-30' }],
     ['fromLocalDate', { fromLocalDate: undefined }],
     ['toLocalDate', { toLocalDate: '2026-02-30' }],

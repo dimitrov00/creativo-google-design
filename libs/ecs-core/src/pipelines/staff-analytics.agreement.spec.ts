@@ -89,8 +89,8 @@ async function reportOf(
   return unwrapOk(
     await staffAnalytics(analyticsFixturePorts(world))({
       callerUserId,
-      scopeBarberId,
-      scopeLocationId: null,
+      scopeBarberIds: scopeBarberId === null ? [] : [scopeBarberId],
+      scopeLocationIds: [],
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
       toLocalDate: null,
@@ -107,8 +107,8 @@ async function reportAt(
   return unwrapOk(
     await staffAnalytics(analyticsFixturePorts(world))({
       callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
-      scopeBarberId: null,
-      scopeLocationId: locationId,
+      scopeBarberIds: [],
+      scopeLocationIds: [locationId],
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
       toLocalDate: null,
@@ -781,8 +781,8 @@ describe('P2 — stored days + live days === every day live, through the pipelin
     unwrapOk(
       await staffAnalytics({ ...off, loadAnalyticsDays: offDays })({
         callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
-        scopeBarberId: null,
-        scopeLocationId: null,
+        scopeBarberIds: [],
+        scopeLocationIds: [],
         analyticsSpan: AnalyticsSpan.Month,
         fromLocalDate: ANALYTICS_FIXTURE_MONTH,
         toLocalDate: null,
@@ -792,8 +792,8 @@ describe('P2 — stored days + live days === every day live, through the pipelin
     unwrapOk(
       await staffAnalytics({ ...on, loadAnalyticsDays: onDays })({
         callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
-        scopeBarberId: null,
-        scopeLocationId: null,
+        scopeBarberIds: [],
+        scopeLocationIds: [],
         analyticsSpan: AnalyticsSpan.Month,
         fromLocalDate: ANALYTICS_FIXTURE_MONTH,
         toLocalDate: null,
@@ -848,7 +848,7 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
       });
       expect(comparable(stored), shop).toEqual(comparable(live));
       expect(comparable(half), shop).toEqual(comparable(live));
-      expect(stored.reportScopeLocationId).toBe(shop);
+      expect(stored.reportScopeLocationIds).toEqual([shop]);
       expect(stored.reportScopeBarberId).toBeNull();
       expect(stored.reportMissingDays).toBe(0);
     }
@@ -895,6 +895,42 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
     expect(stored.reportLocations).toEqual(shop.reportLocations);
   });
 
+  it('scopes are sets (owner review 2026-11-09): two barbers add up to their own reports, every shop named is the shop', async () => {
+    const asked = async (
+      scopeBarberIds: readonly BarberId[],
+      scopeLocationIds: readonly LocationId[],
+    ) =>
+      unwrapOk(
+        await staffAnalytics(analyticsFixturePorts({}))({
+          callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
+          scopeBarberIds,
+          scopeLocationIds,
+          analyticsSpan: AnalyticsSpan.Month,
+          fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+          toLocalDate: null,
+          analyticsComparison: AnalyticsComparison.Previous,
+        }),
+      );
+    const shop = await reportOf(ANALYTICS_FIXTURE_USERS.admin.id, null);
+    const reports = await barberReports();
+    const pair = await asked([ivan, niko], []);
+    expect(pair.reportScopeBarberId).toBeNull();
+    expect(pair.reportScopeBarberIds).toEqual([ivan, niko]);
+    expect(pair.reportBarbers.map((row) => row.barberId)).toEqual([ivan, niko]);
+    expect(pair.reportTakingsCents).toBe(
+      (reports.get(ivan)?.reportTakingsCents ?? 0) +
+        (reports.get(niko)?.reportTakingsCents ?? 0),
+    );
+    expect(pair.reportGoalLowCents).toBeNull();
+
+    const everyShop = await asked([], [...SHOPS]);
+    expect(everyShop.reportTakingsCents).toBe(shop.reportTakingsCents);
+    expect(everyShop.reportWorkedMinutes).toBe(shop.reportWorkedMinutes);
+    expect(
+      everyShop.reportLocations.map((row) => row.locationId).sort(),
+    ).toEqual([...SHOPS].sort());
+  });
+
   it('carries no location comparison on a location’s or a barber’s report', async () => {
     expect(
       (await reportAt(ANALYTICS_FIXTURE_SHOPS.centre)).reportLocations,
@@ -904,7 +940,7 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
     ).toEqual([]);
   });
 
-  it('reads no goal for a location, and refuses a barber, a location beside a barber, and an unknown one', async () => {
+  it('reads no goal for a location, refuses a barber and an unknown one, and reads a barber’s work at a location', async () => {
     const report = await reportAt(ANALYTICS_FIXTURE_SHOPS.centre);
     expect(report.reportGoalLowCents).toBeNull();
     const ports = analyticsFixturePorts({});
@@ -915,8 +951,8 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
     ) =>
       staffAnalytics(ports)({
         callerUserId,
-        scopeBarberId,
-        scopeLocationId,
+        scopeBarberIds: scopeBarberId === null ? [] : [scopeBarberId],
+        scopeLocationIds: [scopeLocationId],
         analyticsSpan: AnalyticsSpan.Month,
         fromLocalDate: ANALYTICS_FIXTURE_MONTH,
         toLocalDate: null,
@@ -926,12 +962,21 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
     expect(
       await ask(ANALYTICS_FIXTURE_USERS.ivan.id, null, centre),
     ).toMatchObject({ ok: false, error: { errorCode: 'ANALYTICS_FORBIDDEN' } });
-    expect(
+    // A barber beside a location (owner review 2026-11-09): that barber's
+    // work there — their own report, cut to the shop, with no goal.
+    const ivanAtCentre = unwrapOk(
       await ask(ANALYTICS_FIXTURE_USERS.admin.id, ivan, centre),
-    ).toMatchObject({
-      ok: false,
-      error: { errorCode: 'ANALYTICS_INVALID_INPUT', field: 'scopeLocationId' },
-    });
+    );
+    expect(ivanAtCentre.reportScopeBarberId).toBe(ivan);
+    expect(ivanAtCentre.reportScopeLocationIds).toEqual([centre]);
+    expect(ivanAtCentre.reportGoalLowCents).toBeNull();
+    const ivanEverywhere = await reportOf(
+      ANALYTICS_FIXTURE_USERS.ivan.id,
+      ivan,
+    );
+    expect(ivanAtCentre.reportTakingsCents).toBeLessThanOrEqual(
+      ivanEverywhere.reportTakingsCents,
+    );
     expect(
       await ask(
         ANALYTICS_FIXTURE_USERS.admin.id,

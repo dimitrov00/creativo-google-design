@@ -65,8 +65,11 @@ export class UiMenuTrigger {
     'button[uiMenuItem], a[uiMenuItem], label[uiMenuItem], [uiMenuItem]',
   host: {
     class: 'ui-menu__item',
-    '[attr.role]': "uiSelected() === undefined ? 'menuitem' : 'menuitemradio'",
-    '[attr.aria-checked]': 'uiSelected() ?? null',
+    '[attr.role]':
+      "uiChecked() !== undefined ? 'menuitemcheckbox' : uiSelected() === undefined ? 'menuitem' : 'menuitemradio'",
+    '[attr.aria-checked]': 'uiChecked() ?? uiSelected() ?? null',
+    '[attr.data-keeps-open]':
+      "uiKeepsOpen() || uiChecked() !== undefined ? '' : null",
     '[attr.data-role]': 'uiMenuItemRole()',
     '[attr.tabindex]': '-1',
   },
@@ -85,6 +88,17 @@ export class UiMenuItem {
    * the same one the location step uses.
    */
   readonly uiSelected = input<boolean | undefined>(undefined);
+  /**
+   * Present ⇒ this item is one TICK BOX of a several-select list
+   * (`menuitemcheckbox` + `aria-checked`): it toggles, and the menu stays
+   * open. Outranks `uiSelected`.
+   */
+  readonly uiChecked = input<boolean | undefined>(undefined);
+  /**
+   * The item does not close the menu — it moves within it (a submenu's
+   * chevron, its back row). A tick box keeps it open by itself.
+   */
+  readonly uiKeepsOpen = input(false);
   readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
 }
 
@@ -863,10 +877,15 @@ export class UiMenu {
     this.dismissToTrigger();
   }
 
-  /** Choosing an action closes the menu — every item is a one-shot command. */
+  /**
+   * Choosing an action closes the menu — every item is a one-shot command,
+   * but a tick box and an item that moves within the menu
+   * (`[data-keeps-open]`, a submenu's chevron and back row).
+   */
   protected onSurfaceClick(event: Event): void {
     const target = event.target as HTMLElement | null;
-    if (target?.closest('.ui-menu__item')) this.dismissToTrigger();
+    const item = target?.closest('.ui-menu__item');
+    if (item && !item.hasAttribute('data-keeps-open')) this.dismissToTrigger();
   }
 
   private dismissToTrigger(): void {

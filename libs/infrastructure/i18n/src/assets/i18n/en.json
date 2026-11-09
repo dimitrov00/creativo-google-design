@@ -2678,7 +2678,18 @@
         "other": "All shops"
       },
       "me": "Me",
-      "barber": "Barber"
+      "barber": "Barber",
+      "wholeTeam": "Whole team",
+      "shopsCount": {
+        "one": "{{count}} shop",
+        "other": "{{count}} shops"
+      },
+      "barbersCount": {
+        "one": "{{count}} barber",
+        "other": "{{count}} barbers"
+      },
+      "pickShops": "Choose shops",
+      "pickBarbers": "Choose barbers"
     },
     "status": {
       "justNow": "just now",

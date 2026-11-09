@@ -180,7 +180,8 @@ export function analyticsReportFixture(
     reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
     reportComputedAtUtcMs: FIXTURE_NOW_UTC_MS,
     reportScopeBarberId: ivan,
-    reportScopeLocationId: null,
+    reportScopeBarberIds: [ivan],
+    reportScopeLocationIds: [],
     reportAnalyticsSpan: AnalyticsSpan.Month,
     reportFromLocalDate: localDate('2026-09-01'),
     reportToLocalDate: localDate('2026-09-30'),
@@ -415,6 +416,7 @@ export function shopReportFixture(
   ];
   return analyticsReportFixture({
     reportScopeBarberId: null,
+    reportScopeBarberIds: [],
     reportBarbers: shopBarbers,
     reportComparisonBarbers: comparisonBarbers,
     reportLocations: [],
@@ -439,7 +441,8 @@ export type AnalyticsCacheState = {
 export function analyticsCacheKeyOf(key: AnalyticsCacheKey): string {
   return [
     key.userId,
-    key.scopeBarberId ?? '',
+    key.scopeBarberIds.join(','),
+    key.scopeLocationIds.join(','),
     key.analyticsSpan,
     key.fromLocalDate,
     key.toLocalDate ?? '',

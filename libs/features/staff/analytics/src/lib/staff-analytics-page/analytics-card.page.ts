@@ -258,7 +258,7 @@ export class AnalyticsCardPage {
   /** A barber's row of a shop drill-down: that barber's figures. */
   protected openBarber(barberId: BarberId): void {
     this.drill.set(null);
-    this.store.pickScope(barberId);
+    this.store.pickBarber(barberId);
   }
 
   /** A month of a year's day rows opens that month. */

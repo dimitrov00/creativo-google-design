@@ -57,15 +57,19 @@ export function bindAnalyticsRouteInputs(
   });
   effect(() => {
     const requested = page.barber() ?? null;
-    if (requested !== untracked(() => store.published().barber)) {
+    if (requested !== untracked(() => listParam(store.published().barber))) {
       untracked(() => store.applyRouteBarber(requested));
     }
   });
-  // After `?barber=`: a location never stands beside a barber.
   effect(() => {
     const requested = page.location() ?? null;
-    if (requested !== untracked(() => store.published().location)) {
+    if (requested !== untracked(() => listParam(store.published().location))) {
       untracked(() => store.applyRouteLocation(requested));
     }
   });
+}
+
+/** A published list as the URL spells it: comma-joined, `null` when none. */
+function listParam(ids: readonly string[] | undefined): string | null {
+  return ids === undefined || ids.length === 0 ? null : ids.join(',');
 }

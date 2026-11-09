@@ -297,8 +297,8 @@ function ask(
 ): StaffAnalyticsCommand {
   return {
     callerUserId: caller,
-    scopeBarberId,
-    scopeLocationId: null,
+    scopeBarberIds: scopeBarberId === null ? [] : [scopeBarberId],
+    scopeLocationIds: [],
     fromLocalDate,
     toLocalDate,
     analyticsSpan,
@@ -965,7 +965,7 @@ describe('staffAnalytics — the log line', () => {
     expect(line?.fields).toEqual({
       uid: IVAN_USER.id,
       scope: IVAN,
-      location: null,
+      locations: [],
       span: AnalyticsSpan.Month,
       periodFrom: '2026-09-01',
       periodTo: '2026-09-30',

@@ -2681,7 +2681,18 @@
         "other": "Всички салони"
       },
       "me": "Аз",
-      "barber": "Бръснар"
+      "barber": "Бръснар",
+      "wholeTeam": "Целият екип",
+      "shopsCount": {
+        "one": "{{count}} салон",
+        "other": "{{count}} салона"
+      },
+      "barbersCount": {
+        "one": "{{count}} бръснар",
+        "other": "{{count}} бръснари"
+      },
+      "pickShops": "Избери салони",
+      "pickBarbers": "Избери бръснари"
     },
     "status": {
       "justNow": "току-що",

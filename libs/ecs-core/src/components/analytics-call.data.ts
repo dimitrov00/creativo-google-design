@@ -31,10 +31,12 @@ import type { DayRow } from './day-figures.data';
 /**
  * What the `staffAnalytics` callable is asked for — flat (Law 6): the
  * scope, the period's first day, last day and span, and the comparison.
- * `scopeBarberId: null` is the shop for an admin and the caller's own barber
- * record for a barber; `scopeLocationId` narrows an admin's shop to one
- * location (ADR 2026-11-09) and is `null` otherwise — never beside a
- * barber; the period is rebuilt with `AnalyticsPeriod.of`,
+ * The scope is two sets (owner review 2026-11-09): `scopeBarberIds` —
+ * none is the whole team for an admin and the caller's own record for a
+ * barber, one is that barber's report, several a part of the team — and
+ * `scopeLocationIds`, an admin's narrowing to some locations (ADR
+ * 2026-11-09), none for every one; the two may sit together (those
+ * barbers' work at those locations). The period is rebuilt with `AnalyticsPeriod.of`,
  * which refuses a first day that is not its span's first (any day for a
  * `DAY`, a Monday, a 1st, 1 January). `toLocalDate` is `null` unless the
  * span is `CUSTOM` — a `to` on another span, or none on `CUSTOM`, is
@@ -44,8 +46,8 @@ import type { DayRow } from './day-figures.data';
  * contract).
  */
 export type AnalyticsCall = {
-  readonly scopeBarberId: BarberId | null;
-  readonly scopeLocationId: LocationId | null;
+  readonly scopeBarberIds: readonly BarberId[];
+  readonly scopeLocationIds: readonly LocationId[];
   readonly fromLocalDate: LocalDate;
   /** The `CUSTOM` range's last day; `null` on every other span. */
   readonly toLocalDate: LocalDate | null;
@@ -376,7 +378,12 @@ export const AnalyticsCall = {
     const span = r.field('reportAnalyticsSpan');
     const comparison = r.field('reportAnalyticsComparison');
     const scope = r.field('reportScopeBarberId');
-    const location = r.field('reportScopeLocationId');
+    const scopeBarbers = rowsOf(r.list('reportScopeBarberIds'), (id) =>
+      BarberId.is(id) ? id : null,
+    );
+    const scopeLocations = rowsOf(r.list('reportScopeLocationIds'), (id) =>
+      LocationId.is(id) ? id : null,
+    );
     const radarBase = r.field('reportRadarBase');
     const goalPace = r.field('reportGoalPaceTag');
     const figures = {
@@ -466,8 +473,8 @@ export const AnalyticsCall = {
       !Tag.has(AnalyticsSpan, span) ||
       !Tag.has(AnalyticsComparison, comparison) ||
       (scope !== null && !BarberId.is(scope)) ||
-      (location !== null && !LocationId.is(location)) ||
-      (scope !== null && location !== null) ||
+      scopeBarbers === null ||
+      scopeLocations === null ||
       !Tag.has(RadarBase, radarBase) ||
       !Tag.has(GoalPaceTag, goalPace) ||
       series === null ||
@@ -490,7 +497,8 @@ export const AnalyticsCall = {
       reportDefinitionVersion: version,
       reportComputedAtUtcMs: computedAt,
       reportScopeBarberId: scope,
-      reportScopeLocationId: location,
+      reportScopeBarberIds: scopeBarbers,
+      reportScopeLocationIds: scopeLocations,
       reportAnalyticsSpan: span,
       reportAnalyticsComparison: comparison,
       ...figures,

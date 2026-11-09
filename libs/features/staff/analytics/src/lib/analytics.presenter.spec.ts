@@ -64,9 +64,10 @@ function inputOf(
     analyticsLoad: AnalyticsLoad.Ready,
     report: deepFreeze(analyticsReportFixture()),
     refusal: null,
-    scopeChoices: null,
+    scopeMenu: null,
+    scopeBarberIds: [],
     scopeBarberId: null,
-    scopeLocationId: null,
+    scopeLocationIds: [],
     linkedBarberId: IVAN,
     scopeGone: false,
     shopCount: 1,
@@ -117,8 +118,6 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     // The current month: back is offered, forward is not.
     expect(vm.period.previousEnabled).toBe(true);
     expect(vm.period.nextEnabled).toBe(false);
-    // A barber has no picker.
-    expect(vm.scope).toBeNull();
     expect(vm.placeholder).toBe(false);
     expect(vm.blocked).toBeNull();
   });
@@ -387,30 +386,13 @@ describe('analyticsVm — the same month in English', () => {
 });
 
 describe('analyticsVm — the admin and the shop', () => {
-  const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO, []);
-
-  it('offers the shop, «Аз», then every other barber — the chosen one ticked', () => {
-    const vm = analyticsVm(
-      inputOf('bg', {
-        report: shopReportFixture(),
-        scopeChoices: choices,
-        scopeBarberId: null,
-        scheduleBarberId: null,
-      }),
-    );
-    expect(vm.scope?.tiles.map((tile) => [tile.name, tile.selected])).toEqual([
-      ['Салон', true],
-      ['Аз', false],
-      ['Иван Колев', false],
-    ]);
-    expect(vm.scope?.label).toBe('Чии данни');
-  });
+  const choices = StaffAnalyticsSystem.scopeMenuOf([IVAN, NIKO], NIKO, []);
 
   it('draws the admin’s radars: one per barber in its tone, five axes on the shop’s base, the comparison on the same base, a tap to the scope', () => {
     const body = bodyOf(
       inputOf('bg', {
         report: shopReportFixture(),
-        scopeChoices: choices,
+        scopeMenu: choices,
         scheduleBarberId: null,
       }),
     );
@@ -461,7 +443,7 @@ describe('analyticsVm — the admin and the shop', () => {
           ],
           reportRadarBase: RadarBase.TooFewBarbers,
         }),
-        scopeChoices: choices,
+        scopeMenu: choices,
         scheduleBarberId: null,
       }),
     );
@@ -475,7 +457,7 @@ describe('analyticsVm — the admin and the shop', () => {
           ...report,
           reportAnalyticsSpan: AnalyticsSpan.Week,
         }),
-        scopeChoices: choices,
+        scopeMenu: choices,
         scheduleBarberId: null,
       }),
     );
@@ -486,7 +468,7 @@ describe('analyticsVm — the admin and the shop', () => {
     const body = bodyOf(
       inputOf('bg', {
         report: shopReportFixture(),
-        scopeChoices: choices,
+        scopeMenu: choices,
         scheduleBarberId: null,
       }),
     );
@@ -1065,6 +1047,7 @@ describe('analyticsVm — the month’s goal (staff-analytics-v2 CUJ 6)', () => 
     const colleague = bodyOf(
       inputOf('bg', {
         report: stored(),
+        scopeBarberIds: [NIKO],
         scopeBarberId: NIKO,
         linkedBarberId: IVAN,
         scheduleBarberId: NIKO,
@@ -1075,6 +1058,7 @@ describe('analyticsVm — the month’s goal (staff-analytics-v2 CUJ 6)', () => 
     expect(
       bodyOf(
         inputOf('bg', {
+          scopeBarberIds: [],
           scopeBarberId: null,
           linkedBarberId: null,
           scheduleBarberId: null,
@@ -1082,11 +1066,22 @@ describe('analyticsVm — the month’s goal (staff-analytics-v2 CUJ 6)', () => 
       ).goal?.setLabel,
     ).toBe('Задай цел');
     expect(
-      bodyOf(inputOf('bg', { scopeBarberId: IVAN, linkedBarberId: IVAN })).goal
-        ?.setLabel,
+      bodyOf(
+        inputOf('bg', {
+          scopeBarberIds: [IVAN],
+          scopeBarberId: IVAN,
+          linkedBarberId: IVAN,
+        }),
+      ).goal?.setLabel,
     ).toBe('Задай цел');
     expect(
-      bodyOf(inputOf('bg', { scopeBarberId: NIKO, linkedBarberId: IVAN })).goal,
+      bodyOf(
+        inputOf('bg', {
+          scopeBarberIds: [NIKO],
+          scopeBarberId: NIKO,
+          linkedBarberId: IVAN,
+        }),
+      ).goal,
     ).toBeNull();
 
     const august = AnalyticsPeriod.monthOf(localDate('2026-08-05'));

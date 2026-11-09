@@ -3,8 +3,12 @@ import {
   type AnalyticsReport,
   AnalyticsSpan,
 } from '@core/components';
-import { MinuteCount } from '@core/primitives';
-import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
+import { type LocationId, MinuteCount } from '@core/primitives';
+import {
+  AnalyticsCarouselSystem,
+  type AnalyticsScopeBarber,
+  StaffAnalyticsSystem,
+} from '@core/systems';
 import {
   formatCount,
   formatPercent,
@@ -20,7 +24,6 @@ import {
   money,
   periodLabelOf,
   rangeDateText,
-  scopeOf,
   shopNameOf,
   statusOf,
 } from './analytics.presenter';
@@ -40,11 +43,7 @@ import {
   type AnalyticsTeamCardVm,
   type AnalyticsToolRowVm,
 } from './analytics-home.vm';
-import {
-  AnalyticsLoad,
-  type AnalyticsScopeTileVm,
-  type AnalyticsBodyVm,
-} from './analytics.vm';
+import { AnalyticsLoad, type AnalyticsBodyVm } from './analytics.vm';
 
 /*
  * THE REVOLUT-LAYOUT HOME (`docs/designs/staff-analytics-v3-revolut.md`,
@@ -108,55 +107,119 @@ export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
 
 // ── The top row ───────────────────────────────────────────────────────────
 
-/** A scope tile's menu id: the barber's id, `location:<id>`, or `shop`. */
-function optionIdOf(tile: AnalyticsScopeTileVm): string {
-  if (tile.scopeBarberId !== null) return tile.scopeBarberId;
-  return tile.scopeLocationId === null
-    ? AnalyticsScopeOption.Shop
-    : `${AnalyticsScopeOption.LocationPrefix}${tile.scopeLocationId}`;
-}
-
 /** Past this many minutes a span is said in whole hours. */
 const TEN_HOURS = 600;
 
 /** The shop's disc — beside the barbers' faces in the scope menu and its trigger. */
 const SHOP_GLYPH = 'location.shop' satisfies UiIconName;
+/** The whole team's disc on its row. */
+const TEAM_GLYPH = 'nav.team' satisfies UiIconName;
 
+/**
+ * THE SCOPE MENU (owner review 2026-11-09): two rows — «Всички салони»
+ * when the shop has two or more, then «Целият екип» — each picked whole by
+ * its row (the row reads chosen while nothing in it is ticked), or
+ * narrowed through its submenu: a box per location, a box per barber, the
+ * admin's own first («Аз»). The trigger names what is ticked: «Център»,
+ * «2 салона», «Нико Димов», «3 бръснари», the two joined by a dot; the
+ * shop's name when nothing is.
+ */
 function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
-  const scope = scopeOf(input);
-  if (scope === null) return null;
-  const selected = scope.tiles.find((tile) => tile.selected);
-  const label = selected?.name ?? shopNameOf(input);
-  const listsLocations = scope.tiles.some(
-    (tile) => tile.scopeLocationId !== null,
-  );
+  const menu = input.scopeMenu;
+  if (menu === null) return null;
+  const { words } = input;
+  const locations = input.scopeLocationIds;
+  const barbers = input.scopeBarberIds;
+  const locationName = (id: LocationId) =>
+    input.names.locationName(id) ?? words.scope.shop;
+  const barberName = (row: AnalyticsScopeBarber) =>
+    row.scopeMine
+      ? words.scope.me
+      : (input.names.barberName(row.barberId) ?? words.scope.barber);
+  const named = (row: AnalyticsScopeBarber) => barberName(row);
+  const options: UiChoiceOption[] = [];
+  if (menu.locationIds.length > 0) {
+    options.push({
+      id: AnalyticsScopeOption.Locations,
+      label:
+        locations.length === 0
+          ? shopNameOf(input)
+          : locations.length === 1
+            ? locationName(locations[0] as LocationId)
+            : words.scope.shopsCount(locations.length),
+      icon: SHOP_GLYPH,
+      avatarSrc: null,
+      selected: locations.length === 0,
+      testId: 'analytics-scope-shop',
+      childrenTitle: words.scope.shopsGroup,
+      openLabel: words.scope.pickShops,
+      openTestId: 'analytics-scope-locations-open',
+      children: menu.locationIds.map((id): UiChoiceOption => ({
+        id,
+        label: locationName(id),
+        icon: SHOP_GLYPH,
+        avatarSrc: null,
+        checked: locations.length === 0 || locations.includes(id),
+        testId: `analytics-scope-location-${id}`,
+      })),
+    });
+  }
+  const soleRow = menu.barbers.find((row) => row.barberId === barbers[0]);
+  options.push({
+    id: AnalyticsScopeOption.Team,
+    label:
+      barbers.length === 0
+        ? words.scope.wholeTeam
+        : barbers.length === 1 && soleRow !== undefined
+          ? named(soleRow)
+          : words.scope.barbersCount(barbers.length),
+    icon: TEAM_GLYPH,
+    avatarSrc:
+      barbers.length === 1 && soleRow !== undefined
+        ? input.names.barberAvatarSrc(soleRow.barberId)
+        : null,
+    selected: barbers.length === 0,
+    testId: 'analytics-scope-team',
+    childrenTitle: words.scope.teamGroup,
+    openLabel: words.scope.pickBarbers,
+    openTestId: 'analytics-scope-team-open',
+    children: menu.barbers.map((row): UiChoiceOption => ({
+      id: row.barberId,
+      label: barberName(row),
+      avatarSrc: input.names.barberAvatarSrc(row.barberId),
+      checked: barbers.length === 0 || barbers.includes(row.barberId),
+      testId: `analytics-scope-${row.barberId}`,
+    })),
+  });
+  const shopsPart =
+    locations.length === 0
+      ? null
+      : locations.length === 1
+        ? locationName(locations[0] as LocationId)
+        : words.scope.shopsCount(locations.length);
+  const sole =
+    barbers.length === 1
+      ? menu.barbers.find((row) => row.barberId === barbers[0])
+      : undefined;
+  const teamPart =
+    barbers.length === 0
+      ? null
+      : sole !== undefined
+        ? named(sole)
+        : words.scope.barbersCount(barbers.length);
+  const label =
+    [shopsPart, teamPart].filter((part) => part !== null).join(' · ') ||
+    shopNameOf(input);
   return {
     label,
-    menuLabel: scope.label,
-    // Every option is a disc: a face, a monogram, or a shop's glyph. The
-    // shops and the people are two sections; the shops' is captioned only
-    // when it lists locations beside the whole.
-    options: scope.tiles.map((tile): UiChoiceOption => ({
-      id: optionIdOf(tile),
-      label: tile.name,
-      avatarSrc: tile.avatarSrc,
-      ...(tile.scopeBarberId === null ? { icon: SHOP_GLYPH } : {}),
-      group:
-        tile.scopeBarberId !== null
-          ? input.words.scope.teamGroup
-          : listsLocations
-            ? input.words.scope.shopsGroup
-            : '',
-      testId: tile.testId,
-    })),
-    selected: selected === undefined ? null : optionIdOf(selected),
+    menuLabel: words.scope.label,
+    options,
+    selected: null,
     leading: {
-      avatarSrc: selected?.avatarSrc ?? null,
-      name: label,
-      icon:
-        selected === undefined || selected.scopeBarberId === null
-          ? SHOP_GLYPH
-          : null,
+      avatarSrc:
+        sole === undefined ? null : input.names.barberAvatarSrc(sole.barberId),
+      name: teamPart ?? label,
+      icon: sole === undefined ? SHOP_GLYPH : null,
     },
     testId: 'analytics-scope-menu',
   };
@@ -205,8 +268,9 @@ function pageOf(
     from: period.fromLocalDate,
     to:
       period.analyticsSpan === AnalyticsSpan.Custom ? period.toLocalDate : null,
-    barber: input.scopeBarberId,
-    location: input.scopeLocationId,
+    // A list in the URL is one comma-joined parameter.
+    barber: input.scopeBarberIds.join(',') || null,
+    location: input.scopeLocationIds.join(',') || null,
   };
   const key = `${period.analyticsSpan}-${period.fromLocalDate}`;
   const label = pageLabelOf(period, input);
@@ -222,8 +286,8 @@ function pageOf(
     team: StaffAnalyticsSystem.screenOf(report).shopScope
       ? teamOf(pageInput, report)
       : null,
-    // The report carries the comparison only for the shop over two or
-    // more locations (`StaffAnalyticsSystem.comparesLocations`).
+    // The report carries the comparison only over two or more locations
+    // (`StaffAnalyticsSystem.comparedLocationsOf`).
     locations:
       report.reportLocations.length > 0 ? locationsOf(pageInput, report) : null,
     query,

@@ -26,8 +26,8 @@ const SEPTEMBER = unwrapOk(LocalDate.parse('2026-09-01'));
 function keyOf(overrides: Partial<AnalyticsCacheKey> = {}): AnalyticsCacheKey {
   return {
     userId: IVAN,
-    scopeBarberId: BarberId.of('ivan'),
-    scopeLocationId: null,
+    scopeBarberIds: [BarberId.of('ivan')],
+    scopeLocationIds: [],
     analyticsSpan: AnalyticsSpan.Month,
     fromLocalDate: SEPTEMBER,
     toLocalDate: null,
@@ -57,7 +57,7 @@ describe('localStorageAnalyticsCachePorts', () => {
     expect(
       analyticsCacheStorageKey(
         keyOf({
-          scopeBarberId: null,
+          scopeBarberIds: [],
           analyticsSpan: AnalyticsSpan.Week,
           fromLocalDate: unwrapOk(LocalDate.parse('2026-09-28')),
         }),
@@ -69,12 +69,26 @@ describe('localStorageAnalyticsCachePorts', () => {
     expect(
       analyticsCacheStorageKey(
         keyOf({
-          scopeBarberId: null,
-          scopeLocationId: LocationId.of('loc-centre'),
+          scopeBarberIds: [],
+          scopeLocationIds: [LocationId.of('loc-centre')],
         }),
       ),
     ).toBe(
-      'creativo.analytics/3/dev-staff-ivan/location%3Aloc-centre/MONTH-2026-09-01-none-PREVIOUS',
+      'creativo.analytics/3/dev-staff-ivan/shop%40location%3Aloc-centre/MONTH-2026-09-01-none-PREVIOUS',
+    );
+    // Sets key the same in any order: barbers and locations sorted.
+    expect(
+      analyticsCacheStorageKey(
+        keyOf({
+          scopeBarberIds: [BarberId.of('niko'), BarberId.of('ivan')],
+          scopeLocationIds: [
+            LocationId.of('loc-mladost'),
+            LocationId.of('loc-centre'),
+          ],
+        }),
+      ),
+    ).toBe(
+      'creativo.analytics/3/dev-staff-ivan/ivan%2Bniko%40location%3Aloc-centre%2Bloc-mladost/MONTH-2026-09-01-none-PREVIOUS',
     );
     // A CUSTOM range carries its last day, so two ranges from one day never share an entry.
     expect(
@@ -137,7 +151,7 @@ describe('localStorageAnalyticsCachePorts', () => {
       unwrapOk(ports.readCachedReport(keyOf({ userId: UserId.of('other') }))),
     ).toBeNull();
     expect(
-      unwrapOk(ports.readCachedReport(keyOf({ scopeBarberId: null }))),
+      unwrapOk(ports.readCachedReport(keyOf({ scopeBarberIds: [] }))),
     ).toBeNull();
     expect(
       unwrapOk(

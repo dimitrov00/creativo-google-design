@@ -117,12 +117,18 @@ export const setAnalyticsGoal =
     ]);
     if (!records.ok) return records;
     if (!listed.ok) return listed;
-    const scope = S.scopeOf(caller.value, cmd, records.value);
+    const scope = S.scopeOf(
+      caller.value,
+      { scopeBarberIds: cmd.scopeBarberId === null ? [] : [cmd.scopeBarberId] },
+      records.value,
+    );
     if (!scope.ok) return refused(scope.error);
     // A goal call names no location: goals are the shop's or a barber's.
-    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId, null)) {
+    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId, [])) {
       return refused(AnalyticsError.goalForbidden());
     }
+    // The goal's scope: the one barber, or the shop (`null`).
+    const goalBarberId = S.soleBarberOf(scope.value);
 
     // 2. The range, and the month on the shop's clock.
     const range = AnalyticsGoal.rangeOrClearOf(
@@ -148,7 +154,7 @@ export const setAnalyticsGoal =
     //    no range, its removal and that row.
     const actor = Actor.forCaller(cmd.callerUserId, profile.value?.roles ?? []);
     if (range.value === null) {
-      const key = AnalyticsGoalKey.of(scope.value, cmd.goalMonth);
+      const key = AnalyticsGoalKey.of(goalBarberId, cmd.goalMonth);
       const cleared = await ports.commit(
         async () => null,
         (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
@@ -159,7 +165,7 @@ export const setAnalyticsGoal =
                 [
                   AuditSystem.planAnalyticsGoalCleared(
                     key,
-                    scope.value,
+                    goalBarberId,
                     cmd.goalMonth,
                     actor,
                     cmd.operationId,
@@ -174,15 +180,15 @@ export const setAnalyticsGoal =
       if (!cleared.ok) return cleared;
       ports.log('info', LogEvent.AnalyticsGoalCleared, {
         uid: cmd.callerUserId,
-        scope: scope.value,
+        scope: goalBarberId,
         month: cmd.goalMonth,
         key,
       });
       return Result.ok({ goalKey: key, goalSetAtUtcMs: nowUtcMs });
     }
     const goal: StoredAnalyticsGoal = {
-      id: AnalyticsGoalKey.of(scope.value, cmd.goalMonth),
-      barberId: scope.value,
+      id: AnalyticsGoalKey.of(goalBarberId, cmd.goalMonth),
+      barberId: goalBarberId,
       goalMonth: cmd.goalMonth,
       goalLowCents: range.value.goalLowCents,
       goalHighCents: range.value.goalHighCents,

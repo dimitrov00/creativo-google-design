@@ -36,4 +36,101 @@
   [data-popover-surface] > .ui-list-group + .ui-choice-menu__section {
     margin-block-start: var(--sys-space-tight);
   }
+
+  /* A ROW WITH A SUBMENU (owner review 2026-11-09): the row keeps its own
+     pick; at its trailing edge a hairline, then a chevron that opens the
+     list's boxes — the chevron sits OVER the row's end, so the row's
+     segment and its hover stay whole. */
+  /* The list group lays a wrapper out as `display: contents`; this one
+     must stay a box, so the chevron has a row to sit in. */
+  .ui-choice-menu .ui-list-group > .ui-choice-menu__split {
+    position: relative;
+    display: block;
+  }
+
+  .ui-choice-menu__split > .ui-list-row {
+    inline-size: 100%;
+    padding-inline-end: calc(
+      var(--control-size-regular) + var(--sys-space-compact)
+    );
+  }
+
+  /* Out-ranks the menu's own item rule (full width, the regular height). */
+  .ui-choice-menu__split > .ui-choice-menu__open.ui-menu__item {
+    position: absolute;
+    min-block-size: 0;
+    padding: 0;
+    inset-block: var(--sys-space-tight);
+    inset-inline-end: var(--sys-space-tight);
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--control-size-regular);
+    border: 0;
+    border-radius: var(--control-radius-capsule);
+    background: transparent;
+    color: var(--sys-color-secondary-label);
+    font-size: 1.125rem;
+    cursor: pointer;
+  }
+
+  /* The hairline that parts the row's pick from its submenu. */
+  .ui-choice-menu__open::before {
+    content: '';
+    position: absolute;
+    inset-block: var(--sys-space-compact);
+    inset-inline-start: 0;
+    inline-size: 1px;
+    background: var(--sys-color-separator);
+  }
+
+  @media (hover: hover) {
+    .ui-choice-menu__open:hover {
+      background: var(--sys-state-layer-hover);
+      color: var(--sys-color-foreground);
+    }
+  }
+
+  .ui-choice-menu__open:active {
+    background: var(--sys-state-layer-press);
+  }
+
+  .ui-choice-menu__open:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
+  /* THE SUBMENU's back row: the list's title after a back chevron. */
+  .ui-choice-menu__back {
+    font-weight: 600;
+  }
+
+  /* A TICK BOX: a rounded square in the separator's ink; ticked, the
+     accent as its fill and the check in white — colour as a shape. */
+  .ui-choice-menu__box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.375rem;
+    block-size: 1.375rem;
+    border-radius: 6px;
+    box-shadow: inset 0 0 0 1.5px var(--sys-color-tertiary-label);
+    font-size: 1rem;
+    transition:
+      background-color var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-instant)
+        var(--sys-motion-ease-standard);
+  }
+
+  .ui-choice-menu__box[data-checked] {
+    background: var(--sys-color-accent);
+    box-shadow: none;
+  }
+
+  /* The check on the accent is white, never the row's trailing ink. */
+  .ui-choice-menu .ui-choice-menu__box[data-checked] > .ui-icon {
+    color: var(--sys-color-on-accent);
+  }
 }

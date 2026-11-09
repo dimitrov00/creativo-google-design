@@ -64,7 +64,29 @@ that day, in any booking status.
   at every location the barber worked. With every shop in one zone (today)
   they agree.
 - **Short gaps across shops** are each location's own: a gap between a
-stretch at one shop and a stretch at another is no shop's short gap.
-</content>
+  stretch at one shop and a stretch at another is no shop's short gap.
 
-</invoke>
+## Amendment — the scope as sets (owner review 2026-11-09)
+
+The owner asked for the scope menu as two rows with submenus of tick
+boxes: «Всички салони ›» and «Целият екип ›».
+
+- **The call carries sets.** `scopeBarberIds` and `scopeLocationIds`
+  replace the single ids. None named is the whole team or every location;
+  one barber is that barber's own report (seat rows, goal); several barbers
+  are a part of the team, read like the shop over them alone. The wire
+  takes at most 64 of either.
+- **Shops and barbers combine.** The earlier rule "never a location beside
+  a barber" is lifted: the two together are those barbers' work at those
+  shops. Several shops cut a stored day to the sum of their shares
+  (`storedAt` over `DayFiguresSystem.sum`).
+- **Goals.** Only the shop at every location, or one barber at every
+  location, has a goal (`scopeHasGoal`, `goalScopeAllowed`).
+- **The comparison.** `reportLocations` lists the shops named, or every
+  shop when none is, whenever that is two or more — for an admin only.
+- **The menu.** A row picks its list whole; a hairline and a chevron open
+  its tick boxes in the menu's place (no room beside it on a phone). Every
+  box reads ticked while the row names none; the last box cannot be
+  unticked; ticking every box is the whole list again
+  (`StaffAnalyticsSystem.scopeToggled`). The URL carries comma lists
+  (`?barber=ivan,niko&location=loc-mladost`).

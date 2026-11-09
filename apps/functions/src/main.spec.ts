@@ -881,7 +881,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
     pipeline: 'staffAnalytics',
     input: request(
       {
-        scopeBarberId: null,
+        scopeBarberIds: [],
         fromLocalDate: '2026-11-01',
         analyticsSpan: 'MONTH',
         analyticsComparison: 'PREVIOUS',
@@ -892,7 +892,8 @@ const FLIPPED: { readonly [name: string]: Case } = {
     // The verified caller rides the command; the transport id stays at the edge.
     command: {
       callerUserId: 'u-staff',
-      scopeBarberId: null,
+      scopeBarberIds: [],
+      scopeLocationIds: [],
       fromLocalDate: '2026-11-01',
       toLocalDate: null,
       analyticsSpan: 'MONTH',

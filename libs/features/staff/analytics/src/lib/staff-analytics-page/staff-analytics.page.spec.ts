@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LocationId } from '@core/primitives';
-import { locationFixture } from '@core/testing';
+import { BarberId, LocationId } from '@core/primitives';
+import { barberFixture, locationFixture } from '@core/testing';
 import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import {
   byTestId,
@@ -132,7 +132,14 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
   });
 
   it('the admin chooses whose figures in the scope menu, and the shop’s page carries the team', async () => {
-    const { fixture, host, sent } = await render({ admin: true, shop: true });
+    const { fixture, host, sent } = await render({
+      admin: true,
+      shop: true,
+      barbers: [
+        barberFixture({ id: BarberId.of('ivan') }),
+        barberFixture({ id: BarberId.of('niko') }),
+      ],
+    });
     const trigger = byTestId(host, 'analytics-scope-menu');
     expect(trigger?.textContent).toContain('Салон');
     expect(byTestId(host, 'analytics-card-team')?.textContent).toContain(
@@ -140,24 +147,37 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     );
     trigger?.click();
     await settle(fixture);
-    const options = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '[data-testid^="analytics-scope-"]',
-      ),
-    ).filter((o) => o !== trigger);
-    expect(options.map((o) => o.getAttribute('data-testid'))).toContain(
-      'analytics-scope-shop',
-    );
+    // The team's row, picked whole; its chevron opens a box per barber.
+    expect(
+      document.querySelector('[data-testid="analytics-scope-team"]'),
+    ).not.toBeNull();
     document
-      .querySelector<HTMLElement>('[data-testid="analytics-scope-ivan"]')
+      .querySelector<HTMLElement>('[data-testid="analytics-scope-team-open"]')
+      ?.click();
+    await settle(fixture);
+    const boxes = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
+    );
+    expect(boxes.length).toBeGreaterThan(1);
+    expect(
+      boxes.every((box) => box.getAttribute('aria-checked') === 'true'),
+    ).toBe(true);
+    // Unticking Niko leaves Ivan's own report; the menu stays up.
+    document
+      .querySelector<HTMLElement>('[data-testid="analytics-scope-niko"]')
       ?.click();
     await settle(fixture);
     await settle(fixture);
-    expect(sent.at(-1)?.scopeBarberId).toBe('ivan');
+    expect(
+      document
+        .querySelector('[data-testid="analytics-scope-niko"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('false');
+    expect(sent.at(-1)?.scopeBarberIds).toEqual(['ivan']);
     expect(byTestId(host, 'analytics-card-team')).toBeNull();
   });
 
-  it('with two locations the admin may pick one: the call, the URL and the pill follow (ADR 2026-11-09)', async () => {
+  it('with two locations the admin ticks shops in the submenu: the call, the URL and the pill follow (ADR 2026-11-09)', async () => {
     const { fixture, host, sent, router } = await render({
       admin: true,
       shop: true,
@@ -172,17 +192,34 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     await settle(fixture);
     document
       .querySelector<HTMLElement>(
-        '[data-testid="analytics-scope-location-loc-mladost"]',
+        '[data-testid="analytics-scope-locations-open"]',
+      )
+      ?.click();
+    await settle(fixture);
+    // Every shop ticked while none is named; unticking the centre leaves Mladost.
+    document
+      .querySelector<HTMLElement>(
+        `[data-testid="analytics-scope-location-${locationFixture().id}"]`,
       )
       ?.click();
     await settle(fixture);
     await settle(fixture);
-    expect(sent.at(-1)?.scopeLocationId).toBe('loc-mladost');
-    expect(sent.at(-1)?.scopeBarberId).toBeNull();
+    expect(sent.at(-1)?.scopeLocationIds).toEqual(['loc-mladost']);
+    expect(sent.at(-1)?.scopeBarberIds).toEqual([]);
     expect(router.url).toContain('location=loc-mladost');
+    // The menu stays up on the shops' boxes: the centre's off, Mladost's on.
     expect(
-      byTestId(host, 'analytics-scope-menu')?.getAttribute('aria-label'),
-    ).not.toContain('Всички салони');
+      document
+        .querySelector(
+          `[data-testid="analytics-scope-location-${locationFixture().id}"]`,
+        )
+        ?.getAttribute('aria-checked'),
+    ).toBe('false');
+    expect(
+      document
+        .querySelector('[data-testid="analytics-scope-location-loc-mladost"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('true');
   });
 
   it('under the carousel: the days ahead open the schedule on the emptiest day, the tools set a goal and export', async () => {
@@ -280,8 +317,8 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
     );
     expect(sent).toEqual([
       {
-        scopeBarberId: null,
-        scopeLocationId: null,
+        scopeBarberIds: [],
+        scopeLocationIds: [],
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
         toLocalDate: null,
@@ -303,8 +340,8 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
     });
     expect(sent).toEqual([
       {
-        scopeBarberId: null,
-        scopeLocationId: null,
+        scopeBarberIds: [],
+        scopeLocationIds: [],
         fromLocalDate: '2026-09-01',
         analyticsSpan: 'MONTH',
         toLocalDate: null,
@@ -321,8 +358,8 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
     });
     expect(sent).toEqual([
       {
-        scopeBarberId: 'ivan',
-        scopeLocationId: null,
+        scopeBarberIds: ['ivan'],
+        scopeLocationIds: [],
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
         toLocalDate: null,

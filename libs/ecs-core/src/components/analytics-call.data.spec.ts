@@ -87,8 +87,8 @@ function reportOf(scopeBarberId: BarberId | null): AnalyticsReport {
     seats,
   });
   return StaffAnalyticsSystem.report({
-    scopeBarberId,
-    scopeLocationId: null,
+    scopeBarberIds: scopeBarberId === null ? [] : [scopeBarberId],
+    scopeLocationIds: [],
     barberIds: scopeBarberId === null ? [ivan, niko] : [scopeBarberId],
     period: AnalyticsPeriod.monthOf(FIXTURE_TODAY),
     analyticsComparison: AnalyticsComparison.Previous,

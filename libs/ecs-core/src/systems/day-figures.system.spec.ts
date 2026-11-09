@@ -578,8 +578,8 @@ function reportInput(
   scopeBarberId: BarberId | null,
 ): AnalyticsInput {
   return {
-    scopeBarberId,
-    scopeLocationId: null,
+    scopeBarberIds: scopeBarberId === null ? [] : [scopeBarberId],
+    scopeLocationIds: [],
     barberIds: scopeBarberId === null ? [...BARBERS] : [scopeBarberId],
     period: OCTOBER,
     analyticsComparison: AnalyticsComparison.Previous,

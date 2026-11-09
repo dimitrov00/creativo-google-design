@@ -19,7 +19,7 @@ import {
   type SetAnalyticsGoalCall,
 } from '@core/components';
 import { PipelineError } from '@core/errors';
-import type { ShopLocation } from '@core/entities';
+import type { Barber, ShopLocation } from '@core/entities';
 import type { AnalyticsCallPorts } from '@core/ports';
 import { AnalyticsGoalKey, Result, UserId } from '@core/primitives';
 import {
@@ -108,6 +108,8 @@ export async function renderAnalyticsScreen<T>(
     readonly compareLocations?: boolean;
     /** The shop's locations in the catalogue; none by default. */
     readonly locations?: readonly ShopLocation[];
+    /** The shop's barber records in the catalogue; none by default. */
+    readonly barbers?: readonly Barber[];
   } = {},
 ) {
   const principal = signal(
@@ -128,7 +130,7 @@ export async function renderAnalyticsScreen<T>(
         );
       }
       const answered =
-        options.shop && call.scopeBarberId === null
+        options.shop && call.scopeBarberIds.length !== 1
           ? shopReportFixture()
           : reportFor(call);
       const report = options.compareLocations
@@ -195,7 +197,7 @@ export async function renderAnalyticsScreen<T>(
       {
         provide: CatalogContentService,
         useValue: {
-          barbers: signal([]),
+          barbers: signal(options.barbers ?? []),
           services: signal([]),
           barberVms: signal([]),
           locations: signal(options.locations ?? []),

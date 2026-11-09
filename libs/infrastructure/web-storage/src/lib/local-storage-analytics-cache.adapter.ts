@@ -26,7 +26,9 @@ const NO_TO = 'none';
 /**
  * The storage key of one cached report —
  * `creativo.analytics/<definitionVersion>/<uid>/<scope>/<period>`: the
- * scope a barber id, `location:<id>` (ADR 2026-11-09) or `shop`, the period its span, first day, last day
+ * scope its barber ids joined by `+` (sorted) or `shop`, then — when it
+ * names locations — `@location:` and their ids joined by `+` (sets since
+ * the owner's review 2026-11-09), the period its span, first day, last day
  * (`none` unless `CUSTOM`) and comparison —
  * `MONTH-2026-09-01-none-PREVIOUS`, `CUSTOM-2026-09-07-2026-09-20-PREVIOUS`
  * (the design's cache key encodes the comparison and the `to` too, so two
@@ -34,11 +36,14 @@ const NO_TO = 'none';
  * no id can reach into another segment.
  */
 export function analyticsCacheStorageKey(key: AnalyticsCacheKey): string {
-  const scope =
-    key.scopeBarberId ??
-    (key.scopeLocationId === null
+  const barbers =
+    key.scopeBarberIds.length === 0
       ? SHOP_SCOPE
-      : `${LOCATION_SCOPE}${key.scopeLocationId}`);
+      : [...key.scopeBarberIds].sort().join('+');
+  const scope =
+    key.scopeLocationIds.length === 0
+      ? barbers
+      : `${barbers}@${LOCATION_SCOPE}${[...key.scopeLocationIds].sort().join('+')}`;
   const period = `${key.analyticsSpan}-${key.fromLocalDate}-${key.toLocalDate ?? NO_TO}-${key.analyticsComparison}`;
   return `${VERSION_PREFIX}${[key.userId, scope, period]
     .map(encodeURIComponent)

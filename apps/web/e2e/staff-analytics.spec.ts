@@ -126,6 +126,32 @@ async function pickFromMenu(
   await reportReady(page);
 }
 
+/**
+ * The scope menu's submenu (owner review 2026-11-09): opens the menu, then
+ * the row's chevron, and unticks every box but `keep` — every box reads
+ * ticked while the row names none — then closes the menu.
+ */
+async function tickOnly(page: Page, open: string, keep: string): Promise<void> {
+  await page.getByTestId('analytics-scope-menu').click();
+  await page.getByTestId(open).click();
+  const boxes = page.getByRole('menuitemcheckbox');
+  await expect(boxes.first()).toBeVisible();
+  const ids: string[] = [];
+  for (const box of await boxes.all()) {
+    ids.push((await box.getAttribute('data-testid')) ?? '');
+  }
+  if ((await page.getByTestId(keep).getAttribute('aria-checked')) !== 'true') {
+    await page.getByTestId(keep).click();
+  }
+  for (const id of ids) {
+    if (id === keep) continue;
+    const box = page.getByTestId(id);
+    if ((await box.getAttribute('aria-checked')) === 'true') await box.click();
+  }
+  await page.keyboard.press('Escape');
+  await reportReady(page);
+}
+
 /** The CSV's block 1 header (staff-analytics-v2 «Export (PR 7)»). */
 const DAY_HEADER =
   'вид;бръснар;дата;работено мин;неявяване мин;немаркирано мин;блокирано мин;почивка мин;непродадено мин;друго мин;оборот;бакшиш';
@@ -395,9 +421,9 @@ test.describe('«Анализи» — staff analytics', () => {
 
     // One location (ADR 2026-11-09): its figures, its name on the pill, the
     // URL saying so, and no goal — a goal is the shop's or a barber's.
-    await pickFromMenu(
+    await tickOnly(
       page,
-      'analytics-scope-menu',
+      'analytics-scope-locations-open',
       'analytics-scope-location-loc-mladost',
     );
     await expect
@@ -412,12 +438,21 @@ test.describe('«Анализи» — staff analytics', () => {
       currentPage(page).getByTestId('analytics-card-team'),
     ).toBeVisible();
 
-    await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-niko');
+    // A barber's work at a shop (owner review 2026-11-09): the two sit
+    // together in the URL and on the pill.
+    await tickOnly(page, 'analytics-scope-team-open', 'analytics-scope-niko');
     await expect
       .poll(() => new URL(page.url()).searchParams.get('barber'))
       .toBe('niko');
-    // A barber never stands beside a location.
-    expect(new URL(page.url()).searchParams.get('location')).toBeNull();
+    expect(new URL(page.url()).searchParams.get('location')).toBe(
+      'loc-mladost',
+    );
+    // «Всички салони» picked whole: every location again, the barber kept.
+    await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-shop');
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('location'))
+      .toBeNull();
+    expect(new URL(page.url()).searchParams.get('barber')).toBe('niko');
     // A colleague's scope shows no goal of the shop's, and the admin is
     // offered none to set there: a barber's goal is the barber's alone.
     await expect(page.getByTestId('analytics-goal-ring')).toHaveCount(0);
@@ -447,7 +482,7 @@ test.describe('«Анализи» — staff analytics', () => {
 
     await page.goto('/staff/analytics');
     await reportReady(page);
-    await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-stefan');
+    await tickOnly(page, 'analytics-scope-team-open', 'analytics-scope-stefan');
 
     // The card is a link: the schedule, its agenda, the barber, free time on.
     const ahead = page.getByTestId('analytics-ahead');

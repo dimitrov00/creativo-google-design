@@ -30,6 +30,7 @@ import {
   BarberId,
   LocalDate,
   LocationId,
+  type Result,
   type UserId,
   Tag,
 } from '@core/primitives';
@@ -37,7 +38,7 @@ import type { UiDateFieldParts } from '@creativo/ui/controls';
 import {
   type AnalyticsCarouselSpan,
   AnalyticsCarouselSystem,
-  type AnalyticsScopeChoice,
+  type AnalyticsScopeMenu,
   StaffAnalyticsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -70,8 +71,8 @@ type AnalyticsRequest = {
 function sameCall(a: AnalyticsRequest, b: AnalyticsRequest): boolean {
   return (
     a.userId === b.userId &&
-    a.call.scopeBarberId === b.call.scopeBarberId &&
-    a.call.scopeLocationId === b.call.scopeLocationId &&
+    a.call.scopeBarberIds.join() === b.call.scopeBarberIds.join() &&
+    a.call.scopeLocationIds.join() === b.call.scopeLocationIds.join() &&
     a.call.analyticsSpan === b.call.analyticsSpan &&
     a.call.fromLocalDate === b.call.fromLocalDate &&
     a.call.toLocalDate === b.call.toLocalDate &&
@@ -255,8 +256,8 @@ export class StaffAnalyticsStore {
     readonly span: AnalyticsSpan | null | undefined;
     readonly from: LocalDate | null | undefined;
     readonly to: LocalDate | null | undefined;
-    readonly barber: BarberId | null | undefined;
-    readonly location: LocationId | null | undefined;
+    readonly barber: readonly BarberId[] | undefined;
+    readonly location: readonly LocationId[] | undefined;
   }>({
     span: undefined,
     from: undefined,
@@ -266,31 +267,37 @@ export class StaffAnalyticsStore {
   });
   readonly published = this._published.asReadonly();
 
-  /** The admin's pick; `null` is the shop. A barber's is always their own. */
-  private readonly pickedScope = signal<BarberId | null>(null);
-  readonly scopeBarberId = this.pickedScope.asReadonly();
   /**
-   * The admin's location (ADR 2026-11-09); `null` is every location. Never
-   * beside a barber: picking one clears the other.
+   * The admin's barber records (owner review 2026-11-09: the scope as
+   * sets); none is the whole team. A barber's is always their own.
    */
-  private readonly pickedLocation = signal<LocationId | null>(null);
-  readonly scopeLocationId = this.pickedLocation.asReadonly();
+  private readonly pickedScope = signal<readonly BarberId[]>([]);
+  readonly scopeBarberIds = this.pickedScope.asReadonly();
+  /** The one barber picked — their own report — or `null` for the team or a part of it. */
+  readonly scopeBarberId = computed(() =>
+    StaffAnalyticsSystem.soleBarberOf(this.pickedScope()),
+  );
+  /**
+   * The admin's locations (ADR 2026-11-09; sets since 2026-11-09); none is
+   * every location. They may sit beside barbers: those barbers' work there.
+   */
+  private readonly pickedLocation = signal<readonly LocationId[]>([]);
+  readonly scopeLocationIds = this.pickedLocation.asReadonly();
 
-  /** The admin's scope picker, in its order; `null` for a barber. */
-  readonly scopeChoices = computed<readonly AnalyticsScopeChoice[] | null>(
-    () =>
-      this.readsShop()
-        ? StaffAnalyticsSystem.scopeChoicesOf(
-            this.catalog.barbers().map((barber) => barber.id),
-            this.linkedBarberId(),
-            this.catalog.locations().map((location) => location.id),
-          )
-        : null,
+  /** The admin's scope menu: the locations and the barbers to tick; `null` for a barber. */
+  readonly scopeMenu = computed<AnalyticsScopeMenu | null>(() =>
+    this.readsShop()
+      ? StaffAnalyticsSystem.scopeMenuOf(
+          this.catalog.barbers().map((barber) => barber.id),
+          this.linkedBarberId(),
+          this.catalog.locations().map((location) => location.id),
+        )
+      : null,
   );
 
-  /** The barber the open-hours card opens the schedule on: the scope, or the barber's own record. */
+  /** The barber the open-hours card opens the schedule on: the one picked, or the barber's own record. */
   readonly scheduleBarberId = computed<BarberId | null>(() =>
-    this.readsShop() ? this.pickedScope() : this.linkedBarberId(),
+    this.readsShop() ? this.scopeBarberId() : this.linkedBarberId(),
   );
 
   private readonly _report = signal<AnalyticsReport | null>(null);
@@ -320,8 +327,8 @@ export class StaffAnalyticsStore {
     const shop = this.readsShop();
     const call: AnalyticsCall = {
       // A barber sends none: the callable reads their record off the stored user.
-      scopeBarberId: shop ? this.pickedScope() : null,
-      scopeLocationId: shop ? this.pickedLocation() : null,
+      scopeBarberIds: shop ? this.pickedScope() : [],
+      scopeLocationIds: shop ? this.pickedLocation() : [],
       fromLocalDate: period.fromLocalDate,
       // Named on `CUSTOM` alone (the callable's rule).
       toLocalDate:
@@ -332,14 +339,15 @@ export class StaffAnalyticsStore {
       // The constant until a second value is enabled (v2, State and URL).
       analyticsComparison: AnalyticsComparison.Previous,
     };
-    const cacheScope = shop ? this.pickedScope() : this.linkedBarberId();
+    const linked = this.linkedBarberId();
     return {
       userId,
       call,
-      cacheKey:
-        !shop && cacheScope === null
+      cacheKey: shop
+        ? { ...call, userId }
+        : linked === null
           ? null
-          : { ...call, scopeBarberId: cacheScope, userId },
+          : { ...call, scopeBarberIds: [linked], userId },
     };
   }
 
@@ -636,7 +644,11 @@ export class StaffAnalyticsStore {
     }
     this._goalSave.set(AnalyticsGoalSave.Saving);
     const call: SetAnalyticsGoalCall = {
-      scopeBarberId: request.call.scopeBarberId,
+      // A goal is the shop's or one barber's: the screen offers none to a
+      // part of the team (`scopeHasGoal`).
+      scopeBarberId: StaffAnalyticsSystem.soleBarberOf(
+        request.call.scopeBarberIds,
+      ),
       goalMonth: LocalDate.monthKey(period.fromLocalDate),
       goalLowCents: check.goalLowCents,
       goalHighCents: check.goalHighCents,
@@ -670,7 +682,11 @@ export class StaffAnalyticsStore {
     }
     this._goalSave.set(AnalyticsGoalSave.Saving);
     const call: SetAnalyticsGoalCall = {
-      scopeBarberId: request.call.scopeBarberId,
+      // A goal is the shop's or one barber's: the screen offers none to a
+      // part of the team (`scopeHasGoal`).
+      scopeBarberId: StaffAnalyticsSystem.soleBarberOf(
+        request.call.scopeBarberIds,
+      ),
       goalMonth: LocalDate.monthKey(period.fromLocalDate),
       goalLowCents: null,
       goalHighCents: null,
@@ -700,22 +716,61 @@ export class StaffAnalyticsStore {
     this.pickPeriod(AnalyticsPeriod.monthOf(localDate));
   }
 
-  /** The admin's scope picker: the shop (`null`) or a barber record. */
-  pickScope(scopeBarberId: BarberId | null): void {
-    if (!untracked(this.readsShop)) return;
-    this._scopeGone.set(false);
-    this.pickedLocation.set(null);
-    this.pickedScope.set(scopeBarberId);
-    this.publishQuery({ barber: scopeBarberId, location: null });
+  /**
+   * The admin's scope menu (owner review 2026-11-09): «Целият екип» names
+   * no barber; a barber's box toggles them (`scopeToggled` — never the last
+   * one off, every box ticked is the whole team again).
+   */
+  pickAllBarbers(): void {
+    this.pickBarbers([]);
   }
 
-  /** The admin's scope picker: one location of the shop (ADR 2026-11-09). */
-  pickLocation(scopeLocationId: LocationId): void {
+  toggleBarber(barberId: BarberId): void {
+    const all = untracked(this.scopeMenu)?.barbers.map((b) => b.barberId);
+    if (all === undefined) return;
+    this.pickBarbers(
+      StaffAnalyticsSystem.scopeToggled(
+        untracked(this.pickedScope),
+        barberId,
+        all,
+      ),
+    );
+  }
+
+  /** «Всички салони» names no location; a location's box toggles it, as a barber's does. */
+  pickAllLocations(): void {
+    this.pickLocations([]);
+  }
+
+  toggleLocation(locationId: LocationId): void {
+    const all = untracked(this.scopeMenu)?.locationIds;
+    if (all === undefined || all.length === 0) return;
+    this.pickLocations(
+      StaffAnalyticsSystem.scopeToggled(
+        untracked(this.pickedLocation),
+        locationId,
+        all,
+      ),
+    );
+  }
+
+  /** One barber record alone — a row of the team's list opens it. */
+  pickBarber(barberId: BarberId): void {
+    this.pickBarbers([barberId]);
+  }
+
+  private pickBarbers(barberIds: readonly BarberId[]): void {
     if (!untracked(this.readsShop)) return;
     this._scopeGone.set(false);
-    this.pickedScope.set(null);
-    this.pickedLocation.set(scopeLocationId);
-    this.publishQuery({ barber: null, location: scopeLocationId });
+    this.pickedScope.set(barberIds);
+    this.publishQuery({ barber: barberIds });
+  }
+
+  private pickLocations(locationIds: readonly LocationId[]): void {
+    if (!untracked(this.readsShop)) return;
+    this._scopeGone.set(false);
+    this.pickedLocation.set(locationIds);
+    this.publishQuery({ location: locationIds });
   }
 
   // ── The URL ───────────────────────────────────────────────────────────
@@ -758,33 +813,28 @@ export class StaffAnalyticsStore {
   }
 
   /**
-   * `?barber=` read ONCE at its edge (`BarberId.parse`): the admin's scope
-   * — a record, or the shop when absent or naming no id. A barber's own
-   * `?barber=` is IGNORED: only the shop's reader picks a scope. A record
-   * the shop no longer has is answered by the callable (`SCOPE_UNKNOWN`).
+   * `?barber=` read ONCE at its edge (`BarberId.parse`, each of a comma
+   * list): the admin's barber records — none, the whole team, when absent
+   * or naming no id. A barber's own `?barber=` is IGNORED: only the shop's
+   * reader picks a scope. A record the shop no longer has is answered by
+   * the callable (`SCOPE_UNKNOWN`).
    */
   applyRouteBarber(raw: string | null): void {
     if (!untracked(this.readsShop)) return;
-    const parsed = raw ? BarberId.parse(raw) : null;
-    const barber = parsed !== null && parsed.ok ? parsed.value : null;
     this._scopeGone.set(false);
-    this.pickedScope.set(barber);
+    this.pickedScope.set(idsOfParam(raw, BarberId.parse));
   }
 
   /**
-   * `?location=` read ONCE at its edge (`LocationId.parse`), as `?barber=`:
-   * the admin's location, ignored for a barber and beside a barber; a
-   * location the shop no longer has is answered by the callable
+   * `?location=` read ONCE at its edge (`LocationId.parse`, each of a
+   * comma list), as `?barber=`: the admin's locations, ignored for a
+   * barber; a location the shop no longer has is answered by the callable
    * (`LOCATION_UNKNOWN`).
    */
   applyRouteLocation(raw: string | null): void {
     if (!untracked(this.readsShop)) return;
-    const parsed = raw ? LocationId.parse(raw) : null;
-    const location = parsed !== null && parsed.ok ? parsed.value : null;
     this._scopeGone.set(false);
-    this.pickedLocation.set(
-      untracked(this.pickedScope) === null ? location : null,
-    );
+    this.pickedLocation.set(idsOfParam(raw, LocationId.parse));
   }
 
   /**
@@ -801,8 +851,8 @@ export class StaffAnalyticsStore {
       span: period.analyticsSpan,
       from: period.fromLocalDate,
       to: toParamOf(period),
-      barber: this.readsShop() ? this.pickedScope() : null,
-      location: this.readsShop() ? this.pickedLocation() : null,
+      barber: this.readsShop() ? this.pickedScope() : [],
+      location: this.readsShop() ? this.pickedLocation() : [],
     });
   }
 
@@ -817,8 +867,8 @@ export class StaffAnalyticsStore {
       readonly span: AnalyticsSpan | null;
       readonly from: LocalDate | null;
       readonly to: LocalDate | null;
-      readonly barber: BarberId | null;
-      readonly location: LocationId | null;
+      readonly barber: readonly BarberId[];
+      readonly location: readonly LocationId[];
     }>,
   ): void {
     // Read UNTRACKED: a caller inside an effect must not come to depend on
@@ -832,8 +882,8 @@ export class StaffAnalyticsStore {
       next.span === current.span &&
       next.from === current.from &&
       next.to === current.to &&
-      next.barber === current.barber &&
-      next.location === current.location
+      paramOf(next.barber) === paramOf(current.barber) &&
+      paramOf(next.location) === paramOf(current.location)
     ) {
       return;
     }
@@ -854,8 +904,8 @@ export class StaffAnalyticsStore {
           span: stated.span ?? null,
           from: stated.from ?? null,
           to: stated.to ?? null,
-          barber: stated.barber ?? null,
-          location: stated.location ?? null,
+          barber: paramOf(stated.barber),
+          location: paramOf(stated.location),
         },
         queryParamsHandling: 'merge',
         replaceUrl: true,
@@ -927,8 +977,8 @@ export class StaffAnalyticsStore {
     this.cache.writeCachedReport(
       {
         ...request.call,
-        scopeBarberId: report.reportScopeBarberId,
-        scopeLocationId: report.reportScopeLocationId,
+        scopeBarberIds: report.reportScopeBarberIds,
+        scopeLocationIds: report.reportScopeLocationIds,
         userId: request.userId,
       },
       report,
@@ -963,16 +1013,16 @@ export class StaffAnalyticsStore {
         this._load.set(AnalyticsLoad.Refused);
         return;
       case AnalyticsErrorCode.ScopeUnknown:
-        if (untracked(this.pickedScope) === null) break;
-        // Back to the shop, which the effect then asks for.
+        if (untracked(this.pickedScope).length === 0) break;
+        // Back to the whole team, which the effect then asks for.
         this._scopeGone.set(true);
-        this.pickedScope.set(null);
+        this.pickedScope.set([]);
         return;
       case AnalyticsErrorCode.LocationUnknown:
-        if (untracked(this.pickedLocation) === null) break;
+        if (untracked(this.pickedLocation).length === 0) break;
         // Back to every location, as a barber gone is.
         this._scopeGone.set(true);
-        this.pickedLocation.set(null);
+        this.pickedLocation.set([]);
         return;
       case AnalyticsErrorCode.PeriodOutOfRange: {
         const routed = untracked(this.routed);
@@ -995,4 +1045,23 @@ export class StaffAnalyticsStore {
     }
     this._load.set(AnalyticsLoad.Failed);
   }
+}
+
+/** A comma list of ids from the URL, each through its parse — the unreadable ones dropped, sorted, each once. */
+function idsOfParam<T extends string>(
+  raw: string | null,
+  parse: (value: string) => Result<T, unknown>,
+): readonly T[] {
+  if (!raw) return [];
+  const out = new Set<T>();
+  for (const part of raw.split(',')) {
+    const parsed = parse(part.trim());
+    if (parsed.ok) out.add(parsed.value);
+  }
+  return [...out].sort();
+}
+
+/** A list of ids as its URL parameter: comma-joined, absent when none. */
+function paramOf(ids: readonly string[] | undefined): string | null {
+  return ids === undefined || ids.length === 0 ? null : ids.join(',');
 }

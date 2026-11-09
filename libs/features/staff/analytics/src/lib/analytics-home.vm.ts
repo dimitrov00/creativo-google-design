@@ -176,18 +176,23 @@ export type AnalyticsCardQuery = {
   readonly span: string;
   readonly from: LocalDate;
   readonly to: LocalDate | null;
-  readonly barber: BarberId | null;
-  readonly location: LocationId | null;
+  /** The barber records ticked, comma-joined; `null` for the whole team. */
+  readonly barber: string | null;
+  /** The locations ticked, comma-joined; `null` for every one. */
+  readonly location: string | null;
 };
 
 /**
- * The scope menu's option ids beside the barber ids: the whole shop, and
- * the prefix of a location's (`location:loc-centre`, ADR 2026-11-09).
+ * The scope menu's two rows (owner review 2026-11-09): every location and
+ * the whole team — each picked whole by its row, or narrowed through its
+ * submenu's boxes (the submenu's options are the location and barber ids).
  */
 export const AnalyticsScopeOption = {
-  Shop: 'shop',
-  LocationPrefix: 'location:',
+  Locations: 'locations',
+  Team: 'team',
 } as const;
+export type AnalyticsScopeOption =
+  (typeof AnalyticsScopeOption)[keyof typeof AnalyticsScopeOption];
 
 /** A dropdown of the top row: its trigger's word and its options. */
 export type AnalyticsMenuVm = {

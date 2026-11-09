@@ -83,6 +83,15 @@ export interface AnalyticsWords {
     readonly teamGroup: string;
     readonly me: string;
     readonly barber: string;
+    /** «Целият екип» — the team row with no barber ticked. */
+    readonly wholeTeam: string;
+    /** «2 салона» — several ticked, on the trigger. */
+    readonly shopsCount: (count: number) => string;
+    /** «3 бръснари». */
+    readonly barbersCount: (count: number) => string;
+    /** «Избери салони» · «Избери бръснари» — the chevrons' names. */
+    readonly pickShops: string;
+    readonly pickBarbers: string;
   };
   /** The freshness line (staff-analytics-v2 «Freshness»): how old the figures are, and the ⓘ. */
   readonly freshness: {
@@ -491,6 +500,11 @@ export function analyticsWordsOf(
       teamGroup: t('scope.teamGroup'),
       me: t('scope.me'),
       barber: t('scope.barber'),
+      wholeTeam: t('scope.wholeTeam'),
+      shopsCount: counted('scope.shopsCount'),
+      barbersCount: counted('scope.barbersCount'),
+      pickShops: t('scope.pickShops'),
+      pickBarbers: t('scope.pickBarbers'),
     },
     freshness: {
       justNow: t('status.justNow'),

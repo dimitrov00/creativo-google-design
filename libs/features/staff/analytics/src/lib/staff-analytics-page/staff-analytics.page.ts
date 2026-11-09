@@ -18,6 +18,7 @@ import {
   UiAvatar,
   UiButton,
   UiChoiceMenu,
+  type UiChoiceToggle,
   UiIcon,
   UiNotice,
   UiSkeleton,
@@ -139,21 +140,23 @@ export class StaffAnalyticsPage {
     }
   }
 
-  /** The scope menu: «Салон» (`shop`), one location (`location:<id>`) or a barber record. */
+  /** The scope menu's rows: «Всички салони» and «Целият екип», each picked whole. */
   protected pickScopeOption(id: string): void {
-    if (id === AnalyticsScopeOption.Shop) {
-      this.store.pickScope(null);
+    if (id === AnalyticsScopeOption.Locations) this.store.pickAllLocations();
+    if (id === AnalyticsScopeOption.Team) this.store.pickAllBarbers();
+  }
+
+  /** A box of the scope menu's submenus: a location, or a barber record. */
+  protected toggleScope(toggle: UiChoiceToggle): void {
+    if (toggle.row === AnalyticsScopeOption.Locations) {
+      const locationId = LocationId.parse(toggle.id);
+      if (locationId.ok) this.store.toggleLocation(locationId.value);
       return;
     }
-    if (id.startsWith(AnalyticsScopeOption.LocationPrefix)) {
-      const locationId = LocationId.parse(
-        id.slice(AnalyticsScopeOption.LocationPrefix.length),
-      );
-      if (locationId.ok) this.store.pickLocation(locationId.value);
-      return;
+    if (toggle.row === AnalyticsScopeOption.Team) {
+      const barberId = BarberId.parse(toggle.id);
+      if (barberId.ok) this.store.toggleBarber(barberId.value);
     }
-    const barberId = BarberId.parse(id);
-    if (barberId.ok) this.store.pickScope(barberId.value);
   }
 
   protected readonly Tool = AnalyticsTool;

@@ -23,7 +23,7 @@ import {
   type Weekday,
 } from '@core/primitives';
 import {
-  type AnalyticsScopeChoice,
+  type AnalyticsScopeMenu,
   type AnalyticsScreen,
   StaffAnalyticsSystem,
 } from '@core/systems';
@@ -79,7 +79,6 @@ import {
   type AnalyticsRangeCheck,
   AnalyticsRangeRefusal,
   type AnalyticsRangeVm,
-  type AnalyticsScopeVm,
   type AnalyticsSeriesVm,
   type AnalyticsServicesVm,
   type AnalyticsStatusVm,
@@ -126,12 +125,14 @@ export interface AnalyticsScreenInput {
   readonly report: AnalyticsReport | null;
   /** A refusal of the account, already worded (`errors.<code>`); `null` without one. */
   readonly refusal: string | null;
-  /** The admin's scope picker (`StaffAnalyticsSystem.scopeChoicesOf`); `null` for a barber. */
-  readonly scopeChoices: readonly AnalyticsScopeChoice[] | null;
-  /** The scope chosen in the picker; `null` is the shop. */
+  /** The admin's scope menu (`StaffAnalyticsSystem.scopeMenuOf`); `null` for a barber. */
+  readonly scopeMenu: AnalyticsScopeMenu | null;
+  /** The barber records ticked (owner review 2026-11-09); none is the whole team. */
+  readonly scopeBarberIds: readonly BarberId[];
+  /** The one barber ticked — their own report; `null` for the team or a part of it. */
   readonly scopeBarberId: BarberId | null;
-  /** The location chosen in the picker (ADR 2026-11-09); `null` is every location. */
-  readonly scopeLocationId: LocationId | null;
+  /** The locations ticked (ADR 2026-11-09; sets since 2026-11-09); none is every location. */
+  readonly scopeLocationIds: readonly LocationId[];
   /**
    * How many locations the shop has. A report's shop scope is every one of
    * them (the day documents hold no location), so with two or more the
@@ -166,7 +167,6 @@ export function analyticsVm(input: AnalyticsScreenInput): AnalyticsVm {
     freshness: statusOf(input),
     retryLabel: words.freshness.retry,
     period: periodOf(input),
-    scope: scopeOf(input),
     placeholder:
       report === null && input.analyticsLoad === AnalyticsLoad.Loading,
     blocked: blockedOf(input),
@@ -419,37 +419,6 @@ export function periodLabelOf(
       );
 }
 
-export function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
-  const { words, scopeChoices } = input;
-  if (scopeChoices === null) return null;
-  return {
-    label: words.scope.label,
-    tiles: scopeChoices.map((choice) => {
-      const id = choice.scopeBarberId;
-      const location = choice.scopeLocationId;
-      return {
-        scopeBarberId: id,
-        scopeLocationId: location,
-        name:
-          location !== null
-            ? (input.names.locationName(location) ?? words.scope.shop)
-            : id === null
-              ? shopNameOf(input)
-              : choice.scopeMine
-                ? words.scope.me
-                : (input.names.barberName(id) ?? words.scope.barber),
-        avatarSrc: id === null ? null : input.names.barberAvatarSrc(id),
-        selected:
-          id === input.scopeBarberId && location === input.scopeLocationId,
-        testId:
-          location !== null
-            ? `analytics-scope-location-${location}`
-            : `analytics-scope-${id ?? 'shop'}`,
-      };
-    }),
-  };
-}
-
 /** «Салон» — or «Всички салони» when the figures span several locations. */
 export function shopNameOf(input: AnalyticsScreenInput): string {
   return input.words.scope.shopOf(input.shopCount);
@@ -547,9 +516,9 @@ function goalOf(
   const offered =
     StaffAnalyticsSystem.goalMonthOffered(period, input.today) &&
     StaffAnalyticsSystem.goalScopeAllowed(
-      input.scopeBarberId,
+      input.scopeBarberIds,
       input.linkedBarberId,
-      input.scopeLocationId,
+      input.scopeLocationIds,
     );
   const low = report.reportGoalLowCents;
   const high = report.reportGoalHighCents;
