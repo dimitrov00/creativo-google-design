@@ -20,6 +20,7 @@ import {
   BusyKey,
   type CustomerId,
   type LocalDate,
+  LocationId,
   MinuteCount,
   type UserId,
 } from '@core/primitives';
@@ -44,6 +45,7 @@ import {
   ANALYTICS_FIXTURE_LOCATIONS,
   ANALYTICS_FIXTURE_MONTH,
   ANALYTICS_FIXTURE_ROSTERS,
+  ANALYTICS_FIXTURE_SHOPS,
   ANALYTICS_FIXTURE_USERS,
   ANALYTICS_FIXTURE_VISITS,
   FIXTURE_NOW_UTC_MS,
@@ -87,6 +89,25 @@ async function reportOf(
     await staffAnalytics(analyticsFixturePorts(world))({
       callerUserId,
       scopeBarberId,
+      scopeLocationId: null,
+      analyticsSpan: AnalyticsSpan.Month,
+      fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+      toLocalDate: null,
+      analyticsComparison: AnalyticsComparison.Previous,
+    }),
+  );
+}
+
+/** The admin's report on one location (ADR 2026-11-09) — every day live unless `world` stores days and turns the flag on. */
+async function reportAt(
+  locationId: LocationId,
+  world: AnalyticsFixtureWorld = {},
+): Promise<AnalyticsReport> {
+  return unwrapOk(
+    await staffAnalytics(analyticsFixturePorts(world))({
+      callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
+      scopeBarberId: null,
+      scopeLocationId: locationId,
       analyticsSpan: AnalyticsSpan.Month,
       fromLocalDate: ANALYTICS_FIXTURE_MONTH,
       toLocalDate: null,
@@ -533,6 +554,7 @@ describe('P1 — sum(days.map(fold)) + live === report(visits), over the fixture
           followUps,
           policy,
           computedAtUtcMs: FIXTURE_NOW_UTC_MS,
+          locationShares: [],
         }),
       );
     const stored = documents.filter((day) => inScope(day.barberId));
@@ -759,6 +781,7 @@ describe('P2 — stored days + live days === every day live, through the pipelin
       await staffAnalytics({ ...off, loadAnalyticsDays: offDays })({
         callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
         scopeBarberId: null,
+        scopeLocationId: null,
         analyticsSpan: AnalyticsSpan.Month,
         fromLocalDate: ANALYTICS_FIXTURE_MONTH,
         toLocalDate: null,
@@ -769,6 +792,7 @@ describe('P2 — stored days + live days === every day live, through the pipelin
       await staffAnalytics({ ...on, loadAnalyticsDays: onDays })({
         callerUserId: ANALYTICS_FIXTURE_USERS.admin.id,
         scopeBarberId: null,
+        scopeLocationId: null,
         analyticsSpan: AnalyticsSpan.Month,
         fromLocalDate: ANALYTICS_FIXTURE_MONTH,
         toLocalDate: null,
@@ -780,5 +804,109 @@ describe('P2 — stored days + live days === every day live, through the pipelin
       ['2026-09-01', '2026-09-30'],
       ['2026-08-01', '2026-08-31'],
     ]);
+  });
+});
+
+describe('L — one location’s figures (ADR 2026-11-09)', () => {
+  const documents = analyticsFixtureDayDocuments();
+  const STORED = [FlagName.AnalyticsStoredDays] as const;
+  const SHOPS = Object.values(ANALYTICS_FIXTURE_SHOPS);
+
+  /** The fields the flag may change. */
+  const APART = new Set<keyof AnalyticsReport>([
+    'reportComputedAtUtcMs',
+    'reportMissingDays',
+  ]);
+  const comparable = (report: AnalyticsReport): Record<string, unknown> =>
+    Object.fromEntries(
+      Object.entries(report).filter(
+        ([field]) => !APART.has(field as keyof AnalyticsReport),
+      ),
+    );
+
+  it('is not vacuous: the fixture month has a day split across two shops, and both shops took money', async () => {
+    expect(documents.some((day) => day.dayLocations.length >= 2)).toBe(true);
+    for (const shop of [
+      ANALYTICS_FIXTURE_SHOPS.centre,
+      ANALYTICS_FIXTURE_SHOPS.mladost,
+    ]) {
+      expect((await reportAt(shop)).reportTakingsCents).toBeGreaterThan(0);
+    }
+  });
+
+  it('stored days + live days === every day live, for each location', async () => {
+    for (const shop of SHOPS) {
+      const live = await reportAt(shop);
+      const stored = await reportAt(shop, {
+        storedDays: documents,
+        flagsOn: STORED,
+      });
+      const half = await reportAt(shop, {
+        storedDays: documents.filter((day) => day.localDate <= '2026-09-13'),
+        flagsOn: STORED,
+      });
+      expect(comparable(stored), shop).toEqual(comparable(live));
+      expect(comparable(half), shop).toEqual(comparable(live));
+      expect(stored.reportScopeLocationId).toBe(shop);
+      expect(stored.reportScopeBarberId).toBeNull();
+      expect(stored.reportMissingDays).toBe(0);
+    }
+  });
+
+  it('the locations add up to the shop: takings, tips, worked and rostered time, worked and no-show seats', async () => {
+    const shop = await reportOf(ANALYTICS_FIXTURE_USERS.admin.id, null);
+    const parts = await Promise.all(SHOPS.map((id) => reportAt(id)));
+    const sum = (pick: (report: AnalyticsReport) => number): number =>
+      parts.reduce((total, report) => total + pick(report), 0);
+    expect(sum((r) => r.reportTakingsCents)).toBe(shop.reportTakingsCents);
+    expect(sum((r) => r.reportTipsCents)).toBe(shop.reportTipsCents);
+    expect(sum((r) => r.reportWorkedMinutes)).toBe(shop.reportWorkedMinutes);
+    expect(sum((r) => r.reportRosteredMinutes)).toBe(
+      shop.reportRosteredMinutes,
+    );
+    expect(sum((r) => r.reportNoShowBase)).toBe(shop.reportNoShowBase);
+  });
+
+  it('reads no goal for a location, and refuses a barber, a location beside a barber, and an unknown one', async () => {
+    const report = await reportAt(ANALYTICS_FIXTURE_SHOPS.centre);
+    expect(report.reportGoalLowCents).toBeNull();
+    const ports = analyticsFixturePorts({});
+    const ask = (
+      callerUserId: UserId,
+      scopeBarberId: BarberId | null,
+      scopeLocationId: LocationId,
+    ) =>
+      staffAnalytics(ports)({
+        callerUserId,
+        scopeBarberId,
+        scopeLocationId,
+        analyticsSpan: AnalyticsSpan.Month,
+        fromLocalDate: ANALYTICS_FIXTURE_MONTH,
+        toLocalDate: null,
+        analyticsComparison: AnalyticsComparison.Previous,
+      });
+    const centre = ANALYTICS_FIXTURE_SHOPS.centre;
+    expect(
+      await ask(ANALYTICS_FIXTURE_USERS.ivan.id, null, centre),
+    ).toMatchObject({ ok: false, error: { errorCode: 'ANALYTICS_FORBIDDEN' } });
+    expect(
+      await ask(ANALYTICS_FIXTURE_USERS.admin.id, ivan, centre),
+    ).toMatchObject({
+      ok: false,
+      error: { errorCode: 'ANALYTICS_INVALID_INPUT', field: 'scopeLocationId' },
+    });
+    expect(
+      await ask(
+        ANALYTICS_FIXTURE_USERS.admin.id,
+        null,
+        LocationId.of('loc-gone'),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        errorCode: 'ANALYTICS_LOCATION_UNKNOWN',
+        locationId: 'loc-gone',
+      },
+    });
   });
 });

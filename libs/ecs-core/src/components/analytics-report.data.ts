@@ -4,6 +4,7 @@ import type {
   BarberId,
   HourOfDay,
   LocalDate,
+  LocationId,
   MinuteCount,
   MinuteOfDay,
   PriceCents,
@@ -22,9 +23,11 @@ import type { DayRow } from './day-figures.data';
  * The catalogue's version — raised whenever a formula changes, so cached
  * reports are dropped and every stored day (`dayDefinitionVersion`) becomes
  * eligible for the recompute. 2 since staff analytics v2 PR 4a: the day
- * rows are `DayRow`s (the `day*` fields, the money per day).
+ * rows are `DayRow`s (the `day*` fields, the money per day). 3 since the
+ * location scope (ADR 2026-11-09): a stored day says which locations it
+ * touched, with each one's share of a day split across shops.
  */
-export const ANALYTICS_DEFINITION_VERSION = 2;
+export const ANALYTICS_DEFINITION_VERSION = 3;
 
 /** Where a visit was booked — the field `bookingOrigin`. */
 export const BookingOrigin = {
@@ -115,8 +118,13 @@ export type GoalPaceTag = (typeof GoalPaceTag)[keyof typeof GoalPaceTag];
 export type AnalyticsReport = {
   readonly reportDefinitionVersion: number;
   readonly reportComputedAtUtcMs: UtcEpochMs;
-  /** The barber record reported on; `null` for the whole shop. */
+  /** The barber record reported on; `null` for the whole shop or one location. */
   readonly reportScopeBarberId: BarberId | null;
+  /**
+   * The location reported on (ADR 2026-11-09): every barber, counted only
+   * for what happened there; `null` for the whole shop or a barber.
+   */
+  readonly reportScopeLocationId: LocationId | null;
   readonly reportAnalyticsSpan: AnalyticsSpan;
   readonly reportFromLocalDate: LocalDate;
   readonly reportToLocalDate: LocalDate;

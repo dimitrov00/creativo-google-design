@@ -40,6 +40,7 @@ describe('decodeStaffAnalytics', () => {
       value: {
         callerUserId: 'u-ivan',
         scopeBarberId: 'b-ivan',
+        scopeLocationId: null,
         fromLocalDate: '2026-09-01',
         toLocalDate: null,
         analyticsSpan: 'MONTH',
@@ -63,6 +64,18 @@ describe('decodeStaffAnalytics', () => {
     }
   });
 
+  it('reads an admin’s location scope, and refuses one that is no id (ADR 2026-11-09)', () => {
+    const decoded = decodeStaffAnalytics(
+      callable({ ...sent, scopeBarberId: null, scopeLocationId: 'loc-centre' }),
+    );
+    expect(decoded.ok && decoded.value.scopeLocationId).toBe('loc-centre');
+    expect(decoded.ok && decoded.value.scopeBarberId).toBeNull();
+    expect(refusalOf({ ...sent, scopeLocationId: 42 })).toEqual({
+      errorCode: 'ANALYTICS_INVALID_INPUT',
+      field: 'scopeLocationId',
+    });
+  });
+
   it('decodes the v2 spans: a YEAR, and a CUSTOM range with its last day', () => {
     expect(
       decodeStaffAnalytics(
@@ -77,6 +90,7 @@ describe('decodeStaffAnalytics', () => {
       value: {
         callerUserId: 'u-ivan',
         scopeBarberId: 'b-ivan',
+        scopeLocationId: null,
         fromLocalDate: '2026-01-01',
         toLocalDate: null,
         analyticsSpan: 'YEAR',
@@ -97,6 +111,7 @@ describe('decodeStaffAnalytics', () => {
       value: {
         callerUserId: 'u-ivan',
         scopeBarberId: 'b-ivan',
+        scopeLocationId: null,
         fromLocalDate: '2026-09-07',
         toLocalDate: '2026-09-20',
         analyticsSpan: 'CUSTOM',

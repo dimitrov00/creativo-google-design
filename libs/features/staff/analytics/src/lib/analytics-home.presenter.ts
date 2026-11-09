@@ -20,6 +20,7 @@ import {
 } from './analytics.presenter';
 import {
   AnalyticsCard,
+  AnalyticsScopeOption,
   AnalyticsTool,
   type AnalyticsAheadCardVm,
   type AnalyticsBentoCardVm,
@@ -32,6 +33,7 @@ import {
 } from './analytics-home.vm';
 import {
   AnalyticsLoad,
+  type AnalyticsScopeTileVm,
   AnalyticsTopic,
   type AnalyticsBodyVm,
 } from './analytics.vm';
@@ -98,6 +100,14 @@ export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
 
 // ── The top row ───────────────────────────────────────────────────────────
 
+/** A scope tile's menu id: the barber's id, `location:<id>`, or `shop`. */
+function optionIdOf(tile: AnalyticsScopeTileVm): string {
+  if (tile.scopeBarberId !== null) return tile.scopeBarberId;
+  return tile.scopeLocationId === null
+    ? AnalyticsScopeOption.Shop
+    : `${AnalyticsScopeOption.LocationPrefix}${tile.scopeLocationId}`;
+}
+
 /** The shop's disc — beside the barbers' faces in the scope menu and its trigger. */
 const SHOP_GLYPH = 'location.shop' satisfies UiIconName;
 
@@ -109,16 +119,15 @@ function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   return {
     label,
     menuLabel: scope.label,
-    // Every option is a disc: a face, a monogram, or the shop's glyph.
+    // Every option is a disc: a face, a monogram, or a shop's glyph.
     options: scope.tiles.map((tile): UiChoiceOption => ({
-      id: tile.scopeBarberId ?? 'shop',
+      id: optionIdOf(tile),
       label: tile.name,
       avatarSrc: tile.avatarSrc,
       ...(tile.scopeBarberId === null ? { icon: SHOP_GLYPH } : {}),
       testId: tile.testId,
     })),
-    selected:
-      selected === undefined ? null : (selected.scopeBarberId ?? 'shop'),
+    selected: selected === undefined ? null : optionIdOf(selected),
     leading: {
       avatarSrc: selected?.avatarSrc ?? null,
       name: label,
@@ -175,6 +184,7 @@ function pageOf(
     to:
       period.analyticsSpan === AnalyticsSpan.Custom ? period.toLocalDate : null,
     barber: input.scopeBarberId,
+    location: input.scopeLocationId,
   };
   const key = `${period.analyticsSpan}-${period.fromLocalDate}`;
   const label = pageLabelOf(period, input);

@@ -26,7 +26,13 @@ import {
   PipelineErrorCode,
 } from '@core/errors';
 import type { AnalyticsCacheKey } from '@core/ports';
-import { BarberId, LocalDate, type UserId, Tag } from '@core/primitives';
+import {
+  BarberId,
+  LocalDate,
+  LocationId,
+  type UserId,
+  Tag,
+} from '@core/primitives';
 import type { UiDateFieldParts } from '@creativo/ui/controls';
 import {
   type AnalyticsCarouselSpan,
@@ -65,6 +71,7 @@ function sameCall(a: AnalyticsRequest, b: AnalyticsRequest): boolean {
   return (
     a.userId === b.userId &&
     a.call.scopeBarberId === b.call.scopeBarberId &&
+    a.call.scopeLocationId === b.call.scopeLocationId &&
     a.call.analyticsSpan === b.call.analyticsSpan &&
     a.call.fromLocalDate === b.call.fromLocalDate &&
     a.call.toLocalDate === b.call.toLocalDate &&
@@ -249,12 +256,25 @@ export class StaffAnalyticsStore {
     readonly from: LocalDate | null | undefined;
     readonly to: LocalDate | null | undefined;
     readonly barber: BarberId | null | undefined;
-  }>({ span: undefined, from: undefined, to: undefined, barber: undefined });
+    readonly location: LocationId | null | undefined;
+  }>({
+    span: undefined,
+    from: undefined,
+    to: undefined,
+    barber: undefined,
+    location: undefined,
+  });
   readonly published = this._published.asReadonly();
 
   /** The admin's pick; `null` is the shop. A barber's is always their own. */
   private readonly pickedScope = signal<BarberId | null>(null);
   readonly scopeBarberId = this.pickedScope.asReadonly();
+  /**
+   * The admin's location (ADR 2026-11-09); `null` is every location. Never
+   * beside a barber: picking one clears the other.
+   */
+  private readonly pickedLocation = signal<LocationId | null>(null);
+  readonly scopeLocationId = this.pickedLocation.asReadonly();
 
   /** The admin's scope picker, in its order; `null` for a barber. */
   readonly scopeChoices = computed<readonly AnalyticsScopeChoice[] | null>(
@@ -263,6 +283,7 @@ export class StaffAnalyticsStore {
         ? StaffAnalyticsSystem.scopeChoicesOf(
             this.catalog.barbers().map((barber) => barber.id),
             this.linkedBarberId(),
+            this.catalog.locations().map((location) => location.id),
           )
         : null,
   );
@@ -300,6 +321,7 @@ export class StaffAnalyticsStore {
     const call: AnalyticsCall = {
       // A barber sends none: the callable reads their record off the stored user.
       scopeBarberId: shop ? this.pickedScope() : null,
+      scopeLocationId: shop ? this.pickedLocation() : null,
       fromLocalDate: period.fromLocalDate,
       // Named on `CUSTOM` alone (the callable's rule).
       toLocalDate:
@@ -648,8 +670,18 @@ export class StaffAnalyticsStore {
   pickScope(scopeBarberId: BarberId | null): void {
     if (!untracked(this.readsShop)) return;
     this._scopeGone.set(false);
+    this.pickedLocation.set(null);
     this.pickedScope.set(scopeBarberId);
-    this.publishQuery({ barber: scopeBarberId });
+    this.publishQuery({ barber: scopeBarberId, location: null });
+  }
+
+  /** The admin's scope picker: one location of the shop (ADR 2026-11-09). */
+  pickLocation(scopeLocationId: LocationId): void {
+    if (!untracked(this.readsShop)) return;
+    this._scopeGone.set(false);
+    this.pickedScope.set(null);
+    this.pickedLocation.set(scopeLocationId);
+    this.publishQuery({ barber: null, location: scopeLocationId });
   }
 
   // ── The URL ───────────────────────────────────────────────────────────
@@ -706,6 +738,22 @@ export class StaffAnalyticsStore {
   }
 
   /**
+   * `?location=` read ONCE at its edge (`LocationId.parse`), as `?barber=`:
+   * the admin's location, ignored for a barber and beside a barber; a
+   * location the shop no longer has is answered by the callable
+   * (`LOCATION_UNKNOWN`).
+   */
+  applyRouteLocation(raw: string | null): void {
+    if (!untracked(this.readsShop)) return;
+    const parsed = raw ? LocationId.parse(raw) : null;
+    const location = parsed !== null && parsed.ok ? parsed.value : null;
+    this._scopeGone.set(false);
+    this.pickedLocation.set(
+      untracked(this.pickedScope) === null ? location : null,
+    );
+  }
+
+  /**
    * THE FIRST WRITE-BACK: the one write that is not a pick. The schedule
    * sends `from=<its day>`; the address bar then says the period's first
    * day and the span and scope the store stands on, so a reload or a
@@ -720,6 +768,7 @@ export class StaffAnalyticsStore {
       from: period.fromLocalDate,
       to: toParamOf(period),
       barber: this.readsShop() ? this.pickedScope() : null,
+      location: this.readsShop() ? this.pickedLocation() : null,
     });
   }
 
@@ -735,6 +784,7 @@ export class StaffAnalyticsStore {
       readonly from: LocalDate | null;
       readonly to: LocalDate | null;
       readonly barber: BarberId | null;
+      readonly location: LocationId | null;
     }>,
   ): void {
     // Read UNTRACKED: a caller inside an effect must not come to depend on
@@ -748,7 +798,8 @@ export class StaffAnalyticsStore {
       next.span === current.span &&
       next.from === current.from &&
       next.to === current.to &&
-      next.barber === current.barber
+      next.barber === current.barber &&
+      next.location === current.location
     ) {
       return;
     }
@@ -770,6 +821,7 @@ export class StaffAnalyticsStore {
           from: stated.from ?? null,
           to: stated.to ?? null,
           barber: stated.barber ?? null,
+          location: stated.location ?? null,
         },
         queryParamsHandling: 'merge',
         replaceUrl: true,
@@ -842,6 +894,7 @@ export class StaffAnalyticsStore {
       {
         ...request.call,
         scopeBarberId: report.reportScopeBarberId,
+        scopeLocationId: report.reportScopeLocationId,
         userId: request.userId,
       },
       report,
@@ -880,6 +933,12 @@ export class StaffAnalyticsStore {
         // Back to the shop, which the effect then asks for.
         this._scopeGone.set(true);
         this.pickedScope.set(null);
+        return;
+      case AnalyticsErrorCode.LocationUnknown:
+        if (untracked(this.pickedLocation) === null) break;
+        // Back to every location, as a barber gone is.
+        this._scopeGone.set(true);
+        this.pickedLocation.set(null);
         return;
       case AnalyticsErrorCode.PeriodOutOfRange: {
         const routed = untracked(this.routed);

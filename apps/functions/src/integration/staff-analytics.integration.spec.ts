@@ -253,6 +253,7 @@ describe('staffAnalytics (emulator)', () => {
   ): StaffAnalyticsCommand => ({
     callerUserId,
     scopeBarberId,
+    scopeLocationId: null,
     fromLocalDate,
     toLocalDate: null,
     analyticsSpan: AnalyticsSpan.Month,

@@ -19,6 +19,7 @@ import {
   type SetAnalyticsGoalCall,
 } from '@core/components';
 import { PipelineError } from '@core/errors';
+import type { ShopLocation } from '@core/entities';
 import type { AnalyticsCallPorts } from '@core/ports';
 import { AnalyticsGoalKey, Result, UserId } from '@core/primitives';
 import {
@@ -88,7 +89,7 @@ function reportFor(call: AnalyticsCall) {
 
 /** The route's query, as `withComponentInputBinding` sets it on the page: absent is unset. */
 export type RouteQuery = Partial<
-  Record<'span' | 'from' | 'to' | 'barber', string>
+  Record<'span' | 'from' | 'to' | 'barber' | 'location', string>
 >;
 
 export async function renderAnalyticsScreen<T>(
@@ -102,6 +103,8 @@ export async function renderAnalyticsScreen<T>(
     readonly shop?: boolean;
     /** The callable refuses the account: no figures. */
     readonly refuse?: boolean;
+    /** The shop's locations in the catalogue; none by default. */
+    readonly locations?: readonly ShopLocation[];
   } = {},
 ) {
   const principal = signal(
@@ -186,7 +189,7 @@ export async function renderAnalyticsScreen<T>(
           barbers: signal([]),
           services: signal([]),
           barberVms: signal([]),
-          locations: signal([]),
+          locations: signal(options.locations ?? []),
           findService: () => undefined,
         },
       },

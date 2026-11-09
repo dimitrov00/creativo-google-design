@@ -180,6 +180,7 @@
     "ANALYTICS_GOAL_INVALID_RANGE": "The low end must not exceed the high end, both above zero; the month this one or the next.",
     "ANALYTICS_PERIOD_OUT_OF_RANGE": "This period is out of range.",
     "ANALYTICS_SCOPE_UNKNOWN": "This barber no longer exists.",
+    "ANALYTICS_LOCATION_UNKNOWN": "This shop no longer exists.",
     "ANALYTICS_INVALID_INPUT": "The request is not valid.",
     "APP_CHECK_REQUIRED": "We couldn't verify this device. Reload the page.",
     "APP_CHECK_REPLAYED": "We couldn't verify this device. Reload the page.",

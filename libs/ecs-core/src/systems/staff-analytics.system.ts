@@ -31,6 +31,7 @@ import {
   type AnalyticsReport,
   BookingOrigin,
   ClientStatsPolicy,
+  type DayBody,
   DayFigures,
   type DayRow,
   type MinuteRange,
@@ -38,6 +39,7 @@ import {
   RadarBase,
   type Role,
   Roles,
+  type RosterWindow,
   Seat,
   type ShopNow,
   StaffLink,
@@ -51,11 +53,7 @@ import type {
 } from '@core/entities';
 import { AnalyticsHourSystem, type HourDay } from './analytics-hour.system';
 import { AnalyticsRadarSystem } from './analytics-radar.system';
-import {
-  type ChairDay,
-  type ChairVisit,
-  ChairTimeSystem,
-} from './chair-time.system';
+import { type ChairDay, ChairTimeSystem } from './chair-time.system';
 import { DayFiguresSystem } from './day-figures.system';
 import { IntervalSetSystem } from './interval-set.system';
 import {
@@ -79,6 +77,7 @@ export type AnalyticsCaller = {
 export type AnalyticsVisit = Pick<
   Appointment,
   | 'id'
+  | 'locationId'
   | 'localDate'
   | 'startMinutes'
   | 'utcEpochMs'
@@ -104,12 +103,16 @@ export type AnalyticsFollowUp = {
  * normalized: what `rosteredMinutes` totals), which the hour grid buckets —
  * and whether the day is PAST (Terms, «Past day»: two days back at every
  * shop the barber has a stretch at on it, `isPastDay`), decided once here so
- * the fold and the report stay zone-blind.
+ * the fold and the report stay zone-blind. `locationIds` are the locations
+ * the day touched (ADR 2026-11-09): its offered windows, blocks and
+ * breaks, the roster a `CLOSED` day would have given, and every visit with
+ * a seat of the barber — sorted, each once.
  */
 export type AnalyticsDay = ChairDay & {
   readonly closedDayMinutes: MinuteCount;
   readonly stretches: readonly MinuteRange[];
   readonly pastDay: boolean;
+  readonly locationIds: readonly LocationId[];
 };
 
 /**
@@ -124,8 +127,16 @@ export type AnalyticsDay = ChairDay & {
  * document holds it.
  */
 export type AnalyticsInput = {
-  /** The barber record reported on; `null` for the shop. */
+  /** The barber record reported on; `null` for the shop or a location. */
   readonly scopeBarberId: BarberId | null;
+  /**
+   * The location reported on (ADR 2026-11-09); `null` for the shop or a
+   * barber. Every list below is already cut to it — the days by
+   * {@link StaffAnalyticsSystem.atLocation}, the stored days by
+   * {@link StaffAnalyticsSystem.storedAt}, the visits by
+   * {@link StaffAnalyticsSystem.visitsAt} — so the report only states it.
+   */
+  readonly scopeLocationId: LocationId | null;
   /** The barber records in scope: the one, or every one of the shop. */
   readonly barberIds: readonly BarberId[];
   readonly period: AnalyticsPeriod;
@@ -251,10 +262,26 @@ export type AnalyticsSteps = {
   readonly next: AnalyticsPeriod | null;
 };
 
-/** One choice of the admin's scope picker: the shop (`null`) or a barber record, and whether it is the admin's own. */
+/**
+ * One choice of the admin's scope picker: the shop (both `null`), one
+ * location, or a barber record — and whether it is the admin's own.
+ */
 export type AnalyticsScopeChoice = {
   readonly scopeBarberId: BarberId | null;
+  readonly scopeLocationId: LocationId | null;
   readonly scopeMine: boolean;
+};
+
+/**
+ * Everything one stored barber-day is folded from: the day's inputs as
+ * `daysOf` reads them (one barber, one date), its follow-ups, the policy
+ * and the writer's stamp.
+ */
+export type StoredDayInput = {
+  readonly dayInput: AnalyticsDaysInput;
+  readonly followUps: readonly AnalyticsFollowUp[];
+  readonly policy: ClientStatsPolicy;
+  readonly computedAtUtcMs: UtcEpochMs;
 };
 
 /** What a drill-down's rows add up to: their money (the figure's) and how many they are. */
@@ -1007,14 +1034,40 @@ function hadWorkedSeat(
 }
 
 /** The minutes `input`'s day would roster — its windows, blocks and breaks, normalized. */
-function rosteredMinutesOf(input: BuildDayWindowsInput): MinuteCount {
-  return IntervalSetSystem.totalMinutes(
-    IntervalSetSystem.normalize([
-      ...RosterSystem.offeredWindows(input),
-      ...RosterSystem.offeredCarveOuts(input),
-      ...RosterSystem.offeredBreaks(input),
-    ]),
-  );
+function offeredOf(input: BuildDayWindowsInput): readonly RosterWindow[] {
+  return [
+    ...RosterSystem.offeredWindows(input),
+    ...RosterSystem.offeredCarveOuts(input),
+    ...RosterSystem.offeredBreaks(input),
+  ];
+}
+
+/**
+ * The locations a barber-day touched: those of its stretches (offered, or
+ * what a `CLOSED` day would have offered) and of every visit with a seat of
+ * the barber — sorted, each once.
+ */
+function touchedOf(
+  stretches: readonly RosterWindow[],
+  visits: readonly AnalyticsVisit[] | undefined,
+  barberId: BarberId,
+): readonly LocationId[] {
+  const ids = new Set<LocationId>();
+  for (let i = 0; i < stretches.length; i++) {
+    ids.add((stretches[i] as RosterWindow).locationId);
+  }
+  if (visits !== undefined) {
+    for (let v = 0; v < visits.length; v++) {
+      const visit = visits[v] as AnalyticsVisit;
+      for (let s = 0; s < visit.seats.length; s++) {
+        if ((visit.seats[s] as Seat).barberId === barberId) {
+          ids.add(visit.locationId);
+          break;
+        }
+      }
+    }
+  }
+  return [...ids].sort();
 }
 
 /** One shop's clock among those read, else the report's own. */
@@ -1316,7 +1369,7 @@ export const StaffAnalyticsSystem = {
       if (list === undefined) departuresOf.set(departure.barberId, [departure]);
       else list.push(departure);
     }
-    const visitsOn = new Map<LocalDate, ChairVisit[]>();
+    const visitsOn = new Map<LocalDate, AnalyticsVisit[]>();
     for (let i = 0; i < input.visits.length; i++) {
       const visit = input.visits[i] as AnalyticsVisit;
       const list = visitsOn.get(visit.localDate);
@@ -1352,6 +1405,15 @@ export const StaffAnalyticsSystem = {
             exception.localDate === localDate &&
             exception.exceptionEffect === ExceptionEffect.Closed,
         );
+        // What a CLOSED day would have offered without its departure.
+        const wouldOffer = closed
+          ? offeredOf({
+              ...day,
+              exceptions: exceptions.filter(
+                (exception) => exception.localDate !== localDate,
+              ),
+            })
+          : [];
         const chairDay = ChairTimeSystem.dayBreakdown({
           barberId,
           localDate,
@@ -1375,17 +1437,142 @@ export const StaffAnalyticsSystem = {
             input.now,
           ),
           closedDayMinutes: closed
-            ? rosteredMinutesOf({
-                ...day,
-                exceptions: exceptions.filter(
-                  (exception) => exception.localDate !== localDate,
-                ),
-              })
+            ? IntervalSetSystem.totalMinutes(
+                IntervalSetSystem.normalize(wouldOffer),
+              )
             : MinuteCount.ZERO,
+          locationIds: touchedOf(
+            [...windows, ...blocks, ...breaks, ...wouldOffer],
+            visitsOn.get(localDate),
+            barberId,
+          ),
         });
       }
     }
     return days;
+  },
+
+  /**
+   * A scope's days cut to one location (ADR 2026-11-09): only that shop's
+   * hours — the roster offers nothing at a shop it is not given
+   * (`RosterSystem.offeredWindows`) — and only the visits booked there.
+   * `null` is every location: the input as it is.
+   */
+  atLocation(
+    input: AnalyticsDaysInput,
+    locationId: LocationId | null,
+  ): AnalyticsDaysInput {
+    if (locationId === null) return input;
+    const locations: ShopLocation[] = [];
+    for (let i = 0; i < input.locations.length; i++) {
+      const location = input.locations[i] as ShopLocation;
+      if (location.id === locationId) locations.push(location);
+    }
+    return {
+      ...input,
+      locations,
+      visits: StaffAnalyticsSystem.visitsAt(input.visits, locationId),
+    };
+  },
+
+  /** The visits booked at `locationId`; `null` keeps every one. */
+  visitsAt<V extends { readonly locationId: LocationId }>(
+    visits: readonly V[],
+    locationId: LocationId | null,
+  ): readonly V[] {
+    if (locationId === null) return visits;
+    const out: V[] = [];
+    for (let i = 0; i < visits.length; i++) {
+      const visit = visits[i] as V;
+      if (visit.locationId === locationId) out.push(visit);
+    }
+    return out;
+  },
+
+  /**
+   * The stored days as one location's figures (`DayFigures.atLocation`):
+   * one per stored day, so every day stays held — a day that never touched
+   * the location answers an empty one. `null` keeps the days as they are.
+   */
+  storedAt<D extends DayFigures>(
+    days: readonly D[],
+    locationId: LocationId | null,
+  ): readonly DayFigures[] {
+    if (locationId === null) return days;
+    const out: DayFigures[] = [];
+    for (let i = 0; i < days.length; i++) {
+      out.push(DayFigures.atLocation(days[i] as D, locationId));
+    }
+    return out;
+  },
+
+  /**
+   * ONE STORED BARBER-DAY (the writer's fold): the day's figures over every
+   * location, the locations it touched, and — when it touched two or more —
+   * each one's share, folded from the day cut to that location
+   * ({@link atLocation}), so a stored share and a live location day are
+   * spelt by one rule. `input.dayInput` names one barber and one date.
+   */
+  storedDayOf(input: StoredDayInput): DayFigures {
+    const day = StaffAnalyticsSystem.daysOf(input.dayInput)[0] as AnalyticsDay;
+    const shares: DayBody[] = [];
+    if (day.locationIds.length > 1) {
+      for (let i = 0; i < day.locationIds.length; i++) {
+        const cut = StaffAnalyticsSystem.atLocation(
+          input.dayInput,
+          day.locationIds[i] as LocationId,
+        );
+        shares.push(
+          DayFiguresSystem.body({
+            day: StaffAnalyticsSystem.daysOf(cut)[0] as AnalyticsDay,
+            visits: cut.visits,
+            followUps: input.followUps,
+            policy: input.policy,
+          }),
+        );
+      }
+    }
+    return DayFiguresSystem.fold({
+      day,
+      visits: input.dayInput.visits,
+      followUps: input.followUps,
+      policy: input.policy,
+      computedAtUtcMs: input.computedAtUtcMs,
+      locationShares: shares,
+    });
+  },
+
+  /**
+   * THE LOCATION SCOPE (ADR 2026-11-09), beside {@link scopeOf}: `null`
+   * (the whole shop, or the barber `scopeOf` answered) unless the request
+   * names a location. Only an admin may, never beside a barber, and only a
+   * location of the shop's.
+   */
+  locationScopeOf(
+    caller: AnalyticsCaller,
+    request: {
+      readonly scopeBarberId: BarberId | null;
+      readonly scopeLocationId: LocationId | null;
+    },
+    locations: readonly ShopLocation[],
+  ): Result<LocationId | null, AnalyticsError> {
+    const locationId = request.scopeLocationId;
+    if (locationId === null) return Result.ok(null);
+    if (request.scopeBarberId !== null) {
+      return Result.err(AnalyticsError.invalidInput('scopeLocationId'));
+    }
+    const isAdmin =
+      !caller.callerBlocked &&
+      caller.callerRoles.some((role) =>
+        (Roles.ANALYTICS_SHOP as readonly Role[]).includes(role),
+      );
+    if (!isAdmin) return Result.err(AnalyticsError.forbidden());
+    for (let i = 0; i < locations.length; i++) {
+      if ((locations[i] as ShopLocation).id === locationId) {
+        return Result.ok(locationId);
+      }
+    }
+    return Result.err(AnalyticsError.locationUnknown(locationId));
   },
 
   /**
@@ -1526,6 +1713,7 @@ export const StaffAnalyticsSystem = {
       reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
       reportComputedAtUtcMs: input.now.utcEpochMs,
       reportScopeBarberId: input.scopeBarberId,
+      reportScopeLocationId: input.scopeLocationId,
       reportAnalyticsSpan: period.analyticsSpan,
       reportFromLocalDate: period.fromLocalDate,
       reportToLocalDate: period.toLocalDate,
@@ -1696,7 +1884,10 @@ export const StaffAnalyticsSystem = {
   goalScopeAllowed(
     scopeBarberId: BarberId | null,
     linkedBarberId: BarberId | null,
+    scopeLocationId: LocationId | null,
   ): boolean {
+    // A goal is the shop's or a barber's; a location has none (ADR 2026-11-09, L5).
+    if (scopeLocationId !== null) return false;
     return scopeBarberId === null || scopeBarberId === linkedBarberId;
   },
 
@@ -1835,23 +2026,43 @@ export const StaffAnalyticsSystem = {
 
   /**
    * The admin's scope picker, in its order (design, «Which barber the
-   * caller is»): the shop first — an admin opens on it — then the admin's
-   * own linked record («Аз»), then every other record as listed.
+   * caller is»): the shop first — an admin opens on it — then each location
+   * when there are two or more (ADR 2026-11-09, L4: with one, it IS the
+   * shop), then the admin's own linked record («Аз»), then every other
+   * record as listed.
    */
   scopeChoicesOf(
     barberIds: readonly BarberId[],
     linkedBarberId: BarberId | null,
+    locationIds: readonly LocationId[],
   ): readonly AnalyticsScopeChoice[] {
     const out: AnalyticsScopeChoice[] = [
-      { scopeBarberId: null, scopeMine: false },
+      { scopeBarberId: null, scopeLocationId: null, scopeMine: false },
     ];
+    if (locationIds.length > 1) {
+      for (let i = 0; i < locationIds.length; i++) {
+        out.push({
+          scopeBarberId: null,
+          scopeLocationId: locationIds[i] as LocationId,
+          scopeMine: false,
+        });
+      }
+    }
     if (linkedBarberId !== null) {
-      out.push({ scopeBarberId: linkedBarberId, scopeMine: true });
+      out.push({
+        scopeBarberId: linkedBarberId,
+        scopeLocationId: null,
+        scopeMine: true,
+      });
     }
     for (let i = 0; i < barberIds.length; i++) {
       const barberId = barberIds[i] as BarberId;
       if (barberId !== linkedBarberId) {
-        out.push({ scopeBarberId: barberId, scopeMine: false });
+        out.push({
+          scopeBarberId: barberId,
+          scopeLocationId: null,
+          scopeMine: false,
+        });
       }
     }
     return out;
@@ -2360,6 +2571,8 @@ function dayRowsOf(
         followUps: input.followUps,
         policy: input.policy,
         computedAtUtcMs: input.now.utcEpochMs,
+        // A drill-down row reads the root alone.
+        locationShares: [],
       }),
     );
   }

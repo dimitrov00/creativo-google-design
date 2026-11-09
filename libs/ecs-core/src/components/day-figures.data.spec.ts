@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   BarberId,
   Currency,
+  LocationId,
   MinuteCount,
   PriceCents,
   ServiceId,
 } from '@core/primitives';
 import { deepFreeze, localDate, minuteCount, utcMs } from '@core/testing';
 import { ANALYTICS_DEFINITION_VERSION } from './analytics-report.data';
-import { DayFigures, type DayRow } from './day-figures.data';
+import { type DayBody, DayFigures, type DayRow } from './day-figures.data';
 
 /*
  * The per-day family (staff analytics v2, «The day document»): the empty
@@ -119,6 +120,71 @@ describe('DayFigures.is — the read-time door', () => {
     const body = deepFreeze(good());
     expect(DayFigures.is(body)).toBe(true);
     expect(body).toEqual(good());
+  });
+});
+
+describe('DayFigures — where the day happened (ADR 2026-11-09)', () => {
+  const centre = LocationId.of('loc-centre');
+  const mladost = LocationId.of('loc-mladost');
+  const share = (cents: number): DayFigures => ({
+    ...DayFigures.empty(ivan, DAY, AT),
+    dayTakingsCents: cents as PriceCents,
+  });
+  /** A split day's share — a day's figures; the extra stamp fields are not read. */
+  const bodyOf = (cents: number): DayBody => share(cents);
+  const body = DayFigures.empty(ivan, DAY, AT);
+  const shareBody = bodyOf(0);
+
+  it('admits no location, one with no shares, and two or more with one share each', () => {
+    expect(DayFigures.is({ ...body, dayLocationIds: [centre] })).toBe(true);
+    expect(
+      DayFigures.is({
+        ...body,
+        dayLocationIds: [centre, mladost],
+        dayLocations: [shareBody, shareBody],
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses unsorted or repeated ids, a share for a lone location, and a count that does not match', () => {
+    for (const malformed of [
+      {
+        dayLocationIds: [mladost, centre],
+        dayLocations: [shareBody, shareBody],
+      },
+      {
+        dayLocationIds: [centre, centre],
+        dayLocations: [shareBody, shareBody],
+      },
+      { dayLocationIds: [centre], dayLocations: [shareBody] },
+      { dayLocationIds: [centre, mladost], dayLocations: [shareBody] },
+      { dayLocationIds: [centre, mladost], dayLocations: [] },
+      { dayLocationIds: ['' as LocationId], dayLocations: [] },
+      { dayLocationIds: [centre, mladost], dayLocations: [{}, shareBody] },
+      { dayLocationIds: null, dayLocations: [] },
+    ]) {
+      expect(DayFigures.is({ ...body, ...malformed })).toBe(false);
+    }
+  });
+
+  it('atLocation: the day itself for its one location, the share of a split day, an empty held day elsewhere', () => {
+    const lone = { ...share(2800), dayLocationIds: [centre], dayLocations: [] };
+    expect(DayFigures.atLocation(lone, centre)).toBe(lone);
+    expect(DayFigures.atLocation(lone, mladost)).toEqual({
+      ...DayFigures.empty(ivan, DAY, AT),
+    });
+
+    const split = {
+      ...share(2800),
+      dayLocationIds: [centre, mladost],
+      dayLocations: [bodyOf(1000), bodyOf(1800)],
+    };
+    const atMladost = DayFigures.atLocation(deepFreeze(split), mladost);
+    expect(atMladost.dayTakingsCents).toBe(1800);
+    expect(atMladost.dayLocationIds).toEqual([mladost]);
+    expect(atMladost.dayLocations).toEqual([]);
+    expect(atMladost.dayComputedAtUtcMs).toBe(AT);
+    expect(DayFigures.is(atMladost)).toBe(true);
   });
 });
 

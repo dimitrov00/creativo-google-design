@@ -503,6 +503,11 @@
     },
     {
       "collectionGroup": "analyticsDays",
+      "fieldPath": "dayLocations",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analyticsDays",
       "fieldPath": "purgeAt",
       "ttl": true,
       "indexes": []

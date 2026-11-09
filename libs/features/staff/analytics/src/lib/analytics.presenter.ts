@@ -15,6 +15,7 @@ import {
   Currency,
   HourOfDay,
   LocalDate,
+  type LocationId,
   type PriceCents,
   type ServiceId,
   type TimeZone,
@@ -104,11 +105,12 @@ import {
 /** The report's money is euro cents (`MoneyAllocationSystem.seatNets`, the catalogue's Takings row). */
 export const REPORT_CURRENCY = Currency.EUR;
 
-/** What the screen names from the catalogue — services and barbers. */
+/** What the screen names from the catalogue — services, barbers and locations. */
 export interface AnalyticsNames {
   serviceName(id: ServiceId): string | null;
   barberName(id: BarberId): string | null;
   barberAvatarSrc(id: BarberId): string | null;
+  locationName(id: LocationId): string | null;
 }
 
 /** Everything the screen is worded from. */
@@ -128,6 +130,8 @@ export interface AnalyticsScreenInput {
   readonly scopeChoices: readonly AnalyticsScopeChoice[] | null;
   /** The scope chosen in the picker; `null` is the shop. */
   readonly scopeBarberId: BarberId | null;
+  /** The location chosen in the picker (ADR 2026-11-09); `null` is every location. */
+  readonly scopeLocationId: LocationId | null;
   /**
    * How many locations the shop has. A report's shop scope is every one of
    * them (the day documents hold no location), so with two or more the
@@ -422,17 +426,25 @@ export function scopeOf(input: AnalyticsScreenInput): AnalyticsScopeVm | null {
     label: words.scope.label,
     tiles: scopeChoices.map((choice) => {
       const id = choice.scopeBarberId;
+      const location = choice.scopeLocationId;
       return {
         scopeBarberId: id,
+        scopeLocationId: location,
         name:
-          id === null
-            ? shopNameOf(input)
-            : choice.scopeMine
-              ? words.scope.me
-              : (input.names.barberName(id) ?? words.scope.barber),
+          location !== null
+            ? (input.names.locationName(location) ?? words.scope.shop)
+            : id === null
+              ? shopNameOf(input)
+              : choice.scopeMine
+                ? words.scope.me
+                : (input.names.barberName(id) ?? words.scope.barber),
         avatarSrc: id === null ? null : input.names.barberAvatarSrc(id),
-        selected: id === input.scopeBarberId,
-        testId: `analytics-scope-${id ?? 'shop'}`,
+        selected:
+          id === input.scopeBarberId && location === input.scopeLocationId,
+        testId:
+          location !== null
+            ? `analytics-scope-location-${location}`
+            : `analytics-scope-${id ?? 'shop'}`,
       };
     }),
   };
@@ -537,6 +549,7 @@ function goalOf(
     StaffAnalyticsSystem.goalScopeAllowed(
       input.scopeBarberId,
       input.linkedBarberId,
+      input.scopeLocationId,
     );
   const low = report.reportGoalLowCents;
   const high = report.reportGoalHighCents;

@@ -117,7 +117,8 @@ export const setAnalyticsGoal =
     if (!listed.ok) return listed;
     const scope = S.scopeOf(caller.value, cmd, records.value);
     if (!scope.ok) return refused(scope.error);
-    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId)) {
+    // A goal call names no location: goals are the shop's or a barber's.
+    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId, null)) {
       return refused(AnalyticsError.goalForbidden());
     }
 

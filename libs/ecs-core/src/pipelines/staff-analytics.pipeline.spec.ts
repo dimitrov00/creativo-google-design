@@ -298,6 +298,7 @@ function ask(
   return {
     callerUserId: caller,
     scopeBarberId,
+    scopeLocationId: null,
     fromLocalDate,
     toLocalDate,
     analyticsSpan,
@@ -964,11 +965,12 @@ describe('staffAnalytics — the log line', () => {
     expect(line?.fields).toEqual({
       uid: IVAN_USER.id,
       scope: IVAN,
+      location: null,
       span: AnalyticsSpan.Month,
       periodFrom: '2026-09-01',
       periodTo: '2026-09-30',
       comparison: AnalyticsComparison.Previous,
-      definitionVersion: 2,
+      definitionVersion: 3,
       visitCount: 2,
       missingDays: 26,
       durationMs: 0,

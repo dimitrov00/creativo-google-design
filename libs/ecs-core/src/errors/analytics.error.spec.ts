@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId, LocalDate } from '@core/primitives';
+import { BarberId, LocalDate, LocationId } from '@core/primitives';
 import { AnalyticsError, AnalyticsErrorCode } from './analytics.error';
 
 const barber = (raw: string): BarberId => {
@@ -14,17 +14,22 @@ const day = (raw: string): LocalDate => {
 };
 
 describe('AnalyticsError', () => {
-  it('uses eight SCREAMING codes, each with the ANALYTICS_ prefix — v1’s six and the goal’s two (PR 6)', () => {
+  it('uses nine SCREAMING codes, each with the ANALYTICS_ prefix — v1’s six, the location scope’s one and the goal’s two (PR 6)', () => {
     expect(Object.values(AnalyticsErrorCode)).toEqual([
       'ANALYTICS_UNAUTHENTICATED',
       'ANALYTICS_FORBIDDEN',
       'ANALYTICS_BARBER_NOT_LINKED',
       'ANALYTICS_PERIOD_OUT_OF_RANGE',
       'ANALYTICS_SCOPE_UNKNOWN',
+      'ANALYTICS_LOCATION_UNKNOWN',
       'ANALYTICS_INVALID_INPUT',
       'ANALYTICS_GOAL_FORBIDDEN',
       'ANALYTICS_GOAL_INVALID_RANGE',
     ]);
+    expect(AnalyticsError.locationUnknown(LocationId.of('loc-gone'))).toEqual({
+      errorCode: 'ANALYTICS_LOCATION_UNKNOWN',
+      locationId: 'loc-gone',
+    });
     expect(AnalyticsError.goalForbidden()).toEqual({
       errorCode: 'ANALYTICS_GOAL_FORBIDDEN',
     });

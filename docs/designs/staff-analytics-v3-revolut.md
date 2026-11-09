@@ -120,10 +120,13 @@ contents move into the card screens: the heatmap and the stacked parts under «�
   photo), or the shop's storefront glyph (`location.shop`), inset 6 px in the 36 px pill
   as the staff schedule's scope trigger does. The menu's shop row draws the same glyph
   disc beside the faces (`ui-choice-menu` passes an avatar option's `icon` to its disc).
-- **Several locations**: a report's shop scope is every location — the day documents hold
-  one row per barber-day across locations, no `locationId` (v2) — so with two or more
-  locations the shop option reads «Всички салони» (the plural form of the location count).
-  Figures for one location need the day documents split by location; not built.
+- **Several locations**: with two or more locations the shop option reads «Всички
+  салони» (the plural form of the location count) and each location follows it in the
+  scope menu as its own storefront disc. A location's figures count every barber for
+  what happened there (`?location=`, the callable's `scopeLocationId`); its card screens
+  carry it, it has no goal. The stored days say which locations each day touched and hold
+  each one's share of a day split across shops (ADR
+  `docs/architecture/decisions/2026-11-09-analytics-location-scope.md`, definition 3).
 - **A service ring paints the top service in the accent and the rest in the chart's
   greys**; the identity tones stay the people's (the team).
 - **The card's figure opens its rows** (`analytics-card-figure`), which add up to it —

@@ -57,6 +57,7 @@ function dayOf(barberId: BarberId, rostered: number): AnalyticsDay {
     outsideHoursMinutes: zero,
     outsideHoursSeatCount: 0,
     closedDayMinutes: zero,
+    locationIds: [],
     // 09:00 on, for `rostered` minutes — the hour grid's stretch.
     stretches: [MinuteRange.of(minute(540), endMinute(540 + rostered))],
     pastDay: true,
@@ -82,6 +83,7 @@ function reportOf(scopeBarberId: BarberId | null): AnalyticsReport {
   });
   return StaffAnalyticsSystem.report({
     scopeBarberId,
+    scopeLocationId: null,
     barberIds: scopeBarberId === null ? [ivan, niko] : [scopeBarberId],
     period: AnalyticsPeriod.monthOf(FIXTURE_TODAY),
     analyticsComparison: AnalyticsComparison.Previous,

@@ -179,6 +179,7 @@ export function analyticsReportFixture(
     reportDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
     reportComputedAtUtcMs: FIXTURE_NOW_UTC_MS,
     reportScopeBarberId: ivan,
+    reportScopeLocationId: null,
     reportAnalyticsSpan: AnalyticsSpan.Month,
     reportFromLocalDate: localDate('2026-09-01'),
     reportToLocalDate: localDate('2026-09-30'),

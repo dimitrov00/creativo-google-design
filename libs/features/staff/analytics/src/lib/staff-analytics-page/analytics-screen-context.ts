@@ -68,6 +68,10 @@ export function injectAnalyticsScreen(
     },
     barberAvatarSrc: (id) =>
       catalog.barberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
+    locationName: (id) => {
+      const location = catalog.locations().find((entry) => entry.id === id);
+      return location === undefined ? null : wording.text(location.name);
+    },
   };
 
   /** A refusal of the account, in the catalogue's words (`errors.<code>`). */
@@ -110,6 +114,7 @@ export function injectAnalyticsScreen(
       refusal: refusal(),
       scopeChoices: store.scopeChoices(),
       scopeBarberId: store.scopeBarberId(),
+      scopeLocationId: store.scopeLocationId(),
       shopCount,
       linkedBarberId: store.linkedBarberId(),
       scopeGone: store.scopeGone(),

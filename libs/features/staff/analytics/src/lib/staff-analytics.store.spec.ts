@@ -160,6 +160,7 @@ function build(options: {
         provide: CatalogContentService,
         useValue: {
           barbers: signal([{ id: IVAN }, { id: NIKO }]),
+          locations: signal([]),
         },
       },
     ],
@@ -194,6 +195,7 @@ describe('StaffAnalyticsStore — a barber', () => {
         {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
+          scopeLocationId: null,
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -218,6 +220,7 @@ describe('StaffAnalyticsStore — a barber', () => {
     expect(calls.calls).toEqual([
       {
         scopeBarberId: null,
+        scopeLocationId: null,
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
         toLocalDate: null,
@@ -236,6 +239,7 @@ describe('StaffAnalyticsStore — a barber', () => {
     expect(cache.state.writes.at(-1)?.key).toEqual({
       userId: BARBER_UID,
       scopeBarberId: IVAN,
+      scopeLocationId: null,
       analyticsSpan: AnalyticsSpan.Month,
       toLocalDate: null,
       analyticsComparison: AnalyticsComparison.Previous,
@@ -261,6 +265,7 @@ describe('StaffAnalyticsStore — a barber', () => {
         {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
+          scopeLocationId: null,
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -283,6 +288,7 @@ describe('StaffAnalyticsStore — a barber', () => {
         {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
+          scopeLocationId: null,
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -325,6 +331,7 @@ describe('StaffAnalyticsStore — a barber', () => {
         {
           userId: BARBER_UID,
           scopeBarberId: IVAN,
+          scopeLocationId: null,
           analyticsSpan: AnalyticsSpan.Month,
           toLocalDate: null,
           analyticsComparison: AnalyticsComparison.Previous,
@@ -540,9 +547,9 @@ describe('StaffAnalyticsStore — the admin', () => {
     });
     expect(store.readsShop()).toBe(true);
     expect(store.scopeChoices()).toEqual([
-      { scopeBarberId: null, scopeMine: false },
-      { scopeBarberId: NIKO, scopeMine: true },
-      { scopeBarberId: IVAN, scopeMine: false },
+      { scopeBarberId: null, scopeLocationId: null, scopeMine: false },
+      { scopeBarberId: NIKO, scopeLocationId: null, scopeMine: true },
+      { scopeBarberId: IVAN, scopeLocationId: null, scopeMine: false },
     ]);
     expect(calls.calls[0]?.scopeBarberId).toBeNull();
     await calls.answer(Result.ok(shopReportFixture()));
@@ -580,6 +587,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(calls.calls).toEqual([
       {
         scopeBarberId: null,
+        scopeLocationId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: AnalyticsSpan.Week,
         toLocalDate: null,
@@ -652,6 +660,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
     expect(calls.calls).toEqual([
       {
         scopeBarberId: IVAN,
+        scopeLocationId: null,
         fromLocalDate: SEPTEMBER.fromLocalDate,
         analyticsSpan: AnalyticsSpan.Month,
         toLocalDate: null,
@@ -675,6 +684,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
       from: '2026-09-28',
       to: null,
       barber: IVAN,
+      location: null,
     });
     // …and written on the next task, never inside the activation.
     expect(router.url).toBe('/');
@@ -693,6 +703,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
       from: '2026-09-01',
       to: null,
       barber: null,
+      location: null,
     });
     await settle();
     expect(router.url).toBe('/?span=MONTH&from=2026-09-01');
@@ -709,6 +720,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
       from: undefined,
       to: undefined,
       barber: undefined,
+      location: undefined,
     });
     await settle();
     expect(router.url).toBe('/');
@@ -735,6 +747,7 @@ describe('StaffAnalyticsStore — the URL (staff-analytics-v2, State and URL)', 
           from: '2026-08-31',
           to: null,
           barber: null,
+          location: null,
         },
         queryParamsHandling: 'merge',
         replaceUrl: true,

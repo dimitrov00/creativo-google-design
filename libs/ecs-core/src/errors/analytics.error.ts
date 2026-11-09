@@ -1,4 +1,4 @@
-import type { BarberId, LocalDate } from '@core/primitives';
+import type { BarberId, LocalDate, LocationId } from '@core/primitives';
 
 /**
  * Staff analytics' refusals (`docs/designs/staff-analytics.md`, Errors) —
@@ -24,6 +24,8 @@ export const AnalyticsErrorCode = {
   PeriodOutOfRange: 'ANALYTICS_PERIOD_OUT_OF_RANGE',
   /** The requested scope names an id that is not a barber record. */
   ScopeUnknown: 'ANALYTICS_SCOPE_UNKNOWN',
+  /** An admin's location scope names no listed location (ADR 2026-11-09). */
+  LocationUnknown: 'ANALYTICS_LOCATION_UNKNOWN',
   /**
    * A malformed request: a field missing or of the wrong type, a period
    * start that is not its span's first day, a `toLocalDate` on a span other
@@ -54,6 +56,7 @@ export type AnalyticsError =
   | AnalyticsError.BarberNotLinked
   | AnalyticsError.PeriodOutOfRange
   | AnalyticsError.ScopeUnknown
+  | AnalyticsError.LocationUnknown
   | AnalyticsError.InvalidInput
   | AnalyticsError.GoalForbidden
   | AnalyticsError.GoalInvalidRange;
@@ -73,6 +76,9 @@ export const AnalyticsError = {
   },
   scopeUnknown(barberId: BarberId): AnalyticsError.ScopeUnknown {
     return { errorCode: AnalyticsErrorCode.ScopeUnknown, barberId };
+  },
+  locationUnknown(locationId: LocationId): AnalyticsError.LocationUnknown {
+    return { errorCode: AnalyticsErrorCode.LocationUnknown, locationId };
   },
   invalidInput(field: string): AnalyticsError.InvalidInput {
     return { errorCode: AnalyticsErrorCode.InvalidInput, field };
@@ -105,9 +111,14 @@ export namespace AnalyticsError {
     /** The id that named no barber record. */
     readonly barberId: BarberId;
   };
+  export type LocationUnknown = {
+    readonly errorCode: typeof AnalyticsErrorCode.LocationUnknown;
+    /** The id that named no listed location. */
+    readonly locationId: LocationId;
+  };
   export type InvalidInput = {
     readonly errorCode: typeof AnalyticsErrorCode.InvalidInput;
-    /** The request field at fault: `scopeBarberId`, `fromLocalDate`, `toLocalDate`, `analyticsSpan` or `analyticsComparison`. */
+    /** The request field at fault: `scopeBarberId`, `scopeLocationId`, `fromLocalDate`, `toLocalDate`, `analyticsSpan` or `analyticsComparison`. */
     readonly field: string;
   };
   export type GoalForbidden = {

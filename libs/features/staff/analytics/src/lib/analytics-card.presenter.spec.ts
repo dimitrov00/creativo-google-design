@@ -39,6 +39,7 @@ function inputOf(
     refusal: null,
     scopeChoices: null,
     scopeBarberId: null,
+    scopeLocationId: null,
     linkedBarberId: null,
     scopeGone: false,
     shopCount: 1,

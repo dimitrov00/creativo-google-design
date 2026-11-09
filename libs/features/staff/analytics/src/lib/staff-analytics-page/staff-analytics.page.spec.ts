@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LocationId } from '@core/primitives';
+import { locationFixture } from '@core/testing';
 import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import {
   byTestId,
@@ -153,6 +155,34 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     expect(byTestId(host, 'analytics-card-team')).toBeNull();
   });
 
+  it('with two locations the admin may pick one: the call, the URL and the pill follow (ADR 2026-11-09)', async () => {
+    const { fixture, host, sent, router } = await render({
+      admin: true,
+      shop: true,
+      locations: [
+        locationFixture(),
+        locationFixture({ id: LocationId.of('loc-mladost') }),
+      ],
+    });
+    const trigger = byTestId(host, 'analytics-scope-menu');
+    expect(trigger?.textContent).toContain('Всички салони');
+    trigger?.click();
+    await settle(fixture);
+    document
+      .querySelector<HTMLElement>(
+        '[data-testid="analytics-scope-location-loc-mladost"]',
+      )
+      ?.click();
+    await settle(fixture);
+    await settle(fixture);
+    expect(sent.at(-1)?.scopeLocationId).toBe('loc-mladost');
+    expect(sent.at(-1)?.scopeBarberId).toBeNull();
+    expect(router.url).toContain('location=loc-mladost');
+    expect(
+      byTestId(host, 'analytics-scope-menu')?.getAttribute('aria-label'),
+    ).not.toContain('Всички салони');
+  });
+
   it('under the carousel: the days ahead open the schedule on the emptiest day, the tools set a goal and export', async () => {
     const { host } = await render();
     const ahead = byTestId(host, 'analytics-ahead');
@@ -232,6 +262,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
     expect(sent).toEqual([
       {
         scopeBarberId: null,
+        scopeLocationId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
         toLocalDate: null,
@@ -254,6 +285,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
     expect(sent).toEqual([
       {
         scopeBarberId: null,
+        scopeLocationId: null,
         fromLocalDate: '2026-09-01',
         analyticsSpan: 'MONTH',
         toLocalDate: null,
@@ -271,6 +303,7 @@ describe('StaffAnalyticsPage — the URL as inputs (route-inputs.ts)', () => {
     expect(sent).toEqual([
       {
         scopeBarberId: 'ivan',
+        scopeLocationId: null,
         fromLocalDate: '2026-09-28',
         analyticsSpan: 'WEEK',
         toLocalDate: null,

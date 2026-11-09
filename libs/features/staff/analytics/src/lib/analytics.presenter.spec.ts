@@ -66,6 +66,7 @@ function inputOf(
     refusal: null,
     scopeChoices: null,
     scopeBarberId: null,
+    scopeLocationId: null,
     linkedBarberId: IVAN,
     scopeGone: false,
     shopCount: 1,
@@ -386,7 +387,7 @@ describe('analyticsVm — the same month in English', () => {
 });
 
 describe('analyticsVm — the admin and the shop', () => {
-  const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO);
+  const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO, []);
 
   it('offers the shop, «Аз», then every other barber — the chosen one ticked', () => {
     const vm = analyticsVm(

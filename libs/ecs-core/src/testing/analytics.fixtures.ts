@@ -59,7 +59,6 @@ import {
   type AnalyticsDay,
   type AnalyticsFollowUp,
   BusySystem,
-  DayFiguresSystem,
   type ShopNowAt,
   StaffAnalyticsSystem,
   ZonedTimeSystem,
@@ -727,22 +726,33 @@ export function analyticsFixtureFollowUps(): readonly AnalyticsFollowUp[] {
 }
 
 /**
- * The day documents of the fixture month — `DayFiguresSystem.fold` over its
- * PAST barber-days (the 1st to the 26th, 78 documents, zeros included),
- * keyed by busy key and stamped at the pinned now: what the recompute would
- * have written, for the pipelines' reads.
+ * The day documents of the fixture month — `StaffAnalyticsSystem.storedDayOf`
+ * over its PAST barber-days (the 1st to the 26th, 78 documents, zeros
+ * included; a day worked at two shops carries both shares), keyed by busy
+ * key and stamped at the pinned now: what the recompute would have
+ * written, for the pipelines' reads.
  */
 export function analyticsFixtureDayDocuments(): readonly BarberAnalyticsDay[] {
   const followUps = analyticsFixtureFollowUps();
   const policy = ClientStatsPolicy.forBooking(BookingPolicy.DEFAULT);
+  const now = ZonedTimeSystem.shopNow(FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE);
+  const nowByLocation = analyticsFixtureNowByLocation();
   const out: BarberAnalyticsDay[] = [];
   for (const day of analyticsFixtureDays()) {
     if (!day.pastDay) continue;
     out.push({
       id: BarberAnalyticsDayId.of(BusyKey.of(day.barberId, day.localDate)),
-      ...DayFiguresSystem.fold({
-        day,
-        visits: ANALYTICS_FIXTURE_VISITS,
+      ...StaffAnalyticsSystem.storedDayOf({
+        dayInput: {
+          barberIds: [day.barberId],
+          localDates: [day.localDate],
+          rosters: ANALYTICS_FIXTURE_ROSTERS,
+          departures: ANALYTICS_FIXTURE_DEPARTURES,
+          locations: ANALYTICS_FIXTURE_LOCATIONS,
+          visits: ANALYTICS_FIXTURE_VISITS,
+          nowByLocation,
+          now,
+        },
         followUps,
         policy,
         computedAtUtcMs: FIXTURE_NOW_UTC_MS,

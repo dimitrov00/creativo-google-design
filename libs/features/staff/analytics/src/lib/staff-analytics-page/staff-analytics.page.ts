@@ -9,7 +9,7 @@ import {
 import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { AnalyticsSpan } from '@core/components';
-import { BarberId, Tag } from '@core/primitives';
+import { BarberId, LocationId, Tag } from '@core/primitives';
 import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import { UiSparkBars } from '@creativo/ui/charts';
 import {
@@ -39,7 +39,7 @@ import {
 } from '@creativo/ui/patterns';
 import { analyticsExportFile } from '../analytics-export.presenter';
 import { analyticsHomeVm } from '../analytics-home.presenter';
-import { AnalyticsTool } from '../analytics-home.vm';
+import { AnalyticsScopeOption, AnalyticsTool } from '../analytics-home.vm';
 import { analyticsFreshnessInfoVm } from '../analytics.presenter';
 import { StaffAnalyticsStore } from '../staff-analytics.store';
 import { AnalyticsCarousel } from './analytics-carousel';
@@ -96,7 +96,7 @@ export class StaffAnalyticsPage {
   private readonly screen = injectAnalyticsScreen(this.store);
 
   /**
-   * `?span=`, `?from=`, `?to=` and `?barber=`, bound from the route
+   * `?span=`, `?from=`, `?to=`, `?barber=` and `?location=`, bound from the route
    * (`withComponentInputBinding`; staff-analytics-v2, State and URL): the
    * schedule arrives with the week of its day and, for an admin, its
    * chair; a swipe of the carousel writes the page it settles on. Absent
@@ -107,6 +107,7 @@ export class StaffAnalyticsPage {
   readonly from = input<string | undefined>();
   readonly to = input<string | undefined>();
   readonly barber = input<string | undefined>();
+  readonly location = input<string | undefined>();
 
   /** The home, worded; `null` until the words, the shop's clock and the period are known. */
   protected readonly vm = computed(() => {
@@ -127,7 +128,7 @@ export class StaffAnalyticsPage {
   constructor() {
     // English, like every other page's title in this app.
     inject(Title).setTitle('Analytics · Creativo');
-    // The URL's four parameters, each read at its edge (`route-inputs.ts`).
+    // The URL's five parameters, each read at its edge (`route-inputs.ts`).
     bindAnalyticsRouteInputs(this, this.store);
   }
 
@@ -138,10 +139,17 @@ export class StaffAnalyticsPage {
     }
   }
 
-  /** The scope menu: «Салон» (`shop`) or a barber record. */
+  /** The scope menu: «Салон» (`shop`), one location (`location:<id>`) or a barber record. */
   protected pickScopeOption(id: string): void {
-    if (id === 'shop') {
+    if (id === AnalyticsScopeOption.Shop) {
       this.store.pickScope(null);
+      return;
+    }
+    if (id.startsWith(AnalyticsScopeOption.LocationPrefix)) {
+      const locationId = LocationId.parse(
+        id.slice(AnalyticsScopeOption.LocationPrefix.length),
+      );
+      if (locationId.ok) this.store.pickLocation(locationId.value);
       return;
     }
     const barberId = BarberId.parse(id);

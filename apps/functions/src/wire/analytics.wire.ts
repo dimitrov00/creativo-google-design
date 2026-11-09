@@ -3,6 +3,7 @@ import { AnalyticsError } from '@core/errors';
 import {
   BarberId,
   LocalDate,
+  LocationId,
   MonthKey,
   PriceCents,
   Result,
@@ -20,6 +21,7 @@ import { idOf, operationIdOf, payloadOf, type WireRequest } from './wire-read';
 /**
  * THE STAFF ANALYTICS WIRE (`docs/designs/staff-analytics-v2.md`, The
  * callable v2 contract) — `staffAnalytics` `{ scopeBarberId: string | null,
+ * scopeLocationId: string | null (ADR 2026-11-09; absent reads as `null`),
  * fromLocalDate, toLocalDate: string | null, analyticsSpan: 'DAY' | 'WEEK' |
  * 'MONTH' | 'YEAR' | 'CUSTOM', analyticsComparison: 'PREVIOUS' }` → the
  * report. A signed-in caller (`ANALYTICS_UNAUTHENTICATED`) whose TOKEN
@@ -56,6 +58,14 @@ export function decodeStaffAnalytics(
   if (sentScope !== null && scopeBarberId === null) {
     return invalid('scopeBarberId');
   }
+  // One location of the shop (an admin's); whether the caller may name one
+  // is the pipeline's question (`locationScopeOf`).
+  const sentLocation = StoredFields.field(payload, 'scopeLocationId') ?? null;
+  const scopeLocationId =
+    sentLocation === null ? null : idOf(sentLocation, LocationId.parse);
+  if (sentLocation !== null && scopeLocationId === null) {
+    return invalid('scopeLocationId');
+  }
   const fromLocalDate = idOf(
     StoredFields.field(payload, 'fromLocalDate'),
     LocalDate.parse,
@@ -80,6 +90,7 @@ export function decodeStaffAnalytics(
   return Result.ok({
     callerUserId: caller,
     scopeBarberId,
+    scopeLocationId,
     fromLocalDate,
     toLocalDate,
     analyticsSpan,

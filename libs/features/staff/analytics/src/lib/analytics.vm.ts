@@ -6,6 +6,7 @@ import {
 import type {
   BarberId,
   LocalDate,
+  LocationId,
   PriceCents,
   ServiceId,
 } from '@core/primitives';
@@ -420,8 +421,10 @@ export type AnalyticsPeriodVm = {
 
 /** One tile of the admin's scope picker. */
 export type AnalyticsScopeTileVm = {
-  /** The barber record, or `null` for the shop. */
+  /** The barber record, or `null` for the shop or a location. */
   readonly scopeBarberId: BarberId | null;
+  /** The location (ADR 2026-11-09), or `null` for the shop or a barber. */
+  readonly scopeLocationId: LocationId | null;
   readonly name: string;
   readonly avatarSrc: string | null;
   readonly selected: boolean;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AnalyticsPeriod, AnalyticsSpan } from '@core/components';
+import { LocationId } from '@core/primitives';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -22,6 +23,7 @@ import {
   analyticsHomeVm,
   pageLabelOf,
 } from './analytics-home.presenter';
+import { AnalyticsTool } from './analytics-home.vm';
 import {
   AnalyticsGoalRefusal,
   AnalyticsGoalSave,
@@ -51,6 +53,7 @@ function inputOf(
     refusal: null,
     scopeChoices: null,
     scopeBarberId: null,
+    scopeLocationId: null,
     linkedBarberId: null,
     scopeGone: false,
     shopCount: 1,
@@ -118,7 +121,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
   });
 
   it('leads the scope pill with a disc — the shop’s glyph, or the chosen barber’s face — and offers the shop as a glyph disc', () => {
-    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO);
+    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO, []);
     const shop = analyticsHomeVm(
       inputOf('bg', { report: shopReportFixture(), scopeChoices: choices }),
     );
@@ -147,7 +150,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
   });
 
   it('names the shop scope «Всички салони» when its figures span several locations', () => {
-    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO);
+    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN, NIKO], NIKO, []);
     const bg = analyticsHomeVm(
       inputOf('bg', { scopeChoices: choices, shopCount: 2 }),
     );
@@ -162,6 +165,55 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     ).toBe('Shop');
   });
 
+  it('offers each location after «Всички салони», as a glyph disc; a chosen one names the pill and the cards’ query (ADR 2026-11-09)', () => {
+    const centre = LocationId.of('loc-centre');
+    const mladost = LocationId.of('loc-mladost');
+    const choices = StaffAnalyticsSystem.scopeChoicesOf([IVAN], null, [
+      centre,
+      mladost,
+    ]);
+    const all = analyticsHomeVm(
+      inputOf('bg', { scopeChoices: choices, shopCount: 2 }),
+    );
+    expect(
+      all.scope?.options.map((o) => [o.id, o.label, o.icon ?? null, o.testId]),
+    ).toEqual([
+      ['shop', 'Всички салони', 'location.shop', 'analytics-scope-shop'],
+      [
+        'location:loc-centre',
+        'Център',
+        'location.shop',
+        'analytics-scope-location-loc-centre',
+      ],
+      [
+        'location:loc-mladost',
+        'Младост',
+        'location.shop',
+        'analytics-scope-location-loc-mladost',
+      ],
+      ['ivan', 'Иван Колев', null, 'analytics-scope-ivan'],
+    ]);
+    const atMladost = analyticsHomeVm(
+      inputOf('bg', {
+        scopeChoices: choices,
+        shopCount: 2,
+        scopeLocationId: mladost,
+      }),
+    );
+    expect(atMladost.scope?.label).toBe('Младост');
+    expect(atMladost.scope?.selected).toBe('location:loc-mladost');
+    expect(atMladost.scope?.leading).toEqual({
+      avatarSrc: null,
+      name: 'Младост',
+      icon: 'location.shop',
+    });
+    expect(atMladost.pages.at(-1)?.query.location).toBe(mladost);
+    // A location has no goal: no «Задай цел» among the tools.
+    expect(atMladost.tools.map((tool) => tool.tool)).not.toContain(
+      AnalyticsTool.Goal,
+    );
+  });
+
   it('words a page’s five cards from its report — the figure, the change, the line under it and its graph', () => {
     const vm = analyticsHomeVm(inputOf('bg'));
     const page = vm.pages.at(-1);
@@ -171,6 +223,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       from: '2026-09-01',
       to: null,
       barber: null,
+      location: null,
     });
     const cards = page?.cards ?? [];
     expect(cards.map((c) => [c.card, c.title, c.value])).toEqual([

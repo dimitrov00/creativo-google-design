@@ -63,7 +63,7 @@ const INFO_CLOSE = 'close';
  * as a smooth line, bars or a ring of the figure's breakdown; the range row
  * (1С 1М 6М 1Г МАКС and «…» for the custom period sheet); and the v2
  * sections that break the figure down, each opening its rows. Its own
- * store on its own URL (`?span&from&to&barber`), opened on the home page's
+ * store on its own URL (`?span&from&to&barber&location`), opened on the home page's
  * period and scope.
  */
 @Component({
@@ -101,16 +101,17 @@ const INFO_CLOSE = 'close';
 export class AnalyticsCardPage {
   protected readonly store = inject(StaffAnalyticsStore);
   private readonly screen = injectAnalyticsScreen(this.store);
-  private readonly location = inject(Location);
+  private readonly browserLocation = inject(Location);
   private readonly router = inject(Router);
 
   /** `:card` — which card's screen; an unknown one reads as «Оборот». */
   readonly card = input<string | undefined>();
-  /** `?span&from&to&barber`, as the home binds them (`route-inputs.ts`). */
+  /** `?span&from&to&barber&location`, as the home binds them (`route-inputs.ts`). */
   readonly span = input<string | undefined>();
   readonly from = input<string | undefined>();
   readonly to = input<string | undefined>();
   readonly barber = input<string | undefined>();
+  readonly location = input<string | undefined>();
 
   private readonly cardTag = computed<AnalyticsCard>(() => {
     const raw = this.card();
@@ -158,7 +159,7 @@ export class AnalyticsCardPage {
   /** Back to the home — the way it came when it came from the home. */
   protected back(): void {
     if (this.router.lastSuccessfulNavigation()?.previousNavigation) {
-      this.location.back();
+      this.browserLocation.back();
       return;
     }
     void this.router.navigate(['/staff/analytics']);

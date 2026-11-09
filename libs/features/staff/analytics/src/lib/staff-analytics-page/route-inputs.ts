@@ -1,12 +1,13 @@
 import { type Signal, effect, untracked } from '@angular/core';
 import type { StaffAnalyticsStore } from '../staff-analytics.store';
 
-/** The analytics screen's route-bound inputs — `?span=`, `?from=`, `?to=`, `?barber=`. */
+/** The analytics screen's route-bound inputs — `?span=`, `?from=`, `?to=`, `?barber=`, `?location=`. */
 export interface AnalyticsRouteInputs {
   readonly span: Signal<string | undefined>;
   readonly from: Signal<string | undefined>;
   readonly to: Signal<string | undefined>;
   readonly barber: Signal<string | undefined>;
+  readonly location: Signal<string | undefined>;
 }
 
 /**
@@ -58,6 +59,13 @@ export function bindAnalyticsRouteInputs(
     const requested = page.barber() ?? null;
     if (requested !== untracked(() => store.published().barber)) {
       untracked(() => store.applyRouteBarber(requested));
+    }
+  });
+  // After `?barber=`: a location never stands beside a barber.
+  effect(() => {
+    const requested = page.location() ?? null;
+    if (requested !== untracked(() => store.published().location)) {
+      untracked(() => store.applyRouteLocation(requested));
     }
   });
 }

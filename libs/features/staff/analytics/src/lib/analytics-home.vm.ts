@@ -1,4 +1,4 @@
-import type { BarberId, LocalDate } from '@core/primitives';
+import type { BarberId, LocalDate, LocationId } from '@core/primitives';
 import type { UiChoiceOption } from '@creativo/ui/controls';
 import type { UiIconName } from '@creativo/ui/icons';
 import type {
@@ -107,7 +107,17 @@ export type AnalyticsCardQuery = {
   readonly from: LocalDate;
   readonly to: LocalDate | null;
   readonly barber: BarberId | null;
+  readonly location: LocationId | null;
 };
+
+/**
+ * The scope menu's option ids beside the barber ids: the whole shop, and
+ * the prefix of a location's (`location:loc-centre`, ADR 2026-11-09).
+ */
+export const AnalyticsScopeOption = {
+  Shop: 'shop',
+  LocationPrefix: 'location:',
+} as const;
 
 /** A dropdown of the top row: its trigger's word and its options. */
 export type AnalyticsMenuVm = {

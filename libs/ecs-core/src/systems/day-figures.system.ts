@@ -14,6 +14,7 @@ import {
 import {
   ANALYTICS_DEFINITION_VERSION,
   ClientStatsPolicy,
+  type DayBody,
   DayFigures,
   type MinuteRange,
   Placement,
@@ -37,16 +38,26 @@ import type {
  * `StaffAnalyticsSystem.daysOf` cut it (its parts on its own shop's clock,
  * its offered stretches, whether it is PAST), the visits of that shop day
  * (a seat of another barber, or a visit of another day, is skipped), the
- * follow-ups the rebooking rule reads, the policy the late line is drawn
- * by, and the writer's `sourceReadUtcMs` — the stamp. Zone-blind: the day's
- * clocks were resolved once by `daysOf`.
+ * follow-ups the rebooking rule reads and the policy the late line is
+ * drawn by. Zone-blind: the day's clocks were resolved once by `daysOf`.
  */
-export type DayFoldInput = {
+export type DayBodyInput = {
   readonly day: AnalyticsDay;
   readonly visits: readonly AnalyticsVisit[];
   readonly followUps: readonly AnalyticsFollowUp[];
   readonly policy: ClientStatsPolicy;
+};
+
+/**
+ * A stored day's fold: its body's inputs, the writer's `sourceReadUtcMs`
+ * (the stamp), and each
+ * touched location's share — empty unless the day touched two or more
+ * (`StaffAnalyticsSystem.storedDayOf` decides and folds them; ADR
+ * 2026-11-09). A live drill-down row reads the root alone and passes none.
+ */
+export type DayFoldInput = DayBodyInput & {
   readonly computedAtUtcMs: UtcEpochMs;
+  readonly locationShares: readonly DayBody[];
 };
 
 /** A sum under construction — mutable inside one call only. */
@@ -219,6 +230,20 @@ export const DayFiguresSystem = {
    * rebooked when a live follow-up was booked by the end of the next day.
    */
   fold(input: DayFoldInput): DayFigures {
+    return {
+      ...DayFiguresSystem.body(input),
+      dayLocationIds: input.day.locationIds,
+      dayLocations: input.locationShares,
+      dayDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
+      dayComputedAtUtcMs: input.computedAtUtcMs,
+    };
+  },
+
+  /**
+   * A barber-day's figures without where or when they were folded — the
+   * root of {@link fold}, and each location's share of a split day.
+   */
+  body(input: DayBodyInput): DayBody {
     const { day, policy } = input;
     const rebooked = DayFiguresSystem.rebookedVisits(
       input.visits,
@@ -319,8 +344,6 @@ export const DayFiguresSystem = {
       dayServices: serviceRowsOf(services),
       dayHourWorked: hours.worked,
       dayHourRostered: hours.rostered,
-      dayDefinitionVersion: ANALYTICS_DEFINITION_VERSION,
-      dayComputedAtUtcMs: input.computedAtUtcMs,
     };
   },
 

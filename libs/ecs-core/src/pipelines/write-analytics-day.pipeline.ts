@@ -32,11 +32,11 @@ import type {
 } from '@core/ports';
 import {
   type AnalyticsDay,
+  type AnalyticsDaysInput,
   type AnalyticsFollowUp,
   type AttemptFailure,
   BackfillPlanSystem,
   BusySystem,
-  DayFiguresSystem,
   type ShopNowAt,
   StaffAnalyticsSystem,
   TriggerAttemptSystem,
@@ -71,7 +71,8 @@ import type { RebuildBusyCommand } from './rebuild-busy.pipeline';
  * row over the cap is a refused read), the follow-ups of those ids in
  * chunks of 30, the existing document, the source visit when the command
  * names one and the departure. The decide step folds
- * (`DayFiguresSystem.fold`) and writes one `Set` ONLY when the stored
+ * (`StaffAnalyticsSystem.storedDayOf`: the day, the locations it touched
+ * and each one's share of a split day) and writes one `Set` ONLY when the stored
  * `dayComputedAtUtcMs` is earlier than `sourceReadUtcMs`: two writers racing
  * leave the later computation, and an older read never overwrites a newer
  * document. The adapter stamps the TTL `purgeAt` beside the body.
@@ -299,22 +300,30 @@ export const writeAnalyticsDay =
         ...ZonedTimeSystem.shopNow(sourceReadUtcMs, location.timeZone),
       }));
 
-      /** The day as `daysOf` cuts it from a roster, a departure and visits. */
+      /** What `daysOf` cuts this barber-day from: a roster, a departure and visits. */
+      const dayInputOf = (
+        roster: BarberSchedule | null,
+        departure: ScheduleException | null,
+        visits: readonly Appointment[],
+      ): AnalyticsDaysInput => ({
+        barberIds: [barberId],
+        localDates: [localDate],
+        rosters: roster === null ? [] : [roster],
+        departures: departure === null ? [] : [departure],
+        locations,
+        visits,
+        nowByLocation,
+        now,
+      });
+      /** The day as `daysOf` cuts it. */
       const dayOf = (
         roster: BarberSchedule | null,
         departure: ScheduleException | null,
         visits: readonly Appointment[],
       ): AnalyticsDay =>
-        StaffAnalyticsSystem.daysOf({
-          barberIds: [barberId],
-          localDates: [localDate],
-          rosters: roster === null ? [] : [roster],
-          departures: departure === null ? [] : [departure],
-          locations,
-          visits,
-          nowByLocation,
-          now,
-        })[0] as AnalyticsDay;
+        StaffAnalyticsSystem.daysOf(
+          dayInputOf(roster, departure, visits),
+        )[0] as AnalyticsDay;
 
       // ── Outside the transaction: is the day past, and which visits ─────
       const [rosterRead, departureRead, visitsRead] = await Promise.all([
@@ -441,9 +450,10 @@ export const writeAnalyticsDay =
                 writes: [],
               });
             }
-            const figures: DayFigures = DayFiguresSystem.fold({
-              day: dayOf(roster, read.departure, read.visits),
-              visits: read.visits,
+            // The day, the locations it touched, and each one's share of
+            // a day split across shops (ADR 2026-11-09).
+            const figures: DayFigures = StaffAnalyticsSystem.storedDayOf({
+              dayInput: dayInputOf(roster, read.departure, read.visits),
               followUps,
               policy,
               computedAtUtcMs: sourceReadUtcMs,

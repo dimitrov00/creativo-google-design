@@ -24,6 +24,7 @@ import {
   SeatId,
   ServiceId,
   UtcEpochMs,
+  LocationId,
 } from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -105,6 +106,8 @@ const visit = (
     ...extra,
   } as Parameters<typeof appointmentFixture>[0]);
 
+const NO_LOCATIONS: readonly LocationId[] = [];
+
 const dayOf = (
   barberId: BarberId,
   localDay: LocalDate,
@@ -134,6 +137,7 @@ const dayOf = (
     outsideHoursMinutes: zero,
     outsideHoursSeatCount: 0,
     closedDayMinutes: zero,
+    locationIds: NO_LOCATIONS,
     ...parts,
   }) as AnalyticsDay;
 
@@ -144,6 +148,7 @@ function foldInput(overrides: Partial<DayFoldInput> = {}): DayFoldInput {
     followUps: [],
     policy: ClientStatsPolicy.DEFAULT,
     computedAtUtcMs: stamp,
+    locationShares: [],
     ...overrides,
   };
 }
@@ -574,6 +579,7 @@ function reportInput(
 ): AnalyticsInput {
   return {
     scopeBarberId,
+    scopeLocationId: null,
     barberIds: scopeBarberId === null ? [...BARBERS] : [scopeBarberId],
     period: OCTOBER,
     analyticsComparison: AnalyticsComparison.Previous,
@@ -606,6 +612,7 @@ function expectSumAgrees(world: World, scopeBarberId: BarberId | null): void {
         followUps: world.followUps,
         policy: input.policy,
         computedAtUtcMs: stamp,
+        locationShares: [],
       }),
     );
   const total = sum(folded, ivan, OCTOBER.fromLocalDate);

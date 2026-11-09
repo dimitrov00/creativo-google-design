@@ -72,7 +72,11 @@ import {
  *    once beside it, for the days worked there and the follow-ups booked
  *    there.
  * 4. **The scope** — the visibility table (`scopeOf`) over the records read:
- *    one barber, or every record of the shop.
+ *    one barber, or every record of the shop; and an admin's location
+ *    (`locationScopeOf`, ADR 2026-11-09), which cuts every read below to
+ *    that shop: the stored days to its share (`storedAt`), the live days to
+ *    its hours (`atLocation`), the visits to those booked there
+ *    (`visitsAt`). A location reads no goal.
  * 5. **The stored days.** With `FlagName.AnalyticsStoredDays` on (read
  *    inside the handler), the period's day documents are read in one range
  *    (`loadAnalyticsDays(barberIds, from, to)`; the adapter's bound is 366 ×
@@ -246,6 +250,9 @@ export const staffAnalytics =
     // 4. The scope.
     const scope = S.scopeOf(caller.value, cmd, records.value);
     if (!scope.ok) return scope;
+    const at = S.locationScopeOf(caller.value, cmd, locations);
+    if (!at.ok) return at;
+    const locationId = at.value;
     const barberIds = S.barbersInScope(scope.value, records.value);
 
     // 5. The scope's reads. First the stored days (with the flag on), the
@@ -300,8 +307,9 @@ export const staffAnalytics =
             previous.toLocalDate,
           )
         : Promise.resolve(NO_DAYS),
-      // The month's goal (PR 6) — on a MONTH only, the scope's own key.
-      period.value.analyticsSpan === AnalyticsSpan.Month
+      // The month's goal (PR 6) — on a MONTH only, the scope's own key;
+      // a location has none.
+      period.value.analyticsSpan === AnalyticsSpan.Month && locationId === null
         ? ports.loadAnalyticsGoal(
             AnalyticsGoalKey.of(
               scope.value,
@@ -321,8 +329,14 @@ export const staffAnalytics =
     if (!periodDocs.ok) return periodDocs;
     if (!previousDocs.ok) return previousDocs;
     if (!goal.ok) return goal;
-    const pastDays = S.currentStoredOf(periodDocs.value);
-    const previousPastDays = S.currentStoredOf(previousDocs.value);
+    const pastDays = S.storedAt(
+      S.currentStoredOf(periodDocs.value),
+      locationId,
+    );
+    const previousPastDays = S.storedAt(
+      S.currentStoredOf(previousDocs.value),
+      locationId,
+    );
     const roster: BarberSchedule[] = [];
     for (const schedule of rosterRead.value) {
       if (schedule !== null) roster.push(schedule);
@@ -369,9 +383,10 @@ export const staffAnalytics =
     if (!periodRows.ok) return periodRows;
     if (!previousRows.ok) return previousRows;
     if (!aheadRows.ok) return aheadRows;
-    const visits = S.mergeVisits(periodRows.value);
+    const visits = S.visitsAt(S.mergeVisits(periodRows.value), locationId);
 
-    // 7a. The period's barber-days, cut on each shop's clock.
+    // 7a. The period's barber-days, cut on each shop's clock — and to the
+    //     location, when the scope names one.
     const daysInput = {
       barberIds,
       rosters: roster,
@@ -379,12 +394,17 @@ export const staffAnalytics =
       nowByLocation,
       now,
     };
-    const days = S.daysOf({
-      ...daysInput,
-      localDates: periodDays,
-      departures: departureRead.value.flat(),
-      visits,
-    });
+    const days = S.daysOf(
+      S.atLocation(
+        {
+          ...daysInput,
+          localDates: periodDays,
+          departures: departureRead.value.flat(),
+          visits,
+        },
+        locationId,
+      ),
+    );
 
     // 6. The follow-ups, each booking day read once on its shop's clock —
     //    none on a DAY, none when every past day came from its document.
@@ -429,19 +449,25 @@ export const staffAnalytics =
     // 7b. Compute.
     const report = S.report({
       scopeBarberId: scope.value,
+      scopeLocationId: locationId,
       barberIds,
       period: period.value,
       analyticsComparison: cmd.analyticsComparison,
       days,
       pastDays,
-      aheadDays: S.daysOf({
-        ...daysInput,
-        localDates: aheadDays,
-        departures: aheadDepartureRead.value.flat(),
-        visits: S.mergeVisits(aheadRows.value),
-      }),
+      aheadDays: S.daysOf(
+        S.atLocation(
+          {
+            ...daysInput,
+            localDates: aheadDays,
+            departures: aheadDepartureRead.value.flat(),
+            visits: S.mergeVisits(aheadRows.value),
+          },
+          locationId,
+        ),
+      ),
       visits,
-      previousVisits: S.mergeVisits(previousRows.value),
+      previousVisits: S.visitsAt(S.mergeVisits(previousRows.value), locationId),
       previousPastDays,
       followUps,
       policy: ClientStatsPolicy.forBooking(policy.value),
@@ -453,6 +479,7 @@ export const staffAnalytics =
     ports.log('info', LogEvent.AnalyticsReported, {
       uid: cmd.callerUserId,
       scope: report.reportScopeBarberId,
+      location: report.reportScopeLocationId,
       span: report.reportAnalyticsSpan,
       periodFrom: report.reportFromLocalDate,
       periodTo: report.reportToLocalDate,
