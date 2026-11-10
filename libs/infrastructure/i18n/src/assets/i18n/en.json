@@ -2784,7 +2784,7 @@
         "fill": "Occupancy",
         "rebooking": "Come back",
         "tipsRate": "Tips",
-        "averageTicket": "Avg ticket"
+        "averageTicket": "€ per client"
       },
       "missing": "little data",
       "comparison": "previous period",
@@ -2995,7 +2995,7 @@
       "LATE_CANCELLATIONS": "Client cancellations after the cancellation deadline.",
       "BUSY": "The worked share of the working time, by weekday and hour; the busiest and quietest hours show after 7 working days.",
       "ORIGINS": "Visits with a worked service by who booked them: the client online, or the shop.",
-      "RADARS": "Five axes per barber — € an hour of service, occupancy, clients who come back, tips and the average ticket — against the best of the shop (100); an axis under its floor reads «little data».",
+      "RADARS": "Five axes per barber — € an hour of service, occupancy, clients who come back, tips and € per client — against the best of the shop (100); an axis under its floor reads «little data».",
       "GOAL": "The goal is a takings range for the month. The pace compares the takings so far with what the working days gone by should have brought: ahead, on track or behind."
     },
     "drill": {

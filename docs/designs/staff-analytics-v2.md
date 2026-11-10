@@ -318,7 +318,7 @@ and 8.
 - **When**: they scroll to «Как се справя всеки».
 - **Then**: one radar per barber: five axes normalised 0–100 against the best barber
   meeting the sample floor (€ per hour of service, fill, rebooking, tips rate, average
-  ticket — «€ на час», «Заетост», «Връщат се», «Бакшиши», «Среден чек»), a subtitle saying so in words, the previous month as a grey outline on the same
+  ticket — «€ на час», «Заетост», «Връщат се», «Бакшиши», «€ на клиент»), a subtitle saying so in words, the previous month as a grey outline on the same
   base, an axis under the floor drawn as missing with a word. Tapping a radar switches the
   scope to that barber.
 

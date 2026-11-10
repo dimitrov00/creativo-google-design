@@ -414,7 +414,7 @@ describe('analyticsVm — the admin and the shop', () => {
       'Заетост',
       'Връщат се',
       'Бакшиши',
-      'Среден чек',
+      '€ на клиент',
     ]);
     expect(ivan?.axes.map((axis) => axis.value)).toEqual([
       100, 100, 100, 62.5, 100,
