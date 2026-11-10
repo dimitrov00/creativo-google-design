@@ -1328,7 +1328,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       );
     });
 
-    it('draws the shop’s radars on a MONTH: one row per barber, normalised against the best, reliability absolute', () => {
+    it('draws the shop’s radars on a MONTH: one row per barber, normalised against the best', () => {
       const report = S.report(shop());
       expect(report.reportRadarBase).toBe(RadarBase.BestOfShop);
       expect(report.reportRadars.map((row) => row.barberId)).toEqual([
@@ -1341,16 +1341,29 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         fill: 100,
         rebooking: 100,
         tipsRate: 50,
-        reliability: 100,
       });
       expect(report.reportRadars[1]).toMatchObject({
         takingsPerHour: 50,
         fill: 100,
         rebooking: 50,
         tipsRate: 100,
-        // The live seat joins the no-show base: 4 of 25.
-        reliability: 84,
       });
+      // The average ticket: each barber's takings per worked seat against the better one.
+      const [ivanFigures, nikoFigures] = report.reportBarbers as [
+        AnalyticsReport.BarberFigures,
+        AnalyticsReport.BarberFigures,
+      ];
+      const ticketOf = (f: AnalyticsReport.BarberFigures): number =>
+        f.takingsCents / f.workedSeatCount;
+      const bestTicket = Math.max(ticketOf(ivanFigures), ticketOf(nikoFigures));
+      expect(report.reportRadars[0]?.averageTicket).toBeCloseTo(
+        (ticketOf(ivanFigures) / bestTicket) * 100,
+        10,
+      );
+      expect(report.reportRadars[1]?.averageTicket).toBeCloseTo(
+        (ticketOf(nikoFigures) / bestTicket) * 100,
+        10,
+      );
       // The maximum itself never leaves the server: no field of the report carries 7200 ÷ 230 × 60.
       expect(JSON.stringify(report)).not.toContain(String((7200 / 230) * 60));
       expect(S.report(shop()).reportRadars).toEqual(
@@ -1403,14 +1416,14 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         (200 / 3360 / (230 / 3840)) * 100,
         10,
       );
-      expect(ivanRow.comparisonReliability).toBeCloseTo((1 - 2 / 23) * 100, 10);
+      expect(ivanRow.comparisonAverageTicket).not.toBeNull();
       // Niko has no comparison figures over any floor: every comparison axis missing.
       expect(report.reportRadars[1]).toMatchObject({
         comparisonTakingsPerHour: null,
         comparisonFill: null,
         comparisonRebooking: null,
         comparisonTipsRate: null,
-        comparisonReliability: null,
+        comparisonAverageTicket: null,
       });
     });
 

@@ -245,12 +245,12 @@ function radarRowOf(raw: unknown): AnalyticsReport.RadarRow | null {
     fill: r.axis('fill'),
     rebooking: r.axis('rebooking'),
     tipsRate: r.axis('tipsRate'),
-    reliability: r.axis('reliability'),
+    averageTicket: r.axis('averageTicket'),
     comparisonTakingsPerHour: r.axis('comparisonTakingsPerHour'),
     comparisonFill: r.axis('comparisonFill'),
     comparisonRebooking: r.axis('comparisonRebooking'),
     comparisonTipsRate: r.axis('comparisonTipsRate'),
-    comparisonReliability: r.axis('comparisonReliability'),
+    comparisonAverageTicket: r.axis('comparisonAverageTicket'),
   };
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }

@@ -379,12 +379,12 @@ function barberFigures(
  * | fill               | 240 ÷ 540 = 4⁄9       | 240 ÷ 540 = 4⁄9        | 4⁄9      |
  * | rebooking          | 12 ÷ 20 = 0.6         | 8 ÷ 20 = 0.4           | 0.6     |
  * | tips rate          | 250 ÷ 2800 = 5⁄56     | 250 ÷ 1750 = 1⁄7       | 1⁄7      |
- * | reliability (abs.) | (1 − 1⁄25) × 100 = 96 | (1 − 3⁄24) × 100 = 87.5 | —     |
+ * | average ticket     | 2800 ÷ 24 ≈ 116.7     | 1750 ÷ 21 ≈ 83.3       | 116.7   |
  *
- * so Ivan's radar reads 100 · 100 · 100 · 62.5 · 96 and Niko's ≈ 71.4 · 100
- * · 66.7 · 100 · 87.5. Only Ivan has comparison figures (August: 35,00 €
+ * so Ivan's radar reads 100 · 100 · 100 · 62.5 · 100 and Niko's ≈ 71.4 · 100
+ * · 66.7 · 100 · 71.4. Only Ivan has comparison figures (August: 35,00 €
  * over 300 service minutes = 700 an hour → 100; 240 ÷ 600 = 0.4 → 90; 10 ÷
- * 20 = 0.5 → 83.3; 300 ÷ 3500 = 3⁄35 → 60; (1 − 2⁄27) × 100 ≈ 92.6); Niko's
+ * 20 = 0.5 → 83.3; 300 ÷ 3500 = 3⁄35 → 60; 3500 ÷ 25 = 140 → 120); Niko's
  * comparison axes are all `null`. The rows are `AnalyticsRadarSystem.radarsOf`
  * over these figures, so they can never drift from them.
  */

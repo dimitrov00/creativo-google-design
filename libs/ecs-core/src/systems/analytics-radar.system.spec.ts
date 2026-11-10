@@ -46,6 +46,7 @@ const NO_BEST: RadarBest = {
   fill: null,
   rebooking: null,
   tipsRate: null,
+  averageTicket: null,
 };
 
 describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors', () => {
@@ -55,7 +56,7 @@ describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors',
       fill: 240 / 540,
       rebooking: 0.6,
       tipsRate: 250 / 2800,
-      reliability: 96, // (1 − 0.04) × 100
+      averageTicket: 2800 / 24, // the takings per worked seat
     });
   });
 
@@ -66,8 +67,6 @@ describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors',
         rosteredDayCount: 6,
         rebookedBase: 19,
         rebookedRate: null,
-        noShowBase: 19,
-        noShowRate: null,
       }),
     );
     expect(values).toEqual({
@@ -75,14 +74,22 @@ describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors',
       fill: null,
       rebooking: null,
       tipsRate: null,
-      reliability: null,
+      averageTicket: null,
     });
     // Exactly at the base, every axis has a value.
+    const atBase = R.axisValuesOf(
+      figuresOf(ivan, { workedSeatCount: 20, rosteredDayCount: 7 }),
+    );
+    expect(atBase.takingsPerHour).not.toBeNull();
+    expect(atBase.fill).not.toBeNull();
+    expect(atBase.tipsRate).not.toBeNull();
+    expect(atBase.averageTicket).toBe(140); // 2800 ÷ 20
+  });
+
+  it('leaves the clients’ no-shows off the radar: no axis moves with the no-show rate', () => {
     expect(
-      R.axisValuesOf(
-        figuresOf(ivan, { workedSeatCount: 20, rosteredDayCount: 7 }),
-      ),
-    ).not.toMatchObject({ takingsPerHour: null, fill: null, tipsRate: null });
+      R.axisValuesOf(figuresOf(ivan, { noShowCount: 10, noShowRate: 0.4 })),
+    ).toEqual(R.axisValuesOf(figuresOf(ivan)));
   });
 
   it('answers null with nothing to divide by: no service minutes, no rostered minutes, no takings', () => {
@@ -108,6 +115,7 @@ describe('AnalyticsRadarSystem.bestOf — the shop’s best of each axis', () =>
         workedMinutes: m(300), // fill 300 ÷ 540
         rebookedRate: 0.4,
         tipsCents: cents(250), // 250 ÷ 1750 — the higher tips rate
+        workedSeatCount: 20, // 1750 ÷ 20 — the lower ticket
       }),
       // Under every floor: never the best, however high the figure.
       figuresOf(maria, {
@@ -123,6 +131,7 @@ describe('AnalyticsRadarSystem.bestOf — the shop’s best of each axis', () =>
       fill: 300 / 540,
       rebooking: 0.6,
       tipsRate: 250 / 1750,
+      averageTicket: 2800 / 24,
     });
   });
 
@@ -143,15 +152,16 @@ describe('AnalyticsRadarSystem.axes — one barber against the best', () => {
     fill: 240 / 540,
     rebooking: 0.6,
     tipsRate: 250 / 1750,
+    averageTicket: 2800 / 24,
   };
 
-  it('normalises the four axes to value ÷ best × 100 and keeps reliability absolute', () => {
+  it('normalises the five axes to value ÷ best × 100', () => {
     expect(R.axes(figuresOf(ivan), best)).toEqual({
       takingsPerHour: 100,
       fill: 100,
       rebooking: 100,
       tipsRate: 62.5, // (250 ÷ 2800) ÷ (250 ÷ 1750) × 100
-      reliability: 96,
+      averageTicket: 100,
     });
     const half = R.axes(
       figuresOf(niko, { takingsCents: cents(1400), rebookedRate: 0.3 }),
@@ -159,31 +169,23 @@ describe('AnalyticsRadarSystem.axes — one barber against the best', () => {
     );
     expect(half.takingsPerHour).toBe(50);
     expect(half.rebooking).toBe(50);
+    expect(half.averageTicket).toBe(50);
   });
 
   it('answers null under the base, and when the best is null or 0', () => {
     expect(R.axes(figuresOf(ivan, { workedSeatCount: 5 }), best)).toMatchObject(
-      { takingsPerHour: null, tipsRate: null, fill: 100 },
+      { takingsPerHour: null, tipsRate: null, averageTicket: null, fill: 100 },
     );
     expect(R.axes(figuresOf(ivan), NO_BEST)).toEqual({
       takingsPerHour: null,
       fill: null,
       rebooking: null,
       tipsRate: null,
-      reliability: 96,
+      averageTicket: null,
     });
     expect(
       R.axes(figuresOf(ivan, { rebookedRate: 0 }), { ...best, rebooking: 0 })
         .rebooking,
-    ).toBeNull();
-  });
-
-  it('keeps reliability even when every normalised axis is missing', () => {
-    expect(
-      R.axes(figuresOf(ivan, { workedSeatCount: 0 }), NO_BEST).reliability,
-    ).toBe(96);
-    expect(
-      R.axes(figuresOf(ivan, { noShowRate: null }), best).reliability,
     ).toBeNull();
   });
 });
@@ -214,22 +216,25 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
       fill: 100,
       rebooking: 100,
       tipsRate: 62.5,
-      reliability: 96,
+      averageTicket: 100,
       comparisonTakingsPerHour: null,
       comparisonFill: null,
       comparisonRebooking: null,
       comparisonTipsRate: null,
-      comparisonReliability: null,
+      comparisonAverageTicket: null,
     });
     const second = reportRadars[1] as AnalyticsReport.RadarRow;
     expect(second).toMatchObject({
       barberId: niko,
       fill: 100,
       tipsRate: 100,
-      reliability: 87.5,
     });
     expect(second.takingsPerHour).toBeCloseTo((500 / 700) * 100, 10);
     expect(second.rebooking).toBeCloseTo((0.4 / 0.6) * 100, 10);
+    expect(second.averageTicket).toBeCloseTo(
+      (1750 / 21 / (2800 / 24)) * 100,
+      10,
+    );
   });
 
   it('normalises the comparison period against THIS period’s best, matched by barber — null where a barber has none', () => {
@@ -252,17 +257,17 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
     expect(first).toMatchObject({
       comparisonTakingsPerHour: 100,
       comparisonRebooking: 75,
-      comparisonReliability: 80,
     });
     // On this period's best a comparison axis may pass 100.
     expect(first.comparisonFill).toBeCloseTo(125, 10);
     expect(first.comparisonTipsRate).toBeCloseTo(40, 10);
+    expect(first.comparisonAverageTicket).toBeCloseTo(125, 10); // 3500 ÷ 24 against 2800 ÷ 24
     expect(reportRadars[1]).toMatchObject({
       comparisonTakingsPerHour: null,
       comparisonFill: null,
       comparisonRebooking: null,
       comparisonTipsRate: null,
-      comparisonReliability: null,
+      comparisonAverageTicket: null,
     });
     expect(reportRadars).toHaveLength(2);
   });
@@ -278,7 +283,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
     });
   });
 
-  it('draws two barbers under every floor as rows of null axes, reliability included', () => {
+  it('draws two barbers under every floor as rows of null axes', () => {
     const { reportRadars, reportRadarBase } = R.radarsOf(
       [
         figuresOf(ivan, {
@@ -304,7 +309,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
         fill: null,
         rebooking: null,
         tipsRate: null,
-        reliability: null,
+        averageTicket: null,
       });
     }
   });
@@ -323,9 +328,10 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
       fill: 100,
       rebooking: 100,
       tipsRate: 62.5,
-      reliability: 96,
+      averageTicket: 100,
       comparisonTakingsPerHour: 100,
     });
+    expect(ivanRow.comparisonAverageTicket).toBeCloseTo(120, 10);
     expect(ivanRow.comparisonFill).toBeCloseTo(90, 10);
     expect(ivanRow.comparisonTipsRate).toBeCloseTo(60, 10);
   });

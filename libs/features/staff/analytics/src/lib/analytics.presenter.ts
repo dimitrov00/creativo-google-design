@@ -649,7 +649,7 @@ function radarsOf(
     words.radars.axis.fill,
     words.radars.axis.rebooking,
     words.radars.axis.tipsRate,
-    words.radars.axis.reliability,
+    words.radars.axis.averageTicket,
   ];
   const radars = report.reportRadars.map((row, i) => {
     const values: readonly (number | null)[] = [
@@ -657,14 +657,14 @@ function radarsOf(
       row.fill,
       row.rebooking,
       row.tipsRate,
-      row.reliability,
+      row.averageTicket,
     ];
     const comparisons: readonly (number | null)[] = [
       row.comparisonTakingsPerHour,
       row.comparisonFill,
       row.comparisonRebooking,
       row.comparisonTipsRate,
-      row.comparisonReliability,
+      row.comparisonAverageTicket,
     ];
     const name = input.names.barberName(row.barberId) ?? words.scope.barber;
     const axes = axisWords.map((label, a) => ({

@@ -453,12 +453,17 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       {
         ...shop,
         reportRadars: [
-          { ...first(shop['reportRadars']), comparisonReliability: undefined },
+          {
+            ...first(shop['reportRadars']),
+            comparisonAverageTicket: undefined,
+          },
         ],
       },
       {
         ...shop,
-        reportRadars: [{ ...first(shop['reportRadars']), reliability: 'high' }],
+        reportRadars: [
+          { ...first(shop['reportRadars']), averageTicket: 'high' },
+        ],
       },
       { ...good, reportDayRows: [null] },
     ]) {
