@@ -1,7 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { UiChartPart } from '../chart-part';
+import { UiChartPart, type UiChartTick } from '../chart-part';
 import {
   fitLabel,
   UiBarChart,
@@ -47,6 +47,7 @@ const WEEK: readonly UiChartBar[] = [
       [uiRanked]="ranked()"
       [uiHighlightIndex]="highlight()"
       [uiValueText]="valueText()"
+      [uiTicks]="ticks()"
       [uiScrubbable]="scrubbable()"
       (uiScrubbed)="scrubbed.push($event)"
       uiLabel="Времето по дни: най-зает вторник"
@@ -69,6 +70,7 @@ class Host {
   readonly picked: number[] = [];
   readonly scrubbable = signal(false);
   readonly scrubbed: (number | null)[] = [];
+  readonly ticks = signal<readonly UiChartTick[]>([]);
 }
 
 function render(setup?: (host: Host) => void) {
@@ -137,9 +139,10 @@ describe('UiBarChart', () => {
     expect(length(parts[1] as SVGRectElement)).toBe(13); // 15 − 2
     expect(offset(parts[2] as SVGRectElement)).toBe(91); // 90 + 1
     expect(length(parts[2] as SVGRectElement)).toBe(21.5); // 112.5 − 91
-    // Three bands of 320 / 3, each bar 2 px narrower than its band.
-    expect(parts[0]?.getAttribute('width')).toBe('104.67');
-    expect(parts[0]?.getAttribute('x')).toBe('1');
+    // Three bands of 320 / 3, each column 62 % of its band, centred in it
+    // (Apple Health's air between columns).
+    expect(parts[0]?.getAttribute('width')).toBe('66.13');
+    expect(parts[0]?.getAttribute('x')).toBe('20.27');
   });
 
   it('draws the total as one mark on the first part when single', () => {
@@ -176,8 +179,9 @@ describe('UiBarChart', () => {
       host.ranked.set(true);
     });
     expect(chart.getAttribute('data-orientation')).toBe('horizontal');
+    // Three rows of 18 words + 8 bar, 12 apart.
     expect(chart.querySelector('svg')?.getAttribute('viewBox')).toBe(
-      '0 0 320 106',
+      '0 0 320 102',
     );
     expect(bars().map((bar) => bar.getAttribute('data-index'))).toEqual([
       '1',
@@ -191,8 +195,64 @@ describe('UiBarChart', () => {
     ).toEqual(['8 ч', '8 ч', '4 ч']);
     const [first] = segments(bars()[0] as Element);
     expect(first?.getAttribute('y')).toBe('18');
-    expect(first?.getAttribute('height')).toBe('12');
+    expect(first?.getAttribute('height')).toBe('8');
     expect(length(first as SVGRectElement)).toBe(279); // 420 / 480 × 320 − 1
+  });
+
+  it('gives a horizontal bar with no word and no figure no words line — the bar starts at the top', () => {
+    const { chart, bars, segments } = render((host) => {
+      host.orientation.set('horizontal');
+      host.bars.set([
+        {
+          label: '',
+          parts: [
+            { part: UiChartPart.Worked, value: 1 },
+            { part: UiChartPart.Unsold, value: 1 },
+          ],
+        },
+      ]);
+      host.valueText.set([]);
+    });
+    expect(chart.querySelector('svg')?.getAttribute('viewBox')).toBe(
+      '0 0 320 8',
+    );
+    const [first] = segments(bars()[0] as Element);
+    expect(first?.getAttribute('y')).toBe('0');
+  });
+
+  it('stands columns on the value grid: a rule per tick, its words at the right, the top tick the plot’s top', () => {
+    const { chart, bars, segments, fixture, host } = render();
+    // No ticks: the baseline and the named columns' guides, no grid.
+    expect(chart.querySelectorAll('.ui-bar-chart__grid')).toHaveLength(0);
+    expect(chart.querySelectorAll('.ui-bar-chart__baseline')).toHaveLength(1);
+    expect(
+      Array.from(chart.querySelectorAll('.ui-bar-chart__guide')).map((g) =>
+        g.getAttribute('x1'),
+      ),
+    ).toEqual(['0', '106.67', '213.33']);
+    // Words at their guide's start, not centred.
+    expect(chart.querySelector('.ui-bar-chart__label')?.getAttribute('x')).toBe(
+      '3',
+    );
+
+    host.ticks.set([
+      { value: 300, text: '5 ч' },
+      { value: 600, text: '10 ч' },
+    ]);
+    fixture.detectChanges();
+    const rules = Array.from(chart.querySelectorAll('.ui-bar-chart__grid'));
+    // 600 is the plot's top (y 0); 300 its middle (y 60).
+    expect(rules.map((r) => r.getAttribute('y1'))).toEqual(['60', '0']);
+    expect(
+      Array.from(chart.querySelectorAll('.ui-bar-chart__tick-label')).map((t) =>
+        t.textContent?.trim(),
+      ),
+    ).toEqual(['5 ч', '10 ч']);
+    // The words' column: 4 glyphs × 7 + 6 → the 36 px floor; the plot keeps 284.
+    expect(rules[0]?.getAttribute('x2')).toBe('284');
+    // Monday's worked 300 under a 600 top: half the 120 px plot, the gap's 1 px off.
+    const [worked] = segments(bars()[0] as Element);
+    expect(length(worked as SVGRectElement)).toBe(59);
   });
 
   it('marks the highlighted bar and the host while a highlight is set', () => {

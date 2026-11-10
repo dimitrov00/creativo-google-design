@@ -14,7 +14,7 @@
        the way back, the chart switch; once the large figure (its
        `uiSheetLargeTitle` sentinel) passes under it, the figure small in
        the middle and the house fade under it (owner, 2026-11-09). -->
-  <ui-sheet-header class="analytics-card__bar">
+  <ui-sheet-header uiPage class="analytics-card__bar">
     <button
       uiLeading
       type="button"
@@ -205,6 +205,7 @@
       <ui-bar-chart
         [uiOrientation]="chart.orientation"
         [uiBars]="chart.bars"
+        [uiTicks]="chart.ticks"
         [uiValueText]="chart.valueText"
         [uiLabel]="chart.label"
         uiScrubbable
@@ -279,16 +280,18 @@
       @if (services.empty; as empty) {
       <p uiText uiFont="callout" uiForegroundStyle="secondary">{{ empty }}</p>
       } @else {
-      <ui-bar-chart
-        uiOrientation="horizontal"
-        uiStacking="single"
-        [uiRanked]="true"
-        [uiBars]="services.bars"
-        [uiValueText]="services.valueText"
-        [uiLabel]="services.label"
-        data-testid="analytics-services-bars"
-        (uiBarPicked)="openDrillOf(services.drills[$event] ?? null)"
-      />
+      <ui-card uiTone="muted" uiPadding="regular" class="analytics-card__panel">
+        <ui-bar-chart
+          uiOrientation="horizontal"
+          uiStacking="single"
+          [uiRanked]="true"
+          [uiBars]="services.bars"
+          [uiValueText]="services.valueText"
+          [uiLabel]="services.label"
+          data-testid="analytics-services-bars"
+          (uiBarPicked)="openDrillOf(services.drills[$event] ?? null)"
+        />
+      </ui-card>
       }
     </section>
     } @if (vm.origins; as origins) {
@@ -300,34 +303,39 @@
       <h2 uiText uiFont="title3" id="analytics-origins-title">
         {{ origins.title }}
       </h2>
-      <ui-bar-chart
-        uiOrientation="horizontal"
-        [uiBars]="origins.bars"
-        [uiLabel]="origins.label"
-        data-testid="analytics-origins-bar"
-      >
-        <ul uiChartLegend class="analytics-card__legend">
-          @for (row of origins.rows; track row.part) {
-          <li
-            class="analytics-card__legend-row"
-            [attr.data-testid]="row.testId"
-          >
-            <span
-              class="ui-chart-swatch"
-              [attr.data-part]="row.part"
-              aria-hidden="true"
-            ></span>
-            <span uiText uiFont="footnote">{{ row.title }}</span>
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ row.detail }}</span
+      <ui-card uiTone="muted" uiPadding="regular" class="analytics-card__panel">
+        <ui-bar-chart
+          uiOrientation="horizontal"
+          [uiBars]="origins.bars"
+          [uiLabel]="origins.label"
+          data-testid="analytics-origins-bar"
+        >
+          <ul uiChartLegend class="analytics-card__legend">
+            @for (row of origins.rows; track row.part) {
+            <li
+              class="analytics-card__legend-row"
+              [attr.data-testid]="row.testId"
             >
-            <span uiText uiFont="footnote" class="analytics-card__legend-value"
-              >{{ row.value }}</span
-            >
-          </li>
-          }
-        </ul>
-      </ui-bar-chart>
+              <span
+                class="ui-chart-swatch"
+                [attr.data-part]="row.part"
+                aria-hidden="true"
+              ></span>
+              <span uiText uiFont="footnote">{{ row.title }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ row.detail }}</span
+              >
+              <span
+                uiText
+                uiFont="footnote"
+                class="analytics-card__legend-value"
+                >{{ row.value }}</span
+              >
+            </li>
+            }
+          </ul>
+        </ui-bar-chart>
+      </ui-card>
     </section>
     }
 
@@ -412,8 +420,9 @@
     >
       <h2 uiText uiFont="title3" id="analytics-busy-title">{{ busy.title }}</h2>
       <!-- The grid and what it says, on one card like every other figure
-           of the screen (owner, 2026-11-09). -->
-      <ui-card uiTone="muted" uiPadding="regular" class="analytics-card__busy">
+           of the screen (owner, 2026-11-09; the services and the origins
+           joined it 2026-11-10: "shouldn't those be in cards/groups"). -->
+      <ui-card uiTone="muted" uiPadding="regular" class="analytics-card__panel">
         <ui-heatmap
           [uiRows]="busy.rows"
           [uiColumns]="busy.columns"
@@ -568,8 +577,7 @@
         {{ radars.subtitle }}
       </p>
       @for (radar of radars.radars; track radar.barberId) {
-      <div
-        uiCard
+      <ui-card
         uiTone="muted"
         uiPadding="regular"
         class="analytics-card__radar"
@@ -583,7 +591,7 @@
           [uiTone]="radar.tone"
           [uiLabel]="radar.label"
         />
-      </div>
+      </ui-card>
       } @if (radars.comparisonLegend; as legend) {
       <p
         uiText

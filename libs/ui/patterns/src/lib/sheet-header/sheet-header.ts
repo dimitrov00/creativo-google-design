@@ -5,6 +5,7 @@ import {
   ElementRef,
   ViewEncapsulation,
   afterNextRender,
+  booleanAttribute,
   computed,
   inject,
   input,
@@ -76,6 +77,12 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
  * with the house fade keyed to the page background (sheet-header.css), the
  * same chrome the modal sheet gives it, never a slab. The sentinel is
  * looked up in the header's own parent, the page it heads.
+ *
+ * A screen that KNOWS it is a page says so with `uiPage` (2026-11-10): the
+ * detection above waits a frame past the first render (it reads computed
+ * styles, which a sheet's open must not pay for), and until it ran the
+ * page painted a sheet's bar — grabber shown, compact title in — for a
+ * frame or two. `uiPage` stamps `data-page` on the first render.
  */
 @Component({
   selector: 'ui-sheet-header',
@@ -105,12 +112,21 @@ export class UiSheetHeader {
    */
   readonly uiCollapsed = input<boolean | undefined>(undefined);
 
+  /**
+   * The header heads a page the document scrolls — declared, so the page
+   * chrome is there on the first frame rather than once detection ran.
+   */
+  readonly uiPage = input(false, { transform: booleanAttribute });
+
   private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly observedCollapsed = signal(false);
-  /** No scrolling ancestor: the header heads a page the document scrolls. */
-  protected readonly onPage = signal(false);
+  /** No scrolling ancestor was found: a page the document scrolls. */
+  private readonly detectedPage = signal(false);
+  protected readonly onPage = computed(
+    () => this.uiPage() || this.detectedPage(),
+  );
   protected readonly collapsed = computed(
     () => this.uiCollapsed() ?? this.observedCollapsed(),
   );
@@ -160,7 +176,7 @@ export class UiSheetHeader {
     // scrolls. One walk, shared with the visits browser (ui/layout).
     const scroller = nearestScroller(this.elementRef.nativeElement);
     // No scrolling ancestor: a page, scrolled by the document.
-    if (!scroller) this.onPage.set(true);
+    if (!scroller) this.detectedPage.set(true);
     this.scroller = scroller;
 
     this.syncSentinel();

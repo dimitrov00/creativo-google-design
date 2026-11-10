@@ -282,7 +282,9 @@
 }
 
 /* «Кога е заето»: the grid and its sentence on one card. */
-.analytics-card__busy {
+/* A MODULE'S CARD: the figure and its words on one muted card, like the
+   tiles and the list groups beside it. */
+.analytics-card__panel {
   display: flex;
   flex-direction: column;
   gap: var(--sys-space-regular);

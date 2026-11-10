@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { elementWidth } from '@creativo/ui/layout';
 import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
-import { UiChartPart } from '../chart-part';
+import { UiChartPart, type UiChartTick } from '../chart-part';
 import {
   type ChartPoint,
   areaPath,
@@ -51,12 +51,6 @@ type SeriesShape = {
   readonly d: string;
   readonly tone: number;
   readonly end: ChartPoint | null;
-};
-
-/** A value the grid rules, and its words (the kit formats no number). */
-export type UiChartTick = {
-  readonly value: number;
-  readonly text: string;
 };
 
 /**

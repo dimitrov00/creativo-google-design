@@ -205,6 +205,34 @@ describe('AnalyticsCarouselSystem.moneyTicksOf — a money chart’s round amoun
   });
 });
 
+describe('AnalyticsCarouselSystem.minuteTicksOf — a time chart’s round durations', () => {
+  it('steps by the clock: a quarter or half hour, then hours that divide a day', () => {
+    // 8 h 20 min → a third is 2 h 47 min → steps of 3 h: 3, 6, 9 h.
+    expect(C.minuteTicksOf([300, null, 500])).toEqual([180, 360, 540]);
+    // 40 min → steps of a quarter hour: 15, 30, 45 min.
+    expect(C.minuteTicksOf([40])).toEqual([15, 30, 45]);
+    // Exactly on a step: it is the last rule.
+    expect(C.minuteTicksOf([720])).toEqual([240, 480, 720]);
+    // A day's step and no finer than a quarter hour.
+    expect(C.minuteTicksOf([4000])).toEqual([1440, 2880, 4320]);
+    expect(C.minuteTicksOf([5])).toEqual([15]);
+  });
+
+  it('past a day, steps 1, 2 or 5 × a power of ten hours', () => {
+    // 200 h → a third is 66.7 h → steps of 100 h: 100, 200 h.
+    expect(C.minuteTicksOf([12_000])).toEqual([6000, 12_000]);
+    // 500 h → a third is 166.7 h → steps of 200 h: 200, 400, 600 h.
+    expect(C.minuteTicksOf([30_000])).toEqual([12_000, 24_000, 36_000]);
+  });
+
+  it('rules nothing when nothing above zero is drawn, and is pure', () => {
+    expect(C.minuteTicksOf([])).toEqual([]);
+    expect(C.minuteTicksOf([0, null])).toEqual([]);
+    const values = deepFreeze([120, 90]);
+    expect(C.minuteTicksOf(values)).toEqual(C.minuteTicksOf(values));
+  });
+});
+
 describe('AnalyticsCarouselSystem — the locations compared', () => {
   const day = (d: string): AnalyticsReport.SeriesPoint => ({
     localDate: localDate(d),

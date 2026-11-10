@@ -24,7 +24,41 @@
       <line class="ui-chart-hatch__line" x1="0" y1="0" x2="0" y2="6" />
     </pattern>
   </defs>
-  @for (mark of marks(); track mark.index; let position = $index) {
+  <!-- Under the bars: the value grid, the column guides, the baseline;
+       the ticks' words in their column at the right. -->
+  @for (rule of grid(); track $index) {
+  <line
+    class="ui-bar-chart__grid"
+    x1="0"
+    [attr.x2]="plotWidth()"
+    [attr.y1]="rule.y"
+    [attr.y2]="rule.y"
+  />
+  <text
+    class="ui-bar-chart__tick-label"
+    aria-hidden="true"
+    [attr.x]="rule.textX"
+    [attr.y]="rule.textY"
+  >
+    {{ rule.text }}
+  </text>
+  } @for (x of guides(); track $index) {
+  <line
+    class="ui-bar-chart__guide"
+    [attr.x1]="x"
+    [attr.x2]="x"
+    y1="0"
+    [attr.y2]="height()"
+  />
+  } @if (uiOrientation() === 'vertical') {
+  <line
+    class="ui-bar-chart__baseline"
+    x1="0"
+    [attr.x2]="plotWidth()"
+    [attr.y1]="baselineY"
+    [attr.y2]="baselineY"
+  />
+  } @for (mark of marks(); track mark.index; let position = $index) {
   <g
     class="ui-bar-chart__bar"
     role="button"

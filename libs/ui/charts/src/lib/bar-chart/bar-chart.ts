@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { elementWidth } from '@creativo/ui/layout';
-import type { UiChartPart } from '../chart-part';
+import type { UiChartPart, UiChartTick } from '../chart-part';
 import { linearScale, px, zeroExtent } from '../geometry/linear-scale';
 import { stackOffsets, stackTotal } from '../geometry/stack-offsets';
 
@@ -54,11 +54,30 @@ const GAP = 2;
 /** A vertical chart: the plot's height and the label band under the baseline. */
 const PLOT_HEIGHT = 120;
 const LABEL_BAND = 20;
-/** A horizontal chart: the words line over each bar, the bar, and the gap to the next row. */
+/**
+ * A vertical bar's share of its column (Apple Health's, 2026-11-10): the
+ * column's air is the gap between bars, never a hairline of surface, so a
+ * week reads as seven columns rather than one slab cut in seven.
+ */
+const BAR_SHARE = 0.62;
+/** The value grid's words column at the right: at least this, wider for a longer word. */
+const LABEL_GUTTER = 36;
+/** The words column never takes more than this share of the box. */
+const MAX_GUTTER_SHARE = 0.3;
+/** The air between the plot's end and a tick's word. */
+const TICK_INSET = 6;
+/** A tick's word sits under its rule, a caption's height down. */
+const TICK_TEXT_DROP = 12;
+/** A column's word starts this far in from its guide. */
+const LABEL_INSET = 3;
+/**
+ * A horizontal chart: the words line over each bar, the bar, and the gap
+ * to the next row. The bar is Screen Time's «Most used» capsule: thin,
+ * round at both ends, the words above carrying the reading.
+ */
 const ROW_TEXT = 18;
-const ROW_BAR = 12;
-const ROW_GAP = 8;
-const ROW_PITCH = ROW_TEXT + ROW_BAR + ROW_GAP;
+const ROW_BAR = 8;
+const ROW_GAP = 12;
 /**
  * A caption glyph's width, near enough, for the one layout decision SVG
  * cannot make itself: on a horizontal row the word and the figure share one
@@ -140,8 +159,12 @@ type BarMark = {
  * emits its index in `uiBars` (`uiBarPicked`); the bars are one tab stop,
  * the arrows walk them.
  *
- * Marks: the data end rounded 4 px, 2 px of surface between parts and
- * between bars, a hairline separator edge; a bar's length and place in the
+ * Marks (Apple Health's, 2026-11-10): a column 62 % of its band, round
+ * 4 px at the data end and square on a hairline baseline, with dotted
+ * guides at its named columns and, given `uiTicks`, a dotted value grid
+ * whose amounts stand in a column at the right; a row a thin capsule
+ * under its words (Screen Time's). 2 px of surface between stacked parts;
+ * a bar's length and place in the
  * stack glide on registered custom properties after the first frame, and
  * not at all under reduced motion. `[uiChartLegend]` is the slot under the
  * drawing for the rows that explain the parts.
@@ -175,6 +198,15 @@ export class UiBarChart {
   readonly uiValueText = input<readonly string[]>([]);
   /** The drawing's accessible name — one sentence the presenter writes. */
   readonly uiLabel = input.required<string>();
+  /**
+   * THE VALUE GRID of a vertical chart (Apple Health's): a rule at each
+   * round value the presenter names, its words in a column at the right,
+   * and the scale reaching the highest tick so the top rule is the plot's
+   * top — a bar's height reads as an amount without a tap. The baseline is
+   * drawn with or without ticks, so an empty period is still a chart.
+   * Horizontal charts ignore it.
+   */
+  readonly uiTicks = input<readonly UiChartTick[]>([]);
   /** The index in `uiBars` of the bar tapped or chosen with Enter/Space. */
   readonly uiBarPicked = output<number>();
 
@@ -190,10 +222,86 @@ export class UiBarChart {
 
   protected readonly width = computed(() => this.measured() || FALLBACK_WIDTH);
 
+  private readonly vertical = computed(
+    () => this.uiOrientation() === 'vertical',
+  );
+
+  /** The ticks' words column at the right — a vertical chart's, with ticks only. */
+  private readonly gutter = computed(() => {
+    const ticks = this.uiTicks();
+    if (!this.vertical() || ticks.length === 0) return 0;
+    const longest = ticks.reduce(
+      (max, tick) => Math.max(max, tick.text.length),
+      0,
+    );
+    return Math.min(
+      Math.max(LABEL_GUTTER, longest * CHAR_WIDTH + TICK_INSET),
+      this.width() * MAX_GUTTER_SHARE,
+    );
+  });
+
+  /** The bars' width: the box less the ticks' column. */
+  protected readonly plotWidth = computed(() =>
+    px(this.width() - this.gutter()),
+  );
+
+  /** Value → length along the axis: the tallest stack or the highest tick fills the plot. */
+  private readonly valueLength = computed(() => {
+    // A single mark draws its bar's total, so either stacking scales by it.
+    const totals = this.uiBars().map((bar) =>
+      stackTotal(bar.parts.map((p) => p.value)),
+    );
+    const ticks = this.vertical() ? this.uiTicks().map((t) => t.value) : [];
+    return linearScale(zeroExtent([...totals, ...ticks]), [
+      0,
+      this.vertical() ? PLOT_HEIGHT : this.width(),
+    ]);
+  });
+
+  /** The rules of the value grid and their words, top-down. */
+  protected readonly grid = computed(() => {
+    if (!this.vertical()) return [];
+    const length = this.valueLength();
+    const textX = px(this.plotWidth() + TICK_INSET);
+    return this.uiTicks().map((tick) => {
+      const y = px(PLOT_HEIGHT - length(tick.value));
+      return { y, text: tick.text, textX, textY: px(y + TICK_TEXT_DROP) };
+    });
+  });
+
+  /**
+   * THE COLUMN GUIDES: a faint rule up from each named column's start
+   * through the plot — a week's every day, a month's week starts — the
+   * word beside it at the column's leading edge.
+   */
+  protected readonly guides = computed(() =>
+    this.vertical()
+      ? this.marks()
+          .filter((mark) => mark.label !== '')
+          .map((mark) => mark.hitX)
+      : [],
+  );
+
+  protected readonly baselineY = PLOT_HEIGHT;
+
+  /**
+   * A horizontal row's words line: none when no bar carries a word or a
+   * figure (a one-bar split whose legend names its parts) — the bar then
+   * starts at the top instead of under an empty line (2026-11-10).
+   */
+  private readonly rowText = computed(() =>
+    this.hasLabels() || this.uiValueText().some((text) => text !== '')
+      ? ROW_TEXT
+      : 0,
+  );
+  private readonly rowPitch = computed(
+    () => this.rowText() + ROW_BAR + ROW_GAP,
+  );
+
   protected readonly height = computed(() => {
     if (this.uiOrientation() === 'horizontal') {
       const rows = this.uiBars().length;
-      return rows === 0 ? 0 : rows * ROW_PITCH - ROW_GAP;
+      return rows === 0 ? 0 : rows * this.rowPitch() - ROW_GAP;
     }
     return PLOT_HEIGHT + LABEL_BAND;
   });
@@ -225,11 +333,13 @@ export class UiBarChart {
     const texts = this.uiValueText();
     const highlight = this.uiHighlightIndex();
     const single = this.uiStacking() === 'single';
-    const max = zeroExtent(
-      bars.map((bar) => stackTotal(bar.parts.map((p) => p.value))),
-    );
-    const length = linearScale(max, [0, horizontal ? width : PLOT_HEIGHT]);
-    const band = width / bars.length;
+    const length = this.valueLength();
+    const band = (horizontal ? width : this.plotWidth()) / bars.length;
+    const thickness = horizontal
+      ? ROW_BAR
+      : px(Math.max(1, Math.min(band - GAP, band * BAR_SHARE)));
+    const rowText = this.rowText();
+    const pitch = this.rowPitch();
 
     return order.flatMap((index, position) => {
       const bar = bars.at(index);
@@ -255,7 +365,7 @@ export class UiBarChart {
         });
       });
       const valueText = texts.at(index) ?? '';
-      const row = position * ROW_PITCH;
+      const row = position * pitch;
       const mark: BarMark = {
         index,
         label: horizontal ? fitLabel(bar.label, valueText, width) : bar.label,
@@ -266,11 +376,13 @@ export class UiBarChart {
         hitX: horizontal ? 0 : px(position * band),
         hitY: horizontal ? row : 0,
         hitWidth: horizontal ? px(width) : px(band),
-        hitHeight: horizontal ? ROW_PITCH - ROW_GAP : PLOT_HEIGHT,
-        across: horizontal ? row + ROW_TEXT : px(position * band + GAP / 2),
-        thickness: horizontal ? ROW_BAR : px(Math.max(1, band - GAP)),
-        labelX: horizontal ? 0 : px(position * band + band / 2),
-        labelY: horizontal ? row + ROW_TEXT - 5 : PLOT_HEIGHT + LABEL_BAND - 6,
+        hitHeight: horizontal ? pitch - ROW_GAP : PLOT_HEIGHT,
+        across: horizontal
+          ? row + rowText
+          : px(position * band + (band - thickness) / 2),
+        thickness,
+        labelX: horizontal ? 0 : px(position * band + LABEL_INSET),
+        labelY: horizontal ? row + rowText - 5 : PLOT_HEIGHT + LABEL_BAND - 6,
         segments,
       };
       return [mark];
@@ -347,7 +459,7 @@ export class UiBarChart {
         ? Math.floor(
             ((event.clientY - box.top) * this.height()) /
               box.height /
-              ROW_PITCH,
+              this.rowPitch(),
           )
         : Math.floor(((event.clientX - box.left) * marks.length) / box.width);
     const mark = marks[Math.min(Math.max(position, 0), marks.length - 1)];

@@ -62,13 +62,37 @@
   }
 
   /* THE DATA END — the marks of a bar are clipped together on their own
-     box, round at the end that moves and square on the baseline. */
+     box. A column is round at the end that moves and square on the
+     baseline (Apple Health's); a row is Screen Time's capsule, round at
+     both ends — it stands on no axis, its words above it do the reading. */
   .ui-bar-chart[data-orientation='vertical'] .ui-bar-chart__marks {
     clip-path: inset(0 round 4px 4px 0 0) fill-box;
   }
 
   .ui-bar-chart[data-orientation='horizontal'] .ui-bar-chart__marks {
-    clip-path: inset(0 round 0 4px 4px 0) fill-box;
+    clip-path: inset(0 round 999px) fill-box;
+  }
+
+  /* THE VALUE GRID and THE GUIDES — the line chart's recipe exactly, so the
+     two views of one figure share a ground: dotted separator rules at the
+     ticks, fainter dotted guides at the named columns, and the baseline a
+     solid hairline the columns stand on. */
+  .ui-bar-chart__grid {
+    stroke: var(--sys-color-separator);
+    stroke-width: 1px;
+    stroke-dasharray: 2 3;
+  }
+
+  .ui-bar-chart__guide {
+    stroke: var(--sys-color-separator);
+    stroke-opacity: 0.6;
+    stroke-width: 1px;
+    stroke-dasharray: 2 3;
+  }
+
+  .ui-bar-chart__baseline {
+    stroke: var(--sys-color-separator);
+    stroke-width: 1px;
   }
 
   /* A segment's place and length along the axis come from the two
@@ -117,8 +141,20 @@
     pointer-events: none;
   }
 
+  /* A column's word starts at its guide (Apple Health's), so a month's
+     «1 · 8 · 15» read as the weeks they open. */
   .ui-bar-chart[data-orientation='vertical'] .ui-bar-chart__label {
-    text-anchor: middle;
+    text-anchor: start;
+  }
+
+  /* The ticks' amounts: the line chart's words — caption, tabular, the
+     tertiary ink under the figures' secondary. */
+  .ui-bar-chart__tick-label {
+    font: var(--sys-font-caption);
+    font-variant-numeric: tabular-nums;
+    fill: var(--sys-color-tertiary-label);
+    text-anchor: start;
+    pointer-events: none;
   }
 
   .ui-bar-chart[data-orientation='horizontal'] .ui-bar-chart__label {
