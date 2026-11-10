@@ -644,8 +644,13 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(report.reportToLocalDate).toBe(TODAY);
     expect(report.reportComparisonFromLocalDate).toBe(day(-7));
     expect(report.reportComparisonToLocalDate).toBe(day(-7));
-    expect(report.reportSeries).toEqual([
-      { localDate: TODAY, takingsCents: 3500, comparisonTakingsCents: 2700 },
+    expect(report.reportSeries).toMatchObject([
+      {
+        localDate: TODAY,
+        takingsCents: 3500,
+        tipsCents: 0,
+        comparisonTakingsCents: 2700,
+      },
     ]);
     expect(report.reportTimeSeries).toHaveLength(1);
     expect(report.reportTimeSeries[0]).toMatchObject({
@@ -879,6 +884,46 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     expect(S.report(input()).reportAheadDays).toHaveLength(7);
   });
 
+  it('states the working time ahead the open hours are part of, and whose — breaks, blocks and days off are none of it', () => {
+    const report = S.report(
+      input({
+        scopeBarberIds: [],
+        barberIds: [ivan, niko],
+        aheadDays: [
+          // Tomorrow, Ivan: 2 h booked, 5 h open, 30 min of short gaps
+          // ahead (10 already past), a 60 min lunch and a 45 min block
+          // that are not working time.
+          dayOf(ivan, day(1), {
+            bookedAheadMinutes: 120,
+            openMinutes: 300,
+            shortGapMinutes: 40,
+            pastShortGapMinutes: 10,
+            breakMinutes: 60,
+            blockedMinutes: 45,
+          }),
+          // Niko works tomorrow too: 8 h, all open.
+          dayOf(niko, day(1), { openMinutes: 480 }),
+          // Niko's day off: nothing rostered, nothing ahead.
+          dayOf(niko, day(2), {}),
+        ],
+      }),
+    );
+    expect(report.reportAheadDays.map((row) => row.workingMinutes)).toEqual([
+      0,
+      120 + 300 + 30 + 480,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    expect(report.reportBookableWorkingMinutes).toBe(930);
+    expect(report.reportBookableOpenMinutes).toBe(780);
+    // Two barbers have working time ahead; whose hours the card adds up.
+    expect(report.reportAheadBarberCount).toBe(2);
+    expect(S.report(input()).reportAheadBarberCount).toBe(0);
+  });
+
   describe('the charts (v2)', () => {
     const stretch = (start: number, end: number): MinuteRange =>
       MinuteRange.of(minute(start), endMinute(end));
@@ -1000,10 +1045,16 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         input({
           period: longer,
           visits: [
-            visit('w0', localDate('2026-01-03'), [seat(ivan, 1000)]),
+            visit('w0', localDate('2026-01-03'), [
+              seat(ivan, 1000, undefined, cut, 10, 150),
+            ]),
             visit('w1', localDate('2026-01-05'), [seat(ivan, 2000)]),
-            visit('w1b', localDate('2026-01-11'), [seat(ivan, 500)]),
-            visit('wl', localDate('2026-04-04'), [seat(ivan, 300)]),
+            visit('w1b', localDate('2026-01-11'), [
+              seat(ivan, 500, undefined, cut, 10, 50),
+            ]),
+            visit('wl', localDate('2026-04-04'), [
+              seat(ivan, 300, undefined, cut, 10, 20),
+            ]),
           ],
           days: [
             dayOf(ivan, localDate('2026-01-03'), { workedMinutes: 30 }),
@@ -1020,6 +1071,25 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
       expect(sum(report.reportSeries, (p) => p.takingsCents)).toBe(
         report.reportTakingsCents,
       );
+      // The tips share the takings' buckets — a range this long keeps its
+      // day rows per month, but its series never needs them (owner,
+      // 2026-11-09: tips over 6М / 1Г / МАКС had no line or bars).
+      expect(report.reportSeries.map((p) => p.tipsCents)).toEqual([
+        150, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20,
+      ]);
+      expect(sum(report.reportSeries, (p) => p.tipsCents)).toBe(
+        report.reportTipsCents,
+      );
+      // Each point's takings by service make its takings, service by
+      // service — the stacked bars' parts.
+      for (const point of report.reportSeries) {
+        expect(sum(point.serviceTakings, (row) => row.takingsCents)).toBe(
+          point.takingsCents,
+        );
+      }
+      expect(
+        report.reportSeries[0]?.serviceTakings.map((row) => row.serviceId),
+      ).toEqual([cut]);
     });
 
     it('aligns the comparison by position, null where the shorter previous period ends', () => {
@@ -1039,9 +1109,10 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         }),
       );
       expect(report.reportSeries).toHaveLength(31);
-      expect(report.reportSeries[2]).toEqual({
+      expect(report.reportSeries[2]).toMatchObject({
         localDate: localDate('2026-03-03'),
         takingsCents: 4000,
+        tipsCents: 0,
         comparisonTakingsCents: 2500,
       });
       expect(report.reportSeries[3]?.comparisonTakingsCents).toBe(0);
@@ -1487,18 +1558,20 @@ describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
     expect(S.clockLocationOf([], centre)).toBeNull();
   });
 
-  it('scopeToggled: every box ticked when none is named; never the last off; every box ticked is none again', () => {
+  it('scopeToggled: «all» and the boxes are either/or — from the whole list a box names it alone; the last off or every one on is the whole list', () => {
     const tom = BarberId.of('tom');
     const all = [ivan, niko, tom];
-    // From the whole list: one box off leaves the others named.
-    expect(S.scopeToggled([], niko, all)).toEqual([ivan, tom]);
+    // From the whole list: the box tapped, alone.
+    expect(S.scopeToggled([], niko, all)).toEqual([niko]);
     // A box on, a box off.
-    expect(S.scopeToggled([ivan], niko, all)).toEqual([ivan, niko]);
+    expect(S.scopeToggled([niko], ivan, all)).toEqual([ivan, niko]);
     expect(S.scopeToggled([ivan, niko], ivan, all)).toEqual([niko]);
-    // The last ticked box stays.
-    expect(S.scopeToggled([ivan], ivan, all)).toEqual([ivan]);
+    // The last box off is the whole list again.
+    expect(S.scopeToggled([ivan], ivan, all)).toEqual([]);
     // Every box ticked is the whole list again.
     expect(S.scopeToggled([ivan, niko], tom, all)).toEqual([]);
+    // A list of one has nothing to narrow.
+    expect(S.scopeToggled([], ivan, [ivan])).toEqual([]);
     const frozen = deepFreeze([ivan]);
     expect(S.scopeToggled(frozen, niko, all)).toEqual(
       S.scopeToggled(frozen, niko, all),
@@ -2230,9 +2303,10 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
       }),
     );
     expect(report.reportSeries).toHaveLength(12);
-    expect(report.reportSeries[2]).toEqual({
+    expect(report.reportSeries[2]).toMatchObject({
       localDate: localDate('2026-03-01'),
       takingsCents: 4000,
+      tipsCents: 0,
       comparisonTakingsCents: null,
     });
     expect(report.reportSeries[9]?.takingsCents).toBe(2000);
@@ -2287,9 +2361,10 @@ describe('StaffAnalyticsSystem — the YEAR and CUSTOM spans (v2)', () => {
         localDate('2025-12-31'),
       ),
     );
-    expect(report.reportSeries[0]).toEqual({
+    expect(report.reportSeries[0]).toMatchObject({
       localDate: localDate('2026-01-01'),
       takingsCents: 1000,
+      tipsCents: 0,
       comparisonTakingsCents: 700,
     });
     expect(report.reportSeries).toHaveLength(14);

@@ -28,12 +28,14 @@ import {
   statusOf,
 } from './analytics.presenter';
 import {
+  ANALYTICS_SCOPE_ALL,
   AnalyticsCard,
   AnalyticsScopeOption,
   AnalyticsTile,
   AnalyticsTool,
   type AnalyticsAheadCardVm,
   type AnalyticsBentoCardVm,
+  type AnalyticsBonesVm,
   type AnalyticsHomeVm,
   type AnalyticsLocationRowVm,
   type AnalyticsLocationsCardVm,
@@ -63,6 +65,8 @@ export interface AnalyticsHomeInput extends AnalyticsScreenInput {
   readonly pageIndex: number;
   /** Each page's report, in `pages`' order — `null` while not on the device. */
   readonly pageReports: readonly (AnalyticsReport | null)[];
+  /** The last report of the scope on screen (the store's `shapeReport`): the shape a loading page's bones take. */
+  readonly shapeReport: AnalyticsReport | null;
 }
 
 /** The grains the period menu offers, in its order. */
@@ -80,6 +84,7 @@ const IDENTITY_TONES = 5;
 export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
   const { words } = input;
   const current = input.report;
+  const bones = bonesOf(input);
   const body =
     current === null || input.analyticsLoad === AnalyticsLoad.Refused
       ? null
@@ -92,7 +97,7 @@ export function analyticsHomeVm(input: AnalyticsHomeInput): AnalyticsHomeVm {
     scope: scopeMenuOf(input),
     period: periodMenuOf(input),
     pages: input.pages.map((period, index) =>
-      pageOf(input, period, input.pageReports.at(index) ?? null),
+      pageOf(input, period, input.pageReports.at(index) ?? null, bones),
     ),
     pageIndex: input.pageIndex,
     blocked: blockedOf(input),
@@ -116,13 +121,16 @@ const SHOP_GLYPH = 'location.shop' satisfies UiIconName;
 const TEAM_GLYPH = 'nav.team' satisfies UiIconName;
 
 /**
- * THE SCOPE MENU (owner review 2026-11-09): two rows — «Всички салони»
- * when the shop has two or more, then «Целият екип» — each picked whole by
- * its row (the row reads chosen while nothing in it is ticked), or
- * narrowed through its submenu: a box per location, a box per barber, the
- * admin's own first («Аз»). The trigger names what is ticked: «Център»,
- * «2 салона», «Нико Димов», «3 бръснари», the two joined by a dot; the
- * shop's name when nothing is.
+ * THE SCOPE MENU (owner review 2026-11-09, round 2: "the selection is
+ * either salons either barbers right?"): two FILTERS in force at once,
+ * never a choice between them — so neither row is "chosen". Each row is
+ * iOS's nested picker row: the dimension («Салони», «Екип»), its value
+ * under it («Всички», «Център», «Нико Димов, Аз») and a chevron. It opens
+ * its submenu: an «all» box alone at the head (ticked while nothing is
+ * narrowed — it picks the row whole), then a box per location or per
+ * barber, the admin's own first («Аз»). The trigger names what is
+ * narrowed: «Център», «2 салона», «Нико Димов», «3 бръснари», the two
+ * joined by a dot; the shop's name when nothing is.
  */
 function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   const menu = input.scopeMenu;
@@ -141,55 +149,73 @@ function scopeMenuOf(input: AnalyticsScreenInput): AnalyticsMenuVm | null {
   if (menu.locationIds.length > 0) {
     options.push({
       id: AnalyticsScopeOption.Locations,
-      label:
+      label: words.scope.shopsGroup,
+      // The value: «Всички», or the salons ticked, in the shop's order.
+      description:
         locations.length === 0
-          ? shopNameOf(input)
-          : locations.length === 1
-            ? locationName(locations[0] as LocationId)
-            : words.scope.shopsCount(locations.length),
+          ? words.scope.all
+          : menu.locationIds
+              .filter((id) => locations.includes(id))
+              .map(locationName)
+              .join(', '),
       icon: SHOP_GLYPH,
       avatarSrc: null,
-      selected: locations.length === 0,
       testId: 'analytics-scope-shop',
       childrenTitle: words.scope.shopsGroup,
-      openLabel: words.scope.pickShops,
-      openTestId: 'analytics-scope-locations-open',
-      children: menu.locationIds.map((id): UiChoiceOption => ({
-        id,
-        label: locationName(id),
-        icon: SHOP_GLYPH,
-        avatarSrc: null,
-        checked: locations.length === 0 || locations.includes(id),
-        testId: `analytics-scope-location-${id}`,
-      })),
+      children: [
+        {
+          id: ANALYTICS_SCOPE_ALL,
+          label: words.scope.shopOf(menu.locationIds.length),
+          icon: SHOP_GLYPH,
+          avatarSrc: null,
+          all: true,
+          checked: locations.length === 0,
+          testId: 'analytics-scope-locations-all',
+        },
+        ...menu.locationIds.map((id): UiChoiceOption => ({
+          id,
+          label: locationName(id),
+          icon: SHOP_GLYPH,
+          avatarSrc: null,
+          checked: locations.includes(id),
+          testId: `analytics-scope-location-${id}`,
+        })),
+      ],
     });
   }
-  const soleRow = menu.barbers.find((row) => row.barberId === barbers[0]);
   options.push({
     id: AnalyticsScopeOption.Team,
-    label:
+    label: words.scope.teamGroup,
+    // The value: «Всички», or the barbers ticked, in the menu's order.
+    description:
       barbers.length === 0
-        ? words.scope.wholeTeam
-        : barbers.length === 1 && soleRow !== undefined
-          ? named(soleRow)
-          : words.scope.barbersCount(barbers.length),
+        ? words.scope.all
+        : menu.barbers
+            .filter((row) => barbers.includes(row.barberId))
+            .map(named)
+            .join(', '),
     icon: TEAM_GLYPH,
-    avatarSrc:
-      barbers.length === 1 && soleRow !== undefined
-        ? input.names.barberAvatarSrc(soleRow.barberId)
-        : null,
-    selected: barbers.length === 0,
+    avatarSrc: null,
     testId: 'analytics-scope-team',
     childrenTitle: words.scope.teamGroup,
-    openLabel: words.scope.pickBarbers,
-    openTestId: 'analytics-scope-team-open',
-    children: menu.barbers.map((row): UiChoiceOption => ({
-      id: row.barberId,
-      label: barberName(row),
-      avatarSrc: input.names.barberAvatarSrc(row.barberId),
-      checked: barbers.length === 0 || barbers.includes(row.barberId),
-      testId: `analytics-scope-${row.barberId}`,
-    })),
+    children: [
+      {
+        id: ANALYTICS_SCOPE_ALL,
+        label: words.scope.wholeTeam,
+        icon: TEAM_GLYPH,
+        avatarSrc: null,
+        all: true,
+        checked: barbers.length === 0,
+        testId: 'analytics-scope-team-all',
+      },
+      ...menu.barbers.map((row): UiChoiceOption => ({
+        id: row.barberId,
+        label: barberName(row),
+        avatarSrc: input.names.barberAvatarSrc(row.barberId),
+        checked: barbers.includes(row.barberId),
+        testId: `analytics-scope-${row.barberId}`,
+      })),
+    ],
   });
   const shopsPart =
     locations.length === 0
@@ -258,10 +284,38 @@ function periodMenuOf(input: AnalyticsHomeInput): AnalyticsMenuVm {
 
 // ── A page of the carousel ────────────────────────────────────────────────
 
+/** No loaded page to take the shape from (the first load): the cards' bones alone. */
+const NO_BONES: AnalyticsBonesVm = { teamRows: [], locationRows: [] };
+
+/** `[0 … n)`, the rows a list of bones tracks by. */
+const rowsOf = (n: number): readonly number[] =>
+  Array.from({ length: n }, (_, i) => i);
+
+/**
+ * The shape of a page still loading: the one the last report of this
+ * scope has — kept by the store while the carousel swipes past the
+ * pages it has, since they are dropped from `pageReports` — with the same rule that
+ * shows its team card (`screenOf(…).shopScope`) and its locations card (a
+ * report carries `reportLocations` only over two or more).
+ */
+function bonesOf(input: AnalyticsHomeInput): AnalyticsBonesVm {
+  const shape = input.shapeReport ?? input.report;
+  if (shape === null) return NO_BONES;
+  return {
+    teamRows: rowsOf(
+      StaffAnalyticsSystem.screenOf(shape).shopScope
+        ? shape.reportBarbers.length
+        : 0,
+    ),
+    locationRows: rowsOf(shape.reportLocations.length),
+  };
+}
+
 function pageOf(
   input: AnalyticsHomeInput,
   period: AnalyticsPeriod,
   report: AnalyticsReport | null,
+  bones: AnalyticsBonesVm,
 ): AnalyticsPageVm {
   const query = {
     span: period.analyticsSpan,
@@ -275,7 +329,15 @@ function pageOf(
   const key = `${period.analyticsSpan}-${period.fromLocalDate}`;
   const label = pageLabelOf(period, input);
   if (report === null) {
-    return { key, label, cards: null, team: null, locations: null, query };
+    return {
+      key,
+      label,
+      cards: null,
+      team: null,
+      locations: null,
+      query,
+      bones,
+    };
   }
   const pageInput: AnalyticsScreenInput = { ...input, period, report };
   const body = bodyOf(pageInput, report);
@@ -291,7 +353,19 @@ function pageOf(
     locations:
       report.reportLocations.length > 0 ? locationsOf(pageInput, report) : null,
     query,
+    bones,
   };
+}
+
+/** A span of hours in words — past ten hours the minutes are noise: «489 ч», not «489 ч 35 мин». */
+function hoursWords(
+  minutes: MinuteCount,
+  words: AnalyticsScreenInput['words'],
+): string {
+  return spanWords(
+    minutes >= TEN_HOURS ? MinuteCount.roundToHour(minutes) : minutes,
+    words.spanWords,
+  );
 }
 
 function cardsOf(
@@ -354,12 +428,7 @@ function cardsOf(
   const rosteredSoFar = AnalyticsCarouselSystem.rosteredSoFarOf(report);
   const worked = spanWords(report.reportWorkedMinutes, words.spanWords);
   // The roster's whole is said in hours past ten («от 131 ч»).
-  const rostered = spanWords(
-    rosteredSoFar >= TEN_HOURS
-      ? MinuteCount.roundToHour(rosteredSoFar)
-      : rosteredSoFar,
-    words.spanWords,
-  );
+  const rostered = hoursWords(rosteredSoFar, words);
 
   // «Бакшиши»: the tips and their share of the takings.
   const tipsShare = AnalyticsCarouselSystem.tipsShareOf(report);
@@ -368,7 +437,7 @@ function cardsOf(
   // «Работно време»: how full the roster was. «Свободно време»: what no
   // one booked or can still book, by weekday. «Клиенти»: who came.
   const occupancy = AnalyticsCarouselSystem.occupancyOf(report);
-  const free = AnalyticsCarouselSystem.freeMinutesOf(report);
+  const free = AnalyticsCarouselSystem.freeTimeOf(report);
   const freeWeek = AnalyticsCarouselSystem.freeWeekOf(report);
   const weekdayLabels = formatWeekdayLabels(lang);
   const served = AnalyticsCarouselSystem.servedOf(report);
@@ -414,19 +483,22 @@ function cardsOf(
       card: AnalyticsTile.Free,
       screen: AnalyticsCard.Time,
       title: words.home.free,
-      // Past ten hours the minutes are noise: «489 ч», not «489 ч 35 мин».
-      value: spanWords(
-        free >= TEN_HOURS ? MinuteCount.roundToHour(free) : free,
-        words.spanWords,
-      ),
+      // The figure is the free time SO FAR — beside the time card's «…ч
+      // по график», which counts so far too; what is still open to book
+      // reads under it while the period has any (owner, 2026-11-09).
+      value: hoursWords(free.soFarMinutes, words),
       delta: null,
       trend: null,
       detail:
-        freeWeek === null
-          ? null
-          : freeWeek.emptiest === null
-            ? words.home.freeNone
-            : words.home.freeDetail(weekdayLabels[freeWeek.emptiest - 1] ?? ''),
+        free.aheadMinutes > 0
+          ? words.home.freeAhead(hoursWords(free.aheadMinutes, words))
+          : freeWeek === null
+            ? null
+            : freeWeek.emptiest === null
+              ? words.home.freeNone
+              : words.home.freeDetail(
+                  weekdayLabels[freeWeek.emptiest - 1] ?? '',
+                ),
       spark:
         freeWeek === null
           ? null
@@ -567,10 +639,20 @@ function aheadOf(
 ): AnalyticsAheadCardVm {
   const { words } = input;
   const bars = body.open.bars;
+  // What the open hours are free OF: the working time still to come — and
+  // whose, when several barbers' hours add up.
+  const working = hoursWords(report.reportBookableWorkingMinutes, words);
+  const detail =
+    report.reportAheadBarberCount > 1
+      ? words.home.aheadDetailTeam(
+          working,
+          words.scope.barbersCount(report.reportAheadBarberCount),
+        )
+      : words.home.aheadDetail(working);
   return {
     title: words.home.ahead,
     value: body.open.value,
-    detail: words.home.aheadDetail,
+    detail,
     spark: {
       values: report.reportAheadDays.map((day) => day.openMinutes),
       highlight: bars.highlightIndex,
@@ -579,8 +661,9 @@ function aheadOf(
       labels: bars.bars.map((bar) => bar.label),
       label: bars.label,
     },
+    tracks: report.reportAheadDays.map((day) => day.workingMinutes),
     link: body.open.link,
-    accessibleName: [words.home.ahead, body.open.value, words.home.aheadDetail]
+    accessibleName: [words.home.ahead, body.open.value, detail]
       .filter(Boolean)
       .join(', '),
   };

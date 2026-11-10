@@ -62,6 +62,10 @@ export function injectAnalyticsScreen(
       const service = catalog.findService(id);
       return service === undefined ? null : wording.text(service.name);
     },
+    serviceOrder: (id) => {
+      const order = catalog.services().findIndex((entry) => entry.id === id);
+      return order === -1 ? null : order;
+    },
     barberName: (id) => {
       const barber = catalog.barbers().find((entry) => entry.id === id);
       return barber === undefined ? null : wording.text(barber.name);

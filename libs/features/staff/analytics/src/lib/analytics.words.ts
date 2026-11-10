@@ -89,9 +89,8 @@ export interface AnalyticsWords {
     readonly shopsCount: (count: number) => string;
     /** «3 бръснари». */
     readonly barbersCount: (count: number) => string;
-    /** «Избери салони» · «Избери бръснари» — the chevrons' names. */
-    readonly pickShops: string;
-    readonly pickBarbers: string;
+    /** «Всички» — a filter row's value while nothing in it is narrowed. */
+    readonly all: string;
   };
   /** The freshness line (staff-analytics-v2 «Freshness»): how old the figures are, and the ⓘ. */
   readonly freshness: {
@@ -133,6 +132,8 @@ export interface AnalyticsWords {
     readonly ahead: (booked: string, open: string) => string;
     /** «По дни» — the bar's way to its days. */
     readonly byDay: string;
+    /** «<1%» — a part that is there, too small to round to a whole percent. */
+    readonly shareUnderOne: string;
   };
   readonly open: {
     readonly title: string;
@@ -273,6 +274,8 @@ export interface AnalyticsWords {
     /** «най-свободно: пн» — the weekday with the most free time. */
     readonly freeDetail: (weekday: string) => string;
     readonly freeNone: string;
+    /** «още 352 ч свободни» — the free time still open before the period ends. */
+    readonly freeAhead: (time: string) => string;
     /** «Свободно време по дни от седмицата» — the weekday bars' name. */
     readonly freeWeek: string;
     /** «Клиенти» — the clients served. */
@@ -293,7 +296,13 @@ export interface AnalyticsWords {
     /** «Салони» — the shop's locations compared. */
     readonly locations: string;
     readonly ahead: string;
-    readonly aheadDetail: string;
+    /**
+     * Under the open hours: what they are free OF — «от 120 ч работно
+     * време за 7 дни» for one barber, «… на 3 бръснари за 7 дни» for
+     * several, whose hours add up (owner, 2026-11-09: «97 ч free?»).
+     */
+    readonly aheadDetail: (working: string) => string;
+    readonly aheadDetailTeam: (working: string, barbers: string) => string;
     readonly tools: string;
     readonly exportDetail: string;
     readonly goalNone: string;
@@ -303,6 +312,8 @@ export interface AnalyticsWords {
   };
   /** A card's own screen (staff-analytics-v3): the chart switch, the range row, the ring's words. */
   readonly card: {
+    /** The rows under a card's chart, by what they are: «Посещения», «По дни», «По бръснари». */
+    readonly rows: Readonly<Record<'SEATS' | 'DAYS' | 'BARBERS', string>>;
     readonly views: string;
     readonly view: Readonly<Record<'LINE' | 'BARS' | 'RING', string>>;
     readonly ranges: string;
@@ -503,8 +514,7 @@ export function analyticsWordsOf(
       wholeTeam: t('scope.wholeTeam'),
       shopsCount: counted('scope.shopsCount'),
       barbersCount: counted('scope.barbersCount'),
-      pickShops: t('scope.pickShops'),
-      pickBarbers: t('scope.pickBarbers'),
+      all: t('scope.all'),
     },
     freshness: {
       justNow: t('status.justNow'),
@@ -546,6 +556,7 @@ export function analyticsWordsOf(
       },
       ahead: (booked, open) => t('time.ahead', { booked, open }),
       byDay: t('time.byDay'),
+      shareUnderOne: t('time.shareUnderOne'),
     },
     open: {
       title: t('open.title'),
@@ -660,6 +671,7 @@ export function analyticsWordsOf(
       free: t('home.free'),
       freeDetail: (weekday) => t('home.freeDetail', { weekday }),
       freeNone: t('home.freeNone'),
+      freeAhead: (time) => t('home.freeAhead', { time }),
       freeWeek: t('home.freeWeek'),
       clients: t('home.clients'),
       // Nobody missed is its own sentence, not «0 не дойдоха».
@@ -677,7 +689,9 @@ export function analyticsWordsOf(
       team: t('home.team'),
       locations: t('home.locations'),
       ahead: t('home.ahead'),
-      aheadDetail: t('home.aheadDetail'),
+      aheadDetail: (working) => t('home.aheadDetail', { working }),
+      aheadDetailTeam: (working, barbers) =>
+        t('home.aheadDetailTeam', { working, barbers }),
       tools: t('home.tools'),
       exportDetail: t('home.exportDetail'),
       goalNone: t('home.goalNone'),
@@ -685,6 +699,11 @@ export function analyticsWordsOf(
       loading: t('home.loading'),
     },
     card: {
+      rows: {
+        SEATS: t('card.rows.SEATS'),
+        DAYS: t('card.rows.DAYS'),
+        BARBERS: t('card.rows.BARBERS'),
+      },
       views: t('card.views'),
       view: {
         LINE: t('card.view.LINE'),

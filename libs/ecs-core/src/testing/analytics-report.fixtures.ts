@@ -64,6 +64,15 @@ function seriesPoints(): readonly AnalyticsReport.SeriesPoint[] {
     takingsCents: cents(
       day === '2026-09-14' ? 2800 : day === '2026-09-15' ? 1750 : 0,
     ),
+    // The two day rows' 3,00 € of tips each, on their days.
+    tipsCents: cents(day === '2026-09-14' || day === '2026-09-15' ? 300 : 0),
+    // The haircut on the 14th, the beard on the 15th — the services' rows.
+    serviceTakings:
+      day === '2026-09-14'
+        ? [{ serviceId: cut, takingsCents: cents(2800) }]
+        : day === '2026-09-15'
+          ? [{ serviceId: beard, takingsCents: cents(1750) }]
+          : [],
     comparisonTakingsCents: cents(index === 13 ? 3500 : 0),
   }));
 }
@@ -118,9 +127,12 @@ function hourCells(): readonly AnalyticsReport.HourCell[] {
 /** The seven days from `FIXTURE_TODAY` (28 September): 390 open minutes, the most on the 29th. */
 function aheadDays(): readonly AnalyticsReport.AheadDay[] {
   const open = [0, 120, 90, 60, 60, 30, 30];
+  // The working time still to come each day the open minutes are part of.
+  const working = [60, 480, 480, 480, 480, 240, 0];
   return open.map((minutes, index) => ({
     localDate: LocalDate.addDays(localDate('2026-09-28'), index),
     openMinutes: m(minutes),
+    workingMinutes: m(working[index] ?? 0),
   }));
 }
 
@@ -228,6 +240,8 @@ export function analyticsReportFixture(
     reportLateCancellationCount: 1,
 
     reportBookableOpenMinutes: m(390),
+    reportBookableWorkingMinutes: m(2220),
+    reportAheadBarberCount: 1,
     reportEmptiestLocalDate: localDate('2026-09-29'),
 
     reportBusiestWeekday: null,

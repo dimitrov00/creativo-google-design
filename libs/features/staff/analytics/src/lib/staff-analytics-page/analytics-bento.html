@@ -198,13 +198,43 @@
     </span>
   </a>
   } } @else {
-  <!-- The bones of a page whose report is not here yet. -->
-  <ui-skeleton
-    uiFrame
-    uiFrameHeight="13rem"
+  <!-- The bones of a page whose report is not here yet, in the page's own
+       shape (`bones`): each bone is a card's own frame with its words
+       hidden, so it is exactly as tall as the card the figures will fill —
+       the takings card's floor, four square tiles, then a row per barber
+       and per salon — and the swipe lands on the layout it will keep. -->
+  <div
+    class="analytics-bento__bone analytics-bento__bone--takings analytics-bento__card--wide"
+    aria-hidden="true"
+  >
+    <ui-skeleton class="analytics-bento__bone-fill" />
+  </div>
+  @for (bone of [0, 1, 2, 3]; track bone) {
+  <div
+    class="analytics-bento__bone analytics-bento__bone--tile"
+    aria-hidden="true"
+  >
+    <ui-skeleton class="analytics-bento__bone-fill" />
+  </div>
+  } @for (rows of [p.bones.teamRows, p.bones.locationRows]; track $index) { @if
+  (rows.length > 0) {
+  <div
+    uiPadding="regular"
     class="analytics-bento__bone analytics-bento__card--wide"
-  />
-  @for (bone of [1, 2, 3, 4]; track bone) {
-  <ui-skeleton uiFrame uiFrameHeight="11rem" class="analytics-bento__bone" />
-  } }
+    aria-hidden="true"
+  >
+    <ui-skeleton class="analytics-bento__bone-fill" />
+    <span uiText uiFont="subheadline" class="analytics-bento__title"
+      >&nbsp;</span
+    >
+    <span class="analytics-bento__team">
+      @for (row of rows; track row) {
+      <span class="analytics-bento__member">
+        <span uiText uiFont="footnote">&nbsp;</span>
+        <span class="analytics-bento__member-bar"></span>
+      </span>
+      }
+    </span>
+  </div>
+  } } }
 </div>

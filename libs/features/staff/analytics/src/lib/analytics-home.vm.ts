@@ -169,6 +169,20 @@ export type AnalyticsPageVm = {
   readonly locations: AnalyticsLocationsCardVm | null;
   /** The card screens' query: this page's period and the scope. */
   readonly query: AnalyticsCardQuery;
+  /** What the page draws while its report is out (`cards` is `null`). */
+  readonly bones: AnalyticsBonesVm;
+};
+
+/**
+ * The bones of a page whose report is not here yet, in the SHAPE a loaded
+ * page of the same scope has — so a swipe lands on the layout the figures
+ * will fill, not on a different one that jumps when they arrive: a row of
+ * bones per barber of the team card and per salon of the locations card
+ * (none when that card does not show), each list an index to track by.
+ */
+export type AnalyticsBonesVm = {
+  readonly teamRows: readonly number[];
+  readonly locationRows: readonly number[];
 };
 
 /** What a card hands its screen in the URL. */
@@ -187,6 +201,9 @@ export type AnalyticsCardQuery = {
  * the whole team — each picked whole by its row, or narrowed through its
  * submenu's boxes (the submenu's options are the location and barber ids).
  */
+/** The «all» box at the head of each scope submenu: it picks the row whole. */
+export const ANALYTICS_SCOPE_ALL = 'all';
+
 export const AnalyticsScopeOption = {
   Locations: 'locations',
   Team: 'team',
@@ -224,6 +241,12 @@ export type AnalyticsAheadCardVm = {
   readonly value: string;
   readonly detail: string;
   readonly spark: AnalyticsSparkVm;
+  /**
+   * Each day's working time still to come — the track its free bar fills
+   * (owner, 2026-11-09: free hours as a share of working hours, a day off
+   * an empty slot).
+   */
+  readonly tracks: readonly number[];
   readonly link: AnalyticsScheduleLink | null;
   readonly accessibleName: string;
 };

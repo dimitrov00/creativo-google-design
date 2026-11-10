@@ -18,13 +18,32 @@
   padding-block-start: var(--sys-space-regular);
 }
 
+/* THE BAR is the DS's collapsing title (ui-sheet-header on a page): it
+   pins, folds the figure into its middle and lands with the house fade.
+   The page only runs it edge to edge — its own inset is the page's
+   gutter — and keeps the gap to the figure. */
 .analytics-card__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sys-space-compact);
-  min-block-size: var(--control-size-large);
+  margin-inline: calc(-1 * var(--sys-space-regular));
   margin-block-end: var(--sys-space-regular);
+  /* The chart switch is a wide pill: plain `1fr` sides would grow to hold
+     it and push the landed title off the screen's centre. Zero-floored,
+     the sides stay equal; the switch keeps its own width at the trailing
+     edge (and is gone while the title shows). */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+/* The chart switch leaves once the bar has landed: it switches the chart,
+   and the chart has scrolled away (owner, 2026-11-09) — landed, the bar
+   is the way back and the figure, an iOS navigation bar. */
+.analytics-card__views {
+  transition:
+    opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard),
+    visibility var(--sys-motion-duration-instant);
+}
+
+.analytics-card__bar[data-collapsed] .analytics-card__views {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .analytics-card__modules {
@@ -110,6 +129,13 @@
   min-block-size: 12rem;
 }
 
+/* A drawn chart is as tall as its drawing: the 12rem floor holds the
+   loading bone's place only — under two salons' rows, or the 140px of a
+   column chart, it left a well of nothing. */
+.analytics-card__chart:has(> .ui-bar-chart, > .ui-line-chart) {
+  min-block-size: 0;
+}
+
 /* FULL BLEED (Revolut's detail charts): the line runs to the screen's
    edges; the chart keeps its right-edge figures inside the page's gutter
    (`[uiInset]`, the same 16 px). */
@@ -138,6 +164,9 @@
 }
 
 /* THE RANGE ROW: the chips take the width, the «…» hugs the trailing edge. */
+/* THE RANGE ROW: in the page's flow under the chart — it belongs to the
+   chart, never pinned to the bar (owner, 2026-11-09: «makes 0 sense to be
+   in the top toolbar»). */
 .analytics-card__ranges {
   display: flex;
   align-items: center;
@@ -246,4 +275,38 @@
   display: grid;
   gap: 2px;
   min-inline-size: 0;
+}
+
+/* «Кога е заето»: the grid and its sentence on one card. */
+.analytics-card__busy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+}
+
+/* The chart's key: the share in the quiet ink, then the time, both in
+   tabular figures so the column of times lines up down the run. */
+.analytics-card__key-figures {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sys-space-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-card__key-swatch {
+  flex: none;
+}
+
+/* Two columns of their own, both right-aligned, so the shares («<1%»,
+   «99%») and the times («0 мин», «3159 ч 50 мин») each line up down the
+   run whatever the other holds. */
+.analytics-card__key-share {
+  min-inline-size: 4ch;
+  text-align: end;
+}
+
+.analytics-card__key-figures .analytics-card__legend-value {
+  min-inline-size: 12ch;
+  margin-inline-start: 0;
+  text-align: end;
 }

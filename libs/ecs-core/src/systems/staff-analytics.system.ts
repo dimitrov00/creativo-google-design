@@ -761,23 +761,53 @@ function bucketIndexOf(grain: SeriesGrain, localDate: LocalDate): number {
 }
 
 /**
- * The net takings per bucket — the `reportTakingsCents` rule (a stored
- * day's takings as held; an allocated bill's seat nets on a live day; a
- * visit whose bill could not be evaluated adds nothing), cut by the day.
+ * The takings and the tips per bucket of `grain`, each summed the one way
+ * the report's totals are: the past days' stored figures, then each
+ * allocated worked seat of a live visit — the tips line and the takings
+ * line share their buckets at every range.
  */
-function takingsByBucket(
+function moneyByBucket(
   visits: readonly AnalyticsVisit[],
   pastDays: readonly DayFigures[],
   counting: Counting,
   grain: SeriesGrain,
-): readonly PriceCents[] {
-  const out: PriceCents[] = [];
-  for (let i = 0; i < grain.starts.length; i++) out.push(PriceCents.ZERO);
+): {
+  readonly takings: readonly PriceCents[];
+  readonly tips: readonly PriceCents[];
+  readonly services: readonly (readonly AnalyticsReport.ServiceTakings[])[];
+} {
+  const takings: PriceCents[] = [];
+  const tips: PriceCents[] = [];
+  const byService: Map<ServiceId, PriceCents>[] = [];
+  for (let i = 0; i < grain.starts.length; i++) {
+    takings.push(PriceCents.ZERO);
+    tips.push(PriceCents.ZERO);
+    byService.push(new Map());
+  }
+  const addService = (
+    index: number,
+    serviceId: ServiceId,
+    cents: PriceCents,
+  ): void => {
+    const bucket = byService[index] as Map<ServiceId, PriceCents>;
+    bucket.set(
+      serviceId,
+      PriceCents.add(bucket.get(serviceId) ?? PriceCents.ZERO, cents),
+    );
+  };
   for (let i = 0; i < pastDays.length; i++) {
     const day = pastDays[i] as DayFigures;
     const index = bucketIndexOf(grain, day.localDate);
     if (index < 0 || !counting.inScope(day.barberId)) continue;
-    out[index] = PriceCents.add(out[index] as PriceCents, day.dayTakingsCents);
+    takings[index] = PriceCents.add(
+      takings[index] as PriceCents,
+      day.dayTakingsCents,
+    );
+    tips[index] = PriceCents.add(tips[index] as PriceCents, day.dayTipsCents);
+    for (let r = 0; r < day.dayServices.length; r++) {
+      const row = day.dayServices[r] as DayFigures.ServiceRow;
+      addService(index, row.serviceId, row.takingsCents);
+    }
   }
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v] as AnalyticsVisit;
@@ -793,13 +823,24 @@ function takingsByBucket(
       ) {
         continue;
       }
-      out[index] = PriceCents.add(
-        out[index] as PriceCents,
-        (nets.nets[s] as SeatNet).netCents,
+      const net = nets.nets[s] as SeatNet;
+      takings[index] = PriceCents.add(
+        takings[index] as PriceCents,
+        net.netCents,
       );
+      tips[index] = PriceCents.add(tips[index] as PriceCents, net.tipCents);
+      addService(index, seat.serviceId, net.netCents);
     }
   }
-  return out;
+  // Each bucket's services by id — the order a report's arrays keep —
+  // and only the ones that took something.
+  const services = byService.map((bucket) =>
+    [...bucket.entries()]
+      .filter(([, cents]) => cents > 0)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([serviceId, takingsCents]) => ({ serviceId, takingsCents })),
+  );
+  return { takings, tips, services };
 }
 
 /**
@@ -814,26 +855,23 @@ function seriesOf(
   grain: SeriesGrain,
   previous: AnalyticsPeriod | null,
 ): readonly AnalyticsReport.SeriesPoint[] {
-  const current = takingsByBucket(
-    input.visits,
-    input.pastDays,
-    counting,
-    grain,
-  );
+  const current = moneyByBucket(input.visits, input.pastDays, counting, grain);
   const compared =
     previous === null
       ? []
-      : takingsByBucket(
+      : moneyByBucket(
           input.previousVisits,
           input.previousPastDays,
           previousCounting,
           grainOf(previous),
-        );
+        ).takings;
   const out: AnalyticsReport.SeriesPoint[] = [];
   for (let i = 0; i < grain.starts.length; i++) {
     out.push({
       localDate: grain.starts[i] as LocalDate,
-      takingsCents: current[i] as PriceCents,
+      takingsCents: current.takings[i] as PriceCents,
+      tipsCents: current.tips[i] as PriceCents,
+      serviceTakings: current.services[i] ?? [],
       comparisonTakingsCents:
         i < compared.length ? (compared[i] as PriceCents) : null,
     });
@@ -1234,21 +1272,22 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * A scope list's tick boxes (owner review 2026-11-09): none named shows
-   * every box ticked; a toggle flips one box — never the last ticked one
-   * off — and ticking every box is none named again (the whole list).
-   * Answers the scope sorted, each once.
+   * A scope list's tick boxes (owner review 2026-11-09, round 2: "either
+   * you choose salon within the submenus or all"): «all» and the boxes
+   * are either/or. From the whole list (none named) a box names that one
+   * alone; then a toggle flips one box; the last box off, or every box on,
+   * is the whole list again. Answers the scope sorted, each once.
    */
   scopeToggled<T extends string>(
     named: readonly T[],
     id: T,
     all: readonly T[],
   ): readonly T[] {
-    const ticked = named.length === 0 ? all : named;
-    const next = ticked.includes(id)
-      ? ticked.filter((entry) => entry !== id)
-      : [...ticked, id];
-    if (next.length === 0) return named;
+    if (named.length === 0)
+      return all.every((entry) => entry === id) ? [] : [id];
+    const next = named.includes(id)
+      ? named.filter((entry) => entry !== id)
+      : [...named, id];
     if (all.every((entry) => next.includes(entry))) return [];
     return [...new Set(next)].sort();
   },
@@ -2351,28 +2390,41 @@ function bookableOf(
   today: LocalDate,
 ): {
   readonly reportBookableOpenMinutes: MinuteCount;
+  readonly reportBookableWorkingMinutes: MinuteCount;
+  readonly reportAheadBarberCount: number;
   readonly reportEmptiestLocalDate: LocalDate | null;
   readonly reportAheadDays: readonly AnalyticsReport.AheadDay[];
 } {
   const dates = StaffAnalyticsSystem.aheadDaysOf(today);
   const open: MinuteCount[] = [];
-  for (let i = 0; i < dates.length; i++) open.push(MinuteCount.ZERO);
+  const working: MinuteCount[] = [];
+  for (let i = 0; i < dates.length; i++) {
+    open.push(MinuteCount.ZERO);
+    working.push(MinuteCount.ZERO);
+  }
+  const barbers = new Set<BarberId>();
   for (let i = 0; i < aheadDays.length; i++) {
     const day = aheadDays[i] as ChairDay;
     if (!counting.inScope(day.barberId)) continue;
     const index = LocalDate.daysBetween(today, day.localDate);
     if (index < 0 || index >= dates.length) continue;
     open[index] = MinuteCount.add(open[index] as MinuteCount, day.openMinutes);
+    const ahead = workingAheadOf(day);
+    working[index] = MinuteCount.add(working[index] as MinuteCount, ahead);
+    if (ahead > 0) barbers.add(day.barberId);
   }
   const rows: AnalyticsReport.AheadDay[] = [];
   let total = MinuteCount.ZERO;
+  let workingTotal = MinuteCount.ZERO;
   let emptiest: LocalDate | null = null;
   let most = 0;
   for (let i = 0; i < dates.length; i++) {
     const localDate = dates[i] as LocalDate;
     const openMinutes = open[i] as MinuteCount;
-    rows.push({ localDate, openMinutes });
+    const workingMinutes = working[i] as MinuteCount;
+    rows.push({ localDate, openMinutes, workingMinutes });
     total = MinuteCount.add(total, openMinutes);
+    workingTotal = MinuteCount.add(workingTotal, workingMinutes);
     if (openMinutes > most) {
       most = openMinutes;
       emptiest = localDate;
@@ -2380,9 +2432,29 @@ function bookableOf(
   }
   return {
     reportBookableOpenMinutes: total,
+    reportBookableWorkingMinutes: workingTotal,
+    reportAheadBarberCount: barbers.size,
     reportEmptiestLocalDate: emptiest,
     reportAheadDays: rows,
   };
+}
+
+/**
+ * A barber-day's working time still to come: the parts of its rostered
+ * time that lie from now on — booked ahead, open, and the future share of
+ * held time and short gaps. Breaks and blocks are not working time, and a
+ * day off rosters nothing.
+ */
+function workingAheadOf(day: ChairDay): MinuteCount {
+  let total = MinuteCount.add(day.bookedAheadMinutes, day.openMinutes);
+  total = MinuteCount.add(
+    total,
+    MinuteCount.minus(day.heldMinutes, day.pastHeldMinutes),
+  );
+  return MinuteCount.add(
+    total,
+    MinuteCount.minus(day.shortGapMinutes, day.pastShortGapMinutes),
+  );
 }
 
 /** A service row under construction — mutable inside one call only. */

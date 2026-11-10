@@ -179,7 +179,8 @@ the same disc in HTML for a legend row.
 | `no-show`                        | `--sys-color-destructive`                                                       |
 | `unmarked`                       | `--sys-color-warning` under a diagonal hatch of the surface (`#ui-chart-hatch`) |
 | `blocked`                        | `color-mix(in srgb, var(--sys-color-foreground) 76%, transparent)`              |
-| `unsold`, `staff`                | … 62 %                                                                          |
+| `unsold`                         | `color-mix(in srgb, var(--sys-color-accent) 16%, transparent)` — a track        |
+| `staff`                          | `color-mix(…foreground…)` 62 %                                                  |
 | `other`, `unknown`, `comparison` | … 48 %                                                                          |
 
 Every SVG part has a 1 px `--sys-color-separator` edge. The heatmap's ramp is
@@ -207,7 +208,7 @@ reads `charts.css` and pins these in both themes:
 | Part (over page / card)               | Light                 | Dark                   |
 | ------------------------------------- | --------------------- | ---------------------- |
 | `blocked` 76 %                        | 8.74 / 8.74 (#4b4b4b) | 10.14 / 9.20 (#b4b4b4) |
-| `unsold`, `staff` 62 %                | 5.25 / 5.25 (#6c6c6c) | 6.83 / 6.50 (#939393)  |
+| `staff` 62 %                          | 5.25 / 5.25 (#6c6c6c) | 6.83 / 6.50 (#939393)  |
 | `other`, `unknown`, `comparison` 48 % | 3.31 / 3.31 (#8d8d8d) | 4.35 / 4.40 (#727272)  |
 | `worked`, `online`                    | 3.04 / 3.04           | 6.90 / 5.89            |
 | `no-show`                             | 5.62 / 5.62           | 4.22 / 3.60            |
@@ -218,6 +219,17 @@ Adjacent pairs, OKLab × 100 (light / dark, on the page): worked · no-show
 15.7 / 13.1; no-show · unmarked 13.3 / 18.3; unmarked · blocked ≈ 23 / 17;
 blocked · unsold 11.3 / 11.2; unsold · other 11.9 / 10.7; online · staff
 23.9 / 18.5; staff · unknown 11.9 / 10.7; comparison · accent 18.8 / 22.7.
+
+**The free time is a wash, the one part under 3:1** (owner, 2026-11-09: the
+time chart's grey columns read as dead time, "so much monochrome"). `unsold`
+— rostered time nobody booked — is capacity, not a thing of its own, so it
+wears the worked hue at 16 %, a faint track: a column reads as the chair's
+working time, the solid foot the part that was used (a 34 % wash read as a
+muddy slab that buried that foot).
+Under 3:1 by design, it is never told by colour alone — every chart that
+draws it carries a legend and a table — and the spec still holds it ≥ 8
+apart from its neighbours and from the solid accent (`WASHES` in
+`chart-palette.spec.ts`).
 
 ## Accessibility
 

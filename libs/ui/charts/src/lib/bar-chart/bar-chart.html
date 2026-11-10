@@ -5,6 +5,12 @@
   [attr.aria-label]="uiLabel()"
   [attr.viewBox]="viewBox()"
   [attr.data-labels]="hasLabels() ? '' : null"
+  [attr.data-scrubbable]="uiScrubbable() ? '' : null"
+  (pointerdown)="scrubStart($event)"
+  (pointermove)="scrubMove($event)"
+  (pointerup)="scrubEnd($event)"
+  (pointercancel)="scrubEnd($event)"
+  (pointerleave)="scrubEnd($event)"
 >
   <defs>
     <pattern
@@ -26,6 +32,7 @@
     [attr.aria-label]="mark.name"
     [attr.data-index]="mark.index"
     [attr.data-highlight]="mark.highlight ? '' : null"
+    [attr.data-scrubbed]="scrubIndex() === mark.index ? '' : null"
     (click)="pick(mark.index)"
     (keydown)="onKeydown($event, position, mark.index)"
   >
@@ -42,6 +49,7 @@
       <rect
         class="ui-bar-chart__segment"
         [attr.data-part]="segment.part"
+        [attr.data-tone]="segment.tone ?? mark.tone"
         [attr.y]="mark.across"
         [attr.height]="mark.thickness"
         [style.--ui-bar-offset]="segment.offset + 'px'"
@@ -51,6 +59,7 @@
       <rect
         class="ui-bar-chart__segment"
         [attr.data-part]="segment.part"
+        [attr.data-tone]="segment.tone ?? mark.tone"
         [attr.x]="mark.across"
         [attr.width]="mark.thickness"
         [style.--ui-bar-offset]="segment.offset + 'px'"

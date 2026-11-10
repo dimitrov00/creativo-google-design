@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { UiChartPart } from '../chart-part';
-import { UiRingChart, type UiChartRingSegment } from './ring-chart';
+import { UiRingChart, shareAt, type UiChartRingSegment } from './ring-chart';
 
 const SPEND: readonly UiChartRingSegment[] = [
   {
@@ -200,5 +200,33 @@ describe('UiRingChart', () => {
     expect(arcs()).toEqual([]);
     expect(one('.ui-ring-chart__track')).not.toBeNull();
     expect(one('table')).toBeNull();
+  });
+});
+
+describe('shareAt — the ring’s share under an angle', () => {
+  const ring = (...values: number[]): UiChartRingSegment[] =>
+    values.map((value, i) => ({
+      value,
+      part: null,
+      tone: null,
+      label: `${i}`,
+      valueText: `${value}`,
+    }));
+  const turn = 2 * Math.PI;
+
+  it('walks the turn clockwise from twelve o’clock, a share each in order', () => {
+    // A half, a quarter, a quarter.
+    const segments = ring(2, 1, 1);
+    expect(shareAt(segments, 0.1)).toBe(0);
+    expect(shareAt(segments, turn * 0.49)).toBe(0);
+    expect(shareAt(segments, turn * 0.6)).toBe(1);
+    expect(shareAt(segments, turn * 0.9)).toBe(2);
+    // atan2 answers −π … π: the left half arrives negative.
+    expect(shareAt(segments, -turn * 0.1)).toBe(2);
+  });
+
+  it('skips the shares of nothing, and has none for a ring of nothing', () => {
+    expect(shareAt(ring(1, 0, 1), turn * 0.75)).toBe(2);
+    expect(shareAt(ring(0, 0), 1)).toBeNull();
   });
 });

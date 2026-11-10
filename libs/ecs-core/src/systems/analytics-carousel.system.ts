@@ -53,9 +53,25 @@ export type AnalyticsPace = {
 };
 
 /**
+ * The free time of a period, split at now (owner, 2026-11-09: «490 ч»
+ * free beside «138 ч по график» read as counting time nobody works). Both
+ * parts are rostered working time only — the roster's windows with its
+ * breaks, blocks and closed days already out:
+ * - `soFarMinutes` — free time that is gone: rostered, never booked, and
+ *   past (or too near to book any more) — the schedule's unsold;
+ * - `aheadMinutes` — free time still open for booking before the period
+ *   ends — the schedule's open.
+ */
+export type AnalyticsFreeTime = {
+  readonly soFarMinutes: MinuteCount;
+  readonly aheadMinutes: MinuteCount;
+};
+
+/**
  * The free time by weekday (the home's free-time card): the minutes
- * nobody booked or can still book — unsold plus open — on each ISO
- * weekday, Monday first, and the weekday that holds the most.
+ * gone free so far (`AnalyticsFreeTime.soFarMinutes`, the unsold) on each
+ * ISO weekday, Monday first, and the weekday that holds the most — the
+ * same minutes the card's figure counts.
  */
 export type AnalyticsFreeWeek = {
   /** Seven entries, Monday … Sunday. */
@@ -299,20 +315,44 @@ export const AnalyticsCarouselSystem = {
   },
 
   /**
-   * The FREE TIME of `report` — the schedule's free (G5): rostered time
-   * nobody booked (unsold) and time still open for booking (open).
+   * The FREE TIME of `report`, split at now ({@link AnalyticsFreeTime}):
+   * the rostered time that went unbooked so far (unsold), and the time
+   * still open for booking (open). Their sum is the schedule's free (G5).
    */
-  freeMinutesOf(report: AnalyticsReport): MinuteCount {
-    return MinuteCount.add(
-      report.reportUnsoldMinutes,
-      report.reportOpenMinutes,
-    );
+  freeTimeOf(report: AnalyticsReport): AnalyticsFreeTime {
+    return {
+      soFarMinutes: report.reportUnsoldMinutes,
+      aheadMinutes: report.reportOpenMinutes,
+    };
   },
 
   /**
    * How full the roster was: worked time over the rostered time so far
    * ({@link rosteredSoFarOf}), `0 … 1`; `null` with nothing rostered yet.
    */
+  /**
+   * THE HEATMAP'S STRENGTHS, one per `reportHourGrid` cell in its order:
+   * each hour's occupancy (worked over rostered) over the BUSIEST hour's,
+   * `0 … 1` — the grid's own scale, so a quiet shop's peak still reads as
+   * its peak (owner, 2026-11-09: at 1–5 % on an absolute scale every cell
+   * was the same near-black). All zero when nothing was worked.
+   */
+  busyStrengthsOf(report: AnalyticsReport): readonly number[] {
+    const cells = report.reportHourGrid;
+    const rates: number[] = [];
+    let peak = 0;
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i] as AnalyticsReport.HourCell;
+      const rate =
+        cell.rosteredMinutes > 0
+          ? cell.workedMinutes / cell.rosteredMinutes
+          : 0;
+      rates.push(rate);
+      if (rate > peak) peak = rate;
+    }
+    return rates.map((rate) => (peak > 0 ? Math.min(rate / peak, 1) : 0));
+  },
+
   occupancyOf(report: AnalyticsReport): number | null {
     const rostered = AnalyticsCarouselSystem.rosteredSoFarOf(report);
     return rostered > 0
@@ -321,8 +361,8 @@ export const AnalyticsCarouselSystem = {
   },
 
   /**
-   * THE FREE WEEK ({@link AnalyticsFreeWeek}): the day rows' unsold and
-   * open minutes summed by their day's weekday. `null` where the rows are
+   * THE FREE WEEK ({@link AnalyticsFreeWeek}): the day rows' unsold
+   * minutes — the free time so far — summed by their day's weekday. `null` where the rows are
    * per month (a span over 93 days): a month has no weekday.
    */
   freeWeekOf(report: AnalyticsReport): AnalyticsFreeWeek | null {
@@ -334,7 +374,7 @@ export const AnalyticsCarouselSystem = {
       const index = LocalDate.weekday(row.localDate) - 1;
       minutes[index] = MinuteCount.add(
         minutes[index] as MinuteCount,
-        MinuteCount.add(row.dayUnsoldMinutes, row.dayOpenMinutes),
+        row.dayUnsoldMinutes,
       );
     }
     let emptiest: Weekday | null = null;
@@ -394,36 +434,6 @@ export const AnalyticsCarouselSystem = {
     return report.reportTakingsCents > 0
       ? report.reportTipsCents / report.reportTakingsCents
       : null;
-  },
-
-  /**
-   * The tips per bucket of `report`'s series — the day rows' tips summed
-   * into the bucket each row's day falls in, aligned with
-   * `reportSeries`. `null` where the rows cannot be placed: a range over
-   * 93 days that is no `YEAR` keeps a row per barber-MONTH against weekly
-   * buckets.
-   */
-  tipsSeriesOf(report: AnalyticsReport): readonly number[] | null {
-    const points = report.reportSeries;
-    if (
-      report.reportAnalyticsSpan !== AnalyticsSpan.Year &&
-      StaffAnalyticsSystem.dayRowsAreMonths(report)
-    ) {
-      return null;
-    }
-    const out = points.map(() => 0);
-    for (const row of report.reportDayRows) {
-      let bucket = -1;
-      for (let i = 0; i < points.length; i++) {
-        if (
-          (points[i] as AnalyticsReport.SeriesPoint).localDate <= row.localDate
-        ) {
-          bucket = i;
-        }
-      }
-      if (bucket >= 0) out[bucket] = (out[bucket] as number) + row.dayTipsCents;
-    }
-    return out;
   },
 
   /** The range chip `period` is on `today`, or `null` — a day, a past week, a range of the sheet's. */

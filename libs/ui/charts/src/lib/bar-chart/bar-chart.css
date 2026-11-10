@@ -20,6 +20,28 @@
     overflow: visible;
   }
 
+  /* READ BY TOUCH (uiScrubbable): a drag reads across the bars — the
+     page scrolls only up and down over them — and while a finger rests,
+     the bar under it keeps its paint (its parts too: a stacked bar is not
+     flattened to one colour) and every other steps back. */
+  .ui-bar-chart__drawing[data-scrubbable] {
+    touch-action: pan-y;
+    cursor: crosshair;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .ui-bar-chart__marks {
+    transition: opacity var(--sys-motion-duration-instant)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-bar-chart[data-scrubbing]
+    .ui-bar-chart__bar:not([data-scrubbed])
+    .ui-bar-chart__marks {
+    opacity: 0.32;
+  }
+
   .ui-bar-chart__bar {
     cursor: pointer;
     outline: none;
@@ -74,6 +96,14 @@
     .ui-bar-chart__bar[data-highlight]
     .ui-bar-chart__segment {
     fill: var(--sys-color-accent);
+  }
+
+  /* A MEMBER keeps its own colour when it is the one highlighted — the
+     accent would make it someone else. */
+  .ui-bar-chart[data-highlighting]
+    .ui-bar-chart__bar[data-highlight]
+    .ui-bar-chart__segment[data-tone] {
+    fill: var(--ui-chart-paint);
   }
 
   /* WORDS ARE INK: the caption role in the quiet ink under each bar

@@ -144,7 +144,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       ['Неявили се', '1 ч'],
       ['Неотбелязани', '0 мин'],
       ['Блокирано', '2 ч'],
-      ['Непродадено', '3 ч 20 мин'],
+      ['Свободно', '3 ч 20 мин'],
       ['Друго', '20 мин'],
     ]);
     expect(body.time.segments[0]?.part).toBe('worked');
@@ -170,6 +170,8 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     expect(body.services.bars[0]).toEqual({
       label: 'Подстригване · 42,00\u00a0€ на час',
       parts: [{ part: 'worked', value: 2800 }],
+      // The service's own colour — its place in the catalogue.
+      tone: 0,
     });
     expect(body.services.valueText).toEqual([
       `${nbsp('28,00 €')} · 1 път`,
@@ -226,7 +228,7 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
     expect(bars.valueText[0]).toBe('0 мин');
   });
 
-  it('draws when the chair is busy: the rostered weekdays by the rostered hours, worked over rostered', () => {
+  it('draws when the chair is busy: the rostered weekdays by the rostered hours, each hour against the busiest', () => {
     const busy = body.busy;
     expect(busy?.title).toBe('Кога е заето');
     expect(busy?.label).toBe('Заетост по ден и час');
@@ -243,8 +245,9 @@ describe('analyticsVm — a barber’s month, in Bulgarian', () => {
       '17',
     ]);
     expect(busy?.cells).toHaveLength(18);
-    expect(busy?.cells[0]).toEqual({ row: 0, column: 0, value: 30, max: 60 });
-    expect(busy?.cells[17]).toEqual({ row: 1, column: 8, value: 0, max: 60 });
+    // 30 of 60 minutes worked is the grid's busiest hour: full strength.
+    expect(busy?.cells[0]).toEqual({ row: 0, column: 0, value: 1, max: 1 });
+    expect(busy?.cells[17]).toEqual({ row: 1, column: 8, value: 0, max: 1 });
     // Two rostered days: under the base of seven, no verdict yet.
     expect(busy?.sentence).toBe(
       'Най-натовареният час се показва след 7 работни дни.',
@@ -357,7 +360,7 @@ describe('analyticsVm — the same month in English', () => {
       'No-shows',
       'Unmarked',
       'Blocked',
-      'Unsold',
+      'Free',
       'Other',
     ]);
     expect(body.time.ahead).toBe(
@@ -482,6 +485,7 @@ describe('analyticsVm — the admin and the shop', () => {
           { part: 'staff', value: 1 },
           { part: 'unknown', value: 0 },
         ],
+        tone: null,
       },
     ]);
     expect(
@@ -671,6 +675,8 @@ describe('analyticsVm — the screen states', () => {
           reportSeries: report.reportAheadDays.map((day) => ({
             localDate: day.localDate,
             takingsCents: cents(day.openMinutes * 10),
+            tipsCents: cents(0),
+            serviceTakings: [],
             comparisonTakingsCents: null,
           })),
           reportTimeSeries: report.reportTimeSeries
@@ -939,8 +945,8 @@ describe('analyticsDrillVm — a figure’s rows and a footer equal to it', () =
     expect(drill.drillRows).toBe(DrillRows.Days);
     expect(drill.days.map((day) => [day.title, day.detail, day.value])).toEqual(
       [
-        ['пн, 14.09', '9 ч по график · 2 ч 20 мин непродадено', '4 ч 30 мин'],
-        ['вт, 15.09', '9 ч по график · 3 ч 20 мин непродадено', '3 ч 30 мин'],
+        ['пн, 14.09', '9 ч по график · 2 ч 20 мин свободно', '4 ч 30 мин'],
+        ['вт, 15.09', '9 ч по график · 3 ч 20 мин свободно', '3 ч 30 мин'],
       ],
     );
     expect(drill.footerValue).toBe('8 ч');

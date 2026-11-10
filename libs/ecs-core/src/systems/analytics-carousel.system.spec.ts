@@ -185,33 +185,6 @@ describe('AnalyticsCarouselSystem — what a bento card measures', () => {
   });
 });
 
-describe('AnalyticsCarouselSystem.tipsSeriesOf — tips per bucket', () => {
-  it('sums each day row’s tips into the bucket its day falls in', () => {
-    const report = analyticsReportFixture();
-    const tips = C.tipsSeriesOf(report);
-    expect(tips).toHaveLength(report.reportSeries.length);
-    const index14 = report.reportSeries.findIndex(
-      (p) => p.localDate === '2026-09-14',
-    );
-    // The fixture's two day rows (14 and 15 Sep) carry 3,00 € of tips each.
-    expect(tips?.[index14]).toBe(300);
-    expect(tips?.[index14 + 1]).toBe(300);
-    expect(tips?.reduce((a, b) => a + b, 0)).toBe(600);
-  });
-
-  it('has none for a long range whose rows are per month against weekly buckets', () => {
-    expect(
-      C.tipsSeriesOf(
-        analyticsReportFixture({
-          reportAnalyticsSpan: AnalyticsSpan.Custom,
-          reportFromLocalDate: localDate('2026-01-01'),
-          reportToLocalDate: localDate('2026-09-30'),
-        }),
-      ),
-    ).toBeNull();
-  });
-});
-
 describe('AnalyticsCarouselSystem.moneyTicksOf — a money chart’s round amounts', () => {
   it('steps 1, 2 or 5 × a power of ten up to the first at or over the top', () => {
     // 136,50 € → steps of 50 €: 50, 100, 150.
@@ -236,6 +209,8 @@ describe('AnalyticsCarouselSystem — the locations compared', () => {
   const day = (d: string): AnalyticsReport.SeriesPoint => ({
     localDate: localDate(d),
     takingsCents: 0 as PriceCents,
+    tipsCents: 0 as PriceCents,
+    serviceTakings: [],
     comparisonTakingsCents: null,
   });
   const SERIES = [day('2026-11-08'), day('2026-11-09'), day('2026-11-10')];
@@ -299,6 +274,8 @@ describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals
   ): AnalyticsReport.SeriesPoint => ({
     localDate: localDate(day),
     takingsCents: takings as PriceCents,
+    tipsCents: 0 as PriceCents,
+    serviceTakings: [],
     comparisonTakingsCents: comparison as PriceCents | null,
   });
   const report = (points: readonly AnalyticsReport.SeriesPoint[]) =>
@@ -356,11 +333,33 @@ describe('AnalyticsCarouselSystem.paceOf — the takings card’s running totals
 });
 
 describe('AnalyticsCarouselSystem — occupancy, free time and clients served', () => {
-  it('is the free time the schedule’s: unsold plus open', () => {
-    const report = analyticsReportFixture();
-    expect(C.freeMinutesOf(report)).toBe(
-      report.reportUnsoldMinutes + report.reportOpenMinutes,
-    );
+  it('splits the free time at now: the unsold so far, the open still ahead — together the schedule’s free', () => {
+    const report = analyticsReportFixture({
+      reportUnsoldMinutes: 330 as MinuteCount,
+      reportOpenMinutes: 1410 as MinuteCount,
+    });
+    expect(C.freeTimeOf(report)).toEqual({
+      soFarMinutes: 330,
+      aheadMinutes: 1410,
+    });
+  });
+
+  it('scales the heatmap to its busiest hour — each cell’s occupancy over the peak’s, 0 … 1; all zero with nothing worked', () => {
+    const cell = (worked: number, rostered: number) => ({
+      weekday: 1 as AnalyticsReport.HourCell['weekday'],
+      hour: 9 as AnalyticsReport.HourCell['hour'],
+      workedMinutes: worked as MinuteCount,
+      rosteredMinutes: rostered as MinuteCount,
+    });
+    // 3 % and 6 % of the hour worked: the 6 % is the grid's top.
+    const quiet = analyticsReportFixture({
+      reportHourGrid: [cell(3, 100), cell(6, 100), cell(0, 100), cell(0, 0)],
+    });
+    expect(C.busyStrengthsOf(quiet)).toEqual([0.5, 1, 0, 0]);
+    const idle = analyticsReportFixture({
+      reportHourGrid: [cell(0, 60), cell(0, 60)],
+    });
+    expect(C.busyStrengthsOf(idle)).toEqual([0, 0]);
   });
 
   it('measures occupancy as worked over the rostered time so far, capped at 1, none with nothing rostered', () => {
@@ -380,7 +379,7 @@ describe('AnalyticsCarouselSystem — occupancy, free time and clients served', 
     expect(C.occupancyOf(empty)).toBeNull();
   });
 
-  it('sums the day rows’ free time by weekday, Monday first, naming the emptiest; none on rows per month', () => {
+  it('sums the day rows’ free time so far (the unsold) by weekday, Monday first, naming the emptiest; none on rows per month', () => {
     const base = analyticsReportFixture();
     const row = (day: string, unsold: number, open: number) => ({
       ...(base.reportDayRows[0] as AnalyticsReport['reportDayRows'][number]),
@@ -391,14 +390,15 @@ describe('AnalyticsCarouselSystem — occupancy, free time and clients served', 
     const week = C.freeWeekOf(
       analyticsReportFixture({
         reportDayRows: [
-          // Monday 7 Sep twice (two barbers), Wednesday 9 Sep.
+          // Monday 7 Sep twice (two barbers), Wednesday 9 Sep; the open
+          // minutes are still ahead and stay out of the week's bars.
           row('2026-09-07', 60, 0),
           row('2026-09-07', 30, 30),
-          row('2026-09-09', 0, 45),
+          row('2026-09-09', 15, 45),
         ],
       }),
     );
-    expect(week?.minutes).toEqual([120, 0, 45, 0, 0, 0, 0]);
+    expect(week?.minutes).toEqual([90, 0, 15, 0, 0, 0, 0]);
     expect(week?.emptiest).toBe(1);
     expect(
       C.freeWeekOf(analyticsReportFixture({ reportDayRows: [] }))?.emptiest,

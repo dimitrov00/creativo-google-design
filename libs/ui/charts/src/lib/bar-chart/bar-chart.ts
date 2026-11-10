@@ -21,12 +21,26 @@ import { stackOffsets, stackTotal } from '../geometry/stack-offsets';
 export type UiChartBarPart = {
   readonly part: UiChartPart;
   readonly value: number;
+  /**
+   * The part's own identity tone (`0 … 4`) — a column stacked by service,
+   * each in its colour; outranks the bar's `tone`. Absent or `null`, the
+   * bar's tone, else the part's hook, paints it.
+   */
+  readonly tone?: number | null;
 };
 
-/** One bar: its word along the baseline (or the row) and its parts, baseline first. */
+/**
+ * One bar: its word along the baseline (or the row) and its parts, baseline
+ * first. A bar that is a MEMBER of a set — a shop, a barber — carries its
+ * identity `tone` (`0 … 4`, `--sys-identity-N`), the same colour its line,
+ * swatch and row wear elsewhere: the tone then paints every part, because
+ * the hook says WHOSE before a part says WHAT. Absent or `null`, the parts
+ * paint.
+ */
 export type UiChartBar = {
   readonly label: string;
   readonly parts: readonly UiChartBarPart[];
+  readonly tone?: number | null;
 };
 
 export type UiBarChartOrientation = 'vertical' | 'horizontal';
@@ -54,6 +68,19 @@ const ROW_PITCH = ROW_TEXT + ROW_BAR + ROW_GAP;
  */
 const CHAR_WIDTH = 7;
 const TEXT_GAP = 12;
+/** The identity tones the stylesheet maps (`--sys-identity-0..4`). */
+const IDENTITY_TONES = 5;
+
+/** A tone the stylesheet knows, or none. */
+function toneOf(tone: number | null | undefined): number | null {
+  return tone !== null &&
+    tone !== undefined &&
+    Number.isInteger(tone) &&
+    tone >= 0 &&
+    tone < IDENTITY_TONES
+    ? tone
+    : null;
+}
 
 /** The word as it fits beside its figure on a row of `width`. */
 export function fitLabel(
@@ -72,6 +99,8 @@ export function fitLabel(
 type BarSegment = {
   readonly key: number;
   readonly part: UiChartPart;
+  /** The part's own tone, or `null` for the bar's. */
+  readonly tone: number | null;
   /** Along the axis from the baseline, in px. */
   readonly offset: number;
   readonly size: number;
@@ -84,6 +113,8 @@ type BarMark = {
   readonly valueText: string;
   readonly name: string;
   readonly highlight: boolean;
+  /** The member's identity tone — it paints every segment — or none. */
+  readonly tone: number | null;
   /** The pointer target: the whole band (vertical) or the whole row (horizontal). */
   readonly hitX: number;
   readonly hitY: number;
@@ -130,6 +161,7 @@ type BarMark = {
     '[attr.data-orientation]': 'uiOrientation()',
     '[attr.data-highlighting]': "uiHighlightIndex() === null ? null : ''",
     '[attr.data-settled]': "settled() ? '' : null",
+    '[attr.data-scrubbing]': "scrubIndex() === null ? null : ''",
     '[style.--ui-bar-base]': 'baseline()',
   },
 })
@@ -217,6 +249,7 @@ export class UiBarChart {
         segments.push({
           key: i,
           part: part.part,
+          tone: toneOf(part.tone),
           offset: px(start),
           size: px(Math.max(0, end - start)),
         });
@@ -229,6 +262,7 @@ export class UiBarChart {
         valueText,
         name: valueText ? `${bar.label}, ${valueText}` : bar.label,
         highlight: highlight === index,
+        tone: toneOf(bar.tone),
         hitX: horizontal ? 0 : px(position * band),
         hitY: horizontal ? row : 0,
         hitWidth: horizontal ? px(width) : px(band),
@@ -258,6 +292,72 @@ export class UiBarChart {
 
   protected pick(index: number): void {
     this.uiBarPicked.emit(index);
+  }
+
+  // ── The scrub (the line chart's grammar, owner 2026-11-09: "why other
+  // types of graphs … don't have those hover/tap animations?") ───────────
+
+  /**
+   * READ BY TOUCH: a finger down or dragging across the bars — a mouse on
+   * hover — reads the bar under it: that bar keeps its paint, every other
+   * dims, and its index goes out through `uiScrubbed` (`null` when the
+   * finger lifts or the mouse leaves), so the screen's figure can read it.
+   */
+  readonly uiScrubbable = input(false, { transform: booleanAttribute });
+  /** The index (in `uiBars`) of the bar under the pointer; `null` at rest. */
+  readonly uiScrubbed = output<number | null>();
+
+  protected readonly scrubIndex = signal<number | null>(null);
+  private scrubbing = false;
+
+  protected scrubStart(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    this.scrubbing = true;
+    this.scrubAt(event);
+    const target = event.currentTarget as Element | null;
+    try {
+      target?.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* no active pointer to capture */
+    }
+  }
+
+  protected scrubMove(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    // A mouse reads on hover; a finger or pen only while it is down.
+    if (this.scrubbing || event.pointerType === 'mouse') this.scrubAt(event);
+  }
+
+  protected scrubEnd(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    if (event.type === 'pointerleave' && this.scrubbing) return;
+    this.scrubbing = false;
+    this.setScrub(null);
+  }
+
+  /** The bar whose band (or row) holds the pointer, in display order. */
+  private scrubAt(event: PointerEvent): void {
+    const svg = this.svg()?.nativeElement;
+    const marks = this.marks();
+    if (svg === undefined || marks.length === 0) return;
+    const box = svg.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return;
+    const position =
+      this.uiOrientation() === 'horizontal'
+        ? Math.floor(
+            ((event.clientY - box.top) * this.height()) /
+              box.height /
+              ROW_PITCH,
+          )
+        : Math.floor(((event.clientX - box.left) * marks.length) / box.width);
+    const mark = marks[Math.min(Math.max(position, 0), marks.length - 1)];
+    this.setScrub(mark === undefined ? null : mark.index);
+  }
+
+  private setScrub(index: number | null): void {
+    if (index === this.scrubIndex()) return;
+    this.scrubIndex.set(index);
+    this.uiScrubbed.emit(index);
   }
 
   protected onKeydown(

@@ -1,6 +1,7 @@
 import {
   AnalyticsBarPart,
   AnalyticsFigure,
+  type AnalyticsReport,
   BookingOrigin,
 } from '@core/components';
 import type {
@@ -80,6 +81,16 @@ export const FIGURE_TOPICS = {
  * (the accent law: colour is a shape; worked is the one orange, the rest
  * graded ink). Values: external contract, the kit's vocabulary.
  */
+/** Each bar part's field of a time point — the stacked bar's six segments, in the legend's order. */
+export const TIME_POINT_FIELDS = {
+  [AnalyticsBarPart.Worked]: 'workedMinutes',
+  [AnalyticsBarPart.NoShow]: 'noShowMinutes',
+  [AnalyticsBarPart.Unmarked]: 'unmarkedMinutes',
+  [AnalyticsBarPart.Blocked]: 'blockedMinutes',
+  [AnalyticsBarPart.Unsold]: 'unsoldMinutes',
+  [AnalyticsBarPart.Other]: 'otherMinutes',
+} as const satisfies Record<AnalyticsBarPart, keyof AnalyticsReport.TimePoint>;
+
 export const BAR_PART_HOOKS = {
   [AnalyticsBarPart.Worked]: 'worked',
   [AnalyticsBarPart.NoShow]: 'no-show',
@@ -102,7 +113,11 @@ export type AnalyticsChartBarVm = {
   readonly parts: readonly {
     readonly part: UiChartPart;
     readonly value: number;
+    /** The part's own identity tone — a service's colour in a stacked column. */
+    readonly tone?: number | null;
   }[];
+  /** A member's identity tone (`0…4`, the colour of its line and row), or none. */
+  readonly tone: number | null;
 };
 
 /** One point of the takings line: the bucket's figure and the comparison aligned by position. */
@@ -439,13 +454,19 @@ export type AnalyticsHeroVm = {
 
 /** One segment of the time bar and its legend row. */
 export type AnalyticsBarSegmentVm = {
+  /** The part, a tag — what a tap on its row focuses in the chart. */
+  readonly analyticsBarPart: AnalyticsBarPart;
   /** The CSS hook (`BAR_PART_HOOKS`). */
   readonly part: string;
   /** Its share of the bar, `0…1` — the segment's width. */
   readonly share: number;
+  /** «1%» — its share of the working time, as the column draws it. */
+  readonly shareText: string;
   readonly label: string;
   /** «4 ч 30 мин». */
   readonly value: string;
+  /** The part the chart above draws alone (the card screen's focus). */
+  readonly selected: boolean;
   readonly testId: string;
 };
 

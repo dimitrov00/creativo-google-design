@@ -4,9 +4,11 @@ import {
   ElementRef,
   ViewEncapsulation,
   afterNextRender,
+  booleanAttribute,
   computed,
   input,
   linkedSignal,
+  output,
   signal,
   viewChild,
 } from '@angular/core';
@@ -93,6 +95,7 @@ function toneOf(tone: number | null): number | null {
   host: {
     class: 'ui-ring-chart',
     '[attr.data-settled]': "settled() ? '' : null",
+    '[attr.data-scrubbing]': "scrubIndex() === null ? null : ''",
     '[style.--ui-ring-chart-thickness]': "thickness() + 'px'",
   },
 })
@@ -195,4 +198,92 @@ export class UiRingChart {
       this.nodes.update((nodes) => nodes.filter((node) => !node.leaving));
     }
   }
+
+  // ── The scrub (the line and bar charts' grammar) ──────────────────────
+
+  /**
+   * READ BY TOUCH: a finger down on the ring, or going round it — a mouse
+   * on hover — reads the share under it: that segment keeps its paint,
+   * every other steps back, and its index goes out through `uiScrubbed`
+   * (`null` when the finger lifts or the mouse leaves). The share is the
+   * one whose slice of the turn holds the pointer's angle, measured
+   * clockwise from twelve o'clock as the arcs are drawn.
+   */
+  readonly uiScrubbable = input(false, { transform: booleanAttribute });
+  /** The index (in `uiSegments`) of the share under the pointer; `null` at rest. */
+  readonly uiScrubbed = output<number | null>();
+
+  protected readonly scrubIndex = signal<number | null>(null);
+  private scrubbing = false;
+
+  protected scrubStart(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    this.scrubbing = true;
+    this.scrubAt(event);
+    const target = event.currentTarget as Element | null;
+    try {
+      target?.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* no active pointer to capture */
+    }
+  }
+
+  protected scrubMove(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    if (this.scrubbing || event.pointerType === 'mouse') this.scrubAt(event);
+  }
+
+  protected scrubEnd(event: PointerEvent): void {
+    if (!this.uiScrubbable()) return;
+    if (event.type === 'pointerleave' && this.scrubbing) return;
+    this.scrubbing = false;
+    this.setScrub(null);
+  }
+
+  private scrubAt(event: PointerEvent): void {
+    const svg = this.svg()?.nativeElement;
+    if (svg === undefined) return;
+    const box = svg.getBoundingClientRect();
+    if (box.width <= 0) return;
+    const dx = event.clientX - (box.left + box.width / 2);
+    const dy = event.clientY - (box.top + box.height / 2);
+    // The ring's hole holds the figure: a touch there reads nothing.
+    const inner =
+      ((this.radius() - this.thickness()) * box.width) / this.size();
+    if (Math.hypot(dx, dy) < inner) {
+      this.setScrub(null);
+      return;
+    }
+    this.setScrub(shareAt(this.uiSegments(), Math.atan2(dx, -dy)));
+  }
+
+  private setScrub(index: number | null): void {
+    if (index === this.scrubIndex()) return;
+    this.scrubIndex.set(index);
+    this.uiScrubbed.emit(index);
+  }
+}
+
+/**
+ * The segment whose slice of the turn holds `angle` (radians clockwise from
+ * twelve o'clock, any turn): each positive value takes its share of the
+ * turn in order; `null` when nothing is shared out.
+ */
+export function shareAt(
+  segments: readonly UiChartRingSegment[],
+  angle: number,
+): number | null {
+  let total = 0;
+  for (const segment of segments) total += Math.max(0, segment.value);
+  if (total <= 0) return null;
+  const turn = 2 * Math.PI;
+  const at = (((angle % turn) + turn) % turn) / turn;
+  let edge = 0;
+  for (let i = 0; i < segments.length; i++) {
+    const share = Math.max(0, segments.at(i)?.value ?? 0) / total;
+    if (share <= 0) continue;
+    edge += share;
+    if (at < edge) return i;
+  }
+  return segments.length - 1;
 }

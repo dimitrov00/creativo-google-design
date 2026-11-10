@@ -147,34 +147,41 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     );
     trigger?.click();
     await settle(fixture);
-    // The team's row, picked whole; its chevron opens a box per barber.
-    expect(
-      document.querySelector('[data-testid="analytics-scope-team"]'),
-    ).not.toBeNull();
+    // The team's row is a filter: it opens a box per barber under
+    // «Целият екип», which alone is ticked while nobody is named.
     document
-      .querySelector<HTMLElement>('[data-testid="analytics-scope-team-open"]')
+      .querySelector<HTMLElement>('[data-testid="analytics-scope-team"]')
       ?.click();
     await settle(fixture);
-    const boxes = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
-    );
-    expect(boxes.length).toBeGreaterThan(1);
-    expect(
-      boxes.every((box) => box.getAttribute('aria-checked') === 'true'),
-    ).toBe(true);
-    // Unticking Niko leaves Ivan's own report; the menu stays up.
+    const checked = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
+      ).map((box) => [box.dataset['testid'], box.getAttribute('aria-checked')]);
+    expect(checked()).toEqual([
+      ['analytics-scope-team-all', 'true'],
+      ['analytics-scope-ivan', 'false'],
+      ['analytics-scope-niko', 'false'],
+    ]);
+    // Ticking Ivan names him alone — his own report; the menu stays up.
     document
-      .querySelector<HTMLElement>('[data-testid="analytics-scope-niko"]')
+      .querySelector<HTMLElement>('[data-testid="analytics-scope-ivan"]')
       ?.click();
     await settle(fixture);
     await settle(fixture);
-    expect(
-      document
-        .querySelector('[data-testid="analytics-scope-niko"]')
-        ?.getAttribute('aria-checked'),
-    ).toBe('false');
+    expect(checked()).toEqual([
+      ['analytics-scope-team-all', 'false'],
+      ['analytics-scope-ivan', 'true'],
+      ['analytics-scope-niko', 'false'],
+    ]);
     expect(sent.at(-1)?.scopeBarberIds).toEqual(['ivan']);
     expect(byTestId(host, 'analytics-card-team')).toBeNull();
+    // «Целият екип» takes the whole team back.
+    document
+      .querySelector<HTMLElement>('[data-testid="analytics-scope-team-all"]')
+      ?.click();
+    await settle(fixture);
+    await settle(fixture);
+    expect(sent.at(-1)?.scopeBarberIds).toEqual([]);
   });
 
   it('with two locations the admin ticks shops in the submenu: the call, the URL and the pill follow (ADR 2026-11-09)', async () => {
@@ -191,15 +198,13 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     trigger?.click();
     await settle(fixture);
     document
-      .querySelector<HTMLElement>(
-        '[data-testid="analytics-scope-locations-open"]',
-      )
+      .querySelector<HTMLElement>('[data-testid="analytics-scope-shop"]')
       ?.click();
     await settle(fixture);
-    // Every shop ticked while none is named; unticking the centre leaves Mladost.
+    // From «Всички салони», ticking Mladost names it alone.
     document
       .querySelector<HTMLElement>(
-        `[data-testid="analytics-scope-location-${locationFixture().id}"]`,
+        '[data-testid="analytics-scope-location-loc-mladost"]',
       )
       ?.click();
     await settle(fixture);

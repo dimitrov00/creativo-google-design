@@ -128,9 +128,18 @@ async function pickFromMenu(
 
 /**
  * The scope menu's submenu (owner review 2026-11-09): opens the menu, then
- * the row's chevron, and unticks every box but `keep` — every box reads
- * ticked while the row names none — then closes the menu.
+ * the filter row's submenu, ticks `keep` — from the row's «all» that names
+ * it alone — and unticks every other box, then closes the menu.
  */
+/** A filter row's «all» box: the row's whole list again, then the menu closes. */
+async function pickAll(page: Page, open: string, all: string): Promise<void> {
+  await page.getByTestId('analytics-scope-menu').click();
+  await page.getByTestId(open).click();
+  await page.getByTestId(all).click();
+  await page.keyboard.press('Escape');
+  await reportReady(page);
+}
+
 async function tickOnly(page: Page, open: string, keep: string): Promise<void> {
   await page.getByTestId('analytics-scope-menu').click();
   await page.getByTestId(open).click();
@@ -144,7 +153,7 @@ async function tickOnly(page: Page, open: string, keep: string): Promise<void> {
     await page.getByTestId(keep).click();
   }
   for (const id of ids) {
-    if (id === keep) continue;
+    if (id === keep || id.endsWith('-all')) continue;
     const box = page.getByTestId(id);
     if ((await box.getAttribute('aria-checked')) === 'true') await box.click();
   }
@@ -314,7 +323,16 @@ test.describe('«Анализи» — staff analytics', () => {
       .getByTestId('analytics-rows')
       .locator('[data-testid^="analytics-day-"]');
     await expect(days.first()).toBeVisible();
-    const dayCount = await days.count();
+    // The rows arrive a page at a time as the list's end comes within
+    // reach: scroll to the end until no more days arrive, then count.
+    let dayCount = 0;
+    for (let shown = await days.count(); shown > dayCount;) {
+      dayCount = shown;
+      await days.last().scrollIntoViewIfNeeded();
+      // The next page lays out once its sentinel comes within reach.
+      await page.waitForTimeout(500);
+      shown = await days.count();
+    }
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('analytics-rows')).toBeHidden();
     await backHome(page);
@@ -423,7 +441,7 @@ test.describe('«Анализи» — staff analytics', () => {
     // URL saying so, and no goal — a goal is the shop's or a barber's.
     await tickOnly(
       page,
-      'analytics-scope-locations-open',
+      'analytics-scope-shop',
       'analytics-scope-location-loc-mladost',
     );
     await expect
@@ -440,15 +458,19 @@ test.describe('«Анализи» — staff analytics', () => {
 
     // A barber's work at a shop (owner review 2026-11-09): the two sit
     // together in the URL and on the pill.
-    await tickOnly(page, 'analytics-scope-team-open', 'analytics-scope-niko');
+    await tickOnly(page, 'analytics-scope-team', 'analytics-scope-niko');
     await expect
       .poll(() => new URL(page.url()).searchParams.get('barber'))
       .toBe('niko');
     expect(new URL(page.url()).searchParams.get('location')).toBe(
       'loc-mladost',
     );
-    // «Всички салони» picked whole: every location again, the barber kept.
-    await pickFromMenu(page, 'analytics-scope-menu', 'analytics-scope-shop');
+    // «Всички салони» in its submenu: every location again, the barber kept.
+    await pickAll(
+      page,
+      'analytics-scope-shop',
+      'analytics-scope-locations-all',
+    );
     await expect
       .poll(() => new URL(page.url()).searchParams.get('location'))
       .toBeNull();
@@ -482,7 +504,7 @@ test.describe('«Анализи» — staff analytics', () => {
 
     await page.goto('/staff/analytics');
     await reportReady(page);
-    await tickOnly(page, 'analytics-scope-team-open', 'analytics-scope-stefan');
+    await tickOnly(page, 'analytics-scope-team', 'analytics-scope-stefan');
 
     // The card is a link: the schedule, its agenda, the barber, free time on.
     const ahead = page.getByTestId('analytics-ahead');

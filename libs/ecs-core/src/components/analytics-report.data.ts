@@ -198,6 +198,15 @@ export type AnalyticsReport = {
   readonly reportLateCancellationCount: number;
 
   readonly reportBookableOpenMinutes: MinuteCount;
+  /**
+   * The working time still to come in the next seven days that the open
+   * minutes are part of (owner, 2026-11-09: «97 ч free? shouldn't this be
+   * only inside working hours and days?») — each `AheadDay.workingMinutes`
+   * summed.
+   */
+  readonly reportBookableWorkingMinutes: MinuteCount;
+  /** The barbers in scope with working time in the next seven days — whose hours the open-hours card adds up. */
+  readonly reportAheadBarberCount: number;
   readonly reportEmptiestLocalDate: LocalDate | null;
 
   /**
@@ -304,7 +313,28 @@ export namespace AnalyticsReport {
   export type SeriesPoint = {
     readonly localDate: LocalDate;
     readonly takingsCents: PriceCents;
+    /**
+     * The bucket's tips, summed exactly as its takings are — so the tips
+     * line has a point wherever the takings line does, at any range (a
+     * range's day rows may be per month; the series never is coarser
+     * than its buckets).
+     */
+    readonly tipsCents: PriceCents;
+    /**
+     * The bucket's takings by service, summed as its takings are (a stored
+     * day's service rows, a live visit's worked seats) — each service once,
+     * by id, only the ones that took something; together they make
+     * `takingsCents`. The takings bars stack them, each in its colour
+     * (owner, 2026-11-09).
+     */
+    readonly serviceTakings: readonly AnalyticsReport.ServiceTakings[];
     readonly comparisonTakingsCents: PriceCents | null;
+  };
+
+  /** One service's takings in a bucket of the series. */
+  export type ServiceTakings = {
+    readonly serviceId: ServiceId;
+    readonly takingsCents: PriceCents;
   };
 
   /**
@@ -335,10 +365,15 @@ export namespace AnalyticsReport {
     readonly rosteredMinutes: MinuteCount;
   };
 
-  /** One of the next seven shop days and its open (still bookable) minutes in scope. */
+  /**
+   * One of the next seven shop days in scope: its open (still bookable)
+   * minutes, and the working time still to come they are part of — the
+   * roster's windows from now on, breaks, blocks and days off out.
+   */
   export type AheadDay = {
     readonly localDate: LocalDate;
     readonly openMinutes: MinuteCount;
+    readonly workingMinutes: MinuteCount;
   };
 
   /** One service's worked seats. */

@@ -6,27 +6,14 @@ import {
   output,
   signal,
 } from '@angular/core';
-import {
-  UI_SHEET_HEADLINE,
-  UiListGroup,
-  UiIcon,
-  UiListRow,
-  UiModalSheet,
-  UiStack,
-  UiAvatar,
-} from '@creativo/ui/controls';
+import { UI_SHEET_HEADLINE, UiModalSheet } from '@creativo/ui/controls';
 import {
   UiForegroundStyleDirective,
-  UiInteractiveDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import {
-  VisitList,
-  VisitListStyle,
-  VisitPerspective,
-} from '@creativo/features/shared/visits';
 import type { BarberId, LocalDate } from '@core/primitives';
-import { type AnalyticsDrillVm, DrillRows } from '../analytics.vm';
+import type { AnalyticsDrillVm } from '../analytics.vm';
+import { AnalyticsRows } from './analytics-rows';
 
 /**
  * THE DRILL-DOWN (`docs/designs/staff-analytics.md`, The screen · Drill-down)
@@ -40,17 +27,11 @@ import { type AnalyticsDrillVm, DrillRows } from '../analytics.vm';
 @Component({
   selector: 'lib-analytics-rows-page',
   imports: [
+    AnalyticsRows,
     UI_SHEET_HEADLINE,
-    UiAvatar,
     UiForegroundStyleDirective,
-    UiInteractiveDirective,
-    UiListGroup,
-    UiIcon,
-    UiListRow,
     UiModalSheet,
-    UiStack,
     UiTextDirective,
-    VisitList,
   ],
   templateUrl: './analytics-rows-page.html',
   styleUrl: './analytics-rows-page.css',
@@ -66,9 +47,6 @@ export class AnalyticsRowsPage {
   /** A year's month row: the month to open (PR 4b). */
   readonly openMonth = output<LocalDate>();
 
-  protected readonly DrillRows = DrillRows;
-  protected readonly VisitPerspective = VisitPerspective;
-  protected readonly VisitListStyle = VisitListStyle;
   protected readonly titleId = 'analytics-rows-title';
 
   protected readonly closing = signal(false);

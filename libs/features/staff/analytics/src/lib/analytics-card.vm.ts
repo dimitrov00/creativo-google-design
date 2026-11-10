@@ -91,6 +91,12 @@ export type AnalyticsCardChartVm =
       readonly valueText: readonly string[];
       readonly orientation: 'vertical' | 'horizontal';
       readonly label: string;
+      /**
+       * The line under the figure while a finger rests on each bar — its
+       * day («понеделник, 14 септември»), or its barber's or salon's name;
+       * the figure itself is the bar's `valueText`.
+       */
+      readonly readouts: readonly string[];
     }
   | {
       readonly chartView: typeof AnalyticsChartView.Ring;

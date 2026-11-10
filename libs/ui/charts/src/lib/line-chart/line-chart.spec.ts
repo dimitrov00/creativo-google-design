@@ -530,4 +530,29 @@ describe('UiLineChart — the grid means something', () => {
     ]);
     expect(all('.ui-line-chart__guide')).toHaveLength(3);
   });
+
+  it('thins a crowded axis to every k-th word — an even rhythm, no two words touching', () => {
+    // A year of weeks with a word every fourth week: 14 dates under the
+    // 320px fallback width would overlap (owner, 2026-11-09, at МАКС).
+    const { all } = render((h) => {
+      h.axis.set(true);
+      h.points.set(
+        Array.from({ length: 53 }, (_, i) => ({
+          label: i % 4 === 0 ? `${(i % 28) + 1}.${(i % 12) + 1}` : '',
+          value: i,
+          comparison: null,
+        })),
+      );
+      h.valueText.set(Array.from({ length: 53 }, () => ''));
+    });
+    const labels = all('.ui-line-chart__axis-label');
+    expect(labels.length).toBeGreaterThan(1);
+    expect(labels.length).toBeLessThan(14);
+    // The first word is kept and the kept ones sit an even step apart.
+    expect(labels[0]?.textContent?.trim()).toBe('1.1');
+    const xs = labels.map((l) => Number(l.getAttribute('x')));
+    const steps = xs.slice(1).map((x, i) => Math.round(x - (xs[i] as number)));
+    expect(new Set(steps.slice(0, -1)).size).toBeLessThanOrEqual(1);
+    expect(all('.ui-line-chart__guide')).toHaveLength(labels.length);
+  });
 });

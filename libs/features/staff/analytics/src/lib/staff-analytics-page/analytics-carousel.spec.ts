@@ -49,6 +49,7 @@ class Host {
       cards: null,
       team: null,
       locations: null,
+      bones: { teamRows: [], locationRows: [] },
       query: {
         span: 'MONTH',
         from: '2026-01-01' as AnalyticsPageVm['query']['from'],

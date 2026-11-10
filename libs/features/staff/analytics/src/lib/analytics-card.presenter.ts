@@ -23,6 +23,7 @@ import {
   bodyOf,
   money,
   REPORT_CURRENCY,
+  serviceToneOf,
   statusOf,
 } from './analytics.presenter';
 import { locationsOf, pageLabelOf, teamOf } from './analytics-home.presenter';
@@ -37,6 +38,7 @@ import {
 import {
   AnalyticsTopic,
   BAR_PART_HOOKS,
+  TIME_POINT_FIELDS,
   type AnalyticsBodyVm,
   type AnalyticsChartBarVm,
 } from './analytics.vm';
@@ -58,6 +60,12 @@ export interface AnalyticsCardInput extends AnalyticsScreenInput {
   readonly view: AnalyticsChartView | null;
   /** The locations whose line the screen's toggles turned off. */
   readonly hiddenLocationIds: readonly LocationId[];
+  /**
+   * The time part a tap on its «Време» row focused: the chart above draws
+   * it alone, at its own scale; `null` draws every part stacked (owner,
+   * 2026-11-09: the list "has to be somehow related to the upper one").
+   */
+  readonly focusedPart: AnalyticsBarPart | null;
 }
 
 /** Each view's glyph on the switch. */
@@ -89,14 +97,6 @@ const CARD_TOPICS = {
   // The locations compare their takings: the takings' definition.
   [AnalyticsCard.Locations]: AnalyticsTopic.Takings,
 } as const satisfies Record<AnalyticsCard, AnalyticsTopic>;
-
-/** A service ring's paints, in rank order: the accent, then the chart's greys. */
-const SERVICE_PARTS: readonly UiChartPart[] = [
-  'worked',
-  'blocked',
-  'unsold',
-  'other',
-];
 
 /** The identity tones the team paints with, in the catalogue's order. */
 const IDENTITY_TONES = 5;
@@ -165,7 +165,16 @@ export function analyticsCardVm(
     ranges: rangesOf(input, preset),
     services: card === AnalyticsCard.Takings ? (body?.services ?? null) : null,
     origins: card === AnalyticsCard.Takings ? (body?.origins ?? null) : null,
-    time: card === AnalyticsCard.Time ? (body?.time ?? null) : null,
+    time:
+      card === AnalyticsCard.Time && body !== null
+        ? {
+            ...body.time,
+            segments: body.time.segments.map((segment) => ({
+              ...segment,
+              selected: segment.analyticsBarPart === input.focusedPart,
+            })),
+          }
+        : null,
     busy: card === AnalyticsCard.Time ? (body?.busy ?? null) : null,
     clients:
       card === AnalyticsCard.Rebooked || card === AnalyticsCard.NoShows
@@ -321,10 +330,10 @@ function viewsOf(
       return series ? [Line, Bars, Ring] : [Ring];
     case AnalyticsCard.Time:
       return report.reportTimeSeries.length > 1 ? [Bars, Line, Ring] : [Ring];
-    case AnalyticsCard.Tips: {
-      const tips = AnalyticsCarouselSystem.tipsSeriesOf(report);
-      return series && tips !== null ? [Line, Bars, Ring] : [Ring];
-    }
+    case AnalyticsCard.Tips:
+      // Each bucket carries its tips beside its takings: the tips line
+      // exists wherever the takings line does, at any range.
+      return series ? [Line, Bars, Ring] : [Ring];
     case AnalyticsCard.Rebooked:
     case AnalyticsCard.NoShows:
       return shop && report.reportBarbers.length > 0 ? [Ring, Bars] : [Ring];
@@ -415,15 +424,22 @@ function chartOf(
     barLabels: readonly string[] = labels,
     part: UiChartPart = 'worked',
     orientation: 'vertical' | 'horizontal' = 'vertical',
+    tones: readonly number[] = [],
   ): AnalyticsCardChartVm => ({
     chartView: AnalyticsChartView.Bars,
     bars: values.map((value, i): AnalyticsChartBarVm => ({
       label: barLabels.at(i) ?? '',
       parts: [{ part, value }],
+      tone: tones.at(i) ?? null,
     })),
     valueText,
     orientation,
     label,
+    // A bar of the period reads its day; a barber's or a salon's, its name.
+    readouts:
+      barLabels === labels
+        ? values.map((_, i) => days.at(i) ?? labels.at(i) ?? '')
+        : barLabels,
   });
   const byBarber = (
     value: (row: AnalyticsReport.BarberFigures) => number,
@@ -439,6 +455,8 @@ function chartOf(
       ),
       'worked',
       'horizontal',
+      // Each barber in their own colour — the team card's and the radars'.
+      report.reportBarbers.map((_, i) => i % IDENTITY_TONES),
     );
 
   switch (card) {
@@ -477,43 +495,96 @@ function chartOf(
         );
       }
       if (view === AnalyticsChartView.Bars && series !== null) {
-        // A day's takings: every point of the daily series has a figure.
-        return bars(
+        // A bucket's takings, stacked BY SERVICE — each in its colour, the
+        // ring's and the «Услуги» bars' (owner, 2026-11-09) — from the
+        // first colour slot up, so a service sits at the same height of
+        // every column; one without a slot of its own on top, in grey.
+        const slot = (tone: number | null): number => tone ?? Number.MAX_VALUE;
+        const chart = bars(
           series.points.map((p) => p.value ?? 0),
           series.valueText,
           series.label,
         );
+        if (chart.chartView !== AnalyticsChartView.Bars) return chart;
+        return {
+          ...chart,
+          bars: chart.bars.map((bar, i) => {
+            const rows = report.reportSeries.at(i)?.serviceTakings ?? [];
+            if (rows.length === 0) return bar;
+            return {
+              ...bar,
+              parts: rows
+                .map((row) => ({
+                  part: 'other' as const,
+                  value: row.takingsCents,
+                  tone: serviceToneOf(input.names, row.serviceId),
+                }))
+                .sort((a, b) => slot(a.tone) - slot(b.tone)),
+            };
+          }),
+        };
       }
       const shares = report.reportServices;
       return ring(
-        shares.map((row, i) => ({
+        shares.map((row) => ({
           value: row.takingsCents,
-          // Services are no people: the top one in the accent, the rest in
-          // the chart's greys, as the ranked bars draw them.
-          part: SERVICE_PARTS[i % SERVICE_PARTS.length] as UiChartPart,
-          tone: null,
+          // Each service in its own colour, the bars' too; one without a
+          // tone of its own in the chart's grey.
+          part: 'other',
+          tone: serviceToneOf(input.names, row.serviceId),
           label: input.names.serviceName(row.serviceId) ?? words.unknownService,
           valueText: money(row.takingsCents, lang),
         })),
       );
     }
     case AnalyticsCard.Time: {
+      const focused = input.focusedPart;
       if (view === AnalyticsChartView.Bars) {
         const time = body.time.bars;
+        if (focused === null) {
+          return {
+            chartView: AnalyticsChartView.Bars,
+            bars: time.bars,
+            valueText: time.valueText,
+            orientation: 'vertical',
+            label: time.label,
+            readouts: time.bars.map((bar, i) => days.at(i) ?? bar.label),
+          };
+        }
+        // One part alone, each bar at its own height — the worked hours a
+        // stack of free time dwarfed become real columns.
+        // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
+        const hook = BAR_PART_HOOKS[focused];
+        const bars = time.bars.map((bar) => ({
+          ...bar,
+          parts: bar.parts.filter((part) => part.part === hook),
+        }));
         return {
           chartView: AnalyticsChartView.Bars,
-          bars: time.bars,
-          valueText: time.valueText,
+          bars,
+          valueText: bars.map((bar) =>
+            spanWords(
+              bar.parts.reduce((sum, part) => sum + part.value, 0),
+              words.spanWords,
+            ),
+          ),
           orientation: 'vertical',
-          label: time.label,
+          // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
+          label: words.time.part[focused],
+          readouts: bars.map((bar, i) => days.at(i) ?? bar.label),
         };
       }
       if (view === AnalyticsChartView.Line) {
+        // The focused part's line; the worked hours by default.
+        const field = TIME_POINT_FIELDS[focused ?? AnalyticsBarPart.Worked];
         const points = report.reportTimeSeries;
         return line(
-          points.map((p) => p.workedMinutes),
-          points.map((p) => spanWords(p.workedMinutes, words.spanWords)),
-          words.card.workedLine,
+          // eslint-disable-next-line security/detect-object-injection -- `field` is one of the table's six literal keys.
+          points.map((p) => p[field]),
+          // eslint-disable-next-line security/detect-object-injection -- as above.
+          points.map((p) => spanWords(p[field], words.spanWords)),
+          // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
+          focused === null ? words.card.workedLine : words.time.part[focused],
         );
       }
       const minutes = {
@@ -535,11 +606,9 @@ function chartOf(
       );
     }
     case AnalyticsCard.Tips: {
-      const tips = AnalyticsCarouselSystem.tipsSeriesOf(report);
-      if (tips !== null && view !== AnalyticsChartView.Ring) {
-        const text = tips.map((cents) =>
-          money(cents as AnalyticsReport['reportTipsCents'], lang),
-        );
+      if (view !== AnalyticsChartView.Ring) {
+        const tips = report.reportSeries.map((point) => point.tipsCents);
+        const text = tips.map((cents) => money(cents, lang));
         return view === AnalyticsChartView.Line
           ? line(tips, text, words.card.tipsLine, null, null, null, null, true)
           : bars(tips, text, words.card.tipsLine);
@@ -698,6 +767,8 @@ function chartOf(
         names,
         'worked',
         'horizontal',
+        // Each salon in its own colour — its line's, its chip's, its row's.
+        rows.map((_, i) => i % IDENTITY_TONES),
       );
     }
   }

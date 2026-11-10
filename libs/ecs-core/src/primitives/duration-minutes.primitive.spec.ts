@@ -40,6 +40,16 @@ describe('MinuteCount — a non-negative whole number of minutes', () => {
     expect(MinuteCount.roundToHour(m(0))).toBe(0);
   });
 
+  it('minus takes a part away, never below zero', () => {
+    const m = (raw: number) => {
+      const parsed = MinuteCount.of(raw);
+      if (!parsed.ok) throw new Error('fixture');
+      return parsed.value;
+    };
+    expect(MinuteCount.minus(m(90), m(30))).toBe(60);
+    expect(MinuteCount.minus(m(30), m(90))).toBe(0);
+  });
+
   it('of takes an integer ≥ 0, folding a negative zero', () => {
     expect(MinuteCount.of(0)).toEqual({ ok: true, value: 0 });
     expect(Object.is(unwrapOk(MinuteCount.of(-0)), 0)).toBe(true);

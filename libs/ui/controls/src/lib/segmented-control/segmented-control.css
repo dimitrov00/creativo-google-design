@@ -113,7 +113,12 @@
     min-inline-size: 0;
     block-size: calc(var(--control-size-small) - 2 * var(--ui-segmented-inset));
     padding-block: 0;
-    padding-inline: var(--sys-space-compact);
+    /* The words sit CENTRED in an equal share, so the padding is only the
+       floor a cramped word may not cross — never visible air. At 8px the
+       range chips' «МАКС» lost its last letter on a 375px phone by a
+       single pixel (41.7px of semibold in a 41px box); 4px keeps it whole
+       down to a 340px row. */
+    padding-inline: var(--sys-space-tight);
     border: 0;
     border-radius: calc(
       var(--control-radius-regular) - var(--ui-segmented-inset)

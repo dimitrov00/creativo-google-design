@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AnalyticsPeriod } from '@core/components';
+import { AnalyticsBarPart, AnalyticsPeriod } from '@core/components';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -61,6 +61,7 @@ function inputOf(
     card,
     view: null,
     hiddenLocationIds: [],
+    focusedPart: null,
     ...overrides,
   };
 }
@@ -106,15 +107,42 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     ]);
   });
 
-  it('draws the takings’ ring by service — the top one in the accent, the rest in the greys — the figure in its centre', () => {
+  it('stacks the takings bars by service — each part in its service’s colour, from the first colour slot up; a day of nothing stays empty', () => {
+    const chart = analyticsCardVm(
+      inputOf(AnalyticsCard.Takings, { view: AnalyticsChartView.Bars }),
+    ).chart;
+    if (chart?.chartView !== 'BARS') throw new Error('not bars');
+    const byDay = chart.bars.map((bar) =>
+      bar.parts.map((part) => [part.tone, part.value]),
+    );
+    // The 14th: the haircut (the catalogue's first); the 15th: the beard.
+    expect(byDay[13]).toEqual([[0, 2800]]);
+    expect(byDay[14]).toEqual([[1, 1750]]);
+    // A bar reads its day under a finger.
+    expect(chart.readouts[13]).toContain('14');
+  });
+
+  it('draws the takings’ ring by service — each in its own colour, by its place in the catalogue, never its rank — the figure in its centre', () => {
     const vm = analyticsCardVm(
       inputOf(AnalyticsCard.Takings, { view: AnalyticsChartView.Ring }),
     );
     const chart = vm.chart;
     if (chart?.chartView !== 'RING') throw new Error('not a ring');
-    expect(chart.segments.map((s) => [s.label, s.part, s.valueText])).toEqual([
-      ['Подстригване', 'worked', nbsp('28,00 €')],
-      ['Брада', 'blocked', nbsp('17,50 €')],
+    expect(chart.segments.map((s) => [s.label, s.tone, s.valueText])).toEqual([
+      ['Подстригване', 0, nbsp('28,00 €')],
+      ['Брада', 1, nbsp('17,50 €')],
+    ]);
+    // A service past the fifth, or no longer in the catalogue: the grey.
+    const unlisted = analyticsCardVm(
+      inputOf(AnalyticsCard.Takings, {
+        view: AnalyticsChartView.Ring,
+        names: { ...NAMES, serviceOrder: () => null },
+      }),
+    ).chart;
+    if (unlisted?.chartView !== 'RING') throw new Error('not a ring');
+    expect(unlisted.segments.map((s) => [s.tone, s.part])).toEqual([
+      [null, 'other'],
+      [null, 'other'],
     ]);
     expect(chart.centreCaption).toBe('Оборот');
     expect(chart.centreValue).toBe(nbsp('45,50 €'));
@@ -168,6 +196,59 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     expect(vm.busy).not.toBeNull();
   });
 
+  it('«Време» is the chart’s key: each part’s share beside its time, and a focused part drawn alone — bars at its own scale, its line — its row selected', () => {
+    const all = analyticsCardVm(inputOf(AnalyticsCard.Time));
+    expect(all.time?.segments.map((s) => s.selected)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    // A part that is there never reads «0%»; one that is not does.
+    for (const segment of all.time?.segments ?? []) {
+      if (segment.share > 0) expect(segment.shareText).not.toBe('0%');
+      else expect(segment.shareText).toBe('0%');
+    }
+    const stacked = all.chart;
+    if (stacked?.chartView !== 'BARS') throw new Error('not bars');
+    expect(
+      new Set(stacked.bars.flatMap((bar) => bar.parts.map((p) => p.part))).size,
+    ).toBeGreaterThan(1);
+
+    const worked = analyticsCardVm(
+      inputOf(AnalyticsCard.Time, { focusedPart: AnalyticsBarPart.Worked }),
+    );
+    expect(
+      worked.time?.segments
+        .filter((s) => s.selected)
+        .map((s) => s.analyticsBarPart),
+    ).toEqual([AnalyticsBarPart.Worked]);
+    const alone = worked.chart;
+    if (alone?.chartView !== 'BARS') throw new Error('not bars');
+    expect(alone.label).toBe('Работа');
+    expect(
+      new Set(alone.bars.flatMap((bar) => bar.parts.map((p) => p.part))),
+    ).toEqual(new Set(['worked']));
+    // Each bar's figure is that part's time.
+    const workedTotal = alone.bars.reduce(
+      (sum, bar) => sum + bar.parts.reduce((s, p) => s + p.value, 0),
+      0,
+    );
+    expect(workedTotal).toBe(analyticsReportFixture().reportBarWorkedMinutes);
+
+    // The line view draws the focused part's line.
+    const noShows = analyticsCardVm(
+      inputOf(AnalyticsCard.Time, {
+        focusedPart: AnalyticsBarPart.NoShow,
+        view: AnalyticsChartView.Line,
+      }),
+    ).chart;
+    if (noShows?.chartView !== 'LINE') throw new Error('not a line');
+    expect(noShows.label).toBe('Неявили се');
+  });
+
   it('«Бакшиши»: tips per day as a line, and the ring of tips against the takings', () => {
     const line = analyticsCardVm(inputOf(AnalyticsCard.Tips)).chart;
     if (line?.chartView !== 'LINE') throw new Error('not a line');
@@ -203,6 +284,8 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
       'Иван Колев',
       'Нико Петров',
     ]);
+    // Each barber in their own colour — the team card's and the radars'.
+    expect(bars.bars.map((b) => b.tone)).toEqual([0, 1]);
   });
 
   it('«Екипът» on the shop: bars by barber first, a row per barber, the radars', () => {
@@ -264,7 +347,8 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     expect(one.readouts[14]).toBe(`15 септември · Младост ${nbsp('17,50 €')}`);
     expect(hidden.locationPicks?.map((p) => p.selected)).toEqual([false, true]);
 
-    // The bars: each salon's takings, in the shop's order; no toggles.
+    // The bars: each salon's takings, in the shop's order and in its own
+    // colour (its line's, its row's); no toggles.
     const bars = analyticsCardVm(
       inputOf(AnalyticsCard.Locations, {
         report,
@@ -273,6 +357,7 @@ describe('analyticsCardVm — a card’s own screen (staff-analytics-v3)', () =>
     );
     if (bars.chart?.chartView !== 'BARS') throw new Error('not bars');
     expect(bars.chart.bars.map((b) => b.label)).toEqual(['Център', 'Младост']);
+    expect(bars.chart.bars.map((b) => b.tone)).toEqual([0, 1]);
     expect(bars.locationPicks).toBeNull();
   });
 

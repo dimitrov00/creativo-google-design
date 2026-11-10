@@ -10,8 +10,13 @@
   [attr.data-load]="store.analyticsLoad()"
 >
   @if (vm(); as vm) {
-  <div class="analytics-card__bar">
+  <!-- THE BAR: the DS's collapsing title (ui-sheet-header on a page) —
+       the way back, the chart switch; once the large figure (its
+       `uiSheetLargeTitle` sentinel) passes under it, the figure small in
+       the middle and the house fade under it (owner, 2026-11-09). -->
+  <ui-sheet-header class="analytics-card__bar">
     <button
+      uiLeading
       type="button"
       uiButton
       uiButtonStyle="bordered"
@@ -24,8 +29,13 @@
     >
       <ui-icon uiName="nav.back" />
     </button>
-    @if (vm.views.length > 0) {
+    @if (header(); as head) {
+    <span uiTitle data-testid="analytics-card-bar-title"
+      >{{ vm.title }} · {{ head.value }}</span
+    >
+    } @if (vm.views.length > 0) {
     <ui-segmented-control
+      uiTrailing
       class="analytics-card__views"
       uiControlSize="regular"
       uiShape="capsule"
@@ -36,7 +46,7 @@
       (uiPicked)="pickView($event)"
     />
     }
-  </div>
+  </ui-sheet-header>
 
   <div class="analytics-card__modules">
     <header class="analytics-card__head">
@@ -60,6 +70,7 @@
       @if (header(); as head) { @if (head.value; as value) {
       <!-- The figure opens its rows, which add up to it (v2's CUJ 8). -->
       <button
+        uiSheetLargeTitle
         type="button"
         class="analytics-card__figure-button"
         uiInteractive
@@ -196,6 +207,8 @@
         [uiBars]="chart.bars"
         [uiValueText]="chart.valueText"
         [uiLabel]="chart.label"
+        uiScrubbable
+        (uiScrubbed)="scrubbed.set($event)"
         [attr.data-view]="chart.chartView"
       />
       } @case (ChartView.Ring) {
@@ -203,6 +216,8 @@
         class="analytics-card__ring"
         [uiSegments]="chart.segments"
         [uiLabel]="chart.label"
+        uiScrubbable
+        (uiScrubbed)="scrubbed.set($event)"
         [attr.data-view]="chart.chartView"
       >
         <span uiRingCenter class="analytics-card__ring-centre">
@@ -325,29 +340,45 @@
       data-testid="analytics-time"
     >
       <h2 uiText uiFont="title3" id="analytics-time-title">{{ time.title }}</h2>
+      <!-- THE CHART'S KEY (owner, 2026-11-09: the list "has to be somehow
+           related to the upper one"): a row per part of the columns above,
+           its share and its time; a tap draws that part alone in the chart,
+           at its own scale, and the same row again stacks them back. -->
       <ul
-        class="analytics-card__legend"
+        uiListGroup
         [attr.aria-label]="time.barName"
         data-testid="analytics-time-bar"
       >
         @for (segment of time.segments; track segment.part) {
-        <li
-          class="analytics-card__legend-row"
-          [attr.data-testid]="segment.testId"
-        >
-          <span
-            class="ui-chart-swatch"
-            [attr.data-part]="segment.part"
-            aria-hidden="true"
-          ></span>
-          <span uiText uiFont="footnote">{{ segment.label }}</span>
-          <span
-            uiText
-            uiFont="footnote"
-            uiForegroundStyle="secondary"
-            class="analytics-card__legend-value"
-            >{{ segment.value }}</span
+        <li>
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [uiSelected]="segment.selected"
+            [attr.aria-pressed]="segment.selected"
+            [attr.data-testid]="segment.testId"
+            (click)="focusPart(segment.analyticsBarPart)"
           >
+            <span
+              uiLeading
+              class="ui-chart-swatch analytics-card__key-swatch"
+              [attr.data-part]="segment.part"
+              aria-hidden="true"
+            ></span>
+            {{ segment.label }}
+            <span uiTrailing class="analytics-card__key-figures">
+              <span
+                uiForegroundStyle="secondary"
+                class="analytics-card__key-share"
+                >{{ segment.shareText }}</span
+              >
+              <span class="analytics-card__legend-value"
+                >{{ segment.value }}</span
+              >
+            </span>
+          </button>
         </li>
         }
       </ul>
@@ -380,21 +411,25 @@
       data-testid="analytics-busy"
     >
       <h2 uiText uiFont="title3" id="analytics-busy-title">{{ busy.title }}</h2>
-      <ui-heatmap
-        [uiRows]="busy.rows"
-        [uiColumns]="busy.columns"
-        [uiCells]="busy.cells"
-        [uiLabel]="busy.label"
-        data-testid="analytics-heatmap"
-      />
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        data-testid="analytics-busy-sentence"
-      >
-        {{ busy.sentence }}
-      </p>
+      <!-- The grid and what it says, on one card like every other figure
+           of the screen (owner, 2026-11-09). -->
+      <ui-card uiTone="muted" uiPadding="regular" class="analytics-card__busy">
+        <ui-heatmap
+          [uiRows]="busy.rows"
+          [uiColumns]="busy.columns"
+          [uiCells]="busy.cells"
+          [uiLabel]="busy.label"
+          data-testid="analytics-heatmap"
+        />
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          data-testid="analytics-busy-sentence"
+        >
+          {{ busy.sentence }}
+        </p>
+      </ui-card>
     </section>
     }
 
@@ -565,7 +600,24 @@
       </p>
       }
     </section>
-    } }
+    } } @if (rows(); as rows) {
+    <!-- THE ROWS BEHIND THE FIGURE (owner, 2026-11-09, Revolut's
+         transactions under the graph): the visits by day, the days or the
+         barbers — a page at a time as the end comes within reach. -->
+    <section
+      class="analytics-card__module"
+      aria-labelledby="analytics-rows-title"
+      data-testid="analytics-card-rows"
+    >
+      <h2 uiText uiFont="title3" id="analytics-rows-title">{{ rows.title }}</h2>
+      <lib-analytics-rows
+        [vm]="rows.vm"
+        [showTotal]="false"
+        (openBarber)="openBarber($event)"
+        (openMonth)="openMonth($event)"
+      />
+    </section>
+    }
   </div>
 
   <!-- THE CUSTOM PERIOD: «От» and «До» in collapsible rows with inline

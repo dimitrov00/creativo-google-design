@@ -9,7 +9,11 @@ import {
 import { Location } from '@angular/common';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
-import { AnalyticsFigure, AnalyticsRangePreset } from '@core/components';
+import {
+  type AnalyticsBarPart,
+  AnalyticsFigure,
+  AnalyticsRangePreset,
+} from '@core/components';
 import {
   type BarberId,
   type LocalDate,
@@ -41,7 +45,13 @@ import {
   UiTextDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
-import { UiCard, UiListGroup, UiListRow } from '@creativo/ui/patterns';
+import {
+  UiCard,
+  UiListGroup,
+  UiListRow,
+  UiSheetHeader,
+} from '@creativo/ui/patterns';
+import { AnalyticsRows } from '../analytics-rows-page/analytics-rows';
 import { AnalyticsRowsPage } from '../analytics-rows-page/analytics-rows-page';
 import { analyticsCardVm, cardTopicOf } from '../analytics-card.presenter';
 import { AnalyticsChartView } from '../analytics-card.vm';
@@ -61,7 +71,6 @@ import { bindAnalyticsRouteInputs } from './route-inputs';
 
 /** The ⓘ alert's one answer. */
 const INFO_CLOSE = 'close';
-
 /**
  * A CARD'S OWN SCREEN (`/staff/analytics/:card`,
  * `docs/designs/staff-analytics-v3-revolut.md`) — Revolut's «Spent» screen
@@ -76,12 +85,14 @@ const INFO_CLOSE = 'close';
   selector: 'lib-analytics-card-page',
   imports: [
     AnalyticsRangeSheet,
+    AnalyticsRows,
     AnalyticsRowsPage,
     RouterLink,
     UiAlert,
     UiBarChart,
     UiButton,
     UiCard,
+    UiSheetHeader,
     UiChip,
     UiForegroundStyleDirective,
     UiFrameDirective,
@@ -135,6 +146,9 @@ export class AnalyticsCardPage {
   /** The locations whose line the toggles turned off; at least one stays on. */
   private readonly hiddenLocations = signal<readonly LocationId[]>([]);
 
+  /** The «Време» row tapped: the chart draws that part alone; `null` stacks them all. */
+  private readonly focusedPart = signal<AnalyticsBarPart | null>(null);
+
   protected readonly vm = computed(() => {
     const screen = this.screen.input();
     if (screen === null) return null;
@@ -143,8 +157,20 @@ export class AnalyticsCardPage {
       card: this.cardTag(),
       view: this.view(),
       hiddenLocationIds: this.hiddenLocations(),
+      focusedPart: this.focusedPart(),
     });
   });
+
+  /**
+   * A «Време» row: the chart above draws that part alone — at its own
+   * scale, so the worked hours a stack of free time dwarfed read — and the
+   * same row again stacks every part back (Apple Health's category rows).
+   */
+  protected focusPart(part: AnalyticsBarPart): void {
+    this.focusedPart.update((focused) => (focused === part ? null : part));
+    // A scrub point belongs to the chart that was drawn.
+    this.scrubbed.set(null);
+  }
 
   /** A location's toggle: its line on or off — never the last line off. */
   protected toggleLocation(locationId: LocationId): void {
@@ -162,24 +188,39 @@ export class AnalyticsCardPage {
   protected readonly scrubbed = signal<number | null>(null);
 
   /**
-   * The figure and the line under it: while a finger rests on the line
-   * (Revolut, Apple Health) they read that point — its figure, its day and
-   * the previous period's — else the period's own. A point with no figure
-   * of its own (past today on a running total) keeps the period's figure.
+   * The figure and the line under it: while a finger rests on the chart
+   * (Revolut, Apple Health) they read what is under it — a point of the
+   * line or a bar (its figure and its day, or its barber's name), a share
+   * of the ring (its figure and its word) — else the period's own. A point
+   * with no figure of its own (past today on a running total) keeps the
+   * period's figure.
    */
   protected readonly header = computed(() => {
     const vm = this.vm();
     if (vm === null) return null;
     const at = this.scrubbed();
     const chart = vm.chart;
-    if (at === null || chart?.chartView !== AnalyticsChartView.Line) {
-      return { value: vm.value, subline: vm.subline, scrubbing: false };
+    const rest = { value: vm.value, subline: vm.subline, scrubbing: false };
+    if (at === null || chart === null) return rest;
+    switch (chart.chartView) {
+      case AnalyticsChartView.Line:
+      case AnalyticsChartView.Bars:
+        return {
+          value: chart.valueText.at(at) || vm.value,
+          subline: chart.readouts.at(at) ?? vm.subline,
+          scrubbing: true,
+        };
+      case AnalyticsChartView.Ring: {
+        const segment = chart.segments.at(at);
+        return segment === undefined
+          ? rest
+          : {
+              value: segment.valueText,
+              subline: segment.label,
+              scrubbing: true,
+            };
+      }
     }
-    return {
-      value: chart.valueText.at(at) || vm.value,
-      subline: chart.readouts.at(at) ?? vm.subline,
-      scrubbing: true,
-    };
   });
 
   /** The custom period sheet's words and verdict. */
@@ -213,7 +254,10 @@ export class AnalyticsCardPage {
   }
 
   protected pickView(id: string): void {
-    if (Tag.has(AnalyticsChartView, id)) this.view.set(id);
+    if (!Tag.has(AnalyticsChartView, id)) return;
+    this.view.set(id);
+    // A reading belongs to the chart it was read off.
+    this.scrubbed.set(null);
   }
 
   protected pickRange(id: string): void {
@@ -240,6 +284,37 @@ export class AnalyticsCardPage {
       seatRowsHeld: this.store.seatRowsHeld(),
       names: this.screen.names,
     });
+  });
+
+  /**
+   * THE ROWS UNDER THE CHART — the figure's own drill-down laid out in the
+   * screen, on the money cards (Revolut's transactions under its graph):
+   * a barber's visits by day, the shop's days or its barbers.
+   */
+  protected readonly rows = computed(() => {
+    const vm = this.vm();
+    const card = this.cardTag();
+    const words = this.screen.words();
+    const report = this.store.report();
+    const today = this.store.today();
+    if (
+      vm?.drill == null ||
+      (card !== AnalyticsCard.Takings && card !== AnalyticsCard.Tips) ||
+      words === null ||
+      report === null ||
+      today === null
+    ) {
+      return null;
+    }
+    const rowsVm = analyticsDrillVm({
+      words,
+      today,
+      report,
+      drill: vm.drill,
+      seatRowsHeld: this.store.seatRowsHeld(),
+      names: this.screen.names,
+    });
+    return { title: words.card.rows[rowsVm.drillRows], vm: rowsVm };
   });
 
   /** «По дни»: the working time's days. */

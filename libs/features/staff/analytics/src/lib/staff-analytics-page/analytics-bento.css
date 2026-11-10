@@ -166,7 +166,14 @@
 .analytics-bento__member-bar {
   grid-column: 1 / -1;
   block-size: 0.375rem;
-  inline-size: max(0.375rem, calc(var(--analytics-share, 0) * 100%));
+  /* A small share still shows as a round dot; NOTHING shows as nothing — a
+     0,00 € row drew a coloured dot that read as a mark. `min(1, share ×
+     10⁶)` is 1 for any share above zero and 0 at zero, so the dot's floor
+     switches off exactly there. */
+  inline-size: max(
+    calc(0.375rem * min(1, var(--analytics-share, 0) * 1000000)),
+    calc(var(--analytics-share, 0) * 100%)
+  );
   border-radius: 999px;
   background: var(--sys-color-accent);
 }
@@ -191,9 +198,33 @@
   background: var(--sys-identity-4);
 }
 
+/* A BONE is a card's own frame — the same padding, the same lines, the
+   same square or floor — with its words hidden, and the skeleton laid
+   over the whole of it: its height is the card's by construction, never a
+   number kept in step by hand (a 13rem guess stood under a 176px card,
+   and the team and salon cards had no bones at all — owner, 2026-11-09:
+   "the loading animation doesn't match the actual"). */
 .analytics-bento__bone {
-  display: block;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight); /* the card's own */
+  visibility: hidden;
+}
+
+.analytics-bento__bone-fill {
+  position: absolute;
+  inset: 0;
+  visibility: visible;
   border-radius: var(--control-radius-prominent);
+}
+
+.analytics-bento__bone--takings {
+  min-block-size: 11rem;
+}
+
+.analytics-bento__bone--tile {
+  aspect-ratio: 1;
 }
 
 /* THE PACE: the line over the period's two ends, then the legend — each

@@ -47,6 +47,8 @@ const WEEK: readonly UiChartBar[] = [
       [uiRanked]="ranked()"
       [uiHighlightIndex]="highlight()"
       [uiValueText]="valueText()"
+      [uiScrubbable]="scrubbable()"
+      (uiScrubbed)="scrubbed.push($event)"
       uiLabel="Времето по дни: най-зает вторник"
       (uiBarPicked)="picked.push($event)"
       data-testid="chart"
@@ -65,6 +67,8 @@ class Host {
   readonly highlight = signal<number | null>(null);
   readonly valueText = signal<readonly string[]>(['8 ч', '8 ч', '4 ч']);
   readonly picked: number[] = [];
+  readonly scrubbable = signal(false);
+  readonly scrubbed: (number | null)[] = [];
 }
 
 function render(setup?: (host: Host) => void) {
@@ -146,6 +150,26 @@ describe('UiBarChart', () => {
     expect(length(parts[0] as SVGRectElement)).toBe(112.5); // 450 of 480
   });
 
+  it('paints a member bar in its identity tone on every part; an unknown or absent tone paints by part', () => {
+    const { bars, segments } = render((host) =>
+      host.bars.set([
+        { label: 'Център', parts: [{ part: 'worked', value: 2 }], tone: 0 },
+        { label: 'Младост', parts: [{ part: 'worked', value: 1 }], tone: 1 },
+        { label: 'Стар', parts: [{ part: 'worked', value: 1 }], tone: 7 },
+        { label: 'Без', parts: [{ part: 'worked', value: 1 }] },
+      ]),
+    );
+    expect(
+      bars().map((bar) =>
+        segments(bar).map((rect) => rect.getAttribute('data-tone')),
+      ),
+    ).toEqual([['0'], ['1'], [null], [null]]);
+    // The part hook stays: the tone says WHOSE, the part still says WHAT.
+    expect(segments(bars()[0] as Element)[0]?.getAttribute('data-part')).toBe(
+      'worked',
+    );
+  });
+
   it('lays horizontal bars in rows, largest first when ranked, the figure at the row’s end, the index kept', () => {
     const { chart, bars, segments } = render((host) => {
       host.orientation.set('horizontal');
@@ -222,6 +246,58 @@ describe('UiBarChart', () => {
     expect(
       legend?.querySelector('.ui-chart-swatch')?.getAttribute('data-part'),
     ).toBe('worked');
+  });
+
+  it('reads the bar under a finger when scrubbable: it keeps its paint, the others step back, the index goes out; lifting ends it', () => {
+    const { fixture, chart, bars } = render((host) =>
+      host.scrubbable.set(true),
+    );
+    const svg = chart.querySelector('svg') as SVGSVGElement;
+    // jsdom lays nothing out: give the drawing a 300 px box.
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 300, height: 140 }) as DOMRect;
+    const pointer = (type: string, clientX: number) =>
+      svg.dispatchEvent(
+        Object.assign(new Event(type, { bubbles: true }), {
+          clientX,
+          clientY: 50,
+          pointerId: 1,
+          pointerType: 'touch',
+        }),
+      );
+    // Three bars, 100 px a band: x 150 is the second.
+    pointer('pointerdown', 150);
+    fixture.detectChanges();
+    expect(chart.hasAttribute('data-scrubbing')).toBe(true);
+    expect(bars().map((bar) => bar.hasAttribute('data-scrubbed'))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    pointer('pointermove', 290);
+    fixture.detectChanges();
+    pointer('pointerup', 290);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.scrubbed).toEqual([1, 2, null]);
+    expect(chart.hasAttribute('data-scrubbing')).toBe(false);
+  });
+
+  it('reads nothing unless scrubbable', () => {
+    const { fixture, chart } = render();
+    const svg = chart.querySelector('svg') as SVGSVGElement;
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 300, height: 140 }) as DOMRect;
+    svg.dispatchEvent(
+      Object.assign(new Event('pointerdown', { bubbles: true }), {
+        clientX: 150,
+        clientY: 50,
+        pointerId: 1,
+        pointerType: 'touch',
+      }),
+    );
+    fixture.detectChanges();
+    expect(fixture.componentInstance.scrubbed).toEqual([]);
+    expect(chart.hasAttribute('data-scrubbing')).toBe(false);
   });
 
   it('draws nothing for no bars', () => {

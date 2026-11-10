@@ -302,6 +302,26 @@ export class StaffAnalyticsStore {
 
   private readonly _report = signal<AnalyticsReport | null>(null);
   readonly report = this._report.asReadonly();
+  /**
+   * The last report painted under the scope on screen — kept while the
+   * carousel swipes to pages still loading, so their bones take the shape
+   * this scope's pages have (a team card's rows, the salons'). Another
+   * scope's report never shapes them: a scope change drops it.
+   */
+  private readonly _shape = signal<{
+    readonly scope: string;
+    readonly report: AnalyticsReport;
+  } | null>(null);
+  readonly shapeReport = computed<AnalyticsReport | null>(() => {
+    const shape = this._shape();
+    return shape !== null && shape.scope === this.scopeKey()
+      ? shape.report
+      : null;
+  });
+  /** The scope picked, as one key: the barbers, then the locations. */
+  private readonly scopeKey = computed(
+    () => `${this.pickedScope().join(',')}|${this.pickedLocation().join(',')}`,
+  );
   /** The report on screen is the callable's own answer — its seat rows held (a cached one keeps none). */
   private readonly _seatRowsHeld = signal(false);
   readonly seatRowsHeld = this._seatRowsHeld.asReadonly();
@@ -718,8 +738,9 @@ export class StaffAnalyticsStore {
 
   /**
    * The admin's scope menu (owner review 2026-11-09): «Целият екип» names
-   * no barber; a barber's box toggles them (`scopeToggled` — never the last
-   * one off, every box ticked is the whole team again).
+   * no barber; a barber's box toggles them (`scopeToggled` — from the whole
+   * team it names that one alone; the last off, or every box on, is the
+   * whole team again).
    */
   pickAllBarbers(): void {
     this.pickBarbers([]);
@@ -945,6 +966,7 @@ export class StaffAnalyticsStore {
     const cached = this.cache.readCachedReport(request.cacheKey);
     if (!cached.ok || cached.value === null) return;
     this._report.set(cached.value);
+    this._shape.set({ scope: this.scopeKey(), report: cached.value });
     this._seatRowsHeld.set(false);
     if (this._load() === AnalyticsLoad.Loading) {
       this._load.set(AnalyticsLoad.Refreshing);
@@ -970,6 +992,7 @@ export class StaffAnalyticsStore {
 
   private answered(request: AnalyticsRequest, report: AnalyticsReport): void {
     this._report.set(report);
+    this._shape.set({ scope: this.scopeKey(), report });
     this._seatRowsHeld.set(true);
     this._load.set(AnalyticsLoad.Ready);
     // The report's own scope keys it: a barber's names their record even

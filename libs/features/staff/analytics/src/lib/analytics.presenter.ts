@@ -23,6 +23,7 @@ import {
   type Weekday,
 } from '@core/primitives';
 import {
+  AnalyticsCarouselSystem,
   type AnalyticsScopeMenu,
   type AnalyticsScreen,
   StaffAnalyticsSystem,
@@ -87,6 +88,7 @@ import {
   AnalyticsTopic,
   type AnalyticsVm,
   BAR_PART_HOOKS,
+  TIME_POINT_FIELDS,
   DrillRows,
   FIGURE_TOPICS,
   ORIGIN_PART_HOOKS,
@@ -105,8 +107,29 @@ import {
 export const REPORT_CURRENCY = Currency.EUR;
 
 /** What the screen names from the catalogue — services, barbers and locations. */
+/**
+ * A SERVICE'S COLOUR (owner, 2026-11-09: "each service should have also
+ * different color assigned to it not everything using our accent"): an
+ * identity tone (`0…4`) by its place in the catalogue — so it follows the
+ * service, never its rank in the period — and `null` (the chart's grey)
+ * for a service past the fifth or no longer in the catalogue, rather than
+ * a tone two services would share.
+ */
+export function serviceToneOf(
+  names: AnalyticsNames,
+  serviceId: ServiceId,
+): number | null {
+  const order = names.serviceOrder(serviceId);
+  return order !== null && order < SERVICE_TONES ? order : null;
+}
+
+/** The identity tones a service can take — beyond them, the grey. */
+const SERVICE_TONES = 5;
+
 export interface AnalyticsNames {
   serviceName(id: ServiceId): string | null;
+  /** The service's place in the shop's catalogue, `0 …`; `null` for one no longer in it. */
+  serviceOrder(id: ServiceId): number | null;
   barberName(id: BarberId): string | null;
   barberAvatarSrc(id: BarberId): string | null;
   locationName(id: LocationId): string | null;
@@ -772,16 +795,6 @@ function seriesOf(
 
 // ── The time bars ─────────────────────────────────────────────────────────
 
-/** Each bar part's field of a time point — the stacked bar's six segments, in the legend's order. */
-const TIME_POINT_FIELDS = {
-  [AnalyticsBarPart.Worked]: 'workedMinutes',
-  [AnalyticsBarPart.NoShow]: 'noShowMinutes',
-  [AnalyticsBarPart.Unmarked]: 'unmarkedMinutes',
-  [AnalyticsBarPart.Blocked]: 'blockedMinutes',
-  [AnalyticsBarPart.Unsold]: 'unsoldMinutes',
-  [AnalyticsBarPart.Other]: 'otherMinutes',
-} as const satisfies Record<AnalyticsBarPart, keyof AnalyticsReport.TimePoint>;
-
 const TIME_PARTS: readonly AnalyticsBarPart[] = Object.values(AnalyticsBarPart);
 
 function timeBarsOf(
@@ -802,7 +815,7 @@ function timeBarsOf(
       return { part: BAR_PART_HOOKS[part], value };
     });
     totals.push(total);
-    return { label: labels.at(i) ?? '', parts };
+    return { label: labels.at(i) ?? '', parts, tone: null };
   });
   return {
     bars,
@@ -842,16 +855,17 @@ function busyOf(
     report.reportEmptiestWeekday !== null && report.reportEmptiestHour !== null
       ? at(report.reportEmptiestWeekday, report.reportEmptiestHour)
       : null;
+  // Each cell against the busiest hour — the system's scale.
+  const strengths = AnalyticsCarouselSystem.busyStrengthsOf(report);
   return {
     title: words.busy.title,
     rows: weekdays.map((weekday) => weekdayLabel(weekday, lang)),
     columns: hours.map((hour) => String(hour)),
-    cells: cells.map((cell) => ({
+    cells: cells.map((cell, i) => ({
       row: weekdays.indexOf(cell.weekday),
       column: hours.indexOf(cell.hour),
-      value: cell.workedMinutes,
-      // A cell with no rostered minute is drawn at no strength.
-      max: Math.max(cell.rosteredMinutes, 1),
+      value: strengths.at(i) ?? 0,
+      max: 1,
     })),
     sentence:
       busiest === null || emptiest === null
@@ -883,6 +897,7 @@ function aheadBarsOf(
           value: day.openMinutes,
         },
       ],
+      tone: null,
     })),
     highlightIndex: highlight === -1 ? null : highlight,
     valueText: days.map((day) => spanWords(day.openMinutes, words.spanWords)),
@@ -961,10 +976,18 @@ function timeOf(
     barName: words.time.barName,
     bars: timeBarsOf(input, report),
     segments: StaffAnalyticsSystem.barSegmentsOf(report).map((segment) => ({
+      analyticsBarPart: segment.analyticsBarPart,
       part: BAR_PART_HOOKS[segment.analyticsBarPart],
       share: segment.share,
+      // A part that is there never reads «0%»: under half a percent it is
+      // «<1%», as a rounded share would otherwise hide it.
+      shareText:
+        segment.share > 0 && segment.share < 0.005
+          ? words.time.shareUnderOne
+          : formatPercent(segment.share, words.lang),
       label: words.time.part[segment.analyticsBarPart],
       value: span(segment.minutes),
+      selected: false,
       testId: `analytics-bar-${BAR_PART_HOOKS[segment.analyticsBarPart]}`,
     })),
     ahead: words.time.ahead(
@@ -1034,6 +1057,7 @@ function servicesOf(
     bars: rows.map((row) => {
       const name =
         input.names.serviceName(row.serviceId) ?? words.unknownService;
+      const tone = serviceToneOf(input.names, row.serviceId);
       return {
         label:
           row.takingsPerHourCents === null
@@ -1044,10 +1068,15 @@ function servicesOf(
               ),
         parts: [
           {
-            part: BAR_PART_HOOKS[AnalyticsBarPart.Worked],
+            // A service without a tone of its own is the chart's grey,
+            // as the ring draws it — never the accent.
+            part:
+              tone === null ? 'other' : BAR_PART_HOOKS[AnalyticsBarPart.Worked],
             value: row.takingsCents,
           },
         ],
+        // Each service in its own colour — the ring's too.
+        tone,
       };
     }),
     valueText: rows.map((row) =>
@@ -1136,6 +1165,7 @@ function originsOf(
           part: ORIGIN_PART_HOOKS[row.bookingOrigin],
           value: row.visitCount,
         })),
+        tone: null,
       },
     ],
     label: words.charts.origins,

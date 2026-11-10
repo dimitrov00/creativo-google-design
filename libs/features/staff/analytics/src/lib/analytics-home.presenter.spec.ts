@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AnalyticsPeriod, AnalyticsSpan } from '@core/components';
-import { LocationId } from '@core/primitives';
+import { LocationId, MinuteCount } from '@core/primitives';
 import { AnalyticsCarouselSystem, StaffAnalyticsSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -75,6 +75,7 @@ function inputOf(
     pages: PAGES,
     pageIndex: PAGES.length - 1,
     pageReports: PAGES.map((_, i) => (i === PAGES.length - 1 ? report : null)),
+    shapeReport: report,
     ...overrides,
   };
 }
@@ -122,7 +123,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(vm.scope).toBeNull();
   });
 
-  it('the scope menu: «Целият екип» picked whole, its submenu a box per barber — the admin’s own first — every box ticked while none is named', () => {
+  it('the scope menu: «Екип» is a filter row — its value under it, no pick — its submenu «Целият екип» alone first, then a box per barber, the admin’s own first; «all» and the boxes either/or', () => {
     const menu = StaffAnalyticsSystem.scopeMenuOf([IVAN, NIKO], NIKO, []);
     const shop = analyticsHomeVm(
       inputOf('bg', { report: shopReportFixture(), scopeMenu: menu }),
@@ -133,18 +134,24 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       name: 'Салон',
       icon: 'location.shop',
     });
-    // One shop: no shops' row — the team's alone, chosen.
+    // One shop: no shops' row — the team's alone, a filter: no pick.
     expect(
-      shop.scope?.options.map((o) => [o.id, o.label, o.selected, o.icon]),
-    ).toEqual([['team', 'Целият екип', true, 'nav.team']]);
+      shop.scope?.options.map((o) => [
+        o.id,
+        o.label,
+        o.description,
+        o.selected,
+        o.icon,
+      ]),
+    ).toEqual([['team', 'Екип', 'Всички', undefined, 'nav.team']]);
     const team = shop.scope?.options[0];
     expect(team?.childrenTitle).toBe('Екип');
-    expect(team?.openLabel).toBe('Избери бръснари');
     expect(
-      team?.children?.map((o) => [o.id, o.label, o.checked, o.testId]),
+      team?.children?.map((o) => [o.id, o.label, o.all, o.checked, o.testId]),
     ).toEqual([
-      ['niko', 'Аз', true, 'analytics-scope-niko'],
-      ['ivan', 'Иван Колев', true, 'analytics-scope-ivan'],
+      ['all', 'Целият екип', true, true, 'analytics-scope-team-all'],
+      ['niko', 'Аз', undefined, false, 'analytics-scope-niko'],
+      ['ivan', 'Иван Колев', undefined, false, 'analytics-scope-ivan'],
     ]);
     expect(shop.period.leading).toBeNull();
 
@@ -163,9 +170,9 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       icon: null,
     });
     const row = ivan.scope?.options[0];
-    expect(row?.selected).toBe(false);
-    expect(row?.label).toBe('Иван Колев');
-    expect(row?.children?.map((o) => o.checked)).toEqual([false, true]);
+    expect(row?.label).toBe('Екип');
+    expect(row?.description).toBe('Иван Колев');
+    expect(row?.children?.map((o) => o.checked)).toEqual([false, false, true]);
     expect(ivan.pages.at(-1)?.query.barber).toBe('ivan');
 
     // Two ticked: a count, no face, and no goal to set.
@@ -173,6 +180,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       inputOf('bg', { scopeMenu: menu, scopeBarberIds: [IVAN, NIKO] }),
     );
     expect(pair.scope?.label).toBe('2 бръснари');
+    // The row's value names them, in the menu's order.
+    expect(pair.scope?.options[0]?.description).toBe('Аз, Иван Колев');
     expect(pair.scope?.leading?.icon).toBe('location.shop');
     expect(pair.pages.at(-1)?.query.barber).toBe('ivan,niko');
     expect(pair.tools.map((tool) => tool.tool)).not.toContain(
@@ -195,7 +204,7 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     ).toBe('Shop');
   });
 
-  it('with two or more shops: «Всички салони» first, its submenu a box per shop; ticked shops and barbers name the pill together (ADR 2026-11-09)', () => {
+  it('with two or more shops: «Салони» first, a filter row beside «Екип»; its submenu «Всички салони» alone, then a box per shop; ticked shops and barbers name the pill together (ADR 2026-11-09)', () => {
     const centre = LocationId.of('loc-centre');
     const mladost = LocationId.of('loc-mladost');
     const menu = StaffAnalyticsSystem.scopeMenuOf([IVAN], null, [
@@ -206,29 +215,35 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       inputOf('bg', { scopeMenu: menu, shopCount: 2 }),
     );
     expect(
-      all.scope?.options.map((o) => [o.id, o.label, o.selected, o.testId]),
+      all.scope?.options.map((o) => [o.id, o.label, o.description, o.testId]),
     ).toEqual([
-      ['locations', 'Всички салони', true, 'analytics-scope-shop'],
-      ['team', 'Целият екип', true, 'analytics-scope-team'],
+      ['locations', 'Салони', 'Всички', 'analytics-scope-shop'],
+      ['team', 'Екип', 'Всички', 'analytics-scope-team'],
     ]);
     const shops = all.scope?.options[0];
     expect(shops?.childrenTitle).toBe('Салони');
-    expect(shops?.openTestId).toBe('analytics-scope-locations-open');
     expect(
       shops?.children?.map((o) => [o.id, o.label, o.icon, o.checked, o.testId]),
     ).toEqual([
       [
+        'all',
+        'Всички салони',
+        'location.shop',
+        true,
+        'analytics-scope-locations-all',
+      ],
+      [
         centre,
         'Център',
         'location.shop',
-        true,
+        false,
         'analytics-scope-location-loc-centre',
       ],
       [
         mladost,
         'Младост',
         'location.shop',
-        true,
+        false,
         'analytics-scope-location-loc-mladost',
       ],
     ]);
@@ -241,10 +256,10 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       }),
     );
     expect(atMladost.scope?.label).toBe('Младост');
-    expect(atMladost.scope?.options[0]?.selected).toBe(false);
+    expect(atMladost.scope?.options[0]?.description).toBe('Младост');
     expect(
       atMladost.scope?.options[0]?.children?.map((o) => o.checked),
-    ).toEqual([false, true]);
+    ).toEqual([false, false, true]);
     expect(atMladost.scope?.leading).toEqual({
       avatarSrc: null,
       name: 'Младост',
@@ -284,7 +299,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(cards.map((c) => [c.card, c.screen, c.title, c.value])).toEqual([
       ['takings', 'takings', 'Оборот', nbsp('45,50 €')],
       ['time', 'time', 'Работно време', '8 ч'],
-      ['free', 'time', 'Свободно време', '4 ч 10 мин'],
+      // The free time so far (the unsold), beside the time so far.
+      ['free', 'time', 'Свободно време', '3 ч 20 мин'],
       ['tips', 'tips', 'Бакшиши', nbsp('5,00 €')],
       ['clients', 'rebooked', 'Клиенти', '2'],
     ]);
@@ -311,8 +327,8 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     // How full the roster was, as a ring and a sentence.
     expect(time?.ring?.value).toBe(480);
     expect(time?.detail).toBe(`55% от 15 ч по график`);
-    // The free time by weekday, the emptiest day named and stressed.
-    expect(free?.detail).toBe('най-свободно: вт');
+    // What is still open to book reads under the figure while there is any.
+    expect(free?.detail).toBe('още 50 мин свободни');
     expect(free?.spark?.values).toHaveLength(7);
     expect(free?.spark?.labels).toEqual([
       'пн',
@@ -323,6 +339,22 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
       'сб',
       'нд',
     ]);
+    // A period with nothing left to book names its emptiest weekday.
+    const done = analyticsReportFixture({
+      reportOpenMinutes: 0 as MinuteCount,
+    });
+    const closed = analyticsHomeVm(
+      inputOf('bg', {
+        report: done,
+        pageReports: PAGES.map((_, i) =>
+          i === PAGES.length - 1 ? done : null,
+        ),
+      }),
+    )
+      .pages.at(-1)
+      ?.cards?.find((c) => c.card === 'free');
+    expect(closed?.value).toBe('3 ч 20 мин');
+    expect(closed?.detail).toBe('най-свободно: вт');
     expect(tips?.detail).toBe('11% от оборота');
     // Who came of everyone booked, and who did not.
     // The new clients beside those who did not come.
@@ -375,10 +407,59 @@ describe('analyticsHomeVm — the Revolut home (staff-analytics-v3)', () => {
     expect(analyticsHomeVm(inputOf('bg')).pages.at(-1)?.locations).toBeNull();
   });
 
+  it('draws a loading page’s bones in the shape the scope’s last report has — a row per barber and per salon — even with no page loaded', () => {
+    const shop = deepFreeze(locationsReportFixture());
+    const swiped = analyticsHomeVm(
+      inputOf('bg', {
+        // Swiped away from every loaded page: the screen's report is out
+        // and the carousel holds none, the scope's last one stays.
+        report: null,
+        pageReports: PAGES.map(() => null),
+        shapeReport: shop,
+      }),
+    );
+    expect(swiped.pages[0]?.cards).toBeNull();
+    expect(swiped.pages[0]?.bones).toEqual({
+      teamRows: shop.reportBarbers.map((_, i) => i),
+      locationRows: [0, 1],
+    });
+    // A barber's own report has no team card and no salons: tiles alone.
+    const own = deepFreeze(analyticsReportFixture());
+    expect(
+      analyticsHomeVm(
+        inputOf('bg', {
+          report: null,
+          pageReports: PAGES.map(() => null),
+          shapeReport: own,
+        }),
+      ).pages[0]?.bones,
+    ).toEqual({ teamRows: [], locationRows: [] });
+    // The first load knows no shape yet.
+    expect(
+      analyticsHomeVm(
+        inputOf('bg', {
+          report: null,
+          pageReports: PAGES.map(() => null),
+          shapeReport: null,
+        }),
+      ).pages[0]?.bones,
+    ).toEqual({ teamRows: [], locationRows: [] });
+  });
+
   it('under the carousel: the days ahead, and the tools — the goal, then the export', () => {
     const vm = analyticsHomeVm(inputOf('bg'));
     expect(vm.ahead?.title).toBe('Предстои');
-    expect(vm.ahead?.detail).toBe('свободни в следващите 7 дни');
+    // What the open hours are free OF: one barber's working time ahead…
+    expect(vm.ahead?.detail).toBe('свободни от 37 ч работно време за 7 дни');
+    // …and, for several barbers, whose hours add up.
+    const team = analyticsHomeVm(
+      inputOf('bg', {
+        report: analyticsReportFixture({ reportAheadBarberCount: 3 }),
+      }),
+    );
+    expect(team.ahead?.detail).toBe(
+      'свободни от 37 ч работно време на 3 бръснари за 7 дни',
+    );
     expect(vm.ahead?.spark.values).toHaveLength(7);
     expect(vm.tools.map((t) => [t.tool, t.title, t.detail])).toEqual([
       ['GOAL', 'Задай цел', 'Задай оборот за месеца'],

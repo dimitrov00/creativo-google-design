@@ -68,6 +68,14 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
  * The grabber is presentation only (shown inside UiSheetBehavior's default
  * drag media, max-width 760px); the OWNER wires drag-to-dismiss pointer
  * events to the behavior.
+ *
+ * ON A PAGE (2026-11-09; owner: "reuse — don't hand-roll it"): with no
+ * scrolling ancestor the document is the scroller. The header then watches
+ * its sentinel against the viewport (window scroll), marks itself
+ * `data-page` — no grabber, no drag, the page scrolls under it — and lands
+ * with the house fade keyed to the page background (sheet-header.css), the
+ * same chrome the modal sheet gives it, never a slab. The sentinel is
+ * looked up in the header's own parent, the page it heads.
  */
 @Component({
   selector: 'ui-sheet-header',
@@ -86,6 +94,7 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
   host: {
     class: 'ui-sheet-header',
     '[attr.data-collapsed]': "collapsed() ? '' : null",
+    '[attr.data-page]': "onPage() ? '' : null",
   },
 })
 export class UiSheetHeader {
@@ -100,6 +109,8 @@ export class UiSheetHeader {
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly observedCollapsed = signal(false);
+  /** No scrolling ancestor: the header heads a page the document scrolls. */
+  protected readonly onPage = signal(false);
   protected readonly collapsed = computed(
     () => this.uiCollapsed() ?? this.observedCollapsed(),
   );
@@ -111,8 +122,12 @@ export class UiSheetHeader {
 
   /** No-sentinel fallback: any scroll means content runs under the bar. */
   private readonly onScrollerScroll = (): void => {
-    if (this.sentinel || !this.scroller) return;
-    this.observedCollapsed.set(this.scroller.scrollTop > 0);
+    if (this.sentinel) return;
+    if (this.scroller) {
+      this.observedCollapsed.set(this.scroller.scrollTop > 0);
+    } else if (this.onPage()) {
+      this.observedCollapsed.set(window.scrollY > 0);
+    }
   };
 
   constructor() {
@@ -128,6 +143,9 @@ export class UiSheetHeader {
       this.destroyed = true;
       this.intersectionObserver?.disconnect();
       this.scroller?.removeEventListener('scroll', this.onScrollerScroll);
+      if (this.onPage()) {
+        window.removeEventListener('scroll', this.onScrollerScroll);
+      }
     });
   }
 
@@ -141,28 +159,35 @@ export class UiSheetHeader {
     // The sheet's own scroller: the nearest ancestor that actually
     // scrolls. One walk, shared with the visits browser (ui/layout).
     const scroller = nearestScroller(this.elementRef.nativeElement);
-    if (!scroller) return;
+    // No scrolling ancestor: a page, scrolled by the document.
+    if (!scroller) this.onPage.set(true);
     this.scroller = scroller;
 
     this.syncSentinel();
-    scroller.addEventListener('scroll', this.onScrollerScroll, {
+    (scroller ?? window).addEventListener('scroll', this.onScrollerScroll, {
       passive: true,
     });
 
     // Detail sheets typically swap their content subtree per open
     // (`@if (activeLocation())` …) — re-resolve the sentinel whenever the
     // scroller's contents change so observation survives the swap.
-    if (typeof MutationObserver !== 'undefined') {
+    const scope = this.scope();
+    if (typeof MutationObserver !== 'undefined' && scope !== null) {
       const mutations = new MutationObserver(() => this.syncSentinel());
-      mutations.observe(scroller, { childList: true, subtree: true });
+      mutations.observe(scope, { childList: true, subtree: true });
       this.destroyRef.onDestroy(() => mutations.disconnect());
     }
   }
 
+  /** Where the sentinel lives: the scroller, or on a page the header's parent. */
+  private scope(): Element | null {
+    return this.scroller ?? this.elementRef.nativeElement.parentElement;
+  }
+
   private syncSentinel(): void {
-    const scroller = this.scroller;
-    if (!scroller) return;
-    const sentinel = scroller.querySelector(LARGE_TITLE_SELECTOR);
+    const scope = this.scope();
+    if (!scope) return;
+    const sentinel = scope.querySelector(LARGE_TITLE_SELECTOR);
     if (sentinel === this.sentinel) return;
 
     this.intersectionObserver?.disconnect();
@@ -185,7 +210,8 @@ export class UiSheetHeader {
         }
       },
       {
-        root: scroller,
+        // A page's root is the viewport (`null`).
+        root: this.scroller,
         rootMargin: `-${this.elementRef.nativeElement.offsetHeight}px 0px 0px 0px`,
         threshold: 0,
       },

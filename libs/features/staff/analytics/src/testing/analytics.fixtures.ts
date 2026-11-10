@@ -69,6 +69,10 @@ const LOCATIONS = new Map<string, string>([
 /** The shop's names: two services, two barbers, two locations, no portraits. */
 export const NAMES: AnalyticsNames = {
   serviceName: (id) => SERVICES.get(id) ?? null,
+  serviceOrder: (id) => {
+    const order = [...SERVICES.keys()].indexOf(id);
+    return order === -1 ? null : order;
+  },
   barberName: (id) => BARBERS.get(id) ?? null,
   barberAvatarSrc: () => null,
   locationName: (id) => LOCATIONS.get(id) ?? null,
