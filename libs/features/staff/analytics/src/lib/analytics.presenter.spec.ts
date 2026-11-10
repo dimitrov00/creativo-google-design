@@ -414,7 +414,7 @@ describe('analyticsVm — the admin and the shop', () => {
       'Заетост',
       'Връщат се',
       'Бакшиши',
-      '€ на клиент',
+      'Нови клиенти',
     ]);
     expect(ivan?.axes.map((axis) => axis.value)).toEqual([
       100, 100, 100, 62.5, 100,
@@ -424,7 +424,7 @@ describe('analyticsVm — the admin and the shop', () => {
       ivan?.axes.map((axis) =>
         axis.comparison === null ? null : Math.round(axis.comparison),
       ),
-    ).toEqual([100, 90, 83, 60, 120]);
+    ).toEqual([100, 90, 83, 60, 50]);
     expect(ivan?.accessibleName).toBe(`Отвори ${NAMES.barberName(IVAN)}`);
     expect(ivan?.testId).toBe('analytics-radar-ivan');
     const niko = radars?.radars[1];

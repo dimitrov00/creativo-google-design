@@ -7,7 +7,7 @@ import { type AnalyticsReport, RadarBase } from '@core/components';
  * normalised 0–100 against the best barber meeting that axis's sample
  * floor. Every axis is the barber's own doing — a client's no-show is not,
  * so the no-show rate stays in the report and off the radar (owner,
- * 2026-11-10: the average ticket took its axis). Runs on the server only — the best value
+ * 2026-11-10: the new clients took its axis). Runs on the server only — the best value
  * never leaves it; the report carries the normalised axes and the base
  * (`reportRadarBase`) the screen words.
  */
@@ -18,7 +18,7 @@ export type RadarBest = {
   readonly fill: number | null;
   readonly rebooking: number | null;
   readonly tipsRate: number | null;
-  readonly averageTicket: number | null;
+  readonly newClients: number | null;
 };
 
 /**
@@ -36,9 +36,6 @@ const FILL_DAY_BASE = 7;
 
 /** The worked seats a barber needs before their tips rate is drawn. */
 const TIPS_SEAT_BASE = 20;
-
-/** The worked seats a barber needs before their average ticket is drawn. */
-const TICKET_SEAT_BASE = 20;
 
 /**
  * The base a count rate needs before it is shown as a rate (design G6) —
@@ -69,14 +66,13 @@ const NO_AXES: RadarAxes = {
   fill: null,
   rebooking: null,
   tipsRate: null,
-  averageTicket: null,
+  newClients: null,
 };
 
 export const AnalyticsRadarSystem = {
   TAKINGS_SEAT_BASE,
   FILL_DAY_BASE,
   TIPS_SEAT_BASE,
-  TICKET_SEAT_BASE,
   RATE_BASE,
 
   /**
@@ -87,9 +83,10 @@ export const AnalyticsRadarSystem = {
    * rostered days, `null` with no rostered minutes), rebooking (the figures'
    * `rebookedRate`, v1's base of {@link RATE_BASE}), tips rate
    * (`tipsCents ÷ takingsCents`, base {@link TIPS_SEAT_BASE} worked seats,
-   * `null` with no takings) and the average ticket (`takingsCents ÷
-   * workedSeatCount`, the takings per client served, base
-   * {@link TICKET_SEAT_BASE} worked seats).
+   * `null` with no takings) and the new clients (`newClientCount`, the
+   * clients whose first visit at the shop was with the barber, base
+   * {@link FILL_DAY_BASE} rostered days — a count, so it is weighed over
+   * the same stretch of work as the fill).
    */
   axisValuesOf(figures: AnalyticsReport.BarberFigures): RadarAxes {
     const enoughSeats = figures.workedSeatCount >= TAKINGS_SEAT_BASE;
@@ -107,9 +104,9 @@ export const AnalyticsRadarSystem = {
         figures.workedSeatCount >= TIPS_SEAT_BASE && figures.takingsCents > 0
           ? figures.tipsCents / figures.takingsCents
           : null,
-      averageTicket:
-        figures.workedSeatCount >= TICKET_SEAT_BASE
-          ? figures.takingsCents / figures.workedSeatCount
+      newClients:
+        figures.rosteredDayCount >= FILL_DAY_BASE
+          ? figures.newClientCount
           : null,
     };
   },
@@ -120,7 +117,7 @@ export const AnalyticsRadarSystem = {
     let fill: number | null = null;
     let rebooking: number | null = null;
     let tipsRate: number | null = null;
-    let averageTicket: number | null = null;
+    let newClients: number | null = null;
     for (let i = 0; i < barbers.length; i++) {
       const values = AnalyticsRadarSystem.axisValuesOf(
         barbers[i] as AnalyticsReport.BarberFigures,
@@ -129,9 +126,9 @@ export const AnalyticsRadarSystem = {
       fill = better(fill, values.fill);
       rebooking = better(rebooking, values.rebooking);
       tipsRate = better(tipsRate, values.tipsRate);
-      averageTicket = better(averageTicket, values.averageTicket);
+      newClients = better(newClients, values.newClients);
     }
-    return { takingsPerHour, fill, rebooking, tipsRate, averageTicket };
+    return { takingsPerHour, fill, rebooking, tipsRate, newClients };
   },
 
   /**
@@ -147,7 +144,7 @@ export const AnalyticsRadarSystem = {
       fill: normalised(values.fill, best.fill),
       rebooking: normalised(values.rebooking, best.rebooking),
       tipsRate: normalised(values.tipsRate, best.tipsRate),
-      averageTicket: normalised(values.averageTicket, best.averageTicket),
+      newClients: normalised(values.newClients, best.newClients),
     };
   },
 
@@ -190,12 +187,12 @@ export const AnalyticsRadarSystem = {
         fill: current.fill,
         rebooking: current.rebooking,
         tipsRate: current.tipsRate,
-        averageTicket: current.averageTicket,
+        newClients: current.newClients,
         comparisonTakingsPerHour: comparison.takingsPerHour,
         comparisonFill: comparison.fill,
         comparisonRebooking: comparison.rebooking,
         comparisonTipsRate: comparison.tipsRate,
-        comparisonAverageTicket: comparison.averageTicket,
+        comparisonNewClients: comparison.newClients,
       });
     }
     return { reportRadars: rows, reportRadarBase: RadarBase.BestOfShop };

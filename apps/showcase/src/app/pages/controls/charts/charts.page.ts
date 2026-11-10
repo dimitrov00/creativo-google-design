@@ -97,7 +97,7 @@ const RADAR_AXES = [
   'Заетост',
   'Връщат се',
   'Бакшиши',
-  '€ на клиент',
+  'Нови клиенти',
 ] as const;
 
 /** One barber's radar as the presenter would hand it over: the figures 0 … 100 and their words. */

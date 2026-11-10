@@ -1329,7 +1329,27 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
     });
 
     it('draws the shop’s radars on a MONTH: one row per barber, normalised against the best', () => {
-      const report = S.report(shop());
+      const firstSeen = (id: string, on: LocalDate, barber: BarberId) => ({
+        customerId: CustomerId.of(id),
+        firstVisitLocalDate: on,
+        firstVisitBarberIds: [barber],
+        firstVisitLocationId: null,
+      });
+      const report = S.report(
+        shop({
+          // Two new clients for Ivan, four for Niko; September's are not this month's.
+          firstSeen: [
+            firstSeen('c-1', day(-10), ivan),
+            firstSeen('c-2', day(-2), ivan),
+            firstSeen('c-3', day(-10), niko),
+            firstSeen('c-4', day(-10), niko),
+            firstSeen('c-5', day(-2), niko),
+            firstSeen('c-6', day(-2), niko),
+            firstSeen('c-7', localDate('2026-09-20'), ivan),
+          ],
+        }),
+      );
+      expect(report.reportBarbers.map((b) => b.newClientCount)).toEqual([2, 4]);
       expect(report.reportRadarBase).toBe(RadarBase.BestOfShop);
       expect(report.reportRadars.map((row) => row.barberId)).toEqual([
         ivan,
@@ -1348,25 +1368,12 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         rebooking: 50,
         tipsRate: 100,
       });
-      // The average ticket: each barber's takings per worked seat against the better one.
-      const [ivanFigures, nikoFigures] = report.reportBarbers as [
-        AnalyticsReport.BarberFigures,
-        AnalyticsReport.BarberFigures,
-      ];
-      const ticketOf = (f: AnalyticsReport.BarberFigures): number =>
-        f.takingsCents / f.workedSeatCount;
-      const bestTicket = Math.max(ticketOf(ivanFigures), ticketOf(nikoFigures));
-      expect(report.reportRadars[0]?.averageTicket).toBeCloseTo(
-        (ticketOf(ivanFigures) / bestTicket) * 100,
-        10,
-      );
-      expect(report.reportRadars[1]?.averageTicket).toBeCloseTo(
-        (ticketOf(nikoFigures) / bestTicket) * 100,
-        10,
-      );
+      // New clients: Ivan's 2 against Niko's 4.
+      expect(report.reportRadars[0]?.newClients).toBe(50);
+      expect(report.reportRadars[1]?.newClients).toBe(100);
       // The maximum itself never leaves the server: no field of the report carries 7200 ÷ 230 × 60.
       expect(JSON.stringify(report)).not.toContain(String((7200 / 230) * 60));
-      expect(S.report(shop()).reportRadars).toEqual(
+      expect(report.reportRadars).toEqual(
         AnalyticsRadarSystem.radarsOf(report.reportBarbers, []).reportRadars,
       );
     });
@@ -1378,6 +1385,27 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
             ivan,
             strongDay(ivan, localDate('2026-09-10'), 3000, 8, 2),
           ),
+          // One new client of Ivan's this month, two in September — the comparison's.
+          firstSeen: [
+            {
+              customerId: CustomerId.of('c-oct'),
+              firstVisitLocalDate: day(-2),
+              firstVisitBarberIds: [ivan],
+              firstVisitLocationId: null,
+            },
+            {
+              customerId: CustomerId.of('c-sep-1'),
+              firstVisitLocalDate: localDate('2026-09-10'),
+              firstVisitBarberIds: [ivan],
+              firstVisitLocationId: null,
+            },
+            {
+              customerId: CustomerId.of('c-sep-2'),
+              firstVisitLocalDate: localDate('2026-09-20'),
+              firstVisitBarberIds: [ivan],
+              firstVisitLocationId: null,
+            },
+          ],
           // A live comparison visit: money and seats count, its day adds no minutes and enters no rebooking base.
           previousVisits: [
             visit('sept', localDate('2026-09-20'), [seat(ivan, 600)]),
@@ -1400,6 +1428,7 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         rebookedRate: 0.4,
         // The live seat joins the no-show base: 2 of 23.
         noShowRate: 2 / 23,
+        newClientCount: 2,
       });
       expect(report.reportComparisonBarbers[1]).toMatchObject({
         takingsCents: 0,
@@ -1416,14 +1445,15 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
         (200 / 3360 / (230 / 3840)) * 100,
         10,
       );
-      expect(ivanRow.comparisonAverageTicket).not.toBeNull();
+      // Two new clients in September against this month's best of one.
+      expect(ivanRow.comparisonNewClients).toBe(200);
       // Niko has no comparison figures over any floor: every comparison axis missing.
       expect(report.reportRadars[1]).toMatchObject({
         comparisonTakingsPerHour: null,
         comparisonFill: null,
         comparisonRebooking: null,
         comparisonTipsRate: null,
-        comparisonAverageTicket: null,
+        comparisonNewClients: null,
       });
     });
 
@@ -2779,6 +2809,20 @@ describe('StaffAnalyticsSystem.newClientCountOf — the period’s new clients',
     expect(S.newClientCountOf(records, [], [centre, mladost], OCTOBER)).toBe(3);
     expect(S.newClientCountOf(records, [niko], [centre], OCTOBER)).toBe(1);
     expect(S.newClientCountOf([], [], [], OCTOBER)).toBe(0);
+  });
+
+  it('starts the read at the comparison period when a shop radar is drawn against it, else at the period', () => {
+    const september = localDate('2026-09-01');
+    expect(S.firstSeenFromOf(OCTOBER, TODAY, [])).toBe(september);
+    // A barber's report draws no radar; neither does a WEEK or a DAY.
+    expect(S.firstSeenFromOf(OCTOBER, TODAY, [ivan])).toBe(
+      OCTOBER.fromLocalDate,
+    );
+    const week = AnalyticsPeriod.weekOf(TODAY);
+    expect(S.firstSeenFromOf(week, TODAY, [])).toBe(week.fromLocalDate);
+    // A YEAR whose comparison is out of reach has none to read.
+    const year = AnalyticsPeriod.yearOf(TODAY);
+    expect(S.firstSeenFromOf(year, TODAY, [])).toBe(year.fromLocalDate);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
