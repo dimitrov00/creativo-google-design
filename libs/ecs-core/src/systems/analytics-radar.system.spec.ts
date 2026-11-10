@@ -11,7 +11,7 @@ const maria = BarberId.of('maria');
 const m = (raw: number): MinuteCount => raw as MinuteCount;
 const cents = (raw: number): PriceCents => raw as PriceCents;
 
-/** A barber clearing every floor: 24 seats over 240 service minutes for 28,00 €, 8 rostered days, 20 in each base. */
+/** A barber clearing every floor: 24 seats over 240 service minutes for 28,00 €, 8 rostered days, 20 in each base, 6 new clients. */
 function figuresOf(
   barberId: BarberId,
   overrides: Partial<AnalyticsReport.BarberFigures> = {},
@@ -37,6 +37,7 @@ function figuresOf(
     serviceMinutes: m(240),
     workedSeatCount: 24,
     rosteredDayCount: 8,
+    newClientCount: 6,
     ...overrides,
   };
 }
@@ -46,6 +47,7 @@ const NO_BEST: RadarBest = {
   fill: null,
   rebooking: null,
   tipsRate: null,
+  newClients: null,
 };
 
 describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors', () => {
@@ -55,7 +57,7 @@ describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors',
       fill: 240 / 540,
       rebooking: 0.6,
       tipsRate: 250 / 2800,
-      reliability: 96, // (1 − 0.04) × 100
+      newClients: 6, // first visits with the barber
     });
   });
 
@@ -66,8 +68,6 @@ describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors',
         rosteredDayCount: 6,
         rebookedBase: 19,
         rebookedRate: null,
-        noShowBase: 19,
-        noShowRate: null,
       }),
     );
     expect(values).toEqual({
@@ -75,14 +75,22 @@ describe('AnalyticsRadarSystem.axisValuesOf — the raw axes with their floors',
       fill: null,
       rebooking: null,
       tipsRate: null,
-      reliability: null,
+      newClients: null,
     });
     // Exactly at the base, every axis has a value.
+    const atBase = R.axisValuesOf(
+      figuresOf(ivan, { workedSeatCount: 20, rosteredDayCount: 7 }),
+    );
+    expect(atBase.takingsPerHour).not.toBeNull();
+    expect(atBase.fill).not.toBeNull();
+    expect(atBase.tipsRate).not.toBeNull();
+    expect(atBase.newClients).toBe(6);
+  });
+
+  it('leaves the clients’ no-shows off the radar: no axis moves with the no-show rate', () => {
     expect(
-      R.axisValuesOf(
-        figuresOf(ivan, { workedSeatCount: 20, rosteredDayCount: 7 }),
-      ),
-    ).not.toMatchObject({ takingsPerHour: null, fill: null, tipsRate: null });
+      R.axisValuesOf(figuresOf(ivan, { noShowCount: 10, noShowRate: 0.4 })),
+    ).toEqual(R.axisValuesOf(figuresOf(ivan)));
   });
 
   it('answers null with nothing to divide by: no service minutes, no rostered minutes, no takings', () => {
@@ -108,10 +116,12 @@ describe('AnalyticsRadarSystem.bestOf — the shop’s best of each axis', () =>
         workedMinutes: m(300), // fill 300 ÷ 540
         rebookedRate: 0.4,
         tipsCents: cents(250), // 250 ÷ 1750 — the higher tips rate
+        newClientCount: 9, // the more new clients
       }),
       // Under every floor: never the best, however high the figure.
       figuresOf(maria, {
         takingsCents: cents(99_000),
+        newClientCount: 99,
         workedSeatCount: 3,
         rosteredDayCount: 2,
         rebookedBase: 2,
@@ -123,6 +133,7 @@ describe('AnalyticsRadarSystem.bestOf — the shop’s best of each axis', () =>
       fill: 300 / 540,
       rebooking: 0.6,
       tipsRate: 250 / 1750,
+      newClients: 9,
     });
   });
 
@@ -143,47 +154,44 @@ describe('AnalyticsRadarSystem.axes — one barber against the best', () => {
     fill: 240 / 540,
     rebooking: 0.6,
     tipsRate: 250 / 1750,
+    newClients: 6,
   };
 
-  it('normalises the four axes to value ÷ best × 100 and keeps reliability absolute', () => {
+  it('normalises the five axes to value ÷ best × 100', () => {
     expect(R.axes(figuresOf(ivan), best)).toEqual({
       takingsPerHour: 100,
       fill: 100,
       rebooking: 100,
       tipsRate: 62.5, // (250 ÷ 2800) ÷ (250 ÷ 1750) × 100
-      reliability: 96,
+      newClients: 100,
     });
     const half = R.axes(
-      figuresOf(niko, { takingsCents: cents(1400), rebookedRate: 0.3 }),
+      figuresOf(niko, {
+        takingsCents: cents(1400),
+        rebookedRate: 0.3,
+        newClientCount: 3,
+      }),
       best,
     );
     expect(half.takingsPerHour).toBe(50);
     expect(half.rebooking).toBe(50);
+    expect(half.newClients).toBe(50);
   });
 
   it('answers null under the base, and when the best is null or 0', () => {
     expect(R.axes(figuresOf(ivan, { workedSeatCount: 5 }), best)).toMatchObject(
-      { takingsPerHour: null, tipsRate: null, fill: 100 },
+      { takingsPerHour: null, tipsRate: null, fill: 100, newClients: 100 },
     );
     expect(R.axes(figuresOf(ivan), NO_BEST)).toEqual({
       takingsPerHour: null,
       fill: null,
       rebooking: null,
       tipsRate: null,
-      reliability: 96,
+      newClients: null,
     });
     expect(
       R.axes(figuresOf(ivan, { rebookedRate: 0 }), { ...best, rebooking: 0 })
         .rebooking,
-    ).toBeNull();
-  });
-
-  it('keeps reliability even when every normalised axis is missing', () => {
-    expect(
-      R.axes(figuresOf(ivan, { workedSeatCount: 0 }), NO_BEST).reliability,
-    ).toBe(96);
-    expect(
-      R.axes(figuresOf(ivan, { noShowRate: null }), best).reliability,
     ).toBeNull();
   });
 });
@@ -201,6 +209,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
       noShowRate: 0.125,
       workedSeatCount: 21,
       rosteredDayCount: 7,
+      newClientCount: 3,
     }),
   ];
 
@@ -214,19 +223,19 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
       fill: 100,
       rebooking: 100,
       tipsRate: 62.5,
-      reliability: 96,
+      newClients: 100,
       comparisonTakingsPerHour: null,
       comparisonFill: null,
       comparisonRebooking: null,
       comparisonTipsRate: null,
-      comparisonReliability: null,
+      comparisonNewClients: null,
     });
     const second = reportRadars[1] as AnalyticsReport.RadarRow;
     expect(second).toMatchObject({
       barberId: niko,
       fill: 100,
       tipsRate: 100,
-      reliability: 87.5,
+      newClients: 50,
     });
     expect(second.takingsPerHour).toBeCloseTo((500 / 700) * 100, 10);
     expect(second.rebooking).toBeCloseTo((0.4 / 0.6) * 100, 10);
@@ -234,7 +243,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
 
   it('normalises the comparison period against THIS period’s best, matched by barber — null where a barber has none', () => {
     const { reportRadars } = R.radarsOf(current, [
-      // Last month Ivan made 700 an hour too, filled 300 of 540, rebooked 9 of 20, took fewer tips.
+      // Last month Ivan made 700 an hour too, filled 300 of 540, rebooked 9 of 20, took fewer tips, met 9 new clients.
       figuresOf(ivan, {
         takingsCents: cents(3500),
         serviceMinutes: m(300),
@@ -242,8 +251,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
         rebookedCount: 9,
         rebookedRate: 0.45,
         tipsCents: cents(200),
-        noShowCount: 5,
-        noShowRate: 0.2,
+        newClientCount: 9,
       }),
       // A barber of last month who is not in scope now: ignored.
       figuresOf(maria),
@@ -252,17 +260,17 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
     expect(first).toMatchObject({
       comparisonTakingsPerHour: 100,
       comparisonRebooking: 75,
-      comparisonReliability: 80,
     });
     // On this period's best a comparison axis may pass 100.
     expect(first.comparisonFill).toBeCloseTo(125, 10);
     expect(first.comparisonTipsRate).toBeCloseTo(40, 10);
+    expect(first.comparisonNewClients).toBe(150); // 9 against this month's best of 6
     expect(reportRadars[1]).toMatchObject({
       comparisonTakingsPerHour: null,
       comparisonFill: null,
       comparisonRebooking: null,
       comparisonTipsRate: null,
-      comparisonReliability: null,
+      comparisonNewClients: null,
     });
     expect(reportRadars).toHaveLength(2);
   });
@@ -278,7 +286,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
     });
   });
 
-  it('draws two barbers under every floor as rows of null axes, reliability included', () => {
+  it('draws two barbers under every floor as rows of null axes', () => {
     const { reportRadars, reportRadarBase } = R.radarsOf(
       [
         figuresOf(ivan, {
@@ -304,7 +312,7 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
         fill: null,
         rebooking: null,
         tipsRate: null,
-        reliability: null,
+        newClients: null,
       });
     }
   });
@@ -323,8 +331,9 @@ describe('AnalyticsRadarSystem.radarsOf — the report’s rows', () => {
       fill: 100,
       rebooking: 100,
       tipsRate: 62.5,
-      reliability: 96,
+      newClients: 100,
       comparisonTakingsPerHour: 100,
+      comparisonNewClients: 50,
     });
     expect(ivanRow.comparisonFill).toBeCloseTo(90, 10);
     expect(ivanRow.comparisonTipsRate).toBeCloseTo(60, 10);

@@ -207,6 +207,7 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       serviceMinutes: 240,
       workedSeatCount: 24,
       rosteredDayCount: 8,
+      newClientCount: 6,
     });
   });
 
@@ -453,12 +454,15 @@ describe('AnalyticsCall.decodeReport — the staffAnalytics answer', () => {
       {
         ...shop,
         reportRadars: [
-          { ...first(shop['reportRadars']), comparisonReliability: undefined },
+          {
+            ...first(shop['reportRadars']),
+            comparisonNewClients: undefined,
+          },
         ],
       },
       {
         ...shop,
-        reportRadars: [{ ...first(shop['reportRadars']), reliability: 'high' }],
+        reportRadars: [{ ...first(shop['reportRadars']), newClients: 'high' }],
       },
       { ...good, reportDayRows: [null] },
     ]) {

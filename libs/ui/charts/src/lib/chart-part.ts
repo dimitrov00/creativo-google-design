@@ -39,3 +39,12 @@ export type UiChartPart = (typeof UiChartPart)[keyof typeof UiChartPart];
 /** Every part, in dictionary order: the stylesheet and its spec cover all of them. */
 export const UI_CHART_PARTS: readonly UiChartPart[] =
   Object.values(UiChartPart);
+
+/**
+ * A value the grid rules, and its words (the kit formats no number) — the
+ * line chart's and the vertical bar chart's value grid alike.
+ */
+export type UiChartTick = {
+  readonly value: number;
+  readonly text: string;
+};

@@ -176,8 +176,10 @@ export type AnalyticsInput = {
   readonly previousPastDays: readonly DayFigures[];
   readonly followUps: readonly AnalyticsFollowUp[];
   /**
-   * The clients first seen in the period, shop-wide (the client-stats
-   * projection's records) — the report counts the scope's own.
+   * The clients first seen from `firstSeenFromOf` to the period's end,
+   * shop-wide (the client-stats projection's records) — the report counts
+   * the scope's own in the period, and each barber's in the period and the
+   * comparison period (the radar's «Нови клиенти»).
    */
   readonly firstSeen: readonly AnalyticsFirstSeen[];
   readonly policy: ClientStatsPolicy;
@@ -1679,6 +1681,25 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
+   * Where the first-seen read starts: the comparison period's first day
+   * when the report draws a radar against it — a shop scope on a MONTH,
+   * YEAR or CUSTOM span whose comparison is in reach, the comparison
+   * period then ending the day before this one's — else the period's own
+   * first day. One range read covers both periods.
+   */
+  firstSeenFromOf(
+    period: AnalyticsPeriod,
+    today: LocalDate,
+    scopeBarberIds: readonly BarberId[],
+  ): LocalDate {
+    return StaffAnalyticsSystem.soleBarberOf(scopeBarberIds) === null &&
+      carriesRadar(period.analyticsSpan) &&
+      AnalyticsPeriod.isComparable(period, today)
+      ? AnalyticsPeriod.previous(period).fromLocalDate
+      : period.fromLocalDate;
+  },
+
+  /**
    * THE NEW CLIENTS of a scope's period: the clients whose first worked
    * visit at the shop fell in it — with one of `scopeBarberIds` when the
    * scope names barbers, at one of `scopeLocationIds` when it names
@@ -1875,7 +1896,7 @@ export const StaffAnalyticsSystem = {
     const barbers = shop ? barbersOf(input, rebooked, past, counting) : [];
     const comparisonBarbers =
       shop && previous !== null
-        ? comparisonBarbersOf(input, previousCounting)
+        ? comparisonBarbersOf(input, previous, previousCounting)
         : [];
     const radars =
       shop && carriesRadar(period.analyticsSpan)
@@ -2638,6 +2659,7 @@ function barberFiguresOf(
   rebooked: ReadonlySet<AppointmentId>,
   past: PastOf,
   policy: ClientStatsPolicy,
+  newClientCount: number,
 ): AnalyticsReport.BarberFigures {
   const only = onlyOf(counting, barberId);
   const figures = figuresOf(visits, pastDays, only, rebooked, past, policy);
@@ -2663,6 +2685,7 @@ function barberFiguresOf(
     serviceMinutes: figures.serviceMinutes,
     workedSeatCount: figures.workedSeatCount,
     rosteredDayCount: rosteredDayCountOf(days, pastDays, only),
+    newClientCount,
   };
 }
 
@@ -2684,6 +2707,12 @@ function barbersOf(
         rebooked,
         past,
         input.policy,
+        StaffAnalyticsSystem.newClientCountOf(
+          input.firstSeen,
+          [input.barberIds[b] as BarberId],
+          input.scopeLocationIds,
+          input.period,
+        ),
       ),
     );
   }
@@ -2698,10 +2727,12 @@ function barbersOf(
  * alone — a live comparison day adds no minutes — and its rebooking pair is
  * the stored days' alone: a live visit enters no base ({@link NEVER_PAST}).
  * Its money, worked seats, service minutes and the other counts come from
- * both sources, as this period's do.
+ * both sources, as this period's do; its new clients from the first-seen
+ * records of `previous` ({@link StaffAnalyticsSystem.firstSeenFromOf}).
  */
 function comparisonBarbersOf(
   input: AnalyticsInput,
+  previous: AnalyticsPeriod,
   previousCounting: Counting,
 ): readonly AnalyticsReport.BarberFigures[] {
   const out: AnalyticsReport.BarberFigures[] = [];
@@ -2716,6 +2747,12 @@ function comparisonBarbersOf(
         NO_REBOOKED,
         NEVER_PAST,
         input.policy,
+        StaffAnalyticsSystem.newClientCountOf(
+          input.firstSeen,
+          [input.barberIds[b] as BarberId],
+          input.scopeLocationIds,
+          previous,
+        ),
       ),
     );
   }

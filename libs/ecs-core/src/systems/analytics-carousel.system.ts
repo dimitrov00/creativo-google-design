@@ -84,6 +84,13 @@ export type AnalyticsFreeWeek = {
 const TICK_COUNT = 3;
 /** The grid's finest step: 1 €, in cents. */
 const ONE_EURO = 100;
+/**
+ * A time chart's round steps, in minutes, as a clock reads them: a quarter
+ * and a half hour, then whole hours that divide a day. Past a day the
+ * steps are 1, 2 or 5 × a power of ten hours.
+ */
+const MINUTE_STEPS = [15, 30, 60, 120, 180, 240, 360, 480, 720, 1440] as const;
+const MINUTES_PER_HOUR = 60;
 
 export const AnalyticsCarouselSystem = {
   /**
@@ -264,6 +271,42 @@ export const AnalyticsCarouselSystem = {
     for (let k = 1; k * step < top + step; k++) {
       const tick = Math.round(k * step);
       if (PriceCents.is(tick)) out.push(tick);
+    }
+    return out;
+  },
+
+  /**
+   * THE VALUE GRID of a time chart: round durations — a quarter or half
+   * hour, then 1, 2, 3, 4, 6, 8, 12 or 24 hours, past a day 1, 2 or 5 × a
+   * power of ten hours — from one step up to the first at or over the
+   * highest value drawn, about three of them. Empty when nothing above zero
+   * is drawn. What a column chart of minutes rules, so a column's height
+   * reads as hours.
+   */
+  minuteTicksOf(values: readonly (number | null)[]): readonly MinuteCount[] {
+    let top = 0;
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i];
+      if (value !== null && value !== undefined && value > top) top = value;
+    }
+    if (top <= 0) return [];
+    const rough = top / TICK_COUNT;
+    let step: number | undefined;
+    for (let i = 0; i < MINUTE_STEPS.length && step === undefined; i++) {
+      const candidate = MINUTE_STEPS[i] as number;
+      if (candidate >= rough) step = candidate;
+    }
+    if (step === undefined) {
+      const hours = rough / MINUTES_PER_HOUR;
+      const magnitude = 10 ** Math.floor(Math.log10(hours));
+      const norm = hours / magnitude;
+      const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+      step = nice * magnitude * MINUTES_PER_HOUR;
+    }
+    const out: MinuteCount[] = [];
+    for (let k = 1; k * step < top + step; k++) {
+      const tick = Math.round(k * step);
+      if (MinuteCount.is(tick)) out.push(tick);
     }
     return out;
   },

@@ -484,6 +484,7 @@ describe('G5 — every drill-down’s rows add up to its figure', () => {
         rosteredDayCount: own.reportDayRows.filter(
           (row) => row.dayRosteredMinutes > 0,
         ).length,
+        newClientCount: own.reportNewClientCount,
       });
       sums.takings += entry.takingsCents;
       sums.tips += entry.tipsCents;

@@ -94,10 +94,10 @@ const TAKINGS_LAST = [100, 200, 160, 90, 250, 180, 0];
 /** The radar's five axes, in the design's order. */
 const RADAR_AXES = [
   '€ / час',
-  'Запълване',
-  'Презаписване',
+  'Заетост',
+  'Връщат се',
   'Бакшиши',
-  'Надеждност',
+  'Нови клиенти',
 ] as const;
 
 /** One barber's radar as the presenter would hand it over: the figures 0 … 100 and their words. */

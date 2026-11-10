@@ -411,20 +411,20 @@ describe('analyticsVm — the admin and the shop', () => {
     expect(ivan?.barberId).toBe(IVAN);
     expect(ivan?.axes.map((axis) => axis.label)).toEqual([
       '€ на час',
-      'Запълване',
-      'Презаписване',
+      'Заетост',
+      'Връщат се',
       'Бакшиши',
-      'Надеждност',
+      'Нови клиенти',
     ]);
     expect(ivan?.axes.map((axis) => axis.value)).toEqual([
-      100, 100, 100, 62.5, 96,
+      100, 100, 100, 62.5, 100,
     ]);
-    expect(ivan?.valueText).toEqual(['100', '100', '100', '63', '96']);
+    expect(ivan?.valueText).toEqual(['100', '100', '100', '63', '100']);
     expect(
       ivan?.axes.map((axis) =>
         axis.comparison === null ? null : Math.round(axis.comparison),
       ),
-    ).toEqual([100, 90, 83, 60, 93]);
+    ).toEqual([100, 90, 83, 60, 50]);
     expect(ivan?.accessibleName).toBe(`Отвори ${NAMES.barberName(IVAN)}`);
     expect(ivan?.testId).toBe('analytics-radar-ivan');
     const niko = radars?.radars[1];

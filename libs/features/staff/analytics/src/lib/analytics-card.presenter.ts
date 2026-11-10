@@ -417,6 +417,15 @@ function chartOf(
       value: cents,
       text: formatCentsWhole(cents, REPORT_CURRENCY, lang),
     }));
+  /** A time chart's grid: the system's round durations, in words. */
+  const minuteTicksOf = (values: readonly number[]) =>
+    AnalyticsCarouselSystem.minuteTicksOf(values).map((minutes) => ({
+      value: minutes,
+      text: spanWords(minutes, words.spanWords),
+    }));
+  /** A column's height: its parts summed, as the chart stacks them. */
+  const stackOf = (bar: AnalyticsChartBarVm): number =>
+    bar.parts.reduce((sum, part) => sum + part.value, 0);
   const bars = (
     values: readonly number[],
     valueText: readonly string[],
@@ -435,6 +444,9 @@ function chartOf(
     valueText,
     orientation,
     label,
+    // Columns of money stand on round amounts (Apple Health's grid); rows
+    // carry their figures in words and rule nothing.
+    ticks: orientation === 'vertical' ? ticksOf(values) : [],
     // A bar of the period reads its day; a barber's or a salon's, its name.
     readouts:
       barLabels === labels
@@ -549,6 +561,7 @@ function chartOf(
             orientation: 'vertical',
             label: time.label,
             readouts: time.bars.map((bar, i) => days.at(i) ?? bar.label),
+            ticks: minuteTicksOf(time.bars.map(stackOf)),
           };
         }
         // One part alone, each bar at its own height — the worked hours a
@@ -572,6 +585,7 @@ function chartOf(
           // eslint-disable-next-line security/detect-object-injection -- `focused` is a closed `AnalyticsBarPart` literal.
           label: words.time.part[focused],
           readouts: bars.map((bar, i) => days.at(i) ?? bar.label),
+          ticks: minuteTicksOf(bars.map(stackOf)),
         };
       }
       if (view === AnalyticsChartView.Line) {

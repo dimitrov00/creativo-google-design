@@ -5,7 +5,9 @@ import { type AnalyticsReport, RadarBase } from '@core/components';
  * THE ADMIN'S RADAR (`docs/designs/staff-analytics-v2.md`, CUJ 5 and
  * `AnalyticsRadarSystem`): one polygon per barber of the shop, four axes
  * normalised 0–100 against the best barber meeting that axis's sample
- * floor, and reliability absolute. Runs on the server only — the best value
+ * floor. Every axis is the barber's own doing — a client's no-show is not,
+ * so the no-show rate stays in the report and off the radar (owner,
+ * 2026-11-10: the new clients took its axis). Runs on the server only — the best value
  * never leaves it; the report carries the normalised axes and the base
  * (`reportRadarBase`) the screen words.
  */
@@ -16,16 +18,15 @@ export type RadarBest = {
   readonly fill: number | null;
   readonly rebooking: number | null;
   readonly tipsRate: number | null;
+  readonly newClients: number | null;
 };
 
 /**
  * One barber's five axis values — raw with their floors applied
  * (`axisValuesOf`), or normalised (`axes`): `null` under the base, or when
- * the best is `null` or 0. Reliability is absolute either way.
+ * the best is `null` or 0.
  */
-export type RadarAxes = RadarBest & {
-  readonly reliability: number | null;
-};
+export type RadarAxes = RadarBest;
 
 /** The worked seats a barber needs before € per hour of service is drawn. */
 const TAKINGS_SEAT_BASE = 20;
@@ -65,7 +66,7 @@ const NO_AXES: RadarAxes = {
   fill: null,
   rebooking: null,
   tipsRate: null,
-  reliability: null,
+  newClients: null,
 };
 
 export const AnalyticsRadarSystem = {
@@ -82,8 +83,10 @@ export const AnalyticsRadarSystem = {
    * rostered days, `null` with no rostered minutes), rebooking (the figures'
    * `rebookedRate`, v1's base of {@link RATE_BASE}), tips rate
    * (`tipsCents ÷ takingsCents`, base {@link TIPS_SEAT_BASE} worked seats,
-   * `null` with no takings) and reliability (`(1 − noShowRate) × 100`, the
-   * figures' `noShowRate` over its base of {@link RATE_BASE}, absolute).
+   * `null` with no takings) and the new clients (`newClientCount`, the
+   * clients whose first visit at the shop was with the barber, base
+   * {@link FILL_DAY_BASE} rostered days — a count, so it is weighed over
+   * the same stretch of work as the fill).
    */
   axisValuesOf(figures: AnalyticsReport.BarberFigures): RadarAxes {
     const enoughSeats = figures.workedSeatCount >= TAKINGS_SEAT_BASE;
@@ -101,8 +104,10 @@ export const AnalyticsRadarSystem = {
         figures.workedSeatCount >= TIPS_SEAT_BASE && figures.takingsCents > 0
           ? figures.tipsCents / figures.takingsCents
           : null,
-      reliability:
-        figures.noShowRate === null ? null : (1 - figures.noShowRate) * 100,
+      newClients:
+        figures.rosteredDayCount >= FILL_DAY_BASE
+          ? figures.newClientCount
+          : null,
     };
   },
 
@@ -112,6 +117,7 @@ export const AnalyticsRadarSystem = {
     let fill: number | null = null;
     let rebooking: number | null = null;
     let tipsRate: number | null = null;
+    let newClients: number | null = null;
     for (let i = 0; i < barbers.length; i++) {
       const values = AnalyticsRadarSystem.axisValuesOf(
         barbers[i] as AnalyticsReport.BarberFigures,
@@ -120,14 +126,14 @@ export const AnalyticsRadarSystem = {
       fill = better(fill, values.fill);
       rebooking = better(rebooking, values.rebooking);
       tipsRate = better(tipsRate, values.tipsRate);
+      newClients = better(newClients, values.newClients);
     }
-    return { takingsPerHour, fill, rebooking, tipsRate };
+    return { takingsPerHour, fill, rebooking, tipsRate, newClients };
   },
 
   /**
-   * One barber's axes against `best`: the four normalised `value ÷ best ×
-   * 100` — `null` under the base, or when the best is `null` or 0 — and
-   * reliability absolute, never divided. The comparison period's figures
+   * One barber's axes against `best`: each `value ÷ best × 100` — `null`
+   * under the base, or when the best is `null` or 0. The comparison period's figures
    * are passed with THIS period's best, so the two polygons share a base;
    * a comparison value may then exceed 100.
    */
@@ -138,7 +144,7 @@ export const AnalyticsRadarSystem = {
       fill: normalised(values.fill, best.fill),
       rebooking: normalised(values.rebooking, best.rebooking),
       tipsRate: normalised(values.tipsRate, best.tipsRate),
-      reliability: values.reliability,
+      newClients: normalised(values.newClients, best.newClients),
     };
   },
 
@@ -181,12 +187,12 @@ export const AnalyticsRadarSystem = {
         fill: current.fill,
         rebooking: current.rebooking,
         tipsRate: current.tipsRate,
-        reliability: current.reliability,
+        newClients: current.newClients,
         comparisonTakingsPerHour: comparison.takingsPerHour,
         comparisonFill: comparison.fill,
         comparisonRebooking: comparison.rebooking,
         comparisonTipsRate: comparison.tipsRate,
-        comparisonReliability: comparison.reliability,
+        comparisonNewClients: comparison.newClients,
       });
     }
     return { reportRadars: rows, reportRadarBase: RadarBase.BestOfShop };

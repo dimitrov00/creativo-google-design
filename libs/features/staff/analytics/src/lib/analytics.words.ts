@@ -195,7 +195,7 @@ export interface AnalyticsWords {
       readonly fill: string;
       readonly rebooking: string;
       readonly tipsRate: string;
-      readonly reliability: string;
+      readonly newClients: string;
     };
     /** «малко данни» — an axis under its floor. */
     readonly missing: string;
@@ -605,7 +605,7 @@ export function analyticsWordsOf(
         fill: t('radars.axis.fill'),
         rebooking: t('radars.axis.rebooking'),
         tipsRate: t('radars.axis.tipsRate'),
-        reliability: t('radars.axis.reliability'),
+        newClients: t('radars.axis.newClients'),
       },
       missing: t('radars.missing'),
       comparison: t('radars.comparison'),

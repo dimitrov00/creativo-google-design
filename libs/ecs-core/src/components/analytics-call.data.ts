@@ -208,6 +208,7 @@ function barberFiguresOf(raw: unknown): AnalyticsReport.BarberFigures | null {
     serviceMinutes: r.minutes('serviceMinutes'),
     workedSeatCount: r.count('workedSeatCount'),
     rosteredDayCount: r.count('rosteredDayCount'),
+    newClientCount: r.count('newClientCount'),
   };
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }
@@ -245,12 +246,12 @@ function radarRowOf(raw: unknown): AnalyticsReport.RadarRow | null {
     fill: r.axis('fill'),
     rebooking: r.axis('rebooking'),
     tipsRate: r.axis('tipsRate'),
-    reliability: r.axis('reliability'),
+    newClients: r.axis('newClients'),
     comparisonTakingsPerHour: r.axis('comparisonTakingsPerHour'),
     comparisonFill: r.axis('comparisonFill'),
     comparisonRebooking: r.axis('comparisonRebooking'),
     comparisonTipsRate: r.axis('comparisonTipsRate'),
-    comparisonReliability: r.axis('comparisonReliability'),
+    comparisonNewClients: r.axis('comparisonNewClients'),
   };
   return r.ok() && BarberId.is(barberId) ? { barberId, ...row } : null;
 }

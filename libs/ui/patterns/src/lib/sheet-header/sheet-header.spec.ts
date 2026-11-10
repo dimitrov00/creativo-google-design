@@ -101,6 +101,18 @@ class NestedHostComponent {}
 })
 class PageHostComponent {}
 
+/** The same page, declared one — `uiPage`, no detection to wait for. */
+@Component({
+  imports: [UiSheetHeader],
+  template: `<main>
+    <ui-sheet-header uiPage data-testid="header">
+      <div uiTitle>Compact title</div>
+    </ui-sheet-header>
+    <h2 uiSheetLargeTitle>Large title</h2>
+  </main>`,
+})
+class DeclaredPageHostComponent {}
+
 /** One animation frame: the header starts observing after the first. */
 const nextFrame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -319,6 +331,17 @@ describe('UiSheetHeader', () => {
       fixture.componentInstance.collapsed.set(true);
       fixture.detectChanges();
       expect(header().hasAttribute('data-collapsed')).toBe(true);
+    });
+
+    it('a declared page (`uiPage`) wears the page chrome on its first render, before any frame', () => {
+      const page = TestBed.createComponent(DeclaredPageHostComponent);
+      page.detectChanges();
+      const bar: HTMLElement = page.nativeElement.querySelector(
+        '[data-testid="header"]',
+      );
+      // No frame has run, so detection has not either: the input alone.
+      expect(bar.hasAttribute('data-page')).toBe(true);
+      expect(bar.hasAttribute('data-collapsed')).toBe(false);
     });
 
     it('falls back to scroll-position collapse when no sentinel is labelled', async () => {

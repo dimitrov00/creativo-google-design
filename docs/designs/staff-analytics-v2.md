@@ -316,9 +316,9 @@ and 8.
 
 - **Given**: the admin on the shop scope, `MONTH`.
 - **When**: they scroll to «Как се справя всеки».
-- **Then**: one radar per barber: four axes normalised 0–100 against the best barber
-  meeting the sample floor (€ per hour of service, fill, rebooking, tips rate), reliability
-  absolute, a subtitle saying so in words, the previous month as a grey outline on the same
+- **Then**: one radar per barber: five axes normalised 0–100 against the best barber
+  meeting the sample floor (€ per hour of service, fill, rebooking, tips rate, new
+  clients — «€ на час», «Заетост», «Връщат се», «Бакшиши», «Нови клиенти»), a subtitle saying so in words, the previous month as a grey outline on the same
   base, an axis under the floor drawn as missing with a word. Tapping a radar switches the
   scope to that barber.
 
@@ -526,9 +526,9 @@ AnalyticsVisit[]; followUps; policy; nowByLocation }` (`AnalyticsDay` is v1's pe
 - **`AnalyticsRecomputeJobSystem`** (PR 4a) — the contract above.
 - **`AnalyticsRadarSystem`** (`systems/analytics-radar.system.ts`, PR 5):
   `bestOf(barbers: readonly BarberFigures[]) → RadarBest` — `{ takingsPerHour; fill;
-rebooking; tipsRate }`, each the maximum among barbers meeting that axis's floor or
-  `null`; `axes(figures: BarberFigures, best: RadarBest) → RadarRow` — four values
-  normalised 0–100 and reliability absolute, each `null` under the base or when the best is
+rebooking; tipsRate; newClients }`, each the maximum among barbers meeting that axis's floor or
+  `null`; `axes(figures: BarberFigures, best: RadarBest) → RadarRow` — five values
+  normalised 0–100, each `null` under the base or when the best is
   `null` or 0; the comparison period's figures are normalised against this period's best,
   so the two polygons share a base. Runs on the server; the maximum never leaves it.
 - **`AnalyticsPeriod`** (changed): `AnalyticsSpan.Day | Year | Custom`;
@@ -645,15 +645,19 @@ with formula, includes, excludes and base gate:
 | `reportBusiestWeekday`, `reportBusiestHour`, `reportEmptiestWeekday`, `reportEmptiestHour`                                                 | `AnalyticsHourSystem.peak`: the cell with the highest and the lowest `worked ÷ rostered` among cells with rostered minutes, ties to the earliest; `null` under 7 rostered days                                                                                                                                                                                                                                                    |
 | `reportAheadDays: readonly { localDate; openMinutes }[]` (7)                                                                               | the open-hours card's bars (v1 had the total and the emptiest only)                                                                                                                                                                                                                                                                                                                                                               |
 | `reportBarbers` (changed, PR 5)                                                                                                            | `BarberFigures` gains `serviceMinutes`, `workedSeatCount` and `rosteredDayCount`; `reportComparisonBarbers: readonly BarberFigures[]` carries the comparison period's                                                                                                                                                                                                                                                             |
-| `reportRadars: readonly RadarRow[]` (shop scope, PR 5)                                                                                     | flat: `{ barberId; takingsPerHour; fill; rebooking; tipsRate; reliability; comparisonTakingsPerHour; comparisonFill; comparisonRebooking; comparisonTipsRate; comparisonReliability }`, each `number \| null`; `reportRadarBase: 'BEST_OF_SHOP' \| 'TOO_FEW_BARBERS'` (`RadarBase`)                                                                                                                                               |
+| `reportRadars: readonly RadarRow[]` (shop scope, PR 5)                                                                                     | flat: `{ barberId; takingsPerHour; fill; rebooking; tipsRate; newClients; comparisonTakingsPerHour; comparisonFill; comparisonRebooking; comparisonTipsRate; comparisonNewClients }`, each `number \| null`; `reportRadarBase: 'BEST_OF_SHOP' \| 'TOO_FEW_BARBERS'` (`RadarBase`)                                                                                                                                                 |
 | `reportMissingDays`                                                                                                                        | past days computed live because no current document exists (the screen says nothing; the log counts them)                                                                                                                                                                                                                                                                                                                         |
 | `reportGoalLowCents`, `reportGoalHighCents` (`null` off MONTH), `reportGoalPaceTag`, `reportGoalDaysSoFar`, `reportGoalDaysInMonth` (PR 6) | the month's goal and the pace: `expectedLow/High = goalLow/High × daysWorkedSoFar ÷ daysRosteredInMonth` (days with a stretch, up to and including today); takings ≥ expectedHigh → `AHEAD`, ≥ expectedLow → `ON_TRACK`, else `BEHIND`; `NONE` = no goal, not MONTH, or no rostered day yet; the two day counts are the formula's, carried so the screen words «12 от 22 работни дни» without re-deriving them (built 2026-11-09) |
 
 Radar axes (admin-shop, MONTH / YEAR / CUSTOM): € per hour of service (`takingsCents ÷
 serviceMinutes × 60`, base 20 worked seats), fill (`worked ÷ rostered`, base 7 rostered
-days), rebooking rate (v1, base 20), tips rate (`tips ÷ takings`, base 20 worked seats) —
-each normalised `value ÷ best × 100` where best is the maximum among barbers meeting the
-floor; reliability (`(1 − noShowRate) × 100`, base 20) absolute, never divided by the best.
+days), rebooking rate (v1, base 20), tips rate (`tips ÷ takings`, base 20 worked seats),
+new clients (the clients whose first visit at the shop was with the barber, base 7
+rostered days; the first-seen read starts at the comparison period's first day so the
+grey outline has them too) — each normalised
+`value ÷ best × 100` where best is the maximum among barbers meeting the floor. The
+no-show rate is the clients' doing, not the barber's, so it stays in the report and off
+the radar (owner, 2026-11-10: new clients replaced the absolute reliability axis).
 `null` axes are drawn as missing with the word «малко данни». A barber's report carries no
 radar.
 
@@ -1605,7 +1609,7 @@ functions:test-integration`) — the appointment trigger writes a past day's doc
 
 83. `libs/ecs-core/src/systems/analytics-radar.system.ts` + `.spec.ts` (Create) —
     `bestOf → RadarBest`, `axes(figures, best) → RadarRow`; a `null` best → `null`; under
-    the base → `null`; reliability absolute; the comparison on the same base; purity.
+    the base → `null`; the comparison on the same base; purity.
 84. `libs/ecs-core/src/components/analytics-report.data.ts`, `analytics-call.data.ts`
     (Modify) — `BarberFigures` gains `serviceMinutes`, `workedSeatCount` and
     `rosteredDayCount`; `reportComparisonBarbers`; `RadarRow`, `reportRadars`, `RadarBase`

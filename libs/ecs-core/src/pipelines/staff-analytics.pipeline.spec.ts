@@ -649,6 +649,29 @@ describe('staffAnalytics — the reads', () => {
     ).toBe(true);
   });
 
+  it('reads the first-seen clients from the comparison month when the shop’s radar is drawn against it, else from the period', async () => {
+    const ranges: (readonly [LocalDate, LocalDate])[] = [];
+    const { ports } = world({
+      loadClientsFirstSeenIn: async (from, to) => {
+        ranges.push([from, to]);
+        return Result.ok([]);
+      },
+    });
+    // The shop's September: August's new clients are the radar's grey outline.
+    unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, null)));
+    // A barber's September draws no radar: the period alone.
+    unwrapOk(await staffAnalytics(ports)(ask(ADMIN.id, IVAN)));
+    // September 2025's comparison is out of reach: the period alone.
+    unwrapOk(
+      await staffAnalytics(ports)(ask(ADMIN.id, null, localDate('2025-09-01'))),
+    );
+    expect(ranges).toEqual([
+      [localDate('2026-08-01'), localDate('2026-09-30')],
+      [SEPTEMBER, localDate('2026-09-30')],
+      [localDate('2025-09-01'), localDate('2025-09-30')],
+    ]);
+  });
+
   it('reads one barber’s follow-ups by the visits in their rebooking base', async () => {
     const { ports, reads } = world();
     const report = unwrapOk(

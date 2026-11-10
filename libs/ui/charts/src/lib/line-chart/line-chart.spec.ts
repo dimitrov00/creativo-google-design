@@ -1,12 +1,12 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
+import type { UiChartTick } from '../chart-part';
 import {
   UiLineChart,
   type UiChartLinePoint,
   type UiLineChartCurve,
   type UiLineChartSeries,
-  type UiChartTick,
 } from './line-chart';
 
 const WEEK: readonly UiChartLinePoint[] = [

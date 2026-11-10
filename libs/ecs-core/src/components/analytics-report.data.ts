@@ -427,8 +427,10 @@ export namespace AnalyticsReport {
     readonly serviceMinutes: MinuteCount;
     /** The worked seats, whether or not their bill could be evaluated — the € per hour and tips rate floors' base. */
     readonly workedSeatCount: number;
-    /** The distinct shop days of the period that roster any minute for the barber — the fill floor's base. */
+    /** The distinct shop days of the period that roster any minute for the barber — the fill and new-client floors' base. */
     readonly rosteredDayCount: number;
+    /** The clients whose first worked visit at the shop fell in the period, with this barber (`StaffAnalyticsSystem.newClientCountOf`). */
+    readonly newClientCount: number;
   };
 
   /**
@@ -457,9 +459,9 @@ export namespace AnalyticsReport {
   };
 
   /**
-   * One barber's radar: the four axes normalised 0–100 against the shop's
+   * One barber's radar: the five axes normalised 0–100 against the shop's
    * best barber meeting the floor — € per hour of service, fill, rebooking,
-   * tips rate — and reliability absolute (`(1 − noShowRate) × 100`); then
+   * tips rate, new clients (`newClientCount`); then
    * the comparison period's five, on the SAME best (so a comparison axis may
    * exceed 100). `null` is an axis under its floor, with no best, or — the
    * comparison's — a barber with no comparison figures; the screen draws it
@@ -471,12 +473,12 @@ export namespace AnalyticsReport {
     readonly fill: number | null;
     readonly rebooking: number | null;
     readonly tipsRate: number | null;
-    readonly reliability: number | null;
+    readonly newClients: number | null;
     readonly comparisonTakingsPerHour: number | null;
     readonly comparisonFill: number | null;
     readonly comparisonRebooking: number | null;
     readonly comparisonTipsRate: number | null;
-    readonly comparisonReliability: number | null;
+    readonly comparisonNewClients: number | null;
   };
 
   /** One seat of the scoped barber (the money and count drill-downs). */

@@ -97,6 +97,8 @@ export type AnalyticsCardChartVm =
        * the figure itself is the bar's `valueText`.
        */
       readonly readouts: readonly string[];
+      /** A column chart's value grid: round amounts or hours; empty on rows. */
+      readonly ticks: readonly UiChartTick[];
     }
   | {
       readonly chartView: typeof AnalyticsChartView.Ring;

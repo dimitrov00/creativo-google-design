@@ -323,9 +323,10 @@ export const staffAnalytics =
           )
         : Promise.resolve(NO_GOAL),
       // The clients first seen in the period, shop-wide — the report
-      // counts the scope's own (one range on the projection).
+      // counts the scope's own (one range on the projection); from the
+      // comparison period's start when the report draws the radar.
       ports.loadClientsFirstSeenIn(
-        period.value.fromLocalDate,
+        S.firstSeenFromOf(period.value, now.localDate, scope.value),
         period.value.toLocalDate,
       ),
     ]);
