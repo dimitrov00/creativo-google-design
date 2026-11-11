@@ -23,6 +23,6 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../../../coverage/libs/features/staff/dashboard',
       provider: 'v8' as const,
-    }
+    },
   },
 }));
