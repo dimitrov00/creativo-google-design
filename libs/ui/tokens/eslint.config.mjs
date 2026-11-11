@@ -1,5 +1,3 @@
-import baseConfig from "#eslint-config";
+import baseConfig from '#eslint-config';
 
-export default [
-    ...baseConfig
-];
+export default [...baseConfig];

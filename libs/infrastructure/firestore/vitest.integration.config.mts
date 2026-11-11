@@ -18,7 +18,8 @@ import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
  */
 export default defineConfig(() => ({
   root: __dirname,
-  cacheDir: '../../../node_modules/.vite/libs/infrastructure/firestore-integration',
+  cacheDir:
+    '../../../node_modules/.vite/libs/infrastructure/firestore-integration',
   plugins: [angular(), nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
   test: {
     name: 'firestore-integration',
@@ -31,7 +32,8 @@ export default defineConfig(() => ({
     hookTimeout: 20_000,
     reporters: ['default'],
     coverage: {
-      reportsDirectory: '../../../coverage/libs/infrastructure/firestore-integration',
+      reportsDirectory:
+        '../../../coverage/libs/infrastructure/firestore-integration',
       provider: 'v8' as const,
     },
   },
