@@ -160,6 +160,9 @@ function build(options: {
         provide: CatalogContentService,
         useValue: {
           barbers: signal([{ id: IVAN }, { id: NIKO }]),
+          // The whole team's read (team onboarding D3): everyone who worked.
+          workedBarbers: signal([{ id: IVAN }, { id: NIKO }]),
+          watchTeam: () => undefined,
           locations: signal([]),
         },
       },

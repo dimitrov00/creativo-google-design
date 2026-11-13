@@ -198,6 +198,11 @@ export async function renderAnalyticsScreen<T>(
         provide: CatalogContentService,
         useValue: {
           barbers: signal(options.barbers ?? []),
+          // The whole team's read (team onboarding D3) — the same barbers.
+          teamBarbers: signal(options.barbers ?? []),
+          workedBarbers: signal(options.barbers ?? []),
+          teamBarberVms: signal([]),
+          watchTeam: () => undefined,
           services: signal([]),
           allServices: signal([]),
           barberVms: signal([]),

@@ -4,17 +4,27 @@ import {
   computed,
   effect,
   inject,
+  signal,
   untracked,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { distinctUntilChanged, map, skip } from 'rxjs';
 import {
   AUTH_SESSION_PORTS,
+  BARBER_LOOKUP_PORTS,
   CATALOG_PORTS,
   MEDIA_RESOLVE_PORTS,
+  TEAM_BARBER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { MediaRef, Principal, PrincipalKind } from '@core/components';
-import type { MediaRefId, ServiceId } from '@core/primitives';
+import {
+  BarberLifecycle,
+  BarberStatus,
+  MediaRef,
+  Principal,
+  PrincipalKind,
+} from '@core/components';
+import type { BarberId, MediaRefId, Result, ServiceId } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import { CatalogListingSystem } from '@core/systems';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
@@ -38,6 +48,16 @@ import { mediaUrlCache } from './media-url-cache';
 @Injectable({ providedIn: 'root' })
 export class CatalogContentService {
   private readonly catalog = inject(CATALOG_PORTS);
+  /**
+   * The whole team's live read and the by-id lookup (team onboarding D3).
+   * Optional: a host that provides neither (a spec, a narrow shell) sees
+   * the public list wherever the team would stand.
+   */
+  private readonly teamPorts = inject(TEAM_BARBER_PORTS, { optional: true });
+  private readonly lookupPorts = inject(BARBER_LOOKUP_PORTS, {
+    optional: true,
+  });
+  private readonly destroyRef = inject(DestroyRef);
 
   /**
    * Resolved cover and avatar URLs, one resolve per media object — a
@@ -146,14 +166,143 @@ export class CatalogContentService {
   );
 
   readonly barberVms = computed<readonly BarberVm[]>(() =>
-    this.barbers().map((barber) =>
-      barberToVm(
-        barber,
-        this.media.url(avatarRefOf(barber)),
-        BARBER_ART[barber.id],
-      ),
+    this.barbers().map((barber) => this.toBarberVm(barber)),
+  );
+
+  // ── The whole team (staff surfaces) ─────────────────────────────────
+
+  private readonly teamResult = signal<Result<
+    readonly Barber[],
+    RepositoryError
+  > | null>(null);
+  private teamWatched = false;
+
+  /**
+   * Starts the live read of EVERY barber record — a draft, a staff-only
+   * barber, a leaver (team onboarding D3). Staff only (the read rule
+   * refuses a client a `DRAFT`), so a staff surface calls it once, from its
+   * constructor; a second call is a no-op.
+   */
+  watchTeam(): void {
+    if (this.teamWatched || this.teamPorts === null) return;
+    this.teamWatched = true;
+    this.teamPorts
+      .observeTeamBarbers()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((result) => this.teamResult.set(result));
+  }
+
+  /**
+   * Every barber record, whatever its status, by `sortOrder` — the names,
+   * faces and tones of the staff surfaces. The public list stands until
+   * the team read answers (or where there is none).
+   */
+  readonly teamBarbers = computed<readonly Barber[]>(() => {
+    const result = this.teamResult();
+    return result?.ok ? result.value : this.barbers();
+  });
+
+  /**
+   * Whether the team read has answered successfully — with no team read
+   * (see the ports above), whether the public one has.
+   */
+  readonly teamKnown = computed(() =>
+    this.teamPorts === null
+      ? this.barbersKnown()
+      : this.teamResult()?.ok === true,
+  );
+
+  /**
+   * The barbers who WORK — `STAFF_ONLY` or `PUBLIC`: the schedule's lanes,
+   * its scope menu and legend, the chair pickers.
+   */
+  readonly liveBarbers = computed<readonly Barber[]>(() =>
+    this.teamBarbers().filter(BarberLifecycle.isLive),
+  );
+
+  /** Every barber record but a leaver's — who an account can be linked to. */
+  readonly currentBarbers = computed<readonly Barber[]>(() =>
+    this.teamBarbers().filter(
+      (barber) => barber.barberStatus !== BarberStatus.Departed,
     ),
   );
+
+  /** Every barber record that has ever worked — a draft never has figures. */
+  readonly workedBarbers = computed<readonly Barber[]>(() =>
+    this.teamBarbers().filter(
+      (barber) => barber.barberStatus !== BarberStatus.Draft,
+    ),
+  );
+
+  readonly teamBarberVms = computed<readonly BarberVm[]>(() =>
+    this.teamBarbers().map((barber) => this.toBarberVm(barber)),
+  );
+
+  readonly liveBarberVms = computed<readonly BarberVm[]>(() =>
+    this.liveBarbers().map((barber) => this.toBarberVm(barber)),
+  );
+
+  /** A barber record on the team, by id — a name for a staff surface. */
+  findTeamBarber(barberId: BarberId): Barber | undefined {
+    return this.teamBarbers().find((barber) => barber.id === barberId);
+  }
+
+  /** The same barber's view model — their face. */
+  findTeamBarberVm(barberId: BarberId): BarberVm | undefined {
+    return this.teamBarberVms().find((vm) => vm.id === barberId);
+  }
+
+  // ── Barbers by id (a client's past visits) ──────────────────────────
+
+  private readonly looked = signal<ReadonlyMap<BarberId, Barber>>(new Map());
+  private readonly asked = new Set<BarberId>();
+
+  /**
+   * Loads, once each, the records of barbers on no list this viewer holds
+   * — a past visit with a barber who left or now works staff-only. A
+   * record the viewer may not read (a `DRAFT`, for a client) stays
+   * unnamed.
+   */
+  rememberBarbers(ids: readonly BarberId[]): void {
+    if (this.lookupPorts === null) return;
+    const known = new Set(this.teamBarbers().map((barber) => barber.id));
+    const missing: BarberId[] = [];
+    for (const id of ids) {
+      if (known.has(id) || this.asked.has(id)) continue;
+      this.asked.add(id);
+      missing.push(id);
+    }
+    if (missing.length === 0) return;
+    void this.lookupPorts.loadBarbers(missing).then((result) => {
+      if (!result.ok || result.value.length === 0) return;
+      this.looked.update((before) => {
+        const next = new Map(before);
+        for (const barber of result.value) next.set(barber.id, barber);
+        return next;
+      });
+    });
+  }
+
+  /**
+   * Every barber this viewer can name — the team (or public) list, then the
+   * ones looked up by id ({@link rememberBarbers}).
+   */
+  readonly namedBarberVms = computed<readonly BarberVm[]>(() => {
+    const listed = this.teamBarbers();
+    const ids = new Set(listed.map((barber) => barber.id));
+    const extra = [...this.looked().values()].filter(
+      (barber) => !ids.has(barber.id),
+    );
+    return [...listed, ...extra].map((barber) => this.toBarberVm(barber));
+  });
+
+  private toBarberVm(barber: Barber): BarberVm {
+    return barberToVm(
+      barber,
+      this.media.url(avatarRefOf(barber)),
+      BARBER_ART[barber.id],
+    );
+  }
 
   /** Every cover and avatar the catalogue names. */
   private readonly mediaRefs = computed<readonly MediaRef[]>(() => [
@@ -161,7 +310,7 @@ export class CatalogContentService {
       const cover = coverRefOf(service);
       return cover ? [cover] : [];
     }),
-    ...this.barbers().flatMap((barber) => {
+    ...[...this.teamBarbers(), ...this.looked().values()].flatMap((barber) => {
       const avatar = avatarRefOf(barber);
       return avatar ? [avatar] : [];
     }),

@@ -31,6 +31,26 @@ export type ObserveBarbers = () => Observable<
   Result<readonly Barber[], RepositoryError>
 >;
 
+/**
+ * Live EVERY barber record, whatever its `barberStatus` — a draft being set
+ * up, a staff-only barber, a leaver — `orderBy sortOrder` (team onboarding
+ * D3). Staff only: the `barbers` read rule refuses a `DRAFT` to anyone
+ * else, so a client's unfiltered list would be refused whole.
+ */
+export type ObserveTeamBarbers = () => Observable<
+  Result<readonly Barber[], RepositoryError>
+>;
+
+/**
+ * Barber records by id, once each — the ones that exist and the reader may
+ * read, in the order asked (a `DRAFT` is skipped for a client, as is an id
+ * with no record): the names on a client's past visits with a barber who
+ * is not listed any more.
+ */
+export type LoadBarbers = (
+  ids: readonly BarberId[],
+) => Promise<Result<readonly Barber[], RepositoryError>>;
+
 /** Live service categories, `orderBy sortOrder` (no status is stored). */
 export type ObserveCategories = () => Observable<
   Result<readonly ServiceCategory[], RepositoryError>
@@ -100,6 +120,16 @@ export type CatalogReadPorts = {
   readonly observeBarbers: ObserveBarbers;
   readonly observeCategories: ObserveCategories;
   readonly observeLocations: ObserveLocations;
+};
+
+/** The whole team, live — staff surfaces only (`TEAM_BARBER_PORTS`). */
+export type TeamBarberReadPorts = {
+  readonly observeTeamBarbers: ObserveTeamBarbers;
+};
+
+/** Barber records by id — a past visit's name (`BARBER_LOOKUP_PORTS`). */
+export type BarberLookupPorts = {
+  readonly loadBarbers: LoadBarbers;
 };
 
 /** The cart's services and named shop in one read — the functions' `firestore-catalog.adapter.ts`. */

@@ -67,11 +67,11 @@ export function injectAnalyticsScreen(
       return order === -1 ? null : order;
     },
     barberName: (id) => {
-      const barber = catalog.barbers().find((entry) => entry.id === id);
+      const barber = catalog.teamBarbers().find((entry) => entry.id === id);
       return barber === undefined ? null : wording.text(barber.name);
     },
     barberAvatarSrc: (id) =>
-      catalog.barberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
+      catalog.teamBarberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
     locationName: (id) => {
       const location = catalog.locations().find((entry) => entry.id === id);
       return location === undefined ? null : wording.text(location.name);
@@ -103,7 +103,7 @@ export function injectAnalyticsScreen(
       return null;
     }
     // Read here so a late catalogue re-words the names.
-    catalog.barbers();
+    catalog.teamBarbers();
     catalog.allServices();
     // Locations not read yet word as one shop, never as «all».
     const shopCount = catalog.locations().length || 1;

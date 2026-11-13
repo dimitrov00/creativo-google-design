@@ -288,7 +288,8 @@ export class StaffAnalyticsStore {
   readonly scopeMenu = computed<AnalyticsScopeMenu | null>(() =>
     this.readsShop()
       ? StaffAnalyticsSystem.scopeMenuOf(
-          this.catalog.barbers().map((barber) => barber.id),
+          // Everyone who has worked — a draft never has figures.
+          this.catalog.workedBarbers().map((barber) => barber.id),
           this.linkedBarberId(),
           this.catalog.locations().map((location) => location.id),
         )
@@ -467,6 +468,8 @@ export class StaffAnalyticsStore {
   private stated = false;
 
   constructor() {
+    // The whole team: a staff-only barber and a leaver have figures too.
+    this.catalog.watchTeam();
     const tick = setInterval(() => {
       this._nowUtcMs.set(this.clock.nowUtcMs());
     }, NOW_TICK_MS);
