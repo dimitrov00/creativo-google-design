@@ -2084,11 +2084,20 @@ function firstParting(
 /** Fixed seeds: a property that fails must fail the same way for everyone. */
 const RUNS = { seed: 20260929, numRuns: 300 } as const;
 
+/**
+ * The time a 300-run property below may take. They run in about 0.1 s here
+ * and the "higher floor" variants in about 0.55 s, against Vitest's default
+ * of 5 s. A CPU-starved CI runner ran the whole suite about 20× slower and
+ * timed two of them out (PR #65, 2026-11-13); this leaves them room without
+ * hiding a real slowdown.
+ */
+const PROPERTY = { timeout: 30_000 } as const;
+
 describe('projectStreak, a looser rule', () => {
   describe.each(CLOCK.map((loosening) => [loosening.name, loosening] as const))(
     'on the plain clock, %s',
     (_name, loosening) => {
-      it('never lowers the count, nor the best run', () => {
+      it('never lowers the count, nor the best run', PROPERTY, () => {
         fc.assert(
           fc.property(
             plainClock,
@@ -2117,45 +2126,53 @@ describe('projectStreak, a looser rule', () => {
     },
   );
 
-  it('under any rule, the phase kind alone is the projected state’s phase kind', () => {
-    // `StreakSystem.phaseKind` is the preview's hot path: the same fold,
-    // no state assembled — it must never answer differently.
-    fc.assert(
-      fc.property(anyRule, anyFacts, (props, { facts, today }) => {
-        const rule = made(props);
-        expect(
-          StreakSystem.phaseKind(rule, strict(facts), shopDay(today)),
-        ).toBe(projectStreak(rule, facts, today)?.streakPhase ?? null);
-      }),
-      RUNS,
-    );
-  });
+  it(
+    'under any rule, the phase kind alone is the projected state’s phase kind',
+    PROPERTY,
+    () => {
+      // `StreakSystem.phaseKind` is the preview's hot path: the same fold,
+      // no state assembled — it must never answer differently.
+      fc.assert(
+        fc.property(anyRule, anyFacts, (props, { facts, today }) => {
+          const rule = made(props);
+          expect(
+            StreakSystem.phaseKind(rule, strict(facts), shopDay(today)),
+          ).toBe(projectStreak(rule, facts, today)?.streakPhase ?? null);
+        }),
+        RUNS,
+      );
+    },
+  );
 
-  it('under any rule, a miss that holds the count never lowers it', () => {
-    fc.assert(
-      fc.property(anyRule, anyFacts, (props, { facts, today }) => {
-        fc.pre(props.onBreak === 'RESTART');
-        const before = projectStreak(made(props), facts, today);
-        const after = projectStreak(
-          made({ ...props, onBreak: 'HOLD' }),
-          facts,
-          today,
-        );
-        expect(after?.current ?? 0).toBeGreaterThanOrEqual(
-          before?.current ?? 0,
-        );
-        expect(after?.best ?? 0).toBeGreaterThanOrEqual(before?.best ?? 0);
-      }),
-      RUNS,
-    );
-  });
+  it(
+    'under any rule, a miss that holds the count never lowers it',
+    PROPERTY,
+    () => {
+      fc.assert(
+        fc.property(anyRule, anyFacts, (props, { facts, today }) => {
+          fc.pre(props.onBreak === 'RESTART');
+          const before = projectStreak(made(props), facts, today);
+          const after = projectStreak(
+            made({ ...props, onBreak: 'HOLD' }),
+            facts,
+            today,
+          );
+          expect(after?.current ?? 0).toBeGreaterThanOrEqual(
+            before?.current ?? 0,
+          );
+          expect(after?.best ?? 0).toBeGreaterThanOrEqual(before?.best ?? 0);
+        }),
+        RUNS,
+      );
+    },
+  );
 
   describe.each(
     [...CLOCK, ...CUSHION].map(
       (loosening) => [loosening.name, loosening] as const,
     ),
   )('under any rule, %s', (_name, loosening) => {
-    it('is the higher count where the two first part', () => {
+    it('is the higher count where the two first part', PROPERTY, () => {
       fc.assert(
         fc.property(anyRule, anyFacts, by, (props, { facts, today }, b) => {
           const looser = loosening.of(props, b);
@@ -2172,7 +2189,7 @@ describe('projectStreak, a looser rule', () => {
     });
   });
 
-  it('under any rule, keeps the state inside its bounds', () => {
+  it('under any rule, keeps the state inside its bounds', PROPERTY, () => {
     fc.assert(
       fc.property(anyRule, anyFacts, (props, { facts, today }) => {
         const definition = made(props);
@@ -2210,31 +2227,35 @@ describe('projectStreak, a looser rule', () => {
     );
   });
 
-  it('under any rule, dates the run by the visit that made the count one', () => {
-    fc.assert(
-      fc.property(anyRule, anyFacts, (props, { facts, today }) => {
-        const trace = traceStreak(made(props), facts, today);
-        const { state } = trace;
-        if (state === null || state.current === 0) return;
-        const counted = facts.visits
-          .filter((visit) => visit.counted)
-          .map((visit) => visit.day);
-        expect(counted).toContain(state.runStartedOn);
-        expect(state.runStartedOn).toBe(
-          trace.counts.filter(({ current }) => current === 1).at(-1)?.on,
-        );
-        expect(
-          (state.runStartedOn ?? '') <=
-            sofiaDayOf(state.lastQualifiedAtUtcMs ?? 0),
-        ).toBe(true);
-        // A miss that holds the count never starts anybody over.
-        if (props.onBreak === 'HOLD') {
-          expect(state.runStartedOn).toBe([...counted].sort()[0]);
-        }
-      }),
-      RUNS,
-    );
-  });
+  it(
+    'under any rule, dates the run by the visit that made the count one',
+    PROPERTY,
+    () => {
+      fc.assert(
+        fc.property(anyRule, anyFacts, (props, { facts, today }) => {
+          const trace = traceStreak(made(props), facts, today);
+          const { state } = trace;
+          if (state === null || state.current === 0) return;
+          const counted = facts.visits
+            .filter((visit) => visit.counted)
+            .map((visit) => visit.day);
+          expect(counted).toContain(state.runStartedOn);
+          expect(state.runStartedOn).toBe(
+            trace.counts.filter(({ current }) => current === 1).at(-1)?.on,
+          );
+          expect(
+            (state.runStartedOn ?? '') <=
+              sofiaDayOf(state.lastQualifiedAtUtcMs ?? 0),
+          ).toBe(true);
+          // A miss that holds the count never starts anybody over.
+          if (props.onBreak === 'HOLD') {
+            expect(state.runStartedOn).toBe([...counted].sort()[0]);
+          }
+        }),
+        RUNS,
+      );
+    },
+  );
 
   /**
    * PINNED, so nobody promises it and nobody "fixes" the fold blind: a
