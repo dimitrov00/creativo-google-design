@@ -72,8 +72,7 @@ export function injectAnalyticsScreen(
       const barber = team.findTeamBarber(id);
       return barber === undefined ? null : wording.text(barber.name);
     },
-    barberAvatarSrc: (id) =>
-      team.findTeamBarberVm(id)?.avatarSrc ?? null,
+    barberAvatarSrc: (id) => team.findTeamBarberVm(id)?.avatarSrc ?? null,
     locationName: (id) => {
       const location = catalog.locations().find((entry) => entry.id === id);
       return location === undefined ? null : wording.text(location.name);
