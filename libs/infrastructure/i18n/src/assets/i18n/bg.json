@@ -33,6 +33,7 @@
     "BOOKING_SERVICE_NOT_AT_LOCATION": "Тази услуга не се предлага в този салон.",
     "BOOKING_CONFLICTING_SERVICES": "Тези услуги не се комбинират.",
     "BOOKING_BARBER_NOT_ROSTERED": "Този бръснар не работи по това време.",
+    "BOOKING_BARBER_NOT_BOOKABLE": "Този бръснар не може да бъде записан за този ден.",
     "BOOKING_SLOT_UNAVAILABLE": "Този час вече е зает.",
     "BOOKING_TOO_SOON": "Резервациите са с поне {{minLeadMinutes}} минути предизвестие.",
     "BOOKING_BEYOND_HORIZON": "Още не приемаме резервации толкова напред.",

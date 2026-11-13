@@ -72,6 +72,7 @@ import {
   customerOf,
   FIXTURE_NOW_UTC_MS,
   until,
+  barberFixture,
 } from '@core/testing';
 import { AppointmentEditSystem } from './appointment-edit.system';
 import { BookingDecisionSystem } from './booking-decision.system';
@@ -1138,6 +1139,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
       {
         shopHours: [],
         services: [servedBoth(CUT, 45), servedBoth(BEARD, 30)],
+        barbers: [barberFixture({ id: IVAN }), barberFixture({ id: PETAR })],
         schedules: [MONDAY_09_18(IVAN), MONDAY_09_18(PETAR)],
         busy: [],
         exceptions: [],

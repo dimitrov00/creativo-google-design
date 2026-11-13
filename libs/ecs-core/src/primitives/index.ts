@@ -3,6 +3,7 @@ export * from './app-check-outcome.data';
 export * from './app-check-token-use.data';
 export * from './attendance-state.data';
 export * from './award-kind.data';
+export * from './barber-bookability-reason.data';
 export * from './booking-status.data';
 export * from './brand';
 export * from './busy-key.primitive';

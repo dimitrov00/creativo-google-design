@@ -504,6 +504,7 @@ export const MoveSystem = {
     switch (error.errorCode) {
       case BookingErrorCode.SlotUnavailable:
       case BookingErrorCode.BarberNotRostered:
+      case BookingErrorCode.BarberNotBookable:
         return CarriedSeatRefusal.BarberUnavailable;
       case BookingErrorCode.UnknownService:
       case BookingErrorCode.ServiceNotAtLocation:

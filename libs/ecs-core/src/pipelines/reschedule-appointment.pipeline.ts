@@ -553,6 +553,8 @@ function standingOf(
                 requestedSubjectRole: RequestedSubjectRole.Companion,
                 companionUserId: seat.subjectUserId,
               },
+      barberId: seat.barberId,
+      localDate: stored.localDate,
       startMinutes: seat.startMinutes,
       durationMinutes: seat.durationMinutes,
     });

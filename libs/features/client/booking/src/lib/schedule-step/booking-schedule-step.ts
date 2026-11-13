@@ -613,7 +613,8 @@ export class BookingScheduleStep {
     return this.exactDays().map((localDate) => ({
       cart,
       services: this.catalog.services(),
-      barberIds: this.barberIds(),
+      // The PUBLIC barber records: pool and working period ride along (D3).
+      barbers: this.catalog.barbers(),
       locationId: this.store.locationId(),
       localDate,
       policy: this.policy(),

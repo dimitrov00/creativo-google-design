@@ -538,11 +538,7 @@ export const WaitlistSystem = {
         const barber = snapshot.barbers[b] as CartBarberDay;
         const windows = RosterSystem.windowsAt(barber.windows, shop);
         if (windows.length > 0) {
-          narrowed.push({
-            barberId: barber.barberId,
-            windows,
-            busy: barber.busy,
-          });
+          narrowed.push({ ...barber, windows });
         }
       }
       barbers = narrowed;

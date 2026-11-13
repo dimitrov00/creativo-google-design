@@ -17,6 +17,7 @@ import {
   localDate,
   memorySchedulingReadPorts,
   unwrapOk,
+  barberFixture,
 } from '@core/testing';
 import { observeCapacityEntries, observeDayDocs } from './shop-day.pipeline';
 
@@ -38,7 +39,7 @@ const TUESDAY = localDate('2026-09-29');
 function key(barberIds: readonly BarberId[]): DayDocsKey {
   return BookingCartSystem.dayDocsKey({
     localDate: TUESDAY,
-    barberIds,
+    barbers: barberIds.map((id) => barberFixture({ id })),
     locationId: null,
     release: [],
   });

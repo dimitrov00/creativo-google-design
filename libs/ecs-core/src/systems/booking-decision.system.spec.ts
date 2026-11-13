@@ -55,6 +55,7 @@ import {
   unwrapOk,
   utcMs,
   at,
+  barberFixture,
   cents,
   duration,
   minuteCount,
@@ -123,6 +124,18 @@ const SHOP_HOURS = [
 ];
 
 const ivan = BarberId.of('ivan');
+/** The other chairs the specs seat people in — each a public barber (team onboarding D3). */
+const OTHER_CHAIRS = [
+  'petar',
+  'georgi',
+  'niko',
+  // the property specs' one-barber-per-seat chairs
+  'b0',
+  'b1',
+  'b2',
+  'b3',
+  'b4',
+].map(BarberId.of);
 
 function fadeService(
   overrides: {
@@ -145,6 +158,12 @@ function fadeService(
     })),
     offerings: [
       { barberId: ivan, overrides: [], ...termsFixture(4500, 30, 0, 10) },
+      // Everyone else performs it at the catalogue's own terms.
+      ...OTHER_CHAIRS.map((barberId) => ({
+        barberId,
+        overrides: [],
+        ...termsFixture(4000, 60),
+      })),
     ],
   });
 }
@@ -155,7 +174,11 @@ function beardService(conflictsWith: readonly string[] = []): Service {
     ...termsFixture(1500, 20),
     locationIds: [CENTER],
     conflictsWith: conflictsWith.map(ServiceId.of),
-    offerings: [{ barberId: ivan, overrides: [], ...termsFixture(1500, 20) }],
+    offerings: [ivan, ...OTHER_CHAIRS].map((barberId) => ({
+      barberId,
+      overrides: [],
+      ...termsFixture(1500, 20),
+    })),
   });
 }
 
@@ -188,6 +211,7 @@ function snapshot(overrides: Partial<BookingSnapshot> = {}): BookingSnapshot {
   return {
     shopHours: SHOP_HOURS,
     services: [fadeService(), beardService()],
+    barbers: [ivan, ...OTHER_CHAIRS].map((id) => barberFixture({ id })),
     schedules: [schedule('ivan')],
     busy: [],
     exceptions: [],
@@ -321,6 +345,7 @@ function decideBooking(
       skipMinNotice: outside,
       allowOverlap: given.allowOverlap === true,
       allowConflictingServices: given.allowConflictingServices === true,
+      allowStaffOnlyBarbers: outside,
     },
     given.release ?? [],
     {
@@ -1196,12 +1221,16 @@ describe('decide — a double seating the visit already held stands', () => {
     {
       seatId: SeatId.of('id-0'),
       subject: walkIn,
+      barberId: ivan,
+      localDate: AUG_3,
       startMinutes: at(12),
       durationMinutes: duration(30),
     },
     {
       seatId: SeatId.of('id-1'),
       subject: walkIn,
+      barberId: ivan,
+      localDate: AUG_3,
       startMinutes: at(12),
       durationMinutes: duration(20),
     },
@@ -1332,6 +1361,8 @@ describe('decide — a double seating the visit already held stands', () => {
           const standing = drafts.map((draft, index): DecisionStandingSeat => ({
             seatId: SeatId.of(`id-${index}`),
             subject: subjectOf(draft.person),
+            barberId: ivan,
+            localDate: AUG_3,
             startMinutes: startOf(draft.quarter),
             durationMinutes: duration(MINUTES[draft.serviceId]),
           }));
@@ -1913,12 +1944,16 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
           {
             seatId: SeatId.of('id-0'),
             subject: SELF,
+            barberId: ivan,
+            localDate: AUG_3,
             startMinutes: at(12),
             durationMinutes: duration(30),
           },
           {
             seatId: SeatId.of('id-1'),
             subject: SELF,
+            barberId: ivan,
+            localDate: AUG_3,
             startMinutes: at(12),
             durationMinutes: duration(20),
           },

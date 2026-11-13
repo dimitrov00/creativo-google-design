@@ -19,6 +19,7 @@ import {
   WriteOp,
 } from '@core/components';
 import {
+  type Barber,
   type BarberSchedule,
   Collections,
   type ScheduleException,
@@ -193,6 +194,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     );
     const rostered: {
       readonly barberId: BarberId;
+      readonly record: Barber;
       readonly schedule: BarberSchedule;
       readonly windows: readonly RosterWindow[];
     }[] = [];
@@ -215,7 +217,12 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         shopHours,
       });
       if (windows.length > 0) {
-        rostered.push({ barberId, schedule: schedule.value, windows });
+        rostered.push({
+          barberId,
+          record: listed.value.barbers[i] as Barber,
+          schedule: schedule.value,
+          windows,
+        });
       }
     }
     if (rostered.length === 0) return Result.ok({ services, barbers: [] });
@@ -243,6 +250,11 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
       barbers.push({
         barberId: entry.barberId,
         windows: entry.windows,
+        // The pool and the working period (team onboarding D3): a freed
+        // chair is offered only where the commit would book it.
+        barberJoinsAnyPool: entry.record.barberJoinsAnyPool,
+        barberStartsLocalDate: entry.record.barberStartsLocalDate,
+        barberLastWorkingLocalDate: entry.record.barberLastWorkingLocalDate,
         // PADDED by the barber's turnaround — the one rule the grid and the
         // commit both apply; nothing is released (a request is a new booking).
         busy: AvailabilitySystem.paddedBusy(

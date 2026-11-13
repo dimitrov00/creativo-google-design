@@ -15,6 +15,7 @@ export * from './availability.system';
 export * from './avatar.system';
 export * from './backfill-plan.system';
 export * from './badge.system';
+export * from './barber-bookability.system';
 export * from './barber-tone.system';
 export * from './billing.system';
 export * from './booking-cart.system';

@@ -130,6 +130,11 @@ export const WIRE_PARAM_ALLOWLIST: {
   BOOKING_SERVICE_NOT_AT_LOCATION: ['serviceId', 'locationId'],
   BOOKING_CONFLICTING_SERVICES: ['first', 'second'],
   BOOKING_BARBER_NOT_ROSTERED: ['barberId', 'localDate'],
+  BOOKING_BARBER_NOT_BOOKABLE: [
+    'barberId',
+    'localDate',
+    'barberBookabilityReason',
+  ],
   // The seat the refusal names — the flat scalar struct, never a busy body
   // (OR-12: the live listeners redraw the day).
   BOOKING_SLOT_UNAVAILABLE: [
@@ -231,6 +236,9 @@ const CODE_OVERRIDES: {
   // the user's side: re-picking from a fresh grid is the fix for both.
   [B.SlotUnavailable]: P.SlotUnavailable,
   [B.BarberNotRostered]: P.SlotUnavailable,
+  // A barber who stopped being bookable under a stale tab (made staff-only,
+  // left, or out of the «Който и да е» pool): re-picking is the fix too.
+  [B.BarberNotBookable]: P.SlotUnavailable,
   // The one staff refusal that is an OFFER («Запази въпреки застъпването»).
   [S.Overlaps]: P.SlotUnavailable,
   [B.Unauthenticated]: P.Unauthenticated,

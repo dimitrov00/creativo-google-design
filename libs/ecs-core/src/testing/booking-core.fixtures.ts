@@ -164,6 +164,17 @@ const BARBER_STARTS: LocalDate = sure(LocalDate.parse('2024-01-01'), 'start');
 /** When the fixture barbers went live — 2024-01-01T00:00:00Z. */
 const BARBER_LIVE_AT: UtcEpochMs = sure(UtcEpochMs.of(1704067200000), 'live');
 
+/**
+ * A barber day's pool flag and working period that never narrow a search —
+ * in the «Който и да е» pool, working since 2024-01-01, no last day — for
+ * the `CartBarberDay` literals the engine specs build.
+ */
+export const OPEN_BARBER_DAY = {
+  barberJoinsAnyPool: true,
+  barberStartsLocalDate: BARBER_STARTS,
+  barberLastWorkingLocalDate: null,
+} as const;
+
 /** A live, public lifecycle — the default of {@link barberFixture}. */
 export const PUBLIC_BARBER: BarberLifecycle.Public = {
   barberStatus: BarberStatus.Public,

@@ -31,6 +31,7 @@ import {
   type DurationMinutes,
   MinuteCount,
   AppointmentId,
+  BarberBookabilityReason,
   BarberId,
   type CustomerId,
   defect,
@@ -58,6 +59,10 @@ import type {
 } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { AvailabilitySystem, type BusyBlocks } from './availability.system';
+import {
+  BarberBookabilitySystem,
+  type BookableBarber,
+} from './barber-bookability.system';
 import { GuestLabelSystem } from './guest-label.system';
 import { OfferingPriceSystem } from './offering-price.system';
 import {
@@ -121,6 +126,12 @@ export type DecisionException = Pick<
 export type BookingSnapshot = {
   readonly shopHours: readonly DayHours[];
   readonly services: readonly Service[];
+  /**
+   * The barber records the seats name (team onboarding D3) — whatever
+   * their status; a placed seat on one that is absent or cannot be booked
+   * is refused (`BarberBookabilitySystem.verdictOf`).
+   */
+  readonly barbers: readonly BookableBarber[];
   readonly schedules: readonly DecisionSchedule[];
   readonly busy: readonly DecisionBusyDay[];
   readonly exceptions: readonly DecisionException[];
@@ -135,6 +146,9 @@ export type BookingSnapshot = {
 export type DecisionStandingSeat = {
   readonly seatId: SeatId;
   readonly subject: BookingCall.SubjectInput;
+  /** The chair and shop day the seat stands on — a seat kept there is not placed again. */
+  readonly barberId: BarberId;
+  readonly localDate: LocalDate;
   readonly startMinutes: MinuteOfDay;
   readonly durationMinutes: DurationMinutes;
 };
@@ -197,6 +211,42 @@ export type BookingDecision = {
 };
 
 /* ── helpers ──────────────────────────────────────────────────────────── */
+
+/** The barber record by id, or `null` — a linear scan of a handful. */
+function barberOf(
+  barbers: readonly BookableBarber[],
+  barberId: BarberId,
+): BookableBarber | null {
+  for (let i = 0; i < barbers.length; i++) {
+    const barber = barbers[i] as BookableBarber;
+    if (barber.id === barberId) return barber;
+  }
+  return null;
+}
+
+/**
+ * Whether a request seat is being PLACED: no standing seat carries its line
+ * id (a commit's every seat, an edit's added one), or the standing one sat
+ * on another chair, shop day or start.
+ */
+function isPlaced(
+  standing: readonly DecisionStandingSeat[],
+  lineId: string,
+  barberId: BarberId,
+  localDate: LocalDate,
+  startMinutes: MinuteOfDay,
+): boolean {
+  for (let i = 0; i < standing.length; i++) {
+    const stood = standing[i] as DecisionStandingSeat;
+    if (stood.seatId !== lineId) continue;
+    return (
+      stood.barberId !== barberId ||
+      stood.localDate !== localDate ||
+      stood.startMinutes !== startMinutes
+    );
+  }
+  return true;
+}
 
 function isBlank(raw: string): boolean {
   return raw.trim().length === 0;
@@ -592,6 +642,37 @@ export const BookingDecisionSystem = {
       }
       const localDate = day.value;
       const startMinutes = start.value;
+
+      // WHO MAY BE BOOKED (team onboarding D3): a seat being PLACED — new,
+      // or moved to another chair, day or start — must land on a barber
+      // this asker may book that day. A seat left where it stands is not
+      // asked again, so a leaver's last visits can still be corrected.
+      if (
+        isPlaced(
+          context.standing,
+          requested.lineId,
+          barberId,
+          localDate,
+          startMinutes,
+        )
+      ) {
+        const barber = barberOf(snapshot.barbers, barberId);
+        const refusal =
+          barber === null
+            ? BarberBookabilityReason.Unknown
+            : BarberBookabilitySystem.verdictOf(
+                barber,
+                admitted.service,
+                placement,
+                requested.barberPreference,
+                localDate,
+              );
+        if (refusal !== null) {
+          return Result.err(
+            BookingError.barberNotBookable(barberId, localDate, refusal),
+          );
+        }
+      }
 
       if (!placement.allowOutsideWindow && !placement.skipMinNotice) {
         const floor = AvailabilitySystem.leadFloor(now, policy, localDate);

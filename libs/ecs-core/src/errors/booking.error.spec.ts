@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { localDate, minute, unwrapOk } from '@core/testing';
 import {
   AppointmentId,
+  BarberBookabilityReason,
   BarberId,
   MinuteCount,
   ServiceId,
@@ -19,6 +20,7 @@ describe('BookingError', () => {
   it('keeps every booking commit code, SCREAMING with the BOOKING_ prefix (flatten-spec §4.2)', () => {
     expect(Object.values(BookingErrorCode).sort()).toEqual(
       [
+        'BOOKING_BARBER_NOT_BOOKABLE',
         'BOOKING_BARBER_NOT_ROSTERED',
         'BOOKING_BEYOND_HORIZON',
         'BOOKING_CONFLICTING_SERVICES',
@@ -79,6 +81,11 @@ describe('BookingError', () => {
       BookingError.barberNotRostered(
         BarberId.of('b-1'),
         localDate('2026-10-10'),
+      ),
+      BookingError.barberNotBookable(
+        BarberId.of('b-1'),
+        localDate('2026-10-10'),
+        BarberBookabilityReason.Departed,
       ),
       BookingError.slotUnavailable(
         BarberId.of('b-1'),
@@ -202,6 +209,18 @@ describe('BookingError', () => {
       errorCode: 'BOOKING_BARBER_NOT_ROSTERED',
       barberId: 'b-1',
       localDate: '2026-10-10',
+    });
+    expect(
+      BookingError.barberNotBookable(
+        BarberId.of('b-1'),
+        localDate('2026-10-10'),
+        BarberBookabilityReason.StaffOnly,
+      ),
+    ).toEqual({
+      errorCode: 'BOOKING_BARBER_NOT_BOOKABLE',
+      barberId: 'b-1',
+      localDate: '2026-10-10',
+      barberBookabilityReason: 'STAFF_ONLY',
     });
   });
 

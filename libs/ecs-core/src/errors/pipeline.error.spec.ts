@@ -134,6 +134,13 @@ describe('PipelineError.fromWire — today’s adapter rows, re-keyed', () => {
       'failed-precondition',
       P.SlotUnavailable,
     ],
+    // a barber who stopped being bookable under a stale tab (team onboarding D3)
+    [
+      'booking.commit.barber_not_bookable',
+      BookingErrorCode.BarberNotBookable,
+      'failed-precondition',
+      P.SlotUnavailable,
+    ],
     // the one staff refusal that is an OFFER («Запази въпреки застъпването»)
     [
       'booking.staffEdit.overlaps',
