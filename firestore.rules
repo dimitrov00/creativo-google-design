@@ -561,8 +561,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // A barber is public unless `DRAFT` (team onboarding D3): a record being
+    // set up — someone who may still be working out notice elsewhere — is
+    // read by staff only. `/book` queries `barberStatus == 'PUBLIC'`, which
+    // the engine can prove against this rule; a client reads a name for a
+    // past visit by single get, and a `STAFF_ONLY` or `DEPARTED` barber's
+    // name stays readable for history.
     match /barbers/{barberId} {
-      allow read: if true;
+      allow read: if resource.data.barberStatus != 'DRAFT' || isStaff();
       allow write: if false;
 
       // `restricted/link` — the record's account lock (`BarberLink`:

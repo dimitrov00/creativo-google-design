@@ -20,10 +20,12 @@ import {
 import {
   BarberId,
   Currency,
+  LocalDate,
   MediaRefId,
   Result,
   ServiceCategoryId,
   ServiceId,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   type AuthoredService,
@@ -152,14 +154,17 @@ function barbers(): readonly Barber[] {
   return BARBERS.map((vm, index): Barber => ({
     id: BarberId.of(vm.id),
     name: sure(LocalizedText.parse(vm.name)),
-    handle: vm.id,
     title: sure(LocalizedText.parse(vm.title)),
     bio: sure(LocalizedText.parse(vm.bio)),
     yearsExperience: null,
     locationIds: [],
     instagramHandle: null,
-    barberStatus: BarberStatus.Active,
+    barberJoinsAnyPool: true,
     sortOrder: index,
+    barberStatus: BarberStatus.Public,
+    barberStatusChangedAtUtcMs: sure(UtcEpochMs.of(1704067200000)),
+    barberStartsLocalDate: sure(LocalDate.parse('2024-01-01')),
+    barberLastWorkingLocalDate: null,
     avatarMediaId: MediaRefId.of(`media-barber-${vm.id}`),
     avatarMediaPath: vm.avatarSrc,
     avatarMediaWidth: 1200,
@@ -167,6 +172,7 @@ function barbers(): readonly Barber[] {
     avatarMediaBlurhash: null,
     avatarMediaFocalX: null,
     avatarMediaFocalY: null,
+    writeOperationId: null,
   }));
 }
 

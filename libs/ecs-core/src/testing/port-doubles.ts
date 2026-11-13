@@ -554,7 +554,7 @@ export type CatalogReadState = {
 };
 
 /**
- * `CATALOG_PORTS` — the four live streams: ACTIVE services, ACTIVE barbers,
+ * `CATALOG_PORTS` — the four live streams: ACTIVE services, PUBLIC barbers,
  * every category, ACTIVE shops — each by `sortOrder`.
  */
 export function memoryCatalogReadPorts(
@@ -570,7 +570,7 @@ export function memoryCatalogReadPorts(
     observeBarbers: () =>
       stream(() =>
         (state.barbers ?? [])
-          .filter((entry) => entry.barberStatus === BarberStatus.Active)
+          .filter((entry) => entry.barberStatus === BarberStatus.Public)
           .sort(bySortOrder),
       ),
     observeCategories: () =>

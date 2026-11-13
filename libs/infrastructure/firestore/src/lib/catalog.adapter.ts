@@ -26,7 +26,9 @@ import { observeQuery, readDoc } from './observe';
  * locations #5 (`locationStatus`, `sortOrder`); categories carry no status
  * and order by `sortOrder` alone. Only what `/book` may list: an archived
  * service, an inactive barber and a hidden shop are filtered by the query
- * itself, and every stream lists the whole active catalogue.
+ * itself (a barber is listed only while `PUBLIC` — a draft, a staff-only
+ * and a departed barber are not), and every stream lists the whole active
+ * catalogue.
  */
 export const catalogReadPorts = (db: Firestore): CatalogReadPorts => {
   const ordered = (path: string, ...constraints: readonly QueryConstraint[]) =>
@@ -47,7 +49,7 @@ export const catalogReadPorts = (db: Firestore): CatalogReadPorts => {
       observeQuery<Barber>(
         ordered(
           Collections.Barbers,
-          where('barberStatus', '==', BarberStatus.Active),
+          where('barberStatus', '==', BarberStatus.Public),
         ),
         Collections.Barbers,
       ),

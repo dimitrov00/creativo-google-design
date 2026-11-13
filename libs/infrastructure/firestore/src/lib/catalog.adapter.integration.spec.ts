@@ -55,17 +55,17 @@ describe('catalogReadPorts (emulator)', () => {
       await setDoc(doc(db, 'serviceCategories', 'cat-1'), { sortOrder: 1 });
       await setDoc(doc(db, 'barbers', 'ivan'), {
         locationIds: ['loc-center'],
-        barberStatus: 'ACTIVE',
+        barberStatus: 'PUBLIC',
         sortOrder: 1,
       });
       await setDoc(doc(db, 'barbers', 'niko'), {
         locationIds: ['loc-mladost'],
-        barberStatus: 'ACTIVE',
+        barberStatus: 'PUBLIC',
         sortOrder: 2,
       });
       await setDoc(doc(db, 'barbers', 'gone'), {
         locationIds: ['loc-center'],
-        barberStatus: 'INACTIVE',
+        barberStatus: 'DEPARTED',
         sortOrder: 0,
       });
       await setDoc(doc(db, 'locations', 'loc-center'), {
@@ -97,7 +97,7 @@ describe('catalogReadPorts (emulator)', () => {
     ]);
   });
 
-  it('lists the active barbers of every shop — index #4', async () => {
+  it('lists the public barbers of every shop — index #4', async () => {
     const everyone = await firstValueFrom(anonymous().observeBarbers());
 
     expect(everyone.ok && everyone.value.map((b) => b.id)).toEqual([

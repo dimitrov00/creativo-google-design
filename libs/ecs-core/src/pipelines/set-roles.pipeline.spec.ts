@@ -121,7 +121,7 @@ function rig(options: RigOptions = {}) {
     ),
     ...(options.barbers ?? [IVAN, NIKO]).map((id) => ({
       path: [Collections.Barbers, id],
-      body: bodyOf(barberFixture({ id, handle: id })),
+      body: bodyOf(barberFixture({ id })),
     })),
     ...(options.locks ?? []).map(([barberId, linkedUserId]) => ({
       path: lockPath(barberId),

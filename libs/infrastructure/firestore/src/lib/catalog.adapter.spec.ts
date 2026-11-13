@@ -52,17 +52,17 @@ const catalog = () =>
     'serviceCategories/hair': { sortOrder: 1 },
     'barbers/ivan': {
       locationIds: ['loc-center'],
-      barberStatus: 'ACTIVE',
+      barberStatus: 'PUBLIC',
       sortOrder: 1,
     },
     'barbers/niko': {
       locationIds: ['loc-mladost'],
-      barberStatus: 'ACTIVE',
+      barberStatus: 'PUBLIC',
       sortOrder: 2,
     },
     'barbers/gone': {
       locationIds: ['loc-center'],
-      barberStatus: 'INACTIVE',
+      barberStatus: 'DEPARTED',
       sortOrder: 0,
     },
     'locations/loc-mladost': { locationStatus: 'ACTIVE', sortOrder: 2 },
@@ -112,14 +112,14 @@ describe('catalogReadPorts — what /book may list, live', () => {
     ]);
   });
 
-  it('lists the ACTIVE barbers of every shop, the inactive one left out — index #4', () => {
+  it('lists the PUBLIC barbers of every shop, the departed one left out — index #4', () => {
     const fake = catalog();
 
     const everyone = recorded(catalogReadPorts(asDb(fake)).observeBarbers());
 
     expect(everyone.seen.map(idsOf)).toEqual([['ivan', 'niko']]);
     expect(fake.reads.map((read) => read.constraints)).toEqual([
-      ['barberStatus == "ACTIVE"', 'orderBy sortOrder asc'],
+      ['barberStatus == "PUBLIC"', 'orderBy sortOrder asc'],
     ]);
   });
 

@@ -34,6 +34,8 @@ export * from './badge-category-kind.data';
 export * from './badge-emblem.data';
 export * from './badge-level.data';
 export * from './badge-subject-slot.data';
+export * from './barber-employment.data';
+export * from './barber-lifecycle.data';
 export * from './barber-offering.data';
 export * from './barber-pref.data';
 export * from './barber-status.data';

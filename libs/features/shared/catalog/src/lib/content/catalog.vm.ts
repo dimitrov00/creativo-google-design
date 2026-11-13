@@ -29,16 +29,18 @@ import type { CardPrice, OfferingRange } from '@core/systems';
 export interface BarberVm {
   readonly id: BarberId;
   readonly name: LocalizedText;
-  readonly title: LocalizedText;
-  readonly bio: LocalizedText;
+  /** `null` while the barber has no title (team onboarding D5). */
+  readonly title: LocalizedText | null;
+  /** `null` while the barber has no bio. */
+  readonly bio: LocalizedText | null;
   readonly avatarSrc: string;
   /** v2 seeds every avatar with FocalPoint(0.5, 0.25) → object-position. */
   readonly objectPosition: string;
   /** Client rating (★ 0–5, one decimal) — omitted for barbers without
    *  enough reviews yet. */
   readonly rating?: number;
-  /** The one-line craft summary the team cards read. */
-  readonly specialty: LocalizedText;
+  /** The one-line craft summary the team cards read; `null` with no art and no title. */
+  readonly specialty: LocalizedText | null;
   /** Selected work, for the barber destination's gallery. */
   readonly gallery: readonly string[];
 }

@@ -353,9 +353,8 @@ const SERVICE_BODY = {
 
 const BARBER_BODY = {
   name: textFixture('Ivan', 'Иван'),
-  handle: 'ivan',
   locationIds: [LocationId.of('loc-center')],
-  barberStatus: BarberStatus.Active,
+  barberStatus: BarberStatus.Public,
   sortOrder: 1,
 } satisfies Partial<Omit<Barber, 'id'>>;
 
@@ -1382,6 +1381,67 @@ describe('firestore.rules', () => {
         await assertFails(deleteDoc(doc(db, path, 'doc-1')));
       },
     );
+  });
+
+  describe('barbers — public unless DRAFT (team onboarding D3)', () => {
+    const withStatus = (barberStatus: string) => ({
+      ...BARBER_BODY,
+      barberStatus,
+    });
+
+    it('lets anyone list the PUBLIC barbers — the query /book runs', async () => {
+      await seed('barbers/ivan', withStatus(BarberStatus.Public));
+      await seed('barbers/new', withStatus(BarberStatus.Draft));
+
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(testEnv.unauthenticatedContext().firestore(), 'barbers'),
+            where('barberStatus', '==', BarberStatus.Public),
+          ),
+        ),
+      );
+    });
+
+    it('hides a DRAFT from a visitor and a client, and shows it to staff', async () => {
+      await seed('barbers/new', withStatus(BarberStatus.Draft));
+
+      await assertFails(
+        getDoc(
+          doc(testEnv.unauthenticatedContext().firestore(), 'barbers/new'),
+        ),
+      );
+      await assertFails(
+        getDoc(doc(signedIn('client-1', 'client').firestore(), 'barbers/new')),
+      );
+      await assertSucceeds(
+        getDoc(doc(signedIn('staff-1', 'barber').firestore(), 'barbers/new')),
+      );
+      await assertSucceeds(
+        getDoc(
+          doc(signedIn('desk-1', 'receptionist').firestore(), 'barbers/new'),
+        ),
+      );
+    });
+
+    it('keeps a STAFF_ONLY and a DEPARTED barber readable — names on past visits', async () => {
+      await seed('barbers/student', withStatus(BarberStatus.StaffOnly));
+      await seed('barbers/gone', withStatus(BarberStatus.Departed));
+      const client = signedIn('client-1', 'client').firestore();
+
+      await assertSucceeds(getDoc(doc(client, 'barbers/student')));
+      await assertSucceeds(getDoc(doc(client, 'barbers/gone')));
+    });
+
+    it('refuses an unfiltered barber list to a visitor — it could reach a DRAFT', async () => {
+      await seed('barbers/new', withStatus(BarberStatus.Draft));
+
+      await assertFails(
+        getDocs(
+          collection(testEnv.unauthenticatedContext().firestore(), 'barbers'),
+        ),
+      );
+    });
   });
 
   describe('scheduleExceptions — public read, staff write', () => {

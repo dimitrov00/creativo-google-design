@@ -105,7 +105,7 @@ export const firestoreCatalogPorts = (
           db,
           Collections.Barbers,
           'barberStatus',
-          BarberStatus.Active,
+          BarberStatus.Public,
         ),
       ]);
       return Result.ok({ services, locations, barbers });

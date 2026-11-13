@@ -7,6 +7,7 @@ import { Collections } from '@core/entities';
 import {
   barberFixture,
   FIXTURE_IDS,
+  FIXTURE_NOW_UTC_MS,
   locationFixture,
   serviceFixture,
 } from '@core/testing';
@@ -39,7 +40,13 @@ function seeded() {
     ),
     [`${Collections.Barbers}/${FIXTURE_IDS.barber}`]: bodyOf(barberFixture()),
     [`${Collections.Barbers}/${NIKO}`]: bodyOf(
-      barberFixture({ id: NIKO, barberStatus: BarberStatus.Inactive }),
+      barberFixture(
+        { id: NIKO },
+        {
+          barberStatus: BarberStatus.StaffOnly,
+          barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        },
+      ),
     ),
   });
 }
