@@ -5,6 +5,7 @@ import {
   decodeAddBarber,
   decodeDeleteDraftBarber,
   decodeEditBarber,
+  decodeListTeam,
   decodeSetBarberOfferings,
 } from './team.wire';
 
@@ -469,6 +470,41 @@ describe('decodeActivateBarber / decodeDeleteDraftBarber', () => {
         : { ...sent, ...change };
     for (const decode of [decodeActivateBarber, decodeDeleteDraftBarber]) {
       expect(refusalOf(decode(callable(data)))).toEqual(INVALID(field));
+    }
+  });
+});
+
+describe('decodeListTeam', () => {
+  it('reads nothing but the verified caller — whatever the payload says', () => {
+    expect(decodeListTeam(callable({}))).toEqual({ ok: true, value: CALLER });
+    expect(
+      decodeListTeam(
+        callable({ callerUserId: 'u-forged', callerRoles: ['sysadmin'], x: 1 }),
+      ),
+    ).toEqual({ ok: true, value: CALLER });
+    expect(decodeListTeam(callable(undefined))).toEqual({
+      ok: true,
+      value: CALLER,
+    });
+  });
+
+  it('is the admin’s alone', () => {
+    expect(refusalOf(decodeListTeam(callable({}, null)))).toEqual([
+      TeamErrorCode.Unauthenticated,
+      null,
+    ]);
+    for (const roles of [
+      ['content_manager'],
+      ['receptionist'],
+      ['barber'],
+      ['sysadmin'],
+      ['client'],
+      [],
+    ]) {
+      expect(refusalOf(decodeListTeam(callable({}, roles)))).toEqual([
+        TeamErrorCode.Forbidden,
+        null,
+      ]);
     }
   });
 });

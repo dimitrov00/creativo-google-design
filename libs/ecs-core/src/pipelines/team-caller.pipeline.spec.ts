@@ -9,7 +9,10 @@ import {
   admitTeamStaffCaller,
   TEAM_BARBERS,
   TEAM_LOCATIONS,
+  TEAM_ROSTERS,
   TEAM_SERVICES,
+  TEAM_STAFF_ACCOUNTS,
+  TEAM_STAFF_ACCOUNTS_MAX,
   type TeamCaller,
   teamActor,
 } from './team-caller.pipeline';
@@ -109,5 +112,33 @@ describe('the team pipelines’ whole-collection reads', () => {
         limit: null,
       },
     ]);
+  });
+
+  it('read every roster, and the staff accounts by their stored roles — bounded', () => {
+    expect(TEAM_ROSTERS).toEqual({
+      collection: [Collections.BarberSchedules],
+      where: [],
+      orderBy: [],
+      limit: null,
+    });
+    expect(TEAM_STAFF_ACCOUNTS).toEqual({
+      collection: [Collections.Users],
+      where: [
+        {
+          field: 'roles',
+          op: 'array-contains-any',
+          value: [
+            Role.Barber,
+            Role.Receptionist,
+            Role.ContentManager,
+            Role.Admin,
+            Role.Sysadmin,
+          ],
+        },
+      ],
+      orderBy: [],
+      limit: 200,
+    });
+    expect(TEAM_STAFF_ACCOUNTS_MAX).toBe(200);
   });
 });

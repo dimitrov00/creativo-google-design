@@ -105,3 +105,36 @@ describe('TeamCall.decodeActivation — what the go-live step came to', () => {
     }
   });
 });
+
+describe('TeamCall.decodeListed — the Team page’s rows', () => {
+  const row = {
+    teamMemberStatus: 'ROLE_ONLY',
+    memberUserId: 'u-desk',
+    memberAccountName: 'Яна Димова',
+    memberRoles: ['receptionist'],
+  };
+
+  it('reads every member, and an empty team', () => {
+    expect(
+      unwrapOk(TeamCall.decodeListed({ members: [row, row] })).members,
+    ).toHaveLength(2);
+    expect(unwrapOk(TeamCall.decodeListed({ members: [] }))).toEqual({
+      members: [],
+    });
+  });
+
+  it('refuses the whole answer when it holds no list, or one member cannot be read', () => {
+    for (const raw of [
+      null,
+      {},
+      { members: 'everyone' },
+      { members: [row, { ...row, memberUserId: '' }] },
+      { members: [row, null] },
+    ]) {
+      expect(
+        unwrapErr(TeamCall.decodeListed(raw)).errorCode,
+        JSON.stringify(raw),
+      ).toBe(PipelineErrorCode.Unknown);
+    }
+  });
+});

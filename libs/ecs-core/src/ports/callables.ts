@@ -42,8 +42,9 @@ import type { PipelineError } from '@core/errors';
  * `setAnalyticsGoal`, a scope's month goal; team onboarding adds the barber
  * record's four — `addBarber`, `editBarber`, `activateBarber` and
  * `deleteDraftBarber` — `setBarberOfferings`, a barber's services and
- * prices, and `setDayExceptions`, a barber's days off, blocks and one-day
- * breaks (`docs/designs/team-onboarding.md`, D5, D6, D9, D10, O4).
+ * prices, `setDayExceptions`, a barber's days off, blocks and one-day
+ * breaks, and `listTeam`, the Team page's read
+ * (`docs/designs/team-onboarding.md`, D5, D6, D8, D9, D10, O4).
  * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
@@ -81,6 +82,7 @@ export const Callables = {
   DeleteDraftBarber: 'deleteDraftBarber',
   SetBarberOfferings: 'setBarberOfferings',
   SetDayExceptions: 'setDayExceptions',
+  ListTeam: 'listTeam',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -288,6 +290,14 @@ export type CallableWire = {
     readonly input: DayExceptionsCall;
     readonly answer: DayExceptionsCall.Saved;
   };
+  /**
+   * The Team page's one read (team onboarding D8) — read-only: nothing in,
+   * every barber record and every staff account out as the page's rows.
+   */
+  readonly [Callables.ListTeam]: {
+    readonly input: TeamCall.ListRequest;
+    readonly answer: TeamCall.Listed;
+  };
 };
 
 /**
@@ -347,6 +357,8 @@ export const OPERATION_ID_FIELD: {
   [Callables.DeleteDraftBarber]: 'operationId',
   [Callables.SetBarberOfferings]: 'operationId',
   [Callables.SetDayExceptions]: 'operationId',
+  // A read, like the analytics report: the id is the transport's only.
+  [Callables.ListTeam]: 'operationId',
 };
 
 /**
@@ -398,6 +410,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.DeleteDraftBarber]: AppCheckTokenUse.Standard,
   [Callables.SetBarberOfferings]: AppCheckTokenUse.Standard,
   [Callables.SetDayExceptions]: AppCheckTokenUse.Standard,
+  [Callables.ListTeam]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -469,4 +482,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.DeleteDraftBarber]: TeamCall.decodeSaved,
   [Callables.SetBarberOfferings]: TeamCall.decodeSaved,
   [Callables.SetDayExceptions]: DayExceptionsCall.decodeSaved,
+  [Callables.ListTeam]: TeamCall.decodeListed,
 };

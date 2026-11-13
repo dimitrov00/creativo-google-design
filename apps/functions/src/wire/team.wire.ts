@@ -28,6 +28,7 @@ import {
   admitTeamStaffCaller,
   type DeleteDraftBarberCommand,
   type EditBarberCommand,
+  type ListTeamCommand,
   type SetBarberOfferingsCommand,
   type TeamCaller,
 } from '@core/pipelines';
@@ -50,9 +51,10 @@ import {
  * `setBarberOfferings`, `activateBarber`, `deleteDraftBarber`. The caller
  * and their roles come off the VERIFIED token, never the payload, and the
  * token gate is asked before the payload is read (`TEAM_UNAUTHENTICATED`,
- * `TEAM_FORBIDDEN`): the team manager's for a new record, a deletion, the
- * services and prices, and every edit but the profile; any staff role's
- * for a profile and the go-live step — the
+ * `TEAM_FORBIDDEN`): the team manager's for the Team page's read
+ * (`listTeam`), a new record, a deletion, the services and prices, and
+ * every edit but the profile; any staff role's for a profile and the
+ * go-live step — the
  * pipeline judges the STORED account after it. Every field is re-read
  * through its smart constructor or guard, the first unreadable one named
  * (`TEAM_INVALID_INPUT`). The act's name (`operationId`) is REQUIRED: a
@@ -396,4 +398,16 @@ export function decodeDeleteDraftBarber(
   if (!admitted.ok) return admitted;
   const named = namedOf(payloadOf(request));
   return named.ok ? Result.ok({ ...caller, ...named.value }) : named;
+}
+
+/**
+ * `listTeam` `{}` → `{ members: [...] }` — the team manager's. The call
+ * names nothing: only the verified caller reaches the pipeline.
+ */
+export function decodeListTeam(
+  request: WireRequest,
+): Result<ListTeamCommand, EdgeError> {
+  const caller = callerOf(request);
+  const admitted = admitTeamCaller(caller);
+  return admitted.ok ? Result.ok(caller) : admitted;
 }

@@ -310,6 +310,7 @@ export * from './streak-transition.data';
 export * from './subject-visit-outcome.data';
 export * from './team-barber-action.data';
 export * from './team-call.data';
+export * from './team-member.data';
 export * from './tenant-config.data';
 export * from './tenure-state.data';
 export * from './text-segment.data';

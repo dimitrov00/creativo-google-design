@@ -108,6 +108,7 @@ export * from './streak-preview.system';
 export * from './streak-publish.system';
 export * from './streak-rule.system';
 export * from './streak.system';
+export * from './team-roster.system';
 export * from './team.system';
 export * from './terms-span.system';
 export * from './text-match.system';

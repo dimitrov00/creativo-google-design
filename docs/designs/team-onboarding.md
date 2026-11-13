@@ -628,6 +628,14 @@ member:
 | last day set        | «Последен ден: 31 дек.»                     |
 | no account          | «Без профил в приложението»                 |
 
+As built (stage 1a): `listTeam` reads the caller, every barber record,
+every account holding a staff role (at most 200), every roster and every
+service in one read-only transaction; the rows carry ids, names, roles,
+shop days and counts, and no contact. The two notes that exist without
+invites are «last day set» and «no account»; the three invite notes join
+them with the invites. A staff account linked to no existing record
+(a barber not linked yet included) is a `ROLE_ONLY` row.
+
 **Add sheet.** Preset; name; shops (multi-shop businesses only); start day;
 last day (when the preset needs one); email (when the preset allows one);
 «Копирай цените от» (optional). Below the fields, one informational line

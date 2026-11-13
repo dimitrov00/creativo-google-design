@@ -1020,7 +1020,12 @@
     {
       "collectionGroup": "users",
       "fieldPath": "roles",
-      "indexes": []
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
     },
     {
       "collectionGroup": "positions",
