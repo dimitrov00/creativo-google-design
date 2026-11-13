@@ -366,11 +366,47 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
     });
   });
 
+  it('a first registration keeps the contact the login proved — a form never replaces the stub e-mail or phone', () => {
+    // Signed in by e-mail: a crafted form naming another address (a staff
+    // invitee's, say) is ignored; the phone the login did not verify is
+    // still taken from the form.
+    const byEmailLogin = RegistrationSystem.settle(
+      stub({ email: Email.of('ada@example.com'), phone: null }),
+      fields({
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'mallory@example.com',
+        phone: '+14155550999',
+      }),
+      null,
+    );
+    expect(byEmailLogin).toMatchObject({
+      email: 'ada@example.com',
+      phone: '+14155550999',
+    });
+
+    // Signed in by phone: the same for the number.
+    const byPhoneLogin = RegistrationSystem.settle(
+      stub({ email: null, phone: E164.of('+14155552671') }),
+      fields({
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        phone: '+14155550999',
+        email: 'ada@example.com',
+      }),
+      null,
+    );
+    expect(byPhoneLogin).toMatchObject({
+      phone: '+14155552671',
+      email: 'ada@example.com',
+    });
+  });
+
   it('a blank form e-mail falls back to the stored one; absent names and an unsent phone settle as empty text', () => {
-    // A first registration takes the phone from the form only — the stub's
-    // own number arrives through `effectiveFields` when it is the login.
+    // The stub of an e-mail login holds no phone — the form's (here none)
+    // is the only source.
     const settled = RegistrationSystem.settle(
-      stub({ email: Email.of('ada@example.com') }),
+      stub({ email: Email.of('ada@example.com'), phone: null }),
       fields({ email: '   ' }),
       null,
     );
