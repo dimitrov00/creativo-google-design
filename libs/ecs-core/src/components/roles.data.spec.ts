@@ -143,3 +143,45 @@ describe('Roles.assignsRoles (claims-tolerant)', () => {
     expect(held).toEqual([Role.Barber, Role.Admin]);
   });
 });
+
+describe('Roles.TEAM / Roles.TEAM_PROFILES — who manages the team (team onboarding D5)', () => {
+  it('TEAM is the admin alone; TEAM_PROFILES adds the content editor', () => {
+    expect(Roles.TEAM).toEqual([Role.Admin]);
+    expect(Roles.TEAM_PROFILES).toEqual([Role.ContentManager, Role.Admin]);
+  });
+
+  it('lets the admin manage the team, and nobody else — the sysadmin and the front desk included (claims-tolerant)', () => {
+    expect(Roles.managesTeam([Role.Admin])).toBe(true);
+    expect(Roles.managesTeam([Role.Barber, Role.Admin])).toBe(true);
+    for (const role of [
+      Role.Sysadmin,
+      Role.Barber,
+      Role.Receptionist,
+      Role.ContentManager,
+      Role.Client,
+    ]) {
+      expect(Roles.managesTeam([role]), role).toBe(false);
+    }
+    expect(Roles.managesTeam([])).toBe(false);
+    expect(Roles.managesTeam(['owner', 'ADMIN'])).toBe(false);
+  });
+
+  it('lets the admin and the content editor edit any barber’s profile, and no other role', () => {
+    expect(Roles.editsTeamProfiles([Role.Admin])).toBe(true);
+    expect(Roles.editsTeamProfiles([Role.ContentManager])).toBe(true);
+    for (const role of [
+      Role.Sysadmin,
+      Role.Barber,
+      Role.Receptionist,
+      Role.Client,
+    ]) {
+      expect(Roles.editsTeamProfiles([role]), role).toBe(false);
+    }
+  });
+
+  it('is pure: same roles → same answer, roles untouched', () => {
+    const held = deepFreeze([Role.Barber, Role.Admin]);
+    expect(Roles.managesTeam(held)).toBe(Roles.managesTeam(held));
+    expect(held).toEqual([Role.Barber, Role.Admin]);
+  });
+});

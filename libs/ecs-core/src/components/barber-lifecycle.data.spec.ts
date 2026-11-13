@@ -44,4 +44,24 @@ describe('BarberLifecycle', () => {
       [draft, staffOnly, listed, departed].map(BarberLifecycle.isPublic),
     ).toEqual([false, false, true, false]);
   });
+
+  it('builds a draft with where it goes live, and a live record with its stamp', () => {
+    expect(BarberLifecycle.draft(at, BarberStatus.StaffOnly)).toEqual({
+      barberStatus: 'DRAFT',
+      barberStatusChangedAtUtcMs: at,
+      barberDraftTargetStatus: 'STAFF_ONLY',
+    });
+    expect(BarberLifecycle.live(BarberStatus.Public, at)).toEqual({
+      barberStatus: 'PUBLIC',
+      barberStatusChangedAtUtcMs: at,
+    });
+  });
+
+  it('takes only the two live statuses from an untrusted value', () => {
+    expect(
+      ['STAFF_ONLY', 'PUBLIC', 'DRAFT', 'DEPARTED', 'public', null, 1].map(
+        BarberLifecycle.isLiveStatus,
+      ),
+    ).toEqual([true, true, false, false, false, false, false]);
+  });
 });

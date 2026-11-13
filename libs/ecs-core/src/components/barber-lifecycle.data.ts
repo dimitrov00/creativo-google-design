@@ -38,6 +38,31 @@ export const BarberLifecycle = {
   /** `[STAFF_ONLY, PUBLIC]` — the statuses in which a barber works. */
   LIVE_STATUSES,
 
+  /** A record being set up, and where it goes when it goes live. */
+  draft(
+    atUtcMs: UtcEpochMs,
+    barberDraftTargetStatus: BarberLifecycle.LiveStatus,
+  ): BarberLifecycle.Draft {
+    return {
+      barberStatus: BarberStatus.Draft,
+      barberStatusChangedAtUtcMs: atUtcMs,
+      barberDraftTargetStatus,
+    };
+  },
+
+  /** A working record — staff-only or public — entered at `atUtcMs`. */
+  live(
+    barberStatus: BarberLifecycle.LiveStatus,
+    atUtcMs: UtcEpochMs,
+  ): BarberLifecycle.StaffOnly | BarberLifecycle.Public {
+    return { barberStatus, barberStatusChangedAtUtcMs: atUtcMs };
+  },
+
+  /** The edge guard for an untrusted live status (a callable's payload). */
+  isLiveStatus(value: unknown): value is BarberLifecycle.LiveStatus {
+    return value === BarberStatus.StaffOnly || value === BarberStatus.Public;
+  },
+
   /** Whether the barber works — staff can book them (`STAFF_ONLY` or `PUBLIC`). */
   isLive(
     lifecycle: BarberLifecycle,

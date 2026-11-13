@@ -41,6 +41,7 @@ import {
   SearchQueryErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
+  TeamErrorCode,
   TimeErrorCode,
   WaitlistErrorCode,
   WIRE_PARAM_ALLOWLIST,
@@ -130,6 +131,7 @@ export const EDGE_DICTIONARIES = {
   SearchQueryErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
+  TeamErrorCode,
   TimeErrorCode,
   WaitlistErrorCode,
 } as const;
@@ -162,6 +164,7 @@ export type EdgeCode =
   | SearchQueryErrorCode
   | StaffEditErrorCode
   | StreakPublishErrorCode
+  | TeamErrorCode
   | TimeErrorCode
   | WaitlistErrorCode;
 
@@ -738,6 +741,20 @@ const ENGAGEMENT_WIRE = uniform(
   },
 );
 
+// The team callables (team onboarding D5): who may act, then what was asked.
+const TEAM_WIRE: WireTable<TeamErrorCode> = {
+  [TeamErrorCode.Unauthenticated]: fields(S.Unauthenticated),
+  [TeamErrorCode.Forbidden]: fields(S.PermissionDenied),
+  [TeamErrorCode.InvalidInput]: withField(S.InvalidArgument),
+  [TeamErrorCode.BarberNotFound]: fields(S.NotFound),
+  [TeamErrorCode.BarberDeparted]: fields(S.FailedPrecondition),
+  [TeamErrorCode.PeriodInvalid]: fields(S.InvalidArgument),
+  [TeamErrorCode.ShopUnknown]: fields(S.NotFound),
+  [TeamErrorCode.ShopHasHours]: fields(S.FailedPrecondition),
+  [TeamErrorCode.ServiceUnknown]: fields(S.NotFound),
+  [TeamErrorCode.NotDraft]: fields(S.FailedPrecondition),
+};
+
 const CATALOG_WIRE = uniform(CatalogErrorCode, fields(S.InvalidArgument), {
   // A boundary with no zone to read (`resolveShopZone`): a precondition the
   // deployment owes, as an event with no zone is. The server pipelines fold
@@ -817,6 +834,7 @@ export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
     ...SEARCH_QUERY_WIRE,
     ...STAFF_EDIT_WIRE,
     ...STREAK_PUBLISH_WIRE,
+    ...TEAM_WIRE,
     ...TIME_WIRE,
     ...WAITLIST_WIRE,
   });

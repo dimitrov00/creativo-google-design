@@ -26,7 +26,10 @@ import { Roles } from './roles.data';
  * — the data-subject export and erasure, audit-hardening Phase 3
  * P3-RU-13), and `Roles.ASSIGN` / `Roles.ASSIGNABLE` (the admin alone, and
  * every role but the sysadmin — the `setRoles` roles change, security
- * hardening S-RU-14; `users.roles` takes no client write at all).
+ * hardening S-RU-14; `users.roles` takes no client write at all), and
+ * `Roles.TEAM` / `Roles.TEAM_PROFILES` (the admin alone, and the content
+ * editor beside the admin — the team callables, team onboarding D5;
+ * `barbers` and `services` take no client write).
  *
  * The reader is `@core/testing`'s `rules-text.ts` — the one every
  * rules-text spec parses the file with (its own cases sit beside it).

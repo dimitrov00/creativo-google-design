@@ -126,6 +126,10 @@ export type PipelineError = {
 export const WIRE_PARAM_ALLOWLIST: {
   readonly [errorCode: string]: readonly string[];
 } = {
+  // The team callables: the shop or the service a refusal names.
+  TEAM_SHOP_UNKNOWN: ['locationId'],
+  TEAM_SHOP_HAS_HOURS: ['locationId'],
+  TEAM_SERVICE_UNKNOWN: ['serviceId'],
   BOOKING_UNKNOWN_SERVICE: ['serviceId'],
   BOOKING_SERVICE_NOT_AT_LOCATION: ['serviceId', 'locationId'],
   BOOKING_CONFLICTING_SERVICES: ['first', 'second'],
