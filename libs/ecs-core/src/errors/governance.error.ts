@@ -73,7 +73,7 @@ export const GovernanceErrorCode = {
   RolesForbidden: 'GOVERNANCE_ROLES_FORBIDDEN',
   /** The requested set is empty, or names a role outside `Roles.ASSIGNABLE` (unknown, or the sysadmin). */
   RolesInvalid: 'GOVERNANCE_ROLES_INVALID',
-  /** An admin cannot change their own roles. */
+  /** An admin's own account takes only a set that keeps `admin` — nobody takes the admin role from themself. */
   RolesSelf: 'GOVERNANCE_ROLES_SELF',
   /** `setRoles` named a uid with no account document. */
   RolesTargetNotFound: 'GOVERNANCE_ROLES_TARGET_NOT_FOUND',
@@ -390,7 +390,7 @@ export namespace GovernanceError {
   };
   export type RolesSelf = {
     readonly errorCode: typeof GovernanceErrorCode.RolesSelf;
-    /** The admin who named their own account. */
+    /** The admin who asked their own account for a set without `admin`. */
     readonly callerUserId: UserId;
   };
   export type RolesTargetNotFound = {

@@ -461,6 +461,15 @@ function granted(field, standard) {
 - This overturns the cut in team onboarding ("An admin linking their own
   account as a barber"). The reason for the cut was token handling, which
   the line above removes.
+- **As built (stage 0).** `RoleAssignmentSystem.decide` asks the target's
+  guards and the set's own rules first, then refuses the caller's own
+  account a set that holds no `Roles.ASSIGN` role (`GOVERNANCE_ROLES_SELF`,
+  the code that used to refuse every self-change).
+  `RoleAssignmentSystem.revokesSessions` is the rule for the revoke. The
+  pipeline reads the one account once, as caller and target. An admin who
+  also holds `sysadmin` is refused as any sysadmin target is. The client
+  card still does not offer «Роли» on the viewer's own account; the door is
+  the Team screen.
 
 ### P10. The screens
 
@@ -584,8 +593,9 @@ edits something, except where it closes a gap.
 
 **0. The owner as a barber.** `setRoles` admits a self-change that keeps
 `admin`, with no revoke. Exit: the pipeline and property specs, and an
-emulator case that links an admin to a record and reads their own
-analytics.
+emulator case that links an admin to a record, finds no session revoked,
+and has analytics admit the account's own scope. Built; the «Това съм аз»
+door lands with the Team screen.
 
 **A. The engine, and the calls that already read the account.** The
 catalogue, the defaults and the spec that pins them to today's lists;
