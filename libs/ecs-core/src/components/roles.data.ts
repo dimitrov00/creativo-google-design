@@ -120,6 +120,27 @@ export const Roles = {
   ASSIGN: [Role.Admin],
 
   /**
+   * The roles that MANAGE THE TEAM — add a barber, set their shops,
+   * services and prices, working period, booking access and «Който и да е»
+   * flag, let them go, delete a draft (team onboarding D5): the shop's
+   * admin ONLY. Prices are the owner's (`MONEY` is about discounts on a
+   * visit and includes the front desk); the sysadmin is the vendor's
+   * support role. CALLABLE-ONLY, as {@link Roles.ASSIGN}: `barbers` and
+   * `services` take no client write, so no rules helper twins it; the
+   * server re-reads the caller's STORED roles against it.
+   */
+  TEAM: [Role.Admin],
+
+  /**
+   * The roles that may edit ANY barber's public profile — name, photo,
+   * title, bio, Instagram, experience (team onboarding D5): the content
+   * editor (a copy-and-media role) and the admin. A barber edits their own
+   * through their account's link, whatever this list says. CALLABLE-ONLY,
+   * as {@link Roles.TEAM}.
+   */
+  TEAM_PROFILES: [Role.ContentManager, Role.Admin],
+
+  /**
    * The roles `setRoles` may grant or take away — every role but the
    * vendor's `sysadmin`, dictionary order (S-RU-14). CALLABLE-ONLY, as
    * {@link Roles.ASSIGN}.
@@ -213,6 +234,23 @@ export const Roles = {
    */
   assignsRoles(roles: readonly string[]): boolean {
     return anyIn(Roles.ASSIGN, roles);
+  },
+
+  /**
+   * Whether a role set manages the team (`TEAM` — the admin alone): the
+   * team callables' gate on the claims, their systems' on the stored
+   * roles, and the Team page's route guard. Claims-tolerant like `mayBook`.
+   */
+  managesTeam(roles: readonly string[]): boolean {
+    return anyIn(Roles.TEAM, roles);
+  },
+
+  /**
+   * Whether a role set may edit any barber's public profile
+   * (`TEAM_PROFILES`). Claims-tolerant like `mayBook`.
+   */
+  editsTeamProfiles(roles: readonly string[]): boolean {
+    return anyIn(Roles.TEAM_PROFILES, roles);
   },
 
   /**

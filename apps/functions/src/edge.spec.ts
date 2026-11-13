@@ -54,6 +54,7 @@ import {
   StaffEditErrorCode,
   StreakPublishError,
   StreakPublishErrorCode,
+  TeamErrorCode,
   TimeError,
   TimeErrorCode,
   WaitlistError,
@@ -455,6 +456,7 @@ describe('edge — the wire table', () => {
           PrivacyErrorCode.InvalidInput,
           AnalyticsErrorCode.InvalidInput,
           AnalyticsErrorCode.GoalInvalidRange,
+          TeamErrorCode.InvalidInput,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([
