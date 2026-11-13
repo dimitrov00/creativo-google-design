@@ -48,6 +48,7 @@ import {
   utcMs,
   minuteCount,
   termsFixture,
+  OPEN_BARBER_DAY,
 } from '@core/testing';
 import { AvailabilitySystem } from './availability.system';
 import type { CartBarberDay, CartService } from './booking-cart.system';
@@ -960,6 +961,7 @@ function snapshot(
       );
     if (windows.length === 0) continue;
     out.push({
+      ...OPEN_BARBER_DAY,
       barberId: id,
       windows,
       busy: AvailabilitySystem.paddedBusy(

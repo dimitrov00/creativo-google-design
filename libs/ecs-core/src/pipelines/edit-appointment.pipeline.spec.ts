@@ -113,6 +113,7 @@ import {
   until,
   unwrapOk,
   utcMs,
+  barberFixture,
 } from '@core/testing';
 import {
   type EditAppointmentCommand,
@@ -165,6 +166,10 @@ function catalogue() {
     {
       path: [Collections.Services, FIXTURE_IDS.service],
       body: bodyOf(serviceFixture()),
+    },
+    {
+      path: [Collections.Barbers, FIXTURE_IDS.barber],
+      body: bodyOf(barberFixture()),
     },
     {
       path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
@@ -868,6 +873,10 @@ describe('editAppointment — the shop moving its own book', () => {
           body: bodyOf(
             serviceFixture({ locationIds: [FIXTURE_IDS.location, MLADOST] }),
           ),
+        },
+        {
+          path: [Collections.Barbers, FIXTURE_IDS.barber],
+          body: bodyOf(barberFixture()),
         },
         {
           path: [Collections.BarberSchedules, FIXTURE_IDS.barber],

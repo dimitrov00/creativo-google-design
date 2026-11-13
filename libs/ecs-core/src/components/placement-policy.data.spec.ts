@@ -8,6 +8,7 @@ describe('PlacementPolicy', () => {
       allowOverlap: false,
       allowConflictingServices: false,
       skipMinNotice: false,
+      allowStaffOnlyBarbers: false,
     });
   });
 
@@ -17,6 +18,7 @@ describe('PlacementPolicy', () => {
       skipMinNotice: true,
       allowOverlap: false,
       allowConflictingServices: true,
+      allowStaffOnlyBarbers: true,
     });
     // The staff edit acknowledges the overlap on top of the same preset.
     expect(
@@ -26,6 +28,7 @@ describe('PlacementPolicy', () => {
       skipMinNotice: true,
       allowOverlap: true,
       allowConflictingServices: true,
+      allowStaffOnlyBarbers: true,
     });
   });
 

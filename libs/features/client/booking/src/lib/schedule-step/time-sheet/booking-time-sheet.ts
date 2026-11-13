@@ -193,10 +193,6 @@ export class BookingTimeSheet {
     ZonedTimeSystem.shopNow(this.clock.nowUtcMs(), this.zone()),
   );
 
-  private readonly barberIds = computed<readonly BarberId[]>(() =>
-    this.catalog.barbers().map((barber) => barber.id),
-  );
-
   /** The subtitle: the day this sheet is about. */
   protected readonly dayLabel = computed(() =>
     formatBookingDay(this.day(), this.content.locale()),
@@ -211,7 +207,8 @@ export class BookingTimeSheet {
     return {
       cart,
       services: this.catalog.services(),
-      barberIds: this.barberIds(),
+      // The PUBLIC barber records: pool and working period ride along (D3).
+      barbers: this.catalog.barbers(),
       locationId: this.store.locationId(),
       localDate: this.day(),
       policy: this.policy(),

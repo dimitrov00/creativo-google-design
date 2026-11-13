@@ -1,5 +1,6 @@
 import {
   type AppointmentId,
+  type BarberBookabilityReason,
   BarberId,
   type LocalDate,
   LocationId,
@@ -38,6 +39,7 @@ export const BookingErrorCode = {
   ServiceNotAtLocation: 'BOOKING_SERVICE_NOT_AT_LOCATION',
   ConflictingServices: 'BOOKING_CONFLICTING_SERVICES',
   BarberNotRostered: 'BOOKING_BARBER_NOT_ROSTERED',
+  BarberNotBookable: 'BOOKING_BARBER_NOT_BOOKABLE',
   SlotUnavailable: 'BOOKING_SLOT_UNAVAILABLE',
   TooSoon: 'BOOKING_TOO_SOON',
   BeyondHorizon: 'BOOKING_BEYOND_HORIZON',
@@ -138,6 +140,7 @@ export type BookingError =
   | BookingError.ServiceNotAtLocation
   | BookingError.ConflictingServices
   | BookingError.BarberNotRostered
+  | BookingError.BarberNotBookable
   | BookingError.SlotUnavailable
   | BookingError.TooSoon
   | BookingError.BeyondHorizon
@@ -210,6 +213,18 @@ export const BookingError = {
     localDate: LocalDate,
   ): BookingError.BarberNotRostered {
     return { errorCode: E.BarberNotRostered, barberId, localDate };
+  },
+  barberNotBookable(
+    barberId: BarberId,
+    localDate: LocalDate,
+    barberBookabilityReason: BarberBookabilityReason,
+  ): BookingError.BarberNotBookable {
+    return {
+      errorCode: E.BarberNotBookable,
+      barberId,
+      localDate,
+      barberBookabilityReason,
+    };
   },
   slotUnavailable(
     barberId: BarberId,
@@ -325,6 +340,16 @@ export namespace BookingError {
     readonly errorCode: typeof BookingErrorCode.BarberNotRostered;
     readonly barberId: BarberId;
     readonly localDate: LocalDate;
+  };
+  /**
+   * A seat placed on a barber who cannot be booked by this asker on that
+   * shop day (team onboarding D3) — why, as a reason tag the UI words.
+   */
+  export type BarberNotBookable = {
+    readonly errorCode: typeof BookingErrorCode.BarberNotBookable;
+    readonly barberId: BarberId;
+    readonly localDate: LocalDate;
+    readonly barberBookabilityReason: BarberBookabilityReason;
   };
   /**
    * `seatIndex` is the request seat the refusal is about; `localDate` +

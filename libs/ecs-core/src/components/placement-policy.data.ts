@@ -15,13 +15,18 @@
  * - `allowOverlap` — staff may double-book, but only once they ACKNOWLEDGED it
  *   («Запази въпреки застъпването»), so it is never part of a preset;
  * - `allowConflictingServices` — the catalogue's `conflictsWith` is the
- *   client's self-booking rule, which the shop's own book need not obey.
+ *   client's self-booking rule, which the shop's own book need not obey;
+ * - `allowStaffOnlyBarbers` — a `STAFF_ONLY` barber (a soft start, a course
+ *   student) is booked by the shop, never by a client online (team
+ *   onboarding D3). No policy exempts a seat from the barber's lifecycle or
+ *   working period.
  */
 export type PlacementPolicy = {
   readonly allowOutsideWindow: boolean;
   readonly allowOverlap: boolean;
   readonly allowConflictingServices: boolean;
   readonly skipMinNotice: boolean;
+  readonly allowStaffOnlyBarbers: boolean;
 };
 
 const CLIENT_DEFAULT: PlacementPolicy = {
@@ -29,6 +34,7 @@ const CLIENT_DEFAULT: PlacementPolicy = {
   allowOverlap: false,
   allowConflictingServices: false,
   skipMinNotice: false,
+  allowStaffOnlyBarbers: false,
 };
 
 const STAFF_PLACEMENT: PlacementPolicy = {
@@ -36,6 +42,7 @@ const STAFF_PLACEMENT: PlacementPolicy = {
   allowOverlap: false,
   allowConflictingServices: true,
   skipMinNotice: true,
+  allowStaffOnlyBarbers: true,
 };
 
 export const PlacementPolicy = {

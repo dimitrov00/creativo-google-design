@@ -190,6 +190,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
             {
               shopHours: [],
               services: CATALOGUE,
+              barbers: [],
               schedules: [],
               busy: [],
               exceptions: [],

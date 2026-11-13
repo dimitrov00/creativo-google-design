@@ -33,6 +33,7 @@
     "BOOKING_SERVICE_NOT_AT_LOCATION": "That service is not offered at this shop.",
     "BOOKING_CONFLICTING_SERVICES": "Those services cannot be combined.",
     "BOOKING_BARBER_NOT_ROSTERED": "That barber does not work then.",
+    "BOOKING_BARBER_NOT_BOOKABLE": "That barber cannot be booked for that day.",
     "BOOKING_SLOT_UNAVAILABLE": "That time is already taken.",
     "BOOKING_TOO_SOON": "Bookings need at least {{minLeadMinutes}} minutes' notice.",
     "BOOKING_BEYOND_HORIZON": "We are not taking bookings that far ahead yet.",

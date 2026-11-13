@@ -143,6 +143,7 @@ function line(
       ...pref,
       ...terms(durationMinutes, pads.before ?? 0, pads.after ?? 0),
       termsByBarber: [],
+      barberEligible: [],
       personKey: personKey === null ? null : SeatKeyText.of(personKey),
     },
     overrides,

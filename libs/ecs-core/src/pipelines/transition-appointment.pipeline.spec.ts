@@ -96,6 +96,7 @@ import {
   until,
   unwrapOk,
   utcMs,
+  barberFixture,
 } from '@core/testing';
 import {
   type BookAppointmentCommand,
@@ -1272,6 +1273,10 @@ function windowRig() {
     {
       path: [Collections.Services, FIXTURE_IDS.service],
       body: bodyOf(serviceFixture()),
+    },
+    {
+      path: [Collections.Barbers, FIXTURE_IDS.barber],
+      body: bodyOf(barberFixture()),
     },
     {
       path: [Collections.BarberSchedules, FIXTURE_IDS.barber],

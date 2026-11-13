@@ -900,6 +900,8 @@ function decideEdit(
     standing.push({
       seatId: seat.seatId,
       subject,
+      barberId: seat.barberId,
+      localDate: stored.localDate,
       startMinutes: seat.startMinutes,
       durationMinutes: seat.durationMinutes,
     });

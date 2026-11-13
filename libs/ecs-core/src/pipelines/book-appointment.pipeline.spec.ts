@@ -1,6 +1,7 @@
 import {
   Actor,
   AuditAction,
+  BarberStatus,
   BlockKind,
   BookingPolicy,
   CustomerOrigin,
@@ -22,6 +23,7 @@ import {
 } from '@core/components';
 import {
   AppointmentId,
+  BarberBookabilityReason,
   BarberBusyDayId,
   BusyKey,
   CustomerId,
@@ -42,6 +44,7 @@ import {
 import {
   type AccountContact,
   type AuditEntry,
+  type Barber,
   type BarberBusyDay,
   Collections,
   type Customer,
@@ -78,6 +81,7 @@ import {
   serviceFixture,
   until,
   utcMs,
+  barberFixture,
 } from '@core/testing';
 import {
   type BookAppointmentCommand,
@@ -106,6 +110,10 @@ function catalogue(locationStatus: LocationStatus = LocationStatus.Active) {
     {
       path: [Collections.Services, FIXTURE_IDS.service],
       body: bodyOf(serviceFixture()),
+    },
+    {
+      path: [Collections.Barbers, FIXTURE_IDS.barber],
+      body: bodyOf(barberFixture()),
     },
     {
       path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
@@ -304,13 +312,14 @@ describe('bookAppointment', () => {
     await run(command());
     const reads = tx.transactions[0]?.reads.map((path) => path.join('/')) ?? [];
     expect(reads[0]).toBe(`${Collections.Appointments}/${ATTEMPT}`);
-    expect(reads.slice(1, 5)).toEqual([
+    expect(reads.slice(1, 6)).toEqual([
       `${Collections.Locations}/${FIXTURE_IDS.location}`,
       `${Collections.Services}/${FIXTURE_IDS.service}`,
       `${Collections.BarberSchedules}/${FIXTURE_IDS.barber}`,
+      `${Collections.Barbers}/${FIXTURE_IDS.barber}`,
       CUSTOMER_PATH,
     ]);
-    expect(reads.slice(5)).toEqual([
+    expect(reads.slice(6)).toEqual([
       `${Collections.BarberBusy}/${BUSY_KEY}`,
       `${Collections.ScheduleExceptions}/${BUSY_KEY}`,
     ]);
@@ -845,6 +854,68 @@ describe('bookAppointment', () => {
   });
 });
 
+describe('bookAppointment — who may be booked (team onboarding D3)', () => {
+  /** The catalogue with Ivan's record replaced by `barber`. */
+  function withIvan(barber: Barber) {
+    return catalogue().map((document) =>
+      document.path[0] === Collections.Barbers
+        ? { ...document, body: bodyOf(barber) }
+        : document,
+    );
+  }
+  const desk = Actor.staff(UserId.of('u-staff'), []);
+  const staffOnly = barberFixture(
+    {},
+    {
+      barberStatus: BarberStatus.StaffOnly,
+      barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    },
+  );
+
+  it('refuses a client booking a staff-only barber, and writes nothing', async () => {
+    const { store, run } = rig(withIvan(staffOnly));
+    const answer = await run(command());
+    expect(answer).toEqual({
+      ok: false,
+      error: {
+        errorCode: BookingErrorCode.BarberNotBookable,
+        barberId: FIXTURE_IDS.barber,
+        localDate: TOMORROW,
+        barberBookabilityReason: BarberBookabilityReason.StaffOnly,
+      },
+    });
+    expect(store.get(`${Collections.Appointments}/${ATTEMPT}`)).toBeUndefined();
+  });
+
+  it('lets the desk book the same staff-only barber', async () => {
+    const { run } = rig(withIvan(staffOnly));
+    const answer = await run(command({ staffPlacement: true, actor: desk }));
+    expect(answer.ok).toBe(true);
+  });
+
+  it('refuses everyone a barber whose working period has not started, and a barber with no record', async () => {
+    const newcomer = barberFixture({
+      barberStartsLocalDate: localDate('2099-01-01'),
+    });
+    const before = await rig(withIvan(newcomer)).run(
+      command({ staffPlacement: true, actor: desk }),
+    );
+    expect(before.ok ? null : before.error).toMatchObject({
+      errorCode: BookingErrorCode.BarberNotBookable,
+      barberBookabilityReason: BarberBookabilityReason.BeforeStart,
+    });
+
+    const noRecord = catalogue().filter(
+      (document) => document.path[0] !== Collections.Barbers,
+    );
+    const unknown = await rig(noRecord).run(command());
+    expect(unknown.ok ? null : unknown.error).toMatchObject({
+      errorCode: BookingErrorCode.BarberNotBookable,
+      barberBookabilityReason: BarberBookabilityReason.Unknown,
+    });
+  });
+});
+
 describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', () => {
   const MARIA_PHONE = E164.of('+359888123456');
   const MARIA_RECORD = CustomerId.forWalkIn(MARIA_PHONE, fixtureWalkInHash);
@@ -918,10 +989,11 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
     expect(store.get(MARIA_PATH)).toEqual(expected);
     // The record rides the phase-one getAll — no extra round trip.
     const reads = tx.transactions[0]?.reads.map((path) => path.join('/')) ?? [];
-    expect(reads.slice(1, 5)).toEqual([
+    expect(reads.slice(1, 6)).toEqual([
       `${Collections.Locations}/${FIXTURE_IDS.location}`,
       `${Collections.Services}/${FIXTURE_IDS.service}`,
       `${Collections.BarberSchedules}/${FIXTURE_IDS.barber}`,
+      `${Collections.Barbers}/${FIXTURE_IDS.barber}`,
       MARIA_PATH,
     ]);
     const appointment = store.get(`${Collections.Appointments}/${ATTEMPT}`);

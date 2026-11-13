@@ -72,6 +72,7 @@ import {
   serviceFixture,
   until,
   utcMs,
+  barberFixture,
 } from '@core/testing';
 import {
   type RescheduleAppointmentCommand,
@@ -116,6 +117,10 @@ function catalogue(
       path: [Collections.Services, service.id],
       body: bodyOf(service),
     })),
+    {
+      path: [Collections.Barbers, FIXTURE_IDS.barber],
+      body: bodyOf(barberFixture()),
+    },
     {
       path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
       body: bodyOf(barberScheduleFixture()),
@@ -891,8 +896,16 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
           ),
         },
         {
+          path: [Collections.Barbers, FIXTURE_IDS.barber],
+          body: bodyOf(barberFixture()),
+        },
+        {
           path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
           body: bodyOf(barberScheduleFixture()),
+        },
+        {
+          path: [Collections.Barbers, NIKO],
+          body: bodyOf(barberFixture({ id: NIKO })),
         },
         {
           path: [Collections.BarberSchedules, NIKO],

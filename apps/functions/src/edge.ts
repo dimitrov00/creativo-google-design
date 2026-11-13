@@ -296,6 +296,7 @@ const BOOKING_WIRE: WireTable<BookingErrorCode> = {
   [BookingErrorCode.ServiceNotAtLocation]: fields(S.FailedPrecondition),
   [BookingErrorCode.ConflictingServices]: fields(S.FailedPrecondition),
   [BookingErrorCode.BarberNotRostered]: fields(S.FailedPrecondition),
+  [BookingErrorCode.BarberNotBookable]: fields(S.FailedPrecondition),
   // `aborted`: the honest status of a lost race, retryable as no other is.
   [BookingErrorCode.SlotUnavailable]: fields(S.Aborted),
   [BookingErrorCode.TooSoon]: fields(S.FailedPrecondition),

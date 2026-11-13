@@ -62,6 +62,14 @@ export type BarberTerms = {
 export type AvailabilityLine = {
   readonly lineId: CartLineId;
   readonly termsByBarber: readonly LineTerms[];
+  /**
+   * DENSE and parallel to `AvailabilityQuery.barbers`, like
+   * `termsByBarber`: `false` where barber `b` may not take this line — out
+   * of the «Който и да е» pool for an `ANY` line, or not performing the
+   * service (`BarberBookabilitySystem`, the rule the commit applies). A
+   * missing entry is eligible.
+   */
+  readonly barberEligible: readonly boolean[];
   readonly personKey: SeatKeyText | null;
 } & LineTerms &
   BarberPref;
@@ -412,6 +420,7 @@ function search(
     for (let b = 0; b < barberCount; b++) {
       const barber = barbers[b] as BarberDayAvailability;
       if (!BarberPref.matches(line, barber.barberId)) continue;
+      if (line.barberEligible[b] === false) continue;
       eligible[eligibleCount++] = b;
       const terms = termsAt(line, b);
       const k = p * barberCount + b;

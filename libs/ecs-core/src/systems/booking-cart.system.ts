@@ -1,4 +1,5 @@
 import {
+  BarberEmployment,
   BarberPref,
   BookingCall,
   type BookingPolicy,
@@ -58,6 +59,10 @@ import {
   type LineTerms,
   type SearchBudget,
 } from './availability.system';
+import {
+  BarberBookabilitySystem,
+  type BookableBarber,
+} from './barber-bookability.system';
 import { GuestLabelSystem } from './guest-label.system';
 import { LocationScopeSystem } from './location-scope.system';
 import { MoveSystem } from './move.system';
@@ -113,7 +118,9 @@ export type CartBarberDay = {
   readonly barberId: BarberId;
   readonly windows: readonly RosterWindow[];
   readonly busy: readonly MinuteRange[];
-};
+  /** Whether a «Който и да е» line may land here (team onboarding D3). */
+  readonly barberJoinsAnyPool: boolean;
+} & BarberEmployment;
 
 /**
  * One shop day's question (`observe-availability.use-case.ts:255-306`): the
@@ -215,8 +222,12 @@ export type DayQuery = {
   readonly cart: BookingCart;
   /** The catalogue the bag's service ids resolve against. */
   readonly services: readonly Service[];
-  /** Every ACTIVE barber — the roster decides who works where, not this list. */
-  readonly barberIds: readonly BarberId[];
+  /**
+   * Every PUBLIC barber record — the roster decides who works where, not
+   * this list; the record says whether they are in the «Който и да е» pool
+   * and when they work (team onboarding D3).
+   */
+  readonly barbers: readonly BookableBarber[];
   /** `null` ⇒ "any shop": every shop is a candidate and each option names its own. */
   readonly locationId: LocationId | null;
   readonly localDate: LocalDate;
@@ -239,6 +250,18 @@ export type DayQuery = {
 
 const SELF_KEY = SeatKeyText.of('self');
 const GUEST_PREFIX = 'guest-';
+
+/** The barber record by id, or `null` — a linear scan of a handful. */
+function recordOf(
+  barbers: readonly BookableBarber[],
+  barberId: BarberId,
+): BookableBarber | null {
+  for (let i = 0; i < barbers.length; i++) {
+    const barber = barbers[i] as BookableBarber;
+    if (barber.id === barberId) return barber;
+  }
+  return null;
+}
 
 function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -457,6 +480,7 @@ export const BookingCartSystem = {
     cart: BookingCart,
     services: readonly CartService[],
     barberIds: readonly BarberId[],
+    joinsAnyPool: readonly boolean[],
   ): readonly AvailabilityLine[] {
     const lines: AvailabilityLine[] = [];
     for (let s = 0; s < cart.cartSeats.length; s++) {
@@ -468,8 +492,18 @@ export const BookingCartSystem = {
         const defaults = lineTermsOf(
           OfferingPriceSystem.termsFor(service, null, line.variantId),
         );
+        const pref = BarberPref.fromBarberId(line.barberId);
         const termsByBarber: LineTerms[] = [];
+        const barberEligible: boolean[] = [];
         for (let b = 0; b < barberIds.length; b++) {
+          barberEligible.push(
+            BarberBookabilitySystem.takesLine(
+              service,
+              barberIds[b] as BarberId,
+              joinsAnyPool[b] ?? true,
+              pref.barberPreference,
+            ),
+          );
           termsByBarber.push(
             lineTermsOf(
               OfferingPriceSystem.termsFor(
@@ -482,11 +516,12 @@ export const BookingCartSystem = {
         }
         lines.push({
           lineId: line.lineId,
-          ...BarberPref.fromBarberId(line.barberId),
+          ...pref,
           durationMinutes: defaults.durationMinutes,
           padBeforeMinutes: defaults.padBeforeMinutes,
           padAfterMinutes: defaults.padAfterMinutes,
           termsByBarber,
+          barberEligible,
           personKey: seat.seatKey,
         });
       }
@@ -569,10 +604,13 @@ export const BookingCartSystem = {
     // barber's struct built once after the walk.
     const shops: LocationId[] = [];
     const poolIds: BarberId[][] = [];
+    const poolJoinsAny: boolean[][] = [];
     const poolBusy: (readonly MinuteRange[])[][] = [];
     const poolWindows: RosterWindow[][][] = [];
     for (let b = 0; b < query.barbers.length; b++) {
       const barber = query.barbers[b] as CartBarberDay;
+      // Nobody is offered outside their working period (team onboarding D3).
+      if (!BarberEmployment.covers(barber, query.localDate)) continue;
       for (let w = 0; w < barber.windows.length; w++) {
         const window = barber.windows[w] as RosterWindow;
         let at = shops.indexOf(window.locationId);
@@ -580,6 +618,7 @@ export const BookingCartSystem = {
           at = shops.length;
           shops.push(window.locationId);
           poolIds.push([]);
+          poolJoinsAny.push([]);
           poolBusy.push([]);
           poolWindows.push([]);
         }
@@ -587,6 +626,7 @@ export const BookingCartSystem = {
         const mine = ids.indexOf(barber.barberId);
         if (mine === -1) {
           ids.push(barber.barberId);
+          (poolJoinsAny[at] as boolean[]).push(barber.barberJoinsAnyPool);
           (poolBusy[at] as (readonly MinuteRange[])[]).push(barber.busy);
           (poolWindows[at] as RosterWindow[][]).push([window]);
         } else {
@@ -634,6 +674,7 @@ export const BookingCartSystem = {
         query.cart,
         query.services,
         ids,
+        poolJoinsAny[index] as boolean[],
       );
       const result = AvailabilitySystem.availableStarts(
         {
@@ -1135,11 +1176,15 @@ export const BookingCartSystem = {
    * release to hand back).
    */
   dayDocsKey(
-    query: Pick<DayQuery, 'localDate' | 'barberIds' | 'locationId' | 'release'>,
+    query: Pick<DayQuery, 'localDate' | 'barbers' | 'locationId' | 'release'>,
   ): DayDocsKey {
+    const barberIds: BarberId[] = [];
+    for (let i = 0; i < query.barbers.length; i++) {
+      barberIds.push((query.barbers[i] as BookableBarber).id);
+    }
     return {
       localDate: query.localDate,
-      barberIds: [...query.barberIds].sort(compareIds),
+      barberIds: barberIds.sort(compareIds),
       namedLocationId:
         query.locationId !== null && query.release.length > 0
           ? query.locationId
@@ -1186,6 +1231,8 @@ export const BookingCartSystem = {
     for (let b = 0; b < docs.barbers.length; b++) {
       const barber = docs.barbers[b] as BarberDayDocs;
       if (barber.schedule === null) continue;
+      const record = recordOf(query.barbers, barber.barberId);
+      if (record === null) continue;
       // Only at a shop the day may offer (`RosterSystem.offeredWindows`).
       const all = RosterSystem.offeredWindows({
         barberId: barber.barberId,
@@ -1208,6 +1255,9 @@ export const BookingCartSystem = {
           barber.schedule,
           release,
         ),
+        barberJoinsAnyPool: record.barberJoinsAnyPool,
+        barberStartsLocalDate: record.barberStartsLocalDate,
+        barberLastWorkingLocalDate: record.barberLastWorkingLocalDate,
       });
     }
     return days;

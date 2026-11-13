@@ -68,6 +68,8 @@ import {
   locationFixture,
   scheduleExceptionFixture,
   serviceFixture,
+  barberFixture,
+  OPEN_BARBER_DAY,
 } from '@core/testing';
 import {
   type AvailabilityLine,
@@ -679,6 +681,7 @@ function barberDay(
     barberId: barber(id),
     windows: [rosterWindow(id, CENTER, hours[0], hours[1])],
     busy: [],
+    ...OPEN_BARBER_DAY,
   };
 }
 
@@ -726,6 +729,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
       cartWithFade(),
       [fadeService()],
       [barber('ivan'), barber('niko')],
+      [],
     );
 
     expect(lines).toHaveLength(1);
@@ -756,6 +760,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
       cart,
       [fadeService()],
       [barber('ivan'), barber('niko')],
+      [],
     );
 
     expect(lines.map((l) => l.personKey)).toEqual(['self', 'guest-3']);
@@ -775,6 +780,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
       cart,
       [fadeService(), beard],
       [barber('ivan'), barber('niko')],
+      [],
     );
 
     const options = optionsFor({
@@ -803,6 +809,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
         cartWithFade(),
         [],
         [barber('ivan')],
+        [],
       ),
     ).toEqual([]);
   });
@@ -887,6 +894,64 @@ describe('BookingCartSystem.optionsForDay', () => {
   });
 });
 
+describe('BookingCartSystem.optionsForDay — who may take a line (team onboarding D3)', () => {
+  const policy = policyWithLead(120);
+  const firstBarbers = (options: ReturnType<typeof optionsFor>) =>
+    new Set(options.map(({ option }) => option.assignments[0]?.barberId));
+
+  it('never gives a «Който и да е» line to a barber out of the pool — a named line still reaches them', () => {
+    const niko = {
+      ...barberDay('niko', [mins(14), mins(15)]),
+      barberJoinsAnyPool: false,
+    };
+    const ivan = barberDay('ivan', [mins(12), mins(12, 30)]);
+    const anyone = optionsFor({
+      cart: cartWithFade(),
+      services: [fadeService()],
+      barbers: [ivan, niko],
+      policy,
+      now: nowAt(6),
+    });
+    expect(firstBarbers(anyone)).toEqual(new Set([barber('ivan')]));
+
+    const named = optionsFor({
+      cart: cartWithFade('niko'),
+      services: [fadeService()],
+      barbers: [ivan, niko],
+      policy,
+      now: nowAt(6),
+    });
+    expect(firstBarbers(named)).toEqual(new Set([barber('niko')]));
+  });
+
+  it('never gives a line to a barber the service does not list', () => {
+    const georgi = barberDay('georgi', [mins(12), mins(13)]);
+    const options = optionsFor({
+      cart: cartWithFade(),
+      services: [fadeService()],
+      barbers: [georgi],
+      policy,
+      now: nowAt(6),
+    });
+    expect(options).toEqual([]);
+  });
+
+  it('offers nobody outside their working period', () => {
+    const starting = {
+      ...barberDay('ivan', [mins(12), mins(13)]),
+      barberStartsLocalDate: localDate('2099-01-01'),
+    };
+    const options = optionsFor({
+      cart: cartWithFade(),
+      services: [fadeService()],
+      barbers: [starting],
+      policy,
+      now: nowAt(6),
+    });
+    expect(options).toEqual([]);
+  });
+});
+
 describe('BookingCartSystem.optionsForDay — a move', () => {
   const policy = policyWithLead(120);
   /** The client keeps Ivan for their fade: 30 minutes with him. */
@@ -910,6 +975,7 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
     release: readonly ChairTime[] = [],
   ): readonly CartBarberDay[] {
     return days.map((entry) => ({
+      ...OPEN_BARBER_DAY,
       barberId: barber(entry.id),
       windows: [
         rosterWindow(entry.id, CENTER, entry.window[0], entry.window[1]),
@@ -1018,6 +1084,7 @@ describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody 
   /** Ivan and Niko work Center 12:00–13:00 and Mladost 15:00–16:00; nobody is booked. */
   const pool = (): readonly CartBarberDay[] =>
     ['ivan', 'niko'].map((id) => ({
+      ...OPEN_BARBER_DAY,
       barberId: barber(id),
       windows: [
         rosterWindow(id, CENTER, mins(12), mins(13)),
@@ -1615,6 +1682,7 @@ describe('BookingCartSystem — purity', () => {
             ['ivan', ivan] as const,
             ['niko', niko] as const,
           ].map(([id, windows]) => ({
+            ...OPEN_BARBER_DAY,
             barberId: barber(id),
             windows: MinuteRange.normalize(
               windows
@@ -2036,7 +2104,7 @@ describe('BookingCartSystem — one shop day’s grid from its raw documents', (
     return {
       cart: CUT_CART,
       services: [serviceFixture()],
-      barberIds: [IVAN],
+      barbers: [barberFixture({ id: IVAN })],
       locationId: null,
       localDate: TUESDAY,
       policy: BookingPolicy.DEFAULT,
@@ -2098,8 +2166,9 @@ describe('BookingCartSystem — one shop day’s grid from its raw documents', (
   describe('dayDocsKey / sameDayDocsKey — which documents a day reads', () => {
     it('lists the barbers in code-unit order, whatever order they came in', () => {
       expect(
-        BookingCartSystem.dayDocsKey(query({ barberIds: [NIKO, IVAN] }))
-          .barberIds,
+        BookingCartSystem.dayDocsKey(
+          query({ barbers: [NIKO, IVAN].map((id) => barberFixture({ id })) }),
+        ).barberIds,
       ).toEqual([IVAN, NIKO]);
     });
 
@@ -2130,8 +2199,8 @@ describe('BookingCartSystem — one shop day’s grid from its raw documents', (
       expect(BookingCartSystem.sameDayDocsKey(key(), key())).toBe(true);
       expect(
         BookingCartSystem.sameDayDocsKey(
-          key({ barberIds: [IVAN, NIKO] }),
-          key({ barberIds: [NIKO, IVAN] }),
+          key({ barbers: [IVAN, NIKO].map((id) => barberFixture({ id })) }),
+          key({ barbers: [NIKO, IVAN].map((id) => barberFixture({ id })) }),
         ),
       ).toBe(true);
       expect(
@@ -2143,7 +2212,7 @@ describe('BookingCartSystem — one shop day’s grid from its raw documents', (
       expect(
         BookingCartSystem.sameDayDocsKey(
           key(),
-          key({ barberIds: [IVAN, NIKO] }),
+          key({ barbers: [IVAN, NIKO].map((id) => barberFixture({ id })) }),
         ),
       ).toBe(false);
       expect(

@@ -43,6 +43,7 @@ import {
   appointmentFixture,
   at,
   barberBusyDayFixture,
+  barberFixture,
   barberScheduleFixture,
   cents,
   FIXTURE_IDS,
@@ -75,7 +76,7 @@ import {
 const KEY = BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY);
 
 describe('the booking read set', () => {
-  it('phase one is ONE getAll — the location, the services, the schedules and the client records, duplicates read once', async () => {
+  it('phase one is ONE getAll — the location, the services, the schedules, the barber records and the client records, duplicates read once', async () => {
     const tx = memoryReadTx(
       memoryStore([
         {
@@ -89,6 +90,10 @@ describe('the booking read set', () => {
         {
           path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
           body: bodyOf(barberScheduleFixture()),
+        },
+        {
+          path: [Collections.Barbers, FIXTURE_IDS.barber],
+          body: bodyOf(barberFixture()),
         },
       ]),
     );
@@ -106,6 +111,7 @@ describe('the booking read set', () => {
       [Collections.Locations, FIXTURE_IDS.location],
       [Collections.Services, FIXTURE_IDS.service],
       [Collections.BarberSchedules, FIXTURE_IDS.barber],
+      [Collections.Barbers, FIXTURE_IDS.barber],
       [Collections.Customers, FIXTURE_IDS.customer],
     ]);
     expect(set.location?.id).toBe(FIXTURE_IDS.location);
@@ -113,6 +119,9 @@ describe('the booking read set', () => {
       FIXTURE_IDS.service,
     ]);
     expect(set.schedules.map((schedule) => schedule.id)).toEqual([
+      FIXTURE_IDS.barber,
+    ]);
+    expect(set.barbers.map((barber) => barber.id)).toEqual([
       FIXTURE_IDS.barber,
     ]);
     expect(set.customers.get(FIXTURE_IDS.customer)).toBeNull();
@@ -185,6 +194,7 @@ describe('the booking read set', () => {
         location: locationFixture(),
         services: [serviceFixture(), archived],
         schedules: [barberScheduleFixture()],
+        barbers: [barberFixture()],
         customers: new Map(),
       },
       {

@@ -28,6 +28,7 @@ import {
 import {
   type Appointment,
   type BarberBusyDay,
+  type Barber,
   type BarberSchedule,
   type CouponGrant,
   type Customer,
@@ -93,6 +94,11 @@ export type BookingReadSet = {
   readonly services: readonly Service[];
   readonly schedules: readonly BarberSchedule[];
   /**
+   * Every barber record read, whatever its status (team onboarding D3) —
+   * the decision judges who may be booked from these.
+   */
+  readonly barbers: readonly Barber[];
+  /**
    * Every client record asked for, `null` when absent (F1-5: an account's
    * absent → a `FIRST_BOOKING` create; OR-26: a walk-in's → `STAFF_WALK_IN`).
    */
@@ -153,7 +159,10 @@ export function readAppointment(
   return tx.get<Appointment>(appointmentPath(id));
 }
 
-/** Phase one: ONE `getAll` of the location, the services, the schedules and the client records. */
+/**
+ * Phase one: ONE `getAll` of the location, the services, the schedules, the
+ * barber records and the client records — in that order.
+ */
 export async function readBookingSet(
   tx: ReadTx,
   request: BookingReadRequest,
@@ -164,6 +173,7 @@ export async function readBookingSet(
   const paths: DocPath[] = [[Collections.Locations, request.locationId]];
   for (const id of serviceIds) paths.push([Collections.Services, id]);
   for (const id of barberIds) paths.push([Collections.BarberSchedules, id]);
+  for (const id of barberIds) paths.push([Collections.Barbers, id]);
   for (const id of customerIds) paths.push(customerPath(id));
   const docs = await tx.getAll<unknown>(paths);
 
@@ -178,8 +188,14 @@ export async function readBookingSet(
     const doc = docs[offset + i] as BarberSchedule | null;
     if (doc !== null) schedules.push(doc);
   }
+  const barbers: Barber[] = [];
+  const barberOffset = offset + barberIds.length;
+  for (let i = 0; i < barberIds.length; i++) {
+    const doc = docs[barberOffset + i] as Barber | null;
+    if (doc !== null) barbers.push(doc);
+  }
   const customers = new Map<CustomerId, Customer | null>();
-  const customerOffset = offset + barberIds.length;
+  const customerOffset = barberOffset + barberIds.length;
   for (const [i, id] of customerIds.entries()) {
     customers.set(id, (docs[customerOffset + i] as Customer | null) ?? null);
   }
@@ -187,6 +203,7 @@ export async function readBookingSet(
     location: (docs[0] as ShopLocation | null) ?? null,
     services,
     schedules,
+    barbers,
     customers,
   };
 }
@@ -270,6 +287,7 @@ export function bookingSnapshotOf(
   return {
     shopHours: set.location === null ? [] : set.location.openingHours,
     services: PartyAdmissionSystem.bookableServices(set.services),
+    barbers: set.barbers,
     schedules: set.schedules,
     busy: placement.busy,
     exceptions: placement.exceptions,
