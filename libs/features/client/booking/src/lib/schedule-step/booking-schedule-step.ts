@@ -257,8 +257,9 @@ export class BookingScheduleStep {
    */
   private readonly capacityBarberIds = computed<readonly BarberId[]>(() => {
     const cart = this.store.cart();
-    const pool = this.barberIds();
-    return cart ? BookingCart.acceptedBarbers(cart, pool) : pool;
+    return cart
+      ? BookingCart.acceptedBarbers(cart, this.catalog.barbers())
+      : this.barberIds();
   });
 
   // ── Which shops can serve this visit ────────────────────────────────

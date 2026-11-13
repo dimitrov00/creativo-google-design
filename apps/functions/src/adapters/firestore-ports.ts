@@ -19,6 +19,7 @@ import type {
   IdPorts,
   LeadTimeWritePorts,
   ListedCatalogPorts,
+  LiveBarberListPorts,
   LocationLoadPorts,
   OpenWaitlistReadPorts,
   OtpStorePorts,
@@ -108,6 +109,7 @@ export type FirestorePorts = TxPorts &
   // firestoreCatalogPorts
   CatalogLoadPorts &
   ListedCatalogPorts &
+  LiveBarberListPorts &
   LocationLoadPorts &
   // firestoreSchedulePorts
   BarberListPorts &

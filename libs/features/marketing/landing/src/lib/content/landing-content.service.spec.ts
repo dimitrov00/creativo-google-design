@@ -18,6 +18,7 @@ import {
   barberFixture,
   memoryCatalogReadPorts,
   serviceFixture,
+  FIXTURE_TERMS,
 } from '@core/testing';
 import {
   CatalogContentService,
@@ -39,6 +40,11 @@ const fade: Service = serviceFixture({
   coverMediaPath: cover.path,
   coverMediaWidth: cover.width,
   coverMediaHeight: 1500,
+  // Performed by the listed Ivan below — a public catalogue keeps only
+  // listed performers' offerings (team onboarding D3).
+  offerings: [
+    { barberId: BarberId.of('ivan'), overrides: [], ...FIXTURE_TERMS },
+  ],
 });
 
 const ivan: Barber = barberFixture({

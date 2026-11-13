@@ -1,5 +1,5 @@
 import type { DocumentSnapshot, Firestore } from 'firebase-admin/firestore';
-import { LocationId, Result, ServiceId } from '@core/primitives';
+import { BarberId, LocationId, Result, ServiceId } from '@core/primitives';
 import { BarberStatus, LocationStatus, ServiceStatus } from '@core/components';
 import {
   type Barber,
@@ -10,6 +10,7 @@ import {
 import type {
   CatalogLoadPorts,
   ListedCatalogPorts,
+  LiveBarberListPorts,
   LocationLoadPorts,
 } from '@core/ports';
 import { readFailed } from './store-answer';
@@ -25,8 +26,11 @@ import { readFailed } from './store-answer';
  *   would throw on the path — and answers `null`, which the system refuses
  *   like any absent row.
  * - `loadListedCatalog` — the waitlist matcher's day read: every ACTIVE
- *   service, shop and barber (three single-field `== 'ACTIVE'` queries on
- *   the root status keys, no composite).
+ *   service and shop and every PUBLIC barber (three single-field equality
+ *   queries on the root status keys, no composite).
+ * - `listLiveBarberIds` — the ids of every `STAFF_ONLY` or `PUBLIC` barber
+ *   (one single-field `in` query, bodies not read): the lead-time sampler's
+ *   population filter.
  * - `loadLocation` — one shop by id, `null` when absent: where every server
  *   pipeline reads its wall clock's zone (`resolveShopZone`, Phase 4a
  *   4A-11 — the named shop, else the default location).
@@ -55,7 +59,10 @@ async function active<E>(
 
 export const firestoreCatalogPorts = (
   db: Firestore,
-): CatalogLoadPorts & ListedCatalogPorts & LocationLoadPorts => ({
+): CatalogLoadPorts &
+  ListedCatalogPorts &
+  LiveBarberListPorts &
+  LocationLoadPorts => ({
   loadCatalog: async (serviceIds, locationId) => {
     try {
       const readable = serviceIds.filter((id) => ServiceId.is(id));
@@ -111,6 +118,27 @@ export const firestoreCatalogPorts = (
       return Result.ok({ services, locations, barbers });
     } catch (error) {
       return Result.err(readFailed(Collections.Services, error));
+    }
+  },
+
+  listLiveBarberIds: async () => {
+    try {
+      // unbounded-ok: the shop's own staff, a handful to a few dozen
+      const snaps = await db
+        .collection(Collections.Barbers)
+        .where('barberStatus', 'in', [
+          BarberStatus.StaffOnly,
+          BarberStatus.Public,
+        ])
+        .select()
+        .get();
+      const ids: BarberId[] = [];
+      for (const snap of snaps.docs) {
+        if (BarberId.is(snap.id)) ids.push(snap.id);
+      }
+      return Result.ok(ids);
+    } catch (error) {
+      return Result.err(readFailed(Collections.Barbers, error));
     }
   },
 

@@ -671,7 +671,7 @@ export class StaffDashboard {
    * follows a late catalogue on its own.
    */
   private readonly catalogNames: StaffCatalogNames = {
-    findService: (id) => this.catalog.findService(id),
+    findService: (id) => this.catalog.findAnyService(id),
     text: (localized) => this.content.text(localized),
   };
 
@@ -748,12 +748,12 @@ export class StaffDashboard {
     const categories = this.serviceCategories;
     return {
       serviceName: (id: ServiceId) => {
-        const service = catalog.findService(id);
+        const service = catalog.findAnyService(id);
         return service === undefined ? null : content.text(service.name);
       },
       serviceCoverSrc: (id: ServiceId) => catalog.coverUrl(id) ?? null,
       serviceCategory: (id: ServiceId) => {
-        const service = catalog.findService(id);
+        const service = catalog.findAnyService(id);
         const listed = categories();
         if (service === undefined || listed === null || !listed.ok) {
           return null;
@@ -1007,7 +1007,7 @@ export class StaffDashboard {
    * and, for a chair with none, the service's OWN terms; the VM path this
    * replaced fell back to the FIRST barber's offering and quoted another
    * chair's price and minutes for a seat the server would charge
-   * differently. `serviceVms()` still names the services and variants, and
+   * differently. `allServiceVms()` still names the services and variants, and
    * `CatalogWording.price` words the figure as the client's catalogue
    * does.
    */
@@ -1037,7 +1037,7 @@ export class StaffDashboard {
 
   /** The catalogue as `barberId`'s chair sells it today, priced and timed for him. */
   private offersOn(barberId: BarberId): readonly VisitEditorServiceOption[] {
-    return serviceOptionsOf(this.catalog.serviceVms(), barberId, {
+    return serviceOptionsOf(this.catalog.allServiceVms(), barberId, {
       ...this.catalogNames,
       price: (money) => this.content.price(money),
     });
@@ -2915,7 +2915,7 @@ export class StaffDashboard {
   >(() => {
     const seen = new Set<string>();
     const images: VisitEditorLibraryImage[] = [];
-    for (const vm of this.catalog.serviceVms()) {
+    for (const vm of this.catalog.allServiceVms()) {
       const label = this.content.text(vm.name);
       for (const url of [vm.coverSrc, ...vm.gallery]) {
         if (!url || seen.has(url)) continue;

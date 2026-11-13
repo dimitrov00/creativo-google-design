@@ -132,8 +132,37 @@ describe('firestoreCatalogPorts.loadCatalog', () => {
   });
 });
 
+describe('firestoreCatalogPorts.listLiveBarberIds', () => {
+  it('lists the STAFF_ONLY and PUBLIC barbers — a draft and a leaver are not live (team onboarding D3)', async () => {
+    const fake = seeded();
+    await fake.db
+      .collection(Collections.Barbers)
+      .doc('b-draft')
+      .set(
+        bodyOf(
+          barberFixture(
+            { id: BarberId.of('b-draft') },
+            {
+              barberStatus: BarberStatus.Draft,
+              barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+              barberDraftTargetStatus: BarberStatus.Public,
+            },
+          ),
+        ),
+      );
+    const ports = firestoreCatalogPorts(fake.db as unknown as Firestore);
+    const answer = await ports.listLiveBarberIds();
+    expect(answer.ok).toBe(true);
+    if (answer.ok) {
+      expect([...answer.value].sort()).toEqual(
+        [FIXTURE_IDS.barber, NIKO].sort(),
+      );
+    }
+  });
+});
+
 describe('firestoreCatalogPorts.loadListedCatalog', () => {
-  it('reads every ACTIVE service, shop and barber on the root status keys', async () => {
+  it('reads every ACTIVE service and shop and every PUBLIC barber on the root status keys', async () => {
     const ports = firestoreCatalogPorts(seeded().db as unknown as Firestore);
     expect(await ports.loadListedCatalog()).toEqual({
       ok: true,

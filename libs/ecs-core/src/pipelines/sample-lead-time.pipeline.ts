@@ -3,6 +3,7 @@ import { type RepositoryError } from '@core/errors';
 import { BookingPolicy, type CapacityEntry } from '@core/components';
 import type {
   BarberListPorts,
+  LiveBarberListPorts,
   CapacityReadPorts,
   ClockPorts,
   DefaultLocationPorts,
@@ -41,6 +42,7 @@ export type SampleLeadTimeAnswer = {
 
 export type SampleLeadTimePorts = ClockPorts &
   BarberListPorts &
+  LiveBarberListPorts &
   CapacityReadPorts &
   PolicyReadPorts &
   LocationLoadPorts &
@@ -69,9 +71,16 @@ export const sampleLeadTime =
       if (month !== null) entries.push(...month.entries);
     }
 
-    // The ROSTER is the population, not the catalogue.
-    const barbers = await ports.listBarbers();
-    if (!barbers.ok) return barbers;
+    // The ROSTER is the population, not the catalogue — narrowed to the
+    // LIVE barbers (team onboarding D3): a draft being set up and a leaver
+    // whose roster has not closed yet are nobody's lead time.
+    const rostered = await ports.listBarbers();
+    if (!rostered.ok) return rostered;
+    const live = await ports.listLiveBarberIds();
+    if (!live.ok) return live;
+    const barbers = Result.ok(
+      rostered.value.filter((barberId) => live.value.includes(barberId)),
+    );
     const threshold = BookingPolicy.freeThreshold(policy.value);
     const sampledBarberIds: BarberId[] = [];
     for (const barberId of barbers.value) {

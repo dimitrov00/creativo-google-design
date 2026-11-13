@@ -16,6 +16,7 @@ import {
 import { MediaRef, Principal, PrincipalKind } from '@core/components';
 import type { MediaRefId, ServiceId } from '@core/primitives';
 import type { Barber, Service, ShopLocation } from '@core/entities';
+import { CatalogListingSystem } from '@core/systems';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
 import { type BarberVm, type ServiceVm } from './catalog.vm';
 import { barberToVm, serviceToVm } from './catalog.presenter';
@@ -63,16 +64,38 @@ export class CatalogContentService {
     initialValue: null,
   });
 
-  /** Active services as the stored entities — for conflict rules and terms. */
-  readonly services = computed<readonly Service[]>(() => {
+  /**
+   * Active services as STORED — every performer's offering, a staff-only
+   * barber's included. The staff surfaces read these (`findAnyService`,
+   * `allServiceVms`); a client surface reads {@link services}.
+   */
+  readonly allServices = computed<readonly Service[]>(() => {
     const result = this.servicesResult();
     return result?.ok ? result.value : [];
   });
 
+  /** The PUBLIC barbers — listed and bookable online (team onboarding D3). */
   readonly barbers = computed<readonly Barber[]>(() => {
     const result = this.barbersResult();
     return result?.ok ? result.value : [];
   });
+
+  /**
+   * Active services as the PUBLIC sees them (team onboarding D3,
+   * `CatalogListingSystem.listedServices`): offerings of listed barbers
+   * only, so a «от» price, an «anyone» span or a performer list never
+   * counts a draft or a staff-only barber; a service only unlisted barbers
+   * perform is absent. Every client surface — `/book`, the landing,
+   * onboarding — reads these. Until the barbers read has answered, the
+   * stored services stand: the booking engine and the commit judge who may
+   * be booked exactly, so a moment of an unfiltered price is never a
+   * booking.
+   */
+  readonly services = computed<readonly Service[]>(() =>
+    this.barbersKnown()
+      ? CatalogListingSystem.listedServices(this.allServices(), this.barbers())
+      : this.allServices(),
+  );
 
   /**
    * Active shops. The booking flow needs them for their `openingHours` (the
@@ -112,8 +135,14 @@ export class CatalogContentService {
    */
   readonly locationsKnown = computed(() => this.locationsResult()?.ok === true);
 
+  /** The public services' view models — the client surfaces' list. */
   readonly serviceVms = computed<readonly ServiceVm[]>(() =>
     this.services().map((service) => this.toServiceVm(service)),
+  );
+
+  /** Every stored service's view model — the staff surfaces' list. */
+  readonly allServiceVms = computed<readonly ServiceVm[]>(() =>
+    this.allServices().map((service) => this.toServiceVm(service)),
   );
 
   readonly barberVms = computed<readonly BarberVm[]>(() =>
@@ -128,7 +157,7 @@ export class CatalogContentService {
 
   /** Every cover and avatar the catalogue names. */
   private readonly mediaRefs = computed<readonly MediaRef[]>(() => [
-    ...this.services().flatMap((service) => {
+    ...this.allServices().flatMap((service) => {
       const cover = coverRefOf(service);
       return cover ? [cover] : [];
     }),
@@ -201,8 +230,14 @@ export class CatalogContentService {
     );
   }
 
+  /** A service as the PUBLIC sees it (see {@link services}). */
   findService(serviceId: ServiceId): Service | undefined {
     return this.services().find((service) => service.id === serviceId);
+  }
+
+  /** A service as STORED, every performer included — staff and history. */
+  findAnyService(serviceId: ServiceId): Service | undefined {
+    return this.allServices().find((service) => service.id === serviceId);
   }
 }
 

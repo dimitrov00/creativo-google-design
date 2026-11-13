@@ -221,11 +221,16 @@ export const BookingCart = {
   /**
    * The barbers of `pool`, in `pool`'s order, that some line would accept: a
    * line pinned to Ivan is served by nobody else, one "anyone" line accepts
-   * the whole pool, an empty cart accepts nobody.
+   * every barber in the «Който и да е» pool (team onboarding D3 — a barber
+   * out of it is accepted only by a line pinned to them), an empty cart
+   * accepts nobody. A whole `Barber` passes as a pool member.
    */
   acceptedBarbers(
     cart: BookingCart,
-    pool: readonly BarberId[],
+    pool: readonly {
+      readonly id: BarberId;
+      readonly barberJoinsAnyPool: boolean;
+    }[],
   ): readonly BarberId[] {
     let anyone = false;
     const pinned: BarberId[] = [];
@@ -239,8 +244,10 @@ export const BookingCart = {
     }
     const accepted: BarberId[] = [];
     for (let i = 0; i < pool.length; i++) {
-      const barberId = pool[i] as BarberId;
-      if (anyone || pinned.includes(barberId)) accepted.push(barberId);
+      const member = pool[i] as (typeof pool)[number];
+      if ((anyone && member.barberJoinsAnyPool) || pinned.includes(member.id)) {
+        accepted.push(member.id);
+      }
     }
     return accepted;
   },

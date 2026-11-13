@@ -384,7 +384,10 @@ describe('BookingCartSystem.salvage — the forgiving reconstitute', () => {
 });
 
 describe('BookingCart.acceptedBarbers', () => {
-  const POOL = ['ivan', 'niko', 'stefan'].map(barber);
+  const POOL = ['ivan', 'niko', 'stefan'].map((id) => ({
+    id: barber(id),
+    barberJoinsAnyPool: true,
+  }));
 
   function pinned(
     cart: BookingCart,
@@ -468,7 +471,12 @@ describe('BookingCart.acceptedBarbers', () => {
           const expected = pool.filter((id) =>
             prefs.some((p) => BarberPref.matches(p, id)),
           );
-          expect(BookingCart.acceptedBarbers(restored, pool)).toEqual(expected);
+          expect(
+            BookingCart.acceptedBarbers(
+              restored,
+              pool.map((id) => ({ id, barberJoinsAnyPool: true })),
+            ),
+          ).toEqual(expected);
         },
       ),
     );

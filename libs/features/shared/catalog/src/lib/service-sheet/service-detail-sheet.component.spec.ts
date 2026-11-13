@@ -23,6 +23,7 @@ import {
   memoryMediaResolvePorts,
   serviceFixture,
   termsFixture,
+  performersOf,
 } from '@core/testing';
 import type { BarberVm, ServiceVm } from '../content/catalog.vm';
 
@@ -167,7 +168,10 @@ async function render(host: Type<unknown>) {
       provideRouter([]),
       {
         provide: CATALOG_PORTS,
-        useValue: memoryCatalogReadPorts({ services: CATALOG }),
+        useValue: memoryCatalogReadPorts({
+          services: CATALOG,
+          barbers: performersOf(CATALOG),
+        }),
       },
       { provide: MEDIA_RESOLVE_PORTS, useValue: memoryMediaResolvePorts() },
       ...provideTransloco({

@@ -1,5 +1,5 @@
 import type { Observable } from 'rxjs';
-import type { Result, LocationId, ServiceId } from '@core/primitives';
+import type { BarberId, Result, LocationId, ServiceId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type {
   Barber,
@@ -78,6 +78,15 @@ export type LoadListedCatalog = () => Promise<
   Result<ListedCatalog, RepositoryError>
 >;
 
+/**
+ * The ids of every LIVE barber record — `STAFF_ONLY` or `PUBLIC`, never a
+ * `DRAFT` or `DEPARTED` (team onboarding D3) — bodies not read: the
+ * population a daily job measures, beside the roster.
+ */
+export type ListLiveBarberIds = () => Promise<
+  Result<readonly BarberId[], RepositoryError>
+>;
+
 /** `locations/{id}`, once — `null` when absent (an event save's zone, F-4). */
 export type LoadLocation = (
   id: LocationId,
@@ -101,6 +110,11 @@ export type CatalogLoadPorts = {
 /** Every listed service, shop and barber — the waitlist matcher's day read. */
 export type ListedCatalogPorts = {
   readonly loadListedCatalog: LoadListedCatalog;
+};
+
+/** Every live barber's id — the lead-time sampler's population filter. */
+export type LiveBarberListPorts = {
+  readonly listLiveBarberIds: ListLiveBarberIds;
 };
 
 /** One shop by id — `LOCATION_LOAD_PORTS` (an event save's zone, F-4). */

@@ -199,9 +199,11 @@ export async function renderAnalyticsScreen<T>(
         useValue: {
           barbers: signal(options.barbers ?? []),
           services: signal([]),
+          allServices: signal([]),
           barberVms: signal([]),
           locations: signal(options.locations ?? []),
           findService: () => undefined,
+          findAnyService: () => undefined,
         },
       },
       { provide: CatalogWording, useValue: { text: () => '' } },

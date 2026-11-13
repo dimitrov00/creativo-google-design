@@ -216,7 +216,8 @@ describe('BookingCart.dropSeat', () => {
 });
 
 describe('BookingCart.acceptedBarbers', () => {
-  const POOL = [IVAN, STEFAN, ANA];
+  const POOL_IDS = [IVAN, STEFAN, ANA];
+  const POOL = POOL_IDS.map((id) => ({ id, barberJoinsAnyPool: true }));
 
   it('narrows the pool to the barber a single pinned line wants', () => {
     const cart = added(BookingCart.empty(), SELF, line('svc-cut', STEFAN));
@@ -238,7 +239,18 @@ describe('BookingCart.acceptedBarbers', () => {
       GUEST,
       CUT,
     );
-    expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual(POOL);
+    expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual(POOL_IDS);
+  });
+
+  it('keeps a barber out of the «Който и да е» pool from an anyone line — a pinned line still accepts them (team onboarding D3)', () => {
+    const pool = [
+      { id: IVAN, barberJoinsAnyPool: true },
+      { id: ANA, barberJoinsAnyPool: false },
+    ];
+    const anyone = added(BookingCart.empty(), SELF, CUT);
+    expect(BookingCart.acceptedBarbers(anyone, pool)).toEqual([IVAN]);
+    const pinned = added(anyone, GUEST, line('svc-cut', ANA));
+    expect(BookingCart.acceptedBarbers(pinned, pool)).toEqual([IVAN, ANA]);
   });
 
   it('accepts nobody for an empty cart, and nobody outside the pool', () => {
@@ -263,7 +275,7 @@ describe('BookingCart.acceptedBarbers', () => {
             line('svc-cut', barberId),
           );
         });
-        const expected = POOL.filter((barber) =>
+        const expected = POOL_IDS.filter((barber) =>
           pins.some((p) => p === null || p === barber),
         );
         expect(BookingCart.acceptedBarbers(cart, POOL)).toEqual(expected);
