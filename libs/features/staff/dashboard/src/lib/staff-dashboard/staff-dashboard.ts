@@ -130,6 +130,7 @@ import {
 import * as VisitSeed from '../visit-editor/visit-seed';
 import {
   CatalogContentService,
+  TeamCatalogService,
   CatalogWording,
 } from '@creativo/features/shared/catalog';
 import { StaffEventHead } from '@creativo/features/shared/visits';
@@ -664,6 +665,7 @@ export class StaffDashboard {
   }
 
   protected readonly catalog = inject(CatalogContentService);
+  private readonly team = inject(TeamCatalogService);
   protected readonly content = inject(CatalogWording);
   /**
    * The catalogue, as a presenter reads it: each lookup reads the catalogue's
@@ -744,6 +746,7 @@ export class StaffDashboard {
 
   protected readonly clientCardCatalog = computed<ClientCardCatalog>(() => {
     const catalog = this.catalog;
+    const team = this.team;
     const content = this.content;
     const categories = this.serviceCategories;
     return {
@@ -766,12 +769,13 @@ export class StaffDashboard {
           : { id: category.id, name: content.text(category.name) };
       },
       barberName: (id: BarberId) => {
-        const barber = catalog.barbers().find((entry) => entry.id === id);
+        const barber = team.findTeamBarber(id);
         return barber === undefined ? null : content.text(barber.name);
       },
       barberAvatarSrc: (id: BarberId) =>
-        catalog.barberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
-      barberIds: () => catalog.barbers().map((entry) => entry.id),
+        team.findTeamBarberVm(id)?.avatarSrc ?? null,
+      // Who an account can be linked to: everyone on the team but a leaver.
+      barberIds: () => team.currentBarbers().map((entry) => entry.id),
       // A row's fact line names the shop without the brand every shop
       // carries: `Location.shortName` (its name when the catalogue has none).
       locationName: (id: LocationId) => {
@@ -1048,7 +1052,7 @@ export class StaffDashboard {
     // `barberVms` rather than `barbers`: the presenter has already resolved
     // the portraits the lane headers draw, and a second resolution here would
     // be a second answer to the same question.
-    this.catalog.barberVms().map((vm) => ({
+    this.team.liveBarberVms().map((vm) => ({
       id: vm.id,
       name: this.content.text(vm.name),
       avatarSrc: vm.avatarSrc ?? null,
@@ -1440,9 +1444,7 @@ export class StaffDashboard {
   );
 
   private barberNameOf(barberId: BarberId): string {
-    const barber = this.catalog
-      .barbers()
-      .find((entry) => entry.id === barberId);
+    const barber = this.team.findTeamBarber(barberId);
     return barber ? this.content.text(barber.name) : barberId;
   }
 
@@ -1468,7 +1470,7 @@ export class StaffDashboard {
    * Tuesday, and the calendar views read the same map.
    */
   protected readonly barberTones = computed<ReadonlyMap<string, number>>(() => {
-    const ids = this.catalog.barberVms().map((vm) => vm.id);
+    const ids = this.team.teamBarberVms().map((vm) => vm.id);
     // The system answers parallel to the roster; the views look a chair
     // up by its id.
     const tones = BarberToneSystem.assignBarberTones(ids);
@@ -1487,7 +1489,7 @@ export class StaffDashboard {
 
   protected readonly lanes = computed<readonly LaneVm[]>(() => {
     const vmById = new Map(
-      this.catalog.barberVms().map((vm) => [vm.id, vm] as const),
+      this.team.teamBarberVms().map((vm) => [vm.id, vm] as const),
     );
     const context = this.rowContext();
     // The lanes are the shown day's (`workingLanes`).
@@ -1751,7 +1753,7 @@ export class StaffDashboard {
   protected readonly resting = computed(() =>
     restingChairs(
       this.store.offToday(),
-      this.catalog.barberVms(),
+      this.team.liveBarberVms(),
       this.catalogNames,
       (id) => this.toneOf(id),
     ),
@@ -1859,10 +1861,7 @@ export class StaffDashboard {
 
   /** The barber's headshot, or nothing if HR never uploaded one. */
   private barberAvatarOf(barberId: BarberId): string | null {
-    return (
-      this.catalog.barberVms().find((vm) => vm.id === barberId)?.avatarSrc ??
-      null
-    );
+    return this.team.findTeamBarberVm(barberId)?.avatarSrc ?? null;
   }
 
   /**
@@ -4130,9 +4129,7 @@ export class StaffDashboard {
   protected readonly homeOf = (id: BarberId) => this.shopOfChair(id);
   /** Where a chair's new visit starts and its block is filed (`homeOrFirst`). */
   private shopOfChair(barberId: BarberId): LocationId | null {
-    const barber = this.catalog
-      .barbers()
-      .find((entry) => entry.id === barberId);
+    const barber = this.team.findTeamBarber(barberId);
     return LocationScopeSystem.homeOrFirst(
       barber ?? null,
       this.catalog.locations(),

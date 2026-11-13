@@ -49,7 +49,10 @@ import {
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
-import { CatalogContentService } from '@creativo/features/shared/catalog';
+import {
+  CatalogContentService,
+  TeamCatalogService,
+} from '@creativo/features/shared/catalog';
 import { partsToLocalDate } from './analytics.presenter';
 import {
   type AnalyticsGoalCheck,
@@ -184,6 +187,7 @@ export class StaffAnalyticsStore {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly catalog = inject(CatalogContentService);
+  private readonly team = inject(TeamCatalogService);
 
   /** The default shop's zone — "today", and the report's time, are read on it (as the callable does). */
   readonly zone = inject(ShopZoneService).defaultZone();
@@ -288,7 +292,8 @@ export class StaffAnalyticsStore {
   readonly scopeMenu = computed<AnalyticsScopeMenu | null>(() =>
     this.readsShop()
       ? StaffAnalyticsSystem.scopeMenuOf(
-          this.catalog.barbers().map((barber) => barber.id),
+          // Everyone who has worked — a draft never has figures.
+          this.team.workedBarbers().map((barber) => barber.id),
           this.linkedBarberId(),
           this.catalog.locations().map((location) => location.id),
         )
@@ -467,6 +472,8 @@ export class StaffAnalyticsStore {
   private stated = false;
 
   constructor() {
+    // The whole team: a staff-only barber and a leaver have figures too.
+    this.team.watchTeam();
     const tick = setInterval(() => {
       this._nowUtcMs.set(this.clock.nowUtcMs());
     }, NOW_TICK_MS);

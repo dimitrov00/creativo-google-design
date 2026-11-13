@@ -136,7 +136,10 @@ import type {
   VisitEditorGrantOption,
   VisitEditorPromoOption,
 } from './visit-editor/staff-visit-editor';
-import { CatalogContentService } from '@creativo/features/shared/catalog';
+import {
+  CatalogContentService,
+  TeamCatalogService,
+} from '@creativo/features/shared/catalog';
 import { ScheduleStatusFilter } from './schedule-status-filter';
 
 /**
@@ -526,6 +529,7 @@ export class StaffDayStore {
   /** Mints each act's `operationId` (WS-4.1) — see `staffEdit` and `mintFor`. */
   private readonly ids = inject(ID_PORTS);
   private readonly catalog = inject(CatalogContentService);
+  private readonly team = inject(TeamCatalogService);
   private readonly shopZones = inject(ShopZoneService);
   /** The default location's zone — the day's clock until the catalogue names a shop (4A-11). */
   private readonly defaultZone = this.shopZones.defaultZone();
@@ -732,6 +736,8 @@ export class StaffDayStore {
   readonly published = this._published.asReadonly();
 
   constructor() {
+    // The whole team, a staff-only barber included (team onboarding D3).
+    this.team.watchTeam();
     // Cheap, and the only two moments the answer can change: the clock
     // crossing midnight while the tab sits open, and the tab coming back
     // after the laptop was shut. A minute's granularity is finer than any
@@ -796,9 +802,12 @@ export class StaffDayStore {
     // answered: an empty roster while it loads says nothing about the id.
     effect(() => {
       const scope = this._scope();
-      const barbers = this.catalog.barbers();
+      // The working team (team onboarding D3): a staff-only barber is a
+      // chair too. Asked only once the team read has answered.
+      const barbers = this.team.liveBarbers();
       if (
         scope !== null &&
+        this.team.teamKnown() &&
         barbers.length > 0 &&
         !barbers.some((barber) => barber.id === scope)
       ) {
@@ -1113,7 +1122,7 @@ export class StaffDayStore {
 
   /** The chairs this view is about — every active one, or just the scoped. */
   private readonly scopedBarbers = computed(() => {
-    const all = this.catalog.barbers();
+    const all = this.team.liveBarbers();
     const scope = this._scope();
     return scope === null ? all : all.filter((barber) => barber.id === scope);
   });

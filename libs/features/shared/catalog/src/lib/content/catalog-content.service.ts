@@ -1,9 +1,11 @@
 import {
   DestroyRef,
   Injectable,
+  type Signal,
   computed,
   effect,
   inject,
+  signal,
   untracked,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -146,14 +148,34 @@ export class CatalogContentService {
   );
 
   readonly barberVms = computed<readonly BarberVm[]>(() =>
-    this.barbers().map((barber) =>
-      barberToVm(
-        barber,
-        this.media.url(avatarRefOf(barber)),
-        BARBER_ART[barber.id],
-      ),
-    ),
+    this.barbers().map((barber) => this.barberVmOf(barber)),
   );
+
+  /**
+   * A barber's view model, its avatar through the session's one URL cache
+   * — also for a barber off the public list, whose avatar a caller first
+   * hands to {@link alsoResolveAvatars}.
+   */
+  barberVmOf(barber: Barber): BarberVm {
+    return barberToVm(
+      barber,
+      this.media.url(avatarRefOf(barber)),
+      BARBER_ART[barber.id],
+    );
+  }
+
+  private readonly avatarSources = signal<readonly Signal<readonly Barber[]>[]>(
+    [],
+  );
+
+  /**
+   * More barbers whose avatars this cache resolves — the staff's whole
+   * team, a past visit's barber (`TeamCatalogService`). The public
+   * catalogue never carries them itself.
+   */
+  alsoResolveAvatars(source: Signal<readonly Barber[]>): void {
+    this.avatarSources.update((sources) => [...sources, source]);
+  }
 
   /** Every cover and avatar the catalogue names. */
   private readonly mediaRefs = computed<readonly MediaRef[]>(() => [
@@ -161,7 +183,10 @@ export class CatalogContentService {
       const cover = coverRefOf(service);
       return cover ? [cover] : [];
     }),
-    ...this.barbers().flatMap((barber) => {
+    ...[
+      ...this.barbers(),
+      ...this.avatarSources().flatMap((source) => source()),
+    ].flatMap((barber) => {
       const avatar = avatarRefOf(barber);
       return avatar ? [avatar] : [];
     }),

@@ -40,6 +40,7 @@ import type {
   ShopEventReadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
+  TeamBarberPorts,
   TimerPorts,
   UserSearchPorts,
   WaitlistReadPorts,
@@ -93,6 +94,11 @@ export const AUDIT_READ_PORTS = new InjectionToken<AuditReadPorts>(
 /** The catalogue's four live streams (`CatalogReadPorts`). */
 export const CATALOG_PORTS = new InjectionToken<CatalogReadPorts>(
   'CATALOG_PORTS',
+);
+
+/** The barbers off the public list: the whole team, and records by id (`TeamBarberPorts`). */
+export const TEAM_BARBER_PORTS = new InjectionToken<TeamBarberPorts>(
+  'TEAM_BARBER_PORTS',
 );
 
 /** Coupons, grants and gift vouchers (`CouponVoucherPorts`). */

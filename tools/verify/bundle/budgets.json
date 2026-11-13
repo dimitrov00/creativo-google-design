@@ -6,10 +6,11 @@
   "// routes 2026-11-08, later": "Staff analytics' first ceiling, about 5% above its first build (1.60 MB): 1.68 MB. Client appointments to 1.64 MB (from 1.63): +6 kB from the analytics cache adapter the session loads at start and the shell's session link and menu row.",
   "// routes 2026-11-09": "Staff analytics to 1.77 MB (built 1.69): the month's goal ring (the gauge), the goal sheet with two amount fields, and the setAnalyticsGoal call and its decoder.",
   "// routes 2026-11-09, later": "Staff analytics to 1.87 MB (built 1.78): the Revolut home — the carousel and its page control, the card screens, the spark line and ring chart, the location scope, the free-time, occupancy and clients tiles, the goal removal. Loaded on demand (the route's own chunk); the initial chunk is unchanged.",
+  "// routes 2026-11-13": "Client booking to 1.76 MB (built 1.72, 728 bytes under its old ceiling before this change): the team onboarding work put the barber lifecycle, the bookability rule and the public-catalogue listing on this route, which it needs, and the staff's whole-team lists and the by-id barber lookup (about 2 kB) in the shared catalogue chunk every route loads — the builder merges small shared modules into that chunk, so a separate service does not keep them off this route. About 2% above the build rather than the usual 5%.",
   "defaultRouteBytes": 1550000,
   "routes": {
     "libs/features/staff/dashboard/src/index.ts": 2090000,
-    "libs/features/client/booking/src/index.ts": 1720000,
+    "libs/features/client/booking/src/index.ts": 1760000,
     "libs/features/admin/loyalty/src/index.ts": 1710000,
     "libs/features/staff/analytics/src/index.ts": 1870000,
     "libs/features/client/appointments/src/index.ts": 1640000

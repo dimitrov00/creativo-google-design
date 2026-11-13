@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import { LocationId, Result } from '@core/primitives';
+import { BarberId, LocationId, Result } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { locationFixture } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
@@ -9,7 +9,7 @@ vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
 );
 
-const { catalogReadPorts, locationLoadPorts } =
+const { catalogReadPorts, locationLoadPorts, teamBarberPorts } =
   await import('./catalog.adapter');
 
 const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
@@ -165,6 +165,43 @@ describe('catalogReadPorts — what /book may list, live', () => {
         reason: 'unavailable-forever',
       }),
     ]);
+  });
+});
+
+describe('teamBarberPorts — the whole team, staff only (team onboarding D3)', () => {
+  it('lists every barber record by sortOrder, whatever its status', () => {
+    const fake = catalog();
+    const team = recorded(teamBarberPorts(asDb(fake)).observeTeamBarbers());
+
+    expect(team.seen.map(idsOf)).toEqual([['gone', 'ivan', 'niko']]);
+    expect(fake.reads.map((read) => read.constraints)).toEqual([
+      ['orderBy sortOrder asc'],
+    ]);
+  });
+});
+
+describe('teamBarberPorts — barber records by id (a past visit’s name)', () => {
+  it('answers the records that exist, in the order asked, and leaves out an id with none', async () => {
+    const loaded = await teamBarberPorts(asDb(catalog())).loadBarbers(
+      ['niko', 'nobody', 'gone'].map(BarberId.of),
+    );
+    expect(idsOf(loaded)).toEqual(['niko', 'gone']);
+  });
+
+  it('leaves out a record the rules refuse the reader (a DRAFT, for a client), and answers any other failure', async () => {
+    const refused = catalog().failWith(new Error('permission-denied'));
+    expect(
+      await teamBarberPorts(asDb(refused)).loadBarbers([BarberId.of('ivan')]),
+    ).toEqual({ ok: true, value: [] });
+
+    const down = catalog().failWith(new Error('unavailable'));
+    const answer = await teamBarberPorts(asDb(down)).loadBarbers([
+      BarberId.of('ivan'),
+    ]);
+    expect(answer.ok).toBe(false);
+    if (!answer.ok) {
+      expect(answer.error.errorCode).toBe(RepositoryErrorCode.ReadFailed);
+    }
   });
 });
 

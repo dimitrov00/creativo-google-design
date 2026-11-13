@@ -1433,6 +1433,17 @@ describe('firestore.rules', () => {
       await assertSucceeds(getDoc(doc(client, 'barbers/gone')));
     });
 
+    it('lets staff list every barber, a DRAFT included — the team read', async () => {
+      await seed('barbers/ivan', withStatus(BarberStatus.Public));
+      await seed('barbers/new', withStatus(BarberStatus.Draft));
+
+      await assertSucceeds(
+        getDocs(
+          collection(signedIn('staff-1', 'barber').firestore(), 'barbers'),
+        ),
+      );
+    });
+
     it('refuses an unfiltered barber list to a visitor — it could reach a DRAFT', async () => {
       await seed('barbers/new', withStatus(BarberStatus.Draft));
 

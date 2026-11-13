@@ -9,6 +9,7 @@ import {
   input,
   linkedSignal,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -22,6 +23,7 @@ import {
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
+  TeamCatalogService,
   CatalogWording,
 } from '@creativo/features/shared/catalog';
 import {
@@ -77,7 +79,12 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import type { Appointment } from '@core/entities';
-import { AppointmentId, BookingStatus, LocalDate } from '@core/primitives';
+import {
+  AppointmentId,
+  type BarberId,
+  BookingStatus,
+  LocalDate,
+} from '@core/primitives';
 import { BookingErrorCode, CancellationRefusalCode } from '@core/errors';
 import {
   BookingPolicy,
@@ -282,6 +289,7 @@ export class ClientAppointments {
   private readonly injector = inject(Injector);
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
+  private readonly team = inject(TeamCatalogService);
   private readonly content = inject(CatalogWording);
 
   protected readonly store = inject(AppointmentsStore);
@@ -398,8 +406,11 @@ export class ClientAppointments {
 
   /** The catalogue, as a row reads it: names in the active language, the barber's face. */
   private readonly lookup = computed<VisitLookup>(() => {
+    // Every barber this client can name: the public list, and, by id, a
+    // past visit's barber who left or now works staff-only (team
+    // onboarding D3 — see the constructor).
     const barbers = new Map(
-      this.catalog.barberVms().map((barber) => [barber.id, barber]),
+      this.team.namedBarberVms().map((barber) => [barber.id, barber]),
     );
     const locations = this.catalog.locations();
     return {
@@ -750,6 +761,18 @@ export class ClientAppointments {
       const principal = this.accountState.principal();
       if (!Principal.isActive(principal)) return;
       this.store.setUserId(principal.userId);
+    });
+    // A visit's barber who is on no list this client holds is read by id,
+    // once — the catalogue keeps the asked set, so a re-run asks nothing.
+    effect(() => {
+      if (!this.catalog.barbersKnown()) return;
+      const ids: BarberId[] = [];
+      for (const appointment of this.appointments()) {
+        for (const barberId of appointment.barberIds) {
+          if (!ids.includes(barberId)) ids.push(barberId);
+        }
+      }
+      untracked(() => this.team.rememberBarbers(ids));
     });
   }
 

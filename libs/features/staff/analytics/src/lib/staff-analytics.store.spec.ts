@@ -39,7 +39,10 @@ import {
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
-import { CatalogContentService } from '@creativo/features/shared/catalog';
+import {
+  CatalogContentService,
+  TeamCatalogService,
+} from '@creativo/features/shared/catalog';
 import { IVAN, NIKO } from '../testing/analytics.fixtures';
 import {
   AnalyticsGoalRefusal,
@@ -161,6 +164,14 @@ function build(options: {
         useValue: {
           barbers: signal([{ id: IVAN }, { id: NIKO }]),
           locations: signal([]),
+        },
+      },
+      {
+        // The whole team's read (team onboarding D3): everyone who worked.
+        provide: TeamCatalogService,
+        useValue: {
+          workedBarbers: signal([{ id: IVAN }, { id: NIKO }]),
+          watchTeam: () => undefined,
         },
       },
     ],

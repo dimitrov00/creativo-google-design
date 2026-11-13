@@ -85,6 +85,7 @@ import {
   provideLazyPort,
   rolesAdminPorts,
   analyticsCallPorts,
+  TEAM_BARBER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
 import { Result } from '@core/primitives';
@@ -503,6 +504,17 @@ export const appConfig: ApplicationConfig = {
         observeBarbers: LazyMethod.Observable,
         observeCategories: LazyMethod.Observable,
         observeLocations: LazyMethod.Observable,
+      },
+      onLoadError: dataUnavailable,
+    }),
+    // The barbers off the public list (team onboarding D3): the whole
+    // team, staff only, and records by id for a past visit's name.
+    provideLazyPort(TEAM_BARBER_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.teamBarberPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observeTeamBarbers: LazyMethod.Observable,
+        loadBarbers: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
