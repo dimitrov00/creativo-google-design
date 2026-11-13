@@ -35,6 +35,7 @@ import {
   seatFixture,
   serviceFixture,
   termsFixture,
+  performersOf,
 } from '@core/testing';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 import {
@@ -142,6 +143,7 @@ async function renderShell(
         provide: CATALOG_PORTS,
         useValue: memoryCatalogReadPorts({
           services: options.catalog ?? CATALOG,
+          barbers: performersOf(options.catalog ?? CATALOG),
         }),
       },
       {

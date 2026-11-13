@@ -61,6 +61,7 @@ import {
   serviceFixture,
   termsFixture,
   utcMs,
+  performersOf,
 } from '@core/testing';
 import {
   AUTH_DEPLOYMENT_PORTS,
@@ -312,7 +313,10 @@ describe('ClientOnboarding', () => {
         },
         {
           provide: CATALOG_PORTS,
-          useValue: memoryCatalogReadPorts({ services: catalog.services }),
+          useValue: memoryCatalogReadPorts({
+            services: catalog.services,
+            barbers: performersOf(catalog.services),
+          }),
         },
         { provide: MEDIA_RESOLVE_PORTS, useValue: catalog.media },
       ],

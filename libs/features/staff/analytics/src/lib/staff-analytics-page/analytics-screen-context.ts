@@ -59,11 +59,11 @@ export function injectAnalyticsScreen(
 
   const names: AnalyticsNames = {
     serviceName: (id) => {
-      const service = catalog.findService(id);
+      const service = catalog.findAnyService(id);
       return service === undefined ? null : wording.text(service.name);
     },
     serviceOrder: (id) => {
-      const order = catalog.services().findIndex((entry) => entry.id === id);
+      const order = catalog.allServices().findIndex((entry) => entry.id === id);
       return order === -1 ? null : order;
     },
     barberName: (id) => {
@@ -104,7 +104,7 @@ export function injectAnalyticsScreen(
     }
     // Read here so a late catalogue re-words the names.
     catalog.barbers();
-    catalog.services();
+    catalog.allServices();
     // Locations not read yet word as one shop, never as «all».
     const shopCount = catalog.locations().length || 1;
     return {

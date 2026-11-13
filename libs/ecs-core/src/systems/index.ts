@@ -27,6 +27,7 @@ export * from './calendar-grid.system';
 export * from './cancellation-policy.system';
 export * from './canonical-json.system';
 export * from './capacity.system';
+export * from './catalog-listing.system';
 export * from './catalog-pricing.system';
 export * from './catalog.system';
 export * from './client-erasure.system';

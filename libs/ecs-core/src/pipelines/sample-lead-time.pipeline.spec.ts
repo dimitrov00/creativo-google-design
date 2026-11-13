@@ -63,6 +63,7 @@ const ZONE_PORTS = {
 function rig(
   entries: readonly CapacityEntry[],
   barbers: readonly BarberId[] = [IVAN],
+  live: readonly BarberId[] = barbers,
 ) {
   const asked: (readonly MonthKey[])[] = [];
   const written: BarberLeadTimeSample[] = [];
@@ -73,6 +74,7 @@ function rig(
     nowUtcMs: pinnedNowUtcMs(),
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     listBarbers: async () => Result.ok(barbers),
+    listLiveBarberIds: async () => Result.ok(live),
     loadCapacityMonths: async (months) => {
       asked.push(months);
       return Result.ok(
@@ -169,6 +171,22 @@ describe('sampleLeadTime', () => {
     ]);
   });
 
+  it('samples only LIVE barbers — a rostered draft or leaver is nobody’s lead time (team onboarding D3)', async () => {
+    const { written, run } = rig(
+      [
+        entry(FIXTURE_TODAY, PETAR, CENTRE, 30),
+        entry(FIXTURE_TODAY, IVAN, CENTRE, 30),
+      ],
+      [IVAN, PETAR],
+      [IVAN],
+    );
+    expect(await run()).toEqual({
+      ok: true,
+      value: { sampledBarberIds: [IVAN] },
+    });
+    expect(written.map((sample) => sample.barberId)).toEqual([IVAN]);
+  });
+
   it('stamps each sample with the day it was taken and the pipeline’s clock', async () => {
     const { written, run } = rig([entry(FIXTURE_TODAY, IVAN, CENTRE, 30)]);
     await run();
@@ -190,6 +208,7 @@ describe('sampleLeadTime', () => {
       nowUtcMs: pinnedNowUtcMs(),
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([PETAR, IVAN]),
+      listLiveBarberIds: async () => Result.ok([PETAR, IVAN]),
       loadCapacityMonths: async (months) => Result.ok(months.map(() => null)),
       writeLeadTimeSample: async (sample) => {
         if (sample.barberId === PETAR) return Result.err(failure);
@@ -223,6 +242,7 @@ describe('sampleLeadTime', () => {
       nowUtcMs: pinnedNowUtcMs(),
       loadPolicy: async () => Result.err(failure),
       listBarbers: async () => Result.ok([IVAN]),
+      listLiveBarberIds: async () => Result.ok([IVAN]),
       loadCapacityMonths: async () => Result.ok([]),
       writeLeadTimeSample: async (sample) => {
         written.push(sample);
@@ -243,6 +263,7 @@ describe('sampleLeadTime', () => {
       nowUtcMs: pinnedNowUtcMs(),
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([IVAN]),
+      listLiveBarberIds: async () => Result.ok([IVAN]),
       loadCapacityMonths: async () => Result.ok([]),
       writeLeadTimeSample: async (sample) => {
         written.push(sample);

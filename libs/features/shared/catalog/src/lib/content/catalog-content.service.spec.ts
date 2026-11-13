@@ -27,6 +27,7 @@ import {
   memoryMediaResolvePorts,
   principalFixture,
   serviceFixture,
+  FIXTURE_TERMS,
 } from '@core/testing';
 import { CatalogContentService } from './catalog-content.service';
 import { DEFAULT_MEDIA_RETRY_POLICY } from './media-url-cache';
@@ -44,6 +45,11 @@ const fade: Service = serviceFixture({
   coverMediaPath: cover.path,
   coverMediaWidth: cover.width,
   coverMediaHeight: 1500,
+  // Performed by the listed Ivan below — the public catalogue keeps only
+  // listed performers' offerings (team onboarding D3).
+  offerings: [
+    { barberId: BarberId.of('ivan'), overrides: [], ...FIXTURE_TERMS },
+  ],
 });
 
 const ivan: Barber = barberFixture({

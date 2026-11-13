@@ -404,7 +404,7 @@ export class ClientAppointments {
     const locations = this.catalog.locations();
     return {
       serviceName: (id) => {
-        const service = this.catalog.findService(id);
+        const service = this.catalog.findAnyService(id);
         return service ? this.content.text(service.name) : null;
       },
       barberName: (id) => {

@@ -218,6 +218,26 @@ export function barberFixture(
   };
 }
 
+/**
+ * A public barber record (`barberFixture`) for every distinct performer the
+ * services list, in first-listed order — the catalogue double's barbers for
+ * a spec that seeds services only, so the public catalogue
+ * (`CatalogListingSystem.listedServices`) keeps every offering.
+ */
+export function performersOf(
+  services: readonly {
+    readonly offerings: readonly { readonly barberId: BarberId }[];
+  }[],
+): readonly Barber[] {
+  const ids: BarberId[] = [];
+  for (const service of services) {
+    for (const offering of service.offerings) {
+      if (!ids.includes(offering.barberId)) ids.push(offering.barberId);
+    }
+  }
+  return ids.map((id) => barberFixture({ id }));
+}
+
 /** The centre shop, open 09:00–19:00 Monday to Saturday, closed Sunday. */
 export function locationFixture(
   overrides: Partial<ShopLocation> = {},

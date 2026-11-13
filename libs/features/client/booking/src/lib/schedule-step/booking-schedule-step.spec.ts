@@ -36,6 +36,7 @@ import {
   termsFixture,
   unwrapOk,
   until,
+  performersOf,
 } from '@core/testing';
 import {
   bookingPortProviders,
@@ -220,7 +221,8 @@ async function renderShell(
         useValue: {
           ...memoryCatalogReadPorts({
             services: options.services ?? CATALOG,
-            barbers: options.barbers ?? [],
+            barbers:
+              options.barbers ?? performersOf(options.services ?? CATALOG),
             locations: shops,
           }),
           ...(options.locations === 'pending'
@@ -682,10 +684,14 @@ describe('BookingScheduleStep — a visit that asks for its barber', () => {
 
   // A projection asked about no chair can only answer "no room", so the run
   // asks nothing: no `capacity/{YYYY-MM}` listener opens for a visit no
-  // barber on the list can take, and no day is live.
+  // barber on the list can take, and no day is live. The cut lists no
+  // performer (everyone's, at its own terms), so it stays public with
+  // nobody listed — a service only UNLISTED barbers perform would not be
+  // public at all (team onboarding D3).
   it('reads no capacity month for a visit no barber can take, and marks no day', async () => {
     const capacityReads: string[] = [];
     const fixture = await toSchedule({
+      services: [{ ...service('cut'), offerings: [] }],
       barbers: [],
       locations: SHOPS,
       shopId: 'loc-center',
