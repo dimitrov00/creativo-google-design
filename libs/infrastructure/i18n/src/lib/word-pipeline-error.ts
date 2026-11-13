@@ -42,10 +42,28 @@ export function wordPipelineError(
   fallbackCode: string,
   extraParams: Readonly<Record<string, string>> = {},
 ): string {
+  return (
+    wordServerRefusal(error, translate, extraParams) ??
+    translate(fallbackCode, { ...error.serverParams, ...extraParams })
+  );
+}
+
+/**
+ * The server's own refusal in the catalogue's words, or `null` when the
+ * call named no server code or the catalogue has no copy for it — the
+ * first half of {@link wordPipelineError}'s rule, for a surface whose
+ * generic line is its own UI copy rather than an error code (the staff
+ * block editor, the hours sheet).
+ */
+export function wordServerRefusal(
+  error: PipelineError,
+  translate: TranslateCode,
+  extraParams: Readonly<Record<string, string>> = {},
+): string | null {
   const params = { ...error.serverParams, ...extraParams };
   for (const code of serverCopyCodes(error)) {
     const worded = translate(code, params);
     if (worded !== code) return worded;
   }
-  return translate(fallbackCode, params);
+  return null;
 }

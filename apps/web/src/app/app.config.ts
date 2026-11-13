@@ -64,7 +64,6 @@ import {
   ROLES_ADMIN_PORTS,
   ANALYTICS_CACHE_PORTS,
   ANALYTICS_CALL_PORTS,
-  SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   SHOP_EVENT_READ_PORTS,
   STREAK_DEFINITION_PORTS,
@@ -437,12 +436,6 @@ export const appConfig: ApplicationConfig = {
         observePolicy: LazyMethod.Observable,
         observeCapacityMonth: LazyMethod.Observable,
       },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(SCHEDULE_EXCEPTION_PORTS, firebaseData, {
-      factory: (m) => (inj) =>
-        m.firestore.scheduleExceptionPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { writeScheduleException: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_READ_PORTS, firebaseData, {

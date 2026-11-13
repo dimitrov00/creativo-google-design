@@ -15,7 +15,6 @@ import {
   ID_PORTS,
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
-  SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { BarberId, LocationId, Result } from '@core/primitives';
@@ -27,6 +26,7 @@ import type {
   ScheduleException,
   ShopLocation,
 } from '@core/entities';
+import { Callables } from '@core/ports';
 import type {
   AppointmentNotePorts,
   AppointmentReadPorts,
@@ -48,6 +48,7 @@ import {
   memoryCatalogReadPorts,
   memoryClockPorts,
   memoryCouponVoucherPorts,
+  memoryDayExceptionsCallable,
   memoryDefaultLocationPorts,
   memoryLocationLoadPorts,
   memoryProgramsWorld,
@@ -182,7 +183,17 @@ export async function buildStaffDayStore(
       },
       {
         provide: GATEWAY_PORTS,
-        useValue: scriptedGatewayPorts(options.script ?? {}, options.calls),
+        // The day-exceptions callable runs the pens' own merges over an
+        // in-memory writer unless a case scripts its answer.
+        useValue: scriptedGatewayPorts(
+          {
+            [Callables.SetDayExceptions]: memoryDayExceptionsCallable(
+              memoryScheduleExceptionPorts([]),
+            ),
+            ...options.script,
+          },
+          options.calls,
+        ),
       },
       {
         provide: CATALOG_PORTS,
@@ -201,10 +212,6 @@ export async function buildStaffDayStore(
           exceptions: options.exceptions ?? [],
           busyDays: options.busyDays ?? [],
         }),
-      },
-      {
-        provide: SCHEDULE_EXCEPTION_PORTS,
-        useValue: memoryScheduleExceptionPorts([]),
       },
       { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
       {

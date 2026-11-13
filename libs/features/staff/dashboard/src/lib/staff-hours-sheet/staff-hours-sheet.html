@@ -138,8 +138,8 @@
       </li>
       }
     </ul>
-    @if (weekError() ?? (store.absenceError() ? t('staff.hours.failed') : null);
-    as error) {
+    @if (weekError() ?? (store.absenceError() | staffBlockFailure:
+    'staff.hours.failed'); as error) {
     <p
       uiText
       uiFont="footnote"

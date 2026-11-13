@@ -55,24 +55,6 @@ service cloud.firestore {
       return hasAnyRole(['barber', 'receptionist', 'admin', 'sysadmin']);
     }
 
-    /**
-     * Who may change a chair's hours for a day or declare it absent — the
-     * `scheduleExceptions` grant. (The weekly roster itself,
-     * `barberSchedules`, has no client writer since pass E, DEP-6.)
-     *
-     * The intended rule is SELF-OR-MANAGER, and it is not expressible yet:
-     * `Barber` deliberately carries no `userId`, so no token claim can say
-     * which chair the caller IS. Until that link exists this is the honest
-     * subset — everyone who works the book, minus `content_manager`, which
-     * is the part that was actually dangerous (a copy role could rewrite
-     * every barber's roster, and utilisation history divides by it).
-     *
-     * Narrow this to true self-or-manager the moment `Barber ↔ User` lands.
-     */
-    function mayEditRoster() {
-      return worksTheBook();
-    }
-
     function isCatalogManager() {
       return hasAnyRole(['content_manager', 'admin', 'sysadmin']);
     }
@@ -618,23 +600,13 @@ service cloud.firestore {
       // geometry only, structurally reason-free (the doc schema has no field
       // a reason could ride in; a `sick` day must never be derivable here).
       allow read: if true;
-      // The roster editors' boundary — see `mayEditRoster`. The live writer
-      // is the staff's pen on the day, `scheduleExceptionPorts`
-      // (`scheduling.adapter.ts`, one transaction per edit).
-      // Its id is the day's busy key (`BusyKey.of`: `<barberId>__<localDate>`,
-      // which the booking transaction reads by), so a write must BE the day
-      // its id names — the body's barber and date-shaped day — and hold only
-      // the seven keys (`ScheduleException`, pinned by
-      // rules-key-parity.rules-text.spec.ts): zero reads, since a multi-day
-      // block writes many days in one transaction — security hardening
-      // S-DEP-5. A delete needs neither.
-      allow create, update: if mayEditRoster()
-        && request.resource.data.keys().hasOnly(['barberId', 'dayBreakRanges', 'exceptionEffect', 'exceptionRanges', 'localDate', 'locationId', 'utcEpochMs'])
-        && request.resource.data.barberId is string
-        && request.resource.data.localDate is string
-        && request.resource.data.localDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && dayDocId == request.resource.data.barberId + '__' + request.resource.data.localDate;
-      allow delete: if mayEditRoster();
+      // No client writer (team onboarding O4). "A barber changes only their
+      // own days" cannot be said here: `Barber` carries no account, so no
+      // token claim says which chair the caller is, and a `get()` per write
+      // would break a multi-day block's zero-read transaction. The
+      // `setDayExceptions` callable is the one door: it judges the caller's
+      // STORED roles and barber link, and writes through the Admin SDK.
+      allow write: if false;
     }
 
     match /capacity/{monthId} {

@@ -48,7 +48,6 @@ import {
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
   PROFILE_PORTS,
-  SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   USER_SEARCH_PORTS,
   CUSTOMER_SEARCH_PORTS,
@@ -149,6 +148,7 @@ import {
   type MediaResolvePorts,
   type ObserveAppointmentNote,
   type SaveAppointmentNote,
+  type ScheduleExceptionMerge,
   type SchedulingReadPorts,
   type UpdateAppointmentNote,
 } from '@core/ports';
@@ -180,6 +180,7 @@ import {
   memoryLocationLoadPorts,
   memoryProfilePorts,
   memoryProgramsWorld,
+  memoryDayExceptionsCallable,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
   memoryCustomerSearchPorts,
@@ -751,7 +752,14 @@ describe('StaffDashboard', () => {
     exceptions.length = 0;
     exceptions.push(...seededExceptions);
     transition.mockClear();
-    gateway = { [Callables.TransitionAppointment]: transition };
+    gateway = {
+      [Callables.TransitionAppointment]: transition,
+      // The staff's pen reaches the days through the callable: the pens'
+      // own merges, over the writer the cases watch.
+      [Callables.SetDayExceptions]: memoryDayExceptionsCallable({
+        writeScheduleException,
+      }),
+    };
     gatewayCalls = [];
     await TestBed.configureTestingModule({
       imports: [StaffDashboard],
@@ -875,10 +883,6 @@ describe('StaffDashboard', () => {
             observeSchedule,
             observeBusyDay,
           } satisfies SchedulingReadPorts,
-        },
-        {
-          provide: SCHEDULE_EXCEPTION_PORTS,
-          useValue: { writeScheduleException },
         },
         {
           // The signed-in principal — a barber who also holds the keys, so
@@ -10009,12 +10013,7 @@ describe('StaffDashboard', () => {
           // A writer that refuses whatever would hold the new range; anything
           // else lands, as a lift on its own would.
           writeScheduleException.mockImplementation(
-            async <E>(
-              keys: readonly BusyKey[],
-              merge: (
-                stored: readonly (ScheduleException | null)[],
-              ) => PortResult<readonly (ScheduleException | null)[], E>,
-            ) => {
+            async (keys: readonly BusyKey[], merge: ScheduleExceptionMerge) => {
               const refused = merge(
                 keys.map(
                   (key) =>

@@ -43,7 +43,6 @@ import {
   type VoucherRefusal,
 } from '@core/primitives';
 import {
-  CatalogError,
   PipelineError,
   PipelineErrorCode,
   type RepositoryError,
@@ -60,6 +59,8 @@ import {
   type MinuteRange,
   Principal,
   type ShopNow,
+  DayExceptionsEdit,
+  type DayExceptionsRequest,
   type RosterCall,
   type VisitEditWrite,
   VisitEditWriteOutcome,
@@ -104,16 +105,11 @@ import {
   adoptVisitPhoto,
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
-  clearScheduleBlock,
-  moveScheduleBlock,
-  type ScheduleBlocksCommand,
   loadHeldGrants,
   saveTeamNote as saveTeamNotePipeline,
   type SaveVisitEditCommand,
   saveVisitEdit,
   type VisitPhotoSubject,
-  writeDayBreaks,
-  writeScheduleBlocks,
 } from '@core/pipelines';
 import { downscaleImage } from '@creativo/infrastructure/storage';
 import {
@@ -127,7 +123,6 @@ import {
   GATEWAY_PORTS,
   ID_PORTS,
   routePatternOf,
-  SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
@@ -519,7 +514,6 @@ export class StaffDayStore {
   private readonly couponsVouchers = inject(COUPON_VOUCHER_PORTS);
   /** The raw availability streams the lanes' geometry is derived from (F1-10). */
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
-  private readonly exceptions = inject(SCHEDULE_EXCEPTION_PORTS);
   /** The one typed callable client — every write of the day goes through it. */
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly clock = inject(CLOCK_PORTS);
@@ -2059,13 +2053,12 @@ export class StaffDayStore {
   readonly absencePending = this._absencePending.asReadonly();
 
   /**
-   * Why the last block write did not land — the struct, never a word
-   * (Law 7.5): the block pipelines' own answers as they answer
-   * (`writeScheduleBlocks` / `clearScheduleBlock` — a scheduling refusal or
-   * a repository failure), or `CATALOG_LOCATION_ZONE_UNKNOWN` when neither
-   * the shop nor the day names a zone to read the block's day in. The
-   * sheet words it as one line (`staff.day.blockFailed`); `null` while
-   * nothing has failed.
+   * Why the last block or roster write did not land — the struct, never a
+   * word (Law 7.5): the callable's own failure (`setDayExceptions`,
+   * `amendRosterBreaks`, `setRosterWeek` — its refusal's code rides
+   * `serverErrorCode`), or the chair the block sheet found no shop to file
+   * at. The sheet words it as one line (`staff.day.blockFailed`); `null`
+   * while nothing has failed.
    */
   private readonly _absenceError = signal<StaffBlockFailure | null>(null);
   readonly absenceError = this._absenceError.asReadonly();
@@ -2144,82 +2137,49 @@ export class StaffDayStore {
     return true;
   }
 
-  /** An edited block's one write (`moveScheduleBlock`), each chair's day read in its shop's zone. */
-  private async moveBlock(
+  /**
+   * An edited block's ONE write: the old range lifted and each chair's new
+   * days written in one `setDayExceptions` act, so a refused write never
+   * loses the old block.
+   */
+  private moveBlock(
     lift: BlockLift,
     writes: readonly BlockWrite[],
   ): Promise<boolean> {
-    if (this._absencePending()) return false;
-    const commands: ScheduleBlocksCommand[] = [];
-    for (const { barberId, locationId, ranges, days } of writes) {
-      const timeZone = untracked(this.zoneAt)(locationId);
-      if (timeZone === null) {
-        this._absenceError.set(CatalogError.locationZoneUnknown(locationId));
-        return false;
-      }
-      commands.push({
+    return this.dayExceptionsWrite({
+      dayExceptionsEdit: DayExceptionsEdit.Move,
+      liftBarberId: lift.barberId,
+      liftLocalDate: lift.localDate,
+      liftRange: lift.range,
+      writes: writes.map(({ barberId, locationId, ranges, days }) => ({
         barberId,
         locationId,
-        timeZone,
         ranges,
         localDates: days,
-      });
-    }
-    this._absencePending.set(true);
-    this._absenceError.set(null);
-    try {
-      const result = await moveScheduleBlock(this.exceptions)({
-        lift,
-        writes: commands,
-      });
-      if (!result.ok) {
-        this._absenceError.set(result.error);
-        return false;
-      }
-      return true;
-    } finally {
-      this._absencePending.set(false);
-    }
+      })),
+    });
   }
 
   /**
    * The one exception write behind `blockTime` and `blockSeries` —
-   * `writeScheduleBlocks` (`@core/pipelines`): per day, a whole-day
-   * stand-down REPLACES what the day held (`CLOSED`), and a range MERGES
-   * into its stored blocks (`ScheduleExceptionSystem.block` — a day already
-   * off whole stays off, never demoted to a partial block).
+   * `setDayExceptions`' `BLOCK`: per day, a whole-day stand-down REPLACES
+   * what the day held (`CLOSED`), and a range MERGES into its stored blocks
+   * (a day already off whole stays off, never demoted to a partial block).
+   * The server reads each day's first instant in its shop's zone.
    */
-  private async writeBlocks(
+  private writeBlocks(
     barberId: BarberId,
     locationId: LocationId,
     ranges: readonly MinuteRange[],
     days: readonly LocalDate[],
   ): Promise<boolean> {
-    // The exception's day instant is read in ITS shop's zone (Law 7.2), the
-    // day's own until the catalogue lists that shop; none known, no write.
-    const zone = untracked(this.zoneAt)(locationId);
-    if (zone === null) {
-      this._absenceError.set(CatalogError.locationZoneUnknown(locationId));
-      return false;
-    }
-    this._absencePending.set(true);
-    this._absenceError.set(null);
-    try {
-      const result = await writeScheduleBlocks(this.exceptions)({
-        barberId,
-        locationId,
-        timeZone: zone,
-        ranges,
-        localDates: days,
-      });
-      if (!result.ok) {
-        this._absenceError.set(result.error);
-        return false;
-      }
-      return true;
-    } finally {
-      this._absencePending.set(false);
-    }
+    return this.dayExceptionsWrite({
+      dayExceptionsEdit: DayExceptionsEdit.Block,
+      barberId,
+      locationId,
+      ranges,
+      localDates: days,
+    });
   }
 
   /**
@@ -2228,69 +2188,56 @@ export class StaffDayStore {
    * A day off WHOLE has no ranges to lift one from: the range form refuses
    * it, and the day-wide clear is the honest path.
    */
-  async clearBlock(
+  clearBlock(
     barberId: BarberId,
     range: MinuteRange | null,
     day: LocalDate,
   ): Promise<boolean> {
-    if (this._absencePending()) return false;
-    this._absencePending.set(true);
-    this._absenceError.set(null);
-    try {
-      // `clearScheduleBlock` (`@core/pipelines`): the day's stored body
-      // through `ScheduleExceptionSystem.unblock` inside the write.
-      const result = await clearScheduleBlock(this.exceptions)({
-        barberId,
-        localDate: day,
-        range,
-      });
-      if (!result.ok) {
-        this._absenceError.set(result.error);
-        return false;
-      }
-      return true;
-    } finally {
-      this._absencePending.set(false);
-    }
+    // `setDayExceptions`' `CLEAR`: the day's stored body goes through
+    // `ScheduleExceptionSystem.unblock` inside the server's write.
+    return this.dayExceptionsWrite({
+      dayExceptionsEdit: DayExceptionsEdit.Clear,
+      barberId,
+      localDate: day,
+      range,
+    });
   }
 
   /**
    * A chair's breaks said for ONE day alone (owner, 2026-11-06: «Само този
    * ден» — "no lunch breaks for some specific days, removed day by day"):
    * `ranges` instead of the roster's (`[]`: none that day), `null` hands the
-   * day back to the roster. One exception document (`writeDayBreaks`); the
-   * day's blocks stay. The day is read in its shop's zone (Law 7.2).
+   * day back to the roster. One exception document (`setDayExceptions`'
+   * `DAY_BREAKS`); the day's blocks stay.
    */
-  async setDayBreaks(
+  setDayBreaks(
     barberId: BarberId,
     locationId: LocationId,
     localDate: LocalDate,
     ranges: readonly MinuteRange[] | null,
   ): Promise<boolean> {
-    if (this._absencePending()) return false;
-    const timeZone = untracked(this.zoneAt)(locationId);
-    if (timeZone === null) {
-      this._absenceError.set(CatalogError.locationZoneUnknown(locationId));
-      return false;
-    }
-    this._absencePending.set(true);
-    this._absenceError.set(null);
-    try {
-      const result = await writeDayBreaks(this.exceptions)({
-        barberId,
-        locationId,
-        timeZone,
-        localDate,
-        ranges,
-      });
-      if (!result.ok) {
-        this._absenceError.set(result.error);
-        return false;
-      }
-      return true;
-    } finally {
-      this._absencePending.set(false);
-    }
+    return this.dayExceptionsWrite({
+      dayExceptionsEdit: DayExceptionsEdit.DayBreaks,
+      barberId,
+      locationId,
+      localDate,
+      ranges,
+    });
+  }
+
+  /**
+   * A barber's days changed — `setDayExceptions`, ONE act on the server
+   * (`scheduleExceptions` has no client writer): it judges whose days the
+   * caller may change and writes them. The exceptions' listener redraws
+   * every day it reaches.
+   */
+  private dayExceptionsWrite(request: DayExceptionsRequest): Promise<boolean> {
+    return this.rosterWrite((operationId) =>
+      this.gateway.callableClient(Callables.SetDayExceptions)({
+        ...request,
+        operationId,
+      }),
+    );
   }
 
   /**
@@ -2325,7 +2272,7 @@ export class StaffDayStore {
     );
   }
 
-  /** A roster callable, named and in flight once — its refusal kept for the sheet. */
+  /** A roster or day-exceptions callable, named and in flight once — its refusal kept for the sheet. */
   private async rosterWrite(
     dial: (
       operationId: ClientOperationId,

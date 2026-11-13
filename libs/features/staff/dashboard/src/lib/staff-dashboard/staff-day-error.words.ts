@@ -1,8 +1,14 @@
 import { BookingStatus, Tag } from '@core/primitives';
-import { BookingErrorCode, type PipelineError } from '@core/errors';
+import {
+  BookingErrorCode,
+  type PipelineError,
+  type StaffBlockFailure,
+} from '@core/errors';
 import {
   bookingStatusWords,
+  type TranslateCode,
   wordPipelineError,
+  wordServerRefusal,
 } from '@creativo/infrastructure/i18n';
 import type { StaffTranslate } from './staff-day.vm';
 
@@ -58,4 +64,21 @@ export function refusalSentence(
   // (`wordPipelineError`), reused: a staff save refused for seating one
   // person twice said only "invalid input".
   return wordPipelineError(error, wordCode, BookingErrorCode.CallFailed, extra);
+}
+
+/**
+ * Why a block, a day's breaks or the hours did not save, as one line: the
+ * server's own refusal when the catalogue has copy for it — «Можеш да
+ * променяш само своето работно време.» for a barber touching a
+ * colleague's days — else the surface's `generic` line. A failure no call
+ * made (a chair with no shop to file at) is the generic line too.
+ */
+export function blockFailureSentence(
+  failure: StaffBlockFailure,
+  wordCode: TranslateCode,
+  generic: string,
+): string {
+  return 'serverErrorCode' in failure
+    ? (wordServerRefusal(failure, wordCode) ?? generic)
+    : generic;
 }

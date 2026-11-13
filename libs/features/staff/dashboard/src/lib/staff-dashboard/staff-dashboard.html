@@ -1531,7 +1531,7 @@
       (dayChanged)="onBlockDayChanged($event)"
       (converted)="convertBlockFromEditor($event)"
     />
-    @if (store.absenceError()) {
+    @if (store.absenceError(); as failure) {
     <p
       uiText
       uiFont="footnote"
@@ -1539,7 +1539,7 @@
       role="alert"
       data-testid="staff-block-error"
     >
-      {{ t('staff.day.blockFailed') }}
+      {{ failure | staffBlockFailure: 'staff.day.blockFailed' }}
     </p>
     }
   </ui-modal-sheet>

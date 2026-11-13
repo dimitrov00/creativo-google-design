@@ -30,8 +30,7 @@ vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
 );
 
-const { scheduleExceptionPorts, schedulingReadPorts } =
-  await import('./scheduling.adapter');
+const { schedulingReadPorts } = await import('./scheduling.adapter');
 const { guardedReads } = await import('./observe');
 
 const IVAN = BarberId.of('ivan');
@@ -267,114 +266,6 @@ describe('schedulingReadPorts.observePolicy — the defaults are the floor', () 
         reason: 'permission-denied',
       }),
     ]);
-  });
-});
-
-describe('scheduleExceptionPorts.writeScheduleException — read, merge, write in one transaction', () => {
-  it('reads every key’s stored day and writes the merge’s answer, the body without its id', async () => {
-    const fake = new FakeFirestore({
-      [`scheduleExceptions/${MONDAY}`]: bodyOf(blocked(MONDAY)),
-    });
-    const merge = vi.fn(
-      (
-        stored: readonly (ScheduleException | null)[],
-      ): Result<readonly (ScheduleException | null)[], never> => {
-        expect(stored).toHaveLength(2);
-        return Result.ok([
-          blocked(MONDAY, [
-            MinuteRange.of(at(10), until(11)),
-            MinuteRange.of(at(15), until(16)),
-          ]),
-          blocked(TUESDAY),
-        ]);
-      },
-    );
-
-    const answer = await scheduleExceptionPorts(
-      asDb(fake),
-    ).writeScheduleException([MONDAY, TUESDAY], merge);
-
-    expect(answer).toEqual(Result.ok(undefined));
-    expect(merge).toHaveBeenCalledWith([blocked(MONDAY), null]);
-    expect(fake.reads.map((read) => [read.kind, read.path])).toEqual([
-      ['document', `scheduleExceptions/${MONDAY}`],
-      ['document', `scheduleExceptions/${TUESDAY}`],
-    ]);
-    expect(fake.writes).toEqual([
-      {
-        kind: 'set',
-        path: `scheduleExceptions/${MONDAY}`,
-        data: bodyOf(
-          blocked(MONDAY, [
-            MinuteRange.of(at(10), until(11)),
-            MinuteRange.of(at(15), until(16)),
-          ]),
-        ),
-      },
-      {
-        kind: 'set',
-        path: `scheduleExceptions/${TUESDAY}`,
-        data: bodyOf(blocked(TUESDAY)),
-      },
-    ]);
-  });
-
-  it('deletes a day the merge empties, and writes nothing for a day that held nothing and holds nothing', async () => {
-    const fake = new FakeFirestore({
-      [`scheduleExceptions/${MONDAY}`]: bodyOf(blocked(MONDAY)),
-    });
-
-    const answer = await scheduleExceptionPorts(
-      asDb(fake),
-    ).writeScheduleException([MONDAY, TUESDAY], () => Result.ok([null, null]));
-
-    expect(answer).toEqual(Result.ok(undefined));
-    expect(fake.writes).toEqual([
-      { kind: 'delete', path: `scheduleExceptions/${MONDAY}`, data: null },
-    ]);
-    expect(fake.documentAt(`scheduleExceptions/${MONDAY}`)).toBeUndefined();
-  });
-
-  it('writes nothing when the merge refuses, and hands its refusal back', async () => {
-    const fake = new FakeFirestore();
-    const refusal = { errorCode: 'SCHEDULING_EXCEPTION_EMPTY_RANGES' } as const;
-
-    const answer = await scheduleExceptionPorts(
-      asDb(fake),
-    ).writeScheduleException([MONDAY], () => Result.err(refusal));
-
-    expect(answer).toEqual(Result.err(refusal));
-    expect(fake.writes).toEqual([]);
-  });
-
-  it('turns a refused transaction into REPOSITORY_WRITE_FAILED, nothing written', async () => {
-    const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
-
-    const answer = await scheduleExceptionPorts(
-      asDb(fake),
-    ).writeScheduleException([MONDAY], () => Result.ok([blocked(MONDAY)]));
-
-    expect(answer).toEqual(
-      Result.err({
-        errorCode: RepositoryErrorCode.WriteFailed,
-        path: 'scheduleExceptions',
-        reason: 'permission-denied',
-      }),
-    );
-    expect(fake.writes).toEqual([]);
-  });
-
-  it('refuses, as a defect, a merge that answers for another number of days — nothing written', async () => {
-    const fake = new FakeFirestore();
-
-    const answer = await scheduleExceptionPorts(
-      asDb(fake),
-    ).writeScheduleException([MONDAY, TUESDAY], () =>
-      Result.ok([blocked(MONDAY)]),
-    );
-
-    expect(answer.ok).toBe(false);
-    expect(fake.writes).toEqual([]);
   });
 });
 

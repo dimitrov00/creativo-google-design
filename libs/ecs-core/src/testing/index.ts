@@ -4,6 +4,7 @@ export * from './analytics.fixtures';
 export * from './appointment.fixtures';
 export * from './booking-core.fixtures';
 export * from './booking-flow.fixtures';
+export * from './day-exceptions-callable.double';
 export * from './deep-freeze';
 export * from './identity.fixtures';
 export * from './loyalty.fixtures';

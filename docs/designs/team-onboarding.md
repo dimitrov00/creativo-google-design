@@ -425,7 +425,12 @@ roles and link inside its transaction.
 - **Day exceptions move behind a callable** (`setDayExceptions`), which does
   the same checks and writes a multi-day series in one commit. Today they
   are client writes that any staff member may make, and the rules cannot
-  tell which barber the caller is (`firestore.rules:58-74`). O4.
+  tell which barber the caller is (`firestore.rules:58-74`). O4. As built:
+  one callable for the staff schedule's four pens (`dayExceptionsEdit`:
+  `BLOCK`, `CLEAR`, `MOVE`, `DAY_BREAKS`). It runs the browser's old merges
+  unchanged inside the server's transaction, reads each shop's zone itself,
+  and admits every barber the act touches, so a barber cannot move a block
+  onto a colleague. `scheduleExceptions` is `allow write: if false`.
 - The rules spec that asserts any barber may write exceptions changes with
   it.
 
@@ -907,8 +912,11 @@ trigger plans no row for a `barbers` or `services` write that stamped its
 operation (`GovernedChangeSystem.auditedByCallable`). A deletion stamps
 nothing, so it keeps both rows: the callable's, credited to the admin, and
 the trigger's. The offerings a deleted draft leaves behind are unstamped
-too, so the trigger audits those service writes. The action names carry
-the `TEAM_` domain prefix, as every audit action carries its domain's.
+too, so the trigger audits those service writes. Day exception documents
+are not stamped either (they stay the seven-field public effect), so each
+keeps its trigger row, now credited to the Admin SDK; the callable's row is
+the one that names the person. The action names carry the `TEAM_` domain
+prefix, as every audit action carries its domain's.
 
 | Callable or job             | Audit action                                                                                   |
 | --------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -917,7 +925,7 @@ the `TEAM_` domain prefix, as every audit action carries its domain's.
 | Shops                       | `TEAM_BARBER_SHOPS_CHANGED`                                                                    |
 | Offerings, copy             | `TEAM_BARBER_OFFERINGS_CHANGED`                                                                |
 | Hours, breaks               | the existing roster row, now with `operationId`                                                |
-| Day exceptions              | `SCHEDULE_EXCEPTIONS_CHANGED`                                                                  |
+| Day exceptions              | `TEAM_DAY_EXCEPTIONS_CHANGED` (one row per barber an act changed days of)                      |
 | Working period, «Напускане» | `TEAM_BARBER_PERIOD_CHANGED`                                                                   |
 | «Който и да е» flag         | `TEAM_BARBER_POOL_CHANGED`                                                                     |
 | Activation, access, rehire  | `TEAM_BARBER_STATUS_CHANGED`                                                                   |

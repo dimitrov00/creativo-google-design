@@ -61,3 +61,4 @@ export * from './edit-barber.pipeline';
 export * from './activate-barber.pipeline';
 export * from './delete-draft-barber.pipeline';
 export * from './set-barber-offerings.pipeline';
+export * from './set-day-exceptions.pipeline';

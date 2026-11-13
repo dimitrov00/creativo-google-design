@@ -1,24 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type {
-  AppointmentNote,
-  AppointmentPhoto,
-  ScheduleException,
-} from '@core/entities';
+import type { AppointmentNote, AppointmentPhoto } from '@core/entities';
 import { blockOf, occurrences, rulesCode } from '@core/testing';
 
 /*
- * The book's three browser-written collections as rules TEXT (security
+ * The book's two browser-written collections as rules TEXT (security
  * hardening S-DEP-5, S-L-14): each create / update names only the keys its
  * entity stores — `keys().hasOnly([…])` — and this spec ties every such
  * list to a key table the COMPILER checks against the entity, so a field
- * added to, renamed in or dropped from `AppointmentNote`, `AppointmentPhoto`
- * or `ScheduleException` fails here instead of in production (a list that
- * lags the entity refuses the app's own write). It also pins the id proofs
- * the emulator suite exercises: one `exists(` in the notes and in the photos
- * block, none in the exceptions block (a multi-day block writes many days
- * in one transaction), and the photo id's UUID pattern once. Like
+ * added to, renamed in or dropped from `AppointmentNote` or
+ * `AppointmentPhoto` fails here instead of in production (a list that lags
+ * the entity refuses the app's own write). It also pins the id proofs the
+ * emulator suite exercises: one `exists(` in the notes and in the photos
+ * block, and the photo id's UUID pattern once — and that
+ * `scheduleExceptions`, once the third, has no client writer at all (team
+ * onboarding O4: the `setDayExceptions` callable is its one door). Like
  * `stamp-window.rules-text.spec.ts` and `role.rules-parity.spec.ts`, it
  * reads the rules file as text, comments removed — through the one rules
  * reader of `@core/testing` (`rules-text.ts`).
@@ -64,17 +61,6 @@ const PHOTO_KEYS: KeyTable<AppointmentPhoto> = {
   width: true,
 };
 
-/** Over the three effect variants: `CLOSED` stores no `exceptionRanges`, the ranged two do. */
-const EXCEPTION_KEYS: KeyTable<ScheduleException> = {
-  barberId: true,
-  dayBreakRanges: true,
-  exceptionEffect: true,
-  exceptionRanges: true,
-  localDate: true,
-  locationId: true,
-  utcEpochMs: true,
-};
-
 /** A key table's keys in code-unit order — the order the rules lists are written in. */
 const sortedKeys = (table: Readonly<Record<string, true>>): string[] =>
   Object.keys(table).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -86,7 +72,6 @@ describe('firestore.rules — the book’s key lists match the entities (S-DEP-5
   it.each([
     ['/appointmentNotes/{appointmentId}', NOTE_KEYS],
     ['/appointmentPhotos/{photoId}', PHOTO_KEYS],
-    ['/scheduleExceptions/{dayDocId}', EXCEPTION_KEYS],
   ] as const)(
     '%s lists exactly its entity’s stored keys, once',
     (path, table) => {
@@ -94,7 +79,7 @@ describe('firestore.rules — the book’s key lists match the entities (S-DEP-5
     },
   );
 
-  it('ties a note and a photo to an existing appointment with one exists( each, and an exception to no read at all', () => {
+  it('ties a note and a photo to an existing appointment with one exists( each', () => {
     expect(
       occurrences(
         blockOf(CODE, '/appointmentNotes/{appointmentId}'),
@@ -116,12 +101,18 @@ describe('firestore.rules — the book’s key lists match the entities (S-DEP-5
         'exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId))',
       ),
     ).toBe(1);
+  });
+
+  it('gives a day exception no client writer: world-readable, every write refused, no key list and no read (team onboarding O4)', () => {
     const exceptions = blockOf(CODE, '/scheduleExceptions/{dayDocId}');
+    expect(occurrences(exceptions, 'allow read: if true;')).toBe(1);
+    expect(occurrences(exceptions, 'allow write: if false;')).toBe(1);
+    expect(occurrences(exceptions, 'allow ')).toBe(2);
+    expect(hasOnlyLists(exceptions)).toEqual([]);
     expect(occurrences(exceptions, 'exists(')).toBe(0);
     expect(occurrences(exceptions, 'get(')).toBe(0);
-    expect(exceptions).toContain(
-      "dayDocId == request.resource.data.barberId + '__' + request.resource.data.localDate",
-    );
+    // The roster-editor grant it once used is gone with its last user.
+    expect(occurrences(CODE, 'mayEditRoster')).toBe(0);
   });
 
   it('holds the photo id’s UUID pattern once, inside the photos block', () => {

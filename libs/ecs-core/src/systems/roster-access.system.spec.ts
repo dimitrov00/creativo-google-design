@@ -185,6 +185,115 @@ describe('RosterAccessSystem.withinShops — hours only where the barber works',
   });
 });
 
+describe('RosterAccessSystem.worksAt / admitDays — an act on barbers’ days', () => {
+  const desk = userFixture({ roles: [Role.Receptionist] });
+  const own = userFixture({ roles: [Role.Barber], linkedBarberId: IVAN });
+  const niko = barberFixture({ id: NIKO });
+
+  it('worksAt: every shop for an empty list, else only the listed ones', () => {
+    expect(
+      RosterAccessSystem.worksAt(barberFixture({ locationIds: [] }), MLADOST)
+        .ok,
+    ).toBe(true);
+    expect(unwrapOk(RosterAccessSystem.worksAt(ivan, CENTER))).toBe(ivan);
+    expect(unwrapErr(RosterAccessSystem.worksAt(ivan, MLADOST))).toEqual({
+      errorCode: SchedulingErrorCode.RosterOutsideShops,
+      locationId: MLADOST,
+    });
+  });
+
+  it('admits the front desk for every barber the act touches', () => {
+    expect(
+      RosterAccessSystem.admitDays(
+        desk,
+        [ivan, niko],
+        [
+          { barberId: IVAN, locationId: null },
+          { barberId: NIKO, locationId: CENTER },
+        ],
+        NOW,
+      ),
+    ).toEqual({ ok: true, value: null });
+  });
+
+  it('admits a barber for their own days only — a move onto a colleague is refused', () => {
+    expect(
+      RosterAccessSystem.admitDays(
+        own,
+        [ivan],
+        [{ barberId: IVAN, locationId: CENTER }],
+        NOW,
+      ).ok,
+    ).toBe(true);
+    expect(
+      unwrapErr(
+        RosterAccessSystem.admitDays(
+          own,
+          [ivan, niko],
+          [
+            { barberId: IVAN, locationId: null },
+            { barberId: NIKO, locationId: CENTER },
+          ],
+          NOW,
+        ),
+      ),
+    ).toEqual(FORBIDDEN);
+  });
+
+  it('refuses a day filed at a shop its barber does not work at; a lift names no shop and is not asked', () => {
+    expect(
+      unwrapErr(
+        RosterAccessSystem.admitDays(
+          desk,
+          [ivan],
+          [{ barberId: IVAN, locationId: MLADOST }],
+          NOW,
+        ),
+      ),
+    ).toEqual({
+      errorCode: SchedulingErrorCode.RosterOutsideShops,
+      locationId: MLADOST,
+    });
+    expect(
+      RosterAccessSystem.admitDays(
+        desk,
+        [ivan],
+        [{ barberId: IVAN, locationId: null }],
+        NOW,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('refuses a barber with no record among those read, and one who has left', () => {
+    expect(
+      unwrapErr(
+        RosterAccessSystem.admitDays(
+          desk,
+          [ivan],
+          [{ barberId: NIKO, locationId: CENTER }],
+          NOW,
+        ),
+      ),
+    ).toEqual({
+      errorCode: SchedulingErrorCode.RosterInvalidInput,
+      field: 'barberId',
+    });
+    expect(
+      unwrapErr(
+        RosterAccessSystem.admitDays(
+          desk,
+          [departed],
+          [{ barberId: IVAN, locationId: CENTER }],
+          NOW,
+        ),
+      ),
+    ).toEqual({
+      errorCode: SchedulingErrorCode.RosterDeparted,
+      barberId: IVAN,
+    });
+  });
+});
+
 describe('RosterAccessSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const caller = deepFreeze(

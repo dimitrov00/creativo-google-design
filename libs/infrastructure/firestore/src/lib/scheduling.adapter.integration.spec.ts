@@ -11,7 +11,7 @@ import type {
   RulesTestContext,
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { firstValueFrom, skip } from 'rxjs';
 import { BlockKind, BookingPolicy, MinuteRange } from '@core/components';
 import {
@@ -23,26 +23,14 @@ import {
   Result,
   ScheduleExceptionId,
 } from '@core/primitives';
-import { RepositoryErrorCode, SchedulingErrorCode } from '@core/errors';
 import type { ScheduleException } from '@core/entities';
-import { moveScheduleBlock } from '@core/pipelines';
-import {
-  FIXTURE_TIME_ZONE,
-  at,
-  localDate,
-  recordingTelemetry,
-  until,
-  utcMs,
-} from '@core/testing';
+import { at, localDate, recordingTelemetry, until, utcMs } from '@core/testing';
 import {
   createEmulatorTestEnv,
   modularFirestore,
 } from '../testing/emulator-test-env';
 import { guardedReads } from './observe';
-import {
-  scheduleExceptionPorts,
-  schedulingReadPorts,
-} from './scheduling.adapter';
+import { schedulingReadPorts } from './scheduling.adapter';
 
 const IVAN = BarberId.of('ivan');
 const MONDAY = BusyKey.of(IVAN, localDate('2026-10-12'));
@@ -77,7 +65,7 @@ const BUSY = {
   blocks: [{ startMinutes: 600, endMinutes: 645, blockKind: BlockKind.Busy }],
 };
 
-describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
+describe('schedulingReadPorts (emulator)', () => {
   let testEnv: RulesTestEnvironment;
   // The reads go through the REAL guard, as the composition root binds it
   // (OR-33): every document seeded here is admitted, so nothing is reported.
@@ -85,10 +73,6 @@ describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
 
   const readsFor = (context: RulesTestContext) =>
     schedulingReadPorts(modularFirestore(context), guardedReads(telemetry));
-  const writesFor = (context: RulesTestContext) =>
-    scheduleExceptionPorts(modularFirestore(context));
-  const barber = () =>
-    testEnv.authenticatedContext('staff-ivan', { roles: ['barber'] });
 
   beforeAll(async () => {
     testEnv = await createEmulatorTestEnv('demo-firestore-scheduling');
@@ -179,179 +163,30 @@ describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
     ).rejects.toBeTruthy();
   });
 
-  it('writes a barber’s merged block in one transaction, the day reading it back', async () => {
-    const merged = blocked([
-      MinuteRange.of(at(10), until(11)),
-      MinuteRange.of(at(15), until(16)),
-    ]);
-
-    const answer = await writesFor(barber()).writeScheduleException(
-      [MONDAY],
-      (stored) => {
-        expect(stored).toEqual([blocked()]);
-        return Result.ok([merged]);
-      },
-    );
-
-    expect(answer).toEqual(Result.ok(undefined));
+  it('RULES: a day exception is world-readable and has no client writer — the barber, the front desk and the admin included (team onboarding O4)', async () => {
+    for (const roles of [
+      ['client'],
+      ['content_manager'],
+      ['barber'],
+      ['receptionist'],
+      ['admin'],
+      ['sysadmin'],
+    ]) {
+      const db = modularFirestore(
+        testEnv.authenticatedContext('u-anyone', { roles }),
+      );
+      const day = doc(db, 'scheduleExceptions', MONDAY);
+      await expect(
+        setDoc(day, bodyOf(blocked())),
+        roles.join(),
+      ).rejects.toBeTruthy();
+      await expect(deleteDoc(day), roles.join()).rejects.toBeTruthy();
+    }
+    // Untouched: the day reads back as seeded.
     expect(
       await firstValueFrom(
         readsFor(testEnv.unauthenticatedContext()).observeExceptions(MONDAY),
       ),
-    ).toEqual(Result.ok(merged));
-  });
-
-  it('deletes the day the merge empties, and writes nothing on a refusal', async () => {
-    const ports = writesFor(barber());
-
-    const refused = await ports.writeScheduleException([MONDAY], () =>
-      Result.err({ errorCode: 'REFUSED' } as const),
-    );
-    expect(refused).toEqual(Result.err({ errorCode: 'REFUSED' }));
-
-    const cleared = await ports.writeScheduleException([MONDAY], () =>
-      Result.ok([null]),
-    );
-    expect(cleared).toEqual(Result.ok(undefined));
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      const snap = await getDoc(
-        doc(modularFirestore(ctx), 'scheduleExceptions', MONDAY),
-      );
-      expect(snap.exists()).toBe(false);
-    });
-  });
-
-  it('RULES: a content manager may not touch the roster’s exceptions', async () => {
-    const answer = await writesFor(
-      testEnv.authenticatedContext('copy-1', { roles: ['content_manager'] }),
-    ).writeScheduleException([MONDAY], () => Result.ok([blocked()]));
-
-    expect(answer.ok).toBe(false);
-    expect(!answer.ok && answer.error).toMatchObject({
-      errorCode: RepositoryErrorCode.WriteFailed,
-      path: 'scheduleExceptions',
-    });
-  });
-
-  describe('moveScheduleBlock, an edited block in one real transaction', () => {
-    const SHOP = LocationId.of('loc-center');
-    const NIKO = BarberId.of('niko');
-    const MONDAY_DAY = localDate('2026-10-12');
-    const TUESDAY_DAY = localDate('2026-10-13');
-    const TUESDAY = BusyKey.of(IVAN, TUESDAY_DAY);
-    const NIKOS_MONDAY = BusyKey.of(NIKO, MONDAY_DAY);
-    const OLD = MinuteRange.of(at(10), until(11));
-    const NEW = MinuteRange.of(at(14), until(15));
-    const lift = { barberId: IVAN, localDate: MONDAY_DAY, range: OLD };
-    const write = (
-      ranges: readonly MinuteRange[],
-      localDates: readonly ReturnType<typeof localDate>[],
-      barberId = IVAN,
-    ) => ({
-      barberId,
-      locationId: SHOP,
-      timeZone: FIXTURE_TIME_ZONE,
-      ranges,
-      localDates,
-    });
-    /** A day's stored body, read past the rules. */
-    const storedDay = async (key: BusyKey) => {
-      let body: object | undefined;
-      await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        const snap = await getDoc(
-          doc(modularFirestore(ctx), 'scheduleExceptions', key),
-        );
-        body = snap.data();
-      });
-      return body;
-    };
-    const blockedBody = (
-      barberId: BarberId,
-      day: ReturnType<typeof localDate>,
-      utc: string,
-      range: MinuteRange,
-    ) => ({
-      barberId,
-      localDate: day,
-      utcEpochMs: utcMs(utc),
-      locationId: SHOP,
-      exceptionEffect: ExceptionEffect.Blocked,
-      exceptionRanges: [range],
-      // A block keeps the day on its roster's breaks (DayBreaks).
-      dayBreakRanges: null,
-    });
-    const OLD_BODY = blockedBody(
-      IVAN,
-      MONDAY_DAY,
-      '2026-10-12T00:00:00+03:00',
-      OLD,
-    );
-
-    it('moves a block inside its day, on one document', async () => {
-      const answer = await moveScheduleBlock(writesFor(barber()))({
-        lift,
-        writes: [write([NEW], [MONDAY_DAY])],
-      });
-      expect(answer).toEqual(Result.ok(undefined));
-      expect(await storedDay(MONDAY)).toEqual(
-        blockedBody(IVAN, MONDAY_DAY, '2026-10-12T00:00:00+03:00', NEW),
-      );
-    });
-
-    it('moves a block to another day: the old day deleted, the new one written', async () => {
-      const answer = await moveScheduleBlock(writesFor(barber()))({
-        lift,
-        writes: [write([NEW], [TUESDAY_DAY])],
-      });
-      expect(answer).toEqual(Result.ok(undefined));
-      expect(await storedDay(MONDAY)).toBeUndefined();
-      expect(await storedDay(TUESDAY)).toEqual(
-        blockedBody(IVAN, TUESDAY_DAY, '2026-10-13T00:00:00+03:00', NEW),
-      );
-    });
-
-    it('moves a block across two chairs in one write', async () => {
-      const answer = await moveScheduleBlock(writesFor(barber()))({
-        lift,
-        writes: [write([NEW], [MONDAY_DAY]), write([NEW], [MONDAY_DAY], NIKO)],
-      });
-      expect(answer).toEqual(Result.ok(undefined));
-      expect(await storedDay(MONDAY)).toEqual(
-        blockedBody(IVAN, MONDAY_DAY, '2026-10-12T00:00:00+03:00', NEW),
-      );
-      expect(await storedDay(NIKOS_MONDAY)).toEqual(
-        blockedBody(NIKO, MONDAY_DAY, '2026-10-12T00:00:00+03:00', NEW),
-      );
-    });
-
-    it('leaves the old block intact when the decision refuses a written day', async () => {
-      // A range with no minute in it is no block: the merge refuses it.
-      const answer = await moveScheduleBlock(writesFor(barber()))({
-        lift,
-        writes: [write([MinuteRange.of(at(14), until(14))], [TUESDAY_DAY])],
-      });
-      expect(answer.ok).toBe(false);
-      expect(!answer.ok && answer.error.errorCode).toBe(
-        SchedulingErrorCode.ScheduleExceptionEmptyRanges,
-      );
-      expect(await storedDay(MONDAY)).toEqual(OLD_BODY);
-      expect(await storedDay(TUESDAY)).toBeUndefined();
-    });
-
-    it('leaves the old block intact when the rules refuse the write', async () => {
-      const answer = await moveScheduleBlock(
-        writesFor(
-          testEnv.authenticatedContext('copy-1', {
-            roles: ['content_manager'],
-          }),
-        ),
-      )({ lift, writes: [write([NEW], [TUESDAY_DAY])] });
-      expect(answer.ok).toBe(false);
-      expect(!answer.ok && answer.error.errorCode).toBe(
-        RepositoryErrorCode.WriteFailed,
-      );
-      expect(await storedDay(MONDAY)).toEqual(OLD_BODY);
-      expect(await storedDay(TUESDAY)).toBeUndefined();
-    });
+    ).toEqual(Result.ok(blocked()));
   });
 });

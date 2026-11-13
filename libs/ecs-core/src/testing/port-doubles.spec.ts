@@ -86,6 +86,8 @@ import {
   RepositoryError,
   PipelineError,
   PipelineErrorCode,
+  SchedulingError,
+  SchedulingErrorCode,
 } from '@core/errors';
 import type {
   Appointment,
@@ -317,9 +319,12 @@ describe('memoryScheduleExceptionPorts — the staff command, in place', () => {
       exceptions,
     ).writeScheduleException([KEY], () => ({
       ok: false,
-      error: { errorCode: 'REFUSED' } as const,
+      error: SchedulingError.rosterForbidden(),
     }));
-    expect(refused).toEqual({ ok: false, error: { errorCode: 'REFUSED' } });
+    expect(refused).toEqual({
+      ok: false,
+      error: { errorCode: SchedulingErrorCode.RosterForbidden },
+    });
     expect(exceptions).toEqual([exception]);
   });
 

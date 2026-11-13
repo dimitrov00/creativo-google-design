@@ -1,16 +1,14 @@
-import { type Firestore, doc, runTransaction } from 'firebase/firestore';
+import { type Firestore, doc } from 'firebase/firestore';
 import { distinctUntilChanged, map, startWith } from 'rxjs';
 import { BookingPolicy } from '@core/components';
-import { Result, defect } from '@core/primitives';
+import { Result } from '@core/primitives';
 import {
   BOOKING_POLICY_DOC,
   type BookingPolicySettings,
   Collections,
-  type ScheduleException,
 } from '@core/entities';
-import type { ScheduleExceptionPorts, SchedulingReadPorts } from '@core/ports';
+import type { SchedulingReadPorts } from '@core/ports';
 import { observeDoc, type ReadGuard } from './observe';
-import { entityOf, writeFailed } from './stored-entity';
 
 /**
  * The booking store's raw scheduling streams (flip 1, plan §3.4) — the
@@ -36,6 +34,10 @@ import { entityOf, writeFailed } from './stored-entity';
  * The other five members read through the same guard, as stored — the
  * registry guards none of their collections. The guard is REQUIRED (OR-33,
  * DEP-F24): a bare `schedulingReadPorts(db)` does not type-check.
+ *
+ * Reads only. The browser writes none of these: a day exception changes
+ * through the `setDayExceptions` callable (team onboarding O4), a roster
+ * through `setRosterWeek` and `amendRosterBreaks`.
  */
 export const schedulingReadPorts = (
   db: Firestore,
@@ -77,56 +79,4 @@ export const schedulingReadPorts = (
         (a, b) => a.ok && b.ok && BookingPolicy.equals(a.value, b.value),
       ),
     ),
-});
-
-/**
- * The staff's pen on the roster — `writeScheduleException` (§4.2): every
- * key's stored exception is read and the pure merge's answer written inside
- * ONE transaction, so two staff editing one day never lose a block. A
- * merge that refuses writes nothing; a `null` answer deletes that day's
- * document (a day with nothing left blocked), and a key that held nothing
- * and still holds nothing is not written at all. The arithmetic is
- * `ScheduleExceptionSystem`'s, handed in as `merge` — none of it is here.
- */
-export const scheduleExceptionPorts = (
-  db: Firestore,
-): ScheduleExceptionPorts => ({
-  writeScheduleException: async (keys, merge) => {
-    const refs = keys.map((key) =>
-      doc(db, Collections.ScheduleExceptions, key),
-    );
-    try {
-      return await runTransaction(db, async (tx) => {
-        const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
-        const stored = snaps.map((snap) => {
-          const data = snap.data();
-          return data === undefined
-            ? null
-            : entityOf<ScheduleException>(snap.id, data);
-        });
-        const merged = merge(stored);
-        if (!merged.ok) return merged;
-        if (merged.value.length !== refs.length) {
-          defect(
-            `writeScheduleException: ${refs.length} keys, ${merged.value.length} answers`,
-          );
-        }
-        refs.forEach((ref, i) => {
-          const next = merged.value.at(i) ?? null;
-          if (next !== null) {
-            const { id, ...body } = next;
-            if (id !== ref.id) {
-              defect(`writeScheduleException: ${id} answered for ${ref.id}`);
-            }
-            tx.set(ref, body);
-          } else if (stored.at(i) !== null) {
-            tx.delete(ref);
-          }
-        });
-        return Result.ok(undefined);
-      });
-    } catch (cause) {
-      return Result.err(writeFailed(Collections.ScheduleExceptions, cause));
-    }
-  },
 });

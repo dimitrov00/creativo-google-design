@@ -110,6 +110,7 @@ export * from './erasure-lifecycle.data';
 export * from './erasure-offer.data';
 export * from './exception-detail.data';
 export * from './day-breaks.data';
+export * from './day-exceptions-call.data';
 export * from './exception-effect-rule.data';
 export * from './family-scope-filter.data';
 export * from './feature-flags.data';

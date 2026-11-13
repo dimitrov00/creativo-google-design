@@ -1,6 +1,10 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import { SchedulingErrorCode } from '@core/errors';
-import { decodeAmendRosterBreaks, decodeSetRosterWeek } from './roster.wire';
+import {
+  decodeAmendRosterBreaks,
+  decodeSetDayExceptions,
+  decodeSetRosterWeek,
+} from './roster.wire';
 
 /*
  * `amendRosterBreaks`' wire: a caller who works the book, every field read
@@ -151,5 +155,162 @@ describe('decodeSetRosterWeek', () => {
     expect(decoded.ok ? null : decoded.error.errorCode).toBe(
       SchedulingErrorCode.RosterForbidden,
     );
+  });
+});
+
+describe('decodeSetDayExceptions', () => {
+  const OP = 'operation-0123456789ab';
+  const days = {
+    barberId: 'b-ivan',
+    locationId: 'loc-center',
+    ranges: [LUNCH],
+    localDates: ['2026-12-24', '2026-12-25'],
+  };
+  const block = { dayExceptionsEdit: 'BLOCK', ...days, operationId: OP };
+  const clear = {
+    dayExceptionsEdit: 'CLEAR',
+    barberId: 'b-ivan',
+    localDate: '2026-12-24',
+    range: LUNCH,
+    operationId: OP,
+  };
+  const move = {
+    dayExceptionsEdit: 'MOVE',
+    liftBarberId: 'b-ivan',
+    liftLocalDate: '2026-12-24',
+    liftRange: LUNCH,
+    writes: [{ ...days, barberId: 'b-niko' }],
+    operationId: OP,
+  };
+  const dayBreaks = {
+    dayExceptionsEdit: 'DAY_BREAKS',
+    barberId: 'b-ivan',
+    locationId: 'loc-center',
+    localDate: '2026-12-24',
+    ranges: [LUNCH],
+    operationId: OP,
+  };
+  const CALLER = { callerUserId: 'u-staff', operationId: OP };
+
+  const refusal = (data: unknown, roles?: readonly string[] | null) => {
+    const decoded = decodeSetDayExceptions(callable(data, roles));
+    return decoded.ok ? null : decoded.error;
+  };
+  const INVALID = (field: string) => ({
+    errorCode: SchedulingErrorCode.RosterInvalidInput,
+    field,
+  });
+
+  it('reads each pen whole, beside the verified caller and the act’s name', () => {
+    for (const sent of [block, clear, move, dayBreaks]) {
+      // The command is the request with the verified caller beside it.
+      expect(decodeSetDayExceptions(callable(sent))).toEqual({
+        ok: true,
+        value: { ...sent, ...CALLER },
+      });
+    }
+  });
+
+  it('reads a whole-day block, a whole-day lift and a day handed back to the roster', () => {
+    expect(
+      decodeSetDayExceptions(callable({ ...block, ranges: [] })),
+    ).toMatchObject({ ok: true, value: { ranges: [] } });
+    for (const range of [null, undefined]) {
+      expect(
+        decodeSetDayExceptions(callable({ ...clear, range })),
+      ).toMatchObject({ ok: true, value: { range: null } });
+    }
+    for (const ranges of [null, undefined]) {
+      expect(
+        decodeSetDayExceptions(callable({ ...dayBreaks, ranges })),
+      ).toMatchObject({ ok: true, value: { ranges: null } });
+    }
+    expect(
+      decodeSetDayExceptions(callable({ ...dayBreaks, ranges: [] })),
+    ).toMatchObject({ ok: true, value: { ranges: [] } });
+  });
+
+  it('names a day once, in the order given', () => {
+    expect(
+      decodeSetDayExceptions(
+        callable({
+          ...block,
+          localDates: ['2026-12-25', '2026-12-24', '2026-12-25'],
+        }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      value: { localDates: ['2026-12-25', '2026-12-24'] },
+    });
+  });
+
+  it('takes the caller off the token, never the payload', () => {
+    expect(
+      decodeSetDayExceptions(callable({ ...block, callerUserId: 'u-forged' })),
+    ).toMatchObject({ ok: true, value: { callerUserId: 'u-staff' } });
+  });
+
+  it('refuses a caller who is not signed in, or does not work the book — before the payload is read', () => {
+    expect(refusal({}, null)).toEqual({
+      errorCode: SchedulingErrorCode.RosterUnauthenticated,
+    });
+    for (const roles of [['client'], ['content_manager'], []]) {
+      expect(refusal({}, roles)).toEqual({
+        errorCode: SchedulingErrorCode.RosterForbidden,
+      });
+    }
+  });
+
+  it.each([
+    ['dayExceptionsEdit', { dayExceptionsEdit: 'ERASE' }],
+    ['dayExceptionsEdit', { dayExceptionsEdit: undefined }],
+    ['operationId', { operationId: 'short' }],
+    ['barberId', { barberId: '' }],
+    ['locationId', { locationId: 'a/b' }],
+    ['ranges', { ranges: undefined }],
+    ['ranges', { ranges: [{ startMinutes: 840, endMinutes: 780 }] }],
+    ['ranges', { ranges: Array.from({ length: 25 }, () => LUNCH) }],
+    ['localDates', { localDates: [] }],
+    ['localDates', { localDates: ['2026-02-30'] }],
+    [
+      'localDates',
+      { localDates: Array.from({ length: 367 }, () => '2026-12-24') },
+    ],
+  ])('names %s as the unreadable field of a block', (field, change) => {
+    expect(refusal({ ...block, ...change })).toEqual(INVALID(field));
+  });
+
+  it.each([
+    ['localDate', clear, { localDate: 'today' }],
+    ['range', clear, { range: { startMinutes: 1, endMinutes: 1 } }],
+    ['liftBarberId', move, { liftBarberId: 7 }],
+    ['liftLocalDate', move, { liftLocalDate: '2026-13-01' }],
+    ['liftRange', move, { liftRange: null }],
+    ['writes', move, { writes: [] }],
+    ['writes', move, { writes: ['b-niko'] }],
+    ['writes', move, { writes: [{ ...days, localDates: [] }] }],
+    ['writes', move, { writes: Array.from({ length: 21 }, () => days) }],
+    ['ranges', dayBreaks, { ranges: 'none' }],
+    ['localDate', dayBreaks, { localDate: undefined }],
+  ])('names %s as the unreadable field of its pen', (field, sent, change) => {
+    expect(refusal({ ...sent, ...change })).toEqual(INVALID(field));
+  });
+
+  it('refuses a move that would write more days than one transaction holds', () => {
+    const year = Array.from({ length: 366 }, (_, i) => {
+      const day = String((i % 28) + 1).padStart(2, '0');
+      const month = String((Math.floor(i / 28) % 12) + 1).padStart(2, '0');
+      const year = 2026 + Math.floor(i / 336);
+      return `${year}-${month}-${day}`;
+    });
+    expect(
+      refusal({
+        ...move,
+        writes: [
+          { ...days, localDates: year },
+          { ...days, barberId: 'b-niko', localDates: year },
+        ],
+      }),
+    ).toEqual(INVALID('writes'));
   });
 });
