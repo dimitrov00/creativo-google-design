@@ -5,6 +5,7 @@ import {
   decodeAddBarber,
   decodeDeleteDraftBarber,
   decodeEditBarber,
+  decodeSetBarberOfferings,
 } from './team.wire';
 
 /*
@@ -270,6 +271,156 @@ describe('decodeEditBarber', () => {
   ])('names %s as the unreadable field of its part', (field, part) => {
     expect(
       refusalOf(decodeEditBarber(callable({ ...named, ...part }))),
+    ).toEqual(INVALID(field));
+  });
+});
+
+describe('decodeSetBarberOfferings', () => {
+  const named = { barberId: 'b-ivan', operationId: OP };
+  const terms = {
+    priceCents: 2800,
+    currency: 'EUR',
+    durationMinutes: 30,
+    setupMinutes: 0,
+    cleanupMinutes: 5,
+  };
+  const long = { variantId: 'long', ...terms, priceCents: 3200 };
+  const list = {
+    ...named,
+    offeringsEdit: 'SET',
+    offerings: [
+      { serviceId: 'svc-cut', ...terms, overrides: [long] },
+      { serviceId: 'svc-beard', ...terms },
+    ],
+  };
+  const copy = { ...named, offeringsEdit: 'COPY', copyFromBarberId: 'b-niko' };
+
+  it('reads the typed list flat — the service beside its terms and overrides, absent overrides none', () => {
+    expect(decodeSetBarberOfferings(callable(list))).toEqual({
+      ok: true,
+      value: {
+        ...CALLER,
+        ...named,
+        offeringsEdit: 'SET',
+        offerings: [
+          { serviceId: 'svc-cut', overrides: [long], ...terms },
+          { serviceId: 'svc-beard', overrides: [], ...terms },
+        ],
+      },
+    });
+    // An empty list is a list: the barber performs nothing.
+    expect(
+      decodeSetBarberOfferings(callable({ ...list, offerings: [] })),
+    ).toMatchObject({ ok: true, value: { offerings: [] } });
+  });
+
+  it('reads only the entry’s own fields — a sent barber or a stray key is dropped', () => {
+    const decoded = decodeSetBarberOfferings(
+      callable({
+        ...list,
+        offerings: [
+          { serviceId: 'svc-cut', ...terms, barberId: 'b-other', note: 'x' },
+        ],
+      }),
+    );
+    expect(
+      decoded.ok &&
+        decoded.value.offeringsEdit === 'SET' &&
+        Object.keys(decoded.value.offerings[0] ?? {}).sort(),
+    ).toEqual([
+      'cleanupMinutes',
+      'currency',
+      'durationMinutes',
+      'overrides',
+      'priceCents',
+      'serviceId',
+      'setupMinutes',
+    ]);
+  });
+
+  it('reads a copy: the colleague, and no list', () => {
+    expect(decodeSetBarberOfferings(callable(copy))).toEqual({
+      ok: true,
+      value: { ...CALLER, ...copy },
+    });
+  });
+
+  it('is the admin’s alone — prices are the owner’s', () => {
+    expect(refusalOf(decodeSetBarberOfferings(callable(list, null)))).toEqual([
+      TeamErrorCode.Unauthenticated,
+      null,
+    ]);
+    for (const roles of [
+      ['content_manager'],
+      ['receptionist'],
+      ['barber'],
+      ['sysadmin'],
+      ['client'],
+    ]) {
+      expect(refusalOf(decodeSetBarberOfferings(callable({}, roles)))).toEqual([
+        TeamErrorCode.Forbidden,
+        null,
+      ]);
+    }
+  });
+
+  it.each([
+    ['offeringsEdit', { offeringsEdit: 'MERGE' }],
+    ['offeringsEdit', { offeringsEdit: undefined }],
+    ['barberId', { barberId: '' }],
+    ['operationId', { operationId: 'short' }],
+    ['offerings', { offerings: undefined }],
+    ['offerings', { offerings: 'svc-cut' }],
+    ['offerings', { offerings: ['svc-cut'] }],
+    ['offerings', { offerings: [{ ...terms }] }],
+    ['offerings', { offerings: [{ serviceId: 'a/b', ...terms }] }],
+    ['offerings', { offerings: [{ serviceId: 'svc-cut' }] }],
+    [
+      'offerings',
+      { offerings: [{ serviceId: 'svc-cut', ...terms, priceCents: '2800' }] },
+    ],
+    [
+      'offerings',
+      { offerings: [{ serviceId: 'svc-cut', ...terms, currency: 978 }] },
+    ],
+    [
+      'offerings',
+      { offerings: [{ serviceId: 'svc-cut', ...terms, overrides: [terms] }] },
+    ],
+    [
+      'offerings',
+      {
+        offerings: [
+          {
+            serviceId: 'svc-cut',
+            ...terms,
+            overrides: Array.from({ length: 21 }, () => long),
+          },
+        ],
+      },
+    ],
+    [
+      'offerings',
+      {
+        offerings: Array.from({ length: 201 }, () => ({
+          serviceId: 'svc-cut',
+          ...terms,
+        })),
+      },
+    ],
+  ])('names %s as the unreadable field of a typed list', (field, change) => {
+    expect(
+      refusalOf(decodeSetBarberOfferings(callable({ ...list, ...change }))),
+    ).toEqual(INVALID(field));
+  });
+
+  it.each([
+    ['copyFromBarberId', { copyFromBarberId: undefined }],
+    ['copyFromBarberId', { copyFromBarberId: 7 }],
+    ['copyFromBarberId', { copyFromBarberId: 'a/b' }],
+  ])('names %s as the unreadable field of a copy', (field, change) => {
+    expect(
+      refusalOf(decodeSetBarberOfferings(callable({ ...copy, ...change }))),
     ).toEqual(INVALID(field));
   });
 });

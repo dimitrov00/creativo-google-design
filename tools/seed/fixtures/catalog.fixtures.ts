@@ -457,12 +457,13 @@ function withCovers(
   });
 }
 
-/** The fields every seeded service shares. */
+/** The fields every seeded service shares — no writing call: the seed is no callable's write. */
 const LISTED = {
   categoryId: CATEGORY.id,
   locationIds: [],
   upsellOnly: false,
   serviceStatus: ServiceStatus.Active,
+  writeOperationId: null,
 } as const;
 
 const text = (bg: string, en: string): LocalizedText => ({ bg, en });

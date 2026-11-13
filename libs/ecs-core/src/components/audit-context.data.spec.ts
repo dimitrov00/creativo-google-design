@@ -12,6 +12,7 @@ import {
   LocationId,
   PriceCents,
   SeatId,
+  ServiceId,
   UserId,
 } from '@core/primitives';
 import { localDate, minute, unwrapOk, utcMs } from '@core/testing';
@@ -136,7 +137,8 @@ describe('AuditAction', () => {
       | typeof AuditAction.IdentityRegistrationCompleted
       | typeof AuditAction.PrivacyClientExported
       | typeof AuditAction.AnalyticsGoalSet
-      | typeof AuditAction.AnalyticsGoalCleared;
+      | typeof AuditAction.AnalyticsGoalCleared
+      | typeof AuditAction.TeamBarberOfferingsChanged;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -602,6 +604,22 @@ describe('AuditContext — one flat variant per verb family, every field present
       'TEAM_BARBER_STATUS_CHANGED',
       'TEAM_BARBER_DELETED',
     ]);
+  });
+});
+
+describe('AuditContext.teamOfferings — a barber’s services and prices changed', () => {
+  it('names the services whose list changed and the colleague copied from — ids only', () => {
+    const cut = ServiceId.of('svc-cut');
+    const shave = ServiceId.of('svc-shave');
+    expect(AuditContext.teamOfferings([cut, shave], null)).toEqual({
+      auditAction: 'TEAM_BARBER_OFFERINGS_CHANGED',
+      teamOfferingServiceIds: ['svc-cut', 'svc-shave'],
+      teamOfferingsCopiedFromBarberId: null,
+    });
+    expect(
+      AuditContext.teamOfferings([cut], BarberId.of('b-1'))
+        .teamOfferingsCopiedFromBarberId,
+    ).toBe('b-1');
   });
 });
 

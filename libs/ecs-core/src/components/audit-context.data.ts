@@ -12,6 +12,7 @@ import {
   type MonthKey,
   type PriceCents,
   type SeatId,
+  type ServiceId,
   Tag,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -178,6 +179,12 @@ export const AuditAction = {
   TeamBarberStatusChanged: 'TEAM_BARBER_STATUS_CHANGED',
   /** A record that never went live removed (`deleteDraftBarber`). */
   TeamBarberDeleted: 'TEAM_BARBER_DELETED',
+  /**
+   * What a barber performs, and at what terms, changed
+   * (`setBarberOfferings`): the services whose list changed — never a
+   * price; the matrix is the services' own.
+   */
+  TeamBarberOfferingsChanged: 'TEAM_BARBER_OFFERINGS_CHANGED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -233,7 +240,8 @@ export type AuditContext =
   | AuditContext.ClientErasure
   | AuditContext.AnalyticsGoalSet
   | AuditContext.AnalyticsGoalCleared
-  | AuditContext.TeamBarber;
+  | AuditContext.TeamBarber
+  | AuditContext.TeamOfferings;
 
 /** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -478,6 +486,17 @@ export const AuditContext = {
       teamBarberStatusTo,
       teamBarberStartsLocalDate,
       teamBarberLastWorkingLocalDate,
+    };
+  },
+  /** A barber's offerings changed: the services whose list changed, and the colleague copied from (or `null`). */
+  teamOfferings(
+    teamOfferingServiceIds: readonly ServiceId[],
+    teamOfferingsCopiedFromBarberId: BarberId | null,
+  ): AuditContext.TeamOfferings {
+    return {
+      auditAction: AuditAction.TeamBarberOfferingsChanged,
+      teamOfferingServiceIds,
+      teamOfferingsCopiedFromBarberId,
     };
   },
   /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
@@ -752,6 +771,18 @@ export namespace AuditContext {
     /** The working period as the write left it — both `null` for a deletion. */
     readonly teamBarberStartsLocalDate: LocalDate | null;
     readonly teamBarberLastWorkingLocalDate: LocalDate | null;
+  };
+  /**
+   * A barber's services and prices changed (`setBarberOfferings`, team
+   * onboarding D12) — the resource is `barbers/<id>`, the target none, the
+   * actor the admin. Ids only: the terms stay on the services.
+   */
+  export type TeamOfferings = {
+    readonly auditAction: typeof AuditAction.TeamBarberOfferingsChanged;
+    /** The services whose `offerings` the act changed, in the order its transaction read them (by id). */
+    readonly teamOfferingServiceIds: readonly ServiceId[];
+    /** The colleague whose terms were copied; `null` for a typed list. */
+    readonly teamOfferingsCopiedFromBarberId: BarberId | null;
   };
   export type ImpersonationStarted = {
     readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;

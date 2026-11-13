@@ -304,7 +304,7 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
     ).toBe(GovernanceErrorCode.AuditEntryEmptyAction);
   });
 
-  it('plans no row for a barbers write a team callable stamped — its own row landed in the commit; an unstamped write and a deletion stay the trigger’s (team onboarding D12)', () => {
+  it('plans no row for a barbers or services write a team callable stamped — its own row landed in the commit; an unstamped write and a deletion stay the trigger’s (team onboarding D12)', () => {
     const operation = OperationId.of('op-team-00000000001');
     const stamped = changeOf(GovernedCollection.Barbers, {
       writeOperationId: operation,
@@ -329,7 +329,18 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
         GovernedChangeSystem.plan({ ...unstamped, afterExists: false }, AT),
       )?.row.auditAction,
     ).toBe('GOVERNED_DOC_DELETED');
-    // Only `barbers`: a stamped customers write keeps its row and its join.
+    // A stamped services write is the offerings editor's: audited there too.
+    const offerings = changeOf(GovernedCollection.Services, {
+      writeOperationId: operation,
+    });
+    expect(GovernedChangeSystem.auditedByCallable(offerings)).toBe(true);
+    expect(unwrapOk(GovernedChangeSystem.plan(offerings, AT))).toBeNull();
+    expect(
+      unwrapOk(
+        GovernedChangeSystem.plan(changeOf(GovernedCollection.Services), AT),
+      )?.row.auditAction,
+    ).toBe('GOVERNED_DOC_UPDATED');
+    // Only those two: a stamped customers write keeps its row and its join.
     expect(
       GovernedChangeSystem.auditedByCallable(
         changeOf(GovernedCollection.Customers, { writeOperationId: operation }),

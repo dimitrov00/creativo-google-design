@@ -402,8 +402,18 @@
       "indexes": []
     },
     {
+      "collectionGroup": "services",
+      "fieldPath": "writeOperationId",
+      "indexes": []
+    },
+    {
       "collectionGroup": "barbers",
       "fieldPath": "locationIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "barbers",
+      "fieldPath": "writeOperationId",
       "indexes": []
     },
     {

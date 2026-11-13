@@ -4,7 +4,7 @@ import { BarberId } from '@core/primitives';
 import { unwrapErr, unwrapOk } from '@core/testing';
 import { BarberActivation } from './barber-activation.data';
 import { StaffSetupItem } from './staff-setup-item.data';
-import { BarberEdit, TeamCall } from './team-call.data';
+import { BarberEdit, OfferingsEdit, TeamCall } from './team-call.data';
 
 const IVAN = BarberId.of('ivan');
 
@@ -17,6 +17,12 @@ describe('BarberEdit — which part of a record `editBarber` replaces', () => {
       Pool: 'POOL',
       Access: 'ACCESS',
     });
+  });
+});
+
+describe('OfferingsEdit — how `setBarberOfferings` says what a barber performs', () => {
+  it('names the typed list and the copy, SCREAMING_SNAKE, each once', () => {
+    expect(OfferingsEdit).toEqual({ Set: 'SET', Copy: 'COPY' });
   });
 });
 

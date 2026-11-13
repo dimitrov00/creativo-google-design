@@ -97,22 +97,25 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
   });
 
-  it('the barber record’s four (team onboarding) ride `operationId`, a standard token, the team call’s decoders', () => {
+  it('the barber record’s four and the offerings save (team onboarding) ride `operationId`, a standard token, the team call’s decoders', () => {
     expect(Callables.AddBarber).toBe('addBarber');
     expect(Callables.EditBarber).toBe('editBarber');
     expect(Callables.ActivateBarber).toBe('activateBarber');
     expect(Callables.DeleteDraftBarber).toBe('deleteDraftBarber');
+    expect(Callables.SetBarberOfferings).toBe('setBarberOfferings');
     expect(OPERATION_ID_FIELD).toMatchObject({
       [Callables.AddBarber]: 'operationId',
       [Callables.EditBarber]: 'operationId',
       [Callables.ActivateBarber]: 'operationId',
       [Callables.DeleteDraftBarber]: 'operationId',
+      [Callables.SetBarberOfferings]: 'operationId',
     });
     expect(CALLABLE_APP_CHECK_TOKEN).toMatchObject({
       [Callables.AddBarber]: AppCheckTokenUse.Standard,
       [Callables.EditBarber]: AppCheckTokenUse.Standard,
       [Callables.ActivateBarber]: AppCheckTokenUse.Standard,
       [Callables.DeleteDraftBarber]: AppCheckTokenUse.Standard,
+      [Callables.SetBarberOfferings]: AppCheckTokenUse.Standard,
     });
     expect(CALLABLE_ANSWER_DECODERS[Callables.AddBarber]).toBe(
       TeamCall.decodeSaved,
@@ -125,6 +128,9 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
     expect(CALLABLE_ANSWER_DECODERS[Callables.ActivateBarber]).toBe(
       TeamCall.decodeActivation,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.SetBarberOfferings]).toBe(
+      TeamCall.decodeSaved,
     );
   });
 

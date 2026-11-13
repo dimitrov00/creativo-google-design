@@ -8,10 +8,11 @@ import {
   BarberEdit,
   BarberStatus,
   GovernedCollection,
+  OfferingsEdit,
   Role,
   StaffSetupItem,
 } from '@core/components';
-import { BarberId, OperationId, UserId } from '@core/primitives';
+import { BarberId, OperationId, ServiceId, UserId } from '@core/primitives';
 import { TeamErrorCode } from '@core/errors';
 import { BARBER_LINK_DOC, Collections, Subcollections } from '@core/entities';
 import { StoredDocumentSystem } from '@core/systems';
@@ -21,8 +22,10 @@ import {
   auditDocumentChange,
   deleteDraftBarber,
   editBarber,
+  setBarberOfferings,
 } from '@core/pipelines';
 import {
+  barberFixture,
   barberScheduleFixture,
   bodyOf,
   FIXTURE_IDS,
@@ -49,6 +52,9 @@ import { decodeDocumentChangeEvent } from '../wire/triggers.wire';
  *   the governed trigger, handed the write's before / after image, plans
  *   NO second row (the write stamped its operation);
  * - `editBarber` sets the record whole beside ONE row;
+ * - `setBarberOfferings` copies a colleague's terms onto the services the
+ *   colleague performs, each stamped with the act, beside ONE row on the
+ *   barber; the governed trigger over a stamped service write plans none;
  * - `activateBarber` answers what a draft still misses, then takes it live
  *   — the stored document exactly the live variant;
  * - `deleteDraftBarber` removes the record with its roster, its lock, the
@@ -240,6 +246,76 @@ describe('the team callables (emulator)', () => {
       ok: false,
       error: { errorCode: TeamErrorCode.Forbidden },
     });
+    expect(await auditRows()).toHaveLength(2);
+  });
+
+  it('copies a colleague’s prices: each service stamped with the act beside ONE row on the barber; the trigger plans no second row; a replay writes nothing', async () => {
+    await add();
+    const ivan = barberFixture();
+    await db.doc(`${Collections.Barbers}/${ivan.id}`).set(bodyOf(ivan));
+    // Ivan performs the cut; nobody is listed for the shave.
+    const cut = db.doc(`${Collections.Services}/${FIXTURE_IDS.service}`);
+    await cut.set(bodyOf(serviceFixture()));
+    const shaveId = ServiceId.of('svc-shave');
+    const shave = db.doc(`${Collections.Services}/${shaveId}`);
+    await shave.set(bodyOf(serviceFixture({ id: shaveId, offerings: [] })));
+
+    const operationId = OperationId.of('operation-copy-012345678');
+    const copy = () =>
+      setBarberOfferings(ports())({
+        ...CALLER,
+        operationId,
+        barberId: NEW,
+        offeringsEdit: OfferingsEdit.Copy,
+        copyFromBarberId: ivan.id,
+      });
+
+    const before = await cut.get();
+    expect(await copy()).toEqual({ ok: true, value: { barberId: NEW } });
+    const after = await cut.get();
+
+    const source = serviceFixture().offerings[0];
+    expect(after.data()).toMatchObject({
+      offerings: [source, { ...source, barberId: NEW }],
+      writeOperationId: operationId,
+    });
+    // A service the colleague does not perform is not written at all.
+    expect((await shave.get()).data()).toEqual(
+      bodyOf(serviceFixture({ id: shaveId, offerings: [] })),
+    );
+
+    const rows = await auditRows();
+    expect(rows.map((row) => row['auditAction'])).toEqual([
+      AuditAction.TeamBarberAdded,
+      AuditAction.TeamBarberOfferingsChanged,
+    ]);
+    expect(rows[1]).toMatchObject({
+      ...Actor.admin(ADMIN),
+      resourceId: `barbers/${NEW}`,
+      auditOperationId: operationId,
+      teamOfferingServiceIds: [FIXTURE_IDS.service],
+      teamOfferingsCopiedFromBarberId: ivan.id,
+    });
+
+    // The governed trigger over the stamped service write plans no row.
+    const telemetry = recordingTelemetry();
+    const audited = await auditDocumentChange({
+      ...firestoreAuditPorts(db, telemetry),
+      hash: sha256Hex,
+      nowUtcMs: pinnedNowUtcMs(),
+    })(
+      decodeDocumentChangeEvent(GovernedCollection.Services, {
+        id: 'evt-team-offerings',
+        time: EVENT_TIME,
+        params: { docId: FIXTURE_IDS.service },
+        data: { before, after },
+        authType: 'service_account',
+      }),
+    );
+    expect(audited).toEqual({ ok: true, value: { rows: 0 } });
+
+    // The same act again: nothing to change, nothing written.
+    expect(await copy()).toEqual({ ok: true, value: { barberId: NEW } });
     expect(await auditRows()).toHaveLength(2);
   });
 

@@ -1,4 +1,9 @@
-import { BarberId, ServiceVariantId, Result } from '@core/primitives';
+import {
+  BarberId,
+  type ServiceId,
+  ServiceVariantId,
+  Result,
+} from '@core/primitives';
 import { CatalogError } from '@core/errors';
 import { ServiceTerms } from './service-terms.data';
 import type { ServiceTermsInput } from './service-terms-input.data';
@@ -202,6 +207,15 @@ export namespace BarberOffering {
   /** An offering as authored, before its edge guard. */
   export type Input = {
     readonly barberId: string;
+    readonly overrides: readonly VariantTerms.Input[];
+  } & ServiceTermsInput;
+  /**
+   * One service a barber performs, as the team's offerings editor names it
+   * (team onboarding D5) — flat (Law 6): the service beside the authored
+   * terms and overrides. The barber is the call's, never the entry's.
+   */
+  export type Entry = {
+    readonly serviceId: ServiceId;
     readonly overrides: readonly VariantTerms.Input[];
   } & ServiceTermsInput;
 }

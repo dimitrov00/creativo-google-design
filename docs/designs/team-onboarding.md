@@ -895,20 +895,23 @@ caller. Governed triggers on `barbers`, `barberSchedules` and `services`
 join on `writeOperationId` (the existing pattern for governed collections),
 so a write never gets two rows.
 
-As built for `barbers` (stage 1a): the callable's row carries the changed
-field names, the status on both sides and the working period. The governed
-trigger plans no row for a `barbers` write that stamped its operation
-(`GovernedChangeSystem.auditedByCallable`). A deletion stamps nothing, so
-it keeps both rows: the callable's, credited to the admin, and the
-trigger's. The action names carry the `TEAM_` domain prefix, as every
-audit action carries its domain's.
+As built for `barbers` and `services` (stage 1a): a record's row carries
+the changed field names, the status on both sides and the working period;
+an offerings save writes one row on the barber, naming the services whose
+list changed and the colleague copied from, never a price. The governed
+trigger plans no row for a `barbers` or `services` write that stamped its
+operation (`GovernedChangeSystem.auditedByCallable`). A deletion stamps
+nothing, so it keeps both rows: the callable's, credited to the admin, and
+the trigger's. The offerings a deleted draft leaves behind are unstamped
+too, so the trigger audits those service writes. The action names carry
+the `TEAM_` domain prefix, as every audit action carries its domain's.
 
 | Callable or job             | Audit action                                                                                   |
 | --------------------------- | ---------------------------------------------------------------------------------------------- |
 | Add                         | `TEAM_BARBER_ADDED`                                                                            |
 | Profile and photo editors   | `TEAM_BARBER_PROFILE_CHANGED`                                                                  |
 | Shops                       | `TEAM_BARBER_SHOPS_CHANGED`                                                                    |
-| Offerings, copy             | `BARBER_OFFERINGS_CHANGED`                                                                     |
+| Offerings, copy             | `TEAM_BARBER_OFFERINGS_CHANGED`                                                                |
 | Hours, breaks               | the existing roster row, now with `operationId`                                                |
 | Day exceptions              | `SCHEDULE_EXCEPTIONS_CHANGED`                                                                  |
 | Working period, «Напускане» | `TEAM_BARBER_PERIOD_CHANGED`                                                                   |

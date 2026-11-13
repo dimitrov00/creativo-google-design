@@ -241,8 +241,8 @@ export const GovernedChangeSystem = {
    * carries one, or an update that changed it. `null` for a delete, for a
    * write that left the field as it was (the id there names an EARLIER call
    * — a console edit must never be credited to it) and for anything
-   * `OperationId.is` refuses. `customers` and `barbers` store the slice
-   * among the governed collections today; any other reads `null`.
+   * `OperationId.is` refuses. `customers`, `barbers` and `services` store
+   * the slice among the governed collections today; any other reads `null`.
    */
   stampedOperationOf(
     before: StoredFields | null,
@@ -259,17 +259,20 @@ export const GovernedChangeSystem = {
   /**
    * Whether a callable that audits its own write already wrote this
    * event's row (team onboarding D12, the `users` precedent
-   * `AuditSystem.auditedByCallable`): a `barbers` write that STAMPED an
-   * operation ({@link GovernedChangeSystem.stampedOperationOf}) is a team
-   * callable's — its `TEAM_BARBER_*` row, credited to the caller and naming
-   * the changed fields, landed in the same commit — so the trigger plans
-   * none and a write never gets two rows. A write that stamped nothing (the
-   * console, the seed, an Admin-SDK script) is the trigger's to audit, as
-   * is every deletion: a deleted document stamps nothing.
+   * `AuditSystem.auditedByCallable`): a `barbers` or `services` write that
+   * STAMPED an operation ({@link GovernedChangeSystem.stampedOperationOf})
+   * is a team callable's — its `TEAM_BARBER_*` row, credited to the caller
+   * (the changed fields of a record, the services of an offerings save),
+   * landed in the same commit — so the trigger plans none and a write
+   * never gets two rows. A write that stamped nothing (the console, the
+   * seed, an Admin-SDK script, the offerings a deleted draft leaves behind)
+   * is the trigger's to audit, as is every deletion: a deleted document
+   * stamps nothing.
    */
   auditedByCallable(change: GovernedChange): boolean {
     return (
-      change.governedCollection === GovernedCollection.Barbers &&
+      (change.governedCollection === GovernedCollection.Barbers ||
+        change.governedCollection === GovernedCollection.Services) &&
       change.writeOperationId !== null
     );
   },

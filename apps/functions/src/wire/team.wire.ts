@@ -3,7 +3,12 @@ import {
   BarberEdit,
   type BarberEditRequest,
   BarberLifecycle,
+  type BarberOffering,
+  OfferingsEdit,
+  type OfferingsRequest,
   Roles,
+  type ServiceTermsInput,
+  type VariantTerms,
 } from '@core/components';
 import { TeamError } from '@core/errors';
 import {
@@ -12,6 +17,7 @@ import {
   LocationId,
   type OperationId,
   Result,
+  ServiceId,
   StoredFields,
   Tag,
 } from '@core/primitives';
@@ -22,6 +28,7 @@ import {
   admitTeamStaffCaller,
   type DeleteDraftBarberCommand,
   type EditBarberCommand,
+  type SetBarberOfferingsCommand,
   type TeamCaller,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
@@ -29,6 +36,8 @@ import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
 import {
   idOf,
   idsOf,
+  isRecord,
+  listOf,
   operationIdOf,
   type Payload,
   payloadOf,
@@ -36,13 +45,14 @@ import {
 } from './wire-read';
 
 /**
- * THE TEAM CALLABLES' WIRE (team onboarding D5, D9, D10,
+ * THE TEAM CALLABLES' WIRE (team onboarding D5, D6, D9, D10,
  * `docs/designs/team-onboarding.md`) — `addBarber`, `editBarber`,
- * `activateBarber`, `deleteDraftBarber`. The caller and their roles come
- * off the VERIFIED token, never the payload, and the token gate is asked
- * before the payload is read (`TEAM_UNAUTHENTICATED`, `TEAM_FORBIDDEN`):
- * the team manager's for a new record, a deletion and every edit but the
- * profile; any staff role's for a profile and the go-live step — the
+ * `setBarberOfferings`, `activateBarber`, `deleteDraftBarber`. The caller
+ * and their roles come off the VERIFIED token, never the payload, and the
+ * token gate is asked before the payload is read (`TEAM_UNAUTHENTICATED`,
+ * `TEAM_FORBIDDEN`): the team manager's for a new record, a deletion, the
+ * services and prices, and every edit but the profile; any staff role's
+ * for a profile and the go-live step — the
  * pipeline judges the STORED account after it. Every field is re-read
  * through its smart constructor or guard, the first unreadable one named
  * (`TEAM_INVALID_INPUT`). The act's name (`operationId`) is REQUIRED: a
@@ -54,6 +64,12 @@ import {
 
 /** A barber works at a handful of shops; a longer list is no list. */
 const SHOPS_MAX = 50;
+
+/** A catalogue holds tens of services; a list longer than this is no list. */
+const OFFERINGS_MAX = 200;
+
+/** A service declares a handful of variants; an offering overrides at most this many. */
+const OVERRIDES_MAX = 20;
 
 const invalid = (field: string) => Result.err(TeamError.invalidInput(field));
 
@@ -263,6 +279,101 @@ export function decodeEditBarber(
   const edit = editOf(barberEdit, payload);
   if (!edit.ok) return edit;
   return Result.ok({ ...caller, ...named.value, ...edit.value });
+}
+
+/** The five terms as typed — each a number, the currency a string — else `null`. The catalogue's guard judges the figures. */
+function termsOf(raw: Payload): ServiceTermsInput | null {
+  const priceCents = StoredFields.field(raw, 'priceCents');
+  const currency = StoredFields.field(raw, 'currency');
+  const durationMinutes = StoredFields.field(raw, 'durationMinutes');
+  const setupMinutes = StoredFields.field(raw, 'setupMinutes');
+  const cleanupMinutes = StoredFields.field(raw, 'cleanupMinutes');
+  return typeof priceCents === 'number' &&
+    typeof currency === 'string' &&
+    typeof durationMinutes === 'number' &&
+    typeof setupMinutes === 'number' &&
+    typeof cleanupMinutes === 'number'
+    ? { priceCents, currency, durationMinutes, setupMinutes, cleanupMinutes }
+    : null;
+}
+
+/** An offering's per-variant overrides as sent — absent reads as none — else `null`. */
+function overridesOf(raw: Payload): readonly VariantTerms.Input[] | null {
+  const sent = listOf(raw, 'overrides');
+  if (sent.length > OVERRIDES_MAX) return null;
+  const overrides: VariantTerms.Input[] = [];
+  for (const override of sent) {
+    if (!isRecord(override)) return null;
+    const variantId = StoredFields.field(override, 'variantId');
+    const terms = termsOf(override);
+    if (typeof variantId !== 'string' || terms === null) return null;
+    overrides.push({ variantId, ...terms });
+  }
+  return overrides;
+}
+
+/** The typed list as sent: at most {@link OFFERINGS_MAX} flat entries, else `null`. */
+function entriesOf(payload: Payload): readonly BarberOffering.Entry[] | null {
+  const sent = StoredFields.field(payload, 'offerings');
+  if (!Array.isArray(sent) || sent.length > OFFERINGS_MAX) return null;
+  const entries: BarberOffering.Entry[] = [];
+  for (const raw of sent as readonly unknown[]) {
+    if (!isRecord(raw)) return null;
+    const serviceId = idOf(
+      StoredFields.field(raw, 'serviceId'),
+      ServiceId.parse,
+    );
+    const terms = termsOf(raw);
+    const overrides = overridesOf(raw);
+    if (serviceId === null || terms === null || overrides === null) {
+      return null;
+    }
+    entries.push({ serviceId, overrides, ...terms });
+  }
+  return entries;
+}
+
+/** The request half of a `setBarberOfferings` payload — or the first unreadable field. */
+function offeringsOf(
+  offeringsEdit: OfferingsEdit,
+  payload: Payload,
+): Result<OfferingsRequest, EdgeError> {
+  if (offeringsEdit === OfferingsEdit.Set) {
+    const offerings = entriesOf(payload);
+    return offerings === null
+      ? invalid('offerings')
+      : Result.ok({ offeringsEdit, offerings });
+  }
+  const copyFromBarberId = idOf(
+    StoredFields.field(payload, 'copyFromBarberId'),
+    BarberId.parse,
+  );
+  return copyFromBarberId === null
+    ? invalid('copyFromBarberId')
+    : Result.ok({ offeringsEdit, copyFromBarberId });
+}
+
+/**
+ * `setBarberOfferings` `{ barberId, offeringsEdit: 'SET', offerings:
+ * [{ serviceId, priceCents, currency, durationMinutes, setupMinutes,
+ * cleanupMinutes, overrides: [{ variantId, …terms }] }], operationId }` or
+ * `{ barberId, offeringsEdit: 'COPY', copyFromBarberId, operationId }` →
+ * `{ barberId }` — the team manager's: prices are the owner's.
+ */
+export function decodeSetBarberOfferings(
+  request: WireRequest,
+): Result<SetBarberOfferingsCommand, EdgeError> {
+  const caller = callerOf(request);
+  const admitted = admitTeamCaller(caller);
+  if (!admitted.ok) return admitted;
+  const payload = payloadOf(request);
+  const offeringsEdit = StoredFields.field(payload, 'offeringsEdit');
+  if (!Tag.has(OfferingsEdit, offeringsEdit)) return invalid('offeringsEdit');
+  const named = namedOf(payload);
+  if (!named.ok) return named;
+  const offerings = offeringsOf(offeringsEdit, payload);
+  if (!offerings.ok) return offerings;
+  return Result.ok({ ...caller, ...named.value, ...offerings.value });
 }
 
 /** `activateBarber` `{ barberId, operationId }` → `{ barberId, barberActivation, staffSetupItem? }` — any staff token. */
