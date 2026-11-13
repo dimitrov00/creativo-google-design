@@ -350,6 +350,13 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
     expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
   });
 
+  it('names a barber record by its collection path — the restated name is the registry’s (team onboarding D12)', () => {
+    const resource = AuditResourceId.forBarber(Ids.BarberId.of('ivan'));
+    expect(resource).toBe(`${Collections.Barbers}/ivan`);
+    expect(resource).toBe('barbers/ivan');
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+  });
+
   it('names a client record by its collection path — the restated name is the registry’s (Phase 3 WS-C)', () => {
     const record = CustomerId.forUser(UserId.of('u_42'), fixtureHash);
     const resource = AuditResourceId.forCustomer(record);

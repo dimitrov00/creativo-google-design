@@ -40,6 +40,8 @@ import {
   StoredDocumentSystem,
 } from '@core/systems';
 import {
+  activateBarber as activateBarberPipeline,
+  addBarber as addBarberPipeline,
   amendRosterBreaks as amendRosterBreaksPipeline,
   AnalyticsDaySource,
   auditDocumentChange,
@@ -49,7 +51,9 @@ import {
   completeRegistration as completeRegistrationPipeline,
   continueAnalyticsRecompute,
   continuePolicyRecompute,
+  deleteDraftBarber as deleteDraftBarberPipeline,
   editAppointment,
+  editBarber as editBarberPipeline,
   endImpersonation as endImpersonationPipeline,
   eraseClient as eraseClientPipeline,
   exportClientData as exportClientDataPipeline,
@@ -201,6 +205,12 @@ import {
   decodeStaffAnalytics,
 } from './wire/analytics.wire';
 import {
+  decodeActivateBarber,
+  decodeAddBarber,
+  decodeDeleteDraftBarber,
+  decodeEditBarber,
+} from './wire/team.wire';
+import {
   decodeCancelWaitlist,
   decodeRequestWaitlist,
 } from './wire/waitlist.wire';
@@ -272,7 +282,11 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * the analytics recompute's step `continueAnalyticsRecomputeOnJobWrite`
  * (the policy step's timeout and memory) and its 04:30 sweep
  * `sweepAnalyticsDaysDaily`, and made `rebuildBusyOnAppointmentChange`
- * run the day writer beside the busy rebuild: 57 exports.
+ * run the day writer beside the busy rebuild: 57 exports; PR 6 added
+ * `setAnalyticsGoal`: 58. Team onboarding (stage 1a) added the barber
+ * record's four callables — `addBarber`, `editBarber`, `activateBarber`,
+ * `deleteDraftBarber` — over the server ports, bound to the log digest
+ * key: 62 exports.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -933,6 +947,74 @@ export const setAnalyticsGoal = onCall(
     root.analytics,
     decodeSetAnalyticsGoal,
     (ports, cmd) => setAnalyticsGoalPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * «Добави» — a new barber record as a `DRAFT` (team onboarding D5,
+ * `docs/designs/team-onboarding.md`): the record and its
+ * `TEAM_BARBER_ADDED` row in one commit. The act's operation id is the new
+ * record's id, so a retried call writes nothing twice.
+ */
+export const addBarber = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.AddBarber, null),
+    root.ports,
+    decodeAddBarber,
+    (ports, cmd) => addBarberPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * One part of a barber record replaced whole — the profile, the shops, the
+ * working period, the «Който и да е» flag or who may book them: the record
+ * and its `TEAM_BARBER_*` row in one commit. A profile is any admitted
+ * editor's (the content editor, the admin, the barber's own account); the
+ * rest are the team manager's.
+ */
+export const editBarber = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.EditBarber, null),
+    root.ports,
+    decodeEditBarber,
+    (ports, cmd) => editBarberPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * The idempotent go-live step (team onboarding D9): a `DRAFT` whose needed
+ * items are done goes live at the status its admin set, with its
+ * `TEAM_BARBER_STATUS_CHANGED` row; anything else answers what is missing,
+ * or that nothing changed, and writes nothing.
+ */
+export const activateBarber = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.ActivateBarber, null),
+    root.ports,
+    decodeActivateBarber,
+    (ports, cmd) => activateBarberPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * «Изтрий» — a record that never went live, removed with its roster, its
+ * account lock and link and its offerings, beside its
+ * `TEAM_BARBER_DELETED` row, in one commit (team onboarding D10).
+ */
+export const deleteDraftBarber = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.DeleteDraftBarber, null),
+    root.ports,
+    decodeDeleteDraftBarber,
+    (ports, cmd) => deleteDraftBarberPipeline(ports)(cmd),
     refusalOf,
   ),
 );

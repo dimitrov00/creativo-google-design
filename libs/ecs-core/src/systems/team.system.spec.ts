@@ -1,31 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import {
   AccountLifecycle,
+  Actor,
+  AuditAction,
   BarberActivation,
   BarberStatus,
   BlockReason,
   Role,
   StaffSetupItem,
+  WriteOp,
 } from '@core/components';
 import {
+  AuditEntryId,
   BarberId,
   LocationId,
   OperationId,
+  UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import { TeamErrorCode } from '@core/errors';
+import { Collections } from '@core/entities';
 import {
   barberFixture,
   barberScheduleFixture,
+  bodyOf,
   deepFreeze,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,
+  fixtureHash,
   localDate,
   unwrapErr,
   unwrapOk,
   userFixture,
 } from '@core/testing';
+import { AuditSystem } from './audit.system';
 import type { StaffSetupChecklist } from './staff-setup.system';
 import {
   type AddBarberInput,
@@ -133,6 +142,40 @@ describe('TeamSystem.admitProfileEdit — who edits a barber’s profile', () =>
   });
 });
 
+describe('TeamSystem.admitActivation — who may ask a draft to go live', () => {
+  it('admits any staff account on its STORED roles', () => {
+    for (const roles of [
+      [Role.Admin],
+      [Role.ContentManager],
+      [Role.Receptionist],
+      [Role.Barber],
+    ]) {
+      expect(
+        TeamSystem.admitActivation(userFixture({ roles }), NOW).ok,
+        roles.join(),
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a client, an account that is gone, and blocked staff', () => {
+    expect(
+      unwrapErr(
+        TeamSystem.admitActivation(userFixture({ roles: [Role.Client] }), NOW),
+      ),
+    ).toEqual({ errorCode: TeamErrorCode.Forbidden });
+    expect(TeamSystem.admitActivation(null, NOW).ok).toBe(false);
+    expect(
+      TeamSystem.admitActivation(
+        userFixture({
+          roles: [Role.Barber],
+          ...AccountLifecycle.block(BlockReason.Manual, null),
+        }),
+        NOW,
+      ).ok,
+    ).toBe(false);
+  });
+});
+
 describe('TeamSystem.add — a new barber record', () => {
   const input: AddBarberInput = {
     name: { bg: '  Петър Петров ', en: null },
@@ -144,7 +187,7 @@ describe('TeamSystem.add — a new barber record', () => {
   };
   const context = {
     barberId: NEW,
-    knownLocationIds: [CENTER, MLADOST],
+    listedShops: [{ id: CENTER }, { id: MLADOST }],
     barberCount: 3,
     nowUtcMs: NOW,
     operationId: OP,
@@ -251,7 +294,7 @@ describe('TeamSystem.editProfile', () => {
 
 describe('TeamSystem.setShops', () => {
   const facts = {
-    knownLocationIds: [CENTER, MLADOST],
+    listedShops: [{ id: CENTER }, { id: MLADOST }],
     // Ivan's roster: open-ended hours at the centre shop.
     schedule: barberScheduleFixture(),
     today: FIXTURE_TODAY,
@@ -421,6 +464,139 @@ describe('TeamSystem.removable', () => {
   });
 });
 
+describe('TeamSystem.changedFields — the names a write changes', () => {
+  it('lists the stored fields that differ, ascending — never the id, never the provenance stamp', () => {
+    const before = barberFixture();
+    const after = unwrapOk(TeamSystem.setPool(before, false, OP));
+    expect(after.writeOperationId).toBe(OP);
+    expect(TeamSystem.changedFields(before, after)).toEqual([
+      'barberJoinsAnyPool',
+    ]);
+    // A restamp alone is no change.
+    expect(
+      TeamSystem.changedFields(before, { ...before, writeOperationId: OP }),
+    ).toEqual([]);
+  });
+
+  it('lists a creation’s and a deletion’s whole stored key list', () => {
+    const created = TeamSystem.changedFields(null, draft);
+    expect(created).toEqual(TeamSystem.changedFields(draft, null));
+    expect(created).toContain('barberDraftTargetStatus');
+    expect(created).toContain('name');
+    expect(created).not.toContain('id');
+    expect(created).not.toContain('writeOperationId');
+    expect(created).toEqual([...created].sort());
+    expect(TeamSystem.changedFields(null, null)).toEqual([]);
+  });
+});
+
+describe('TeamSystem.writesOf — the record and its ONE row', () => {
+  const actor = Actor.admin(UserId.of('u-admin'));
+  const write = {
+    action: AuditAction.TeamBarberPoolChanged,
+    actor,
+    nowUtcMs: NOW,
+    operationId: OP,
+  } as const;
+
+  it('sets the record whole — the entity minus its id — beside its row under hash(idBasis)', () => {
+    const before = barberFixture();
+    const after = unwrapOk(TeamSystem.setPool(before, false, OP));
+    const row = AuditSystem.planTeamBarber(
+      AuditAction.TeamBarberPoolChanged,
+      before.id,
+      before,
+      after,
+      ['barberJoinsAnyPool'],
+      actor,
+      NOW,
+      OP,
+    );
+    expect(
+      TeamSystem.writesOf({ ...write, before, after }, fixtureHash),
+    ).toEqual([
+      WriteOp.set([Collections.Barbers, before.id], bodyOf(after)),
+      WriteOp.create(
+        [Collections.AuditLog, AuditEntryId.of(fixtureHash(row.idBasis))],
+        row.row,
+      ),
+    ]);
+    expect(row.row).toMatchObject({
+      auditAction: 'TEAM_BARBER_POOL_CHANGED',
+      resourceId: `barbers/${before.id}`,
+      auditOperationId: OP,
+      recordedAtUtcMs: NOW,
+      teamBarberFields: ['barberJoinsAnyPool'],
+      teamBarberStatusFrom: BarberStatus.Public,
+      teamBarberStatusTo: BarberStatus.Public,
+      teamBarberStartsLocalDate: before.barberStartsLocalDate,
+      teamBarberLastWorkingLocalDate: null,
+    });
+  });
+
+  it('removes a deleted record, its row naming the status it had and no period', () => {
+    const [removal, row] = TeamSystem.writesOf(
+      {
+        ...write,
+        action: AuditAction.TeamBarberDeleted,
+        before: draft,
+        after: null,
+      },
+      fixtureHash,
+    );
+    expect(removal).toEqual(WriteOp.remove([Collections.Barbers, NEW]));
+    expect(row).toMatchObject({
+      body: {
+        auditAction: 'TEAM_BARBER_DELETED',
+        resourceId: `barbers/${NEW}`,
+        teamBarberStatusFrom: BarberStatus.Draft,
+        teamBarberStatusTo: null,
+        teamBarberStartsLocalDate: null,
+        teamBarberLastWorkingLocalDate: null,
+      },
+    });
+  });
+
+  it('plans NOTHING for an act that changes no stored field — a save of what is there, a replay', () => {
+    const barber = barberFixture();
+    expect(
+      TeamSystem.writesOf(
+        { ...write, before: barber, after: { ...barber } },
+        fixtureHash,
+      ),
+    ).toEqual([]);
+    expect(
+      TeamSystem.writesOf(
+        {
+          ...write,
+          before: barber,
+          after: unwrapOk(
+            TeamSystem.setPool(barber, barber.barberJoinsAnyPool, OP),
+          ),
+        },
+        fixtureHash,
+      ),
+    ).toEqual([]);
+    expect(
+      TeamSystem.writesOf({ ...write, before: null, after: null }, fixtureHash),
+    ).toEqual([]);
+  });
+
+  it('derives the same row id for the same act — and another for another act', () => {
+    const before = barberFixture();
+    const after = unwrapOk(TeamSystem.setPool(before, false, OP));
+    const rowPath = (operationId: OperationId) =>
+      TeamSystem.writesOf(
+        { ...write, before, after, operationId },
+        fixtureHash,
+      )[1]?.path;
+    expect(rowPath(OP)).toEqual(rowPath(OP));
+    expect(rowPath(OperationId.of('operation-another-0001'))).not.toEqual(
+      rowPath(OP),
+    );
+  });
+});
+
 describe('TeamSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const barber = deepFreeze(barberFixture());
@@ -429,7 +605,7 @@ describe('TeamSystem — purity', () => {
       TeamSystem.setShops(
         barber,
         [CENTER],
-        { knownLocationIds: [CENTER], schedule, today: FIXTURE_TODAY },
+        { listedShops: [{ id: CENTER }], schedule, today: FIXTURE_TODAY },
         OP,
       );
     expect(run()).toEqual(run());

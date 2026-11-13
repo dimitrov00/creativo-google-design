@@ -304,6 +304,39 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
     ).toBe(GovernanceErrorCode.AuditEntryEmptyAction);
   });
 
+  it('plans no row for a barbers write a team callable stamped — its own row landed in the commit; an unstamped write and a deletion stay the trigger’s (team onboarding D12)', () => {
+    const operation = OperationId.of('op-team-00000000001');
+    const stamped = changeOf(GovernedCollection.Barbers, {
+      writeOperationId: operation,
+    });
+    expect(GovernedChangeSystem.auditedByCallable(stamped)).toBe(true);
+    expect(unwrapOk(GovernedChangeSystem.plan(stamped, AT))).toBeNull();
+    // A creation that stamped one is the callable's too.
+    expect(
+      unwrapOk(
+        GovernedChangeSystem.plan({ ...stamped, beforeExists: false }, AT),
+      ),
+    ).toBeNull();
+    // The console, the seed: nothing stamped — audited as before.
+    const unstamped = changeOf(GovernedCollection.Barbers);
+    expect(GovernedChangeSystem.auditedByCallable(unstamped)).toBe(false);
+    expect(
+      unwrapOk(GovernedChangeSystem.plan(unstamped, AT))?.row.auditAction,
+    ).toBe('GOVERNED_DOC_UPDATED');
+    // A deletion stamps nothing (`stampedOperationOf`), so it is never skipped.
+    expect(
+      unwrapOk(
+        GovernedChangeSystem.plan({ ...unstamped, afterExists: false }, AT),
+      )?.row.auditAction,
+    ).toBe('GOVERNED_DOC_DELETED');
+    // Only `barbers`: a stamped customers write keeps its row and its join.
+    expect(
+      GovernedChangeSystem.auditedByCallable(
+        changeOf(GovernedCollection.Customers, { writeOperationId: operation }),
+      ),
+    ).toBe(false);
+  });
+
   it('stamps nowUtcMs only when the event’s instant did not parse; a redelivery derives the same id', () => {
     const change = changeOf(GovernedCollection.Barbers, { eventAtUtcMs: null });
     const plan = unwrapOk(GovernedChangeSystem.plan(change, AT));
