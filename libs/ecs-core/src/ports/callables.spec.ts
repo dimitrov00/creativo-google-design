@@ -4,6 +4,7 @@ import {
   ClientPrivacyCall,
   RolesCall,
   SetAnalyticsGoalCall,
+  TeamCall,
 } from '@core/components';
 import { AppCheckTokenUse, Tag } from '@core/primitives';
 import {
@@ -93,6 +94,37 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
     expect(CALLABLE_ANSWER_DECODERS[Callables.SetAnalyticsGoal]).toBe(
       SetAnalyticsGoalCall.decodeSet,
+    );
+  });
+
+  it('the barber record’s four (team onboarding) ride `operationId`, a standard token, the team call’s decoders', () => {
+    expect(Callables.AddBarber).toBe('addBarber');
+    expect(Callables.EditBarber).toBe('editBarber');
+    expect(Callables.ActivateBarber).toBe('activateBarber');
+    expect(Callables.DeleteDraftBarber).toBe('deleteDraftBarber');
+    expect(OPERATION_ID_FIELD).toMatchObject({
+      [Callables.AddBarber]: 'operationId',
+      [Callables.EditBarber]: 'operationId',
+      [Callables.ActivateBarber]: 'operationId',
+      [Callables.DeleteDraftBarber]: 'operationId',
+    });
+    expect(CALLABLE_APP_CHECK_TOKEN).toMatchObject({
+      [Callables.AddBarber]: AppCheckTokenUse.Standard,
+      [Callables.EditBarber]: AppCheckTokenUse.Standard,
+      [Callables.ActivateBarber]: AppCheckTokenUse.Standard,
+      [Callables.DeleteDraftBarber]: AppCheckTokenUse.Standard,
+    });
+    expect(CALLABLE_ANSWER_DECODERS[Callables.AddBarber]).toBe(
+      TeamCall.decodeSaved,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.EditBarber]).toBe(
+      TeamCall.decodeSaved,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.DeleteDraftBarber]).toBe(
+      TeamCall.decodeSaved,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.ActivateBarber]).toBe(
+      TeamCall.decodeActivation,
     );
   });
 

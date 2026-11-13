@@ -646,6 +646,9 @@ const CUSTOMERS = 'customers';
 /** `Collections.AnalyticsGoals` — restated likewise (spec-checked). */
 const ANALYTICS_GOALS = 'analyticsGoals';
 
+/** `Collections.Barbers` — restated likewise (spec-checked). */
+const BARBERS = 'barbers';
+
 /**
  * The resource an audit row names — the one id whose text may hold ONE `/`
  * (`users/{uid}`, `streakDefinitions/{id}`, `impersonationSessions/{id}`,
@@ -699,6 +702,10 @@ export const AuditResourceId = {
   /** An analytics goal row names the goal document, `analyticsGoals/{key}` (staff analytics v2 PR 6). */
   forAnalyticsGoal(key: AnalyticsGoalKey): AuditResourceId {
     return `${ANALYTICS_GOALS}/${key}` as AuditResourceId;
+  },
+  /** A team row names the barber record, `barbers/{id}` (team onboarding D12) — the governed trigger's spelling of the same document. */
+  forBarber(id: BarberId): AuditResourceId {
+    return `${BARBERS}/${id}` as AuditResourceId;
   },
 } as const;
 

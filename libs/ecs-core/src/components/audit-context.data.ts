@@ -18,6 +18,7 @@ import {
 import type { AccountStatus } from './account-status.data';
 import type { ArrivalAction } from './arrival-action.data';
 import type { AuditedProfileField } from './audited-profile-field.data';
+import type { BarberStatus } from './barber-status.data';
 import type { CancellationDelta } from './cancellation-delta.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
@@ -36,6 +37,7 @@ import type { RescheduleDelta } from './reschedule-delta.data';
 import type { SessionKind } from './session-kind.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { StaffEditDelta } from './staff-edit-delta.data';
+import type { TeamBarberAction } from './team-barber-action.data';
 import type { TipAction } from './tip-action.data';
 import type { TipDelta } from './tip-delta.data';
 import type { TransitionAction } from './transition-action.data';
@@ -152,6 +154,30 @@ export const AuditAction = {
    * on the set's row.
    */
   AnalyticsGoalCleared: 'ANALYTICS_GOAL_CLEARED',
+  /*
+   * The team callables' writes of a barber record (team onboarding D12):
+   * each written inside the callable's own commit, credited to the caller,
+   * naming the changed fields — so the governed trigger plans no second row
+   * for a write a callable stamped (`GovernedChangeSystem.auditedByCallable`).
+   */
+  /** A barber record added as a `DRAFT` (`addBarber`). */
+  TeamBarberAdded: 'TEAM_BARBER_ADDED',
+  /** A barber's public profile replaced (`editBarber`, `PROFILE`) — field names only, never the text. */
+  TeamBarberProfileChanged: 'TEAM_BARBER_PROFILE_CHANGED',
+  /** The shops a barber works at replaced (`editBarber`, `SHOPS`). */
+  TeamBarberShopsChanged: 'TEAM_BARBER_SHOPS_CHANGED',
+  /** A barber's working period replaced (`editBarber`, `PERIOD`). */
+  TeamBarberPeriodChanged: 'TEAM_BARBER_PERIOD_CHANGED',
+  /** A barber put in or taken out of the «Който и да е» pool (`editBarber`, `POOL`). */
+  TeamBarberPoolChanged: 'TEAM_BARBER_POOL_CHANGED',
+  /**
+   * Who may book a barber changed: a draft's target or a live record's
+   * status (`editBarber`, `ACCESS`), or a draft going live
+   * (`activateBarber`).
+   */
+  TeamBarberStatusChanged: 'TEAM_BARBER_STATUS_CHANGED',
+  /** A record that never went live removed (`deleteDraftBarber`). */
+  TeamBarberDeleted: 'TEAM_BARBER_DELETED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -206,7 +232,8 @@ export type AuditContext =
   | AuditContext.ClientExported
   | AuditContext.ClientErasure
   | AuditContext.AnalyticsGoalSet
-  | AuditContext.AnalyticsGoalCleared;
+  | AuditContext.AnalyticsGoalCleared
+  | AuditContext.TeamBarber;
 
 /** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -430,6 +457,27 @@ export const AuditContext = {
       goalKey,
       goalScopeBarberId,
       goalMonth,
+    };
+  },
+  /**
+   * A team callable's write of a barber record: the verb, the changed field
+   * names, the status on both sides and the working period it left.
+   */
+  teamBarber(
+    auditAction: TeamBarberAction,
+    teamBarberFields: readonly string[],
+    teamBarberStatusFrom: BarberStatus | null,
+    teamBarberStatusTo: BarberStatus | null,
+    teamBarberStartsLocalDate: LocalDate | null,
+    teamBarberLastWorkingLocalDate: LocalDate | null,
+  ): AuditContext.TeamBarber {
+    return {
+      auditAction,
+      teamBarberFields,
+      teamBarberStatusFrom,
+      teamBarberStatusTo,
+      teamBarberStartsLocalDate,
+      teamBarberLastWorkingLocalDate,
     };
   },
   /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
@@ -686,6 +734,24 @@ export namespace AuditContext {
     readonly goalKey: AnalyticsGoalKey;
     readonly goalScopeBarberId: BarberId | null;
     readonly goalMonth: MonthKey;
+  };
+  /**
+   * A team callable's write of a barber record (team onboarding D12) — the
+   * resource is `barbers/<id>`, the target none (a barber record is not an
+   * account), the actor the caller. Names, tags and shop days only: a
+   * profile's text stays in the record (R36 / T5).
+   */
+  export type TeamBarber = {
+    readonly auditAction: TeamBarberAction;
+    /** The record's changed top-level field NAMES, ascending, each once — a creation's or a deletion's whole key list. */
+    readonly teamBarberFields: readonly string[];
+    /** The lifecycle status before the write; `null` for a creation. */
+    readonly teamBarberStatusFrom: BarberStatus | null;
+    /** The lifecycle status after it; `null` for a deletion. */
+    readonly teamBarberStatusTo: BarberStatus | null;
+    /** The working period as the write left it — both `null` for a deletion. */
+    readonly teamBarberStartsLocalDate: LocalDate | null;
+    readonly teamBarberLastWorkingLocalDate: LocalDate | null;
   };
   export type ImpersonationStarted = {
     readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;

@@ -55,3 +55,8 @@ export * from './rhythm-preview.pipeline';
 export * from './save-visit-edit.pipeline';
 export * from './report-client-issues.pipeline';
 export * from './write-analytics-day.pipeline';
+export * from './team-caller.pipeline';
+export * from './add-barber.pipeline';
+export * from './edit-barber.pipeline';
+export * from './activate-barber.pipeline';
+export * from './delete-draft-barber.pipeline';

@@ -241,8 +241,8 @@ export const GovernedChangeSystem = {
    * carries one, or an update that changed it. `null` for a delete, for a
    * write that left the field as it was (the id there names an EARLIER call
    * — a console edit must never be credited to it) and for anything
-   * `OperationId.is` refuses. Only `customers` stores the slice among the
-   * governed collections today; any other reads `null`.
+   * `OperationId.is` refuses. `customers` and `barbers` store the slice
+   * among the governed collections today; any other reads `null`.
    */
   stampedOperationOf(
     before: StoredFields | null,
@@ -254,6 +254,24 @@ export const GovernedChangeSystem = {
     return before !== null && before['writeOperationId'] === stamped
       ? null
       : stamped;
+  },
+
+  /**
+   * Whether a callable that audits its own write already wrote this
+   * event's row (team onboarding D12, the `users` precedent
+   * `AuditSystem.auditedByCallable`): a `barbers` write that STAMPED an
+   * operation ({@link GovernedChangeSystem.stampedOperationOf}) is a team
+   * callable's — its `TEAM_BARBER_*` row, credited to the caller and naming
+   * the changed fields, landed in the same commit — so the trigger plans
+   * none and a write never gets two rows. A write that stamped nothing (the
+   * console, the seed, an Admin-SDK script) is the trigger's to audit, as
+   * is every deletion: a deleted document stamps nothing.
+   */
+  auditedByCallable(change: GovernedChange): boolean {
+    return (
+      change.governedCollection === GovernedCollection.Barbers &&
+      change.writeOperationId !== null
+    );
   },
 
   /** Creation, update and deletion, named apart. */
@@ -268,7 +286,9 @@ export const GovernedChangeSystem = {
    * The ONE row a document write plans — the single planner entry of the
    * document-change trigger. A users write is
    * `AuditSystem.planProfileChange`'s, unchanged. Any other: a write that
-   * changed no field plans nothing; an event with no id is refused rather
+   * changed no field plans nothing, and neither does one a callable audited
+   * in its own commit ({@link GovernedChangeSystem.auditedByCallable}); an
+   * event with no id is refused rather
    * than minted one; otherwise one `GOVERNED_DOC_*` row credited to the
    * writer, stamped with the event's instant, naming the resource, targeted
    * at the client record for a CUSTOMERS write and at nobody otherwise,
@@ -286,6 +306,7 @@ export const GovernedChangeSystem = {
       return AuditSystem.planProfileChange(change, nowUtcMs);
     }
     if (change.fields.length === 0) return Result.ok(null);
+    if (GovernedChangeSystem.auditedByCallable(change)) return Result.ok(null);
     if (change.eventId.trim().length === 0) {
       return Result.err(GovernanceError.auditEntryEmptyAction());
     }

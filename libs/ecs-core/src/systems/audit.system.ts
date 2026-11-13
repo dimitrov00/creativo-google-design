@@ -18,6 +18,7 @@ import {
   SeatSubject,
   StaffLink,
   SubjectRelationship,
+  type TeamBarberAction,
   EditCommand,
   WriteOp,
 } from '@core/components';
@@ -47,6 +48,7 @@ import { GovernanceError } from '@core/errors';
 import {
   type Appointment,
   type AuditEntryMeta,
+  type Barber,
   Collections,
   type ImpersonationSession,
   type StoredAnalyticsGoal,
@@ -577,6 +579,15 @@ export const AuditSystem = {
       return `goal-set:${goalKey}:${operationId ?? setAtUtcMs}`;
     },
     /**
+     * A team callable's write of a barber record (team onboarding D12): the
+     * act's operation id — required on the team wire — beside the record in
+     * the basis. A replay plans no row: it finds the record as its own act
+     * left it.
+     */
+    teamBarber(operationId: OperationId): string {
+      return `team-barber:${operationId}`;
+    },
+    /**
      * An owner's own edit through `updateProfile` (4A-16): the account and
      * the instant its transaction stamped — a retried call that re-commits
      * re-stamps, so each landed edit is its own change.
@@ -1031,6 +1042,55 @@ export const AuditSystem = {
           operationId,
           goal.goalSetAtUtcMs,
         ),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row a team callable writes for a barber record inside its own
+   * commit (team onboarding D12): stamped with the commit's instant, naming
+   * `barbers/<id>`, credited to the caller (`Actor.forCaller` over the
+   * STORED roles), the verb, the changed field names (`fields` — names
+   * only: a profile's text stays in the record), the status on both sides
+   * and the working period the write left; untargeted — a barber record is
+   * not an account. `before` is `null` for a creation, `after` for a
+   * deletion; a row for neither is a programmer defect.
+   */
+  planTeamBarber(
+    action: TeamBarberAction,
+    barberId: BarberId,
+    before: Barber | null,
+    after: Barber | null,
+    fields: readonly string[],
+    actor: Actor,
+    recordedAtUtcMs: UtcEpochMs,
+    operationId: OperationId,
+  ): AuditRowPlan {
+    if (before === null && after === null) {
+      return defect('a team row needs the record before or after its write');
+    }
+    const resourceId = AuditResourceId.forBarber(barberId);
+    return {
+      row: {
+        recordedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.teamBarber(
+          action,
+          fields,
+          before === null ? null : before.barberStatus,
+          after === null ? null : after.barberStatus,
+          after === null ? null : after.barberStartsLocalDate,
+          after === null ? null : after.barberLastWorkingLocalDate,
+        ),
+        ...AuditTargetRef.none(),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        null,
+        AuditSystem.changeKey.teamBarber(operationId),
       ),
     };
   },

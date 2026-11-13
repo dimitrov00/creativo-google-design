@@ -13,6 +13,7 @@ import {
   RosterCall,
   SetAnalyticsGoalCall,
   StreakPublishCall,
+  TeamCall,
   WaitlistCall,
 } from '@core/components';
 import { AppCheckTokenUse, Result } from '@core/primitives';
@@ -37,8 +38,10 @@ import type { PipelineError } from '@core/errors';
  * door to a chair's roster, and `setRosterWeek`, the hours editor's
  * (2026-11-06); staff analytics adds `staffAnalytics`, the report a barber
  * or the admin reads (`docs/designs/staff-analytics.md`), and v2 PR 6
- * `setAnalyticsGoal`, a scope's month goal. Triggers and schedules are never dialled, so they are
- * not here.
+ * `setAnalyticsGoal`, a scope's month goal; team onboarding adds the barber
+ * record's four — `addBarber`, `editBarber`, `activateBarber` and
+ * `deleteDraftBarber` (`docs/designs/team-onboarding.md`, D5, D9, D10).
+ * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
   RequestOtpChallenge: 'requestOtpChallenge',
@@ -69,6 +72,10 @@ export const Callables = {
   SetRosterWeek: 'setRosterWeek',
   StaffAnalytics: 'staffAnalytics',
   SetAnalyticsGoal: 'setAnalyticsGoal',
+  AddBarber: 'addBarber',
+  EditBarber: 'editBarber',
+  ActivateBarber: 'activateBarber',
+  DeleteDraftBarber: 'deleteDraftBarber',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -232,6 +239,33 @@ export type CallableWire = {
     readonly input: SetAnalyticsGoalCall;
     readonly answer: SetAnalyticsGoalCall.Set;
   };
+  /**
+   * «Добави» — a new barber record as a `DRAFT` (team onboarding D5). The
+   * act's operation id is REQUIRED and IS the new record's id, so a
+   * retried call answers the record its first run wrote.
+   */
+  readonly [Callables.AddBarber]: {
+    readonly input: TeamCall;
+    readonly answer: TeamCall.Saved;
+  };
+  /** One part of a barber record replaced whole — `barberEdit` says which. */
+  readonly [Callables.EditBarber]: {
+    readonly input: TeamCall.Edit;
+    readonly answer: TeamCall.Saved;
+  };
+  /**
+   * The idempotent go-live step (team onboarding D9): a `DRAFT` with every
+   * needed item done goes live; the answer says what the step came to.
+   */
+  readonly [Callables.ActivateBarber]: {
+    readonly input: TeamCall.Named;
+    readonly answer: TeamCall.Activation;
+  };
+  /** «Изтрий» — a record that never went live, removed with what names it. */
+  readonly [Callables.DeleteDraftBarber]: {
+    readonly input: TeamCall.Named;
+    readonly answer: TeamCall.Saved;
+  };
 };
 
 /**
@@ -284,6 +318,11 @@ export const OPERATION_ID_FIELD: {
   // correlates by it; the decoder never requires it.
   [Callables.StaffAnalytics]: 'operationId',
   [Callables.SetAnalyticsGoal]: 'operationId',
+  // The team acts name themselves: the input carries the id, REQUIRED.
+  [Callables.AddBarber]: 'operationId',
+  [Callables.EditBarber]: 'operationId',
+  [Callables.ActivateBarber]: 'operationId',
+  [Callables.DeleteDraftBarber]: 'operationId',
 };
 
 /**
@@ -329,6 +368,10 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.SetRosterWeek]: AppCheckTokenUse.Standard,
   [Callables.StaffAnalytics]: AppCheckTokenUse.Standard,
   [Callables.SetAnalyticsGoal]: AppCheckTokenUse.Standard,
+  [Callables.AddBarber]: AppCheckTokenUse.Standard,
+  [Callables.EditBarber]: AppCheckTokenUse.Standard,
+  [Callables.ActivateBarber]: AppCheckTokenUse.Standard,
+  [Callables.DeleteDraftBarber]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -394,4 +437,8 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.SetRosterWeek]: RosterCall.decodeAmended,
   [Callables.StaffAnalytics]: AnalyticsCall.decodeReport,
   [Callables.SetAnalyticsGoal]: SetAnalyticsGoalCall.decodeSet,
+  [Callables.AddBarber]: TeamCall.decodeSaved,
+  [Callables.EditBarber]: TeamCall.decodeSaved,
+  [Callables.ActivateBarber]: TeamCall.decodeActivation,
+  [Callables.DeleteDraftBarber]: TeamCall.decodeSaved,
 };

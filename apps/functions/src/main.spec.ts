@@ -34,6 +34,8 @@ import { hmacSha256Hex } from './adapters/crypto.adapter';
  */
 const seam = vi.hoisted(() => {
   const PIPELINES = [
+    'activateBarber',
+    'addBarber',
     'amendRosterBreaks',
     'auditDocumentChange',
     'bookAppointment',
@@ -42,7 +44,9 @@ const seam = vi.hoisted(() => {
     'completeRegistration',
     'continueAnalyticsRecompute',
     'continuePolicyRecompute',
+    'deleteDraftBarber',
     'editAppointment',
+    'editBarber',
     'endImpersonation',
     'eraseClient',
     'exportClientData',
@@ -319,6 +323,10 @@ const ENDPOINTS = {
   setRosterWeek: tracedCallable,
   staffAnalytics: { ...tracedCallable, availableMemoryMb: 512 },
   setAnalyticsGoal: tracedCallable,
+  addBarber: tracedCallable,
+  editBarber: tracedCallable,
+  activateBarber: tracedCallable,
+  deleteDraftBarber: tracedCallable,
   clearArrival: tracedCallable,
   recordSeatTip: tracedCallable,
   staffEditAppointment: walkInCallable,
@@ -926,6 +934,97 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ goalKey: 'b-1__2026-11', goalSetAtUtcMs: 1_762_700_000_000 }),
     expected: { goalKey: 'b-1__2026-11', goalSetAtUtcMs: 1_762_700_000_000 },
   },
+  // ── team onboarding: the barber record's four callables ──
+  addBarber: {
+    pipeline: 'addBarber',
+    input: request(
+      {
+        name: { bg: 'Иван', en: null },
+        locationIds: ['loc-1'],
+        barberStartsLocalDate: '2026-12-01',
+        barberLastWorkingLocalDate: null,
+        barberDraftTargetStatus: 'PUBLIC',
+        barberJoinsAnyPool: true,
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    // The verified caller and the act's name ride the command (the name is the new record's id).
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      operationId: 'operation-0123456789ab',
+      name: { bg: 'Иван', en: null },
+      locationIds: ['loc-1'],
+      barberStartsLocalDate: '2026-12-01',
+      barberLastWorkingLocalDate: null,
+      barberDraftTargetStatus: 'PUBLIC',
+      barberJoinsAnyPool: true,
+    },
+    answer: ok({ barberId: 'operation-0123456789ab' }),
+    expected: { barberId: 'operation-0123456789ab' },
+  },
+  editBarber: {
+    pipeline: 'editBarber',
+    input: request(
+      {
+        barberId: 'b-1',
+        barberEdit: 'POOL',
+        barberJoinsAnyPool: false,
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      barberId: 'b-1',
+      operationId: 'operation-0123456789ab',
+      barberEdit: 'POOL',
+      barberJoinsAnyPool: false,
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
+  },
+  activateBarber: {
+    pipeline: 'activateBarber',
+    // Any staff token may ask: the step decides nothing a caller chooses.
+    input: request(
+      { barberId: 'b-1', operationId: 'operation-0123456789ab' },
+      STAFF,
+    ),
+    command: {
+      callerUserId: 'u-staff',
+      callerRoles: ['barber'],
+      barberId: 'b-1',
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({
+      barberId: 'b-1',
+      barberActivation: 'NOT_READY',
+      staffSetupItem: 'HOURS',
+    }),
+    expected: {
+      barberId: 'b-1',
+      barberActivation: 'NOT_READY',
+      staffSetupItem: 'HOURS',
+    },
+  },
+  deleteDraftBarber: {
+    pipeline: 'deleteDraftBarber',
+    input: request(
+      { barberId: 'b-1', operationId: 'operation-0123456789ab' },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      barberId: 'b-1',
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
+  },
   clearArrival: {
     pipeline: 'markArrival',
     input: request(
@@ -1387,7 +1486,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 57 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report and v2’s three day-writer triggers', () => {
+  it('exports exactly the 62 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, and team onboarding’s four barber-record callables', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1433,7 +1532,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(58);
+    expect(FLIPPED_EXPORTS).toHaveLength(62);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

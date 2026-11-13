@@ -42,6 +42,8 @@ import type { RescheduleDelta } from './reschedule-delta.data';
 import { SessionKind } from './session-kind.data';
 import { StaffEditDelta } from './staff-edit-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
+import type { TeamBarberAction } from './team-barber-action.data';
+import { BarberStatus } from './barber-status.data';
 import type { TipAction } from './tip-action.data';
 import type { TransitionAction } from './transition-action.data';
 import { StreakRuleDirection } from './streak-rule-direction.data';
@@ -65,7 +67,7 @@ describe('AuditAction', () => {
     );
     for (const action of AuditContext.ACTIONS) {
       expect(action).toMatch(
-        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY|PRIVACY|ANALYTICS)_[A-Z_]+$/,
+        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY|PRIVACY|ANALYTICS|TEAM)_[A-Z_]+$/,
       );
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
@@ -144,6 +146,7 @@ describe('AuditAction', () => {
       ProfileAction,
       GovernedAction,
       ErasureAction,
+      TeamBarberAction,
       Singles,
     ];
     // `tsc` failing on either constant IS the failure.
@@ -561,6 +564,44 @@ describe('AuditContext — one flat variant per verb family, every field present
     for (const [field, value] of Object.entries(context)) {
       if (field !== 'auditAction') expect(typeof value, field).toBe('number');
     }
+  });
+
+  it('a team write of a barber record: the verb, the changed names, the status on both sides and the period left (team onboarding D12)', () => {
+    const context = AuditContext.teamBarber(
+      AuditAction.TeamBarberStatusChanged,
+      ['barberStatus', 'barberStatusChangedAtUtcMs'],
+      BarberStatus.Draft,
+      BarberStatus.Public,
+      localDate('2026-12-01'),
+      null,
+    );
+    expect(context).toEqual({
+      auditAction: 'TEAM_BARBER_STATUS_CHANGED',
+      teamBarberFields: ['barberStatus', 'barberStatusChangedAtUtcMs'],
+      teamBarberStatusFrom: 'DRAFT',
+      teamBarberStatusTo: 'PUBLIC',
+      teamBarberStartsLocalDate: '2026-12-01',
+      teamBarberLastWorkingLocalDate: null,
+    });
+    // The seven verbs, each a member of the dictionary under the TEAM_ prefix.
+    const verbs: readonly TeamBarberAction[] = [
+      AuditAction.TeamBarberAdded,
+      AuditAction.TeamBarberProfileChanged,
+      AuditAction.TeamBarberShopsChanged,
+      AuditAction.TeamBarberPeriodChanged,
+      AuditAction.TeamBarberPoolChanged,
+      AuditAction.TeamBarberStatusChanged,
+      AuditAction.TeamBarberDeleted,
+    ];
+    expect(verbs).toEqual([
+      'TEAM_BARBER_ADDED',
+      'TEAM_BARBER_PROFILE_CHANGED',
+      'TEAM_BARBER_SHOPS_CHANGED',
+      'TEAM_BARBER_PERIOD_CHANGED',
+      'TEAM_BARBER_POOL_CHANGED',
+      'TEAM_BARBER_STATUS_CHANGED',
+      'TEAM_BARBER_DELETED',
+    ]);
   });
 });
 

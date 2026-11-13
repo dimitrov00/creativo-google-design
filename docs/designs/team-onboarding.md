@@ -735,7 +735,7 @@ next call retries. The editors stay unaware of onboarding.
 array-contains` and `bookingStatus` on the existing index. Confirmation
    copy: «След {{date}} {{name}} има {{count}} записа. Остават в графика,
    докато ги преместиш или откажеш.»
-3. Writes `barberLastWorkingLocalDate` and a `BARBER_PERIOD_CHANGED` audit
+3. Writes `barberLastWorkingLocalDate` and a `TEAM_BARBER_PERIOD_CHANGED` audit
    row. The barber stays bookable and keeps access until that day.
 4. A last day already in the past is closed at once by the same pipeline as
    the daily job.
@@ -759,7 +759,7 @@ other four scheduled jobs do).
   - sets `DEPARTED` with `barberDepartedUserId`, `barberRehireStatus` and
     `barberSessionsRevokedAtUtcMs: null`;
   - writes one audit row credited to the system under a new `SystemSource`,
-    `SCHEDULED_JOB`, pointing at the `BARBER_PERIOD_CHANGED` row that set
+    `SCHEDULED_JOB`, pointing at the `TEAM_BARBER_PERIOD_CHANGED` row that set
     the date.
 - **If the account holds `admin`**, its roles are left alone and the rest of
   the close goes ahead. The Team page shows «Администратор · махни ролята
@@ -778,7 +778,7 @@ other four scheduled jobs do).
 
 **«Изтрий»** (admin, `DRAFT` only, so only a record that never went live).
 One transaction removes the record, its offerings, its roster, any link and
-lock, and any pending invite, with a `BARBER_DELETED` audit row.
+lock, and any pending invite, with a `TEAM_BARBER_DELETED` audit row.
 
 **«Върни в екипа»** (admin, `DEPARTED` rows). Same record and id: a new
 working period, hours prefilled from the last roster version, prices kept,
@@ -895,19 +895,27 @@ caller. Governed triggers on `barbers`, `barberSchedules` and `services`
 join on `writeOperationId` (the existing pattern for governed collections),
 so a write never gets two rows.
 
+As built for `barbers` (stage 1a): the callable's row carries the changed
+field names, the status on both sides and the working period. The governed
+trigger plans no row for a `barbers` write that stamped its operation
+(`GovernedChangeSystem.auditedByCallable`). A deletion stamps nothing, so
+it keeps both rows: the callable's, credited to the admin, and the
+trigger's. The action names carry the `TEAM_` domain prefix, as every
+audit action carries its domain's.
+
 | Callable or job             | Audit action                                                                                   |
 | --------------------------- | ---------------------------------------------------------------------------------------------- |
-| Add                         | `BARBER_ADDED`                                                                                 |
-| Profile and photo editors   | `BARBER_PROFILE_CHANGED`                                                                       |
-| Shops                       | `BARBER_SHOPS_CHANGED`                                                                         |
+| Add                         | `TEAM_BARBER_ADDED`                                                                            |
+| Profile and photo editors   | `TEAM_BARBER_PROFILE_CHANGED`                                                                  |
+| Shops                       | `TEAM_BARBER_SHOPS_CHANGED`                                                                    |
 | Offerings, copy             | `BARBER_OFFERINGS_CHANGED`                                                                     |
 | Hours, breaks               | the existing roster row, now with `operationId`                                                |
 | Day exceptions              | `SCHEDULE_EXCEPTIONS_CHANGED`                                                                  |
-| Working period, «Напускане» | `BARBER_PERIOD_CHANGED`                                                                        |
-| «Който и да е» flag         | `BARBER_POOL_CHANGED`                                                                          |
-| Activation, rehire          | `BARBER_STATUS_CHANGED`                                                                        |
+| Working period, «Напускане» | `TEAM_BARBER_PERIOD_CHANGED`                                                                   |
+| «Който и да е» flag         | `TEAM_BARBER_POOL_CHANGED`                                                                     |
+| Activation, access, rehire  | `TEAM_BARBER_STATUS_CHANGED`                                                                   |
 | Daily close                 | `BARBER_DEPARTED` (system, `SCHEDULED_JOB`) plus the role change it makes, in one row          |
-| Delete                      | `BARBER_DELETED`                                                                               |
+| Delete                      | `TEAM_BARBER_DELETED`                                                                          |
 | Invites                     | `STAFF_INVITE_CREATED`, `STAFF_INVITE_RESENT`, `STAFF_INVITE_REVOKED`, `STAFF_INVITE_ACCEPTED` |
 | «Свържи профил»             | the existing `PROFILE_ROLES_CHANGED`                                                           |
 
