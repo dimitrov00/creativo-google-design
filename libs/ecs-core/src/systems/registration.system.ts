@@ -143,29 +143,34 @@ export const RegistrationSystem = {
   },
 
   /**
-   * The registered profile a submission settles to. On a first
-   * registration the form supplies the channel the login did not verify; once
-   * registered, a phone or e-mail changes only through a verified contact
-   * change, never through a re-run's form. `birthDate` is the submission's
-   * own, already through `AgeSystem` (or `null` when it sent none — the
-   * stored one then stands).
+   * The registered profile a submission settles to. A contact the document
+   * already holds always stands: the stub holds exactly the login channel
+   * ({@link provision}), which the one-time code proved, so a form can never
+   * replace a proven e-mail or phone with someone else's (team onboarding
+   * D7 — a staff invite is matched on the proven e-mail). On a first
+   * registration the form supplies only the channel the login did not
+   * verify; once registered, a missing e-mail stays missing (it moves only
+   * through a verified contact change), while a missing phone is still
+   * taken from the form. `birthDate` is the submission's own, already
+   * through `AgeSystem` (or `null` when it sent none — the stored one then
+   * stands).
    */
   settle(
     standing: RegistrationStanding,
     fields: RegistrationFields,
     birthDate: BirthDate | null,
   ): RegistrationSettlement {
-    const keepContacts = Registration.isRegistered(standing);
     const formEmail = trimmedOrNull(fields[RegistrationField.Email]);
     const formPhone = fields[RegistrationField.Phone];
     return {
       firstName: fields[RegistrationField.FirstName]?.trim() ?? '',
       lastName: fields[RegistrationField.LastName]?.trim() ?? '',
       phone:
-        keepContacts && standing.phone !== null
-          ? standing.phone
-          : (formPhone?.trim() ?? ''),
-      email: keepContacts ? standing.email : (formEmail ?? standing.email),
+        standing.phone !== null ? standing.phone : (formPhone?.trim() ?? ''),
+      email:
+        standing.email !== null || Registration.isRegistered(standing)
+          ? standing.email
+          : formEmail,
       birthDate: birthDate ?? standing.birthDate,
       roles: RegistrationSystem.grantedRoles(standing.roles),
     };

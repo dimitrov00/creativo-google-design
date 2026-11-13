@@ -90,7 +90,7 @@ export const authClaimsPorts = (
     try {
       const created = await auth.createUser(
         destination.identifierChannel === IdentifierChannel.Email
-          ? { email: destination.identifier }
+          ? { email: destination.identifier, emailVerified: true }
           : { phoneNumber: destination.identifier },
       );
       return Result.ok(UserId.of(created.uid));

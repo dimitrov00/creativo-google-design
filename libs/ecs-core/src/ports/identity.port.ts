@@ -157,8 +157,10 @@ export type FindAuthUserByDestination = (
 
 /**
  * Create the Firebase Auth user for a first verification
- * (`auth.createUser({ phoneNumber | email })`) and answer its uid — the
- * stub's document id. `null` when Auth REFUSED because a user already holds
+ * (`auth.createUser({ phoneNumber })`, or `({ email, emailVerified: true })`
+ * — the one-time code just proved the address, and a staff invite is
+ * matched on a verified Auth e-mail, team onboarding D7) and answer its
+ * uid — the stub's document id. `null` when Auth REFUSED because a user already holds
  * the destination (`auth/phone-number-already-exists`,
  * `auth/email-already-exists`): the race loser, who then resolves the winner
  * through {@link FindAuthUserByDestination}. Auth's uniqueness of phone and

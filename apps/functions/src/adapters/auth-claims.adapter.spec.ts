@@ -203,7 +203,7 @@ describe('auth-claims adapter', () => {
   });
 
   describe('the first-verification race', () => {
-    it('provisions a phone user by phoneNumber and an e-mail user by email', async () => {
+    it('provisions a phone user by phoneNumber and an e-mail user by a verified email', async () => {
       const auth = fakeAuth();
       const ports = authClaimsPorts(asAuth(auth));
       expect(await ports.provisionAuthUser(PHONE)).toEqual({
@@ -213,7 +213,7 @@ describe('auth-claims adapter', () => {
       await ports.provisionAuthUser(EMAIL);
       expect(auth.createUser.mock.calls).toEqual([
         [{ phoneNumber: '+359888123456' }],
-        [{ email: 'ana@example.com' }],
+        [{ email: 'ana@example.com', emailVerified: true }],
       ]);
     });
 
