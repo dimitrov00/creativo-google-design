@@ -29,18 +29,19 @@ import type {
 import type { StaffSetupChecklist } from './staff-setup.system';
 
 /**
- * Display text as an editor sends it: Bulgarian, and English when the
+ * Display text as an editor AUTHORS it — not a stored `LocalizedText`,
+ * whose two languages are both required: Bulgarian, and English when the
  * author gave one. A blank English is saved as the Bulgarian text (team
  * onboarding D5, O5), so nobody has to write in two languages.
  */
-export type LocalizedInput = {
+export type AuthoredText = {
   readonly bg: string;
   readonly en: string | null;
 };
 
 /** What «Добави» sends for a new barber record — ids and days already parsed at the edge. */
 export type AddBarberInput = {
-  readonly name: LocalizedInput;
+  readonly name: AuthoredText;
   /** The shops they work at; `[]` is every shop. */
   readonly locationIds: readonly LocationId[];
   readonly barberStartsLocalDate: LocalDate;
@@ -64,9 +65,9 @@ export type AddBarberContext = {
 
 /** A barber's whole public profile, as its editor saves it. */
 export type BarberProfileInput = {
-  readonly name: LocalizedInput;
-  readonly title: LocalizedInput | null;
-  readonly bio: LocalizedInput | null;
+  readonly name: AuthoredText;
+  readonly title: AuthoredText | null;
+  readonly bio: AuthoredText | null;
   readonly instagramHandle: string | null;
   readonly yearsExperience: number | null;
 };
@@ -80,7 +81,7 @@ const INSTAGRAM = /^[A-Za-z0-9._]{1,30}$/;
 
 /** Required text: a non-blank Bulgarian within `max`, English falling back to it. */
 function requiredText(
-  input: LocalizedInput,
+  input: AuthoredText,
   field: string,
   max: number,
 ): Result<LocalizedText, TeamError> {
@@ -94,7 +95,7 @@ function requiredText(
 
 /** Optional text: `null`, or a blank Bulgarian, is "none". */
 function optionalText(
-  input: LocalizedInput | null,
+  input: AuthoredText | null,
   field: string,
   max: number,
 ): Result<LocalizedText | null, TeamError> {
