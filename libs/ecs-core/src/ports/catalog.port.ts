@@ -122,15 +122,21 @@ export type CatalogReadPorts = {
   readonly observeLocations: ObserveLocations;
 };
 
-/** The whole team, live — staff surfaces only (`TEAM_BARBER_PORTS`). */
+/** The whole team, live — staff surfaces only. */
 export type TeamBarberReadPorts = {
   readonly observeTeamBarbers: ObserveTeamBarbers;
 };
 
-/** Barber records by id — a past visit's name (`BARBER_LOOKUP_PORTS`). */
+/** Barber records by id — a past visit's name. */
 export type BarberLookupPorts = {
   readonly loadBarbers: LoadBarbers;
 };
+
+/**
+ * Every read of barbers OFF the public list — the web's ONE
+ * `TEAM_BARBER_PORTS` token and adapter factory (`teamBarberPorts`).
+ */
+export type TeamBarberPorts = TeamBarberReadPorts & BarberLookupPorts;
 
 /** The cart's services and named shop in one read — the functions' `firestore-catalog.adapter.ts`. */
 export type CatalogLoadPorts = {

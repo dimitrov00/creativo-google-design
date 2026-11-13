@@ -2,6 +2,7 @@ export * from './lib/content/catalog-art';
 export * from './lib/content/catalog.vm';
 export * from './lib/content/catalog-wording.service';
 export * from './lib/content/catalog-content.service';
+export * from './lib/content/team-catalog.service';
 export * from './lib/content/media-url-cache';
 export * from './lib/content/catalog.presenter';
 export * from './lib/content/shop-name.format';

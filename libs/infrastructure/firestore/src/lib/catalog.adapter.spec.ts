@@ -9,12 +9,8 @@ vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
 );
 
-const {
-  barberLookupPorts,
-  catalogReadPorts,
-  locationLoadPorts,
-  teamBarberReadPorts,
-} = await import('./catalog.adapter');
+const { catalogReadPorts, locationLoadPorts, teamBarberPorts } =
+  await import('./catalog.adapter');
 
 const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
 
@@ -172,10 +168,10 @@ describe('catalogReadPorts — what /book may list, live', () => {
   });
 });
 
-describe('teamBarberReadPorts — the whole team, staff only (team onboarding D3)', () => {
+describe('teamBarberPorts — the whole team, staff only (team onboarding D3)', () => {
   it('lists every barber record by sortOrder, whatever its status', () => {
     const fake = catalog();
-    const team = recorded(teamBarberReadPorts(asDb(fake)).observeTeamBarbers());
+    const team = recorded(teamBarberPorts(asDb(fake)).observeTeamBarbers());
 
     expect(team.seen.map(idsOf)).toEqual([['gone', 'ivan', 'niko']]);
     expect(fake.reads.map((read) => read.constraints)).toEqual([
@@ -184,9 +180,9 @@ describe('teamBarberReadPorts — the whole team, staff only (team onboarding D3
   });
 });
 
-describe('barberLookupPorts — barber records by id (a past visit’s name)', () => {
+describe('teamBarberPorts — barber records by id (a past visit’s name)', () => {
   it('answers the records that exist, in the order asked, and leaves out an id with none', async () => {
-    const loaded = await barberLookupPorts(asDb(catalog())).loadBarbers(
+    const loaded = await teamBarberPorts(asDb(catalog())).loadBarbers(
       ['niko', 'nobody', 'gone'].map(BarberId.of),
     );
     expect(idsOf(loaded)).toEqual(['niko', 'gone']);
@@ -195,11 +191,11 @@ describe('barberLookupPorts — barber records by id (a past visit’s name)', (
   it('leaves out a record the rules refuse the reader (a DRAFT, for a client), and answers any other failure', async () => {
     const refused = catalog().failWith(new Error('permission-denied'));
     expect(
-      await barberLookupPorts(asDb(refused)).loadBarbers([BarberId.of('ivan')]),
+      await teamBarberPorts(asDb(refused)).loadBarbers([BarberId.of('ivan')]),
     ).toEqual({ ok: true, value: [] });
 
     const down = catalog().failWith(new Error('unavailable'));
-    const answer = await barberLookupPorts(asDb(down)).loadBarbers([
+    const answer = await teamBarberPorts(asDb(down)).loadBarbers([
       BarberId.of('ivan'),
     ]);
     expect(answer.ok).toBe(false);

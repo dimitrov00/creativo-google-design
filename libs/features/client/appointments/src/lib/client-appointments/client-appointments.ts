@@ -23,6 +23,7 @@ import {
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
+  TeamCatalogService,
   CatalogWording,
 } from '@creativo/features/shared/catalog';
 import {
@@ -288,6 +289,7 @@ export class ClientAppointments {
   private readonly injector = inject(Injector);
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
+  private readonly team = inject(TeamCatalogService);
   private readonly content = inject(CatalogWording);
 
   protected readonly store = inject(AppointmentsStore);
@@ -408,7 +410,7 @@ export class ClientAppointments {
     // past visit's barber who left or now works staff-only (team
     // onboarding D3 — see the constructor).
     const barbers = new Map(
-      this.catalog.namedBarberVms().map((barber) => [barber.id, barber]),
+      this.team.namedBarberVms().map((barber) => [barber.id, barber]),
     );
     const locations = this.catalog.locations();
     return {
@@ -770,7 +772,7 @@ export class ClientAppointments {
           if (!ids.includes(barberId)) ids.push(barberId);
         }
       }
-      untracked(() => this.catalog.rememberBarbers(ids));
+      untracked(() => this.team.rememberBarbers(ids));
     });
   }
 

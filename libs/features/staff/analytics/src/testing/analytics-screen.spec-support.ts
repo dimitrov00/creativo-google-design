@@ -21,7 +21,12 @@ import {
 import { PipelineError } from '@core/errors';
 import type { Barber, ShopLocation } from '@core/entities';
 import type { AnalyticsCallPorts } from '@core/ports';
-import { AnalyticsGoalKey, Result, UserId } from '@core/primitives';
+import {
+  AnalyticsGoalKey,
+  type BarberId,
+  Result,
+  UserId,
+} from '@core/primitives';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -41,6 +46,7 @@ import { SessionIdentityService } from '@creativo/features/shared/shell';
 import {
   CatalogContentService,
   CatalogWording,
+  TeamCatalogService,
 } from '@creativo/features/shared/catalog';
 import { IVAN, catalogueOf } from './analytics.fixtures';
 
@@ -198,17 +204,24 @@ export async function renderAnalyticsScreen<T>(
         provide: CatalogContentService,
         useValue: {
           barbers: signal(options.barbers ?? []),
-          // The whole team's read (team onboarding D3) — the same barbers.
-          teamBarbers: signal(options.barbers ?? []),
-          workedBarbers: signal(options.barbers ?? []),
-          teamBarberVms: signal([]),
-          watchTeam: () => undefined,
           services: signal([]),
           allServices: signal([]),
           barberVms: signal([]),
           locations: signal(options.locations ?? []),
           findService: () => undefined,
           findAnyService: () => undefined,
+        },
+      },
+      {
+        // The whole team's read (team onboarding D3) — the same barbers.
+        provide: TeamCatalogService,
+        useValue: {
+          teamBarbers: signal(options.barbers ?? []),
+          workedBarbers: signal(options.barbers ?? []),
+          findTeamBarber: (id: BarberId) =>
+            (options.barbers ?? []).find((barber) => barber.id === id),
+          findTeamBarberVm: () => undefined,
+          watchTeam: () => undefined,
         },
       },
       { provide: CatalogWording, useValue: { text: () => '' } },

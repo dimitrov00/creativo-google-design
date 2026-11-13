@@ -10,7 +10,6 @@ import type {
   AuthDeploymentPorts,
   AuthSessionPorts,
   AvatarPorts,
-  BarberLookupPorts,
   BookingDraftPorts,
   CatalogReadPorts,
   ClientIssuePorts,
@@ -41,7 +40,7 @@ import type {
   ShopEventReadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
-  TeamBarberReadPorts,
+  TeamBarberPorts,
   TimerPorts,
   UserSearchPorts,
   WaitlistReadPorts,
@@ -97,14 +96,9 @@ export const CATALOG_PORTS = new InjectionToken<CatalogReadPorts>(
   'CATALOG_PORTS',
 );
 
-/** The whole team, live — staff surfaces only (`TeamBarberReadPorts`). */
-export const TEAM_BARBER_PORTS = new InjectionToken<TeamBarberReadPorts>(
+/** The barbers off the public list: the whole team, and records by id (`TeamBarberPorts`). */
+export const TEAM_BARBER_PORTS = new InjectionToken<TeamBarberPorts>(
   'TEAM_BARBER_PORTS',
-);
-
-/** Barber records by id — a past visit's name (`BarberLookupPorts`). */
-export const BARBER_LOOKUP_PORTS = new InjectionToken<BarberLookupPorts>(
-  'BARBER_LOOKUP_PORTS',
 );
 
 /** Coupons, grants and gift vouchers (`CouponVoucherPorts`). */

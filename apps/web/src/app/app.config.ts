@@ -30,7 +30,6 @@ import {
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
   BOOKING_DRAFT_PORTS,
-  BARBER_LOOKUP_PORTS,
   CATALOG_PORTS,
   CLIENT_ISSUE_REPORTER,
   CLIENT_JOURNAL_PORTS,
@@ -508,18 +507,15 @@ export const appConfig: ApplicationConfig = {
       },
       onLoadError: dataUnavailable,
     }),
-    // The whole team (every barber record, staff only) and barber records
-    // by id (a past visit's name) — team onboarding D3.
+    // The barbers off the public list (team onboarding D3): the whole
+    // team, staff only, and records by id for a past visit's name.
     provideLazyPort(TEAM_BARBER_PORTS, firebaseData, {
       factory: (m) => (inj) =>
-        m.firestore.teamBarberReadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { observeTeamBarbers: LazyMethod.Observable },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(BARBER_LOOKUP_PORTS, firebaseData, {
-      factory: (m) => (inj) =>
-        m.firestore.barberLookupPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { loadBarbers: LazyMethod.Promise },
+        m.firestore.teamBarberPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observeTeamBarbers: LazyMethod.Observable,
+        loadBarbers: LazyMethod.Promise,
+      },
       onLoadError: dataUnavailable,
     }),
     // The counter's code lookups (what a typed promo code opens), a client's

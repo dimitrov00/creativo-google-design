@@ -18,10 +18,9 @@ import {
   type ShopLocation,
 } from '@core/entities';
 import type {
-  BarberLookupPorts,
   CatalogReadPorts,
   LocationLoadPorts,
-  TeamBarberReadPorts,
+  TeamBarberPorts,
 } from '@core/ports';
 import { observeQuery, readDoc } from './observe';
 
@@ -79,26 +78,25 @@ export const catalogReadPorts = (db: Firestore): CatalogReadPorts => {
 };
 
 /**
- * The whole team, live (team onboarding D3) — every barber record by
- * `sortOrder` (the field's automatic single-field index), whatever its
- * status. Staff only: the read rule lets staff read a `DRAFT`.
+ * The barbers OFF the public list (team onboarding D3) — one factory for
+ * the web's `TEAM_BARBER_PORTS`:
+ *
+ * - `observeTeamBarbers` — every barber record by `sortOrder` (the field's
+ *   automatic single-field index), whatever its status. Staff only: the
+ *   read rule lets staff read a `DRAFT`.
+ * - `loadBarbers` — records by id, as single gets, so the read rule judges
+ *   each record on its own (a client may read any barber but a `DRAFT`).
+ *   An id with no record, or one the reader may not read, is left out; any
+ *   other failure answers the first one.
  */
-export const teamBarberReadPorts = (db: Firestore): TeamBarberReadPorts => ({
+export const teamBarberPorts = (db: Firestore): TeamBarberPorts => ({
   observeTeamBarbers: () =>
     observeQuery<Barber>(
       // unbounded-ok: the shop's own staff, a handful to a few dozen
       query(collection(db, Collections.Barbers), orderBy('sortOrder')),
       Collections.Barbers,
     ),
-});
 
-/**
- * Barber records by id — single gets, so the read rule judges each record
- * on its own (a client may read any barber but a `DRAFT`). An id with no
- * record, or one the reader may not read, is left out; any other failure
- * answers the first one.
- */
-export const barberLookupPorts = (db: Firestore): BarberLookupPorts => ({
   loadBarbers: async (ids) => {
     const answers = await Promise.all(
       ids.map((id) => readDoc<Barber>(doc(db, Collections.Barbers, id))),
