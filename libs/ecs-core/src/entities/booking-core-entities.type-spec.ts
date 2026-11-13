@@ -8,8 +8,11 @@
  * here runs.
  */
 import {
+  type BarberEmployment,
+  type BarberLifecycle,
   type BookingPolicy,
   BarberStatus,
+  type WriteProvenance,
   LocationStatus,
   ServiceStatus,
   type GeoPoint,
@@ -37,24 +40,58 @@ type IsNever<T> = [T] extends [never] ? true : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
 type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 
-/* ── Barber = BarberMeta & BarberAvatar ──────────────────────────────── */
+/* ── Barber = Meta & Lifecycle & Employment & Avatar & WriteProvenance ── */
 
 export const barberNotNever: IsNever<Barber> = false;
 export const barberFlat: EveryVariantFlat<Barber> = true;
-export const barberDisjoint: Disjoint<BarberMeta, BarberAvatar> = true;
+export const barberDisjoint: [
+  Disjoint<BarberMeta, BarberAvatar>,
+  Disjoint<BarberMeta, BarberLifecycle>,
+  Disjoint<BarberMeta, BarberEmployment>,
+  Disjoint<BarberLifecycle, BarberEmployment>,
+  Disjoint<BarberLifecycle, BarberAvatar>,
+  Disjoint<BarberEmployment, BarberAvatar>,
+  Disjoint<BarberMeta, WriteProvenance>,
+] = [true, true, true, true, true, true, true];
 
 declare const barber: Barber;
-// The avatar is prefixed at the root (N9), never a nested `MediaRef`.
+// The avatar is prefixed at the root (N9), never a nested `MediaRef`; the
+// lifecycle and the working period sit at the root too (Law 6.1).
 export const barberRoot: readonly unknown[] = [
   barber.avatarMediaId,
   barber.avatarMediaPath,
   barber.avatarMediaFocalX,
-  barber.barberStatus === BarberStatus.Active,
+  barber.barberStatus === BarberStatus.Public,
+  barber.barberStatusChangedAtUtcMs,
+  barber.barberStartsLocalDate,
+  barber.barberLastWorkingLocalDate,
+  barber.barberJoinsAnyPool,
+  barber.writeOperationId,
 ];
+// Each lifecycle variant narrows on `barberStatus` (Law 6.2).
+export const barberDraftTarget: unknown =
+  barber.barberStatus === BarberStatus.Draft
+    ? barber.barberDraftTargetStatus
+    : null;
+export const barberDepartedFields: unknown =
+  barber.barberStatus === BarberStatus.Departed
+    ? [
+        barber.barberDepartedUserId,
+        barber.barberSessionsRevokedAtUtcMs,
+        barber.barberRehireStatus,
+      ]
+    : null;
+export const barberLiveHasNoDraftTarget: unknown =
+  barber.barberStatus === BarberStatus.Public
+    ? // @ts-expect-error — only a DRAFT carries where it goes live
+      barber.barberDraftTargetStatus
+    : null;
 // @ts-expect-error — the avatar is flattened, never nested under `avatar`
 export const noAvatar: unknown = barber.avatar;
 // @ts-expect-error — the status is `barberStatus` (N15), never `status`
 export const noBarberStatusField: unknown = barber.status;
+// @ts-expect-error — `handle` was dropped (team onboarding D5: no reader)
+export const noBarberHandle: unknown = barber.handle;
 
 /* ── ShopLocation = Meta & GeoPoint & VenuePhone & ShopCover ─────────── */
 

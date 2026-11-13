@@ -265,7 +265,6 @@ function barber(id: string, name: string): Barber {
   return barberFixture({
     id: BarberId.of(id),
     name: textFixture(name),
-    handle: id,
     title: { en: 'Barber', bg: 'Бръснар' },
     bio: textFixture('Bio', 'Био'),
     // A real location: blocking time writes against the chair's own shop,

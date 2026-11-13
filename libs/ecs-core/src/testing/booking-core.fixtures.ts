@@ -9,7 +9,10 @@ import {
   ServiceTerms,
   E164,
   type LocalizedText,
+  type BarberEmployment,
+  type BarberLifecycle,
   BarberStatus,
+  type WriteProvenance,
   LocationStatus,
   ServiceStatus,
   CompositionKind,
@@ -34,11 +37,14 @@ import {
   MinuteOfDay,
   PriceCents,
   type TimeZone,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   type BarberBusyDay,
   type BarberSchedule,
   type Barber,
+  type BarberAvatar,
+  type BarberMeta,
   type ShopLocation,
   type Service,
   Collections,
@@ -152,19 +158,42 @@ export const FIXTURE_TERMS: ServiceTerms = termsFixture(2800, 30);
 
 /* ── Entity builders ─────────────────────────────────────────────────────── */
 
-/** Ivan, active, working at the centre shop, no avatar. */
-export function barberFixture(overrides: Partial<Barber> = {}): Barber {
+/** The first day a fixture barber works — well before `FIXTURE_TODAY`. */
+const BARBER_STARTS: LocalDate = sure(LocalDate.parse('2024-01-01'), 'start');
+
+/** When the fixture barbers went live — 2024-01-01T00:00:00Z. */
+const BARBER_LIVE_AT: UtcEpochMs = sure(UtcEpochMs.of(1704067200000), 'live');
+
+/** A live, public lifecycle — the default of {@link barberFixture}. */
+export const PUBLIC_BARBER: BarberLifecycle.Public = {
+  barberStatus: BarberStatus.Public,
+  barberStatusChangedAtUtcMs: BARBER_LIVE_AT,
+};
+
+/**
+ * Ivan, public, in the «Който и да е» pool, working at the centre shop
+ * since 2024-01-01 with no last day, no avatar. Another lifecycle is the
+ * second argument (a `DRAFT`, a `DEPARTED` — each with its own variant
+ * fields), never a bare `barberStatus` override.
+ */
+export function barberFixture(
+  overrides: Partial<
+    BarberMeta & BarberEmployment & BarberAvatar & WriteProvenance
+  > = {},
+  lifecycle: BarberLifecycle = PUBLIC_BARBER,
+): Barber {
   return {
     id: IDS.barber,
     name: text('Ivan', 'Иван'),
-    handle: 'ivan',
     title: text('Barber', 'Бръснар'),
     bio: text('Classic cuts.', 'Класически подстрижки.'),
     yearsExperience: 8,
     locationIds: [IDS.location],
     instagramHandle: null,
-    barberStatus: BarberStatus.Active,
+    barberJoinsAnyPool: true,
     sortOrder: 0,
+    barberStartsLocalDate: BARBER_STARTS,
+    barberLastWorkingLocalDate: null,
     avatarMediaId: null,
     avatarMediaPath: null,
     avatarMediaWidth: null,
@@ -172,7 +201,9 @@ export function barberFixture(overrides: Partial<Barber> = {}): Barber {
     avatarMediaBlurhash: null,
     avatarMediaFocalX: null,
     avatarMediaFocalY: null,
+    writeOperationId: null,
     ...overrides,
+    ...lifecycle,
   };
 }
 

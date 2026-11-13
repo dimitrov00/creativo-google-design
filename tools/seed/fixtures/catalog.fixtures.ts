@@ -55,6 +55,7 @@ import {
   ServiceId,
   ServiceVariantId,
   type TimeZone,
+  UtcEpochMs,
 } from '@core/primitives';
 import { PhoneSystem, ZonedTimeSystem } from '@core/systems';
 
@@ -283,6 +284,24 @@ function avatarOf(id: BarberId) {
 }
 
 /**
+ * Every seeded barber's lifecycle, working period, pool flag and provenance
+ * (team onboarding D2): public, in the «Който и да е» pool, working since
+ * 2024-01-01 — before every seeded visit, so seeded history is never outside
+ * a working period — with no last day and no writing call.
+ */
+const LIVE_SINCE_2024 = {
+  barberStatus: BarberStatus.Public,
+  barberStatusChangedAtUtcMs: sure(
+    UtcEpochMs.of(1704067200000),
+    'barber live since',
+  ),
+  barberJoinsAnyPool: true,
+  barberStartsLocalDate: day('2024-01-01'),
+  barberLastWorkingLocalDate: null,
+  writeOperationId: null,
+} as const;
+
+/**
  * The roster the landing has been rendering from hand-authored content. No
  * `rating` on purpose ("fabricated ratings read as a scam"). `locationIds`
  * is populated rather than left empty (which would mean "every location"),
@@ -295,7 +314,6 @@ export const BARBERS: readonly SeededBarber[] = [
     file: 'ivan.jpg',
     body: {
       name: { bg: 'Иван Колев', en: 'Ivan Kolev' },
-      handle: 'ivan',
       title: { bg: 'Главен бръснар', en: 'Chief barber' },
       bio: {
         bg: 'Дванадесет години на пода. Класическа ножична работа и чист skin фейд са неговата запазена марка.',
@@ -304,7 +322,7 @@ export const BARBERS: readonly SeededBarber[] = [
       yearsExperience: 12,
       locationIds: BOTH_LOCATIONS,
       instagramHandle: 'ivan.cuts',
-      barberStatus: BarberStatus.Active,
+      ...LIVE_SINCE_2024,
       sortOrder: 1,
       ...avatarOf(IVAN),
     } satisfies Body<Barber>,
@@ -314,7 +332,6 @@ export const BARBERS: readonly SeededBarber[] = [
     file: 'niko.jpg',
     body: {
       name: { bg: 'Нико Димов', en: 'Niko Dimov' },
-      handle: 'niko',
       title: { bg: 'Бръснар', en: 'Barber' },
       bio: {
         bg: 'Човекът на фейда — градиенти толкова чисти, че ще се върнеш на момента.',
@@ -323,7 +340,7 @@ export const BARBERS: readonly SeededBarber[] = [
       yearsExperience: 6,
       locationIds: BOTH_LOCATIONS,
       instagramHandle: 'niko.fades',
-      barberStatus: BarberStatus.Active,
+      ...LIVE_SINCE_2024,
       sortOrder: 2,
       ...avatarOf(NIKO),
     } satisfies Body<Barber>,
@@ -333,7 +350,6 @@ export const BARBERS: readonly SeededBarber[] = [
     file: 'stefan.jpg',
     body: {
       name: { bg: 'Стефан Петров', en: 'Stefan Petrov' },
-      handle: 'stefan',
       title: { bg: 'Бръснар', en: 'Barber' },
       bio: {
         bg: 'Бръсненето с права бръсначка и оформянето на брада са неговата територия.',
@@ -342,7 +358,7 @@ export const BARBERS: readonly SeededBarber[] = [
       yearsExperience: 8,
       locationIds: [CENTER],
       instagramHandle: 'stefan.razor',
-      barberStatus: BarberStatus.Active,
+      ...LIVE_SINCE_2024,
       sortOrder: 3,
       ...avatarOf(STEFAN),
     } satisfies Body<Barber>,

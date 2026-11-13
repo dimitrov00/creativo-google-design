@@ -113,13 +113,11 @@ describe('G5 — the schedule’s day-summary free time is the report’s unsold
         }),
         barberFixture({
           id: niko,
-          handle: 'niko',
           locationIds: [ANALYTICS_FIXTURE_SHOPS.mladost],
           sortOrder: 1,
         }),
         barberFixture({
           id: maria,
-          handle: 'maria',
           locationIds: [
             ANALYTICS_FIXTURE_SHOPS.centre,
             ANALYTICS_FIXTURE_SHOPS.old,

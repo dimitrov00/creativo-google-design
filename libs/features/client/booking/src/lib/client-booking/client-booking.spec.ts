@@ -447,7 +447,6 @@ function activeBarber(id: string): Barber {
   return barberFixture({
     id: BarberId.of(id),
     name: { bg: id, en: id },
-    handle: id,
     bio: { bg: '—', en: '—' },
     yearsExperience: null,
     locationIds: [],

@@ -685,10 +685,14 @@ describe('memoryCatalogReadPorts — the four live streams', () => {
       sortOrder: 1,
       locationIds: [LocationId.of('loc-other')],
     });
-    const away = barberFixture({
-      id: BarberId.of('b-away'),
-      barberStatus: BarberStatus.Inactive,
-    });
+    // A staff-only barber is live but never listed publicly.
+    const away = barberFixture(
+      { id: BarberId.of('b-away') },
+      {
+        barberStatus: BarberStatus.StaffOnly,
+        barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      },
+    );
     const hidden = locationFixture({
       id: LocationId.of('loc-hidden'),
       locationStatus: LocationStatus.Hidden,

@@ -233,13 +233,15 @@
                         <h4 uiText uiFont="headline">
                           {{ content.text(performer.barber.name) }}
                         </h4>
-                        <p
-                          uiText
-                          uiFont="footnote"
-                          uiForegroundStyle="secondary"
-                        >
-                          {{ content.text(performer.barber.title) }}
-                        </p>
+                        @if (performer.barber.title; as title) {
+                          <p
+                            uiText
+                            uiFont="footnote"
+                            uiForegroundStyle="secondary"
+                          >
+                            {{ content.text(title) }}
+                          </p>
+                        }
                         <ui-stack
                           uiAxis="horizontal"
                           uiSpacing="tight"
@@ -331,20 +333,33 @@
                         uiForegroundStyle="secondary"
                         class="service-performer__meta"
                       >
-                        <span class="service-performer__role">{{
-                          content.text(performer.barber.title)
-                        }}</span>
+                        @if (performer.barber.title; as title) {
+                          <span class="service-performer__role">{{
+                            content.text(title)
+                          }}</span>
+                        }
                         @if (performer.barber.rating !== undefined) {
+                          @if (performer.barber.title) {
+                            <span
+                              aria-hidden="true"
+                              class="service-performer__sep"
+                              >·</span
+                            >
+                          }
+                          <ui-rating [uiValue]="performer.barber.rating" />
+                        }
+                        <!-- A barber with no title (team onboarding D5) and
+                           no rating leads with the duration alone. -->
+                        @if (
+                          performer.barber.title ||
+                          performer.barber.rating !== undefined
+                        ) {
                           <span
                             aria-hidden="true"
                             class="service-performer__sep"
                             >·</span
                           >
-                          <ui-rating [uiValue]="performer.barber.rating" />
                         }
-                        <span aria-hidden="true" class="service-performer__sep"
-                          >·</span
-                        >
                         <!-- No clock glyph: "мин" already names the unit, and
                            a symbol that only repeats its label is
                            decoration (HIG — symbols aid recognition or

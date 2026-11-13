@@ -23,7 +23,10 @@ export type ObserveServices = () => Observable<
   Result<readonly Service[], RepositoryError>
 >;
 
-/** Live ACTIVE barbers of every shop, `orderBy sortOrder` (index #4). */
+/**
+ * Live PUBLIC barbers of every shop — the ones listed and bookable online
+ * (team onboarding D3) — `orderBy sortOrder` (index #4).
+ */
 export type ObserveBarbers = () => Observable<
   Result<readonly Barber[], RepositoryError>
 >;
@@ -62,9 +65,9 @@ export type LoadCatalog = (
 ) => Promise<Result<CatalogSnapshot, RepositoryError>>;
 
 /**
- * The listed catalogue a freed day is searched with — every ACTIVE service,
- * shop and barber (three single-field `== 'ACTIVE'` queries, bodies straight
- * from `snap.data()`).
+ * The listed catalogue a freed day is searched with — every ACTIVE service
+ * and shop and every PUBLIC barber (three single-field equality queries,
+ * bodies straight from `snap.data()`).
  */
 export type ListedCatalog = {
   readonly services: readonly Service[];
