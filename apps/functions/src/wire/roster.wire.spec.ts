@@ -37,7 +37,8 @@ const codeOf = (data: unknown, roles?: readonly string[] | null) => {
 describe('decodeAmendRosterBreaks', () => {
   it('reads the change, the weekdays distinct and in week order', () => {
     const decoded = decodeAmendRosterBreaks(callable(sent));
-    // The act's name stays at the edge: the command is the change alone.
+    // The change, beside the verified caller and the act's name: the
+    // pipeline judges the caller's stored account and stamps the roster.
     expect(decoded).toEqual({
       ok: true,
       value: {
@@ -47,6 +48,8 @@ describe('decodeAmendRosterBreaks', () => {
         weekdays: [1, 3],
         before: null,
         after: LUNCH,
+        callerUserId: 'u-staff',
+        operationId: sent.operationId,
       },
     });
   });
@@ -99,6 +102,8 @@ describe('decodeSetRosterWeek', () => {
         fromLocalDate: '2026-11-16',
         segments: week.segments,
         breaks: week.breaks,
+        callerUserId: 'u-staff',
+        operationId: week.operationId,
       },
     });
   });
@@ -128,6 +133,16 @@ describe('decodeSetRosterWeek', () => {
     expect(decodeSetRosterWeek(callable({ ...week, ...broken }))).toEqual({
       ok: false,
       error: { errorCode: SchedulingErrorCode.RosterInvalidInput, field },
+    });
+  });
+
+  it('takes the caller off the token, never the payload', () => {
+    const decoded = decodeSetRosterWeek(
+      callable({ ...week, callerUserId: 'u-forged' }),
+    );
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: { callerUserId: 'u-staff' },
     });
   });
 

@@ -2,6 +2,9 @@
   "errors": {
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "Почивката трябва да е в работните часове на деня.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "Промяната не може да започва от минал ден.",
+    "SCHEDULING_ROSTER_FORBIDDEN": "Можеш да променяш само своето работно време.",
+    "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "Бръснарят не работи в този салон. Първо го добави към салоните му.",
+    "SCHEDULING_ROSTER_DEPARTED": "Този бръснар е напуснал. Работното му време не се променя.",
     "SCHEDULING_TIME_RANGE_INVALID": "Краят трябва да е след началото, без застъпване.",
     "SCHEDULING_SHIFT_SEGMENT_IMPOSSIBLE_TRANSFER": "Между два салона трябва да има поне половин час.",
     "DST_GAP_INVALID_TIME": "{{wallClock}} не съществува в {{timeZone}} — часовникът го прескача. Избери друг час.",

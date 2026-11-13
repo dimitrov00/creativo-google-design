@@ -367,6 +367,7 @@ const LOCATION_BODY = {
 const SCHEDULE_BODY = {
   turnaroundMinutes: minuteCount(10),
   versions: [],
+  writeOperationId: null,
 } satisfies Omit<BarberSchedule, 'id'>;
 
 /** Who `isCatalogManager()` admits — the catalogue's writers until pass E. */

@@ -29,7 +29,10 @@ import { Roles } from './roles.data';
  * hardening S-RU-14; `users.roles` takes no client write at all), and
  * `Roles.TEAM` / `Roles.TEAM_PROFILES` (the admin alone, and the content
  * editor beside the admin — the team callables, team onboarding D5;
- * `barbers` and `services` take no client write).
+ * `barbers` and `services` take no client write), and `Roles.ROSTERS` (the
+ * front desk and the owners — any barber's hours; a barber's own go by the
+ * account's link, which no rule can read; `barberSchedules` takes no
+ * client write).
  *
  * The reader is `@core/testing`'s `rules-text.ts` — the one every
  * rules-text spec parses the file with (its own cases sit beside it).

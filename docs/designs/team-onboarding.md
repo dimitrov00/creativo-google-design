@@ -417,7 +417,11 @@ roles and link inside its transaction.
 - **Hours.** `setRosterWeek` and `amendRosterBreaks` read `barbers/{id}`
   and the caller's account inside their transactions and refuse a barber
   editing someone else's roster, any edit on a `DEPARTED` record, and
-  segments at a shop the barber does not work at.
+  segments at a shop the barber does not work at. As built
+  (`RosterAccessSystem`): the grant for any barber's hours is
+  `Roles.ROSTERS` (front desk, admin, sysadmin); a barber's own go by the
+  account's link. An id with no barber record is refused. The roster is
+  stamped with the call (`writeOperationId`), so its audit row names it.
 - **Day exceptions move behind a callable** (`setDayExceptions`), which does
   the same checks and writes a multi-day series in one commit. Today they
   are client writes that any staff member may make, and the rules cannot

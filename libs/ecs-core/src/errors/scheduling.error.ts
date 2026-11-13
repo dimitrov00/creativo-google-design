@@ -104,10 +104,19 @@ export const SchedulingErrorCode = {
   RosterBreakOutsideShift: 'SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT',
   /** `amendRosterBreaks` with no signed-in caller. */
   RosterUnauthenticated: 'SCHEDULING_ROSTER_UNAUTHENTICATED',
-  /** `amendRosterBreaks` from a caller who does not work the book. */
+  /**
+   * A roster callable from a caller who may not edit this barber's hours:
+   * a token that does not work the book, or — on the STORED account — a
+   * blocked one, a role outside the book, or a barber editing a colleague's
+   * (team onboarding D5: a barber edits only their own).
+   */
   RosterForbidden: 'SCHEDULING_ROSTER_FORBIDDEN',
   /** `amendRosterBreaks` sent a field it cannot read. */
   RosterInvalidInput: 'SCHEDULING_ROSTER_INVALID_INPUT',
+  /** Hours at a shop the barber does not work at (`Barber.locationIds`). */
+  RosterOutsideShops: 'SCHEDULING_ROSTER_OUTSIDE_SHOPS',
+  /** The barber has left the shop: their hours take no edit. */
+  RosterDeparted: 'SCHEDULING_ROSTER_DEPARTED',
 } as const;
 export type SchedulingErrorCode =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
@@ -157,6 +166,8 @@ export type SchedulingError =
   | SchedulingError.RosterUnauthenticated
   | SchedulingError.RosterForbidden
   | SchedulingError.RosterInvalidInput
+  | SchedulingError.RosterOutsideShops
+  | SchedulingError.RosterDeparted
   | SchedulingError.StaffScheduleRetroactiveAmendment
   | SchedulingError.WaitlistNoDays
   | SchedulingError.WaitlistEmptyCart
@@ -468,6 +479,16 @@ export const SchedulingError = {
   rosterInvalidInput(field: string): SchedulingError.RosterInvalidInput {
     return { errorCode: C.RosterInvalidInput, field };
   },
+  /** Hours at `locationId`, a shop the barber does not work at. */
+  rosterOutsideShops(
+    locationId: LocationId,
+  ): SchedulingError.RosterOutsideShops {
+    return { errorCode: C.RosterOutsideShops, locationId };
+  },
+  /** The barber has left the shop. */
+  rosterDeparted(barberId: BarberId): SchedulingError.RosterDeparted {
+    return { errorCode: C.RosterDeparted, barberId };
+  },
 
   /** Narrows an error to one code — `SchedulingError.is(e, SchedulingErrorCode.FlexibleWhenFull)`. */
   is<K extends SchedulingErrorCode>(
@@ -503,6 +524,15 @@ export namespace SchedulingError {
   export type RosterInvalidInput = {
     readonly errorCode: typeof SchedulingErrorCode.RosterInvalidInput;
     readonly field: string;
+  };
+  export type RosterOutsideShops = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterOutsideShops;
+    /** The first shop of the week the barber does not work at. */
+    readonly locationId: LocationId;
+  };
+  export type RosterDeparted = {
+    readonly errorCode: typeof SchedulingErrorCode.RosterDeparted;
+    readonly barberId: BarberId;
   };
   export type AppointmentEmptySeats = {
     readonly errorCode: typeof SchedulingErrorCode.AppointmentEmptySeats;

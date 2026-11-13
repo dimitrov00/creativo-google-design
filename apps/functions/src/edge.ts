@@ -675,6 +675,8 @@ const SCHEDULING_WIRE = uniform(
     [SchedulingErrorCode.RosterMissing]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.RosterUnauthenticated]: fields(S.Unauthenticated),
     [SchedulingErrorCode.RosterForbidden]: fields(S.PermissionDenied),
+    [SchedulingErrorCode.RosterOutsideShops]: fields(S.FailedPrecondition),
+    [SchedulingErrorCode.RosterDeparted]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.StaffScheduleRetroactiveAmendment]: fields(
       S.FailedPrecondition,
     ),

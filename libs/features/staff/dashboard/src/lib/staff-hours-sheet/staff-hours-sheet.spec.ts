@@ -43,6 +43,7 @@ const WORKDAYS = [
 const roster: BarberSchedule = {
   id: IVAN,
   turnaroundMinutes: MinuteCount.ZERO,
+  writeOperationId: null,
   versions: ScheduleVersion.startingWith(
     WORKDAYS.map((day) =>
       ShiftSegment.of(day, CENTER, minute(540), endMinute(1080)),

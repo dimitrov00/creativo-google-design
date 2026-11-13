@@ -20,13 +20,7 @@ import type { ShiftSegment } from './shift-segment.data';
  * `locationId`, whose clock says what «today» is. The roster has no client
  * writer (rules, pass E DEP-6): this callable is its one door from the desk.
  */
-export type RosterCall = {
-  readonly barberId: BarberId;
-  readonly locationId: LocationId;
-  readonly fromLocalDate: LocalDate;
-  readonly weekdays: readonly Weekday[];
-  readonly before: MinuteRange | null;
-  readonly after: MinuteRange | null;
+export type RosterCall = RosterCall.BreaksChange & {
   /** The act's name — the web mints one per change (WS-4.1). */
   readonly operationId: ClientOperationId;
 };
@@ -47,16 +41,31 @@ export namespace RosterCall {
   /** The chair whose roster now carries the change. */
   export type Amended = { readonly barberId: BarberId };
   /**
-   * `setRosterWeek` — the hours editor's save: the chair's whole week, its
-   * shifts and the breaks inside them, standing from `fromLocalDate` on (a
-   * day of the shop `locationId`, whose clock says what «today» is).
+   * The breaks change itself — what a screen hands its store, which names
+   * the act before it dials.
    */
-  export type Week = {
+  export type BreaksChange = {
+    readonly barberId: BarberId;
+    readonly locationId: LocationId;
+    readonly fromLocalDate: LocalDate;
+    readonly weekdays: readonly Weekday[];
+    readonly before: MinuteRange | null;
+    readonly after: MinuteRange | null;
+  };
+  /**
+   * The hours editor's week itself: the chair's shifts and the breaks
+   * inside them, standing from `fromLocalDate` on (a day of the shop
+   * `locationId`, whose clock says what «today» is).
+   */
+  export type WeekChange = {
     readonly barberId: BarberId;
     readonly locationId: LocationId;
     readonly fromLocalDate: LocalDate;
     readonly segments: readonly ShiftSegment[];
     readonly breaks: readonly RosterBreak[];
+  };
+  /** `setRosterWeek` — the hours editor's save: the week, named. */
+  export type Week = WeekChange & {
     /** The act's name — the web mints one per save (WS-4.1). */
     readonly operationId: ClientOperationId;
   };

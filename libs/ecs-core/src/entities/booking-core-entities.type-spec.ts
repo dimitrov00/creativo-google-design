@@ -24,7 +24,10 @@ import {
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BarberBusyDay } from './barber-busy-day.entity';
 import type { BarberLeadTimeSample } from './barber-lead-time-sample.entity';
-import type { BarberSchedule } from './barber-schedule.entity';
+import type {
+  BarberSchedule,
+  BarberScheduleMeta,
+} from './barber-schedule.entity';
 import type { Barber, BarberAvatar, BarberMeta } from './barber.entity';
 import type { BookingPolicySettings } from './booking-policy-settings.entity';
 import type { CapacityMonth } from './capacity-month.entity';
@@ -182,6 +185,15 @@ export const singleSliceFlat: [
   EveryVariantFlat<CapacityMonth>,
   EveryVariantFlat<ServiceCategory>,
 ] = [true, true, true, true, true, true];
+// The roster carries its last writing call beside its own fields.
+export const scheduleDisjoint: Disjoint<BarberScheduleMeta, WriteProvenance> =
+  true;
+declare const roster: BarberSchedule;
+export const rosterRoot: readonly unknown[] = [
+  roster.turnaroundMinutes,
+  roster.versions,
+  roster.writeOperationId,
+];
 // The settings document IS the policy beside its id.
 export const settingsDisjoint: Disjoint<
   Pick<BookingPolicySettings, 'id'>,

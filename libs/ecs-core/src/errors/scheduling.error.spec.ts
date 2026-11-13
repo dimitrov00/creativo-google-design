@@ -151,6 +151,8 @@ describe('SchedulingError factories', () => {
       SchedulingError.rosterUnauthenticated(),
       SchedulingError.rosterForbidden(),
       SchedulingError.rosterInvalidInput('weekdays'),
+      SchedulingError.rosterOutsideShops(LocationId.of('loc-mladost')),
+      SchedulingError.rosterDeparted(BarberId.of('ivan')),
     ];
     // One factory per code, each code reached once.
     expect(errors.map((error) => error.errorCode).sort()).toEqual(
