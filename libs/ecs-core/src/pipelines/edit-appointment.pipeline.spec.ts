@@ -1223,6 +1223,116 @@ describe('editAppointment — the shop moving its own book', () => {
       );
     });
 
+    /** A price named for the fixture's seat — its cut is stored at 28,00 €. */
+    const repriceTo = (priceCents: number): BookingCall.EditCommand => ({
+      editCommand: EditCommand.Reprice,
+      seatId: FIXTURE_IDS.seat,
+      priceCents: cents(priceCents),
+    });
+    const REPRICE = repriceTo(3500);
+    /** A barber's own save — the roles the callable verified, and the actor its row would name. */
+    const AS_BARBER = {
+      actorRoles: [Role.Barber],
+      actor: Actor.staff(UserId.of('u-barber'), [Role.Barber]),
+    };
+
+    it('refuses a seat’s NEW price from a role that does not handle money (FORBIDDEN) — nothing written, no row', async () => {
+      const { store, tx, rows, telemetry, run } = rig([
+        ...catalogue(),
+        stored(visit()),
+      ]);
+      const answer = await run(command({ ...AS_BARBER, commands: [REPRICE] }));
+      expect(answer).toEqual({
+        ok: false,
+        error: { errorCode: StaffEditErrorCode.Forbidden },
+      });
+      expect(tx.plans).toEqual([]);
+      expect(rows).toEqual([]);
+      expect(store.get(PATH)).toEqual(bodyOf(visit()));
+      expect(telemetry.lines).toEqual([
+        expect.objectContaining({
+          level: 'warn',
+          msg: LogEvent.BookingStaffEditRejected,
+          fields: expect.objectContaining({
+            errorCode: StaffEditErrorCode.Forbidden,
+          }),
+        }),
+      ]);
+    });
+
+    it('refuses the WHOLE save when a barber’s batch names a new price — the move beside it is not written', async () => {
+      const { store, tx, run } = rig([...catalogue(), stored(visit())]);
+      const answer = await run(
+        command({ ...AS_BARBER, commands: [MOVE_TO_ELEVEN, REPRICE] }),
+      );
+      expect(!answer.ok && answer.error).toEqual({
+        errorCode: StaffEditErrorCode.Forbidden,
+      });
+      expect(tx.plans).toEqual([]);
+      expect(store.get(PATH)).toEqual(bodyOf(visit()));
+    });
+
+    it.each([
+      ['the front desk', Role.Receptionist],
+      ['the admin', Role.Admin],
+    ])(
+      'admits a seat’s new price from %s — the price in the one Update, the row a reprice',
+      async (_who, role) => {
+        const { store, rows, run } = rig([...catalogue(), stored(visit())]);
+        const answer = await run(
+          command({
+            actorRoles: [role],
+            actor: Actor.staff(UserId.of('u-money'), [role]),
+            commands: [REPRICE],
+          }),
+        );
+        expect(answer).toEqual({
+          ok: true,
+          value: {
+            appointmentId: FIXTURE_IDS.appointment,
+            revision: 2,
+            replayed: false,
+          },
+        });
+        expect(store.get(PATH)).toMatchObject({
+          revision: 2,
+          seats: [
+            expect.objectContaining({
+              seatId: FIXTURE_IDS.seat,
+              priceCents: 3500,
+            }),
+          ],
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          auditAction: AuditAction.BookingStaffReprice,
+          editRepriceFromCents: 2800,
+          editRepriceToCents: 3500,
+        });
+      },
+    );
+
+    it('admits a barber naming the price the seat already holds — a save that leaves the money as it was', async () => {
+      const { store, run } = rig([...catalogue(), stored(visit())]);
+      const answer = await run(
+        command({
+          ...AS_BARBER,
+          commands: [MOVE_TO_ELEVEN, repriceTo(2800)],
+        }),
+      );
+      expect(answer.ok).toBe(true);
+      expect(store.get(PATH)).toMatchObject({
+        revision: 2,
+        startMinutes: at(11),
+        seats: [
+          expect.objectContaining({
+            seatId: FIXTURE_IDS.seat,
+            priceCents: 2800,
+          }),
+        ],
+      });
+    });
+
     it('applies a voucher BY CODE read in the transaction — its balance Update on a key it read', async () => {
       const { store, tx, run } = rig([
         ...catalogue(),
