@@ -1,10 +1,16 @@
 import {
   AccountLifecycle,
   BarberStatus,
+  type DayExceptionsRequest,
   Roles,
   type ShiftSegment,
 } from '@core/components';
-import { type BarberId, Result, type UtcEpochMs } from '@core/primitives';
+import {
+  type BarberId,
+  type LocationId,
+  Result,
+  type UtcEpochMs,
+} from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import type { Barber, User } from '@core/entities';
 
@@ -65,14 +71,69 @@ export const RosterAccessSystem = {
     barber: Barber,
     segments: readonly ShiftSegment[],
   ): Result<readonly ShiftSegment[], SchedulingError> {
-    const shops = barber.locationIds;
-    if (shops.length === 0) return Result.ok(segments);
     for (let i = 0; i < segments.length; i++) {
-      const locationId = (segments[i] as ShiftSegment).locationId;
-      if (!shops.includes(locationId)) {
-        return Result.err(SchedulingError.rosterOutsideShops(locationId));
-      }
+      const placed = RosterAccessSystem.worksAt(
+        barber,
+        (segments[i] as ShiftSegment).locationId,
+      );
+      if (!placed.ok) return placed;
     }
     return Result.ok(segments);
+  },
+
+  /**
+   * Whether the barber works at `locationId`: an empty `locationIds` is
+   * every shop — else `SCHEDULING_ROSTER_OUTSIDE_SHOPS`, naming the shop.
+   */
+  worksAt(
+    barber: Barber,
+    locationId: LocationId,
+  ): Result<Barber, SchedulingError> {
+    return barber.locationIds.length === 0 ||
+      barber.locationIds.includes(locationId)
+      ? Result.ok(barber)
+      : Result.err(SchedulingError.rosterOutsideShops(locationId));
+  },
+
+  /**
+   * Whether `caller` may make an act on barbers' days (`setDayExceptions`):
+   * every barber it touches is admitted as {@link RosterAccessSystem.admit}
+   * admits — so a barber cannot move a block onto a colleague — and every
+   * day it files sits at a shop its barber works at. `records` are the
+   * barber records the transaction read; a barber with none there is
+   * refused as `admit` refuses an id with no record. The first refusal, in
+   * the request's own order.
+   */
+  admitDays(
+    caller: User | null,
+    records: readonly Barber[],
+    placements: readonly DayExceptionsRequest.Placement[],
+    nowUtcMs: UtcEpochMs,
+  ): Result<null, SchedulingError> {
+    for (let i = 0; i < placements.length; i++) {
+      const placement = placements[i] as DayExceptionsRequest.Placement;
+      let record: Barber | null = null;
+      for (let j = 0; j < records.length; j++) {
+        if ((records[j] as Barber).id === placement.barberId) {
+          record = records[j] as Barber;
+          break;
+        }
+      }
+      const admitted = RosterAccessSystem.admit(
+        caller,
+        record,
+        placement.barberId,
+        nowUtcMs,
+      );
+      if (!admitted.ok) return admitted;
+      if (placement.locationId !== null) {
+        const placed = RosterAccessSystem.worksAt(
+          admitted.value,
+          placement.locationId,
+        );
+        if (!placed.ok) return placed;
+      }
+    }
+    return Result.ok(null);
   },
 } as const;

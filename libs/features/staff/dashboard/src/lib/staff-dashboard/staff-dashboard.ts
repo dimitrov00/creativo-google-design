@@ -254,6 +254,7 @@ import {
 } from './staff-day.vm';
 import { guestLabelsOf } from './staff-day-guest.words';
 import { refusalSentence } from './staff-day-error.words';
+import { StaffBlockFailurePipe } from './staff-block-failure.pipe';
 import {
   chairColumnHead,
   dateColumnHead,
@@ -399,6 +400,7 @@ const ANCHOR_TOLERANCE = 2;
   selector: 'lib-staff-dashboard',
   imports: [
     NgTemplateOutlet,
+    StaffBlockFailurePipe,
     UiAlert,
     UiChoiceLeading,
     UiChoiceMenu,

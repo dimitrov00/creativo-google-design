@@ -3,10 +3,12 @@ import {
   BookingErrorCode,
   PipelineError,
   PipelineErrorCode,
+  SchedulingError,
+  SchedulingErrorCode,
 } from '@core/errors';
-import { BookingStatus } from '@core/primitives';
+import { BarberId, BookingStatus } from '@core/primitives';
 import { catalogueTranslate } from './catalogue.spec-support';
-import { refusalSentence } from './staff-day-error.words';
+import { blockFailureSentence, refusalSentence } from './staff-day-error.words';
 
 const translate = catalogueTranslate('bg');
 const english = catalogueTranslate('en');
@@ -62,5 +64,60 @@ describe('refusalSentence — a refusal in the shop’s words', () => {
     expect(refusalSentence(bare, english, wordCode(english))).toBe(
       'Something went wrong. Try again.',
     );
+  });
+});
+
+describe('blockFailureSentence — why a block or the hours did not save', () => {
+  const refused = (serverErrorCode: string): PipelineError =>
+    PipelineError.of(
+      PipelineErrorCode.InvalidRequest,
+      serverErrorCode,
+      null,
+      null,
+    );
+  const GENERIC = 'Не се запази. Опитай пак.';
+
+  it('says the server’s refusal when the catalogue has a line for it — in both languages', () => {
+    const forbidden = refused(SchedulingErrorCode.RosterForbidden);
+    expect(blockFailureSentence(forbidden, wordCode(translate), GENERIC)).toBe(
+      'Можеш да променяш само своето работно време.',
+    );
+    expect(blockFailureSentence(forbidden, wordCode(english), GENERIC)).toBe(
+      'You can only change your own hours.',
+    );
+    expect(
+      blockFailureSentence(
+        refused(SchedulingErrorCode.RosterDeparted),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe('Този бръснар е напуснал. Работното му време не се променя.');
+  });
+
+  it('falls back to the sheet’s own line for a code with no copy, and a call that named none', () => {
+    expect(
+      blockFailureSentence(
+        refused('SCHEDULING_SOMETHING_UNWORDED'),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe(GENERIC);
+    expect(
+      blockFailureSentence(
+        PipelineError.bare(PipelineErrorCode.Unavailable),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe(GENERIC);
+  });
+
+  it('keeps a failure no call made — a chair with no shop — on the generic line', () => {
+    expect(
+      blockFailureSentence(
+        SchedulingError.blockChairWithoutHome(BarberId.of('ivan')),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe(GENERIC);
   });
 });

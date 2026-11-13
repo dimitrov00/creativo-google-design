@@ -23,6 +23,7 @@ import type { BarberStatus } from './barber-status.data';
 import type { CancellationDelta } from './cancellation-delta.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
+import type { DayExceptionsEdit } from './day-exceptions-call.data';
 import type { ImpersonationEndReason } from './end-reason-fields.data';
 import type { ErasureAction } from './erasure-action.data';
 import { ErasureCensus } from './erasure-census.data';
@@ -185,6 +186,12 @@ export const AuditAction = {
    * price; the matrix is the services' own.
    */
   TeamBarberOfferingsChanged: 'TEAM_BARBER_OFFERINGS_CHANGED',
+  /**
+   * A barber's days off, blocks or one-day breaks changed
+   * (`setDayExceptions`): which pen, and the span of days it changed —
+   * geometry only, as the documents themselves (no reason has a field).
+   */
+  TeamDayExceptionsChanged: 'TEAM_DAY_EXCEPTIONS_CHANGED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -241,7 +248,8 @@ export type AuditContext =
   | AuditContext.AnalyticsGoalSet
   | AuditContext.AnalyticsGoalCleared
   | AuditContext.TeamBarber
-  | AuditContext.TeamOfferings;
+  | AuditContext.TeamOfferings
+  | AuditContext.TeamDayExceptions;
 
 /** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -497,6 +505,21 @@ export const AuditContext = {
       auditAction: AuditAction.TeamBarberOfferingsChanged,
       teamOfferingServiceIds,
       teamOfferingsCopiedFromBarberId,
+    };
+  },
+  /** A barber's days changed: which pen, the first and last day it changed, and how many. */
+  teamDayExceptions(
+    dayExceptionsEdit: DayExceptionsEdit,
+    dayExceptionsFromLocalDate: LocalDate,
+    dayExceptionsToLocalDate: LocalDate,
+    dayExceptionsDayCount: number,
+  ): AuditContext.TeamDayExceptions {
+    return {
+      auditAction: AuditAction.TeamDayExceptionsChanged,
+      dayExceptionsEdit,
+      dayExceptionsFromLocalDate,
+      dayExceptionsToLocalDate,
+      dayExceptionsDayCount,
     };
   },
   /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
@@ -783,6 +806,21 @@ export namespace AuditContext {
     readonly teamOfferingServiceIds: readonly ServiceId[];
     /** The colleague whose terms were copied; `null` for a typed list. */
     readonly teamOfferingsCopiedFromBarberId: BarberId | null;
+  };
+  /**
+   * A barber's days off, blocks or one-day breaks changed
+   * (`setDayExceptions`, team onboarding D12) — the resource is
+   * `barbers/<id>`, the target none, the actor the caller. One row per
+   * barber an act changed days of, whatever the number of days.
+   */
+  export type TeamDayExceptions = {
+    readonly auditAction: typeof AuditAction.TeamDayExceptionsChanged;
+    readonly dayExceptionsEdit: DayExceptionsEdit;
+    /** The first and last shop day the act changed for this barber. */
+    readonly dayExceptionsFromLocalDate: LocalDate;
+    readonly dayExceptionsToLocalDate: LocalDate;
+    /** How many of the barber's day documents it wrote or deleted. */
+    readonly dayExceptionsDayCount: number;
   };
   export type ImpersonationStarted = {
     readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;

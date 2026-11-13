@@ -73,6 +73,7 @@ import {
   sampleLeadTime,
   setAnalyticsGoal as setAnalyticsGoalPipeline,
   setBarberOfferings as setBarberOfferingsPipeline,
+  setDayExceptions as setDayExceptionsPipeline,
   setRoles as setRolesPipeline,
   setRosterWeek as setRosterWeekPipeline,
   staffAnalytics as staffAnalyticsPipeline,
@@ -199,6 +200,7 @@ import {
 } from './wire/triggers.wire';
 import {
   decodeAmendRosterBreaks,
+  decodeSetDayExceptions,
   decodeSetRosterWeek,
 } from './wire/roster.wire';
 import {
@@ -289,7 +291,8 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * record's four callables — `addBarber`, `editBarber`, `activateBarber`,
  * `deleteDraftBarber` — over the server ports, bound to the log digest
  * key: 62 exports; then `setBarberOfferings`, a barber's services and
- * prices, on the same ports: 63.
+ * prices, on the same ports: 63; then `setDayExceptions`, the one door to
+ * a barber's days off, blocks and one-day breaks: 64.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -911,6 +914,25 @@ export const setRosterWeek = onCall(
     root.ports,
     decodeSetRosterWeek,
     (ports, cmd) => setRosterWeekPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * A barber's days off, blocks and one-day breaks, changed as one act — the
+ * staff schedule's four pens (team onboarding O4). `scheduleExceptions`
+ * has no client writer: the callable judges whose days the caller may
+ * change on their stored account, writes the changed days and one
+ * `TEAM_DAY_EXCEPTIONS_CHANGED` row per barber in one commit. The capacity
+ * rebuild of each day rides the document's own trigger.
+ */
+export const setDayExceptions = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.SetDayExceptions, null),
+    root.ports,
+    decodeSetDayExceptions,
+    (ports, cmd) => setDayExceptionsPipeline(ports)(cmd),
     refusalOf,
   ),
 );

@@ -39,9 +39,7 @@ import type {
   WaitlistStatus,
   Weekday,
 } from '@core/primitives';
-import type { CatalogError } from './catalog.error';
 import type { PipelineError } from './pipeline.error';
-import type { RepositoryError } from './repository.error';
 
 /** Error codes — the ONLY source of these strings; the UI translates them. */
 export const SchedulingErrorCode = {
@@ -727,16 +725,11 @@ export namespace SchedulingError {
 }
 
 /**
- * Why a staff block write did not land (`StaffDayStore.absenceError`, pass D
- * §2.3/§2.9): the block pipelines' own answers as they answer
- * (`writeScheduleBlocks` / `clearScheduleBlock` — a scheduling refusal or a
- * repository failure), `CATALOG_LOCATION_ZONE_UNKNOWN` when neither the
- * shop nor the day names a zone to read the block's day in, or the
- * `amendRosterBreaks` call's own failure (a break changed «from this day
- * on»).
+ * Why a staff block or roster write did not land
+ * (`StaffDayStore.absenceError`, pass D §2.3/§2.9): the callable's own
+ * failure — `setDayExceptions`, `amendRosterBreaks` or `setRosterWeek`, its
+ * refusal's code on `serverErrorCode` — or the chair the block sheet found
+ * no shop to file at, refused before any call.
  */
 export type StaffBlockFailure =
-  | SchedulingError
-  | RepositoryError
-  | CatalogError.LocationZoneUnknown
-  | PipelineError;
+  SchedulingError.BlockChairWithoutHome | PipelineError;

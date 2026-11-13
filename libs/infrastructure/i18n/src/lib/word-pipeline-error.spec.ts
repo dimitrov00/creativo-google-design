@@ -44,7 +44,7 @@ import bg from '../assets/i18n/bg.json';
 import en from '../assets/i18n/en.json';
 import { bookingStatusWords } from './booking-status-words';
 import { translateCodedError } from './translate-coded-error';
-import { wordPipelineError } from './word-pipeline-error';
+import { wordPipelineError, wordServerRefusal } from './word-pipeline-error';
 
 /*
  * The cases of the legacy `wordError` (`booking-gateway.port.spec.ts`,
@@ -617,4 +617,37 @@ describe('wordPipelineError — the DST gap end to end, wire to words', () => {
       ).toBe(sentence);
     },
   );
+});
+
+describe('wordServerRefusal — the server’s own words, or nothing', () => {
+  const refused = (serverErrorCode: string | null, field: string | null) =>
+    PipelineError.of(
+      PipelineErrorCode.InvalidRequest,
+      serverErrorCode,
+      null,
+      field,
+    );
+
+  it('answers the catalogue’s copy for the server’s code, one level deeper first', () => {
+    const { translate, asked } = catalogue({
+      'X_REFUSED.day': 'that day',
+      X_REFUSED: 'refused',
+    });
+    expect(wordServerRefusal(refused('X_REFUSED', 'day'), translate)).toBe(
+      'that day',
+    );
+    expect(wordServerRefusal(refused('X_REFUSED', null), translate)).toBe(
+      'refused',
+    );
+    expect(asked).toEqual(['X_REFUSED.day', 'X_REFUSED']);
+  });
+
+  it('answers null when the call named no server code, or the catalogue has no copy for it', () => {
+    const { translate, asked } = catalogue({});
+    expect(wordServerRefusal(refused(null, null), translate)).toBeNull();
+    expect(asked).toEqual([]);
+    expect(
+      wordServerRefusal(refused('X_UNWORDED', null), translate),
+    ).toBeNull();
+  });
 });

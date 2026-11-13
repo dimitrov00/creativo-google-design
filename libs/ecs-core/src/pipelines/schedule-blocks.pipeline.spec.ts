@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ExceptionEffectRule, MinuteRange } from '@core/components';
+import {
+  DayExceptionsEdit,
+  ExceptionEffectRule,
+  MinuteRange,
+} from '@core/components';
 import type { ScheduleException } from '@core/entities';
 import { SchedulingErrorCode } from '@core/errors';
 import type { ScheduleExceptionPorts } from '@core/ports';
@@ -21,6 +25,7 @@ import {
   unwrapOk,
 } from '@core/testing';
 import {
+  applyDayExceptions,
   clearScheduleBlock,
   moveScheduleBlock,
   writeDayBreaks,
@@ -377,5 +382,128 @@ describe('writeDayBreaks — «Само този ден» on a roster break', ()
         dayBreakRanges: [wall(12)],
       },
     ]);
+  });
+});
+
+describe('applyDayExceptions — a `setDayExceptions` request, run as the pen it names', () => {
+  /** Every shop asked for its zone, in order. */
+  function zones() {
+    const asked: LocationId[] = [];
+    return {
+      asked,
+      zoneOf: (locationId: LocationId) => {
+        asked.push(locationId);
+        return FIXTURE_TIME_ZONE;
+      },
+    };
+  }
+
+  it('BLOCK writes the days as `writeScheduleBlocks` does, each read in its shop’s zone', async () => {
+    const exceptions: ScheduleException[] = [];
+    const { ports, keys } = writer(exceptions);
+    const { asked, zoneOf } = zones();
+    const done = await applyDayExceptions(ports)(
+      {
+        dayExceptionsEdit: DayExceptionsEdit.Block,
+        barberId: IVAN,
+        locationId: SHOP,
+        ranges: [wall(13)],
+        localDates: [DAY, NEXT],
+      },
+      zoneOf,
+    );
+    expect(done.ok).toBe(true);
+    expect(asked).toEqual([SHOP]);
+    expect(keys()).toEqual([['ivan__2026-08-05', 'ivan__2026-08-06']]);
+    expect(exceptions).toEqual([
+      stored(DAY, unwrapOk(ExceptionEffectRule.blocked([wall(13)]))),
+      stored(NEXT, unwrapOk(ExceptionEffectRule.blocked([wall(13)]))),
+    ]);
+  });
+
+  it('CLEAR lifts the day and asks no zone', async () => {
+    const exceptions = [stored(DAY, ExceptionEffectRule.closed())];
+    const { ports } = writer(exceptions);
+    const { asked, zoneOf } = zones();
+    const done = await applyDayExceptions(ports)(
+      {
+        dayExceptionsEdit: DayExceptionsEdit.Clear,
+        barberId: IVAN,
+        localDate: DAY,
+        range: null,
+      },
+      zoneOf,
+    );
+    expect(done.ok).toBe(true);
+    expect(asked).toEqual([]);
+    expect(exceptions).toEqual([]);
+  });
+
+  it('MOVE lifts the old range and writes the new days in ONE exception write', async () => {
+    const exceptions = [
+      stored(DAY, unwrapOk(ExceptionEffectRule.blocked([wall(10)]))),
+    ];
+    const { ports, keys } = writer(exceptions);
+    const done = await applyDayExceptions(ports)(
+      {
+        dayExceptionsEdit: DayExceptionsEdit.Move,
+        liftBarberId: IVAN,
+        liftLocalDate: DAY,
+        liftRange: wall(10),
+        writes: [
+          {
+            barberId: IVAN,
+            locationId: SHOP,
+            ranges: [wall(11)],
+            localDates: [NEXT],
+          },
+        ],
+      },
+      zones().zoneOf,
+    );
+    expect(done.ok).toBe(true);
+    expect(keys()).toEqual([['ivan__2026-08-05', 'ivan__2026-08-06']]);
+    expect(exceptions).toEqual([
+      stored(NEXT, unwrapOk(ExceptionEffectRule.blocked([wall(11)]))),
+    ]);
+  });
+
+  it('DAY_BREAKS says the day’s breaks, and answers a pen’s refusal as it refused', async () => {
+    const exceptions: ScheduleException[] = [];
+    const { ports } = writer(exceptions);
+    const { zoneOf } = zones();
+    const done = await applyDayExceptions(ports)(
+      {
+        dayExceptionsEdit: DayExceptionsEdit.DayBreaks,
+        barberId: IVAN,
+        locationId: SHOP,
+        localDate: DAY,
+        ranges: [wall(12)],
+      },
+      zoneOf,
+    );
+    expect(done.ok).toBe(true);
+    expect(exceptions).toEqual([
+      {
+        ...metaOf(DAY),
+        exceptionEffect: ExceptionEffect.Rostered,
+        dayBreakRanges: [wall(12)],
+      },
+    ]);
+    // A range lifted from a day off whole is the lift's own refusal.
+    const closed = [stored(NEXT, ExceptionEffectRule.closed())];
+    const refused = await applyDayExceptions(writer(closed).ports)(
+      {
+        dayExceptionsEdit: DayExceptionsEdit.Clear,
+        barberId: IVAN,
+        localDate: NEXT,
+        range: wall(10),
+      },
+      zoneOf,
+    );
+    expect(refused.ok ? null : refused.error.errorCode).toBe(
+      SchedulingErrorCode.ScheduleExceptionEmptyRanges,
+    );
+    expect(closed).toHaveLength(1);
   });
 });

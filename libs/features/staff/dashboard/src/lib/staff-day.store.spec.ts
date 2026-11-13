@@ -18,10 +18,10 @@ import {
   Weekday,
 } from '@core/primitives';
 import {
-  CatalogErrorCode,
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
+  SchedulingErrorCode,
 } from '@core/errors';
 import {
   type BookingCall,
@@ -299,8 +299,20 @@ describe('StaffDayStore — the zone of a shop, and now per shop', () => {
 });
 
 describe('StaffDayStore — the block write’s failure is a struct', () => {
-  it('names the shop whose zone is unknown — and writes nothing', async () => {
-    const { store } = await build({ shops: [], defaultShops: [] });
+  it('keeps the callable’s refusal as it answered — the server judges who may and reads the shop’s zone', async () => {
+    const calls: GatewayCall[] = [];
+    const refusal = PipelineError.of(
+      PipelineErrorCode.InvalidRequest,
+      SchedulingErrorCode.RosterForbidden,
+      null,
+      null,
+    );
+    const { store } = await build({
+      calls,
+      script: {
+        [Callables.SetDayExceptions]: () => Result.err(refusal),
+      },
+    });
     const done = await store.blockTime(
       IVAN,
       CENTER,
@@ -308,11 +320,22 @@ describe('StaffDayStore — the block write’s failure is a struct', () => {
       localDate('2026-08-05'),
     );
     expect(done).toBe(false);
-    expect(store.absenceError()).toEqual({
-      errorCode: CatalogErrorCode.LocationZoneUnknown,
-      locationId: CENTER,
-    });
+    expect(store.absenceError()).toEqual(refusal);
     expect(store.absencePending()).toBe(false);
+    // ONE call, the act named: the pen and its days, no zone — the server reads it.
+    expect(calls).toEqual([
+      {
+        callable: Callables.SetDayExceptions,
+        input: {
+          dayExceptionsEdit: 'BLOCK',
+          barberId: IVAN,
+          locationId: CENTER,
+          ranges: [],
+          localDates: ['2026-08-05'],
+          operationId: 'operation-000000000001',
+        },
+      },
+    ]);
   });
 
   it('clears the failure on a write that lands', async () => {

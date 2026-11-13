@@ -138,7 +138,8 @@ describe('AuditAction', () => {
       | typeof AuditAction.PrivacyClientExported
       | typeof AuditAction.AnalyticsGoalSet
       | typeof AuditAction.AnalyticsGoalCleared
-      | typeof AuditAction.TeamBarberOfferingsChanged;
+      | typeof AuditAction.TeamBarberOfferingsChanged
+      | typeof AuditAction.TeamDayExceptionsChanged;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -620,6 +621,25 @@ describe('AuditContext.teamOfferings — a barber’s services and prices change
       AuditContext.teamOfferings([cut], BarberId.of('b-1'))
         .teamOfferingsCopiedFromBarberId,
     ).toBe('b-1');
+  });
+});
+
+describe('AuditContext.teamDayExceptions — a barber’s days changed', () => {
+  it('names the pen and the span of days — geometry only', () => {
+    expect(
+      AuditContext.teamDayExceptions(
+        'BLOCK',
+        localDate('2026-12-24'),
+        localDate('2026-12-31'),
+        6,
+      ),
+    ).toEqual({
+      auditAction: 'TEAM_DAY_EXCEPTIONS_CHANGED',
+      dayExceptionsEdit: 'BLOCK',
+      dayExceptionsFromLocalDate: '2026-12-24',
+      dayExceptionsToLocalDate: '2026-12-31',
+      dayExceptionsDayCount: 6,
+    });
   });
 });
 

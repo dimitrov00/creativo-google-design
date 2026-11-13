@@ -35,7 +35,6 @@ import type {
   ProfilePorts,
   ProgramsPorts,
   RolesAdminPorts,
-  ScheduleExceptionPorts,
   SchedulingReadPorts,
   ShopEventReadPorts,
   StreakDefinitionPorts,
@@ -62,10 +61,6 @@ import { CLIENT_ISSUE_REPORTER } from './reporting-error-handler';
 export const SCHEDULING_READ_PORTS = new InjectionToken<SchedulingReadPorts>(
   'SCHEDULING_READ_PORTS',
 );
-
-/** The staff schedule-exception command (`ScheduleExceptionPorts`). */
-export const SCHEDULE_EXCEPTION_PORTS =
-  new InjectionToken<ScheduleExceptionPorts>('SCHEDULE_EXCEPTION_PORTS');
 
 /** The appointment readers and the staff search window (`AppointmentReadPorts`). */
 export const APPOINTMENT_READ_PORTS = new InjectionToken<AppointmentReadPorts>(

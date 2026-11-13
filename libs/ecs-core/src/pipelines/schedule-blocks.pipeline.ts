@@ -1,4 +1,8 @@
-import type { MinuteRange } from '@core/components';
+import {
+  DayExceptionsEdit,
+  type DayExceptionsRequest,
+  type MinuteRange,
+} from '@core/components';
 import type { ScheduleException } from '@core/entities';
 import type { RepositoryError, SchedulingError } from '@core/errors';
 import type { ScheduleExceptionPorts } from '@core/ports';
@@ -203,4 +207,53 @@ export const writeDayBreaks =
         }),
       ]),
     );
+  };
+
+/**
+ * `applyDayExceptions` — a `setDayExceptions` request, run as the pen it
+ * names (team onboarding O4): the ONE mapping from the wire's four edits to
+ * the four writes above, so the server callable and a spec's in-memory
+ * stand-in for it cannot drift. `zoneOf` answers the zone of a shop the
+ * request files days at — the caller has read every one
+ * (`DayExceptionsRequest.locationIds`); each day's first instant is read in
+ * it here, at the ingestion boundary (Law 7.3).
+ */
+export const applyDayExceptions =
+  (ports: ScheduleExceptionPorts) =>
+  (
+    request: DayExceptionsRequest,
+    zoneOf: (locationId: LocationId) => TimeZone,
+  ): Promise<Result<void, SchedulingError | RepositoryError>> => {
+    switch (request.dayExceptionsEdit) {
+      case DayExceptionsEdit.Block:
+        return writeScheduleBlocks(ports)({
+          barberId: request.barberId,
+          locationId: request.locationId,
+          timeZone: zoneOf(request.locationId),
+          ranges: request.ranges,
+          localDates: request.localDates,
+        });
+      case DayExceptionsEdit.Clear:
+        return clearScheduleBlock(ports)(request);
+      case DayExceptionsEdit.Move:
+        return moveScheduleBlock(ports)({
+          lift: {
+            barberId: request.liftBarberId,
+            localDate: request.liftLocalDate,
+            range: request.liftRange,
+          },
+          writes: request.writes.map((write) => ({
+            ...write,
+            timeZone: zoneOf(write.locationId),
+          })),
+        });
+      case DayExceptionsEdit.DayBreaks:
+        return writeDayBreaks(ports)({
+          barberId: request.barberId,
+          locationId: request.locationId,
+          timeZone: zoneOf(request.locationId),
+          localDate: request.localDate,
+          ranges: request.ranges,
+        });
+    }
   };

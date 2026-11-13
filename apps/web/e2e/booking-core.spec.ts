@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { Role } from '@core/components';
 import { BarberId, LocalDate, UtcEpochMs, Weekday } from '@core/primitives';
 import { DEV_CHAIR } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
@@ -314,6 +315,16 @@ test.describe('booking core (flip 1) — live', () => {
     const turn = info.repeatEachIndex * (info.project.retries + 1) + info.retry;
     const blockDay = centerWeekdayFrom(42 + 7 * turn);
 
+    // The block goes through `setDayExceptions`, which judges the caller's
+    // STORED account (team onboarding O4): the token's roles alone open
+    // nothing, and the catalogue-only seed writes no staff account.
+    await seedUserProfile('dev-staff-ivan', {
+      firstName: 'Иван',
+      lastName: 'Колев',
+      phone: '+35943012399',
+      roles: [Role.Barber, Role.Admin],
+      linkedBarberId: DEV_CHAIR.barberId,
+    });
     await signInAs(page, 'dev-staff-ivan', ['barber', 'admin']);
     await page.goto(
       `/staff/schedule?day=${blockDay}&view=day&barber=${DEV_CHAIR.barberId}`,

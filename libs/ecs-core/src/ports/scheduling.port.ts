@@ -12,7 +12,11 @@ import type {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import type { PipelineError, RepositoryError } from '@core/errors';
+import type {
+  PipelineError,
+  RepositoryError,
+  SchedulingError,
+} from '@core/errors';
 import type {
   Appointment,
   BarberBusyDay,
@@ -264,12 +268,15 @@ export type LoadPolicyRecomputeJob = () => Promise<
  * `null` deletes that day's document — or refuses with its own error, in
  * which case nothing is written. One key for a block, many for a series.
  */
-export type WriteScheduleException = <E>(
+export type WriteScheduleException = (
   keys: readonly BusyKey[],
-  merge: (
-    stored: readonly (ScheduleException | null)[],
-  ) => Result<readonly (ScheduleException | null)[], E>,
-) => Promise<Result<void, E | RepositoryError>>;
+  merge: ScheduleExceptionMerge,
+) => Promise<Result<void, SchedulingError | RepositoryError>>;
+
+/** The pure merge a {@link WriteScheduleException} runs inside its transaction. */
+export type ScheduleExceptionMerge = (
+  stored: readonly (ScheduleException | null)[],
+) => Result<readonly (ScheduleException | null)[], SchedulingError>;
 
 // ── The web's callable gateway ────────────────────────────────────────────
 
@@ -421,7 +428,13 @@ export type SchedulingReadPorts = ShopDayStreamPorts &
   PolicyStreamPorts &
   CapacityStreamPorts;
 
-/** The staff schedule-exception command — `SCHEDULE_EXCEPTION_PORTS`. */
+/**
+ * The schedule-exception write — the transaction the day-exception
+ * pipelines (`schedule-blocks.pipeline.ts`) hand their merge to. No browser
+ * binds it (team onboarding O4: `scheduleExceptions` has no client writer):
+ * `setDayExceptions` runs it over the server's commit, beside its caller
+ * checks and its audit rows.
+ */
 export type ScheduleExceptionPorts = {
   readonly writeScheduleException: WriteScheduleException;
 };

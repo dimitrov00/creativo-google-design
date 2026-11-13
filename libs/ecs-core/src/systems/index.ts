@@ -39,6 +39,7 @@ export * from './client-query.system';
 export * from './client-stats.system';
 export * from './coupon-grant.system';
 export * from './customer-record.system';
+export * from './day-exception-write.system';
 export * from './day-figures.system';
 export * from './decision-input.system';
 export * from './discount.system';

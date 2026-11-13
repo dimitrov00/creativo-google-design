@@ -372,7 +372,7 @@ const SCHEDULE_BODY = {
 
 /** Who `isCatalogManager()` admits — the catalogue's writers until pass E. */
 const CATALOGUE_ROLES = ['content_manager', 'admin', 'sysadmin'] as const;
-/** Who `mayEditRoster()` admits — the roster's writers until pass E. */
+/** Who works the book — the roster's writers until pass E, a day exception's until team onboarding O4. */
 const ROSTER_ROLES = ['barber', 'receptionist', 'admin', 'sysadmin'] as const;
 
 describe('firestore.rules', () => {
@@ -1456,7 +1456,7 @@ describe('firestore.rules', () => {
     });
   });
 
-  describe('scheduleExceptions — public read, staff write', () => {
+  describe('scheduleExceptions — public read, no client write (team onboarding O4)', () => {
     /** A day off as `scheduleExceptions/{BusyKey}` stores it — geometry only, no zone (Law 7.2). */
     const closedDay = (day: string): Omit<ScheduleException, 'id'> =>
       ({
@@ -1468,109 +1468,45 @@ describe('firestore.rules', () => {
         dayBreakRanges: null,
       }) satisfies Omit<ScheduleException, 'id'>;
 
-    it('lets an anonymous visitor read an exception, and a client not write one', async () => {
-      await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(
-          doc(ctx.firestore(), 'scheduleExceptions', 'ivan__2026-09-01'),
-          closedDay('2026-09-01'),
-        );
-      });
-      const anon = testEnv.unauthenticatedContext();
-      await assertSucceeds(
-        getDoc(doc(anon.firestore(), 'scheduleExceptions', 'ivan__2026-09-01')),
-      );
-      const client = testEnv.authenticatedContext('user-1', {
-        roles: ['client'],
-      });
-      await assertFails(
-        setDoc(
-          doc(client.firestore(), 'scheduleExceptions', 'ivan__2026-09-02'),
-          closedDay('2026-09-02'),
-        ),
-      );
-    });
-
-    it('lets a barber write and delete a day (`mayEditRoster`), and refuses a content manager both (WS-3.4: no field change)', async () => {
-      const path = 'scheduleExceptions/ivan__2026-09-03';
-      const barber = signedIn('staff-1', 'barber').firestore();
-      await assertSucceeds(setDoc(doc(barber, path), closedDay('2026-09-03')));
-      await assertSucceeds(deleteDoc(doc(barber, path)));
-
-      await seed(path, closedDay('2026-09-03'));
-      const copy = signedIn('copy-1', 'content_manager').firestore();
-      await assertFails(setDoc(doc(copy, path), closedDay('2026-09-03')));
-      await assertFails(deleteDoc(doc(copy, path)));
-    });
-
-    it('admits a day whose id is its body’s busy key, the CLOSED variant with no ranges and a ranged one alike (S-DEP-5)', async () => {
-      const barber = signedIn('staff-1', 'barber').firestore();
-      await assertSucceeds(
-        setDoc(
-          doc(barber, 'scheduleExceptions/ivan__2026-09-04'),
-          closedDay('2026-09-04'),
-        ),
+    it('lets an anonymous visitor read an exception', async () => {
+      await seed(
+        'scheduleExceptions/ivan__2026-09-01',
+        closedDay('2026-09-01'),
       );
       await assertSucceeds(
-        setDoc(doc(barber, 'scheduleExceptions/ivan__2026-09-05'), {
-          ...closedDay('2026-09-05'),
-          ...unwrapOk(
-            ExceptionEffectRule.blocked([
-              MinuteRange.of(minute(10 * 60), endMinute(11 * 60)),
-            ]),
+        getDoc(
+          doc(
+            testEnv.unauthenticatedContext().firestore(),
+            'scheduleExceptions',
+            'ivan__2026-09-01',
           ),
-        }),
-      );
-    });
-
-    it('refuses an id that is not its body’s busy key — another day or another barber (S-DEP-5)', async () => {
-      const barber = signedIn('staff-1', 'barber').firestore();
-      await assertFails(
-        setDoc(
-          doc(barber, 'scheduleExceptions/ivan__2026-09-06'),
-          closedDay('2026-09-07'),
-        ),
-      );
-      await assertFails(
-        setDoc(
-          doc(barber, 'scheduleExceptions/stefan__2026-09-06'),
-          closedDay('2026-09-06'),
-        ),
-      );
-      await assertFails(
-        setDoc(
-          doc(barber, 'scheduleExceptions/day-off'),
-          closedDay('2026-09-06'),
         ),
       );
     });
 
-    it('refuses a body day that is no YYYY-MM-DD, even under the id it spells (S-DEP-5)', async () => {
-      const barber = signedIn('staff-1', 'barber').firestore();
-      await assertFails(
-        setDoc(doc(barber, 'scheduleExceptions/ivan__2026-9-8'), {
-          ...closedDay('2026-09-08'),
-          localDate: '2026-9-8',
-        }),
-      );
-    });
+    // The `setDayExceptions` callable is the one door: it judges the
+    // caller's stored roles and barber link, which no rule can read.
+    it.each(['client', ...ROSTER_ROLES, 'content_manager'] as const)(
+      'refuses a %s every write — create, update and delete',
+      async (role) => {
+        const path = 'scheduleExceptions/ivan__2026-09-03';
+        const db = signedIn('user-1', role).firestore();
+        await assertFails(setDoc(doc(db, path), closedDay('2026-09-03')));
 
-    it('refuses a day carrying a key its entity does not store — a reason above all (S-DEP-5)', async () => {
-      const barber = signedIn('staff-1', 'barber').firestore();
-      await assertFails(
-        setDoc(doc(barber, 'scheduleExceptions/ivan__2026-09-09'), {
-          ...closedDay('2026-09-09'),
-          exceptionReason: 'SICK',
-        }),
-      );
-    });
-
-    it('lets a barber delete a day whatever its id (S-DEP-5: deletes unchanged)', async () => {
-      await seed('scheduleExceptions/day-off', closedDay('2026-09-10'));
-      const barber = signedIn('staff-1', 'barber').firestore();
-      await assertSucceeds(
-        deleteDoc(doc(barber, 'scheduleExceptions/day-off')),
-      );
-    });
+        await seed(path, closedDay('2026-09-03'));
+        await assertFails(
+          setDoc(doc(db, path), {
+            ...closedDay('2026-09-03'),
+            ...unwrapOk(
+              ExceptionEffectRule.blocked([
+                MinuteRange.of(minute(10 * 60), endMinute(11 * 60)),
+              ]),
+            ),
+          }),
+        );
+        await assertFails(deleteDoc(doc(db, path)));
+      },
+    );
   });
 
   describe('couponGrants — the holder, and the book (2026-09-10)', () => {

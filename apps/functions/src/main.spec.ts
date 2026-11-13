@@ -67,6 +67,7 @@ const seam = vi.hoisted(() => {
     'sampleLeadTime',
     'setAnalyticsGoal',
     'setBarberOfferings',
+    'setDayExceptions',
     'setRoles',
     'setRosterWeek',
     'staffAnalytics',
@@ -322,6 +323,7 @@ const ENDPOINTS = {
   markArrived: tracedCallable,
   amendRosterBreaks: tracedCallable,
   setRosterWeek: tracedCallable,
+  setDayExceptions: tracedCallable,
   staffAnalytics: { ...tracedCallable, availableMemoryMb: 512 },
   setAnalyticsGoal: tracedCallable,
   addBarber: tracedCallable,
@@ -892,6 +894,32 @@ const FLIPPED: { readonly [name: string]: Case } = {
     },
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },
+  },
+  setDayExceptions: {
+    pipeline: 'setDayExceptions',
+    input: request(
+      {
+        dayExceptionsEdit: 'BLOCK',
+        barberId: 'b-1',
+        locationId: 'loc-1',
+        ranges: [{ startMinutes: 780, endMinutes: 840 }],
+        localDates: ['2026-12-24', '2026-12-25', '2026-12-24'],
+        operationId: 'operation-0123456789ab',
+      },
+      STAFF,
+    ),
+    // The verified caller and the act's name ride the command; a day named twice is one day.
+    command: {
+      dayExceptionsEdit: 'BLOCK',
+      barberId: 'b-1',
+      locationId: 'loc-1',
+      ranges: [{ startMinutes: 780, endMinutes: 840 }],
+      localDates: ['2026-12-24', '2026-12-25'],
+      callerUserId: 'u-staff',
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({ barberIds: ['b-1'] }),
+    expected: { barberIds: ['b-1'] },
   },
   staffAnalytics: {
     pipeline: 'staffAnalytics',
@@ -1554,7 +1582,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 63 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, and team onboarding’s four barber-record callables and its offerings save', () => {
+  it('exports exactly the 64 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save and its day-exceptions save', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1600,7 +1628,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(63);
+    expect(FLIPPED_EXPORTS).toHaveLength(64);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

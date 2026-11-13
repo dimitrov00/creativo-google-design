@@ -7,6 +7,7 @@ import {
   AuditContext,
   AuditedProfileField,
   AuditTargetRef,
+  type DayExceptionsEdit,
   type GovernedCollection,
   ImpersonationEndReason,
   ImpersonationStatus,
@@ -33,6 +34,7 @@ import {
   type CustomerId,
   defect,
   type ImpersonationSessionId,
+  type LocalDate,
   type MonthKey,
   type OperationId,
   type OtpId,
@@ -1125,6 +1127,47 @@ export const AuditSystem = {
         auditOperationId: operationId,
         ...actor,
         ...AuditContext.teamOfferings(serviceIds, copiedFromBarberId),
+        ...AuditTargetRef.none(),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        null,
+        AuditSystem.changeKey.teamBarber(operationId),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row `setDayExceptions` writes per barber inside its own commit
+   * (team onboarding D12): on the barber record (`barbers/<id>`), credited
+   * to the caller, naming the pen and the span of that barber's days the
+   * act changed — `days` ascending, at least one (an act that changed no
+   * day of a barber writes no row for them: planning one is a programmer
+   * defect); untargeted.
+   */
+  planTeamDayExceptions(
+    barberId: BarberId,
+    edit: DayExceptionsEdit,
+    days: readonly LocalDate[],
+    actor: Actor,
+    recordedAtUtcMs: UtcEpochMs,
+    operationId: OperationId,
+  ): AuditRowPlan {
+    const first = days[0];
+    const last = days[days.length - 1];
+    if (first === undefined || last === undefined) {
+      return defect('a day-exceptions act that changed no day writes no row');
+    }
+    const action = AuditAction.TeamDayExceptionsChanged;
+    const resourceId = AuditResourceId.forBarber(barberId);
+    return {
+      row: {
+        recordedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.teamDayExceptions(edit, first, last, days.length),
         ...AuditTargetRef.none(),
       },
       idBasis: rowBasis(

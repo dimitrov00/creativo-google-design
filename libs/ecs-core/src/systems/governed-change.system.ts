@@ -118,12 +118,16 @@ const EXCEPTION_KEYS: KeyTable<ScheduleException> = {
 const UNKNOWN_FIELD = '<unknown>';
 
 /**
- * The stored keys of a collection the BROWSER writes with no key-set rule
- * (`appointmentNotes`, `appointmentPhotos` — `worksTheBook()`;
- * `scheduleExceptions` — `mayEditRoster()`), where a field NAME is caller
- * text; `null` for every other collection — written by the Admin SDK only,
- * or by a rule that pins its keys (`keys().hasOnly`: positions, courses,
- * events) — whose names are the schema's.
+ * The stored keys of a collection whose field NAMES can be caller text:
+ * the two the BROWSER writes (`appointmentNotes`, `appointmentPhotos` —
+ * `worksTheBook()`), and `scheduleExceptions`, the browser's too until
+ * team onboarding O4 put it behind the `setDayExceptions` callable — kept
+ * here because the document is world-readable and "structurally
+ * reason-free": a key its entity does not declare (a console write naming
+ * a reason) never reaches a permanent row by name. `null` for every other
+ * collection — written by the Admin SDK only, or by a rule that pins its
+ * keys (`keys().hasOnly`: positions, courses, events) — whose names are the
+ * schema's.
  */
 function knownKeysOf(collection: GovernedDocCollection): object | null {
   switch (collection) {

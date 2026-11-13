@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AnalyticsCall,
   ClientPrivacyCall,
+  DayExceptionsCall,
   RolesCall,
   SetAnalyticsGoalCall,
   TeamCall,
@@ -131,6 +132,17 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
     expect(CALLABLE_ANSWER_DECODERS[Callables.SetBarberOfferings]).toBe(
       TeamCall.decodeSaved,
+    );
+  });
+
+  it('the day-exceptions save (team onboarding O4) rides `operationId`, a standard token, its own decoder', () => {
+    expect(Callables.SetDayExceptions).toBe('setDayExceptions');
+    expect(OPERATION_ID_FIELD[Callables.SetDayExceptions]).toBe('operationId');
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.SetDayExceptions]).toBe(
+      AppCheckTokenUse.Standard,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.SetDayExceptions]).toBe(
+      DayExceptionsCall.decodeSaved,
     );
   });
 
