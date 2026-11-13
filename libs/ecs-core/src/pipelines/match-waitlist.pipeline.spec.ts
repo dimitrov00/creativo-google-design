@@ -147,6 +147,7 @@ function tuesdayRoster(
     id: barberId,
     turnaroundMinutes: minuteCount(turnaround),
     versions: [version],
+    writeOperationId: null,
   };
 }
 

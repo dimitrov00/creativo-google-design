@@ -30,7 +30,9 @@ import {
  * `{ barberId, locationId, fromLocalDate, weekdays: [1…7], before:
  * { startMinutes, endMinutes } | null, after: … | null, operationId }` →
  * `{ barberId }`. A signed-in caller who works the book only
- * (`SCHEDULING_ROSTER_UNAUTHENTICATED` / `_FORBIDDEN`); every field
+ * (`SCHEDULING_ROSTER_UNAUTHENTICATED` / `_FORBIDDEN`) — whose hours a
+ * caller may change is the pipeline's question, asked of the STORED
+ * account (team onboarding D5: a barber only their own); every field
  * re-read through its smart constructor, the first unreadable one named
  * (`SCHEDULING_ROSTER_INVALID_INPUT`). A change that changes nothing —
  * neither a `before` nor an `after` — is no change at all, and refused.
@@ -60,7 +62,8 @@ function weekdaysOf(raw: readonly unknown[]): readonly Weekday[] | null {
 export function decodeAmendRosterBreaks(
   request: WireRequest,
 ): Result<AmendRosterBreaksCommand, EdgeError> {
-  if (callerUserId(request) === null) {
+  const caller = callerUserId(request);
+  if (caller === null) {
     return Result.err(SchedulingError.rosterUnauthenticated());
   }
   if (!callerWorksTheBook(request)) {
@@ -92,9 +95,8 @@ export function decodeAmendRosterBreaks(
   if (after === undefined) return invalid('after');
   if (before === null && after === null) return invalid('after');
   // The act's name, REQUIRED (WS-4.1) — the web mints one per change.
-  if (operationIdOf(payload, 'operationId') === null) {
-    return invalid('operationId');
-  }
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
   return Result.ok({
     barberId,
     locationId,
@@ -102,6 +104,8 @@ export function decodeAmendRosterBreaks(
     weekdays,
     before,
     after,
+    callerUserId: caller,
+    operationId,
   });
 }
 
@@ -132,7 +136,8 @@ function weekdayRangeOf(
 export function decodeSetRosterWeek(
   request: WireRequest,
 ): Result<SetRosterWeekCommand, EdgeError> {
-  if (callerUserId(request) === null) {
+  const caller = callerUserId(request);
+  if (caller === null) {
     return Result.err(SchedulingError.rosterUnauthenticated());
   }
   if (!callerWorksTheBook(request)) {
@@ -180,8 +185,15 @@ export function decodeSetRosterWeek(
     if (read === null) return invalid('breaks');
     breaks.push(RosterBreak.of(read.weekday, read.range));
   }
-  if (operationIdOf(payload, 'operationId') === null) {
-    return invalid('operationId');
-  }
-  return Result.ok({ barberId, locationId, fromLocalDate, segments, breaks });
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
+  return Result.ok({
+    barberId,
+    locationId,
+    fromLocalDate,
+    segments,
+    breaks,
+    callerUserId: caller,
+    operationId,
+  });
 }

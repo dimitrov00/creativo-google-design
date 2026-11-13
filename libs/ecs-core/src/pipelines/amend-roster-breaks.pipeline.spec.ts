@@ -1,66 +1,118 @@
 import { describe, expect, it } from 'vitest';
-import { MinuteRange, RosterBreak, WriteOp } from '@core/components';
-import { Collections } from '@core/entities';
-import { SchedulingErrorCode } from '@core/errors';
-import { LocationId, Weekday } from '@core/primitives';
 import {
+  BarberStatus,
+  MinuteRange,
+  Role,
+  RosterBreak,
+  WriteOp,
+} from '@core/components';
+import { type Barber, Collections, type User } from '@core/entities';
+import { SchedulingErrorCode } from '@core/errors';
+import {
+  BarberId,
+  LocationId,
+  OperationId,
+  UserId,
+  Weekday,
+} from '@core/primitives';
+import {
+  barberFixture,
   barberScheduleFixture,
   bodyOf,
   endMinute,
   FIXTURE_IDS,
+  FIXTURE_NOW_UTC_MS,
   localDate,
   locationFixture,
   memoryStore,
   memoryTxPorts,
   minute,
+  registeredUserFixture,
   unwrapErr,
   unwrapOk,
 } from '@core/testing';
-import { amendRosterBreaks } from './amend-roster-breaks.pipeline';
+import {
+  type AmendRosterBreaksCommand,
+  amendRosterBreaks,
+} from './amend-roster-breaks.pipeline';
 
 /*
  * A chair's standing breaks changed «from this day on» — ONE transaction:
- * the roster and the shop read, the versions revised from the day on by
- * `RosterBreakSystem.amend`, the roster's `versions` written whole. The
- * fixture clock reads 2026-09-28 (a Monday) at the fixture shop.
+ * the caller's account, the barber record, the roster and the shop read;
+ * who may judged on the stored account (team onboarding D5); the versions
+ * revised from the day on by `RosterBreakSystem.amend`; the roster's
+ * `versions` written whole, stamped with the act. The fixture clock reads
+ * 2026-09-28 (a Monday) at the fixture shop.
  */
 
+const CALLER = UserId.of('u-desk');
+const OP = OperationId.of('operation-break-01234567');
+const IVAN = FIXTURE_IDS.barber;
 const LUNCH = MinuteRange.of(minute(780), endMinute(840));
-const ROSTER = [Collections.BarberSchedules, FIXTURE_IDS.barber];
+const ROSTER = [Collections.BarberSchedules, IVAN];
 const SHOP = [Collections.Locations, FIXTURE_IDS.location];
 
-function rig(withRoster = true) {
+/** The front desk: changes any barber's breaks. */
+const DESK: User = registeredUserFixture({
+  id: CALLER,
+  roles: [Role.Receptionist],
+});
+
+type RigOptions = {
+  readonly caller?: User | null;
+  readonly barber?: Barber | null;
+  readonly withRoster?: boolean;
+};
+
+function rig(options: RigOptions = {}) {
+  const caller = options.caller === undefined ? DESK : options.caller;
+  const barber =
+    options.barber === undefined ? barberFixture() : options.barber;
   const store = memoryStore([
     { path: SHOP, body: bodyOf(locationFixture()) },
-    ...(withRoster
-      ? [{ path: ROSTER, body: bodyOf(barberScheduleFixture()) }]
-      : []),
+    ...(caller === null
+      ? []
+      : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
+    ...(barber === null
+      ? []
+      : [{ path: [Collections.Barbers, barber.id], body: bodyOf(barber) }]),
+    ...(options.withRoster === false
+      ? []
+      : [{ path: ROSTER, body: bodyOf(barberScheduleFixture()) }]),
   ]);
   const tx = memoryTxPorts(store);
   return { store, tx, run: amendRosterBreaks(tx) };
 }
 
-const weekdayLunch = {
-  barberId: FIXTURE_IDS.barber,
+const weekdayLunch: AmendRosterBreaksCommand = {
+  barberId: IVAN,
   locationId: FIXTURE_IDS.location,
   fromLocalDate: localDate('2026-09-28'),
   weekdays: [Weekday.Mon, Weekday.Tue, Weekday.Wed, Weekday.Thu, Weekday.Fri],
   before: null,
   after: LUNCH,
+  callerUserId: CALLER,
+  operationId: OP,
 };
 
 describe('amendRosterBreaks', () => {
-  it('adds a weekday lunch from today on in ONE roster write', async () => {
+  it('adds a weekday lunch from today on in ONE roster write, stamped with the act', async () => {
     const { tx, run } = rig();
-    expect(unwrapOk(await run(weekdayLunch))).toEqual({
-      barberId: FIXTURE_IDS.barber,
-    });
+    expect(unwrapOk(await run(weekdayLunch))).toEqual({ barberId: IVAN });
     expect(tx.plans).toHaveLength(1);
     const [write] = tx.plans[0] as readonly WriteOp[];
     expect(write).toEqual(
-      WriteOp.update(ROSTER, { versions: expect.any(Array) }),
+      WriteOp.update(ROSTER, {
+        versions: expect.any(Array),
+        writeOperationId: OP,
+      }),
     );
-    expect(tx.transactions[0]?.reads).toEqual([ROSTER, SHOP]);
+    expect(tx.transactions[0]?.reads).toEqual([
+      [Collections.Users, CALLER],
+      [Collections.Barbers, IVAN],
+      ROSTER,
+      SHOP,
+    ]);
   });
 
   it('keeps the weeks before the day as they were', async () => {
@@ -91,9 +143,9 @@ describe('amendRosterBreaks', () => {
   });
 
   it('refuses a chair with no roster, and a shop that is not there', async () => {
-    expect(unwrapErr(await rig(false).run(weekdayLunch)).errorCode).toBe(
-      SchedulingErrorCode.RosterMissing,
-    );
+    expect(
+      unwrapErr(await rig({ withRoster: false }).run(weekdayLunch)).errorCode,
+    ).toBe(SchedulingErrorCode.RosterMissing);
     expect(
       unwrapErr(
         await rig().run({
@@ -102,5 +154,58 @@ describe('amendRosterBreaks', () => {
         }),
       ).errorCode,
     ).toBe(SchedulingErrorCode.RosterInvalidInput);
+  });
+
+  describe('who may', () => {
+    it('lets a barber change their own breaks, and refuses them a colleague’s — nothing written', async () => {
+      const own = rig({
+        caller: registeredUserFixture({
+          id: CALLER,
+          roles: [Role.Barber],
+          linkedBarberId: IVAN,
+        }),
+      });
+      expect((await own.run(weekdayLunch)).ok).toBe(true);
+
+      for (const caller of [
+        registeredUserFixture({
+          id: CALLER,
+          roles: [Role.Barber],
+          linkedBarberId: BarberId.of('niko'),
+        }),
+        registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
+        null,
+      ]) {
+        const { tx, run } = rig({ caller });
+        expect(unwrapErr(await run(weekdayLunch))).toEqual({
+          errorCode: SchedulingErrorCode.RosterForbidden,
+        });
+        expect(tx.plans).toEqual([]);
+      }
+    });
+
+    it('refuses an id with no barber record, and a barber who has left', async () => {
+      expect(unwrapErr(await rig({ barber: null }).run(weekdayLunch))).toEqual({
+        errorCode: SchedulingErrorCode.RosterInvalidInput,
+        field: 'barberId',
+      });
+      const left = rig({
+        barber: barberFixture(
+          {},
+          {
+            barberStatus: BarberStatus.Departed,
+            barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+            barberDepartedUserId: null,
+            barberSessionsRevokedAtUtcMs: null,
+            barberRehireStatus: BarberStatus.Public,
+          },
+        ),
+      });
+      expect(unwrapErr(await left.run(weekdayLunch))).toEqual({
+        errorCode: SchedulingErrorCode.RosterDeparted,
+        barberId: IVAN,
+      });
+      expect(left.tx.plans).toEqual([]);
+    });
   });
 });

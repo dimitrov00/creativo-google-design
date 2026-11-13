@@ -60,6 +60,7 @@ import {
   type MinuteRange,
   Principal,
   type ShopNow,
+  type RosterCall,
   type VisitEditWrite,
   VisitEditWriteOutcome,
   VoucherCode,
@@ -103,8 +104,6 @@ import {
   adoptVisitPhoto,
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
-  type AmendRosterBreaksCommand,
-  type SetRosterWeekCommand,
   clearScheduleBlock,
   moveScheduleBlock,
   type ScheduleBlocksCommand,
@@ -2299,7 +2298,7 @@ export class StaffDayStore {
    * ONE roster write on the server (the roster has no client writer). The
    * roster's listener redraws every day it reaches.
    */
-  async amendBreaks(change: AmendRosterBreaksCommand): Promise<boolean> {
+  async amendBreaks(change: RosterCall.BreaksChange): Promise<boolean> {
     return this.rosterWrite((operationId) =>
       this.gateway.callableClient(Callables.AmendRosterBreaks)({
         ...change,
@@ -2317,7 +2316,7 @@ export class StaffDayStore {
    * The hours sheet's save: a chair's whole week, shifts and breaks, from a
    * day on — `setRosterWeek`, ONE roster write on the server.
    */
-  async setRosterWeek(week: SetRosterWeekCommand): Promise<boolean> {
+  async setRosterWeek(week: RosterCall.WeekChange): Promise<boolean> {
     return this.rosterWrite((operationId) =>
       this.gateway.callableClient(Callables.SetRosterWeek)({
         ...week,

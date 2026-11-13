@@ -48,6 +48,7 @@ const schedule = (versions: readonly ScheduleVersion[]): BarberSchedule => ({
   id: IVAN,
   turnaroundMinutes: MinuteCount.ZERO,
   versions,
+  writeOperationId: null,
 });
 const week = WEEKDAYS.map((weekday) =>
   ShiftSegment.of(weekday, CENTER, minute(540), endMinute(1080)),

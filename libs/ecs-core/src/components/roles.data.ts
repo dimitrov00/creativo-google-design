@@ -141,6 +141,16 @@ export const Roles = {
   TEAM_PROFILES: [Role.ContentManager, Role.Admin],
 
   /**
+   * The roles that may edit ANY barber's hours, breaks and days off — the
+   * front desk and the owners (team onboarding D5, O3): `BOOK` without the
+   * barber, who edits only their own through their account's link. The
+   * rules cannot say which barber a caller is, so the roster callables
+   * judge the STORED roles and link. CALLABLE-ONLY, as {@link Roles.TEAM}:
+   * `barberSchedules` takes no client write.
+   */
+  ROSTERS: [Role.Receptionist, Role.Admin, Role.Sysadmin],
+
+  /**
    * The roles `setRoles` may grant or take away — every role but the
    * vendor's `sysadmin`, dictionary order (S-RU-14). CALLABLE-ONLY, as
    * {@link Roles.ASSIGN}.
@@ -251,6 +261,14 @@ export const Roles = {
    */
   editsTeamProfiles(roles: readonly string[]): boolean {
     return anyIn(Roles.TEAM_PROFILES, roles);
+  },
+
+  /**
+   * Whether a role set may edit any barber's hours, breaks and days off
+   * (`ROSTERS`). Claims-tolerant like `mayBook`.
+   */
+  editsAnyRoster(roles: readonly string[]): boolean {
+    return anyIn(Roles.ROSTERS, roles);
   },
 
   /**

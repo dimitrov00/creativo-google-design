@@ -333,6 +333,7 @@ export function barberScheduleFixture(
     id: IDS.barber,
     turnaroundMinutes: MinuteCount.ZERO,
     versions: [version],
+    writeOperationId: null,
     ...overrides,
   };
 }

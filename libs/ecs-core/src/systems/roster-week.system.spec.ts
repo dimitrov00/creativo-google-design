@@ -131,6 +131,7 @@ describe('RosterWeekSystem.setFrom — the week from a day on', () => {
     id: BarberId.of('ivan'),
     turnaroundMinutes: MinuteCount.ZERO,
     versions,
+    writeOperationId: null,
   });
   const old = ScheduleVersion.startingWith(
     [shift(Weekday.Fri, 540, 1080)],

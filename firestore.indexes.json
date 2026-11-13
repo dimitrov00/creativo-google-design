@@ -417,6 +417,11 @@
       "indexes": []
     },
     {
+      "collectionGroup": "barberSchedules",
+      "fieldPath": "writeOperationId",
+      "indexes": []
+    },
+    {
       "collectionGroup": "locations",
       "fieldPath": "openingHours",
       "indexes": []

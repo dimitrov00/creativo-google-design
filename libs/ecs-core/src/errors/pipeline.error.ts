@@ -130,6 +130,8 @@ export const WIRE_PARAM_ALLOWLIST: {
   TEAM_SHOP_UNKNOWN: ['locationId'],
   TEAM_SHOP_HAS_HOURS: ['locationId'],
   TEAM_SERVICE_UNKNOWN: ['serviceId'],
+  // The hours editor: the shop of the week the barber does not work at.
+  SCHEDULING_ROSTER_OUTSIDE_SHOPS: ['locationId'],
   BOOKING_UNKNOWN_SERVICE: ['serviceId'],
   BOOKING_SERVICE_NOT_AT_LOCATION: ['serviceId', 'locationId'],
   BOOKING_CONFLICTING_SERVICES: ['first', 'second'],

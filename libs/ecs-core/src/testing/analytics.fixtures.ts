@@ -198,6 +198,7 @@ function roster(
   return {
     id: barberId,
     turnaroundMinutes: MinuteCount.ZERO,
+    writeOperationId: null,
     versions: [
       {
         seq: 1,

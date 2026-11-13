@@ -105,6 +105,8 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
     id: IVAN,
     body: {
       turnaroundMinutes: minuteCount(10),
+      // No writing call: the seed is no callable's write.
+      writeOperationId: null,
       versions: openEnded(
         [
           ...shiftAt(Weekday.Mon, CENTER),
@@ -131,6 +133,8 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
     id: NIKO,
     body: {
       turnaroundMinutes: minuteCount(0),
+      // No writing call: the seed is no callable's write.
+      writeOperationId: null,
       versions: openEnded([
         ...lateShift(Weekday.Tue),
         // The headline case: ONE day, TWO shops. Center in the morning,
@@ -150,6 +154,8 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
     id: STEFAN,
     body: {
       turnaroundMinutes: minuteCount(15),
+      // No writing call: the seed is no callable's write.
+      writeOperationId: null,
       versions: openEnded(
         [
           ...shiftAt(Weekday.Mon, CENTER),

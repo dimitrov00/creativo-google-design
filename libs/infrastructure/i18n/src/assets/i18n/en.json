@@ -2,6 +2,9 @@
   "errors": {
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "A break has to sit inside the day's hours.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "A change can't start on a past day.",
+    "SCHEDULING_ROSTER_FORBIDDEN": "You can only change your own hours.",
+    "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "The barber doesn't work at this shop. Add it to their shops first.",
+    "SCHEDULING_ROSTER_DEPARTED": "This barber has left. Their hours can't be changed.",
     "SCHEDULING_TIME_RANGE_INVALID": "The end has to come after the start, with no overlap.",
     "SCHEDULING_SHIFT_SEGMENT_IMPOSSIBLE_TRANSFER": "Two shops need at least half an hour between them.",
     "DST_GAP_INVALID_TIME": "{{wallClock}} doesn't exist in {{timeZone}} — the clocks jump past it. Pick another time.",

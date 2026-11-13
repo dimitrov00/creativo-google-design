@@ -144,6 +144,31 @@ describe('Roles.assignsRoles (claims-tolerant)', () => {
   });
 });
 
+describe('Roles.ROSTERS — who edits any barber’s hours (team onboarding D5, O3)', () => {
+  it('is the book’s roles without the barber', () => {
+    expect(Roles.ROSTERS).toEqual([
+      Role.Receptionist,
+      Role.Admin,
+      Role.Sysadmin,
+    ]);
+    for (const role of Roles.ROSTERS) {
+      expect(Roles.BOOK, role).toContain(role);
+    }
+  });
+
+  it('lets the front desk and the owners edit any roster — never a barber or the content editor by role (claims-tolerant)', () => {
+    for (const role of [Role.Receptionist, Role.Admin, Role.Sysadmin]) {
+      expect(Roles.editsAnyRoster([role]), role).toBe(true);
+    }
+    expect(Roles.editsAnyRoster([Role.Barber, Role.Receptionist])).toBe(true);
+    for (const role of [Role.Barber, Role.ContentManager, Role.Client]) {
+      expect(Roles.editsAnyRoster([role]), role).toBe(false);
+    }
+    expect(Roles.editsAnyRoster([])).toBe(false);
+    expect(Roles.editsAnyRoster(['owner', 'ADMIN'])).toBe(false);
+  });
+});
+
 describe('Roles.TEAM / Roles.TEAM_PROFILES — who manages the team (team onboarding D5)', () => {
   it('TEAM is the admin alone; TEAM_PROFILES adds the content editor', () => {
     expect(Roles.TEAM).toEqual([Role.Admin]);

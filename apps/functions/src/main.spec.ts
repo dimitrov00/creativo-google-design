@@ -839,6 +839,8 @@ const FLIPPED: { readonly [name: string]: Case } = {
       },
       STAFF,
     ),
+    // The verified caller and the act's name ride the command: the pipeline
+    // judges the stored account and stamps the roster.
     command: {
       barberId: 'b-1',
       locationId: 'loc-1',
@@ -846,6 +848,8 @@ const FLIPPED: { readonly [name: string]: Case } = {
       weekdays: [1, 5],
       before: null,
       after: { startMinutes: 780, endMinutes: 840 },
+      callerUserId: 'u-staff',
+      operationId: 'operation-0123456789ab',
     },
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },
@@ -883,6 +887,8 @@ const FLIPPED: { readonly [name: string]: Case } = {
         },
       ],
       breaks: [{ weekday: 1, startMinutes: 780, endMinutes: 840 }],
+      callerUserId: 'u-staff',
+      operationId: 'operation-0123456789ab',
     },
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },

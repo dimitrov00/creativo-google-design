@@ -1,4 +1,4 @@
-import type { ScheduleVersion } from '@core/components';
+import type { ScheduleVersion, WriteProvenance } from '@core/components';
 import type { MinuteCount, BarberId } from '@core/primitives';
 
 /**
@@ -9,9 +9,14 @@ import type { MinuteCount, BarberId } from '@core/primitives';
  * the version in force on a day is how booking, availability and capacity
  * pick a roster — a flat roster could not be amended from a future day.
  * Each version's `'HH:mm'` weekday map is flattened to `segments` on the
- * wall clock.
+ * wall clock. The last writing call (`writeOperationId`, team onboarding
+ * D12) sits beside them: the roster callables stamp it, so the roster's
+ * audit row names the call that made the write; `null` for the seed.
  */
-export type BarberSchedule = {
+export type BarberSchedule = BarberScheduleMeta & WriteProvenance;
+
+/** The roster itself: whose it is, the reset it keeps and its versions. */
+export type BarberScheduleMeta = {
   readonly id: BarberId;
   /**
    * The separation this barber keeps between unrelated clients: every busy
