@@ -453,6 +453,17 @@ describe('TeamSystem.activate — the go-live step', () => {
   });
 });
 
+describe('TeamSystem.editable', () => {
+  it('lets a draft and a live record be edited, never one that has left', () => {
+    expect(unwrapOk(TeamSystem.editable(draft))).toBe(draft);
+    expect(TeamSystem.editable(barberFixture()).ok).toBe(true);
+    expect(unwrapErr(TeamSystem.editable(departed))).toEqual({
+      errorCode: TeamErrorCode.BarberDeparted,
+      barberId: FIXTURE_IDS.barber,
+    });
+  });
+});
+
 describe('TeamSystem.removable', () => {
   it('lets only a record that never went live be deleted', () => {
     expect(TeamSystem.removable(draft).ok).toBe(true);

@@ -12,6 +12,7 @@ import {
   type BarberActivationAnswer,
 } from './barber-activation.data';
 import type { BarberLifecycle } from './barber-lifecycle.data';
+import type { BarberOffering } from './barber-offering.data';
 import { CallAnswer } from './call-answer.data';
 import { StaffSetupItem } from './staff-setup-item.data';
 
@@ -78,6 +79,34 @@ export namespace BarberEditRequest {
 }
 
 /**
+ * How a `setBarberOfferings` call says what a barber performs — the ONLY
+ * source of these strings, the field `offeringsEdit`.
+ */
+export const OfferingsEdit = {
+  /** The COMPLETE list, as the editor shows it: a service left out is no longer theirs. */
+  Set: 'SET',
+  /** «Копирай цените от» — a colleague's terms on every service that colleague performs. */
+  Copy: 'COPY',
+} as const;
+export type OfferingsEdit = (typeof OfferingsEdit)[keyof typeof OfferingsEdit];
+
+/** The request half of a `setBarberOfferings` call — flat variants on `offeringsEdit`. */
+export type OfferingsRequest = OfferingsRequest.Set | OfferingsRequest.Copy;
+
+export namespace OfferingsRequest {
+  export type Set = {
+    readonly offeringsEdit: typeof OfferingsEdit.Set;
+    /** Every service the barber performs, each once, at the terms typed. */
+    readonly offerings: readonly BarberOffering.Entry[];
+  };
+  export type Copy = {
+    readonly offeringsEdit: typeof OfferingsEdit.Copy;
+    /** The colleague whose terms are copied — a one-time snapshot. */
+    readonly copyFromBarberId: BarberId;
+  };
+}
+
+/**
  * THE TEAM WIRE (team onboarding D5, D9, D10,
  * `docs/designs/team-onboarding.md`) — the barber record's callables. The
  * root is `addBarber`: a new record as a `DRAFT`. Every call names its act
@@ -100,7 +129,7 @@ export type TeamCall = {
 };
 
 export const TeamCall = {
-  /** The answer of `addBarber`, `editBarber` and `deleteDraftBarber`: the record, or nothing usable. */
+  /** The answer of `addBarber`, `editBarber`, `setBarberOfferings` and `deleteDraftBarber`: the record, or nothing usable. */
   decodeSaved(raw: unknown): Result<TeamCall.Saved, PipelineError> {
     const answer = CallAnswer.read(raw);
     const barberId =
@@ -143,6 +172,12 @@ export const TeamCall = {
 export namespace TeamCall {
   /** `editBarber` — one part of one record, replaced whole. */
   export type Edit = BarberEditRequest & {
+    readonly barberId: BarberId;
+    /** The act's name — the web mints one per save. */
+    readonly operationId: ClientOperationId;
+  };
+  /** `setBarberOfferings` — a barber's services and prices: one list, or a colleague's copied. */
+  export type Offerings = OfferingsRequest & {
     readonly barberId: BarberId;
     /** The act's name — the web mints one per save. */
     readonly operationId: ClientOperationId;

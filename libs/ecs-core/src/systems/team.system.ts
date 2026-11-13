@@ -486,6 +486,12 @@ export const TeamSystem = {
     };
   },
 
+  /**
+   * Whether the record still takes an edit — of itself, or of what it
+   * performs: a record that has left the shop is `TEAM_BARBER_DEPARTED`.
+   */
+  editable: current,
+
   /** Whether the record may be deleted: only one that never went live. */
   removable(barber: Barber): Result<Barber, TeamError> {
     return barber.barberStatus === BarberStatus.Draft

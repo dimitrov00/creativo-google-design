@@ -72,6 +72,7 @@ import {
   runBackfill as runBackfillPipeline,
   sampleLeadTime,
   setAnalyticsGoal as setAnalyticsGoalPipeline,
+  setBarberOfferings as setBarberOfferingsPipeline,
   setRoles as setRolesPipeline,
   setRosterWeek as setRosterWeekPipeline,
   staffAnalytics as staffAnalyticsPipeline,
@@ -209,6 +210,7 @@ import {
   decodeAddBarber,
   decodeDeleteDraftBarber,
   decodeEditBarber,
+  decodeSetBarberOfferings,
 } from './wire/team.wire';
 import {
   decodeCancelWaitlist,
@@ -286,7 +288,8 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * `setAnalyticsGoal`: 58. Team onboarding (stage 1a) added the barber
  * record's four callables — `addBarber`, `editBarber`, `activateBarber`,
  * `deleteDraftBarber` — over the server ports, bound to the log digest
- * key: 62 exports.
+ * key: 62 exports; then `setBarberOfferings`, a barber's services and
+ * prices, on the same ports: 63.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -982,6 +985,23 @@ export const editBarber = onCall(
     root.ports,
     decodeEditBarber,
     (ports, cmd) => editBarberPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * A barber's services and prices, saved as one act (team onboarding D5,
+ * D6): the editor's complete list, or a colleague's terms copied. Only the
+ * services whose list changes are written, stamped with the act, beside
+ * one `TEAM_BARBER_OFFERINGS_CHANGED` row on the barber, in one commit.
+ */
+export const setBarberOfferings = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.SetBarberOfferings, null),
+    root.ports,
+    decodeSetBarberOfferings,
+    (ports, cmd) => setBarberOfferingsPipeline(ports)(cmd),
     refusalOf,
   ),
 );

@@ -38,6 +38,7 @@ import {
   type OtpId,
   type PublishRequestId,
   type SeatId,
+  type ServiceId,
   type StoredFields,
   type TriggerEventId,
   Tag,
@@ -579,10 +580,11 @@ export const AuditSystem = {
       return `goal-set:${goalKey}:${operationId ?? setAtUtcMs}`;
     },
     /**
-     * A team callable's write of a barber record (team onboarding D12): the
-     * act's operation id — required on the team wire — beside the record in
-     * the basis. A replay plans no row: it finds the record as its own act
-     * left it.
+     * A team callable's act on a barber (team onboarding D12) — a write of
+     * the record, or of what they perform: the act's operation id —
+     * required on the team wire — beside the record and the verb in the
+     * basis. A replay plans no row: it finds the documents as its own act
+     * left them.
      */
     teamBarber(operationId: OperationId): string {
       return `team-barber:${operationId}`;
@@ -1084,6 +1086,45 @@ export const AuditSystem = {
           after === null ? null : after.barberStartsLocalDate,
           after === null ? null : after.barberLastWorkingLocalDate,
         ),
+        ...AuditTargetRef.none(),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        null,
+        AuditSystem.changeKey.teamBarber(operationId),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row `setBarberOfferings` writes inside its own commit (team
+   * onboarding D12): on the barber record (`barbers/<id>` — the act is
+   * "what this barber performs", though the terms live on the services),
+   * credited to the caller, naming the services whose list changed and the
+   * colleague copied from; untargeted. An act that changed no service
+   * writes no row: planning one is a programmer defect.
+   */
+  planTeamOfferings(
+    barberId: BarberId,
+    serviceIds: readonly ServiceId[],
+    copiedFromBarberId: BarberId | null,
+    actor: Actor,
+    recordedAtUtcMs: UtcEpochMs,
+    operationId: OperationId,
+  ): AuditRowPlan {
+    if (serviceIds.length === 0) {
+      return defect('an offerings act that changed no service writes no row');
+    }
+    const action = AuditAction.TeamBarberOfferingsChanged;
+    const resourceId = AuditResourceId.forBarber(barberId);
+    return {
+      row: {
+        recordedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.teamOfferings(serviceIds, copiedFromBarberId),
         ...AuditTargetRef.none(),
       },
       idBasis: rowBasis(

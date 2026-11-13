@@ -66,6 +66,7 @@ const seam = vi.hoisted(() => {
     'runBackfill',
     'sampleLeadTime',
     'setAnalyticsGoal',
+    'setBarberOfferings',
     'setRoles',
     'setRosterWeek',
     'staffAnalytics',
@@ -325,6 +326,7 @@ const ENDPOINTS = {
   setAnalyticsGoal: tracedCallable,
   addBarber: tracedCallable,
   editBarber: tracedCallable,
+  setBarberOfferings: tracedCallable,
   activateBarber: tracedCallable,
   deleteDraftBarber: tracedCallable,
   clearArrival: tracedCallable,
@@ -986,6 +988,66 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },
   },
+  setBarberOfferings: {
+    pipeline: 'setBarberOfferings',
+    input: request(
+      {
+        barberId: 'b-1',
+        offeringsEdit: 'SET',
+        offerings: [
+          {
+            serviceId: 'svc-cut',
+            priceCents: 2800,
+            currency: 'EUR',
+            durationMinutes: 30,
+            setupMinutes: 0,
+            cleanupMinutes: 5,
+            overrides: [
+              {
+                variantId: 'long',
+                priceCents: 3200,
+                currency: 'EUR',
+                durationMinutes: 45,
+                setupMinutes: 0,
+                cleanupMinutes: 5,
+              },
+            ],
+          },
+        ],
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      barberId: 'b-1',
+      operationId: 'operation-0123456789ab',
+      offeringsEdit: 'SET',
+      offerings: [
+        {
+          serviceId: 'svc-cut',
+          overrides: [
+            {
+              variantId: 'long',
+              priceCents: 3200,
+              currency: 'EUR',
+              durationMinutes: 45,
+              setupMinutes: 0,
+              cleanupMinutes: 5,
+            },
+          ],
+          priceCents: 2800,
+          currency: 'EUR',
+          durationMinutes: 30,
+          setupMinutes: 0,
+          cleanupMinutes: 5,
+        },
+      ],
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
+  },
   activateBarber: {
     pipeline: 'activateBarber',
     // Any staff token may ask: the step decides nothing a caller chooses.
@@ -1486,7 +1548,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 62 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, and team onboarding’s four barber-record callables', () => {
+  it('exports exactly the 63 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, and team onboarding’s four barber-record callables and its offerings save', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1532,7 +1594,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(62);
+    expect(FLIPPED_EXPORTS).toHaveLength(63);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

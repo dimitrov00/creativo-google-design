@@ -40,7 +40,8 @@ import type { PipelineError } from '@core/errors';
  * or the admin reads (`docs/designs/staff-analytics.md`), and v2 PR 6
  * `setAnalyticsGoal`, a scope's month goal; team onboarding adds the barber
  * record's four — `addBarber`, `editBarber`, `activateBarber` and
- * `deleteDraftBarber` (`docs/designs/team-onboarding.md`, D5, D9, D10).
+ * `deleteDraftBarber` — and `setBarberOfferings`, a barber's services and
+ * prices (`docs/designs/team-onboarding.md`, D5, D6, D9, D10).
  * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
@@ -76,6 +77,7 @@ export const Callables = {
   EditBarber: 'editBarber',
   ActivateBarber: 'activateBarber',
   DeleteDraftBarber: 'deleteDraftBarber',
+  SetBarberOfferings: 'setBarberOfferings',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -266,6 +268,14 @@ export type CallableWire = {
     readonly input: TeamCall.Named;
     readonly answer: TeamCall.Saved;
   };
+  /**
+   * A barber's services and prices, as one act: the editor's complete list,
+   * or a colleague's terms copied (team onboarding D5, D6).
+   */
+  readonly [Callables.SetBarberOfferings]: {
+    readonly input: TeamCall.Offerings;
+    readonly answer: TeamCall.Saved;
+  };
 };
 
 /**
@@ -323,6 +333,7 @@ export const OPERATION_ID_FIELD: {
   [Callables.EditBarber]: 'operationId',
   [Callables.ActivateBarber]: 'operationId',
   [Callables.DeleteDraftBarber]: 'operationId',
+  [Callables.SetBarberOfferings]: 'operationId',
 };
 
 /**
@@ -372,6 +383,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.EditBarber]: AppCheckTokenUse.Standard,
   [Callables.ActivateBarber]: AppCheckTokenUse.Standard,
   [Callables.DeleteDraftBarber]: AppCheckTokenUse.Standard,
+  [Callables.SetBarberOfferings]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -441,4 +453,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.EditBarber]: TeamCall.decodeSaved,
   [Callables.ActivateBarber]: TeamCall.decodeActivation,
   [Callables.DeleteDraftBarber]: TeamCall.decodeSaved,
+  [Callables.SetBarberOfferings]: TeamCall.decodeSaved,
 };

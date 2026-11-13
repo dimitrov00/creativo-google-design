@@ -124,7 +124,7 @@ export const noPhone: unknown = shop.phone;
 // @ts-expect-error — the zone is `timeZone: TimeZone` (Law 7), never `zone`
 export const noShopZone: unknown = shop.zone;
 
-/* ── Service = Meta & ServiceTerms & ServiceComposition & ServiceCover ── */
+/* ── Service = Meta & ServiceTerms & ServiceComposition & ServiceCover & WriteProvenance ── */
 
 export const serviceNotNever: IsNever<Service> = false;
 export const serviceFlat: EveryVariantFlat<Service> = true;
@@ -135,7 +135,8 @@ export const serviceDisjoint: [
   Disjoint<ServiceTerms, ServiceComposition>,
   Disjoint<ServiceTerms, ServiceCover>,
   Disjoint<ServiceComposition, ServiceCover>,
-] = [true, true, true, true, true, true];
+  Disjoint<ServiceMeta, WriteProvenance>,
+] = [true, true, true, true, true, true, true];
 
 declare const service: Service;
 // The terms sit at the root — no `baseTerms` wrapper is left (Law 6.1).
@@ -146,6 +147,7 @@ export const serviceRoot: readonly unknown[] = [
   service.setupMinutes,
   service.cleanupMinutes,
   service.serviceStatus === ServiceStatus.Active,
+  service.writeOperationId,
 ];
 // The composition narrows on its own discriminator.
 export const bundleParts: unknown =

@@ -147,6 +147,7 @@ function serviceFromVm(vm: AuthoredService): Service {
     serviceStatus: ServiceStatus.Active,
     sortOrder: 0,
     ...coverOf(vm),
+    writeOperationId: null,
   };
 }
 

@@ -301,6 +301,7 @@ export function serviceFixture(overrides: Partial<Service> = {}): Service {
     coverMediaBlurhash: null,
     coverMediaFocalX: null,
     coverMediaFocalY: null,
+    writeOperationId: null,
     ...overrides,
   } as Service;
 }

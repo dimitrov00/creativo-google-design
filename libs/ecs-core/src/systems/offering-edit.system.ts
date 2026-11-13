@@ -1,24 +1,42 @@
 import {
+  type Actor,
   BarberOffering,
   type ServiceTerms,
   type VariantTerms,
+  WriteOp,
+  WriteProvenance,
 } from '@core/components';
-import { type BarberId, Result, type ServiceId } from '@core/primitives';
+import {
+  type BarberId,
+  type OperationId,
+  Result,
+  type ServiceId,
+  type UtcEpochMs,
+} from '@core/primitives';
 import { TeamError } from '@core/errors';
-import type { Service } from '@core/entities';
+import { Collections, type Service } from '@core/entities';
+import { AuditSystem } from './audit.system';
 import { OfferingPriceSystem } from './offering-price.system';
-
-/** One service a barber performs, at the terms the editor typed. */
-export type OfferingEntry = {
-  readonly serviceId: ServiceId;
-  /** The offering as authored; its `barberId` is the barber being edited. */
-  readonly offering: BarberOffering.Input;
-};
 
 /** A service whose `offerings` change, and the list to write. */
 export type OfferingChange = {
   readonly serviceId: ServiceId;
   readonly offerings: readonly BarberOffering[];
+};
+
+/**
+ * One offerings act on a barber, as its pipeline decided it: whose list,
+ * the per-service changes, the colleague copied from (`null` for a typed
+ * list), who did it and the act's name.
+ */
+export type OfferingsWrite = {
+  readonly barberId: BarberId;
+  readonly changes: readonly OfferingChange[];
+  readonly copiedFromBarberId: BarberId | null;
+  /** The caller, credited over their STORED roles (`Actor.forCaller`). */
+  readonly actor: Actor;
+  readonly nowUtcMs: UtcEpochMs;
+  readonly operationId: OperationId;
 };
 
 function sameTerms(a: ServiceTerms, b: ServiceTerms): boolean {
@@ -79,27 +97,25 @@ function withOffering(
 export const OfferingEditSystem = {
   /**
    * The changes that make `entries` the COMPLETE list of what `barberId`
-   * performs: each named service gains or replaces their offering (parsed
-   * by the catalogue's own guard, `BarberOffering.parse`, against the
-   * service's variants and currency), and every other service loses it.
+   * performs: each named service gains or replaces their offering (the
+   * entry's terms under this barber, parsed by the catalogue's own guard,
+   * `BarberOffering.parse`, against the service's variants and currency),
+   * and every other service loses it.
    *
-   * Refused: a service named twice, an offering authored for another
-   * barber or one the guard rejects (`TEAM_INVALID_INPUT`, field
-   * `offerings`), a price in another currency than the service's (field
-   * `currency`), an id that is no service (`TEAM_SERVICE_UNKNOWN`).
+   * Refused: a service named twice or terms the guard rejects
+   * (`TEAM_INVALID_INPUT`, field `offerings`), a price in another currency
+   * than the service's (field `currency`), an id that is no service
+   * (`TEAM_SERVICE_UNKNOWN`).
    */
   plan(
     services: readonly Service[],
     barberId: BarberId,
-    entries: readonly OfferingEntry[],
+    entries: readonly BarberOffering.Entry[],
   ): Result<readonly OfferingChange[], TeamError> {
-    const byService = new Map<ServiceId, OfferingEntry>();
+    const byService = new Map<ServiceId, BarberOffering.Entry>();
     for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i] as OfferingEntry;
-      if (
-        byService.has(entry.serviceId) ||
-        entry.offering.barberId !== barberId
-      ) {
+      const entry = entries[i] as BarberOffering.Entry;
+      if (byService.has(entry.serviceId)) {
         return Result.err(TeamError.invalidInput('offerings'));
       }
       byService.set(entry.serviceId, entry);
@@ -120,7 +136,11 @@ export const OfferingEditSystem = {
         continue;
       }
       matched++;
-      const parsed = BarberOffering.parse(entry.offering, service.variants);
+      // The guard reads the terms and overrides by name; the barber is the call's.
+      const parsed = BarberOffering.parse(
+        { ...entry, barberId },
+        service.variants,
+      );
       if (!parsed.ok) return Result.err(TeamError.invalidInput('offerings'));
       if (BarberOffering.mixedCurrency(service, [parsed.value]) !== null) {
         return Result.err(TeamError.invalidInput('currency'));
@@ -173,5 +193,50 @@ export const OfferingEditSystem = {
       });
     }
     return changes;
+  },
+
+  /**
+   * The write plan of one offerings act (team onboarding D12): each changed
+   * service's `offerings` updated at the root, stamped with the act
+   * (`writeOperationId` — the governed trigger reads the stamp as "audited
+   * in its own commit"), and ONE `TEAM_BARBER_OFFERINGS_CHANGED` row on the
+   * barber under `hash(idBasis)`, which lands with the writes or not at
+   * all. An act that changes no service plans NOTHING — a save of what is
+   * already there, and the replay of an act that landed.
+   */
+  writesOf(
+    write: OfferingsWrite,
+    hash: (input: string) => string,
+  ): readonly WriteOp[] {
+    const { changes } = write;
+    if (changes.length === 0) return [];
+    const writes: WriteOp[] = [];
+    const serviceIds: ServiceId[] = [];
+    for (let i = 0; i < changes.length; i++) {
+      const change = changes[i] as OfferingChange;
+      serviceIds.push(change.serviceId);
+      writes.push(
+        WriteOp.update([Collections.Services, change.serviceId], {
+          offerings: change.offerings,
+          ...WriteProvenance.of(write.operationId),
+        }),
+      );
+    }
+    writes.push(
+      ...AuditSystem.createsOf(
+        [
+          AuditSystem.planTeamOfferings(
+            write.barberId,
+            serviceIds,
+            write.copiedFromBarberId,
+            write.actor,
+            write.nowUtcMs,
+            write.operationId,
+          ),
+        ],
+        hash,
+      ),
+    );
+    return writes;
   },
 } as const;

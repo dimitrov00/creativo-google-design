@@ -5,6 +5,7 @@ import type {
   ServiceComposition,
   ServiceTerms,
   ServiceVariant,
+  WriteProvenance,
 } from '@core/components';
 import {
   type LocationId,
@@ -64,9 +65,13 @@ export type ServiceCover = {
  * `baseTerms` wrapper is gone); the composition is the flat
  * `compositionKind` (+ `bundleServiceIds`) slice. Until the booking-core
  * flip the stored body kept its legacy `status`, `cover` and
- * `composition`, which the legacy shims converted.
+ * `composition`, which the legacy shims converted. The last writing call
+ * (`writeOperationId`, team onboarding D12) sits beside them: the team's
+ * offerings editor stamps it, so the governed trigger knows the write was
+ * audited in its own commit; `null` for the seed and the console.
  */
 export type Service = ServiceMeta &
   ServiceTerms &
   ServiceComposition &
-  ServiceCover;
+  ServiceCover &
+  WriteProvenance;
