@@ -1051,9 +1051,29 @@ editors"); its server half is merged.
   - The schedule's chart button is now hidden from a session that reads no
     analytics. It used to be shown to everyone, and led the front desk to the
     forbidden page.
-- **Still to build in this stage.** The hours and block entry points on a
-  colleague's lane; the Team page, its editors and the add sheet; «Права»;
-  the «Това съм аз» door; the end-to-end exit tests.
+- **Built so far: the schedule's gates.** `ScheduleAccess` (beside the
+  schedule page) asks the service what each entry point needs: `TIME_OFF`
+  for blocked time and a day's own breaks, `HOURS` for a chair's weekly
+  hours and its roster breaks.
+  - The ＋ offers «Блокирай време» and «Работно време» only to someone who
+    may do them on some chair; a slot or a free-time row asks for its own
+    chair. From the ＋, and from a date's all-day band, a block lands on a
+    chair the person may block.
+  - The hours sheet and the block editor list only the chairs the person
+    may change.
+  - A colleague's block and break open nothing and lift nothing. The grid
+    draws them as unavailable and keeps them named for a reader; the list's
+    row loses its press and its focus stop; the all-day band and a day-off
+    chip on a colleague's chair are pictures.
+  - A break's question offers only what the person may do: «Само този ден»
+    is `TIME_OFF`, «Този и следващите» is `HOURS`.
+  - The visit sheet's «Откажи и блокирай времето» is offered only where the
+    chair's time is the person's to block.
+  - Left as it is: «Без край» on the block sheet writes a weekly break, so
+    it asks `HOURS`. Someone with `TIME_OFF` alone still sees the choice
+    and gets the server's worded refusal on save.
+- **Still to build in this stage.** The Team page, its editors and the add
+  sheet; «Права»; the «Това съм аз» door; the end-to-end exit tests.
 
 ### Stage B. The booking calls
 
