@@ -117,6 +117,21 @@ export const StaffAccessSystem = {
   },
 
   /**
+   * Whether a reach covers ONE barber record — what the web shows an entry
+   * point by (P8): everyone covers every record, own covers the caller's
+   * and nothing else, nobody covers none. The same arms as `admit`'s for a
+   * single named barber, without the account: a screen asks before the
+   * person acts, and the server asks again when they do.
+   */
+  reaches(access: StaffAccess, barberId: BarberId): boolean {
+    if (access.accessScope === AccessScope.All) return true;
+    return (
+      access.accessScope === AccessScope.Own &&
+      access.linkedBarberId === barberId
+    );
+  },
+
+  /**
    * THE DECISION (P6) — the stored account, when it may make an act of
    * `staffCapability` on `staffTarget`:
    *

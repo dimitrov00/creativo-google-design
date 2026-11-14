@@ -20,6 +20,7 @@ import {
   SessionKind,
   TenantConfig,
   type VoucherCode,
+  StaffPermissions,
 } from '@core/components';
 import {
   BusyKey,
@@ -122,6 +123,7 @@ import type {
   ProgramsPorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  StaffPermissionsStreamPorts,
   ShopEventReadPorts,
   ShopEventWritePorts,
   StoredFile,
@@ -250,6 +252,17 @@ export function memorySchedulingReadPorts(
           null,
       ),
   };
+}
+
+/**
+ * `STAFF_PERMISSIONS_PORTS` — the owner's cells, live: one answer, the
+ * cells given (every default when omitted). A spec that changes the cells
+ * mid-session drives a stream of its own.
+ */
+export function memoryStaffPermissionsStreamPorts(
+  permissions: StaffPermissions = StaffPermissions.UNSET,
+): StaffPermissionsStreamPorts {
+  return { observeStaffPermissions: () => stream(() => permissions) };
 }
 
 /**

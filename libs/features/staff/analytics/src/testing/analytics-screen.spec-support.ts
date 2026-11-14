@@ -15,8 +15,10 @@ import {
   type AnalyticsCall,
   AnalyticsSpan,
   GoalPaceTag,
+  Principal,
   Role,
   type SetAnalyticsGoalCall,
+  StaffPermissions,
 } from '@core/components';
 import { PipelineError } from '@core/errors';
 import type { Barber, ShopLocation } from '@core/entities';
@@ -25,8 +27,10 @@ import {
   AnalyticsGoalKey,
   type BarberId,
   Result,
+  type StaffCapability,
   UserId,
 } from '@core/primitives';
+import { StaffAccessSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -42,6 +46,7 @@ import {
   CLOCK_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
+import { StaffAccessService } from '@creativo/features/client/account-state';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import {
   CatalogContentService,
@@ -199,6 +204,20 @@ export async function renderAnalyticsScreen<T>(
           principal,
           userId: computed(() => principal().userId),
           linkedBarberId: signal(IVAN),
+        },
+      },
+      {
+        // The owner's cells on the standard, asked with the session's roles.
+        provide: StaffAccessService,
+        useValue: {
+          scopeOf: (staffCapability: StaffCapability) => {
+            const held = principal();
+            return StaffAccessSystem.scopeOf(
+              StaffPermissions.UNSET,
+              staffCapability,
+              Principal.isActive(held) ? held.roles : [],
+            );
+          },
         },
       },
       {

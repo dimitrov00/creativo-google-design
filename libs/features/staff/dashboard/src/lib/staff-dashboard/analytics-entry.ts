@@ -1,9 +1,12 @@
+import { Injectable, computed, effect, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import {
-  type Principal as PrincipalType,
-  Principal,
-  Roles,
-} from '@core/components';
-import type { BarberId, LocalDate } from '@core/primitives';
+  AccessScope,
+  type BarberId,
+  type LocalDate,
+  StaffCapability,
+} from '@core/primitives';
+import { StaffAccessService } from '@creativo/features/client/account-state';
 
 /** The query the chart button opens «Анализи» with. */
 export type AnalyticsEntryQuery = {
@@ -17,14 +20,16 @@ export type AnalyticsEntryQuery = {
  * schedule», PR 1; the `DAY` span since PR 3): the day on screen, and whose
  * figures:
  *
- * - an admin (`Roles.ANALYTICS_SHOP`) viewing ONE chair opens that barber's;
- * - an admin viewing every chair opens the shop's (no `barber`);
- * - a barber opens their own, whatever chair the book shows: the callable
- *   reads their record off the stored user, and a colleague's id in the
- *   query would be refused `ACCESS_OWN_ONLY`.
+ * - a reader of the shop's (the `ANALYTICS` capability at "everyone": the
+ *   admin, and any level the owner has given it) viewing ONE chair opens
+ *   that barber's;
+ * - the same reader viewing every chair opens the shop's (no `barber`);
+ * - a reader of their own opens their own, whatever chair the book shows:
+ *   the callable reads their record off the stored user, and a colleague's
+ *   id in the query would be refused `ACCESS_OWN_ONLY`.
  *
- * `principal` is the settled one the route guard resolved; `undefined`
- * (not yet known) reads as a barber, the narrower choice.
+ * `readsShop` is `StaffAccessService`'s answer; while the cells have not
+ * answered it is `false`, the narrower choice.
  */
 /**
  * «Анализи» FETCHED while the book is idle, so the chart button's navigation
@@ -48,14 +53,53 @@ export function prefetchAnalytics(): void {
 }
 
 export function analyticsEntryQueryOf(
-  principal: PrincipalType | undefined,
+  readsShop: boolean,
   scope: BarberId | null,
   day: LocalDate,
 ): AnalyticsEntryQuery {
-  const readsShop =
-    principal !== undefined &&
-    Principal.hasAnyRole(principal, Roles.ANALYTICS_SHOP);
   return readsShop && scope !== null
     ? { span: 'DAY', from: day, barber: scope }
     : { span: 'DAY', from: day };
+}
+
+/**
+ * THE SCHEDULE'S CHART BUTTON (staff permissions P8): whether it is there,
+ * and where it leads. It follows the `ANALYTICS` capability, as the route's
+ * gate and the callable do: nobody hides it, everyone opens the chair on
+ * screen, own opens the person's own. The page's chunk is fetched ahead
+ * once the person is known to read analytics, and never for a session the
+ * button is hidden from.
+ */
+@Injectable()
+export class AnalyticsEntry {
+  private readonly access = inject(StaffAccessService);
+  private readonly router = inject(Router);
+
+  private readonly scope = computed(() =>
+    this.access.scopeOf(StaffCapability.Analytics),
+  );
+
+  /** The person reads some analytics: the chart button is there. */
+  readonly reads = computed(() => this.scope() !== AccessScope.None);
+
+  private prefetched = false;
+
+  constructor() {
+    effect(() => {
+      if (this.prefetched || !this.reads()) return;
+      this.prefetched = true;
+      prefetchAnalytics();
+    });
+  }
+
+  /** Opens «Анализи» on `day`, for the chair the book shows (`chair`: every chair when `null`). */
+  open(chair: BarberId | null, day: LocalDate): void {
+    void this.router.navigate(['/staff/analytics'], {
+      queryParams: analyticsEntryQueryOf(
+        this.scope() === AccessScope.All,
+        chair,
+        day,
+      ),
+    });
+  }
 }

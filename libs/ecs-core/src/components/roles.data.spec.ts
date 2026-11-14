@@ -90,29 +90,6 @@ describe('Roles.ASSIGN / Roles.ASSIGNABLE — the roles change’s grant and its
   });
 });
 
-describe('Roles.ANALYTICS_* — who reads staff analytics', () => {
-  it('lets a barber read their own and the admin read the shop, and never the sysadmin', () => {
-    expect(Roles.ANALYTICS_SELF).toEqual(['barber']);
-    expect(Roles.ANALYTICS_SHOP).toEqual(['admin']);
-    expect(Roles.ANALYTICS_SHOP).not.toContain(Role.Sysadmin);
-  });
-
-  it('opens analytics for a barber or an admin, and for no other role set (claims-tolerant)', () => {
-    expect(Roles.readsAnalytics([Role.Barber])).toBe(true);
-    expect(Roles.readsAnalytics([Role.Admin])).toBe(true);
-    expect(Roles.readsAnalytics([Role.Barber, Role.Admin])).toBe(true);
-    for (const role of [
-      Role.Client,
-      Role.Receptionist,
-      Role.ContentManager,
-      Role.Sysadmin,
-    ]) {
-      expect(Roles.readsAnalytics([role])).toBe(false);
-    }
-    expect(Roles.readsAnalytics(['not-a-role'])).toBe(false);
-  });
-});
-
 describe('Roles.assignsRoles (claims-tolerant)', () => {
   it('admits the admin, alone or beside another role', () => {
     expect(Roles.assignsRoles([Role.Admin])).toBe(true);

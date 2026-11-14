@@ -8,9 +8,10 @@ import {
   type AnalyticsReport,
   AnalyticsComparison,
   AnalyticsSpan,
-  type Principal,
+  Principal,
   Role,
   SetAnalyticsGoalCall,
+  StaffPermissions,
 } from '@core/components';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import type { AnalyticsCallPorts } from '@core/ports';
@@ -20,9 +21,11 @@ import {
   LocalDate,
   type PriceCents,
   Result,
+  type StaffCapability,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { StaffAccessSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -38,6 +41,7 @@ import {
   CLOCK_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
+import { StaffAccessService } from '@creativo/features/client/account-state';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import {
   CatalogContentService,
@@ -157,6 +161,20 @@ function build(options: {
             return 'userId' in held ? held.userId : null;
           }),
           linkedBarberId: linked,
+        },
+      },
+      {
+        // The owner's cells on the standard, asked with the session's roles.
+        provide: StaffAccessService,
+        useValue: {
+          scopeOf: (staffCapability: StaffCapability) => {
+            const held = principal();
+            return StaffAccessSystem.scopeOf(
+              StaffPermissions.UNSET,
+              staffCapability,
+              Principal.isActive(held) ? held.roles : [],
+            );
+          },
         },
       },
       {

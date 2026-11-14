@@ -270,6 +270,72 @@ describe('StaffAccessSystem.accessOf — the scope and the record that is one’
   });
 });
 
+describe('StaffAccessSystem.reaches — whether a reach covers one record (P8)', () => {
+  it('everyone covers every record, own covers the caller’s alone, nobody covers none', () => {
+    const everyone = { accessScope: All, linkedBarberId: null };
+    expect(StaffAccessSystem.reaches(everyone, IVAN)).toBe(true);
+    expect(StaffAccessSystem.reaches(everyone, NIKO)).toBe(true);
+
+    const own = { accessScope: Own, linkedBarberId: IVAN };
+    expect(StaffAccessSystem.reaches(own, IVAN)).toBe(true);
+    expect(StaffAccessSystem.reaches(own, NIKO)).toBe(false);
+    // Own with no record of one's own reaches nobody.
+    expect(
+      StaffAccessSystem.reaches(
+        { accessScope: Own, linkedBarberId: null },
+        IVAN,
+      ),
+    ).toBe(false);
+
+    // Nobody, even on the caller's own record.
+    expect(
+      StaffAccessSystem.reaches(
+        { accessScope: None, linkedBarberId: IVAN },
+        IVAN,
+      ),
+    ).toBe(false);
+  });
+
+  it('agrees with the decision for a single named barber, on every level and capability', () => {
+    const callers = [barber(), barber(NIKO), barber(null), desk, editor, admin];
+    const stored = [
+      DEFAULTS,
+      cells({ barberHoursScope: All, receptionistHoursScope: None }),
+      cells({
+        barberTimeOffScope: None,
+        contentManagerTeamProfilesScope: None,
+      }),
+    ];
+    for (const permissions of stored) {
+      for (const caller of callers) {
+        for (const staffCapability of StaffPermissions.CAPABILITIES) {
+          for (const target of [IVAN, NIKO]) {
+            expect(
+              StaffAccessSystem.reaches(
+                StaffAccessSystem.accessOf(
+                  permissions,
+                  staffCapability,
+                  caller,
+                ),
+                target,
+              ),
+              `${caller.roles.join('+')} ${staffCapability} ${target}`,
+            ).toBe(
+              StaffAccessSystem.admit({
+                staffCapability,
+                staffTarget: StaffTarget.barbers([target]),
+                caller,
+                permissions,
+                nowUtcMs: NOW,
+              }).ok,
+            );
+          }
+        }
+      }
+    }
+  });
+});
+
 describe('StaffAccessSystem.admit — the decision table (P6)', () => {
   it('a missing, blocked or erased account, or one with no staff role, is ACCESS_NOT_STAFF — before the capability is asked', () => {
     const blocked = userFixture({

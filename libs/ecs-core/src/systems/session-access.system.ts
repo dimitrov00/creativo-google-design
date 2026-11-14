@@ -4,12 +4,15 @@ import {
   AccessVerdict,
   Principal,
   PrincipalKind,
+  type RouteCapability,
   RouteGate,
   type RouteGateRule,
   SessionReadiness,
   type SessionReadinessState,
 } from '@core/components';
+import { AccessScope } from '@core/primitives';
 import type { PrincipalTag } from './guest-guard.system';
+import { StaffAccessSystem } from './staff-access.system';
 
 /**
  * SessionAccessSystem — who may enter which route, and when a session is
@@ -87,10 +90,33 @@ export const SessionAccessSystem = {
         return gate.standalone && Principal.isActive(principal)
           ? redirect(AccessTarget.Account, false)
           : ALLOW;
-      default:
+      case RouteGate.Roles:
         return Principal.hasAnyRole(principal, gate.roles)
           ? ALLOW
           : redirect(AccessTarget.Forbidden, false);
+      default: {
+        // The owner's permissions decide (staff permissions P8): the route
+        // opens when the account's levels reach far enough for any one of
+        // its capabilities. A principal that is not active holds nothing.
+        if (!Principal.isActive(principal)) {
+          return redirect(AccessTarget.Forbidden, false);
+        }
+        for (let i = 0; i < gate.routeCapabilities.length; i++) {
+          const need = gate.routeCapabilities[i] as RouteCapability;
+          const scope = StaffAccessSystem.scopeOf(
+            gate.permissions,
+            need.staffCapability,
+            gate.storedRoles,
+          );
+          if (
+            scope === AccessScope.All ||
+            (scope === AccessScope.Own && need.accessScope === AccessScope.Own)
+          ) {
+            return ALLOW;
+          }
+        }
+        return redirect(AccessTarget.Forbidden, false);
+      }
     }
   },
 } as const;

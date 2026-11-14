@@ -7,11 +7,18 @@ import {
   type Principal,
   Principal as P,
   Role,
+  type RouteCapability,
   RouteGate,
   SessionReadiness,
   type SessionReadinessState,
+  StaffPermissions,
 } from '@core/components';
-import { TenantId, UserId } from '@core/primitives';
+import {
+  AccessScope,
+  StaffCapability,
+  TenantId,
+  UserId,
+} from '@core/primitives';
 import { deepFreeze, unwrapOk } from '@core/testing';
 import {
   REFRESH_BACKOFF_MS,
@@ -188,6 +195,122 @@ describe('SessionAccessSystem.decide (apps/web/src/app/guards/*)', () => {
   });
 });
 
+describe('SessionAccessSystem.decide — the capability gate (staff permissions P8)', () => {
+  const FORBIDDEN = {
+    accessVerdict: AccessVerdict.Redirect,
+    to: AccessTarget.Forbidden,
+    keepReturnUrl: false,
+  };
+  const analyticsOwn: RouteCapability = {
+    staffCapability: StaffCapability.Analytics,
+    accessScope: AccessScope.Own,
+  };
+  const analyticsAll: RouteCapability = {
+    staffCapability: StaffCapability.Analytics,
+    accessScope: AccessScope.All,
+  };
+  const gate = (
+    storedRoles: readonly Role[],
+    routeCapabilities: readonly RouteCapability[],
+    stored: Record<string, unknown> = {},
+  ) =>
+    ({
+      routeGate: RouteGate.Capability,
+      routeCapabilities,
+      storedRoles,
+      permissions: StaffPermissions.read(stored),
+    }) as const;
+  const verdict = (
+    storedRoles: readonly Role[],
+    routeCapabilities: readonly RouteCapability[],
+    stored: Record<string, unknown> = {},
+  ) =>
+    SessionAccessSystem.decide(
+      staff,
+      gate(storedRoles, routeCapabilities, stored),
+    ).accessVerdict;
+
+  it('opens on the standard: a barber reaches their own analytics, the admin everyone’s, nobody else any', () => {
+    expect(verdict([Role.Barber], [analyticsOwn])).toBe(AccessVerdict.Allow);
+    expect(verdict([Role.Admin], [analyticsOwn])).toBe(AccessVerdict.Allow);
+    for (const role of [
+      Role.Receptionist,
+      Role.ContentManager,
+      Role.Sysadmin,
+      Role.Client,
+    ]) {
+      expect(
+        SessionAccessSystem.decide(staff, gate([role], [analyticsOwn])),
+        role,
+      ).toEqual(FORBIDDEN);
+    }
+  });
+
+  it('a route that shows everyone’s needs everyone: own is not enough', () => {
+    expect(
+      SessionAccessSystem.decide(staff, gate([Role.Barber], [analyticsAll])),
+    ).toEqual(FORBIDDEN);
+    expect(verdict([Role.Admin], [analyticsAll])).toBe(AccessVerdict.Allow);
+    expect(
+      verdict([Role.Barber], [analyticsAll], { barberAnalyticsScope: 'ALL' }),
+    ).toBe(AccessVerdict.Allow);
+  });
+
+  it('follows the owner’s cells: a narrowed level is turned away, a widened one let in', () => {
+    expect(
+      SessionAccessSystem.decide(
+        staff,
+        gate([Role.Barber], [analyticsOwn], { barberAnalyticsScope: 'NONE' }),
+      ),
+    ).toEqual(FORBIDDEN);
+    expect(
+      verdict([Role.Receptionist], [analyticsOwn], {
+        receptionistAnalyticsScope: 'ALL',
+      }),
+    ).toBe(AccessVerdict.Allow);
+    // The owner is never turned away, whatever is stored.
+    expect(
+      verdict([Role.Admin], [analyticsAll], { barberAnalyticsScope: 'NONE' }),
+    ).toBe(AccessVerdict.Allow);
+  });
+
+  it('any one capability of the route opens it; none listed opens nothing', () => {
+    const profilesAll: RouteCapability = {
+      staffCapability: StaffCapability.TeamProfiles,
+      accessScope: AccessScope.All,
+    };
+    const manage: RouteCapability = {
+      staffCapability: StaffCapability.TeamManage,
+      accessScope: AccessScope.All,
+    };
+    // A content editor edits every profile and does not manage the team.
+    expect(verdict([Role.ContentManager], [manage, profilesAll])).toBe(
+      AccessVerdict.Allow,
+    );
+    expect(
+      SessionAccessSystem.decide(staff, gate([Role.ContentManager], [manage])),
+    ).toEqual(FORBIDDEN);
+    expect(SessionAccessSystem.decide(staff, gate([Role.Admin], []))).toEqual(
+      FORBIDDEN,
+    );
+  });
+
+  it('reads the STORED roles it is handed, not the token’s — and turns away a principal that is not active', () => {
+    // The token still says barber + admin; the stored account is a client's.
+    expect(
+      SessionAccessSystem.decide(staff, gate([Role.Client], [analyticsOwn])),
+    ).toEqual(FORBIDDEN);
+    for (const principal of [anonymous, onboarding]) {
+      expect(
+        SessionAccessSystem.decide(
+          principal,
+          gate([Role.Admin], [analyticsOwn]),
+        ),
+      ).toEqual(FORBIDDEN);
+    }
+  });
+});
+
 describe('SessionAccessSystem properties', () => {
   it('never refreshes more often than the schedule, and only ever settles on an active principal after a refresh', () => {
     fc.assert(
@@ -220,8 +343,20 @@ describe('SessionAccessSystem purity', () => {
       routeGate: RouteGate.Roles,
       roles: [Role.Admin],
     } as const);
+    const capability = deepFreeze({
+      routeGate: RouteGate.Capability,
+      routeCapabilities: [
+        {
+          staffCapability: StaffCapability.Analytics,
+          accessScope: AccessScope.Own,
+        },
+      ],
+      storedRoles: [Role.Barber],
+      permissions: StaffPermissions.read({ barberAnalyticsScope: 'ALL' }),
+    } as const);
     const run = () => ({
       decision: SessionAccessSystem.decide(principal, gate),
+      capability: SessionAccessSystem.decide(principal, capability),
       readiness: SessionAccessSystem.readiness(principal, 2),
     });
     expect(run()).toEqual(run());

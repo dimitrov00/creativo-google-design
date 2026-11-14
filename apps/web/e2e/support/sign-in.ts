@@ -36,10 +36,14 @@ export async function mintActiveToken(
  * custom token minted against the Auth emulator, handed to the dev build's
  * `window.__e2eSignIn` hook (`E2eSignInHookService`).
  *
- * The roles travel as token claims only, which is what the route guards,
- * `firestore.rules` and today's callables read. Seed `users/{uid}` as well
- * when a flow reads the stored profile, and once F3 lands the stored roles
- * too, which then win over the token (design §12.6.3).
+ * The roles travel as token claims only, which is what `activeGuard`,
+ * `rolesGuard`, `firestore.rules` and a callable's wire gate read. Seed
+ * `users/{uid}` as well when a flow reads the stored profile — and with its
+ * STORED roles when the flow goes through a capability gate or a callable
+ * the owner's permissions decide (staff permissions P6, P8): both judge the
+ * stored account, so one whose stored roles are `[client]` is turned away
+ * there whatever the token says. An account with no document is judged by
+ * the token on the web and refused by the callable.
  *
  * The role list is non-empty by type: `AuthClaims.fromToken` treats an
  * empty list as an onboarding session, which is never what a spec means.

@@ -1025,6 +1025,35 @@ editors"); its server half is merged.
   and sees their own lane; a content manager reaches a barber's profile
   from the Team list and sees no accounts.
 - **Leaves.** Rows for B's and C's capabilities.
+- **Built so far: the access service and the route gate.**
+  `StaffAccessService` (beside `AccountStateService`) holds the session's
+  one live copy of the cells (`STAFF_PERMISSIONS_PORTS`, one bundle, one
+  token) and answers `scopeOf`, `accessOf` and `mayFor`. The route gate is
+  `RouteGate.Capability`, decided by `SessionAccessSystem`; `capabilityGuard`
+  waits for the stored account and the cells. The analytics routes, the
+  menu's row, the schedule's chart button and the scope picker follow the
+  `ANALYTICS` capability, and `ANALYTICS_SELF`, `ANALYTICS_SHOP` and
+  `Roles.readsAnalytics` are deleted. Where it differs from P8:
+  - `mayFor` asks a new pure rule, `StaffAccessSystem.reaches`, not
+    `admit`: a screen asks before the account has loaded and has no clock
+    to read a block by. A spec holds the two to the same answer for every
+    level, capability and barber.
+  - Nothing is granted on a half-read session. Until the account and the
+    cells have answered, every reach is nobody, so an entry point appears
+    only once the decision behind it is final; P8 read the token until the
+    account loaded. A tap must never start a navigation its gate has to
+    wait on: the page being left syncs its own URL meanwhile, which cancels
+    the pending navigation. The end-to-end suite caught exactly that on the
+    schedule's chart button.
+  - The owner needs no cells. The admin's everything is answered before a
+    cell is read (P4), so an admin's session is settled once the account
+    has answered. When the cells cannot be read, every cell is nobody.
+  - The schedule's chart button is now hidden from a session that reads no
+    analytics. It used to be shown to everyone, and led the front desk to the
+    forbidden page.
+- **Still to build in this stage.** The hours and block entry points on a
+  colleague's lane; the Team page, its editors and the add sheet; «Права»;
+  the «Това съм аз» door; the end-to-end exit tests.
 
 ### Stage B. The booking calls
 

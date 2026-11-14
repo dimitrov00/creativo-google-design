@@ -1,24 +1,43 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
-import { type Principal, Role } from '@core/components';
-import { UserId } from '@core/primitives';
+import { type Principal, Role, StaffPermissions } from '@core/components';
+import type { User } from '@core/entities';
+import { RepositoryError } from '@core/errors';
+import type { StaffPermissionsStreamPorts } from '@core/ports';
+import { AccessScope, Result, UserId } from '@core/primitives';
 import {
   immediateTimerPorts,
   memoryAuthSessionPorts,
+  memoryProfilePorts,
+  memoryStaffPermissionsStreamPorts,
   principalFixture,
+  registeredUserFixture,
 } from '@core/testing';
 import {
   AUTH_SESSION_PORTS,
+  PROFILE_PORTS,
+  STAFF_PERMISSIONS_PORTS,
   TIMER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { of } from 'rxjs';
 import { appRoutes } from './app.routes';
 
 const ADMIN = principalFixture.staff(UserId.of('admin-1'), [Role.Admin]);
 const BARBER = principalFixture.staff(UserId.of('barber-1'), [Role.Barber]);
 
+/**
+ * What the capability gate reads beside the session: the stored accounts
+ * (none unless given, so the token's roles stand) and the owner's cells
+ * (every default unless given).
+ */
+type Stored = {
+  readonly accounts?: readonly User[];
+  readonly permissions?: StaffPermissionsStreamPorts;
+};
+
 /** The REAL route table, the session settled on `principal`. */
-function routerFor(principal: Principal): Router {
+function routerFor(principal: Principal, stored: Stored = {}): Router {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
@@ -30,14 +49,28 @@ function routerFor(principal: Principal): Router {
         }),
       },
       { provide: TIMER_PORTS, useValue: immediateTimerPorts() },
+      {
+        provide: PROFILE_PORTS,
+        useValue: memoryProfilePorts(
+          new Map((stored.accounts ?? []).map((user) => [user.id, user])),
+        ),
+      },
+      {
+        provide: STAFF_PERMISSIONS_PORTS,
+        useValue: stored.permissions ?? memoryStaffPermissionsStreamPorts(),
+      },
     ],
   });
   return TestBed.inject(Router);
 }
 
 /** Where `url` lands: the router's URL once the navigation and its redirects settle. */
-async function landingOf(principal: Principal, url: string): Promise<string> {
-  const router = routerFor(principal);
+async function landingOf(
+  principal: Principal,
+  url: string,
+  stored: Stored = {},
+): Promise<string> {
+  const router = routerFor(principal, stored);
   await router.navigateByUrl(url);
   return router.url;
 }
@@ -88,13 +121,93 @@ describe('appRoutes — /account/notifications (OR-19)', () => {
 });
 
 /*
- * `/staff/analytics` (docs/designs/staff-analytics.md, The screen): the two
- * analytics role sets — a barber, the admin — and nobody else; the callable
- * re-judges the stored roles.
+ * `/staff/analytics` (docs/designs/staff-analytics.md, The screen): behind
+ * the `ANALYTICS` capability (staff permissions P8). On the standard a
+ * barber and the admin open it and nobody else; the owner's cells and the
+ * STORED roles move that, as they do for the callable.
  */
 describe('appRoutes — /staff/analytics', () => {
   afterEach(() => {
     TestBed.resetTestingModule();
+  });
+
+  const cells = (stored: Record<string, unknown>): Stored => ({
+    permissions: memoryStaffPermissionsStreamPorts(
+      StaffPermissions.read(stored),
+    ),
+  });
+  const DESK = principalFixture.staff(UserId.of('desk-1'), [Role.Receptionist]);
+
+  test('the owner’s cells decide: a narrowed barber is turned away, a front desk given analytics opens it', async () => {
+    expect(
+      await landingOf(
+        BARBER,
+        '/staff/analytics',
+        cells({ barberAnalyticsScope: AccessScope.None }),
+      ),
+    ).toBe('/forbidden');
+    expect(
+      await landingOf(
+        DESK,
+        '/staff/analytics/takings',
+        cells({ receptionistAnalyticsScope: AccessScope.All }),
+      ),
+    ).toBe('/staff/analytics/takings');
+    // The owner is never turned away, whatever is stored.
+    expect(
+      await landingOf(
+        ADMIN,
+        '/staff/analytics',
+        cells({ barberAnalyticsScope: AccessScope.None }),
+      ),
+    ).toBe('/staff/analytics');
+  });
+
+  test('the STORED roles decide, not the token’s', async () => {
+    // The token still says barber; the owner has since made the account front desk.
+    expect(
+      await landingOf(BARBER, '/staff/analytics', {
+        accounts: [
+          registeredUserFixture({
+            id: UserId.of('barber-1'),
+            roles: [Role.Receptionist],
+          }),
+        ],
+      }),
+    ).toBe('/forbidden');
+    // The token says front desk; the stored account is a barber's too.
+    expect(
+      await landingOf(DESK, '/staff/analytics', {
+        accounts: [
+          registeredUserFixture({
+            id: UserId.of('desk-1'),
+            roles: [Role.Receptionist, Role.Barber],
+          }),
+        ],
+      }),
+    ).toBe('/staff/analytics');
+  });
+
+  test('cells that cannot be read open it for the admin alone', async () => {
+    const refused: Stored = {
+      permissions: {
+        observeStaffPermissions: () =>
+          of(
+            Result.err(
+              RepositoryError.readFailed(
+                'settings/staffPermissions',
+                'unavailable',
+              ),
+            ),
+          ),
+      },
+    };
+    expect(await landingOf(BARBER, '/staff/analytics', refused)).toBe(
+      '/forbidden',
+    );
+    expect(await landingOf(ADMIN, '/staff/analytics', refused)).toBe(
+      '/staff/analytics',
+    );
   });
 
   test('a barber and the admin open it', async () => {

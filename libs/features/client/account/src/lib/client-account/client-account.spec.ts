@@ -161,6 +161,9 @@ function accountStateStub(options: {
     userId: signal(PRINCIPAL.userId),
     account: signal(options.account),
     accountLoading: signal(options.accountLoading),
+    // What `StaffAccessService` waits for (the header's menu asks it): the
+    // account has answered once it is no longer loading.
+    accountSettled: signal(!options.accountLoading),
     refresh: () => undefined,
   } as unknown as AccountStateService;
 }

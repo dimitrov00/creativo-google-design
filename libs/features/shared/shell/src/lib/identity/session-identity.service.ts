@@ -13,7 +13,10 @@ import {
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { AccountStateService } from '@creativo/features/client/account-state';
+import {
+  AccountStateService,
+  StaffAccessService,
+} from '@creativo/features/client/account-state';
 import {
   E164,
   OnboardingFlowStep,
@@ -23,8 +26,10 @@ import {
 } from '@core/components';
 import { Profile } from '@core/entities';
 import {
+  AccessScope,
   type BarberId,
   IdentifierChannel,
+  StaffCapability,
   type UserId,
 } from '@core/primitives';
 import { OnboardingFlowSystem, ProfileCompletionSystem } from '@core/systems';
@@ -56,6 +61,7 @@ export class SessionIdentityService {
   private readonly session = inject(AUTH_SESSION_PORTS);
   private readonly avatars = inject(AVATAR_PORTS);
   private readonly accountState = inject(AccountStateService);
+  private readonly access = inject(StaffAccessService);
   /**
    * The device's analytics report cache — optional, so a host that binds
    * none (a test bed, the showcase) is no session without one.
@@ -91,17 +97,15 @@ export class SessionIdentityService {
   });
 
   /**
-   * Readers of the analytics menu row — `Roles.readsAnalytics` over the
-   * token's claims (a barber, or the admin): the route's guard and the
-   * callable's wire use the same rule, and the callable then judges the
-   * stored roles.
+   * Readers of the analytics menu row — whoever the `ANALYTICS` capability
+   * reaches at all (staff permissions P8): a barber and the admin on the
+   * standard, and whoever the owner has given it since. The route's guard
+   * decides on the same capability, and the callable judges the stored
+   * account and the cells again.
    */
-  readonly readsAnalytics = computed(() => {
-    const principal = this.principal();
-    return (
-      Principal.isActive(principal) && Roles.readsAnalytics(principal.roles)
-    );
-  });
+  readonly readsAnalytics = computed(
+    () => this.access.scopeOf(StaffCapability.Analytics) !== AccessScope.None,
+  );
 
   /** The uid the cache-clearing effect last saw; `undefined` before its first run. */
   private cacheOwner: UserId | null | undefined = undefined;

@@ -1,9 +1,11 @@
 import { CanDeactivateFn, Route } from '@angular/router';
 import { firstValueFrom, isObservable } from 'rxjs';
-import { Role, Roles } from '@core/components';
+import { Role, Roles, type RouteCapability } from '@core/components';
+import { AccessScope, StaffCapability } from '@core/primitives';
 import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
+import { capabilityGuard } from './guards/capability.guard';
 import { homeGuard } from './guards/home.guard';
 import { rolesGuard } from './guards/roles.guard';
 
@@ -33,6 +35,17 @@ const adminRhythmLeaveGuard: CanDeactivateFn<
     nextState,
   );
   return isObservable(answer) ? firstValueFrom(answer) : answer;
+};
+
+/**
+ * What opens «Анализи»: the `ANALYTICS` capability at "own" or wider — a
+ * barber's own figures on the standard, the shop's for the admin, and
+ * whatever the owner has set since (staff permissions P8). The screen then
+ * shows the scope picker by the same capability.
+ */
+const READS_ANALYTICS: RouteCapability = {
+  staffCapability: StaffCapability.Analytics,
+  accessScope: AccessScope.Own,
 };
 
 // Route tree per blueprint §1.4 — 1:1 with v2. Feature libs are still
@@ -142,13 +155,11 @@ export const appRoutes: Route[] = [
   },
   {
     // «Анализи» (docs/designs/staff-analytics.md, The screen): a barber's own
-    // figures, the admin's every barber and the shop — the two analytics
-    // role sets, which the callable re-judges on the STORED roles.
+    // figures, the admin's every barber and the shop — and whoever the owner
+    // has given the `ANALYTICS` capability since. The gate reads the stored
+    // account and the owner's cells, as the callable does.
     path: 'staff/analytics',
-    canActivate: [
-      activeGuard,
-      rolesGuard(...Roles.ANALYTICS_SELF, ...Roles.ANALYTICS_SHOP),
-    ],
+    canActivate: [activeGuard, capabilityGuard(READS_ANALYTICS)],
     loadComponent: () =>
       import('@creativo/features/staff/analytics').then(
         (m) => m.StaffAnalyticsPage,
@@ -156,12 +167,9 @@ export const appRoutes: Route[] = [
   },
   {
     // A card of «Анализи» on its own screen (docs/designs/
-    // staff-analytics-v3-revolut.md): the same role sets as the home.
+    // staff-analytics-v3-revolut.md): the same gate as the home.
     path: 'staff/analytics/:card',
-    canActivate: [
-      activeGuard,
-      rolesGuard(...Roles.ANALYTICS_SELF, ...Roles.ANALYTICS_SHOP),
-    ],
+    canActivate: [activeGuard, capabilityGuard(READS_ANALYTICS)],
     loadComponent: () =>
       import('@creativo/features/staff/analytics').then(
         (m) => m.AnalyticsCardPage,

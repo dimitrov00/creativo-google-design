@@ -169,7 +169,10 @@
                from the schedule»): the week of this day, this chair's figures
                for an admin, their own for a barber. A plain navigation — the
                router's own view transition carries it. At every width: the
-               cluster runs view · chart · find · who. -->
+               cluster runs view · chart · find · who. Only for someone the
+               owner lets read analytics (staff permissions P8): the route
+               would turn anyone else away. -->
+            @if (analytics.reads()) {
             <button
               type="button"
               uiButton
@@ -184,6 +187,7 @@
             >
               <ui-icon uiName="analytics.chart" />
             </button>
+            }
 
             <!-- Search sits between the chart and the person — the trailing
                cluster runs view · chart · find · who, which is the order HIG

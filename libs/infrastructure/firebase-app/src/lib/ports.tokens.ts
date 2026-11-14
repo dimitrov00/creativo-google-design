@@ -36,6 +36,7 @@ import type {
   ProgramsPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
+  StaffPermissionsStreamPorts,
   ShopEventReadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
@@ -61,6 +62,13 @@ import { CLIENT_ISSUE_REPORTER } from './reporting-error-handler';
 export const SCHEDULING_READ_PORTS = new InjectionToken<SchedulingReadPorts>(
   'SCHEDULING_READ_PORTS',
 );
+
+/**
+ * What each staff level may do, live (`StaffPermissionsStreamPorts`) — the
+ * one copy `StaffAccessService` reads; staff sessions only.
+ */
+export const STAFF_PERMISSIONS_PORTS =
+  new InjectionToken<StaffPermissionsStreamPorts>('STAFF_PERMISSIONS_PORTS');
 
 /** The appointment readers and the staff search window (`AppointmentReadPorts`). */
 export const APPOINTMENT_READ_PORTS = new InjectionToken<AppointmentReadPorts>(

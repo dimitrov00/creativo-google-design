@@ -17,6 +17,7 @@ import {
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
   PROFILE_PORTS,
+  STAFF_PERMISSIONS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { AuthClaims, AuthStage, Principal } from '@core/components';
 import { UserId } from '@core/primitives';
@@ -30,6 +31,7 @@ import {
   memoryInboxPorts,
   memoryLocationLoadPorts,
   memoryProfilePorts,
+  memoryStaffPermissionsStreamPorts,
   memoryProgramsWorld,
 } from '@core/testing';
 import { SiteMenuComponent } from '../menu/site-menu.component';
@@ -137,6 +139,12 @@ async function configure(
       {
         provide: PROFILE_PORTS,
         useValue: memoryProfilePorts(new Map()),
+      },
+      // The owner's cells, every default: the menu's «Анализи» row follows
+      // the `ANALYTICS` capability (`StaffAccessService`).
+      {
+        provide: STAFF_PERMISSIONS_PORTS,
+        useValue: memoryStaffPermissionsStreamPorts(),
       },
       // The menu's bookings row counts upcoming visits, and its
       // notifications row counts unread ones.
