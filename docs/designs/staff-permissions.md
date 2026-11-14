@@ -1028,9 +1028,16 @@ editors"); its server half is merged.
     `admit`: a screen asks before the account has loaded and has no clock
     to read a block by. A spec holds the two to the same answer for every
     level, capability and barber.
-  - Until the cells answer, and when they cannot be read, every cell is
-    nobody. An entry point may appear a beat late; one the owner cut never
-    shows. The admin's everything is no cell, so it holds throughout.
+  - Nothing is granted on a half-read session. Until the account and the
+    cells have answered, every reach is nobody, so an entry point appears
+    only once the decision behind it is final; P8 read the token until the
+    account loaded. A tap must never start a navigation its gate has to
+    wait on: the page being left syncs its own URL meanwhile, which cancels
+    the pending navigation. The end-to-end suite caught exactly that on the
+    schedule's chart button.
+  - The owner needs no cells. The admin's everything is answered before a
+    cell is read (P4), so an admin's session is settled once the account
+    has answered. When the cells cannot be read, every cell is nobody.
   - The schedule's chart button is now hidden from a session that reads no
     analytics. It used to be shown to everyone, and led the front desk to the
     forbidden page.

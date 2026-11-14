@@ -12,7 +12,7 @@ import { map, of, switchMap } from 'rxjs';
 import { STAFF_PERMISSIONS_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   Principal,
-  type Role,
+  Role,
   Roles,
   StaffLink,
   StaffPermissions,
@@ -75,13 +75,25 @@ const CLOSED: StaffPermissions = StaffPermissions.saved(
  *
  * It reads what the server reads:
  *
- * - **the STORED account's roles** (`AccountStateService.account`), and the
- *   token's only until the account has loaded — so a role the owner gave
- *   themself works at once, with no new sign-in;
- * - **the owner's cells**, through the same reading guard. Until they
- *   answer, and when they cannot be read, every cell is nobody
- *   ({@link CLOSED}): an entry point may appear a beat late, never one the
- *   owner cut.
+ * - **the STORED account's roles** (`AccountStateService.account`) — so a
+ *   role the owner gave themself works at once, with no new sign-in — and
+ *   the token's only for an account that has no document;
+ * - **the owner's cells**, through the same reading guard. When they
+ *   cannot be read, every cell is nobody ({@link CLOSED}): never an entry
+ *   point the owner cut.
+ *
+ * **Nothing is granted on a half-read session.** Until the account and the
+ * cells have answered ({@link StaffAccessService.settled}), every reach is
+ * nobody, so an entry point appears only once the decision behind it is
+ * final. That is what keeps a tap from starting a navigation its gate
+ * would have to wait on: the page being left syncs its own URL meanwhile,
+ * which cancels the pending navigation, and the button does nothing (the
+ * schedule's chart button did exactly that on a slow machine).
+ *
+ * **The owner needs no cells.** The admin's everything is answered before
+ * a cell is read (P4), so an admin's session is settled as soon as the
+ * account has answered; it never waits for a document that cannot change
+ * its answer.
  *
  * The cells are read by staff sessions only — the rules refuse the
  * document to everyone else, and nobody else has a capability to ask
@@ -151,9 +163,9 @@ export class StaffAccessService {
   );
 
   /**
-   * The account's roles as the server reads them: the stored ones, and the
-   * token's until the account has loaded. Empty for nobody and for an
-   * account that is not onboarded.
+   * The account's roles as the server reads them: the stored ones; the
+   * token's while the account has not answered and for one that has no
+   * document. Empty for nobody and for an account that is not onboarded.
    */
   readonly storedRoles: Signal<readonly Role[]> = computed(() => {
     const account = this.accountState.account();
@@ -168,19 +180,27 @@ export class StaffAccessService {
 
   /**
    * Everything a decision reads has answered for the signed-in person: the
-   * account, and the cells (at once for a session with none to read).
+   * account, and the cells — at once for a session with none to read, and
+   * not at all for the owner, whose everything no cell can change.
    */
   readonly settled: Signal<boolean> = computed(
-    () => this.accountState.accountSettled() && this.cells() !== undefined,
+    () =>
+      this.accountState.accountSettled() &&
+      (this.cells() !== undefined || this.storedRoles().includes(Role.Admin)),
   );
 
-  /** How far `staffCapability` reaches for the signed-in person. */
+  /**
+   * How far `staffCapability` reaches for the signed-in person — nobody
+   * while the session is half-read ({@link settled}).
+   */
   scopeOf(staffCapability: StaffCapability): AccessScope {
-    return StaffAccessSystem.scopeOf(
-      this.permissions(),
-      staffCapability,
-      this.storedRoles(),
-    );
+    return this.settled()
+      ? StaffAccessSystem.scopeOf(
+          this.permissions(),
+          staffCapability,
+          this.storedRoles(),
+        )
+      : AccessScope.None;
   }
 
   /** The reach for one capability: its scope and the record that is one's own. */
@@ -214,7 +234,9 @@ export class StaffAccessService {
    * - **A session that is already settled answers at once**, in the same
    *   microtask a role gate does. A wait of even one tick leaves room for
    *   the page being left to sync its own URL, which cancels the pending
-   *   navigation: the chart button then does nothing.
+   *   navigation: the chart button then does nothing. (`scopeOf` closes the
+   *   other half of that gap: no entry point shows before the session is
+   *   settled, so only a cold deep link ever waits here.)
    */
   whenSettled(): Promise<StaffAccessFacts> {
     if (this.settled()) return Promise.resolve(this.facts());

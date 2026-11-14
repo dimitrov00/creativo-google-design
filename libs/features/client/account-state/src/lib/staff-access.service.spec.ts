@@ -214,19 +214,34 @@ describe('StaffAccessService — how far a capability reaches', () => {
 });
 
 describe('StaffAccessService — the stored roles decide', () => {
-  it('reads the token’s roles only until the account has loaded', () => {
+  it('grants nothing on a half-read session: no entry point before the account has answered', () => {
     const { service, stored, permissions } = harness(staff(Role.Barber));
     permissions(cellsOf({}));
-    // The account has not answered: the token says barber.
+    // The account has not answered. The token says barber, and the standard
+    // would say "own" — but a decision made now could change a beat later.
     expect(service.storedRoles()).toEqual([Role.Barber]);
-    expect(service.scopeOf(Hours)).toBe(Own);
-    // …and the link is not known yet, so "own" reaches no record.
+    expect(service.settled()).toBe(false);
+    expect(service.scopeOf(Hours)).toBe(None);
     expect(service.mayFor(Hours, IVAN)).toBe(false);
 
     stored(account([Role.Receptionist]));
     // The stored account is the front desk's: it decides.
+    expect(service.settled()).toBe(true);
     expect(service.storedRoles()).toEqual([Role.Receptionist]);
     expect(service.scopeOf(Hours)).toBe(All);
+  });
+
+  it('reads the token’s roles for an account that has no document', () => {
+    const { service, stored, permissions } = harness(staff(Role.Barber));
+    permissions(cellsOf({}));
+
+    stored(null);
+
+    expect(service.settled()).toBe(true);
+    expect(service.storedRoles()).toEqual([Role.Barber]);
+    expect(service.scopeOf(Hours)).toBe(Own);
+    // No account, no record of one's own: "own" reaches nobody's.
+    expect(service.mayFor(Hours, IVAN)).toBe(false);
   });
 
   it('an owner who made themself a barber works their own chair at once, on the old token', () => {
@@ -278,9 +293,44 @@ describe('StaffAccessService — cells nobody could read grant nothing', () => {
     expect(owner.service.mayFor(Hours, IVAN)).toBe(true);
   });
 
-  it('keeps the sysadmin’s fixed column while the cells are unread', () => {
-    const { service, stored } = harness(staff(Role.Sysadmin));
+  it('the owner’s session is settled without the cells: it never waits for a document that cannot change its answer', async () => {
+    const { service, stored } = harness(staff(Role.Admin));
+    // Not before the account: the stored roles are what make an owner.
+    expect(service.settled()).toBe(false);
+    expect(service.scopeOf(Analytics)).toBe(None);
+
+    stored(account([Role.Barber, Role.Admin], IVAN));
+
+    // The cells have not answered, and nothing waits for them.
+    expect(service.settled()).toBe(true);
+    expect(service.scopeOf(Analytics)).toBe(All);
+    let facts: unknown = null;
+    void service.whenSettled().then((answer) => (facts = answer));
+    await Promise.resolve();
+    expect(facts).toMatchObject({ storedRoles: [Role.Barber, Role.Admin] });
+  });
+
+  it('an account that stopped being the owner’s waits for the cells again', () => {
+    const { service, stored, permissions } = harness(staff(Role.Admin));
+    stored(account([Role.Admin]));
+    expect(service.settled()).toBe(true);
+
+    // The token still says admin; the stored account is the front desk's.
+    stored(account([Role.Receptionist]));
+    expect(service.settled()).toBe(false);
+    expect(service.scopeOf(Hours)).toBe(None);
+
+    permissions(cellsOf({}));
+    expect(service.scopeOf(Hours)).toBe(All);
+  });
+
+  it('keeps the sysadmin’s fixed column when the cells cannot be read', () => {
+    const { service, stored, permissions } = harness(staff(Role.Sysadmin));
     stored(account([Role.Sysadmin]));
+    // The vendor's role is not the owner's: it waits for the cells' answer.
+    expect(service.settled()).toBe(false);
+
+    permissions(REFUSED);
 
     expect(service.scopeOf(Hours)).toBe(All);
     expect(service.scopeOf(Analytics)).toBe(None);
