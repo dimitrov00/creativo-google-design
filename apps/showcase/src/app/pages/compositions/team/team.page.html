@@ -1,0 +1,948 @@
+<sc-page scTitle="Team">
+  <ng-container scLede>
+    «Екип» and «Права», composed from the design system before a page is built
+    (staff permissions, stage T). Each screen below is a stand-in at a 390 pt
+    phone's width; the pieces on it are the real
+    <code>&#64;creativo/ui</code> pieces and the people are samples. The two
+    level pages are live: they read and write the real permission cells, so the
+    rows, the standards and the counts are the engine's own.
+  </ng-container>
+
+  <!-- THE BAR of a stand-in screen: the real `ui-sheet-header`, as every
+       collapsing top bar in the app. `landed` titles it from rest (a page
+       with no large title); `add` gives it the one orange disc; `close`
+       makes it a sheet's bar. The chips are decorative here. -->
+  <ng-template
+    #bar
+    let-title
+    let-landed="landed"
+    let-add="add"
+    let-close="close"
+  >
+    <ui-sheet-header [uiCollapsed]="landed === true">
+      @if (close !== true) {
+      <span
+        uiLeading
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+      >
+        <ui-icon uiName="nav.back" />
+      </span>
+      }
+      <div uiTitle aria-hidden="true">{{ title }}</div>
+      @if (add === true) {
+      <span
+        uiTrailing
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+        data-testid="composition-team-add"
+      >
+        <ui-icon uiName="action.add" />
+      </span>
+      } @if (close === true) {
+      <span
+        uiTrailing
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        aria-hidden="true"
+      >
+        <ui-icon uiName="sheet.close" />
+      </span>
+      }
+    </ui-sheet-header>
+  </ng-template>
+
+  <!-- A PERSON'S ROW: the face, the name over one quiet line, the way in. -->
+  <ng-template #person let-member>
+    <button
+      type="button"
+      uiListRow
+      uiSize="large"
+      [uiInteractive]="true"
+      [attr.data-testid]="'composition-team-member-' + member.id"
+    >
+      <ui-avatar
+        uiLeading
+        uiControlSize="small"
+        [uiSrc]="member.src"
+        [uiName]="member.name"
+      />
+      <ui-stack uiSpacing="tight" class="team__identity">
+        <span>{{ member.name }}</span>
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ member.line }}</span
+        >
+      </ui-stack>
+      <span uiTrailing>
+        <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+      </span>
+    </button>
+  </ng-template>
+
+  <!-- A VALUE ROW that leads somewhere: the label, what is there, the way in. -->
+  <ng-template #link let-label let-value="value">
+    <button type="button" uiListRow uiSize="regular" [uiInteractive]="true">
+      {{ label }}
+      <span uiTrailing class="team__value">
+        <span>{{ value }}</span>
+        <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+      </span>
+    </button>
+  </ng-template>
+
+  <!-- A LEVEL'S PAGE: its rows grouped, the standard said under a changed
+       row, «Върни стандартните» under them, «Запази» in the dock while the
+       draft differs from what is saved. -->
+  <ng-template #levelPage let-level let-groups="groups" let-faces="faces">
+    <ng-container
+      [ngTemplateOutlet]="bar"
+      [ngTemplateOutletContext]="{ $implicit: levelName(level) }"
+    />
+    <div class="team__page team__page--docked">
+      <ui-sheet-headline>
+        <h3 uiSheetLargeTitle uiText uiFont="largeTitle">
+          {{ levelName(level) }}
+        </h3>
+        <div class="team__holders">
+          @if (faces.length > 1) {
+          <ui-avatar-group
+            uiControlSize="small"
+            [uiOverflow]="faces.length > 3 ? faces.length - 3 : 0"
+            aria-hidden="true"
+          >
+            @for (member of faces.slice(0, 3); track member.id) {
+            <ui-avatar
+              uiControlSize="small"
+              [uiSrc]="member.src"
+              [uiName]="member.name"
+            />
+            }
+          </ui-avatar-group>
+          } @else { @for (member of faces; track member.id) {
+          <ui-avatar
+            uiControlSize="small"
+            [uiSrc]="member.src"
+            [uiName]="member.name"
+            aria-hidden="true"
+          />
+          } }
+          <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+            Важи за {{ faces.length }} {{ faces.length === 1 ? 'човек' : 'души'
+            }}
+          </p>
+        </div>
+      </ui-sheet-headline>
+
+      @if (receipt()) {
+      <ui-notice
+        uiTone="neutral"
+        uiIcon="checklist.done"
+        [attr.data-testid]="'composition-level-receipt-' + level"
+      >
+        Правата са запазени. Важат от следващото действие.
+      </ui-notice>
+      } @for (group of groups; track group.id) {
+      <section class="team__module">
+        <ui-section-header uiHeaderProminence="increased">
+          <h4 uiTitle>{{ group.title }}</h4>
+        </ui-section-header>
+        <ul uiListGroup>
+          @for (row of group.rows; track row.capability) {
+          <li
+            uiListRow
+            uiSize="regular"
+            uiLabelWraps
+            class="team__permission"
+            [attr.data-changed]="row.changed ? '' : null"
+            [attr.data-testid]="'composition-permission-' + row.menuId"
+          >
+            <ui-stack uiSpacing="tight" class="team__identity">
+              <span class="team__permission-label">
+                @if (row.changed) {
+                <span class="team__changed" aria-hidden="true"></span>
+                <span uiVisuallyHidden>Променено. </span>
+                }{{ row.label }}
+              </span>
+              @if (row.changed) {
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ row.standard }}</span
+              >
+              }
+            </ui-stack>
+            @if (row.isSwitch) {
+            <button
+              uiSwitch
+              uiTrailing
+              [uiOn]="row.on"
+              [attr.aria-label]="row.label"
+              [attr.data-testid]="'composition-permission-switch-' + row.menuId"
+              (uiOnChange)="toggle(level, row.capability, $event)"
+            ></button>
+            } @else {
+            <span uiTrailing>
+              <ui-choice-menu
+                uiAlignment="trailing"
+                [uiOptions]="row.options"
+                [uiSelectedId]="row.scope"
+                [uiLabel]="row.label"
+                [uiPresented]="openMenu() === row.menuId"
+                (uiPresentedChange)="openMenu.set($event ? row.menuId : null)"
+                (uiPicked)="pick(level, row.capability, $event)"
+              >
+                <button
+                  type="button"
+                  uiInteractive
+                  uiRadius="capsule"
+                  uiMenuTrigger
+                  class="team__choice"
+                  [attr.aria-label]="row.label + ': ' + row.scopeWord"
+                  [attr.data-testid]="'composition-permission-value-' + row.menuId"
+                  (click)="openMenu.set(row.menuId)"
+                >
+                  <span>{{ row.scopeWord }}</span>
+                  <ui-icon uiName="field.popUp" aria-hidden="true" />
+                </button>
+              </ui-choice-menu>
+            </span>
+            }
+          </li>
+          }
+        </ul>
+      </section>
+      }
+
+      <ui-list-group>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="departs(level)"
+          [disabled]="!departs(level)"
+          [attr.data-testid]="'composition-level-restore-' + level"
+          (click)="restore(level)"
+        >
+          Върни стандартните
+        </button>
+      </ui-list-group>
+    </div>
+    @if (dirty()) {
+    <div class="team__dock">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [attr.data-testid]="'composition-level-save-' + level"
+        (click)="save()"
+      >
+        Запази
+      </button>
+    </div>
+    }
+  </ng-template>
+
+  <!-- ═══ 1 · THE TEAM IS ONE LIST ═════════════════════════════════════ -->
+  <section class="team__plate" aria-labelledby="team-plate-list">
+    <header class="team__lead">
+      <h2 uiText uiFont="title2" id="team-plate-list">The team is one list</h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        Everyone who works here, in the shop's own order: a face, a name and one
+        quiet line that says how the person stands. The line holds the standing
+        first and at most one note after it. The one filled disc on the screen
+        adds someone. A content editor reaches the same list for the profiles:
+        the same rows, with no accounts, no way to add and no «Права».
+      </p>
+    </header>
+    <div class="team__stage">
+      <figure class="team__figure">
+        <div class="team__screen" data-testid="composition-team-owner">
+          <ng-container
+            [ngTemplateOutlet]="bar"
+            [ngTemplateOutletContext]="{ $implicit: 'Екип', add: true }"
+          />
+          <div class="team__page">
+            <ui-sheet-headline>
+              <h3 uiSheetLargeTitle uiText uiFont="largeTitle">Екип</h3>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                4 бръснари · 2 приемат записи
+              </p>
+            </ui-sheet-headline>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Бръснари</h4>
+              </ui-section-header>
+              <ui-list-group>
+                @for (member of barbers; track member.id) {
+                <ng-container
+                  [ngTemplateOutlet]="person"
+                  [ngTemplateOutletContext]="{ $implicit: member }"
+                />
+                }
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Още в екипа</h4>
+              </ui-section-header>
+              <ui-list-group>
+                @for (member of others; track member.id) {
+                <ng-container
+                  [ngTemplateOutlet]="person"
+                  [ngTemplateOutletContext]="{ $implicit: member }"
+                />
+                }
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Достъп</h4>
+              </ui-section-header>
+              <ui-list-group data-testid="composition-team-access">
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Права',
+                    value: accessValue(),
+                  }"
+                />
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Напуснали</h4>
+              </ui-section-header>
+              <ui-list-group>
+                @for (member of departed; track member.id) {
+                <ng-container
+                  [ngTemplateOutlet]="person"
+                  [ngTemplateOutletContext]="{ $implicit: member }"
+                />
+                }
+              </ui-list-group>
+            </section>
+          </div>
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">The owner</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >Records, accounts and the way to «Права».</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="team__figure">
+        <div class="team__screen" data-testid="composition-team-editor">
+          <ng-container
+            [ngTemplateOutlet]="bar"
+            [ngTemplateOutletContext]="{ $implicit: 'Екип' }"
+          />
+          <div class="team__page">
+            <ui-sheet-headline>
+              <h3 uiSheetLargeTitle uiText uiFont="largeTitle">Екип</h3>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                Профилите на бръснарите
+              </p>
+            </ui-sheet-headline>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Бръснари</h4>
+              </ui-section-header>
+              <ui-list-group>
+                @for (member of records; track member.id) {
+                <ng-container
+                  [ngTemplateOutlet]="person"
+                  [ngTemplateOutletContext]="{ $implicit: member }"
+                />
+                }
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Напуснали</h4>
+              </ui-section-header>
+              <ui-list-group>
+                @for (member of departed; track member.id) {
+                <ng-container
+                  [ngTemplateOutlet]="person"
+                  [ngTemplateOutletContext]="{ $implicit: member }"
+                />
+                }
+              </ui-list-group>
+            </section>
+          </div>
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">A content editor</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The records only: no accounts are read for this person.</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ═══ 2 · A MEMBER'S PAGE IS THEIR CHECKLIST ════════════════════════ -->
+  <section class="team__plate" aria-labelledby="team-plate-member">
+    <header class="team__lead">
+      <h2 uiText uiFont="title2" id="team-plate-member">
+        A member's page is their checklist
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        The five things a barber needs before anyone can book them are the first
+        rows of the page, each a way into its own editor. Nothing asks the owner
+        to press «go live»: the person starts taking bookings once the five are
+        there and the start day has come. «Това съм аз» is the owner's door to
+        their own chair; press it to see the row it leaves.
+      </p>
+    </header>
+    <div class="team__stage">
+      <figure class="team__figure">
+        <div class="team__screen" data-testid="composition-member-draft">
+          <ng-container
+            [ngTemplateOutlet]="bar"
+            [ngTemplateOutletContext]="{ $implicit: 'Николай Стоянов' }"
+          />
+          <div class="team__page">
+            <ui-sheet-headline class="team__risen" uiHeadlineStyle="hero">
+              <h3 uiSheetLargeTitle uiText uiFont="title">Николай Стоянов</h3>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                Подготовка · 3 от 5
+              </p>
+              <ui-avatar
+                uiHeadlineMedia
+                uiControlSize="extraLarge"
+                [uiSrc]="null"
+                uiName="Николай Стоянов"
+              />
+            </ui-sheet-headline>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>За да приема записи</h4>
+              </ui-section-header>
+              <ui-list-group data-testid="composition-member-setup">
+                @for (item of setup; track item.id) {
+                <button
+                  type="button"
+                  uiListRow
+                  uiSize="regular"
+                  [uiInteractive]="true"
+                  [attr.data-done]="item.done ? '' : null"
+                >
+                  <ui-icon
+                    uiLeading
+                    [uiName]="setupGlyph(item)"
+                    [uiForegroundStyle]="item.done ? 'accent' : 'secondary'"
+                    aria-hidden="true"
+                  />
+                  {{ item.label }}
+                  <span uiVisuallyHidden
+                    >{{ item.done ? ' — готово' : ' — липсва' }}</span
+                  >
+                  <span uiTrailing class="team__value">
+                    <span>{{ item.value }}</span>
+                    <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+                  </span>
+                </button>
+                }
+              </ui-list-group>
+              <p
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="team__footnote"
+              >
+                Николай ще приема записи от 1 дек., щом услугите и работното
+                време са готови.
+              </p>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Профил</h4>
+              </ui-section-header>
+              <ui-list-group>
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Снимка и описание',
+                    value: 'Няма',
+                  }"
+                />
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Период на работа',
+                    value: 'от 1 дек.',
+                  }"
+                />
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Профил в приложението</h4>
+              </ui-section-header>
+              @if (isMe()) {
+              <ui-list-group data-testid="composition-member-linked">
+                <ui-list-row uiSize="large">
+                  <ui-avatar
+                    uiLeading
+                    uiControlSize="small"
+                    [uiSrc]="owner.src"
+                    [uiName]="owner.name"
+                  />
+                  <ui-stack uiSpacing="tight" class="team__identity">
+                    <span>{{ owner.name }}</span>
+                    <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                      >Твоят профил · Администратор, Бръснар</span
+                    >
+                  </ui-stack>
+                </ui-list-row>
+                <button
+                  type="button"
+                  uiListRow
+                  uiSize="regular"
+                  [uiInteractive]="true"
+                  data-testid="composition-member-not-me"
+                  (click)="isMe.set(false)"
+                >
+                  Не съм аз
+                </button>
+              </ui-list-group>
+              } @else {
+              <ui-list-group data-testid="composition-member-unlinked">
+                <button
+                  type="button"
+                  uiListRow
+                  uiSize="regular"
+                  [uiInteractive]="true"
+                >
+                  Свържи профил
+                  <span uiTrailing>
+                    <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  uiListRow
+                  uiSize="regular"
+                  [uiInteractive]="true"
+                  data-testid="composition-member-is-me"
+                  (click)="isMe.set(true)"
+                >
+                  Това съм аз
+                </button>
+              </ui-list-group>
+              }
+              <p
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="team__footnote"
+              >
+                @if (isMe()) { Работиш и на стола: графикът ти е в «График», а
+                всичко друго остава както е. } @else { Без профил Николай не
+                влиза в приложението. Часовете му се записват от екипа. }
+              </p>
+            </section>
+
+            <ui-list-group>
+              <button
+                type="button"
+                uiListRow
+                uiSize="regular"
+                uiRole="destructive"
+                [uiInteractive]="true"
+              >
+                Изтрий
+              </button>
+            </ui-list-group>
+          </div>
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">In preparation</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >What is missing leads the page. «Изтрий» exists only here.</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="team__figure">
+        <div class="team__screen" data-testid="composition-member-live">
+          <ng-container
+            [ngTemplateOutlet]="bar"
+            [ngTemplateOutletContext]="{ $implicit: 'Иван Петров' }"
+          />
+          <div class="team__page">
+            <ui-sheet-headline class="team__risen" uiHeadlineStyle="hero">
+              <h3 uiSheetLargeTitle uiText uiFont="title">Иван Петров</h3>
+              <p uiText uiFont="callout" uiForegroundStyle="secondary">
+                Приема записи
+              </p>
+              <ui-avatar
+                uiHeadlineMedia
+                uiControlSize="extraLarge"
+                [uiSrc]="ivan.src"
+                uiName="Иван Петров"
+              />
+            </ui-sheet-headline>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>График</h4>
+              </ui-section-header>
+              <ui-list-group>
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Работно време',
+                    value: 'пон – съб',
+                  }"
+                />
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Почивни дни',
+                    value: '24 – 26 дек.',
+                  }"
+                />
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Профил</h4>
+              </ui-section-header>
+              <ui-list-group>
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Снимка и описание',
+                    value: 'Старши бръснар',
+                  }"
+                />
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Услуги и цени',
+                    value: '12 услуги',
+                  }"
+                />
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Период на работа',
+                    value: 'от 3 март 2024 г.',
+                  }"
+                />
+                <ui-list-row uiSize="regular" uiLabelWraps>
+                  <span>Приема „Който и да е“</span>
+                  <button
+                    uiSwitch
+                    uiTrailing
+                    [uiOn]="inPool()"
+                    aria-label="Приема „Който и да е“"
+                    data-testid="composition-member-pool"
+                    (uiOnChange)="inPool.set($event)"
+                  ></button>
+                </ui-list-row>
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-section-header uiHeaderProminence="increased">
+                <h4 uiTitle>Достъп</h4>
+              </ui-section-header>
+              <ui-list-group data-testid="composition-member-access">
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Роли',
+                    value: 'Бръснар',
+                  }"
+                />
+                <ng-container
+                  [ngTemplateOutlet]="link"
+                  [ngTemplateOutletContext]="{
+                    $implicit: 'Права на „Бръснар“',
+                    value: barberValue(),
+                  }"
+                />
+              </ui-list-group>
+            </section>
+          </div>
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">Taking bookings</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >The same rows at rest, and the way to the level this person
+            holds.</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ═══ 3 · ADDING SOMEONE TAKES THREE ANSWERS ════════════════════════ -->
+  <section class="team__plate" aria-labelledby="team-plate-add">
+    <header class="team__lead">
+      <h2 uiText uiFont="title2" id="team-plate-add">
+        Adding someone takes three answers
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        Who they are, their name and the day they start. A tile is the answer:
+        it fills the defaults a barber, a course student or a guest gets, and
+        every default can still be changed on the member's page. Prices can be
+        copied from a colleague so the first day does not begin with an empty
+        list.
+      </p>
+    </header>
+    <div class="team__stage">
+      <figure class="team__figure">
+        <div
+          class="team__screen team__screen--sheet"
+          data-testid="composition-team-add-sheet"
+        >
+          <ng-container
+            [ngTemplateOutlet]="bar"
+            [ngTemplateOutletContext]="{
+              $implicit: 'Нов в екипа',
+              landed: true,
+              close: true,
+            }"
+          />
+          <div class="team__page team__page--docked">
+            <ui-choice-tiles
+              uiLabel="Вид"
+              [uiTiles]="presets"
+              [uiSelectedId]="preset()"
+              [uiColumns]="3"
+              (uiPicked)="preset.set($event)"
+            />
+
+            <section class="team__module">
+              <label
+                class="team__field-label"
+                for="composition-team-name"
+                uiText
+                uiFont="subheadline"
+                uiForegroundStyle="secondary"
+                >Име</label
+              >
+              <input
+                uiTextField
+                id="composition-team-name"
+                type="text"
+                autocomplete="off"
+                placeholder="Име и фамилия"
+              />
+            </section>
+
+            <ui-list-group>
+              <ng-container
+                [ngTemplateOutlet]="link"
+                [ngTemplateOutletContext]="{
+                  $implicit: 'Начална дата',
+                  value: '1 дек.',
+                }"
+              />
+              <ui-list-row uiSize="regular" class="team__permission">
+                <span>Копирай цените от</span>
+                <span uiTrailing>
+                  <ui-choice-menu
+                    uiAlignment="trailing"
+                    uiLabel="Копирай цените от"
+                    [uiOptions]="copyOptions"
+                    [uiSelectedId]="copyFrom()"
+                    [uiPresented]="openMenu() === 'copy'"
+                    (uiPresentedChange)="openMenu.set($event ? 'copy' : null)"
+                    (uiPicked)="copyFrom.set($event)"
+                  >
+                    <button
+                      type="button"
+                      uiInteractive
+                      uiRadius="capsule"
+                      uiMenuTrigger
+                      class="team__choice"
+                      [attr.aria-label]="'Копирай цените от: ' + copyLabel()"
+                      data-testid="composition-team-copy"
+                      (click)="openMenu.set('copy')"
+                    >
+                      <span>{{ copyLabel() }}</span>
+                      <ui-icon uiName="field.popUp" aria-hidden="true" />
+                    </button>
+                  </ui-choice-menu>
+                </span>
+              </ui-list-row>
+            </ui-list-group>
+          </div>
+          <div class="team__dock">
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="borderedProminent"
+              uiControlSize="large"
+            >
+              Добави
+            </button>
+          </div>
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">The add sheet</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >«Добави» creates the record and opens its page.</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ═══ 4 · PERMISSIONS: A LEVEL, THEN ITS ROWS ═══════════════════════ -->
+  <section class="team__plate" aria-labelledby="team-plate-permissions">
+    <header class="team__lead">
+      <h2 uiText uiFont="title2" id="team-plate-permissions">
+        Permissions: a level, then its rows
+      </h2>
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        «Права» lists the three levels the owner can edit, who holds each and
+        how far it has moved from the standard. A level's page asks one question
+        a row. On «Бръснар» the answer is a value, «Не», «Само своите» or
+        «Всички»; everywhere else it is a switch. A changed row carries an
+        orange dot and says what the standard was. Change a row: «Запази» comes
+        into the dock, and the count on «Права» follows the save.
+      </p>
+    </header>
+    <div class="team__stage">
+      <figure class="team__figure">
+        <div class="team__screen" data-testid="composition-permissions">
+          <ng-container
+            [ngTemplateOutlet]="bar"
+            [ngTemplateOutletContext]="{ $implicit: 'Права' }"
+          />
+          <div class="team__page">
+            <ui-sheet-headline>
+              <h3 uiSheetLargeTitle uiText uiFont="largeTitle">Права</h3>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                Какво може всяко ниво в екипа
+              </p>
+            </ui-sheet-headline>
+
+            <section class="team__module">
+              <ui-list-group data-testid="composition-permissions-levels">
+                @for (row of levels(); track row.level) {
+                <button
+                  type="button"
+                  uiListRow
+                  uiSize="large"
+                  [uiInteractive]="true"
+                  [attr.data-testid]="'composition-level-' + row.level"
+                >
+                  <ui-stack uiSpacing="tight" class="team__identity">
+                    <span>{{ row.name }}</span>
+                    <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                      >{{ row.holders }}</span
+                    >
+                  </ui-stack>
+                  <span uiTrailing class="team__value">
+                    <span>{{ row.value }}</span>
+                    <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+                  </span>
+                </button>
+                }
+              </ui-list-group>
+            </section>
+
+            <section class="team__module">
+              <ui-list-group>
+                <ui-list-row
+                  uiSize="large"
+                  data-testid="composition-level-admin"
+                >
+                  <ui-stack uiSpacing="tight" class="team__identity">
+                    <span>Администратор</span>
+                    <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                      >Може всичко, винаги</span
+                    >
+                  </ui-stack>
+                </ui-list-row>
+              </ui-list-group>
+              <p
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                class="team__footnote"
+              >
+                Промените важат от следващото действие. Никой не излиза от
+                профила си.
+              </p>
+            </section>
+          </div>
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">«Права»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >Three levels to edit, one that cannot be cut.</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="team__figure">
+        <div class="team__screen" data-testid="composition-level-page-barber">
+          <ng-container
+            [ngTemplateOutlet]="levelPage"
+            [ngTemplateOutletContext]="{
+              $implicit: Role.Barber,
+              groups: barberGroups(),
+              faces: barbers,
+            }"
+          />
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">«Бръснар»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >Values where «own» exists, a switch where it does not.</span
+          >
+        </figcaption>
+      </figure>
+
+      <figure class="team__figure">
+        <div
+          class="team__screen"
+          data-testid="composition-level-page-receptionist"
+        >
+          <ng-container
+            [ngTemplateOutlet]="levelPage"
+            [ngTemplateOutletContext]="{
+              $implicit: Role.Receptionist,
+              groups: receptionGroups(),
+              faces: reception,
+            }"
+          />
+        </div>
+        <figcaption class="team__caption">
+          <span uiText uiFont="headline">«Рецепция»</span>
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >Every row a switch: the front desk has no «own».</span
+          >
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+</sc-page>
