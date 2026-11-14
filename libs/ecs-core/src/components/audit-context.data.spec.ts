@@ -139,7 +139,8 @@ describe('AuditAction', () => {
       | typeof AuditAction.AnalyticsGoalSet
       | typeof AuditAction.AnalyticsGoalCleared
       | typeof AuditAction.TeamBarberOfferingsChanged
-      | typeof AuditAction.TeamDayExceptionsChanged;
+      | typeof AuditAction.TeamDayExceptionsChanged
+      | typeof AuditAction.TeamPermissionsChanged;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -640,6 +641,32 @@ describe('AuditContext.teamDayExceptions — a barber’s days changed', () => {
       dayExceptionsToLocalDate: '2026-12-31',
       dayExceptionsDayCount: 6,
     });
+  });
+});
+
+describe('AuditContext.teamPermissions — what a staff level may do changed', () => {
+  it('carries one element per changed cell — tags only, as given', () => {
+    const changes = [
+      {
+        staffCapability: 'HOURS',
+        role: 'receptionist',
+        accessScopeFrom: 'ALL',
+        accessScopeTo: 'NONE',
+      },
+      {
+        staffCapability: 'TIME_OFF',
+        role: 'barber',
+        accessScopeFrom: 'OWN',
+        accessScopeTo: 'ALL',
+      },
+    ] as const;
+    const context = AuditContext.teamPermissions(changes);
+    expect(context).toEqual({
+      auditAction: 'TEAM_PERMISSIONS_CHANGED',
+      permissionChanges: changes,
+    });
+    // The list is carried, never copied (Law 3: no allocation).
+    expect(context.permissionChanges).toBe(changes);
   });
 });
 

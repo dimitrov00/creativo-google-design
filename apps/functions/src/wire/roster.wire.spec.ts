@@ -1,5 +1,5 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
-import { SchedulingErrorCode } from '@core/errors';
+import { AccessErrorCode, SchedulingErrorCode } from '@core/errors';
 import {
   decodeAmendRosterBreaks,
   decodeSetDayExceptions,
@@ -58,9 +58,26 @@ describe('decodeAmendRosterBreaks', () => {
     });
   });
 
-  it('refuses a caller who is not signed in, or does not work the book', () => {
+  it('refuses a caller who is not signed in, or whose token holds no staff role', () => {
     expect(codeOf(sent, null)).toBe(SchedulingErrorCode.RosterUnauthenticated);
-    expect(codeOf(sent, ['client'])).toBe(SchedulingErrorCode.RosterForbidden);
+    expect(codeOf(sent, ['client'])).toBe(AccessErrorCode.NotStaff);
+    expect(codeOf(sent, [])).toBe(AccessErrorCode.NotStaff);
+  });
+
+  it('lets any staff token through — whose hours it may change is the pipeline’s question (staff permissions P6)', () => {
+    // The content editor's token was turned away here before; the owner may
+    // now give that level hours, so the stored account decides.
+    for (const role of [
+      'barber',
+      'receptionist',
+      'content_manager',
+      'admin',
+      'sysadmin',
+    ]) {
+      expect(decodeAmendRosterBreaks(callable(sent, [role])).ok, role).toBe(
+        true,
+      );
+    }
   });
 
   it.each([
@@ -150,10 +167,13 @@ describe('decodeSetRosterWeek', () => {
     });
   });
 
-  it('refuses a caller who does not work the book', () => {
+  it('refuses a token that holds no staff role, and lets the content editor’s through', () => {
     const decoded = decodeSetRosterWeek(callable(week, ['client']));
     expect(decoded.ok ? null : decoded.error.errorCode).toBe(
-      SchedulingErrorCode.RosterForbidden,
+      AccessErrorCode.NotStaff,
+    );
+    expect(decodeSetRosterWeek(callable(week, ['content_manager'])).ok).toBe(
+      true,
     );
   });
 });
@@ -250,15 +270,20 @@ describe('decodeSetDayExceptions', () => {
     ).toMatchObject({ ok: true, value: { callerUserId: 'u-staff' } });
   });
 
-  it('refuses a caller who is not signed in, or does not work the book — before the payload is read', () => {
+  it('refuses a caller who is not signed in, or whose token holds no staff role — before the payload is read', () => {
     expect(refusal({}, null)).toEqual({
       errorCode: SchedulingErrorCode.RosterUnauthenticated,
     });
-    for (const roles of [['client'], ['content_manager'], []]) {
+    for (const roles of [['client'], []]) {
       expect(refusal({}, roles)).toEqual({
-        errorCode: SchedulingErrorCode.RosterForbidden,
+        errorCode: AccessErrorCode.NotStaff,
       });
     }
+    // A staff token gets as far as the payload: an empty one names its field.
+    expect(refusal({}, ['content_manager'])).toEqual({
+      errorCode: SchedulingErrorCode.RosterInvalidInput,
+      field: 'dayExceptionsEdit',
+    });
   });
 
   it.each([

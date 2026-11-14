@@ -19,6 +19,7 @@ import {
   CompositionKind,
   type ServiceComposition,
   type ServiceTerms,
+  type StaffPermissions,
   type VenuePhone,
 } from '@core/components';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
@@ -38,6 +39,7 @@ import type {
   ShopLocation,
   ShopLocationMeta,
 } from './shop-location.entity';
+import type { StaffPermissionsSettings } from './staff-permissions-settings.entity';
 
 type IsNever<T> = [T] extends [never] ? true : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
@@ -199,6 +201,32 @@ export const settingsDisjoint: Disjoint<
   Pick<BookingPolicySettings, 'id'>,
   BookingPolicy
 > = true;
+
+/* ── StaffPermissionsSettings = { id } & StaffPermissions & WriteProvenance ── */
+
+// The other settings document (staff permissions P5): the owner's cells
+// flat at the root beside the save that last wrote it.
+export const permissionsNotNever: IsNever<StaffPermissionsSettings> = false;
+export const permissionsFlat: EveryVariantFlat<StaffPermissionsSettings> = true;
+export const permissionsDisjoint: [
+  Disjoint<Pick<StaffPermissionsSettings, 'id'>, StaffPermissions>,
+  Disjoint<StaffPermissions, WriteProvenance>,
+] = [true, true];
+declare const permissions: StaffPermissionsSettings;
+// Every cell is a scope or `null` (follows the default) — never a list of
+// roles, never a nested map keyed by level.
+export const permissionsRoot: readonly (string | null)[] = [
+  permissions.barberHoursScope,
+  permissions.receptionistTimeOffScope,
+  permissions.contentManagerTeamManageScope,
+  permissions.writeOperationId,
+];
+// @ts-expect-error — `admin` has everything, always: it has no cell (P4)
+export const noAdminCell: unknown = permissions.adminHoursScope;
+// @ts-expect-error — the vendor's `sysadmin` is a fixed column, not a cell
+export const noSysadminCell: unknown = permissions.sysadminHoursScope;
+// @ts-expect-error — a capability has no cell before its stage ships (P13)
+export const noLaterCell: unknown = permissions.barberBookingManageScope;
 
 declare const busyDay: BarberBusyDay;
 // A busy day is a shop day (Law 7.2): `localDate` + its first instant, no zone.

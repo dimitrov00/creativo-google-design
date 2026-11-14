@@ -1,4 +1,5 @@
 import {
+  AccessScope,
   AttendanceState,
   BookingStatus,
   BusyKey,
@@ -7,6 +8,7 @@ import {
   MinuteCount,
   PriceCents,
   Result,
+  StaffCapability,
   type AppointmentId,
   type BarberId,
   type LocationId,
@@ -16,10 +18,9 @@ import {
   type UtcEpochMs,
   type Weekday,
 } from '@core/primitives';
-import { AnalyticsError } from '@core/errors';
+import { AccessError, AnalyticsError } from '@core/errors';
 import {
   ANALYTICS_DEFINITION_VERSION,
-  AccountLifecycle,
   AnalyticsBarPart,
   type AnalyticsComparison,
   AnalyticsFigure,
@@ -37,12 +38,9 @@ import {
   type MinuteRange,
   Placement,
   RadarBase,
-  type Role,
-  Roles,
   type RosterWindow,
   Seat,
   type ShopNow,
-  StaffLink,
 } from '@core/components';
 import type {
   Appointment,
@@ -50,7 +48,6 @@ import type {
   ClientStatsRecord,
   ScheduleException,
   ShopLocation,
-  User,
 } from '@core/entities';
 import { AnalyticsHourSystem, type HourDay } from './analytics-hour.system';
 import { AnalyticsRadarSystem } from './analytics-radar.system';
@@ -64,15 +61,8 @@ import {
 } from './money-allocation.system';
 import { PartyAdmissionSystem } from './party-admission.system';
 import { type BuildDayWindowsInput, RosterSystem } from './roster.system';
+import type { StaffAccess } from './staff-access.system';
 import { ZonedTimeSystem } from './zoned-time.system';
-
-/** The caller as the visibility table judges them — from their STORED user record. */
-export type AnalyticsCaller = {
-  readonly callerRoles: readonly Role[];
-  /** Blocked (or erased) at the call's instant. */
-  readonly callerBlocked: boolean;
-  readonly linkedBarberId: BarberId | null;
-};
 
 /** A visit as the report reads it — an `Appointment` satisfies it as is. */
 export type AnalyticsVisit = Pick<
@@ -1228,26 +1218,6 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * The caller as the visibility table judges them, from their STORED user
-   * record: its roles, whether it is blocked at the call's instant (a T2
-   * expiry, `AccountLifecycle.isBlockedAt`) and its barber link
-   * (`StaffLink.of`, an absent or malformed field read as none). No record
-   * at all is `ANALYTICS_FORBIDDEN` — an account that never signed in has
-   * no roles to read.
-   */
-  callerOf(
-    user: User | null,
-    nowUtcMs: UtcEpochMs,
-  ): Result<AnalyticsCaller, AnalyticsError> {
-    if (user === null) return Result.err(AnalyticsError.forbidden());
-    return Result.ok({
-      callerRoles: user.roles,
-      callerBlocked: AccountLifecycle.isBlockedAt(user, nowUtcMs),
-      linkedBarberId: StaffLink.of(user).linkedBarberId,
-    });
-  },
-
-  /**
    * The shop whose clock says what "today" is: the deployment's default
    * shop when it is listed, else the first by id (any status — a zone is
    * configuration); `null` with no shop at all.
@@ -1577,15 +1547,16 @@ export const StaffAnalyticsSystem = {
   /**
    * The locations a report compares (owner review 2026-11-09): the ones
    * the scope names, or every location of the shop when it names none —
-   * when that is two or more, and only for an admin (a barber's scope
-   * names no location). Empty otherwise: one location IS its report.
+   * when that is two or more, and only for a reader of the whole shop
+   * (`ANALYTICS` for everyone; an own-only scope names no location).
+   * Empty otherwise: one location IS its report.
    */
   comparedLocationsOf(
-    caller: AnalyticsCaller,
+    access: StaffAccess,
     scopeLocationIds: readonly LocationId[],
     locations: readonly ShopLocation[],
   ): readonly LocationId[] {
-    if (!isShopReader(caller)) return [];
+    if (access.accessScope !== AccessScope.All) return [];
     const ids =
       scopeLocationIds.length > 0
         ? scopeLocationIds
@@ -1744,18 +1715,21 @@ export const StaffAnalyticsSystem = {
   /**
    * THE LOCATION SCOPE (ADR 2026-11-09; sets since 2026-11-09), beside
    * {@link scopeOf}: none — every location — unless the request names
-   * some. Only an admin may, and only locations of the shop's; they may
-   * sit beside barbers (those barbers' work at those locations). Answers
-   * them sorted, each once.
+   * some. Only a reader of the whole shop may (`ANALYTICS` for everyone —
+   * else the capability's refusal), and only locations of the shop's; they
+   * may sit beside barbers (those barbers' work at those locations).
+   * Answers them sorted, each once.
    */
   locationScopeOf(
-    caller: AnalyticsCaller,
+    access: StaffAccess,
     request: { readonly scopeLocationIds: readonly LocationId[] },
     locations: readonly ShopLocation[],
-  ): Result<readonly LocationId[], AnalyticsError> {
+  ): Result<readonly LocationId[], AnalyticsError | AccessError> {
     const asked = request.scopeLocationIds;
     if (asked.length === 0) return Result.ok([]);
-    if (!isShopReader(caller)) return Result.err(AnalyticsError.forbidden());
+    if (access.accessScope !== AccessScope.All) {
+      return Result.err(shortOf(access.accessScope));
+    }
     const known = new Set(locations.map((location) => location.id));
     for (let i = 0; i < asked.length; i++) {
       const locationId = asked[i] as LocationId;
@@ -1767,24 +1741,33 @@ export const StaffAnalyticsSystem = {
   },
 
   /**
-   * THE VISIBILITY TABLE, read top-down on the caller's STORED roles: a
-   * blocked account sees nothing; an admin sees the whole team (none
-   * named) or any known barber records, one or several; a barber sees only
-   * the record their account is linked to; every other role nothing.
-   * Answers the barber records the scope names — sorted, each once — none
-   * for the whole team.
+   * THE VISIBILITY TABLE, read top-down on how far `ANALYTICS` reaches
+   * for the caller (`StaffAccessSystem.accessOf` over their STORED roles
+   * and the owner's cells — staff permissions P3; a missing or blocked
+   * account was refused before this is asked):
+   *
+   * - nobody → `ACCESS_DENIED`;
+   * - everyone → the whole team (none named) or any known barber records,
+   *   one or several — an id that is no record is
+   *   `ANALYTICS_SCOPE_UNKNOWN`;
+   * - own → only the record the account is linked to: no link is
+   *   `ANALYTICS_BARBER_NOT_LINKED`; a request that names no barber reads
+   *   as that record; one that names a colleague is `ACCESS_OWN_ONLY`.
+   *
+   * By default the admin reads everyone and a barber their own. Answers
+   * the barber records the scope names — sorted, each once — none for the
+   * whole team.
    */
   scopeOf(
-    caller: AnalyticsCaller,
+    access: StaffAccess,
     request: { readonly scopeBarberIds: readonly BarberId[] },
     barberIds: readonly BarberId[],
-  ): Result<readonly BarberId[], AnalyticsError> {
-    if (caller.callerBlocked) return Result.err(AnalyticsError.forbidden());
-    if (!Roles.readsAnalytics(caller.callerRoles)) {
-      return Result.err(AnalyticsError.forbidden());
+  ): Result<readonly BarberId[], AnalyticsError | AccessError> {
+    if (access.accessScope === AccessScope.None) {
+      return Result.err(shortOf(access.accessScope));
     }
     const asked = request.scopeBarberIds;
-    if (isShopReader(caller)) {
+    if (access.accessScope === AccessScope.All) {
       for (let i = 0; i < asked.length; i++) {
         const barberId = asked[i] as BarberId;
         if (!barberIds.includes(barberId)) {
@@ -1793,13 +1776,13 @@ export const StaffAnalyticsSystem = {
       }
       return Result.ok([...new Set(asked)].sort());
     }
-    if (caller.linkedBarberId === null) {
+    if (access.linkedBarberId === null) {
       return Result.err(AnalyticsError.barberNotLinked());
     }
-    const own = caller.linkedBarberId;
+    const own = access.linkedBarberId;
     return asked.every((id) => id === own)
       ? Result.ok([own])
-      : Result.err(AnalyticsError.forbidden());
+      : Result.err(shortOf(access.accessScope));
   },
 
   report(input: AnalyticsInput): AnalyticsReport {
@@ -2902,12 +2885,9 @@ function seatRowsOf(
   );
 }
 
-/** An admin who may read the shop — any barber records, any locations — and is not blocked. */
-function isShopReader(caller: AnalyticsCaller): boolean {
-  return (
-    !caller.callerBlocked &&
-    caller.callerRoles.some((role) =>
-      (Roles.ANALYTICS_SHOP as readonly Role[]).includes(role),
-    )
-  );
+/** Why a scope short of everyone does not reach what was asked: nobody has the capability, or it is the caller's own only. */
+function shortOf(accessScope: AccessScope): AccessError {
+  return accessScope === AccessScope.None
+    ? AccessError.denied(StaffCapability.Analytics)
+    : AccessError.ownOnly(StaffCapability.Analytics);
 }

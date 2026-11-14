@@ -1,12 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { Actor, Role } from '@core/components';
-import { UserId } from '@core/primitives';
-import { TeamErrorCode } from '@core/errors';
-import { Collections } from '@core/entities';
-import { registeredUserFixture, unwrapErr, unwrapOk } from '@core/testing';
+import { Actor, Role, StaffPermissions } from '@core/components';
+import { Result, UserId } from '@core/primitives';
+import {
+  AccessErrorCode,
+  RepositoryError,
+  RepositoryErrorCode,
+  TeamErrorCode,
+} from '@core/errors';
+import { Collections, STAFF_PERMISSIONS_DOC } from '@core/entities';
+import {
+  bodyOf,
+  memoryProfileLoadPorts,
+  memoryStaffPermissionsPorts,
+  memoryStore,
+  memoryTxPorts,
+  registeredUserFixture,
+  unwrapErr,
+  unwrapOk,
+} from '@core/testing';
 import {
   admitTeamCaller,
-  admitTeamStaffCaller,
+  loadStaffCaller,
+  readStaffCaller,
+  type StaffCallerFacts,
   TEAM_BARBERS,
   TEAM_LOCATIONS,
   TEAM_ROSTERS,
@@ -23,10 +39,18 @@ const caller = (
   callerUserId: UserId | null = UID,
 ): TeamCaller => ({ callerUserId, callerRoles: roles });
 
-describe('admitTeamCaller — the token gate of the team manager’s acts', () => {
-  it('admits a token holding the admin role', () => {
-    expect(unwrapOk(admitTeamCaller(caller([Role.Admin])))).toBe(UID);
-    expect(unwrapOk(admitTeamCaller(caller([Role.Barber, Role.Admin])))).toBe(
+describe('admitTeamCaller — the one token gate of the team acts', () => {
+  it('admits a token holding any staff role — which staff, and for what, the stored account decides', () => {
+    for (const role of [
+      Role.Admin,
+      Role.Sysadmin,
+      Role.ContentManager,
+      Role.Receptionist,
+      Role.Barber,
+    ]) {
+      expect(unwrapOk(admitTeamCaller(caller([role]))), role).toBe(UID);
+    }
+    expect(unwrapOk(admitTeamCaller(caller([Role.Client, Role.Barber])))).toBe(
       UID,
     );
   });
@@ -37,42 +61,117 @@ describe('admitTeamCaller — the token gate of the team manager’s acts', () =
     });
   });
 
-  it('refuses every other role as TEAM_FORBIDDEN — the sysadmin and the content editor too', () => {
-    for (const role of [
-      Role.Sysadmin,
-      Role.ContentManager,
-      Role.Receptionist,
-      Role.Barber,
-      Role.Client,
-    ]) {
-      expect(unwrapErr(admitTeamCaller(caller([role]))), role).toEqual({
-        errorCode: TeamErrorCode.Forbidden,
+  it('refuses a client and an empty claim as ACCESS_NOT_STAFF', () => {
+    for (const roles of [[Role.Client], []]) {
+      expect(unwrapErr(admitTeamCaller(caller(roles)))).toEqual({
+        errorCode: AccessErrorCode.NotStaff,
       });
     }
-    expect(admitTeamCaller(caller([])).ok).toBe(false);
   });
 });
 
-describe('admitTeamStaffCaller — the token gate of a profile edit and the go-live step', () => {
-  it('admits any staff role', () => {
-    for (const role of [
-      Role.Admin,
-      Role.ContentManager,
-      Role.Receptionist,
-      Role.Barber,
-    ]) {
-      expect(unwrapOk(admitTeamStaffCaller(caller([role]))), role).toBe(UID);
-    }
+describe('readStaffCaller / loadStaffCaller — what a caller is judged on', () => {
+  const STORED = registeredUserFixture({ id: UID, roles: [Role.Receptionist] });
+  const PATH = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+
+  /** The facts read inside a transaction over `documents`. */
+  async function inTransaction(
+    documents: Parameters<typeof memoryStore>[0],
+  ): Promise<{
+    readonly facts: StaffCallerFacts;
+    readonly reads: readonly (readonly string[])[];
+  }> {
+    const tx = memoryTxPorts(memoryStore(documents));
+    const committed = await tx.commit(
+      (read) => readStaffCaller(read, UID),
+      (facts) => Result.ok({ facts, writes: [] }),
+    );
+    return {
+      facts: unwrapOk(committed).facts,
+      reads: tx.transactions[0]?.reads ?? [],
+    };
+  }
+
+  it('reads the account and the cells in one round trip — two documents, nothing else', async () => {
+    const { facts, reads } = await inTransaction([
+      { path: [Collections.Users, UID], body: bodyOf(STORED) },
+      { path: PATH, body: { receptionistHoursScope: 'NONE' } },
+    ]);
+    expect(reads).toEqual([[Collections.Users, UID], PATH]);
+    expect(facts.caller).toEqual(STORED);
+    expect(facts.permissions).toEqual({
+      ...StaffPermissions.UNSET,
+      receptionistHoursScope: 'NONE',
+    });
   });
 
-  it('refuses no session, a client and an empty claim', () => {
-    expect(unwrapErr(admitTeamStaffCaller(caller([Role.Admin], null)))).toEqual(
-      { errorCode: TeamErrorCode.Unauthenticated },
-    );
-    expect(unwrapErr(admitTeamStaffCaller(caller([Role.Client])))).toEqual({
-      errorCode: TeamErrorCode.Forbidden,
+  it('answers no account as null, and no document as every cell at its default', async () => {
+    const { facts } = await inTransaction([]);
+    expect(facts).toEqual({
+      caller: null,
+      permissions: StaffPermissions.UNSET,
     });
-    expect(admitTeamStaffCaller(caller([])).ok).toBe(false);
+  });
+
+  it('hands the stored cells through the guard: a value nobody could save reads as nobody', async () => {
+    const { facts } = await inTransaction([
+      { path: PATH, body: { barberHoursScope: 'EVERYONE', junk: true } },
+    ]);
+    expect(facts.permissions).toEqual({
+      ...StaffPermissions.UNSET,
+      barberHoursScope: 'NONE',
+    });
+  });
+
+  it('reads the same facts through ports, for a call with no transaction', async () => {
+    const permissions = StaffPermissions.read({ barberAnalyticsScope: 'ALL' });
+    const ports = {
+      ...memoryProfileLoadPorts([STORED]),
+      ...memoryStaffPermissionsPorts(permissions),
+    };
+    expect(unwrapOk(await loadStaffCaller(ports, UID))).toEqual({
+      caller: STORED,
+      permissions,
+    });
+    expect(
+      unwrapOk(await loadStaffCaller(ports, UserId.of('u-nobody'))),
+    ).toEqual({ caller: null, permissions });
+    // No cells given: every one at its default.
+    expect(
+      unwrapOk(
+        await loadStaffCaller(
+          { ...ports, ...memoryStaffPermissionsPorts() },
+          UID,
+        ),
+      ).permissions,
+    ).toEqual(StaffPermissions.UNSET);
+  });
+
+  it('answers either failed read as it failed', async () => {
+    const failure = RepositoryError.readFailed(
+      'users/u-caller',
+      RepositoryErrorCode.ReadFailed,
+    );
+    const working = {
+      ...memoryProfileLoadPorts([STORED]),
+      ...memoryStaffPermissionsPorts(),
+    };
+    expect(
+      unwrapErr(
+        await loadStaffCaller(
+          { ...working, loadProfile: async () => Result.err(failure) },
+          UID,
+        ),
+      ),
+    ).toEqual(failure);
+    expect(
+      unwrapErr(
+        await loadStaffCaller(
+          { ...working, loadStaffPermissions: async () => Result.err(failure) },
+          UID,
+        ),
+      ),
+    ).toEqual(failure);
   });
 });
 

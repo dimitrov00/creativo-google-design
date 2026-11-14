@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AccountLifecycle,
   Actor,
   AuditAction,
   BarberActivation,
   BarberStatus,
-  BlockReason,
-  Role,
   StaffSetupItem,
   WriteOp,
 } from '@core/components';
@@ -32,7 +29,6 @@ import {
   localDate,
   unwrapErr,
   unwrapOk,
-  userFixture,
 } from '@core/testing';
 import { AuditSystem } from './audit.system';
 import type { StaffSetupChecklist } from './staff-setup.system';
@@ -48,7 +44,6 @@ const CENTER = FIXTURE_IDS.location;
 const MLADOST = LocationId.of('loc-mladost');
 const NEW = BarberId.of('b-new');
 
-const admin = userFixture({ roles: [Role.Admin] });
 const draft = barberFixture(
   { id: NEW },
   {
@@ -68,113 +63,13 @@ const departed = barberFixture(
   },
 );
 
-describe('TeamSystem.admit — who manages the team', () => {
-  it('admits the admin on their STORED roles, alone or beside another role', () => {
-    expect(TeamSystem.admit(admin, NOW).ok).toBe(true);
-    expect(
-      TeamSystem.admit(userFixture({ roles: [Role.Barber, Role.Admin] }), NOW)
-        .ok,
-    ).toBe(true);
-  });
-
-  it('refuses everyone else, an account that is gone, and a blocked admin', () => {
-    for (const roles of [
-      [Role.Barber],
-      [Role.Receptionist],
-      [Role.ContentManager],
-      [Role.Sysadmin],
-      [Role.Client],
-      [],
-    ]) {
-      expect(unwrapErr(TeamSystem.admit(userFixture({ roles }), NOW))).toEqual({
-        errorCode: TeamErrorCode.Forbidden,
-      });
-    }
-    expect(TeamSystem.admit(null, NOW).ok).toBe(false);
-    expect(
-      TeamSystem.admit(
-        userFixture({
-          roles: [Role.Admin],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        NOW,
-      ).ok,
-    ).toBe(false);
-  });
-});
-
-describe('TeamSystem.admitProfileEdit — who edits a barber’s profile', () => {
-  const ivan = FIXTURE_IDS.barber;
-
-  it('admits the admin, the content editor, and the barber whose account is linked to this record', () => {
-    expect(TeamSystem.admitProfileEdit(admin, ivan, NOW).ok).toBe(true);
-    expect(
-      TeamSystem.admitProfileEdit(
-        userFixture({ roles: [Role.ContentManager] }),
-        ivan,
-        NOW,
-      ).ok,
-    ).toBe(true);
-    expect(
-      TeamSystem.admitProfileEdit(
-        userFixture({ roles: [Role.Barber], linkedBarberId: ivan }),
-        ivan,
-        NOW,
-      ).ok,
-    ).toBe(true);
-  });
-
-  it('refuses a barber another record, an unlinked barber, the front desk, and anyone blocked', () => {
-    const refused = [
-      userFixture({ roles: [Role.Barber], linkedBarberId: NEW }),
-      userFixture({ roles: [Role.Barber] }),
-      userFixture({ roles: [Role.Receptionist] }),
-      userFixture({
-        roles: [Role.Barber],
-        linkedBarberId: ivan,
-        ...AccountLifecycle.block(BlockReason.Manual, null),
-      }),
-      null,
-    ];
-    for (const caller of refused) {
-      expect(TeamSystem.admitProfileEdit(caller, ivan, NOW).ok).toBe(false);
-    }
-  });
-});
-
-describe('TeamSystem.admitActivation — who may ask a draft to go live', () => {
-  it('admits any staff account on its STORED roles', () => {
-    for (const roles of [
-      [Role.Admin],
-      [Role.ContentManager],
-      [Role.Receptionist],
-      [Role.Barber],
-    ]) {
-      expect(
-        TeamSystem.admitActivation(userFixture({ roles }), NOW).ok,
-        roles.join(),
-      ).toBe(true);
-    }
-  });
-
-  it('refuses a client, an account that is gone, and blocked staff', () => {
-    expect(
-      unwrapErr(
-        TeamSystem.admitActivation(userFixture({ roles: [Role.Client] }), NOW),
-      ),
-    ).toEqual({ errorCode: TeamErrorCode.Forbidden });
-    expect(TeamSystem.admitActivation(null, NOW).ok).toBe(false);
-    expect(
-      TeamSystem.admitActivation(
-        userFixture({
-          roles: [Role.Barber],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        NOW,
-      ).ok,
-    ).toBe(false);
-  });
-});
+/*
+ * WHO may make a team act is `StaffAccessSystem`'s question since staff
+ * permissions stage A (`staff-access.system.spec.ts`, and the table that
+ * pins the defaults to what `admit`, `admitProfileEdit` and
+ * `admitActivation` answered here). What follows are the record decisions,
+ * asked after the caller is admitted.
+ */
 
 describe('TeamSystem.add — a new barber record', () => {
   const input: AddBarberInput = {

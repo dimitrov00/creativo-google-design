@@ -10,11 +10,14 @@ import {
   OperationId,
   PrimitiveErrorCode,
   type Result,
+  StaffCapability,
   StoredFields,
+  Tag,
   TriggerEventId,
   UtcEpochMs,
 } from '@core/primitives';
 import {
+  AccessErrorCode,
   AccountsErrorCode,
   AnalyticsErrorCode,
   AppCheckErrorCode,
@@ -105,6 +108,7 @@ import { eventInstantOf, idOf, operationIdOf } from './wire/wire-read';
  * their codes maps, and that no ecs-core error dictionary is missing here.
  */
 export const EDGE_DICTIONARIES = {
+  AccessErrorCode,
   AccountsErrorCode,
   AnalyticsErrorCode,
   AppCheckErrorCode,
@@ -138,6 +142,7 @@ export const EDGE_DICTIONARIES = {
 
 /** Every code the edge can put on the wire. */
 export type EdgeCode =
+  | AccessErrorCode
   | AccountsErrorCode
   | AnalyticsErrorCode
   | AppCheckErrorCode
@@ -432,7 +437,6 @@ const CLIENT_ISSUE_WIRE: WireTable<ClientIssueErrorCode> = {
  */
 const ANALYTICS_WIRE: WireTable<AnalyticsErrorCode> = {
   [AnalyticsErrorCode.Unauthenticated]: fields(S.Unauthenticated),
-  [AnalyticsErrorCode.Forbidden]: fields(S.PermissionDenied),
   [AnalyticsErrorCode.BarberNotLinked]: fields(S.FailedPrecondition),
   [AnalyticsErrorCode.PeriodOutOfRange]: fields(S.InvalidArgument),
   [AnalyticsErrorCode.ScopeUnknown]: fields(S.NotFound),
@@ -517,6 +521,13 @@ const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   [IdentityErrorCode.CallFailed]: fields(S.Internal),
 };
 
+/**
+ * Staff access (staff permissions P6): every refusal of who may make a
+ * staff act leaves `permission-denied`, with the capability the caller
+ * lacks (its allowlist row) so the web can name it.
+ */
+const ACCESS_WIRE = uniform(AccessErrorCode, fields(S.PermissionDenied), {});
+
 const ACCOUNTS_WIRE: WireTable<AccountsErrorCode> = {
   [AccountsErrorCode.BlockReasonInvalid]: fields(S.InvalidArgument),
   [AccountsErrorCode.UserRoleInvalid]: fields(S.InvalidArgument),
@@ -577,6 +588,11 @@ const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
   [GovernanceErrorCode.RolesBarberUnknown]: fields(S.NotFound),
   [GovernanceErrorCode.RolesLinkWithoutBarber]: fields(S.InvalidArgument),
   [GovernanceErrorCode.RolesBarberAlreadyLinked]: fields(S.FailedPrecondition),
+  // The permissions save (staff permissions P6), as the roles change.
+  [GovernanceErrorCode.PermissionsUnauthenticated]: fields(S.Unauthenticated),
+  [GovernanceErrorCode.PermissionsForbidden]: fields(S.PermissionDenied),
+  [GovernanceErrorCode.PermissionsInvalid]: withField(S.InvalidArgument),
+  [GovernanceErrorCode.PermissionsNotOffered]: fields(S.FailedPrecondition),
 };
 
 const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {
@@ -674,7 +690,6 @@ const SCHEDULING_WIRE = uniform(
     [SchedulingErrorCode.RosterBreakInPast]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.RosterMissing]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.RosterUnauthenticated]: fields(S.Unauthenticated),
-    [SchedulingErrorCode.RosterForbidden]: fields(S.PermissionDenied),
     [SchedulingErrorCode.RosterOutsideShops]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.RosterDeparted]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.StaffScheduleRetroactiveAmendment]: fields(
@@ -746,7 +761,6 @@ const ENGAGEMENT_WIRE = uniform(
 // The team callables (team onboarding D5): who may act, then what was asked.
 const TEAM_WIRE: WireTable<TeamErrorCode> = {
   [TeamErrorCode.Unauthenticated]: fields(S.Unauthenticated),
-  [TeamErrorCode.Forbidden]: fields(S.PermissionDenied),
   [TeamErrorCode.InvalidInput]: withField(S.InvalidArgument),
   [TeamErrorCode.BarberNotFound]: fields(S.NotFound),
   [TeamErrorCode.BarberDeparted]: fields(S.FailedPrecondition),
@@ -810,6 +824,7 @@ function withAllowlists<C extends string>(
 /** The whole table — total over {@link EdgeCode} by its type. */
 export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
   withAllowlists<EdgeCode>({
+    ...ACCESS_WIRE,
     ...ACCOUNTS_WIRE,
     ...ANALYTICS_WIRE,
     ...APP_CHECK_WIRE,
@@ -1097,12 +1112,25 @@ type Outcome = {
   readonly msg: LogEvent;
   readonly errorCode: string | null;
   readonly wireStatus: string;
+  /**
+   * The capability a staff-access refusal names (`ACCESS_DENIED`,
+   * `ACCESS_OWN_ONLY` — staff permissions P11), else `null`: a rise in
+   * refusals for one capability after a change means the owner cut
+   * something people need. A tag, never a person.
+   */
+  readonly staffCapability: StaffCapability | null;
 };
 
 /** The `errorCode` an `HttpsError`'s details carry (the flipped wire, 4A-4), else `null`. */
 function wireCodeOf(error: HttpsError): string | null {
   const code = StoredFields.field(error.details, 'errorCode');
   return typeof code === 'string' ? code : null;
+}
+
+/** The capability an `HttpsError`'s details name — what its code's allowlist let leave — else `null`. */
+function wireCapabilityOf(error: HttpsError): StaffCapability | null {
+  const capability = StoredFields.field(error.details, 'staffCapability');
+  return Tag.has(StaffCapability, capability) ? capability : null;
 }
 
 /**
@@ -1118,6 +1146,7 @@ function thrownOutcome(error: HttpsError, errorCode: string | null): Outcome {
     msg: failed ? LogEvent.CallableFailed : LogEvent.CallableRefused,
     errorCode,
     wireStatus: error.code,
+    staffCapability: wireCapabilityOf(error),
   };
 }
 
@@ -1273,6 +1302,10 @@ export const callableEdge =
       ports.log(outcome.level, outcome.msg, {
         ...context,
         errorCode: outcome.errorCode,
+        // Only a staff-access refusal names one; every other line is as it was.
+        ...(outcome.staffCapability === null
+          ? {}
+          : { staffCapability: outcome.staffCapability }),
         wireStatus: outcome.wireStatus,
         durationMs: UtcEpochMs.elapsedMs(
           budget.startedAtUtcMs,
@@ -1343,6 +1376,7 @@ function outcomeOf<Out>(spec: CallableSpec, settled: Settled<Out>): Outcome {
           msg: LogEvent.CallableFailed,
           errorCode: spec.failureCode,
           wireStatus: settled.thrown.code,
+          staffCapability: null,
         }
       : thrownOutcome(settled.thrown, wireCodeOf(settled.thrown));
   }
@@ -1353,6 +1387,7 @@ function outcomeOf<Out>(spec: CallableSpec, settled: Settled<Out>): Outcome {
       msg: LogEvent.CallableCompleted,
       errorCode: null,
       wireStatus: 'ok',
+      staffCapability: null,
     };
   }
   return thrownOutcome(toHttpsError(result.error), result.error.errorCode);

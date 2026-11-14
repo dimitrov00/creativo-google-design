@@ -1,5 +1,5 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
-import { AnalyticsErrorCode } from '@core/errors';
+import { AccessErrorCode, AnalyticsErrorCode } from '@core/errors';
 import { decodeSetAnalyticsGoal, decodeStaffAnalytics } from './analytics.wire';
 
 /*
@@ -164,20 +164,25 @@ describe('decodeStaffAnalytics', () => {
     });
   });
 
-  it('refuses a token that claims no role reading analytics', () => {
-    for (const roles of [
-      ['client'],
-      ['receptionist'],
-      ['sysadmin'],
-      ['content_manager'],
-      [],
-      [['admin']],
-    ]) {
+  it('refuses a token that claims no staff role — an entry counts only when it IS the role', () => {
+    for (const roles of [['client'], [], [['admin']]]) {
       expect(refusalOf(sent, roles)).toEqual({
-        errorCode: AnalyticsErrorCode.Forbidden,
+        errorCode: AccessErrorCode.NotStaff,
       });
     }
-    for (const roles of [['barber'], ['admin'], ['admin', 'barber']]) {
+  });
+
+  it('lets every staff token through — who reads whose numbers is the pipeline’s question (staff permissions P6)', () => {
+    // The owner may give any level the numbers, and an owner linked as a
+    // barber reads their own before their token says `barber`.
+    for (const roles of [
+      ['barber'],
+      ['admin'],
+      ['admin', 'barber'],
+      ['receptionist'],
+      ['content_manager'],
+      ['sysadmin'],
+    ]) {
       expect(refusalOf(sent, roles)).toBeNull();
     }
   });
@@ -276,16 +281,16 @@ describe('decodeSetAnalyticsGoal', () => {
     ).toBe(true);
   });
 
-  it('refuses a caller who is not signed in, and a token with no analytics role', () => {
+  it('refuses a caller who is not signed in, and a token with no staff role', () => {
     expect(goalRefusalOf(goalSent, null)).toEqual({
       errorCode: AnalyticsErrorCode.Unauthenticated,
     });
-    for (const roles of [['client'], ['receptionist'], []]) {
+    for (const roles of [['client'], []]) {
       expect(goalRefusalOf(goalSent, roles)).toEqual({
-        errorCode: AnalyticsErrorCode.Forbidden,
+        errorCode: AccessErrorCode.NotStaff,
       });
     }
-    for (const roles of [['barber'], ['admin']]) {
+    for (const roles of [['barber'], ['admin'], ['receptionist']]) {
       expect(goalRefusalOf(goalSent, roles)).toBeNull();
     }
   });

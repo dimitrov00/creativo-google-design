@@ -15,6 +15,7 @@ import { type EdgeError, toHttpsError } from '../edge';
 import {
   decodeEndImpersonation,
   decodeSetRoles,
+  decodeSetStaffPermissions,
   decodeStartImpersonation,
 } from './governance.wire';
 import { refusalOf, type WireRequest } from './wire-read';
@@ -439,5 +440,124 @@ describe('decodeSetRoles (security hardening S-WS-E)', () => {
     expect(() =>
       refusalOf(RepositoryError.writeFailed('users/u-client', 'aborted')),
     ).toThrow('REPOSITORY_WRITE_FAILED');
+  });
+});
+
+describe('decodeSetStaffPermissions (staff permissions P6)', () => {
+  const OP = 'operation-0123456789ab';
+  const CELL = {
+    staffCapability: 'HOURS',
+    role: 'receptionist',
+    accessScope: 'NONE',
+  };
+  const SAVE = { changes: [CELL], operationId: OP };
+
+  /** A payload whose every read throws — proof the gate refuses before reading it. */
+  const unreadable = (): unknown =>
+    new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('the payload was read');
+        },
+        has: () => {
+          throw new Error('the payload was read');
+        },
+      },
+    );
+
+  it('refuses nobody as GOVERNANCE_PERMISSIONS_UNAUTHENTICATED, before the payload is read', () => {
+    for (const data of [null, SAVE, unreadable()]) {
+      expect(wire(decodeSetStaffPermissions(signedIn(data, null)))).toEqual({
+        code: 'unauthenticated',
+        details: { errorCode: GovernanceErrorCode.PermissionsUnauthenticated },
+      });
+    }
+  });
+
+  it.each([
+    ['a barber', ['barber']],
+    ['the front desk', ['receptionist']],
+    ['the content editor', ['content_manager']],
+    ['the vendor’s sysadmin', ['sysadmin']],
+    ['a client', ['client']],
+    ['no claim', []],
+    ['a list inside the claim', [['admin']]],
+  ])(
+    'refuses %s as GOVERNANCE_PERMISSIONS_FORBIDDEN before the payload is read — the uid stays on the server',
+    (_who, roles) => {
+      expect(
+        wire(decodeSetStaffPermissions(signedIn(unreadable(), 'u-1', roles))),
+      ).toEqual({
+        code: 'permission-denied',
+        details: { errorCode: GovernanceErrorCode.PermissionsForbidden },
+      });
+    },
+  );
+
+  it('decodes the changes as sent — the caller and their roles off the token, the act’s name required', () => {
+    expect(valueOf(decodeSetStaffPermissions(admin(SAVE)))).toEqual({
+      adminUserId: 'u-owner',
+      adminRoles: ['barber', 'admin'],
+      changes: [CELL],
+      operationId: OP,
+    });
+    // An empty save is a save: the pipeline answers it changed nothing.
+    expect(
+      valueOf(
+        decodeSetStaffPermissions(admin({ changes: [], operationId: OP })),
+      ).changes,
+    ).toEqual([]);
+    // A level the owner does not edit, and "own" off the barber level, are
+    // well-formed: whether a cell is on offer is the system's question.
+    for (const cell of [
+      { ...CELL, role: 'admin' },
+      { ...CELL, accessScope: 'OWN' },
+    ]) {
+      expect(
+        decodeSetStaffPermissions(admin({ changes: [cell], operationId: OP }))
+          .ok,
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    ['changes', { changes: undefined }],
+    ['changes', { changes: 'HOURS' }],
+    ['changes', { changes: { 0: CELL } }],
+    // Longer than the grid has cells.
+    ['changes', { changes: Array.from({ length: 19 }, () => CELL) }],
+    ['staffCapability', { changes: [{ ...CELL, staffCapability: 'BOOKING' }] }],
+    ['staffCapability', { changes: [{ ...CELL, staffCapability: undefined }] }],
+    // A capability whose stage has not shipped is no capability (P13).
+    [
+      'staffCapability',
+      { changes: [{ ...CELL, staffCapability: 'BOOKING_MANAGE' }] },
+    ],
+    ['staffCapability', { changes: ['HOURS'] }],
+    ['role', { changes: [{ ...CELL, role: 'owner' }] }],
+    ['role', { changes: [{ ...CELL, role: ['receptionist'] }] }],
+    ['accessScope', { changes: [{ ...CELL, accessScope: 'EVERYONE' }] }],
+    ['accessScope', { changes: [{ ...CELL, accessScope: null }] }],
+    // The first cell at fault, in the request's order.
+    [
+      'role',
+      {
+        changes: [
+          CELL,
+          { ...CELL, role: 'nobody' },
+          { ...CELL, accessScope: 7 },
+        ],
+      },
+    ],
+    ['operationId', { operationId: 'short' }],
+    ['operationId', { operationId: undefined }],
+  ])('names the unreadable %s', (field, broken) => {
+    expect(
+      wire(decodeSetStaffPermissions(admin({ ...SAVE, ...broken }))),
+    ).toEqual({
+      code: 'invalid-argument',
+      details: { errorCode: GovernanceErrorCode.PermissionsInvalid, field },
+    });
   });
 });

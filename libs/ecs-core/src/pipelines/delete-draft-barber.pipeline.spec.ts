@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Actor, BarberStatus, Role, WriteOp } from '@core/components';
+import {
+  Actor,
+  BarberStatus,
+  type DocBody,
+  Role,
+  WriteOp,
+} from '@core/components';
 import {
   AuditEntryId,
   BarberId,
@@ -8,13 +14,14 @@ import {
   ServiceId,
   UserId,
 } from '@core/primitives';
-import { TeamErrorCode } from '@core/errors';
+import { AccessErrorCode, TeamErrorCode } from '@core/errors';
 import {
   BARBER_LINK_DOC,
   type Barber,
   type BarberSchedule,
   Collections,
   type Service,
+  STAFF_PERMISSIONS_DOC,
   Subcollections,
   type User,
 } from '@core/entities';
@@ -92,8 +99,17 @@ const COLOUR: Service = serviceFixture({
   ],
 });
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const DENIED = {
+  errorCode: AccessErrorCode.Denied,
+  staffCapability: 'TEAM_MANAGE',
+};
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   readonly barber?: Barber | null;
   readonly schedule?: BarberSchedule | null;
   /** The account the record's lock names; `null` is no lock. */
@@ -107,6 +123,9 @@ function rig(options: RigOptions = {}) {
   const schedule = options.schedule ?? null;
   const linked = options.linked ?? null;
   const store = memoryStore([
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...[caller, linked].flatMap((user) =>
       user === null
         ? []
@@ -234,6 +253,7 @@ describe('deleteDraftBarber', () => {
     await run(call());
     expect(tx.transactions[0]?.reads).toEqual([
       [Collections.Users, ADMIN],
+      PERMISSIONS,
       [Collections.Barbers, IVAN],
       [Collections.BarberSchedules, IVAN],
       lockPath,
@@ -280,30 +300,44 @@ describe('deleteDraftBarber', () => {
     expect(auditRowsOf(tx.plans)).toHaveLength(1);
   });
 
-  it('is the admin’s alone: every other token is turned away before any read, every other stored account after it', async () => {
-    const { store, tx, run } = rig();
+  it('turns away no session and a token with no staff role before any read', async () => {
+    const { tx, run } = rig();
     expect(unwrapErr(await run(call({ callerUserId: null })))).toEqual({
       errorCode: TeamErrorCode.Unauthenticated,
     });
-    for (const callerRoles of [
-      [Role.ContentManager],
-      [Role.Receptionist],
-      [Role.Barber],
-      [Role.Sysadmin],
-    ]) {
-      expect(unwrapErr(await run(call({ callerRoles })))).toEqual({
-        errorCode: TeamErrorCode.Forbidden,
-      });
+    for (const callerRoles of [[Role.Client], []]) {
+      expect(unwrapErr(await run(call({ callerRoles })))).toEqual(NOT_STAFF);
     }
     expect(tx.transactions).toHaveLength(0);
+  });
 
-    const demoted = rig({
-      caller: registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }),
+  it('with no document, is the admin’s alone: every other stored account is refused, and the draft stays', async () => {
+    for (const role of [
+      Role.ContentManager,
+      Role.Receptionist,
+      Role.Barber,
+      Role.Sysadmin,
+    ]) {
+      const { store, tx, run } = rig({
+        caller: registeredUserFixture({ id: ADMIN, roles: [role] }),
+      });
+      // The token still says admin; the stored account decides.
+      expect(unwrapErr(await run(call())), role).toEqual(DENIED);
+      expect(tx.plans).toEqual([]);
+      expect(store.has(`${Collections.Barbers}/${IVAN}`)).toBe(true);
+    }
+    const gone = rig({ caller: null });
+    expect(unwrapErr(await gone.run(call()))).toEqual(NOT_STAFF);
+  });
+
+  it('follows the owner’s cells: a level given the team deletes a draft', async () => {
+    const { store, run } = rig({
+      caller: registeredUserFixture({ id: ADMIN, roles: [Role.Receptionist] }),
+      permissions: { receptionistTeamManageScope: 'ALL' },
     });
-    expect(unwrapErr(await demoted.run(call()))).toEqual({
-      errorCode: TeamErrorCode.Forbidden,
-    });
-    expect(demoted.tx.plans).toEqual([]);
-    expect(store.has(`${Collections.Barbers}/${IVAN}`)).toBe(true);
+    expect(await run(call({ callerRoles: [Role.Receptionist] }))).toEqual(
+      Result.ok({ barberId: IVAN }),
+    );
+    expect(store.has(`${Collections.Barbers}/${IVAN}`)).toBe(false);
   });
 });

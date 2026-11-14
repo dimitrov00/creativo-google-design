@@ -7,6 +7,7 @@ import {
   callerActor,
   callerActorAsClaimed,
   callerIsAdmin,
+  callerIsStaff,
   callerKnownRoles,
   callerRoles,
   callerUserId,
@@ -120,6 +121,28 @@ describe('callerWorksTheBook', () => {
   it('refuses a claim nobody promised', () => {
     expect(callerWorksTheBook({})).toBe(false);
     expect(callerWorksTheBook(caller('barber'))).toBe(false);
+  });
+});
+
+describe('callerIsStaff — the gate of the callables that judge the stored account (staff permissions P6)', () => {
+  it('admits every staff role — the content editor too — and never a client', () => {
+    expect(Roles.ALL.filter((role) => callerIsStaff(caller([role])))).toEqual([
+      'barber',
+      'receptionist',
+      'content_manager',
+      'admin',
+      'sysadmin',
+    ]);
+    expect(callerIsStaff(caller(['client', 'barber']))).toBe(true);
+  });
+
+  it('refuses a claim nobody promised — an entry counts only when it IS the role', () => {
+    expect(callerIsStaff({})).toBe(false);
+    expect(callerIsStaff({ auth: {} })).toBe(false);
+    expect(callerIsStaff(caller('barber'))).toBe(false);
+    expect(callerIsStaff(caller([]))).toBe(false);
+    expect(callerIsStaff(caller([['admin']]))).toBe(false);
+    expect(callerIsStaff(caller(['Barber', 'staff']))).toBe(false);
   });
 });
 

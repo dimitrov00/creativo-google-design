@@ -5,6 +5,7 @@ import {
   type BarberOffering,
   BarberStatus,
   BlockReason,
+  type DocBody,
   OfferingsEdit,
   type OfferingsRequest,
   Role,
@@ -17,11 +18,12 @@ import {
   ServiceId,
   UserId,
 } from '@core/primitives';
-import { TeamErrorCode } from '@core/errors';
+import { AccessErrorCode, TeamErrorCode } from '@core/errors';
 import {
   type Barber,
   Collections,
   type Service,
+  STAFF_PERMISSIONS_DOC,
   type User,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
@@ -121,8 +123,21 @@ const COPY_IVAN: OfferingsRequest.Copy = {
   copyFromBarberId: IVAN,
 };
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const DENIED = {
+  errorCode: AccessErrorCode.Denied,
+  staffCapability: 'TEAM_OFFERINGS',
+};
+const OWN_ONLY = {
+  errorCode: AccessErrorCode.OwnOnly,
+  staffCapability: 'TEAM_OFFERINGS',
+};
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   /** The barber whose list is saved (default the newcomer); `null`: no record. */
   readonly barber?: Barber | null;
   /** Whether Ivan — the colleague a copy names — has a record. */
@@ -138,6 +153,9 @@ function rig(options: RigOptions = {}) {
     ...(options.withIvan === false ? [] : [barberFixture()]),
   ];
   const store = memoryStore([
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...(caller === null
       ? []
       : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
@@ -243,12 +261,13 @@ describe('setBarberOfferings', () => {
       });
     });
 
-    it('reads the caller, the barber and every service — no colleague', async () => {
+    it('reads the caller and the owner’s cells, the barber and every service — no colleague', async () => {
       const { tx, run } = rig();
       await run(call(set(entry(CUT, 2000, 45))));
       expect(tx.transactions).toHaveLength(1);
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Users, ADMIN],
+        PERMISSIONS,
         [Collections.Barbers, NEW],
       ]);
       expect(tx.transactions[0]?.queries).toEqual([TEAM_SERVICES]);
@@ -301,6 +320,7 @@ describe('setBarberOfferings', () => {
       await run(call(COPY_IVAN));
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Users, ADMIN],
+        PERMISSIONS,
         [Collections.Barbers, NEW],
         [Collections.Barbers, IVAN],
       ]);
@@ -330,43 +350,110 @@ describe('setBarberOfferings', () => {
   });
 
   describe('the caller and the record', () => {
-    it('is the admin’s alone: every other token is turned away before any read, every other stored account after it', async () => {
+    it('turns away no session and a token with no staff role before any read', async () => {
       const { tx, run } = rig();
       expect(
         unwrapErr(await run(call(COPY_IVAN, { callerUserId: null }))),
       ).toEqual({ errorCode: TeamErrorCode.Unauthenticated });
-      for (const callerRoles of [
-        [Role.ContentManager],
-        [Role.Receptionist],
-        [Role.Barber],
-        [Role.Sysadmin],
-      ]) {
-        expect(unwrapErr(await run(call(COPY_IVAN, { callerRoles })))).toEqual({
-          errorCode: TeamErrorCode.Forbidden,
-        });
+      for (const callerRoles of [[Role.Client], []]) {
+        expect(unwrapErr(await run(call(COPY_IVAN, { callerRoles })))).toEqual(
+          NOT_STAFF,
+        );
       }
       expect(tx.transactions).toHaveLength(0);
+    });
 
-      for (const caller of [
+    it('with no document, prices are the owner’s: every other stored account is refused, and nothing is written', async () => {
+      const cases: [User | null, object][] = [
         // A barber sets no price — not even their own.
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Barber],
+            linkedBarberId: NEW,
+          }),
+          DENIED,
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.ContentManager] }),
+          DENIED,
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.Receptionist] }),
+          DENIED,
+        ],
+        [registeredUserFixture({ id: ADMIN, roles: [Role.Sysadmin] }), DENIED],
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Admin],
+            ...AccountLifecycle.block(BlockReason.Manual, null),
+          }),
+          NOT_STAFF,
+        ],
+        [null, NOT_STAFF],
+      ];
+      for (const [caller, refusal] of cases) {
+        const refused = rig({ caller });
+        expect(unwrapErr(await refused.run(call(COPY_IVAN)))).toEqual(refusal);
+        expect(refused.tx.plans).toEqual([]);
+      }
+    });
+
+    it('a barber given their own prices sets their own list — and no colleague’s (O8)', async () => {
+      const permissions = { barberTeamOfferingsScope: 'OWN' };
+      const own = registeredUserFixture({
+        id: ADMIN,
+        roles: [Role.Barber],
+        linkedBarberId: NEW,
+      });
+      const { store, run } = rig({ caller: own, permissions });
+      expect(
+        await run(
+          call(set(entry(CUT, 2000, 45)), { callerRoles: [Role.Barber] }),
+        ),
+      ).toEqual(Result.ok({ barberId: NEW }));
+      expect(
+        (
+          store.get(`${Collections.Services}/${CUT}`)?.['offerings'] as
+            readonly BarberOffering[] | undefined
+        )?.some((offering) => offering.barberId === NEW),
+      ).toBe(true);
+
+      // The same grant on a colleague's record, and with no link at all.
+      for (const caller of [
         registeredUserFixture({
           id: ADMIN,
           roles: [Role.Barber],
-          linkedBarberId: NEW,
+          linkedBarberId: IVAN,
         }),
-        registeredUserFixture({
-          id: ADMIN,
-          roles: [Role.Admin],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        null,
+        registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }),
       ]) {
-        const refused = rig({ caller });
-        expect(unwrapErr(await refused.run(call(COPY_IVAN)))).toEqual({
-          errorCode: TeamErrorCode.Forbidden,
-        });
+        const refused = rig({ caller, permissions });
+        expect(
+          unwrapErr(
+            await refused.run(
+              call(set(entry(CUT, 2000, 45)), { callerRoles: [Role.Barber] }),
+            ),
+          ),
+        ).toEqual(OWN_ONLY);
         expect(refused.tx.plans).toEqual([]);
       }
+    });
+
+    it('a level given everyone’s prices sets any barber’s', async () => {
+      const { run } = rig({
+        caller: registeredUserFixture({
+          id: ADMIN,
+          roles: [Role.Receptionist],
+        }),
+        permissions: { receptionistTeamOfferingsScope: 'ALL' },
+      });
+      expect(
+        await run(
+          call(set(entry(CUT, 2000, 45)), { callerRoles: [Role.Receptionist] }),
+        ),
+      ).toEqual(Result.ok({ barberId: NEW }));
     });
 
     it('answers TEAM_BARBER_NOT_FOUND for an id with no record, and never edits one that has left', async () => {

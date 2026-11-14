@@ -14,10 +14,9 @@ const day = (raw: string): LocalDate => {
 };
 
 describe('AnalyticsError', () => {
-  it('uses nine SCREAMING codes, each with the ANALYTICS_ prefix — v1’s six, the location scope’s one and the goal’s two (PR 6)', () => {
+  it('uses eight SCREAMING codes, each with the ANALYTICS_ prefix — v1’s five, the location scope’s one and the goal’s two (PR 6); who may ask is an AccessError', () => {
     expect(Object.values(AnalyticsErrorCode)).toEqual([
       'ANALYTICS_UNAUTHENTICATED',
-      'ANALYTICS_FORBIDDEN',
       'ANALYTICS_BARBER_NOT_LINKED',
       'ANALYTICS_PERIOD_OUT_OF_RANGE',
       'ANALYTICS_SCOPE_UNKNOWN',
@@ -42,12 +41,9 @@ describe('AnalyticsError', () => {
     }
   });
 
-  it('builds the three context-free refusals as the code alone', () => {
+  it('builds the two context-free refusals as the code alone', () => {
     expect(AnalyticsError.unauthenticated()).toEqual({
       errorCode: 'ANALYTICS_UNAUTHENTICATED',
-    });
-    expect(AnalyticsError.forbidden()).toEqual({
-      errorCode: 'ANALYTICS_FORBIDDEN',
     });
     expect(AnalyticsError.barberNotLinked()).toEqual({
       errorCode: 'ANALYTICS_BARBER_NOT_LINKED',

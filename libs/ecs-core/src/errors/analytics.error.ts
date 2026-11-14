@@ -6,18 +6,14 @@ import type { BarberId, LocalDate, LocationId } from '@core/primitives';
  * Flat structs discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with
  * the `ANALYTICS_` prefix; the screen words each as `errors.<errorCode>`.
  *
- * The visibility table decides most of them: who may ask for which scope,
- * judged on the caller's STORED roles and account status.
+ * The visibility table decides most of them. WHO may ask for which scope
+ * is judged on the caller's STORED account against the owner's
+ * permissions, and refused as an `AccessError` (staff permissions P6):
+ * no staff member, nobody has `ANALYTICS`, or own only.
  */
 export const AnalyticsErrorCode = {
   /** The callable was reached without a signed-in session. */
   Unauthenticated: 'ANALYTICS_UNAUTHENTICATED',
-  /**
-   * The caller may not see this scope: a blocked account, a role outside
-   * `Roles.ANALYTICS_SELF` ∪ `Roles.ANALYTICS_SHOP`, or a barber asking for
-   * another barber record or the shop.
-   */
-  Forbidden: 'ANALYTICS_FORBIDDEN',
   /** A barber whose account no admin has linked to a barber record yet. */
   BarberNotLinked: 'ANALYTICS_BARBER_NOT_LINKED',
   /** A period more than 12 months back, starting after today, or a `CUSTOM` range longer than `AnalyticsPeriod.CUSTOM_MAX_DAYS`. */
@@ -52,7 +48,6 @@ export type AnalyticsErrorCode =
 
 export type AnalyticsError =
   | AnalyticsError.Unauthenticated
-  | AnalyticsError.Forbidden
   | AnalyticsError.BarberNotLinked
   | AnalyticsError.PeriodOutOfRange
   | AnalyticsError.ScopeUnknown
@@ -64,9 +59,6 @@ export type AnalyticsError =
 export const AnalyticsError = {
   unauthenticated(): AnalyticsError.Unauthenticated {
     return { errorCode: AnalyticsErrorCode.Unauthenticated };
-  },
-  forbidden(): AnalyticsError.Forbidden {
-    return { errorCode: AnalyticsErrorCode.Forbidden };
   },
   barberNotLinked(): AnalyticsError.BarberNotLinked {
     return { errorCode: AnalyticsErrorCode.BarberNotLinked };
@@ -94,9 +86,6 @@ export const AnalyticsError = {
 export namespace AnalyticsError {
   export type Unauthenticated = {
     readonly errorCode: typeof AnalyticsErrorCode.Unauthenticated;
-  };
-  export type Forbidden = {
-    readonly errorCode: typeof AnalyticsErrorCode.Forbidden;
   };
   export type BarberNotLinked = {
     readonly errorCode: typeof AnalyticsErrorCode.BarberNotLinked;

@@ -9,6 +9,7 @@ import {
   CLIENT_MONEY_DOC,
   Collections,
   POLICY_RECOMPUTE_DOC,
+  STAFF_PERMISSIONS_DOC,
 } from '@core/entities';
 import { VisitDraftSystem } from '@core/systems';
 import {
@@ -44,6 +45,7 @@ import {
   OtpId,
   PolicyRecomputeJobId,
   SeatKeyText,
+  StaffPermissionsSettingsId,
   StreakDefinitionId,
   StreakDefinitionVersionId,
   TenantId,
@@ -162,6 +164,8 @@ describe('the id companions (decision F-3)', () => {
   it('keeps the fixed document ids (stable path keys, OQ-9)', () => {
     expect(BookingPolicySettingsId.FIXED).toBe('bookingPolicy');
     expect(BOOKING_POLICY_DOC).toBe(BookingPolicySettingsId.FIXED);
+    expect(StaffPermissionsSettingsId.FIXED).toBe('staffPermissions');
+    expect(STAFF_PERMISSIONS_DOC).toBe(StaffPermissionsSettingsId.FIXED);
     expect(ClientMoneyStatsId.FIXED).toBe('money');
     expect(CLIENT_MONEY_DOC).toBe(ClientMoneyStatsId.FIXED);
     expect(BarberLinkId.FIXED).toBe('link');
@@ -354,6 +358,15 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
     const resource = AuditResourceId.forBarber(Ids.BarberId.of('ivan'));
     expect(resource).toBe(`${Collections.Barbers}/ivan`);
     expect(resource).toBe('barbers/ivan');
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+  });
+
+  it('names the staff permissions document by its collection path — the restated name is the registry’s, and the governed trigger’s spelling (staff permissions P11)', () => {
+    const resource = AuditResourceId.forStaffPermissions(
+      StaffPermissionsSettingsId.FIXED,
+    );
+    expect(resource).toBe(`${Collections.Settings}/${STAFF_PERMISSIONS_DOC}`);
+    expect(resource).toBe('settings/staffPermissions');
     expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
   });
 

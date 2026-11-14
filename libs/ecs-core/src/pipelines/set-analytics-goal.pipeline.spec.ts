@@ -4,9 +4,14 @@ import {
   AnalyticsGoal,
   AuditAction,
   Role,
+  StaffPermissions,
   WriteAction,
 } from '@core/components';
-import { AnalyticsErrorCode, RepositoryErrorCode } from '@core/errors';
+import {
+  AccessErrorCode,
+  AnalyticsErrorCode,
+  RepositoryErrorCode,
+} from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   AnalyticsGoalKey,
@@ -29,6 +34,7 @@ import {
   memoryAnalyticsReadPorts,
   memoryDefaultLocationPorts,
   memoryProfileLoadPorts,
+  memoryStaffPermissionsPorts,
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
@@ -96,7 +102,11 @@ function call(
   };
 }
 
-function rig(commit?: CommitPlan) {
+function rig(
+  commit?: CommitPlan,
+  /** The stored `settings/staffPermissions` body; none — no document — by default. */
+  permissions: Record<string, unknown> | null = null,
+) {
   const store = memoryStore();
   const tx = memoryTxPorts(store);
   const telemetry = recordingTelemetry();
@@ -109,6 +119,7 @@ function rig(commit?: CommitPlan) {
     ...(commit === undefined ? {} : { commit }),
     ...analytics.ports,
     ...memoryProfileLoadPorts(USERS),
+    ...memoryStaffPermissionsPorts(StaffPermissions.read(permissions)),
     ...memoryDefaultLocationPorts(FIXTURE_IDS.location),
     log: telemetry.log,
   };
@@ -297,33 +308,71 @@ describe('setAnalyticsGoal — the admin’s shop goal', () => {
 });
 
 describe('setAnalyticsGoal — the refusals', () => {
-  it('judges the caller by the visibility table first (v1’s codes), writing nothing', async () => {
+  it('judges the caller first — the stored account, then the visibility table — writing nothing', async () => {
     const { store, run } = rig();
     const codeOf = async (cmd: SetAnalyticsGoalCommand) =>
       unwrapErr(await run(cmd)).errorCode;
-    // No record, a blocked account, a role outside analytics.
+    // No record and a blocked account are no staff member; a role with no analytics is denied.
     expect(await codeOf(call({ callerUserId: UserId.of('u-nobody') }))).toBe(
-      AnalyticsErrorCode.Forbidden,
+      AccessErrorCode.NotStaff,
     );
     expect(await codeOf(call({ callerUserId: BLOCKED.id }))).toBe(
-      AnalyticsErrorCode.Forbidden,
+      AccessErrorCode.NotStaff,
     );
-    expect(await codeOf(call({ callerUserId: RECEPTIONIST.id }))).toBe(
-      AnalyticsErrorCode.Forbidden,
-    );
+    expect(
+      unwrapErr(await run(call({ callerUserId: RECEPTIONIST.id }))),
+    ).toEqual({
+      errorCode: AccessErrorCode.Denied,
+      staffCapability: 'ANALYTICS',
+    });
     // A barber with no record, a barber naming a colleague, an admin naming an unknown record.
     expect(await codeOf(call({ callerUserId: UNLINKED.id }))).toBe(
       AnalyticsErrorCode.BarberNotLinked,
     );
-    expect(await codeOf(call({ scopeBarberId: NIKO }))).toBe(
-      AnalyticsErrorCode.Forbidden,
-    );
+    expect(unwrapErr(await run(call({ scopeBarberId: NIKO })))).toEqual({
+      errorCode: AccessErrorCode.OwnOnly,
+      staffCapability: 'ANALYTICS',
+    });
     expect(
       await codeOf(
         call({ callerUserId: ADMIN.id, scopeBarberId: BarberId.of('b-ghost') }),
       ),
     ).toBe(AnalyticsErrorCode.ScopeUnknown);
     expect(store.size).toBe(0);
+  });
+
+  it('follows the owner’s cells, and keeps the goal’s own rule: the shop’s goal needs the whole shop, a colleague’s is nobody’s', async () => {
+    // Narrowed: a barber whose numbers the owner took sets no goal.
+    const narrowed = rig(undefined, { barberAnalyticsScope: 'NONE' });
+    expect(unwrapErr(await narrowed.run(call()))).toEqual({
+      errorCode: AccessErrorCode.Denied,
+      staffCapability: 'ANALYTICS',
+    });
+    expect(narrowed.store.size).toBe(0);
+
+    // Widened: the front desk reads everyone, so it may set the shop's goal…
+    const widened = rig(undefined, { receptionistAnalyticsScope: 'ALL' });
+    expect(
+      unwrapOk(await widened.run(call({ callerUserId: RECEPTIONIST.id })))
+        .goalKey,
+    ).toBe('shop__2026-09');
+    // …and still no barber's: a record's goal is that barber's alone.
+    expect(
+      unwrapErr(
+        await widened.run(
+          call({ callerUserId: RECEPTIONIST.id, scopeBarberId: IVAN }),
+        ),
+      ).errorCode,
+    ).toBe(AnalyticsErrorCode.GoalForbidden);
+
+    // A barber let into everyone's numbers still sets only their own goal.
+    const colleagues = rig(undefined, { barberAnalyticsScope: 'ALL' });
+    expect(
+      unwrapErr(await colleagues.run(call({ scopeBarberId: NIKO }))).errorCode,
+    ).toBe(AnalyticsErrorCode.GoalForbidden);
+    expect(
+      unwrapOk(await colleagues.run(call({ scopeBarberId: IVAN }))).goalKey,
+    ).toBe('b-ivan__2026-09');
   });
 
   it('refuses a range that is no range through AnalyticsGoal.rangeOf, the field named', async () => {

@@ -2,6 +2,7 @@ import {
   AuditAction,
   BarberEdit,
   type BarberEditRequest,
+  StaffTarget,
   type TeamBarberAction,
   type TeamCall,
   type WriteOp,
@@ -10,15 +11,20 @@ import {
   type BarberId,
   defect,
   Result,
+  StaffCapability,
   type UtcEpochMs,
 } from '@core/primitives';
-import { CatalogErrorCode, RepositoryError, TeamError } from '@core/errors';
+import {
+  type AccessError,
+  CatalogErrorCode,
+  RepositoryError,
+  TeamError,
+} from '@core/errors';
 import {
   type Barber,
   type BarberSchedule,
   Collections,
   type ShopLocation,
-  type User,
 } from '@core/entities';
 import type {
   ClockPorts,
@@ -27,13 +33,15 @@ import type {
   HashPorts,
 } from '@core/ports';
 import {
+  StaffAccessSystem,
   StaffAnalyticsSystem,
   TeamSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   admitTeamCaller,
-  admitTeamStaffCaller,
+  readStaffCaller,
+  type StaffCallerFacts,
   TEAM_LOCATIONS,
   type TeamAct,
   teamActor,
@@ -43,16 +51,17 @@ import {
  * `editBarber` — one part of one barber record, replaced whole (team
  * onboarding D5): the public profile, the shops, the working period, the
  * «Който и да е» flag or who may book them (`barberEdit`). The caller gate
- * first, on the VERIFIED token: a profile is any staff account's to ask
- * for (`admitTeamStaffCaller`), every other part the team manager's
- * (`admitTeamCaller`). Then ONE commit that reads `users/{caller}` and
+ * first, on the VERIFIED token (`admitTeamCaller`: any staff role). Then
+ * ONE commit that reads `users/{caller}`, `settings/staffPermissions` and
  * `barbers/{id}` — and, for the shops, every location and the barber's
- * roster — and asks `TeamSystem`:
+ * roster — and asks:
  *
- * - who may: `admitProfileEdit` for a profile (the content editor, the
- *   admin, or the barber whose account is linked to this very record),
- *   `admit` for the rest — the STORED roles, block and link;
- * - the part's own decision (`editProfile`, `setShops`, `setPeriod`,
+ * - who may (`StaffAccessSystem.admit`, staff permissions P6):
+ *   `TEAM_PROFILES` on the barber named for a profile — by default the
+ *   content editor, the admin, or the barber whose account is linked to
+ *   this very record — and `TEAM_MANAGE` on the shop for every other part
+ *   — by default the admin alone. The STORED roles, block and link;
+ * - the part's own decision (`TeamSystem.editProfile`, `setShops`, `setPeriod`,
  *   `setPool`, `setAccess`), which answers the WHOLE next record. «Today»
  *   for the shops is the default shop's wall clock (else the first shop's),
  *   derived once from the instant read before the transaction.
@@ -78,8 +87,7 @@ export type EditBarberPorts = CommitPorts &
   HashPorts &
   DefaultLocationPorts;
 
-type Snapshot = {
-  readonly caller: User | null;
+type Snapshot = StaffCallerFacts & {
   readonly barber: Barber | null;
   /** Every location — read for a shops edit only, else none. */
   readonly shops: readonly ShopLocation[];
@@ -168,11 +176,11 @@ export const editBarber =
   (ports: EditBarberPorts) =>
   async (
     cmd: EditBarberCommand,
-  ): Promise<Result<TeamCall.Saved, TeamError | RepositoryError>> => {
+  ): Promise<
+    Result<TeamCall.Saved, TeamError | AccessError | RepositoryError>
+  > => {
     const isProfile = cmd.barberEdit === BarberEdit.Profile;
-    const admitted = isProfile
-      ? admitTeamStaffCaller(cmd)
-      : admitTeamCaller(cmd);
+    const admitted = admitTeamCaller(cmd);
     if (!admitted.ok) return admitted;
     const callerUserId = admitted.value;
     const readsShops = cmd.barberEdit === BarberEdit.Shops;
@@ -180,8 +188,8 @@ export const editBarber =
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       async (tx): Promise<Snapshot> => {
-        const [caller, barber, shops, schedule] = await Promise.all([
-          tx.get<User>([Collections.Users, callerUserId]),
+        const [facts, barber, shops, schedule] = await Promise.all([
+          readStaffCaller(tx, callerUserId),
           tx.get<Barber>([Collections.Barbers, cmd.barberId]),
           readsShops ? tx.query<ShopLocation>(TEAM_LOCATIONS) : [],
           readsShops
@@ -191,17 +199,25 @@ export const editBarber =
               ])
             : null,
         ]);
-        return { caller, barber, shops, schedule };
+        return { ...facts, barber, shops, schedule };
       },
       (
         snapshot,
       ): Result<
         { readonly writes: readonly WriteOp[] },
-        TeamError | RepositoryError
+        TeamError | AccessError | RepositoryError
       > => {
-        const stored = isProfile
-          ? TeamSystem.admitProfileEdit(snapshot.caller, cmd.barberId, nowUtcMs)
-          : TeamSystem.admit(snapshot.caller, nowUtcMs);
+        const stored = StaffAccessSystem.admit({
+          staffCapability: isProfile
+            ? StaffCapability.TeamProfiles
+            : StaffCapability.TeamManage,
+          staffTarget: isProfile
+            ? StaffTarget.barbers([cmd.barberId])
+            : StaffTarget.SHOP,
+          caller: snapshot.caller,
+          permissions: snapshot.permissions,
+          nowUtcMs,
+        });
         if (!stored.ok) return stored;
         const before = snapshot.barber;
         if (before === null) {

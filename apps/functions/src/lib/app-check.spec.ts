@@ -181,7 +181,7 @@ describe('replayProtectedOptions — the limited-use callables consume their tok
     },
   );
 
-  it('names exactly the five sensitive callables', () => {
+  it('names exactly the six sensitive callables', () => {
     expect(
       Object.values(Callables)
         .filter(
@@ -194,6 +194,7 @@ describe('replayProtectedOptions — the limited-use callables consume their tok
         Callables.ExportClientData,
         Callables.PreviewClientErasure,
         Callables.SetRoles,
+        Callables.SetStaffPermissions,
         Callables.StartImpersonation,
       ].sort(),
     );

@@ -573,15 +573,15 @@ ONE switch, `config/app-check.json` (`development` `MONITOR`, `staging` and
 `production` `OFF`), which the functions predeploy writes into
 `.env.<projectId>` as `APP_CHECK_MODE=<mode>`:
 
-| Mode      | What every callable and `reportClientIssues` does                                                                                                                                                                     |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OFF`     | nothing — no outcome reported, nothing consumed, nothing refused (today's behaviour)                                                                                                                                  |
-| `MONITOR` | verifies, and writes `appCheckOutcome` (`VALID`, `MISSING`, `INVALID`, `REPLAYED`) on each outcome line; the five limited-use callables consume their token; never refuses                                            |
-| `ENFORCE` | `MONITOR`, and refuses `MISSING` / `INVALID` with `failed-precondition` / `APP_CHECK_REQUIRED`, and a replayed token on the five limited-use callables with `APP_CHECK_REPLAYED` (both are phrased "reload the page") |
+| Mode      | What every callable and `reportClientIssues` does                                                                                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OFF`     | nothing — no outcome reported, nothing consumed, nothing refused (today's behaviour)                                                                                                                                 |
+| `MONITOR` | verifies, and writes `appCheckOutcome` (`VALID`, `MISSING`, `INVALID`, `REPLAYED`) on each outcome line; the six limited-use callables consume their token; never refuses                                            |
+| `ENFORCE` | `MONITOR`, and refuses `MISSING` / `INVALID` with `failed-precondition` / `APP_CHECK_REQUIRED`, and a replayed token on the six limited-use callables with `APP_CHECK_REPLAYED` (both are phrased "reload the page") |
 
-The five limited-use (replay-protected) callables are `eraseClient`,
-`previewClientErasure`, `exportClientData`, `startImpersonation` and
-`setRoles` (`CALLABLE_APP_CHECK_TOKEN`): the web asks a fresh limited-use
+The six limited-use (replay-protected) callables are `eraseClient`,
+`previewClientErasure`, `exportClientData`, `startImpersonation`,
+`setRoles` and `setStaffPermissions` (`CALLABLE_APP_CHECK_TOKEN`): the web asks a fresh limited-use
 token per call and the server consumes it. A demo-only override
 (`--app-check <MODE>` / `CREATIVO_APP_CHECK_MODE`) exists for the emulator
 journeys; the writer refuses it for any real project, so a deploy carries
@@ -640,7 +640,7 @@ console after use. Do it in this order:
       limited-use mint failure's standard fallback — a client issue
       `CALLABLE_TRANSPORT_FAILED` with an `appCheck/*` code just before it,
       the second such fallback within the cached token's lifetime re-sending
-      a consumed token), and each of the five limited-use callables shows
+      a consumed token), and each of the six limited-use callables shows
       real `VALID` calls and no unexplained `INVALID` (the owner's bar; an
       aggregate would hide the five low-volume admin callables).
 - [ ] **5. `ENFORCE`.** Set `"production": "ENFORCE"`; deploy functions
@@ -1017,6 +1017,24 @@ audit rows).
 Source: `apps/functions/src/main.ts` (`setRoles`);
 `libs/ecs-core/src/pipelines/set-roles.pipeline.ts`;
 `docs/architecture/firestore-runbook.md` §3.
+
+Staff permissions, stage A, added `setStaffPermissions`: the owner's save
+of what each staff level may do. It is bound to `LOG_DIGEST_KEY` like every
+traced callable and takes a limited-use App Check token like `setRoles`
+(nothing new to create). It writes one document, `settings/staffPermissions`,
+and one `TEAM_PERMISSIONS_CHANGED` row in one commit. Nothing has to be
+seeded: with no document every level follows the defaults in code, which
+are today's behaviour. The same deploy changes who may call eleven existing
+callables (hours, days off, analytics, the team): each now reads that
+document and the caller's stored account inside its own transaction, so a
+change applies to the next call and nobody is signed out. Two things ship
+with it: the rules make that one document readable by staff only (3.2), and
+its `writeOperationId` gets a single-field index override (3.1). The order
+between rules and functions does not matter for this stage, because no
+browser reads the document yet.
+Source: `apps/functions/src/main.ts` (`setStaffPermissions`);
+`libs/ecs-core/src/pipelines/set-staff-permissions.pipeline.ts`;
+`docs/designs/staff-permissions.md` (P5, P6, stage A).
 
 ### 3.4 Hosting, straight after functions
 

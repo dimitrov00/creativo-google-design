@@ -422,6 +422,11 @@
       "indexes": []
     },
     {
+      "collectionGroup": "settings",
+      "fieldPath": "writeOperationId",
+      "indexes": []
+    },
+    {
       "collectionGroup": "locations",
       "fieldPath": "openingHours",
       "indexes": []

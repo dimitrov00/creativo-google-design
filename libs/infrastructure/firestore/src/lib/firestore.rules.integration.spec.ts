@@ -1340,6 +1340,89 @@ describe('firestore.rules', () => {
     });
   });
 
+  // Staff permissions stage A (exit test 6): the ONE settings document
+  // carved out of the public read — who may do what is no client's
+  // business — while the booking policy stays public for `/book`.
+  describe('settings/staffPermissions — staff read it, no client reads or writes it (staff permissions P5)', () => {
+    const CELLS = { receptionistHoursScope: 'NONE', writeOperationId: null };
+    const permissions = (db: ReturnType<RulesTestContext['firestore']>) =>
+      doc(db, 'settings', 'staffPermissions');
+
+    it('refuses an anonymous visitor and a signed-in client — stored or not', async () => {
+      const anon = testEnv.unauthenticatedContext().firestore();
+      const client = signedIn('client-1', 'client').firestore();
+      const noClaim = testEnv.authenticatedContext('client-2').firestore();
+      // No document yet: a refusal all the same, never "not found".
+      for (const db of [anon, client, noClaim]) {
+        await assertFails(getDoc(permissions(db)));
+      }
+      await seed('settings/staffPermissions', CELLS);
+      for (const db of [anon, client, noClaim]) {
+        await assertFails(getDoc(permissions(db)));
+      }
+    });
+
+    it('lets every staff role read it — a barber, the front desk, the content editor, the admin pair', async () => {
+      await seed('settings/staffPermissions', CELLS);
+      for (const role of [
+        'barber',
+        'receptionist',
+        'content_manager',
+        'admin',
+        'sysadmin',
+      ]) {
+        const snap = await assertSucceeds(
+          getDoc(permissions(signedIn(`staff-${role}`, role).firestore())),
+        );
+        expect(snap.data(), role).toEqual(CELLS);
+      }
+    });
+
+    it('answers staff an absent document as absent — every cell at its default, no refusal to retry on', async () => {
+      const snap = await assertSucceeds(
+        getDoc(permissions(signedIn('staff-1', 'barber').firestore())),
+      );
+      expect(snap.exists()).toBe(false);
+    });
+
+    it('keeps the booking policy public: the carve-out is this one document', async () => {
+      await seed('settings/bookingPolicy', { horizonMonths: 2 });
+      await seed('settings/staffPermissions', CELLS);
+      const anon = testEnv.unauthenticatedContext().firestore();
+      await assertSucceeds(getDoc(doc(anon, 'settings', 'bookingPolicy')));
+      await assertSucceeds(
+        getDoc(
+          doc(
+            signedIn('client-1', 'client').firestore(),
+            'settings',
+            'bookingPolicy',
+          ),
+        ),
+      );
+      // Listing the collection would hand a client the document it may not get.
+      await assertFails(getDocs(collection(anon, 'settings')));
+      await assertSucceeds(
+        getDocs(
+          collection(signedIn('staff-1', 'barber').firestore(), 'settings'),
+        ),
+      );
+    });
+
+    it('refuses every client write — the admin’s included: the callable is the one writer', async () => {
+      await seed('settings/staffPermissions', CELLS);
+      for (const role of ['barber', 'receptionist', 'admin', 'sysadmin']) {
+        const db = signedIn(`actor-${role}`, role).firestore();
+        await assertFails(
+          setDoc(permissions(db), { receptionistHoursScope: 'ALL' }),
+        );
+        await assertFails(
+          updateDoc(permissions(db), { barberHoursScope: 'ALL' }),
+        );
+        await assertFails(deleteDoc(permissions(db)));
+      }
+    });
+  });
+
   // DEP-6 (pass E, E-16): the catalogue (once a catalogue manager's) and the
   // roster (once a roster editor's) have no client writer — the Admin SDK
   // (the dev seed, Cloud Functions) is the one; `/book` still reads them.

@@ -6,6 +6,7 @@ import {
   type BarberEditRequest,
   BarberStatus,
   BlockReason,
+  type DocBody,
   Role,
   WriteOp,
 } from '@core/components';
@@ -17,12 +18,17 @@ import {
   Result,
   UserId,
 } from '@core/primitives';
-import { RepositoryErrorCode, TeamErrorCode } from '@core/errors';
+import {
+  AccessErrorCode,
+  RepositoryErrorCode,
+  TeamErrorCode,
+} from '@core/errors';
 import {
   type Barber,
   type BarberSchedule,
   Collections,
   type ShopLocation,
+  STAFF_PERMISSIONS_DOC,
   type User,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
@@ -82,8 +88,21 @@ const DEPARTED: Barber = barberFixture(
   },
 );
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const denied = (staffCapability: string) => ({
+  errorCode: AccessErrorCode.Denied,
+  staffCapability,
+});
+const ownOnly = (staffCapability: string) => ({
+  errorCode: AccessErrorCode.OwnOnly,
+  staffCapability,
+});
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   readonly barber?: Barber | null;
   readonly shops?: readonly ShopLocation[];
   readonly schedule?: BarberSchedule | null;
@@ -95,6 +114,9 @@ function rig(options: RigOptions = {}) {
   const barber = options.barber === undefined ? STORED_IVAN : options.barber;
   const schedule = options.schedule ?? null;
   const store = memoryStore([
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...(caller === null
       ? []
       : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
@@ -220,11 +242,12 @@ describe('editBarber', () => {
       expect(text).not.toContain('sentinel');
     });
 
-    it('reads the caller and the record only — no shop, no roster', async () => {
+    it('reads the caller, the owner’s cells and the record only — no shop, no roster', async () => {
       const { tx, run } = rig();
       await run(call(PROFILE));
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Users, ADMIN],
+        PERMISSIONS,
         [Collections.Barbers, IVAN],
       ]);
       expect(tx.transactions[0]?.queries).toEqual([]);
@@ -253,30 +276,94 @@ describe('editBarber', () => {
     });
 
     it('refuses a barber another record, the front desk and a client token', async () => {
-      const others: readonly User[] = [
-        registeredUserFixture({
-          id: ADMIN,
-          roles: [Role.Barber],
-          linkedBarberId: NIKO,
-        }),
-        registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }),
-        registeredUserFixture({ id: ADMIN, roles: [Role.Receptionist] }),
+      const others: [User, object][] = [
+        // Own only, and the record is a colleague's — or nobody's.
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Barber],
+            linkedBarberId: NIKO,
+          }),
+          ownOnly('TEAM_PROFILES'),
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }),
+          ownOnly('TEAM_PROFILES'),
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.Receptionist] }),
+          denied('TEAM_PROFILES'),
+        ],
       ];
-      for (const caller of others) {
+      for (const [caller, refusal] of others) {
         const { tx, run } = rig({ caller });
         expect(
           unwrapErr(
             await run(call(PROFILE, { callerRoles: [...caller.roles] })),
           ),
-        ).toEqual({ errorCode: TeamErrorCode.Forbidden });
+        ).toEqual(refusal);
         expect(tx.plans).toEqual([]);
       }
       // A client's token is turned away before any read.
       const { tx, run } = rig();
       expect(
         unwrapErr(await run(call(PROFILE, { callerRoles: [Role.Client] }))),
-      ).toEqual({ errorCode: TeamErrorCode.Forbidden });
+      ).toEqual(NOT_STAFF);
       expect(tx.transactions).toHaveLength(0);
+    });
+
+    it('follows the owner’s cells: profiles taken from a level, and given to another', async () => {
+      const editor = registeredUserFixture({
+        id: ADMIN,
+        roles: [Role.ContentManager],
+      });
+      const own = registeredUserFixture({
+        id: ADMIN,
+        roles: [Role.Barber],
+        linkedBarberId: IVAN,
+      });
+      const desk = registeredUserFixture({
+        id: ADMIN,
+        roles: [Role.Receptionist],
+      });
+      const cases: [User, DocBody, object | null][] = [
+        // Narrowed: the content editor, and a barber's own.
+        [
+          editor,
+          { contentManagerTeamProfilesScope: 'NONE' },
+          denied('TEAM_PROFILES'),
+        ],
+        [own, { barberTeamProfilesScope: 'NONE' }, denied('TEAM_PROFILES')],
+        // Widened: the front desk, and a barber for every colleague.
+        [desk, { receptionistTeamProfilesScope: 'ALL' }, null],
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Barber],
+            linkedBarberId: NIKO,
+          }),
+          { barberTeamProfilesScope: 'ALL' },
+          null,
+        ],
+        // A value nobody could save refuses its level.
+        [
+          editor,
+          { contentManagerTeamProfilesScope: 'OWN' },
+          denied('TEAM_PROFILES'),
+        ],
+      ];
+      for (const [caller, permissions, refusal] of cases) {
+        const { tx, run } = rig({ caller, permissions });
+        const answer = await run(
+          call(PROFILE, { callerRoles: [...caller.roles] }),
+        );
+        if (refusal === null) {
+          expect(answer.ok).toBe(true);
+        } else {
+          expect(unwrapErr(answer)).toEqual(refusal);
+          expect(tx.plans).toEqual([]);
+        }
+      }
     });
 
     it('names the first field at fault and writes nothing', async () => {
@@ -304,6 +391,7 @@ describe('editBarber', () => {
       await run(call(shops([CENTER, MLADOST])));
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Users, ADMIN],
+        PERMISSIONS,
         [Collections.Barbers, IVAN],
         [Collections.BarberSchedules, IVAN],
       ]);
@@ -410,43 +498,79 @@ describe('editBarber', () => {
       });
     });
 
-    it('is the admin’s alone: every other token is turned away before any read, every other stored account after it', async () => {
+    it('turns away no session and a token with no staff role before any read', async () => {
       const { tx, run } = rig();
-      for (const callerRoles of [
-        [Role.ContentManager],
-        [Role.Receptionist],
-        [Role.Barber],
-        [Role.Sysadmin],
-      ]) {
-        expect(unwrapErr(await run(call(POOL, { callerRoles })))).toEqual({
-          errorCode: TeamErrorCode.Forbidden,
-        });
+      for (const callerRoles of [[Role.Client], []]) {
+        expect(unwrapErr(await run(call(POOL, { callerRoles })))).toEqual(
+          NOT_STAFF,
+        );
       }
       expect(unwrapErr(await run(call(POOL, { callerUserId: null })))).toEqual({
         errorCode: TeamErrorCode.Unauthenticated,
       });
       expect(tx.transactions).toHaveLength(0);
+    });
 
-      for (const caller of [
+    it('with no document, is the admin’s alone: every other stored account is refused after the read', async () => {
+      const cases: [User | null, object][] = [
         // The barber's own record is theirs for the profile only.
-        registeredUserFixture({
-          id: ADMIN,
-          roles: [Role.Barber],
-          linkedBarberId: IVAN,
-        }),
-        registeredUserFixture({
-          id: ADMIN,
-          roles: [Role.Admin],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        null,
-      ]) {
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Barber],
+            linkedBarberId: IVAN,
+          }),
+          denied('TEAM_MANAGE'),
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.ContentManager] }),
+          denied('TEAM_MANAGE'),
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.Receptionist] }),
+          denied('TEAM_MANAGE'),
+        ],
+        [
+          registeredUserFixture({ id: ADMIN, roles: [Role.Sysadmin] }),
+          denied('TEAM_MANAGE'),
+        ],
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Admin],
+            ...AccountLifecycle.block(BlockReason.Manual, null),
+          }),
+          NOT_STAFF,
+        ],
+        [null, NOT_STAFF],
+      ];
+      for (const [caller, refusal] of cases) {
         const stored = rig({ caller });
-        expect(unwrapErr(await stored.run(call(POOL)))).toEqual({
-          errorCode: TeamErrorCode.Forbidden,
-        });
+        expect(unwrapErr(await stored.run(call(POOL)))).toEqual(refusal);
         expect(stored.tx.plans).toEqual([]);
       }
+    });
+
+    it('a level given the team changes the pool — and editing profiles alone does not', async () => {
+      const editor = registeredUserFixture({
+        id: ADMIN,
+        roles: [Role.ContentManager],
+      });
+      const given = rig({
+        caller: editor,
+        permissions: { contentManagerTeamManageScope: 'ALL' },
+      });
+      expect(
+        (await given.run(call(POOL, { callerRoles: [Role.ContentManager] })))
+          .ok,
+      ).toBe(true);
+      // The content editor edits every profile by default — that is not the team.
+      const plain = rig({ caller: editor });
+      expect(
+        unwrapErr(
+          await plain.run(call(POOL, { callerRoles: [Role.ContentManager] })),
+        ),
+      ).toEqual(denied('TEAM_MANAGE'));
     });
   });
 
@@ -462,9 +586,9 @@ describe('editBarber', () => {
         barber: null,
         caller: registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }),
       });
-      expect(unwrapErr(await stranger.run(call(POOL)))).toEqual({
-        errorCode: TeamErrorCode.Forbidden,
-      });
+      expect(unwrapErr(await stranger.run(call(POOL)))).toEqual(
+        denied('TEAM_MANAGE'),
+      );
     });
 
     it('never edits a record that has left', async () => {

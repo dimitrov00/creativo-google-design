@@ -46,6 +46,8 @@ describe('LogEvent', () => {
       LeadTimeSampleFailed: 'lead-time sample failed for barber',
       OtpSendFailed: 'otp.send_failed',
       OtpVerifyAdoptionRefused: 'otp.verify.adoption_refused',
+      PermissionsChanged: 'permissions.changed',
+      PermissionsChangeRefused: 'permissions.change_refused',
       PolicyRecomputeNudged: 'policy recompute nudged',
       PolicyRecomputeStallNotRecorded: 'policy recompute stall not recorded',
       PolicyRecomputeSweepStarted:

@@ -23,6 +23,7 @@ import {
 import {
   ANALYTICS_RECOMPUTE_DOC,
   type AnalyticsRecomputeJob,
+  BOOKING_POLICY_DOC,
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
 } from '@core/entities';
@@ -269,7 +270,10 @@ export type CapacitySource =
 
 /**
  * The rebuild's scope for one entry point — `null` when a busy or exception
- * document id is no busy key (nothing to rebuild, as today).
+ * document id is no busy key (nothing to rebuild, as today), and when a
+ * settings write is not the booking policy's: the policy is the horizon,
+ * and no other settings document moves a free minute (a permissions save
+ * rebuilds nothing — staff permissions P5).
  */
 export function decodeCapacityEvent(
   source: CapacitySource,
@@ -289,8 +293,11 @@ export function decodeCapacityEvent(
         ? { capacityTrigger: CapacityTrigger.Roster, barberId: barberId.value }
         : null;
     }
-    case CapacitySource.Location:
     case CapacitySource.Settings:
+      return params.docId === BOOKING_POLICY_DOC
+        ? { capacityTrigger: CapacityTrigger.Sweep }
+        : null;
+    case CapacitySource.Location:
     case CapacitySource.Sweep:
       return { capacityTrigger: CapacityTrigger.Sweep };
   }

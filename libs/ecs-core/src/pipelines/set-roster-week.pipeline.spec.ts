@@ -3,14 +3,20 @@ import {
   AccountLifecycle,
   BarberStatus,
   BlockReason,
+  type DocBody,
   MinuteRange,
   Role,
   RosterBreak,
   ShiftSegment,
   WriteOp,
 } from '@core/components';
-import { type Barber, Collections, type User } from '@core/entities';
-import { SchedulingErrorCode } from '@core/errors';
+import {
+  type Barber,
+  Collections,
+  STAFF_PERMISSIONS_DOC,
+  type User,
+} from '@core/entities';
+import { AccessErrorCode, SchedulingErrorCode } from '@core/errors';
 import {
   BarberId,
   LocationId,
@@ -40,10 +46,11 @@ import {
 } from './set-roster-week.pipeline';
 
 /*
- * The hours editor's save — ONE transaction: the caller's account, the
- * barber record, the roster and the shop read; who may judged on the
- * stored account (team onboarding D5: the front desk and the owners any
- * barber's, a barber only their own); the week judged and standing from
+ * The hours editor's save — ONE transaction: the caller's account and the
+ * owner's cells, the barber record, the roster and the shop read; who may
+ * judged on the stored account against `HOURS` (staff permissions P6 — by
+ * default the front desk and the owners any barber's, a barber only their
+ * own); the week judged and standing from
  * the day on; the roster written whole, stamped with the act. The fixture
  * clock reads 2026-09-28 at the fixture shop.
  */
@@ -82,8 +89,18 @@ const DEPARTED: Barber = barberFixture(
   },
 );
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const DENIED = { errorCode: AccessErrorCode.Denied, staffCapability: 'HOURS' };
+const OWN_ONLY = {
+  errorCode: AccessErrorCode.OwnOnly,
+  staffCapability: 'HOURS',
+};
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   /** The barber record (default Ivan, at the centre shop); `null`: none. */
   readonly barber?: Barber | null;
   readonly withRoster?: boolean;
@@ -95,6 +112,9 @@ function rig(options: RigOptions = {}) {
     options.barber === undefined ? barberFixture() : options.barber;
   const store = memoryStore([
     { path: SHOP, body: bodyOf(locationFixture()) },
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...(caller === null
       ? []
       : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
@@ -142,12 +162,13 @@ describe('setRosterWeek', () => {
     expect(versions[1]?.breaks).toEqual([LUNCH]);
   });
 
-  it('reads the caller’s account, the barber record, the roster and the shop — in one round trip', async () => {
+  it('reads the caller’s account and the owner’s cells, the barber record, the roster and the shop — in one round trip', async () => {
     const { tx, run } = rig();
     await run(week);
     expect(tx.transactions).toHaveLength(1);
     expect(tx.transactions[0]?.reads).toEqual([
       [Collections.Users, CALLER],
+      PERMISSIONS,
       [Collections.Barbers, IVAN],
       ROSTER,
       SHOP,
@@ -194,31 +215,101 @@ describe('setRosterWeek', () => {
     });
 
     it('refuses a barber a colleague’s hours, an unlinked barber, the content editor, a blocked account and one that is gone — nothing written', async () => {
-      const refused: readonly (User | null)[] = [
-        registeredUserFixture({
-          id: CALLER,
-          roles: [Role.Barber],
-          linkedBarberId: BarberId.of('niko'),
-        }),
-        registeredUserFixture({ id: CALLER, roles: [Role.Barber] }),
-        registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
-        registeredUserFixture({
-          id: CALLER,
-          roles: [Role.Admin],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        null,
+      const refused: [User | null, object][] = [
+        [
+          registeredUserFixture({
+            id: CALLER,
+            roles: [Role.Barber],
+            linkedBarberId: BarberId.of('niko'),
+          }),
+          OWN_ONLY,
+        ],
+        [registeredUserFixture({ id: CALLER, roles: [Role.Barber] }), OWN_ONLY],
+        [
+          registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
+          DENIED,
+        ],
+        [
+          registeredUserFixture({
+            id: CALLER,
+            roles: [Role.Admin],
+            ...AccountLifecycle.block(BlockReason.Manual, null),
+          }),
+          NOT_STAFF,
+        ],
+        [
+          registeredUserFixture({ id: CALLER, roles: [Role.Client] }),
+          NOT_STAFF,
+        ],
+        [null, NOT_STAFF],
       ];
-      for (const caller of refused) {
+      for (const [caller, refusal] of refused) {
         const { tx, store, run } = rig({ caller });
-        expect(unwrapErr(await run(week))).toEqual({
-          errorCode: SchedulingErrorCode.RosterForbidden,
-        });
+        expect(unwrapErr(await run(week))).toEqual(refusal);
         expect(tx.plans).toEqual([]);
         expect(store.get(ROSTER.join('/'))).toEqual(
           bodyOf(barberScheduleFixture()),
         );
       }
+    });
+
+    it('follows the owner’s cells: a narrowed level is refused on the next call, a widened one admitted', async () => {
+      // The owner took hours from the front desk…
+      const narrowed = rig({ permissions: { receptionistHoursScope: 'NONE' } });
+      expect(unwrapErr(await narrowed.run(week))).toEqual(DENIED);
+      expect(narrowed.tx.plans).toEqual([]);
+      // …and gave them back: the same call, the same account, is admitted.
+      narrowed.store.set(PERMISSIONS.join('/'), {
+        receptionistHoursScope: null,
+      });
+      expect((await narrowed.run(week)).ok).toBe(true);
+
+      // A barber's own hours can be taken too.
+      const own = registeredUserFixture({
+        id: CALLER,
+        roles: [Role.Barber],
+        linkedBarberId: IVAN,
+      });
+      expect(
+        unwrapErr(
+          await rig({
+            caller: own,
+            permissions: { barberHoursScope: 'NONE' },
+          }).run(week),
+        ),
+      ).toEqual(DENIED);
+      // …and a barber let into every colleague's.
+      const colleague = registeredUserFixture({
+        id: CALLER,
+        roles: [Role.Barber],
+        linkedBarberId: BarberId.of('niko'),
+      });
+      expect(
+        (
+          await rig({
+            caller: colleague,
+            permissions: { barberHoursScope: 'ALL' },
+          }).run(week)
+        ).ok,
+      ).toBe(true);
+    });
+
+    it('a hand-written bad cell refuses its level — and still admits the admin', async () => {
+      const permissions = { receptionistHoursScope: 'EVERYONE' };
+      expect(unwrapErr(await rig({ permissions }).run(week))).toEqual(DENIED);
+      const admin = rig({
+        permissions,
+        caller: registeredUserFixture({ id: CALLER, roles: [Role.Admin] }),
+      });
+      expect((await admin.run(week)).ok).toBe(true);
+    });
+
+    it('asks who may BEFORE the record: a refused caller learns nothing about the id', async () => {
+      const stranger = rig({
+        barber: null,
+        caller: registeredUserFixture({ id: CALLER, roles: [Role.Barber] }),
+      });
+      expect(unwrapErr(await stranger.run(week))).toEqual(OWN_ONLY);
     });
 
     it('refuses hours for an id with no barber record, and for a barber who has left', async () => {

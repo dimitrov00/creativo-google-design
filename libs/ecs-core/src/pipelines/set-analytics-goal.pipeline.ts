@@ -4,9 +4,11 @@ import {
   LogEvent,
   type OperationId,
   Result,
+  StaffCapability,
   type UserId,
 } from '@core/primitives';
 import {
+  type AccessError,
   AnalyticsError,
   CatalogErrorCode,
   RepositoryError,
@@ -26,28 +28,34 @@ import type {
   HashPorts,
   LogPorts,
   ProfileLoadPorts,
+  StaffPermissionsReadPorts,
 } from '@core/ports';
 import {
   AuditSystem,
+  StaffAccessSystem,
   StaffAnalyticsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { loadStaffCaller } from './team-caller.pipeline';
 
 /**
  * `setAnalyticsGoal` — one scope's takings goal for one month
  * (`docs/designs/staff-analytics-v2.md`, Pipelines · `setAnalyticsGoal`;
  * CUJ 6). The sandwich:
  *
- * 1. **The caller** — `users/{uid}`, its STORED roles, block and barber link
- *    (`StaffAnalyticsSystem.callerOf`; no record → `ANALYTICS_FORBIDDEN`),
- *    then **the scope** by the visibility table (`scopeOf`, v1's codes: a
- *    blocked account or a role outside analytics → `ANALYTICS_FORBIDDEN`, an
- *    unlinked barber → `ANALYTICS_BARBER_NOT_LINKED`, an unknown record →
- *    `ANALYTICS_SCOPE_UNKNOWN`, a barber naming a colleague →
- *    `ANALYTICS_FORBIDDEN`). Then the goal's own rule: a barber record's
- *    goal is that barber's alone — a caller whose account is not linked to
- *    the record the scope resolved to (an admin naming a barber's record)
- *    → `ANALYTICS_GOAL_FORBIDDEN`; the shop's goal (`null`) is any admin's.
+ * 1. **The caller** — `users/{uid}` and `settings/staffPermissions`, read
+ *    side by side (`loadStaffCaller`; a missing, blocked or erased account,
+ *    or one with no staff role → `ACCESS_NOT_STAFF`), then how far
+ *    `ANALYTICS` reaches for the STORED roles and link
+ *    (`StaffAccessSystem.accessOf`, staff permissions P3) and **the scope**
+ *    by the visibility table (`scopeOf`: nobody → `ACCESS_DENIED`, an
+ *    unlinked own-only reader → `ANALYTICS_BARBER_NOT_LINKED`, an unknown
+ *    record → `ANALYTICS_SCOPE_UNKNOWN`, an own-only reader naming a
+ *    colleague → `ACCESS_OWN_ONLY`). Then the goal's own rule, unchanged: a
+ *    barber record's goal is that barber's alone — a caller whose account
+ *    is not linked to the record the scope resolved to (a whole-shop
+ *    reader naming a barber's record) → `ANALYTICS_GOAL_FORBIDDEN`; the
+ *    shop's goal (`null`) needs the whole shop.
  * 2. **The range and the month** — `AnalyticsGoal.rangeOrClearOf`: no
  *    range at all REMOVES the month's goal (step 3 deletes the document
  *    and writes an `ANALYTICS_GOAL_CLEARED` row); otherwise `rangeOf` (both bounds
@@ -82,6 +90,7 @@ export type SetAnalyticsGoalPorts = CommitPorts &
   HashPorts &
   ClockPorts &
   ProfileLoadPorts &
+  StaffPermissionsReadPorts &
   AnalyticsReadPorts &
   DefaultLocationPorts &
   LogPorts;
@@ -93,11 +102,14 @@ export const setAnalyticsGoal =
   async (
     cmd: SetAnalyticsGoalCommand,
   ): Promise<
-    Result<SetAnalyticsGoalCall.Set, AnalyticsError | RepositoryError>
+    Result<
+      SetAnalyticsGoalCall.Set,
+      AnalyticsError | AccessError | RepositoryError
+    >
   > => {
     const refused = <T>(
-      error: AnalyticsError,
-    ): Result<T, AnalyticsError | RepositoryError> => {
+      error: AnalyticsError | AccessError,
+    ): Result<T, AnalyticsError | AccessError | RepositoryError> => {
       ports.log('info', LogEvent.AnalyticsGoalRefused, {
         uid: cmd.callerUserId,
         errorCode: error.errorCode,
@@ -107,10 +119,15 @@ export const setAnalyticsGoal =
     const nowUtcMs = ports.nowUtcMs();
 
     // 1. The caller, then the scope.
-    const profile = await ports.loadProfile(cmd.callerUserId);
-    if (!profile.ok) return profile;
-    const caller = S.callerOf(profile.value, nowUtcMs);
-    if (!caller.ok) return refused(caller.error);
+    const facts = await loadStaffCaller(ports, cmd.callerUserId);
+    if (!facts.ok) return facts;
+    const staff = StaffAccessSystem.staffOf(facts.value.caller, nowUtcMs);
+    if (!staff.ok) return refused(staff.error);
+    const access = StaffAccessSystem.accessOf(
+      facts.value.permissions,
+      StaffCapability.Analytics,
+      staff.value,
+    );
     const [records, listed] = await Promise.all([
       ports.listBarberRecordIds(),
       ports.listLocations(),
@@ -118,13 +135,13 @@ export const setAnalyticsGoal =
     if (!records.ok) return records;
     if (!listed.ok) return listed;
     const scope = S.scopeOf(
-      caller.value,
+      access,
       { scopeBarberIds: cmd.scopeBarberId === null ? [] : [cmd.scopeBarberId] },
       records.value,
     );
     if (!scope.ok) return refused(scope.error);
     // A goal call names no location: goals are the shop's or a barber's.
-    if (!S.goalScopeAllowed(scope.value, caller.value.linkedBarberId, [])) {
+    if (!S.goalScopeAllowed(scope.value, access.linkedBarberId, [])) {
       return refused(AnalyticsError.goalForbidden());
     }
     // The goal's scope: the one barber, or the shop (`null`).
@@ -152,7 +169,7 @@ export const setAnalyticsGoal =
 
     // 3. One transaction: the goal document and its audit row — or, with
     //    no range, its removal and that row.
-    const actor = Actor.forCaller(cmd.callerUserId, profile.value?.roles ?? []);
+    const actor = Actor.forCaller(cmd.callerUserId, staff.value.roles);
     if (range.value === null) {
       const key = AnalyticsGoalKey.of(goalBarberId, cmd.goalMonth);
       const cleared = await ports.commit(

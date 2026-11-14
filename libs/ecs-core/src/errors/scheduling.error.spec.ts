@@ -149,7 +149,6 @@ describe('SchedulingError factories', () => {
         endMinute(840),
       ),
       SchedulingError.rosterUnauthenticated(),
-      SchedulingError.rosterForbidden(),
       SchedulingError.rosterInvalidInput('weekdays'),
       SchedulingError.rosterOutsideShops(LocationId.of('loc-mladost')),
       SchedulingError.rosterDeparted(BarberId.of('ivan')),

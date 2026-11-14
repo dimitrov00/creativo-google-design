@@ -42,6 +42,7 @@ export * from './season.entity';
 export * from './service-category.entity';
 export * from './service.entity';
 export * from './shop-location.entity';
+export * from './staff-permissions-settings.entity';
 export * from './streak-definition-version.entity';
 export * from './streak-definition.entity';
 export * from './tier-definition.entity';

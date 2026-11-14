@@ -1,3 +1,4 @@
+export * from './access-scope.data';
 export * from './app-check-mode.data';
 export * from './app-check-outcome.data';
 export * from './app-check-token-use.data';
@@ -28,6 +29,7 @@ export * from './price-cents.primitive';
 export * from './primitive.error';
 export * from './redirect-path.primitive';
 export * from './result.data';
+export * from './staff-capability.data';
 export * from './stored-fields.data';
 export * from './tag.data';
 export * from './time-zone.primitive';

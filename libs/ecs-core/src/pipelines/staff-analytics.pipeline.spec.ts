@@ -11,8 +11,10 @@ import {
   Role,
   Seat,
   SeatOutcome,
+  StaffPermissions,
 } from '@core/components';
 import {
+  AccessErrorCode,
   AnalyticsErrorCode,
   RepositoryError,
   RepositoryErrorCode,
@@ -58,6 +60,7 @@ import {
   memoryFlagsPorts,
   memoryProfileLoadPorts,
   memoryShopDayReadPorts,
+  memoryStaffPermissionsPorts,
   minute,
   recordingTelemetry,
   registeredUserFixture,
@@ -226,6 +229,18 @@ type WorldState = {
   readonly flagsOn?: readonly FlagName[];
   /** The month goals stored (PR 6). */
   readonly goals?: readonly StoredAnalyticsGoal[];
+  /** The stored `settings/staffPermissions` body; none — no document — by default. */
+  readonly permissions?: Record<string, unknown>;
+};
+
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const DENIED = {
+  errorCode: AccessErrorCode.Denied,
+  staffCapability: 'ANALYTICS',
+};
+const OWN_ONLY = {
+  errorCode: AccessErrorCode.OwnOnly,
+  staffCapability: 'ANALYTICS',
 };
 
 type World = {
@@ -256,6 +271,9 @@ function world(
       ...goals.ports,
       ...memoryFlagsPorts(state.flagsOn ?? []),
       ...memoryProfileLoadPorts(USERS),
+      ...memoryStaffPermissionsPorts(
+        StaffPermissions.read(state.permissions ?? null),
+      ),
       ...memoryShopDayReadPorts([
         barberScheduleFixture({ id: IVAN }),
         barberScheduleFixture({ id: NIKO }),
@@ -317,7 +335,7 @@ describe('staffAnalytics — the visibility table on the STORED record', () => {
     const refused = unwrapErr(
       await staffAnalytics(ports)(ask(BLOCKED.id, IVAN)),
     );
-    expect(refused).toEqual({ errorCode: AnalyticsErrorCode.Forbidden });
+    expect(refused).toEqual(NOT_STAFF);
   });
 
   it('answers an admin the shop: every barber record, no seat rows', async () => {
@@ -374,7 +392,7 @@ describe('staffAnalytics — the visibility table on the STORED record', () => {
     const refused = unwrapErr(
       await staffAnalytics(ports)(ask(IVAN_USER.id, NIKO)),
     );
-    expect(refused).toEqual({ errorCode: AnalyticsErrorCode.Forbidden });
+    expect(refused).toEqual(OWN_ONLY);
   });
 
   it('never answers a barber the shop: the shop request (null) is their own record', async () => {
@@ -397,10 +415,89 @@ describe('staffAnalytics — the visibility table on the STORED record', () => {
 
   it('refuses the receptionist and the sysadmin, and an account with no record', async () => {
     const { ports } = world();
-    for (const caller of [RECEPTIONIST.id, SYSADMIN.id, UserId.of('u-none')]) {
+    for (const caller of [RECEPTIONIST.id, SYSADMIN.id]) {
       const refused = unwrapErr(await staffAnalytics(ports)(ask(caller, null)));
-      expect(refused).toEqual({ errorCode: AnalyticsErrorCode.Forbidden });
+      expect(refused).toEqual(DENIED);
     }
+    expect(
+      unwrapErr(await staffAnalytics(ports)(ask(UserId.of('u-none'), null))),
+    ).toEqual(NOT_STAFF);
+  });
+
+  it('reads nothing of the shop for a refused caller: the account and the cells, and no more', async () => {
+    const { ports, reads } = world();
+    await staffAnalytics(ports)(ask(RECEPTIONIST.id, null));
+    await staffAnalytics(ports)(ask(UserId.of('u-none'), null));
+    expect(reads.visitQueries).toEqual([]);
+    expect(reads.departureQueries).toEqual([]);
+    expect(reads.bookedInQueries).toEqual([]);
+  });
+});
+
+describe('staffAnalytics — the owner’s cells (staff permissions P3, P6)', () => {
+  it('a widened level is admitted: the front desk given everyone’s numbers reads the shop and any barber', async () => {
+    const { ports } = world(
+      {},
+      { permissions: { receptionistAnalyticsScope: 'ALL' } },
+    );
+    const shop = unwrapOk(
+      await staffAnalytics(ports)(ask(RECEPTIONIST.id, null)),
+    );
+    expect(shop.reportScopeBarberId).toBeNull();
+    expect(shop.reportBarbers.map((b) => b.barberId)).toEqual([IVAN, NIKO]);
+    const one = unwrapOk(
+      await staffAnalytics(ports)(ask(RECEPTIONIST.id, NIKO)),
+    );
+    expect(one.reportScopeBarberId).toBe(NIKO);
+  });
+
+  it('a barber let into everyone’s numbers reads a colleague — and, asking for none, the shop', async () => {
+    const { ports } = world(
+      {},
+      { permissions: { barberAnalyticsScope: 'ALL' } },
+    );
+    const colleague = unwrapOk(
+      await staffAnalytics(ports)(ask(IVAN_USER.id, NIKO)),
+    );
+    expect(colleague.reportScopeBarberId).toBe(NIKO);
+    const shop = unwrapOk(await staffAnalytics(ports)(ask(IVAN_USER.id, null)));
+    expect(shop.reportScopeBarberId).toBeNull();
+  });
+
+  it('a narrowed level is refused: a barber whose own numbers the owner took away', async () => {
+    const { ports } = world(
+      {},
+      { permissions: { barberAnalyticsScope: 'NONE' } },
+    );
+    expect(
+      unwrapErr(await staffAnalytics(ports)(ask(IVAN_USER.id, null))),
+    ).toEqual(DENIED);
+    // The admin is never narrowed.
+    expect((await staffAnalytics(ports)(ask(ADMIN.id, null))).ok).toBe(true);
+  });
+
+  it('a hand-written bad cell refuses its level and still admits the admin', async () => {
+    const { ports } = world(
+      {},
+      { permissions: { barberAnalyticsScope: 'EVERYONE' } },
+    );
+    expect(
+      unwrapErr(await staffAnalytics(ports)(ask(IVAN_USER.id, null))),
+    ).toEqual(DENIED);
+    expect((await staffAnalytics(ports)(ask(ADMIN.id, null))).ok).toBe(true);
+  });
+
+  it('answers a failed read of the cells as it failed', async () => {
+    const failure = RepositoryError.readFailed(
+      'settings/staffPermissions',
+      RepositoryErrorCode.ReadFailed,
+    );
+    const { ports } = world({
+      loadStaffPermissions: async () => Result.err(failure),
+    });
+    expect(unwrapErr(await staffAnalytics(ports)(ask(ADMIN.id, null)))).toEqual(
+      failure,
+    );
   });
 });
 

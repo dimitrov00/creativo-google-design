@@ -2,7 +2,6 @@
   "errors": {
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "A break has to sit inside the day's hours.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "A change can't start on a past day.",
-    "SCHEDULING_ROSTER_FORBIDDEN": "You can only change your own hours.",
     "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "The barber doesn't work at this shop. Add it to their shops first.",
     "SCHEDULING_ROSTER_DEPARTED": "This barber has left. Their hours can't be changed.",
     "SCHEDULING_TIME_RANGE_INVALID": "The end has to come after the start, with no overlap.",
@@ -177,8 +176,25 @@
     "GOVERNANCE_ROLES_BARBER_UNKNOWN": "There is no such barber.",
     "GOVERNANCE_ROLES_LINK_WITHOUT_BARBER": "Only a barber can be linked to a barber record.",
     "GOVERNANCE_ROLES_BARBER_ALREADY_LINKED": "This barber is already linked to another account.",
+    "GOVERNANCE_PERMISSIONS_UNAUTHENTICATED": "Sign in again to change permissions.",
+    "GOVERNANCE_PERMISSIONS_FORBIDDEN": "Only the owner can change permissions.",
+    "GOVERNANCE_PERMISSIONS_INVALID": "Check what you picked and try again.",
+    "GOVERNANCE_PERMISSIONS_NOT_OFFERED": "This permission can't be given to that role.",
+    "ACCESS_NOT_STAFF": "You don't have access to this. Sign in again or ask the owner.",
+    "ACCESS_DENIED": "You don't have permission for this. Ask the owner.",
+    "ACCESS_DENIED.TIME_OFF": "You don't have permission to block time. Ask the owner.",
+    "ACCESS_DENIED.HOURS": "You don't have permission to change working hours. Ask the owner.",
+    "ACCESS_DENIED.ANALYTICS": "You have no access to analytics.",
+    "ACCESS_DENIED.TEAM_PROFILES": "You don't have permission to edit barber profiles.",
+    "ACCESS_DENIED.TEAM_OFFERINGS": "You don't have permission to set services and prices.",
+    "ACCESS_DENIED.TEAM_MANAGE": "You don't have permission to manage the team.",
+    "ACCESS_OWN_ONLY": "You can only change your own.",
+    "ACCESS_OWN_ONLY.TIME_OFF": "You can only block time in your own schedule.",
+    "ACCESS_OWN_ONLY.HOURS": "You can only change your own hours.",
+    "ACCESS_OWN_ONLY.ANALYTICS": "You only see your own analytics.",
+    "ACCESS_OWN_ONLY.TEAM_PROFILES": "You can only edit your own profile.",
+    "ACCESS_OWN_ONLY.TEAM_OFFERINGS": "You can only set your own services and prices.",
     "TEAM_UNAUTHENTICATED": "Sign in again to manage the team.",
-    "TEAM_FORBIDDEN": "You don't have access to make this change.",
     "TEAM_INVALID_INPUT": "Check what you filled in and try again.",
     "TEAM_BARBER_NOT_FOUND": "This barber no longer exists.",
     "TEAM_BARBER_DEPARTED": "This barber has left. Bring them back to the team to change them.",
@@ -188,7 +204,6 @@
     "TEAM_SERVICE_UNKNOWN": "This service no longer exists.",
     "TEAM_NOT_DRAFT": "Only a barber who has never taken bookings can be deleted.",
     "ANALYTICS_UNAUTHENTICATED": "Sign in again to see the analytics.",
-    "ANALYTICS_FORBIDDEN": "You have no access to these analytics.",
     "ANALYTICS_BARBER_NOT_LINKED": "Your account is not linked to a barber yet. Ask the owner to link it.",
     "ANALYTICS_GOAL_FORBIDDEN": "A barber’s goal is set by that barber alone.",
     "ANALYTICS_GOAL_INVALID_RANGE": "The low end must not exceed the high end, both above zero; the month this one or the next.",
@@ -1042,6 +1057,16 @@
     "countOne": "1 visit"
   },
   "staff": {
+    "permissions": {
+      "capabilities": {
+        "TIME_OFF": "Blocks time",
+        "HOURS": "Changes working hours",
+        "ANALYTICS": "Sees analytics",
+        "TEAM_PROFILES": "Edits a barber's profile",
+        "TEAM_OFFERINGS": "Sets services and prices",
+        "TEAM_MANAGE": "Manages the team"
+      }
+    },
     "hours": {
       "title": "Working hours",
       "lede": "The barber's weekly hours and breaks.",

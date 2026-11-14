@@ -1,58 +1,33 @@
 import {
-  AccountLifecycle,
   BarberStatus,
   type DayExceptionsRequest,
-  Roles,
   type ShiftSegment,
 } from '@core/components';
-import {
-  type BarberId,
-  type LocationId,
-  Result,
-  type UtcEpochMs,
-} from '@core/primitives';
+import { type LocationId, Result } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-import type { Barber, User } from '@core/entities';
+import type { Barber } from '@core/entities';
 
 /**
- * RosterAccessSystem — who may edit a barber's hours, breaks and days off,
- * and where those hours may sit (team onboarding D5, O3,
+ * RosterAccessSystem — which barber record a roster act may change, and
+ * where its hours may sit (team onboarding D5, O3,
  * `docs/designs/team-onboarding.md`). Pure: the roster pipelines read the
- * caller's account and the barber record inside their commit and ask.
+ * barber record inside their commit and ask.
  *
- * The rules cannot say which barber a caller is, so this is judged on the
- * STORED account: its roles, its block and its barber link. The caller's
- * block is an elapsed-time rule (`AccountLifecycle.isBlockedAt`):
- * `nowUtcMs`, never the shop clock.
+ * WHO may is no longer asked here: `StaffAccessSystem.admit` judges the
+ * caller's stored account against the owner's cells first (staff
+ * permissions P6 — `HOURS` for a week and its breaks, `TIME_OFF` for a
+ * barber's days), and these record checks run after it.
  */
 export const RosterAccessSystem = {
   /**
-   * The barber record `barberId` names, when `caller` may edit its hours:
+   * The barber record a call names — `null` when its id names none — when
+   * its hours can be edited:
    *
-   * - the caller works the book and is not blocked, and either holds a role
-   *   that edits ANY roster (`Roles.ROSTERS`: the front desk and the
-   *   owners) or is the barber — their account is linked to this very
-   *   record — else `SCHEDULING_ROSTER_FORBIDDEN`;
    * - the id names a record — else `SCHEDULING_ROSTER_INVALID_INPUT`
    *   (`barberId`), asked only after the caller is admitted;
    * - the record has not left the shop — else `SCHEDULING_ROSTER_DEPARTED`.
    */
-  admit(
-    caller: User | null,
-    barber: Barber | null,
-    barberId: BarberId,
-    nowUtcMs: UtcEpochMs,
-  ): Result<Barber, SchedulingError> {
-    if (
-      caller === null ||
-      AccountLifecycle.isBlockedAt(caller, nowUtcMs) ||
-      !Roles.mayBook(caller.roles) ||
-      !(
-        Roles.editsAnyRoster(caller.roles) || caller.linkedBarberId === barberId
-      )
-    ) {
-      return Result.err(SchedulingError.rosterForbidden());
-    }
+  recordOf(barber: Barber | null): Result<Barber, SchedulingError> {
     if (barber === null) {
       return Result.err(SchedulingError.rosterInvalidInput('barberId'));
     }
@@ -96,19 +71,17 @@ export const RosterAccessSystem = {
   },
 
   /**
-   * Whether `caller` may make an act on barbers' days (`setDayExceptions`):
-   * every barber it touches is admitted as {@link RosterAccessSystem.admit}
-   * admits — so a barber cannot move a block onto a colleague — and every
-   * day it files sits at a shop its barber works at. `records` are the
-   * barber records the transaction read; a barber with none there is
-   * refused as `admit` refuses an id with no record. The first refusal, in
-   * the request's own order.
+   * Whether an act on barbers' days (`setDayExceptions`) names records it
+   * can change: every barber it touches is a record that has not left
+   * ({@link RosterAccessSystem.recordOf}) and every day it files sits at a
+   * shop its barber works at. `records` are the barber records the
+   * transaction read; a barber with none there is refused as `recordOf`
+   * refuses an id with no record. The first refusal, in the request's own
+   * order.
    */
-  admitDays(
-    caller: User | null,
+  placedDays(
     records: readonly Barber[],
     placements: readonly DayExceptionsRequest.Placement[],
-    nowUtcMs: UtcEpochMs,
   ): Result<null, SchedulingError> {
     for (let i = 0; i < placements.length; i++) {
       const placement = placements[i] as DayExceptionsRequest.Placement;
@@ -119,16 +92,11 @@ export const RosterAccessSystem = {
           break;
         }
       }
-      const admitted = RosterAccessSystem.admit(
-        caller,
-        record,
-        placement.barberId,
-        nowUtcMs,
-      );
-      if (!admitted.ok) return admitted;
+      const named = RosterAccessSystem.recordOf(record);
+      if (!named.ok) return named;
       if (placement.locationId !== null) {
         const placed = RosterAccessSystem.worksAt(
-          admitted.value,
+          named.value,
           placement.locationId,
         );
         if (!placed.ok) return placed;

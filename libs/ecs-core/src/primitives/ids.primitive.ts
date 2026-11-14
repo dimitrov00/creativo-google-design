@@ -198,6 +198,17 @@ export const BookingPolicySettingsId = {
   FIXED: 'bookingPolicy' as BookingPolicySettingsId,
 } as const;
 
+/** The staff-permissions settings document (`settings/staffPermissions`, staff permissions P5). */
+export type StaffPermissionsSettingsId = Brand<
+  string,
+  'StaffPermissionsSettingsId'
+>;
+export const StaffPermissionsSettingsId = {
+  ...idCompanion('StaffPermissionsSettingsId'),
+  /** The one document id there is (`STAFF_PERMISSIONS_DOC`). */
+  FIXED: 'staffPermissions' as StaffPermissionsSettingsId,
+} as const;
+
 /** The shape of a month key: `YYYY-MM`, the month `01`–`12`. */
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -649,6 +660,9 @@ const ANALYTICS_GOALS = 'analyticsGoals';
 /** `Collections.Barbers` — restated likewise (spec-checked). */
 const BARBERS = 'barbers';
 
+/** `Collections.Settings` — restated likewise (spec-checked). */
+const SETTINGS = 'settings';
+
 /**
  * The resource an audit row names — the one id whose text may hold ONE `/`
  * (`users/{uid}`, `streakDefinitions/{id}`, `impersonationSessions/{id}`,
@@ -706,6 +720,10 @@ export const AuditResourceId = {
   /** A team row names the barber record, `barbers/{id}` (team onboarding D12) — the governed trigger's spelling of the same document. */
   forBarber(id: BarberId): AuditResourceId {
     return `${BARBERS}/${id}` as AuditResourceId;
+  },
+  /** A permissions row names the settings document, `settings/staffPermissions` (staff permissions P11) — the governed trigger's spelling of the same document. */
+  forStaffPermissions(id: StaffPermissionsSettingsId): AuditResourceId {
+    return `${SETTINGS}/${id}` as AuditResourceId;
   },
 } as const;
 

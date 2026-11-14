@@ -68,6 +68,18 @@ export function callerWorksTheBook(request: VerifiedRequest): boolean {
 }
 
 /**
+ * Is this caller a staff member, by their token? The gate of every callable
+ * whose real question — which staff, for whom — is asked of the STORED
+ * account against the owner's permissions (staff permissions P6): the token
+ * cannot know the cells, so it is asked only this, to keep clients and
+ * anonymous callers out before anything is read. Read off the entries as
+ * they are, as {@link callerIsAdmin} reads them.
+ */
+export function callerIsStaff(request: VerifiedRequest): boolean {
+  return Roles.isStaff(callerKnownRoles(request));
+}
+
+/**
  * May this caller change how the shop runs: publish the rhythm's rule,
  * open or end an impersonation, and whatever else only the owner's pair
  * decides? The same two roles `firestore.rules` admits with `isAdmin()`

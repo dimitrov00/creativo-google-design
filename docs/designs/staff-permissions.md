@@ -5,7 +5,8 @@
 - **Stage:** Design brief, revised after its first review round
   (`docs/designs/staff-permissions-review/goldfish_review_round1.md`: 2
   blockers, 24 major findings, 25 nits). "Review record" at the end says
-  where each finding went. Stage 0 is built and merged; stage A is next.
+  where each finding went. Stage 0 is built and merged; stage A is built
+  (PR #78); stage T is next.
 - **Decisions:** the owner delegated them. Each is the author's call and the
   owner may overturn any of them; the ones most worth a look are under "Open
   decisions".
@@ -937,7 +938,7 @@ emulators and the rules emulator spec when the rules change.
 - **Left.** The «Това съм аз» door (stage T). The analytics callable was
   not driven with the un-refreshed token; stage A's emulator case does.
 
-### Stage A. The engine, and the calls that already judge the account
+### Stage A. The engine, and the calls that already judge the account (built, PR #78)
 
 - **Depends on.** Nothing. O8 and O11 are settled as written.
 - **Builds.** Everything in P12: six capabilities, the cells and defaults,
@@ -968,6 +969,32 @@ emulators and the rules emulator spec when the rules change.
      `settings/bookingPolicy` still public.
 - **Leaves.** The web still gates analytics on the token's roles until T.
   Nobody can edit a cell without a script until T.
+- **Built, and where it differs from the text above.**
+  - _The target's name._ `AccessTarget` was already the route guard's
+    redirect, so the act's target is the component `StaffTarget`
+    (`staffReach`: `BARBERS` or `SHOP`) and `admit` takes `staffTarget`.
+  - _The "needs" rule is not in the code yet._ None of the six
+    capabilities of this stage needs another, so there was nothing to
+    clamp or test. It enters with `BOOKING_MONEY` in stage B. Until then
+    `GOVERNANCE_PERMISSIONS_NOT_OFFERED` covers a level the owner does not
+    edit and "own" where the cell does not offer it.
+  - _The words._ One sentence per code and capability
+    (`errors.ACCESS_DENIED.HOURS`), read one level deeper as a field or a
+    refusal already is, with the code's own sentence as the fallback. A
+    label set into one sentence read badly in Bulgarian. The row labels of
+    P10 are in the catalogue too (`staff.permissions.capabilities`).
+  - _The Team list for an editor of every barber's page._ The accounts are
+    not read at all, so those rows carry no "no account" note: it would be
+    a guess.
+  - _The wire gate now admits the content editor's token_ on the roster
+    calls, because the owner may give that level hours. The stored account
+    still decides.
+  - _The frozen table_ is a data file beside its spec
+    (`staff-access.characterization.json`), taken from the systems as they
+    were on `main` before any check changed: 64 role sets, and both links
+    for the 32 that hold `barber`. A link with no barber role is left out,
+    because no call can write that state; the old profile check admitted
+    it and the new one does not.
 
 ### Stage T. The Team screen, with «Права»
 

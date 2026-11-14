@@ -2,11 +2,16 @@ import {
   AuditAction,
   type DocPath,
   StaffLink,
+  StaffTarget,
   type TeamCall,
   WriteOp,
 } from '@core/components';
-import { type BarberId, Result } from '@core/primitives';
-import { type RepositoryError, TeamError } from '@core/errors';
+import { type BarberId, Result, StaffCapability } from '@core/primitives';
+import {
+  type AccessError,
+  type RepositoryError,
+  TeamError,
+} from '@core/errors';
 import {
   BARBER_LINK_DOC,
   type Barber,
@@ -18,9 +23,15 @@ import {
   type User,
 } from '@core/entities';
 import type { ClockPorts, CommitPorts, HashPorts } from '@core/ports';
-import { OfferingEditSystem, TeamSystem } from '@core/systems';
+import {
+  OfferingEditSystem,
+  StaffAccessSystem,
+  TeamSystem,
+} from '@core/systems';
 import {
   admitTeamCaller,
+  readStaffCaller,
+  type StaffCallerFacts,
   TEAM_SERVICES,
   type TeamAct,
   teamActor,
@@ -29,10 +40,12 @@ import {
 /**
  * `deleteDraftBarber` — «Изтрий»: a record that never went live, removed
  * with everything that names it (team onboarding D10). The caller gate
- * first, on the VERIFIED token (`admitTeamCaller`). Then ONE commit that
- * reads `users/{caller}`, `barbers/{id}`, its roster, its account lock
+ * first, on the VERIFIED token (`admitTeamCaller`: any staff role). Then
+ * ONE commit that reads `users/{caller}`, `settings/staffPermissions`,
+ * `barbers/{id}`, its roster, its account lock
  * (`barbers/{id}/restricted/link`) and every service — then the account
- * the lock names — and asks `TeamSystem.admit` and `TeamSystem.removable`
+ * the lock names — and asks `StaffAccessSystem.admit` (`TEAM_MANAGE` on
+ * the shop, staff permissions P6) and `TeamSystem.removable`
  * (only a `DRAFT`; a record that has been live is `TEAM_NOT_DRAFT` — it
  * leaves through «Напускане», and its history stays).
  *
@@ -58,8 +71,7 @@ export type DeleteDraftBarberCommand = TeamAct & {
 
 export type DeleteDraftBarberPorts = CommitPorts & ClockPorts & HashPorts;
 
-type Snapshot = {
-  readonly caller: User | null;
+type Snapshot = StaffCallerFacts & {
   readonly barber: Barber | null;
   readonly schedule: BarberSchedule | null;
   readonly lock: BarberLink | null;
@@ -110,7 +122,9 @@ export const deleteDraftBarber =
   (ports: DeleteDraftBarberPorts) =>
   async (
     cmd: DeleteDraftBarberCommand,
-  ): Promise<Result<TeamCall.Saved, TeamError | RepositoryError>> => {
+  ): Promise<
+    Result<TeamCall.Saved, TeamError | AccessError | RepositoryError>
+  > => {
     const admitted = admitTeamCaller(cmd);
     if (!admitted.ok) return admitted;
     const callerUserId = admitted.value;
@@ -118,8 +132,8 @@ export const deleteDraftBarber =
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       async (tx): Promise<Snapshot> => {
-        const [caller, barber, schedule, lock, services] = await Promise.all([
-          tx.get<User>([Collections.Users, callerUserId]),
+        const [facts, barber, schedule, lock, services] = await Promise.all([
+          readStaffCaller(tx, callerUserId),
           tx.get<Barber>([Collections.Barbers, cmd.barberId]),
           tx.get<BarberSchedule>([Collections.BarberSchedules, cmd.barberId]),
           tx.get<BarberLink>(lockPath(cmd.barberId)),
@@ -129,12 +143,21 @@ export const deleteDraftBarber =
           lock === null
             ? null
             : await tx.get<User>([Collections.Users, lock.linkedUserId]);
-        return { caller, barber, schedule, lock, linked, services };
+        return { ...facts, barber, schedule, lock, linked, services };
       },
       (
         snapshot,
-      ): Result<{ readonly writes: readonly WriteOp[] }, TeamError> => {
-        const stored = TeamSystem.admit(snapshot.caller, nowUtcMs);
+      ): Result<
+        { readonly writes: readonly WriteOp[] },
+        TeamError | AccessError
+      > => {
+        const stored = StaffAccessSystem.admit({
+          staffCapability: StaffCapability.TeamManage,
+          staffTarget: StaffTarget.SHOP,
+          caller: snapshot.caller,
+          permissions: snapshot.permissions,
+          nowUtcMs,
+        });
         if (!stored.ok) return stored;
         if (snapshot.barber === null) {
           return Result.err(TeamError.barberNotFound(cmd.barberId));

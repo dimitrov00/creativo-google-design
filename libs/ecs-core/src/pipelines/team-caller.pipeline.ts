@@ -1,20 +1,35 @@
-import { Actor, type Role, Roles } from '@core/components';
+import { Actor, type Role, Roles, StaffPermissions } from '@core/components';
 import { type OperationId, Result, type UserId } from '@core/primitives';
-import { TeamError } from '@core/errors';
-import { Collections, QueryOp, type User } from '@core/entities';
-import type { QuerySpec } from '@core/ports';
+import { AccessError, type RepositoryError, TeamError } from '@core/errors';
+import {
+  Collections,
+  QueryOp,
+  STAFF_PERMISSIONS_DOC,
+  type StaffPermissionsSettings,
+  type User,
+} from '@core/entities';
+import type {
+  ProfileLoadPorts,
+  QuerySpec,
+  ReadTx,
+  StaffPermissionsReadPorts,
+} from '@core/ports';
 
 /**
- * WHO IS ASKING, AND WHAT THE TEAM PIPELINES READ (team onboarding D5,
- * D12) — the part `addBarber`, `editBarber`, `activateBarber` and
- * `deleteDraftBarber` share (reuse, never copy): the caller as the wire
- * read them off the verified token, the two token gates, the act's
- * attribution and the three whole-collection reads.
+ * WHO IS ASKING, AND WHAT THE STAFF PIPELINES READ TO JUDGE THEM (team
+ * onboarding D5, D12; staff permissions P6) — the part the team, roster
+ * and analytics callables share (reuse, never copy): the caller as the
+ * wire read them off the verified token, the one token gate, the two
+ * readers of what `StaffAccessSystem` decides on, the act's attribution
+ * and the team's whole-collection reads.
  *
- * Every team callable asks twice: the gate below on the token's claims,
- * before anything is read, then `TeamSystem.admit…` on the STORED roles,
- * block and barber link inside the transaction — a token minted before a
- * role was taken away opens nothing.
+ * Every converted callable asks twice. The gate below asks the token only
+ * "is this a staff member" — it cannot know the owner's cells — and keeps
+ * clients and anonymous callers out before anything is read. Then
+ * `StaffAccessSystem.admit` judges the STORED account against
+ * `settings/staffPermissions`, read beside it: a token minted before a
+ * role was taken away opens nothing, and a cell the owner changed applies
+ * to the next call.
  */
 
 /** The verified caller — never the payload's. */
@@ -32,33 +47,64 @@ export type TeamAct = TeamCaller & {
 };
 
 /**
- * The caller of an act that only the team's manager may make — a uid whose
- * claims hold a `Roles.TEAM` role, or the refusal
- * (`TEAM_UNAUTHENTICATED`, `TEAM_FORBIDDEN`).
+ * The caller of a team act — a uid whose claims hold any staff role, or
+ * the refusal (`TEAM_UNAUTHENTICATED`, `ACCESS_NOT_STAFF`). Which staff,
+ * and for which record, the transaction decides on the stored account.
  */
-export function admitTeamCaller(caller: TeamCaller): Result<UserId, TeamError> {
-  if (caller.callerUserId === null) {
-    return Result.err(TeamError.unauthenticated());
-  }
-  return Roles.managesTeam(caller.callerRoles)
-    ? Result.ok(caller.callerUserId)
-    : Result.err(TeamError.forbidden());
-}
-
-/**
- * The caller of an act a wider circle may make (a profile edit, the
- * go-live step) — a uid whose claims hold any staff role; which staff, and
- * for which record, the transaction decides on the stored account.
- */
-export function admitTeamStaffCaller(
+export function admitTeamCaller(
   caller: TeamCaller,
-): Result<UserId, TeamError> {
+): Result<UserId, TeamError | AccessError> {
   if (caller.callerUserId === null) {
     return Result.err(TeamError.unauthenticated());
   }
   return Roles.isStaff(caller.callerRoles)
     ? Result.ok(caller.callerUserId)
-    : Result.err(TeamError.forbidden());
+    : Result.err(AccessError.notStaff());
+}
+
+/** What `StaffAccessSystem` judges a caller on: their stored account and the owner's cells. */
+export type StaffCallerFacts = {
+  /** `users/{caller}` — `null` when the uid has no account document. */
+  readonly caller: User | null;
+  /** `settings/staffPermissions` through its guard — every cell at its default when there is no document. */
+  readonly permissions: StaffPermissions;
+};
+
+/**
+ * The caller's facts read INSIDE a transaction — two document reads that
+ * join the pipeline's first read step (`Promise.all`), so they cost no
+ * extra round trip and the decision is atomic with the write.
+ */
+export async function readStaffCaller(
+  tx: ReadTx,
+  callerUserId: UserId,
+): Promise<StaffCallerFacts> {
+  const [caller, stored] = await Promise.all([
+    tx.get<User>([Collections.Users, callerUserId]),
+    tx.get<StaffPermissionsSettings>([
+      Collections.Settings,
+      STAFF_PERMISSIONS_DOC,
+    ]),
+  ]);
+  return { caller, permissions: StaffPermissions.read(stored) };
+}
+
+/**
+ * The caller's facts read through ports, for a call with no transaction to
+ * read in (the analytics pair): "as of this call", which is all a read —
+ * or a write that needs no more — asks.
+ */
+export async function loadStaffCaller(
+  ports: ProfileLoadPorts & StaffPermissionsReadPorts,
+  callerUserId: UserId,
+): Promise<Result<StaffCallerFacts, RepositoryError>> {
+  const [profile, permissions] = await Promise.all([
+    ports.loadProfile(callerUserId),
+    ports.loadStaffPermissions(),
+  ]);
+  if (!profile.ok) return profile;
+  if (!permissions.ok) return permissions;
+  return Result.ok({ caller: profile.value, permissions: permissions.value });
 }
 
 /** Who the audit row credits: the caller, over the roles their account STORES. */

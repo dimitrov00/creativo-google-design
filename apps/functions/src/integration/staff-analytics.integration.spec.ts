@@ -24,9 +24,10 @@ import {
   type LocalDate,
   ScheduleExceptionId,
   SeatId,
+  StaffCapability,
   UserId,
 } from '@core/primitives';
-import { AnalyticsErrorCode } from '@core/errors';
+import { AccessErrorCode, AnalyticsErrorCode } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import { type StaffAnalyticsCommand, staffAnalytics } from '@core/pipelines';
@@ -275,7 +276,8 @@ describe('staffAnalytics (emulator)', () => {
 
   it('refuses the barber a colleague’s report', async () => {
     expect(unwrapErr(await report(ask(IVAN_USER.id, NIKO)))).toEqual({
-      errorCode: AnalyticsErrorCode.Forbidden,
+      errorCode: AccessErrorCode.OwnOnly,
+      staffCapability: StaffCapability.Analytics,
     });
   });
 

@@ -24,8 +24,9 @@ import {
 } from '@jsverse/transloco';
 import { Observable, firstValueFrom, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { BookingStatus } from '@core/primitives';
+import { BookingStatus, StaffCapability } from '@core/primitives';
 import {
+  AccessErrorCode,
   AppCheckErrorCode,
   BookingErrorCode,
   CancellationRefusalCode,
@@ -619,6 +620,60 @@ describe('wordPipelineError — the DST gap end to end, wire to words', () => {
   );
 });
 
+describe('wordPipelineError — a staff-access refusal end to end, wire to words (staff permissions P6)', () => {
+  let transloco: TranslocoService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideTransloco({
+          config: { availableLangs: ['en', 'bg'], defaultLang: 'en' },
+          loader: CatalogueLoader,
+        }),
+      ],
+    });
+    transloco = TestBed.inject(TranslocoService);
+  });
+
+  // The edge answers `permission-denied` with the capability the caller
+  // lacks; it rides `serverParams`, and the surface's translate step reads
+  // the sentence one level deeper by it — through the REAL catalogue.
+  it.each([
+    ['en', 'ACCESS_OWN_ONLY', 'HOURS', 'You can only change your own hours.'],
+    [
+      'bg',
+      'ACCESS_OWN_ONLY',
+      'HOURS',
+      'Можеш да променяш само своето работно време.',
+    ],
+    ['bg', 'ACCESS_DENIED', 'ANALYTICS', 'Нямаш достъп до анализите.'],
+    ['bg', 'ACCESS_DENIED', 'TEAM_MANAGE', 'Нямаш право да управляваш екипа.'],
+    // A capability with no line of its own yet: the code's own sentence.
+    [
+      'bg',
+      'ACCESS_DENIED',
+      'BOOKING_MANAGE',
+      'Нямаш право за това. Питай собственика.',
+    ],
+  ])('words %s %s %s', async (lang, errorCode, staffCapability, sentence) => {
+    await firstValueFrom(transloco.load(lang));
+    transloco.setActiveLang(lang);
+    const refused = PipelineError.fromWire('functions/permission-denied', {
+      errorCode,
+      staffCapability,
+    });
+    expect(refused.serverParams).toEqual({ staffCapability });
+    expect(
+      wordPipelineError(
+        refused,
+        (code, params) =>
+          translateCodedError(transloco, { ...params, errorCode: code }),
+        BookingErrorCode.CallFailed,
+      ),
+    ).toBe(sentence);
+  });
+});
+
 describe('wordServerRefusal — the server’s own words, or nothing', () => {
   const refused = (serverErrorCode: string | null, field: string | null) =>
     PipelineError.of(
@@ -640,6 +695,76 @@ describe('wordServerRefusal — the server’s own words, or nothing', () => {
       'refused',
     );
     expect(asked).toEqual(['X_REFUSED.day', 'X_REFUSED']);
+  });
+
+  it('reads a staff-access refusal one level deeper by the capability it names (staff permissions P6)', () => {
+    const access = (errorCode: string, staffCapability?: string) =>
+      PipelineError.fromWire('functions/permission-denied', {
+        errorCode,
+        ...(staffCapability === undefined ? {} : { staffCapability }),
+      });
+    const { translate, asked } = catalogue({
+      'ACCESS_DENIED.HOURS': 'no hours',
+      ACCESS_DENIED: 'no right',
+    });
+    expect(wordServerRefusal(access('ACCESS_DENIED', 'HOURS'), translate)).toBe(
+      'no hours',
+    );
+    // A capability with no line of its own falls back to the code's.
+    expect(
+      wordServerRefusal(access('ACCESS_DENIED', 'TIME_OFF'), translate),
+    ).toBe('no right');
+    expect(asked).toEqual([
+      'ACCESS_DENIED.HOURS',
+      'ACCESS_DENIED.TIME_OFF',
+      'ACCESS_DENIED',
+    ]);
+    // A refusal that names none asks for the code alone.
+    expect(wordServerRefusal(access('ACCESS_NOT_STAFF'), translate)).toBeNull();
+  });
+
+  it('words every access refusal of every capability in both catalogues — no code leaks to a screen', () => {
+    for (const [lang, copy] of [
+      ['bg', bg],
+      ['en', en],
+    ] as const) {
+      const errors: Readonly<Record<string, string>> = copy.errors;
+      const { translate } = catalogue(errors);
+      for (const staffCapability of Object.values(StaffCapability)) {
+        for (const errorCode of [
+          AccessErrorCode.Denied,
+          AccessErrorCode.OwnOnly,
+        ]) {
+          const worded = wordServerRefusal(
+            PipelineError.fromWire('functions/permission-denied', {
+              errorCode,
+              staffCapability,
+            }),
+            translate,
+          );
+          expect(
+            worded,
+            `${lang} ${errorCode} ${staffCapability}`,
+          ).not.toBeNull();
+          expect(worded).not.toContain('ACCESS_');
+        }
+      }
+      expect(errors[AccessErrorCode.NotStaff], lang).toBeTruthy();
+      // The retired codes have no line left to rot.
+      for (const retired of [
+        'SCHEDULING_ROSTER_FORBIDDEN',
+        'TEAM_FORBIDDEN',
+        'ANALYTICS_FORBIDDEN',
+      ]) {
+        expect(Object.hasOwn(errors, retired), `${lang} ${retired}`).toBe(
+          false,
+        );
+      }
+      // …and the row labels the «Права» screen will draw from the dictionary.
+      expect(Object.keys(copy.staff.permissions.capabilities)).toEqual(
+        Object.values(StaffCapability),
+      );
+    }
   });
 
   it('answers null when the call named no server code, or the catalogue has no copy for it', () => {

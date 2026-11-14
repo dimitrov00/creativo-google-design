@@ -16,9 +16,10 @@ import {
   ExceptionEffect,
   type LocalDate,
   OperationId,
+  StaffCapability,
   UserId,
 } from '@core/primitives';
-import { SchedulingErrorCode } from '@core/errors';
+import { AccessErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import { StoredDocumentSystem } from '@core/systems';
 import { auditDocumentChange, setDayExceptions } from '@core/pipelines';
@@ -281,7 +282,10 @@ describe('setDayExceptions (emulator)', () => {
     );
     expect(colleague).toEqual({
       ok: false,
-      error: { errorCode: SchedulingErrorCode.RosterForbidden },
+      error: {
+        errorCode: AccessErrorCode.OwnOnly,
+        staffCapability: StaffCapability.TimeOff,
+      },
     });
     expect((await day(NIKO, D1).get()).exists).toBe(false);
     expect(await auditRows()).toHaveLength(1);

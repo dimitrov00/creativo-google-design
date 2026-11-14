@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryErrorCode } from '@core/errors';
-import { BookingPolicy } from '@core/components';
+import { BookingPolicy, StaffPermissions } from '@core/components';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreSettingsPorts } from './firestore-settings.adapter';
 
@@ -88,5 +88,66 @@ describe('firestoreSettingsPorts — settings/bookingPolicy', () => {
       },
     });
     expect(JSON.stringify(result)).not.toContain('359880000777');
+  });
+});
+
+describe('firestoreSettingsPorts — settings/staffPermissions (staff permissions P5, P6)', () => {
+  it('reads the stored cells through the component guard — the stamp and any key that is no cell left behind', async () => {
+    const result = await portsOver({
+      'settings/staffPermissions': {
+        receptionistHoursScope: 'NONE',
+        barberTimeOffScope: 'ALL',
+        barberHoursScope: null,
+        writeOperationId: 'operation-0123456789ab',
+        adminHoursScope: 'NONE',
+      },
+    }).loadStaffPermissions();
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        ...StaffPermissions.UNSET,
+        receptionistHoursScope: 'NONE',
+        barberTimeOffScope: 'ALL',
+      },
+    });
+  });
+
+  it('answers every cell at its default for an absent document — the normal case, not a failure', async () => {
+    expect(await portsOver().loadStaffPermissions()).toEqual({
+      ok: true,
+      value: StaffPermissions.UNSET,
+    });
+  });
+
+  it('reads a value nobody could have saved as nobody — never as the default, never a failure (O11)', async () => {
+    const result = await portsOver({
+      'settings/staffPermissions': {
+        receptionistHoursScope: 'EVERYONE',
+        contentManagerTeamProfilesScope: 'OWN',
+      },
+    }).loadStaffPermissions();
+    expect(result.ok && result.value).toEqual({
+      ...StaffPermissions.UNSET,
+      receptionistHoursScope: 'NONE',
+      contentManagerTeamProfilesScope: 'NONE',
+    });
+  });
+
+  it('answers a read that throws as a REPOSITORY_READ_FAILED value naming the document, never a rejection', async () => {
+    const db = {
+      doc: () => ({
+        get: async () => {
+          throw Object.assign(new Error('unavailable'), { code: 14 });
+        },
+      }),
+    } as unknown as Firestore;
+    expect(await firestoreSettingsPorts(db).loadStaffPermissions()).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'settings/staffPermissions',
+        reason: 'unavailable',
+      },
+    });
   });
 });

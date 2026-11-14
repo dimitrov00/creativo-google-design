@@ -4,6 +4,7 @@ import {
   Actor,
   BarberStatus,
   BlockReason,
+  type DocBody,
   Role,
   WriteOp,
 } from '@core/components';
@@ -15,8 +16,13 @@ import {
   Result,
   UserId,
 } from '@core/primitives';
-import { TeamErrorCode } from '@core/errors';
-import { type Barber, Collections, type User } from '@core/entities';
+import { AccessErrorCode, TeamErrorCode } from '@core/errors';
+import {
+  type Barber,
+  Collections,
+  STAFF_PERMISSIONS_DOC,
+  type User,
+} from '@core/entities';
 import type { CommitPlan } from '@core/ports';
 import { AuditSystem, TeamSystem } from '@core/systems';
 import {
@@ -39,10 +45,12 @@ import { type AddBarberCommand, addBarber } from './add-barber.pipeline';
 import { TEAM_BARBERS, TEAM_LOCATIONS } from './team-caller.pipeline';
 
 /*
- * `addBarber` (team onboarding D5): the token gate, then ONE commit that
- * reads the caller, the record the act names, every shop and every barber
- * record, and writes the DRAFT whole beside its ONE `TEAM_BARBER_ADDED`
- * row. The act's id IS the record's id, so a replay writes nothing.
+ * `addBarber` (team onboarding D5; staff permissions P6): the token gate
+ * (any staff role), then ONE commit that reads the caller and the owner's
+ * cells, the record the act names, every shop and every barber record,
+ * asks `TEAM_MANAGE` of the stored account, and writes the DRAFT whole
+ * beside its ONE `TEAM_BARBER_ADDED` row. The act's id IS the record's
+ * id, so a replay writes nothing.
  */
 
 const ADMIN = UserId.of('u-admin');
@@ -57,8 +65,17 @@ const STORED_ADMIN: User = registeredUserFixture({
   roles: [Role.Admin],
 });
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const DENIED = {
+  errorCode: AccessErrorCode.Denied,
+  staffCapability: 'TEAM_MANAGE',
+};
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   /** The barber records already stored (default one: Ivan). */
   readonly barbers?: readonly Barber[];
   readonly commit?: (commit: CommitPlan) => CommitPlan;
@@ -67,6 +84,9 @@ type RigOptions = {
 function rig(options: RigOptions = {}) {
   const caller = options.caller === undefined ? STORED_ADMIN : options.caller;
   const store = memoryStore([
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...(caller === null
       ? []
       : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
@@ -149,12 +169,13 @@ describe('addBarber', () => {
     });
   });
 
-  it('reads the caller, the named record, every shop and every barber record — in one round trip', async () => {
+  it('reads the caller and the owner’s cells, the named record, every shop and every barber record — in one round trip', async () => {
     const { tx, run } = rig();
     await run(call());
     expect(tx.transactions).toHaveLength(1);
     expect(tx.transactions[0]?.reads).toEqual([
       [Collections.Users, ADMIN],
+      PERMISSIONS,
       [Collections.Barbers, NEW],
     ]);
     expect(tx.transactions[0]?.queries).toEqual([TEAM_LOCATIONS, TEAM_BARBERS]);
@@ -220,41 +241,84 @@ describe('addBarber', () => {
   });
 
   describe('the caller', () => {
-    it('refuses no session and a token without the admin role before any read', async () => {
+    it('refuses no session and a token with no staff role before any read', async () => {
       const { tx, run } = rig();
       expect(unwrapErr(await run(call({ callerUserId: null })))).toEqual({
         errorCode: TeamErrorCode.Unauthenticated,
       });
-      for (const callerRoles of [
-        [Role.ContentManager],
-        [Role.Receptionist],
-        [Role.Barber],
-        [Role.Sysadmin],
-        [],
-      ]) {
-        expect(unwrapErr(await run(call({ callerRoles })))).toEqual({
-          errorCode: TeamErrorCode.Forbidden,
-        });
+      for (const callerRoles of [[Role.Client], []]) {
+        expect(unwrapErr(await run(call({ callerRoles })))).toEqual(NOT_STAFF);
       }
       expect(tx.transactions).toHaveLength(0);
     });
 
     it('judges the STORED account, not the token: a taken-away role, a block and a missing account are refused', async () => {
-      for (const caller of [
-        registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }),
-        registeredUserFixture({
-          id: ADMIN,
-          roles: [Role.Admin],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        null,
-      ]) {
+      const cases: [User | null, object][] = [
+        [registeredUserFixture({ id: ADMIN, roles: [Role.Barber] }), DENIED],
+        [
+          registeredUserFixture({
+            id: ADMIN,
+            roles: [Role.Admin],
+            ...AccountLifecycle.block(BlockReason.Manual, null),
+          }),
+          NOT_STAFF,
+        ],
+        [null, NOT_STAFF],
+      ];
+      for (const [caller, refusal] of cases) {
         const { store, tx, run } = rig({ caller });
-        expect(unwrapErr(await run(call()))).toEqual({
-          errorCode: TeamErrorCode.Forbidden,
-        });
+        expect(unwrapErr(await run(call()))).toEqual(refusal);
         expect(tx.plans).toEqual([]);
         expect(store.has(`${Collections.Barbers}/${NEW}`)).toBe(false);
+      }
+    });
+
+    it('with no document, is the admin’s alone — every other level is refused after the read, whatever its token', async () => {
+      for (const role of [
+        Role.ContentManager,
+        Role.Receptionist,
+        Role.Barber,
+        Role.Sysadmin,
+      ]) {
+        const { store, tx, run } = rig({
+          caller: registeredUserFixture({ id: ADMIN, roles: [role] }),
+        });
+        expect(
+          unwrapErr(await run(call({ callerRoles: [role] }))),
+          role,
+        ).toEqual(DENIED);
+        expect(tx.plans).toEqual([]);
+        expect(store.has(`${Collections.Barbers}/${NEW}`)).toBe(false);
+      }
+      // A staff token the admin's own account still holds is enough to ask.
+      const { run } = rig();
+      expect((await run(call({ callerRoles: [Role.Barber] }))).ok).toBe(true);
+    });
+
+    it('follows the owner’s cells: a level given the team adds a barber, credited over its stored roles; a bad cell gives nothing', async () => {
+      const editor = registeredUserFixture({
+        id: ADMIN,
+        roles: [Role.ContentManager],
+      });
+      const widened = rig({
+        caller: editor,
+        permissions: { contentManagerTeamManageScope: 'ALL' },
+      });
+      expect(
+        await widened.run(call({ callerRoles: [Role.ContentManager] })),
+      ).toEqual(Result.ok({ barberId: NEW }));
+      expect(auditRowsOf(widened.tx.plans)[0]).toMatchObject(
+        Actor.forCaller(ADMIN, [Role.ContentManager]),
+      );
+      // "Own" is not on offer for the team: a hand-written one reads as nobody.
+      for (const permissions of [
+        { contentManagerTeamManageScope: 'OWN' },
+        { contentManagerTeamManageScope: 'EVERYONE' },
+      ]) {
+        const { run } = rig({ caller: editor, permissions });
+        expect(
+          unwrapErr(await run(call({ callerRoles: [Role.ContentManager] }))),
+        ).toEqual(DENIED);
       }
     });
   });

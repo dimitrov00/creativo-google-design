@@ -71,6 +71,7 @@ const seam = vi.hoisted(() => {
     'setDayExceptions',
     'setRoles',
     'setRosterWeek',
+    'setStaffPermissions',
     'staffAnalytics',
     'startImpersonation',
     'startAnalyticsRecompute',
@@ -293,7 +294,8 @@ const daily = (schedule: string) => ({
  * also `auditProfileChanges`', whose name is kept and whose path param
  * became `{docId}` (`users/{uid}` before). Security hardening (S-DEP-6)
  * added `setRoles`, the admin's audited roles change — a traced callable
- * declaring no other option. Staff analytics added `staffAnalytics`, the
+ * declaring no other option; staff permissions added `setStaffPermissions`,
+ * the owner's save of what a staff level may do, the same way. Staff analytics added `staffAnalytics`, the
  * read-only report — traced, on 512 MiB (a shop-month's read).
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
  * timeout, memory, instance cap, secret or schedule fails here.
@@ -390,6 +392,7 @@ const ENDPOINTS = {
   endImpersonation: tracedCallable,
   redeemInvitation: tracedCallable,
   setRoles: tracedCallable,
+  setStaffPermissions: tracedCallable,
   exportClientData: { ...walkInCallable, availableMemoryMb: 512 },
   previewClientErasure: walkInCallable,
   eraseClient: {
@@ -1501,6 +1504,51 @@ const FLIPPED: { readonly [name: string]: Case } = {
       rolesChanged: true,
     },
   },
+  // ── staff permissions: the owner's save of what a level may do (P6) ──
+  setStaffPermissions: {
+    pipeline: 'setStaffPermissions',
+    input: request(
+      {
+        changes: [
+          {
+            staffCapability: 'HOURS',
+            role: 'receptionist',
+            accessScope: 'NONE',
+          },
+        ],
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      adminUserId: 'u-owner',
+      adminRoles: ['admin'],
+      changes: [
+        { staffCapability: 'HOURS', role: 'receptionist', accessScope: 'NONE' },
+      ],
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({
+      changes: [
+        {
+          staffCapability: 'HOURS',
+          role: 'receptionist',
+          accessScopeFrom: 'ALL',
+          accessScopeTo: 'NONE',
+        },
+      ],
+    }),
+    expected: {
+      changes: [
+        {
+          staffCapability: 'HOURS',
+          role: 'receptionist',
+          accessScopeFrom: 'ALL',
+          accessScopeTo: 'NONE',
+        },
+      ],
+    },
+  },
   // ── audit-hardening Phase 3: the admin's data-subject export (P3-DEP-9) ──
   exportClientData: {
     pipeline: 'exportClientData',
@@ -1610,7 +1658,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 65 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read', () => {
+  it('exports exactly the 66 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read, and staff permissions’ save', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1656,7 +1704,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(65);
+    expect(FLIPPED_EXPORTS).toHaveLength(66);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
@@ -1863,6 +1911,23 @@ describe('main.ts — the composition root', () => {
         expect(refused.code).toBe('permission-denied');
         expect(refused.details).toEqual({
           errorCode: 'GOVERNANCE_ROLES_FORBIDDEN',
+        });
+      }
+      // The permissions save (staff permissions P6): behind the same list.
+      const unsigned = await rejection(
+        run('setStaffPermissions', request({}, null)),
+      );
+      expect(unsigned.code).toBe('unauthenticated');
+      expect(unsigned.details).toEqual({
+        errorCode: 'GOVERNANCE_PERMISSIONS_UNAUTHENTICATED',
+      });
+      for (const auth of [STAFF, SYSADMIN, OWNER_WITHOUT_ADMIN]) {
+        const refused = await rejection(
+          run('setStaffPermissions', request({}, auth)),
+        );
+        expect(refused.code).toBe('permission-denied');
+        expect(refused.details).toEqual({
+          errorCode: 'GOVERNANCE_PERMISSIONS_FORBIDDEN',
         });
       }
       const anonymous = await rejection(
@@ -3047,7 +3112,7 @@ describe('main.ts — the composition root', () => {
       }
     });
 
-    it('exactly the five LIMITED_USE exports carry consumeAppCheckToken (S-DEP-11); none carries enforceAppCheck (S-RU-17)', () => {
+    it('exactly the six LIMITED_USE exports carry consumeAppCheckToken (S-DEP-11); none carries enforceAppCheck (S-RU-17)', () => {
       const consuming = EXPORTS.filter((name) =>
         appCheckOptionsOf(name).includes('consumeAppCheckToken'),
       );
@@ -3057,6 +3122,7 @@ describe('main.ts — the composition root', () => {
           'exportClientData',
           'previewClientErasure',
           'setRoles',
+          'setStaffPermissions',
           'startImpersonation',
         ].sort(),
       );

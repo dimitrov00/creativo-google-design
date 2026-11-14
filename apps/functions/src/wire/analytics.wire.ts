@@ -1,5 +1,5 @@
-import { AnalyticsComparison, AnalyticsSpan, Roles } from '@core/components';
-import { AnalyticsError } from '@core/errors';
+import { AnalyticsComparison, AnalyticsSpan } from '@core/components';
+import { AccessError, AnalyticsError } from '@core/errors';
 import {
   BarberId,
   LocalDate,
@@ -15,7 +15,7 @@ import type {
   StaffAnalyticsCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
-import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
+import { callerIsStaff, callerUserId } from '../lib/booking/caller-roles';
 import {
   idOf,
   idsOf,
@@ -35,10 +35,12 @@ const SCOPE_MAX = 64;
  * fromLocalDate, toLocalDate: string | null, analyticsSpan: 'DAY' | 'WEEK' |
  * 'MONTH' | 'YEAR' | 'CUSTOM', analyticsComparison: 'PREVIOUS' }` → the
  * report. A signed-in caller (`ANALYTICS_UNAUTHENTICATED`) whose TOKEN
- * claims a role that reads analytics (`Roles.readsAnalytics` — the cheap
- * first gate, else `ANALYTICS_FORBIDDEN`); the pipeline judges the STORED
- * roles after it, so a demoted or blocked account is refused there whatever
- * its token still says. Every field is re-read through its smart
+ * claims a staff role (the cheap first gate, else `ACCESS_NOT_STAFF`); the
+ * pipeline judges the STORED roles and link against the owner's
+ * permissions after it (`ANALYTICS`, staff permissions P6), so a demoted
+ * or blocked account is refused there whatever its token still says, and
+ * an owner linked as a barber reads their own numbers before their token
+ * refreshes. Every field is re-read through its smart
  * constructor, the first unreadable one named (`ANALYTICS_INVALID_INPUT`):
  * `toLocalDate` is a day or `null` (an absent field reads as `null`) —
  * whether a `to` belongs to the span, like whether the first day is its
@@ -54,9 +56,7 @@ export function decodeStaffAnalytics(
   if (caller === null) {
     return Result.err(AnalyticsError.unauthenticated());
   }
-  if (!Roles.readsAnalytics(callerKnownRoles(request))) {
-    return Result.err(AnalyticsError.forbidden());
-  }
+  if (!callerIsStaff(request)) return Result.err(AccessError.notStaff());
   const payload = payloadOf(request);
   const invalid = (field: string) =>
     Result.err(AnalyticsError.invalidInput(field));
@@ -129,9 +129,7 @@ export function decodeSetAnalyticsGoal(
   if (caller === null) {
     return Result.err(AnalyticsError.unauthenticated());
   }
-  if (!Roles.readsAnalytics(callerKnownRoles(request))) {
-    return Result.err(AnalyticsError.forbidden());
-  }
+  if (!callerIsStaff(request)) return Result.err(AccessError.notStaff());
   const payload = payloadOf(request);
   const invalid = (field: string) =>
     Result.err(AnalyticsError.invalidInput(field));

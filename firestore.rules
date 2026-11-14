@@ -805,8 +805,15 @@ service cloud.firestore {
     // and the doc holds tuning numbers, nothing secret. The missing match
     // here once default-denied every `/book` session into a silent
     // defaults-only policy plus a per-tab retry loop.
+    //
+    // `settings/staffPermissions` — the flat `StaffPermissionsSettings`:
+    // what each staff level may do, as the owner set it (staff permissions
+    // P5). Staff-only: a client has no business in who may do what, so this
+    // ONE document is carved out of the public read. Only a staff session
+    // subscribes to it — a refused settings read is the retry loop above. An
+    // absent document reads as absent to staff (every cell at its default).
     match /settings/{docId} {
-      allow read: if true;
+      allow read: if docId != 'staffPermissions' || isStaff();
       // No client writes the settings (pass E, DEP-6): no web adapter does
       // — `schedulingReadPorts.observePolicy` only reads — so the admin
       // grant that stood here was a browser write path no app code used.

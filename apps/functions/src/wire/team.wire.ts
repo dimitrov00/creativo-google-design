@@ -6,7 +6,6 @@ import {
   type BarberOffering,
   OfferingsEdit,
   type OfferingsRequest,
-  Roles,
   type ServiceTermsInput,
   type VariantTerms,
 } from '@core/components';
@@ -25,7 +24,6 @@ import {
   type ActivateBarberCommand,
   type AddBarberCommand,
   admitTeamCaller,
-  admitTeamStaffCaller,
   type DeleteDraftBarberCommand,
   type EditBarberCommand,
   type ListTeamCommand,
@@ -51,11 +49,10 @@ import {
  * `setBarberOfferings`, `activateBarber`, `deleteDraftBarber`. The caller
  * and their roles come off the VERIFIED token, never the payload, and the
  * token gate is asked before the payload is read (`TEAM_UNAUTHENTICATED`,
- * `TEAM_FORBIDDEN`): the team manager's for the Team page's read
- * (`listTeam`), a new record, a deletion, the services and prices, and
- * every edit but the profile; any staff role's for a profile and the
- * go-live step — the
- * pipeline judges the STORED account after it. Every field is re-read
+ * `ACCESS_NOT_STAFF`): any staff role, for every call. The token cannot
+ * know what the owner lets a level do, so which staff member may make
+ * which act is the pipeline's question, asked of the STORED account
+ * against `settings/staffPermissions` (staff permissions P6). Every field is re-read
  * through its smart constructor or guard, the first unreadable one named
  * (`TEAM_INVALID_INPUT`). The act's name (`operationId`) is REQUIRED: a
  * replay is the same act, and `addBarber`'s IS the new record's id.
@@ -259,23 +256,18 @@ function editOf(
 /**
  * `editBarber` `{ barberId, barberEdit: 'PROFILE' | 'SHOPS' | 'PERIOD' |
  * 'POOL' | 'ACCESS', …the part, operationId }` → `{ barberId }`. Any staff
- * token may ask for a profile; every other part is the team manager's.
+ * token may ask; the pipeline judges the part against the owner's
+ * permissions (`TEAM_PROFILES` for a profile, `TEAM_MANAGE` for the rest).
  */
 export function decodeEditBarber(
   request: WireRequest,
 ): Result<EditBarberCommand, EdgeError> {
   const caller = callerOf(request);
-  const staff = admitTeamStaffCaller(caller);
+  const staff = admitTeamCaller(caller);
   if (!staff.ok) return staff;
   const payload = payloadOf(request);
   const barberEdit = StoredFields.field(payload, 'barberEdit');
   if (!Tag.has(BarberEdit, barberEdit)) return invalid('barberEdit');
-  if (
-    barberEdit !== BarberEdit.Profile &&
-    !Roles.managesTeam(caller.callerRoles)
-  ) {
-    return Result.err(TeamError.forbidden());
-  }
   const named = namedOf(payload);
   if (!named.ok) return named;
   const edit = editOf(barberEdit, payload);
@@ -360,7 +352,8 @@ function offeringsOf(
  * [{ serviceId, priceCents, currency, durationMinutes, setupMinutes,
  * cleanupMinutes, overrides: [{ variantId, …terms }] }], operationId }` or
  * `{ barberId, offeringsEdit: 'COPY', copyFromBarberId, operationId }` →
- * `{ barberId }` — the team manager's: prices are the owner's.
+ * `{ barberId }`. Who may set a barber's prices is the pipeline's
+ * question (`TEAM_OFFERINGS`; by default the owner alone).
  */
 export function decodeSetBarberOfferings(
   request: WireRequest,
@@ -383,13 +376,13 @@ export function decodeActivateBarber(
   request: WireRequest,
 ): Result<ActivateBarberCommand, EdgeError> {
   const caller = callerOf(request);
-  const admitted = admitTeamStaffCaller(caller);
+  const admitted = admitTeamCaller(caller);
   if (!admitted.ok) return admitted;
   const named = namedOf(payloadOf(request));
   return named.ok ? Result.ok({ ...caller, ...named.value }) : named;
 }
 
-/** `deleteDraftBarber` `{ barberId, operationId }` → `{ barberId }` — the team manager's. */
+/** `deleteDraftBarber` `{ barberId, operationId }` → `{ barberId }` — any staff token; `TEAM_MANAGE` in the pipeline. */
 export function decodeDeleteDraftBarber(
   request: WireRequest,
 ): Result<DeleteDraftBarberCommand, EdgeError> {
@@ -401,8 +394,9 @@ export function decodeDeleteDraftBarber(
 }
 
 /**
- * `listTeam` `{}` → `{ members: [...] }` — the team manager's. The call
- * names nothing: only the verified caller reaches the pipeline.
+ * `listTeam` `{}` → `{ members: [...] }` — any staff token; how much of
+ * the list a caller sees is the pipeline's question. The call names
+ * nothing: only the verified caller reaches the pipeline.
  */
 export function decodeListTeam(
   request: WireRequest,

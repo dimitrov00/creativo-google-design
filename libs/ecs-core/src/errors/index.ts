@@ -1,3 +1,4 @@
+export * from './access.error';
 export * from './accounts.error';
 export * from './analytics.error';
 export * from './app-check.error';
