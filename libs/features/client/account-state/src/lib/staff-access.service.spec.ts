@@ -141,6 +141,8 @@ function harness(initial: Principal) {
       principal.next(next);
       TestBed.tick();
     },
+    /** The session restores `next` and nothing has reacted to it yet. */
+    arrive: (next: Principal) => principal.next(next),
   };
 }
 
@@ -375,6 +377,50 @@ describe('StaffAccessService.whenSettled — what a route’s gate waits for', (
     expect(facts).toEqual({
       storedRoles: [Role.Barber, Role.Receptionist],
       permissions: StaffPermissions.read({ barberAnalyticsScope: None }),
+    });
+  });
+
+  it('a cold load: never answers the signed-out moment’s "settled" for the person who has just arrived', async () => {
+    // The app starts signed out, and that state is settled.
+    const { service, stored, permissions, arrive } = harness(ANONYMOUS);
+    expect(service.settled()).toBe(true);
+
+    // Auth restores the session; the guard asks in the same beat, before
+    // anything has reacted to the new person.
+    arrive(staff(Role.Barber));
+    let facts: unknown = null;
+    void service.whenSettled().then((answer) => (facts = answer));
+    TestBed.tick();
+    await Promise.resolve();
+
+    // Their account and their cells have not answered: the gate waits.
+    expect(service.settled()).toBe(false);
+    expect(facts).toBeNull();
+
+    stored(account([Role.Barber], null));
+    permissions(cellsOf({}));
+    await vi.waitFor(() => expect(facts).not.toBeNull());
+
+    // …and decides on the standard, not on closed cells.
+    expect(facts).toEqual({
+      storedRoles: [Role.Barber],
+      permissions: StaffPermissions.UNSET,
+    });
+  });
+
+  it('a settled session answers in the same microtask, as a role gate does — no tick for another navigation to cancel it in', async () => {
+    const { service, stored, permissions } = harness(staff(Role.Barber));
+    stored(account([Role.Barber], IVAN));
+    permissions(cellsOf({}));
+    let facts: unknown = null;
+
+    void service.whenSettled().then((answer) => (facts = answer));
+    // No `TestBed.tick()`: nothing may need to run but the promise itself.
+    await Promise.resolve();
+
+    expect(facts).toEqual({
+      storedRoles: [Role.Barber],
+      permissions: StaffPermissions.UNSET,
     });
   });
 

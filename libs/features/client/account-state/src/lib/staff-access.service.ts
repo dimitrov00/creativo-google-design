@@ -1,6 +1,14 @@
-import { Injectable, type Signal, computed, inject } from '@angular/core';
+import {
+  Injectable,
+  Injector,
+  type Signal,
+  computed,
+  effect,
+  inject,
+  untracked,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { filter, firstValueFrom, map, of, switchMap } from 'rxjs';
+import { map, of, switchMap } from 'rxjs';
 import { STAFF_PERMISSIONS_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   Principal,
@@ -87,6 +95,7 @@ const CLOSED: StaffPermissions = StaffPermissions.saved(
 @Injectable({ providedIn: 'root' })
 export class StaffAccessService {
   private readonly accountState = inject(AccountStateService);
+  private readonly injector = inject(Injector);
   /**
    * The cells' stream — optional, so a host that binds none (a test bed,
    * the showcase) is a session with no cells to read: closed, and the
@@ -165,8 +174,6 @@ export class StaffAccessService {
     () => this.accountState.accountSettled() && this.cells() !== undefined,
   );
 
-  private readonly settled$ = toObservable(this.settled);
-
   /** How far `staffCapability` reaches for the signed-in person. */
   scopeOf(staffCapability: StaffCapability): AccessScope {
     return StaffAccessSystem.scopeOf(
@@ -196,9 +203,34 @@ export class StaffAccessService {
    * What a route's capability gate decides on, once the account and the
    * cells have answered for whoever is signed in. It always resolves: a
    * session with nobody in it is settled, with no roles and closed cells.
+   *
+   * Two rules, each learned from a lost navigation:
+   *
+   * - **It READS `settled` as it stands, never a replayed stream.** A
+   *   stream hands back the last value it was told — on a cold load that
+   *   is the signed-out moment's "settled", a beat before the person's
+   *   account and cells are even asked, and the gate would decide on the
+   *   token and closed cells.
+   * - **A session that is already settled answers at once**, in the same
+   *   microtask a role gate does. A wait of even one tick leaves room for
+   *   the page being left to sync its own URL, which cancels the pending
+   *   navigation: the chart button then does nothing.
    */
-  async whenSettled(): Promise<StaffAccessFacts> {
-    await firstValueFrom(this.settled$.pipe(filter((settled) => settled)));
+  whenSettled(): Promise<StaffAccessFacts> {
+    if (this.settled()) return Promise.resolve(this.facts());
+    return new Promise((resolve) => {
+      const watch = effect(
+        () => {
+          if (!this.settled()) return;
+          watch.destroy();
+          resolve(untracked(() => this.facts()));
+        },
+        { injector: this.injector },
+      );
+    });
+  }
+
+  private facts(): StaffAccessFacts {
     return {
       storedRoles: this.storedRoles(),
       permissions: this.permissions(),
