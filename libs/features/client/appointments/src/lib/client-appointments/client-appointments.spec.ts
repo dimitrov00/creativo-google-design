@@ -251,6 +251,8 @@ function accountStateStub(): AccountStateService {
     userId: signal(PRINCIPAL.userId),
     account: signal(null),
     accountLoading: signal(false),
+    // What `StaffAccessService` waits for (the header's menu asks it).
+    accountSettled: signal(true),
   } as unknown as AccountStateService;
 }
 
