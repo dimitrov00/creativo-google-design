@@ -9,6 +9,7 @@ import {
   type RouteGateRule,
   SessionReadiness,
   type SessionReadinessState,
+  type StaffPermissions,
 } from '@core/components';
 import { AccessScope } from '@core/primitives';
 import type { PrincipalTag } from './guest-guard.system';
@@ -74,6 +75,34 @@ export const SessionAccessSystem = {
     };
   },
 
+  /**
+   * Whether a role set opens a route the owner's permissions decide: its
+   * levels reach far enough for any ONE of the route's capabilities. What
+   * the gate decides on, and what a way in to the route is shown by — so
+   * the two cannot disagree.
+   */
+  opens(
+    routeCapabilities: readonly RouteCapability[],
+    permissions: StaffPermissions,
+    storedRoles: readonly string[],
+  ): boolean {
+    for (let i = 0; i < routeCapabilities.length; i++) {
+      const need = routeCapabilities[i] as RouteCapability;
+      const scope = StaffAccessSystem.scopeOf(
+        permissions,
+        need.staffCapability,
+        storedRoles,
+      );
+      if (
+        scope === AccessScope.All ||
+        (scope === AccessScope.Own && need.accessScope === AccessScope.Own)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
+
   /** The route decision for a settled principal. */
   decide(principal: Principal, gate: RouteGateRule): AccessDecision {
     switch (gate.routeGate) {
@@ -98,24 +127,14 @@ export const SessionAccessSystem = {
         // The owner's permissions decide (staff permissions P8): the route
         // opens when the account's levels reach far enough for any one of
         // its capabilities. A principal that is not active holds nothing.
-        if (!Principal.isActive(principal)) {
-          return redirect(AccessTarget.Forbidden, false);
-        }
-        for (let i = 0; i < gate.routeCapabilities.length; i++) {
-          const need = gate.routeCapabilities[i] as RouteCapability;
-          const scope = StaffAccessSystem.scopeOf(
+        return Principal.isActive(principal) &&
+          SessionAccessSystem.opens(
+            gate.routeCapabilities,
             gate.permissions,
-            need.staffCapability,
             gate.storedRoles,
-          );
-          if (
-            scope === AccessScope.All ||
-            (scope === AccessScope.Own && need.accessScope === AccessScope.Own)
-          ) {
-            return ALLOW;
-          }
-        }
-        return redirect(AccessTarget.Forbidden, false);
+          )
+          ? ALLOW
+          : redirect(AccessTarget.Forbidden, false);
       }
     }
   },

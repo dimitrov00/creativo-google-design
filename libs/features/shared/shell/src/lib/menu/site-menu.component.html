@@ -489,7 +489,7 @@
               </ui-list-group>
             </div>
 
-            @if (isAdmin()) {
+            @if (isAdmin() || opensTeam()) {
               <!-- The shop's rules — ITS OWN group after the account run
                    (iOS Settings grammar: what is MINE, then what I MANAGE,
                    then the site). One row today: «Лоялност», the ONE way to
@@ -505,7 +505,14 @@
                    UI-only, like the schedule row: `rolesGuard('admin',
                    'sysadmin')` on the route and `isAdmin()` in
                    firestore.rules are the locks; this only decides what is
-                   worth showing. -->
+                   worth showing.
+
+                   «Екип» stands first in the group, for whoever the Team
+                   page opens for (`RouteCapabilities.Team`: the owner, and
+                   anyone the owner's permissions let manage the team or
+                   edit every barber's profile or prices). The route's
+                   capability gate asks the same rule, so the row never
+                   shows for a page that would turn the person away. -->
               <div
                 class="cr-menu__section"
                 [uiReveal]="'fade-up'"
@@ -513,21 +520,36 @@
                 [uiRevealDelay]="160"
               >
                 <ui-list-group>
-                  <a
-                    routerLink="/admin/loyalty/rhythm"
-                    uiListRow
-                    uiSize="large"
-                    [uiInteractive]="true"
-                    data-testid="menu-admin-loyalty"
-                    (click)="close()"
-                  >
-                    <ui-icon
-                      uiLeading
-                      uiName="admin.loyalty"
-                      uiScale="medium"
-                    />
-                    {{ t('landing.menu.loyaltyAdmin') }}
-                  </a>
+                  @if (opensTeam()) {
+                    <a
+                      routerLink="/admin/team"
+                      uiListRow
+                      uiSize="large"
+                      [uiInteractive]="true"
+                      data-testid="menu-admin-team"
+                      (click)="close()"
+                    >
+                      <ui-icon uiLeading uiName="nav.team" uiScale="medium" />
+                      {{ t('landing.menu.team') }}
+                    </a>
+                  }
+                  @if (isAdmin()) {
+                    <a
+                      routerLink="/admin/loyalty/rhythm"
+                      uiListRow
+                      uiSize="large"
+                      [uiInteractive]="true"
+                      data-testid="menu-admin-loyalty"
+                      (click)="close()"
+                    >
+                      <ui-icon
+                        uiLeading
+                        uiName="admin.loyalty"
+                        uiScale="medium"
+                      />
+                      {{ t('landing.menu.loyaltyAdmin') }}
+                    </a>
+                  }
                 </ui-list-group>
               </div>
             }

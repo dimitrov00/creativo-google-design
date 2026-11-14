@@ -1,0 +1,13 @@
+{
+  "name": "admin-team",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/features/admin/team/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["scope:app", "type:feature"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

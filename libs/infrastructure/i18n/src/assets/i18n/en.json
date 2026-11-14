@@ -657,7 +657,8 @@
       "signOut": "Sign out",
       "staffDay": "Schedule",
       "loyaltyAdmin": "Loyalty",
-      "staffAnalytics": "Analytics"
+      "staffAnalytics": "Analytics",
+      "team": "Team"
     },
     "prefs": {
       "language": "Language",
@@ -1065,6 +1066,11 @@
         "TEAM_PROFILES": "Edits a barber's profile",
         "TEAM_OFFERINGS": "Sets services and prices",
         "TEAM_MANAGE": "Manages the team"
+      },
+      "groups": {
+        "SCHEDULE": "Schedule",
+        "ANALYTICS": "Analytics",
+        "TEAM": "Team"
       }
     },
     "hours": {
@@ -2420,6 +2426,68 @@
     }
   },
   "admin": {
+    "team": {
+      "title": "Team",
+      "back": "Back",
+      "ledeAll": "Everyone on the team and where each one stands.",
+      "ledeRecords": "The barbers’ profiles.",
+      "failed": "The team did not load.",
+      "empty": "Nobody is on the team yet.",
+      "groups": {
+        "barbers": "Barbers",
+        "others": "Also on the team",
+        "access": "Access",
+        "departed": "Left"
+      },
+      "status": {
+        "DRAFT": "Setting up",
+        "STAFF_ONLY": "Team only",
+        "PUBLIC": "Taking bookings",
+        "DEPARTED": "Left",
+        "departedOn": "Left on {{date}}"
+      },
+      "setup": "{{done}} of {{needed}}",
+      "note": {
+        "LAST_DAY_SET": "Last day: {{date}}",
+        "NO_ACCOUNT": "No account in the app"
+      },
+      "roles": {
+        "sysadmin": "Support"
+      },
+      "permissionsRow": "Permissions"
+    },
+    "permissions": {
+      "title": "Permissions",
+      "lede": "What each level on the team may do.",
+      "back": "To the team",
+      "backToLevels": "To permissions",
+      "standard": "Standard",
+      "changesOne": "1 change",
+      "changesMany": "{{count}} changes",
+      "unsaved": "Not saved",
+      "holdersNone": "Nobody yet",
+      "holdersMore": "{{names}} and {{count}} more",
+      "adminTitle": "Administrator",
+      "adminLine": "May do everything, always",
+      "footnote": "Changes apply from the next action. Nobody is signed out.",
+      "appliesNone": "Nobody holds this level yet",
+      "appliesOne": "Applies to 1 person",
+      "appliesMany": "Applies to {{count}} people",
+      "scope": {
+        "NONE": "No",
+        "OWN": "Own only",
+        "ALL": "Everyone"
+      },
+      "switchOn": "on",
+      "switchOff": "off",
+      "standardWas": "Standard: {{scope}}",
+      "changed": "Changed.",
+      "restore": "Restore the standard",
+      "save": "Save",
+      "saved": "Permissions saved",
+      "dismiss": "Close",
+      "unknownLevel": "There is no such level."
+    },
     "rhythm": {
       "title": "Rhythm",
       "lede": "When a visit keeps a client's rhythm.",

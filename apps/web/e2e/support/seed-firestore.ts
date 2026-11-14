@@ -46,6 +46,7 @@ import {
   Subcollections,
   BARBER_LINK_DOC,
   type User,
+  STAFF_PERMISSIONS_DOC,
 } from '@core/entities';
 import {
   AppointmentId,
@@ -932,6 +933,19 @@ export async function readBarberLink(barberId: string): Promise<string | null> {
     .get();
   const linked = snapshot.data()?.['linkedUserId'];
   return typeof linked === 'string' ? linked : null;
+}
+
+/**
+ * Puts the owner's permissions back on the standard: deletes
+ * `settings/staffPermissions` (no document is every default). A spec that
+ * changes a cell calls it when it is done — the document is the whole
+ * shop's, and every other spec's staff sessions read it.
+ */
+export async function resetStaffPermissions(): Promise<void> {
+  await getFirestore(adminApp())
+    .collection(Collections.Settings)
+    .doc(STAFF_PERMISSIONS_DOC)
+    .delete();
 }
 
 export async function readStoredBody(

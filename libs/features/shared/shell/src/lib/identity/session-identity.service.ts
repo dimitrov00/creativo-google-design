@@ -22,14 +22,13 @@ import {
   OnboardingFlowStep,
   Principal,
   Roles,
+  RouteCapabilities,
   StaffLink,
 } from '@core/components';
 import { Profile } from '@core/entities';
 import {
-  AccessScope,
   type BarberId,
   IdentifierChannel,
-  StaffCapability,
   type UserId,
 } from '@core/primitives';
 import { OnboardingFlowSystem, ProfileCompletionSystem } from '@core/systems';
@@ -103,8 +102,18 @@ export class SessionIdentityService {
    * decides on the same capability, and the callable judges the stored
    * account and the cells again.
    */
-  readonly readsAnalytics = computed(
-    () => this.access.scopeOf(StaffCapability.Analytics) !== AccessScope.None,
+  readonly readsAnalytics = computed(() =>
+    this.access.opens(RouteCapabilities.Analytics),
+  );
+
+  /**
+   * Whoever the Team page opens for (`RouteCapabilities.Team`): the owner,
+   * and anyone the owner's permissions let manage the team or edit every
+   * barber's profile or prices. The menu's «Екип» row; the route's gate
+   * decides on the same capabilities.
+   */
+  readonly opensTeam = computed(() =>
+    this.access.opens(RouteCapabilities.Team),
   );
 
   /** The uid the cache-clearing effect last saw; `undefined` before its first run. */

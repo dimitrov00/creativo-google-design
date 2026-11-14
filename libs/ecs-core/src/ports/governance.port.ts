@@ -1,4 +1,4 @@
-import type { RolesCall } from '@core/components';
+import type { PermissionsCall, RolesCall, TeamCall } from '@core/components';
 import type { Result, AppointmentId, BackfillJobId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
@@ -81,6 +81,26 @@ export type PageAppointments = (
  */
 export type SetRoles = Callable<RolesCall, RolesCall.Changed>;
 
+// ── The web's Team screens ────────────────────────────────────────────────
+
+/**
+ * `listTeam` — the Team page's one read (team onboarding D8): nothing in;
+ * every barber record and every staff account out, as far as the caller's
+ * permissions reach (the records alone for someone who edits profiles and
+ * does not manage the team).
+ */
+export type ListTeam = Callable<TeamCall.ListRequest, TeamCall.Listed>;
+
+/**
+ * `setStaffPermissions` — the owner's save of what a staff level may do
+ * (staff permissions P6): the cells wanted in; the cells that really
+ * changed out, each with its scope before and after.
+ */
+export type SaveStaffPermissions = Callable<
+  PermissionsCall,
+  PermissionsCall.Saved
+>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The after-commit audit write — the operator backfill's per-call row only (L2). */
@@ -112,6 +132,19 @@ export type BackfillJobPorts = {
 export type RolesAdminPorts = {
   readonly setRoles: SetRoles;
 };
+
+/** The Team page's read. */
+export type TeamListPorts = {
+  readonly listTeam: ListTeam;
+};
+
+/** The owner's save of what each staff level may do — «Права». */
+export type StaffPermissionsSavePorts = {
+  readonly setStaffPermissions: SaveStaffPermissions;
+};
+
+/** The Team screens' calls — ONE token, `TEAM_ADMIN_PORTS` (web), `teamAdminPorts(gateway)`. */
+export type TeamAdminPorts = TeamListPorts & StaffPermissionsSavePorts;
 
 /** The governance context's whole port suite — an intersection of its bundles. */
 export type GovernancePorts = AuditPorts & BackfillJobPorts;

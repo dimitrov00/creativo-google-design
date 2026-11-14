@@ -1,0 +1,153 @@
+<ng-container *transloco="let t">
+  <!-- A ROUTED PAGE: one column at the content measure. The bar is the DS's
+       collapsing title; the back chip is icon-only (quiet HIG chrome). -->
+  <main
+    class="team-page"
+    uiPaddingHorizontal="regular"
+    data-testid="admin-team"
+    [attr.data-load]="store.loadState()"
+  >
+    <ui-sheet-header uiPage class="team-page__bar">
+      <a
+        uiLeading
+        uiButton
+        routerLink="/staff/schedule"
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.team.back')"
+        data-testid="admin-team-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+      <span uiTitle>{{ t('admin.team.title') }}</span>
+    </ui-sheet-header>
+
+    <div class="team-page__modules">
+      <header class="team-page__head">
+        <h1
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+          data-testid="admin-team-title"
+        >
+          {{ t('admin.team.title') }}
+        </h1>
+        @if (vm(); as page) {
+        <p
+          uiText
+          uiFont="subheadline"
+          uiForegroundStyle="secondary"
+          data-testid="admin-team-lede"
+        >
+          {{ page.lede }}
+        </p>
+        }
+      </header>
+
+      <!-- A refused read is said beside whatever rows are still on screen. -->
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="admin-team-failed"
+      >
+        {{ line }}
+        <button
+          uiNoticeActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiControlSize="small"
+          data-testid="admin-team-retry"
+          (click)="retry()"
+        >
+          {{ t('visits.retry') }}
+        </button>
+      </ui-notice>
+      } @switch (store.loadState()) { @case (LoadState.Loading) { @for (group of
+      [1, 2]; track group) {
+      <div
+        class="team-page__module team-page__skeleton"
+        aria-busy="true"
+        data-testid="admin-team-skeleton"
+      >
+        <ui-skeleton uiFrame uiFrameHeight="1.5rem" uiFrameWidth="8rem" />
+        <ui-skeleton uiFrame uiFrameHeight="11rem" />
+      </div>
+      } } @case (LoadState.Empty) {
+      <p
+        uiText
+        uiFont="callout"
+        uiForegroundStyle="secondary"
+        data-testid="admin-team-empty"
+      >
+        {{ t('admin.team.empty') }}
+      </p>
+      } @case (LoadState.Ready) { @if (vm(); as page) { @for (run of page.runs;
+      track run.teamRun) {
+      <section
+        class="team-page__module"
+        [attr.aria-labelledby]="'admin-team-run-' + run.teamRun"
+        [attr.data-testid]="'admin-team-run-' + run.teamRun"
+      >
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle [id]="'admin-team-run-' + run.teamRun">
+            {{ run.title }}
+          </h2>
+        </ui-section-header>
+        <ul uiListGroup>
+          @for (row of run.rows; track row.id) {
+          <li uiListRow uiSize="large" [attr.data-testid]="row.testId">
+            <ui-avatar
+              uiLeading
+              uiControlSize="small"
+              [uiSrc]="row.avatarSrc"
+              [uiName]="row.name"
+            />
+            <ui-stack uiSpacing="tight" class="team-page__identity">
+              <span>{{ row.name }}</span>
+              @if (row.line) {
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ row.line }}</span
+              >
+              }
+            </ui-stack>
+          </li>
+          }
+        </ul>
+      </section>
+      } } } }
+
+      <!-- «Права» is the owner's: what each level may do. Shown whatever the
+           list's own read says, since it does not depend on it. -->
+      @if (editsPermissions()) {
+      <section class="team-page__module" aria-labelledby="admin-team-access">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="admin-team-access">
+            {{ t('admin.team.groups.access') }}
+          </h2>
+        </ui-section-header>
+        <ui-list-group>
+          <a
+            routerLink="/admin/team/permissions"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            data-testid="admin-team-permissions"
+          >
+            {{ t('admin.team.permissionsRow') }}
+            <span uiTrailing class="team-page__value">
+              <span data-testid="admin-team-permissions-value"
+                >{{ permissionsValue() }}</span
+              >
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </a>
+        </ui-list-group>
+      </section>
+      }
+    </div>
+  </main>
+</ng-container>

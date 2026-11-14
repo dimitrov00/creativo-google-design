@@ -657,7 +657,8 @@
       "signOut": "Изход",
       "staffDay": "График",
       "loyaltyAdmin": "Лоялност",
-      "staffAnalytics": "Анализи"
+      "staffAnalytics": "Анализи",
+      "team": "Екип"
     },
     "prefs": {
       "language": "Език",
@@ -1065,6 +1066,11 @@
         "TEAM_PROFILES": "Редактира профил на бръснар",
         "TEAM_OFFERINGS": "Определя услуги и цени",
         "TEAM_MANAGE": "Управлява екипа"
+      },
+      "groups": {
+        "SCHEDULE": "График",
+        "ANALYTICS": "Анализи",
+        "TEAM": "Екип"
       }
     },
     "hours": {
@@ -2423,6 +2429,68 @@
     }
   },
   "admin": {
+    "team": {
+      "title": "Екип",
+      "back": "Назад",
+      "ledeAll": "Хората в екипа и как стои всеки.",
+      "ledeRecords": "Профилите на бръснарите.",
+      "failed": "Екипът не се зареди.",
+      "empty": "Още няма никого в екипа.",
+      "groups": {
+        "barbers": "Бръснари",
+        "others": "Още в екипа",
+        "access": "Достъп",
+        "departed": "Напуснали"
+      },
+      "status": {
+        "DRAFT": "Подготовка",
+        "STAFF_ONLY": "Само за екипа",
+        "PUBLIC": "Приема записи",
+        "DEPARTED": "Напусна",
+        "departedOn": "Напусна на {{date}}"
+      },
+      "setup": "{{done}} от {{needed}}",
+      "note": {
+        "LAST_DAY_SET": "Последен ден: {{date}}",
+        "NO_ACCOUNT": "Без профил в приложението"
+      },
+      "roles": {
+        "sysadmin": "Поддръжка"
+      },
+      "permissionsRow": "Права"
+    },
+    "permissions": {
+      "title": "Права",
+      "lede": "Какво може всяко ниво в екипа.",
+      "back": "Към екипа",
+      "backToLevels": "Към правата",
+      "standard": "Стандартни",
+      "changesOne": "1 промяна",
+      "changesMany": "{{count}} промени",
+      "unsaved": "Незапазено",
+      "holdersNone": "Никой засега",
+      "holdersMore": "{{names}} и още {{count}}",
+      "adminTitle": "Администратор",
+      "adminLine": "Може всичко, винаги",
+      "footnote": "Промените важат от следващото действие. Никой не излиза от профила си.",
+      "appliesNone": "Никой няма това ниво засега",
+      "appliesOne": "Важи за 1 човек",
+      "appliesMany": "Важи за {{count}} души",
+      "scope": {
+        "NONE": "Не",
+        "OWN": "Само своите",
+        "ALL": "Всички"
+      },
+      "switchOn": "включено",
+      "switchOff": "изключено",
+      "standardWas": "Стандартно: {{scope}}",
+      "changed": "Променено.",
+      "restore": "Върни стандартните",
+      "save": "Запази",
+      "saved": "Правата са запазени",
+      "dismiss": "Затвори",
+      "unknownLevel": "Няма такова ниво."
+    },
     "rhythm": {
       "title": "Ритъм",
       "lede": "Кога едно посещение пази ритъма на клиента.",

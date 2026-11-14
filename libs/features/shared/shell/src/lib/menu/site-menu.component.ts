@@ -106,6 +106,10 @@ export class SiteMenuComponent {
    *  menu's analytics row under «График». UI-only, like the others: the
    *  route's capability gate and the callable are the locks. */
   readonly readsAnalytics = input(false);
+  /** Whoever the Team page opens for (`RouteCapabilities.Team`) — the
+   *  menu's «Екип» row, first in the group of what one manages. UI-only:
+   *  the route's capability gate and the callable are the locks. */
+  readonly opensTeam = input(false);
   readonly closed = output();
 
   /** The onboarding link's `?phase=` word, for the template (D-8.2). */

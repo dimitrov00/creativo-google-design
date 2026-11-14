@@ -37,6 +37,7 @@ import type {
   RolesAdminPorts,
   SchedulingReadPorts,
   StaffPermissionsStreamPorts,
+  TeamAdminPorts,
   ShopEventReadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
@@ -236,6 +237,15 @@ export const CLIENT_PRIVACY_PORTS =
  */
 export const ROLES_ADMIN_PORTS = new InjectionToken<RolesAdminPorts>(
   'ROLES_ADMIN_PORTS',
+);
+
+/**
+ * The Team screens' calls (`TeamAdminPorts`): the Team page's read and the
+ * owner's save of what each staff level may do — bound to
+ * `teamAdminPorts(gateway)`, over the same callable client.
+ */
+export const TEAM_ADMIN_PORTS = new InjectionToken<TeamAdminPorts>(
+  'TEAM_ADMIN_PORTS',
 );
 
 /**

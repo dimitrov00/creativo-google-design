@@ -6,7 +6,12 @@ import {
   PROFILE_PORTS,
   STAFF_PERMISSIONS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { type Principal, Role, StaffPermissions } from '@core/components';
+import {
+  type Principal,
+  Role,
+  RouteCapabilities,
+  StaffPermissions,
+} from '@core/components';
 import type { User } from '@core/entities';
 import type { ProfilePorts, StaffPermissionsStreamPorts } from '@core/ports';
 import {
@@ -210,6 +215,43 @@ describe('StaffAccessService — how far a capability reaches', () => {
     permissions(cellsOf({ receptionistHoursScope: None }));
 
     expect(seen).toEqual([true, false]);
+  });
+});
+
+describe('StaffAccessService — the ways in', () => {
+  it('opens: a way in to a gated route shows exactly when the gate would let the person in', () => {
+    const { service, stored, permissions } = harness(
+      staff(Role.ContentManager),
+    );
+    // Not on a half-read session.
+    expect(service.opens(RouteCapabilities.Team)).toBe(false);
+    stored(account([Role.ContentManager]));
+    permissions(cellsOf({}));
+
+    // A content editor reaches the team's records, and reads no analytics.
+    expect(service.opens(RouteCapabilities.Team)).toBe(true);
+    expect(service.opens(RouteCapabilities.Analytics)).toBe(false);
+
+    // The owner takes the profiles away: the way in goes with no reload.
+    permissions(cellsOf({ contentManagerTeamProfilesScope: None }));
+    expect(service.opens(RouteCapabilities.Team)).toBe(false);
+  });
+
+  it('editsPermissions: the owner alone, by the stored roles', () => {
+    const { service, stored, permissions } = harness(staff(Role.Admin));
+    expect(service.editsPermissions()).toBe(false);
+    stored(account([Role.Admin]));
+    expect(service.editsPermissions()).toBe(true);
+
+    // The stored account is no longer the owner's; the token still says so.
+    stored(account([Role.Receptionist]));
+    permissions(cellsOf({ receptionistTeamManageScope: All }));
+    expect(service.opens(RouteCapabilities.Team)).toBe(true);
+    expect(service.editsPermissions()).toBe(false);
+
+    // The vendor's support role does not edit the owner's permissions.
+    stored(account([Role.Sysadmin]));
+    expect(service.editsPermissions()).toBe(false);
   });
 });
 

@@ -26,3 +26,20 @@ export const StaffCapability = {
 } as const;
 export type StaffCapability =
   (typeof StaffCapability)[keyof typeof StaffCapability];
+
+/**
+ * The group a capability's row stands in on a level's page — the field
+ * `capabilityGroup`, the ONLY source of these strings (P2, P10). A group
+ * enters with its first capability: «Каса» and «Клиенти» arrive with stages
+ * B and C. Dictionary order is the page's order.
+ */
+export const CapabilityGroup = {
+  /** The schedule: blocked time and working hours. */
+  Schedule: 'SCHEDULE',
+  /** The figures. */
+  Analytics: 'ANALYTICS',
+  /** The team's records. */
+  Team: 'TEAM',
+} as const;
+export type CapabilityGroup =
+  (typeof CapabilityGroup)[keyof typeof CapabilityGroup];
