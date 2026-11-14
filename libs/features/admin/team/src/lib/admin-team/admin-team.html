@@ -22,6 +22,21 @@
         <ui-icon uiName="nav.back" />
       </a>
       <span uiTitle>{{ t('admin.team.title') }}</span>
+      @if (managesTeam()) {
+      <button
+        uiTrailing
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.team.add.open')"
+        data-testid="admin-team-add"
+        (click)="openAdd()"
+      >
+        <ui-icon uiName="action.add" />
+      </button>
+      }
     </ui-sheet-header>
 
     <div class="team-page__modules">
@@ -97,9 +112,17 @@
             {{ run.title }}
           </h2>
         </ui-section-header>
-        <ul uiListGroup>
-          @for (row of run.rows; track row.id) {
-          <li uiListRow uiSize="large" [attr.data-testid]="row.testId">
+        <ui-list-group>
+          @for (row of run.rows; track row.id) { @if (row.barberId; as barberId)
+          {
+          <!-- A barber record leads to its page. -->
+          <a
+            [routerLink]="['/admin/team/member', barberId]"
+            uiListRow
+            uiSize="large"
+            [uiInteractive]="true"
+            [attr.data-testid]="row.testId"
+          >
             <ui-avatar
               uiLeading
               uiControlSize="small"
@@ -114,9 +137,29 @@
               >
               }
             </ui-stack>
-          </li>
-          }
-        </ul>
+            <ui-icon uiTrailing uiName="nav.disclosure" aria-hidden="true" />
+          </a>
+          } @else {
+          <!-- An account with no record is read: its roles are the client
+               card's to change. -->
+          <ui-list-row uiSize="large" [attr.data-testid]="row.testId">
+            <ui-avatar
+              uiLeading
+              uiControlSize="small"
+              [uiSrc]="row.avatarSrc"
+              [uiName]="row.name"
+            />
+            <ui-stack uiSpacing="tight" class="team-page__identity">
+              <span>{{ row.name }}</span>
+              @if (row.line) {
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ row.line }}</span
+              >
+              }
+            </ui-stack>
+          </ui-list-row>
+          } }
+        </ui-list-group>
       </section>
       } } } }
 
@@ -149,5 +192,17 @@
       </section>
       }
     </div>
+
+    <!-- THE ADD SHEET: mounted while open, so each opening starts empty. -->
+    @if (addOpen()) {
+    <lib-team-add-sheet
+      [uiToday]="today()"
+      [uiCopyNone]="t('admin.team.add.copyNone')"
+      [uiClosing]="addClosing()"
+      (dismissed)="closeAdd()"
+      (closeFinished)="finishAdd()"
+      (added)="onAdded($event)"
+    />
+    }
   </main>
 </ng-container>

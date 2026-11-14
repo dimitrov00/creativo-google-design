@@ -2,6 +2,7 @@ import {
   type EnvironmentProviders,
   Injectable,
   type Provider,
+  computed,
   signal,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
@@ -10,23 +11,53 @@ import {
   type TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { type Observable, of } from 'rxjs';
+import { BehaviorSubject, type Observable, map, of } from 'rxjs';
 import {
+  BarberActivation,
+  BarberLifecycle,
   type PermissionsCall,
   type Role,
+  type RolesCall,
   StaffPermissions,
+  StaffSetupItem,
   type TeamCall,
   type TeamMember,
 } from '@core/components';
+import type {
+  Barber,
+  BarberSchedule,
+  Service,
+  ShopLocation,
+} from '@core/entities';
 import type { PipelineError } from '@core/errors';
-import type { TeamAdminPorts } from '@core/ports';
-import { AccessScope, Result, type StaffCapability } from '@core/primitives';
+import type {
+  RolesAdminPorts,
+  SchedulingReadPorts,
+  TeamAdminPorts,
+  TeamRecordPorts,
+} from '@core/ports';
+import {
+  AccessScope,
+  BarberId,
+  Result,
+  type StaffCapability,
+  UserId,
+} from '@core/primitives';
 import { StaffAccessSystem } from '@core/systems';
 import { FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE } from '@core/testing';
-import { StaffAccessService } from '@creativo/features/client/account-state';
-import { TeamCatalogService } from '@creativo/features/shared/catalog';
+import {
+  AccountStateService,
+  StaffAccessService,
+} from '@creativo/features/client/account-state';
+import {
+  CatalogContentService,
+  TeamCatalogService,
+} from '@creativo/features/shared/catalog';
 import {
   CLOCK_PORTS,
+  ID_PORTS,
+  ROLES_ADMIN_PORTS,
+  SCHEDULING_READ_PORTS,
   ShopZoneService,
   TEAM_ADMIN_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -34,9 +65,10 @@ import { catalogueOf } from './catalogue.spec-support';
 
 /*
  * The Team screens' test bed: the app's real catalogue behind Transloco,
- * the two calls scripted, and the session's access answered from the roles
- * and the cells a spec hands in — through the engine's own rule, so a spec
- * can move a cell and see the page follow. Specs only.
+ * every call scripted and recorded, the staff's live reads held in signals
+ * a spec can move, and the session's access answered from the roles, the
+ * link and the cells a spec hands in — through the engine's own rules, so
+ * a spec can move a cell and see the page follow. Specs only.
  */
 
 @Injectable()
@@ -46,10 +78,14 @@ class CatalogueLoader implements TranslocoLoader {
   }
 }
 
-/** What a spec's session is: who is looking, and what the owner has saved. */
+/** What a spec's session is: who is looking, and what the shop holds. */
 export type TeamBedOptions = {
   /** The stored roles of whoever is looking; the owner's unless told. */
   readonly roles?: readonly Role[];
+  /** Their account; the owner's unless told. */
+  readonly userId?: UserId;
+  /** The barber record their account is linked to; none unless told. */
+  readonly linkedBarberId?: BarberId | null;
   /** The saved cells; every default unless told. */
   readonly stored?: Record<string, unknown>;
   /** What `listTeam` answers; a refusal when given one. */
@@ -57,18 +93,90 @@ export type TeamBedOptions = {
   readonly listRefusal?: PipelineError;
   /** What `setStaffPermissions` answers when it refuses. */
   readonly saveRefusal?: PipelineError;
+  /** The barber records the staff's team stream holds. */
+  readonly barbers?: readonly Barber[];
+  /** The catalogue's services. */
+  readonly services?: readonly Service[];
+  /** The rosters, by their barber's id. */
+  readonly schedules?: readonly BarberSchedule[];
+  /** The catalogue's shops. */
+  readonly locations?: readonly ShopLocation[];
 };
+
+/** The call a barber record's write made, by its port. */
+export type RecordCalls = {
+  readonly adds: TeamCall[];
+  readonly edits: TeamCall.Edit[];
+  readonly offerings: TeamCall.Offerings[];
+  readonly deletes: TeamCall.Named[];
+  readonly activations: TeamCall.Named[];
+  readonly roles: RolesCall[];
+};
+
+/** A record's writes for a spec that makes none: each one fails the spec that calls it. */
+export const UNUSED_RECORD_PORTS: TeamRecordPorts = {
+  addBarber: () => Promise.reject(new Error('addBarber was not expected')),
+  editBarber: () => Promise.reject(new Error('editBarber was not expected')),
+  setBarberOfferings: () =>
+    Promise.reject(new Error('setBarberOfferings was not expected')),
+  deleteDraftBarber: () =>
+    Promise.reject(new Error('deleteDraftBarber was not expected')),
+  activateBarber: () =>
+    Promise.reject(new Error('activateBarber was not expected')),
+};
+
+/** A barber as the catalogue's services hand it to a face. */
+function faceOf(barber: Barber) {
+  return {
+    id: barber.id,
+    name: barber.name,
+    title: barber.title,
+    bio: barber.bio,
+    avatarSrc: '',
+    objectPosition: '',
+  };
+}
 
 export function teamBed(options: TeamBedOptions = {}) {
   const roles = signal<readonly Role[]>(options.roles ?? ['admin']);
+  const linked = signal<BarberId | null>(options.linkedBarberId ?? null);
+  const userId = options.userId ?? UserId.of('u-owner');
   const permissions = signal(StaffPermissions.read(options.stored ?? {}));
+  const barbers = signal<readonly Barber[]>(options.barbers ?? []);
+  const services = signal<readonly Service[]>(options.services ?? []);
+  const locations = signal<readonly ShopLocation[]>(options.locations ?? []);
+  const schedules = new BehaviorSubject<readonly BarberSchedule[]>(
+    options.schedules ?? [],
+  );
   const listed: TeamCall.ListRequest[] = [];
   const saves: PermissionsCall[] = [];
+  const calls: RecordCalls = {
+    adds: [],
+    edits: [],
+    offerings: [],
+    deletes: [],
+    activations: [],
+    roles: [],
+  };
   let listAnswer: () => Result<TeamCall.Listed, PipelineError> = () =>
     options.listRefusal === undefined
       ? Result.ok({ members: options.members ?? [] })
       : Result.err(options.listRefusal);
   let saveRefusal = options.saveRefusal ?? null;
+  /** What a record's write refuses with, by its port's name; none unless told. */
+  const refusals = new Map<keyof TeamAdminPorts, PipelineError>();
+  let activation: BarberActivation = BarberActivation.Unchanged;
+  let minted = 0;
+
+  const saved = (
+    port: keyof TeamAdminPorts,
+    barberId: BarberId,
+  ): Result<TeamCall.Saved, PipelineError> => {
+    const refusal = refusals.get(port);
+    return refusal === undefined
+      ? Result.ok({ barberId })
+      : Result.err(refusal);
+  };
 
   const ports: TeamAdminPorts = {
     listTeam: async (request) => {
@@ -81,10 +189,68 @@ export function teamBed(options: TeamBedOptions = {}) {
         ? Result.ok({ changes: [] })
         : Result.err(saveRefusal);
     },
+    addBarber: async (call) => {
+      calls.adds.push(call);
+      // The act's name IS the new record's id.
+      return saved('addBarber', BarberId.of(call.operationId));
+    },
+    editBarber: async (call) => {
+      calls.edits.push(call);
+      return saved('editBarber', call.barberId);
+    },
+    setBarberOfferings: async (call) => {
+      calls.offerings.push(call);
+      return saved('setBarberOfferings', call.barberId);
+    },
+    deleteDraftBarber: async (call) => {
+      calls.deletes.push(call);
+      return saved('deleteDraftBarber', call.barberId);
+    },
+    activateBarber: async (call) => {
+      calls.activations.push(call);
+      const refusal = refusals.get('activateBarber');
+      if (refusal !== undefined) return Result.err(refusal);
+      return Result.ok(
+        activation === BarberActivation.NotReady
+          ? {
+              barberId: call.barberId,
+              barberActivation: activation,
+              staffSetupItem: StaffSetupItem.Hours,
+            }
+          : { barberId: call.barberId, barberActivation: activation },
+      );
+    },
+  };
+
+  let rolesRefusal: PipelineError | null = null;
+  const rolesPorts: RolesAdminPorts = {
+    setRoles: async (call) => {
+      calls.roles.push(call);
+      if (rolesRefusal !== null) return Result.err(rolesRefusal);
+      // The stored account moves, as the listener would say.
+      roles.set(call.roles);
+      linked.set(call.linkedBarberId);
+      return Result.ok({
+        targetUserId: call.targetUserId,
+        roles: call.roles,
+        rolesChanged: true,
+        linkedBarberId: call.linkedBarberId,
+        linkChanged: true,
+      });
+    },
   };
 
   const scopeOf = (staffCapability: StaffCapability): AccessScope =>
     StaffAccessSystem.scopeOf(permissions(), staffCapability, roles());
+
+  const scheduling = {
+    observeSchedule: (barberId: BarberId) =>
+      schedules.pipe(
+        map((all) =>
+          Result.ok(all.find((roster) => roster.id === barberId) ?? null),
+        ),
+      ),
+  } as unknown as SchedulingReadPorts;
 
   const providers: (Provider | EnvironmentProviders)[] = [
     provideRouter([]),
@@ -98,17 +264,56 @@ export function teamBed(options: TeamBedOptions = {}) {
       loader: CatalogueLoader,
     }),
     { provide: TEAM_ADMIN_PORTS, useValue: ports },
+    { provide: ROLES_ADMIN_PORTS, useValue: rolesPorts },
+    { provide: SCHEDULING_READ_PORTS, useValue: scheduling },
+    {
+      provide: ID_PORTS,
+      useValue: {
+        nextId: () => `operation-${String(++minted).padStart(6, '0')}`,
+      },
+    },
     {
       provide: StaffAccessService,
       useValue: {
         permissions,
+        storedRoles: roles,
+        linkedBarberId: linked,
         scopeOf,
+        mayFor: (staffCapability: StaffCapability, barberId: BarberId) =>
+          StaffAccessSystem.reaches(
+            {
+              accessScope: scopeOf(staffCapability),
+              linkedBarberId: linked(),
+            },
+            barberId,
+          ),
         editsPermissions: () => roles().includes('admin'),
       },
     },
+    { provide: AccountStateService, useValue: { userId: signal(userId) } },
     {
       provide: TeamCatalogService,
-      useValue: { watchTeam: () => undefined, teamBarberVms: signal([]) },
+      useValue: {
+        watchTeam: () => undefined,
+        teamBarbers: barbers,
+        teamKnown: signal(true),
+        teamBarberVms: computed(() => barbers().map(faceOf)),
+        liveBarberVms: computed(() =>
+          barbers().filter(BarberLifecycle.isLive).map(faceOf),
+        ),
+        findTeamBarberVm: (barberId: BarberId) => {
+          const barber = barbers().find((record) => record.id === barberId);
+          return barber === undefined ? undefined : faceOf(barber);
+        },
+      },
+    },
+    {
+      provide: CatalogContentService,
+      useValue: {
+        allServices: services,
+        locations,
+        servicesKnown: signal(true),
+      },
     },
     { provide: CLOCK_PORTS, useValue: { nowUtcMs: () => FIXTURE_NOW_UTC_MS } },
     {
@@ -123,6 +328,8 @@ export function teamBed(options: TeamBedOptions = {}) {
     listed,
     /** Every `setStaffPermissions` call, in order. */
     saves,
+    /** Every call a barber record's write made, by its port. */
+    calls,
     /** The live cells move, as the listener would say after a save. */
     liveCells: (stored: Record<string, unknown>) =>
       permissions.set(StaffPermissions.read(stored)),
@@ -136,5 +343,24 @@ export function teamBed(options: TeamBedOptions = {}) {
     saveRefuses: (refusal: PipelineError | null) => {
       saveRefusal = refusal;
     },
+    /** A record's write refuses from now on, or lands again. */
+    refuses: (port: keyof TeamAdminPorts, refusal: PipelineError | null) => {
+      if (refusal === null) refusals.delete(port);
+      else refusals.set(port, refusal);
+    },
+    /** `setRoles` refuses from now on, or lands again. */
+    rolesRefuse: (refusal: PipelineError | null) => {
+      rolesRefusal = refusal;
+    },
+    /** What the go-live step answers from now on. */
+    activates: (answer: BarberActivation) => {
+      activation = answer;
+    },
+    /** The team stream says these records, as the listener would. */
+    liveBarbers: (next: readonly Barber[]) => barbers.set(next),
+    /** The catalogue says these services. */
+    liveServices: (next: readonly Service[]) => services.set(next),
+    /** The rosters say these, as the listener would. */
+    liveSchedules: (next: readonly BarberSchedule[]) => schedules.next(next),
   };
 }

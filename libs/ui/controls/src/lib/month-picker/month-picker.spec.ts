@@ -14,6 +14,7 @@ import { UiMonthPicker } from './month-picker';
       [uiRelatives]="relatives"
       [uiMarked]="marked()"
       [uiMin]="min()"
+      [uiOpensOn]="opensOn()"
       (uiPicked)="picked.push($event)"
     />
   `,
@@ -23,6 +24,7 @@ class Host {
   readonly today = signal<LocalDate | null>(localDate('2026-08-24'));
   readonly marked = signal<readonly LocalDate[]>([]);
   readonly min = signal<LocalDate | null>(null);
+  readonly opensOn = signal<LocalDate | null>(null);
   readonly relatives = [
     { offset: 0, label: 'Днес' },
     { offset: 1, label: 'Утре' },
@@ -169,6 +171,29 @@ describe('UiMonthPicker', () => {
     expect(
       host.querySelectorAll('[data-testid^="ui-month-day-"]'),
     ).toHaveLength(0);
+  });
+
+  it('opens on the month it is told while nothing is chosen, with no day read as chosen — and a choice wins', async () => {
+    const { fixture, host } = await render();
+    fixture.componentInstance.selected.set(null);
+    fixture.componentInstance.opensOn.set(localDate('2026-12-01'));
+    fixture.detectChanges();
+
+    expect(
+      host.querySelector('.ui-month-picker__title')?.textContent?.trim(),
+    ).toBe('Декември 2026 г.');
+    expect(day(host, '2026-12-01')).not.toBeNull();
+    expect(host.querySelector('[aria-current="date"]')).toBeNull();
+    // Paging works from the month it opened on.
+    host.querySelector<HTMLElement>('[data-testid="ui-month-next"]')?.click();
+    fixture.detectChanges();
+    expect(day(host, '2027-01-15')).not.toBeNull();
+
+    // A choice lands the grid on its own month.
+    fixture.componentInstance.selected.set(localDate('2026-08-26'));
+    fixture.detectChanges();
+    expect(day(host, '2026-08-26')?.getAttribute('aria-current')).toBe('date');
+    expect(day(host, '2026-12-01')).toBeNull();
   });
 
   it('emits the day a cell names', async () => {

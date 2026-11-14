@@ -299,6 +299,25 @@ describe('TeamSystem.setAccess — who may book the record', () => {
   });
 });
 
+describe('TeamSystem.accessOf — who may book the record, read back', () => {
+  it('reads a DRAFT’s target, a live record’s own status, and nobody for a leaver', () => {
+    // The draft's target is the public list (its fixture, above).
+    expect(TeamSystem.accessOf(draft)).toBe(BarberStatus.Public);
+    expect(TeamSystem.accessOf(barberFixture())).toBe(BarberStatus.Public);
+    expect(TeamSystem.accessOf(departed)).toBeNull();
+  });
+
+  it('follows setAccess on a draft and on a live record', () => {
+    const LATER = UtcEpochMs.plusHours(NOW, 1);
+    for (const record of [draft, barberFixture()]) {
+      const next = unwrapOk(
+        TeamSystem.setAccess(record, BarberStatus.StaffOnly, LATER, OP),
+      );
+      expect(TeamSystem.accessOf(next)).toBe(BarberStatus.StaffOnly);
+    }
+  });
+});
+
 describe('TeamSystem.activate — the go-live step', () => {
   const ready: StaffSetupChecklist = {
     needed: [],

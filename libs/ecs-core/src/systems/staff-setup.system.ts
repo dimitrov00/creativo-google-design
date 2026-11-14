@@ -125,4 +125,13 @@ export const StaffSetupSystem = {
     }
     return { needed, optional, ready: firstMissing === null, firstMissing };
   },
+
+  /** How many of the needed items are done — «3 от 5» beside `needed.length`. */
+  doneCountOf(checklist: StaffSetupChecklist): number {
+    let done = 0;
+    for (let i = 0; i < checklist.needed.length; i++) {
+      if ((checklist.needed[i] as StaffSetupEntry).done) done++;
+    }
+    return done;
+  },
 } as const;

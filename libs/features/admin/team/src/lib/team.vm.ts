@@ -1,5 +1,5 @@
 import type { StaffLevel } from '@core/components';
-import type { AccessScope, StaffCapability } from '@core/primitives';
+import type { AccessScope, BarberId, StaffCapability } from '@core/primitives';
 
 /** A run of the Team list — the field `teamRun`, the ONLY source of these strings. */
 export const TeamRun = {
@@ -16,6 +16,8 @@ export type TeamRun = (typeof TeamRun)[keyof typeof TeamRun];
 export type TeamRowVm = {
   /** The record's id, or the account's for someone with no record. */
   readonly id: string;
+  /** The barber record the row leads to; `null` for an account with no record. */
+  readonly barberId: BarberId | null;
   readonly name: string;
   /** How the person stands, then the one note; the role names for an account alone. */
   readonly line: string;

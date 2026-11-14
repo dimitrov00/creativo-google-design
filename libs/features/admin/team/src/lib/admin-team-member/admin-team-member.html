@@ -1,0 +1,390 @@
+<ng-container *transloco="let t">
+  <!-- A ROUTED PAGE: one column at the content measure. The bar is the DS's
+       collapsing title; the back chip is icon-only (quiet HIG chrome). -->
+  <main
+    class="team-page"
+    uiPaddingHorizontal="regular"
+    data-testid="admin-team-member"
+  >
+    <ui-sheet-header uiPage class="team-page__bar">
+      <a
+        uiLeading
+        uiButton
+        routerLink="/admin/team"
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.team.member.back')"
+        data-testid="admin-team-member-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+      <span uiTitle>{{ vm()?.name ?? t('admin.team.title') }}</span>
+    </ui-sheet-header>
+
+    @if (vm(); as page) {
+    <div class="team-page__modules">
+      <!-- THE HEAD: who it is and how the record stands. -->
+      <ui-sheet-headline uiHeadlineStyle="hero">
+        <h1 uiSheetLargeTitle uiText uiFont="title" data-testid="member-name">
+          {{ page.name }}
+        </h1>
+        <p
+          uiText
+          uiFont="callout"
+          uiForegroundStyle="secondary"
+          data-testid="member-standing"
+        >
+          {{ page.standing }}
+        </p>
+        <ui-avatar
+          uiHeadlineMedia
+          uiControlSize="extraLarge"
+          [uiSrc]="page.avatarSrc"
+          [uiName]="page.name"
+        />
+      </ui-sheet-headline>
+
+      <!-- A refused switch, answer or link is said here; an editor says its own. -->
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <!-- IN PREPARATION: what bookings need leads the page. -->
+      @if (page.setup.length > 0) {
+      <section class="team-page__module" aria-labelledby="member-setup-title">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="member-setup-title">
+            {{ t('admin.team.member.setupTitle') }}
+          </h2>
+        </ui-section-header>
+        <ui-list-group data-testid="member-setup">
+          @for (row of page.setup; track row.staffSetupItem) { @if
+          (row.memberEditor; as memberEditor) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [attr.data-done]="row.done ? '' : null"
+            [attr.data-testid]="row.testId"
+            (click)="openEditor(memberEditor)"
+          >
+            <ui-icon
+              uiLeading
+              [uiName]="row.done ? 'checklist.done' : 'checklist.pending'"
+              [uiForegroundStyle]="row.done ? 'accent' : 'secondary'"
+              aria-hidden="true"
+            />
+            {{ row.label }}
+            <span uiVisuallyHidden> — {{ row.state }}</span>
+            <span uiTrailing class="team-page__value">
+              <span>{{ row.value }}</span>
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </button>
+          } @else {
+          <ui-list-row
+            uiSize="regular"
+            [attr.data-done]="row.done ? '' : null"
+            [attr.data-testid]="row.testId"
+          >
+            <ui-icon
+              uiLeading
+              [uiName]="row.done ? 'checklist.done' : 'checklist.pending'"
+              [uiForegroundStyle]="row.done ? 'accent' : 'secondary'"
+              aria-hidden="true"
+            />
+            {{ row.label }}
+            <span uiVisuallyHidden> — {{ row.state }}</span>
+            <span uiTrailing class="team-page__value">
+              <span>{{ row.value }}</span>
+            </span>
+          </ui-list-row>
+          } }
+        </ui-list-group>
+        @if (page.goesLive; as line) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="team-page__footnote"
+          data-testid="member-goes-live"
+        >
+          {{ line }}
+        </p>
+        }
+      </section>
+      }
+
+      <!-- THE PROFILE: the same rows at rest, and who may book the person. -->
+      <section class="team-page__module" aria-labelledby="member-profile-title">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="member-profile-title">
+            {{ t('admin.team.member.profileTitle') }}
+          </h2>
+        </ui-section-header>
+        <ui-list-group data-testid="member-profile">
+          @for (row of page.profile; track row.id) { @if (row.memberEditor; as
+          memberEditor) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [attr.data-testid]="row.testId"
+            (click)="openEditor(memberEditor)"
+          >
+            {{ row.label }}
+            <span uiTrailing class="team-page__value">
+              <span>{{ row.value }}</span>
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </button>
+          } @else {
+          <ui-list-row uiSize="regular" [attr.data-testid]="row.testId">
+            {{ row.label }}
+            <span uiTrailing class="team-page__value">
+              <span>{{ row.value }}</span>
+            </span>
+          </ui-list-row>
+          } } @if (page.bookedBy; as bookedBy) {
+          <ui-list-row
+            uiSize="regular"
+            uiLabelWraps
+            class="team-page__permission"
+            data-testid="member-pool-row"
+          >
+            <span>{{ t('admin.team.member.poolRow') }}</span>
+            <button
+              uiSwitch
+              uiTrailing
+              [uiOn]="store.poolOn()"
+              [uiDisabled]="!page.manageable"
+              [attr.aria-label]="t('admin.team.member.poolRow')"
+              data-testid="member-pool"
+              (uiOnChange)="setPool($event)"
+            ></button>
+          </ui-list-row>
+          <ui-list-row
+            uiSize="regular"
+            uiLabelWraps
+            class="team-page__permission"
+            data-testid="member-booked-by-row"
+          >
+            <span>{{ t('admin.team.member.bookedByRow') }}</span>
+            @if (page.manageable) {
+            <span uiTrailing>
+              <ui-choice-menu
+                uiAlignment="trailing"
+                [uiOptions]="bookedBy.options"
+                [uiSelectedId]="bookedBy.id"
+                [uiLabel]="t('admin.team.member.bookedByRow')"
+                [uiPresented]="bookedByOpen()"
+                (uiPresentedChange)="bookedByOpen.set($event)"
+                (uiPicked)="pickBookedBy($event)"
+              >
+                <button
+                  type="button"
+                  uiInteractive
+                  uiRadius="capsule"
+                  uiMenuTrigger
+                  class="team-page__choice"
+                  [attr.aria-label]="
+                    t('admin.team.member.bookedByRow') + ': ' + bookedBy.word
+                  "
+                  data-testid="member-booked-by"
+                  (click)="bookedByOpen.set(true)"
+                >
+                  <span>{{ bookedBy.word }}</span>
+                  <ui-icon uiName="field.popUp" aria-hidden="true" />
+                </button>
+              </ui-choice-menu>
+            </span>
+            } @else {
+            <span uiTrailing class="team-page__value">
+              <span data-testid="member-booked-by">{{ bookedBy.word }}</span>
+            </span>
+            }
+          </ui-list-row>
+          }
+        </ui-list-group>
+      </section>
+
+      <!-- THE ACCOUNT beside the record, for whoever manages the team. -->
+      @if (page.account; as account) {
+      <section class="team-page__module" aria-labelledby="member-account-title">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="member-account-title">
+            {{ t('admin.team.member.accountTitle') }}
+          </h2>
+        </ui-section-header>
+        @if (account.name !== null || account.isMine || account.isOpen) {
+        <ui-list-group data-testid="member-account">
+          @if (account.name; as name) {
+          <ui-list-row uiSize="large" data-testid="member-account-linked">
+            <ui-avatar
+              uiLeading
+              uiControlSize="small"
+              [uiSrc]="null"
+              [uiName]="name"
+            />
+            <ui-stack uiSpacing="tight" class="team-page__identity">
+              <span>{{ name }}</span>
+              @if (account.line) {
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ account.line }}</span
+              >
+              }
+            </ui-stack>
+          </ui-list-row>
+          } @if (account.isMine) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [disabled]="store.pending()"
+            data-testid="member-not-me"
+            (click)="claim(false)"
+          >
+            {{ t('admin.team.member.notMe') }}
+          </button>
+          } @else if (account.isOpen) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [disabled]="store.pending()"
+            data-testid="member-is-me"
+            (click)="claim(true)"
+          >
+            {{ t('admin.team.member.isMe') }}
+          </button>
+          }
+        </ui-list-group>
+        } @if (account.footnote; as line) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="team-page__footnote"
+          data-testid="member-account-note"
+        >
+          {{ line }}
+        </p>
+        }
+      </section>
+      }
+
+      <!-- THE LEVELS the linked account holds: the way to «Права». -->
+      @if (page.levels.length > 0) {
+      <section class="team-page__module" aria-labelledby="member-access-title">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="member-access-title">
+            {{ t('admin.team.member.accessTitle') }}
+          </h2>
+        </ui-section-header>
+        <ui-list-group data-testid="member-levels">
+          @for (link of page.levels; track link.level) {
+          <a
+            [routerLink]="['/admin/team/permissions', link.level]"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [attr.data-testid]="link.testId"
+          >
+            {{ link.label }}
+            <span uiTrailing class="team-page__value">
+              <span>{{ link.value }}</span>
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </a>
+          }
+        </ui-list-group>
+      </section>
+      }
+
+      <!-- «Изтрий» exists only for a record that never went live. -->
+      @if (page.deletable) {
+      <ui-list-group>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          uiRole="destructive"
+          [uiInteractive]="true"
+          [disabled]="store.pending()"
+          data-testid="member-delete"
+          (click)="deleteOpen.set(true)"
+        >
+          {{ t('admin.team.member.delete') }}
+        </button>
+      </ui-list-group>
+      }
+    </div>
+
+    <ui-alert
+      [uiPresented]="deleteOpen()"
+      [uiTitle]="page.deleteTitle"
+      [uiMessage]="t('admin.team.member.deleteMessage')"
+      [uiActions]="page.deleteActions"
+      data-testid="member-delete-question"
+      (uiPicked)="onDeletePick($event)"
+      (uiDismissed)="deleteOpen.set(false)"
+    />
+
+    <ui-toast
+      [uiPresented]="store.wentLive()"
+      [uiLabel]="page.liveReceipt"
+      [uiDismissLabel]="t('admin.permissions.dismiss')"
+      data-testid="member-live-toast"
+      (uiDismissed)="store.dismissLive()"
+    />
+
+    <!-- THE EDITORS: mounted while open, so each opening reads the record. -->
+    @if (store.barber(); as barber) { @switch (editor()) { @case
+    (MemberEditor.Profile) {
+    <lib-member-profile-sheet
+      [uiBarber]="barber"
+      [uiClosing]="closing()"
+      (dismissed)="requestClose()"
+      (closeFinished)="finishClose()"
+    />
+    } @case (MemberEditor.Period) {
+    <lib-member-period-sheet
+      [uiBarber]="barber"
+      [uiToday]="today()"
+      [uiClosing]="closing()"
+      (dismissed)="requestClose()"
+      (closeFinished)="finishClose()"
+    />
+    } } } } @else if (missing()) {
+    <p
+      uiText
+      uiFont="callout"
+      uiForegroundStyle="secondary"
+      data-testid="admin-team-member-missing"
+    >
+      {{ t('admin.team.member.notFound') }}
+    </p>
+    } @else {
+    <div
+      class="team-page__module team-page__skeleton"
+      aria-busy="true"
+      data-testid="admin-team-member-skeleton"
+    >
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
+      <ui-skeleton uiFrame uiFrameHeight="11rem" />
+    </div>
+    }
+  </main>
+</ng-container>

@@ -133,6 +133,25 @@ export const OfferingPriceSystem = {
     return OfferingPriceSystem.offeringFor(service, barberId) !== null;
   },
 
+  /** How many of `services` the barber performs — «12 услуги» on their page. */
+  performedCount(
+    services: readonly PricedService[],
+    barberId: BarberId,
+  ): number {
+    let count = 0;
+    for (let i = 0; i < services.length; i++) {
+      if (
+        OfferingPriceSystem.isPerformedBy(
+          services[i] as PricedService,
+          barberId,
+        )
+      ) {
+        count++;
+      }
+    }
+    return count;
+  },
+
   /** Every terms a booking could land on — the service's, then each offering's base and overrides. */
   everyTerms(service: PricedService): readonly ServiceTerms[] {
     const all: ServiceTerms[] = [service];

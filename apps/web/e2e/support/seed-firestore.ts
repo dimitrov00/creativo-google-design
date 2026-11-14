@@ -936,6 +936,33 @@ export async function readBarberLink(barberId: string): Promise<string | null> {
 }
 
 /**
+ * Removes a barber record a spec ADDED through the app, with what names
+ * it: its account lock and its entry on every service's offerings. For a
+ * case that stopped before it deleted the record itself — never for a
+ * seeded barber, which other specs read.
+ */
+export async function removeAddedBarber(barberId: string): Promise<void> {
+  const db = getFirestore(adminApp());
+  const record = db.collection(Collections.Barbers).doc(barberId);
+  await record
+    .collection(Subcollections.Restricted)
+    .doc(BARBER_LINK_DOC)
+    .delete();
+  await record.delete();
+  const services = await db.collection(Collections.Services).get();
+  for (const service of services.docs) {
+    const offerings: unknown = service.get('offerings');
+    if (!Array.isArray(offerings)) continue;
+    const kept = (offerings as readonly { barberId?: unknown }[]).filter(
+      (offering) => offering.barberId !== barberId,
+    );
+    if (kept.length !== offerings.length) {
+      await service.ref.update({ offerings: kept });
+    }
+  }
+}
+
+/**
  * Puts the owner's permissions back on the standard: deletes
  * `settings/staffPermissions` (no document is every default). A spec that
  * changes a cell calls it when it is done — the document is the whole

@@ -8,6 +8,7 @@ import {
   loadedLanguage,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
+import { type MemberWords, memberWordsOf } from './member.words';
 import { type TeamWords, teamWordsOf } from './team.words';
 
 /**
@@ -36,6 +37,16 @@ export class TeamWording {
     return lang === null
       ? null
       : teamWordsOf((key, params) =>
+          this.transloco.translate(key, { ...params }, lang),
+        );
+  });
+
+  /** The words a member's page prints from values; `null` until the catalogue has loaded. */
+  readonly memberWords = computed<MemberWords | null>(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : memberWordsOf((key, params) =>
           this.transloco.translate(key, { ...params }, lang),
         );
   });

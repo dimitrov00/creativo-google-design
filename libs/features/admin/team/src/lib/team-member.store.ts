@@ -1,0 +1,431 @@
+import {
+  Injectable,
+  computed,
+  effect,
+  inject,
+  linkedSignal,
+  signal,
+  untracked,
+} from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { of, switchMap } from 'rxjs';
+import {
+  BarberActivation,
+  BarberEdit,
+  type BarberEditRequest,
+  type BarberLifecycle,
+  BarberStatus,
+  RecordClaim,
+  type RolesCall,
+} from '@core/components';
+import type { Barber, ShopLocation } from '@core/entities';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
+import {
+  AccessScope,
+  type BarberId,
+  ClientOperationId,
+  type LocalDate,
+  type Result,
+  StaffCapability,
+} from '@core/primitives';
+import {
+  type BarberProfileInput,
+  LocationScopeSystem,
+  OfferingPriceSystem,
+  RoleAssignmentSystem,
+  StaffSetupSystem,
+  TeamRosterSystem,
+  TeamSystem,
+} from '@core/systems';
+import {
+  AccountStateService,
+  StaffAccessService,
+} from '@creativo/features/client/account-state';
+import {
+  CatalogContentService,
+  TeamCatalogService,
+} from '@creativo/features/shared/catalog';
+import {
+  ID_PORTS,
+  ROLES_ADMIN_PORTS,
+  SCHEDULING_READ_PORTS,
+  TEAM_ADMIN_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { TeamStore } from './team.store';
+
+/**
+ * ONE TEAM MEMBER, LIVE (team onboarding D5, D8, D9; staff permissions P9):
+ * the barber record off the staff's team stream, what it still needs
+ * (`StaffSetupSystem.checklistOf` over the live record, services and
+ * roster, so a save made anywhere redraws the checklist), the account the
+ * Team list read beside it, and the calls the page makes.
+ *
+ * Provided by the member's page: one record per visit. Every write is a
+ * callable; a save answers `true` when it landed and keeps its refusal for
+ * the page when it did not. The go-live step is asked by itself the moment
+ * a record in preparation shows every needed item done — when the page
+ * opens on one, or after a save completes it.
+ */
+@Injectable()
+export class TeamMemberStore {
+  private readonly ports = inject(TEAM_ADMIN_PORTS);
+  private readonly rolesPorts = inject(ROLES_ADMIN_PORTS);
+  private readonly ids = inject(ID_PORTS);
+  private readonly scheduling = inject(SCHEDULING_READ_PORTS);
+  private readonly catalog = inject(TeamCatalogService);
+  private readonly content = inject(CatalogContentService);
+  private readonly team = inject(TeamStore);
+  private readonly access = inject(StaffAccessService);
+  private readonly account = inject(AccountStateService);
+
+  private readonly _barberId = signal<BarberId | null>(null);
+  private readonly _pending = signal(false);
+  private readonly _refusal = signal<PipelineError | null>(null);
+  private readonly _wentLive = signal(false);
+  /** The record the go-live step was last asked for: one ask per ready record. */
+  private askedLive: BarberId | null = null;
+
+  /** The record the page is on. */
+  readonly barberId = this._barberId.asReadonly();
+
+  /** The record, live; `undefined` while the team is unread or holds no such record. */
+  readonly barber = computed<Barber | undefined>(() => {
+    const barberId = this._barberId();
+    return barberId === null
+      ? undefined
+      : this.catalog.teamBarbers().find((barber) => barber.id === barberId);
+  });
+
+  /** The team read has answered: a record it does not hold is really not there. */
+  readonly known = this.catalog.teamKnown;
+
+  private readonly rosterAnswer = toSignal(
+    toObservable(this._barberId).pipe(
+      switchMap((barberId) =>
+        barberId === null
+          ? of(undefined)
+          : this.scheduling.observeSchedule(barberId),
+      ),
+    ),
+  );
+
+  /** The roster's read has answered. */
+  private readonly rosterKnown = computed(
+    () => this.rosterAnswer()?.ok === true,
+  );
+
+  /** What the record still needs; `null` while there is no record. */
+  readonly checklist = computed(() => {
+    const barber = this.barber();
+    const roster = this.rosterAnswer();
+    return barber === undefined
+      ? null
+      : StaffSetupSystem.checklistOf(
+          barber,
+          this.content.allServices(),
+          roster?.ok === true ? roster.value : null,
+        );
+  });
+
+  /** How many of the needed items are done. */
+  readonly doneCount = computed(() => {
+    const checklist = this.checklist();
+    return checklist === null ? 0 : StaffSetupSystem.doneCountOf(checklist);
+  });
+
+  /** How many services list the barber. */
+  readonly servicesCount = computed(() => {
+    const barberId = this._barberId();
+    return barberId === null
+      ? 0
+      : OfferingPriceSystem.performedCount(
+          this.content.allServices(),
+          barberId,
+        );
+  });
+
+  /** The shops the record works at, in the catalogue's order. */
+  readonly shops = computed<readonly ShopLocation[]>(() => {
+    const barber = this.barber();
+    return barber === undefined
+      ? []
+      : this.content
+          .locations()
+          .filter((shop) =>
+            LocationScopeSystem.servesLocation(barber, shop.id),
+          );
+  });
+
+  /** The record names no shop of its own: it works at every one. */
+  readonly everyShop = computed(() => {
+    const barber = this.barber();
+    return barber !== undefined && LocationScopeSystem.homeOf(barber) === null;
+  });
+
+  /** There are shops to tell apart. */
+  readonly multiShop = computed(() =>
+    LocationScopeSystem.isMultiShop(this.content.locations().length),
+  );
+
+  /** The Team list's row for the record: the account beside it. */
+  readonly member = computed(() => {
+    const barberId = this._barberId();
+    return barberId === null
+      ? null
+      : TeamRosterSystem.recordOf(this.team.members() ?? [], barberId);
+  });
+
+  /** Whose record it is to the person looking. */
+  readonly recordClaim = computed<RecordClaim>(() => {
+    const member = this.member();
+    return member === null
+      ? RecordClaim.None
+      : TeamRosterSystem.claimOf(member, {
+          userId: this.account.userId(),
+          linkedBarberId: this.access.linkedBarberId(),
+          assignsRoles: this.access.editsPermissions(),
+        });
+  });
+
+  /** The record still takes edits: one that has left takes none. */
+  private readonly editable = computed(() => {
+    const barber = this.barber();
+    return barber !== undefined && TeamSystem.editable(barber).ok;
+  });
+
+  /** The person looking manages the team: the accounts were read for them. */
+  readonly managesTeam = computed(
+    () => this.access.scopeOf(StaffCapability.TeamManage) !== AccessScope.None,
+  );
+
+  /** They may edit this record's profile. */
+  readonly mayEditProfile = computed(() => {
+    const barberId = this._barberId();
+    return (
+      barberId !== null &&
+      this.editable() &&
+      this.access.mayFor(StaffCapability.TeamProfiles, barberId)
+    );
+  });
+
+  /** They may change this record's period, pool and access. */
+  readonly mayManage = computed(() => {
+    const barberId = this._barberId();
+    return (
+      barberId !== null &&
+      this.editable() &&
+      this.access.mayFor(StaffCapability.TeamManage, barberId)
+    );
+  });
+
+  /** They may delete it: a record that never went live, and they manage the team. */
+  readonly deletable = computed(() => {
+    const barber = this.barber();
+    return (
+      barber !== undefined &&
+      this.managesTeam() &&
+      TeamSystem.removable(barber).ok
+    );
+  });
+
+  /**
+   * In the «Който и да е» pool, as the page shows it: the record's own
+   * answer, and the one just asked for until the record says it back.
+   */
+  readonly poolOn = linkedSignal(
+    () => this.barber()?.barberJoinsAnyPool ?? false,
+  );
+
+  /** Who may book the record, the same way; `null` once it has left. */
+  readonly bookedBy = linkedSignal<BarberLifecycle.LiveStatus | null>(() => {
+    const barber = this.barber();
+    return barber === undefined ? null : TeamSystem.accessOf(barber);
+  });
+
+  /** A call is on its way. */
+  readonly pending = this._pending.asReadonly();
+
+  /** Why the last call was refused; `null` when it was not. */
+  readonly refusal = this._refusal.asReadonly();
+
+  /** The record has just gone live — said once. */
+  readonly wentLive = this._wentLive.asReadonly();
+
+  constructor() {
+    // THE GO-LIVE STEP (team onboarding D9): asked once for a record in
+    // preparation that shows every needed item done, on reads that have
+    // really answered — so an unread roster is never taken for "no hours"
+    // and never for "ready" either. It writes nothing this effect reads.
+    effect(() => {
+      const barber = this.barber();
+      const checklist = this.checklist();
+      if (
+        barber === undefined ||
+        checklist === null ||
+        barber.barberStatus !== BarberStatus.Draft ||
+        !checklist.ready
+      ) {
+        this.askedLive = null;
+        return;
+      }
+      if (!this.content.servicesKnown() || !this.rosterKnown()) return;
+      if (this.askedLive === barber.id) return;
+      this.askedLive = barber.id;
+      untracked(() => void this.goLive(barber.id));
+    });
+  }
+
+  /** The page opens on a record: its refusal and receipt are another record's no more. */
+  open(barberId: BarberId | null): void {
+    if (barberId === untracked(this._barberId)) return;
+    this._barberId.set(barberId);
+    this._refusal.set(null);
+    this._wentLive.set(false);
+  }
+
+  /** The profile, whole: the name, the title, the few words, Instagram, the experience. */
+  saveProfile(profile: BarberProfileInput): Promise<boolean> {
+    return this.edit({ barberEdit: BarberEdit.Profile, ...profile });
+  }
+
+  /** The working period: the start day and the last working day. */
+  savePeriod(
+    barberStartsLocalDate: LocalDate,
+    barberLastWorkingLocalDate: LocalDate | null,
+  ): Promise<boolean> {
+    return this.edit({
+      barberEdit: BarberEdit.Period,
+      barberStartsLocalDate,
+      barberLastWorkingLocalDate,
+    });
+  }
+
+  /** In or out of the «Който и да е» pool; the switch goes back when the call is refused. */
+  async setPool(barberJoinsAnyPool: boolean): Promise<void> {
+    this.poolOn.set(barberJoinsAnyPool);
+    const saved = await this.edit({
+      barberEdit: BarberEdit.Pool,
+      barberJoinsAnyPool,
+    });
+    if (!saved) {
+      this.poolOn.set(untracked(this.barber)?.barberJoinsAnyPool ?? false);
+    }
+  }
+
+  /** Who may book the record; the answer goes back when the call is refused. */
+  async setAccess(barberStatus: BarberLifecycle.LiveStatus): Promise<void> {
+    this.bookedBy.set(barberStatus);
+    const saved = await this.edit({
+      barberEdit: BarberEdit.Access,
+      barberStatus,
+    });
+    if (!saved) {
+      const barber = untracked(this.barber);
+      this.bookedBy.set(
+        barber === undefined ? null : TeamSystem.accessOf(barber),
+      );
+    }
+  }
+
+  /** «Изтрий»: a record that never went live, removed. `true` once it is gone. */
+  async remove(): Promise<boolean> {
+    const answer = await this.act((operationId, barberId) =>
+      this.ports.deleteDraftBarber({ barberId, operationId }),
+    );
+    if (answer?.ok !== true) return false;
+    await this.team.load();
+    return true;
+  }
+
+  /**
+   * «Това съм аз» · «Не съм аз» (staff permissions P9): the owner's own
+   * account takes the record, or gives it back — `setRoles` on themself
+   * with the set and the link `RoleAssignmentSystem.selfLinkOf` answers.
+   * Nobody is signed out: the stored account moves and the page follows it.
+   */
+  async claim(mine: boolean): Promise<boolean> {
+    const userId = this.account.userId();
+    if (userId === null) return false;
+    const answer = await this.act((operationId, barberId) => {
+      const change = RoleAssignmentSystem.selfLinkOf(
+        this.access.storedRoles(),
+        mine ? barberId : null,
+      );
+      const call: RolesCall & { readonly operationId: ClientOperationId } = {
+        targetUserId: userId,
+        roles: change.roles,
+        ...change.link,
+        operationId,
+      };
+      return this.rolesPorts.setRoles(call);
+    });
+    if (answer?.ok !== true) return false;
+    void this.team.load();
+    return true;
+  }
+
+  /** The receipt was read. */
+  dismissLive(): void {
+    this._wentLive.set(false);
+  }
+
+  /** The refusal was read, or the sheet it belonged to closed. */
+  clearRefusal(): void {
+    this._refusal.set(null);
+  }
+
+  /** One part of the record, replaced whole. */
+  private async edit(request: BarberEditRequest): Promise<boolean> {
+    const answer = await this.act((operationId, barberId) =>
+      this.ports.editBarber({ ...request, barberId, operationId }),
+    );
+    if (answer?.ok !== true) return false;
+    // The row on the Team list words the same record.
+    void this.team.load();
+    return true;
+  }
+
+  /**
+   * The go-live step. Quiet: a refusal or a "not ready" changes nothing on
+   * the page — the record stays in preparation, which is the safe state,
+   * and the next ready record asks again.
+   */
+  private async goLive(barberId: BarberId): Promise<void> {
+    const operationId = ClientOperationId.parse(this.ids.nextId());
+    if (!operationId.ok) return;
+    const answer = await this.ports.activateBarber({
+      barberId,
+      operationId: operationId.value,
+    });
+    if (
+      answer.ok &&
+      answer.value.barberActivation === BarberActivation.Activated &&
+      untracked(this._barberId) === barberId
+    ) {
+      this._wentLive.set(true);
+      void this.team.load();
+    }
+  }
+
+  /** One named call for the record on the page, in flight once; its refusal kept. */
+  private async act<T>(
+    dial: (
+      operationId: ClientOperationId,
+      barberId: BarberId,
+    ) => Promise<Result<T, PipelineError>>,
+  ): Promise<Result<T, PipelineError> | null> {
+    const barberId = this._barberId();
+    if (barberId === null || this._pending()) return null;
+    const operationId = ClientOperationId.parse(this.ids.nextId());
+    if (!operationId.ok) {
+      this._refusal.set(PipelineError.bare(PipelineErrorCode.InvalidRequest));
+      return null;
+    }
+    this._pending.set(true);
+    this._refusal.set(null);
+    const answer = await dial(operationId.value, barberId);
+    this._pending.set(false);
+    if (!answer.ok) this._refusal.set(answer.error);
+    return answer;
+  }
+}

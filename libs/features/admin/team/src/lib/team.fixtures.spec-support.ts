@@ -1,4 +1,5 @@
 import {
+  BarberLifecycle,
   BarberStatus,
   Role,
   type TeamMember,
@@ -6,7 +7,14 @@ import {
   TeamMemberStatus,
 } from '@core/components';
 import { BarberId, UserId } from '@core/primitives';
-import { localDate } from '@core/testing';
+import {
+  FIXTURE_NOW_UTC_MS,
+  barberFixture,
+  barberScheduleFixture,
+  localDate,
+  serviceFixture,
+  termsFixture,
+} from '@core/testing';
 
 /*
  * The Team screens' sample shop, as `listTeam` answers it: four barber
@@ -118,3 +126,69 @@ export const RECORDS: readonly TeamMember[] = [
       ? null
       : member.teamMemberNote,
 }));
+
+/*
+ * The same shop's barber RECORDS, as the staff's team stream holds them:
+ * Ivan at work with a title, a service and a roster; Nikolay in
+ * preparation with nothing but a name and a start day; Stefan gone.
+ */
+
+/** Ivan: taking bookings since March 2024. */
+export const IVAN_RECORD = barberFixture({
+  id: IVAN.barberId,
+  name: IVAN.memberName,
+  title: { bg: 'Старши бръснар', en: 'Senior barber' },
+  barberStartsLocalDate: START,
+  sortOrder: 0,
+});
+
+/** Nikolay: in preparation, starting in December, working at every shop. */
+export const NIKOLAY_RECORD = barberFixture(
+  {
+    id: NIKOLAY.barberId,
+    name: NIKOLAY.memberName,
+    title: null,
+    bio: null,
+    yearsExperience: null,
+    locationIds: [],
+    barberStartsLocalDate: localDate('2026-12-01'),
+    sortOrder: 3,
+  },
+  BarberLifecycle.draft(FIXTURE_NOW_UTC_MS, BarberStatus.Public),
+);
+
+/** Stefan: left at the end of September. */
+export const STEFAN_RECORD = barberFixture(
+  {
+    id: STEFAN.barberId,
+    name: STEFAN.memberName,
+    barberStartsLocalDate: START,
+    barberLastWorkingLocalDate: localDate('2026-09-30'),
+    sortOrder: 4,
+  },
+  {
+    barberStatus: BarberStatus.Departed,
+    barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    barberDepartedUserId: null,
+    barberSessionsRevokedAtUtcMs: null,
+    barberRehireStatus: BarberStatus.Public,
+  },
+);
+
+/** A service that lists the given barbers, each at the service's own terms. */
+export function serviceOf(...barberIds: readonly BarberId[]) {
+  const terms = termsFixture(1500, 30);
+  return serviceFixture({
+    ...terms,
+    offerings: barberIds.map((barberId) => ({
+      barberId,
+      overrides: [],
+      ...terms,
+    })),
+  });
+}
+
+/** A weekday roster for the given barber, in force since the start of 2026. */
+export function rosterOf(barberId: BarberId) {
+  return barberScheduleFixture({ id: barberId });
+}

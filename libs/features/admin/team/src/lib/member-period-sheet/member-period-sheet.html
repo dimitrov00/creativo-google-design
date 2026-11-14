@@ -1,0 +1,108 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="member-period-sheet"
+    labelledBy="member-period-sheet-title"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="member-period-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title>{{ t('admin.team.period.title') }}</span>
+
+    <div class="team-page__form">
+      <h2
+        id="member-period-sheet-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('admin.team.period.title') }}
+      </h2>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-period-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      } @else if (!valid()) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-period-invalid"
+      >
+        {{ t('errors.TEAM_PERIOD_INVALID') }}
+      </ui-notice>
+      }
+
+      <ui-list-group>
+        <ui-list-row uiSize="regular" class="team-page__permission">
+          <span>{{ t('admin.team.period.start') }}</span>
+          <lib-team-day-menu
+            uiTrailing
+            uiTestId="member-period-start"
+            [uiDay]="starts()"
+            [uiValue]="startsWords()"
+            [uiLabel]="t('admin.team.period.start')"
+            [uiToday]="uiToday()"
+            [uiLocale]="locale()"
+            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+            [uiNextLabel]="t('admin.team.period.nextMonth')"
+            [uiDisabled]="store.pending()"
+            (uiPicked)="starts.set($event)"
+          />
+        </ui-list-row>
+        <ui-list-row uiSize="regular" class="team-page__permission">
+          <span>{{ t('admin.team.period.last') }}</span>
+          <lib-team-day-menu
+            #lastMenu
+            uiTrailing
+            uiTestId="member-period-last"
+            [uiDay]="last()"
+            [uiValue]="lastWords() ?? t('admin.team.period.lastNone')"
+            [uiLabel]="t('admin.team.period.last')"
+            [uiToday]="uiToday()"
+            [uiMin]="starts()"
+            [uiLocale]="locale()"
+            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+            [uiNextLabel]="t('admin.team.period.nextMonth')"
+            [uiDisabled]="store.pending()"
+            (uiPicked)="last.set($event)"
+          />
+        </ui-list-row>
+        @if (last() !== null) {
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          [disabled]="store.pending()"
+          data-testid="member-period-last-clear"
+          (click)="clearLast(lastMenu)"
+        >
+          {{ t('admin.team.period.lastClear') }}
+        </button>
+        }
+      </ui-list-group>
+    </div>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSave() || store.pending()"
+        data-testid="member-period-save"
+        (click)="save()"
+      >
+        {{ t('admin.team.period.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

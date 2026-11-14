@@ -1,0 +1,318 @@
+import {
+  type BarberLifecycle,
+  BarberStatus,
+  LocalizedText,
+  RecordClaim,
+  StaffPermissions,
+  StaffSetupItem,
+  type TeamMember,
+} from '@core/components';
+import type { Barber, ShopLocation } from '@core/entities';
+import type { LocalDate, Locale } from '@core/primitives';
+import type { StaffSetupChecklist, StaffSetupEntry } from '@core/systems';
+import { shopNameOf } from '@creativo/features/shared/catalog';
+import {
+  DeleteAnswer,
+  type LevelLinkVm,
+  type MemberAccountVm,
+  MemberEditor,
+  type MemberPageVm,
+  type MemberRowVm,
+  type SetupRowVm,
+} from './member.vm';
+import type { MemberWords } from './member.words';
+import { dayWords, firstWord, lineOf } from './team.format';
+import type { TeamWords } from './team.words';
+
+/*
+ * A TEAM MEMBER'S PAGE, WORDED (Law 10): the record, its checklist and the
+ * account beside it in; the rows a template prints out. It decides nothing.
+ * What a record still needs is `StaffSetupSystem`'s, who may book it is
+ * `TeamSystem.accessOf`'s, whose record it is to the person looking is
+ * `TeamRosterSystem.claimOf`'s, and what that person may change is the
+ * access service's — each handed in; this file gives them their words.
+ */
+
+/** What a member's page is worded from. */
+export type MemberPageInput = {
+  readonly barber: Barber;
+  /** `StaffSetupSystem.checklistOf` over the live record, services and roster. */
+  readonly checklist: StaffSetupChecklist;
+  /** `StaffSetupSystem.doneCountOf(checklist)`. */
+  readonly doneCount: number;
+  /** `OfferingPriceSystem.performedCount` — how many services list the barber. */
+  readonly servicesCount: number;
+  /** `TeamSystem.accessOf` — who may book the record; `null` once it has left. */
+  readonly bookedBy: BarberLifecycle.LiveStatus | null;
+  /** The shops the record works at (`LocationScopeSystem.servesLocation`), in the catalogue's order. */
+  readonly shops: readonly ShopLocation[];
+  /** The record names no shop of its own (`LocationScopeSystem.homeOf` is `null`): it works at every one. */
+  readonly everyShop: boolean;
+  /** `LocationScopeSystem.isMultiShop` — a one-shop business never sees the shops row. */
+  readonly multiShop: boolean;
+  /** The Team list's row for the record; `null` while the list has none. */
+  readonly member: TeamMember.OfBarber | null;
+  /** `TeamRosterSystem.claimOf` for the person looking. */
+  readonly recordClaim: RecordClaim;
+  /** The person looking manages the team: the accounts were read for them. */
+  readonly managesTeam: boolean;
+  /** They may edit this record's profile, and the record still takes edits. */
+  readonly mayEditProfile: boolean;
+  /** They may change this record's period, pool and access, and it still takes edits. */
+  readonly mayManage: boolean;
+  /** They may delete it (`TeamSystem.removable`, and they manage the team). */
+  readonly deletable: boolean;
+  /** They edit «Права»: the way to a level's page is theirs. */
+  readonly editsPermissions: boolean;
+  /** The cells in force, for how far a level departs from the standard. */
+  readonly permissions: StaffPermissions;
+  readonly avatarSrc: string | null;
+  readonly words: TeamWords;
+  readonly memberWords: MemberWords;
+  readonly locale: Locale;
+  /** The shop's today; `null` until its zone is known (a date then carries its year). */
+  readonly today: LocalDate | null;
+};
+
+function nameOf(input: MemberPageInput): string {
+  return LocalizedText.pick(input.barber.name, input.locale);
+}
+
+function dayOf(day: LocalDate, input: MemberPageInput): string {
+  return dayWords(day, input.today, input.locale);
+}
+
+/** «Подготовка · 3 от 5» · «Приема записи» · «Напусна на 30 септ.» */
+function standingOf(input: MemberPageInput): string {
+  const { barber, words } = input;
+  const standing = words.standing.get(barber.barberStatus) ?? '';
+  if (barber.barberStatus === BarberStatus.Departed) {
+    const last = barber.barberLastWorkingLocalDate;
+    return last === null ? standing : words.departedOn(dayOf(last, input));
+  }
+  return barber.barberStatus === BarberStatus.Draft
+    ? lineOf([
+        standing,
+        words.setup(input.doneCount, input.checklist.needed.length),
+      ])
+    : standing;
+}
+
+/** Whether the checklist shows `item` done — the system's answer, read, never re-derived. */
+function isDone(input: MemberPageInput, item: StaffSetupItem): boolean {
+  for (const entry of input.checklist.needed) {
+    if (entry.staffSetupItem === item) return entry.done;
+  }
+  return false;
+}
+
+/** «12 услуги», or the word for none. */
+function servicesValue(input: MemberPageInput): string {
+  return isDone(input, StaffSetupItem.Services)
+    ? input.memberWords.services(input.servicesCount)
+    : input.memberWords.none;
+}
+
+/** «Център, Младост», or «Всички» for a record that works at every shop. */
+function shopsValue(input: MemberPageInput): string {
+  return input.everyShop
+    ? input.memberWords.allShops
+    : input.shops.map((shop) => shopNameOf(shop, input.locale)).join(', ');
+}
+
+/** «от 3 март» · «3 март – 31 дек.» */
+function periodValue(input: MemberPageInput): string {
+  const { barber, memberWords } = input;
+  const from = dayOf(barber.barberStartsLocalDate, input);
+  const last = barber.barberLastWorkingLocalDate;
+  return last === null
+    ? memberWords.periodFrom(from)
+    : memberWords.periodRange(from, dayOf(last, input));
+}
+
+/** One row of the checklist; `null` for an item the page gives no row. */
+function setupRow(
+  entry: StaffSetupEntry,
+  input: MemberPageInput,
+): SetupRowVm | null {
+  const { memberWords } = input;
+  const item = entry.staffSetupItem;
+  const label = memberWords.items.get(item);
+  if (label === undefined) return null;
+  if (item === StaffSetupItem.Shops && !input.multiShop) return null;
+  let value: string;
+  let memberEditor: MemberEditor | null = null;
+  switch (item) {
+    case StaffSetupItem.Name:
+      value = nameOf(input);
+      memberEditor = input.mayEditProfile ? MemberEditor.Profile : null;
+      break;
+    case StaffSetupItem.StartDay:
+      value = dayOf(input.barber.barberStartsLocalDate, input);
+      memberEditor = input.mayManage ? MemberEditor.Period : null;
+      break;
+    case StaffSetupItem.Shops:
+      value = shopsValue(input);
+      break;
+    case StaffSetupItem.Services:
+      value = servicesValue(input);
+      break;
+    default:
+      value = entry.done ? memberWords.hoursSet : memberWords.none;
+  }
+  return {
+    staffSetupItem: item,
+    label,
+    value,
+    done: entry.done,
+    state: entry.done ? memberWords.setupDone : memberWords.setupMissing,
+    memberEditor,
+    testId: `member-setup-${item}`,
+  };
+}
+
+/** The «Профил» group's value rows. */
+function profileRows(
+  input: MemberPageInput,
+  isDraft: boolean,
+): readonly MemberRowVm[] {
+  const { barber, memberWords } = input;
+  const rows: MemberRowVm[] = [
+    {
+      id: 'profile',
+      label: memberWords.profileRow,
+      value:
+        barber.title === null
+          ? memberWords.none
+          : LocalizedText.pick(barber.title, input.locale),
+      memberEditor: input.mayEditProfile ? MemberEditor.Profile : null,
+      testId: 'member-row-profile',
+    },
+  ];
+  // A draft's services are a row of its checklist; a record at work lists
+  // them here.
+  if (!isDraft) {
+    rows.push({
+      id: 'services',
+      label: memberWords.items.get(StaffSetupItem.Services) ?? '',
+      value: servicesValue(input),
+      memberEditor: null,
+      testId: 'member-row-services',
+    });
+  }
+  rows.push({
+    id: 'period',
+    label: memberWords.periodRow,
+    value: periodValue(input),
+    memberEditor: input.mayManage ? MemberEditor.Period : null,
+    testId: 'member-row-period',
+  });
+  return rows;
+}
+
+/** «Администратор, Бръснар» — the roles a row may name, in its order. */
+function rolesLine(member: TeamMember.OfBarber, words: TeamWords): string {
+  const named: string[] = [];
+  for (const [role, word] of words.roles) {
+    if (member.memberRoles.includes(role)) named.push(word);
+  }
+  return named.join(', ');
+}
+
+/** The account block: who is linked, in what roles, and the line under it. */
+function accountOf(input: MemberPageInput): MemberAccountVm | null {
+  const { member, memberWords, recordClaim } = input;
+  if (!input.managesTeam || member === null) return null;
+  const mine = recordClaim === RecordClaim.Mine;
+  const facts = [
+    ...(mine ? [memberWords.mine] : []),
+    rolesLine(member, input.words),
+  ].filter((fact) => fact.length > 0);
+  return {
+    isMine: mine,
+    isOpen: recordClaim === RecordClaim.Open,
+    name: member.memberAccountName,
+    line: facts.join(' · '),
+    footnote: mine
+      ? memberWords.accountMine
+      : member.memberUserId === null
+        ? memberWords.accountNone(firstWord(nameOf(input)))
+        : null,
+  };
+}
+
+/** The way to «Права» for each level the linked account holds. */
+function levelsOf(input: MemberPageInput): readonly LevelLinkVm[] {
+  const { member, words } = input;
+  if (!input.editsPermissions || member === null) return [];
+  const links: LevelLinkVm[] = [];
+  for (const level of StaffPermissions.LEVELS) {
+    if (!member.memberRoles.includes(level)) continue;
+    const departures = StaffPermissions.departuresOf(input.permissions, level);
+    links.push({
+      level,
+      label: input.memberWords.levelRow(words.roles.get(level) ?? level),
+      value:
+        departures.length === 0
+          ? words.standard
+          : words.changes(departures.length),
+      testId: `member-level-${level}`,
+    });
+  }
+  return links;
+}
+
+/** A team member's page: the head, the checklist, the profile, the account. */
+export function memberPageVm(input: MemberPageInput): MemberPageVm {
+  const { barber, memberWords } = input;
+  const name = nameOf(input);
+  const isDraft = barber.barberStatus === BarberStatus.Draft;
+  const setup: SetupRowVm[] = [];
+  if (isDraft) {
+    for (const entry of input.checklist.needed) {
+      const row = setupRow(entry, input);
+      if (row !== null) setup.push(row);
+    }
+  }
+  const bookedBy = input.bookedBy;
+  return {
+    name,
+    standing: standingOf(input),
+    avatarSrc: input.avatarSrc,
+    setup,
+    goesLive: isDraft ? memberWords.goesLive(firstWord(name)) : null,
+    profile: profileRows(input, isDraft),
+    bookedBy:
+      bookedBy === null
+        ? null
+        : {
+            id: bookedBy,
+            word: memberWords.bookedBy.get(bookedBy) ?? bookedBy,
+            options: [...memberWords.bookedBy].map(([status, label]) => ({
+              id: status,
+              label,
+              testId: `member-booked-by-${status}`,
+            })),
+          },
+    manageable: input.mayManage,
+    account: accountOf(input),
+    levels: levelsOf(input),
+    deletable: input.deletable,
+    deleteTitle: memberWords.deleteTitle(name),
+    deleteActions: [
+      {
+        id: DeleteAnswer.Delete,
+        label: memberWords.deleteLabel,
+        role: 'destructive',
+        testId: 'member-delete-confirm',
+      },
+      {
+        id: DeleteAnswer.Cancel,
+        label: memberWords.deleteCancel,
+        role: 'cancel',
+        testId: 'member-delete-cancel',
+      },
+    ],
+    liveReceipt: memberWords.live(firstWord(name)),
+  };
+}

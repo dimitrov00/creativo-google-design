@@ -5,6 +5,7 @@ import type { TeamAdminPorts } from '@core/ports';
 import { Result } from '@core/primitives';
 import { TEAM_ADMIN_PORTS } from '@creativo/infrastructure/firebase-app';
 import { LoadState } from '@creativo/shared/view-state';
+import { UNUSED_RECORD_PORTS } from './team-bed.spec-support';
 import { ELENA, IVAN, STEFAN, TEAM } from './team.fixtures.spec-support';
 import { TeamStore } from './team.store';
 
@@ -31,6 +32,7 @@ function harness() {
       {
         provide: TEAM_ADMIN_PORTS,
         useValue: {
+          ...UNUSED_RECORD_PORTS,
           listTeam,
           setStaffPermissions: async () => Result.ok({ changes: [] }),
         } satisfies TeamAdminPorts,

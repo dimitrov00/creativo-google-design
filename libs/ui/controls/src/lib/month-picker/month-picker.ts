@@ -106,6 +106,13 @@ export class UiMonthPicker {
    * empty and the steps page nothing) until one arrives.
    */
   readonly uiSelected = input.required<LocalDate | null>();
+  /**
+   * The month to draw while NO day is chosen — an optional date opens on
+   * the month it would most likely be picked in (a period's last day on
+   * its start's). No day of it reads as chosen, and it is ignored once
+   * there is a selection. `null` keeps the empty grid.
+   */
+  readonly uiOpensOn = input<LocalDate | null>(null);
   /** Today, so a selected today still says it is today. */
   readonly uiToday = input<LocalDate | null>(null);
   /**
@@ -149,7 +156,8 @@ export class UiMonthPicker {
   readonly uiPicked = output<LocalDate>();
 
   /**
-   * The month on screen, as its 1st — `null` while there is no selection.
+   * The month on screen, as its 1st — `null` while there is no selection
+   * and no month to open on.
    *
    * ⚠ `linkedSignal`, and it carries `previous` forward. Re-deriving on every
    * recompute rather than on a genuine change of source is how a paged month
@@ -161,8 +169,8 @@ export class UiMonthPicker {
     LocalDate | null
   >({
     source: () => {
-      const selected = this.uiSelected();
-      return selected === null ? null : LocalDate.startOfMonth(selected);
+      const anchor = this.uiSelected() ?? this.uiOpensOn();
+      return anchor === null ? null : LocalDate.startOfMonth(anchor);
     },
     computation: (month, previous) =>
       previous !== undefined && previous.source === month

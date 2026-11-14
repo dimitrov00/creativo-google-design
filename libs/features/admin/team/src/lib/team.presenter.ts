@@ -14,7 +14,7 @@ import {
   type Locale,
 } from '@core/primitives';
 import type { TeamSections } from '@core/systems';
-import { formatWallClock } from '@creativo/ui/wall-clock';
+import { dayWords, firstWord, lineOf } from './team.format';
 import {
   type LevelPageVm,
   type LevelRowVm,
@@ -36,32 +36,6 @@ import type { TeamWords } from './team.words';
  * answers of `TeamRosterSystem` and `StaffPermissions`, handed in or asked
  * here; this file gives each its words.
  */
-
-/**
- * The no-break space: inside a fact («31 дек.», «3 от 5») so it is one word
- * to the line breaker, and BEFORE a separator, so a quiet line that wraps
- * ends its first line on the «·».
- */
-const NBSP = ' ';
-
-/** A quiet line of facts: each one word to the line breaker, «·» between. */
-function lineOf(facts: readonly string[]): string {
-  return facts.map((fact) => fact.replaceAll(' ', NBSP)).join(`${NBSP}· `);
-}
-
-/** «31 дек.» · «31 дек. 2027 г.» — a day in a quiet line, the year only outside `today`'s. */
-function dayWords(
-  day: LocalDate,
-  today: LocalDate | null,
-  locale: Locale,
-): string {
-  const sameYear = today !== null && day.slice(0, 4) === today.slice(0, 4);
-  return formatWallClock(day, null, locale, {
-    day: 'numeric',
-    month: 'short',
-    ...(sameYear ? {} : { year: 'numeric' }),
-  });
-}
 
 /** What the Team list is worded from. */
 export type TeamPageInput = {
@@ -118,6 +92,7 @@ function barberRow(
 ): TeamRowVm {
   return {
     id: member.barberId,
+    barberId: member.barberId,
     name: LocalizedText.pick(member.memberName, input.locale),
     line: lineOf([...standingOf(member, input), ...noteOf(member, input)]),
     avatarSrc: input.avatars.get(member.barberId) ?? null,
@@ -135,6 +110,7 @@ function accountRow(
   }
   return {
     id: member.memberUserId,
+    barberId: null,
     name: member.memberAccountName,
     line: roles.join(', '),
     avatarSrc: null,
@@ -181,7 +157,7 @@ function shortName(member: TeamMember, locale: Locale): string {
     member.teamMemberStatus === TeamMemberStatus.RoleOnly
       ? member.memberAccountName
       : LocalizedText.pick(member.memberName, locale);
-  return name.trim().split(/\s+/)[0] ?? name;
+  return firstWord(name);
 }
 
 /** What «Права» is worded from. */

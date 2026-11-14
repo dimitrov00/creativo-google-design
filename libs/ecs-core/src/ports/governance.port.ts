@@ -92,6 +92,29 @@ export type SetRoles = Callable<RolesCall, RolesCall.Changed>;
 export type ListTeam = Callable<TeamCall.ListRequest, TeamCall.Listed>;
 
 /**
+ * `addBarber` — a new barber record as a `DRAFT` (team onboarding D8): the
+ * add sheet's answers in; the record out. The act's operation id IS the new
+ * record's id, so a retry writes nothing twice.
+ */
+export type AddBarber = Callable<TeamCall, TeamCall.Saved>;
+
+/** `editBarber` — one part of one record, replaced whole (`barberEdit` says which). */
+export type EditBarber = Callable<TeamCall.Edit, TeamCall.Saved>;
+
+/** `setBarberOfferings` — a barber's services and prices: the whole list, or a colleague's copied. */
+export type SetBarberOfferings = Callable<TeamCall.Offerings, TeamCall.Saved>;
+
+/** `deleteDraftBarber` — «Изтрий»: a record that never went live, removed. */
+export type DeleteDraftBarber = Callable<TeamCall.Named, TeamCall.Saved>;
+
+/**
+ * `activateBarber` — the idempotent go-live step (team onboarding D9),
+ * asked when a member's page opens on a `DRAFT` and after each save on one:
+ * the answer says what the step came to.
+ */
+export type ActivateBarber = Callable<TeamCall.Named, TeamCall.Activation>;
+
+/**
  * `setStaffPermissions` — the owner's save of what a staff level may do
  * (staff permissions P6): the cells wanted in; the cells that really
  * changed out, each with its scope before and after.
@@ -143,8 +166,22 @@ export type StaffPermissionsSavePorts = {
   readonly setStaffPermissions: SaveStaffPermissions;
 };
 
+/**
+ * A barber record's writes — the add sheet's and the member page's
+ * (team onboarding D5, D8, D9).
+ */
+export type TeamRecordPorts = {
+  readonly addBarber: AddBarber;
+  readonly editBarber: EditBarber;
+  readonly setBarberOfferings: SetBarberOfferings;
+  readonly deleteDraftBarber: DeleteDraftBarber;
+  readonly activateBarber: ActivateBarber;
+};
+
 /** The Team screens' calls — ONE token, `TEAM_ADMIN_PORTS` (web), `teamAdminPorts(gateway)`. */
-export type TeamAdminPorts = TeamListPorts & StaffPermissionsSavePorts;
+export type TeamAdminPorts = TeamListPorts &
+  StaffPermissionsSavePorts &
+  TeamRecordPorts;
 
 /** The governance context's whole port suite — an intersection of its bundles. */
 export type GovernancePorts = AuditPorts & BackfillJobPorts;

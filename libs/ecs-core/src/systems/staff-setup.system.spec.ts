@@ -142,3 +142,27 @@ describe('StaffSetupSystem.checklistOf', () => {
     );
   });
 });
+
+describe('StaffSetupSystem.doneCountOf', () => {
+  it('counts the needed items that are done, never the optional ones', () => {
+    const fresh = StaffSetupSystem.checklistOf(
+      barberFixture({ id: BarberId.of('b-new') }),
+      [],
+      null,
+    );
+    // A name, a start day and the shops are there; services and hours are not.
+    expect(StaffSetupSystem.doneCountOf(fresh)).toBe(3);
+    expect(fresh.needed).toHaveLength(5);
+  });
+
+  it('reaches the needed count exactly when the record is ready', () => {
+    const barber = barberFixture();
+    const ready = StaffSetupSystem.checklistOf(
+      barber,
+      [serviceFixture()],
+      barberScheduleFixture(),
+    );
+    expect(ready.ready).toBe(true);
+    expect(StaffSetupSystem.doneCountOf(ready)).toBe(ready.needed.length);
+  });
+});
