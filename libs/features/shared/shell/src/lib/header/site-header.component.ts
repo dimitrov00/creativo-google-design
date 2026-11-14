@@ -72,6 +72,8 @@ export class SiteHeaderComponent {
   protected readonly isAdmin = this.identity.isAdmin;
   /** The menu's «Анализи» row — whoever the `ANALYTICS` capability reaches. */
   protected readonly readsAnalytics = this.identity.readsAnalytics;
+  /** The menu's «Екип» row — whoever the Team page opens for. */
+  protected readonly opensTeam = this.identity.opensTeam;
 
   protected readonly menuOpen = signal(false);
   protected readonly isScrolled = signal(false);

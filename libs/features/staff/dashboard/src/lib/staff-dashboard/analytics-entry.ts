@@ -1,5 +1,6 @@
 import { Injectable, computed, effect, inject } from '@angular/core';
 import { Router } from '@angular/router';
+import { RouteCapabilities } from '@core/components';
 import {
   AccessScope,
   type BarberId,
@@ -79,8 +80,10 @@ export class AnalyticsEntry {
     this.access.scopeOf(StaffCapability.Analytics),
   );
 
-  /** The person reads some analytics: the chart button is there. */
-  readonly reads = computed(() => this.scope() !== AccessScope.None);
+  /** The route would let the person in: the chart button is there. */
+  readonly reads = computed(() =>
+    this.access.opens(RouteCapabilities.Analytics),
+  );
 
   private prefetched = false;
 

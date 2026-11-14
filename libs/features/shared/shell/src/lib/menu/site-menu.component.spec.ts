@@ -100,6 +100,7 @@ const bg: Translation = {
       staffDay: 'График',
       loyaltyAdmin: 'Лоялност',
       staffAnalytics: 'Анализи',
+      team: 'Екип',
     },
     hero: { cta: 'Запази час' },
     footer: {
@@ -142,6 +143,8 @@ describe('SiteMenuComponent', () => {
     isAdmin?: boolean;
     /** A barber or the admin — surfaces the «Анализи» row. */
     readsAnalytics?: boolean;
+    /** Whoever the Team page opens for — surfaces the «Екип» row. */
+    opensTeam?: boolean;
     /** The account's live bookings — the bookings row counts those still to come. */
     upcoming?: readonly Appointment[];
     /** How many UNREAD notifications the inbox should report. */
@@ -247,6 +250,9 @@ describe('SiteMenuComponent', () => {
     }
     if (inputs.readsAnalytics !== undefined) {
       fixture.componentRef.setInput('readsAnalytics', inputs.readsAnalytics);
+    }
+    if (inputs.opensTeam !== undefined) {
+      fixture.componentRef.setInput('opensTeam', inputs.opensTeam);
     }
     // Several passes: the avatar URL travels principal signal → observable
     // → storage-lookup promise → signal, so the portrait's <img> only
@@ -903,6 +909,68 @@ describe('SiteMenuComponent', () => {
    * draft. The row is UI-only like the schedule's — `rolesGuard('admin',
    * 'sysadmin')` and firestore.rules' `isAdmin()` are the locks.
    */
+  /**
+   * «Екип» — the way to the Team page (team onboarding D8; staff permissions
+   * P10), for whoever it opens for: the owner, and anyone the owner's
+   * permissions let manage the team or edit every barber's profile or
+   * prices. UI-only: the route's capability gate asks the same rule.
+   */
+  describe('the team row', () => {
+    const teamRow = (host: HTMLElement) =>
+      host.querySelector<HTMLAnchorElement>('[data-testid="menu-admin-team"]');
+
+    it('is absent for a staff session the Team page would turn away', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+      });
+      expect(teamRow(fixture.nativeElement)).toBeNull();
+    });
+
+    it('leads to /admin/team as «Екип», first in the group of what one manages', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        isAdmin: true,
+        opensTeam: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      const row = teamRow(host);
+
+      expect(row?.tagName).toBe('A');
+      expect(row?.getAttribute('href')).toBe('/admin/team');
+      expect(row?.textContent).toContain('Екип');
+      const glyph = row?.firstElementChild;
+      expect(glyph?.getAttribute('uiname')).toBe('nav.team');
+      expect(glyph?.getAttribute('data-scale')).toBe('medium');
+      // One group with the loyalty row, and ahead of it.
+      const loyalty = host.querySelector('[data-testid="menu-admin-loyalty"]');
+      expect(row?.closest('ui-list-group')).toBe(
+        loyalty?.closest('ui-list-group'),
+      );
+      expect(
+        (row as Node).compareDocumentPosition(loyalty as Node) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('stands alone for someone who reaches the team and is no admin: a content editor sees «Екип» and no «Лоялност»', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        opensTeam: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      expect(teamRow(host)).not.toBeNull();
+      expect(
+        host.querySelector('[data-testid="menu-admin-loyalty"]'),
+      ).toBeNull();
+    });
+  });
+
   describe('the admin loyalty row', () => {
     it('is absent for a staff session without the admin pair', async () => {
       const fixture = await render({

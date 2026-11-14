@@ -121,6 +121,81 @@ describe('appRoutes — /account/notifications (OR-19)', () => {
 });
 
 /*
+ * `/admin/team` and «Права» (team onboarding D8; staff permissions P10).
+ * The Team page is behind the capabilities that open it; «Права» is the
+ * owner's alone, as its save is.
+ */
+describe('appRoutes — /admin/team', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  const staff = (role: Role) =>
+    principalFixture.staff(UserId.of(`staff-${role}`), [role]);
+
+  test('the owner and a content editor open the Team page; a barber and the front desk do not', async () => {
+    expect(await landingOf(ADMIN, '/admin/team')).toBe('/admin/team');
+    expect(await landingOf(staff(Role.ContentManager), '/admin/team')).toBe(
+      '/admin/team',
+    );
+    for (const role of [Role.Barber, Role.Receptionist, Role.Sysadmin]) {
+      expect(await landingOf(staff(role), '/admin/team')).toBe('/forbidden');
+    }
+    expect(await landingOf(principalFixture.client(), '/admin/team')).toBe(
+      '/forbidden',
+    );
+  });
+
+  test('the owner’s cells decide: the front desk let in to manage the team, a content editor cut from the profiles', async () => {
+    expect(
+      await landingOf(staff(Role.Receptionist), '/admin/team', {
+        permissions: memoryStaffPermissionsStreamPorts(
+          StaffPermissions.read({
+            receptionistTeamManageScope: AccessScope.All,
+          }),
+        ),
+      }),
+    ).toBe('/admin/team');
+    expect(
+      await landingOf(staff(Role.ContentManager), '/admin/team', {
+        permissions: memoryStaffPermissionsStreamPorts(
+          StaffPermissions.read({
+            contentManagerTeamProfilesScope: AccessScope.None,
+          }),
+        ),
+      }),
+    ).toBe('/forbidden');
+  });
+
+  test('«Права» and a level’s page open for the owner alone — not the sysadmin, not whoever manages the team', async () => {
+    expect(await landingOf(ADMIN, '/admin/team/permissions')).toBe(
+      '/admin/team/permissions',
+    );
+    expect(await landingOf(ADMIN, '/admin/team/permissions/barber')).toBe(
+      '/admin/team/permissions/barber',
+    );
+    for (const role of [
+      Role.Sysadmin,
+      Role.ContentManager,
+      Role.Receptionist,
+    ]) {
+      expect(await landingOf(staff(role), '/admin/team/permissions')).toBe(
+        '/forbidden',
+      );
+      expect(
+        await landingOf(staff(role), '/admin/team/permissions/receptionist'),
+      ).toBe('/forbidden');
+    }
+  });
+
+  test('a signed-out visitor is sent to sign in, and back here after', async () => {
+    expect(
+      await landingOf(principalFixture.anonymous(), '/admin/team/permissions'),
+    ).toBe('/auth?redirect=%2Fadmin%2Fteam%2Fpermissions');
+  });
+});
+
+/*
  * `/staff/analytics` (docs/designs/staff-analytics.md, The screen): behind
  * the `ANALYTICS` capability (staff permissions P8). On the standard a
  * barber and the admin open it and nobody else; the owner's cells and the

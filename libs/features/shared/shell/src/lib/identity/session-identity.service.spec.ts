@@ -426,6 +426,23 @@ describe('SessionIdentityService', () => {
       expect(service.readsAnalytics()).toBe(true);
     });
 
+    it('opensTeam: the owner and a content editor on the standard; the owner’s cells move it', () => {
+      const { service, signIn, permissions } = harness(ANONYMOUS_PRINCIPAL);
+      expect(service.opensTeam()).toBe(false);
+      signIn('a', ['admin']);
+      expect(service.opensTeam()).toBe(true);
+      signIn('e', ['content_manager']);
+      expect(service.opensTeam()).toBe(true);
+      signIn('b', ['barber']);
+      expect(service.opensTeam()).toBe(false);
+      signIn('r', ['receptionist']);
+      expect(service.opensTeam()).toBe(false);
+
+      // The owner lets the front desk manage the team.
+      permissions({ receptionistTeamManageScope: AccessScope.All });
+      expect(service.opensTeam()).toBe(true);
+    });
+
     it('reads the STORED roles once the account has loaded, the token’s until then', () => {
       const { service, account, signIn } = harness(ANONYMOUS_PRINCIPAL);
       signIn('desk', ['receptionist']);

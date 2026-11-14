@@ -1,0 +1,143 @@
+/*
+ * THE TEAM SCREENS: «Екип», «Права» and a level's page. Layout only. Every
+ * surface, ink and type role is a DS piece's own; these rules place the
+ * pieces on the space tokens, as the showcase's «Team» composition does. No
+ * `font:` shorthand is written but the value trigger's `font: inherit`
+ * (which re-asserts the tabular figures after it), and the one orange a
+ * rule paints is a changed row's dot: a shape, never a word.
+ */
+
+/* A ROUTED PAGE: one column at the content measure, floored by the dock. */
+.team-page {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--sys-container-content);
+  min-block-size: 100dvh;
+  margin-inline: auto;
+  padding-block-start: var(--sys-space-regular);
+}
+
+/* THE BAR is the DS's collapsing title (ui-sheet-header on a page). The
+   page only runs it edge to edge — its own inset is the page's gutter —
+   and keeps the gap to the large title. */
+.team-page__bar {
+  margin-inline: calc(-1 * var(--sys-space-regular));
+  margin-block-end: var(--sys-space-regular);
+}
+
+/* THE MODULES: 32 apart, and one clear screen under the last so the dock's
+   scrim never covers a row at scroll end. */
+.team-page__modules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  padding-block-end: var(--sys-space-spacious);
+}
+
+/* Heading → body is `compact` (8) under the small-rung heading row. */
+.team-page__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* The head: the title over its lede, the name's `tight` step. */
+.team-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+}
+
+.team-page__head > * {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+/* A name over its quiet line: the two wrap inside the row, never past it. */
+.team-page__identity {
+  min-inline-size: 0;
+}
+
+.team-page__identity > * {
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* A value row's trailing: the value and the disclosure as one quiet run. */
+.team-page__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* A footnote under a group sits on the group's inset. */
+.team-page__footnote {
+  margin: 0;
+  padding-inline: var(--sys-space-regular);
+  text-wrap: pretty;
+}
+
+/* The loading state: a heading's bar over a group's block. */
+.team-page__skeleton {
+  gap: var(--sys-space-compact);
+}
+
+/* ── a permission row ────────────────────────────────────────────────── */
+
+/* The label wraps beside its control; the control keeps the trailing edge
+   and its own line (the rhythm page's row grammar). */
+.team-page__permission.ui-list-row {
+  flex-wrap: wrap;
+  row-gap: var(--sys-space-tight);
+}
+
+.team-page__permission.ui-list-row > .ui-list-row__label {
+  flex: 1 1 auto;
+  white-space: normal;
+  text-wrap: pretty;
+}
+
+.team-page__permission.ui-list-row > [uitrailing] {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/* A CHANGED ROW'S MARK, and a level's with unsaved changes: one orange dot
+   before the words. Colour as a shape; the words stay ink. */
+.team-page__dot {
+  display: inline-block;
+  inline-size: calc(var(--sys-space-unit) * 2);
+  block-size: calc(var(--sys-space-unit) * 2);
+  margin-inline-end: var(--sys-space-compact);
+  border-radius: 50%;
+  background: var(--sys-color-accent);
+  vertical-align: middle;
+}
+
+/* THE VALUE as the row's control (the rhythm page's «Брои се» grammar): a
+   quiet run with the pop-up glyph, its focus ring inside the row. The
+   trailing padding is folded into the row's inset so the glyph ends where
+   the segment's content ends. */
+.team-page__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  min-block-size: var(--control-size-small);
+  max-inline-size: 100%;
+  margin-inline-end: calc(-1 * var(--sys-space-compact));
+  padding-inline: var(--sys-space-compact);
+  border: 0;
+  background: transparent;
+  color: var(--sys-color-secondary-label);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  cursor: pointer;
+}
+
+.team-page__choice > span {
+  white-space: nowrap;
+}

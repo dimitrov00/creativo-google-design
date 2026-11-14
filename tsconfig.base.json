@@ -108,6 +108,9 @@
       "@creativo/features/admin/loyalty": [
         "./libs/features/admin/loyalty/src/index.ts"
       ],
+      "@creativo/features/admin/team": [
+        "./libs/features/admin/team/src/index.ts"
+      ],
       "@creativo/features/shared/catalog": [
         "./libs/features/shared/catalog/src/index.ts"
       ],

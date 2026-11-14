@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   BarberStatus,
   Role,
+  type StaffLevel,
   StaffSetupItem,
+  type TeamMember,
   TeamMemberNote,
   TeamMemberStatus,
 } from '@core/components';
@@ -246,5 +248,111 @@ describe('TeamRosterSystem.membersOf — the Team page’s rows', () => {
     expect(TeamRosterSystem.membersOf(frozen)).toEqual(
       TeamRosterSystem.membersOf(frozen),
     );
+    const members = deepFreeze([...TeamRosterSystem.membersOf(frozen)]);
+    expect(TeamRosterSystem.sectionsOf(members)).toEqual(
+      TeamRosterSystem.sectionsOf(members),
+    );
+    expect(TeamRosterSystem.holdersOf(members, Role.Receptionist)).toEqual(
+      TeamRosterSystem.holdersOf(members, Role.Receptionist),
+    );
+  });
+});
+
+describe('TeamRosterSystem.sectionsOf — the page’s three runs', () => {
+  const gone = barberFixture(
+    {
+      id: BarberId.of('b-gone'),
+      sortOrder: 0,
+      barberLastWorkingLocalDate: localDate('2026-10-31'),
+    },
+    {
+      barberStatus: BarberStatus.Departed,
+      barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      barberDepartedUserId: null,
+      barberSessionsRevokedAtUtcMs: null,
+      barberRehireStatus: BarberStatus.Public,
+    },
+  );
+  const members = TeamRosterSystem.membersOf(
+    facts({
+      barbers: [ivan, niko, draft, gone],
+      accounts: [
+        account('u-desk', [Role.Receptionist]),
+        account('u-ivan', [Role.Barber], IVAN),
+      ],
+    }),
+  );
+
+  it('sets the leavers apart and keeps each run in the members’ order', () => {
+    const sections = TeamRosterSystem.sectionsOf(members);
+    expect(sections.working.map((member) => member.barberId)).toEqual(
+      members
+        .filter(
+          (member) =>
+            member.teamMemberStatus !== TeamMemberStatus.RoleOnly &&
+            member.teamMemberStatus !== TeamMemberStatus.Departed,
+        )
+        .map((member) => ('barberId' in member ? member.barberId : null)),
+    );
+    expect(sections.working.map((member) => member.barberId)).not.toContain(
+      gone.id,
+    );
+    expect(sections.departed.map((member) => member.barberId)).toEqual([
+      gone.id,
+    ]);
+    expect(sections.others.map((member) => member.memberUserId)).toEqual([
+      UserId.of('u-desk'),
+    ]);
+    // Every member stands in exactly one run.
+    expect(
+      sections.working.length +
+        sections.others.length +
+        sections.departed.length,
+    ).toBe(members.length);
+  });
+
+  it('answers three empty runs for an empty shop', () => {
+    expect(TeamRosterSystem.sectionsOf([])).toEqual({
+      working: [],
+      others: [],
+      departed: [],
+    });
+  });
+});
+
+describe('TeamRosterSystem.holdersOf — who holds a staff level', () => {
+  const members = TeamRosterSystem.membersOf(
+    facts({
+      barbers: [ivan, niko],
+      accounts: [
+        account('u-desk', [Role.Receptionist]),
+        account('u-both', [Role.Receptionist, Role.ContentManager]),
+        account('u-ivan', [Role.Barber], IVAN),
+      ],
+    }),
+  );
+
+  it('names every member whose stored roles hold the level, in the members’ order', () => {
+    const names = (level: StaffLevel) =>
+      TeamRosterSystem.holdersOf(members, level).map((member) =>
+        'barberId' in member ? member.barberId : member.memberUserId,
+      );
+    // Ivan's record is linked to a barber's account; Niko's has none.
+    expect(names(Role.Barber)).toEqual([IVAN]);
+    expect(names(Role.Receptionist).sort()).toEqual(
+      [UserId.of('u-both'), UserId.of('u-desk')].sort(),
+    );
+    expect(names(Role.ContentManager)).toEqual([UserId.of('u-both')]);
+  });
+
+  it('never names a leaver, whatever roles the row still carries', () => {
+    const leaver: TeamMember = {
+      ...(members.find(
+        (member) => 'barberId' in member,
+      ) as TeamMember.OfBarber),
+      teamMemberStatus: TeamMemberStatus.Departed,
+      memberRoles: [Role.Barber],
+    };
+    expect(TeamRosterSystem.holdersOf([leaver], Role.Barber)).toEqual([]);
   });
 });

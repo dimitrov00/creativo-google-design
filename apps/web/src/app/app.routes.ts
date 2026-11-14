@@ -1,7 +1,6 @@
 import { CanDeactivateFn, Route } from '@angular/router';
 import { firstValueFrom, isObservable } from 'rxjs';
-import { Role, Roles, type RouteCapability } from '@core/components';
-import { AccessScope, StaffCapability } from '@core/primitives';
+import { Role, RouteCapabilities, Roles } from '@core/components';
 import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
@@ -35,17 +34,6 @@ const adminRhythmLeaveGuard: CanDeactivateFn<
     nextState,
   );
   return isObservable(answer) ? firstValueFrom(answer) : answer;
-};
-
-/**
- * What opens «Анализи»: the `ANALYTICS` capability at "own" or wider — a
- * barber's own figures on the standard, the shop's for the admin, and
- * whatever the owner has set since (staff permissions P8). The screen then
- * shows the scope picker by the same capability.
- */
-const READS_ANALYTICS: RouteCapability = {
-  staffCapability: StaffCapability.Analytics,
-  accessScope: AccessScope.Own,
 };
 
 // Route tree per blueprint §1.4 — 1:1 with v2. Feature libs are still
@@ -159,7 +147,7 @@ export const appRoutes: Route[] = [
     // has given the `ANALYTICS` capability since. The gate reads the stored
     // account and the owner's cells, as the callable does.
     path: 'staff/analytics',
-    canActivate: [activeGuard, capabilityGuard(READS_ANALYTICS)],
+    canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Analytics)],
     loadComponent: () =>
       import('@creativo/features/staff/analytics').then(
         (m) => m.StaffAnalyticsPage,
@@ -169,7 +157,7 @@ export const appRoutes: Route[] = [
     // A card of «Анализи» on its own screen (docs/designs/
     // staff-analytics-v3-revolut.md): the same gate as the home.
     path: 'staff/analytics/:card',
-    canActivate: [activeGuard, capabilityGuard(READS_ANALYTICS)],
+    canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Analytics)],
     loadComponent: () =>
       import('@creativo/features/staff/analytics').then(
         (m) => m.AnalyticsCardPage,
@@ -201,6 +189,35 @@ export const appRoutes: Route[] = [
     canActivate: [activeGuard, rolesGuard(Role.ContentManager, ...Roles.ADMIN)],
     loadComponent: () =>
       import('@creativo/features/admin/programs').then((m) => m.AdminPrograms),
+  },
+  {
+    // «Екип» (team onboarding D8; staff permissions P10): everyone who
+    // works here. Behind the capabilities that open it — the owner, and
+    // whoever the owner lets manage the team or edit every barber's profile
+    // or prices; `listTeam` then answers as far as the person reaches.
+    path: 'admin/team',
+    canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Team)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team').then((m) => m.AdminTeam),
+  },
+  {
+    // «Права» — what each staff level may do. The owner's alone, as the
+    // save is (`Roles.ASSIGN`: the admin, never the vendor's sysadmin); the
+    // callable judges the stored account again.
+    path: 'admin/team/permissions',
+    canActivate: [activeGuard, rolesGuard(...Roles.ASSIGN)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team').then((m) => m.AdminPermissions),
+  },
+  {
+    // One level's page; `:level` is the level's own word (`barber`,
+    // `receptionist`, `content_manager`), bound to the page as an input.
+    path: 'admin/team/permissions/:level',
+    canActivate: [activeGuard, rolesGuard(...Roles.ASSIGN)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team').then(
+        (m) => m.AdminPermissionLevel,
+      ),
   },
   {
     // The loyalty rules' home; its one page today is the rhythm's. The

@@ -216,6 +216,8 @@ describe('SiteHeaderComponent', () => {
       expect(menu.isStaffMember()).toBe(true);
       expect(menu.isAdmin()).toBe(true);
       expect(menu.readsAnalytics()).toBe(true);
+      // The owner reaches the team.
+      expect(menu.opensTeam()).toBe(true);
     });
 
     it('keeps a barber out of the pair', async () => {
@@ -226,6 +228,8 @@ describe('SiteHeaderComponent', () => {
       expect(menu.isAdmin()).toBe(false);
       // A barber reads their own analytics.
       expect(menu.readsAnalytics()).toBe(true);
+      // …and edits their own profile only: the Team page is not theirs.
+      expect(menu.opensTeam()).toBe(false);
     });
 
     it('keeps a receptionist away from the analytics row', async () => {

@@ -7,6 +7,7 @@ import {
   type Principal,
   Principal as P,
   Role,
+  RouteCapabilities,
   type RouteCapability,
   RouteGate,
   SessionReadiness,
@@ -293,6 +294,44 @@ describe('SessionAccessSystem.decide — the capability gate (staff permissions 
     expect(SessionAccessSystem.decide(staff, gate([Role.Admin], []))).toEqual(
       FORBIDDEN,
     );
+  });
+
+  it('RouteCapabilities: what opens «Анализи» and «Екип», read by the gate and by every way in', () => {
+    const opens = (
+      route: readonly RouteCapability[],
+      roles: readonly Role[],
+      stored: Record<string, unknown> = {},
+    ) => SessionAccessSystem.opens(route, StaffPermissions.read(stored), roles);
+
+    // «Анализи»: a barber's own, the admin's everything.
+    expect(opens(RouteCapabilities.Analytics, [Role.Barber])).toBe(true);
+    expect(opens(RouteCapabilities.Analytics, [Role.Admin])).toBe(true);
+    expect(opens(RouteCapabilities.Analytics, [Role.Receptionist])).toBe(false);
+
+    // «Екип»: the admin, and a content editor for the profiles; not a barber
+    // (own profile only) and not the front desk.
+    expect(opens(RouteCapabilities.Team, [Role.Admin])).toBe(true);
+    expect(opens(RouteCapabilities.Team, [Role.ContentManager])).toBe(true);
+    expect(opens(RouteCapabilities.Team, [Role.Barber])).toBe(false);
+    expect(opens(RouteCapabilities.Team, [Role.Receptionist])).toBe(false);
+    // The owner lets the front desk manage the team.
+    expect(
+      opens(RouteCapabilities.Team, [Role.Receptionist], {
+        receptionistTeamManageScope: 'ALL',
+      }),
+    ).toBe(true);
+    // …and takes the profiles from the content editors.
+    expect(
+      opens(RouteCapabilities.Team, [Role.ContentManager], {
+        contentManagerTeamProfilesScope: 'NONE',
+      }),
+    ).toBe(false);
+    // The gate and `opens` are one rule.
+    for (const roles of [[Role.Barber], [Role.ContentManager], [Role.Admin]]) {
+      expect(
+        verdict(roles, RouteCapabilities.Team) === AccessVerdict.Allow,
+      ).toBe(opens(RouteCapabilities.Team, roles));
+    }
   });
 
   it('reads the STORED roles it is handed, not the token’s — and turns away a principal that is not active', () => {

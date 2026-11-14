@@ -14,6 +14,7 @@ import {
   Principal,
   Role,
   Roles,
+  type RouteCapability,
   StaffLink,
   StaffPermissions,
 } from '@core/components';
@@ -23,7 +24,11 @@ import {
   type StaffCapability,
   type UserId,
 } from '@core/primitives';
-import { type StaffAccess, StaffAccessSystem } from '@core/systems';
+import {
+  SessionAccessSystem,
+  type StaffAccess,
+  StaffAccessSystem,
+} from '@core/systems';
 import { AccountStateService } from './account-state.service';
 
 /** Who reads the cells: the signed-in person, and whether their token holds a staff role. */
@@ -202,6 +207,32 @@ export class StaffAccessService {
         )
       : AccessScope.None;
   }
+
+  /**
+   * Whether the person's levels open a route the owner's permissions decide
+   * (`RouteCapabilities`) — the gate's own rule (`SessionAccessSystem.opens`),
+   * so a way in is shown exactly when the route would let the person in.
+   * Never on a half-read session.
+   */
+  opens(routeCapabilities: readonly RouteCapability[]): boolean {
+    return (
+      this.settled() &&
+      SessionAccessSystem.opens(
+        routeCapabilities,
+        this.permissions(),
+        this.storedRoles(),
+      )
+    );
+  }
+
+  /**
+   * The person edits «Права»: the owner alone (`Roles.assignsRoles` on the
+   * stored roles, as `setStaffPermissions` admits). Never on a half-read
+   * session.
+   */
+  readonly editsPermissions: Signal<boolean> = computed(
+    () => this.settled() && Roles.assignsRoles(this.storedRoles()),
+  );
 
   /** The reach for one capability: its scope and the record that is one's own. */
   accessOf(staffCapability: StaffCapability): StaffAccess {

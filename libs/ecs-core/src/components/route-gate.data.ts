@@ -1,4 +1,4 @@
-import type { AccessScope, StaffCapability } from '@core/primitives';
+import { AccessScope, StaffCapability } from '@core/primitives';
 import type { Role } from './role.data';
 import type { StaffPermissions } from './staff-permissions.data';
 
@@ -30,6 +30,44 @@ export type RouteCapability = {
   readonly staffCapability: StaffCapability;
   readonly accessScope: typeof AccessScope.Own | typeof AccessScope.All;
 };
+
+/**
+ * WHAT OPENS EACH ROUTE THE OWNER'S PERMISSIONS DECIDE — one definition,
+ * read by the route's gate and by every way in to it (the menu's row, the
+ * schedule's chart button), so a way in can never show for a route that
+ * would turn the person away.
+ */
+export const RouteCapabilities = {
+  /**
+   * «Анализи»: the figures at "own" or wider — a barber's own on the
+   * standard, the shop's for the admin.
+   */
+  Analytics: [
+    {
+      staffCapability: StaffCapability.Analytics,
+      accessScope: AccessScope.Own,
+    },
+  ],
+  /**
+   * «Екип»: whoever manages the team sees everyone; whoever edits every
+   * barber's profile or prices reaches the records for it (`listTeam`
+   * answers the records alone for them).
+   */
+  Team: [
+    {
+      staffCapability: StaffCapability.TeamManage,
+      accessScope: AccessScope.All,
+    },
+    {
+      staffCapability: StaffCapability.TeamProfiles,
+      accessScope: AccessScope.All,
+    },
+    {
+      staffCapability: StaffCapability.TeamOfferings,
+      accessScope: AccessScope.All,
+    },
+  ],
+} as const satisfies Record<string, readonly RouteCapability[]>;
 
 /** The guard a route mounts, with what that guard reads (`SessionAccessSystem.decide`). */
 export type RouteGateRule =

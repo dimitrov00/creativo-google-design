@@ -85,6 +85,8 @@ import {
   provideLazyPort,
   rolesAdminPorts,
   analyticsCallPorts,
+  teamAdminPorts,
+  TEAM_ADMIN_PORTS,
   TEAM_BARBER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
@@ -392,6 +394,12 @@ export const appConfig: ApplicationConfig = {
     {
       provide: ROLES_ADMIN_PORTS,
       useFactory: () => rolesAdminPorts(inject(GATEWAY_PORTS)),
+    },
+    // The Team screens' read and the owner's save of «Права», over the same
+    // callable client.
+    {
+      provide: TEAM_ADMIN_PORTS,
+      useFactory: () => teamAdminPorts(inject(GATEWAY_PORTS)),
     },
     // The staff «Анализи» report, over the same callable client.
     {

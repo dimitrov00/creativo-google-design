@@ -1,5 +1,6 @@
 import {
   BarberStatus,
+  type StaffLevel,
   type TeamMember,
   TeamMemberNote,
   TeamMemberStatus,
@@ -12,6 +13,16 @@ import {
   type User,
 } from '@core/entities';
 import { StaffSetupSystem } from './staff-setup.system';
+
+/** The Team page's runs (`TeamRosterSystem.sectionsOf`). */
+export type TeamSections = {
+  /** Barber records that are setting up or working, in team order. */
+  readonly working: readonly TeamMember.OfBarber[];
+  /** Staff accounts linked to no record, by name. */
+  readonly others: readonly TeamMember.RoleOnly[];
+  /** Barber records that have left, in team order. */
+  readonly departed: readonly TeamMember.OfBarber[];
+};
 
 /** What the Team page's read found: every record and every staff account. */
 export type TeamRosterFacts = {
@@ -151,5 +162,43 @@ export const TeamRosterSystem = {
       });
     }
     return [...members, ...roleOnly.sort(byAccountName)];
+  },
+
+  /**
+   * The page's three runs, each in the members' own order: the barbers who
+   * are setting up or working, the staff accounts with no record, and the
+   * barbers who have left — set apart, because a leaver is history, not
+   * someone to open today.
+   */
+  sectionsOf(members: readonly TeamMember[]): TeamSections {
+    const working: TeamMember.OfBarber[] = [];
+    const others: TeamMember.RoleOnly[] = [];
+    const departed: TeamMember.OfBarber[] = [];
+    for (const member of members) {
+      if (member.teamMemberStatus === TeamMemberStatus.RoleOnly) {
+        others.push(member);
+      } else if (member.teamMemberStatus === TeamMemberStatus.Departed) {
+        departed.push(member);
+      } else {
+        working.push(member);
+      }
+    }
+    return { working, others, departed };
+  },
+
+  /**
+   * Who holds a staff level, in the members' order: every member whose
+   * stored roles name it. A leaver is none of them — their roles went with
+   * them — and a barber record with no account holds no level yet.
+   */
+  holdersOf(
+    members: readonly TeamMember[],
+    level: StaffLevel,
+  ): readonly TeamMember[] {
+    return members.filter(
+      (member) =>
+        member.teamMemberStatus !== TeamMemberStatus.Departed &&
+        member.memberRoles.includes(level),
+    );
   },
 } as const;

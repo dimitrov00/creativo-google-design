@@ -1,5 +1,6 @@
 import {
   AccessScope,
+  CapabilityGroup,
   StaffCapability,
   StoredFields,
   Tag,
@@ -183,6 +184,31 @@ function cellsOf(
 /** Every cell following its default — what no document reads as. */
 const UNSET: StaffPermissions = cellsOf(() => null);
 
+/** The scopes in the order an editor offers them: nobody, own, everyone. */
+const SCOPES: readonly AccessScope[] = [None, Own, All];
+
+/** One group of a level's page: its tag and its capabilities, in the page's order. */
+type CapabilityGroupRows = {
+  readonly capabilityGroup: CapabilityGroup;
+  readonly staffCapabilities: readonly StaffCapability[];
+};
+
+/** P2's groups — every capability stands in exactly one (a spec holds it). */
+const GROUPS: readonly CapabilityGroupRows[] = [
+  {
+    capabilityGroup: CapabilityGroup.Schedule,
+    staffCapabilities: [TimeOff, Hours],
+  },
+  {
+    capabilityGroup: CapabilityGroup.Analytics,
+    staffCapabilities: [Analytics],
+  },
+  {
+    capabilityGroup: CapabilityGroup.Team,
+    staffCapabilities: [TeamProfiles, TeamOfferings, TeamManage],
+  },
+];
+
 /** Whether a cell offers a scope: nobody and everyone always; "own" on the barber level, for a capability a barber can own. */
 function offers(
   level: StaffLevel,
@@ -201,6 +227,39 @@ export const StaffPermissions = {
   SYSADMIN,
   /** Every cell following its default — no document, or one the owner never changed. */
   UNSET,
+  /** A level's page, group by group (P2, P10): every capability once. */
+  GROUPS,
+
+  /** What a cell grants when the owner has changed nothing. */
+  standardOf(level: StaffLevel, capability: StaffCapability): AccessScope {
+    return DEFAULT[level][capability];
+  },
+
+  /**
+   * The scopes a cell offers, in the editor's order — nobody, own, everyone.
+   * Two of them make a switch; three make a choice.
+   */
+  offered(
+    level: StaffLevel,
+    capability: StaffCapability,
+  ): readonly AccessScope[] {
+    return SCOPES.filter((scope) => offers(level, capability, scope));
+  },
+
+  /**
+   * The capabilities on which a level departs from the standard, in
+   * dictionary order — what «Права» counts as a level's changes.
+   */
+  departuresOf(
+    permissions: StaffPermissions,
+    level: StaffLevel,
+  ): readonly StaffCapability[] {
+    return Tag.values(StaffCapability).filter(
+      (capability) =>
+        (permissions[FIELDS[level][capability]] ??
+          DEFAULT[level][capability]) !== DEFAULT[level][capability],
+    );
+  },
 
   /** The edge guard for an untrusted level — a wire scalar, a stored role. */
   isLevel(value: unknown): value is StaffLevel {

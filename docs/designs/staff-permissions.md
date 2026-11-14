@@ -1072,8 +1072,45 @@ editors"); its server half is merged.
   - Left as it is: «Без край» on the block sheet writes a weekly break, so
     it asks `HOURS`. Someone with `TIME_OFF` alone still sees the choice
     and gets the server's worded refusal on save.
-- **Still to build in this stage.** The Team page, its editors and the add
-  sheet; «Права»; the «Това съм аз» door; the end-to-end exit tests.
+- **Built so far: the Team list and «Права».** A library of its own
+  (`libs/features/admin/team`) and three routes: `/admin/team`,
+  `/admin/team/permissions` and `/admin/team/permissions/:level`.
+  - Who gets in. The Team list opens for anyone one of the team's three
+    capabilities reaches everyone for (`RouteCapabilities.Team`:
+    `TEAM_MANAGE`, `TEAM_PROFILES` or `TEAM_OFFERINGS`), which is the
+    question `listTeam` asks. «Права» is the owner's alone (`Roles.ASSIGN`),
+    as `setStaffPermissions` is. The menu's «Екип» row and the list's
+    «Права» row ask the same two rules (`StaffAccessService.opens`,
+    `editsPermissions`), so neither leads to the forbidden page.
+  - The list reads `listTeam` on each visit (`TeamStore`). Its runs are
+    `TeamRosterSystem.sectionsOf`: the barbers who have not left, the
+    accounts with a staff role and no record, and those who left. A row
+    words how the record stands, a draft's progress and its one note.
+    Someone without `TEAM_MANAGE` gets the records alone from the server,
+    and a lede that says so. The rows open nothing yet: the member page is
+    the next slice.
+  - «Права» keeps one draft for all levels (`PermissionsStore`): the
+    answers the owner wants, which `StaffPermissionsEditSystem.plan` turns
+    into the changes to send. An answer put back by hand therefore leaves
+    the draft clean, and «Запази» leaves the dock. A level's row names who
+    holds it (`TeamRosterSystem.holdersOf`) and counts how far it departs
+    from the standard (`StaffPermissions.departuresOf`). A level's page
+    lists its rows in three groups (`StaffPermissions.GROUPS`): a cell with
+    two answers is a switch, one with three is a menu. «Запази» sends the
+    whole draft in one call; «Върни стандартните» drafts the standard for
+    one level.
+  - Everyone else's session follows at once. The end-to-end case has the
+    owner switch off the front desk's hours while a front-desk session has
+    the ＋ open: «Работно време» leaves that menu with no reload, and comes
+    back when the owner restores the standard. That the same session's call
+    is refused is the emulator suite's case (`staff-permissions`
+    integration spec). A second case holds that a content editor sees the
+    records and no accounts and is turned away from «Права», and that a
+    barber is turned away from the list.
+- **Still to build in this stage.** The member page, its editors and the
+  add sheet; the «Това съм аз» door; the end-to-end exit tests that need
+  them (an owner links themself to a record, a content manager reaches a
+  barber's profile from the list).
 
 ### Stage B. The booking calls
 

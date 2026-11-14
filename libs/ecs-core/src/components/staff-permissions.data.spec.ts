@@ -173,6 +173,69 @@ describe('StaffPermissions.offers — which scopes a cell can hold', () => {
   });
 });
 
+describe('StaffPermissions — what an editor reads off the grid (P10)', () => {
+  it('GROUPS: every capability stands in exactly one group, in dictionary order', () => {
+    const grouped = StaffPermissions.GROUPS.flatMap(
+      (group) => group.staffCapabilities,
+    );
+    expect(grouped).toEqual(CAPABILITIES);
+    expect(
+      StaffPermissions.GROUPS.map((group) => group.capabilityGroup),
+    ).toEqual(['SCHEDULE', 'ANALYTICS', 'TEAM']);
+  });
+
+  it('standardOf is the default table, cell by cell', () => {
+    for (const [level, capability] of CELLS) {
+      expect(StaffPermissions.standardOf(level, capability)).toBe(
+        StaffPermissions.DEFAULT[level][capability],
+      );
+    }
+  });
+
+  it('offered: nobody and everyone on every cell, "own" between them where the cell offers it', () => {
+    expect(StaffPermissions.offered(Barber, StaffCapability.Hours)).toEqual([
+      None,
+      Own,
+      All,
+    ]);
+    // A switch: the team row, and every row off the barber level.
+    expect(
+      StaffPermissions.offered(Barber, StaffCapability.TeamManage),
+    ).toEqual([None, All]);
+    expect(
+      StaffPermissions.offered(Receptionist, StaffCapability.Hours),
+    ).toEqual([None, All]);
+    for (const [level, capability] of CELLS) {
+      for (const scope of StaffPermissions.offered(level, capability)) {
+        expect(StaffPermissions.offers(level, capability, scope)).toBe(true);
+      }
+    }
+  });
+
+  it('departuresOf: the capabilities on which a level has left the standard — none for an untouched shop', () => {
+    for (const level of LEVELS) {
+      expect(
+        StaffPermissions.departuresOf(StaffPermissions.UNSET, level),
+      ).toEqual([]);
+    }
+    const cells = StaffPermissions.read({
+      barberTimeOffScope: All,
+      barberTeamOfferingsScope: Own,
+      // The standard, spelled out: no departure.
+      barberHoursScope: Own,
+      receptionistHoursScope: None,
+    });
+    expect(StaffPermissions.departuresOf(cells, Barber)).toEqual([
+      StaffCapability.TimeOff,
+      StaffCapability.TeamOfferings,
+    ]);
+    expect(StaffPermissions.departuresOf(cells, Receptionist)).toEqual([
+      StaffCapability.Hours,
+    ]);
+    expect(StaffPermissions.departuresOf(cells, ContentManager)).toEqual([]);
+  });
+});
+
 describe('StaffPermissions.read — the reading guard (P5, O11)', () => {
   it('reads an absent field and null as "follows the default"', () => {
     const read = StaffPermissions.read({ barberHoursScope: null });

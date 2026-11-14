@@ -1,0 +1,132 @@
+<ng-container *transloco="let t">
+  <main
+    class="team-page"
+    uiPaddingHorizontal="regular"
+    data-testid="admin-permissions"
+  >
+    <ui-sheet-header uiPage class="team-page__bar">
+      <a
+        uiLeading
+        uiButton
+        routerLink="/admin/team"
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.permissions.back')"
+        data-testid="admin-permissions-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+      <span uiTitle>{{ t('admin.permissions.title') }}</span>
+    </ui-sheet-header>
+
+    <div class="team-page__modules">
+      <header class="team-page__head">
+        <h1
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+          data-testid="admin-permissions-title"
+        >
+          {{ t('admin.permissions.title') }}
+        </h1>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('admin.permissions.lede') }}
+        </p>
+      </header>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="assertive"
+        data-testid="admin-permissions-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      } @if (vm(); as page) {
+      <section class="team-page__module">
+        <ui-list-group data-testid="admin-permissions-levels">
+          @for (row of page.levels; track row.level) {
+          <a
+            [routerLink]="['/admin/team/permissions', row.level]"
+            uiListRow
+            uiSize="large"
+            [uiInteractive]="true"
+            [attr.data-unsaved]="row.unsaved ? '' : null"
+            [attr.data-testid]="row.testId"
+          >
+            <ui-stack uiSpacing="tight" class="team-page__identity">
+              <span>
+                @if (row.unsaved) {
+                <span class="team-page__dot" aria-hidden="true"></span>
+                <span uiVisuallyHidden
+                  >{{ t('admin.permissions.unsaved') }}.
+                </span>
+                }{{ row.name }}
+              </span>
+              @if (row.holders) {
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ row.holders }}</span
+              >
+              }
+            </ui-stack>
+            <span uiTrailing class="team-page__value">
+              <span>{{ row.value }}</span>
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </a>
+          }
+        </ui-list-group>
+      </section>
+
+      <section class="team-page__module">
+        <ui-list-group>
+          <ui-list-row uiSize="large" data-testid="permissions-level-admin">
+            <ui-stack uiSpacing="tight" class="team-page__identity">
+              <span>{{ page.adminTitle }}</span>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ page.adminLine }}</span
+              >
+            </ui-stack>
+          </ui-list-row>
+        </ui-list-group>
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="team-page__footnote"
+        >
+          {{ t('admin.permissions.footnote') }}
+        </p>
+      </section>
+      }
+    </div>
+
+    <!-- The dock: hugged, trailing; present only while the draft differs. -->
+    @if (store.dirty()) {
+    <ui-page-action-bar data-testid="admin-permissions-dock">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [uiLoading]="store.saving()"
+        data-testid="admin-permissions-save"
+        (click)="save()"
+      >
+        {{ t('admin.permissions.save') }}
+      </button>
+    </ui-page-action-bar>
+    }
+  </main>
+
+  <!-- The receipt: said in passing, gone on the next change. -->
+  <ui-toast
+    [uiPresented]="store.receipt()"
+    [uiLabel]="t('admin.permissions.saved')"
+    [uiDismissLabel]="t('admin.permissions.dismiss')"
+    data-testid="admin-permissions-toast"
+    (uiDismissed)="store.dismissReceipt()"
+  />
+</ng-container>

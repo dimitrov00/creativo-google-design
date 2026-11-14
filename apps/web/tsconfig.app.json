@@ -11,9 +11,6 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
-      "path": "../../libs/features/client/account-state/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/ui/tokens/tsconfig.lib.json"
     },
     {
@@ -21,6 +18,12 @@
     },
     {
       "path": "../../libs/ui/modifiers/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/client/account-state/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/admin/team/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/admin/programs/tsconfig.lib.json"
