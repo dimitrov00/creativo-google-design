@@ -92,8 +92,13 @@ export class AnalyticsEntry {
     });
   }
 
-  /** Opens «Анализи» on `day`, for the chair the book shows (`chair`: every chair when `null`). */
-  open(chair: BarberId | null, day: LocalDate): void {
+  /**
+   * Opens «Анализи» on `day`, for the chair the book shows (`chair`: every
+   * chair when `null`). No day before the shop's zone is known: nothing to
+   * open on.
+   */
+  open(chair: BarberId | null, day: LocalDate | null): void {
+    if (day === null) return;
     void this.router.navigate(['/staff/analytics'], {
       queryParams: analyticsEntryQueryOf(
         this.scope() === AccessScope.All,

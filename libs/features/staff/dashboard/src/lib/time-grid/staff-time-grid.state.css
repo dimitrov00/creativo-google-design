@@ -401,6 +401,20 @@
   transform: scale(0.99);
 }
 
+/* DRAWN, NOT THIS PERSON'S TO CHANGE (staff permissions P8): a colleague's
+   blocked time answers neither a hover nor a press, and the pointer does
+   not promise a control. It keeps its place, its words and its focus ring,
+   so it reads as part of the day. */
+.staff-grid__event[data-readonly] {
+  cursor: default;
+}
+
+.staff-grid__event[data-readonly]:hover,
+.staff-grid__event[data-readonly]:active {
+  filter: none;
+  transform: none;
+}
+
 .staff-grid__event:focus-visible {
   outline: 2px solid var(--sys-color-accent);
   outline-offset: 1px;

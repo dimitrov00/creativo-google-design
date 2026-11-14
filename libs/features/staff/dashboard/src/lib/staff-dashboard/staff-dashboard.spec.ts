@@ -10039,6 +10039,235 @@ describe('StaffDashboard', () => {
         TestBed.inject(ScheduleStatusFilter).showAll();
       });
 
+      describe('hours and blocked time follow HOURS and TIME_OFF — a colleague’s is read-only (staff permissions P8)', () => {
+        const STAFF = AccountId.of('dev-staff-ivan');
+        const BLOCK = 'block:ivan:2026-08-05:720';
+        const LUNCH_ID = 'break:ivan:2026-08-05:780';
+        type GatePage = {
+          blockEdit: () => { readonly barberIds: readonly string[] } | null;
+          blockChairs: () => readonly { readonly id: string }[];
+          hoursChairs: () => readonly { readonly id: string }[];
+          movableIds: () => ReadonlySet<string>;
+          readOnlyIds: () => ReadonlySet<string>;
+          allDayShut: () => ReadonlySet<string>;
+          openBlock: (id: string) => void;
+          openBlockSheet: (barberId: BarberId) => void;
+          store: { setView: (view: StaffView) => void };
+          breakFlow: {
+            question: () => unknown;
+            actions: () => readonly { readonly id: string }[];
+            pick: (id: string) => Promise<void>;
+          };
+        };
+        const gatePage = () => fixture.componentInstance as unknown as GatePage;
+        const ids = (chairs: readonly { readonly id: string }[]) =>
+          chairs.map((chair) => chair.id);
+        const blockRow = () =>
+          host().querySelector<HTMLElement>(
+            `[data-testid="staff-block-row"][data-row-id="${BLOCK}"]`,
+          );
+        const gridBlock = (id: string) =>
+          host().querySelector<HTMLElement>(
+            `.staff-grid__event[data-event-id="${id}"]`,
+          );
+        const addRow = (testId: string) => {
+          (
+            host().querySelector(
+              '[data-testid="staff-add-trigger"]',
+            ) as HTMLButtonElement
+          ).click();
+          fixture.detectChanges();
+          const row = host().querySelector(`[data-testid="${testId}"]`);
+          (
+            host().querySelector(
+              '[data-testid="staff-add-trigger"]',
+            ) as HTMLButtonElement
+          ).click();
+          fixture.detectChanges();
+          return row;
+        };
+        const saved = (stored: Record<string, unknown>): void => {
+          permissions$.next(PortResult.ok(StaffPermissions.read(stored)));
+          fixture.detectChanges();
+        };
+
+        /**
+         * Who is at the book, as the server would read them: the stored
+         * account's roles and the record that is its own. Ivan's day holds
+         * a block at 12:00 and his Wednesday lunch at 13:00.
+         */
+        async function atTheBook(
+          roles: readonly Role[],
+          linked: string | null,
+        ): Promise<void> {
+          profiles.set(
+            STAFF,
+            registeredUserFixture({
+              id: STAFF,
+              roles,
+              linkedBarberId: linked === null ? null : BarberId.of(linked),
+            }),
+          );
+          principal$.next(principalFixture.staff(STAFF, roles));
+          blockOn('2026-08-05', wallAt(12), until(13));
+          ivanBreaks = [
+            RosterBreak.of(Weekday.Wed, MinuteRange.of(wallAt(13), until(14))),
+          ];
+          await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        }
+
+        afterEach(() => {
+          profiles.delete(STAFF);
+          ivanBreaks = [];
+          permissions$.next(PortResult.ok(StaffPermissions.UNSET));
+          principal$.next(
+            principalFixture.staff(STAFF, [Role.Barber, Role.Admin]),
+          );
+        });
+
+        it('a barber changes their own chair: the block opens, lifts and moves, and the ＋ offers both acts', async () => {
+          await atTheBook([Role.Barber], 'ivan');
+
+          expect(ids(gatePage().blockChairs())).toEqual(['ivan']);
+          expect(ids(gatePage().hoursChairs())).toEqual(['ivan']);
+          expect(addRow('staff-add-block')).not.toBeNull();
+          expect(addRow('staff-add-hours')).not.toBeNull();
+
+          // The list's row is a button, and a press opens the editor.
+          expect(blockRow()?.getAttribute('role')).toBe('button');
+          expect(blockRow()?.getAttribute('tabindex')).toBe('0');
+          blockRow()?.click();
+          expect(gatePage().blockEdit()?.barberIds).toEqual(['ivan']);
+
+          gatePage().store.setView(StaffView.Day);
+          fixture.detectChanges();
+          expect(gatePage().movableIds().has(BLOCK)).toBe(true);
+          expect(gatePage().movableIds().has(LUNCH_ID)).toBe(true);
+          expect([...gatePage().readOnlyIds()]).toEqual([]);
+          expect(gridBlock(BLOCK)?.hasAttribute('aria-disabled')).toBe(false);
+          // The all-day doors: their own chair's open, every colleague's shut.
+          expect(gatePage().allDayShut().has('ivan')).toBe(false);
+          expect(gatePage().allDayShut().has('niko')).toBe(true);
+        });
+
+        it('a colleague’s chair is read: its block and break open nothing, lift nothing, and say so', async () => {
+          // The same book, read by the barber whose own record is Niko's.
+          await atTheBook([Role.Barber], 'niko');
+
+          expect(ids(gatePage().blockChairs())).toEqual(['niko']);
+          expect(ids(gatePage().hoursChairs())).toEqual(['niko']);
+
+          // The list's row keeps its words and loses the press and the stop.
+          expect(blockRow()?.getAttribute('aria-label')).toContain('12:00');
+          expect(blockRow()?.hasAttribute('role')).toBe(false);
+          expect(blockRow()?.hasAttribute('tabindex')).toBe(false);
+          expect(blockRow()?.hasAttribute('data-interactive')).toBe(false);
+          blockRow()?.click();
+          expect(gatePage().blockEdit()).toBeNull();
+
+          // No door opens the sheet on Ivan's time…
+          gatePage().openBlock(BLOCK);
+          gatePage().openBlockSheet(BarberId.of('ivan'));
+          expect(gatePage().blockEdit()).toBeNull();
+          // …and his lunch is not asked about.
+          gatePage().openBlock(LUNCH_ID);
+          expect(gatePage().breakFlow.question()).toBeNull();
+
+          gatePage().store.setView(StaffView.Day);
+          fixture.detectChanges();
+          expect(gatePage().movableIds().has(BLOCK)).toBe(false);
+          expect(gatePage().movableIds().has(LUNCH_ID)).toBe(false);
+          expect([...gatePage().readOnlyIds()].sort()).toEqual(
+            [BLOCK, LUNCH_ID].sort(),
+          );
+          // Drawn as unavailable, still named for a reader.
+          expect(gridBlock(BLOCK)?.getAttribute('aria-disabled')).toBe('true');
+          expect(gridBlock(BLOCK)?.hasAttribute('data-readonly')).toBe(true);
+          expect(gridBlock(BLOCK)?.getAttribute('aria-label')).toContain(
+            '12:00',
+          );
+          gridBlock(BLOCK)?.click();
+          expect(gatePage().blockEdit()).toBeNull();
+          // Ivan's all-day band and day-off chip are pictures here.
+          expect(gatePage().allDayShut().has('ivan')).toBe(true);
+          expect(gatePage().allDayShut().has('niko')).toBe(false);
+        });
+
+        it('from the ＋ a barber looking at the shop blocks their OWN time, not the first chair’s', async () => {
+          await atTheBook([Role.Barber], 'niko');
+
+          openBlockDoor();
+
+          expect(gatePage().blockEdit()?.barberIds).toEqual(['niko']);
+        });
+
+        it('the front desk changes every chair on the standard; a cut row goes from the ＋ with no new sign-in, and comes back', async () => {
+          await atTheBook([Role.Receptionist], null);
+
+          expect(ids(gatePage().blockChairs())).toEqual(
+            ids(gatePage().hoursChairs()),
+          );
+          expect(ids(gatePage().hoursChairs())).toContain('ivan');
+          expect(ids(gatePage().hoursChairs())).toContain('niko');
+          expect(addRow('staff-add-hours')).not.toBeNull();
+
+          saved({ receptionistHoursScope: AccessScope.None });
+          expect(gatePage().hoursChairs()).toEqual([]);
+          expect(addRow('staff-add-hours')).toBeNull();
+          // Blocked time is another row of «Права»: it stays.
+          expect(addRow('staff-add-block')).not.toBeNull();
+          expect(blockRow()?.getAttribute('role')).toBe('button');
+
+          saved({});
+          expect(addRow('staff-add-hours')).not.toBeNull();
+        });
+
+        it('with blocked time cut, the ＋ offers no block and every block is read', async () => {
+          await atTheBook([Role.Receptionist], null);
+
+          saved({ receptionistTimeOffScope: AccessScope.None });
+
+          expect(gatePage().blockChairs()).toEqual([]);
+          expect(addRow('staff-add-block')).toBeNull();
+          expect(addRow('staff-add-hours')).not.toBeNull();
+          expect(blockRow()?.hasAttribute('role')).toBe(false);
+          gatePage().openBlockSheet(BarberId.of('ivan'));
+          expect(gatePage().blockEdit()).toBeNull();
+        });
+
+        it('a break’s question offers only what the person may do: the day is TIME_OFF, the roster is HOURS', async () => {
+          await atTheBook([Role.Receptionist], null);
+          const answers = () =>
+            gatePage()
+              .breakFlow.actions()
+              .map((action) => action.id);
+
+          gatePage().openBlock(LUNCH_ID);
+          expect(answers()).toEqual(['THIS_DAY', 'FOLLOWING', 'CANCEL']);
+          await gatePage().breakFlow.pick('CANCEL');
+
+          // Hours cut: only the day's own answer is left.
+          saved({ receptionistHoursScope: AccessScope.None });
+          gatePage().openBlock(LUNCH_ID);
+          expect(answers()).toEqual(['THIS_DAY', 'CANCEL']);
+          await gatePage().breakFlow.pick('CANCEL');
+
+          // Blocked time cut instead: only the roster's answer is left.
+          saved({ receptionistTimeOffScope: AccessScope.None });
+          gatePage().openBlock(LUNCH_ID);
+          expect(answers()).toEqual(['FOLLOWING', 'CANCEL']);
+          await gatePage().breakFlow.pick('CANCEL');
+
+          // Both cut: the break is not an edit at all.
+          saved({
+            receptionistHoursScope: AccessScope.None,
+            receptionistTimeOffScope: AccessScope.None,
+          });
+          gatePage().openBlock(LUNCH_ID);
+          expect(gatePage().breakFlow.question()).toBeNull();
+        });
+      });
+
       describe('an edited block (B6)', () => {
         const DAY = unwrapOk(LocalDate.parse('2026-08-05'));
         const moved = {

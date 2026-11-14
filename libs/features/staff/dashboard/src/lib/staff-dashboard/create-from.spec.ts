@@ -5,7 +5,9 @@ import { trackMinute, unwrapOk } from '@core/testing';
 import {
   NEW_VISIT_BLANKS,
   createFromSlot,
+  createChairOf,
   movableIdsOf,
+  readOnlyIdsOf,
   slotTimeLabel,
 } from './create-from';
 
@@ -95,7 +97,7 @@ describe('the grid’s create helpers', () => {
       partyLabel: null,
       barberTone: null,
     };
-    const ids = movableIdsOf([
+    const columns: Parameters<typeof movableIdsOf>[0] = [
       {
         id: 'ivan',
         title: '',
@@ -132,9 +134,37 @@ describe('the grid’s create helpers', () => {
           },
         ],
       },
-    ]);
+    ];
+    const everything = (): boolean => true;
     // A break moves like a visit (owner, 2026-11-06); one already past does not.
-    expect([...ids]).toEqual(['live', 'break']);
+    expect([...movableIdsOf(columns, everything)]).toEqual(['live', 'break']);
+
+    // A colleague's blocked time stays where it is (staff permissions P8):
+    // the gate is asked by id, and a visit is never its to refuse.
+    const notTheBreak = (id: string): boolean => id !== 'break';
+    expect([...movableIdsOf(columns, notTheBreak)]).toEqual(['live']);
+    // …and is drawn as unavailable — past or not, a block the person may
+    // not change is read-only; a visit never is.
+    expect([...readOnlyIdsOf(columns, notTheBreak)]).toEqual(['break']);
+    expect([...readOnlyIdsOf(columns, () => false)]).toEqual([
+      'break',
+      'old-break',
+    ]);
+    expect([...readOnlyIdsOf(columns, everything)]).toEqual([]);
+  });
+
+  it('aims a create at the scoped chair, else the first working lane, else the first chair — the last fallback is the door', () => {
+    const NIKO = BarberId.of('niko');
+    const chairs = [{ id: IVAN }, { id: NIKO }];
+    const lanes = [{ barberId: NIKO }];
+    expect(createChairOf(NIKO, chairs, lanes)).toBe(NIKO);
+    // Nobody scoped: the first working lane.
+    expect(createChairOf(null, chairs, lanes)).toBe(NIKO);
+    // A scope that is no chair of the roster is not aimed at.
+    expect(createChairOf(BarberId.of('gone'), chairs, lanes)).toBe(NIKO);
+    // A day everyone is off still opens: the first chair of the roster.
+    expect(createChairOf(null, chairs, [])).toBe(IVAN);
+    expect(createChairOf(null, [], [])).toBeNull();
   });
 
   it('starts a new visit with nothing booked, priced or decided', () => {
