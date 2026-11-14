@@ -83,16 +83,22 @@ export const Roles = {
   /**
    * The roles that read their OWN staff analytics — a barber, for the barber
    * record their account is linked to (`docs/designs/staff-analytics.md`,
-   * Visibility). Used by the analytics route guard, the menu and the
-   * callable's wire. Reading billed takings is not `MONEY`, which is about
+   * Visibility). Reading billed takings is not `MONEY`, which is about
    * spending the shop's money (discounts, vouchers).
+   *
+   * THE WEB'S GATE ONLY, until the Team screen ships (staff permissions,
+   * stage T): the analytics route guard, the menu and the scope picker
+   * still read it off the token. The server no longer does — the
+   * `ANALYTICS` capability decides there, on the stored account and the
+   * owner's cells (`StaffAccessSystem`) — so this list is the default the
+   * web shows, not what a call is admitted by.
    */
   ANALYTICS_SELF: [Role.Barber],
 
   /**
    * The roles that read EVERY barber's analytics and the shop's — the admin
    * alone; not the sysadmin, the vendor's support role, as `SPEND` keeps it
-   * from a client's spend.
+   * from a client's spend. The web's gate only, as {@link Roles.ANALYTICS_SELF}.
    */
   ANALYTICS_SHOP: [Role.Admin],
 
@@ -115,40 +121,12 @@ export const Roles = {
    * `isAdmin`. CALLABLE-ONLY like `PRIVACY`: `users.roles` takes no client
    * write (`firestore.rules`), so no rules helper twins it
    * (`role.rules-parity.spec.ts` says so); the server re-reads the caller's
-   * STORED roles against it, behind the token's claims.
+   * STORED roles against it, behind the token's claims. The same list
+   * guards `setStaffPermissions`: who may edit what a staff level may do
+   * is who may hand out the levels, and it cannot be granted (staff
+   * permissions P4).
    */
   ASSIGN: [Role.Admin],
-
-  /**
-   * The roles that MANAGE THE TEAM — add a barber, set their shops,
-   * services and prices, working period, booking access and «Който и да е»
-   * flag, let them go, delete a draft (team onboarding D5): the shop's
-   * admin ONLY. Prices are the owner's (`MONEY` is about discounts on a
-   * visit and includes the front desk); the sysadmin is the vendor's
-   * support role. CALLABLE-ONLY, as {@link Roles.ASSIGN}: `barbers` and
-   * `services` take no client write, so no rules helper twins it; the
-   * server re-reads the caller's STORED roles against it.
-   */
-  TEAM: [Role.Admin],
-
-  /**
-   * The roles that may edit ANY barber's public profile — name, photo,
-   * title, bio, Instagram, experience (team onboarding D5): the content
-   * editor (a copy-and-media role) and the admin. A barber edits their own
-   * through their account's link, whatever this list says. CALLABLE-ONLY,
-   * as {@link Roles.TEAM}.
-   */
-  TEAM_PROFILES: [Role.ContentManager, Role.Admin],
-
-  /**
-   * The roles that may edit ANY barber's hours, breaks and days off — the
-   * front desk and the owners (team onboarding D5, O3): `BOOK` without the
-   * barber, who edits only their own through their account's link. The
-   * rules cannot say which barber a caller is, so the roster callables
-   * judge the STORED roles and link. CALLABLE-ONLY, as {@link Roles.TEAM}:
-   * `barberSchedules` takes no client write.
-   */
-  ROSTERS: [Role.Receptionist, Role.Admin, Role.Sysadmin],
 
   /**
    * The roles `setRoles` may grant or take away — every role but the
@@ -247,35 +225,11 @@ export const Roles = {
   },
 
   /**
-   * Whether a role set manages the team (`TEAM` — the admin alone): the
-   * team callables' gate on the claims, their systems' on the stored
-   * roles, and the Team page's route guard. Claims-tolerant like `mayBook`.
-   */
-  managesTeam(roles: readonly string[]): boolean {
-    return anyIn(Roles.TEAM, roles);
-  },
-
-  /**
-   * Whether a role set may edit any barber's public profile
-   * (`TEAM_PROFILES`). Claims-tolerant like `mayBook`.
-   */
-  editsTeamProfiles(roles: readonly string[]): boolean {
-    return anyIn(Roles.TEAM_PROFILES, roles);
-  },
-
-  /**
-   * Whether a role set may edit any barber's hours, breaks and days off
-   * (`ROSTERS`). Claims-tolerant like `mayBook`.
-   */
-  editsAnyRoster(roles: readonly string[]): boolean {
-    return anyIn(Roles.ROSTERS, roles);
-  },
-
-  /**
    * Whether a role set may open staff analytics at all — its own
-   * (`ANALYTICS_SELF`) or the shop's (`ANALYTICS_SHOP`): the route guard's,
-   * the menu's and the wire's first gate. Claims-tolerant like `mayBook`;
-   * the pipeline judges the stored roles after it.
+   * (`ANALYTICS_SELF`) or the shop's (`ANALYTICS_SHOP`): the route guard's
+   * and the menu's gate. Claims-tolerant like `mayBook`; the server judges
+   * the stored account against the owner's permissions, whatever this
+   * answers.
    */
   readsAnalytics(roles: readonly string[]): boolean {
     return (

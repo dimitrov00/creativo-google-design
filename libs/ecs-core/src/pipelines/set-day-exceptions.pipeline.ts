@@ -1,20 +1,29 @@
-import { type DayExceptionsCall, DayExceptionsRequest } from '@core/components';
+import {
+  type DayExceptionsCall,
+  DayExceptionsRequest,
+  StaffTarget,
+  type WriteOp,
+} from '@core/components';
 import {
   type BarberId,
   defect,
   type LocationId,
   type OperationId,
   Result,
+  StaffCapability,
   type TimeZone,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import { type RepositoryError, SchedulingError } from '@core/errors';
+import {
+  type AccessError,
+  type RepositoryError,
+  SchedulingError,
+} from '@core/errors';
 import {
   type Barber,
   Collections,
   type ScheduleException,
-  type User,
 } from '@core/entities';
 import type {
   ClockPorts,
@@ -23,9 +32,17 @@ import type {
   LocationLoadPorts,
   ScheduleExceptionPorts,
 } from '@core/ports';
-import { DayExceptionWriteSystem, RosterAccessSystem } from '@core/systems';
+import {
+  DayExceptionWriteSystem,
+  RosterAccessSystem,
+  StaffAccessSystem,
+} from '@core/systems';
 import { applyDayExceptions } from './schedule-blocks.pipeline';
-import { teamActor } from './team-caller.pipeline';
+import {
+  readStaffCaller,
+  type StaffCallerFacts,
+  teamActor,
+} from './team-caller.pipeline';
 
 /**
  * `setDayExceptions` — a barber's days off, blocks and one-day breaks,
@@ -43,12 +60,14 @@ import { teamActor } from './team-caller.pipeline';
  * 2. **One transaction** (Law 4: the transaction is the sandwich) — the
  *    exception write the pens hand their merge to
  *    (`ScheduleExceptionPorts`), run over the server's commit: it reads
- *    `users/{caller}`, the record of every barber the act touches and every
- *    day document, and asks
- *    - `RosterAccessSystem.admitDays` — the front desk and the owners
- *      change any barber's days, a barber only their own (so never a move
- *      onto a colleague); a barber who has left and a day filed at a shop
- *      its barber does not work at are refused;
+ *    `users/{caller}` and `settings/staffPermissions`, the record of every
+ *    barber the act touches and every day document, and asks
+ *    - `StaffAccessSystem.admit` — who may (staff permissions P6):
+ *      `TIME_OFF` on EVERY barber the act names. By default the front desk
+ *      and the owners change any barber's days, a barber only their own
+ *      (so never a move onto a colleague);
+ *    - `RosterAccessSystem.placedDays` — a barber who has left and a day
+ *      filed at a shop its barber does not work at are refused;
  *    - the pen's own merge (`applyDayExceptions` →
  *      `ScheduleExceptionSystem`), unchanged from the browser's;
  *    - `DayExceptionWriteSystem.writesOf` — only the days that really
@@ -58,8 +77,8 @@ import { teamActor } from './team-caller.pipeline';
  *
  * A refusal writes nothing. The capacity rebuild of each changed day rides
  * the document's own trigger, as before. The answer: the barbers the act
- * named. The token's refusals (no caller, not working the book, an
- * unreadable field) are the edge decoder's (`roster.wire.ts`).
+ * named. The token's refusals (no caller, no staff role, an unreadable
+ * field) are the edge decoder's (`roster.wire.ts`).
  */
 
 /** The call as the wire decoded it, with the verified caller. */
@@ -75,8 +94,7 @@ export type SetDayExceptionsPorts = CommitPorts &
   HashPorts &
   LocationLoadPorts;
 
-type Snapshot = {
-  readonly caller: User | null;
+type Snapshot = StaffCallerFacts & {
   /** The records of the barbers the act touches — those that exist. */
   readonly barbers: readonly Barber[];
   /** Each day document, positions as the keys asked. */
@@ -119,8 +137,8 @@ function transactional(
     writeScheduleException: async (keys, merge) => {
       const committed = await ports.commit(
         async (tx): Promise<Snapshot> => {
-          const [caller, records, stored] = await Promise.all([
-            tx.get<User>([Collections.Users, cmd.callerUserId]),
+          const [facts, records, stored] = await Promise.all([
+            readStaffCaller(tx, cmd.callerUserId),
             tx.getAll<Barber>(
               barberIds.map((barberId) => [Collections.Barbers, barberId]),
             ),
@@ -132,18 +150,27 @@ function transactional(
           for (const record of records) {
             if (record !== null) barbers.push(record);
           }
-          return { caller, barbers, stored };
+          return { ...facts, barbers, stored };
         },
-        ({ caller, barbers, stored }) => {
-          const admitted = RosterAccessSystem.admitDays(
+        ({
+          caller,
+          permissions,
+          barbers,
+          stored,
+        }): Result<
+          { readonly writes: readonly WriteOp[] },
+          SchedulingError | AccessError
+        > => {
+          const admitted = StaffAccessSystem.admit({
+            staffCapability: StaffCapability.TimeOff,
+            staffTarget: StaffTarget.barbers(barberIds),
             caller,
-            barbers,
-            placements,
+            permissions,
             nowUtcMs,
-          );
+          });
           if (!admitted.ok) return admitted;
-          // `admitDays` admits only a stored caller.
-          if (caller === null) return defect('an admitted caller is stored');
+          const placed = RosterAccessSystem.placedDays(barbers, placements);
+          if (!placed.ok) return placed;
           const merged = merge(stored);
           if (!merged.ok) return merged;
           return Result.ok({
@@ -153,7 +180,7 @@ function transactional(
                 keys,
                 stored,
                 merged: merged.value,
-                actor: teamActor(cmd.callerUserId, caller),
+                actor: teamActor(cmd.callerUserId, admitted.value),
                 nowUtcMs,
                 operationId: cmd.operationId,
               },
@@ -172,7 +199,10 @@ export const setDayExceptions =
   async (
     cmd: SetDayExceptionsCommand,
   ): Promise<
-    Result<DayExceptionsCall.Saved, SchedulingError | RepositoryError>
+    Result<
+      DayExceptionsCall.Saved,
+      SchedulingError | AccessError | RepositoryError
+    >
   > => {
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();

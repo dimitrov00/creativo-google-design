@@ -8,10 +8,11 @@ import {
   type GovernedDocCollection,
 } from '@core/components';
 import {
-  type AuditResourceId,
+  AuditResourceId,
   type CustomerId,
   OperationId,
   Result,
+  StaffPermissionsSettingsId,
   type StoredFields,
   type TriggerEventId,
   type UtcEpochMs,
@@ -56,6 +57,11 @@ export type GovernedChange = {
   /** The call that made this write — `null` when the write stamped none (the row's `auditOperationId`). */
   readonly writeOperationId: OperationId | null;
 };
+
+/** `settings/staffPermissions` as an audit row names it — the document `setStaffPermissions` audits itself. */
+const STAFF_PERMISSIONS_RESOURCE = AuditResourceId.forStaffPermissions(
+  StaffPermissionsSettingsId.FIXED,
+);
 
 /**
  * One document write the trigger audits — narrowed with `===` on
@@ -268,16 +274,21 @@ export const GovernedChangeSystem = {
    * is a team callable's — its `TEAM_BARBER_*` row, credited to the caller
    * (the changed fields of a record, the services of an offerings save),
    * landed in the same commit — so the trigger plans none and a write
-   * never gets two rows. A write that stamped nothing (the console, the
-   * seed, an Admin-SDK script, the offerings a deleted draft leaves behind)
-   * is the trigger's to audit, as is every deletion: a deleted document
-   * stamps nothing.
+   * never gets two rows. So is a stamped write of
+   * `settings/staffPermissions`: `setStaffPermissions` wrote its
+   * `TEAM_PERMISSIONS_CHANGED` row beside it (staff permissions P11);
+   * every other settings document stays the trigger's. A write that
+   * stamped nothing (the console, the seed, an Admin-SDK script, the
+   * offerings a deleted draft leaves behind) is the trigger's to audit, as
+   * is every deletion: a deleted document stamps nothing.
    */
   auditedByCallable(change: GovernedChange): boolean {
+    if (change.writeOperationId === null) return false;
     return (
-      (change.governedCollection === GovernedCollection.Barbers ||
-        change.governedCollection === GovernedCollection.Services) &&
-      change.writeOperationId !== null
+      change.governedCollection === GovernedCollection.Barbers ||
+      change.governedCollection === GovernedCollection.Services ||
+      (change.governedCollection === GovernedCollection.Settings &&
+        change.resourceId === STAFF_PERMISSIONS_RESOURCE)
     );
   },
 

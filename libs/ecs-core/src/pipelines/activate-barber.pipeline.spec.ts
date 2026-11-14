@@ -8,12 +8,13 @@ import {
   WriteOp,
 } from '@core/components';
 import { AuditEntryId, OperationId, Result, UserId } from '@core/primitives';
-import { TeamErrorCode } from '@core/errors';
+import { AccessErrorCode, TeamErrorCode } from '@core/errors';
 import {
   type Barber,
   type BarberSchedule,
   Collections,
   type Service,
+  STAFF_PERMISSIONS_DOC,
   type User,
 } from '@core/entities';
 import { AuditSystem, StaffSetupSystem, TeamSystem } from '@core/systems';
@@ -208,8 +209,10 @@ describe('activateBarber', () => {
     const { tx, run } = rig();
     await run(call());
     expect(tx.transactions).toHaveLength(1);
+    // The owner's cells ride the shared caller read; the step asks none of them.
     expect(tx.transactions[0]?.reads).toEqual([
       [Collections.Users, CALLER],
+      [Collections.Settings, STAFF_PERMISSIONS_DOC],
       [Collections.Barbers, IVAN],
       [Collections.BarberSchedules, IVAN],
     ]);
@@ -257,13 +260,14 @@ describe('activateBarber', () => {
   });
 
   it('is any staff account’s: a client token is turned away before any read, a stored client after it', async () => {
+    const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
     const { tx, run } = rig();
     expect(unwrapErr(await run(call({ callerUserId: null })))).toEqual({
       errorCode: TeamErrorCode.Unauthenticated,
     });
-    expect(unwrapErr(await run(call({ callerRoles: [Role.Client] })))).toEqual({
-      errorCode: TeamErrorCode.Forbidden,
-    });
+    expect(unwrapErr(await run(call({ callerRoles: [Role.Client] })))).toEqual(
+      NOT_STAFF,
+    );
     expect(tx.transactions).toHaveLength(0);
 
     for (const caller of [
@@ -271,10 +275,24 @@ describe('activateBarber', () => {
       null,
     ]) {
       const stored = rig({ caller });
-      expect(unwrapErr(await stored.run(call()))).toEqual({
-        errorCode: TeamErrorCode.Forbidden,
-      });
+      expect(unwrapErr(await stored.run(call()))).toEqual(NOT_STAFF);
       expect(stored.tx.plans).toEqual([]);
+    }
+  });
+
+  it('stays the fixed staff tier: no cell the owner sets takes the step from a staff member', async () => {
+    for (const role of [Role.Barber, Role.Receptionist, Role.ContentManager]) {
+      const { store, run } = rig({
+        caller: registeredUserFixture({ id: CALLER, roles: [role] }),
+      });
+      // Every cell this level has, at nobody — the step is no capability (P2).
+      store.set(`${Collections.Settings}/${STAFF_PERMISSIONS_DOC}`, {
+        barberHoursScope: 'NONE',
+        barberTeamProfilesScope: 'NONE',
+        receptionistHoursScope: 'NONE',
+        contentManagerTeamProfilesScope: 'NONE',
+      });
+      expect((await run(call({ callerRoles: [role] }))).ok, role).toBe(true);
     }
   });
 

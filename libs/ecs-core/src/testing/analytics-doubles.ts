@@ -12,10 +12,11 @@ import {
   PipelineErrorCode,
   RepositoryError,
 } from '@core/errors';
-import type {
-  AnalyticsReport,
-  SetAnalyticsGoalCall,
-  AnalyticsCall,
+import {
+  type AnalyticsReport,
+  type SetAnalyticsGoalCall,
+  type AnalyticsCall,
+  StaffPermissions,
 } from '@core/components';
 import {
   type AnalyticsRecomputeJob,
@@ -37,6 +38,7 @@ import type {
   AnalyticsRecomputeJobPorts,
   ProfileLoadPorts,
   ShopDayReadPorts,
+  StaffPermissionsReadPorts,
 } from '@core/ports';
 import { AnalyticsRecomputeJobSystem, BackfillPlanSystem } from '@core/systems';
 
@@ -318,6 +320,17 @@ export function memoryProfileLoadPorts(
     loadProfile: async (userId: UserId) =>
       Result.ok(users.find((user) => user.id === userId) ?? null),
   };
+}
+
+/**
+ * `StaffPermissionsReadPorts` — the owner's cells as the settings adapter
+ * answers them; every cell at its default when none are given (no
+ * document).
+ */
+export function memoryStaffPermissionsPorts(
+  permissions: StaffPermissions = StaffPermissions.UNSET,
+): StaffPermissionsReadPorts {
+  return { loadStaffPermissions: async () => Result.ok(permissions) };
 }
 
 /** `ShopDayReadPorts` over the rosters given — no busy day, no single-day exception. */

@@ -1,7 +1,9 @@
 import {
+  AccessScope,
   BarberId,
   ImpersonationSessionId,
   Result,
+  StaffCapability,
   StoredFields,
   Tag,
   UserId,
@@ -12,13 +14,17 @@ import {
   BarberLinkChange,
   BarberLinkRequest,
   ImpersonationLifecycle,
+  type PermissionChange,
+  PermissionsCall,
   Roles,
 } from '@core/components';
 import {
   admitImpersonationCaller,
+  admitPermissionsCaller,
   admitRolesCaller,
   type EndImpersonationCommand,
   type SetRolesCommand,
+  type SetStaffPermissionsCommand,
   type StartImpersonationCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
@@ -50,6 +56,12 @@ import { operationIdOf, payloadOf, type WireRequest } from './wire-read';
  * (`admitRolesCaller`: no session → `GOVERNANCE_ROLES_UNAUTHENTICATED`,
  * claims holding no `Roles.ASSIGN` role → `GOVERNANCE_ROLES_FORBIDDEN`)
  * before the payload is read.
+ *
+ * `setStaffPermissions` (staff permissions P6) rides it too, behind the
+ * same list: its request is `PermissionsCall`, its answer
+ * `PermissionsCall.Saved`, and its caller is read off the verified token
+ * first (`admitPermissionsCaller`: `GOVERNANCE_PERMISSIONS_UNAUTHENTICATED`,
+ * `_FORBIDDEN`).
  */
 
 /**
@@ -173,5 +185,59 @@ export function decodeSetRoles(
     ...link.value,
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(payload, 'operationId'),
+  });
+}
+
+/** One sent change as a cell — its capability, level and scope each a member of its dictionary — or the field that is not. */
+function changeOf(raw: unknown): Result<PermissionChange, EdgeError> {
+  const invalid = (field: string) =>
+    Result.err(GovernanceError.permissionsInvalid(field));
+  const staffCapability = StoredFields.field(raw, 'staffCapability');
+  if (!Tag.has(StaffCapability, staffCapability)) {
+    return invalid('staffCapability');
+  }
+  const role = StoredFields.field(raw, 'role');
+  if (!Roles.isRole(role)) return invalid('role');
+  const accessScope = StoredFields.field(raw, 'accessScope');
+  if (!Tag.has(AccessScope, accessScope)) return invalid('accessScope');
+  return Result.ok({ staffCapability, role, accessScope });
+}
+
+/**
+ * `setStaffPermissions` `{ changes: [{ staffCapability, role, accessScope }],
+ * operationId }` → `{ changes: [{ staffCapability, role, accessScopeFrom,
+ * accessScopeTo }] }`. The caller's gate first. Then the shape: `changes`
+ * a list no longer than the grid, each entry's three fields a member of
+ * its dictionary — the first that is not named
+ * (`GOVERNANCE_PERMISSIONS_INVALID`) — and the act's name, REQUIRED: it
+ * stamps the document and keys the audit row. Whether a cell is on offer,
+ * and whether one is named twice, are the system's questions.
+ */
+export function decodeSetStaffPermissions(
+  request: WireRequest,
+): Result<SetStaffPermissionsCommand, EdgeError> {
+  const adminRoles = callerKnownRoles(request);
+  const admitted = admitPermissionsCaller(callerUserId(request), adminRoles);
+  if (!admitted.ok) return admitted;
+  const payload = payloadOf(request);
+  const invalid = (field: string) =>
+    Result.err(GovernanceError.permissionsInvalid(field));
+  const sent: unknown = StoredFields.field(payload, 'changes');
+  if (!Array.isArray(sent) || sent.length > PermissionsCall.CHANGES_MAX) {
+    return invalid('changes');
+  }
+  const changes: PermissionChange[] = [];
+  for (const entry of sent as readonly unknown[]) {
+    const change = changeOf(entry);
+    if (!change.ok) return change;
+    changes.push(change.value);
+  }
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
+  return Result.ok({
+    adminUserId: admitted.value,
+    adminRoles,
+    changes,
+    operationId,
   });
 }

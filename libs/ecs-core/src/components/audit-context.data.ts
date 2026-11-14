@@ -21,6 +21,7 @@ import type { ArrivalAction } from './arrival-action.data';
 import type { AuditedProfileField } from './audited-profile-field.data';
 import type { BarberStatus } from './barber-status.data';
 import type { CancellationDelta } from './cancellation-delta.data';
+import type { PermissionsCall } from './permissions-call.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
 import type { DayExceptionsEdit } from './day-exceptions-call.data';
@@ -192,6 +193,12 @@ export const AuditAction = {
    * geometry only, as the documents themselves (no reason has a field).
    */
   TeamDayExceptionsChanged: 'TEAM_DAY_EXCEPTIONS_CHANGED',
+  /**
+   * What a staff level may do changed (`setStaffPermissions`, staff
+   * permissions P11): one row per save, in the save's own commit, credited
+   * to the owner — each changed cell with its scope before and after.
+   */
+  TeamPermissionsChanged: 'TEAM_PERMISSIONS_CHANGED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -249,7 +256,8 @@ export type AuditContext =
   | AuditContext.AnalyticsGoalCleared
   | AuditContext.TeamBarber
   | AuditContext.TeamOfferings
-  | AuditContext.TeamDayExceptions;
+  | AuditContext.TeamDayExceptions
+  | AuditContext.TeamPermissions;
 
 /** A profile row's six tag fields when none of `roles`, `accountStatus` and `linkedBarberId` changed. */
 const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
@@ -520,6 +528,15 @@ export const AuditContext = {
       dayExceptionsFromLocalDate,
       dayExceptionsToLocalDate,
       dayExceptionsDayCount,
+    };
+  },
+  /** What a staff level may do changed: the cells a save changed, carried as given. */
+  teamPermissions(
+    permissionChanges: readonly PermissionsCall.CellChange[],
+  ): AuditContext.TeamPermissions {
+    return {
+      auditAction: AuditAction.TeamPermissionsChanged,
+      permissionChanges,
     };
   },
   /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
@@ -821,6 +838,17 @@ export namespace AuditContext {
     readonly dayExceptionsToLocalDate: LocalDate;
     /** How many of the barber's day documents it wrote or deleted. */
     readonly dayExceptionsDayCount: number;
+  };
+  /**
+   * What a staff level may do changed (`setStaffPermissions`, staff
+   * permissions P11) — the resource is `settings/staffPermissions`, the
+   * target none, the actor the owner. One row per save, whatever the
+   * number of cells; tags only.
+   */
+  export type TeamPermissions = {
+    readonly auditAction: typeof AuditAction.TeamPermissionsChanged;
+    /** One element per changed cell (1-to-N): the capability, the level and its scope before and after. */
+    readonly permissionChanges: readonly PermissionsCall.CellChange[];
   };
   export type ImpersonationStarted = {
     readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;

@@ -1,5 +1,4 @@
 import {
-  AccountLifecycle,
   type Actor,
   type AuthoredText,
   BarberActivation,
@@ -8,7 +7,6 @@ import {
   BarberLifecycle,
   BarberStatus,
   type LocalizedText,
-  Roles,
   ScheduleVersion,
   type TeamBarberAction,
   WriteOp,
@@ -29,7 +27,6 @@ import {
   type BarberMeta,
   type BarberSchedule,
   Collections,
-  type User,
 } from '@core/entities';
 import { AuditSystem } from './audit.system';
 import { GovernedChangeSystem } from './governed-change.system';
@@ -186,65 +183,16 @@ function shopsOf(
 /**
  * TeamSystem — the team callables' decisions (team onboarding D2, D5,
  * D9, `docs/designs/team-onboarding.md`). Pure: the pipeline reads the
- * caller's account, the barber record and what else a decision names
- * inside its commit, asks, and writes the record the decision answers —
- * the WHOLE next record, so the stored document is always exactly one
- * lifecycle variant.
+ * barber record and what else a decision names inside its commit, asks,
+ * and writes the record the decision answers — the WHOLE next record, so
+ * the stored document is always exactly one lifecycle variant.
  *
- * The caller's block is an elapsed-time rule on the account
- * (`AccountLifecycle.isBlockedAt`): `nowUtcMs`, never the shop clock.
+ * WHO may is not asked here: `StaffAccessSystem.admit` judges the caller's
+ * stored account against the owner's cells first (staff permissions P6 —
+ * `TEAM_MANAGE`, `TEAM_PROFILES`, `TEAM_OFFERINGS`), and these record
+ * decisions run after it.
  */
 export const TeamSystem = {
-  /**
-   * Who may manage the team: a caller whose STORED roles hold `Roles.TEAM`
-   * and who is not blocked (or erased) at `nowUtcMs` — else
-   * `TEAM_FORBIDDEN`.
-   */
-  admit(caller: User | null, nowUtcMs: UtcEpochMs): Result<User, TeamError> {
-    return caller !== null &&
-      Roles.managesTeam(caller.roles) &&
-      !AccountLifecycle.isBlockedAt(caller, nowUtcMs)
-      ? Result.ok(caller)
-      : Result.err(TeamError.forbidden());
-  },
-
-  /**
-   * Who may edit `barberId`'s public profile: a caller, not blocked, whose
-   * STORED roles hold `Roles.TEAM_PROFILES`, or whose account is linked to
-   * this very record (a barber edits their own) — else `TEAM_FORBIDDEN`.
-   */
-  admitProfileEdit(
-    caller: User | null,
-    barberId: BarberId,
-    nowUtcMs: UtcEpochMs,
-  ): Result<User, TeamError> {
-    return caller !== null &&
-      !AccountLifecycle.isBlockedAt(caller, nowUtcMs) &&
-      (Roles.editsTeamProfiles(caller.roles) ||
-        caller.linkedBarberId === barberId)
-      ? Result.ok(caller)
-      : Result.err(TeamError.forbidden());
-  },
-
-  /**
-   * Who may ask a draft to go live (`activateBarber`): any staff account,
-   * not blocked — else `TEAM_FORBIDDEN`. The step decides nothing a caller
-   * chooses: the record goes live only when its needed items are done, at
-   * the status the admin set. So whoever may save one of those items — the
-   * admin, the content editor, the front desk and a barber saving hours —
-   * may trigger it, and the row credits them.
-   */
-  admitActivation(
-    caller: User | null,
-    nowUtcMs: UtcEpochMs,
-  ): Result<User, TeamError> {
-    return caller !== null &&
-      Roles.isStaff(caller.roles) &&
-      !AccountLifecycle.isBlockedAt(caller, nowUtcMs)
-      ? Result.ok(caller)
-      : Result.err(TeamError.forbidden());
-  },
-
   /**
    * A new barber record, as a `DRAFT`: a name (Bulgarian required), shops
    * that are all listed locations, a last working day not before the start

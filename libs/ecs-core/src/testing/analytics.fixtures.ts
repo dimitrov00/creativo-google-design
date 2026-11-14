@@ -21,6 +21,7 @@ import {
   SeatOccupant,
   SeatOutcome,
   ShiftSegment,
+  type StaffPermissions,
   SubjectRelationship,
   WriteAction,
 } from '@core/components';
@@ -69,6 +70,7 @@ import {
   memoryAnalyticsReadPorts,
   memoryProfileLoadPorts,
   memoryShopDayReadPorts,
+  memoryStaffPermissionsPorts,
 } from './analytics-doubles';
 import {
   at,
@@ -621,6 +623,8 @@ export type AnalyticsFixtureWorld = {
   readonly flagsOn?: readonly FlagName[];
   /** The month goals stored (PR 6); none by default. */
   readonly goals?: readonly StoredAnalyticsGoal[];
+  /** The owner's cells (`settings/staffPermissions`); every cell at its default when omitted. */
+  readonly permissions?: StaffPermissions;
 };
 
 /**
@@ -646,6 +650,7 @@ export function analyticsFixturePorts(
     ...memoryAnalyticsGoalPorts(world.goals ?? []).ports,
     ...memoryFlagsPorts(world.flagsOn ?? []),
     ...memoryProfileLoadPorts(Object.values(ANALYTICS_FIXTURE_USERS) as User[]),
+    ...memoryStaffPermissionsPorts(world.permissions),
     ...memoryShopDayReadPorts(ANALYTICS_FIXTURE_ROSTERS),
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     ...memoryDefaultLocationPorts(centre),

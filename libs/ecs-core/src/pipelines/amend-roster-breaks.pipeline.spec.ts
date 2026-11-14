@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   BarberStatus,
+  type DocBody,
   MinuteRange,
   Role,
   RosterBreak,
   WriteOp,
 } from '@core/components';
-import { type Barber, Collections, type User } from '@core/entities';
-import { SchedulingErrorCode } from '@core/errors';
+import {
+  type Barber,
+  Collections,
+  STAFF_PERMISSIONS_DOC,
+  type User,
+} from '@core/entities';
+import { AccessErrorCode, SchedulingErrorCode } from '@core/errors';
 import {
   BarberId,
   LocationId,
@@ -38,8 +44,9 @@ import {
 
 /*
  * A chair's standing breaks changed «from this day on» — ONE transaction:
- * the caller's account, the barber record, the roster and the shop read;
- * who may judged on the stored account (team onboarding D5); the versions
+ * the caller's account and the owner's cells, the barber record, the
+ * roster and the shop read; who may judged on the stored account against
+ * `HOURS` (staff permissions P6); the versions
  * revised from the day on by `RosterBreakSystem.amend`; the roster's
  * `versions` written whole, stamped with the act. The fixture clock reads
  * 2026-09-28 (a Monday) at the fixture shop.
@@ -58,8 +65,13 @@ const DESK: User = registeredUserFixture({
   roles: [Role.Receptionist],
 });
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const DENIED = { errorCode: AccessErrorCode.Denied, staffCapability: 'HOURS' };
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   readonly barber?: Barber | null;
   readonly withRoster?: boolean;
 };
@@ -70,6 +82,9 @@ function rig(options: RigOptions = {}) {
     options.barber === undefined ? barberFixture() : options.barber;
   const store = memoryStore([
     { path: SHOP, body: bodyOf(locationFixture()) },
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...(caller === null
       ? []
       : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
@@ -109,6 +124,7 @@ describe('amendRosterBreaks', () => {
     );
     expect(tx.transactions[0]?.reads).toEqual([
       [Collections.Users, CALLER],
+      PERMISSIONS,
       [Collections.Barbers, IVAN],
       ROSTER,
       SHOP,
@@ -167,21 +183,41 @@ describe('amendRosterBreaks', () => {
       });
       expect((await own.run(weekdayLunch)).ok).toBe(true);
 
-      for (const caller of [
-        registeredUserFixture({
+      const refused: [User | null, object][] = [
+        [
+          registeredUserFixture({
+            id: CALLER,
+            roles: [Role.Barber],
+            linkedBarberId: BarberId.of('niko'),
+          }),
+          { errorCode: AccessErrorCode.OwnOnly, staffCapability: 'HOURS' },
+        ],
+        [
+          registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
+          DENIED,
+        ],
+        [null, { errorCode: AccessErrorCode.NotStaff }],
+      ];
+      for (const [caller, refusal] of refused) {
+        const { tx, run } = rig({ caller });
+        expect(unwrapErr(await run(weekdayLunch))).toEqual(refusal);
+        expect(tx.plans).toEqual([]);
+      }
+    });
+
+    it('follows the owner’s cells — the same `HOURS` capability as the week: narrowed is refused, widened admitted', async () => {
+      const narrowed = rig({ permissions: { receptionistHoursScope: 'NONE' } });
+      expect(unwrapErr(await narrowed.run(weekdayLunch))).toEqual(DENIED);
+      expect(narrowed.tx.plans).toEqual([]);
+      const widened = rig({
+        caller: registeredUserFixture({
           id: CALLER,
           roles: [Role.Barber],
           linkedBarberId: BarberId.of('niko'),
         }),
-        registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
-        null,
-      ]) {
-        const { tx, run } = rig({ caller });
-        expect(unwrapErr(await run(weekdayLunch))).toEqual({
-          errorCode: SchedulingErrorCode.RosterForbidden,
-        });
-        expect(tx.plans).toEqual([]);
-      }
+        permissions: { barberHoursScope: 'ALL' },
+      });
+      expect((await widened.run(weekdayLunch)).ok).toBe(true);
     });
 
     it('refuses an id with no barber record, and a barber who has left', async () => {

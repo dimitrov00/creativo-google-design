@@ -78,13 +78,51 @@ describe('blockFailureSentence — why a block or the hours did not save', () =>
   const GENERIC = 'Не се запази. Опитай пак.';
 
   it('says the server’s refusal when the catalogue has a line for it — in both languages', () => {
-    const forbidden = refused(SchedulingErrorCode.RosterForbidden);
+    // A barber touching a colleague's hours: the access refusal names the
+    // capability, and the sentence is read one level deeper by it.
+    const forbidden = PipelineError.fromWire('functions/permission-denied', {
+      errorCode: 'ACCESS_OWN_ONLY',
+      staffCapability: 'HOURS',
+    });
     expect(blockFailureSentence(forbidden, wordCode(translate), GENERIC)).toBe(
       'Можеш да променяш само своето работно време.',
     );
     expect(blockFailureSentence(forbidden, wordCode(english), GENERIC)).toBe(
       'You can only change your own hours.',
     );
+    // A day off is its own capability, with its own words.
+    expect(
+      blockFailureSentence(
+        PipelineError.fromWire('functions/permission-denied', {
+          errorCode: 'ACCESS_OWN_ONLY',
+          staffCapability: 'TIME_OFF',
+        }),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe('Можеш да блокираш време само в своя график.');
+    // The level has no such right at all.
+    expect(
+      blockFailureSentence(
+        PipelineError.fromWire('functions/permission-denied', {
+          errorCode: 'ACCESS_DENIED',
+          staffCapability: 'HOURS',
+        }),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe('Нямаш право да променяш работното време. Питай собственика.');
+    // A capability the catalogue has no line for yet falls back to the code's own.
+    expect(
+      blockFailureSentence(
+        PipelineError.fromWire('functions/permission-denied', {
+          errorCode: 'ACCESS_DENIED',
+          staffCapability: 'BOOKING_MANAGE',
+        }),
+        wordCode(translate),
+        GENERIC,
+      ),
+    ).toBe('Нямаш право за това. Питай собственика.');
     expect(
       blockFailureSentence(
         refused(SchedulingErrorCode.RosterDeparted),

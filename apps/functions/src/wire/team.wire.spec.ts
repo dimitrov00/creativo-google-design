@@ -1,5 +1,5 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
-import { TeamErrorCode } from '@core/errors';
+import { AccessErrorCode, TeamErrorCode } from '@core/errors';
 import {
   decodeActivateBarber,
   decodeAddBarber,
@@ -38,6 +38,21 @@ function refusalOf(decoded: {
     : [decoded.error.errorCode, decoded.error.field ?? null];
 }
 const INVALID = (field: string) => [TeamErrorCode.InvalidInput, field];
+const NOT_STAFF = [AccessErrorCode.NotStaff, null];
+/**
+ * Every staff token: the wire's gate asks no more (staff permissions P6) —
+ * which staff member may make which act is the pipeline's question, asked
+ * of the STORED account against the owner's permissions.
+ */
+const STAFF_TOKENS = [
+  ['content_manager'],
+  ['receptionist'],
+  ['barber'],
+  ['sysadmin'],
+  ['admin'],
+];
+/** No staff role: a client, an empty claim, and a list inside the list — no role. */
+const NO_STAFF_TOKENS = [['client'], [], [['admin']]];
 
 describe('decodeAddBarber', () => {
   const sent = {
@@ -89,26 +104,24 @@ describe('decodeAddBarber', () => {
     expect(decoded).toMatchObject({ ok: true, value: CALLER });
   });
 
-  it('refuses no session, and every token without the admin role — before the payload is read', () => {
+  it('refuses no session, and every token with no staff role — before the payload is read', () => {
     expect(refusalOf(decodeAddBarber(callable(sent, null)))).toEqual([
       TeamErrorCode.Unauthenticated,
       null,
     ]);
-    for (const roles of [
-      ['content_manager'],
-      ['receptionist'],
-      ['barber'],
-      ['sysadmin'],
-      ['client'],
-      [],
-      // A list inside the list is no role.
-      [['admin']],
-    ]) {
-      // An unreadable payload is still FORBIDDEN first.
-      expect(refusalOf(decodeAddBarber(callable({}, roles)))).toEqual([
-        TeamErrorCode.Forbidden,
-        null,
-      ]);
+    for (const roles of NO_STAFF_TOKENS) {
+      // An unreadable payload is still refused for the caller first.
+      expect(refusalOf(decodeAddBarber(callable({}, roles)))).toEqual(
+        NOT_STAFF,
+      );
+    }
+  });
+
+  it('lets every staff token through — `TEAM_MANAGE` is the pipeline’s to ask', () => {
+    for (const roles of STAFF_TOKENS) {
+      expect(decodeAddBarber(callable(sent, roles)).ok, String(roles)).toBe(
+        true,
+      );
     }
   });
 
@@ -215,28 +228,26 @@ describe('decodeEditBarber', () => {
         value: { callerRoles: roles },
       });
     }
-    expect(refusalOf(decodeEditBarber(callable(profile, ['client'])))).toEqual([
-      TeamErrorCode.Forbidden,
-      null,
-    ]);
+    expect(refusalOf(decodeEditBarber(callable(profile, ['client'])))).toEqual(
+      NOT_STAFF,
+    );
     expect(refusalOf(decodeEditBarber(callable(profile, null)))).toEqual([
       TeamErrorCode.Unauthenticated,
       null,
     ]);
   });
 
-  it('keeps every other part the admin’s', () => {
+  it('lets any staff token ask for every other part too — `TEAM_MANAGE` is the pipeline’s to ask', () => {
     const pool = { ...named, barberEdit: 'POOL', barberJoinsAnyPool: false };
-    for (const roles of [
-      ['content_manager'],
-      ['barber'],
-      ['receptionist'],
-      ['sysadmin'],
-    ]) {
-      expect(refusalOf(decodeEditBarber(callable(pool, roles)))).toEqual([
-        TeamErrorCode.Forbidden,
-        null,
-      ]);
+    for (const roles of STAFF_TOKENS) {
+      expect(decodeEditBarber(callable(pool, roles)).ok, String(roles)).toBe(
+        true,
+      );
+    }
+    for (const roles of NO_STAFF_TOKENS) {
+      expect(refusalOf(decodeEditBarber(callable(pool, roles)))).toEqual(
+        NOT_STAFF,
+      );
     }
   });
 
@@ -346,22 +357,21 @@ describe('decodeSetBarberOfferings', () => {
     });
   });
 
-  it('is the admin’s alone — prices are the owner’s', () => {
+  it('refuses no session and a token with no staff role; every staff token gets through — `TEAM_OFFERINGS` is the pipeline’s to ask', () => {
     expect(refusalOf(decodeSetBarberOfferings(callable(list, null)))).toEqual([
       TeamErrorCode.Unauthenticated,
       null,
     ]);
-    for (const roles of [
-      ['content_manager'],
-      ['receptionist'],
-      ['barber'],
-      ['sysadmin'],
-      ['client'],
-    ]) {
-      expect(refusalOf(decodeSetBarberOfferings(callable({}, roles)))).toEqual([
-        TeamErrorCode.Forbidden,
-        null,
-      ]);
+    for (const roles of NO_STAFF_TOKENS) {
+      expect(refusalOf(decodeSetBarberOfferings(callable({}, roles)))).toEqual(
+        NOT_STAFF,
+      );
+    }
+    for (const roles of STAFF_TOKENS) {
+      expect(
+        decodeSetBarberOfferings(callable(list, roles)).ok,
+        String(roles),
+      ).toBe(true);
     }
   });
 
@@ -440,17 +450,14 @@ describe('decodeActivateBarber / decodeDeleteDraftBarber', () => {
     });
   });
 
-  it('the go-live step is any staff token’s; a deletion the admin’s alone', () => {
-    for (const roles of [['barber'], ['receptionist'], ['content_manager']]) {
-      expect(decodeActivateBarber(callable(sent, roles)).ok).toBe(true);
-      expect(refusalOf(decodeDeleteDraftBarber(callable(sent, roles)))).toEqual(
-        [TeamErrorCode.Forbidden, null],
-      );
-    }
-    expect(refusalOf(decodeActivateBarber(callable(sent, ['client'])))).toEqual(
-      [TeamErrorCode.Forbidden, null],
-    );
+  it('the go-live step and a deletion are any staff token’s to ask; a client’s and no session are turned away', () => {
     for (const decode of [decodeActivateBarber, decodeDeleteDraftBarber]) {
+      for (const roles of STAFF_TOKENS) {
+        expect(decode(callable(sent, roles)).ok, String(roles)).toBe(true);
+      }
+      for (const roles of NO_STAFF_TOKENS) {
+        expect(refusalOf(decode(callable(sent, roles)))).toEqual(NOT_STAFF);
+      }
       expect(refusalOf(decode(callable(sent, null)))).toEqual([
         TeamErrorCode.Unauthenticated,
         null,
@@ -488,23 +495,16 @@ describe('decodeListTeam', () => {
     });
   });
 
-  it('is the admin’s alone', () => {
+  it('is any staff token’s to ask — how much of the list a caller sees is the pipeline’s question', () => {
     expect(refusalOf(decodeListTeam(callable({}, null)))).toEqual([
       TeamErrorCode.Unauthenticated,
       null,
     ]);
-    for (const roles of [
-      ['content_manager'],
-      ['receptionist'],
-      ['barber'],
-      ['sysadmin'],
-      ['client'],
-      [],
-    ]) {
-      expect(refusalOf(decodeListTeam(callable({}, roles)))).toEqual([
-        TeamErrorCode.Forbidden,
-        null,
-      ]);
+    for (const roles of NO_STAFF_TOKENS) {
+      expect(refusalOf(decodeListTeam(callable({}, roles)))).toEqual(NOT_STAFF);
+    }
+    for (const roles of STAFF_TOKENS) {
+      expect(decodeListTeam(callable({}, roles)).ok, String(roles)).toBe(true);
     }
   });
 });

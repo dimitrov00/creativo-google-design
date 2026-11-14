@@ -21,7 +21,7 @@ export type AnalyticsEntryQuery = {
  * - an admin viewing every chair opens the shop's (no `barber`);
  * - a barber opens their own, whatever chair the book shows: the callable
  *   reads their record off the stored user, and a colleague's id in the
- *   query would be refused `ANALYTICS_FORBIDDEN`.
+ *   query would be refused `ACCESS_OWN_ONLY`.
  *
  * `principal` is the settled one the route guard resolved; `undefined`
  * (not yet known) reads as a barber, the narrower choice.

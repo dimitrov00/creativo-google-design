@@ -6,6 +6,7 @@ import {
   BlockReason,
   DayExceptionsEdit,
   type DayExceptionsRequest,
+  type DocBody,
   ExceptionEffectRule,
   MinuteRange,
   Role,
@@ -22,12 +23,17 @@ import {
   ScheduleExceptionId,
   UserId,
 } from '@core/primitives';
-import { RepositoryError, SchedulingErrorCode } from '@core/errors';
+import {
+  AccessErrorCode,
+  RepositoryError,
+  SchedulingErrorCode,
+} from '@core/errors';
 import {
   type Barber,
   Collections,
   type ScheduleException,
   type ShopLocation,
+  STAFF_PERMISSIONS_DOC,
   type User,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
@@ -111,8 +117,21 @@ const IVAN_ACCOUNT: User = registeredUserFixture({
   linkedBarberId: IVAN,
 });
 
+const PERMISSIONS = [Collections.Settings, STAFF_PERMISSIONS_DOC];
+const NOT_STAFF = { errorCode: AccessErrorCode.NotStaff };
+const DENIED = {
+  errorCode: AccessErrorCode.Denied,
+  staffCapability: 'TIME_OFF',
+};
+const OWN_ONLY = {
+  errorCode: AccessErrorCode.OwnOnly,
+  staffCapability: 'TIME_OFF',
+};
+
 type RigOptions = {
   readonly caller?: User | null;
+  /** The stored `settings/staffPermissions` body; none by default — no document. */
+  readonly permissions?: DocBody;
   /** The barber records (default Ivan and Niko, both at the centre shop). */
   readonly barbers?: readonly Barber[];
   readonly shops?: readonly ShopLocation[];
@@ -129,6 +148,9 @@ function rig(options: RigOptions = {}) {
     locationFixture({ id: MLADOST }),
   ];
   const store = memoryStore([
+    ...(options.permissions === undefined
+      ? []
+      : [{ path: PERMISSIONS, body: options.permissions }]),
     ...(caller === null
       ? []
       : [{ path: [Collections.Users, caller.id], body: bodyOf(caller) }]),
@@ -213,13 +235,14 @@ describe('setDayExceptions', () => {
       });
     });
 
-    it('reads the shop’s zone first, then the caller, the barber and the day inside one transaction', async () => {
+    it('reads the shop’s zone first, then the caller, the owner’s cells, the barber and the day inside one transaction', async () => {
       const { tx, asked, run } = rig();
       await run(call(block([DAY, NEXT])));
       expect(asked).toEqual([CENTER]);
       expect(tx.transactions).toHaveLength(1);
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Users, CALLER],
+        PERMISSIONS,
         [Collections.Barbers, IVAN],
         dayPath(IVAN, DAY),
         dayPath(IVAN, NEXT),
@@ -348,6 +371,7 @@ describe('setDayExceptions', () => {
       ]);
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Users, CALLER],
+        PERMISSIONS,
         [Collections.Barbers, IVAN],
         [Collections.Barbers, NIKO],
         dayPath(IVAN, DAY),
@@ -429,29 +453,81 @@ describe('setDayExceptions', () => {
             dayOf(NIKO, DAY, ExceptionEffectRule.closed()),
           ],
         });
-        expect(unwrapErr(await run(call(request)))).toEqual({
-          errorCode: SchedulingErrorCode.RosterForbidden,
-        });
+        expect(unwrapErr(await run(call(request)))).toEqual(OWN_ONLY);
         expect(tx.plans).toEqual([]);
         expect(store.has(pathKey(IVAN, DAY))).toBe(true);
         expect(store.has(pathKey(NIKO, DAY))).toBe(true);
       }
     });
 
+    it('follows the owner’s cells: barbers let into each other’s days move a block onto a colleague; a narrowed level is refused', async () => {
+      const move: DayExceptionsRequest = {
+        dayExceptionsEdit: DayExceptionsEdit.Move,
+        liftBarberId: IVAN,
+        liftLocalDate: DAY,
+        liftRange: wall(10),
+        writes: [
+          {
+            barberId: NIKO,
+            locationId: CENTER,
+            ranges: [wall(11)],
+            localDates: [DAY],
+          },
+        ],
+      };
+      const days = [
+        dayOf(IVAN, DAY, unwrapOk(ExceptionEffectRule.blocked([wall(10)]))),
+      ];
+      // Widened: the owner lets barbers block time for each other.
+      const widened = rig({
+        caller: IVAN_ACCOUNT,
+        days,
+        permissions: { barberTimeOffScope: 'ALL' },
+      });
+      expect((await widened.run(call(move))).ok).toBe(true);
+      expect(widened.store.has(pathKey(NIKO, DAY))).toBe(true);
+
+      // Narrowed: the front desk, and a barber's own days.
+      const desk = rig({ permissions: { receptionistTimeOffScope: 'NONE' } });
+      expect(unwrapErr(await desk.run(call(block([DAY]))))).toEqual(DENIED);
+      expect(desk.tx.plans).toEqual([]);
+      const own = rig({
+        caller: IVAN_ACCOUNT,
+        permissions: { barberTimeOffScope: 'NONE' },
+      });
+      expect(unwrapErr(await own.run(call(block([DAY]))))).toEqual(DENIED);
+
+      // A cell nobody could save refuses its level; the admin is admitted still.
+      const permissions = { receptionistTimeOffScope: 'EVERYONE' };
+      expect(
+        unwrapErr(await rig({ permissions }).run(call(block([DAY])))),
+      ).toEqual(DENIED);
+      const admin = rig({
+        permissions,
+        caller: registeredUserFixture({ id: CALLER, roles: [Role.Admin] }),
+      });
+      expect((await admin.run(call(block([DAY])))).ok).toBe(true);
+    });
+
     it('refuses the content editor, a blocked account and one that is gone', async () => {
-      for (const caller of [
-        registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
-        registeredUserFixture({
-          id: CALLER,
-          roles: [Role.Admin],
-          ...AccountLifecycle.block(BlockReason.Manual, null),
-        }),
-        null,
-      ]) {
+      const refused: [User | null, object][] = [
+        [
+          registeredUserFixture({ id: CALLER, roles: [Role.ContentManager] }),
+          DENIED,
+        ],
+        [
+          registeredUserFixture({
+            id: CALLER,
+            roles: [Role.Admin],
+            ...AccountLifecycle.block(BlockReason.Manual, null),
+          }),
+          NOT_STAFF,
+        ],
+        [null, NOT_STAFF],
+      ];
+      for (const [caller, refusal] of refused) {
         const { tx, run } = rig({ caller });
-        expect(unwrapErr(await run(call(block([DAY]))))).toEqual({
-          errorCode: SchedulingErrorCode.RosterForbidden,
-        });
+        expect(unwrapErr(await run(call(block([DAY]))))).toEqual(refusal);
         expect(tx.plans).toEqual([]);
       }
     });

@@ -11,6 +11,7 @@ import {
   type GovernedCollection,
   ImpersonationEndReason,
   ImpersonationStatus,
+  type PermissionsCall,
   type ProfileAction,
   ProfileAuthType,
   type Role,
@@ -41,6 +42,7 @@ import {
   type PublishRequestId,
   type SeatId,
   type ServiceId,
+  StaffPermissionsSettingsId,
   type StoredFields,
   type TriggerEventId,
   Tag,
@@ -590,6 +592,15 @@ export const AuditSystem = {
      */
     teamBarber(operationId: OperationId): string {
       return `team-barber:${operationId}`;
+    },
+    /**
+     * A permissions save (`setStaffPermissions`, staff permissions P11):
+     * the act's operation id — required on its wire — never the instant,
+     * so two saves in one millisecond cannot collide. A replay plans no
+     * row: it finds the cells as its own act left them.
+     */
+    permissionsChanged(operationId: OperationId): string {
+      return `permissions-change:${operationId}`;
     },
     /**
      * An owner's own edit through `updateProfile` (4A-16): the account and
@@ -1175,6 +1186,45 @@ export const AuditSystem = {
         resourceId,
         null,
         AuditSystem.changeKey.teamBarber(operationId),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row a permissions save writes inside its own commit (staff
+   * permissions P11): `TEAM_PERMISSIONS_CHANGED`, on the settings document
+   * (`settings/staffPermissions`), credited to the owner (`Actor.forCaller`
+   * over the STORED roles), one element per changed cell — at least one (a
+   * save that changed no cell writes no row: planning one is a programmer
+   * defect); untargeted. Its id basis is keyed by the operation id.
+   */
+  planPermissionsChanged(
+    changes: readonly PermissionsCall.CellChange[],
+    actor: Actor,
+    recordedAtUtcMs: UtcEpochMs,
+    operationId: OperationId,
+  ): AuditRowPlan {
+    if (changes.length === 0) {
+      return defect('a permissions save that changed no cell writes no row');
+    }
+    const action = AuditAction.TeamPermissionsChanged;
+    const resourceId = AuditResourceId.forStaffPermissions(
+      StaffPermissionsSettingsId.FIXED,
+    );
+    return {
+      row: {
+        recordedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.teamPermissions(changes),
+        ...AuditTargetRef.none(),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        null,
+        AuditSystem.changeKey.permissionsChanged(operationId),
       ),
     };
   },

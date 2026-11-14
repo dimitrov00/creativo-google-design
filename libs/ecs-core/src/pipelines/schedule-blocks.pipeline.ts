@@ -4,7 +4,7 @@ import {
   type MinuteRange,
 } from '@core/components';
 import type { ScheduleException } from '@core/entities';
-import type { RepositoryError, SchedulingError } from '@core/errors';
+import type { ScheduleExceptionWriteError } from '@core/errors';
 import type { ScheduleExceptionPorts } from '@core/ports';
 import {
   type BarberId,
@@ -76,7 +76,7 @@ export const writeScheduleBlocks =
   (ports: ScheduleExceptionPorts) =>
   (
     cmd: ScheduleBlocksCommand,
-  ): Promise<Result<void, SchedulingError | RepositoryError>> =>
+  ): Promise<Result<void, ScheduleExceptionWriteError>> =>
     ports.writeScheduleException(
       cmd.localDates.map((localDate) => BusyKey.of(cmd.barberId, localDate)),
       (stored) => {
@@ -111,7 +111,7 @@ export const clearScheduleBlock =
   (ports: ScheduleExceptionPorts) =>
   (
     cmd: ClearScheduleBlockCommand,
-  ): Promise<Result<void, SchedulingError | RepositoryError>> =>
+  ): Promise<Result<void, ScheduleExceptionWriteError>> =>
     ports.writeScheduleException(
       [BusyKey.of(cmd.barberId, cmd.localDate)],
       (stored) => {
@@ -135,7 +135,7 @@ export const moveScheduleBlock =
   (ports: ScheduleExceptionPorts) =>
   (
     cmd: MoveScheduleBlockCommand,
-  ): Promise<Result<void, SchedulingError | RepositoryError>> => {
+  ): Promise<Result<void, ScheduleExceptionWriteError>> => {
     const liftKey = BusyKey.of(cmd.lift.barberId, cmd.lift.localDate);
     // Each day's position in `keys` — the lifted day leads.
     const positions = new Map<BusyKey, number>([[liftKey, 0]]);
@@ -191,7 +191,7 @@ export const writeDayBreaks =
   (ports: ScheduleExceptionPorts) =>
   (
     cmd: DayBreaksCommand,
-  ): Promise<Result<void, SchedulingError | RepositoryError>> => {
+  ): Promise<Result<void, ScheduleExceptionWriteError>> => {
     const key = BusyKey.of(cmd.barberId, cmd.localDate);
     return ports.writeScheduleException([key], (stored) =>
       Result.ok([
@@ -223,7 +223,7 @@ export const applyDayExceptions =
   (
     request: DayExceptionsRequest,
     zoneOf: (locationId: LocationId) => TimeZone,
-  ): Promise<Result<void, SchedulingError | RepositoryError>> => {
+  ): Promise<Result<void, ScheduleExceptionWriteError>> => {
     switch (request.dayExceptionsEdit) {
       case DayExceptionsEdit.Block:
         return writeScheduleBlocks(ports)({

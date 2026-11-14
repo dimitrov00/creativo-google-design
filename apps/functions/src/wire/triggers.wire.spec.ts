@@ -261,14 +261,30 @@ describe('decodeCapacityEvent', () => {
     });
   });
 
-  it.each([
-    CapacitySource.Location,
-    CapacitySource.Settings,
-    CapacitySource.Sweep,
-  ])('reads a %s write as a sweep of every rostered barber', (source) => {
-    expect(decodeCapacityEvent(source)).toEqual({
-      capacityTrigger: CapacityTrigger.Sweep,
-    });
+  it.each([CapacitySource.Location, CapacitySource.Sweep])(
+    'reads a %s write as a sweep of every rostered barber',
+    (source) => {
+      expect(decodeCapacityEvent(source)).toEqual({
+        capacityTrigger: CapacityTrigger.Sweep,
+      });
+    },
+  );
+
+  it('reads a write of the booking policy as a sweep — the policy IS the horizon', () => {
+    expect(
+      decodeCapacityEvent(CapacitySource.Settings, { docId: 'bookingPolicy' }),
+    ).toEqual({ capacityTrigger: CapacityTrigger.Sweep });
+  });
+
+  it('reads a write of any other settings document as nothing: a permissions save rebuilds no capacity (staff permissions P5)', () => {
+    for (const docId of ['staffPermissions', 'somethingElse', '']) {
+      expect(
+        decodeCapacityEvent(CapacitySource.Settings, { docId }),
+        docId,
+      ).toBeNull();
+    }
+    // A write that names no document is no policy write either.
+    expect(decodeCapacityEvent(CapacitySource.Settings)).toBeNull();
   });
 });
 

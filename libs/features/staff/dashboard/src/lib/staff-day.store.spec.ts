@@ -18,10 +18,10 @@ import {
   Weekday,
 } from '@core/primitives';
 import {
+  AccessErrorCode,
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
-  SchedulingErrorCode,
 } from '@core/errors';
 import {
   type BookingCall,
@@ -303,7 +303,7 @@ describe('StaffDayStore — the block write’s failure is a struct', () => {
     const calls: GatewayCall[] = [];
     const refusal = PipelineError.of(
       PipelineErrorCode.InvalidRequest,
-      SchedulingErrorCode.RosterForbidden,
+      AccessErrorCode.OwnOnly,
       null,
       null,
     );

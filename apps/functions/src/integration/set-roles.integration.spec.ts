@@ -10,11 +10,13 @@ import {
   BarberLinkRequest,
   GovernedCollection,
   Role,
+  StaffPermissions,
 } from '@core/components';
 import {
   AuditResourceId,
   BarberId,
   OperationId,
+  StaffCapability,
   TenantId,
   UserId,
   UtcEpochMs,
@@ -28,6 +30,7 @@ import {
 } from '@core/entities';
 import {
   RegistrationSystem,
+  StaffAccessSystem,
   StaffAnalyticsSystem,
   StoredDocumentSystem,
 } from '@core/systems';
@@ -388,19 +391,26 @@ describe('setRoles (emulator)', () => {
     // Nobody is signed out: the account has never been revoked.
     expect((await auth.getUser(ADMIN)).tokensValidAfterTime).toBeUndefined();
 
-    // The stored account is now a barber's too: analytics judges it linked
-    // to the record, and admits its own scope.
-    const caller = StaffAnalyticsSystem.callerOf(
+    // The stored account is now a barber's too: it is a staff member
+    // linked to the record, and analytics admits its own scope. (The
+    // callable itself, driven with the un-refreshed token, is
+    // `staff-permissions.integration.spec.ts`.)
+    const staff = StaffAccessSystem.staffOf(
       { id: ADMIN, ...stored.data() } as User,
       FIXTURE_NOW_UTC_MS,
     );
-    expect(caller).toMatchObject({
-      ok: true,
-      value: { linkedBarberId: IVAN, callerBlocked: false },
-    });
+    expect(staff.ok).toBe(true);
+    const access =
+      staff.ok &&
+      StaffAccessSystem.accessOf(
+        StaffPermissions.UNSET,
+        StaffCapability.Analytics,
+        staff.value,
+      );
+    expect(access).toEqual({ accessScope: 'ALL', linkedBarberId: IVAN });
     expect(
-      caller.ok &&
-        StaffAnalyticsSystem.scopeOf(caller.value, { scopeBarberIds: [IVAN] }, [
+      access &&
+        StaffAnalyticsSystem.scopeOf(access, { scopeBarberIds: [IVAN] }, [
           IVAN,
         ]),
     ).toEqual({ ok: true, value: [IVAN] });

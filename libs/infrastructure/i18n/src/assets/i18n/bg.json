@@ -2,7 +2,6 @@
   "errors": {
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "Почивката трябва да е в работните часове на деня.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "Промяната не може да започва от минал ден.",
-    "SCHEDULING_ROSTER_FORBIDDEN": "Можеш да променяш само своето работно време.",
     "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "Бръснарят не работи в този салон. Първо го добави към салоните му.",
     "SCHEDULING_ROSTER_DEPARTED": "Този бръснар е напуснал. Работното му време не се променя.",
     "SCHEDULING_TIME_RANGE_INVALID": "Краят трябва да е след началото, без застъпване.",
@@ -177,8 +176,25 @@
     "GOVERNANCE_ROLES_BARBER_UNKNOWN": "Няма такъв бръснар.",
     "GOVERNANCE_ROLES_LINK_WITHOUT_BARBER": "Само бръснар може да има свързан бръснарски профил.",
     "GOVERNANCE_ROLES_BARBER_ALREADY_LINKED": "Този бръснар вече е свързан с друг профил.",
+    "GOVERNANCE_PERMISSIONS_UNAUTHENTICATED": "Влез отново, за да промениш правата.",
+    "GOVERNANCE_PERMISSIONS_FORBIDDEN": "Само собственикът може да променя правата.",
+    "GOVERNANCE_PERMISSIONS_INVALID": "Провери избраното и опитай пак.",
+    "GOVERNANCE_PERMISSIONS_NOT_OFFERED": "Това право не може да се даде на тази роля.",
+    "ACCESS_NOT_STAFF": "Нямаш достъп до това. Влез отново или питай собственика.",
+    "ACCESS_DENIED": "Нямаш право за това. Питай собственика.",
+    "ACCESS_DENIED.TIME_OFF": "Нямаш право да блокираш време. Питай собственика.",
+    "ACCESS_DENIED.HOURS": "Нямаш право да променяш работното време. Питай собственика.",
+    "ACCESS_DENIED.ANALYTICS": "Нямаш достъп до анализите.",
+    "ACCESS_DENIED.TEAM_PROFILES": "Нямаш право да редактираш профили на бръснари.",
+    "ACCESS_DENIED.TEAM_OFFERINGS": "Нямаш право да определяш услуги и цени.",
+    "ACCESS_DENIED.TEAM_MANAGE": "Нямаш право да управляваш екипа.",
+    "ACCESS_OWN_ONLY": "Можеш да променяш само своето.",
+    "ACCESS_OWN_ONLY.TIME_OFF": "Можеш да блокираш време само в своя график.",
+    "ACCESS_OWN_ONLY.HOURS": "Можеш да променяш само своето работно време.",
+    "ACCESS_OWN_ONLY.ANALYTICS": "Виждаш само своите анализи.",
+    "ACCESS_OWN_ONLY.TEAM_PROFILES": "Можеш да редактираш само своя профил.",
+    "ACCESS_OWN_ONLY.TEAM_OFFERINGS": "Можеш да определяш само своите услуги и цени.",
     "TEAM_UNAUTHENTICATED": "Влез отново, за да управляваш екипа.",
-    "TEAM_FORBIDDEN": "Нямаш права за тази промяна.",
     "TEAM_INVALID_INPUT": "Провери попълненото и опитай пак.",
     "TEAM_BARBER_NOT_FOUND": "Този бръснар вече не съществува.",
     "TEAM_BARBER_DEPARTED": "Този бръснар е напуснал. Върни го в екипа, за да го променяш.",
@@ -188,7 +204,6 @@
     "TEAM_SERVICE_UNKNOWN": "Тази услуга вече не съществува.",
     "TEAM_NOT_DRAFT": "Може да се изтрие само бръснар, който още не е приемал записи.",
     "ANALYTICS_UNAUTHENTICATED": "Влез отново, за да видиш анализите.",
-    "ANALYTICS_FORBIDDEN": "Нямаш достъп до тези анализи.",
     "ANALYTICS_BARBER_NOT_LINKED": "Профилът ти още не е свързан с бръснар. Помоли собственика да го свърже.",
     "ANALYTICS_GOAL_FORBIDDEN": "Целта на бръснар се задава само от самия бръснар.",
     "ANALYTICS_GOAL_INVALID_RANGE": "Долната граница трябва да е до горната, и двете над нула; месецът — този или следващият.",
@@ -1042,6 +1057,16 @@
     "countOne": "1 посещение"
   },
   "staff": {
+    "permissions": {
+      "capabilities": {
+        "TIME_OFF": "Блокира време",
+        "HOURS": "Променя работното време",
+        "ANALYTICS": "Вижда анализи",
+        "TEAM_PROFILES": "Редактира профил на бръснар",
+        "TEAM_OFFERINGS": "Определя услуги и цени",
+        "TEAM_MANAGE": "Управлява екипа"
+      }
+    },
     "hours": {
       "title": "Работно време",
       "lede": "Седмичните часове и почивките на бръснаря.",

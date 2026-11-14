@@ -4,6 +4,7 @@ import {
   BookingPolicySettingsId,
   ClientMoneyStatsId,
   PolicyRecomputeJobId,
+  StaffPermissionsSettingsId,
 } from '@core/primitives';
 
 /**
@@ -102,7 +103,7 @@ export const Collections = {
   Positions: 'positions',
   Courses: 'courses',
   Events: 'events',
-  /** Fixed-id tenant settings — today only `bookingPolicy`. */
+  /** Fixed-id tenant settings — `bookingPolicy` and `staffPermissions`. */
   Settings: 'settings',
   /** `BackfillJob` / `PolicyRecomputeJob` / `AnalyticsRecomputeJob`, keyed by the job. */
   BackfillJobs: 'backfillJobs',
@@ -133,8 +134,11 @@ export const Subcollections = {
   SeasonProgress: 'seasonProgress',
 } as const;
 
-/** `settings/bookingPolicy` — the one settings document (`BookingPolicySettings`). */
+/** `settings/bookingPolicy` — the booking policy (`BookingPolicySettings`). */
 export const BOOKING_POLICY_DOC = BookingPolicySettingsId.FIXED;
+
+/** `settings/staffPermissions` — what each staff level may do (`StaffPermissionsSettings`). */
+export const STAFF_PERMISSIONS_DOC = StaffPermissionsSettingsId.FIXED;
 
 /** `clientStats/{customerId}/restricted/money` — the staff-only money projection. */
 export const CLIENT_MONEY_DOC = ClientMoneyStatsId.FIXED;

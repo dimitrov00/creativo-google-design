@@ -28,6 +28,7 @@ import type {
   ProfileLoadPorts,
   RecentNotificationPorts,
   ShopDayReadPorts,
+  StaffPermissionsReadPorts,
   TelemetryPorts,
   TriggerFailurePorts,
   TxPorts,
@@ -100,6 +101,7 @@ import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
 export type FirestorePorts = TxPorts &
   // firestoreSettingsPorts
   PolicyReadPorts &
+  StaffPermissionsReadPorts &
   // firestoreCouponPorts
   CouponLookupPorts &
   // firestoreAccountPorts

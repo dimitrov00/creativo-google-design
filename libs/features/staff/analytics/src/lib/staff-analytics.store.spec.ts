@@ -325,15 +325,20 @@ describe('StaffAnalyticsStore — a barber', () => {
     );
   });
 
-  it('ANALYTICS_FORBIDDEN is a refusal too', async () => {
-    const { store, calls, cache } = build({
-      principal: barber(),
-      linkedBarberId: IVAN,
-    });
-    await calls.answer(refusal('ANALYTICS_FORBIDDEN'));
-    expect(store.analyticsLoad()).toBe(AnalyticsLoad.Refused);
-    expect(cache.state.clears).toBe(1);
-  });
+  it.each(['ACCESS_DENIED', 'ACCESS_OWN_ONLY', 'ACCESS_NOT_STAFF'])(
+    '%s is a refusal too: who may read the numbers is the server’s to say (staff permissions P6)',
+    async (code) => {
+      const { store, calls, cache } = build({
+        principal: barber(),
+        linkedBarberId: IVAN,
+      });
+      await calls.answer(refusal(code));
+      expect(store.analyticsLoad()).toBe(AnalyticsLoad.Refused);
+      expect(store.refusal()?.serverErrorCode).toBe(code);
+      expect(store.report()).toBeNull();
+      expect(cache.state.clears).toBe(1);
+    },
+  );
 
   it('a call that fails keeps the cached figures on screen, and retries', async () => {
     const cached = analyticsReportFixture({ reportSeatRows: [] });

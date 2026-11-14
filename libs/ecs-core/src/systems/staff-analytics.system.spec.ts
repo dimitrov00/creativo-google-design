@@ -24,6 +24,7 @@ import {
   Role,
   Seat,
   SeatOutcome,
+  StaffPermissions,
   type ShopNow,
 } from '@core/components';
 import {
@@ -39,6 +40,7 @@ import {
   ScheduleExceptionId,
   SeatId,
   ServiceId,
+  StaffCapability,
   UserId,
   UtcEpochMs,
   Weekday,
@@ -53,7 +55,6 @@ import {
   analyticsReportFixture,
   appointmentFixture,
   barberScheduleFixture,
-  blockedUserFixture,
   deepFreeze,
   endMinute,
   localDate,
@@ -66,6 +67,7 @@ import {
 } from '@core/testing';
 import { AnalyticsRadarSystem } from './analytics-radar.system';
 import type { ChairDay } from './chair-time.system';
+import { type StaffAccess, StaffAccessSystem } from './staff-access.system';
 import {
   type AnalyticsDay,
   type AnalyticsDaysInput,
@@ -246,19 +248,23 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
     analyticsComparison: AnalyticsComparison.Previous,
   });
   const known = [ivan, niko];
+  /**
+   * How far `ANALYTICS` reaches for a stored account of these roles and
+   * this link — what the pipeline hands the table. A missing or blocked
+   * account never gets here: `StaffAccessSystem.staffOf` refused it first.
+   */
   const caller = (
     roles: readonly Role[],
     linkedBarberId: BarberId | null = null,
-    blocked = false,
-  ) => ({ callerRoles: roles, callerBlocked: blocked, linkedBarberId });
+    stored: Record<string, unknown> = {},
+  ): StaffAccess =>
+    StaffAccessSystem.accessOf(
+      StaffPermissions.read(stored),
+      StaffCapability.Analytics,
+      registeredUserFixture({ roles: [...roles], linkedBarberId }),
+    );
 
   it.each([
-    [
-      'a blocked admin',
-      caller([Role.Admin], null, true),
-      null,
-      'ANALYTICS_FORBIDDEN',
-    ],
     ['an admin asking for the shop', caller([Role.Admin]), null, null],
     ['an admin asking for a barber', caller([Role.Admin]), niko, niko],
     [
@@ -289,7 +295,7 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
       'a linked barber asking for a colleague',
       caller([Role.Barber], ivan),
       niko,
-      'ANALYTICS_FORBIDDEN',
+      'ACCESS_OWN_ONLY',
     ],
     [
       'a barber not linked',
@@ -297,13 +303,8 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
       null,
       'ANALYTICS_BARBER_NOT_LINKED',
     ],
-    [
-      'a receptionist',
-      caller([Role.Receptionist]),
-      null,
-      'ANALYTICS_FORBIDDEN',
-    ],
-    ['the sysadmin', caller([Role.Sysadmin]), null, 'ANALYTICS_FORBIDDEN'],
+    ['a receptionist', caller([Role.Receptionist]), null, 'ACCESS_DENIED'],
+    ['the sysadmin', caller([Role.Sysadmin]), null, 'ACCESS_DENIED'],
     [
       'an admin asking for a part of the team, named twice and out of order',
       caller([Role.Admin]),
@@ -314,12 +315,43 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
       'a linked barber naming themselves and a colleague',
       caller([Role.Barber], ivan),
       [ivan, niko],
-      'ANALYTICS_FORBIDDEN',
+      'ACCESS_OWN_ONLY',
+    ],
+    // The owner's cells (staff permissions P3).
+    [
+      'the front desk, given everyone’s numbers',
+      caller([Role.Receptionist], null, { receptionistAnalyticsScope: 'ALL' }),
+      null,
+      null,
+    ],
+    [
+      'a barber let into every colleague’s numbers',
+      caller([Role.Barber], ivan, { barberAnalyticsScope: 'ALL' }),
+      niko,
+      niko,
+    ],
+    [
+      'a barber whose own numbers the owner took away',
+      caller([Role.Barber], ivan, { barberAnalyticsScope: 'NONE' }),
+      null,
+      'ACCESS_DENIED',
+    ],
+    [
+      'a barber whose cell nobody could have saved',
+      caller([Role.Barber], ivan, { barberAnalyticsScope: 'EVERYONE' }),
+      null,
+      'ACCESS_DENIED',
     ],
   ] as const)('%s', (_, who, asked, expected) => {
     const result = S.scopeOf(who, request(asked), known);
-    if (typeof expected === 'string' && expected.startsWith('ANALYTICS_')) {
+    if (typeof expected === 'string' && /^(ANALYTICS|ACCESS)_/.test(expected)) {
       expect(result.ok ? null : result.error.errorCode).toBe(expected);
+      if (!result.ok && expected.startsWith('ACCESS_')) {
+        expect(result.error).toEqual({
+          errorCode: expected,
+          staffCapability: 'ANALYTICS',
+        });
+      }
     } else {
       // The shop is none named; one record is that barber's own report.
       const value =
@@ -336,11 +368,9 @@ describe('StaffAnalyticsSystem.scopeOf — the visibility table', () => {
 describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
   const centre = ANALYTICS_FIXTURE_SHOPS.centre;
   const mladost = ANALYTICS_FIXTURE_SHOPS.mladost;
-  const admin = {
-    callerRoles: [Role.Admin],
-    callerBlocked: false,
-    linkedBarberId: null,
-  };
+  const admin: StaffAccess = { accessScope: 'ALL', linkedBarberId: null };
+  const own: StaffAccess = { accessScope: 'OWN', linkedBarberId: ivan };
+  const nobody: StaffAccess = { accessScope: 'NONE', linkedBarberId: null };
 
   it('locationScopeOf: none named is every location; an admin may name shops of the shop’s, beside barbers too', () => {
     const ask = (...scopeLocationIds: LocationId[]) => ({ scopeLocationIds });
@@ -362,18 +392,23 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
       ok: false,
       error: { errorCode: 'ANALYTICS_LOCATION_UNKNOWN', locationId: ghost },
     });
-    for (const who of [
-      { ...admin, callerBlocked: true },
-      { ...admin, callerRoles: [Role.Barber], linkedBarberId: ivan },
-    ]) {
-      expect(S.locationScopeOf(who, ask(centre), shops)).toEqual({
-        ok: false,
-        error: { errorCode: 'ANALYTICS_FORBIDDEN' },
-      });
-    }
+    // Naming a location needs the whole shop.
+    expect(S.locationScopeOf(own, ask(centre), shops)).toEqual({
+      ok: false,
+      error: { errorCode: 'ACCESS_OWN_ONLY', staffCapability: 'ANALYTICS' },
+    });
+    expect(S.locationScopeOf(nobody, ask(centre), shops)).toEqual({
+      ok: false,
+      error: { errorCode: 'ACCESS_DENIED', staffCapability: 'ANALYTICS' },
+    });
+    // …and naming none asks nothing of anyone.
+    expect(S.locationScopeOf(own, ask(), shops)).toEqual({
+      ok: true,
+      value: [],
+    });
   });
 
-  it('comparedLocationsOf: the named shops, or every one, when two or more — for an admin only', () => {
+  it('comparedLocationsOf: the named shops, or every one, when two or more — for a reader of the whole shop only', () => {
     const shops = ANALYTICS_FIXTURE_LOCATIONS;
     const all = shops.map((shop) => shop.id);
     expect(S.comparedLocationsOf(admin, [], shops)).toEqual(all);
@@ -382,13 +417,8 @@ describe('StaffAnalyticsSystem — the location scope (ADR 2026-11-09)', () => {
       mladost,
     ]);
     expect(S.comparedLocationsOf(admin, [centre], shops)).toEqual([]);
-    expect(
-      S.comparedLocationsOf(
-        { ...admin, callerRoles: [Role.Barber], linkedBarberId: ivan },
-        [],
-        shops,
-      ),
-    ).toEqual([]);
+    expect(S.comparedLocationsOf(own, [], shops)).toEqual([]);
+    expect(S.comparedLocationsOf(nobody, [], shops)).toEqual([]);
   });
 
   it('atLocations and visitsAt keep those shops’ hours and the visits booked there; none keeps everything', () => {
@@ -1559,36 +1589,6 @@ describe('StaffAnalyticsSystem.report — the catalogue', () => {
 describe('StaffAnalyticsSystem — what the pipeline reads and builds', () => {
   const centre = LocationId.of('loc-center');
   const mladost = LocationId.of('loc-mladost');
-
-  it('reads the caller off the stored record: roles, a block at the instant, the link', () => {
-    const linked = registeredUserFixture({
-      id: UserId.of('u-ivan'),
-      roles: [Role.Barber],
-      linkedBarberId: ivan,
-    });
-    expect(S.callerOf(linked, stamp)).toEqual({
-      ok: true,
-      value: {
-        callerRoles: [Role.Barber],
-        callerBlocked: false,
-        linkedBarberId: ivan,
-      },
-    });
-    const blocked = blockedUserFixture({ roles: [Role.Admin] });
-    expect(S.callerOf(blocked, stamp)).toMatchObject({
-      ok: true,
-      value: { callerBlocked: true, linkedBarberId: null },
-    });
-    // The block ran out: no longer blocked at a later instant.
-    const later = UtcEpochMs.plusDays(stamp, 400);
-    expect(S.callerOf(blocked, later)).toMatchObject({
-      value: { callerBlocked: false },
-    });
-    expect(S.callerOf(null, stamp)).toEqual({
-      ok: false,
-      error: { errorCode: 'ANALYTICS_FORBIDDEN' },
-    });
-  });
 
   it('takes today from the default shop, else the first by id, else none', () => {
     const a = locationFixture({ id: mladost });

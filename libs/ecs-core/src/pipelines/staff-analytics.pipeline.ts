@@ -5,11 +5,13 @@ import {
   type LocationId,
   LogEvent,
   Result,
+  StaffCapability,
   type TimeZone,
   type UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import {
+  type AccessError,
   AnalyticsError,
   CatalogErrorCode,
   RepositoryError,
@@ -42,15 +44,18 @@ import type {
   PolicyReadPorts,
   ProfileLoadPorts,
   ShopDayReadPorts,
+  StaffPermissionsReadPorts,
 } from '@core/ports';
 import {
   AnalyticsCarouselSystem,
   type AnalyticsVisit,
   type AnalyticsFollowUp,
   type ShopNowAt,
+  StaffAccessSystem,
   StaffAnalyticsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { loadStaffCaller } from './team-caller.pipeline';
 
 /**
  * `staffAnalytics` — one report for one scope and one period
@@ -58,9 +63,13 @@ import {
  * Read-only: the impure read, the pure compute, and a log line in place of
  * a write.
  *
- * 1. **The caller** — `users/{uid}`, its STORED roles, block and barber
- *    link (`StaffAnalyticsSystem.callerOf`); no record →
- *    `ANALYTICS_FORBIDDEN`.
+ * 1. **The caller** — `users/{uid}` and `settings/staffPermissions`, read
+ *    side by side (`loadStaffCaller`: this call has no transaction to read
+ *    them in, and a read needs no more than "as of this call"). A missing,
+ *    blocked or erased account, or one with no staff role, is
+ *    `ACCESS_NOT_STAFF` (`StaffAccessSystem.staffOf`); then how far
+ *    `ANALYTICS` reaches for the STORED roles and link (`accessOf`, staff
+ *    permissions P3).
  * 2. **The period** — rebuilt with `AnalyticsPeriod.of` from the span, the
  *    first day and (for a `CUSTOM` range) the last: a first day that is not
  *    its span's first, a `toLocalDate` where none belongs or none where one
@@ -73,7 +82,9 @@ import {
  *    once beside it, for the days worked there and the follow-ups booked
  *    there.
  * 4. **The scope** — the visibility table (`scopeOf`) over the records read:
- *    one barber, or every record of the shop; and an admin's location
+ *    one barber, or every record of the shop — nobody is `ACCESS_DENIED`,
+ *    an own-only reader asking for a colleague `ACCESS_OWN_ONLY`; and a
+ *    whole-shop reader's location
  *    (`locationScopeOf`, ADR 2026-11-09), which cuts every read below to
  *    that shop: the stored days to its share (`storedAt`), the live days to
  *    its hours (`atLocation`), the visits to those booked there
@@ -131,6 +142,7 @@ export type StaffAnalyticsPorts = AnalyticsReadPorts &
   ProfileLoadPorts &
   ShopDayReadPorts &
   PolicyReadPorts &
+  StaffPermissionsReadPorts &
   DefaultLocationPorts &
   ClockPorts &
   LogPorts;
@@ -205,14 +217,21 @@ export const staffAnalytics =
   (ports: StaffAnalyticsPorts) =>
   async (
     cmd: StaffAnalyticsCommand,
-  ): Promise<Result<AnalyticsReport, AnalyticsError | RepositoryError>> => {
+  ): Promise<
+    Result<AnalyticsReport, AnalyticsError | AccessError | RepositoryError>
+  > => {
     const nowUtcMs = ports.nowUtcMs();
 
-    // 1. The caller, from their stored record.
-    const profile = await ports.loadProfile(cmd.callerUserId);
-    if (!profile.ok) return profile;
-    const caller = S.callerOf(profile.value, nowUtcMs);
-    if (!caller.ok) return caller;
+    // 1. The caller, from their stored record and the owner's cells.
+    const facts = await loadStaffCaller(ports, cmd.callerUserId);
+    if (!facts.ok) return facts;
+    const staff = StaffAccessSystem.staffOf(facts.value.caller, nowUtcMs);
+    if (!staff.ok) return staff;
+    const access = StaffAccessSystem.accessOf(
+      facts.value.permissions,
+      StaffCapability.Analytics,
+      staff.value,
+    );
 
     // 2. The period the request names.
     const period = AnalyticsPeriod.of(
@@ -249,9 +268,9 @@ export const staffAnalytics =
     }));
 
     // 4. The scope.
-    const scope = S.scopeOf(caller.value, cmd, records.value);
+    const scope = S.scopeOf(access, cmd, records.value);
     if (!scope.ok) return scope;
-    const at = S.locationScopeOf(caller.value, cmd, locations);
+    const at = S.locationScopeOf(access, cmd, locations);
     if (!at.ok) return at;
     const locationIds = at.value;
     const barberIds = S.barbersInScope(scope.value, records.value);
@@ -468,7 +487,7 @@ export const staffAnalytics =
       locationIds,
     );
     const locationFigures = S.comparedLocationsOf(
-      caller.value,
+      access,
       locationIds,
       locations,
     ).map((locationId) =>

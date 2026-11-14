@@ -131,7 +131,8 @@ export async function renderAnalyticsScreen<T>(
       if (options.refuse) {
         return Result.err(
           PipelineError.fromWire('functions/permission-denied', {
-            errorCode: 'ANALYTICS_FORBIDDEN',
+            errorCode: 'ACCESS_DENIED',
+            staffCapability: 'ANALYTICS',
           }),
         );
       }

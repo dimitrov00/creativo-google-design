@@ -5,18 +5,23 @@ import {
   type WriteOp,
 } from '@core/components';
 import { type BarberId, Result } from '@core/primitives';
-import { type RepositoryError, TeamError } from '@core/errors';
+import {
+  type AccessError,
+  type RepositoryError,
+  TeamError,
+} from '@core/errors';
 import {
   type Barber,
   type BarberSchedule,
   Collections,
   type Service,
-  type User,
 } from '@core/entities';
 import type { ClockPorts, CommitPorts, HashPorts } from '@core/ports';
-import { StaffSetupSystem, TeamSystem } from '@core/systems';
+import { StaffAccessSystem, StaffSetupSystem, TeamSystem } from '@core/systems';
 import {
-  admitTeamStaffCaller,
+  admitTeamCaller,
+  readStaffCaller,
+  type StaffCallerFacts,
   TEAM_SERVICES,
   type TeamAct,
   teamActor,
@@ -29,7 +34,9 @@ import {
  * unaware of onboarding. The caller gate first, on the VERIFIED token (any
  * staff role). Then ONE commit that reads `users/{caller}`, `barbers/{id}`,
  * the barber's roster and every service, and asks
- * `TeamSystem.admitActivation` (a stored staff account, not blocked),
+ * `StaffAccessSystem.staffOf` (a stored staff account, not blocked — the
+ * fixed staff tier, no capability: the step decides nothing a caller
+ * chooses, so whoever may save one of the needed items may trigger it),
  * `StaffSetupSystem.checklistOf` and `TeamSystem.activate`:
  *
  * - a `DRAFT` with every needed item done goes live at the status its
@@ -52,8 +59,7 @@ export type ActivateBarberCommand = TeamAct & {
 
 export type ActivateBarberPorts = CommitPorts & ClockPorts & HashPorts;
 
-type Snapshot = {
-  readonly caller: User | null;
+type Snapshot = StaffCallerFacts & {
   readonly barber: Barber | null;
   readonly schedule: BarberSchedule | null;
   readonly services: readonly Service[];
@@ -69,29 +75,32 @@ export const activateBarber =
   (ports: ActivateBarberPorts) =>
   async (
     cmd: ActivateBarberCommand,
-  ): Promise<Result<TeamCall.Activation, TeamError | RepositoryError>> => {
-    const admitted = admitTeamStaffCaller(cmd);
+  ): Promise<
+    Result<TeamCall.Activation, TeamError | AccessError | RepositoryError>
+  > => {
+    const admitted = admitTeamCaller(cmd);
     if (!admitted.ok) return admitted;
     const callerUserId = admitted.value;
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       async (tx): Promise<Snapshot> => {
-        const [caller, barber, schedule, services] = await Promise.all([
-          tx.get<User>([Collections.Users, callerUserId]),
+        const [facts, barber, schedule, services] = await Promise.all([
+          readStaffCaller(tx, callerUserId),
           tx.get<Barber>([Collections.Barbers, cmd.barberId]),
           tx.get<BarberSchedule>([Collections.BarberSchedules, cmd.barberId]),
           tx.query<Service>(TEAM_SERVICES),
         ]);
-        return { caller, barber, schedule, services };
+        return { ...facts, barber, schedule, services };
       },
       ({
         caller,
         barber,
         schedule,
         services,
-      }): Result<Activation, TeamError> => {
-        const stored = TeamSystem.admitActivation(caller, nowUtcMs);
+      }): Result<Activation, TeamError | AccessError> => {
+        // The fixed staff tier: any staff member's save may complete a setup.
+        const stored = StaffAccessSystem.staffOf(caller, nowUtcMs);
         if (!stored.ok) return stored;
         if (barber === null) {
           return Result.err(TeamError.barberNotFound(cmd.barberId));

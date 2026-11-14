@@ -10,6 +10,7 @@ import {
   GovernanceCall,
   IdentityCall,
   InvitationCall,
+  PermissionsCall,
   RolesCall,
   RosterCall,
   SetAnalyticsGoalCall,
@@ -44,7 +45,9 @@ import type { PipelineError } from '@core/errors';
  * `deleteDraftBarber` — `setBarberOfferings`, a barber's services and
  * prices, `setDayExceptions`, a barber's days off, blocks and one-day
  * breaks, and `listTeam`, the Team page's read
- * (`docs/designs/team-onboarding.md`, D5, D6, D8, D9, D10, O4).
+ * (`docs/designs/team-onboarding.md`, D5, D6, D8, D9, D10, O4); staff
+ * permissions adds `setStaffPermissions`, the owner's save of what a staff
+ * level may do (`docs/designs/staff-permissions.md`, P6).
  * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
@@ -83,6 +86,7 @@ export const Callables = {
   SetBarberOfferings: 'setBarberOfferings',
   SetDayExceptions: 'setDayExceptions',
   ListTeam: 'listTeam',
+  SetStaffPermissions: 'setStaffPermissions',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -298,6 +302,16 @@ export type CallableWire = {
     readonly input: TeamCall.ListRequest;
     readonly answer: TeamCall.Listed;
   };
+  /**
+   * The owner's save of what a staff level may do (staff permissions P6):
+   * the cells changed in — the act's operation id rides the payload
+   * ({@link OPERATION_ID_FIELD}), REQUIRED; the cells that really changed
+   * out, each with its scope before and after.
+   */
+  readonly [Callables.SetStaffPermissions]: {
+    readonly input: PermissionsCall;
+    readonly answer: PermissionsCall.Saved;
+  };
 };
 
 /**
@@ -359,6 +373,8 @@ export const OPERATION_ID_FIELD: {
   [Callables.SetDayExceptions]: 'operationId',
   // A read, like the analytics report: the id is the transport's only.
   [Callables.ListTeam]: 'operationId',
+  // The save names itself: the id stamps the document and keys its row.
+  [Callables.SetStaffPermissions]: 'operationId',
 };
 
 /**
@@ -369,8 +385,8 @@ export const OPERATION_ID_FIELD: {
  * (`consumeAppCheckToken`, replay protection) while the switch is MONITOR
  * or ENFORCE; the edge refuses a replay of it under ENFORCE. The
  * destructive and sensitive acts take limited-use tokens — the erasure,
- * its preview, the data-subject export, an impersonation start and a roles
- * change; every other callable a standard one. Total over
+ * its preview, the data-subject export, an impersonation start, a roles
+ * change and a permissions save; every other callable a standard one. Total over
  * {@link CallableName} by its mapped type.
  */
 export const CALLABLE_APP_CHECK_TOKEN: {
@@ -411,6 +427,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.SetBarberOfferings]: AppCheckTokenUse.Standard,
   [Callables.SetDayExceptions]: AppCheckTokenUse.Standard,
   [Callables.ListTeam]: AppCheckTokenUse.Standard,
+  [Callables.SetStaffPermissions]: AppCheckTokenUse.LimitedUse,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -483,4 +500,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.SetBarberOfferings]: TeamCall.decodeSaved,
   [Callables.SetDayExceptions]: DayExceptionsCall.decodeSaved,
   [Callables.ListTeam]: TeamCall.decodeListed,
+  [Callables.SetStaffPermissions]: PermissionsCall.decodeSaved,
 };

@@ -21,6 +21,7 @@ import {
   type SetAnalyticsGoalCall,
 } from '@core/components';
 import {
+  AccessErrorCode,
   AnalyticsErrorCode,
   type PipelineError,
   PipelineErrorCode,
@@ -161,7 +162,10 @@ function orderedRange(
  *   callable (every open asks: comparing stored instants to skip a call is
  *   no rule of Law 7's) and replaces it; the answer is cached again, its
  *   seat rows dropped by the adapter.
- * - **Refusals.** `ANALYTICS_FORBIDDEN` / `…_BARBER_NOT_LINKED` delete the
+ * - **Refusals.** A staff-access refusal (`ACCESS_NOT_STAFF`,
+ *   `ACCESS_DENIED`, `ACCESS_OWN_ONLY` — who may read the numbers is the
+ *   server's to say, staff permissions P6) and `ANALYTICS_BARBER_NOT_LINKED`
+ *   delete the
  *   account's cached reports and show the refusal; `…_SCOPE_UNKNOWN` falls
  *   back to the shop and says so; `…_UNAUTHENTICATED` (and the platform's
  *   own) is the sign-in; `…_PERIOD_OUT_OF_RANGE` goes back to the current
@@ -1016,6 +1020,18 @@ export class StaffAnalyticsStore {
     this.cacheVersion.update((version) => version + 1);
   }
 
+  /**
+   * This account may not see these figures: none of its cached reports
+   * stays on the device, and the screen shows the refusal.
+   */
+  private denied(error: PipelineError): void {
+    this.cache.clearCachedReports();
+    this._report.set(null);
+    this._seatRowsHeld.set(false);
+    this._refusal.set(error);
+    this._load.set(AnalyticsLoad.Refused);
+  }
+
   private refused(error: PipelineError): void {
     const code = error.serverErrorCode;
     if (
@@ -1027,20 +1043,19 @@ export class StaffAnalyticsStore {
       });
       return;
     }
+    // Who may read the numbers is the server's to say (staff permissions
+    // P6): no staff member, nobody on the level, or their own only.
+    if (Tag.has(AccessErrorCode, code)) {
+      this.denied(error);
+      return;
+    }
     if (!Tag.has(AnalyticsErrorCode, code)) {
       this._load.set(AnalyticsLoad.Failed);
       return;
     }
     switch (code) {
-      case AnalyticsErrorCode.Forbidden:
       case AnalyticsErrorCode.BarberNotLinked:
-        // This account may not see these figures: none of its cached
-        // reports stays on the device.
-        this.cache.clearCachedReports();
-        this._report.set(null);
-        this._seatRowsHeld.set(false);
-        this._refusal.set(error);
-        this._load.set(AnalyticsLoad.Refused);
+        this.denied(error);
         return;
       case AnalyticsErrorCode.ScopeUnknown:
         if (untracked(this.pickedScope).length === 0) break;

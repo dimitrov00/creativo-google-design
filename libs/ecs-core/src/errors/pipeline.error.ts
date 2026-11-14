@@ -126,6 +126,15 @@ export type PipelineError = {
 export const WIRE_PARAM_ALLOWLIST: {
   readonly [errorCode: string]: readonly string[];
 } = {
+  // Staff access: the capability the caller lacks, so the web can name it.
+  ACCESS_DENIED: ['staffCapability'],
+  ACCESS_OWN_ONLY: ['staffCapability'],
+  // The permissions editor: the cell that is not on offer.
+  GOVERNANCE_PERMISSIONS_NOT_OFFERED: [
+    'staffCapability',
+    'role',
+    'accessScope',
+  ],
   // The team callables: the shop or the service a refusal names.
   TEAM_SHOP_UNKNOWN: ['locationId'],
   TEAM_SHOP_HAS_HOURS: ['locationId'],

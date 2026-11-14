@@ -9,17 +9,13 @@ import type { BarberId, LocationId, ServiceId } from '@core/primitives';
  * screen words each as `errors.<errorCode>`.
  *
  * Who may act is judged on the caller's STORED roles, account status and
- * barber link, inside the callable's transaction.
+ * barber link against the owner's permissions, inside the callable's
+ * transaction — and refused as an `AccessError` (staff permissions P6),
+ * not here.
  */
 export const TeamErrorCode = {
   /** A team callable was reached without a signed-in session. */
   Unauthenticated: 'TEAM_UNAUTHENTICATED',
-  /**
-   * The caller may not make this change: a blocked account, a role set
-   * outside `Roles.TEAM` (or, for a profile, outside `Roles.TEAM_PROFILES`
-   * and not the barber's own linked account).
-   */
-  Forbidden: 'TEAM_FORBIDDEN',
   /** A malformed request — `field` names the first offending one. */
   InvalidInput: 'TEAM_INVALID_INPUT',
   /** The call named an id with no barber record. */
@@ -41,7 +37,6 @@ export type TeamErrorCode = (typeof TeamErrorCode)[keyof typeof TeamErrorCode];
 
 export type TeamError =
   | TeamError.Unauthenticated
-  | TeamError.Forbidden
   | TeamError.InvalidInput
   | TeamError.BarberNotFound
   | TeamError.BarberDeparted
@@ -54,9 +49,6 @@ export type TeamError =
 export const TeamError = {
   unauthenticated(): TeamError.Unauthenticated {
     return { errorCode: TeamErrorCode.Unauthenticated };
-  },
-  forbidden(): TeamError.Forbidden {
-    return { errorCode: TeamErrorCode.Forbidden };
   },
   invalidInput(field: string): TeamError.InvalidInput {
     return { errorCode: TeamErrorCode.InvalidInput, field };
@@ -87,9 +79,6 @@ export const TeamError = {
 export namespace TeamError {
   export type Unauthenticated = {
     readonly errorCode: typeof TeamErrorCode.Unauthenticated;
-  };
-  export type Forbidden = {
-    readonly errorCode: typeof TeamErrorCode.Forbidden;
   };
   export type InvalidInput = {
     readonly errorCode: typeof TeamErrorCode.InvalidInput;

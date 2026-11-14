@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ImpersonationSessionId, UserId } from '@core/primitives';
+import {
+  AccessScope,
+  ImpersonationSessionId,
+  StaffCapability,
+  UserId,
+} from '@core/primitives';
 import { GovernanceError, GovernanceErrorCode } from './governance.error';
 
 describe('GovernanceError', () => {
@@ -106,6 +111,33 @@ describe('GovernanceError', () => {
     expect(GovernanceError.rolesSessionsNotRevoked(target)).toEqual({
       errorCode: 'GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED',
       targetUserId: 'u-target',
+    });
+  });
+
+  it('builds the permissions-save refusals: the caller, the field at fault, or the cell that is not on offer (staff permissions P6)', () => {
+    const caller = UserId.of('u-owner');
+    expect(GovernanceError.permissionsUnauthenticated()).toEqual({
+      errorCode: 'GOVERNANCE_PERMISSIONS_UNAUTHENTICATED',
+    });
+    expect(GovernanceError.permissionsForbidden(caller)).toEqual({
+      errorCode: 'GOVERNANCE_PERMISSIONS_FORBIDDEN',
+      callerUserId: 'u-owner',
+    });
+    expect(GovernanceError.permissionsInvalid('changes')).toEqual({
+      errorCode: 'GOVERNANCE_PERMISSIONS_INVALID',
+      field: 'changes',
+    });
+    expect(
+      GovernanceError.permissionsNotOffered(
+        StaffCapability.Hours,
+        'receptionist',
+        AccessScope.Own,
+      ),
+    ).toEqual({
+      errorCode: 'GOVERNANCE_PERMISSIONS_NOT_OFFERED',
+      staffCapability: 'HOURS',
+      role: 'receptionist',
+      accessScope: 'OWN',
     });
   });
 

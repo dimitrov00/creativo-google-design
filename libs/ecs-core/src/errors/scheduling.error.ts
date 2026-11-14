@@ -39,7 +39,9 @@ import type {
   WaitlistStatus,
   Weekday,
 } from '@core/primitives';
+import type { AccessError } from './access.error';
 import type { PipelineError } from './pipeline.error';
+import type { RepositoryError } from './repository.error';
 
 /** Error codes — the ONLY source of these strings; the UI translates them. */
 export const SchedulingErrorCode = {
@@ -100,15 +102,11 @@ export const SchedulingErrorCode = {
   RosterMissing: 'SCHEDULING_ROSTER_MISSING',
   /** A break the weekly hours do not hold — it lies outside every shift of its weekday. */
   RosterBreakOutsideShift: 'SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT',
-  /** `amendRosterBreaks` with no signed-in caller. */
-  RosterUnauthenticated: 'SCHEDULING_ROSTER_UNAUTHENTICATED',
   /**
-   * A roster callable from a caller who may not edit this barber's hours:
-   * a token that does not work the book, or — on the STORED account — a
-   * blocked one, a role outside the book, or a barber editing a colleague's
-   * (team onboarding D5: a barber edits only their own).
+   * A roster callable with no signed-in caller. Who may edit a barber's
+   * hours and days is `AccessError`'s to refuse (staff permissions P6).
    */
-  RosterForbidden: 'SCHEDULING_ROSTER_FORBIDDEN',
+  RosterUnauthenticated: 'SCHEDULING_ROSTER_UNAUTHENTICATED',
   /** `amendRosterBreaks` sent a field it cannot read. */
   RosterInvalidInput: 'SCHEDULING_ROSTER_INVALID_INPUT',
   /** Hours at a shop the barber does not work at (`Barber.locationIds`). */
@@ -162,7 +160,6 @@ export type SchedulingError =
   | SchedulingError.RosterMissing
   | SchedulingError.RosterBreakOutsideShift
   | SchedulingError.RosterUnauthenticated
-  | SchedulingError.RosterForbidden
   | SchedulingError.RosterInvalidInput
   | SchedulingError.RosterOutsideShops
   | SchedulingError.RosterDeparted
@@ -470,9 +467,6 @@ export const SchedulingError = {
   rosterUnauthenticated(): SchedulingError.RosterUnauthenticated {
     return { errorCode: C.RosterUnauthenticated };
   },
-  rosterForbidden(): SchedulingError.RosterForbidden {
-    return { errorCode: C.RosterForbidden };
-  },
   /** The first field `amendRosterBreaks` could not read. */
   rosterInvalidInput(field: string): SchedulingError.RosterInvalidInput {
     return { errorCode: C.RosterInvalidInput, field };
@@ -515,9 +509,6 @@ export namespace SchedulingError {
   };
   export type RosterUnauthenticated = {
     readonly errorCode: typeof SchedulingErrorCode.RosterUnauthenticated;
-  };
-  export type RosterForbidden = {
-    readonly errorCode: typeof SchedulingErrorCode.RosterForbidden;
   };
   export type RosterInvalidInput = {
     readonly errorCode: typeof SchedulingErrorCode.RosterInvalidInput;
@@ -733,3 +724,12 @@ export namespace SchedulingError {
  */
 export type StaffBlockFailure =
   SchedulingError.BlockChairWithoutHome | PipelineError;
+
+/**
+ * Why an exception write did not land (`WriteScheduleException`): the
+ * merge's own refusal, the caller's — the server's transaction judges who
+ * may change a barber's days (`setDayExceptions`, staff permissions P6) —
+ * or the store's failure.
+ */
+export type ScheduleExceptionWriteError =
+  SchedulingError | AccessError | RepositoryError;

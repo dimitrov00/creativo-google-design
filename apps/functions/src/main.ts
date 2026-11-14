@@ -77,6 +77,7 @@ import {
   setDayExceptions as setDayExceptionsPipeline,
   setRoles as setRolesPipeline,
   setRosterWeek as setRosterWeekPipeline,
+  setStaffPermissions as setStaffPermissionsPipeline,
   staffAnalytics as staffAnalyticsPipeline,
   startImpersonation as startImpersonationPipeline,
   startAnalyticsRecompute,
@@ -157,6 +158,7 @@ import {
 import {
   decodeEndImpersonation,
   decodeSetRoles,
+  decodeSetStaffPermissions,
   decodeStartImpersonation,
 } from './wire/governance.wire';
 import {
@@ -247,7 +249,7 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * recognise them (`exportClientData`, `previewClientErasure`,
  * `eraseClient`, P3-RU-36), the log digest key every callable but
  * the sink binds (`LOG_DIGEST_KEY`, audit-hardening WS-4.2: the outcome
- * line's keyed `inputDigest`), the replay protection the five limited-use
+ * line's keyed `inputDigest`), the replay protection the six limited-use
  * callables carry (App Check, below), and seven retry flags: edge-hardening D-5 flipped
  * `rebuildBusyOnAppointmentChange`,
  * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, and pass E
@@ -302,9 +304,9 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * reads it per call and decides every callable's App Check outcome itself
  * (OFF / MONITOR / ENFORCE, S-RU-17) — no export sets the platform's
  * enforcement option. The one App Check option an export carries is replay
- * protection: the five limited-use callables (`eraseClient`,
+ * protection: the six limited-use callables (`eraseClient`,
  * `previewClientErasure`, `exportClientData`, `startImpersonation`,
- * `setRoles` — `CALLABLE_APP_CHECK_TOKEN`) spread
+ * `setRoles`, `setStaffPermissions` — `CALLABLE_APP_CHECK_TOKEN`) spread
  * `replayProtectedOptions(…)`, which consumes their token while the switch
  * is MONITOR or ENFORCE (S-RU-21, S-DEP-11); it is not part of the
  * deployed endpoint (`__endpoint`).
@@ -983,7 +985,9 @@ export const setAnalyticsGoal = onCall(
  * The Team page's one read (team onboarding D8): every barber record,
  * whatever its lifecycle, and every staff account, as the page's rows —
  * each with its status, the account linked to it, its one note and its
- * setup progress. Read-only, in one transaction; the team manager's.
+ * setup progress. Read-only, in one transaction. The whole list is the
+ * team manager's (`TEAM_MANAGE`); an editor of every barber's profile or
+ * offerings is answered the barber records only, with no account.
  */
 export const listTeam = onCall(
   LOG_DIGEST_SECRETS,
@@ -1225,13 +1229,19 @@ export const rebuildCapacityOnLocationChange = onDocumentWritten(
   ),
 );
 
-/** The policy IS the horizon: its edit re-sweeps too — retried the same way (pass E R-1). */
+/**
+ * The policy IS the horizon: its edit re-sweeps too — retried the same way
+ * (pass E R-1). Only `settings/bookingPolicy` does: a write of any other
+ * settings document — a permissions save — decodes to no rebuild (staff
+ * permissions P5).
+ */
 export const rebuildCapacityOnSettingsChange = onDocumentWritten(
   { document: SETTINGS_DOC, retry: true },
   retryingTrigger(
     { fn: REBUILD_CAPACITY_ON_SETTINGS_FN, timeoutSeconds: null },
     root.edge,
-    () => rebuildCapacityFrom(CapacitySource.Settings),
+    (event: DocumentWriteEvent<{ readonly docId: string }>) =>
+      rebuildCapacityFrom(CapacitySource.Settings, event.params),
   ),
 );
 
@@ -1535,6 +1545,27 @@ export const setRoles = onCall(
     root.roles,
     decodeSetRoles,
     (ports, cmd) => setRolesPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * The owner changes what a staff level may do (staff permissions P6) —
+ * `settings/staffPermissions` SET whole and its `TEAM_PERMISSIONS_CHANGED`
+ * row in one commit. The document's only writer. Every converted callable
+ * reads it inside its own transaction, so a changed cell applies to the
+ * next call and nobody is signed out.
+ */
+export const setStaffPermissions = onCall(
+  {
+    ...LOG_DIGEST_SECRETS,
+    ...replayProtectedOptions(Callables.SetStaffPermissions),
+  },
+  wiredCallable(
+    plain(Callables.SetStaffPermissions, null),
+    root.ports,
+    decodeSetStaffPermissions,
+    (ports, cmd) => setStaffPermissionsPipeline(ports)(cmd),
     refusalOf,
   ),
 );

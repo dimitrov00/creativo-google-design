@@ -34,7 +34,7 @@ export const AnalyticsLoad = {
   Ready: 'READY',
   /** The request failed; a cached report may still be shown. */
   Failed: 'FAILED',
-  /** The callable refused the account (`ANALYTICS_FORBIDDEN`, `…_BARBER_NOT_LINKED`). */
+  /** The callable refused the account (a staff-access refusal — `ACCESS_*` — or `ANALYTICS_BARBER_NOT_LINKED`). */
   Refused: 'REFUSED',
 } as const;
 export type AnalyticsLoad = (typeof AnalyticsLoad)[keyof typeof AnalyticsLoad];

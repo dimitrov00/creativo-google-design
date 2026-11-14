@@ -17,8 +17,13 @@ import { StaffSetupSystem } from './staff-setup.system';
 export type TeamRosterFacts = {
   /** Every barber record, whatever its lifecycle. */
   readonly barbers: readonly Barber[];
-  /** Every account that holds a staff role. */
-  readonly accounts: readonly User[];
+  /**
+   * Every account that holds a staff role — `null` when the reader may
+   * not see accounts (staff permissions P6: an editor of every barber's
+   * page lists the records, never who holds which role), so they were not
+   * read at all.
+   */
+  readonly accounts: readonly User[] | null;
   /** Every service — the offerings say who performs what. */
   readonly services: readonly Service[];
   /** Every roster — its id is its barber's. */
@@ -45,16 +50,21 @@ function byAccountName(a: TeamMember.RoleOnly, b: TeamMember.RoleOnly): number {
 /**
  * The first note that applies to a barber's row (team onboarding D8): a
  * last working day still ahead of a barber who has not left, then no
- * linked account.
+ * linked account — said only when the accounts were read (`accountsRead`):
+ * to a reader who may not see accounts, "no account" would be a guess.
  */
-function noteOf(barber: Barber, account: User | null): TeamMemberNote | null {
+function noteOf(
+  barber: Barber,
+  account: User | null,
+  accountsRead: boolean,
+): TeamMemberNote | null {
   if (
     barber.barberStatus !== BarberStatus.Departed &&
     barber.barberLastWorkingLocalDate !== null
   ) {
     return TeamMemberNote.LastDaySet;
   }
-  return account === null ? TeamMemberNote.NoAccount : null;
+  return accountsRead && account === null ? TeamMemberNote.NoAccount : null;
 }
 
 /**
@@ -77,9 +87,15 @@ export const TeamRosterSystem = {
    * 2. then the staff accounts linked to no record that exists (`ROLE_ONLY`
    *    — the front desk, a content editor, an admin, a barber not linked
    *    yet), by name.
+   *
+   * With no accounts read (`accounts: null`) the rows are the barber
+   * records alone: no account, name or role beside any of them, no
+   * "no account" note and no role-only row.
    */
   membersOf(facts: TeamRosterFacts): readonly TeamMember[] {
-    const { accounts, services, schedules } = facts;
+    const { services, schedules } = facts;
+    const accountsRead = facts.accounts !== null;
+    const accounts = facts.accounts ?? [];
     const barbers = [...facts.barbers].sort(byTeamOrder);
     const linked = new Set<User>();
     const members: TeamMember[] = [];
@@ -115,7 +131,7 @@ export const TeamRosterSystem = {
         memberUserId: account === null ? null : account.id,
         memberAccountName: account === null ? null : Profile.fullName(account),
         memberRoles: account === null ? [] : account.roles,
-        teamMemberNote: noteOf(barber, account),
+        teamMemberNote: noteOf(barber, account, accountsRead),
         barberStartsLocalDate: barber.barberStartsLocalDate,
         barberLastWorkingLocalDate: barber.barberLastWorkingLocalDate,
         setupDoneCount: done,

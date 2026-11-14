@@ -15,8 +15,14 @@ import {
   TeamMemberNote,
   TeamMemberStatus,
 } from '@core/components';
-import { BarberId, OperationId, ServiceId, UserId } from '@core/primitives';
-import { TeamErrorCode } from '@core/errors';
+import {
+  BarberId,
+  OperationId,
+  ServiceId,
+  StaffCapability,
+  UserId,
+} from '@core/primitives';
+import { AccessErrorCode, TeamErrorCode } from '@core/errors';
 import { BARBER_LINK_DOC, Collections, Subcollections } from '@core/entities';
 import { StoredDocumentSystem } from '@core/systems';
 import {
@@ -251,7 +257,10 @@ describe('the team callables (emulator)', () => {
     });
     expect(refused).toEqual({
       ok: false,
-      error: { errorCode: TeamErrorCode.Forbidden },
+      error: {
+        errorCode: AccessErrorCode.Denied,
+        staffCapability: StaffCapability.TeamManage,
+      },
     });
     expect(await auditRows()).toHaveLength(2);
   });
@@ -404,7 +413,10 @@ describe('the team callables (emulator)', () => {
       .update({ roles: [Role.Barber] });
     expect(await listTeam(ports())(CALLER)).toEqual({
       ok: false,
-      error: { errorCode: TeamErrorCode.Forbidden },
+      error: {
+        errorCode: AccessErrorCode.Denied,
+        staffCapability: StaffCapability.TeamManage,
+      },
     });
   });
 

@@ -319,11 +319,11 @@ describe('memoryScheduleExceptionPorts — the staff command, in place', () => {
       exceptions,
     ).writeScheduleException([KEY], () => ({
       ok: false,
-      error: SchedulingError.rosterForbidden(),
+      error: SchedulingError.rosterUnauthenticated(),
     }));
     expect(refused).toEqual({
       ok: false,
-      error: { errorCode: SchedulingErrorCode.RosterForbidden },
+      error: { errorCode: SchedulingErrorCode.RosterUnauthenticated },
     });
     expect(exceptions).toEqual([exception]);
   });

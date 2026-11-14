@@ -68,6 +68,10 @@ export const LogEvent = {
   LeadTimeSampleFailed: 'lead-time sample failed for barber',
   OtpSendFailed: 'otp.send_failed',
   OtpVerifyAdoptionRefused: 'otp.verify.adoption_refused',
+  /** The owner changed what a staff level may do (staff permissions P11): the count of changed cells only. */
+  PermissionsChanged: 'permissions.changed',
+  /** `setStaffPermissions` refused: the code alone. */
+  PermissionsChangeRefused: 'permissions.change_refused',
   PolicyRecomputeNudged: 'policy recompute nudged',
   PolicyRecomputeStallNotRecorded: 'policy recompute stall not recorded',
   PolicyRecomputeSweepStarted:

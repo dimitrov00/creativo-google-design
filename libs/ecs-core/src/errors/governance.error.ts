@@ -1,6 +1,8 @@
 import type {
+  AccessScope,
   BarberId,
   ImpersonationSessionId,
+  StaffCapability,
   UserId,
 } from '@core/primitives';
 import type { EngagementError } from './engagement.error';
@@ -96,6 +98,30 @@ export const GovernanceErrorCode = {
   RolesLinkWithoutBarber: 'GOVERNANCE_ROLES_LINK_WITHOUT_BARBER',
   /** The barber record's lock (`barbers/{id}/restricted/link`) names another account. */
   RolesBarberAlreadyLinked: 'GOVERNANCE_ROLES_BARBER_ALREADY_LINKED',
+  /*
+   * `setStaffPermissions` — the owner's save of what a staff level may do
+   * (`docs/designs/staff-permissions.md`, P6).
+   */
+  /** `setStaffPermissions` called without a signed-in session. */
+  PermissionsUnauthenticated: 'GOVERNANCE_PERMISSIONS_UNAUTHENTICATED',
+  /**
+   * The caller may not edit permissions: the token's claims, then the
+   * STORED roles, hold no `Roles.ASSIGN` role, or the stored account is
+   * blocked (or erased) at the call's instant. It cannot be granted.
+   */
+  PermissionsForbidden: 'GOVERNANCE_PERMISSIONS_FORBIDDEN',
+  /**
+   * A malformed save — `field` names what is at fault: `changes` (no list,
+   * or too long a one, or a cell named twice), `staffCapability`, `role`,
+   * `accessScope` (an unknown value) or `operationId`.
+   */
+  PermissionsInvalid: 'GOVERNANCE_PERMISSIONS_INVALID',
+  /**
+   * The save names a cell that is not on offer: a level the owner does not
+   * edit (`admin`, `sysadmin`, `client`), or "own only" off the barber
+   * level or on a capability that is a plain switch.
+   */
+  PermissionsNotOffered: 'GOVERNANCE_PERMISSIONS_NOT_OFFERED',
 } as const;
 export type GovernanceErrorCode =
   (typeof GovernanceErrorCode)[keyof typeof GovernanceErrorCode];
@@ -129,7 +155,11 @@ export type GovernanceError =
   | GovernanceError.RolesBarberLinkRequired
   | GovernanceError.RolesBarberUnknown
   | GovernanceError.RolesLinkWithoutBarber
-  | GovernanceError.RolesBarberAlreadyLinked;
+  | GovernanceError.RolesBarberAlreadyLinked
+  | GovernanceError.PermissionsUnauthenticated
+  | GovernanceError.PermissionsForbidden
+  | GovernanceError.PermissionsInvalid
+  | GovernanceError.PermissionsNotOffered;
 
 export const GovernanceError = {
   auditEntryEmptyAction(): GovernanceError.AuditEntryEmptyAction {
@@ -303,6 +333,33 @@ export const GovernanceError = {
       barberId,
     };
   },
+  permissionsUnauthenticated(): GovernanceError.PermissionsUnauthenticated {
+    return { errorCode: GovernanceErrorCode.PermissionsUnauthenticated };
+  },
+  permissionsForbidden(
+    callerUserId: UserId,
+  ): GovernanceError.PermissionsForbidden {
+    return {
+      errorCode: GovernanceErrorCode.PermissionsForbidden,
+      callerUserId,
+    };
+  },
+  /** The first thing a permissions save could not read. */
+  permissionsInvalid(field: string): GovernanceError.PermissionsInvalid {
+    return { errorCode: GovernanceErrorCode.PermissionsInvalid, field };
+  },
+  permissionsNotOffered(
+    staffCapability: StaffCapability,
+    role: string,
+    accessScope: AccessScope,
+  ): GovernanceError.PermissionsNotOffered {
+    return {
+      errorCode: GovernanceErrorCode.PermissionsNotOffered,
+      staffCapability,
+      role,
+      accessScope,
+    };
+  },
 
   /** Narrows an error to one code — `GovernanceError.is(e, GovernanceErrorCode.ImpersonationSelf)`. */
   is<C extends GovernanceErrorCode>(
@@ -438,7 +495,31 @@ export namespace GovernanceError {
     /** The barber record whose lock names another account. */
     readonly barberId: BarberId;
   };
+  export type PermissionsUnauthenticated = {
+    readonly errorCode: typeof GovernanceErrorCode.PermissionsUnauthenticated;
+  };
+  export type PermissionsForbidden = {
+    readonly errorCode: typeof GovernanceErrorCode.PermissionsForbidden;
+    /** The signed-in caller who may not edit permissions. */
+    readonly callerUserId: UserId;
+  };
+  export type PermissionsInvalid = {
+    readonly errorCode: typeof GovernanceErrorCode.PermissionsInvalid;
+    /** What the save could not read (`changes`, `staffCapability`, `role`, `accessScope`, `operationId`). */
+    readonly field: string;
+  };
+  export type PermissionsNotOffered = {
+    readonly errorCode: typeof GovernanceErrorCode.PermissionsNotOffered;
+    readonly staffCapability: StaffCapability;
+    /** The level as sent — a role the owner does not edit is still a role. */
+    readonly role: string;
+    /** The scope asked for, which the cell does not offer. */
+    readonly accessScope: AccessScope;
+  };
 }
+
+/** What `setStaffPermissions` answers with: a governance refusal or the store's failure. */
+export type SetStaffPermissionsError = GovernanceError | RepositoryError;
 
 /** Why the operator backfill (`runBackfill`) refused a call — the ONLY source of these strings, the field `errorCode`. */
 export const RunBackfillRefusalCode = {

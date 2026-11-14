@@ -962,7 +962,10 @@ describe('L — one location’s figures (ADR 2026-11-09)', () => {
     const centre = ANALYTICS_FIXTURE_SHOPS.centre;
     expect(
       await ask(ANALYTICS_FIXTURE_USERS.ivan.id, null, centre),
-    ).toMatchObject({ ok: false, error: { errorCode: 'ANALYTICS_FORBIDDEN' } });
+    ).toMatchObject({
+      ok: false,
+      error: { errorCode: 'ACCESS_OWN_ONLY', staffCapability: 'ANALYTICS' },
+    });
     // A barber beside a location (owner review 2026-11-09): that barber's
     // work there — their own report, cut to the shop, with no goal.
     const ivanAtCentre = unwrapOk(

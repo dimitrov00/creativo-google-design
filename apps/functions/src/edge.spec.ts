@@ -3,6 +3,7 @@ import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
+  AccessScope,
   AppCheckMode,
   AppointmentId,
   BarberId,
@@ -20,10 +21,12 @@ import {
   PrimitiveErrorCode,
   Result,
   SeatId,
+  StaffCapability,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import {
+  AccessError,
   AccountsError,
   AnalyticsErrorCode,
   BookingError,
@@ -38,6 +41,7 @@ import {
   EngagementError,
   EngagementErrorCode,
   GovernanceError,
+  GovernanceErrorCode,
   HttpsStatus,
   IdentityError,
   IdentityErrorCode,
@@ -457,6 +461,7 @@ describe('edge — the wire table', () => {
           AnalyticsErrorCode.InvalidInput,
           AnalyticsErrorCode.GoalInvalidRange,
           TeamErrorCode.InvalidInput,
+          GovernanceErrorCode.PermissionsInvalid,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([
@@ -874,6 +879,65 @@ describe('edge — the wire table', () => {
         details: { expected: 3, actual: 4 },
       });
       expect(wire(StaffEditError.forbidden()).status).toBe('permission-denied');
+    });
+
+    it('staff access (staff permissions P6): every refusal is `permission-denied`, naming the capability the caller lacks and nothing else', () => {
+      expect(wire(AccessError.notStaff())).toEqual({
+        status: 'permission-denied',
+        message: 'ACCESS_NOT_STAFF',
+        details: { errorCode: 'ACCESS_NOT_STAFF' },
+      });
+      expect(wire(AccessError.denied(StaffCapability.Hours))).toEqual({
+        status: 'permission-denied',
+        message: 'ACCESS_DENIED',
+        details: { errorCode: 'ACCESS_DENIED', staffCapability: 'HOURS' },
+      });
+      expect(wire(AccessError.ownOnly(StaffCapability.TimeOff))).toEqual({
+        status: 'permission-denied',
+        message: 'ACCESS_OWN_ONLY',
+        details: { errorCode: 'ACCESS_OWN_ONLY', staffCapability: 'TIME_OFF' },
+      });
+    });
+
+    it('the permissions save (staff permissions P6): the caller’s uid stays on the server, a bad save names its field, a cell not on offer names itself', () => {
+      expect(wire(GovernanceError.permissionsUnauthenticated())).toEqual({
+        status: 'unauthenticated',
+        message: 'GOVERNANCE_PERMISSIONS_UNAUTHENTICATED',
+        details: { errorCode: 'GOVERNANCE_PERMISSIONS_UNAUTHENTICATED' },
+      });
+      expect(
+        wire(GovernanceError.permissionsForbidden(UserId.of('u-1'))),
+      ).toEqual({
+        status: 'permission-denied',
+        message: 'GOVERNANCE_PERMISSIONS_FORBIDDEN',
+        details: { errorCode: 'GOVERNANCE_PERMISSIONS_FORBIDDEN' },
+      });
+      expect(wire(GovernanceError.permissionsInvalid('changes'))).toEqual({
+        status: 'invalid-argument',
+        message: 'GOVERNANCE_PERMISSIONS_INVALID',
+        details: {
+          errorCode: 'GOVERNANCE_PERMISSIONS_INVALID',
+          field: 'changes',
+        },
+      });
+      expect(
+        wire(
+          GovernanceError.permissionsNotOffered(
+            StaffCapability.Hours,
+            'receptionist',
+            AccessScope.Own,
+          ),
+        ),
+      ).toEqual({
+        status: 'failed-precondition',
+        message: 'GOVERNANCE_PERMISSIONS_NOT_OFFERED',
+        details: {
+          errorCode: 'GOVERNANCE_PERMISSIONS_NOT_OFFERED',
+          staffCapability: 'HOURS',
+          role: 'receptionist',
+          accessScope: 'OWN',
+        },
+      });
     });
 
     it('the programs refusals no callable returns yet (flip 4, D9(b)) leave by their kind — a missing program `not-found`, an event no zone places or whose shop is gone `failed-precondition`', () => {
@@ -1450,6 +1514,42 @@ describe('edge — the wrappers', () => {
           },
         },
       ]);
+    });
+
+    it('names the capability on a staff-access refusal’s line — and on no other line (staff permissions P11)', async () => {
+      const { ports, logged } = edgePorts();
+      const refused = callableEdge(spec, ports, async () =>
+        Result.err(AccessError.denied(StaffCapability.Hours)),
+      );
+      const thrown = await rejection(refused(request({}, STAFF)));
+      expect(thrown.code).toBe('permission-denied');
+      expect(logged).toEqual([
+        {
+          level: 'warn',
+          msg: 'callable.refused',
+          fields: {
+            ...SCOPE,
+            operationId: null,
+            errorCode: 'ACCESS_DENIED',
+            staffCapability: 'HOURS',
+            wireStatus: 'permission-denied',
+            durationMs: 0,
+            inputDigest: null,
+          },
+        },
+      ]);
+      // A refusal that names none carries no such field at all.
+      const plain = edgePorts();
+      await rejection(
+        callableEdge(spec, plain.ports, async () =>
+          Result.err(AccessError.notStaff()),
+        )(request({}, STAFF)),
+      );
+      expect(plain.logged[0]?.fields).not.toHaveProperty('staffCapability');
+      expect(plain.logged[0]?.fields).toMatchObject({
+        errorCode: 'ACCESS_NOT_STAFF',
+        wireStatus: 'permission-denied',
+      });
     });
 
     it('logs a refusal the callable answers itself (returned as Result.ok) as callable.completed, wireStatus ok', async () => {

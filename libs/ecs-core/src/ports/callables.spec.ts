@@ -3,6 +3,7 @@ import {
   AnalyticsCall,
   ClientPrivacyCall,
   DayExceptionsCall,
+  PermissionsCall,
   RolesCall,
   SetAnalyticsGoalCall,
   TeamCall,
@@ -157,6 +158,19 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
   });
 
+  it('the permissions save (staff permissions P6) names itself by `operationId`, takes a limited-use token like the roles change, and answers through its own decoder', () => {
+    expect(Callables.SetStaffPermissions).toBe('setStaffPermissions');
+    expect(OPERATION_ID_FIELD[Callables.SetStaffPermissions]).toBe(
+      'operationId',
+    );
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.SetStaffPermissions]).toBe(
+      AppCheckTokenUse.LimitedUse,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.SetStaffPermissions]).toBe(
+      PermissionsCall.decodeSaved,
+    );
+  });
+
   it('the client issue sink alone carries none (OR-34)', () => {
     expect(ROWS.filter(([, field]) => field === null)).toEqual([
       [Callables.ReportClientIssues, null],
@@ -174,7 +188,7 @@ describe('CALLABLE_APP_CHECK_TOKEN — the token each callable takes (security h
     }
   });
 
-  it('names exactly the five destructive / sensitive callables LIMITED_USE (S-L-3)', () => {
+  it('names exactly the six destructive / sensitive callables LIMITED_USE (S-L-3; staff permissions P6)', () => {
     const limited = Object.entries(CALLABLE_APP_CHECK_TOKEN)
       .filter(([, use]) => use === AppCheckTokenUse.LimitedUse)
       .map(([name]) => name)
@@ -186,6 +200,7 @@ describe('CALLABLE_APP_CHECK_TOKEN — the token each callable takes (security h
         Callables.ExportClientData,
         Callables.StartImpersonation,
         Callables.SetRoles,
+        Callables.SetStaffPermissions,
       ].sort(),
     );
   });
@@ -194,7 +209,7 @@ describe('CALLABLE_APP_CHECK_TOKEN — the token each callable takes (security h
     const standard = Object.entries(CALLABLE_APP_CHECK_TOKEN).filter(
       ([, use]) => use === AppCheckTokenUse.Standard,
     );
-    expect(standard).toHaveLength(Object.values(Callables).length - 5);
+    expect(standard).toHaveLength(Object.values(Callables).length - 6);
     expect(CALLABLE_APP_CHECK_TOKEN[Callables.ReportClientIssues]).toBe(
       AppCheckTokenUse.Standard,
     );

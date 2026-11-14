@@ -1,5 +1,9 @@
 import type { Observable } from 'rxjs';
-import type { BookingPolicy, LivePolicyLine } from '@core/components';
+import type {
+  BookingPolicy,
+  LivePolicyLine,
+  StaffPermissions,
+} from '@core/components';
 import type {
   AppointmentId,
   BarberId,
@@ -15,6 +19,7 @@ import type {
 import type {
   PipelineError,
   RepositoryError,
+  ScheduleExceptionWriteError,
   SchedulingError,
 } from '@core/errors';
 import type {
@@ -267,11 +272,13 @@ export type LoadPolicyRecomputeJob = () => Promise<
  * preserved, `null` when absent) it returns the new body per key —
  * `null` deletes that day's document — or refuses with its own error, in
  * which case nothing is written. One key for a block, many for a series.
+ * The server's implementation judges the caller inside the same
+ * transaction, so its refusal may be an `AccessError`.
  */
 export type WriteScheduleException = (
   keys: readonly BusyKey[],
   merge: ScheduleExceptionMerge,
-) => Promise<Result<void, SchedulingError | RepositoryError>>;
+) => Promise<Result<void, ScheduleExceptionWriteError>>;
 
 /** The pure merge a {@link WriteScheduleException} runs inside its transaction. */
 export type ScheduleExceptionMerge = (
@@ -309,6 +316,17 @@ export type CallableClient = <N extends CallableName>(
  * document is `BookingPolicy.withDefaults` (§9 D28).
  */
 export type LoadPolicy = () => Promise<Result<BookingPolicy, RepositoryError>>;
+
+/**
+ * `settings/staffPermissions` as cells, read OUTSIDE any transaction — for
+ * a call that has none to read in (the analytics pair; staff permissions
+ * P6): the answer is "as of this call", which is all a read needs. An
+ * absent document, an absent field and a hand-edited value are the
+ * guard's (`StaffPermissions.read`), never a failure.
+ */
+export type LoadStaffPermissions = () => Promise<
+  Result<StaffPermissions, RepositoryError>
+>;
 
 /** `barberBusy/{BusyKey}` — `null` when the day holds nothing. */
 export type LoadBusyDay = (
@@ -491,6 +509,11 @@ export type GatewayPorts = {
 /** The booking policy — `firestore-settings.adapter.ts`. */
 export type PolicyReadPorts = {
   readonly loadPolicy: LoadPolicy;
+};
+
+/** What each staff level may do — `firestore-settings.adapter.ts`, beside the policy. */
+export type StaffPermissionsReadPorts = {
+  readonly loadStaffPermissions: LoadStaffPermissions;
 };
 
 /** A barber's roster, busy day and schedule exception for a shop day. */

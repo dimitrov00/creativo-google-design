@@ -1,12 +1,20 @@
-import { type RosterCall, WriteOp, WriteProvenance } from '@core/components';
+import {
+  type RosterCall,
+  StaffTarget,
+  WriteOp,
+  WriteProvenance,
+} from '@core/components';
 import {
   type Barber,
   type BarberSchedule,
   Collections,
   type ShopLocation,
-  type User,
 } from '@core/entities';
-import { type RepositoryError, SchedulingError } from '@core/errors';
+import {
+  type AccessError,
+  type RepositoryError,
+  SchedulingError,
+} from '@core/errors';
 import type { ClockPorts, CommitPorts } from '@core/ports';
 import {
   type BarberId,
@@ -15,26 +23,31 @@ import {
   MinuteCount,
   type OperationId,
   Result,
+  StaffCapability,
   type UserId,
 } from '@core/primitives';
 import {
   RosterAccessSystem,
   type RosterWeek,
   RosterWeekSystem,
+  StaffAccessSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { readStaffCaller, type StaffCallerFacts } from './team-caller.pipeline';
 
 /**
  * `setRosterWeek` — the hours editor's save (owner, 2026-11-06: a weekly
  * hours editor with «＋ Почивка»): a chair's whole week, shifts and breaks,
- * standing from a day on. ONE transaction reads the caller's account, the
- * barber record, the roster and the shop whose clock says what «today»
- * is, and asks:
+ * standing from a day on. ONE transaction reads the caller's account and
+ * the owner's permissions, the barber record, the roster and the shop
+ * whose clock says what «today» is, and asks:
  *
- * - `RosterAccessSystem.admit` — who may (team onboarding D5, O3): the
- *   front desk and the owners edit any barber's hours, a barber only their
- *   own (the STORED roles, block and link); an id with no record and a
- *   barber who has left are refused;
+ * - `StaffAccessSystem.admit` — who may (staff permissions P6): `HOURS`
+ *   on the barber the call names, judged on the STORED roles, block and
+ *   link against `settings/staffPermissions`. By default the front desk
+ *   and the owners edit any barber's hours and a barber only their own;
+ * - `RosterAccessSystem.recordOf` — an id with no record and a barber who
+ *   has left are refused, after the caller is admitted;
  * - `RosterAccessSystem.withinShops` — every shift at a shop the barber
  *   works at;
  * - `RosterWeekSystem.setFrom` — the week itself, replacing the versions
@@ -45,8 +58,8 @@ import {
  * and the audit row ride the roster's own triggers; the row names the call
  * by the stamp.
  *
- * The token's refusals (no caller, not working the book, an unreadable
- * field) are the edge decoder's (`roster.wire.ts`).
+ * The token's refusals (no caller, no staff role, an unreadable field) are
+ * the edge decoder's (`roster.wire.ts`).
  */
 
 export type SetRosterWeekCommand = RosterWeek & {
@@ -61,8 +74,7 @@ export type SetRosterWeekCommand = RosterWeek & {
 
 export type SetRosterWeekPorts = CommitPorts & ClockPorts;
 
-type Snapshot = {
-  readonly caller: User | null;
+type Snapshot = StaffCallerFacts & {
   readonly barber: Barber | null;
   readonly schedule: BarberSchedule | null;
   readonly location: ShopLocation | null;
@@ -72,33 +84,47 @@ export const setRosterWeek =
   (ports: SetRosterWeekPorts) =>
   async (
     cmd: SetRosterWeekCommand,
-  ): Promise<Result<RosterCall.Amended, SchedulingError | RepositoryError>> => {
+  ): Promise<
+    Result<RosterCall.Amended, SchedulingError | AccessError | RepositoryError>
+  > => {
     const path = [Collections.BarberSchedules, cmd.barberId];
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       async (tx): Promise<Snapshot> => {
-        const [caller, barber, schedule, location] = await Promise.all([
-          tx.get<User>([Collections.Users, cmd.callerUserId]),
+        const [facts, barber, schedule, location] = await Promise.all([
+          readStaffCaller(tx, cmd.callerUserId),
           tx.get<Barber>([Collections.Barbers, cmd.barberId]),
           tx.get<BarberSchedule>(path),
           tx.get<ShopLocation>([Collections.Locations, cmd.locationId]),
         ]);
-        return { caller, barber, schedule, location };
+        return { ...facts, barber, schedule, location };
       },
-      ({ caller, barber, schedule, location }) => {
-        const admitted = RosterAccessSystem.admit(
+      ({
+        caller,
+        permissions,
+        barber,
+        schedule,
+        location,
+      }): Result<
+        { readonly writes: readonly WriteOp[] },
+        SchedulingError | AccessError
+      > => {
+        const admitted = StaffAccessSystem.admit({
+          staffCapability: StaffCapability.Hours,
+          staffTarget: StaffTarget.barbers([cmd.barberId]),
           caller,
-          barber,
-          cmd.barberId,
+          permissions,
           nowUtcMs,
-        );
+        });
         if (!admitted.ok) return admitted;
+        const record = RosterAccessSystem.recordOf(barber);
+        if (!record.ok) return record;
         if (location === null) {
           return Result.err(SchedulingError.rosterInvalidInput('locationId'));
         }
         const placed = RosterAccessSystem.withinShops(
-          admitted.value,
+          record.value,
           cmd.segments,
         );
         if (!placed.ok) return placed;

@@ -1,12 +1,13 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
-import { BookingPolicy } from '@core/components';
+import { BookingPolicy, StaffPermissions } from '@core/components';
 import {
   BOOKING_POLICY_DOC,
   type BookingPolicySettings,
   Collections,
+  STAFF_PERMISSIONS_DOC,
 } from '@core/entities';
-import type { PolicyReadPorts } from '@core/ports';
+import type { PolicyReadPorts, StaffPermissionsReadPorts } from '@core/ports';
 import { readFailed } from './store-answer';
 
 /**
@@ -18,11 +19,20 @@ import { readFailed } from './store-answer';
  * (§9 D28), so an absent document — the normal case, not a failure — or a
  * partial one reads as the defaults field by field. Only a read that throws
  * is a failure: a `RepositoryError` value, never a rejection.
+ *
+ * `settings/staffPermissions` (staff permissions P5, P6) is read the same
+ * way for the callables that have no transaction to read it in — the
+ * analytics pair: the stored body goes through `StaffPermissions.read`, so
+ * an absent document is every cell at its default, and an absent field or
+ * a hand-edited value is the guard's to answer, never a failure.
  */
 
 const POLICY_PATH = `${Collections.Settings}/${BOOKING_POLICY_DOC}`;
+const PERMISSIONS_PATH = `${Collections.Settings}/${STAFF_PERMISSIONS_DOC}`;
 
-export const firestoreSettingsPorts = (db: Firestore): PolicyReadPorts => ({
+export const firestoreSettingsPorts = (
+  db: Firestore,
+): PolicyReadPorts & StaffPermissionsReadPorts => ({
   loadPolicy: async () => {
     try {
       const snap = await db.doc(POLICY_PATH).get();
@@ -32,6 +42,14 @@ export const firestoreSettingsPorts = (db: Firestore): PolicyReadPorts => ({
       return Result.ok(BookingPolicy.withDefaults(stored));
     } catch (error) {
       return Result.err(readFailed(POLICY_PATH, error));
+    }
+  },
+  loadStaffPermissions: async () => {
+    try {
+      const snap = await db.doc(PERMISSIONS_PATH).get();
+      return Result.ok(StaffPermissions.read(snap.exists ? snap.data() : null));
+    } catch (error) {
+      return Result.err(readFailed(PERMISSIONS_PATH, error));
     }
   },
 });

@@ -3,10 +3,9 @@ import { BarberId, LocationId, ServiceId } from '@core/primitives';
 import { TeamError, TeamErrorCode } from './team.error';
 
 describe('TeamError', () => {
-  it('uses ten SCREAMING codes, each with the TEAM_ prefix (team onboarding D11)', () => {
+  it('uses nine SCREAMING codes, each with the TEAM_ prefix (team onboarding D11) — who may act is an AccessError', () => {
     expect(Object.values(TeamErrorCode)).toEqual([
       'TEAM_UNAUTHENTICATED',
-      'TEAM_FORBIDDEN',
       'TEAM_INVALID_INPUT',
       'TEAM_BARBER_NOT_FOUND',
       'TEAM_BARBER_DEPARTED',
@@ -25,7 +24,6 @@ describe('TeamError', () => {
     expect(TeamError.unauthenticated()).toEqual({
       errorCode: 'TEAM_UNAUTHENTICATED',
     });
-    expect(TeamError.forbidden()).toEqual({ errorCode: 'TEAM_FORBIDDEN' });
     expect(TeamError.periodInvalid()).toEqual({
       errorCode: 'TEAM_PERIOD_INVALID',
     });

@@ -682,7 +682,7 @@ describe('callableClientPorts — a transport failure, reported to the issue sin
   });
 });
 
-// Security hardening S-WS-A (S-L-3, S-L-5, S-RU-31): the five LIMITED_USE
+// Security hardening S-WS-A (S-L-3, S-L-5, S-RU-31): the six LIMITED_USE
 // callables ask a limited-use App Check token, every other call is dialled
 // exactly as before; no call leaves before the page's App Check decision;
 // a token App Check could not mint is retried once as a standard call.
@@ -699,9 +699,10 @@ describe('callableClientPorts — App Check', () => {
     Callables.PreviewClientErasure,
     Callables.EraseClient,
     Callables.SetRoles,
+    Callables.SetStaffPermissions,
   ];
 
-  it('the table names exactly the five limited-use callables', () => {
+  it('the table names exactly the six limited-use callables', () => {
     const limited = Object.entries(CALLABLE_APP_CHECK_TOKEN)
       .filter(([, use]) => use === AppCheckTokenUse.LimitedUse)
       .map(([name]) => name);

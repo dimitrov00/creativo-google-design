@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AccountLifecycle,
-  BarberStatus,
-  BlockReason,
-  Role,
-  ShiftSegment,
-} from '@core/components';
+import { BarberStatus, ShiftSegment } from '@core/components';
 import {
   BarberId,
   EndMinute,
@@ -21,7 +15,6 @@ import {
   FIXTURE_NOW_UTC_MS,
   unwrapErr,
   unwrapOk,
-  userFixture,
 } from '@core/testing';
 import { RosterAccessSystem } from './roster-access.system';
 
@@ -42,7 +35,6 @@ const departed = barberFixture(
     barberRehireStatus: BarberStatus.Public,
   },
 );
-const FORBIDDEN = { errorCode: SchedulingErrorCode.RosterForbidden };
 
 const shift = (weekday: Weekday, locationId: LocationId): ShiftSegment => {
   const start = unwrapOk(MinuteOfDay.of(9 * 60));
@@ -50,91 +42,27 @@ const shift = (weekday: Weekday, locationId: LocationId): ShiftSegment => {
   return ShiftSegment.of(weekday, locationId, start, end);
 };
 
-describe('RosterAccessSystem.admit — who edits a barber’s hours', () => {
-  it('lets the front desk, the admin and the sysadmin edit any barber’s', () => {
-    for (const role of [Role.Receptionist, Role.Admin, Role.Sysadmin]) {
-      expect(
-        unwrapOk(
-          RosterAccessSystem.admit(
-            userFixture({ roles: [role] }),
-            ivan,
-            IVAN,
-            NOW,
-          ),
-        ),
-        role,
-      ).toBe(ivan);
-    }
+/*
+ * WHO may edit a barber's hours and days is `StaffAccessSystem`'s question
+ * since staff permissions stage A (`staff-access.system.spec.ts` holds
+ * those cases, and the table that pins the defaults to what this system
+ * answered before). What stays here are the record's own rules, asked
+ * after the caller is admitted.
+ */
+describe('RosterAccessSystem.recordOf — which record’s hours can be edited', () => {
+  it('answers the record the id names', () => {
+    expect(unwrapOk(RosterAccessSystem.recordOf(ivan))).toBe(ivan);
   });
 
-  it('lets a barber edit their own — the record their account is linked to — and no colleague’s', () => {
-    const own = userFixture({ roles: [Role.Barber], linkedBarberId: IVAN });
-    expect(RosterAccessSystem.admit(own, ivan, IVAN, NOW).ok).toBe(true);
-    expect(
-      unwrapErr(
-        RosterAccessSystem.admit(own, barberFixture({ id: NIKO }), NIKO, NOW),
-      ),
-    ).toEqual(FORBIDDEN);
-    // A barber with no link edits nobody's.
-    expect(
-      unwrapErr(
-        RosterAccessSystem.admit(
-          userFixture({ roles: [Role.Barber] }),
-          ivan,
-          IVAN,
-          NOW,
-        ),
-      ),
-    ).toEqual(FORBIDDEN);
-  });
-
-  it('refuses the content editor, a client, a missing account and anyone blocked — a link alone is no grant', () => {
-    const refused = [
-      userFixture({ roles: [Role.ContentManager] }),
-      userFixture({ roles: [Role.Client] }),
-      // The link without a role that works the book opens nothing.
-      userFixture({ roles: [Role.ContentManager], linkedBarberId: IVAN }),
-      userFixture({ roles: [Role.Client], linkedBarberId: IVAN }),
-      userFixture({
-        roles: [Role.Admin],
-        ...AccountLifecycle.block(BlockReason.Manual, null),
-      }),
-      userFixture({
-        roles: [Role.Barber],
-        linkedBarberId: IVAN,
-        ...AccountLifecycle.block(BlockReason.Manual, null),
-      }),
-      null,
-    ];
-    for (const caller of refused) {
-      expect(
-        unwrapErr(RosterAccessSystem.admit(caller, ivan, IVAN, NOW)),
-      ).toEqual(FORBIDDEN);
-    }
-  });
-
-  it('names an id with no record as invalid input — only to an admitted caller', () => {
-    const admin = userFixture({ roles: [Role.Admin] });
-    expect(unwrapErr(RosterAccessSystem.admit(admin, null, NIKO, NOW))).toEqual(
-      { errorCode: SchedulingErrorCode.RosterInvalidInput, field: 'barberId' },
-    );
-    expect(
-      unwrapErr(
-        RosterAccessSystem.admit(
-          userFixture({ roles: [Role.Barber] }),
-          null,
-          NIKO,
-          NOW,
-        ),
-      ),
-    ).toEqual(FORBIDDEN);
+  it('names an id with no record as invalid input', () => {
+    expect(unwrapErr(RosterAccessSystem.recordOf(null))).toEqual({
+      errorCode: SchedulingErrorCode.RosterInvalidInput,
+      field: 'barberId',
+    });
   });
 
   it('never edits the hours of a barber who has left — a draft’s and a live record’s are editable', () => {
-    const admin = userFixture({ roles: [Role.Admin] });
-    expect(
-      unwrapErr(RosterAccessSystem.admit(admin, departed, IVAN, NOW)),
-    ).toEqual({
+    expect(unwrapErr(RosterAccessSystem.recordOf(departed))).toEqual({
       errorCode: SchedulingErrorCode.RosterDeparted,
       barberId: IVAN,
     });
@@ -146,7 +74,7 @@ describe('RosterAccessSystem.admit — who edits a barber’s hours', () => {
         barberDraftTargetStatus: BarberStatus.Public,
       },
     );
-    expect(RosterAccessSystem.admit(admin, draft, IVAN, NOW).ok).toBe(true);
+    expect(RosterAccessSystem.recordOf(draft).ok).toBe(true);
   });
 });
 
@@ -185,9 +113,7 @@ describe('RosterAccessSystem.withinShops — hours only where the barber works',
   });
 });
 
-describe('RosterAccessSystem.worksAt / admitDays — an act on barbers’ days', () => {
-  const desk = userFixture({ roles: [Role.Receptionist] });
-  const own = userFixture({ roles: [Role.Barber], linkedBarberId: IVAN });
+describe('RosterAccessSystem.worksAt / placedDays — an act on barbers’ days', () => {
   const niko = barberFixture({ id: NIKO });
 
   it('worksAt: every shop for an empty list, else only the listed ones', () => {
@@ -202,52 +128,24 @@ describe('RosterAccessSystem.worksAt / admitDays — an act on barbers’ days',
     });
   });
 
-  it('admits the front desk for every barber the act touches', () => {
+  it('takes every barber the act touches whose record was read', () => {
     expect(
-      RosterAccessSystem.admitDays(
-        desk,
+      RosterAccessSystem.placedDays(
         [ivan, niko],
         [
           { barberId: IVAN, locationId: null },
           { barberId: NIKO, locationId: CENTER },
         ],
-        NOW,
       ),
     ).toEqual({ ok: true, value: null });
-  });
-
-  it('admits a barber for their own days only — a move onto a colleague is refused', () => {
-    expect(
-      RosterAccessSystem.admitDays(
-        own,
-        [ivan],
-        [{ barberId: IVAN, locationId: CENTER }],
-        NOW,
-      ).ok,
-    ).toBe(true);
-    expect(
-      unwrapErr(
-        RosterAccessSystem.admitDays(
-          own,
-          [ivan, niko],
-          [
-            { barberId: IVAN, locationId: null },
-            { barberId: NIKO, locationId: CENTER },
-          ],
-          NOW,
-        ),
-      ),
-    ).toEqual(FORBIDDEN);
   });
 
   it('refuses a day filed at a shop its barber does not work at; a lift names no shop and is not asked', () => {
     expect(
       unwrapErr(
-        RosterAccessSystem.admitDays(
-          desk,
+        RosterAccessSystem.placedDays(
           [ivan],
           [{ barberId: IVAN, locationId: MLADOST }],
-          NOW,
         ),
       ),
     ).toEqual({
@@ -255,23 +153,19 @@ describe('RosterAccessSystem.worksAt / admitDays — an act on barbers’ days',
       locationId: MLADOST,
     });
     expect(
-      RosterAccessSystem.admitDays(
-        desk,
+      RosterAccessSystem.placedDays(
         [ivan],
         [{ barberId: IVAN, locationId: null }],
-        NOW,
       ).ok,
     ).toBe(true);
   });
 
-  it('refuses a barber with no record among those read, and one who has left', () => {
+  it('refuses a barber with no record among those read, and one who has left — the first, in the request’s order', () => {
     expect(
       unwrapErr(
-        RosterAccessSystem.admitDays(
-          desk,
+        RosterAccessSystem.placedDays(
           [ivan],
           [{ barberId: NIKO, locationId: CENTER }],
-          NOW,
         ),
       ),
     ).toEqual({
@@ -280,11 +174,23 @@ describe('RosterAccessSystem.worksAt / admitDays — an act on barbers’ days',
     });
     expect(
       unwrapErr(
-        RosterAccessSystem.admitDays(
-          desk,
+        RosterAccessSystem.placedDays(
           [departed],
           [{ barberId: IVAN, locationId: CENTER }],
-          NOW,
+        ),
+      ),
+    ).toEqual({
+      errorCode: SchedulingErrorCode.RosterDeparted,
+      barberId: IVAN,
+    });
+    expect(
+      unwrapErr(
+        RosterAccessSystem.placedDays(
+          [departed],
+          [
+            { barberId: IVAN, locationId: CENTER },
+            { barberId: NIKO, locationId: CENTER },
+          ],
         ),
       ),
     ).toEqual({
@@ -296,16 +202,17 @@ describe('RosterAccessSystem.worksAt / admitDays — an act on barbers’ days',
 
 describe('RosterAccessSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
-    const caller = deepFreeze(
-      userFixture({ roles: [Role.Barber], linkedBarberId: IVAN }),
-    );
     const barber = deepFreeze(barberFixture());
     const week = deepFreeze([shift(Weekday.Mon, CENTER)]);
-    expect(RosterAccessSystem.admit(caller, barber, IVAN, NOW)).toEqual(
-      RosterAccessSystem.admit(caller, barber, IVAN, NOW),
+    const placements = deepFreeze([{ barberId: IVAN, locationId: CENTER }]);
+    expect(RosterAccessSystem.recordOf(barber)).toEqual(
+      RosterAccessSystem.recordOf(barber),
     );
     expect(RosterAccessSystem.withinShops(barber, week)).toEqual(
       RosterAccessSystem.withinShops(barber, week),
+    );
+    expect(RosterAccessSystem.placedDays([barber], placements)).toEqual(
+      RosterAccessSystem.placedDays([barber], placements),
     );
   });
 });

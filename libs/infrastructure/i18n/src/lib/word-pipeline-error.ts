@@ -13,14 +13,19 @@ export type TranslateCode = (
 function serverCopyCodes(error: PipelineError): readonly string[] {
   const code = error.serverErrorCode;
   if (code === null || code.length === 0) return [];
-  // WHY, one level down: a carried seat's refusal, or the field an invalid
-  // request names. Never both — they ride on different codes.
+  // WHY, one level down: a carried seat's refusal, the field an invalid
+  // request names, or the capability a staff-access refusal names
+  // (`ACCESS_DENIED.HOURS` — staff permissions P6). Never two — they ride
+  // on different codes.
+  const capability = error.serverParams['staffCapability'];
   const reason =
     error.refusal !== null && error.refusal.length > 0
       ? error.refusal
       : error.field !== null && error.field.length > 0
         ? error.field
-        : null;
+        : typeof capability === 'string' && capability.length > 0
+          ? capability
+          : null;
   return reason === null ? [code] : [`${code}.${reason}`, code];
 }
 
@@ -29,7 +34,8 @@ function serverCopyCodes(error: PipelineError): readonly string[] {
  * 4A-5; successor of the legacy `wordError`) — the ONE rule every surface
  * that narrates a call's failure follows. The server's own code wins when
  * the catalogue has copy for it, read one level deeper first when it names
- * its reason (`<serverErrorCode>.<refusal|field>`, then `<serverErrorCode>`);
+ * its reason (`<serverErrorCode>.<refusal|field|staffCapability>`, then
+ * `<serverErrorCode>`);
  * otherwise the surface's own generic key (`fallbackCode`), so the generic
  * copy stays its own. Interpolates the wire's allowlisted `serverParams`
  * merged with the surface's `extraParams` (the words it derives — the

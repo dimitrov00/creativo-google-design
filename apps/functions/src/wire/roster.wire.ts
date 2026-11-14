@@ -5,7 +5,7 @@ import {
   RosterBreak,
   ShiftSegment,
 } from '@core/components';
-import { SchedulingError } from '@core/errors';
+import { AccessError, SchedulingError } from '@core/errors';
 import {
   BarberId,
   EndMinute,
@@ -23,7 +23,7 @@ import type {
   SetRosterWeekCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
-import { callerUserId, callerWorksTheBook } from '../lib/booking/caller-roles';
+import { callerIsStaff, callerUserId } from '../lib/booking/caller-roles';
 import {
   idOf,
   isRecord,
@@ -38,10 +38,10 @@ import {
  * THE ROSTER CALLABLE'S WIRE (owner, 2026-11-06) — `amendRosterBreaks`
  * `{ barberId, locationId, fromLocalDate, weekdays: [1…7], before:
  * { startMinutes, endMinutes } | null, after: … | null, operationId }` →
- * `{ barberId }`. A signed-in caller who works the book only
- * (`SCHEDULING_ROSTER_UNAUTHENTICATED` / `_FORBIDDEN`) — whose hours a
+ * `{ barberId }`. A signed-in caller whose token holds a staff role only
+ * (`SCHEDULING_ROSTER_UNAUTHENTICATED`, `ACCESS_NOT_STAFF`) — whose hours a
  * caller may change is the pipeline's question, asked of the STORED
- * account (team onboarding D5: a barber only their own); every field
+ * account against the owner's permissions (staff permissions P6); every field
  * re-read through its smart constructor, the first unreadable one named
  * (`SCHEDULING_ROSTER_INVALID_INPUT`). A change that changes nothing —
  * neither a `before` nor an `after` — is no change at all, and refused.
@@ -75,9 +75,7 @@ export function decodeAmendRosterBreaks(
   if (caller === null) {
     return Result.err(SchedulingError.rosterUnauthenticated());
   }
-  if (!callerWorksTheBook(request)) {
-    return Result.err(SchedulingError.rosterForbidden());
-  }
+  if (!callerIsStaff(request)) return Result.err(AccessError.notStaff());
   const payload = payloadOf(request);
   const invalid = (field: string) =>
     Result.err(SchedulingError.rosterInvalidInput(field));
@@ -137,8 +135,8 @@ function weekdayRangeOf(
  * `setRosterWeek` `{ barberId, locationId, fromLocalDate, segments:
  * [{ weekday, locationId, startMinutes, endMinutes }], breaks: [{ weekday,
  * startMinutes, endMinutes }], operationId }` → `{ barberId }` — the hours
- * editor's save. The same door as `amendRosterBreaks`: a signed-in caller
- * who works the book, every field re-read, the first unreadable one named.
+ * editor's save. The same door as `amendRosterBreaks`: a signed-in staff
+ * caller, every field re-read, the first unreadable one named.
  * Whether the week holds (overlaps, breaks inside shifts) is the system's
  * question, not the wire's.
  */
@@ -149,9 +147,7 @@ export function decodeSetRosterWeek(
   if (caller === null) {
     return Result.err(SchedulingError.rosterUnauthenticated());
   }
-  if (!callerWorksTheBook(request)) {
-    return Result.err(SchedulingError.rosterForbidden());
-  }
+  if (!callerIsStaff(request)) return Result.err(AccessError.notStaff());
   const payload = payloadOf(request);
   const invalid = (field: string) =>
     Result.err(SchedulingError.rosterInvalidInput(field));
@@ -367,7 +363,7 @@ function dayExceptionsOf(
  *   ranges: [] | null }`;
  *
  * each with its `operationId`, → `{ barberIds }`. The roster callables'
- * door: a signed-in caller who works the book, every field re-read, the
+ * door: a signed-in staff caller, every field re-read, the
  * first unreadable one named. Whose days a caller may change, and whether
  * a block holds, are the pipeline's questions.
  */
@@ -378,9 +374,7 @@ export function decodeSetDayExceptions(
   if (caller === null) {
     return Result.err(SchedulingError.rosterUnauthenticated());
   }
-  if (!callerWorksTheBook(request)) {
-    return Result.err(SchedulingError.rosterForbidden());
-  }
+  if (!callerIsStaff(request)) return Result.err(AccessError.notStaff());
   const payload = payloadOf(request);
   const invalid = (field: string) =>
     Result.err(SchedulingError.rosterInvalidInput(field));
