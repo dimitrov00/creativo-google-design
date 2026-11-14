@@ -1,0 +1,190 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="member-offerings-sheet"
+    labelledBy="member-offerings-sheet-title"
+    [titleAlwaysVisible]="openServiceId() === null"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="member-offerings-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <!-- THE WAY BACK from a service's page: the hours sheet's own ‹, in the
+         bar opposite the ✕. It keeps what was typed, as «Готово» does. -->
+    @if (openServiceId() !== null) {
+    <button
+      sheet-leading
+      type="button"
+      uiButton
+      uiButtonStyle="bordered"
+      uiTint="neutral"
+      uiControlSize="regular"
+      [uiIconOnly]="true"
+      [attr.aria-label]="t('admin.team.offerings.back')"
+      data-testid="member-offerings-back"
+      (click)="openServiceId.set(null)"
+    >
+      <ui-icon uiName="nav.back" />
+    </button>
+    }
+    <span sheet-title id="member-offerings-sheet-title"
+      >{{ vm()?.page?.name ?? t('admin.team.offerings.title') }}</span
+    >
+
+    @if (vm(); as editor) {
+    <div class="team-page__form">
+      @if (editor.page; as page) {
+      <!-- ───────────────────────── A SERVICE ───────────────────────── -->
+      <ui-sheet-headline>
+        <h2 uiSheetLargeTitle uiText uiFont="largeTitle">{{ page.name }}</h2>
+      </ui-sheet-headline>
+
+      <ui-list-group data-testid="member-offering-page">
+        <ui-list-row uiSize="large">
+          {{ t('admin.team.offerings.performs') }}
+          <button
+            uiSwitch
+            uiTrailing
+            [uiOn]="page.performed"
+            [attr.aria-label]="t('admin.team.offerings.performs')"
+            data-testid="member-offering-performs"
+            (uiOnChange)="setPerformed(page.serviceId, $event)"
+          ></button>
+        </ui-list-row>
+      </ui-list-group>
+
+      @for (terms of page.terms; track terms.key) {
+      <section class="team-page__module">
+        @if (terms.heading; as heading) {
+        <ui-section-header uiHeaderProminence="standard">
+          <h3 uiTitle>{{ heading }}</h3>
+        </ui-section-header>
+        }
+        <ui-list-group
+          [attr.data-testid]="'member-offering-terms-' + terms.key"
+        >
+          <ui-list-row uiSize="regular" uiLabelWraps>
+            <span>{{ t('admin.team.offerings.price') }}</span>
+            <span
+              uiTrailing
+              uiForegroundStyle="primary"
+              class="team-page__pill"
+            >
+              <ui-unit-field
+                uiControlSize="small"
+                uiInputMode="decimal"
+                [uiValue]="terms.price"
+                [uiUnit]="page.currencyUnit"
+                [uiLabel]="terms.priceLabel"
+                [uiTestId]="'member-offering-price-' + terms.key"
+                (uiValueChange)="
+                  setPrice(page.serviceId, terms.variantId, $event)
+                "
+              />
+            </span>
+          </ui-list-row>
+          <ui-list-row uiSize="regular" uiLabelWraps>
+            <span>{{ t('admin.team.offerings.duration') }}</span>
+            <span
+              uiTrailing
+              uiForegroundStyle="primary"
+              class="team-page__pill"
+            >
+              <ui-unit-field
+                uiControlSize="small"
+                uiInputMode="numeric"
+                [uiValue]="terms.minutes"
+                [uiUnit]="t('admin.team.offerings.minutes')"
+                [uiLabel]="terms.minutesLabel"
+                [uiTestId]="'member-offering-minutes-' + terms.key"
+                (uiValueChange)="
+                  setMinutes(page.serviceId, terms.variantId, $event)
+                "
+              />
+            </span>
+          </ui-list-row>
+        </ui-list-group>
+      </section>
+      } } @else {
+      <!-- ───────────────────────── THE LIST ────────────────────────── -->
+      <ui-sheet-headline>
+        <h2 uiSheetLargeTitle uiText uiFont="largeTitle">
+          {{ t('admin.team.offerings.title') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('admin.team.offerings.lede') }}
+        </p>
+      </ui-sheet-headline>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-offerings-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      } @if (editor.rows.length > 0) {
+      <ui-list-group data-testid="member-offerings-list">
+        @for (row of editor.rows; track row.serviceId) {
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          uiLabelWraps
+          [uiInteractive]="true"
+          [attr.data-performed]="row.performed ? '' : null"
+          [attr.data-testid]="row.testId"
+          (click)="openServiceId.set(row.serviceId)"
+        >
+          {{ row.name }}
+          <span uiTrailing class="team-page__value">
+            <span>{{ row.value }}</span>
+            <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+          </span>
+        </button>
+        }
+      </ui-list-group>
+      } @else {
+      <p
+        uiText
+        uiFont="callout"
+        uiForegroundStyle="secondary"
+        data-testid="member-offerings-empty"
+      >
+        {{ t('admin.team.offerings.empty') }}
+      </p>
+      } }
+    </div>
+    }
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      @if (openServiceId() !== null) {
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        data-testid="member-offerings-done"
+        (click)="openServiceId.set(null)"
+      >
+        {{ t('admin.team.offerings.done') }}
+      </button>
+      } @else {
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSave() || store.pending()"
+        data-testid="member-offerings-save"
+        (click)="save()"
+      >
+        {{ t('admin.team.offerings.save') }}
+      </button>
+      }
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

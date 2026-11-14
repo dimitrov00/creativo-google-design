@@ -57,6 +57,7 @@ import {
   UiSheetHeadline,
   UiToast,
 } from '@creativo/ui/patterns';
+import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
 import { memberPageVm } from '../member.presenter';
@@ -90,12 +91,13 @@ function hoursDesk(): HoursDesk {
  * the levels that account holds.
  *
  * The weekly hours are the schedule's own sheet, raised here over this
- * page's store (`HOURS_DESK`) and loaded when it is first asked for. The
- * services are read here until their editor lands.
+ * page's store (`HOURS_DESK`). It and «Услуги и цени» are loaded when they
+ * are first asked for; the two short editors come with the page.
  */
 @Component({
   selector: 'lib-admin-team-member',
   imports: [
+    MemberOfferingsSheet,
     MemberPeriodSheet,
     MemberProfileSheet,
     RouterLink,
@@ -215,6 +217,7 @@ export class AdminTeamMember {
       mayEditProfile: this.store.mayEditProfile(),
       mayManage: this.store.mayManage(),
       mayEditHours: this.store.mayEditHours(),
+      mayEditOfferings: this.store.mayEditOfferings(),
       deletable: this.store.deletable(),
       editsPermissions: this.access.editsPermissions(),
       permissions: this.access.permissions(),

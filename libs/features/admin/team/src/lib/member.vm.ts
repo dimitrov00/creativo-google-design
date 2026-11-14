@@ -12,6 +12,8 @@ export const MemberEditor = {
   Period: 'PERIOD',
   /** The weekly hours — the schedule's own sheet. */
   Hours: 'HOURS',
+  /** What the record performs, and at what price. */
+  Offerings: 'OFFERINGS',
 } as const;
 export type MemberEditor = (typeof MemberEditor)[keyof typeof MemberEditor];
 

@@ -15,7 +15,9 @@ import {
   BarberEdit,
   type BarberEditRequest,
   type BarberLifecycle,
+  type BarberOffering,
   BarberStatus,
+  OfferingsEdit,
   RecordClaim,
   type RolesCall,
   type RosterCall,
@@ -225,6 +227,16 @@ export class TeamMemberStore {
     );
   });
 
+  /** They may set what this record performs, and at what price. */
+  readonly mayEditOfferings = computed(() => {
+    const barberId = this._barberId();
+    return (
+      barberId !== null &&
+      this.editable() &&
+      this.access.mayFor(StaffCapability.TeamOfferings, barberId)
+    );
+  });
+
   /** They may change this record's weekly hours. */
   readonly mayEditHours = computed(() => {
     const barberId = this._barberId();
@@ -329,6 +341,24 @@ export class TeamMemberStore {
       barberStartsLocalDate,
       barberLastWorkingLocalDate,
     });
+  }
+
+  /**
+   * «Услуги и цени»: the COMPLETE list of what the record performs —
+   * `setBarberOfferings`, ONE act: a service left out is no longer theirs.
+   */
+  async saveOfferings(
+    offerings: readonly BarberOffering.Entry[],
+  ): Promise<boolean> {
+    const answer = await this.act((operationId, barberId) =>
+      this.ports.setBarberOfferings({
+        offeringsEdit: OfferingsEdit.Set,
+        offerings,
+        barberId,
+        operationId,
+      }),
+    );
+    return answer?.ok === true;
   }
 
   /** In or out of the «Който и да е» pool; the switch goes back when the call is refused. */

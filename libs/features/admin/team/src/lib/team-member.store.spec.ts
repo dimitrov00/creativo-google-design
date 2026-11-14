@@ -5,12 +5,13 @@ import {
   BarberEdit,
   BarberLinkChange,
   BarberStatus,
+  OfferingsEdit,
   RecordClaim,
   Role,
 } from '@core/components';
 import { PipelineError } from '@core/errors';
 import { Callables } from '@core/ports';
-import { LocationId } from '@core/primitives';
+import { LocationId, ServiceId } from '@core/primitives';
 import { localDate, locationFixture } from '@core/testing';
 import { type TeamBedOptions, teamBed } from './team-bed.spec-support';
 import {
@@ -263,6 +264,40 @@ describe('TeamMemberStore — the record’s edits', () => {
   });
 });
 
+describe('TeamMemberStore — «Услуги и цени»', () => {
+  it('saves the complete list as one named act', async () => {
+    const { store, calls } = await harness();
+    const offerings = [
+      {
+        serviceId: ServiceId.of('svc-cut'),
+        priceCents: 2800,
+        currency: 'EUR',
+        durationMinutes: 30,
+        setupMinutes: 0,
+        cleanupMinutes: 0,
+        overrides: [],
+      },
+    ];
+
+    expect(await store.saveOfferings(offerings)).toBe(true);
+
+    expect(calls.offerings).toHaveLength(1);
+    expect(calls.offerings[0]).toMatchObject({
+      offeringsEdit: OfferingsEdit.Set,
+      offerings,
+      barberId: NIKOLAY.barberId,
+    });
+    expect(calls.offerings[0]?.operationId).toMatch(/^operation-\d{6}$/);
+  });
+
+  it('keeps a refusal for its sheet and answers false', async () => {
+    const { store, refuses } = await harness();
+    refuses('setBarberOfferings', REFUSED);
+    expect(await store.saveOfferings([])).toBe(false);
+    expect(store.refusal()).toBe(REFUSED);
+  });
+});
+
 describe('TeamMemberStore — the weekly hours (the schedule’s sheet over this store)', () => {
   const week = {
     barberId: NIKOLAY.barberId,
@@ -374,6 +409,7 @@ describe('TeamMemberStore — what the person looking may change', () => {
     expect(store.mayEditProfile()).toBe(true);
     expect(store.mayManage()).toBe(true);
     expect(store.mayEditHours()).toBe(true);
+    expect(store.mayEditOfferings()).toBe(true);
     expect(store.deletable()).toBe(true);
   });
 
@@ -383,6 +419,8 @@ describe('TeamMemberStore — what the person looking may change', () => {
     expect(store.mayEditProfile()).toBe(true);
     expect(store.mayManage()).toBe(false);
     expect(store.mayEditHours()).toBe(false);
+    // Prices are the owner's alone by the standard.
+    expect(store.mayEditOfferings()).toBe(false);
     expect(store.deletable()).toBe(false);
     expect(store.recordClaim()).toBe(RecordClaim.None);
   });

@@ -1,7 +1,8 @@
 import {
   type Actor,
   BarberOffering,
-  type ServiceTerms,
+  type ServiceTermsInput,
+  type ServiceVariant,
   type VariantTerms,
   WriteOp,
   WriteProvenance,
@@ -11,6 +12,7 @@ import {
   type OperationId,
   Result,
   type ServiceId,
+  type ServiceVariantId,
   type UtcEpochMs,
 } from '@core/primitives';
 import { TeamError } from '@core/errors';
@@ -39,7 +41,18 @@ export type OfferingsWrite = {
   readonly operationId: OperationId;
 };
 
-function sameTerms(a: ServiceTerms, b: ServiceTerms): boolean {
+/** The five terms of an entry or an override, cut from the wider struct that holds them. */
+function termsOf<T extends ServiceTermsInput>(terms: T): ServiceTermsInput {
+  return {
+    priceCents: terms.priceCents,
+    currency: terms.currency,
+    durationMinutes: terms.durationMinutes,
+    setupMinutes: terms.setupMinutes,
+    cleanupMinutes: terms.cleanupMinutes,
+  };
+}
+
+function sameTerms(a: ServiceTermsInput, b: ServiceTermsInput): boolean {
   return (
     a.priceCents === b.priceCents &&
     a.currency === b.currency &&
@@ -164,6 +177,88 @@ export const OfferingEditSystem = {
       }
     }
     return Result.ok(changes);
+  },
+
+  /**
+   * The complete list of what `barberId` performs, as its editor opens on
+   * it: each offering as its entry, in the services' own order — the list
+   * {@link plan} would answer no change for.
+   */
+  entriesOf(
+    services: readonly Service[],
+    barberId: BarberId,
+  ): readonly BarberOffering.Entry[] {
+    const entries: BarberOffering.Entry[] = [];
+    for (let i = 0; i < services.length; i++) {
+      const service = services[i] as Service;
+      const offering = OfferingPriceSystem.offeringFor(service, barberId);
+      if (offering === null) continue;
+      const overrides: VariantTerms.Input[] = [];
+      for (let j = 0; j < offering.overrides.length; j++) {
+        const override = offering.overrides[j] as VariantTerms;
+        overrides.push({ variantId: override.variantId, ...termsOf(override) });
+      }
+      entries.push({ serviceId: service.id, ...termsOf(offering), overrides });
+    }
+    return entries;
+  },
+
+  /**
+   * The entry a service is switched on with: the service's own terms, and
+   * no variant priced differently — what the catalogue charges until the
+   * barber says otherwise.
+   */
+  entryFor(service: Service): BarberOffering.Entry {
+    return { serviceId: service.id, ...termsOf(service), overrides: [] };
+  },
+
+  /**
+   * The terms an entry holds for `variantId` — its own base terms for
+   * `null`, and for a variant it does not price differently.
+   */
+  termsAt(
+    entry: BarberOffering.Entry,
+    variantId: ServiceVariantId | null,
+  ): ServiceTermsInput {
+    if (variantId !== null) {
+      for (let i = 0; i < entry.overrides.length; i++) {
+        const override = entry.overrides[i] as VariantTerms.Input;
+        if (override.variantId === variantId) return termsOf(override);
+      }
+    }
+    return termsOf(entry);
+  },
+
+  /**
+   * `entry` with `terms` as the terms of `variantId` — its base terms for
+   * `null`: what a price or a time typed on a service's page comes to (the
+   * editor hands {@link termsAt}'s answer with the typed figure in it).
+   * The list stays SPARSE, as the stored one is: a variant whose terms
+   * equal the base holds no override, so "no override" and "an override
+   * equal to the base" stay one state; the overrides keep the service's
+   * declared order, and a variant the service does not declare is left
+   * out.
+   */
+  withTerms(
+    entry: BarberOffering.Entry,
+    declared: readonly ServiceVariant[],
+    variantId: ServiceVariantId | null,
+    terms: ServiceTermsInput,
+  ): BarberOffering.Entry {
+    const base = variantId === null ? termsOf(terms) : termsOf(entry);
+    const overrides: VariantTerms.Input[] = [];
+    for (let i = 0; i < declared.length; i++) {
+      const declaredId = (declared[i] as ServiceVariant).variantId;
+      const held = OfferingEditSystem.termsAt(entry, declaredId);
+      // A variant that followed the old base goes on following the new one.
+      const followed = sameTerms(held, termsOf(entry));
+      const next =
+        declaredId === variantId ? termsOf(terms) : followed ? base : held;
+      if (!sameTerms(next, base)) {
+        overrides.push({ variantId: declaredId, ...next });
+      }
+    }
+    return { serviceId: entry.serviceId, ...base, overrides };
   },
 
   /**

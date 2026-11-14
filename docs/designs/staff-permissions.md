@@ -1167,9 +1167,32 @@ editors"); its server half is merged.
     running beside it. Going live is held by the unit specs and the
     emulator suite (`team-barber` integration spec), and was walked once
     in a browser by hand, through to times on `/book`.
-- **Still to build in this stage.** The services and prices editor; the
-  shops editor; «Свържи профил» for someone else's account; a page for an
-  account with no record. The barber's photo has no callable yet.
+- **Built so far: the services and prices editor.** «Услуги и цени» on a
+  member's page, for anyone `TEAM_OFFERINGS` reaches the record for (the
+  owner alone by the standard).
+  - The sheet lists the catalogue's services, each with what the barber
+    charges or «Не извършва». A row opens the service's own page: a switch
+    for whether they perform it, their price and time, and each variant's
+    when the service declares variants. It is the weekly hours sheet's
+    grammar: a list of rows, a page per row, «Готово» back to the list.
+  - A service switched on starts at the catalogue's own terms
+    (`OfferingEditSystem.entryFor`). A price or a time typed goes through
+    `OfferingEditSystem.withTerms`, which keeps the list sparse as the
+    stored one is: a variant put back to the base holds no override, and a
+    variant that followed the base goes on following it.
+  - «Запази» sends the whole list as one `setBarberOfferings` `SET`. It is
+    offered only when `OfferingEditSystem.plan` takes the draft and answers
+    at least one change, which is the rule the server asks.
+  - The setup and clean-up minutes of an offering are kept as they are and
+    not edited here.
+  - Both this sheet and the hours sheet load when first asked for, so the
+    Team route stays inside its budget (1.50 MB of 1.55 MB).
+  - The end-to-end case switches one service on for a new record, reprices
+    it, and reads the offering on the stored service; «Изтрий» then takes
+    the offering with the record.
+- **Still to build in this stage.** The shops editor; «Свържи профил» for
+  someone else's account; a page for an account with no record. The
+  barber's photo has no callable yet.
 
 ### Stage B. The booking calls
 

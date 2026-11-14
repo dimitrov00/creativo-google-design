@@ -6,6 +6,7 @@ import {
   Currency,
   OperationId,
   ServiceId,
+  ServiceVariantId,
   UserId,
 } from '@core/primitives';
 import { TeamErrorCode } from '@core/errors';
@@ -17,6 +18,7 @@ import {
   fixtureHash,
   serviceFixture,
   termsFixture,
+  textFixture,
   unwrapErr,
   unwrapOk,
 } from '@core/testing';
@@ -28,6 +30,8 @@ const NEW = BarberId.of('b-new');
 const CUT = ServiceId.of('svc-cut');
 const BEARD = ServiceId.of('svc-beard');
 const SHAVE = ServiceId.of('svc-shave');
+const SHORT = ServiceVariantId.of('short');
+const LONG = ServiceVariantId.of('long');
 
 const offering = (barberId: BarberId, cents: number, minutes: number) => ({
   barberId,
@@ -119,6 +123,152 @@ describe('OfferingEditSystem.plan — a barber’s whole list', () => {
       errorCode: TeamErrorCode.ServiceUnknown,
       serviceId: gone,
     });
+  });
+});
+
+describe('OfferingEditSystem.entriesOf / entryFor — what the editor opens on', () => {
+  it('lists what the barber performs as entries, in the services’ order — the list plan answers no change for', () => {
+    const services = deepFreeze(catalogue());
+    const entries = OfferingEditSystem.entriesOf(services, IVAN);
+    expect(entries).toEqual([entry(CUT, 2800, 30), entry(BEARD, 1500, 20)]);
+    expect(unwrapOk(OfferingEditSystem.plan(services, IVAN, entries))).toEqual(
+      [],
+    );
+    expect(OfferingEditSystem.entriesOf(services, NEW)).toEqual([]);
+  });
+
+  it('carries each variant priced differently, by its id', () => {
+    const service = serviceFixture({
+      id: CUT,
+      variants: [
+        { variantId: SHORT, name: textFixture('Short', 'Къса') },
+        { variantId: LONG, name: textFixture('Long', 'Дълга') },
+      ],
+      offerings: [
+        {
+          barberId: IVAN,
+          ...termsFixture(2800, 30),
+          overrides: [{ variantId: LONG, ...termsFixture(3500, 45) }],
+        },
+      ],
+    });
+    expect(OfferingEditSystem.entriesOf([service], IVAN)).toEqual([
+      {
+        ...entry(CUT, 2800, 30),
+        overrides: [
+          {
+            variantId: LONG,
+            priceCents: 3500,
+            currency: 'EUR',
+            durationMinutes: 45,
+            setupMinutes: 0,
+            cleanupMinutes: 0,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('switches a service on at the service’s own terms, with no variant priced differently', () => {
+    const shave = serviceFixture({ id: SHAVE, ...termsFixture(1200, 25) });
+    expect(OfferingEditSystem.entryFor(shave)).toEqual(entry(SHAVE, 1200, 25));
+  });
+});
+
+describe('OfferingEditSystem.termsAt / withTerms — a price or a time typed', () => {
+  const VARIANTS = [
+    { variantId: SHORT, name: textFixture('Short', 'Къса') },
+    { variantId: LONG, name: textFixture('Long', 'Дълга') },
+  ];
+  const base = deepFreeze(entry(CUT, 2800, 30));
+  /** A price or a time typed for a variant (or the base): the terms held there, with the figure in. */
+  const typed = (
+    held: BarberOffering.Entry,
+    variantId: ServiceVariantId | null,
+    figure: { priceCents?: number; durationMinutes?: number },
+  ) =>
+    OfferingEditSystem.withTerms(held, VARIANTS, variantId, {
+      ...OfferingEditSystem.termsAt(held, variantId),
+      ...figure,
+    });
+
+  it('reads the base terms for no variant, and for a variant not priced differently', () => {
+    expect(OfferingEditSystem.termsAt(base, null).priceCents).toBe(2800);
+    expect(OfferingEditSystem.termsAt(base, LONG).durationMinutes).toBe(30);
+  });
+
+  it('changes the base price and leaves the rest of the terms as they were', () => {
+    const next = typed(base, null, {
+      priceCents: 3000,
+    });
+    expect(next).toEqual(entry(CUT, 3000, 30));
+    expect(base.priceCents).toBe(2800);
+  });
+
+  it('prices one variant differently as an override, and reads it back', () => {
+    const next = typed(base, LONG, {
+      priceCents: 3500,
+      durationMinutes: 45,
+    });
+    expect(next.overrides.map((override) => override.variantId)).toEqual([
+      LONG,
+    ]);
+    expect(OfferingEditSystem.termsAt(next, LONG)).toMatchObject({
+      priceCents: 3500,
+      durationMinutes: 45,
+    });
+    expect(OfferingEditSystem.termsAt(next, SHORT).priceCents).toBe(2800);
+  });
+
+  it('stays sparse: a variant put back to the base holds no override', () => {
+    const priced = typed(base, LONG, {
+      priceCents: 3500,
+    });
+    const back = typed(priced, LONG, {
+      priceCents: 2800,
+    });
+    expect(back).toEqual(base);
+  });
+
+  it('a variant that followed the base goes on following it; one priced differently keeps its own', () => {
+    const priced = typed(base, LONG, {
+      priceCents: 3500,
+    });
+    const raised = typed(priced, null, {
+      priceCents: 3000,
+    });
+    expect(OfferingEditSystem.termsAt(raised, SHORT).priceCents).toBe(3000);
+    expect(OfferingEditSystem.termsAt(raised, LONG).priceCents).toBe(3500);
+    expect(raised.overrides).toHaveLength(1);
+  });
+
+  it('keeps the overrides in the service’s declared order, whatever order they were typed in', () => {
+    const long = typed(base, LONG, {
+      priceCents: 3500,
+    });
+    const both = typed(long, SHORT, {
+      priceCents: 2500,
+    });
+    expect(both.overrides.map((override) => override.variantId)).toEqual([
+      SHORT,
+      LONG,
+    ]);
+  });
+
+  it('what it answers is a list plan takes', () => {
+    const service = serviceFixture({
+      id: CUT,
+      variants: VARIANTS,
+      offerings: [offering(IVAN, 2800, 30)],
+    });
+    const priced = typed(OfferingEditSystem.entryFor(service), LONG, {
+      priceCents: 3500,
+    });
+    const changes = unwrapOk(OfferingEditSystem.plan([service], NEW, [priced]));
+    expect(changes).toHaveLength(1);
+    expect(
+      changes[0]?.offerings.find((held) => held.barberId === NEW)?.overrides,
+    ).toHaveLength(1);
   });
 });
 

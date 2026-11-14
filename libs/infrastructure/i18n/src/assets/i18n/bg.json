@@ -2540,6 +2540,22 @@
         "previousMonth": "Предишен месец",
         "nextMonth": "Следващ месец",
         "save": "Запази"
+      },
+      "offerings": {
+        "title": "Услуги и цени",
+        "lede": "Какво извършва и на каква цена.",
+        "none": "Не извършва",
+        "terms": "{{price}} · {{minutes}} мин",
+        "performs": "Извършва",
+        "price": "Цена",
+        "duration": "Времетраене",
+        "minutes": "мин",
+        "variantPrice": "Цена, {{variant}}",
+        "variantDuration": "Времетраене, {{variant}}",
+        "back": "Към услугите",
+        "done": "Готово",
+        "save": "Запази",
+        "empty": "В каталога още няма услуги."
       }
     },
     "permissions": {

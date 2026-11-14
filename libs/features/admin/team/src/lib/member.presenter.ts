@@ -62,6 +62,8 @@ export type MemberPageInput = {
   readonly mayManage: boolean;
   /** They may change this record's weekly hours, and it still takes edits. */
   readonly mayEditHours: boolean;
+  /** They may set what this record performs and its prices, and it still takes edits. */
+  readonly mayEditOfferings: boolean;
   /** They may delete it (`TeamSystem.removable`, and they manage the team). */
   readonly deletable: boolean;
   /** They edit «Права»: the way to a level's page is theirs. */
@@ -165,6 +167,7 @@ function setupRow(
       break;
     case StaffSetupItem.Services:
       value = servicesValue(input);
+      memberEditor = input.mayEditOfferings ? MemberEditor.Offerings : null;
       break;
     default:
       value = hoursValue(input);
@@ -213,7 +216,7 @@ function profileRows(
       id: 'services',
       label: memberWords.items.get(StaffSetupItem.Services) ?? '',
       value: servicesValue(input),
-      memberEditor: null,
+      memberEditor: input.mayEditOfferings ? MemberEditor.Offerings : null,
       testId: 'member-row-services',
     });
   }

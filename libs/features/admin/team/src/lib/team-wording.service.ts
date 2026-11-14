@@ -9,6 +9,7 @@ import {
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import { type MemberWords, memberWordsOf } from './member.words';
+import { type OfferingWords, offeringWordsOf } from './offerings.words';
 import { type TeamWords, teamWordsOf } from './team.words';
 
 /**
@@ -47,6 +48,16 @@ export class TeamWording {
     return lang === null
       ? null
       : memberWordsOf((key, params) =>
+          this.transloco.translate(key, { ...params }, lang),
+        );
+  });
+
+  /** The words «Услуги и цени» prints from values; `null` until the catalogue has loaded. */
+  readonly offeringWords = computed<OfferingWords | null>(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : offeringWordsOf((key, params) =>
           this.transloco.translate(key, { ...params }, lang),
         );
   });

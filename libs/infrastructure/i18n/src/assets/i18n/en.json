@@ -2537,6 +2537,22 @@
         "previousMonth": "Previous month",
         "nextMonth": "Next month",
         "save": "Save"
+      },
+      "offerings": {
+        "title": "Services and prices",
+        "lede": "What they perform, and at what price.",
+        "none": "Not performed",
+        "terms": "{{price}} · {{minutes}} min",
+        "performs": "Performs",
+        "price": "Price",
+        "duration": "Duration",
+        "minutes": "min",
+        "variantPrice": "Price, {{variant}}",
+        "variantDuration": "Duration, {{variant}}",
+        "back": "To the services",
+        "done": "Done",
+        "save": "Save",
+        "empty": "The catalogue has no services yet."
       }
     },
     "permissions": {

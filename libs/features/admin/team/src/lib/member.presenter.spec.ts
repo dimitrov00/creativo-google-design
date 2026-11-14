@@ -77,6 +77,7 @@ function inputOf(
     mayEditProfile: editable,
     mayManage: editable,
     mayEditHours: editable,
+    mayEditOfferings: editable,
     deletable: TeamSystem.removable(barber).ok,
     editsPermissions: true,
     permissions: StaffPermissions.UNSET,
@@ -103,7 +104,7 @@ describe('memberPageVm — a record in preparation', () => {
     expect(read(vm.standing)).toBe('Подготовка · 3 от 5');
   });
 
-  it('leads with what bookings need: each row done or missing, the name, the day and the hours ways into their editors', () => {
+  it('leads with what bookings need: each row done or missing, and each a way into its editor', () => {
     expect(
       vm.setup.map((row) => [
         row.staffSetupItem,
@@ -130,7 +131,14 @@ describe('memberPageVm — a record in preparation', () => {
         'готово',
         MemberEditor.Period,
       ],
-      [StaffSetupItem.Services, 'Услуги и цени', 'Няма', false, 'липсва', null],
+      [
+        StaffSetupItem.Services,
+        'Услуги и цени',
+        'Няма',
+        false,
+        'липсва',
+        MemberEditor.Offerings,
+      ],
       [
         StaffSetupItem.Hours,
         'Работно време',
@@ -247,7 +255,7 @@ describe('memberPageVm — a record at work', () => {
     expect(vm.profile.map((row) => row.memberEditor)).toEqual([
       MemberEditor.Profile,
       MemberEditor.Hours,
-      null,
+      MemberEditor.Offerings,
       MemberEditor.Period,
     ]);
     expect(vm.deletable).toBe(false);
@@ -302,6 +310,7 @@ describe('memberPageVm — a record at work', () => {
         managesTeam: false,
         mayManage: false,
         mayEditHours: false,
+        mayEditOfferings: false,
         deletable: false,
         editsPermissions: false,
       }),
