@@ -141,3 +141,51 @@
 .team-page__choice > span {
   white-space: nowrap;
 }
+
+/* ── a day as a row's value ──────────────────────────────────────────── */
+
+/* The month's surface is where its width is said, once (the schedule's day
+   pill says the same 20rem), and the popover's own padding is local: a
+   month is fluid, so it may be narrower than seven control widths. */
+.team-page__day > .ui-menu {
+  --ui-menu-min-width: 20rem;
+}
+
+.team-page__calendar {
+  padding: var(--sys-space-compact);
+  max-inline-size: min(100%, calc(100vw - 2rem));
+}
+
+.team-page__calendar ui-calendar-grid {
+  inline-size: 100%;
+}
+
+/* ── a form in a sheet ───────────────────────────────────────────────── */
+
+/* The sheet's body: on the sheet's own gutter, its parts 24 apart, and
+   clear of the docked action bar at scroll end (the profile sheet's box). */
+.team-page__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  min-inline-size: 0;
+  padding-inline: var(--modal-sheet-safe);
+  padding-block: var(--sys-space-comfortable)
+    var(--ui-sheet-action-bar-clearance);
+}
+
+.team-page__form > h2 {
+  margin: 0;
+}
+
+/* A label over its field, the name's `tight` step. */
+.team-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-tight);
+}
+
+.team-page__field > textarea {
+  min-block-size: 6rem;
+  resize: vertical;
+}

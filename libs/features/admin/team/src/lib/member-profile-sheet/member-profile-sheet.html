@@ -1,0 +1,188 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="member-profile-sheet"
+    labelledBy="member-profile-sheet-title"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="member-profile-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title>{{ t('admin.team.profile.title') }}</span>
+
+    <div class="team-page__form">
+      <h2
+        id="member-profile-sheet-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('admin.team.profile.title') }}
+      </h2>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-profile-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.team.profile.name') }}</span
+        >
+        <input
+          type="text"
+          uiTextField
+          uiControlSize="large"
+          autocomplete="off"
+          data-testid="member-profile-name"
+          [readonly]="store.pending()"
+          [value]="name()"
+          (input)="name.set(typed($event))"
+        />
+      </label>
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.team.profile.position') }}</span
+        >
+        <input
+          type="text"
+          uiTextField
+          uiControlSize="large"
+          autocomplete="off"
+          data-testid="member-profile-position"
+          [placeholder]="t('admin.team.profile.positionPlaceholder')"
+          [readonly]="store.pending()"
+          [value]="position()"
+          (input)="position.set(typed($event))"
+        />
+      </label>
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.team.profile.bio') }}</span
+        >
+        <textarea
+          uiTextField
+          uiControlSize="large"
+          rows="4"
+          data-testid="member-profile-bio"
+          [placeholder]="t('admin.team.profile.bioPlaceholder')"
+          [readonly]="store.pending()"
+          [value]="bio()"
+          (input)="bio.set(typed($event))"
+        ></textarea>
+      </label>
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.team.profile.instagram') }}</span
+        >
+        <input
+          type="text"
+          uiTextField
+          uiControlSize="large"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+          data-testid="member-profile-instagram"
+          [placeholder]="t('admin.team.profile.instagramPlaceholder')"
+          [readonly]="store.pending()"
+          [value]="instagram()"
+          (input)="instagram.set(typed($event))"
+        />
+      </label>
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.team.profile.experience') }}</span
+        >
+        <input
+          type="text"
+          inputmode="numeric"
+          uiTextField
+          uiControlSize="large"
+          autocomplete="off"
+          data-testid="member-profile-years"
+          [readonly]="store.pending()"
+          [value]="years()"
+          (input)="years.set(typed($event))"
+        />
+      </label>
+
+      <section class="team-page__module">
+        <ui-section-header uiHeaderProminence="increased">
+          <h3 uiTitle>{{ t('admin.team.profile.translation') }}</h3>
+        </ui-section-header>
+        <label class="team-page__field">
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ t('admin.team.profile.nameEn') }}</span
+          >
+          <input
+            type="text"
+            uiTextField
+            uiControlSize="large"
+            autocomplete="off"
+            lang="en"
+            data-testid="member-profile-name-en"
+            [readonly]="store.pending()"
+            [value]="nameEn()"
+            (input)="nameEn.set(typed($event))"
+          />
+        </label>
+        <label class="team-page__field">
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ t('admin.team.profile.positionEn') }}</span
+          >
+          <input
+            type="text"
+            uiTextField
+            uiControlSize="large"
+            autocomplete="off"
+            lang="en"
+            data-testid="member-profile-position-en"
+            [readonly]="store.pending()"
+            [value]="positionEn()"
+            (input)="positionEn.set(typed($event))"
+          />
+        </label>
+        <label class="team-page__field">
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ t('admin.team.profile.bioEn') }}</span
+          >
+          <textarea
+            uiTextField
+            uiControlSize="large"
+            rows="4"
+            lang="en"
+            data-testid="member-profile-bio-en"
+            [readonly]="store.pending()"
+            [value]="bioEn()"
+            (input)="bioEn.set(typed($event))"
+          ></textarea>
+        </label>
+      </section>
+    </div>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSave() || store.pending()"
+        data-testid="member-profile-save"
+        (click)="save()"
+      >
+        {{ t('admin.team.profile.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

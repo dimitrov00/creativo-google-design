@@ -1,10 +1,12 @@
 import {
   BarberStatus,
+  RecordClaim,
   type StaffLevel,
   type TeamMember,
   TeamMemberNote,
   TeamMemberStatus,
 } from '@core/components';
+import type { BarberId, UserId } from '@core/primitives';
 import {
   type Barber,
   type BarberSchedule,
@@ -13,6 +15,15 @@ import {
   type User,
 } from '@core/entities';
 import { StaffSetupSystem } from './staff-setup.system';
+
+/** Who is looking at a record's page, as their stored account says. */
+export type RecordViewer = {
+  readonly userId: UserId | null;
+  /** The barber record the viewer's own account is linked to. */
+  readonly linkedBarberId: BarberId | null;
+  /** The viewer's stored roles let them change roles and links (`Roles.assignsRoles`). */
+  readonly assignsRoles: boolean;
+};
 
 /** The Team page's runs (`TeamRosterSystem.sectionsOf`). */
 export type TeamSections = {
@@ -131,10 +142,6 @@ export const TeamRosterSystem = {
         services,
         schedule,
       );
-      let done = 0;
-      for (let j = 0; j < checklist.needed.length; j++) {
-        if (checklist.needed[j]?.done === true) done++;
-      }
       members.push({
         teamMemberStatus: barber.barberStatus,
         barberId: barber.id,
@@ -145,7 +152,7 @@ export const TeamRosterSystem = {
         teamMemberNote: noteOf(barber, account, accountsRead),
         barberStartsLocalDate: barber.barberStartsLocalDate,
         barberLastWorkingLocalDate: barber.barberLastWorkingLocalDate,
-        setupDoneCount: done,
+        setupDoneCount: StaffSetupSystem.doneCountOf(checklist),
         setupNeededCount: checklist.needed.length,
         staffSetupItem: checklist.firstMissing,
       });
@@ -200,5 +207,39 @@ export const TeamRosterSystem = {
         member.teamMemberStatus !== TeamMemberStatus.Departed &&
         member.memberRoles.includes(level),
     );
+  },
+
+  /** The row of the barber record `barberId`, or `null` when the answer holds none. */
+  recordOf(
+    members: readonly TeamMember[],
+    barberId: BarberId,
+  ): TeamMember.OfBarber | null {
+    for (const member of members) {
+      if (
+        member.teamMemberStatus !== TeamMemberStatus.RoleOnly &&
+        member.barberId === barberId
+      ) {
+        return member;
+      }
+    }
+    return null;
+  },
+
+  /**
+   * What a barber record is to the person looking at its page (staff
+   * permissions P9): `MINE` when the viewer's own stored link names it;
+   * `OPEN` when nobody is linked to it, it has not left, and the viewer
+   * assigns roles and is linked to no record themself; else `NONE`. The
+   * viewer's link is the stored account's, so the answer follows a link
+   * the moment it is written; the record's is the Team list's row.
+   */
+  claimOf(member: TeamMember.OfBarber, viewer: RecordViewer): RecordClaim {
+    if (viewer.userId === null || !viewer.assignsRoles) return RecordClaim.None;
+    if (viewer.linkedBarberId === member.barberId) return RecordClaim.Mine;
+    return member.teamMemberStatus !== TeamMemberStatus.Departed &&
+      member.memberUserId === null &&
+      viewer.linkedBarberId === null
+      ? RecordClaim.Open
+      : RecordClaim.None;
   },
 } as const;

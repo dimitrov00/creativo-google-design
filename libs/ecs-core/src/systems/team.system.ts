@@ -395,6 +395,18 @@ export const TeamSystem = {
   },
 
   /**
+   * Who may book the record, as `setAccess` would read it back: a `DRAFT`'s
+   * target, a live record's own status, and `null` once it has left — a
+   * leaver is booked by nobody.
+   */
+  accessOf(barber: Barber): BarberLifecycle.LiveStatus | null {
+    if (barber.barberStatus === BarberStatus.Draft) {
+      return barber.barberDraftTargetStatus;
+    }
+    return BarberLifecycle.isLive(barber) ? barber.barberStatus : null;
+  },
+
+  /**
    * The go-live step (idempotent): a `DRAFT` whose checklist is ready goes
    * live at its target status; one that is not names the first needed item
    * missing; any other record is unchanged. `barber` of the answer is the

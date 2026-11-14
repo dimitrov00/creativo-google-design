@@ -220,6 +220,16 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    // One team member's page; `:barberId` is the barber record's id, bound
+    // to the page as an input. The same people the list opens for: what
+    // each may change on the page is asked row by row, and the callables
+    // judge the stored account again.
+    path: 'admin/team/member/:barberId',
+    canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Team)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team').then((m) => m.AdminTeamMember),
+  },
+  {
     // The loyalty rules' home; its one page today is the rhythm's. The
     // redirect is deliberately UNGUARDED, like `staff`'s: it is not an
     // authorization decision, and the target's own guards still run.

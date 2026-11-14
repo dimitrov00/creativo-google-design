@@ -1,0 +1,119 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="team-add-sheet"
+    labelledBy="team-add-sheet-title"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="team-add-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title>{{ t('admin.team.add.title') }}</span>
+
+    <div class="team-page__form">
+      <h2
+        id="team-add-sheet-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('admin.team.add.title') }}
+      </h2>
+
+      <!-- A refused add says why; a copy that failed says the record is
+           there and what is left. -->
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="team-add-refusal"
+      >
+        {{ locked() ? t('admin.team.add.copyFailed') : line }}
+      </ui-notice>
+      }
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.team.add.nameLabel') }}</span
+        >
+        <input
+          type="text"
+          uiTextField
+          uiControlSize="large"
+          autocomplete="off"
+          data-testid="team-add-name"
+          [placeholder]="t('admin.team.add.namePlaceholder')"
+          [readonly]="store.pending() || locked()"
+          [value]="name()"
+          (input)="name.set(typed($event))"
+        />
+      </label>
+
+      <ui-list-group>
+        <ui-list-row uiSize="regular" class="team-page__permission">
+          <span>{{ t('admin.team.add.startLabel') }}</span>
+          <lib-team-day-menu
+            uiTrailing
+            uiTestId="team-add-start"
+            [uiDay]="starts()"
+            [uiValue]="startsWords()"
+            [uiLabel]="t('admin.team.add.startLabel')"
+            [uiToday]="uiToday()"
+            [uiLocale]="locale()"
+            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+            [uiNextLabel]="t('admin.team.period.nextMonth')"
+            [uiDisabled]="store.pending() || locked()"
+            (uiPicked)="starts.set($event)"
+          />
+        </ui-list-row>
+        <ui-list-row uiSize="regular" class="team-page__permission">
+          <span>{{ t('admin.team.add.copyLabel') }}</span>
+          <span uiTrailing>
+            <ui-choice-menu
+              uiAlignment="trailing"
+              [uiOptions]="copyOptions()"
+              [uiSelectedId]="copyFrom()"
+              [uiLabel]="t('admin.team.add.copyLabel')"
+              [uiPresented]="copyOpen()"
+              (uiPresentedChange)="copyOpen.set($event)"
+              (uiPicked)="copyFrom.set($event); copyOpen.set(false)"
+            >
+              <button
+                type="button"
+                uiInteractive
+                uiRadius="capsule"
+                uiMenuTrigger
+                class="team-page__choice"
+                [disabled]="store.pending()"
+                [attr.aria-label]="
+                  t('admin.team.add.copyLabel') + ': ' + copyWord()
+                "
+                data-testid="team-add-copy"
+                (click)="copyOpen.set(true)"
+              >
+                <span>{{ copyWord() }}</span>
+                <ui-icon uiName="field.popUp" aria-hidden="true" />
+              </button>
+            </ui-choice-menu>
+          </span>
+        </ui-list-row>
+      </ui-list-group>
+    </div>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canAdd() || store.pending()"
+        data-testid="team-add-save"
+        (click)="add()"
+      >
+        {{ t('admin.team.add.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

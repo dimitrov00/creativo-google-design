@@ -1,0 +1,262 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ViewEncapsulation,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+import { TranslocoDirective } from '@jsverse/transloco';
+import { BarberLifecycle } from '@core/components';
+import { BarberId } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import { StaffAccessService } from '@creativo/features/client/account-state';
+import { TeamCatalogService } from '@creativo/features/shared/catalog';
+import {
+  CLOCK_PORTS,
+  ShopZoneService,
+} from '@creativo/infrastructure/firebase-app';
+import {
+  UiAvatar,
+  UiButton,
+  UiChoiceMenu,
+  UiSkeleton,
+  UiSwitch,
+} from '@creativo/ui/controls';
+import { UiIcon } from '@creativo/ui/icons';
+import { UiStack } from '@creativo/ui/layout';
+import {
+  UiForegroundStyleDirective,
+  UiFrameDirective,
+  UiInteractiveDirective,
+  UiPaddingDirective,
+  UiRadiusDirective,
+  UiTextDirective,
+  UiVisuallyHiddenDirective,
+} from '@creativo/ui/modifiers';
+import {
+  UiAlert,
+  UiListGroup,
+  UiListRow,
+  UiMenuTrigger,
+  UiNotice,
+  UiSectionHeader,
+  UiSheetHeader,
+  UiSheetHeadline,
+  UiToast,
+} from '@creativo/ui/patterns';
+import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
+import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
+import { memberPageVm } from '../member.presenter';
+import { DeleteAnswer, MemberEditor, type MemberPageVm } from '../member.vm';
+import { TeamMemberStore } from '../team-member.store';
+import { TeamWording } from '../team-wording.service';
+import { TeamStore } from '../team.store';
+
+/**
+ * A TEAM MEMBER'S PAGE (team onboarding D8, D9; staff permissions P9, P10):
+ * one barber record. While it is in preparation, what it still needs leads
+ * the page — each row a way into its own editor — and nothing asks anyone
+ * to press «go live»: the record starts taking bookings the moment the
+ * needed items are there. After that the same rows are at rest under
+ * «Профил». The account linked to the record stands beside it, with the
+ * owner's own door to a chair («Това съм аз» · «Не съм аз») and the way to
+ * the levels that account holds.
+ *
+ * In this slice the name, the description and the working period have
+ * editors; the services and the hours are read here and edited from the
+ * next slice on.
+ */
+@Component({
+  selector: 'lib-admin-team-member',
+  imports: [
+    MemberPeriodSheet,
+    MemberProfileSheet,
+    RouterLink,
+    TranslocoDirective,
+    UiAlert,
+    UiAvatar,
+    UiButton,
+    UiChoiceMenu,
+    UiForegroundStyleDirective,
+    UiFrameDirective,
+    UiIcon,
+    UiInteractiveDirective,
+    UiListGroup,
+    UiListRow,
+    UiMenuTrigger,
+    UiNotice,
+    UiPaddingDirective,
+    UiRadiusDirective,
+    UiSectionHeader,
+    UiSheetHeader,
+    UiSheetHeadline,
+    UiSkeleton,
+    UiStack,
+    UiSwitch,
+    UiTextDirective,
+    UiToast,
+    UiVisuallyHiddenDirective,
+  ],
+  providers: [TeamMemberStore],
+  templateUrl: './admin-team-member.html',
+  styleUrl: '../team-pages.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // Every selector in the stylesheet is `team-page`-prefixed.
+  encapsulation: ViewEncapsulation.None,
+})
+export class AdminTeamMember {
+  protected readonly store = inject(TeamMemberStore);
+  private readonly team = inject(TeamStore);
+  private readonly access = inject(StaffAccessService);
+  private readonly wording = inject(TeamWording);
+  private readonly catalog = inject(TeamCatalogService);
+  private readonly router = inject(Router);
+  private readonly clock = inject(CLOCK_PORTS);
+  /** The default shop's zone — a date's year is said only outside its today's. */
+  private readonly zone = inject(ShopZoneService).defaultZone();
+  /** The instant the page opened: "today" is read once from it. */
+  private readonly openedAtUtcMs = this.clock.nowUtcMs();
+
+  /** The route's `:barberId` — bound by the router (`withComponentInputBinding`). */
+  readonly barberId = input<string | undefined>(undefined);
+
+  /** Which editor a row opens, for the template's switch. */
+  protected readonly MemberEditor = MemberEditor;
+
+  /** The editor that is open; `null` when none is. */
+  protected readonly editor = signal<MemberEditor | null>(null);
+  /** The open editor is leaving: its close animation runs. */
+  protected readonly closing = signal(false);
+  /** «Кой може да записва»: its menu is open. */
+  protected readonly bookedByOpen = signal(false);
+  /** The delete question is up. */
+  protected readonly deleteOpen = signal(false);
+
+  protected readonly today = computed(() => {
+    const zone = this.zone();
+    return zone === null
+      ? null
+      : ZonedTimeSystem.shopNow(this.openedAtUtcMs, zone).localDate;
+  });
+
+  /** The team is read and holds no such record: the page says so. */
+  protected readonly missing = computed(
+    () => this.store.known() && this.store.barber() === undefined,
+  );
+
+  protected readonly vm = computed<MemberPageVm | null>(() => {
+    const words = this.wording.words();
+    const memberWords = this.wording.memberWords();
+    const barber = this.store.barber();
+    const checklist = this.store.checklist();
+    if (
+      words === null ||
+      memberWords === null ||
+      barber === undefined ||
+      checklist === null
+    ) {
+      return null;
+    }
+    return memberPageVm({
+      barber,
+      checklist,
+      doneCount: this.store.doneCount(),
+      servicesCount: this.store.servicesCount(),
+      bookedBy: this.store.bookedBy(),
+      shops: this.store.shops(),
+      everyShop: this.store.everyShop(),
+      multiShop: this.store.multiShop(),
+      member: this.store.member(),
+      recordClaim: this.store.recordClaim(),
+      managesTeam: this.store.managesTeam(),
+      mayEditProfile: this.store.mayEditProfile(),
+      mayManage: this.store.mayManage(),
+      deletable: this.store.deletable(),
+      editsPermissions: this.access.editsPermissions(),
+      permissions: this.access.permissions(),
+      avatarSrc: this.catalog.findTeamBarberVm(barber.id)?.avatarSrc ?? null,
+      words,
+      memberWords,
+      locale: this.wording.locale(),
+      today: this.today(),
+    });
+  });
+
+  /**
+   * Why the last call was refused, in the catalogue's words — said on the
+   * page for its own rows; an open editor says its own.
+   */
+  protected readonly refusal = computed(() => {
+    const error = this.store.refusal();
+    return error === null || this.editor() !== null
+      ? null
+      : this.wording.refusalOf(error);
+  });
+
+  constructor() {
+    this.catalog.watchTeam();
+    // The account beside the record is the Team list's row: read it again,
+    // so a page opened from a link is as fresh as one opened from the list.
+    void this.team.load();
+    // The route names the record; the store's own signals are not read here.
+    effect(() => {
+      const raw = this.barberId();
+      const parsed = raw === undefined ? null : BarberId.parse(raw);
+      untracked(() =>
+        this.store.open(parsed !== null && parsed.ok ? parsed.value : null),
+      );
+    });
+  }
+
+  protected openEditor(memberEditor: MemberEditor): void {
+    this.store.clearRefusal();
+    this.closing.set(false);
+    this.editor.set(memberEditor);
+  }
+
+  /** ✕, Escape, the scrim, or a save that landed: the sheet leaves. */
+  protected requestClose(): void {
+    if (this.editor() !== null) this.closing.set(true);
+  }
+
+  protected finishClose(): void {
+    if (!this.closing()) return;
+    this.editor.set(null);
+    this.closing.set(false);
+    this.store.clearRefusal();
+  }
+
+  protected setPool(on: boolean): void {
+    void this.store.setPool(on);
+  }
+
+  /** «Кой може да записва» answered: the live status picked, when it is one. */
+  protected pickBookedBy(picked: string): void {
+    this.bookedByOpen.set(false);
+    if (
+      BarberLifecycle.isLiveStatus(picked) &&
+      picked !== this.store.bookedBy()
+    ) {
+      void this.store.setAccess(picked);
+    }
+  }
+
+  /** «Това съм аз» · «Не съм аз». */
+  protected claim(mine: boolean): void {
+    void this.store.claim(mine);
+  }
+
+  /** The delete question answered. */
+  protected async onDeletePick(answer: string): Promise<void> {
+    this.deleteOpen.set(false);
+    if (answer !== DeleteAnswer.Delete) return;
+    if (await this.store.remove()) {
+      void this.router.navigate(['/admin/team']);
+    }
+  }
+}

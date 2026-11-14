@@ -2457,7 +2457,90 @@
       "roles": {
         "sysadmin": "Поддръжка"
       },
-      "permissionsRow": "Права"
+      "permissionsRow": "Права",
+      "add": {
+        "open": "Добави човек в екипа",
+        "title": "Нов в екипа",
+        "close": "Затвори",
+        "nameLabel": "Име",
+        "namePlaceholder": "Име и фамилия",
+        "startLabel": "Начална дата",
+        "copyLabel": "Копирай цените от",
+        "copyNone": "Никого",
+        "save": "Добави",
+        "copyFailed": "Записът е създаден, но цените не бяха копирани. Опитай пак."
+      },
+      "member": {
+        "back": "Към екипа",
+        "notFound": "Не намерихме този човек в екипа.",
+        "setupTitle": "За да приема записи",
+        "setupDone": "готово",
+        "setupMissing": "липсва",
+        "items": {
+          "NAME": "Име",
+          "START_DAY": "Начална дата",
+          "SHOPS": "Салони",
+          "SERVICES": "Услуги и цени",
+          "HOURS": "Работно време"
+        },
+        "none": "Няма",
+        "hoursSet": "Зададено",
+        "servicesOne": "1 услуга",
+        "servicesMany": "{{count}} услуги",
+        "allShops": "Всички",
+        "goesLive": "{{name}} започва да приема записи, щом всичко тук е готово.",
+        "profileTitle": "Профил",
+        "profileRow": "Име и описание",
+        "periodRow": "Период на работа",
+        "periodFrom": "от {{date}}",
+        "periodRange": "{{from}} – {{to}}",
+        "poolRow": "Приема „Който и да е“",
+        "bookedByRow": "Кой може да записва",
+        "bookedBy": {
+          "PUBLIC": "Всички",
+          "STAFF_ONLY": "Само екипът"
+        },
+        "accountTitle": "Профил в приложението",
+        "mine": "Твоят профил",
+        "isMe": "Това съм аз",
+        "notMe": "Не съм аз",
+        "accountNone": "Без профил {{name}} не влиза в приложението. Часовете се записват от екипа.",
+        "accountMine": "Работиш и на стола: графикът ти е в «График», а всичко друго остава както е.",
+        "accessTitle": "Достъп",
+        "levelRow": "Права на „{{level}}“",
+        "delete": "Изтрий",
+        "deleteTitle": "Да изтрия ли {{name}}?",
+        "deleteMessage": "Този запис още не е приемал записи. Изтриването не може да се върне.",
+        "deleteCancel": "Отказ",
+        "live": "{{name}} вече приема записи.",
+        "saved": "Запазено"
+      },
+      "profile": {
+        "title": "Име и описание",
+        "name": "Име",
+        "position": "Длъжност",
+        "positionPlaceholder": "Напр. Старши бръснар",
+        "bio": "Няколко думи",
+        "bioPlaceholder": "С какво е добър, какво обича да прави",
+        "translation": "Превод (по желание)",
+        "nameEn": "Име на английски",
+        "positionEn": "Длъжност на английски",
+        "bioEn": "Няколко думи на английски",
+        "instagram": "Instagram",
+        "instagramPlaceholder": "@име",
+        "experience": "Опит (години)",
+        "save": "Запази"
+      },
+      "period": {
+        "title": "Период на работа",
+        "start": "Начална дата",
+        "last": "Последен работен ден",
+        "lastNone": "Няма",
+        "lastClear": "Без последен ден",
+        "previousMonth": "Предишен месец",
+        "nextMonth": "Следващ месец",
+        "save": "Запази"
+      }
     },
     "permissions": {
       "title": "Права",

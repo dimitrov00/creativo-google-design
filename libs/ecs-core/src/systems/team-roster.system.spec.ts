@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BarberStatus,
+  RecordClaim,
   Role,
   type StaffLevel,
   StaffSetupItem,
@@ -354,5 +355,77 @@ describe('TeamRosterSystem.holdersOf — who holds a staff level', () => {
       memberRoles: [Role.Barber],
     };
     expect(TeamRosterSystem.holdersOf([leaver], Role.Barber)).toEqual([]);
+  });
+});
+
+describe('TeamRosterSystem.recordOf — a barber record’s row', () => {
+  const members = TeamRosterSystem.membersOf(
+    facts({
+      barbers: [ivan, niko],
+      accounts: [account('u-desk', [Role.Receptionist])],
+    }),
+  );
+
+  it('finds the record by its id, and never an account’s row', () => {
+    expect(TeamRosterSystem.recordOf(members, NIKO)?.barberId).toBe(NIKO);
+    expect(TeamRosterSystem.recordOf(members, IVAN)?.barberId).toBe(IVAN);
+  });
+
+  it('answers null for an id no row carries', () => {
+    expect(TeamRosterSystem.recordOf(members, NEW)).toBeNull();
+    expect(TeamRosterSystem.recordOf([], IVAN)).toBeNull();
+  });
+});
+
+describe('TeamRosterSystem.claimOf — whose record it is to the person looking (staff permissions P9)', () => {
+  const members = TeamRosterSystem.membersOf(
+    facts({
+      barbers: [ivan, niko],
+      accounts: [account('u-ivan', [Role.Barber], IVAN)],
+    }),
+  );
+  const linked = TeamRosterSystem.recordOf(
+    members,
+    IVAN,
+  ) as TeamMember.OfBarber;
+  const free = TeamRosterSystem.recordOf(members, NIKO) as TeamMember.OfBarber;
+  const owner = {
+    userId: UserId.of('u-owner'),
+    linkedBarberId: null,
+    assignsRoles: true,
+  };
+
+  it('is open to an owner linked to no record, when nobody is linked to it', () => {
+    expect(TeamRosterSystem.claimOf(free, owner)).toBe(RecordClaim.Open);
+  });
+
+  it('is the viewer’s own the moment their stored link names it, whatever the row still says', () => {
+    expect(
+      TeamRosterSystem.claimOf(free, { ...owner, linkedBarberId: NIKO }),
+    ).toBe(RecordClaim.Mine);
+  });
+
+  it('is nobody’s to take when another account holds it, or the viewer already has a record', () => {
+    expect(TeamRosterSystem.claimOf(linked, owner)).toBe(RecordClaim.None);
+    expect(
+      TeamRosterSystem.claimOf(free, { ...owner, linkedBarberId: IVAN }),
+    ).toBe(RecordClaim.None);
+  });
+
+  it('is never offered to someone who assigns no roles, or to nobody', () => {
+    expect(
+      TeamRosterSystem.claimOf(free, { ...owner, assignsRoles: false }),
+    ).toBe(RecordClaim.None);
+    expect(TeamRosterSystem.claimOf(free, { ...owner, userId: null })).toBe(
+      RecordClaim.None,
+    );
+  });
+
+  it('is never open on a leaver’s record', () => {
+    const leaver: TeamMember.OfBarber = {
+      ...free,
+      teamMemberStatus: TeamMemberStatus.Departed,
+    };
+    expect(TeamRosterSystem.claimOf(leaver, owner)).toBe(RecordClaim.None);
   });
 });

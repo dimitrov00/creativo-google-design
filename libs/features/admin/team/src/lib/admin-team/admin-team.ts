@@ -4,8 +4,9 @@ import {
   ViewEncapsulation,
   computed,
   inject,
+  signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { StaffPermissions } from '@core/components';
 import { AccessScope, type BarberId, StaffCapability } from '@core/primitives';
@@ -33,6 +34,7 @@ import {
   UiSectionHeader,
   UiSheetHeader,
 } from '@creativo/ui/patterns';
+import { TeamAddSheet } from '../team-add-sheet/team-add-sheet';
 import { TeamWording } from '../team-wording.service';
 import { teamPageVm } from '../team.presenter';
 import { TeamStore } from '../team.store';
@@ -45,13 +47,15 @@ import type { TeamPageVm } from '../team.vm';
  * whoever edits every barber's profile or prices sees the records alone.
  * The owner also finds the way to «Права» here.
  *
- * A row is read, not pressed, in this slice: the member's page and the add
- * sheet arrive next, and a row that led nowhere would be a lie.
+ * A barber record's row leads to its page; whoever manages the team adds
+ * someone from the bar's ＋. An account with no record is read here: its
+ * roles are the client card's to change.
  */
 @Component({
   selector: 'lib-admin-team',
   imports: [
     RouterLink,
+    TeamAddSheet,
     TranslocoDirective,
     UiAvatar,
     UiButton,
@@ -88,10 +92,24 @@ export class AdminTeam {
   /** Where the read stands, for the template's switch. */
   protected readonly LoadState = LoadState;
 
+  private readonly router = inject(Router);
+
   /** The owner alone edits «Права»: the row is theirs. */
   protected readonly editsPermissions = this.access.editsPermissions;
 
-  private readonly today = computed(() => {
+  /** Whoever manages the team adds to it: the bar's ＋ is theirs. */
+  protected readonly managesTeam = computed(
+    () => this.access.scopeOf(StaffCapability.TeamManage) !== AccessScope.None,
+  );
+
+  /** The add sheet is up. */
+  protected readonly addOpen = signal(false);
+  /** The add sheet is leaving: its close animation runs. */
+  protected readonly addClosing = signal(false);
+  /** The record the add sheet created: the page opens it once the sheet has left. */
+  private addedId: BarberId | null = null;
+
+  protected readonly today = computed(() => {
     const zone = this.zone();
     return zone === null
       ? null
@@ -114,9 +132,7 @@ export class AdminTeam {
       ? null
       : teamPageVm({
           sections: this.store.sections(),
-          managesTeam:
-            this.access.scopeOf(StaffCapability.TeamManage) !==
-            AccessScope.None,
+          managesTeam: this.managesTeam(),
           avatars: this.avatars(),
           words,
           locale: this.wording.locale(),
@@ -149,5 +165,33 @@ export class AdminTeam {
 
   protected retry(): void {
     void this.store.load();
+  }
+
+  protected openAdd(): void {
+    this.addedId = null;
+    this.addClosing.set(false);
+    this.addOpen.set(true);
+  }
+
+  /** ✕, Escape, the scrim: the sheet leaves. */
+  protected closeAdd(): void {
+    if (this.addOpen()) this.addClosing.set(true);
+  }
+
+  /** The record was added: the sheet leaves, then its page opens. */
+  protected onAdded(barberId: BarberId): void {
+    this.addedId = barberId;
+    this.closeAdd();
+  }
+
+  protected finishAdd(): void {
+    if (!this.addClosing()) return;
+    this.addOpen.set(false);
+    this.addClosing.set(false);
+    const barberId = this.addedId;
+    this.addedId = null;
+    if (barberId !== null) {
+      void this.router.navigate(['/admin/team/member', barberId]);
+    }
   }
 }

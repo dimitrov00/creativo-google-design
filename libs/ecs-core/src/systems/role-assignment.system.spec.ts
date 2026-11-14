@@ -425,6 +425,36 @@ describe('RoleAssignmentSystem.decide — the caller’s own account (staff perm
   });
 });
 
+describe('RoleAssignmentSystem.selfLinkOf — «Това съм аз» · «Не съм аз» (staff permissions P9)', () => {
+  const RECORD = BarberId.of('b-owner');
+
+  it('takes a record: the stored set plus barber, in dictionary order, and a SET link', () => {
+    const taken = RoleAssignmentSystem.selfLinkOf([Role.Admin], RECORD);
+    expect(taken.roles).toEqual(
+      Roles.ALL.filter((role) => role === Role.Admin || role === Role.Barber),
+    );
+    expect(taken.link).toEqual(BarberLinkRequest.set(RECORD));
+  });
+
+  it('gives it back: the stored set without barber, and a CLEAR', () => {
+    const given = RoleAssignmentSystem.selfLinkOf(
+      [Role.Barber, Role.Admin],
+      null,
+    );
+    expect(given.roles).toEqual([Role.Admin]);
+    expect(given.link).toEqual(BarberLinkRequest.CLEAR);
+  });
+
+  it('the two undo each other, and never name a role twice', () => {
+    const stored: readonly Role[] = deepFreeze([Role.Admin, Role.Receptionist]);
+    const taken = RoleAssignmentSystem.selfLinkOf(stored, RECORD);
+    const again = RoleAssignmentSystem.selfLinkOf(taken.roles, RECORD);
+    expect(again.roles).toEqual(taken.roles);
+    const back = RoleAssignmentSystem.selfLinkOf(taken.roles, null);
+    expect([...back.roles].sort()).toEqual([...stored].sort());
+  });
+});
+
 describe('RoleAssignmentSystem.revokesSessions — whose sessions an admitted change ends', () => {
   it('ends another account’s sessions, never the caller’s own', () => {
     expect(RoleAssignmentSystem.revokesSessions(ADMIN_ID, TARGET_ID)).toBe(

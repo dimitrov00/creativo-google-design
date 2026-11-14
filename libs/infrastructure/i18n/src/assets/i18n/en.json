@@ -2454,7 +2454,90 @@
       "roles": {
         "sysadmin": "Support"
       },
-      "permissionsRow": "Permissions"
+      "permissionsRow": "Permissions",
+      "add": {
+        "open": "Add someone to the team",
+        "title": "New on the team",
+        "close": "Close",
+        "nameLabel": "Name",
+        "namePlaceholder": "First and last name",
+        "startLabel": "Start day",
+        "copyLabel": "Copy prices from",
+        "copyNone": "Nobody",
+        "save": "Add",
+        "copyFailed": "The record was created, but the prices were not copied. Try again."
+      },
+      "member": {
+        "back": "To the team",
+        "notFound": "We could not find this person on the team.",
+        "setupTitle": "Before taking bookings",
+        "setupDone": "done",
+        "setupMissing": "missing",
+        "items": {
+          "NAME": "Name",
+          "START_DAY": "Start day",
+          "SHOPS": "Shops",
+          "SERVICES": "Services and prices",
+          "HOURS": "Working hours"
+        },
+        "none": "None",
+        "hoursSet": "Set",
+        "servicesOne": "1 service",
+        "servicesMany": "{{count}} services",
+        "allShops": "All",
+        "goesLive": "{{name}} starts taking bookings once everything here is done.",
+        "profileTitle": "Profile",
+        "profileRow": "Name and description",
+        "periodRow": "Working period",
+        "periodFrom": "from {{date}}",
+        "periodRange": "{{from}} – {{to}}",
+        "poolRow": "Takes “Anyone”",
+        "bookedByRow": "Who can book",
+        "bookedBy": {
+          "PUBLIC": "Everyone",
+          "STAFF_ONLY": "The team only"
+        },
+        "accountTitle": "App account",
+        "mine": "Your account",
+        "isMe": "This is me",
+        "notMe": "This is not me",
+        "accountNone": "Without an account {{name}} cannot sign in. The team books their visits.",
+        "accountMine": "You work a chair too: your schedule is under “Schedule”, and everything else stays as it is.",
+        "accessTitle": "Access",
+        "levelRow": "Permissions of “{{level}}”",
+        "delete": "Delete",
+        "deleteTitle": "Delete {{name}}?",
+        "deleteMessage": "This record has never taken bookings. Deleting it cannot be undone.",
+        "deleteCancel": "Cancel",
+        "live": "{{name}} is now taking bookings.",
+        "saved": "Saved"
+      },
+      "profile": {
+        "title": "Name and description",
+        "name": "Name",
+        "position": "Title",
+        "positionPlaceholder": "E.g. Senior barber",
+        "bio": "A few words",
+        "bioPlaceholder": "What they are good at, what they like doing",
+        "translation": "Translation (optional)",
+        "nameEn": "Name in English",
+        "positionEn": "Title in English",
+        "bioEn": "A few words in English",
+        "instagram": "Instagram",
+        "instagramPlaceholder": "@name",
+        "experience": "Experience (years)",
+        "save": "Save"
+      },
+      "period": {
+        "title": "Working period",
+        "start": "Start day",
+        "last": "Last working day",
+        "lastNone": "None",
+        "lastClear": "No last day",
+        "previousMonth": "Previous month",
+        "nextMonth": "Next month",
+        "save": "Save"
+      }
     },
     "permissions": {
       "title": "Permissions",

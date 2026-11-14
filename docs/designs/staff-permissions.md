@@ -1107,10 +1107,52 @@ editors"); its server half is merged.
     integration spec). A second case holds that a content editor sees the
     records and no accounts and is turned away from «Права», and that a
     barber is turned away from the list.
-- **Still to build in this stage.** The member page, its editors and the
-  add sheet; the «Това съм аз» door; the end-to-end exit tests that need
-  them (an owner links themself to a record, a content manager reaches a
-  barber's profile from the list).
+- **Built so far: the member's page, the add sheet and «Това съм аз».**
+  `/admin/team/member/:barberId`, for the people the list opens for. A
+  barber record's row on the list leads to it.
+  - The page reads the record off the staff's team stream and asks
+    `StaffSetupSystem.checklistOf` over the live record, services and
+    roster, so a save made anywhere redraws it. In preparation, what
+    bookings need leads the page; at work, the same rows are at rest under
+    «Профил». A leaver's page is read.
+  - Each editor is one `editBarber` part: «Име и описание» (`PROFILE`, a
+    sheet, the English under «Превод (по желание)»), «Период на работа»
+    (`PERIOD`, a sheet with the design system's month), «Приема „Който и
+    да е“» (`POOL`, a switch) and «Кой може да записва» (`ACCESS`, a
+    menu). A sheet offers «Запази» only when `TeamSystem` would take the
+    draft, which is the rule the server asks. What a person may change is
+    asked row by row: `TEAM_PROFILES` for the profile, `TEAM_MANAGE` for
+    the rest.
+  - Going live has no button. The page's store asks `activateBarber` once
+    when a record in preparation shows every needed item done, on reads
+    that have answered, and the page then says «… вече приема записи».
+  - «Изтрий» is offered where `TeamSystem.removable` allows, behind a
+    question.
+  - The add sheet (the list's ＋, for `TEAM_MANAGE`) takes a name, a start
+    day and «Копирай цените от». It calls `addBarber`, then
+    `setBarberOfferings` with `COPY`. The record gets a barber's defaults:
+    every shop, public once live, in the pool. A copy that fails leaves
+    the record there and is retried alone, so «Добави» never adds a second
+    person.
+  - «Това съм аз» · «Не съм аз» (P9). `TeamRosterSystem.claimOf` decides
+    what the record is to the person looking, and
+    `RoleAssignmentSystem.selfLinkOf` answers the roles and the link
+    `setRoles` is sent. The page follows the stored account, so the row
+    turns at once and nobody is signed out.
+  - A member's page leads to the «Права» page of each level the linked
+    account holds (P10).
+  - The end-to-end case has an owner add a barber with a colleague's
+    prices, save a title, flip the pool, take the record as their own,
+    give it back and delete it, checking the stored record, account and
+    lock at each step. A second case has a content editor reach a barber's
+    profile from the list and find no account, no period editor and no
+    delete.
+- **Still to build in this stage.** The services and prices editor; the
+  hours from the member's page, so a new barber can go live without the
+  schedule; the shops editor; «Свържи профил» for someone else's account;
+  a page for an account with no record. The barber's photo has no callable
+  yet. The end-to-end exit test "a new barber goes live and a client books
+  them" waits for the hours.
 
 ### Stage B. The booking calls
 

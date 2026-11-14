@@ -160,3 +160,19 @@ describe('OfferingPriceSystem.offersOf — what a chair’s menu holds', () => {
     expect(S.offersOf(service, ivan)).toEqual(S.offersOf(service, ivan));
   });
 });
+
+describe('OfferingPriceSystem.performedCount — how many services a barber performs', () => {
+  it('counts the services that list the barber, each once', () => {
+    const both = withMatrix();
+    const ivanOnly = serviceFixture({
+      ...terms(900, 15),
+      offerings: [{ barberId: ivan, ...terms(900, 15), overrides: [] }],
+    });
+    const nobody = serviceFixture({ ...terms(700, 10), offerings: [] });
+    const services = deepFreeze([both, ivanOnly, nobody]);
+    expect(S.performedCount(services, ivan)).toBe(2);
+    expect(S.performedCount(services, niko)).toBe(1);
+    expect(S.performedCount(services, BarberId.of('nobody'))).toBe(0);
+    expect(S.performedCount([], ivan)).toBe(0);
+  });
+});

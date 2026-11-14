@@ -325,6 +325,27 @@ export const RoleAssignmentSystem = {
   },
 
   /**
+   * What an owner sends to take a barber record as their own, or to give it
+   * back (staff permissions P9, «Това съм аз» · «Не съм аз»): with a
+   * record, the stored set plus `barber` and a `SET` link to it; with
+   * `null`, the stored set without `barber` and a `CLEAR` — the exact
+   * inverse, so the two undo each other. The set is normalised as `decide`
+   * normalises it; `decide` still judges the call.
+   */
+  selfLinkOf(
+    stored: readonly Role[],
+    barberId: BarberId | null,
+  ): { readonly roles: readonly Role[]; readonly link: BarberLinkRequest } {
+    const kept = stored.filter((role) => role !== Role.Barber);
+    return barberId === null
+      ? { roles: normalised(kept), link: BarberLinkRequest.CLEAR }
+      : {
+          roles: normalised([...kept, Role.Barber]),
+          link: BarberLinkRequest.set(barberId),
+        };
+  },
+
+  /**
    * Whether an admitted change ends the target's sessions (S-RU-10): every
    * change but the caller's own (staff permissions P9). A revoke exists so
    * a session minted from the old roles cannot outlive them; a caller's own
