@@ -60,6 +60,8 @@ export type MemberPageInput = {
   readonly mayEditProfile: boolean;
   /** They may change this record's period, pool and access, and it still takes edits. */
   readonly mayManage: boolean;
+  /** They may change this record's weekly hours, and it still takes edits. */
+  readonly mayEditHours: boolean;
   /** They may delete it (`TeamSystem.removable`, and they manage the team). */
   readonly deletable: boolean;
   /** They edit «Права»: the way to a level's page is theirs. */
@@ -113,6 +115,13 @@ function servicesValue(input: MemberPageInput): string {
     : input.memberWords.none;
 }
 
+/** «Зададено», or the word for none. */
+function hoursValue(input: MemberPageInput): string {
+  return isDone(input, StaffSetupItem.Hours)
+    ? input.memberWords.hoursSet
+    : input.memberWords.none;
+}
+
 /** «Център, Младост», or «Всички» for a record that works at every shop. */
 function shopsValue(input: MemberPageInput): string {
   return input.everyShop
@@ -158,7 +167,8 @@ function setupRow(
       value = servicesValue(input);
       break;
     default:
-      value = entry.done ? memberWords.hoursSet : memberWords.none;
+      value = hoursValue(input);
+      memberEditor = input.mayEditHours ? MemberEditor.Hours : null;
   }
   return {
     staffSetupItem: item,
@@ -189,9 +199,16 @@ function profileRows(
       testId: 'member-row-profile',
     },
   ];
-  // A draft's services are a row of its checklist; a record at work lists
-  // them here.
+  // A draft's hours and services are rows of its checklist; a record at
+  // work lists them here.
   if (!isDraft) {
+    rows.push({
+      id: 'hours',
+      label: memberWords.items.get(StaffSetupItem.Hours) ?? '',
+      value: hoursValue(input),
+      memberEditor: input.mayEditHours ? MemberEditor.Hours : null,
+      testId: 'member-row-hours',
+    });
     rows.push({
       id: 'services',
       label: memberWords.items.get(StaffSetupItem.Services) ?? '',
@@ -276,6 +293,7 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
   }
   const bookedBy = input.bookedBy;
   return {
+    barberId: barber.id,
     name,
     standing: standingOf(input),
     avatarSrc: input.avatarSrc,

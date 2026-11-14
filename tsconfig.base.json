@@ -51,6 +51,12 @@
       "@creativo/features/staff/dashboard": [
         "./libs/features/staff/dashboard/src/index.ts"
       ],
+      "@creativo/features/staff/dashboard/hours": [
+        "./libs/features/staff/dashboard/src/hours.ts"
+      ],
+      "@creativo/features/staff/dashboard/hours-desk": [
+        "./libs/features/staff/dashboard/src/hours-desk.ts"
+      ],
       "@creativo/features/staff/analytics": [
         "./libs/features/staff/analytics/src/index.ts"
       ],

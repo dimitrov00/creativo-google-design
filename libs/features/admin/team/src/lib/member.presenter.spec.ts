@@ -76,6 +76,7 @@ function inputOf(
     managesTeam: true,
     mayEditProfile: editable,
     mayManage: editable,
+    mayEditHours: editable,
     deletable: TeamSystem.removable(barber).ok,
     editsPermissions: true,
     permissions: StaffPermissions.UNSET,
@@ -102,7 +103,7 @@ describe('memberPageVm — a record in preparation', () => {
     expect(read(vm.standing)).toBe('Подготовка · 3 от 5');
   });
 
-  it('leads with what bookings need: each row done or missing, the name and the day ways into their editors', () => {
+  it('leads with what bookings need: each row done or missing, the name, the day and the hours ways into their editors', () => {
     expect(
       vm.setup.map((row) => [
         row.staffSetupItem,
@@ -130,14 +131,21 @@ describe('memberPageVm — a record in preparation', () => {
         MemberEditor.Period,
       ],
       [StaffSetupItem.Services, 'Услуги и цени', 'Няма', false, 'липсва', null],
-      [StaffSetupItem.Hours, 'Работно време', 'Няма', false, 'липсва', null],
+      [
+        StaffSetupItem.Hours,
+        'Работно време',
+        'Няма',
+        false,
+        'липсва',
+        MemberEditor.Hours,
+      ],
     ]);
     expect(vm.goesLive).toBe(
       'Николай започва да приема записи, щом всичко тук е готово.',
     );
   });
 
-  it('keeps the profile rows at rest under it, without the services the checklist already lists', () => {
+  it('keeps the profile rows at rest under it, without the hours and services the checklist already lists', () => {
     expect(
       vm.profile.map((row) => [row.label, row.value, row.memberEditor]),
     ).toEqual([
@@ -232,8 +240,15 @@ describe('memberPageVm — a record at work', () => {
     expect(vm.goesLive).toBeNull();
     expect(vm.profile.map((row) => [row.label, row.value])).toEqual([
       ['Име и описание', 'Старши бръснар'],
+      ['Работно време', 'Зададено'],
       ['Услуги и цени', '1 услуга'],
       ['Период на работа', 'от 3.03.2024 г.'],
+    ]);
+    expect(vm.profile.map((row) => row.memberEditor)).toEqual([
+      MemberEditor.Profile,
+      MemberEditor.Hours,
+      null,
+      MemberEditor.Period,
     ]);
     expect(vm.deletable).toBe(false);
   });
@@ -286,12 +301,14 @@ describe('memberPageVm — a record at work', () => {
       inputOf(IVAN_RECORD, facts, {
         managesTeam: false,
         mayManage: false,
+        mayEditHours: false,
         deletable: false,
         editsPermissions: false,
       }),
     );
     expect(vm.profile.map((row) => row.memberEditor)).toEqual([
       MemberEditor.Profile,
+      null,
       null,
       null,
     ]);
@@ -306,6 +323,7 @@ describe('memberPageVm — a record at work', () => {
     expect(vm.standing).toBe('Taking bookings');
     expect(vm.profile.map((row) => [row.label, row.value])).toEqual([
       ['Name and description', 'Senior barber'],
+      ['Working hours', 'Set'],
       ['Services and prices', '1 service'],
       ['Working period', 'from Mar 3, 2024'],
     ]);
@@ -321,6 +339,7 @@ describe('memberPageVm — a record that has left', () => {
     expect(read(vm.standing)).toBe('Напусна на 30.09');
     expect(vm.bookedBy).toBeNull();
     expect(vm.profile.map((row) => row.memberEditor)).toEqual([
+      null,
       null,
       null,
       null,

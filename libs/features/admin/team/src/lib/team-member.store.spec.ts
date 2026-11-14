@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { firstValueFrom } from 'rxjs';
 import {
   BarberActivation,
   BarberEdit,
@@ -8,7 +9,9 @@ import {
   Role,
 } from '@core/components';
 import { PipelineError } from '@core/errors';
-import { localDate } from '@core/testing';
+import { Callables } from '@core/ports';
+import { LocationId } from '@core/primitives';
+import { localDate, locationFixture } from '@core/testing';
 import { type TeamBedOptions, teamBed } from './team-bed.spec-support';
 import {
   IVAN,
@@ -260,6 +263,60 @@ describe('TeamMemberStore — the record’s edits', () => {
   });
 });
 
+describe('TeamMemberStore — the weekly hours (the schedule’s sheet over this store)', () => {
+  const week = {
+    barberId: NIKOLAY.barberId,
+    locationId: LocationId.of('loc-center'),
+    fromLocalDate: localDate('2026-12-01'),
+    segments: [],
+    breaks: [],
+  };
+
+  it('saves the week as one named roster write, and answers true', async () => {
+    const { store, calls } = await harness();
+
+    expect(await store.setRosterWeek(week)).toBe(true);
+
+    expect(calls.dialled).toHaveLength(1);
+    expect(calls.dialled[0]?.callable).toBe(Callables.SetRosterWeek);
+    expect(calls.dialled[0]?.input).toMatchObject(week);
+    expect(
+      (calls.dialled[0]?.input as { operationId: string }).operationId,
+    ).toMatch(/^operation-\d{6}$/);
+  });
+
+  it('keeps a refusal for the sheet, never for the page', async () => {
+    const { store, dialRefuses } = await harness();
+    dialRefuses(Callables.SetRosterWeek, REFUSED);
+
+    expect(await store.setRosterWeek(week)).toBe(false);
+
+    expect(store.hoursRefusal()).toBe(REFUSED);
+    expect(store.refusal()).toBeNull();
+    store.clearHoursRefusal();
+    expect(store.hoursRefusal()).toBeNull();
+  });
+
+  it('reads a chair’s roster off the staff’s stream', async () => {
+    const { store } = await harness(NIKOLAY, {
+      schedules: [rosterOf(NIKOLAY.barberId)],
+    });
+    const read = await firstValueFrom(store.rosterOf(NIKOLAY.barberId));
+    expect(read.ok && read.value?.id).toBe(NIKOLAY.barberId);
+  });
+
+  it('names the shop a new shift is worked at: the record’s own, else the catalogue’s first', async () => {
+    const center = locationFixture();
+    const own = await harness(IVAN, { locations: [center] });
+    expect(own.store.homeShop()).toBe(IVAN_RECORD.locationIds[0]);
+    TestBed.resetTestingModule();
+
+    // Nikolay works everywhere: the first shop the catalogue lists.
+    const everywhere = await harness(NIKOLAY, { locations: [center] });
+    expect(everywhere.store.homeShop()).toBe(center.id);
+  });
+});
+
 describe('TeamMemberStore — «Това съм аз» · «Не съм аз» (staff permissions P9)', () => {
   it('is open to the owner on a record nobody is linked to', async () => {
     const { store } = await harness();
@@ -316,6 +373,7 @@ describe('TeamMemberStore — what the person looking may change', () => {
     expect(store.managesTeam()).toBe(true);
     expect(store.mayEditProfile()).toBe(true);
     expect(store.mayManage()).toBe(true);
+    expect(store.mayEditHours()).toBe(true);
     expect(store.deletable()).toBe(true);
   });
 
@@ -324,8 +382,16 @@ describe('TeamMemberStore — what the person looking may change', () => {
     expect(store.managesTeam()).toBe(false);
     expect(store.mayEditProfile()).toBe(true);
     expect(store.mayManage()).toBe(false);
+    expect(store.mayEditHours()).toBe(false);
     expect(store.deletable()).toBe(false);
     expect(store.recordClaim()).toBe(RecordClaim.None);
+  });
+
+  it('the front desk may change the hours and nothing else', async () => {
+    const { store } = await harness(IVAN, { roles: [Role.Receptionist] });
+    expect(store.mayEditHours()).toBe(true);
+    expect(store.mayEditProfile()).toBe(false);
+    expect(store.mayManage()).toBe(false);
   });
 
   it('a record at work cannot be deleted, and one that has left takes no edit', async () => {
@@ -336,6 +402,7 @@ describe('TeamMemberStore — what the person looking may change', () => {
     const gone = await harness(STEFAN);
     expect(gone.store.mayEditProfile()).toBe(false);
     expect(gone.store.mayManage()).toBe(false);
+    expect(gone.store.mayEditHours()).toBe(false);
     expect(gone.store.bookedBy()).toBeNull();
   });
 });

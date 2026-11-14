@@ -1,4 +1,5 @@
 import type { StaffLevel, StaffSetupItem } from '@core/components';
+import type { BarberId } from '@core/primitives';
 
 /**
  * The editor a row of a member's page opens — the field `memberEditor`,
@@ -9,6 +10,8 @@ export const MemberEditor = {
   Profile: 'PROFILE',
   /** The start day and the last working day. */
   Period: 'PERIOD',
+  /** The weekly hours — the schedule's own sheet. */
+  Hours: 'HOURS',
 } as const;
 export type MemberEditor = (typeof MemberEditor)[keyof typeof MemberEditor];
 
@@ -92,6 +95,7 @@ export type LevelLinkVm = {
 
 /** A team member's page. */
 export type MemberPageVm = {
+  readonly barberId: BarberId;
   readonly name: string;
   /** «Подготовка · 3 от 5» · «Приема записи» · «Напусна на 30 септ.» */
   readonly standing: string;

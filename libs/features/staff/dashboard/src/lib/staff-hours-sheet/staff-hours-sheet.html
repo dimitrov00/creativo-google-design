@@ -138,7 +138,7 @@
       </li>
       }
     </ul>
-    @if (weekError() ?? (store.absenceError() | staffBlockFailure:
+    @if (weekError() ?? (desk.absenceError() | staffBlockFailure:
     'staff.hours.failed'); as error) {
     <p
       uiText
@@ -282,7 +282,7 @@
       uiControlSize="large"
       uiPrimary
       [disabled]="!dirty() || weekError() !== null || home() === null"
-      [uiLoading]="store.absencePending()"
+      [uiLoading]="desk.absencePending()"
       data-testid="staff-hours-save"
       (click)="save()"
     >

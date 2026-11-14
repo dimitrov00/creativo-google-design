@@ -2,6 +2,7 @@ import {
   DestroyRef,
   Injectable,
   Injector,
+  type Provider,
   computed,
   effect,
   inject,
@@ -135,6 +136,7 @@ import {
   TeamCatalogService,
 } from '@creativo/features/shared/catalog';
 import { ScheduleStatusFilter } from './schedule-status-filter';
+import { HOURS_DESK } from './staff-hours-sheet/hours-desk';
 
 /**
  * The refusal a staff intent earns BEFORE it is sent — a field the wire
@@ -2788,3 +2790,13 @@ export class StaffDayStore {
     return null;
   }
 }
+
+/**
+ * The schedule's store with the seams it answers: the weekly hours sheet
+ * asks its host for the roster and the week's save (`HOURS_DESK`), and on
+ * the schedule that host is this store — its own members, no copy.
+ */
+export const STAFF_DAY_PROVIDERS: Provider[] = [
+  StaffDayStore,
+  { provide: HOURS_DESK, useExisting: StaffDayStore },
+];

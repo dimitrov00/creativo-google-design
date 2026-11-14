@@ -180,6 +180,89 @@ test.describe('a team member’s page', () => {
     added = null;
   });
 
+  test('an owner sets a new barber’s weekly hours from their page: the roster is stored and the page marks the hours done', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-hours-${key}`;
+    const name = `Нов График ${key}`.slice(0, 40);
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'График',
+      roles: [Role.Admin],
+    });
+    await signInAs(page, uid, ['admin']);
+
+    // A new record with NO prices copied: it stays in preparation whatever
+    // its hours, so no other spec ever meets a fourth chair at work.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    await expect(page.getByTestId('member-standing')).toContainText('3 от 5', {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-setup-HOURS')).toContainText('Няма');
+
+    // THE HOURS: the schedule's own sheet, raised on this record alone.
+    await page.getByTestId('member-setup-HOURS').click();
+    await expect(page.getByTestId('staff-hours-sheet')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('staff-hours-chair')).toHaveCount(0);
+    await page.getByTestId('staff-hours-day-1').click();
+    await page.getByTestId('staff-hours-working').click();
+    await page.getByTestId('staff-hours-done').click();
+    await page.getByTestId('staff-hours-save').click();
+
+    // Saved: the sheet leaves, the page says so, and the checklist — read
+    // off the live roster — marks the hours done.
+    await expect(page.getByTestId('staff-hours-sheet')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-hours-toast')).toContainText(
+      'Работното време е запазено',
+    );
+    await expect(page.getByTestId('member-setup-HOURS')).toHaveAttribute(
+      'data-done',
+      '',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('member-setup-HOURS')).toContainText(
+      'Зададено',
+    );
+    await expect(page.getByTestId('member-standing')).toContainText('4 от 5');
+    const roster = await readStoredBody(Collections.BarberSchedules, added);
+    const versions = (roster?.['versions'] ?? []) as readonly {
+      segments: readonly { weekday: number }[];
+    }[];
+    expect(versions.at(-1)?.segments.map((segment) => segment.weekday)).toEqual(
+      [1],
+    );
+    // Still in preparation: it has no services yet.
+    expect(
+      (await readStoredBody(Collections.Barbers, added))?.['barberStatus'],
+    ).toBe(BarberStatus.Draft);
+
+    // «Изтрий» takes the roster with the record.
+    await page.getByTestId('member-delete').click();
+    await page.getByTestId('member-delete-confirm').click();
+    await expect(page).toHaveURL(/\/admin\/team$/, { timeout: 30_000 });
+    expect(await readStoredBody(Collections.Barbers, added)).toBeNull();
+    expect(await readStoredBody(Collections.BarberSchedules, added)).toBeNull();
+    added = null;
+  });
+
   test('a content editor reaches a barber’s profile from the Team list, and sees no account, no period editor and no delete', async ({
     page,
   }) => {
@@ -211,6 +294,10 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-is-me')).toHaveCount(0);
     await expect(page.getByTestId('member-delete')).toHaveCount(0);
     await expect(page.getByTestId('member-pool')).toBeDisabled();
+    // The hours are the schedule's permission, not theirs: the row is read.
+    await expect(
+      page.locator('button[data-testid="member-row-hours"]'),
+    ).toHaveCount(0);
 
     // The profile is theirs to edit: the sheet opens on the record.
     await page.getByTestId('member-row-profile').click();

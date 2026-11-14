@@ -18,7 +18,7 @@ import {
   Weekday,
 } from '@core/primitives';
 import { endMinute, localDate, minute } from '@core/testing';
-import { StaffDayStore } from '../staff-day.store';
+import { HOURS_DESK, type HoursDesk } from './hours-desk';
 import { StaffHoursSheet } from './staff-hours-sheet';
 import { hoursWeekVm } from './staff-hours.presenter';
 
@@ -95,13 +95,13 @@ describe('StaffHoursSheet', () => {
           },
         }),
         {
-          provide: StaffDayStore,
+          provide: HOURS_DESK,
           useValue: {
             rosterOf: () => of(Result.ok(roster)),
             setRosterWeek,
             absencePending: signal(false),
             absenceError: signal(null),
-          },
+          } satisfies HoursDesk,
         },
       ],
     });

@@ -185,6 +185,7 @@ import {
   UiToast,
 } from '@creativo/ui/patterns';
 import {
+  STAFF_DAY_PROVIDERS,
   StaffDayStore,
   type BarberDayLane,
   StaffView,
@@ -446,7 +447,7 @@ const ANCHOR_TOLERANCE = 2;
     UiVisuallyHiddenDirective,
     UiWeightDirective,
   ],
-  providers: [StaffDayStore, StaffWeekStrip, BreakFlow, AnalyticsEntry],
+  providers: [STAFF_DAY_PROVIDERS, StaffWeekStrip, BreakFlow, AnalyticsEntry],
   templateUrl: './staff-dashboard.html',
   styleUrls: ['./staff-dashboard.css', './staff-dashboard.chrome.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
