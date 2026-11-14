@@ -50,6 +50,7 @@ const seam = vi.hoisted(() => {
     'endImpersonation',
     'eraseClient',
     'exportClientData',
+    'listTeam',
     'markArrival',
     'matchWaitlist',
     'previewClientErasure',
@@ -326,6 +327,7 @@ const ENDPOINTS = {
   setDayExceptions: tracedCallable,
   staffAnalytics: { ...tracedCallable, availableMemoryMb: 512 },
   setAnalyticsGoal: tracedCallable,
+  listTeam: tracedCallable,
   addBarber: tracedCallable,
   editBarber: tracedCallable,
   setBarberOfferings: tracedCallable,
@@ -970,7 +972,33 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ goalKey: 'b-1__2026-11', goalSetAtUtcMs: 1_762_700_000_000 }),
     expected: { goalKey: 'b-1__2026-11', goalSetAtUtcMs: 1_762_700_000_000 },
   },
-  // ── team onboarding: the barber record's four callables ──
+  // ── team onboarding: the Team page's read and the barber record's callables ──
+  listTeam: {
+    pipeline: 'listTeam',
+    input: request({ operationId: 'operation-0123456789ab' }, PRIVACY_ADMIN),
+    // Only the verified caller rides the command; the transport id stays at the edge.
+    command: { callerUserId: 'u-owner', callerRoles: ['admin'] },
+    answer: ok({
+      members: [
+        {
+          teamMemberStatus: 'ROLE_ONLY',
+          memberUserId: 'u-owner',
+          memberAccountName: 'Петър Собственик',
+          memberRoles: ['admin'],
+        },
+      ],
+    }),
+    expected: {
+      members: [
+        {
+          teamMemberStatus: 'ROLE_ONLY',
+          memberUserId: 'u-owner',
+          memberAccountName: 'Петър Собственик',
+          memberRoles: ['admin'],
+        },
+      ],
+    },
+  },
   addBarber: {
     pipeline: 'addBarber',
     input: request(
@@ -1582,7 +1610,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 64 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save and its day-exceptions save', () => {
+  it('exports exactly the 65 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1628,7 +1656,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(64);
+    expect(FLIPPED_EXPORTS).toHaveLength(65);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

@@ -1,7 +1,7 @@
 import { Actor, type Role, Roles } from '@core/components';
 import { type OperationId, Result, type UserId } from '@core/primitives';
 import { TeamError } from '@core/errors';
-import { Collections, type User } from '@core/entities';
+import { Collections, QueryOp, type User } from '@core/entities';
 import type { QuerySpec } from '@core/ports';
 
 /**
@@ -91,4 +91,35 @@ export const TEAM_SERVICES: QuerySpec = {
   orderBy: [],
   // unbounded-ok: the catalogue of one tenant
   limit: null,
+};
+
+/** Every roster — its id is its barber's. */
+export const TEAM_ROSTERS: QuerySpec = {
+  collection: [Collections.BarberSchedules],
+  where: [],
+  orderBy: [],
+  // unbounded-ok: one roster per barber record of one tenant
+  limit: null,
+};
+
+/** A shop's staff is a few dozen accounts at most; past this the Team page says so rather than paging. */
+export const TEAM_STAFF_ACCOUNTS_MAX = 200;
+
+/**
+ * Every account that holds a staff role — `users where roles
+ * array-contains-any Roles.STAFF` (the single-field array index of
+ * `users.roles`, `firestore.indexes.json`), at most
+ * {@link TEAM_STAFF_ACCOUNTS_MAX}.
+ */
+export const TEAM_STAFF_ACCOUNTS: QuerySpec = {
+  collection: [Collections.Users],
+  where: [
+    {
+      field: 'roles' satisfies keyof User,
+      op: QueryOp.ArrayContainsAny,
+      value: Roles.STAFF,
+    },
+  ],
+  orderBy: [],
+  limit: TEAM_STAFF_ACCOUNTS_MAX,
 };

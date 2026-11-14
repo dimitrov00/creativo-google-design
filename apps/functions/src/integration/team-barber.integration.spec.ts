@@ -11,6 +11,9 @@ import {
   OfferingsEdit,
   Role,
   StaffSetupItem,
+  TeamCall,
+  TeamMemberNote,
+  TeamMemberStatus,
 } from '@core/components';
 import { BarberId, OperationId, ServiceId, UserId } from '@core/primitives';
 import { TeamErrorCode } from '@core/errors';
@@ -22,6 +25,7 @@ import {
   auditDocumentChange,
   deleteDraftBarber,
   editBarber,
+  listTeam,
   setBarberOfferings,
 } from '@core/pipelines';
 import {
@@ -57,6 +61,9 @@ import { decodeDocumentChangeEvent } from '../wire/triggers.wire';
  *   barber; the governed trigger over a stamped service write plans none;
  * - `activateBarber` answers what a draft still misses, then takes it live
  *   — the stored document exactly the live variant;
+ * - `listTeam` reads the records and the staff accounts (the
+ *   `array-contains-any` query on the stored roles) in one transaction and
+ *   answers the page's rows — which the wire's own decoder reads back;
  * - `deleteDraftBarber` removes the record with its roster, its lock, the
  *   account's link and its offerings — and the trigger still audits the
  *   deletion, which stamps nothing.
@@ -317,6 +324,88 @@ describe('the team callables (emulator)', () => {
     // The same act again: nothing to change, nothing written.
     expect(await copy()).toEqual({ ok: true, value: { barberId: NEW } });
     expect(await auditRows()).toHaveLength(2);
+  });
+
+  it('lists the team: the draft with its progress and the staff accounts by their stored roles — no client, no contact', async () => {
+    await add();
+    await Promise.all([
+      db.doc(`${Collections.Users}/${NEWCOMER}`).set(
+        bodyOf(
+          registeredUserFixture({
+            id: NEWCOMER,
+            roles: [Role.Barber],
+            linkedBarberId: NEW,
+            firstName: 'Нико',
+            lastName: 'Новаков',
+          }),
+        ),
+      ),
+      db.doc(`${Collections.Users}/u-desk`).set(
+        bodyOf(
+          registeredUserFixture({
+            id: UserId.of('u-desk'),
+            roles: [Role.Client, Role.Receptionist],
+            firstName: 'Яна',
+            lastName: 'Димова',
+          }),
+        ),
+      ),
+      db
+        .doc(`${Collections.Users}/u-client`)
+        .set(bodyOf(registeredUserFixture({ id: UserId.of('u-client') }))),
+    ]);
+
+    const listed = await listTeam(ports())(CALLER);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.members).toEqual([
+      expect.objectContaining({
+        teamMemberStatus: BarberStatus.Draft,
+        barberId: NEW,
+        memberUserId: NEWCOMER,
+        memberAccountName: 'Нико Новаков',
+        memberRoles: [Role.Barber],
+        teamMemberNote: null,
+        setupDoneCount: 3,
+        setupNeededCount: 5,
+        staffSetupItem: StaffSetupItem.Services,
+      }),
+      // The caller, then the front desk — by name; the client is no member.
+      expect.objectContaining({
+        teamMemberStatus: TeamMemberStatus.RoleOnly,
+        memberUserId: ADMIN,
+      }),
+      {
+        teamMemberStatus: TeamMemberStatus.RoleOnly,
+        memberUserId: 'u-desk',
+        memberAccountName: 'Яна Димова',
+        memberRoles: [Role.Client, Role.Receptionist],
+      },
+    ]);
+    const text = JSON.stringify(listed.value);
+    expect(text).not.toContain('u-client');
+    expect(text).not.toContain('phone');
+    // The answer as the web receives it reads back whole.
+    expect(TeamCall.decodeListed(JSON.parse(text))).toEqual(listed);
+
+    // With the link gone the row says so.
+    await db
+      .doc(`${Collections.Users}/${NEWCOMER}`)
+      .update({ linkedBarberId: null });
+    const unlinked = await listTeam(ports())(CALLER);
+    expect(unlinked.ok && unlinked.value.members[0]).toMatchObject({
+      memberUserId: null,
+      teamMemberNote: TeamMemberNote.NoAccount,
+    });
+
+    // A caller whose stored role is gone sees nothing.
+    await db
+      .doc(`${Collections.Users}/${ADMIN}`)
+      .update({ roles: [Role.Barber] });
+    expect(await listTeam(ports())(CALLER)).toEqual({
+      ok: false,
+      error: { errorCode: TeamErrorCode.Forbidden },
+    });
   });
 
   it('answers what a draft still misses, then takes it live — the stored document exactly the live variant', async () => {

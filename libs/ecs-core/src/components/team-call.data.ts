@@ -4,6 +4,7 @@ import {
   type LocalDate,
   type LocationId,
   Result,
+  StoredFields,
 } from '@core/primitives';
 import type { PipelineError } from '@core/errors';
 import type { AuthoredText } from './authored-text.data';
@@ -15,6 +16,7 @@ import type { BarberLifecycle } from './barber-lifecycle.data';
 import type { BarberOffering } from './barber-offering.data';
 import { CallAnswer } from './call-answer.data';
 import { StaffSetupItem } from './staff-setup-item.data';
+import { TeamMember } from './team-member.data';
 
 /**
  * Which part of a barber record an `editBarber` call replaces — the ONLY
@@ -140,6 +142,25 @@ export const TeamCall = {
   },
 
   /**
+   * `listTeam`'s answer: every member, each re-read by `TeamMember.read`.
+   * One member that cannot be read makes the whole answer unusable — a
+   * Team page that silently drops a person would be worse than none.
+   */
+  decodeListed(raw: unknown): Result<TeamCall.Listed, PipelineError> {
+    const answer = CallAnswer.read(raw);
+    const sent =
+      answer === null ? undefined : StoredFields.field(answer, 'members');
+    if (!Array.isArray(sent)) return CallAnswer.unusable();
+    const members: TeamMember[] = [];
+    for (const entry of sent as readonly unknown[]) {
+      const member = TeamMember.read(entry);
+      if (member === null) return CallAnswer.unusable();
+      members.push(member);
+    }
+    return Result.ok({ members });
+  },
+
+  /**
    * `activateBarber`'s answer: the record and what the step came to — a
    * record that is not ready names the first needed item still missing.
    */
@@ -187,6 +208,13 @@ export namespace TeamCall {
     readonly barberId: BarberId;
     readonly operationId: ClientOperationId;
   };
+  /**
+   * `listTeam` — the Team page's one read. It names nothing: the caller's
+   * account says what they may see.
+   */
+  export type ListRequest = Readonly<Record<string, never>>;
+  /** `listTeam`'s answer: the barber records in team order, then the staff accounts with no record. */
+  export type Listed = { readonly members: readonly TeamMember[] };
   /** The record a call wrote (or, for a replay, had already written). */
   export type Saved = { readonly barberId: BarberId };
   /** `activateBarber`'s answer. */

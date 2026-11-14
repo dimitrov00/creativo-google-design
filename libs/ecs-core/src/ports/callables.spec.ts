@@ -146,6 +146,17 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
   });
 
+  it('the Team page’s read (team onboarding D8) rides `operationId` for correlation only, a standard token, the list’s decoder', () => {
+    expect(Callables.ListTeam).toBe('listTeam');
+    expect(OPERATION_ID_FIELD[Callables.ListTeam]).toBe('operationId');
+    expect(CALLABLE_APP_CHECK_TOKEN[Callables.ListTeam]).toBe(
+      AppCheckTokenUse.Standard,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.ListTeam]).toBe(
+      TeamCall.decodeListed,
+    );
+  });
+
   it('the client issue sink alone carries none (OR-34)', () => {
     expect(ROWS.filter(([, field]) => field === null)).toEqual([
       [Callables.ReportClientIssues, null],

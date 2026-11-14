@@ -56,6 +56,7 @@ import {
   editBarber as editBarberPipeline,
   endImpersonation as endImpersonationPipeline,
   eraseClient as eraseClientPipeline,
+  listTeam as listTeamPipeline,
   exportClientData as exportClientDataPipeline,
   markArrival,
   matchWaitlist,
@@ -212,6 +213,7 @@ import {
   decodeAddBarber,
   decodeDeleteDraftBarber,
   decodeEditBarber,
+  decodeListTeam,
   decodeSetBarberOfferings,
 } from './wire/team.wire';
 import {
@@ -292,7 +294,8 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * `deleteDraftBarber` — over the server ports, bound to the log digest
  * key: 62 exports; then `setBarberOfferings`, a barber's services and
  * prices, on the same ports: 63; then `setDayExceptions`, the one door to
- * a barber's days off, blocks and one-day breaks: 64.
+ * a barber's days off, blocks and one-day breaks: 64; then `listTeam`, the
+ * Team page's read: 65.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -972,6 +975,23 @@ export const setAnalyticsGoal = onCall(
     root.analytics,
     decodeSetAnalyticsGoal,
     (ports, cmd) => setAnalyticsGoalPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * The Team page's one read (team onboarding D8): every barber record,
+ * whatever its lifecycle, and every staff account, as the page's rows —
+ * each with its status, the account linked to it, its one note and its
+ * setup progress. Read-only, in one transaction; the team manager's.
+ */
+export const listTeam = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.ListTeam, null),
+    root.ports,
+    decodeListTeam,
+    (ports, cmd) => listTeamPipeline(ports)(cmd),
     refusalOf,
   ),
 );
