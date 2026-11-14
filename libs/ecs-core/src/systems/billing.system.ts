@@ -9,6 +9,7 @@ import {
   DiscountMethod,
   DiscountProvenance,
   DiscountSource,
+  EditCommand,
   type Money,
   Roles,
   Seat,
@@ -76,6 +77,9 @@ export type ManualDiscountValue =
 
 /** The price slice of a seat — all a subtotal reads (Law 3: the slice it needs). */
 export type SeatPrice = Pick<Seat, 'priceCents' | 'currency'>;
+
+/** A seat and the price it holds — all the reprice gate reads; a stored seat passes as it is (Law 3). */
+export type PricedSeat = Pick<Seat, 'seatId' | 'priceCents'>;
 
 /**
  * One requested discount with what the resolver found for it — `null` when
@@ -234,6 +238,19 @@ function findDiscount(
 
 function combinabilityOf(exclusive: boolean): Combinability {
   return exclusive ? Combinability.Exclusive : Combinability.Stackable;
+}
+
+/** Does the seat `seatId` of `seats` hold exactly `priceCents`? A seat they do not hold holds no price. */
+function holdsPrice(
+  seats: readonly PricedSeat[],
+  seatId: SeatId,
+  priceCents: PriceCents,
+): boolean {
+  for (let i = 0; i < seats.length; i++) {
+    const seat = seats[i] as PricedSeat;
+    if (seat.seatId === seatId) return seat.priceCents === priceCents;
+  }
+  return false;
 }
 
 function findVoucher(
@@ -600,6 +617,35 @@ export const BillingSystem = {
       return invalid('discounts');
     }
     return Result.ok(settled);
+  },
+
+  /**
+   * May these roles send the batch's `REPRICE`s? A seat's price is the
+   * shop's money, as a manual figure is ({@link settleDiscounts}): naming
+   * any price but the one the STORED seat holds needs a role that handles
+   * money (`Roles.MONEY`) — `FORBIDDEN` otherwise, not a bad command. Naming
+   * the price the seat already holds changes nothing and is admitted,
+   * whoever sends it — as keeping a manual figure somebody else set is.
+   *
+   * Each command is read against the stored seat, never the running draft:
+   * a price named and then taken back in one batch is still a price named,
+   * and a seat the batch itself added holds no stored price, so any price
+   * named for it is a new one. `null` when the batch may go ahead.
+   */
+  repriceRefusal(
+    commands: readonly BookingCall.EditCommand[],
+    stored: readonly PricedSeat[],
+    actorRoles: readonly string[],
+  ): StaffEditForbidden | null {
+    if (Roles.seesMoney(actorRoles)) return null;
+    for (let i = 0; i < commands.length; i++) {
+      const command = commands[i] as BookingCall.EditCommand;
+      if (command.editCommand !== EditCommand.Reprice) continue;
+      if (!holdsPrice(stored, command.seatId, command.priceCents)) {
+        return StaffEditError.forbidden();
+      }
+    }
+    return null;
   },
 
   /**

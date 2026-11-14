@@ -9,6 +9,7 @@ import {
   CouponValue,
   DiscountMethod,
   DiscountSource,
+  EditCommand,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
@@ -592,6 +593,134 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
   it('refuses a manual figure its guards refuse — a percent past 100, a zero amount', () => {
     expect(settle([manual(140)], ['admin']).ok).toBe(false);
     expect(settle([manualAmount(cents(0))], ['admin']).ok).toBe(false);
+  });
+});
+
+/* ── Who may name a seat's price (repriceRefusal) ────────────────────── */
+
+/** The stored visit's seats: the 20,00 € cut (`s10`) and the 8,00 € beard (`s11`). */
+const STORED_SEATS = visit().seats;
+
+const reprice = (
+  seatId: string,
+  priceCents: number,
+): BookingCall.EditCommand => ({
+  editCommand: EditCommand.Reprice,
+  seatId: SeatId.of(seatId),
+  priceCents: cents(priceCents),
+});
+
+/** A batch that names no price: the party moved to 12:00, the beard dropped. */
+const NO_PRICE: readonly BookingCall.EditCommand[] = [
+  {
+    editCommand: EditCommand.Move,
+    localDate: visit().localDate,
+    startMinutes: minute(720),
+    seatIds: null,
+  },
+  { editCommand: EditCommand.RemoveSeat, seatId: SeatId.of('s11') },
+];
+
+const FORBIDDEN = { errorCode: StaffEditErrorCode.Forbidden };
+
+describe('BillingSystem.repriceRefusal — who may name a seat’s price', () => {
+  it('refuses a NEW price from a barber — forbidden, not malformed', () => {
+    expect(
+      BillingSystem.repriceRefusal([reprice('s10', 2500)], STORED_SEATS, [
+        'barber',
+      ]),
+    ).toEqual(FORBIDDEN);
+    // …wherever in the batch it sits.
+    expect(
+      BillingSystem.repriceRefusal(
+        [...NO_PRICE, reprice('s10', 1500)],
+        STORED_SEATS,
+        ['barber'],
+      ),
+    ).toEqual(FORBIDDEN);
+  });
+
+  it('admits a new price from the front desk and the owners — and from a barber who is one of them', () => {
+    for (const roles of [
+      ['receptionist'],
+      ['admin'],
+      ['sysadmin'],
+      ['barber', 'admin'],
+    ]) {
+      expect(
+        BillingSystem.repriceRefusal(
+          [reprice('s10', 2500), reprice('s-new', 0)],
+          STORED_SEATS,
+          roles,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it('admits the price the seat already holds, whoever names it — as keeping a manual figure is', () => {
+    expect(
+      BillingSystem.repriceRefusal(
+        [reprice('s10', 2000), reprice('s11', 800)],
+        STORED_SEATS,
+        ['barber'],
+      ),
+    ).toBeNull();
+  });
+
+  it('asks nothing of a batch that names no price', () => {
+    expect(
+      BillingSystem.repriceRefusal(NO_PRICE, STORED_SEATS, ['barber']),
+    ).toBeNull();
+    expect(BillingSystem.repriceRefusal([], STORED_SEATS, [])).toBeNull();
+  });
+
+  it('reads each command against the STORED seat — a price named and taken back is still a price named', () => {
+    expect(
+      BillingSystem.repriceRefusal(
+        [reprice('s10', 2500), reprice('s10', 2000)],
+        STORED_SEATS,
+        ['barber'],
+      ),
+    ).toEqual(FORBIDDEN);
+    // Another seat's stored price is not this seat's.
+    expect(
+      BillingSystem.repriceRefusal([reprice('s10', 800)], STORED_SEATS, [
+        'barber',
+      ]),
+    ).toEqual(FORBIDDEN);
+  });
+
+  it('holds a seat the stored visit does not have to NO price — any figure for one the batch added is new, a free one included', () => {
+    for (const priceCents of [0, 2000]) {
+      expect(
+        BillingSystem.repriceRefusal(
+          [reprice('s-new', priceCents)],
+          STORED_SEATS,
+          ['barber'],
+        ),
+      ).toEqual(FORBIDDEN);
+    }
+  });
+
+  it('grants nothing to a role that does not handle money, to one it does not know, or to none', () => {
+    for (const roles of [[], ['client'], ['content_manager'], ['owner']]) {
+      expect(
+        BillingSystem.repriceRefusal(
+          [reprice('s10', 2500)],
+          STORED_SEATS,
+          roles,
+        ),
+      ).toEqual(FORBIDDEN);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const commands = deepFreeze([...NO_PRICE, reprice('s10', 2500)]);
+    const stored = deepFreeze(visit().seats);
+    const roles = deepFreeze(['barber']);
+    const once = BillingSystem.repriceRefusal(commands, stored, roles);
+    expect(BillingSystem.repriceRefusal(commands, stored, roles)).toEqual(once);
+    expect(once).toEqual(FORBIDDEN);
   });
 });
 

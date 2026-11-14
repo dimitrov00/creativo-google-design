@@ -155,7 +155,9 @@ import {
  *   stored ids, terms, outcomes and tips carried back — and every walk-in
  *   seated `WALK_IN`: an added one by the record resolved for it, a stored
  *   one by its own (`CustomerRecordSystem.seatedWalkIns`); `BillingSystem`
- *   settles the bill's discounts (a grant that no longer applies — spent,
+ *   refuses the shop's money to a role that does not handle it — a seat's
+ *   new price (`repriceRefusal`) and a new manual figure alike, `FORBIDDEN` —
+ *   and settles the bill's discounts (a grant that no longer applies — spent,
  *   expired, another client's — is refused as `grant`), and
  *   `CouponGrantSystem.settleBill` moves the grants the bill's lines name
  *   (OR-13, the voucher semantics, DEP-F10): a grant line NEW on the bill
@@ -192,7 +194,7 @@ import {
  */
 export type EditAppointmentCommand = {
   readonly appointmentId: AppointmentId;
-  /** The VERIFIED token's roles — a new manual discount needs one that handles money. */
+  /** The VERIFIED token's roles — a seat's new price or a new manual discount needs one that handles money. */
   readonly actorRoles: readonly string[];
   readonly commands: readonly BookingCall.EditCommand[];
   /** «Запази въпреки застъпването» — the ONLY thing that turns the collision check off. */
@@ -789,6 +791,15 @@ function decideEdit(
   const cmd = context.cmd;
   const nowUtcMs = context.nowUtcMs;
   const first = stored.seats[0] as Seat;
+
+  // 0. THE SHOP'S MONEY, before anything is settled: a seat's new price
+  //    needs a role that handles money, as a new manual figure does below.
+  const repriceRefusal = BillingSystem.repriceRefusal(
+    cmd.commands,
+    stored.seats,
+    cmd.actorRoles,
+  );
+  if (repriceRefusal !== null) return Result.err(repriceRefusal);
 
   // 1. The bill's discounts after the batch (refused before the placement):
   //    each grant as its coupon labels it, each typed code as its coupon.
