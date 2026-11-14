@@ -13,6 +13,7 @@ import {
 import { RosterBreakSystem } from '@core/systems';
 import type { UiAlertAction } from '@creativo/ui/patterns';
 import { StaffDayStore } from '../staff-day.store';
+import { ScheduleAccess } from './schedule-access';
 
 /** The two reaches of a break edit, and the way out that edits nothing. */
 export const BreakScope = {
@@ -53,11 +54,18 @@ const NOTHING: BreakAnswer = { saved: false, undo: null };
  * that already says its own breaks asks nothing — the edit is that day's.
  * Either way the time is bookable at once when a break goes, on the desk
  * and on `/book`. The page owns the grid; this owns the question.
+ *
+ * WHO MAY ANSWER WHAT (staff permissions P8): «Само този ден» is the day's
+ * own breaks, so it asks `TIME_OFF` on the chair; «Този и следващите» is
+ * the weekly roster, so it asks `HOURS`. The question offers only what the
+ * person may do, and a break they may not change at all is not an edit
+ * (`editOf` answers none), so a colleague's break is read-only.
  */
 @Injectable()
 export class BreakFlow {
   private readonly store = inject(StaffDayStore);
   private readonly transloco = inject(TranslocoService);
+  private readonly gates = inject(ScheduleAccess);
 
   /** The edit on screen, or `null`. */
   readonly question = signal<BreakEdit | null>(null);
@@ -76,21 +84,36 @@ export class BreakFlow {
         );
   });
 
-  /** «Само този ден» (preferred, the smaller act) · «Този и следващите» · «Отказ». */
+  /**
+   * «Само този ден» (preferred, the smaller act) · «Този и следващите» ·
+   * «Отказ» — each reach only when the person may make it on this chair.
+   */
   readonly actions = computed<readonly UiAlertAction[]>(() => {
-    this.question();
+    const chair = this.question()?.barberId;
+    const thisDay = chair === undefined || this.gates.blocks(chair);
+    const following = chair === undefined || this.gates.hours(chair);
     return [
-      {
-        id: BreakScope.ThisDay,
-        label: this.transloco.translate('staff.day.breakThisDay'),
-        preferred: true,
-        testId: 'staff-break-this-day',
-      },
-      {
-        id: BreakScope.Following,
-        label: this.transloco.translate('staff.day.breakFollowing'),
-        testId: 'staff-break-following',
-      },
+      ...(thisDay
+        ? [
+            {
+              id: BreakScope.ThisDay,
+              label: this.transloco.translate('staff.day.breakThisDay'),
+              preferred: true,
+              testId: 'staff-break-this-day',
+            },
+          ]
+        : []),
+      ...(following
+        ? [
+            {
+              id: BreakScope.Following,
+              label: this.transloco.translate('staff.day.breakFollowing'),
+              // With the day's own answer not on offer, this is the one act.
+              preferred: !thisDay,
+              testId: 'staff-break-following',
+            },
+          ]
+        : []),
       {
         id: BreakScope.Cancel,
         label: this.transloco.translate('staff.day.breakCancel'),
@@ -116,7 +139,9 @@ export class BreakFlow {
    * The break an id names (`break:<chair>:<day>:<start>` — the grid's and
    * the agenda's alike), as its chair's lane draws it on that day, as an
    * edit that takes it off — filed at the chair's home (`homeOf`); `null`
-   * when it is not drawn.
+   * when it is not drawn, and when the person may not change it: a day
+   * that says its own breaks is `TIME_OFF`'s alone, a roster day opens on
+   * either capability (the question then offers what the person may do).
    */
   editOf(
     id: string,
@@ -125,11 +150,13 @@ export class BreakFlow {
     const key = breakKeyOf(id);
     if (key === null) return null;
     const start = Number(id.split(':').at(-1));
-    const drawn = this.laneOf(key)?.breaks.find(
-      (entry) => entry.startMinutes === start,
-    );
+    const lane = this.laneOf(key);
+    const drawn = lane?.breaks.find((entry) => entry.startMinutes === start);
     const locationId = homeOf(key.barberId);
-    return drawn === undefined || locationId === null
+    const may =
+      this.gates.blocks(key.barberId) ||
+      (lane?.breaksOwn !== true && this.gates.hours(key.barberId));
+    return drawn === undefined || locationId === null || !may
       ? null
       : { ...key, locationId, drawn, to: null };
   }

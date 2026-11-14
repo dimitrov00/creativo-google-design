@@ -510,6 +510,7 @@ describe('the exits', () => {
     started: true,
     peerCount: 0,
     clients: [{ label: 'Мартин' }],
+    mayBlock: true,
     words: BG,
   };
 
@@ -557,6 +558,14 @@ describe('the exits', () => {
         (exit) => exit.id === 'cancel',
       )?.label,
     ).toBe('Cancel for Мартин');
+  });
+
+  it('offers cancel-and-block only to someone who may block this chair’s time', () => {
+    expect(visitExitsVm(base).map((exit) => exit.id)).toContain('cancel-block');
+    const exits = visitExitsVm({ ...base, mayBlock: false });
+    expect(exits.map((exit) => exit.id)).not.toContain('cancel-block');
+    // The plain cancel is a visit's act, not a block's: it stays.
+    expect(exits.map((exit) => exit.id)).toContain('cancel');
   });
 
   it('offers the next visit after a finished one, by the system’s answer', () => {

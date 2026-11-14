@@ -99,7 +99,7 @@
            chips, filling the cell, and each chip a button on top. In a
            sheet's frame, where nothing is a target, both are pictures. -->
       <div class="staff-grid__allday-cell" data-testid="staff-grid-allday-cell">
-        @if (allDayPickable()) {
+        @if (allDayOpens(column.id)) {
         <button
           type="button"
           class="staff-grid__allday-add"
@@ -107,7 +107,8 @@
           data-testid="staff-grid-allday-add"
           (click)="allDayPicked.emit(column.id)"
         ></button>
-        @for (entry of allDayFor(column.id); track entry.key) {
+        } @for (entry of allDayFor(column.id); track entry.key) { @if
+        (allDayOpens(entry.key)) {
         <button
           type="button"
           class="staff-grid__allday-chip"
@@ -119,7 +120,9 @@
             *ngTemplateOutlet="allDayChip; context: { $implicit: entry }"
           />
         </button>
-        } } @else { @for (entry of allDayFor(column.id); track entry.key) {
+        } @else {
+        <!-- A door that is shut — a sheet's frame, or a colleague's day off
+             (staff permissions P8) — is the same chip as a picture. -->
         <span
           class="staff-grid__allday-chip"
           [attr.data-barber-tone]="entry.tone"
@@ -254,6 +257,8 @@
         "
         [attr.aria-label]="event.accessibleName"
         [attr.inert]="inertBlock(event) ? '' : null"
+        [attr.aria-disabled]="readOnly(event) ? 'true' : null"
+        [attr.data-readonly]="readOnly(event) ? '' : null"
         (click)="pick(event)"
       >
         <!-- The leading rail is an ELEMENT, so it can have its own shape:

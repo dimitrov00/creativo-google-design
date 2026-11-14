@@ -74,10 +74,13 @@ export function slotTimeLabel(slot: GridPendingSlot): string {
 
 /**
  * The grid blocks a hold may lift (owner, 2026-11-06): visits that can
- * still be moved — none whose story is over (`terminal`).
+ * still be moved — none whose story is over (`terminal`) — and blocked
+ * time the person may change (`mayEdit`, `ScheduleAccess.edits`: a
+ * colleague's block or break stays where it is, staff permissions P8).
  */
 export function movableIdsOf(
   columns: readonly GridColumn[],
+  mayEdit: (id: string) => boolean,
 ): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const column of columns) {
@@ -88,10 +91,52 @@ export function movableIdsOf(
         event.gridEvent === GridEventTag.Visit
           ? !event.terminal
           : event.gridEvent === GridEventTag.Block && !event.past;
-      if (live) ids.add(event.id);
+      if (live && mayEdit(event.id)) ids.add(event.id);
     }
   }
   return ids;
+}
+
+/**
+ * The drawn blocks the person may not change (`mayEdit`,
+ * `ScheduleAccess.edits`): a colleague's blocked time and breaks. The grid
+ * draws them as unavailable and opens nothing on a tap.
+ */
+export function readOnlyIdsOf(
+  columns: readonly GridColumn[],
+  mayEdit: (id: string) => boolean,
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const column of columns) {
+    for (const event of column.events) {
+      if (event.gridEvent === GridEventTag.Block && !mayEdit(event.id)) {
+        ids.add(event.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * The chair a create aims at: the scoped one, else the first working
+ * lane, else the first chair of the roster.
+ *
+ * THE LAST FALLBACK IS THE DOOR (owner, 2026-09-09: "adding a blocker
+ * when all are blocked for the selected date is not working — it should
+ * always open"). A day everyone is off has no working lane, and the ＋
+ * used to resolve to nobody and quietly do nothing. A block is exactly
+ * what one adds to — or lifts from — such a day, and a booking on it is
+ * the sheet's to warn about, not the button's to refuse.
+ */
+export function createChairOf(
+  scope: BarberId | null,
+  chairs: readonly { readonly id: BarberId }[],
+  lanes: readonly { readonly barberId: BarberId }[],
+): BarberId | null {
+  if (scope !== null && chairs.some((chair) => chair.id === scope)) {
+    return scope;
+  }
+  return lanes[0]?.barberId ?? chairs[0]?.id ?? null;
 }
 
 /**

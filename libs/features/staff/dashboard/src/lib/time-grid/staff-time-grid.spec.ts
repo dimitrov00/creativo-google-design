@@ -390,6 +390,50 @@ describe('StaffTimeGrid', () => {
       expect(picked).toEqual(['block:ivan:1']);
       expect(visits).toEqual([]);
     });
+
+    it('draws a block the person may not change as unavailable: named, in the reading order, and a tap opens nothing (staff permissions P8)', () => {
+      fixture.componentRef.setInput('uiReadOnly', new Set(['block:niko:1']));
+      const host = render([
+        column({
+          events: [
+            event({
+              id: 'block:ivan:1',
+              gridEvent: GridEventTag.Block,
+              title: 'Blocked',
+              accessibleName: 'Blocked, Ivan',
+            }),
+            event({
+              id: 'block:niko:1',
+              gridEvent: GridEventTag.Block,
+              title: 'Blocked',
+              accessibleName: 'Blocked, Niko',
+              startMinute: trackMinute(660),
+              endMinute: trackMinute(720),
+            }),
+          ],
+        }),
+      ]);
+      const picked: string[] = [];
+      fixture.componentInstance.blockPicked.subscribe((id) => picked.push(id));
+      const block = (id: string) =>
+        host.querySelector<HTMLButtonElement>(`[data-event-id="${id}"]`);
+
+      // The colleague's: said as unavailable, never hidden from a reader.
+      expect(block('block:niko:1')?.getAttribute('aria-disabled')).toBe('true');
+      expect(block('block:niko:1')?.hasAttribute('data-readonly')).toBe(true);
+      expect(block('block:niko:1')?.hasAttribute('inert')).toBe(false);
+      expect(block('block:niko:1')?.getAttribute('aria-label')).toBe(
+        'Blocked, Niko',
+      );
+      // The person's own is a control as before.
+      expect(block('block:ivan:1')?.hasAttribute('aria-disabled')).toBe(false);
+      expect(block('block:ivan:1')?.hasAttribute('data-readonly')).toBe(false);
+
+      block('block:niko:1')?.click();
+      block('block:ivan:1')?.click();
+
+      expect(picked).toEqual(['block:ivan:1']);
+    });
   });
 
   describe('placement', () => {
@@ -798,6 +842,25 @@ describe('StaffTimeGrid', () => {
       expect(chip?.tagName).toBe('BUTTON');
       chip?.click();
       expect(entries).toEqual([{ columnId: '2026-08-06', key: 'ivan' }]);
+
+      // A SHUT DOOR is a picture (staff permissions P8), key by key: a
+      // colleague's day off is a chip nobody presses, and the band of a
+      // column stays a door unless that column is shut too.
+      const adds = () =>
+        host.querySelectorAll('[data-testid="staff-grid-allday-add"]').length;
+      const chipTag = () =>
+        host.querySelector('[data-testid="staff-grid-allday-chip"]')?.tagName;
+      fixture.componentRef.setInput('uiAllDayShut', new Set(['ivan']));
+      fixture.detectChanges();
+      expect(chipTag()).toBe('SPAN');
+      expect(adds()).toBe(2);
+      fixture.componentRef.setInput('uiAllDayShut', new Set(['2026-08-06']));
+      fixture.detectChanges();
+      expect(chipTag()).toBe('BUTTON');
+      expect(adds()).toBe(1);
+      fixture.componentRef.setInput('uiAllDayShut', null);
+      fixture.detectChanges();
+      expect(adds()).toBe(2);
 
       // In a frame nothing is a target: no door, and the chip is a picture.
       fixture.componentRef.setInput('uiViewport', 'framed');

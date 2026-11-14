@@ -210,10 +210,13 @@ import {
 import {
   type CreateFrom,
   NEW_VISIT_BLANKS,
+  createChairOf,
   createFromSlot,
   movableIdsOf,
+  readOnlyIdsOf,
   slotTimeLabel,
 } from './create-from';
+import { ScheduleAccess } from './schedule-access';
 import { type BreakEdit, BreakFlow } from './break-flow';
 import { StaffHoursSheet } from '../staff-hours-sheet/staff-hours-sheet';
 import {
@@ -792,6 +795,8 @@ export class StaffDashboard {
   });
   protected readonly store = inject(StaffDayStore);
   protected readonly breakFlow = inject(BreakFlow);
+  /** Whose blocked time and hours the person may change (staff permissions P8). */
+  protected readonly gates = inject(ScheduleAccess);
 
   /**
    * `?day=YYYY-MM-DD`, bound from the route. Absent means today — a link that
@@ -1187,7 +1192,13 @@ export class StaffDashboard {
 
   /** The grid blocks a hold may lift (`movableIdsOf`). */
   protected readonly movableIds = computed(() =>
-    movableIdsOf(this.gridColumns()),
+    movableIdsOf(this.gridColumns(), this.gates.edits),
+  );
+  protected readonly readOnlyIds = computed(() =>
+    readOnlyIdsOf(this.gridColumns(), this.gates.edits),
+  );
+  protected readonly allDayShut = computed(() =>
+    this.gates.allDayShut(this.barberOptions(), this.gridColumns()),
   );
 
   /** A drop the sheet must decide — the sheet it opens drafts it. */
@@ -1677,11 +1688,6 @@ export class StaffDashboard {
 
   /** The chart button: there for whoever reads analytics, and where it leads. */
   protected readonly analytics = inject(AnalyticsEntry);
-
-  protected openAnalytics(): void {
-    const day = this.store.dayKey() ?? this.store.todayKey();
-    if (day !== null) this.analytics.open(this.store.scope(), day);
-  }
 
   protected openFields(): void {
     this.presentOnly();
@@ -3281,27 +3287,17 @@ export class StaffDashboard {
     };
   });
 
-  /**
-   * The chair a create aims at: the scoped one, else the first working
-   * lane, else the first chair of the roster.
-   *
-   * THE LAST FALLBACK IS THE DOOR (owner, 2026-09-09: "adding a blocker
-   * when all are blocked for the selected date is not working — it should
-   * always open"). A day everyone is off has no working lane, and the ＋
-   * used to resolve to nobody and quietly do nothing. A block is exactly
-   * what one adds to — or lifts from — such a day, and a booking on it is
-   * the sheet's to warn about, not the button's to refuse.
-   */
-  private createChair(): BarberId | null {
-    const scope = this.store.scope();
-    if (
-      scope !== null &&
-      this.scopeOptions().some((option) => option.id === scope)
-    ) {
-      return scope;
-    }
-    return this.lanes()[0]?.barberId ?? this.scopeOptions()[0]?.id ?? null;
-  }
+  /** The chair a create aims at (`createChairOf`). */
+  private readonly createChair = (): BarberId | null =>
+    createChairOf(this.store.scope(), this.scopeOptions(), this.lanes());
+
+  /** The chairs the person may block time on, and whose hours they may change. */
+  protected readonly blockChairs = computed(() =>
+    this.gates.blockable(this.barberOptions()),
+  );
+  protected readonly hoursChairs = computed(() =>
+    this.gates.hourable(this.barberOptions()),
+  );
 
   /**
    * Where a walk-in starts — the next tick, inside the shop day
@@ -3342,7 +3338,10 @@ export class StaffDashboard {
         startMinute: from.openFromMinutes,
         endMinute: from.endMinutes,
       };
-      this.openBlockSheet(chair, range);
+      // From the ＋ the block lands on a chair the person may block.
+      const aimed = from ? chair : this.gates.aimed(chair, this.blockChairs());
+      if (aimed === null) return;
+      this.openBlockSheet(aimed, range);
       if (otherDay) {
         this.blockEdit.update((edit) => edit && { ...edit, dayKey });
         this.onBlockDayChanged(dayKey);
@@ -3867,6 +3866,8 @@ export class StaffDashboard {
       readonly endMinute: TrackMinute;
     },
   ): void {
+    // A colleague's time is read-only: no door opens the sheet on it.
+    if (!this.gates.blocks(barberId)) return;
     this.presentOnly();
     this.blockLiftArmed.set(false);
     this.blockEdit.set({
@@ -4018,7 +4019,10 @@ export class StaffDashboard {
     const isChair = this.store.view() === StaffView.Day;
     // A chair column's id is its chair's `BarberId`; a date column's is its
     // day — each minted from the brand, so neither read refuses.
-    const barberId = isChair ? BarberId.of(columnId) : this.createChair();
+    // A date's band opens on a chair the person may block, as the ＋ does.
+    const barberId = isChair
+      ? BarberId.of(columnId)
+      : this.gates.aimed(this.createChair(), this.blockChairs());
     if (barberId === null) return;
     let dayKey = shownDay;
     if (!isChair) {
@@ -4042,6 +4046,7 @@ export class StaffDashboard {
    * and minute is not the one tapped (DEP-11).
    */
   protected openBlock(blockId: string): void {
+    if (!this.gates.edits(blockId)) return;
     const edit = this.breakFlow.editOf(blockId, this.homeOf);
     if (edit !== null) {
       // A tapped break asks to come off — that day, or from it on.

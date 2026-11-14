@@ -1341,6 +1341,8 @@ export class StaffVisitEditor {
   readonly uiClientSearching = input(false);
   /** The shop's chairs, for the barber combobox. */
   readonly uiBarbers = input<readonly VisitEditorBarberOption[]>([]);
+  /** The person may block time on this visit's chair: the cancel-and-block exit is theirs. */
+  readonly uiMayBlock = input(true);
   /** The sheet asked to close AT ROOT. A child pops and never emits this. */
   readonly dismissed = output<void>();
 
@@ -2663,6 +2665,7 @@ export class StaffVisitEditor {
       started: this.started(),
       peerCount: vm.peers.length,
       clients: this.draft().clients,
+      mayBlock: this.uiMayBlock(),
       words: this.words(),
     });
   });

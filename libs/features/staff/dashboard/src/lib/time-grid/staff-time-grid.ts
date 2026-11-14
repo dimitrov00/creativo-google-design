@@ -873,6 +873,22 @@ export class StaffTimeGrid {
    */
   readonly uiMovable = input<ReadonlySet<string> | null>(null);
 
+  /**
+   * Blocks that are DRAWN and that the person here may not change — a
+   * colleague's blocked time or break (staff permissions P8). They keep
+   * their place and their words for every reader, said as unavailable; a
+   * tap opens nothing. (A hold lifts nothing either: the parent leaves
+   * them out of {@link uiMovable}.)
+   */
+  readonly uiReadOnly = input<ReadonlySet<string> | null>(null);
+
+  /**
+   * All-day doors that are SHUT (staff permissions P8), by key: a column
+   * whose blank band opens nothing, a chip whose day off is a colleague's.
+   * A shut door is drawn as a picture, as every door is in a sheet's frame.
+   */
+  readonly uiAllDayShut = input<ReadonlySet<string> | null>(null);
+
   readonly zonePicked = output<void>();
   readonly eventPicked = output<string>();
   readonly gapPicked = output<string>();
@@ -1484,7 +1500,18 @@ export class StaffTimeGrid {
     };
   }
 
+  /** An all-day door — a column's band or a chip — that opens here. */
+  protected allDayOpens(key: string): boolean {
+    return this.allDayPickable() && this.uiAllDayShut()?.has(key) !== true;
+  }
+
+  /** Drawn, and not this person's to change ({@link uiReadOnly}). */
+  protected readOnly(event: GridEvent): boolean {
+    return this.uiReadOnly()?.has(event.id) === true;
+  }
+
   protected pick(event: GridEvent): void {
+    if (this.readOnly(event)) return;
     if (event.gridEvent === GridEventTag.Gap) {
       this.gapPicked.emit(event.id);
     } else if (event.gridEvent === GridEventTag.Block) {

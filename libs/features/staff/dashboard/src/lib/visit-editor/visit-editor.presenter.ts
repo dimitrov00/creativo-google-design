@@ -840,6 +840,12 @@ export type VisitExitsInput = {
   readonly peerCount: number;
   /** The chair's people, as the draft holds them. */
   readonly clients: readonly { readonly label: string }[];
+  /**
+   * The person may block time on this chair (`ScheduleAccess.blocks`,
+   * staff permissions P8): without it the compound exit is not offered —
+   * its second half would be refused.
+   */
+  readonly mayBlock: boolean;
   readonly words: VisitEditorWords;
 };
 
@@ -918,13 +924,15 @@ export function visitExitsVm(input: VisitExitsInput): readonly VisitExit[] {
       destructive: true,
       act: BookingStatus.Cancelled,
     });
-    out.push({
-      id: VisitExitId.CancelBlock,
-      label: words.cancelAndBlock,
-      icon: 'booking.blocked',
-      destructive: true,
-      act: null,
-    });
+    if (input.mayBlock) {
+      out.push({
+        id: VisitExitId.CancelBlock,
+        label: words.cancelAndBlock,
+        icon: 'booking.blocked',
+        destructive: true,
+        act: null,
+      });
+    }
   }
   return out;
 }

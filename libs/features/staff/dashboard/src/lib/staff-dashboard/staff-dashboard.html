@@ -183,7 +183,7 @@
               class="staff-cluster__item staff-analytics-open"
               [attr.aria-label]="t('staff.day.analyticsLabel')"
               data-testid="staff-analytics-open"
-              (click)="openAnalytics()"
+              (click)="analytics.open(store.scope(), store.dayKey() ?? store.todayKey())"
             >
               <ui-icon uiName="analytics.chart" />
             </button>
@@ -395,6 +395,8 @@
         [uiPendingTemplate]="slotMenu"
         (slotPicked)="pickSlot($event)"
         [uiMovable]="movableIds()"
+        [uiReadOnly]="readOnlyIds()"
+        [uiAllDayShut]="allDayShut()"
         (draftCommitted)="dropOnGrid($event)"
         (zonePicked)="explainZone()"
         data-testid="staff-grid"
@@ -642,12 +644,17 @@
                  filter's «Блокирано време» switch): the hole's head with the
                  grid block's mark and word, its rail neutral like the grid's.
                  A press opens it in the block editor, as the grid's does. -->
+            <!-- A colleague's block is read (staff permissions P8): the row
+                 keeps its words and loses the press, the focus stop and the
+                 button's name for what it is. -->
+            @let editable = gates.edits(entry.id);
             <li
               class="agenda-card agenda-card--gap"
               [class.agenda-card--idle]="entry.past"
               uiInteractive
-              tabindex="0"
-              role="button"
+              [attr.data-interactive]="editable ? '' : null"
+              [attr.tabindex]="editable ? 0 : null"
+              [attr.role]="editable ? 'button' : null"
               [attr.aria-label]="entry.accessibleName"
               [attr.data-past]="entry.past ? '' : null"
               [attr.data-row-id]="entry.id"
@@ -1081,6 +1088,10 @@
           <span uiLeading><ui-icon uiName="appointment.book" /></span>
           {{ t('staff.day.fab.booking') }}
         </button>
+        <!-- Blocked time is the chair's whose time it is (staff permissions
+             P8): from a slot or a free-time row, that chair's; from the ＋,
+             any chair the person may block. A colleague's is read-only. -->
+        @if (from ? gates.blocks(from.barberId) : blockChairs().length > 0) {
         <button
           type="button"
           uiMenuItem
@@ -1092,9 +1103,11 @@
           <span uiLeading><ui-icon uiName="booking.blocked" /></span>
           {{ t('staff.day.fab.block') }}
         </button>
+        }
         <!-- A chair's weekly hours and breaks — from the ＋ alone: a slot
-             or a free-time row is a moment, not the week. -->
-        @if (from === undefined) {
+             or a free-time row is a moment, not the week — and only for
+             someone who may change some chair's hours. -->
+        @if (from === undefined && hoursChairs().length > 0) {
         <button
           type="button"
           uiMenuItem
@@ -1213,10 +1226,10 @@
   <!-- A CHAIR'S WEEKLY HOURS (the ＋'s «Работно време»): the scoped chair,
        else the first. -->
   @defer (when hoursOpen(); prefetch on idle) { @if (hoursOpen() &&
-  store.todayKey(); as today) { @let chairId = store.scope() ??
-  barberOptions()[0]?.id; @if (chairId) {
+  store.todayKey(); as today) { @let chairId = gates.aimed(store.scope(),
+  hoursChairs()); @if (chairId) {
   <lib-staff-hours-sheet
-    [uiChairs]="barberOptions()"
+    [uiChairs]="hoursChairs()"
     [uiChairId]="chairId"
     [uiToday]="today"
     [uiLocale]="content.locale()"
@@ -1371,6 +1384,7 @@
       [vm]="editorVm"
       [uiDropped]="droppedTime()"
       [uiBarbers]="barberOptions()"
+      [uiMayBlock]="editorVm.chairId !== null && gates.blocks(editorVm.chairId)"
       [uiShops]="shopOptions()"
       [uiServices]="visitServiceOptions()"
       [uiClients]="visitClientOptionsWithFaces()"
@@ -1529,7 +1543,7 @@
     <lib-staff-block-editor
       #blockEditor
       [vm]="blockVm"
-      [uiBarbers]="barberOptions()"
+      [uiBarbers]="blockChairs()"
       (committed)="commitBlock($event)"
       (lifted)="liftFromEditor()"
       (dayChanged)="onBlockDayChanged($event)"
