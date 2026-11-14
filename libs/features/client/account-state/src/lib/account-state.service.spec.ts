@@ -220,6 +220,30 @@ describe('AccountStateService', () => {
     expect(service.account()?.id).toBe('user_2');
   });
 
+  it('accountSettled: true with nobody signed in, false from the moment a person is, true once their account answers', () => {
+    const { service, live, signIn } = harness(ANONYMOUS);
+    expect(service.accountSettled()).toBe(true);
+
+    signIn(active('user_1'));
+    expect(service.accountSettled()).toBe(false);
+    live().snapshots.next(Result.ok(user()));
+    expect(service.accountSettled()).toBe(true);
+
+    // Another person: unsettled at once, and a failed first answer settles.
+    signIn(active('user_2'));
+    expect(service.accountSettled()).toBe(false);
+    live().snapshots.next(LIVE_QUERY_FAILED);
+    expect(service.accountSettled()).toBe(true);
+
+    signIn(ANONYMOUS);
+    expect(service.accountSettled()).toBe(true);
+    // The same person back: their old answer does not stand in for a new one.
+    signIn(active('user_2'));
+    expect(service.accountSettled()).toBe(false);
+    live().snapshots.next(Result.ok(null));
+    expect(service.accountSettled()).toBe(true);
+  });
+
   it('detaches and clears on sign-out', () => {
     const { service, live, signIn } = harness(active('user_1'));
     live().snapshots.next(Result.ok(user()));

@@ -66,6 +66,7 @@ import {
   ANALYTICS_CALL_PORTS,
   SCHEDULING_READ_PORTS,
   SHOP_EVENT_READ_PORTS,
+  STAFF_PERMISSIONS_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
   TIMER_PORTS,
@@ -436,6 +437,14 @@ export const appConfig: ApplicationConfig = {
         observePolicy: LazyMethod.Observable,
         observeCapacityMonth: LazyMethod.Observable,
       },
+      onLoadError: dataUnavailable,
+    }),
+    // What each staff level may do, live (staff permissions P8): the one
+    // copy `StaffAccessService` reads, opened for staff sessions only.
+    provideLazyPort(STAFF_PERMISSIONS_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.staffPermissionsStreamPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { observeStaffPermissions: LazyMethod.Observable },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_READ_PORTS, firebaseData, {

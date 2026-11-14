@@ -1015,6 +1015,28 @@ editors"); its server half is merged.
   and sees their own lane; a content manager reaches a barber's profile
   from the Team list and sees no accounts.
 - **Leaves.** Rows for B's and C's capabilities.
+- **Built so far: the access service and the route gate.**
+  `StaffAccessService` (beside `AccountStateService`) holds the session's
+  one live copy of the cells (`STAFF_PERMISSIONS_PORTS`, one bundle, one
+  token) and answers `scopeOf`, `accessOf` and `mayFor`. The route gate is
+  `RouteGate.Capability`, decided by `SessionAccessSystem`; `capabilityGuard`
+  waits for the stored account and the cells. The analytics routes, the
+  menu's row, the schedule's chart button and the scope picker follow the
+  `ANALYTICS` capability, and `ANALYTICS_SELF`, `ANALYTICS_SHOP` and
+  `Roles.readsAnalytics` are deleted. Where it differs from P8:
+  - `mayFor` asks a new pure rule, `StaffAccessSystem.reaches`, not
+    `admit`: a screen asks before the account has loaded and has no clock
+    to read a block by. A spec holds the two to the same answer for every
+    level, capability and barber.
+  - Until the cells answer, and when they cannot be read, every cell is
+    nobody. An entry point may appear a beat late; one the owner cut never
+    shows. The admin's everything is no cell, so it holds throughout.
+  - The schedule's chart button is now hidden from a session that reads no
+    analytics. It used to be shown to everyone, and led the front desk to the
+    forbidden page.
+- **Still to build in this stage.** The hours and block entry points on a
+  colleague's lane; the Team page, its editors and the add sheet; «Права»;
+  the «Това съм аз» door; the end-to-end exit tests.
 
 ### Stage B. The booking calls
 

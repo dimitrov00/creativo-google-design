@@ -30,6 +30,7 @@ export * from './loyalty-catalog.adapter';
 export * from './notifications.adapter';
 export * from './programs.adapter';
 export * from './scheduling.adapter';
+export * from './staff-permissions.adapter';
 export * from './streak-definitions.adapter';
 export * from './streak-publish.adapter';
 export * from './waitlist.adapter';

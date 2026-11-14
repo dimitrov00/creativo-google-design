@@ -30,6 +30,9 @@
   ],
   "references": [
     {
+      "path": "../../client/account-state/tsconfig.lib.json"
+    },
+    {
       "path": "../../shared/shell/tsconfig.lib.json"
     },
     {

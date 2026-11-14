@@ -78,6 +78,22 @@ export class AccountStateService {
   private readonly _accountLoading = signal(false);
   readonly accountLoading = this._accountLoading.asReadonly();
 
+  /** Whose account has given its first answer; `null` before any has. */
+  private readonly answeredUid = signal<UserId | null>(null);
+
+  /**
+   * The account has ANSWERED for whoever is signed in — a snapshot, an
+   * absent document or a failed read — or nobody is signed in. Asked by
+   * person, so it is false from the moment the person changes, not from
+   * the moment the listener attaches a beat later (`accountLoading` only
+   * turns true then). What a guard waits for before it reads the stored
+   * roles (`StaffAccessService.settledFor`).
+   */
+  readonly accountSettled: Signal<boolean> = computed(() => {
+    const uid = this.userId();
+    return uid === null || this.answeredUid() === uid;
+  });
+
   /**
    * The account to listen to — an id (a string) so the listener follows the
    * PERSON: a token refresh or the onboarding → client claim flip re-emits
@@ -118,6 +134,7 @@ export class AccountStateService {
     if (uid !== this.listenedUid) {
       // Never show one person's profile to the next, not even for a frame.
       this._account.set(null);
+      this.answeredUid.set(null);
       this.listenedUid = uid;
     }
     this.listenerFailed = false;
@@ -138,6 +155,7 @@ export class AccountStateService {
         this.listenerFailed = true;
       }
       this._accountLoading.set(false);
+      this.answeredUid.set(uid);
     });
   }
 }

@@ -81,28 +81,6 @@ export const Roles = {
   SPEND: [Role.Admin],
 
   /**
-   * The roles that read their OWN staff analytics — a barber, for the barber
-   * record their account is linked to (`docs/designs/staff-analytics.md`,
-   * Visibility). Reading billed takings is not `MONEY`, which is about
-   * spending the shop's money (discounts, vouchers).
-   *
-   * THE WEB'S GATE ONLY, until the Team screen ships (staff permissions,
-   * stage T): the analytics route guard, the menu and the scope picker
-   * still read it off the token. The server no longer does — the
-   * `ANALYTICS` capability decides there, on the stored account and the
-   * owner's cells (`StaffAccessSystem`) — so this list is the default the
-   * web shows, not what a call is admitted by.
-   */
-  ANALYTICS_SELF: [Role.Barber],
-
-  /**
-   * The roles that read EVERY barber's analytics and the shop's — the admin
-   * alone; not the sysadmin, the vendor's support role, as `SPEND` keeps it
-   * from a client's spend. The web's gate only, as {@link Roles.ANALYTICS_SELF}.
-   */
-  ANALYTICS_SHOP: [Role.Admin],
-
-  /**
    * The roles that may act on a person's data as a DATA-SUBJECT REQUEST —
    * the client export and erasure callables (audit-hardening Phase 3,
    * P3-RU-13): the shop's admin ONLY. An irreversible or wholesale act on a
@@ -222,19 +200,6 @@ export const Roles = {
    */
   assignsRoles(roles: readonly string[]): boolean {
     return anyIn(Roles.ASSIGN, roles);
-  },
-
-  /**
-   * Whether a role set may open staff analytics at all — its own
-   * (`ANALYTICS_SELF`) or the shop's (`ANALYTICS_SHOP`): the route guard's
-   * and the menu's gate. Claims-tolerant like `mayBook`; the server judges
-   * the stored account against the owner's permissions, whatever this
-   * answers.
-   */
-  readsAnalytics(roles: readonly string[]): boolean {
-    return (
-      anyIn(Roles.ANALYTICS_SELF, roles) || anyIn(Roles.ANALYTICS_SHOP, roles)
-    );
   },
 
   /**

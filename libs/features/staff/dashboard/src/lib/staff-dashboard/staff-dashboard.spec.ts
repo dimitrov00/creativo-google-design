@@ -49,6 +49,7 @@ import {
   MEDIA_RESOLVE_PORTS,
   PROFILE_PORTS,
   SCHEDULING_READ_PORTS,
+  STAFF_PERMISSIONS_PORTS,
   USER_SEARCH_PORTS,
   CUSTOMER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -87,6 +88,7 @@ import {
   SeatOutcome,
   RosterBreak,
   ShiftSegment,
+  StaffPermissions,
   SubjectRelationship,
 } from '@core/components';
 import type {
@@ -102,6 +104,7 @@ import type {
   User,
 } from '@core/entities';
 import {
+  AccessScope,
   AppointmentId,
   BarberBusyDayId,
   BarberId,
@@ -674,6 +677,14 @@ describe('StaffDashboard', () => {
   let heldGrants: readonly HeldGrant[] = [];
   const grantsAskedFor: string[] = [];
 
+  /**
+   * What each staff level may do, as the owner set it — every default, as a
+   * shop that changed nothing; `next()` other cells to move a gate.
+   */
+  const permissions$ = new BehaviorSubject(
+    PortResult.ok(StaffPermissions.UNSET),
+  );
+
   /** Who is at the book. `next()` a plain barber to shut the money gate. */
   const principal$ = new BehaviorSubject<Principal>(
     principalFixture.staff(AccountId.of('dev-staff-ivan'), [
@@ -954,6 +965,13 @@ describe('StaffDashboard', () => {
           // here; nobody has a profile unless a case puts one in.
           provide: PROFILE_PORTS,
           useValue: memoryProfilePorts(profiles),
+        },
+        {
+          // The owner's cells, live (`StaffAccessService`).
+          provide: STAFF_PERMISSIONS_PORTS,
+          useValue: {
+            observeStaffPermissions: () => permissions$.asObservable(),
+          },
         },
       ],
     }).compileComponents();
@@ -4337,6 +4355,69 @@ describe('StaffDashboard', () => {
           Role.Admin,
         ]),
       );
+    });
+
+    describe('the chart button follows the ANALYTICS capability (staff permissions P8)', () => {
+      const chart = (): HTMLButtonElement | null =>
+        host().querySelector('[data-testid="staff-analytics-open"]');
+      const atTheBook = (...roles: Role[]): void => {
+        principal$.next(
+          principalFixture.staff(AccountId.of('dev-staff-ivan'), roles),
+        );
+        fixture.detectChanges();
+      };
+      const saved = (stored: Record<string, unknown>): void => {
+        permissions$.next(PortResult.ok(StaffPermissions.read(stored)));
+        fixture.detectChanges();
+      };
+
+      afterEach(() => {
+        permissions$.next(PortResult.ok(StaffPermissions.UNSET));
+        atTheBook(Role.Barber, Role.Admin);
+      });
+
+      it('is there for a barber and the admin, and not for the front desk, who reads none', () => {
+        expect(chart()).not.toBeNull();
+        atTheBook(Role.Barber);
+        expect(chart()).not.toBeNull();
+        atTheBook(Role.Receptionist);
+        expect(chart()).toBeNull();
+      });
+
+      it('goes and comes with the owner’s save, with no new sign-in', () => {
+        atTheBook(Role.Barber);
+        expect(chart()).not.toBeNull();
+
+        saved({ barberAnalyticsScope: AccessScope.None });
+        expect(chart()).toBeNull();
+
+        saved({});
+        expect(chart()).not.toBeNull();
+      });
+
+      it('a level the owner gave everyone’s figures opens the chair on screen, as the admin does', () => {
+        atTheBook(Role.Receptionist);
+        saved({ receptionistAnalyticsScope: AccessScope.All });
+        (
+          host().querySelector(
+            '[data-testid="staff-scope-trigger"]',
+          ) as HTMLButtonElement
+        ).click();
+        fixture.detectChanges();
+        (
+          host().querySelector(
+            '[data-testid="staff-scope-ivan"]',
+          ) as HTMLButtonElement
+        ).click();
+        fixture.detectChanges();
+        const navigate = vi
+          .spyOn(TestBed.inject(Router), 'navigate')
+          .mockResolvedValue(true);
+        openAnalytics();
+        expect(navigate).toHaveBeenCalledWith(['/staff/analytics'], {
+          queryParams: { span: 'DAY', from: '2026-08-05', barber: 'ivan' },
+        });
+      });
     });
   });
 

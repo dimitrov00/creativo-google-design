@@ -328,6 +328,17 @@ export type LoadStaffPermissions = () => Promise<
   Result<StaffPermissions, RepositoryError>
 >;
 
+/**
+ * `settings/staffPermissions` as cells, LIVE — the web's copy (staff
+ * permissions P8), read through the same guard (`StaffPermissions.read`):
+ * no document is every default, a hand-edited value grants nothing. A
+ * refused read is the port's `RepositoryError`; the reader then knows
+ * nothing about the cells and grants nothing by them.
+ */
+export type ObserveStaffPermissions = () => Observable<
+  Result<StaffPermissions, RepositoryError>
+>;
+
 /** `barberBusy/{BusyKey}` — `null` when the day holds nothing. */
 export type LoadBusyDay = (
   key: BusyKey,
@@ -433,6 +444,16 @@ export type PolicyStreamPorts = {
 /** A month's capacity document, live — the calendar's markers. */
 export type CapacityStreamPorts = {
   readonly observeCapacityMonth: ObserveCapacityMonth;
+};
+
+/**
+ * What each staff level may do, live — the bundle the web's
+ * `STAFF_PERMISSIONS_PORTS` token binds, the `(db) => bundle` export of
+ * `staff-permissions.adapter.ts`. Staff sessions only: the rules refuse
+ * the document to everyone else.
+ */
+export type StaffPermissionsStreamPorts = {
+  readonly observeStaffPermissions: ObserveStaffPermissions;
 };
 
 /**

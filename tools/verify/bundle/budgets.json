@@ -7,13 +7,15 @@
   "// routes 2026-11-09": "Staff analytics to 1.77 MB (built 1.69): the month's goal ring (the gauge), the goal sheet with two amount fields, and the setAnalyticsGoal call and its decoder.",
   "// routes 2026-11-09, later": "Staff analytics to 1.87 MB (built 1.78): the Revolut home — the carousel and its page control, the card screens, the spark line and ring chart, the location scope, the free-time, occupancy and clients tiles, the goal removal. Loaded on demand (the route's own chunk); the initial chunk is unchanged.",
   "// routes 2026-11-13": "Client booking to 1.76 MB (built 1.72, 728 bytes under its old ceiling before this change): the team onboarding work put the barber lifecycle, the bookability rule and the public-catalogue listing on this route, which it needs, and the staff's whole-team lists and the by-id barber lookup (about 2 kB) in the shared catalogue chunk every route loads — the builder merges small shared modules into that chunk, so a separate service does not keep them off this route. About 2% above the build rather than the usual 5%.",
+  "// routes 2026-11-14": "Client onboarding given a ceiling of its own, 1.58 MB (built 1.552, 1.6 kB over the default it stood just under): the session now knows what the owner lets each staff level do (staff permissions, stage T) — the access service, the access system and the permission cells' table, about 6.5 kB in the chunks every route loads, because the shell's menu row and the route gate ask them before any staff screen is open. About 2% above the build rather than the usual 5%.",
   "defaultRouteBytes": 1550000,
   "routes": {
     "libs/features/staff/dashboard/src/index.ts": 2090000,
     "libs/features/client/booking/src/index.ts": 1760000,
     "libs/features/admin/loyalty/src/index.ts": 1710000,
     "libs/features/staff/analytics/src/index.ts": 1870000,
-    "libs/features/client/appointments/src/index.ts": 1640000
+    "libs/features/client/appointments/src/index.ts": 1640000,
+    "libs/features/client/onboarding/src/index.ts": 1580000
   },
   "// publicAssetBytes": "Any one file under apps/web/public. Today's largest is welcome.mp4, 4.37 MB; lower this when the videos are recompressed.",
   "publicAssetBytes": 4500000

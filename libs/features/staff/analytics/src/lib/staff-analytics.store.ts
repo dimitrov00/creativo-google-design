@@ -16,8 +16,6 @@ import {
   type AnalyticsReport,
   AnalyticsComparison,
   AnalyticsSpan,
-  Principal,
-  Roles,
   type SetAnalyticsGoalCall,
 } from '@core/components';
 import {
@@ -28,10 +26,12 @@ import {
 } from '@core/errors';
 import type { AnalyticsCacheKey } from '@core/ports';
 import {
+  AccessScope,
   BarberId,
   LocalDate,
   LocationId,
   type Result,
+  StaffCapability,
   type UserId,
   Tag,
 } from '@core/primitives';
@@ -49,6 +49,7 @@ import {
   CLOCK_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
+import { StaffAccessService } from '@creativo/features/client/account-state';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import {
   CatalogContentService,
@@ -187,6 +188,7 @@ export class StaffAnalyticsStore {
   private readonly calls = inject(ANALYTICS_CALL_PORTS);
   private readonly cache = inject(ANALYTICS_CACHE_PORTS);
   private readonly identity = inject(SessionIdentityService);
+  private readonly access = inject(StaffAccessService);
   private readonly clock = inject(CLOCK_PORTS);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -216,9 +218,14 @@ export class StaffAnalyticsStore {
       : ZonedTimeSystem.shopNow(this.openedAtUtcMs(), zone).localDate;
   });
 
-  /** The shop's reader (`Roles.ANALYTICS_SHOP`, the token's claims): the scope picker, the shop scope. */
-  readonly readsShop = computed(() =>
-    Principal.hasAnyRole(this.identity.principal(), Roles.ANALYTICS_SHOP),
+  /**
+   * The shop's reader — the `ANALYTICS` capability at "everyone" (staff
+   * permissions P8): the admin, and any level the owner has given it. The
+   * scope picker and the shop scope; the callable judges the stored account
+   * and the cells again.
+   */
+  readonly readsShop = computed(
+    () => this.access.scopeOf(StaffCapability.Analytics) === AccessScope.All,
   );
 
   /** The account's linked barber record (the session's user document). */

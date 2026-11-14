@@ -12,9 +12,8 @@ import {
 } from './staff-day-save';
 import { StaffWeekStrip } from './week-strip';
 import { bindRouteInputs } from './route-inputs';
-import { analyticsEntryQueryOf, prefetchAnalytics } from './analytics-entry';
+import { AnalyticsEntry } from './analytics-entry';
 import { transitionOf } from './transition-of';
-import { Router } from '@angular/router';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -444,7 +443,7 @@ const ANCHOR_TOLERANCE = 2;
     UiVisuallyHiddenDirective,
     UiWeightDirective,
   ],
-  providers: [StaffDayStore, StaffWeekStrip, BreakFlow],
+  providers: [StaffDayStore, StaffWeekStrip, BreakFlow, AnalyticsEntry],
   templateUrl: './staff-dashboard.html',
   styleUrls: ['./staff-dashboard.css', './staff-dashboard.chrome.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -688,8 +687,6 @@ export class StaffDashboard {
     inject(AUTH_SESSION_PORTS).observePrincipal(),
   );
 
-  private readonly router = inject(Router);
-
   /**
    * A barber may stretch his own time; he may not discount the shop's money
    * (design record, §3.8) — the same front-desk-and-admin list the rules
@@ -818,7 +815,6 @@ export class StaffDashboard {
     effect(() => this.openFoundWhenDrawn());
     // The URL's four parameters, each read at its edge (`route-inputs.ts`).
     bindRouteInputs(this, this.store);
-    prefetchAnalytics();
 
     // English, like every other page's title in this app (`Events ·`,
     // `Careers ·`, `Programs · Creativo Admin`). This one shipped as
@@ -1679,13 +1675,12 @@ export class StaffDashboard {
     return ScheduleFilterSystem.shown(rows, this.statusFilter.hidden());
   }
 
+  /** The chart button: there for whoever reads analytics, and where it leads. */
+  protected readonly analytics = inject(AnalyticsEntry);
+
   protected openAnalytics(): void {
     const day = this.store.dayKey() ?? this.store.todayKey();
-    if (day === null) return;
-    const scope = this.store.scope();
-    void this.router.navigate(['/staff/analytics'], {
-      queryParams: analyticsEntryQueryOf(this.principal(), scope, day),
-    });
+    if (day !== null) this.analytics.open(this.store.scope(), day);
   }
 
   protected openFields(): void {

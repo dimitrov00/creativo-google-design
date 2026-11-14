@@ -1,9 +1,11 @@
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { BehaviorSubject } from 'rxjs';
 import {
   ANALYTICS_CACHE_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  STAFF_PERMISSIONS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
@@ -15,10 +17,12 @@ import {
   ParsedIdentifier,
   Principal,
   ProfileCompletionKey,
+  Role,
+  StaffPermissions,
 } from '@core/components';
 import type { User } from '@core/entities';
 import type { StoredFile } from '@core/ports';
-import { BarberId, Result, UserId } from '@core/primitives';
+import { AccessScope, BarberId, Result, UserId } from '@core/primitives';
 import { MediaError } from '@core/errors';
 import {
   memoryAnalyticsCachePorts,
@@ -97,6 +101,8 @@ function harness(
   const principal = signal<Principal>(initial);
   const account = signal<User | null>(null);
   const cache = memoryAnalyticsCachePorts();
+  /** The owner's cells, live: every default until a test saves others. */
+  const cells = new BehaviorSubject(Result.ok(StaffPermissions.UNSET));
   const find = vi.fn(
     (): Promise<FindResult> =>
       answers.shift() ?? Promise.resolve(Result.ok(null)),
@@ -110,8 +116,22 @@ function harness(
           principal,
           account,
           accountLoading: signal(false),
+          // What `StaffAccessService` reads beside the two above.
+          userId: computed(() => {
+            const current = principal();
+            return 'userId' in current ? current.userId : null;
+          }),
+          roles: computed(() => {
+            const current = principal();
+            return Principal.isActive(current) ? current.roles : null;
+          }),
+          accountSettled: signal(true),
           refresh: () => undefined,
         },
+      },
+      {
+        provide: STAFF_PERMISSIONS_PORTS,
+        useValue: { observeStaffPermissions: () => cells.asObservable() },
       },
       {
         provide: AUTH_SESSION_PORTS,
@@ -132,6 +152,11 @@ function harness(
     find,
     cache,
     account,
+    /** The owner saves other cells. */
+    permissions: (stored: Record<string, unknown>) => {
+      cells.next(Result.ok(StaffPermissions.read(stored)));
+      TestBed.tick();
+    },
     signOut: () => {
       principal.set(ANONYMOUS_PRINCIPAL);
       TestBed.tick();
@@ -365,7 +390,7 @@ describe('SessionIdentityService', () => {
       expect(service.linkedBarberId()).toBeNull();
     });
 
-    it('flags the analytics readers off the token — a barber and the admin, never the receptionist or a client', () => {
+    it('flags the analytics readers by the capability — on the standard a barber and the admin, never the receptionist or a client', () => {
       const { service, signIn, signOut } = harness(ANONYMOUS_PRINCIPAL);
       expect(service.readsAnalytics()).toBe(false);
       signIn('b', ['barber']);
@@ -380,6 +405,36 @@ describe('SessionIdentityService', () => {
       expect(service.readsAnalytics()).toBe(false);
       signOut();
       expect(service.readsAnalytics()).toBe(false);
+    });
+
+    it('follows the owner’s cells with no new sign-in: the row goes for a narrowed level and comes for a widened one', () => {
+      const { service, signIn, permissions } = harness(ANONYMOUS_PRINCIPAL);
+      signIn('b', ['barber']);
+      expect(service.readsAnalytics()).toBe(true);
+
+      permissions({ barberAnalyticsScope: AccessScope.None });
+      expect(service.readsAnalytics()).toBe(false);
+
+      permissions({
+        barberAnalyticsScope: AccessScope.None,
+        receptionistAnalyticsScope: AccessScope.All,
+      });
+      signIn('r', ['receptionist']);
+      expect(service.readsAnalytics()).toBe(true);
+      // The owner is never cut.
+      signIn('a', ['admin']);
+      expect(service.readsAnalytics()).toBe(true);
+    });
+
+    it('reads the STORED roles once the account has loaded, the token’s until then', () => {
+      const { service, account, signIn } = harness(ANONYMOUS_PRINCIPAL);
+      signIn('desk', ['receptionist']);
+      expect(service.readsAnalytics()).toBe(false);
+
+      // The owner made the account a barber too; the token has not caught up.
+      account.set({ ...user('desk'), roles: [Role.Receptionist, Role.Barber] });
+      TestBed.tick();
+      expect(service.readsAnalytics()).toBe(true);
     });
 
     it('clears the analytics cache on a sign-out and on a switch of account — never on a cold load or a refresh of the same one', () => {
