@@ -214,6 +214,7 @@ judged partly closed are covered by the rows above.
   - Invites in a phone-code deployment (no email is proven there).
   - An admin linking their own account as a barber. An owner who also cuts
     hair is a «Бръснар» with no account; the admin already edits everything.
+    Overturned 2026-11-13: `docs/designs/staff-permissions.md`, P9.
   - Holding a ready member back from going live (a manual go-live mode).
   - Inbox notifications for team events.
   - Telling `verifyOtp` callers about a pending invite. Added only if the
@@ -266,7 +267,8 @@ judged partly closed are covered by the rows above.
 - **Rehire through `DRAFT`.** Rejected (round 2): it would hide the barber's
   name on clients' past visits under the read rule.
 - **The admin self-linking as a barber.** Cut (round 2): it needs its own
-  decision and token handling for no booking gain.
+  decision and token handling for no booking gain. Decided since
+  (`docs/designs/staff-permissions.md`, P9): `setRoles` admits it.
 - **A `linkedBarberId` token claim, or one rules `get()` per exception
   write.** Rejected in favour of a callable (O4): a claim must be re-minted
   on every link change, and a `get()` per write breaks the zero-read design

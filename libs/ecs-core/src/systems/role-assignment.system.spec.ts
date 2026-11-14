@@ -274,7 +274,7 @@ describe('RoleAssignmentSystem.decide — the caller', () => {
     );
   });
 
-  it('refuses one’s own account as SELF — after the caller’s gate', () => {
+  it('refuses one’s own account a set without admin as SELF — after the caller’s gate', () => {
     expect(
       RoleAssignmentSystem.decide(
         input({ targetUserId: ADMIN_ID, target: adminUser() }),
@@ -292,6 +292,147 @@ describe('RoleAssignmentSystem.decide — the caller', () => {
         targetUserId: ADMIN_ID,
       }),
     ).toBe(GovernanceErrorCode.RolesForbidden);
+  });
+});
+
+describe('RoleAssignmentSystem.decide — the caller’s own account (staff permissions P9)', () => {
+  /** The admin naming their own account: the stored account is both sides. */
+  const own = (
+    stored: User,
+    overrides: Partial<DecideInput> = {},
+  ): DecideInput =>
+    input({
+      caller: stored,
+      target: stored,
+      targetUserId: ADMIN_ID,
+      ...overrides,
+    });
+
+  it('an owner who cuts hair adds barber and a link to their own account', () => {
+    expect(
+      RoleAssignmentSystem.decide(
+        own(adminUser(), {
+          requestedRoles: [Role.Admin, Role.Barber],
+          linkRequest: BarberLinkRequest.set(IVAN),
+        }),
+      ),
+    ).toEqual(
+      Result.ok({
+        rolesFrom: [Role.Admin],
+        rolesTo: [Role.Barber, Role.Admin],
+        rolesChanged: true,
+        ...LINKED_IVAN,
+      }),
+    );
+  });
+
+  it('takes the barber role back off: the link cleared and its lock released', () => {
+    const linked = adminUser({
+      roles: [Role.Barber, Role.Admin],
+      linkedBarberId: IVAN,
+    });
+    expect(
+      RoleAssignmentSystem.decide(
+        own(linked, {
+          requestedRoles: [Role.Admin],
+          linkRequest: BarberLinkRequest.KEEP,
+          linkFacts: { ...FREE, currentLock: lockOf(ADMIN_ID) },
+        }),
+      ),
+    ).toEqual(
+      Result.ok({
+        rolesFrom: [Role.Barber, Role.Admin],
+        rolesTo: [Role.Admin],
+        rolesChanged: true,
+        linkedBarberIdFrom: IVAN,
+        linkedBarberIdTo: null,
+        linkChanged: true,
+        lockReleased: IVAN,
+        lockTaken: null,
+      }),
+    );
+  });
+
+  it('the stored set again is admitted, unchanged', () => {
+    expect(
+      unwrapOk(
+        RoleAssignmentSystem.decide(
+          own(adminUser(), { requestedRoles: [Role.Admin] }),
+        ),
+      ),
+    ).toMatchObject({ rolesChanged: false, linkChanged: false });
+  });
+
+  it('never takes admin from oneself: every assignable set without it is SELF', () => {
+    const linked = adminUser({
+      roles: [Role.Barber, Role.Admin],
+      linkedBarberId: IVAN,
+    });
+    for (const requestedRoles of [
+      [Role.Barber],
+      [Role.Client],
+      [Role.Receptionist, Role.ContentManager],
+    ]) {
+      expect(
+        RoleAssignmentSystem.decide(
+          own(linked, { requestedRoles, linkRequest: BarberLinkRequest.KEEP }),
+        ),
+      ).toEqual(
+        Result.err({
+          errorCode: GovernanceErrorCode.RolesSelf,
+          callerUserId: ADMIN_ID,
+        }),
+      );
+    }
+  });
+
+  it('asks the set’s own rules first, and the target’s guards before them', () => {
+    // An empty set and the sysadmin are INVALID, not SELF.
+    expect(codeOf(own(adminUser(), { requestedRoles: [] }))).toBe(
+      GovernanceErrorCode.RolesInvalid,
+    );
+    expect(
+      codeOf(own(adminUser(), { requestedRoles: [Role.Admin, Role.Sysadmin] })),
+    ).toBe(GovernanceErrorCode.RolesInvalid);
+    // An admin who also holds the vendor's role is refused as any sysadmin target.
+    expect(
+      codeOf(
+        own(adminUser({ roles: [Role.Admin, Role.Sysadmin] }), {
+          requestedRoles: [Role.Admin],
+        }),
+      ),
+    ).toBe(GovernanceErrorCode.RolesTargetSysadmin);
+  });
+
+  it('keeps the link rules: the barber role needs a record, and a record locked to another account is refused', () => {
+    expect(
+      codeOf(
+        own(adminUser(), {
+          requestedRoles: [Role.Admin, Role.Barber],
+          linkRequest: BarberLinkRequest.KEEP,
+        }),
+      ),
+    ).toBe(GovernanceErrorCode.RolesBarberLinkRequired);
+    expect(
+      codeOf(
+        own(adminUser(), {
+          requestedRoles: [Role.Admin, Role.Barber],
+          linkRequest: BarberLinkRequest.set(IVAN),
+          linkFacts: { ...FREE, requestedLock: lockOf(OTHER_ID) },
+        }),
+      ),
+    ).toBe(GovernanceErrorCode.RolesBarberAlreadyLinked);
+  });
+});
+
+describe('RoleAssignmentSystem.revokesSessions — whose sessions an admitted change ends', () => {
+  it('ends another account’s sessions, never the caller’s own', () => {
+    expect(RoleAssignmentSystem.revokesSessions(ADMIN_ID, TARGET_ID)).toBe(
+      true,
+    );
+    expect(RoleAssignmentSystem.revokesSessions(ADMIN_ID, ADMIN_ID)).toBe(
+      false,
+    );
   });
 });
 
@@ -392,7 +533,7 @@ describe('RoleAssignmentSystem — the last-admin invariant (S-RU-11, property)'
               }),
       );
 
-  it('every admitted plan leaves the caller an admin not blocked at nowUtcMs — or the target holding admin', () => {
+  it('every admitted plan leaves the caller an admin not blocked at nowUtcMs — their own account included', () => {
     fc.assert(
       fc.property(
         account(ADMIN_ID),
@@ -419,11 +560,10 @@ describe('RoleAssignmentSystem — the last-admin invariant (S-RU-11, property)'
           const callerStillAdmin =
             callerAfter.includes(Role.Admin) &&
             !AccountLifecycle.isBlockedAt(caller as User, NOW);
-          expect(
-            callerStillAdmin || decided.value.rolesTo.includes(Role.Admin),
-          ).toBe(true);
-          // And the caller never touched their own account.
-          expect(targetUserId).not.toBe(ADMIN_ID);
+          // The caller is an admin after the plan — on another account
+          // because theirs is untouched, on their own because the set
+          // they asked for still holds it.
+          expect(callerStillAdmin).toBe(true);
         },
       ),
     );

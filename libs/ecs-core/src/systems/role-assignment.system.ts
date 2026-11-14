@@ -160,7 +160,9 @@ function admitTarget(
  *
  * THE LAST-ADMIN INVARIANT (S-RU-11) holds by construction: only a caller
  * whose STORED roles hold `Roles.ASSIGN` (`admin`) and who is not blocked
- * at `nowUtcMs` is admitted, and never on their own account — so after
+ * at `nowUtcMs` is admitted, and on their own account only with a set
+ * that still holds a `Roles.ASSIGN` role (staff permissions P9: an owner
+ * who cuts hair adds `barber` and a link to their own account) — so after
  * every admitted plan the caller is still an admin, and the shop can never
  * lose its last admin through `setRoles` (the property spec proves it over
  * every caller × target × requested set). Should `ASSIGN` ever widen beyond
@@ -170,18 +172,20 @@ export const RoleAssignmentSystem = {
   /**
    * The roles change one admin may make: the caller's STORED roles hold
    * `Roles.ASSIGN` and the caller is not blocked at `nowUtcMs` (an erased
-   * account included) — else `GOVERNANCE_ROLES_FORBIDDEN`; the target is not
-   * the caller (`GOVERNANCE_ROLES_SELF`), exists, is not `ERASED`, is
-   * `REGISTERED` and holds no `sysadmin` (the four target codes, in that
-   * order); the requested set is non-empty and inside `Roles.ASSIGNABLE`
-   * (else `GOVERNANCE_ROLES_INVALID` — an unknown string or the sysadmin
-   * alike), normalised to dictionary order. The same set as stored is
-   * admitted with `rolesChanged: false`. The barber link is then decided
-   * on the admitted set ({@link RoleAssignmentSystem.linkOf}: its four
-   * refusals come after every rule above). `rolesFrom` is the stored set's
-   * known roles (`Roles.known`: each once, stored order, an unknown string
-   * dropped) — `users` has no read guard, so a console-written array is
-   * read raw, and the audit row's closed `Role[]` tags must not carry it.
+   * account included) — else `GOVERNANCE_ROLES_FORBIDDEN`; the target
+   * exists, is not `ERASED`, is `REGISTERED` and holds no `sysadmin` (the
+   * four target codes, in that order); the requested set is non-empty and
+   * inside `Roles.ASSIGNABLE` (else `GOVERNANCE_ROLES_INVALID` — an unknown
+   * string or the sysadmin alike), normalised to dictionary order; and a
+   * caller's OWN account takes only a set that still holds a
+   * `Roles.ASSIGN` role (else `GOVERNANCE_ROLES_SELF`: nobody takes the
+   * admin role from themself — staff permissions P9). The same set as
+   * stored is admitted with `rolesChanged: false`. The barber link is then
+   * decided on the admitted set ({@link RoleAssignmentSystem.linkOf}: its
+   * four refusals come after every rule above). `rolesFrom` is the stored
+   * set's known roles (`Roles.known`: each once, stored order, an unknown
+   * string dropped) — `users` has no read guard, so a console-written array
+   * is read raw, and the audit row's closed `Role[]` tags must not carry it.
    */
   decide(input: {
     readonly callerUserId: UserId;
@@ -201,9 +205,6 @@ export const RoleAssignmentSystem = {
     ) {
       return Result.err(GovernanceError.rolesForbidden(input.callerUserId));
     }
-    if (input.targetUserId === input.callerUserId) {
-      return Result.err(GovernanceError.rolesSelf(input.callerUserId));
-    }
     const target = admitTarget(input.target, input.targetUserId);
     if (!target.ok) return target;
     const requested = input.requestedRoles;
@@ -216,6 +217,14 @@ export const RoleAssignmentSystem = {
       }
     }
     const change = RoleAssignmentSystem.changeOf(target.value.roles, requested);
+    // One's own account: only a set that still assigns roles — the caller
+    // is an admin after every admitted plan (the last-admin invariant).
+    if (
+      input.targetUserId === input.callerUserId &&
+      !Roles.assignsRoles(change.rolesTo)
+    ) {
+      return Result.err(GovernanceError.rolesSelf(input.callerUserId));
+    }
     const link = RoleAssignmentSystem.linkOf({
       target: target.value,
       targetUserId: input.targetUserId,
@@ -316,11 +325,27 @@ export const RoleAssignmentSystem = {
   },
 
   /**
+   * Whether an admitted change ends the target's sessions (S-RU-10): every
+   * change but the caller's own (staff permissions P9). A revoke exists so
+   * a session minted from the old roles cannot outlive them; a caller's own
+   * admitted change leaves their token holding `admin`, which already
+   * passes every token gate an assignable role passes, and a stale lesser
+   * claim adds nothing to it — so signing the owner out would buy nothing.
+   * The roles and the link the change wrote are on the stored account,
+   * which the callables and the web read.
+   */
+  revokesSessions(callerUserId: UserId, targetUserId: UserId): boolean {
+    return targetUserId !== callerUserId;
+  },
+
+  /**
    * Whether the card may OFFER the «Роли» block (S-L-18): the viewer
    * assigns roles (`Roles.assignsRoles` on the viewer's claims), and the
    * subject is a stored, `REGISTERED`, not `ERASED` account that is not the
    * viewer and holds no `sysadmin` — the subject guards `decide` shares.
-   * The server stays the authority: this only hides a block it would refuse.
+   * The card never offers the viewer's own account: an admin's own change
+   * (`decide` admits one that keeps `admin`) has its door on the Team
+   * screen. The server stays the authority: this only hides a block.
    */
   offerOf(
     viewerUserId: UserId,

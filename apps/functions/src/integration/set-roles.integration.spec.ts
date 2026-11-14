@@ -17,6 +17,7 @@ import {
   OperationId,
   TenantId,
   UserId,
+  UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
 import {
@@ -25,7 +26,11 @@ import {
   Subcollections,
   type User,
 } from '@core/entities';
-import { RegistrationSystem, StoredDocumentSystem } from '@core/systems';
+import {
+  RegistrationSystem,
+  StaffAnalyticsSystem,
+  StoredDocumentSystem,
+} from '@core/systems';
 import { auditDocumentChange, setRoles } from '@core/pipelines';
 import {
   barberFixture,
@@ -58,9 +63,12 @@ import { decodeDocumentChangeEvent } from '../wire/triggers.wire';
  * the profile trigger, handed the write's before / after image, plans NO
  * second row (the `profileEditedAtUtcMs` marker, S-RU-12); a custom token
  * minted through the real claims path afterwards carries the written roles
- * (S-RU-10). Self, a `sysadmin` target and an `ERASED` target are refused
- * with nothing written; a target with no Auth user has its roles written
- * and its revoke treated as done.
+ * (S-RU-10). One's own account without `admin`, a `sysadmin` target and an
+ * `ERASED` target are refused with nothing written; a target with no Auth
+ * user has its roles written and its revoke treated as done. An admin's
+ * own account takes `barber` and a link (staff permissions P9) — one
+ * document read once as caller and target — and their sessions are left
+ * alone.
  *
  * The Auth emulator never fails an Admin revoke, so the failed revoke is
  * the pipeline spec's (`set-roles.pipeline.spec.ts`). Emulator-only by
@@ -155,7 +163,11 @@ describe('setRoles (emulator)', () => {
       .doc(`${Collections.Users}/${TARGET}`)
       .set(bodyOf(registeredUserFixture({ id: TARGET, ...overrides })));
 
-  const run = (targetUserId: UserId = TARGET) => {
+  const run = (
+    targetUserId: UserId = TARGET,
+    roles: readonly Role[] = [Role.Barber, Role.Client],
+    nowUtcMs: UtcEpochMs = FIXTURE_NOW_UTC_MS,
+  ) => {
     const telemetry = recordingTelemetry();
     return setRoles({
       commit: firestoreCommitPlan(
@@ -163,7 +175,7 @@ describe('setRoles (emulator)', () => {
         StoredDocumentSystem.guardOf,
         telemetry.log,
       ),
-      nowUtcMs: pinnedNowUtcMs(),
+      nowUtcMs: pinnedNowUtcMs(nowUtcMs),
       hash: sha256Hex,
       ...authSessionRevokePorts(auth),
       ...telemetry,
@@ -171,9 +183,12 @@ describe('setRoles (emulator)', () => {
       adminUserId: ADMIN,
       adminRoles: [Role.Admin],
       targetUserId,
-      roles: [Role.Barber, Role.Client],
-      // Granting the barber role names the record the account is.
-      ...BarberLinkRequest.set(IVAN),
+      roles,
+      // Granting the barber role names the record the account is; a set
+      // without it asks nothing of the link (the server clears it).
+      ...(roles.includes(Role.Barber)
+        ? BarberLinkRequest.set(IVAN)
+        : BarberLinkRequest.KEEP),
       operationId: OPERATION,
     });
   };
@@ -330,7 +345,86 @@ describe('setRoles (emulator)', () => {
     expect(await auditRows()).toHaveLength(1);
   });
 
-  it('refuses one’s own roles, a sysadmin target and an ERASED target — nothing written', async () => {
+  it('an admin links their own account to a barber record: roles, link, lock and ONE row — and their sessions are left alone', async () => {
+    await auth.createUser({ uid: ADMIN });
+    const adminRef = db.doc(`${Collections.Users}/${ADMIN}`);
+
+    const answer = await run(ADMIN, [Role.Admin, Role.Barber]);
+
+    expect(answer).toEqual({
+      ok: true,
+      value: {
+        targetUserId: ADMIN,
+        roles: [Role.Barber, Role.Admin],
+        rolesChanged: true,
+        linkedBarberId: IVAN,
+        linkChanged: true,
+      },
+    });
+    const stored = await adminRef.get();
+    expect(stored.data()).toMatchObject({
+      roles: [Role.Barber, Role.Admin],
+      linkedBarberId: IVAN,
+      profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    expect((await db.doc(IVAN_LOCK).get()).data()).toEqual({
+      linkedUserId: ADMIN,
+    });
+
+    // ONE row: the admin is the actor and the account it is about.
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.[1]).toMatchObject({
+      auditAction: AuditAction.ProfileRolesChanged,
+      ...Actor.admin(ADMIN),
+      ...AuditTargetRef.user(ADMIN),
+      resourceId: AuditResourceId.forUser(ADMIN),
+      profileRolesFrom: [Role.Admin],
+      profileRolesTo: [Role.Barber, Role.Admin],
+      profileLinkedBarberIdFrom: null,
+      profileLinkedBarberIdTo: IVAN,
+    });
+
+    // Nobody is signed out: the account has never been revoked.
+    expect((await auth.getUser(ADMIN)).tokensValidAfterTime).toBeUndefined();
+
+    // The stored account is now a barber's too: analytics judges it linked
+    // to the record, and admits its own scope.
+    const caller = StaffAnalyticsSystem.callerOf(
+      { id: ADMIN, ...stored.data() } as User,
+      FIXTURE_NOW_UTC_MS,
+    );
+    expect(caller).toMatchObject({
+      ok: true,
+      value: { linkedBarberId: IVAN, callerBlocked: false },
+    });
+    expect(
+      caller.ok &&
+        StaffAnalyticsSystem.scopeOf(caller.value, { scopeBarberIds: [IVAN] }, [
+          IVAN,
+        ]),
+    ).toEqual({ ok: true, value: [IVAN] });
+
+    // Taking the role back off, a minute later (an account's roles row is
+    // keyed by its instant), clears the link and frees the record.
+    const undone = await run(
+      ADMIN,
+      [Role.Admin],
+      UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 60_000),
+    );
+    expect(undone).toMatchObject({
+      ok: true,
+      value: { roles: [Role.Admin], linkedBarberId: null, linkChanged: true },
+    });
+    expect((await adminRef.get()).data()).toMatchObject({
+      roles: [Role.Admin],
+      linkedBarberId: null,
+    });
+    expect((await db.doc(IVAN_LOCK).get()).exists).toBe(false);
+    expect((await auth.getUser(ADMIN)).tokensValidAfterTime).toBeUndefined();
+  });
+
+  it('refuses one’s own roles without admin, a sysadmin target and an ERASED target — nothing written', async () => {
     const self = await run(ADMIN);
     expect(!self.ok && self.error.errorCode).toBe(
       GovernanceErrorCode.RolesSelf,

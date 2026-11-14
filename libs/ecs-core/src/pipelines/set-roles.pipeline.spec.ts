@@ -658,6 +658,104 @@ describe('setRoles', () => {
     }
   });
 
+  describe('the caller’s own account (staff permissions P9)', () => {
+    /** The owner who cuts hair: `barber` beside `admin`, linked to `ivan`. */
+    const ownCall = (extra: Partial<SetRolesCommand> = {}) =>
+      call({
+        targetUserId: ADMIN,
+        roles: [RoleTag.Admin, RoleTag.Barber],
+        ...extra,
+      });
+
+    it('links the admin to a barber record: the roles, the link, the lock and ONE row — and nobody is signed out', async () => {
+      const { store, tx, telemetry, asked, run } = rig();
+      expect(await run(ownCall())).toEqual(
+        Result.ok({
+          targetUserId: ADMIN,
+          roles: [RoleTag.Barber, RoleTag.Admin],
+          rolesChanged: true,
+          linkedBarberId: IVAN,
+          linkChanged: true,
+        }),
+      );
+      expect(store.get(`${Collections.Users}/${ADMIN}`)).toMatchObject({
+        roles: [RoleTag.Barber, RoleTag.Admin],
+        linkedBarberId: IVAN,
+        profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      });
+      expect(store.get(lockKey(IVAN))).toEqual({ linkedUserId: ADMIN });
+      const rows = auditRowsOf(tx.plans);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        auditAction: AuditAction.ProfileRolesChanged,
+        profileRolesFrom: [RoleTag.Admin],
+        profileRolesTo: [RoleTag.Barber, RoleTag.Admin],
+        profileLinkedBarberIdTo: IVAN,
+        ...Actor.admin(ADMIN),
+      });
+      // No revoke asked, so no session line either way.
+      expect(asked).toEqual([]);
+      expect(msgs(telemetry.lines)).toEqual([LogEvent.RolesChanged]);
+    });
+
+    it('reads the one account once — it is the caller and the target', async () => {
+      const { tx, run } = rig();
+      unwrapOk(await run(ownCall()));
+      expect(tx.transactions[0]?.reads).toEqual([
+        [Collections.Users, ADMIN],
+        [Collections.Barbers, IVAN],
+        lockPath(IVAN),
+      ]);
+    });
+
+    it('takes the barber role back off: the link cleared, the lock released, still no revoke', async () => {
+      const { store, asked, run } = rig({
+        caller: registeredUserFixture({
+          id: ADMIN,
+          roles: [RoleTag.Barber, RoleTag.Admin],
+          linkedBarberId: IVAN,
+        }),
+        locks: [[IVAN, ADMIN]],
+      });
+      expect(
+        unwrapOk(await run(ownCall({ roles: [RoleTag.Admin] }))),
+      ).toMatchObject({
+        roles: [RoleTag.Admin],
+        rolesChanged: true,
+        linkedBarberId: null,
+        linkChanged: true,
+      });
+      expect(store.get(`${Collections.Users}/${ADMIN}`)).toMatchObject({
+        roles: [RoleTag.Admin],
+        linkedBarberId: null,
+      });
+      expect(store.get(lockKey(IVAN))).toBeUndefined();
+      expect(asked).toEqual([]);
+    });
+
+    it('the stored set again commits nothing and revokes nothing', async () => {
+      const { tx, asked, telemetry, run } = rig();
+      expect(
+        unwrapOk(await run(ownCall({ roles: [RoleTag.Admin] }))),
+      ).toMatchObject({ rolesChanged: false, linkChanged: false });
+      expect(tx.plans).toEqual([[]]);
+      expect(asked).toEqual([]);
+      expect(telemetry.lines).toEqual([]);
+    });
+
+    it('a token admin whose stored account holds no admin is still FORBIDDEN on their own account', async () => {
+      const { tx, asked, run } = rig({
+        caller: registeredUserFixture({ id: ADMIN, roles: [RoleTag.Barber] }),
+      });
+      const refused = await run(ownCall());
+      expect(!refused.ok && refused.error.errorCode).toBe(
+        GovernanceErrorCode.RolesForbidden,
+      );
+      expect(tx.plans).toEqual([]);
+      expect(asked).toEqual([]);
+    });
+  });
+
   describe('refusals commit nothing and never revoke', () => {
     const refusals: readonly {
       readonly name: string;
@@ -700,7 +798,7 @@ describe('setRoles', () => {
         code: GovernanceErrorCode.RolesForbidden,
       },
       {
-        name: 'one’s own roles',
+        name: 'one’s own roles, a set without admin',
         options: {},
         cmd: { targetUserId: ADMIN },
         code: GovernanceErrorCode.RolesSelf,

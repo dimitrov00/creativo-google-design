@@ -58,8 +58,9 @@ import {
  * barber the caller is": two accounts can never hold one record, because
  * both locks are in the transaction's conflict set) — and asks
  * `RoleAssignmentSystem.decide` — the caller's STORED roles and block
- * judged at the instant read once before the transaction, self, the
- * target's four guards, the requested set, then the link — and, when the
+ * judged at the instant read once before the transaction, the target's
+ * four guards, the requested set, the caller's own account (a set that
+ * keeps `admin`, staff permissions P9), then the link — and, when the
  * set or the link changes, plans the `users` update (`roles` and/or
  * `linkedBarberId`, and `profileEditedAtUtcMs` — the marker the profile
  * trigger reads as "audited by a callable", S-RU-12), the lock writes (the
@@ -72,7 +73,10 @@ import {
  * After the commit — a link-only change and the unchanged call too, so a
  * retry finishes a revoke
  * that failed (S-L-15) — the target's refresh tokens are revoked
- * (S-RU-10): their next session is minted from the written roles. Every
+ * (S-RU-10): their next session is minted from the written roles. The
+ * caller's own change revokes nothing
+ * (`RoleAssignmentSystem.revokesSessions`): the owner is not signed out
+ * of the account they just linked. Every
  * successful revoke logs `roles.sessions_revoked` (a forced sign-out is
  * never silent, S-L-26); a failed one logs `roles.sessions_not_revoked`
  * (alerted on any occurrence) and answers
@@ -188,6 +192,8 @@ export const setRoles =
     }
     const callerUserId = admitted.value;
     const targetPath = [Collections.Users, cmd.targetUserId];
+    // The caller's own account is ONE document: read once, both sides.
+    const own = cmd.targetUserId === callerUserId;
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     // The barber record a `SET` names — `null` for `KEEP` and `CLEAR`.
@@ -197,13 +203,18 @@ export const setRoles =
       async (tx): Promise<Snapshot> => {
         // One round trip: both accounts, and a SET's record and its lock.
         const [accounts, barber, requestedLock] = await Promise.all([
-          tx.getAll<User>([[Collections.Users, callerUserId], targetPath]),
+          tx.getAll<User>(
+            own
+              ? [targetPath]
+              : [[Collections.Users, callerUserId], targetPath],
+          ),
           requested === null
             ? null
             : tx.get<Barber>([Collections.Barbers, requested]),
           requested === null ? null : tx.get<BarberLink>(lockPath(requested)),
         ]);
-        const [caller = null, target = null] = accounts;
+        const caller = accounts[0] ?? null;
+        const target = own ? caller : (accounts[1] ?? null);
         // The lock of the record the account is linked to today — the
         // requested one already read when the two are one record.
         const current =
@@ -284,6 +295,16 @@ export const setRoles =
         linkChanged,
       });
     }
+    const changed: RolesCall.Changed = {
+      targetUserId: cmd.targetUserId,
+      roles: rolesTo,
+      rolesChanged,
+      linkedBarberId: linkedBarberIdTo,
+      linkChanged,
+    };
+    if (!RoleAssignmentSystem.revokesSessions(callerUserId, cmd.targetUserId)) {
+      return Result.ok(changed);
+    }
     const revoked = await ports.revokeRefreshTokens(cmd.targetUserId);
     if (!revoked.ok) {
       ports.log('error', LogEvent.RolesSessionsNotRevoked, {
@@ -299,11 +320,5 @@ export const setRoles =
       rolesChanged,
       linkChanged,
     });
-    return Result.ok({
-      targetUserId: cmd.targetUserId,
-      roles: rolesTo,
-      rolesChanged,
-      linkedBarberId: linkedBarberIdTo,
-      linkChanged,
-    });
+    return Result.ok(changed);
   };
