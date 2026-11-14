@@ -285,4 +285,11 @@ export const appRoutes: Route[] = [
         (m) => m.ClientCardCompositionPage,
       ),
   },
+  {
+    path: 'compositions/team',
+    loadComponent: () =>
+      import('./pages/compositions/team/team.page').then(
+        (m) => m.TeamCompositionPage,
+      ),
+  },
 ];

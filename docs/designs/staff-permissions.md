@@ -1002,6 +1002,16 @@ This is the screen half of team onboarding stage 1a ("The Team page and the
 editors"); its server half is merged.
 
 - **Depends on.** A.
+- **Prototype (built).** The showcase's «Team» composition
+  (`apps/showcase/src/app/pages/compositions/team`): the team list as the
+  owner and as a content editor see it, a member in preparation with «Това
+  съм аз», a member taking bookings, the add sheet, «Права» and two level
+  pages. The level pages read and write the real cells
+  (`StaffPermissions`), so their rows, standards and counts are the
+  engine's. What it settled: a changed row carries one orange dot and says
+  what the standard was; «Запази» is in the dock only while the draft
+  differs; a level's row on «Права» counts its changes; going live has no
+  button.
 - **Builds.** A prototype pass first. Then `StaffAccessService`, the route
   gate, the Team page and its editors, «Права» for the capabilities that
   exist, the «Това съм аз» door, and the web gates of stage A's

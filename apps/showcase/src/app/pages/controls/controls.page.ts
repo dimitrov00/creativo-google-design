@@ -112,6 +112,7 @@ export class ControlsPage {
       lede: 'The primitives composed the way a page composes them — real pixels to judge a design by, before a feature is built on it.',
       links: [
         { slug: 'client-card', name: 'Client card', section: 'compositions' },
+        { slug: 'team', name: 'Team', section: 'compositions' },
       ],
     },
   ];

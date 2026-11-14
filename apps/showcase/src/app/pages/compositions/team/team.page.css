@@ -1,0 +1,256 @@
+/*
+ * THE TEAM SCREENS, COMPOSED: layout only. Every surface, ink and type role
+ * on the screens is a DS piece's own; these rules place the pieces and set
+ * the air between them, on the space tokens. No `font:` shorthand is written
+ * here but the value trigger's `font: inherit` (which re-asserts the tabular
+ * figures after it), and the one orange a rule paints is the changed row's
+ * dot: a shape, never a word.
+ */
+
+:host {
+  display: block;
+}
+
+/* ── the page: a plate is its words over a stage of screens ──────────── */
+
+.team__plate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+}
+
+.team__lead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  max-inline-size: 42rem;
+}
+
+.team__lead > * {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+/* THE STAGE: a quiet ground a step off the page. Screens stand side by side
+   at a phone's width where there is room, one under the other where not. */
+.team__stage {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(
+      min(100%, calc(var(--sys-space-unit) * 82.5)),
+      calc(var(--sys-space-unit) * 97.5 + 2px)
+    )
+  );
+  justify-content: center;
+  align-items: start;
+  gap: var(--sys-space-loose) var(--sys-space-comfortable);
+  padding: var(--sys-space-loose) var(--sys-space-comfortable);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-fill);
+}
+
+.team__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-regular);
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.team__caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ── a stand-in for a routed page ────────────────────────────────────── */
+
+/* The page's ground at a 390 pt phone's width, with the app's own inline
+   inset either side of the column. It publishes what the DS bar measures
+   (the chrome's height: a 44 chip, 8 above and under it, its hairline), and
+   it is a containing block so a head stays at rest while the showcase page
+   moves. `timeline-scope` is what the DS surface declares for a real one. */
+.team__screen {
+  --ui-sheet-inset: 1.1rem;
+  --modal-sheet-chrome-height: calc(
+    var(--control-size-regular) + var(--sys-space-compact) * 2 + 1px
+  );
+
+  timeline-scope: --ui-sheet-headline;
+
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  border: 1px solid var(--sys-color-separator);
+  border-radius: var(--control-radius-hero);
+  background: var(--sys-color-background);
+  box-shadow: var(--sys-elevation-raised);
+  overflow: hidden;
+}
+
+/* The add sheet stands on the sheet's surface, not the page's ground. */
+.team__screen--sheet {
+  background: var(--sys-color-surface);
+}
+
+/* The page under the bar: it starts 16 under it, its modules 32 apart, and
+   ends on the same 32. */
+.team__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  padding: var(--sys-space-regular) var(--ui-sheet-inset) var(--sys-space-loose);
+}
+
+/* A page with a dock under it ends on the dock's own air. */
+.team__page--docked {
+  padding-block-end: var(--sys-space-regular);
+}
+
+/* THE HERO'S RISE: the chrome less 24, as the client card's head. */
+.team__risen {
+  --ui-sheet-headline-rise: calc(
+    var(--modal-sheet-chrome-height) - var(--sys-space-comfortable)
+  );
+}
+
+/* Heading → body is `compact` (8) under the small-rung heading row. */
+.team__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-compact);
+  min-inline-size: 0;
+}
+
+/* A name over its quiet line: the two wrap inside the row, never past it. */
+.team__identity {
+  min-inline-size: 0;
+}
+
+.team__identity > * {
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* A value row's trailing: the value and the disclosure as one quiet run. */
+.team__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* A footnote under a group sits on the group's inset. */
+.team__footnote {
+  margin: 0;
+  padding-inline: var(--sys-space-regular);
+  text-wrap: pretty;
+}
+
+/* A field's label sits on the field's own inset. */
+.team__field-label {
+  padding-inline: var(--sys-space-regular);
+}
+
+/* Who holds a level: the faces, then the count. */
+.team__holders {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  margin-block-start: var(--sys-space-tight);
+}
+
+.team__holders > p {
+  margin: 0;
+}
+
+/* ── a permission row ────────────────────────────────────────────────── */
+
+/* The label wraps beside its control; the control keeps the trailing edge
+   and its own line (the rhythm page's row grammar). */
+.team__permission.ui-list-row {
+  flex-wrap: wrap;
+  row-gap: var(--sys-space-tight);
+}
+
+.team__permission.ui-list-row > .ui-list-row__label {
+  flex: 1 1 auto;
+  white-space: normal;
+  text-wrap: pretty;
+}
+
+.team__permission.ui-list-row > [uitrailing] {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/* A CHANGED ROW'S MARK: one orange dot before the label. Colour as a shape;
+   the words under it stay ink. */
+.team__changed {
+  display: inline-block;
+  inline-size: calc(var(--sys-space-unit) * 2);
+  block-size: calc(var(--sys-space-unit) * 2);
+  margin-inline-end: var(--sys-space-compact);
+  border-radius: 50%;
+  background: var(--sys-color-accent);
+  vertical-align: middle;
+}
+
+/* THE VALUE as the row's control (the rhythm page's «Брои се» grammar): a
+   quiet run with the pop-up glyph, its focus ring inside the row. The
+   trailing padding is folded into the row's inset so the glyph ends where
+   the segment's content ends. */
+.team__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  min-block-size: var(--control-size-small);
+  max-inline-size: 100%;
+  margin-inline-end: calc(-1 * var(--sys-space-compact));
+  padding-inline: var(--sys-space-compact);
+  border: 0;
+  background: transparent;
+  color: var(--sys-color-secondary-label);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  cursor: pointer;
+}
+
+.team__choice > span {
+  white-space: nowrap;
+}
+
+/* ── the dock: hugged, trailing ──────────────────────────────────────── */
+
+/* A stand-in for `ui-page-action-bar` (which pins to the viewport, not to a
+   screen drawn on a page): the same hugged trailing button, at the foot. */
+.team__dock {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sys-space-compact) var(--ui-sheet-inset)
+    var(--sys-space-regular);
+}
+
+/* ── on a phone the page is the phone ────────────────────────────────── */
+
+@media (max-width: 30rem) {
+  .team__stage {
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: calc(var(--sys-space-comfortable) * -1);
+    padding: var(--sys-space-comfortable) 0;
+    border-radius: 0;
+  }
+
+  .team__screen {
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .team__caption {
+    padding-inline: var(--sys-space-regular);
+  }
+}
