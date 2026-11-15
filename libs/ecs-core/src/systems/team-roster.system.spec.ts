@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AccountStanding,
   BarberStatus,
   RecordClaim,
   Role,
@@ -20,7 +21,7 @@ import {
   serviceFixture,
   userFixture,
 } from '@core/testing';
-import { TeamRosterSystem } from './team-roster.system';
+import { type RecordViewer, TeamRosterSystem } from './team-roster.system';
 
 const IVAN = FIXTURE_IDS.barber;
 const NIKO = BarberId.of('niko');
@@ -499,11 +500,41 @@ describe('TeamRosterSystem — the account beside a record: who may link one, wh
     const unlinked = TeamRosterSystem.unlinkedOf(members, owner.userId);
     expect(unlinked.map((member) => member.memberUserId)).toEqual(['u-desk']);
     expect(members).toContain(unlinked[0]);
+    // With nobody looking, nobody is offered.
+    expect(TeamRosterSystem.unlinkedOf(members, null)).toEqual([]);
+  });
+
+  it('accountOf finds a staff account’s row by its id, never a barber record’s', () => {
     expect(
-      TeamRosterSystem.unlinkedOf(members, null).map(
-        (member) => member.memberUserId,
-      ),
-    ).toEqual(['u-desk', 'u-owner']);
+      TeamRosterSystem.accountOf(members, UserId.of('u-desk'))?.memberRoles,
+    ).toEqual([Role.Receptionist]);
+    // Ivan's account is beside his record: it is no row of its own.
+    expect(TeamRosterSystem.accountOf(members, UserId.of('u-ivan'))).toBeNull();
+    expect(TeamRosterSystem.accountOf([], UserId.of('u-desk'))).toBeNull();
+  });
+
+  it('accountStandingOf says what an account’s page is to the person looking, the first that applies', () => {
+    const rowOf = (id: string) =>
+      TeamRosterSystem.accountOf(members, UserId.of(id)) as TeamMember.RoleOnly;
+    const standingOf = (id: string, viewer: RecordViewer = owner) =>
+      TeamRosterSystem.accountStandingOf(rowOf(id), viewer);
+    expect(standingOf('u-desk')).toBe(AccountStanding.Editable);
+    expect(standingOf('u-owner')).toBe(AccountStanding.Own);
+    expect(standingOf('u-vendor')).toBe(AccountStanding.Vendor);
+    expect(standingOf('u-stub')).toBe(AccountStanding.Unregistered);
+    const frontDesk = {
+      userId: UserId.of('u-desk'),
+      linkedBarberId: null,
+      assignsRoles: false,
+    };
+    // Someone who assigns no roles reads a colleague's account, and still knows their own.
+    expect(standingOf('u-owner', frontDesk)).toBe(AccountStanding.ReadOnly);
+    expect(standingOf('u-stub', frontDesk)).toBe(AccountStanding.ReadOnly);
+    expect(standingOf('u-desk', frontDesk)).toBe(AccountStanding.Own);
+    expect(standingOf('u-vendor', frontDesk)).toBe(AccountStanding.Vendor);
+    expect(standingOf('u-desk', { ...owner, userId: null })).toBe(
+      AccountStanding.ReadOnly,
+    );
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

@@ -230,6 +230,17 @@ export const appRoutes: Route[] = [
       import('@creativo/features/admin/team').then((m) => m.AdminTeamMember),
   },
   {
+    // A staff account with no barber record — the front desk, a content
+    // editor, an admin; `:userId` is the account's id, bound to the page as
+    // an input. The same people the list opens for; only someone the list
+    // answered accounts to finds one here, and `setRoles` judges every
+    // change.
+    path: 'admin/team/account/:userId',
+    canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Team)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team').then((m) => m.AdminTeamAccount),
+  },
+  {
     // The loyalty rules' home; its one page today is the rhythm's. The
     // redirect is deliberately UNGUARDED, like `staff`'s: it is not an
     // authorization decision, and the target's own guards still run.

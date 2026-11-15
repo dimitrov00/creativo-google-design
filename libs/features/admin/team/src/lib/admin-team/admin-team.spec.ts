@@ -65,7 +65,7 @@ describe('AdminTeam — «Екип»', () => {
     expect(text(piece('team-member-stefan'))).toContain('Напусна на 30.09');
   });
 
-  it('a barber record’s row leads to its page; an account with no record is read', async () => {
+  it('a barber record’s row leads to its page, and an account with no record to its own', async () => {
     const { root, piece } = await render({ members: TEAM });
     const rows = [
       ...root.querySelectorAll<HTMLElement>('[data-testid^="team-member-"]'),
@@ -78,9 +78,10 @@ describe('AdminTeam — «Екип»', () => {
     expect(piece('team-member-stefan')?.getAttribute('href')).toBe(
       '/admin/team/member/stefan',
     );
-    const account = piece('team-member-u-elena');
-    expect(account?.tagName).not.toBe('A');
-    expect(account?.hasAttribute('href')).toBe(false);
+    // A staff account with no record leads to its own page.
+    expect(piece('team-member-u-elena')?.getAttribute('href')).toBe(
+      '/admin/team/account/u-elena',
+    );
   });
 
   it('whoever manages the team finds the ＋ in the bar; a content editor does not', async () => {

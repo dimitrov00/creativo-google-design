@@ -107,6 +107,12 @@ describe('teamPageVm — the Team list', () => {
     expect(rows[1]?.avatarSrc).toBeNull();
     expect(rows[0]?.testId).toBe('team-member-ivan');
     expect(page().runs[1]?.rows[0]?.testId).toBe('team-member-u-owner');
+    // A row leads to a record's page or to an account's, never both.
+    expect([rows[0]?.barberId, rows[0]?.accountUserId]).toEqual(['ivan', null]);
+    expect([
+      page().runs[1]?.rows[0]?.barberId,
+      page().runs[1]?.rows[0]?.accountUserId,
+    ]).toEqual([null, 'u-owner']);
   });
 
   it('for someone who reaches the records alone: the profiles’ lede, no accounts and no note about one', () => {

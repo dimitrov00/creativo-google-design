@@ -3,7 +3,7 @@ import {
   BarberStatus,
   LocalizedText,
   RecordClaim,
-  StaffPermissions,
+  type StaffPermissions,
   StaffSetupItem,
   type TeamMember,
 } from '@core/components';
@@ -11,6 +11,7 @@ import type { Barber, ShopLocation } from '@core/entities';
 import type { LocalDate, Locale } from '@core/primitives';
 import type { StaffSetupChecklist, StaffSetupEntry } from '@core/systems';
 import { shopNameOf } from '@creativo/features/shared/catalog';
+import { levelLinks } from './levels.presenter';
 import { releaseQuestionVm } from './link-question.presenter';
 import type { LinkWords } from './link.words';
 import {
@@ -289,23 +290,17 @@ function accountOf(input: MemberPageInput): MemberAccountVm | null {
 
 /** The way to «Права» for each level the linked account holds. */
 function levelsOf(input: MemberPageInput): readonly LevelLinkVm[] {
-  const { member, words } = input;
-  if (!input.editsPermissions || member === null) return [];
-  const links: LevelLinkVm[] = [];
-  for (const level of StaffPermissions.LEVELS) {
-    if (!member.memberRoles.includes(level)) continue;
-    const departures = StaffPermissions.departuresOf(input.permissions, level);
-    links.push({
-      level,
-      label: input.memberWords.levelRow(words.roles.get(level) ?? level),
-      value:
-        departures.length === 0
-          ? words.standard
-          : words.changes(departures.length),
-      testId: `member-level-${level}`,
-    });
-  }
-  return links;
+  const { member } = input;
+  return member === null
+    ? []
+    : levelLinks({
+        roles: member.memberRoles,
+        editsPermissions: input.editsPermissions,
+        permissions: input.permissions,
+        words: input.words,
+        levelRow: input.memberWords.levelRow,
+        testIdPrefix: 'member-level',
+      });
 }
 
 /** A team member's page: the head, the checklist, the profile, the account. */

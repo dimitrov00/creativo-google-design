@@ -26,6 +26,7 @@ import {
   serviceOf,
 } from './team.fixtures.spec-support';
 import { TeamMemberStore } from './team-member.store';
+import { TeamRolesStore } from './team-roles.store';
 import { TeamStore } from './team.store';
 
 /*
@@ -45,7 +46,7 @@ const RECORDS = [IVAN_RECORD, NIKOLAY_RECORD, STEFAN_RECORD];
 async function harness(barber = NIKOLAY, options: TeamBedOptions = {}) {
   const bed = teamBed({ members: TEAM, barbers: RECORDS, ...options });
   TestBed.configureTestingModule({
-    providers: [...bed.providers, TeamMemberStore],
+    providers: [...bed.providers, TeamRolesStore, TeamMemberStore],
   });
   const store = TestBed.inject(TeamMemberStore);
   const team = TestBed.inject(TeamStore);

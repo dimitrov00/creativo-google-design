@@ -3,6 +3,7 @@ export * from './access-target.data';
 export * from './access-verdict.data';
 export * from './account-occupant.data';
 export * from './account-seat.data';
+export * from './account-standing.data';
 export * from './account-status.data';
 export * from './actor.data';
 export * from './analytics-call.data';

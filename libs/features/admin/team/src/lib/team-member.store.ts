@@ -24,11 +24,7 @@ import {
   type RosterCall,
 } from '@core/components';
 import type { Barber, BarberSchedule, ShopLocation } from '@core/entities';
-import {
-  GovernanceErrorCode,
-  PipelineError,
-  PipelineErrorCode,
-} from '@core/errors';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Callables, type ObserveSchedule } from '@core/ports';
 import {
   AccessScope,
@@ -61,10 +57,10 @@ import {
 import {
   GATEWAY_PORTS,
   ID_PORTS,
-  ROLES_ADMIN_PORTS,
   SCHEDULING_READ_PORTS,
   TEAM_ADMIN_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { TeamRolesStore } from './team-roles.store';
 import { TeamStore } from './team.store';
 
 /**
@@ -83,7 +79,7 @@ import { TeamStore } from './team.store';
 @Injectable()
 export class TeamMemberStore {
   private readonly ports = inject(TEAM_ADMIN_PORTS);
-  private readonly rolesPorts = inject(ROLES_ADMIN_PORTS);
+  private readonly roles = inject(TeamRolesStore);
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly ids = inject(ID_PORTS);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
@@ -98,13 +94,6 @@ export class TeamMemberStore {
   private readonly _refusal = signal<PipelineError | null>(null);
   private readonly _hoursRefusal = signal<PipelineError | null>(null);
   private readonly _wentLive = signal(false);
-  /**
-   * A link change that was WRITTEN while that person's sessions were not
-   * ended (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`): kept, so it can be
-   * sent again as it is — the server then writes nothing and ends them
-   * (S-RU-10, the client card's own retry).
-   */
-  private readonly _unrevoked = signal<RolesCall | null>(null);
   /** The record the go-live step was last asked for: one ask per ready record. */
   private askedLive: BarberId | null = null;
 
@@ -329,11 +318,11 @@ export class TeamMemberStore {
     return barber === undefined ? null : TeamSystem.accessOf(barber);
   });
 
-  /** A call is on its way. */
-  readonly pending = this._pending.asReadonly();
+  /** A call is on its way — the record's own, or a link change. */
+  readonly pending = computed(() => this._pending() || this.roles.pending());
 
   /** Why the last call was refused; `null` when it was not. */
-  readonly refusal = this._refusal.asReadonly();
+  readonly refusal = computed(() => this._refusal() ?? this.roles.refusal());
 
   /** Why the hours' last save was refused — the hours sheet's own line. */
   readonly hoursRefusal = this._hoursRefusal.asReadonly();
@@ -342,7 +331,7 @@ export class TeamMemberStore {
   readonly wentLive = this._wentLive.asReadonly();
 
   /** A link change landed, but that person's sessions were not ended: the page offers the retry. */
-  readonly sessionsPending = computed(() => this._unrevoked() !== null);
+  readonly sessionsPending = this.roles.sessionsPending;
 
   constructor() {
     // THE GO-LIVE STEP (team onboarding D9): asked once for a record in
@@ -374,7 +363,7 @@ export class TeamMemberStore {
     this._barberId.set(barberId);
     this._refusal.set(null);
     this._wentLive.set(false);
-    this._unrevoked.set(null);
+    this.roles.reset();
   }
 
   /** The profile, whole: the name, the title, the few words, Instagram, the experience. */
@@ -518,6 +507,7 @@ export class TeamMemberStore {
   /** The refusal was read, or the sheet it belonged to closed. */
   clearRefusal(): void {
     this._refusal.set(null);
+    this.roles.clearRefusal();
   }
 
   /**
@@ -525,15 +515,14 @@ export class TeamMemberStore {
    * same change again. Nothing is written twice; the server ends them.
    */
   endSessions(): Promise<boolean> {
-    const call = this._unrevoked();
-    return call === null ? Promise.resolve(false) : this.sendRoles(call);
+    return this.roles.endSessions();
   }
 
   /**
    * One account linked to the record on the page, or released from it —
    * `setRoles` with the set and the link `RoleAssignmentSystem.recordLinkOf`
    * answers. `true` once the change is WRITTEN, whether or not that
-   * person's sessions were ended.
+   * person's sessions were ended (`TeamRolesStore`).
    */
   private relink(
     targetUserId: UserId,
@@ -541,48 +530,18 @@ export class TeamMemberStore {
     linked: boolean,
   ): Promise<boolean> {
     const barberId = this._barberId();
-    if (barberId === null) return Promise.resolve(false);
+    if (barberId === null || this._pending()) return Promise.resolve(false);
     const change = RoleAssignmentSystem.recordLinkOf(
       storedRoles,
       linked ? barberId : null,
     );
-    return this.sendRoles({
+    this._refusal.set(null);
+    const call: RolesCall = {
       targetUserId,
       roles: change.roles,
       ...change.link,
-    });
-  }
-
-  /**
-   * One `setRoles` call. A change the server wrote without ending the
-   * person's sessions is no refusal of the change: it is kept for the
-   * retry, which the page offers in its own notice. The Team list is read
-   * again whatever the answer.
-   */
-  private async sendRoles(call: RolesCall): Promise<boolean> {
-    const answer = await this.act((operationId) => {
-      // The act's name rides the payload beside the call.
-      const named: RolesCall & { readonly operationId: ClientOperationId } = {
-        ...call,
-        operationId,
-      };
-      return this.rolesPorts.setRoles(named);
-    });
-    if (answer === null) return false;
-    void this.team.load();
-    if (answer.ok) {
-      this._unrevoked.set(null);
-      return true;
-    }
-    if (
-      answer.error.serverErrorCode !==
-      GovernanceErrorCode.RolesSessionsNotRevoked
-    ) {
-      return false;
-    }
-    this._unrevoked.set(call);
-    this._refusal.set(null);
-    return true;
+    };
+    return this.roles.send(call);
   }
 
   /** One part of the record, replaced whole. */
@@ -630,7 +589,7 @@ export class TeamMemberStore {
     refused: WritableSignal<PipelineError | null> = this._refusal,
   ): Promise<Result<T, PipelineError> | null> {
     const barberId = this._barberId();
-    if (barberId === null || this._pending()) return null;
+    if (barberId === null || this.pending()) return null;
     const operationId = ClientOperationId.parse(this.ids.nextId());
     if (!operationId.ok) {
       refused.set(PipelineError.bare(PipelineErrorCode.InvalidRequest));
@@ -638,6 +597,8 @@ export class TeamMemberStore {
     }
     this._pending.set(true);
     refused.set(null);
+    // A record's call is the news now: an older link refusal is not.
+    this.roles.clearRefusal();
     const answer = await dial(operationId.value, barberId);
     this._pending.set(false);
     if (!answer.ok) refused.set(answer.error);

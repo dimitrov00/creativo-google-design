@@ -1048,6 +1048,98 @@ describe('RoleAssignmentSystem.linkCandidatesOf — who a barber record may be l
   });
 });
 
+describe('RoleAssignmentSystem — an account’s ticks on the Team screen (team onboarding D8)', () => {
+  it('teamTicksOf offers the front desk, the content editor and the admin; barber only while it is held', () => {
+    expect(RoleAssignmentSystem.teamTicksOf([Role.Client])).toEqual([
+      Role.Receptionist,
+      Role.ContentManager,
+      Role.Admin,
+    ]);
+    expect(
+      RoleAssignmentSystem.teamTicksOf([Role.Receptionist, Role.Barber]),
+    ).toEqual([
+      Role.Barber,
+      Role.Receptionist,
+      Role.ContentManager,
+      Role.Admin,
+    ]);
+  });
+
+  it('teamRolesOf keeps what the account holds beside the ticks, and adds the ticked — each once, in dictionary order', () => {
+    expect(
+      RoleAssignmentSystem.teamRolesOf(
+        [Role.Receptionist, Role.Client],
+        [Role.ContentManager, Role.Receptionist, Role.ContentManager],
+      ),
+    ).toEqual([Role.Client, Role.Receptionist, Role.ContentManager]);
+    // A tick taken away is a role taken away.
+    expect(
+      RoleAssignmentSystem.teamRolesOf(
+        [Role.Client, Role.Receptionist, Role.ContentManager],
+        [Role.ContentManager],
+      ),
+    ).toEqual([Role.Client, Role.ContentManager]);
+  });
+
+  it('teamRolesOf with no tick takes the account off the team: a client, even one that held no client role', () => {
+    expect(
+      RoleAssignmentSystem.teamRolesOf([Role.Client, Role.Receptionist], []),
+    ).toEqual([Role.Client]);
+    expect(RoleAssignmentSystem.teamRolesOf([Role.Receptionist], [])).toEqual([
+      Role.Client,
+    ]);
+  });
+
+  it('teamRolesOf never sends a role the page does not offer as a tick', () => {
+    expect(
+      RoleAssignmentSystem.teamRolesOf(
+        [Role.Client],
+        [Role.Receptionist, Role.Sysadmin, Role.Client],
+      ),
+    ).toEqual([Role.Client, Role.Receptionist]);
+  });
+
+  it('teamSaveOf wants at least one tick and a set that differs from the stored one', () => {
+    const stored = [Role.Client, Role.Receptionist];
+    expect(RoleAssignmentSystem.teamSaveOf(stored, [Role.Receptionist])).toBe(
+      false,
+    );
+    expect(
+      RoleAssignmentSystem.teamSaveOf(stored, [
+        Role.Receptionist,
+        Role.ContentManager,
+      ]),
+    ).toBe(true);
+    expect(RoleAssignmentSystem.teamSaveOf(stored, [Role.Admin])).toBe(true);
+    // No tick is the other door's: «Махни от екипа» asks first.
+    expect(RoleAssignmentSystem.teamSaveOf(stored, [])).toBe(false);
+  });
+
+  it('what the page sends is a set `decide` admits', () => {
+    const stored = [Role.Client, Role.Receptionist];
+    for (const ticked of [[Role.ContentManager], [Role.Admin], []]) {
+      const requestedRoles = RoleAssignmentSystem.teamRolesOf(stored, ticked);
+      expect(
+        RoleAssignmentSystem.decide(
+          input({ target: targetUser({ roles: stored }), requestedRoles }),
+        ).ok,
+        ticked.join(),
+      ).toBe(true);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const stored = deepFreeze([Role.Client, Role.Receptionist]);
+    const ticked = deepFreeze([Role.ContentManager]);
+    expect(RoleAssignmentSystem.teamRolesOf(stored, ticked)).toEqual(
+      RoleAssignmentSystem.teamRolesOf(stored, ticked),
+    );
+    expect(RoleAssignmentSystem.teamTicksOf(stored)).toEqual(
+      RoleAssignmentSystem.teamTicksOf(stored),
+    );
+  });
+});
+
 describe('RoleAssignmentSystem.changeOf — the requested set against the stored one', () => {
   it('normalises order and duplicates; a set equal to the stored one is unchanged', () => {
     expect(

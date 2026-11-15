@@ -93,6 +93,7 @@ function barberRow(
   return {
     id: member.barberId,
     barberId: member.barberId,
+    accountUserId: null,
     name: LocalizedText.pick(member.memberName, input.locale),
     line: lineOf([...standingOf(member, input), ...noteOf(member, input)]),
     avatarSrc: input.avatars.get(member.barberId) ?? null,
@@ -111,6 +112,7 @@ function accountRow(
   return {
     id: member.memberUserId,
     barberId: null,
+    accountUserId: member.memberUserId,
     name: member.memberAccountName,
     line: roles.join(', '),
     avatarSrc: null,

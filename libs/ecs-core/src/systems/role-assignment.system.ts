@@ -96,6 +96,14 @@ const NO_LINK_CHANGE: CardLinkChange = {
   linkOffered: false,
 };
 
+/** The staff roles an account's page may tick, dictionary order ({@link RoleAssignmentSystem.teamTicksOf}). */
+const TEAM_TICKS: readonly Role[] = [
+  Role.Barber,
+  Role.Receptionist,
+  Role.ContentManager,
+  Role.Admin,
+];
+
 /** Whether `value` is one of `list` — typed `string`, so a narrower list needs no cast. */
 function holds(list: readonly string[], value: string): boolean {
   return list.includes(value);
@@ -385,6 +393,57 @@ export const RoleAssignmentSystem = {
       }
     }
     return candidates;
+  },
+
+  /**
+   * The staff roles an account's page on the Team screen offers as ticks
+   * (team onboarding D8), in dictionary order: the front desk, the content
+   * editor and the admin always; `barber` only while the account holds it
+   * — the page can take it away, but it is GIVEN by linking a barber
+   * record («Свържи профил»), as `setRoles` requires. Never the vendor's
+   * `sysadmin`, and never `client`, which is a role and no place on the
+   * team.
+   */
+  teamTicksOf(stored: readonly Role[]): readonly Role[] {
+    const ticks: Role[] = [];
+    for (let i = 0; i < TEAM_TICKS.length; i++) {
+      const role = TEAM_TICKS[i] as Role;
+      if (role !== Role.Barber || holds(stored, Role.Barber)) ticks.push(role);
+    }
+    return ticks;
+  },
+
+  /**
+   * The set `setRoles` is sent for the ticks of an account's page: what
+   * the stored set holds beside the ticks offered (`client`), then the
+   * ticked ones — each once, in dictionary order. No tick at all takes the
+   * account off the team, and an account left with no role is a `client`
+   * again: `setRoles` takes no empty set.
+   */
+  teamRolesOf(
+    stored: readonly Role[],
+    ticked: readonly Role[],
+  ): readonly Role[] {
+    const kept = stored.filter((role) => !holds(TEAM_TICKS, role));
+    const next = normalised([
+      ...kept,
+      ...ticked.filter((role) => holds(TEAM_TICKS, role)),
+    ]);
+    return next.length === 0 ? [Role.Client] : next;
+  },
+
+  /**
+   * May an account's page send its ticks: at least one — an account with
+   * none leaves the team by its own door, «Махни от екипа», which asks
+   * first — and a set that differs from the stored one.
+   */
+  teamSaveOf(stored: readonly Role[], ticked: readonly Role[]): boolean {
+    if (ticked.length === 0) return false;
+    const change = RoleAssignmentSystem.changeOf(
+      stored,
+      RoleAssignmentSystem.teamRolesOf(stored, ticked),
+    );
+    return RoleAssignmentSystem.saveOf(change, false);
   },
 
   /**

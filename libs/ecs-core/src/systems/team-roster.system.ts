@@ -1,4 +1,5 @@
 import {
+  AccountStanding,
   BarberStatus,
   RecordClaim,
   Role,
@@ -68,6 +69,22 @@ function byAccountName(a: TeamMember.RoleOnly, b: TeamMember.RoleOnly): number {
     : a.memberUserId > b.memberUserId
       ? 1
       : 0;
+}
+
+/** {@link TeamRosterSystem.accountStandingOf}, on the viewer's two facts. */
+function standingFor(
+  member: TeamMember.RoleOnly,
+  viewerUserId: UserId | null,
+  assignsRoles: boolean,
+): AccountStanding {
+  if (viewerUserId !== null && member.memberUserId === viewerUserId) {
+    return AccountStanding.Own;
+  }
+  if (member.memberRoles.includes(Role.Sysadmin)) return AccountStanding.Vendor;
+  if (viewerUserId === null || !assignsRoles) return AccountStanding.ReadOnly;
+  return member.memberAccountName.length === 0
+    ? AccountStanding.Unregistered
+    : AccountStanding.Editable;
 }
 
 /**
@@ -277,9 +294,9 @@ export const TeamRosterSystem = {
   /**
    * The staff accounts a record may be linked to without a lookup, in the
    * members' order («Свържи профил»): the ones linked to no record
-   * (`ROLE_ONLY`) that have registered (a name), hold no `sysadmin` and
-   * are not the viewer's own, whose door is «Това съм аз». The rows
-   * themselves, never copies.
+   * (`ROLE_ONLY`) whose roles someone who assigns roles could change —
+   * registered, no `sysadmin`, and not the viewer's own, whose door is
+   * «Това съм аз». The rows themselves, never copies.
    */
   unlinkedOf(
     members: readonly TeamMember[],
@@ -289,13 +306,43 @@ export const TeamRosterSystem = {
     for (const member of members) {
       if (
         member.teamMemberStatus === TeamMemberStatus.RoleOnly &&
-        member.memberUserId !== viewerUserId &&
-        member.memberAccountName.length > 0 &&
-        !member.memberRoles.includes(Role.Sysadmin)
+        standingFor(member, viewerUserId, true) === AccountStanding.Editable
       ) {
         unlinked.push(member);
       }
     }
     return unlinked;
+  },
+
+  /** The row of the staff account `userId`, or `null` when the answer holds none. */
+  accountOf(
+    members: readonly TeamMember[],
+    userId: UserId,
+  ): TeamMember.RoleOnly | null {
+    for (const member of members) {
+      if (
+        member.teamMemberStatus === TeamMemberStatus.RoleOnly &&
+        member.memberUserId === userId
+      ) {
+        return member;
+      }
+    }
+    return null;
+  },
+
+  /**
+   * What a staff account's page is to the person looking (team onboarding
+   * D8), the first that applies: their `OWN` account (its roles are not
+   * changed from the page — an owner's door to a chair is «Това съм аз»);
+   * the `VENDOR`'s (`sysadmin`, which `setRoles` never touches);
+   * `READ_ONLY` to someone who assigns no roles; `UNREGISTERED` for a
+   * person who has not finished registering (no name — `setRoles` takes no
+   * such account); else `EDITABLE`. The server stays the authority.
+   */
+  accountStandingOf(
+    member: TeamMember.RoleOnly,
+    viewer: RecordViewer,
+  ): AccountStanding {
+    return standingFor(member, viewer.userId, viewer.assignsRoles);
   },
 } as const;
