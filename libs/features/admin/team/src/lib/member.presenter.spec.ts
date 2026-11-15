@@ -16,6 +16,8 @@ import {
 } from '@core/systems';
 import { deepFreeze, localDate, locationFixture } from '@core/testing';
 import { catalogueTranslate } from './catalogue.spec-support';
+import { LinkAnswer } from './link.vm';
+import { linkWordsOf } from './link.words';
 import { type MemberPageInput, memberPageVm } from './member.presenter';
 import { DeleteAnswer, MemberEditor } from './member.vm';
 import { memberWordsOf } from './member.words';
@@ -79,11 +81,14 @@ function inputOf(
     mayEditHours: editable,
     mayEditOfferings: editable,
     deletable: TeamSystem.removable(barber).ok,
+    linksAccount: false,
+    releasesAccount: false,
     editsPermissions: true,
     permissions: StaffPermissions.UNSET,
     avatarSrc: null,
     words: teamWordsOf(catalogueTranslate(lang)),
     memberWords: memberWordsOf(catalogueTranslate(lang)),
+    linkWords: linkWordsOf(catalogueTranslate(lang)),
     locale: lang === 'bg' ? Locale.Bg : Locale.En,
     today: TODAY,
     ...over,
@@ -175,12 +180,25 @@ describe('memberPageVm — a record in preparation', () => {
     expect(vm.account).toEqual({
       isMine: false,
       isOpen: true,
+      linkable: false,
+      release: null,
       name: null,
       line: '',
       footnote:
         'Без профил Николай не влиза в приложението. Часовете се записват от екипа.',
     });
     expect(vm.levels).toEqual([]);
+  });
+
+  it('offers «Свържи профил» to someone who links accounts, and says how the person gets an account', () => {
+    const linking = memberPageVm(
+      inputOf(NIKOLAY_RECORD, { member: NIKOLAY }, { linksAccount: true }),
+    );
+    expect(linking.account?.linkable).toBe(true);
+    expect(linking.account?.release).toBeNull();
+    expect(linking.account?.footnote).toBe(
+      'Без профил Николай не влиза в приложението. Помоли Николай да влезе веднъж, после натисни „Свържи профил“.',
+    );
   });
 
   it('may be deleted, and asks first by name', () => {
@@ -227,10 +245,22 @@ describe('memberPageVm — a record in preparation', () => {
         { multiShop: true, shops: [center], everyShop: false },
       ),
     );
+    const shopsRow = named.setup.find(
+      (row) => row.staffSetupItem === StaffSetupItem.Shops,
+    );
+    expect(shopsRow?.value).not.toBe('Всички');
+    // The row is the way into «Салони» for whoever manages the team.
+    expect(shopsRow?.memberEditor).toBe(MemberEditor.Shops);
     expect(
-      named.setup.find((row) => row.staffSetupItem === StaffSetupItem.Shops)
-        ?.value,
-    ).not.toBe('Всички');
+      memberPageVm(
+        inputOf(
+          NIKOLAY_RECORD,
+          {},
+          { multiShop: true, shops: [center], mayManage: false },
+        ),
+      ).setup.find((row) => row.staffSetupItem === StaffSetupItem.Shops)
+        ?.memberEditor,
+    ).toBeNull();
   });
 });
 
@@ -261,11 +291,31 @@ describe('memberPageVm — a record at work', () => {
     expect(vm.deletable).toBe(false);
   });
 
+  it('gives a business with several shops the shops row, before the period', () => {
+    const vm = memberPageVm(
+      inputOf(IVAN_RECORD, facts, {
+        multiShop: true,
+        shops: [locationFixture()],
+      }),
+    );
+    expect(
+      vm.profile.map((row) => [row.id, row.value, row.memberEditor]),
+    ).toEqual([
+      ['profile', 'Старши бръснар', MemberEditor.Profile],
+      ['hours', 'Зададено', MemberEditor.Hours],
+      ['services', '1 услуга', MemberEditor.Offerings],
+      ['shops', 'Всички', MemberEditor.Shops],
+      ['period', 'от 3.03.2024 г.', MemberEditor.Period],
+    ]);
+  });
+
   it('names the linked account and its roles, and leads the owner to the level it holds', () => {
     const vm = memberPageVm(inputOf(IVAN_RECORD, facts));
     expect(vm.account).toEqual({
       isMine: false,
       isOpen: false,
+      linkable: false,
+      release: null,
       name: 'Иван Петров',
       line: 'Бръснар',
       footnote: null,
@@ -273,6 +323,40 @@ describe('memberPageVm — a record at work', () => {
     expect(
       vm.levels.map((link) => [link.level, link.label, link.value]),
     ).toEqual([[Role.Barber, 'Права на „Бръснар“', 'Стандартни']]);
+  });
+
+  it('asks before someone else’s account is released, and says what it costs them', () => {
+    const vm = memberPageVm(
+      inputOf(IVAN_RECORD, facts, { releasesAccount: true }),
+    );
+    expect(vm.account?.release).toEqual({
+      title: 'Да разкача ли профила на Иван Петров?',
+      message:
+        'Иван вече няма да влиза като бръснар и ще трябва да влезе отново.',
+      actions: [
+        {
+          id: LinkAnswer.Confirm,
+          label: 'Разкачи',
+          role: 'default',
+          testId: 'member-release-confirm',
+        },
+        {
+          id: LinkAnswer.Cancel,
+          label: 'Отказ',
+          role: 'cancel',
+          testId: 'member-release-cancel',
+        },
+      ],
+    });
+    const english = memberPageVm(
+      inputOf(IVAN_RECORD, { ...facts, lang: 'en' }, { releasesAccount: true }),
+    );
+    expect(english.account?.release?.title).toBe(
+      'Unlink Иван Петров’s account?',
+    );
+    expect(english.account?.release?.message).toBe(
+      'Иван will no longer sign in as a barber and will have to sign in again.',
+    );
   });
 
   it('counts how far the level departs from the standard', () => {

@@ -1,0 +1,139 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="member-shops-sheet"
+    labelledBy="member-shops-sheet-title"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="member-shops-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title>{{ t('admin.team.shops.title') }}</span>
+
+    <div class="team-page__form">
+      <ui-sheet-headline>
+        <h2
+          id="member-shops-sheet-title"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ t('admin.team.shops.title') }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ t('admin.team.shops.lede') }}
+        </p>
+      </ui-sheet-headline>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-shops-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <section class="team-page__module">
+        <ui-list-group>
+          <ui-list-row uiSize="large">
+            {{ t('admin.team.shops.every') }}
+            <button
+              uiSwitch
+              uiTrailing
+              [uiOn]="everyShop()"
+              [uiDisabled]="store.pending()"
+              [attr.aria-label]="t('admin.team.shops.every')"
+              data-testid="member-shops-every"
+              (uiOnChange)="everyShop.set($event)"
+            ></button>
+          </ui-list-row>
+        </ui-list-group>
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="team-page__footnote"
+        >
+          {{ t('admin.team.shops.everyNote') }}
+        </p>
+      </section>
+
+      <!-- THE SHOPS, once «Всички салони» is off: a tick per shop (a save
+           stands between the tick and the change, so not a switch). A shop
+           the roster still has hours at keeps its tick, and says why. -->
+      @if (!everyShop()) {
+      <section class="team-page__module">
+        <ul
+          uiListGroup
+          [attr.aria-label]="t('admin.team.shops.title')"
+          data-testid="member-shops-list"
+        >
+          @for (row of rows(); track row.locationId) {
+          <li>
+            <button
+              uiListRow
+              uiSize="large"
+              type="button"
+              role="checkbox"
+              [uiInteractive]="!row.held"
+              [uiSelected]="row.picked"
+              [attr.aria-checked]="row.picked"
+              [attr.aria-disabled]="row.held ? 'true' : null"
+              [attr.data-testid]="row.testId"
+              (click)="toggle(row)"
+            >
+              <ui-stack uiSpacing="tight" class="team-page__identity">
+                <span>{{ row.name }}</span>
+                @if (row.held) {
+                <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                  >{{ t('admin.team.shops.held') }}</span
+                >
+                }
+              </ui-stack>
+              <span uiTrailing>
+                @if (row.picked) {
+                <ui-icon
+                  uiName="checklist.done"
+                  [uiForegroundStyle]="row.held ? 'secondary' : 'accent'"
+                  aria-hidden="true"
+                />
+                }
+              </span>
+            </button>
+          </li>
+          }
+        </ul>
+        @if (noneTicked()) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="team-page__footnote"
+          data-testid="member-shops-pick-one"
+        >
+          {{ t('admin.team.shops.pickOne') }}
+        </p>
+        }
+      </section>
+      }
+    </div>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSave() || store.pending()"
+        data-testid="member-shops-save"
+        (click)="save()"
+      >
+        {{ t('admin.team.shops.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

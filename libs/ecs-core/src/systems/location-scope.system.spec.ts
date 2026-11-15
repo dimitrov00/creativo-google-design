@@ -131,6 +131,31 @@ describe('LocationScopeSystem.isMultiShop — shops to tell apart', () => {
   });
 });
 
+describe('LocationScopeSystem.sameScope — the same shops, in whatever order', () => {
+  it('holds for the same shops in another order, and for "every shop" against itself', () => {
+    expect(
+      LocationScopeSystem.sameScope([CENTER, MLADOST], [MLADOST, CENTER]),
+    ).toBe(true);
+    expect(LocationScopeSystem.sameScope([], [])).toBe(true);
+  });
+
+  it('fails when a shop differs — and "every shop" is not a list of every shop', () => {
+    expect(LocationScopeSystem.sameScope([CENTER], [MLADOST])).toBe(false);
+    expect(LocationScopeSystem.sameScope([CENTER], [CENTER, MLADOST])).toBe(
+      false,
+    );
+    expect(LocationScopeSystem.sameScope([], [CENTER, MLADOST])).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const a = deepFreeze([CENTER, MLADOST]);
+    const b = deepFreeze([MLADOST, CENTER]);
+    expect(LocationScopeSystem.sameScope(a, b)).toBe(
+      LocationScopeSystem.sameScope(a, b),
+    );
+  });
+});
+
 describe('LocationScopeSystem — pass C purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const barber = deepFreeze({ locationIds: [MLADOST, CENTER] });

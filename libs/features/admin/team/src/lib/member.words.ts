@@ -30,6 +30,8 @@ export type MemberWords = {
   readonly mine: string;
   /** «Без профил Николай не влиза в приложението…» */
   readonly accountNone: (name: string) => string;
+  /** The same, for someone who links accounts: «…Помоли Николай да влезе веднъж…» */
+  readonly accountLink: (name: string) => string;
   readonly accountMine: string;
   /** «Права на „Бръснар“» */
   readonly levelRow: (level: string) => string;
@@ -80,6 +82,7 @@ export function memberWordsOf(translate: Translate): MemberWords {
     ),
     mine: at('mine'),
     accountNone: (name) => at('accountNone', { name }),
+    accountLink: (name) => at('accountLink', { name }),
     accountMine: at('accountMine'),
     levelRow: (level) => at('levelRow', { level }),
     deleteTitle: (name) => at('deleteTitle', { name }),

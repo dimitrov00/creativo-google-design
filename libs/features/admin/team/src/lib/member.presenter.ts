@@ -11,6 +11,8 @@ import type { Barber, ShopLocation } from '@core/entities';
 import type { LocalDate, Locale } from '@core/primitives';
 import type { StaffSetupChecklist, StaffSetupEntry } from '@core/systems';
 import { shopNameOf } from '@creativo/features/shared/catalog';
+import { releaseQuestionVm } from './link-question.presenter';
+import type { LinkWords } from './link.words';
 import {
   DeleteAnswer,
   type LevelLinkVm,
@@ -66,6 +68,10 @@ export type MemberPageInput = {
   readonly mayEditOfferings: boolean;
   /** They may delete it (`TeamSystem.removable`, and they manage the team). */
   readonly deletable: boolean;
+  /** `TeamRosterSystem.linksAccount` — «Свържи профил» is theirs to offer. */
+  readonly linksAccount: boolean;
+  /** `TeamRosterSystem.releasesAccount` — «Разкачи профила» is theirs to offer. */
+  readonly releasesAccount: boolean;
   /** They edit «Права»: the way to a level's page is theirs. */
   readonly editsPermissions: boolean;
   /** The cells in force, for how far a level departs from the standard. */
@@ -73,6 +79,7 @@ export type MemberPageInput = {
   readonly avatarSrc: string | null;
   readonly words: TeamWords;
   readonly memberWords: MemberWords;
+  readonly linkWords: LinkWords;
   readonly locale: Locale;
   /** The shop's today; `null` until its zone is known (a date then carries its year). */
   readonly today: LocalDate | null;
@@ -164,6 +171,7 @@ function setupRow(
       break;
     case StaffSetupItem.Shops:
       value = shopsValue(input);
+      memberEditor = input.mayManage ? MemberEditor.Shops : null;
       break;
     case StaffSetupItem.Services:
       value = servicesValue(input);
@@ -220,6 +228,16 @@ function profileRows(
       testId: 'member-row-services',
     });
   }
+  // A one-shop business has no shops to tell apart, and no row for them.
+  if (!isDraft && input.multiShop) {
+    rows.push({
+      id: 'shops',
+      label: memberWords.items.get(StaffSetupItem.Shops) ?? '',
+      value: shopsValue(input),
+      memberEditor: input.mayManage ? MemberEditor.Shops : null,
+      testId: 'member-row-shops',
+    });
+  }
   rows.push({
     id: 'period',
     label: memberWords.periodRow,
@@ -248,16 +266,24 @@ function accountOf(input: MemberPageInput): MemberAccountVm | null {
     ...(mine ? [memberWords.mine] : []),
     rolesLine(member, input.words),
   ].filter((fact) => fact.length > 0);
+  const first = firstWord(nameOf(input));
   return {
     isMine: mine,
     isOpen: recordClaim === RecordClaim.Open,
+    linkable: input.linksAccount,
+    release:
+      input.releasesAccount && member.memberAccountName !== null
+        ? releaseQuestionVm(member.memberAccountName, input.linkWords)
+        : null,
     name: member.memberAccountName,
     line: facts.join(' · '),
     footnote: mine
       ? memberWords.accountMine
-      : member.memberUserId === null
-        ? memberWords.accountNone(firstWord(nameOf(input)))
-        : null,
+      : member.memberUserId !== null
+        ? null
+        : input.linksAccount
+          ? memberWords.accountLink(first)
+          : memberWords.accountNone(first),
   };
 }
 

@@ -965,6 +965,18 @@ export async function removeAddedBarber(barberId: string): Promise<void> {
 }
 
 /**
+ * Removes a `users/{uid}` profile a spec seeded for itself — for a case
+ * that changed the account's roles and stopped before putting them back,
+ * so no other spec's Team list ever meets it as a member of staff.
+ */
+export async function removeUserProfile(uid: string): Promise<void> {
+  await getFirestore(adminApp())
+    .collection(Collections.Users)
+    .doc(uid)
+    .delete();
+}
+
+/**
  * Puts the owner's permissions back on the standard: deletes
  * `settings/staffPermissions` (no document is every default). A spec that
  * changes a cell calls it when it is done — the document is the whole

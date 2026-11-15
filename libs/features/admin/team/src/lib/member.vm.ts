@@ -1,5 +1,6 @@
 import type { StaffLevel, StaffSetupItem } from '@core/components';
 import type { BarberId } from '@core/primitives';
+import type { LinkQuestionVm } from './link.vm';
 
 /**
  * The editor a row of a member's page opens — the field `memberEditor`,
@@ -14,6 +15,10 @@ export const MemberEditor = {
   Hours: 'HOURS',
   /** What the record performs, and at what price. */
   Offerings: 'OFFERINGS',
+  /** The shops the record works at. */
+  Shops: 'SHOPS',
+  /** «Свържи профил» — whose account the record is. */
+  Link: 'LINK',
 } as const;
 export type MemberEditor = (typeof MemberEditor)[keyof typeof MemberEditor];
 
@@ -77,6 +82,13 @@ export type MemberAccountVm = {
   readonly isMine: boolean;
   /** Nobody is linked and the viewer may take it: «Това съм аз» is offered. */
   readonly isOpen: boolean;
+  /** Nobody is linked and the viewer links accounts: «Свържи профил» is offered. */
+  readonly linkable: boolean;
+  /**
+   * The question before someone else's account is released («Разкачи
+   * профила»); `null` when that is not the viewer's to do.
+   */
+  readonly release: LinkQuestionVm | null;
   /** The linked account's name; `null` when nobody is linked. */
   readonly name: string | null;
   /** «Твоят профил · Администратор, Бръснар» */

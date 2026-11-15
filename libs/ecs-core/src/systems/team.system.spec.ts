@@ -234,6 +234,32 @@ describe('TeamSystem.setShops', () => {
   });
 });
 
+describe('TeamSystem.rosteredShops — the shops a roster still has hours at', () => {
+  it('names the shops of the versions still in force, each once', () => {
+    expect(
+      TeamSystem.rosteredShops(barberScheduleFixture(), FIXTURE_TODAY),
+    ).toEqual([CENTER]);
+  });
+
+  it('names none for no roster, or once every version ended before today', () => {
+    expect(TeamSystem.rosteredShops(null, FIXTURE_TODAY)).toEqual([]);
+    const ended = barberScheduleFixture({
+      versions: barberScheduleFixture().versions.map((version) => ({
+        ...version,
+        effectiveToLocalDate: localDate('2026-09-27'),
+      })),
+    });
+    expect(TeamSystem.rosteredShops(ended, FIXTURE_TODAY)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const schedule = deepFreeze(barberScheduleFixture());
+    expect(TeamSystem.rosteredShops(schedule, FIXTURE_TODAY)).toEqual(
+      TeamSystem.rosteredShops(schedule, FIXTURE_TODAY),
+    );
+  });
+});
+
 describe('TeamSystem.setPeriod / setPool', () => {
   it('sets the working period, refusing a last day before the start', () => {
     const next = unwrapOk(

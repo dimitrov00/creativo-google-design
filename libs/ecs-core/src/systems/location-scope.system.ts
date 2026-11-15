@@ -64,6 +64,19 @@ export const LocationScopeSystem = {
   },
 
   /**
+   * Do two scopes name the same shops, in whatever order — "every shop"
+   * (empty) only the same as itself? What a shops editor asks before it
+   * offers its save.
+   */
+  sameScope(a: readonly LocationId[], b: readonly LocationId[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!b.includes(a[i] as LocationId)) return false;
+    }
+    return true;
+  },
+
+  /**
    * Are there shops to tell apart — more than one? A visit names its shop
    * only then (the visit sheet's «Салон» row, `uiShops().length > 1`).
    */
