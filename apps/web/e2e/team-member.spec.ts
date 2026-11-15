@@ -881,13 +881,28 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
       timeout: 30_000,
     });
-    // The leaver's page still says the booking they hold, and lists it —
-    // as text: a barber who has left has no column on the schedule yet.
+    // The leaver's page still says the booking they hold, and lists it.
+    // The row opens its day on the schedule, where the leaver keeps a
+    // column while they are booked: the visit is there to move or cancel.
     await expect(page.getByTestId('member-leftover')).toContainText(
       'още има 1 запис',
       { timeout: 30_000 },
     );
-    await expect(page.getByTestId(`history-row-${bookedVisit}`)).toBeVisible({
+    await page.locator(`[data-appointment-id="${bookedVisit}"]`).click();
+    await expect
+      .poll(
+        () => {
+          const url = new URL(page.url());
+          return `${url.pathname} ${url.searchParams.get('day')}`;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(`/staff/schedule ${bookedDay}`);
+    await expect(
+      page.locator(`[data-row-id^="${bookedVisit}"]`).first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.goto(`/admin/team/member/${added}`, { waitUntil: 'commit' });
+    await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
       timeout: 30_000,
     });
     await page.getByTestId('member-return').click();

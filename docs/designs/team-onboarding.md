@@ -1202,11 +1202,37 @@ and a leaver's page keeps showing them until none is left.
   `bookingStatus`. The system keeps the live ones, so a booking awaiting
   confirmation counts too, and no composite index is added.
 
-**1b, still to build.** The leftover lane on the schedule (a leaver's
-bookings are listed on their page and each links to its day, but their
-column is not drawn on that day yet); the reminder cards; and the Team page's notices for a leaver
-whose access is not stopped yet and for an admin whose role has to be
-removed by hand.
+**1b, built so far: the leaver's column on the schedule.** A barber who has
+left keeps a column on the days they are still booked, so the visits left
+behind can be opened, moved or cancelled where every other visit is.
+
+- `EmploymentSystem.lingerCandidates` names the leavers a schedule looks
+  at: the `DEPARTED` records whose last working day is no more than 400
+  days back (`LINGER_DAYS`, as far ahead as anybody is booked).
+- When the schedule opens it reads each of them once (`loadLingeringKeys`:
+  one query per leaver on the busy projection's `(barberId, localDate)`
+  index, from the day after the last day worked). Moving through the days
+  reads nothing more about who has left.
+- `EmploymentSystem.lingeringOn` picks the leavers booked on a day shown;
+  the store appends them after the working chairs. A column is drawn only
+  for a chair that holds a visit that day, so once the last one is moved
+  the column goes; a leaver is never listed as resting.
+- A link may name a leaver (`?barber=`): the scope stays on their chair.
+  The leftover rows on a leaver's page are links again, to
+  `/staff/schedule?day=…&barber=…`.
+- A leaver's visits wear the schedule's own «outside working hours» mark:
+  they have no hours any more.
+- If the read of their days fails, no leaver's column is drawn. The visits
+  are still found by the search.
+- Where this departs from D10 as written: the column is per view, not per
+  day. In a three-day or a week view a leaver booked on one of the days
+  has a column on all of them, as any chair does.
+- The ports are split so the pipeline names what it reads:
+  `BarberAheadPorts = BusyDaysAheadPorts & BarberDayReadPorts`.
+
+**1b, still to build.** The reminder cards; and the Team page's notices
+for a leaver whose access is not stopped yet and for an admin whose role
+has to be removed by hand.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 

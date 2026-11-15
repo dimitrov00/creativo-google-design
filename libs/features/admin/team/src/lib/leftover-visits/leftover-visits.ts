@@ -42,11 +42,10 @@ import { leftoverSectionsVm } from '../leftover-visits.presenter';
  * them, and on the page of a barber who has left.
  *
  * It is the app's own visit list (`lib-visit-list`, the staff search's
- * rows): the date stamp, what and when, and who the shop would call. Where
- * the barber still has a column on the schedule (`uiLinked`) a row is a
- * control: it opens the schedule on that visit's day, on this barber's
- * column, where the visit is moved or cancelled. A barber who has left has
- * no column yet, so their rows are read, not pressed.
+ * rows): the date stamp, what and when, and who the shop would call. A row
+ * is a control (`uiLinked`): it opens the schedule on that visit's day, on
+ * this barber's column, where the visit is moved or cancelled — a barber
+ * who has left keeps a column there on the days they are still booked.
  *
  * The list is handed in (`EmploymentSystem.leftoverVisitsOf`'s answer):
  * this component reads no visit and decides nothing about them. Loaded on
@@ -85,10 +84,7 @@ export class LeftoverVisits {
   readonly uiVisits = input.required<readonly Appointment[]>();
   /** Whose visits they are: the column the schedule opens on. */
   readonly uiBarberId = input.required<BarberId>();
-  /**
-   * A row opens its day on the schedule. Only where the barber has a
-   * column there — a record that still works; off, the rows are text.
-   */
+  /** A row opens its day on the schedule; off, the rows are text. */
   readonly uiLinked = input(false);
 
   protected readonly VisitPerspective = VisitPerspective;

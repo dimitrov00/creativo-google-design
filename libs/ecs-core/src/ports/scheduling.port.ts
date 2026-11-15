@@ -501,14 +501,25 @@ export type LoadBarberDay = (
 ) => Promise<Result<readonly Appointment[], RepositoryError>>;
 
 /**
+ * The days one barber is booked on, from a day on — what the schedule
+ * reads to know which days a barber who has left still needs a column on
+ * (team onboarding D10, the leftover lane).
+ */
+export type BusyDaysAheadPorts = {
+  readonly loadBusyDaysFrom: LoadBusyDaysFrom;
+};
+
+/** One barber's day of visits, read once. */
+export type BarberDayReadPorts = {
+  readonly loadBarberDay: LoadBarberDay;
+};
+
+/**
  * What lies ahead of one barber — `BARBER_AHEAD_PORTS`: the days they are
  * booked on and a day's visits, read once each. The period sheet's read of
  * the bookings a last working day would leave behind (team onboarding D10).
  */
-export type BarberAheadPorts = {
-  readonly loadBusyDaysFrom: LoadBusyDaysFrom;
-  readonly loadBarberDay: LoadBarberDay;
-};
+export type BarberAheadPorts = BusyDaysAheadPorts & BarberDayReadPorts;
 
 /** One visit, a barber's day and the staff search window. */
 export type StaffAppointmentReadPorts = {

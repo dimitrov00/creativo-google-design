@@ -384,6 +384,88 @@ describe('EmploymentSystem — the bookings a last day leaves behind', () => {
   });
 });
 
+describe('EmploymentSystem.lingerCandidates / lingeringOn — the leavers a schedule still keeps a column for', () => {
+  const ON = localDate('2026-11-16');
+  /** A record that left, its last working day `last`. */
+  const left = (id: string, last: string | null) =>
+    barberFixture(
+      {
+        id: BarberId.of(id),
+        barberLastWorkingLocalDate: last === null ? null : localDate(last),
+      },
+      BarberLifecycle.depart(NOW, null, BarberStatus.Public),
+    );
+
+  it('names the records that have left within the horizon — never one that works, one in preparation, or one that left with no last day', () => {
+    const recent = left('recent', '2026-11-10');
+    const edge = left('edge', '2025-10-12');
+    const candidates = EmploymentSystem.lingerCandidates(
+      [
+        barberFixture({
+          id: BarberId.of('works'),
+          barberLastWorkingLocalDate: localDate('2026-11-10'),
+        }),
+        recent,
+        left('long-gone', '2025-10-11'),
+        left('no-day', null),
+        edge,
+        barberFixture(
+          {
+            id: BarberId.of('draft'),
+            barberLastWorkingLocalDate: localDate('2026-11-10'),
+          },
+          BarberLifecycle.draft(NOW, BarberStatus.Public),
+        ),
+      ],
+      ON,
+    );
+    // 400 days back from today is 2025-10-12: that day still counts.
+    expect(candidates).toEqual([recent, edge]);
+  });
+
+  it('keeps a column for a leaver booked on one of the days shown, in the order given — and for no other', () => {
+    const stefan = left('stefan', '2026-11-10');
+    const georgi = left('georgi', '2026-11-12');
+    const held = new Set([
+      BusyKey.of(stefan.id, localDate('2026-11-18')),
+      BusyKey.of(georgi.id, localDate('2026-12-02')),
+    ]);
+
+    expect(
+      EmploymentSystem.lingeringOn([stefan, georgi], held, [
+        localDate('2026-11-17'),
+        localDate('2026-11-18'),
+      ]),
+    ).toEqual([stefan]);
+    expect(
+      EmploymentSystem.lingeringOn([stefan, georgi], held, [
+        localDate('2026-11-18'),
+        localDate('2026-12-02'),
+      ]),
+    ).toEqual([stefan, georgi]);
+    expect(
+      EmploymentSystem.lingeringOn([stefan, georgi], held, [
+        localDate('2026-11-19'),
+      ]),
+    ).toEqual([]);
+    expect(EmploymentSystem.lingeringOn([stefan], new Set(), [])).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const leavers = deepFreeze([left('stefan', '2026-11-10')]);
+    const days = deepFreeze([localDate('2026-11-18')]);
+    const held = new Set([
+      BusyKey.of(BarberId.of('stefan'), localDate('2026-11-18')),
+    ]);
+    expect(EmploymentSystem.lingerCandidates(leavers, ON)).toEqual(
+      EmploymentSystem.lingerCandidates(leavers, ON),
+    );
+    expect(EmploymentSystem.lingeringOn(leavers, held, days)).toEqual(
+      EmploymentSystem.lingeringOn(leavers, held, days),
+    );
+  });
+});
+
 describe('EmploymentSystem.rosterOnReturn — the week a barber last worked, standing again', () => {
   const START = localDate('2026-12-01');
 

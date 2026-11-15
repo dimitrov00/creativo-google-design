@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {} from '@creativo/infrastructure/firebase-app';
 import {
   AppointmentId,
+  BarberId,
   BookingStatus,
+  BusyKey,
   CouponGrantId,
   CouponId,
   CustomerId,
@@ -24,6 +26,8 @@ import {
   RepositoryError,
 } from '@core/errors';
 import {
+  BarberLifecycle,
+  BarberStatus,
   type BookingCall,
   ClientIssueKind,
   Combinability,
@@ -51,6 +55,8 @@ import {
   type GatewayScript,
   appointmentFixture,
   at,
+  barberBusyDayFixture,
+  barberFixture,
   barberScheduleFixture,
   localDate,
   locationFixture,
@@ -453,6 +459,145 @@ describe('StaffDayStore — a chair whose day was not read in full (OR-2)', () =
     const { store } = await build({ barberDay: failing });
     expect(store.lanes()[0]?.failed).toBe(true);
     expect(store.offToday()).toEqual([]);
+  });
+});
+
+describe('StaffDayStore — a barber who has left keeps a column on the days they are still booked (team onboarding D10)', () => {
+  const STEFAN = BarberId.of('stefan');
+  /** The harness's today, a Wednesday. */
+  const TODAY = localDate('2026-08-05');
+  const FRIDAY = localDate('2026-08-07');
+  /** Stefan, who left: the last day he worked was the Saturday before. */
+  const left = (last: string) =>
+    barberFixture(
+      {
+        id: STEFAN,
+        locationIds: [CENTER],
+        barberLastWorkingLocalDate: localDate(last),
+      },
+      BarberLifecycle.depart(
+        utcMs('2026-08-02T09:00:00.000+03:00'),
+        null,
+        BarberStatus.Public,
+      ),
+    );
+  const ivan = barberFixture({ id: IVAN, locationIds: [CENTER] });
+  const stefan = left('2026-08-01');
+  /** A visit still booked with Stefan on `day`. */
+  const visitOn = (day: LocalDate) =>
+    appointmentFixture({
+      id: AppointmentId.of(`apt-left-${day}`),
+      localDate: day,
+      barberIds: [STEFAN],
+      busyKeys: [BusyKey.of(STEFAN, day)],
+    });
+  /** Stefan's chair holds a visit on `day`; every other chair's day is empty. */
+  const bookedOn =
+    (day: LocalDate): ObserveBarberDay =>
+    (key) =>
+      of(
+        Result.ok({
+          appointments: key === BusyKey.of(STEFAN, day) ? [visitOn(day)] : [],
+          unreadableCount: 0,
+        }),
+      );
+  const busyOn = (day: LocalDate) =>
+    barberBusyDayFixture({ barberId: STEFAN, localDate: day });
+  const chairs = (store: StaffDayStore) =>
+    store.lanes().map((lane) => lane.barberId);
+
+  it('draws the leaver’s column on a day they are booked on, after the working chairs — their days read once, from the day after the last', async () => {
+    const aheadAsked: { barberId: BarberId; fromLocalDate: string }[] = [];
+    const { store } = await build({
+      barbers: [ivan, stefan],
+      busyDays: [busyOn(TODAY)],
+      barberDay: bookedOn(TODAY),
+      aheadAsked,
+    });
+
+    expect(chairs(store)).toEqual([IVAN, STEFAN]);
+    // A column is drawn for whoever holds a visit: Stefan's, though he has
+    // no hours any more.
+    expect(store.workingLanes().map((lane) => lane.barberId)).toEqual([STEFAN]);
+    expect(
+      store.workingLanes()[0]?.appointments.map((visit) => visit.id),
+    ).toEqual([`apt-left-${TODAY}`]);
+    expect(aheadAsked).toEqual([
+      { barberId: STEFAN, fromLocalDate: '2026-08-02' },
+    ]);
+  });
+
+  it('draws no column for them on a day they hold nothing — and never calls them off — until the day shown is one they are booked on', async () => {
+    const aheadAsked: { barberId: BarberId; fromLocalDate: string }[] = [];
+    const { store } = await build({
+      barbers: [ivan, stefan],
+      busyDays: [busyOn(FRIDAY)],
+      barberDay: bookedOn(FRIDAY),
+      aheadAsked,
+    });
+    expect(chairs(store)).toEqual([IVAN]);
+    // Ivan is rostered nowhere today: he rests. Stefan is simply not here.
+    expect(store.offToday()).toEqual([IVAN]);
+
+    store.goToDay(FRIDAY);
+    await settle();
+
+    expect(chairs(store)).toEqual([IVAN, STEFAN]);
+    expect(store.offToday()).toEqual([IVAN]);
+    // Moving through the days reads nothing more about who has left.
+    expect(aheadAsked).toHaveLength(1);
+  });
+
+  it('once their last visit of the day is gone, the column is not drawn and they are not called off', async () => {
+    const { store } = await build({
+      barbers: [ivan, stefan],
+      // The projection still names the day: the visit was moved since.
+      busyDays: [busyOn(TODAY)],
+    });
+    expect(chairs(store)).toEqual([IVAN, STEFAN]);
+    expect(store.workingLanes()).toEqual([]);
+    expect(store.offToday()).toEqual([IVAN]);
+  });
+
+  it('reads nothing about someone who left longer ago than anybody is booked ahead', async () => {
+    const aheadAsked: { barberId: BarberId; fromLocalDate: string }[] = [];
+    const { store } = await build({
+      barbers: [ivan, left('2025-06-30')],
+      busyDays: [busyOn(TODAY)],
+      aheadAsked,
+    });
+    expect(chairs(store)).toEqual([IVAN]);
+    expect(aheadAsked).toEqual([]);
+  });
+
+  it('draws no leaver’s column when their days cannot be read', async () => {
+    const { store } = await build({
+      barbers: [ivan, stefan],
+      busyDays: [busyOn(TODAY)],
+      barberDay: bookedOn(TODAY),
+      aheadFails: true,
+    });
+    expect(chairs(store)).toEqual([IVAN]);
+  });
+
+  it('a link that names the leaver stays on their chair — and one that names nobody still falls back to everyone', async () => {
+    const { store, router } = await build({
+      barbers: [ivan, stefan],
+      busyDays: [busyOn(TODAY)],
+      barberDay: bookedOn(TODAY),
+      url: '/?barber=stefan',
+    });
+    store.applyRouteBarber('stefan');
+    await settle();
+
+    expect(store.scope()).toBe(STEFAN);
+    expect(chairs(store)).toEqual([STEFAN]);
+    expect(router.url).toContain('barber=stefan');
+
+    store.applyRouteBarber('nobody');
+    await settle();
+    expect(store.scope()).toBeNull();
+    expect(chairs(store)).toEqual([IVAN, STEFAN]);
   });
 });
 
