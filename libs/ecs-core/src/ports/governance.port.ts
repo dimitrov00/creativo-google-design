@@ -115,6 +115,14 @@ export type DeleteDraftBarber = Callable<TeamCall.Named, TeamCall.Saved>;
 export type ActivateBarber = Callable<TeamCall.Named, TeamCall.Activation>;
 
 /**
+ * `setBarberPhoto` — a barber's ONE photo replaced from a picture the
+ * caller staged (`StagedUploadPorts`), for whoever `TEAM_PROFILES` reaches
+ * the record for. The server copies it into the shop's media and onto the
+ * linked account's avatar.
+ */
+export type SetBarberPhoto = Callable<TeamCall.Photo, TeamCall.Saved>;
+
+/**
  * `setStaffPermissions` — the owner's save of what a staff level may do
  * (staff permissions P6): the cells wanted in; the cells that really
  * changed out, each with its scope before and after.
@@ -166,17 +174,22 @@ export type StaffPermissionsSavePorts = {
   readonly setStaffPermissions: SaveStaffPermissions;
 };
 
-/**
- * A barber record's writes — the add sheet's and the member page's
- * (team onboarding D5, D8, D9).
- */
-export type TeamRecordPorts = {
+/** A barber record added, edited part by part, taken live and deleted (team onboarding D5, D8, D9). */
+export type BarberRecordPorts = {
   readonly addBarber: AddBarber;
   readonly editBarber: EditBarber;
   readonly setBarberOfferings: SetBarberOfferings;
   readonly deleteDraftBarber: DeleteDraftBarber;
   readonly activateBarber: ActivateBarber;
 };
+
+/** A barber's one photo set from a staged picture — what `changeBarberPhoto` dials. */
+export type BarberPhotoCallPorts = {
+  readonly setBarberPhoto: SetBarberPhoto;
+};
+
+/** A barber record's writes — the add sheet's and the member page's. */
+export type TeamRecordPorts = BarberRecordPorts & BarberPhotoCallPorts;
 
 /** The Team screens' calls — ONE token, `TEAM_ADMIN_PORTS` (web), `teamAdminPorts(gateway)`. */
 export type TeamAdminPorts = TeamListPorts &

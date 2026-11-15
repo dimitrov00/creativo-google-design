@@ -58,6 +58,8 @@ const WRITTEN_PREFIXES: readonly string[] = [
   ...[ACTIVE, ERASED, BLOCKED, NO_ACCOUNT].map((uid) => `avatars/${uid}`),
   `appointmentPhotos/${APPOINTMENT}`,
   `unlisted/${ACTIVE}`,
+  `staffUploads/${BARBER}`,
+  `media/barbers/${RUN}`,
 ];
 
 /** The eight bytes of the PNG signature — an image body as small as can be. */
@@ -246,6 +248,83 @@ describe('storage.rules (emulator)', () => {
     const client = signedIn(ACTIVE, Role.Client);
     await assertFails(upload(client, photo, PNG, IMAGE.contentType));
     await assertFails(client.storage(BUCKET).ref(photo).getMetadata());
+  });
+
+  describe('a staged upload (the barber photo, one photo per barber)', () => {
+    const staged = `staffUploads/${BARBER}/staged-${RUN}`;
+
+    it('lets a staff member stage an image under their own uid, and delete it', async () => {
+      const barber = signedIn(BARBER, Role.Barber);
+      await assertSucceeds(upload(barber, staged, PNG, IMAGE.contentType));
+      await assertSucceeds(barber.storage(BUCKET).ref(staged).delete());
+      // Every staff level may edit some profile: the content editor too.
+      await assertSucceeds(
+        upload(
+          signedIn(BARBER, Role.ContentManager),
+          staged,
+          PNG,
+          IMAGE.contentType,
+        ),
+      );
+    });
+
+    it('lets nobody read a staged file — not its owner, not the admin', async () => {
+      await seedObject(staged);
+      for (const ctx of [
+        signedIn(BARBER, Role.Barber),
+        signedIn(ACTIVE, Role.Admin),
+        testEnv.unauthenticatedContext(),
+      ]) {
+        await assertFails(ctx.storage(BUCKET).ref(staged).getMetadata());
+        await assertFails(ctx.storage(BUCKET).ref(staged).getDownloadURL());
+      }
+    });
+
+    it('refuses a client, another account’s folder and an anonymous upload', async () => {
+      await assertFails(
+        upload(signedIn(BARBER, Role.Client), staged, PNG, IMAGE.contentType),
+      );
+      await assertFails(
+        upload(signedIn(ACTIVE, Role.Admin), staged, PNG, IMAGE.contentType),
+      );
+      await assertFails(
+        upload(
+          testEnv.unauthenticatedContext(),
+          staged,
+          PNG,
+          IMAGE.contentType,
+        ),
+      );
+    });
+
+    it('refuses a body of 5 MiB and a body that is not an image', async () => {
+      const barber = signedIn(BARBER, Role.Barber);
+      await assertFails(upload(barber, staged, FIVE_MIB, IMAGE.contentType));
+      await assertFails(upload(barber, staged, PNG, 'application/pdf'));
+    });
+  });
+
+  describe('the media library', () => {
+    const photo = `media/barbers/${RUN}/photo-${RUN}`;
+
+    it('lets anyone who holds a path fetch it, and nobody list or write', async () => {
+      await seedObject(photo);
+      const anyone = testEnv.unauthenticatedContext();
+      await assertSucceeds(anyone.storage(BUCKET).ref(photo).getMetadata());
+      // A barber in preparation is staff-only: its photo's name is not found by listing.
+      await assertFails(
+        anyone.storage(BUCKET).ref(`media/barbers/${RUN}`).listAll(),
+      );
+      await assertFails(
+        signedIn(ACTIVE, Role.Admin)
+          .storage(BUCKET)
+          .ref(`media/barbers/${RUN}`)
+          .listAll(),
+      );
+      await assertFails(
+        upload(signedIn(ACTIVE, Role.Admin), photo, PNG, IMAGE.contentType),
+      );
+    });
   });
 
   it('denies a path no rule names', async () => {

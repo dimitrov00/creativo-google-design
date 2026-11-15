@@ -36,11 +36,12 @@ import type {
   ProgramsPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
-  StaffPermissionsStreamPorts,
-  TeamAdminPorts,
   ShopEventReadPorts,
+  StaffPermissionsStreamPorts,
+  StagedUploadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
+  TeamAdminPorts,
   TeamBarberPorts,
   TimerPorts,
   UserSearchPorts,
@@ -299,6 +300,11 @@ export const FLAGS_PORTS = new InjectionToken<FlagsPorts>('FLAGS_PORTS', {
 
 /** A person's avatar in Storage (`AvatarPorts`) — lazy. */
 export const AVATAR_PORTS = new InjectionToken<AvatarPorts>('AVATAR_PORTS');
+
+/** A picture staged for a callable (`stagedUploadPorts`) — the barber's photo. */
+export const STAGED_UPLOAD_PORTS = new InjectionToken<StagedUploadPorts>(
+  'STAGED_UPLOAD_PORTS',
+);
 
 /** A catalogue image's renditions in Storage (`MediaResolvePorts`) — lazy. */
 export const MEDIA_RESOLVE_PORTS = new InjectionToken<MediaResolvePorts>(

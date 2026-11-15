@@ -562,6 +562,16 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       (fail-closed). One billed Firestore read per avatar upload.
       Source: `storage.rules` (`accountMayUpload`); security hardening §7
       item 10.
+- [ ] **Add a lifecycle rule that deletes staged uploads after one day.**
+      The team's photo picker writes a picture to
+      `staffUploads/{uid}/{name}` and the `setBarberPhoto` callable deletes
+      it once it has taken it. A picture staged by a call that never came
+      (a closed tab, a failed call) stays. On the default bucket: a
+      lifecycle rule, action Delete, condition age 1 day, prefix
+      `staffUploads/`. Nothing reads these objects, so the rule can only
+      remove leftovers.
+      Source: `storage.rules` (`staffUploads`);
+      `docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`.
 
 ### App Check (staged: OFF → MONITOR → ENFORCE)
 

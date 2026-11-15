@@ -288,6 +288,7 @@ export * from './standing-seat.data';
 export * from './standing.data';
 export * from './stats-write-decision.data';
 export * from './stood-seat-pairs.data';
+export * from './stored-object-facts.data';
 export * from './streak-capsule.data';
 export * from './streak-head-rule.data';
 export * from './streak-interval-source.data';

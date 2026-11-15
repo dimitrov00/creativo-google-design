@@ -16,6 +16,7 @@ export * from './privacy.port';
 export * from './programs.port';
 export * from './scheduling.port';
 export * from './storage.port';
+export * from './stored-object.port';
 export * from './telemetry.port';
 export * from './trigger-failure.port';
 export * from './tx.port';

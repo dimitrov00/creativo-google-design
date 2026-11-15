@@ -2,7 +2,10 @@ import { RepositoryErrorCode } from '@core/errors';
 import type { ObjectEraserPorts } from '@core/ports';
 import { PRIVACY_SENTINELS } from '@core/testing';
 import type { AdminBucket } from '../lib/firebase-admin';
-import { storageObjectPorts } from './storage-objects.adapter';
+import {
+  storageObjectPorts,
+  storedObjectCopyPorts,
+} from './storage-objects.adapter';
 
 /*
  * The erasure's Storage writes (audit-hardening Phase 3, WS-D, §4 PD3) over
@@ -324,5 +327,117 @@ describe('storage-objects adapter', () => {
         },
       });
     });
+  });
+});
+
+/*
+ * The barber photo's Storage reads and copies (`setBarberPhoto`,
+ * `docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`) over a
+ * fake bucket: an object's size and type, `null` for none; one object
+ * copied onto another path; a failure carries the canonical CODE and the
+ * path — never the SDK's message.
+ */
+describe('storage-objects adapter — the photo’s stat and copy', () => {
+  type Stored = { readonly size: unknown; readonly contentType?: unknown };
+
+  /** A bucket of `{ path: metadata }`; `failing` paths throw as Storage does. */
+  function photoBucket(
+    stored: Readonly<Record<string, Stored>>,
+    failing: readonly string[] = [],
+  ) {
+    const objects = new Map<string, Stored>(Object.entries(stored));
+    const copies: string[] = [];
+    const fileOf = (name: string) => ({
+      name,
+      getMetadata: vi.fn(async () => {
+        if (failing.includes(name)) throw storageError('storage/internal');
+        const held = objects.get(name);
+        if (held === undefined) throw noSuchObject(name);
+        return [{ name, ...held }];
+      }),
+      copy: vi.fn(async (target: { readonly name: string }) => {
+        if (failing.includes(target.name)) throw storageError(503);
+        const held = objects.get(name);
+        if (held === undefined) throw noSuchObject(name);
+        objects.set(target.name, held);
+        copies.push(`${name}→${target.name}`);
+        return [{}];
+      }),
+    });
+    return {
+      objects,
+      copies,
+      bucket: { file: vi.fn(fileOf) } as unknown as AdminBucket,
+    };
+  }
+
+  const STAGED = 'staffUploads/u-editor/a1b2c3d4-staged';
+  const PHOTO = 'media/barbers/ivan/operation-photo-0123456';
+
+  it('answers an object’s size and type — the size Storage reports as a string read as a number', async () => {
+    const { bucket } = photoBucket({
+      [STAGED]: { size: '90210', contentType: 'image/jpeg' },
+    });
+    expect(
+      await storedObjectCopyPorts(bucket).statStoredObject(STAGED),
+    ).toEqual({
+      ok: true,
+      value: { sizeBytes: 90210, contentType: 'image/jpeg' },
+    });
+  });
+
+  it('answers null for no such object, and an object with no type or size as one the guard refuses', async () => {
+    const { bucket } = photoBucket({ [PHOTO]: { size: undefined } });
+    const ports = storedObjectCopyPorts(bucket);
+    expect(await ports.statStoredObject(STAGED)).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(await ports.statStoredObject(PHOTO)).toEqual({
+      ok: true,
+      value: { sizeBytes: 0, contentType: null },
+    });
+  });
+
+  it('copies one object onto another path, replacing what was there', async () => {
+    const { bucket, objects, copies } = photoBucket({
+      [STAGED]: { size: '90210', contentType: 'image/jpeg' },
+      [PHOTO]: { size: '5', contentType: 'image/png' },
+    });
+    expect(
+      await storedObjectCopyPorts(bucket).copyStoredObject(STAGED, PHOTO),
+    ).toEqual({ ok: true, value: undefined });
+    expect(copies).toEqual([`${STAGED}→${PHOTO}`]);
+    expect(objects.get(PHOTO)).toEqual({
+      size: '90210',
+      contentType: 'image/jpeg',
+    });
+  });
+
+  it('a failed read or copy carries the code and the path, never the SDK’s words', async () => {
+    const { bucket } = photoBucket(
+      { [STAGED]: { size: '1', contentType: 'image/jpeg' } },
+      [STAGED, PHOTO],
+    );
+    const ports = storedObjectCopyPorts(bucket);
+    const read = await ports.statStoredObject(STAGED);
+    const copied = await ports.copyStoredObject(STAGED, PHOTO);
+    for (const [answer, path] of [
+      [read, STAGED],
+      [copied, PHOTO],
+    ] as const) {
+      expect(answer.ok).toBe(false);
+      expect(answer).toMatchObject({
+        error: { errorCode: RepositoryErrorCode.WriteFailed, path },
+      });
+      expect(JSON.stringify(answer)).not.toContain(PRIVACY_SENTINELS.email);
+    }
+  });
+
+  it('a source that is not there fails the copy', async () => {
+    const { bucket } = photoBucket({});
+    expect(
+      (await storedObjectCopyPorts(bucket).copyStoredObject(STAGED, PHOTO)).ok,
+    ).toBe(false);
   });
 });

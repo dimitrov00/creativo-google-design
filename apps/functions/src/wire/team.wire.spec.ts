@@ -7,6 +7,7 @@ import {
   decodeEditBarber,
   decodeListTeam,
   decodeSetBarberOfferings,
+  decodeSetBarberPhoto,
 } from './team.wire';
 
 /*
@@ -506,5 +507,61 @@ describe('decodeListTeam', () => {
     for (const roles of STAFF_TOKENS) {
       expect(decodeListTeam(callable({}, roles)).ok, String(roles)).toBe(true);
     }
+  });
+});
+
+describe('decodeSetBarberPhoto', () => {
+  const sent = {
+    barberId: 'b-ivan',
+    stagedName: 'a1b2c3d4-staged',
+    mediaWidth: 1200,
+    mediaHeight: 1600,
+    operationId: OP,
+  };
+
+  it('reads the record, the staged file’s name, its size and the act’s name beside the verified caller', () => {
+    expect(decodeSetBarberPhoto(callable(sent))).toEqual({
+      ok: true,
+      value: { ...CALLER, ...sent },
+    });
+  });
+
+  it('is any staff token’s to ask; a client’s and no session are turned away', () => {
+    for (const roles of STAFF_TOKENS) {
+      expect(
+        decodeSetBarberPhoto(callable(sent, roles)).ok,
+        String(roles),
+      ).toBe(true);
+    }
+    for (const roles of NO_STAFF_TOKENS) {
+      expect(refusalOf(decodeSetBarberPhoto(callable(sent, roles)))).toEqual(
+        NOT_STAFF,
+      );
+    }
+    expect(refusalOf(decodeSetBarberPhoto(callable(sent, null)))).toEqual([
+      TeamErrorCode.Unauthenticated,
+      null,
+    ]);
+  });
+
+  it.each([
+    ['barberId', { barberId: 'a/b' }],
+    ['operationId', { operationId: 'has spaces in it !!' }],
+    ['stagedName', { stagedName: 7 }],
+    ['mediaWidth', { mediaWidth: '1200' }],
+    ['mediaHeight', { mediaHeight: null }],
+  ])('names %s as the unreadable field', (field, change) => {
+    expect(
+      refusalOf(decodeSetBarberPhoto(callable({ ...sent, ...change }))),
+    ).toEqual(INVALID(field));
+  });
+
+  it('carries no path: the payload names a file, and the caller’s folder is the pipeline’s to add', () => {
+    const decoded = decodeSetBarberPhoto(
+      callable({ ...sent, stagedPath: 'staffUploads/u-other/their-file' }),
+    );
+    expect(decoded.ok && Object.keys(decoded.value)).not.toContain(
+      'stagedPath',
+    );
   });
 });

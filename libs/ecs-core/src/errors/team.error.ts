@@ -32,6 +32,10 @@ export const TeamErrorCode = {
   ServiceUnknown: 'TEAM_SERVICE_UNKNOWN',
   /** Only a record that never went live (a `DRAFT`) can be deleted. */
   NotDraft: 'TEAM_NOT_DRAFT',
+  /** The photo the call names was never uploaded by this account, or is gone. */
+  PhotoMissing: 'TEAM_PHOTO_MISSING',
+  /** The uploaded photo is no image the shop shows, or is too large. */
+  PhotoInvalid: 'TEAM_PHOTO_INVALID',
 } as const;
 export type TeamErrorCode = (typeof TeamErrorCode)[keyof typeof TeamErrorCode];
 
@@ -44,7 +48,9 @@ export type TeamError =
   | TeamError.ShopUnknown
   | TeamError.ShopHasHours
   | TeamError.ServiceUnknown
-  | TeamError.NotDraft;
+  | TeamError.NotDraft
+  | TeamError.PhotoMissing
+  | TeamError.PhotoInvalid;
 
 export const TeamError = {
   unauthenticated(): TeamError.Unauthenticated {
@@ -73,6 +79,12 @@ export const TeamError = {
   },
   notDraft(barberId: BarberId): TeamError.NotDraft {
     return { errorCode: TeamErrorCode.NotDraft, barberId };
+  },
+  photoMissing(): TeamError.PhotoMissing {
+    return { errorCode: TeamErrorCode.PhotoMissing };
+  },
+  photoInvalid(): TeamError.PhotoInvalid {
+    return { errorCode: TeamErrorCode.PhotoInvalid };
   },
 } as const;
 
@@ -114,5 +126,11 @@ export namespace TeamError {
   export type NotDraft = {
     readonly errorCode: typeof TeamErrorCode.NotDraft;
     readonly barberId: BarberId;
+  };
+  export type PhotoMissing = {
+    readonly errorCode: typeof TeamErrorCode.PhotoMissing;
+  };
+  export type PhotoInvalid = {
+    readonly errorCode: typeof TeamErrorCode.PhotoInvalid;
   };
 }

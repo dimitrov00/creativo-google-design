@@ -25,6 +25,7 @@ import {
   type AddBarberCommand,
   admitTeamCaller,
   type DeleteDraftBarberCommand,
+  type SetBarberPhotoCommand,
   type EditBarberCommand,
   type ListTeamCommand,
   type SetBarberOfferingsCommand,
@@ -380,6 +381,36 @@ export function decodeActivateBarber(
   if (!admitted.ok) return admitted;
   const named = namedOf(payloadOf(request));
   return named.ok ? Result.ok({ ...caller, ...named.value }) : named;
+}
+
+/**
+ * `setBarberPhoto` `{ barberId, stagedName, mediaWidth, mediaHeight,
+ * operationId }` → `{ barberId }` — any staff token; `TEAM_PROFILES` on
+ * the barber named in the pipeline. The staged file is read under the
+ * VERIFIED caller's own folder: the payload names a file, never a path.
+ */
+export function decodeSetBarberPhoto(
+  request: WireRequest,
+): Result<SetBarberPhotoCommand, EdgeError> {
+  const caller = callerOf(request);
+  const admitted = admitTeamCaller(caller);
+  if (!admitted.ok) return admitted;
+  const payload = payloadOf(request);
+  const named = namedOf(payload);
+  if (!named.ok) return named;
+  const stagedName = StoredFields.field(payload, 'stagedName');
+  if (typeof stagedName !== 'string') return invalid('stagedName');
+  const mediaWidth = StoredFields.field(payload, 'mediaWidth');
+  if (typeof mediaWidth !== 'number') return invalid('mediaWidth');
+  const mediaHeight = StoredFields.field(payload, 'mediaHeight');
+  if (typeof mediaHeight !== 'number') return invalid('mediaHeight');
+  return Result.ok({
+    ...caller,
+    ...named.value,
+    stagedName,
+    mediaWidth,
+    mediaHeight,
+  });
 }
 
 /** `deleteDraftBarber` `{ barberId, operationId }` → `{ barberId }` — any staff token; `TEAM_MANAGE` in the pipeline. */

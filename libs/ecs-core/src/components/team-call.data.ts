@@ -203,6 +203,20 @@ export namespace TeamCall {
     /** The act's name — the web mints one per save. */
     readonly operationId: ClientOperationId;
   };
+  /**
+   * `setBarberPhoto` — a barber's ONE photo, replaced: the picture the
+   * caller staged under their own account, by its name, and its pixel size
+   * as the browser measured it. The bytes never ride the call.
+   */
+  export type Photo = {
+    readonly barberId: BarberId;
+    /** The staged file's name under `staffUploads/{caller}/`. */
+    readonly stagedName: string;
+    readonly mediaWidth: number;
+    readonly mediaHeight: number;
+    /** The act's name — and the new photo object's. */
+    readonly operationId: ClientOperationId;
+  };
   /** A call that names a record and nothing else — `activateBarber`, `deleteDraftBarber`. */
   export type Named = {
     readonly barberId: BarberId;

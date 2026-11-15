@@ -587,11 +587,12 @@ describe('AuditContext — one flat variant per verb family, every field present
       teamBarberStartsLocalDate: '2026-12-01',
       teamBarberLastWorkingLocalDate: null,
     });
-    // The seven verbs, each a member of the dictionary under the TEAM_ prefix.
+    // The eight verbs, each a member of the dictionary under the TEAM_ prefix.
     const verbs: readonly TeamBarberAction[] = [
       AuditAction.TeamBarberAdded,
       AuditAction.TeamBarberProfileChanged,
       AuditAction.TeamBarberShopsChanged,
+      AuditAction.TeamBarberPhotoChanged,
       AuditAction.TeamBarberPeriodChanged,
       AuditAction.TeamBarberPoolChanged,
       AuditAction.TeamBarberStatusChanged,
@@ -601,6 +602,7 @@ describe('AuditContext — one flat variant per verb family, every field present
       'TEAM_BARBER_ADDED',
       'TEAM_BARBER_PROFILE_CHANGED',
       'TEAM_BARBER_SHOPS_CHANGED',
+      'TEAM_BARBER_PHOTO_CHANGED',
       'TEAM_BARBER_PERIOD_CHANGED',
       'TEAM_BARBER_POOL_CHANGED',
       'TEAM_BARBER_STATUS_CHANGED',

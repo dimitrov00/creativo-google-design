@@ -62,6 +62,8 @@ describe('LogEvent', () => {
       RolesChangeRefused: 'roles.change_refused',
       RolesSessionsNotRevoked: 'roles.sessions_not_revoked',
       RolesSessionsRevoked: 'roles.sessions_revoked',
+      TeamPhotoCleanupFailed: 'team.photo_cleanup_failed',
+      TeamPhotoMirrorFailed: 'team.photo_mirror_failed',
       TriggerAttemptFailed: 'trigger attempt failed',
       TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
       WaitlistBarberSkipped: 'waitlist barber skipped',

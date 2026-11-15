@@ -463,8 +463,11 @@ roles and link inside its transaction.
   with blurhash `null` and a centred focus. In `storage.rules`,
   `media/barbers` allows get but not list. The object name is unguessable
   and a `DRAFT` record (which holds the path) is staff-only, so a draft's
-  face cannot be found. A newcomer who already has a client avatar can pick
-  it as the source instead.
+  face cannot be found. Superseded in part (2026-11-15,
+  `docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`): a
+  barber has ONE photo. It is kept on the record and the server copies it
+  to the linked account's avatar, so the two cannot drift; an account
+  linked to a record with no photo gives the record its avatar.
 
 ### D6. Course students and guest barbers
 

@@ -30,16 +30,16 @@
   ],
   "references": [
     {
-      "path": "../../../ui/wall-clock/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
-      "path": "../../../shared/view-state/tsconfig.lib.json"
+      "path": "../../../infrastructure/storage/tsconfig.lib.json"
     },
     {
-      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../shared/view-state/tsconfig.lib.json"
     },
     {
       "path": "../../staff/dashboard/tsconfig.lib.json"
@@ -64,6 +64,9 @@
     },
     {
       "path": "../../../ui/controls/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     },
     {
       "path": "../../../ecs-core/tsconfig.lib.json"

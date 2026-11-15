@@ -11,6 +11,7 @@ import {
   AuditEntryId,
   BarberId,
   LocationId,
+  MediaRefId,
   OperationId,
   UserId,
   UtcEpochMs,
@@ -231,6 +232,51 @@ describe('TeamSystem.setShops', () => {
         ),
       ).locationIds,
     ).toEqual([MLADOST, CENTER]);
+  });
+});
+
+describe('TeamSystem.setPhoto — a barber’s one photo, replaced whole', () => {
+  const media = {
+    mediaId: MediaRefId.of('operation-photo-0123456'),
+    mediaPath: 'media/barbers/ivan/operation-photo-0123456',
+    mediaWidth: 1200,
+    mediaHeight: 1600,
+    mediaBlurhash: null,
+    mediaFocalX: 0.5,
+    mediaFocalY: 0.5,
+  };
+
+  it('sets the seven fields of the reference and stamps the act', () => {
+    const before = barberFixture();
+    const next = unwrapOk(TeamSystem.setPhoto(before, media, OP));
+    expect(next).toEqual({
+      ...before,
+      avatarMediaId: media.mediaId,
+      avatarMediaPath: media.mediaPath,
+      avatarMediaWidth: 1200,
+      avatarMediaHeight: 1600,
+      avatarMediaBlurhash: null,
+      avatarMediaFocalX: 0.5,
+      avatarMediaFocalY: 0.5,
+      writeOperationId: OP,
+    });
+    expect(TeamSystem.changedFields(before, next)).toEqual(
+      expect.arrayContaining(['avatarMediaId', 'avatarMediaPath']),
+    );
+  });
+
+  it('gives a record that has left no photo', () => {
+    expect(unwrapErr(TeamSystem.setPhoto(departed, media, OP)).errorCode).toBe(
+      TeamErrorCode.BarberDeparted,
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const barber = deepFreeze(barberFixture());
+    const frozen = deepFreeze(media);
+    expect(TeamSystem.setPhoto(barber, frozen, OP)).toEqual(
+      TeamSystem.setPhoto(barber, frozen, OP),
+    );
   });
 });
 

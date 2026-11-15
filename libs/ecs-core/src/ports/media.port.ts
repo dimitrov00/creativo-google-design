@@ -66,6 +66,19 @@ export type UploadPhotoBytes = (
   image: Blob,
 ) => Promise<Result<StoredFile, MediaError>>;
 
+/**
+ * Stage a picture for a callable to take: the bytes go to the account's own
+ * staging folder under `stagedName` (`staffUploads/{userId}/{stagedName}`),
+ * which only that account can write and nobody can read. The callable is
+ * then told the NAME — never a path — and reads, checks and deletes the
+ * object itself (`setBarberPhoto`).
+ */
+export type StageUpload = (
+  userId: UserId,
+  stagedName: string,
+  image: Blob,
+) => Promise<Result<void, MediaError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** A person's avatar — upload, find, remove. */
@@ -85,5 +98,13 @@ export type PhotoUploadPorts = {
   readonly uploadPhotoBytes: UploadPhotoBytes;
 };
 
+/** A picture staged for a callable — `STAGED_UPLOAD_PORTS` (web). */
+export type StagedUploadPorts = {
+  readonly stageUpload: StageUpload;
+};
+
 /** The Storage bundle the web binds — an intersection of its bundles. */
-export type MediaPorts = AvatarPorts & MediaResolvePorts & PhotoUploadPorts;
+export type MediaPorts = AvatarPorts &
+  MediaResolvePorts &
+  PhotoUploadPorts &
+  StagedUploadPorts;

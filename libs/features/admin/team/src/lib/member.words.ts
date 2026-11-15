@@ -20,6 +20,8 @@ export type MemberWords = {
   /** «Николай започва да приема записи, щом всичко тук е готово.» */
   readonly goesLive: (name: string) => string;
   readonly profileRow: string;
+  readonly photoAdd: string;
+  readonly photoChange: string;
   readonly periodRow: string;
   /** «от 1 дек.» */
   readonly periodFrom: (date: string) => string;
@@ -71,6 +73,8 @@ export function memberWordsOf(translate: Translate): MemberWords {
     allShops: at('allShops'),
     goesLive: (name) => at('goesLive', { name }),
     profileRow: at('profileRow'),
+    photoAdd: at('photoAdd'),
+    photoChange: at('photoChange'),
     periodRow: at('periodRow'),
     periodFrom: (date) => at('periodFrom', { date }),
     periodRange: (from, to) => at('periodRange', { from, to }),

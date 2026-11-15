@@ -167,6 +167,25 @@ describe('memberPageVm — a record in preparation', () => {
     ]);
   });
 
+  it('offers whoever edits the profile the photo: «Добави» with none, «Смени» with one; nobody else', () => {
+    expect(vm.photoLabel).toBe('Добави снимка');
+    expect(
+      memberPageVm(
+        inputOf({
+          ...NIKOLAY_RECORD,
+          avatarMediaPath: 'media/barbers/nikolay/operation-photo-0123456',
+        }),
+      ).photoLabel,
+    ).toBe('Смени снимката');
+    expect(
+      memberPageVm(inputOf(NIKOLAY_RECORD, {}, { mayEditProfile: false }))
+        .photoLabel,
+    ).toBeNull();
+    expect(
+      memberPageVm(inputOf(NIKOLAY_RECORD, { lang: 'en' })).photoLabel,
+    ).toBe('Add a photo');
+  });
+
   it('says who may book the record once it goes live, and the answers offered', () => {
     expect(vm.bookedBy?.id).toBe(BarberStatus.Public);
     expect(vm.bookedBy?.word).toBe('Всички');

@@ -4,13 +4,21 @@ import { Collections } from '@core/entities';
 import { DEV_CHAIR } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import {
+  lockBarberLink,
   readBarberLink,
   readStoredBody,
   removeAddedBarber,
   removeUserProfile,
   seedUserProfile,
+  storedObjectExists,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
+
+/** A 1×1 PNG: the smallest picture a browser can measure. */
+const PORTRAIT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
 
 /*
  * A team member's page and the add sheet (team onboarding stage 1a; staff
@@ -19,8 +27,18 @@ import { signInAs } from './support/sign-in';
  * The owner's case ADDS its own barber record and works on that one alone
  * — its link, its profile, its deletion — so it never moves a seeded barber
  * another spec reads, and two attempts never contend for one record.
+ *
+ * The cases run ONE AFTER ANOTHER, in this file's order: every one of them
+ * adds a barber, and `addBarber` counts every barber record inside its
+ * transaction (the new one sorts last). Started at the same instant, the
+ * emulator makes each wait for the others — a call that takes a second
+ * took ten, and a page waiting on it stalled. Nobody adds six barbers at
+ * once in a shop; the suite should not either. A failed case does not stop
+ * the ones after it.
  */
 test.describe('a team member’s page', () => {
+  test.describe.configure({ mode: 'default' });
+
   /** The record the running case added; removed if the case stopped before deleting it. */
   let added: string | null = null;
   /** The account the running case linked to its record; removed if the case stopped while it was staff. */
@@ -468,6 +486,90 @@ test.describe('a team member’s page', () => {
     await page.getByTestId('member-delete-confirm').click();
     await expect(page).toHaveURL(/\/admin\/team$/, { timeout: 30_000 });
     expect(await readStoredBody(Collections.Barbers, added)).toBeNull();
+    added = null;
+  });
+
+  test('an owner sets a new barber’s photo: the record holds it, the picture is in the shop’s media, and the linked account’s avatar is the same picture', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-photo-${key}`;
+    const linkedAccount = `e2e-member-photo-linked-${key}`;
+    const name = `Нов Портрет ${key}`.slice(0, 40);
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Снимка',
+      roles: [Role.Admin],
+    });
+    await signInAs(page, uid, ['admin']);
+
+    // A new record with nothing copied: in preparation throughout.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    await expect(page.getByTestId('member-photo-pick')).toHaveText(
+      'Добави снимка',
+      { timeout: 30_000 },
+    );
+    // An account linked to the record before it has a photo: its avatar
+    // is the server's to write.
+    await seedUserProfile(linkedAccount, {
+      firstName: 'Георги',
+      lastName: 'Портрет',
+      roles: [Role.Client, Role.Barber],
+      linkedBarberId: added,
+    });
+    linkedUid = linkedAccount;
+    await lockBarberLink(added, linkedAccount);
+    expect(await storedObjectExists(`avatars/${linkedAccount}/original`)).toBe(
+      false,
+    );
+
+    // THE PHOTO: picked in the browser, which sizes it, stages it under the
+    // owner's account and names it to the call.
+    await page.getByTestId('member-photo-input').setInputFiles({
+      name: 'portrait.png',
+      mimeType: 'image/png',
+      buffer: PORTRAIT_PNG,
+    });
+
+    // Landed: the live record offers to change it, and holds a picture of
+    // its own under the shop's media, named after no one.
+    await expect(page.getByTestId('member-photo-pick')).toHaveText(
+      'Смени снимката',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('member-refusal')).toHaveCount(0);
+    const stored = await readStoredBody(Collections.Barbers, added);
+    const path = String(stored?.['avatarMediaPath']);
+    expect(path.startsWith(`media/barbers/${added}/`)).toBe(true);
+    expect(stored?.['avatarMediaWidth']).toBe(1);
+    expect(stored?.['avatarMediaHeight']).toBe(1);
+    expect(stored?.['barberStatus']).toBe(BarberStatus.Draft);
+    expect(await storedObjectExists(path)).toBe(true);
+    // The linked account's avatar is the same picture now: one photo.
+    expect(await storedObjectExists(`avatars/${linkedAccount}/original`)).toBe(
+      true,
+    );
+    // The page draws it from the shop's media.
+    await expect(
+      page.getByTestId('admin-team-member').locator('.ui-avatar img').first(),
+    ).toHaveAttribute('src', /media%2Fbarbers/, { timeout: 30_000 });
+
+    await page.getByTestId('member-delete').click();
+    await page.getByTestId('member-delete-confirm').click();
+    await expect(page).toHaveURL(/\/admin\/team$/, { timeout: 30_000 });
     added = null;
   });
 

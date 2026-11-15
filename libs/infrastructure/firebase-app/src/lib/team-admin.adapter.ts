@@ -17,6 +17,7 @@ export const teamAdminPorts = (gateway: GatewayPorts): TeamAdminPorts => ({
   setStaffPermissions: gateway.callableClient(Callables.SetStaffPermissions),
   addBarber: gateway.callableClient(Callables.AddBarber),
   editBarber: gateway.callableClient(Callables.EditBarber),
+  setBarberPhoto: gateway.callableClient(Callables.SetBarberPhoto),
   setBarberOfferings: gateway.callableClient(Callables.SetBarberOfferings),
   deleteDraftBarber: gateway.callableClient(Callables.DeleteDraftBarber),
   activateBarber: gateway.callableClient(Callables.ActivateBarber),

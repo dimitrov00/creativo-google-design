@@ -1265,8 +1265,36 @@ editors"); its server half is merged.
   - The end-to-end case opens a seeded front-desk account from the list,
     adds «Съдържание», reads the stored roles, and takes the account off
     the team. A second case holds that the owner's own account is read.
-- **Still to build in this stage.** The barber's photo, which has no
-  callable yet.
+- **Built so far: the barber's photo.** A barber has ONE photo
+  (`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`, the
+  owner's ruling of 2026-11-15): it is kept on the record, and the server
+  copies it to the linked account's avatar, so the two cannot drift.
+  - On a member's page, whoever `TEAM_PROFILES` reaches the record for
+    finds «Добави снимка» or «Смени снимката» under the head: the barber
+    themself, a content editor, the owner.
+  - The browser sizes the picture, stages it under the signed-in account
+    (`staffUploads/{uid}/{name}`: a staff token, its own folder, an image
+    under 5 MiB, no reads) and calls `setBarberPhoto` with the file's name.
+    The bytes never ride the call.
+  - The call asks who may before it touches an object; checks the staged
+    object; copies it to `media/barbers/{id}/{operationId}`; writes the
+    record's `avatarMedia*` beside one `TEAM_BARBER_PHOTO_CHANGED` row; then
+    copies the picture to the linked account's avatar, and deletes the
+    staged file and the photo it replaced. A replay names the same object
+    and answers at once.
+  - `media/` lost its `list` permission: a record in preparation is
+    staff-only, and its photo's name must not be found by listing.
+  - Not built yet (decisions F6, F7 of the record): an account linked to a
+    record takes the record's photo, or gives the record its avatar when
+    the record has none; a linked barber's own picker sets the barber's
+    photo; the storage rule refuses a linked account a separate upload.
+    Until then a linked barber can still change their account's avatar by
+    hand, and the next photo set on the record overwrites it.
+  - The end-to-end case picks a picture in the browser for a new record
+    with a linked account, and reads the stored reference, the object under
+    `media/` and the account's avatar object.
+- **Still to build in this stage.** The account side of the one photo (F6,
+  F7 above).
 
 ### Stage B. The booking calls
 

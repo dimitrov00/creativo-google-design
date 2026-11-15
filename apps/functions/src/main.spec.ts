@@ -68,6 +68,7 @@ const seam = vi.hoisted(() => {
     'sampleLeadTime',
     'setAnalyticsGoal',
     'setBarberOfferings',
+    'setBarberPhoto',
     'setDayExceptions',
     'setRoles',
     'setRosterWeek',
@@ -333,6 +334,7 @@ const ENDPOINTS = {
   addBarber: tracedCallable,
   editBarber: tracedCallable,
   setBarberOfferings: tracedCallable,
+  setBarberPhoto: tracedCallable,
   activateBarber: tracedCallable,
   deleteDraftBarber: tracedCallable,
   clearArrival: tracedCallable,
@@ -1152,6 +1154,30 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },
   },
+  setBarberPhoto: {
+    pipeline: 'setBarberPhoto',
+    input: request(
+      {
+        barberId: 'b-1',
+        stagedName: 'a1b2c3d4-staged',
+        mediaWidth: 1200,
+        mediaHeight: 1600,
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      barberId: 'b-1',
+      stagedName: 'a1b2c3d4-staged',
+      mediaWidth: 1200,
+      mediaHeight: 1600,
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({ barberId: 'b-1' }),
+    expected: { barberId: 'b-1' },
+  },
   clearArrival: {
     pipeline: 'markArrival',
     input: request(
@@ -1658,7 +1684,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 66 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read, and staff permissions’ save', () => {
+  it('exports exactly the 67 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read, staff permissions’ save, and the barber’s photo', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1704,7 +1730,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(66);
+    expect(FLIPPED_EXPORTS).toHaveLength(67);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

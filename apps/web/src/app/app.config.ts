@@ -86,6 +86,7 @@ import {
   rolesAdminPorts,
   analyticsCallPorts,
   teamAdminPorts,
+  STAGED_UPLOAD_PORTS,
   TEAM_ADMIN_PORTS,
   TEAM_BARBER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -189,6 +190,8 @@ const dataUnavailable = () => Result.err(RepositoryError.unavailable());
  */
 const avatarsUnavailable = () => Result.err(MediaError.transient('avatars'));
 const mediaUnavailable = () => Result.err(MediaError.transient('media'));
+const stagingUnavailable = () =>
+  Result.err(MediaError.transient('staffUploads'));
 
 /** What `firebaseData` loads: the Firestore and the Storage adapter modules. */
 type FirebaseDataModule =
@@ -762,6 +765,14 @@ export const appConfig: ApplicationConfig = {
         removeAvatar: LazyMethod.Promise,
       },
       onLoadError: avatarsUnavailable,
+    }),
+    // A picture staged for a callable (the barber's photo): written to the
+    // account's own staging folder, never read back.
+    provideLazyPort(STAGED_UPLOAD_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.storage.stagedUploadPorts(inj.get(m.storage.FIREBASE_STORAGE)),
+      methods: { stageUpload: LazyMethod.Promise },
+      onLoadError: stagingUnavailable,
     }),
     provideLazyPort(MEDIA_RESOLVE_PORTS, firebaseData, {
       factory: (m) => (inj) =>

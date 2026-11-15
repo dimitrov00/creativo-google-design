@@ -1,5 +1,5 @@
 import { Result } from '@core/primitives';
-import type { ObjectEraserPorts } from '@core/ports';
+import type { ObjectEraserPorts, StoredObjectCopyPorts } from '@core/ports';
 import type { AdminBucket } from '../lib/firebase-admin';
 import { writeFailed } from './store-answer';
 
@@ -34,6 +34,45 @@ function isNotFound(error: unknown): boolean {
     error.code === 404
   );
 }
+
+/**
+ * The photo call's Storage reads and copies over the same bucket
+ * (`StoredObjectCopyPorts`, `setBarberPhoto`): one object's size and type
+ * (`null` when there is none — HTTP 404), and one object copied onto
+ * another path, bytes and type, replacing what was there. The size Storage
+ * reports is a decimal string or a number; anything else reads as an empty
+ * object, which the photo's own guard refuses.
+ */
+export const storedObjectCopyPorts = (
+  bucket: AdminBucket,
+): StoredObjectCopyPorts => ({
+  statStoredObject: async (path) => {
+    try {
+      const [metadata] = await bucket.file(path).getMetadata();
+      const size = Number(metadata.size);
+      return Result.ok({
+        sizeBytes: Number.isFinite(size) ? size : 0,
+        contentType:
+          typeof metadata.contentType === 'string'
+            ? metadata.contentType
+            : null,
+      });
+    } catch (error) {
+      return isNotFound(error)
+        ? Result.ok(null)
+        : Result.err(writeFailed(path, error));
+    }
+  },
+
+  copyStoredObject: async (fromPath, toPath) => {
+    try {
+      await bucket.file(fromPath).copy(bucket.file(toPath));
+      return Result.ok(undefined);
+    } catch (error) {
+      return Result.err(writeFailed(toPath, error));
+    }
+  },
+});
 
 export const storageObjectPorts = (bucket: AdminBucket): ObjectEraserPorts => ({
   deleteStoredObject: async (path) => {

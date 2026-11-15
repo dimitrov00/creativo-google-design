@@ -83,6 +83,7 @@ export const Callables = {
   EditBarber: 'editBarber',
   ActivateBarber: 'activateBarber',
   DeleteDraftBarber: 'deleteDraftBarber',
+  SetBarberPhoto: 'setBarberPhoto',
   SetBarberOfferings: 'setBarberOfferings',
   SetDayExceptions: 'setDayExceptions',
   ListTeam: 'listTeam',
@@ -272,6 +273,14 @@ export type CallableWire = {
     readonly input: TeamCall.Named;
     readonly answer: TeamCall.Activation;
   };
+  /**
+   * A barber's ONE photo replaced from an upload the caller staged — and
+   * the linked account's avatar with it, so the two never differ.
+   */
+  readonly [Callables.SetBarberPhoto]: {
+    readonly input: TeamCall.Photo;
+    readonly answer: TeamCall.Saved;
+  };
   /** «Изтрий» — a record that never went live, removed with what names it. */
   readonly [Callables.DeleteDraftBarber]: {
     readonly input: TeamCall.Named;
@@ -369,6 +378,7 @@ export const OPERATION_ID_FIELD: {
   [Callables.EditBarber]: 'operationId',
   [Callables.ActivateBarber]: 'operationId',
   [Callables.DeleteDraftBarber]: 'operationId',
+  [Callables.SetBarberPhoto]: 'operationId',
   [Callables.SetBarberOfferings]: 'operationId',
   [Callables.SetDayExceptions]: 'operationId',
   // A read, like the analytics report: the id is the transport's only.
@@ -424,6 +434,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.EditBarber]: AppCheckTokenUse.Standard,
   [Callables.ActivateBarber]: AppCheckTokenUse.Standard,
   [Callables.DeleteDraftBarber]: AppCheckTokenUse.Standard,
+  [Callables.SetBarberPhoto]: AppCheckTokenUse.Standard,
   [Callables.SetBarberOfferings]: AppCheckTokenUse.Standard,
   [Callables.SetDayExceptions]: AppCheckTokenUse.Standard,
   [Callables.ListTeam]: AppCheckTokenUse.Standard,
@@ -497,6 +508,7 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.EditBarber]: TeamCall.decodeSaved,
   [Callables.ActivateBarber]: TeamCall.decodeActivation,
   [Callables.DeleteDraftBarber]: TeamCall.decodeSaved,
+  [Callables.SetBarberPhoto]: TeamCall.decodeSaved,
   [Callables.SetBarberOfferings]: TeamCall.decodeSaved,
   [Callables.SetDayExceptions]: DayExceptionsCall.decodeSaved,
   [Callables.ListTeam]: TeamCall.decodeListed,

@@ -326,6 +326,17 @@ export class AdminTeamMember {
     void this.store.endSessions();
   }
 
+  /**
+   * A picture was picked: it becomes the barber's photo. The field is
+   * emptied first, so picking the same file again is a change too.
+   */
+  protected onPhotoPicked(event: Event): void {
+    const field = event.target as HTMLInputElement;
+    const file = field.files?.item(0) ?? null;
+    field.value = '';
+    if (file !== null) void this.store.changePhoto(file);
+  }
+
   /** The «Разкачи профила» question answered. */
   protected onReleasePick(answer: string): void {
     this.releaseOpen.set(false);

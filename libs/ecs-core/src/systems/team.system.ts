@@ -7,6 +7,7 @@ import {
   BarberLifecycle,
   BarberStatus,
   type LocalizedText,
+  type MediaRef,
   ScheduleVersion,
   type TeamBarberAction,
   WriteOp,
@@ -276,6 +277,31 @@ export const TeamSystem = {
       bio: bio.value,
       instagramHandle: typedHandle.length === 0 ? null : typedHandle,
       yearsExperience: years,
+      ...WriteProvenance.of(operationId),
+    });
+  },
+
+  /**
+   * The record with this photo — its ONE photo, replaced whole (the seven
+   * `avatarMedia*` fields of the reference). A record that has left takes
+   * none.
+   */
+  setPhoto(
+    barber: Barber,
+    media: MediaRef,
+    operationId: OperationId | null,
+  ): Result<Barber, TeamError> {
+    const live = current(barber);
+    if (!live.ok) return live;
+    return Result.ok({
+      ...barber,
+      avatarMediaId: media.mediaId,
+      avatarMediaPath: media.mediaPath,
+      avatarMediaWidth: media.mediaWidth,
+      avatarMediaHeight: media.mediaHeight,
+      avatarMediaBlurhash: media.mediaBlurhash,
+      avatarMediaFocalX: media.mediaFocalX,
+      avatarMediaFocalY: media.mediaFocalY,
       ...WriteProvenance.of(operationId),
     });
   },
