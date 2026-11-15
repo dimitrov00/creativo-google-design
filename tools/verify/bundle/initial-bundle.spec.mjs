@@ -227,6 +227,28 @@ describe('routeBytes', () => {
     ]);
   });
 
+  it('measures a library’s further route entries (`*.route.ts`), and never a sheet’s own entry', () => {
+    const split = {
+      outputs: {
+        'main-A.js': { bytes: 100, imports: [] },
+        'chunk-MEMBER.js': {
+          bytes: 30,
+          entryPoint: 'libs/features/admin/team/src/member.route.ts',
+          imports: [],
+        },
+        // A sheet loaded on demand inside a page: no route opens on it.
+        'chunk-SHEET.js': {
+          bytes: 500,
+          entryPoint: 'libs/features/staff/dashboard/src/hours.ts',
+          imports: [],
+        },
+      },
+    };
+    assert.deepEqual(routeBytes(split), [
+      { route: 'libs/features/admin/team/src/member.route.ts', bytes: 130 },
+    ]);
+  });
+
   it('does not count a shared chunk twice when the initial files reach it too', () => {
     const shared = {
       outputs: {

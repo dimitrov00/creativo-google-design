@@ -207,7 +207,9 @@ export const appRoutes: Route[] = [
     path: 'admin/team/permissions',
     canActivate: [activeGuard, rolesGuard(...Roles.ASSIGN)],
     loadComponent: () =>
-      import('@creativo/features/admin/team').then((m) => m.AdminPermissions),
+      import('@creativo/features/admin/team/permissions').then(
+        (m) => m.AdminPermissions,
+      ),
   },
   {
     // One level's page; `:level` is the level's own word (`barber`,
@@ -215,7 +217,7 @@ export const appRoutes: Route[] = [
     path: 'admin/team/permissions/:level',
     canActivate: [activeGuard, rolesGuard(...Roles.ASSIGN)],
     loadComponent: () =>
-      import('@creativo/features/admin/team').then(
+      import('@creativo/features/admin/team/permissions').then(
         (m) => m.AdminPermissionLevel,
       ),
   },
@@ -227,7 +229,9 @@ export const appRoutes: Route[] = [
     path: 'admin/team/member/:barberId',
     canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Team)],
     loadComponent: () =>
-      import('@creativo/features/admin/team').then((m) => m.AdminTeamMember),
+      import('@creativo/features/admin/team/member').then(
+        (m) => m.AdminTeamMember,
+      ),
   },
   {
     // A staff account with no barber record — the front desk, a content
@@ -238,7 +242,9 @@ export const appRoutes: Route[] = [
     path: 'admin/team/account/:userId',
     canActivate: [activeGuard, capabilityGuard(...RouteCapabilities.Team)],
     loadComponent: () =>
-      import('@creativo/features/admin/team').then((m) => m.AdminTeamAccount),
+      import('@creativo/features/admin/team/account').then(
+        (m) => m.AdminTeamAccount,
+      ),
   },
   {
     // The loyalty rules' home; its one page today is the rhythm's. The
