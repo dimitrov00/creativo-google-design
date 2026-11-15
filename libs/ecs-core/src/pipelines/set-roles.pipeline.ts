@@ -1,8 +1,6 @@
 import {
   Actor,
   BarberLinkChange,
-  type DocBody,
-  type DocPath,
   type Role,
   Roles,
   type RolesCall,
@@ -10,13 +8,11 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  type BarberId,
   LogEvent,
   type OperationId,
   Result,
   Tag,
   type UserId,
-  type UtcEpochMs,
 } from '@core/primitives';
 import {
   GovernanceError,
@@ -24,11 +20,9 @@ import {
   type SetRolesError,
 } from '@core/errors';
 import {
-  BARBER_LINK_DOC,
   type Barber,
   type BarberLink,
   Collections,
-  Subcollections,
   type User,
 } from '@core/entities';
 import type {
@@ -132,50 +126,6 @@ type Snapshot = {
   readonly linkFacts: BarberLinkFacts;
 };
 
-/** `barbers/{barberId}/restricted/link` — the record's account lock. */
-function lockPath(barberId: BarberId): DocPath {
-  return [
-    Collections.Barbers,
-    barberId,
-    Subcollections.Restricted,
-    BARBER_LINK_DOC,
-  ];
-}
-
-/**
- * The `users` update of an admitted change: the roles when they changed,
- * the link when it changed, and the `profileEditedAtUtcMs` marker the
- * profile trigger reads as "audited by a callable" (S-RU-12) — a link-only
- * change stamps it like a role change.
- */
-function userFieldsOf(
-  assignment: RoleAssignment,
-  nowUtcMs: UtcEpochMs,
-): DocBody {
-  const fields: Record<string, unknown> = { profileEditedAtUtcMs: nowUtcMs };
-  if (assignment.rolesChanged) fields['roles'] = assignment.rolesTo;
-  if (assignment.linkChanged) {
-    fields['linkedBarberId'] = assignment.linkedBarberIdTo;
-  }
-  return fields;
-}
-
-/** The lock writes of a changed link: the old record's lock released, the new one's taken. */
-function lockWritesOf(
-  assignment: RoleAssignment,
-  targetUserId: UserId,
-): readonly WriteOp[] {
-  const out: WriteOp[] = [];
-  if (assignment.lockReleased !== null) {
-    out.push(WriteOp.remove(lockPath(assignment.lockReleased)));
-  }
-  if (assignment.lockTaken !== null) {
-    const lock: Omit<BarberLink, 'id'> = { linkedUserId: targetUserId };
-    out.push(WriteOp.set(lockPath(assignment.lockTaken), lock));
-  }
-  return out;
-}
-
 /**
  * The caller as `setRoles` gates them on the verified token — a uid whose
  * claims hold a `Roles.ASSIGN` role, or the refusal. The wire asks it
@@ -226,7 +176,9 @@ export const setRoles =
           requested === null
             ? null
             : tx.get<Barber>([Collections.Barbers, requested]),
-          requested === null ? null : tx.get<BarberLink>(lockPath(requested)),
+          requested === null
+            ? null
+            : tx.get<BarberLink>(RoleAssignmentSystem.lockPathOf(requested)),
         ]);
         const caller = accounts[0] ?? null;
         const target = own ? caller : (accounts[1] ?? null);
@@ -239,7 +191,9 @@ export const setRoles =
             ? null
             : current === requested
               ? requestedLock
-              : await tx.get<BarberLink>(lockPath(current));
+              : await tx.get<BarberLink>(
+                  RoleAssignmentSystem.lockPathOf(current),
+                );
         return {
           caller,
           target,
@@ -283,8 +237,11 @@ export const setRoles =
           actor,
           recordPhotoPath,
           writes: [
-            WriteOp.update(targetPath, userFieldsOf(assignment, nowUtcMs)),
-            ...lockWritesOf(assignment, cmd.targetUserId),
+            ...RoleAssignmentSystem.writesOf(
+              cmd.targetUserId,
+              assignment,
+              nowUtcMs,
+            ),
             ...AuditSystem.createsOf(
               [
                 AuditSystem.planRolesChanged(

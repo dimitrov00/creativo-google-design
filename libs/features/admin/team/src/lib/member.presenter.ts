@@ -282,9 +282,12 @@ function accountOf(input: MemberPageInput): MemberAccountVm | null {
       ? memberWords.accountMine
       : member.memberUserId !== null
         ? null
-        : input.linksAccount
-          ? memberWords.accountLink(first)
-          : memberWords.accountNone(first),
+        : input.barber.barberStatus === BarberStatus.Departed
+          ? // A leaver's record says why nobody signs in as them.
+            memberWords.accountDeparted(first)
+          : input.linksAccount
+            ? memberWords.accountLink(first)
+            : memberWords.accountNone(first),
   };
 }
 

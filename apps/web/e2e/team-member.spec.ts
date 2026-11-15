@@ -1,17 +1,21 @@
 import { type Page, expect, test } from '@playwright/test';
-import { BarberStatus, Role } from '@core/components';
+import { AuditAction, BarberStatus, Role } from '@core/components';
 import { Collections } from '@core/entities';
+import { LocalDate } from '@core/primitives';
 import { DEV_CHAIR } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import {
   lockBarberLink,
+  readAuditActionsFor,
   readBarberLink,
   readStoredBody,
   removeAddedBarber,
   removeUserProfile,
   seedUserProfile,
+  setBarberStart,
   storedObjectExists,
 } from './support/seed-firestore';
+import { shopToday } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
 
 /** A 1×1 PNG: the smallest picture a browser can measure. */
@@ -712,6 +716,108 @@ test.describe('a team member’s page', () => {
       .toBe(false);
     expect(await storedObjectExists(avatar)).toBe(true);
     // The record and the account's link are the `afterEach`'s to remove.
+  });
+
+  test('an owner saves a last working day that has already passed: asked first, the record leaves at once, the linked account loses its staff access, and its next staff page is refused', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-leave-${key}`;
+    const leaverUid = `e2e-member-leaver-${key}`;
+    const name = `Нов Напуска ${key}`.slice(0, 40);
+    // Yesterday on the shop's clock: the last day the barber worked.
+    const yesterday = LocalDate.addDays(shopToday(), -1);
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Напускане',
+      roles: [Role.Admin],
+    });
+    await signInAs(page, uid, ['admin']);
+
+    // A new record, then an account linked to it and a period that began
+    // yesterday — a last day can never be before the start.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    await expect(page.getByTestId('member-name')).toHaveText(name, {
+      timeout: 30_000,
+    });
+    await seedUserProfile(leaverUid, {
+      firstName: 'Георги',
+      lastName: 'Напуска',
+      roles: [Role.Client, Role.Barber],
+      linkedBarberId: added,
+    });
+    linkedUid = leaverUid;
+    await lockBarberLink(added, leaverUid);
+    await setBarberStart(added, yesterday);
+
+    // «ПЕРИОД НА РАБОТА»: yesterday as the last day. The sheet says the
+    // person leaves on saving, and «Запази» asks first.
+    await page.getByTestId('member-setup-START_DAY').click();
+    await expect(page.getByTestId('member-period-sheet')).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTestId('member-period-last').click();
+    await page.getByTestId(`ui-month-day-${yesterday}`).click();
+    await expect(page.getByTestId('member-period-note')).toContainText(
+      'напуска екипа веднага',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('member-period-save').click();
+    await expect(
+      page.getByTestId('member-period-leave-question'),
+    ).toContainText('напуска екипа сега?');
+    // Nothing is written while the question is up.
+    expect(
+      (await readStoredBody(Collections.Barbers, added))?.['barberStatus'],
+    ).toBe(BarberStatus.Draft);
+    await page.getByTestId('member-period-leave-confirm').click();
+
+    // LEFT: the sheet leaves, the page reads the record as gone, and the
+    // stored record says whose access it took and that their sessions ended.
+    await expect(page.getByTestId('member-period-sheet')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
+      timeout: 30_000,
+    });
+    const record = await readStoredBody(Collections.Barbers, added);
+    expect(record?.['barberStatus']).toBe(BarberStatus.Departed);
+    expect(record?.['barberLastWorkingLocalDate']).toBe(yesterday);
+    expect(record?.['barberDepartedUserId']).toBe(leaverUid);
+    expect(record?.['barberSessionsRevokedAtUtcMs']).not.toBeNull();
+    // The account is a client again, linked to nothing; the lock is gone.
+    const account = await readStoredBody(Collections.Users, leaverUid);
+    expect(account?.['roles']).toEqual([Role.Client]);
+    expect(account?.['linkedBarberId']).toBeNull();
+    expect(await readBarberLink(added)).toBeNull();
+    expect(await readAuditActionsFor(leaverUid)).toContain(
+      AuditAction.ProfileRolesChanged,
+    );
+    // The owner's own account did not move.
+    expect((await readStoredBody(Collections.Users, uid))?.['roles']).toEqual([
+      Role.Admin,
+    ]);
+
+    // THE LEAVER, on a token that still says «barber»: a staff page the
+    // stored account decides is refused.
+    await signInAs(page, leaverUid, ['client', 'barber']);
+    await page.goto('/staff/analytics', { waitUntil: 'commit' });
+    await expect(page).toHaveURL(/\/forbidden$/, { timeout: 30_000 });
+    // The record and the account are the `afterEach`'s to remove.
   });
 
   test('a content editor reaches a barber’s profile from the Team list, and sees no account, no period editor and no delete', async ({

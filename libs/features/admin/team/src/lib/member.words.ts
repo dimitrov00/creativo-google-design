@@ -27,11 +27,23 @@ export type MemberWords = {
   readonly periodFrom: (date: string) => string;
   /** «3 март – 31 дек.» */
   readonly periodRange: (from: string, to: string) => string;
+  /** «След 31 дек. Николай напуска екипа…» */
+  readonly periodEnds: (name: string, date: string) => string;
+  /** «31 дек. вече е минал. Със запазването Николай напуска екипа веднага.» */
+  readonly periodEnded: (name: string, date: string) => string;
+  /** «Николай напуска екипа сега?» */
+  readonly leaveTitle: (name: string) => string;
+  /** «Последният работен ден вече е минал. Николай спира да приема записи…» */
+  readonly leaveMessage: (name: string) => string;
+  readonly leaveLabel: string;
+  readonly leaveCancel: string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
   readonly mine: string;
   /** «Без профил Николай не влиза в приложението…» */
   readonly accountNone: (name: string) => string;
+  /** «Стефан напусна екипа и вече не влиза в приложението като бръснар.» */
+  readonly accountDeparted: (name: string) => string;
   /** The same, for someone who links accounts: «…Помоли Николай да влезе веднъж…» */
   readonly accountLink: (name: string) => string;
   readonly accountMine: string;
@@ -78,6 +90,15 @@ export function memberWordsOf(translate: Translate): MemberWords {
     periodRow: at('periodRow'),
     periodFrom: (date) => at('periodFrom', { date }),
     periodRange: (from, to) => at('periodRange', { from, to }),
+    periodEnds: (name, date) =>
+      translate('admin.team.period.ends', { name, date }),
+    periodEnded: (name, date) =>
+      translate('admin.team.period.ended', { name, date }),
+    leaveTitle: (name) => translate('admin.team.period.leaveTitle', { name }),
+    leaveMessage: (name) =>
+      translate('admin.team.period.leaveMessage', { name }),
+    leaveLabel: translate('admin.team.period.leaveLabel'),
+    leaveCancel: translate('admin.team.link.cancel'),
     bookedBy: new Map(
       BarberLifecycle.LIVE_STATUSES.map((status) => [
         status,
@@ -86,6 +107,7 @@ export function memberWordsOf(translate: Translate): MemberWords {
     ),
     mine: at('mine'),
     accountNone: (name) => at('accountNone', { name }),
+    accountDeparted: (name) => at('accountDeparted', { name }),
     accountLink: (name) => at('accountLink', { name }),
     accountMine: at('accountMine'),
     levelRow: (level) => at('levelRow', { level }),

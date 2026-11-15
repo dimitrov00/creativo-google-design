@@ -1099,6 +1099,46 @@ pinned export, registry, secret and App Check tables in `main.spec.ts`.
   retried on the next run. **Emulator e2e:** a last day already in the past
   closes at once and the leaver's next request is refused.
 
+**1b, built so far: the close.** A last working day is how someone leaves,
+and the record now leaves by itself once that day is behind the shop's
+today. Both exit tests above pass.
+
+- `EmploymentSystem` decides: which records are due (`outlookOf`, `isDue`,
+  `dueOf`), what a roster looks like after the last day, and the one plan a
+  close writes. `RoleAssignmentSystem.departureOf` says what happens to the
+  linked account; `decide` is never asked.
+- `closeBarberPeriod` is one commit (record `DEPARTED`, the account's staff
+  roles and link taken, the lock released, the roster closed on the last
+  day, two audit rows), then the revoke, then the marker in a commit of its
+  own. A departure that still owes its revoke is retried on every run.
+- `closeEndedPeriodsDaily` runs at 02:30 on `CRON_TIME_ZONE`, before the
+  capacity sweep. A record that cannot close is logged
+  (`team.period_close_failed`) and the others go ahead.
+- `editBarber` runs the same close at once when the last day it was given
+  has already passed, credited to the caller. The daily job's rows are
+  credited to the new `SCHEDULED_JOB` source.
+- The revoke port now has three holders: `setRoles`, `editBarber` and the
+  daily close.
+- The period sheet says what the last day will do before it is saved. A
+  last day already passed is held behind a question («… напуска екипа
+  сега?»).
+- Where this departs from D10 as written:
+  - An admin's roles are left alone, and then the record names no departed
+    account (`barberDepartedUserId` is `null`): no access was taken, so
+    there is nothing to revoke or retry.
+  - The close's rows do not point at the `TEAM_BARBER_PERIOD_CHANGED` row
+    that set the date. The record's `barberLastWorkingLocalDate` and that
+    row's own entry are the trail.
+  - A record in preparation whose period has ended leaves too, and a
+    rehire would return it to its draft target.
+
+**1b, still to build.** The leftover list on «Напускане» (bookings after
+the last day); «Върни в екипа»; the leftover lane on the schedule; the
+reminder cards; and the Team page's notices for a leaver whose access is
+not stopped yet and for an admin whose role has to be removed by hand.
+Until «Върни в екипа» exists, a record that has left cannot be brought
+back from the app.
+
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 
 **2. Launch track, in parallel: the real email provider.** Unblocks sign-in

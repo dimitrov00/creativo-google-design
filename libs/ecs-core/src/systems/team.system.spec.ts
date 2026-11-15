@@ -594,6 +594,72 @@ describe('TeamSystem.writesOf — the record and its ONE row', () => {
   });
 });
 
+describe('TeamSystem.depart and sessionsRevoked — a record that leaves (team onboarding D10)', () => {
+  const ACCOUNT = UserId.of('u-ivan');
+
+  it('departs a live record: DEPARTED at now, naming who lost access and its own status as where a rehire returns — every other field kept', () => {
+    const working = barberFixture();
+    const left = TeamSystem.depart(working, ACCOUNT, NOW, OP);
+    expect(left).toMatchObject({
+      barberStatus: BarberStatus.Departed,
+      barberStatusChangedAtUtcMs: NOW,
+      barberDepartedUserId: ACCOUNT,
+      barberSessionsRevokedAtUtcMs: null,
+      barberRehireStatus: BarberStatus.Public,
+      writeOperationId: OP,
+      name: working.name,
+      locationIds: working.locationIds,
+    });
+    // Exactly one lifecycle variant: nothing of the old one is carried.
+    expect(TeamSystem.changedFields(working, left)).toEqual([
+      'barberDepartedUserId',
+      'barberRehireStatus',
+      'barberSessionsRevokedAtUtcMs',
+      'barberStatus',
+      'barberStatusChangedAtUtcMs',
+    ]);
+  });
+
+  it('departs a record in preparation to where it was going, and drops its draft target', () => {
+    const left = TeamSystem.depart(draft, null, NOW, OP);
+    expect(left).toMatchObject({
+      barberStatus: BarberStatus.Departed,
+      barberRehireStatus: BarberStatus.Public,
+      barberDepartedUserId: null,
+    });
+    expect(left).not.toHaveProperty('barberDraftTargetStatus');
+  });
+
+  it('answers a record that has left already as it is', () => {
+    expect(TeamSystem.depart(departed, ACCOUNT, NOW, OP)).toBe(departed);
+  });
+
+  it('sets the revoke marker on a departure that owes one, and nothing else', () => {
+    const owes = TeamSystem.depart(barberFixture(), ACCOUNT, NOW, OP);
+    const later = UtcEpochMs.plusMs(NOW, 5_000);
+    const settled = TeamSystem.sessionsRevoked(owes, later, OP);
+    expect(TeamSystem.changedFields(owes, settled)).toEqual([
+      'barberSessionsRevokedAtUtcMs',
+    ]);
+    expect(settled).toMatchObject({
+      barberSessionsRevokedAtUtcMs: later,
+      barberStatusChangedAtUtcMs: NOW,
+    });
+    // Nothing owed: the record itself.
+    expect(TeamSystem.sessionsRevoked(settled, later, OP)).toBe(settled);
+    expect(TeamSystem.sessionsRevoked(departed, later, OP)).toBe(departed);
+    const working = barberFixture();
+    expect(TeamSystem.sessionsRevoked(working, later, OP)).toBe(working);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const barber = deepFreeze(barberFixture());
+    expect(TeamSystem.depart(barber, ACCOUNT, NOW, OP)).toEqual(
+      TeamSystem.depart(barber, ACCOUNT, NOW, OP),
+    );
+  });
+});
+
 describe('TeamSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const barber = deepFreeze(barberFixture());

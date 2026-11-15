@@ -1,4 +1,5 @@
 import {
+  type Actor,
   AuditAction,
   BarberEdit,
   type BarberEditRequest,
@@ -39,6 +40,10 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  closeIfEnded,
+  type CloseIfEndedPorts,
+} from './close-barber-period.pipeline';
+import {
   admitTeamCaller,
   readStaffCaller,
   type StaffCallerFacts,
@@ -72,6 +77,12 @@ import {
  * changes no stored field — and so the replay of one that landed — writes
  * no document and no row.
  *
+ * A WORKING PERIOD WHOSE LAST DAY HAS ALREADY PASSED is closed at once
+ * (team onboarding D10): after the period's own commit, the same close the
+ * daily job runs (`closeIfEnded`) takes the record off the team, credited
+ * to the caller. It cannot refuse the edit, which has landed; a close that
+ * could not run is logged and the daily job catches it up.
+ *
  * The answer: `{ barberId }`. An id with no record is
  * `TEAM_BARBER_NOT_FOUND`, asked only after the caller is admitted.
  */
@@ -85,7 +96,17 @@ export type EditBarberCommand = BarberEditRequest &
 export type EditBarberPorts = CommitPorts &
   ClockPorts &
   HashPorts &
-  DefaultLocationPorts;
+  DefaultLocationPorts &
+  CloseIfEndedPorts;
+
+/** What the edit's commit leaves for the step after it. */
+type Edited = {
+  /** The record as the edit left it. */
+  readonly barber: Barber;
+  /** The caller, as the edit's row credits them. */
+  readonly actor: Actor;
+  readonly writes: readonly WriteOp[];
+};
 
 type Snapshot = StaffCallerFacts & {
   readonly barber: Barber | null;
@@ -201,12 +222,7 @@ export const editBarber =
         ]);
         return { ...facts, barber, shops, schedule };
       },
-      (
-        snapshot,
-      ): Result<
-        { readonly writes: readonly WriteOp[] },
-        TeamError | AccessError | RepositoryError
-      > => {
+      (snapshot): Result<Edited, TeamError | AccessError | RepositoryError> => {
         const stored = StaffAccessSystem.admit({
           staffCapability: isProfile
             ? StaffCapability.TeamProfiles
@@ -225,13 +241,16 @@ export const editBarber =
         }
         const after = decide(cmd, before, snapshot, nowUtcMs, ports);
         if (!after.ok) return after;
+        const actor = teamActor(callerUserId, stored.value);
         return Result.ok({
+          barber: after.value,
+          actor,
           writes: TeamSystem.writesOf(
             {
               action: actionOf(cmd.barberEdit),
               before,
               after: after.value,
-              actor: teamActor(callerUserId, stored.value),
+              actor,
               nowUtcMs,
               operationId: cmd.operationId,
             },
@@ -240,5 +259,10 @@ export const editBarber =
         });
       },
     );
-    return committed.ok ? Result.ok({ barberId: cmd.barberId }) : committed;
+    if (!committed.ok) return committed;
+    // A last day that had already passed: the record leaves now, not tonight.
+    if (cmd.barberEdit === BarberEdit.Period) {
+      await closeIfEnded(ports)(committed.value.barber, committed.value.actor);
+    }
+    return Result.ok({ barberId: cmd.barberId });
   };

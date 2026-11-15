@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { UserId, UtcEpochMs } from '@core/primitives';
 import { FIXTURE_NOW_UTC_MS } from '@core/testing';
 import { BarberLifecycle } from './barber-lifecycle.data';
 import { BarberStatus } from './barber-status.data';
@@ -55,6 +56,54 @@ describe('BarberLifecycle', () => {
       barberStatus: 'PUBLIC',
       barberStatusChangedAtUtcMs: at,
     });
+  });
+
+  it('departs a record: who lost access, sessions not revoked yet, and where a rehire returns', () => {
+    const user = UserId.of('u-ivan');
+    expect(BarberLifecycle.depart(at, user, BarberStatus.Public)).toEqual({
+      barberStatus: 'DEPARTED',
+      barberStatusChangedAtUtcMs: at,
+      barberDepartedUserId: 'u-ivan',
+      barberSessionsRevokedAtUtcMs: null,
+      barberRehireStatus: 'PUBLIC',
+    });
+    expect(
+      BarberLifecycle.depart(at, null, BarberStatus.StaffOnly)
+        .barberDepartedUserId,
+    ).toBeNull();
+  });
+
+  it('marks a departure’s sessions revoked without moving its own stamp', () => {
+    const left = BarberLifecycle.depart(
+      at,
+      UserId.of('u-ivan'),
+      BarberStatus.Public,
+    );
+    const later = UtcEpochMs.plusMs(at, 60_000);
+    expect(BarberLifecycle.revoked(left, later)).toEqual({
+      ...left,
+      barberSessionsRevokedAtUtcMs: later,
+    });
+    // The input is untouched.
+    expect(left.barberSessionsRevokedAtUtcMs).toBeNull();
+  });
+
+  it('awaits a revoke only as a departure that took access from an account and has not ended its sessions', () => {
+    const left = BarberLifecycle.depart(
+      at,
+      UserId.of('u-ivan'),
+      BarberStatus.Public,
+    );
+    expect(
+      [
+        draft,
+        staffOnly,
+        listed,
+        departed,
+        left,
+        BarberLifecycle.revoked(left, at),
+      ].map(BarberLifecycle.awaitsRevoke),
+    ).toEqual([false, false, false, false, true, false]);
   });
 
   it('takes only the two live statuses from an untrusted value', () => {

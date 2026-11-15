@@ -50,6 +50,7 @@ import {
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
   cancelWaitlist as cancelWaitlistPipeline,
+  closeEndedPeriods,
   completeRegistration as completeRegistrationPipeline,
   continueAnalyticsRecompute,
   continuePolicyRecompute,
@@ -605,6 +606,19 @@ const rolesPorts = once(() => ({
 }));
 
 /**
+ * The working period's ports: the server ports and Admin Auth's session
+ * revocation — the daily close (`closeEndedPeriodsDaily`) takes a leaver's
+ * staff roles and ends their sessions, and `editBarber` runs the same
+ * close at once for a last day that has already passed (team onboarding
+ * D10). The revoke port's third and last holder, beside `setRoles`. Built
+ * on first use.
+ */
+const periodPorts = once(() => ({
+  ...serverPorts(),
+  ...authSessionRevokePorts(auth()),
+}));
+
+/**
  * The staff analytics report's ports (`staffAnalytics`, staff analytics v2
  * PR 4b): the server ports — the analytics reads, the stored days
  * (`AnalyticsDayReadPorts`), the rosters, the policy, the clock, the
@@ -632,6 +646,7 @@ const root = {
   roles: rolesPorts,
   analytics: analyticsPorts,
   photo: photoPorts,
+  period: periodPorts,
 } as const;
 
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
@@ -1070,13 +1085,15 @@ export const addBarber = onCall(
  * working period, the «Който и да е» flag or who may book them: the record
  * and its `TEAM_BARBER_*` row in one commit. A profile is any admitted
  * editor's (the content editor, the admin, the barber's own account); the
- * rest are the team manager's.
+ * rest are the team manager's. A working period whose last day has already
+ * passed is closed at once, by the daily job's own close — hence the
+ * period's ports, which can end the leaver's sessions.
  */
 export const editBarber = onCall(
   LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.EditBarber, null),
-    root.ports,
+    root.period,
     decodeEditBarber,
     (ports, cmd) => editBarberPipeline(ports)(cmd),
     refusalOf,
@@ -1315,6 +1332,20 @@ export const rebuildCapacityOnSettingsChange = onDocumentWritten(
 export const sweepCapacityDaily = onSchedule(
   { schedule: 'every day 03:00', timeZone: CRON_TIME_ZONE, retryCount: 3 },
   () => rebuildCapacityFrom(CapacitySource.Sweep),
+);
+
+/**
+ * 02:30 — before the capacity sweep, so the sweep counts no leaver's
+ * chair: every barber whose last working day is behind the shop's today
+ * leaves the team (team onboarding D10). A record that could not close is
+ * logged and tried again by the next run; the run itself fails only when
+ * the shop's clock or the team cannot be read.
+ */
+export const closeEndedPeriodsDaily = onSchedule(
+  { schedule: 'every day 02:30', timeZone: CRON_TIME_ZONE, retryCount: 3 },
+  async () => {
+    failOnRefusal(await closeEndedPeriods(root.period())());
+  },
 );
 
 /** 04:00 — an hour after the capacity sweep, so it samples a repaired rollup. */

@@ -44,6 +44,7 @@ export * from './day-exception-write.system';
 export * from './day-figures.system';
 export * from './decision-input.system';
 export * from './discount.system';
+export * from './employment.system';
 export * from './failure-code.system';
 export * from './governed-change.system';
 export * from './chair-time.system';

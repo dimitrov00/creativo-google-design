@@ -19,6 +19,7 @@ import {
   type LocationId,
   type OperationId,
   Result,
+  type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import { TeamError } from '@core/errors';
@@ -432,6 +433,51 @@ export const TeamSystem = {
           }
         : { ...rest, ...BarberLifecycle.live(barberStatus, nowUtcMs) },
     );
+  },
+
+  /**
+   * The record, departed (team onboarding D10): the lifecycle moves to
+   * `DEPARTED` at `nowUtcMs`, naming the account the close took staff
+   * access from (`null` for none) and where a rehire returns — a live
+   * record's own status, a `DRAFT`'s target. Every other field stays. A
+   * record that has left already is answered as it is.
+   */
+  depart(
+    barber: Barber,
+    barberDepartedUserId: UserId | null,
+    nowUtcMs: UtcEpochMs,
+    operationId: OperationId | null,
+  ): Barber {
+    if (barber.barberStatus === BarberStatus.Departed) return barber;
+    return {
+      ...withoutLifecycle(barber),
+      ...WriteProvenance.of(operationId),
+      ...BarberLifecycle.depart(
+        nowUtcMs,
+        barberDepartedUserId,
+        barber.barberStatus === BarberStatus.Draft
+          ? barber.barberDraftTargetStatus
+          : barber.barberStatus,
+      ),
+    };
+  },
+
+  /**
+   * A departed record whose account's sessions were just revoked: the
+   * marker set, nothing else moved. Any other record — and a departure
+   * that owes no revoke — is answered as it is.
+   */
+  sessionsRevoked(
+    barber: Barber,
+    nowUtcMs: UtcEpochMs,
+    operationId: OperationId | null,
+  ): Barber {
+    if (!BarberLifecycle.awaitsRevoke(barber)) return barber;
+    return {
+      ...withoutLifecycle(barber),
+      ...WriteProvenance.of(operationId),
+      ...BarberLifecycle.revoked(barber, nowUtcMs),
+    };
   },
 
   /**

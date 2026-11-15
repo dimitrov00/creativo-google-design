@@ -5,6 +5,8 @@ export * from './booking-read-set.pipeline';
 export * from './cancel-appointment.pipeline';
 export * from './cancel-waitlist.pipeline';
 export * from './change-barber-photo.pipeline';
+export * from './close-barber-period.pipeline';
+export * from './close-ended-periods.pipeline';
 export * from './complete-client-erasure.pipeline';
 export * from './complete-registration.pipeline';
 export * from './continue-analytics-recompute.pipeline';
