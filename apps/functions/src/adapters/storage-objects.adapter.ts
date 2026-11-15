@@ -35,13 +35,21 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
+/** A custom-metadata value as whole pixels; `null` for anything else. */
+function pixelsOf(value: unknown): number | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const pixels = Number(value);
+  return Number.isInteger(pixels) && pixels > 0 ? pixels : null;
+}
+
 /**
  * The photo call's Storage reads and copies over the same bucket
  * (`StoredObjectCopyPorts`, `setBarberPhoto`): one object's size and type
  * (`null` when there is none — HTTP 404), and one object copied onto
- * another path, bytes and type, replacing what was there. The size Storage
- * reports is a decimal string or a number; anything else reads as an empty
- * object, which the photo's own guard refuses.
+ * another path, bytes, type and custom metadata, replacing what was there.
+ * The size Storage reports is a decimal string or a number; anything else
+ * reads as an empty object, which the photo's own guard refuses. A
+ * picture's pixel size is what its uploader wrote beside it.
  */
 export const storedObjectCopyPorts = (
   bucket: AdminBucket,
@@ -56,6 +64,10 @@ export const storedObjectCopyPorts = (
           typeof metadata.contentType === 'string'
             ? metadata.contentType
             : null,
+        // What the uploader measured (`avatarPorts`): custom metadata is
+        // strings; anything that is no whole number reads as not measured.
+        pixelWidth: pixelsOf(metadata.metadata?.['mediaWidth']),
+        pixelHeight: pixelsOf(metadata.metadata?.['mediaHeight']),
       });
     } catch (error) {
       return isNotFound(error)

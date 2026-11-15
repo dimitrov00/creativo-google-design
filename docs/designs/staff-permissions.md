@@ -1284,17 +1284,38 @@ editors"); its server half is merged.
     and answers at once.
   - `media/` lost its `list` permission: a record in preparation is
     staff-only, and its photo's name must not be found by listing.
-  - Not built yet (decisions F6, F7 of the record): an account linked to a
-    record takes the record's photo, or gives the record its avatar when
-    the record has none; a linked barber's own picker sets the barber's
-    photo; the storage rule refuses a linked account a separate upload.
-    Until then a linked barber can still change their account's avatar by
-    hand, and the next photo set on the record overwrites it.
   - The end-to-end case picks a picture in the browser for a new record
     with a linked account, and reads the stored reference, the object under
     `media/` and the account's avatar object.
-- **Still to build in this stage.** The account side of the one photo (F6,
-  F7 above).
+- **Built so far: the account side of the one photo** (decisions F6 and F7
+  of the same record).
+  - **On linking (F6).** `setRoles` runs `reconcileBarberPhoto` after the
+    link's commit. A record with a photo gives it to the account: the
+    server copies it over `avatars/{uid}/original`. A record with none
+    takes the account's avatar, in one commit with its own
+    `TEAM_BARBER_PHOTO_CHANGED` row credited to whoever made the link. A
+    failure is logged and never undoes the link.
+  - The record takes an avatar only when its pixel size is known. The
+    browser's avatar upload now downscales the picture and writes
+    `mediaWidth` and `mediaHeight` as custom metadata; the server reads
+    them and opens no file.
+  - **The barber's own picker (F7).** On `/account/profile` a linked
+    barber has one control, the picker, and a line saying clients see the
+    photo. A pick runs `changeBarberPhoto` for their own record. There is
+    no «Премахни снимката». When the owner's permissions do not let the
+    barber edit their profile, the page says the shop manages the photo.
+  - `storage.rules` refuses a create, an update and a delete under
+    `avatars/{uid}/` to an account whose stored `linkedBarberId` is set.
+  - Each Team screen loads on its own entry (`permissions.route.ts`,
+    `member.route.ts`, `account.route.ts`), so the member page stays under
+    its bundle ceiling: 1.48 MB of 1.55 MB.
+  - The end-to-end case: a client adds a photo on their account page, the
+    owner links them to a new record, the record holds a copy of that
+    photo, and a pick on the barber's account page then replaces the
+    record's photo and deletes the one it replaced.
+- **Still to build in this stage.** Adding a front desk or content
+  account from the Team page (it waits for the invites, or a lookup on the
+  add sheet).
 
 ### Stage B. The booking calls
 

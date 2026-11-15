@@ -53,6 +53,13 @@ export const AccountsErrorCode = {
    */
   UploadAvatarUploadFailed: 'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
   /**
+   * The account is a barber's, so its photo is the barber's ONE photo
+   * (`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`), and
+   * the owner's permissions do not let this barber set it — the profile
+   * page words it (`avatar-refusal.ts`); no pipeline raises it.
+   */
+  UploadAvatarShopManaged: 'ACCOUNTS_UPLOAD_AVATAR_SHOP_MANAGED',
+  /**
    * The avatar removal failed — the profile page words it
    * (`avatar-refusal.ts`); no pipeline raises it (succeeds a retired dotted
    * i18n key — `docs/architecture/flips/phase-4b-delete.md` §2 row 2).
@@ -138,6 +145,9 @@ export const AccountsError = {
   uploadAvatarTooLarge(maxBytes: number): AccountsError.UploadAvatarTooLarge {
     return { errorCode: AccountsErrorCode.UploadAvatarTooLarge, maxBytes };
   },
+  uploadAvatarShopManaged(): AccountsError.UploadAvatarShopManaged {
+    return { errorCode: AccountsErrorCode.UploadAvatarShopManaged };
+  },
   uploadAvatarUploadFailed(): AccountsError.UploadAvatarUploadFailed {
     return { errorCode: AccountsErrorCode.UploadAvatarUploadFailed };
   },
@@ -205,6 +215,9 @@ export namespace AccountsError {
   export type UploadAvatarUploadFailed = {
     readonly errorCode: typeof AccountsErrorCode.UploadAvatarUploadFailed;
   };
+  export type UploadAvatarShopManaged = {
+    readonly errorCode: typeof AccountsErrorCode.UploadAvatarShopManaged;
+  };
   export type RemoveAvatarRemoveFailed = {
     readonly errorCode: typeof AccountsErrorCode.RemoveAvatarRemoveFailed;
   };
@@ -228,11 +241,15 @@ export namespace AccountsError {
   /**
    * What a person reads for a refused upload of their own photo
    * (`avatarUploadRefusal`, pass E E-7): the picked file's own refusal (not
-   * an image, over `maxBytes`) or the ONE upload-failed copy for every
-   * Storage failure.
+   * an image, over `maxBytes`), the ONE upload-failed copy for every
+   * Storage failure, or — for a barber's account — that the shop manages
+   * the photo.
    */
   export type AvatarRefusal =
-    UploadAvatarNotAnImage | UploadAvatarTooLarge | UploadAvatarUploadFailed;
+    | UploadAvatarNotAnImage
+    | UploadAvatarTooLarge
+    | UploadAvatarUploadFailed
+    | UploadAvatarShopManaged;
 }
 
 /**

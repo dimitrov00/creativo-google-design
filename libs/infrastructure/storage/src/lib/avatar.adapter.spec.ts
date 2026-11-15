@@ -55,6 +55,29 @@ describe('avatarPorts', () => {
     });
   });
 
+  it('writes the picture’s pixel size beside the bytes where the browser can measure it — what a barber record adopts it by', async () => {
+    const fakeRef = { path: PATH };
+    refMock.mockReturnValue(fakeRef);
+    uploadBytesMock.mockResolvedValue(undefined);
+    getDownloadURLMock.mockResolvedValue('https://example.com/avatar.jpg');
+    // A JPEG already under the long-edge cap goes up as it is, measured.
+    vi.stubGlobal('createImageBitmap', () =>
+      Promise.resolve({ width: 512, height: 640, close: () => undefined }),
+    );
+    const image = makeBlob('image/jpeg', 1024);
+
+    try {
+      await avatarPorts(STORAGE).uploadAvatar(USER, image);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(uploadBytesMock).toHaveBeenCalledWith(fakeRef, image, {
+      contentType: 'image/jpeg',
+      customMetadata: { mediaWidth: '512', mediaHeight: '640' },
+    });
+  });
+
   // The guard left the adapter (4A-8): the type and the 5 MiB limit are
   // `AvatarSystem.check`'s, run by the `uploadAvatar` pipeline first.
   // Whatever slips past it, Storage refuses — permanent, never retried.

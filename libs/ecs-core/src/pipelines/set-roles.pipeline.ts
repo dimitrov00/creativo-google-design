@@ -44,6 +44,10 @@ import {
   type RoleAssignment,
   RoleAssignmentSystem,
 } from '@core/systems';
+import {
+  reconcileBarberPhoto,
+  type ReconcileBarberPhotoPorts,
+} from './reconcile-barber-photo.pipeline';
 
 /**
  * `setRoles` — an admin changes one account's roles (security hardening
@@ -70,6 +74,10 @@ import {
  * token's) under `hash(idBasis)` — the row lands with the change or not at
  * all. An unchanged set and link commits nothing.
  *
+ * A link just written is followed by its photo (`reconcileBarberPhoto`,
+ * one photo per barber): the account takes the record's, or the record
+ * takes the account's avatar when it has none. It refuses nothing.
+ *
  * After the commit — a link-only change and the unchanged call too, so a
  * retry finishes a revoke
  * that failed (S-L-15) — the target's refresh tokens are revoked
@@ -89,7 +97,8 @@ export type SetRolesPorts = CommitPorts &
   ClockPorts &
   HashPorts &
   AuthSessionRevokePorts &
-  TelemetryPorts;
+  TelemetryPorts &
+  ReconcileBarberPhotoPorts;
 
 /** The call (`RolesCall`) & the verified caller — never the payload's. */
 export type SetRolesCommand = RolesCall & {
@@ -104,9 +113,13 @@ export type SetRolesCommand = RolesCall & {
   readonly operationId: OperationId | null;
 };
 
-/** The transaction's decision: the admitted change and its plan. */
+/** The transaction's decision: the admitted change, who made it, and its plan. */
 type RolesDecision = {
   readonly assignment: RoleAssignment;
+  /** The caller, over their stored roles — `null` when nothing changed. */
+  readonly actor: Actor | null;
+  /** The photo of the record a `SET` names, as read; `null` for none. */
+  readonly recordPhotoPath: string | null;
   readonly writes: readonly WriteOp[];
 };
 
@@ -114,6 +127,8 @@ type RolesDecision = {
 type Snapshot = {
   readonly caller: User | null;
   readonly target: User | null;
+  /** The photo of the record a `SET` names; `null` for none, and with no `SET`. */
+  readonly recordPhotoPath: string | null;
   readonly linkFacts: BarberLinkFacts;
 };
 
@@ -228,6 +243,7 @@ export const setRoles =
         return {
           caller,
           target,
+          recordPhotoPath: barber === null ? null : barber.avatarMediaPath,
           linkFacts: {
             requestedBarberExists: barber !== null,
             requestedLock,
@@ -238,6 +254,7 @@ export const setRoles =
       ({
         caller,
         target,
+        recordPhotoPath,
         linkFacts,
       }): Result<RolesDecision, GovernanceError> => {
         const decided = RoleAssignmentSystem.decide({
@@ -253,11 +270,18 @@ export const setRoles =
         if (!decided.ok) return decided;
         const assignment = decided.value;
         if (!assignment.rolesChanged && !assignment.linkChanged)
-          return Result.ok({ assignment, writes: [] });
+          return Result.ok({
+            assignment,
+            actor: null,
+            recordPhotoPath,
+            writes: [],
+          });
         // `decide` admits only a stored caller holding `Roles.ASSIGN`.
         const actor = Actor.forCaller(callerUserId, caller?.roles ?? []);
         return Result.ok({
           assignment,
+          actor,
+          recordPhotoPath,
           writes: [
             WriteOp.update(targetPath, userFieldsOf(assignment, nowUtcMs)),
             ...lockWritesOf(assignment, cmd.targetUserId),
@@ -293,6 +317,20 @@ export const setRoles =
         rolesCount: rolesTo.length,
         rolesChanged,
         linkChanged,
+      });
+    }
+    // ONE PHOTO (decision F6): an account just linked to a barber record
+    // takes the record's photo, or gives the record its avatar when the
+    // record has none. On its own, after the link landed: it cannot refuse
+    // the change, and a photo that could not follow is logged.
+    const linker = committed.value.actor;
+    if (linkChanged && linkedBarberIdTo !== null && linker !== null) {
+      await reconcileBarberPhoto(ports)({
+        barberId: linkedBarberIdTo,
+        linkedUserId: cmd.targetUserId,
+        recordPhotoPath: committed.value.recordPhotoPath,
+        actor: linker,
+        nowUtcMs,
       });
     }
     const changed: RolesCall.Changed = {

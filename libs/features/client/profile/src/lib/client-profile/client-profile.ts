@@ -52,6 +52,7 @@ import { UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
+  UiMultilineTextAlignmentDirective,
   UiPaddingDirective,
   UiTextDirective,
   UiVisuallyHiddenDirective,
@@ -114,6 +115,7 @@ type ProfileEdit =
     UiMenuItem,
     UiMenuTrigger,
     UiModalSheet,
+    UiMultilineTextAlignmentDirective,
     UiPaddingDirective,
     UiSheetActionBar,
     UiSkeleton,

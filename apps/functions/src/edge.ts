@@ -543,6 +543,8 @@ const ACCOUNTS_WIRE: WireTable<AccountsErrorCode> = {
   // The web's own failure words (Phase 4b, 4B-5): no pipeline raises them;
   // inert rows — the answer the edge gives a code it does not know.
   [AccountsErrorCode.UploadAvatarUploadFailed]: fields(S.Internal),
+  // The web's own word: no callable raises it — an inert row.
+  [AccountsErrorCode.UploadAvatarShopManaged]: fields(S.PermissionDenied),
   [AccountsErrorCode.RemoveAvatarRemoveFailed]: fields(S.Internal),
   [AccountsErrorCode.UpdateProfileRepositoryFailure]: fields(S.Internal),
   [AccountsErrorCode.RepositoryFailure]: fields(S.Internal),

@@ -24,7 +24,7 @@ import {
   type RosterCall,
 } from '@core/components';
 import type { Barber, BarberSchedule, ShopLocation } from '@core/entities';
-import { PipelineError, PipelineErrorCode, TeamErrorCode } from '@core/errors';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { changeBarberPhoto } from '@core/pipelines';
 import { Callables, type ObserveSchedule } from '@core/ports';
 import {
@@ -397,8 +397,8 @@ export class TeamMemberStore {
    * picture sized for the wire here, then `changeBarberPhoto` — checked,
    * staged under the signed-in account and handed to the server, which
    * copies it into the shop's media and onto the linked account's avatar.
-   * A picture the browser cannot measure is refused: the record holds its
-   * size. `true` once the photo landed; the live record draws it.
+   * A picture the browser cannot measure is refused there: the record
+   * holds its size. `true` once the photo landed; the live record draws it.
    */
   async changePhoto(file: Blob): Promise<boolean> {
     const barberId = this._barberId();
@@ -409,27 +409,17 @@ export class TeamMemberStore {
     this._refusal.set(null);
     this.roles.clearRefusal();
     const sized = await downscaleImage(file);
-    const answer =
-      sized.width === null || sized.height === null
-        ? Result.err(
-            PipelineError.of(
-              PipelineErrorCode.InvalidRequest,
-              TeamErrorCode.PhotoInvalid,
-              null,
-              null,
-            ),
-          )
-        : await changeBarberPhoto({
-            ...this.ports,
-            ...this.staging,
-            ...this.ids,
-          })({
-            userId,
-            barberId,
-            image: sized.image,
-            mediaWidth: sized.width,
-            mediaHeight: sized.height,
-          });
+    const answer = await changeBarberPhoto({
+      ...this.ports,
+      ...this.staging,
+      ...this.ids,
+    })({
+      userId,
+      barberId,
+      image: sized.image,
+      mediaWidth: sized.width,
+      mediaHeight: sized.height,
+    });
     this._pending.set(false);
     this._photoPending.set(false);
     if (!answer.ok) {

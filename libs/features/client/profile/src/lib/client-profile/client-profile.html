@@ -34,15 +34,17 @@
            file picker (a label over the hidden input) — burying a lone
            primary action behind a menu is the thing HIG names as "not an
            approach we encourage". Once a photo exists there are two, and
-           only then does the menu appear. -->
+           only then does the menu appear. A barber's photo is the shop's
+           (one photo per barber): theirs is always the one action. -->
     <ui-stack uiAlignment="center" uiSpacing="regular">
-      @if (portraitUrl(); as photo) {
+      @let photo = portraitUrl() ?? null;
       <ui-avatar
         uiControlSize="extraLarge"
         [uiSrc]="photo"
         [uiName]="fullName()"
         data-testid="profile-photo-preview"
       />
+      @if (photo !== null && !store.photoIsBarbers()) {
       <ui-menu
         [uiPresented]="photoMenuOpen()"
         uiAlignment="center"
@@ -89,12 +91,6 @@
         </button>
       </ui-menu>
       } @else {
-      <ui-avatar
-        uiControlSize="extraLarge"
-        [uiSrc]="null"
-        [uiName]="fullName()"
-        data-testid="profile-photo-preview"
-      />
       <!-- The label is the picker; the SPAN carries the button look.
                `uiButton` has no `label[uiButton]` selector — a bare label
                would silently render as unstyled text — and this is the
@@ -112,11 +108,23 @@
           uiButton
           uiButtonStyle="plain"
           uiControlSize="small"
+          [uiLoading]="store.photoPending()"
           data-testid="profile-photo-pick"
         >
-          {{ t('account.profile.photo.add') }}
+          {{ photo === null ? t('account.profile.photo.add') :
+          t('account.profile.photo.change') }}
         </span>
       </label>
+      } @if (store.photoIsBarbers()) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        uiMultilineTextAlignment="center"
+        data-testid="profile-photo-barber-note"
+      >
+        {{ t('account.profile.photo.barberNote') }}
+      </p>
       } @if (translateError(photoError()); as error) {
       <p
         uiText

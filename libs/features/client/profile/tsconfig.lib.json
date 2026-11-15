@@ -29,6 +29,9 @@
   ],
   "references": [
     {
+      "path": "../../../infrastructure/storage/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {

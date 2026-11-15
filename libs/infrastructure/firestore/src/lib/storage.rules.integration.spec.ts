@@ -46,16 +46,29 @@ const BLOCKED = `storage-rules-${RUN}-blocked`;
 /** A signed-in uid with no `users` document. */
 const NO_ACCOUNT = `storage-rules-${RUN}-no-account`;
 const BARBER = `storage-rules-${RUN}-barber`;
+/** An active account linked to a barber record — its photo is the shop's. */
+const LINKED = `storage-rules-${RUN}-linked`;
+/** An active account whose link was cleared: the field is there, and `null`. */
+const UNLINKED = `storage-rules-${RUN}-unlinked`;
 const APPOINTMENT = `storage-rules-${RUN}-appointment`;
 
 const SEEDED_ACCOUNTS: ReadonlyArray<readonly [string, AccountStatus]> = [
   [ACTIVE, AccountStatus.Active],
   [ERASED, AccountStatus.Erased],
   [BLOCKED, AccountStatus.Blocked],
+  [LINKED, AccountStatus.Active],
+  [UNLINKED, AccountStatus.Active],
+];
+/** The stored link of the accounts that carry the field at all. */
+const SEEDED_LINKS: ReadonlyArray<readonly [string, string | null]> = [
+  [LINKED, `storage-rules-${RUN}-record`],
+  [UNLINKED, null],
 ];
 /** Every prefix this file may write under — emptied in `afterAll`. */
 const WRITTEN_PREFIXES: readonly string[] = [
-  ...[ACTIVE, ERASED, BLOCKED, NO_ACCOUNT].map((uid) => `avatars/${uid}`),
+  ...[ACTIVE, ERASED, BLOCKED, NO_ACCOUNT, LINKED, UNLINKED].map(
+    (uid) => `avatars/${uid}`,
+  ),
   `appointmentPhotos/${APPOINTMENT}`,
   `unlisted/${ACTIVE}`,
   `staffUploads/${BARBER}`,
@@ -82,6 +95,13 @@ describe('storage.rules (emulator)', () => {
           .collection(Collections.Users)
           .doc(uid)
           .set({ accountStatus });
+      }
+      for (const [uid, linkedBarberId] of SEEDED_LINKS) {
+        await ctx
+          .firestore()
+          .collection(Collections.Users)
+          .doc(uid)
+          .update({ linkedBarberId });
       }
     });
   });
@@ -192,6 +212,63 @@ describe('storage.rules (emulator)', () => {
           PNG,
           IMAGE.contentType,
         ),
+      );
+    });
+  });
+
+  describe('a barber’s photo is the shop’s (one photo per barber, F7)', () => {
+    it('refuses a LINKED owner a new avatar, an overwrite and a metadata change', async () => {
+      const linked = signedIn(LINKED, Role.Client, Role.Barber);
+      await assertFails(
+        upload(linked, avatarOf(LINKED), PNG, IMAGE.contentType),
+      );
+      // The server's copy of the record's photo is there.
+      await seedObject(avatarOf(LINKED));
+      await assertFails(
+        upload(linked, avatarOf(LINKED), PNG, IMAGE.contentType),
+      );
+      await assertFails(
+        linked
+          .storage(BUCKET)
+          .ref(avatarOf(LINKED))
+          .updateMetadata({ cacheControl: 'no-cache' }),
+      );
+    });
+
+    it('refuses a LINKED owner the removal of it — and still lets anyone read it', async () => {
+      await seedObject(avatarOf(LINKED));
+      await assertFails(
+        signedIn(LINKED, Role.Client, Role.Barber)
+          .storage(BUCKET)
+          .ref(avatarOf(LINKED))
+          .delete(),
+      );
+      await assertSucceeds(
+        testEnv
+          .unauthenticatedContext()
+          .storage(BUCKET)
+          .ref(avatarOf(LINKED))
+          .getMetadata(),
+      );
+    });
+
+    it('an account whose link was cleared (the field is null) owns its avatar again', async () => {
+      const owner = signedIn(UNLINKED, Role.Client);
+      await assertSucceeds(
+        upload(owner, avatarOf(UNLINKED), PNG, IMAGE.contentType),
+      );
+      await assertSucceeds(
+        owner.storage(BUCKET).ref(avatarOf(UNLINKED)).delete(),
+      );
+    });
+
+    it('a signed-in uid with no users document may still delete its own object', async () => {
+      await seedObject(avatarOf(NO_ACCOUNT));
+      await assertSucceeds(
+        signedIn(NO_ACCOUNT, Role.Client)
+          .storage(BUCKET)
+          .ref(avatarOf(NO_ACCOUNT))
+          .delete(),
       );
     });
   });

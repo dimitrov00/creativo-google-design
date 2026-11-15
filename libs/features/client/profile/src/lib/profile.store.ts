@@ -1,7 +1,11 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { type BirthDate, Principal, type ProfileEdits } from '@core/components';
-import { saveOwnProfile, uploadAvatar } from '@core/pipelines';
-import { Result, type UserId } from '@core/primitives';
+import {
+  changeBarberPhoto,
+  saveOwnProfile,
+  uploadAvatar,
+} from '@core/pipelines';
+import { type BarberId, Result, type UserId } from '@core/primitives';
 import {
   AccountsError,
   type AvatarUploadError,
@@ -13,11 +17,16 @@ import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   SessionIdentityService,
   avatarUploadRefusal,
+  barberPhotoRefusal,
 } from '@creativo/features/shared/shell';
 import {
   AVATAR_PORTS,
   GATEWAY_PORTS,
+  ID_PORTS,
+  STAGED_UPLOAD_PORTS,
+  TEAM_ADMIN_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { downscaleImage } from '@creativo/infrastructure/storage';
 
 /**
  * The write half of `/account/profile` — one place where an edit becomes a
@@ -41,6 +50,14 @@ import {
  * the same transaction, credited to this user. The web no longer writes
  * `users/{uid}` (the rules refuse it).
  *
+ * A BARBER'S photo is the shop's (one photo per barber, decision F7 of
+ * `docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`): for an
+ * account linked to a barber record, picking a photo here sets the RECORD'S
+ * photo through `setBarberPhoto` — the same call the Team page makes — and
+ * the server copies it onto this account's avatar. There is no second
+ * picture to keep in step, and none to remove here: `storage.rules` refuses
+ * a linked account an avatar write of its own.
+ *
  * Component-provided, not root: drafts and pending state belong to one
  * visit of the screen.
  */
@@ -51,9 +68,26 @@ export class ProfileStore {
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly avatars = inject(AVATAR_PORTS);
   private readonly upload = uploadAvatar(this.avatars);
+  private readonly changeRecordPhoto = changeBarberPhoto({
+    ...inject(TEAM_ADMIN_PORTS),
+    ...inject(STAGED_UPLOAD_PORTS),
+    ...inject(ID_PORTS),
+  });
+
+  /**
+   * Whether this account's photo is its barber record's — the account is
+   * linked to one. The page then offers the one picker and no removal, and
+   * says whose photo it is.
+   */
+  readonly photoIsBarbers = computed(
+    () => this.sessionIdentity.linkedBarberId() !== null,
+  );
 
   private readonly _pending = signal(false);
   readonly pending = this._pending.asReadonly();
+  /** A picked photo on its way up — the picker's own busy ring. */
+  private readonly _photoPending = signal(false);
+  readonly photoPending = this._photoPending.asReadonly();
 
   /**
    * The signed-in user's id — the avatar owner `AVATAR_PORTS` names, and
@@ -101,7 +135,8 @@ export class ProfileStore {
    * The photo commits on pick — no sheet, no Save (Apple's grammar: for a
    * profile picture, choosing IS the commit). Mirrors the client-side
    * pre-checks the Storage rules enforce anyway, so a bad file fails fast
-   * with a domain error instead of a raw permission-denied.
+   * with a domain error instead of a raw permission-denied. A linked
+   * barber's pick goes to their record instead (`uploadBarberPhoto`).
    */
   async uploadPhoto(
     file: File,
@@ -110,9 +145,17 @@ export class ProfileStore {
     if (!checked.ok) return checked;
     const userId = this.currentUserId();
     if (!userId) return Result.err(IdentityError.identifierMissing());
+    const barberId = this.sessionIdentity.linkedBarberId();
 
     this._pending.set(true);
+    this._photoPending.set(true);
     try {
+      if (barberId !== null) {
+        const refusal = await this.uploadBarberPhoto(userId, barberId, file);
+        if (refusal !== null) return Result.err(refusal);
+        this.sessionIdentity.refreshAvatar();
+        return Result.ok(undefined);
+      }
       const result = await this.upload(userId, file);
       if (!result.ok) return Result.err(avatarUploadRefusal(result.error));
       // The avatar is a storage object, not a `User` field — refreshing
@@ -122,7 +165,32 @@ export class ProfileStore {
       return Result.ok(undefined);
     } finally {
       this._pending.set(false);
+      this._photoPending.set(false);
     }
+  }
+
+  /**
+   * A linked barber's pick: the picture sized for the wire, then
+   * `changeBarberPhoto` — staged under this account and handed to
+   * `setBarberPhoto`, which judges who may (by default a barber sets their
+   * own record's photo; the owner's permissions can say otherwise), sets
+   * the record's photo and rewrites this account's avatar with it. `null`
+   * once it landed; else the refusal as the person reads it.
+   */
+  private async uploadBarberPhoto(
+    userId: UserId,
+    barberId: BarberId,
+    file: Blob,
+  ): Promise<AccountsError.AvatarRefusal | null> {
+    const sized = await downscaleImage(file);
+    const answer = await this.changeRecordPhoto({
+      userId,
+      barberId,
+      image: sized.image,
+      mediaWidth: sized.width,
+      mediaHeight: sized.height,
+    });
+    return answer.ok ? null : barberPhotoRefusal(answer.error);
   }
 
   /**

@@ -107,6 +107,17 @@ describe('changeBarberPhoto', () => {
     }
   });
 
+  it('refuses a picture the browser could not measure — the record holds its size', async () => {
+    for (const over of [{ mediaWidth: null }, { mediaHeight: null }]) {
+      const { staged, calls, run } = rig();
+      const refusal = unwrapErr(await run(input(over)));
+      expect(refusal.errorCode).toBe(PipelineErrorCode.InvalidRequest);
+      expect(refusal.serverErrorCode).toBe(TeamErrorCode.PhotoInvalid);
+      expect(staged).toEqual([]);
+      expect(calls).toEqual([]);
+    }
+  });
+
   it('an upload that fails is worth trying again, and no call is made', async () => {
     const { calls, run } = rig({ stagingFails: true });
 

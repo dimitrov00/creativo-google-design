@@ -1,4 +1,4 @@
-import type { TeamCall } from '@core/components';
+import { StoredObjectFacts, type TeamCall } from '@core/components';
 import {
   type BarberId,
   ClientOperationId,
@@ -20,7 +20,8 @@ import { BarberPhotoSystem } from '@core/systems';
  * `setBarberPhoto` by its NAME.
  *
  * 1. **The picture** is one the shop shows (`BarberPhotoSystem.admitObject`
- *    — the server asks the same again): else `TEAM_PHOTO_INVALID`, and
+ *    — the server asks the same again) and one the browser could measure,
+ *    since the record holds its size: else `TEAM_PHOTO_INVALID`, and
  *    nothing is uploaded.
  * 2. **Two names**, minted once: the staged file's and the act's. The act's
  *    is the new photo object's on the server, so a retried call names the
@@ -39,15 +40,18 @@ export type ChangeBarberPhotoPorts = StagedUploadPorts &
   BarberPhotoCallPorts &
   IdPorts;
 
-/** What the member's page hands over: whose picture, and the picture as the browser sized it. */
+/**
+ * What a picker hands over — the member's page, or a linked barber's own
+ * account page: whose picture, and the picture as the browser sized it.
+ */
 export type ChangeBarberPhotoInput = {
   /** The signed-in account: the staging folder is its own. */
   readonly userId: UserId;
   readonly barberId: BarberId;
   readonly image: Blob;
-  /** The picture's pixel size, as the browser measured it. */
-  readonly mediaWidth: number;
-  readonly mediaHeight: number;
+  /** The picture's pixel size, as the browser measured it; `null` where it could not. */
+  readonly mediaWidth: number | null;
+  readonly mediaHeight: number | null;
 };
 
 export const changeBarberPhoto =
@@ -55,11 +59,14 @@ export const changeBarberPhoto =
   async (
     input: ChangeBarberPhotoInput,
   ): Promise<Result<TeamCall.Saved, PipelineError>> => {
-    const picture = BarberPhotoSystem.admitObject({
-      contentType: input.image.type.length === 0 ? null : input.image.type,
-      sizeBytes: input.image.size,
-    });
-    if (!picture.ok) {
+    const { mediaWidth, mediaHeight } = input;
+    const picture = BarberPhotoSystem.admitObject(
+      StoredObjectFacts.unmeasured(
+        input.image.size,
+        input.image.type.length === 0 ? null : input.image.type,
+      ),
+    );
+    if (!picture.ok || mediaWidth === null || mediaHeight === null) {
       return Result.err(
         PipelineError.of(
           PipelineErrorCode.InvalidRequest,
@@ -85,8 +92,8 @@ export const changeBarberPhoto =
     return ports.setBarberPhoto({
       barberId: input.barberId,
       stagedName: stagedName.value,
-      mediaWidth: input.mediaWidth,
-      mediaHeight: input.mediaHeight,
+      mediaWidth,
+      mediaHeight,
       operationId: operationId.value,
     });
   };

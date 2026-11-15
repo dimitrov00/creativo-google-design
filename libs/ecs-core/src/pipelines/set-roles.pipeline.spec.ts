@@ -7,6 +7,7 @@ import {
   Email,
   type Role,
   Role as RoleTag,
+  type StoredObjectFacts,
   WriteOp,
 } from '@core/components';
 import {
@@ -105,6 +106,10 @@ type RigOptions = {
   readonly commit?: (commit: CommitPlan) => CommitPlan;
   /** The barber records stored (default `ivan` and `niko`). */
   readonly barbers?: readonly BarberId[];
+  /** The photo each stored record holds, by its id; none unless told. */
+  readonly photos?: Readonly<Record<string, string>>;
+  /** The objects in Storage, by path; none unless told. */
+  readonly objects?: Readonly<Record<string, StoredObjectFacts>>;
   /** The record locks stored, each naming its account. */
   readonly locks?: readonly (readonly [BarberId, UserId])[];
 };
@@ -121,7 +126,12 @@ function rig(options: RigOptions = {}) {
     ),
     ...(options.barbers ?? [IVAN, NIKO]).map((id) => ({
       path: [Collections.Barbers, id],
-      body: bodyOf(barberFixture({ id })),
+      body: bodyOf(
+        barberFixture({
+          id,
+          avatarMediaPath: options.photos?.[id] ?? null,
+        }),
+      ),
     })),
     ...(options.locks ?? []).map(([barberId, linkedUserId]) => ({
       path: lockPath(barberId),
@@ -148,8 +158,44 @@ function rig(options: RigOptions = {}) {
     },
   };
   const commit = options.commit ? options.commit(tx.commit) : tx.commit;
-  const run = setRoles({ ...tx, commit, ...telemetry, ...revokePorts });
-  return { store, tx, telemetry, revoke, asked, plansAtRevoke, run };
+  /** The objects in Storage, by path; none unless told. */
+  const objects = new Map<string, StoredObjectFacts>(
+    Object.entries(options.objects ?? {}),
+  );
+  /** Every Storage call the link's photo made, in order. */
+  const storage: string[] = [];
+  const run = setRoles({
+    ...tx,
+    commit,
+    ...telemetry,
+    ...revokePorts,
+    statStoredObject: async (path) => {
+      storage.push(`stat:${path}`);
+      return Result.ok(objects.get(path) ?? null);
+    },
+    copyStoredObject: async (fromPath, toPath) => {
+      storage.push(`copy:${fromPath}→${toPath}`);
+      const source = objects.get(fromPath);
+      if (source !== undefined) objects.set(toPath, source);
+      return Result.ok(undefined);
+    },
+    deleteStoredObject: async (path) => {
+      storage.push(`delete:${path}`);
+      objects.delete(path);
+      return Result.ok(undefined);
+    },
+  });
+  return {
+    store,
+    tx,
+    telemetry,
+    revoke,
+    asked,
+    plansAtRevoke,
+    objects,
+    storage,
+    run,
+  };
 }
 
 /**
@@ -903,5 +949,108 @@ describe('setRoles', () => {
         Result.err(GovernanceError.rolesForbidden(ADMIN)),
       );
     });
+  });
+});
+
+describe('setRoles — a link is followed by its photo (one photo per barber, F6)', () => {
+  const AVATAR = `avatars/${TARGET}/original`;
+  const PORTRAIT = 'media/barbers/ivan/operation-photo-0123456';
+  const measured: StoredObjectFacts = {
+    sizeBytes: 90_000,
+    contentType: 'image/jpeg',
+    pixelWidth: 800,
+    pixelHeight: 1000,
+  };
+  const link = () => call({ roles: [RoleTag.Client, RoleTag.Barber] });
+
+  it('a record with a photo gives it to the account just linked: the avatar is rewritten, and nothing else is written', async () => {
+    const { tx, storage, objects, run } = rig({
+      photos: { [IVAN]: PORTRAIT },
+      objects: { [PORTRAIT]: measured },
+    });
+
+    expect((await run(link())).ok).toBe(true);
+
+    expect(storage).toEqual([`copy:${PORTRAIT}→${AVATAR}`]);
+    expect(objects.get(AVATAR)).toEqual(measured);
+    // The roles change's own plan, and no other.
+    expect(tx.plans).toHaveLength(1);
+  });
+
+  it('a record with none takes the account’s avatar: a copy in the barber’s folder, the record set beside ONE row credited to whoever linked', async () => {
+    const { store, tx, storage, objects, run } = rig({
+      objects: { [AVATAR]: measured },
+    });
+
+    expect((await run(link())).ok).toBe(true);
+
+    const stored = store.get(`${Collections.Barbers}/${IVAN}`);
+    const path = String(stored?.['avatarMediaPath']);
+    expect(path.startsWith(`media/barbers/${IVAN}/`)).toBe(true);
+    expect(stored).toMatchObject({
+      avatarMediaWidth: 800,
+      avatarMediaHeight: 1000,
+      avatarMediaFocalX: 0.5,
+      avatarMediaFocalY: 0.5,
+    });
+    expect(storage).toEqual([`stat:${AVATAR}`, `copy:${AVATAR}→${path}`]);
+    expect(objects.get(path)).toEqual(measured);
+    // The roles change, then the photo: two plans, the second the record and its row.
+    expect(tx.plans).toHaveLength(2);
+    const rows = auditRowsOf(tx.plans);
+    expect(rows.map((row) => row.auditAction)).toEqual([
+      AuditAction.ProfileRolesChanged,
+      AuditAction.TeamBarberPhotoChanged,
+    ]);
+    expect(rows[1]).toMatchObject({ resourceId: `barbers/${IVAN}` });
+    expect(JSON.stringify(rows[1])).toContain(ADMIN);
+  });
+
+  it('takes nothing when the account has no avatar, or one nobody measured', async () => {
+    const none = rig();
+    await none.run(link());
+    expect(none.storage).toEqual([`stat:${AVATAR}`]);
+    expect(none.tx.plans).toHaveLength(1);
+
+    const unmeasured = rig({
+      objects: {
+        [AVATAR]: { ...measured, pixelWidth: null, pixelHeight: null },
+      },
+    });
+    await unmeasured.run(link());
+    expect(unmeasured.storage).toEqual([`stat:${AVATAR}`]);
+    expect(
+      unmeasured.store.get(`${Collections.Barbers}/${IVAN}`)?.[
+        'avatarMediaPath'
+      ],
+    ).toBeNull();
+  });
+
+  it('touches no object for a roles change with no link, a link released, or a change refused', async () => {
+    const rolesOnly = rig({ objects: { [AVATAR]: measured } });
+    await rolesOnly.run(
+      call({ roles: [RoleTag.Client, RoleTag.Receptionist] }),
+    );
+    expect(rolesOnly.storage).toEqual([]);
+
+    const released = rig({
+      target: storedBarber(IVAN),
+      locks: [[IVAN, TARGET]],
+      photos: { [IVAN]: PORTRAIT },
+    });
+    await released.run(
+      call({ roles: [RoleTag.Client] }, BarberLinkRequest.CLEAR),
+    );
+    expect(released.storage).toEqual([]);
+
+    const refused = rig({
+      caller: registeredUserFixture({
+        id: ADMIN,
+        roles: [RoleTag.Receptionist],
+      }),
+      objects: { [AVATAR]: measured },
+    });
+    expect((await refused.run(link())).ok).toBe(false);
+    expect(refused.storage).toEqual([]);
   });
 });

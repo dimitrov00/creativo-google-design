@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type DocBody, Role, type StoredObjectFacts } from '@core/components';
+import { type DocBody, Role, StoredObjectFacts } from '@core/components';
 import {
   BarberId,
   LogEvent,
@@ -53,10 +53,7 @@ const NIKO = BarberId.of('niko');
 const STAGED = `staffUploads/${ADMIN}/a1b2c3d4-staged`;
 const PHOTO = `media/barbers/${IVAN}/${OP}`;
 const OLDER = `media/barbers/${IVAN}/operation-older-0123456`;
-const JPEG: StoredObjectFacts = {
-  contentType: 'image/jpeg',
-  sizeBytes: 90_000,
-};
+const JPEG = StoredObjectFacts.unmeasured(90_000, 'image/jpeg');
 
 const STORED_ADMIN: User = registeredUserFixture({
   id: ADMIN,
@@ -379,8 +376,8 @@ describe('setBarberPhoto — the staged object', () => {
 
   it('refuses what is no picture the shop shows as TEAM_PHOTO_INVALID, and copies nothing', async () => {
     for (const facts of [
-      { contentType: 'application/pdf', sizeBytes: 1000 },
-      { contentType: 'image/jpeg', sizeBytes: 6 * 1024 * 1024 },
+      StoredObjectFacts.unmeasured(1000, 'application/pdf'),
+      StoredObjectFacts.unmeasured(6 * 1024 * 1024, 'image/jpeg'),
     ]) {
       const { storage, run } = rig({ objects: { [STAGED]: facts } });
       expect(unwrapErr(await run(call()))).toEqual({

@@ -31,6 +31,7 @@ export * from './reschedule-appointment.pipeline';
 export * from './resolve-shop-zone.pipeline';
 export * from './run-backfill.pipeline';
 export * from './sample-lead-time.pipeline';
+export * from './reconcile-barber-photo.pipeline';
 export * from './set-roles.pipeline';
 export * from './set-staff-permissions.pipeline';
 export * from './shop-zone-read.pipeline';
