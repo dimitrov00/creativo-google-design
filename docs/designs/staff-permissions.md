@@ -1233,8 +1233,40 @@ editors"); its server half is merged.
   - The end-to-end case moves a new record to one shop, links a seeded
     client found by family name, checks the stored roles, link and lock,
     releases it and checks them again.
-- **Still to build in this stage.** A page for an account with no record.
-  The barber's photo has no callable yet.
+- **Built so far: a staff account's page.** `/admin/team/account/:userId`,
+  for an account that holds a staff role and is linked to no barber record:
+  the front desk, a content editor, an admin. Its row on the Team list
+  leads to it.
+  - The page shows who it is, the staff roles as ticks, the way to «Права»
+    for each level held (P10), and «Махни от екипа» behind a question.
+  - What the page is to the person looking is
+    `TeamRosterSystem.accountStandingOf`: the owner changes someone else's
+    account; their own, the vendor's, an unregistered person's, and any
+    account to someone who assigns no roles are read, each with one line
+    that says why.
+  - The ticks are «Рецепция», «Съдържание» and «Администратор»
+    (`RoleAssignmentSystem.teamTicksOf`). «Бръснар» is a tick only while
+    the account holds it: the page can take it away, and it is given from a
+    barber's page with «Свържи профил», because `setRoles` wants a record.
+  - The ticks are a draft. «Запази» is in the dock only while
+    `RoleAssignmentSystem.teamSaveOf` would send them: at least one tick,
+    and a set that differs from the stored one. `teamRolesOf` answers the
+    set: what the account holds beside the ticks (`client`) plus the ticked
+    roles. With no tick there is no save; the account leaves the team by
+    «Махни от екипа», which sends it as a `client`.
+  - Every change ends that person's sessions, and the page says so under
+    the ticks. A change written without ending them is said with «Опитай
+    пак», as on a barber's page. Both pages send through one
+    `TeamRolesStore`.
+  - Not built: adding someone to the team who is no barber. Today the
+    front desk and a content editor get their role on the client card; the
+    Team list's ＋ adds barbers only. This waits for the invites, or for a
+    lookup on the add sheet.
+  - The end-to-end case opens a seeded front-desk account from the list,
+    adds «Съдържание», reads the stored roles, and takes the account off
+    the team. A second case holds that the owner's own account is read.
+- **Still to build in this stage.** The barber's photo, which has no
+  callable yet.
 
 ### Stage B. The booking calls
 

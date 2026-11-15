@@ -66,6 +66,7 @@ import { MemberShopsSheet } from '../member-shops-sheet/member-shops-sheet';
 import { memberPageVm } from '../member.presenter';
 import { DeleteAnswer, MemberEditor, type MemberPageVm } from '../member.vm';
 import { TeamMemberStore } from '../team-member.store';
+import { TeamRolesStore } from '../team-roles.store';
 import { TeamWording } from '../team-wording.service';
 import { TeamStore } from '../team.store';
 
@@ -137,7 +138,11 @@ function hoursDesk(): HoursDesk {
     UiToast,
     UiVisuallyHiddenDirective,
   ],
-  providers: [TeamMemberStore, { provide: HOURS_DESK, useFactory: hoursDesk }],
+  providers: [
+    TeamRolesStore,
+    TeamMemberStore,
+    { provide: HOURS_DESK, useFactory: hoursDesk },
+  ],
   templateUrl: './admin-team-member.html',
   styleUrl: '../team-pages.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

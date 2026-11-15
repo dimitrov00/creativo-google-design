@@ -2570,6 +2570,26 @@
         "sessionsRetry": "Try again",
         "cancel": "Cancel"
       },
+      "account": {
+        "notFound": "We could not find this account on the team.",
+        "unnamed": "No name",
+        "rolesTitle": "Roles",
+        "standing": {
+          "OWN": "This is your account. Its roles are not changed from here.",
+          "VENDOR": "A support account. Its roles are not changed.",
+          "UNREGISTERED": "This person has not finished registering yet.",
+          "READ_ONLY": "Only the administrator changes roles."
+        },
+        "sessionsNote": "After a change {{name}} will have to sign in again.",
+        "barberNote": "“Barber” is given from the barber’s page, with “Link an account”.",
+        "noneTicked": "With no role the account leaves the team. Use “Remove from the team”.",
+        "save": "Save",
+        "remove": "Remove from the team",
+        "removeTitle": "Remove {{account}} from the team?",
+        "removeMessage": "{{name}} stays a client and will have to sign in again.",
+        "removeLabel": "Remove",
+        "cancel": "Cancel"
+      },
       "offerings": {
         "title": "Services and prices",
         "lede": "What they perform, and at what price.",

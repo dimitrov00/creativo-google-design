@@ -8,6 +8,7 @@ import {
   loadedLanguage,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
+import { type AccountWords, accountWordsOf } from './account.words';
 import { type LinkWords, linkWordsOf } from './link.words';
 import { type MemberWords, memberWordsOf } from './member.words';
 import { type OfferingWords, offeringWordsOf } from './offerings.words';
@@ -49,6 +50,16 @@ export class TeamWording {
     return lang === null
       ? null
       : memberWordsOf((key, params) =>
+          this.transloco.translate(key, { ...params }, lang),
+        );
+  });
+
+  /** The words a staff account's page prints from values; `null` until the catalogue has loaded. */
+  readonly accountWords = computed<AccountWords | null>(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : accountWordsOf((key, params) =>
           this.transloco.translate(key, { ...params }, lang),
         );
   });

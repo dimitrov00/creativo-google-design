@@ -1,0 +1,255 @@
+<ng-container *transloco="let t">
+  <!-- A ROUTED PAGE: one column at the content measure, the member page's
+       own anatomy — the DS's collapsing title, an icon-only back chip. -->
+  <main
+    class="team-page"
+    uiPaddingHorizontal="regular"
+    data-testid="admin-team-account"
+  >
+    <ui-sheet-header uiPage class="team-page__bar">
+      <a
+        uiLeading
+        uiButton
+        routerLink="/admin/team"
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.team.member.back')"
+        data-testid="admin-team-account-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+      <span uiTitle>{{ vm()?.name ?? t('admin.team.title') }}</span>
+    </ui-sheet-header>
+
+    @if (vm(); as page) {
+    <div class="team-page__modules">
+      <!-- THE HEAD: who it is and what they are on the team. -->
+      <ui-sheet-headline uiHeadlineStyle="hero">
+        <h1 uiSheetLargeTitle uiText uiFont="title" data-testid="account-name">
+          {{ page.name }}
+        </h1>
+        @if (page.line) {
+        <p
+          uiText
+          uiFont="callout"
+          uiForegroundStyle="secondary"
+          data-testid="account-line"
+        >
+          {{ page.line }}
+        </p>
+        }
+        <ui-avatar
+          uiHeadlineMedia
+          uiControlSize="extraLarge"
+          [uiSrc]="null"
+          [uiName]="page.name"
+        />
+      </ui-sheet-headline>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="account-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <!-- A CHANGE THAT LANDED WITHOUT ENDING THE PERSON'S SESSIONS: said
+           until the retry ends them — the stack's one retry grammar. -->
+      @if (store.sessionsPending()) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="account-sessions-pending"
+      >
+        {{ t('admin.team.link.sessionsPending') }}
+        <button
+          uiNoticeActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiLoading]="store.pending()"
+          [disabled]="store.pending()"
+          data-testid="account-sessions-retry"
+          (click)="endSessions()"
+        >
+          {{ t('admin.team.link.sessionsRetry') }}
+        </button>
+      </ui-notice>
+      }
+
+      <!-- THE ROLES: a tick per staff role (a save stands between the tick
+           and the change, so not a switch). Read where they are not the
+           viewer's to change. -->
+      <section class="team-page__module" aria-labelledby="account-roles-title">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="account-roles-title">
+            {{ t('admin.team.account.rolesTitle') }}
+          </h2>
+        </ui-section-header>
+        @if (page.editable) {
+        <ul
+          uiListGroup
+          [attr.aria-label]="t('admin.team.account.rolesTitle')"
+          data-testid="account-roles"
+        >
+          @for (tick of page.ticks; track tick.role) {
+          <li>
+            <button
+              uiListRow
+              uiSize="large"
+              type="button"
+              role="checkbox"
+              [uiInteractive]="true"
+              [uiSelected]="tick.checked"
+              [attr.aria-checked]="tick.checked"
+              [disabled]="store.pending()"
+              [attr.data-testid]="tick.testId"
+              (click)="store.toggle(tick.role)"
+            >
+              {{ tick.label }}
+              <span uiTrailing>
+                @if (tick.checked) {
+                <ui-icon
+                  uiName="checklist.done"
+                  uiForegroundStyle="accent"
+                  aria-hidden="true"
+                />
+                }
+              </span>
+            </button>
+          </li>
+          }
+        </ul>
+        } @else if (page.ticks.length > 0) {
+        <ui-list-group data-testid="account-roles">
+          @for (tick of page.ticks; track tick.role) {
+          <ui-list-row uiSize="large" [attr.data-testid]="tick.testId">
+            {{ tick.label }}
+          </ui-list-row>
+          }
+        </ui-list-group>
+        } @for (note of page.notes; track note) {
+        <p
+          uiText
+          uiFont="footnote"
+          uiForegroundStyle="secondary"
+          class="team-page__footnote"
+          data-testid="account-note"
+        >
+          {{ note }}
+        </p>
+        }
+      </section>
+
+      <!-- THE LEVELS the account holds: the way to «Права». -->
+      @if (page.levels.length > 0) {
+      <section class="team-page__module" aria-labelledby="account-access-title">
+        <ui-section-header uiHeaderProminence="increased">
+          <h2 uiTitle id="account-access-title">
+            {{ t('admin.team.member.accessTitle') }}
+          </h2>
+        </ui-section-header>
+        <ui-list-group data-testid="account-levels">
+          @for (link of page.levels; track link.level) {
+          <a
+            [routerLink]="['/admin/team/permissions', link.level]"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [attr.data-testid]="link.testId"
+          >
+            {{ link.label }}
+            <span uiTrailing class="team-page__value">
+              <span>{{ link.value }}</span>
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </a>
+          }
+        </ui-list-group>
+      </section>
+      }
+
+      <!-- «Махни от екипа»: the account stays, as a client. -->
+      @if (page.remove !== null) {
+      <ui-list-group>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          uiRole="destructive"
+          [uiInteractive]="true"
+          [disabled]="store.pending()"
+          data-testid="account-remove"
+          (click)="removeOpen.set(true)"
+        >
+          {{ t('admin.team.account.remove') }}
+        </button>
+      </ui-list-group>
+      }
+    </div>
+
+    @if (page.remove; as remove) {
+    <ui-alert
+      [uiPresented]="removeOpen()"
+      [uiTitle]="remove.title"
+      [uiMessage]="remove.message"
+      [uiActions]="remove.actions"
+      data-testid="account-remove-question"
+      (uiPicked)="onRemovePick($event)"
+      (uiDismissed)="removeOpen.set(false)"
+    />
+    }
+
+    <!-- The dock: hugged, trailing; present only while the ticks would be
+         sent — the level page's own grammar. -->
+    @if (store.canSave()) {
+    <ui-page-action-bar data-testid="account-dock">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        [uiLoading]="store.pending()"
+        data-testid="account-save"
+        (click)="save()"
+      >
+        {{ t('admin.team.account.save') }}
+      </button>
+    </ui-page-action-bar>
+    } } @else if (missing()) {
+    <p
+      uiText
+      uiFont="callout"
+      uiForegroundStyle="secondary"
+      data-testid="admin-team-account-missing"
+    >
+      {{ t('admin.team.account.notFound') }}
+    </p>
+    } @else {
+    <div
+      class="team-page__module team-page__skeleton"
+      aria-busy="true"
+      data-testid="admin-team-account-skeleton"
+    >
+      <ui-skeleton uiFrame uiFrameHeight="8rem" />
+      <ui-skeleton uiFrame uiFrameHeight="11rem" />
+    </div>
+    }
+  </main>
+
+  <!-- The receipt: said in passing, gone on the next change. -->
+  <ui-toast
+    [uiPresented]="store.saved()"
+    [uiLabel]="t('clientCard.roles.saved')"
+    [uiDismissLabel]="t('admin.permissions.dismiss')"
+    data-testid="account-saved-toast"
+    (uiDismissed)="store.dismissSaved()"
+  />
+</ng-container>

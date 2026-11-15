@@ -139,10 +139,16 @@
             </ui-stack>
             <ui-icon uiTrailing uiName="nav.disclosure" aria-hidden="true" />
           </a>
-          } @else {
-          <!-- An account with no record is read: its roles are the client
-               card's to change. -->
-          <ui-list-row uiSize="large" [attr.data-testid]="row.testId">
+          } @else if (row.accountUserId; as accountUserId) {
+          <!-- A staff account with no record leads to its own page: its
+               roles, and the way off the team. -->
+          <a
+            [routerLink]="['/admin/team/account', accountUserId]"
+            uiListRow
+            uiSize="large"
+            [uiInteractive]="true"
+            [attr.data-testid]="row.testId"
+          >
             <ui-avatar
               uiLeading
               uiControlSize="small"
@@ -157,7 +163,8 @@
               >
               }
             </ui-stack>
-          </ui-list-row>
+            <ui-icon uiTrailing uiName="nav.disclosure" aria-hidden="true" />
+          </a>
           } }
         </ui-list-group>
       </section>
