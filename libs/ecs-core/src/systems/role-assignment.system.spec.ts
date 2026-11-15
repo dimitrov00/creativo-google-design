@@ -1048,6 +1048,182 @@ describe('RoleAssignmentSystem.linkCandidatesOf — who a barber record may be l
   });
 });
 
+describe('RoleAssignmentSystem — a role given from the Team page’s ＋ («Добави в екипа», team onboarding D8)', () => {
+  const admin = [Role.Admin] as const;
+  const account = (id: string, overrides: Partial<User> = {}): User =>
+    targetUser({ id: UserId.of(id), ...overrides });
+  const candidatesOf = (
+    accounts: readonly User[],
+    role: Role = Role.Receptionist,
+    viewerRoles: readonly Role[] = admin,
+  ) =>
+    RoleAssignmentSystem.additionCandidatesOf({
+      viewerUserId: ADMIN_ID,
+      viewerRoles,
+      accounts,
+      role,
+      nowUtcMs: NOW,
+    });
+
+  it('TEAM_ADDITIONS is the front desk, the content editor and the admin — never barber, never the vendor', () => {
+    expect(RoleAssignmentSystem.TEAM_ADDITIONS).toEqual([
+      Role.Receptionist,
+      Role.ContentManager,
+      Role.Admin,
+    ]);
+  });
+
+  it('teamAddOffersOf: a barber record for whoever adds records, then the additions for whoever assigns roles', () => {
+    expect(
+      RoleAssignmentSystem.teamAddOffersOf({
+        addsRecords: true,
+        assignsRoles: true,
+      }),
+    ).toEqual([
+      Role.Barber,
+      Role.Receptionist,
+      Role.ContentManager,
+      Role.Admin,
+    ]);
+    expect(
+      RoleAssignmentSystem.teamAddOffersOf({
+        addsRecords: true,
+        assignsRoles: false,
+      }),
+    ).toEqual([Role.Barber]);
+    expect(
+      RoleAssignmentSystem.teamAddOffersOf({
+        addsRecords: false,
+        assignsRoles: true,
+      }),
+    ).toEqual(RoleAssignmentSystem.TEAM_ADDITIONS);
+    expect(
+      RoleAssignmentSystem.teamAddOffersOf({
+        addsRecords: false,
+        assignsRoles: false,
+      }),
+    ).toEqual([]);
+  });
+
+  it('keeps a registered client and a colleague under another role — a linked barber too — in the lookup’s order, the accounts themselves', () => {
+    const client = account('u-client');
+    const editor = account('u-editor', { roles: [Role.ContentManager] });
+    const barber = account('u-ivan', {
+      roles: [Role.Barber],
+      linkedBarberId: IVAN,
+    });
+    const kept = candidatesOf([client, editor, barber]);
+    expect(kept).toEqual([client, editor, barber]);
+    expect(kept[0]).toBe(client);
+  });
+
+  it('drops an account that holds the role already — for that role alone', () => {
+    const desk = account('u-desk', { roles: [Role.Receptionist] });
+    expect(candidatesOf([desk])).toEqual([]);
+    expect(candidatesOf([desk], Role.Admin)).toEqual([desk]);
+  });
+
+  it('drops an admin for every role: one who assigns roles already does everything a role gives', () => {
+    const coOwner = account('u-co-owner', { roles: [Role.Admin] });
+    for (const role of RoleAssignmentSystem.TEAM_ADDITIONS) {
+      expect(candidatesOf([coOwner], role), role).toEqual([]);
+    }
+  });
+
+  it('drops the viewer, a sysadmin, an erased, an unregistered and a blocked account; keeps one whose block has lapsed', () => {
+    const lapsed = account(
+      'u-lapsed',
+      AccountLifecycle.block(BlockReason.Manual, UtcEpochMs.plusMs(NOW, -HOUR)),
+    );
+    expect(
+      candidatesOf([
+        adminUser(),
+        account('u-vendor', { roles: [Role.Sysadmin] }),
+        account('u-erased', AccountLifecycle.erase(NOW)),
+        provisionedUserFixture({ id: UserId.of('u-stub') }),
+        account('u-blocked', AccountLifecycle.block(BlockReason.Manual, null)),
+        lapsed,
+      ]),
+    ).toEqual([lapsed]);
+  });
+
+  it('offers nobody for a role that is no addition, and nobody to a viewer who assigns no roles', () => {
+    const client = account('u-client');
+    for (const role of [Role.Barber, Role.Client, Role.Sysadmin]) {
+      expect(candidatesOf([client], role), role).toEqual([]);
+    }
+    expect(candidatesOf([client], Role.Receptionist, [Role.Barber])).toEqual(
+      [],
+    );
+  });
+
+  it('additionOf puts the role beside what the account holds — each once, dictionary order, client and barber kept', () => {
+    expect(
+      RoleAssignmentSystem.additionOf([Role.Client], Role.Receptionist),
+    ).toEqual([Role.Client, Role.Receptionist]);
+    expect(
+      RoleAssignmentSystem.additionOf([Role.Barber, Role.Client], Role.Admin),
+    ).toEqual([Role.Client, Role.Barber, Role.Admin]);
+    // Held already: the same set.
+    expect(
+      RoleAssignmentSystem.additionOf(
+        [Role.ContentManager],
+        Role.ContentManager,
+      ),
+    ).toEqual([Role.ContentManager]);
+  });
+
+  it('additionOf adds nothing for a role that is no addition, and never answers an empty set', () => {
+    expect(RoleAssignmentSystem.additionOf([Role.Client], Role.Barber)).toEqual(
+      [Role.Client],
+    );
+    expect(
+      RoleAssignmentSystem.additionOf([Role.Client], Role.Sysadmin),
+    ).toEqual([Role.Client]);
+    expect(RoleAssignmentSystem.additionOf([], Role.Barber)).toEqual([
+      Role.Client,
+    ]);
+  });
+
+  it('what additionOf answers is a set decide admits, with the link left as stored', () => {
+    for (const role of RoleAssignmentSystem.TEAM_ADDITIONS) {
+      const target = account('u-ivan', {
+        roles: [Role.Client, Role.Barber],
+        linkedBarberId: IVAN,
+      });
+      const decided = RoleAssignmentSystem.decide({
+        callerUserId: ADMIN_ID,
+        caller: adminUser(),
+        target,
+        targetUserId: target.id,
+        requestedRoles: RoleAssignmentSystem.additionOf(target.roles, role),
+        linkRequest: BarberLinkRequest.KEEP,
+        linkFacts: {
+          requestedBarberExists: false,
+          requestedLock: null,
+          currentLock: lockOf(target.id),
+        },
+        nowUtcMs: NOW,
+      });
+      expect(decided.ok && decided.value.rolesChanged, role).toBe(true);
+      expect(decided.ok && decided.value.linkChanged, role).toBe(false);
+      expect(decided.ok && decided.value.linkedBarberIdTo, role).toBe(IVAN);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const accounts = deepFreeze([
+      account('u-client'),
+      account('u-desk', { roles: [Role.Receptionist] }),
+    ]);
+    expect(candidatesOf(accounts)).toEqual(candidatesOf(accounts));
+    const stored = deepFreeze([Role.Client, Role.Barber]);
+    expect(RoleAssignmentSystem.additionOf(stored, Role.Admin)).toEqual(
+      RoleAssignmentSystem.additionOf(stored, Role.Admin),
+    );
+  });
+});
+
 describe('RoleAssignmentSystem — an account’s ticks on the Team screen (team onboarding D8)', () => {
   it('teamTicksOf offers the front desk, the content editor and the admin; barber only while it is held', () => {
     expect(RoleAssignmentSystem.teamTicksOf([Role.Client])).toEqual([

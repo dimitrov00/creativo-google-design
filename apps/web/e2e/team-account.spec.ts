@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { Role } from '@core/components';
+import { AuditAction, Role } from '@core/components';
 import { Collections } from '@core/entities';
 import { attemptKey } from './support/attempt-key';
 import {
+  readAuditActionsFor,
   readStoredBody,
   removeUserProfile,
   seedUserProfile,
@@ -119,6 +120,94 @@ test.describe('a staff account’s page', () => {
     );
     await expect(page.getByTestId(`team-member-${deskUid}`)).toHaveCount(0);
     staffUid = null;
+  });
+
+  test('an owner gives a registered client the front desk from the ＋: found by a lookup, asked first, the stored account holds the role and their page opens', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-account-adder-${key}`;
+    const clientUid = `e2e-account-added-${key}`;
+    // A family name nobody else holds: the lookup finds this account alone.
+    const family = `Нова${key}`;
+    const name = `Елена ${family}`;
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Добавя',
+      roles: [Role.Admin],
+    });
+    await seedUserProfile(clientUid, {
+      firstName: 'Елена',
+      lastName: family,
+      phone: '+359881112288',
+    });
+    staffUid = clientUid;
+    await signInAs(page, uid, ['admin']);
+
+    // THE ＋ IS A MENU for the owner: a barber, or a role for an account.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId(`team-member-${clientUid}`)).toHaveCount(0);
+    await page.getByTestId('admin-team-add').click();
+    await expect(page.getByTestId('admin-team-add-barber')).toBeVisible();
+    await page.getByTestId('admin-team-add-receptionist').click();
+
+    // «ДОБАВИ В ЕКИПА»: the lookup finds the registered client by family
+    // name; the row asks first, and says the person signs in again.
+    await expect(page.getByTestId('team-role-sheet')).toContainText(
+      'роля „Рецепция“',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('team-role-query').fill(family);
+    const found = page.getByTestId(`team-role-${clientUid}`);
+    await expect(found).toContainText(name, { timeout: 30_000 });
+    await found.click();
+    await expect(page.getByTestId('team-role-question')).toContainText(
+      `Да дам ли на ${name} роля „Рецепция“?`,
+    );
+    await expect(page.getByTestId('team-role-question')).toContainText(
+      'ще трябва да влезе отново',
+    );
+    await page.getByTestId('team-role-confirm').click();
+
+    // Added: the sheet leaves and the account's own page opens, on the
+    // role it was given; the stored account holds it beside «client», and
+    // the change is on the audit log.
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/admin/team/account/${clientUid}`,
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('account-name')).toHaveText(name, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('account-line')).toHaveText('Рецепция');
+    await expect(page.getByTestId('account-role-receptionist')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(
+      (await readStoredBody(Collections.Users, clientUid))?.['roles'],
+    ).toEqual([Role.Client, Role.Receptionist]);
+    expect(await readAuditActionsFor(clientUid)).toContain(
+      AuditAction.ProfileRolesChanged,
+    );
+    // The owner's own account did not move.
+    expect((await readStoredBody(Collections.Users, uid))?.['roles']).toEqual([
+      Role.Admin,
+    ]);
+
+    // Back on the list they stand under «Още в екипа».
+    await page.getByTestId('admin-team-account-back').click();
+    await expect(page.getByTestId(`team-member-${clientUid}`)).toContainText(
+      'Рецепция',
+      { timeout: 30_000 },
+    );
+    // The account is the `afterEach`'s to remove.
   });
 
   test('the owner’s own account is read: no tick to turn, no way off the team', async ({

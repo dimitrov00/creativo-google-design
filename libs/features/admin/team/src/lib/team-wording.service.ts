@@ -12,6 +12,7 @@ import { type AccountWords, accountWordsOf } from './account.words';
 import { type LinkWords, linkWordsOf } from './link.words';
 import { type MemberWords, memberWordsOf } from './member.words';
 import { type OfferingWords, offeringWordsOf } from './offerings.words';
+import { type RoleAddWords, roleAddWordsOf } from './role-add.words';
 import { type TeamWords, teamWordsOf } from './team.words';
 
 /**
@@ -70,6 +71,16 @@ export class TeamWording {
     return lang === null
       ? null
       : linkWordsOf((key, params) =>
+          this.transloco.translate(key, { ...params }, lang),
+        );
+  });
+
+  /** The words «Добави в екипа» prints from values; `null` until the catalogue has loaded. */
+  readonly roleAddWords = computed<RoleAddWords | null>(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : roleAddWordsOf((key, params) =>
           this.transloco.translate(key, { ...params }, lang),
         );
   });

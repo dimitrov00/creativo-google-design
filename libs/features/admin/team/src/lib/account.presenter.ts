@@ -9,7 +9,7 @@ import type { AccountWords } from './account.words';
 import { levelLinks } from './levels.presenter';
 import { LinkAnswer, type LinkQuestionVm } from './link.vm';
 import type { MemberWords } from './member.words';
-import { firstWord } from './team.format';
+import { firstWord, rolesLine } from './team.format';
 import type { TeamWords } from './team.words';
 
 /*
@@ -37,15 +37,6 @@ export type AccountPageInput = {
   readonly memberWords: MemberWords;
   readonly accountWords: AccountWords;
 };
-
-/** «Администратор, Рецепция» — the roles a row may name, in its order. */
-function rolesLine(roles: readonly Role[], words: TeamWords): string {
-  const named: string[] = [];
-  for (const [role, word] of words.roles) {
-    if (roles.includes(role)) named.push(word);
-  }
-  return named.join(', ');
-}
 
 /** The ticks on show: every one offered when they take presses, else the ones on. */
 function ticksOf(
@@ -118,7 +109,7 @@ export function accountPageVm(input: AccountPageInput): AccountPageVm {
   return {
     userId: account.memberUserId,
     name,
-    line: rolesLine(account.memberRoles, input.words),
+    line: rolesLine(account.memberRoles, input.words.roles),
     editable,
     ticks: ticksOf(input, editable),
     notes: notesOf(input, editable, name),

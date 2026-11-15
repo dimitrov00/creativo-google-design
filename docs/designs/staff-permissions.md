@@ -1258,10 +1258,8 @@ editors"); its server half is merged.
     the ticks. A change written without ending them is said with «Опитай
     пак», as on a barber's page. Both pages send through one
     `TeamRolesStore`.
-  - Not built: adding someone to the team who is no barber. Today the
-    front desk and a content editor get their role on the client card; the
-    Team list's ＋ adds barbers only. This waits for the invites, or for a
-    lookup on the add sheet.
+  - Adding someone who is no barber came later: see «Добави в екипа»
+    below.
   - The end-to-end case opens a seeded front-desk account from the list,
     adds «Съдържание», reads the stored roles, and takes the account off
     the team. A second case holds that the owner's own account is read.
@@ -1313,9 +1311,44 @@ editors"); its server half is merged.
     owner links them to a new record, the record holds a copy of that
     photo, and a pick on the barber's account page then replaces the
     record's photo and deletes the one it replaced.
-- **Still to build in this stage.** Adding a front desk or content
-  account from the Team page (it waits for the invites, or a lookup on the
-  add sheet).
+- **Built so far: «Добави в екипа», a role for a registered account.** The
+  front desk, a content editor and an admin are accounts with a role, not
+  barber records. The Team page's ＋ now adds them too.
+  - The ＋ is a menu for the owner: «Бръснар», «Рецепция», «Съдържание»,
+    «Администратор». `RoleAssignmentSystem.teamAddOffersOf` says which are
+    offered: a barber record to whoever manages the team, the three roles
+    to whoever assigns roles. Someone offered only one thing gets no menu;
+    the press opens it.
+  - A role opens a lookup sheet. Before anything is typed it lists the
+    team's own people who do not hold the role
+    (`TeamRosterSystem.additionCandidatesOf`): a barber somebody signs in
+    as, or a colleague under another role. A lookup by name, phone or
+    email answers registered accounts
+    (`RoleAssignmentSystem.additionCandidatesOf`).
+  - Nobody is offered who could not take the role, or would gain nothing
+    by it: the viewer, the vendor, an erased, unregistered or blocked
+    account, a leaver, one that holds the role already, and an admin, who
+    already does everything a role gives.
+  - A row asks first («Да дам ли на … роля „Рецепция“?») and says the
+    person will sign in again. For «Администратор» it also says what an
+    admin may do.
+  - The call is `setRoles` with `RoleAssignmentSystem.additionOf`: the role
+    beside whatever the account holds, the barber link left as it is. So
+    a barber can also run the front desk, and keeps the chair.
+  - When it lands, the Team list is read again and the person's page
+    opens: the account's page, or the barber's for an account linked to a
+    record. A change written without ending the person's sessions is said
+    on the list with «Опитай пак», and no page opens.
+  - The person must have an account first. There are still no invites: a
+    newcomer signs in to the app once, and the owner then finds them here.
+  - «Свържи профил» and this sheet are one component,
+    `lib-account-pick-sheet`; each brings its own rules and words.
+  - The end-to-end case gives a registered client the front desk from the
+    ＋, reads the stored roles and the audit row, and finds the account's
+    page open.
+- **Stage T is built.** What is left of the team's onboarding is the
+  invites (email, per the owner's ruling) and the leaving stage, both in
+  `docs/designs/team-onboarding.md`.
 
 ### Stage B. The booking calls
 

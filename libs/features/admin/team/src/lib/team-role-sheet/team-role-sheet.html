@@ -1,0 +1,19 @@
+<ng-container *transloco="let t">
+  <lib-account-pick-sheet
+    uiSheetId="team-role"
+    [uiTitle]="t('admin.team.roleAdd.title')"
+    [uiVm]="vm()"
+    [uiQuestion]="question()"
+    [uiQuestionOpen]="questionOpen()"
+    [uiRefusal]="refusal()"
+    [uiPending]="pending()"
+    [uiSearching]="lookup.searching()"
+    [uiClosing]="uiClosing()"
+    (queried)="lookup.ask($event)"
+    (picked)="pick($event)"
+    (answered)="answer($event)"
+    (questionDismissed)="questionOpen.set(false)"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  />
+</ng-container>

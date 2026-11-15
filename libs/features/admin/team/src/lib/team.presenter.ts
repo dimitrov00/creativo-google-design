@@ -1,6 +1,7 @@
 import {
   BarberStatus,
   LocalizedText,
+  type Role,
   type StaffLevel,
   StaffPermissions,
   type TeamMember,
@@ -14,13 +15,14 @@ import {
   type Locale,
 } from '@core/primitives';
 import type { TeamSections } from '@core/systems';
-import { dayWords, firstWord, lineOf } from './team.format';
+import { dayWords, firstWord, lineOf, rolesLine } from './team.format';
 import {
   type LevelPageVm,
   type LevelRowVm,
   type LevelsVm,
   type PermissionGroupVm,
   type PermissionRowVm,
+  type TeamAddOptionVm,
   type TeamPageVm,
   type TeamRowVm,
   TeamRun,
@@ -105,16 +107,12 @@ function accountRow(
   member: TeamMember.RoleOnly,
   input: TeamPageInput,
 ): TeamRowVm {
-  const roles: string[] = [];
-  for (const [role, word] of input.words.roles) {
-    if (member.memberRoles.includes(role)) roles.push(word);
-  }
   return {
     id: member.memberUserId,
     barberId: null,
     accountUserId: member.memberUserId,
     name: member.memberAccountName,
-    line: roles.join(', '),
+    line: rolesLine(member.memberRoles, input.words.roles),
     avatarSrc: null,
     testId: `team-member-${member.memberUserId}`,
   };
@@ -144,6 +142,22 @@ export function teamPageVm(input: TeamPageInput): TeamPageVm {
     lede: input.managesTeam ? words.ledeAll : words.ledeRecords,
     runs: runs.filter((run) => run.rows.length > 0),
   };
+}
+
+/**
+ * What the ＋ adds, each under its role's own name: «Бръснар», «Рецепция»,
+ * «Съдържание», «Администратор». Which are offered, and in what order, is
+ * `RoleAssignmentSystem.teamAddOffersOf`'s answer.
+ */
+export function teamAddMenuVm(
+  offers: readonly Role[],
+  words: TeamWords,
+): readonly TeamAddOptionVm[] {
+  return offers.map((role) => ({
+    role,
+    label: words.roles.get(role) ?? role,
+    testId: `admin-team-add-${role}`,
+  }));
 }
 
 /** How many names a holders line spells out before «и още N». */

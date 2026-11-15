@@ -504,6 +504,50 @@ describe('TeamRosterSystem — the account beside a record: who may link one, wh
     expect(TeamRosterSystem.unlinkedOf(members, null)).toEqual([]);
   });
 
+  it('additionCandidatesOf lists the members with an account that could take the role — a linked barber and a staff account, not one that holds it, the viewer, a sysadmin, a stub or a record nobody signs in as', () => {
+    const ids = (role: Role, viewer: UserId | null = owner.userId) =>
+      TeamRosterSystem.additionCandidatesOf(members, role, viewer).map(
+        (member) => member.memberUserId,
+      );
+    expect(ids(Role.Receptionist)).toEqual([UserId.of('u-ivan')]);
+    expect(ids(Role.Admin)).toEqual([UserId.of('u-ivan'), UserId.of('u-desk')]);
+    // The rows themselves.
+    expect(
+      TeamRosterSystem.additionCandidatesOf(
+        members,
+        Role.Receptionist,
+        owner.userId,
+      )[0],
+    ).toBe(linked);
+    // Nobody looking: nobody offered.
+    expect(ids(Role.Admin, null)).toEqual([]);
+    // The viewer's own roles are not changed from a list: looking from
+    // the front desk's account, Ivan is offered and the desk is not.
+    expect(ids(Role.ContentManager, UserId.of('u-desk'))).toEqual([
+      UserId.of('u-ivan'),
+    ]);
+    // An admin already does everything a role gives: never offered one.
+    expect(ids(Role.ContentManager)).not.toContain(UserId.of('u-owner'));
+    expect(ids(Role.ContentManager, UserId.of('u-desk'))).not.toContain(
+      UserId.of('u-owner'),
+    );
+  });
+
+  it('additionCandidatesOf leaves a leaver’s account out', () => {
+    const left = members.map((member) =>
+      member === linked
+        ? { ...linked, teamMemberStatus: TeamMemberStatus.Departed }
+        : member,
+    );
+    expect(
+      TeamRosterSystem.additionCandidatesOf(
+        left,
+        Role.Receptionist,
+        owner.userId,
+      ),
+    ).toEqual([]);
+  });
+
   it('accountOf finds a staff account’s row by its id, never a barber record’s', () => {
     expect(
       TeamRosterSystem.accountOf(members, UserId.of('u-desk'))?.memberRoles,

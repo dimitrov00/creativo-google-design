@@ -1,0 +1,119 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    [sheetId]="uiSheetId() + '-sheet'"
+    [labelledBy]="uiSheetId() + '-sheet-title'"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    [titleCollapsed]="searchEngaged() ? true : undefined"
+    [attr.data-testid]="uiSheetId() + '-sheet'"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title>{{ uiTitle() }}</span>
+
+    @if (uiVm(); as sheet) {
+    <div class="team-page__form">
+      <!-- The house sheet-search grammar: the headline folds while the
+           search is engaged; the field itself rides the dock (below). -->
+      <ui-sheet-headline [uiFolded]="searchEngaged()">
+        <h2
+          [id]="uiSheetId() + '-sheet-title'"
+          uiSheetLargeTitle
+          uiText
+          uiFont="largeTitle"
+        >
+          {{ uiTitle() }}
+        </h2>
+        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+          {{ sheet.lede }}
+        </p>
+      </ui-sheet-headline>
+
+      @if (uiRefusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        [attr.data-testid]="uiSheetId() + '-refusal'"
+      >
+        {{ line }}
+      </ui-notice>
+      } @if (sheet.rows.length > 0) {
+      <section class="team-page__module">
+        @if (sheet.heading; as heading) {
+        <ui-section-header uiHeaderProminence="standard">
+          <h3 uiTitle>{{ heading }}</h3>
+        </ui-section-header>
+        }
+        <ui-list-group [attr.data-testid]="uiSheetId() + '-list'">
+          @for (row of sheet.rows; track row.userId) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="large"
+            [uiInteractive]="true"
+            [disabled]="uiPending()"
+            [attr.data-testid]="row.testId"
+            (click)="picked.emit(row)"
+          >
+            <ui-avatar
+              uiLeading
+              uiControlSize="small"
+              [uiSrc]="null"
+              [uiName]="row.name"
+            />
+            <ui-stack uiSpacing="tight" class="team-page__identity">
+              <span>{{ row.name }}</span>
+              @if (row.line; as line) {
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ line }}</span
+              >
+              }
+            </ui-stack>
+          </button>
+          }
+        </ui-list-group>
+      </section>
+      } @else if (sheet.emptyBody; as body) {
+      <ui-empty-state
+        [uiTitle]="sheet.emptyTitle"
+        role="status"
+        [attr.data-testid]="uiSheetId() + '-empty'"
+      >
+        <span uiText uiFont="callout" uiForegroundStyle="secondary"
+          >{{ body }}</span
+        >
+      </ui-empty-state>
+      }
+    </div>
+    }
+
+    <!-- THE SEARCH AT THE THUMB: the field is the dock. A row is the act,
+         so nothing sits beside it. -->
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <ui-search-field
+        uiFill
+        uiControlSize="large"
+        uiAutocapitalize="words"
+        [uiValue]="query()"
+        [uiPlaceholder]="t('admin.team.link.placeholder')"
+        [uiLabel]="t('admin.team.link.search')"
+        [uiBusy]="uiSearching()"
+        [uiTestId]="uiSheetId() + '-query'"
+        [uiClearLabel]="t('admin.team.link.clear')"
+        (uiInput)="ask($event)"
+        (uiFocusChange)="searchFocused.set($event)"
+      />
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+
+  <ui-alert
+    [uiPresented]="uiQuestionOpen()"
+    [uiTitle]="uiQuestion()?.title ?? ''"
+    [uiMessage]="uiQuestion()?.message ?? ''"
+    [uiActions]="uiQuestion()?.actions ?? []"
+    [attr.data-testid]="uiSheetId() + '-question'"
+    (uiPicked)="answered.emit($event)"
+    (uiDismissed)="questionDismissed.emit()"
+  />
+</ng-container>

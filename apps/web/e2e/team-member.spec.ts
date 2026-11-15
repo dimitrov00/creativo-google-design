@@ -24,6 +24,9 @@ const PORTRAIT_PNG = Buffer.from(
  * A team member's page and the add sheet (team onboarding stage 1a; staff
  * permissions P9) against the emulators.
  *
+ * The owner's ＋ is a menu (a barber, or a role for a registered account):
+ * every case here picks «Бръснар».
+ *
  * The owner's case ADDS its own barber record and works on that one alone
  * — its link, its profile, its deletion — so it never moves a seeded barber
  * another spec reads, and two attempts never contend for one record.
@@ -77,6 +80,7 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
     await expect(page.getByTestId('team-add-save')).toBeDisabled();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-copy').click();
@@ -227,6 +231,7 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -309,6 +314,7 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -405,6 +411,7 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -512,6 +519,7 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -624,6 +632,7 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {

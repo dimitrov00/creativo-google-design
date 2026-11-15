@@ -2576,6 +2576,15 @@
         "sessionsRetry": "Try again",
         "cancel": "Cancel"
       },
+      "roleAdd": {
+        "title": "Add to the team",
+        "lede": "Choose whose account gets the “{{role}}” role. The person signs in to the app with it.",
+        "hint": "Look the account up by name, phone or email. If the person has no account yet, ask them to sign in to the app once.",
+        "none": "Ask the person to sign in to the app once, then search again.",
+        "questionTitle": "Give {{account}} the “{{role}}” role?",
+        "adminMessage": "{{name}} will be able to change everything in the shop, roles and permissions included, and will have to sign in to the app again.",
+        "addLabel": "Add"
+      },
       "account": {
         "notFound": "We could not find this account on the team.",
         "unnamed": "No name",

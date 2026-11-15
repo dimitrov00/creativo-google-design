@@ -181,4 +181,11 @@ export namespace TeamMember {
     readonly memberAccountName: string;
     readonly memberRoles: readonly Role[];
   };
+  /** A barber record somebody signs in as: its account is there, with its name. */
+  export type Linked = OfBarber & {
+    readonly memberUserId: UserId;
+    readonly memberAccountName: string;
+  };
+  /** A member of the team who has an account — one a role can be given to. */
+  export type WithAccount = Linked | RoleOnly;
 }

@@ -22,7 +22,48 @@
         <ui-icon uiName="nav.back" />
       </a>
       <span uiTitle>{{ t('admin.team.title') }}</span>
-      @if (managesTeam()) {
+      <!-- THE ＋: with more than one thing to add it is a menu — a barber,
+           or a role for a registered account; with one, the press is the
+           act (a lone action is never buried behind a menu). -->
+      @if (addOptions().length > 1) {
+      <ui-menu
+        uiTrailing
+        uiAlignment="trailing"
+        [uiPresented]="addMenuOpen()"
+        [uiLabel]="t('admin.team.add.open')"
+        (uiDismissed)="addMenuOpen.set(false)"
+      >
+        <button
+          uiMenuTrigger
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          [attr.aria-label]="t('admin.team.add.open')"
+          data-testid="admin-team-add"
+          (click)="addMenuOpen.set(!addMenuOpen())"
+        >
+          <ui-icon uiName="action.add" />
+        </button>
+        <ui-list-group>
+          @for (option of addOptions(); track option.role) {
+          <button
+            type="button"
+            uiMenuItem
+            uiListRow
+            [uiInteractive]="true"
+            [attr.data-testid]="option.testId"
+            (click)="startAdd(option)"
+          >
+            {{ option.label }}
+          </button>
+          }
+        </ui-list-group>
+      </ui-menu>
+      } @else if (soleAdd(); as option) {
+      <!-- One projected element per branch: the bar places `uiTrailing`
+           only on a block's own root. -->
       <button
         uiTrailing
         type="button"
@@ -32,7 +73,7 @@
         [uiIconOnly]="true"
         [attr.aria-label]="t('admin.team.add.open')"
         data-testid="admin-team-add"
-        (click)="openAdd()"
+        (click)="startAdd(option)"
       >
         <ui-icon uiName="action.add" />
       </button>
@@ -79,6 +120,32 @@
           (click)="retry()"
         >
           {{ t('visits.retry') }}
+        </button>
+      </ui-notice>
+      }
+
+      <!-- A ROLE THAT LANDED WITHOUT ENDING THE PERSON'S SESSIONS: said
+           until the retry ends them — the stack's one retry grammar. -->
+      @if (roles.sessionsPending()) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="admin-team-sessions-pending"
+      >
+        {{ t('admin.team.link.sessionsPending') }}
+        <button
+          uiNoticeActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiLoading]="roles.pending()"
+          [disabled]="roles.pending()"
+          data-testid="admin-team-sessions-retry"
+          (click)="endSessions()"
+        >
+          {{ t('admin.team.link.sessionsRetry') }}
         </button>
       </ui-notice>
       } @switch (store.loadState()) { @case (LoadState.Loading) { @for (group of
@@ -211,5 +278,19 @@
       (added)="onAdded($event)"
     />
     }
+
+    <!-- «ДОБАВИ В ЕКИПА»: a role for a registered account. Loaded when
+         first asked for (and fetched while the page is idle), mounted
+         while open, so each opening starts empty. -->
+    @defer (when roleAdd() !== null; prefetch on idle) { @if (roleAdd(); as
+    role) {
+    <lib-team-role-sheet
+      [uiRole]="role"
+      [uiClosing]="roleClosing()"
+      (dismissed)="closeRole()"
+      (closeFinished)="finishRole()"
+      (added)="onRoleAdded($event)"
+    />
+    } }
   </main>
 </ng-container>
