@@ -309,6 +309,16 @@ export class TeamMemberStore {
     );
   });
 
+  /** They may bring it back: a record that has left, and they manage the team. */
+  readonly returnable = computed(() => {
+    const barber = this.barber();
+    return (
+      barber !== undefined &&
+      this.managesTeam() &&
+      TeamSystem.returnable(barber).ok
+    );
+  });
+
   /**
    * In the «Който и да е» pool, as the page shows it: the record's own
    * answer, and the one just asked for until the record says it back.
@@ -388,6 +398,18 @@ export class TeamMemberStore {
       barberEdit: BarberEdit.Period,
       barberStartsLocalDate,
       barberLastWorkingLocalDate,
+    });
+  }
+
+  /**
+   * «Върни в екипа»: a record that has left, back on the team from
+   * `barberStartsLocalDate` — the same record, its prices and the week it
+   * last worked (team onboarding D10). Its account is linked again by hand.
+   */
+  rehire(barberStartsLocalDate: LocalDate): Promise<boolean> {
+    return this.edit({
+      barberEdit: BarberEdit.Return,
+      barberStartsLocalDate,
     });
   }
 

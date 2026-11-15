@@ -32,6 +32,7 @@ import {
   NIKOLAY,
   NIKOLAY_RECORD,
   RECORDS,
+  STEFAN,
   STEFAN_RECORD,
   TEAM,
   rosterOf,
@@ -1189,6 +1190,81 @@ describe('AdminTeamMember — the edges', () => {
     expect(piece('member-booked-by-row')).toBeNull();
     expect(piece('member-is-me')).toBeNull();
     expect(piece('member-delete')).toBeNull();
+  });
+
+  describe('«Върни в екипа» — a barber who has left, back on the team (team onboarding D10)', () => {
+    it('is offered on a leaver’s record to whoever manages the team, and never on a working one', async () => {
+      const leaver = await render('stefan');
+      expect(leaver.text(leaver.piece('member-return'))).toBe('Върни в екипа');
+      expect(leaver.piece('member-return-sheet')).toBeNull();
+
+      TestBed.resetTestingModule();
+      const working = await render('ivan');
+      expect(working.piece('member-return')).toBeNull();
+
+      TestBed.resetTestingModule();
+      const editor = await render('stefan', { roles: [Role.ContentManager] });
+      expect(editor.piece('member-return')).toBeNull();
+    });
+
+    it('opens on the earliest day a return may start, says what comes back and what does not, and sends the return', async () => {
+      const { piece, press, text, calls } = await render('stefan');
+      await press('member-return');
+
+      expect(text(piece('member-return-lede'))).toBe(
+        'Стефан се връща със същия профил, цени и работното време от последната си седмица.',
+      );
+      // Stefan's last day is 30.09, two days ahead of the shop's today: the
+      // return opens on the day after it.
+      expect(text(piece('member-return-start'))).toContain('1.10');
+      expect(text(piece('member-return-note'))).toBe(
+        'Достъпът до приложението не се връща сам. След това свържи профила отново със „Свържи профил“.',
+      );
+      expect((piece('member-return-save') as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+
+      await press('member-return-save');
+      expect(calls.edits).toHaveLength(1);
+      expect(calls.edits[0]).toMatchObject({
+        barberEdit: BarberEdit.Return,
+        barberStartsLocalDate: '2026-10-01',
+        barberId: STEFAN.barberId,
+      });
+    });
+
+    it('a day on or before the last day worked cannot be sent', async () => {
+      const { fixture, piece, press, settle, calls } = await render('stefan');
+      await press('member-return');
+      const menu = fixture.debugElement.query(By.directive(TeamDayMenu));
+      (menu.componentInstance as TeamDayMenu).uiPicked.emit(
+        localDate('2026-09-30'),
+      );
+      await settle();
+
+      expect((piece('member-return-save') as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      await press('member-return-save');
+      expect(calls.edits).toEqual([]);
+    });
+
+    it('a refused return is said in the sheet, which stays', async () => {
+      const { piece, press, text, refuses } = await render('stefan');
+      refuses(
+        'editBarber',
+        PipelineError.fromWire('functions/failed-precondition', {
+          errorCode: 'TEAM_BARBER_NOT_DEPARTED',
+        }),
+      );
+      await press('member-return');
+      await press('member-return-save');
+
+      expect(text(piece('member-return-refusal'))).toBe(
+        'Този бръснар не е напускал екипа.',
+      );
+      expect(piece('member-return-sheet')).not.toBeNull();
+    });
   });
 
   it('says a record the team does not hold in words', async () => {

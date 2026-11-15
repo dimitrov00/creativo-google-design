@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId, LocationId, ServiceId } from '@core/primitives';
+import { BarberId, LocalDate, LocationId, ServiceId } from '@core/primitives';
 import { TeamError, TeamErrorCode } from './team.error';
 
 describe('TeamError', () => {
-  it('uses nine SCREAMING codes, each with the TEAM_ prefix (team onboarding D11) — who may act is an AccessError', () => {
+  it('uses SCREAMING codes, each with the TEAM_ prefix (team onboarding D11) — who may act is an AccessError', () => {
     expect(Object.values(TeamErrorCode)).toEqual([
       'TEAM_UNAUTHENTICATED',
       'TEAM_INVALID_INPUT',
       'TEAM_BARBER_NOT_FOUND',
       'TEAM_BARBER_DEPARTED',
       'TEAM_PERIOD_INVALID',
+      'TEAM_BARBER_NOT_DEPARTED',
+      'TEAM_RETURN_TOO_EARLY',
       'TEAM_SHOP_UNKNOWN',
       'TEAM_SHOP_HAS_HOURS',
       'TEAM_SERVICE_UNKNOWN',
@@ -45,6 +47,15 @@ describe('TeamError', () => {
     expect(TeamError.barberDeparted(barberId)).toEqual({
       errorCode: 'TEAM_BARBER_DEPARTED',
       barberId: 'b-new',
+    });
+    expect(TeamError.barberNotDeparted(barberId)).toEqual({
+      errorCode: 'TEAM_BARBER_NOT_DEPARTED',
+      barberId: 'b-new',
+    });
+    const lastDay = LocalDate.parse('2026-11-14');
+    expect(lastDay.ok && TeamError.returnTooEarly(lastDay.value)).toEqual({
+      errorCode: 'TEAM_RETURN_TOO_EARLY',
+      lastLocalDate: '2026-11-14',
     });
     expect(TeamError.shopUnknown(locationId)).toEqual({
       errorCode: 'TEAM_SHOP_UNKNOWN',

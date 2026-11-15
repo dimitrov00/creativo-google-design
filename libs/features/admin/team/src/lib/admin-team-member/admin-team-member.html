@@ -396,6 +396,23 @@
       </section>
       }
 
+      <!-- «Върни в екипа» exists only for a record that has left. -->
+      @if (page.returnable) {
+      <ui-list-group>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          [disabled]="store.pending()"
+          data-testid="member-return"
+          (click)="openEditor(MemberEditor.Return)"
+        >
+          {{ t('admin.team.return.open') }}
+        </button>
+      </ui-list-group>
+      }
+
       <!-- «Изтрий» exists only for a record that never went live. -->
       @if (page.deletable) {
       <ui-list-group>
@@ -511,6 +528,14 @@
     />
     } @case (MemberEditor.Shops) {
     <lib-member-shops-sheet
+      [uiBarber]="barber"
+      [uiToday]="today()"
+      [uiClosing]="closing()"
+      (dismissed)="requestClose()"
+      (closeFinished)="finishClose()"
+    />
+    } @case (MemberEditor.Return) {
+    <lib-member-return-sheet
       [uiBarber]="barber"
       [uiToday]="today()"
       [uiClosing]="closing()"

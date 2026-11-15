@@ -688,6 +688,189 @@ describe('editBarber', () => {
     });
   });
 
+  describe('a return — a record that has left, back on the team (team onboarding D10)', () => {
+    const LAST = LocalDate.addDays(FIXTURE_TODAY, -30);
+    /** Ivan, who left a month ago: a public barber before. */
+    const LEFT: Barber = barberFixture(
+      { barberLastWorkingLocalDate: LAST },
+      {
+        barberStatus: BarberStatus.Departed,
+        barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        barberDepartedUserId: null,
+        barberSessionsRevokedAtUtcMs: null,
+        barberRehireStatus: BarberStatus.Public,
+      },
+    );
+    /** His roster as the close left it: one version, ended on the last day. */
+    const CLOSED = barberScheduleFixture({
+      versions: barberScheduleFixture().versions.map((version) => ({
+        ...version,
+        effectiveToLocalDate: LAST,
+      })),
+    });
+    const back = (barberStartsLocalDate: LocalDate = FIXTURE_TODAY) =>
+      call({ barberEdit: BarberEdit.Return, barberStartsLocalDate });
+
+    it('ONE commit: the record live again on a new period beside ONE status row, and the week last worked standing again in the roster', async () => {
+      const { store, tx, run } = rig({ barber: LEFT, schedule: CLOSED });
+
+      expect(unwrapOk(await run(back()))).toEqual({ barberId: IVAN });
+
+      expect(tx.plans).toHaveLength(1);
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberStatus: BarberStatus.Public,
+        barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        barberStartsLocalDate: FIXTURE_TODAY,
+        barberLastWorkingLocalDate: null,
+        writeOperationId: OP,
+      });
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).not.toHaveProperty(
+        'barberRehireStatus',
+      );
+      const roster = store.get(`${Collections.BarberSchedules}/${IVAN}`);
+      expect(roster).toMatchObject({ writeOperationId: OP });
+      expect(
+        (roster?.['versions'] as readonly Record<string, unknown>[]).map(
+          (version) => [
+            version['effectiveFromLocalDate'],
+            version['effectiveToLocalDate'],
+          ],
+        ),
+      ).toEqual([
+        [CLOSED.versions[0]?.effectiveFromLocalDate, LAST],
+        [FIXTURE_TODAY, null],
+      ]);
+      const rows = auditRowsOf(tx.plans);
+      expect(rows.map((row) => row.auditAction)).toEqual([
+        'TEAM_BARBER_STATUS_CHANGED',
+      ]);
+      expect(rows[0]).toMatchObject({
+        ...Actor.forCaller(ADMIN, [Role.Admin]),
+        teamBarberStatusFrom: BarberStatus.Departed,
+        teamBarberStatusTo: BarberStatus.Public,
+      });
+    });
+
+    it('a record with no roster returns all the same: the hours are set from its page', async () => {
+      const { store, tx, run } = rig({ barber: LEFT });
+      expect(unwrapOk(await run(back()))).toEqual({ barberId: IVAN });
+      expect(tx.plans[0]).toHaveLength(2);
+      expect(
+        store.get(`${Collections.BarberSchedules}/${IVAN}`),
+      ).toBeUndefined();
+    });
+
+    it('the replay of a return that landed writes nothing — no second version, no second row', async () => {
+      const { store, tx, run } = rig({ barber: LEFT, schedule: CLOSED });
+      await run(back());
+      const roster = store.get(`${Collections.BarberSchedules}/${IVAN}`);
+
+      expect(unwrapOk(await run(back()))).toEqual({ barberId: IVAN });
+      expect(tx.plans.slice(1)).toEqual([[]]);
+      expect(store.get(`${Collections.BarberSchedules}/${IVAN}`)).toEqual(
+        roster,
+      );
+      expect(auditRowsOf(tx.plans)).toHaveLength(1);
+    });
+
+    it('refuses a start on or before the last day worked, and a record that has not left — nothing written', async () => {
+      const early = rig({ barber: LEFT, schedule: CLOSED });
+      expect(unwrapErr(await early.run(back(LAST)))).toEqual({
+        errorCode: TeamErrorCode.ReturnTooEarly,
+        lastLocalDate: LAST,
+      });
+      expect(early.tx.plans).toEqual([]);
+
+      const working = rig();
+      expect(unwrapErr(await working.run(back()))).toEqual({
+        errorCode: TeamErrorCode.BarberNotDeparted,
+        barberId: IVAN,
+      });
+      expect(working.tx.plans).toEqual([]);
+    });
+
+    it('is the team manager’s alone: a barber is refused before the record is judged', async () => {
+      const barber = registeredUserFixture({
+        id: UserId.of('u-barber'),
+        roles: [Role.Barber],
+      });
+      const { tx, run } = rig({ barber: LEFT, caller: barber });
+      expect(
+        unwrapErr(
+          await run(
+            call(
+              {
+                barberEdit: BarberEdit.Return,
+                barberStartsLocalDate: FIXTURE_TODAY,
+              },
+              { callerUserId: barber.id, callerRoles: [Role.Barber] },
+            ),
+          ),
+        ),
+      ).toEqual(denied('TEAM_MANAGE'));
+      expect(tx.plans).toEqual([]);
+    });
+
+    it('every other part of a record that has left is still refused', async () => {
+      const { tx, run } = rig({ barber: LEFT });
+      expect(unwrapErr(await run(call(POOL)))).toEqual({
+        errorCode: TeamErrorCode.BarberDeparted,
+        barberId: IVAN,
+      });
+      expect(tx.plans).toEqual([]);
+    });
+
+    it('a barber who leaves and comes back: the close and the return leave one record, one roster and no day covered twice', async () => {
+      const yesterday = LocalDate.addDays(FIXTURE_TODAY, -1);
+      const { store, run } = rig({ schedule: barberScheduleFixture() });
+      // Leaves: a last day already passed is closed at once.
+      await run(
+        call({
+          barberEdit: BarberEdit.Period,
+          barberStartsLocalDate: STORED_IVAN.barberStartsLocalDate,
+          barberLastWorkingLocalDate: yesterday,
+        }),
+      );
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberStatus: BarberStatus.Departed,
+      });
+      // Comes back today.
+      expect(
+        unwrapOk(
+          await run(
+            call(
+              {
+                barberEdit: BarberEdit.Return,
+                barberStartsLocalDate: FIXTURE_TODAY,
+              },
+              { operationId: OperationId.of('operation-edit-return01') },
+            ),
+          ),
+        ),
+      ).toEqual({ barberId: IVAN });
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberStatus: BarberStatus.Public,
+        barberStartsLocalDate: FIXTURE_TODAY,
+        barberLastWorkingLocalDate: null,
+      });
+      const versions = store.get(`${Collections.BarberSchedules}/${IVAN}`)?.[
+        'versions'
+      ] as readonly Record<string, unknown>[];
+      expect(
+        versions.map((version) => [
+          version['effectiveFromLocalDate'],
+          version['effectiveToLocalDate'],
+        ]),
+      ).toEqual([
+        [
+          barberScheduleFixture().versions[0]?.effectiveFromLocalDate,
+          yesterday,
+        ],
+        [FIXTURE_TODAY, null],
+      ]);
+    });
+  });
+
   describe('a last day that has already passed — the record leaves at once (team onboarding D10)', () => {
     const YESTERDAY = LocalDate.addDays(FIXTURE_TODAY, -1);
     const IVANS_ACCOUNT: User = registeredUserFixture({

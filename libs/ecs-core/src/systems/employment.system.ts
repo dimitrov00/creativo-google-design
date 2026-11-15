@@ -2,7 +2,6 @@ import {
   type Actor,
   AuditAction,
   BarberLifecycle,
-  BarberStatus,
   EmploymentOutlook,
   ScheduleVersion,
   WriteOp,
@@ -83,16 +82,22 @@ const NOTHING: EmploymentClose = {
  */
 export const EmploymentSystem = {
   /**
-   * Where a working period with this last day stands on the shop's
-   * `today`: `OPEN` with no last day; `ENDS` while the last day is today
-   * or ahead — the barber works their last day through; `ENDED` once it is
-   * BEFORE today. The one rule the period sheet words and the close reads.
+   * Where the working period of a record in this lifecycle, with this last
+   * day, stands on the shop's `today`. Only a record that WORKS has a
+   * period to end: `OPEN` for one in preparation — it has never worked,
+   * and is deleted, not closed — and for one that has left already; `OPEN`
+   * with no last day; `ENDS` while the last day is today or ahead — the
+   * barber works their last day through; `ENDED` once it is BEFORE today.
+   * The one rule the period sheet words and the close reads.
    */
   outlookOf(
+    lifecycle: BarberLifecycle,
     lastLocalDate: LocalDate | null,
     today: LocalDate,
   ): EmploymentOutlook {
-    if (lastLocalDate === null) return EmploymentOutlook.Open;
+    if (!BarberLifecycle.isLive(lifecycle) || lastLocalDate === null) {
+      return EmploymentOutlook.Open;
+    }
     return lastLocalDate < today
       ? EmploymentOutlook.Ended
       : EmploymentOutlook.Ends;
@@ -100,15 +105,17 @@ export const EmploymentSystem = {
 
   /**
    * Whether the record's working period is to be closed: it has `ENDED`
-   * ({@link EmploymentSystem.outlookOf}) and the record has not left
-   * already. A record in preparation counts: one whose period ended before
-   * it ever went live leaves too.
+   * ({@link EmploymentSystem.outlookOf}) — a working record whose last day
+   * is behind today. Never a record in preparation, never one that has
+   * left.
    */
   isDue(barber: Barber, today: LocalDate): boolean {
     return (
-      barber.barberStatus !== BarberStatus.Departed &&
-      EmploymentSystem.outlookOf(barber.barberLastWorkingLocalDate, today) ===
-        EmploymentOutlook.Ended
+      EmploymentSystem.outlookOf(
+        barber,
+        barber.barberLastWorkingLocalDate,
+        today,
+      ) === EmploymentOutlook.Ended
     );
   },
 
@@ -155,6 +162,58 @@ export const EmploymentSystem = {
       );
     }
     return kept;
+  },
+
+  /**
+   * A roster's versions once its barber comes back on `startLocalDate`
+   * («Върни в екипа»): the week they last worked — the hours and the
+   * standing breaks of the last version — stands again from that day,
+   * open-ended, and the history before it is kept as it was
+   * (`ScheduleVersion.replaceFrom`). The owner changes the hours from
+   * there. An empty list for a roster with no version: there is no week
+   * to bring back.
+   */
+  rosterOnReturn(
+    versions: readonly ScheduleVersion[],
+    startLocalDate: LocalDate,
+  ): readonly ScheduleVersion[] {
+    const last = versions[versions.length - 1];
+    return last === undefined
+      ? []
+      : ScheduleVersion.replaceFrom(
+          versions,
+          startLocalDate,
+          last.segments,
+          last.breaks,
+        );
+  },
+
+  /**
+   * The roster write of a return: the roster set whole with the week the
+   * barber last worked standing again from `startLocalDate`
+   * ({@link EmploymentSystem.rosterOnReturn}), under the act's name. No
+   * write for a record with no roster, or one whose roster holds no
+   * version: the hours are set from the member's page.
+   */
+  rosterWritesOnReturn(
+    schedule: BarberSchedule | null,
+    startLocalDate: LocalDate,
+    operationId: OperationId | null,
+  ): readonly WriteOp[] {
+    if (schedule === null) return [];
+    const versions = EmploymentSystem.rosterOnReturn(
+      schedule.versions,
+      startLocalDate,
+    );
+    if (versions.length === 0) return [];
+    const { id: _id, ...body } = schedule;
+    return [
+      WriteOp.set([Collections.BarberSchedules, schedule.id], {
+        ...body,
+        versions,
+        ...WriteProvenance.of(operationId),
+      }),
+    ];
   },
 
   /**

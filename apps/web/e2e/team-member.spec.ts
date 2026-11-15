@@ -12,7 +12,7 @@ import {
   removeAddedBarber,
   removeUserProfile,
   seedUserProfile,
-  setBarberStart,
+  seedWorkingBarber,
   storedObjectExists,
 } from './support/seed-firestore';
 import { shopToday } from './support/shop-clock';
@@ -718,7 +718,7 @@ test.describe('a team member’s page', () => {
     // The record and the account's link are the `afterEach`'s to remove.
   });
 
-  test('an owner saves a last working day that has already passed: asked first, the record leaves at once, the linked account loses its staff access, and its next staff page is refused', async ({
+  test('a barber leaves and comes back: a last working day already passed is asked about and closes at once, the leaver is turned away, and «Върни в екипа» brings the same record back', async ({
     page,
   }) => {
     test.setTimeout(240_000);
@@ -735,8 +735,9 @@ test.describe('a team member’s page', () => {
     });
     await signInAs(page, uid, ['admin']);
 
-    // A new record, then an account linked to it and a period that began
-    // yesterday — a last day can never be before the start.
+    // A new record, made a working one whose period began yesterday (only
+    // a record that works has a period to end, and a last day can never be
+    // before the start), with an account linked to it.
     await page.goto('/admin/team', { waitUntil: 'commit' });
     await expect(page.getByTestId('admin-team')).toHaveAttribute(
       'data-load',
@@ -762,11 +763,15 @@ test.describe('a team member’s page', () => {
     });
     linkedUid = leaverUid;
     await lockBarberLink(added, leaverUid);
-    await setBarberStart(added, yesterday);
+    await seedWorkingBarber(added, yesterday);
+    await expect(page.getByTestId('member-standing')).toContainText(
+      'Само за екипа',
+      { timeout: 30_000 },
+    );
 
     // «ПЕРИОД НА РАБОТА»: yesterday as the last day. The sheet says the
     // person leaves on saving, and «Запази» asks first.
-    await page.getByTestId('member-setup-START_DAY').click();
+    await page.getByTestId('member-row-period').click();
     await expect(page.getByTestId('member-period-sheet')).toBeVisible({
       timeout: 30_000,
     });
@@ -783,7 +788,7 @@ test.describe('a team member’s page', () => {
     // Nothing is written while the question is up.
     expect(
       (await readStoredBody(Collections.Barbers, added))?.['barberStatus'],
-    ).toBe(BarberStatus.Draft);
+    ).toBe(BarberStatus.StaffOnly);
     await page.getByTestId('member-period-leave-confirm').click();
 
     // LEFT: the sheet leaves, the page reads the record as gone, and the
@@ -817,6 +822,45 @@ test.describe('a team member’s page', () => {
     await signInAs(page, leaverUid, ['client', 'barber']);
     await page.goto('/staff/analytics', { waitUntil: 'commit' });
     await expect(page).toHaveURL(/\/forbidden$/, { timeout: 30_000 });
+
+    // «ВЪРНИ В ЕКИПА»: the owner brings the same record back. The sheet
+    // opens on the earliest day a return may start — today, the day after
+    // the last day worked — and says the account does not come back.
+    await signInAs(page, uid, ['admin']);
+    await page.goto(`/admin/team/member/${added}`, { waitUntil: 'commit' });
+    await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
+      timeout: 30_000,
+    });
+    await page.getByTestId('member-return').click();
+    await expect(page.getByTestId('member-return-sheet')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-return-note')).toContainText(
+      'не се връща сам',
+    );
+    await page.getByTestId('member-return-save').click();
+
+    // BACK: the sheet leaves and the page reads a working record again —
+    // the same one, where it was, on a new period with no last day. The
+    // account is not brought back: the page offers to link one.
+    await expect(page.getByTestId('member-return-sheet')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-standing')).toContainText(
+      'Само за екипа',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('member-return')).toHaveCount(0);
+    await expect(page.getByTestId('member-link')).toBeVisible();
+    const back = await readStoredBody(Collections.Barbers, added);
+    expect(back?.['barberStatus']).toBe(BarberStatus.StaffOnly);
+    expect(back?.['barberStartsLocalDate']).toBe(shopToday());
+    expect(back?.['barberLastWorkingLocalDate']).toBeNull();
+    expect(back).not.toHaveProperty('barberRehireStatus');
+    expect(await readBarberLink(added)).toBeNull();
+    expect(
+      (await readStoredBody(Collections.Users, leaverUid))?.['roles'],
+    ).toEqual([Role.Client]);
     // The record and the account are the `afterEach`'s to remove.
   });
 

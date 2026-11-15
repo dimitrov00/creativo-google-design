@@ -61,6 +61,7 @@ import { LinkAnswer } from '../link.vm';
 import { MemberLinkSheet } from '../member-link-sheet/member-link-sheet';
 import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
+import { MemberReturnSheet } from '../member-return-sheet/member-return-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
 import { MemberShopsSheet } from '../member-shops-sheet/member-shops-sheet';
 import { memberPageVm } from '../member.presenter';
@@ -109,6 +110,7 @@ function hoursDesk(): HoursDesk {
     MemberLinkSheet,
     MemberOfferingsSheet,
     MemberPeriodSheet,
+    MemberReturnSheet,
     MemberProfileSheet,
     MemberShopsSheet,
     RouterLink,
@@ -238,6 +240,7 @@ export class AdminTeamMember {
       mayEditHours: this.store.mayEditHours(),
       mayEditOfferings: this.store.mayEditOfferings(),
       deletable: this.store.deletable(),
+      returnable: this.store.returnable(),
       linksAccount: this.store.linksAccount(),
       releasesAccount: this.store.releasesAccount(),
       editsPermissions: this.access.editsPermissions(),

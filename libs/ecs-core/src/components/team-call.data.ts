@@ -20,8 +20,9 @@ import { TeamMember } from './team-member.data';
 
 /**
  * Which part of a barber record an `editBarber` call replaces — the ONLY
- * source of these strings, the field `barberEdit`. One callable, five
- * editors: each save is one part, whole.
+ * source of these strings, the field `barberEdit`. One callable, six
+ * acts: five editors, each saving one part whole, and the return of a
+ * record that has left.
  */
 export const BarberEdit = {
   /** The public profile: name, title, bio, Instagram, experience. */
@@ -34,6 +35,8 @@ export const BarberEdit = {
   Pool: 'POOL',
   /** Who may book them: staff only, or everyone. */
   Access: 'ACCESS',
+  /** «Върни в екипа» — a record that has left, back with a new working period. */
+  Return: 'RETURN',
 } as const;
 export type BarberEdit = (typeof BarberEdit)[keyof typeof BarberEdit];
 
@@ -46,7 +49,8 @@ export type BarberEditRequest =
   | BarberEditRequest.Shops
   | BarberEditRequest.Period
   | BarberEditRequest.Pool
-  | BarberEditRequest.Access;
+  | BarberEditRequest.Access
+  | BarberEditRequest.Return;
 
 export namespace BarberEditRequest {
   export type Profile = {
@@ -77,6 +81,11 @@ export namespace BarberEditRequest {
     readonly barberEdit: typeof BarberEdit.Access;
     /** A draft's status once it goes live; a live record's status now. */
     readonly barberStatus: BarberLifecycle.LiveStatus;
+  };
+  export type Return = {
+    readonly barberEdit: typeof BarberEdit.Return;
+    /** The first day of the new working period: after the last day worked. */
+    readonly barberStartsLocalDate: LocalDate;
   };
 }
 

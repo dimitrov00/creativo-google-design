@@ -245,6 +245,15 @@ function editOf(
         ? Result.ok({ barberEdit, barberJoinsAnyPool })
         : invalid('barberJoinsAnyPool');
     }
+    case BarberEdit.Return: {
+      const barberStartsLocalDate = idOf(
+        StoredFields.field(payload, 'barberStartsLocalDate'),
+        LocalDate.parse,
+      );
+      return barberStartsLocalDate === null
+        ? invalid('barberStartsLocalDate')
+        : Result.ok({ barberEdit, barberStartsLocalDate });
+    }
     case BarberEdit.Access: {
       const barberStatus = StoredFields.field(payload, 'barberStatus');
       return BarberLifecycle.isLiveStatus(barberStatus)

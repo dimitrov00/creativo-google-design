@@ -178,6 +178,7 @@ describe('decodeEditBarber', () => {
       },
       { barberEdit: 'POOL', barberJoinsAnyPool: false },
       { barberEdit: 'ACCESS', barberStatus: 'STAFF_ONLY' },
+      { barberEdit: 'RETURN', barberStartsLocalDate: '2026-12-01' },
     ]) {
       expect(decodeEditBarber(callable({ ...named, ...part }))).toEqual({
         ok: true,
@@ -281,6 +282,11 @@ describe('decodeEditBarber', () => {
     ],
     ['barberJoinsAnyPool', { barberEdit: 'POOL' }],
     ['barberStatus', { barberEdit: 'ACCESS', barberStatus: 'DRAFT' }],
+    ['barberStartsLocalDate', { barberEdit: 'RETURN' }],
+    [
+      'barberStartsLocalDate',
+      { barberEdit: 'RETURN', barberStartsLocalDate: 'tomorrow' },
+    ],
   ])('names %s as the unreadable field of its part', (field, part) => {
     expect(
       refusalOf(decodeEditBarber(callable({ ...named, ...part }))),

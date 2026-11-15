@@ -69,6 +69,8 @@ export type MemberPageInput = {
   readonly mayEditOfferings: boolean;
   /** They may delete it (`TeamSystem.removable`, and they manage the team). */
   readonly deletable: boolean;
+  /** They may bring it back (`TeamSystem.returnable`, and they manage the team). */
+  readonly returnable: boolean;
   /** `TeamRosterSystem.linksAccount` — «Свържи профил» is theirs to offer. */
   readonly linksAccount: boolean;
   /** `TeamRosterSystem.releasesAccount` — «Разкачи профила» is theirs to offer. */
@@ -348,6 +350,7 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
     manageable: input.mayManage,
     account: accountOf(input),
     levels: levelsOf(input),
+    returnable: input.returnable,
     deletable: input.deletable,
     deleteTitle: memberWords.deleteTitle(name),
     deleteActions: [

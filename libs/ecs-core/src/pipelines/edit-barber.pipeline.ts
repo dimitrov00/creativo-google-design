@@ -34,6 +34,7 @@ import type {
   HashPorts,
 } from '@core/ports';
 import {
+  EmploymentSystem,
   StaffAccessSystem,
   StaffAnalyticsSystem,
   TeamSystem,
@@ -55,7 +56,8 @@ import {
 /**
  * `editBarber` — one part of one barber record, replaced whole (team
  * onboarding D5): the public profile, the shops, the working period, the
- * «Който и да е» flag or who may book them (`barberEdit`). The caller gate
+ * «Който и да е» flag or who may book them (`barberEdit`) — and the return
+ * of a record that has left («Върни в екипа», D10). The caller gate
  * first, on the VERIFIED token (`admitTeamCaller`: any staff role). Then
  * ONE commit that reads `users/{caller}`, `settings/staffPermissions` and
  * `barbers/{id}` — and, for the shops, every location and the barber's
@@ -67,7 +69,7 @@ import {
  *   this very record — and `TEAM_MANAGE` on the shop for every other part
  *   — by default the admin alone. The STORED roles, block and link;
  * - the part's own decision (`TeamSystem.editProfile`, `setShops`, `setPeriod`,
- *   `setPool`, `setAccess`), which answers the WHOLE next record. «Today»
+ *   `setPool`, `setAccess`, `rehire`), which answers the WHOLE next record. «Today»
  *   for the shops is the default shop's wall clock (else the first shop's),
  *   derived once from the instant read before the transaction.
  *
@@ -76,6 +78,14 @@ import {
  * caller over their stored roles (`TeamSystem.writesOf`). A save that
  * changes no stored field — and so the replay of one that landed — writes
  * no document and no row.
+ *
+ * A RETURN is the one act a record that has left takes
+ * (`TeamSystem.rehire`): the same record, live again where the close said
+ * a rehire returns, on a new working period — beside its
+ * `TEAM_BARBER_STATUS_CHANGED` row, and with the week the barber last
+ * worked standing again in the roster from the new start
+ * (`EmploymentSystem.rosterWritesOnReturn`), all in the one commit. Its
+ * account is not brought back: the owner links one again, as for anyone.
  *
  * A WORKING PERIOD WHOSE LAST DAY HAS ALREADY PASSED is closed at once
  * (team onboarding D10): after the period's own commit, the same close the
@@ -112,7 +122,7 @@ type Snapshot = StaffCallerFacts & {
   readonly barber: Barber | null;
   /** Every location — read for a shops edit only, else none. */
   readonly shops: readonly ShopLocation[];
-  /** The barber's roster — read for a shops edit only, else `null`. */
+  /** The barber's roster — read for a shops edit and a return, else `null`. */
   readonly schedule: BarberSchedule | null;
 };
 
@@ -128,6 +138,7 @@ function actionOf(barberEdit: BarberEdit): TeamBarberAction {
     case BarberEdit.Pool:
       return AuditAction.TeamBarberPoolChanged;
     case BarberEdit.Access:
+    case BarberEdit.Return:
       return AuditAction.TeamBarberStatusChanged;
     default:
       return defect(`no audit verb for the edit ${String(barberEdit)}`);
@@ -190,6 +201,13 @@ function decide(
         nowUtcMs,
         cmd.operationId,
       );
+    case BarberEdit.Return:
+      return TeamSystem.rehire(
+        barber,
+        cmd.barberStartsLocalDate,
+        nowUtcMs,
+        cmd.operationId,
+      );
   }
 }
 
@@ -205,6 +223,8 @@ export const editBarber =
     if (!admitted.ok) return admitted;
     const callerUserId = admitted.value;
     const readsShops = cmd.barberEdit === BarberEdit.Shops;
+    // A return brings the week the barber last worked back with it.
+    const readsRoster = readsShops || cmd.barberEdit === BarberEdit.Return;
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
@@ -213,7 +233,7 @@ export const editBarber =
           readStaffCaller(tx, callerUserId),
           tx.get<Barber>([Collections.Barbers, cmd.barberId]),
           readsShops ? tx.query<ShopLocation>(TEAM_LOCATIONS) : [],
-          readsShops
+          readsRoster
             ? tx.get<BarberSchedule>([
                 Collections.BarberSchedules,
                 cmd.barberId,
@@ -242,20 +262,33 @@ export const editBarber =
         const after = decide(cmd, before, snapshot, nowUtcMs, ports);
         if (!after.ok) return after;
         const actor = teamActor(callerUserId, stored.value);
+        const record = TeamSystem.writesOf(
+          {
+            action: actionOf(cmd.barberEdit),
+            before,
+            after: after.value,
+            actor,
+            nowUtcMs,
+            operationId: cmd.operationId,
+          },
+          ports.hash,
+        );
         return Result.ok({
           barber: after.value,
           actor,
-          writes: TeamSystem.writesOf(
-            {
-              action: actionOf(cmd.barberEdit),
-              before,
-              after: after.value,
-              actor,
-              nowUtcMs,
-              operationId: cmd.operationId,
-            },
-            ports.hash,
-          ),
+          writes:
+            // The roster follows a return that is written — never a replay,
+            // which plans nothing.
+            cmd.barberEdit === BarberEdit.Return && record.length > 0
+              ? [
+                  ...record,
+                  ...EmploymentSystem.rosterWritesOnReturn(
+                    snapshot.schedule,
+                    cmd.barberStartsLocalDate,
+                    cmd.operationId,
+                  ),
+                ]
+              : record,
         });
       },
     );

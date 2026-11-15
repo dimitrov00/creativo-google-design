@@ -5,7 +5,7 @@ import { catalogueTranslate } from './catalogue.spec-support';
 import { LinkAnswer } from './link.vm';
 import { memberWordsOf } from './member.words';
 import { type PeriodOutlookInput, periodOutlookVm } from './period.presenter';
-import { NIKOLAY_RECORD } from './team.fixtures.spec-support';
+import { IVAN_RECORD, NIKOLAY_RECORD } from './team.fixtures.spec-support';
 
 /*
  * «Период на работа», worded (Law 10; team onboarding D10): what the last
@@ -25,7 +25,7 @@ function inputOf(
   lang: 'bg' | 'en' = 'bg',
 ): PeriodOutlookInput {
   return deepFreeze({
-    barber: NIKOLAY_RECORD,
+    barber: IVAN_RECORD,
     lastLocalDate: null,
     today: TODAY,
     memberWords: memberWordsOf(catalogueTranslate(lang)),
@@ -49,7 +49,7 @@ describe('periodOutlookVm', () => {
       inputOf({ lastLocalDate: localDate('2026-12-31') }),
     );
     expect(read(ahead.note)).toBe(
-      'След 31.12 Николай напуска екипа и вече не влиза в приложението като бръснар.',
+      'След 31.12 Иван напуска екипа и вече не влиза в приложението като бръснар.',
     );
     expect(ahead.question).toBeNull();
     // The last day itself is worked through.
@@ -63,12 +63,12 @@ describe('periodOutlookVm', () => {
       inputOf({ lastLocalDate: localDate('2026-11-15') }),
     );
     expect(read(passed.note)).toBe(
-      '15.11 вече е минал. Със запазването Николай напуска екипа веднага.',
+      '15.11 вече е минал. Със запазването Иван напуска екипа веднага.',
     );
     expect(passed.question).toEqual({
-      title: 'Николай напуска екипа сега?',
+      title: 'Иван напуска екипа сега?',
       message:
-        'Последният работен ден вече е минал. Николай спира да приема записи и вече не влиза в приложението като бръснар.',
+        'Последният работен ден вече е минал. Иван спира да приема записи и вече не влиза в приложението като бръснар.',
       actions: [
         {
           id: LinkAnswer.Confirm,
@@ -86,6 +86,17 @@ describe('periodOutlookVm', () => {
     });
   });
 
+  it('says and asks nothing for a record in preparation: it has never worked, so no last day makes it leave', () => {
+    for (const lastLocalDate of [
+      localDate('2026-11-15'),
+      localDate('2026-12-31'),
+    ]) {
+      expect(
+        periodOutlookVm(inputOf({ barber: NIKOLAY_RECORD, lastLocalDate })),
+      ).toEqual({ note: null, question: null });
+    }
+  });
+
   it('says a day outside today’s year with its year', () => {
     expect(
       read(
@@ -100,15 +111,15 @@ describe('periodOutlookVm', () => {
       inputOf({ lastLocalDate: localDate('2026-12-31') }, 'en'),
     );
     expect(read(ahead.note)).toMatch(
-      /^After .+ Nikolay leaves the team and no longer signs in to the app as a barber\.$/,
+      /^After .+ Ivan leaves the team and no longer signs in to the app as a barber\.$/,
     );
     const passed = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-11-15') }, 'en'),
     );
     expect(read(passed.note)).toMatch(
-      /has already passed\. Saving makes Nikolay leave the team right away\.$/,
+      /has already passed\. Saving makes Ivan leave the team right away\.$/,
     );
-    expect(passed.question?.title).toBe('Nikolay leaves the team now?');
+    expect(passed.question?.title).toBe('Ivan leaves the team now?');
     expect(passed.question?.actions.map((action) => action.label)).toEqual([
       'Leaves',
       'Cancel',

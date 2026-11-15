@@ -15,7 +15,7 @@ import {
 } from '@core/components';
 import {
   type BarberId,
-  type LocalDate,
+  LocalDate,
   type LocationId,
   type OperationId,
   Result,
@@ -463,6 +463,47 @@ export const TeamSystem = {
   },
 
   /**
+   * A record that has left, back on the team (team onboarding D10, «Върни
+   * в екипа»): the SAME record and id, so its past visits, its prices and
+   * its name stay where they are. Its lifecycle returns to where the close
+   * said a rehire returns (`barberRehireStatus`) at `nowUtcMs` — never to
+   * `DRAFT`: a record that has worked is not set up again — and its
+   * working period starts anew on `barberStartsLocalDate`, with no last
+   * day. Bookability holds the record back until that day
+   * (`BARBER_BEFORE_START`).
+   *
+   * A record that has not left is `TEAM_BARBER_NOT_DEPARTED` — unless its
+   * last write was this very act (`writeOperationId`): the replay of a
+   * return that landed is answered with the record as it stands, and
+   * writes nothing. A start on or before the last day worked is
+   * `TEAM_RETURN_TOO_EARLY`: the two periods never share a day, so nothing
+   * counts one day twice.
+   */
+  rehire(
+    barber: Barber,
+    barberStartsLocalDate: LocalDate,
+    nowUtcMs: UtcEpochMs,
+    operationId: OperationId | null,
+  ): Result<Barber, TeamError> {
+    if (barber.barberStatus !== BarberStatus.Departed) {
+      return operationId !== null && barber.writeOperationId === operationId
+        ? Result.ok(barber)
+        : Result.err(TeamError.barberNotDeparted(barber.id));
+    }
+    const lastLocalDate = barber.barberLastWorkingLocalDate;
+    if (lastLocalDate !== null && barberStartsLocalDate <= lastLocalDate) {
+      return Result.err(TeamError.returnTooEarly(lastLocalDate));
+    }
+    return Result.ok({
+      ...withoutLifecycle(barber),
+      barberStartsLocalDate,
+      barberLastWorkingLocalDate: null,
+      ...WriteProvenance.of(operationId),
+      ...BarberLifecycle.live(barber.barberRehireStatus, nowUtcMs),
+    });
+  },
+
+  /**
    * A departed record whose account's sessions were just revoked: the
    * marker set, nothing else moved. Any other record — and a departure
    * that owes no revoke — is answered as it is.
@@ -537,6 +578,38 @@ export const TeamSystem = {
    * performs: a record that has left the shop is `TEAM_BARBER_DEPARTED`.
    */
   editable: current,
+
+  /**
+   * Whether the record may be brought back («Върни в екипа»): only one
+   * that has left — else `TEAM_BARBER_NOT_DEPARTED`.
+   */
+  returnable(barber: Barber): Result<Barber, TeamError> {
+    return barber.barberStatus === BarberStatus.Departed
+      ? Result.ok(barber)
+      : Result.err(TeamError.barberNotDeparted(barber.id));
+  },
+
+  /**
+   * The first day a return may start: the day after the last day the
+   * barber worked — the two periods never share a day ({@link
+   * TeamSystem.rehire}). `null` for a record with no last day: any day
+   * will do.
+   */
+  earliestReturn(barber: Barber): LocalDate | null {
+    return barber.barberLastWorkingLocalDate === null
+      ? null
+      : LocalDate.addDays(barber.barberLastWorkingLocalDate, 1);
+  },
+
+  /**
+   * The day «Върни в екипа» opens on: the shop's `today`, or the earliest
+   * return when that is later — a return is for now on, and the owner
+   * moves it from there.
+   */
+  suggestedReturn(barber: Barber, today: LocalDate): LocalDate {
+    const earliest = TeamSystem.earliestReturn(barber);
+    return earliest !== null && earliest > today ? earliest : today;
+  },
 
   /** Whether the record may be deleted: only one that never went live. */
   removable(barber: Barber): Result<Barber, TeamError> {

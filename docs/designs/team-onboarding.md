@@ -1129,15 +1129,35 @@ today. Both exit tests above pass.
   - The close's rows do not point at the `TEAM_BARBER_PERIOD_CHANGED` row
     that set the date. The record's `barberLastWorkingLocalDate` and that
     row's own entry are the trail.
-  - A record in preparation whose period has ended leaves too, and a
-    rehire would return it to its draft target.
+  - Only a record that works is closed. One in preparation has no period
+    to end, whatever its last day: it has never worked, and it is deleted,
+    not closed. (The first cut closed drafts too; a return would then have
+    made one live without its setup.)
+
+**1b, built so far: «Върни в екипа».** A record that has left comes back
+as the same record, so its name, prices and past visits stay where they
+were.
+
+- It is one more part of `editBarber` (`barberEdit: RETURN`, the start
+  day), the mirror of the period edit that makes someone leave. Whoever
+  manages the team may send it.
+- `TeamSystem.rehire` returns the record to `barberRehireStatus`, never to
+  `DRAFT`, on a new period with no last day. The new start has to be after
+  the last day worked (`TEAM_RETURN_TOO_EARLY`), so the two periods share
+  no day. A record that has not left is `TEAM_BARBER_NOT_DEPARTED`; the
+  replay of a return that landed writes nothing.
+- The roster follows in the same commit: the week the barber last worked
+  stands again from the new start (`EmploymentSystem.rosterOnReturn`), and
+  the history before it is kept.
+- The account is not brought back. The sheet says so, and the owner links
+  one again with «Свържи профил», as for anyone.
+- The sheet opens on today, or on the day after the last day worked when
+  that is later.
 
 **1b, still to build.** The leftover list on «Напускане» (bookings after
-the last day); «Върни в екипа»; the leftover lane on the schedule; the
-reminder cards; and the Team page's notices for a leaver whose access is
-not stopped yet and for an admin whose role has to be removed by hand.
-Until «Върни в екипа» exists, a record that has left cannot be brought
-back from the app.
+the last day); the leftover lane on the schedule; the reminder cards; and
+the Team page's notices for a leaver whose access is not stopped yet and
+for an admin whose role has to be removed by hand.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 
