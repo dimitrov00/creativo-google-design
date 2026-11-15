@@ -24,7 +24,8 @@ import {
   type RosterCall,
 } from '@core/components';
 import type { Barber, BarberSchedule, ShopLocation } from '@core/entities';
-import { PipelineError, PipelineErrorCode } from '@core/errors';
+import { PipelineError, PipelineErrorCode, TeamErrorCode } from '@core/errors';
+import { changeBarberPhoto } from '@core/pipelines';
 import { Callables, type ObserveSchedule } from '@core/ports';
 import {
   AccessScope,
@@ -32,7 +33,7 @@ import {
   ClientOperationId,
   type LocalDate,
   type LocationId,
-  type Result,
+  Result,
   StaffCapability,
   type UserId,
 } from '@core/primitives';
@@ -58,8 +59,10 @@ import {
   GATEWAY_PORTS,
   ID_PORTS,
   SCHEDULING_READ_PORTS,
+  STAGED_UPLOAD_PORTS,
   TEAM_ADMIN_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { downscaleImage } from '@creativo/infrastructure/storage';
 import { TeamRolesStore } from './team-roles.store';
 import { TeamStore } from './team.store';
 
@@ -79,6 +82,7 @@ import { TeamStore } from './team.store';
 @Injectable()
 export class TeamMemberStore {
   private readonly ports = inject(TEAM_ADMIN_PORTS);
+  private readonly staging = inject(STAGED_UPLOAD_PORTS);
   private readonly roles = inject(TeamRolesStore);
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly ids = inject(ID_PORTS);
@@ -94,6 +98,7 @@ export class TeamMemberStore {
   private readonly _refusal = signal<PipelineError | null>(null);
   private readonly _hoursRefusal = signal<PipelineError | null>(null);
   private readonly _wentLive = signal(false);
+  private readonly _photoPending = signal(false);
   /** The record the go-live step was last asked for: one ask per ready record. */
   private askedLive: BarberId | null = null;
 
@@ -321,6 +326,9 @@ export class TeamMemberStore {
   /** A call is on its way — the record's own, or a link change. */
   readonly pending = computed(() => this._pending() || this.roles.pending());
 
+  /** The call on its way is the photo's: its picker shows the ring. */
+  readonly photoPending = this._photoPending.asReadonly();
+
   /** Why the last call was refused; `null` when it was not. */
   readonly refusal = computed(() => this._refusal() ?? this.roles.refusal());
 
@@ -381,6 +389,55 @@ export class TeamMemberStore {
       barberStartsLocalDate,
       barberLastWorkingLocalDate,
     });
+  }
+
+  /**
+   * «Смени снимката» — the barber's ONE photo
+   * (`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`): the
+   * picture sized for the wire here, then `changeBarberPhoto` — checked,
+   * staged under the signed-in account and handed to the server, which
+   * copies it into the shop's media and onto the linked account's avatar.
+   * A picture the browser cannot measure is refused: the record holds its
+   * size. `true` once the photo landed; the live record draws it.
+   */
+  async changePhoto(file: Blob): Promise<boolean> {
+    const barberId = this._barberId();
+    const userId = this.account.userId();
+    if (barberId === null || userId === null || this.pending()) return false;
+    this._pending.set(true);
+    this._photoPending.set(true);
+    this._refusal.set(null);
+    this.roles.clearRefusal();
+    const sized = await downscaleImage(file);
+    const answer =
+      sized.width === null || sized.height === null
+        ? Result.err(
+            PipelineError.of(
+              PipelineErrorCode.InvalidRequest,
+              TeamErrorCode.PhotoInvalid,
+              null,
+              null,
+            ),
+          )
+        : await changeBarberPhoto({
+            ...this.ports,
+            ...this.staging,
+            ...this.ids,
+          })({
+            userId,
+            barberId,
+            image: sized.image,
+            mediaWidth: sized.width,
+            mediaHeight: sized.height,
+          });
+    this._pending.set(false);
+    this._photoPending.set(false);
+    if (!answer.ok) {
+      this._refusal.set(answer.error);
+      return false;
+    }
+    void this.team.load();
+    return true;
   }
 
   /** The shops the record works at, whole: `[]` is every shop. */

@@ -46,6 +46,32 @@
         />
       </ui-sheet-headline>
 
+      <!-- THE PHOTO: the barber's ONE photo, set by whoever edits the
+           profile. The label is the picker and the SPAN carries the button
+           look (the account page's own pattern); the hidden field still
+           takes the keyboard, so the ring is drawn on its sibling. -->
+      @if (page.photoLabel; as photoLabel) {
+      <label class="team-page__photo">
+        <input
+          type="file"
+          accept="image/*"
+          class="team-page__photo-input"
+          [disabled]="store.pending()"
+          data-testid="member-photo-input"
+          (change)="onPhotoPicked($event)"
+        />
+        <span
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          [uiLoading]="store.photoPending()"
+          data-testid="member-photo-pick"
+        >
+          {{ photoLabel }}
+        </span>
+      </label>
+      }
+
       <!-- A refused switch, answer or link is said here; an editor says its own. -->
       @if (refusal(); as line) {
       <ui-notice

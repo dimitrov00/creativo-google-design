@@ -569,6 +569,126 @@ describe('AdminTeamMember — «Това съм аз» · «Не съм аз» (
   });
 });
 
+describe('AdminTeamMember — the photo (one photo per barber)', () => {
+  /** A JPEG as a person picks it, and a browser that can measure it. */
+  const jpeg = (size = 90_000): File =>
+    new File([new Uint8Array(size)], 'portrait.jpg', { type: 'image/jpeg' });
+  const measures = (width: number, height: number) =>
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => ({ width, height, close: () => undefined })),
+    );
+  /** Picks `file` in the page's hidden field, the way the label does. */
+  const pick = async (
+    field: HTMLElement | null,
+    file: File,
+    settle: () => Promise<void>,
+  ): Promise<void> => {
+    Object.defineProperty(field, 'files', {
+      configurable: true,
+      value: { length: 1, item: () => file, 0: file },
+    });
+    field?.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a picture picked is staged under the owner’s account and named to the call with its size; the list is read again', async () => {
+    measures(800, 1000);
+    const { piece, text, settle, calls, listed } = await render('nikolay');
+    expect(text(piece('member-photo-pick'))).toBe('Добави снимка');
+    const before = listed.length;
+
+    await pick(piece('member-photo-input'), jpeg(), settle);
+
+    expect(calls.staged).toEqual([
+      {
+        userId: 'u-owner',
+        stagedName: calls.photos[0]?.stagedName,
+        contentType: 'image/jpeg',
+        size: 90_000,
+      },
+    ]);
+    expect(calls.photos).toEqual([
+      expect.objectContaining({
+        barberId: NIKOLAY.barberId,
+        mediaWidth: 800,
+        mediaHeight: 1000,
+      }),
+    ]);
+    expect(calls.photos[0]?.stagedName).not.toBe(calls.photos[0]?.operationId);
+    expect(listed.length).toBeGreaterThan(before);
+    expect(piece('member-refusal')).toBeNull();
+  });
+
+  it('a record with a photo offers to change it', async () => {
+    const { piece, text } = await render('nikolay', {
+      barbers: [
+        IVAN_RECORD,
+        {
+          ...NIKOLAY_RECORD,
+          avatarMediaPath: 'media/barbers/nikolay/operation-photo-0123456',
+        },
+        STEFAN_RECORD,
+      ],
+    });
+    expect(text(piece('member-photo-pick'))).toBe('Смени снимката');
+  });
+
+  it('a picture that is too large is refused on the page, and nothing is uploaded', async () => {
+    measures(800, 1000);
+    const { piece, text, settle, calls } = await render('nikolay');
+
+    await pick(piece('member-photo-input'), jpeg(6 * 1024 * 1024), settle);
+
+    expect(text(piece('member-refusal'))).toBe(
+      'Тази снимка не става. Избери изображение до 5 MB.',
+    );
+    expect(calls.staged).toEqual([]);
+    expect(calls.photos).toEqual([]);
+  });
+
+  it('a picture the browser cannot measure is refused the same way', async () => {
+    const { piece, text, settle, calls } = await render('nikolay');
+
+    await pick(piece('member-photo-input'), jpeg(), settle);
+
+    expect(text(piece('member-refusal'))).toContain('Тази снимка не става');
+    expect(calls.staged).toEqual([]);
+  });
+
+  it('an upload that fails, and a call that is refused, are said on the page', async () => {
+    measures(800, 1000);
+    const { piece, text, settle, calls, stagingFails, refuses } =
+      await render('nikolay');
+
+    stagingFails(true);
+    await pick(piece('member-photo-input'), jpeg(), settle);
+    expect(text(piece('member-refusal')).length).toBeGreaterThan(0);
+    expect(calls.photos).toEqual([]);
+
+    stagingFails(false);
+    refuses('setBarberPhoto', REFUSED);
+    await pick(piece('member-photo-input'), jpeg(), settle);
+    expect(calls.photos).toHaveLength(1);
+    expect(text(piece('member-refusal')).length).toBeGreaterThan(0);
+  });
+
+  it('is a content editor’s to set, and not the front desk’s', async () => {
+    const editor = await render('ivan', {
+      roles: [Role.ContentManager],
+      members: RECORDS,
+    });
+    expect(editor.piece('member-photo-pick')).not.toBeNull();
+    TestBed.resetTestingModule();
+    const desk = await render('ivan', { roles: [Role.Receptionist] });
+    expect(desk.piece('member-photo-pick')).toBeNull();
+    expect(desk.piece('member-photo-input')).toBeNull();
+  });
+});
+
 describe('AdminTeamMember — «Салони»', () => {
   const center = locationFixture();
   const mladost = locationFixture({

@@ -169,6 +169,8 @@ export const AuditAction = {
   TeamBarberProfileChanged: 'TEAM_BARBER_PROFILE_CHANGED',
   /** The shops a barber works at replaced (`editBarber`, `SHOPS`). */
   TeamBarberShopsChanged: 'TEAM_BARBER_SHOPS_CHANGED',
+  /** A barber's photo replaced (`setBarberPhoto`) — field names only, never the picture. */
+  TeamBarberPhotoChanged: 'TEAM_BARBER_PHOTO_CHANGED',
   /** A barber's working period replaced (`editBarber`, `PERIOD`). */
   TeamBarberPeriodChanged: 'TEAM_BARBER_PERIOD_CHANGED',
   /** A barber put in or taken out of the «Който и да е» pool (`editBarber`, `POOL`). */

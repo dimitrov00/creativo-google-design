@@ -10,6 +10,7 @@ export type TeamBarberAction =
   | typeof AuditAction.TeamBarberAdded
   | typeof AuditAction.TeamBarberProfileChanged
   | typeof AuditAction.TeamBarberShopsChanged
+  | typeof AuditAction.TeamBarberPhotoChanged
   | typeof AuditAction.TeamBarberPeriodChanged
   | typeof AuditAction.TeamBarberPoolChanged
   | typeof AuditAction.TeamBarberStatusChanged

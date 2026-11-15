@@ -321,6 +321,12 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
     name,
     standing: standingOf(input),
     avatarSrc: input.avatarSrc,
+    // The photo is part of the profile: whoever edits it sets the photo.
+    photoLabel: !input.mayEditProfile
+      ? null
+      : barber.avatarMediaPath === null
+        ? memberWords.photoAdd
+        : memberWords.photoChange,
     setup,
     goesLive: isDraft ? memberWords.goesLive(firstWord(name)) : null,
     profile: profileRows(input, isDraft),

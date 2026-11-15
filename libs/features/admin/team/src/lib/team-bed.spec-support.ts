@@ -30,11 +30,12 @@ import type {
   ShopLocation,
   User,
 } from '@core/entities';
-import { type PipelineError, RepositoryError } from '@core/errors';
+import { MediaError, type PipelineError, RepositoryError } from '@core/errors';
 import type {
   GatewayPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
+  StagedUploadPorts,
   TeamAdminPorts,
   TeamRecordPorts,
   UserSearchPorts,
@@ -64,6 +65,7 @@ import {
   ROLES_ADMIN_PORTS,
   SCHEDULING_READ_PORTS,
   ShopZoneService,
+  STAGED_UPLOAD_PORTS,
   TEAM_ADMIN_PORTS,
   USER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -123,6 +125,15 @@ export type RecordCalls = {
   readonly dialled: { readonly callable: string; readonly input: unknown }[];
   /** Every prefix the accounts' index was asked, in order. */
   readonly searched: string[];
+  /** Every `setBarberPhoto` call, in order. */
+  readonly photos: TeamCall.Photo[];
+  /** Every picture staged, in order: whose folder, under which name, how many bytes of what. */
+  readonly staged: {
+    readonly userId: UserId;
+    readonly stagedName: string;
+    readonly contentType: string;
+    readonly size: number;
+  }[];
 };
 
 /** A record's writes for a spec that makes none: each one fails the spec that calls it. */
@@ -135,6 +146,8 @@ export const UNUSED_RECORD_PORTS: TeamRecordPorts = {
     Promise.reject(new Error('deleteDraftBarber was not expected')),
   activateBarber: () =>
     Promise.reject(new Error('activateBarber was not expected')),
+  setBarberPhoto: () =>
+    Promise.reject(new Error('setBarberPhoto was not expected')),
 };
 
 /** A barber as the catalogue's services hand it to a face. */
@@ -171,6 +184,8 @@ export function teamBed(options: TeamBedOptions = {}) {
     roles: [],
     dialled: [],
     searched: [],
+    photos: [],
+    staged: [],
   };
   let listAnswer: () => Result<TeamCall.Listed, PipelineError> = () =>
     options.listRefusal === undefined
@@ -220,6 +235,10 @@ export function teamBed(options: TeamBedOptions = {}) {
       calls.deletes.push(call);
       return saved('deleteDraftBarber', call.barberId);
     },
+    setBarberPhoto: async (call) => {
+      calls.photos.push(call);
+      return saved('setBarberPhoto', call.barberId);
+    },
     activateBarber: async (call) => {
       calls.activations.push(call);
       const refusal = refusals.get('activateBarber');
@@ -268,6 +287,20 @@ export function teamBed(options: TeamBedOptions = {}) {
     },
   } as unknown as GatewayPorts;
 
+  let stagingFails = false;
+  const staging: StagedUploadPorts = {
+    stageUpload: async (stagedUserId, stagedName, image) => {
+      if (stagingFails) return Result.err(MediaError.transient('staffUploads'));
+      calls.staged.push({
+        userId: stagedUserId,
+        stagedName,
+        contentType: image.type,
+        size: image.size,
+      });
+      return Result.ok(undefined);
+    },
+  };
+
   let searchFails = false;
   const userSearch: UserSearchPorts = {
     searchUsers: async (prefix) => {
@@ -306,6 +339,7 @@ export function teamBed(options: TeamBedOptions = {}) {
     { provide: GATEWAY_PORTS, useValue: gateway },
     { provide: SCHEDULING_READ_PORTS, useValue: scheduling },
     { provide: USER_SEARCH_PORTS, useValue: userSearch },
+    { provide: STAGED_UPLOAD_PORTS, useValue: staging },
     {
       provide: AUTH_DEPLOYMENT_PORTS,
       useValue: { authDeployment: { defaultCountry: 'BG' } },
@@ -396,6 +430,10 @@ export function teamBed(options: TeamBedOptions = {}) {
     dialRefuses: (callable: string, refusal: PipelineError | null) => {
       if (refusal === null) dialRefusals.delete(callable);
       else dialRefusals.set(callable, refusal);
+    },
+    /** Staging a picture fails from now on, or works again. */
+    stagingFails: (fails: boolean) => {
+      stagingFails = fails;
     },
     /** The accounts' index cannot be read from now on, or answers again. */
     searchFails: (fails: boolean) => {

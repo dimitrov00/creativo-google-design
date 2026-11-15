@@ -301,12 +301,20 @@ export type AuthEraserPorts = {
   readonly deleteAuthUser: DeleteAuthUser;
 };
 
-/** Storage deletions and the kept objects' label — the erasure only (`storage-objects.adapter.ts`, functions). */
-export type ObjectEraserPorts = {
+/** One Storage object deleted by its path — the erasure's, and a replaced barber photo's. */
+export type StoredObjectDeletePorts = {
   readonly deleteStoredObject: DeleteStoredObject;
+};
+
+/** A prefix deleted and a kept object's label cleared — the erasure only. */
+export type StoredObjectScrubPorts = {
   readonly deleteStoredPrefix: DeleteStoredPrefix;
   readonly clearStoredLabel: ClearStoredLabel;
 };
+
+/** Storage deletions and the kept objects' label (`storage-objects.adapter.ts`, functions). */
+export type ObjectEraserPorts = StoredObjectDeletePorts &
+  StoredObjectScrubPorts;
 
 /** The web's privacy callables — ONE token, `CLIENT_PRIVACY_PORTS` (the staff client card). */
 export type ClientPrivacyGatewayPorts = {

@@ -769,6 +769,8 @@ const TEAM_WIRE: WireTable<TeamErrorCode> = {
   [TeamErrorCode.ShopHasHours]: fields(S.FailedPrecondition),
   [TeamErrorCode.ServiceUnknown]: fields(S.NotFound),
   [TeamErrorCode.NotDraft]: fields(S.FailedPrecondition),
+  [TeamErrorCode.PhotoMissing]: fields(S.FailedPrecondition),
+  [TeamErrorCode.PhotoInvalid]: fields(S.InvalidArgument),
 };
 
 const CATALOG_WIRE = uniform(CatalogErrorCode, fields(S.InvalidArgument), {

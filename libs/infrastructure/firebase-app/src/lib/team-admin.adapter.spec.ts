@@ -100,7 +100,7 @@ describe('teamAdminPorts (team onboarding D8; staff permissions P6)', () => {
     expect(call).toEqual(SAVE);
   });
 
-  it('a barber record’s five writes dial their own callables with the call as built, each answering the record', async () => {
+  it('a barber record’s six writes dial their own callables with the call as built, each answering the record', async () => {
     const NEW = BarberId.of('b-new');
     const act = (name: string) =>
       (ClientOperationId.parse(name) as { ok: true; value: ClientOperationId })
@@ -120,6 +120,7 @@ describe('teamAdminPorts (team onboarding D8; staff permissions P6)', () => {
           [Callables.SetBarberOfferings]: () => Result.ok(saved),
           [Callables.DeleteDraftBarber]: () => Result.ok(saved),
           [Callables.ActivateBarber]: () => Result.ok(activation),
+          [Callables.SetBarberPhoto]: () => Result.ok(saved),
         },
         calls,
       ),
@@ -155,6 +156,14 @@ describe('teamAdminPorts (team onboarding D8; staff permissions P6)', () => {
     expect(unwrapOk(await ports.setBarberOfferings(copy))).toBe(saved);
     expect(unwrapOk(await ports.deleteDraftBarber(named))).toBe(saved);
     expect(unwrapOk(await ports.activateBarber(named))).toBe(activation);
+    const photo: TeamCall.Photo = deepFreeze({
+      barberId: NEW,
+      stagedName: 'a1b2c3d4-staged-name',
+      mediaWidth: 1200,
+      mediaHeight: 1600,
+      operationId: act('op-photo'),
+    });
+    expect(unwrapOk(await ports.setBarberPhoto(photo))).toBe(saved);
 
     expect(calls.map((call) => call.callable)).toEqual([
       Callables.AddBarber,
@@ -162,6 +171,7 @@ describe('teamAdminPorts (team onboarding D8; staff permissions P6)', () => {
       Callables.SetBarberOfferings,
       Callables.DeleteDraftBarber,
       Callables.ActivateBarber,
+      Callables.SetBarberPhoto,
     ]);
     // Each input is the call as built: the same object, untouched.
     expect(calls.map((call) => call.input)).toEqual([
@@ -170,6 +180,7 @@ describe('teamAdminPorts (team onboarding D8; staff permissions P6)', () => {
       copy,
       named,
       named,
+      photo,
     ]);
     expect(calls[0]?.input).toBe(add);
   });

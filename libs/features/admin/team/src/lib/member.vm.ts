@@ -114,6 +114,8 @@ export type MemberPageVm = {
   /** «Подготовка · 3 от 5» · «Приема записи» · «Напусна на 30 септ.» */
   readonly standing: string;
   readonly avatarSrc: string | null;
+  /** «Добави снимка» · «Смени снимката»; `null` when the photo is not theirs to change. */
+  readonly photoLabel: string | null;
   /** What bookings need, while the record is in preparation; empty after. */
   readonly setup: readonly SetupRowVm[];
   /** The line under the checklist; `null` when there is none. */

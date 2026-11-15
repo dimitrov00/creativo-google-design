@@ -14,6 +14,8 @@ describe('TeamError', () => {
       'TEAM_SHOP_HAS_HOURS',
       'TEAM_SERVICE_UNKNOWN',
       'TEAM_NOT_DRAFT',
+      'TEAM_PHOTO_MISSING',
+      'TEAM_PHOTO_INVALID',
     ]);
     for (const code of Object.values(TeamErrorCode)) {
       expect(code).toMatch(/^TEAM_[A-Z_]+$/);

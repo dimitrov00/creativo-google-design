@@ -229,3 +229,26 @@
 .team-page__pill .ui-unit-field__unit {
   color: inherit;
 }
+
+/* THE PHOTO PICKER under a member's head: a label around a hidden file
+   field, centred with the head. The field keeps the keyboard, so the focus
+   ring is drawn on the pill beside it (the account page's own recipe). */
+.team-page__photo {
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.team-page__photo-input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.team-page__photo-input:focus-visible ~ .ui-button {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: var(--sys-focus-ring-offset);
+}

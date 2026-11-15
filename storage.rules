@@ -59,14 +59,47 @@ service firebase.storage {
       allow delete: if isOwner(userId);
     }
 
-    // Catalog media library (service covers, location photos — the assets
-    // a stored `MediaRef`'s `mediaPath` points at, resolved client-side by
-    // `mediaResolvePorts`): public marketing/catalog content, readable by
-    // anyone; written only by staff tooling with admin credentials (which
+    // Catalog media library (service covers, location photos, a barber's
+    // photo — the assets a stored `MediaRef`'s `mediaPath` points at,
+    // resolved client-side by `mediaResolvePorts`): public marketing/catalog
+    // content, FETCHED by anyone who knows its path; written only with admin
+    // credentials (staff tooling, and the `setBarberPhoto` callable — both
     // bypass rules), never by clients.
+    //
+    // `get`, never `list`: a barber record in preparation is staff-only, and
+    // its photo's unguessable object name is all that keeps the face from
+    // the public — a listing of `media/barbers/…` would hand it over. No
+    // client lists `media/`: every reader holds a path.
     match /media/{allPaths=**} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if false;
       allow write: if false;
+    }
+
+    // Any staff role's claim — the token gate the team callables ask before
+    // they read the stored account (`admitTeamCaller`).
+    function isStaff() {
+      return isSignedIn() && 'roles' in request.auth.token
+        && request.auth.token.roles.hasAny(['barber', 'receptionist', 'content_manager', 'admin', 'sysadmin']);
+    }
+
+    // A staff member's STAGED upload (`stagedUploadPorts`): the picture a
+    // callable is about to take — today a barber's photo, `setBarberPhoto`
+    // (docs/architecture/decisions/2026-11-15-one-photo-per-barber.md). The
+    // rules cannot ask who may edit a barber (that is the owner's permission
+    // cells, judged on the stored account), so the browser writes HERE, under
+    // its own uid, and the callable reads it with admin credentials, checks
+    // it again, copies it into `media/` and deletes it. Nobody reads a staged
+    // file through the rules — not even its owner: it is in transit. A staff
+    // token, the owner's own folder, an image under 5 MiB
+    // (`BarberPhotoSystem.MAX_BYTES`).
+    match /staffUploads/{userId}/{fileName} {
+      allow read: if false;
+      allow create, update: if isOwner(userId)
+        && isStaff()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(userId);
     }
 
     // The shop's photos of a visit (`appointmentPhotoPorts`, one object

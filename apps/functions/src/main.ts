@@ -52,6 +52,7 @@ import {
   continueAnalyticsRecompute,
   continuePolicyRecompute,
   deleteDraftBarber as deleteDraftBarberPipeline,
+  setBarberPhoto as setBarberPhotoPipeline,
   editAppointment,
   editBarber as editBarberPipeline,
   endImpersonation as endImpersonationPipeline,
@@ -114,7 +115,10 @@ import {
   nodeOtpCryptoPorts,
 } from './adapters/otp-crypto.adapter';
 import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';
-import { storageObjectPorts } from './adapters/storage-objects.adapter';
+import {
+  storageObjectPorts,
+  storedObjectCopyPorts,
+} from './adapters/storage-objects.adapter';
 import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
   type CallableEdgePorts,
@@ -214,6 +218,7 @@ import {
   decodeActivateBarber,
   decodeAddBarber,
   decodeDeleteDraftBarber,
+  decodeSetBarberPhoto,
   decodeEditBarber,
   decodeListTeam,
   decodeSetBarberOfferings,
@@ -297,7 +302,9 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * key: 62 exports; then `setBarberOfferings`, a barber's services and
  * prices, on the same ports: 63; then `setDayExceptions`, the one door to
  * a barber's days off, blocks and one-day breaks: 64; then `listTeam`, the
- * Team page's read: 65.
+ * Team page's read: 65; staff permissions' save: 66; then
+ * `setBarberPhoto`, a barber's one photo, over the server ports and the
+ * default bucket — the second export that reaches Storage: 67.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -539,16 +546,35 @@ const previewPorts = once(() => ({
 }));
 
 /**
+ * The default bucket, named once per instance — the erasure's and the
+ * barber photo's. Asked for on first use, never at import: an export that
+ * reaches no Storage must load without it.
+ */
+const bucket = once(() => adminBucket());
+
+/**
  * The erasure's ports (`eraseClient`, WS-D): the privacy ports, the Auth
  * user's claim roles and its deletion, and the default bucket's object
- * deletions (P3-L-9, P3-L-10, P3-DEP-23 — the only export that reaches
- * Storage or deletes an Auth user). Built on first use; handed to no other
+ * deletions (P3-L-9, P3-L-10, P3-DEP-23 — the only export that deletes an
+ * Auth user; `setBarberPhoto` is the other that reaches Storage). Built on first use; handed to no other
  * export.
  */
 const erasurePorts = once(() => ({
   ...privacyPorts(),
   ...authEraserPorts(auth()),
-  ...storageObjectPorts(adminBucket()),
+  ...storageObjectPorts(bucket()),
+}));
+
+/**
+ * The barber photo's ports (`setBarberPhoto`): the server ports and the
+ * default bucket's stat, copy and delete — the staged upload read, copied
+ * into the shop's media and onto the linked account's avatar, and deleted.
+ * Built on first use; handed to no other export.
+ */
+const photoPorts = once(() => ({
+  ...serverPorts(),
+  ...storedObjectCopyPorts(bucket()),
+  ...storageObjectPorts(bucket()),
 }));
 
 /** The admin roles change's ports: the server ports and Admin Auth's session revocation. Built on first use. */
@@ -584,6 +610,7 @@ const root = {
   erasure: erasurePorts,
   roles: rolesPorts,
   analytics: analyticsPorts,
+  photo: photoPorts,
 } as const;
 
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
@@ -1081,6 +1108,24 @@ export const deleteDraftBarber = onCall(
     root.ports,
     decodeDeleteDraftBarber,
     (ports, cmd) => deleteDraftBarberPipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/**
+ * A barber's ONE photo, replaced from a picture the caller staged under
+ * their own account: copied into the shop's media, set on the record beside
+ * its `TEAM_BARBER_PHOTO_CHANGED` row, and copied onto the linked account's
+ * avatar, so the two never differ
+ * (`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`).
+ */
+export const setBarberPhoto = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.SetBarberPhoto, null),
+    root.photo,
+    decodeSetBarberPhoto,
+    (ports, cmd) => setBarberPhotoPipeline(ports)(cmd),
     refusalOf,
   ),
 );

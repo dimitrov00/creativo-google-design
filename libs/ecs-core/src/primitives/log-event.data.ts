@@ -93,6 +93,10 @@ export const LogEvent = {
   RolesSessionsNotRevoked: 'roles.sessions_not_revoked',
   /** The target's sessions were revoked — every successful revoke, the unchanged call too (S-L-26): ids and a boolean. */
   RolesSessionsRevoked: 'roles.sessions_revoked',
+  /** A barber's photo landed, but an object it leaves behind (the staged upload, the photo it replaced) was not deleted: paths only. */
+  TeamPhotoCleanupFailed: 'team.photo_cleanup_failed',
+  /** A barber's photo landed, but the linked account's avatar was not rewritten — the two differ until the next photo: ids only. */
+  TeamPhotoMirrorFailed: 'team.photo_mirror_failed',
   TriggerAttemptFailed: 'trigger attempt failed',
   TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
   WaitlistBarberSkipped: 'waitlist barber skipped',
