@@ -2,10 +2,12 @@ import {
   AccountLifecycle,
   BarberLinkChange,
   BarberLinkRequest,
+  type DocPath,
   Registration,
   Role,
   Roles,
   StaffLink,
+  WriteOp,
 } from '@core/components';
 import {
   type BarberId,
@@ -14,7 +16,13 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
-import type { BarberLink, User } from '@core/entities';
+import {
+  BARBER_LINK_DOC,
+  type BarberLink,
+  Collections,
+  Subcollections,
+  type User,
+} from '@core/entities';
 
 /**
  * An admitted roles change (security hardening S-WS-E): the target's
@@ -339,6 +347,100 @@ export const RoleAssignmentSystem = {
           : null,
       lockTaken: linkChanged ? to : null,
     });
+  },
+
+  /** `barbers/{barberId}/restricted/link` — the record's account lock. */
+  lockPathOf(barberId: BarberId): DocPath {
+    return [
+      Collections.Barbers,
+      barberId,
+      Subcollections.Restricted,
+      BARBER_LINK_DOC,
+    ];
+  },
+
+  /**
+   * The document writes of an admitted change, without its audit row
+   * (which the pipeline plans beside them, under its digest): the
+   * account's changed fields on `users/{uid}` — `profileEditedAtUtcMs`
+   * first, the marker the profile trigger reads so the pipeline's own row
+   * is the only one (S-RU-12), then `roles` and `linkedBarberId` each only
+   * when it moved — then the old record's lock released and the new one's
+   * taken. A change that moves neither roles nor link writes no account
+   * field; a lock is still released or taken when the assignment says so.
+   */
+  writesOf(
+    targetUserId: UserId,
+    assignment: RoleAssignment,
+    nowUtcMs: UtcEpochMs,
+  ): readonly WriteOp[] {
+    const out: WriteOp[] = [];
+    if (assignment.rolesChanged || assignment.linkChanged) {
+      const fields: Record<string, unknown> = {
+        profileEditedAtUtcMs: nowUtcMs,
+      };
+      if (assignment.rolesChanged) fields['roles'] = assignment.rolesTo;
+      if (assignment.linkChanged) {
+        fields['linkedBarberId'] = assignment.linkedBarberIdTo;
+      }
+      out.push(WriteOp.update([Collections.Users, targetUserId], fields));
+    }
+    if (assignment.lockReleased !== null) {
+      out.push(
+        WriteOp.remove(
+          RoleAssignmentSystem.lockPathOf(assignment.lockReleased),
+        ),
+      );
+    }
+    if (assignment.lockTaken !== null) {
+      const lock: { readonly linkedUserId: UserId } = {
+        linkedUserId: targetUserId,
+      };
+      out.push(
+        WriteOp.set(
+          RoleAssignmentSystem.lockPathOf(assignment.lockTaken),
+          lock,
+        ),
+      );
+    }
+    return out;
+  },
+
+  /**
+   * What the close of a barber record's working period does to the
+   * account linked to it (team onboarding D10) — never asked of `decide`,
+   * which judges a person's request; this is a consequence, and nobody is
+   * asking:
+   *
+   * - **the roles**: the stored set without every staff role
+   *   (`Roles.STAFF`), a `client` for one left with nothing. An account
+   *   that assigns roles, or the vendor's, is left as it is: the shop
+   *   never loses its last admin to a schedule (S-RU-11), and the owner
+   *   takes that role away by hand;
+   * - **the link**: cleared when it names this record, left alone when it
+   *   names another;
+   * - **the lock**: this record's, released.
+   *
+   * The stored set's known roles in `rolesFrom`, as `decide` reads them.
+   */
+  departureOf(account: User, barberId: BarberId): RoleAssignment {
+    const stored = normalised(account.roles);
+    const keeps =
+      Roles.assignsRoles(account.roles) || holds(account.roles, Role.Sysadmin);
+    const left = stored.filter((role) => !holds(Roles.STAFF, role));
+    const rolesTo = keeps ? stored : left.length === 0 ? [Role.Client] : left;
+    const from = StaffLink.of(account).linkedBarberId;
+    const to = from === barberId ? null : from;
+    return {
+      rolesFrom: Roles.known(account.roles),
+      rolesTo,
+      rolesChanged: !sameSet(stored, rolesTo),
+      linkedBarberIdFrom: from,
+      linkedBarberIdTo: to,
+      linkChanged: to !== from,
+      lockReleased: barberId,
+      lockTaken: null,
+    };
   },
 
   /**

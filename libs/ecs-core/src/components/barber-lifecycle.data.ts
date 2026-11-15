@@ -58,6 +58,49 @@ export const BarberLifecycle = {
     return { barberStatus, barberStatusChangedAtUtcMs: atUtcMs };
   },
 
+  /**
+   * A record whose working period has closed (team onboarding D10): the
+   * account the close took staff access from — `null` when none was — whose
+   * sessions are not revoked yet, and where a rehire returns.
+   */
+  depart(
+    atUtcMs: UtcEpochMs,
+    barberDepartedUserId: UserId | null,
+    barberRehireStatus: BarberLifecycle.LiveStatus,
+  ): BarberLifecycle.Departed {
+    return {
+      barberStatus: BarberStatus.Departed,
+      barberStatusChangedAtUtcMs: atUtcMs,
+      barberDepartedUserId,
+      barberSessionsRevokedAtUtcMs: null,
+      barberRehireStatus,
+    };
+  },
+
+  /** The same departure, its account's sessions revoked at `atUtcMs`. The status stamp is the departure's own. */
+  revoked(
+    departed: BarberLifecycle.Departed,
+    atUtcMs: UtcEpochMs,
+  ): BarberLifecycle.Departed {
+    return { ...departed, barberSessionsRevokedAtUtcMs: atUtcMs };
+  },
+
+  /**
+   * Whether a departure still owes its account a revoke: it took staff
+   * access from one, and that account's sessions are not ended yet.
+   */
+  awaitsRevoke(
+    lifecycle: BarberLifecycle,
+  ): lifecycle is BarberLifecycle.Departed & {
+    readonly barberDepartedUserId: UserId;
+  } {
+    return (
+      lifecycle.barberStatus === BarberStatus.Departed &&
+      lifecycle.barberDepartedUserId !== null &&
+      lifecycle.barberSessionsRevokedAtUtcMs === null
+    );
+  },
+
   /** The edge guard for an untrusted live status (a callable's payload). */
   isLiveStatus(value: unknown): value is BarberLifecycle.LiveStatus {
     return value === BarberStatus.StaffOnly || value === BarberStatus.Public;

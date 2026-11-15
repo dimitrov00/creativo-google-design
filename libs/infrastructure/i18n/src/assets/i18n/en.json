@@ -2508,6 +2508,7 @@
         "isMe": "This is me",
         "notMe": "This is not me",
         "accountNone": "Without an account {{name}} cannot sign in. The team books their visits.",
+        "accountDeparted": "{{name}} has left the team and no longer signs in to the app as a barber.",
         "accountLink": "Without an account {{name}} cannot sign in. Ask {{name}} to sign in once, then press “Link an account”.",
         "accountMine": "You work a chair too: your schedule is under “Schedule”, and everything else stays as it is.",
         "accessTitle": "Access",
@@ -2543,7 +2544,12 @@
         "lastClear": "No last day",
         "previousMonth": "Previous month",
         "nextMonth": "Next month",
-        "save": "Save"
+        "save": "Save",
+        "ends": "After {{date}} {{name}} leaves the team and no longer signs in to the app as a barber.",
+        "ended": "{{date}} has already passed. Saving makes {{name}} leave the team right away.",
+        "leaveTitle": "{{name}} leaves the team now?",
+        "leaveMessage": "The last working day has already passed. {{name}} stops taking bookings and no longer signs in to the app as a barber.",
+        "leaveLabel": "Leaves"
       },
       "shops": {
         "title": "Shops",

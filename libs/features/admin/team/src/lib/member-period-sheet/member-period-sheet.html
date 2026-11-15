@@ -88,6 +88,20 @@
         </button>
         }
       </ui-list-group>
+
+      <!-- WHAT THE LAST DAY WILL DO, said before it is saved: a last day is
+           how someone leaves the team. -->
+      @if (outlook().note; as note) {
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="team-page__footnote"
+        data-testid="member-period-note"
+      >
+        {{ note }}
+      </p>
+      }
     </div>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
@@ -105,4 +119,15 @@
       </button>
     </ui-sheet-action-bar>
   </ui-modal-sheet>
+
+  <!-- A last day already passed makes the barber leave at once: asked first. -->
+  <ui-alert
+    [uiPresented]="questionOpen()"
+    [uiTitle]="outlook().question?.title ?? ''"
+    [uiMessage]="outlook().question?.message ?? ''"
+    [uiActions]="outlook().question?.actions ?? []"
+    data-testid="member-period-leave-question"
+    (uiPicked)="answer($event)"
+    (uiDismissed)="questionOpen.set(false)"
+  />
 </ng-container>

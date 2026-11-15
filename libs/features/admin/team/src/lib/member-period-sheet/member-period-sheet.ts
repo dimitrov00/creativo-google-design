@@ -20,11 +20,14 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import {
+  UiAlert,
   UiListGroup,
   UiListRow,
   UiNotice,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
+import { LinkAnswer } from '../link.vm';
+import { type PeriodOutlookVm, periodOutlookVm } from '../period.presenter';
 import { TeamDayMenu } from '../team-day-menu/team-day-menu';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
@@ -35,8 +38,15 @@ import { dayWords } from '../team.format';
  * last day they work (team onboarding D2): outside the period nobody can
  * book them. Two days, each picked in the DS's month.
  *
+ * A last day is the way someone leaves the team (team onboarding D10):
+ * once it is behind the shop's today the record leaves, the linked account
+ * loses its staff access and its sessions end. The sheet says so under the
+ * two days before anything is saved, and a save that would make the barber
+ * leave AT ONCE — a last day already passed — is held behind a question.
+ *
  * The sheet holds a draft and decides nothing: whether the two days make a
- * period is `TeamSystem.setPeriod`'s answer, the rule the server asks.
+ * period is `TeamSystem.setPeriod`'s answer, the rule the server asks, and
+ * where the period stands today is `EmploymentSystem.outlookOf`'s.
  * Mounted while it is open, so every opening starts from the record.
  */
 @Component({
@@ -44,6 +54,7 @@ import { dayWords } from '../team.format';
   imports: [
     TeamDayMenu,
     TranslocoDirective,
+    UiAlert,
     UiButton,
     UiForegroundStyleDirective,
     UiListGroup,
@@ -110,6 +121,22 @@ export class MemberPeriodSheet implements OnInit {
 
   protected readonly canSave = computed(() => this.valid() && this.changed());
 
+  /** What the last day drafted will do, and the question a save may be held behind. */
+  protected readonly outlook = computed<PeriodOutlookVm>(() => {
+    const memberWords = this.wording.memberWords();
+    return memberWords === null
+      ? { note: null, question: null }
+      : periodOutlookVm({
+          barber: this.uiBarber(),
+          lastLocalDate: this.last(),
+          today: this.uiToday(),
+          memberWords,
+          locale: this.locale(),
+        });
+  });
+  /** The question before a save that makes the barber leave at once is up. */
+  protected readonly questionOpen = signal(false);
+
   /** Why the save was refused, in the catalogue's words. */
   protected readonly refusal = computed(() => {
     const error = this.store.refusal();
@@ -132,7 +159,23 @@ export class MemberPeriodSheet implements OnInit {
     row.focus();
   }
 
-  protected async save(): Promise<void> {
+  /** «Запази»: a last day already passed is asked about first; any other period is sent. */
+  protected save(): void {
+    if (!this.canSave() || this.store.pending()) return;
+    if (this.outlook().question !== null) {
+      this.questionOpen.set(true);
+      return;
+    }
+    void this.send();
+  }
+
+  /** The question answered: «Напуска» sends the period, anything else lets it go. */
+  protected answer(linkAnswer: string): void {
+    this.questionOpen.set(false);
+    if (linkAnswer === LinkAnswer.Confirm) void this.send();
+  }
+
+  private async send(): Promise<void> {
     const starts = this.starts();
     if (starts === null || !this.canSave() || this.store.pending()) return;
     if (await this.store.savePeriod(starts, this.last())) {

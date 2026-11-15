@@ -1,6 +1,5 @@
 import {
   AuditAction,
-  type DocPath,
   StaffLink,
   StaffTarget,
   type TeamCall,
@@ -13,18 +12,17 @@ import {
   TeamError,
 } from '@core/errors';
 import {
-  BARBER_LINK_DOC,
   type Barber,
   type BarberLink,
   type BarberSchedule,
   Collections,
   type Service,
-  Subcollections,
   type User,
 } from '@core/entities';
 import type { ClockPorts, CommitPorts, HashPorts } from '@core/ports';
 import {
   OfferingEditSystem,
+  RoleAssignmentSystem,
   StaffAccessSystem,
   TeamSystem,
 } from '@core/systems';
@@ -80,16 +78,6 @@ type Snapshot = StaffCallerFacts & {
   readonly services: readonly Service[];
 };
 
-/** `barbers/{barberId}/restricted/link` — the record's account lock. */
-function lockPath(barberId: BarberId): DocPath {
-  return [
-    Collections.Barbers,
-    barberId,
-    Subcollections.Restricted,
-    BARBER_LINK_DOC,
-  ];
-}
-
 /** What goes with the record: its roster, its lock and link, its offerings. */
 function dependentWrites(
   barberId: BarberId,
@@ -99,7 +87,8 @@ function dependentWrites(
   if (snapshot.schedule !== null) {
     writes.push(WriteOp.remove([Collections.BarberSchedules, barberId]));
   }
-  if (snapshot.lock !== null) writes.push(WriteOp.remove(lockPath(barberId)));
+  if (snapshot.lock !== null)
+    writes.push(WriteOp.remove(RoleAssignmentSystem.lockPathOf(barberId)));
   const linked = snapshot.linked;
   if (linked !== null && StaffLink.of(linked).linkedBarberId === barberId) {
     writes.push(
@@ -136,7 +125,7 @@ export const deleteDraftBarber =
           readStaffCaller(tx, callerUserId),
           tx.get<Barber>([Collections.Barbers, cmd.barberId]),
           tx.get<BarberSchedule>([Collections.BarberSchedules, cmd.barberId]),
-          tx.get<BarberLink>(lockPath(cmd.barberId)),
+          tx.get<BarberLink>(RoleAssignmentSystem.lockPathOf(cmd.barberId)),
           tx.query<Service>(TEAM_SERVICES),
         ]);
         const linked =

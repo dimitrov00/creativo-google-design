@@ -38,6 +38,13 @@ export const SystemSource = {
    * context named nobody; this one names the process that acted.
    */
   IdentityCallable: 'IDENTITY_CALLABLE',
+  /**
+   * A job the scheduler runs with nobody behind it (team onboarding D10:
+   * the daily close of a barber's working period). What it does is the
+   * consequence of an act a person made earlier — the last working day
+   * they set — and that act has its own row.
+   */
+  ScheduledJob: 'SCHEDULED_JOB',
   UnattributedUnknown: 'UNATTRIBUTED_UNKNOWN',
   UnattributedApiKey: 'UNATTRIBUTED_API_KEY',
   UnattributedUnauthenticated: 'UNATTRIBUTED_UNAUTHENTICATED',

@@ -1346,9 +1346,11 @@ editors"); its server half is merged.
   - The end-to-end case gives a registered client the front desk from the
     ＋, reads the stored roles and the audit row, and finds the account's
     page open.
-- **Stage T is built.** What is left of the team's onboarding is the
-  invites (email, per the owner's ruling) and the leaving stage, both in
-  `docs/designs/team-onboarding.md`.
+- **Stage T is built.** What is left of the team's onboarding is in
+  `docs/designs/team-onboarding.md`: the invites (email, per the owner's
+  ruling) and the rest of the leaving stage. The close itself is built
+  (stage 1b there): a barber whose last working day has passed leaves the
+  team, and the linked account loses its staff access.
 
 ### Stage B. The booking calls
 

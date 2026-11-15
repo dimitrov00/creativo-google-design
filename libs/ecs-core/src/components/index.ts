@@ -99,6 +99,7 @@ export * from './doc-body.data';
 export * from './doc-path.data';
 export * from './draft-assessment.data';
 export * from './e164.data';
+export * from './employment-outlook.data';
 export * from './earned-level.data';
 export * from './edit-call-outcome.data';
 export * from './edit-command.data';

@@ -43,11 +43,13 @@ import {
   localDate,
   locationFixture,
   pinnedNowUtcMs,
+  recordingSessionRevokePorts,
   recordingTelemetry,
   registeredUserFixture,
   serviceFixture,
 } from '@core/testing';
-import { sha256Hex } from '../adapters/crypto.adapter';
+import { randomUuid, sha256Hex } from '../adapters/crypto.adapter';
+import { firestoreCatalogPorts } from '../adapters/firestore-catalog.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { decodeDocumentChangeEvent } from '../wire/triggers.wire';
@@ -129,6 +131,20 @@ describe('the team callables (emulator)', () => {
     nowUtcMs: pinnedNowUtcMs(),
     hash: sha256Hex,
     defaultLocationId: CENTER,
+  });
+
+  /**
+   * `editBarber`'s ports: the team's, and what a working period that has
+   * already ended is closed with — none of which these cases reach (no
+   * period edit here; the close has its own spec,
+   * `close-ended-periods.integration.spec.ts`).
+   */
+  const editPorts = () => ({
+    ...ports(),
+    ...recordingTelemetry(),
+    nextId: randomUuid,
+    ...recordingSessionRevokePorts().ports,
+    ...firestoreCatalogPorts(db),
   });
 
   const add = () =>
@@ -221,7 +237,7 @@ describe('the team callables (emulator)', () => {
     await add();
     const operationId = OperationId.of('operation-edit-012345678');
     expect(
-      await editBarber(ports())({
+      await editBarber(editPorts())({
         ...CALLER,
         operationId,
         barberId: NEW,
@@ -248,7 +264,7 @@ describe('the team callables (emulator)', () => {
     await db
       .doc(`${Collections.Users}/${ADMIN}`)
       .update({ roles: [Role.Barber] });
-    const refused = await editBarber(ports())({
+    const refused = await editBarber(editPorts())({
       ...CALLER,
       operationId: OperationId.of('operation-edit-refused01'),
       barberId: NEW,

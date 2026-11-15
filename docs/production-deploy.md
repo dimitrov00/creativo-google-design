@@ -672,8 +672,10 @@ Source: `config/app-check.json`; `apps/functions/src/lib/app-check.ts`
 
 ### Schedules and flags
 
-- [ ] **Check that `CRON_TIME_ZONE` matches the shop.** The four nightly jobs
-      (`sweepCapacityDaily` 03:00, `sweepClientStatsPolicyDaily` 03:30,
+- [ ] **Check that `CRON_TIME_ZONE` matches the shop.** The five nightly jobs
+      (`closeEndedPeriodsDaily` 02:30 — a barber whose last working day has
+      passed leaves the team, team onboarding D10 —
+      `sweepCapacityDaily` 03:00, `sweepClientStatsPolicyDaily` 03:30,
       `sampleBarberLeadTimeDaily` 04:00, `sweepAnalyticsDaysDaily` 04:30 — the
       analytics recompute, staff-analytics-v2 PR 4a — each with
       `retryCount: 3`) fire on

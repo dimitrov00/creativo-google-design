@@ -93,10 +93,16 @@ export const LogEvent = {
   RolesSessionsNotRevoked: 'roles.sessions_not_revoked',
   /** The target's sessions were revoked — every successful revoke, the unchanged call too (S-L-26): ids and a boolean. */
   RolesSessionsRevoked: 'roles.sessions_revoked',
+  /** A barber's working period closed and the record left the team (team onboarding D10): ids and a boolean. */
+  TeamPeriodClosed: 'team.period_closed',
+  /** One barber's close could not be read or written — the next run tries again; alerted on: the id and the code. */
+  TeamPeriodCloseFailed: 'team.period_close_failed',
   /** A barber's photo landed, but an object it leaves behind (the staged upload, the photo it replaced) was not deleted: paths only. */
   TeamPhotoCleanupFailed: 'team.photo_cleanup_failed',
   /** A barber's photo landed, but the linked account's avatar was not rewritten — the two differ until the next photo: ids only. */
   TeamPhotoMirrorFailed: 'team.photo_mirror_failed',
+  /** A barber left, but the account's sessions were not ended, or the marker that says so was not written — the next run tries again; alerted on: the id and the code. */
+  TeamSessionsNotRevoked: 'team.sessions_not_revoked',
   TriggerAttemptFailed: 'trigger attempt failed',
   TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
   WaitlistBarberSkipped: 'waitlist barber skipped',

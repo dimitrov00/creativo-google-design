@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import {
   BarberActivation,
@@ -13,6 +14,7 @@ import { GovernanceErrorCode, PipelineError } from '@core/errors';
 import { Callables } from '@core/ports';
 import {
   AccessScope,
+  type LocalDate,
   LocationId,
   StaffCapability,
   UserId,
@@ -35,6 +37,7 @@ import {
   rosterOf,
   serviceOf,
 } from '../team.fixtures.spec-support';
+import { TeamDayMenu } from '../team-day-menu/team-day-menu';
 import { AdminTeamMember } from './admin-team-member';
 
 /*
@@ -319,6 +322,70 @@ describe('AdminTeamMember — a record in preparation', () => {
       barberStartsLocalDate: NIKOLAY_RECORD.barberStartsLocalDate,
       barberLastWorkingLocalDate: null,
       barberId: NIKOLAY.barberId,
+    });
+  });
+
+  describe('a last day is how someone leaves the team (team onboarding D10)', () => {
+    /** The last-day menu's pick: its month is the DS's own, driven through its output. */
+    const pickLast = async (
+      fixture: Awaited<ReturnType<typeof render>>['fixture'],
+      settle: () => Promise<void>,
+      day: LocalDate,
+    ): Promise<void> => {
+      const menus = fixture.debugElement.queryAll(By.directive(TeamDayMenu));
+      (menus.at(1)?.componentInstance as TeamDayMenu).uiPicked.emit(day);
+      await settle();
+    };
+
+    it('a last day ahead says when the person leaves, and saves without a question', async () => {
+      const { fixture, piece, press, text, settle, calls } =
+        await render('ivan');
+      await press('member-row-period');
+      expect(piece('member-period-note')).toBeNull();
+
+      await pickLast(fixture, settle, localDate('2026-12-31'));
+      expect(text(piece('member-period-note'))).toBe(
+        'След 31.12 Иван напуска екипа и вече не влиза в приложението като бръснар.',
+      );
+
+      await press('member-period-save');
+      expect(calls.edits).toHaveLength(1);
+      expect(calls.edits[0]).toMatchObject({
+        barberEdit: BarberEdit.Period,
+        barberLastWorkingLocalDate: '2026-12-31',
+      });
+    });
+
+    it('a last day already passed says the person leaves on saving, and asks first: «Отказ» sends nothing, «Напуска» sends the period', async () => {
+      const { fixture, piece, press, text, settle, calls } =
+        await render('ivan');
+      await press('member-row-period');
+      await pickLast(fixture, settle, localDate('2026-09-01'));
+      expect(text(piece('member-period-note'))).toBe(
+        '1.09 вече е минал. Със запазването Иван напуска екипа веднага.',
+      );
+
+      await press('member-period-save');
+      expect(calls.edits).toEqual([]);
+      expect(text(piece('member-period-leave-question'))).toContain(
+        'Иван напуска екипа сега?',
+      );
+      expect(text(piece('member-period-leave-question'))).toContain(
+        'спира да приема записи',
+      );
+
+      await press('member-period-leave-cancel');
+      expect(calls.edits).toEqual([]);
+      expect(piece('member-period-sheet')).not.toBeNull();
+
+      await press('member-period-save');
+      await press('member-period-leave-confirm');
+      expect(calls.edits).toHaveLength(1);
+      expect(calls.edits[0]).toMatchObject({
+        barberEdit: BarberEdit.Period,
+        barberLastWorkingLocalDate: '2026-09-01',
+        barberId: IVAN.barberId,
+      });
     });
   });
 
@@ -1112,6 +1179,11 @@ describe('AdminTeamMember — the edges', () => {
   it('a record that has left is read: when it left, and nothing to change', async () => {
     const { piece, text } = await render('stefan');
     expect(text(piece('member-standing'))).toBe('Напусна на 30.09');
+    // Nobody signs in as a leaver: the page says why, and offers no link.
+    expect(text(piece('member-account-note'))).toBe(
+      'Стефан напусна екипа и вече не влиза в приложението като бръснар.',
+    );
+    expect(piece('member-link')).toBeNull();
     expect(piece('member-row-profile')?.tagName).not.toBe('BUTTON');
     expect(piece('member-pool-row')).toBeNull();
     expect(piece('member-booked-by-row')).toBeNull();

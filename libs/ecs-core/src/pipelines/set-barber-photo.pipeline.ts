@@ -1,6 +1,5 @@
 import {
   AuditAction,
-  type DocPath,
   StaffTarget,
   type TeamCall,
   type WriteOp,
@@ -21,10 +20,8 @@ import {
 } from '@core/errors';
 import {
   type Barber,
-  BARBER_LINK_DOC,
   type BarberLink,
   Collections,
-  Subcollections,
   type User,
 } from '@core/entities';
 import type {
@@ -39,6 +36,7 @@ import type {
 import {
   BarberPhotoSystem,
   type BarberPhotoPlan,
+  RoleAssignmentSystem,
   StaffAccessSystem,
   TeamSystem,
 } from '@core/systems';
@@ -117,16 +115,6 @@ type Landed = {
 
 type Refusal = TeamError | AccessError | RepositoryError;
 
-/** `barbers/{barberId}/restricted/link` — the record's account lock. */
-function lockPath(barberId: BarberId): DocPath {
-  return [
-    Collections.Barbers,
-    barberId,
-    Subcollections.Restricted,
-    BARBER_LINK_DOC,
-  ];
-}
-
 /** The stored account against `TEAM_PROFILES` on the record, then the record with the photo. */
 function decide(
   snapshot: Snapshot,
@@ -185,7 +173,7 @@ export const setBarberPhoto =
       const [facts, barber, link] = await Promise.all([
         readStaffCaller(tx, callerUserId),
         tx.get<Barber>([Collections.Barbers, cmd.barberId]),
-        tx.get<BarberLink>(lockPath(cmd.barberId)),
+        tx.get<BarberLink>(RoleAssignmentSystem.lockPathOf(cmd.barberId)),
       ]);
       return { ...facts, barber, link };
     };

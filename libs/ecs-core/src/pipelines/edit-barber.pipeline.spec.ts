@@ -13,7 +13,9 @@ import {
 import {
   AuditEntryId,
   BarberId,
+  LocalDate,
   LocationId,
+  LogEvent,
   OperationId,
   Result,
   UserId,
@@ -25,10 +27,12 @@ import {
 } from '@core/errors';
 import {
   type Barber,
+  BARBER_LINK_DOC,
   type BarberSchedule,
   Collections,
   type ShopLocation,
   STAFF_PERMISSIONS_DOC,
+  Subcollections,
   type User,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
@@ -41,11 +45,14 @@ import {
   contendedCommit,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
+  FIXTURE_TODAY,
   fixtureHash,
   localDate,
   locationFixture,
   memoryStore,
   memoryTxPorts,
+  recordingSessionRevokePorts,
+  recordingTelemetry,
   registeredUserFixture,
   unwrapErr,
   unwrapOk,
@@ -106,6 +113,10 @@ type RigOptions = {
   readonly barber?: Barber | null;
   readonly shops?: readonly ShopLocation[];
   readonly schedule?: BarberSchedule | null;
+  /** The account linked to the record, with its lock; none by default. */
+  readonly linked?: User;
+  /** The shop's zone cannot be read. */
+  readonly zoneFails?: boolean;
   readonly commit?: (commit: CommitPlan) => CommitPlan;
 };
 
@@ -135,13 +146,51 @@ function rig(options: RigOptions = {}) {
             body: bodyOf(schedule),
           },
         ]),
+    ...(options.linked === undefined || barber === null
+      ? []
+      : [
+          {
+            path: [Collections.Users, options.linked.id],
+            body: bodyOf(options.linked),
+          },
+          {
+            path: [
+              Collections.Barbers,
+              barber.id,
+              Subcollections.Restricted,
+              BARBER_LINK_DOC,
+            ],
+            body: { linkedUserId: options.linked.id },
+          },
+        ]),
   ]);
   const tx = memoryTxPorts(store);
   const commit = options.commit ? options.commit(tx.commit) : tx.commit;
+  const telemetry = recordingTelemetry();
+  const revoke = recordingSessionRevokePorts();
+  const shops = options.shops ?? SHOPS;
   return {
     store,
     tx,
-    run: editBarber({ ...tx, commit, defaultLocationId: CENTER }),
+    telemetry,
+    /** Every account whose sessions were ended, in order. */
+    revoked: revoke.revoked,
+    run: editBarber({
+      ...tx,
+      commit,
+      defaultLocationId: CENTER,
+      ...revoke.ports,
+      ...telemetry,
+      // The shop's clock, for a period that may have ended already.
+      loadLocation: async (id) =>
+        options.zoneFails === true
+          ? Result.err({
+              errorCode: RepositoryErrorCode.ReadFailed,
+              path: `${Collections.Locations}/${id}`,
+              reason: 'unavailable',
+            })
+          : Result.ok(shops.find((shop) => shop.id === id) ?? null),
+    }),
   };
 }
 
@@ -636,6 +685,132 @@ describe('editBarber', () => {
       expect(decisions).toHaveLength(2);
       expect(decisions[0]).toEqual(decisions[1]);
       expect(tx.plans).toEqual([decisions[1]]);
+    });
+  });
+
+  describe('a last day that has already passed — the record leaves at once (team onboarding D10)', () => {
+    const YESTERDAY = LocalDate.addDays(FIXTURE_TODAY, -1);
+    const IVANS_ACCOUNT: User = registeredUserFixture({
+      id: UserId.of('u-ivan'),
+      roles: [Role.Client, Role.Barber],
+      linkedBarberId: IVAN,
+    });
+    const period = (barberLastWorkingLocalDate: LocalDate | null) =>
+      call({
+        barberEdit: BarberEdit.Period,
+        barberStartsLocalDate: STORED_IVAN.barberStartsLocalDate,
+        barberLastWorkingLocalDate,
+      });
+
+    it('closes the period right after its own commit: the record DEPARTED, the account a client with no link, its sessions ended and marked — all credited to the caller', async () => {
+      const { store, tx, revoked, run } = rig({
+        linked: IVANS_ACCOUNT,
+        schedule: barberScheduleFixture(),
+      });
+
+      expect(unwrapOk(await run(period(YESTERDAY)))).toEqual({
+        barberId: IVAN,
+      });
+
+      // The edit, the close, the revoke's marker: three plans, in that order.
+      expect(tx.plans).toHaveLength(3);
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberStatus: BarberStatus.Departed,
+        barberLastWorkingLocalDate: YESTERDAY,
+        barberDepartedUserId: IVANS_ACCOUNT.id,
+        barberSessionsRevokedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        barberRehireStatus: BarberStatus.Public,
+      });
+      expect(
+        store.get(`${Collections.Users}/${IVANS_ACCOUNT.id}`),
+      ).toMatchObject({ roles: [Role.Client], linkedBarberId: null });
+      expect(
+        store.get(
+          `${Collections.Barbers}/${IVAN}/${Subcollections.Restricted}/${BARBER_LINK_DOC}`,
+        ),
+      ).toBeUndefined();
+      expect(store.get(`${Collections.BarberSchedules}/${IVAN}`)).toMatchObject(
+        {
+          versions: [{ effectiveToLocalDate: YESTERDAY }],
+        },
+      );
+      expect(revoked).toEqual([IVANS_ACCOUNT.id]);
+      // The period's row, then the close's two and the marker's — every one the caller's.
+      const rows = auditRowsOf(tx.plans);
+      expect(rows.map((row) => row.auditAction)).toEqual([
+        'TEAM_BARBER_PERIOD_CHANGED',
+        'TEAM_BARBER_STATUS_CHANGED',
+        'PROFILE_ROLES_CHANGED',
+        'TEAM_BARBER_STATUS_CHANGED',
+      ]);
+      for (const row of rows) {
+        expect(row).toMatchObject(Actor.forCaller(ADMIN, [Role.Admin]));
+      }
+    });
+
+    it('leaves a record whose last day is today, or ahead, working — the barber works the last day through', async () => {
+      for (const last of [
+        FIXTURE_TODAY,
+        LocalDate.addDays(FIXTURE_TODAY, 30),
+      ]) {
+        const { store, tx, revoked, run } = rig({ linked: IVANS_ACCOUNT });
+        await run(period(last));
+        expect(tx.plans, last).toHaveLength(1);
+        expect(store.get(`${Collections.Barbers}/${IVAN}`), last).toMatchObject(
+          { barberStatus: BarberStatus.Public },
+        );
+        expect(revoked, last).toEqual([]);
+      }
+    });
+
+    it('asks nothing of the shop’s clock when no last day is set', async () => {
+      const { tx, telemetry, run } = rig({ zoneFails: true });
+      await run(period(LocalDate.addDays(FIXTURE_TODAY, 30)));
+      // A day is set here: the clock is asked, cannot be read, and that is logged.
+      expect(telemetry.lines.map((line) => line.msg)).toEqual([
+        LogEvent.TeamPeriodCloseFailed,
+      ]);
+      const cleared = rig({
+        zoneFails: true,
+        barber: { ...STORED_IVAN, barberLastWorkingLocalDate: YESTERDAY },
+      });
+      expect(unwrapOk(await cleared.run(period(null)))).toEqual({
+        barberId: IVAN,
+      });
+      expect(cleared.telemetry.lines).toEqual([]);
+      expect(tx.plans).toHaveLength(1);
+    });
+
+    it('a close that could not run never refuses the edit: the period is saved, the failure logged', async () => {
+      const { store, tx, telemetry, run } = rig({ zoneFails: true });
+      expect(unwrapOk(await run(period(YESTERDAY)))).toEqual({
+        barberId: IVAN,
+      });
+      expect(tx.plans).toHaveLength(1);
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberStatus: BarberStatus.Public,
+        barberLastWorkingLocalDate: YESTERDAY,
+      });
+      expect(telemetry.lines).toEqual([
+        {
+          level: 'error',
+          msg: LogEvent.TeamPeriodCloseFailed,
+          fields: {
+            barberId: IVAN,
+            errorCode: RepositoryErrorCode.ReadFailed,
+          },
+        },
+      ]);
+    });
+
+    it('no other part of a record closes anything', async () => {
+      const { tx, telemetry, run } = rig({
+        zoneFails: true,
+        barber: { ...STORED_IVAN, barberLastWorkingLocalDate: YESTERDAY },
+      });
+      await run(call(POOL));
+      expect(tx.plans).toHaveLength(1);
+      expect(telemetry.lines).toEqual([]);
     });
   });
 });

@@ -923,6 +923,23 @@ export async function lockBarberLink(
     .set({ linkedUserId: uid });
 }
 
+/**
+ * Moves a barber record's first working day (`barberStartsLocalDate`)
+ * through the Admin SDK — for a case that needs a working period that
+ * began before today (a last day can never be before the start, and a
+ * record added through the app starts today). Only for a record the spec
+ * added itself.
+ */
+export async function setBarberStart(
+  barberId: string,
+  barberStartsLocalDate: string,
+): Promise<void> {
+  await getFirestore(adminApp())
+    .collection(Collections.Barbers)
+    .doc(barberId)
+    .update({ barberStartsLocalDate });
+}
+
 /** The account a barber record's lock names, or `null` when the record is free. */
 export async function readBarberLink(barberId: string): Promise<string | null> {
   const snapshot = await getFirestore(adminApp())

@@ -8,8 +8,14 @@ import {
   BlockReason,
   Role,
   Roles,
+  WriteOp,
 } from '@core/components';
-import { BARBER_LINK_DOC, type BarberLink, type User } from '@core/entities';
+import {
+  BARBER_LINK_DOC,
+  type BarberLink,
+  Collections,
+  type User,
+} from '@core/entities';
 import {
   deepFreeze,
   provisionedUserFixture,
@@ -1220,6 +1226,132 @@ describe('RoleAssignmentSystem — a role given from the Team page’s ＋ («Д
     const stored = deepFreeze([Role.Client, Role.Barber]);
     expect(RoleAssignmentSystem.additionOf(stored, Role.Admin)).toEqual(
       RoleAssignmentSystem.additionOf(stored, Role.Admin),
+    );
+  });
+});
+
+describe('RoleAssignmentSystem.departureOf and writesOf — what a barber’s close does to the linked account (team onboarding D10)', () => {
+  const linked = (roles: readonly Role[], linkedBarberId = IVAN): User =>
+    targetUser({ roles, linkedBarberId });
+
+  it('takes every staff role and the link, and releases the record’s lock; client stays', () => {
+    expect(
+      RoleAssignmentSystem.departureOf(
+        linked([
+          Role.Client,
+          Role.Barber,
+          Role.Receptionist,
+          Role.ContentManager,
+        ]),
+        IVAN,
+      ),
+    ).toEqual({
+      rolesFrom: [
+        Role.Client,
+        Role.Barber,
+        Role.Receptionist,
+        Role.ContentManager,
+      ],
+      rolesTo: [Role.Client],
+      rolesChanged: true,
+      linkedBarberIdFrom: IVAN,
+      linkedBarberIdTo: null,
+      linkChanged: true,
+      lockReleased: IVAN,
+      lockTaken: null,
+    });
+  });
+
+  it('leaves an account with no role a client', () => {
+    expect(
+      RoleAssignmentSystem.departureOf(linked([Role.Barber]), IVAN).rolesTo,
+    ).toEqual([Role.Client]);
+  });
+
+  it('leaves an admin’s and the vendor’s roles alone — the link still goes', () => {
+    for (const roles of [
+      [Role.Barber, Role.Admin],
+      [Role.Barber, Role.Sysadmin],
+    ]) {
+      const departure = RoleAssignmentSystem.departureOf(linked(roles), IVAN);
+      expect(departure.rolesChanged, roles.join()).toBe(false);
+      expect(departure.rolesTo, roles.join()).toEqual(roles);
+      expect(departure.linkChanged, roles.join()).toBe(true);
+      expect(departure.linkedBarberIdTo, roles.join()).toBeNull();
+    }
+  });
+
+  it('leaves a link that names another record alone', () => {
+    const other = BarberId.of('niko');
+    const departure = RoleAssignmentSystem.departureOf(
+      linked([Role.Client, Role.Barber], other),
+      IVAN,
+    );
+    expect(departure.linkChanged).toBe(false);
+    expect(departure.linkedBarberIdTo).toBe(other);
+  });
+
+  it('writesOf: the account’s moved fields behind the marker, then the lock released and the lock taken', () => {
+    const departure = RoleAssignmentSystem.departureOf(
+      linked([Role.Client, Role.Barber]),
+      IVAN,
+    );
+    expect(RoleAssignmentSystem.writesOf(TARGET_ID, departure, NOW)).toEqual([
+      WriteOp.update([Collections.Users, TARGET_ID], {
+        profileEditedAtUtcMs: NOW,
+        roles: [Role.Client],
+        linkedBarberId: null,
+      }),
+      WriteOp.remove(RoleAssignmentSystem.lockPathOf(IVAN)),
+    ]);
+    // A taken lock names the account.
+    expect(
+      RoleAssignmentSystem.writesOf(
+        TARGET_ID,
+        {
+          ...departure,
+          rolesChanged: false,
+          linkedBarberIdTo: IVAN,
+          linkedBarberIdFrom: null,
+          lockReleased: null,
+          lockTaken: IVAN,
+        },
+        NOW,
+      ),
+    ).toEqual([
+      WriteOp.update([Collections.Users, TARGET_ID], {
+        profileEditedAtUtcMs: NOW,
+        linkedBarberId: IVAN,
+      }),
+      WriteOp.set(RoleAssignmentSystem.lockPathOf(IVAN), {
+        linkedUserId: TARGET_ID,
+      }),
+    ]);
+  });
+
+  it('writesOf: a change that moves neither roles nor link writes no account field', () => {
+    const admin = RoleAssignmentSystem.departureOf(
+      linked([Role.Admin], BarberId.of('niko')),
+      IVAN,
+    );
+    expect(RoleAssignmentSystem.writesOf(TARGET_ID, admin, NOW)).toEqual([
+      WriteOp.remove(RoleAssignmentSystem.lockPathOf(IVAN)),
+    ]);
+  });
+
+  it('lockPathOf names the record’s restricted link document', () => {
+    expect(RoleAssignmentSystem.lockPathOf(IVAN)).toEqual([
+      'barbers',
+      'ivan',
+      'restricted',
+      'link',
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const account = deepFreeze(linked([Role.Client, Role.Barber]));
+    expect(RoleAssignmentSystem.departureOf(account, IVAN)).toEqual(
+      RoleAssignmentSystem.departureOf(account, IVAN),
     );
   });
 });
