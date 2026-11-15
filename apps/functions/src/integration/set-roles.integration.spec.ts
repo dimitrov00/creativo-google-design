@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Auth } from 'firebase-admin/auth';
 import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 import {
   AccountLifecycle,
   Actor,
@@ -29,6 +30,7 @@ import {
   type User,
 } from '@core/entities';
 import {
+  BarberPhotoSystem,
   RegistrationSystem,
   StaffAccessSystem,
   StaffAnalyticsSystem,
@@ -47,9 +49,13 @@ import {
   authClaimsPorts,
   authSessionRevokePorts,
 } from '../adapters/auth-claims.adapter';
-import { sha256Hex } from '../adapters/crypto.adapter';
+import { randomUuid, sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import {
+  storageObjectPorts,
+  storedObjectCopyPorts,
+} from '../adapters/storage-objects.adapter';
 import { decodeDocumentChangeEvent } from '../wire/triggers.wire';
 
 /**
@@ -71,7 +77,10 @@ import { decodeDocumentChangeEvent } from '../wire/triggers.wire';
  * user has its roles written and its revoke treated as done. An admin's
  * own account takes `barber` and a link (staff permissions P9) — one
  * document read once as caller and target — and their sessions are left
- * alone.
+ * alone. A link is followed by its photo, over the real Storage adapters
+ * (one photo per barber, F6): a record with a photo gives it to the
+ * account; a record without one takes the account's measured avatar, in
+ * one commit with its own row.
  *
  * The Auth emulator never fails an Admin revoke, so the failed revoke is
  * the pipeline spec's (`set-roles.pipeline.spec.ts`). Emulator-only by
@@ -83,9 +92,17 @@ const FIRESTORE_HOST = (process.env['FIRESTORE_EMULATOR_HOST'] ??=
   '127.0.0.1:8080');
 const AUTH_HOST = (process.env['FIREBASE_AUTH_EMULATOR_HOST'] ??=
   '127.0.0.1:9099');
-if (!FIRESTORE_HOST.includes('127.0.0.1') || !AUTH_HOST.includes('127.0.0.1')) {
+const STORAGE_HOST = (process.env['FIREBASE_STORAGE_EMULATOR_HOST'] ??=
+  '127.0.0.1:9199');
+if (
+  ![FIRESTORE_HOST, AUTH_HOST, STORAGE_HOST].every((host) =>
+    host.includes('127.0.0.1'),
+  )
+) {
   throw new Error('Refusing to run outside the local emulators.');
 }
+/** This spec's own bucket in the Storage emulator — no other spec's objects. */
+const BUCKET = 'demo-functions-set-roles.appspot.com';
 
 const ADMIN = UserId.of('u-admin');
 const TARGET = UserId.of('u-client');
@@ -130,13 +147,18 @@ async function identityToolkit(
 describe('setRoles (emulator)', () => {
   let db: Firestore;
   let auth: Auth;
+  let bucket: ReturnType<ReturnType<typeof getStorage>['bucket']>;
 
   beforeAll(() => {
     const app =
       admin.apps.find((a) => a?.name === PROJECT_ID) ??
-      admin.initializeApp({ projectId: PROJECT_ID }, PROJECT_ID);
+      admin.initializeApp(
+        { projectId: PROJECT_ID, storageBucket: BUCKET },
+        PROJECT_ID,
+      );
     db = app.firestore();
     auth = app.auth();
+    bucket = getStorage(app).bucket(BUCKET);
   });
 
   afterAll(async () => {
@@ -152,6 +174,7 @@ describe('setRoles (emulator)', () => {
       `http://${AUTH_HOST}/emulator/v1/projects/${PROJECT_ID}/accounts`,
       { method: 'DELETE' },
     );
+    await bucket.deleteFiles({ force: true });
     await db
       .doc(`${Collections.Users}/${ADMIN}`)
       .set(bodyOf(registeredUserFixture({ id: ADMIN, roles: [Role.Admin] })));
@@ -180,7 +203,10 @@ describe('setRoles (emulator)', () => {
       ),
       nowUtcMs: pinnedNowUtcMs(nowUtcMs),
       hash: sha256Hex,
+      nextId: randomUuid,
       ...authSessionRevokePorts(auth),
+      ...storedObjectCopyPorts(bucket),
+      deleteStoredObject: storageObjectPorts(bucket).deleteStoredObject,
       ...telemetry,
     })({
       adminUserId: ADMIN,
@@ -474,5 +500,99 @@ describe('setRoles (emulator)', () => {
       linkedUserId: 'u-other',
     });
     expect(await auditRows()).toEqual([]);
+  });
+
+  describe('a link is followed by its photo (one photo per barber, F6)', () => {
+    const AVATAR = BarberPhotoSystem.accountAvatarPathOf(TARGET);
+    const barberRef = (): DocumentReference =>
+      db.doc(`${Collections.Barbers}/${IVAN}`);
+    /** A stored picture: its bytes, its type and what its uploader measured. */
+    const savePicture = (
+      path: string,
+      bytes: string,
+      metadata: Record<string, string> = {},
+    ) =>
+      bucket.file(path).save(Buffer.from(bytes), {
+        resumable: false,
+        metadata: { contentType: 'image/jpeg', metadata },
+      });
+    const bytesOf = async (path: string): Promise<string> =>
+      (await bucket.file(path).download())[0].toString('utf8');
+    const storedPaths = async (): Promise<readonly string[]> =>
+      (await bucket.getFiles())[0].map((file) => file.name).sort();
+
+    it('a record with a photo: the linked account’s avatar is rewritten with it — no second row', async () => {
+      const RECORD_PHOTO = `${BarberPhotoSystem.folderOf(IVAN)}photo-1`;
+      await barberRef().update({
+        avatarMediaId: 'photo-1',
+        avatarMediaPath: RECORD_PHOTO,
+        avatarMediaWidth: 640,
+        avatarMediaHeight: 800,
+      });
+      await savePicture(RECORD_PHOTO, 'the shop’s picture');
+      await savePicture(AVATAR, 'the account’s old picture');
+      await seedTarget();
+
+      const answer = await run();
+
+      expect(answer.ok).toBe(true);
+      expect(await bytesOf(AVATAR)).toBe('the shop’s picture');
+      expect(await storedPaths()).toEqual([AVATAR, RECORD_PHOTO].sort());
+      expect((await barberRef().get()).data()).toMatchObject({
+        avatarMediaPath: RECORD_PHOTO,
+      });
+      expect(await auditRows()).toHaveLength(1);
+    });
+
+    it('a record without one takes the account’s measured avatar: a copy in its own folder, the reference and ONE more row in one commit', async () => {
+      await savePicture(AVATAR, 'the account’s picture', {
+        mediaWidth: '512',
+        mediaHeight: '640',
+      });
+      await seedTarget();
+
+      const answer = await run();
+
+      expect(answer.ok).toBe(true);
+      const record = (await barberRef().get()).data() ?? {};
+      const copyPath = String(record['avatarMediaPath']);
+      expect(copyPath.startsWith(BarberPhotoSystem.folderOf(IVAN))).toBe(true);
+      expect(record).toMatchObject({
+        avatarMediaId: copyPath.slice(BarberPhotoSystem.folderOf(IVAN).length),
+        avatarMediaWidth: 512,
+        avatarMediaHeight: 640,
+        avatarMediaBlurhash: null,
+      });
+      // The account keeps its own object; the record's is a copy of it.
+      expect(await storedPaths()).toEqual([AVATAR, copyPath].sort());
+      expect(await bytesOf(copyPath)).toBe('the account’s picture');
+
+      const actions = (await auditRows()).map(([, row]) => row['auditAction']);
+      expect([...actions].sort()).toEqual(
+        [
+          AuditAction.ProfileRolesChanged,
+          AuditAction.TeamBarberPhotoChanged,
+        ].sort(),
+      );
+      const photoRow = (await auditRows()).find(
+        ([, row]) => row['auditAction'] === AuditAction.TeamBarberPhotoChanged,
+      );
+      // Credited to whoever made the link.
+      expect(photoRow?.[1]).toMatchObject({ ...Actor.admin(ADMIN) });
+    });
+
+    it('an avatar nobody measured is left where it is: the record stays without a photo', async () => {
+      await savePicture(AVATAR, 'an older upload');
+      await seedTarget();
+
+      const answer = await run();
+
+      expect(answer.ok).toBe(true);
+      expect((await barberRef().get()).data()).toMatchObject({
+        avatarMediaPath: null,
+      });
+      expect(await storedPaths()).toEqual([AVATAR]);
+      expect(await auditRows()).toHaveLength(1);
+    });
   });
 });

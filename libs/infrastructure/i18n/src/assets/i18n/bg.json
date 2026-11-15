@@ -99,6 +99,7 @@
     "ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE": "Този файл не е изображение — избери снимка.",
     "ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE": "Снимката е твърде голяма — до 5 MB.",
     "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "Не успяхме да качим снимката. Опитай пак.",
+    "ACCOUNTS_UPLOAD_AVATAR_SHOP_MANAGED": "Снимката ти се управлява от салона. Помоли администратора да я смени.",
     "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "Не успяхме да премахнем снимката. Опитай пак.",
     "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "Не успяхме да запазим това. Опитай пак.",
     "ACCOUNTS_REPOSITORY_FAILURE": "Нещо се обърка от наша страна. Опитай пак.",
@@ -573,7 +574,8 @@
         "change": "Промени снимката",
         "choose": "Избери снимка",
         "remove": "Премахни снимката",
-        "menuLabel": "Действия със снимката"
+        "menuLabel": "Действия със снимката",
+        "barberNote": "Това е и снимката ти в салона: клиентите я виждат при записване."
       },
       "sections": {
         "personal": "Лични данни",

@@ -338,7 +338,11 @@ describe('storage-objects adapter', () => {
  * path — never the SDK's message.
  */
 describe('storage-objects adapter — the photo’s stat and copy', () => {
-  type Stored = { readonly size: unknown; readonly contentType?: unknown };
+  type Stored = {
+    readonly size: unknown;
+    readonly contentType?: unknown;
+    readonly metadata?: Readonly<Record<string, unknown>>;
+  };
 
   /** A bucket of `{ path: metadata }`; `failing` paths throw as Storage does. */
   function photoBucket(
@@ -382,7 +386,12 @@ describe('storage-objects adapter — the photo’s stat and copy', () => {
       await storedObjectCopyPorts(bucket).statStoredObject(STAGED),
     ).toEqual({
       ok: true,
-      value: { sizeBytes: 90210, contentType: 'image/jpeg' },
+      value: {
+        sizeBytes: 90210,
+        contentType: 'image/jpeg',
+        pixelWidth: null,
+        pixelHeight: null,
+      },
     });
   });
 
@@ -395,8 +404,38 @@ describe('storage-objects adapter — the photo’s stat and copy', () => {
     });
     expect(await ports.statStoredObject(PHOTO)).toEqual({
       ok: true,
-      value: { sizeBytes: 0, contentType: null },
+      value: {
+        sizeBytes: 0,
+        contentType: null,
+        pixelWidth: null,
+        pixelHeight: null,
+      },
     });
+  });
+
+  it('reads a picture’s pixel size from what its uploader wrote beside it — and nothing that is no whole number', async () => {
+    const AVATAR = 'avatars/u-ivan/original';
+    const measured = photoBucket({
+      [AVATAR]: {
+        size: '90210',
+        contentType: 'image/jpeg',
+        metadata: { mediaWidth: '800', mediaHeight: '1000' },
+      },
+    });
+    expect(
+      await storedObjectCopyPorts(measured.bucket).statStoredObject(AVATAR),
+    ).toMatchObject({ value: { pixelWidth: 800, pixelHeight: 1000 } });
+
+    const wrong = photoBucket({
+      [AVATAR]: {
+        size: '90210',
+        contentType: 'image/jpeg',
+        metadata: { mediaWidth: 'wide', mediaHeight: '12.5' },
+      },
+    });
+    expect(
+      await storedObjectCopyPorts(wrong.bucket).statStoredObject(AVATAR),
+    ).toMatchObject({ value: { pixelWidth: null, pixelHeight: null } });
   });
 
   it('copies one object onto another path, replacing what was there', async () => {

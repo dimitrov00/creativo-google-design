@@ -67,6 +67,9 @@ describe('AccountsError', () => {
     expect(AccountsErrorCode.UploadAvatarUploadFailed).toBe(
       'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
     );
+    expect(AccountsError.uploadAvatarShopManaged()).toEqual({
+      errorCode: 'ACCOUNTS_UPLOAD_AVATAR_SHOP_MANAGED',
+    });
     expect(AccountsErrorCode.RemoveAvatarRemoveFailed).toBe(
       'ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED',
     );

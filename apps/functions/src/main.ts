@@ -31,6 +31,8 @@ import {
   type HashPorts,
   type IdPorts,
   type NowUtcMs,
+  type StoredObjectCopyPorts,
+  type StoredObjectDeletePorts,
   type TriggerFailurePorts,
 } from '@core/ports';
 import {
@@ -566,6 +568,21 @@ const erasurePorts = once(() => ({
 }));
 
 /**
+ * The default bucket's stat, copy and delete for a barber's photo —
+ * `setBarberPhoto`'s, and `setRoles`' when a link is followed by its photo.
+ * Each reaches for the bucket when it is CALLED, never when the ports are
+ * built: a roles change that touches no photo must not need Storage.
+ */
+const photoObjectPorts: StoredObjectCopyPorts & StoredObjectDeletePorts = {
+  statStoredObject: (path) =>
+    storedObjectCopyPorts(bucket()).statStoredObject(path),
+  copyStoredObject: (fromPath, toPath) =>
+    storedObjectCopyPorts(bucket()).copyStoredObject(fromPath, toPath),
+  deleteStoredObject: (path) =>
+    storageObjectPorts(bucket()).deleteStoredObject(path),
+};
+
+/**
  * The barber photo's ports (`setBarberPhoto`): the server ports and the
  * default bucket's stat, copy and delete — the staged upload read, copied
  * into the shop's media and onto the linked account's avatar, and deleted.
@@ -573,14 +590,18 @@ const erasurePorts = once(() => ({
  */
 const photoPorts = once(() => ({
   ...serverPorts(),
-  ...storedObjectCopyPorts(bucket()),
-  ...storageObjectPorts(bucket()),
+  ...photoObjectPorts,
 }));
 
-/** The admin roles change's ports: the server ports and Admin Auth's session revocation. Built on first use. */
+/**
+ * The admin roles change's ports: the server ports, Admin Auth's session
+ * revocation, and the photo's object ports — a link is followed by its
+ * photo (one photo per barber). Built on first use.
+ */
 const rolesPorts = once(() => ({
   ...serverPorts(),
   ...authSessionRevokePorts(auth()),
+  ...photoObjectPorts,
 }));
 
 /**

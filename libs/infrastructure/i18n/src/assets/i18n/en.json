@@ -99,6 +99,7 @@
     "ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE": "That file isn't an image — pick a photo.",
     "ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE": "That photo is too large — up to 5 MB.",
     "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "We couldn't upload the photo. Try again.",
+    "ACCOUNTS_UPLOAD_AVATAR_SHOP_MANAGED": "The shop manages your photo. Ask the administrator to change it.",
     "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "We couldn't remove the photo. Try again.",
     "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "We couldn't save that right now. Try again.",
     "ACCOUNTS_REPOSITORY_FAILURE": "Something went wrong on our end. Try again.",
@@ -573,7 +574,8 @@
         "change": "Change photo",
         "choose": "Choose photo",
         "remove": "Remove photo",
-        "menuLabel": "Photo actions"
+        "menuLabel": "Photo actions",
+        "barberNote": "This is also your photo at the shop: clients see it when they book."
       },
       "sections": {
         "personal": "Personal details",

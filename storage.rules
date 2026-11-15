@@ -36,27 +36,46 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/users/$(uid)).data.accountStatus != 'ERASED';
     }
 
+    // A barber's photo is the shop's (one photo per barber, decision F7 of
+    // docs/architecture/decisions/2026-11-15-one-photo-per-barber.md): an
+    // account linked to a barber record (`users/{uid}.linkedBarberId`, set
+    // by `setRoles` alone) keeps no avatar of its own. Its avatar object is
+    // the record's photo, copied there by the server (Admin SDK, which
+    // bypasses rules) — so the two can never differ. An absent field (a
+    // document written before the link existed) and `null` read as not
+    // linked; no `users` document reads as not linked too, so a delete by
+    // an account that is gone still passes. The same document
+    // `accountMayUpload` reads: one read per request.
+    function isLinkedBarber(uid) {
+      return firestore.exists(/databases/(default)/documents/users/$(uid))
+        && firestore.get(/databases/(default)/documents/users/$(uid)).data.get('linkedBarberId', null) != null;
+    }
+
     // One object per user (`avatars/{userId}/original`, `avatarPorts`),
     // overwritten on re-upload. Publicly readable (avatars are shown across
     // staff dashboards and to other booking parties, and carry no sensitive
     // data) — writes restricted to the owner, capped at 5 MiB, image
-    // content-types only, and refused to an erased account
-    // (`accountMayUpload`, Phase 4 S-RU-4).
+    // content-types only, refused to an erased account
+    // (`accountMayUpload`, Phase 4 S-RU-4) and to an account linked to a
+    // barber record (`isLinkedBarber`): a barber changes their photo
+    // through `setBarberPhoto`.
     //
     // `create`/`update` and `delete` are split deliberately: `write` covers
     // all three, but on a DELETE `request.resource` is null, so the size and
     // content-type checks below can never pass — a single `allow write` rule
     // silently makes deletion impossible. Owners may drop their own avatar
     // (the profile screen's "Remove photo", `removeAvatar`) — an erased
-    // owner too: a delete reads no account; the size/type guards only make
+    // owner too: a delete asks only whether the account is a barber's
+    // (whose photo is not theirs to drop); the size/type guards only make
     // sense where there IS an incoming object.
     match /avatars/{userId}/{fileName} {
       allow read: if true;
       allow create, update: if isOwner(userId)
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*')
-        && accountMayUpload(userId);
-      allow delete: if isOwner(userId);
+        && accountMayUpload(userId)
+        && !isLinkedBarber(userId);
+      allow delete: if isOwner(userId) && !isLinkedBarber(userId);
     }
 
     // Catalog media library (service covers, location photos, a barber's

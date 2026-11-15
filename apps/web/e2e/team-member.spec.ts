@@ -573,6 +573,138 @@ test.describe('a team member’s page', () => {
     added = null;
   });
 
+  test('a client with a photo of their own is linked to a new record: the record takes it, and from then on their account page changes the shop’s one photo', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-adopt-${key}`;
+    const clientUid = `e2e-member-adopted-${key}`;
+    const name = `Нов Профил ${key}`.slice(0, 40);
+    // A family name nobody else holds: the lookup finds this account alone.
+    const family = `Осиновен${key}`;
+    const avatar = `avatars/${clientUid}/original`;
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Профил',
+      roles: [Role.Admin],
+    });
+    await seedUserProfile(clientUid, {
+      firstName: 'Елена',
+      lastName: family,
+      phone: '+359881112266',
+    });
+
+    // THE CLIENT'S OWN PHOTO, picked on their account page while they are
+    // nobody's barber: theirs to add, with a menu to change or remove it.
+    await signInAs(page, clientUid, ['client']);
+    await page.goto('/account/profile', { waitUntil: 'commit' });
+    await expect(page.getByTestId('profile-photo-pick')).toHaveText(
+      'Добави снимка',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('profile-photo-barber-note')).toHaveCount(0);
+    await page.getByTestId('profile-photo-input').setInputFiles({
+      name: 'me.png',
+      mimeType: 'image/png',
+      buffer: PORTRAIT_PNG,
+    });
+    await expect(page.getByTestId('profile-photo-replace')).toHaveCount(1, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('profile-photo-error')).toHaveCount(0);
+    expect(await storedObjectExists(avatar)).toBe(true);
+
+    // THE OWNER adds a record with no photo and links the client to it.
+    await signInAs(page, uid, ['admin']);
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    await expect(page.getByTestId('member-photo-pick')).toHaveText(
+      'Добави снимка',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('member-link').click();
+    await page.getByTestId('member-link-query').fill(family);
+    const found = page.getByTestId(`member-link-${clientUid}`);
+    await expect(found).toContainText(`Елена ${family}`, { timeout: 30_000 });
+    await found.click();
+    linkedUid = clientUid;
+    await page.getByTestId('member-link-confirm').click();
+    await expect(page.getByTestId('member-account-linked')).toContainText(
+      `Елена ${family}`,
+      { timeout: 30_000 },
+    );
+
+    // The record took the account's photo: a copy of its own under the
+    // shop's media, the size the browser measured, and the page draws it.
+    await expect(page.getByTestId('member-photo-pick')).toHaveText(
+      'Смени снимката',
+      { timeout: 30_000 },
+    );
+    const taken = await readStoredBody(Collections.Barbers, added);
+    const takenPath = String(taken?.['avatarMediaPath']);
+    expect(takenPath.startsWith(`media/barbers/${added}/`)).toBe(true);
+    expect(taken?.['avatarMediaWidth']).toBe(1);
+    expect(taken?.['avatarMediaHeight']).toBe(1);
+    expect(taken?.['barberStatus']).toBe(BarberStatus.Draft);
+    expect(await storedObjectExists(takenPath)).toBe(true);
+    expect(await storedObjectExists(avatar)).toBe(true);
+
+    // THE BARBER'S OWN ACCOUNT PAGE: the photo is the shop's — one picker,
+    // nothing to remove, and a line saying who sees it.
+    await signInAs(page, clientUid, ['client', 'barber']);
+    await page.goto('/account/profile', { waitUntil: 'commit' });
+    await expect(page.getByTestId('profile-photo-barber-note')).toContainText(
+      'снимката ти в салона',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('profile-photo-pick')).toHaveText(
+      'Промени снимката',
+    );
+    await expect(page.getByTestId('profile-photo-replace')).toHaveCount(0);
+    await expect(page.getByTestId('profile-photo-remove')).toHaveCount(0);
+
+    // A pick there sets the RECORD'S photo: a new object under the shop's
+    // media, the one it replaced deleted, the account's avatar still there.
+    await page.getByTestId('profile-photo-input').setInputFiles({
+      name: 'new.png',
+      mimeType: 'image/png',
+      buffer: PORTRAIT_PNG,
+    });
+    await expect
+      .poll(
+        async () =>
+          String(
+            (await readStoredBody(Collections.Barbers, added ?? ''))?.[
+              'avatarMediaPath'
+            ],
+          ),
+        { timeout: 30_000 },
+      )
+      .not.toBe(takenPath);
+    await expect(page.getByTestId('profile-photo-error')).toHaveCount(0);
+    const changed = await readStoredBody(Collections.Barbers, added);
+    const changedPath = String(changed?.['avatarMediaPath']);
+    expect(changedPath.startsWith(`media/barbers/${added}/`)).toBe(true);
+    expect(await storedObjectExists(changedPath)).toBe(true);
+    await expect
+      .poll(() => storedObjectExists(takenPath), { timeout: 30_000 })
+      .toBe(false);
+    expect(await storedObjectExists(avatar)).toBe(true);
+    // The record and the account's link are the `afterEach`'s to remove.
+  });
+
   test('a content editor reaches a barber’s profile from the Team list, and sees no account, no period editor and no delete', async ({
     page,
   }) => {

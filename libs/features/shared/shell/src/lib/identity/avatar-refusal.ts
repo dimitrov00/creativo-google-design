@@ -1,8 +1,12 @@
 import {
+  AccessErrorCode,
   AccountsError,
   AccountsErrorCode,
   type MediaError,
+  type PipelineError,
+  TeamErrorCode,
 } from '@core/errors';
+import { Tag } from '@core/primitives';
 
 /**
  * The refusal a person reads for a refused avatar upload
@@ -21,5 +25,25 @@ export function avatarUploadRefusal(
   return error.errorCode === AccountsErrorCode.UploadAvatarNotAnImage ||
     error.errorCode === AccountsErrorCode.UploadAvatarTooLarge
     ? error
+    : AccountsError.uploadAvatarUploadFailed();
+}
+
+/**
+ * The refusal a BARBER reads for a refused upload of their own photo — the
+ * barber's ONE photo, set through `setBarberPhoto`
+ * (`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`), as
+ * the same family of structs: a picture the shop does not show is "not an
+ * image"; a refusal of who may (the owner's permissions do not let this
+ * barber set it) is `ACCOUNTS_UPLOAD_AVATAR_SHOP_MANAGED`; everything else
+ * the one upload-failed copy.
+ */
+export function barberPhotoRefusal(
+  error: PipelineError,
+): AccountsError.AvatarRefusal {
+  if (error.serverErrorCode === TeamErrorCode.PhotoInvalid) {
+    return AccountsError.uploadAvatarNotAnImage();
+  }
+  return Tag.has(AccessErrorCode, error.serverErrorCode)
+    ? AccountsError.uploadAvatarShopManaged()
     : AccountsError.uploadAvatarUploadFailed();
 }

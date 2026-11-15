@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { EnvironmentProviders, Injectable } from '@angular/core';
+import { EnvironmentProviders, Injectable, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -18,19 +18,24 @@ import {
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   GATEWAY_PORTS,
+  ID_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
   PROFILE_PORTS,
+  STAGED_UPLOAD_PORTS,
+  TEAM_ADMIN_PORTS,
+  teamAdminPorts,
 } from '@creativo/infrastructure/firebase-app';
 import {
   BirthDate,
   Email,
   type IdentityCall,
   type Principal,
+  Role,
 } from '@core/components';
 import type { User } from '@core/entities';
 import { Callables, type StoredFile } from '@core/ports';
-import { Result, UserId } from '@core/primitives';
+import { BarberId, Result, UserId } from '@core/primitives';
 import { AccountsErrorCode, MediaError, PipelineError } from '@core/errors';
 import {
   locationFixture,
@@ -183,6 +188,17 @@ async function render(options?: {
           },
         },
       },
+      // A linked barber's pick goes to their record (`setBarberPhoto`):
+      // the Team calls over the same gateway, a staging folder and ids.
+      {
+        provide: TEAM_ADMIN_PORTS,
+        useFactory: () => teamAdminPorts(inject(GATEWAY_PORTS)),
+      },
+      {
+        provide: STAGED_UPLOAD_PORTS,
+        useValue: { stageUpload: async () => Result.ok(undefined) },
+      },
+      { provide: ID_PORTS, useValue: { nextId: () => 'minted-id-00000001' } },
       // The birth-date window's age day, pinned.
       {
         provide: CLOCK_PORTS,
@@ -600,6 +616,60 @@ describe('ClientProfile', () => {
     expect(items.length).toBe(2);
     expect(items[0]?.getAttribute('data-testid')).toBe('profile-photo-replace');
     expect(items.at(-1)?.getAttribute('data-role')).toBe('destructive');
+  });
+
+  describe('a linked barber — the photo is the shop’s (one photo per barber)', () => {
+    const barber = (): User => ({
+      ...user(),
+      roles: [Role.Client, Role.Barber],
+      linkedBarberId: BarberId.of('ivan'),
+    });
+
+    it('with a photo: ONE action, the picker itself — no menu, nothing to remove — and a note saying whose photo it is', async () => {
+      const { host } = await render({
+        profile: barber(),
+        photoUrl: 'http://avatar/user_1.jpg',
+      });
+
+      expect(host.querySelector('ui-menu')).toBeNull();
+      expect(
+        host.querySelector('[data-testid="profile-photo-remove"]'),
+      ).toBeNull();
+      const pick = host.querySelector('[data-testid="profile-photo-pick"]');
+      expect(pick?.textContent?.trim()).toBe('account.profile.photo.change');
+      expect(
+        pick?.closest('label')?.querySelector('input[type="file"]'),
+      ).not.toBeNull();
+      const note = host.querySelector(
+        '[data-testid="profile-photo-barber-note"]',
+      );
+      expect(note?.textContent?.trim()).toBe(
+        'account.profile.photo.barberNote',
+      );
+      // Centred under the portrait, as the picker above it is.
+      expect(note?.getAttribute('data-text-alignment')).toBe('center');
+    });
+
+    it('without one: the same picker, worded «add», and the note', async () => {
+      const { host } = await render({ profile: barber(), photoUrl: null });
+
+      expect(
+        host
+          .querySelector('[data-testid="profile-photo-pick"]')
+          ?.textContent?.trim(),
+      ).toBe('account.profile.photo.add');
+      expect(
+        host.querySelector('[data-testid="profile-photo-barber-note"]'),
+      ).not.toBeNull();
+    });
+
+    it('nobody else reads the note', async () => {
+      const { host } = await render({ photoUrl: 'http://avatar/user_1.jpg' });
+
+      expect(
+        host.querySelector('[data-testid="profile-photo-barber-note"]'),
+      ).toBeNull();
+    });
   });
 
   it('removes the photo and falls back to the monogram without a confirmation step', async () => {

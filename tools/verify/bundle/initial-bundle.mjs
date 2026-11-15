@@ -75,9 +75,13 @@ export function initialOutputs(metafile) {
   );
 }
 
-/** A lazy route's own entry: a feature's barrel, or a page of the app itself. */
+/**
+ * A lazy route's own entry: a feature's barrel, one of its further route
+ * entries (`src/<name>.route.ts` — a library whose screens load apart), or
+ * a page of the app itself.
+ */
 const ROUTE_ENTRY =
-  /^(libs\/features\/.*\/src\/index\.ts|apps\/web\/src\/app\/pages\/.*\.ts)$/;
+  /^(libs\/features\/.*\/src\/(index|[a-z-]+\.route)\.ts|apps\/web\/src\/app\/pages\/.*\.ts)$/;
 
 /**
  * What the browser must fetch to open each lazy route: the initial files plus

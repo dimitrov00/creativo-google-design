@@ -18,6 +18,19 @@ const CONTENT_TYPES: readonly string[] = [
   'image/webp',
 ];
 
+/** The widest picture a reference describes: far past any camera, and a bound on what metadata may claim. */
+const MAX_PIXELS = 20_000;
+
+/** Whole pixels, more than none and no more than {@link MAX_PIXELS}. */
+function isPixelSize(value: number | null): value is number {
+  return (
+    value !== null &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= MAX_PIXELS
+  );
+}
+
 /** A staged file's name: one path segment the browser minted, nothing that climbs or nests. */
 const STAGED_NAME = /^[A-Za-z0-9_-]{8,64}$/;
 
@@ -81,29 +94,77 @@ export const BarberPhotoSystem = {
     if (!STAGED_NAME.test(input.stagedName)) {
       return Result.err(TeamError.invalidInput('stagedName'));
     }
-    if (!Number.isInteger(input.mediaWidth) || input.mediaWidth <= 0) {
+    if (!isPixelSize(input.mediaWidth)) {
       return Result.err(TeamError.invalidInput('mediaWidth'));
     }
-    if (!Number.isInteger(input.mediaHeight) || input.mediaHeight <= 0) {
+    if (!isPixelSize(input.mediaHeight)) {
       return Result.err(TeamError.invalidInput('mediaHeight'));
     }
-    const media = MediaRef.parse({
-      mediaId: input.operationId,
-      mediaPath: `${BarberPhotoSystem.folderOf(input.barberId)}${input.operationId}`,
-      mediaWidth: input.mediaWidth,
-      mediaHeight: input.mediaHeight,
-      mediaBlurhash: null,
-      ...MediaRef.centerFocus(),
-    });
+    const media = BarberPhotoSystem.referenceOf(
+      input.barberId,
+      input.operationId,
+      input.mediaWidth,
+      input.mediaHeight,
+    );
     // The fields were checked above: a refusal here is the act's name.
-    if (!media.ok) return Result.err(TeamError.invalidInput('operationId'));
+    if (media === null)
+      return Result.err(TeamError.invalidInput('operationId'));
     return Result.ok({
       stagedPath: BarberPhotoSystem.stagedPathOf(
         input.callerUserId,
         input.stagedName,
       ),
-      media: media.value,
+      media,
     });
+  },
+
+  /**
+   * The reference a barber record holds for a photo named `mediaId` under
+   * its own folder: the size as measured, no blurhash, a centred crop.
+   * `null` when the name or the size is none a reference takes.
+   */
+  referenceOf(
+    barberId: BarberId,
+    mediaId: string,
+    mediaWidth: number,
+    mediaHeight: number,
+  ): MediaRef | null {
+    const media = MediaRef.parse({
+      mediaId,
+      mediaPath: `${BarberPhotoSystem.folderOf(barberId)}${mediaId}`,
+      mediaWidth,
+      mediaHeight,
+      mediaBlurhash: null,
+      ...MediaRef.centerFocus(),
+    });
+    return media.ok ? media.value : null;
+  },
+
+  /**
+   * The photo a barber record takes from the account just linked to it
+   * (decision F6): the account's avatar, when it is a picture the shop
+   * shows ({@link BarberPhotoSystem.admitObject}) and its uploader measured
+   * it — the reference a copy named `mediaId` would hold. `null` when there
+   * is no avatar to take, or its size is unknown: the record then stays
+   * without a photo until someone sets one.
+   */
+  adoptionOf(
+    barberId: BarberId,
+    mediaId: string,
+    avatar: StoredObjectFacts | null,
+  ): MediaRef | null {
+    if (avatar === null || !BarberPhotoSystem.admitObject(avatar).ok) {
+      return null;
+    }
+    const { pixelWidth, pixelHeight } = avatar;
+    return isPixelSize(pixelWidth) && isPixelSize(pixelHeight)
+      ? BarberPhotoSystem.referenceOf(
+          barberId,
+          mediaId,
+          pixelWidth,
+          pixelHeight,
+        )
+      : null;
   },
 
   /**

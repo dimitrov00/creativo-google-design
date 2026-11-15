@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { StoredObjectFacts } from '@core/components';
 import { BarberId, OperationId, UserId } from '@core/primitives';
 import { TeamErrorCode } from '@core/errors';
 import { barberFixture, deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
@@ -83,10 +84,12 @@ describe('BarberPhotoSystem.admitObject — a picture the shop shows', () => {
   it('takes a JPEG, a PNG and a WebP up to the limit', () => {
     for (const contentType of BarberPhotoSystem.CONTENT_TYPES) {
       expect(
-        BarberPhotoSystem.admitObject({
-          contentType,
-          sizeBytes: BarberPhotoSystem.MAX_BYTES,
-        }).ok,
+        BarberPhotoSystem.admitObject(
+          StoredObjectFacts.unmeasured(
+            BarberPhotoSystem.MAX_BYTES,
+            contentType,
+          ),
+        ).ok,
         contentType,
       ).toBe(true);
     }
@@ -94,15 +97,61 @@ describe('BarberPhotoSystem.admitObject — a picture the shop shows', () => {
 
   it('refuses what is no such image, an empty object and one over the limit', () => {
     for (const facts of [
-      { contentType: 'image/svg+xml', sizeBytes: 1000 },
-      { contentType: 'application/pdf', sizeBytes: 1000 },
-      { contentType: null, sizeBytes: 1000 },
-      { contentType: 'image/jpeg', sizeBytes: 0 },
-      { contentType: 'image/jpeg', sizeBytes: BarberPhotoSystem.MAX_BYTES + 1 },
+      StoredObjectFacts.unmeasured(1000, 'image/svg+xml'),
+      StoredObjectFacts.unmeasured(1000, 'application/pdf'),
+      StoredObjectFacts.unmeasured(1000, null),
+      StoredObjectFacts.unmeasured(0, 'image/jpeg'),
+      StoredObjectFacts.unmeasured(
+        BarberPhotoSystem.MAX_BYTES + 1,
+        'image/jpeg',
+      ),
     ]) {
       expect(unwrapErr(BarberPhotoSystem.admitObject(facts))).toEqual({
         errorCode: TeamErrorCode.PhotoInvalid,
       });
+    }
+  });
+});
+
+describe('BarberPhotoSystem.adoptionOf — the photo a record takes from the account just linked (F6)', () => {
+  const measured = (
+    over: Partial<StoredObjectFacts> = {},
+  ): StoredObjectFacts => ({
+    sizeBytes: 90_000,
+    contentType: 'image/jpeg',
+    pixelWidth: 800,
+    pixelHeight: 1000,
+    ...over,
+  });
+
+  it('takes an avatar the shop shows whose size is known: a copy named after the taking, in the barber’s folder', () => {
+    expect(
+      BarberPhotoSystem.adoptionOf(IVAN, 'taking-0123456789abcdef', measured()),
+    ).toEqual({
+      mediaId: 'taking-0123456789abcdef',
+      mediaPath: 'media/barbers/ivan/taking-0123456789abcdef',
+      mediaWidth: 800,
+      mediaHeight: 1000,
+      mediaBlurhash: null,
+      mediaFocalX: 0.5,
+      mediaFocalY: 0.5,
+    });
+  });
+
+  it('takes nothing when there is no avatar, it is no picture the shop shows, or nobody measured it', () => {
+    for (const avatar of [
+      null,
+      measured({ contentType: 'application/pdf' }),
+      measured({ sizeBytes: BarberPhotoSystem.MAX_BYTES + 1 }),
+      measured({ pixelWidth: null }),
+      measured({ pixelHeight: null }),
+      measured({ pixelWidth: 0 }),
+      measured({ pixelHeight: 12.5 }),
+      measured({ pixelWidth: 1_000_000 }),
+    ]) {
+      expect(
+        BarberPhotoSystem.adoptionOf(IVAN, 'taking-0123456789abcdef', avatar),
+      ).toBeNull();
     }
   });
 });

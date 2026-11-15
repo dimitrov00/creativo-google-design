@@ -117,6 +117,15 @@
       "@creativo/features/admin/team": [
         "./libs/features/admin/team/src/index.ts"
       ],
+      "@creativo/features/admin/team/permissions": [
+        "./libs/features/admin/team/src/permissions.route.ts"
+      ],
+      "@creativo/features/admin/team/member": [
+        "./libs/features/admin/team/src/member.route.ts"
+      ],
+      "@creativo/features/admin/team/account": [
+        "./libs/features/admin/team/src/account.route.ts"
+      ],
       "@creativo/features/shared/catalog": [
         "./libs/features/shared/catalog/src/index.ts"
       ],
