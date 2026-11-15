@@ -660,6 +660,143 @@ describe('TeamSystem.depart and sessionsRevoked — a record that leaves (team o
   });
 });
 
+describe('TeamSystem.rehire — a record that has left, back on the team (team onboarding D10)', () => {
+  const LAST = localDate('2026-09-30');
+  const START = localDate('2026-11-16');
+  /** Ivan, who left after 30 September: a public barber before, an account signed out. */
+  const left = barberFixture(
+    { barberLastWorkingLocalDate: LAST },
+    {
+      barberStatus: BarberStatus.Departed,
+      barberStatusChangedAtUtcMs: NOW,
+      barberDepartedUserId: UserId.of('u-ivan'),
+      barberSessionsRevokedAtUtcMs: NOW,
+      barberRehireStatus: BarberStatus.StaffOnly,
+    },
+  );
+  const later = UtcEpochMs.plusMs(NOW, 60_000);
+
+  it('returns the SAME record to where the close said a rehire returns, on a new period with no last day — never a draft', () => {
+    const back = unwrapOk(TeamSystem.rehire(left, START, later, OP));
+    expect(back).toMatchObject({
+      id: left.id,
+      name: left.name,
+      barberStatus: BarberStatus.StaffOnly,
+      barberStatusChangedAtUtcMs: later,
+      barberStartsLocalDate: START,
+      barberLastWorkingLocalDate: null,
+      writeOperationId: OP,
+    });
+    // Exactly one lifecycle variant: nothing of the departure is carried.
+    for (const field of [
+      'barberDepartedUserId',
+      'barberSessionsRevokedAtUtcMs',
+      'barberRehireStatus',
+      'barberDraftTargetStatus',
+    ]) {
+      expect(back, field).not.toHaveProperty(field);
+    }
+    expect(TeamSystem.changedFields(left, back)).toEqual([
+      'barberDepartedUserId',
+      'barberLastWorkingLocalDate',
+      'barberRehireStatus',
+      'barberSessionsRevokedAtUtcMs',
+      'barberStartsLocalDate',
+      'barberStatus',
+      'barberStatusChangedAtUtcMs',
+    ]);
+  });
+
+  it('refuses a start on or before the last day worked, and takes the day after it', () => {
+    for (const start of [LAST, localDate('2026-09-01')]) {
+      expect(unwrapErr(TeamSystem.rehire(left, start, later, OP))).toEqual({
+        errorCode: TeamErrorCode.ReturnTooEarly,
+        lastLocalDate: LAST,
+      });
+    }
+    expect(
+      unwrapOk(TeamSystem.rehire(left, localDate('2026-10-01'), later, OP))
+        .barberStartsLocalDate,
+    ).toBe('2026-10-01');
+  });
+
+  it('takes any start for a departure that never recorded a last day', () => {
+    expect(
+      unwrapOk(TeamSystem.rehire(departed, localDate('2026-01-01'), later, OP))
+        .barberStatus,
+    ).toBe(BarberStatus.Public);
+  });
+
+  it('refuses a record that has not left — a working one and one in preparation alike', () => {
+    for (const record of [barberFixture(), draft]) {
+      expect(unwrapErr(TeamSystem.rehire(record, START, later, OP))).toEqual({
+        errorCode: TeamErrorCode.BarberNotDeparted,
+        barberId: record.id,
+      });
+    }
+  });
+
+  it('answers the replay of a return that landed with the record as it stands', () => {
+    const back = unwrapOk(TeamSystem.rehire(left, START, later, OP));
+    expect(unwrapOk(TeamSystem.rehire(back, START, later, OP))).toBe(back);
+    // Another act on a working record is still refused.
+    expect(
+      unwrapErr(
+        TeamSystem.rehire(
+          back,
+          START,
+          later,
+          OperationId.of('operation-another-00001'),
+        ),
+      ).errorCode,
+    ).toBe(TeamErrorCode.BarberNotDeparted);
+  });
+
+  it('a record that leaves and returns is live again exactly as it was', () => {
+    const working = barberFixture({ barberLastWorkingLocalDate: LAST });
+    const gone = TeamSystem.depart(working, null, NOW, OP);
+    const back = unwrapOk(TeamSystem.rehire(gone, START, later, OP));
+    expect(back.barberStatus).toBe(working.barberStatus);
+    expect(back.barberJoinsAnyPool).toBe(working.barberJoinsAnyPool);
+    expect(back.locationIds).toEqual(working.locationIds);
+  });
+
+  it('returnable: only a record that has left', () => {
+    expect(TeamSystem.returnable(left).ok).toBe(true);
+    for (const record of [barberFixture(), draft]) {
+      expect(unwrapErr(TeamSystem.returnable(record)).errorCode).toBe(
+        TeamErrorCode.BarberNotDeparted,
+      );
+    }
+  });
+
+  it('earliestReturn is the day after the last day worked; suggestedReturn is today, or that day when it is later', () => {
+    expect(TeamSystem.earliestReturn(left)).toBe('2026-10-01');
+    expect(TeamSystem.earliestReturn(departed)).toBeNull();
+    expect(TeamSystem.suggestedReturn(left, START)).toBe(START);
+    expect(TeamSystem.suggestedReturn(left, localDate('2026-09-20'))).toBe(
+      '2026-10-01',
+    );
+    expect(TeamSystem.suggestedReturn(departed, START)).toBe(START);
+    // What is suggested is a start `rehire` takes.
+    expect(
+      TeamSystem.rehire(
+        left,
+        TeamSystem.suggestedReturn(left, START),
+        later,
+        OP,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(left);
+    expect(TeamSystem.rehire(frozen, START, later, OP)).toEqual(
+      TeamSystem.rehire(frozen, START, later, OP),
+    );
+  });
+});
+
 describe('TeamSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const barber = deepFreeze(barberFixture());

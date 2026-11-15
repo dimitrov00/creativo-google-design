@@ -55,6 +55,8 @@ export type MemberWords = {
   readonly deleteCancel: string;
   /** «Николай вече приема записи.» */
   readonly live: (name: string) => string;
+  /** «Стефан се връща със същия профил, цени и работно време…» */
+  readonly returnLede: (name: string) => string;
 };
 
 /** The setup items a member's page gives a row: what bookings need. */
@@ -115,5 +117,6 @@ export function memberWordsOf(translate: Translate): MemberWords {
     deleteLabel: at('delete'),
     deleteCancel: at('deleteCancel'),
     live: (name) => at('live', { name }),
+    returnLede: (name) => translate('admin.team.return.lede', { name }),
   };
 }

@@ -6,7 +6,7 @@ import {
   BarberStatus,
   EmploymentOutlook,
   Role,
-  type ScheduleVersion,
+  ScheduleVersion,
   SystemSource,
   WriteAction,
   type WriteOp,
@@ -26,6 +26,7 @@ import {
   FIXTURE_NOW_UTC_MS,
   localDate,
   registeredUserFixture,
+  unwrapOk,
 } from '@core/testing';
 import {
   type EmploymentContext,
@@ -105,19 +106,42 @@ const rows = (writes: readonly WriteOp[]): readonly unknown[] =>
     );
 
 describe('EmploymentSystem.outlookOf — where a period stands today', () => {
-  it('is OPEN with no last day, ENDS while the last day is today or ahead, ENDED once it is behind', () => {
-    expect(EmploymentSystem.outlookOf(null, TODAY)).toBe(
+  const working = BarberLifecycle.live(BarberStatus.Public, NOW);
+
+  it('for a working record: OPEN with no last day, ENDS while the last day is today or ahead, ENDED once it is behind', () => {
+    expect(EmploymentSystem.outlookOf(working, null, TODAY)).toBe(
       EmploymentOutlook.Open,
     );
-    expect(EmploymentSystem.outlookOf(TODAY, TODAY)).toBe(
+    expect(EmploymentSystem.outlookOf(working, TODAY, TODAY)).toBe(
       EmploymentOutlook.Ends,
     );
-    expect(EmploymentSystem.outlookOf(localDate('2027-01-31'), TODAY)).toBe(
-      EmploymentOutlook.Ends,
-    );
-    expect(EmploymentSystem.outlookOf(LAST, TODAY)).toBe(
+    expect(
+      EmploymentSystem.outlookOf(working, localDate('2027-01-31'), TODAY),
+    ).toBe(EmploymentOutlook.Ends);
+    expect(EmploymentSystem.outlookOf(working, LAST, TODAY)).toBe(
       EmploymentOutlook.Ended,
     );
+    expect(
+      EmploymentSystem.outlookOf(
+        BarberLifecycle.live(BarberStatus.StaffOnly, NOW),
+        LAST,
+        TODAY,
+      ),
+    ).toBe(EmploymentOutlook.Ended);
+  });
+
+  it('is OPEN whatever the last day for a record in preparation — it has never worked — and for one that has left', () => {
+    for (const lifecycle of [
+      BarberLifecycle.draft(NOW, BarberStatus.Public),
+      BarberLifecycle.depart(NOW, null, BarberStatus.Public),
+    ]) {
+      for (const last of [null, LAST, TODAY, localDate('2027-01-31')]) {
+        expect(
+          EmploymentSystem.outlookOf(lifecycle, last, TODAY),
+          `${lifecycle.barberStatus} ${String(last)}`,
+        ).toBe(EmploymentOutlook.Open);
+      }
+    }
   });
 });
 
@@ -149,19 +173,19 @@ describe('EmploymentSystem.isDue — a period has ended', () => {
     ).toBe(false);
   });
 
-  it('for a record in preparation and a staff-only one alike', () => {
-    expect(
-      EmploymentSystem.isDue(
-        leaving({}, BarberLifecycle.draft(NOW, BarberStatus.Public)),
-        TODAY,
-      ),
-    ).toBe(true);
+  it('for a staff-only record as for a public one — and never for a record in preparation: it has not worked, and is deleted, not closed', () => {
     expect(
       EmploymentSystem.isDue(
         leaving({}, BarberLifecycle.live(BarberStatus.StaffOnly, NOW)),
         TODAY,
       ),
     ).toBe(true);
+    expect(
+      EmploymentSystem.isDue(
+        leaving({}, BarberLifecycle.draft(NOW, BarberStatus.Public)),
+        TODAY,
+      ),
+    ).toBe(false);
   });
 });
 
@@ -220,6 +244,97 @@ describe('EmploymentSystem.rosterAfter — a roster once its barber has left', (
     ).toEqual([
       { ...version(1, '2026-01-01', '2026-12-31'), effectiveToLocalDate: LAST },
     ]);
+  });
+});
+
+describe('EmploymentSystem.rosterOnReturn — the week a barber last worked, standing again', () => {
+  const START = localDate('2026-12-01');
+
+  it('keeps the history and appends the last version’s week from the new start, open-ended, under the next seq', () => {
+    const before = [
+      version(1, '2026-01-01', '2026-06-30'),
+      version(2, '2026-07-01', '2026-11-15'),
+    ];
+    const after = EmploymentSystem.rosterOnReturn(before, START);
+    expect(after).toEqual([
+      before[0],
+      before[1],
+      {
+        ...before[1],
+        seq: 3,
+        effectiveFromLocalDate: START,
+        effectiveToLocalDate: null,
+      },
+    ]);
+    // What was worked before stays the version itself.
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+  });
+
+  it('closes a version still open the day before the new start', () => {
+    const open = [version(1, '2026-01-01', null)];
+    expect(EmploymentSystem.rosterOnReturn(open, START)).toEqual([
+      { ...open[0], effectiveToLocalDate: localDate('2026-11-30') },
+      { ...open[0], seq: 2, effectiveFromLocalDate: START },
+    ]);
+  });
+
+  it('has no week to bring back for a roster with no version', () => {
+    expect(EmploymentSystem.rosterOnReturn([], START)).toEqual([]);
+  });
+
+  it('a roster closed by a leave and reopened by a return covers no day twice, and none in between', () => {
+    const worked = [version(1, '2026-01-01', null)];
+    const closed = EmploymentSystem.rosterAfter(worked, LAST);
+    const back = EmploymentSystem.rosterOnReturn(closed, START);
+    expect(
+      back.map((v) => [v.effectiveFromLocalDate, v.effectiveToLocalDate]),
+    ).toEqual([
+      ['2026-01-01', LAST],
+      [START, null],
+    ]);
+    expect(unwrapOk(ScheduleVersion.history(back))).toEqual(back);
+  });
+
+  it('rosterWritesOnReturn sets the roster whole under the act’s name; nothing for no roster or no version', () => {
+    const schedule = barberScheduleFixture({
+      id: IVAN,
+      versions: [version(1, '2026-01-01', '2026-11-15')],
+    });
+    const [write] = EmploymentSystem.rosterWritesOnReturn(
+      schedule,
+      START,
+      OPERATION,
+    );
+    expect(write?.path).toEqual([Collections.BarberSchedules, IVAN]);
+    expect(write?.writeAction === WriteAction.Set && write.body).toMatchObject({
+      turnaroundMinutes: schedule.turnaroundMinutes,
+      versions: [
+        schedule.versions[0],
+        { seq: 2, effectiveFromLocalDate: START, effectiveToLocalDate: null },
+      ],
+      writeOperationId: OPERATION,
+    });
+    expect(write?.writeAction === WriteAction.Set && 'id' in write.body).toBe(
+      false,
+    );
+    expect(
+      EmploymentSystem.rosterWritesOnReturn(null, START, OPERATION),
+    ).toEqual([]);
+    expect(
+      EmploymentSystem.rosterWritesOnReturn(
+        barberScheduleFixture({ id: IVAN, versions: [] }),
+        START,
+        OPERATION,
+      ),
+    ).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze([version(1, '2026-01-01', '2026-11-15')]);
+    expect(EmploymentSystem.rosterOnReturn(frozen, START)).toEqual(
+      EmploymentSystem.rosterOnReturn(frozen, START),
+    );
   });
 });
 
@@ -367,10 +482,10 @@ describe('EmploymentSystem.close — one record’s close', () => {
     ).toEqual([]);
   });
 
-  it('a record in preparation leaves too, and a rehire would return to where it was going', () => {
+  it('a staff-only record leaves, and a rehire returns it to staff-only', () => {
     const close = EmploymentSystem.close(
       facts({
-        barber: leaving({}, BarberLifecycle.draft(NOW, BarberStatus.StaffOnly)),
+        barber: leaving({}, BarberLifecycle.live(BarberStatus.StaffOnly, NOW)),
       }),
       context,
       hash,
@@ -382,6 +497,21 @@ describe('EmploymentSystem.close — one record’s close', () => {
       barberStatus: BarberStatus.Departed,
       barberRehireStatus: BarberStatus.StaffOnly,
     });
+  });
+
+  it('a record in preparation is never closed, whatever its last day: its account, lock and roster stay', () => {
+    expect(
+      EmploymentSystem.close(
+        facts({
+          barber: leaving({}, BarberLifecycle.draft(NOW, BarberStatus.Public)),
+          lock,
+          account: account(),
+          schedule: barberScheduleFixture({ id: IVAN }),
+        }),
+        context,
+        hash,
+      ),
+    ).toEqual({ closed: false, revokeUserId: null, writes: [] });
   });
 
   it('writes nothing for a record that is gone, one whose period has not ended, and one that left already', () => {

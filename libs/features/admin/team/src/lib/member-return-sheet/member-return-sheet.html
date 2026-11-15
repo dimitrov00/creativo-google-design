@@ -1,0 +1,89 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="member-return-sheet"
+    labelledBy="member-return-sheet-title"
+    [closeLabel]="t('admin.team.add.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="member-return-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title>{{ t('admin.team.return.title') }}</span>
+
+    <div class="team-page__form">
+      <h2
+        id="member-return-sheet-title"
+        uiSheetLargeTitle
+        uiText
+        uiFont="largeTitle"
+      >
+        {{ t('admin.team.return.title') }}
+      </h2>
+      <p
+        uiText
+        uiFont="subheadline"
+        uiForegroundStyle="secondary"
+        data-testid="member-return-lede"
+      >
+        {{ lede() }}
+      </p>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="member-return-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <ui-list-group>
+        <ui-list-row uiSize="regular" class="team-page__permission">
+          <span>{{ t('admin.team.period.start') }}</span>
+          <lib-team-day-menu
+            uiTrailing
+            uiTestId="member-return-start"
+            [uiDay]="starts()"
+            [uiValue]="startsWords()"
+            [uiLabel]="t('admin.team.period.start')"
+            [uiToday]="uiToday()"
+            [uiMin]="earliest()"
+            [uiLocale]="locale()"
+            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+            [uiNextLabel]="t('admin.team.period.nextMonth')"
+            [uiDisabled]="store.pending()"
+            (uiPicked)="starts.set($event)"
+          />
+        </ui-list-row>
+      </ui-list-group>
+
+      <!-- The account does not come back by itself: said before the save. -->
+      <p
+        uiText
+        uiFont="footnote"
+        uiForegroundStyle="secondary"
+        class="team-page__footnote"
+        data-testid="member-return-note"
+      >
+        {{ t('admin.team.return.accountNote') }}
+      </p>
+    </div>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canSave() || store.pending()"
+        data-testid="member-return-save"
+        (click)="save()"
+      >
+        {{ t('admin.team.return.save') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

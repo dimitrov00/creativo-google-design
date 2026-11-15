@@ -81,6 +81,7 @@ function inputOf(
     mayEditHours: editable,
     mayEditOfferings: editable,
     deletable: TeamSystem.removable(barber).ok,
+    returnable: TeamSystem.returnable(barber).ok,
     linksAccount: false,
     releasesAccount: false,
     editsPermissions: true,
@@ -405,6 +406,15 @@ describe('memberPageVm — a record at work', () => {
     expect(vm.account?.footnote).toBe(
       'Работиш и на стола: графикът ти е в «График», а всичко друго остава както е.',
     );
+  });
+
+  it('offers «Върни в екипа» only as the store says: for a record that has left, to someone who manages the team', () => {
+    expect(memberPageVm(inputOf(STEFAN_RECORD, facts)).returnable).toBe(true);
+    expect(memberPageVm(inputOf(IVAN_RECORD, facts)).returnable).toBe(false);
+    expect(
+      memberPageVm(inputOf(STEFAN_RECORD, facts, { returnable: false }))
+        .returnable,
+    ).toBe(false);
   });
 
   it('for someone who edits profiles and does not manage the team: the profile opens, the rest is read, and no account is shown', () => {

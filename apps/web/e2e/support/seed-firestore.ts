@@ -6,10 +6,11 @@ import { promisify } from 'node:util';
 import { workspaceRoot } from '@nx/devkit';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import {
   AccountLifecycle,
+  BarberStatus,
   BirthDate,
   BookingContact,
   type ClientStats,
@@ -924,20 +925,28 @@ export async function lockBarberLink(
 }
 
 /**
- * Moves a barber record's first working day (`barberStartsLocalDate`)
- * through the Admin SDK — for a case that needs a working period that
- * began before today (a last day can never be before the start, and a
- * record added through the app starts today). Only for a record the spec
- * added itself.
+ * Makes a record a spec ADDED a working one whose period began on
+ * `barberStartsLocalDate`, through the Admin SDK: `STAFF_ONLY` — never
+ * public, so no client-facing page of another spec meets it — with the
+ * draft's own field removed, so the document is exactly one lifecycle
+ * variant. For a case about leaving: only a record that works has a period
+ * to end, a last day can never be before the start, and a record added
+ * through the app is in preparation and starts today. Only for a record
+ * the spec added itself, removed again by {@link removeAddedBarber}.
  */
-export async function setBarberStart(
+export async function seedWorkingBarber(
   barberId: string,
   barberStartsLocalDate: string,
 ): Promise<void> {
   await getFirestore(adminApp())
     .collection(Collections.Barbers)
     .doc(barberId)
-    .update({ barberStartsLocalDate });
+    .update({
+      barberStatus: BarberStatus.StaffOnly,
+      barberStatusChangedAtUtcMs: Date.now(),
+      barberDraftTargetStatus: FieldValue.delete(),
+      barberStartsLocalDate,
+    });
 }
 
 /** The account a barber record's lock names, or `null` when the record is free. */

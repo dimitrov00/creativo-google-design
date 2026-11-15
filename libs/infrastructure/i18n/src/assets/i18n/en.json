@@ -200,6 +200,8 @@
     "TEAM_BARBER_NOT_FOUND": "This barber no longer exists.",
     "TEAM_BARBER_DEPARTED": "This barber has left. Bring them back to the team to change them.",
     "TEAM_PERIOD_INVALID": "The last working day can't be before the first.",
+    "TEAM_BARBER_NOT_DEPARTED": "This barber has not left the team.",
+    "TEAM_RETURN_TOO_EARLY": "The new start has to be after the last day worked.",
     "TEAM_SHOP_UNKNOWN": "There is no such shop.",
     "TEAM_SHOP_HAS_HOURS": "The barber still has hours at this shop. Change the hours first.",
     "TEAM_PHOTO_MISSING": "The photo was not uploaded. Pick it again.",
@@ -2535,6 +2537,13 @@
         "instagramPlaceholder": "@name",
         "experience": "Experience (years)",
         "save": "Save"
+      },
+      "return": {
+        "open": "Bring back to the team",
+        "title": "Bring back to the team",
+        "lede": "{{name}} comes back with the same profile, prices and the hours of their last week.",
+        "accountNote": "Access to the app does not come back by itself. Link the account again afterwards with “Link an account”.",
+        "save": "Bring back"
       },
       "period": {
         "title": "Working period",

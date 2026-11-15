@@ -1,4 +1,9 @@
-import type { BarberId, LocationId, ServiceId } from '@core/primitives';
+import type {
+  BarberId,
+  LocalDate,
+  LocationId,
+  ServiceId,
+} from '@core/primitives';
 
 /**
  * The team callables' refusals (team onboarding D5 and D11,
@@ -24,6 +29,10 @@ export const TeamErrorCode = {
   BarberDeparted: 'TEAM_BARBER_DEPARTED',
   /** A last working day before the start day. */
   PeriodInvalid: 'TEAM_PERIOD_INVALID',
+  /** «Върни в екипа» named a record that has not left: there is nobody to bring back. */
+  BarberNotDeparted: 'TEAM_BARBER_NOT_DEPARTED',
+  /** A return that starts on or before the last day the barber worked. */
+  ReturnTooEarly: 'TEAM_RETURN_TOO_EARLY',
   /** The shops name an id that is no listed location. */
   ShopUnknown: 'TEAM_SHOP_UNKNOWN',
   /** A shop cannot be removed while the barber's hours still name it. */
@@ -45,6 +54,8 @@ export type TeamError =
   | TeamError.BarberNotFound
   | TeamError.BarberDeparted
   | TeamError.PeriodInvalid
+  | TeamError.BarberNotDeparted
+  | TeamError.ReturnTooEarly
   | TeamError.ShopUnknown
   | TeamError.ShopHasHours
   | TeamError.ServiceUnknown
@@ -67,6 +78,12 @@ export const TeamError = {
   },
   periodInvalid(): TeamError.PeriodInvalid {
     return { errorCode: TeamErrorCode.PeriodInvalid };
+  },
+  barberNotDeparted(barberId: BarberId): TeamError.BarberNotDeparted {
+    return { errorCode: TeamErrorCode.BarberNotDeparted, barberId };
+  },
+  returnTooEarly(lastLocalDate: LocalDate): TeamError.ReturnTooEarly {
+    return { errorCode: TeamErrorCode.ReturnTooEarly, lastLocalDate };
   },
   shopUnknown(locationId: LocationId): TeamError.ShopUnknown {
     return { errorCode: TeamErrorCode.ShopUnknown, locationId };
@@ -107,6 +124,15 @@ export namespace TeamError {
   };
   export type PeriodInvalid = {
     readonly errorCode: typeof TeamErrorCode.PeriodInvalid;
+  };
+  export type BarberNotDeparted = {
+    readonly errorCode: typeof TeamErrorCode.BarberNotDeparted;
+    readonly barberId: BarberId;
+  };
+  export type ReturnTooEarly = {
+    readonly errorCode: typeof TeamErrorCode.ReturnTooEarly;
+    /** The last day the barber worked: the new start has to be after it. */
+    readonly lastLocalDate: LocalDate;
   };
   export type ShopUnknown = {
     readonly errorCode: typeof TeamErrorCode.ShopUnknown;

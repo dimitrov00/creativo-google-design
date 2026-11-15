@@ -767,6 +767,8 @@ const TEAM_WIRE: WireTable<TeamErrorCode> = {
   [TeamErrorCode.BarberNotFound]: fields(S.NotFound),
   [TeamErrorCode.BarberDeparted]: fields(S.FailedPrecondition),
   [TeamErrorCode.PeriodInvalid]: fields(S.InvalidArgument),
+  [TeamErrorCode.BarberNotDeparted]: fields(S.FailedPrecondition),
+  [TeamErrorCode.ReturnTooEarly]: fields(S.InvalidArgument),
   [TeamErrorCode.ShopUnknown]: fields(S.NotFound),
   [TeamErrorCode.ShopHasHours]: fields(S.FailedPrecondition),
   [TeamErrorCode.ServiceUnknown]: fields(S.NotFound),

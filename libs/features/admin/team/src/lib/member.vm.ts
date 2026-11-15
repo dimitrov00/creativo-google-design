@@ -19,6 +19,8 @@ export const MemberEditor = {
   Shops: 'SHOPS',
   /** «Свържи профил» — whose account the record is. */
   Link: 'LINK',
+  /** «Върни в екипа» — a record that has left, back with a new start day. */
+  Return: 'RETURN',
 } as const;
 export type MemberEditor = (typeof MemberEditor)[keyof typeof MemberEditor];
 
@@ -128,6 +130,8 @@ export type MemberPageVm = {
   /** `null` for someone who does not manage the team: no account was read. */
   readonly account: MemberAccountVm | null;
   readonly levels: readonly LevelLinkVm[];
+  /** «Върни в екипа» is offered: the record has left, and the viewer manages the team. */
+  readonly returnable: boolean;
   readonly deletable: boolean;
   readonly deleteTitle: string;
   readonly deleteActions: readonly DeleteActionVm[];

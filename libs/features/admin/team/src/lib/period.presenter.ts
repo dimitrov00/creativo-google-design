@@ -11,7 +11,9 @@ import { dayWords, firstWord } from './team.format';
  * day drafted will do, said before it is saved — and the question asked
  * when saving it makes the barber leave at once. It decides nothing: where
  * a period stands against the shop's today is
- * `EmploymentSystem.outlookOf`'s answer, the rule the daily close reads.
+ * `EmploymentSystem.outlookOf`'s answer, the rule the daily close reads —
+ * a record in preparation has no period to end, so its last day says
+ * nothing here.
  */
 
 /** What the period sheet says under its two days, and asks before a save. */
@@ -42,7 +44,7 @@ export function periodOutlookVm(input: PeriodOutlookInput): PeriodOutlookVm {
   if (lastLocalDate === null || today === null) return QUIET;
   const name = firstWord(LocalizedText.pick(input.barber.name, input.locale));
   const date = dayWords(lastLocalDate, today, input.locale);
-  switch (EmploymentSystem.outlookOf(lastLocalDate, today)) {
+  switch (EmploymentSystem.outlookOf(input.barber, lastLocalDate, today)) {
     case EmploymentOutlook.Ends:
       return { note: memberWords.periodEnds(name, date), question: null };
     case EmploymentOutlook.Ended:
