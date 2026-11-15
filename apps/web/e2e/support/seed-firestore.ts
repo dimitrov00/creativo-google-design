@@ -937,7 +937,8 @@ export async function readBarberLink(barberId: string): Promise<string | null> {
 
 /**
  * Removes a barber record a spec ADDED through the app, with what names
- * it: its account lock and its entry on every service's offerings. For a
+ * it: its account lock, its roster and its entry on every service's
+ * offerings. For a
  * case that stopped before it deleted the record itself — never for a
  * seeded barber, which other specs read.
  */
@@ -949,6 +950,7 @@ export async function removeAddedBarber(barberId: string): Promise<void> {
     .doc(BARBER_LINK_DOC)
     .delete();
   await record.delete();
+  await db.collection(Collections.BarberSchedules).doc(barberId).delete();
   const services = await db.collection(Collections.Services).get();
   for (const service of services.docs) {
     const offerings: unknown = service.get('offerings');

@@ -31,6 +31,7 @@ import type {
 } from '@core/entities';
 import type { PipelineError } from '@core/errors';
 import type {
+  GatewayPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
   TeamAdminPorts,
@@ -55,6 +56,7 @@ import {
 } from '@creativo/features/shared/catalog';
 import {
   CLOCK_PORTS,
+  GATEWAY_PORTS,
   ID_PORTS,
   ROLES_ADMIN_PORTS,
   SCHEDULING_READ_PORTS,
@@ -111,6 +113,8 @@ export type RecordCalls = {
   readonly deletes: TeamCall.Named[];
   readonly activations: TeamCall.Named[];
   readonly roles: RolesCall[];
+  /** Every call dialled through the gateway by name — the hours' `setRosterWeek`. */
+  readonly dialled: { readonly callable: string; readonly input: unknown }[];
 };
 
 /** A record's writes for a spec that makes none: each one fails the spec that calls it. */
@@ -157,6 +161,7 @@ export function teamBed(options: TeamBedOptions = {}) {
     deletes: [],
     activations: [],
     roles: [],
+    dialled: [],
   };
   let listAnswer: () => Result<TeamCall.Listed, PipelineError> = () =>
     options.listRefusal === undefined
@@ -240,6 +245,16 @@ export function teamBed(options: TeamBedOptions = {}) {
     },
   };
 
+  /** What a call dialled by name refuses with; none unless told. */
+  const dialRefusals = new Map<string, PipelineError>();
+  const gateway = {
+    callableClient: (callable: string) => async (input: unknown) => {
+      calls.dialled.push({ callable, input });
+      const refusal = dialRefusals.get(callable);
+      return refusal === undefined ? Result.ok({}) : Result.err(refusal);
+    },
+  } as unknown as GatewayPorts;
+
   const scopeOf = (staffCapability: StaffCapability): AccessScope =>
     StaffAccessSystem.scopeOf(permissions(), staffCapability, roles());
 
@@ -265,6 +280,7 @@ export function teamBed(options: TeamBedOptions = {}) {
     }),
     { provide: TEAM_ADMIN_PORTS, useValue: ports },
     { provide: ROLES_ADMIN_PORTS, useValue: rolesPorts },
+    { provide: GATEWAY_PORTS, useValue: gateway },
     { provide: SCHEDULING_READ_PORTS, useValue: scheduling },
     {
       provide: ID_PORTS,
@@ -347,6 +363,11 @@ export function teamBed(options: TeamBedOptions = {}) {
     refuses: (port: keyof TeamAdminPorts, refusal: PipelineError | null) => {
       if (refusal === null) refusals.delete(port);
       else refusals.set(port, refusal);
+    },
+    /** A call dialled by name refuses from now on, or lands again. */
+    dialRefuses: (callable: string, refusal: PipelineError | null) => {
+      if (refusal === null) dialRefusals.delete(callable);
+      else dialRefusals.set(callable, refusal);
     },
     /** `setRoles` refuses from now on, or lands again. */
     rolesRefuse: (refusal: PipelineError | null) => {

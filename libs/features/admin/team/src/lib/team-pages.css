@@ -189,3 +189,43 @@
   min-block-size: 6rem;
   resize: vertical;
 }
+
+/* ── a typed figure in a row ─────────────────────────────────────────── */
+
+/* THE FIGURE'S PILL: a price or a time typed at a row's trailing edge sits
+   on a capsule of the row's own ink at the interactive alpha — the rhythm
+   page's «Брои се» pill and the schedule's time pills are this same
+   recipe, each still said by its own page until the DS owns it. The ring
+   is the pill's, not the input's inside it (the DS field's hook). */
+.team-page__pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-block-size: var(--control-size-small);
+  padding-inline: var(--sys-space-compact);
+  border-radius: var(--control-radius-capsule);
+  background: color-mix(
+    in srgb,
+    currentColor var(--sys-alpha-interactive),
+    transparent
+  );
+  --ui-field-ring: none;
+  transition: background-color var(--sys-motion-duration-regular)
+    var(--sys-motion-ease-standard);
+}
+
+.team-page__pill:focus-within {
+  background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
+}
+
+.team-page__pill:has(.ui-unit-field__native:focus-visible) {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
+  outline-offset: 2px;
+}
+
+/* The unit reads at the pill's own ink: the DS field greys it by the
+   secondary rung, which is right on a bare surface and too faint on the
+   pill's lifted ground (the rhythm page's finding, review 2). */
+.team-page__pill .ui-unit-field__unit {
+  color: inherit;
+}

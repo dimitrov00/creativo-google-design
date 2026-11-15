@@ -1,5 +1,6 @@
 import {
   Injectable,
+  type WritableSignal,
   computed,
   effect,
   inject,
@@ -14,17 +15,22 @@ import {
   BarberEdit,
   type BarberEditRequest,
   type BarberLifecycle,
+  type BarberOffering,
   BarberStatus,
+  OfferingsEdit,
   RecordClaim,
   type RolesCall,
+  type RosterCall,
 } from '@core/components';
 import type { Barber, ShopLocation } from '@core/entities';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
+import { Callables, type ObserveSchedule } from '@core/ports';
 import {
   AccessScope,
   type BarberId,
   ClientOperationId,
   type LocalDate,
+  type LocationId,
   type Result,
   StaffCapability,
 } from '@core/primitives';
@@ -46,6 +52,7 @@ import {
   TeamCatalogService,
 } from '@creativo/features/shared/catalog';
 import {
+  GATEWAY_PORTS,
   ID_PORTS,
   ROLES_ADMIN_PORTS,
   SCHEDULING_READ_PORTS,
@@ -70,6 +77,7 @@ import { TeamStore } from './team.store';
 export class TeamMemberStore {
   private readonly ports = inject(TEAM_ADMIN_PORTS);
   private readonly rolesPorts = inject(ROLES_ADMIN_PORTS);
+  private readonly gateway = inject(GATEWAY_PORTS);
   private readonly ids = inject(ID_PORTS);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   private readonly catalog = inject(TeamCatalogService);
@@ -81,6 +89,7 @@ export class TeamMemberStore {
   private readonly _barberId = signal<BarberId | null>(null);
   private readonly _pending = signal(false);
   private readonly _refusal = signal<PipelineError | null>(null);
+  private readonly _hoursRefusal = signal<PipelineError | null>(null);
   private readonly _wentLive = signal(false);
   /** The record the go-live step was last asked for: one ask per ready record. */
   private askedLive: BarberId | null = null;
@@ -218,6 +227,37 @@ export class TeamMemberStore {
     );
   });
 
+  /** They may set what this record performs, and at what price. */
+  readonly mayEditOfferings = computed(() => {
+    const barberId = this._barberId();
+    return (
+      barberId !== null &&
+      this.editable() &&
+      this.access.mayFor(StaffCapability.TeamOfferings, barberId)
+    );
+  });
+
+  /** They may change this record's weekly hours. */
+  readonly mayEditHours = computed(() => {
+    const barberId = this._barberId();
+    return (
+      barberId !== null &&
+      this.editable() &&
+      this.access.mayFor(StaffCapability.Hours, barberId)
+    );
+  });
+
+  /**
+   * The shop a new shift of the record is worked at: its own first shop,
+   * else the catalogue's first for a record that works everywhere.
+   */
+  readonly homeShop = computed<LocationId | null>(() =>
+    LocationScopeSystem.homeOrFirst(
+      this.barber() ?? null,
+      this.content.locations(),
+    ),
+  );
+
   /** They may delete it: a record that never went live, and they manage the team. */
   readonly deletable = computed(() => {
     const barber = this.barber();
@@ -247,6 +287,9 @@ export class TeamMemberStore {
 
   /** Why the last call was refused; `null` when it was not. */
   readonly refusal = this._refusal.asReadonly();
+
+  /** Why the hours' last save was refused — the hours sheet's own line. */
+  readonly hoursRefusal = this._hoursRefusal.asReadonly();
 
   /** The record has just gone live — said once. */
   readonly wentLive = this._wentLive.asReadonly();
@@ -298,6 +341,24 @@ export class TeamMemberStore {
       barberStartsLocalDate,
       barberLastWorkingLocalDate,
     });
+  }
+
+  /**
+   * «Услуги и цени»: the COMPLETE list of what the record performs —
+   * `setBarberOfferings`, ONE act: a service left out is no longer theirs.
+   */
+  async saveOfferings(
+    offerings: readonly BarberOffering.Entry[],
+  ): Promise<boolean> {
+    const answer = await this.act((operationId, barberId) =>
+      this.ports.setBarberOfferings({
+        offeringsEdit: OfferingsEdit.Set,
+        offerings,
+        barberId,
+        operationId,
+      }),
+    );
+    return answer?.ok === true;
   }
 
   /** In or out of the «Който и да е» pool; the switch goes back when the call is refused. */
@@ -364,6 +425,33 @@ export class TeamMemberStore {
     return true;
   }
 
+  /** A chair's roster, live — what the hours sheet reads. */
+  rosterOf(barberId: BarberId): ReturnType<ObserveSchedule> {
+    return this.scheduling.observeSchedule(barberId);
+  }
+
+  /**
+   * The hours sheet's save: the record's whole week from a day on —
+   * `setRosterWeek`, ONE roster write on the server, which judges whose
+   * hours the caller may change. Its refusal is the sheet's to say.
+   */
+  async setRosterWeek(week: RosterCall.WeekChange): Promise<boolean> {
+    const answer = await this.act(
+      (operationId) =>
+        this.gateway.callableClient(Callables.SetRosterWeek)({
+          ...week,
+          operationId,
+        }),
+      this._hoursRefusal,
+    );
+    return answer?.ok === true;
+  }
+
+  /** The hours sheet closed: its refusal goes with it. */
+  clearHoursRefusal(): void {
+    this._hoursRefusal.set(null);
+  }
+
   /** The receipt was read. */
   dismissLive(): void {
     this._wentLive.set(false);
@@ -407,25 +495,29 @@ export class TeamMemberStore {
     }
   }
 
-  /** One named call for the record on the page, in flight once; its refusal kept. */
+  /**
+   * One named call for the record on the page, in flight once; its refusal
+   * kept where the one who made it reads it — the page's, unless told.
+   */
   private async act<T>(
     dial: (
       operationId: ClientOperationId,
       barberId: BarberId,
     ) => Promise<Result<T, PipelineError>>,
+    refused: WritableSignal<PipelineError | null> = this._refusal,
   ): Promise<Result<T, PipelineError> | null> {
     const barberId = this._barberId();
     if (barberId === null || this._pending()) return null;
     const operationId = ClientOperationId.parse(this.ids.nextId());
     if (!operationId.ok) {
-      this._refusal.set(PipelineError.bare(PipelineErrorCode.InvalidRequest));
+      refused.set(PipelineError.bare(PipelineErrorCode.InvalidRequest));
       return null;
     }
     this._pending.set(true);
-    this._refusal.set(null);
+    refused.set(null);
     const answer = await dial(operationId.value, barberId);
     this._pending.set(false);
-    if (!answer.ok) this._refusal.set(answer.error);
+    if (!answer.ok) refused.set(answer.error);
     return answer;
   }
 }

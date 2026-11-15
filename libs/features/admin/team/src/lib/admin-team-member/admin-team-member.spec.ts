@@ -4,10 +4,12 @@ import {
   BarberActivation,
   BarberEdit,
   BarberLinkChange,
+  OfferingsEdit,
   Role,
 } from '@core/components';
 import { PipelineError } from '@core/errors';
-import { localDate } from '@core/testing';
+import { Callables } from '@core/ports';
+import { localDate, locationFixture } from '@core/testing';
 import { type TeamBedOptions, teamBed } from '../team-bed.spec-support';
 import {
   IVAN,
@@ -93,12 +95,110 @@ describe('AdminTeamMember — a record in preparation', () => {
     expect(piece('member-setup-HOURS')?.hasAttribute('data-done')).toBe(false);
   });
 
-  it('the name and the day are ways into their editors; the services and the hours are read', async () => {
+  it('each needed item is a way into its editor', async () => {
     const { piece } = await render('nikolay');
     expect(piece('member-setup-NAME')?.tagName).toBe('BUTTON');
     expect(piece('member-setup-START_DAY')?.tagName).toBe('BUTTON');
-    expect(piece('member-setup-SERVICES')?.tagName).not.toBe('BUTTON');
-    expect(piece('member-setup-HOURS')?.tagName).not.toBe('BUTTON');
+    expect(piece('member-setup-HOURS')?.tagName).toBe('BUTTON');
+    expect(piece('member-setup-SERVICES')?.tagName).toBe('BUTTON');
+  });
+
+  it('the hours row raises the schedule’s own sheet on this record; a week set there is ONE roster write, and the page says it was saved', async () => {
+    const center = locationFixture();
+    const { piece, press, text, settle, calls } = await render('nikolay', {
+      locations: [center],
+    });
+    expect(piece('staff-hours-sheet')).toBeNull();
+
+    await press('member-setup-HOURS');
+    await settle();
+
+    expect(piece('staff-hours-sheet')).not.toBeNull();
+    // One chair: the sheet offers no chair to pick.
+    expect(piece('staff-hours-chair')).toBeNull();
+    expect((piece('staff-hours-save') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    // Monday: working, the sheet's own first shift.
+    await press('staff-hours-day-1');
+    await press('staff-hours-working');
+    await press('staff-hours-done');
+    await press('staff-hours-save');
+    await settle();
+
+    expect(calls.dialled).toHaveLength(1);
+    expect(calls.dialled[0]?.callable).toBe(Callables.SetRosterWeek);
+    const week = calls.dialled[0]?.input as {
+      barberId: string;
+      locationId: string;
+      segments: readonly { weekday: number; locationId: string }[];
+    };
+    expect(week.barberId).toBe(NIKOLAY.barberId);
+    // A record that works everywhere files its shifts at the first shop.
+    expect(week.locationId).toBe(center.id);
+    expect(week.segments).toHaveLength(1);
+    expect(week.segments[0]?.locationId).toBe(center.id);
+    // Saved: the sheet has left and the page says so.
+    expect(piece('staff-hours-sheet')).toBeNull();
+    expect(text(piece('member-hours-toast'))).toContain(
+      'Работното време е запазено',
+    );
+  });
+
+  it('hours that complete the record: it goes live, and the page says that instead of «запазено»', async () => {
+    const { piece, press, settle, activates, liveSchedules } = await render(
+      'nikolay',
+      {
+        locations: [locationFixture()],
+        services: [serviceOf(NIKOLAY.barberId)],
+      },
+    );
+    activates(BarberActivation.Activated);
+    await press('member-setup-HOURS');
+    await settle();
+    await press('staff-hours-day-1');
+    await press('staff-hours-working');
+    await press('staff-hours-done');
+    await press('staff-hours-save');
+    await settle();
+    // Saved: the hours' own receipt is up.
+    expect(piece('member-hours-toast')?.hasAttribute('data-presented')).toBe(
+      true,
+    );
+
+    // The roster's listener then says the week: every needed item is done.
+    liveSchedules([rosterOf(NIKOLAY.barberId)]);
+    await settle();
+    await settle();
+
+    expect(piece('member-live-toast')?.hasAttribute('data-presented')).toBe(
+      true,
+    );
+    expect(piece('member-live-toast')?.textContent).toContain(
+      'вече приема записи',
+    );
+    expect(piece('member-hours-toast')?.hasAttribute('data-presented')).toBe(
+      false,
+    );
+  });
+
+  it('a refused week is said in the hours sheet, which stays, and never on the page', async () => {
+    const { piece, press, settle, dialRefuses } = await render('nikolay', {
+      locations: [locationFixture()],
+    });
+    dialRefuses(Callables.SetRosterWeek, REFUSED);
+    await press('member-setup-HOURS');
+    await settle();
+    await press('staff-hours-day-1');
+    await press('staff-hours-working');
+    await press('staff-hours-done');
+    await press('staff-hours-save');
+    await settle();
+
+    expect(piece('staff-hours-sheet')).not.toBeNull();
+    expect(piece('staff-hours-error')).not.toBeNull();
+    expect(piece('member-refusal')).toBeNull();
   });
 
   it('the name row opens the profile on the record as it stands; a changed name is saved whole and the sheet leaves', async () => {
@@ -259,6 +359,123 @@ describe('AdminTeamMember — a record in preparation', () => {
   });
 });
 
+describe('AdminTeamMember — «Услуги и цени»', () => {
+  /** A unit field's figure, typed and left — the field commits on change. */
+  const typeFigure = (field: HTMLElement | null, value: string): void => {
+    const input = field as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  it('a service is switched on at the catalogue’s terms, repriced on its own page, and the whole list is saved as one act', async () => {
+    const { piece, press, text, settle, calls } = await render('nikolay', {
+      services: [serviceOf(IVAN.barberId)],
+    });
+    expect(piece('member-offerings-sheet')).toBeNull();
+
+    await press('member-setup-SERVICES');
+    await settle();
+
+    const row = () => piece('offering-svc-classic-cut');
+    expect(text(row())).toContain('Не извършва');
+    const save = () => piece('member-offerings-save') as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+
+    // THE SERVICE'S PAGE: off, and no terms to type until it is on.
+    await press('offering-svc-classic-cut');
+    expect(
+      piece('member-offering-performs')?.getAttribute('aria-checked'),
+    ).toBe('false');
+    expect(piece('member-offering-terms-base')).toBeNull();
+
+    await press('member-offering-performs');
+    const price = () => piece('member-offering-price-base') as HTMLInputElement;
+    expect(price().value).toBe('15,00');
+    expect(
+      (piece('member-offering-minutes-base') as HTMLInputElement).value,
+    ).toBe('30');
+
+    // A price typed is kept; one that is no amount puts the field back.
+    typeFigure(price(), '18,50');
+    await settle();
+    expect(price().value).toBe('18,50');
+    typeFigure(price(), 'скъпо');
+    await settle();
+    expect(price().value).toBe('18,50');
+    typeFigure(piece('member-offering-minutes-base'), '45');
+    await settle();
+
+    await press('member-offerings-done');
+    expect(text(row())).toContain('18,50 € · 45 мин');
+    expect(row()?.hasAttribute('data-performed')).toBe(true);
+    expect(save().disabled).toBe(false);
+
+    await press('member-offerings-save');
+    await settle();
+
+    expect(calls.offerings).toHaveLength(1);
+    expect(calls.offerings[0]).toMatchObject({
+      offeringsEdit: OfferingsEdit.Set,
+      barberId: NIKOLAY.barberId,
+      offerings: [
+        {
+          serviceId: 'svc-classic-cut',
+          priceCents: 1850,
+          currency: 'EUR',
+          durationMinutes: 45,
+          overrides: [],
+        },
+      ],
+    });
+  });
+
+  it('opens on what the barber performs, offers no save until something changes, and a service switched off leaves the list', async () => {
+    const { piece, press, text, settle, calls } = await render('ivan', {
+      services: [serviceOf(IVAN.barberId)],
+      schedules: [rosterOf(IVAN.barberId)],
+    });
+    await press('member-row-services');
+    await settle();
+
+    expect(text(piece('offering-svc-classic-cut'))).toContain(
+      '15,00 € · 30 мин',
+    );
+    const save = () => piece('member-offerings-save') as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+
+    await press('offering-svc-classic-cut');
+    await press('member-offering-performs');
+    await press('member-offerings-back');
+    expect(text(piece('offering-svc-classic-cut'))).toContain('Не извършва');
+    expect(save().disabled).toBe(false);
+
+    await press('member-offerings-save');
+    await settle();
+    expect(calls.offerings[0]).toMatchObject({
+      offeringsEdit: OfferingsEdit.Set,
+      offerings: [],
+    });
+  });
+
+  it('a refused save is said in the sheet, which stays', async () => {
+    const { piece, press, settle, refuses } = await render('ivan', {
+      services: [serviceOf(IVAN.barberId)],
+    });
+    refuses('setBarberOfferings', REFUSED);
+    await press('member-row-services');
+    await settle();
+    await press('offering-svc-classic-cut');
+    await press('member-offering-performs');
+    await press('member-offerings-done');
+    await press('member-offerings-save');
+    await settle();
+
+    expect(piece('member-offerings-refusal')).not.toBeNull();
+    expect(piece('member-offerings-sheet')).not.toBeNull();
+    expect(piece('member-refusal')).toBeNull();
+  });
+});
+
 describe('AdminTeamMember — the record’s own answers', () => {
   it('the pool switch flips at once and sends the one part', async () => {
     const { piece, press, calls } = await render('nikolay');
@@ -350,6 +567,8 @@ describe('AdminTeamMember — a record at work', () => {
     expect(text(piece('member-standing'))).toBe('Приема записи');
     expect(piece('member-setup')).toBeNull();
     expect(text(piece('member-row-profile'))).toContain('Старши бръснар');
+    expect(text(piece('member-row-hours'))).toContain('Зададено');
+    expect(piece('member-row-hours')?.tagName).toBe('BUTTON');
     expect(text(piece('member-row-services'))).toContain('1 услуга');
     expect(text(piece('member-row-period'))).toContain('от 3.03.2024 г.');
     expect(piece('member-delete')).toBeNull();
@@ -367,6 +586,8 @@ describe('AdminTeamMember — a record at work', () => {
     });
 
     expect(piece('member-row-profile')?.tagName).toBe('BUTTON');
+    expect(piece('member-row-hours')?.tagName).not.toBe('BUTTON');
+    expect(piece('member-row-services')?.tagName).not.toBe('BUTTON');
     expect(piece('member-row-period')?.tagName).not.toBe('BUTTON');
     expect((piece('member-pool') as HTMLButtonElement).disabled).toBe(true);
     expect(piece('member-booked-by')?.tagName).not.toBe('BUTTON');

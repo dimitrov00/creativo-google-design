@@ -342,13 +342,49 @@
       (uiDismissed)="deleteOpen.set(false)"
     />
 
+    <!-- ONE receipt at a time: going live is the bigger news, so the hours'
+         own receipt gives way to it and does not come back after it. -->
     <ui-toast
       [uiPresented]="store.wentLive()"
       [uiLabel]="page.liveReceipt"
       [uiDismissLabel]="t('admin.permissions.dismiss')"
       data-testid="member-live-toast"
-      (uiDismissed)="store.dismissLive()"
+      (uiDismissed)="store.dismissLive(); hoursSaved.set(false)"
     />
+
+    <ui-toast
+      [uiPresented]="hoursSaved() && !store.wentLive()"
+      [uiLabel]="t('staff.hours.saved')"
+      [uiDismissLabel]="t('admin.permissions.dismiss')"
+      data-testid="member-hours-toast"
+      (uiDismissed)="hoursSaved.set(false)"
+    />
+
+    <!-- THE WEEKLY HOURS: the schedule's own sheet over this page's store,
+         loaded when first asked for (and fetched while the page is idle). -->
+    @defer (when editor() === MemberEditor.Hours; prefetch on idle) { @if
+    (editor() === MemberEditor.Hours) { @if (today(); as day) {
+    <lib-staff-hours-sheet
+      [uiChairs]="hoursChairs()"
+      [uiChairId]="page.barberId"
+      [uiToday]="day"
+      [uiLocale]="locale()"
+      [uiHomeOf]="homeOf"
+      (saved)="hoursSaved.set(true)"
+      (closed)="closeHours()"
+    />
+    } } }
+
+    <!-- «УСЛУГИ И ЦЕНИ»: loaded when first asked for, mounted while open. -->
+    @defer (when editor() === MemberEditor.Offerings; prefetch on idle) { @if
+    (editor() === MemberEditor.Offerings) { @if (store.barber(); as barber) {
+    <lib-member-offerings-sheet
+      [uiBarber]="barber"
+      [uiClosing]="closing()"
+      (dismissed)="requestClose()"
+      (closeFinished)="finishClose()"
+    />
+    } } }
 
     <!-- THE EDITORS: mounted while open, so each opening reads the record. -->
     @if (store.barber(); as barber) { @switch (editor()) { @case

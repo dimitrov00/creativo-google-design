@@ -47,8 +47,8 @@ import {
 } from '@creativo/ui/patterns';
 import { StaffBlockFailurePipe } from '../staff-dashboard/staff-block-failure.pipe';
 import { StaffDayPill } from '../day-pill/staff-day-pill';
-import { StaffDayStore } from '../staff-day.store';
 import { WEEKDAY_WORD } from '../block-editor/block-repeat';
+import { HOURS_DESK } from './hours-desk';
 import { hoursClock, hoursWeekVm } from './staff-hours.presenter';
 import type { HoursWords } from './staff-hours.vm';
 
@@ -67,7 +67,9 @@ type DayList = 'shifts' | 'breaks';
  * и за» to copy the day onto others. Nothing is written until «Запази»:
  * the whole week, from «В сила от» on, as ONE roster write
  * (`setRosterWeek`) — earlier weeks stay as they were worked. The week is
- * the system's (`RosterWeekSystem`); the sheet holds a draft of it.
+ * the system's (`RosterWeekSystem`); the sheet holds a draft of it. The
+ * roster and the write are its host's (`HOURS_DESK`): the schedule, or a
+ * team member's page.
  */
 @Component({
   selector: 'lib-staff-hours-sheet',
@@ -119,7 +121,8 @@ export class StaffHoursSheet {
   /** A save landed — the page says so. */
   readonly saved = output<void>();
 
-  protected readonly store = inject(StaffDayStore);
+  /** Whoever raised the sheet: the roster's read and the week's save. */
+  protected readonly desk = inject(HOURS_DESK);
   private readonly transloco = inject(TranslocoService);
   private readonly copyTable = toSignal(this.transloco.selectTranslation());
   protected readonly t = (key: string, params?: object): string => {
@@ -134,7 +137,7 @@ export class StaffHoursSheet {
 
   private readonly roster = toSignal(
     toObservable(this.chairId).pipe(
-      switchMap((barberId) => this.store.rosterOf(barberId)),
+      switchMap((barberId) => this.desk.rosterOf(barberId)),
     ),
   );
   /** The week the roster holds from «В сила от» — what a draft is measured against. */
@@ -290,7 +293,7 @@ export class StaffHoursSheet {
     if (!this.dirty() || this.weekError() !== null || locationId === null) {
       return;
     }
-    const saved = await this.store.setRosterWeek({
+    const saved = await this.desk.setRosterWeek({
       barberId: this.chairId(),
       locationId,
       fromLocalDate: this.fromDay(),

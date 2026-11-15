@@ -1147,12 +1147,52 @@ editors"); its server half is merged.
     lock at each step. A second case has a content editor reach a barber's
     profile from the list and find no account, no period editor and no
     delete.
-- **Still to build in this stage.** The services and prices editor; the
-  hours from the member's page, so a new barber can go live without the
-  schedule; the shops editor; «Свържи профил» for someone else's account;
-  a page for an account with no record. The barber's photo has no callable
-  yet. The end-to-end exit test "a new barber goes live and a client books
-  them" waits for the hours.
+- **Built so far: the hours from the member's page.** The weekly hours
+  are the schedule's own sheet, not a second editor.
+  - The sheet asks its host for four things (`HOURS_DESK`: a chair's
+    roster, the week's save, and how that save stands). On the schedule the
+    host is `StaffDayStore`; on a member's page it is that page's store,
+    which calls `setRosterWeek` the same way. The sheet and its seam have
+    entries of their own (`…/staff/dashboard/hours` and `…/hours-desk`), so
+    the member's page loads the sheet when it is first asked for and never
+    loads the schedule.
+  - The row is a way in for anyone `HOURS` reaches the record for: the
+    owner and the front desk by the standard, never a content editor.
+  - A record in preparation can now be finished from its own page. With a
+    colleague's prices copied and a week saved, it goes live by itself and
+    `/book` offers it.
+  - The end-to-end case adds a record with no prices, sets Monday from the
+    page and reads the stored roster. It keeps the record in preparation
+    on purpose: a fourth chair at work would be seen by every other spec
+    running beside it. Going live is held by the unit specs and the
+    emulator suite (`team-barber` integration spec), and was walked once
+    in a browser by hand, through to times on `/book`.
+- **Built so far: the services and prices editor.** «Услуги и цени» on a
+  member's page, for anyone `TEAM_OFFERINGS` reaches the record for (the
+  owner alone by the standard).
+  - The sheet lists the catalogue's services, each with what the barber
+    charges or «Не извършва». A row opens the service's own page: a switch
+    for whether they perform it, their price and time, and each variant's
+    when the service declares variants. It is the weekly hours sheet's
+    grammar: a list of rows, a page per row, «Готово» back to the list.
+  - A service switched on starts at the catalogue's own terms
+    (`OfferingEditSystem.entryFor`). A price or a time typed goes through
+    `OfferingEditSystem.withTerms`, which keeps the list sparse as the
+    stored one is: a variant put back to the base holds no override, and a
+    variant that followed the base goes on following it.
+  - «Запази» sends the whole list as one `setBarberOfferings` `SET`. It is
+    offered only when `OfferingEditSystem.plan` takes the draft and answers
+    at least one change, which is the rule the server asks.
+  - The setup and clean-up minutes of an offering are kept as they are and
+    not edited here.
+  - Both this sheet and the hours sheet load when first asked for, so the
+    Team route stays inside its budget (1.50 MB of 1.55 MB).
+  - The end-to-end case switches one service on for a new record, reprices
+    it, and reads the offering on the stored service; «Изтрий» then takes
+    the offering with the record.
+- **Still to build in this stage.** The shops editor; «Свържи профил» for
+  someone else's account; a page for an account with no record. The
+  barber's photo has no callable yet.
 
 ### Stage B. The booking calls
 

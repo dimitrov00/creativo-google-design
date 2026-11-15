@@ -12,10 +12,18 @@ import {
 import { Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { BarberLifecycle } from '@core/components';
-import { BarberId } from '@core/primitives';
+import { BarberId, type LocationId } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
+import {
+  type HoursChair,
+  StaffHoursSheet,
+} from '@creativo/features/staff/dashboard/hours';
+import {
+  HOURS_DESK,
+  type HoursDesk,
+} from '@creativo/features/staff/dashboard/hours-desk';
 import {
   CLOCK_PORTS,
   ShopZoneService,
@@ -49,6 +57,7 @@ import {
   UiSheetHeadline,
   UiToast,
 } from '@creativo/ui/patterns';
+import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
 import { memberPageVm } from '../member.presenter';
@@ -56,6 +65,20 @@ import { DeleteAnswer, MemberEditor, type MemberPageVm } from '../member.vm';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
 import { TeamStore } from '../team.store';
+
+/**
+ * The hours sheet's host on this page: the record's roster and the week's
+ * save are the page's store's.
+ */
+function hoursDesk(): HoursDesk {
+  const store = inject(TeamMemberStore);
+  return {
+    rosterOf: (barberId) => store.rosterOf(barberId),
+    setRosterWeek: (week) => store.setRosterWeek(week),
+    absenceError: store.hoursRefusal,
+    absencePending: store.pending,
+  };
+}
 
 /**
  * A TEAM MEMBER'S PAGE (team onboarding D8, D9; staff permissions P9, P10):
@@ -67,16 +90,18 @@ import { TeamStore } from '../team.store';
  * owner's own door to a chair («Това съм аз» · «Не съм аз») and the way to
  * the levels that account holds.
  *
- * In this slice the name, the description and the working period have
- * editors; the services and the hours are read here and edited from the
- * next slice on.
+ * The weekly hours are the schedule's own sheet, raised here over this
+ * page's store (`HOURS_DESK`). It and «Услуги и цени» are loaded when they
+ * are first asked for; the two short editors come with the page.
  */
 @Component({
   selector: 'lib-admin-team-member',
   imports: [
+    MemberOfferingsSheet,
     MemberPeriodSheet,
     MemberProfileSheet,
     RouterLink,
+    StaffHoursSheet,
     TranslocoDirective,
     UiAlert,
     UiAvatar,
@@ -102,7 +127,7 @@ import { TeamStore } from '../team.store';
     UiToast,
     UiVisuallyHiddenDirective,
   ],
-  providers: [TeamMemberStore],
+  providers: [TeamMemberStore, { provide: HOURS_DESK, useFactory: hoursDesk }],
   templateUrl: './admin-team-member.html',
   styleUrl: '../team-pages.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -136,6 +161,21 @@ export class AdminTeamMember {
   protected readonly bookedByOpen = signal(false);
   /** The delete question is up. */
   protected readonly deleteOpen = signal(false);
+  /** The hours were just saved — said once. */
+  protected readonly hoursSaved = signal(false);
+
+  protected readonly locale = this.wording.locale;
+
+  /** The one chair the hours sheet opens on: this record's. */
+  protected readonly hoursChairs = computed<readonly HoursChair[]>(() => {
+    const barber = this.store.barber();
+    return barber === undefined
+      ? []
+      : [{ id: barber.id, label: this.vm()?.name ?? '' }];
+  });
+
+  /** Where a new shift of the record is worked — the hours sheet asks by chair. */
+  protected readonly homeOf = (): LocationId | null => this.store.homeShop();
 
   protected readonly today = computed(() => {
     const zone = this.zone();
@@ -176,6 +216,8 @@ export class AdminTeamMember {
       managesTeam: this.store.managesTeam(),
       mayEditProfile: this.store.mayEditProfile(),
       mayManage: this.store.mayManage(),
+      mayEditHours: this.store.mayEditHours(),
+      mayEditOfferings: this.store.mayEditOfferings(),
       deletable: this.store.deletable(),
       editsPermissions: this.access.editsPermissions(),
       permissions: this.access.permissions(),
@@ -229,6 +271,12 @@ export class AdminTeamMember {
     this.editor.set(null);
     this.closing.set(false);
     this.store.clearRefusal();
+  }
+
+  /** The hours sheet closed itself — after a save, or on ✕. */
+  protected closeHours(): void {
+    this.editor.set(null);
+    this.store.clearHoursRefusal();
   }
 
   protected setPool(on: boolean): void {
