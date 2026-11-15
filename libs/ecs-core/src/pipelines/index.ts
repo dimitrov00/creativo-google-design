@@ -68,4 +68,5 @@ export * from './delete-draft-barber.pipeline';
 export * from './set-barber-offerings.pipeline';
 export * from './set-barber-photo.pipeline';
 export * from './set-day-exceptions.pipeline';
+export * from './list-bookings-ahead.pipeline';
 export * from './list-team.pipeline';

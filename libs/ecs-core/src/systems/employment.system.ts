@@ -2,20 +2,25 @@ import {
   type Actor,
   AuditAction,
   BarberLifecycle,
+  BookingLifecycle,
   EmploymentOutlook,
+  LeftoverBookings,
   ScheduleVersion,
   WriteOp,
   WriteProvenance,
 } from '@core/components';
-import type {
-  BarberId,
+import {
+  type BarberId,
+  BusyKey,
   LocalDate,
-  OperationId,
-  UserId,
-  UtcEpochMs,
+  type OperationId,
+  type UserId,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
+  type Appointment,
   type Barber,
+  type BarberBusyDay,
   type BarberLink,
   type BarberSchedule,
   Collections,
@@ -162,6 +167,87 @@ export const EmploymentSystem = {
       );
     }
     return kept;
+  },
+
+  /**
+   * The days to read for what a last day would leave behind, as the keys
+   * a day's visits are queried by: every busy day AFTER `lastLocalDate`
+   * that holds a block, in the order given. A day with no block holds no
+   * visit — the projection is rebuilt from the appointments — so it is
+   * never read.
+   */
+  keysAfter(
+    busyDays: readonly BarberBusyDay[],
+    lastLocalDate: LocalDate,
+  ): readonly BusyKey[] {
+    const keys: BusyKey[] = [];
+    for (let i = 0; i < busyDays.length; i++) {
+      const day = busyDays[i] as BarberBusyDay;
+      if (day.localDate > lastLocalDate && day.blocks.length > 0) {
+        keys.push(BusyKey.of(day.barberId, day.localDate));
+      }
+    }
+    return keys;
+  },
+
+  /**
+   * The visits a barber's last working day leaves behind (team onboarding
+   * D10): the LIVE ones (`BookingLifecycle.isLive`) that seat `barberId`
+   * on a shop day AFTER `lastLocalDate` — each visit once, however many of
+   * its seats are theirs or however many times the reads answered it —
+   * oldest first, by day and then by start. A visit on the last day itself
+   * is worked; a cancelled or finished one is nobody's to move. The
+   * entities come back as they were read, so a screen lists and links them
+   * with no second read.
+   */
+  leftoverVisitsOf(
+    appointments: readonly Appointment[],
+    barberId: BarberId,
+    lastLocalDate: LocalDate,
+  ): readonly Appointment[] {
+    const seen = new Set<string>();
+    const left: Appointment[] = [];
+    for (let i = 0; i < appointments.length; i++) {
+      const visit = appointments[i] as Appointment;
+      if (
+        visit.localDate > lastLocalDate &&
+        BookingLifecycle.isLive(visit) &&
+        visit.barberIds.includes(barberId) &&
+        !seen.has(visit.id)
+      ) {
+        seen.add(visit.id);
+        left.push(visit);
+      }
+    }
+    return left.sort(
+      (a, b) =>
+        LocalDate.compare(a.localDate, b.localDate) ||
+        a.startMinutes - b.startMinutes,
+    );
+  },
+
+  /**
+   * How many visits a last working day leaves behind, and the days they
+   * fall on, each once, oldest first — what a notice says and a calendar
+   * dots (`leftoverVisitsOf` is the list itself).
+   */
+  leftoverOf(
+    appointments: readonly Appointment[],
+    barberId: BarberId,
+    lastLocalDate: LocalDate,
+  ): LeftoverBookings {
+    const left = EmploymentSystem.leftoverVisitsOf(
+      appointments,
+      barberId,
+      lastLocalDate,
+    );
+    if (left.length === 0) return LeftoverBookings.NONE;
+    const days: LocalDate[] = [];
+    for (let i = 0; i < left.length; i++) {
+      const day = (left[i] as Appointment).localDate;
+      if (days[days.length - 1] !== day) days.push(day);
+    }
+    return { leftoverCount: left.length, leftoverLocalDates: days };
   },
 
   /**

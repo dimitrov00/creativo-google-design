@@ -132,9 +132,22 @@ export type MemberPageVm = {
   readonly levels: readonly LevelLinkVm[];
   /** «Върни в екипа» is offered: the record has left, and the viewer manages the team. */
   readonly returnable: boolean;
+  /** «Стефан още има 3 записа» and what to do about them; `null` with none, or none read. */
+  readonly leftover: LeftoverNoticeVm | null;
   readonly deletable: boolean;
   readonly deleteTitle: string;
   readonly deleteActions: readonly DeleteActionVm[];
   /** «Николай вече приема записи.» — said once the record goes live. */
   readonly liveReceipt: string;
+};
+
+/**
+ * The warning about the visits a last working day leaves behind: how many
+ * as its title (`null` when they could not be counted), and under it what
+ * happens to them or what to do. The visits themselves are listed beside
+ * it (`lib-leftover-visits`).
+ */
+export type LeftoverNoticeVm = {
+  readonly title: string | null;
+  readonly body: string;
 };

@@ -461,6 +461,15 @@ export const UI_ICON_REGISTRY = {
    *  read — the offline notice on a page that could not reach the server. */
   'connection.offline': 'cloud_off',
 
+  /* ── Notices: what a toned notice wears by default ──────────────── */
+  /** A restriction in force, or a consequence to weigh before saving —
+   *  the warning notice's own mark, so a warning reads as one on every
+   *  screen (`ui-notice`, `uiTone="warning"`). */
+  'notice.warning': 'warning',
+  /** A refusal: the thing asked for did not happen — the destructive
+   *  notice's own mark (`ui-notice`, `uiTone="destructive"`). */
+  'notice.refusal': 'error',
+
   /* ── Loyalty: the programme, its currency, its rhythm ───────────── */
   /**
    * The loyalty module as a whole — its row and its page.

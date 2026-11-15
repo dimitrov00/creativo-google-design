@@ -39,41 +39,44 @@
       </ui-notice>
       }
 
+      <!-- THE TWO DAYS, each a date row: the month unfolds under the row
+           it belongs to, one at a time — the app's one way to ask for a
+           date in a form. The last day's month dots the days the barber is
+           booked on, so the day is chosen against the visits it cuts. -->
       <ui-list-group>
-        <ui-list-row uiSize="regular" class="team-page__permission">
-          <span>{{ t('admin.team.period.start') }}</span>
-          <lib-team-day-menu
-            uiTrailing
-            uiTestId="member-period-start"
-            [uiDay]="starts()"
-            [uiValue]="startsWords()"
-            [uiLabel]="t('admin.team.period.start')"
-            [uiToday]="uiToday()"
-            [uiLocale]="locale()"
-            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
-            [uiNextLabel]="t('admin.team.period.nextMonth')"
-            [uiDisabled]="store.pending()"
-            (uiPicked)="starts.set($event)"
-          />
-        </ui-list-row>
-        <ui-list-row uiSize="regular" class="team-page__permission">
-          <span>{{ t('admin.team.period.last') }}</span>
-          <lib-team-day-menu
-            #lastMenu
-            uiTrailing
-            uiTestId="member-period-last"
-            [uiDay]="last()"
-            [uiValue]="lastWords() ?? t('admin.team.period.lastNone')"
-            [uiLabel]="t('admin.team.period.last')"
-            [uiToday]="uiToday()"
-            [uiMin]="starts()"
-            [uiLocale]="locale()"
-            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
-            [uiNextLabel]="t('admin.team.period.nextMonth')"
-            [uiDisabled]="store.pending()"
-            (uiPicked)="last.set($event)"
-          />
-        </ui-list-row>
+        <ui-date-row
+          uiTestId="member-period-start"
+          [uiLabel]="t('admin.team.period.start')"
+          [uiSelected]="starts()"
+          [uiValue]="startsWords()"
+          [uiToday]="uiToday()"
+          [uiLocale]="locale()"
+          [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+          [uiNextLabel]="t('admin.team.period.nextMonth')"
+          [uiDisabled]="store.pending()"
+          [uiExpanded]="unfolded() === PeriodDay.Starts"
+          (uiExpandedChange)="unfold(PeriodDay.Starts, $event)"
+          (uiPicked)="pickStart($event)"
+        />
+        <ui-date-row
+          #lastRow
+          uiTestId="member-period-last"
+          [uiLabel]="t('admin.team.period.last')"
+          [uiSelected]="last()"
+          [uiValue]="lastWords()"
+          [uiPlaceholder]="t('admin.team.period.lastNone')"
+          [uiToday]="uiToday()"
+          [uiMin]="starts()"
+          [uiOpensOn]="lastOpensOn()"
+          [uiMarked]="bookedDays()"
+          [uiLocale]="locale()"
+          [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+          [uiNextLabel]="t('admin.team.period.nextMonth')"
+          [uiDisabled]="store.pending()"
+          [uiExpanded]="unfolded() === PeriodDay.Last"
+          (uiExpandedChange)="unfold(PeriodDay.Last, $event)"
+          (uiPicked)="pickLast($event)"
+        />
         @if (last() !== null) {
         <button
           type="button"
@@ -82,7 +85,7 @@
           [uiInteractive]="true"
           [disabled]="store.pending()"
           data-testid="member-period-last-clear"
-          (click)="clearLast(lastMenu)"
+          (click)="clearLast(lastRow)"
         >
           {{ t('admin.team.period.lastClear') }}
         </button>
@@ -102,6 +105,30 @@
         {{ note }}
       </p>
       }
+      <!-- THE BOOKINGS THE LAST DAY LEAVES BEHIND: leaving cancels nothing,
+           so the owner is told how many stand after it — and shown them,
+           under their days, each one the way to its day on the schedule. -->
+      @if (outlook().leftover; as leftover) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="member-period-leftover"
+      >
+        @if (leftover.title; as title) {
+        <h3 uiNoticeTitle>{{ title }}</h3>
+        } {{ leftover.body }}
+      </ui-notice>
+      }
+      <!-- The list is its own chunk: fetched while the sheet is idle,
+           mounted once there are visits to show. -->
+      @defer (when leftoverVisits().length > 0; prefetch on idle) { @if
+      (leftoverVisits().length > 0) {
+      <lib-leftover-visits
+        [uiVisits]="leftoverVisits()"
+        [uiBarberId]="uiBarber().id"
+        [uiLinked]="true"
+      />
+      } }
     </div>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">

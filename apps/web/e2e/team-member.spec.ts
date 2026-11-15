@@ -1,16 +1,19 @@
 import { type Page, expect, test } from '@playwright/test';
 import { AuditAction, BarberStatus, Role } from '@core/components';
 import { Collections } from '@core/entities';
-import { LocalDate } from '@core/primitives';
+import { BarberId, LocalDate } from '@core/primitives';
 import { DEV_CHAIR } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import {
   lockBarberLink,
   readAuditActionsFor,
+  readBarberBusyDay,
   readBarberLink,
   readStoredBody,
   removeAddedBarber,
+  removeAppointment,
   removeUserProfile,
+  seedUpcomingAppointment,
   seedUserProfile,
   seedWorkingBarber,
   storedObjectExists,
@@ -50,12 +53,16 @@ test.describe('a team member’s page', () => {
   let added: string | null = null;
   /** The account the running case linked to its record; removed if the case stopped while it was staff. */
   let linkedUid: string | null = null;
+  /** The visit the running case booked for its record; removed with it. */
+  let bookedVisit: string | null = null;
 
   test.afterEach(async () => {
+    if (bookedVisit !== null) await removeAppointment(bookedVisit);
     if (added !== null) await removeAddedBarber(added);
     if (linkedUid !== null) await removeUserProfile(linkedUid);
     added = null;
     linkedUid = null;
+    bookedVisit = null;
   });
 
   /** The member page's id, from its address. */
@@ -718,7 +725,7 @@ test.describe('a team member’s page', () => {
     // The record and the account's link are the `afterEach`'s to remove.
   });
 
-  test('a barber leaves and comes back: a last working day already passed is asked about and closes at once, the leaver is turned away, and «Върни в екипа» brings the same record back', async ({
+  test('a barber leaves and comes back: a last working day already passed is asked about and closes at once, the booking left behind is said, the leaver is turned away, and «Върни в екипа» brings the same record back', async ({
     page,
   }) => {
     test.setTimeout(240_000);
@@ -768,6 +775,24 @@ test.describe('a team member’s page', () => {
       'Само за екипа',
       { timeout: 30_000 },
     );
+    // Someone is booked with them the day after tomorrow (the owner's own
+    // account: a booking needs a profile to open its client record from):
+    // leaving cancels nothing. The busy projection follows the booking by
+    // its trigger.
+    const bookedDay = LocalDate.addDays(shopToday(), 2);
+    const bookedBarber = BarberId.of(added);
+    bookedVisit = `e2e-member-left-${key}`;
+    await seedUpcomingAppointment(
+      bookedVisit,
+      uid,
+      `${bookedDay}T10:00:00`,
+      added,
+    );
+    await expect
+      .poll(() => readBarberBusyDay(bookedBarber, bookedDay), {
+        timeout: 60_000,
+      })
+      .not.toBeNull();
 
     // «ПЕРИОД НА РАБОТА»: yesterday as the last day. The sheet says the
     // person leaves on saving, and «Запази» asks first.
@@ -775,12 +800,37 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-period-sheet')).toBeVisible({
       timeout: 30_000,
     });
+    // The last day's row unfolds its month under it, on today's month,
+    // with the booked day dotted; yesterday may be a month back.
     await page.getByTestId('member-period-last').click();
-    await page.getByTestId(`ui-month-day-${yesterday}`).click();
+    const lastMonth = page.getByTestId('member-period-last-calendar');
+    if (bookedDay.slice(0, 7) === shopToday().slice(0, 7)) {
+      await expect(
+        lastMonth.getByTestId(`ui-month-day-${bookedDay}`),
+      ).toHaveAttribute('data-marked', '', { timeout: 30_000 });
+    }
+    if (yesterday.slice(0, 7) !== shopToday().slice(0, 7)) {
+      await lastMonth.getByTestId('ui-month-prev').click();
+    }
+    await lastMonth.getByTestId(`ui-month-day-${yesterday}`).click();
     await expect(page.getByTestId('member-period-note')).toContainText(
       'напуска екипа веднага',
       { timeout: 30_000 },
     );
+    // The booking after that day is said before anything is saved — a
+    // warning with its count, and the visit itself listed under it.
+    const leftover = page.getByTestId('member-period-leftover');
+    await expect(leftover).toContainText('има 1 запис след', {
+      timeout: 30_000,
+    });
+    await expect(leftover).toContainText(
+      'Премести го или го откажи, преди да запазиш.',
+    );
+    await expect(
+      page
+        .getByTestId('member-period-sheet')
+        .locator(`[data-appointment-id="${bookedVisit}"]`),
+    ).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('member-period-save').click();
     await expect(
       page.getByTestId('member-period-leave-question'),
@@ -829,6 +879,15 @@ test.describe('a team member’s page', () => {
     await signInAs(page, uid, ['admin']);
     await page.goto(`/admin/team/member/${added}`, { waitUntil: 'commit' });
     await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
+      timeout: 30_000,
+    });
+    // The leaver's page still says the booking they hold, and lists it —
+    // as text: a barber who has left has no column on the schedule yet.
+    await expect(page.getByTestId('member-leftover')).toContainText(
+      'още има 1 запис',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId(`history-row-${bookedVisit}`)).toBeVisible({
       timeout: 30_000,
     });
     await page.getByTestId('member-return').click();

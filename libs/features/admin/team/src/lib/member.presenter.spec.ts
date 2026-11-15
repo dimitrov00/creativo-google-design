@@ -82,6 +82,7 @@ function inputOf(
     mayEditOfferings: editable,
     deletable: TeamSystem.removable(barber).ok,
     returnable: TeamSystem.returnable(barber).ok,
+    leftover: null,
     linksAccount: false,
     releasesAccount: false,
     editsPermissions: true,
@@ -415,6 +416,34 @@ describe('memberPageVm — a record at work', () => {
       memberPageVm(inputOf(STEFAN_RECORD, facts, { returnable: false }))
         .returnable,
     ).toBe(false);
+  });
+
+  it('counts the bookings a leaver still holds as the warning’s title — one, several — with what to do under it, and says nothing with none', () => {
+    const left = (leftoverCount: number, days: readonly string[]) =>
+      memberPageVm(
+        inputOf(STEFAN_RECORD, facts, {
+          leftover: {
+            leftoverCount,
+            leftoverLocalDates: days.map((day) => localDate(day)),
+          },
+        }),
+      ).leftover;
+    expect(left(1, ['2026-10-02'])).toEqual({
+      title: 'Стефан още има 1 запис',
+      body: 'След последния работен ден. Премести го или го откажи.',
+    });
+    expect(left(4, ['2026-10-02', '2026-10-05', '2026-10-20'])).toEqual({
+      title: 'Стефан още има 4 записа',
+      body: 'След последния работен ден. Премести ги или ги откажи.',
+    });
+    expect(memberPageVm(inputOf(STEFAN_RECORD, facts)).leftover).toBeNull();
+    expect(
+      memberPageVm(
+        inputOf(STEFAN_RECORD, facts, {
+          leftover: { leftoverCount: 0, leftoverLocalDates: [] },
+        }),
+      ).leftover,
+    ).toBeNull();
   });
 
   it('for someone who edits profiles and does not manage the team: the profile opens, the rest is read, and no account is shown', () => {

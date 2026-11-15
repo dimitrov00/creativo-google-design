@@ -51,22 +51,20 @@
       </label>
 
       <ui-list-group>
-        <ui-list-row uiSize="regular" class="team-page__permission">
-          <span>{{ t('admin.team.add.startLabel') }}</span>
-          <lib-team-day-menu
-            uiTrailing
-            uiTestId="team-add-start"
-            [uiDay]="starts()"
-            [uiValue]="startsWords()"
-            [uiLabel]="t('admin.team.add.startLabel')"
-            [uiToday]="uiToday()"
-            [uiLocale]="locale()"
-            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
-            [uiNextLabel]="t('admin.team.period.nextMonth')"
-            [uiDisabled]="store.pending() || locked()"
-            (uiPicked)="starts.set($event)"
-          />
-        </ui-list-row>
+        <!-- The start day: the app's date row, its month under it. -->
+        <ui-date-row
+          uiTestId="team-add-start"
+          [uiLabel]="t('admin.team.add.startLabel')"
+          [uiSelected]="starts()"
+          [uiValue]="startsWords()"
+          [uiToday]="uiToday()"
+          [uiLocale]="locale()"
+          [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+          [uiNextLabel]="t('admin.team.period.nextMonth')"
+          [uiDisabled]="store.pending() || locked()"
+          [(uiExpanded)]="startsOpen"
+          (uiPicked)="pickStart($event)"
+        />
         <ui-list-row uiSize="regular" class="team-page__permission">
           <span>{{ t('admin.team.add.copyLabel') }}</span>
           <span uiTrailing>

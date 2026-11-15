@@ -1,6 +1,7 @@
 import {
   type BarberLifecycle,
   BarberStatus,
+  type LeftoverBookings,
   LocalizedText,
   RecordClaim,
   type StaffPermissions,
@@ -16,6 +17,7 @@ import { releaseQuestionVm } from './link-question.presenter';
 import type { LinkWords } from './link.words';
 import {
   DeleteAnswer,
+  type LeftoverNoticeVm,
   type LevelLinkVm,
   type MemberAccountVm,
   MemberEditor,
@@ -71,6 +73,8 @@ export type MemberPageInput = {
   readonly deletable: boolean;
   /** They may bring it back (`TeamSystem.returnable`, and they manage the team). */
   readonly returnable: boolean;
+  /** `EmploymentSystem.leftoverOf` after a leaver's last day; `null` when it was not read. */
+  readonly leftover: LeftoverBookings | null;
   /** `TeamRosterSystem.linksAccount` — «Свържи профил» is theirs to offer. */
   readonly linksAccount: boolean;
   /** `TeamRosterSystem.releasesAccount` — «Разкачи профила» is theirs to offer. */
@@ -293,6 +297,21 @@ function accountOf(input: MemberPageInput): MemberAccountVm | null {
   };
 }
 
+/** The bookings a leaver still holds: how many, and what to do — the days are the list's, beside it. */
+function leftoverOf(input: MemberPageInput): LeftoverNoticeVm | null {
+  const { leftover, memberWords } = input;
+  const count = leftover?.leftoverCount ?? 0;
+  return count === 0
+    ? null
+    : {
+        title: memberWords.departedLeftoverTitle(
+          firstWord(nameOf(input)),
+          count,
+        ),
+        body: memberWords.departedLeftoverBody(count),
+      };
+}
+
 /** The way to «Права» for each level the linked account holds. */
 function levelsOf(input: MemberPageInput): readonly LevelLinkVm[] {
   const { member } = input;
@@ -351,6 +370,7 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
     account: accountOf(input),
     levels: levelsOf(input),
     returnable: input.returnable,
+    leftover: leftoverOf(input),
     deletable: input.deletable,
     deleteTitle: memberWords.deleteTitle(name),
     deleteActions: [

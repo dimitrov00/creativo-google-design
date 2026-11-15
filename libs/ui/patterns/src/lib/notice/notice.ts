@@ -28,6 +28,21 @@ export type UiNoticeTone = 'neutral' | 'accent' | 'warning' | 'destructive';
  */
 export type UiNoticeAnnounce = 'off' | 'polite' | 'assertive';
 
+/**
+ * The mark a tone wears when the consumer names none. A warning and a
+ * refusal are told apart from a plain fact at a glance, on every screen,
+ * by the same two glyphs — never by a wash alone, which a reader in a
+ * hurry (or one who does not see the hue) takes for a note. A fact and a
+ * thing in progress have no mark of their own: theirs is the consumer's
+ * (a cloud, a cake), or none.
+ */
+const TONE_GLYPH: Readonly<Record<UiNoticeTone, UiIconName | null>> = {
+  neutral: null,
+  accent: null,
+  warning: 'notice.warning',
+  destructive: 'notice.refusal',
+};
+
 let nextTitleId = 0;
 
 /**
@@ -39,7 +54,8 @@ let nextTitleId = 0;
  * A sibling of the list segments, not a card: the grouped segment's fill
  * (a tone washes it at `--sys-alpha-tint`, opaque, never translucent), the
  * segment's prominent corner, no border, no shadow. The glyph and the wash
- * carry the tone; the TITLE and the FACTS stay in the foreground ink in
+ * carry the tone — a warning and a refusal ALWAYS wear their mark, so they
+ * are never mistaken for a note; the TITLE and the FACTS stay in the foreground ink in
  * every tone, because the tone's own text cut drops under AA on its own
  * wash, and a title that changed colour with the tone would read as a
  * different thing each time.
@@ -61,7 +77,7 @@ let nextTitleId = 0;
   selector: 'ui-notice',
   imports: [UiIcon],
   template: `
-    @if (uiIcon(); as icon) {
+    @if (glyph(); as icon) {
       <ui-icon class="ui-notice__glyph" [uiName]="icon" uiScale="medium" />
     }
     <div class="ui-notice__content">
@@ -86,7 +102,12 @@ let nextTitleId = 0;
 })
 export class UiNotice {
   readonly uiTone = input<UiNoticeTone>('neutral');
-  /** The tone's glyph, leading, aligned to the first line. */
+  /**
+   * The glyph, leading, aligned to the first line. Left out, a warning and
+   * a refusal wear their tone's own mark (`TONE_GLYPH`), so every one of
+   * them reads the same; a consumer names one only when the notice is
+   * about a particular thing (data read offline, a birthday).
+   */
   readonly uiIcon = input<UiIconName | null>(null);
   readonly uiAnnounce = input<UiNoticeAnnounce>('off');
   /** The accessible name when no title is projected (a compact notice). */
@@ -97,6 +118,11 @@ export class UiNotice {
 
   /** The projected title's id, once it is there; the title then names the notice. */
   protected readonly titleId = signal<string | null>(null);
+
+  /** The consumer's glyph, else the tone's own. */
+  protected readonly glyph = computed(
+    () => this.uiIcon() ?? TONE_GLYPH[this.uiTone()],
+  );
 
   protected readonly role = computed(() => {
     switch (this.uiAnnounce()) {

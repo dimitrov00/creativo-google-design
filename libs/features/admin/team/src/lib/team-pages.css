@@ -142,24 +142,6 @@
   white-space: nowrap;
 }
 
-/* ── a day as a row's value ──────────────────────────────────────────── */
-
-/* The month's surface is where its width is said, once (the schedule's day
-   pill says the same 20rem), and the popover's own padding is local: a
-   month is fluid, so it may be narrower than seven control widths. */
-.team-page__day > .ui-menu {
-  --ui-menu-min-width: 20rem;
-}
-
-.team-page__calendar {
-  padding: var(--sys-space-compact);
-  max-inline-size: min(100%, calc(100vw - 2rem));
-}
-
-.team-page__calendar ui-calendar-grid {
-  inline-size: 100%;
-}
-
 /* ── a form in a sheet ───────────────────────────────────────────────── */
 
 /* The sheet's body: on the sheet's own gutter, its parts 24 apart, and

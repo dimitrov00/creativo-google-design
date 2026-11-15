@@ -14,17 +14,23 @@ import { GovernanceErrorCode, PipelineError } from '@core/errors';
 import { Callables } from '@core/ports';
 import {
   AccessScope,
+  AppointmentId,
+  type BarberId,
+  BusyKey,
   type LocalDate,
   LocationId,
   StaffCapability,
   UserId,
 } from '@core/primitives';
 import {
+  appointmentFixture,
+  FIXTURE_TODAY,
   localDate,
   locationFixture,
   textFixture,
   userFixture,
 } from '@core/testing';
+import { UiDateRow } from '@creativo/ui/controls';
 import { type TeamBedOptions, teamBed } from '../team-bed.spec-support';
 import {
   IVAN,
@@ -38,7 +44,6 @@ import {
   rosterOf,
   serviceOf,
 } from '../team.fixtures.spec-support';
-import { TeamDayMenu } from '../team-day-menu/team-day-menu';
 import { AdminTeamMember } from './admin-team-member';
 
 /*
@@ -327,14 +332,14 @@ describe('AdminTeamMember — a record in preparation', () => {
   });
 
   describe('a last day is how someone leaves the team (team onboarding D10)', () => {
-    /** The last-day menu's pick: its month is the DS's own, driven through its output. */
+    /** The last-day row's pick: its month is the DS's own, driven through its output. */
     const pickLast = async (
       fixture: Awaited<ReturnType<typeof render>>['fixture'],
       settle: () => Promise<void>,
       day: LocalDate,
     ): Promise<void> => {
-      const menus = fixture.debugElement.queryAll(By.directive(TeamDayMenu));
-      (menus.at(1)?.componentInstance as TeamDayMenu).uiPicked.emit(day);
+      const rows = fixture.debugElement.queryAll(By.directive(UiDateRow));
+      (rows.at(1)?.componentInstance as UiDateRow).uiPicked.emit(day);
       await settle();
     };
 
@@ -355,6 +360,153 @@ describe('AdminTeamMember — a record in preparation', () => {
         barberEdit: BarberEdit.Period,
         barberLastWorkingLocalDate: '2026-12-31',
       });
+    });
+
+    /** A live visit seating `barberId` on `day`, keyed as the day's read finds it. */
+    const visitOf = (id: string, barberId: BarberId, day: string) =>
+      appointmentFixture({
+        id: AppointmentId.of(id),
+        localDate: localDate(day),
+        barberIds: [barberId],
+        busyKeys: [BusyKey.of(barberId, localDate(day))],
+      });
+
+    it('reads the barber’s visits ahead once, counts the ones a last day would leave behind as a titled warning — and says nothing with none', async () => {
+      const { fixture, piece, press, text, settle, calls } = await render(
+        'ivan',
+        {
+          visits: [
+            visitOf('a-1', IVAN.barberId, '2027-01-04'),
+            visitOf('a-2', IVAN.barberId, '2027-01-05'),
+            visitOf('a-3', IVAN.barberId, '2026-12-20'),
+          ],
+        },
+      );
+      await press('member-row-period');
+      await settle();
+      // No last day: nothing is said — but the visits from today on are
+      // read, once, for the month's dots.
+      expect(piece('member-period-leftover')).toBeNull();
+      expect(calls.aheadAsked).toEqual([
+        { barberId: IVAN.barberId, fromLocalDate: FIXTURE_TODAY },
+      ]);
+
+      await pickLast(fixture, settle, localDate('2026-12-31'));
+      await settle();
+      const warning = piece('member-period-leftover');
+      expect(warning?.getAttribute('data-tone')).toBe('warning');
+      expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+        'Иван има 2 записа след 31.12',
+      );
+      expect(text(warning)).toContain(
+        'Остават в графика, докато ги преместиш или откажеш.',
+      );
+      // A warning wears its mark.
+      expect(
+        warning?.querySelector('.ui-notice__glyph')?.getAttribute('data-name'),
+      ).toBe('notice.warning');
+
+      // A later day leaves nothing behind: the warning goes — and what was
+      // read covers it, so nothing is read again.
+      await pickLast(fixture, settle, localDate('2027-01-31'));
+      await settle();
+      expect(piece('member-period-leftover')).toBeNull();
+      expect(calls.aheadAsked).toHaveLength(1);
+    });
+
+    it('lists the visits left under their days, as the app’s own visit rows — and a row opens the schedule on its day, on the barber’s column', async () => {
+      const { fixture, piece, press, text, settle } = await render('ivan', {
+        visits: [
+          visitOf('a-2', IVAN.barberId, '2027-01-05'),
+          visitOf('a-1', IVAN.barberId, '2027-01-04'),
+          visitOf('a-kept', IVAN.barberId, '2026-12-20'),
+        ],
+      });
+      await press('member-row-period');
+      await settle();
+      // No last day: nothing is left, so nothing is listed.
+      expect(piece('leftover-visits')).toBeNull();
+
+      await pickLast(fixture, settle, localDate('2026-12-31'));
+      await settle();
+      await settle();
+
+      const list = piece('leftover-visits');
+      const rows = [
+        ...(list?.querySelectorAll<HTMLElement>('[data-appointment-id]') ?? []),
+      ];
+      expect(rows.map((row) => row.dataset['appointmentId'])).toEqual([
+        'a-1',
+        'a-2',
+      ]);
+      expect(text(piece('leftover-group-2027-01-04'))).toContain(
+        'Понеделник, 4 януари',
+      );
+      expect(text(piece('leftover-group-2027-01-05'))).toContain(
+        'Вторник, 5 януари',
+      );
+
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true);
+      rows.at(0)?.click();
+      expect(navigate).toHaveBeenCalledWith(['/staff/schedule'], {
+        queryParams: { day: '2027-01-04', barber: IVAN.barberId },
+      });
+    });
+
+    it('dots the days the barber is booked on in the last day’s month', async () => {
+      const { fixture, piece, press, settle } = await render('ivan', {
+        visits: [
+          visitOf('a-1', IVAN.barberId, '2026-09-29'),
+          visitOf('a-2', IVAN.barberId, '2026-09-30'),
+        ],
+      });
+      await press('member-row-period');
+      await settle();
+      // The row opens on today's month, not on the month the barber started.
+      await press('member-period-last');
+      fixture.detectChanges();
+
+      expect(
+        piece('ui-month-day-2026-09-29')?.hasAttribute('data-marked'),
+      ).toBe(true);
+      expect(
+        piece('ui-month-day-2026-09-30')?.hasAttribute('data-marked'),
+      ).toBe(true);
+      expect(
+        piece(`ui-month-day-${FIXTURE_TODAY}`)?.hasAttribute('data-marked'),
+      ).toBe(false);
+    });
+
+    it('a last day already passed with bookings after it says to move or cancel them first', async () => {
+      const { fixture, piece, press, text, settle } = await render('ivan', {
+        visits: [visitOf('a-1', IVAN.barberId, '2026-10-02')],
+      });
+      await press('member-row-period');
+      await pickLast(fixture, settle, localDate('2026-09-01'));
+      await settle();
+
+      const warning = piece('member-period-leftover');
+      expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+        'Иван има 1 запис след 1.09',
+      );
+      expect(text(warning)).toContain(
+        'Премести го или го откажи, преди да запазиш.',
+      );
+    });
+
+    it('says it could not check when the bookings cannot be read', async () => {
+      const { fixture, piece, press, text, settle } = await render('ivan', {
+        aheadFails: true,
+      });
+      await press('member-row-period');
+      await pickLast(fixture, settle, localDate('2026-12-31'));
+      await settle();
+
+      expect(text(piece('member-period-leftover'))).toBe(
+        'Не успяхме да проверим дали има записи след тази дата.',
+      );
     });
 
     it('a last day already passed says the person leaves on saving, and asks first: «Отказ» sends nothing, «Напуска» sends the period', async () => {
@@ -1192,6 +1344,67 @@ describe('AdminTeamMember — the edges', () => {
     expect(piece('member-delete')).toBeNull();
   });
 
+  describe('a leaver’s bookings — what still stands after the last day (team onboarding D10)', () => {
+    const visitOf = (id: string, day: string) =>
+      appointmentFixture({
+        id: AppointmentId.of(id),
+        localDate: localDate(day),
+        barberIds: [STEFAN.barberId],
+        busyKeys: [BusyKey.of(STEFAN.barberId, localDate(day))],
+      });
+
+    it('tells whoever can bring the barber back how many bookings they still hold, and what to do', async () => {
+      const { piece, text, settle, calls } = await render('stefan', {
+        visits: [
+          visitOf('a-1', '2026-10-02'),
+          visitOf('a-2', '2026-10-20'),
+          // On the last day itself: worked, not left behind.
+          visitOf('a-last', '2026-09-30'),
+        ],
+      });
+      await settle();
+
+      const warning = piece('member-leftover');
+      expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+        'Стефан още има 2 записа',
+      );
+      // The visits themselves, under the warning — read, not pressed: a
+      // barber who has left has no column on the schedule to open.
+      await settle();
+      const list = piece('leftover-visits');
+      expect(piece('history-row-a-1')).not.toBeNull();
+      expect(piece('history-row-a-2')).not.toBeNull();
+      expect(list?.querySelector('button')).toBeNull();
+      expect(text(warning)).toContain(
+        'След последния работен ден. Премести ги или ги откажи.',
+      );
+      expect(calls.aheadAsked).toEqual([
+        { barberId: STEFAN.barberId, fromLocalDate: '2026-10-01' },
+      ]);
+    });
+
+    it('says nothing for a leaver with none, and reads nothing for someone who cannot bring them back or for a working record', async () => {
+      const none = await render('stefan');
+      await none.settle();
+      expect(none.piece('member-leftover')).toBeNull();
+      expect(none.calls.aheadAsked).toHaveLength(1);
+
+      TestBed.resetTestingModule();
+      const editor = await render('stefan', {
+        roles: [Role.ContentManager],
+        visits: [visitOf('a-1', '2026-10-02')],
+      });
+      await editor.settle();
+      expect(editor.piece('member-leftover')).toBeNull();
+      expect(editor.calls.aheadAsked).toEqual([]);
+
+      TestBed.resetTestingModule();
+      const working = await render('ivan');
+      await working.settle();
+      expect(working.calls.aheadAsked).toEqual([]);
+    });
+  });
+
   describe('«Върни в екипа» — a barber who has left, back on the team (team onboarding D10)', () => {
     it('is offered on a leaver’s record to whoever manages the team, and never on a working one', async () => {
       const leaver = await render('stefan');
@@ -1236,8 +1449,8 @@ describe('AdminTeamMember — the edges', () => {
     it('a day on or before the last day worked cannot be sent', async () => {
       const { fixture, piece, press, settle, calls } = await render('stefan');
       await press('member-return');
-      const menu = fixture.debugElement.query(By.directive(TeamDayMenu));
-      (menu.componentInstance as TeamDayMenu).uiPicked.emit(
+      const row = fixture.debugElement.query(By.directive(UiDateRow));
+      (row.componentInstance as UiDateRow).uiPicked.emit(
         localDate('2026-09-30'),
       );
       await settle();

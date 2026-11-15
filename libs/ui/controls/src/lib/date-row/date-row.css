@@ -1,0 +1,33 @@
+@layer sys-components {
+  /* The value and the chevron that turns: one run at the row's trailing
+     edge, its figures on the tabular cut so a date does not shift the
+     chevron as it changes. */
+  .ui-date-row__value {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-date-row__chevron {
+    transition: rotate var(--sys-motion-duration-quick, 150ms)
+      var(--sys-motion-ease-standard, ease);
+  }
+
+  .ui-date-row__chevron[data-open] {
+    rotate: 180deg;
+  }
+
+  /* The month under its row: inset to the row's own text edge, with room
+     under it before the next segment. */
+  .ui-date-row__calendar {
+    padding: var(--sys-space-compact) var(--sys-space-regular)
+      var(--sys-space-regular);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-date-row__chevron {
+      transition: none;
+    }
+  }
+}

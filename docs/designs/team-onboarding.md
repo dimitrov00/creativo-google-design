@@ -1154,10 +1154,59 @@ were.
 - The sheet opens on today, or on the day after the last day worked when
   that is later.
 
-**1b, still to build.** The leftover list on «Напускане» (bookings after
-the last day); the leftover lane on the schedule; the reminder cards; and
-the Team page's notices for a leaver whose access is not stopped yet and
-for an admin whose role has to be removed by hand.
+**1b, built so far: the bookings a last day leaves behind.** Whoever sets
+a last working day sees the bookings that stand after it before they save,
+and a leaver's page keeps showing them until none is left.
+
+- Nothing is stored and nothing is cancelled. `listBookingsAhead` reads on
+  demand, in the browser: the barber's busy days after a day (one query on
+  the projection's `(barberId, localDate)` index, at most 400 days), then
+  each of those days' visits by `busyKeys array-contains`, side by side.
+  These are the reads the day sheet already makes, so there is no new
+  index.
+- `EmploymentSystem.leftoverVisitsOf` answers the visits themselves: live,
+  seating this barber after the day, each once, oldest first.
+  `leftoverOf` is their count and their days (`LeftoverBookings`);
+  `keysAfter` picks the busy days worth reading (a day with no block is
+  skipped).
+- The period sheet reads the barber's visits from today on **once**
+  (`BookingsAheadStore.watch`). Every last day drafted after that is
+  counted from what is held; only a day drafted further back reads again.
+- The sheet uses the app's own parts, so nothing has to be learned twice:
+  - the two days are **date rows** (`ui-date-row`): the row, and its month
+    unfolding under it, one at a time. The analytics period sheet, the add
+    sheet and the return sheet use the same control; the team's pull-down
+    day menu is gone;
+  - the last day's month **dots the days the barber is booked on**, the
+    mark a repeating block's end is already chosen against, so the day is
+    picked against the visits it cuts. It opens on today's month, not on
+    the month the barber started;
+  - the count is a **warning notice with its mark and a title** («Иван има
+    2 записа след 31.12»), and under it what becomes of them («Остават в
+    графика, докато ги преместиш или откажеш.») or, for a day already
+    passed, what to do («Премести ги или ги откажи, преди да запазиш.»).
+    Saving is never blocked;
+  - under the warning the visits are **listed under their days** as the
+    shared visit rows (`lib-visit-list`, the staff search's rows). A row
+    opens the schedule on that day, on this barber's column
+    (`/staff/schedule?day=…&barber=…`). The list is its own lazy chunk.
+- The page of a barber who has left shows the same warning and list to
+  whoever may bring them back. Nobody else's page makes the read.
+- A read that fails says «Не успяхме да проверим дали има записи след тази
+  дата.», never that nothing is left.
+- Design-system changes that came with it, for one vocabulary everywhere:
+  a warning and a refusal notice always wear their mark (`notice.warning`,
+  `notice.refusal`) when the screen names no glyph, so neither is ever a
+  tinted box alone.
+- Where this departs from D10 as written: the day query does not filter on
+  `bookingStatus`. The system keeps the live ones, so a booking awaiting
+  confirmation counts too, and no composite index is added.
+
+**1b, still to build.** The leftover lane on the schedule (a leaver's
+bookings are listed on their page and each links to its day, but their
+column is not drawn on that day yet); the reminder cards; and the Team page's notices for a leaver
+whose access is not stopped yet and for an admin whose role has to be
+removed by hand.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 

@@ -1,11 +1,17 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { LocalDate } from '@core/primitives';
 import type { UiMonthPickerRelative } from '@creativo/ui/controls';
-import { UiMonthPicker } from '@creativo/ui/controls';
+import { UiDateRow, UiMonthPicker } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import type { UiDateBadgeState } from '@creativo/ui/patterns';
-import { UiCalendarGrid, UiCard, UiDateBadge } from '@creativo/ui/patterns';
+import {
+  UiCalendarGrid,
+  UiCard,
+  UiDateBadge,
+  UiListGroup,
+} from '@creativo/ui/patterns';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import { ScDemo } from '@showcase/shared/demo';
 import { ScPage } from '@showcase/shared/page';
 
@@ -36,7 +42,9 @@ const TODAY = october(6);
     UiCalendarGrid,
     UiCard,
     UiDateBadge,
+    UiDateRow,
     UiFlow,
+    UiListGroup,
     UiMonthPicker,
     UiStack,
     UiTextDirective,
@@ -49,6 +57,19 @@ export class MonthPickerPage {
   protected readonly selected = signal(october(14));
   protected readonly min = october(1);
   protected readonly largeSelected = signal(TODAY);
+
+  /** The date rows' period: a start, and a last day not chosen yet. */
+  protected readonly periodStart = signal<LocalDate | null>(october(1));
+  protected readonly periodLast = signal<LocalDate | null>(null);
+  /** The row whose month is unfolded. */
+  protected readonly rowOpen = signal<'start' | 'last' | null>(null);
+
+  /** «14 окт.» — the consumer words the day; `null` prints the placeholder. */
+  protected dayWords(day: LocalDate | null): string | null {
+    return day === null
+      ? null
+      : formatWallClock(day, null, 'bg', { day: 'numeric', month: 'short' });
+  }
 
   protected readonly relatives: readonly UiMonthPickerRelative[] = [
     { offset: 0, label: 'Днес' },
