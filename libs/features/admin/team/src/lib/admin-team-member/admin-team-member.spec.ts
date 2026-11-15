@@ -14,12 +14,16 @@ import { GovernanceErrorCode, PipelineError } from '@core/errors';
 import { Callables } from '@core/ports';
 import {
   AccessScope,
+  AppointmentId,
+  type BarberId,
+  BusyKey,
   type LocalDate,
   LocationId,
   StaffCapability,
   UserId,
 } from '@core/primitives';
 import {
+  appointmentFixture,
   localDate,
   locationFixture,
   textFixture,
@@ -355,6 +359,73 @@ describe('AdminTeamMember — a record in preparation', () => {
         barberEdit: BarberEdit.Period,
         barberLastWorkingLocalDate: '2026-12-31',
       });
+    });
+
+    /** A live visit seating `barberId` on `day`, keyed as the day's read finds it. */
+    const visitOf = (id: string, barberId: BarberId, day: string) =>
+      appointmentFixture({
+        id: AppointmentId.of(id),
+        localDate: localDate(day),
+        barberIds: [barberId],
+        busyKeys: [BusyKey.of(barberId, localDate(day))],
+      });
+
+    it('says how many bookings a last day would leave behind, asked once per day picked — and nothing with none', async () => {
+      const { fixture, piece, press, text, settle, calls } = await render(
+        'ivan',
+        {
+          visits: [
+            visitOf('a-1', IVAN.barberId, '2027-01-04'),
+            visitOf('a-2', IVAN.barberId, '2027-01-05'),
+            visitOf('a-3', IVAN.barberId, '2026-12-20'),
+          ],
+        },
+      );
+      await press('member-row-period');
+      expect(piece('member-period-leftover')).toBeNull();
+      // No last day: nothing is asked.
+      expect(calls.aheadAsked).toEqual([]);
+
+      await pickLast(fixture, settle, localDate('2026-12-31'));
+      await settle();
+      expect(text(piece('member-period-leftover'))).toBe(
+        'След 31.12 Иван има 2 записа. Те остават в графика, докато ги преместиш или откажеш.',
+      );
+      expect(calls.aheadAsked).toEqual([
+        { barberId: IVAN.barberId, fromLocalDate: '2027-01-01' },
+      ]);
+
+      // A later day leaves nothing behind: the line goes.
+      await pickLast(fixture, settle, localDate('2027-01-31'));
+      await settle();
+      expect(piece('member-period-leftover')).toBeNull();
+      expect(calls.aheadAsked).toHaveLength(2);
+    });
+
+    it('a last day already passed with bookings after it says to move or cancel them first', async () => {
+      const { fixture, piece, press, text, settle } = await render('ivan', {
+        visits: [visitOf('a-1', IVAN.barberId, '2026-10-02')],
+      });
+      await press('member-row-period');
+      await pickLast(fixture, settle, localDate('2026-09-01'));
+      await settle();
+
+      expect(text(piece('member-period-leftover'))).toBe(
+        'След 1.09 Иван има 1 запис. Премести го или го откажи, преди да запазиш.',
+      );
+    });
+
+    it('says it could not check when the bookings cannot be read', async () => {
+      const { fixture, piece, press, text, settle } = await render('ivan', {
+        aheadFails: true,
+      });
+      await press('member-row-period');
+      await pickLast(fixture, settle, localDate('2026-12-31'));
+      await settle();
+
+      expect(text(piece('member-period-leftover'))).toBe(
+        'Не успяхме да проверим дали има записи след тази дата.',
+      );
     });
 
     it('a last day already passed says the person leaves on saving, and asks first: «Отказ» sends nothing, «Напуска» sends the period', async () => {
@@ -1190,6 +1261,56 @@ describe('AdminTeamMember — the edges', () => {
     expect(piece('member-booked-by-row')).toBeNull();
     expect(piece('member-is-me')).toBeNull();
     expect(piece('member-delete')).toBeNull();
+  });
+
+  describe('a leaver’s bookings — what still stands after the last day (team onboarding D10)', () => {
+    const visitOf = (id: string, day: string) =>
+      appointmentFixture({
+        id: AppointmentId.of(id),
+        localDate: localDate(day),
+        barberIds: [STEFAN.barberId],
+        busyKeys: [BusyKey.of(STEFAN.barberId, localDate(day))],
+      });
+
+    it('tells whoever can bring the barber back how many bookings they still hold, and when', async () => {
+      const { piece, text, settle, calls } = await render('stefan', {
+        visits: [
+          visitOf('a-1', '2026-10-02'),
+          visitOf('a-2', '2026-10-20'),
+          // On the last day itself: worked, not left behind.
+          visitOf('a-last', '2026-09-30'),
+        ],
+      });
+      await settle();
+
+      expect(text(piece('member-leftover'))).toBe(
+        'След последния си ден Стефан още има 2 записа, между 2.10 и 20.10.',
+      );
+      expect(calls.aheadAsked).toEqual([
+        { barberId: STEFAN.barberId, fromLocalDate: '2026-10-01' },
+      ]);
+    });
+
+    it('says nothing for a leaver with none, and reads nothing for someone who cannot bring them back or for a working record', async () => {
+      const none = await render('stefan');
+      await none.settle();
+      expect(none.piece('member-leftover')).toBeNull();
+      expect(none.calls.aheadAsked).toHaveLength(1);
+
+      TestBed.resetTestingModule();
+      const editor = await render('stefan', {
+        roles: [Role.ContentManager],
+        visits: [visitOf('a-1', '2026-10-02')],
+      });
+      await editor.settle();
+      expect(editor.piece('member-leftover')).toBeNull();
+      expect(editor.calls.aheadAsked).toEqual([]);
+
+      TestBed.resetTestingModule();
+      const working = await render('ivan');
+      await working.settle();
+      expect(working.calls.aheadAsked).toEqual([]);
+    });
   });
 
   describe('«Върни в екипа» — a barber who has left, back on the team (team onboarding D10)', () => {

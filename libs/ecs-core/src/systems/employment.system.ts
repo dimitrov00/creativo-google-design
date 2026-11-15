@@ -2,20 +2,25 @@ import {
   type Actor,
   AuditAction,
   BarberLifecycle,
+  BookingLifecycle,
   EmploymentOutlook,
+  LeftoverBookings,
   ScheduleVersion,
   WriteOp,
   WriteProvenance,
 } from '@core/components';
-import type {
-  BarberId,
-  LocalDate,
-  OperationId,
-  UserId,
-  UtcEpochMs,
+import {
+  type BarberId,
+  BusyKey,
+  type LocalDate,
+  type OperationId,
+  type UserId,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
+  type Appointment,
   type Barber,
+  type BarberBusyDay,
   type BarberLink,
   type BarberSchedule,
   Collections,
@@ -162,6 +167,63 @@ export const EmploymentSystem = {
       );
     }
     return kept;
+  },
+
+  /**
+   * The days to read for what a last day would leave behind, as the keys
+   * a day's visits are queried by: every busy day AFTER `lastLocalDate`
+   * that holds a block, in the order given. A day with no block holds no
+   * visit — the projection is rebuilt from the appointments — so it is
+   * never read.
+   */
+  keysAfter(
+    busyDays: readonly BarberBusyDay[],
+    lastLocalDate: LocalDate,
+  ): readonly BusyKey[] {
+    const keys: BusyKey[] = [];
+    for (let i = 0; i < busyDays.length; i++) {
+      const day = busyDays[i] as BarberBusyDay;
+      if (day.localDate > lastLocalDate && day.blocks.length > 0) {
+        keys.push(BusyKey.of(day.barberId, day.localDate));
+      }
+    }
+    return keys;
+  },
+
+  /**
+   * The bookings a barber's last working day leaves behind (team
+   * onboarding D10): the LIVE visits (`BookingLifecycle.isLive`) that seat
+   * `barberId` on a shop day AFTER `lastLocalDate` — each visit once,
+   * however many of its seats are theirs or however many times the reads
+   * answered it — and the days they fall on, each once, oldest first. A
+   * visit on the last day itself is worked; a cancelled or finished one is
+   * nobody's to move.
+   */
+  leftoverOf(
+    appointments: readonly Appointment[],
+    barberId: BarberId,
+    lastLocalDate: LocalDate,
+  ): LeftoverBookings {
+    const seen = new Set<string>();
+    const days = new Set<LocalDate>();
+    for (let i = 0; i < appointments.length; i++) {
+      const visit = appointments[i] as Appointment;
+      if (
+        visit.localDate > lastLocalDate &&
+        BookingLifecycle.isLive(visit) &&
+        visit.barberIds.includes(barberId) &&
+        !seen.has(visit.id)
+      ) {
+        seen.add(visit.id);
+        days.add(visit.localDate);
+      }
+    }
+    return seen.size === 0
+      ? LeftoverBookings.NONE
+      : {
+          leftoverCount: seen.size,
+          leftoverLocalDates: [...days].sort(),
+        };
   },
 
   /**

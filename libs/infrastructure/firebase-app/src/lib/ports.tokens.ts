@@ -10,6 +10,7 @@ import type {
   AuthDeploymentPorts,
   AuthSessionPorts,
   AvatarPorts,
+  BarberAheadPorts,
   BookingDraftPorts,
   CatalogReadPorts,
   ClientIssuePorts,
@@ -75,6 +76,15 @@ export const STAFF_PERMISSIONS_PORTS =
 /** The appointment readers and the staff search window (`AppointmentReadPorts`). */
 export const APPOINTMENT_READ_PORTS = new InjectionToken<AppointmentReadPorts>(
   'APPOINTMENT_READ_PORTS',
+);
+
+/**
+ * What lies ahead of one barber: the days they are booked on, and a day's
+ * visits (`BarberAheadPorts`) — the bookings a last working day would
+ * leave behind.
+ */
+export const BARBER_AHEAD_PORTS = new InjectionToken<BarberAheadPorts>(
+  'BARBER_AHEAD_PORTS',
 );
 
 /** An account's own waitlist requests (`WaitlistReadPorts`). */

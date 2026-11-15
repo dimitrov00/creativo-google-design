@@ -478,6 +478,38 @@ export type ScheduleExceptionPorts = {
   readonly writeScheduleException: WriteScheduleException;
 };
 
+/**
+ * One barber's busy days from a shop day on, oldest first — `barberBusy`
+ * by barber and day (its existing index), the days the public grid already
+ * reads one at a time. Bounded: the projection is a cache with a TTL, and
+ * nobody is booked further ahead than the booking horizon.
+ */
+export type LoadBusyDaysFrom = (
+  barberId: BarberId,
+  fromLocalDate: LocalDate,
+) => Promise<Result<readonly BarberBusyDay[], RepositoryError>>;
+
+/**
+ * Everything on ONE barber's chair for ONE day, every status, read ONCE —
+ * the query {@link ObserveBarberDay} listens on (`busyKeys array-contains
+ * key`), for a reader that asks and leaves. Rules allow it for whoever
+ * works the book. The visits the guard refuses are dropped: a count that
+ * cannot read a visit says so by being smaller, never by failing.
+ */
+export type LoadBarberDay = (
+  key: BusyKey,
+) => Promise<Result<readonly Appointment[], RepositoryError>>;
+
+/**
+ * What lies ahead of one barber — `BARBER_AHEAD_PORTS`: the days they are
+ * booked on and a day's visits, read once each. The period sheet's read of
+ * the bookings a last working day would leave behind (team onboarding D10).
+ */
+export type BarberAheadPorts = {
+  readonly loadBusyDaysFrom: LoadBusyDaysFrom;
+  readonly loadBarberDay: LoadBarberDay;
+};
+
 /** One visit, a barber's day and the staff search window. */
 export type StaffAppointmentReadPorts = {
   readonly observeAppointment: ObserveAppointment;

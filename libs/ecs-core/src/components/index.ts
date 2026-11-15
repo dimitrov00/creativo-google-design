@@ -143,6 +143,7 @@ export * from './ladder-rung.data';
 export * from './last-visit.data';
 export * from './ledger-line.data';
 export * from './ledger-verdict.data';
+export * from './leftover-bookings.data';
 export * from './live-policy-line.data';
 export * from './localized-text.data';
 export * from './location-status.data';

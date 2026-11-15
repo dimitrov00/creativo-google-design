@@ -4,14 +4,23 @@ import {
   AuditAction,
   BarberLifecycle,
   BarberStatus,
+  BookingLifecycle,
   EmploymentOutlook,
+  LeftoverBookings,
   Role,
   ScheduleVersion,
   SystemSource,
   WriteAction,
   type WriteOp,
 } from '@core/components';
-import { BarberId, OperationId, UserId, UtcEpochMs } from '@core/primitives';
+import {
+  AppointmentId,
+  BarberId,
+  BusyKey,
+  OperationId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import {
   BARBER_LINK_DOC,
   type Barber,
@@ -20,6 +29,8 @@ import {
   Subcollections,
 } from '@core/entities';
 import {
+  appointmentFixture,
+  barberBusyDayFixture,
   barberFixture,
   barberScheduleFixture,
   deepFreeze,
@@ -244,6 +255,114 @@ describe('EmploymentSystem.rosterAfter — a roster once its barber has left', (
     ).toEqual([
       { ...version(1, '2026-01-01', '2026-12-31'), effectiveToLocalDate: LAST },
     ]);
+  });
+});
+
+describe('EmploymentSystem — the bookings a last day leaves behind', () => {
+  const NIKO = BarberId.of('niko');
+  const busy = (day: string, blocks?: readonly never[]) =>
+    barberBusyDayFixture({
+      barberId: IVAN,
+      localDate: localDate(day),
+      ...(blocks === undefined ? {} : { blocks }),
+    });
+  const visit = (
+    id: string,
+    day: string,
+    over: Parameters<typeof appointmentFixture>[0] = {},
+  ) =>
+    appointmentFixture({
+      id: AppointmentId.of(id),
+      localDate: localDate(day),
+      barberIds: [IVAN],
+      ...over,
+    });
+
+  it('keysAfter names every busy day after the last day that holds a block, in the order given', () => {
+    expect(
+      EmploymentSystem.keysAfter(
+        [
+          // On the last day itself: worked, not left behind.
+          busy('2026-11-15'),
+          busy('2026-11-17'),
+          // A day the projection keeps with nothing on it.
+          busy('2026-11-18', []),
+          busy('2026-12-02'),
+        ],
+        LAST,
+      ),
+    ).toEqual([
+      BusyKey.of(IVAN, localDate('2026-11-17')),
+      BusyKey.of(IVAN, localDate('2026-12-02')),
+    ]);
+    expect(EmploymentSystem.keysAfter([], LAST)).toEqual([]);
+  });
+
+  it('leftoverOf counts the live visits that seat the barber after the last day — each once — and the days they fall on, oldest first', () => {
+    expect(
+      EmploymentSystem.leftoverOf(
+        [
+          visit('a-2', '2026-12-02'),
+          visit('a-1', '2026-11-17'),
+          visit('a-3', '2026-11-17', {
+            lifecycle: BookingLifecycle.pending(NOW),
+          }),
+          // The same visit answered twice (a party seated across two days' reads).
+          visit('a-1', '2026-11-17'),
+        ],
+        IVAN,
+        LAST,
+      ),
+    ).toEqual({
+      leftoverCount: 3,
+      leftoverLocalDates: ['2026-11-17', '2026-12-02'],
+    });
+  });
+
+  it('leaves out a visit on the last day itself, a cancelled or finished one, and a colleague’s', () => {
+    expect(
+      EmploymentSystem.leftoverOf(
+        [
+          visit('a-last', '2026-11-15'),
+          visit('a-done', '2026-11-17', {
+            lifecycle: BookingLifecycle.complete(NOW),
+          }),
+          visit('a-gone', '2026-11-17', {
+            lifecycle: BookingLifecycle.noShow(NOW),
+          }),
+          visit('a-niko', '2026-11-17', { barberIds: [NIKO] }),
+        ],
+        IVAN,
+        LAST,
+      ),
+    ).toEqual(LeftoverBookings.NONE);
+    expect(EmploymentSystem.leftoverOf([], IVAN, LAST)).toBe(
+      LeftoverBookings.NONE,
+    );
+  });
+
+  it('counts a visit the barber shares with a colleague once', () => {
+    expect(
+      EmploymentSystem.leftoverOf(
+        [visit('a-pair', '2026-11-20', { barberIds: [NIKO, IVAN] })],
+        IVAN,
+        LAST,
+      ).leftoverCount,
+    ).toBe(1);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const visits = deepFreeze([
+      visit('a-1', '2026-11-17'),
+      visit('a-2', '2026-12-02'),
+    ]);
+    expect(EmploymentSystem.leftoverOf(visits, IVAN, LAST)).toEqual(
+      EmploymentSystem.leftoverOf(visits, IVAN, LAST),
+    );
+    const days = deepFreeze([busy('2026-11-17')]);
+    expect(EmploymentSystem.keysAfter(days, LAST)).toEqual(
+      EmploymentSystem.keysAfter(days, LAST),
+    );
   });
 });
 

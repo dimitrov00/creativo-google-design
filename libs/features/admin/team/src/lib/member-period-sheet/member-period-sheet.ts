@@ -4,6 +4,7 @@ import {
   type OnInit,
   ViewEncapsulation,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -26,6 +27,7 @@ import {
   UiNotice,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
+import { BookingsAheadStore } from '../bookings-ahead.store';
 import { LinkAnswer } from '../link.vm';
 import { type PeriodOutlookVm, periodOutlookVm } from '../period.presenter';
 import { TeamDayMenu } from '../team-day-menu/team-day-menu';
@@ -44,9 +46,15 @@ import { dayWords } from '../team.format';
  * two days before anything is saved, and a save that would make the barber
  * leave AT ONCE — a last day already passed — is held behind a question.
  *
+ * Leaving cancels nothing: the bookings the barber holds after the last
+ * day stay until someone moves or cancels them. The sheet asks how many
+ * there are each time a last day is picked (`BookingsAheadStore`) and says
+ * so under the days, before the save.
+ *
  * The sheet holds a draft and decides nothing: whether the two days make a
- * period is `TeamSystem.setPeriod`'s answer, the rule the server asks, and
- * where the period stands today is `EmploymentSystem.outlookOf`'s.
+ * period is `TeamSystem.setPeriod`'s answer, the rule the server asks,
+ * where the period stands today is `EmploymentSystem.outlookOf`'s, and
+ * which bookings are left is `EmploymentSystem.leftoverOf`'s.
  * Mounted while it is open, so every opening starts from the record.
  */
 @Component({
@@ -64,6 +72,7 @@ import { dayWords } from '../team.format';
     UiSheetActionBar,
     UiTextDirective,
   ],
+  providers: [BookingsAheadStore],
   templateUrl: './member-period-sheet.html',
   styleUrl: '../team-pages.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -73,6 +82,7 @@ import { dayWords } from '../team.format';
 export class MemberPeriodSheet implements OnInit {
   protected readonly store = inject(TeamMemberStore);
   private readonly wording = inject(TeamWording);
+  private readonly ahead = inject(BookingsAheadStore);
 
   /** The record the sheet edits. */
   readonly uiBarber = input.required<Barber>();
@@ -125,11 +135,13 @@ export class MemberPeriodSheet implements OnInit {
   protected readonly outlook = computed<PeriodOutlookVm>(() => {
     const memberWords = this.wording.memberWords();
     return memberWords === null
-      ? { note: null, question: null }
+      ? { note: null, question: null, leftover: null }
       : periodOutlookVm({
           barber: this.uiBarber(),
           lastLocalDate: this.last(),
           today: this.uiToday(),
+          leftover: this.ahead.leftover(),
+          leftoverFailed: this.ahead.failed(),
           memberWords,
           locale: this.locale(),
         });
@@ -142,6 +154,15 @@ export class MemberPeriodSheet implements OnInit {
     const error = this.store.refusal();
     return error === null ? null : this.wording.refusalOf(error);
   });
+
+  constructor() {
+    // Each last day picked is asked about once: what it would leave behind.
+    effect(() => {
+      const barberId = this.uiBarber().id;
+      const last = this.last();
+      untracked(() => this.ahead.ask(barberId, last));
+    });
+  }
 
   /** The record as it stands when the sheet opens: read once. */
   ngOnInit(): void {

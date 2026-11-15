@@ -102,6 +102,17 @@
         {{ note }}
       </p>
       }
+      <!-- THE BOOKINGS THE LAST DAY LEAVES BEHIND: leaving cancels nothing,
+           so the owner is told how many stand after it. -->
+      @if (outlook().leftover; as leftover) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="member-period-leftover"
+      >
+        {{ leftover }}
+      </ui-notice>
+      }
     </div>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">

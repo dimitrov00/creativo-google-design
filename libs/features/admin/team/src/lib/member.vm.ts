@@ -132,6 +132,8 @@ export type MemberPageVm = {
   readonly levels: readonly LevelLinkVm[];
   /** «Върни в екипа» is offered: the record has left, and the viewer manages the team. */
   readonly returnable: boolean;
+  /** «След последния си ден Стефан още има 3 записа…»; `null` with none, or none read. */
+  readonly leftover: string | null;
   readonly deletable: boolean;
   readonly deleteTitle: string;
   readonly deleteActions: readonly DeleteActionVm[];

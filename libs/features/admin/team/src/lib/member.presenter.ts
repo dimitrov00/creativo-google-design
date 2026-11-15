@@ -1,6 +1,7 @@
 import {
   type BarberLifecycle,
   BarberStatus,
+  type LeftoverBookings,
   LocalizedText,
   RecordClaim,
   type StaffPermissions,
@@ -71,6 +72,8 @@ export type MemberPageInput = {
   readonly deletable: boolean;
   /** They may bring it back (`TeamSystem.returnable`, and they manage the team). */
   readonly returnable: boolean;
+  /** `EmploymentSystem.leftoverOf` after a leaver's last day; `null` when it was not read. */
+  readonly leftover: LeftoverBookings | null;
   /** `TeamRosterSystem.linksAccount` — «Свържи профил» is theirs to offer. */
   readonly linksAccount: boolean;
   /** `TeamRosterSystem.releasesAccount` — «Разкачи профила» is theirs to offer. */
@@ -293,6 +296,29 @@ function accountOf(input: MemberPageInput): MemberAccountVm | null {
   };
 }
 
+/** The bookings a leaver still holds: how many, and the day or the days they span. */
+function leftoverOf(input: MemberPageInput): string | null {
+  const { leftover, memberWords } = input;
+  if (leftover === null) return null;
+  const first = leftover.leftoverLocalDates[0];
+  const last =
+    leftover.leftoverLocalDates[leftover.leftoverLocalDates.length - 1];
+  if (first === undefined || last === undefined) return null;
+  const name = firstWord(nameOf(input));
+  const count = leftover.leftoverCount;
+  if (count === 1) {
+    return memberWords.departedLeftoverOne(name, dayOf(first, input));
+  }
+  return first === last
+    ? memberWords.departedLeftoverOnDay(name, count, dayOf(first, input))
+    : memberWords.departedLeftoverBetween(
+        name,
+        count,
+        dayOf(first, input),
+        dayOf(last, input),
+      );
+}
+
 /** The way to «Права» for each level the linked account holds. */
 function levelsOf(input: MemberPageInput): readonly LevelLinkVm[] {
   const { member } = input;
@@ -351,6 +377,7 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
     account: accountOf(input),
     levels: levelsOf(input),
     returnable: input.returnable,
+    leftover: leftoverOf(input),
     deletable: input.deletable,
     deleteTitle: memberWords.deleteTitle(name),
     deleteActions: [

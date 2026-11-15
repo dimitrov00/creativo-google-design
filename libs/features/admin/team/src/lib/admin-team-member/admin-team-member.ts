@@ -60,6 +60,7 @@ import {
 import { LinkAnswer } from '../link.vm';
 import { MemberLinkSheet } from '../member-link-sheet/member-link-sheet';
 import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
+import { BookingsAheadStore } from '../bookings-ahead.store';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
 import { MemberReturnSheet } from '../member-return-sheet/member-return-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
@@ -143,6 +144,7 @@ function hoursDesk(): HoursDesk {
   providers: [
     TeamRolesStore,
     TeamMemberStore,
+    BookingsAheadStore,
     { provide: HOURS_DESK, useFactory: hoursDesk },
   ],
   templateUrl: './admin-team-member.html',
@@ -153,6 +155,7 @@ function hoursDesk(): HoursDesk {
 })
 export class AdminTeamMember {
   protected readonly store = inject(TeamMemberStore);
+  private readonly ahead = inject(BookingsAheadStore);
   private readonly team = inject(TeamStore);
   private readonly access = inject(StaffAccessService);
   private readonly wording = inject(TeamWording);
@@ -241,6 +244,7 @@ export class AdminTeamMember {
       mayEditOfferings: this.store.mayEditOfferings(),
       deletable: this.store.deletable(),
       returnable: this.store.returnable(),
+      leftover: this.ahead.leftover(),
       linksAccount: this.store.linksAccount(),
       releasesAccount: this.store.releasesAccount(),
       editsPermissions: this.access.editsPermissions(),
@@ -277,6 +281,21 @@ export class AdminTeamMember {
       untracked(() =>
         this.store.open(parsed !== null && parsed.ok ? parsed.value : null),
       );
+    });
+    // A leaver may still hold bookings after their last day: whoever can
+    // bring them back is told so. Asked once per record and last day —
+    // never for a working record, whose bookings are on the schedule.
+    effect(() => {
+      const barber = this.store.barber();
+      const asks = this.store.returnable();
+      untracked(() => {
+        if (barber !== undefined) {
+          this.ahead.ask(
+            barber.id,
+            asks ? barber.barberLastWorkingLocalDate : null,
+          );
+        }
+      });
     });
   }
 

@@ -1154,10 +1154,39 @@ were.
 - The sheet opens on today, or on the day after the last day worked when
   that is later.
 
-**1b, still to build.** The leftover list on «Напускане» (bookings after
-the last day); the leftover lane on the schedule; the reminder cards; and
-the Team page's notices for a leaver whose access is not stopped yet and
-for an admin whose role has to be removed by hand.
+**1b, built so far: the bookings a last day leaves behind.** Whoever sets
+a last working day is told how many bookings stand after it, before they
+save, and a leaver's page keeps saying so until none is left.
+
+- Nothing is stored and nothing is cancelled. `listBookingsAhead` reads on
+  demand, in the browser: the barber's busy days after the last day (one
+  query on the projection's `(barberId, localDate)` index, at most 400
+  days), then each of those days' visits by `busyKeys array-contains`,
+  side by side. These are the reads the day sheet already makes, so there
+  is no new index.
+- `EmploymentSystem.leftoverOf` counts: live visits that seat this barber
+  after the day, each once, and the days they fall on
+  (`LeftoverBookings`). `keysAfter` picks the busy days worth reading (a
+  day with no block is skipped).
+- The period sheet asks on every last day drafted and shows one warning
+  line under what the day will do. A day still ahead reads «… Те остават в
+  графика, докато ги преместиш или откажеш.»; a day already passed, which
+  closes the record on save, reads «… Премести ги или ги откажи, преди да
+  запазиш.». Saving is never blocked.
+- The page of a barber who has left says how many are still there and
+  between which days, to whoever may bring them back. Nobody else's page
+  makes the read.
+- A read that fails says «Не успяхме да проверим дали има записи след тази
+  дата.», never that nothing is left.
+- Where this departs from D10 as written: the day query does not filter on
+  `bookingStatus`. The system keeps the live ones, so a booking awaiting
+  confirmation counts too, and no composite index is added.
+
+**1b, still to build.** The leftover lane on the schedule (a leaver's
+bookings are counted on their page, but their column is not drawn on those
+days yet); the reminder cards; and the Team page's notices for a leaver
+whose access is not stopped yet and for an admin whose role has to be
+removed by hand.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 

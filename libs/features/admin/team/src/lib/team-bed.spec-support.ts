@@ -24,6 +24,7 @@ import {
   type TeamMember,
 } from '@core/components';
 import type {
+  Appointment,
   Barber,
   BarberSchedule,
   Service,
@@ -32,6 +33,7 @@ import type {
 } from '@core/entities';
 import { MediaError, type PipelineError, RepositoryError } from '@core/errors';
 import type {
+  BarberAheadPorts,
   GatewayPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
@@ -42,13 +44,20 @@ import type {
 } from '@core/ports';
 import {
   AccessScope,
+  BarberBusyDayId,
   BarberId,
+  BusyKey,
+  type LocalDate,
   Result,
   type StaffCapability,
   UserId,
 } from '@core/primitives';
 import { StaffAccessSystem } from '@core/systems';
-import { FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE } from '@core/testing';
+import {
+  FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
+  barberBusyDayFixture,
+} from '@core/testing';
 import {
   AccountStateService,
   StaffAccessService,
@@ -59,6 +68,7 @@ import {
 } from '@creativo/features/shared/catalog';
 import {
   AUTH_DEPLOYMENT_PORTS,
+  BARBER_AHEAD_PORTS,
   CLOCK_PORTS,
   GATEWAY_PORTS,
   ID_PORTS,
@@ -111,6 +121,10 @@ export type TeamBedOptions = {
   readonly locations?: readonly ShopLocation[];
   /** What the accounts' index answers a lookup, whatever is asked. */
   readonly accounts?: readonly User[];
+  /** The visits the shop holds — what lies ahead of a barber is read from them. */
+  readonly visits?: readonly Appointment[];
+  /** The reads of what lies ahead of a barber fail. */
+  readonly aheadFails?: boolean;
 };
 
 /** The call a barber record's write made, by its port. */
@@ -127,6 +141,11 @@ export type RecordCalls = {
   readonly searched: string[];
   /** Every `setBarberPhoto` call, in order. */
   readonly photos: TeamCall.Photo[];
+  /** Every read of what lies ahead of a barber: whose, from which day on. */
+  readonly aheadAsked: {
+    readonly barberId: BarberId;
+    readonly fromLocalDate: LocalDate;
+  }[];
   /** Every picture staged, in order: whose folder, under which name, how many bytes of what. */
   readonly staged: {
     readonly userId: UserId;
@@ -185,6 +204,7 @@ export function teamBed(options: TeamBedOptions = {}) {
     dialled: [],
     searched: [],
     photos: [],
+    aheadAsked: [],
     staged: [],
   };
   let listAnswer: () => Result<TeamCall.Listed, PipelineError> = () =>
@@ -323,6 +343,41 @@ export function teamBed(options: TeamBedOptions = {}) {
       ),
   } as unknown as SchedulingReadPorts;
 
+  /**
+   * What lies ahead of a barber, over the bed's visits: a busy day for
+   * each day a visit seats them on, and that day's visits by its key.
+   */
+  const visits = options.visits ?? [];
+  const aheadFailure = RepositoryError.readFailed('appointments', 'denied');
+  const ahead: BarberAheadPorts = {
+    loadBusyDaysFrom: async (barberId, fromLocalDate) => {
+      calls.aheadAsked.push({ barberId, fromLocalDate });
+      if (options.aheadFails === true) return Result.err(aheadFailure);
+      const days = [
+        ...new Set(
+          visits
+            .filter(
+              (visit) =>
+                visit.barberIds.includes(barberId) &&
+                visit.localDate >= fromLocalDate,
+            )
+            .map((visit) => visit.localDate),
+        ),
+      ].sort();
+      return Result.ok(
+        days.map((localDate) =>
+          barberBusyDayFixture({
+            id: BarberBusyDayId.of(BusyKey.of(barberId, localDate)),
+            barberId,
+            localDate,
+          }),
+        ),
+      );
+    },
+    loadBarberDay: async (key) =>
+      Result.ok(visits.filter((visit) => visit.busyKeys.includes(key))),
+  };
+
   const providers: (Provider | EnvironmentProviders)[] = [
     provideRouter([]),
     ...provideTransloco({
@@ -339,6 +394,7 @@ export function teamBed(options: TeamBedOptions = {}) {
     { provide: GATEWAY_PORTS, useValue: gateway },
     { provide: SCHEDULING_READ_PORTS, useValue: scheduling },
     { provide: USER_SEARCH_PORTS, useValue: userSearch },
+    { provide: BARBER_AHEAD_PORTS, useValue: ahead },
     { provide: STAGED_UPLOAD_PORTS, useValue: staging },
     {
       provide: AUTH_DEPLOYMENT_PORTS,

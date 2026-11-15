@@ -21,6 +21,7 @@ export * from './accounts.adapter';
 export * from './appointment-notes.adapter';
 export * from './appointments.adapter';
 export * from './audit.adapter';
+export * from './barber-ahead.adapter';
 export * from './catalog.adapter';
 export * from './client-stats.adapter';
 export * from './coupons-vouchers.adapter';

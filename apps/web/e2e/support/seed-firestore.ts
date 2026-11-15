@@ -266,6 +266,19 @@ export async function seedUpcomingAppointment(
 }
 
 /**
+ * Removes a visit a spec seeded for itself (`appointments/{id}`) — for a
+ * case that books a record it ADDED, so no other spec's schedule, search
+ * or figures meet a visit of a barber who is gone. The busy projection
+ * follows by its trigger.
+ */
+export async function removeAppointment(id: string): Promise<void> {
+  await getFirestore(adminApp())
+    .collection(Collections.Appointments)
+    .doc(id)
+    .delete();
+}
+
+/**
  * Gives a seeded visit the contact the desk typed for it — the name and the
  * number a search reads (`contactName`, `contactPhone`; the seeded body
  * carries none), and the e-mail and note when given. Root fields, as every

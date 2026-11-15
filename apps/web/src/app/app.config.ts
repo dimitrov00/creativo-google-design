@@ -29,6 +29,7 @@ import {
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  BARBER_AHEAD_PORTS,
   BOOKING_DRAFT_PORTS,
   CATALOG_PORTS,
   CLIENT_ISSUE_REPORTER,
@@ -517,6 +518,21 @@ export const appConfig: ApplicationConfig = {
         observeBarbers: LazyMethod.Observable,
         observeCategories: LazyMethod.Observable,
         observeLocations: LazyMethod.Observable,
+      },
+      onLoadError: dataUnavailable,
+    }),
+    // What lies ahead of one barber (team onboarding D10): the days they
+    // are booked on and a day's visits, read once each — the bookings a
+    // last working day would leave behind.
+    provideLazyPort(BARBER_AHEAD_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.barberAheadPorts(
+          inj.get(FIREBASE_FIRESTORE),
+          m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
+        ),
+      methods: {
+        loadBusyDaysFrom: LazyMethod.Promise,
+        loadBarberDay: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),

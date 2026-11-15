@@ -37,6 +37,26 @@ export type MemberWords = {
   readonly leaveMessage: (name: string) => string;
   readonly leaveLabel: string;
   readonly leaveCancel: string;
+  /** «След 31.12 Николай има 3 записа. Те остават в графика…» — for one, for several. */
+  readonly leftover: (name: string, date: string, count: number) => string;
+  /** «След 14.11 Николай има 3 записа. Премести ги или ги откажи, преди да запазиш.» */
+  readonly leftoverNow: (name: string, date: string, count: number) => string;
+  readonly leftoverFailed: string;
+  /** «След последния си ден Стефан още има 1 запис, на 16.11.» */
+  readonly departedLeftoverOne: (name: string, date: string) => string;
+  /** «…още има 3 записа, на 16.11.» — several on one day. */
+  readonly departedLeftoverOnDay: (
+    name: string,
+    count: number,
+    date: string,
+  ) => string;
+  /** «…още има 3 записа, между 16.11 и 2.12.» */
+  readonly departedLeftoverBetween: (
+    name: string,
+    count: number,
+    from: string,
+    to: string,
+  ) => string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
   readonly mine: string;
@@ -101,6 +121,20 @@ export function memberWordsOf(translate: Translate): MemberWords {
       translate('admin.team.period.leaveMessage', { name }),
     leaveLabel: translate('admin.team.period.leaveLabel'),
     leaveCancel: translate('admin.team.link.cancel'),
+    leftover: (name, date, count) =>
+      count === 1
+        ? translate('admin.team.period.leftoverOne', { name, date })
+        : translate('admin.team.period.leftoverMany', { name, date, count }),
+    leftoverNow: (name, date, count) =>
+      count === 1
+        ? translate('admin.team.period.leftoverNowOne', { name, date })
+        : translate('admin.team.period.leftoverNowMany', { name, date, count }),
+    leftoverFailed: translate('admin.team.period.leftoverFailed'),
+    departedLeftoverOne: (name, date) => at('leftoverOne', { name, date }),
+    departedLeftoverOnDay: (name, count, date) =>
+      at('leftoverOnDay', { name, count, date }),
+    departedLeftoverBetween: (name, count, from, to) =>
+      at('leftoverBetween', { name, count, from, to }),
     bookedBy: new Map(
       BarberLifecycle.LIVE_STATUSES.map((status) => [
         status,
