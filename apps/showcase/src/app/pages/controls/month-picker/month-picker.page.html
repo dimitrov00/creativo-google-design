@@ -122,4 +122,47 @@
       </ui-stack>
     </ui-card>
   </sc-demo>
+  <sc-demo scTitle="A date as a row of a form">
+    <ng-container scAbout>
+      <code>ui-date-row</code> — the ONE way a form asks for a date: the row
+      says what the date is and which day it holds, and the month unfolds under
+      it, in the flow of the sheet. A period is two of them, one open at a time
+      (the analytics period, a barber's working period). The second row's month
+      dots the days that hold something, so an end is chosen against what it
+      cuts. The consumer formats the day and decides whether a pick folds the
+      month; when it does, the row takes the keyboard back.
+    </ng-container>
+    <ui-list-group class="month-picker__rows">
+      <ui-date-row
+        uiLabel="Начална дата"
+        uiTestId="sc-date-row-start"
+        uiLocale="bg"
+        uiPreviousLabel="Предишен месец"
+        uiNextLabel="Следващ месец"
+        [uiSelected]="periodStart()"
+        [uiValue]="dayWords(periodStart())"
+        [uiToday]="today"
+        [uiExpanded]="rowOpen() === 'start'"
+        (uiExpandedChange)="rowOpen.set($event ? 'start' : null)"
+        (uiPicked)="periodStart.set($event); rowOpen.set(null)"
+      />
+      <ui-date-row
+        uiLabel="Последен работен ден"
+        uiPlaceholder="Няма"
+        uiTestId="sc-date-row-last"
+        uiLocale="bg"
+        uiPreviousLabel="Предишен месец"
+        uiNextLabel="Следващ месец"
+        [uiSelected]="periodLast()"
+        [uiValue]="dayWords(periodLast())"
+        [uiToday]="today"
+        [uiMin]="periodStart()"
+        [uiOpensOn]="today"
+        [uiMarked]="marked"
+        [uiExpanded]="rowOpen() === 'last'"
+        (uiExpandedChange)="rowOpen.set($event ? 'last' : null)"
+        (uiPicked)="periodLast.set($event); rowOpen.set(null)"
+      />
+    </ui-list-group>
+  </sc-demo>
 </sc-page>

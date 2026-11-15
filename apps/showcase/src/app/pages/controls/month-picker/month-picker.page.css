@@ -25,3 +25,9 @@
   text-transform: uppercase;
   letter-spacing: var(--sys-tracking-caption);
 }
+
+/* The date rows keep a form's measure, so the month under a row is a
+   month and not seven dinner plates on a wide page. */
+.month-picker__rows {
+  max-inline-size: 24rem;
+}

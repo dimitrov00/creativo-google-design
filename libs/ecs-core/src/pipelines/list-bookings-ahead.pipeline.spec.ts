@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BookingLifecycle, LeftoverBookings } from '@core/components';
+import { BookingLifecycle } from '@core/components';
 import {
   AppointmentId,
   BarberId,
@@ -14,6 +14,7 @@ import {
   barberBusyDayFixture,
   FIXTURE_NOW_UTC_MS,
   localDate,
+  minute,
   unwrapErr,
   unwrapOk,
 } from '@core/testing';
@@ -22,8 +23,8 @@ import { listBookingsAhead } from './list-bookings-ahead.pipeline';
 /*
  * `listBookingsAhead` (team onboarding D10): the bookings a barber's last
  * working day would leave behind — the busy days after it in ONE read, a
- * day's visits for each day that holds a block, and the count the system
- * answers.
+ * day's visits for each day that holds a block, and the visits the system
+ * keeps, oldest first.
  */
 
 const IVAN = BarberId.of('ivan');
@@ -81,8 +82,12 @@ function rig(options: {
   };
 }
 
+/** The answered visits, by id. */
+const idsOf = (visits: readonly Appointment[]): readonly string[] =>
+  visits.map((visit) => visit.id);
+
 describe('listBookingsAhead', () => {
-  it('reads the busy days from the day AFTER the last day, then only the days that hold a block — and counts what is left', async () => {
+  it('reads the busy days from the day AFTER the last day, then only the days that hold a block — and answers what is left, oldest first', async () => {
     const { asked, read, run } = rig({
       busyDays: [
         busy('2026-11-15'),
@@ -92,16 +97,17 @@ describe('listBookingsAhead', () => {
       ],
       visits: [
         visit('a-last', '2026-11-15'),
-        visit('a-1', '2026-11-17'),
-        visit('a-2', '2026-11-17'),
         visit('a-3', '2026-12-02'),
+        visit('a-2', '2026-11-17', { startMinutes: minute(15 * 60) }),
+        visit('a-1', '2026-11-17', { startMinutes: minute(9 * 60) }),
       ],
     });
 
-    expect(unwrapOk(await run(IVAN, LAST))).toEqual({
-      leftoverCount: 3,
-      leftoverLocalDates: ['2026-11-17', '2026-12-02'],
-    });
+    expect(idsOf(unwrapOk(await run(IVAN, LAST)))).toEqual([
+      'a-1',
+      'a-2',
+      'a-3',
+    ]);
     expect(asked).toEqual([{ barberId: IVAN, from: '2026-11-16' }]);
     expect(read).toEqual([
       BusyKey.of(IVAN, localDate('2026-11-17')),
@@ -111,7 +117,7 @@ describe('listBookingsAhead', () => {
 
   it('answers nothing left for a barber booked on no later day — and reads no visit', async () => {
     const { read, run } = rig({ busyDays: [busy('2026-11-15')] });
-    expect(unwrapOk(await run(IVAN, LAST))).toEqual(LeftoverBookings.NONE);
+    expect(unwrapOk(await run(IVAN, LAST))).toEqual([]);
     expect(read).toEqual([]);
   });
 
@@ -124,7 +130,7 @@ describe('listBookingsAhead', () => {
         }),
       ],
     });
-    expect(unwrapOk(await run(IVAN, LAST))).toEqual(LeftoverBookings.NONE);
+    expect(unwrapOk(await run(IVAN, LAST))).toEqual([]);
   });
 
   it('a read that fails is the answer’s refusal — never «nothing is left»', async () => {

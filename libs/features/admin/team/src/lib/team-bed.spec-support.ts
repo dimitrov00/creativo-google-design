@@ -439,12 +439,16 @@ export function teamBed(options: TeamBedOptions = {}) {
           const barber = barbers().find((record) => record.id === barberId);
           return barber === undefined ? undefined : faceOf(barber);
         },
+        findTeamBarber: (barberId: BarberId) =>
+          barbers().find((record) => record.id === barberId),
       },
     },
     {
       provide: CatalogContentService,
       useValue: {
         allServices: services,
+        findAnyService: (serviceId: string) =>
+          services().find((service) => service.id === serviceId),
         locations,
         servicesKnown: signal(true),
       },

@@ -13,7 +13,7 @@ import { Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { BarberLifecycle } from '@core/components';
 import { BarberId, type LocationId } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { EmploymentSystem, ZonedTimeSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
 import {
@@ -61,6 +61,7 @@ import { LinkAnswer } from '../link.vm';
 import { MemberLinkSheet } from '../member-link-sheet/member-link-sheet';
 import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
 import { BookingsAheadStore } from '../bookings-ahead.store';
+import { LeftoverVisits } from '../leftover-visits/leftover-visits';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
 import { MemberReturnSheet } from '../member-return-sheet/member-return-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
@@ -108,6 +109,7 @@ function hoursDesk(): HoursDesk {
 @Component({
   selector: 'lib-admin-team-member',
   imports: [
+    LeftoverVisits,
     MemberLinkSheet,
     MemberOfferingsSheet,
     MemberPeriodSheet,
@@ -244,7 +246,7 @@ export class AdminTeamMember {
       mayEditOfferings: this.store.mayEditOfferings(),
       deletable: this.store.deletable(),
       returnable: this.store.returnable(),
-      leftover: this.ahead.leftover(),
+      leftover: this.leftover(),
       linksAccount: this.store.linksAccount(),
       releasesAccount: this.store.releasesAccount(),
       editsPermissions: this.access.editsPermissions(),
@@ -269,6 +271,22 @@ export class AdminTeamMember {
       : this.wording.refusalOf(error);
   });
 
+  /**
+   * The visits a leaver still holds, oldest first — everything read after
+   * their last day (`EmploymentSystem.leftoverVisitsOf`, in the pipeline).
+   */
+  protected readonly leftoverVisits = computed(() => this.ahead.visits() ?? []);
+
+  /** How many they are and the days they fall on; `null` until they are read. */
+  private readonly leftover = computed(() => {
+    const barber = this.store.barber();
+    const visits = this.ahead.visits();
+    const last = barber?.barberLastWorkingLocalDate ?? null;
+    return barber === undefined || visits === null || last === null
+      ? null
+      : EmploymentSystem.leftoverOf(visits, barber.id, last);
+  });
+
   constructor() {
     this.catalog.watchTeam();
     // The account beside the record is the Team list's row: read it again,
@@ -283,14 +301,14 @@ export class AdminTeamMember {
       );
     });
     // A leaver may still hold bookings after their last day: whoever can
-    // bring them back is told so. Asked once per record and last day —
+    // bring them back is shown them. Read once per record and last day —
     // never for a working record, whose bookings are on the schedule.
     effect(() => {
       const barber = this.store.barber();
       const asks = this.store.returnable();
       untracked(() => {
         if (barber !== undefined) {
-          this.ahead.ask(
+          this.ahead.watch(
             barber.id,
             asks ? barber.barberLastWorkingLocalDate : null,
           );

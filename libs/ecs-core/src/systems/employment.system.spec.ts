@@ -36,6 +36,7 @@ import {
   deepFreeze,
   FIXTURE_NOW_UTC_MS,
   localDate,
+  minute,
   registeredUserFixture,
   unwrapOk,
 } from '@core/testing';
@@ -341,6 +342,20 @@ describe('EmploymentSystem — the bookings a last day leaves behind', () => {
     );
   });
 
+  it('leftoverVisitsOf answers the visits themselves, each once, by day and then by start', () => {
+    const early = visit('a-early', '2026-11-17', { startMinutes: minute(540) });
+    const late = visit('a-late', '2026-11-17', { startMinutes: minute(900) });
+    const next = visit('a-next', '2026-12-02');
+    const left = EmploymentSystem.leftoverVisitsOf(
+      [next, late, early, late, visit('a-last', '2026-11-15')],
+      IVAN,
+      LAST,
+    );
+    expect(left).toEqual([early, late, next]);
+    // The entities as they were read: nothing copied, nothing re-shaped.
+    expect(left[0]).toBe(early);
+  });
+
   it('counts a visit the barber shares with a colleague once', () => {
     expect(
       EmploymentSystem.leftoverOf(
@@ -358,6 +373,9 @@ describe('EmploymentSystem — the bookings a last day leaves behind', () => {
     ]);
     expect(EmploymentSystem.leftoverOf(visits, IVAN, LAST)).toEqual(
       EmploymentSystem.leftoverOf(visits, IVAN, LAST),
+    );
+    expect(EmploymentSystem.leftoverVisitsOf(visits, IVAN, LAST)).toEqual(
+      EmploymentSystem.leftoverVisitsOf(visits, IVAN, LAST),
     );
     const days = deepFreeze([busy('2026-11-17')]);
     expect(EmploymentSystem.keysAfter(days, LAST)).toEqual(

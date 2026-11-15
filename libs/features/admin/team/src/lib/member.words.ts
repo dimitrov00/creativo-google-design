@@ -37,26 +37,17 @@ export type MemberWords = {
   readonly leaveMessage: (name: string) => string;
   readonly leaveLabel: string;
   readonly leaveCancel: string;
-  /** «След 31.12 Николай има 3 записа. Те остават в графика…» — for one, for several. */
-  readonly leftover: (name: string, date: string, count: number) => string;
-  /** «След 14.11 Николай има 3 записа. Премести ги или ги откажи, преди да запазиш.» */
-  readonly leftoverNow: (name: string, date: string, count: number) => string;
+  /** «Николай има 3 записа след 31.12» — the warning's title, for one and for several. */
+  readonly leftoverTitle: (name: string, date: string, count: number) => string;
+  /** «Остават в графика, докато ги преместиш или откажеш.» — a last day still ahead. */
+  readonly leftoverStays: (count: number) => string;
+  /** «Премести ги или ги откажи, преди да запазиш.» — a last day already passed. */
+  readonly leftoverNow: (count: number) => string;
   readonly leftoverFailed: string;
-  /** «След последния си ден Стефан още има 1 запис, на 16.11.» */
-  readonly departedLeftoverOne: (name: string, date: string) => string;
-  /** «…още има 3 записа, на 16.11.» — several on one day. */
-  readonly departedLeftoverOnDay: (
-    name: string,
-    count: number,
-    date: string,
-  ) => string;
-  /** «…още има 3 записа, между 16.11 и 2.12.» */
-  readonly departedLeftoverBetween: (
-    name: string,
-    count: number,
-    from: string,
-    to: string,
-  ) => string;
+  /** «Стефан още има 3 записа» — the title on the page of a barber who has left. */
+  readonly departedLeftoverTitle: (name: string, count: number) => string;
+  /** «След последния работен ден. Премести ги или ги откажи.» */
+  readonly departedLeftoverBody: (count: number) => string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
   readonly mine: string;
@@ -121,20 +112,33 @@ export function memberWordsOf(translate: Translate): MemberWords {
       translate('admin.team.period.leaveMessage', { name }),
     leaveLabel: translate('admin.team.period.leaveLabel'),
     leaveCancel: translate('admin.team.link.cancel'),
-    leftover: (name, date, count) =>
+    leftoverTitle: (name, date, count) =>
       count === 1
-        ? translate('admin.team.period.leftoverOne', { name, date })
-        : translate('admin.team.period.leftoverMany', { name, date, count }),
-    leftoverNow: (name, date, count) =>
-      count === 1
-        ? translate('admin.team.period.leftoverNowOne', { name, date })
-        : translate('admin.team.period.leftoverNowMany', { name, date, count }),
+        ? translate('admin.team.period.leftoverTitleOne', { name, date })
+        : translate('admin.team.period.leftoverTitleMany', {
+            name,
+            date,
+            count,
+          }),
+    leftoverStays: (count) =>
+      translate(
+        count === 1
+          ? 'admin.team.period.leftoverStaysOne'
+          : 'admin.team.period.leftoverStaysMany',
+      ),
+    leftoverNow: (count) =>
+      translate(
+        count === 1
+          ? 'admin.team.period.leftoverNowOne'
+          : 'admin.team.period.leftoverNowMany',
+      ),
     leftoverFailed: translate('admin.team.period.leftoverFailed'),
-    departedLeftoverOne: (name, date) => at('leftoverOne', { name, date }),
-    departedLeftoverOnDay: (name, count, date) =>
-      at('leftoverOnDay', { name, count, date }),
-    departedLeftoverBetween: (name, count, from, to) =>
-      at('leftoverBetween', { name, count, from, to }),
+    departedLeftoverTitle: (name, count) =>
+      count === 1
+        ? at('leftoverTitleOne', { name })
+        : at('leftoverTitleMany', { name, count }),
+    departedLeftoverBody: (count) =>
+      at(count === 1 ? 'leftoverBodyOne' : 'leftoverBodyMany'),
     bookedBy: new Map(
       BarberLifecycle.LIVE_STATUSES.map((status) => [
         status,

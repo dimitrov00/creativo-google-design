@@ -800,17 +800,37 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-period-sheet')).toBeVisible({
       timeout: 30_000,
     });
+    // The last day's row unfolds its month under it, on today's month,
+    // with the booked day dotted; yesterday may be a month back.
     await page.getByTestId('member-period-last').click();
-    await page.getByTestId(`ui-month-day-${yesterday}`).click();
+    const lastMonth = page.getByTestId('member-period-last-calendar');
+    if (bookedDay.slice(0, 7) === shopToday().slice(0, 7)) {
+      await expect(
+        lastMonth.getByTestId(`ui-month-day-${bookedDay}`),
+      ).toHaveAttribute('data-marked', '', { timeout: 30_000 });
+    }
+    if (yesterday.slice(0, 7) !== shopToday().slice(0, 7)) {
+      await lastMonth.getByTestId('ui-month-prev').click();
+    }
+    await lastMonth.getByTestId(`ui-month-day-${yesterday}`).click();
     await expect(page.getByTestId('member-period-note')).toContainText(
       'напуска екипа веднага',
       { timeout: 30_000 },
     );
-    // The booking after that day is said before anything is saved.
-    await expect(page.getByTestId('member-period-leftover')).toContainText(
-      'има 1 запис. Премести го или го откажи, преди да запазиш.',
-      { timeout: 30_000 },
+    // The booking after that day is said before anything is saved — a
+    // warning with its count, and the visit itself listed under it.
+    const leftover = page.getByTestId('member-period-leftover');
+    await expect(leftover).toContainText('има 1 запис след', {
+      timeout: 30_000,
+    });
+    await expect(leftover).toContainText(
+      'Премести го или го откажи, преди да запазиш.',
     );
+    await expect(
+      page
+        .getByTestId('member-period-sheet')
+        .locator(`[data-appointment-id="${bookedVisit}"]`),
+    ).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('member-period-save').click();
     await expect(
       page.getByTestId('member-period-leave-question'),
@@ -861,11 +881,15 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
       timeout: 30_000,
     });
-    // The leaver's page still says the booking they hold.
+    // The leaver's page still says the booking they hold, and lists it —
+    // as text: a barber who has left has no column on the schedule yet.
     await expect(page.getByTestId('member-leftover')).toContainText(
       'още има 1 запис',
       { timeout: 30_000 },
     );
+    await expect(page.getByTestId(`history-row-${bookedVisit}`)).toBeVisible({
+      timeout: 30_000,
+    });
     await page.getByTestId('member-return').click();
     await expect(page.getByTestId('member-return-sheet')).toBeVisible({
       timeout: 30_000,

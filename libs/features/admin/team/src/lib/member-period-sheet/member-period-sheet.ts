@@ -13,9 +13,9 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import type { Barber } from '@core/entities';
-import type { LocalDate } from '@core/primitives';
-import { TeamSystem } from '@core/systems';
-import { UiButton, UiModalSheet } from '@creativo/ui/controls';
+import { LocalDate } from '@core/primitives';
+import { EmploymentSystem, TeamSystem } from '@core/systems';
+import { UiButton, UiDateRow, UiModalSheet } from '@creativo/ui/controls';
 import {
   UiForegroundStyleDirective,
   UiTextDirective,
@@ -28,17 +28,23 @@ import {
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { BookingsAheadStore } from '../bookings-ahead.store';
+import { LeftoverVisits } from '../leftover-visits/leftover-visits';
 import { LinkAnswer } from '../link.vm';
 import { type PeriodOutlookVm, periodOutlookVm } from '../period.presenter';
-import { TeamDayMenu } from '../team-day-menu/team-day-menu';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
 import { dayWords } from '../team.format';
 
+/** Which of the two days' months is unfolded. */
+const PeriodDay = { Starts: 'STARTS', Last: 'LAST' } as const;
+type PeriodDay = (typeof PeriodDay)[keyof typeof PeriodDay];
+
 /**
  * «ПЕРИОД НА РАБОТА» — the day a barber starts and, when there is one, the
  * last day they work (team onboarding D2): outside the period nobody can
- * book them. Two days, each picked in the DS's month.
+ * book them. Two days, each a date row (`ui-date-row`) whose month unfolds
+ * under it, one at a time — the same rows the analytics period is picked
+ * with.
  *
  * A last day is the way someone leaves the team (team onboarding D10):
  * once it is behind the shop's today the record leaves, the linked account
@@ -47,23 +53,27 @@ import { dayWords } from '../team.format';
  * leave AT ONCE — a last day already passed — is held behind a question.
  *
  * Leaving cancels nothing: the bookings the barber holds after the last
- * day stay until someone moves or cancels them. The sheet asks how many
- * there are each time a last day is picked (`BookingsAheadStore`) and says
- * so under the days, before the save.
+ * day stay until someone moves or cancels them. The sheet reads the
+ * barber's visits ahead once (`BookingsAheadStore`): the last day's month
+ * dots the days they fall on, so the day is chosen against what it cuts,
+ * and once a last day is drafted its month folds and the visits after it
+ * are counted in a warning and listed under it (`lib-leftover-visits`),
+ * each the way to its day on the schedule, before the save.
  *
  * The sheet holds a draft and decides nothing: whether the two days make a
  * period is `TeamSystem.setPeriod`'s answer, the rule the server asks,
  * where the period stands today is `EmploymentSystem.outlookOf`'s, and
- * which bookings are left is `EmploymentSystem.leftoverOf`'s.
+ * which bookings are left is `EmploymentSystem.leftoverVisitsOf`'s.
  * Mounted while it is open, so every opening starts from the record.
  */
 @Component({
   selector: 'lib-member-period-sheet',
   imports: [
-    TeamDayMenu,
+    LeftoverVisits,
     TranslocoDirective,
     UiAlert,
     UiButton,
+    UiDateRow,
     UiForegroundStyleDirective,
     UiListGroup,
     UiListRow,
@@ -100,15 +110,32 @@ export class MemberPeriodSheet implements OnInit {
   protected readonly starts = signal<LocalDate | null>(null);
   protected readonly last = signal<LocalDate | null>(null);
 
+  protected readonly PeriodDay = PeriodDay;
+  /** The day whose month is unfolded; none when the sheet opens. */
+  protected readonly unfolded = signal<PeriodDay | null>(null);
+
+  /** The start day in words; `null` only before the sheet has read the record. */
   protected readonly startsWords = computed(() => {
     const day = this.starts();
-    return day === null ? '' : dayWords(day, this.uiToday(), this.locale());
+    return day === null ? null : dayWords(day, this.uiToday(), this.locale());
   });
 
   /** The last day in words; `null` when there is none. */
   protected readonly lastWords = computed(() => {
     const day = this.last();
     return day === null ? null : dayWords(day, this.uiToday(), this.locale());
+  });
+
+  /**
+   * The month the last day's row opens on while it holds no day: today's —
+   * someone leaves about now, not in the month they started — or the
+   * start's, for a period that begins later.
+   */
+  protected readonly lastOpensOn = computed(() => {
+    const today = this.uiToday();
+    const starts = this.starts();
+    if (today === null || starts === null) return today ?? starts;
+    return starts > today ? starts : today;
   });
 
   /** The two days make a period (`TeamSystem.setPeriod`). */
@@ -131,6 +158,39 @@ export class MemberPeriodSheet implements OnInit {
 
   protected readonly canSave = computed(() => this.valid() && this.changed());
 
+  /**
+   * The day the barber's visits are read AFTER: yesterday — everything
+   * from today on, whichever last day is drafted next — or the last day
+   * drafted when that is further back. `null` until the shop's today is
+   * known and no day is drafted.
+   */
+  private readonly watchedAfter = computed(() => {
+    const today = this.uiToday();
+    const last = this.last();
+    if (today === null) return last;
+    const yesterday = LocalDate.addDays(today, -1);
+    return last !== null && last < yesterday ? last : yesterday;
+  });
+
+  /** The days the barber is booked on, from the day watched: the month's dots. */
+  protected readonly bookedDays = computed(() => {
+    const visits = this.ahead.visits();
+    const after = this.watchedAfter();
+    return visits === null || after === null
+      ? []
+      : EmploymentSystem.leftoverOf(visits, this.uiBarber().id, after)
+          .leftoverLocalDates;
+  });
+
+  /** The visits after the last day drafted, oldest first; none with no day, or before they are read. */
+  private readonly left = computed(() => {
+    const visits = this.ahead.visits();
+    const last = this.last();
+    return visits === null || last === null
+      ? null
+      : EmploymentSystem.leftoverVisitsOf(visits, this.uiBarber().id, last);
+  });
+
   /** What the last day drafted will do, and the question a save may be held behind. */
   protected readonly outlook = computed<PeriodOutlookVm>(() => {
     const memberWords = this.wording.memberWords();
@@ -140,12 +200,29 @@ export class MemberPeriodSheet implements OnInit {
           barber: this.uiBarber(),
           lastLocalDate: this.last(),
           today: this.uiToday(),
-          leftover: this.ahead.leftover(),
+          leftover: this.leftover(),
           leftoverFailed: this.ahead.failed(),
           memberWords,
           locale: this.locale(),
         });
   });
+  /** How many visits the last day drafted leaves, and their days; `null` while unknown. */
+  private readonly leftover = computed(() => {
+    const left = this.left();
+    const last = this.last();
+    return left === null || last === null
+      ? null
+      : EmploymentSystem.leftoverOf(left, this.uiBarber().id, last);
+  });
+
+  /**
+   * The visits listed under the warning: the ones it counts — none while
+   * the period says nothing about them (a record with no period to end).
+   */
+  protected readonly leftoverVisits = computed(() =>
+    this.outlook().leftover?.title == null ? [] : (this.left() ?? []),
+  );
+
   /** The question before a save that makes the barber leave at once is up. */
   protected readonly questionOpen = signal(false);
 
@@ -156,11 +233,12 @@ export class MemberPeriodSheet implements OnInit {
   });
 
   constructor() {
-    // Each last day picked is asked about once: what it would leave behind.
+    // The barber's visits ahead are read once; a last day drafted further
+    // back than what is held reads again from there.
     effect(() => {
       const barberId = this.uiBarber().id;
-      const last = this.last();
-      untracked(() => this.ahead.ask(barberId, last));
+      const after = this.watchedAfter();
+      untracked(() => this.ahead.watch(barberId, after));
     });
   }
 
@@ -171,11 +249,32 @@ export class MemberPeriodSheet implements OnInit {
     this.last.set(barber.barberLastWorkingLocalDate);
   }
 
+  /** A row was pressed: its month unfolds and the other folds; pressed again, it folds. */
+  protected unfold(day: PeriodDay, expanded: boolean): void {
+    this.unfolded.set(expanded ? day : null);
+  }
+
+  /** The start is picked: its month folds, so the last day's row is next. */
+  protected pickStart(day: LocalDate): void {
+    this.starts.set(day);
+    this.unfolded.set(null);
+  }
+
+  /**
+   * The last day is picked: its month folds, so what the day will do — and
+   * the visits it leaves behind — is the next thing on the sheet, never
+   * under the fold of an open month.
+   */
+  protected pickLast(day: LocalDate): void {
+    this.last.set(day);
+    this.unfolded.set(null);
+  }
+
   /**
    * «Без последен ден»: the day goes, and so does this row — the keyboard
-   * moves to the last day's value, so the sheet still hears it.
+   * moves to the last day's row, so the sheet still hears it.
    */
-  protected clearLast(row: TeamDayMenu): void {
+  protected clearLast(row: UiDateRow): void {
     this.last.set(null);
     row.focus();
   }

@@ -4,7 +4,11 @@ import { deepFreeze, localDate } from '@core/testing';
 import { catalogueTranslate } from './catalogue.spec-support';
 import { LinkAnswer } from './link.vm';
 import { memberWordsOf } from './member.words';
-import { type PeriodOutlookInput, periodOutlookVm } from './period.presenter';
+import {
+  type PeriodOutlookInput,
+  type PeriodOutlookVm,
+  periodOutlookVm,
+} from './period.presenter';
 import { IVAN_RECORD, NIKOLAY_RECORD } from './team.fixtures.spec-support';
 
 /*
@@ -17,6 +21,13 @@ import { IVAN_RECORD, NIKOLAY_RECORD } from './team.fixtures.spec-support';
 const NBSP = ' ';
 const read = (line: string | null): string | null =>
   line === null ? null : line.replaceAll(NBSP, ' ');
+/** A warning as it reads: its title, then its line. */
+const said = (
+  notice: PeriodOutlookVm['leftover'],
+): { title: string | null; body: string | null } | null =>
+  notice === null
+    ? null
+    : { title: read(notice.title), body: read(notice.body) };
 
 const TODAY = localDate('2026-11-16');
 
@@ -103,9 +114,9 @@ describe('periodOutlookVm', () => {
     }
   });
 
-  it('says the bookings a last day ahead would leave behind — one, several — and that they stay on the schedule', () => {
+  it('counts the bookings a last day ahead would leave behind — one, several — as the warning’s title, and says under it that they stay on the schedule', () => {
     const ahead = (leftoverCount: number) =>
-      read(
+      said(
         periodOutlookVm(
           inputOf({
             lastLocalDate: localDate('2026-12-31'),
@@ -116,18 +127,20 @@ describe('periodOutlookVm', () => {
           }),
         ).leftover,
       );
-    expect(ahead(1)).toBe(
-      'След 31.12 Иван има 1 запис. Той остава в графика, докато го преместиш или откажеш.',
-    );
-    expect(ahead(3)).toBe(
-      'След 31.12 Иван има 3 записа. Те остават в графика, докато ги преместиш или откажеш.',
-    );
+    expect(ahead(1)).toEqual({
+      title: 'Иван има 1 запис след 31.12',
+      body: 'Остава в графика, докато го преместиш или откажеш.',
+    });
+    expect(ahead(3)).toEqual({
+      title: 'Иван има 3 записа след 31.12',
+      body: 'Остават в графика, докато ги преместиш или откажеш.',
+    });
     expect(ahead(0)).toBeNull();
   });
 
   it('for a last day already passed, says to move or cancel them before saving', () => {
     const passed = (leftoverCount: number) =>
-      read(
+      said(
         periodOutlookVm(
           inputOf({
             lastLocalDate: localDate('2026-11-15'),
@@ -138,15 +151,17 @@ describe('periodOutlookVm', () => {
           }),
         ).leftover,
       );
-    expect(passed(1)).toBe(
-      'След 15.11 Иван има 1 запис. Премести го или го откажи, преди да запазиш.',
-    );
-    expect(passed(2)).toBe(
-      'След 15.11 Иван има 2 записа. Премести ги или ги откажи, преди да запазиш.',
-    );
+    expect(passed(1)).toEqual({
+      title: 'Иван има 1 запис след 15.11',
+      body: 'Премести го или го откажи, преди да запазиш.',
+    });
+    expect(passed(2)).toEqual({
+      title: 'Иван има 2 записа след 15.11',
+      body: 'Премести ги или ги откажи, преди да запазиш.',
+    });
   });
 
-  it('says it could not check when the bookings cannot be read, and nothing while the answer is on its way', () => {
+  it('says it could not check when the bookings cannot be read — a line with no count — and nothing while the answer is on its way', () => {
     expect(
       periodOutlookVm(
         inputOf({
@@ -154,7 +169,10 @@ describe('periodOutlookVm', () => {
           leftoverFailed: true,
         }),
       ).leftover,
-    ).toBe('Не успяхме да проверим дали има записи след тази дата.');
+    ).toEqual({
+      title: null,
+      body: 'Не успяхме да проверим дали има записи след тази дата.',
+    });
     expect(
       periodOutlookVm(inputOf({ lastLocalDate: localDate('2026-12-31') }))
         .leftover,

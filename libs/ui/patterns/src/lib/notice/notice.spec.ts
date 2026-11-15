@@ -105,14 +105,33 @@ describe('UiNotice', () => {
     expect(notice.getAttribute('role')).toBe('alert');
   });
 
-  it('leads with the tone glyph as decoration, and draws none without one', () => {
-    const { fixture, notice } = render();
+  it('leads with the glyph the consumer names, as decoration', () => {
+    const { notice } = render();
     const glyph = notice.querySelector('ui-icon.ui-notice__glyph');
     expect(glyph?.getAttribute('data-name')).toBe('loyalty.freeze');
     expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  // One vocabulary: a warning and a refusal are never a wash alone.
+  it('gives a warning and a refusal their own mark when none is named, and a fact none', () => {
+    const { fixture, notice } = render();
+    const glyphName = () =>
+      notice
+        .querySelector('ui-icon.ui-notice__glyph')
+        ?.getAttribute('data-name') ?? null;
     fixture.componentInstance.icon.set(null);
     fixture.detectChanges();
-    expect(notice.querySelector('.ui-notice__glyph')).toBeNull();
+    expect(glyphName()).toBe('notice.warning');
+
+    fixture.componentInstance.tone.set('destructive');
+    fixture.detectChanges();
+    expect(glyphName()).toBe('notice.refusal');
+
+    for (const tone of ['neutral', 'accent'] as const) {
+      fixture.componentInstance.tone.set(tone);
+      fixture.detectChanges();
+      expect(glyphName()).toBeNull();
+    }
   });
 
   it('projects the title, the facts and the actions into their places', () => {

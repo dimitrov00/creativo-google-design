@@ -16,7 +16,7 @@ import type { Barber } from '@core/entities';
 import type { LocalDate } from '@core/primitives';
 import { TeamSystem } from '@core/systems';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
-import { UiButton, UiModalSheet } from '@creativo/ui/controls';
+import { UiButton, UiDateRow, UiModalSheet } from '@creativo/ui/controls';
 import {
   UiForegroundStyleDirective,
   UiTextDirective,
@@ -27,7 +27,6 @@ import {
   UiNotice,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
-import { TeamDayMenu } from '../team-day-menu/team-day-menu';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
 import { dayWords, firstWord } from '../team.format';
@@ -48,7 +47,7 @@ import { dayWords, firstWord } from '../team.format';
 @Component({
   selector: 'lib-member-return-sheet',
   imports: [
-    TeamDayMenu,
+    UiDateRow,
     TranslocoDirective,
     UiButton,
     UiForegroundStyleDirective,
@@ -91,9 +90,18 @@ export class MemberReturnSheet implements OnInit {
     TeamSystem.earliestReturn(this.uiBarber()),
   );
 
+  /** The start day's month is unfolded under its row. */
+  protected readonly startsOpen = signal(false);
+
+  /** A day is picked: the row holds it and its month folds. */
+  protected pickStart(day: LocalDate): void {
+    this.starts.set(day);
+    this.startsOpen.set(false);
+  }
+
   protected readonly startsWords = computed(() => {
     const day = this.starts();
-    return day === null ? '' : dayWords(day, this.uiToday(), this.locale());
+    return day === null ? null : dayWords(day, this.uiToday(), this.locale());
   });
 
   /** «Стефан се връща със същия профил, цени и работно време…» */

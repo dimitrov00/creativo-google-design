@@ -7,6 +7,7 @@ import type { Barber } from '@core/entities';
 import type { LocalDate, Locale } from '@core/primitives';
 import { EmploymentSystem } from '@core/systems';
 import { LinkAnswer, type LinkQuestionVm } from './link.vm';
+import type { LeftoverNoticeVm } from './member.vm';
 import type { MemberWords } from './member.words';
 import { dayWords, firstWord } from './team.format';
 
@@ -27,11 +28,11 @@ export type PeriodOutlookVm = {
   /** The question a save is held behind; `null` unless saving makes the barber leave at once. */
   readonly question: LinkQuestionVm | null;
   /**
-   * The bookings the last day would leave behind, or that they could not
-   * be read; `null` with none, while the answer is on its way, and for a
-   * record with no period to end.
+   * The bookings the last day would leave behind — how many, and what
+   * becomes of them — or that they could not be read; `null` with none,
+   * while the answer is on its way, and for a record with no period to end.
    */
-  readonly leftover: string | null;
+  readonly leftover: LeftoverNoticeVm | null;
 };
 
 /** What the period sheet's outlook is worded from. */
@@ -52,16 +53,23 @@ export type PeriodOutlookInput = {
 /** Nothing to say and nothing to ask. */
 const QUIET: PeriodOutlookVm = { note: null, question: null, leftover: null };
 
-/** The line about the bookings left: what they are for a day ahead, what to do for a day passed. */
+/** The warning about the bookings left: how many, then what becomes of them (a day ahead) or what to do (a day passed). */
 function leftoverOf(
   input: PeriodOutlookInput,
-  word: (name: string, date: string, count: number) => string,
+  body: (count: number) => string,
   name: string,
   date: string,
-): string | null {
-  if (input.leftoverFailed) return input.memberWords.leftoverFailed;
+): LeftoverNoticeVm | null {
+  if (input.leftoverFailed) {
+    return { title: null, body: input.memberWords.leftoverFailed };
+  }
   const count = input.leftover?.leftoverCount ?? 0;
-  return count === 0 ? null : word(name, date, count);
+  return count === 0
+    ? null
+    : {
+        title: input.memberWords.leftoverTitle(name, date, count),
+        body: body(count),
+      };
 }
 
 /** The period sheet's outlook: a quiet line for a day ahead, a line and a question for one behind. */
@@ -75,7 +83,7 @@ export function periodOutlookVm(input: PeriodOutlookInput): PeriodOutlookVm {
       return {
         note: memberWords.periodEnds(name, date),
         question: null,
-        leftover: leftoverOf(input, memberWords.leftover, name, date),
+        leftover: leftoverOf(input, memberWords.leftoverStays, name, date),
       };
     case EmploymentOutlook.Ended:
       return {

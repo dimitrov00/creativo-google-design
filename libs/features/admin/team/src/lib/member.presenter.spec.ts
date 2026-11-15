@@ -418,7 +418,7 @@ describe('memberPageVm — a record at work', () => {
     ).toBe(false);
   });
 
-  it('says the bookings a leaver still holds: one on its day, several on one day, several across days — and nothing with none', () => {
+  it('counts the bookings a leaver still holds as the warning’s title — one, several — with what to do under it, and says nothing with none', () => {
     const left = (leftoverCount: number, days: readonly string[]) =>
       memberPageVm(
         inputOf(STEFAN_RECORD, facts, {
@@ -428,15 +428,14 @@ describe('memberPageVm — a record at work', () => {
           },
         }),
       ).leftover;
-    expect(left(1, ['2026-10-02'])).toBe(
-      'След последния си ден Стефан още има 1 запис, на 2.10.',
-    );
-    expect(left(3, ['2026-10-02'])).toBe(
-      'След последния си ден Стефан още има 3 записа, на 2.10.',
-    );
-    expect(left(4, ['2026-10-02', '2026-10-05', '2026-10-20'])).toBe(
-      'След последния си ден Стефан още има 4 записа, между 2.10 и 20.10.',
-    );
+    expect(left(1, ['2026-10-02'])).toEqual({
+      title: 'Стефан още има 1 запис',
+      body: 'След последния работен ден. Премести го или го откажи.',
+    });
+    expect(left(4, ['2026-10-02', '2026-10-05', '2026-10-20'])).toEqual({
+      title: 'Стефан още има 4 записа',
+      body: 'След последния работен ден. Премести ги или ги откажи.',
+    });
     expect(memberPageVm(inputOf(STEFAN_RECORD, facts)).leftover).toBeNull();
     expect(
       memberPageVm(

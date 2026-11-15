@@ -40,23 +40,21 @@
       }
 
       <ui-list-group>
-        <ui-list-row uiSize="regular" class="team-page__permission">
-          <span>{{ t('admin.team.period.start') }}</span>
-          <lib-team-day-menu
-            uiTrailing
-            uiTestId="member-return-start"
-            [uiDay]="starts()"
-            [uiValue]="startsWords()"
-            [uiLabel]="t('admin.team.period.start')"
-            [uiToday]="uiToday()"
-            [uiMin]="earliest()"
-            [uiLocale]="locale()"
-            [uiPreviousLabel]="t('admin.team.period.previousMonth')"
-            [uiNextLabel]="t('admin.team.period.nextMonth')"
-            [uiDisabled]="store.pending()"
-            (uiPicked)="starts.set($event)"
-          />
-        </ui-list-row>
+        <!-- The new start day: the app's date row, its month under it. -->
+        <ui-date-row
+          uiTestId="member-return-start"
+          [uiLabel]="t('admin.team.period.start')"
+          [uiSelected]="starts()"
+          [uiValue]="startsWords()"
+          [uiToday]="uiToday()"
+          [uiMin]="earliest()"
+          [uiLocale]="locale()"
+          [uiPreviousLabel]="t('admin.team.period.previousMonth')"
+          [uiNextLabel]="t('admin.team.period.nextMonth')"
+          [uiDisabled]="store.pending()"
+          [(uiExpanded)]="startsOpen"
+          (uiPicked)="pickStart($event)"
+        />
       </ui-list-group>
 
       <!-- The account does not come back by itself: said before the save. -->

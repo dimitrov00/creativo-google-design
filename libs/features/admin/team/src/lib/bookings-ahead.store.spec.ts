@@ -12,9 +12,10 @@ import { BookingsAheadStore } from './bookings-ahead.store';
 import { teamBed } from './team-bed.spec-support';
 
 /*
- * `BookingsAheadStore` — the bookings a last day would leave behind, asked
- * once per day picked: the answer in force, a failure said as one, and a
- * late answer never replacing a newer day's.
+ * `BookingsAheadStore` — the visits a barber has ahead, read once and
+ * kept: a later day is covered by what was read, an earlier one reads
+ * again, a failure is said as one, and a late answer never replaces a
+ * newer ask's.
  */
 
 const IVAN = BarberId.of('ivan');
@@ -37,53 +38,94 @@ function harness(options: Parameters<typeof teamBed>[0] = {}) {
   return { ...bed, store: TestBed.inject(BookingsAheadStore) };
 }
 
+/** The held visits, by id. */
+const idsOf = (store: BookingsAheadStore): readonly string[] | null =>
+  store.visits()?.map((entry) => entry.id) ?? null;
+
 describe('BookingsAheadStore', () => {
-  it('asks for the days after the one picked, and holds what they leave behind', async () => {
+  it('reads the visits after the day watched, and holds them oldest first', async () => {
     const { store, calls } = harness({
       visits: [
-        visit('a-1', '2026-11-17'),
         visit('a-2', '2026-12-02'),
+        visit('a-1', '2026-11-17'),
         visit('a-last', '2026-11-15'),
       ],
     });
-    expect(store.leftover()).toBeNull();
+    expect(store.visits()).toBeNull();
 
-    store.ask(IVAN, localDate('2026-11-15'));
+    store.watch(IVAN, localDate('2026-11-15'));
     // On its way: nothing is said yet.
-    expect(store.leftover()).toBeNull();
+    expect(store.visits()).toBeNull();
     await settled();
 
-    expect(store.leftover()).toEqual({
-      leftoverCount: 2,
-      leftoverLocalDates: ['2026-11-17', '2026-12-02'],
-    });
+    expect(idsOf(store)).toEqual(['a-1', 'a-2']);
     expect(store.failed()).toBe(false);
     expect(calls.aheadAsked).toEqual([
       { barberId: IVAN, fromLocalDate: '2026-11-16' },
     ]);
   });
 
-  it('asking nothing forgets the last answer and reads nothing', async () => {
+  it('a later day is covered by what is held: nothing is read again, and the answer stays', async () => {
     const { store, calls } = harness({ visits: [visit('a-1', '2026-11-17')] });
-    store.ask(IVAN, localDate('2026-11-15'));
+    store.watch(IVAN, localDate('2026-11-15'));
     await settled();
-    store.ask(IVAN, null);
+    const held = store.visits();
+
+    store.watch(IVAN, localDate('2026-11-15'));
+    store.watch(IVAN, localDate('2026-11-30'));
     await settled();
 
-    expect(store.leftover()).toBeNull();
+    expect(store.visits()).toBe(held);
     expect(calls.aheadAsked).toHaveLength(1);
   });
 
-  it('says a read that failed as a failure — never as «nothing is left»', async () => {
-    const { store } = harness({ aheadFails: true });
-    store.ask(IVAN, localDate('2026-11-15'));
+  it('an earlier day — or another barber — reads again from there', async () => {
+    const { store, calls } = harness({
+      visits: [visit('a-0', '2026-11-12'), visit('a-1', '2026-11-17')],
+    });
+    store.watch(IVAN, localDate('2026-11-15'));
+    await settled();
+    expect(idsOf(store)).toEqual(['a-1']);
+
+    store.watch(IVAN, localDate('2026-11-10'));
+    await settled();
+    expect(idsOf(store)).toEqual(['a-0', 'a-1']);
+
+    store.watch(BarberId.of('niko'), localDate('2026-11-20'));
+    await settled();
+    expect(idsOf(store)).toEqual([]);
+    expect(calls.aheadAsked.map((ask) => ask.fromLocalDate)).toEqual([
+      '2026-11-16',
+      '2026-11-11',
+      '2026-11-21',
+    ]);
+  });
+
+  it('watching nothing forgets the last answer and reads nothing', async () => {
+    const { store, calls } = harness({ visits: [visit('a-1', '2026-11-17')] });
+    store.watch(IVAN, localDate('2026-11-15'));
+    await settled();
+    store.watch(IVAN, null);
+    await settled();
+
+    expect(store.visits()).toBeNull();
+    expect(calls.aheadAsked).toHaveLength(1);
+  });
+
+  it('says a read that failed as a failure — never as «nothing is left» — and reads again when asked again', async () => {
+    const { store, calls } = harness({ aheadFails: true });
+    store.watch(IVAN, localDate('2026-11-15'));
     await settled();
 
     expect(store.failed()).toBe(true);
-    expect(store.leftover()).toBeNull();
+    expect(store.visits()).toBeNull();
+
+    store.watch(IVAN, localDate('2026-11-20'));
+    await settled();
+    expect(calls.aheadAsked).toHaveLength(2);
   });
 
-  it('an answer that comes back late never replaces a newer day’s', async () => {
+  it('an answer that comes back late never replaces a newer ask’s', async () => {
     /** Each busy-day read, held until the spec lets it answer. */
     const pending: { from: LocalDate; answer: () => void }[] = [];
     const slow: BarberAheadPorts = {
@@ -106,16 +148,16 @@ describe('BookingsAheadStore', () => {
     });
     const store = TestBed.inject(BookingsAheadStore);
 
-    store.ask(IVAN, localDate('2026-11-15'));
-    store.ask(IVAN, localDate('2026-12-31'));
-    // The newer day answers first, then the older one lands late.
+    store.watch(IVAN, localDate('2026-11-15'));
+    // An earlier day: a second read, which answers first.
+    store.watch(IVAN, localDate('2026-11-01'));
     pending.at(1)?.answer();
     await settled();
-    const newer = store.leftover();
+    const newer = store.visits();
     pending.at(0)?.answer();
     await settled();
 
-    expect(newer).toEqual({ leftoverCount: 0, leftoverLocalDates: [] });
-    expect(store.leftover()).toBe(newer);
+    expect(newer).toEqual([]);
+    expect(store.visits()).toBe(newer);
   });
 });

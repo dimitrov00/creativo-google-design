@@ -11,18 +11,15 @@ import { LocalDate } from '@core/primitives';
 import {
   UiButton,
   type UiDateFieldParts,
-  UiIcon,
+  UiDateRow,
   UiModalSheet,
-  UiMonthPicker,
 } from '@creativo/ui/controls';
 import {
   UiForegroundStyleDirective,
-  UiInteractiveDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import {
   UiListGroup,
-  UiListRow,
   UiSheetActionBar,
   UiSheetHeadline,
 } from '@creativo/ui/patterns';
@@ -38,8 +35,8 @@ type RangeEnd = 'from' | 'to';
  * THE CUSTOM PERIOD SHEET (staff-analytics-v3, «The custom period sheet»;
  * Revolut's «Select custom period»): a modal sheet with two collapsible
  * rows, «От» and «До», each showing its date; tapping one unfolds an inline
- * month calendar (`ui-month-picker`, from the reach's first day) under it,
- * one open at a time — picking «От» moves on to «До». «Приложи» in the
+ * month calendar under it (`ui-date-row`, the app's one date row, from the
+ * reach's first day), one open at a time — picking «От» moves on to «До». «Приложи» in the
  * sheet's action row applies the range. It decides nothing: the store runs
  * `AnalyticsPeriod.of(Custom, from, to)` and `isWithinRange` over the two
  * days and this sheet prints the presenter's wording of that verdict
@@ -50,13 +47,10 @@ type RangeEnd = 'from' | 'to';
   selector: 'lib-analytics-range-sheet',
   imports: [
     UiButton,
+    UiDateRow,
     UiForegroundStyleDirective,
-    UiIcon,
-    UiInteractiveDirective,
     UiListGroup,
-    UiListRow,
     UiModalSheet,
-    UiMonthPicker,
     UiSheetActionBar,
     UiSheetHeadline,
     UiTextDirective,
@@ -96,8 +90,9 @@ export class AnalyticsRangeSheet {
     });
   }
 
-  protected toggle(end: RangeEnd): void {
-    this.unfolded.update((open) => (open === end ? null : end));
+  /** A row was pressed: its month unfolds and the other folds; pressed again, it folds. */
+  protected unfold(end: RangeEnd, expanded: boolean): void {
+    this.unfolded.set(expanded ? end : null);
   }
 
   protected pick(end: RangeEnd, day: LocalDate): void {

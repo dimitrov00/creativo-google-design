@@ -17,6 +17,7 @@ import { releaseQuestionVm } from './link-question.presenter';
 import type { LinkWords } from './link.words';
 import {
   DeleteAnswer,
+  type LeftoverNoticeVm,
   type LevelLinkVm,
   type MemberAccountVm,
   MemberEditor,
@@ -296,27 +297,19 @@ function accountOf(input: MemberPageInput): MemberAccountVm | null {
   };
 }
 
-/** The bookings a leaver still holds: how many, and the day or the days they span. */
-function leftoverOf(input: MemberPageInput): string | null {
+/** The bookings a leaver still holds: how many, and what to do — the days are the list's, beside it. */
+function leftoverOf(input: MemberPageInput): LeftoverNoticeVm | null {
   const { leftover, memberWords } = input;
-  if (leftover === null) return null;
-  const first = leftover.leftoverLocalDates[0];
-  const last =
-    leftover.leftoverLocalDates[leftover.leftoverLocalDates.length - 1];
-  if (first === undefined || last === undefined) return null;
-  const name = firstWord(nameOf(input));
-  const count = leftover.leftoverCount;
-  if (count === 1) {
-    return memberWords.departedLeftoverOne(name, dayOf(first, input));
-  }
-  return first === last
-    ? memberWords.departedLeftoverOnDay(name, count, dayOf(first, input))
-    : memberWords.departedLeftoverBetween(
-        name,
-        count,
-        dayOf(first, input),
-        dayOf(last, input),
-      );
+  const count = leftover?.leftoverCount ?? 0;
+  return count === 0
+    ? null
+    : {
+        title: memberWords.departedLeftoverTitle(
+          firstWord(nameOf(input)),
+          count,
+        ),
+        body: memberWords.departedLeftoverBody(count),
+      };
 }
 
 /** The way to «Права» for each level the linked account holds. */
