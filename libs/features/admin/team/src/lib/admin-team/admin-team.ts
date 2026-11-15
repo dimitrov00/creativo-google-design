@@ -8,9 +8,9 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { StaffPermissions } from '@core/components';
+import { Role, StaffPermissions } from '@core/components';
 import { AccessScope, type BarberId, StaffCapability } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { RoleAssignmentSystem, ZonedTimeSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
 import {
@@ -30,15 +30,23 @@ import {
 import {
   UiListGroup,
   UiListRow,
+  UiMenu,
+  UiMenuItem,
+  UiMenuTrigger,
   UiNotice,
   UiSectionHeader,
   UiSheetHeader,
 } from '@creativo/ui/patterns';
 import { TeamAddSheet } from '../team-add-sheet/team-add-sheet';
+import {
+  type TeamRoleAdded,
+  TeamRoleSheet,
+} from '../team-role-sheet/team-role-sheet';
+import { TeamRolesStore } from '../team-roles.store';
 import { TeamWording } from '../team-wording.service';
-import { teamPageVm } from '../team.presenter';
+import { teamAddMenuVm, teamPageVm } from '../team.presenter';
 import { TeamStore } from '../team.store';
-import type { TeamPageVm } from '../team.vm';
+import type { TeamAddOptionVm, TeamPageVm } from '../team.vm';
 
 /**
  * «ЕКИП» — the Team page (team onboarding D8; staff permissions P10): one
@@ -47,15 +55,18 @@ import type { TeamPageVm } from '../team.vm';
  * whoever edits every barber's profile or prices sees the records alone.
  * The owner also finds the way to «Права» here.
  *
- * A barber record's row leads to its page; whoever manages the team adds
- * someone from the bar's ＋. An account with no record is read here: its
- * roles are the client card's to change.
+ * A row leads to the person's page: a barber record's, or a staff
+ * account's. The bar's ＋ adds someone: a barber record for whoever manages
+ * the team, and a role for a registered account — the front desk, a
+ * content editor, an admin — for the owner. With more than one thing to
+ * add it is a menu; with one, the press is the act.
  */
 @Component({
   selector: 'lib-admin-team',
   imports: [
     RouterLink,
     TeamAddSheet,
+    TeamRoleSheet,
     TranslocoDirective,
     UiAvatar,
     UiButton,
@@ -64,6 +75,9 @@ import type { TeamPageVm } from '../team.vm';
     UiIcon,
     UiListGroup,
     UiListRow,
+    UiMenu,
+    UiMenuItem,
+    UiMenuTrigger,
     UiNotice,
     UiPaddingDirective,
     UiSectionHeader,
@@ -72,6 +86,8 @@ import type { TeamPageVm } from '../team.vm';
     UiStack,
     UiTextDirective,
   ],
+  // A role given from the ＋ is this page's one roles call at a time.
+  providers: [TeamRolesStore],
   templateUrl: './admin-team.html',
   styleUrl: '../team-pages.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -80,6 +96,7 @@ import type { TeamPageVm } from '../team.vm';
 })
 export class AdminTeam {
   protected readonly store = inject(TeamStore);
+  protected readonly roles = inject(TeamRolesStore);
   private readonly access = inject(StaffAccessService);
   private readonly wording = inject(TeamWording);
   private readonly catalog = inject(TeamCatalogService);
@@ -101,6 +118,34 @@ export class AdminTeam {
   protected readonly managesTeam = computed(
     () => this.access.scopeOf(StaffCapability.TeamManage) !== AccessScope.None,
   );
+
+  /** What the ＋ adds for the person looking, as the menu prints it; nothing hides the ＋. */
+  protected readonly addOptions = computed<readonly TeamAddOptionVm[]>(() => {
+    const words = this.wording.words();
+    return words === null
+      ? []
+      : teamAddMenuVm(
+          RoleAssignmentSystem.teamAddOffersOf({
+            addsRecords: this.managesTeam(),
+            assignsRoles: this.access.editsPermissions(),
+          }),
+          words,
+        );
+  });
+  /** The one thing the ＋ adds, when it adds only one: the press is the act. */
+  protected readonly soleAdd = computed<TeamAddOptionVm | null>(() => {
+    const options = this.addOptions();
+    return options.length === 1 ? (options.at(0) ?? null) : null;
+  });
+  /** The ＋'s menu is up. */
+  protected readonly addMenuOpen = signal(false);
+
+  /** The role being given to an account: its sheet is up. */
+  protected readonly roleAdd = signal<Role | null>(null);
+  /** That sheet is leaving: its close animation runs. */
+  protected readonly roleClosing = signal(false);
+  /** Whose roles the sheet changed: their page opens once the sheet has left. */
+  private roleAdded: TeamRoleAdded | null = null;
 
   /** The add sheet is up. */
   protected readonly addOpen = signal(false);
@@ -167,10 +212,55 @@ export class AdminTeam {
     void this.store.load();
   }
 
+  /** One of the ＋'s options: a barber is a new record, any other role is given to an account. */
+  protected startAdd(option: TeamAddOptionVm): void {
+    this.addMenuOpen.set(false);
+    if (option.role === Role.Barber) {
+      this.openAdd();
+      return;
+    }
+    this.roleAdded = null;
+    this.roleClosing.set(false);
+    this.roleAdd.set(option.role);
+  }
+
   protected openAdd(): void {
     this.addedId = null;
     this.addClosing.set(false);
     this.addOpen.set(true);
+  }
+
+  /** ✕, Escape, the scrim: the role sheet leaves. */
+  protected closeRole(): void {
+    if (this.roleAdd() !== null) this.roleClosing.set(true);
+  }
+
+  /**
+   * The role was given: the sheet leaves, then the person's page opens —
+   * unless their sessions were not ended, which this page says and retries.
+   */
+  protected onRoleAdded(added: TeamRoleAdded): void {
+    this.roleAdded = this.roles.sessionsPending() ? null : added;
+    this.closeRole();
+  }
+
+  protected finishRole(): void {
+    if (!this.roleClosing()) return;
+    this.roleAdd.set(null);
+    this.roleClosing.set(false);
+    const added = this.roleAdded;
+    this.roleAdded = null;
+    if (added === null) return;
+    void this.router.navigate(
+      added.barberId === null
+        ? ['/admin/team/account', added.userId]
+        : ['/admin/team/member', added.barberId],
+    );
+  }
+
+  /** «Опитай пак» after a role that landed without ending that person's sessions. */
+  protected endSessions(): void {
+    void this.roles.endSessions();
   }
 
   /** ✕, Escape, the scrim: the sheet leaves. */

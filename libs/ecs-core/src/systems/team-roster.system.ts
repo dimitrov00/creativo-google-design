@@ -3,6 +3,7 @@ import {
   BarberStatus,
   RecordClaim,
   Role,
+  Roles,
   type StaffLevel,
   type TeamMember,
   TeamMemberNote,
@@ -85,6 +86,11 @@ function standingFor(
   return member.memberAccountName.length === 0
     ? AccountStanding.Unregistered
     : AccountStanding.Editable;
+}
+
+/** A barber record somebody signs in as: its account is there, with its name. */
+function isLinked(member: TeamMember.OfBarber): member is TeamMember.Linked {
+  return member.memberUserId !== null && member.memberAccountName !== null;
 }
 
 /**
@@ -312,6 +318,52 @@ export const TeamRosterSystem = {
       }
     }
     return unlinked;
+  },
+
+  /**
+   * The members of the team `role` may be given to without a lookup, in
+   * the members' order («Добави в екипа»): the ones with an account whose
+   * roles someone who assigns roles could change — registered, no
+   * `sysadmin`, not the viewer's own — that does not hold the role yet
+   * and assigns no roles itself (`Roles.assignsRoles`): an admin already
+   * does everything a role gives. A barber somebody signs in as is one of
+   * them, unless the record has left; a staff account with no record is
+   * another. The rows themselves, never copies. Which roles the ＋ gives at
+   * all is `RoleAssignmentSystem.TEAM_ADDITIONS`' to say.
+   */
+  additionCandidatesOf(
+    members: readonly TeamMember[],
+    role: Role,
+    viewerUserId: UserId | null,
+  ): readonly TeamMember.WithAccount[] {
+    const candidates: TeamMember.WithAccount[] = [];
+    if (viewerUserId === null) return candidates;
+    for (const member of members) {
+      if (
+        member.memberRoles.includes(role) ||
+        Roles.assignsRoles(member.memberRoles)
+      ) {
+        continue;
+      }
+      if (member.teamMemberStatus === TeamMemberStatus.RoleOnly) {
+        if (
+          standingFor(member, viewerUserId, true) === AccountStanding.Editable
+        ) {
+          candidates.push(member);
+        }
+        continue;
+      }
+      if (
+        member.teamMemberStatus !== TeamMemberStatus.Departed &&
+        isLinked(member) &&
+        member.memberUserId !== viewerUserId &&
+        member.memberAccountName.length > 0 &&
+        !member.memberRoles.includes(Role.Sysadmin)
+      ) {
+        candidates.push(member);
+      }
+    }
+    return candidates;
   },
 
   /** The row of the staff account `userId`, or `null` when the answer holds none. */

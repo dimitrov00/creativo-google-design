@@ -1,10 +1,10 @@
-import { LocalizedText, type Role, type TeamMember } from '@core/components';
-import { type Barber, Profile, type User } from '@core/entities';
+import { LocalizedText, type TeamMember } from '@core/components';
+import type { Barber, User } from '@core/entities';
 import type { Locale } from '@core/primitives';
-import { PhoneSystem } from '@core/systems';
-import type { LinkRowVm, LinkVm } from './link.vm';
+import { foundAccountRow, teamAccountRow } from './account-row.presenter';
+import type { LinkVm } from './link.vm';
 import type { LinkWords } from './link.words';
-import { firstWord, lineOf } from './team.format';
+import { firstWord } from './team.format';
 import type { TeamWords } from './team.words';
 
 /*
@@ -15,9 +15,10 @@ import type { TeamWords } from './team.words';
  * handed in; which of the two is on show is the sheet's own state (a
  * lookup is in force, or not).
  *
- * It words a phone, so it carries the phone rules: only the sheet, which
- * loads when it is first asked for, imports this file. The questions the
- * member's page asks are in `link-question.presenter.ts`.
+ * Its rows word a phone (`account-row.presenter.ts`), so it carries the
+ * phone rules: only the sheet, which loads when it is first asked for,
+ * imports this file. The questions the member's page asks are in
+ * `link-question.presenter.ts`.
  */
 
 /** What «Свържи профил» is worded from. */
@@ -38,52 +39,17 @@ export type LinkInput = {
   readonly locale: Locale;
 };
 
-/** «Рецепция, Съдържание» — the staff roles a row may name, in its order. */
-function rolesLine(roles: readonly Role[], words: TeamWords): string {
-  const named: string[] = [];
-  for (const [role, word] of words.roles) {
-    if (roles.includes(role)) named.push(word);
-  }
-  return named.join(', ');
-}
-
-/** A quiet line of the facts that are there; `null` for none. */
-function factsLine(facts: readonly string[]): string | null {
-  const said = facts.filter((fact) => fact.length > 0);
-  return said.length === 0 ? null : lineOf(said);
-}
-
-/** An account a lookup found: its name, the contact it is told apart by, its staff roles. */
-function foundRow(account: User, input: LinkInput): LinkRowVm {
-  const contact =
-    account.phone === null
-      ? (account.email ?? '')
-      : PhoneSystem.formatInternational(account.phone);
-  return {
-    userId: account.id,
-    name: Profile.fullName(account),
-    line: factsLine([contact, rolesLine(account.roles, input.words)]),
-    testId: `member-link-${account.id}`,
-  };
-}
-
-/** One of the team's own accounts: its name and its roles — the Team list holds no contact. */
-function teamRow(member: TeamMember.RoleOnly, input: LinkInput): LinkRowVm {
-  return {
-    userId: member.memberUserId,
-    name: member.memberAccountName,
-    line: factsLine([rolesLine(member.memberRoles, input.words)]),
-    testId: `member-link-${member.memberUserId}`,
-  };
-}
+/** The rows' test ids: `member-link-<uid>`. */
+const ROW = 'member-link';
 
 /** «Свържи профил»: the lookup's answer while one is in force, else the team's own accounts. */
 export function linkVm(input: LinkInput): LinkVm {
   const { linkWords } = input;
   const name = firstWord(LocalizedText.pick(input.barber.name, input.locale));
+  const named = input.words.roles;
   const rows = input.asked
-    ? input.found.map((account) => foundRow(account, input))
-    : input.unlinked.map((member) => teamRow(member, input));
+    ? input.found.map((account) => foundAccountRow(account, named, ROW))
+    : input.unlinked.map((member) => teamAccountRow(member, named, ROW));
   // Nothing to show, and no answer still on its way.
   const empty = rows.length === 0 && !(input.asked && input.searching);
   const foundNone = empty && input.asked && !input.failed;

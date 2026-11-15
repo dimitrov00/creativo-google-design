@@ -1,3 +1,4 @@
+import type { Role } from '@core/components';
 import type { LocalDate, Locale } from '@core/primitives';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 
@@ -31,6 +32,28 @@ export function dayWords(
     month: 'short',
     ...(sameYear ? {} : { year: 'numeric' }),
   });
+}
+
+/**
+ * «Администратор, Рецепция» — the roles a line may name, in the order the
+ * words table names them (`TeamWords.roles`); a role with no word there is
+ * not said.
+ */
+export function rolesLine(
+  roles: readonly Role[],
+  named: ReadonlyMap<Role, string>,
+): string {
+  const said: string[] = [];
+  for (const [role, word] of named) {
+    if (roles.includes(role)) said.push(word);
+  }
+  return said.join(', ');
+}
+
+/** A quiet line of the facts that are there; `null` for none. */
+export function factsLine(facts: readonly string[]): string | null {
+  const said = facts.filter((fact) => fact.length > 0);
+  return said.length === 0 ? null : lineOf(said);
 }
 
 /** The first word of a name — what a line calls the person («Николай»). */

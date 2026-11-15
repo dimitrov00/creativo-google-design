@@ -1,4 +1,4 @@
-import type { StaffLevel } from '@core/components';
+import type { Role, StaffLevel } from '@core/components';
 import type {
   AccessScope,
   BarberId,
@@ -37,6 +37,14 @@ export type TeamRunVm = {
   readonly teamRun: TeamRun;
   readonly title: string;
   readonly rows: readonly TeamRowVm[];
+};
+
+/** One thing the Team page's ＋ adds: a barber record, or a role for a registered account. */
+export type TeamAddOptionVm = {
+  /** `barber` is a new barber record; any other role is given to an account. */
+  readonly role: Role;
+  readonly label: string;
+  readonly testId: string;
 };
 
 /** The Team page: what it says under its title, and its runs (the empty ones left out). */

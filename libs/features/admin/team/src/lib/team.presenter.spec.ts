@@ -20,7 +20,12 @@ import {
   STEFAN,
   TEAM,
 } from './team.fixtures.spec-support';
-import { levelPageVm, levelsVm, teamPageVm } from './team.presenter';
+import {
+  levelPageVm,
+  levelsVm,
+  teamAddMenuVm,
+  teamPageVm,
+} from './team.presenter';
 import { TeamRun } from './team.vm';
 import { teamWordsOf } from './team.words';
 
@@ -174,6 +179,43 @@ const holders = (members = TEAM) =>
       TeamRosterSystem.holdersOf(members, level),
     ]),
   );
+
+describe('teamAddMenuVm — what the ＋ adds', () => {
+  it('words each offer by its role’s own name, in the order it was handed', () => {
+    expect(
+      teamAddMenuVm(
+        [Role.Barber, Role.Receptionist, Role.ContentManager, Role.Admin],
+        BG,
+      ),
+    ).toEqual([
+      { role: Role.Barber, label: 'Бръснар', testId: 'admin-team-add-barber' },
+      {
+        role: Role.Receptionist,
+        label: 'Рецепция',
+        testId: 'admin-team-add-receptionist',
+      },
+      {
+        role: Role.ContentManager,
+        label: 'Съдържание',
+        testId: 'admin-team-add-content_manager',
+      },
+      {
+        role: Role.Admin,
+        label: 'Администратор',
+        testId: 'admin-team-add-admin',
+      },
+    ]);
+    expect(teamAddMenuVm([], BG)).toEqual([]);
+  });
+
+  it('words them in English', () => {
+    expect(
+      teamAddMenuVm([Role.Barber, Role.Admin], EN).map(
+        (option) => option.label,
+      ),
+    ).toEqual(['Barber', 'Admin']);
+  });
+});
 
 describe('levelsVm — «Права»', () => {
   it('an untouched shop: every level on the standard, with who holds it', () => {

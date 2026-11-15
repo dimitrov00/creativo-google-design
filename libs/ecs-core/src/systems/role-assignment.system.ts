@@ -104,6 +104,15 @@ const TEAM_TICKS: readonly Role[] = [
   Role.Admin,
 ];
 
+/**
+ * The roles the Team page's ＋ gives a registered account, dictionary order
+ * ({@link RoleAssignmentSystem.TEAM_ADDITIONS}): every team tick but
+ * `barber`, which is given by linking a barber record.
+ */
+const TEAM_ADDITIONS: readonly Role[] = TEAM_TICKS.filter(
+  (role) => role !== Role.Barber,
+);
+
 /** Whether `value` is one of `list` — typed `string`, so a narrower list needs no cast. */
 function holds(list: readonly string[], value: string): boolean {
   return list.includes(value);
@@ -393,6 +402,88 @@ export const RoleAssignmentSystem = {
       }
     }
     return candidates;
+  },
+
+  /**
+   * The roles the Team page's ＋ gives a registered account (team
+   * onboarding D8, «Добави в екипа»): the front desk, the content editor
+   * and the admin. Never `barber` — a barber is a record clients book, and
+   * an account becomes one by being linked to it («Свържи профил») — and
+   * never the vendor's `sysadmin`.
+   */
+  TEAM_ADDITIONS,
+
+  /**
+   * What the Team page's ＋ offers the person looking, as roles in
+   * dictionary order: `barber` — a new barber record — for whoever adds
+   * records (`TEAM_MANAGE`), then every addition
+   * ({@link RoleAssignmentSystem.TEAM_ADDITIONS}) for whoever assigns
+   * roles. Nothing for someone who does neither.
+   */
+  teamAddOffersOf(viewer: {
+    readonly addsRecords: boolean;
+    readonly assignsRoles: boolean;
+  }): readonly Role[] {
+    return [
+      ...(viewer.addsRecords ? [Role.Barber] : []),
+      ...(viewer.assignsRoles ? TEAM_ADDITIONS : []),
+    ];
+  },
+
+  /**
+   * The accounts `role` may be given to, out of a lookup's answer and in
+   * its order («Добави в екипа»): each one the card would offer «Роли» on
+   * ({@link RoleAssignmentSystem.offerOf} — stored, `REGISTERED`, not
+   * `ERASED`, no `sysadmin`, and not the viewer, whose own roles are not
+   * changed from a list), not blocked at `nowUtcMs` (a T2 row), not
+   * holding the role already, and not one that assigns roles
+   * (`Roles.assignsRoles`): an admin already does everything a role
+   * gives. An account on the team under another role is one of them: a
+   * barber may also run the front desk. Nobody for a role that is no
+   * addition. The accounts themselves, never copies; the server stays the
+   * authority.
+   */
+  additionCandidatesOf(input: {
+    readonly viewerUserId: UserId;
+    readonly viewerRoles: readonly Role[];
+    readonly accounts: readonly User[];
+    readonly role: Role;
+    readonly nowUtcMs: UtcEpochMs;
+  }): readonly User[] {
+    const candidates: User[] = [];
+    if (!holds(TEAM_ADDITIONS, input.role)) return candidates;
+    for (let i = 0; i < input.accounts.length; i++) {
+      const account = input.accounts[i] as User;
+      if (
+        RoleAssignmentSystem.offerOf(
+          input.viewerUserId,
+          input.viewerRoles,
+          account,
+        ) &&
+        !AccountLifecycle.isBlockedAt(account, input.nowUtcMs) &&
+        !holds(account.roles, input.role) &&
+        !Roles.assignsRoles(account.roles)
+      ) {
+        candidates.push(account);
+      }
+    }
+    return candidates;
+  },
+
+  /**
+   * The set `setRoles` is sent to give `role` to an account: the stored
+   * set with the role beside it — each once, in dictionary order, every
+   * role it held kept (`client`, `barber` and its link included; the call
+   * asks nothing of the link). A role that is no addition
+   * ({@link RoleAssignmentSystem.TEAM_ADDITIONS}) adds nothing: the stored
+   * set as it is, a `client` for one that held nothing — `setRoles` takes
+   * no empty set.
+   */
+  additionOf(stored: readonly Role[], role: Role): readonly Role[] {
+    const next = normalised(
+      holds(TEAM_ADDITIONS, role) ? [...stored, role] : stored,
+    );
+    return next.length === 0 ? [Role.Client] : next;
   },
 
   /**

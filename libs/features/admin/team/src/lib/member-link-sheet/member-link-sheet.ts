@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  ViewEncapsulation,
   computed,
   inject,
   input,
@@ -18,23 +17,8 @@ import {
   StaffAccessService,
 } from '@creativo/features/client/account-state';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
-import { UiAvatar, UiModalSheet, UiSearchField } from '@creativo/ui/controls';
-import { UiStack } from '@creativo/ui/layout';
-import {
-  UiForegroundStyleDirective,
-  UiTextDirective,
-} from '@creativo/ui/modifiers';
-import {
-  UiAlert,
-  UiEmptyState,
-  UiListGroup,
-  UiListRow,
-  UiNotice,
-  UiSectionHeader,
-  UiSheetActionBar,
-  UiSheetHeadline,
-} from '@creativo/ui/patterns';
 import { AccountLookupStore } from '../account-lookup.store';
+import { AccountPickSheet } from '../account-pick-sheet/account-pick-sheet';
 import { linkQuestionVm } from '../link-question.presenter';
 import { linkVm } from '../link.presenter';
 import {
@@ -65,34 +49,15 @@ type PickedAccount = {
  * The sheet decides nothing. Who may be linked is
  * `RoleAssignmentSystem.linkCandidatesOf`'s answer over the lookup and
  * `TeamRosterSystem.unlinkedOf`'s over the team; `setRoles` judges the
- * call. The search is the sheet's dock, and the headline folds while it is
- * engaged (the house sheet-search grammar). Mounted while it is open.
+ * call. What is drawn is the shared lookup sheet (`lib-account-pick-sheet`).
+ * Mounted while it is open.
  */
 @Component({
   selector: 'lib-member-link-sheet',
-  imports: [
-    TranslocoDirective,
-    UiAlert,
-    UiAvatar,
-    UiEmptyState,
-    UiForegroundStyleDirective,
-    UiListGroup,
-    UiListRow,
-    UiModalSheet,
-    UiNotice,
-    UiSearchField,
-    UiSectionHeader,
-    UiSheetActionBar,
-    UiSheetHeadline,
-    UiStack,
-    UiTextDirective,
-  ],
+  imports: [AccountPickSheet, TranslocoDirective],
   providers: [AccountLookupStore],
   templateUrl: './member-link-sheet.html',
-  styleUrl: '../team-pages.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // Every selector in the stylesheet is `team-page`-prefixed.
-  encapsulation: ViewEncapsulation.None,
 })
 export class MemberLinkSheet {
   protected readonly store = inject(TeamMemberStore);
@@ -112,12 +77,6 @@ export class MemberLinkSheet {
   /** The close animation ended. */
   readonly closeFinished = output<void>();
 
-  protected readonly query = signal('');
-  protected readonly searchFocused = signal(false);
-  /** The field holds the keyboard or a query: the headline folds. */
-  protected readonly searchEngaged = computed(
-    () => this.searchFocused() || this.query().trim() !== '',
-  );
   /** The account last picked: kept while its question leaves, so the words stay. */
   private readonly picked = signal<PickedAccount | null>(null);
   /** The question about it is up. */
@@ -173,11 +132,6 @@ export class MemberLinkSheet {
     const error = this.store.refusal();
     return error === null ? null : this.wording.refusalOf(error);
   });
-
-  protected ask(query: string): void {
-    this.query.set(query);
-    this.lookup.ask(query);
-  }
 
   /** A row: the question goes up, with the account as it was read. */
   protected pick(row: LinkRowVm): void {
