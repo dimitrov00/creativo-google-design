@@ -699,7 +699,7 @@ export default [
     files: [
       'libs/features/staff/dashboard/src/lib/staff-dashboard/staff-dashboard.ts',
     ],
-    rules: { 'max-lines': ['error', { max: 4337 }] },
+    rules: { 'max-lines': ['error', { max: 4336 }] },
   },
   {
     files: [

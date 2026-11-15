@@ -411,6 +411,28 @@ export function viewSegmentsOf(
   }));
 }
 
+/**
+ * The face on the scope trigger: the scoped chair's name and portrait, by
+ * the team's whole catalogue — so a barber who has left, whom the picker
+ * no longer offers but a link may still name (the visits they left
+ * behind), wears their own face, and the trigger never says «everyone»
+ * over one person's column. `null` for everyone, and for a chair the
+ * catalogue does not know.
+ */
+export function scopeFaceOf(
+  scope: BarberId | null,
+  catalogue: {
+    barberName(id: BarberId): string | null;
+    barberAvatarSrc(id: BarberId): string | null;
+  },
+): { readonly name: string; readonly avatarSrc: string | null } | null {
+  if (scope === null) return null;
+  const name = catalogue.barberName(scope);
+  return name === null
+    ? null
+    : { name, avatarSrc: catalogue.barberAvatarSrc(scope) };
+}
+
 /** Everyone, then each chair — the scope switcher's options. */
 export function scopeChoicesOf(
   chairs: readonly {

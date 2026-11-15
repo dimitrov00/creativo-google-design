@@ -264,6 +264,7 @@ import {
   discardActionsOf,
   periodLabelOf,
   scopeChoicesOf,
+  scopeFaceOf,
   serviceOptionsOf,
   shopOptionsOf,
   staffChromeWordsOf,
@@ -950,27 +951,10 @@ export class StaffDashboard {
     return this.barberNameOf(scope);
   });
 
-  /**
-   * The scoped barber's portrait for the trigger, or `null` for everyone.
-   * A barber who has left is no option of the picker, but a link may still
-   * name their chair (the visits left behind): the trigger wears their
-   * face then, so it never says «everyone» over one person's column.
-   */
-  protected readonly scopeAvatar = computed(() => {
-    const scope = this.store.scope();
-    if (scope === null) return null;
-    const option = this.scopeOptions().find((entry) => entry.id === scope);
-    if (option !== undefined) return option;
-    const gone = this.team.findTeamBarberVm(scope);
-    return gone === undefined
-      ? null
-      : {
-          id: gone.id,
-          name: this.content.text(gone.name),
-          avatarSrc: gone.avatarSrc ?? null,
-          tone: this.toneOf(gone.id),
-        };
-  });
+  /** The scoped chair's face for the trigger — a leaver's too (`scopeFaceOf`). */
+  protected readonly scopeAvatar = computed(() =>
+    scopeFaceOf(this.store.scope(), this.clientCardCatalog()),
+  );
 
   protected readonly isGrid = computed(
     () => this.store.view() !== StaffView.Agenda,
