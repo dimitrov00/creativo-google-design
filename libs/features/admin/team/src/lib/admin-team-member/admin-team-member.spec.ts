@@ -4,12 +4,25 @@ import {
   BarberActivation,
   BarberEdit,
   BarberLinkChange,
+  E164,
   OfferingsEdit,
   Role,
+  StaffPermissions,
 } from '@core/components';
-import { PipelineError } from '@core/errors';
+import { GovernanceErrorCode, PipelineError } from '@core/errors';
 import { Callables } from '@core/ports';
-import { localDate, locationFixture } from '@core/testing';
+import {
+  AccessScope,
+  LocationId,
+  StaffCapability,
+  UserId,
+} from '@core/primitives';
+import {
+  localDate,
+  locationFixture,
+  textFixture,
+  userFixture,
+} from '@core/testing';
 import { type TeamBedOptions, teamBed } from '../team-bed.spec-support';
 import {
   IVAN,
@@ -518,8 +531,9 @@ describe('AdminTeamMember — «Това съм аз» · «Не съм аз» (
     expect(text(piece('member-is-me'))).toBe('Това съм аз');
     expect(piece('member-not-me')).toBeNull();
     expect(piece('member-account-linked')).toBeNull();
+    // The owner links accounts too, so the line says how the person gets one.
     expect(text(piece('member-account-note'))).toBe(
-      'Без профил Николай не влиза в приложението. Часовете се записват от екипа.',
+      'Без профил Николай не влиза в приложението. Помоли Николай да влезе веднъж, после натисни „Свържи профил“.',
     );
   });
 
@@ -552,6 +566,383 @@ describe('AdminTeamMember — «Това съм аз» · «Не съм аз» (
     expect(piece('member-not-me')).toBeNull();
     expect(text(piece('member-account-linked'))).toContain('Иван Петров');
     expect(text(piece('member-account-linked'))).toContain('Бръснар');
+  });
+});
+
+describe('AdminTeamMember — «Салони»', () => {
+  const center = locationFixture();
+  const mladost = locationFixture({
+    id: LocationId.of('mladost'),
+    name: textFixture('Mladost', 'Младост'),
+  });
+  const twoShops: TeamBedOptions = { locations: [center, mladost] };
+  const checked = (element: HTMLElement | null) =>
+    element?.getAttribute('aria-checked');
+
+  it('opens on «Всички салони» with nothing to save; switched off, a tick taken away is saved as the shops left', async () => {
+    const { piece, press, text, calls } = await render('nikolay', twoShops);
+    expect(text(piece('member-setup-SHOPS'))).toContain('Всички');
+
+    await press('member-setup-SHOPS');
+
+    expect(piece('member-shops-sheet')).not.toBeNull();
+    expect(piece('member-shops-list')).toBeNull();
+    const save = piece('member-shops-save') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    // Off: every shop starts ticked, so one press is the whole edit. The
+    // list of every shop is not «Всички салони», so it can be saved.
+    await press('member-shops-every');
+    expect(checked(piece(`member-shop-${center.id}`))).toBe('true');
+    expect(checked(piece('member-shop-mladost'))).toBe('true');
+    expect(save.disabled).toBe(false);
+
+    await press('member-shop-mladost');
+    expect(checked(piece('member-shop-mladost'))).toBe('false');
+    await press('member-shops-save');
+
+    expect(calls.edits).toEqual([
+      expect.objectContaining({
+        barberEdit: BarberEdit.Shops,
+        barberId: NIKOLAY.barberId,
+        locationIds: [center.id],
+      }),
+    ]);
+  });
+
+  it('with no shop ticked there is no save, and the sheet says to pick one', async () => {
+    const { piece, press, text } = await render('nikolay', twoShops);
+    await press('member-setup-SHOPS');
+    await press('member-shops-every');
+    await press(`member-shop-${center.id}`);
+    await press('member-shop-mladost');
+
+    expect(text(piece('member-shops-pick-one'))).toBe(
+      'Избери поне един салон.',
+    );
+    expect((piece('member-shops-save') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it('a shop the roster still has hours at keeps its tick, and says why', async () => {
+    const { piece, press, text, calls } = await render('ivan', {
+      ...twoShops,
+      services: [serviceOf(IVAN.barberId)],
+      schedules: [rosterOf(IVAN.barberId)],
+    });
+    // Ivan works at the centre shop, where his roster's hours are.
+    expect(text(piece('member-row-shops'))).toContain('Център');
+
+    await press('member-row-shops');
+
+    expect(piece('member-shops-every')?.getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    const held = piece(`member-shop-${center.id}`);
+    expect(held?.getAttribute('aria-disabled')).toBe('true');
+    expect(text(held)).toContain('Има работно време тук');
+    await press(`member-shop-${center.id}`);
+    expect(checked(held)).toBe('true');
+
+    // A second shop is theirs to take: the record then lists both.
+    expect(checked(piece('member-shop-mladost'))).toBe('false');
+    await press('member-shop-mladost');
+    await press('member-shops-save');
+    expect(calls.edits[0]).toMatchObject({
+      barberEdit: BarberEdit.Shops,
+      locationIds: [center.id, mladost.id],
+    });
+  });
+
+  it('a refused save is said in the sheet, which stays', async () => {
+    const { piece, press, text, refuses } = await render('nikolay', twoShops);
+    refuses('editBarber', REFUSED);
+    await press('member-setup-SHOPS');
+    await press('member-shops-every');
+    await press('member-shops-save');
+
+    expect(text(piece('member-shops-refusal')).length).toBeGreaterThan(0);
+    expect(piece('member-shops-sheet')).not.toBeNull();
+    expect(piece('member-refusal')).toBeNull();
+  });
+
+  it('is read by someone who does not manage the team, and a one-shop business has no row at all', async () => {
+    const editor = await render('nikolay', {
+      ...twoShops,
+      roles: [Role.ContentManager],
+      members: RECORDS,
+    });
+    expect(editor.piece('member-setup-SHOPS')?.tagName).not.toBe('BUTTON');
+    TestBed.resetTestingModule();
+    const oneShop = await render('ivan', {
+      locations: [center],
+      services: [serviceOf(IVAN.barberId)],
+      schedules: [rosterOf(IVAN.barberId)],
+    });
+    expect(oneShop.piece('member-row-shops')).toBeNull();
+  });
+});
+
+describe('AdminTeamMember — «Свържи профил» · «Разкачи профила» (team onboarding D8)', () => {
+  /** A registered client the lookup finds by phone. */
+  const georgi = userFixture({
+    id: UserId.of('u-georgi'),
+    firstName: 'Георги',
+    lastName: 'Иванов',
+    phone: E164.of('+359881112233'),
+  });
+  /** An account that is a barber record already: never offered. */
+  const taken = userFixture({
+    id: UserId.of('u-ivan'),
+    firstName: 'Иван',
+    lastName: 'Петров',
+    roles: [Role.Barber],
+    linkedBarberId: IVAN.barberId,
+  });
+  /** The change was written; the person's sessions were not ended. */
+  const UNREVOKED = PipelineError.fromWire('functions/aborted', {
+    errorCode: GovernanceErrorCode.RolesSessionsNotRevoked,
+  });
+  /** The typing rests, and the index answers. */
+  const rested = async (settle: () => Promise<void>): Promise<void> => {
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    await settle();
+  };
+
+  it('opens on the team’s own accounts with no record — never the owner’s, whose door is «Това съм аз»', async () => {
+    const { piece, press, text, settle, root } = await render('nikolay');
+    expect(piece('member-link-sheet')).toBeNull();
+
+    await press('member-link');
+    await settle();
+
+    expect(piece('member-link-sheet')).not.toBeNull();
+    expect(text(piece('member-link-list'))).toContain('Елена Василева');
+    expect(text(piece('member-link-u-elena'))).toContain('Рецепция');
+    expect(piece('member-link-u-maria')).not.toBeNull();
+    expect(piece('member-link-u-owner')).toBeNull();
+    expect(text(root)).toContain('От екипа');
+  });
+
+  it('a colleague picked is asked about first; «Свържи» sends their roles plus barber and the link, and the list is read again', async () => {
+    const { piece, press, text, settle, calls, listed } =
+      await render('nikolay');
+    await press('member-link');
+    await settle();
+    const before = listed.length;
+
+    await press('member-link-u-elena');
+    expect(text(piece('member-link-question'))).toContain(
+      'Да свържа ли Елена Василева с Николай?',
+    );
+    expect(text(piece('member-link-question'))).toContain(
+      'Елена ще трябва да влезе отново в приложението.',
+    );
+    expect(calls.roles).toEqual([]);
+
+    await press('member-link-confirm');
+    await settle();
+
+    expect(calls.roles).toEqual([
+      expect.objectContaining({
+        targetUserId: 'u-elena',
+        roles: [Role.Barber, Role.Receptionist],
+        barberLinkChange: BarberLinkChange.Set,
+        linkedBarberId: NIKOLAY.barberId,
+      }),
+    ]);
+    expect(listed.length).toBeGreaterThan(before);
+    // The owner's own account did not move.
+    expect(piece('member-not-me')).toBeNull();
+  });
+
+  it('«Отказ» sends nothing and the sheet stays', async () => {
+    const { piece, press, settle, calls } = await render('nikolay');
+    await press('member-link');
+    await settle();
+    await press('member-link-u-elena');
+    await press('member-link-cancel');
+    await settle();
+
+    expect(calls.roles).toEqual([]);
+    expect(piece('member-link-sheet')).not.toBeNull();
+  });
+
+  it('a lookup asks the index once the typing rests, and offers only who may be linked', async () => {
+    const { piece, press, type, text, settle, calls, listAnswers } =
+      await render('nikolay', { accounts: [georgi, taken] });
+    await press('member-link');
+    await settle();
+
+    await type('member-link-query', 'Гео');
+    await type('member-link-query', 'Георги');
+    expect(calls.searched).toEqual([]);
+    await rested(settle);
+
+    expect(calls.searched).toEqual(['георги']);
+    expect(text(piece('member-link-u-georgi'))).toContain('Георги Иванов');
+    expect(text(piece('member-link-u-georgi'))).toContain('+359 88 111 2233');
+    // Linked to a record already, and the team's own accounts gave way.
+    expect(piece('member-link-u-ivan')).toBeNull();
+    expect(piece('member-link-u-elena')).toBeNull();
+
+    // The Team list will say the account beside the record.
+    listAnswers(
+      TEAM.map((member) =>
+        member === NIKOLAY
+          ? {
+              ...NIKOLAY,
+              memberUserId: georgi.id,
+              memberAccountName: 'Георги Иванов',
+              memberRoles: [Role.Client, Role.Barber],
+              teamMemberNote: null,
+            }
+          : member,
+      ),
+    );
+    await press('member-link-u-georgi');
+    await press('member-link-confirm');
+    await settle();
+
+    expect(calls.roles[0]).toMatchObject({
+      targetUserId: 'u-georgi',
+      roles: [Role.Client, Role.Barber],
+      barberLinkChange: BarberLinkChange.Set,
+      linkedBarberId: NIKOLAY.barberId,
+    });
+    expect(text(piece('member-account-linked'))).toContain('Георги Иванов');
+    expect(piece('member-link')).toBeNull();
+    expect(text(piece('member-release'))).toBe('Разкачи профила');
+  });
+
+  it('says so when nobody is found, and when the index could not be read', async () => {
+    const { piece, press, type, text, settle, searchFails } =
+      await render('nikolay');
+    await press('member-link');
+    await settle();
+
+    await type('member-link-query', 'Никой');
+    await rested(settle);
+    expect(text(piece('member-link-empty'))).toContain('Няма такъв профил');
+    expect(text(piece('member-link-empty'))).toContain(
+      'Помоли Николай да влезе веднъж в приложението и потърси пак.',
+    );
+
+    searchFails(true);
+    await type('member-link-query', 'Някой');
+    await rested(settle);
+    expect(text(piece('member-link-empty'))).toBe(
+      'Търсенето не успя. Опитай пак.',
+    );
+  });
+
+  it('a refused link is said in the sheet, which stays', async () => {
+    const { piece, press, text, settle, rolesRefuse } = await render('nikolay');
+    rolesRefuse(REFUSED);
+    await press('member-link');
+    await settle();
+    await press('member-link-u-elena');
+    await press('member-link-confirm');
+    await settle();
+
+    expect(text(piece('member-link-refusal')).length).toBeGreaterThan(0);
+    expect(piece('member-link-sheet')).not.toBeNull();
+    expect(piece('member-refusal')).toBeNull();
+  });
+
+  it('«Разкачи профила» asks first, then takes barber from the account and clears the link', async () => {
+    const { piece, press, text, settle, calls } = await render('ivan');
+    expect(piece('member-link')).toBeNull();
+
+    await press('member-release');
+    expect(text(piece('member-release-question'))).toContain(
+      'Да разкача ли профила на Иван Петров?',
+    );
+    expect(calls.roles).toEqual([]);
+
+    await press('member-release-confirm');
+    await settle();
+
+    // Barber was the only role the account held: it is a client again.
+    expect(calls.roles).toEqual([
+      expect.objectContaining({
+        targetUserId: 'u-ivan',
+        roles: [Role.Client],
+        barberLinkChange: BarberLinkChange.Clear,
+        linkedBarberId: null,
+      }),
+    ]);
+  });
+
+  it('a release the server wrote without ending the sessions is said with its retry, which sends the same change again', async () => {
+    const { piece, press, text, settle, calls, rolesRefuse } =
+      await render('ivan');
+    rolesRefuse(UNREVOKED);
+    await press('member-release');
+    await press('member-release-confirm');
+    await settle();
+
+    expect(calls.roles).toHaveLength(1);
+    expect(text(piece('member-sessions-pending'))).toContain(
+      'Промяната е запазена, но старите сесии на профила не бяха прекратени.',
+    );
+    // The change landed: it is not said as a refusal as well.
+    expect(piece('member-refusal')).toBeNull();
+
+    rolesRefuse(null);
+    await press('member-sessions-retry');
+    await settle();
+
+    expect(calls.roles).toHaveLength(2);
+    expect(calls.roles[1]).toMatchObject({
+      targetUserId: 'u-ivan',
+      roles: [Role.Client],
+      barberLinkChange: BarberLinkChange.Clear,
+    });
+    expect(piece('member-sessions-pending')).toBeNull();
+  });
+
+  it('a link written the same way is a link: the sheet says no refusal, and the page offers the retry', async () => {
+    const { piece, press, settle, calls, rolesRefuse } =
+      await render('nikolay');
+    rolesRefuse(UNREVOKED);
+    await press('member-link');
+    await settle();
+    await press('member-link-u-elena');
+    await press('member-link-confirm');
+    await settle();
+
+    expect(calls.roles).toHaveLength(1);
+    expect(piece('member-link-refusal')).toBeNull();
+    expect(piece('member-sessions-pending')).not.toBeNull();
+  });
+
+  it('neither door is there for someone who manages the team and assigns no roles', async () => {
+    const stored = {
+      [StaffPermissions.fieldOf(Role.Receptionist, StaffCapability.TeamManage)]:
+        AccessScope.All,
+    };
+    const free = await render('nikolay', {
+      roles: [Role.Receptionist],
+      userId: UserId.of('u-elena'),
+      stored,
+    });
+    expect(free.piece('member-link')).toBeNull();
+    expect(free.piece('member-is-me')).toBeNull();
+    expect(free.text(free.piece('member-account-note'))).toBe(
+      'Без профил Николай не влиза в приложението. Часовете се записват от екипа.',
+    );
+    TestBed.resetTestingModule();
+    const held = await render('ivan', {
+      roles: [Role.Receptionist],
+      userId: UserId.of('u-elena'),
+      stored,
+    });
+    expect(held.piece('member-release')).toBeNull();
+    expect(held.text(held.piece('member-account-linked'))).toContain(
+      'Иван Петров',
+    );
   });
 });
 

@@ -57,6 +57,32 @@
       </ui-notice>
       }
 
+      <!-- A LINK CHANGE THAT LANDED WITHOUT ENDING THE PERSON'S SESSIONS:
+           said until the retry ends them — the stack's one retry grammar. -->
+      @if (store.sessionsPending()) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="member-sessions-pending"
+      >
+        {{ t('admin.team.link.sessionsPending') }}
+        <button
+          uiNoticeActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiLoading]="store.pending()"
+          [disabled]="store.pending()"
+          data-testid="member-sessions-retry"
+          (click)="endSessions()"
+        >
+          {{ t('admin.team.link.sessionsRetry') }}
+        </button>
+      </ui-notice>
+      }
+
       <!-- IN PREPARATION: what bookings need leads the page. -->
       @if (page.setup.length > 0) {
       <section class="team-page__module" aria-labelledby="member-setup-title">
@@ -226,7 +252,8 @@
             {{ t('admin.team.member.accountTitle') }}
           </h2>
         </ui-section-header>
-        @if (account.name !== null || account.isMine || account.isOpen) {
+        @if ( account.name !== null || account.isMine || account.isOpen ||
+        account.linkable ) {
         <ui-list-group data-testid="member-account">
           @if (account.name; as name) {
           <ui-list-row uiSize="large" data-testid="member-account-linked">
@@ -268,6 +295,36 @@
             (click)="claim(true)"
           >
             {{ t('admin.team.member.isMe') }}
+          </button>
+          }
+          <!-- SOMEONE ELSE'S ACCOUNT: linked from a lookup, released behind
+               a question. Both end that person's sessions. -->
+          @if (account.linkable) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [disabled]="store.pending()"
+            data-testid="member-link"
+            (click)="openEditor(MemberEditor.Link)"
+          >
+            {{ t('admin.team.link.title') }}
+            <span uiTrailing class="team-page__value">
+              <ui-icon uiName="nav.disclosure" aria-hidden="true" />
+            </span>
+          </button>
+          } @if (account.release !== null) {
+          <button
+            type="button"
+            uiListRow
+            uiSize="regular"
+            [uiInteractive]="true"
+            [disabled]="store.pending()"
+            data-testid="member-release"
+            (click)="releaseOpen.set(true)"
+          >
+            {{ t('admin.team.link.release') }}
           </button>
           }
         </ui-list-group>
@@ -342,6 +399,18 @@
       (uiDismissed)="deleteOpen.set(false)"
     />
 
+    @if (page.account?.release; as release) {
+    <ui-alert
+      [uiPresented]="releaseOpen()"
+      [uiTitle]="release.title"
+      [uiMessage]="release.message"
+      [uiActions]="release.actions"
+      data-testid="member-release-question"
+      (uiPicked)="onReleasePick($event)"
+      (uiDismissed)="releaseOpen.set(false)"
+    />
+    }
+
     <!-- ONE receipt at a time: going live is the bigger news, so the hours'
          own receipt gives way to it and does not come back after it. -->
     <ui-toast
@@ -386,6 +455,17 @@
     />
     } } }
 
+    <!-- «СВЪРЖИ ПРОФИЛ»: loaded when first asked for, mounted while open. -->
+    @defer (when editor() === MemberEditor.Link; prefetch on idle) { @if
+    (editor() === MemberEditor.Link) { @if (store.barber(); as barber) {
+    <lib-member-link-sheet
+      [uiBarber]="barber"
+      [uiClosing]="closing()"
+      (dismissed)="requestClose()"
+      (closeFinished)="finishClose()"
+    />
+    } } }
+
     <!-- THE EDITORS: mounted while open, so each opening reads the record. -->
     @if (store.barber(); as barber) { @switch (editor()) { @case
     (MemberEditor.Profile) {
@@ -397,6 +477,14 @@
     />
     } @case (MemberEditor.Period) {
     <lib-member-period-sheet
+      [uiBarber]="barber"
+      [uiToday]="today()"
+      [uiClosing]="closing()"
+      (dismissed)="requestClose()"
+      (closeFinished)="finishClose()"
+    />
+    } @case (MemberEditor.Shops) {
+    <lib-member-shops-sheet
       [uiBarber]="barber"
       [uiToday]="today()"
       [uiClosing]="closing()"

@@ -19,11 +19,16 @@ import {
   BarberStatus,
   OfferingsEdit,
   RecordClaim,
+  type Role,
   type RolesCall,
   type RosterCall,
 } from '@core/components';
-import type { Barber, ShopLocation } from '@core/entities';
-import { PipelineError, PipelineErrorCode } from '@core/errors';
+import type { Barber, BarberSchedule, ShopLocation } from '@core/entities';
+import {
+  GovernanceErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
 import { Callables, type ObserveSchedule } from '@core/ports';
 import {
   AccessScope,
@@ -33,11 +38,13 @@ import {
   type LocationId,
   type Result,
   StaffCapability,
+  type UserId,
 } from '@core/primitives';
 import {
   type BarberProfileInput,
   LocationScopeSystem,
   OfferingPriceSystem,
+  type RecordViewer,
   RoleAssignmentSystem,
   StaffSetupSystem,
   TeamRosterSystem,
@@ -91,6 +98,13 @@ export class TeamMemberStore {
   private readonly _refusal = signal<PipelineError | null>(null);
   private readonly _hoursRefusal = signal<PipelineError | null>(null);
   private readonly _wentLive = signal(false);
+  /**
+   * A link change that was WRITTEN while that person's sessions were not
+   * ended (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`): kept, so it can be
+   * sent again as it is — the server then writes nothing and ends them
+   * (S-RU-10, the client card's own retry).
+   */
+  private readonly _unrevoked = signal<RolesCall | null>(null);
   /** The record the go-live step was last asked for: one ask per ready record. */
   private askedLive: BarberId | null = null;
 
@@ -122,6 +136,12 @@ export class TeamMemberStore {
   private readonly rosterKnown = computed(
     () => this.rosterAnswer()?.ok === true,
   );
+
+  /** The record's roster as read; `null` while unread, and for a record with none. */
+  readonly roster = computed<BarberSchedule | null>(() => {
+    const roster = this.rosterAnswer();
+    return roster?.ok === true ? roster.value : null;
+  });
 
   /** What the record still needs; `null` while there is no record. */
   readonly checklist = computed(() => {
@@ -184,17 +204,44 @@ export class TeamMemberStore {
       : TeamRosterSystem.recordOf(this.team.members() ?? [], barberId);
   });
 
+  /** The person looking, as their stored account says. */
+  private readonly viewer = computed<RecordViewer>(() => ({
+    userId: this.account.userId(),
+    linkedBarberId: this.access.linkedBarberId(),
+    assignsRoles: this.access.editsPermissions(),
+  }));
+
   /** Whose record it is to the person looking. */
   readonly recordClaim = computed<RecordClaim>(() => {
     const member = this.member();
     return member === null
       ? RecordClaim.None
-      : TeamRosterSystem.claimOf(member, {
-          userId: this.account.userId(),
-          linkedBarberId: this.access.linkedBarberId(),
-          assignsRoles: this.access.editsPermissions(),
-        });
+      : TeamRosterSystem.claimOf(member, this.viewer());
   });
+
+  /** They may link someone's account to the record («Свържи профил»). */
+  readonly linksAccount = computed(() => {
+    const member = this.member();
+    return (
+      member !== null && TeamRosterSystem.linksAccount(member, this.viewer())
+    );
+  });
+
+  /** They may release the account linked to it («Разкачи профила»). */
+  readonly releasesAccount = computed(() => {
+    const member = this.member();
+    return (
+      member !== null && TeamRosterSystem.releasesAccount(member, this.viewer())
+    );
+  });
+
+  /** The team's own accounts a record may be linked to without a lookup. */
+  readonly unlinked = computed(() =>
+    TeamRosterSystem.unlinkedOf(
+      this.team.members() ?? [],
+      this.account.userId(),
+    ),
+  );
 
   /** The record still takes edits: one that has left takes none. */
   private readonly editable = computed(() => {
@@ -294,6 +341,9 @@ export class TeamMemberStore {
   /** The record has just gone live — said once. */
   readonly wentLive = this._wentLive.asReadonly();
 
+  /** A link change landed, but that person's sessions were not ended: the page offers the retry. */
+  readonly sessionsPending = computed(() => this._unrevoked() !== null);
+
   constructor() {
     // THE GO-LIVE STEP (team onboarding D9): asked once for a record in
     // preparation that shows every needed item done, on reads that have
@@ -324,6 +374,7 @@ export class TeamMemberStore {
     this._barberId.set(barberId);
     this._refusal.set(null);
     this._wentLive.set(false);
+    this._unrevoked.set(null);
   }
 
   /** The profile, whole: the name, the title, the few words, Instagram, the experience. */
@@ -341,6 +392,11 @@ export class TeamMemberStore {
       barberStartsLocalDate,
       barberLastWorkingLocalDate,
     });
+  }
+
+  /** The shops the record works at, whole: `[]` is every shop. */
+  saveShops(locationIds: readonly LocationId[]): Promise<boolean> {
+    return this.edit({ barberEdit: BarberEdit.Shops, locationIds });
   }
 
   /**
@@ -400,29 +456,31 @@ export class TeamMemberStore {
 
   /**
    * «Това съм аз» · «Не съм аз» (staff permissions P9): the owner's own
-   * account takes the record, or gives it back — `setRoles` on themself
-   * with the set and the link `RoleAssignmentSystem.selfLinkOf` answers.
-   * Nobody is signed out: the stored account moves and the page follows it.
+   * account takes the record, or gives it back. Nobody is signed out: the
+   * stored account moves and the page follows it.
    */
-  async claim(mine: boolean): Promise<boolean> {
+  claim(mine: boolean): Promise<boolean> {
     const userId = this.account.userId();
-    if (userId === null) return false;
-    const answer = await this.act((operationId, barberId) => {
-      const change = RoleAssignmentSystem.selfLinkOf(
-        this.access.storedRoles(),
-        mine ? barberId : null,
-      );
-      const call: RolesCall & { readonly operationId: ClientOperationId } = {
-        targetUserId: userId,
-        roles: change.roles,
-        ...change.link,
-        operationId,
-      };
-      return this.rolesPorts.setRoles(call);
-    });
-    if (answer?.ok !== true) return false;
-    void this.team.load();
-    return true;
+    return userId === null
+      ? Promise.resolve(false)
+      : this.relink(userId, this.access.storedRoles(), mine);
+  }
+
+  /**
+   * «Свържи профил» (team onboarding D8): someone's account becomes this
+   * record's — their stored roles, as the lookup or the Team list read
+   * them, plus `barber`. The server ends that person's sessions.
+   */
+  linkAccount(userId: UserId, storedRoles: readonly Role[]): Promise<boolean> {
+    return this.relink(userId, storedRoles, true);
+  }
+
+  /** «Разкачи профила»: the account linked to the record is released from it. */
+  releaseAccount(): Promise<boolean> {
+    const member = this.member();
+    return member === null || member.memberUserId === null
+      ? Promise.resolve(false)
+      : this.relink(member.memberUserId, member.memberRoles, false);
   }
 
   /** A chair's roster, live — what the hours sheet reads. */
@@ -460,6 +518,71 @@ export class TeamMemberStore {
   /** The refusal was read, or the sheet it belonged to closed. */
   clearRefusal(): void {
     this._refusal.set(null);
+  }
+
+  /**
+   * «Опитай пак» after a link change whose sessions were not ended: the
+   * same change again. Nothing is written twice; the server ends them.
+   */
+  endSessions(): Promise<boolean> {
+    const call = this._unrevoked();
+    return call === null ? Promise.resolve(false) : this.sendRoles(call);
+  }
+
+  /**
+   * One account linked to the record on the page, or released from it —
+   * `setRoles` with the set and the link `RoleAssignmentSystem.recordLinkOf`
+   * answers. `true` once the change is WRITTEN, whether or not that
+   * person's sessions were ended.
+   */
+  private relink(
+    targetUserId: UserId,
+    storedRoles: readonly Role[],
+    linked: boolean,
+  ): Promise<boolean> {
+    const barberId = this._barberId();
+    if (barberId === null) return Promise.resolve(false);
+    const change = RoleAssignmentSystem.recordLinkOf(
+      storedRoles,
+      linked ? barberId : null,
+    );
+    return this.sendRoles({
+      targetUserId,
+      roles: change.roles,
+      ...change.link,
+    });
+  }
+
+  /**
+   * One `setRoles` call. A change the server wrote without ending the
+   * person's sessions is no refusal of the change: it is kept for the
+   * retry, which the page offers in its own notice. The Team list is read
+   * again whatever the answer.
+   */
+  private async sendRoles(call: RolesCall): Promise<boolean> {
+    const answer = await this.act((operationId) => {
+      // The act's name rides the payload beside the call.
+      const named: RolesCall & { readonly operationId: ClientOperationId } = {
+        ...call,
+        operationId,
+      };
+      return this.rolesPorts.setRoles(named);
+    });
+    if (answer === null) return false;
+    void this.team.load();
+    if (answer.ok) {
+      this._unrevoked.set(null);
+      return true;
+    }
+    if (
+      answer.error.serverErrorCode !==
+      GovernanceErrorCode.RolesSessionsNotRevoked
+    ) {
+      return false;
+    }
+    this._unrevoked.set(call);
+    this._refusal.set(null);
+    return true;
   }
 
   /** One part of the record, replaced whole. */

@@ -425,11 +425,11 @@ describe('RoleAssignmentSystem.decide — the caller’s own account (staff perm
   });
 });
 
-describe('RoleAssignmentSystem.selfLinkOf — «Това съм аз» · «Не съм аз» (staff permissions P9)', () => {
+describe('RoleAssignmentSystem.recordLinkOf — an account takes a record, or gives it back (staff permissions P9, team onboarding D8)', () => {
   const RECORD = BarberId.of('b-owner');
 
   it('takes a record: the stored set plus barber, in dictionary order, and a SET link', () => {
-    const taken = RoleAssignmentSystem.selfLinkOf([Role.Admin], RECORD);
+    const taken = RoleAssignmentSystem.recordLinkOf([Role.Admin], RECORD);
     expect(taken.roles).toEqual(
       Roles.ALL.filter((role) => role === Role.Admin || role === Role.Barber),
     );
@@ -437,7 +437,7 @@ describe('RoleAssignmentSystem.selfLinkOf — «Това съм аз» · «Не
   });
 
   it('gives it back: the stored set without barber, and a CLEAR', () => {
-    const given = RoleAssignmentSystem.selfLinkOf(
+    const given = RoleAssignmentSystem.recordLinkOf(
       [Role.Barber, Role.Admin],
       null,
     );
@@ -447,11 +447,25 @@ describe('RoleAssignmentSystem.selfLinkOf — «Това съм аз» · «Не
 
   it('the two undo each other, and never name a role twice', () => {
     const stored: readonly Role[] = deepFreeze([Role.Admin, Role.Receptionist]);
-    const taken = RoleAssignmentSystem.selfLinkOf(stored, RECORD);
-    const again = RoleAssignmentSystem.selfLinkOf(taken.roles, RECORD);
+    const taken = RoleAssignmentSystem.recordLinkOf(stored, RECORD);
+    const again = RoleAssignmentSystem.recordLinkOf(taken.roles, RECORD);
     expect(again.roles).toEqual(taken.roles);
-    const back = RoleAssignmentSystem.selfLinkOf(taken.roles, null);
+    const back = RoleAssignmentSystem.recordLinkOf(taken.roles, null);
     expect([...back.roles].sort()).toEqual([...stored].sort());
+  });
+
+  it('a client linked to a record is a client and a barber, and a client again once released', () => {
+    const linked = RoleAssignmentSystem.recordLinkOf([Role.Client], RECORD);
+    expect(linked.roles).toEqual([Role.Client, Role.Barber]);
+    expect(RoleAssignmentSystem.recordLinkOf(linked.roles, null).roles).toEqual(
+      [Role.Client],
+    );
+  });
+
+  it('an account that held barber alone is left a client: no call sends an empty set', () => {
+    const released = RoleAssignmentSystem.recordLinkOf([Role.Barber], null);
+    expect(released.roles).toEqual([Role.Client]);
+    expect(released.link).toEqual(BarberLinkRequest.CLEAR);
   });
 });
 
@@ -961,6 +975,76 @@ describe('RoleAssignmentSystem.offerOf — may the card offer the «Роли» b
         roles.join(),
       ).toBe(false);
     }
+  });
+});
+
+describe('RoleAssignmentSystem.linkCandidatesOf — who a barber record may be linked to («Свържи профил», team onboarding D8)', () => {
+  const admin = [Role.Admin] as const;
+  const account = (id: string, overrides: Partial<User> = {}): User =>
+    targetUser({ id: UserId.of(id), ...overrides });
+  const candidatesOf = (
+    accounts: readonly User[],
+    viewerRoles: readonly Role[] = admin,
+  ) =>
+    RoleAssignmentSystem.linkCandidatesOf({
+      viewerUserId: ADMIN_ID,
+      viewerRoles,
+      accounts,
+      nowUtcMs: NOW,
+    });
+
+  it('keeps a registered client and an unlinked colleague, in the lookup’s order — the accounts themselves', () => {
+    const client = account('u-client');
+    const frontDesk = account('u-desk', { roles: [Role.Receptionist] });
+    const unlinkedBarber = account('u-barber', { roles: [Role.Barber] });
+    const kept = candidatesOf([client, frontDesk, unlinkedBarber]);
+    expect(kept).toEqual([client, frontDesk, unlinkedBarber]);
+    expect(kept[0]).toBe(client);
+  });
+
+  it('drops an account already linked to a record: a link is released first, never taken over', () => {
+    expect(
+      candidatesOf([
+        account('u-ivan', { roles: [Role.Barber], linkedBarberId: IVAN }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('drops the viewer, a sysadmin, an erased and an unregistered account — the card’s own guards', () => {
+    expect(
+      candidatesOf([
+        adminUser(),
+        account('u-vendor', { roles: [Role.Sysadmin] }),
+        account('u-erased', AccountLifecycle.erase(NOW)),
+        provisionedUserFixture({ id: UserId.of('u-stub') }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('drops an account blocked now, and keeps one whose block has lapsed (T2)', () => {
+    const blocked = account(
+      'u-blocked',
+      AccountLifecycle.block(BlockReason.Manual, null),
+    );
+    const lapsed = account(
+      'u-lapsed',
+      AccountLifecycle.block(BlockReason.Manual, UtcEpochMs.plusMs(NOW, -HOUR)),
+    );
+    expect(candidatesOf([blocked, lapsed])).toEqual([lapsed]);
+  });
+
+  it('offers nobody to a viewer who does not assign roles', () => {
+    expect(candidatesOf([account('u-client')], [Role.Receptionist])).toEqual(
+      [],
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const accounts = deepFreeze([
+      account('u-client'),
+      account('u-ivan', { roles: [Role.Barber], linkedBarberId: IVAN }),
+    ]);
+    expect(candidatesOf(accounts)).toEqual(candidatesOf(accounts));
   });
 });
 

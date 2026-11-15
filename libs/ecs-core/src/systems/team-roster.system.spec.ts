@@ -429,3 +429,87 @@ describe('TeamRosterSystem.claimOf — whose record it is to the person looking 
     expect(TeamRosterSystem.claimOf(leaver, owner)).toBe(RecordClaim.None);
   });
 });
+
+describe('TeamRosterSystem — the account beside a record: who may link one, who may release it (team onboarding D8)', () => {
+  const members = TeamRosterSystem.membersOf(
+    facts({
+      barbers: [ivan, niko],
+      accounts: [
+        account('u-ivan', [Role.Barber], IVAN),
+        account('u-owner', [Role.Admin]),
+        account('u-desk', [Role.Receptionist], null, {
+          firstName: 'Ана',
+          lastName: 'Колева',
+        }),
+        account('u-vendor', [Role.Sysadmin], null, {
+          firstName: 'Вера',
+          lastName: 'Димова',
+        }),
+        account('u-stub', [Role.Barber], null, { firstName: '', lastName: '' }),
+      ],
+    }),
+  );
+  const linked = TeamRosterSystem.recordOf(
+    members,
+    IVAN,
+  ) as TeamMember.OfBarber;
+  const free = TeamRosterSystem.recordOf(members, NIKO) as TeamMember.OfBarber;
+  const owner = {
+    userId: UserId.of('u-owner'),
+    linkedBarberId: null,
+    assignsRoles: true,
+  };
+
+  it('an owner links an account to a record nobody is linked to — even when they hold a record themself', () => {
+    expect(TeamRosterSystem.linksAccount(free, owner)).toBe(true);
+    expect(
+      TeamRosterSystem.linksAccount(free, { ...owner, linkedBarberId: IVAN }),
+    ).toBe(true);
+    expect(TeamRosterSystem.linksAccount(linked, owner)).toBe(false);
+  });
+
+  it('an owner releases someone else’s account, never their own: that leaves through «Не съм аз»', () => {
+    expect(TeamRosterSystem.releasesAccount(linked, owner)).toBe(true);
+    expect(TeamRosterSystem.releasesAccount(free, owner)).toBe(false);
+    expect(
+      TeamRosterSystem.releasesAccount(linked, {
+        ...owner,
+        userId: UserId.of('u-ivan'),
+      }),
+    ).toBe(false);
+  });
+
+  it('neither door is there for someone who assigns no roles, for nobody, or on a leaver’s record', () => {
+    const leaver = (member: TeamMember.OfBarber): TeamMember.OfBarber => ({
+      ...member,
+      teamMemberStatus: TeamMemberStatus.Departed,
+    });
+    for (const viewer of [
+      { ...owner, assignsRoles: false },
+      { ...owner, userId: null },
+    ]) {
+      expect(TeamRosterSystem.linksAccount(free, viewer)).toBe(false);
+      expect(TeamRosterSystem.releasesAccount(linked, viewer)).toBe(false);
+    }
+    expect(TeamRosterSystem.linksAccount(leaver(free), owner)).toBe(false);
+    expect(TeamRosterSystem.releasesAccount(leaver(linked), owner)).toBe(false);
+  });
+
+  it('unlinkedOf lists the registered staff accounts with no record — not the viewer, a sysadmin or a stub', () => {
+    const unlinked = TeamRosterSystem.unlinkedOf(members, owner.userId);
+    expect(unlinked.map((member) => member.memberUserId)).toEqual(['u-desk']);
+    expect(members).toContain(unlinked[0]);
+    expect(
+      TeamRosterSystem.unlinkedOf(members, null).map(
+        (member) => member.memberUserId,
+      ),
+    ).toEqual(['u-desk', 'u-owner']);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(members);
+    expect(TeamRosterSystem.unlinkedOf(frozen, owner.userId)).toEqual(
+      TeamRosterSystem.unlinkedOf(frozen, owner.userId),
+    );
+  });
+});

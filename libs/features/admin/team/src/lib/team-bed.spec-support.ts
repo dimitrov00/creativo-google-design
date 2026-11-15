@@ -28,14 +28,16 @@ import type {
   BarberSchedule,
   Service,
   ShopLocation,
+  User,
 } from '@core/entities';
-import type { PipelineError } from '@core/errors';
+import { type PipelineError, RepositoryError } from '@core/errors';
 import type {
   GatewayPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
   TeamAdminPorts,
   TeamRecordPorts,
+  UserSearchPorts,
 } from '@core/ports';
 import {
   AccessScope,
@@ -55,6 +57,7 @@ import {
   TeamCatalogService,
 } from '@creativo/features/shared/catalog';
 import {
+  AUTH_DEPLOYMENT_PORTS,
   CLOCK_PORTS,
   GATEWAY_PORTS,
   ID_PORTS,
@@ -62,6 +65,7 @@ import {
   SCHEDULING_READ_PORTS,
   ShopZoneService,
   TEAM_ADMIN_PORTS,
+  USER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { catalogueOf } from './catalogue.spec-support';
 
@@ -103,6 +107,8 @@ export type TeamBedOptions = {
   readonly schedules?: readonly BarberSchedule[];
   /** The catalogue's shops. */
   readonly locations?: readonly ShopLocation[];
+  /** What the accounts' index answers a lookup, whatever is asked. */
+  readonly accounts?: readonly User[];
 };
 
 /** The call a barber record's write made, by its port. */
@@ -115,6 +121,8 @@ export type RecordCalls = {
   readonly roles: RolesCall[];
   /** Every call dialled through the gateway by name — the hours' `setRosterWeek`. */
   readonly dialled: { readonly callable: string; readonly input: unknown }[];
+  /** Every prefix the accounts' index was asked, in order. */
+  readonly searched: string[];
 };
 
 /** A record's writes for a spec that makes none: each one fails the spec that calls it. */
@@ -162,6 +170,7 @@ export function teamBed(options: TeamBedOptions = {}) {
     activations: [],
     roles: [],
     dialled: [],
+    searched: [],
   };
   let listAnswer: () => Result<TeamCall.Listed, PipelineError> = () =>
     options.listRefusal === undefined
@@ -232,9 +241,13 @@ export function teamBed(options: TeamBedOptions = {}) {
     setRoles: async (call) => {
       calls.roles.push(call);
       if (rolesRefusal !== null) return Result.err(rolesRefusal);
-      // The stored account moves, as the listener would say.
-      roles.set(call.roles);
-      linked.set(call.linkedBarberId);
+      // The viewer's own stored account moves, as the listener would say;
+      // someone else's change is theirs, and reaches the page through the
+      // Team list.
+      if (call.targetUserId === userId) {
+        roles.set(call.roles);
+        linked.set(call.linkedBarberId);
+      }
       return Result.ok({
         targetUserId: call.targetUserId,
         roles: call.roles,
@@ -254,6 +267,16 @@ export function teamBed(options: TeamBedOptions = {}) {
       return refusal === undefined ? Result.ok({}) : Result.err(refusal);
     },
   } as unknown as GatewayPorts;
+
+  let searchFails = false;
+  const userSearch: UserSearchPorts = {
+    searchUsers: async (prefix) => {
+      calls.searched.push(prefix);
+      return searchFails
+        ? Result.err(RepositoryError.readFailed(null, null))
+        : Result.ok(options.accounts ?? []);
+    },
+  };
 
   const scopeOf = (staffCapability: StaffCapability): AccessScope =>
     StaffAccessSystem.scopeOf(permissions(), staffCapability, roles());
@@ -282,6 +305,11 @@ export function teamBed(options: TeamBedOptions = {}) {
     { provide: ROLES_ADMIN_PORTS, useValue: rolesPorts },
     { provide: GATEWAY_PORTS, useValue: gateway },
     { provide: SCHEDULING_READ_PORTS, useValue: scheduling },
+    { provide: USER_SEARCH_PORTS, useValue: userSearch },
+    {
+      provide: AUTH_DEPLOYMENT_PORTS,
+      useValue: { authDeployment: { defaultCountry: 'BG' } },
+    },
     {
       provide: ID_PORTS,
       useValue: {
@@ -368,6 +396,10 @@ export function teamBed(options: TeamBedOptions = {}) {
     dialRefuses: (callable: string, refusal: PipelineError | null) => {
       if (refusal === null) dialRefusals.delete(callable);
       else dialRefusals.set(callable, refusal);
+    },
+    /** The accounts' index cannot be read from now on, or answers again. */
+    searchFails: (fails: boolean) => {
+      searchFails = fails;
     },
     /** `setRoles` refuses from now on, or lands again. */
     rolesRefuse: (refusal: PipelineError | null) => {

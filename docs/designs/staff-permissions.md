@@ -1136,7 +1136,7 @@ editors"); its server half is merged.
     person.
   - «Това съм аз» · «Не съм аз» (P9). `TeamRosterSystem.claimOf` decides
     what the record is to the person looking, and
-    `RoleAssignmentSystem.selfLinkOf` answers the roles and the link
+    `RoleAssignmentSystem.recordLinkOf` answers the roles and the link
     `setRoles` is sent. The page follows the stored account, so the row
     turns at once and nobody is signed out.
   - A member's page leads to the «Права» page of each level the linked
@@ -1190,9 +1190,51 @@ editors"); its server half is merged.
   - The end-to-end case switches one service on for a new record, reprices
     it, and reads the offering on the stored service; «Изтрий» then takes
     the offering with the record.
-- **Still to build in this stage.** The shops editor; «Свържи профил» for
-  someone else's account; a page for an account with no record. The
-  barber's photo has no callable yet.
+- **Built so far: the shops editor.** «Салони» on a member's page, for
+  whoever `TEAM_MANAGE` reaches the record for; a one-shop business has no
+  row.
+  - «Всички салони» is a switch of its own, because the stored empty list
+    means every shop, including one added later. Off, each shop is a tick.
+    A record that works everywhere starts with every shop ticked, so one
+    press is the whole edit.
+  - A shop the roster still has hours at keeps its tick and says why
+    (`TeamSystem.rosteredShops`, the list `setShops` refuses over). The
+    owner changes the hours first.
+  - «Запази» is offered only when `TeamSystem.setShops` takes the draft and
+    `LocationScopeSystem.sameScope` says it changes something. With no shop
+    ticked there is no save.
+- **Built so far: «Свържи профил» and «Разкачи профила».** Someone else's
+  account, linked to a record from its page and released from it, by the
+  owner alone (`setRoles` is theirs).
+  - Who sees which door is `TeamRosterSystem.linksAccount` and
+    `releasesAccount`: a record nobody is linked to offers the link; a
+    record someone else holds offers the release. The owner's own account
+    keeps «Това съм аз» · «Не съм аз», which sign nobody out.
+  - The sheet opens on the team's own accounts that have no record
+    (`TeamRosterSystem.unlinkedOf`). Typing looks the accounts up the way
+    the schedule's client search does (`ClientQuerySystem`, the `users`
+    index): a name, a phone or an email. Who of the answer is offered is
+    `RoleAssignmentSystem.linkCandidatesOf`: registered, not erased, not
+    blocked, no `sysadmin`, not the owner, and linked to no record yet. A
+    link moves by being released first, never by being taken over.
+  - A row asks before it acts, and says the person will have to sign in
+    again. `RoleAssignmentSystem.recordLinkOf` answers what `setRoles` is
+    sent, for the owner's own account and anyone else's: the stored roles
+    plus `barber` and the link, or without `barber` and the link cleared.
+    An account left with no role is a `client` again.
+  - A change the server wrote without ending the person's sessions
+    (`GOVERNANCE_ROLES_SESSIONS_NOT_REVOKED`) counts as written. The page
+    says so in a notice with «Опитай пак», which sends the same change
+    again: nothing is written twice and the sessions are ended. This is the
+    client card's retry.
+  - Where it differs from team onboarding D8: the lookup is by name, phone
+    or email in one field, not by an email check on the add sheet. That
+    check (`checkStaffInviteEmail`) comes with the invites.
+  - The end-to-end case moves a new record to one shop, links a seeded
+    client found by family name, checks the stored roles, link and lock,
+    releases it and checks them again.
+- **Still to build in this stage.** A page for an account with no record.
+  The barber's photo has no callable yet.
 
 ### Stage B. The booking calls
 

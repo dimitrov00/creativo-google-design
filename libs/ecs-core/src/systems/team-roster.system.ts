@@ -1,6 +1,7 @@
 import {
   BarberStatus,
   RecordClaim,
+  Role,
   type StaffLevel,
   type TeamMember,
   TeamMemberNote,
@@ -241,5 +242,60 @@ export const TeamRosterSystem = {
       viewer.linkedBarberId === null
       ? RecordClaim.Open
       : RecordClaim.None;
+  },
+
+  /**
+   * May the person looking link someone's account to the record («Свържи
+   * профил», team onboarding D8): they assign roles, the record has not
+   * left, and nobody is linked to it.
+   */
+  linksAccount(member: TeamMember.OfBarber, viewer: RecordViewer): boolean {
+    return (
+      viewer.userId !== null &&
+      viewer.assignsRoles &&
+      member.teamMemberStatus !== TeamMemberStatus.Departed &&
+      member.memberUserId === null
+    );
+  },
+
+  /**
+   * May they release the account linked to it («Откачи профила»): they
+   * assign roles, the record has not left, and the account linked is
+   * someone else's — their own leaves through «Не съм аз», which signs
+   * nobody out.
+   */
+  releasesAccount(member: TeamMember.OfBarber, viewer: RecordViewer): boolean {
+    return (
+      viewer.userId !== null &&
+      viewer.assignsRoles &&
+      member.teamMemberStatus !== TeamMemberStatus.Departed &&
+      member.memberUserId !== null &&
+      member.memberUserId !== viewer.userId
+    );
+  },
+
+  /**
+   * The staff accounts a record may be linked to without a lookup, in the
+   * members' order («Свържи профил»): the ones linked to no record
+   * (`ROLE_ONLY`) that have registered (a name), hold no `sysadmin` and
+   * are not the viewer's own, whose door is «Това съм аз». The rows
+   * themselves, never copies.
+   */
+  unlinkedOf(
+    members: readonly TeamMember[],
+    viewerUserId: UserId | null,
+  ): readonly TeamMember.RoleOnly[] {
+    const unlinked: TeamMember.RoleOnly[] = [];
+    for (const member of members) {
+      if (
+        member.teamMemberStatus === TeamMemberStatus.RoleOnly &&
+        member.memberUserId !== viewerUserId &&
+        member.memberAccountName.length > 0 &&
+        !member.memberRoles.includes(Role.Sysadmin)
+      ) {
+        unlinked.push(member);
+      }
+    }
+    return unlinked;
   },
 } as const;

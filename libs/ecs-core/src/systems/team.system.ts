@@ -281,10 +281,33 @@ export const TeamSystem = {
   },
 
   /**
+   * The shops a roster still has hours at: the ones its current or coming
+   * versions — still in force on `today` or later — name, each once, in
+   * the roster's order. None for no roster. `setShops` lets none of them
+   * go, and the shops editor holds their rows.
+   */
+  rosteredShops(
+    schedule: BarberSchedule | null,
+    today: LocalDate,
+  ): readonly LocationId[] {
+    if (schedule === null) return [];
+    const coming: ScheduleVersion[] = [];
+    for (const version of schedule.versions) {
+      if (
+        version.effectiveToLocalDate === null ||
+        version.effectiveToLocalDate >= today
+      ) {
+        coming.push(version);
+      }
+    }
+    return ScheduleVersion.locations(coming);
+  },
+
+  /**
    * The record at these shops (`[]` is every shop): every one a listed
-   * location, and no shop removed while the roster's current or coming
-   * versions — the ones still in force on `today` or later — have hours
-   * there (`TEAM_SHOP_HAS_HOURS`, naming the first such shop).
+   * location, and no shop removed while the roster still has hours there
+   * ({@link TeamSystem.rosteredShops} — `TEAM_SHOP_HAS_HOURS`, naming the
+   * first such shop).
    */
   setShops(
     barber: Barber,
@@ -300,17 +323,8 @@ export const TeamSystem = {
     if (!live.ok) return live;
     const shops = shopsOf(locationIds, facts.listedShops);
     if (!shops.ok) return shops;
-    if (shops.value.length > 0 && facts.schedule !== null) {
-      const coming: ScheduleVersion[] = [];
-      for (const version of facts.schedule.versions) {
-        if (
-          version.effectiveToLocalDate === null ||
-          version.effectiveToLocalDate >= facts.today
-        ) {
-          coming.push(version);
-        }
-      }
-      const rostered = ScheduleVersion.locations(coming);
+    if (shops.value.length > 0) {
+      const rostered = TeamSystem.rosteredShops(facts.schedule, facts.today);
       for (let i = 0; i < rostered.length; i++) {
         const locationId = rostered[i] as LocationId;
         if (!shops.value.includes(locationId)) {

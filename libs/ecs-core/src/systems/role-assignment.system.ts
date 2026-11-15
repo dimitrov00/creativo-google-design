@@ -325,24 +325,66 @@ export const RoleAssignmentSystem = {
   },
 
   /**
-   * What an owner sends to take a barber record as their own, or to give it
-   * back (staff permissions P9, «Това съм аз» · «Не съм аз»): with a
-   * record, the stored set plus `barber` and a `SET` link to it; with
-   * `null`, the stored set without `barber` and a `CLEAR` — the exact
-   * inverse, so the two undo each other. The set is normalised as `decide`
+   * What `setRoles` is sent to link an account to a barber record, or to
+   * release it — the owner's own («Това съм аз» · «Не съм аз», staff
+   * permissions P9) and someone else's («Свържи профил» · «Откачи
+   * профила», team onboarding D8) alike: with a record, the stored set
+   * plus `barber` and a `SET` link to it; with `null`, the stored set
+   * without `barber` and a `CLEAR` — the exact inverse, so the two undo
+   * each other. An account left with no role at all is a `client` again:
+   * `setRoles` takes no empty set. The set is normalised as `decide`
    * normalises it; `decide` still judges the call.
    */
-  selfLinkOf(
+  recordLinkOf(
     stored: readonly Role[],
     barberId: BarberId | null,
   ): { readonly roles: readonly Role[]; readonly link: BarberLinkRequest } {
     const kept = stored.filter((role) => role !== Role.Barber);
-    return barberId === null
-      ? { roles: normalised(kept), link: BarberLinkRequest.CLEAR }
-      : {
-          roles: normalised([...kept, Role.Barber]),
-          link: BarberLinkRequest.set(barberId),
-        };
+    if (barberId !== null) {
+      return {
+        roles: normalised([...kept, Role.Barber]),
+        link: BarberLinkRequest.set(barberId),
+      };
+    }
+    const left = normalised(kept);
+    return {
+      roles: left.length === 0 ? [Role.Client] : left,
+      link: BarberLinkRequest.CLEAR,
+    };
+  },
+
+  /**
+   * The accounts a barber record may be linked to, out of a lookup's
+   * answer and in its order (team onboarding D8, «Свържи профил»): each
+   * one the card would offer «Роли» on ({@link RoleAssignmentSystem.offerOf}
+   * — stored, `REGISTERED`, not `ERASED`, no `sysadmin`, and not the
+   * viewer, whose own door is «Това съм аз»), not blocked at `nowUtcMs`
+   * (a T2 row, as the caller's block is), and linked to no record yet: a
+   * link moves by being released first, never by being taken over. The
+   * accounts themselves, never copies; the server stays the authority.
+   */
+  linkCandidatesOf(input: {
+    readonly viewerUserId: UserId;
+    readonly viewerRoles: readonly Role[];
+    readonly accounts: readonly User[];
+    readonly nowUtcMs: UtcEpochMs;
+  }): readonly User[] {
+    const candidates: User[] = [];
+    for (let i = 0; i < input.accounts.length; i++) {
+      const account = input.accounts[i] as User;
+      if (
+        RoleAssignmentSystem.offerOf(
+          input.viewerUserId,
+          input.viewerRoles,
+          account,
+        ) &&
+        !AccountLifecycle.isBlockedAt(account, input.nowUtcMs) &&
+        StaffLink.of(account).linkedBarberId === null
+      ) {
+        candidates.push(account);
+      }
+    }
+    return candidates;
   },
 
   /**

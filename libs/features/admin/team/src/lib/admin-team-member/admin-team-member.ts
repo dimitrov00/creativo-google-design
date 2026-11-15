@@ -57,9 +57,12 @@ import {
   UiSheetHeadline,
   UiToast,
 } from '@creativo/ui/patterns';
+import { LinkAnswer } from '../link.vm';
+import { MemberLinkSheet } from '../member-link-sheet/member-link-sheet';
 import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
+import { MemberShopsSheet } from '../member-shops-sheet/member-shops-sheet';
 import { memberPageVm } from '../member.presenter';
 import { DeleteAnswer, MemberEditor, type MemberPageVm } from '../member.vm';
 import { TeamMemberStore } from '../team-member.store';
@@ -90,16 +93,23 @@ function hoursDesk(): HoursDesk {
  * owner's own door to a chair («Това съм аз» · «Не съм аз») and the way to
  * the levels that account holds.
  *
+ * the levels that account holds. Someone else's account is linked from
+ * «Свържи профил» and released by «Разкачи профила», each behind a
+ * question: both end that person's sessions.
+ *
  * The weekly hours are the schedule's own sheet, raised here over this
- * page's store (`HOURS_DESK`). It and «Услуги и цени» are loaded when they
- * are first asked for; the two short editors come with the page.
+ * page's store (`HOURS_DESK`). It, «Услуги и цени» and «Свържи профил» are
+ * loaded when they are first asked for; the short editors come with the
+ * page.
  */
 @Component({
   selector: 'lib-admin-team-member',
   imports: [
+    MemberLinkSheet,
     MemberOfferingsSheet,
     MemberPeriodSheet,
     MemberProfileSheet,
+    MemberShopsSheet,
     RouterLink,
     StaffHoursSheet,
     TranslocoDirective,
@@ -161,6 +171,8 @@ export class AdminTeamMember {
   protected readonly bookedByOpen = signal(false);
   /** The delete question is up. */
   protected readonly deleteOpen = signal(false);
+  /** The «Разкачи профила» question is up. */
+  protected readonly releaseOpen = signal(false);
   /** The hours were just saved — said once. */
   protected readonly hoursSaved = signal(false);
 
@@ -192,11 +204,13 @@ export class AdminTeamMember {
   protected readonly vm = computed<MemberPageVm | null>(() => {
     const words = this.wording.words();
     const memberWords = this.wording.memberWords();
+    const linkWords = this.wording.linkWords();
     const barber = this.store.barber();
     const checklist = this.store.checklist();
     if (
       words === null ||
       memberWords === null ||
+      linkWords === null ||
       barber === undefined ||
       checklist === null
     ) {
@@ -219,11 +233,14 @@ export class AdminTeamMember {
       mayEditHours: this.store.mayEditHours(),
       mayEditOfferings: this.store.mayEditOfferings(),
       deletable: this.store.deletable(),
+      linksAccount: this.store.linksAccount(),
+      releasesAccount: this.store.releasesAccount(),
       editsPermissions: this.access.editsPermissions(),
       permissions: this.access.permissions(),
       avatarSrc: this.catalog.findTeamBarberVm(barber.id)?.avatarSrc ?? null,
       words,
       memberWords,
+      linkWords,
       locale: this.wording.locale(),
       today: this.today(),
     });
@@ -297,6 +314,17 @@ export class AdminTeamMember {
   /** «Това съм аз» · «Не съм аз». */
   protected claim(mine: boolean): void {
     void this.store.claim(mine);
+  }
+
+  /** «Опитай пак»: the link change again, so the person's sessions are ended. */
+  protected endSessions(): void {
+    void this.store.endSessions();
+  }
+
+  /** The «Разкачи профила» question answered. */
+  protected onReleasePick(answer: string): void {
+    this.releaseOpen.set(false);
+    if (answer === LinkAnswer.Confirm) void this.store.releaseAccount();
   }
 
   /** The delete question answered. */

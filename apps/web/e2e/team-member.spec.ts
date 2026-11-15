@@ -7,6 +7,7 @@ import {
   readBarberLink,
   readStoredBody,
   removeAddedBarber,
+  removeUserProfile,
   seedUserProfile,
 } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
@@ -22,10 +23,14 @@ import { signInAs } from './support/sign-in';
 test.describe('a team member’s page', () => {
   /** The record the running case added; removed if the case stopped before deleting it. */
   let added: string | null = null;
+  /** The account the running case linked to its record; removed if the case stopped while it was staff. */
+  let linkedUid: string | null = null;
 
   test.afterEach(async () => {
     if (added !== null) await removeAddedBarber(added);
+    if (linkedUid !== null) await removeUserProfile(linkedUid);
     added = null;
+    linkedUid = null;
   });
 
   /** The member page's id, from its address. */
@@ -349,6 +354,120 @@ test.describe('a team member’s page', () => {
     await page.getByTestId('member-delete-confirm').click();
     await expect(page).toHaveURL(/\/admin\/team$/, { timeout: 30_000 });
     await expect.poll(offeringOf, { timeout: 20_000 }).toBeNull();
+    added = null;
+  });
+
+  test('an owner moves a new barber to one shop, links a registered account to the record from a lookup, and releases it', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-link-${key}`;
+    const clientUid = `e2e-member-linked-${key}`;
+    const name = `Нов Салон ${key}`.slice(0, 40);
+    // A family name nobody else holds: the lookup finds this account alone.
+    const family = `Свързан${key}`;
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Връзка',
+      roles: [Role.Admin],
+    });
+    await seedUserProfile(clientUid, {
+      firstName: 'Георги',
+      lastName: family,
+      phone: '+359881112255',
+    });
+    await signInAs(page, uid, ['admin']);
+
+    // A new record with nothing copied: in preparation throughout.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+
+    // «САЛОНИ»: a new record works everywhere. «Всички салони» off, one
+    // tick taken away, and the record is the centre shop's alone.
+    const shops = page.getByTestId('member-setup-SHOPS');
+    await expect(shops).toContainText('Всички', { timeout: 30_000 });
+    await shops.click();
+    await expect(page.getByTestId('member-shops-save')).toBeDisabled();
+    await page.getByTestId('member-shops-every').click();
+    const mladost = page.getByTestId('member-shop-loc-mladost');
+    await expect(mladost).toHaveAttribute('aria-checked', 'true');
+    await mladost.click();
+    await expect(mladost).toHaveAttribute('aria-checked', 'false');
+    await page.getByTestId('member-shops-save').click();
+    await expect(page.getByTestId('member-shops-sheet')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(shops).toContainText('Център', { timeout: 30_000 });
+    await expect(shops).not.toContainText('Всички');
+    expect(
+      (await readStoredBody(Collections.Barbers, added))?.['locationIds'],
+    ).toEqual([DEV_CHAIR.locationId]);
+
+    // «СВЪРЖИ ПРОФИЛ»: the lookup finds the registered client by family
+    // name; the row asks first, and says the person signs in again.
+    await page.getByTestId('member-link').click();
+    await page.getByTestId('member-link-query').fill(family);
+    const found = page.getByTestId(`member-link-${clientUid}`);
+    await expect(found).toContainText(`Георги ${family}`, { timeout: 30_000 });
+    await found.click();
+    await expect(page.getByTestId('member-link-question')).toContainText(
+      'ще трябва да влезе отново',
+    );
+    linkedUid = clientUid;
+    await page.getByTestId('member-link-confirm').click();
+
+    // Linked: the sheet leaves, the account stands beside the record, and
+    // the stored account is a barber with the link, its lock taken.
+    await expect(page.getByTestId('member-link-sheet')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-account-linked')).toContainText(
+      `Георги ${family}`,
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('member-link')).toHaveCount(0);
+    const account = await readStoredBody(Collections.Users, clientUid);
+    expect(account?.['roles']).toEqual([Role.Client, Role.Barber]);
+    expect(account?.['linkedBarberId']).toBe(added);
+    expect(await readBarberLink(added)).toBe(clientUid);
+    // The owner's own account did not move.
+    expect((await readStoredBody(Collections.Users, uid))?.['roles']).toEqual([
+      Role.Admin,
+    ]);
+
+    // «РАЗКАЧИ ПРОФИЛА»: asked first; the account is a client again, the
+    // link and its lock gone, and the record offers a link once more.
+    await page.getByTestId('member-release').click();
+    await expect(page.getByTestId('member-release-question')).toContainText(
+      `Георги ${family}`,
+    );
+    await page.getByTestId('member-release-confirm').click();
+    await expect(page.getByTestId('member-link')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-account-linked')).toHaveCount(0);
+    const released = await readStoredBody(Collections.Users, clientUid);
+    expect(released?.['roles']).toEqual([Role.Client]);
+    expect(released?.['linkedBarberId']).toBeNull();
+    expect(await readBarberLink(added)).toBeNull();
+    linkedUid = null;
+
+    await page.getByTestId('member-delete').click();
+    await page.getByTestId('member-delete-confirm').click();
+    await expect(page).toHaveURL(/\/admin\/team$/, { timeout: 30_000 });
+    expect(await readStoredBody(Collections.Barbers, added)).toBeNull();
     added = null;
   });
 
