@@ -1591,10 +1591,10 @@
               <!-- ONE DAY PILL, shared with the page toolbar (owner, 2026-09-09):
                  same trigger, same label, same calendar. `dayRelatives` marks
                  the visit's own days on the month. -->
-              <lib-staff-day-pill
+              <ui-date-pill
                 uiAlignment="trailing"
-                [uiDayKey]="draft().dayKey"
-                [uiTodayKey]="vm().now?.localDate ?? null"
+                [uiSelected]="draft().dayKey"
+                [uiToday]="vm().now?.localDate ?? null"
                 [uiLocale]="locale()"
                 [uiRelatives]="dayRelatives()"
                 [uiPreviousLabel]="t('staff.visit.monthPrevious')"

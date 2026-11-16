@@ -9,7 +9,6 @@ import { SHEET_STAGED, climbStages } from '../staged-render';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import type { AppointmentPhoto } from '@core/entities';
 import { NgTemplateOutlet } from '@angular/common';
-import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import { rankClients } from './client-query';
 import type { RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
@@ -278,6 +277,7 @@ import {
   UiTimeField,
   UiUnitField,
   UiChip,
+  UiDatePill,
 } from '@creativo/ui/controls';
 import { catalogNoteWords, catalogTagWords } from '../shared/catalog-tag.words';
 import {
@@ -288,7 +288,11 @@ import {
   photoMomentOf,
 } from '@creativo/features/shared/visits';
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
-import { formatCentsFigure, formatCurrencyUnit } from '@creativo/ui/wall-clock';
+import {
+  formatCentsFigure,
+  formatCurrencyUnit,
+  formatDayPill,
+} from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { UiFlow, UiGrid, UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
@@ -1086,7 +1090,7 @@ const TRACK_DAY_END: TrackMinute = TrackMinute.ofProven(DAY_MINUTES);
     UiAmountField,
     UiChoiceMenu,
     UiChoiceTiles,
-    StaffDayPill,
+    UiDatePill,
     UiForegroundStyleDirective,
     UiIcon,
     UiMap,

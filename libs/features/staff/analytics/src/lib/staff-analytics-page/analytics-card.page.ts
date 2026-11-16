@@ -59,8 +59,6 @@ import { AnalyticsCard } from '../analytics-home.vm';
 import {
   analyticsDrillVm,
   analyticsInfoVm,
-  partsToLocalDate,
-  rangeDateText,
   rangeOf,
 } from '../analytics.presenter';
 import type { AnalyticsDrill } from '../analytics.vm';
@@ -227,16 +225,6 @@ export class AnalyticsCardPage {
   protected readonly rangeVm = computed(() => {
     const screen = this.screen.input();
     return screen === null ? null : rangeOf(screen);
-  });
-
-  /** The sheet's two rows' dates in words. */
-  protected readonly rangeTexts = computed(() => {
-    const screen = this.screen.input();
-    if (screen === null) return { from: null, to: null };
-    return {
-      from: rangeDateText(partsToLocalDate(this.store.rangeFrom()), screen),
-      to: rangeDateText(partsToLocalDate(this.store.rangeTo()), screen),
-    };
   });
 
   constructor() {

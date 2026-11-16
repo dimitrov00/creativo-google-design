@@ -11,7 +11,6 @@ import {
   UiDateBadge,
   UiListGroup,
 } from '@creativo/ui/patterns';
-import { formatWallClock } from '@creativo/ui/wall-clock';
 import { ScDemo } from '@showcase/shared/demo';
 import { ScPage } from '@showcase/shared/page';
 
@@ -61,16 +60,6 @@ export class MonthPickerPage {
   /** The date rows' period: a start, and a last day not chosen yet. */
   protected readonly periodStart = signal<LocalDate | null>(october(1));
   protected readonly periodLast = signal<LocalDate | null>(null);
-  /** The row whose month is unfolded. */
-  protected readonly rowOpen = signal<'start' | 'last' | null>(null);
-
-  /** «14 окт.» — the consumer words the day; `null` prints the placeholder. */
-  protected dayWords(day: LocalDate | null): string | null {
-    return day === null
-      ? null
-      : formatWallClock(day, null, 'bg', { day: 'numeric', month: 'short' });
-  }
-
   protected readonly relatives: readonly UiMonthPickerRelative[] = [
     { offset: 0, label: 'Днес' },
     { offset: 1, label: 'Утре' },

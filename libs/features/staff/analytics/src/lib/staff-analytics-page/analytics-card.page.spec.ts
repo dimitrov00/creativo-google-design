@@ -131,17 +131,16 @@ describe('AnalyticsCardPage — a card’s own screen (staff-analytics-v3)', () 
     });
   });
 
-  it('«…» opens the custom period sheet on «От», its calendar unfolded, «До» folded', async () => {
+  it('«…» opens the custom period sheet with both months closed; a capsule pops its own', async () => {
     const { fixture, host } = await render('takings');
     byTestId(host, 'analytics-custom-range')?.click();
     await settle(fixture);
-    expect(
-      byTestId(host, 'analytics-range-from')?.getAttribute('aria-expanded'),
-    ).toBe('true');
-    expect(byTestId(host, 'analytics-range-from-calendar')).not.toBeNull();
+    expect(byTestId(host, 'analytics-range-from-calendar')).toBeNull();
     expect(byTestId(host, 'analytics-range-to-calendar')).toBeNull();
+    // The month is a popover: drawn on the press, before anything else
+    // runs (a test page has no layout to keep it anchored to).
     byTestId(host, 'analytics-range-to')?.click();
-    await settle(fixture);
+    fixture.detectChanges();
     expect(byTestId(host, 'analytics-range-from-calendar')).toBeNull();
     expect(byTestId(host, 'analytics-range-to-calendar')).not.toBeNull();
   });

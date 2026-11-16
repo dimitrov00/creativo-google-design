@@ -39,31 +39,27 @@
       </ui-notice>
       }
 
-      <!-- THE TWO DAYS, each a date row: the month unfolds under the row
-           it belongs to, one at a time — the app's one way to ask for a
-           date in a form. The last day's month dots the days the barber is
-           booked on, so the day is chosen against the visits it cuts. -->
+      <!-- THE TWO DAYS, each a date row: the day in a capsule at the
+           row's end that pops the month — the app's one way to ask for a
+           date. The last day's month dots the days the barber is booked
+           on, so the day is chosen against the visits it cuts. -->
       <ui-list-group>
         <ui-date-row
           uiTestId="member-period-start"
           [uiLabel]="t('admin.team.period.start')"
           [uiSelected]="starts()"
-          [uiValue]="startsWords()"
           [uiToday]="uiToday()"
           [uiLocale]="locale()"
           [uiPreviousLabel]="t('admin.team.period.previousMonth')"
           [uiNextLabel]="t('admin.team.period.nextMonth')"
           [uiDisabled]="store.pending()"
-          [uiExpanded]="unfolded() === PeriodDay.Starts"
-          (uiExpandedChange)="unfold(PeriodDay.Starts, $event)"
-          (uiPicked)="pickStart($event)"
+          (uiPicked)="starts.set($event)"
         />
         <ui-date-row
           #lastRow
           uiTestId="member-period-last"
           [uiLabel]="t('admin.team.period.last')"
           [uiSelected]="last()"
-          [uiValue]="lastWords()"
           [uiPlaceholder]="t('admin.team.period.lastNone')"
           [uiToday]="uiToday()"
           [uiMin]="starts()"
@@ -73,9 +69,7 @@
           [uiPreviousLabel]="t('admin.team.period.previousMonth')"
           [uiNextLabel]="t('admin.team.period.nextMonth')"
           [uiDisabled]="store.pending()"
-          [uiExpanded]="unfolded() === PeriodDay.Last"
-          (uiExpandedChange)="unfold(PeriodDay.Last, $event)"
-          (uiPicked)="pickLast($event)"
+          (uiPicked)="last.set($event)"
         />
         @if (last() !== null) {
         <button

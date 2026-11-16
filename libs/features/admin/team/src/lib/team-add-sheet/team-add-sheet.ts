@@ -37,7 +37,6 @@ import {
 } from '@creativo/ui/patterns';
 import { TeamAddStore } from '../team-add.store';
 import { TeamWording } from '../team-wording.service';
-import { dayWords } from '../team.format';
 
 /** The copy menu's answer for nobody — an id no barber record carries. */
 const COPY_FROM_NOBODY = '';
@@ -105,20 +104,6 @@ export class TeamAddSheet {
   );
   protected readonly copyFrom = signal(COPY_FROM_NOBODY);
   protected readonly copyOpen = signal(false);
-
-  /** The start day's month is unfolded under its row. */
-  protected readonly startsOpen = signal(false);
-
-  /** A day is picked: the row holds it and its month folds. */
-  protected pickStart(day: LocalDate): void {
-    this.starts.set(day);
-    this.startsOpen.set(false);
-  }
-
-  protected readonly startsWords = computed(() => {
-    const day = this.starts();
-    return day === null ? null : dayWords(day, this.uiToday(), this.locale());
-  });
 
   /** Nobody, then every barber at work — whose prices can be copied. */
   protected readonly copyOptions = computed<readonly UiChoiceOption[]>(() => [

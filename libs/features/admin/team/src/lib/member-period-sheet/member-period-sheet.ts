@@ -33,18 +33,13 @@ import { LinkAnswer } from '../link.vm';
 import { type PeriodOutlookVm, periodOutlookVm } from '../period.presenter';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
-import { dayWords } from '../team.format';
-
-/** Which of the two days' months is unfolded. */
-const PeriodDay = { Starts: 'STARTS', Last: 'LAST' } as const;
-type PeriodDay = (typeof PeriodDay)[keyof typeof PeriodDay];
 
 /**
  * «ПЕРИОД НА РАБОТА» — the day a barber starts and, when there is one, the
  * last day they work (team onboarding D2): outside the period nobody can
- * book them. Two days, each a date row (`ui-date-row`) whose month unfolds
- * under it, one at a time — the same rows the analytics period is picked
- * with.
+ * book them. Two days, each a date row (`ui-date-row`): the day in a
+ * capsule that pops the month — the same rows every date in a form is
+ * picked with.
  *
  * A last day is the way someone leaves the team (team onboarding D10):
  * once it is behind the shop's today the record leaves, the linked account
@@ -56,9 +51,9 @@ type PeriodDay = (typeof PeriodDay)[keyof typeof PeriodDay];
  * day stay until someone moves or cancels them. The sheet reads the
  * barber's visits ahead once (`BookingsAheadStore`): the last day's month
  * dots the days they fall on, so the day is chosen against what it cuts,
- * and once a last day is drafted its month folds and the visits after it
- * are counted in a warning and listed under it (`lib-leftover-visits`),
- * each the way to its day on the schedule, before the save.
+ * and once a last day is drafted the visits after it are counted in a
+ * warning and listed under it (`lib-leftover-visits`), each the way to its
+ * day on the schedule, before the save.
  *
  * The sheet holds a draft and decides nothing: whether the two days make a
  * period is `TeamSystem.setPeriod`'s answer, the rule the server asks,
@@ -109,22 +104,6 @@ export class MemberPeriodSheet implements OnInit {
   /** The start day as drafted; `null` only before the sheet has read the record. */
   protected readonly starts = signal<LocalDate | null>(null);
   protected readonly last = signal<LocalDate | null>(null);
-
-  protected readonly PeriodDay = PeriodDay;
-  /** The day whose month is unfolded; none when the sheet opens. */
-  protected readonly unfolded = signal<PeriodDay | null>(null);
-
-  /** The start day in words; `null` only before the sheet has read the record. */
-  protected readonly startsWords = computed(() => {
-    const day = this.starts();
-    return day === null ? null : dayWords(day, this.uiToday(), this.locale());
-  });
-
-  /** The last day in words; `null` when there is none. */
-  protected readonly lastWords = computed(() => {
-    const day = this.last();
-    return day === null ? null : dayWords(day, this.uiToday(), this.locale());
-  });
 
   /**
    * The month the last day's row opens on while it holds no day: today's —
@@ -247,27 +226,6 @@ export class MemberPeriodSheet implements OnInit {
     const barber = untracked(this.uiBarber);
     this.starts.set(barber.barberStartsLocalDate);
     this.last.set(barber.barberLastWorkingLocalDate);
-  }
-
-  /** A row was pressed: its month unfolds and the other folds; pressed again, it folds. */
-  protected unfold(day: PeriodDay, expanded: boolean): void {
-    this.unfolded.set(expanded ? day : null);
-  }
-
-  /** The start is picked: its month folds, so the last day's row is next. */
-  protected pickStart(day: LocalDate): void {
-    this.starts.set(day);
-    this.unfolded.set(null);
-  }
-
-  /**
-   * The last day is picked: its month folds, so what the day will do — and
-   * the visits it leaves behind — is the next thing on the sheet, never
-   * under the fold of an open month.
-   */
-  protected pickLast(day: LocalDate): void {
-    this.last.set(day);
-    this.unfolded.set(null);
   }
 
   /**

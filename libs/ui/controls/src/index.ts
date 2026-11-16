@@ -4,6 +4,7 @@ export * from './lib/button/button';
 // still covers the full control set.
 export * from '@creativo/ui/icons';
 export * from './lib/month-picker/month-picker';
+export * from './lib/date-pill/date-pill';
 export * from './lib/date-row/date-row';
 export * from './lib/async-image/async-image';
 export * from './lib/map/map';

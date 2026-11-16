@@ -40,20 +40,18 @@
       }
 
       <ui-list-group>
-        <!-- The new start day: the app's date row, its month under it. -->
+        <!-- The new start day: the app's date row, a capsule that pops the month. -->
         <ui-date-row
           uiTestId="member-return-start"
           [uiLabel]="t('admin.team.period.start')"
           [uiSelected]="starts()"
-          [uiValue]="startsWords()"
           [uiToday]="uiToday()"
           [uiMin]="earliest()"
           [uiLocale]="locale()"
           [uiPreviousLabel]="t('admin.team.period.previousMonth')"
           [uiNextLabel]="t('admin.team.period.nextMonth')"
           [uiDisabled]="store.pending()"
-          [(uiExpanded)]="startsOpen"
-          (uiPicked)="pickStart($event)"
+          (uiPicked)="starts.set($event)"
         />
       </ui-list-group>
 

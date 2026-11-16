@@ -26,6 +26,7 @@ import {
   UiButton,
   UiChoiceMenu,
   type UiChoiceOption,
+  UiDatePill,
   UiIcon,
   UiModalSheet,
   UiSwitch,
@@ -46,7 +47,6 @@ import {
   UiSheetHeadline,
 } from '@creativo/ui/patterns';
 import { StaffBlockFailurePipe } from '../staff-dashboard/staff-block-failure.pipe';
-import { StaffDayPill } from '../day-pill/staff-day-pill';
 import { WEEKDAY_WORD } from '../block-editor/block-repeat';
 import { HOURS_DESK } from './hours-desk';
 import { hoursClock, hoursWeekVm } from './staff-hours.presenter';
@@ -75,7 +75,7 @@ type DayList = 'shifts' | 'breaks';
   selector: 'lib-staff-hours-sheet',
   imports: [
     StaffBlockFailurePipe,
-    StaffDayPill,
+    UiDatePill,
     UiButton,
     UiChoiceMenu,
     UiForegroundStyleDirective,

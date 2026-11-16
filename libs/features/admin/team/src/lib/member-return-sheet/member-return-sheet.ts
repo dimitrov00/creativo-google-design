@@ -29,7 +29,7 @@ import {
 } from '@creativo/ui/patterns';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
-import { dayWords, firstWord } from '../team.format';
+import { firstWord } from '../team.format';
 
 /**
  * «ВЪРНИ В ЕКИПА» — a barber who has left, back on the team (team
@@ -89,20 +89,6 @@ export class MemberReturnSheet implements OnInit {
   protected readonly earliest = computed(() =>
     TeamSystem.earliestReturn(this.uiBarber()),
   );
-
-  /** The start day's month is unfolded under its row. */
-  protected readonly startsOpen = signal(false);
-
-  /** A day is picked: the row holds it and its month folds. */
-  protected pickStart(day: LocalDate): void {
-    this.starts.set(day);
-    this.startsOpen.set(false);
-  }
-
-  protected readonly startsWords = computed(() => {
-    const day = this.starts();
-    return day === null ? null : dayWords(day, this.uiToday(), this.locale());
-  });
 
   /** «Стефан се връща със същия профил, цени и работно време…» */
   protected readonly lede = computed(() => {

@@ -1173,10 +1173,13 @@ and a leaver's page keeps showing them until none is left.
   (`BookingsAheadStore.watch`). Every last day drafted after that is
   counted from what is held; only a day drafted further back reads again.
 - The sheet uses the app's own parts, so nothing has to be learned twice:
-  - the two days are **date rows** (`ui-date-row`): the row, and its month
-    unfolding under it, one at a time. The analytics period sheet, the add
-    sheet and the return sheet use the same control; the team's pull-down
-    day menu is gone;
+  - the two days are **date rows** (`ui-date-row`): the label, and the day
+    in a capsule at the row's end that pops the month over the sheet —
+    Apple's compact `DatePicker`. The capsule is `ui-date-pill`, the one
+    the visit sheet, a block and the hours already wore (lifted into the
+    design system from the schedule). The analytics period sheet, the add
+    sheet and the return sheet use the same row; the team's pull-down day
+    menu is gone;
   - the last day's month **dots the days the barber is booked on**, the
     mark a repeating block's end is already chosen against, so the day is
     picked against the visits it cuts. It opens on today's month, not on

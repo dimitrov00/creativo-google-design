@@ -37,8 +37,6 @@ const WORDS: AnalyticsRangeVm = {
       [open]="open()"
       [from]="from()"
       [to]="to()"
-      [fromText]="fromText()"
-      [toText]="null"
       (fromChange)="from.set($event)"
       (toChange)="to.set($event)"
       (applied)="applied = applied + 1"
@@ -51,7 +49,6 @@ class Host {
   readonly open = signal(true);
   readonly from = signal<UiDateFieldParts | null>(null);
   readonly to = signal<UiDateFieldParts | null>(null);
-  readonly fromText = signal<string | null>(null);
   applied = 0;
   closed = 0;
 }
@@ -78,22 +75,20 @@ const byTestId = (root: HTMLElement, id: string) =>
 
 afterEach(() => TestBed.resetTestingModule());
 
-describe('AnalyticsRangeSheet — two collapsible rows with inline calendars and «Приложи»', () => {
-  it('opens on «От», its calendar unfolded; each row says its date or «Избери»; «Приложи» stays off while the store refuses', async () => {
+describe('AnalyticsRangeSheet — two date rows whose capsules pop the month, and «Приложи»', () => {
+  it('opens with both months closed; each capsule says its day or «Избери»; «Приложи» stays off while the store refuses', async () => {
     const { fixture, host, root } = await render();
-    expect(
-      byTestId(root, 'analytics-range-from')?.getAttribute('aria-expanded'),
-    ).toBe('true');
-    expect(byTestId(root, 'analytics-range-from-calendar')).not.toBeNull();
+    expect(byTestId(root, 'analytics-range-from-calendar')).toBeNull();
     expect(byTestId(root, 'analytics-range-to-calendar')).toBeNull();
     expect(
       byTestId(root, 'analytics-range-from-value')?.textContent?.trim(),
     ).toBe('Избери');
-    host.fromText.set('1.09');
+    host.from.set({ year: 2026, month: 9, day: 1 });
     fixture.detectChanges();
+    // The day as every pill names a day: weekday first.
     expect(
       byTestId(root, 'analytics-range-from-value')?.textContent?.trim(),
-    ).toBe('1.09');
+    ).toBe('вт, 1.09');
     const apply = byTestId(root, 'analytics-range-apply') as HTMLButtonElement;
     expect(apply.disabled).toBe(true);
     expect(byTestId(root, 'analytics-range-refusal')?.textContent?.trim()).toBe(
@@ -101,18 +96,7 @@ describe('AnalyticsRangeSheet — two collapsible rows with inline calendars and
     );
   });
 
-  it('a tap on a row unfolds its calendar and folds the other; a second tap folds it', async () => {
-    const { fixture, root } = await render();
-    byTestId(root, 'analytics-range-to')?.click();
-    fixture.detectChanges();
-    expect(byTestId(root, 'analytics-range-from-calendar')).toBeNull();
-    expect(byTestId(root, 'analytics-range-to-calendar')).not.toBeNull();
-    byTestId(root, 'analytics-range-to')?.click();
-    fixture.detectChanges();
-    expect(byTestId(root, 'analytics-range-to-calendar')).toBeNull();
-  });
-
-  it('a day picked for «От» is handed up and moves on to «До»; a day for «До» folds it', async () => {
+  it('a day picked in each capsule’s month is handed up, and the month closes', async () => {
     const { fixture, host, root } = await render();
     // The store opens the sheet on the period on screen (`openRange`).
     host.from.set({ year: 2026, month: 9, day: 1 });
@@ -122,10 +106,15 @@ describe('AnalyticsRangeSheet — two collapsible rows with inline calendars and
       byTestId(root, calendar)?.querySelector<HTMLButtonElement>(
         `[data-testid="ui-month-day-${date}"]`,
       );
+    byTestId(root, 'analytics-range-from')?.click();
+    fixture.detectChanges();
     day('analytics-range-from-calendar', '2026-09-03')?.click();
     fixture.detectChanges();
     expect(host.from()).toEqual({ year: 2026, month: 9, day: 3 });
-    expect(byTestId(root, 'analytics-range-to-calendar')).not.toBeNull();
+    expect(byTestId(root, 'analytics-range-from-calendar')).toBeNull();
+
+    byTestId(root, 'analytics-range-to')?.click();
+    fixture.detectChanges();
     day('analytics-range-to-calendar', '2026-09-20')?.click();
     fixture.detectChanges();
     expect(host.to()).toEqual({ year: 2026, month: 9, day: 20 });

@@ -237,11 +237,11 @@
       <li uiListRow uiSize="regular">
         {{ t('staff.block.repeatEndDate') }}
         <span uiTrailing>
-          <lib-staff-day-pill
+          <ui-date-pill
             uiAlignment="trailing"
             uiControlSize="small"
-            [uiDayKey]="until"
-            [uiTodayKey]="todayKey()"
+            [uiSelected]="until"
+            [uiToday]="todayKey()"
             [uiLocale]="locale()"
             [uiMarked]="seriesDays()"
             [uiMin]="draft().dayKey"
@@ -548,10 +548,10 @@
           </button>
         </span>
         <span uiTrailing class="staff-frame__day">
-          <lib-staff-day-pill
+          <ui-date-pill
             uiAlignment="trailing"
-            [uiDayKey]="draft().dayKey"
-            [uiTodayKey]="todayKey()"
+            [uiSelected]="draft().dayKey"
+            [uiToday]="todayKey()"
             [uiLocale]="locale()"
             [uiPreviousLabel]="t('staff.visit.monthPrevious')"
             [uiNextLabel]="t('staff.visit.monthNext')"

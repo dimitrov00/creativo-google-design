@@ -76,11 +76,11 @@
       <li uiListRow uiSize="regular">
         {{ t('staff.hours.from') }}
         <span uiTrailing>
-          <lib-staff-day-pill
+          <ui-date-pill
             uiAlignment="trailing"
             uiControlSize="small"
-            [uiDayKey]="fromDay()"
-            [uiTodayKey]="uiToday()"
+            [uiSelected]="fromDay()"
+            [uiToday]="uiToday()"
             [uiLocale]="uiLocale()"
             [uiMin]="uiToday()"
             [uiPreviousLabel]="t('staff.visit.monthPrevious')"

@@ -1,8 +1,12 @@
-@import '../shared/staff-sheet-pill.css';
+/* Unlayered on purpose, as it was where the pill was born: the trigger is
+   a DS `bordered` button whose type this sheet sets for the frame head
+   (`headline`) and hands back for a form row (`revert-layer`), which only
+   works from outside the button's own `sys-components` layer. Every
+   selector is `ui-date-pill`-prefixed, so nothing else is reached. */
 
 /* The host is a real box so the popover has something to anchor to and the
    pill can sit at either edge of whatever row holds it. */
-.staff-day-pill {
+.ui-date-pill {
   display: inline-flex;
   max-inline-size: 100%;
   /* MAY SHRINK (2026-09-23, the grid views' design record §9): a period
@@ -14,24 +18,20 @@
   min-inline-size: 0;
 }
 
-.staff-day-pill > .ui-menu {
+.ui-date-pill > .ui-menu {
   display: flex;
   max-inline-size: 100%;
   min-inline-size: 0;
-  /* THE SAME MONTH AT THE SAME SIZE in both places (owner, 2026-09-09): the
+  /* THE SAME MONTH AT THE SAME SIZE everywhere (owner, 2026-09-09): the
      surface is what the grid fills, so the surface is where the width is
      said — once. */
   --ui-menu-min-width: 20rem;
 }
 
 /* A DS `bordered` / `neutral` button — the fill the sheet's close chip, the
-   back chip and the frame's arrows already wear (owner, 2026-09-09: one
-   material for these controls on the page and in the sheet, and the DS's
-   own directive rather than a local recipe). The button owns its height,
-   padding, fill and states — it does NOT wear `.staff-sheet__pill`, whose
-   field sizing (36px, 8px) sits outside the DS's cascade layer and would
-   win over the regular 44px control beside the segments. Hugs its label. */
-.staff-day-pill__trigger {
+   back chip and the frame's arrows already wear. The button owns its
+   height, padding, fill and states. Hugs its label. */
+.ui-date-pill__trigger {
   flex: 0 1 auto;
   min-inline-size: 0;
   gap: var(--sys-space-compact);
@@ -40,25 +40,29 @@
   white-space: nowrap;
 }
 
-/* SMALL — the pill as a form row's VALUE (the repeat's end date,
-   2026-09-24): the 36px tier the row's other pills wear, in the button's
-   own type rather than the frame head's headline, so the row keeps the
-   52px every row beside it has. `revert-layer` hands the font back to the
-   DS button's layered rule; the shorthand resets tabular figures, so they
-   are said again. */
-.staff-day-pill[data-size='small'] .staff-day-pill__trigger {
+/* SMALL — the pill as a form row's VALUE: the 36px tier the row's other
+   pills wear, in the button's own type rather than the frame head's
+   headline, so the row keeps the height every row beside it has.
+   `revert-layer` hands the font back to the DS button's layered rule; the
+   shorthand resets tabular figures, so they are said again. */
+.ui-date-pill[data-size='small'] .ui-date-pill__trigger {
   font: revert-layer;
   font-variant-numeric: tabular-nums;
+}
+
+/* NO DAY YET — the placeholder in the secondary ink, as a field's prompt. */
+.ui-date-pill__trigger[data-empty] .ui-date-pill__label {
+  color: var(--sys-color-secondary-label);
 }
 
 /* OPEN — the same accent wash the field pills show, and the chevron carries
    the accent while the label stays foreground ink (contrast: the glyph is a
    graphic and answers to 3:1; the label would not clear 4.5 on the wash). */
-.staff-day-pill__trigger[aria-expanded='true'] {
+.ui-date-pill__trigger[aria-expanded='true'] {
   background: color-mix(in srgb, var(--sys-color-accent) 18%, transparent);
 }
 
-.staff-day-pill__trigger[aria-expanded='true'] .ui-icon {
+.ui-date-pill__trigger[aria-expanded='true'] .ui-icon {
   color: var(--sys-color-accent);
 }
 
@@ -67,17 +71,17 @@
    be narrow: a month is FLUID by construction — the grid's columns are
    `minmax(0, 1fr)` so seven of them may shrink on a phone — and a floor of
    seven whole control widths is wider than the popover gets there. */
-.staff-day-pill__calendar {
+.ui-date-pill__calendar {
   padding: var(--sys-space-compact);
   max-inline-size: min(100%, calc(100vw - 2rem));
 }
 
-.staff-day-pill__calendar ui-calendar-grid {
+.ui-date-pill__calendar ui-calendar-grid {
   inline-size: 100%;
 }
 
 /* The words give way with an ellipsis; the chevron keeps its place. */
-.staff-day-pill__label {
+.ui-date-pill__label {
   flex: 0 1 auto;
   min-inline-size: 0;
   overflow: hidden;
