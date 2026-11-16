@@ -10,6 +10,7 @@ import {
 import {
   AuditEntryId,
   BarberId,
+  LocalDate,
   LocationId,
   MediaRefId,
   OperationId,
@@ -680,7 +681,7 @@ describe('TeamSystem.rehire — a record that has left, back on the team (team o
   );
   const later = UtcEpochMs.plusMs(NOW, 60_000);
 
-  it('returns the SAME record to where the close said a rehire returns, on a new period with no last day — never a draft', () => {
+  it('returns the SAME record to where the close said a rehire returns, on a new period with no last day — never a draft — and keeps the period that ended', () => {
     const back = unwrapOk(TeamSystem.rehire(left, START, later, OP));
     expect(back).toMatchObject({
       id: left.id,
@@ -689,8 +690,40 @@ describe('TeamSystem.rehire — a record that has left, back on the team (team o
       barberStatusChangedAtUtcMs: later,
       barberStartsLocalDate: START,
       barberLastWorkingLocalDate: null,
+      barberPastPeriods: [
+        {
+          pastStartsLocalDate: left.barberStartsLocalDate,
+          pastLastWorkingLocalDate: left.barberLastWorkingLocalDate,
+        },
+      ],
       writeOperationId: OP,
     });
+    // A second leave and return keeps both, oldest first.
+    const again = unwrapOk(
+      TeamSystem.rehire(
+        {
+          ...TeamSystem.depart(
+            {
+              ...back,
+              barberLastWorkingLocalDate: LocalDate.addDays(START, 30),
+            },
+            null,
+            later,
+            OP,
+          ),
+        },
+        LocalDate.addDays(START, 60),
+        later,
+        OP,
+      ),
+    );
+    expect(again.barberPastPeriods).toEqual([
+      ...back.barberPastPeriods,
+      {
+        pastStartsLocalDate: START,
+        pastLastWorkingLocalDate: LocalDate.addDays(START, 30),
+      },
+    ]);
     // Exactly one lifecycle variant: nothing of the departure is carried.
     for (const field of [
       'barberDepartedUserId',
@@ -705,6 +738,7 @@ describe('TeamSystem.rehire — a record that has left, back on the team (team o
       'barberDepartedUserId',
       'barberKeptAccessUserId',
       'barberLastWorkingLocalDate',
+      'barberPastPeriods',
       'barberRehireStatus',
       'barberSessionsRevokedAtUtcMs',
       'barberStartsLocalDate',

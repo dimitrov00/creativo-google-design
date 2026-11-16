@@ -46,6 +46,8 @@ export type MemberRowVm = {
   /** The editor the row opens; `null` for a row that is read. */
   readonly memberEditor: MemberEditor | null;
   readonly testId: string;
+  /** A quiet second line under the label — the periods worked before; `null` for none. */
+  readonly detail: string | null;
 };
 
 /** One answer of «Кой може да записва» — the shape `ui-choice-menu` reads. */

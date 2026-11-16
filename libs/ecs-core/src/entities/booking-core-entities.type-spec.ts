@@ -9,6 +9,7 @@
  */
 import {
   type BarberEmployment,
+  type BarberHistory,
   type BarberLifecycle,
   type BookingPolicy,
   BarberStatus,
@@ -57,7 +58,10 @@ export const barberDisjoint: [
   Disjoint<BarberLifecycle, BarberAvatar>,
   Disjoint<BarberEmployment, BarberAvatar>,
   Disjoint<BarberMeta, WriteProvenance>,
-] = [true, true, true, true, true, true, true];
+  Disjoint<BarberHistory, BarberEmployment>,
+  Disjoint<BarberHistory, BarberLifecycle>,
+  Disjoint<BarberHistory, BarberMeta>,
+] = [true, true, true, true, true, true, true, true, true, true];
 
 declare const barber: Barber;
 // The avatar is prefixed at the root (N9), never a nested `MediaRef`; the

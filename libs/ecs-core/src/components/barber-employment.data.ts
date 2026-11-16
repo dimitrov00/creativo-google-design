@@ -25,3 +25,36 @@ export const BarberEmployment = {
     return last === null || localDate <= last;
   },
 } as const;
+
+/**
+ * The working periods a barber finished BEFORE the current one (account
+ * first, A8 — `docs/architecture/decisions/2026-11-16-account-first-team.md`):
+ * one entry per return to the team, oldest first. «Върни в екипа» moves
+ * the period that ended into it; nothing else writes it. A true 1-to-N
+ * relation (Law 5): a short array of flat structs, never queried. The
+ * audit log keeps every leave and return beside it.
+ */
+export type BarberHistory = {
+  readonly barberPastPeriods: readonly BarberHistory.PastPeriod[];
+};
+
+export const BarberHistory = {
+  /** A record that has never left. */
+  NONE: [] as readonly BarberHistory.PastPeriod[],
+
+  /** `history` with the period that just ended kept last. */
+  withEnded(
+    history: BarberHistory,
+    period: BarberHistory.PastPeriod,
+  ): readonly BarberHistory.PastPeriod[] {
+    return [...history.barberPastPeriods, period];
+  },
+} as const;
+
+export namespace BarberHistory {
+  /** One working period that ended: its first and its last day, both inclusive. */
+  export type PastPeriod = {
+    readonly pastStartsLocalDate: LocalDate;
+    readonly pastLastWorkingLocalDate: LocalDate;
+  };
+}

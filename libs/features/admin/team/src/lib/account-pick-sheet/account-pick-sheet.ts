@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAvatar, UiModalSheet, UiSearchField } from '@creativo/ui/controls';
+import { UiIcon } from '@creativo/ui/icons';
 import { UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
@@ -46,6 +47,7 @@ import type { LinkQuestionVm, LinkRowVm, LinkVm } from '../link.vm';
     UiAvatar,
     UiEmptyState,
     UiForegroundStyleDirective,
+    UiIcon,
     UiListGroup,
     UiListRow,
     UiModalSheet,
@@ -82,11 +84,19 @@ export class AccountPickSheet {
   readonly uiSearching = input(false);
   /** The sheet is leaving: its close animation runs. */
   readonly uiClosing = input(false);
+  /**
+   * An answer that is no account at all («Без профил в приложението»),
+   * offered first, above the accounts; `null` for a sheet whose answer has
+   * to be an account.
+   */
+  readonly uiSkipLabel = input<string | null>(null);
 
   /** What was typed, on every keystroke. */
   readonly queried = output<string>();
   /** A row was pressed. */
   readonly picked = output<LinkRowVm>();
+  /** The no-account answer was pressed. */
+  readonly skipped = output<void>();
   /** The question was answered, with the answer's id. */
   readonly answered = output<string>();
   /** The question was let go: Escape, the scrim. */
