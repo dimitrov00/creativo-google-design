@@ -166,6 +166,7 @@ function barbers(): readonly Barber[] {
     barberStatusChangedAtUtcMs: sure(UtcEpochMs.of(1704067200000)),
     barberStartsLocalDate: sure(LocalDate.parse('2024-01-01')),
     barberLastWorkingLocalDate: null,
+    barberPastPeriods: [],
     avatarMediaId: MediaRefId.of(`media-barber-${vm.id}`),
     avatarMediaPath: vm.avatarSrc,
     avatarMediaWidth: 1200,
