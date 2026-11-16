@@ -145,10 +145,10 @@ function actionOf(barberEdit: BarberEdit): TeamBarberAction {
       return AuditAction.TeamBarberPeriodChanged;
     case BarberEdit.Pool:
       return AuditAction.TeamBarberPoolChanged;
+    // «Опитай пак» (END_SESSIONS) moves nothing in its commit, so no row is
+    // written under this verb: the revoke's marker is its own status row.
     case BarberEdit.Access:
     case BarberEdit.Return:
-    // «Опитай пак» moves nothing in this commit, so no row is written
-    // under this verb: the revoke's marker is its own status row.
     case BarberEdit.EndSessions:
       return AuditAction.TeamBarberStatusChanged;
     default:
