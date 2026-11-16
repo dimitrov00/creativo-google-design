@@ -57,6 +57,11 @@ export type MemberWords = {
   readonly owingBody: string;
   /** «Опитай пак» */
   readonly owingRetry: string;
+  /** «Профилът на Стефан запази достъпа си» — a leaver whose account kept its roles. */
+  readonly keptTitle: (name: string) => string;
+  readonly keptBody: string;
+  /** «Роли» */
+  readonly keptAction: string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
   readonly mine: string;
@@ -161,6 +166,9 @@ export function memberWordsOf(translate: Translate): MemberWords {
     owingTitle: (name) => translate('admin.team.owing.title', { name }),
     owingBody: translate('admin.team.owing.body'),
     owingRetry: translate('admin.team.owing.retry'),
+    keptTitle: (name) => translate('admin.team.kept.title', { name }),
+    keptBody: translate('admin.team.kept.body'),
+    keptAction: translate('admin.team.kept.action'),
     accountLink: (name) => at('accountLink', { name }),
     accountMine: at('accountMine'),
     levelRow: (level) => at('levelRow', { level }),

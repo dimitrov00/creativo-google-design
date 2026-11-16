@@ -1570,5 +1570,22 @@ describe('AdminTeamMember — the Team page’s notices, followed (team onboardi
   it('says nothing about access for a leaver who owes nothing', async () => {
     const { piece } = await render('stefan');
     expect(piece('member-owing')).toBeNull();
+    expect(piece('member-kept')).toBeNull();
+  });
+
+  it('says a leaver’s account kept its roles, with «Роли» on that account', async () => {
+    const kept = {
+      ...STEFAN,
+      teamMemberNote: TeamMemberNote.AccessKept,
+      memberKeptUserId: UserId.of('u-stefan'),
+    };
+    const { piece, text } = await render('stefan', { members: [IVAN, kept] });
+    const notice = piece('member-kept');
+    expect(text(notice?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+      'Профилът на Стефан запази достъпа си',
+    );
+    expect(piece('member-kept-roles')?.getAttribute('href')).toBe(
+      '/admin/team/account/u-stefan',
+    );
   });
 });

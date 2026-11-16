@@ -18,6 +18,7 @@ import { releaseQuestionVm } from './link-question.presenter';
 import type { LinkWords } from './link.words';
 import {
   DeleteAnswer,
+  type KeptNoticeVm,
   type LeftoverNoticeVm,
   type OwingNoticeVm,
   type LevelLinkVm,
@@ -331,6 +332,25 @@ function owingOf(input: MemberPageInput): OwingNoticeVm | null {
     : null;
 }
 
+/**
+ * A leaver whose account kept its roles at the close (`ACCESS_KEPT`, the
+ * Team row's own note — said only to whoever sees accounts), and «Роли» on
+ * that account; `null` otherwise.
+ */
+function keptOf(input: MemberPageInput): KeptNoticeVm | null {
+  const { member, memberWords } = input;
+  return input.managesTeam &&
+    member?.teamMemberNote === TeamMemberNote.AccessKept &&
+    member.memberKeptUserId !== null
+    ? {
+        title: memberWords.keptTitle(firstWord(nameOf(input))),
+        body: memberWords.keptBody,
+        action: memberWords.keptAction,
+        accountUserId: member.memberKeptUserId,
+      }
+    : null;
+}
+
 /** The way to «Права» for each level the linked account holds. */
 function levelsOf(input: MemberPageInput): readonly LevelLinkVm[] {
   const { member } = input;
@@ -391,6 +411,7 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
     returnable: input.returnable,
     leftover: leftoverOf(input),
     owing: owingOf(input),
+    kept: keptOf(input),
     deletable: input.deletable,
     deleteTitle: memberWords.deleteTitle(name),
     deleteActions: [

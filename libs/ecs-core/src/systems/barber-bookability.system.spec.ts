@@ -52,6 +52,7 @@ describe('BarberBookabilitySystem.verdictOf', () => {
         barberStatusChangedAtUtcMs: at,
         barberDepartedUserId: null,
         barberSessionsRevokedAtUtcMs: null,
+        barberKeptAccessUserId: null,
         barberRehireStatus: BarberStatus.Public,
       },
     );

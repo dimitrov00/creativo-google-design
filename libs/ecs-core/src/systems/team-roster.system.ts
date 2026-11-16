@@ -18,6 +18,7 @@ import {
   type Service,
   type User,
 } from '@core/entities';
+import { EmploymentSystem } from './employment.system';
 import { StaffSetupSystem } from './staff-setup.system';
 
 /** Who is looking at a record's page, as their stored account says. */
@@ -96,8 +97,9 @@ function isLinked(member: TeamMember.OfBarber): member is TeamMember.Linked {
 
 /**
  * The first note that applies to a barber's row (team onboarding D8): the
- * sessions a leaver's account still owes, then a last working day still
- * ahead of a barber who has not left, then no linked account. The two
+ * sessions a leaver's account still owes, then the roles a leaver's account
+ * kept (`keptOf`), then a last working day still ahead of a barber who has
+ * not left, then no linked account. The two
  * about accounts are said only when the accounts were read
  * (`accountsRead`): to a reader who may not see accounts, "no account"
  * would be a guess, and whose access is not stopped is not theirs to know.
@@ -105,11 +107,13 @@ function isLinked(member: TeamMember.OfBarber): member is TeamMember.Linked {
 function noteOf(
   barber: Barber,
   account: User | null,
+  kept: User | null,
   accountsRead: boolean,
 ): TeamMemberNote | null {
   if (accountsRead && BarberLifecycle.awaitsRevoke(barber)) {
     return TeamMemberNote.SessionsOwed;
   }
+  if (kept !== null) return TeamMemberNote.AccessKept;
   if (
     barber.barberStatus !== BarberStatus.Departed &&
     barber.barberLastWorkingLocalDate !== null
@@ -117,6 +121,29 @@ function noteOf(
     return TeamMemberNote.LastDaySet;
   }
   return accountsRead && account === null ? TeamMemberNote.NoAccount : null;
+}
+
+/**
+ * The account a record that has left signed in with and that KEPT its roles
+ * at the close (`barberKeptAccessUserId`, an admin), found among the staff
+ * accounts read — while it still holds the barber role. `null` for any
+ * other record, once «Бръснар» is off it, and when the accounts were not
+ * read.
+ */
+function keptOf(barber: Barber, accounts: readonly User[]): User | null {
+  if (
+    barber.barberStatus !== BarberStatus.Departed ||
+    barber.barberKeptAccessUserId === null
+  ) {
+    return null;
+  }
+  for (let i = 0; i < accounts.length; i++) {
+    const account = accounts[i] as User;
+    if (account.id === barber.barberKeptAccessUserId) {
+      return account.roles.includes(Role.Barber) ? account : null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -167,6 +194,7 @@ export const TeamRosterSystem = {
           break;
         }
       }
+      const kept = keptOf(barber, accounts);
       const checklist = StaffSetupSystem.checklistOf(
         barber,
         services,
@@ -179,7 +207,8 @@ export const TeamRosterSystem = {
         memberUserId: account === null ? null : account.id,
         memberAccountName: account === null ? null : Profile.fullName(account),
         memberRoles: account === null ? [] : account.roles,
-        teamMemberNote: noteOf(barber, account, accountsRead),
+        teamMemberNote: noteOf(barber, account, kept, accountsRead),
+        memberKeptUserId: kept === null ? null : kept.id,
         barberStartsLocalDate: barber.barberStartsLocalDate,
         barberLastWorkingLocalDate: barber.barberLastWorkingLocalDate,
         setupDoneCount: StaffSetupSystem.doneCountOf(checklist),
@@ -224,17 +253,11 @@ export const TeamRosterSystem = {
   },
 
   /**
-   * How many days ahead a last working day is worth a reminder — and how
-   * long a period has to be for one: a guest booked for a week needs no
-   * card saying the week ends.
-   */
-  REMINDER_DAYS: 7,
-
-  /**
    * The members whose last working day is close (team onboarding D10,
    * the reminder cards): a barber who works, whose last day is today or
-   * within `REMINDER_DAYS` of it, on a period longer than that — soonest
-   * first, then in the members' order. Someone has to decide before the
+   * within `EmploymentSystem.REMINDER_DAYS` of it, on a period longer than
+   * that (`EmploymentSystem.isReminded`) — soonest first, then in the
+   * members' order. Someone has to decide before the
    * day: extend the period, or let it end. Derived from the rows and the
    * shop's today; nothing is stored and nothing is sent.
    */
@@ -242,24 +265,16 @@ export const TeamRosterSystem = {
     members: readonly TeamMember[],
     today: LocalDate,
   ): readonly TeamMember.OfBarber[] {
-    const horizon = LocalDate.addDays(today, TeamRosterSystem.REMINDER_DAYS);
     const due: TeamMember.OfBarber[] = [];
     for (const member of members) {
       if (
-        member.teamMemberStatus !== TeamMemberStatus.StaffOnly &&
-        member.teamMemberStatus !== TeamMemberStatus.Public
-      ) {
-        continue;
-      }
-      const last = member.barberLastWorkingLocalDate;
-      if (
-        last !== null &&
-        last >= today &&
-        last <= horizon &&
-        LocalDate.addDays(
+        (member.teamMemberStatus === TeamMemberStatus.StaffOnly ||
+          member.teamMemberStatus === TeamMemberStatus.Public) &&
+        EmploymentSystem.isReminded(
           member.barberStartsLocalDate,
-          TeamRosterSystem.REMINDER_DAYS,
-        ) < last
+          member.barberLastWorkingLocalDate,
+          today,
+        )
       ) {
         due.push(member);
       }
@@ -288,6 +303,24 @@ export const TeamRosterSystem = {
       }
     }
     return owing;
+  },
+
+  /**
+   * The leavers whose account kept its roles at the close and still holds
+   * the barber role (`ACCESS_KEPT`), in the members' order: the ones the
+   * page asks to take «Бръснар» off in «Роли».
+   */
+  keptOf(members: readonly TeamMember[]): readonly TeamMember.OfBarber[] {
+    const kept: TeamMember.OfBarber[] = [];
+    for (const member of members) {
+      if (
+        member.teamMemberStatus === TeamMemberStatus.Departed &&
+        member.teamMemberNote === TeamMemberNote.AccessKept
+      ) {
+        kept.push(member);
+      }
+    }
+    return kept;
   },
 
   /**

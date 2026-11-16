@@ -45,6 +45,7 @@ describe('TeamCatalogService — the barbers off the public list (team onboardin
       barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
       barberDepartedUserId: null,
       barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.Public,
     },
   );

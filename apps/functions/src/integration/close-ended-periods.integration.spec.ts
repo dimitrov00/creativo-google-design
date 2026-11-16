@@ -169,6 +169,7 @@ describe('closeEndedPeriods (emulator)', () => {
       barberLastWorkingLocalDate: YESTERDAY,
       barberDepartedUserId: ACCOUNT,
       barberSessionsRevokedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.Public,
     });
     // The account is a client again, linked to nothing; the lock is gone.

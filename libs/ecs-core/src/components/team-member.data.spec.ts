@@ -42,6 +42,7 @@ describe('TeamMemberStatus / TeamMemberNote', () => {
     });
     expect(TeamMemberNote).toEqual({
       SessionsOwed: 'SESSIONS_OWED',
+      AccessKept: 'ACCESS_KEPT',
       LastDaySet: 'LAST_DAY_SET',
       NoAccount: 'NO_ACCOUNT',
     });
@@ -58,12 +59,28 @@ describe('TeamMember.read — the edge guard of one row', () => {
       memberAccountName: null,
       memberRoles: [],
       teamMemberNote: TeamMemberNote.NoAccount,
+      memberKeptUserId: null,
       barberStartsLocalDate: localDate('2026-12-01'),
       barberLastWorkingLocalDate: null,
       setupDoneCount: 3,
       setupNeededCount: 5,
       staffSetupItem: StaffSetupItem.Services,
     });
+  });
+
+  it('reads the account a leaver kept, and refuses one that is no account id', () => {
+    expect(
+      TeamMember.read({
+        ...barberRow,
+        teamMemberStatus: 'DEPARTED',
+        teamMemberNote: 'ACCESS_KEPT',
+        memberKeptUserId: 'u-ivan',
+      }),
+    ).toMatchObject({
+      teamMemberNote: TeamMemberNote.AccessKept,
+      memberKeptUserId: UserId.of('u-ivan'),
+    });
+    expect(TeamMember.read({ ...barberRow, memberKeptUserId: 7 })).toBeNull();
   });
 
   it('reads a linked, live barber with a last day and nothing missing', () => {

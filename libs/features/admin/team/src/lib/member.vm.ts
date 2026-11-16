@@ -1,5 +1,5 @@
 import type { StaffLevel, StaffSetupItem } from '@core/components';
-import type { BarberId } from '@core/primitives';
+import type { BarberId, UserId } from '@core/primitives';
 import type { LinkQuestionVm } from './link.vm';
 
 /**
@@ -136,6 +136,8 @@ export type MemberPageVm = {
   readonly leftover: LeftoverNoticeVm | null;
   /** A leaver whose sessions are still owed, and «Опитай пак»; `null` otherwise. */
   readonly owing: OwingNoticeVm | null;
+  /** A leaver whose account kept its roles, and «Роли» on that account; `null` otherwise. */
+  readonly kept: KeptNoticeVm | null;
   readonly deletable: boolean;
   readonly deleteTitle: string;
   readonly deleteActions: readonly DeleteActionVm[];
@@ -149,6 +151,14 @@ export type MemberPageVm = {
  * happens to them or what to do. The visits themselves are listed beside
  * it (`lib-leftover-visits`).
  */
+export type KeptNoticeVm = {
+  readonly title: string;
+  readonly body: string;
+  readonly action: string;
+  /** The account «Роли» opens. */
+  readonly accountUserId: UserId;
+};
+
 export type OwingNoticeVm = {
   readonly title: string;
   readonly body: string;

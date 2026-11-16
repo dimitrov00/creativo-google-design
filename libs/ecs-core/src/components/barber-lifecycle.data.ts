@@ -22,7 +22,10 @@ const LIVE_STATUSES: readonly BarberLifecycle.LiveStatus[] = [
  * - `DEPARTED` carries the account whose staff access the close ended
  *   (`barberDepartedUserId`), whether that account's sessions were revoked
  *   (`barberSessionsRevokedAtUtcMs`, `null` until the revoke succeeds — the
- *   close retries it), and where a rehire returns (`barberRehireStatus`).
+ *   close retries it), the account the close LEFT ALONE because it assigns
+ *   roles — an admin, whose roles are the owner's to change
+ *   (`barberKeptAccessUserId`) — and where a rehire returns
+ *   (`barberRehireStatus`).
  *
  * Holidays, illness and leave are not states: they are day exceptions or
  * a gap in hours. The audit rows hold the history of transitions; the
@@ -67,12 +70,14 @@ export const BarberLifecycle = {
     atUtcMs: UtcEpochMs,
     barberDepartedUserId: UserId | null,
     barberRehireStatus: BarberLifecycle.LiveStatus,
+    barberKeptAccessUserId: UserId | null = null,
   ): BarberLifecycle.Departed {
     return {
       barberStatus: BarberStatus.Departed,
       barberStatusChangedAtUtcMs: atUtcMs,
       barberDepartedUserId,
       barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId,
       barberRehireStatus,
     };
   },
@@ -148,6 +153,13 @@ export namespace BarberLifecycle {
     readonly barberDepartedUserId: UserId | null;
     /** When that account's sessions were revoked; `null` until the revoke succeeds. */
     readonly barberSessionsRevokedAtUtcMs: UtcEpochMs | null;
+    /**
+     * The account that signed in as them and KEPT its roles at the close,
+     * because it assigns roles (an admin): no access was taken from it, so
+     * none is revoked — its roles are the owner's to change in «Роли».
+     * `null` when the close took access, or found no account.
+     */
+    readonly barberKeptAccessUserId: UserId | null;
     /** Where «Върни в екипа» returns the record. */
     readonly barberRehireStatus: LiveStatus;
   };

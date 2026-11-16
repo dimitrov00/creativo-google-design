@@ -35,6 +35,13 @@ export type TeamWords = {
   readonly noAccount: string;
   /** «Достъпът не е спрян» — a leaver's row whose account still has its sessions. */
   readonly sessionsOwed: string;
+  /** «Още е администратор» — a leaver's row whose account kept its roles. */
+  readonly accessKept: string;
+  /** «Профилът на Георги запази достъпа си» */
+  readonly keptTitle: (name: string) => string;
+  readonly keptBody: string;
+  /** «Роли» */
+  readonly keptAction: string;
   /** «Последният ден на Георги е пт, 20.11» — a reminder's title. */
   readonly reminderTitle: (name: string, date: string) => string;
   /** «Днес е последният ден на Георги» */
@@ -97,6 +104,10 @@ export function teamWordsOf(translate: Translate): TeamWords {
     lastDay: (date) => translate('admin.team.note.LAST_DAY_SET', { date }),
     noAccount: translate('admin.team.note.NO_ACCOUNT'),
     sessionsOwed: translate('admin.team.note.SESSIONS_OWED'),
+    accessKept: translate('admin.team.note.ACCESS_KEPT'),
+    keptTitle: (name) => translate('admin.team.kept.title', { name }),
+    keptBody: translate('admin.team.kept.body'),
+    keptAction: translate('admin.team.kept.action'),
     reminderTitle: (name, date) =>
       translate('admin.team.reminder.title', { name, date }),
     reminderToday: (name) => translate('admin.team.reminder.today', { name }),

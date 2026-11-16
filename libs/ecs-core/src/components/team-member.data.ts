@@ -41,6 +41,14 @@ export const TeamMemberNote = {
    * accounts.
    */
   SessionsOwed: 'SESSIONS_OWED',
+  /**
+   * The record has left, and the account that signed in as them kept its
+   * roles — an admin, whom the close leaves alone
+   * (`barberKeptAccessUserId`) — and still holds the barber role. Said only
+   * to a reader who sees accounts; it goes once «Бръснар» is taken off
+   * that account in «Роли».
+   */
+  AccessKept: 'ACCESS_KEPT',
   /** A last working day is set, and the barber has not left yet. */
   LastDaySet: 'LAST_DAY_SET',
   /** No account is linked to the record: bookable, but nobody signs in as them. */
@@ -117,6 +125,9 @@ export const TeamMember = {
       sentUserId === null ? null : parsedOf(sentUserId, UserId.parse);
     const memberAccountName = raw['memberAccountName'] ?? null;
     const teamMemberNote = raw['teamMemberNote'] ?? null;
+    const sentKept = raw['memberKeptUserId'] ?? null;
+    const memberKeptUserId =
+      sentKept === null ? null : parsedOf(sentKept, UserId.parse);
     const barberStartsLocalDate = parsedOf(
       raw['barberStartsLocalDate'],
       LocalDate.parse,
@@ -133,6 +144,7 @@ export const TeamMember = {
       (sentUserId !== null && memberUserId === null) ||
       (memberAccountName !== null && typeof memberAccountName !== 'string') ||
       (teamMemberNote !== null && !Tag.has(TeamMemberNote, teamMemberNote)) ||
+      (sentKept !== null && memberKeptUserId === null) ||
       barberStartsLocalDate === null ||
       (sentLast !== null && barberLastWorkingLocalDate === null) ||
       setupDoneCount === null ||
@@ -149,6 +161,7 @@ export const TeamMember = {
       memberAccountName,
       memberRoles,
       teamMemberNote,
+      memberKeptUserId,
       barberStartsLocalDate,
       barberLastWorkingLocalDate,
       setupDoneCount,
@@ -172,6 +185,12 @@ export namespace TeamMember {
     /** That account's stored roles; `[]` with no account. */
     readonly memberRoles: readonly Role[];
     readonly teamMemberNote: TeamMemberNote | null;
+    /**
+     * A record that has left: the account that kept its roles at the close
+     * and still holds the barber role (`ACCESS_KEPT`) — where «Роли» leads.
+     * `null` otherwise, and for a reader who does not see accounts.
+     */
+    readonly memberKeptUserId: UserId | null;
     readonly barberStartsLocalDate: LocalDate;
     readonly barberLastWorkingLocalDate: LocalDate | null;
     /** How many of the items bookings need are done, and how many there are. */

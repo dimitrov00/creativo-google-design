@@ -100,6 +100,26 @@
       </ui-notice>
       }
 
+      <!-- A LEAVER WHOSE ACCOUNT KEPT ITS ROLES: an admin, whom the close
+           leaves alone; «Роли» opens that account. -->
+      @if (page.kept; as kept) {
+      <ui-notice uiTone="warning" data-testid="member-kept">
+        <h2 uiNoticeTitle>{{ kept.title }}</h2>
+        {{ kept.body }}
+        <a
+          uiNoticeActions
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [routerLink]="['/admin/team/account', kept.accountUserId]"
+          data-testid="member-kept-roles"
+        >
+          {{ kept.action }}
+        </a>
+      </ui-notice>
+      }
+
       <!-- A LEAVER'S BOOKINGS: leaving cancels nothing, so whoever can
            bring the barber back is told what still stands after the last
            day, and «Виж записите» opens the schedule's search on it —

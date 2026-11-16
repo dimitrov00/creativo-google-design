@@ -10,6 +10,7 @@ import {
   BarberId,
   Locale,
   StaffCapability,
+  UserId,
 } from '@core/primitives';
 import { TeamRosterSystem } from '@core/systems';
 import { deepFreeze, localDate } from '@core/testing';
@@ -61,6 +62,7 @@ const page = (
     today: TODAY,
     reminders: [],
     owing: [],
+    kept: [],
     ...over,
   });
 
@@ -138,6 +140,28 @@ describe('teamPageVm — the Team list', () => {
     ]);
     expect(read(vm.runs[0]?.rows[0]?.line ?? '')).toBe(
       'Напусна на 30.09 · Достъпът не е спрян',
+    );
+  });
+
+  it('words a leaver whose account kept its roles as a notice with «Роли» on that account, and notes the row', () => {
+    const kept = {
+      ...STEFAN,
+      teamMemberNote: TeamMemberNote.AccessKept,
+      memberKeptUserId: UserId.of('u-stefan'),
+    };
+    const vm = page([kept], { kept: [kept] });
+    expect(vm.kept).toEqual([
+      {
+        barberId: 'stefan',
+        accountUserId: 'u-stefan',
+        title: 'Профилът на Стефан запази достъпа си',
+        body: 'Напусна екипа, но профилът е на администратор и ролите му останаха. В „Роли“ махни „Бръснар“, а и „Администратор“, ако вече не управлява салона.',
+        action: 'Роли',
+        testId: 'team-kept-stefan',
+      },
+    ]);
+    expect(read(vm.runs[0]?.rows[0]?.line ?? '')).toBe(
+      'Напусна на 30.09 · Още е администратор',
     );
   });
 
@@ -224,6 +248,7 @@ describe('teamPageVm — the Team list', () => {
       today: TODAY,
       reminders: [GEORGI],
       owing: [STEFAN],
+      kept: [],
     });
     expect(teamPageVm(input)).toEqual(teamPageVm(input));
   });

@@ -188,6 +188,7 @@ describe('reconcileBarberPhoto — what can go wrong on the way', () => {
           barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
           barberDepartedUserId: null,
           barberSessionsRevokedAtUtcMs: null,
+          barberKeptAccessUserId: null,
           barberRehireStatus: 'PUBLIC',
         },
       ),
