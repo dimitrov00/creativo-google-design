@@ -18,7 +18,7 @@ import {
 } from '@core/testing';
 import type { VisitLookup } from '@creativo/features/shared/visits';
 import { UiModalSheet } from '@creativo/ui/controls';
-import { StaffDayStore } from '../staff-day.store';
+import { type SearchLink, StaffDayStore } from '../staff-day.store';
 import { SEARCH_RECENTS_KEY, loadRecents } from '../staff-search-recents';
 import { StaffSearchSheet } from './staff-search-sheet';
 
@@ -59,9 +59,10 @@ const POOL = [
   visit('c', 'Мартин Илиев', NIKO, FADE),
 ];
 
-/** Just what the sheet reads of the store — signals and two calls. */
-function fakeStore() {
+/** Just what the sheet reads of the store — signals and a few calls. */
+function fakeStore(seed: SearchLink | null = null) {
   return {
+    takeSearchSeed: vi.fn(() => seed),
     pool: signal<readonly Appointment[]>(POOL),
     searchCapped: signal(false),
     searchStale: signal(false),
@@ -98,8 +99,8 @@ describe('StaffSearchSheet', () => {
       fixture.nativeElement.querySelectorAll(selector),
     ) as HTMLElement[];
 
-  async function mount(): Promise<void> {
-    store = fakeStore();
+  async function mount(seed: SearchLink | null = null): Promise<void> {
+    store = fakeStore(seed);
     TestBed.configureTestingModule({
       imports: [Host],
       providers: [
@@ -260,6 +261,23 @@ describe('StaffSearchSheet', () => {
         '[data-testid="staff-search-keys"] [data-testid="staff-search-suggestion"]',
       ).map((row) => row.getAttribute('data-suggestion')),
     ).toEqual(['FIELD:WHEN', 'FIELD:BARBER', 'FIELD:SERVICE', 'FIELD:STATUS']);
+  });
+
+  it('opens on the RESULTS of a search a link asked for («Виж записите»): the barber, the span and the live statuses stand, the cards are there, the field keeps no caret', async () => {
+    await mount({
+      barberId: NIKO,
+      fromLocalDate: FIXTURE_TODAY,
+      toLocalDate: LocalDate.addDays(FIXTURE_TODAY, 60),
+    });
+    expect(store.takeSearchSeed).toHaveBeenCalledTimes(1);
+    expect(
+      all('[data-testid="staff-search-filter"]').map((chip) =>
+        chip.getAttribute('data-filter'),
+      ),
+    ).toHaveLength(3);
+    expect(cards().length).toBe(2);
+    expect(document.activeElement).not.toBe(field());
+    expect(el('[data-testid="staff-search-keys"]')).toBeNull();
   });
 
   it('ends the search on the ✕ beside the field', async () => {

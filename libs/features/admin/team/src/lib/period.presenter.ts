@@ -33,8 +33,8 @@ export type PeriodNoticeVm = {
   readonly tone: 'neutral' | 'warning';
   readonly title: string;
   readonly body: string;
-  /** The visits it counts are listed under it. */
-  readonly listsVisits: boolean;
+  /** It offers «Виж записите»: the search on the visits it counts. */
+  readonly opensSearch: boolean;
   readonly testId: 'member-period-note' | 'member-period-leftover';
 };
 
@@ -82,7 +82,7 @@ function noticeOf(
       tone: 'warning',
       title,
       body: memberWords.leftoverFailed,
-      listsVisits: false,
+      opensSearch: false,
       testId: 'member-period-leftover',
     };
   }
@@ -92,14 +92,14 @@ function noticeOf(
         tone: 'neutral',
         title,
         body,
-        listsVisits: false,
+        opensSearch: false,
         testId: 'member-period-note',
       }
     : {
         tone: 'warning',
         title: memberWords.leftoverTitle(count),
         body: stays(count),
-        listsVisits: true,
+        opensSearch: true,
         testId: 'member-period-leftover',
       };
 }

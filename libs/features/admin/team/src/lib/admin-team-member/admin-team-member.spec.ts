@@ -432,7 +432,7 @@ describe('AdminTeamMember — a record in preparation', () => {
       expect(calls.aheadAsked).toHaveLength(1);
     });
 
-    it('lists the visits left under their days, as the app’s own visit rows — and a row opens the schedule on its day, on the barber’s column', async () => {
+    it('offers one way to the visits left, «Виж записите» in the warning, which opens the schedule’s search on this barber from the day after — and nothing while none are left', async () => {
       const { fixture, piece, press, text, settle } = await render('ivan', {
         visits: [
           visitOf('a-2', IVAN.barberId, '2027-01-05'),
@@ -442,35 +442,31 @@ describe('AdminTeamMember — a record in preparation', () => {
       });
       await press('member-row-period');
       await settle();
-      // No last day: nothing is left, so nothing is listed.
-      expect(piece('leftover-visits')).toBeNull();
+      // No last day: nothing is left, so there is nothing to open.
+      expect(piece('leftover-search')).toBeNull();
 
       await pickLast(fixture, settle, localDate('2026-12-31'));
       await settle();
-      await settle();
-
-      const list = piece('leftover-visits');
-      const rows = [
-        ...(list?.querySelectorAll<HTMLElement>('[data-appointment-id]') ?? []),
-      ];
-      expect(rows.map((row) => row.dataset['appointmentId'])).toEqual([
-        'a-1',
-        'a-2',
-      ]);
-      expect(text(piece('leftover-group-2027-01-04'))).toContain(
-        'Понеделник, 4 януари',
+      // The visits are not listed in the sheet: the warning has ONE action.
+      expect(piece('leftover-visits')).toBeNull();
+      const warning = piece('member-period-leftover');
+      const action = warning?.querySelector<HTMLElement>(
+        '.ui-notice__actions [data-testid="leftover-search"]',
       );
-      expect(text(piece('leftover-group-2027-01-05'))).toContain(
-        'Вторник, 5 януари',
-      );
+      expect(text(action)).toBe('Виж записите');
 
       const navigate = vi
         .spyOn(TestBed.inject(Router), 'navigate')
         .mockResolvedValue(true);
-      rows.at(0)?.click();
+      action?.click();
       expect(navigate).toHaveBeenCalledWith(['/staff/schedule'], {
-        queryParams: { day: '2027-01-04', barber: IVAN.barberId },
+        queryParams: { searchBarber: IVAN.barberId, searchFrom: '2027-01-01' },
       });
+
+      // A later day leaves nothing: the quiet fact has no action.
+      await pickLast(fixture, settle, localDate('2027-01-31'));
+      await settle();
+      expect(piece('leftover-search')).toBeNull();
     });
 
     it('dots the days the barber is booked on in the last day’s month, and says what the dots mean under it', async () => {
@@ -1383,7 +1379,7 @@ describe('AdminTeamMember — the edges', () => {
         busyKeys: [BusyKey.of(STEFAN.barberId, localDate(day))],
       });
 
-    it('tells whoever can bring the barber back how many bookings they still hold, and what to do', async () => {
+    it('tells whoever can bring the barber back how many bookings they still hold and what to do, and opens the search on them', async () => {
       const { piece, text, settle, calls } = await render('stefan', {
         visits: [
           visitOf('a-1', '2026-10-02'),
@@ -1398,24 +1394,20 @@ describe('AdminTeamMember — the edges', () => {
       expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
         'Стефан още има 2 записа',
       );
-      // The visits themselves, under the warning — each the way to its
-      // day on the schedule, where the leaver keeps a column while booked.
-      await settle();
-      const rows = [
-        ...(piece('leftover-visits')?.querySelectorAll<HTMLElement>(
-          '[data-appointment-id]',
-        ) ?? []),
-      ];
-      expect(rows.map((row) => row.dataset['appointmentId'])).toEqual([
-        'a-1',
-        'a-2',
-      ]);
+      // Not listed here: the warning's one action opens the schedule's
+      // search on them, where the leaver keeps a column while booked.
+      expect(piece('leftover-visits')).toBeNull();
       const navigate = vi
         .spyOn(TestBed.inject(Router), 'navigate')
         .mockResolvedValue(true);
-      rows.at(1)?.click();
+      warning
+        ?.querySelector<HTMLElement>('[data-testid="leftover-search"]')
+        ?.click();
       expect(navigate).toHaveBeenCalledWith(['/staff/schedule'], {
-        queryParams: { day: '2026-10-20', barber: STEFAN.barberId },
+        queryParams: {
+          searchBarber: STEFAN.barberId,
+          searchFrom: '2026-10-01',
+        },
       });
       expect(text(warning)).toContain(
         'Записите са след последния ден. Дай ги на друг бръснар, премести ги или ги откажи.',

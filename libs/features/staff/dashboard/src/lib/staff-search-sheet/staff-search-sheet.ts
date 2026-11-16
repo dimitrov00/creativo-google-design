@@ -197,8 +197,21 @@ export class StaffSearchSheet {
   protected readonly typed = signal('');
   /** The text the window is scanned for: `typed` after the debounce. */
   private readonly committed = signal('');
+  /**
+   * The search a link asked for (`?searchBarber=&searchFrom=`, «Виж
+   * записите» on the Team page), taken once as the sheet opens.
+   */
+  private readonly seed = this.store.takeSearchSeed();
   /** The filters (a query with no text). */
-  private readonly filters = signal<SearchQuery>(SearchQuery.empty());
+  private readonly filters = signal<SearchQuery>(
+    this.seed === null
+      ? SearchQuery.empty()
+      : SearchQuery.bookingsAhead(
+          this.seed.barberId,
+          this.seed.fromLocalDate,
+          this.seed.toLocalDate,
+        ),
+  );
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   /** The key whose values are listed — being picked, or a chosen filter pressed. */
@@ -363,8 +376,12 @@ export class StaffSearchSheet {
     });
     // Spotlight's grammar: the sheet opens on the caret, the keys over it.
     // One frame on: the sheet hands its surface the focus in the frame after
-    // it opens (`UiSheetBehavior`), and the field must come after that.
-    afterNextRender(() => requestAnimationFrame(() => this.field()?.focus()));
+    // it opens (`UiSheetBehavior`), and the field must come after that. A
+    // search a link asked for opens on its RESULTS instead: the caret would
+    // raise the keys over them, and a phone's keyboard under them.
+    if (this.seed === null) {
+      afterNextRender(() => requestAnimationFrame(() => this.field()?.focus()));
+    }
   }
 
   // ── The field ─────────────────────────────────────────────────────────

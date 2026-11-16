@@ -81,8 +81,8 @@
       <!-- WHAT THE LAST DAY WILL DO — one notice for one day: the
            departure as a quiet fact, or, once visits fall after the day,
            a warning that counts them and says the departure in its body.
-           Leaving cancels nothing, so the visits are listed under it, each
-           the way to its day on the schedule. -->
+           Leaving cancels nothing; the warning's one action opens the
+           schedule's search on those visits (owner, 2026-11-16). -->
       @if (outlook().notice; as notice) {
       <ui-notice
         [uiTone]="notice.tone"
@@ -91,18 +91,15 @@
         [attr.data-testid]="notice.testId"
       >
         <h3 uiNoticeTitle>{{ notice.title }}</h3>
-        {{ notice.body }}
+        {{ notice.body }} @if (searchAfter(); as last) {
+        <lib-leftover-search
+          uiNoticeActions
+          [uiBarberId]="uiBarber().id"
+          [uiAfter]="last"
+        />
+        }
       </ui-notice>
       }
-      <!-- The list is its own chunk: fetched while the sheet is idle,
-           mounted once there are visits to show. -->
-      @defer (when leftoverVisits().length > 0; prefetch on idle) { @if
-      (leftoverVisits().length > 0) {
-      <lib-leftover-visits
-        [uiVisits]="leftoverVisits()"
-        [uiBarberId]="uiBarber().id"
-      />
-      } }
     </div>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">

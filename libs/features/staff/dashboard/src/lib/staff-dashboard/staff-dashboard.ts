@@ -801,10 +801,7 @@ export class StaffDashboard {
   /** Whose blocked time and hours the person may change (staff permissions P8). */
   protected readonly gates = inject(ScheduleAccess);
 
-  /**
-   * `?day=YYYY-MM-DD`, bound from the route. Absent means today — a link that
-   * pinned today would be wrong by morning.
-   */
+  /** `?day=YYYY-MM-DD` from the route; absent is today (a link pinning today is wrong by morning). */
   readonly day = input<string | null>(null);
   /**
    * `?view=` and `?barber=`, bound from the route beside the day
@@ -817,11 +814,14 @@ export class StaffDashboard {
   readonly barber = input<string | null>(null);
   /** `?free=1`, read once: free time for this visit (staff-analytics CUJ 2). */
   readonly free = input<string | null>(null);
+  /** `?searchBarber=&searchFrom=`, read once: the search on that barber's visits from that day. */
+  readonly searchBarber = input<string | null>(null);
+  readonly searchFrom = input<string | null>(null);
 
   constructor() {
     this.destroyRef.onDestroy(() => this.rowWatch()?.settle());
     effect(() => this.openFoundWhenDrawn());
-    // The URL's four parameters, each read at its edge (`route-inputs.ts`).
+    // The URL's parameters, each read at its edge (`route-inputs.ts`).
     bindRouteInputs(this, this.store);
 
     // English, like every other page's title in this app (`Events ·`,

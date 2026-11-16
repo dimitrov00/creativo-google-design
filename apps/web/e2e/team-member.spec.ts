@@ -826,7 +826,8 @@ test.describe('a team member’s page', () => {
     await lastMonth.getByTestId(`ui-month-day-${yesterday}`).click();
     // ONE notice says what the day does: with a booking after it, a
     // warning that counts it and says the person leaves on saving — and
-    // the visit itself listed under it.
+    // its one action, the way to the search on it (tried on the leaver's
+    // page below).
     const leftover = page.getByTestId('member-period-leftover');
     await expect(leftover).toContainText('1 запис след последния ден', {
       timeout: 30_000,
@@ -836,11 +837,9 @@ test.describe('a team member’s page', () => {
       'Дай го на друг бръснар, премести го или го откажи.',
     );
     await expect(page.getByTestId('member-period-note')).toHaveCount(0);
-    await expect(
-      page
-        .getByTestId('member-period-sheet')
-        .locator(`[data-appointment-id="${bookedVisit}"]`),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(leftover.getByTestId('leftover-search')).toHaveText(
+      'Виж записите',
+    );
     await page.getByTestId('member-period-save').click();
     await expect(
       page.getByTestId('member-period-leave-question'),
@@ -898,19 +897,32 @@ test.describe('a team member’s page', () => {
       'още има 1 запис',
       { timeout: 30_000 },
     );
-    await page.locator(`[data-appointment-id="${bookedVisit}"]`).click();
-    await expect
-      .poll(
-        () => {
-          const url = new URL(page.url());
-          return `${url.pathname} ${url.searchParams.get('day')}`;
-        },
-        { timeout: 30_000 },
-      )
-      .toBe(`/staff/schedule ${bookedDay}`);
+    // «Виж записите» opens the schedule's search on them: this barber,
+    // from the day after the last day, the visits that still hold a slot
+    // — the warning's own count, as the search's filters. The link is read
+    // once and leaves the address bar.
+    await page
+      .getByTestId('member-leftover')
+      .getByTestId('leftover-search')
+      .click();
+    const search = page.getByTestId('staff-search-sheet');
+    await expect(search).toBeVisible({ timeout: 30_000 });
+    await expect(search.getByTestId('staff-search-filters')).toContainText(
+      'Нов',
+      { timeout: 30_000 },
+    );
     await expect(
-      page.locator(`[data-row-id^="${bookedVisit}"]`).first(),
+      search.locator(`[data-appointment-id="${bookedVisit}"]`),
     ).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 30_000 })
+      .toBe('/staff/schedule');
+    expect(page.url()).not.toContain('searchBarber=');
+    // The visit opens from the search, where it is given, moved or cancelled.
+    await search.locator(`[data-appointment-id="${bookedVisit}"]`).click();
+    await expect(page.getByTestId('staff-visit-editor')).toBeVisible({
+      timeout: 30_000,
+    });
     await page.goto(`/admin/team/member/${added}`, { waitUntil: 'commit' });
     await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
       timeout: 30_000,

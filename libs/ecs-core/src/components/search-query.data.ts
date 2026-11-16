@@ -8,6 +8,7 @@ import {
   Tag,
 } from '@core/primitives';
 import { SearchQueryError } from '@core/errors';
+import { BookingLifecycle } from './booking-lifecycle.data';
 import { SearchFilter, SearchFilterField } from './search-filter.data';
 import { ServiceVariantPick } from './service-variant-pick.data';
 
@@ -194,6 +195,28 @@ export const SearchQuery = {
   /** Nothing typed, nothing chosen. */
   empty(): SearchQuery {
     return { searchText: '', searchFilters: [] };
+  },
+
+  /**
+   * One barber's visits that still hold a slot, from a day to another —
+   * what a last working day leaves behind, as the schedule search asks for
+   * it (team onboarding D10, «Виж записите»): the barber, the span of
+   * days, the live statuses (`BookingLifecycle.LIVE_STATUSES`). The three
+   * are the warning's own count, said as the search's filters.
+   */
+  bookingsAhead(
+    barberId: BarberId,
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
+  ): SearchQuery {
+    return {
+      searchText: '',
+      searchFilters: [
+        SearchFilter.barber([barberId]),
+        SearchFilter.when(fromLocalDate, toLocalDate),
+        SearchFilter.bookingStatuses(BookingLifecycle.LIVE_STATUSES),
+      ],
+    };
   },
 
   /** No text (blanks aside) and no filter — the idle sheet. */

@@ -27,7 +27,7 @@ import {
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { BookingsAheadStore } from '../bookings-ahead.store';
-import { LeftoverVisits } from '../leftover-visits/leftover-visits';
+import { LeftoverSearch } from '../leftover-search/leftover-search';
 import { LinkAnswer } from '../link.vm';
 import {
   type PeriodOutlookVm,
@@ -59,19 +59,19 @@ import { TeamWording } from '../team-wording.service';
  * barber's visits ahead once (`BookingsAheadStore`): the last day's month
  * dots the days they fall on, so the day is chosen against what it cuts,
  * and once a last day is drafted the visits after it are counted in a
- * warning and listed under it (`lib-leftover-visits`), each the way to its
- * day on the schedule, before the save.
+ * warning whose one action, «Виж записите» (`lib-leftover-search`), opens
+ * the schedule's search on them — before the save.
  *
  * The sheet holds a draft and decides nothing: whether the two days make a
  * period is `TeamSystem.setPeriod`'s answer, the rule the server asks,
  * where the period stands today is `EmploymentSystem.outlookOf`'s, and
- * which bookings are left is `EmploymentSystem.leftoverVisitsOf`'s.
+ * which bookings are left is `EmploymentSystem.leftoverOf`'s.
  * Mounted while it is open, so every opening starts from the record.
  */
 @Component({
   selector: 'lib-member-period-sheet',
   imports: [
-    LeftoverVisits,
+    LeftoverSearch,
     TranslocoDirective,
     UiAlert,
     UiButton,
@@ -167,15 +167,6 @@ export class MemberPeriodSheet implements OnInit {
           .leftoverLocalDates;
   });
 
-  /** The visits after the last day drafted, oldest first; none with no day, or before they are read. */
-  private readonly left = computed(() => {
-    const visits = this.ahead.visits();
-    const last = this.last();
-    return visits === null || last === null
-      ? null
-      : EmploymentSystem.leftoverVisitsOf(visits, this.uiBarber().id, last);
-  });
-
   /** What the last day drafted will do, and the question a save may be held behind. */
   protected readonly outlook = computed<PeriodOutlookVm>(() => {
     const memberWords = this.wording.memberWords();
@@ -193,19 +184,19 @@ export class MemberPeriodSheet implements OnInit {
   });
   /** How many visits the last day drafted leaves, and their days; `null` while unknown. */
   private readonly leftover = computed(() => {
-    const left = this.left();
+    const visits = this.ahead.visits();
     const last = this.last();
-    return left === null || last === null
+    return visits === null || last === null
       ? null
-      : EmploymentSystem.leftoverOf(left, this.uiBarber().id, last);
+      : EmploymentSystem.leftoverOf(visits, this.uiBarber().id, last);
   });
 
   /**
-   * The visits listed under the warning: the ones it counts — none while
-   * the period says nothing about them (a record with no period to end).
+   * The last day the warning's «Виж записите» searches after — only while
+   * the notice counts visits; `null` otherwise.
    */
-  protected readonly leftoverVisits = computed(() =>
-    this.outlook().notice?.listsVisits === true ? (this.left() ?? []) : [],
+  protected readonly searchAfter = computed(() =>
+    this.outlook().notice?.opensSearch === true ? this.last() : null,
   );
 
   /** The question before a save that makes the barber leave at once is up. */

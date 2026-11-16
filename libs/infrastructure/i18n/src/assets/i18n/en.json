@@ -2516,6 +2516,7 @@
         "leftoverTitleMany": "{{name}} still has {{count}} bookings",
         "leftoverBodyOne": "The booking is after the last day. Give it to another barber, move it or cancel it.",
         "leftoverBodyMany": "The bookings are after the last day. Give them to another barber, move them or cancel them.",
+        "leftoverSee": "See the bookings",
         "accountLink": "Without an account {{name}} cannot sign in. Ask {{name}} to sign in once, then press “Link an account”.",
         "accountMine": "You work a chair too: your schedule is under “Schedule”, and everything else stays as it is.",
         "accessTitle": "Access",

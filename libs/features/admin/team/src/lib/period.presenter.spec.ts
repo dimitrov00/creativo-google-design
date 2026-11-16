@@ -22,7 +22,7 @@ import { IVAN_RECORD, NIKOLAY_RECORD } from './team.fixtures.spec-support';
 
 const NBSP = '\u00a0';
 const read = (line: string): string => line.replaceAll(NBSP, ' ');
-/** The notice as it reads: its tone, title and line, and whether visits follow. */
+/** The notice as it reads: its tone, title and line, and whether it opens the search. */
 const said = (outlook: PeriodOutlookVm) =>
   outlook.notice === null
     ? null
@@ -30,7 +30,7 @@ const said = (outlook: PeriodOutlookVm) =>
         tone: outlook.notice.tone,
         title: read(outlook.notice.title),
         body: read(outlook.notice.body),
-        listsVisits: outlook.notice.listsVisits,
+        opensSearch: outlook.notice.opensSearch,
         testId: outlook.notice.testId,
       };
 
@@ -79,7 +79,7 @@ describe('periodOutlookVm', () => {
       tone: 'neutral',
       title: 'Иван напуска екипа след 31.12',
       body: 'След този ден не приема записи и губи достъпа си до графика.',
-      listsVisits: false,
+      opensSearch: false,
       testId: 'member-period-note',
     });
     expect(ahead.question).toBeNull();
@@ -97,7 +97,7 @@ describe('periodOutlookVm', () => {
       tone: 'neutral',
       title: 'Иван напуска екипа веднага',
       body: '15.11 вече мина. Със запазването спира да приема записи и губи достъпа си до графика.',
-      listsVisits: false,
+      opensSearch: false,
       testId: 'member-period-note',
     });
     expect(passed.question).toEqual({
@@ -138,7 +138,7 @@ describe('periodOutlookVm', () => {
     }
   });
 
-  it('turns into a warning once visits fall after a day ahead — counted in its title, the departure and what to do with them in its body, and listed', () => {
+  it('turns into a warning once visits fall after a day ahead — counted in its title, the departure and what to do with them in its body, and the way to them', () => {
     const ahead = (leftoverCount: number) =>
       said(
         periodOutlookVm(
@@ -152,14 +152,14 @@ describe('periodOutlookVm', () => {
       tone: 'warning',
       title: '1 запис след последния ден',
       body: 'След 31.12 Иван напуска екипа, а записът остава в графика. Дай го на друг бръснар или го премести по-рано.',
-      listsVisits: true,
+      opensSearch: true,
       testId: 'member-period-leftover',
     });
     expect(ahead(3)).toEqual({
       tone: 'warning',
       title: '3 записа след последния ден',
       body: 'След 31.12 Иван напуска екипа, а записите остават в графика. Дай ги на друг бръснар или ги премести по-рано.',
-      listsVisits: true,
+      opensSearch: true,
       testId: 'member-period-leftover',
     });
   });
@@ -186,7 +186,7 @@ describe('periodOutlookVm', () => {
     });
   });
 
-  it('warns that it could not check when the visits cannot be read — under the departure, listing nothing — and stays quiet while the answer is on its way', () => {
+  it('warns that it could not check when the visits cannot be read — under the departure, with nothing to open — and stays quiet while the answer is on its way', () => {
     expect(
       said(
         periodOutlookVm(
@@ -200,7 +200,7 @@ describe('periodOutlookVm', () => {
       tone: 'warning',
       title: 'Иван напуска екипа след 31.12',
       body: 'Не успяхме да проверим дали има записи след този ден.',
-      listsVisits: false,
+      opensSearch: false,
       testId: 'member-period-leftover',
     });
     expect(
