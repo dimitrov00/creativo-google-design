@@ -87,4 +87,22 @@
     font: var(--sys-font-title3);
     font-weight: 700;
   }
+  /* The avatar's own two upper rungs (2026-11-16, the welcome's faces):
+     the tile face and the portrait, so a count beside them is their size. */
+  .ui-avatar-group[data-control-size='tile'] > .ui-avatar-group__more {
+    --ui-avatar-disc: var(--control-size-tile);
+
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
+    font: var(--sys-font-title2);
+    font-weight: 700;
+  }
+  .ui-avatar-group[data-control-size='extraLarge'] > .ui-avatar-group__more {
+    --ui-avatar-disc: var(--control-size-extraLarge);
+
+    inline-size: var(--ui-avatar-disc);
+    block-size: var(--ui-avatar-disc);
+    font: var(--sys-font-largeTitle);
+    font-weight: 700;
+  }
 }

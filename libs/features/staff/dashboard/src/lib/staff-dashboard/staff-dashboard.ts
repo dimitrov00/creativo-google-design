@@ -13,7 +13,7 @@ import {
 import { StaffWeekStrip } from './week-strip';
 import { bindRouteInputs } from './route-inputs';
 import { AnalyticsEntry } from './analytics-entry';
-import { ScheduleReminders } from '../schedule-reminders/schedule-reminders';
+import { StaffHome } from '../staff-home/staff-home';
 import { transitionOf } from './transition-of';
 import {
   ChangeDetectionStrategy,
@@ -406,7 +406,7 @@ const ANCHOR_TOLERANCE = 2;
   selector: 'lib-staff-dashboard',
   imports: [
     NgTemplateOutlet,
-    ScheduleReminders,
+    StaffHome,
     StaffBlockFailurePipe,
     UiAlert,
     UiChoiceLeading,

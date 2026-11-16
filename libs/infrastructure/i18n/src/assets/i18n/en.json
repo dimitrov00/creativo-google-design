@@ -1065,6 +1065,26 @@
     "countOne": "1 visit"
   },
   "staff": {
+    "welcome": {
+      "headlineNamed": "{{name}}, you’re on the team",
+      "headline": "You’re on the team",
+      "ledeWith": "You’ll work with {{names}}. Here is what waits for you.",
+      "ledeAlone": "Here is what waits for you.",
+      "more": "{{count}} more",
+      "scheduleTitle": "Your schedule",
+      "scheduleBody": "Your bookings by day — with the client, the service and the time.",
+      "profileTitle": "Your profile",
+      "profileBody": "A photo and a few words about you — what clients see when they book.",
+      "hoursTitle": "Hours and prices",
+      "hoursBody": "The owner sets them. Once they are ready, clients can book with you.",
+      "start": "Let’s start",
+      "later": "Later"
+    },
+    "setupCard": {
+      "title": "Finish your profile",
+      "body": "{{done}} of {{total}} done. Your photo and a few words about you are what clients see when they book.",
+      "action": "Continue"
+    },
     "permissions": {
       "capabilities": {
         "TIME_OFF": "Blocks time",

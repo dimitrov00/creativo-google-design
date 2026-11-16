@@ -1,0 +1,130 @@
+<ng-container *transloco="let t">
+  @if (vm(); as page) {
+  <!-- A FULL-SCREEN COVER, not a sheet (owner 2026-11-16: the welcome is a
+       page of its own, like every app's first screen): no grabber, no ✕,
+       no bar — the answers at the floor are the way on. -->
+  <ui-modal-sheet
+    sheetId="staff-welcome-sheet"
+    labelledBy="staff-welcome-title"
+    [closeLabel]="t('staff.welcome.later')"
+    [open]="!closing()"
+    [closing]="closing()"
+    [fullScreen]="true"
+    [bareHeader]="true"
+    [closeControl]="false"
+    data-testid="staff-welcome"
+    (dismissed)="later()"
+    (closeFinished)="closeFinished()"
+  >
+    <span sheet-title>{{ page.headline }}</span>
+
+    <div class="staff-welcome">
+      <!-- THE HERO: the newcomer's face in front of the colleagues they
+           join (Beli's «You're in!», Tolan's pair), over a soft wash of the
+           accent; the greeting by their first name. -->
+      <header class="staff-welcome__hero">
+        <ui-avatar-group
+          class="staff-welcome__faces"
+          uiControlSize="tile"
+          [uiOverflow]="page.overflow"
+          [attr.aria-label]="page.facesLabel"
+          data-testid="staff-welcome-faces"
+        >
+          @for (face of page.faces; track face.id; let first = $first) {
+          <ui-avatar
+            [uiControlSize]="first ? 'extraLarge' : 'tile'"
+            [uiSrc]="face.avatarSrc"
+            [uiName]="face.name"
+            [class.staff-welcome__own]="first"
+          />
+          }
+        </ui-avatar-group>
+        <h1
+          id="staff-welcome-title"
+          class="staff-welcome__headline"
+          uiText
+          uiFont="largeTitle"
+          data-testid="staff-welcome-headline"
+        >
+          {{ page.headline }}
+        </h1>
+        <p
+          class="staff-welcome__lede"
+          uiText
+          uiFont="body"
+          uiForegroundStyle="secondary"
+          data-testid="staff-welcome-lede"
+        >
+          {{ page.lede }}
+        </p>
+      </header>
+
+      <!-- WHAT THIS PLACE IS FOR THEM — Apple's welcome: a bare mark in the
+           accent, a semibold line, a secondary one that wraps. -->
+      <ul class="staff-welcome__facts">
+        <li class="staff-welcome__fact">
+          <ui-icon uiName="staff.day" uiScale="large" />
+          <div>
+            <h2 uiText uiFont="headline">
+              {{ t('staff.welcome.scheduleTitle') }}
+            </h2>
+            <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+              {{ t('staff.welcome.scheduleBody') }}
+            </p>
+          </div>
+        </li>
+        <li class="staff-welcome__fact">
+          <ui-icon uiName="account.photo" uiScale="large" />
+          <div>
+            <h2 uiText uiFont="headline">
+              {{ t('staff.welcome.profileTitle') }}
+            </h2>
+            <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+              {{ t('staff.welcome.profileBody') }}
+            </p>
+          </div>
+        </li>
+        <li class="staff-welcome__fact">
+          <ui-icon uiName="service.duration" uiScale="large" />
+          <div>
+            <h2 uiText uiFont="headline">
+              {{ t('staff.welcome.hoursTitle') }}
+            </h2>
+            <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+              {{ t('staff.welcome.hoursBody') }}
+            </p>
+          </div>
+        </li>
+      </ul>
+
+      <!-- THE ANSWERS at the floor: one wide prominent button, the quiet
+           way on under it. -->
+      <footer class="staff-welcome__answers">
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          uiFrame
+          uiFrameMaxWidth="infinity"
+          data-testid="staff-welcome-start"
+          (click)="start()"
+        >
+          {{ t('staff.welcome.start') }}
+        </button>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiTint="neutral"
+          uiControlSize="large"
+          data-testid="staff-welcome-later"
+          (click)="later()"
+        >
+          {{ t('staff.welcome.later') }}
+        </button>
+      </footer>
+    </div>
+  </ui-modal-sheet>
+  }
+</ng-container>

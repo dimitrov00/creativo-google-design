@@ -1,0 +1,152 @@
+/* THE WELCOME — a page of its own (owner 2026-11-16: never a sheet, and
+   welcoming like every app's first screen). One centred column at the
+   reading measure: the faces and the greeting high, the facts in the
+   middle, the answers at the floor. Every selector is
+   `staff-welcome`-prefixed. */
+.staff-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-loose);
+  box-sizing: border-box;
+  /* The screen under the cover's bar (bare, but still the grabber's home):
+     the shell publishes the bar's height on the scroller. */
+  min-block-size: calc(100svh - var(--modal-sheet-chrome-height, 0px));
+  inline-size: min(100%, 34rem);
+  margin-inline: auto;
+  padding-inline: var(--sys-space-regular);
+  padding-block-start: max(
+    var(--sys-space-section),
+    calc(env(safe-area-inset-top) + var(--sys-space-loose))
+  );
+  padding-block-end: max(
+    var(--sys-space-regular),
+    calc(env(safe-area-inset-bottom) + var(--sys-space-compact))
+  );
+}
+
+/* The hero: the faces over a soft wash of the accent — colour as a shape,
+   the words stay ink. */
+.staff-welcome__hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  text-align: center;
+}
+
+.staff-welcome__hero::before {
+  content: '';
+  position: absolute;
+  inset-block-start: calc(var(--sys-space-loose) * -2);
+  inset-inline: calc(var(--sys-space-regular) * -1);
+  block-size: calc(var(--control-size-extraLarge) * 2.4);
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--sys-color-accent) 18%, transparent),
+    transparent
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+
+.staff-welcome__faces {
+  --ui-avatar-group-ring: var(--sys-color-surface);
+
+  margin-block-end: var(--sys-space-compact);
+}
+
+/* The newcomer's own face: the portrait disc, in front, ringed in the
+   accent (the ground's ring first, so the accent sits apart from it). */
+.staff-welcome__faces > .staff-welcome__own {
+  box-shadow:
+    0 0 0 3px var(--sys-color-surface),
+    0 0 0 6px var(--sys-color-accent);
+}
+
+.staff-welcome__headline,
+.staff-welcome__lede {
+  margin: 0;
+  text-wrap: balance;
+}
+
+/* The facts: a bare mark in the accent, the line and its wrapping second. */
+.staff-welcome__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-welcome__fact {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--sys-space-regular);
+  align-items: start;
+}
+
+.staff-welcome__fact > .ui-icon {
+  color: var(--sys-color-accent);
+  margin-block-start: 2px;
+}
+
+.staff-welcome__fact h2,
+.staff-welcome__fact p {
+  margin: 0;
+}
+
+.staff-welcome__answers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  margin-block-start: auto;
+}
+
+/* The arrival: the faces rise in one after another, the greeting after
+   them — an expressive first moment, still with the motion off. */
+@media (prefers-reduced-motion: no-preference) {
+  .staff-welcome__faces > * {
+    animation: staff-welcome-rise var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-entrance) both;
+  }
+  .staff-welcome__faces > :nth-child(2) {
+    animation-delay: 80ms;
+  }
+  .staff-welcome__faces > :nth-child(3) {
+    animation-delay: 140ms;
+  }
+  .staff-welcome__faces > :nth-child(n + 4) {
+    animation-delay: 200ms;
+  }
+  .staff-welcome__headline,
+  .staff-welcome__lede,
+  .staff-welcome__facts {
+    animation: staff-welcome-fade var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-entrance) 180ms both;
+  }
+}
+
+@keyframes staff-welcome-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes staff-welcome-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -164,6 +164,24 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    // «Моят профил» — the member page on the person's OWN barber record
+    // (account first, A4–A5: the welcome and the setup card lead here).
+    // Behind editing one's own profile, which a barber may by default; the
+    // page reads the record the account is linked to (`self`, bound from
+    // the route's data), and every row still asks what this person may
+    // change, as the callables do.
+    path: 'staff/profile',
+    canActivate: [
+      activeGuard,
+      capabilityGuard(...RouteCapabilities.OwnProfile),
+    ],
+    data: { self: true },
+    loadComponent: () =>
+      import('@creativo/features/admin/team/member').then(
+        (m) => m.AdminTeamMember,
+      ),
+  },
+  {
     // The old address, kept working. Deliberately UNGUARDED: the redirect
     // is not an authorization decision, and the target's own guards still
     // run afterwards — a client following a stale `/staff` link lands on

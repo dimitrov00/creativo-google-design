@@ -70,6 +70,9 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
+      "path": "../../../ui/icons/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/wall-clock/tsconfig.lib.json"
     },
     {

@@ -165,4 +165,59 @@ describe('StaffSetupSystem.doneCountOf', () => {
     expect(ready.ready).toBe(true);
     expect(StaffSetupSystem.doneCountOf(ready)).toBe(ready.needed.length);
   });
+
+  describe('profileLeftOf — the barber’s own part (account first, A5)', () => {
+    it('counts the profile details done of all of them, and answers null once every one is', () => {
+      const bare = barberFixture({
+        title: null,
+        bio: null,
+        instagramHandle: null,
+        yearsExperience: null,
+        avatarMediaId: null,
+      });
+      expect(
+        StaffSetupSystem.profileLeftOf(
+          StaffSetupSystem.checklistOf(bare, [], null),
+        ),
+      ).toEqual({ done: 0, total: 5 });
+      const some = { ...bare, title: { bg: 'Бръснар', en: 'Barber' } };
+      expect(
+        StaffSetupSystem.profileLeftOf(
+          StaffSetupSystem.checklistOf(some, [], null),
+        ),
+      ).toEqual({ done: 1, total: 5 });
+      const complete = StaffSetupSystem.checklistOf(bare, [], null);
+      expect(
+        StaffSetupSystem.profileLeftOf({
+          ...complete,
+          optional: complete.optional.map((entry) => ({
+            ...entry,
+            done: true,
+          })),
+        }),
+      ).toBeNull();
+    });
+
+    it('welcomes while nothing of the profile is done — and no longer once anything is', () => {
+      const bare = barberFixture({
+        title: null,
+        bio: null,
+        instagramHandle: null,
+        yearsExperience: null,
+        avatarMediaId: null,
+      });
+      expect(
+        StaffSetupSystem.welcomes(StaffSetupSystem.checklistOf(bare, [], null)),
+      ).toBe(true);
+      expect(
+        StaffSetupSystem.welcomes(
+          StaffSetupSystem.checklistOf(
+            { ...bare, bio: { bg: 'Здравейте', en: 'Hi' } },
+            [],
+            null,
+          ),
+        ),
+      ).toBe(false);
+    });
+  });
 });
