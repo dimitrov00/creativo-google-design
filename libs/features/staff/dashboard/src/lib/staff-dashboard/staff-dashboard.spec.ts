@@ -37,6 +37,7 @@ import {
   APPOINTMENT_NOTE_PORTS,
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  BARBER_AHEAD_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
   CATALOG_PORTS,
@@ -143,6 +144,7 @@ import {
 import {
   type AppointmentNotePorts,
   type AppointmentReadPorts,
+  type BarberAheadPorts,
   type CallableName,
   type CallableWire,
   Callables,
@@ -809,6 +811,14 @@ describe('StaffDashboard', () => {
         {
           provide: DEFAULT_LOCATION_PORTS,
           useValue: memoryDefaultLocationPorts(SHOP),
+        },
+        {
+          // Nobody in this bed has left: no leaver's day is read.
+          provide: BARBER_AHEAD_PORTS,
+          useValue: {
+            loadBusyDaysFrom: async () => PortResult.ok([]),
+            loadBarberDay: async () => PortResult.ok([]),
+          } satisfies BarberAheadPorts,
         },
         {
           provide: APPOINTMENT_READ_PORTS,

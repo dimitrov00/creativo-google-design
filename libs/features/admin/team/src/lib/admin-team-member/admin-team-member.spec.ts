@@ -1368,13 +1368,25 @@ describe('AdminTeamMember — the edges', () => {
       expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
         'Стефан още има 2 записа',
       );
-      // The visits themselves, under the warning — read, not pressed: a
-      // barber who has left has no column on the schedule to open.
+      // The visits themselves, under the warning — each the way to its
+      // day on the schedule, where the leaver keeps a column while booked.
       await settle();
-      const list = piece('leftover-visits');
-      expect(piece('history-row-a-1')).not.toBeNull();
-      expect(piece('history-row-a-2')).not.toBeNull();
-      expect(list?.querySelector('button')).toBeNull();
+      const rows = [
+        ...(piece('leftover-visits')?.querySelectorAll<HTMLElement>(
+          '[data-appointment-id]',
+        ) ?? []),
+      ];
+      expect(rows.map((row) => row.dataset['appointmentId'])).toEqual([
+        'a-1',
+        'a-2',
+      ]);
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true);
+      rows.at(1)?.click();
+      expect(navigate).toHaveBeenCalledWith(['/staff/schedule'], {
+        queryParams: { day: '2026-10-20', barber: STEFAN.barberId },
+      });
       expect(text(warning)).toContain(
         'След последния работен ден. Премести ги или ги откажи.',
       );

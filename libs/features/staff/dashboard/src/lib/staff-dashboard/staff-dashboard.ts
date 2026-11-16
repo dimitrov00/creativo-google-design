@@ -264,6 +264,7 @@ import {
   discardActionsOf,
   periodLabelOf,
   scopeChoicesOf,
+  scopeFaceOf,
   serviceOptionsOf,
   shopOptionsOf,
   staffChromeWordsOf,
@@ -950,12 +951,10 @@ export class StaffDashboard {
     return this.barberNameOf(scope);
   });
 
-  /** The scoped barber's portrait for the trigger, or `null` for everyone. */
-  protected readonly scopeAvatar = computed(() => {
-    const scope = this.store.scope();
-    if (scope === null) return null;
-    return this.scopeOptions().find((option) => option.id === scope) ?? null;
-  });
+  /** The scoped chair's face for the trigger — a leaver's too (`scopeFaceOf`). */
+  protected readonly scopeAvatar = computed(() =>
+    scopeFaceOf(this.store.scope(), this.clientCardCatalog()),
+  );
 
   protected readonly isGrid = computed(
     () => this.store.view() !== StaffView.Agenda,

@@ -17,6 +17,7 @@ import {
   discardActionsOf,
   periodLabelOf,
   scopeChoicesOf,
+  scopeFaceOf,
   serviceOptionsOf,
   shopOptionsOf,
   staffChromeWordsOf,
@@ -72,6 +73,28 @@ describe('the toolbar’s option lists', () => {
       'staff-scope-ivan',
     ]);
     expect(scopeChoicesOf([], EN)[0]?.label).toBe('All barbers');
+  });
+
+  it('faces the scope trigger with the scoped chair by the whole team’s catalogue — a barber who has left too — and with nobody for everyone', () => {
+    const STEFAN = BarberId.of('stefan');
+    // The team's catalogue: Ivan works, Stefan has left; nobody else.
+    const catalogue = {
+      barberName: (id: BarberId) =>
+        id === IVAN ? 'Иван Колев' : id === STEFAN ? 'Стефан Петров' : null,
+      barberAvatarSrc: (id: BarberId) =>
+        id === STEFAN ? 'https://media.test/stefan.jpg' : null,
+    };
+
+    expect(scopeFaceOf(IVAN, catalogue)).toEqual({
+      name: 'Иван Колев',
+      avatarSrc: null,
+    });
+    expect(scopeFaceOf(STEFAN, catalogue)).toEqual({
+      name: 'Стефан Петров',
+      avatarSrc: 'https://media.test/stefan.jpg',
+    });
+    expect(scopeFaceOf(null, catalogue)).toBeNull();
+    expect(scopeFaceOf(BarberId.of('nobody'), catalogue)).toBeNull();
   });
 });
 

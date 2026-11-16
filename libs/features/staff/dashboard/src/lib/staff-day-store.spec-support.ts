@@ -6,6 +6,7 @@ import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
+  BARBER_AHEAD_PORTS,
   CATALOG_PORTS,
   CLIENT_ISSUE_PORTS,
   CLOCK_PORTS,
@@ -16,6 +17,7 @@ import {
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
   SCHEDULING_READ_PORTS,
+  TEAM_BARBER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { BarberId, LocationId, Result } from '@core/primitives';
 import { DayHours } from '@core/components';
@@ -26,16 +28,19 @@ import type {
   ScheduleException,
   ShopLocation,
 } from '@core/entities';
+import { RepositoryError } from '@core/errors';
 import { Callables } from '@core/ports';
 import type {
   AppointmentNotePorts,
   AppointmentReadPorts,
+  BarberAheadPorts,
   ClientIssuePorts,
   ClockPorts,
   CouponVoucherPorts,
   IdPorts,
   MediaResolvePorts,
   ObserveBarberDay,
+  TeamBarberPorts,
 } from '@core/ports';
 import {
   type GatewayCall,
@@ -128,6 +133,10 @@ export async function buildStaffDayStore(
     readonly searchWindow?: AppointmentReadPorts['searchAppointmentWindow'];
     /** The client issue sink — a recording one by default (`issues.reported`). */
     readonly issues?: ClientIssuePorts;
+    /** Every read of a leaver's booked days: whose, from which day on. */
+    readonly aheadAsked?: { barberId: BarberId; fromLocalDate: string }[];
+    /** That read fails. */
+    readonly aheadFails?: boolean;
   } = {},
 ): Promise<StaffDayStoreHarness> {
   localStorage.clear();
@@ -135,6 +144,9 @@ export async function buildStaffDayStore(
     localStorage.setItem('staff.schedule.view', options.storedView);
   }
   const shops = options.shops ?? [CENTER_SHOP];
+  const barbers = options.barbers ?? [
+    barberFixture({ id: IVAN, locationIds: [CENTER] }),
+  ];
   TestBed.configureTestingModule({
     providers: [
       StaffDayStore,
@@ -182,6 +194,28 @@ export async function buildStaffDayStore(
         } satisfies AppointmentReadPorts,
       },
       {
+        // The days a barber who has left is still booked on: the busy
+        // days the case seeded, read once per leaver.
+        provide: BARBER_AHEAD_PORTS,
+        useValue: {
+          loadBusyDaysFrom: async (barberId, fromLocalDate) => {
+            options.aheadAsked?.push({ barberId, fromLocalDate });
+            return options.aheadFails === true
+              ? Result.err(
+                  RepositoryError.readFailed('barberBusy', 'unavailable'),
+                )
+              : Result.ok(
+                  (options.busyDays ?? []).filter(
+                    (day) =>
+                      day.barberId === barberId &&
+                      day.localDate >= fromLocalDate,
+                  ),
+                );
+          },
+          loadBarberDay: async () => Result.ok([]),
+        } satisfies BarberAheadPorts,
+      },
+      {
         provide: GATEWAY_PORTS,
         // The day-exceptions callable runs the pens' own merges over an
         // in-memory writer unless a case scripts its answer.
@@ -198,11 +232,19 @@ export async function buildStaffDayStore(
       {
         provide: CATALOG_PORTS,
         useValue: memoryCatalogReadPorts({
-          barbers: options.barbers ?? [
-            barberFixture({ id: IVAN, locationIds: [CENTER] }),
-          ],
+          barbers,
           locations: shops,
         }),
+      },
+      {
+        // The staff's read of EVERY barber record — a leaver's and a
+        // draft's too, which the public catalogue never lists.
+        provide: TEAM_BARBER_PORTS,
+        useValue: {
+          observeTeamBarbers: () => of(Result.ok(barbers)),
+          loadBarbers: async (ids) =>
+            Result.ok(barbers.filter((barber) => ids.includes(barber.id))),
+        } satisfies TeamBarberPorts,
       },
       {
         provide: SCHEDULING_READ_PORTS,

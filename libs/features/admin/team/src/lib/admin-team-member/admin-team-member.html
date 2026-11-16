@@ -75,7 +75,8 @@
       <!-- A LEAVER'S BOOKINGS: leaving cancels nothing, so whoever can
            bring the barber back is told what still stands after the last
            day — how many, then the visits themselves under their days,
-           each one the way to its day on the schedule. -->
+           each one the way to its day on the schedule, where the leaver
+           keeps a column while they are booked. -->
       @if (page.leftover; as leftover) {
       <ui-notice
         uiTone="warning"
@@ -93,6 +94,7 @@
       <lib-leftover-visits
         [uiVisits]="leftoverVisits()"
         [uiBarberId]="barber.id"
+        [uiLinked]="true"
       />
       } } }
       <!-- A refused switch, answer or link is said here; an editor says its own. -->

@@ -2,6 +2,7 @@ import {
   type Actor,
   AuditAction,
   BarberLifecycle,
+  BarberStatus,
   BookingLifecycle,
   EmploymentOutlook,
   LeftoverBookings,
@@ -248,6 +249,66 @@ export const EmploymentSystem = {
       if (days[days.length - 1] !== day) days.push(day);
     }
     return { leftoverCount: left.length, leftoverLocalDates: days };
+  },
+
+  /**
+   * How long after a last working day a leaver may still hold a visit —
+   * as far ahead as anybody is booked (the busy projection is read no
+   * further). Past it a record that has left is history: no screen looks
+   * for its visits.
+   */
+  LINGER_DAYS: 400,
+
+  /**
+   * The barbers who have left and may still hold visits (team onboarding
+   * D10, the leftover lane): the DEPARTED records whose last working day
+   * is no more than `LINGER_DAYS` behind `today`, in the order given. A
+   * record that left with no last day stored worked no period to leave
+   * visits after, so it is not one of them.
+   */
+  lingerCandidates(
+    barbers: readonly Barber[],
+    today: LocalDate,
+  ): readonly Barber[] {
+    const floor = LocalDate.addDays(today, -EmploymentSystem.LINGER_DAYS);
+    const out: Barber[] = [];
+    for (let i = 0; i < barbers.length; i++) {
+      const barber = barbers[i] as Barber;
+      const last = barber.barberLastWorkingLocalDate;
+      if (
+        barber.barberStatus === BarberStatus.Departed &&
+        last !== null &&
+        last >= floor
+      ) {
+        out.push(barber);
+      }
+    }
+    return out;
+  },
+
+  /**
+   * Of the leavers, the ones a schedule still keeps a column for on
+   * `days`: those holding a busy key (`keysAfter`) on one of them, in the
+   * order given. A leaver booked on no day shown has no column — and a day
+   * on or before their last working day is never theirs here: they worked
+   * it as part of the team.
+   */
+  lingeringOn(
+    leavers: readonly Barber[],
+    held: ReadonlySet<BusyKey>,
+    days: readonly LocalDate[],
+  ): readonly Barber[] {
+    const out: Barber[] = [];
+    for (let i = 0; i < leavers.length; i++) {
+      const leaver = leavers[i] as Barber;
+      for (let d = 0; d < days.length; d++) {
+        if (held.has(BusyKey.of(leaver.id, days[d] as LocalDate))) {
+          out.push(leaver);
+          break;
+        }
+      }
+    }
+    return out;
   },
 
   /**

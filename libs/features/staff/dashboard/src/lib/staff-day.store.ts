@@ -75,6 +75,7 @@ import {
 import type {
   Appointment,
   AppointmentPhoto,
+  Barber,
   BarberBusyDay,
   BarberSchedule,
   Coupon,
@@ -86,6 +87,7 @@ import type {
 import {
   ClientIssueSystem,
   CouponGrantSystem,
+  EmploymentSystem,
   GridLayoutSystem,
   type HeldGrant,
   type LandedRevision,
@@ -107,6 +109,7 @@ import {
   appendTeamNote as appendTeamNotePipeline,
   attachVisitPhoto,
   loadHeldGrants,
+  loadLingeringKeys,
   saveTeamNote as saveTeamNotePipeline,
   type SaveVisitEditCommand,
   saveVisitEdit,
@@ -118,6 +121,7 @@ import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
+  BARBER_AHEAD_PORTS,
   CLIENT_ISSUE_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
@@ -227,6 +231,11 @@ function writeStoredView(view: StaffView): void {
     // Nothing to remember on; the reading still shows.
   }
 }
+
+/** Nobody: one empty list, so a signal that answers it twice has not changed. */
+const NO_BARBERS: readonly Barber[] = [];
+/** No day a leaver is booked on. */
+const NO_KEYS: ReadonlySet<BusyKey> = new Set<BusyKey>();
 
 const DAY_SPAN: Record<StaffView, number> = {
   [StaffView.Agenda]: 1,
@@ -514,6 +523,8 @@ export class StaffDayStore {
   private readonly notes = inject(APPOINTMENT_NOTE_PORTS);
   private readonly photos = inject(APPOINTMENT_PHOTO_PORTS);
   private readonly couponsVouchers = inject(COUPON_VOUCHER_PORTS);
+  /** The days a barber who has left is still booked on — see {@link leavers}. */
+  private readonly ahead = inject(BARBER_AHEAD_PORTS);
   /** The raw availability streams the lanes' geometry is derived from (F1-10). */
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   /** The one typed callable client — every write of the day goes through it. */
@@ -800,14 +811,28 @@ export class StaffDayStore {
       // The working team (team onboarding D3): a staff-only barber is a
       // chair too. Asked only once the team read has answered.
       const barbers = this.team.liveBarbers();
+      // A barber who left not long ago is still a chair a link may name:
+      // their column stands on the days they are booked on (`leavers`,
+      // judged against the shop's today — so nothing is said before it is
+      // known).
+      const leavers = this.leavers();
       if (
         scope !== null &&
         this.team.teamKnown() &&
+        this.todayKey() !== null &&
         barbers.length > 0 &&
-        !barbers.some((barber) => barber.id === scope)
+        !barbers.some((barber) => barber.id === scope) &&
+        !leavers.some((barber) => barber.id === scope)
       ) {
         untracked(() => this.setScope(null));
       }
+    });
+
+    // The days the leavers are still booked on: read when the schedule
+    // opens, and again only when WHO has left changes.
+    effect(() => {
+      const leavers = this.leavers();
+      untracked(() => this.readLeaverKeys(leavers));
     });
   }
 
@@ -1115,11 +1140,84 @@ export class StaffDayStore {
     );
   });
 
-  /** The chairs this view is about — every active one, or just the scoped. */
-  private readonly scopedBarbers = computed(() => {
-    const all = this.team.liveBarbers();
+  /**
+   * THE BARBERS WHO HAVE LEFT AND MAY STILL HOLD VISITS (team onboarding
+   * D10, the leftover lane) — `EmploymentSystem.lingerCandidates` over the
+   * whole team, against the shop's today. Leaving cancels nothing, so a
+   * visit booked with someone who has since left must stay on the book
+   * where it can be moved or cancelled. None until the team and today are
+   * known.
+   *
+   * Equal while the same people left on the same days: a record edited
+   * for anything else does not read their days again.
+   */
+  private readonly leavers = computed<readonly Barber[]>(
+    () => {
+      const today = this.todayKey();
+      return today === null || !this.team.teamKnown()
+        ? NO_BARBERS
+        : EmploymentSystem.lingerCandidates(this.team.teamBarbers(), today);
+    },
+    {
+      equal: (a, b) =>
+        a.length === b.length &&
+        a.every((barber, index) => {
+          const other = b[index];
+          return (
+            other !== undefined &&
+            other.id === barber.id &&
+            other.barberLastWorkingLocalDate ===
+              barber.barberLastWorkingLocalDate
+          );
+        }),
+    },
+  );
+
+  /**
+   * The days those leavers are still booked on, as the keys a chair's day
+   * is read by (`loadLingeringKeys`: one query per leaver, when the
+   * schedule opens). A superset is harmless — a column with no visit on a
+   * day is not drawn (`workingLanes`) — and it only ever shrinks: nobody
+   * can be booked with someone who has left. Empty until read, and when
+   * the read fails: no leaver's column is guessed.
+   */
+  private readonly leaverKeys = signal<ReadonlySet<BusyKey>>(NO_KEYS);
+  private leaverRead = 0;
+
+  private readLeaverKeys(leavers: readonly Barber[]): void {
+    const read = ++this.leaverRead;
+    if (leavers.length === 0) {
+      this.leaverKeys.set(NO_KEYS);
+      return;
+    }
+    void loadLingeringKeys(this.ahead)(leavers).then((held) => {
+      // A newer set of leavers owns the answer now.
+      if (read !== this.leaverRead) return;
+      this.leaverKeys.set(held.ok ? held.value : NO_KEYS);
+    });
+  }
+
+  /**
+   * The chairs this view is about — every working one, then each leaver
+   * still booked on a day shown; or just the scoped one, working or gone
+   * (a link to a leaver's day names their chair).
+   */
+  private readonly scopedBarbers = computed<readonly Barber[]>(() => {
+    const live = this.team.liveBarbers();
+    const leavers = this.leavers();
     const scope = this._scope();
-    return scope === null ? all : all.filter((barber) => barber.id === scope);
+    if (scope !== null) {
+      const chair =
+        live.find((barber) => barber.id === scope) ??
+        leavers.find((barber) => barber.id === scope);
+      return chair === undefined ? NO_BARBERS : [chair];
+    }
+    const lingering = EmploymentSystem.lingeringOn(
+      leavers,
+      this.leaverKeys(),
+      this.visibleDays(),
+    );
+    return lingering.length === 0 ? live : [...live, ...lingering];
   });
 
   /**
@@ -1831,18 +1929,22 @@ export class StaffDayStore {
    * A FAILED lane is not off (OR-2): its visits were never read, so «почива»
    * would be a guess; the sheet says it failed instead.
    */
-  readonly offToday = computed(() =>
-    this.lanes()
+  readonly offToday = computed(() => {
+    // A barber who has left is not «почива» on the days they hold nothing:
+    // they are simply not there.
+    const gone = new Set(this.leavers().map((barber) => barber.id));
+    return this.lanes()
       .filter(
         (lane) =>
           !lane.failed &&
+          !gone.has(lane.barberId) &&
           !RosterSystem.worksDay(
             lane.rostered.length,
             lane.appointments.length,
           ),
       )
-      .map((lane) => lane.barberId),
-  );
+      .map((lane) => lane.barberId);
+  });
 
   // ── The pen ────────────────────────────────────────────────────────
 
