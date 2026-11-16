@@ -363,9 +363,11 @@
     } }
     <!-- THE LAST DAYS TO DECIDE ON (team onboarding D10): the Team page's
          reminders where whoever manages the team lands — above any view,
-         nothing at all for anyone else. -->
+         nothing at all for anyone else. Its own chunk, fetched once the
+         page is idle: a reminder is never what the first frame needs. -->
+    @defer (on idle) {
     <lib-schedule-reminders />
-    @if (isGrid()) { @if (dayHealth().length > 0) {
+    } @if (isGrid()) { @if (dayHealth().length > 0) {
     <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the
          agenda's all-day strip opens with — a chair the sheet could not read
          in full is said before any column is read. -->
