@@ -60,6 +60,7 @@ const departed = barberFixture(
     barberStatusChangedAtUtcMs: NOW,
     barberDepartedUserId: null,
     barberSessionsRevokedAtUtcMs: null,
+    barberKeptAccessUserId: null,
     barberRehireStatus: BarberStatus.Public,
   },
 );
@@ -605,6 +606,7 @@ describe('TeamSystem.depart and sessionsRevoked — a record that leaves (team o
       barberStatusChangedAtUtcMs: NOW,
       barberDepartedUserId: ACCOUNT,
       barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.Public,
       writeOperationId: OP,
       name: working.name,
@@ -613,6 +615,7 @@ describe('TeamSystem.depart and sessionsRevoked — a record that leaves (team o
     // Exactly one lifecycle variant: nothing of the old one is carried.
     expect(TeamSystem.changedFields(working, left)).toEqual([
       'barberDepartedUserId',
+      'barberKeptAccessUserId',
       'barberRehireStatus',
       'barberSessionsRevokedAtUtcMs',
       'barberStatus',
@@ -671,6 +674,7 @@ describe('TeamSystem.rehire — a record that has left, back on the team (team o
       barberStatusChangedAtUtcMs: NOW,
       barberDepartedUserId: UserId.of('u-ivan'),
       barberSessionsRevokedAtUtcMs: NOW,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.StaffOnly,
     },
   );
@@ -691,6 +695,7 @@ describe('TeamSystem.rehire — a record that has left, back on the team (team o
     for (const field of [
       'barberDepartedUserId',
       'barberSessionsRevokedAtUtcMs',
+      'barberKeptAccessUserId',
       'barberRehireStatus',
       'barberDraftTargetStatus',
     ]) {
@@ -698,6 +703,7 @@ describe('TeamSystem.rehire — a record that has left, back on the team (team o
     }
     expect(TeamSystem.changedFields(left, back)).toEqual([
       'barberDepartedUserId',
+      'barberKeptAccessUserId',
       'barberLastWorkingLocalDate',
       'barberRehireStatus',
       'barberSessionsRevokedAtUtcMs',

@@ -23,6 +23,7 @@ const departed: BarberLifecycle = {
   barberStatusChangedAtUtcMs: at,
   barberDepartedUserId: null,
   barberSessionsRevokedAtUtcMs: null,
+  barberKeptAccessUserId: null,
   barberRehireStatus: BarberStatus.Public,
 };
 
@@ -65,6 +66,7 @@ describe('BarberLifecycle', () => {
       barberStatusChangedAtUtcMs: at,
       barberDepartedUserId: 'u-ivan',
       barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId: null,
       barberRehireStatus: 'PUBLIC',
     });
     expect(

@@ -24,6 +24,7 @@ import {
   type PermissionGroupVm,
   type PermissionRowVm,
   type TeamAddOptionVm,
+  type TeamKeptVm,
   type TeamNoticeVm,
   type TeamPageVm,
   type TeamRowVm,
@@ -57,6 +58,8 @@ export type TeamPageInput = {
   readonly reminders: readonly TeamMember.OfBarber[];
   /** `TeamRosterSystem.owingOf` — the leavers whose sessions are still owed. */
   readonly owing: readonly TeamMember.OfBarber[];
+  /** `TeamRosterSystem.keptOf` — the leavers whose account kept its roles. */
+  readonly kept: readonly TeamMember.OfBarber[];
 };
 
 /** How a barber record stands: its lifecycle in words, a draft's progress, a leaver's day. */
@@ -87,6 +90,9 @@ function noteOf(
   const { words } = input;
   if (member.teamMemberNote === TeamMemberNote.SessionsOwed) {
     return [words.sessionsOwed];
+  }
+  if (member.teamMemberNote === TeamMemberNote.AccessKept) {
+    return [words.accessKept];
   }
   if (member.teamMemberNote === TeamMemberNote.NoAccount) {
     return [words.noAccount];
@@ -163,6 +169,24 @@ function owingOf(
   };
 }
 
+/** A leaver whose account kept its roles: «Роли» on that account; none without its id. */
+function keptOf(
+  member: TeamMember.OfBarber,
+  input: TeamPageInput,
+): TeamKeptVm | null {
+  const { words } = input;
+  if (member.memberKeptUserId === null) return null;
+  const name = firstWord(LocalizedText.pick(member.memberName, input.locale));
+  return {
+    barberId: member.barberId,
+    accountUserId: member.memberKeptUserId,
+    title: words.keptTitle(name),
+    body: words.keptBody,
+    action: words.keptAction,
+    testId: `team-kept-${member.barberId}`,
+  };
+}
+
 /** The Team list: its lede, its notices and its runs, an empty run left out. */
 export function teamPageVm(input: TeamPageInput): TeamPageVm {
   const { sections, words } = input;
@@ -187,6 +211,10 @@ export function teamPageVm(input: TeamPageInput): TeamPageVm {
     lede: input.managesTeam ? words.ledeAll : words.ledeRecords,
     reminders: input.reminders.map((member) => reminderOf(member, input)),
     owing: input.owing.map((member) => owingOf(member, input)),
+    kept: input.kept.flatMap((member) => {
+      const notice = keptOf(member, input);
+      return notice === null ? [] : [notice];
+    }),
     runs: runs.filter((run) => run.rows.length > 0),
   };
 }

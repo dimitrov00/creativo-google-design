@@ -402,9 +402,14 @@ export const EmploymentSystem = {
       account === null
         ? null
         : RoleAssignmentSystem.departureOf(account, barber.id);
-    // Staff access was taken only where the roles moved: an admin keeps theirs.
+    // Staff access was taken only where the roles moved: an admin keeps
+    // theirs, and the record names that account as the one left alone.
     const revokeUserId =
       account !== null && assignment !== null && assignment.rolesChanged
+        ? account.id
+        : null;
+    const keptUserId =
+      account !== null && assignment !== null && !assignment.rolesChanged
         ? account.id
         : null;
     const writes: WriteOp[] = [
@@ -412,7 +417,13 @@ export const EmploymentSystem = {
         {
           action: AuditAction.TeamBarberStatusChanged,
           before: barber,
-          after: TeamSystem.depart(barber, revokeUserId, nowUtcMs, operationId),
+          after: TeamSystem.depart(
+            barber,
+            revokeUserId,
+            nowUtcMs,
+            operationId,
+            keptUserId,
+          ),
           actor,
           nowUtcMs,
           operationId,

@@ -571,6 +571,7 @@ describe('EmploymentSystem.close — one record’s close', () => {
       barberStatusChangedAtUtcMs: NOW,
       barberDepartedUserId: null,
       barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.Public,
       // The period is the record's history: it stays.
       barberLastWorkingLocalDate: LAST,
@@ -595,6 +596,7 @@ describe('EmploymentSystem.close — one record’s close', () => {
       record?.writeAction === WriteAction.Set && record.body,
     ).toMatchObject({
       barberDepartedUserId: ACCOUNT,
+      barberKeptAccessUserId: null,
     });
     const [user] = at(close.writes, ACCOUNT_PATH);
     expect(user?.writeAction).toBe(WriteAction.Update);
@@ -626,7 +628,7 @@ describe('EmploymentSystem.close — one record’s close', () => {
     ).toMatchObject({ roles: [Role.Client] });
   });
 
-  it('an admin’s roles are left alone: the link and the lock go, the record names nobody to sign out', () => {
+  it('an admin’s roles are left alone: the link and the lock go, the record names nobody to sign out — and names the account it left alone', () => {
     const close = EmploymentSystem.close(
       facts({ lock, account: account([Role.Barber, Role.Admin]) }),
       context,
@@ -640,6 +642,7 @@ describe('EmploymentSystem.close — one record’s close', () => {
     ).toMatchObject({
       barberStatus: BarberStatus.Departed,
       barberDepartedUserId: null,
+      barberKeptAccessUserId: ACCOUNT,
     });
     const [user] = at(close.writes, ACCOUNT_PATH);
     expect(user?.writeAction === WriteAction.Update && user.fields).toEqual({

@@ -39,6 +39,7 @@ function barber(
     memberAccountName: bg,
     memberRoles: [Role.Barber],
     teamMemberNote: null,
+    memberKeptUserId: null,
     barberStartsLocalDate: START,
     barberLastWorkingLocalDate: null,
     setupDoneCount: 5,
@@ -171,6 +172,7 @@ export const STEFAN_RECORD = barberFixture(
     barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
     barberDepartedUserId: null,
     barberSessionsRevokedAtUtcMs: null,
+    barberKeptAccessUserId: null,
     barberRehireStatus: BarberStatus.Public,
   },
 );

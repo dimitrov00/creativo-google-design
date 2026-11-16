@@ -2457,6 +2457,7 @@
       "setup": "{{done}} of {{needed}}",
       "note": {
         "SESSIONS_OWED": "Access not stopped",
+        "ACCESS_KEPT": "Still an admin",
         "LAST_DAY_SET": "Last day: {{date}}",
         "NO_ACCOUNT": "No account in the app"
       },
@@ -2465,6 +2466,11 @@
         "today": "Today is {{name}}’s last day",
         "body": "After it they leave the team. If they are staying, extend the working period.",
         "extend": "Extend"
+      },
+      "kept": {
+        "title": "{{name}}’s account kept its access",
+        "body": "They left the team, but the account is an admin, so its roles stayed. In Roles, take off Barber — and Admin too, if they no longer run the shop.",
+        "action": "Roles"
       },
       "owing": {
         "title": "{{name}}’s access is not stopped",

@@ -201,6 +201,7 @@ export class AdminTeam {
           today: this.today(),
           reminders: this.reminders(),
           owing: TeamRosterSystem.owingOf(this.store.members() ?? []),
+          kept: TeamRosterSystem.keptOf(this.store.members() ?? []),
         });
   });
 

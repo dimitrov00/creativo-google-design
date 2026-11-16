@@ -172,6 +172,7 @@ describe('closeBarberPeriod — one record’s close', () => {
       barberStatusChangedAtUtcMs: NOW,
       barberDepartedUserId: 'u-ivan',
       barberSessionsRevokedAtUtcMs: NOW,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.Public,
       barberLastWorkingLocalDate: YESTERDAY,
     });

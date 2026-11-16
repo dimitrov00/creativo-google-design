@@ -32,6 +32,7 @@ const departed = barberFixture(
     barberStatusChangedAtUtcMs: NOW,
     barberDepartedUserId: null,
     barberSessionsRevokedAtUtcMs: null,
+    barberKeptAccessUserId: null,
     barberRehireStatus: BarberStatus.Public,
   },
 );

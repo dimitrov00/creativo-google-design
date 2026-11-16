@@ -77,6 +77,7 @@ describe('TeamRosterSystem.membersOf — the Team page’s rows', () => {
         memberAccountName: null,
         memberRoles: [],
         teamMemberNote: TeamMemberNote.NoAccount,
+        memberKeptUserId: null,
         barberStartsLocalDate: niko.barberStartsLocalDate,
         barberLastWorkingLocalDate: null,
         // Name, start day and shops are done; services and hours are not.
@@ -92,6 +93,7 @@ describe('TeamRosterSystem.membersOf — the Team page’s rows', () => {
         memberAccountName: null,
         memberRoles: [],
         teamMemberNote: TeamMemberNote.NoAccount,
+        memberKeptUserId: null,
         barberStartsLocalDate: ivan.barberStartsLocalDate,
         barberLastWorkingLocalDate: null,
         setupDoneCount: 5,
@@ -149,6 +151,7 @@ describe('TeamRosterSystem.membersOf — the Team page’s rows', () => {
         barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
         barberDepartedUserId: null,
         barberSessionsRevokedAtUtcMs: null,
+        barberKeptAccessUserId: null,
         barberRehireStatus: BarberStatus.Public,
       },
     );
@@ -270,6 +273,7 @@ describe('TeamRosterSystem — the sessions a departure still owes (team onboard
         barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
         barberDepartedUserId: LEAVER_ACCOUNT,
         barberSessionsRevokedAtUtcMs: revokedAtUtcMs,
+        barberKeptAccessUserId: null,
         barberRehireStatus: BarberStatus.Public,
       },
     );
@@ -305,6 +309,58 @@ describe('TeamRosterSystem — the sessions a departure still owes (team onboard
     expect(
       TeamRosterSystem.owingOf(members).map((member) => member.barberId),
     ).toEqual(['gone-a', 'gone-c']);
+  });
+});
+
+describe('TeamRosterSystem — the roles a leaver’s account kept (team onboarding D10)', () => {
+  const KEPT = UserId.of('u-owner-barber');
+  const leftAdmin = barberFixture(
+    { barberLastWorkingLocalDate: localDate('2026-10-31') },
+    {
+      barberStatus: BarberStatus.Departed,
+      barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      barberDepartedUserId: null,
+      barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId: KEPT,
+      barberRehireStatus: BarberStatus.Public,
+    },
+  );
+
+  it('notes a leaver whose kept account still holds the barber role, naming it — and the account stays a role-only member', () => {
+    const members = TeamRosterSystem.membersOf(
+      facts({
+        barbers: [leftAdmin],
+        accounts: [account('u-owner-barber', [Role.Admin, Role.Barber])],
+      }),
+    );
+    expect(members[0]).toMatchObject({
+      teamMemberStatus: BarberStatus.Departed,
+      teamMemberNote: TeamMemberNote.AccessKept,
+      memberKeptUserId: KEPT,
+      memberUserId: null,
+    });
+    expect(members[1]).toMatchObject({
+      teamMemberStatus: TeamMemberStatus.RoleOnly,
+      memberUserId: KEPT,
+    });
+    expect(
+      TeamRosterSystem.keptOf(members).map((member) => member.barberId),
+    ).toEqual([leftAdmin.id]);
+  });
+
+  it('says nothing once «Бръснар» is off the account, once it holds no staff role, or to a reader who sees no accounts', () => {
+    const noted = (
+      accounts: Parameters<typeof TeamRosterSystem.membersOf>[0]['accounts'],
+    ) =>
+      TeamRosterSystem.membersOf(facts({ barbers: [leftAdmin], accounts }))[0];
+    expect(noted([account('u-owner-barber', [Role.Admin])])).toMatchObject({
+      memberKeptUserId: null,
+    });
+    expect(noted([])).toMatchObject({ memberKeptUserId: null });
+    expect(noted(null)).toMatchObject({
+      teamMemberNote: null,
+      memberKeptUserId: null,
+    });
   });
 });
 
@@ -355,6 +411,7 @@ describe('TeamRosterSystem.remindersOf — the last days close enough to decide 
         barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
         barberDepartedUserId: null,
         barberSessionsRevokedAtUtcMs: null,
+        barberKeptAccessUserId: null,
         barberRehireStatus: BarberStatus.Public,
       },
     );
@@ -393,6 +450,7 @@ describe('TeamRosterSystem.sectionsOf — the page’s three runs', () => {
       barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
       barberDepartedUserId: null,
       barberSessionsRevokedAtUtcMs: null,
+      barberKeptAccessUserId: null,
       barberRehireStatus: BarberStatus.Public,
     },
   );

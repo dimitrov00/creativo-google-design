@@ -91,6 +91,7 @@ const DEPARTED: Barber = barberFixture(
     barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
     barberDepartedUserId: null,
     barberSessionsRevokedAtUtcMs: null,
+    barberKeptAccessUserId: null,
     barberRehireStatus: BarberStatus.Public,
   },
 );
@@ -702,6 +703,7 @@ describe('editBarber', () => {
         barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
         barberDepartedUserId: null,
         barberSessionsRevokedAtUtcMs: null,
+        barberKeptAccessUserId: null,
         barberRehireStatus: BarberStatus.Public,
       },
     );
@@ -906,6 +908,7 @@ describe('editBarber', () => {
         barberLastWorkingLocalDate: YESTERDAY,
         barberDepartedUserId: IVANS_ACCOUNT.id,
         barberSessionsRevokedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        barberKeptAccessUserId: null,
         barberRehireStatus: BarberStatus.Public,
       });
       expect(
@@ -1010,6 +1013,7 @@ describe('editBarber', () => {
           barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
           barberDepartedUserId,
           barberSessionsRevokedAtUtcMs: null,
+          barberKeptAccessUserId: null,
           barberRehireStatus: BarberStatus.Public,
         },
       );

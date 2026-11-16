@@ -438,15 +438,17 @@ export const TeamSystem = {
   /**
    * The record, departed (team onboarding D10): the lifecycle moves to
    * `DEPARTED` at `nowUtcMs`, naming the account the close took staff
-   * access from (`null` for none) and where a rehire returns — a live
-   * record's own status, a `DRAFT`'s target. Every other field stays. A
-   * record that has left already is answered as it is.
+   * access from (`null` for none), the account it left alone because it
+   * assigns roles (`barberKeptAccessUserId`, `null` for none) and where a
+   * rehire returns — a live record's own status, a `DRAFT`'s target. Every
+   * other field stays. A record that has left already is answered as it is.
    */
   depart(
     barber: Barber,
     barberDepartedUserId: UserId | null,
     nowUtcMs: UtcEpochMs,
     operationId: OperationId | null,
+    barberKeptAccessUserId: UserId | null = null,
   ): Barber {
     if (barber.barberStatus === BarberStatus.Departed) return barber;
     return {
@@ -458,6 +460,7 @@ export const TeamSystem = {
         barber.barberStatus === BarberStatus.Draft
           ? barber.barberDraftTargetStatus
           : barber.barberStatus,
+        barberKeptAccessUserId,
       ),
     };
   },

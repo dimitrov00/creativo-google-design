@@ -61,6 +61,11 @@ export type TeamNoticeVm = {
   readonly testId: string;
 };
 
+/** A leaver whose account kept its roles: the notice, and the account «Роли» opens. */
+export type TeamKeptVm = TeamNoticeVm & {
+  readonly accountUserId: UserId;
+};
+
 /** The Team page: what it says under its title, its notices, and its runs (the empty ones left out). */
 export type TeamPageVm = {
   readonly lede: string;
@@ -68,6 +73,8 @@ export type TeamPageVm = {
   readonly reminders: readonly TeamNoticeVm[];
   /** The leavers whose sessions are still owed (`TeamRosterSystem.owingOf`). */
   readonly owing: readonly TeamNoticeVm[];
+  /** The leavers whose account kept its roles (`TeamRosterSystem.keptOf`). */
+  readonly kept: readonly TeamKeptVm[];
   readonly runs: readonly TeamRunVm[];
 };
 

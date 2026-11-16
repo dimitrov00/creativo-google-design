@@ -154,8 +154,8 @@
            the close ended their staff roles, but the revoke of their
            sessions failed — the daily job retries it each night, and
            «Опитай пак» tries it now. Said only to whoever sees accounts. -->
-      @if (vm(); as page) { @if (page.owing.length + page.reminders.length > 0)
-      {
+      @if (vm(); as page) { @if (page.owing.length + page.kept.length +
+      page.reminders.length > 0) {
       <div class="team-page__notices" data-testid="admin-team-notices">
         @for (notice of page.owing; track notice.barberId) {
         <ui-notice
@@ -180,6 +180,28 @@
           >
             {{ notice.action }}
           </button>
+        </ui-notice>
+        }
+
+        <!-- THE LEAVERS WHOSE ACCOUNT KEPT ITS ROLES: an admin, whom the
+             close leaves alone (the last-admin rule). The owner takes
+             «Бръснар» off in «Роли» — and «Администратор», if they no
+             longer run the shop; the notice goes with the barber role. -->
+        @for (notice of page.kept; track notice.barberId) {
+        <ui-notice uiTone="warning" [attr.data-testid]="notice.testId">
+          <h2 uiNoticeTitle>{{ notice.title }}</h2>
+          {{ notice.body }}
+          <a
+            uiNoticeActions
+            uiButton
+            uiButtonStyle="bordered"
+            uiTint="neutral"
+            uiControlSize="regular"
+            [routerLink]="['/admin/team/account', notice.accountUserId]"
+            data-testid="team-kept-roles"
+          >
+            {{ notice.action }}
+          </a>
         </ui-notice>
         }
 

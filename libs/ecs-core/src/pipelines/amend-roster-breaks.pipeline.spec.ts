@@ -233,6 +233,7 @@ describe('amendRosterBreaks', () => {
             barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
             barberDepartedUserId: null,
             barberSessionsRevokedAtUtcMs: null,
+            barberKeptAccessUserId: null,
             barberRehireStatus: BarberStatus.Public,
           },
         ),

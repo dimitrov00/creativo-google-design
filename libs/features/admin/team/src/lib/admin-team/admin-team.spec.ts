@@ -537,6 +537,27 @@ describe('AdminTeam — the ＋: a barber, or a role for a registered account (�
       expect(far.piece('team-reminder-georgi')).toBeNull();
     });
 
+    it('says a leaver’s account kept its roles, and «Роли» leads to that account', async () => {
+      const kept = {
+        ...STEFAN,
+        teamMemberNote: TeamMemberNote.AccessKept,
+        memberKeptUserId: UserId.of('u-stefan'),
+      };
+      const { piece, text } = await render({ members: [IVAN, kept] });
+      const notice = piece('team-kept-stefan');
+      expect(text(notice?.querySelector('[uiNoticeTitle]'))).toBe(
+        'Профилът на Стефан запази достъпа си',
+      );
+      expect(text(piece('team-member-stefan'))).toContain(
+        'Още е администратор',
+      );
+      expect(
+        notice
+          ?.querySelector('[data-testid="team-kept-roles"]')
+          ?.getAttribute('href'),
+      ).toBe('/admin/team/account/u-stefan');
+    });
+
     it('says a leaver’s access is not stopped and «Опитай пак» ends the owed sessions — a refusal said in the notice', async () => {
       const { piece, text, press, settle, calls, refuses, listAnswers } =
         await render({ members: [IVAN, owing] });
