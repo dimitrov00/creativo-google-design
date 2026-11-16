@@ -132,7 +132,7 @@ describe('memberPageVm — a record in preparation', () => {
       ],
       [
         StaffSetupItem.StartDay,
-        'Начална дата',
+        'Първи ден',
         '1.12',
         true,
         'готово',
@@ -165,7 +165,7 @@ describe('memberPageVm — a record in preparation', () => {
       vm.profile.map((row) => [row.label, row.value, row.memberEditor]),
     ).toEqual([
       ['Име и описание', 'Няма', MemberEditor.Profile],
-      ['Период на работа', 'от 1.12', MemberEditor.Period],
+      ['Работен период', 'от 1.12', MemberEditor.Period],
     ]);
   });
 
@@ -301,7 +301,7 @@ describe('memberPageVm — a record at work', () => {
       ['Име и описание', 'Старши бръснар'],
       ['Работно време', 'Зададено'],
       ['Услуги и цени', '1 услуга'],
-      ['Период на работа', 'от 3.03.2024 г.'],
+      ['Работен период', 'от 3.03.2024 г.'],
     ]);
     expect(vm.profile.map((row) => row.memberEditor)).toEqual([
       MemberEditor.Profile,
@@ -430,11 +430,11 @@ describe('memberPageVm — a record at work', () => {
       ).leftover;
     expect(left(1, ['2026-10-02'])).toEqual({
       title: 'Стефан още има 1 запис',
-      body: 'След последния работен ден. Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+      body: 'Записът е след последния ден. Дай го на друг бръснар, премести го или го откажи.',
     });
     expect(left(4, ['2026-10-02', '2026-10-05', '2026-10-20'])).toEqual({
       title: 'Стефан още има 4 записа',
-      body: 'След последния работен ден. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+      body: 'Записите са след последния ден. Дай ги на друг бръснар, премести ги или ги откажи.',
     });
     expect(memberPageVm(inputOf(STEFAN_RECORD, facts)).leftover).toBeNull();
     expect(

@@ -80,6 +80,42 @@
   inline-size: 100%;
 }
 
+/* THE MONTH'S FOOT — what its dots mean at the leading edge, the «no day»
+   answer of an optional date at the trailing one: one line, under the
+   grid, inside the same padding. It wraps only when a narrow phone cannot
+   seat both. */
+.ui-date-pill__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  padding: 0 var(--sys-space-compact) var(--sys-space-compact);
+}
+
+/* The legend: footnote words in the secondary ink, after a dot drawn as
+   the month draws its own (`date-badge.css`, the marker) — the same grey,
+   so the key and the mark are visibly one thing. */
+.ui-date-pill__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+  font: var(--sys-font-footnote);
+  color: var(--sys-color-secondary-label);
+}
+
+.ui-date-pill__dot {
+  flex: none;
+  inline-size: calc(var(--sys-space-unit) * 1.5);
+  block-size: calc(var(--sys-space-unit) * 1.5);
+  border-radius: var(--control-radius-capsule);
+  background: var(--sys-color-secondary-label);
+}
+
+/* The «no day» capsule hugs the trailing edge, with or without a legend. */
+.ui-date-pill__clear {
+  margin-inline-start: auto;
+}
+
 /* The words give way with an ellipsis; the chevron keeps its place. */
 .ui-date-pill__label {
   flex: 0 1 auto;

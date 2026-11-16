@@ -108,6 +108,23 @@ describe('UiDatePill', () => {
     ).toBeNull();
   });
 
+  it('draws no foot under the month unless asked: no legend, and no «no day» answer for a date that is always set', () => {
+    fixture.componentRef.setInput('uiMarked', ['2026-09-12']);
+    trigger()?.click();
+    fixture.detectChanges();
+    expect(host().querySelector('.ui-date-pill__footer')).toBeNull();
+
+    fixture.componentRef.setInput('uiMarkedLabel', 'Дни със записи');
+    fixture.componentRef.setInput('uiClearLabel', 'Без дата');
+    fixture.detectChanges();
+    expect(
+      host().querySelector('[data-testid="ui-date-pill-legend"]')?.textContent,
+    ).toContain('Дни със записи');
+    expect(
+      host().querySelector('[data-testid="ui-date-pill-clear"]')?.textContent,
+    ).toContain('Без дата');
+  });
+
   it('prints its placeholder in the secondary ink while it holds no day', () => {
     fixture.componentRef.setInput('uiSelected', null);
     fixture.componentRef.setInput('uiPlaceholder', 'Няма');

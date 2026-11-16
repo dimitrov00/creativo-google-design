@@ -41,8 +41,11 @@
 
       <!-- THE TWO DAYS, each a date row: the day in a capsule at the
            row's end that pops the month — the app's one way to ask for a
-           date. The last day's month dots the days the barber is booked
-           on, so the day is chosen against the visits it cuts. -->
+           date. The last day is optional, and «no last day» is one of the
+           answers its month offers, never a row of its own (owner,
+           2026-11-16). Its month dots the days the barber is booked on and
+           says so under the grid, so the day is chosen against the visits
+           it cuts. -->
       <ui-list-group>
         <ui-date-row
           uiTestId="member-period-start"
@@ -56,63 +59,39 @@
           (uiPicked)="starts.set($event)"
         />
         <ui-date-row
-          #lastRow
           uiTestId="member-period-last"
           [uiLabel]="t('admin.team.period.last')"
           [uiSelected]="last()"
           [uiPlaceholder]="t('admin.team.period.lastNone')"
+          [uiClearLabel]="t('admin.team.period.lastClear')"
           [uiToday]="uiToday()"
           [uiMin]="starts()"
           [uiOpensOn]="lastOpensOn()"
           [uiMarked]="bookedDays()"
+          [uiMarkedLabel]="t('admin.team.period.marked')"
           [uiLocale]="locale()"
           [uiPreviousLabel]="t('admin.team.period.previousMonth')"
           [uiNextLabel]="t('admin.team.period.nextMonth')"
           [uiDisabled]="store.pending()"
           (uiPicked)="last.set($event)"
+          (uiCleared)="last.set(null)"
         />
-        @if (last() !== null) {
-        <button
-          type="button"
-          uiListRow
-          uiSize="regular"
-          [uiInteractive]="true"
-          [disabled]="store.pending()"
-          data-testid="member-period-last-clear"
-          (click)="clearLast(lastRow)"
-        >
-          {{ t('admin.team.period.lastClear') }}
-        </button>
-        }
       </ui-list-group>
 
-      <!-- WHAT THE LAST DAY WILL DO, said before it is saved: a last day is
-           how someone leaves the team. A notice, in the shape of the
-           warning under it — the fact as its title, what follows under it —
-           so the two read as two facts about one day, never as a caption
-           beside a panel. -->
-      @if (outlook().note; as note) {
+      <!-- WHAT THE LAST DAY WILL DO — one notice for one day: the
+           departure as a quiet fact, or, once visits fall after the day,
+           a warning that counts them and says the departure in its body.
+           Leaving cancels nothing, so the visits are listed under it, each
+           the way to its day on the schedule. -->
+      @if (outlook().notice; as notice) {
       <ui-notice
-        uiIcon="notice.info"
+        [uiTone]="notice.tone"
+        [uiIcon]="notice.tone === 'neutral' ? 'notice.info' : null"
         uiAnnounce="polite"
-        data-testid="member-period-note"
+        [attr.data-testid]="notice.testId"
       >
-        <h3 uiNoticeTitle>{{ note.title }}</h3>
-        {{ note.body }}
-      </ui-notice>
-      }
-      <!-- THE BOOKINGS THE LAST DAY LEAVES BEHIND: leaving cancels nothing,
-           so the owner is told how many stand after it — and shown them,
-           under their days, each one the way to its day on the schedule. -->
-      @if (outlook().leftover; as leftover) {
-      <ui-notice
-        uiTone="warning"
-        uiAnnounce="polite"
-        data-testid="member-period-leftover"
-      >
-        @if (leftover.title; as title) {
-        <h3 uiNoticeTitle>{{ title }}</h3>
-        } {{ leftover.body }}
+        <h3 uiNoticeTitle>{{ notice.title }}</h3>
+        {{ notice.body }}
       </ui-notice>
       }
       <!-- The list is its own chunk: fetched while the sheet is idle,

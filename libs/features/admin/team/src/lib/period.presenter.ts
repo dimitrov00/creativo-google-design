@@ -7,42 +7,43 @@ import type { Barber } from '@core/entities';
 import type { LocalDate, Locale } from '@core/primitives';
 import { EmploymentSystem } from '@core/systems';
 import { LinkAnswer, type LinkQuestionVm } from './link.vm';
-import type { LeftoverNoticeVm } from './member.vm';
 import type { MemberWords } from './member.words';
 import { dayWords, firstWord } from './team.format';
 
 /*
- * «ПЕРИОД НА РАБОТА», WORDED (Law 10; team onboarding D10): what the last
+ * «РАБОТЕН ПЕРИОД», WORDED (Law 10; team onboarding D10): what the last
  * day drafted will do, said before it is saved — and the question asked
  * when saving it makes the barber leave at once. It decides nothing: where
  * a period stands against the shop's today is
- * `EmploymentSystem.outlookOf`'s answer, the rule the daily close reads —
+ * `EmploymentSystem.outlookOf`'s answer, the rule the daily close reads,
+ * and how many visits the day leaves is `EmploymentSystem.leftoverOf`'s —
  * a record in preparation has no period to end, so its last day says
  * nothing here.
  */
 
 /**
- * What the last day drafted will do, as a notice of its own: the fact as
- * its title, what follows from it under it. The same shape as the warning
- * about the bookings left, so the two read as two facts about one day.
+ * What the last day drafted will do — ONE notice for one day (owner,
+ * 2026-11-16: a fact and a warning stacked under the same two rows read as
+ * two loose panels). The departure as a quiet fact while nothing is left
+ * behind; the visits it leaves, as a warning that says the departure in
+ * its body, once there are some — or that they could not be checked.
  */
-export type PeriodNoteVm = {
+export type PeriodNoticeVm = {
+  /** A quiet fact, or a warning about visits left — the notice's own tones. */
+  readonly tone: 'neutral' | 'warning';
   readonly title: string;
   readonly body: string;
+  /** The visits it counts are listed under it. */
+  readonly listsVisits: boolean;
+  readonly testId: 'member-period-note' | 'member-period-leftover';
 };
 
 /** What the period sheet says under its two days, and asks before a save. */
 export type PeriodOutlookVm = {
-  /** What the last day drafted will do; `null` with no last day, or while the shop's today is unknown. */
-  readonly note: PeriodNoteVm | null;
+  /** `null` with no last day, while the shop's today is unknown, and for a record with no period to end. */
+  readonly notice: PeriodNoticeVm | null;
   /** The question a save is held behind; `null` unless saving makes the barber leave at once. */
   readonly question: LinkQuestionVm | null;
-  /**
-   * The bookings the last day would leave behind — how many, and what
-   * becomes of them — or that they could not be read; `null` with none,
-   * while the answer is on its way, and for a record with no period to end.
-   */
-  readonly leftover: LeftoverNoticeVm | null;
 };
 
 /** What the period sheet's outlook is worded from. */
@@ -61,50 +62,73 @@ export type PeriodOutlookInput = {
 };
 
 /** Nothing to say and nothing to ask. */
-const QUIET: PeriodOutlookVm = { note: null, question: null, leftover: null };
+export const QUIET_OUTLOOK: PeriodOutlookVm = { notice: null, question: null };
 
-/** The warning about the bookings left: how many, then what becomes of them (a day ahead) or what to do (a day passed). */
-function leftoverOf(
+/**
+ * The one notice: the departure (`title`, `body`) while no visit is left
+ * after the day, the count as a warning whose body says the departure
+ * (`stays`) once some are, and the departure over «could not check» when
+ * the visits could not be read.
+ */
+function noticeOf(
   input: PeriodOutlookInput,
-  body: (count: number) => string,
-  name: string,
-  date: string,
-): LeftoverNoticeVm | null {
+  title: string,
+  body: string,
+  stays: (count: number) => string,
+): PeriodNoticeVm {
+  const { memberWords } = input;
   if (input.leftoverFailed) {
-    return { title: null, body: input.memberWords.leftoverFailed };
+    return {
+      tone: 'warning',
+      title,
+      body: memberWords.leftoverFailed,
+      listsVisits: false,
+      testId: 'member-period-leftover',
+    };
   }
   const count = input.leftover?.leftoverCount ?? 0;
   return count === 0
-    ? null
+    ? {
+        tone: 'neutral',
+        title,
+        body,
+        listsVisits: false,
+        testId: 'member-period-note',
+      }
     : {
-        title: input.memberWords.leftoverTitle(name, date, count),
-        body: body(count),
+        tone: 'warning',
+        title: memberWords.leftoverTitle(count),
+        body: stays(count),
+        listsVisits: true,
+        testId: 'member-period-leftover',
       };
 }
 
-/** The period sheet's outlook: a quiet line for a day ahead, a line and a question for one behind. */
+/** The period sheet's outlook: a notice for a day ahead, a notice and a question for one behind. */
 export function periodOutlookVm(input: PeriodOutlookInput): PeriodOutlookVm {
   const { lastLocalDate, today, memberWords } = input;
-  if (lastLocalDate === null || today === null) return QUIET;
+  if (lastLocalDate === null || today === null) return QUIET_OUTLOOK;
   const name = firstWord(LocalizedText.pick(input.barber.name, input.locale));
   const date = dayWords(lastLocalDate, today, input.locale);
   switch (EmploymentSystem.outlookOf(input.barber, lastLocalDate, today)) {
     case EmploymentOutlook.Ends:
       return {
-        note: {
-          title: memberWords.periodEndsTitle(name, date),
-          body: memberWords.periodEndsBody,
-        },
+        notice: noticeOf(
+          input,
+          memberWords.periodEndsTitle(name, date),
+          memberWords.periodEndsBody,
+          (count) => memberWords.leftoverStays(name, date, count),
+        ),
         question: null,
-        leftover: leftoverOf(input, memberWords.leftoverStays, name, date),
       };
     case EmploymentOutlook.Ended:
       return {
-        note: {
-          title: memberWords.periodEndedTitle(name),
-          body: memberWords.periodEndedBody(date),
-        },
-        leftover: leftoverOf(input, memberWords.leftoverNow, name, date),
+        notice: noticeOf(
+          input,
+          memberWords.periodEndedTitle(name),
+          memberWords.periodEndedBody(date),
+          (count) => memberWords.leftoverNow(name, count),
+        ),
         question: {
           title: memberWords.leaveTitle(name),
           message: memberWords.leaveMessage(name),
@@ -125,6 +149,6 @@ export function periodOutlookVm(input: PeriodOutlookInput): PeriodOutlookVm {
         },
       };
     default:
-      return QUIET;
+      return QUIET_OUTLOOK;
   }
 }

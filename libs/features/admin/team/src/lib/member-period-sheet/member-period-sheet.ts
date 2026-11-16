@@ -23,29 +23,36 @@ import {
 import {
   UiAlert,
   UiListGroup,
-  UiListRow,
   UiNotice,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { BookingsAheadStore } from '../bookings-ahead.store';
 import { LeftoverVisits } from '../leftover-visits/leftover-visits';
 import { LinkAnswer } from '../link.vm';
-import { type PeriodOutlookVm, periodOutlookVm } from '../period.presenter';
+import {
+  type PeriodOutlookVm,
+  QUIET_OUTLOOK,
+  periodOutlookVm,
+} from '../period.presenter';
 import { TeamMemberStore } from '../team-member.store';
 import { TeamWording } from '../team-wording.service';
 
 /**
- * «ПЕРИОД НА РАБОТА» — the day a barber starts and, when there is one, the
+ * «РАБОТЕН ПЕРИОД» — the day a barber starts and, when there is one, the
  * last day they work (team onboarding D2): outside the period nobody can
  * book them. Two days, each a date row (`ui-date-row`): the day in a
  * capsule that pops the month — the same rows every date in a form is
- * picked with.
+ * picked with. The last day is optional: «Без последен ден» is an answer
+ * its month offers, never a row of its own (owner, 2026-11-16, against
+ * LinkedIn's, Things' and Todoist's own optional dates).
  *
  * A last day is the way someone leaves the team (team onboarding D10):
  * once it is behind the shop's today the record leaves, the linked account
  * loses its staff access and its sessions end. The sheet says so under the
  * two days before anything is saved, and a save that would make the barber
  * leave AT ONCE — a last day already passed — is held behind a question.
+ * One notice says it: the departure while nothing is left behind, the
+ * visits left as a warning once there are some.
  *
  * Leaving cancels nothing: the bookings the barber holds after the last
  * day stay until someone moves or cancels them. The sheet reads the
@@ -71,7 +78,6 @@ import { TeamWording } from '../team-wording.service';
     UiDateRow,
     UiForegroundStyleDirective,
     UiListGroup,
-    UiListRow,
     UiModalSheet,
     UiNotice,
     UiSheetActionBar,
@@ -174,7 +180,7 @@ export class MemberPeriodSheet implements OnInit {
   protected readonly outlook = computed<PeriodOutlookVm>(() => {
     const memberWords = this.wording.memberWords();
     return memberWords === null
-      ? { note: null, question: null, leftover: null }
+      ? QUIET_OUTLOOK
       : periodOutlookVm({
           barber: this.uiBarber(),
           lastLocalDate: this.last(),
@@ -199,7 +205,7 @@ export class MemberPeriodSheet implements OnInit {
    * the period says nothing about them (a record with no period to end).
    */
   protected readonly leftoverVisits = computed(() =>
-    this.outlook().leftover?.title == null ? [] : (this.left() ?? []),
+    this.outlook().notice?.listsVisits === true ? (this.left() ?? []) : [],
   );
 
   /** The question before a save that makes the barber leave at once is up. */
@@ -226,15 +232,6 @@ export class MemberPeriodSheet implements OnInit {
     const barber = untracked(this.uiBarber);
     this.starts.set(barber.barberStartsLocalDate);
     this.last.set(barber.barberLastWorkingLocalDate);
-  }
-
-  /**
-   * «Без последен ден»: the day goes, and so does this row — the keyboard
-   * moves to the last day's row, so the sheet still hears it.
-   */
-  protected clearLast(row: UiDateRow): void {
-    this.last.set(null);
-    row.focus();
   }
 
   /** «Запази»: a last day already passed is asked about first; any other period is sent. */

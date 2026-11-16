@@ -7,27 +7,32 @@ import { memberWordsOf } from './member.words';
 import {
   type PeriodOutlookInput,
   type PeriodOutlookVm,
+  QUIET_OUTLOOK,
   periodOutlookVm,
 } from './period.presenter';
 import { IVAN_RECORD, NIKOLAY_RECORD } from './team.fixtures.spec-support';
 
 /*
- * «Период на работа», worded (Law 10; team onboarding D10): what the last
- * day drafted will do, and the question before a save that makes the
- * barber leave at once — pinned in both languages from fixed inputs and
- * the app's real catalogue. Where the period stands is the system's answer.
+ * «Работен период», worded (Law 10; team onboarding D10): what the last
+ * day drafted will do — ONE notice, the departure or the visits it leaves
+ * — and the question before a save that makes the barber leave at once,
+ * pinned in both languages from fixed inputs and the app's real
+ * catalogue. Where the period stands is the system's answer.
  */
 
-const NBSP = ' ';
-const read = (line: string | null): string | null =>
-  line === null ? null : line.replaceAll(NBSP, ' ');
-/** A warning as it reads: its title, then its line. */
-const said = (
-  notice: PeriodOutlookVm['leftover'],
-): { title: string | null; body: string | null } | null =>
-  notice === null
+const NBSP = '\u00a0';
+const read = (line: string): string => line.replaceAll(NBSP, ' ');
+/** The notice as it reads: its tone, title and line, and whether visits follow. */
+const said = (outlook: PeriodOutlookVm) =>
+  outlook.notice === null
     ? null
-    : { title: read(notice.title), body: read(notice.body) };
+    : {
+        tone: outlook.notice.tone,
+        title: read(outlook.notice.title),
+        body: read(outlook.notice.body),
+        listsVisits: outlook.notice.listsVisits,
+        testId: outlook.notice.testId,
+      };
 
 const TODAY = localDate('2026-11-16');
 
@@ -47,27 +52,35 @@ function inputOf(
   });
 }
 
+/** What the visits after a day were counted as. */
+const counted = (leftoverCount: number, day: string) => ({
+  leftoverCount,
+  leftoverLocalDates: [localDate(day)],
+});
+
 describe('periodOutlookVm', () => {
   it('says nothing with no last day, and nothing while the shop’s today is unknown', () => {
-    expect(periodOutlookVm(inputOf())).toEqual({
-      note: null,
-      question: null,
-      leftover: null,
-    });
+    expect(periodOutlookVm(inputOf())).toEqual(QUIET_OUTLOOK);
     expect(
       periodOutlookVm(
         inputOf({ lastLocalDate: localDate('2026-12-31'), today: null }),
       ),
-    ).toEqual({ note: null, question: null, leftover: null });
+    ).toEqual(QUIET_OUTLOOK);
   });
 
-  it('a last day today or ahead: says when the person leaves, and asks nothing', () => {
+  it('a last day today or ahead, nothing after it: says when the person leaves, quietly, and asks nothing', () => {
     const ahead = periodOutlookVm(
-      inputOf({ lastLocalDate: localDate('2026-12-31') }),
+      inputOf({
+        lastLocalDate: localDate('2026-12-31'),
+        leftover: counted(0, '2027-01-04'),
+      }),
     );
-    expect(ahead.note).toEqual({
+    expect(said(ahead)).toEqual({
+      tone: 'neutral',
       title: 'Иван напуска екипа след 31.12',
-      body: 'След това вече не влиза в приложението като бръснар.',
+      body: 'След този ден не приема записи и губи достъпа си до графика.',
+      listsVisits: false,
+      testId: 'member-period-note',
     });
     expect(ahead.question).toBeNull();
     // The last day itself is worked through.
@@ -80,14 +93,17 @@ describe('periodOutlookVm', () => {
     const passed = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-11-15') }),
     );
-    expect(passed.note).toEqual({
+    expect(said(passed)).toEqual({
+      tone: 'neutral',
       title: 'Иван напуска екипа веднага',
-      body: '15.11 вече е минал. Със запазването спира да влиза в приложението като бръснар.',
+      body: '15.11 вече мина. Със запазването спира да приема записи и губи достъпа си до графика.',
+      listsVisits: false,
+      testId: 'member-period-note',
     });
     expect(passed.question).toEqual({
       title: 'Иван напуска екипа сега?',
       message:
-        'Последният работен ден вече е минал. Иван спира да приема записи и вече не влиза в приложението като бръснар.',
+        'Последният ден вече мина. Иван спира да приема записи и губи достъпа си до графика.',
       actions: [
         {
           id: LinkAnswer.Confirm,
@@ -111,116 +127,126 @@ describe('periodOutlookVm', () => {
       localDate('2026-12-31'),
     ]) {
       expect(
-        periodOutlookVm(inputOf({ barber: NIKOLAY_RECORD, lastLocalDate })),
-      ).toEqual({ note: null, question: null, leftover: null });
+        periodOutlookVm(
+          inputOf({
+            barber: NIKOLAY_RECORD,
+            lastLocalDate,
+            leftover: counted(2, '2027-01-04'),
+          }),
+        ),
+      ).toEqual(QUIET_OUTLOOK);
     }
   });
 
-  it('counts the bookings a last day ahead would leave behind — one, several — as the warning’s title, and says under it that they stay on the schedule', () => {
+  it('turns into a warning once visits fall after a day ahead — counted in its title, the departure and what to do with them in its body, and listed', () => {
     const ahead = (leftoverCount: number) =>
       said(
         periodOutlookVm(
           inputOf({
             lastLocalDate: localDate('2026-12-31'),
-            leftover: {
-              leftoverCount,
-              leftoverLocalDates: [localDate('2027-01-04')],
-            },
+            leftover: counted(leftoverCount, '2027-01-04'),
           }),
-        ).leftover,
+        ),
       );
     expect(ahead(1)).toEqual({
-      title: 'Иван има 1 запис след 31.12',
-      body: 'Остава в графика. Отвори го, за да го дадеш на друг бръснар или да го преместиш преди последния ден.',
+      tone: 'warning',
+      title: '1 запис след последния ден',
+      body: 'След 31.12 Иван напуска екипа, а записът остава в графика. Дай го на друг бръснар или го премести по-рано.',
+      listsVisits: true,
+      testId: 'member-period-leftover',
     });
     expect(ahead(3)).toEqual({
-      title: 'Иван има 3 записа след 31.12',
-      body: 'Остават в графика. Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.',
+      tone: 'warning',
+      title: '3 записа след последния ден',
+      body: 'След 31.12 Иван напуска екипа, а записите остават в графика. Дай ги на друг бръснар или ги премести по-рано.',
+      listsVisits: true,
+      testId: 'member-period-leftover',
     });
-    expect(ahead(0)).toBeNull();
   });
 
-  it('for a last day already passed, says to move or cancel them before saving', () => {
+  it('for a last day already passed, says the person leaves on saving and to give, move or cancel the visits', () => {
     const passed = (leftoverCount: number) =>
       said(
         periodOutlookVm(
           inputOf({
             lastLocalDate: localDate('2026-11-15'),
-            leftover: {
-              leftoverCount,
-              leftoverLocalDates: [localDate('2026-11-17')],
-            },
+            leftover: counted(leftoverCount, '2026-11-17'),
           }),
-        ).leftover,
+        ),
       );
-    expect(passed(1)).toEqual({
-      title: 'Иван има 1 запис след 15.11',
-      body: 'Остава в графика. Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+    expect(passed(1)).toMatchObject({
+      tone: 'warning',
+      title: '1 запис след последния ден',
+      body: 'Със запазването Иван напуска екипа веднага, а записът остава в графика. Дай го на друг бръснар, премести го или го откажи.',
     });
-    expect(passed(2)).toEqual({
-      title: 'Иван има 2 записа след 15.11',
-      body: 'Остават в графика. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+    expect(passed(2)).toMatchObject({
+      tone: 'warning',
+      title: '2 записа след последния ден',
+      body: 'Със запазването Иван напуска екипа веднага, а записите остават в графика. Дай ги на друг бръснар, премести ги или ги откажи.',
     });
   });
 
-  it('says it could not check when the bookings cannot be read — a line with no count — and nothing while the answer is on its way', () => {
+  it('warns that it could not check when the visits cannot be read — under the departure, listing nothing — and stays quiet while the answer is on its way', () => {
     expect(
-      periodOutlookVm(
-        inputOf({
-          lastLocalDate: localDate('2026-12-31'),
-          leftoverFailed: true,
-        }),
-      ).leftover,
+      said(
+        periodOutlookVm(
+          inputOf({
+            lastLocalDate: localDate('2026-12-31'),
+            leftoverFailed: true,
+          }),
+        ),
+      ),
     ).toEqual({
-      title: null,
-      body: 'Не успяхме да проверим дали има записи след тази дата.',
+      tone: 'warning',
+      title: 'Иван напуска екипа след 31.12',
+      body: 'Не успяхме да проверим дали има записи след този ден.',
+      listsVisits: false,
+      testId: 'member-period-leftover',
     });
     expect(
-      periodOutlookVm(inputOf({ lastLocalDate: localDate('2026-12-31') }))
-        .leftover,
-    ).toBeNull();
-  });
-
-  it('says nothing about bookings for a record in preparation, whatever was read', () => {
-    expect(
-      periodOutlookVm(
-        inputOf({
-          barber: NIKOLAY_RECORD,
-          lastLocalDate: localDate('2026-12-31'),
-          leftover: {
-            leftoverCount: 2,
-            leftoverLocalDates: [localDate('2027-01-04')],
-          },
-        }),
-      ).leftover,
-    ).toBeNull();
+      said(periodOutlookVm(inputOf({ lastLocalDate: localDate('2026-12-31') })))
+        ?.tone,
+    ).toBe('neutral');
   });
 
   it('says a day outside today’s year with its year', () => {
     expect(
-      read(
-        periodOutlookVm(inputOf({ lastLocalDate: localDate('2027-03-31') }))
-          .note?.title ?? null,
-      ),
+      said(periodOutlookVm(inputOf({ lastLocalDate: localDate('2027-03-31') })))
+        ?.title,
     ).toContain('31.03.2027');
   });
 
   it('words it in English', () => {
-    const ahead = periodOutlookVm(
-      inputOf({ lastLocalDate: localDate('2026-12-31') }, 'en'),
+    const ahead = said(
+      periodOutlookVm(
+        inputOf({ lastLocalDate: localDate('2026-12-31') }, 'en'),
+      ),
     );
-    expect(read(ahead.note?.title ?? null)).toMatch(
-      /^Ivan leaves the team after .+$/,
+    expect(ahead?.title).toMatch(/^Ivan leaves the team after .+$/);
+    expect(ahead?.body).toBe(
+      'After that day they take no bookings and lose access to the schedule.',
     );
-    expect(ahead.note?.body).toBe(
-      'After that they no longer sign in to the app as a barber.',
+    const left = said(
+      periodOutlookVm(
+        inputOf(
+          {
+            lastLocalDate: localDate('2026-12-31'),
+            leftover: counted(2, '2027-01-04'),
+          },
+          'en',
+        ),
+      ),
+    );
+    expect(left?.title).toBe('2 bookings after the last day');
+    expect(left?.body).toMatch(
+      /^After .+ Ivan leaves the team, but the bookings stay on the schedule\. Give them to another barber or move them earlier\.$/,
     );
     const passed = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-11-15') }, 'en'),
     );
-    expect(passed.note?.title).toBe('Ivan leaves the team right away');
-    expect(read(passed.note?.body ?? null)).toMatch(
-      /has already passed\. On saving they stop signing in to the app as a barber\.$/,
+    expect(said(passed)?.title).toBe('Ivan leaves the team right away');
+    expect(said(passed)?.body).toMatch(
+      /has passed\. On saving they stop taking bookings and lose access to the schedule\.$/,
     );
     expect(passed.question?.title).toBe('Ivan leaves the team now?');
     expect(passed.question?.actions.map((action) => action.label)).toEqual([

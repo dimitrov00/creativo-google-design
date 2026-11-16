@@ -310,7 +310,7 @@ export class TeamCompositionPage {
   /** The five items a barber needs before anyone can book them. */
   protected readonly setup: readonly SetupItem[] = [
     { id: 'name', label: 'Име', value: 'Николай Стоянов', done: true },
-    { id: 'start', label: 'Начална дата', value: '1 дек.', done: true },
+    { id: 'start', label: 'Първи ден', value: '1 дек.', done: true },
     { id: 'shops', label: 'Салон', value: 'Център', done: true },
     { id: 'offerings', label: 'Услуги и цени', value: 'Няма', done: false },
     { id: 'hours', label: 'Работно време', value: 'Няма', done: false },
