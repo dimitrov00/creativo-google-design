@@ -350,9 +350,15 @@ describe('AdminTeamMember — a record in preparation', () => {
       expect(piece('member-period-note')).toBeNull();
 
       await pickLast(fixture, settle, localDate('2026-12-31'));
-      expect(text(piece('member-period-note'))).toBe(
-        'След 31.12 Иван напуска екипа и вече не влиза в приложението като бръснар.',
+      const note = piece('member-period-note');
+      // A notice in the warning's own shape: the fact as its title.
+      expect(text(note?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+        'Иван напуска екипа след 31.12',
       );
+      expect(text(note)).toContain(
+        'След това вече не влиза в приложението като бръснар.',
+      );
+      expect(note?.getAttribute('data-tone')).toBe('neutral');
 
       await press('member-period-save');
       expect(calls.edits).toHaveLength(1);
@@ -399,7 +405,7 @@ describe('AdminTeamMember — a record in preparation', () => {
         'Иван има 2 записа след 31.12',
       );
       expect(text(warning)).toContain(
-        'Остават в графика, докато ги преместиш или откажеш.',
+        'Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.',
       );
       // A warning wears its mark.
       expect(
@@ -492,7 +498,7 @@ describe('AdminTeamMember — a record in preparation', () => {
         'Иван има 1 запис след 1.09',
       );
       expect(text(warning)).toContain(
-        'Премести го или го откажи, преди да запазиш.',
+        'Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
       );
     });
 
@@ -514,8 +520,13 @@ describe('AdminTeamMember — a record in preparation', () => {
         await render('ivan');
       await press('member-row-period');
       await pickLast(fixture, settle, localDate('2026-09-01'));
-      expect(text(piece('member-period-note'))).toBe(
-        '1.09 вече е минал. Със запазването Иван напуска екипа веднага.',
+      expect(
+        text(
+          piece('member-period-note')?.querySelector('[uiNoticeTitle]') ?? null,
+        ),
+      ).toBe('Иван напуска екипа веднага');
+      expect(text(piece('member-period-note'))).toContain(
+        '1.09 вече е минал. Със запазването спира да влиза в приложението като бръснар.',
       );
 
       await press('member-period-save');
@@ -1388,7 +1399,7 @@ describe('AdminTeamMember — the edges', () => {
         queryParams: { day: '2026-10-20', barber: STEFAN.barberId },
       });
       expect(text(warning)).toContain(
-        'След последния работен ден. Премести ги или ги откажи.',
+        'Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
       );
       expect(calls.aheadAsked).toEqual([
         { barberId: STEFAN.barberId, fromLocalDate: '2026-10-01' },

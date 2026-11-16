@@ -1,17 +1,29 @@
 @layer sys-components {
-  /* A SIBLING OF THE LIST SEGMENTS: their fill, their prominent corner, no
-     border, no shadow. The tone lives in `--ui-notice-tone` — the glyph's
-     ink and the wash's hue — and nowhere else. */
+  /* A SIBLING OF THE LIST SEGMENTS: their corner, no border, no shadow.
+     The tone lives in `--ui-notice-tone` — the glyph's ink and the wash's
+     hue — and nowhere else. ONE rule for every mark, whatever the tone: a
+     bare glyph in the tone's own colour. No disc behind it, no second ink
+     on it (owner, 2026-11-16: discs whose ink changed with the tone, and a
+     neutral glyph with none, read as four different controls). */
+  /* THE ANATOMY (owner, 2026-11-16, against Revolut, Monzo, Wise and
+     Apple's own sheets): a semibold title at the body size, a regular
+     description a step smaller in a SECONDARY ink, the glyph centred on
+     the title's first line, and room — 14 inside, 12 from glyph to text.
+     The first cut was 13 over 12, near one weight, one ink and 8 of
+     padding: a dense block nobody could scan. */
   .ui-notice {
     --ui-notice-tone: var(--sys-color-secondary-label);
+    /* The fill the words are measured against — the segment fill, or a
+       tone's wash below. */
+    --ui-notice-fill: var(--sys-color-surface-secondary);
 
     display: flex;
     align-items: flex-start;
-    gap: var(--sys-space-compact);
+    gap: calc(var(--sys-space-unit) * 3);
     box-sizing: border-box;
-    padding: var(--sys-space-compact) var(--sys-space-regular);
+    padding: calc(var(--sys-space-unit) * 3.5) var(--sys-space-regular);
     border-radius: var(--control-radius-prominent);
-    background: var(--sys-color-surface-secondary);
+    background: var(--ui-notice-fill);
     color: var(--sys-color-foreground);
   }
 
@@ -19,22 +31,27 @@
     --ui-notice-tone: var(--sys-color-accent);
   }
 
+  /* A warning is the SIGN's amber (`caution`), never the darker cut that
+     is legible as words (`warning`): washed, that one read as brown. */
   .ui-notice[data-tone='warning'] {
-    --ui-notice-tone: var(--sys-color-warning);
+    --ui-notice-tone: var(--sys-color-caution);
   }
 
   .ui-notice[data-tone='destructive'] {
     --ui-notice-tone: var(--sys-color-destructive);
   }
 
-  /* The ONE tone wash, mixed into the segment's fill rather than laid over
-     it: the notice stays opaque on any ground, and its title and facts are
-     measured against exactly this colour. */
+  /* The ONE tone wash, mixed rather than laid over, so the notice stays
+     opaque on any ground and its title and facts are measured against
+     exactly this colour. It is mixed into the ELEVATED surface — white in
+     the light theme — never the grey segment fill: a hue mixed with grey
+     is mud (owner, 2026-11-16), and a tone has to read as its own colour
+     at a glance. */
   .ui-notice:not([data-tone='neutral']) {
-    background: color-mix(
+    --ui-notice-fill: color-mix(
       in srgb,
       var(--ui-notice-tone) var(--sys-alpha-tint),
-      var(--sys-color-surface-secondary)
+      var(--sys-color-surface-elevated)
     );
   }
 
@@ -52,11 +69,15 @@
   }
 
   /* The title is owned HERE, so every notice's title matches whatever
-     element the consumer's outline made it: foreground in every tone. */
+     element the consumer's outline made it: foreground in every tone, the
+     body size at semibold — HIG's headline over a footnote. Its line is
+     exactly the glyph's height, so the mark sits centred on the first
+     line however the title wraps. */
   .ui-notice__content > [uiNoticeTitle] {
     margin: 0;
-    font: var(--sys-font-subheadline);
+    font: var(--sys-font-body);
     font-weight: 600;
+    line-height: var(--ui-icon-medium);
     font-variant-numeric: tabular-nums;
     color: var(--sys-color-foreground);
   }
@@ -65,16 +86,23 @@
     outline: none;
   }
 
-  /* Fact lines in the PRIMARY ink in every tone: the secondary label on
-     the dark warning wash measures under AA. */
+  /* Under a title the facts are the DESCRIPTION: regular weight, a step
+     smaller, in a secondary ink. Not `--sys-color-secondary-label`: that
+     grey measures 3.3:1 on the dark warning wash. The foreground mixed
+     72% into this very fill is the secondary ink measured where it sits
+     — 5.8:1 on the dark amber, 7:1 on the light one. */
   .ui-notice__facts {
     display: flex;
     flex-direction: column;
     /* The half-unit seam (list-group.css), never a literal. */
     gap: calc(var(--sys-space-unit) / 2);
-    font: var(--sys-font-footnote);
+    font: var(--sys-font-callout);
     font-variant-numeric: tabular-nums;
-    color: var(--sys-color-foreground);
+    color: color-mix(
+      in srgb,
+      var(--sys-color-foreground) 72%,
+      var(--ui-notice-fill)
+    );
     overflow-wrap: anywhere;
   }
 
@@ -87,7 +115,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sys-space-compact);
-    margin-block-start: var(--sys-space-tight);
+    margin-block-start: var(--sys-space-compact);
   }
 
   .ui-notice__facts:empty,
@@ -97,9 +125,16 @@
 
   /* COMPACT — no title: one line of facts, its glyph centred on it, and
      an action (a module's «Опитай пак») hugged at the trailing end of the
-     same line, wrapping under the facts only when the line is full. */
+     same line, wrapping under the facts only when the line is full. The
+     line IS the message here, so it takes the primary ink. */
   .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle])) {
     align-items: center;
+    padding-block: calc(var(--sys-space-unit) * 3);
+  }
+
+  .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle]))
+    .ui-notice__facts {
+    color: var(--sys-color-foreground);
   }
 
   .ui-notice:not(:has(> .ui-notice__content > [uiNoticeTitle]))

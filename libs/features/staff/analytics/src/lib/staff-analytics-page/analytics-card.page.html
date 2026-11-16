@@ -628,16 +628,14 @@
     }
   </div>
 
-  <!-- THE CUSTOM PERIOD: «От» and «До» in collapsible rows with inline
-       calendars, «Приложи» in the sheet's action row. -->
+  <!-- THE CUSTOM PERIOD: «От» and «До» as date rows whose capsules pop
+       the month, «Приложи» in the sheet's action row. -->
   @if (rangeVm(); as range) {
   <lib-analytics-range-sheet
     [vm]="range"
     [open]="store.rangeOpen()"
     [from]="store.rangeFrom()"
     [to]="store.rangeTo()"
-    [fromText]="rangeTexts().from"
-    [toText]="rangeTexts().to"
     (fromChange)="store.rangeFrom.set($event)"
     (toChange)="store.rangeTo.set($event)"
     (applied)="store.applyRange()"

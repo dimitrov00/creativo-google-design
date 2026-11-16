@@ -46,6 +46,8 @@ import { pluralForm, translateCodedError } from '@creativo/infrastructure/i18n';
 import {
   ClockClosing,
   formatClock,
+  formatDayPill,
+  formatDayPillRange,
   formatWallClock,
   formatWeekdayLabels,
 } from '@creativo/ui/wall-clock';
@@ -54,6 +56,7 @@ import {
   type UiChoiceOption,
   UiAvatar,
   UiButton,
+  UiDatePill,
   UiIcon,
   UiSwitch,
   UiTimeField,
@@ -73,11 +76,6 @@ import {
   UiSheetActionBar,
   UiSheetHeadline,
 } from '@creativo/ui/patterns';
-import {
-  StaffDayPill,
-  formatDayPill,
-  formatDayPillRange,
-} from '../day-pill/staff-day-pill';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import { StaffTimeline } from '../timeline/staff-timeline';
@@ -345,7 +343,7 @@ function weekdayName(
     UiMenuTrigger,
     UiSheetActionBar,
     UiSheetHeadline,
-    StaffDayPill,
+    UiDatePill,
     StaffTimeGrid,
     StaffTimeline,
     SwipeToDeleteDirective,

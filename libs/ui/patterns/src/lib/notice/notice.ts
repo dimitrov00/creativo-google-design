@@ -54,8 +54,9 @@ let nextTitleId = 0;
  * A sibling of the list segments, not a card: the grouped segment's fill
  * (a tone washes it at `--sys-alpha-tint`, opaque, never translucent), the
  * segment's prominent corner, no border, no shadow. The glyph and the wash
- * carry the tone — a warning and a refusal ALWAYS wear their mark, so they
- * are never mistaken for a note; the TITLE and the FACTS stay in the foreground ink in
+ * carry the tone: the glyph is bare, in the tone's own colour — the same
+ * in every tone — and the wash is that tone over white. A warning and a
+ * refusal ALWAYS wear their mark, so they are never mistaken for a note; the TITLE and the FACTS stay in the foreground ink in
  * every tone, because the tone's own text cut drops under AA on its own
  * wash, and a title that changed colour with the tone would read as a
  * different thing each time.

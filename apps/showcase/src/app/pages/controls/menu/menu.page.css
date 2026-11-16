@@ -8,7 +8,7 @@
 
 /* THE SAME MONTH AT THE SAME SIZE as the staff day pills draw it: the
    surface is what the grid fills, so the surface is where the width is
-   said (staff-day-pill.css). */
+   said (date-pill.css). */
 .menu__month-host {
   --ui-menu-min-width: 20rem;
 }

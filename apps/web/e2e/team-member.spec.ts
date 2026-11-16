@@ -824,7 +824,7 @@ test.describe('a team member’s page', () => {
       timeout: 30_000,
     });
     await expect(leftover).toContainText(
-      'Премести го или го откажи, преди да запазиш.',
+      'Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
     );
     await expect(
       page

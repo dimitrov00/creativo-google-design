@@ -3,10 +3,10 @@ import {
   formatWallClock,
   formatWallClockRange,
   wallClockParts,
-} from '@creativo/ui/wall-clock';
+} from './wall-clock';
 
 /**
- * `ср, 9.09` — the one grammar for a day named in a pill, COMPACT, exactly
+ * `ср, 9.09` — the one grammar for a day named in a pill (`ui-date-pill`), COMPACT, exactly
  * as `Intl` renders the locale's short date (owner, 2026-09-09: "keep it how
  * Intl produces it", then "the compact version"). The weekday leads because
  * in a barbershop a Saturday is not a Tuesday. `month: 'short'` is numeric

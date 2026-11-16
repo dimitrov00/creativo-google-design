@@ -357,7 +357,7 @@
 }
 
 /* The period pill may SHRINK before the cluster does — its own stylesheet
-   says how (`staff-day-pill.css`: the label ellipsises, the ring stays
+   says how (`date-pill.css`: the label ellipsises, the ring stays
    clear); this sheet is scoped and could not reach inside it anyway. */
 
 /* A SHORT viewport — a phone held sideways — gives the height to the hours

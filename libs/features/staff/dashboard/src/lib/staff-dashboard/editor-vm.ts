@@ -8,7 +8,7 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { IntervalSetSystem } from '@core/systems';
-import { formatDayPill } from '../day-pill/staff-day-pill';
+import { formatDayPill } from '@creativo/ui/wall-clock';
 import type { BarberDayLane } from '../staff-day.store';
 import type {
   VisitEditorPhoto,

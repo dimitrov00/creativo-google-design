@@ -1,29 +1,25 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { LocalDate } from '@core/primitives';
 import { localDate } from '@core/testing';
-import {
-  StaffDayPill,
-  formatDayPill,
-  formatDayPillRange,
-} from './staff-day-pill';
+import { formatDayPill, formatDayPillRange } from '@creativo/ui/wall-clock';
+import { UiDatePill } from './date-pill';
 
-describe('StaffDayPill', () => {
-  let fixture: ComponentFixture<StaffDayPill>;
+describe('UiDatePill', () => {
+  let fixture: ComponentFixture<UiDatePill>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [StaffDayPill],
+      imports: [UiDatePill],
     }).compileComponents();
-    fixture = TestBed.createComponent(StaffDayPill);
-    fixture.componentRef.setInput('uiDayKey', '2026-09-09');
+    fixture = TestBed.createComponent(UiDatePill);
+    fixture.componentRef.setInput('uiSelected', '2026-09-09');
     fixture.componentRef.setInput('uiLocale', 'bg');
     fixture.detectChanges();
   });
 
   const host = () => fixture.nativeElement as HTMLElement;
   const trigger = () =>
-    host().querySelector<HTMLButtonElement>('[data-testid="staff-day-pill"]');
+    host().querySelector<HTMLButtonElement>('[data-testid="ui-date-pill"]');
 
   it("names the day the one way: the locale's own compact date, weekday first", () => {
     expect(formatDayPill(localDate('2026-09-09'), 'bg')).toBe('ср, 9.09');
@@ -92,12 +88,12 @@ describe('StaffDayPill', () => {
     fixture.componentInstance.uiPresented.subscribe((v) => presented.push(v));
     fixture.componentInstance.uiPicked.subscribe((d) => picked.push(d));
     expect(
-      host().querySelector('[data-testid="staff-day-pill-calendar"]'),
+      host().querySelector('[data-testid="ui-date-pill-calendar"]'),
     ).toBeNull();
     trigger()?.click();
     fixture.detectChanges();
     expect(
-      host().querySelector('[data-testid="staff-day-pill-calendar"]'),
+      host().querySelector('[data-testid="ui-date-pill-calendar"]'),
     ).not.toBeNull();
     // The month's own cells are the DS's to test; the contract here is the
     // pill's: a pick closes it and names the day.
@@ -108,27 +104,25 @@ describe('StaffDayPill', () => {
     expect(picked).toEqual(['2026-09-12']);
     expect(presented).toEqual([true, false]);
     expect(
-      host().querySelector('[data-testid="staff-day-pill-calendar"]'),
+      host().querySelector('[data-testid="ui-date-pill-calendar"]'),
     ).toBeNull();
   });
 
-  /*
-   * THE PRE-ZONE PILL (pass D, R-3): before the shop's zone is known the
-   * page's day was `''`, which the old key reader rolled to 0000-01-01 —
-   * the store now says `null`. The page draws its pill only once the zone
-   * is known, but a day-less pill still prints exactly what it printed.
-   */
-  it('prints a day-less pill as it always printed the empty key', () => {
-    // The old reader, verbatim, as the reference: `''` → [0] → 0000-01-01.
-    const [year = 1970, month = 1, day = 1] = ''.split('-').map(Number);
-    const before = formatDayPill(
-      LocalDate.fromEpochDay(LocalDate.epochDayOf(year, month, day)),
-      'bg',
-    );
-    fixture.componentRef.setInput('uiDayKey', null);
+  it('prints its placeholder in the secondary ink while it holds no day', () => {
+    fixture.componentRef.setInput('uiSelected', null);
+    fixture.componentRef.setInput('uiPlaceholder', 'Няма');
     fixture.detectChanges();
     expect(trigger()?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
-      before,
+      'Няма',
+    );
+    expect(trigger()?.hasAttribute('data-empty')).toBe(true);
+  });
+
+  it('reads «label: day» when a row names the value beside it, and names its month after it', () => {
+    fixture.componentRef.setInput('uiAccessibleLabel', 'Начална дата');
+    fixture.detectChanges();
+    expect(trigger()?.getAttribute('aria-label')).toBe(
+      'Начална дата: ср, 9.09',
     );
   });
 
@@ -164,7 +158,7 @@ describe('StaffDayPill', () => {
     // Nothing in it claims to be a menu item: the days are the month's own buttons.
     expect(surface()?.querySelector('[role="menuitem"]')).toBeNull();
     expect(
-      surface()?.querySelector('[data-testid="staff-day-pill-calendar"]'),
+      surface()?.querySelector('[data-testid="ui-date-pill-calendar"]'),
     ).not.toBeNull();
   });
 

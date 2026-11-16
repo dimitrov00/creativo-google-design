@@ -47,10 +47,10 @@
                strip wait on `store.ready()` while the rest of the chrome is
                drawn and the lanes sit in their loading state. -->
           @if (store.ready()) {
-          <lib-staff-day-pill
+          <ui-date-pill
             uiAlignment="leading"
-            [uiDayKey]="store.dayKey()"
-            [uiTodayKey]="store.todayKey()"
+            [uiSelected]="store.dayKey()"
+            [uiToday]="store.todayKey()"
             [uiLocale]="content.locale()"
             [uiLabel]="periodLabel()"
             [uiPreviousLabel]="t('staff.visit.monthPrevious')"

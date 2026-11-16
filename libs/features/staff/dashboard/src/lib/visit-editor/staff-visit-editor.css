@@ -263,7 +263,7 @@
   min-inline-size: 0;
 }
 
-.staff-frame__day > lib-staff-day-pill {
+.staff-frame__day > ui-date-pill {
   display: flex;
   justify-content: flex-end;
   max-inline-size: 100%;

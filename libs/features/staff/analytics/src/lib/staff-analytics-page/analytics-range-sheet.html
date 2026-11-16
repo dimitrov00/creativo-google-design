@@ -21,23 +21,20 @@
   </div>
 
   <div class="analytics-range-sheet__rows">
-    <!-- «От» and «До»: the app's date rows — each row, and under it its
-         month while it is unfolded, one at a time. -->
+    <!-- «От» and «До»: the app's date rows — each day in a capsule at
+         the row's end that pops the month. -->
     <ul uiListGroup>
       <ui-date-row
         role="listitem"
         uiTestId="analytics-range-from"
         [uiLabel]="range.fromLabel"
         [uiSelected]="fromDate()"
-        [uiValue]="fromText()"
         [uiPlaceholder]="range.chooseLabel"
         [uiToday]="range.today"
         [uiMin]="range.earliest"
         [uiLocale]="range.locale"
         [uiPreviousLabel]="range.previousMonthLabel"
         [uiNextLabel]="range.nextMonthLabel"
-        [uiExpanded]="unfolded() === 'from'"
-        (uiExpandedChange)="unfold('from', $event)"
         (uiPicked)="pick('from', $event)"
       />
       <ui-date-row
@@ -45,15 +42,12 @@
         uiTestId="analytics-range-to"
         [uiLabel]="range.toLabel"
         [uiSelected]="toDate()"
-        [uiValue]="toText()"
         [uiPlaceholder]="range.chooseLabel"
         [uiToday]="range.today"
         [uiMin]="fromDate() ?? range.earliest"
         [uiLocale]="range.locale"
         [uiPreviousLabel]="range.previousMonthLabel"
         [uiNextLabel]="range.nextMonthLabel"
-        [uiExpanded]="unfolded() === 'to'"
-        (uiExpandedChange)="unfold('to', $event)"
         (uiPicked)="pick('to', $event)"
       />
     </ul>

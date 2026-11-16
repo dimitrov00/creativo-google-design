@@ -469,6 +469,10 @@ export const UI_ICON_REGISTRY = {
   /** A refusal: the thing asked for did not happen — the destructive
    *  notice's own mark (`ui-notice`, `uiTone="destructive"`). */
   'notice.refusal': 'error',
+  /** A fact worth a panel of its own — what a choice will do, said beside
+   *  the warning it may also raise. Never a default: a neutral notice names
+   *  it only when it stands next to a toned one and has to match its shape. */
+  'notice.info': 'info',
 
   /* ── Loyalty: the programme, its currency, its rhythm ───────────── */
   /**

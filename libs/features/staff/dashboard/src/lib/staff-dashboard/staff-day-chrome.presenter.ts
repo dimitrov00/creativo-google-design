@@ -15,12 +15,13 @@ import type {
 } from '@creativo/ui/controls';
 import type { UiAlertAction } from '@creativo/ui/patterns';
 import {
+  formatDayPill,
+  formatDayPillRange,
   formatWallClock,
   formatZoneName,
   wallClockParts,
 } from '@creativo/ui/wall-clock';
 import { firstNameOf } from '@creativo/features/shared/visits';
-import { formatDayPill, formatDayPillRange } from '../day-pill/day-pill.format';
 import type { GridColumn } from '../time-grid/staff-time-grid';
 import type {
   VisitEditorServiceOption,

@@ -27,10 +27,14 @@ export type MemberWords = {
   readonly periodFrom: (date: string) => string;
   /** «3 март – 31 дек.» */
   readonly periodRange: (from: string, to: string) => string;
-  /** «След 31 дек. Николай напуска екипа…» */
-  readonly periodEnds: (name: string, date: string) => string;
-  /** «31 дек. вече е минал. Със запазването Николай напуска екипа веднага.» */
-  readonly periodEnded: (name: string, date: string) => string;
+  /** «Николай напуска екипа след 31 дек.» — the note's title for a last day still ahead. */
+  readonly periodEndsTitle: (name: string, date: string) => string;
+  /** «След това вече не влиза в приложението като бръснар.» */
+  readonly periodEndsBody: string;
+  /** «Николай напуска екипа веднага» — the note's title for a last day already passed. */
+  readonly periodEndedTitle: (name: string) => string;
+  /** «31 дек. вече е минал. Със запазването спира да влиза в приложението като бръснар.» */
+  readonly periodEndedBody: (date: string) => string;
   /** «Николай напуска екипа сега?» */
   readonly leaveTitle: (name: string) => string;
   /** «Последният работен ден вече е минал. Николай спира да приема записи…» */
@@ -39,14 +43,14 @@ export type MemberWords = {
   readonly leaveCancel: string;
   /** «Николай има 3 записа след 31.12» — the warning's title, for one and for several. */
   readonly leftoverTitle: (name: string, date: string, count: number) => string;
-  /** «Остават в графика, докато ги преместиш или откажеш.» — a last day still ahead. */
+  /** «Остават в графика. Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.» — a last day still ahead. */
   readonly leftoverStays: (count: number) => string;
-  /** «Премести ги или ги откажи, преди да запазиш.» — a last day already passed. */
+  /** «Остават в графика. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.» — a last day already passed. */
   readonly leftoverNow: (count: number) => string;
   readonly leftoverFailed: string;
   /** «Стефан още има 3 записа» — the title on the page of a barber who has left. */
   readonly departedLeftoverTitle: (name: string, count: number) => string;
-  /** «След последния работен ден. Премести ги или ги откажи.» */
+  /** «След последния работен ден. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.» */
   readonly departedLeftoverBody: (count: number) => string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
@@ -103,10 +107,13 @@ export function memberWordsOf(translate: Translate): MemberWords {
     periodRow: at('periodRow'),
     periodFrom: (date) => at('periodFrom', { date }),
     periodRange: (from, to) => at('periodRange', { from, to }),
-    periodEnds: (name, date) =>
-      translate('admin.team.period.ends', { name, date }),
-    periodEnded: (name, date) =>
-      translate('admin.team.period.ended', { name, date }),
+    periodEndsTitle: (name, date) =>
+      translate('admin.team.period.endsTitle', { name, date }),
+    periodEndsBody: translate('admin.team.period.endsBody'),
+    periodEndedTitle: (name) =>
+      translate('admin.team.period.endedTitle', { name }),
+    periodEndedBody: (date) =>
+      translate('admin.team.period.endedBody', { date }),
     leaveTitle: (name) => translate('admin.team.period.leaveTitle', { name }),
     leaveMessage: (name) =>
       translate('admin.team.period.leaveMessage', { name }),

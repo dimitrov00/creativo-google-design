@@ -681,7 +681,7 @@ test.describe('«Анализи» — staff analytics', () => {
 
     // A custom range on the takings screen: «1М» first (the sheet opens on
     // the period on screen), then «…» — «От» the month's first day, «До» the
-    // suite's day, picked in the inline calendars, applied, named in the URL.
+    // suite's day, picked in the capsules' months, applied, named in the URL.
     await backHome(page);
     await openCard(page, 'takings');
     await page.getByTestId('analytics-range-MONTH').click();
@@ -690,10 +690,13 @@ test.describe('«Анализи» — staff analytics', () => {
     await page.getByTestId('analytics-custom-range').click();
     const sheet = page.getByTestId('analytics-range-sheet');
     await expect(sheet).toBeVisible();
+    // Each day is a capsule that pops its month.
+    await page.getByTestId('analytics-range-from').click();
     await page
       .getByTestId('analytics-range-from-calendar')
       .getByTestId(`ui-month-day-${from}`)
       .click();
+    await page.getByTestId('analytics-range-to').click();
     await page
       .getByTestId('analytics-range-to-calendar')
       .getByTestId(`ui-month-day-${day}`)

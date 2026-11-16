@@ -1,4 +1,4 @@
-import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
+import { formatDayPill } from '@creativo/ui/wall-clock';
 import { runViewTransition } from '../shared/view-transition';
 import {
   BUSY_SETTLE_MS,
@@ -149,6 +149,7 @@ import {
   UiAvatar,
   UiButton,
   UiChip,
+  UiDatePill,
   UiIcon,
   type UiIconName,
   UiModalSheet,
@@ -418,7 +419,7 @@ const ANCHOR_TOLERANCE = 2;
     TranslocoDirective,
     UiAvatar,
     UiButton,
-    StaffDayPill,
+    UiDatePill,
     UiChip,
     UiFlow,
     UiForegroundStyleDirective,
@@ -4190,8 +4191,7 @@ export class StaffDashboard {
     this.setDatePicker(!this.datePickerOpen());
   }
 
-  /** The shared day pill reports its own open/close; the page keeps the
-   *  one-popover-at-a-time rule. */
+  /** The date pill reports its own open/close; one popover at a time. */
   protected setDatePicker(open: boolean): void {
     this.presentOnly(open ? DaySurface.Date : undefined);
     this.datePickerOpen.set(open);
