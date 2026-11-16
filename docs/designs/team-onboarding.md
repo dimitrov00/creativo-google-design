@@ -1182,22 +1182,32 @@ and a leaver's page keeps showing them until none is left.
     picked against the visits it cuts. It opens on today's month, not on
     the month the barber started;
   - the count is a **warning notice with its mark and a title** («Иван има
-    2 записа след 31.12»), and under it what becomes of them («Остават в
-    графика, докато ги преместиш или откажеш.») or, for a day already
-    passed, what to do («Премести ги или ги откажи, преди да запазиш.»).
+    2 записа след 31.12»), and under it what can be done: for a day still
+    ahead «Остават в графика. Отвори запис, за да го дадеш на друг бръснар
+    или да го преместиш преди последния ден.»; for a day already passed
+    «… да го дадеш на друг бръснар, да го преместиш или да го откажеш.».
     Saving is never blocked;
   - under the warning the visits are **listed under their days** as the
-    shared visit rows (`lib-visit-list`, the staff search's rows). A row
-    opens the schedule on that day, on this barber's column
-    (`/staff/schedule?day=…&barber=…`). The list is its own lazy chunk.
+    schedule would card them (`lib-leftover-visits`): the client's face
+    and name, what was booked under it, the clock. No barber's face — the
+    list is all one barber's. Built from `ui-avatar` and the shared
+    `lib-staff-event-head`. A row opens the schedule on that day, on this
+    barber's column (`/staff/schedule?day=…&barber=…`). The list is its
+    own lazy chunk.
 - The page of a barber who has left shows the same warning and list to
   whoever may bring them back. Nobody else's page makes the read.
 - A read that fails says «Не успяхме да проверим дали има записи след тази
   дата.», never that nothing is left.
 - Design-system changes that came with it, for one vocabulary everywhere:
-  a warning and a refusal notice always wear their mark (`notice.warning`,
-  `notice.refusal`) when the screen names no glyph, so neither is ever a
-  tinted box alone.
+  - a warning and a refusal notice always wear their mark
+    (`notice.warning`, `notice.refusal`) when the screen names no glyph,
+    so neither is ever a tinted box alone. The mark is a bare glyph in the
+    tone's colour, the same rule in every tone;
+  - a tone's wash is mixed into the elevated surface (white in the light
+    theme), never the grey segment fill, where it turned to mud. A warning
+    takes `--sys-color-caution`, the sign's amber, for its glyph and its
+    wash; `--sys-color-warning` stays the darker cut that is legible as
+    words.
 - Where this departs from D10 as written: the day query does not filter on
   `bookingStatus`. The system keeps the live ones, so a booking awaiting
   confirmation counts too, and no composite index is added.
