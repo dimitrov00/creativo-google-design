@@ -73,6 +73,9 @@
     --sys-color-destructive: #d32f2f;
     --sys-color-success: #3fa56e;
     --sys-color-warning: #d08a2c;
+    /* The warning as a shape — see theme-light.css. A touch lighter on
+       black, where the same amber reads heavier. */
+    --sys-color-caution: #fbbf24;
     /* THE PROMO HUE IS THE ACCENT (owner, 2026-09-16, at the discount
        card: "what is that yellow — use our accent colour"). The semantic
        name stays, so a discount's slider, a coupon's figure and a promo

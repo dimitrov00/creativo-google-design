@@ -1,60 +1,57 @@
 import { describe, expect, it } from 'vitest';
-import { VisitPerspective } from '@core/components';
 import { AppointmentId, BarberId } from '@core/primitives';
 import {
   appointmentFixture,
   deepFreeze,
-  FIXTURE_NOW,
+  endMinute,
   FIXTURE_PHONE,
-  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
   localDate,
   minute,
 } from '@core/testing';
-import {
-  type VisitLookup,
-  visitWordsOf,
-} from '@creativo/features/shared/visits';
-import { catalogueTranslate } from './catalogue.spec-support';
 import {
   type LeftoverVisitsInput,
   leftoverSectionsVm,
 } from './leftover-visits.presenter';
 
 /*
- * The visits a last day leaves behind, as the app's own visit list: one
- * section per shop day under a full date, each row the shared list's — so
- * what is pinned here is the grouping's headings, the order and that a row
- * is the staff's row of that appointment.
+ * The visits a last day leaves behind, as the schedule would card them:
+ * one section per shop day under a full date, each row the client first,
+ * what was booked under the name, the clock — and no barber.
  */
 
 const IVAN = BarberId.of('ivan');
-const translate = catalogueTranslate('bg');
 
-const LOOKUP: VisitLookup = {
-  serviceName: () => 'Класическо подстригване',
-  barberName: () => 'Иван Петров',
-  barberAvatarSrc: () => null,
-  locationName: () => 'Център',
-  locationCount: 1,
-};
-
-const visit = (id: string, day: string, startMinutes = 600) =>
+const visit = (
+  id: string,
+  day: string,
+  startMinutes = 600,
+  contactName: string | null = 'Елена Василева',
+) =>
   appointmentFixture({
     id: AppointmentId.of(id),
     localDate: localDate(day),
     startMinutes: minute(startMinutes),
+    endMinutes: endMinute(startMinutes + 30),
     barberIds: [IVAN],
+    ...(contactName === null
+      ? {}
+      : { contactName, contactPhone: FIXTURE_PHONE }),
   });
 
-function inputOf(visits: LeftoverVisitsInput['visits']): LeftoverVisitsInput {
+function inputOf(
+  visits: LeftoverVisitsInput['visits'],
+  over: Partial<LeftoverVisitsInput> = {},
+): LeftoverVisitsInput {
   return {
     visits,
-    now: FIXTURE_NOW,
-    timeZone: FIXTURE_TIME_ZONE,
+    // 2026-09-28, a Monday.
+    today: FIXTURE_TODAY,
     locale: 'bg',
-    rowWords: visitWordsOf(translate, 'bg', VisitPerspective.Staff),
-    earlier: translate('staff.search.earlier'),
-    lookup: LOOKUP,
+    earlier: 'По-рано',
+    unknownService: 'Услуга',
+    serviceName: () => 'Класическо подстригване',
+    ...over,
   };
 }
 
@@ -89,8 +86,6 @@ describe('leftoverSectionsVm', () => {
         rows: ['a-3'],
       },
     ]);
-    // No worked-visit count: these are visits to move, not a history.
-    expect(sections.every((section) => section.detail === null)).toBe(true);
   });
 
   it('a visit before today that nobody closed files under «По-рано», after the days ahead', () => {
@@ -103,38 +98,43 @@ describe('leftoverSectionsVm', () => {
     ]);
   });
 
-  it('a row is the shared list’s staff row of that appointment: what was booked, and with whom', () => {
-    const [section] = leftoverSectionsVm(inputOf([visit('a-1', '2026-10-02')]));
-    const row = section?.rows.at(0);
-    expect(row?.id).toBe('a-1');
-    expect(row?.title).toBe('Класическо подстригване');
-    expect(row?.accessibleName).toContain('Иван Петров');
+  it('leads a row with who the shop would call, what was booked under the name, and the clock — never the barber', () => {
+    const [section] = leftoverSectionsVm(
+      inputOf([visit('a-1', '2026-10-02', 600)]),
+    );
+    expect(section?.rows.at(0)).toEqual({
+      id: 'a-1',
+      testId: 'leftover-row-a-1',
+      clientName: 'Елена Василева',
+      title: 'Елена Василева',
+      lines: [
+        { text: 'Класическо подстригване', testId: 'leftover-line-services' },
+      ],
+      start: '10:00',
+      end: '10:30',
+      accessibleName:
+        'Елена Василева, Класическо подстригване, Петък, 2 октомври, 10:00',
+    });
   });
 
-  it('names who the shop would call under the person glyph — and adds no line for a visit with nobody to call', () => {
+  it('a visit with nobody to call is titled by what was booked, with no line under it', () => {
     const [section] = leftoverSectionsVm(
-      inputOf([
-        appointmentFixture({
-          id: AppointmentId.of('a-1'),
-          localDate: localDate('2026-10-02'),
-          barberIds: [IVAN],
-          contactName: 'Елена Василева',
-          contactPhone: FIXTURE_PHONE,
-        }),
-        visit('a-walk-in', '2026-10-02', 900),
-      ]),
+      inputOf([visit('a-walk-in', '2026-10-02', 600, null)]),
     );
-    const contactLineOf = (index: number) =>
-      section?.rows
-        .at(index)
-        ?.lines.find((line) => line.testId === 'leftover-line-contact');
+    const row = section?.rows.at(0);
+    expect(row?.clientName).toBeNull();
+    expect(row?.title).toBe('Класическо подстригване');
+    expect(row?.lines).toEqual([]);
+    expect(row?.accessibleName).toBe(
+      'Класическо подстригване, Петък, 2 октомври, 10:00',
+    );
+  });
 
-    expect(contactLineOf(0)).toEqual({
-      text: 'Елена Василева',
-      icon: 'contact.person',
-      testId: 'leftover-line-contact',
-    });
-    expect(contactLineOf(1)).toBeUndefined();
+  it('names a service the catalogue no longer lists by the house word, and each service once', () => {
+    const [section] = leftoverSectionsVm(
+      inputOf([visit('a-1', '2026-10-02')], { serviceName: () => null }),
+    );
+    expect(section?.rows.at(0)?.lines.at(0)?.text).toBe('Услуга');
   });
 
   it('answers no section for no visit', () => {

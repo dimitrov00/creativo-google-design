@@ -399,7 +399,7 @@ describe('AdminTeamMember — a record in preparation', () => {
         'Иван има 2 записа след 31.12',
       );
       expect(text(warning)).toContain(
-        'Остават в графика, докато ги преместиш или откажеш.',
+        'Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.',
       );
       // A warning wears its mark.
       expect(
@@ -492,7 +492,7 @@ describe('AdminTeamMember — a record in preparation', () => {
         'Иван има 1 запис след 1.09',
       );
       expect(text(warning)).toContain(
-        'Премести го или го откажи, преди да запазиш.',
+        'Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
       );
     });
 
@@ -1388,7 +1388,7 @@ describe('AdminTeamMember — the edges', () => {
         queryParams: { day: '2026-10-20', barber: STEFAN.barberId },
       });
       expect(text(warning)).toContain(
-        'След последния работен ден. Премести ги или ги откажи.',
+        'Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
       );
       expect(calls.aheadAsked).toEqual([
         { barberId: STEFAN.barberId, fromLocalDate: '2026-10-01' },

@@ -82,6 +82,13 @@
     --sys-color-destructive: #c62828;
     --sys-color-success: #1f8a5f;
     --sys-color-warning: #b26a00;
+    /* THE WARNING AS A SHAPE (owner, 2026-11-16, at the leftover-bookings
+       notice: "warning colour plus some black alpha"). `warning` above is
+       cut dark enough to be read as WORDS; washed into a grey fill it
+       turned to mud. `caution` is the sign's own amber, for what the
+       accent law calls a shape — a glyph, a wash — and never for words.
+       Yellower than the accent's orange, so the two are never confused. */
+    --sys-color-caution: #f59e0b;
     /* THE PROMO HUE IS THE ACCENT (owner, 2026-09-16, at the discount
        card: "what is that yellow — use our accent colour"). The semantic
        name stays, so a discount's slider, a coupon's figure and a promo

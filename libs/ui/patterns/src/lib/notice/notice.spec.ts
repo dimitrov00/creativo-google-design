@@ -164,10 +164,19 @@ describe('UiNotice', () => {
     }
   });
 
-  it('washes a tone at the one tint over the segment fill, and keeps title and facts in the foreground ink', () => {
+  it('washes a tone at the one tint over the elevated surface — never the grey fill — and keeps title and facts in the foreground ink', () => {
     expect(css).toMatch(
-      /color-mix\(\s*in srgb,\s*var\(--ui-notice-tone\) var\(--sys-alpha-tint\),\s*var\(--sys-color-surface-secondary\)\s*\)/,
+      /color-mix\(\s*in srgb,\s*var\(--ui-notice-tone\) var\(--sys-alpha-tint\),\s*var\(--sys-color-surface-elevated\)\s*\)/,
     );
+    // A warning is the sign's amber, never the darker cut made for words.
+    const warning =
+      /\.ui-notice\[data-tone='warning'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(warning).toContain('--ui-notice-tone: var(--sys-color-caution)');
+    // ONE rule for every mark: a bare glyph in the tone's colour — no disc
+    // behind it in any tone.
+    const glyph = /\.ui-notice__glyph\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(glyph).toContain('color: var(--ui-notice-tone)');
+    expect(css).not.toMatch(/ui-notice__glyph[^{]*\{[^}]*background/);
     const title = /\[uiNoticeTitle\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(title).toContain('color: var(--sys-color-foreground)');
     const facts = /\.ui-notice__facts\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';

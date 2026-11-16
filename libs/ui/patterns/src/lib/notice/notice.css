@@ -1,7 +1,10 @@
 @layer sys-components {
-  /* A SIBLING OF THE LIST SEGMENTS: their fill, their prominent corner, no
-     border, no shadow. The tone lives in `--ui-notice-tone` — the glyph's
-     ink and the wash's hue — and nowhere else. */
+  /* A SIBLING OF THE LIST SEGMENTS: their corner, no border, no shadow.
+     The tone lives in `--ui-notice-tone` — the glyph's ink and the wash's
+     hue — and nowhere else. ONE rule for every mark, whatever the tone: a
+     bare glyph in the tone's own colour. No disc behind it, no second ink
+     on it (owner, 2026-11-16: discs whose ink changed with the tone, and a
+     neutral glyph with none, read as four different controls). */
   .ui-notice {
     --ui-notice-tone: var(--sys-color-secondary-label);
 
@@ -19,22 +22,27 @@
     --ui-notice-tone: var(--sys-color-accent);
   }
 
+  /* A warning is the SIGN's amber (`caution`), never the darker cut that
+     is legible as words (`warning`): washed, that one read as brown. */
   .ui-notice[data-tone='warning'] {
-    --ui-notice-tone: var(--sys-color-warning);
+    --ui-notice-tone: var(--sys-color-caution);
   }
 
   .ui-notice[data-tone='destructive'] {
     --ui-notice-tone: var(--sys-color-destructive);
   }
 
-  /* The ONE tone wash, mixed into the segment's fill rather than laid over
-     it: the notice stays opaque on any ground, and its title and facts are
-     measured against exactly this colour. */
+  /* The ONE tone wash, mixed rather than laid over, so the notice stays
+     opaque on any ground and its title and facts are measured against
+     exactly this colour. It is mixed into the ELEVATED surface — white in
+     the light theme — never the grey segment fill: a hue mixed with grey
+     is mud (owner, 2026-11-16), and a tone has to read as its own colour
+     at a glance. */
   .ui-notice:not([data-tone='neutral']) {
     background: color-mix(
       in srgb,
       var(--ui-notice-tone) var(--sys-alpha-tint),
-      var(--sys-color-surface-secondary)
+      var(--sys-color-surface-elevated)
     );
   }
 

@@ -39,14 +39,14 @@ export type MemberWords = {
   readonly leaveCancel: string;
   /** «Николай има 3 записа след 31.12» — the warning's title, for one and for several. */
   readonly leftoverTitle: (name: string, date: string, count: number) => string;
-  /** «Остават в графика, докато ги преместиш или откажеш.» — a last day still ahead. */
+  /** «Остават в графика. Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.» — a last day still ahead. */
   readonly leftoverStays: (count: number) => string;
-  /** «Премести ги или ги откажи, преди да запазиш.» — a last day already passed. */
+  /** «Остават в графика. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.» — a last day already passed. */
   readonly leftoverNow: (count: number) => string;
   readonly leftoverFailed: string;
   /** «Стефан още има 3 записа» — the title on the page of a barber who has left. */
   readonly departedLeftoverTitle: (name: string, count: number) => string;
-  /** «След последния работен ден. Премести ги или ги откажи.» */
+  /** «След последния работен ден. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.» */
   readonly departedLeftoverBody: (count: number) => string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
