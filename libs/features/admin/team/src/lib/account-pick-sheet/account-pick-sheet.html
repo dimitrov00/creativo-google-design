@@ -38,6 +38,24 @@
       >
         {{ line }}
       </ui-notice>
+      }
+      <!-- THE ANSWER THAT IS NO ACCOUNT, first: someone who will never sign
+           in is still added, and linked later if they ever do. -->
+      @if (uiSkipLabel(); as skip) {
+      <ui-list-group>
+        <button
+          type="button"
+          uiListRow
+          uiSize="regular"
+          [uiInteractive]="true"
+          [disabled]="uiPending()"
+          [attr.data-testid]="uiSheetId() + '-skip'"
+          (click)="skipped.emit()"
+        >
+          {{ skip }}
+          <ui-icon uiTrailing uiName="nav.disclosure" aria-hidden="true" />
+        </button>
+      </ui-list-group>
       } @if (sheet.rows.length > 0) {
       <section class="team-page__module">
         @if (sheet.heading; as heading) {

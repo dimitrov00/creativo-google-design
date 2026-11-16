@@ -4,6 +4,7 @@ import {
   BarberActivation,
   type BarberActivationAnswer,
   type BarberEmployment,
+  BarberHistory,
   BarberLifecycle,
   BarberStatus,
   type LocalizedText,
@@ -124,7 +125,11 @@ function optionalText(
 /** The record's fields that are not its lifecycle — every one, named. */
 function withoutLifecycle(
   barber: Barber,
-): BarberMeta & BarberEmployment & BarberAvatar & WriteProvenance {
+): BarberMeta &
+  BarberEmployment &
+  BarberHistory &
+  BarberAvatar &
+  WriteProvenance {
   return {
     id: barber.id,
     name: barber.name,
@@ -137,6 +142,7 @@ function withoutLifecycle(
     sortOrder: barber.sortOrder,
     barberStartsLocalDate: barber.barberStartsLocalDate,
     barberLastWorkingLocalDate: barber.barberLastWorkingLocalDate,
+    barberPastPeriods: barber.barberPastPeriods,
     avatarMediaId: barber.avatarMediaId,
     avatarMediaPath: barber.avatarMediaPath,
     avatarMediaWidth: barber.avatarMediaWidth,
@@ -229,6 +235,7 @@ export const TeamSystem = {
       ...BarberLifecycle.draft(context.nowUtcMs, input.barberDraftTargetStatus),
       barberStartsLocalDate: input.barberStartsLocalDate,
       barberLastWorkingLocalDate: last,
+      barberPastPeriods: BarberHistory.NONE,
       avatarMediaId: null,
       avatarMediaPath: null,
       avatarMediaWidth: null,
@@ -501,6 +508,14 @@ export const TeamSystem = {
       ...withoutLifecycle(barber),
       barberStartsLocalDate,
       barberLastWorkingLocalDate: null,
+      // The period that ended is kept: the page says when they worked before.
+      barberPastPeriods:
+        lastLocalDate === null
+          ? barber.barberPastPeriods
+          : BarberHistory.withEnded(barber, {
+              pastStartsLocalDate: barber.barberStartsLocalDate,
+              pastLastWorkingLocalDate: lastLocalDate,
+            }),
       ...WriteProvenance.of(operationId),
       ...BarberLifecycle.live(barber.barberRehireStatus, nowUtcMs),
     });

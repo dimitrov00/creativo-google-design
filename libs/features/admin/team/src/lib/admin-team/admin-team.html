@@ -352,10 +352,24 @@
       }
     </div>
 
+    <!-- «НОВ БРЪСНАР», THE ACCOUNT FIRST (account first, A2): the person's
+         account, or none — then the add sheet below, with it named. Its
+         own chunk (its rows word phones), fetched while the page is idle. -->
+    @defer (when accountStepOpen(); prefetch on idle) { @if (accountStepOpen())
+    {
+    <lib-team-barber-account-sheet
+      [uiClosing]="accountStepClosing()"
+      (chosen)="onAccountChosen($event)"
+      (dismissed)="closeAccountStep()"
+      (closeFinished)="finishAccountStep()"
+    />
+    } }
+
     <!-- THE ADD SHEET: mounted while open, so each opening starts empty. -->
     @if (addOpen()) {
     <lib-team-add-sheet
       [uiToday]="today()"
+      [uiAccount]="addAccount()"
       [uiCopyNone]="t('admin.team.add.copyNone')"
       [uiClosing]="addClosing()"
       (dismissed)="closeAdd()"

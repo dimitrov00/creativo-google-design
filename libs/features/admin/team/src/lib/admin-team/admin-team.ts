@@ -43,6 +43,10 @@ import {
 } from '@creativo/ui/patterns';
 import { TeamAddSheet } from '../team-add-sheet/team-add-sheet';
 import {
+  type BarberAccountPick,
+  TeamBarberAccountSheet,
+} from '../team-barber-account-sheet/team-barber-account-sheet';
+import {
   type TeamRoleAdded,
   TeamRoleSheet,
 } from '../team-role-sheet/team-role-sheet';
@@ -70,6 +74,7 @@ import type { TeamAddOptionVm, TeamPageVm } from '../team.vm';
   imports: [
     RouterLink,
     TeamAddSheet,
+    TeamBarberAccountSheet,
     TeamRoleSheet,
     TranslocoDirective,
     UiAvatar,
@@ -150,6 +155,15 @@ export class AdminTeam {
   protected readonly roleClosing = signal(false);
   /** Whose roles the sheet changed: their page opens once the sheet has left. */
   private roleAdded: TeamRoleAdded | null = null;
+
+  /** «Нов бръснар»'s account step is up (account first, A2). */
+  protected readonly accountStepOpen = signal(false);
+  /** That step is leaving: its close animation runs. */
+  protected readonly accountStepClosing = signal(false);
+  /** The account the step chose — `null` for none — held until the add sheet opens. */
+  private accountChosen: BarberAccountPick | null | undefined = undefined;
+  /** The account the add sheet makes the barber from; `null` for none. */
+  protected readonly addAccount = signal<BarberAccountPick | null>(null);
 
   /** The add sheet is up. */
   protected readonly addOpen = signal(false);
@@ -247,7 +261,7 @@ export class AdminTeam {
   protected startAdd(option: TeamAddOptionVm): void {
     this.addMenuOpen.set(false);
     if (option.role === Role.Barber) {
-      this.openAdd();
+      this.openAccountStep();
       return;
     }
     this.roleAdded = null;
@@ -255,8 +269,36 @@ export class AdminTeam {
     this.roleAdd.set(option.role);
   }
 
-  protected openAdd(): void {
+  /** «Бръснар»: the account first — the add sheet follows it. */
+  protected openAccountStep(): void {
+    this.accountChosen = undefined;
+    this.accountStepClosing.set(false);
+    this.accountStepOpen.set(true);
+  }
+
+  /** The account step answered — an account, or none: it leaves, then the add sheet opens. */
+  protected onAccountChosen(account: BarberAccountPick | null): void {
+    this.accountChosen = account;
+    this.accountStepClosing.set(true);
+  }
+
+  /** ✕, Escape, the scrim: the account step leaves, and nothing follows it. */
+  protected closeAccountStep(): void {
+    if (this.accountStepOpen()) this.accountStepClosing.set(true);
+  }
+
+  protected finishAccountStep(): void {
+    if (!this.accountStepClosing()) return;
+    this.accountStepOpen.set(false);
+    this.accountStepClosing.set(false);
+    const chosen = this.accountChosen;
+    this.accountChosen = undefined;
+    if (chosen !== undefined) this.openAdd(chosen);
+  }
+
+  protected openAdd(account: BarberAccountPick | null = null): void {
     this.addedId = null;
+    this.addAccount.set(account);
     this.addClosing.set(false);
     this.addOpen.set(true);
   }

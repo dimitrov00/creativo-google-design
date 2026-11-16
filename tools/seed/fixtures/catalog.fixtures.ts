@@ -298,6 +298,7 @@ const LIVE_SINCE_2024 = {
   barberJoinsAnyPool: true,
   barberStartsLocalDate: day('2024-01-01'),
   barberLastWorkingLocalDate: null,
+  barberPastPeriods: [],
   writeOperationId: null,
 } as const;
 

@@ -53,9 +53,35 @@
           [uiDisabled]="store.pending()"
           (uiPicked)="starts.set($event)"
         />
+        <!-- THE ACCOUNT THAT LEFT WITH THE RECORD, offered back (account
+             first, A9): on by default; off, the record returns with none. -->
+        @if (previous() !== null) {
+        <ui-list-row uiSize="regular" data-testid="member-return-relink-row">
+          <ui-stack uiSpacing="none" class="team-page__identity">
+            <span>{{ t('admin.team.return.relink') }}</span>
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              data-testid="member-return-relink-name"
+              >{{ previousName() }}</span
+            >
+          </ui-stack>
+          <button
+            uiSwitch
+            uiTrailing
+            [(uiOn)]="relink"
+            [uiDisabled]="store.pending()"
+            [attr.aria-label]="t('admin.team.return.relink')"
+            data-testid="member-return-relink"
+          ></button>
+        </ui-list-row>
+        }
       </ui-list-group>
 
-      <!-- The account does not come back by itself: said before the save. -->
+      <!-- Without the account offered back, it does not come back by itself:
+           said before the save. -->
+      @if (previous() === null || !relink()) {
       <p
         uiText
         uiFont="footnote"
@@ -65,6 +91,7 @@
       >
         {{ t('admin.team.return.accountNote') }}
       </p>
+      }
     </div>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">

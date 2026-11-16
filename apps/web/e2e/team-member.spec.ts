@@ -92,6 +92,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await expect(page.getByTestId('team-add-save')).toBeDisabled();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-copy').click();
@@ -250,6 +251,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -333,6 +335,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -430,6 +433,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -538,6 +542,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -651,6 +656,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -760,6 +766,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -931,14 +938,18 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-return-sheet')).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByTestId('member-return-note')).toContainText(
-      'не се връща сам',
+    // The account that left with the record is offered back, on by
+    // default (account first, A9): nothing says it does not come back.
+    await expect(page.getByTestId('member-return-relink-name')).toHaveText(
+      'Георги Напуска',
+      { timeout: 30_000 },
     );
+    await expect(page.getByTestId('member-return-note')).toHaveCount(0);
     await page.getByTestId('member-return-save').click();
 
     // BACK: the sheet leaves and the page reads a working record again —
-    // the same one, where it was, on a new period with no last day. The
-    // account is not brought back: the page offers to link one.
+    // the same one, where it was, on a new period with no last day, the
+    // period that ended kept — and the same account linked again.
     await expect(page.getByTestId('member-return-sheet')).toHaveCount(0, {
       timeout: 30_000,
     });
@@ -947,17 +958,100 @@ test.describe('a team member’s page', () => {
       { timeout: 30_000 },
     );
     await expect(page.getByTestId('member-return')).toHaveCount(0);
-    await expect(page.getByTestId('member-link')).toBeVisible();
+    await expect(page.getByTestId('member-row-period-detail')).toContainText(
+      'Преди:',
+      { timeout: 30_000 },
+    );
     const back = await readStoredBody(Collections.Barbers, added);
     expect(back?.['barberStatus']).toBe(BarberStatus.StaffOnly);
     expect(back?.['barberStartsLocalDate']).toBe(shopToday());
     expect(back?.['barberLastWorkingLocalDate']).toBeNull();
     expect(back).not.toHaveProperty('barberRehireStatus');
-    expect(await readBarberLink(added)).toBeNull();
-    expect(
-      (await readStoredBody(Collections.Users, leaverUid))?.['roles'],
-    ).toEqual([Role.Client]);
+    expect(back?.['barberPastPeriods']).toEqual([
+      { pastStartsLocalDate: yesterday, pastLastWorkingLocalDate: yesterday },
+    ]);
+    await expect
+      .poll(() => readBarberLink(added ?? ''), { timeout: 20_000 })
+      .toBe(leaverUid);
+    await expect
+      .poll(
+        async () =>
+          (await readStoredBody(Collections.Users, leaverUid))?.['roles'],
+        { timeout: 20_000 },
+      )
+      .toEqual([Role.Client, Role.Barber]);
     // The record and the account are the `afterEach`'s to remove.
+  });
+
+  test('an owner adds a barber from a registered account: the account comes first, found by a lookup; the add sheet names it and takes its name; the record is made linked', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-first-${key}`;
+    const accountUid = `e2e-member-account-${key}`;
+    // A family name nobody else holds: the lookup finds this account alone.
+    const family = `Първо${key}`;
+    const name = `Мартин ${family}`;
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Първо',
+      roles: [Role.Admin],
+    });
+    await seedUserProfile(accountUid, {
+      firstName: 'Мартин',
+      lastName: family,
+      phone: '+359881112299',
+    });
+    linkedUid = accountUid;
+    await signInAs(page, uid, ['admin']);
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+
+    // «＋ → Бръснар»: the person's account first (account first, A2).
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
+    await expect(page.getByTestId('team-barber-account-sheet')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('team-barber-account-skip')).toBeVisible();
+    await page.getByTestId('team-barber-account-query').fill(family);
+    const found = page.getByTestId(`team-barber-account-${accountUid}`);
+    await expect(found).toContainText(name, { timeout: 30_000 });
+    await found.click();
+
+    // The add sheet names the account, its name the record's.
+    await expect(page.getByTestId('team-add-account')).toContainText(name, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('team-add-name')).toHaveValue(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    await expect(page.getByTestId('member-name')).toHaveText(name, {
+      timeout: 30_000,
+    });
+
+    // Made linked: the record's lock names the account, which holds
+    // «barber» beside «client» and the record as its own.
+    await expect
+      .poll(() => readBarberLink(added ?? ''), { timeout: 20_000 })
+      .toBe(accountUid);
+    await expect
+      .poll(
+        async () => {
+          const stored = await readStoredBody(Collections.Users, accountUid);
+          return [stored?.['roles'], stored?.['linkedBarberId']];
+        },
+        { timeout: 20_000 },
+      )
+      .toEqual([[Role.Client, Role.Barber], added]);
   });
 
   test('a last day three days off is a reminder on the Team page, and «Удължи» lands in that barber’s working period', async ({
@@ -985,6 +1079,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
@@ -1064,6 +1159,7 @@ test.describe('a team member’s page', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(name);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {

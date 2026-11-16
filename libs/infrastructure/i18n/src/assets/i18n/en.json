@@ -2491,7 +2491,10 @@
         "copyLabel": "Copy prices from",
         "copyNone": "Nobody",
         "save": "Add",
-        "copyFailed": "The record was created, but the prices were not copied. Try again."
+        "copyFailed": "The record was created, but the prices were not copied. Try again.",
+        "accountRow": "Account in the app",
+        "linkFailed": "The barber is added, but the account was not linked. Link it from the barber’s page.",
+        "openPage": "Open the page"
       },
       "member": {
         "back": "To the team",
@@ -2519,6 +2522,7 @@
         "periodRow": "Working period",
         "periodFrom": "from {{date}}",
         "periodRange": "{{from}} – {{to}}",
+        "periodEarlier": "Earlier: {{periods}}",
         "poolRow": "Takes “Anyone”",
         "bookedByRow": "Who can book",
         "bookedBy": {
@@ -2568,6 +2572,7 @@
         "title": "Bring back to the team",
         "lede": "{{name}} comes back with the same profile, prices and the hours of their last week.",
         "accountNote": "Access to the app does not come back by itself. Link the account again afterwards with “Link an account”.",
+        "relink": "With the same account",
         "save": "Bring back"
       },
       "period": {
@@ -2603,6 +2608,14 @@
         "held": "Has working hours here",
         "pickOne": "Pick at least one shop.",
         "save": "Save"
+      },
+      "barberAccount": {
+        "title": "New barber",
+        "lede": "Find the person’s account in the app — by name, phone or email.",
+        "skip": "Without an account in the app",
+        "hint": "If they have no account yet, go on without one — you can link it later.",
+        "noneTitle": "No such account",
+        "none": "Check what you typed, or go on without an account."
       },
       "link": {
         "title": "Link an account",

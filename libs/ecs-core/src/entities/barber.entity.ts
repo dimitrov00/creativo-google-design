@@ -1,5 +1,6 @@
 import type {
   BarberEmployment,
+  BarberHistory,
   BarberLifecycle,
   LocalizedText,
   WriteProvenance,
@@ -61,5 +62,6 @@ export type BarberAvatar = {
 export type Barber = BarberMeta &
   BarberLifecycle &
   BarberEmployment &
+  BarberHistory &
   BarberAvatar &
   WriteProvenance;

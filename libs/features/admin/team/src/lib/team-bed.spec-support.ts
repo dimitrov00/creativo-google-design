@@ -72,6 +72,7 @@ import {
   CLOCK_PORTS,
   GATEWAY_PORTS,
   ID_PORTS,
+  PROFILE_PORTS,
   ROLES_ADMIN_PORTS,
   SCHEDULING_READ_PORTS,
   ShopZoneService,
@@ -121,6 +122,8 @@ export type TeamBedOptions = {
   readonly locations?: readonly ShopLocation[];
   /** What the accounts' index answers a lookup, whatever is asked. */
   readonly accounts?: readonly User[];
+  /** The stored accounts one read by id answers (`loadProfile`); none by default. */
+  readonly profiles?: readonly User[];
   /** The visits the shop holds — what lies ahead of a barber is read from them. */
   readonly visits?: readonly Appointment[];
   /** The reads of what lies ahead of a barber fail. */
@@ -394,6 +397,16 @@ export function teamBed(options: TeamBedOptions = {}) {
     { provide: GATEWAY_PORTS, useValue: gateway },
     { provide: SCHEDULING_READ_PORTS, useValue: scheduling },
     { provide: USER_SEARCH_PORTS, useValue: userSearch },
+    {
+      provide: PROFILE_PORTS,
+      useValue: {
+        loadProfile: async (userId: UserId) =>
+          Result.ok(
+            (options.profiles ?? []).find((user) => user.id === userId) ?? null,
+          ),
+        observeProfile: () => of(Result.ok(null)),
+      },
+    },
     { provide: BARBER_AHEAD_PORTS, useValue: ahead },
     { provide: STAGED_UPLOAD_PORTS, useValue: staging },
     {

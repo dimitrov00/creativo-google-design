@@ -417,6 +417,11 @@
       "indexes": []
     },
     {
+      "collectionGroup": "barbers",
+      "fieldPath": "barberPastPeriods",
+      "indexes": []
+    },
+    {
       "collectionGroup": "barberSchedules",
       "fieldPath": "writeOperationId",
       "indexes": []

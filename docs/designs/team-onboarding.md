@@ -1328,6 +1328,36 @@ behind can be opened, moved or cancelled where every other visit is.
 
 Stage 1b is complete.
 
+**1c, account first (owner, 2026-11-16 —
+`docs/architecture/decisions/2026-11-16-account-first-team.md`).** The
+owner asked for the GitLab way in: register first, then be made a
+barber. A barber still does not need an account (a salon books the chair
+whether its barber signs in), but the account now comes first:
+
+- «＋ → Бръснар» opens the account step (`lib-team-barber-account-sheet`,
+  the one `lib-account-pick-sheet` over the same lookup «Свържи профил»
+  uses): the team's own accounts with no record, or a lookup by name,
+  phone or email (`RoleAssignmentSystem.linkCandidatesOf`), and «Без профил
+  в приложението» on top. Picking an account opens the add sheet with the
+  account named («Профил в приложението · Мартин Колевски») and its name
+  as the record's; «Добави» creates the record and then links that account
+  (`setRoles`, the stored roles plus `barber`). A link refused leaves the
+  record — the bookable thing — and says «Бръснарят е добавен, но
+  профилът не беше свързан…», with «Към страницата».
+- «Върни в екипа» offers the account that left with the record —
+  `barberDepartedUserId`, else `barberKeptAccessUserId`, read once
+  (`loadProfile`) — while it may still be linked: «Със същия профил ·
+  Георги Иванов», on by default. On, the return links it again after the
+  record is back; off, the record returns alone and the sheet says the
+  account does not come back by itself.
+- The periods worked before the current one are kept on the record
+  (`barberPastPeriods`, a short array of `{ pastStartsLocalDate,
+pastLastWorkingLocalDate }`, never queried, its single-field indexes
+  off). «Върни в екипа» moves the period that ended into it. The member
+  page says them under «Работен период»: «Преди: 3.03.2024 – 30.11.2025».
+- Next in 1c: the welcome sheet and the setup card for a barber the owner
+  links (A4–A6 of the decision).
+
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 
 **2. Launch track, in parallel: the real email provider.** Unblocks sign-in
