@@ -278,15 +278,17 @@ describe('TeamRosterSystem — the sessions a departure still owes (team onboard
     const [owed] = TeamRosterSystem.membersOf(
       facts({ barbers: [leaver(null)] }),
     );
-    expect(owed?.teamMemberNote).toBe(TeamMemberNote.SessionsOwed);
+    expect(owed).toMatchObject({
+      teamMemberNote: TeamMemberNote.SessionsOwed,
+    });
     const [unseen] = TeamRosterSystem.membersOf(
       facts({ barbers: [leaver(null)], accounts: null }),
     );
-    expect(unseen?.teamMemberNote).toBeNull();
+    expect(unseen).toMatchObject({ teamMemberNote: null });
     const [ended] = TeamRosterSystem.membersOf(
       facts({ barbers: [leaver(FIXTURE_NOW_UTC_MS)] }),
     );
-    expect(ended?.teamMemberNote).toBe(TeamMemberNote.NoAccount);
+    expect(ended).toMatchObject({ teamMemberNote: TeamMemberNote.NoAccount });
   });
 
   it('owingOf names the leavers who owe sessions, in the members’ order — nobody else', () => {

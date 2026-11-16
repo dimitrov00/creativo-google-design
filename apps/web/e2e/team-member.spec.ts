@@ -960,6 +960,77 @@ test.describe('a team member’s page', () => {
     // The record and the account are the `afterEach`'s to remove.
   });
 
+  test('a last day three days off is a reminder on the Team page, and «Удължи» lands in that barber’s working period', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-remind-${key}`;
+    const name = `Нов Напомняне ${key}`.slice(0, 40);
+    const last = LocalDate.addDays(shopToday(), 3);
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Напомняне',
+      roles: [Role.Admin],
+    });
+    await signInAs(page, uid, ['admin']);
+
+    // A record that has worked for a month: a period long enough to be
+    // reminded of.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    await seedWorkingBarber(added, LocalDate.addDays(shopToday(), -30));
+    await expect(page.getByTestId('member-standing')).toContainText(
+      'Само за екипа',
+      { timeout: 30_000 },
+    );
+
+    // The last day, three days off, through the period sheet.
+    await page.getByTestId('member-row-period').click();
+    await page.getByTestId('member-period-last').click();
+    const month = page.getByTestId('member-period-last-calendar');
+    if (last.slice(0, 7) !== shopToday().slice(0, 7)) {
+      await month.getByTestId('ui-month-next').click();
+    }
+    await month.getByTestId(`ui-month-day-${last}`).click();
+    await page.getByTestId('member-period-save').click();
+    await expect(page.getByTestId('member-period-sheet')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+
+    // The Team page says so, above the list.
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    const reminder = page.getByTestId(`team-reminder-${added}`);
+    await expect(reminder).toContainText('Последният ден на Нов е', {
+      timeout: 30_000,
+    });
+    await expect(reminder).toContainText('удължи работния период');
+
+    // «Удължи»: the record's page, its working period open.
+    await reminder.getByTestId('team-reminder-extend').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^?]+\?edit=period$/, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-period-sheet')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-period-last-value')).not.toHaveText(
+      'Няма',
+    );
+  });
+
   test('a content editor reaches a barber’s profile from the Team list, and sees no account, no period editor and no delete', async ({
     page,
   }) => {

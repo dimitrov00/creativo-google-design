@@ -10,7 +10,11 @@ import { Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { Role, StaffPermissions } from '@core/components';
 import { AccessScope, type BarberId, StaffCapability } from '@core/primitives';
-import { RoleAssignmentSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  RoleAssignmentSystem,
+  TeamRosterSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
 import {
@@ -171,6 +175,19 @@ export class AdminTeam {
       ),
   );
 
+  /**
+   * The last days close enough to decide on (`TeamRosterSystem.remindersOf`)
+   * — only for someone who manages the team: «Удължи» is theirs. None until
+   * the shop's today is known.
+   */
+  private readonly reminders = computed(() => {
+    const today = this.today();
+    const members = this.store.members();
+    return today === null || members === null || !this.managesTeam()
+      ? []
+      : TeamRosterSystem.remindersOf(members, today);
+  });
+
   protected readonly vm = computed<TeamPageVm | null>(() => {
     const words = this.wording.words();
     return words === null
@@ -182,7 +199,20 @@ export class AdminTeam {
           words,
           locale: this.wording.locale(),
           today: this.today(),
+          reminders: this.reminders(),
+          owing: TeamRosterSystem.owingOf(this.store.members() ?? []),
         });
+  });
+
+  /** «Опитай пак» refused for a leaver: why, in the catalogue's words, beside their notice. */
+  protected readonly endRefusal = computed(() => {
+    const refused = this.store.endRefusal();
+    return refused === null
+      ? null
+      : {
+          barberId: refused.barberId,
+          line: this.wording.refusalOf(refused.error),
+        };
   });
 
   /** «Стандартни» · «3 промени» — how far the shop's permissions are from the standard. */
@@ -261,6 +291,18 @@ export class AdminTeam {
   /** «Опитай пак» after a role that landed without ending that person's sessions. */
   protected endSessions(): void {
     void this.roles.endSessions();
+  }
+
+  /** «Удължи»: the record's page, its working period open. */
+  protected extend(barberId: BarberId): void {
+    void this.router.navigate(['/admin/team/member', barberId], {
+      queryParams: { edit: 'period' },
+    });
+  }
+
+  /** «Опитай пак» on a leaver whose sessions are still owed. */
+  protected endOwedSessions(barberId: BarberId): void {
+    void this.store.endSessions(barberId);
   }
 
   /** ✕, Escape, the scrim: the sheet leaves. */

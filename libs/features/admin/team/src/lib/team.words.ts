@@ -33,6 +33,20 @@ export type TeamWords = {
   /** «Последен ден: 31 дек.» */
   readonly lastDay: (date: string) => string;
   readonly noAccount: string;
+  /** «Достъпът не е спрян» — a leaver's row whose account still has its sessions. */
+  readonly sessionsOwed: string;
+  /** «Последният ден на Георги е пт, 20.11» — a reminder's title. */
+  readonly reminderTitle: (name: string, date: string) => string;
+  /** «Днес е последният ден на Георги» */
+  readonly reminderToday: (name: string) => string;
+  readonly reminderBody: string;
+  /** «Удължи» */
+  readonly reminderExtend: string;
+  /** «Достъпът на Георги не е спрян» */
+  readonly owingTitle: (name: string) => string;
+  readonly owingBody: string;
+  /** «Опитай пак» */
+  readonly owingRetry: string;
   /** A role's name; a role with no word here is not printed. */
   readonly roles: ReadonlyMap<Role, string>;
 
@@ -82,6 +96,15 @@ export function teamWordsOf(translate: Translate): TeamWords {
     setup: (done, needed) => translate('admin.team.setup', { done, needed }),
     lastDay: (date) => translate('admin.team.note.LAST_DAY_SET', { date }),
     noAccount: translate('admin.team.note.NO_ACCOUNT'),
+    sessionsOwed: translate('admin.team.note.SESSIONS_OWED'),
+    reminderTitle: (name, date) =>
+      translate('admin.team.reminder.title', { name, date }),
+    reminderToday: (name) => translate('admin.team.reminder.today', { name }),
+    reminderBody: translate('admin.team.reminder.body'),
+    reminderExtend: translate('admin.team.reminder.extend'),
+    owingTitle: (name) => translate('admin.team.owing.title', { name }),
+    owingBody: translate('admin.team.owing.body'),
+    owingRetry: translate('admin.team.owing.retry'),
     roles: new Map(
       NAMED_ROLES.map((role) => [
         role,

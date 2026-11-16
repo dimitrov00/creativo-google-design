@@ -171,6 +171,14 @@ export class AdminTeamMember {
 
   /** The route's `:barberId` — bound by the router (`withComponentInputBinding`). */
   readonly barberId = input<string | undefined>(undefined);
+  /**
+   * `?edit=period`, bound from the route: the Team page's «Удължи» opens
+   * the working period on arrival. Asked once per record, and only of
+   * someone who may change it.
+   */
+  readonly edit = input<string | undefined>(undefined);
+  /** The record the route's `?edit=` was last answered for. */
+  private editAnsweredFor: string | null = null;
 
   /** Which editor a row opens, for the template's switch. */
   protected readonly MemberEditor = MemberEditor;
@@ -306,6 +314,20 @@ export class AdminTeamMember {
         this.store.open(parsed !== null && parsed.ok ? parsed.value : null),
       );
     });
+    // «Удължи» from the Team page: the working period opens once the record
+    // is read and may be changed. The opening is a signal of this page,
+    // never a navigation, so it is safe inside the first activation.
+    effect(() => {
+      const asked = this.edit();
+      const barber = this.store.barber();
+      const mayManage = this.store.mayManage();
+      if (asked !== 'period' || barber === undefined || !mayManage) return;
+      untracked(() => {
+        if (this.editAnsweredFor === barber.id) return;
+        this.editAnsweredFor = barber.id;
+        this.openEditor(MemberEditor.Period);
+      });
+    });
     // A leaver may still hold bookings after their last day: whoever can
     // bring them back is shown them. Read once per record and last day —
     // never for a working record, whose bookings are on the schedule.
@@ -321,6 +343,11 @@ export class AdminTeamMember {
         }
       });
     });
+  }
+
+  /** «Опитай пак» on a leaver whose sessions are still owed. */
+  protected endOwedSessions(): void {
+    void this.store.endOwedSessions();
   }
 
   protected openEditor(memberEditor: MemberEditor): void {

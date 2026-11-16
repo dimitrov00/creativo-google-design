@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Role, type StaffLevel, StaffPermissions } from '@core/components';
+import {
+  Role,
+  type StaffLevel,
+  StaffPermissions,
+  TeamMemberNote,
+} from '@core/components';
 import {
   AccessScope,
   BarberId,
@@ -54,6 +59,8 @@ const page = (
     words: BG,
     locale: Locale.Bg,
     today: TODAY,
+    reminders: [],
+    owing: [],
     ...over,
   });
 
@@ -84,6 +91,54 @@ describe('teamPageVm — the Team list', () => {
       ],
       [['Стефан Илиев', 'Напусна на 30.09']],
     ]);
+  });
+
+  it('words a last day within the week as a reminder with «Удължи» — «Днес» on the day itself', () => {
+    const georgi = {
+      ...GEORGI,
+      barberLastWorkingLocalDate: localDate('2026-11-20'),
+    };
+    const today = { ...IVAN, barberLastWorkingLocalDate: TODAY };
+    const vm = page(TEAM, { reminders: [today, georgi] });
+    expect(
+      vm.reminders.map((notice) => ({
+        ...notice,
+        title: read(notice.title),
+      })),
+    ).toEqual([
+      {
+        barberId: 'ivan',
+        title: 'Днес е последният ден на Иван',
+        body: 'След него напуска екипа. Ако остава, удължи работния период.',
+        action: 'Удължи',
+        testId: 'team-reminder-ivan',
+      },
+      {
+        barberId: 'georgi',
+        title: 'Последният ден на Георги е пт, 20.11',
+        body: 'След него напуска екипа. Ако остава, удължи работния период.',
+        action: 'Удължи',
+        testId: 'team-reminder-georgi',
+      },
+    ]);
+    expect(page().reminders).toEqual([]);
+  });
+
+  it('words a leaver whose access is not stopped as a notice with «Опитай пак», and notes the row', () => {
+    const owing = { ...STEFAN, teamMemberNote: TeamMemberNote.SessionsOwed };
+    const vm = page([owing], { owing: [owing] });
+    expect(vm.owing).toEqual([
+      {
+        barberId: 'stefan',
+        title: 'Достъпът на Стефан не е спрян',
+        body: 'Напусна екипа, но профилът още е отворен на някое устройство.',
+        action: 'Опитай пак',
+        testId: 'team-owing-stefan',
+      },
+    ]);
+    expect(read(vm.runs[0]?.rows[0]?.line ?? '')).toBe(
+      'Напусна на 30.09 · Достъпът не е спрян',
+    );
   });
 
   it('keeps each fact one word to the line breaker, the «·» on the line it ends', () => {
@@ -167,6 +222,8 @@ describe('teamPageVm — the Team list', () => {
       words: BG,
       locale: Locale.Bg,
       today: TODAY,
+      reminders: [GEORGI],
+      owing: [STEFAN],
     });
     expect(teamPageVm(input)).toEqual(teamPageVm(input));
   });

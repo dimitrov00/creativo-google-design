@@ -1,9 +1,12 @@
 import { TestBed } from '@angular/core/testing';
-import type { TeamCall, TeamMember } from '@core/components';
+import { BarberEdit, type TeamCall, type TeamMember } from '@core/components';
 import { PipelineError } from '@core/errors';
 import type { TeamAdminPorts } from '@core/ports';
-import { Result } from '@core/primitives';
-import { TEAM_ADMIN_PORTS } from '@creativo/infrastructure/firebase-app';
+import { BarberId, Result } from '@core/primitives';
+import {
+  ID_PORTS,
+  TEAM_ADMIN_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { LoadState } from '@creativo/shared/view-state';
 import { UNUSED_RECORD_PORTS } from './team-bed.spec-support';
 import { ELENA, IVAN, STEFAN, TEAM } from './team.fixtures.spec-support';
@@ -22,7 +25,9 @@ const REFUSED = PipelineError.fromWire('functions/permission-denied', {
 });
 
 /** A store whose every read is held until the spec answers it. */
-function harness() {
+function harness(
+  editBarber: TeamAdminPorts['editBarber'] = UNUSED_RECORD_PORTS.editBarber,
+) {
   const pending: ((answer: Listed) => void)[] = [];
   const listTeam = vi.fn(
     () => new Promise<Listed>((resolve) => pending.push(resolve)),
@@ -33,10 +38,12 @@ function harness() {
         provide: TEAM_ADMIN_PORTS,
         useValue: {
           ...UNUSED_RECORD_PORTS,
+          editBarber,
           listTeam,
           setStaffPermissions: async () => Result.ok({ changes: [] }),
         } satisfies TeamAdminPorts,
       },
+      { provide: ID_PORTS, useValue: { nextId: () => 'operation-000001' } },
     ],
   });
   const store = TestBed.inject(TeamStore);
@@ -131,5 +138,43 @@ describe('TeamStore', () => {
 
     expect(store.members()).toEqual([IVAN, ELENA]);
     expect(store.loading()).toBe(false);
+  });
+
+  describe('«Опитай пак» — a leaver’s owed sessions, ended now', () => {
+    const STEFAN_ID = BarberId.of('stefan');
+
+    it('sends END_SESSIONS for the leaver, says who is being ended meanwhile, and reads the list again once it lands', async () => {
+      const editBarber = vi.fn(async () => Result.ok({ barberId: STEFAN_ID }));
+      const { store, listTeam, answer } = harness(editBarber);
+      const ending = store.endSessions(STEFAN_ID);
+      expect(store.ending()).toBe(STEFAN_ID);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(editBarber).toHaveBeenCalledWith({
+        barberEdit: BarberEdit.EndSessions,
+        barberId: STEFAN_ID,
+        operationId: 'operation-000001',
+      });
+      await answer(0, rows(TEAM));
+      await ending;
+      expect(store.ending()).toBeNull();
+      expect(store.endRefusal()).toBeNull();
+      expect(listTeam).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the refusal beside the leaver when the sessions cannot be ended yet — nothing read again', async () => {
+      const refused = PipelineError.fromWire('functions/unavailable', {
+        errorCode: 'TEAM_SESSIONS_NOT_ENDED',
+        barberId: 'stefan',
+      });
+      const { store, listTeam } = harness(async () => Result.err(refused));
+      await store.endSessions(STEFAN_ID);
+      expect(store.ending()).toBeNull();
+      expect(store.endRefusal()).toEqual({
+        barberId: STEFAN_ID,
+        error: refused,
+      });
+      expect(listTeam).not.toHaveBeenCalled();
+    });
   });
 });

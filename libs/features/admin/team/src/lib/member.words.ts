@@ -52,6 +52,11 @@ export type MemberWords = {
   readonly departedLeftoverTitle: (name: string, count: number) => string;
   /** «Записите са след последния ден. Дай ги на друг бръснар, премести ги или ги откажи.» */
   readonly departedLeftoverBody: (count: number) => string;
+  /** «Достъпът на Стефан не е спрян» — a leaver whose sessions are still owed. */
+  readonly owingTitle: (name: string) => string;
+  readonly owingBody: string;
+  /** «Опитай пак» */
+  readonly owingRetry: string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
   readonly mine: string;
@@ -153,6 +158,9 @@ export function memberWordsOf(translate: Translate): MemberWords {
     mine: at('mine'),
     accountNone: (name) => at('accountNone', { name }),
     accountDeparted: (name) => at('accountDeparted', { name }),
+    owingTitle: (name) => translate('admin.team.owing.title', { name }),
+    owingBody: translate('admin.team.owing.body'),
+    owingRetry: translate('admin.team.owing.retry'),
     accountLink: (name) => at('accountLink', { name }),
     accountMine: at('accountMine'),
     levelRow: (level) => at('levelRow', { level }),

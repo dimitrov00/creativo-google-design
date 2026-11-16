@@ -9,6 +9,7 @@ import {
   OfferingsEdit,
   Role,
   StaffPermissions,
+  TeamMemberNote,
 } from '@core/components';
 import { GovernanceErrorCode, PipelineError } from '@core/errors';
 import { Callables } from '@core/ports';
@@ -59,7 +60,10 @@ const REFUSED = PipelineError.fromWire('functions/permission-denied', {
   staffCapability: 'TEAM_MANAGE',
 });
 
-async function render(barberId: string, options: TeamBedOptions = {}) {
+async function render(
+  barberId: string,
+  options: TeamBedOptions & { readonly edit?: string } = {},
+) {
   const bed = teamBed({ members: TEAM, barbers: BARBERS, ...options });
   await TestBed.configureTestingModule({
     imports: [AdminTeamMember],
@@ -67,6 +71,9 @@ async function render(barberId: string, options: TeamBedOptions = {}) {
   }).compileComponents();
   const fixture = TestBed.createComponent(AdminTeamMember);
   fixture.componentRef.setInput('barberId', barberId);
+  if (options.edit !== undefined) {
+    fixture.componentRef.setInput('edit', options.edit);
+  }
   const settle = async (): Promise<void> => {
     fixture.detectChanges();
     await fixture.whenStable();
@@ -1528,5 +1535,40 @@ describe('AdminTeamMember — the edges', () => {
     expect(piece('admin-team-member-back')?.getAttribute('href')).toBe(
       '/admin/team',
     );
+  });
+});
+
+describe('AdminTeamMember — the Team page’s notices, followed (team onboarding D10)', () => {
+  it('«Удължи» arrives as ?edit=period: the working period opens on arrival — once, and only for whoever may change it', async () => {
+    const owner = await render('ivan', { edit: 'period' });
+    expect(owner.piece('member-period-sheet')).not.toBeNull();
+    TestBed.resetTestingModule();
+
+    const editor = await render('ivan', {
+      edit: 'period',
+      roles: [Role.ContentManager],
+    });
+    expect(editor.piece('member-period-sheet')).toBeNull();
+  });
+
+  it('says a leaver’s access is not stopped, and «Опитай пак» sends END_SESSIONS for the record', async () => {
+    const owing = { ...STEFAN, teamMemberNote: TeamMemberNote.SessionsOwed };
+    const { piece, text, press, calls } = await render('stefan', {
+      members: [IVAN, owing],
+    });
+    const notice = piece('member-owing');
+    expect(text(notice?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+      'Достъпът на Стефан не е спрян',
+    );
+    await press('member-owing-retry');
+    expect(calls.edits.at(-1)).toMatchObject({
+      barberEdit: BarberEdit.EndSessions,
+      barberId: STEFAN.barberId,
+    });
+  });
+
+  it('says nothing about access for a leaver who owes nothing', async () => {
+    const { piece } = await render('stefan');
+    expect(piece('member-owing')).toBeNull();
   });
 });

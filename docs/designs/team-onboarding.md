@@ -1266,9 +1266,41 @@ behind can be opened, moved or cancelled where every other visit is.
 - The ports are split so the pipeline names what it reads:
   `BarberAheadPorts = BusyDaysAheadPorts & BarberDayReadPorts`.
 
-**1b, still to build.** The reminder cards; and the Team page's notices
-for a leaver whose access is not stopped yet and for an admin whose role
-has to be removed by hand.
+**1b, built so far: the reminder cards and «Опитай пак».**
+
+- `TeamRosterSystem.remindersOf(members, today)` names the barbers who
+  work, whose last day is today or within `REMINDER_DAYS` (7), on a
+  period longer than that, soonest first. A guest booked for a week gets
+  no card. Derived from the rows `listTeam` already answered and the
+  shop's today; nothing is stored, nothing is sent, no cron.
+- The Team page shows each as a notice above the list, to whoever manages
+  the team: «Последният ден на Георги е пт, 20.11» (on the day itself,
+  «Днес е последният ден на Георги») over «След него напуска екипа. Ако
+  остава, удължи работния период.», with one action, «Удължи». It opens
+  the record's page with its working period open
+  (`/admin/team/member/…?edit=period`, read once per record and only for
+  someone who may change it). The mark is a calendar glyph
+  (`notice.reminder`) in the accent tone.
+- A leaver whose account still has its sessions (the revoke after the
+  close failed, `BarberLifecycle.awaitsRevoke`) carries the row note
+  `SESSIONS_OWED`, «Достъпът не е спрян», first of all notes and only to
+  a reader who sees accounts (`TeamRosterSystem.owingOf` lists them). The
+  Team page and the leaver's page say «Достъпът на Стефан не е спрян» over
+  «Напусна екипа, но профилът още е отворен на някое устройство.», with
+  «Опитай пак».
+- «Опитай пак» is `editBarber` `END_SESSIONS`: for a record that has left,
+  the revoke a close still owes runs now (`endOwedSessions`, the step the
+  daily job retries each night), credited to the caller.
+  `TEAM_SESSIONS_NOT_ENDED` («Достъпът още не е спрян. Опитай пак след
+  малко.») when it fails again; `TEAM_BARBER_NOT_DEPARTED` for a record
+  that has not left; a leaver who owes nothing is simply saved.
+- Where this departs from D11 as written: the reminder rule lives in
+  `TeamRosterSystem` beside the rows it reads, not in a
+  `TeamReminderSystem` of its own.
+
+**1b, still to build.** The same reminder on the staff home (the
+schedule), and the notice for an admin whose roles were left alone by the
+close: the departure does not yet record which account kept them.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 

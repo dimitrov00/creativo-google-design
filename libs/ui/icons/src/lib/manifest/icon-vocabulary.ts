@@ -473,6 +473,9 @@ export const UI_ICON_REGISTRY = {
    *  the warning it may also raise. Never a default: a neutral notice names
    *  it only when it stands next to a toned one and has to match its shape. */
   'notice.info': 'info',
+  /** A date coming up that someone has to decide about — a reminder's
+   *  mark (the Team page's last days within a week, «Удължи»). */
+  'notice.reminder': 'event_upcoming',
 
   /* ── Loyalty: the programme, its currency, its rhythm ───────────── */
   /**
