@@ -1,5 +1,6 @@
 import {
   AccountStanding,
+  BarberLifecycle,
   BarberStatus,
   RecordClaim,
   Role,
@@ -9,7 +10,7 @@ import {
   TeamMemberNote,
   TeamMemberStatus,
 } from '@core/components';
-import type { BarberId, UserId } from '@core/primitives';
+import { type BarberId, LocalDate, type UserId } from '@core/primitives';
 import {
   type Barber,
   type BarberSchedule,
@@ -94,16 +95,21 @@ function isLinked(member: TeamMember.OfBarber): member is TeamMember.Linked {
 }
 
 /**
- * The first note that applies to a barber's row (team onboarding D8): a
- * last working day still ahead of a barber who has not left, then no
- * linked account — said only when the accounts were read (`accountsRead`):
- * to a reader who may not see accounts, "no account" would be a guess.
+ * The first note that applies to a barber's row (team onboarding D8): the
+ * sessions a leaver's account still owes, then a last working day still
+ * ahead of a barber who has not left, then no linked account. The two
+ * about accounts are said only when the accounts were read
+ * (`accountsRead`): to a reader who may not see accounts, "no account"
+ * would be a guess, and whose access is not stopped is not theirs to know.
  */
 function noteOf(
   barber: Barber,
   account: User | null,
   accountsRead: boolean,
 ): TeamMemberNote | null {
+  if (accountsRead && BarberLifecycle.awaitsRevoke(barber)) {
+    return TeamMemberNote.SessionsOwed;
+  }
   if (
     barber.barberStatus !== BarberStatus.Departed &&
     barber.barberLastWorkingLocalDate !== null
@@ -215,6 +221,73 @@ export const TeamRosterSystem = {
       }
     }
     return { working, others, departed };
+  },
+
+  /**
+   * How many days ahead a last working day is worth a reminder — and how
+   * long a period has to be for one: a guest booked for a week needs no
+   * card saying the week ends.
+   */
+  REMINDER_DAYS: 7,
+
+  /**
+   * The members whose last working day is close (team onboarding D10,
+   * the reminder cards): a barber who works, whose last day is today or
+   * within `REMINDER_DAYS` of it, on a period longer than that — soonest
+   * first, then in the members' order. Someone has to decide before the
+   * day: extend the period, or let it end. Derived from the rows and the
+   * shop's today; nothing is stored and nothing is sent.
+   */
+  remindersOf(
+    members: readonly TeamMember[],
+    today: LocalDate,
+  ): readonly TeamMember.OfBarber[] {
+    const horizon = LocalDate.addDays(today, TeamRosterSystem.REMINDER_DAYS);
+    const due: TeamMember.OfBarber[] = [];
+    for (const member of members) {
+      if (
+        member.teamMemberStatus !== TeamMemberStatus.StaffOnly &&
+        member.teamMemberStatus !== TeamMemberStatus.Public
+      ) {
+        continue;
+      }
+      const last = member.barberLastWorkingLocalDate;
+      if (
+        last !== null &&
+        last >= today &&
+        last <= horizon &&
+        LocalDate.addDays(
+          member.barberStartsLocalDate,
+          TeamRosterSystem.REMINDER_DAYS,
+        ) < last
+      ) {
+        due.push(member);
+      }
+    }
+    // Stable: members on one day keep the order they were given in.
+    return due.sort((a, b) =>
+      LocalDate.compare(
+        a.barberLastWorkingLocalDate as LocalDate,
+        b.barberLastWorkingLocalDate as LocalDate,
+      ),
+    );
+  },
+
+  /**
+   * The leavers whose account still has its sessions (`SESSIONS_OWED`), in
+   * the members' order: the ones the page asks to try again for.
+   */
+  owingOf(members: readonly TeamMember[]): readonly TeamMember.OfBarber[] {
+    const owing: TeamMember.OfBarber[] = [];
+    for (const member of members) {
+      if (
+        member.teamMemberStatus === TeamMemberStatus.Departed &&
+        member.teamMemberNote === TeamMemberNote.SessionsOwed
+      ) {
+        owing.push(member);
+      }
+    }
+    return owing;
   },
 
   /**

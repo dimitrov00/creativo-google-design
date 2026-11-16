@@ -33,6 +33,8 @@ export const TeamErrorCode = {
   BarberNotDeparted: 'TEAM_BARBER_NOT_DEPARTED',
   /** A return that starts on or before the last day the barber worked. */
   ReturnTooEarly: 'TEAM_RETURN_TOO_EARLY',
+  /** «Опитай пак» could not end the leaver's sessions: they are still owed. */
+  SessionsNotEnded: 'TEAM_SESSIONS_NOT_ENDED',
   /** The shops name an id that is no listed location. */
   ShopUnknown: 'TEAM_SHOP_UNKNOWN',
   /** A shop cannot be removed while the barber's hours still name it. */
@@ -56,6 +58,7 @@ export type TeamError =
   | TeamError.PeriodInvalid
   | TeamError.BarberNotDeparted
   | TeamError.ReturnTooEarly
+  | TeamError.SessionsNotEnded
   | TeamError.ShopUnknown
   | TeamError.ShopHasHours
   | TeamError.ServiceUnknown
@@ -84,6 +87,9 @@ export const TeamError = {
   },
   returnTooEarly(lastLocalDate: LocalDate): TeamError.ReturnTooEarly {
     return { errorCode: TeamErrorCode.ReturnTooEarly, lastLocalDate };
+  },
+  sessionsNotEnded(barberId: BarberId): TeamError.SessionsNotEnded {
+    return { errorCode: TeamErrorCode.SessionsNotEnded, barberId };
   },
   shopUnknown(locationId: LocationId): TeamError.ShopUnknown {
     return { errorCode: TeamErrorCode.ShopUnknown, locationId };
@@ -133,6 +139,10 @@ export namespace TeamError {
     readonly errorCode: typeof TeamErrorCode.ReturnTooEarly;
     /** The last day the barber worked: the new start has to be after it. */
     readonly lastLocalDate: LocalDate;
+  };
+  export type SessionsNotEnded = {
+    readonly errorCode: typeof TeamErrorCode.SessionsNotEnded;
+    readonly barberId: BarberId;
   };
   export type ShopUnknown = {
     readonly errorCode: typeof TeamErrorCode.ShopUnknown;

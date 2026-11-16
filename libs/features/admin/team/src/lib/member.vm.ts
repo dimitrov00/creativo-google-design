@@ -134,6 +134,8 @@ export type MemberPageVm = {
   readonly returnable: boolean;
   /** «Стефан още има 3 записа» and what to do about them; `null` with none, or none read. */
   readonly leftover: LeftoverNoticeVm | null;
+  /** A leaver whose sessions are still owed, and «Опитай пак»; `null` otherwise. */
+  readonly owing: OwingNoticeVm | null;
   readonly deletable: boolean;
   readonly deleteTitle: string;
   readonly deleteActions: readonly DeleteActionVm[];
@@ -147,6 +149,12 @@ export type MemberPageVm = {
  * happens to them or what to do. The visits themselves are listed beside
  * it (`lib-leftover-visits`).
  */
+export type OwingNoticeVm = {
+  readonly title: string;
+  readonly body: string;
+  readonly action: string;
+};
+
 export type LeftoverNoticeVm = {
   readonly title: string | null;
   readonly body: string;

@@ -202,6 +202,7 @@
     "TEAM_PERIOD_INVALID": "The last working day can't be before the first.",
     "TEAM_BARBER_NOT_DEPARTED": "This barber has not left the team.",
     "TEAM_RETURN_TOO_EARLY": "The new start has to be after the last day worked.",
+    "TEAM_SESSIONS_NOT_ENDED": "Access is still not stopped. Try again in a moment.",
     "TEAM_SHOP_UNKNOWN": "There is no such shop.",
     "TEAM_SHOP_HAS_HOURS": "The barber still has hours at this shop. Change the hours first.",
     "TEAM_PHOTO_MISSING": "The photo was not uploaded. Pick it again.",
@@ -2455,8 +2456,20 @@
       },
       "setup": "{{done}} of {{needed}}",
       "note": {
+        "SESSIONS_OWED": "Access not stopped",
         "LAST_DAY_SET": "Last day: {{date}}",
         "NO_ACCOUNT": "No account in the app"
+      },
+      "reminder": {
+        "title": "{{name}}’s last day is {{date}}",
+        "today": "Today is {{name}}’s last day",
+        "body": "After it they leave the team. If they are staying, extend the working period.",
+        "extend": "Extend"
+      },
+      "owing": {
+        "title": "{{name}}’s access is not stopped",
+        "body": "They left the team, but the account is still signed in on a device.",
+        "retry": "Try again"
       },
       "roles": {
         "sysadmin": "Support"

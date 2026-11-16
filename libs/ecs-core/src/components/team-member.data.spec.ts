@@ -41,6 +41,7 @@ describe('TeamMemberStatus / TeamMemberNote', () => {
       RoleOnly: 'ROLE_ONLY',
     });
     expect(TeamMemberNote).toEqual({
+      SessionsOwed: 'SESSIONS_OWED',
       LastDaySet: 'LAST_DAY_SET',
       NoAccount: 'NO_ACCOUNT',
     });

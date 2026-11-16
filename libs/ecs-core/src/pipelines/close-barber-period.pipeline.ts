@@ -1,4 +1,4 @@
-import type { Actor, WriteOp } from '@core/components';
+import { type Actor, BarberLifecycle, type WriteOp } from '@core/components';
 import {
   type BarberId,
   type LocalDate,
@@ -171,6 +171,35 @@ function contextOf(
       })
     : operationId;
 }
+
+/**
+ * The revoke a departure still owes, tried now — «Опитай пак» on the Team
+ * page (`editBarber`, `END_SESSIONS`): the step the daily job retries each
+ * night, credited to whoever asked. `true` while the sessions are still
+ * owed: the revoke failed again, its marker could not be written, or the
+ * run could not start (the shop's clock, the store). A record that owes
+ * nothing reads nothing and answers `false`.
+ */
+export const endOwedSessions =
+  (ports: CloseIfEndedPorts) =>
+  async (barber: Barber, actor: Actor): Promise<boolean> => {
+    if (!BarberLifecycle.awaitsRevoke(barber)) return false;
+    const failed = (errorCode: string): true => {
+      ports.log('error', LogEvent.TeamSessionsNotRevoked, {
+        barberId: barber.id,
+        errorCode,
+      });
+      return true;
+    };
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return failed(zone.error.errorCode);
+    const closed = await closeBarberPeriod(ports)({
+      barberId: barber.id,
+      today: ZonedTimeSystem.shopNow(ports.nowUtcMs(), zone.value).localDate,
+      actor,
+    });
+    return closed.ok ? closed.value.revokeOwed : failed(closed.error.errorCode);
+  };
 
 export type CloseIfEndedPorts = CloseBarberPeriodPorts &
   LocationLoadPorts &

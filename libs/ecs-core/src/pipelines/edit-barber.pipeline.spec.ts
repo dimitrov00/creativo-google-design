@@ -117,6 +117,8 @@ type RigOptions = {
   readonly linked?: User;
   /** The shop's zone cannot be read. */
   readonly zoneFails?: boolean;
+  /** Ending an account's sessions fails. */
+  readonly revokeFails?: boolean;
   readonly commit?: (commit: CommitPlan) => CommitPlan;
 };
 
@@ -167,7 +169,9 @@ function rig(options: RigOptions = {}) {
   const tx = memoryTxPorts(store);
   const commit = options.commit ? options.commit(tx.commit) : tx.commit;
   const telemetry = recordingTelemetry();
-  const revoke = recordingSessionRevokePorts();
+  const revoke = recordingSessionRevokePorts({
+    failing: options.revokeFails === true,
+  });
   const shops = options.shops ?? SHOPS;
   return {
     store,
@@ -994,6 +998,87 @@ describe('editBarber', () => {
       await run(call(POOL));
       expect(tx.plans).toHaveLength(1);
       expect(telemetry.lines).toEqual([]);
+    });
+  });
+  describe('«Опитай пак» — the sessions a departure still owes, ended now (team onboarding D10)', () => {
+    const OWED_ACCOUNT = UserId.of('u-gone');
+    const left = (barberDepartedUserId: UserId | null): Barber =>
+      barberFixture(
+        { barberLastWorkingLocalDate: LocalDate.addDays(FIXTURE_TODAY, -3) },
+        {
+          barberStatus: BarberStatus.Departed,
+          barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+          barberDepartedUserId,
+          barberSessionsRevokedAtUtcMs: null,
+          barberRehireStatus: BarberStatus.Public,
+        },
+      );
+    const retry = () => call({ barberEdit: BarberEdit.EndSessions });
+
+    it('ends the owed sessions and marks them, credited to the caller — the record otherwise as it was', async () => {
+      const { store, tx, revoked, run } = rig({ barber: left(OWED_ACCOUNT) });
+      expect(unwrapOk(await run(retry()))).toEqual({ barberId: IVAN });
+      expect(revoked).toEqual([OWED_ACCOUNT]);
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberStatus: BarberStatus.Departed,
+        barberDepartedUserId: OWED_ACCOUNT,
+        barberSessionsRevokedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      });
+      const rows = auditRowsOf(tx.plans);
+      expect(rows.map((row) => row.auditAction)).toEqual([
+        'TEAM_BARBER_STATUS_CHANGED',
+      ]);
+      expect(rows.at(0)).toMatchObject(Actor.forCaller(ADMIN, [Role.Admin]));
+    });
+
+    it('answers TEAM_SESSIONS_NOT_ENDED when they cannot be ended again — still owed, the failure logged', async () => {
+      const { store, telemetry, run } = rig({
+        barber: left(OWED_ACCOUNT),
+        revokeFails: true,
+      });
+      expect(await run(retry())).toEqual({
+        ok: false,
+        error: { errorCode: TeamErrorCode.SessionsNotEnded, barberId: IVAN },
+      });
+      expect(store.get(`${Collections.Barbers}/${IVAN}`)).toMatchObject({
+        barberSessionsRevokedAtUtcMs: null,
+      });
+      expect(telemetry.lines.map((line) => line.msg)).toContain(
+        LogEvent.TeamSessionsNotRevoked,
+      );
+    });
+
+    it('is simply saved for a leaver who owes nothing: nothing ended, nothing written', async () => {
+      const { tx, revoked, run } = rig({ barber: left(null) });
+      expect(unwrapOk(await run(retry()))).toEqual({ barberId: IVAN });
+      expect(revoked).toEqual([]);
+      expect(auditRowsOf(tx.plans)).toEqual([]);
+    });
+
+    it('refuses a record that has not left, and a caller who does not manage the team — nothing ended', async () => {
+      const working = rig();
+      expect(await working.run(retry())).toEqual({
+        ok: false,
+        error: { errorCode: TeamErrorCode.BarberNotDeparted, barberId: IVAN },
+      });
+      expect(working.revoked).toEqual([]);
+
+      const someone = registeredUserFixture({
+        id: UserId.of('u-barber'),
+        roles: [Role.Barber],
+      });
+      const barber = rig({ barber: left(OWED_ACCOUNT), caller: someone });
+      expect(
+        unwrapErr(
+          await barber.run(
+            call(
+              { barberEdit: BarberEdit.EndSessions },
+              { callerUserId: someone.id, callerRoles: [Role.Barber] },
+            ),
+          ),
+        ),
+      ).toEqual(denied('TEAM_MANAGE'));
+      expect(barber.revoked).toEqual([]);
     });
   });
 });

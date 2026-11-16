@@ -42,6 +42,7 @@ import {
 } from '@core/systems';
 import {
   closeIfEnded,
+  endOwedSessions,
   type CloseIfEndedPorts,
 } from './close-barber-period.pipeline';
 import {
@@ -86,6 +87,13 @@ import {
  * worked standing again in the roster from the new start
  * (`EmploymentSystem.rosterWritesOnReturn`), all in the one commit. Its
  * account is not brought back: the owner links one again, as for anyone.
+ *
+ * «ОПИТАЙ ПАК» (`END_SESSIONS`) is the one act that writes nothing of the
+ * record: for a record that has left it runs, after the gate's commit, the
+ * revoke a close still owes (`endOwedSessions` — the step the daily job
+ * retries each night), credited to the caller. Sessions that could not be
+ * ended again are `TEAM_SESSIONS_NOT_ENDED`; a record that has not left
+ * is `TEAM_BARBER_NOT_DEPARTED`; one that owes nothing is simply saved.
  *
  * A WORKING PERIOD WHOSE LAST DAY HAS ALREADY PASSED is closed at once
  * (team onboarding D10): after the period's own commit, the same close the
@@ -137,8 +145,11 @@ function actionOf(barberEdit: BarberEdit): TeamBarberAction {
       return AuditAction.TeamBarberPeriodChanged;
     case BarberEdit.Pool:
       return AuditAction.TeamBarberPoolChanged;
+    // «Опитай пак» (END_SESSIONS) moves nothing in its commit, so no row is
+    // written under this verb: the revoke's marker is its own status row.
     case BarberEdit.Access:
     case BarberEdit.Return:
+    case BarberEdit.EndSessions:
       return AuditAction.TeamBarberStatusChanged;
     default:
       return defect(`no audit verb for the edit ${String(barberEdit)}`);
@@ -201,6 +212,8 @@ function decide(
         nowUtcMs,
         cmd.operationId,
       );
+    case BarberEdit.EndSessions:
+      return TeamSystem.leaver(barber);
     case BarberEdit.Return:
       return TeamSystem.rehire(
         barber,
@@ -296,6 +309,17 @@ export const editBarber =
     // A last day that had already passed: the record leaves now, not tonight.
     if (cmd.barberEdit === BarberEdit.Period) {
       await closeIfEnded(ports)(committed.value.barber, committed.value.actor);
+    }
+    // «Опитай пак»: the revoke a close still owes, tried now. Still owed
+    // after it is the one refusal — the record has left either way.
+    if (
+      cmd.barberEdit === BarberEdit.EndSessions &&
+      (await endOwedSessions(ports)(
+        committed.value.barber,
+        committed.value.actor,
+      ))
+    ) {
+      return Result.err(TeamError.sessionsNotEnded(cmd.barberId));
     }
     return Result.ok({ barberId: cmd.barberId });
   };

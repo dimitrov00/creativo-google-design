@@ -47,9 +47,27 @@ export type TeamAddOptionVm = {
   readonly testId: string;
 };
 
-/** The Team page: what it says under its title, and its runs (the empty ones left out). */
+/**
+ * One notice above the Team list about one record, with its one action —
+ * a last day close enough to decide on («Удължи»), or a leaver whose
+ * sessions are still owed («Опитай пак»).
+ */
+export type TeamNoticeVm = {
+  readonly barberId: BarberId;
+  readonly title: string;
+  readonly body: string;
+  /** The action's words. */
+  readonly action: string;
+  readonly testId: string;
+};
+
+/** The Team page: what it says under its title, its notices, and its runs (the empty ones left out). */
 export type TeamPageVm = {
   readonly lede: string;
+  /** The last days within a week, soonest first (`TeamRosterSystem.remindersOf`). */
+  readonly reminders: readonly TeamNoticeVm[];
+  /** The leavers whose sessions are still owed (`TeamRosterSystem.owingOf`). */
+  readonly owing: readonly TeamNoticeVm[];
   readonly runs: readonly TeamRunVm[];
 };
 

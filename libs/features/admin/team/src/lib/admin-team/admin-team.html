@@ -148,8 +148,71 @@
           {{ t('admin.team.link.sessionsRetry') }}
         </button>
       </ui-notice>
-      } @switch (store.loadState()) { @case (LoadState.Loading) { @for (group of
-      [1, 2]; track group) {
+      }
+
+      <!-- THE LEAVERS WHOSE ACCESS IS NOT STOPPED (team onboarding D10):
+           the close ended their staff roles, but the revoke of their
+           sessions failed — the daily job retries it each night, and
+           «Опитай пак» tries it now. Said only to whoever sees accounts. -->
+      @if (vm(); as page) { @if (page.owing.length + page.reminders.length > 0)
+      {
+      <div class="team-page__notices" data-testid="admin-team-notices">
+        @for (notice of page.owing; track notice.barberId) {
+        <ui-notice
+          uiTone="warning"
+          uiAnnounce="polite"
+          [attr.data-testid]="notice.testId"
+        >
+          <h2 uiNoticeTitle>{{ notice.title }}</h2>
+          @if (endRefusal()?.barberId === notice.barberId) { {{
+          endRefusal()?.line }} } @else { {{ notice.body }} }
+          <button
+            uiNoticeActions
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiTint="neutral"
+            uiControlSize="regular"
+            [uiLoading]="store.ending() === notice.barberId"
+            [disabled]="store.ending() !== null"
+            data-testid="team-owing-retry"
+            (click)="endOwedSessions(notice.barberId)"
+          >
+            {{ notice.action }}
+          </button>
+        </ui-notice>
+        }
+
+        <!-- THE LAST DAYS CLOSE ENOUGH TO DECIDE ON (team onboarding D10, the
+           reminder cards): within a week, soonest first, only for whoever
+           manages the team. Derived from the rows already read and the
+           shop's today; nothing is stored and nothing is sent. «Удължи»
+           opens the record's working period. -->
+        @for (notice of page.reminders; track notice.barberId) {
+        <ui-notice
+          uiTone="accent"
+          uiIcon="notice.reminder"
+          [attr.data-testid]="notice.testId"
+        >
+          <h2 uiNoticeTitle>{{ notice.title }}</h2>
+          {{ notice.body }}
+          <button
+            uiNoticeActions
+            type="button"
+            uiButton
+            uiButtonStyle="bordered"
+            uiTint="neutral"
+            uiControlSize="regular"
+            data-testid="team-reminder-extend"
+            (click)="extend(notice.barberId)"
+          >
+            {{ notice.action }}
+          </button>
+        </ui-notice>
+        }
+      </div>
+      } } @switch (store.loadState()) { @case (LoadState.Loading) { @for (group
+      of [1, 2]; track group) {
       <div
         class="team-page__module team-page__skeleton"
         aria-busy="true"

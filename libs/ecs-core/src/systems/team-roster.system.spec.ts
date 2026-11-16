@@ -260,6 +260,127 @@ describe('TeamRosterSystem.membersOf — the Team page’s rows', () => {
   });
 });
 
+describe('TeamRosterSystem — the sessions a departure still owes (team onboarding D10)', () => {
+  const LEAVER_ACCOUNT = UserId.of('u-leaver');
+  const leaver = (revokedAtUtcMs: typeof FIXTURE_NOW_UTC_MS | null) =>
+    barberFixture(
+      { barberLastWorkingLocalDate: localDate('2026-10-31') },
+      {
+        barberStatus: BarberStatus.Departed,
+        barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        barberDepartedUserId: LEAVER_ACCOUNT,
+        barberSessionsRevokedAtUtcMs: revokedAtUtcMs,
+        barberRehireStatus: BarberStatus.Public,
+      },
+    );
+
+  it('notes a leaver whose account still has its sessions before any other note — only to a reader who sees accounts', () => {
+    const [owed] = TeamRosterSystem.membersOf(
+      facts({ barbers: [leaver(null)] }),
+    );
+    expect(owed).toMatchObject({
+      teamMemberNote: TeamMemberNote.SessionsOwed,
+    });
+    const [unseen] = TeamRosterSystem.membersOf(
+      facts({ barbers: [leaver(null)], accounts: null }),
+    );
+    expect(unseen).toMatchObject({ teamMemberNote: null });
+    const [ended] = TeamRosterSystem.membersOf(
+      facts({ barbers: [leaver(FIXTURE_NOW_UTC_MS)] }),
+    );
+    expect(ended).toMatchObject({ teamMemberNote: TeamMemberNote.NoAccount });
+  });
+
+  it('owingOf names the leavers who owe sessions, in the members’ order — nobody else', () => {
+    const members = TeamRosterSystem.membersOf(
+      facts({
+        barbers: [
+          ivan,
+          { ...leaver(null), id: BarberId.of('gone-a'), sortOrder: 5 },
+          { ...leaver(FIXTURE_NOW_UTC_MS), id: BarberId.of('gone-b') },
+          { ...leaver(null), id: BarberId.of('gone-c'), sortOrder: 6 },
+        ],
+      }),
+    );
+    expect(
+      TeamRosterSystem.owingOf(members).map((member) => member.barberId),
+    ).toEqual(['gone-a', 'gone-c']);
+  });
+});
+
+describe('TeamRosterSystem.remindersOf — the last days close enough to decide on (team onboarding D10)', () => {
+  const TODAY = localDate('2026-11-16');
+  const ending = (id: string, last: string, starts = '2026-01-01') =>
+    barberFixture({
+      id: BarberId.of(id),
+      sortOrder: 1,
+      barberStartsLocalDate: localDate(starts),
+      barberLastWorkingLocalDate: localDate(last),
+    });
+
+  it('names the working barbers whose last day is today or within seven days, soonest first', () => {
+    const members = TeamRosterSystem.membersOf(
+      facts({
+        barbers: [
+          ending('in-four', '2026-11-20'),
+          ending('today', '2026-11-16'),
+          ending('in-seven', '2026-11-23'),
+          ending('in-eight', '2026-11-24'),
+          ending('passed', '2026-11-15'),
+          ivan,
+        ],
+      }),
+    );
+    expect(
+      TeamRosterSystem.remindersOf(members, TODAY).map(
+        (member) => member.barberId,
+      ),
+    ).toEqual(['today', 'in-four', 'in-seven']);
+  });
+
+  it('says nothing about a period of seven days or less, a record in preparation or one that has left', () => {
+    const shortStay = ending('guest', '2026-11-20', '2026-11-14');
+    const preparing = {
+      ...ending('draft', '2026-11-20'),
+      barberStatus: BarberStatus.Draft,
+      barberDraftTargetStatus: BarberStatus.Public,
+    } as typeof draft;
+    const left = barberFixture(
+      {
+        id: BarberId.of('left'),
+        barberLastWorkingLocalDate: localDate('2026-11-20'),
+      },
+      {
+        barberStatus: BarberStatus.Departed,
+        barberStatusChangedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        barberDepartedUserId: null,
+        barberSessionsRevokedAtUtcMs: null,
+        barberRehireStatus: BarberStatus.Public,
+      },
+    );
+    const members = TeamRosterSystem.membersOf(
+      facts({ barbers: [shortStay, preparing, left] }),
+    );
+    expect(TeamRosterSystem.remindersOf(members, TODAY)).toEqual([]);
+  });
+
+  it('keeps the members’ order between two on one day, and is pure', () => {
+    const members = deepFreeze([
+      ...TeamRosterSystem.membersOf(
+        facts({
+          barbers: [
+            { ...ending('first', '2026-11-18'), sortOrder: 1 },
+            { ...ending('second', '2026-11-18'), sortOrder: 2 },
+          ],
+        }),
+      ),
+    ]);
+    const once = TeamRosterSystem.remindersOf(members, TODAY);
+    expect(once.map((member) => member.barberId)).toEqual(['first', 'second']);
+    expect(TeamRosterSystem.remindersOf(members, TODAY)).toEqual(once);
+  });
+});
+
 describe('TeamRosterSystem.sectionsOf — the page’s three runs', () => {
   const gone = barberFixture(
     {

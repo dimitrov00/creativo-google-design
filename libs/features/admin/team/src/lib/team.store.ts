@@ -1,8 +1,12 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import type { TeamMember } from '@core/components';
-import type { PipelineError } from '@core/errors';
+import { BarberEdit, type TeamMember } from '@core/components';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
+import { type BarberId, ClientOperationId } from '@core/primitives';
 import { TeamRosterSystem } from '@core/systems';
-import { TEAM_ADMIN_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  ID_PORTS,
+  TEAM_ADMIN_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { LoadState } from '@creativo/shared/view-state';
 
 /**
@@ -19,6 +23,7 @@ import { LoadState } from '@creativo/shared/view-state';
 @Injectable({ providedIn: 'root' })
 export class TeamStore {
   private readonly ports = inject(TEAM_ADMIN_PORTS);
+  private readonly ids = inject(ID_PORTS);
 
   private readonly _members = signal<readonly TeamMember[] | null>(null);
   private readonly _refusal = signal<PipelineError | null>(null);
@@ -52,6 +57,48 @@ export class TeamStore {
   readonly sections = computed(() =>
     TeamRosterSystem.sectionsOf(this._members() ?? []),
   );
+
+  private readonly _ending = signal<BarberId | null>(null);
+  /** The leaver whose sessions «Опитай пак» is ending now; `null` while none is. */
+  readonly ending = this._ending.asReadonly();
+
+  private readonly _endRefusal = signal<{
+    readonly barberId: BarberId;
+    readonly error: PipelineError;
+  } | null>(null);
+  /** Why the last «Опитай пак» was refused, and for whom; `null` when it was not. */
+  readonly endRefusal = this._endRefusal.asReadonly();
+
+  /**
+   * «Опитай пак» (team onboarding D10): the sessions a leaver's close still
+   * owes, ended now (`editBarber` `END_SESSIONS`, credited to the caller).
+   * Landed, the list is read again — the row's note goes with the debt;
+   * refused, the refusal is kept beside the leaver's notice.
+   */
+  async endSessions(barberId: BarberId): Promise<void> {
+    if (this._ending() !== null) return;
+    const operationId = ClientOperationId.parse(this.ids.nextId());
+    if (!operationId.ok) {
+      this._endRefusal.set({
+        barberId,
+        error: PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      });
+      return;
+    }
+    this._ending.set(barberId);
+    this._endRefusal.set(null);
+    const answer = await this.ports.editBarber({
+      barberEdit: BarberEdit.EndSessions,
+      barberId,
+      operationId: operationId.value,
+    });
+    this._ending.set(null);
+    if (!answer.ok) {
+      this._endRefusal.set({ barberId, error: answer.error });
+      return;
+    }
+    await this.load();
+  }
 
   /** Reads the team again. The rows on screen stay until the answer lands. */
   async load(): Promise<void> {

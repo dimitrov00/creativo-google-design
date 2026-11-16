@@ -36,6 +36,15 @@
   padding-block-end: var(--sys-space-spacious);
 }
 
+/* THE NOTICES ABOVE THE LIST, one group: a leaver's access, a last day to
+   decide on — the segment seam apart (12), not a module's (24), so a
+   stack of them reads as one thing to deal with, not as sections. */
+.team-page__notices {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sys-space-unit) * 3);
+}
+
 /* Heading → body is `compact` (8) under the small-rung heading row. */
 .team-page__module {
   display: flex;

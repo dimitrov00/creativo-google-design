@@ -9,7 +9,7 @@ import { BarberEdit, OfferingsEdit, TeamCall } from './team-call.data';
 const IVAN = BarberId.of('ivan');
 
 describe('BarberEdit — which part of a record `editBarber` replaces', () => {
-  it('names the five editors and the return of a record that has left, SCREAMING_SNAKE, each once', () => {
+  it('names the five editors, the return of a record that has left and the retry of its owed sessions, SCREAMING_SNAKE, each once', () => {
     expect(BarberEdit).toEqual({
       Profile: 'PROFILE',
       Shops: 'SHOPS',
@@ -17,6 +17,7 @@ describe('BarberEdit — which part of a record `editBarber` replaces', () => {
       Pool: 'POOL',
       Access: 'ACCESS',
       Return: 'RETURN',
+      EndSessions: 'END_SESSIONS',
     });
   });
 });

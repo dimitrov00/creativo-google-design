@@ -1,8 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { BarberLinkChange, E164, Role } from '@core/components';
+import {
+  BarberEdit,
+  BarberLinkChange,
+  E164,
+  Role,
+  TeamMemberNote,
+} from '@core/components';
 import { GovernanceErrorCode, PipelineError } from '@core/errors';
-import { AccessScope, UserId } from '@core/primitives';
+import { AccessScope, LocalDate, UserId } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -10,7 +16,13 @@ import {
   userFixture,
 } from '@core/testing';
 import { type TeamBedOptions, teamBed } from '../team-bed.spec-support';
-import { IVAN, RECORDS, TEAM } from '../team.fixtures.spec-support';
+import {
+  GEORGI,
+  IVAN,
+  RECORDS,
+  STEFAN,
+  TEAM,
+} from '../team.fixtures.spec-support';
 import { AdminTeam } from './admin-team';
 
 /*
@@ -481,5 +493,83 @@ describe('AdminTeam — the ＋: a barber, or a role for a registered account (�
       barberLinkChange: BarberLinkChange.Keep,
     });
     expect(piece('admin-team-sessions-pending')).toBeNull();
+  });
+
+  describe('the notices above the list (team onboarding D10)', () => {
+    const TODAY = ZonedTimeSystem.shopNow(
+      FIXTURE_NOW_UTC_MS,
+      FIXTURE_TIME_ZONE,
+    ).localDate;
+    const soon = {
+      ...GEORGI,
+      barberLastWorkingLocalDate: LocalDate.addDays(TODAY, 3),
+    };
+    const owing = { ...STEFAN, teamMemberNote: TeamMemberNote.SessionsOwed };
+
+    it('reminds whoever manages the team of a last day within the week, and «Удължи» opens that record’s working period', async () => {
+      const { piece, text, press } = await render({
+        members: [IVAN, soon, STEFAN],
+      });
+      const reminder = piece('team-reminder-georgi');
+      expect(text(reminder?.querySelector('[uiNoticeTitle]'))).toMatch(
+        /^Последният ден на Георги е /,
+      );
+      expect(text(reminder)).toContain(
+        'След него напуска екипа. Ако остава, удължи работния период.',
+      );
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true);
+      await press('team-reminder-extend');
+      expect(navigate).toHaveBeenCalledWith(['/admin/team/member', 'georgi'], {
+        queryParams: { edit: 'period' },
+      });
+    });
+
+    it('reminds nobody who cannot extend a period, and nothing of a last day further off', async () => {
+      const editor = await render({
+        members: [IVAN, soon],
+        roles: [Role.ContentManager],
+      });
+      expect(editor.piece('team-reminder-georgi')).toBeNull();
+      TestBed.resetTestingModule();
+      const far = await render({ members: [IVAN, GEORGI] });
+      expect(far.piece('team-reminder-georgi')).toBeNull();
+    });
+
+    it('says a leaver’s access is not stopped and «Опитай пак» ends the owed sessions — a refusal said in the notice', async () => {
+      const { piece, text, press, settle, calls, refuses, listAnswers } =
+        await render({ members: [IVAN, owing] });
+      const notice = piece('team-owing-stefan');
+      expect(text(notice?.querySelector('[uiNoticeTitle]'))).toBe(
+        'Достъпът на Стефан не е спрян',
+      );
+      expect(text(piece('team-member-stefan'))).toContain(
+        'Достъпът не е спрян',
+      );
+
+      refuses(
+        'editBarber',
+        PipelineError.fromWire('functions/unavailable', {
+          errorCode: 'TEAM_SESSIONS_NOT_ENDED',
+          barberId: 'stefan',
+        }),
+      );
+      await press('team-owing-retry');
+      await settle();
+      expect(calls.edits.at(-1)).toMatchObject({
+        barberEdit: BarberEdit.EndSessions,
+        barberId: 'stefan',
+      });
+      expect(text(piece('team-owing-stefan'))).toContain(
+        'Достъпът още не е спрян. Опитай пак след малко.',
+      );
+
+      refuses('editBarber', null);
+      listAnswers([IVAN, STEFAN]);
+      await press('team-owing-retry');
+      await settle();
+      expect(piece('team-owing-stefan')).toBeNull();
+    });
   });
 });

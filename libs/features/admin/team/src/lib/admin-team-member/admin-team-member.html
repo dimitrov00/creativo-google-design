@@ -72,6 +72,34 @@
       </label>
       }
 
+      <!-- A LEAVER WHOSE ACCESS IS NOT STOPPED: the close ended the staff
+           roles, the revoke of the sessions failed — the daily job retries
+           it each night, «Опитай пак» tries it now. -->
+      @if (page.owing; as owing) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="member-owing"
+      >
+        <h2 uiNoticeTitle>{{ owing.title }}</h2>
+        {{ owing.body }}
+        <button
+          uiNoticeActions
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiLoading]="store.pending()"
+          [disabled]="store.pending()"
+          data-testid="member-owing-retry"
+          (click)="endOwedSessions()"
+        >
+          {{ owing.action }}
+        </button>
+      </ui-notice>
+      }
+
       <!-- A LEAVER'S BOOKINGS: leaving cancels nothing, so whoever can
            bring the barber back is told what still stands after the last
            day, and «Виж записите» opens the schedule's search on it —

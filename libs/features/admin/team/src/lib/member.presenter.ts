@@ -7,6 +7,7 @@ import {
   type StaffPermissions,
   StaffSetupItem,
   type TeamMember,
+  TeamMemberNote,
 } from '@core/components';
 import type { Barber, ShopLocation } from '@core/entities';
 import type { LocalDate, Locale } from '@core/primitives';
@@ -18,6 +19,7 @@ import type { LinkWords } from './link.words';
 import {
   DeleteAnswer,
   type LeftoverNoticeVm,
+  type OwingNoticeVm,
   type LevelLinkVm,
   type MemberAccountVm,
   MemberEditor,
@@ -312,6 +314,23 @@ function leftoverOf(input: MemberPageInput): LeftoverNoticeVm | null {
       };
 }
 
+/**
+ * A leaver whose account still has its sessions (`TeamMemberNote.SESSIONS_OWED`,
+ * the Team row's own note — said only to whoever sees accounts), and
+ * «Опитай пак»; `null` otherwise.
+ */
+function owingOf(input: MemberPageInput): OwingNoticeVm | null {
+  const { member, memberWords } = input;
+  return input.managesTeam &&
+    member?.teamMemberNote === TeamMemberNote.SessionsOwed
+    ? {
+        title: memberWords.owingTitle(firstWord(nameOf(input))),
+        body: memberWords.owingBody,
+        action: memberWords.owingRetry,
+      }
+    : null;
+}
+
 /** The way to «Права» for each level the linked account holds. */
 function levelsOf(input: MemberPageInput): readonly LevelLinkVm[] {
   const { member } = input;
@@ -371,6 +390,7 @@ export function memberPageVm(input: MemberPageInput): MemberPageVm {
     levels: levelsOf(input),
     returnable: input.returnable,
     leftover: leftoverOf(input),
+    owing: owingOf(input),
     deletable: input.deletable,
     deleteTitle: memberWords.deleteTitle(name),
     deleteActions: [

@@ -15,6 +15,7 @@ import {
   type Locale,
 } from '@core/primitives';
 import type { TeamSections } from '@core/systems';
+import { formatDayPill } from '@creativo/ui/wall-clock';
 import { dayWords, firstWord, lineOf, rolesLine } from './team.format';
 import {
   type LevelPageVm,
@@ -23,6 +24,7 @@ import {
   type PermissionGroupVm,
   type PermissionRowVm,
   type TeamAddOptionVm,
+  type TeamNoticeVm,
   type TeamPageVm,
   type TeamRowVm,
   TeamRun,
@@ -51,6 +53,10 @@ export type TeamPageInput = {
   readonly locale: Locale;
   /** The shop's today; `null` until its zone is known (a date then carries its year). */
   readonly today: LocalDate | null;
+  /** `TeamRosterSystem.remindersOf` — the last days to decide on; none for someone who cannot extend them. */
+  readonly reminders: readonly TeamMember.OfBarber[];
+  /** `TeamRosterSystem.owingOf` — the leavers whose sessions are still owed. */
+  readonly owing: readonly TeamMember.OfBarber[];
 };
 
 /** How a barber record stands: its lifecycle in words, a draft's progress, a leaver's day. */
@@ -79,6 +85,9 @@ function noteOf(
   input: TeamPageInput,
 ): readonly string[] {
   const { words } = input;
+  if (member.teamMemberNote === TeamMemberNote.SessionsOwed) {
+    return [words.sessionsOwed];
+  }
   if (member.teamMemberNote === TeamMemberNote.NoAccount) {
     return [words.noAccount];
   }
@@ -118,7 +127,43 @@ function accountRow(
   };
 }
 
-/** The Team list: its lede and its runs, an empty run left out. */
+/** A last day to decide on: when it is, what follows, «Удължи». */
+function reminderOf(
+  member: TeamMember.OfBarber,
+  input: TeamPageInput,
+): TeamNoticeVm {
+  const { words } = input;
+  const name = firstWord(LocalizedText.pick(member.memberName, input.locale));
+  const last = member.barberLastWorkingLocalDate;
+  return {
+    barberId: member.barberId,
+    title:
+      last === null || last === input.today
+        ? words.reminderToday(name)
+        : words.reminderTitle(name, formatDayPill(last, input.locale)),
+    body: words.reminderBody,
+    action: words.reminderExtend,
+    testId: `team-reminder-${member.barberId}`,
+  };
+}
+
+/** A leaver whose sessions are still owed: «Опитай пак». */
+function owingOf(
+  member: TeamMember.OfBarber,
+  input: TeamPageInput,
+): TeamNoticeVm {
+  const { words } = input;
+  const name = firstWord(LocalizedText.pick(member.memberName, input.locale));
+  return {
+    barberId: member.barberId,
+    title: words.owingTitle(name),
+    body: words.owingBody,
+    action: words.owingRetry,
+    testId: `team-owing-${member.barberId}`,
+  };
+}
+
+/** The Team list: its lede, its notices and its runs, an empty run left out. */
 export function teamPageVm(input: TeamPageInput): TeamPageVm {
   const { sections, words } = input;
   const runs: TeamRunVm[] = [
@@ -140,6 +185,8 @@ export function teamPageVm(input: TeamPageInput): TeamPageVm {
   ];
   return {
     lede: input.managesTeam ? words.ledeAll : words.ledeRecords,
+    reminders: input.reminders.map((member) => reminderOf(member, input)),
+    owing: input.owing.map((member) => owingOf(member, input)),
     runs: runs.filter((run) => run.rows.length > 0),
   };
 }

@@ -452,6 +452,15 @@ export class TeamMemberStore {
     return true;
   }
 
+  /**
+   * «Опитай пак» (team onboarding D10): the sessions a leaver's close still
+   * owes, ended now — `TEAM_SESSIONS_NOT_ENDED` when they cannot be yet,
+   * said by the page like any refusal.
+   */
+  endOwedSessions(): Promise<boolean> {
+    return this.edit({ barberEdit: BarberEdit.EndSessions });
+  }
+
   /** The shops the record works at, whole: `[]` is every shop. */
   saveShops(locationIds: readonly LocationId[]): Promise<boolean> {
     return this.edit({ barberEdit: BarberEdit.Shops, locationIds });
