@@ -93,17 +93,19 @@
       </ui-list-group>
 
       <!-- WHAT THE LAST DAY WILL DO, said before it is saved: a last day is
-           how someone leaves the team. -->
+           how someone leaves the team. A notice, in the shape of the
+           warning under it — the fact as its title, what follows under it —
+           so the two read as two facts about one day, never as a caption
+           beside a panel. -->
       @if (outlook().note; as note) {
-      <p
-        uiText
-        uiFont="footnote"
-        uiForegroundStyle="secondary"
-        class="team-page__footnote"
+      <ui-notice
+        uiIcon="notice.info"
+        uiAnnounce="polite"
         data-testid="member-period-note"
       >
-        {{ note }}
-      </p>
+        <h3 uiNoticeTitle>{{ note.title }}</h3>
+        {{ note.body }}
+      </ui-notice>
       }
       <!-- THE BOOKINGS THE LAST DAY LEAVES BEHIND: leaving cancels nothing,
            so the owner is told how many stand after it — and shown them,

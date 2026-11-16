@@ -65,9 +65,10 @@ describe('periodOutlookVm', () => {
     const ahead = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-12-31') }),
     );
-    expect(read(ahead.note)).toBe(
-      'След 31.12 Иван напуска екипа и вече не влиза в приложението като бръснар.',
-    );
+    expect(ahead.note).toEqual({
+      title: 'Иван напуска екипа след 31.12',
+      body: 'След това вече не влиза в приложението като бръснар.',
+    });
     expect(ahead.question).toBeNull();
     // The last day itself is worked through.
     expect(
@@ -79,9 +80,10 @@ describe('periodOutlookVm', () => {
     const passed = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-11-15') }),
     );
-    expect(read(passed.note)).toBe(
-      '15.11 вече е минал. Със запазването Иван напуска екипа веднага.',
-    );
+    expect(passed.note).toEqual({
+      title: 'Иван напуска екипа веднага',
+      body: '15.11 вече е минал. Със запазването спира да влиза в приложението като бръснар.',
+    });
     expect(passed.question).toEqual({
       title: 'Иван напуска екипа сега?',
       message:
@@ -198,7 +200,7 @@ describe('periodOutlookVm', () => {
     expect(
       read(
         periodOutlookVm(inputOf({ lastLocalDate: localDate('2027-03-31') }))
-          .note,
+          .note?.title ?? null,
       ),
     ).toContain('31.03.2027');
   });
@@ -207,14 +209,18 @@ describe('periodOutlookVm', () => {
     const ahead = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-12-31') }, 'en'),
     );
-    expect(read(ahead.note)).toMatch(
-      /^After .+ Ivan leaves the team and no longer signs in to the app as a barber\.$/,
+    expect(read(ahead.note?.title ?? null)).toMatch(
+      /^Ivan leaves the team after .+$/,
+    );
+    expect(ahead.note?.body).toBe(
+      'After that they no longer sign in to the app as a barber.',
     );
     const passed = periodOutlookVm(
       inputOf({ lastLocalDate: localDate('2026-11-15') }, 'en'),
     );
-    expect(read(passed.note)).toMatch(
-      /has already passed\. Saving makes Ivan leave the team right away\.$/,
+    expect(passed.note?.title).toBe('Ivan leaves the team right away');
+    expect(read(passed.note?.body ?? null)).toMatch(
+      /has already passed\. On saving they stop signing in to the app as a barber\.$/,
     );
     expect(passed.question?.title).toBe('Ivan leaves the team now?');
     expect(passed.question?.actions.map((action) => action.label)).toEqual([

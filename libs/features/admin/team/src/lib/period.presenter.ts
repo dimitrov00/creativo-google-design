@@ -21,10 +21,20 @@ import { dayWords, firstWord } from './team.format';
  * nothing here.
  */
 
+/**
+ * What the last day drafted will do, as a notice of its own: the fact as
+ * its title, what follows from it under it. The same shape as the warning
+ * about the bookings left, so the two read as two facts about one day.
+ */
+export type PeriodNoteVm = {
+  readonly title: string;
+  readonly body: string;
+};
+
 /** What the period sheet says under its two days, and asks before a save. */
 export type PeriodOutlookVm = {
   /** What the last day drafted will do; `null` with no last day, or while the shop's today is unknown. */
-  readonly note: string | null;
+  readonly note: PeriodNoteVm | null;
   /** The question a save is held behind; `null` unless saving makes the barber leave at once. */
   readonly question: LinkQuestionVm | null;
   /**
@@ -81,13 +91,19 @@ export function periodOutlookVm(input: PeriodOutlookInput): PeriodOutlookVm {
   switch (EmploymentSystem.outlookOf(input.barber, lastLocalDate, today)) {
     case EmploymentOutlook.Ends:
       return {
-        note: memberWords.periodEnds(name, date),
+        note: {
+          title: memberWords.periodEndsTitle(name, date),
+          body: memberWords.periodEndsBody,
+        },
         question: null,
         leftover: leftoverOf(input, memberWords.leftoverStays, name, date),
       };
     case EmploymentOutlook.Ended:
       return {
-        note: memberWords.periodEnded(name, date),
+        note: {
+          title: memberWords.periodEndedTitle(name),
+          body: memberWords.periodEndedBody(date),
+        },
         leftover: leftoverOf(input, memberWords.leftoverNow, name, date),
         question: {
           title: memberWords.leaveTitle(name),

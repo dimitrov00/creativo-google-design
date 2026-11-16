@@ -27,10 +27,14 @@ export type MemberWords = {
   readonly periodFrom: (date: string) => string;
   /** «3 март – 31 дек.» */
   readonly periodRange: (from: string, to: string) => string;
-  /** «След 31 дек. Николай напуска екипа…» */
-  readonly periodEnds: (name: string, date: string) => string;
-  /** «31 дек. вече е минал. Със запазването Николай напуска екипа веднага.» */
-  readonly periodEnded: (name: string, date: string) => string;
+  /** «Николай напуска екипа след 31 дек.» — the note's title for a last day still ahead. */
+  readonly periodEndsTitle: (name: string, date: string) => string;
+  /** «След това вече не влиза в приложението като бръснар.» */
+  readonly periodEndsBody: string;
+  /** «Николай напуска екипа веднага» — the note's title for a last day already passed. */
+  readonly periodEndedTitle: (name: string) => string;
+  /** «31 дек. вече е минал. Със запазването спира да влиза в приложението като бръснар.» */
+  readonly periodEndedBody: (date: string) => string;
   /** «Николай напуска екипа сега?» */
   readonly leaveTitle: (name: string) => string;
   /** «Последният работен ден вече е минал. Николай спира да приема записи…» */
@@ -103,10 +107,13 @@ export function memberWordsOf(translate: Translate): MemberWords {
     periodRow: at('periodRow'),
     periodFrom: (date) => at('periodFrom', { date }),
     periodRange: (from, to) => at('periodRange', { from, to }),
-    periodEnds: (name, date) =>
-      translate('admin.team.period.ends', { name, date }),
-    periodEnded: (name, date) =>
-      translate('admin.team.period.ended', { name, date }),
+    periodEndsTitle: (name, date) =>
+      translate('admin.team.period.endsTitle', { name, date }),
+    periodEndsBody: translate('admin.team.period.endsBody'),
+    periodEndedTitle: (name) =>
+      translate('admin.team.period.endedTitle', { name }),
+    periodEndedBody: (date) =>
+      translate('admin.team.period.endedBody', { date }),
     leaveTitle: (name) => translate('admin.team.period.leaveTitle', { name }),
     leaveMessage: (name) =>
       translate('admin.team.period.leaveMessage', { name }),

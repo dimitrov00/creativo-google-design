@@ -1181,6 +1181,11 @@ and a leaver's page keeps showing them until none is left.
     mark a repeating block's end is already chosen against, so the day is
     picked against the visits it cuts. It opens on today's month, not on
     the month the barber started;
+  - what the last day will do is a **notice of its own**, neutral, in the
+    warning's shape: «Иван напуска екипа след 31.12» as its title, «След
+    това вече не влиза в приложението като бръснар.» under it. It used to
+    be a footnote under the rows, which read as a caption beside the
+    warning's panel;
   - the count is a **warning notice with its mark and a title** («Иван има
     2 записа след 31.12»), and under it what can be done: for a day still
     ahead «Остават в графика. Отвори запис, за да го дадеш на друг бръснар
