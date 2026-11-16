@@ -1,12 +1,14 @@
 import { type Signal, effect, untracked } from '@angular/core';
 import type { StaffDayStore } from '../staff-day.store';
 
-/** The schedule's route-bound inputs — `?day=`, `?view=`, `?barber=`, `?free=`. */
+/** The schedule's route-bound inputs — `?day=`, `?view=`, `?barber=`, `?free=`, `?searchBarber=&searchFrom=`. */
 export interface ScheduleRouteInputs {
   readonly day: Signal<string | null>;
   readonly view: Signal<string | null>;
   readonly barber: Signal<string | null>;
   readonly free: Signal<string | null>;
+  readonly searchBarber: Signal<string | null>;
+  readonly searchFrom: Signal<string | null>;
 }
 
 /**
@@ -69,5 +71,16 @@ export function bindRouteInputs(
   effect(() => {
     const requested = page.free() ?? null;
     if (requested !== null) untracked(() => store.applyRouteFree(requested));
+  });
+  // `?searchBarber=&searchFrom=` ask ONCE too (team onboarding D10, «Виж
+  // записите»): the search opens on that barber's visits from that day,
+  // and the pair leaves the URL by the store's deferred write. Its removal
+  // reads as silent, which asks nothing.
+  effect(() => {
+    const barber = page.searchBarber() ?? null;
+    const from = page.searchFrom() ?? null;
+    if (barber !== null || from !== null) {
+      untracked(() => store.applyRouteSearch(barber, from));
+    }
   });
 }

@@ -215,6 +215,67 @@ describe('StaffDayStore — ?free=1 read once (staff-analytics CUJ 2)', () => {
   });
 });
 
+describe('StaffDayStore — ?searchBarber=&searchFrom= read once (team onboarding D10)', () => {
+  it('opens the search on that barber from that day to the window’s edge, hands the ask to the sheet once, and takes both parameters out of the URL', async () => {
+    const { store, router } = await build({
+      url: '/?day=2026-08-07&searchBarber=ivan&searchFrom=2026-08-10',
+    });
+    store.applyRouteDay('2026-08-07');
+    store.applyRouteSearch('ivan', '2026-08-10');
+    expect(store.searching()).toBe(true);
+
+    const seed = store.takeSearchSeed();
+    expect(seed?.barberId).toBe('ivan');
+    expect(seed?.fromLocalDate).toBe('2026-08-10');
+    // To the window's far edge — the booking horizon, past the day asked.
+    expect((seed?.toLocalDate ?? '') > '2026-08-10').toBe(true);
+    // Handed once: a sheet opened later starts empty.
+    expect(store.takeSearchSeed()).toBeNull();
+
+    await settle();
+    expect(router.url).not.toContain('searchBarber=');
+    expect(router.url).not.toContain('searchFrom=');
+    expect(router.url).toContain('day=2026-08-07');
+  });
+
+  it('spans a single day for a day past the window’s edge, never an end before its start', async () => {
+    const { store } = await build();
+    store.applyRouteSearch('ivan', '2099-01-01');
+    expect(store.takeSearchSeed()).toEqual({
+      barberId: 'ivan',
+      fromLocalDate: '2099-01-01',
+      toLocalDate: '2099-01-01',
+    });
+  });
+
+  it.each([
+    ['a/b', '2026-08-10'],
+    ['ivan', '2026-02-30'],
+    [null, '2026-08-10'],
+  ])(
+    'opens nothing for a link whose barber or day does not parse (%j, %j), and still clears the URL',
+    async (barber, from) => {
+      const { store, router } = await build({
+        url: '/?searchBarber=x&searchFrom=y',
+      });
+      store.applyRouteSearch(barber, from);
+      expect(store.searching()).toBe(false);
+      expect(store.takeSearchSeed()).toBeNull();
+      await settle();
+      expect(router.url).not.toContain('search');
+    },
+  );
+
+  it('asks nothing when the URL is silent', async () => {
+    const { store, router } = await build({ url: '/?day=' });
+    store.applyRouteSearch(null, null);
+    store.applyRouteSearch(undefined, undefined);
+    expect(store.searching()).toBe(false);
+    await settle();
+    expect(router.url).toBe('/?day=');
+  });
+});
+
 describe('StaffDayStore — ?view= (the contract-spelled dictionary)', () => {
   it('spells the views as the URL, the device and the page hooks do', () => {
     expect(StaffView).toEqual({

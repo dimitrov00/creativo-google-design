@@ -211,6 +211,26 @@ describe('SearchQuery — the companion', () => {
     ).toBe(false);
   });
 
+  it('asks for one barber’s live visits over a span of days — the barber, the span, the live statuses, in that order', () => {
+    const query = SearchQuery.bookingsAhead(
+      IVAN,
+      localDate('2026-11-17'),
+      localDate('2027-02-14'),
+    );
+    expect(query).toEqual({
+      searchText: '',
+      searchFilters: [
+        SearchFilter.barber([IVAN]),
+        SearchFilter.when(localDate('2026-11-17'), localDate('2027-02-14')),
+        SearchFilter.bookingStatuses([
+          BookingStatus.Pending,
+          BookingStatus.Confirmed,
+        ]),
+      ],
+    });
+    expect(SearchQuery.isEmpty(query)).toBe(false);
+  });
+
   it('says which kinds hold several values', () => {
     expect(SearchFilter.holdsMany(SearchFilterField.Barber)).toBe(true);
     expect(SearchFilter.holdsMany(SearchFilterField.Service)).toBe(true);

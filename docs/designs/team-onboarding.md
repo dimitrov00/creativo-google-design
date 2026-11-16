@@ -1180,32 +1180,50 @@ and a leaver's page keeps showing them until none is left.
     design system from the schedule). The analytics period sheet, the add
     sheet and the return sheet use the same row; the team's pull-down day
     menu is gone;
+  - the sheet is «Работен период», and its rows are «Първи ден» and
+    «Последен ден» (the add sheet and the setup item say «Първи ден» too).
+    The last day is optional, and **«Без последен ден» is an answer its
+    own month offers** — a capsule under the grid while a day is chosen
+    (`uiClearLabel` on `ui-date-pill`) — never a row of its own: LinkedIn,
+    Things and Todoist all keep the «no date» answer inside the picker.
+    The row the first cut had under the last day read as a stray button;
   - the last day's month **dots the days the barber is booked on**, the
     mark a repeating block's end is already chosen against, so the day is
-    picked against the visits it cuts. It opens on today's month, not on
-    the month the barber started;
-  - what the last day will do is a **notice of its own**, neutral, in the
-    warning's shape: «Иван напуска екипа след 31.12» as its title, «След
-    това вече не влиза в приложението като бръснар.» under it. It used to
-    be a footnote under the rows, which read as a caption beside the
-    warning's panel;
-  - the count is a **warning notice with its mark and a title** («Иван има
-    2 записа след 31.12»), and under it what can be done: for a day still
-    ahead «Остават в графика. Отвори запис, за да го дадеш на друг бръснар
-    или да го преместиш преди последния ден.»; for a day already passed
-    «… да го дадеш на друг бръснар, да го преместиш или да го откажеш.».
-    Saving is never blocked;
-  - under the warning the visits are **listed under their days** as the
-    schedule would card them (`lib-leftover-visits`): the client's face
-    and name, what was booked under it, the clock. No barber's face — the
-    list is all one barber's. Built from `ui-avatar` and the shared
-    `lib-staff-event-head`. A row opens the schedule on that day, on this
-    barber's column (`/staff/schedule?day=…&barber=…`). The list is its
-    own lazy chunk.
-- The page of a barber who has left shows the same warning and list to
-  whoever may bring them back. Nobody else's page makes the read.
-- A read that fails says «Не успяхме да проверим дали има записи след тази
-  дата.», never that nothing is left.
+    picked against the visits it cuts. **Under the grid the month says
+    what the dots mean** — «• Дни със записи» (`uiMarkedLabel`); the
+    block's end month says «• Дни, в които се повтаря». A dot nobody
+    explains is a guess. The month opens on today's, not on the one the
+    barber started in;
+  - what the last day will do is **one notice for one day**. With nothing
+    after it, a quiet fact: «Иван напуска екипа след 31.12» over «След
+    този ден не приема записи и губи достъпа си до графика.» (for a day
+    already passed, «… напуска екипа веднага» over «31.12 вече мина. Със
+    запазването спира да приема записи …»). With visits after it, the
+    same notice becomes a **warning that counts them** — «2 записа след
+    последния ден» over «След 31.12 Иван напуска екипа, а записите остават
+    в графика. Дай ги на друг бръснар или ги премести по-рано.» (a day
+    passed: «… Дай ги на друг бръснар, премести ги или ги откажи.»). The
+    first cut stacked a fact and a warning under the same rows, two
+    panels about one day. Saving is never blocked;
+  - the warning has **one action, «Виж записите»** (`lib-leftover-search`),
+    which opens the schedule's own search on the visits it counts:
+    `/staff/schedule?searchBarber=…&searchFrom=…`, read once by the
+    schedule into the search's filters — «Бръснар» this barber, «Кога»
+    from the day after the last day to the window's far edge (the booking
+    horizon), «Статус» the live ones (`SearchQuery.bookingsAhead`). The
+    search opens on its results, without the caret, and the two parameters
+    leave the address bar. There each visit is opened, given to another
+    barber, moved or cancelled (owner, 2026-11-16: the visits listed under
+    the warning felt odd; "just one button … to our powerful search").
+    The first cut listed them in the sheet, under their days;
+- The page of a barber who has left shows the same warning and the same
+  action to whoever may bring them back. Nobody else's page makes the
+  read. The search sees the window the schedule reads (60 days back to
+  the horizon): a visit booked beyond the horizon is counted but not
+  found there.
+- A read that fails turns the notice into a warning under the departure:
+  «Не успяхме да проверим дали има записи след този ден.», never that
+  nothing is left.
 - Design-system changes that came with it, for one vocabulary everywhere:
   - a warning and a refusal notice always wear their mark
     (`notice.warning`, `notice.refusal`) when the screen names no glyph,

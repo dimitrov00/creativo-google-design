@@ -61,7 +61,7 @@ import { LinkAnswer } from '../link.vm';
 import { MemberLinkSheet } from '../member-link-sheet/member-link-sheet';
 import { MemberOfferingsSheet } from '../member-offerings-sheet/member-offerings-sheet';
 import { BookingsAheadStore } from '../bookings-ahead.store';
-import { LeftoverVisits } from '../leftover-visits/leftover-visits';
+import { LeftoverSearch } from '../leftover-search/leftover-search';
 import { MemberPeriodSheet } from '../member-period-sheet/member-period-sheet';
 import { MemberReturnSheet } from '../member-return-sheet/member-return-sheet';
 import { MemberProfileSheet } from '../member-profile-sheet/member-profile-sheet';
@@ -109,7 +109,7 @@ function hoursDesk(): HoursDesk {
 @Component({
   selector: 'lib-admin-team-member',
   imports: [
-    LeftoverVisits,
+    LeftoverSearch,
     MemberLinkSheet,
     MemberOfferingsSheet,
     MemberPeriodSheet,
@@ -272,10 +272,16 @@ export class AdminTeamMember {
   });
 
   /**
-   * The visits a leaver still holds, oldest first — everything read after
-   * their last day (`EmploymentSystem.leftoverVisitsOf`, in the pipeline).
+   * Whose visits «Виж записите» searches for, and after which day: a
+   * leaver's, after their last day.
    */
-  protected readonly leftoverVisits = computed(() => this.ahead.visits() ?? []);
+  protected readonly leftoverSearch = computed(() => {
+    const barber = this.store.barber();
+    const last = barber?.barberLastWorkingLocalDate ?? null;
+    return barber === undefined || last === null
+      ? null
+      : { barberId: barber.id, after: last };
+  });
 
   /** How many they are and the days they fall on; `null` until they are read. */
   private readonly leftover = computed(() => {

@@ -95,6 +95,32 @@ import {
           [uiNextLabel]="uiNextLabel()"
           (uiPicked)="pick($event)"
         />
+        @if (legend() !== null || clearable()) {
+          <div class="ui-date-pill__footer">
+            @if (legend(); as words) {
+              <span
+                class="ui-date-pill__legend"
+                [attr.data-testid]="uiTestId() + '-legend'"
+                ><span class="ui-date-pill__dot" aria-hidden="true"></span
+                >{{ words }}</span
+              >
+            }
+            @if (clearable()) {
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="small"
+                class="ui-date-pill__clear"
+                [attr.data-testid]="uiTestId() + '-clear'"
+                (click)="clear()"
+              >
+                {{ uiClearLabel() }}
+              </button>
+            }
+          </div>
+        }
       }
     </ui-menu>
   `,
@@ -120,6 +146,21 @@ export class UiDatePill {
   readonly uiRelatives = input<readonly UiMonthPickerRelative[]>([]);
   /** Days with something on them — the month's event dots. */
   readonly uiMarked = input<readonly LocalDate[]>([]);
+  /**
+   * What the dots MEAN («Дни със записи»), said under the month beside a
+   * dot of the same ink — the calendar's own legend. A dot nobody explains
+   * is a guess (owner, 2026-11-16: "what is the idea of the dots?"). Said
+   * only while some day is marked.
+   */
+  readonly uiMarkedLabel = input<string | null>(null);
+  /**
+   * The «no day» answer of an OPTIONAL date («Без последен ден»), offered
+   * INSIDE the month while a day is chosen — Things' «Clear», Todoist's «No
+   * date»: choosing none is one of the choices the picker offers, never a
+   * row of its own beside it (owner, 2026-11-16). `null` for a date that
+   * is always set. Pressed, it closes the month and says `uiCleared`.
+   */
+  readonly uiClearLabel = input<string | null>(null);
   /** The earliest day the month offers. */
   readonly uiMin = input<LocalDate | null>(null);
   /**
@@ -147,6 +188,8 @@ export class UiDatePill {
   readonly uiPresented = model(false);
   /** The day picked in the month — always a real calendar day. */
   readonly uiPicked = output<LocalDate>();
+  /** The «no day» answer was chosen (`uiClearLabel`). */
+  readonly uiCleared = output<void>();
 
   private readonly injector = inject(Injector);
   private readonly trigger = viewChild.required<
@@ -163,6 +206,16 @@ export class UiDatePill {
         : formatDayPill(day, this.uiLocale()))
     );
   });
+
+  /** The legend under the month: its words while some day is marked. */
+  protected readonly legend = computed(() =>
+    this.uiMarked().length > 0 ? this.uiMarkedLabel() : null,
+  );
+
+  /** The «no day» answer is offered: an optional date that holds one. */
+  protected readonly clearable = computed(
+    () => this.uiClearLabel() !== null && this.uiSelected() !== null,
+  );
 
   protected readonly accessibleName = computed(() => {
     const name = this.uiAccessibleLabel();
@@ -181,6 +234,13 @@ export class UiDatePill {
   protected pick(day: LocalDate): void {
     this.uiPresented.set(false);
     this.uiPicked.emit(day);
+    afterNextRender(() => this.focus(), { injector: this.injector });
+  }
+
+  /** «No day» chosen: the month closes as on a pick, and says so. */
+  protected clear(): void {
+    this.uiPresented.set(false);
+    this.uiCleared.emit();
     afterNextRender(() => this.focus(), { injector: this.injector });
   }
 }

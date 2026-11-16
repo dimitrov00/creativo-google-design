@@ -128,12 +128,14 @@
       compact <code>DatePicker</code>: the row says what the date is, and its
       value is <code>ui-date-pill</code>, a capsule at the trailing edge that
       pops the month over the page. The capsule says the value can be changed. A
-      period is two rows; the second's month dots the days that hold something,
-      so an end is chosen against what it cuts.
+      period is two rows; the second's month dots the days that hold something
+      and says what the dots mean under the grid, so an end is chosen against
+      what it cuts. An optional date offers «no day» inside its own month, never
+      as a row of its own.
     </ng-container>
     <ui-list-group class="month-picker__rows">
       <ui-date-row
-        uiLabel="Начална дата"
+        uiLabel="Първи ден"
         uiTestId="sc-date-row-start"
         uiLocale="bg"
         uiPreviousLabel="Предишен месец"
@@ -143,8 +145,10 @@
         (uiPicked)="periodStart.set($event)"
       />
       <ui-date-row
-        uiLabel="Последен работен ден"
+        uiLabel="Последен ден"
         uiPlaceholder="Няма"
+        uiClearLabel="Без последен ден"
+        uiMarkedLabel="Дни със записи"
         uiTestId="sc-date-row-last"
         uiLocale="bg"
         uiPreviousLabel="Предишен месец"
@@ -155,6 +159,7 @@
         [uiOpensOn]="today"
         [uiMarked]="marked"
         (uiPicked)="periodLast.set($event)"
+        (uiCleared)="periodLast.set(null)"
       />
     </ui-list-group>
   </sc-demo>

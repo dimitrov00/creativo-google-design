@@ -140,7 +140,8 @@ test.describe('a team member’s page', () => {
       .toEqual({ bg: 'Младши бръснар', en: 'Младши бръснар' });
 
     // THE PERIOD: a last day that is not set yet opens on a month with
-    // days in it; picking one keeps the keyboard inside the sheet, so
+    // days in it; «Без последен ден» is an answer of the same month, not a
+    // row of its own; choosing it keeps the keyboard inside the sheet, so
     // Escape still closes it — and nothing was saved.
     await page.getByTestId('member-row-period').click();
     await page.getByTestId('member-period-last').click();
@@ -149,8 +150,14 @@ test.describe('a team member’s page', () => {
       .locator('[data-testid^="ui-month-day-"]')
       .last()
       .click();
-    await expect(page.getByTestId('member-period-last-clear')).toBeVisible();
     await expect(page.getByTestId('member-period-save')).toBeEnabled();
+    await expect(page.getByTestId('member-period-last-clear')).toHaveCount(0);
+    await page.getByTestId('member-period-last').click();
+    await page.getByTestId('member-period-last-clear').click();
+    await expect(page.getByTestId('member-period-last-value')).toHaveText(
+      'Няма',
+    );
+    await expect(page.getByTestId('member-period-save')).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('member-period-sheet')).toHaveCount(0, {
       timeout: 15_000,
@@ -794,43 +801,45 @@ test.describe('a team member’s page', () => {
       })
       .not.toBeNull();
 
-    // «ПЕРИОД НА РАБОТА»: yesterday as the last day. The sheet says the
+    // «РАБОТЕН ПЕРИОД»: yesterday as the last day. The sheet says the
     // person leaves on saving, and «Запази» asks first.
     await page.getByTestId('member-row-period').click();
     await expect(page.getByTestId('member-period-sheet')).toBeVisible({
       timeout: 30_000,
     });
-    // The last day's row unfolds its month under it, on today's month,
-    // with the booked day dotted; yesterday may be a month back.
+    // The last day's capsule pops its month, on today's month, with the
+    // booked day dotted and the dots explained; yesterday may be a month
+    // back.
     await page.getByTestId('member-period-last').click();
     const lastMonth = page.getByTestId('member-period-last-calendar');
     if (bookedDay.slice(0, 7) === shopToday().slice(0, 7)) {
       await expect(
         lastMonth.getByTestId(`ui-month-day-${bookedDay}`),
       ).toHaveAttribute('data-marked', '', { timeout: 30_000 });
+      await expect(page.getByTestId('member-period-last-legend')).toHaveText(
+        'Дни със записи',
+      );
     }
     if (yesterday.slice(0, 7) !== shopToday().slice(0, 7)) {
       await lastMonth.getByTestId('ui-month-prev').click();
     }
     await lastMonth.getByTestId(`ui-month-day-${yesterday}`).click();
-    await expect(page.getByTestId('member-period-note')).toContainText(
-      'напуска екипа веднага',
-      { timeout: 30_000 },
-    );
-    // The booking after that day is said before anything is saved — a
-    // warning with its count, and the visit itself listed under it.
+    // ONE notice says what the day does: with a booking after it, a
+    // warning that counts it and says the person leaves on saving — and
+    // its one action, the way to the search on it (tried on the leaver's
+    // page below).
     const leftover = page.getByTestId('member-period-leftover');
-    await expect(leftover).toContainText('има 1 запис след', {
+    await expect(leftover).toContainText('1 запис след последния ден', {
       timeout: 30_000,
     });
+    await expect(leftover).toContainText('напуска екипа веднага');
     await expect(leftover).toContainText(
-      'Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+      'Дай го на друг бръснар, премести го или го откажи.',
     );
-    await expect(
-      page
-        .getByTestId('member-period-sheet')
-        .locator(`[data-appointment-id="${bookedVisit}"]`),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('member-period-note')).toHaveCount(0);
+    await expect(leftover.getByTestId('leftover-search')).toHaveText(
+      'Виж записите',
+    );
     await page.getByTestId('member-period-save').click();
     await expect(
       page.getByTestId('member-period-leave-question'),
@@ -888,19 +897,32 @@ test.describe('a team member’s page', () => {
       'още има 1 запис',
       { timeout: 30_000 },
     );
-    await page.locator(`[data-appointment-id="${bookedVisit}"]`).click();
-    await expect
-      .poll(
-        () => {
-          const url = new URL(page.url());
-          return `${url.pathname} ${url.searchParams.get('day')}`;
-        },
-        { timeout: 30_000 },
-      )
-      .toBe(`/staff/schedule ${bookedDay}`);
+    // «Виж записите» opens the schedule's search on them: this barber,
+    // from the day after the last day, the visits that still hold a slot
+    // — the warning's own count, as the search's filters. The link is read
+    // once and leaves the address bar.
+    await page
+      .getByTestId('member-leftover')
+      .getByTestId('leftover-search')
+      .click();
+    const search = page.getByTestId('staff-search-sheet');
+    await expect(search).toBeVisible({ timeout: 30_000 });
+    await expect(search.getByTestId('staff-search-filters')).toContainText(
+      'Нов',
+      { timeout: 30_000 },
+    );
     await expect(
-      page.locator(`[data-row-id^="${bookedVisit}"]`).first(),
+      search.locator(`[data-appointment-id="${bookedVisit}"]`),
     ).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 30_000 })
+      .toBe('/staff/schedule');
+    expect(page.url()).not.toContain('searchBarber=');
+    // The visit opens from the search, where it is given, moved or cancelled.
+    await search.locator(`[data-appointment-id="${bookedVisit}"]`).click();
+    await expect(page.getByTestId('staff-visit-editor')).toBeVisible({
+      timeout: 30_000,
+    });
     await page.goto(`/admin/team/member/${added}`, { waitUntil: 'commit' });
     await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
       timeout: 30_000,

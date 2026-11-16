@@ -74,9 +74,8 @@
 
       <!-- A LEAVER'S BOOKINGS: leaving cancels nothing, so whoever can
            bring the barber back is told what still stands after the last
-           day — how many, then the visits themselves under their days,
-           each one the way to its day on the schedule, where the leaver
-           keeps a column while they are booked. -->
+           day, and «Виж записите» opens the schedule's search on it —
+           where the leaver keeps a column while they are booked. -->
       @if (page.leftover; as leftover) {
       <ui-notice
         uiTone="warning"
@@ -84,18 +83,15 @@
         data-testid="member-leftover"
       >
         <h2 uiNoticeTitle>{{ leftover.title }}</h2>
-        {{ leftover.body }}
+        {{ leftover.body }} @if (leftoverSearch(); as search) {
+        <lib-leftover-search
+          uiNoticeActions
+          [uiBarberId]="search.barberId"
+          [uiAfter]="search.after"
+        />
+        }
       </ui-notice>
       }
-      <!-- The list is its own chunk: fetched while the page is idle,
-           mounted once there are visits to show. -->
-      @defer (when page.leftover !== null; prefetch on idle) { @if
-      (page.leftover !== null) { @if (store.barber(); as barber) {
-      <lib-leftover-visits
-        [uiVisits]="leftoverVisits()"
-        [uiBarberId]="barber.id"
-      />
-      } } }
       <!-- A refused switch, answer or link is said here; an editor says its own. -->
       @if (refusal(); as line) {
       <ui-notice

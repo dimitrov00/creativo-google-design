@@ -8,16 +8,19 @@ import { UiDateRow } from './date-row';
   imports: [UiDateRow],
   template: `
     <ui-date-row
-      uiLabel="Последен работен ден"
+      uiLabel="Последен ден"
       uiTestId="last"
       uiLocale="bg"
       uiPlaceholder="Няма"
+      uiClearLabel="Без последен ден"
+      uiMarkedLabel="Дни със записи"
       [uiSelected]="selected()"
       [uiToday]="today"
       [uiMin]="min()"
       [uiMarked]="marked()"
       [uiDisabled]="disabled()"
       (uiPicked)="onPicked($event)"
+      (uiCleared)="onCleared()"
     />
   `,
 })
@@ -28,10 +31,16 @@ class Host {
   readonly disabled = signal(false);
   readonly today = localDate('2026-11-15');
   picked: LocalDate[] = [];
+  cleared = 0;
 
   onPicked(day: LocalDate): void {
     this.picked.push(day);
     this.selected.set(day);
+  }
+
+  onCleared(): void {
+    this.cleared += 1;
+    this.selected.set(null);
   }
 }
 
@@ -48,7 +57,9 @@ async function render() {
     host.querySelector<HTMLButtonElement>(
       `[data-testid="ui-month-day-${key}"]`,
     );
-  return { fixture, host, pill, calendar, day };
+  const piece = (id: string) =>
+    host.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+  return { fixture, host, pill, calendar, day, piece };
 }
 
 describe('UiDateRow', () => {
@@ -58,13 +69,11 @@ describe('UiDateRow', () => {
       host.querySelector<HTMLElement>('[data-testid="last-value"]');
 
     expect(host.querySelector('.ui-list-row')?.textContent).toContain(
-      'Последен работен ден',
+      'Последен ден',
     );
     expect(pill()?.closest('[uitrailing]')).not.toBeNull();
     expect(value()?.textContent?.trim()).toBe('Няма');
-    expect(pill()?.getAttribute('aria-label')).toBe(
-      'Последен работен ден: Няма',
-    );
+    expect(pill()?.getAttribute('aria-label')).toBe('Последен ден: Няма');
 
     fixture.componentInstance.selected.set(localDate('2026-11-20'));
     fixture.detectChanges();
@@ -97,6 +106,35 @@ describe('UiDateRow', () => {
 
     expect(fixture.componentInstance.picked).toEqual([localDate('2026-11-20')]);
     expect(calendar()).toBeNull();
+  });
+
+  it('says what the dots mean under the month — only while some day is marked', async () => {
+    const { fixture, pill, piece } = await render();
+    pill()?.click();
+    fixture.detectChanges();
+    expect(piece('last-legend')?.textContent?.trim()).toBe('Дни със записи');
+
+    fixture.componentInstance.marked.set([]);
+    fixture.detectChanges();
+    expect(piece('last-legend')).toBeNull();
+  });
+
+  it('offers «no day» inside the month of an optional date while it holds one — chosen, it closes the month and says so', async () => {
+    const { fixture, pill, calendar, piece } = await render();
+    pill()?.click();
+    fixture.detectChanges();
+    // Nothing chosen: nothing to take back.
+    expect(piece('last-clear')).toBeNull();
+
+    fixture.componentInstance.selected.set(localDate('2026-11-20'));
+    fixture.detectChanges();
+    expect(piece('last-clear')?.textContent?.trim()).toBe('Без последен ден');
+
+    piece('last-clear')?.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.cleared).toBe(1);
+    expect(calendar()).toBeNull();
+    expect(piece('last-value')?.textContent?.trim()).toBe('Няма');
   });
 
   it('answers nothing while disabled', async () => {

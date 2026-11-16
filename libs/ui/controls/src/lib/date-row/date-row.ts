@@ -35,11 +35,14 @@ import { UiDatePill } from '../date-pill/date-pill';
  *
  * ```html
  * <ui-date-row
- *   uiLabel="Последен работен ден"
+ *   uiLabel="Последен ден"
  *   uiPlaceholder="Няма"
+ *   uiClearLabel="Без последен ден"
+ *   uiMarkedLabel="Дни със записи"
  *   [uiSelected]="last()"
  *   [uiMarked]="bookedDays()"
  *   (uiPicked)="last.set($event)"
+ *   (uiCleared)="last.set(null)"
  * />
  * ```
  */
@@ -59,6 +62,8 @@ import { UiDatePill } from '../date-pill/date-pill';
         [uiToday]="uiToday()"
         [uiMin]="uiMin()"
         [uiMarked]="uiMarked()"
+        [uiMarkedLabel]="uiMarkedLabel()"
+        [uiClearLabel]="uiClearLabel()"
         [uiLocale]="uiLocale()"
         [uiPreviousLabel]="uiPreviousLabel()"
         [uiNextLabel]="uiNextLabel()"
@@ -67,6 +72,7 @@ import { UiDatePill } from '../date-pill/date-pill';
         [uiTestId]="uiTestId()"
         [(uiPresented)]="uiPresented"
         (uiPicked)="uiPicked.emit($event)"
+        (uiCleared)="uiCleared.emit()"
       />
     </ui-list-row>
   `,
@@ -94,6 +100,14 @@ export class UiDateRow {
   readonly uiOpensOn = input<LocalDate | null>(null);
   /** Days that hold something — the event dot, as every month draws it. */
   readonly uiMarked = input<readonly LocalDate[]>([]);
+  /** What the dots mean, said under the month («Дни със записи»). */
+  readonly uiMarkedLabel = input<string | null>(null);
+  /**
+   * The «no day» answer of an optional date, offered inside the month
+   * while the row holds a day («Без последен ден»); `null` for a date
+   * that is always set.
+   */
+  readonly uiClearLabel = input<string | null>(null);
   readonly uiLocale = input('en');
   readonly uiPreviousLabel = input('Previous month');
   readonly uiNextLabel = input('Next month');
@@ -102,14 +116,12 @@ export class UiDateRow {
   readonly uiTestId = input('ui-date-row');
   /** The day picked in the month. */
   readonly uiPicked = output<LocalDate>();
+  /** The «no day» answer was chosen. */
+  readonly uiCleared = output<void>();
 
   private readonly pill = viewChild.required(UiDatePill);
 
-  /**
-   * Puts the keyboard on the row's capsule. A consumer calls it when the
-   * control that held focus leaves the page (a «no date» row that removes
-   * itself), so the sheet around the row keeps hearing Escape.
-   */
+  /** Puts the keyboard on the row's capsule. */
   focus(): void {
     this.pill().focus();
   }

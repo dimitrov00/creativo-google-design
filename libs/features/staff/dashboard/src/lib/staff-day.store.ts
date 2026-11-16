@@ -62,6 +62,7 @@ import {
   type ShopNow,
   DayExceptionsEdit,
   type DayExceptionsRequest,
+  type DateRange,
   type RosterCall,
   type VisitEditWrite,
   VisitEditWriteOutcome,
@@ -159,6 +160,13 @@ export function invalidCommand(field: string): PipelineError {
 
 /** The zone the search window is read in until the shop's own is known. */
 const UTC_ZONE = ZonedTimeSystem.checkZone('UTC');
+
+/**
+ * What a link asks the schedule's search for (`?searchBarber=&searchFrom=`):
+ * one barber's visits over a span of shop days — made the search's filters
+ * by the sheet (`SearchQuery.bookingsAhead`).
+ */
+export type SearchLink = { readonly barberId: BarberId } & DateRange;
 
 /**
  * The shop's day a held coupon lapses on, or `null` for one that never
@@ -958,7 +966,7 @@ export class StaffDayStore {
       next.day === current.day &&
       (next.view ?? null) === (current.view ?? null) &&
       next.barber === current.barber &&
-      !this.freeInUrl
+      !this.onceInUrl
     ) {
       return;
     }
@@ -983,16 +991,19 @@ export class StaffDayStore {
       void settledViewTransition().then(() => {
         if (this.destroyed) return;
         const stated = this._published();
-        this.freeInUrl = false;
+        this.onceInUrl = false;
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: {
             day: stated.day ?? null,
             view: stated.view ?? null,
             barber: stated.barber ?? null,
-            // `?free=1` is read once and never carried on: every write
-            // states it gone, so `merge` cannot keep it.
+            // `?free=1` and the search's link are read once and never
+            // carried on: every write states them gone, so `merge` cannot
+            // keep them.
             free: null,
+            searchBarber: null,
+            searchFrom: null,
           },
           queryParamsHandling: 'merge',
           replaceUrl: true,
@@ -1007,8 +1018,8 @@ export class StaffDayStore {
   /** The pending address-bar write, if one is scheduled. */
   private urlWrite: ReturnType<typeof setTimeout> | null = null;
 
-  /** `?free=1` still stands in the address bar: the next write removes it. */
-  private freeInUrl = false;
+  /** A read-once parameter (`?free=1`, the search's link) still stands in the address bar: the next write removes it. */
+  private onceInUrl = false;
 
   /**
    * `?free=1` — the analytics screen's open-hours card (staff-analytics
@@ -1021,8 +1032,54 @@ export class StaffDayStore {
   applyRouteFree(requested: string | null | undefined): void {
     if (requested === null || requested === undefined) return;
     if (requested === '1') this.statusFilter.showFreeTimeOnce();
-    this.freeInUrl = true;
+    this.onceInUrl = true;
     this.publishQuery({});
+  }
+
+  /**
+   * `?searchBarber=&searchFrom=`, read once (team onboarding D10, «Виж
+   * записите»): the search opens on that barber's live visits from that
+   * day to the window's far edge — the visits a last working day leaves
+   * behind — and both parameters leave the address bar on the next write.
+   * A link whose barber or day does not parse opens nothing. The store
+   * hands the sheet the barber and the span (`SearchLink`); the sheet,
+   * loaded on demand, makes them its filters (`SearchQuery.bookingsAhead`)
+   * — the query's module stays out of the schedule's first chunk.
+   */
+  applyRouteSearch(
+    barberRaw: string | null | undefined,
+    fromRaw: string | null | undefined,
+  ): void {
+    if (barberRaw == null && fromRaw == null) return;
+    this.onceInUrl = true;
+    this.publishQuery({});
+    const barberId = BarberId.parse(barberRaw ?? '');
+    const from = LocalDate.parse(fromRaw ?? '');
+    const zone = untracked(this.zone) ?? (UTC_ZONE.ok ? UTC_ZONE.value : null);
+    if (!barberId.ok || !from.ok || zone === null) return;
+    const today = ZonedTimeSystem.shopNow(this.readNow(), zone).localDate;
+    const edge = SearchWindowSystem.rangeOf(
+      untracked(this.policy),
+      today,
+    ).toLocalDate;
+    this.searchSeed = {
+      barberId: barberId.value,
+      fromLocalDate: from.value,
+      toLocalDate: from.value > edge ? from.value : edge,
+    };
+    // No transition: the page is still drawing its first frame.
+    this._searching.set(true);
+    void this.ensureWindow();
+  }
+
+  /** The search a link asked for, until the sheet takes it. */
+  private searchSeed: SearchLink | null = null;
+
+  /** The search a link asked for, handed to the sheet ONCE as it opens. */
+  takeSearchSeed(): SearchLink | null {
+    const seed = this.searchSeed;
+    this.searchSeed = null;
+    return seed;
   }
 
   // ── What the sheet is showing ───────────────────────────────────────

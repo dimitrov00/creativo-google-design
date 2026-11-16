@@ -298,14 +298,15 @@ describe('AdminTeamMember — a record in preparation', () => {
     );
   });
 
-  it('«Без последен ден» removes the day, keeps the keyboard in the sheet, and the period is saved with none', async () => {
+  it('«Без последен ден» is an answer of the last day’s own month: it removes the day, gives the keyboard back to the capsule, and the period is saved with none', async () => {
     const leaving = {
       ...NIKOLAY_RECORD,
       barberLastWorkingLocalDate: localDate('2026-12-31'),
     };
-    const { piece, press, text, calls } = await render('nikolay', {
-      barbers: [IVAN_RECORD, leaving],
-    });
+    const { fixture, piece, press, text, settle, calls } = await render(
+      'nikolay',
+      { barbers: [IVAN_RECORD, leaving] },
+    );
     expect(text(piece('member-row-period'))).toContain('1.12 – 31.12');
 
     await press('member-row-period');
@@ -313,12 +314,19 @@ describe('AdminTeamMember — a record in preparation', () => {
     expect((piece('member-period-save') as HTMLButtonElement).disabled).toBe(
       true,
     );
-
-    await press('member-period-last-clear');
-
+    // No row of its own: the answer lives in the month.
     expect(piece('member-period-last-clear')).toBeNull();
+
+    piece('member-period-last')?.click();
+    fixture.detectChanges();
+    expect(text(piece('member-period-last-clear'))).toBe('Без последен ден');
+    piece('member-period-last-clear')?.click();
+    await settle();
+
+    expect(piece('member-period-last-calendar')).toBeNull();
     expect(text(piece('member-period-last'))).toContain('Няма');
-    // The row that held focus is gone: focus is on the value beside it.
+    // The month is gone with the answer that held focus: the keyboard is
+    // back on the capsule, so the sheet still hears Escape.
     expect(document.activeElement).toBe(piece('member-period-last'));
 
     await press('member-period-save');
@@ -351,14 +359,15 @@ describe('AdminTeamMember — a record in preparation', () => {
 
       await pickLast(fixture, settle, localDate('2026-12-31'));
       const note = piece('member-period-note');
-      // A notice in the warning's own shape: the fact as its title.
+      // One notice: the fact as its title, what follows under it.
       expect(text(note?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
         'Иван напуска екипа след 31.12',
       );
       expect(text(note)).toContain(
-        'След това вече не влиза в приложението като бръснар.',
+        'След този ден не приема записи и губи достъпа си до графика.',
       );
       expect(note?.getAttribute('data-tone')).toBe('neutral');
+      expect(piece('member-period-leftover')).toBeNull();
 
       await press('member-period-save');
       expect(calls.edits).toHaveLength(1);
@@ -377,7 +386,7 @@ describe('AdminTeamMember — a record in preparation', () => {
         busyKeys: [BusyKey.of(barberId, localDate(day))],
       });
 
-    it('reads the barber’s visits ahead once, counts the ones a last day would leave behind as a titled warning — and says nothing with none', async () => {
+    it('reads the barber’s visits ahead once, and turns the notice into a warning that counts the ones a last day would leave behind — and back with none', async () => {
       const { fixture, piece, press, text, settle, calls } = await render(
         'ivan',
         {
@@ -402,25 +411,28 @@ describe('AdminTeamMember — a record in preparation', () => {
       const warning = piece('member-period-leftover');
       expect(warning?.getAttribute('data-tone')).toBe('warning');
       expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
-        'Иван има 2 записа след 31.12',
+        '2 записа след последния ден',
       );
       expect(text(warning)).toContain(
-        'Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.',
+        'След 31.12 Иван напуска екипа, а записите остават в графика. Дай ги на друг бръснар или ги премести по-рано.',
       );
+      // One notice for one day: the departure is said inside the warning.
+      expect(piece('member-period-note')).toBeNull();
       // A warning wears its mark.
       expect(
         warning?.querySelector('.ui-notice__glyph')?.getAttribute('data-name'),
       ).toBe('notice.warning');
 
-      // A later day leaves nothing behind: the warning goes — and what was
-      // read covers it, so nothing is read again.
+      // A later day leaves nothing behind: the warning goes back to the
+      // quiet fact — and what was read covers it, so nothing is read again.
       await pickLast(fixture, settle, localDate('2027-01-31'));
       await settle();
       expect(piece('member-period-leftover')).toBeNull();
+      expect(piece('member-period-note')).not.toBeNull();
       expect(calls.aheadAsked).toHaveLength(1);
     });
 
-    it('lists the visits left under their days, as the app’s own visit rows — and a row opens the schedule on its day, on the barber’s column', async () => {
+    it('offers one way to the visits left, «Виж записите» in the warning, which opens the schedule’s search on this barber from the day after — and nothing while none are left', async () => {
       const { fixture, piece, press, text, settle } = await render('ivan', {
         visits: [
           visitOf('a-2', IVAN.barberId, '2027-01-05'),
@@ -430,39 +442,35 @@ describe('AdminTeamMember — a record in preparation', () => {
       });
       await press('member-row-period');
       await settle();
-      // No last day: nothing is left, so nothing is listed.
-      expect(piece('leftover-visits')).toBeNull();
+      // No last day: nothing is left, so there is nothing to open.
+      expect(piece('leftover-search')).toBeNull();
 
       await pickLast(fixture, settle, localDate('2026-12-31'));
       await settle();
-      await settle();
-
-      const list = piece('leftover-visits');
-      const rows = [
-        ...(list?.querySelectorAll<HTMLElement>('[data-appointment-id]') ?? []),
-      ];
-      expect(rows.map((row) => row.dataset['appointmentId'])).toEqual([
-        'a-1',
-        'a-2',
-      ]);
-      expect(text(piece('leftover-group-2027-01-04'))).toContain(
-        'Понеделник, 4 януари',
+      // The visits are not listed in the sheet: the warning has ONE action.
+      expect(piece('leftover-visits')).toBeNull();
+      const warning = piece('member-period-leftover');
+      const action = warning?.querySelector<HTMLElement>(
+        '.ui-notice__actions [data-testid="leftover-search"]',
       );
-      expect(text(piece('leftover-group-2027-01-05'))).toContain(
-        'Вторник, 5 януари',
-      );
+      expect(text(action)).toBe('Виж записите');
 
       const navigate = vi
         .spyOn(TestBed.inject(Router), 'navigate')
         .mockResolvedValue(true);
-      rows.at(0)?.click();
+      action?.click();
       expect(navigate).toHaveBeenCalledWith(['/staff/schedule'], {
-        queryParams: { day: '2027-01-04', barber: IVAN.barberId },
+        queryParams: { searchBarber: IVAN.barberId, searchFrom: '2027-01-01' },
       });
+
+      // A later day leaves nothing: the quiet fact has no action.
+      await pickLast(fixture, settle, localDate('2027-01-31'));
+      await settle();
+      expect(piece('leftover-search')).toBeNull();
     });
 
-    it('dots the days the barber is booked on in the last day’s month', async () => {
-      const { fixture, piece, press, settle } = await render('ivan', {
+    it('dots the days the barber is booked on in the last day’s month, and says what the dots mean under it', async () => {
+      const { fixture, piece, press, settle, text } = await render('ivan', {
         visits: [
           visitOf('a-1', IVAN.barberId, '2026-09-29'),
           visitOf('a-2', IVAN.barberId, '2026-09-30'),
@@ -483,9 +491,12 @@ describe('AdminTeamMember — a record in preparation', () => {
       expect(
         piece(`ui-month-day-${FIXTURE_TODAY}`)?.hasAttribute('data-marked'),
       ).toBe(false);
+      expect(text(piece('member-period-last-legend'))).toBe('Дни със записи');
+      // No day is chosen yet, so there is no «no day» answer to offer.
+      expect(piece('member-period-last-clear')).toBeNull();
     });
 
-    it('a last day already passed with bookings after it says to move or cancel them first', async () => {
+    it('a last day already passed with bookings after it says the person leaves on saving, and to give, move or cancel them', async () => {
       const { fixture, piece, press, text, settle } = await render('ivan', {
         visits: [visitOf('a-1', IVAN.barberId, '2026-10-02')],
       });
@@ -495,10 +506,10 @@ describe('AdminTeamMember — a record in preparation', () => {
 
       const warning = piece('member-period-leftover');
       expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
-        'Иван има 1 запис след 1.09',
+        '1 запис след последния ден',
       );
       expect(text(warning)).toContain(
-        'Отвори го, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+        'Със запазването Иван напуска екипа веднага, а записът остава в графика. Дай го на друг бръснар, премести го или го откажи.',
       );
     });
 
@@ -510,8 +521,12 @@ describe('AdminTeamMember — a record in preparation', () => {
       await pickLast(fixture, settle, localDate('2026-12-31'));
       await settle();
 
-      expect(text(piece('member-period-leftover'))).toBe(
-        'Не успяхме да проверим дали има записи след тази дата.',
+      const warning = piece('member-period-leftover');
+      expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
+        'Иван напуска екипа след 31.12',
+      );
+      expect(text(warning)).toContain(
+        'Не успяхме да проверим дали има записи след този ден.',
       );
     });
 
@@ -526,7 +541,7 @@ describe('AdminTeamMember — a record in preparation', () => {
         ),
       ).toBe('Иван напуска екипа веднага');
       expect(text(piece('member-period-note'))).toContain(
-        '1.09 вече е минал. Със запазването спира да влиза в приложението като бръснар.',
+        '1.09 вече мина. Със запазването спира да приема записи и губи достъпа си до графика.',
       );
 
       await press('member-period-save');
@@ -1345,7 +1360,7 @@ describe('AdminTeamMember — the edges', () => {
     expect(text(piece('member-standing'))).toBe('Напусна на 30.09');
     // Nobody signs in as a leaver: the page says why, and offers no link.
     expect(text(piece('member-account-note'))).toBe(
-      'Стефан напусна екипа и вече не влиза в приложението като бръснар.',
+      'Стефан напусна екипа и вече няма достъп до графика.',
     );
     expect(piece('member-link')).toBeNull();
     expect(piece('member-row-profile')?.tagName).not.toBe('BUTTON');
@@ -1364,7 +1379,7 @@ describe('AdminTeamMember — the edges', () => {
         busyKeys: [BusyKey.of(STEFAN.barberId, localDate(day))],
       });
 
-    it('tells whoever can bring the barber back how many bookings they still hold, and what to do', async () => {
+    it('tells whoever can bring the barber back how many bookings they still hold and what to do, and opens the search on them', async () => {
       const { piece, text, settle, calls } = await render('stefan', {
         visits: [
           visitOf('a-1', '2026-10-02'),
@@ -1379,27 +1394,23 @@ describe('AdminTeamMember — the edges', () => {
       expect(text(warning?.querySelector('[uiNoticeTitle]') ?? null)).toBe(
         'Стефан още има 2 записа',
       );
-      // The visits themselves, under the warning — each the way to its
-      // day on the schedule, where the leaver keeps a column while booked.
-      await settle();
-      const rows = [
-        ...(piece('leftover-visits')?.querySelectorAll<HTMLElement>(
-          '[data-appointment-id]',
-        ) ?? []),
-      ];
-      expect(rows.map((row) => row.dataset['appointmentId'])).toEqual([
-        'a-1',
-        'a-2',
-      ]);
+      // Not listed here: the warning's one action opens the schedule's
+      // search on them, where the leaver keeps a column while booked.
+      expect(piece('leftover-visits')).toBeNull();
       const navigate = vi
         .spyOn(TestBed.inject(Router), 'navigate')
         .mockResolvedValue(true);
-      rows.at(1)?.click();
+      warning
+        ?.querySelector<HTMLElement>('[data-testid="leftover-search"]')
+        ?.click();
       expect(navigate).toHaveBeenCalledWith(['/staff/schedule'], {
-        queryParams: { day: '2026-10-20', barber: STEFAN.barberId },
+        queryParams: {
+          searchBarber: STEFAN.barberId,
+          searchFrom: '2026-10-01',
+        },
       });
       expect(text(warning)).toContain(
-        'Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.',
+        'Записите са след последния ден. Дай ги на друг бръснар, премести ги или ги откажи.',
       );
       expect(calls.aheadAsked).toEqual([
         { barberId: STEFAN.barberId, fromLocalDate: '2026-10-01' },

@@ -361,6 +361,22 @@ ring round the face, the service card's grammar. The tile is the design
 system's (`libs/ui/controls/src/lib/person-tile`), on the avatar's new
 `tile` rung (`--control-size-tile`).
 
+### Opened by a link (2026-11-16)
+
+Another screen can open the search with its filters already set:
+`/staff/schedule?searchBarber=<barberId>&searchFrom=<YYYY-MM-DD>` opens it
+on that barber's live visits from that day to the window's far edge
+(`SearchQuery.bookingsAhead`: «Бръснар», «Кога», «Статус» — Pending and
+Confirmed). The schedule reads the pair once (`route-inputs.ts`,
+`StaffDayStore.applyRouteSearch`), hands the barber and the span to the
+sheet as it opens (`takeSearchSeed`, a plain `SearchLink`, so the query's
+module stays in the sheet's own chunk and off the schedule's first one),
+and drops the pair from the address bar on its next write, like
+`?free=1`. A sheet opened this way shows its results and
+does not take the caret, so neither the keys card nor a phone's keyboard
+covers them. A barber or day that does not parse opens nothing. The first
+user is the Team page's «Виж записите» (team onboarding D10).
+
 ## Not done (on purpose)
 
 - **A client key** (`Клиент: …`). Typed text already finds a client by every

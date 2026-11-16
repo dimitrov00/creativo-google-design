@@ -27,37 +27,37 @@ export type MemberWords = {
   readonly periodFrom: (date: string) => string;
   /** «3 март – 31 дек.» */
   readonly periodRange: (from: string, to: string) => string;
-  /** «Николай напуска екипа след 31 дек.» — the note's title for a last day still ahead. */
+  /** «Николай напуска екипа след 31.12» — the notice's title for a last day still ahead. */
   readonly periodEndsTitle: (name: string, date: string) => string;
-  /** «След това вече не влиза в приложението като бръснар.» */
+  /** «След този ден не приема записи и губи достъпа си до графика.» */
   readonly periodEndsBody: string;
-  /** «Николай напуска екипа веднага» — the note's title for a last day already passed. */
+  /** «Николай напуска екипа веднага» — the notice's title for a last day already passed. */
   readonly periodEndedTitle: (name: string) => string;
-  /** «31 дек. вече е минал. Със запазването спира да влиза в приложението като бръснар.» */
+  /** «31.12 вече мина. Със запазването спира да приема записи…» */
   readonly periodEndedBody: (date: string) => string;
   /** «Николай напуска екипа сега?» */
   readonly leaveTitle: (name: string) => string;
-  /** «Последният работен ден вече е минал. Николай спира да приема записи…» */
+  /** «Последният ден вече мина. Николай спира да приема записи…» */
   readonly leaveMessage: (name: string) => string;
   readonly leaveLabel: string;
   readonly leaveCancel: string;
-  /** «Николай има 3 записа след 31.12» — the warning's title, for one and for several. */
-  readonly leftoverTitle: (name: string, date: string, count: number) => string;
-  /** «Остават в графика. Отвори запис, за да го дадеш на друг бръснар или да го преместиш преди последния ден.» — a last day still ahead. */
-  readonly leftoverStays: (count: number) => string;
-  /** «Остават в графика. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.» — a last day already passed. */
-  readonly leftoverNow: (count: number) => string;
+  /** «3 записа след последния ден» — the warning's title, for one and for several. */
+  readonly leftoverTitle: (count: number) => string;
+  /** «След 31.12 Николай напуска екипа, а записите остават в графика. Дай ги…» — a last day still ahead. */
+  readonly leftoverStays: (name: string, date: string, count: number) => string;
+  /** «Със запазването Николай напуска екипа веднага, а записите остават…» — a last day already passed. */
+  readonly leftoverNow: (name: string, count: number) => string;
   readonly leftoverFailed: string;
   /** «Стефан още има 3 записа» — the title on the page of a barber who has left. */
   readonly departedLeftoverTitle: (name: string, count: number) => string;
-  /** «След последния работен ден. Отвори запис, за да го дадеш на друг бръснар, да го преместиш или да го откажеш.» */
+  /** «Записите са след последния ден. Дай ги на друг бръснар, премести ги или ги откажи.» */
   readonly departedLeftoverBody: (count: number) => string;
   /** Who may book a record, by the live status that says it. */
   readonly bookedBy: ReadonlyMap<BarberLifecycle.LiveStatus, string>;
   readonly mine: string;
   /** «Без профил Николай не влиза в приложението…» */
   readonly accountNone: (name: string) => string;
-  /** «Стефан напусна екипа и вече не влиза в приложението като бръснар.» */
+  /** «Стефан напусна екипа и вече няма достъп до графика.» */
   readonly accountDeparted: (name: string) => string;
   /** The same, for someone who links accounts: «…Помоли Николай да влезе веднъж…» */
   readonly accountLink: (name: string) => string;
@@ -119,25 +119,23 @@ export function memberWordsOf(translate: Translate): MemberWords {
       translate('admin.team.period.leaveMessage', { name }),
     leaveLabel: translate('admin.team.period.leaveLabel'),
     leaveCancel: translate('admin.team.link.cancel'),
-    leftoverTitle: (name, date, count) =>
+    leftoverTitle: (count) =>
       count === 1
-        ? translate('admin.team.period.leftoverTitleOne', { name, date })
-        : translate('admin.team.period.leftoverTitleMany', {
-            name,
-            date,
-            count,
-          }),
-    leftoverStays: (count) =>
+        ? translate('admin.team.period.leftoverTitleOne')
+        : translate('admin.team.period.leftoverTitleMany', { count }),
+    leftoverStays: (name, date, count) =>
       translate(
         count === 1
           ? 'admin.team.period.leftoverStaysOne'
           : 'admin.team.period.leftoverStaysMany',
+        { name, date },
       ),
-    leftoverNow: (count) =>
+    leftoverNow: (name, count) =>
       translate(
         count === 1
           ? 'admin.team.period.leftoverNowOne'
           : 'admin.team.period.leftoverNowMany',
+        { name },
       ),
     leftoverFailed: translate('admin.team.period.leftoverFailed'),
     departedLeftoverTitle: (name, count) =>
