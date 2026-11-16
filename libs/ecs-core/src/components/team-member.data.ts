@@ -34,6 +34,13 @@ export type TeamMemberStatus =
  * applies, in this order. The invite notes join it with the invites.
  */
 export const TeamMemberNote = {
+  /**
+   * The record has left, and the account that signed in as them still has
+   * its sessions: the revoke after the close failed, and is owed
+   * (`BarberLifecycle.awaitsRevoke`). Said only to a reader who sees
+   * accounts.
+   */
+  SessionsOwed: 'SESSIONS_OWED',
   /** A last working day is set, and the barber has not left yet. */
   LastDaySet: 'LAST_DAY_SET',
   /** No account is linked to the record: bookable, but nobody signs in as them. */

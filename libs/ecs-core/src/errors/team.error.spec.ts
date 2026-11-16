@@ -12,6 +12,7 @@ describe('TeamError', () => {
       'TEAM_PERIOD_INVALID',
       'TEAM_BARBER_NOT_DEPARTED',
       'TEAM_RETURN_TOO_EARLY',
+      'TEAM_SESSIONS_NOT_ENDED',
       'TEAM_SHOP_UNKNOWN',
       'TEAM_SHOP_HAS_HOURS',
       'TEAM_SERVICE_UNKNOWN',
@@ -42,6 +43,10 @@ describe('TeamError', () => {
     });
     expect(TeamError.barberNotFound(barberId)).toEqual({
       errorCode: 'TEAM_BARBER_NOT_FOUND',
+      barberId: 'b-new',
+    });
+    expect(TeamError.sessionsNotEnded(barberId)).toEqual({
+      errorCode: 'TEAM_SESSIONS_NOT_ENDED',
       barberId: 'b-new',
     });
     expect(TeamError.barberDeparted(barberId)).toEqual({

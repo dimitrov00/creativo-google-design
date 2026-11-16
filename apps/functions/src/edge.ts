@@ -769,6 +769,7 @@ const TEAM_WIRE: WireTable<TeamErrorCode> = {
   [TeamErrorCode.PeriodInvalid]: fields(S.InvalidArgument),
   [TeamErrorCode.BarberNotDeparted]: fields(S.FailedPrecondition),
   [TeamErrorCode.ReturnTooEarly]: fields(S.InvalidArgument),
+  [TeamErrorCode.SessionsNotEnded]: fields(S.Unavailable),
   [TeamErrorCode.ShopUnknown]: fields(S.NotFound),
   [TeamErrorCode.ShopHasHours]: fields(S.FailedPrecondition),
   [TeamErrorCode.ServiceUnknown]: fields(S.NotFound),

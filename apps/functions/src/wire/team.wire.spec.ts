@@ -179,6 +179,7 @@ describe('decodeEditBarber', () => {
       { barberEdit: 'POOL', barberJoinsAnyPool: false },
       { barberEdit: 'ACCESS', barberStatus: 'STAFF_ONLY' },
       { barberEdit: 'RETURN', barberStartsLocalDate: '2026-12-01' },
+      { barberEdit: 'END_SESSIONS' },
     ]) {
       expect(decodeEditBarber(callable({ ...named, ...part }))).toEqual({
         ok: true,

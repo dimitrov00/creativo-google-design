@@ -504,6 +504,19 @@ export const TeamSystem = {
   },
 
   /**
+   * The record «Опитай пак» names (the sessions a close still owes, ended
+   * now): itself, untouched, when it has left — the revoke and its marker
+   * are acts of their own, after this — and `TEAM_BARBER_NOT_DEPARTED` for
+   * one that has not: nobody's access was taken, so there is nothing to
+   * end.
+   */
+  leaver(barber: Barber): Result<Barber, TeamError> {
+    return barber.barberStatus === BarberStatus.Departed
+      ? Result.ok(barber)
+      : Result.err(TeamError.barberNotDeparted(barber.id));
+  },
+
+  /**
    * A departed record whose account's sessions were just revoked: the
    * marker set, nothing else moved. Any other record — and a departure
    * that owes no revoke — is answered as it is.

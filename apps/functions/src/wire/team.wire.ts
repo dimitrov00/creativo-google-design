@@ -260,12 +260,16 @@ function editOf(
         ? Result.ok({ barberEdit, barberStatus })
         : invalid('barberStatus');
     }
+    // «Опитай пак»: the act alone — the record is named by the call.
+    case BarberEdit.EndSessions:
+      return Result.ok({ barberEdit });
   }
 }
 
 /**
  * `editBarber` `{ barberId, barberEdit: 'PROFILE' | 'SHOPS' | 'PERIOD' |
- * 'POOL' | 'ACCESS', …the part, operationId }` → `{ barberId }`. Any staff
+ * 'POOL' | 'ACCESS' | 'RETURN' | 'END_SESSIONS', …the part, operationId }`
+ * → `{ barberId }`. Any staff
  * token may ask; the pipeline judges the part against the owner's
  * permissions (`TEAM_PROFILES` for a profile, `TEAM_MANAGE` for the rest).
  */

@@ -37,6 +37,11 @@ export const BarberEdit = {
   Access: 'ACCESS',
   /** «Върни в екипа» — a record that has left, back with a new working period. */
   Return: 'RETURN',
+  /**
+   * «Опитай пак» — the sessions of a leaver's account, ended now: the
+   * revoke a close still owes, tried again without waiting for the night.
+   */
+  EndSessions: 'END_SESSIONS',
 } as const;
 export type BarberEdit = (typeof BarberEdit)[keyof typeof BarberEdit];
 
@@ -50,7 +55,8 @@ export type BarberEditRequest =
   | BarberEditRequest.Period
   | BarberEditRequest.Pool
   | BarberEditRequest.Access
-  | BarberEditRequest.Return;
+  | BarberEditRequest.Return
+  | BarberEditRequest.EndSessions;
 
 export namespace BarberEditRequest {
   export type Profile = {
@@ -86,6 +92,10 @@ export namespace BarberEditRequest {
     readonly barberEdit: typeof BarberEdit.Return;
     /** The first day of the new working period: after the last day worked. */
     readonly barberStartsLocalDate: LocalDate;
+  };
+  /** Nothing but the act: the record is named by the call. */
+  export type EndSessions = {
+    readonly barberEdit: typeof BarberEdit.EndSessions;
   };
 }
 
