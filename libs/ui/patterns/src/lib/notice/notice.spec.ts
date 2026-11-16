@@ -164,9 +164,9 @@ describe('UiNotice', () => {
     }
   });
 
-  it('washes a tone at the one tint over the elevated surface — never the grey fill — and keeps title and facts in the foreground ink', () => {
+  it('washes a tone at the one tint over the elevated surface — never the grey fill — with a foreground title over a secondary description', () => {
     expect(css).toMatch(
-      /color-mix\(\s*in srgb,\s*var\(--ui-notice-tone\) var\(--sys-alpha-tint\),\s*var\(--sys-color-surface-elevated\)\s*\)/,
+      /--ui-notice-fill:\s*color-mix\(\s*in srgb,\s*var\(--ui-notice-tone\) var\(--sys-alpha-tint\),\s*var\(--sys-color-surface-elevated\)\s*\)/,
     );
     // A warning is the sign's amber, never the darker cut made for words.
     const warning =
@@ -179,7 +179,11 @@ describe('UiNotice', () => {
     expect(css).not.toMatch(/ui-notice__glyph[^{]*\{[^}]*background/);
     const title = /\[uiNoticeTitle\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(title).toContain('color: var(--sys-color-foreground)');
+    expect(title).toContain('font-weight: 600');
+    // The description: the foreground mixed into the very fill it sits on.
     const facts = /\.ui-notice__facts\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
-    expect(facts).toContain('color: var(--sys-color-foreground)');
+    expect(facts).toMatch(
+      /color:\s*color-mix\(\s*in srgb,\s*var\(--sys-color-foreground\) 72%,\s*var\(--ui-notice-fill\)\s*\)/,
+    );
   });
 });
