@@ -68,6 +68,20 @@ async function textOf(locator: Locator): Promise<string> {
   return ((await locator.textContent()) ?? '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Closes a sheet with Escape. The sheet takes the keyboard a frame after it
+ * opens (`UiSheetBehavior` focuses its surface then), and its Escape is
+ * the dialog's own keydown: pressed before that frame, it lands outside the
+ * sheet and closes nothing. So wait for the focus first.
+ */
+async function escapeSheet(page: Page, sheet: Locator): Promise<void> {
+  await expect
+    .poll(() => sheet.evaluate((el) => el.contains(document.activeElement)))
+    .toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+}
+
 /** The page on screen of the home's carousel. */
 function currentPage(page: Page): Locator {
   return page.locator('.analytics-carousel__page[data-current]');
@@ -111,8 +125,7 @@ async function expectTakingsRowsAddUp(
     .first();
   await expect.poll(async () => textOf(footer)).toBe(figure);
   // The sheet is a native dialog: Escape closes it.
-  await page.keyboard.press('Escape');
-  await expect(sheet).toBeHidden();
+  await escapeSheet(page, sheet);
 }
 
 /** Picks an option of a home menu by its test id. */
@@ -302,16 +315,19 @@ test.describe('«Анализи» — staff analytics', () => {
       `${run}-cut-seat`,
       `${run}-beard-seat`,
     ]);
-    // A service bar opens that service's seats alone.
+    // A service bar opens that service's seats alone: one of this attempt's
+    // two. Only this attempt's are counted — a retry or a repeat books the
+    // same barber's month, so the seats an earlier attempt seeded are there
+    // too.
     await serviceBars.first().click();
     const sheet = page.getByTestId('analytics-rows');
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator('[data-testid^="analytics-seat-"]')).toHaveCount(
-      1,
-      { timeout: 20_000 },
-    );
-    await page.keyboard.press('Escape');
-    await expect(sheet).toBeHidden();
+    await expect(
+      sheet.locator(
+        `[data-testid="analytics-seat-${run}-cut-seat"], [data-testid="analytics-seat-${run}-beard-seat"]`,
+      ),
+    ).toHaveCount(1, { timeout: 20_000 });
+    await escapeSheet(page, sheet);
     await backHome(page);
 
     // THE EXPORT (CUJ 7): the tools' «Експорт» downloads the month — a row
@@ -333,8 +349,7 @@ test.describe('«Анализи» — staff analytics', () => {
       await page.waitForTimeout(500);
       shown = await days.count();
     }
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('analytics-rows')).toBeHidden();
+    await escapeSheet(page, page.getByTestId('analytics-rows'));
     await backHome(page);
     const csv = await exportCsv(page);
     expect(csv.name).toMatch(

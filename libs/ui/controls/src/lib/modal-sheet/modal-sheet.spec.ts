@@ -82,6 +82,88 @@ describe('UiModalSheet', () => {
     expect(surface?.style.getPropertyValue('--ui-sheet-drag-y')).toBe('');
   });
 
+  describe('the close completes once, even when no fade ends', () => {
+    /** The next frame, after the one the close began in. */
+    const frame = () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    async function closing(getAnimations?: () => Animation[]) {
+      await TestBed.configureTestingModule({
+        imports: [UiModalSheet],
+      }).compileComponents();
+      const fixture = TestBed.createComponent(UiModalSheet);
+      fixture.componentRef.setInput('sheetId', 'test-sheet');
+      fixture.componentRef.setInput('labelledBy', 'test-title');
+      fixture.componentRef.setInput('closeLabel', 'Close');
+      fixture.componentRef.setInput('open', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const sheet = fixture.nativeElement.querySelector(
+        '#test-sheet',
+      ) as HTMLElement;
+      if (getAnimations !== undefined) {
+        Object.assign(sheet, { getAnimations });
+      }
+      const finished: unknown[] = [];
+      fixture.componentInstance.closeFinished.subscribe(() =>
+        finished.push(true),
+      );
+      fixture.componentRef.setInput('open', false);
+      fixture.componentRef.setInput('closing', true);
+      fixture.detectChanges();
+      const fadeEnds = () => {
+        const end = new Event('transitionend');
+        Object.assign(end, { propertyName: 'opacity' });
+        sheet.dispatchEvent(end);
+      };
+      return { finished, fadeEnds };
+    }
+
+    it('with no fade running, the frame after the close begins', async () => {
+      const { finished } = await closing(() => []);
+      expect(finished).toHaveLength(0);
+      await frame();
+      expect(finished).toHaveLength(1);
+    });
+
+    it('with a fade running, when it settles — and its end event tells nothing twice', async () => {
+      let settle: () => void = () => undefined;
+      const fade = {
+        transitionProperty: 'opacity',
+        finished: new Promise<void>((resolve) => (settle = resolve)),
+      } as unknown as Animation;
+      let running = [fade];
+      const { finished, fadeEnds } = await closing(() => running);
+      await frame();
+      expect(finished).toHaveLength(0);
+
+      running = [];
+      settle();
+      fadeEnds();
+      await frame();
+      await frame();
+      expect(finished).toHaveLength(1);
+    });
+
+    it('a transform still running is no fade: the close does not wait on it', async () => {
+      const slide = {
+        transitionProperty: 'transform',
+        finished: new Promise<void>(() => undefined),
+      } as unknown as Animation;
+      const { finished } = await closing(() => [slide]);
+      await frame();
+      expect(finished).toHaveLength(1);
+    });
+
+    it('where the engine has no animations to ask, the fade’s end event completes it', async () => {
+      const { finished, fadeEnds } = await closing();
+      await frame();
+      expect(finished).toHaveLength(0);
+      fadeEnds();
+      expect(finished).toHaveLength(1);
+    });
+  });
+
   describe('the chrome height the collapse timeline is inset by', () => {
     /** jsdom has no ResizeObserver; the shell only needs to be told once. */
     class FakeResizeObserver implements ResizeObserver {

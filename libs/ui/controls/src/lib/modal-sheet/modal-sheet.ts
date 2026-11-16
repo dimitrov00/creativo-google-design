@@ -8,7 +8,8 @@ import {
   input,
   output,
   PLATFORM_ID,
-  type ElementRef,
+  ElementRef,
+  untracked,
   viewChild,
   ViewEncapsulation,
 } from '@angular/core';
@@ -156,6 +157,13 @@ export class UiModalSheet {
   /** The shared behavior instance hosted by the inner ui-sheet. */
   private readonly behavior =
     viewChild.required<UiSheetBehavior>('sheetBehavior');
+  /** The inner ui-sheet's host: the element whose scrim fade is the exit. */
+  private readonly sheetHost = viewChild<string, ElementRef<HTMLElement>>(
+    'sheetBehavior',
+    { read: ElementRef },
+  );
+  /** This close has been told finished: one `closeFinished` per close. */
+  private exitFinished = false;
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
   private readonly destroyRef = inject(DestroyRef);
   private readonly chrome = viewChild<ElementRef<HTMLElement>>('chrome');
@@ -206,6 +214,46 @@ export class UiModalSheet {
         scroller.scrollTop = 0;
       });
     });
+
+    // THE CLOSE COMPLETES, ONCE, EVEN WHEN NO FADE ENDS (2026-11-16). A
+    // close completes on the scrim fade's end event. One asked for while
+    // the fade in still runs may never see it: Escape 80 ms after an open
+    // left a sheet `closing` for good in a browser test, and a sheet left
+    // closing keeps the page behind it inert. So the frame after a close
+    // begins also asks the host's own animations. No fade running means the
+    // close is complete; a running fade completes it when it settles,
+    // finished or cancelled.
+    effect(() => {
+      if (!this.closing()) {
+        this.exitFinished = false;
+        return;
+      }
+      if (!isPlatformBrowser(this.platformId)) return;
+      requestAnimationFrame(() => this.settleExit());
+    });
+  }
+
+  /** The close's fade, asked of the host itself (see the constructor). */
+  private settleExit(): void {
+    if (!untracked(this.closing) || this.exitFinished) return;
+    const host = this.sheetHost()?.nativeElement;
+    // An engine without the Web Animations API (jsdom) keeps the events.
+    if (host === undefined || typeof host.getAnimations !== 'function') return;
+    const fades = host.getAnimations().filter(isFade);
+    if (fades.length === 0) {
+      this.finishExit();
+      return;
+    }
+    void Promise.allSettled(fades.map((fade) => fade.finished)).then(() =>
+      requestAnimationFrame(() => this.settleExit()),
+    );
+  }
+
+  /** Tells the owner the close is complete, once per close. */
+  private finishExit(): void {
+    if (!untracked(this.closing) || this.exitFinished) return;
+    this.exitFinished = true;
+    this.closeFinished.emit();
   }
 
   /**
@@ -236,6 +284,14 @@ export class UiModalSheet {
     if (!this.closing()) return;
     if (event.target !== event.currentTarget) return;
     if (event.propertyName !== 'opacity') return;
-    this.closeFinished.emit();
+    this.finishExit();
   }
+}
+
+/** A transition of `opacity` — the host's scrim fade. */
+function isFade(animation: Animation): boolean {
+  return (
+    'transitionProperty' in animation &&
+    (animation as CSSTransition).transitionProperty === 'opacity'
+  );
 }
