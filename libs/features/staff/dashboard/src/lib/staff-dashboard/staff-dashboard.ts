@@ -13,6 +13,7 @@ import {
 import { StaffWeekStrip } from './week-strip';
 import { bindRouteInputs } from './route-inputs';
 import { AnalyticsEntry } from './analytics-entry';
+import { ScheduleReminders } from '../schedule-reminders/schedule-reminders';
 import { transitionOf } from './transition-of';
 import {
   ChangeDetectionStrategy,
@@ -405,6 +406,7 @@ const ANCHOR_TOLERANCE = 2;
   selector: 'lib-staff-dashboard',
   imports: [
     NgTemplateOutlet,
+    ScheduleReminders,
     StaffBlockFailurePipe,
     UiAlert,
     UiChoiceLeading,
@@ -829,7 +831,6 @@ export class StaffDashboard {
     // hardcoded BULGARIAN — "Днес · Creativo" — so an English-locale staff
     // member got a Bulgarian tab, and it was a third name for the screen
     // besides the menu row's and the heading's.
-    //
     // Deliberately NOT moved onto a translation key: no page in this app
     // translates its title, and adding a key for one of six would make this
     // the outlier again in the other direction. If titles should follow the
@@ -1639,7 +1640,6 @@ export class StaffDashboard {
   // browser's, on the compositor, and there is no scroll listener anywhere.
   // Each child is exactly one week wide, which is what makes a flick advance
   // by a week rather than by a day.
-  //
   // The window is BOUNDED and anchored to today rather than to the selection
   // (`StaffWeekStrip`, which also keeps the strip on the shown day's week).
   protected readonly strip = inject(StaffWeekStrip);

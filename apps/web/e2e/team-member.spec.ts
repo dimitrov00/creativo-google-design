@@ -1029,6 +1029,98 @@ test.describe('a team member’s page', () => {
     await expect(page.getByTestId('member-period-last-value')).not.toHaveText(
       'Няма',
     );
+
+    // The staff home says it too, above the schedule, with the same way in.
+    await page.goto('/staff/schedule', { waitUntil: 'commit' });
+    const onSchedule = page.getByTestId(`schedule-reminder-${added}`);
+    await expect(onSchedule).toContainText('Последният ден на Нов е', {
+      timeout: 60_000,
+    });
+    await onSchedule.getByTestId('schedule-reminder-extend').click();
+    await expect(page.getByTestId('member-period-sheet')).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test('an admin who also cuts hair leaves: the close keeps their roles, and the Team page says the account kept its access, with «Роли» on it', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-member-kept-${key}`;
+    const coOwner = `e2e-member-coowner-${key}`;
+    const name = `Нов Съсобственик ${key}`.slice(0, 40);
+    await seedUserProfile(uid, {
+      firstName: 'Собственик',
+      lastName: 'Запазен',
+      roles: [Role.Admin],
+    });
+    await signInAs(page, uid, ['admin']);
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    await expect(page.getByTestId('admin-team')).toHaveAttribute(
+      'data-load',
+      'READY',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('admin-team-add').click();
+    await page.getByTestId('admin-team-add-barber').click();
+    await page.getByTestId('team-add-name').fill(name);
+    await page.getByTestId('team-add-save').click();
+    await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    added = memberIdOf(page);
+    // The record's account is an admin as well as a barber.
+    await seedUserProfile(coOwner, {
+      firstName: 'Петър',
+      lastName: 'Съсобственик',
+      roles: [Role.Client, Role.Barber, Role.Admin],
+      linkedBarberId: added,
+    });
+    linkedUid = coOwner;
+    await lockBarberLink(added, coOwner);
+    await seedWorkingBarber(added, LocalDate.addDays(shopToday(), -30));
+    await expect(page.getByTestId('member-standing')).toContainText(
+      'Само за екипа',
+      { timeout: 30_000 },
+    );
+
+    // Yesterday as the last day: the record leaves at once.
+    const yesterday = LocalDate.addDays(shopToday(), -1);
+    await page.getByTestId('member-row-period').click();
+    await page.getByTestId('member-period-last').click();
+    const month = page.getByTestId('member-period-last-calendar');
+    if (yesterday.slice(0, 7) !== shopToday().slice(0, 7)) {
+      await month.getByTestId('ui-month-prev').click();
+    }
+    await month.getByTestId(`ui-month-day-${yesterday}`).click();
+    await page.getByTestId('member-period-save').click();
+    await page.getByTestId('member-period-leave-confirm').click();
+    await expect(page.getByTestId('member-standing')).toContainText('Напусна', {
+      timeout: 30_000,
+    });
+
+    // The close left the admin's roles alone and says so.
+    await expect(page.getByTestId('member-kept')).toContainText(
+      'запази достъпа си',
+      { timeout: 30_000 },
+    );
+    await expect
+      .poll(
+        async () =>
+          (await readStoredBody(Collections.Users, coOwner))?.['roles'],
+        { timeout: 20_000 },
+      )
+      .toEqual([Role.Client, Role.Barber, Role.Admin]);
+    await page.goto('/admin/team', { waitUntil: 'commit' });
+    const kept = page.getByTestId(`team-kept-${added}`);
+    await expect(kept).toContainText('Профилът на Нов запази достъпа си', {
+      timeout: 30_000,
+    });
+    await expect(kept.getByTestId('team-kept-roles')).toHaveAttribute(
+      'href',
+      `/admin/team/account/${coOwner}`,
+    );
   });
 
   test('a content editor reaches a barber’s profile from the Team list, and sees no account, no period editor and no delete', async ({

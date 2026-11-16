@@ -18,6 +18,7 @@ import {
   type Service,
   type User,
 } from '@core/entities';
+import { EmploymentSystem } from './employment.system';
 import { StaffSetupSystem } from './staff-setup.system';
 
 /** Who is looking at a record's page, as their stored account says. */
@@ -252,17 +253,11 @@ export const TeamRosterSystem = {
   },
 
   /**
-   * How many days ahead a last working day is worth a reminder — and how
-   * long a period has to be for one: a guest booked for a week needs no
-   * card saying the week ends.
-   */
-  REMINDER_DAYS: 7,
-
-  /**
    * The members whose last working day is close (team onboarding D10,
    * the reminder cards): a barber who works, whose last day is today or
-   * within `REMINDER_DAYS` of it, on a period longer than that — soonest
-   * first, then in the members' order. Someone has to decide before the
+   * within `EmploymentSystem.REMINDER_DAYS` of it, on a period longer than
+   * that (`EmploymentSystem.isReminded`) — soonest first, then in the
+   * members' order. Someone has to decide before the
    * day: extend the period, or let it end. Derived from the rows and the
    * shop's today; nothing is stored and nothing is sent.
    */
@@ -270,24 +265,16 @@ export const TeamRosterSystem = {
     members: readonly TeamMember[],
     today: LocalDate,
   ): readonly TeamMember.OfBarber[] {
-    const horizon = LocalDate.addDays(today, TeamRosterSystem.REMINDER_DAYS);
     const due: TeamMember.OfBarber[] = [];
     for (const member of members) {
       if (
-        member.teamMemberStatus !== TeamMemberStatus.StaffOnly &&
-        member.teamMemberStatus !== TeamMemberStatus.Public
-      ) {
-        continue;
-      }
-      const last = member.barberLastWorkingLocalDate;
-      if (
-        last !== null &&
-        last >= today &&
-        last <= horizon &&
-        LocalDate.addDays(
+        (member.teamMemberStatus === TeamMemberStatus.StaffOnly ||
+          member.teamMemberStatus === TeamMemberStatus.Public) &&
+        EmploymentSystem.isReminded(
           member.barberStartsLocalDate,
-          TeamRosterSystem.REMINDER_DAYS,
-        ) < last
+          member.barberLastWorkingLocalDate,
+          today,
+        )
       ) {
         due.push(member);
       }

@@ -1298,9 +1298,35 @@ behind can be opened, moved or cancelled where every other visit is.
   `TeamRosterSystem` beside the rows it reads, not in a
   `TeamReminderSystem` of its own.
 
-**1b, still to build.** The same reminder on the staff home (the
-schedule), and the notice for an admin whose roles were left alone by the
-close: the departure does not yet record which account kept them.
+**1b, built: the reminder on the staff home, and an admin's kept roles.**
+
+- The schedule (`/staff/schedule`, where whoever manages the team lands)
+  shows the same reminders above any view, one compact notice each:
+  «Последният ден на Георги е пт, 20.11 · Удължи»
+  (`lib-schedule-reminders`). They are derived from the records the
+  staff's team stream already holds (`EmploymentSystem.remindersOf`, the
+  one rule the Team page's `TeamRosterSystem.remindersOf` asks too, via
+  `EmploymentSystem.isReminded`); no read of their own, nothing for anyone
+  who does not manage the team. Its own component, so the schedule page,
+  whose file only shrinks, mounts it with one tag.
+- The close now names the account it leaves alone because it assigns
+  roles (an admin, kept by the last-admin rule): `barberKeptAccessUserId`
+  on the departed record, beside `barberDepartedUserId`. No access is
+  taken, so nothing is revoked.
+- While that account still holds the barber role, the leaver's Team row
+  carries `ACCESS_KEPT` («Още е администратор») and `memberKeptUserId`,
+  and the Team page and the leaver's page say «Профилът на Георги запази
+  достъпа си» over «Напусна екипа, но профилът е на администратор и
+  ролите му останаха. В „Роли“ махни „Бръснар“, а и „Администратор“, ако
+  вече не управлява салона.», with «Роли» on that account
+  (`/admin/team/account/…`). Taking «Бръснар» off — or every role — ends
+  the note, so a co-owner who stops cutting hair but still runs the shop
+  keeps admin without a standing warning.
+- Where this departs from D10 as written: the notice reads «Профилът …
+  запази достъпа си» rather than «Администратор · махни ролята в
+  „Роли“», and it names the barber role as the one to take off.
+
+Stage 1b is complete.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 
