@@ -158,6 +158,28 @@ function periodValue(input: MemberPageInput): string {
     : memberWords.periodRange(from, dayOf(last, input));
 }
 
+/**
+ * «Преди: 3.03.2024 г. – 30.11.2025 г.» — the periods worked before the
+ * current one (`barberPastPeriods`, oldest first), every end with its year;
+ * `null` for a record that has never left and come back.
+ */
+function earlierPeriodsOf(input: MemberPageInput): string | null {
+  const { barber, memberWords } = input;
+  if (barber.barberPastPeriods.length === 0) return null;
+  return memberWords.periodEarlier(
+    barber.barberPastPeriods
+      .map((period) =>
+        // History: both ends always carry their year, so a period across
+        // a new year never reads «12.10.2025 г. – 17.09».
+        memberWords.periodRange(
+          dayWords(period.pastStartsLocalDate, null, input.locale),
+          dayWords(period.pastLastWorkingLocalDate, null, input.locale),
+        ),
+      )
+      .join(', '),
+  );
+}
+
 /** One row of the checklist; `null` for an item the page gives no row. */
 function setupRow(
   entry: StaffSetupEntry,
@@ -218,6 +240,7 @@ function profileRows(
           : LocalizedText.pick(barber.title, input.locale),
       memberEditor: input.mayEditProfile ? MemberEditor.Profile : null,
       testId: 'member-row-profile',
+      detail: null,
     },
   ];
   // A draft's hours and services are rows of its checklist; a record at
@@ -229,6 +252,7 @@ function profileRows(
       value: hoursValue(input),
       memberEditor: input.mayEditHours ? MemberEditor.Hours : null,
       testId: 'member-row-hours',
+      detail: null,
     });
     rows.push({
       id: 'services',
@@ -236,6 +260,7 @@ function profileRows(
       value: servicesValue(input),
       memberEditor: input.mayEditOfferings ? MemberEditor.Offerings : null,
       testId: 'member-row-services',
+      detail: null,
     });
   }
   // A one-shop business has no shops to tell apart, and no row for them.
@@ -246,6 +271,7 @@ function profileRows(
       value: shopsValue(input),
       memberEditor: input.mayManage ? MemberEditor.Shops : null,
       testId: 'member-row-shops',
+      detail: null,
     });
   }
   rows.push({
@@ -254,6 +280,7 @@ function profileRows(
     value: periodValue(input),
     memberEditor: input.mayManage ? MemberEditor.Period : null,
     testId: 'member-row-period',
+    detail: earlierPeriodsOf(input),
   });
   return rows;
 }

@@ -205,6 +205,7 @@ export function barberFixture(
     sortOrder: 0,
     barberStartsLocalDate: BARBER_STARTS,
     barberLastWorkingLocalDate: null,
+    barberPastPeriods: [],
     avatarMediaId: null,
     avatarMediaPath: null,
     avatarMediaWidth: null,

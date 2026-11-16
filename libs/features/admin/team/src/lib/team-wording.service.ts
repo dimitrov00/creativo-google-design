@@ -9,6 +9,10 @@ import {
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import { type AccountWords, accountWordsOf } from './account.words';
+import {
+  type BarberAccountWords,
+  barberAccountWordsOf,
+} from './barber-account.words';
 import { type LinkWords, linkWordsOf } from './link.words';
 import { type MemberWords, memberWordsOf } from './member.words';
 import { type OfferingWords, offeringWordsOf } from './offerings.words';
@@ -71,6 +75,16 @@ export class TeamWording {
     return lang === null
       ? null
       : linkWordsOf((key, params) =>
+          this.transloco.translate(key, { ...params }, lang),
+        );
+  });
+
+  /** The words «Нов бръснар»'s account step prints; `null` until the catalogue has loaded. */
+  readonly barberAccountWords = computed<BarberAccountWords | null>(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : barberAccountWordsOf((key, params) =>
           this.transloco.translate(key, { ...params }, lang),
         );
   });

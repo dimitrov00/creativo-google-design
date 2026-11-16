@@ -11,12 +11,25 @@ import {
   untracked,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { LocalizedText } from '@core/components';
-import type { Barber } from '@core/entities';
-import type { LocalDate } from '@core/primitives';
-import { TeamSystem } from '@core/systems';
-import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
-import { UiButton, UiDateRow, UiModalSheet } from '@creativo/ui/controls';
+import { BarberStatus, LocalizedText } from '@core/components';
+import { type Barber, Profile, type User } from '@core/entities';
+import type { LocalDate, UserId } from '@core/primitives';
+import { RoleAssignmentSystem, TeamSystem } from '@core/systems';
+import {
+  AccountStateService,
+  StaffAccessService,
+} from '@creativo/features/client/account-state';
+import {
+  CLOCK_PORTS,
+  PROFILE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { UiStack } from '@creativo/ui/layout';
+import {
+  UiButton,
+  UiDateRow,
+  UiModalSheet,
+  UiSwitch,
+} from '@creativo/ui/controls';
 import {
   UiForegroundStyleDirective,
   UiTextDirective,
@@ -56,6 +69,8 @@ import { firstWord } from '../team.format';
     UiModalSheet,
     UiNotice,
     UiSheetActionBar,
+    UiStack,
+    UiSwitch,
     UiTextDirective,
   ],
   templateUrl: './member-return-sheet.html',
@@ -67,6 +82,9 @@ import { firstWord } from '../team.format';
 export class MemberReturnSheet implements OnInit {
   protected readonly store = inject(TeamMemberStore);
   private readonly wording = inject(TeamWording);
+  private readonly profiles = inject(PROFILE_PORTS);
+  private readonly session = inject(AccountStateService);
+  private readonly access = inject(StaffAccessService);
   /** The instant the sheet opened: the stamp a return would carry, for the rule's own check. */
   private readonly openedAtUtcMs = inject(CLOCK_PORTS).nowUtcMs();
 
@@ -100,6 +118,22 @@ export class MemberReturnSheet implements OnInit {
         );
   });
 
+  /**
+   * The account that left with the record — the one the close took access
+   * from, or the admin it left alone — read once as the sheet opens, and
+   * offered back only while it may still be linked
+   * (`RoleAssignmentSystem.linkCandidatesOf`: registered, not blocked,
+   * linked to no other record). `null` otherwise (account first, A9).
+   */
+  protected readonly previous = signal<User | null>(null);
+  /** «Със същия профил»: on by default once the account is offered. */
+  protected readonly relink = signal(true);
+  /** The account's name, as the row says it. */
+  protected readonly previousName = computed(() => {
+    const account = this.previous();
+    return account === null ? '' : Profile.fullName(account);
+  });
+
   /** The day drafted is one a return takes (`TeamSystem.rehire`). */
   protected readonly canSave = computed(() => {
     const starts = this.starts();
@@ -117,17 +151,46 @@ export class MemberReturnSheet implements OnInit {
 
   /** The day the sheet opens on, read once: today, or the earliest return when that is later. */
   ngOnInit(): void {
+    const barber = untracked(this.uiBarber);
     const today = untracked(this.uiToday);
     if (today !== null) {
-      this.starts.set(
-        TeamSystem.suggestedReturn(untracked(this.uiBarber), today),
-      );
+      this.starts.set(TeamSystem.suggestedReturn(barber, today));
+    }
+    if (barber.barberStatus === BarberStatus.Departed) {
+      const userId =
+        barber.barberDepartedUserId ?? barber.barberKeptAccessUserId;
+      if (userId !== null) void this.readPrevious(userId);
     }
   }
 
+  /** The account that left with the record, offered back only while it may be linked. */
+  private async readPrevious(userId: UserId): Promise<void> {
+    const viewerUserId = untracked(this.session.userId);
+    const read = await this.profiles.loadProfile(userId);
+    if (!read.ok || read.value === null || viewerUserId === null) return;
+    const [offered] = RoleAssignmentSystem.linkCandidatesOf({
+      viewerUserId,
+      viewerRoles: untracked(this.access.storedRoles),
+      accounts: [read.value],
+      nowUtcMs: this.openedAtUtcMs,
+    });
+    this.previous.set(offered ?? null);
+  }
+
+  /**
+   * «Върни»: the record back on the team — then, with «Със същия профил»
+   * on, the same account linked to it again («Свържи профил»'s call). A
+   * link the server refuses is said on the page; the record is back
+   * either way (account first, A3).
+   */
   protected async save(): Promise<void> {
     const starts = this.starts();
     if (starts === null || !this.canSave() || this.store.pending()) return;
-    if (await this.store.rehire(starts)) this.dismissed.emit();
+    if (!(await this.store.rehire(starts))) return;
+    const account = this.previous();
+    if (account !== null && this.relink()) {
+      await this.store.linkAccount(account.id, account.roles);
+    }
+    this.dismissed.emit();
   }
 }

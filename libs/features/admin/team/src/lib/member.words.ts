@@ -27,6 +27,8 @@ export type MemberWords = {
   readonly periodFrom: (date: string) => string;
   /** «3 март – 31 дек.» */
   readonly periodRange: (from: string, to: string) => string;
+  /** «Преди: 3.03.2024 – 30.11.2025» — the periods worked before the current one. */
+  readonly periodEarlier: (periods: string) => string;
   /** «Николай напуска екипа след 31.12» — the notice's title for a last day still ahead. */
   readonly periodEndsTitle: (name: string, date: string) => string;
   /** «След този ден не приема записи и губи достъпа си до графика.» */
@@ -117,6 +119,7 @@ export function memberWordsOf(translate: Translate): MemberWords {
     periodRow: at('periodRow'),
     periodFrom: (date) => at('periodFrom', { date }),
     periodRange: (from, to) => at('periodRange', { from, to }),
+    periodEarlier: (periods) => at('periodEarlier', { periods }),
     periodEndsTitle: (name, date) =>
       translate('admin.team.period.endsTitle', { name, date }),
     periodEndsBody: translate('admin.team.period.endsBody'),

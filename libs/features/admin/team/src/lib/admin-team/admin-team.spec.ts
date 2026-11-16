@@ -129,19 +129,27 @@ describe('AdminTeam — «Екип»', () => {
     expect(piece('admin-team-add')).toBeNull();
   });
 
-  it('the ＋ opens the add sheet: a name and «Добави» create the record, starting today, and its page opens', async () => {
-    const { piece, calls, settle } = await render({ members: TEAM });
+  it('the ＋ asks for the account first; «Без профил» opens the add sheet: a name and «Добави» create the record, starting today, and its page opens', async () => {
+    const { piece, calls, settle, left } = await render({ members: TEAM });
     const navigate = vi
       .spyOn(TestBed.inject(Router), 'navigate')
       .mockResolvedValue(true);
 
-    // The owner's ＋ is a menu: a barber is its first answer.
+    // The owner's ＋ is a menu: a barber is its first answer — and the
+    // account comes first (account first, A2).
     piece('admin-team-add')?.click();
     await settle();
     expect(piece('team-add-sheet')).toBeNull();
     piece('admin-team-add-barber')?.click();
     await settle();
+    expect(piece('team-barber-account-sheet')).not.toBeNull();
+    expect(piece('team-add-sheet')).toBeNull();
+    piece('team-barber-account-skip')?.click();
+    await settle();
+    await left('team-barber-account-sheet');
+    expect(piece('team-barber-account-sheet')).toBeNull();
     expect(piece('team-add-sheet')).not.toBeNull();
+    expect(piece('team-add-account')).toBeNull();
     const save = piece('team-add-save') as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
@@ -289,7 +297,41 @@ describe('AdminTeam — the ＋: a barber, or a role for a registered account (�
 
     await press('admin-team-add');
 
-    expect(piece('team-add-sheet')).not.toBeNull();
+    // The one thing the ＋ adds: the account step at once, no menu.
+    expect(piece('team-barber-account-sheet')).not.toBeNull();
+  });
+
+  it('a barber made from an account: the account step offers the team’s accounts with no record; the add sheet names the account and takes its name; «Добави» makes the record and links that account', async () => {
+    const { piece, calls, settle, left, press, text } = await render({
+      members: TEAM,
+    });
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await press('admin-team-add');
+    await press('admin-team-add-barber');
+    // The team's own accounts with no record: the front desk, the editor.
+    const rows = [
+      ...(piece('team-barber-account-list')?.querySelectorAll<HTMLElement>(
+        '[data-testid^="team-barber-account-"]',
+      ) ?? []),
+    ].map((row) => row.dataset['testid']);
+    expect(rows).toContain('team-barber-account-u-elena');
+    await press('team-barber-account-u-elena');
+    await left('team-barber-account-sheet');
+
+    expect(text(piece('team-add-account'))).toContain('Елена Василева');
+    expect((piece('team-add-name') as HTMLInputElement).value).toBe(
+      'Елена Василева',
+    );
+    await press('team-add-save');
+    await settle();
+    await settle();
+    expect(calls.adds).toHaveLength(1);
+    expect(calls.roles.at(-1)).toMatchObject({
+      targetUserId: 'u-elena',
+      barberLinkChange: BarberLinkChange.Set,
+      linkedBarberId: calls.adds.length > 0 ? expect.any(String) : null,
+    });
+    expect(calls.roles.at(-1)?.roles).toContain(Role.Barber);
   });
 
   it('a role opens on the team’s own people who do not hold it — a barber somebody signs in as, a colleague under another role — never the owner, a leaver or a record with no account', async () => {

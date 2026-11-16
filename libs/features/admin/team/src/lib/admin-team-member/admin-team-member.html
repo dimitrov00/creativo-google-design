@@ -262,7 +262,18 @@
             [attr.data-testid]="row.testId"
             (click)="openEditor(memberEditor)"
           >
-            {{ row.label }}
+            @if (row.detail; as detail) {
+            <ui-stack uiSpacing="none" class="team-page__identity">
+              <span>{{ row.label }}</span>
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                [attr.data-testid]="row.testId + '-detail'"
+                >{{ detail }}</span
+              >
+            </ui-stack>
+            } @else { {{ row.label }} }
             <span uiTrailing class="team-page__value">
               <span>{{ row.value }}</span>
               <ui-icon uiName="nav.disclosure" aria-hidden="true" />
@@ -270,7 +281,18 @@
           </button>
           } @else {
           <ui-list-row uiSize="regular" [attr.data-testid]="row.testId">
-            {{ row.label }}
+            @if (row.detail; as detail) {
+            <ui-stack uiSpacing="none" class="team-page__identity">
+              <span>{{ row.label }}</span>
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                [attr.data-testid]="row.testId + '-detail'"
+                >{{ detail }}</span
+              >
+            </ui-stack>
+            } @else { {{ row.label }} }
             <span uiTrailing class="team-page__value">
               <span>{{ row.value }}</span>
             </span>

@@ -12,6 +12,7 @@ import {
 import { TranslocoDirective } from '@jsverse/transloco';
 import { LocalizedText } from '@core/components';
 import { BarberId, type LocalDate } from '@core/primitives';
+import { RoleAssignmentSystem } from '@core/systems';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
 import {
   UiButton,
@@ -35,7 +36,9 @@ import {
   UiNotice,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
+import type { BarberAccountPick } from '../team-barber-account-sheet/team-barber-account-sheet';
 import { TeamAddStore } from '../team-add.store';
+import { TeamRolesStore } from '../team-roles.store';
 import { TeamWording } from '../team-wording.service';
 
 /** The copy menu's answer for nobody — an id no barber record carries. */
@@ -80,11 +83,18 @@ const COPY_FROM_NOBODY = '';
 })
 export class TeamAddSheet {
   protected readonly store = inject(TeamAddStore);
+  private readonly roles = inject(TeamRolesStore);
   private readonly wording = inject(TeamWording);
   private readonly catalog = inject(TeamCatalogService);
 
   /** The shop's today: the day a newcomer starts unless told otherwise. */
   readonly uiToday = input<LocalDate | null>(null);
+  /**
+   * The account the barber is made from (account first, A2) — named on the
+   * sheet, its name the record's to start with, linked once the record
+   * exists; `null` for a record with no account.
+   */
+  readonly uiAccount = input<BarberAccountPick | null>(null);
   /** The words for nobody in the copy menu. */
   readonly uiCopyNone = input('');
   /** The sheet is leaving: its close animation runs. */
@@ -97,7 +107,16 @@ export class TeamAddSheet {
   readonly added = output<BarberId>();
 
   protected readonly locale = this.wording.locale;
-  protected readonly name = signal('');
+  /** The record's name: the account's, until it is typed over. */
+  protected readonly name = linkedSignal(() => this.uiAccount()?.name ?? '');
+  /** A call is on its way: the record's, its prices', or its account's link. */
+  protected readonly busy = computed(
+    () => this.store.pending() || this.roles.pending(),
+  );
+  /** The record was added, but its account could not be linked (A3). */
+  protected readonly linkFailed = signal(false);
+  /** The record that was added, while the sheet still says what is left. */
+  private readonly addedId = signal<BarberId | null>(null);
   /** The start day: today until another is picked. */
   protected readonly starts = linkedSignal<LocalDate | null>(() =>
     this.uiToday(),
@@ -139,7 +158,18 @@ export class TeamAddSheet {
     return (event.target as HTMLInputElement).value;
   }
 
+  /**
+   * «Добави»: the record, its copied prices — then, for a barber made from
+   * an account, that account linked to it («Свържи профил»'s call, the
+   * stored roles plus `barber`). A link refused leaves the record (it is
+   * the bookable thing) and says so, with the way to its page (A3).
+   */
   protected async add(): Promise<void> {
+    const left = this.addedId();
+    if (left !== null) {
+      this.added.emit(left);
+      return;
+    }
     const starts = this.starts();
     if (starts === null || !this.canAdd() || this.store.pending()) return;
     const copyFrom = BarberId.parse(this.copyFrom());
@@ -148,6 +178,24 @@ export class TeamAddSheet {
       barberStartsLocalDate: starts,
       copyFromBarberId: copyFrom.ok ? copyFrom.value : null,
     });
-    if (barberId !== null) this.added.emit(barberId);
+    if (barberId === null) return;
+    const account = this.uiAccount();
+    if (account !== null) {
+      const change = RoleAssignmentSystem.recordLinkOf(
+        account.storedRoles,
+        barberId,
+      );
+      const linked = await this.roles.send({
+        targetUserId: account.userId,
+        roles: change.roles,
+        ...change.link,
+      });
+      if (!linked) {
+        this.addedId.set(barberId);
+        this.linkFailed.set(true);
+        return;
+      }
+    }
+    this.added.emit(barberId);
   }
 }

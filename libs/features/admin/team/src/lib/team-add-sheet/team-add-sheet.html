@@ -23,7 +23,15 @@
 
       <!-- A refused add says why; a copy that failed says the record is
            there and what is left. -->
-      @if (refusal(); as line) {
+      @if (linkFailed()) {
+      <ui-notice
+        uiTone="warning"
+        uiAnnounce="polite"
+        data-testid="team-add-link-failed"
+      >
+        {{ t('admin.team.add.linkFailed') }}
+      </ui-notice>
+      } @else if (refusal(); as line) {
       <ui-notice
         uiTone="destructive"
         uiAnnounce="polite"
@@ -31,6 +39,18 @@
       >
         {{ locked() ? t('admin.team.add.copyFailed') : line }}
       </ui-notice>
+      }
+
+      <!-- THE ACCOUNT THE BARBER IS MADE FROM (account first, A2): named,
+           so the sheet is the question — «Добави» makes the record and
+           links this account to it. -->
+      @if (uiAccount(); as account) {
+      <ui-list-group>
+        <ui-list-row uiSize="regular" data-testid="team-add-account">
+          <span>{{ t('admin.team.add.accountRow') }}</span>
+          <span uiTrailing class="team-page__value">{{ account.name }}</span>
+        </ui-list-row>
+      </ui-list-group>
       }
 
       <label class="team-page__field">
@@ -44,7 +64,7 @@
           autocomplete="off"
           data-testid="team-add-name"
           [placeholder]="t('admin.team.add.namePlaceholder')"
-          [readonly]="store.pending() || locked()"
+          [readonly]="busy() || locked()"
           [value]="name()"
           (input)="name.set(typed($event))"
         />
@@ -60,7 +80,7 @@
           [uiLocale]="locale()"
           [uiPreviousLabel]="t('admin.team.period.previousMonth')"
           [uiNextLabel]="t('admin.team.period.nextMonth')"
-          [uiDisabled]="store.pending() || locked()"
+          [uiDisabled]="busy() || locked()"
           (uiPicked)="starts.set($event)"
         />
         <ui-list-row uiSize="regular" class="team-page__permission">
@@ -81,7 +101,7 @@
                 uiRadius="capsule"
                 uiMenuTrigger
                 class="team-page__choice"
-                [disabled]="store.pending()"
+                [disabled]="busy()"
                 [attr.aria-label]="
                   t('admin.team.add.copyLabel') + ': ' + copyWord()
                 "
@@ -103,12 +123,13 @@
         uiButton
         uiButtonStyle="borderedProminent"
         [uiSpread]="true"
-        [uiLoading]="store.pending()"
-        [disabled]="!canAdd() || store.pending()"
+        [uiLoading]="busy()"
+        [disabled]="(!canAdd() && !linkFailed()) || busy()"
         data-testid="team-add-save"
         (click)="add()"
       >
-        {{ t('admin.team.add.save') }}
+        {{ linkFailed() ? t('admin.team.add.openPage') :
+        t('admin.team.add.save') }}
       </button>
     </ui-sheet-action-bar>
   </ui-modal-sheet>

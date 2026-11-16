@@ -1487,6 +1487,81 @@ describe('AdminTeamMember — the edges', () => {
       });
     });
 
+    it('offers the account that left with the record back, on by default — «Върни» brings the record back, then links that account', async () => {
+      const left = {
+        ...STEFAN_RECORD,
+        barberDepartedUserId: UserId.of('u-stefan-old'),
+      };
+      const account = userFixture({
+        id: UserId.of('u-stefan-old'),
+        firstName: 'Стефан',
+        lastName: 'Илиев',
+        roles: [Role.Client],
+        linkedBarberId: null,
+      });
+      const { piece, press, text, settle, calls } = await render('stefan', {
+        barbers: [IVAN_RECORD, NIKOLAY_RECORD, left],
+        profiles: [account],
+      });
+      await press('member-return');
+      await settle();
+
+      expect(text(piece('member-return-relink-name'))).toBe('Стефан Илиев');
+      expect(piece('member-return-relink')?.getAttribute('aria-checked')).toBe(
+        'true',
+      );
+      // Offered back, the account needs no note that it does not come back.
+      expect(piece('member-return-note')).toBeNull();
+
+      await press('member-return-save');
+      await settle();
+      expect(calls.edits.at(-1)).toMatchObject({
+        barberEdit: BarberEdit.Return,
+      });
+      expect(calls.roles.at(-1)).toMatchObject({
+        targetUserId: 'u-stefan-old',
+        barberLinkChange: BarberLinkChange.Set,
+        linkedBarberId: STEFAN.barberId,
+      });
+    });
+
+    it('with «Със същия профил» off, returns the record alone; an account linked elsewhere is not offered', async () => {
+      const left = {
+        ...STEFAN_RECORD,
+        barberDepartedUserId: UserId.of('u-stefan-old'),
+      };
+      const free = userFixture({
+        id: UserId.of('u-stefan-old'),
+        firstName: 'Стефан',
+        lastName: 'Илиев',
+        roles: [Role.Client],
+        linkedBarberId: null,
+      });
+      const off = await render('stefan', {
+        barbers: [IVAN_RECORD, NIKOLAY_RECORD, left],
+        profiles: [free],
+      });
+      await off.press('member-return');
+      await off.settle();
+      await off.press('member-return-relink');
+      expect(off.piece('member-return-note')).not.toBeNull();
+      await off.press('member-return-save');
+      await off.settle();
+      expect(off.calls.edits.at(-1)).toMatchObject({
+        barberEdit: BarberEdit.Return,
+      });
+      expect(off.calls.roles).toEqual([]);
+      TestBed.resetTestingModule();
+
+      const taken = await render('stefan', {
+        barbers: [IVAN_RECORD, NIKOLAY_RECORD, left],
+        profiles: [{ ...free, linkedBarberId: IVAN.barberId }],
+      });
+      await taken.press('member-return');
+      await taken.settle();
+      expect(taken.piece('member-return-relink-row')).toBeNull();
+    });
+
     it('a day on or before the last day worked cannot be sent', async () => {
       const { fixture, piece, press, settle, calls } = await render('stefan');
       await press('member-return');
@@ -1535,6 +1610,29 @@ describe('AdminTeamMember — the edges', () => {
     expect(piece('admin-team-member-back')?.getAttribute('href')).toBe(
       '/admin/team',
     );
+  });
+});
+
+describe('AdminTeamMember — the periods worked before (account first, A8)', () => {
+  it('says the earlier periods under «Работен период», oldest first — nothing for a record that never came back', async () => {
+    const returned = {
+      ...IVAN_RECORD,
+      barberPastPeriods: [
+        {
+          pastStartsLocalDate: localDate('2024-03-03'),
+          pastLastWorkingLocalDate: localDate('2025-11-30'),
+        },
+      ],
+    };
+    const { piece, text } = await render('ivan', {
+      barbers: [returned, NIKOLAY_RECORD, STEFAN_RECORD],
+    });
+    expect(text(piece('member-row-period-detail'))).toBe(
+      'Преди: 3.03.2024 г. – 30.11.2025 г.',
+    );
+    TestBed.resetTestingModule();
+    const never = await render('ivan');
+    expect(never.piece('member-row-period-detail')).toBeNull();
   });
 });
 
