@@ -87,6 +87,14 @@ test.describe('a newly linked barber’s first visit', () => {
     await expect(
       page.getByTestId('staff-welcome-faces').locator('ui-avatar').first(),
     ).toBeVisible();
+    // The centre is the person reading, named as their account names them
+    // («Петър Посрещнат»), not as the record does («Нов Посрещнат …»): the
+    // initials agree with the greeting.
+    await expect(
+      page
+        .getByTestId('staff-welcome-faces')
+        .locator('.ui-avatar-orbit__center'),
+    ).toHaveText('ПП');
     await page.getByTestId('staff-welcome-later').click();
     await expect(welcome).toHaveCount(0, { timeout: 30_000 });
 

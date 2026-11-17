@@ -22,7 +22,9 @@ export type WelcomeWords = {
 export type WelcomeInput = {
   /** The account's own first name; `null` when it has none. */
   readonly firstName: string | null;
-  /** The newcomer's own face. */
+  /** The account's own full name («Петър Петров»); `''` when it has none. */
+  readonly accountName: string;
+  /** The newcomer's own face, as their barber record shows it. */
   readonly own: WelcomeFaceVm;
   /** The team's live barbers but the newcomer, in the team's order. */
   readonly colleagues: readonly WelcomeFaceVm[];
@@ -65,10 +67,17 @@ function namesOf(
  */
 export function welcomeVm(input: WelcomeInput): WelcomeVm {
   const { words, colleagues, locale } = input;
-  const everyone = [input.own, ...colleagues].map((face) => face.name);
+  // The centre is the person reading: named as their account names them,
+  // like the greeting, so the initials and «Петър, …» never disagree when
+  // the record goes by another name; the record's photo stays (one photo
+  // per barber). An account with no name keeps the record's.
+  const accountName = input.accountName.trim();
+  const own: WelcomeFaceVm =
+    accountName.length > 0 ? { ...input.own, name: accountName } : input.own;
+  const everyone = [own, ...colleagues].map((face) => face.name);
   const name = input.firstName?.trim() ?? '';
   return {
-    own: input.own,
+    own,
     colleagues,
     facesLabel: listFormat(locale).format(everyone),
     headline: name.length > 0 ? words.headlineNamed(name) : words.headline,

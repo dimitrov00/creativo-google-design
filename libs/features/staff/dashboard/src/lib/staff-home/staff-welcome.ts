@@ -11,6 +11,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { LocalizedText, RouteCapabilities } from '@core/components';
+import { Profile } from '@core/entities';
 import { Locale, type UserId } from '@core/primitives';
 import { StaffSetupSystem } from '@core/systems';
 import {
@@ -140,8 +141,10 @@ export class StaffWelcomeSheet {
     const own = this.team.findTeamBarberVm(barberId);
     const words = (key: string, params?: Record<string, unknown>) =>
       this.transloco.translate<string>(`staff.welcome.${key}`, params);
+    const account = this.session.account();
     return welcomeVm({
-      firstName: this.session.account()?.firstName ?? null,
+      firstName: account?.firstName ?? null,
+      accountName: account === null ? '' : Profile.fullName(account),
       own:
         own === undefined
           ? {

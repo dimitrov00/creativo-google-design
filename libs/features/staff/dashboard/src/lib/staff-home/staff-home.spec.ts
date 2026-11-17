@@ -265,6 +265,7 @@ describe('welcomeVm', () => {
   it('greets by first name, puts the newcomer at the centre of everyone they join, names two and counts the rest', () => {
     const vm = welcomeVm({
       firstName: ' Петър ',
+      accountName: '',
       own,
       colleagues: team,
       words: bg,
@@ -279,10 +280,45 @@ describe('welcomeVm', () => {
     );
   });
 
+  it('names the centre as the account names the person — the greeting and the initials agree — the record’s photo kept', () => {
+    const record: WelcomeFaceVm = {
+      id: 'b-own',
+      name: 'Нов Бръснар',
+      avatarSrc: 'https://example.test/own.jpg',
+    };
+    const vm = welcomeVm({
+      firstName: 'Петър',
+      accountName: ' Петър Петров ',
+      own: record,
+      colleagues: team.slice(0, 1),
+      words: bg,
+      locale: 'bg',
+    });
+    expect(vm.headline).toBe('Петър, вече си в екипа');
+    expect(vm.own).toEqual({
+      id: 'b-own',
+      name: 'Петър Петров',
+      avatarSrc: 'https://example.test/own.jpg',
+    });
+    expect(vm.facesLabel).toBe('Петър Петров и Иван');
+    // An account with no name keeps the record's.
+    expect(
+      welcomeVm({
+        firstName: null,
+        accountName: '',
+        own: record,
+        colleagues: [],
+        words: bg,
+        locale: 'bg',
+      }).own.name,
+    ).toBe('Нов Бръснар');
+  });
+
   it('in English, and with one colleague, and with none', () => {
     expect(
       welcomeVm({
         firstName: 'Peter',
+        accountName: '',
         own,
         colleagues: team.slice(0, 2),
         words: en,
@@ -296,6 +332,7 @@ describe('welcomeVm', () => {
     expect(
       welcomeVm({
         firstName: 'Петър',
+        accountName: '',
         own,
         colleagues: team.slice(0, 3),
         words: bg,
@@ -305,6 +342,7 @@ describe('welcomeVm', () => {
     expect(
       welcomeVm({
         firstName: null,
+        accountName: '',
         own,
         colleagues: team.slice(0, 1),
         words: bg,
@@ -316,6 +354,7 @@ describe('welcomeVm', () => {
     });
     const alone = welcomeVm({
       firstName: '',
+      accountName: '',
       own,
       colleagues: [],
       words: bg,
