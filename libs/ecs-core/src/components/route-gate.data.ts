@@ -67,6 +67,18 @@ export const RouteCapabilities = {
       accessScope: AccessScope.All,
     },
   ],
+  /**
+   * «Моят профил» (`/staff/profile`): the member page on the person's own
+   * barber record, for whoever may edit their own profile — a barber, by
+   * default (staff permissions O1). The welcome and the setup card lead
+   * here; every row still asks what the person may change.
+   */
+  OwnProfile: [
+    {
+      staffCapability: StaffCapability.TeamProfiles,
+      accessScope: AccessScope.Own,
+    },
+  ],
 } as const satisfies Record<string, readonly RouteCapability[]>;
 
 /** The guard a route mounts, with what that guard reads (`SessionAccessSystem.decide`). */

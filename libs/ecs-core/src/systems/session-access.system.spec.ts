@@ -326,6 +326,22 @@ describe('SessionAccessSystem.decide — the capability gate (staff permissions 
         contentManagerTeamProfilesScope: 'NONE',
       }),
     ).toBe(false);
+    // «Моят профил»: whoever edits their own profile — a barber by default,
+    // the content editor and the admin, who reach everyone's; not the front
+    // desk, and not a barber the owner took their profile from.
+    expect(opens(RouteCapabilities.OwnProfile, [Role.Barber])).toBe(true);
+    expect(opens(RouteCapabilities.OwnProfile, [Role.ContentManager])).toBe(
+      true,
+    );
+    expect(opens(RouteCapabilities.OwnProfile, [Role.Admin])).toBe(true);
+    expect(opens(RouteCapabilities.OwnProfile, [Role.Receptionist])).toBe(
+      false,
+    );
+    expect(
+      opens(RouteCapabilities.OwnProfile, [Role.Barber], {
+        barberTeamProfilesScope: 'NONE',
+      }),
+    ).toBe(false);
     // The gate and `opens` are one rule.
     for (const roles of [[Role.Barber], [Role.ContentManager], [Role.Admin]]) {
       expect(

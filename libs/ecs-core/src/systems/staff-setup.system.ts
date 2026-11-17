@@ -134,4 +134,36 @@ export const StaffSetupSystem = {
     }
     return done;
   },
+
+  /**
+   * The barber's OWN part of the setup (account first, A5 — the setup card
+   * on their schedule): the profile details clients see — photo, title,
+   * the few words, Instagram, experience — how many are done of how many;
+   * `null` once every one is, and the card goes. The items bookings need
+   * (shops, services, hours) are the owner's and not counted here.
+   */
+  profileLeftOf(
+    checklist: StaffSetupChecklist,
+  ): { readonly done: number; readonly total: number } | null {
+    let done = 0;
+    for (let i = 0; i < checklist.optional.length; i++) {
+      if ((checklist.optional[i] as StaffSetupEntry).done) done++;
+    }
+    return done === checklist.optional.length
+      ? null
+      : { done, total: checklist.optional.length };
+  },
+
+  /**
+   * Is the first-time welcome still worth showing (account first, A4)?
+   * While nothing of the barber's own profile is done: once they have set
+   * anything — on any device — they have found their way in, and the setup
+   * card alone carries on.
+   */
+  welcomes(checklist: StaffSetupChecklist): boolean {
+    for (let i = 0; i < checklist.optional.length; i++) {
+      if ((checklist.optional[i] as StaffSetupEntry).done) return false;
+    }
+    return checklist.optional.length > 0;
+  },
 } as const;

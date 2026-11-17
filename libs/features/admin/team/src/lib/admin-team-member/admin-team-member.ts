@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  type OnInit,
   ViewEncapsulation,
   computed,
   effect,
@@ -11,7 +12,7 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { BarberLifecycle } from '@core/components';
+import { BarberLifecycle, RouteCapabilities } from '@core/components';
 import { BarberId, type LocationId } from '@core/primitives';
 import { EmploymentSystem, ZonedTimeSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
@@ -155,7 +156,7 @@ function hoursDesk(): HoursDesk {
   // Every selector in the stylesheet is `team-page`-prefixed.
   encapsulation: ViewEncapsulation.None,
 })
-export class AdminTeamMember {
+export class AdminTeamMember implements OnInit {
   protected readonly store = inject(TeamMemberStore);
   private readonly ahead = inject(BookingsAheadStore);
   private readonly team = inject(TeamStore);
@@ -171,6 +172,12 @@ export class AdminTeamMember {
 
   /** The route's `:barberId` — bound by the router (`withComponentInputBinding`). */
   readonly barberId = input<string | undefined>(undefined);
+  /**
+   * `/staff/profile`, bound from the route's data: the page is the person's
+   * OWN record — the one their account is linked to — its back leads to
+   * the schedule, and the Team list is read only for whoever may open it.
+   */
+  readonly self = input(false);
   /**
    * `?edit=period`, bound from the route: the Team page's «Удължи» opens
    * the working period on arrival. Asked once per record, and only of
@@ -301,14 +308,28 @@ export class AdminTeamMember {
       : EmploymentSystem.leftoverOf(visits, barber.id, last);
   });
 
-  constructor() {
-    this.catalog.watchTeam();
+  ngOnInit(): void {
     // The account beside the record is the Team list's row: read it again,
     // so a page opened from a link is as fresh as one opened from the list.
-    void this.team.load();
-    // The route names the record; the store's own signals are not read here.
+    // Not for someone the list would refuse — a barber on their own page.
+    if (!this.self() || this.access.opens(RouteCapabilities.Team)) {
+      void this.team.load();
+    }
+  }
+
+  /** Where the bar's back leads: the Team list, or the schedule from one's own page. */
+  protected readonly backLink = computed(() =>
+    this.self() ? '/staff/schedule' : '/admin/team',
+  );
+
+  constructor() {
+    this.catalog.watchTeam();
+    // The route names the record — on one's own page, the linked one; the
+    // store's own signals are not read here.
     effect(() => {
-      const raw = this.barberId();
+      const raw = this.self()
+        ? (this.access.linkedBarberId() ?? undefined)
+        : this.barberId();
       const parsed = raw === undefined ? null : BarberId.parse(raw);
       untracked(() =>
         this.store.open(parsed !== null && parsed.ok ? parsed.value : null),

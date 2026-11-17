@@ -1,0 +1,28 @@
+/* THE STAFF HOME'S OWN PARTS — above the schedule: the reminders and the
+   setup card, a stack at the page's gutter; nothing while there are none.
+   The welcome page keeps its own sheet (`staff-welcome.css`). Every
+   selector is `staff-home`-prefixed. */
+/* The host takes no box: the notices' stack is the one thing laid out,
+   and the welcome page rides the top layer beside it. */
+.staff-home {
+  display: contents;
+}
+
+/* The notices are the stack's own items — their hosts take no box, so an
+   empty one adds no gap — the segment seam apart, at the page's gutter;
+   nothing at all while there are none. */
+.staff-home__notices {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sys-space-unit) * 3);
+}
+
+.staff-home__notices:has(ui-notice) {
+  padding-inline: var(--sys-space-regular);
+  padding-block: var(--sys-space-compact);
+}
+
+.staff-home__notices > lib-schedule-reminders,
+.staff-home__notices > lib-staff-setup-card {
+  display: contents;
+}

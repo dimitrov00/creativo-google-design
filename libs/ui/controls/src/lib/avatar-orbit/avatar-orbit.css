@@ -1,0 +1,225 @@
+@layer sys-components {
+  /* One person at the centre, the people around them on two faint orbits.
+     A square measured off its own width (`container-type`), so the orbits
+     and seats scale with the room it is given, up to its size
+     (`--ui-avatar-orbit-size`). Every length inside is a share of the half
+     width: `50cqi` is the radius of the square. */
+  .ui-avatar-orbit {
+    position: relative;
+    display: block;
+    flex-shrink: 0;
+    inline-size: min(100%, var(--ui-avatar-orbit-size, 18rem));
+    aspect-ratio: 1;
+    container-type: inline-size;
+    isolation: isolate;
+  }
+
+  .ui-avatar-orbit__paths,
+  .ui-avatar-orbit__pulse,
+  .ui-avatar-orbit__ring {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* The two orbits: hairline circles through the seats' centres. */
+  .ui-avatar-orbit__paths::before,
+  .ui-avatar-orbit__paths::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    border: 1px solid var(--sys-color-separator);
+    border-radius: 50%;
+  }
+  .ui-avatar-orbit__paths::before {
+    inline-size: 64cqi;
+    block-size: 64cqi;
+  }
+  .ui-avatar-orbit__paths::after {
+    inline-size: 84cqi;
+    block-size: 84cqi;
+  }
+
+  /* ONE PICTURE, SCALED AS ONE. The discs keep their ladder sizes
+     (portrait 112, large 52, regular 44) at the orbit's full size, 18rem,
+     and shrink with the square below it — a share of its width each — so
+     a smaller orbit never brings a face onto the centre's ring. */
+  .ui-avatar-orbit > .ui-avatar.ui-avatar-orbit__center {
+    --ui-avatar-disc: min(var(--control-size-extraLarge), 39cqi);
+  }
+  .ui-avatar-orbit__ring
+    > .ui-avatar.ui-avatar-orbit__seat[data-control-size='large'] {
+    --ui-avatar-disc: min(var(--control-size-large), 18cqi);
+  }
+  .ui-avatar-orbit__ring
+    > .ui-avatar.ui-avatar-orbit__seat[data-control-size='regular'] {
+    --ui-avatar-disc: min(var(--control-size-regular), 15.3cqi);
+  }
+
+  /* Every disc: the film every avatar wears, laid over the ground — so
+     the orbit lines and whatever the consumer paints behind (a wash of the
+     accent) never tint a monogram — and a ring of the ground that cuts the
+     face out of the line it sits on. */
+  .ui-avatar-orbit > .ui-avatar-orbit__center,
+  .ui-avatar-orbit__ring > .ui-avatar-orbit__seat {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    background:
+      linear-gradient(
+        color-mix(
+          in srgb,
+          var(--ui-avatar-ink, currentColor) var(--sys-alpha-fill),
+          transparent
+        ),
+        color-mix(
+          in srgb,
+          var(--ui-avatar-ink, currentColor) var(--sys-alpha-fill),
+          transparent
+        )
+      ),
+      var(--ui-avatar-orbit-ground, var(--sys-color-surface));
+    box-shadow: 0 0 0 3px
+      var(--ui-avatar-orbit-ground, var(--sys-color-surface));
+  }
+
+  /* The centre: ringed in the accent beyond the ground's ring, so the
+     accent sits apart from the face. */
+  .ui-avatar-orbit > .ui-avatar-orbit__center {
+    box-shadow:
+      0 0 0 3px var(--ui-avatar-orbit-ground, var(--sys-color-surface)),
+      0 0 0 6px var(--sys-color-accent);
+  }
+
+  /* A seat: centred, then carried out to its place on an orbit. */
+  .ui-avatar-orbit__ring > .ui-avatar-orbit__seat {
+    translate: calc(var(--seat-x) * 50cqi) calc(var(--seat-y) * 50cqi);
+  }
+
+  /* The seats: inner orbit (radius .64) at -30°, -150°, 90°; outer orbit
+     (radius .84) at -90°, 150°, 30° — sixty degrees apart, alternating, so
+     one to six faces sit balanced. `--seat-order` staggers the arrival. */
+  .ui-avatar-orbit__seat[data-seat='1'] {
+    --seat-x: 0.5543;
+    --seat-y: -0.32;
+    --seat-order: 0;
+  }
+  .ui-avatar-orbit__seat[data-seat='2'] {
+    --seat-x: -0.5543;
+    --seat-y: -0.32;
+    --seat-order: 1;
+  }
+  .ui-avatar-orbit__seat[data-seat='3'] {
+    --seat-x: 0;
+    --seat-y: 0.64;
+    --seat-order: 2;
+  }
+  .ui-avatar-orbit__seat[data-seat='4'] {
+    --seat-x: 0;
+    --seat-y: -0.84;
+    --seat-order: 3;
+  }
+  .ui-avatar-orbit__seat[data-seat='5'] {
+    --seat-x: -0.7274;
+    --seat-y: 0.42;
+    --seat-order: 4;
+  }
+  .ui-avatar-orbit__seat[data-seat='6'] {
+    --seat-x: 0.7274;
+    --seat-y: 0.42;
+    --seat-order: 5;
+  }
+
+  /* The count: a disc of the outer seat's size, the avatar's own film and
+     ink, tabular so «+12» sits still. */
+  .ui-avatar-orbit__more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: min(var(--control-size-regular), 15.3cqi);
+    block-size: min(var(--control-size-regular), 15.3cqi);
+    border-radius: var(--control-radius-capsule);
+    font: var(--sys-font-callout);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The pulse: one ring of the accent, sent out from the centre face as
+     the others arrive. */
+  .ui-avatar-orbit__pulse::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    inline-size: min(var(--control-size-extraLarge), 39cqi);
+    block-size: min(var(--control-size-extraLarge), 39cqi);
+    border: 2px solid var(--sys-color-accent);
+    border-radius: 50%;
+    opacity: 0;
+  }
+
+  /* THE MOTION — transform only, on the compositor. The centre settles,
+     the faces come out of it one after another, a ring pulses once, and
+     the orbits turn: one turn per period, each face counter-turning at the
+     same pace so it stays upright. Reduced motion: a still picture. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-avatar-orbit > .ui-avatar-orbit__center {
+      animation: ui-avatar-orbit-settle var(--sys-motion-duration-slowest)
+        var(--sys-motion-ease-entrance) both;
+    }
+    .ui-avatar-orbit__ring {
+      animation: ui-avatar-orbit-turn var(--ui-avatar-orbit-period, 120s) linear
+        infinite;
+    }
+    .ui-avatar-orbit__ring > .ui-avatar-orbit__seat {
+      animation:
+        ui-avatar-orbit-arrive var(--sys-motion-duration-slowest)
+          var(--sys-motion-ease-entrance)
+          calc(180ms + var(--seat-order, 0) * 70ms) both,
+        ui-avatar-orbit-upright var(--ui-avatar-orbit-period, 120s) linear
+          infinite;
+    }
+    .ui-avatar-orbit__pulse::before {
+      animation: ui-avatar-orbit-pulse var(--sys-motion-duration-cinematic)
+        var(--sys-motion-ease-standard) 260ms;
+    }
+  }
+
+  @keyframes ui-avatar-orbit-settle {
+    from {
+      opacity: 0;
+      scale: 0.82;
+    }
+  }
+
+  @keyframes ui-avatar-orbit-arrive {
+    from {
+      opacity: 0;
+      translate: 0 0;
+      scale: 0.4;
+    }
+  }
+
+  @keyframes ui-avatar-orbit-turn {
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  @keyframes ui-avatar-orbit-upright {
+    to {
+      rotate: -360deg;
+    }
+  }
+
+  @keyframes ui-avatar-orbit-pulse {
+    from {
+      opacity: 0.7;
+      scale: 1;
+    }
+    to {
+      opacity: 0;
+      scale: 1.9;
+    }
+  }
+}

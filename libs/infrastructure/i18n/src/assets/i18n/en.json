@@ -1065,6 +1065,18 @@
     "countOne": "1 visit"
   },
   "staff": {
+    "welcome": {
+      "headlineNamed": "{{name}}, you’re on the team",
+      "headline": "You’re on the team",
+      "lede": "Add a photo and a few words about yourself — it’s how clients get to know you.",
+      "start": "Let’s start",
+      "later": "Later"
+    },
+    "setupCard": {
+      "title": "Finish your profile",
+      "body": "{{done}} of {{total}} done. Your photo and a few words about you are what clients see when they book.",
+      "action": "Continue"
+    },
     "permissions": {
       "capabilities": {
         "TIME_OFF": "Blocks time",

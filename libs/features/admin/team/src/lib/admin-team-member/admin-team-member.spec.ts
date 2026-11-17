@@ -62,7 +62,11 @@ const REFUSED = PipelineError.fromWire('functions/permission-denied', {
 
 async function render(
   barberId: string,
-  options: TeamBedOptions & { readonly edit?: string } = {},
+  options: TeamBedOptions & {
+    readonly edit?: string;
+    /** `/staff/profile`: the page is the viewer's own record. */
+    readonly self?: boolean;
+  } = {},
 ) {
   const bed = teamBed({ members: TEAM, barbers: BARBERS, ...options });
   await TestBed.configureTestingModule({
@@ -71,6 +75,7 @@ async function render(
   }).compileComponents();
   const fixture = TestBed.createComponent(AdminTeamMember);
   fixture.componentRef.setInput('barberId', barberId);
+  if (options.self === true) fixture.componentRef.setInput('self', true);
   if (options.edit !== undefined) {
     fixture.componentRef.setInput('edit', options.edit);
   }
@@ -1317,6 +1322,49 @@ describe('AdminTeamMember — «Свържи профил» · «Разкачи 
       'Иван Петров',
     );
   });
+});
+
+describe('AdminTeamMember — one’s own page (`/staff/profile`, account first A5)', () => {
+  /** A barber on the standard level, signed in to the account linked to Иван's record. */
+  const ivanHimself: TeamBedOptions & { readonly self: boolean } = {
+    self: true,
+    roles: [Role.Client, Role.Barber],
+    userId: UserId.of('u-ivan'),
+    linkedBarberId: IVAN.barberId,
+    services: [serviceOf(IVAN.barberId)],
+    schedules: [rosterOf(IVAN.barberId)],
+  };
+
+  it('is the record the account is linked to: the profile opens, the rest is read, and back leads to the schedule', async () => {
+    const { piece, text } = await render('', ivanHimself);
+
+    expect(text(piece('member-name'))).toBe('Иван Петров');
+    expect(piece('member-row-profile')?.tagName).toBe('BUTTON');
+    expect(piece('member-row-period')?.tagName).not.toBe('BUTTON');
+    expect(piece('member-row-services')?.tagName).not.toBe('BUTTON');
+    expect(piece('member-delete')).toBeNull();
+    expect(piece('admin-team-member-back')?.getAttribute('href')).toBe(
+      '/staff/schedule',
+    );
+  });
+
+  it('never asks for the Team list it would be refused; the owner on their own page still reads it', async () => {
+    const barber = await render('', ivanHimself);
+    expect(barber.listed).toHaveLength(0);
+    TestBed.resetTestingModule();
+
+    const owner = await render('', {
+      self: true,
+      linkedBarberId: NIKOLAY.barberId,
+    });
+    expect(owner.listed.length).toBeGreaterThan(0);
+    expect(text(owner.piece('member-name'))).toBe('Николай Стоянов');
+  });
+
+  /** The words of a piece, its spaces folded. */
+  function text(element: Element | null | undefined): string {
+    return (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
 });
 
 describe('AdminTeamMember — a record at work', () => {

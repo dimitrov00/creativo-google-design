@@ -18,6 +18,7 @@ import {
   type PermissionsCall,
   type Role,
   type RolesCall,
+  type RouteCapability,
   StaffPermissions,
   StaffSetupItem,
   type TeamCall,
@@ -52,7 +53,7 @@ import {
   type StaffCapability,
   UserId,
 } from '@core/primitives';
-import { StaffAccessSystem } from '@core/systems';
+import { SessionAccessSystem, StaffAccessSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -435,6 +436,8 @@ export function teamBed(options: TeamBedOptions = {}) {
             barberId,
           ),
         editsPermissions: () => roles().includes('admin'),
+        opens: (routeCapabilities: readonly RouteCapability[]) =>
+          SessionAccessSystem.opens(routeCapabilities, permissions(), roles()),
       },
     },
     { provide: AccountStateService, useValue: { userId: signal(userId) } },

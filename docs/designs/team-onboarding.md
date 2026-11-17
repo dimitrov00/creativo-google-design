@@ -1355,8 +1355,23 @@ whether its barber signs in), but the account now comes first:
 pastLastWorkingLocalDate }`, never queried, its single-field indexes
   off). «Върни в екипа» moves the period that ended into it. The member
   page says them under «Работен период»: «Преди: 3.03.2024 – 30.11.2025».
-- Next in 1c: the welcome sheet and the setup card for a barber the owner
-  links (A4–A6 of the decision).
+- A barber the owner links is welcomed (A4–A6, the second 1c PR): the
+  first time they open `/staff/schedule`, `lib-staff-welcome` covers it — a
+  page, not a sheet, on the app's onboarding grammar (the client
+  onboarding's reward step: a centred column, the stacked
+  `ui-page-action-bar`) and Apple's hero page — one picture, one headline,
+  one line, no list of names or features (owner 2026-11-17): their face at the centre of `ui-avatar-orbit`,
+  ringed in the accent, up to six colleagues on two faint orbits turning
+  once every two minutes («+N» past five; still with reduced motion),
+  the centre named as the account names the person, «Петър, вече си в
+  екипа», one line («Добави снимка и няколко думи за себе си — така
+  клиентите ще те познаят.») and «Да започваме» over a quiet
+  «По-късно». It shows while `StaffSetupSystem.welcomes` holds (nothing of
+  the profile done yet); «По-късно» is kept on the device, nothing on the
+  server. The setup card then stays until `profileLeftOf` is empty. Both
+  open `/staff/profile`: the member page on the linked record, behind
+  `RouteCapabilities.OwnProfile` (`TEAM_PROFILES`, own scope), every row
+  still asking what the person may change; back leads to the schedule.
 
 **Gate: O7.** Decide on invites after 1a and 1b are in use.
 

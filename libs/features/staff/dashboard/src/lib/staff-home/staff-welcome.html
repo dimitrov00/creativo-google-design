@@ -1,0 +1,109 @@
+<ng-container *transloco="let t">
+  @if (vm(); as page) {
+  <!-- A FULL-SCREEN COVER, not a sheet (owner 2026-11-16: the welcome is a
+       page of its own, like every app's first screen): no grabber, no ✕,
+       no bar — the answers at the floor are the way on. -->
+  <ui-modal-sheet
+    sheetId="staff-welcome-sheet"
+    labelledBy="staff-welcome-title"
+    [closeLabel]="t('staff.welcome.later')"
+    [open]="!closing()"
+    [closing]="closing()"
+    [fullScreen]="true"
+    [bareHeader]="true"
+    [closeControl]="false"
+    data-testid="staff-welcome"
+    (dismissed)="later()"
+    (closeFinished)="closeFinished()"
+  >
+    <span sheet-title>{{ page.headline }}</span>
+
+    <!-- ONE IDEA, ONE LINE (Apple's hero pages — Music's «Hear About New
+         Music First», the Fitness+ offer): the picture, a headline, a
+         single line that leads to the answer, and air around them. A list
+         of features is a page of its own at Apple, never under a hero, so
+         this page carries none; the setup card and the profile carry the
+         rest. On the app's onboarding grammar: a centred column between
+         two spacers, risen in on mount, the stacked action bar below. -->
+    <ui-stack class="staff-welcome" uiAlignment="center" uiSpacing="none">
+      <ui-spacer />
+      <ui-stack
+        class="staff-welcome__body"
+        uiAlignment="center"
+        uiSpacing="none"
+        uiPaddingHorizontal="regular"
+      >
+        <!-- THE HERO: the newcomer at the centre, the colleagues they join
+             turning around them (Messages' group). Who they are is the
+             faces' to say — and the label's, for assistive tech. -->
+        <ui-avatar-orbit
+          class="staff-welcome__orbit"
+          [uiCenter]="page.own"
+          [uiFaces]="page.colleagues"
+          [attr.aria-label]="page.facesLabel"
+          data-testid="staff-welcome-faces"
+        />
+        <ui-stack
+          class="staff-welcome__words"
+          uiAlignment="center"
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="250"
+        >
+          <h1
+            id="staff-welcome-title"
+            class="staff-welcome__headline"
+            uiText
+            uiFont="largeTitle"
+            data-testid="staff-welcome-headline"
+          >
+            {{ page.headline }}
+          </h1>
+          <p
+            class="staff-welcome__lede"
+            uiText
+            uiFont="body"
+            uiForegroundStyle="secondary"
+            data-testid="staff-welcome-lede"
+          >
+            {{ t('staff.welcome.lede') }}
+          </p>
+        </ui-stack>
+      </ui-stack>
+      <ui-spacer />
+
+      <!-- The completion anatomy (Apple Setup Assistant): one filled
+           primary, the quiet «not now» beneath, both centred, sticky in the
+           thumb zone like every bottom bar in the app. -->
+      <ui-page-action-bar
+        [uiStacked]="true"
+        uiReveal="fade"
+        uiRevealTrigger="mount"
+        [uiRevealDelay]="450"
+      >
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiControlSize="large"
+          data-testid="staff-welcome-start"
+          (click)="start()"
+        >
+          {{ t('staff.welcome.start') }}
+        </button>
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="plain"
+          uiControlSize="small"
+          data-testid="staff-welcome-later"
+          (click)="later()"
+        >
+          {{ t('staff.welcome.later') }}
+        </button>
+      </ui-page-action-bar>
+    </ui-stack>
+  </ui-modal-sheet>
+  }
+</ng-container>

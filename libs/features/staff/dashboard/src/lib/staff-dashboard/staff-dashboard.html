@@ -361,12 +361,13 @@
       (visitPicked)="openFoundVisit($event)"
     />
     } }
-    <!-- THE LAST DAYS TO DECIDE ON (team onboarding D10): the Team page's
-         reminders where whoever manages the team lands — above any view,
-         nothing at all for anyone else. Its own chunk, fetched once the
-         page is idle: a reminder is never what the first frame needs. -->
+    <!-- THE STAFF HOME'S OWN PARTS (team onboarding D10; account first,
+         A4–A5): the last days to decide on for whoever manages the team, the
+         setup card and the first-time welcome for a linked barber — above
+         any view. Its own chunk, fetched once the page is idle: none of it
+         is what the first frame needs. -->
     @defer (on idle) {
-    <lib-schedule-reminders />
+    <lib-staff-home />
     } @if (isGrid()) { @if (dayHealth().length > 0) {
     <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the
          agenda's all-day strip opens with — a chair the sheet could not read
