@@ -312,6 +312,7 @@ describe('translateCodedError', () => {
   const AUTH_FLOW_ERROR_CODES: readonly string[] = [
     IdentityErrorCode.InvalidInput,
     IdentityErrorCode.OtpRateLimited,
+    IdentityErrorCode.OtpDailyLimit,
     IdentityErrorCode.RepositoryFailure,
     IdentityErrorCode.OtpSendFailure,
     IdentityErrorCode.OtpSendUnavailable,

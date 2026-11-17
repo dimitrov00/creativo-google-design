@@ -362,10 +362,20 @@ cost, mail-bombing strangers, and sender-domain reputation. **The first draft's
 Security hardening Phase 4 added App Check behind an OFF / MONITOR / ENFORCE switch,
 and its rollout is an owner checklist at the end of `HANDOFF.md` §3.3.
 
+_Status 2026-11-17: addressed with the sender
+(`decisions/2026-11-17-sign-in-email-sender.md`) — the reviewers' smallest
+email set: the existing `throttledCallable` bucket on `requestOtpChallenge`
+(ten, then one a second, two instances), five open codes per address a day
+in `OtpSystem` over index #10, and the provider's plan as the spend cap. No
+country allowlist and no App Check for launch (email only)._
+
 **F-22 🟡 (Gate B) Anonymous callers can write permanent rows.** _Confirmed._ Each
 new destination commits an `otps` document and an `auditLog` row, even under the
 refusing sender, and `auditLog` has no TTL. At 100 requests a second that is 8.6
 million permanent rows a day (estimated). The limit must refuse before the commit.
+_Status 2026-11-17: the bucket refuses before any read or write, so the
+ceiling is two requests a second — at most about 173,000 challenges and as
+many audit rows a day under a sustained flood, against 8.6 million._
 
 **F-23 🟢 The client issue sink's worst case.** _Estimated._ At its cap it writes
 about 14 GiB of logs a day, $5–12. It is capped already, so this is only a note.

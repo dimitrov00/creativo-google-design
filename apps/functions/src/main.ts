@@ -117,7 +117,7 @@ import {
   fixedCodeOtpCryptoPorts,
   nodeOtpCryptoPorts,
 } from './adapters/otp-crypto.adapter';
-import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';
+import { postmarkOtpSender } from './adapters/postmark-otp-sender.adapter';
 import {
   storageObjectPorts,
   storedObjectCopyPorts,
@@ -174,6 +174,7 @@ import {
   decodeRequestOtp,
   decodeUpdateProfile,
   decodeVerifyOtp,
+  OTP_REQUEST_RATE,
   otpChallengeOf,
   requestOtpRefusal,
   verifyOtpRefusal,
@@ -383,6 +384,35 @@ const LOG_DIGEST_KEY = defineSecret('LOG_DIGEST_KEY');
 const LOG_DIGEST_SECRETS = { secrets: [LOG_DIGEST_KEY] };
 
 /**
+ * The login-OTP sender identity's two settings (2026-11-17,
+ * `postmark-otp-sender.adapter.ts`): the token of the Postmark server that
+ * sends sign-in codes and nothing else, and its `auth.*` from-address
+ * («Creativo <codes@auth.…>»). Secret Manager holds both — one place per
+ * project, set once (`firebase functions:secrets:set`, the deploy
+ * checklist's «Sign-in: the OTP sender»); the emulator reads the fixed test
+ * values `tools/flags/write-functions-env.mjs` writes and never sends. A
+ * campaign sender, when one exists, gets its own server, token and address
+ * — never these (owner rule).
+ */
+const OTP_POSTMARK_TOKEN = defineSecret('OTP_POSTMARK_TOKEN');
+const OTP_EMAIL_FROM = defineSecret('OTP_EMAIL_FROM');
+
+/**
+ * The code request's options: the sender's two settings beside the log
+ * digest key — bound to this callable alone, the one that sends (the other
+ * identity callables share the ports but never deliver, and the sender
+ * reads its settings at each send) — and two instances at most, which
+ * with {@link OTP_REQUEST_RATE} is the whole ceiling.
+ */
+const OTP_REQUEST_OPTIONS = {
+  secrets: [OTP_POSTMARK_TOKEN, OTP_EMAIL_FROM, LOG_DIGEST_KEY],
+  maxInstances: 2,
+};
+
+/** The code request's bucket — module state, one per instance (`OTP_REQUEST_RATE`). */
+const otpRequestThrottle = tokenBucket(OTP_REQUEST_RATE, nowUtcMs);
+
+/**
  * The server's ports, in one bundle: every Firestore-backed port (the
  * locations among them — where every pipeline reads its wall clock's
  * zone), the telemetry, and the deployment's default location
@@ -434,9 +464,17 @@ const identityPorts = once(() => ({
   ...authClaimsPorts(auth()),
   // The login-OTP sender identity — never a campaign sender. Under the
   // emulator the code goes to the log (manual QA reads `devCode` anyway); a
-  // deployed environment can only construct the refusing sender, which
-  // answers IDENTITY_OTP_SEND_UNAVAILABLE until a real one lands (WS-0).
-  ...(onEmulator() ? consoleOtpSender(telemetry.log) : refusingOtpSender()),
+  // deployed environment sends it through Postmark, from the OTP identity
+  // alone, worded with the deployment's own code lifetime.
+  ...(onEmulator()
+    ? consoleOtpSender(telemetry.log)
+    : postmarkOtpSender({
+        serverToken: () => OTP_POSTMARK_TOKEN.value(),
+        fromAddress: () => OTP_EMAIL_FROM.value(),
+        ttlMinutes: AuthDeployment.DEFAULT.strategy.policy.ttlMinutes,
+        post: (url, init) => fetch(url, init),
+        log: telemetry.log,
+      })),
   // Under the emulator every code is the fixed one (manual QA never fishes
   // logs); a deployed environment can only construct the real generator.
   ...(onEmulator() ? fixedCodeOtpCryptoPorts() : nodeOtpCryptoPorts()),
@@ -729,18 +767,27 @@ const LARGE_MEMORY = '512MiB';
 
 // ── Identity ──────────────────────────────────────────────────────────────
 
+/**
+ * A new sign-in code. Any device may dial it, signed in or not, so a call
+ * first passes the instance's bucket (`OTP_REQUEST_RATE`, two instances at
+ * most); the pipeline then holds the address to its day's allowance and
+ * resend window before anything is saved or sent.
+ */
 export const requestOtpChallenge = onCall(
-  LOG_DIGEST_SECRETS,
-  wiredCallable(
-    plain(Callables.RequestOtpChallenge, IdentityErrorCode.RepositoryFailure),
-    root.identity,
-    decodeRequestOtp,
-    // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
-    async (ports, cmd) =>
-      Result.map(await requestOtp(ports)(cmd), (answer) =>
-        otpChallengeOf(answer, onEmulator()),
-      ),
-    requestOtpRefusal,
+  OTP_REQUEST_OPTIONS,
+  throttledCallable(
+    otpRequestThrottle,
+    wiredCallable(
+      plain(Callables.RequestOtpChallenge, IdentityErrorCode.RepositoryFailure),
+      root.identity,
+      decodeRequestOtp,
+      // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
+      async (ports, cmd) =>
+        Result.map(await requestOtp(ports)(cmd), (answer) =>
+          otpChallengeOf(answer, onEmulator()),
+        ),
+      requestOtpRefusal,
+    ),
   ),
 );
 

@@ -17,7 +17,7 @@ import {
   TenantId,
   UtcEpochMs,
 } from '@core/primitives';
-import { IdentityErrorCode } from '@core/errors';
+import { IdentityError, IdentityErrorCode } from '@core/errors';
 import type { Otp } from '@core/entities';
 import {
   deepFreeze,
@@ -456,10 +456,12 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
     ).toBe(true);
   });
 
-  it('owns the figures the client reads — a 60 s resend window, escalation from the third send (OR-9, OR-10)', () => {
+  it('owns the figures — a 60 s resend window, escalation from the third send (OR-9, OR-10), five open codes a day per address (2026-11-17)', () => {
     expect(OtpLimits).toEqual({
       ResendWindowSeconds: 60,
       EscalateAfterSends: 3,
+      DailyCodesPerDestination: 5,
+      DailyWindowHours: 24,
     });
   });
 
@@ -538,6 +540,101 @@ describe('OtpSystem.retryAfterSeconds (OR-9)', () => {
     const newer = stored({ createdAtUtcMs: at(0, 45) });
     expect(OtpSystem.retryAfterSeconds([older, newer], at(0, 50))).toBe(55);
     expect(OtpSystem.retryAfterSeconds([newer, older], at(0, 50))).toBe(55);
+  });
+});
+
+describe('OtpSystem.issueRefusal — the day’s allowance, then the resend window (2026-11-17)', () => {
+  const HOUR = 3_600_000;
+  /** `n` open challenges, the newest `newestAgoMs` before T0 + 24 h and each older one an hour before it. */
+  function openRun(n: number, newestAgoMs: number): readonly Otp[] {
+    const now = UtcEpochMs.plusMs(T0, 24 * HOUR);
+    return Array.from({ length: n }, (_, i) =>
+      stored({
+        id: OtpId.of(`otp_${i}`),
+        createdAtUtcMs: UtcEpochMs.plusMs(now, -newestAgoMs - i * HOUR),
+      }),
+    );
+  }
+  const NOW = UtcEpochMs.plusMs(T0, 24 * HOUR);
+
+  it('reads the day from 24 h before now, inclusive', () => {
+    expect(OtpSystem.dailyWindowStartUtcMs(NOW)).toBe(T0);
+  });
+
+  it('answers null for a free address — nothing open, or only codes older than the resend window', () => {
+    expect(OtpSystem.issueRefusal([], NOW)).toBeNull();
+    expect(OtpSystem.issueRefusal(openRun(4, 2 * 60_000), NOW)).toBeNull();
+  });
+
+  it('answers the resend countdown while the newest open code is under 60 s old', () => {
+    expect(OtpSystem.issueRefusal(openRun(1, 20_000), NOW)).toEqual(
+      IdentityError.otpRateLimited(40),
+    );
+  });
+
+  it('refuses the sixth open code of a day IDENTITY_OTP_DAILY_LIMIT, before any countdown', () => {
+    expect(OtpSystem.issueRefusal(openRun(5, 2 * 60_000), NOW)).toEqual(
+      IdentityError.otpDailyLimit(),
+    );
+    expect(OtpSystem.issueRefusal(openRun(5, 20_000), NOW)).toEqual(
+      IdentityError.otpDailyLimit(),
+    );
+  });
+
+  it('counts only open codes inside the day — a used code, or one older than 24 h, never', () => {
+    const day = openRun(5, 2 * 60_000);
+    const used = day.map((otp, i) =>
+      i === 0 ? { ...otp, consumedAtUtcMs: NOW } : otp,
+    );
+    expect(OtpSystem.issueRefusal(used, NOW)).toBeNull();
+    const aged = day.map((otp, i) =>
+      i === 4 ? { ...otp, createdAtUtcMs: UtcEpochMs.plusMs(T0, -1) } : otp,
+    );
+    expect(OtpSystem.issueRefusal(aged, NOW)).toBeNull();
+    const atEdge = day.map((otp, i) =>
+      i === 4 ? { ...otp, createdAtUtcMs: T0 } : otp,
+    );
+    expect(OtpSystem.issueRefusal(atEdge, NOW)).toEqual(
+      IdentityError.otpDailyLimit(),
+    );
+  });
+
+  it('equals the brute-force reading of both rules (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            agoMs: fc.integer({ min: 0, max: 30 * HOUR }),
+            used: fc.boolean(),
+          }),
+          { maxLength: 9 },
+        ),
+        (rows) => {
+          const open = rows.map((row, i) =>
+            stored({
+              id: OtpId.of(`otp_${i}`),
+              createdAtUtcMs: UtcEpochMs.plusMs(NOW, -row.agoMs),
+              consumedAtUtcMs: row.used ? NOW : null,
+            }),
+          );
+          const today = rows.filter(
+            (row) => !row.used && row.agoMs <= 24 * HOUR,
+          ).length;
+          const refusal = OtpSystem.issueRefusal(open, NOW);
+          if (today >= OtpLimits.DailyCodesPerDestination) {
+            expect(refusal).toEqual(IdentityError.otpDailyLimit());
+          } else if (!OtpSystem.mayIssue(open, NOW)) {
+            expect(refusal).toEqual(
+              IdentityError.otpRateLimited(
+                OtpSystem.retryAfterSeconds(open, NOW),
+              ),
+            );
+          } else {
+            expect(refusal).toBeNull();
+          }
+        },
+      ),
+    );
   });
 });
 
@@ -684,6 +781,7 @@ describe('OtpSystem purity', () => {
       recorded: OtpSystem.recordAttempt(otp),
       mayIssue: OtpSystem.mayIssue(open, at(0, 30)),
       retryAfterSeconds: OtpSystem.retryAfterSeconds(open, at(0, 30)),
+      issueRefusal: OtpSystem.issueRefusal(open, at(0, 30)),
       escalates: OtpSystem.escalates(OtpLimits.EscalateAfterSends),
     });
     const once = run();

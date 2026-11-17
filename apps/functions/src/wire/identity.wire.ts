@@ -32,7 +32,7 @@ import type {
   UpdateProfileCommand,
   VerifyOtpCommand,
 } from '@core/pipelines';
-import type { EdgeError } from '../edge';
+import type { EdgeError, ThrottleRate } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
 import {
   isRecord,
@@ -148,6 +148,21 @@ export function requestOtpRefusal(failure: RequestOtpError): EdgeError {
   }
   return error;
 }
+
+/**
+ * The code request's admission rate on ONE instance (2026-11-17, with the
+ * real sender — performance-cost audit F-21/F-22): a burst of ten, then one
+ * call a second; the definition's two instances bound the whole at two a
+ * second. A refused call is answered `resource-exhausted` before anything
+ * is read or written, so a flood costs no `otps` document, no audit row and
+ * no message. Per address, the day's allowance (`OtpLimits`) is the cap; this
+ * is the ceiling over every address at once. Its cost: under a flood, real
+ * sign-ins wait their turn too — accepted at this shop's size.
+ */
+export const OTP_REQUEST_RATE: ThrottleRate = {
+  capacity: 10,
+  callsPerSecond: 1,
+};
 
 // ── verifyOtpChallenge ──────────────────────────────────────────────────
 

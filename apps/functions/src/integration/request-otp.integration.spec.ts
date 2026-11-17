@@ -19,7 +19,7 @@ import { firestoreOtpPorts } from '../adapters/firestore-otps.adapter';
 import { purgeAtFor } from '../adapters/firestore-ttl.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 import { nodeOtpCryptoPorts } from '../adapters/otp-crypto.adapter';
-import { refusingOtpSender } from '../adapters/refusing-otp-sender.adapter';
+import { postmarkOtpSender } from '../adapters/postmark-otp-sender.adapter';
 import { singleTenantPorts } from '../adapters/tenant.adapter';
 
 /**
@@ -36,8 +36,12 @@ import { singleTenantPorts } from '../adapters/tenant.adapter';
  * - a commit that fails (the row's `auditLog/<id>` already there, so its
  *   `Create` meets ALREADY_EXISTS) leaves neither the challenge nor a row,
  *   and sends nothing;
- * - a refused send (the deployed sender, WS-0) follows its ALREADY committed
- *   challenge and row — RU-3's order, the plan's §7 item 5;
+ * - a refused send (the deployed Postmark sender with no token set)
+ *   follows its ALREADY committed challenge and row — RU-3's order, the
+ *   plan's §7 item 5;
+ * - the day's allowance reads index #10's query over the real store: five
+ *   open challenges of the address inside 24 h refuse a sixth before
+ *   anything is written;
  * - no row field holds the destination, the code, the hash or the salt
  *   (R36 / T5): the destination is a SENTINEL and the rows are searched.
  *
@@ -203,7 +207,16 @@ describe('requestOtp (emulator)', () => {
   });
 
   it('a refused send follows the ALREADY committed challenge and its row (RU-3 order; §7 item 5)', async () => {
-    const answered = await run(COMMAND, refusingOtpSender()).answer;
+    const unconfigured = postmarkOtpSender({
+      serverToken: () => '',
+      fromAddress: () => '',
+      ttlMinutes: AuthDeployment.DEFAULT.strategy.policy.ttlMinutes,
+      post: async () => {
+        throw new Error('an unconfigured sender never calls Postmark');
+      },
+      log: () => undefined,
+    });
+    const answered = await run(COMMAND, unconfigured).answer;
     expect(!answered.ok && answered.error.errorCode).toBe(
       IdentityErrorCode.OtpSendUnavailable,
     );
@@ -229,5 +242,39 @@ describe('requestOtp (emulator)', () => {
     ]) {
       expect(serialised, secret).not.toContain(secret);
     }
+  });
+
+  it('refuses a sixth open code of the day over index #10’s query on the real store — nothing written, nothing sent (2026-11-17)', async () => {
+    const now = pinnedNowUtcMs()();
+    const hour = 3_600_000;
+    for (let i = 0; i < 5; i++) {
+      await db.doc(`${Collections.Otps}/open-${i}`).set({
+        tenantId: 'creativo',
+        destination: SENTINEL_EMAIL,
+        otpDestinationType: OtpDestinationType.Email,
+        otpPurpose: 'LOGIN',
+        codeHash: 'hash',
+        salt: 'salt',
+        expiresAtUtcMs: now - i * hour + 5 * 60_000,
+        attemptCount: 0,
+        maxAttempts: 5,
+        consumedAtUtcMs: null,
+        createdAtUtcMs: now - (i + 1) * hour,
+      });
+    }
+    const { sent, answer } = run(COMMAND);
+    const answered = await answer;
+    expect(!answered.ok && answered.error.errorCode).toBe(
+      IdentityErrorCode.OtpDailyLimit,
+    );
+    expect(sent).toEqual([]);
+    expect((await otpDocs()).map((doc) => doc.id).sort()).toEqual([
+      'open-0',
+      'open-1',
+      'open-2',
+      'open-3',
+      'open-4',
+    ]);
+    expect(await auditRows()).toEqual([]);
   });
 });

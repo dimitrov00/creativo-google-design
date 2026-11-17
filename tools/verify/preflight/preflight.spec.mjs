@@ -712,7 +712,7 @@ describe('P7 · the emulator-only adapters', () => {
     assert.deepEqual(answer.lines.slice(0, -1), [outside(3)]);
     assert.match(
       answer.lines.at(-1),
-      /onEmulator\(\) \? <emulator adapter> : <deployed adapter>, as the OTP crypto is; .* docs\/production-deploy\.md §1/,
+      /onEmulator\(\) \? <emulator adapter> : <deployed adapter>, as the OTP crypto and the OTP sender are \(docs\/production-deploy\.md §1/,
     );
   });
 
@@ -1981,8 +1981,18 @@ describe('the deploy wiring', () => {
     );
     return sources;
   };
-  const GATED_SENDER =
-    '...(onEmulator() ? consoleOtpSender(telemetry.log) : refusingOtpSender()),';
+  /** The emulator gate of the login-OTP sender in main.ts, as formatted (the deployed branch is Postmark's, 2026-11-17). */
+  const GATED_SENDER = [
+    '  ...(onEmulator()',
+    '    ? consoleOtpSender(telemetry.log)',
+    '    : postmarkOtpSender({',
+  ].join('\n');
+  /** The same lines with the gate taken off — the console sender reached on every deployment. */
+  const UNGATED_SENDER = [
+    '  ...(true',
+    '    ? consoleOtpSender(telemetry.log)',
+    '    : postmarkOtpSender({',
+  ].join('\n');
 
   // Flipped ON PURPOSE by audit-hardening WS-0 (it pinned FAIL on the
   // console sender wired outright): main.ts now gates the console sender
@@ -2000,13 +2010,7 @@ describe('the deploy wiring', () => {
     assert.ok(main.text.includes(GATED_SENDER));
     const ungated = sources.map((file) =>
       file === main
-        ? {
-            ...file,
-            text: file.text.replace(
-              GATED_SENDER,
-              '...consoleOtpSender(telemetry.log),',
-            ),
-          }
+        ? { ...file, text: file.text.replace(GATED_SENDER, UNGATED_SENDER) }
         : file,
     );
     const reverted = checkEmulatorOnly({ root: FUNCTIONS, sources: ungated });
@@ -2019,41 +2023,61 @@ describe('the deploy wiring', () => {
   });
 
   // The launch blocker, read off the repository: P8 resolves the very files
-  // the functions build compiles. This pin flips to PASS in the change that
-  // wires a transactional sender in place of refusingOtpSender
-  // (docs/production-deploy.md §1, "Sign-in: the OTP sender") — update it
-  // there, with that checklist item.
-  it('P8 refuses today’s functions on main.ts’s refusing sender alone, and passes once a real sender replaces it', () => {
+  // the functions build compiles. Flipped ON PURPOSE on 2026-11-17: the
+  // Postmark sender replaced refusingOtpSender (docs/production-deploy.md
+  // §1, "Sign-in: the OTP sender"), which is deleted — so no @launchBlocker
+  // export is left. A stand-in tagged again and wired fails it again.
+  it('P8 passes on today’s functions — the real sender wired, no launch-blocker stand-in left — and refuses one wired again', () => {
     const sources = realTree();
     const today = checkLaunchBlockers({ root: FUNCTIONS, sources });
-    assert.equal(today.verdict, Verdict.Fail);
-    assert.equal(today.lines.length, 2);
-    assert.match(
-      today.lines[0],
-      /apps\/functions\/src\/main\.ts:\d+ uses refusingOtpSender \(@launchBlocker, .*apps\/functions\/src\/adapters\/refusing-otp-sender\.adapter\.ts\)$/,
-    );
+    assert.equal(today.verdict, Verdict.Pass);
+    assert.match(today.detail, /^no @launchBlocker export in \d+ files under /);
     const main = sources.find(({ path }) => path.endsWith('/main.ts'));
     assert.ok(main.text.includes(GATED_SENDER));
-    const replaced = sources.map((file) =>
-      file === main
-        ? {
-            ...file,
-            text: file.text.replace(
-              GATED_SENDER,
-              '...(onEmulator() ? consoleOtpSender(telemetry.log) : transactionalOtpSender()),',
-            ),
-          }
-        : file,
+    const standIn = `${FUNCTIONS}/adapters/stand-in-otp-sender.adapter.ts`;
+    const rewired = [
+      ...sources.map((file) =>
+        file === main
+          ? {
+              ...file,
+              text: [
+                "import { standInOtpSender } from './adapters/stand-in-otp-sender.adapter';",
+                file.text.replace(
+                  GATED_SENDER,
+                  [
+                    '  ...(onEmulator()',
+                    '    ? consoleOtpSender(telemetry.log)',
+                    '    : standInOtpSender() && postmarkOtpSender({',
+                  ].join('\n'),
+                ),
+              ].join('\n'),
+            }
+          : file,
+      ),
+      {
+        path: standIn,
+        text: [
+          '/**',
+          ' * A sender that delivers nothing.',
+          ' *',
+          ' * @launchBlocker The production preflight refuses a deploy that uses it.',
+          ' */',
+          'export const standInOtpSender = () => ({ sendOtp: async () => null });',
+        ].join('\n'),
+      },
+    ];
+    const reverted = checkLaunchBlockers({ root: FUNCTIONS, sources: rewired });
+    assert.equal(reverted.verdict, Verdict.Fail);
+    assert.match(
+      reverted.lines[0],
+      /apps\/functions\/src\/main\.ts:\d+ uses standInOtpSender \(@launchBlocker, .*stand-in-otp-sender\.adapter\.ts\)$/,
     );
-    const tomorrow = checkLaunchBlockers({
-      root: FUNCTIONS,
-      sources: replaced,
-    });
-    assert.equal(tomorrow.verdict, Verdict.Pass);
-    assert.equal(tomorrow.detail, 'refusingOtpSender: never used');
   });
 
-  it('keeps the functions predeploy fail-closed on today’s tree — every other row passing on a healthy project, P8 alone stops it', async () => {
+  // Flipped ON PURPOSE on 2026-11-17 with the pin above: the functions
+  // predeploy passed every row but P8 on a healthy project; with the real
+  // sender wired it passes whole.
+  it('passes the functions predeploy on today’s tree on a healthy project — P8 included, since the real sender is wired', async () => {
     const sources = realTree();
     const rows = await runPreflight({
       scope: 'functions',
@@ -2071,12 +2095,12 @@ describe('the deploy wiring', () => {
         ['P3', Verdict.Pass],
         ['P6', Verdict.Pass],
         ['P7', Verdict.Pass],
-        ['P8', Verdict.Fail],
+        ['P8', Verdict.Pass],
         ['P9', Verdict.Pass],
         ['P10', Verdict.Pass],
       ],
     );
-    assert.equal(exitCodeOf(rows), 1);
+    assert.equal(exitCodeOf(rows), 0);
   });
 
   // P10 over today's tree (security hardening S-DEP-13): the shipped

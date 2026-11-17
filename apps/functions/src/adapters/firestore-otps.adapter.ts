@@ -8,8 +8,9 @@ import { readFailed } from './store-answer';
  * The `otps` store outside any transaction (identity flip (2), blueprint
  * §4.1 `requestOtp`) — `otps/{id}` IS the flat `Otp` minus `id` (Law 5):
  * `loadOpenOtps`, every challenge for a destination still unconsumed and
- * created at or after the window start: `destination ==`,
- * `consumedAtUtcMs == null`, `createdAtUtcMs >=` (index #10).
+ * created at or after the window start — the day's window, which holds the
+ * resend window too: `destination ==`, `consumedAtUtcMs == null`,
+ * `createdAtUtcMs >=` (index #10).
  *
  * No `otps` write lives here (audit-hardening Phase 3, P3-RU-6,
  * P3-DEP-6): `requestOtp` saves the issued challenge by ONE commit — the
@@ -25,7 +26,7 @@ import { readFailed } from './store-answer';
 export const firestoreOtpPorts = (db: Firestore): OtpStorePorts => ({
   loadOpenOtps: async (destination, sinceUtcMs) => {
     try {
-      // unbounded-ok: one destination inside the resend window
+      // unbounded-ok: one destination's open codes of a day — the day's allowance stops issuing at five
       const snap = await db
         .collection(Collections.Otps)
         .where('destination', '==', destination)

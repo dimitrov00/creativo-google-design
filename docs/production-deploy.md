@@ -37,8 +37,8 @@ failure doesn't land in the middle of a deploy. By hand it defaults to
 fails with "no built scripts"; only `--scope functions` (P1–P3, P6–P10) runs
 P7, P8 and P9 (P10 runs in both). Without `--project` it falls back to
 `$GCLOUD_PROJECT`, then to `.firebaserc`'s default. On a first deploy P2 and
-P3 fail until the index deploy of section 3.1 has run; that is expected. P8 fails every functions
-deploy until the OTP sender of section 1 lands — that is the point. P9 never
+P3 fail until the index deploy of section 3.1 has run; that is expected. P8 passes since the
+Postmark OTP sender of section 1 replaced its refusing stand-in (2026-11-17). P9 never
 fails: it reports the platform backstops (PITR, backups, the audit sink and
 its bucket) as `INFO` lines. P10 passes today (App Check ships `OFF`) and
 refuses an `ENFORCE` the web cannot satisfy: the built bundle in the web
@@ -67,9 +67,9 @@ used. It judges a run-time `import()` or `require()` of a module that exports
 one (declared or re-exported, a barrel included) at the load, and refuses a
 load whose specifier isn't a literal. The tag anchors only on an exported
 top-level `const` or `function`; anywhere else it fails, so it can't drop out
-unnoticed. The one `@launchBlocker` export is the refusing OTP sender
-(`refusingOtpSender`); P8 follows its uses the same way and fails on any use
-at all, behind `onEmulator()` or not. Exit codes: 0 = pass, 1 = a check
+unnoticed. No `@launchBlocker` export is left since the refusing OTP sender
+was deleted (2026-11-17); P8 follows any future one the same way and fails on
+any use at all, behind `onEmulator()` or not. Exit codes: 0 = pass, 1 = a check
 failed, 2 = bad arguments. If P6 fails, P1–P3 and P9 are skipped; P7 and P8
 read only the repository, so they run either way. P9 reads the names in
 `tools/ops/names.env` (the ones the `tools/ops` scripts create) and turns
@@ -257,73 +257,95 @@ Source: `docs/architecture/firestore-runbook.md` deploy step 4;
 `apps/functions/src/main.ts` (`LOG_DIGEST_KEY`);
 `docs/architecture/flips/audit-hardening.md` §2.6.
 
-### Sign-in: the OTP sender (LAUNCH BLOCKER)
+### Sign-in: the OTP sender
 
-- [ ] **Replace the refusing OTP sender with a real transactional sender.**
-      A deployed project wires `refusingOtpSender`: it sends nothing and
-      refuses each code request that reaches it with
-      `IDENTITY_OTP_SEND_UNAVAILABLE` (`failed-precondition`; the sign-in
-      screen says codes aren't being sent yet and offers no retry). The
-      refused request still saved its challenge and used up the resend
-      window, so a repeat for the same destination inside that window
-      answers `IDENTITY_OTP_RATE_LIMITED`, whose words say a code was already
-      sent though none was. Until this is replaced, nobody can sign in,
-      staff and admins included. The console sender (`consoleOtpSender`,
-      which writes `[otp] would send <channel> OTP to <destination>: <code>`
-      to the log) runs only under the emulator, so no deployed project logs a
-      code or a destination. What to build:
-  - an adapter implementing `OtpDeliveryPorts.sendOtp` for both channels
-    (`OtpDestinationType.Email` and `Sms`) over a transactional provider (the
-    console adapter's comment suggests Postmark or Twilio);
-  - bind it in `identityPorts` in place of `refusingOtpSender()`, in the
-    deployed branch of the emulator switch, the way the OTP crypto beside it
-    is bound —
-    `...(onEmulator() ? consoleOtpSender(telemetry.log) : <real sender>(…))` —
-    so the emulator keeps the console sender. The preflight's **P8** refuses
-    every functions deploy until then: `refusingOtpSender` is tagged
-    `@launchBlocker`, and P8 fails on any use of it (followed through renames
-    and re-exports). **P7** already passes: `consoleOtpSender` is tagged
-    `@emulatorOnly` and is used only behind `onEmulator()`; keep that tag,
-    and tag any new emulator-only adapter the same way (in its JSDoc, on the
-    exported `const` or `function` itself). In the same change, delete the
-    refusing adapter (or drop its last use) and flip the pin in
-    `preflight.spec.mjs` ("P8 refuses today’s functions on main.ts’s
-    refusing sender alone, …", and the fail-closed predeploy case beside it)
-    to expect PASS;
-  - declare the provider's keys with `defineSecret('<NAME>')` and bind them
-    through `onCall({ secrets: [...] })` on the three callables that build
-    `root.identity` (`requestOtpChallenge`, `verifyOtpChallenge`,
-    `completeRegistration`, which share the one `identityPorts`), the way
-    `WALK_IN_SECRETS` does, then set each one:
+The code half landed on 2026-11-17
+(`docs/architecture/decisions/2026-11-17-sign-in-email-sender.md`): a
+deployed project sends each sign-in code by e-mail through Postmark
+(`postmarkOtpSender`), from the login-OTP identity alone. The emulator keeps
+the console sender, which logs the code and sends nothing. Until the steps
+below are done, a deployed project still sends nothing: a request answers
+`IDENTITY_OTP_SEND_UNAVAILABLE` and the sign-in screen says codes aren't
+being sent yet.
+
+What is built:
+
+- **The sender.** One `POST https://api.postmarkapp.com/email` per code on
+  the server's transactional stream (`outbound`), tagged `sign-in-code`, with
+  open and link tracking off. The code is in the subject so a phone can
+  autofill it, and the message is Bulgarian (`otp-email.words.ts`). Every
+  refusal logs one `otp.provider_refused` line with the reason, the HTTP
+  status and Postmark's `ErrorCode`, never the address, the code or the token.
+- **The limits, checked before anything is saved or sent:**
+  - one code per address per 60 s (OR-9);
+  - at most five unused codes per address in any 24 h
+    (`IDENTITY_OTP_DAILY_LIMIT`), so a stranger's inbox gets at most five a
+    day, while a person who signs in uses each code and is never counted;
+  - a ceiling over every address at once: a burst of ten, then one request a
+    second per instance, on two instances at most (`OTP_REQUEST_RATE`). Past
+    it a request is refused `resource-exhausted` before any read or write.
+    Under a flood, real sign-ins wait too; that is accepted at this size.
+- **The address is stored as it is searched:** lower-cased e-mail, E.164
+  phone. Before, a mixed-case address escaped its own throttle and the
+  erasure's sweep.
+- **The settings** are two Secret Manager secrets, bound to
+  `requestOtpChallenge` alone: `OTP_POSTMARK_TOKEN` and `OTP_EMAIL_FROM`.
+
+What the owner does, once per project:
+
+- [ ] **Create the Postmark account and a server for sign-in codes only**
+      (for example «Creativo — sign-in codes»). This is the login-OTP
+      identity: never send marketing or reminders from this server or its
+      token (owner rule). A future campaign sender gets its own server,
+      token, address and adapter.
+- [ ] **Add the sending domain `auth.<your domain>` to Postmark** and publish
+      the DNS records Postmark shows for it: the DKIM `TXT` record and the
+      Return-Path `CNAME`. Publish a DMARC record for the domain too
+      (`_dmarc`, starting at `p=none` with a report address, then tightening).
+      Wait until Postmark shows the domain verified. **decide**: the domain
+      itself.
+- [ ] **Ask Postmark to approve the account.** Until it does, Postmark only
+      delivers to addresses on the sender's own domain (`ErrorCode` 412), and
+      the sender answers every other request `IDENTITY_OTP_SEND_UNAVAILABLE`.
+- [ ] **Check the plan's volume and overage settings** in the Postmark account,
+      so a month's codes can't run past the budget unnoticed. **decide**: the
+      plan.
+- [ ] **Set the two secrets**, then deploy the functions:
 
 ```bash
-firebase functions:secrets:set <NAME> --project "$PROJECT_ID"
+firebase functions:secrets:set OTP_POSTMARK_TOKEN --project "$PROJECT_ID"
 ```
 
-- add each new secret to `EMULATOR_SECRETS` so the emulator keeps working.
+```bash
+firebase functions:secrets:set OTP_EMAIL_FROM --project "$PROJECT_ID"
+```
 
-Source: `apps/functions/src/adapters/refusing-otp-sender.adapter.ts:5-25`;
-`apps/functions/src/adapters/console-otp-sender.adapter.ts:6-54`;
-`apps/functions/src/main.ts:333-347` (`identityPorts`), `:386-389`
-(`WALK_IN_SECRETS`), `:504-538` (the three identity callables);
-`apps/functions/src/edge.ts` (`IDENTITY_WIRE`);
-`tools/flags/write-functions-env.mjs:99-102` (`EMULATOR_SECRETS`);
-`tools/verify/preflight/preflight.mjs:859-907` (P7, `checkEmulatorOnly`),
-`:909-948` (P8, `checkLaunchBlockers`).
+- `OTP_POSTMARK_TOKEN` is the sign-in server's **Server API token** (Postmark
+  → the server → API Tokens), never the account token.
+- `OTP_EMAIL_FROM` is the from-address on the verified domain, for example
+  `Creativo <codes@auth.<your domain>>`.
+- [ ] **After the deploy, sign in once with your own address.**
+  - The message arrives with the code in its subject.
+  - Postmark's Activity shows it under the `sign-in-code` tag.
+  - No `otp.provider_refused` line is in the functions log. If there is one,
+    its `providerErrorCode` names the cause: 10 is the token, 412 or 413 is
+    the approval, 403 is the from-address, 1235 is the stream.
+
+Source: `apps/functions/src/adapters/postmark-otp-sender.adapter.ts`,
+`otp-email.words.ts`; `apps/functions/src/main.ts` (`OTP_POSTMARK_TOKEN`,
+`OTP_EMAIL_FROM`, `OTP_REQUEST_OPTIONS`, `identityPorts`,
+`requestOtpChallenge`); `apps/functions/src/wire/identity.wire.ts`
+(`OTP_REQUEST_RATE`); `libs/ecs-core/src/systems/otp.system.ts`
+(`OtpLimits`, `issueRefusal`); `tools/flags/write-functions-env.mjs`
+(`EMULATOR_SECRETS`).
 
 - [ ] **Keep the login-OTP sender separate from any campaign or marketing
-      sender (owner rule).** It gets its own provider account or sub-account,
-      its own API-key secret, its own sending identity (a dedicated `auth.*`
-      from-address and its own SMS sender id or number) and its own adapter
-      file. Never send marketing through `OtpDeliveryPorts`, and never reuse
-      this identity from a campaign adapter. No campaign sender exists today.
-      Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:7-11`;
-      `apps/functions/src/main.ts:336-340` (`identityPorts`).
-- [ ] **Publish the provider's e-mail DNS records (SPF, DKIM, DMARC) for the
-      `auth.*` sending domain**, and register an SMS sender id if the BG
-      provider requires one. The provider defines these steps; the repo has no
-      DNS config. **decide** (depends on the provider).
-      Source: `console-otp-sender.adapter.ts:10-11`.
+      sender (owner rule).** It has its own Postmark server, its own token
+      secret, its own `auth.*` from-address and its own adapter file. Never
+      send marketing through `OtpDeliveryPorts`, and never reuse this
+      identity from a campaign adapter. No campaign sender exists today.
+      Source: `apps/functions/src/adapters/postmark-otp-sender.adapter.ts`;
+      `apps/functions/src/main.ts` (`identityPorts`).
 
 ### Auth
 
@@ -775,7 +797,8 @@ pnpm run preflight --project "$PROJECT_ID"
       reach the ID token only from the stored `users/{uid}.roles`, and only
       at sign-in. Steps for the first admin:
   1. The person signs in once through OTP and finishes registration. This
-     needs the real OTP sender from section 1.
+     needs the OTP sender's owner steps from section 1 (the Postmark account,
+     its approval, the domain and the two secrets).
   2. With Admin credentials, set the root `roles` array on `users/{uid}` (for
      example `['admin']`, `['sysadmin']`, `['barber']`). Use only known `Roles`
      tags, never a nested or dotted field.
@@ -969,9 +992,11 @@ the `production` App Check mode, `APP_CHECK_MODE=<mode>`, into
 `--scope functions` (P1–P3, P6–P10). Don't set `FLAGS_ENV` for production.
 The deploy fails closed if `loc-center`, the TTLs or the composites aren't
 ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
-code) is wired outside the emulator (P7), while the refusing OTP sender is
-still wired (P8), if the App Check mode is `ENFORCE` while the live web
-carries no site key (P10), or if `WALKIN_ID_KEY` is missing.
+code) is wired outside the emulator (P7), if a `@launchBlocker` stand-in is
+wired (P8), if the App Check mode is `ENFORCE` while the live web carries no
+site key (P10), or if `WALKIN_ID_KEY`, `OTP_POSTMARK_TOKEN` or
+`OTP_EMAIL_FROM` is missing (a bound secret that Secret Manager doesn't hold
+fails the deploy).
 
 The deploy holds 51 functions. Audit-hardening WS-3 (DEP-14) added thirteen
 document-change audit triggers, one per governed collection, each retrying:

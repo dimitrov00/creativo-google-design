@@ -1,6 +1,5 @@
 import {
   AuthStrategyKind,
-  Identifier,
   type OtpDestinationType,
   OtpPurpose,
   ParsedIdentifier,
@@ -34,7 +33,9 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * §4.1; identity flip (2), §3.2): the successor of the legacy
  * `RequestOtpUseCase` (deleted in Phase 4b) and the `requestOtpChallenge`
  * handler, as one sandwich whose only write is ONE commit with no reads
- * (the resend window is the throttle, a lost race costs one extra code).
+ * (the resend window and the day's allowance are the per-address limits,
+ * the edge's bucket the ceiling over all; a lost race costs one extra
+ * code).
  *
  * The order is frozen, refusal by refusal: (1) the deployment's ONE
  * challenge channel (`OtpSystem.channelAccepts`; a magic-link deployment
@@ -42,10 +43,14 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * destination parsed on that channel (an e-mail through `Email.parse`, a
  * phone through `PhoneSystem.parse` with no default country — the kernel's
  * rule) → `IDENTITY_IDENTIFIER_INVALID`; (3) the open challenges of the
- * PARSED destination created inside the resend window (`loadOpenOtps`,
- * index #10) → `IDENTITY_OTP_RATE_LIMITED`, carrying the seconds left on
- * that window (`OtpSystem.retryAfterSeconds`, OR-9) so the code step
- * restarts its countdown instead of showing a dead end; (4) the tenant;
+ * PARSED destination created inside the day's window (`loadOpenOtps`,
+ * index #10, from `OtpSystem.dailyWindowStartUtcMs`), judged by
+ * `OtpSystem.issueRefusal`: the day's allowance spent →
+ * `IDENTITY_OTP_DAILY_LIMIT` (2026-11-17, the real sender's limit per
+ * inbox), else a challenge inside the resend window →
+ * `IDENTITY_OTP_RATE_LIMITED`, carrying the seconds left on that window
+ * (OR-9) so the code step restarts its countdown instead of showing a dead
+ * end; (4) the tenant;
  * then the challenge is issued with the strategy's own
  * `ttlMinutes`/`maxAttempts`, saved and sent. It is saved by ONE commit
  * (audit-hardening Phase 3, P3-RU-6, P3-DEP-6): the whole-body `Set` of
@@ -59,19 +64,18 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * (P3-L-2). A send failure is answered as such — the saved challenge and
  * its row stay, as the challenge always has — and so is the deployed
  * sender's refusal
- * (`IDENTITY_OTP_SEND_UNAVAILABLE`, audit-hardening WS-0), passed through
- * unchanged so the edge words it as its own code. The save and the resend
- * window still come BEFORE the send: an unwired sender refuses every
- * request that reaches it, its saved challenge is TTL-purged and
- * unreachable without a delivered code, and sending first would change what
- * the OR-9 window counts. The cost, under that sender: the refused request
- * used up the window, so a repeat for the same destination inside it
- * answers `IDENTITY_OTP_RATE_LIMITED` (worded as a code already sent,
- * though none was) before the refusal answers again.
+ * (`IDENTITY_OTP_SEND_UNAVAILABLE`: an unconfigured sender, or a channel it
+ * does not carry), passed through unchanged so the edge words it as its
+ * own code. The save and both limits still come BEFORE the send: sending
+ * first would let a failed send escape the count, and the limits exist to
+ * bound what reaches the provider.
  *
- * The stored `destination` is the payload text TRIMMED, byte-identical to
- * today (F2-10): the probe queries the parsed identifier while the challenge
- * stores the trimmed raw value, today's exact pair.
+ * The stored `destination` is the PARSED identifier — the lower-cased
+ * e-mail, the E.164 phone — the very value the probe queries
+ * (2026-11-17). Until then the trimmed raw text was stored (F2-10), so a
+ * client that sent «Ana@Mail.com» was never found by its own throttle, and
+ * the erasure missed such a challenge; `verifyOtp` re-parses the stored
+ * value, which a canonical one always passes.
  *
  * The call's transport operation id rides on the command (RU-21, read by
  * the decoder, never refused) but reaches no row: the caller is not signed
@@ -98,9 +102,9 @@ export type RequestOtpCommand = {
   readonly otpDestinationType: OtpDestinationType;
   /**
    * The payload's `value` as sent — the decoder refused it only when blank.
-   * Parsed here on the asked channel, and trimmed ONCE for the stored
-   * `destination` (F2-10, the stated Law 7.4 exception: its refusal must
-   * follow the channel check).
+   * Parsed here on the asked channel (the stated Law 7.4 exception: its
+   * refusal must follow the channel check); the stored `destination` is
+   * that parse.
    */
   readonly rawDestination: string;
   /**
@@ -151,16 +155,11 @@ export const requestOtp =
     const nowUtcMs = ports.nowUtcMs();
     const open = await ports.loadOpenOtps(
       parsed.value.identifier,
-      OtpSystem.resendWindowStartUtcMs(nowUtcMs),
+      OtpSystem.dailyWindowStartUtcMs(nowUtcMs),
     );
     if (!open.ok) return open;
-    if (!OtpSystem.mayIssue(open.value, nowUtcMs)) {
-      return Result.err(
-        IdentityError.otpRateLimited(
-          OtpSystem.retryAfterSeconds(open.value, nowUtcMs),
-        ),
-      );
-    }
+    const refusal = OtpSystem.issueRefusal(open.value, nowUtcMs);
+    if (refusal !== null) return Result.err(refusal);
 
     const tenant = await ports.loadTenant();
     if (!tenant.ok) return tenant;
@@ -170,7 +169,7 @@ export const requestOtp =
     const otp = OtpSystem.issue(
       {
         tenantId: tenant.value,
-        destination: Identifier.of(cmd.rawDestination.trim()),
+        destination: parsed.value.identifier,
         otpDestinationType: cmd.otpDestinationType,
         otpPurpose: OtpPurpose.Login,
         // The narrowed OTP strategy's own policy — the numbers the client
