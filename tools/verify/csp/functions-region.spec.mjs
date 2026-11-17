@@ -1,0 +1,118 @@
+// node --test tools/verify/csp/functions-region.spec.mjs
+//
+// The functions' region (ADR docs/architecture/decisions/2026-11-18-europe-west8-region.md),
+// one value in four runtimes that cannot share a module — the functions'
+// composition root, the web's callable client, the Node tools and the
+// Playwright support — held equal here, read as text: every export is
+// deployed there (setGlobalOptions, before the first definition), the web
+// dials it, the CSP and the preflight name its host, the emulator journeys
+// post to it, and nothing in the code names another region.
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { FUNCTIONS_REGION, functionsHost } from './check-csp.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const read = (path) => readFileSync(join(ROOT, path), 'utf8');
+
+/** The TypeScript copies of the region, each `const FUNCTIONS_REGION = '…'`. */
+const COPIES = [
+  'apps/functions/src/lib/region.ts',
+  'libs/infrastructure/firebase-app/src/lib/firebase-app.provider.ts',
+  'apps/web/e2e/support/warm-callables.ts',
+];
+
+/** The one literal a copy declares. */
+function regionOf(path) {
+  const found = [
+    ...read(path).matchAll(
+      /^(?:export )?const FUNCTIONS_REGION = '([a-z0-9-]+)';$/gm,
+    ),
+  ];
+  assert.equal(found.length, 1, `${path} declares FUNCTIONS_REGION once`);
+  return found[0][1];
+}
+
+describe('the functions’ region (ADR 2026-11-18, europe-west8)', () => {
+  it('is Milan, and every copy says so', () => {
+    assert.equal(FUNCTIONS_REGION, 'europe-west8');
+    for (const path of COPIES)
+      assert.equal(regionOf(path), FUNCTIONS_REGION, path);
+  });
+
+  it('deploys every export there: setGlobalOptions once, before the first function is defined, and no export names its own region', () => {
+    const main = read('apps/functions/src/main.ts');
+    assert.match(
+      main,
+      /^import \{ FUNCTIONS_REGION \} from '\.\/lib\/region';$/m,
+    );
+    const calls = [
+      ...main.matchAll(/setGlobalOptions\(\{ region: FUNCTIONS_REGION \}\);/g),
+    ];
+    assert.equal(calls.length, 1);
+    const first = Math.min(
+      ...[
+        ' = onCall(',
+        ' = onSchedule(',
+        ' = onDocumentWritten',
+        ' = documentAuditTrigger(',
+      ]
+        .map((needle) => main.indexOf(needle))
+        .filter((at) => at >= 0),
+    );
+    assert.ok(calls[0].index < first, 'set before the first definition');
+    assert.doesNotMatch(main.replace(calls[0][0], ''), /\bregion:/);
+  });
+
+  it('has the web dial it', () => {
+    assert.match(
+      read('libs/infrastructure/firebase-app/src/lib/firebase-app.provider.ts'),
+      /getFunctions\(\s*inject\(FIREBASE_APP\),\s*FUNCTIONS_REGION,?\s*\)/,
+    );
+  });
+
+  it('names its host in the committed CSP — the one callables host there is', () => {
+    const config = read('firebase.json');
+    const hosts = [
+      ...config.matchAll(/https:\/\/[a-z0-9-]+\.cloudfunctions\.net/g),
+    ].map((match) => match[0]);
+    assert.deepEqual(hosts, [functionsHost('creativo-replace-me')]);
+  });
+
+  it('has the emulator journeys post to it, by the tools’ one constant', () => {
+    for (const path of [
+      'tools/verify/p0/verify-p0.mjs',
+      'tools/verify/app-check/verify-app-check.mjs',
+    ]) {
+      const text = read(path);
+      assert.match(
+        text,
+        /^import \{ FUNCTIONS_REGION \} from '\.\.\/csp\/check-csp\.mjs';$/m,
+        path,
+      );
+      assert.match(text, /^const REGION = FUNCTIONS_REGION;$/m, path);
+    }
+  });
+
+  it('leaves no other region in the code', () => {
+    const files = execFileSync(
+      'git',
+      ['ls-files', 'apps', 'libs', 'tools', 'firebase.json'],
+      {
+        cwd: ROOT,
+        encoding: 'utf8',
+      },
+    )
+      .split('\n')
+      .filter((path) => /\.(ts|mts|mjs|js|json)$/.test(path));
+    const offenders = files.filter((path) =>
+      /\b(?:us|europe|asia|australia|northamerica|southamerica|me|africa)-[a-z]+\d+\b/.test(
+        read(path).replaceAll(FUNCTIONS_REGION, ''),
+      ),
+    );
+    assert.deepEqual(offenders, []);
+  });
+});

@@ -33,6 +33,7 @@
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { FUNCTIONS_REGION } from '../csp/check-csp.mjs';
 import { CallableAnswer, readCallableAnswer } from '../p0/callable-answer.mjs';
 import {
   APP_CHECK_HEADER,
@@ -43,7 +44,7 @@ import {
 
 /** The emulators' project and the callables' region (`verify-p0.mjs`'s). */
 const PROJECT_ID = 'demo-creativo-test';
-const REGION = 'us-central1';
+const REGION = FUNCTIONS_REGION;
 
 /** How long one post waits for its answer — every case is answered before any work. */
 const POST_TIMEOUT_MS = 60_000;

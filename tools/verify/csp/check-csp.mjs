@@ -18,8 +18,8 @@
 //       nobody needs is a script the policy would still admit); an inline
 //       event handler or a `javascript:` URL in the markup is refused (a
 //       hash policy blocks both);
-//   (d) functions host — connect-src names the default region's callables
-//       host of `.firebaserc`'s default project, the only one;
+//   (d) functions host — connect-src names the callables host, in the
+//       functions' region, of `.firebaserc`'s default project, the only one;
 //   (e) caching — every built js/css file falls under exactly the cache
 //       rule its name calls for (a hashed `main|polyfills|chunk|styles-*`
 //       is immutable; a service-worker script, index.html, ngsw.json, the
@@ -194,9 +194,16 @@ export function inlineHandlers(html) {
   return found;
 }
 
-/** The callables host of a project's default region (`us-central1`). */
+/**
+ * The region the functions run in — `FUNCTIONS_REGION` of
+ * apps/functions/src/lib/region.ts (ADR 2026-11-18, europe-west8);
+ * tools/verify/csp/functions-region.spec.mjs holds the copies equal.
+ */
+export const FUNCTIONS_REGION = 'europe-west8';
+
+/** The callables host of a project, in the functions' region. */
 export function functionsHost(projectId) {
-  return `https://us-central1-${projectId}.cloudfunctions.net`;
+  return `https://${FUNCTIONS_REGION}-${projectId}.cloudfunctions.net`;
 }
 
 /** Every file under `dir`, as a site path (`/chunk-AB12CD34.js`). */

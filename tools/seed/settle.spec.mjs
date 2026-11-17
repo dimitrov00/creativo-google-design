@@ -127,10 +127,10 @@ describe('waitForQuiet', () => {
         quietMs: 2_000,
         pollMs: 1_000,
         timeoutMs: 5_000,
-        describeBusy: () => 'still running: us-central1-x',
+        describeBusy: () => 'still running: europe-west8-x',
       }),
     ).rejects.toThrow(
-      'the emulators never went quiet within 5000 ms (still running: us-central1-x)',
+      'the emulators never went quiet within 5000 ms (still running: europe-west8-x)',
     );
   });
 
@@ -285,14 +285,14 @@ describe('createExecutionTally', () => {
 
   it('counts each start and finish, and holds what has not finished', () => {
     const tally = createExecutionTally(SINCE);
-    tally.record(begin('us-central1-b', SINCE));
-    tally.record(begin('us-central1-a', SINCE));
-    tally.record(begin('us-central1-a', SINCE));
-    tally.record(finish('us-central1-a', SINCE));
+    tally.record(begin('europe-west8-b', SINCE));
+    tally.record(begin('europe-west8-a', SINCE));
+    tally.record(begin('europe-west8-a', SINCE));
+    tally.record(finish('europe-west8-a', SINCE));
     expect(tally.events()).toBe(4);
-    expect(tally.running()).toEqual(['us-central1-a', 'us-central1-b']);
-    tally.record(finish('us-central1-a', SINCE));
-    tally.record(finish('us-central1-b', SINCE));
+    expect(tally.running()).toEqual(['europe-west8-a', 'europe-west8-b']);
+    tally.record(finish('europe-west8-a', SINCE));
+    tally.record(finish('europe-west8-b', SINCE));
     expect(tally.running()).toEqual([]);
     expect(tally.events()).toBe(6);
   });
@@ -300,22 +300,22 @@ describe('createExecutionTally', () => {
   it('holds an execution begun before it started watching, without counting it as a change', () => {
     // The Logging emulator replays its whole history to a new connection.
     const tally = createExecutionTally(SINCE);
-    tally.record(begin('us-central1-a', SINCE - 500));
-    tally.record(begin('us-central1-b', SINCE - 400));
-    tally.record(finish('us-central1-b', SINCE - 300));
+    tally.record(begin('europe-west8-a', SINCE - 500));
+    tally.record(begin('europe-west8-b', SINCE - 400));
+    tally.record(finish('europe-west8-b', SINCE - 300));
     expect(tally.events()).toBe(0);
-    expect(tally.running()).toEqual(['us-central1-a']);
-    tally.record(finish('us-central1-a', SINCE + 1));
+    expect(tally.running()).toEqual(['europe-west8-a']);
+    tally.record(finish('europe-west8-a', SINCE + 1));
     expect(tally.events()).toBe(1);
     expect(tally.running()).toEqual([]);
   });
 
   it('counts a finish it never saw begin, and never goes below none', () => {
     const tally = createExecutionTally(SINCE);
-    tally.record(finish('us-central1-a', SINCE));
-    tally.record(begin('us-central1-a', SINCE));
+    tally.record(finish('europe-west8-a', SINCE));
+    tally.record(begin('europe-west8-a', SINCE));
     expect(tally.events()).toBe(2);
-    expect(tally.running()).toEqual(['us-central1-a']);
+    expect(tally.running()).toEqual(['europe-west8-a']);
   });
 
   it('ignores every other log line', () => {
@@ -336,13 +336,13 @@ describe('createExecutionTally', () => {
 
   it('a failed request ends the execution it names, and is reported', () => {
     const tally = createExecutionTally(SINCE);
-    tally.record(begin('us-central1-a', SINCE));
-    tally.record(requestFailed('us-central1-a', SINCE + 10));
+    tally.record(begin('europe-west8-a', SINCE));
+    tally.record(requestFailed('europe-west8-a', SINCE + 10));
     expect(tally.running()).toEqual([]);
     expect(tally.events()).toBe(2);
     expect(tally.failures()).toEqual([
       {
-        trigger: 'us-central1-a',
+        trigger: 'europe-west8-a',
         atMs: SINCE + 10,
         cause: 'Request to function failed: Error: socket hang up',
       },
@@ -351,13 +351,13 @@ describe('createExecutionTally', () => {
 
   it('a timeout or a kill says why, and only the line after it ends the execution', () => {
     const tally = createExecutionTally(SINCE);
-    tally.record(begin('us-central1-a', SINCE));
-    tally.record(begin('us-central1-a', SINCE + 1));
-    tally.record(timedOut('us-central1-a', SINCE + 2));
-    tally.record(killed('us-central1-a', SINCE + 3));
+    tally.record(begin('europe-west8-a', SINCE));
+    tally.record(begin('europe-west8-a', SINCE + 1));
+    tally.record(timedOut('europe-west8-a', SINCE + 2));
+    tally.record(killed('europe-west8-a', SINCE + 3));
     // Two in flight still: neither line closed one.
-    tally.record(requestFailed('us-central1-a', SINCE + 4));
-    expect(tally.running()).toEqual(['us-central1-a']);
+    tally.record(requestFailed('europe-west8-a', SINCE + 4));
+    expect(tally.running()).toEqual(['europe-west8-a']);
     expect(tally.failures().map(({ cause }) => cause)).toEqual([
       'Your function timed out after ~60s. To configure this timeout, see',
       'Your function was killed because it raised an unhandled error.',
@@ -367,8 +367,8 @@ describe('createExecutionTally', () => {
 
   it('a failure before it started watching is history: it ends the execution, it is not reported', () => {
     const tally = createExecutionTally(SINCE);
-    tally.record(begin('us-central1-a', SINCE - 20));
-    tally.record(requestFailed('us-central1-a', SINCE - 10));
+    tally.record(begin('europe-west8-a', SINCE - 20));
+    tally.record(requestFailed('europe-west8-a', SINCE - 10));
     expect(tally.running()).toEqual([]);
     expect(tally.failures()).toEqual([]);
     expect(tally.events()).toBe(0);
@@ -391,25 +391,25 @@ describe('createExecutionTally', () => {
 
   it('reads each trigger in flight by its oldest start, sorted by trigger', () => {
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-b', 0));
-    tally.record(begin('us-central1-a', 1_000));
-    tally.record(begin('us-central1-a', 7_000));
-    tally.record(begin('us-central1-c', 8_000));
+    tally.record(begin('europe-west8-b', 0));
+    tally.record(begin('europe-west8-a', 1_000));
+    tally.record(begin('europe-west8-a', 7_000));
+    tally.record(begin('europe-west8-c', 8_000));
     expect(tally.inFlight(10_000)).toEqual([
-      { trigger: 'us-central1-a', forMs: 9_000 },
-      { trigger: 'us-central1-b', forMs: 10_000 },
-      { trigger: 'us-central1-c', forMs: 2_000 },
+      { trigger: 'europe-west8-a', forMs: 9_000 },
+      { trigger: 'europe-west8-b', forMs: 10_000 },
+      { trigger: 'europe-west8-c', forMs: 2_000 },
     ]);
   });
 
   it('retires the OLDEST execution of a trigger on a finish, so an age is never overstated', () => {
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-a', 0));
-    tally.record(begin('us-central1-a', 8_000));
-    tally.record(finish('us-central1-a', 9_000));
-    expect(tally.running()).toEqual(['us-central1-a']);
+    tally.record(begin('europe-west8-a', 0));
+    tally.record(begin('europe-west8-a', 8_000));
+    tally.record(finish('europe-west8-a', 9_000));
+    expect(tally.running()).toEqual(['europe-west8-a']);
     expect(tally.inFlight(10_000)).toEqual([
-      { trigger: 'us-central1-a', forMs: 2_000 },
+      { trigger: 'europe-west8-a', forMs: 2_000 },
     ]);
   });
 });
@@ -423,12 +423,12 @@ describe('timeoutsFromBackends', () => {
           directory: '/workspace/dist/apps/functions',
           functionTriggers: [
             {
-              id: 'us-central1-dispatchClientProjections',
+              id: 'europe-west8-dispatchClientProjections',
               name: 'dispatchClientProjections',
               timeoutSeconds: 60,
             },
             {
-              id: 'us-central1-continueClientStatsPolicyRecompute',
+              id: 'europe-west8-continueClientStatsPolicyRecompute',
               name: 'continueClientStatsPolicyRecompute',
               timeoutSeconds: 540,
             },
@@ -436,16 +436,16 @@ describe('timeoutsFromBackends', () => {
         },
         {
           functionTriggers: [
-            { id: 'us-central1-runBackfill', timeoutSeconds: 540 },
+            { id: 'europe-west8-runBackfill', timeoutSeconds: 540 },
           ],
         },
       ],
     };
     expect(timeoutsFromBackends(listing)).toEqual(
       new Map([
-        ['us-central1-dispatchClientProjections', 60_000],
-        ['us-central1-continueClientStatsPolicyRecompute', 540_000],
-        ['us-central1-runBackfill', 540_000],
+        ['europe-west8-dispatchClientProjections', 60_000],
+        ['europe-west8-continueClientStatsPolicyRecompute', 540_000],
+        ['europe-west8-runBackfill', 540_000],
       ]),
     );
   });
@@ -456,10 +456,10 @@ describe('timeoutsFromBackends', () => {
         backends: [
           {
             functionTriggers: [
-              { id: 'us-central1-a' },
-              { id: 'us-central1-b', timeoutSeconds: 0 },
+              { id: 'europe-west8-a' },
+              { id: 'europe-west8-b', timeoutSeconds: 0 },
               { name: 'no-id', timeoutSeconds: 60 },
-              { id: 'us-central1-c', timeoutSeconds: '60' },
+              { id: 'europe-west8-c', timeoutSeconds: '60' },
             ],
           },
           {},
@@ -474,26 +474,26 @@ describe('timeoutsFromBackends', () => {
 describe('lostExecutions', () => {
   it('names an execution only once it is in flight past its own timeout and the grace', () => {
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-short', 0));
-    tally.record(begin('us-central1-long', 0));
-    tally.record(begin('us-central1-unlisted', 0));
+    tally.record(begin('europe-west8-short', 0));
+    tally.record(begin('europe-west8-long', 0));
+    tally.record(begin('europe-west8-unlisted', 0));
     const timeouts = new Map([
-      ['us-central1-short', 60_000],
-      ['us-central1-long', 540_000],
+      ['europe-west8-short', 60_000],
+      ['europe-west8-long', 540_000],
     ]);
     expect(lostExecutions(tally, timeouts, 89_999, 30_000)).toEqual([]);
     expect(lostExecutions(tally, timeouts, 90_000, 30_000)).toEqual([
-      { trigger: 'us-central1-short', forMs: 90_000, timeoutMs: 60_000 },
+      { trigger: 'europe-west8-short', forMs: 90_000, timeoutMs: 60_000 },
     ]);
     // The long one gets its 540 s; one the listing never named, forever.
     expect(lostExecutions(tally, timeouts, 569_999, 30_000)).toEqual([
-      { trigger: 'us-central1-short', forMs: 569_999, timeoutMs: 60_000 },
+      { trigger: 'europe-west8-short', forMs: 569_999, timeoutMs: 60_000 },
     ]);
     expect(
       lostExecutions(tally, timeouts, 10_000_000, 30_000).map(
         ({ trigger }) => trigger,
       ),
-    ).toEqual(['us-central1-long', 'us-central1-short']);
+    ).toEqual(['europe-west8-long', 'europe-west8-short']);
   });
 });
 
@@ -525,8 +525,8 @@ describe('settleTriggers', () => {
 
   it('settles once the data and the executions have both held still', async () => {
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-a', 0));
-    tally.record(finish('us-central1-a', 0));
+    tally.record(begin('europe-west8-a', 0));
+    tally.record(finish('europe-west8-a', 0));
     const watch = watching(tally);
     const clock = scriptedClock();
     await expect(
@@ -538,16 +538,16 @@ describe('settleTriggers', () => {
   it('never reads a trigger in flight as quiet, and names it when it refuses', async () => {
     // Data-only, this settles at 2 s: nothing is written.
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-dispatchClientProjections', 0));
+    tally.record(begin('europe-west8-dispatchClientProjections', 0));
     const watch = watching(
       tally,
-      new Map([['us-central1-dispatchClientProjections', 60_000]]),
+      new Map([['europe-west8-dispatchClientProjections', 60_000]]),
     );
     const clock = scriptedClock();
     await expect(
       settleTriggers(fakeDb(QUIET), { ...OPTIONS, clock, watch }),
     ).rejects.toThrow(
-      'the emulators never went quiet within 10000 ms (still running: us-central1-dispatchClientProjections (11 s of its 60 s) — busy, or ended in a way the functions emulator did not log)',
+      'the emulators never went quiet within 10000 ms (still running: europe-west8-dispatchClientProjections (11 s of its 60 s) — busy, or ended in a way the functions emulator did not log)',
     );
     expect(clock.now()).toBeGreaterThan(OPTIONS.timeoutMs);
     expect(watch.close).toHaveBeenCalledTimes(1);
@@ -558,8 +558,8 @@ describe('settleTriggers', () => {
     // One execution begins and ends between the 1 s and the 2 s reads.
     const clock = scriptedClock((now) => {
       if (now === 2_000) {
-        tally.record(begin('us-central1-rebuildBusy', 1_400));
-        tally.record(finish('us-central1-rebuildBusy', 1_600));
+        tally.record(begin('europe-west8-rebuildBusy', 1_400));
+        tally.record(finish('europe-west8-rebuildBusy', 1_600));
       }
     });
     // Data-only, this settles at 2 s; the execution moves it to 4 s.
@@ -587,10 +587,10 @@ describe('settleTriggers', () => {
   it('waits for an execution that began before the watch connected', async () => {
     // Replayed history: begun at -3 s, before `sinceMs`; it finishes at 3 s.
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-rebuildCapacity', -3_000));
+    tally.record(begin('europe-west8-rebuildCapacity', -3_000));
     const clock = scriptedClock((now) => {
       if (now === 3_000)
-        tally.record(finish('us-central1-rebuildCapacity', now));
+        tally.record(finish('europe-west8-rebuildCapacity', now));
     });
     await expect(
       settleTriggers(fakeDb(QUIET), {
@@ -605,12 +605,12 @@ describe('settleTriggers', () => {
     // Timed out at 2 s: the emulator's own lines end it. Waiting for a
     // 'Finished' that never comes would hold the window to the timeout.
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-dispatchClientProjections', 0));
+    tally.record(begin('europe-west8-dispatchClientProjections', 0));
     const clock = scriptedClock((now) => {
       if (now === 2_000) {
-        tally.record(timedOut('us-central1-dispatchClientProjections', now));
+        tally.record(timedOut('europe-west8-dispatchClientProjections', now));
         tally.record(
-          requestFailed('us-central1-dispatchClientProjections', now),
+          requestFailed('europe-west8-dispatchClientProjections', now),
         );
       }
     });
@@ -622,7 +622,7 @@ describe('settleTriggers', () => {
       ).resolves.toBe(4_000);
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn).toHaveBeenCalledWith(
-        'settle: 2 trigger execution(s) ended without finishing, and the emulator never retries them — what they were writing may be missing ("us-central1-dispatchClientProjections": Your function timed out after ~60s. To configure this timeout, see; "us-central1-dispatchClientProjections": Request to function failed: Error: socket hang up)',
+        'settle: 2 trigger execution(s) ended without finishing, and the emulator never retries them — what they were writing may be missing ("europe-west8-dispatchClientProjections": Your function timed out after ~60s. To configure this timeout, see; "europe-west8-dispatchClientProjections": Request to function failed: Error: socket hang up)',
       );
       expect(watch.close).toHaveBeenCalledTimes(1);
     } finally {
@@ -632,8 +632,8 @@ describe('settleTriggers', () => {
 
   it('names a trigger that died even when the wait then refuses', async () => {
     const tally = createExecutionTally(0);
-    tally.record(killed('us-central1-rebuildBusy', 0));
-    tally.record(begin('us-central1-rebuildCapacity', 0));
+    tally.record(killed('europe-west8-rebuildBusy', 0));
+    tally.record(begin('europe-west8-rebuildCapacity', 0));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       await expect(
@@ -642,10 +642,10 @@ describe('settleTriggers', () => {
           clock: scriptedClock(),
           watch: watching(tally),
         }),
-      ).rejects.toThrow('still running: us-central1-rebuildCapacity');
+      ).rejects.toThrow('still running: europe-west8-rebuildCapacity');
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining(
-          '"us-central1-rebuildBusy": Your function was killed because it raised an unhandled error.',
+          '"europe-west8-rebuildBusy": Your function was killed because it raised an unhandled error.',
         ),
       );
     } finally {
@@ -669,10 +669,10 @@ describe('settleTriggers', () => {
 
   it('refuses an execution in flight past its own timeout and the grace as lost, naming it', async () => {
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-rebuildCapacity', 0));
+    tally.record(begin('europe-west8-rebuildCapacity', 0));
     const watch = watching(
       tally,
-      new Map([['us-central1-rebuildCapacity', 2_000]]),
+      new Map([['europe-west8-rebuildCapacity', 2_000]]),
     );
     const clock = scriptedClock();
     await expect(
@@ -684,7 +684,7 @@ describe('settleTriggers', () => {
         watch,
       }),
     ).rejects.toThrow(
-      'a trigger execution outlived its timeout without the functions emulator ending it ("us-central1-rebuildCapacity" in flight for 4 s, past its own 2 s timeout)',
+      'a trigger execution outlived its timeout without the functions emulator ending it ("europe-west8-rebuildCapacity" in flight for 4 s, past its own 2 s timeout)',
     );
     // Refused at its timeout and the grace, not waited out to the three minutes.
     expect(clock.now()).toBe(4_000);
@@ -694,7 +694,7 @@ describe('settleTriggers', () => {
   it('gives a function that declares a long timeout its time: still running at the overall bound, never lost', async () => {
     // The policy recompute's step declares 540 s. A flat limit near the
     // emulator's 60 s default would call it lost at 90 s.
-    const trigger = 'us-central1-continueClientStatsPolicyRecompute';
+    const trigger = 'europe-west8-continueClientStatsPolicyRecompute';
     const tally = createExecutionTally(0);
     tally.record(begin(trigger, 0));
     const clock = scriptedClock();
@@ -712,7 +712,7 @@ describe('settleTriggers', () => {
 
   it('never calls lost a trigger the listing does not name', async () => {
     const tally = createExecutionTally(0);
-    tally.record(begin('us-central1-unlisted', 0));
+    tally.record(begin('europe-west8-unlisted', 0));
     const outcome = settleTriggers(fakeDb(QUIET), {
       ...OPTIONS,
       timeoutMs: 180_000,
@@ -721,7 +721,7 @@ describe('settleTriggers', () => {
       watch: watching(tally),
     });
     await expect(outcome).rejects.toThrow(
-      'the emulators never went quiet within 180000 ms (still running: us-central1-unlisted (181 s) — busy',
+      'the emulators never went quiet within 180000 ms (still running: europe-west8-unlisted (181 s) — busy',
     );
   });
 
@@ -849,16 +849,16 @@ describe('watchExecutions, against a stand-in hub', () => {
   it('reads the replayed history into the tally, and the declared timeouts off the listing', async () => {
     hub = await standInHub({
       history: [
-        begin('us-central1-rebuildCapacity', SINCE - 500),
-        begin('us-central1-rebuildBusy', SINCE - 400),
-        finish('us-central1-rebuildBusy', SINCE - 300),
-        begin('us-central1-dispatchClientProjections', SINCE + 10),
+        begin('europe-west8-rebuildCapacity', SINCE - 500),
+        begin('europe-west8-rebuildBusy', SINCE - 400),
+        finish('europe-west8-rebuildBusy', SINCE - 300),
+        begin('europe-west8-dispatchClientProjections', SINCE + 10),
       ],
       listing: {
         backends: [
           {
             functionTriggers: [
-              { id: 'us-central1-rebuildCapacity', timeoutSeconds: 60 },
+              { id: 'europe-west8-rebuildCapacity', timeoutSeconds: 60 },
             ],
           },
         ],
@@ -868,12 +868,12 @@ describe('watchExecutions, against a stand-in hub', () => {
     const watch = await watchExecutions({ sinceMs: SINCE });
     try {
       expect(watch.timeouts).toEqual(
-        new Map([['us-central1-rebuildCapacity', 60_000]]),
+        new Map([['europe-west8-rebuildCapacity', 60_000]]),
       );
       await vi.waitFor(() =>
         expect(watch.tally.running()).toEqual([
-          'us-central1-dispatchClientProjections',
-          'us-central1-rebuildCapacity',
+          'europe-west8-dispatchClientProjections',
+          'europe-west8-rebuildCapacity',
         ]),
       );
       // Only the line logged from `sinceMs` on counts as a change.

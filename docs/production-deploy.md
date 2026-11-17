@@ -52,7 +52,7 @@ section below). Its ten checks are:
 | P2    | all 8 `purgeAt` TTL policies are `ACTIVE`                                                                                          |
 | P3    | all 25 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates)                  |
 | P4    | the built web bundle contains no `REPLACE_ME` and names the project id                                                             |
-| P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host                              |
+| P5    | the CSP `connect-src` names `https://europe-west8-<id>.cloudfunctions.net` and no other callables host                             |
 | P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project, or one of the old app's two projects |
 | P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)                   |
 | P8    | no `@launchBlocker` export in `apps/functions/src` is used at all (functions scope only)                                           |
@@ -107,16 +107,17 @@ checklist, in its order, non-interactively and never with `--force`
 (`.github/actions/deploy`). The rest of this checklist still applies to
 each project; what changed is who runs section 3.
 
-|                       | staging                                           | production                                           |
-| --------------------- | ------------------------------------------------- | ---------------------------------------------------- |
-| GitHub Environment    | `staging`                                         | `production`                                         |
-| Firebase project      | a NEW project; suggested id `creativo-v2-staging` | a NEW project; suggested id `creativo-v2-prod`       |
-| Deploys               | after CI passes on `main` (or `release/**`)       | from a tag `v*`, after you approve                   |
-| Workflow              | `.github/workflows/deploy-staging.yml`            | `.github/workflows/deploy-production.yml`            |
-| Web build             | `web:build:staging` (`environment.staging.ts`)    | `web:build:production` (`environment.production.ts`) |
-| Flags, App Check mode | the `staging` maps of `config/`                   | the `production` maps of `config/`                   |
-| Sign-in codes         | its own Postmark server                           | its own Postmark server                              |
-| Address               | `https://<id>.web.app`                            | `https://<id>.web.app`                               |
+|                       | staging                                             | production                                           |
+| --------------------- | --------------------------------------------------- | ---------------------------------------------------- |
+| GitHub Environment    | `staging`                                           | `production`                                         |
+| Firebase project      | a NEW project; suggested id `creativo-v2-staging`   | a NEW project; suggested id `creativo-v2-prod`       |
+| Deploys               | after CI passes on `main` (or `release/**`)         | from a tag `v*`, after you approve                   |
+| Workflow              | `.github/workflows/deploy-staging.yml`              | `.github/workflows/deploy-production.yml`            |
+| Web build             | `web:build:staging` (`environment.staging.ts`)      | `web:build:production` (`environment.production.ts`) |
+| Flags, App Check mode | the `staging` maps of `config/`                     | the `production` maps of `config/`                   |
+| Sign-in codes         | its own Postmark server                             | its own Postmark server                              |
+| Address               | `https://<id>.web.app`                              | `https://<id>.web.app`                               |
+| Location              | `europe-west8` (Milan): database, bucket, functions | `europe-west8` (Milan): database, bucket, functions  |
 
 > **Never `creativo-prod` or `creativo-staging`.** Those projects run your
 > old, live React app. Nothing here deploys to them, reads them or
@@ -142,8 +143,9 @@ only in each project's Secret Manager.
       its own budget (for example 25 € a month for staging, 100 € for
       production) with alerts at 50 %, 90 % and 100 %. A budget alerts, it
       does not stop spending.
-- [ ] **2. Set each project up as section 1 says**: the Firestore location
-      and the (default) database, the default Storage bucket, `WALKIN_ID_KEY`
+- [ ] **2. Set each project up as section 1 says**: the (default)
+      database, Standard edition, and the default Storage bucket, both in
+      **`europe-west8`** (Milan), where every function runs, `WALKIN_ID_KEY`
       and `LOG_DIGEST_KEY`, and the OTP sender — **a separate Postmark server
       for staging**, with its own token and its own from-address in the
       staging project's Secret Manager, so a test never spends production's
@@ -261,22 +263,26 @@ Auth's authorised domains.
       Source: `firebase.json:9-25`; `apps/functions/src/main.ts:290`
       (`LOG_DIGEST_KEY`), `:386` (`WALKIN_ID_KEY`), `:877-887`,
       `:996-998` (the `onSchedule` jobs).
-- [ ] **Choose the Firestore location knowing that functions run in
-      `us-central1`.** No export sets a `region` and there is no
-      `setGlobalOptions`. The web calls `getFunctions(app)` with no region, and
-      the CSP and preflight P5 pin `https://us-central1-<id>.cloudfunctions.net`.
-      The database location can't be changed after it is created. Gen-2
-      Firestore triggers need a location compatible with the database (a
-      platform constraint), so `nam5` or `us-central1` is the simple choice. An
-      EU database means first adding a region to every export, `getFunctions`,
-      the `connect-src` host in `firebase.json` and the `functionsHost` in
-      `check-csp.mjs`, all in one change. **decide** (the repo records no
-      location decision).
-      Source: `apps/functions/src/main.ts:200-205`;
-      `libs/infrastructure/firebase-app/src/lib/firebase-app.provider.ts:121`;
-      `firebase.json:41`; `tools/verify/csp/check-csp.mjs:170-173`.
-- [ ] **Create the (default) Firestore database (Native mode) and the Storage
-      bucket** before the first rules or functions deploy. P1–P3 read Firestore.
+- [ ] **Put the database and the bucket in `europe-west8` (Milan).**
+      Every function runs there (`setGlobalOptions`, `FUNCTIONS_REGION`), the
+      web dials it, and the CSP and preflight P5 name
+      `https://europe-west8-<id>.cloudfunctions.net`. A Firestore trigger
+      must sit in the database's location, and a callable's transaction
+      should not cross a continent, so the database's location is
+      **`europe-west8`**, a regional location, in both projects. The
+      location can't be changed after the database is created. The default
+      Storage bucket goes there too: its no-cost tier is for US buckets
+      only, so an EU bucket is billed from its first byte (cents a month for
+      avatars and visit photos). Decided 2026-11-18.
+      Source: `docs/architecture/decisions/2026-11-18-europe-west8-region.md`;
+      `apps/functions/src/lib/region.ts`;
+      `tools/verify/csp/functions-region.spec.mjs` (the copies held equal).
+- [ ] **Create the (default) Firestore database (Standard edition, Native
+      mode) and the Storage bucket** before the first rules or functions
+      deploy. Standard, not Enterprise: the app uses the Core interface only
+      (live listeners, the offline cache, rules, triggers, TTL), its indexes
+      and the preflight are Standard's, and a later move to Enterprise is a
+      documented migration (decided 2026-11-18, same record). P1–P3 read Firestore.
       The bucket is the project's DEFAULT one (the `storageBucket` of the web
       config): the web uploads avatars and visit photos there, and the admin's
       GDPR erasure (`eraseClient`) deletes a person's objects from it with the
@@ -313,7 +319,7 @@ placeholders and the legacy projects (`checkEnvironment`).
       `apps/web/project.json:52-57`;
       `tools/verify/preflight/preflight.mjs:427-463` (`checkBundle`).
 - [ ] **The CSP's callables host is the deploy's.** `firebase.json`'s
-      `connect-src` names `https://us-central1-creativo-replace-me.cloudfunctions.net`;
+      `connect-src` names `https://europe-west8-creativo-replace-me.cloudfunctions.net`;
       each deploy swaps it for its own project's host
       (`tools/release/deploy-target.mjs`, which asserts nothing else in the
       file changed), then runs `check-csp.mjs`, which compares `connect-src`
