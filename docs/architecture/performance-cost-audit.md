@@ -365,9 +365,11 @@ and its rollout is an owner checklist at the end of `HANDOFF.md` §3.3.
 _Status 2026-11-17: addressed with the sender
 (`decisions/2026-11-17-sign-in-email-sender.md`) — the reviewers' smallest
 email set: the existing `throttledCallable` bucket on `requestOtpChallenge`
-(ten, then one a second, two instances), five open codes per address a day
-in `OtpSystem` over index #10, and the provider's plan as the spend cap. No
-country allowlist and no App Check for launch (email only)._
+(ten, then one every 20 s, two instances: one code every 10 s for the whole
+project, about 8,660 a day at most), five open codes per address a day in
+`OtpSystem` over index #10, and the `otp_code_sent` alert (more than 100 an
+hour), because Postmark has no spending cap. No country allowlist and no App
+Check for launch (email only)._
 
 **F-22 🟡 (Gate B) Anonymous callers can write permanent rows.** _Confirmed._ Each
 new destination commits an `otps` document and an `auditLog` row, even under the

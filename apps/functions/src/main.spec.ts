@@ -2673,17 +2673,18 @@ describe('main.ts — the composition root', () => {
       });
     });
 
-    it('answers a code request past its burst of ten on one instance `resource-exhausted` — before anything is read, written or sent (2026-11-17)', async () => {
+    it('answers a code request past its burst of ten on one instance, then past one per 20 s, `resource-exhausted` — before anything is read, written or sent (2026-11-17)', async () => {
       const own = caseOf('requestOtpChallenge');
       seam.answers.set(own.pipeline, own.answer);
       vi.useFakeTimers({ toFake: ['Date'] });
       try {
-        // As the issue sink's case below: a minute behind the host clock
-        // re-anchors the instance's bucket, ten seconds later it is full,
-        // and back on the real clock it is full again for the cases after.
-        vi.setSystemTime(Date.now() - 60_000);
+        // As the issue sink's case below: ten minutes behind the host clock
+        // re-anchors the instance's bucket, 200 s later (ten calls at one
+        // per 20 s) it is full, and back on the real clock it is full again
+        // for the cases after.
+        vi.setSystemTime(Date.now() - 600_000);
         await run('requestOtpChallenge', own.input).catch(() => undefined);
-        vi.setSystemTime(Date.now() + 10_000);
+        vi.setSystemTime(Date.now() + 200_000);
         seam.calls.length = 0;
         for (let i = 0; i < 10; i++) {
           await expect(run('requestOtpChallenge', own.input)).resolves.toEqual({
@@ -2697,8 +2698,12 @@ describe('main.ts — the composition root', () => {
         expect(throttled.code).toBe('resource-exhausted');
         expect(throttled.details).toBeUndefined();
         expect(seam.calls).toHaveLength(10);
-        // One second refills one call at one a second.
-        vi.setSystemTime(Date.now() + 1_000);
+        // Twenty seconds refill one call — never a second early.
+        vi.setSystemTime(Date.now() + 19_999);
+        expect(
+          (await rejection(run('requestOtpChallenge', own.input))).code,
+        ).toBe('resource-exhausted');
+        vi.setSystemTime(Date.now() + 1);
         await expect(run('requestOtpChallenge', own.input)).resolves.toEqual({
           challengeId: 'otp-1',
           devCode: null,

@@ -73,6 +73,13 @@ export const LogEvent = {
    * `providerErrorCode` — never the address, never the code.
    */
   OtpProviderRefused: 'otp.provider_refused',
+  /**
+   * The login-OTP e-mail provider accepted a code's message
+   * (`postmark-otp-sender.adapter.ts`): its `providerMessageId` alone —
+   * never the address, never the code. The `otp_code_sent` metric counts
+   * these lines (`tools/ops/log-metrics.sh`).
+   */
+  OtpSent: 'otp.sent',
   OtpSendFailed: 'otp.send_failed',
   OtpVerifyAdoptionRefused: 'otp.verify.adoption_refused',
   /** The owner changed what a staff level may do (staff permissions P11): the count of changed cells only. */

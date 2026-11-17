@@ -1,0 +1,33 @@
+# Alert: sign-in codes sent (2026-11-17, the login-OTP sender) over the
+# otp_code_sent metric of tools/ops/log-metrics.sh — one line per code
+# Postmark accepted (LogEvent.OtpSent). Postmark has no spending cap: every
+# accepted code is a billed e-mail, so a flood against the code request's
+# ceiling (OTP_REQUEST_RATE: a burst, then one code every ten seconds) must
+# be noticed the same hour. Add a notification channel before relying on it.
+displayName: 'Creativo: sign-in codes flooding (otp_code_sent)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    More than 100 sign-in codes sent in an hour. A shop sends a few dozen a
+    day, so this is almost certainly a script requesting codes for many
+    addresses, and each one is a billed Postmark e-mail. The code request's
+    ceiling holds it to about 360 an hour (the rest are answered HTTP 429 in
+    requestotpchallenge's request log). Look up the tag sign-in-code in
+    Postmark's activity view; docs/production-deploy.md, «Sign-in: the OTP
+    sender».
+combiner: OR
+conditions:
+  - displayName: 'otp_code_sent above 100 per hour'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/otp_code_sent" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 100
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 3600s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

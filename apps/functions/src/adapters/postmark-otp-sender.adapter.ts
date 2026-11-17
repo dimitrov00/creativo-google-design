@@ -107,15 +107,34 @@ export type PostmarkOtpSenderConfig = {
 
 type SendRefusal = PipelineError | IdentityError.OtpSendUnavailable;
 
-/** The `ErrorCode` of Postmark's JSON answer, or `null` when it sent none. */
-async function providerErrorCodeOf(response: Response): Promise<number | null> {
+/** What the sender reads off Postmark's JSON answer — each `null` when it sent none. */
+type ProviderAnswer = {
+  /** Postmark's `ErrorCode`: `0` for a message it accepted. */
+  readonly providerErrorCode: number | null;
+  /** Postmark's `MessageID` — what its activity view and the delivery webhooks name the message by. */
+  readonly providerMessageId: string | null;
+};
+
+const UNREADABLE_ANSWER: ProviderAnswer = {
+  providerErrorCode: null,
+  providerMessageId: null,
+};
+
+/** Postmark's JSON answer, read once — {@link UNREADABLE_ANSWER} when the body is not an object. */
+async function providerAnswerOf(response: Response): Promise<ProviderAnswer> {
   try {
     const body: unknown = await response.json();
-    if (typeof body !== 'object' || body === null) return null;
-    const code = (body as { readonly ErrorCode?: unknown }).ErrorCode;
-    return typeof code === 'number' ? code : null;
+    if (typeof body !== 'object' || body === null) return UNREADABLE_ANSWER;
+    const { ErrorCode, MessageID } = body as {
+      readonly ErrorCode?: unknown;
+      readonly MessageID?: unknown;
+    };
+    return {
+      providerErrorCode: typeof ErrorCode === 'number' ? ErrorCode : null,
+      providerMessageId: typeof MessageID === 'string' ? MessageID : null,
+    };
   } catch {
-    return null;
+    return UNREADABLE_ANSWER;
   }
 }
 
@@ -196,7 +215,8 @@ export const postmarkOtpSender = (
       return Result.err(PipelineError.bare(PipelineErrorCode.Unavailable));
     }
 
-    const providerErrorCode = await providerErrorCodeOf(response);
+    const { providerErrorCode, providerMessageId } =
+      await providerAnswerOf(response);
     // A 2xx whose body cannot be read is taken as sent: Postmark accepted
     // the message, and a refusal here would send the person for a second
     // code while the first is on its way (the resend window guards that).
@@ -204,6 +224,10 @@ export const postmarkOtpSender = (
       response.ok &&
       (providerErrorCode === POSTMARK_OK || providerErrorCode === null)
     ) {
+      // One line per code Postmark accepted: the `otp_code_sent` metric
+      // counts them (a flood shows within the hour, `tools/ops/alerts/`),
+      // and the id finds the message in Postmark's activity view.
+      config.log('info', LogEvent.OtpSent, { providerMessageId });
       return Result.ok(undefined);
     }
     const refusal = refusalOf(response.status, providerErrorCode);

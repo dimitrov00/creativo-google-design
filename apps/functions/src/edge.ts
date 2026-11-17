@@ -985,23 +985,24 @@ export const workBudget = (nowUtcMs: NowUtcMs, limitMs: number): WorkBudget => {
 
 /**
  * A callable's admission rate on ONE instance: a bucket that holds
- * `capacity` calls (the burst it absorbs) and refills at `callsPerSecond`.
- * Per instance, never global — the definition's `maxInstances` bounds the
- * whole.
+ * `capacity` calls (the burst it absorbs) and earns one call back every
+ * `refillMsPerCall` milliseconds — twenty a second is `50`, one every
+ * twenty seconds `20_000`. Per instance, never global — the definition's
+ * `maxInstances` bounds the whole.
  */
 export type ThrottleRate = {
   readonly capacity: number;
-  readonly callsPerSecond: number;
+  readonly refillMsPerCall: number;
 };
 
 /**
- * One instance's bucket, in thousandths of a call — so a refill over whole
- * milliseconds is a whole number (`callsPerSecond` thousandths per
- * millisecond) and no fraction drifts — as of the instant it was last
- * filled.
+ * One instance's bucket, in milliseconds of refill — every elapsed
+ * millisecond earns one, and a call costs `refillMsPerCall` of them — so
+ * the refill is a whole number at any rate and no fraction drifts, as of
+ * the instant it was last filled.
  */
 export type TokenBucket = {
-  readonly milliTokens: number;
+  readonly creditMs: number;
   readonly filledAtUtcMs: UtcEpochMs;
 };
 
@@ -1011,16 +1012,13 @@ export type BucketTurn = {
   readonly bucket: TokenBucket;
 };
 
-/** What one call costs, in the bucket's thousandths. */
-const MILLI_TOKENS_PER_CALL = 1000;
-
 /** A full bucket — how an instance starts. */
 export function fullBucket(
   rate: ThrottleRate,
   nowUtcMs: UtcEpochMs,
 ): TokenBucket {
   return {
-    milliTokens: rate.capacity * MILLI_TOKENS_PER_CALL,
+    creditMs: rate.capacity * rate.refillMsPerCall,
     filledAtUtcMs: nowUtcMs,
   };
 }
@@ -1041,15 +1039,15 @@ export function takeToken(
     0,
     UtcEpochMs.elapsedMs(bucket.filledAtUtcMs, nowUtcMs),
   );
-  const milliTokens = Math.min(
-    rate.capacity * MILLI_TOKENS_PER_CALL,
-    bucket.milliTokens + elapsedMs * rate.callsPerSecond,
+  const creditMs = Math.min(
+    rate.capacity * rate.refillMsPerCall,
+    bucket.creditMs + elapsedMs,
   );
-  const admitted = milliTokens >= MILLI_TOKENS_PER_CALL;
+  const admitted = creditMs >= rate.refillMsPerCall;
   return {
     admitted,
     bucket: {
-      milliTokens: admitted ? milliTokens - MILLI_TOKENS_PER_CALL : milliTokens,
+      creditMs: admitted ? creditMs - rate.refillMsPerCall : creditMs,
       filledAtUtcMs: nowUtcMs,
     },
   };

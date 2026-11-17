@@ -29,7 +29,7 @@ export const REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS = 10;
 /** Twenty calls a second per instance, a burst of twenty (OR-34): two instances bound the whole. */
 export const CLIENT_ISSUE_RATE: ThrottleRate = {
   capacity: 20,
-  callsPerSecond: 20,
+  refillMsPerCall: 50,
 };
 
 /** The batch admitted into the pipeline's command beside its reporter — or refused, and logged where it is refused. */
