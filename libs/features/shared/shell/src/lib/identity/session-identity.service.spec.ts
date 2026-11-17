@@ -443,6 +443,34 @@ describe('SessionIdentityService', () => {
       expect(service.opensTeam()).toBe(true);
     });
 
+    it('opensOwnProfile: a linked barber has a page of their own; the owner with no record has none', () => {
+      const { service, account, signIn, permissions } =
+        harness(ANONYMOUS_PRINCIPAL);
+      expect(service.opensOwnProfile()).toBe(false);
+
+      signIn('petar', ['barber']);
+      expect(service.opensOwnProfile()).toBe(false);
+      account.set({
+        ...user('petar'),
+        roles: [Role.Barber],
+        linkedBarberId: BarberId.of('petar'),
+      });
+      TestBed.tick();
+      expect(service.opensOwnProfile()).toBe(true);
+
+      // The owner takes their own profile from barbers: the row goes.
+      permissions({ barberTeamProfilesScope: AccessScope.None });
+      expect(service.opensOwnProfile()).toBe(false);
+
+      // The owner reaches the team and everyone's profile, and has no page
+      // while no record is theirs.
+      signIn('owner', ['admin']);
+      account.set({ ...user('owner'), roles: [Role.Admin] });
+      TestBed.tick();
+      expect(service.opensTeam()).toBe(true);
+      expect(service.opensOwnProfile()).toBe(false);
+    });
+
     it('reads the STORED roles once the account has loaded, the token’s until then', () => {
       const { service, account, signIn } = harness(ANONYMOUS_PRINCIPAL);
       signIn('desk', ['receptionist']);

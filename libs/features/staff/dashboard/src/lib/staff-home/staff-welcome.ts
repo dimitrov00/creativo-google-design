@@ -10,7 +10,7 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { LocalizedText, RouteCapabilities } from '@core/components';
+import { LocalizedText } from '@core/components';
 import { Profile } from '@core/entities';
 import { Locale, type UserId } from '@core/primitives';
 import { StaffSetupSystem } from '@core/systems';
@@ -117,7 +117,7 @@ export class StaffWelcomeSheet {
       barberId === null ||
       this.seen() ||
       !this.team.teamKnown() ||
-      !this.access.opens(RouteCapabilities.OwnProfile)
+      !this.access.opensOwnProfile()
     ) {
       return null;
     }

@@ -272,14 +272,23 @@
               </div>
             }
 
-            @if (readsAnalytics()) {
+            @if (readsAnalytics() || opensOwnProfile()) {
               <!-- «Анализи» — UNDER «График» (staff-analytics, The screen):
                    the schedule is the day, this is how the weeks went. A
                    plain grouped row on the account rows' recipe, so the
                    schedule keeps the menu's one fill; the glyph is the
                    registry's line-chart mark (`timeline`). UI-only:
                    `rolesGuard` on the route and the callable's wire are
-                   the locks. -->
+                   the locks.
+
+                   «Моят профил» shares the group: the barber's own page
+                   (`/staff/profile`, account first A4–A5), what clients see
+                   of them — the way back once the welcome and the setup
+                   card have gone. Shown by `SessionAccessSystem
+                   .opensOwnProfile` (a linked record, and the route's own
+                   `RouteCapabilities.OwnProfile`), so the owner with no
+                   chair of their own never sees it. The setup card's glyph,
+                   because it leads to the same page. -->
               <div
                 class="cr-menu__section"
                 [uiReveal]="'fade-up'"
@@ -287,21 +296,40 @@
                 [uiRevealDelay]="110"
               >
                 <ui-list-group>
-                  <a
-                    routerLink="/staff/analytics"
-                    uiListRow
-                    uiSize="large"
-                    [uiInteractive]="true"
-                    data-testid="menu-staff-analytics"
-                    (click)="close()"
-                  >
-                    <ui-icon
-                      uiLeading
-                      uiName="loyalty.category.rhythm"
-                      uiScale="medium"
-                    />
-                    {{ t('landing.menu.staffAnalytics') }}
-                  </a>
+                  @if (readsAnalytics()) {
+                    <a
+                      routerLink="/staff/analytics"
+                      uiListRow
+                      uiSize="large"
+                      [uiInteractive]="true"
+                      data-testid="menu-staff-analytics"
+                      (click)="close()"
+                    >
+                      <ui-icon
+                        uiLeading
+                        uiName="loyalty.category.rhythm"
+                        uiScale="medium"
+                      />
+                      {{ t('landing.menu.staffAnalytics') }}
+                    </a>
+                  }
+                  @if (opensOwnProfile()) {
+                    <a
+                      routerLink="/staff/profile"
+                      uiListRow
+                      uiSize="large"
+                      [uiInteractive]="true"
+                      data-testid="menu-staff-profile"
+                      (click)="close()"
+                    >
+                      <ui-icon
+                        uiLeading
+                        uiName="account.profile"
+                        uiScale="medium"
+                      />
+                      {{ t('landing.menu.ownProfile') }}
+                    </a>
+                  }
                 </ui-list-group>
               </div>
             }

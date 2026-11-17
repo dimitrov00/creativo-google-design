@@ -17,7 +17,8 @@ import { signInAs } from './support/sign-in';
  * docs/architecture/decisions/2026-11-16-account-first-team.md): the first
  * time a linked barber opens the schedule, the welcome page; let go, it
  * stays gone on the device, and the setup card stays until the profile is
- * done, leading to their own page.
+ * done, leading to their own page; the menu's «Моят профил» row leads there
+ * for good, and never shows for the owner with no record of their own.
  */
 test.describe('a newly linked barber’s first visit', () => {
   test.describe.configure({ mode: 'default' });
@@ -32,7 +33,7 @@ test.describe('a newly linked barber’s first visit', () => {
     barberUid = null;
   });
 
-  test('the welcome first, «По-късно» lets it go; the setup card stays and opens their own page', async ({
+  test('the welcome first, «По-късно» lets it go; the setup card stays and opens their own page, and so does the menu’s «Моят профил»', async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -45,6 +46,20 @@ test.describe('a newly linked barber’s first visit', () => {
       roles: [Role.Admin],
     });
     await signInAs(page, ownerUid, ['admin']);
+    // The owner reaches everyone's profile and has no record of their own:
+    // the menu has «Екип» and no «Моят профил». (The menu sits behind the
+    // header's monogram, which the account page carries.)
+    await page.goto('/account', { waitUntil: 'commit' });
+    await expect(page.getByTestId('account-page')).toHaveAttribute(
+      'data-state',
+      'ready',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('nav-menu-trigger').click();
+    await expect(page.getByTestId('menu-admin-team')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('menu-staff-profile')).toHaveCount(0);
     await page.goto('/admin/team', { waitUntil: 'commit' });
     await expect(page.getByTestId('admin-team')).toHaveAttribute(
       'data-load',
@@ -127,5 +142,35 @@ test.describe('a newly linked barber’s first visit', () => {
     await expect(page).toHaveURL((url) => url.pathname === '/staff/schedule', {
       timeout: 30_000,
     });
+
+    // With nothing finished and the welcome let go, the menu is the way
+    // back that never leaves: «Моят профил» opens their own page, and back
+    // returns to where the menu was opened.
+    await page.goto('/account', { waitUntil: 'commit' });
+    await expect(page.getByTestId('account-page')).toHaveAttribute(
+      'data-state',
+      'ready',
+      { timeout: 30_000 },
+    );
+    await page.getByTestId('nav-menu-trigger').click();
+    const ownProfile = page.getByTestId('menu-staff-profile');
+    await expect(ownProfile).toContainText('Моят профил', { timeout: 30_000 });
+    await ownProfile.click();
+    await expect(page).toHaveURL((url) => url.pathname === '/staff/profile', {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('member-name')).toHaveText(
+      `Нов Посрещнат ${key}`,
+      { timeout: 30_000 },
+    );
+    await page.goBack();
+    await expect(page).toHaveURL((url) => url.pathname === '/account', {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('account-page')).toHaveAttribute(
+      'data-state',
+      'ready',
+      { timeout: 30_000 },
+    );
   });
 });

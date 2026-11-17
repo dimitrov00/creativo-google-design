@@ -74,6 +74,8 @@ export class SiteHeaderComponent {
   protected readonly readsAnalytics = this.identity.readsAnalytics;
   /** The menu's «Екип» row — whoever the Team page opens for. */
   protected readonly opensTeam = this.identity.opensTeam;
+  /** The menu's «Моят профил» row — a linked barber whose own page opens. */
+  protected readonly opensOwnProfile = this.identity.opensOwnProfile;
 
   protected readonly menuOpen = signal(false);
   protected readonly isScrolled = signal(false);

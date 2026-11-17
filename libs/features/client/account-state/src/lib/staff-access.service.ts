@@ -226,6 +226,22 @@ export class StaffAccessService {
   }
 
   /**
+   * The person has a page of their own (`/staff/profile`): an account linked
+   * to a barber record that the route's gate opens for
+   * (`SessionAccessSystem.opensOwnProfile`). What the menu's «Моят профил»
+   * row is shown by. Never on a half-read session.
+   */
+  readonly opensOwnProfile: Signal<boolean> = computed(
+    () =>
+      this.settled() &&
+      SessionAccessSystem.opensOwnProfile(
+        this.linkedBarberId(),
+        this.permissions(),
+        this.storedRoles(),
+      ),
+  );
+
+  /**
    * The person edits «Права»: the owner alone (`Roles.assignsRoles` on the
    * stored roles, as `setStaffPermissions` admits). Never on a half-read
    * session.
