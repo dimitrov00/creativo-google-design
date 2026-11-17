@@ -95,6 +95,12 @@ APP_ID="${APP_ID:-<release-app-id>}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# What the probes read (probe_into assigns them by name).
+main_id=''
+release_id=''
+tag_id=''
+owner_id=''
+
 # One argument as a shell word: bare when plain, else single-quoted.
 word() {
   local quote="'\\''"
@@ -166,7 +172,7 @@ put_or_post_ruleset() {
 
 # Adds a deployment branch or tag policy unless the environment holds it.
 branch_policy() {
-  local environment="$1" name="$2" type="$3" held
+  local environment="$1" name="$2" type="$3" held=''
   probe_into held '' gh api "repos/$REPO/environments/$environment/deployment-branch-policies" --jq ".branch_policies[] | select(.name == \"$name\" and .type == \"$type\") | .id"
   [ "$APPLY" = 1 ] || echo '#   absent →'
   if [ -z "$held" ]; then
