@@ -41,7 +41,7 @@ import {
 } from './preflight.mjs';
 
 const PROJECT = 'creativo-v2-prod';
-const HOST = `https://us-central1-${PROJECT}.cloudfunctions.net`;
+const HOST = `https://europe-west8-${PROJECT}.cloudfunctions.net`;
 
 /** The zone constructor's answers, as `ZonedTimeSystem.checkZone` gives them: canonical, or the refusal. */
 function checkZone(raw) {
@@ -568,7 +568,7 @@ describe('P5 · the callables host', () => {
 
   it('fails on the placeholder’s host, on a second host, and on no policy', () => {
     const placeholder =
-      'https://us-central1-creativo-replace-me.cloudfunctions.net';
+      'https://europe-west8-creativo-replace-me.cloudfunctions.net';
     for (const callables of [[placeholder], [HOST, placeholder], []]) {
       assert.equal(
         checkConnectSrc({ config: firebaseJson(callables), projectId: PROJECT })

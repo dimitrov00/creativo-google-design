@@ -45,7 +45,7 @@ media-src 'self';
 connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com
   https://securetoken.googleapis.com https://firebasestorage.googleapis.com
   https://content-firebaseappcheck.googleapis.com
-  https://us-central1-<PROJECT_ID>.cloudfunctions.net https://tiles.openfreemap.org;
+  https://europe-west8-<PROJECT_ID>.cloudfunctions.net https://tiles.openfreemap.org;
 worker-src 'self' blob:;
 manifest-src 'self';
 frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/;

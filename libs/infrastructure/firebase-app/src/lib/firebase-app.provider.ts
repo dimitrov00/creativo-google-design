@@ -113,12 +113,20 @@ export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
   ]);
 }
 
+/**
+ * The region the callables run in — the functions' `FUNCTIONS_REGION`
+ * (`apps/functions/src/lib/region.ts`, ADR 2026-11-18, europe-west8); the
+ * SDK otherwise dials its own default region, where nothing is deployed.
+ * `tools/verify/csp/functions-region.spec.mjs` holds the copies equal.
+ */
+export const FUNCTIONS_REGION = 'europe-west8';
+
 export function provideFirebaseFunctions(emulator?: FirebaseEmulatorConfig) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_FUNCTIONS,
       useFactory: () => {
-        const functions = getFunctions(inject(FIREBASE_APP));
+        const functions = getFunctions(inject(FIREBASE_APP), FUNCTIONS_REGION);
         if (emulator?.functionsHost && emulator.functionsPort) {
           connectFunctionsEmulator(
             functions,

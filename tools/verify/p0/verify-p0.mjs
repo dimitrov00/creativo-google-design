@@ -87,6 +87,7 @@ import {
   JOURNEY_APP_ID,
   emulatorAppCheckToken,
 } from '../app-check/emulator-token.mjs';
+import { FUNCTIONS_REGION } from '../csp/check-csp.mjs';
 import { CallableAnswer, readCallableAnswer } from './callable-answer.mjs';
 import { checkFunctionsDeps } from './functions-deps.mjs';
 import { proofInstantOf, seedRunEnv } from './seed-run.mjs';
@@ -96,7 +97,7 @@ const WORKSPACE_ROOT = resolve(
   '../../..',
 );
 const PROJECT_ID = 'demo-creativo-test';
-const REGION = 'us-central1';
+const REGION = FUNCTIONS_REGION;
 
 /** `emulators:exec` may hand over the 0.0.0.0 bind address; connect locally. */
 const local = (host) => host.replace('0.0.0.0', '127.0.0.1');

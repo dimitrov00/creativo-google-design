@@ -25,6 +25,7 @@ import {
 } from '@core/systems';
 import { appointmentFixture, FIXTURE_IDS, localDate } from '@core/testing';
 import { hmacSha256Hex } from './adapters/crypto.adapter';
+import { FUNCTIONS_REGION } from './lib/region';
 
 /**
  * The pipelines and the Firestore bundle, replaced at the module seam: each
@@ -186,8 +187,13 @@ import * as main from './main';
 
 type PipelineName = (typeof seam.PIPELINES)[number];
 
-/** Every option a deployed endpoint declares that no export of ours sets. */
+/**
+ * Every option a deployed endpoint declares that no export of ours sets —
+ * and the one every export shares: the region, from `setGlobalOptions`
+ * (ADR 2026-11-18, europe-west8), beside the database.
+ */
 const PLATFORM = {
+  region: [FUNCTIONS_REGION],
   availableMemoryMb: null,
   timeoutSeconds: null,
   minInstances: null,

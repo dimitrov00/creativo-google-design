@@ -4,6 +4,7 @@ import {
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { setGlobalOptions } from 'firebase-functions/v2';
 import { defineSecret } from 'firebase-functions/params';
 import { Result, TenantId, UtcEpochMs, defect } from '@core/primitives';
 import {
@@ -139,6 +140,7 @@ import { replayProtectedOptions } from './lib/app-check';
 import { CRON_TIME_ZONE } from './lib/cron-zone';
 import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
 import { serverRelease } from './lib/release';
+import { FUNCTIONS_REGION } from './lib/region';
 import {
   arrivalRefusal,
   arrivedOf,
@@ -323,6 +325,11 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * is MONITOR or ENFORCE (S-RU-21, S-DEP-11); it is not part of the
  * deployed endpoint (`__endpoint`).
  */
+
+// Every export runs in the database's region (ADR 2026-11-18,
+// europe-west8): set before the first function below is defined, which is
+// when each one reads the global options.
+setGlobalOptions({ region: FUNCTIONS_REGION });
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
 function once<T>(build: () => T): () => T {

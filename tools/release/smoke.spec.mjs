@@ -82,7 +82,7 @@ describe('the pure parts', () => {
     );
     assert.match(
       policyProblems(POLICY, 'creativo-v2-prod')[0],
-      /not https:\/\/us-central1-creativo-v2-prod/,
+      /not https:\/\/europe-west8-creativo-v2-prod/,
     );
     // A second callables host beside the project's is one too many.
     assert.match(

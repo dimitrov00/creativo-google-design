@@ -33,6 +33,13 @@ export const SIGN_IN_CALLABLES = [
   'completeRegistration',
 ] as const;
 
+/**
+ * The region the functions run in, so the emulator's URL for each callable —
+ * the functions' `FUNCTIONS_REGION` (ADR 2026-11-18, europe-west8);
+ * `tools/verify/csp/functions-region.spec.mjs` holds the copies equal.
+ */
+const FUNCTIONS_REGION = 'europe-west8';
+
 /** One request may wait this long for a cold worker before the run refuses. */
 const WARM_TIMEOUT_MS = 60_000;
 
@@ -68,7 +75,7 @@ export async function warmSignInCallables(
     SIGN_IN_CALLABLES.flatMap((name) =>
       Array.from({ length: Math.max(1, concurrency) }, async () => {
         const response = await fetch(
-          `${origin}/${project}/us-central1/${name}`,
+          `${origin}/${project}/${FUNCTIONS_REGION}/${name}`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
