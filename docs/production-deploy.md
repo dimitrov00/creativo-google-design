@@ -822,7 +822,12 @@ Deploys are manual, from a clean `main` whose CI is green. CI
 (`.github/workflows/ci.yml`) has no deploy job and names no secret but
 `GITHUB_TOKEN`. Its jobs run in parallel: `main` runs format, affected
 lint/test/build/typecheck, the static CSP hash check, the icon checks,
-`pnpm audit` and gitleaks; `static` the sync check, the layering check, the
+`pnpm audit` and gitleaks (the audit ignores ONE advisory,
+`GHSA-fc5q-39xc-vjpf`, picomatch's ReDoS, through `pnpm.auditConfig` in
+`package.json`, since 2026-11-17: no fixed picomatch is published, and it
+reaches only the build tools, never the web bundle or the functions'
+runtime dependencies, so `pnpm audit --prod` is clean. Drop the entry when
+a fixed picomatch ships); `static` the sync check, the layering check, the
 seed-tools typecheck, the lint-rules tests, the style lint, the
 initial-bundle guard and the functions build with its dependency check;
 `runbook-gates` the runbook's §4 grep gates; `coverage` the ecs-core

@@ -119,6 +119,11 @@
     "@angular/build@22.2.4>vite": "GHSA-587h-7wmj-h5pm (high, vite >=8.3.0 <=8.3.2): @angular/build 22.2.4 pins vite 8.3.0 exactly. A patch within the minor Angular tested (tilde, not caret); retires with the next @angular/build bump."
   },
   "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-fc5q-39xc-vjpf"
+      ]
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "less",
