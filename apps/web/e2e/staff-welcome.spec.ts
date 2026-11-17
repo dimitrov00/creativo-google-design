@@ -53,6 +53,9 @@ test.describe('a newly linked barber’s first visit', () => {
     );
     await page.getByTestId('admin-team-add').click();
     await page.getByTestId('admin-team-add-barber').click();
+    // The record first, linked to the account below (the link is seeded:
+    // the welcome is about the barber's first visit, not the lookup).
+    await page.getByTestId('team-barber-account-skip').click();
     await page.getByTestId('team-add-name').fill(`Нов Посрещнат ${key}`);
     await page.getByTestId('team-add-save').click();
     await expect(page).toHaveURL(/\/admin\/team\/member\/[^/]+$/, {

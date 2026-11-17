@@ -1,9 +1,9 @@
 import type { WelcomeFaceVm, WelcomeVm } from './staff-home.vm';
 
-/** The colleagues' faces the hero shows beside the newcomer's; the rest are a count. */
-const FACES_BESIDE = 3;
 /** The colleagues the lede names before «and N more». */
 const NAMED = 2;
+/** Up to this many, the lede names them all — «и още 1» is never worded. */
+const NAMED_ALL = 3;
 
 /** The welcome's words, in the catalogue's language (`staff.welcome.*`). */
 export type WelcomeWords = {
@@ -42,13 +42,15 @@ function listFormat(locale: string): Intl.ListFormat {
   return format;
 }
 
-/** «Иван», «Иван и Нико», «Иван, Нико и още 3». */
+/** «Иван», «Иван и Нико», «Иван, Нико и Мартин», «Иван, Нико и още 2». */
 function namesOf(
   colleagues: readonly WelcomeFaceVm[],
   words: WelcomeWords,
   locale: string,
 ): string {
-  const named = colleagues.slice(0, NAMED).map((face) => face.name);
+  const named = colleagues
+    .slice(0, colleagues.length <= NAMED_ALL ? NAMED_ALL : NAMED)
+    .map((face) => face.name);
   const rest = colleagues.length - named.length;
   return listFormat(locale).format(
     rest > 0 ? [...named, words.more(rest)] : named,
@@ -56,20 +58,18 @@ function namesOf(
 }
 
 /**
- * THE WELCOME, WORDED (Law 10; account first, A4): the newcomer's face in
- * front of the colleagues they join, the greeting by their first name, and
+ * THE WELCOME, WORDED (Law 10; account first, A4): the newcomer at the
+ * centre of the colleagues they join, the greeting by their first name, and
  * who they will work with. Who the colleagues are — the team's live
- * barbers — is handed in; this only lays out how many faces fit and words
- * the rest as a count.
+ * barbers — is handed in; how many faces fit is the orbit's to draw.
  */
 export function welcomeVm(input: WelcomeInput): WelcomeVm {
   const { words, colleagues, locale } = input;
-  const beside = colleagues.slice(0, FACES_BESIDE);
   const everyone = [input.own, ...colleagues].map((face) => face.name);
   const name = input.firstName?.trim() ?? '';
   return {
-    faces: [input.own, ...beside],
-    overflow: colleagues.length - beside.length,
+    own: input.own,
+    colleagues,
     facesLabel: listFormat(locale).format(everyone),
     headline: name.length > 0 ? words.headlineNamed(name) : words.headline,
     lede:

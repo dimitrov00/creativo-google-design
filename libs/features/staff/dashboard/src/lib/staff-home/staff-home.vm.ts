@@ -7,7 +7,7 @@ export type SetupCardVm = {
   readonly action: string;
 };
 
-/** One face of the welcome's hero. */
+/** One face of the welcome's orbit (the shape `ui-avatar-orbit` seats). */
 export type WelcomeFaceVm = {
   readonly id: string;
   readonly name: string;
@@ -17,11 +17,11 @@ export type WelcomeFaceVm = {
 
 /** The welcome page: who joins whom, greeted by name. */
 export type WelcomeVm = {
-  /** The newcomer first, in front; then the colleagues shown. */
-  readonly faces: readonly WelcomeFaceVm[];
-  /** Colleagues past the faces shown; `0` draws no count. */
-  readonly overflow: number;
-  /** Everyone the faces stand for, for assistive tech. */
+  /** The newcomer, at the centre of the orbit. */
+  readonly own: WelcomeFaceVm;
+  /** Everyone they join, in the team's order; the orbit seats what fits. */
+  readonly colleagues: readonly WelcomeFaceVm[];
+  /** Everyone the orbit stands for, for assistive tech. */
   readonly facesLabel: string;
   /** «Петър, вече си в екипа» */
   readonly headline: string;

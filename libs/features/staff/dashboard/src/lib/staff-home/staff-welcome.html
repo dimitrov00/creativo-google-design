@@ -18,95 +18,115 @@
   >
     <span sheet-title>{{ page.headline }}</span>
 
-    <div class="staff-welcome">
-      <!-- THE HERO: the newcomer's face in front of the colleagues they
-           join (Beli's «You're in!», Tolan's pair), over a soft wash of the
-           accent; the greeting by their first name. -->
-      <header class="staff-welcome__hero">
-        <ui-avatar-group
-          class="staff-welcome__faces"
-          uiControlSize="tile"
-          [uiOverflow]="page.overflow"
+    <!-- THE APP'S ONBOARDING GRAMMAR (the client onboarding's reward step):
+         a centred column between two spacers that rises in on mount, the
+         stacked action bar pinned in the thumb zone. -->
+    <ui-stack class="staff-welcome" uiAlignment="center" uiSpacing="none">
+      <ui-spacer />
+      <ui-stack
+        class="staff-welcome__body"
+        uiAlignment="center"
+        uiSpacing="regular"
+        uiPaddingHorizontal="regular"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+      >
+        <!-- THE HERO: the newcomer at the centre, the colleagues they join
+             turning around them (Messages' group, Polarsteps, Orbit), over
+             a soft wash of the accent. -->
+        <ui-avatar-orbit
+          class="staff-welcome__orbit"
+          [uiCenter]="page.own"
+          [uiFaces]="page.colleagues"
           [attr.aria-label]="page.facesLabel"
           data-testid="staff-welcome-faces"
+        />
+        <ui-stack
+          uiAlignment="center"
+          uiSpacing="tight"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="250"
         >
-          @for (face of page.faces; track face.id; let first = $first) {
-          <ui-avatar
-            [uiControlSize]="first ? 'extraLarge' : 'tile'"
-            [uiSrc]="face.avatarSrc"
-            [uiName]="face.name"
-            [class.staff-welcome__own]="first"
-          />
-          }
-        </ui-avatar-group>
-        <h1
-          id="staff-welcome-title"
-          class="staff-welcome__headline"
-          uiText
-          uiFont="largeTitle"
-          data-testid="staff-welcome-headline"
-        >
-          {{ page.headline }}
-        </h1>
-        <p
-          class="staff-welcome__lede"
-          uiText
-          uiFont="body"
-          uiForegroundStyle="secondary"
-          data-testid="staff-welcome-lede"
-        >
-          {{ page.lede }}
-        </p>
-      </header>
+          <h1
+            id="staff-welcome-title"
+            class="staff-welcome__headline"
+            uiText
+            uiFont="largeTitle"
+            data-testid="staff-welcome-headline"
+          >
+            {{ page.headline }}
+          </h1>
+          <p
+            class="staff-welcome__lede"
+            uiText
+            uiFont="body"
+            uiForegroundStyle="secondary"
+            data-testid="staff-welcome-lede"
+          >
+            {{ page.lede }}
+          </p>
+        </ui-stack>
 
-      <!-- WHAT THIS PLACE IS FOR THEM — Apple's welcome: a bare mark in the
-           accent, a semibold line, a secondary one that wraps. -->
-      <ul class="staff-welcome__facts">
-        <li class="staff-welcome__fact">
-          <ui-icon uiName="staff.day" uiScale="large" />
-          <div>
-            <h2 uiText uiFont="headline">
-              {{ t('staff.welcome.scheduleTitle') }}
-            </h2>
-            <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-              {{ t('staff.welcome.scheduleBody') }}
-            </p>
-          </div>
-        </li>
-        <li class="staff-welcome__fact">
-          <ui-icon uiName="account.photo" uiScale="large" />
-          <div>
-            <h2 uiText uiFont="headline">
-              {{ t('staff.welcome.profileTitle') }}
-            </h2>
-            <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-              {{ t('staff.welcome.profileBody') }}
-            </p>
-          </div>
-        </li>
-        <li class="staff-welcome__fact">
-          <ui-icon uiName="service.duration" uiScale="large" />
-          <div>
-            <h2 uiText uiFont="headline">
-              {{ t('staff.welcome.hoursTitle') }}
-            </h2>
-            <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-              {{ t('staff.welcome.hoursBody') }}
-            </p>
-          </div>
-        </li>
-      </ul>
+        <!-- WHAT THIS PLACE IS FOR THEM — Apple's welcome: a bare mark in
+             the accent, a semibold line, a secondary one that wraps. -->
+        <ul
+          class="staff-welcome__facts"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="400"
+        >
+          <li class="staff-welcome__fact">
+            <ui-icon uiName="staff.day" uiScale="large" />
+            <div>
+              <h2 uiText uiFont="headline">
+                {{ t('staff.welcome.scheduleTitle') }}
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                {{ t('staff.welcome.scheduleBody') }}
+              </p>
+            </div>
+          </li>
+          <li class="staff-welcome__fact">
+            <ui-icon uiName="account.photo" uiScale="large" />
+            <div>
+              <h2 uiText uiFont="headline">
+                {{ t('staff.welcome.profileTitle') }}
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                {{ t('staff.welcome.profileBody') }}
+              </p>
+            </div>
+          </li>
+          <li class="staff-welcome__fact">
+            <ui-icon uiName="service.duration" uiScale="large" />
+            <div>
+              <h2 uiText uiFont="headline">
+                {{ t('staff.welcome.hoursTitle') }}
+              </h2>
+              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+                {{ t('staff.welcome.hoursBody') }}
+              </p>
+            </div>
+          </li>
+        </ul>
+      </ui-stack>
+      <ui-spacer />
 
-      <!-- THE ANSWERS at the floor: one wide prominent button, the quiet
-           way on under it. -->
-      <footer class="staff-welcome__answers">
+      <!-- The completion anatomy (Apple Setup Assistant): one filled
+           primary, the quiet «not now» beneath, both centred, sticky in the
+           thumb zone like every bottom bar in the app. -->
+      <ui-page-action-bar
+        [uiStacked]="true"
+        uiReveal="fade"
+        uiRevealTrigger="mount"
+        [uiRevealDelay]="550"
+      >
         <button
           type="button"
           uiButton
           uiButtonStyle="borderedProminent"
           uiControlSize="large"
-          uiFrame
-          uiFrameMaxWidth="infinity"
           data-testid="staff-welcome-start"
           (click)="start()"
         >
@@ -116,15 +136,14 @@
           type="button"
           uiButton
           uiButtonStyle="plain"
-          uiTint="neutral"
-          uiControlSize="large"
+          uiControlSize="small"
           data-testid="staff-welcome-later"
           (click)="later()"
         >
           {{ t('staff.welcome.later') }}
         </button>
-      </footer>
-    </div>
+      </ui-page-action-bar>
+    </ui-stack>
   </ui-modal-sheet>
   }
 </ng-container>

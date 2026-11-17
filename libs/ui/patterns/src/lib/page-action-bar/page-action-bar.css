@@ -132,8 +132,13 @@
      on top, quiet link beneath, both centered (project the primary
      first). The horizontal slot contract's trailing-dock margin must not
      leak into the column. */
+  /* Stacked, the cross axis is the row's width: centre the controls on it.
+     The base row's `flex-end` (a field's baseline row, 2026-11-05) read
+     here as "flush right" and pushed the onboarding finale's and the
+     booking confirmation's buttons to the trailing edge until 2026-11-17. */
   .ui-page-action-bar[data-layout='stacked'] {
     flex-direction: column;
+    align-items: center;
     justify-content: center;
   }
 

@@ -4,7 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
-import type { UiAvatarSize } from '../avatar/avatar';
+import type { UiControlSize } from '../button/button';
 
 /**
  * THE AVATAR GROUP — several people as ONE mark (2026-09-17; owner:
@@ -38,8 +38,8 @@ import type { UiAvatarSize } from '../avatar/avatar';
   },
 })
 export class UiAvatarGroup {
-  /** The discs' tier — the same word the avatars inside carry; the count's disc is drawn at it. */
-  readonly uiControlSize = input<UiAvatarSize>('regular');
+  /** The discs' tier — the same word the avatars inside carry. */
+  readonly uiControlSize = input<UiControlSize>('regular');
   /** How many more people than the discs shown; `0` draws nothing. */
   readonly uiOverflow = input(0);
 }

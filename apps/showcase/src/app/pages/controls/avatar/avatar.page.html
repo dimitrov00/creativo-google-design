@@ -123,6 +123,31 @@
     </ui-flow>
   </sc-demo>
 
+  <sc-demo scTitle="Orbit">
+    <ng-container scAbout>
+      <code>ui-avatar-orbit</code> — one person at the centre, the people around
+      them on two faint orbits (Messages' group, a team's welcome): the portrait
+      ringed in the accent, up to six faces seated sixty degrees apart, the
+      first three larger, past six a count in the last seat. The faces arrive
+      from the centre, a ring pulses once, and the orbits turn once every two
+      minutes, each face staying upright — transform only; still with reduced
+      motion. One <code>role="img"</code> named by the host's
+      <code>aria-label</code>.
+    </ng-container>
+    <ui-flow uiSpacing="comfortable" uiAlignment="center">
+      <ui-avatar-orbit
+        [uiCenter]="orbitCenter"
+        [uiFaces]="orbitFaces"
+        aria-label="Ada Lovelace and eight people"
+      />
+      <ui-avatar-orbit
+        [uiCenter]="orbitCenter"
+        [uiFaces]="orbitPair"
+        aria-label="Ada Lovelace, Grace Hopper and Edsger Dijkstra"
+      />
+    </ui-flow>
+  </sc-demo>
+
   <sc-demo scTitle="Broken source">
     <ng-container scAbout>
       The <code>AsyncImage</code> error path: an unreachable

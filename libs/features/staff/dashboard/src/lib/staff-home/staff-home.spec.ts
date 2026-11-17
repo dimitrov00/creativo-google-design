@@ -262,7 +262,7 @@ describe('welcomeVm', () => {
     more: (count) => `${count} more`,
   };
 
-  it('greets by first name, shows three colleagues beside the newcomer and counts the rest', () => {
+  it('greets by first name, puts the newcomer at the centre of everyone they join, names two and counts the rest', () => {
     const vm = welcomeVm({
       firstName: ' Петър ',
       own,
@@ -271,13 +271,8 @@ describe('welcomeVm', () => {
       locale: 'bg',
     });
     expect(vm.headline).toBe('Петър, вече си в екипа');
-    expect(vm.faces.map((one) => one.id)).toEqual([
-      'b-own',
-      'b-1',
-      'b-2',
-      'b-3',
-    ]);
-    expect(vm.overflow).toBe(2);
+    expect(vm.own).toBe(own);
+    expect(vm.colleagues).toBe(team);
     expect(vm.lede).toBe('Ще работиш с Иван, Нико и още 3.');
     expect(vm.facesLabel).toBe(
       'Петър Петров, Иван, Нико, Мартин, Елена и Георги',
@@ -296,8 +291,17 @@ describe('welcomeVm', () => {
     ).toMatchObject({
       headline: 'Peter, you’re on the team',
       lede: 'You’ll work with Иван and Нико.',
-      overflow: 0,
     });
+    // Three are named all — «още 1» is never worded.
+    expect(
+      welcomeVm({
+        firstName: 'Петър',
+        own,
+        colleagues: team.slice(0, 3),
+        words: bg,
+        locale: 'bg',
+      }).lede,
+    ).toBe('Ще работиш с Иван, Нико и Мартин.');
     expect(
       welcomeVm({
         firstName: null,
@@ -320,8 +324,8 @@ describe('welcomeVm', () => {
     expect(alone).toMatchObject({
       headline: 'Вече си в екипа',
       lede: 'Ето какво те чака тук.',
-      overflow: 0,
     });
-    expect(alone.faces).toEqual([own]);
+    expect(alone.own).toBe(own);
+    expect(alone.colleagues).toEqual([]);
   });
 });

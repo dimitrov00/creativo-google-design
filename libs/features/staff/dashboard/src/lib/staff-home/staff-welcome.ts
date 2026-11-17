@@ -21,18 +21,17 @@ import {
   type BarberVm,
   TeamCatalogService,
 } from '@creativo/features/shared/catalog';
-import {
-  UiAvatar,
-  UiAvatarGroup,
-  UiButton,
-  UiModalSheet,
-} from '@creativo/ui/controls';
+import { UiAvatarOrbit, UiButton, UiModalSheet } from '@creativo/ui/controls';
 import { UiIcon } from '@creativo/ui/icons';
+import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
   UiFrameDirective,
+  UiPaddingDirective,
+  UiRevealDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { UiPageActionBar } from '@creativo/ui/patterns';
 import type { WelcomeFaceVm, WelcomeVm } from './staff-home.vm';
 import { welcomeVm } from './staff-welcome.presenter';
 
@@ -79,13 +78,17 @@ function rememberSeen(userId: UserId | null): void {
   selector: 'lib-staff-welcome',
   imports: [
     TranslocoDirective,
-    UiAvatar,
-    UiAvatarGroup,
+    UiAvatarOrbit,
     UiButton,
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiIcon,
     UiModalSheet,
+    UiPaddingDirective,
+    UiPageActionBar,
+    UiRevealDirective,
+    UiSpacer,
+    UiStack,
     UiTextDirective,
   ],
   templateUrl: './staff-welcome.html',
