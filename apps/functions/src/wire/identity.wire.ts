@@ -151,17 +151,22 @@ export function requestOtpRefusal(failure: RequestOtpError): EdgeError {
 
 /**
  * The code request's admission rate on ONE instance (2026-11-17, with the
- * real sender — performance-cost audit F-21/F-22): a burst of ten, then one
- * call a second; the definition's two instances bound the whole at two a
- * second. A refused call is answered `resource-exhausted` before anything
- * is read or written, so a flood costs no `otps` document, no audit row and
- * no message. Per address, the day's allowance (`OtpLimits`) is the cap; this
- * is the ceiling over every address at once. Its cost: under a flood, real
- * sign-ins wait their turn too — accepted at this shop's size.
+ * real sender — performance-cost audit F-21/F-22; tightened the same day,
+ * because Postmark has no spending cap): a burst of ten, then one call every
+ * twenty seconds. The definition's two instances make the whole a burst of
+ * twenty, then one code every ten seconds — at most 8,660 a day, against a
+ * shop's few dozen. A refused call is answered `resource-exhausted` before
+ * anything is read or written, so a flood costs no `otps` document, no audit
+ * row and no message. Per address, the day's allowance (`OtpLimits`) is the
+ * cap; this is the ceiling over every address at once, and the
+ * `otp_code_sent` alert (`tools/ops/alerts/otp-codes-sent.yaml`) is how a
+ * flood against it is noticed. Its cost: under a flood, real sign-ins wait
+ * their turn too — accepted at this shop's size. The burst stays ten so the
+ * e2e suites' handful of codes never meets it.
  */
 export const OTP_REQUEST_RATE: ThrottleRate = {
   capacity: 10,
-  callsPerSecond: 1,
+  refillMsPerCall: 20_000,
 };
 
 // ── verifyOtpChallenge ──────────────────────────────────────────────────

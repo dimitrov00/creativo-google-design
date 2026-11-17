@@ -104,7 +104,11 @@ describe('postmark-otp-sender adapter (the deployed login-OTP sender)', () => {
     });
     expect(call?.body['TextBody']).toContain(CODE);
     expect(call?.body['HtmlBody']).toContain(CODE);
-    expect(lines).toEqual([]);
+    // One line per accepted code — Postmark's message id alone, which the
+    // otp_code_sent metric counts and Postmark's activity view finds.
+    expect(lines).toEqual([
+      { level: 'info', msg: 'otp.sent', fields: { providerMessageId: 'm-1' } },
+    ]);
   });
 
   it('reads the token and the address at each send — a secret is a runtime value', async () => {
@@ -218,7 +222,10 @@ describe('postmark-otp-sender adapter (the deployed login-OTP sender)', () => {
     for (const body of ['not json', {}]) {
       const { send, lines } = rig({}, postmark(200, body));
       expect(await send(TO, CODE)).toEqual({ ok: true, value: undefined });
-      expect(lines).toEqual([]);
+      // Still counted as sent, with no id to name it by.
+      expect(lines).toEqual([
+        { level: 'info', msg: 'otp.sent', fields: { providerMessageId: null } },
+      ]);
     }
   });
 
@@ -261,9 +268,15 @@ describe('postmark-otp-sender adapter (the deployed login-OTP sender)', () => {
     expect(SEND_TIMEOUT_MS).toBeLessThan(60_000);
   });
 
-  it('never writes the address, the code or the token into a line', async () => {
+  it('never writes the address, the code or the token into a line — sent or refused', async () => {
     const lines: Line[] = [];
     for (const answer of [
+      postmark(200, {
+        ErrorCode: 0,
+        Message: 'OK',
+        MessageID: 'm-2',
+        To: 'ana@example.com',
+      }),
       postmark(422, { ErrorCode: 406, Message: 'inactive ana@example.com' }),
       postmark(401, { ErrorCode: 10, Message: 'bad token' }),
       postmark(500, {}),

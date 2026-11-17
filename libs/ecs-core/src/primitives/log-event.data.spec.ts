@@ -45,6 +45,7 @@ describe('LogEvent', () => {
       InvitationRedeemRefused: 'invitation.redeem.refused',
       LeadTimeSampleFailed: 'lead-time sample failed for barber',
       OtpProviderRefused: 'otp.provider_refused',
+      OtpSent: 'otp.sent',
       OtpSendFailed: 'otp.send_failed',
       OtpVerifyAdoptionRefused: 'otp.verify.adoption_refused',
       PermissionsChanged: 'permissions.changed',

@@ -1908,8 +1908,8 @@ describe('edge — the wrappers', () => {
   });
 
   describe('the throttle — a per-instance token bucket (OR-34)', () => {
-    /** The sink's rate: twenty a second, a burst of twenty. */
-    const RATE: ThrottleRate = { capacity: 20, callsPerSecond: 20 };
+    /** The sink's rate: twenty a second (one per 50 ms), a burst of twenty. */
+    const RATE: ThrottleRate = { capacity: 20, refillMsPerCall: 50 };
 
     /** `n` turns at one instant, each on the bucket the last one left. */
     function turns(
@@ -1930,31 +1930,50 @@ describe('edge — the wrappers', () => {
     it('starts full — a burst of exactly its capacity, then a refusal', () => {
       const start = utc(1_000);
       expect(fullBucket(RATE, start)).toEqual({
-        milliTokens: 20_000,
+        creditMs: 1_000,
         filledAtUtcMs: start,
       });
       const burst = turns(fullBucket(RATE, start), 21, start);
       expect(burst.admitted.filter(Boolean)).toHaveLength(20);
       expect(burst.admitted[20]).toBe(false);
       // A refused turn takes nothing: the bucket stays empty, not below.
-      expect(burst.bucket).toEqual({ milliTokens: 0, filledAtUtcMs: start });
+      expect(burst.bucket).toEqual({ creditMs: 0, filledAtUtcMs: start });
     });
 
     it('refills at its rate — one call per 50 ms at twenty a second, never a fraction early', () => {
-      const empty: TokenBucket = { milliTokens: 0, filledAtUtcMs: utc(1_000) };
+      const empty: TokenBucket = { creditMs: 0, filledAtUtcMs: utc(1_000) };
       expect(takeToken(RATE, empty, utc(1_049)).admitted).toBe(false);
       expect(takeToken(RATE, empty, utc(1_050))).toEqual({
         admitted: true,
-        bucket: { milliTokens: 0, filledAtUtcMs: utc(1_050) },
+        bucket: { creditMs: 0, filledAtUtcMs: utc(1_050) },
       });
       // A refused turn keeps what had accrued: 49 ms + 1 ms is one call.
       const partial = takeToken(RATE, empty, utc(1_049)).bucket;
-      expect(partial).toEqual({ milliTokens: 980, filledAtUtcMs: utc(1_049) });
+      expect(partial).toEqual({ creditMs: 49, filledAtUtcMs: utc(1_049) });
       expect(takeToken(RATE, partial, utc(1_050)).admitted).toBe(true);
     });
 
+    it('refills slower than a call a second — one call per 20 s, as the code request does, never a millisecond early', () => {
+      const slow: ThrottleRate = { capacity: 10, refillMsPerCall: 20_000 };
+      const empty: TokenBucket = { creditMs: 0, filledAtUtcMs: utc(1_000) };
+      expect(takeToken(slow, empty, utc(20_999)).admitted).toBe(false);
+      expect(takeToken(slow, empty, utc(21_000))).toEqual({
+        admitted: true,
+        bucket: { creditMs: 0, filledAtUtcMs: utc(21_000) },
+      });
+      // A day of a full flood on one instance: the burst, then one per 20 s.
+      let bucket = fullBucket(slow, utc(0));
+      let admitted = 0;
+      for (let at = 0; at < 86_400_000; at += 1_000) {
+        const turn = takeToken(slow, bucket, utc(at));
+        bucket = turn.bucket;
+        if (turn.admitted) admitted++;
+      }
+      expect(admitted).toBe(10 + 4_319);
+    });
+
     it('never holds more than its capacity, however long it idled', () => {
-      const empty: TokenBucket = { milliTokens: 0, filledAtUtcMs: utc(1_000) };
+      const empty: TokenBucket = { creditMs: 0, filledAtUtcMs: utc(1_000) };
       const later = utc(1_000 + 3_600_000);
       const idled = turns(empty, 21, later);
       expect(idled.admitted.filter(Boolean)).toHaveLength(20);
@@ -1963,24 +1982,24 @@ describe('edge — the wrappers', () => {
 
     it('refills nothing on a clock that stepped back, and re-anchors on now', () => {
       const bucket: TokenBucket = {
-        milliTokens: 500,
+        creditMs: 25,
         filledAtUtcMs: utc(5_000),
       };
       expect(takeToken(RATE, bucket, utc(4_000))).toEqual({
         admitted: false,
-        bucket: { milliTokens: 500, filledAtUtcMs: utc(4_000) },
+        bucket: { creditMs: 25, filledAtUtcMs: utc(4_000) },
       });
     });
 
     it('is pure: the same turn answers the same, its bucket untouched', () => {
       const bucket: TokenBucket = Object.freeze({
-        milliTokens: 1_500,
+        creditMs: 75,
         filledAtUtcMs: utc(2_000),
       });
       const rate = Object.freeze({ ...RATE });
       const once = takeToken(rate, bucket, utc(2_010));
       expect(takeToken(rate, bucket, utc(2_010))).toEqual(once);
-      expect(bucket).toEqual({ milliTokens: 1_500, filledAtUtcMs: utc(2_000) });
+      expect(bucket).toEqual({ creditMs: 75, filledAtUtcMs: utc(2_000) });
     });
 
     it('tokenBucket keeps one bucket over the clock it is given — full at its first call', () => {

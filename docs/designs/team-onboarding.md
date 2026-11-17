@@ -1383,7 +1383,8 @@ DMARC; one transactional stream for codes and invites.
 - The code half is built (2026-11-17,
   `docs/architecture/decisions/2026-11-17-sign-in-email-sender.md`): the
   Postmark sender (`postmark-otp-sender.adapter.ts`), the day's allowance
-  of five open codes per address, the code request's flood ceiling, and the
+  of five open codes per address, the code request's flood ceiling (one
+  code every 10 s after a burst) and its `otp_code_sent` alert, and the
   address stored as its own probe reads it. Preflight P8 passes.
 - Left for the owner: the Postmark account and its approval, the
   `auth.*` domain's records, and the two secrets

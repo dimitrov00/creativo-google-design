@@ -183,6 +183,6 @@ describe('reportClientIssues — the wire', () => {
 
   it('pins the definition: a 10 s timeout, twenty calls a second per instance with a burst of twenty', () => {
     expect(REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS).toBe(10);
-    expect(CLIENT_ISSUE_RATE).toEqual({ capacity: 20, callsPerSecond: 20 });
+    expect(CLIENT_ISSUE_RATE).toEqual({ capacity: 20, refillMsPerCall: 50 });
   });
 });

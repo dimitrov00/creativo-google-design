@@ -276,15 +276,25 @@ What is built:
   autofill it, and the message is Bulgarian (`otp-email.words.ts`). Every
   refusal logs one `otp.provider_refused` line with the reason, the HTTP
   status and Postmark's `ErrorCode`, never the address, the code or the token.
+  Every accepted code logs one `otp.sent` line with Postmark's `MessageID`
+  alone, which the `otp_code_sent` metric counts.
 - **The limits, checked before anything is saved or sent:**
   - one code per address per 60 s (OR-9);
   - at most five unused codes per address in any 24 h
     (`IDENTITY_OTP_DAILY_LIMIT`), so a stranger's inbox gets at most five a
     day, while a person who signs in uses each code and is never counted;
-  - a ceiling over every address at once: a burst of ten, then one request a
-    second per instance, on two instances at most (`OTP_REQUEST_RATE`). Past
-    it a request is refused `resource-exhausted` before any read or write.
-    Under a flood, real sign-ins wait too; that is accepted at this size.
+  - a ceiling over every address at once: a burst of ten, then one request
+    every 20 s per instance, on two instances at most (`OTP_REQUEST_RATE`).
+    For the whole project that is a burst of twenty, then one code every
+    10 s: at most about 8,660 a day, against a shop's few dozen. Past it a
+    request is refused `resource-exhausted` before any read or write. Under
+    a flood, real sign-ins wait too; that is accepted at this size.
+- **Postmark has no spending cap.** Past the plan's volume it keeps sending,
+  e-mails the account once («You've used all your Postmark emails») and bills
+  the extra next month (Basic: $1.80 per 1,000, as of 2026-11-17). The
+  ceiling above caps a full day of flooding at about $16 of overage on
+  Basic, and the `otp_code_sent` alert (more than 100 codes in an hour,
+  `tools/ops/alerts/otp-codes-sent.yaml`) says so the same hour.
 - **The address is stored as it is searched:** lower-cased e-mail, E.164
   phone. Before, a mixed-case address escaped its own throttle and the
   erasure's sweep.
@@ -307,9 +317,12 @@ What the owner does, once per project:
 - [ ] **Ask Postmark to approve the account.** Until it does, Postmark only
       delivers to addresses on the sender's own domain (`ErrorCode` 412), and
       the sender answers every other request `IDENTITY_OTP_SEND_UNAVAILABLE`.
-- [ ] **Check the plan's volume and overage settings** in the Postmark account,
-      so a month's codes can't run past the budget unnoticed. **decide**: the
-      plan.
+- [ ] **Choose the plan.** Basic ($15 a month for 10,000 e-mails, up to five
+      servers, 45 days of activity, as of 2026-11-17) covers a shop's codes
+      and reminders many times over; Pro becomes cheaper past about 13,000 a
+      month and keeps activity up to 365 days as an add-on. There is no
+      overage cap to set: the `otp_code_sent` alert (section 3.5) is the
+      guard, so give it a notification channel. **decide**: the plan.
 - [ ] **Set the two secrets**, then deploy the functions:
 
 ```bash
@@ -327,6 +340,8 @@ firebase functions:secrets:set OTP_EMAIL_FROM --project "$PROJECT_ID"
 - [ ] **After the deploy, sign in once with your own address.**
   - The message arrives with the code in its subject.
   - Postmark's Activity shows it under the `sign-in-code` tag.
+  - One `otp.sent` line is in the functions log; its `providerMessageId`
+    finds the message in Postmark's Activity.
   - No `otp.provider_refused` line is in the functions log. If there is one,
     its `providerErrorCode` names the cause: 10 is the token, 412 or 413 is
     the approval, 403 is the from-address, 1235 is the stream.
@@ -335,7 +350,8 @@ Source: `apps/functions/src/adapters/postmark-otp-sender.adapter.ts`,
 `otp-email.words.ts`; `apps/functions/src/main.ts` (`OTP_POSTMARK_TOKEN`,
 `OTP_EMAIL_FROM`, `OTP_REQUEST_OPTIONS`, `identityPorts`,
 `requestOtpChallenge`); `apps/functions/src/wire/identity.wire.ts`
-(`OTP_REQUEST_RATE`); `libs/ecs-core/src/systems/otp.system.ts`
+(`OTP_REQUEST_RATE`); `tools/ops/alerts/otp-codes-sent.yaml`;
+`libs/ecs-core/src/systems/otp.system.ts`
 (`OtpLimits`, `issueRefusal`); `tools/flags/write-functions-env.mjs`
 (`EMULATOR_SECRETS`).
 
@@ -495,14 +511,17 @@ gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
       this item used to spell out), and, recommended by audit-hardening WS-6,
       `trigger_attempt_failed` (labels `outcome`, `fn`), `document_refused`,
       `audit_actor_missing`, `callable_failed` (label `callable`), from
-      security hardening S-WS-E `roles_sessions_not_revoked`, and
-      `trigger_failure_not_recorded` (label `fn`), then the alert policies
+      security hardening S-WS-E `roles_sessions_not_revoked`,
+      `trigger_failure_not_recorded` (label `fn`), and, from the login-OTP
+      sender, `otp_code_sent`, then the alert policies
       of `tools/ops/alerts/` (client issues above 100 per 5 minutes, as
       before; any PERMANENT trigger attempt or more than 10 failing in 5
       minutes; any refused document; any act without its audit row; more
       than 5 failures of one callable in 5 minutes; any roles change whose
       sessions were not revoked; any failed trigger attempt whose dead
-      letter could not be written). Read the dry run first:
+      letter could not be written), and, with the login-OTP sender,
+      `otp_code_sent` (more than 100 sign-in codes in an hour: each is a
+      billed Postmark e-mail). Read the dry run first:
 
 ```bash
 tools/ops/log-metrics.sh --project "$PROJECT_ID"
@@ -512,7 +531,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID"
 tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 ```
 
-- [ ] **Attach an e-mail notification channel** to each of the seven alert
+- [ ] **Attach an e-mail notification channel** to each of the eight alert
       policies in Cloud Monitoring → Alerting (the files name none).
       Source: `docs/architecture/firestore-runbook.md` §3 step 7;
       `tools/ops/log-metrics.sh`, `tools/ops/alerts/*.yaml`;
@@ -1101,7 +1120,7 @@ Source: `firebase.json:26-34`; `docs/architecture/firestore-runbook.md:235`,
 
 ### 3.5 After the first functions deploy (once)
 
-- [ ] Create the five logs-based metrics and their alert policies:
+- [ ] Create the eight logs-based metrics and their alert policies:
       `tools/ops/log-metrics.sh --project "$PROJECT_ID"`, read the dry run,
       then the same with `--apply` (section 1, Monitoring). The metrics count
       only lines written after they exist.
@@ -1138,7 +1157,7 @@ curl -sI "https://<domain>/"
 ```
 
 - [ ] **Logs:** Cloud Logging has **no** `[otp] would send` line. The
-      seven metrics of `tools/ops/log-metrics.sh` exist
+      eight metrics of `tools/ops/log-metrics.sh` exist
       (`gcloud logging metrics list --project="$PROJECT_ID"`). Error Reporting
       shows no new group.
 - [ ] **The next morning:** the 03:00, 03:30 and 04:00 schedules ran without
