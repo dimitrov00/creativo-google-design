@@ -1,22 +1,11 @@
 import type { WelcomeFaceVm, WelcomeVm } from './staff-home.vm';
 
-/** The colleagues the lede names before «and N more». */
-const NAMED = 2;
-/** Up to this many, the lede names them all — «и още 1» is never worded. */
-const NAMED_ALL = 3;
-
 /** The welcome's words, in the catalogue's language (`staff.welcome.*`). */
 export type WelcomeWords = {
   /** «{{name}}, вече си в екипа» */
   readonly headlineNamed: (name: string) => string;
   /** «Вече си в екипа» — an account with no first name. */
   readonly headline: string;
-  /** «Ще работиш с {{names}}.» */
-  readonly ledeWith: (names: string) => string;
-  /** «Тук са записите ти и профилът, който клиентите виждат.» — no colleague yet. */
-  readonly ledeAlone: string;
-  /** «още {{count}}» — the colleagues past the named ones. */
-  readonly more: (count: number) => string;
 };
 
 export type WelcomeInput = {
@@ -44,26 +33,13 @@ function listFormat(locale: string): Intl.ListFormat {
   return format;
 }
 
-/** «Иван», «Иван и Нико», «Иван, Нико и Мартин», «Иван, Нико и още 2». */
-function namesOf(
-  colleagues: readonly WelcomeFaceVm[],
-  words: WelcomeWords,
-  locale: string,
-): string {
-  const named = colleagues
-    .slice(0, colleagues.length <= NAMED_ALL ? NAMED_ALL : NAMED)
-    .map((face) => face.name);
-  const rest = colleagues.length - named.length;
-  return listFormat(locale).format(
-    rest > 0 ? [...named, words.more(rest)] : named,
-  );
-}
-
 /**
  * THE WELCOME, WORDED (Law 10; account first, A4): the newcomer at the
- * centre of the colleagues they join, the greeting by their first name, and
- * who they will work with. Who the colleagues are — the team's live
- * barbers — is handed in; how many faces fit is the orbit's to draw.
+ * centre of the colleagues they join, and the greeting by their first name.
+ * Who the colleagues are — the team's live barbers — is handed in; how many
+ * faces fit is the orbit's to draw, and who they are is the faces' to say
+ * (and the label's, which names everyone): the copy never lists names
+ * (owner 2026-11-17: a list of names reads oddly, and grows with the team).
  */
 export function welcomeVm(input: WelcomeInput): WelcomeVm {
   const { words, colleagues, locale } = input;
@@ -81,9 +57,5 @@ export function welcomeVm(input: WelcomeInput): WelcomeVm {
     colleagues,
     facesLabel: listFormat(locale).format(everyone),
     headline: name.length > 0 ? words.headlineNamed(name) : words.headline,
-    lede:
-      colleagues.length > 0
-        ? words.ledeWith(namesOf(colleagues, words, locale))
-        : words.ledeAlone,
   };
 }

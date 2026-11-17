@@ -1068,15 +1068,7 @@
     "welcome": {
       "headlineNamed": "{{name}}, you’re on the team",
       "headline": "You’re on the team",
-      "ledeWith": "You’ll work with {{names}}. Here is what waits for you.",
-      "ledeAlone": "Here is what waits for you.",
-      "more": "{{count}} more",
-      "scheduleTitle": "Your schedule",
-      "scheduleBody": "Your bookings by day — with the client, the service and the time.",
-      "profileTitle": "Your profile",
-      "profileBody": "A photo and a few words about you — what clients see when they book.",
-      "hoursTitle": "Hours and prices",
-      "hoursBody": "The owner sets them. Once they are ready, clients can book with you.",
+      "lede": "Add a photo and a few words about yourself — it’s how clients get to know you.",
       "start": "Let’s start",
       "later": "Later"
     },

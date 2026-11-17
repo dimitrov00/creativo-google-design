@@ -25,6 +25,4 @@ export type WelcomeVm = {
   readonly facesLabel: string;
   /** «Петър, вече си в екипа» */
   readonly headline: string;
-  /** «Ще работиш с Иван, Нико и още 3.» */
-  readonly lede: string;
 };

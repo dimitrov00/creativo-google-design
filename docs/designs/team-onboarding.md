@@ -1359,12 +1359,13 @@ pastLastWorkingLocalDate }`, never queried, its single-field indexes
   first time they open `/staff/schedule`, `lib-staff-welcome` covers it — a
   page, not a sheet, on the app's onboarding grammar (the client
   onboarding's reward step: a centred column, the stacked
-  `ui-page-action-bar`): their face at the centre of `ui-avatar-orbit`,
+  `ui-page-action-bar`) and Apple's hero page — one picture, one headline,
+  one line, no list of names or features (owner 2026-11-17): their face at the centre of `ui-avatar-orbit`,
   ringed in the accent, up to six colleagues on two faint orbits turning
   once every two minutes («+N» past five; still with reduced motion),
-  «Петър, вече си в екипа», «Ще работиш с Иван, Нико и още 3.», three
-  facts (the schedule, the profile, the hours as the owner's) and «Да
-  започваме» over a quiet
+  the centre named as the account names the person, «Петър, вече си в
+  екипа», one line («Добави снимка и няколко думи за себе си — така
+  клиентите ще те познаят.») and «Да започваме» over a quiet
   «По-късно». It shows while `StaffSetupSystem.welcomes` holds (nothing of
   the profile done yet); «По-късно» is kept on the device, nothing on the
   server. The setup card then stays until `profileLeftOf` is empty. Both

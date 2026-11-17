@@ -84,9 +84,7 @@ async function render<T>(
                 welcome: {
                   headlineNamed: '{{name}}, вече си в екипа',
                   headline: 'Вече си в екипа',
-                  ledeWith: 'Ще работиш с {{names}}.',
-                  ledeAlone: 'Ето какво те чака тук.',
-                  more: 'още {{count}}',
+                  lede: 'Добави снимка и няколко думи за себе си — така клиентите ще те познаят.',
                   start: 'Да започваме',
                   later: 'По-късно',
                 },
@@ -203,7 +201,7 @@ describe('StaffWelcomeSheet', () => {
     expect(navigate).toHaveBeenCalledWith(['/staff/profile']);
   });
 
-  it('puts their face in front of the colleagues they join, and names them', async () => {
+  it('puts their face at the centre of the colleagues they join, and leads to the profile in one line — never a list of names', async () => {
     const { piece } = await render(StaffWelcomeSheet, {
       colleagues: [
         colleague('b-ivan', 'Иван'),
@@ -215,7 +213,11 @@ describe('StaffWelcomeSheet', () => {
       piece('staff-welcome-faces')?.querySelectorAll('ui-avatar'),
     ).toHaveLength(3);
     expect(piece('staff-welcome-lede')?.textContent?.trim()).toBe(
-      'Ще работиш с Иван и Нико.',
+      'Добави снимка и няколко думи за себе си — така клиентите ще те познаят.',
+    );
+    // Who they are is the faces' to say, and the label's.
+    expect(piece('staff-welcome-faces')?.getAttribute('aria-label')).toContain(
+      'Иван и Нико',
     );
   });
 
@@ -250,19 +252,13 @@ describe('welcomeVm', () => {
   const bg: WelcomeWords = {
     headlineNamed: (name) => `${name}, вече си в екипа`,
     headline: 'Вече си в екипа',
-    ledeWith: (names) => `Ще работиш с ${names}.`,
-    ledeAlone: 'Ето какво те чака тук.',
-    more: (count) => `още ${count}`,
   };
   const en: WelcomeWords = {
     headlineNamed: (name) => `${name}, you’re on the team`,
     headline: 'You’re on the team',
-    ledeWith: (names) => `You’ll work with ${names}.`,
-    ledeAlone: 'Here is what waits for you.',
-    more: (count) => `${count} more`,
   };
 
-  it('greets by first name, puts the newcomer at the centre of everyone they join, names two and counts the rest', () => {
+  it('greets by first name, puts the newcomer at the centre of everyone they join, and names them all to assistive tech', () => {
     const vm = welcomeVm({
       firstName: ' Петър ',
       accountName: '',
@@ -274,7 +270,6 @@ describe('welcomeVm', () => {
     expect(vm.headline).toBe('Петър, вече си в екипа');
     expect(vm.own).toBe(own);
     expect(vm.colleagues).toBe(team);
-    expect(vm.lede).toBe('Ще работиш с Иван, Нико и още 3.');
     expect(vm.facesLabel).toBe(
       'Петър Петров, Иван, Нико, Мартин, Елена и Георги',
     );
@@ -314,7 +309,7 @@ describe('welcomeVm', () => {
     ).toBe('Нов Бръснар');
   });
 
-  it('in English, and with one colleague, and with none', () => {
+  it('in English, and with no first name, and alone', () => {
     expect(
       welcomeVm({
         firstName: 'Peter',
@@ -326,19 +321,8 @@ describe('welcomeVm', () => {
       }),
     ).toMatchObject({
       headline: 'Peter, you’re on the team',
-      lede: 'You’ll work with Иван and Нико.',
+      facesLabel: 'Петър Петров, Иван, and Нико',
     });
-    // Three are named all — «още 1» is never worded.
-    expect(
-      welcomeVm({
-        firstName: 'Петър',
-        accountName: '',
-        own,
-        colleagues: team.slice(0, 3),
-        words: bg,
-        locale: 'bg',
-      }).lede,
-    ).toBe('Ще работиш с Иван, Нико и Мартин.');
     expect(
       welcomeVm({
         firstName: null,
@@ -347,11 +331,8 @@ describe('welcomeVm', () => {
         colleagues: team.slice(0, 1),
         words: bg,
         locale: 'bg',
-      }),
-    ).toMatchObject({
-      headline: 'Вече си в екипа',
-      lede: 'Ще работиш с Иван.',
-    });
+      }).headline,
+    ).toBe('Вече си в екипа');
     const alone = welcomeVm({
       firstName: '',
       accountName: '',
@@ -362,7 +343,7 @@ describe('welcomeVm', () => {
     });
     expect(alone).toMatchObject({
       headline: 'Вече си в екипа',
-      lede: 'Ето какво те чака тук.',
+      facesLabel: 'Петър Петров',
     });
     expect(alone.own).toBe(own);
     expect(alone.colleagues).toEqual([]);

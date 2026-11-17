@@ -23,7 +23,6 @@ import {
   TeamCatalogService,
 } from '@creativo/features/shared/catalog';
 import { UiAvatarOrbit, UiButton, UiModalSheet } from '@creativo/ui/controls';
-import { UiIcon } from '@creativo/ui/icons';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
@@ -83,7 +82,6 @@ function rememberSeen(userId: UserId | null): void {
     UiButton,
     UiForegroundStyleDirective,
     UiFrameDirective,
-    UiIcon,
     UiModalSheet,
     UiPaddingDirective,
     UiPageActionBar,
@@ -160,9 +158,6 @@ export class StaffWelcomeSheet {
       words: {
         headlineNamed: (name) => words('headlineNamed', { name }),
         headline: words('headline'),
-        ledeWith: (names) => words('ledeWith', { names }),
-        ledeAlone: words('ledeAlone'),
-        more: (count) => words('more', { count }),
       },
       locale,
     });

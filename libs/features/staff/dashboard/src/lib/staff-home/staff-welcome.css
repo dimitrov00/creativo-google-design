@@ -1,8 +1,9 @@
 /* THE WELCOME — a page of its own (owner 2026-11-16: never a sheet, and
    welcoming like every app's first screen), on the app's onboarding
    grammar: the DS stacks, spacers, reveal and the stacked page action bar
-   lay it out. This file only sizes the screen, washes the orbit and sets
-   the facts. Every selector is `staff-welcome`-prefixed. */
+   lay it out. This file only sizes the screen and the hero, gives the
+   words their measure and air, and washes the orbit. Every selector is
+   `staff-welcome`-prefixed. */
 
 /* The screen under the cover's bar (bare, but still measured): the shell
    publishes the bar's height on the scroller. */
@@ -15,17 +16,26 @@
   inline-size: 100%;
 }
 
-/* The orbit over a soft wash of the accent — colour as a shape, the words
-   stay ink — and no taller than a third of the screen, so the greeting,
-   the facts and the answers fit under it on a phone. */
+/* The hero, as large as the screen lends it (owner 2026-11-17: "not
+   breathing enough"): up to 20rem, never past ~45% of a short phone's
+   height, over a soft wash of the accent — colour as a shape, the words
+   stay ink. */
 .staff-welcome__orbit {
-  --ui-avatar-orbit-size: min(18rem, 34svh);
+  --ui-avatar-orbit-size: min(20rem, 44svh);
 
   background: radial-gradient(
     closest-side,
-    color-mix(in srgb, var(--sys-color-accent) 16%, transparent),
+    color-mix(in srgb, var(--sys-color-accent) 14%, transparent),
     transparent
   );
+}
+
+/* The words: a clear step below the picture, at a short measure so the
+   headline breaks in two and the line under it in two or three — Apple's
+   centred hero copy, never a paragraph. */
+.staff-welcome__words {
+  max-inline-size: 21rem;
+  margin-block-start: var(--sys-space-loose);
 }
 
 .staff-welcome__headline,
@@ -33,32 +43,4 @@
   margin: 0;
   text-align: center;
   text-wrap: balance;
-}
-
-/* The facts: a bare mark in the accent, the line and its wrapping second. */
-.staff-welcome__facts {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sys-space-compact);
-  align-self: stretch;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.staff-welcome__fact {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: var(--sys-space-regular);
-  align-items: start;
-}
-
-.staff-welcome__fact > .ui-icon {
-  color: var(--sys-color-accent);
-  margin-block-start: 2px;
-}
-
-.staff-welcome__fact h2,
-.staff-welcome__fact p {
-  margin: 0;
 }

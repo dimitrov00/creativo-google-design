@@ -18,22 +18,24 @@
   >
     <span sheet-title>{{ page.headline }}</span>
 
-    <!-- THE APP'S ONBOARDING GRAMMAR (the client onboarding's reward step):
-         a centred column between two spacers that rises in on mount, the
-         stacked action bar pinned in the thumb zone. -->
+    <!-- ONE IDEA, ONE LINE (Apple's hero pages — Music's «Hear About New
+         Music First», the Fitness+ offer): the picture, a headline, a
+         single line that leads to the answer, and air around them. A list
+         of features is a page of its own at Apple, never under a hero, so
+         this page carries none; the setup card and the profile carry the
+         rest. On the app's onboarding grammar: a centred column between
+         two spacers, risen in on mount, the stacked action bar below. -->
     <ui-stack class="staff-welcome" uiAlignment="center" uiSpacing="none">
       <ui-spacer />
       <ui-stack
         class="staff-welcome__body"
         uiAlignment="center"
-        uiSpacing="regular"
+        uiSpacing="none"
         uiPaddingHorizontal="regular"
-        uiFrame
-        uiFrameMaxWidth="28rem"
       >
         <!-- THE HERO: the newcomer at the centre, the colleagues they join
-             turning around them (Messages' group, Polarsteps, Orbit), over
-             a soft wash of the accent. -->
+             turning around them (Messages' group). Who they are is the
+             faces' to say — and the label's, for assistive tech. -->
         <ui-avatar-orbit
           class="staff-welcome__orbit"
           [uiCenter]="page.own"
@@ -42,8 +44,9 @@
           data-testid="staff-welcome-faces"
         />
         <ui-stack
+          class="staff-welcome__words"
           uiAlignment="center"
-          uiSpacing="tight"
+          uiSpacing="regular"
           uiReveal
           uiRevealTrigger="mount"
           [uiRevealDelay]="250"
@@ -64,52 +67,9 @@
             uiForegroundStyle="secondary"
             data-testid="staff-welcome-lede"
           >
-            {{ page.lede }}
+            {{ t('staff.welcome.lede') }}
           </p>
         </ui-stack>
-
-        <!-- WHAT THIS PLACE IS FOR THEM — Apple's welcome: a bare mark in
-             the accent, a semibold line, a secondary one that wraps. -->
-        <ul
-          class="staff-welcome__facts"
-          uiReveal
-          uiRevealTrigger="mount"
-          [uiRevealDelay]="400"
-        >
-          <li class="staff-welcome__fact">
-            <ui-icon uiName="staff.day" uiScale="large" />
-            <div>
-              <h2 uiText uiFont="headline">
-                {{ t('staff.welcome.scheduleTitle') }}
-              </h2>
-              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-                {{ t('staff.welcome.scheduleBody') }}
-              </p>
-            </div>
-          </li>
-          <li class="staff-welcome__fact">
-            <ui-icon uiName="account.photo" uiScale="large" />
-            <div>
-              <h2 uiText uiFont="headline">
-                {{ t('staff.welcome.profileTitle') }}
-              </h2>
-              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-                {{ t('staff.welcome.profileBody') }}
-              </p>
-            </div>
-          </li>
-          <li class="staff-welcome__fact">
-            <ui-icon uiName="service.duration" uiScale="large" />
-            <div>
-              <h2 uiText uiFont="headline">
-                {{ t('staff.welcome.hoursTitle') }}
-              </h2>
-              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-                {{ t('staff.welcome.hoursBody') }}
-              </p>
-            </div>
-          </li>
-        </ul>
       </ui-stack>
       <ui-spacer />
 
@@ -120,7 +80,7 @@
         [uiStacked]="true"
         uiReveal="fade"
         uiRevealTrigger="mount"
-        [uiRevealDelay]="550"
+        [uiRevealDelay]="450"
       >
         <button
           type="button"
