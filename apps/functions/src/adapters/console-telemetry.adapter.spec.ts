@@ -571,6 +571,72 @@ describe('console-telemetry adapter', () => {
     });
   });
 
+  describe('the build’s release (ADR 2026-11-18 R9)', () => {
+    it('rides under every server line — the scope’s and the call’s own fields win a name they hold', async () => {
+      const { sink, calls } = recordingSink();
+      const { log, trackError } = consoleTelemetry(sink, '0.4.1+abc1234');
+      log('info', 'bare line');
+      log('warn', 'client issue CSP_VIOLATION', { release: null });
+      await consoleLogContext().bindLogContext(
+        { callable: 'cancelAppointment' },
+        async () => {
+          log('info', 'scoped line', { n: 1 });
+          trackError(new Error('boom'), { at: 'edge' });
+          trackError('text');
+        },
+      );
+      expect(calls[0]).toEqual({
+        level: 'info',
+        args: ['bare line', { release: '0.4.1+abc1234' }],
+      });
+      // A client issue's own `release` (the web's build) wins.
+      expect(calls[1]?.args[1]).toEqual({ release: null });
+      expect(calls[2]?.args[1]).toEqual({
+        release: '0.4.1+abc1234',
+        callable: 'cancelAppointment',
+        n: 1,
+      });
+      expect(calls[3]?.args[0]).toEqual(
+        expect.objectContaining({
+          release: '0.4.1+abc1234',
+          callable: 'cancelAppointment',
+          at: 'edge',
+          severity: 'ERROR',
+        }),
+      );
+      expect(calls[4]?.args[1]).toEqual(
+        expect.objectContaining({ release: '0.4.1+abc1234' }),
+      );
+    });
+
+    it('never stamps a web client’s error line — it carries the client’s own build', () => {
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink, '0.4.1').log('error', 'TypeError: x', {
+        '@type': ClientIssueSystem.REPORTED_ERROR_EVENT,
+        release: '0.4.0',
+      });
+      expect(calls).toEqual([
+        {
+          level: 'write',
+          args: [
+            {
+              '@type': ClientIssueSystem.REPORTED_ERROR_EVENT,
+              release: '0.4.0',
+              severity: 'ERROR',
+              message: 'TypeError: x',
+            },
+          ],
+        },
+      ]);
+    });
+
+    it('adds nothing without one — the emulator, a deploy that carried none', () => {
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink, null).log('info', 'bare line');
+      expect(calls).toEqual([{ level: 'info', args: ['bare line'] }]);
+    });
+  });
+
   it('writes through firebase-functions/logger by default', () => {
     const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const write = vi.spyOn(logger, 'write').mockImplementation(() => undefined);

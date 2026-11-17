@@ -1,0 +1,5 @@
+. "$(dirname "$0")/repo-node.sh"
+# The commit grammar (commitlint.config.mjs, ADR 2026-11-18 R3–R4). A squash
+# merge rewrites local commits, so the PR title is the check that binds; this
+# one catches the habit early.
+pnpm exec commitlint --edit "$1"

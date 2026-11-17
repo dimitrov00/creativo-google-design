@@ -1,0 +1,28 @@
+{
+  "name": "release-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/release",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "// files": "The release and deploy tooling (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md): the release stamp every deploy compiles in. Pure parts in node:test specs, as tools/verify does",
+  "// inputs": "release-stamp.spec.mjs reads the root package.json (the version release-please bumps) and commitlint.config.mjs (the commit grammar it pins): an edit to either alone must re-run it",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "default",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/commitlint.config.mjs",
+        "{workspaceRoot}/release-please-config.json",
+        "{workspaceRoot}/.release-please-manifest.json",
+        { "externalDependencies": ["@commitlint/cli"] }
+      ],
+      "options": {
+        "command": "node --test \"tools/release/**/*.spec.mjs\"",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

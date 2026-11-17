@@ -18,6 +18,7 @@ import type { ClientIssuePorts } from '@core/ports';
 import { ClientIssueSystem } from '@core/systems';
 import { FIREBASE_APP } from './firebase-app.provider';
 import { CLIENT_ISSUE_REPORTER } from './reporting-error-handler';
+import { WEB_RELEASE } from './web-release';
 
 /**
  * Where the page's App Check tokens come from (security hardening S-WS-A,
@@ -324,7 +325,7 @@ function reportUnavailable(
         routePattern: null,
         topFrame: null,
         message: null,
-        release: null,
+        release: WEB_RELEASE,
       }),
     ]);
   } catch {

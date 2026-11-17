@@ -20,6 +20,7 @@ import {
   RECAPTCHA_REPORT_ONLY_SINKS,
 } from './csp-baseline';
 import { DATA_LOG_ERROR } from './error-handler-log.adapter';
+import { WEB_RELEASE } from './web-release';
 
 /**
  * The page's reporter — ONE per page session. `apps/web/src/main.ts` makes
@@ -168,8 +169,8 @@ function dataLogOf(
  *   rejection being handed over (`rejected`), else an `UNCAUGHT_ERROR`,
  *   with its first stack frame.
  *
- * The route is its PATTERN (`routePatternOf`), never its URL; the build is
- * not stamped into the web bundle yet, so `release` is `null`.
+ * The route is its PATTERN (`routePatternOf`), never its URL; `release` is
+ * the build's stamp ({@link WEB_RELEASE}, `null` without one).
  */
 export function errorIssue(
   error: unknown,
@@ -189,7 +190,7 @@ export function errorIssue(
       routePattern,
       topFrame: null,
       message,
-      release: null,
+      release: WEB_RELEASE,
     });
   }
   const chunk = chunkFailureOf(error);
@@ -202,7 +203,7 @@ export function errorIssue(
       routePattern,
       topFrame: null,
       message: chunk.message,
-      release: null,
+      release: WEB_RELEASE,
     });
   }
   const thrown = thrownOf(error);
@@ -216,7 +217,7 @@ export function errorIssue(
     routePattern,
     topFrame: topFrameOf(thrown.stack),
     message: thrown.message,
-    release: null,
+    release: WEB_RELEASE,
   });
 }
 
@@ -314,7 +315,7 @@ export function cspViolationIssue(
         ? null
         : `${report.sourceFile}:${report.lineNumber}:${report.columnNumber}`,
     message: `${report.disposition} ${blockedOf(report.blockedURI)}`,
-    release: null,
+    release: WEB_RELEASE,
   });
 }
 
