@@ -59,8 +59,10 @@ import { type RequestOtpCommand, requestOtp } from './request-otp.pipeline';
  * is a read-free commit — channel, parse, resend window, tenant, then issue
  * → save (the challenge and its `IDENTITY_OTP_REQUESTED` row, ONE commit —
  * audit-hardening Phase 3, P3-DEP-6 / P3-DEP-7) → send — with the stored
- * destination the payload text trimmed (F2-10). Every case the deleted
- * use-case spec held, plus the flip's own and the sign-in row's.
+ * destination the parsed identifier its probe reads (2026-11-17; the
+ * trimmed text before, F2-10), and the day's allowance per address beside
+ * the resend window. Every case the deleted use-case spec held, plus the
+ * flip's own, the sign-in row's and the sender limits'.
  */
 
 /** A deployment running the given OTP strategy (`required` and policy as the default's unless given). */
@@ -296,7 +298,7 @@ describe('requestOtp', () => {
     expect((await rig({ world }).run(EMAIL)).ok).toBe(true);
   });
 
-  it('probes the PARSED destination while storing the trimmed text — a non-normalised value is never rate-limited (F2-10, today’s pair)', async () => {
+  it('stores the PARSED destination, the value its own probe reads — a mixed-case address meets its throttle (2026-11-17; F2-10 let it through)', async () => {
     const world = memoryIdentityWorld();
     const mixed: RequestOtpCommand = {
       otpDestinationType: OtpDestinationType.Email,
@@ -309,18 +311,19 @@ describe('requestOtp', () => {
       nowUtcMs: plusMs(10_000),
       idPrefix: 'second',
     }).run(mixed);
-    expect(again.ok).toBe(true);
+    expect(!again.ok && again.error.errorCode).toBe(
+      IdentityErrorCode.OtpRateLimited,
+    );
     expect([...otpsIn(world).values()].map((b) => b['destination'])).toEqual([
-      'Client@Example.com',
-      'Client@Example.com',
+      'client@example.com',
     ]);
   });
 
-  it('stores a padded e-mail and a padded phone TRIMMED, delivering to the parsed identifier', async () => {
+  it('stores a padded, mixed-case e-mail and a padded phone as their parse, delivering to the same identifier', async () => {
     const mail = rig();
     await mail.run({
       otpDestinationType: OtpDestinationType.Email,
-      rawDestination: '  a@b.com  ',
+      rawDestination: '  A@B.com  ',
       operationId: null,
     });
     expect(otpsIn(mail.world).get('otp-1')?.['destination']).toBe('a@b.com');
@@ -340,6 +343,109 @@ describe('requestOtp', () => {
     });
     expect(phone.delivery.sent[0]?.destination).toEqual(
       ParsedIdentifier.phone(E164.of('+359888123456')),
+    );
+  });
+
+  it('reads the destination’s open challenges from the day’s window — the wider of the two, both rules judge the same rows', async () => {
+    const since: UtcEpochMs[] = [];
+    const { run } = rig({
+      store: {
+        loadOpenOtps: async (_destination, sinceUtcMs) => {
+          since.push(sinceUtcMs);
+          return Result.ok([]);
+        },
+      },
+    });
+    await run(EMAIL);
+    expect(since).toEqual([
+      UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -24 * 60 * 60 * 1000),
+    ]);
+  });
+
+  it('sends five codes a day to one address, then refuses the sixth IDENTITY_OTP_DAILY_LIMIT — nothing saved, nothing sent (2026-11-17)', async () => {
+    const world = memoryIdentityWorld();
+    const sent: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const turn = rig({
+        world,
+        nowUtcMs: plusMs(i * 120_000),
+        idPrefix: `turn${i}`,
+      });
+      expect((await turn.run(EMAIL)).ok).toBe(true);
+      sent.push(turn.delivery.sent.length);
+    }
+    expect(sent).toEqual([1, 1, 1, 1, 1]);
+
+    const sixth = rig({
+      world,
+      nowUtcMs: plusMs(5 * 120_000),
+      idPrefix: 'six',
+    });
+    expect(await sixth.run(EMAIL)).toEqual({
+      ok: false,
+      error: { errorCode: IdentityErrorCode.OtpDailyLimit },
+    });
+    expect(sixth.delivery.sent).toEqual([]);
+    expect(sixth.tx.transactions).toEqual([]);
+    expect(otpsIn(world).size).toBe(5);
+    expect(rowsIn(world).size).toBe(5);
+  });
+
+  it('never counts a used code against the day — a person who signs in again and again is never refused', async () => {
+    const world = memoryIdentityWorld({
+      otps: Array.from({ length: 8 }, (_, i) =>
+        otpFixture({
+          id: OtpId.of(`used-${i}`),
+          destination: EMAIL.rawDestination as Otp['destination'],
+          otpDestinationType: OtpDestinationType.Email,
+          createdAtUtcMs: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -i * 3_600_000),
+          consumedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        }),
+      ),
+    });
+    expect((await rig({ world }).run(EMAIL)).ok).toBe(true);
+  });
+
+  it('frees the day’s allowance as the oldest open code leaves the 24 h window — inclusive at its edge', async () => {
+    const openAt = (agoMs: number) =>
+      Array.from({ length: 5 }, (_, i) =>
+        otpFixture({
+          id: OtpId.of(`open-${i}`),
+          destination: EMAIL.rawDestination as Otp['destination'],
+          otpDestinationType: OtpDestinationType.Email,
+          createdAtUtcMs: UtcEpochMs.plusMs(
+            FIXTURE_NOW_UTC_MS,
+            i === 0 ? -agoMs : -i * 3_600_000,
+          ),
+        }),
+      );
+    const day = 24 * 3_600_000;
+    const atEdge = await rig({
+      world: memoryIdentityWorld({ otps: openAt(day) }),
+    }).run(EMAIL);
+    expect(!atEdge.ok && atEdge.error.errorCode).toBe(
+      IdentityErrorCode.OtpDailyLimit,
+    );
+    const past = await rig({
+      world: memoryIdentityWorld({ otps: openAt(day + 1) }),
+    }).run(EMAIL);
+    expect(past.ok).toBe(true);
+  });
+
+  it('answers the day’s limit before the resend countdown — a countdown would promise a code that cannot come', async () => {
+    const world = memoryIdentityWorld({
+      otps: Array.from({ length: 5 }, (_, i) =>
+        otpFixture({
+          id: OtpId.of(`open-${i}`),
+          destination: EMAIL.rawDestination as Otp['destination'],
+          otpDestinationType: OtpDestinationType.Email,
+          createdAtUtcMs: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -i * 10_000),
+        }),
+      ),
+    });
+    const answer = await rig({ world, idPrefix: 'more' }).run(EMAIL);
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      IdentityErrorCode.OtpDailyLimit,
     );
   });
 
@@ -472,7 +578,7 @@ describe('requestOtp', () => {
     ]);
   });
 
-  it('passes the deployed sender’s refusal through unchanged — saved first, the resend window consumed, the order frozen (WS-0)', async () => {
+  it('passes a sender’s refusal to deliver at all through unchanged — saved first, the resend window consumed, the order frozen (WS-0)', async () => {
     const { world, telemetry, run } = rig({ refusingSend: true });
     const answer = await run(EMAIL);
     expect(answer).toEqual({

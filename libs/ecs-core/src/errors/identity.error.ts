@@ -22,10 +22,11 @@ import type { RepositoryError } from './repository.error';
  * `AuthStrategy.parse`, AgeSystem and the two flow machines. The nine from
  * `OtpChannelMismatch` to `RegistrationFieldMissing` (identity flip (2),
  * F2-4) are the refusals of the `requestOtp`, `verifyOtp` and
- * `completeRegistration` pipelines that no dictionary spelled before;
- * `OtpSendUnavailable` (audit-hardening WS-0) is the deployed project's
- * login-OTP sender refusing every delivery until a transactional provider
- * lands, which `requestOtp` answers as it is; the
+ * `completeRegistration` pipelines that no dictionary spelled before, and
+ * `OtpDailyLimit` (2026-11-17, the sender's limits) joined them;
+ * `OtpSendUnavailable` (audit-hardening WS-0) is a sender that cannot
+ * deliver at all — an unconfigured one, or a channel it does not carry —
+ * which `requestOtp` answers as it is; the
  * callables' own faults follow them (Phase 4a 4A-4), and the web's own two
  * failure words close the dictionary (Phase 4b, 4B-4: no pipeline raises
  * them, so they stay outside the {@link IdentityError} union and their edge
@@ -75,6 +76,13 @@ export const IdentityErrorCode = {
    * — `retryAfterSeconds` says how long is left (OR-9).
    */
   OtpRateLimited: 'IDENTITY_OTP_RATE_LIMITED',
+  /**
+   * The destination already holds the day's allowance of open codes
+   * (`OtpLimits.DailyCodesPerDestination` unconsumed challenges created in
+   * the last 24 hours): no further code goes to it until the oldest leaves
+   * the window — the cap that keeps a stranger's inbox from being flooded.
+   */
+  OtpDailyLimit: 'IDENTITY_OTP_DAILY_LIMIT',
   /** No `otps/{id}` — an unknown or purged challenge. */
   OtpNotFound: 'IDENTITY_OTP_NOT_FOUND',
   /** The stored `destination` no longer parses as its `otpDestinationType`. */
@@ -94,10 +102,12 @@ export const IdentityErrorCode = {
   /** A field the deployment's strategy requires is absent or blank (`field` names it). */
   RegistrationFieldMissing: 'IDENTITY_REGISTRATION_FIELD_MISSING',
   /**
-   * No login-OTP sender is wired in this deployment: the deployed project's
-   * `refusingOtpSender` answers it for every delivery until a transactional
-   * provider lands (audit-hardening WS-0). Unlike `OtpSendFailure`, a retry
-   * can never succeed, so its words offer none.
+   * The login-OTP sender cannot deliver on this deployment at all: the
+   * e-mail sender answers it for a channel it does not carry (SMS) and when
+   * its provider key or sending address is not configured
+   * (`postmark-otp-sender.adapter.ts`; before it, the refusing stand-in of
+   * audit-hardening WS-0). Unlike `OtpSendFailure`, a retry can never
+   * succeed, so its words offer none.
    */
   OtpSendUnavailable: 'IDENTITY_OTP_SEND_UNAVAILABLE',
   /*
@@ -165,6 +175,7 @@ export type IdentityError =
   | IdentityError.OnboardingFlowInvalidTransition
   | IdentityError.OtpChannelMismatch
   | IdentityError.OtpRateLimited
+  | IdentityError.OtpDailyLimit
   | IdentityError.OtpNotFound
   | IdentityError.OtpDestinationCorrupted
   | IdentityError.OtpAccountConflict
@@ -308,6 +319,9 @@ export const IdentityError = {
       errorCode: IdentityErrorCode.OtpRateLimited,
       retryAfterSeconds,
     };
+  },
+  otpDailyLimit(): IdentityError.OtpDailyLimit {
+    return { errorCode: IdentityErrorCode.OtpDailyLimit };
   },
   otpNotFound(): IdentityError.OtpNotFound {
     return { errorCode: IdentityErrorCode.OtpNotFound };
@@ -474,6 +488,9 @@ export namespace IdentityError {
      * — the code step restarts its resend countdown from it (OR-9, DEP-F8).
      */
     readonly retryAfterSeconds: number;
+  };
+  export type OtpDailyLimit = {
+    readonly errorCode: typeof IdentityErrorCode.OtpDailyLimit;
   };
   export type OtpNotFound = {
     readonly errorCode: typeof IdentityErrorCode.OtpNotFound;

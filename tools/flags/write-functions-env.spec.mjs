@@ -376,6 +376,8 @@ describe('writeFunctionsEnv', () => {
     expect(read('.secret.local')['LOG_DIGEST_KEY']).toMatch(/\S/);
     expect(Object.keys(EMULATOR_SECRETS).sort()).toEqual([
       'LOG_DIGEST_KEY',
+      'OTP_EMAIL_FROM',
+      'OTP_POSTMARK_TOKEN',
       'WALKIN_ID_KEY',
     ]);
   });

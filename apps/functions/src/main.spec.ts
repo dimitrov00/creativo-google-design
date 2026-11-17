@@ -288,8 +288,10 @@ const daily = (schedule: string) => ({
  * read-only `previewClientErasure` and the resumable `eraseClient` —
  * 512 MiB and 540 s, the `runBackfill` idiom — and every
  * callable but the sink binds `LOG_DIGEST_KEY` (audit-hardening WS-4.2,
- * DEP-18: the outcome line's keyed `inputDigest`); no other export holds a
- * secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
+ * DEP-18: the outcome line's keyed `inputDigest`); `requestOtpChallenge`
+ * alone binds the login-OTP sender's two settings, `OTP_POSTMARK_TOKEN` and
+ * `OTP_EMAIL_FROM`, and runs on two instances at most behind its bucket
+ * (2026-11-17); no other export holds a secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
  * thirteen governed-collection audit triggers (`auditSettingsChanges` …
  * `auditAppointmentPhotosChanges`), each the write with its auth context on
  * its own `<collection>/{docId}`, retrying — the one helper behind them is
@@ -303,7 +305,15 @@ const daily = (schedule: string) => ({
  * timeout, memory, instance cap, secret or schedule fails here.
  */
 const ENDPOINTS = {
-  requestOtpChallenge: tracedCallable,
+  requestOtpChallenge: {
+    ...callable,
+    maxInstances: 2,
+    secretEnvironmentVariables: [
+      { key: 'OTP_POSTMARK_TOKEN' },
+      { key: 'OTP_EMAIL_FROM' },
+      { key: 'LOG_DIGEST_KEY' },
+    ],
+  },
   verifyOtpChallenge: tracedCallable,
   completeRegistration: tracedCallable,
   updateProfile: tracedCallable,
@@ -2663,6 +2673,41 @@ describe('main.ts — the composition root', () => {
       });
     });
 
+    it('answers a code request past its burst of ten on one instance `resource-exhausted` — before anything is read, written or sent (2026-11-17)', async () => {
+      const own = caseOf('requestOtpChallenge');
+      seam.answers.set(own.pipeline, own.answer);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        // As the issue sink's case below: a minute behind the host clock
+        // re-anchors the instance's bucket, ten seconds later it is full,
+        // and back on the real clock it is full again for the cases after.
+        vi.setSystemTime(Date.now() - 60_000);
+        await run('requestOtpChallenge', own.input).catch(() => undefined);
+        vi.setSystemTime(Date.now() + 10_000);
+        seam.calls.length = 0;
+        for (let i = 0; i < 10; i++) {
+          await expect(run('requestOtpChallenge', own.input)).resolves.toEqual({
+            challengeId: 'otp-1',
+            devCode: null,
+          });
+        }
+        const throttled = await rejection(
+          run('requestOtpChallenge', own.input),
+        );
+        expect(throttled.code).toBe('resource-exhausted');
+        expect(throttled.details).toBeUndefined();
+        expect(seam.calls).toHaveLength(10);
+        // One second refills one call at one a second.
+        vi.setSystemTime(Date.now() + 1_000);
+        await expect(run('requestOtpChallenge', own.input)).resolves.toEqual({
+          challengeId: 'otp-1',
+          devCode: null,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('answers the refusals: a decoder’s before any pipeline runs, a pipeline’s as its struct, a store failure as IDENTITY_REPOSITORY_FAILURE', async () => {
       const code = await rejection(
         run('verifyOtpChallenge', request({ challengeId: 'otp-1' }, null)),
@@ -2695,6 +2740,18 @@ describe('main.ts — the composition root', () => {
         errorCode: 'IDENTITY_OTP_RATE_LIMITED',
         retryAfterSeconds: 42,
       });
+
+      // The day's allowance (2026-11-17): the same status, its own code —
+      // no seconds, since no countdown would end in a code.
+      seam.answers.set('requestOtp', () => ({
+        ok: false,
+        error: IdentityError.otpDailyLimit(),
+      }));
+      const spent = await rejection(
+        run('requestOtpChallenge', caseOf('requestOtpChallenge').input),
+      );
+      expect(spent.code).toBe('resource-exhausted');
+      expect(spent.details).toEqual({ errorCode: 'IDENTITY_OTP_DAILY_LIMIT' });
 
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
       vi.spyOn(logger, 'write').mockImplementation(() => undefined);

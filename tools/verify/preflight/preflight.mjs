@@ -28,9 +28,9 @@
 //       re-exports, sits behind `onEmulator()`;
 //   P8  no launch-blocker stand-in is wired: no functions export
 //       tagged `@launchBlocker` is used anywhere, followed as P7 follows
-//       its tag — today the deployed branch wires `refusingOtpSender`, which
-//       refuses every sign-in (the launch blocker of
-//       docs/production-deploy.md §1), so P8 fails by design;
+//       its tag — the refusing OTP sender it held back until 2026-11-17
+//       is gone (the Postmark sender replaced it, docs/production-deploy.md
+//       §1), so P8 passes, and fails again on any stand-in tagged and wired;
 //   P9  the platform backstops (audit-hardening WS-6, plan RU-33) —
 //       informational: Point-in-Time Recovery, the backup schedules, the
 //       audit sink and its 400-day bucket (named in tools/ops/names.env,
@@ -211,7 +211,7 @@ const CREDENTIALS_HINT =
   'application-default credentials: gcloud auth application-default login (runbook §3)';
 
 /** P7's way out: the shape the OTP crypto already has, and the OTP sender's checklist item. */
-const EMULATOR_ONLY_HINT = `wire a deployed adapter beside it — ${EMULATOR_GATE}() ? <emulator adapter> : <deployed adapter>, as the OTP crypto is; the OTP sender's is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
+const EMULATOR_ONLY_HINT = `wire a deployed adapter beside it — ${EMULATOR_GATE}() ? <emulator adapter> : <deployed adapter>, as the OTP crypto and the OTP sender are (docs/production-deploy.md §1, "Sign-in: the OTP sender")`;
 
 /** The web's production environment — P10 reads its `appCheck.siteKey` literal. */
 const ENVIRONMENT_PRODUCTION =
@@ -228,8 +228,8 @@ const MAIN_SCRIPT = /<script\b[^>]*\bsrc="([^"]*\bmain-[\w-]+\.js)"/g;
 const APP_CHECK_MONITOR_BAR =
   "ENFORCE only after MONITOR met the bar PER CALLABLE: MISSING + INVALID + REPLAYED under 1 % of each callable's calls, each explained, every limited-use callable showing real VALID calls (docs/production-deploy.md, App Check)";
 
-/** P8's way out: the checklist item that replaces the refusing sender. */
-const LAUNCH_BLOCKER_HINT = `replace each use with the real adapter — the deployed OTP sender is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
+/** P8's way out: the real adapter, as the OTP sender's checklist item did it. */
+const LAUNCH_BLOCKER_HINT = `replace each use with the real adapter — as the deployed OTP sender replaced its stand-in, docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
 
 const USAGE =
   'usage: node tools/verify/preflight/preflight.mjs [--project <id>] [--scope web|functions] [--dist=<dir>] [--config=<firebase.json>]';
@@ -1076,9 +1076,9 @@ export function checkEmulatorOnly({ root, sources }) {
 /**
  * P8 — no launch-blocker stand-in is wired. An export of the
  * functions tagged `@launchBlocker` in its JSDoc stands in for something a
- * launch needs — today `refusingOtpSender`, the deployed project's login-OTP
- * sender until a transactional provider lands, which refuses every sign-in
- * with `IDENTITY_OTP_SEND_UNAVAILABLE`. P8 fails while ANY use of such an
+ * launch needs — until 2026-11-17 `refusingOtpSender`, the deployed
+ * project's login-OTP sender before the Postmark one, which refused every
+ * sign-in with `IDENTITY_OTP_SEND_UNAVAILABLE`; none is left today. P8 fails while ANY use of such an
  * export remains in the functions' source, behind a gate or not, followed
  * exactly as P7 follows its own tag ({@link taggedExportUses}: renames,
  * re-exports, run-time loads, a load it cannot name, a tag that anchors

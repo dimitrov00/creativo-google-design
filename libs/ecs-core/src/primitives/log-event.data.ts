@@ -66,6 +66,13 @@ export const LogEvent = {
   ImpersonationStartRefused: 'impersonation.start.refused',
   InvitationRedeemRefused: 'invitation.redeem.refused',
   LeadTimeSampleFailed: 'lead-time sample failed for barber',
+  /**
+   * The login-OTP e-mail provider refused or never answered a send
+   * (`postmark-otp-sender.adapter.ts`): `reason` (`NOT_CONFIGURED`,
+   * `TRANSPORT`, `PROVIDER`), the HTTP `httpStatus` and the provider's own
+   * `providerErrorCode` — never the address, never the code.
+   */
+  OtpProviderRefused: 'otp.provider_refused',
   OtpSendFailed: 'otp.send_failed',
   OtpVerifyAdoptionRefused: 'otp.verify.adoption_refused',
   /** The owner changed what a staff level may do (staff permissions P11): the count of changed cells only. */

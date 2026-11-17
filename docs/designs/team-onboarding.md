@@ -542,8 +542,8 @@ double tap is absorbed by `writeOperationId`.
    пак».
 
 The emulator wires a console sender tagged `@emulatorOnly`; deployed
-projects wire a refusing sender tagged `@launchBlocker`, so preflight P8
-blocks deploys until the real provider lands. The invite callables bind
+projects send through Postmark, the provider the sign-in codes already use
+(stage 2, 2026-11-17), under the invite's own tag. The invite callables bind
 `STAFF_INVITE_ID_KEY` and the provider's secret. Logs carry the invite id
 and the error code only.
 
@@ -979,9 +979,10 @@ free quota (pricing not checked against the current price list).
 
 ### Risks
 
-- **The email provider** is a launch blocker for sign-in already. Its daily
-  cap and bounce handling are unknown; a bounced invite could suppress
-  later login codes to the same address.
+- **The email provider** (Postmark since 2026-11-17) suppresses an address
+  after a hard bounce or a spam complaint (`ErrorCode` 406), so a bounced
+  invite would also stop later login codes to the same address while both
+  share a server.
 - **Rotating `STAFF_INVITE_ID_KEY`** orphans pending invites (at most 7
   days of them).
 - **The hour-long residual** of an issued ID token after a leaver's revoke.
@@ -1378,6 +1379,15 @@ pastLastWorkingLocalDate }`, never queried, its single-field indexes
 **2. Launch track, in parallel: the real email provider.** Unblocks sign-in
 in production and, later, invites. One sending domain with SPF, DKIM and
 DMARC; one transactional stream for codes and invites.
+
+- The code half is built (2026-11-17,
+  `docs/architecture/decisions/2026-11-17-sign-in-email-sender.md`): the
+  Postmark sender (`postmark-otp-sender.adapter.ts`), the day's allowance
+  of five open codes per address, the code request's flood ceiling, and the
+  address stored as its own probe reads it. Preflight P8 passes.
+- Left for the owner: the Postmark account and its approval, the
+  `auth.*` domain's records, and the two secrets
+  (`docs/production-deploy.md`, «Sign-in: the OTP sender»).
 
 **3. Staff invites and the setup card.** `staffInvites`, the key, delivery,
 TTL, export and erasure; `checkStaffInviteEmail`, create, resend, revoke,

@@ -57,12 +57,12 @@ export type LoadOpenOtps = (
 
 /**
  * Deliver a login code — the LOGIN-OTP sender identity, never shared with
- * a campaign sender. Until a real SMS/e-mail sender lands, the emulator
- * wires `console-otp-sender.adapter.ts`'s `consoleOtpSender` (it writes the
- * code through `Log`) and a deployed project `refusing-otp-sender.adapter.ts`'s
- * `refusingOtpSender`, which answers `IDENTITY_OTP_SEND_UNAVAILABLE` for
- * every delivery (audit-hardening WS-0); a delivery that failed answers its
- * `PipelineError`. The destination arrives parsed —
+ * a campaign sender. The emulator wires `console-otp-sender.adapter.ts`'s
+ * `consoleOtpSender` (it writes the code through `Log`); a deployed project
+ * `postmark-otp-sender.adapter.ts`'s `postmarkOtpSender` (2026-11-17), which
+ * carries e-mail only and answers `IDENTITY_OTP_SEND_UNAVAILABLE` for what
+ * no retry fixes (SMS, its settings unset, an account Postmark has not
+ * approved); a delivery that failed otherwise answers its `PipelineError`. The destination arrives parsed —
  * its channel is the `identifierChannel` the edge parse or the stored
  * `otpDestinationType` named (`ParsedIdentifier.ofDestination`) — so no
  * adapter ever infers an SMS from an e-mail by sniffing the string.

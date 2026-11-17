@@ -496,6 +496,7 @@ const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   // forbidden registration: the web reads that status as the lockout.
   [IdentityErrorCode.OtpChannelMismatch]: fields(S.FailedPrecondition),
   [IdentityErrorCode.OtpRateLimited]: fields(S.ResourceExhausted),
+  [IdentityErrorCode.OtpDailyLimit]: fields(S.ResourceExhausted),
   [IdentityErrorCode.OtpNotFound]: fields(S.NotFound),
   [IdentityErrorCode.OtpDestinationCorrupted]: fields(S.Internal),
   [IdentityErrorCode.OtpAccountConflict]: fields(S.Internal),

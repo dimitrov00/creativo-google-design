@@ -3526,7 +3526,9 @@ audit-hardening WS-0 gated the console sender; P8 FAILs on today's tree by
 design: it is the OTP-sender launch blocker of `docs/production-deploy.md`
 §1 (a deployed project refuses every sign-in
 `IDENTITY_OTP_SEND_UNAVAILABLE`), pinned by the spec until the
-transactional sender lands. P9 is INFORMATIONAL: each backstop, a missing
+transactional sender lands (it landed 2026-11-17: the Postmark sender
+replaced the stand-in, which is deleted, and P8 passes —
+`decisions/2026-11-17-sign-in-email-sender.md`). P9 is INFORMATIONAL: each backstop, a missing
 or unreadable one included, is an INFO line inside a PASS row, so it never
 fails a deploy (its reads need `roles/logging.viewer` on the preflight
 credentials; promoting it to a gate is the owner's call, end of §3.3). Its pure checks run in `run-many -t test`

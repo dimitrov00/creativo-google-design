@@ -172,6 +172,10 @@ export function appCheckModeOf({ manifest, environment, override, projectId }) {
 export const EMULATOR_SECRETS = Object.freeze({
   WALKIN_ID_KEY: 'emulator-walkin-id-key-not-secret',
   LOG_DIGEST_KEY: 'emulator-log-digest-key-not-secret',
+  // The login-OTP sender's settings: bound to requestOtpChallenge, never
+  // read under the emulator (the console sender answers there).
+  OTP_POSTMARK_TOKEN: 'emulator-otp-postmark-token-never-sent',
+  OTP_EMAIL_FROM: 'codes@auth.example.invalid',
 });
 
 export function isDemoProject(projectId) {

@@ -152,6 +152,11 @@ describe('IdentityError', () => {
       errorCode: 'IDENTITY_OTP_RATE_LIMITED',
       retryAfterSeconds: 42,
     });
+    // The day's allowance (2026-11-17): payload-free — the words name no
+    // count and no hour, only that the address has had enough codes.
+    expect(IdentityError.otpDailyLimit()).toEqual({
+      errorCode: 'IDENTITY_OTP_DAILY_LIMIT',
+    });
     expect(IdentityError.otpNotFound()).toEqual({
       errorCode: 'IDENTITY_OTP_NOT_FOUND',
     });

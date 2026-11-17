@@ -30,13 +30,14 @@ import type { Otp } from '@core/entities';
  * the stored hash through the same port and passes the `codeMatches`
  * boolean. The clock (`nowUtcMs`) and the id source (`nextId`) are
  * parameters. An OTP has no location, so no shop clock (flatten-spec F-5):
- * its TTL and resend window are T2 rows — lifecycle stamps compared and
- * added in elapsed real time through `UtcEpochMs.compare`/`plusMs` (and
- * the throttle's remainder through `elapsedMs`).
+ * its TTL, resend window and day's allowance are T2 rows — lifecycle stamps
+ * compared and added in elapsed real time through `UtcEpochMs.compare`/
+ * `plusMs` (and the throttle's remainder through `elapsedMs`).
  */
 
 const MS_PER_SECOND = 1_000;
 const MS_PER_MINUTE = 60_000;
+const MS_PER_HOUR = 3_600_000;
 
 /** The figures this system applies — named, never magic numbers at a use site. */
 export const OtpLimits = {
@@ -58,6 +59,21 @@ export const OtpLimits = {
    * {@link OtpSystem.escalates} answers it, never a template literal.
    */
   EscalateAfterSends: 3,
+  /**
+   * The day's allowance per destination (2026-11-17, with the real e-mail
+   * sender — performance-cost audit F-21): at most this many UNCONSUMED
+   * challenges created in the last {@link OtpLimits.DailyWindowHours}
+   * hours. A person who signs in uses each code and is never counted; a
+   * stranger's inbox, whose codes nobody enters, receives at most this many
+   * a day however the requests are spread. Five covers a person whose codes
+   * land in spam: three sends raise the escalation footnote first.
+   */
+  DailyCodesPerDestination: 5,
+  /**
+   * The rolling window of the day's allowance. The `otps` TTL (`purgeAt` =
+   * expiry + 24 h) keeps every challenge it counts readable.
+   */
+  DailyWindowHours: 24,
 } as const;
 
 /** A code's salted hash, as the `OtpCrypto` port produced it. */
@@ -102,7 +118,7 @@ export type OtpAttempt<O extends OtpCounters = Otp> = {
   readonly write: O | null;
 };
 
-/** The two fields the resend throttle reads — an {@link Otp} satisfies it. */
+/** The two fields the resend throttle and the day's allowance read — an {@link Otp} satisfies it. */
 type ResendFacts = Pick<Otp, 'consumedAtUtcMs' | 'createdAtUtcMs'>;
 
 /**
@@ -128,6 +144,29 @@ function newestOpenUtcMs(
     }
   }
   return newest;
+}
+
+/**
+ * How many still-open (unconsumed) challenges were created at or after
+ * `sinceUtcMs` — the count {@link OtpSystem.issueRefusal} holds against the
+ * day's allowance. Both conditions are re-checked here, as in
+ * {@link newestOpenUtcMs}.
+ */
+function openSinceCount(
+  open: readonly ResendFacts[],
+  sinceUtcMs: UtcEpochMs,
+): number {
+  let count = 0;
+  for (let i = 0; i < open.length; i++) {
+    const otp = open[i] as ResendFacts;
+    if (
+      otp.consumedAtUtcMs === null &&
+      UtcEpochMs.compare(otp.createdAtUtcMs, sinceUtcMs) >= 0
+    ) {
+      count++;
+    }
+  }
+  return count;
 }
 
 export const OtpSystem = {
@@ -244,6 +283,44 @@ export const OtpSystem = {
       nowUtcMs,
       -OtpLimits.ResendWindowSeconds * MS_PER_SECOND,
     );
+  },
+
+  /**
+   * The earliest `createdAtUtcMs` an open challenge may carry and still
+   * count against the day's allowance — inclusive, as index #10's `>=` range
+   * reads it. It is the WIDER of the two windows, so `requestOtp` reads
+   * from it once and both rules judge the same rows.
+   */
+  dailyWindowStartUtcMs(nowUtcMs: UtcEpochMs): UtcEpochMs {
+    return UtcEpochMs.plusMs(
+      nowUtcMs,
+      -OtpLimits.DailyWindowHours * MS_PER_HOUR,
+    );
+  },
+
+  /**
+   * Why no new code may go to the destination now, or `null` when one may:
+   * the day's allowance first (`IDENTITY_OTP_DAILY_LIMIT` — while it holds,
+   * a countdown to the next resend would promise a code that cannot come),
+   * then the resend window (`IDENTITY_OTP_RATE_LIMITED` with the seconds
+   * left, OR-9). `open` is what `LoadOpenOtps` read from
+   * {@link dailyWindowStartUtcMs}; each rule re-checks its own window, so
+   * a wider read never loosens either.
+   */
+  issueRefusal(
+    open: readonly ResendFacts[],
+    nowUtcMs: UtcEpochMs,
+  ): IdentityError.OtpDailyLimit | IdentityError.OtpRateLimited | null {
+    if (
+      openSinceCount(open, OtpSystem.dailyWindowStartUtcMs(nowUtcMs)) >=
+      OtpLimits.DailyCodesPerDestination
+    ) {
+      return IdentityError.otpDailyLimit();
+    }
+    const retryAfterSeconds = OtpSystem.retryAfterSeconds(open, nowUtcMs);
+    return retryAfterSeconds > 0
+      ? IdentityError.otpRateLimited(retryAfterSeconds)
+      : null;
   },
 
   /**
