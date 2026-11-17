@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+      # A hotfix branch (ADR 2026-11-18 R14): its pushes reach staging, and
+      # its tags production, only through this gate.
+      - 'release/**'
   pull_request:
 
 permissions:

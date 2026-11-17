@@ -5,7 +5,7 @@
   "projectType": "library",
   "tags": ["scope:tooling", "type:util"],
   "// files": "The release and deploy tooling (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md): the release stamp every deploy compiles in. Pure parts in node:test specs, as tools/verify does",
-  "// inputs": "release-stamp.spec.mjs reads the root package.json (the version release-please bumps) and commitlint.config.mjs (the commit grammar it pins): an edit to either alone must re-run it",
+  "// inputs": "release-stamp.spec.mjs reads the root package.json (the version release-please bumps) and commitlint.config.mjs (the commit grammar it pins): an edit to either alone must re-run it; deploy-target.spec.mjs reads firebase.json and .firebaserc (the committed placeholders it points) and both it and smoke.mjs use the CSP gate's parser",
   "targets": {
     "test": {
       "executor": "nx:run-commands",
@@ -17,7 +17,12 @@
         "{workspaceRoot}/commitlint.config.mjs",
         "{workspaceRoot}/release-please-config.json",
         "{workspaceRoot}/.release-please-manifest.json",
-        { "externalDependencies": ["@commitlint/cli"] }
+        "{workspaceRoot}/firebase.json",
+        "{workspaceRoot}/.firebaserc",
+        "{workspaceRoot}/tools/verify/csp/check-csp.mjs",
+        {
+          "externalDependencies": ["@commitlint/cli"]
+        }
       ],
       "options": {
         "command": "node --test \"tools/release/**/*.spec.mjs\"",

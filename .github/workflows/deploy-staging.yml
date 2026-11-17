@@ -1,0 +1,68 @@
+name: Deploy staging
+
+# Staging is main (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md,
+# E1, E4): every push to main — and to a hotfix branch release/vX.Y — deploys
+# once CI has passed on it. Pushes only: a pull request, a fork's included,
+# never reaches this workflow, and the commit deployed is the one CI judged.
+#
+# workflow_run runs main's copy of this file with the environment's
+# variables; the job checks out the commit CI ran on. One deploy at a time,
+# never cancelled once it runs. GitHub keeps one queued run per group, so a
+# newer merge replaces an older queued one: staging jumps to the newest main.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches:
+      - main
+      - 'release/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-24.04
+    # The emulator-free build, two preflights, an index wait of at most 20
+    # minutes and four deploys.
+    timeout-minutes: 75
+    environment:
+      name: staging
+      url: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      # First, before any repository code runs: the owner's old, live app is
+      # never a target, whatever the variable says (ADR E11).
+      - name: Refuse the legacy projects
+        run: |
+          case "$FIREBASE_PROJECT_ID" in
+            '') echo "::error::the staging environment has no FIREBASE_PROJECT_ID variable"; exit 1 ;;
+            creativo-prod | creativo-staging) echo "::error::$FIREBASE_PROJECT_ID runs the owner's old, live app — never deploy to it"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+
+      - uses: ./.github/actions/deploy
+        with:
+          environment: staging
+          project: ${{ vars.FIREBASE_PROJECT_ID }}
+          workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service-account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          ref: refs/heads/${{ github.event.workflow_run.head_branch }}
+          sha: ${{ github.event.workflow_run.head_sha }}

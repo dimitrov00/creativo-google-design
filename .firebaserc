@@ -1,12 +1,24 @@
 {
-  "//": "Template — replace 'creativo-replace-me' with the real Firebase project ID once it exists, then run `firebase use --add` yourself; no Firebase CLI auth actions are taken on your behalf. The hosting site ID (web, below) must also be created first via `firebase hosting:sites:create <site-id>` and mapped with `firebase target:apply hosting web <site-id>`.",
+  "//": "Placeholders only (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md, E10). Each deploy points its throwaway CI checkout at its project with tools/release/deploy-target.mjs, from the GitHub Environment's FIREBASE_PROJECT_ID: the default project and the web target on the project's default site (<id>.web.app). You may replace the staging and production aliases with the real ids for your own CLI; a deploy then refuses an alias that names another project. Never the legacy projects of the old app.",
   "projects": {
-    "default": "creativo-replace-me"
+    "default": "creativo-replace-me",
+    "staging": "replace-me-staging",
+    "production": "replace-me-production"
   },
   "targets": {
     "creativo-replace-me": {
       "hosting": {
-        "web": ["creativo-web"]
+        "web": ["creativo-replace-me"]
+      }
+    },
+    "replace-me-staging": {
+      "hosting": {
+        "web": ["replace-me-staging"]
+      }
+    },
+    "replace-me-production": {
+      "hosting": {
+        "web": ["replace-me-production"]
       }
     }
   }

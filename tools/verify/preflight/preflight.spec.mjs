@@ -15,6 +15,7 @@ import {
   SCOPES,
   Verdict,
   appCheckModeFrom,
+  ENVIRONMENT_FILES,
   checkAppCheck,
   checkBackstops,
   checkBundle,
@@ -39,7 +40,7 @@ import {
   skipBanner,
 } from './preflight.mjs';
 
-const PROJECT = 'creativo-prod';
+const PROJECT = 'creativo-v2-prod';
 const HOST = `https://us-central1-${PROJECT}.cloudfunctions.net`;
 
 /** The zone constructor's answers, as `ZonedTimeSystem.checkZone` gives them: canonical, or the refusal. */
@@ -538,7 +539,7 @@ describe('P4 · the built bundle', () => {
     assert.equal(answer.verdict, Verdict.Fail);
     assert.equal(answer.lines.length, 2);
     assert.match(answer.lines[0], /^main\.js carries REPLACE_ME/);
-    assert.match(answer.lines[1], /^no script names "creativo-prod"/);
+    assert.match(answer.lines[1], /^no script names "creativo-v2-prod"/);
   });
 
   it('fails on a build of another project, and on no build at all', () => {
@@ -604,6 +605,14 @@ describe('P6 · the environment', () => {
         Verdict.Fail,
         String(projectId),
       );
+    }
+  });
+
+  it('fails on the legacy projects — the owner’s old, live app (ADR 2026-11-18, E11)', () => {
+    for (const projectId of ['creativo-prod', 'creativo-staging']) {
+      const answer = checkEnvironment({ env: {}, projectId });
+      assert.equal(answer.verdict, Verdict.Fail, projectId);
+      assert.match(answer.lines[0], /old, live app/);
     }
   });
 
@@ -1667,6 +1676,58 @@ describe('P10 · App Check (security hardening S-L-8)', () => {
 describe('runPreflight', () => {
   const env = { GCLOUD_PROJECT: PROJECT };
 
+  it('runs only the checks --only names, of its scope — P6 still gates every project read', async () => {
+    const options = optionsOf(
+      ['--scope', 'functions', '--only', 'P2,P3', '--project', PROJECT],
+      {},
+      () => null,
+    );
+    assert.deepEqual(options.checks, ['P2', 'P3']);
+    assert.deepEqual(
+      optionsOf(['--scope', 'web'], {}, () => null).checks,
+      SCOPES.web,
+    );
+    for (const only of ['P7', 'P2,P11', '']) {
+      assert.throws(
+        () => optionsOf(['--scope', 'web', '--only', only], {}, () => null),
+        /--only names/,
+        only,
+      );
+    }
+    const { read, calls } = fakeReaders();
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env,
+      read,
+      checks: options.checks,
+    });
+    assert.deepEqual(
+      rows.map((entry) => [entry.check, entry.verdict]),
+      [
+        ['P2', Verdict.Pass],
+        ['P3', Verdict.Pass],
+      ],
+    );
+    assert.equal(calls.includes('functionsSource'), false);
+    const unreal = await runPreflight({
+      scope: 'functions',
+      projectId: 'creativo-prod',
+      env: {},
+      read: fakeReaders().read,
+      checks: ['P2', 'P3'],
+    });
+    assert.deepEqual(
+      unreal.map((entry) => entry.verdict),
+      [Verdict.Skip, Verdict.Skip],
+    );
+    assert.equal(exitCodeOf(unreal), 1);
+    assert.match(
+      renderTable({ projectId: PROJECT, scope: 'functions', rows }),
+      /^Production preflight — project creativo-v2-prod, scope functions \(P2 P3\)$/m,
+    );
+  });
+
   // Widened ON PURPOSE by audit-hardening WS-6 (DEP-24): the functions
   // scope gains P9, the informational backstop row. Widened again ON
   // PURPOSE by security hardening S-DEP-13: both scopes gain P10, App Check.
@@ -1896,22 +1957,46 @@ describe('preflight · the command', () => {
     const functions = skipBanner({ projectId: PROJECT, scope: 'functions' });
     assert.match(
       functions,
-      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters, the launch blockers, the platform backstops or App Check of creativo-prod\./,
+      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters, the launch blockers, the platform backstops or App Check of creativo-v2-prod\./,
     );
     assert.match(
       functions,
-      /Run `pnpm run preflight --scope functions --project creativo-prod` after this deploy\./,
+      /Run `pnpm run preflight --scope functions --project creativo-v2-prod` after this deploy\./,
     );
     const web = skipBanner({ projectId: PROJECT, scope: 'web' });
     assert.match(
       web,
-      /the bundle, the CSP, the environment or App Check of creativo-prod\./,
+      /the bundle, the CSP, the environment or App Check of creativo-v2-prod\./,
     );
     assert.doesNotMatch(web, /emulator-only|launch blocker/);
     assert.match(
       skipBanner({ projectId: null, scope: 'web' }),
       /--scope web --project <id>` after this deploy/,
     );
+  });
+
+  it('refuses a legacy project before anything — the escape hatch included — reading nothing, exit 1', async () => {
+    for (const env of [{}, { CREATIVO_SKIP_PREFLIGHT: '1' }]) {
+      for (const projectId of ['creativo-prod', 'creativo-staging']) {
+        const warnings = [];
+        let read = false;
+        const code = await preflight({
+          args: ['--scope', 'functions', '--project', projectId],
+          env,
+          readersFor: () => {
+            read = true;
+            return fakeReaders().read;
+          },
+          firebasercDefault: () => null,
+          print: quiet,
+          warn: (text) => warnings.push(text),
+        });
+        assert.equal(code, 1, `${projectId} ${JSON.stringify(env)}`);
+        assert.equal(read, false);
+        assert.match(warnings.join('\n'), /^refused: .*old, live app/);
+        assert.doesNotMatch(warnings.join('\n'), /did NOT run/);
+      }
+    }
   });
 
   it('runs no check under CREATIVO_SKIP_PREFLIGHT=1, warns loudly and exits 0', async () => {
@@ -2106,6 +2191,29 @@ describe('the deploy wiring', () => {
   // P10 over today's tree (security hardening S-DEP-13): the shipped
   // manifest is OFF for every deployed environment and the web ships no
   // site key, so P10 passes in both scopes — and the readers find both.
+  it('P10 reads each environment’s own web file — staging’s key is not production’s', () => {
+    assert.deepEqual(ENVIRONMENT_FILES, {
+      development: 'apps/web/src/environments/environment.ts',
+      staging: 'apps/web/src/environments/environment.staging.ts',
+      production: 'apps/web/src/environments/environment.production.ts',
+    });
+    for (const path of Object.values(ENVIRONMENT_FILES)) {
+      assert.equal(siteKeyOf(readFileSync(join(root, path), 'utf8')), '', path);
+    }
+    const staging = checkAppCheck({
+      scope: 'web',
+      environment: 'staging',
+      mode: 'ENFORCE',
+      siteKey: '',
+      web: null,
+    });
+    assert.equal(staging.verdict, Verdict.Fail);
+    assert.match(
+      staging.lines[0],
+      /^apps\/web\/src\/environments\/environment\.staging\.ts's appCheck\.siteKey is empty/,
+    );
+  });
+
   it('P10 passes on today’s tree: the shipped manifest OFF for a deployed project, the site key empty', () => {
     const manifest = json('config/app-check.json');
     const siteKey = siteKeyOf(

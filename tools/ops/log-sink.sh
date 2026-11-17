@@ -31,6 +31,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=names.env
 . "$HERE/names.env"
+# shellcheck source=lib/legacy-projects.sh
+. "$HERE/lib/legacy-projects.sh"
 
 # RU-36, verbatim — pinned by tools/verify/ops/ops-scripts.spec.mjs.
 SINK_FILTER='(LOG_ID("cloudaudit.googleapis.com/activity") OR LOG_ID("cloudaudit.googleapis.com/data_access") OR (resource.type="cloud_run_revision" AND labels."goog-managed-by"="cloudfunctions")) AND NOT jsonPayload.clientIssueKind:*'
@@ -53,6 +55,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+refuse_legacy_project "$PROJECT"
 if [ "$APPLY" = 1 ] && [ -z "$PROJECT" ]; then
   echo "--apply needs --project <id> (or PROJECT_ID)" >&2
   exit 2

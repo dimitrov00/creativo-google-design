@@ -21,7 +21,9 @@
 //   P5  the CSP's connect-src names the project's callables host, the only
 //       one;
 //   P6  no emulator variable is set, and the project is neither the
-//       placeholder nor a demo-* one;
+//       placeholder, nor a demo-* one, nor one of the legacy projects
+//       that run the owner's old, live app (tools/release/legacy-projects.mjs,
+//       ADR 2026-11-18 E11);
 //   P7  no deployed project can construct an emulator-only adapter: every
 //       use of a functions export tagged `@emulatorOnly` (the console OTP
 //       sender, the fixed-code OTP crypto), followed through renames and
@@ -42,7 +44,8 @@
 //       flags writer's own chooser, tools/flags/write-functions-env.mjs —
 //       the mode the deploy writes) — OFF passes; MONITOR passes (INFO when
 //       the web has no site key: every request then reads MISSING); ENFORCE
-//       fails unless environment.production.ts's `appCheck.siteKey` is set
+//       fails unless that environment's web file (environment.staging.ts or
+//       environment.production.ts) sets `appCheck.siteKey`
 //       AND a web that can satisfy it carries the key: in the web scope the
 //       built bundle (P4's literal search), in the functions scope — which
 //       has no web build — the LIVE web (the `web` hosting target of
@@ -57,6 +60,9 @@
 // never read (SKIP): the read would reach an emulator, or a project nobody
 // deploys to. P10 never SKIPs: it reads repository files only, but for an
 // ENFORCE flip in the functions scope, which then FAILs instead.
+// `--only P2,P3` runs those checks of the scope alone (the deploy's wait
+// for its indexes, and its first preflight, which leaves them to the index
+// deploy); P6 is judged either way, and still gates every project read.
 //
 // Reads only. P1 reads through firebase-admin under the application-default
 // credentials; P2, P3 and P9's database and backup reads go through the
@@ -76,7 +82,8 @@
 //
 // Exits 1 when a check does not pass (the CLI then stops the deploy), 2 on
 // unreadable arguments. `CREATIVO_SKIP_PREFLIGHT=1` runs no check, warns
-// loudly and exits 0 — the escape hatch, never a habit. The checks are pure
+// loudly and exits 0 — the escape hatch, never a habit, and never for a
+// legacy project: that refusal (exit 1) comes before it. The checks are pure
 // functions over what was read, exported for preflight.spec.mjs.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -90,6 +97,10 @@ import {
   appCheckModeOf,
   chooseEnvironment,
 } from '../../flags/write-functions-env.mjs';
+import {
+  isLegacyProject,
+  legacyRefusal,
+} from '../../release/legacy-projects.mjs';
 import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import {
   CSP_HEADER,
@@ -213,9 +224,12 @@ const CREDENTIALS_HINT =
 /** P7's way out: the shape the OTP crypto already has, and the OTP sender's checklist item. */
 const EMULATOR_ONLY_HINT = `wire a deployed adapter beside it — ${EMULATOR_GATE}() ? <emulator adapter> : <deployed adapter>, as the OTP crypto and the OTP sender are (docs/production-deploy.md §1, "Sign-in: the OTP sender")`;
 
-/** The web's production environment — P10 reads its `appCheck.siteKey` literal. */
-const ENVIRONMENT_PRODUCTION =
-  'apps/web/src/environments/environment.production.ts';
+/** The web's environment file of each flag environment — P10 reads its `appCheck.siteKey` literal. */
+export const ENVIRONMENT_FILES = {
+  development: 'apps/web/src/environments/environment.ts',
+  staging: 'apps/web/src/environments/environment.staging.ts',
+  production: 'apps/web/src/environments/environment.production.ts',
+};
 
 /** The one `appCheck: { siteKey: '…' }` literal of an environment file. */
 const SITE_KEY_LITERAL =
@@ -232,7 +246,7 @@ const APP_CHECK_MONITOR_BAR =
 const LAUNCH_BLOCKER_HINT = `replace each use with the real adapter — as the deployed OTP sender replaced its stand-in, docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
 
 const USAGE =
-  'usage: node tools/verify/preflight/preflight.mjs [--project <id>] [--scope web|functions] [--dist=<dir>] [--config=<firebase.json>]';
+  'usage: node tools/verify/preflight/preflight.mjs [--project <id>] [--scope web|functions] [--only P2,P3] [--dist=<dir>] [--config=<firebase.json>]';
 
 function row(check, verdict, detail, lines = []) {
   return { check, verdict, detail, lines };
@@ -250,7 +264,8 @@ function describeError(error) {
 /**
  * P6 — the environment is a production deploy's: no emulator variable (a
  * firebase-admin read would go to the emulator), and the project is a real
- * one — not missing, not the placeholder, not a `demo-*` project (the
+ * one of this product's — not missing, not a legacy project (the owner's
+ * old, live app), not the placeholder, not a `demo-*` project (the
  * emulators' own), and shaped like a Google Cloud project id.
  */
 export function checkEnvironment({ env, projectId }) {
@@ -264,6 +279,8 @@ export function checkEnvironment({ env, projectId }) {
     problems.push(
       'no project — pass --project <id>, or deploy with the Firebase CLI ($GCLOUD_PROJECT)',
     );
+  } else if (isLegacyProject(projectId)) {
+    problems.push(legacyRefusal(projectId));
   } else if (PLACEHOLDER.test(projectId)) {
     problems.push(
       `${projectId} is the placeholder — set the real project id (.firebaserc, runbook §2.2)`,
@@ -481,13 +498,13 @@ export function checkBundle({ dist, scripts, projectId }) {
   for (const { path, text } of scripts) {
     if (PLACEHOLDER.test(text)) {
       lines.push(
-        `${path} carries REPLACE_ME — fill apps/web/src/environments/environment.production.ts`,
+        `${path} carries REPLACE_ME — fill the environment's web config (apps/web/src/environments/environment.staging.ts or environment.production.ts)`,
       );
     }
   }
   if (!namesLiteral(scripts, projectId)) {
     lines.push(
-      `no script names "${projectId}" — environment.production.ts's firebase.projectId is another project's`,
+      `no script names "${projectId}" — the build's environment file names another project in firebase.projectId`,
     );
   }
   return lines.length === 0
@@ -549,7 +566,8 @@ export function liveWebOriginOf(firebaserc, projectId) {
 
 /**
  * P10 — App Check (S-L-8): the mode (`mode`, of `environment`), the site
- * key environment.production.ts ships (`siteKey`; `null` when unreadable)
+ * key that environment's web file ships ({@link ENVIRONMENT_FILES};
+ * `siteKey`, `null` when unreadable)
  * and — read only for an ENFORCE flip with a key — the web that must carry
  * it, settled (`web`: `{ ok: true, value: { dist, scripts } }`, `dist`
  * naming where the scripts were read, or `{ ok: false, reason }`; `null`
@@ -560,6 +578,8 @@ export function liveWebOriginOf(firebaserc, projectId) {
  */
 export function checkAppCheck({ scope, environment, mode, siteKey, web }) {
   const where = `config/app-check.json (${environment})`;
+  const siteKeyFile =
+    ENVIRONMENT_FILES[environment] ?? ENVIRONMENT_FILES.production;
   if (!APP_CHECK_MODES.includes(mode)) {
     return row(
       'P10',
@@ -586,7 +606,7 @@ export function checkAppCheck({ scope, environment, mode, siteKey, web }) {
       keyed
         ? []
         : [
-            `INFO  site key ${siteKey === null ? 'unreadable' : 'empty'} — every request reads MISSING (${ENVIRONMENT_PRODUCTION}, appCheck.siteKey)`,
+            `INFO  site key ${siteKey === null ? 'unreadable' : 'empty'} — every request reads MISSING (${siteKeyFile}, appCheck.siteKey)`,
           ],
     );
   }
@@ -596,7 +616,7 @@ export function checkAppCheck({ scope, environment, mode, siteKey, web }) {
       Verdict.Fail,
       `App Check ENFORCE in ${where} without a site key`,
       [
-        `${ENVIRONMENT_PRODUCTION}'s appCheck.siteKey is ${siteKey === null ? 'unreadable' : 'empty'} — every call would be refused APP_CHECK_REQUIRED; ship the key on the web first (docs/production-deploy.md, App Check)`,
+        `${siteKeyFile}'s appCheck.siteKey is ${siteKey === null ? 'unreadable' : 'empty'} — every call would be refused APP_CHECK_REQUIRED; ship the key on the web first (docs/production-deploy.md, App Check)`,
       ],
     );
   }
@@ -1328,7 +1348,13 @@ async function readBackstops(read) {
  * way, and so does P10, whose one project-facing read (the live web, for an
  * ENFORCE flip in the functions scope) a failed P6 turns into a FAIL.
  */
-export async function runPreflight({ scope, projectId, env, read }) {
+export async function runPreflight({
+  scope,
+  projectId,
+  env,
+  read,
+  checks = SCOPES[scope],
+}) {
   const environment = checkEnvironment({ env, projectId });
   const functionsSource = once(() => read.functionsSource());
   /** The web an ENFORCE flip must find the key in: the build (web scope) or the live site (functions scope, never with P6 failed). */
@@ -1369,7 +1395,7 @@ export async function runPreflight({ scope, projectId, env, read }) {
     P9: async () => checkBackstops(await readBackstops(read)),
     P10: async () => {
       const { environment: flagsEnvironment, mode } = await read.appCheckMode();
-      const siteKey = await read.siteKey();
+      const siteKey = await read.siteKey(flagsEnvironment);
       const flip =
         mode === 'ENFORCE' && typeof siteKey === 'string' && siteKey !== '';
       return checkAppCheck({
@@ -1382,7 +1408,7 @@ export async function runPreflight({ scope, projectId, env, read }) {
     },
   };
   return Promise.all(
-    SCOPES[scope].map(async (check) => {
+    checks.map(async (check) => {
       if (
         READS_PROJECT.includes(check) &&
         environment.verdict !== Verdict.Pass
@@ -1417,7 +1443,7 @@ export function exitCodeOf(rows) {
 /** The PASS/FAIL table, its INFO and failure lines under their row, and the verdict line. */
 export function renderTable({ projectId, scope, rows }) {
   const out = [
-    `Production preflight — project ${projectId || '(none)'}, scope ${scope} (${SCOPES[scope].join(' ')})`,
+    `Production preflight — project ${projectId || '(none)'}, scope ${scope} (${rows.map((entry) => entry.check).join(' ')})`,
     '',
     `  ${'CHECK'.padEnd(5)}  ${'RESULT'.padEnd(6)}  WHAT IT PROVES`,
   ];
@@ -1458,8 +1484,9 @@ export function skipBanner({ projectId, scope }) {
 
 /**
  * The scope and the project from the command line: `--scope` (default
- * `web`), `--project`, else `$GCLOUD_PROJECT`, else `firebasercDefault()`.
- * Throws on an unknown option or scope.
+ * `web`), `--project`, else `$GCLOUD_PROJECT`, else `firebasercDefault()`;
+ * `--only`, a comma list of the scope's own checks (default: all of them).
+ * Throws on an unknown option or scope, or a check the scope does not run.
  */
 export function optionsOf(args, env, firebasercDefault) {
   const { values } = parseArgs({
@@ -1469,6 +1496,7 @@ export function optionsOf(args, env, firebasercDefault) {
       project: { type: 'string' },
       dist: { type: 'string', default: 'dist/apps/web/browser' },
       config: { type: 'string', default: 'firebase.json' },
+      only: { type: 'string' },
     },
     strict: true,
   });
@@ -1477,8 +1505,21 @@ export function optionsOf(args, env, firebasercDefault) {
       `unknown scope "${values.scope}" — one of ${Object.keys(SCOPES).join(', ')}`,
     );
   }
+  const checks =
+    values.only === undefined
+      ? SCOPES[values.scope]
+      : [...new Set(values.only.split(',').map((check) => check.trim()))];
+  const foreign = checks.filter(
+    (check) => !SCOPES[values.scope].includes(check),
+  );
+  if (checks.length === 0 || foreign.length > 0) {
+    throw new Error(
+      `--only names ${foreign.join(', ') || 'nothing'} — the ${values.scope} scope runs ${SCOPES[values.scope].join(' ')}`,
+    );
+  }
   return {
     scope: values.scope,
+    checks,
     projectId:
       values.project || env.GCLOUD_PROJECT || firebasercDefault() || null,
     dist: values.dist,
@@ -1505,6 +1546,11 @@ export async function preflight({
     warn(`${error.message}\n${USAGE}`);
     return 2;
   }
+  // Before the escape hatch: no flag skips this one (ADR 2026-11-18, E11).
+  if (isLegacyProject(options.projectId)) {
+    warn(`refused: ${legacyRefusal(options.projectId)}`);
+    return 1;
+  }
   if (env.CREATIVO_SKIP_PREFLIGHT === '1') {
     warn(skipBanner(options));
     return 0;
@@ -1514,6 +1560,7 @@ export async function preflight({
     projectId: options.projectId,
     env,
     read: readersFor(options, env),
+    checks: options.checks,
   });
   print(renderTable({ ...options, rows }));
   return exitCodeOf(rows);
@@ -1569,8 +1616,8 @@ function once(load) {
 
 /**
  * The live reads for `options`: the files on disk (the functions' source,
- * tools/ops/names.env, config/app-check.json and the web's production
- * environment among them), the default location through firebase-admin,
+ * tools/ops/names.env, config/app-check.json and the web's environment file
+ * of the deploy's flag environment among them), the default location through firebase-admin,
  * the two listings and P9's database and backup schedules through the
  * Firestore Admin REST API, P9's sink and bucket through the Cloud Logging
  * API — all under the one application-default credential; and P10's live
@@ -1682,8 +1729,10 @@ function liveReaders({ projectId, dist, config }, env) {
         projectId,
         env,
       }),
-    siteKey: async () => {
-      const path = resolve(ENVIRONMENT_PRODUCTION);
+    siteKey: async (environment) => {
+      const path = resolve(
+        ENVIRONMENT_FILES[environment] ?? ENVIRONMENT_FILES.production,
+      );
       return existsSync(path) ? siteKeyOf(readFileSync(path, 'utf8')) : null;
     },
     liveBundle: async () => {

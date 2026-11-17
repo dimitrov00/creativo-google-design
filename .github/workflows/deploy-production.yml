@@ -1,0 +1,91 @@
+name: Deploy production
+
+# Production is the release tags (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md,
+# E1, E5, E7). release-please tags vX.Y.Z when its release PR merges; the
+# tag starts this workflow, and the `production` environment holds the job
+# until the owner approves. The environment admits only tags v*, and the
+# deploy identity only refs/tags/v* of this repository's production jobs.
+#
+# A rollback is this workflow dispatched FROM an older tag (Actions → Deploy
+# production → Run workflow → Use workflow from: Tags → vX.Y.Z), with the
+# same tag as `tag`: the same approval, that tag's code, that tag's
+# workflow. A dispatch from a branch is refused here, by the environment and
+# by the identity.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to deploy — a rollback. Run the workflow from that same tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    environment:
+      name: production
+      url: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+    # actions: read — CI's verdict on the tag's commit, read before anything
+    # deploys.
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      REQUESTED_TAG: ${{ inputs.tag }}
+    steps:
+      # First, before any repository code runs: the owner's old, live app is
+      # never a target (ADR E11), and production deploys only a release tag.
+      - name: Refuse the legacy projects
+        run: |
+          case "$FIREBASE_PROJECT_ID" in
+            '') echo "::error::the production environment has no FIREBASE_PROJECT_ID variable"; exit 1 ;;
+            creativo-prod | creativo-staging) echo "::error::$FIREBASE_PROJECT_ID runs the owner's old, live app — never deploy to it"; exit 1 ;;
+          esac
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *) echo "::error::production deploys a release tag v*, not $GITHUB_REF — run the workflow from the tag"; exit 1 ;;
+          esac
+          if [ -n "$REQUESTED_TAG" ] && [ "refs/tags/$REQUESTED_TAG" != "$GITHUB_REF" ]; then
+            echo "::error::asked for $REQUESTED_TAG but running from $GITHUB_REF — choose the tag under «Use workflow from»"
+            exit 1
+          fi
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # The tag's commit passed CI as a push (the release PR's merge on main,
+      # or a hotfix branch's) — or nothing deploys.
+      - name: CI passed on the tag's commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&status=success&per_page=1" --jq '.total_count')"
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run on $GITHUB_SHA — wait for it, then re-run this job"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup-workspace
+
+      - uses: ./.github/actions/deploy
+        with:
+          environment: production
+          project: ${{ vars.FIREBASE_PROJECT_ID }}
+          workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service-account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          ref: ${{ github.ref }}
+          sha: ${{ github.sha }}

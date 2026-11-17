@@ -100,10 +100,10 @@ const FORBIDDEN = [
 ];
 
 describe('the CI workflow', () => {
-  it('runs on pushes to main and on pull requests, the stale PR run cancelled, never main', () => {
+  it('runs on pushes to main and to release branches and on pull requests, the stale PR run cancelled, never main', () => {
     assert.match(
       CODE,
-      /^on:\n {2}push:\n {4}branches:\n {6}- main\n {2}pull_request:\s*$/m,
+      /^on:\n {2}push:\n {4}branches:\n {6}- main\n(?:\n)* {6}- 'release\/\*\*'\n {2}pull_request:\s*$/m,
     );
     assert.match(
       CODE,
