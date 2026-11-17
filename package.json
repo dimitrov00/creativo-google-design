@@ -42,6 +42,8 @@
     "@angular/language-service": "~22.2.3",
     "@angular/pwa": "^22.2.4",
     "@axe-core/playwright": "4.13.0",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^9.8.0",
     "@firebase/rules-unit-testing": "5.0.1",
     "@nx/angular": "23.1.3",

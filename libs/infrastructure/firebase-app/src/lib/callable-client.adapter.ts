@@ -20,6 +20,7 @@ import {
   OPERATION_ID_FIELD,
 } from '@core/ports';
 import { ClientIssueSystem } from '@core/systems';
+import { WEB_RELEASE } from './web-release';
 
 /**
  * THE WEB'S ONE CALLABLE CLIENT (Phase 4a 4A-4, 4A-5; blueprint §4.2) — the
@@ -221,7 +222,7 @@ function reportTransportFailure(
         errorName: stringProperty(error, 'name'),
         callableErrorCode: stringProperty(error, 'code'),
         operationId,
-        release: null,
+        release: WEB_RELEASE,
       }),
     ]);
   } catch {

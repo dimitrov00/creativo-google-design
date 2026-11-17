@@ -1,2 +1,3 @@
+. "$(dirname "$0")/repo-node.sh"
 pnpm exec lint-staged
 gitleaks protect --staged --redact --config .gitleaks.toml

@@ -1,0 +1,34 @@
+name: PR title
+
+# The PR title IS the commit on main (squash merge only, the title as its
+# subject), and release-please reads that commit to choose the next version
+# (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md,
+# R2–R4). So the title is held to the commit grammar of commitlint.config.mjs
+# by this job, which the `main` ruleset requires. Its own workflow: a title
+# edit must re-check, and re-running CI's seven jobs on every edit would
+# spend half an hour of runner time on a sentence.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # The name is the ruleset's required status check: keep it.
+  pr-title:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-workspace
+      # The title reaches the shell as an environment variable, never as an
+      # expression inside the script: a title is text anyone opening a PR
+      # writes.
+      - run: printf '%s\n' "$PR_TITLE" | pnpm exec commitlint --verbose
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}

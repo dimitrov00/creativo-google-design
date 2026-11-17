@@ -12,11 +12,15 @@
  *   node tools/flags/write-functions-env.mjs --project demo-creativo-test
  *   node tools/flags/write-functions-env.mjs --project demo-creativo-test --app-check ENFORCE
  *   FLAGS_ENV=staging firebase deploy --only functions --project <staging-id>
+ *   CREATIVO_RELEASE=0.4.1 firebase deploy --only functions --project <id>   # the deploy workflows
  *
  * The files land in dist/apps/functions/, the deployed `functions.source`,
  * so this runs AFTER `pnpm nx build functions` (the build wipes the folder):
  *   .env.<projectId>  the chosen map, one `PARAM=true|false` line per flag,
- *                     and the chosen environment's `APP_CHECK_MODE=<mode>`;
+ *                     the chosen environment's `APP_CHECK_MODE=<mode>`, and —
+ *                     when the deploy names one — the build's release stamp,
+ *                     `CREATIVO_RELEASE=<stamp>` (ADR 2026-11-18 R9: every
+ *                     server log line carries it);
  *   .env.local        the development map and mode; the CLI loads it only
  *                     when emulating — LAST, so it wins over .env.<projectId>;
  *   .secret.local     a demo-* project only: a fixed TEST value for every
@@ -35,6 +39,11 @@
  * BOTH files, for an explicit demo-* project only (the emulator journeys'
  * ENFORCE runs); for any other project it is refused (exit 2), so a deploy
  * can only ever carry the committed manifest's mode.
+ *
+ * The release stamp (`--release <stamp>` or `CREATIVO_RELEASE`, which the
+ * deploy workflows set from `tools/release/release-stamp.mjs`) is written
+ * as given when it has a stamp's shape, and refused (exit 1) otherwise;
+ * without one the line is absent and the functions log `release`-less.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -60,6 +69,11 @@ const RESERVED_PREFIXES = ['X_GOOGLE_', 'FIREBASE_', 'EXT_'];
 
 /** The param the App Check mode is written to — `defineString('APP_CHECK_MODE')`. */
 export const APP_CHECK_PARAM = 'APP_CHECK_MODE';
+
+/** The env line the release stamp is written to — `apps/functions/src/lib/release.ts` reads it. */
+export const RELEASE_PARAM = 'CREATIVO_RELEASE';
+/** A stamp's shape: the functions' and the web's one rule — word characters, `.`, `+`, `-`, at most 64. */
+export const RELEASE_SHAPE = /^[\w.+-]{1,64}$/;
 /**
  * The modes, as `AppCheckMode` (`@core/primitives`) spells them — a Node
  * script cannot import the TypeScript dictionary; the parity spec holds the
@@ -103,7 +117,8 @@ export function manifestErrors(manifest) {
         errors.push(`${env}: "${key}" is not a dotted flag key`);
       else if (
         RESERVED_PREFIXES.some((p) => paramNameOf(key).startsWith(p)) ||
-        paramNameOf(key) === APP_CHECK_PARAM
+        paramNameOf(key) === APP_CHECK_PARAM ||
+        paramNameOf(key) === RELEASE_PARAM
       )
         errors.push(`${env}: "${key}" maps to a reserved env name`);
       if (typeof value !== 'boolean')
@@ -194,7 +209,7 @@ export function chooseEnvironment({ projectId, requested }) {
   return requested;
 }
 
-export function renderEnv(map, environment, appCheckMode) {
+export function renderEnv(map, environment, appCheckMode, release = null) {
   const lines = Object.entries(map).map(
     ([key, value]) => `${paramNameOf(key)}=${value}`,
   );
@@ -202,8 +217,20 @@ export function renderEnv(map, environment, appCheckMode) {
     `# Generated from config/feature-flags.json and config/app-check.json (${environment}) by tools/flags/write-functions-env.mjs. Do not edit.`,
     ...lines,
     `${APP_CHECK_PARAM}=${appCheckMode}`,
+    ...(release === null ? [] : [`${RELEASE_PARAM}=${release}`]),
     '',
   ].join('\n');
+}
+
+/** The stamp one run writes: `null` when none is given, the stamp when it has a stamp's shape; throws otherwise. */
+export function releaseOf(requested) {
+  if (requested === undefined || requested === '') return null;
+  if (!RELEASE_SHAPE.test(requested)) {
+    throw new Error(
+      `the release stamp must be word characters, dots, + and - (at most 64), got ${JSON.stringify(requested)}`,
+    );
+  }
+  return requested;
 }
 
 export function renderSecrets(secrets) {
@@ -221,6 +248,7 @@ export function writeFunctionsEnv({
   appCheckOverride,
   projectId,
   requested,
+  release: requestedRelease,
   outDir,
 }) {
   const errors = manifestErrors(manifest);
@@ -232,6 +260,7 @@ export function writeFunctionsEnv({
     throw new Error(`config/app-check.json: ${appCheckErrors.join('; ')}`);
   }
   const environment = chooseEnvironment({ projectId, requested });
+  const release = releaseOf(requestedRelease);
   const appCheckMode = appCheckModeOf({
     manifest: appCheckManifest,
     environment,
@@ -257,7 +286,7 @@ export function writeFunctionsEnv({
     const path = join(outDir, `.env.${projectId}`);
     writeFileSync(
       path,
-      renderEnv(manifest[environment], environment, appCheckMode),
+      renderEnv(manifest[environment], environment, appCheckMode, release),
     );
     files.push(path);
   }
@@ -274,7 +303,7 @@ export function writeFunctionsEnv({
     writeFileSync(secrets, renderSecrets(EMULATOR_SECRETS));
     files.push(secrets);
   }
-  return { environment, appCheckMode, files };
+  return { environment, appCheckMode, release, files };
 }
 
 function isPlainObject(value) {
@@ -293,20 +322,27 @@ function main() {
   const requested = argValue(argv, '--env') ?? process.env['FLAGS_ENV'];
   const appCheckOverride =
     argValue(argv, '--app-check') ?? process.env['CREATIVO_APP_CHECK_MODE'];
+  const release = argValue(argv, '--release') ?? process.env[RELEASE_PARAM];
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
   const appCheckManifest = JSON.parse(
     readFileSync(APP_CHECK_MANIFEST_PATH, 'utf8'),
   );
-  const { environment, appCheckMode, files } = writeFunctionsEnv({
+  const {
+    environment,
+    appCheckMode,
+    release: written,
+    files,
+  } = writeFunctionsEnv({
     manifest,
     appCheckManifest,
     appCheckOverride,
     projectId,
     requested,
+    release,
     outDir: FUNCTIONS_DIST,
   });
   console.log(
-    `flags: ${environment} map, App Check ${appCheckMode} → ${files.map((f) => relative(WORKSPACE_ROOT, f)).join(', ')}`,
+    `flags: ${environment} map, App Check ${appCheckMode}, release ${written ?? '(none)'} → ${files.map((f) => relative(WORKSPACE_ROOT, f)).join(', ')}`,
   );
 }
 

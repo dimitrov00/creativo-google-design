@@ -1,0 +1,52 @@
+name: Release
+
+# release-please (ADR docs/architecture/decisions/2026-11-18-releases-and-environments.md,
+# R5–R8): after every push to main — or to a hotfix branch release/vX.Y — it
+# keeps ONE release PR open with the next version, package.json, CHANGELOG.md
+# and .release-please-manifest.json. Merging that PR is the release: this
+# workflow's next run tags vX.Y.Z and writes the GitHub Release, and the tag
+# starts .github/workflows/deploy-production.yml, which waits for the owner.
+#
+# The token is a GitHub App's, minted per run: a PR or a tag created with
+# GITHUB_TOKEN starts no workflow, so CI would never run on the release PR
+# (the main ruleset would block it) and the tag would deploy nothing. Until
+# the owner has made the App (docs/production-deploy.md, «Environments and
+# releases») the job is skipped, not failed.
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+
+permissions:
+  contents: read
+
+# One run per branch at a time, never cancelled: a run half-way through
+# tagging must finish.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    if: ${{ vars.RELEASE_APP_CLIENT_ID != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Only what release-please writes: the release PR's branch and commits,
+      # the PR and its labels, the tag and the GitHub Release.
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: ${{ github.ref_name }}

@@ -499,3 +499,27 @@ emulator does not enforce composite indexes; declare them in
   skill FIRST, before exploring or calling MCP tools.
 - Use `nx_docs` for advanced config, unfamiliar flags, migrations and plugin
   configuration — not for basic generator syntax or standard commands.
+
+## 7. Branches, commits, releases and deploys
+
+The design is `docs/architecture/decisions/2026-11-18-releases-and-environments.md`;
+the commit grammar for humans is `CONTRIBUTING.md`.
+
+- **A PR title is a Conventional Commit**: `type(scope)!: subject`, the type
+  one of `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`,
+  `chore`, `revert`, the scope lower-case. Merging is squash only, so the
+  title IS the commit on `main`, and release-please reads it to choose the
+  next version; the required `pr-title` check holds it to
+  `commitlint.config.mjs`. A breaking change is `!` after the type or
+  scope, or a `BREAKING CHANGE:` footer — and a PR description is the
+  commit's body, so never write that footer in one unless it is meant.
+- **Agents never merge a release PR** (`chore: release X.Y.Z`, opened by
+  release-please) and **never approve a production deployment**. Both are
+  the owner's.
+- **Agents never deploy. Only CI deploys**: staging after CI passes on
+  `main`, production from a release tag after the owner approves. Never run
+  `firebase deploy`, and never run a `tools/ops/*.sh` script with `--apply`.
+- **The Firebase projects `creativo-prod` and `creativo-staging` run the
+  owner's old, live React app.** Never deploy to, read from, configure,
+  reuse or name them in config. This product's projects are new ones, and
+  their ids are configuration, never code.

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "bootstrap-sha": "effb6c20b025086ff2923d25d43c1c94df913cd5",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "pull-request-title-pattern": "chore${scope}: release ${version}",
+  "pull-request-header": "Merging this pull request releases the version below. release-please then tags it, and the tag starts the production deploy, which waits for the owner's approval (docs/architecture/decisions/2026-11-18-releases-and-environments.md). Agents never merge it.",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "refactor", "section": "Refactoring", "hidden": true },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "creativo",
+      "changelog-path": "CHANGELOG.md",
+      "initial-version": "0.1.0"
+    }
+  }
+}

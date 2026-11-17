@@ -146,52 +146,69 @@ function errorField(error: Error): {
 }
 
 /**
- * The fields a line is written with: the scope's UNDER the call's own, and
- * each top-level `Error` value normalised ({@link errorField}). A new plain
- * object — never the caller's.
+ * The fields a line is written with: the build's `release` under the
+ * scope's, the scope's UNDER the call's own, and each top-level `Error`
+ * value normalised ({@link errorField}). A new plain object — never the
+ * caller's.
  */
 function withScope(
+  base: Record<string, unknown> | undefined,
   own: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   const scope = scopes.getStore();
-  if (own === undefined && scope === undefined) return undefined;
+  if (base === undefined && own === undefined && scope === undefined) {
+    return undefined;
+  }
   return Object.fromEntries(
-    Object.entries({ ...scope, ...own }).map(([name, value]) => [
+    Object.entries({ ...base, ...scope, ...own }).map(([name, value]) => [
       name,
       value instanceof Error ? errorField(value) : value,
     ]),
   );
 }
 
-export const consoleTelemetry = (sink: LogSink = logger): TelemetryPorts => ({
-  log: (level, msg, fields) => {
-    if (fields?.['@type'] === ClientIssueSystem.REPORTED_ERROR_EVENT) {
-      sink.write({ ...fields, severity: 'ERROR', message: msg });
-      return;
-    }
-    const write = writerFor(sink, level);
-    const payload = withScope(fields);
-    if (payload === undefined) write(msg);
-    else write(msg, payload);
-  },
-  trackError: (error, context) => {
-    const payload = withScope(context) ?? {};
-    if (error instanceof Error) {
-      const field = errorField(error);
-      sink.write({
+/**
+ * The telemetry bundle over `sink`. `release` is the deployed build's stamp
+ * (`serverRelease`, ADR 2026-11-18 R9): when known, every line the server
+ * writes carries it as `release`, under every other field — a web client's
+ * issue line keeps the client's own `release`, and its error line, written
+ * whole, is never stamped.
+ */
+export const consoleTelemetry = (
+  sink: LogSink = logger,
+  release: string | null = null,
+): TelemetryPorts => {
+  const base = release === null ? undefined : { release };
+  return {
+    log: (level, msg, fields) => {
+      if (fields?.['@type'] === ClientIssueSystem.REPORTED_ERROR_EVENT) {
+        sink.write({ ...fields, severity: 'ERROR', message: msg });
+        return;
+      }
+      const write = writerFor(sink, level);
+      const payload = withScope(base, fields);
+      if (payload === undefined) write(msg);
+      else write(msg, payload);
+    },
+    trackError: (error, context) => {
+      const payload = withScope(base, context) ?? {};
+      if (error instanceof Error) {
+        const field = errorField(error);
+        sink.write({
+          ...payload,
+          error: field,
+          severity: 'ERROR',
+          message: field.stack,
+        });
+        return;
+      }
+      sink.error('non-error thrown', {
         ...payload,
-        error: field,
-        severity: 'ERROR',
-        message: field.stack,
+        thrown: ClientIssueSystem.scrub(describe(error)),
       });
-      return;
-    }
-    sink.error('non-error thrown', {
-      ...payload,
-      thrown: ClientIssueSystem.scrub(describe(error)),
-    });
-  },
-});
+    },
+  };
+};
 
 /**
  * The per-invocation log scope ({@link LogContextPorts}, WS-4.2): `bind`

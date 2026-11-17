@@ -138,6 +138,7 @@ import {
 import { replayProtectedOptions } from './lib/app-check';
 import { CRON_TIME_ZONE } from './lib/cron-zone';
 import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
+import { serverRelease } from './lib/release';
 import {
   arrivalRefusal,
   arrivedOf,
@@ -332,8 +333,12 @@ function once<T>(build: () => T): () => T {
   };
 }
 
-/** Logging and error tracking: `firebase-functions/logger` (§9 D11(a)). */
-const telemetry = consoleTelemetry();
+/**
+ * Logging and error tracking: `firebase-functions/logger` (§9 D11(a)), every
+ * line stamped with the deployed build (`CREATIVO_RELEASE`, ADR 2026-11-18
+ * R9; `null` on the emulator).
+ */
+const telemetry = consoleTelemetry(undefined, serverRelease(process.env));
 
 /**
  * The clock, as an absolute instant (`NowUtcMs`, flatten-spec §2.3 T4): the

@@ -8,12 +8,14 @@ import {
   APP_CHECK_PARAM,
   EMULATOR_SECRETS,
   ENVIRONMENTS,
+  RELEASE_PARAM,
   appCheckManifestErrors,
   appCheckModeOf,
   chooseEnvironment,
   isDemoProject,
   manifestErrors,
   paramNameOf,
+  releaseOf,
   renderEnv,
   writeFunctionsEnv,
 } from './write-functions-env.mjs';
@@ -97,6 +99,18 @@ describe('manifestErrors', () => {
     );
   });
 
+  it('refuses a flag key that would overwrite the release stamp', () => {
+    const bad = {
+      development: { 'creativo.release': false },
+      staging: { 'creativo.release': false },
+      production: { 'creativo.release': false },
+    };
+    expect(paramNameOf('creativo.release')).toBe(RELEASE_PARAM);
+    expect(manifestErrors(bad)).toContain(
+      'production: "creativo.release" maps to a reserved env name',
+    );
+  });
+
   it('refuses a key that is not dotted, or maps to a reserved env name', () => {
     const bad = {
       development: { clientProfile: false, 'firebase.config': false },
@@ -134,17 +148,20 @@ describe('chooseEnvironment', () => {
 
   it('defaults a real project to production, the map that lights last', () => {
     expect(
-      chooseEnvironment({ projectId: 'creativo-prod', requested: undefined }),
+      chooseEnvironment({
+        projectId: 'creativo-v2-prod',
+        requested: undefined,
+      }),
     ).toBe('production');
     expect(
-      chooseEnvironment({ projectId: 'creativo-prod', requested: '' }),
+      chooseEnvironment({ projectId: 'creativo-v2-prod', requested: '' }),
     ).toBe('production');
   });
 
   it('honours staging for a real project', () => {
     expect(
       chooseEnvironment({
-        projectId: 'creativo-staging',
+        projectId: 'creativo-v2-staging',
         requested: 'staging',
       }),
     ).toBe('staging');
@@ -153,12 +170,12 @@ describe('chooseEnvironment', () => {
   it('refuses the development map or a typo for a real project', () => {
     expect(() =>
       chooseEnvironment({
-        projectId: 'creativo-prod',
+        projectId: 'creativo-v2-prod',
         requested: 'development',
       }),
     ).toThrow(/--env must be staging or production/);
     expect(() =>
-      chooseEnvironment({ projectId: 'creativo-prod', requested: 'prod' }),
+      chooseEnvironment({ projectId: 'creativo-v2-prod', requested: 'prod' }),
     ).toThrow(/got "prod"/);
   });
 });
@@ -174,6 +191,29 @@ describe('renderEnv', () => {
     });
     expect(text.match(/^APP_CHECK_MODE=/gm)).toHaveLength(1);
     expect(text.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('releaseOf (ADR 2026-11-18 R9)', () => {
+  it('passes a stamp through, a tag’s and a branch commit’s', () => {
+    expect(releaseOf('0.4.1')).toBe('0.4.1');
+    expect(releaseOf('0.4.1+abc1234')).toBe('0.4.1+abc1234');
+  });
+
+  it('is null when none is given', () => {
+    expect(releaseOf(undefined)).toBeNull();
+    expect(releaseOf('')).toBeNull();
+  });
+
+  it('refuses anything a dotenv line or a log field should not carry', () => {
+    for (const bad of [
+      '0.4.1 x',
+      '0.4.1\nAPP_CHECK_MODE=ENFORCE',
+      '"0.4.1"',
+      'x'.repeat(65),
+    ]) {
+      expect(() => releaseOf(bad)).toThrow(/the release stamp must be/);
+    }
   });
 });
 
@@ -229,7 +269,7 @@ describe('appCheckModeOf (security hardening S-L-2)', () => {
             manifest: appCheck(),
             environment,
             override,
-            projectId: 'creativo-prod',
+            projectId: 'creativo-v2-prod',
           }),
         ).toBe(appCheck()[environment]);
       }
@@ -250,7 +290,7 @@ describe('appCheckModeOf (security hardening S-L-2)', () => {
   });
 
   it('refuses an override for a real project — or none — with exit code 2', () => {
-    for (const projectId of ['creativo-prod', '', undefined]) {
+    for (const projectId of ['creativo-v2-prod', '', undefined]) {
       let thrown;
       try {
         appCheckModeOf({
@@ -311,16 +351,16 @@ describe('writeFunctionsEnv', () => {
     const result = writeFunctionsEnv({
       manifest: manifest(),
       appCheckManifest: appCheck(),
-      projectId: 'creativo-staging',
+      projectId: 'creativo-v2-staging',
       requested: 'staging',
       outDir,
     });
     expect(result.environment).toBe('staging');
     expect(readdirSync(outDir).sort()).toEqual([
-      '.env.creativo-staging',
+      '.env.creativo-v2-staging',
       '.env.local',
     ]);
-    expect(read('.env.creativo-staging')).toEqual({
+    expect(read('.env.creativo-v2-staging')).toEqual({
       CLIENT_PROFILE: 'true',
       LOYALTY_SELF_VIEW: 'false',
       APP_CHECK_MODE: 'OFF',
@@ -332,16 +372,55 @@ describe('writeFunctionsEnv', () => {
     });
   });
 
+  it('writes the release stamp to the project’s file only, as its last line', () => {
+    const result = writeFunctionsEnv({
+      manifest: manifest(),
+      appCheckManifest: appCheck(),
+      projectId: 'creativo-v2-staging',
+      requested: 'staging',
+      release: '0.4.1+abc1234',
+      outDir,
+    });
+    expect(result.release).toBe('0.4.1+abc1234');
+    const text = readFileSync(join(outDir, '.env.creativo-v2-staging'), 'utf8');
+    expect(text.trimEnd().split('\n').at(-1)).toBe(
+      'CREATIVO_RELEASE=0.4.1+abc1234',
+    );
+    expect(read('.env.local')).not.toHaveProperty(RELEASE_PARAM);
+  });
+
+  it('writes no stamp line without one, and nothing at all for a malformed one', () => {
+    writeFunctionsEnv({
+      manifest: manifest(),
+      appCheckManifest: appCheck(),
+      projectId: 'creativo-v2-prod',
+      outDir,
+    });
+    expect(read('.env.creativo-v2-prod')).not.toHaveProperty(RELEASE_PARAM);
+    rmSync(join(outDir, '.env.creativo-v2-prod'));
+    rmSync(join(outDir, '.env.local'));
+    expect(() =>
+      writeFunctionsEnv({
+        manifest: manifest(),
+        appCheckManifest: appCheck(),
+        projectId: 'creativo-v2-prod',
+        release: '0.4.1; rm -rf',
+        outDir,
+      }),
+    ).toThrow(/the release stamp must be/);
+    expect(readdirSync(outDir)).toEqual([]);
+  });
+
   it('agrees with the manifest value for every flag it writes', () => {
     const source = manifest();
     writeFunctionsEnv({
       manifest: source,
       appCheckManifest: appCheck(),
-      projectId: 'creativo-prod',
+      projectId: 'creativo-v2-prod',
       requested: undefined,
       outDir,
     });
-    const written = read('.env.creativo-prod');
+    const written = read('.env.creativo-v2-prod');
     for (const [key, value] of Object.entries(source.production)) {
       expect(written[paramNameOf(key)]).toBe(String(value));
     }
@@ -386,7 +465,7 @@ describe('writeFunctionsEnv', () => {
     writeFunctionsEnv({
       manifest: manifest(),
       appCheckManifest: appCheck(),
-      projectId: 'creativo-prod',
+      projectId: 'creativo-v2-prod',
       outDir,
     });
     expect(readdirSync(outDir)).not.toContain('.secret.local');
@@ -409,7 +488,7 @@ describe('writeFunctionsEnv', () => {
       writeFunctionsEnv({
         manifest: bad,
         appCheckManifest: appCheck(),
-        projectId: 'creativo-prod',
+        projectId: 'creativo-v2-prod',
         outDir,
       }),
     ).toThrow(/must be true or false/);
@@ -432,11 +511,11 @@ describe('writeFunctionsEnv', () => {
     const result = writeFunctionsEnv({
       manifest: manifest(),
       appCheckManifest: { ...appCheck(), production: 'ENFORCE' },
-      projectId: 'creativo-prod',
+      projectId: 'creativo-v2-prod',
       outDir,
     });
     expect(result.appCheckMode).toBe('ENFORCE');
-    expect(read('.env.creativo-prod')[APP_CHECK_PARAM]).toBe('ENFORCE');
+    expect(read('.env.creativo-v2-prod')[APP_CHECK_PARAM]).toBe('ENFORCE');
     expect(read('.env.local')[APP_CHECK_PARAM]).toBe('MONITOR');
   });
 
@@ -461,7 +540,7 @@ describe('writeFunctionsEnv', () => {
         manifest: manifest(),
         appCheckManifest: appCheck(),
         appCheckOverride: 'ENFORCE',
-        projectId: 'creativo-prod',
+        projectId: 'creativo-v2-prod',
         outDir,
       }),
     ).toThrow(/for a demo-\* project only/);
@@ -469,7 +548,7 @@ describe('writeFunctionsEnv', () => {
       writeFunctionsEnv({
         manifest: manifest(),
         appCheckManifest: { ...appCheck(), staging: 'on' },
-        projectId: 'creativo-staging',
+        projectId: 'creativo-v2-staging',
         requested: 'staging',
         outDir,
       }),
@@ -477,7 +556,7 @@ describe('writeFunctionsEnv', () => {
     expect(() =>
       writeFunctionsEnv({
         manifest: manifest(),
-        projectId: 'creativo-prod',
+        projectId: 'creativo-v2-prod',
         outDir,
       }),
     ).toThrow(/config\/app-check\.json: the manifest is not a JSON object/);
@@ -489,7 +568,7 @@ describe('writeFunctionsEnv', () => {
       writeFunctionsEnv({
         manifest: manifest(),
         appCheckManifest: appCheck(),
-        projectId: 'creativo-prod',
+        projectId: 'creativo-v2-prod',
         outDir: join(outDir, 'missing'),
       }),
     ).toThrow(/run `pnpm nx build functions` first/);

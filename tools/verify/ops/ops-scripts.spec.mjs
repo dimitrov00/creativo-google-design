@@ -31,6 +31,10 @@ const read = (path) => readFileSync(join(ROOT, path), 'utf8');
 const SCRIPTS = readdirSync(OPS)
   .filter((name) => name.endsWith('.sh'))
   .sort();
+/** The repository's GitHub settings (ADR 2026-11-18): `gh`, not gcloud, and no project. */
+const GITHUB_SCRIPT = 'github-repo-settings.sh';
+/** The scripts that address a Google Cloud project. */
+const GCLOUD_SCRIPTS = SCRIPTS.filter((name) => name !== GITHUB_SCRIPT);
 const ALERTS = readdirSync(join(OPS, 'alerts'))
   .filter((name) => name.endsWith('.yaml'))
   .sort();
@@ -63,7 +67,7 @@ const messageTexts = (text) =>
 let stubDir;
 let marker;
 
-/** One dry run of `script`: a clean environment, the stub gcloud first on PATH. */
+/** One dry run of `script`: a clean environment, the stub gcloud and gh first on PATH. */
 function dryRun(script, args = []) {
   const env = { ...process.env, PATH: `${stubDir}:${process.env.PATH}` };
   delete env.PROJECT_ID;
@@ -78,9 +82,11 @@ function dryRun(script, args = []) {
 before(() => {
   stubDir = mkdtempSync(join(tmpdir(), 'ops-stub-'));
   marker = join(stubDir, 'gcloud-called');
-  const stub = join(stubDir, 'gcloud');
-  writeFileSync(stub, `#!/bin/sh\necho "$@" >> '${marker}'\nexit 97\n`);
-  chmodSync(stub, 0o755);
+  for (const tool of ['gcloud', 'gh']) {
+    const stub = join(stubDir, tool);
+    writeFileSync(stub, `#!/bin/sh\necho "$@" >> '${marker}'\nexit 97\n`);
+    chmodSync(stub, 0o755);
+  }
 });
 
 after(() => {
@@ -88,10 +94,11 @@ after(() => {
 });
 
 describe('tools/ops — every script, dry by default', () => {
-  it('holds the four scripts and the eight alert policies the plans name', () => {
+  it('holds the five scripts and the eight alert policies the plans name', () => {
     assert.deepEqual(SCRIPTS, [
       'audit-logs.sh',
       'firestore-backups.sh',
+      'github-repo-settings.sh',
       'log-metrics.sh',
       'log-sink.sh',
     ]);
@@ -126,25 +133,27 @@ describe('tools/ops — every script, dry by default', () => {
       assert.match(text, /^ {4}--apply\) APPLY=1 ;;$/m);
     });
 
-    it(`${script}: run with no arguments, prints its gcloud commands, runs none and exits 0`, () => {
-      rmSync(marker, { force: true });
-      const run = dryRun(script);
-      assert.equal(run.status, 0, run.err);
-      assert.match(run.out, /^\+ gcloud /m);
-      assert.match(
-        run.out,
-        /^# dry run: nothing ran against your-project-id\./m,
-      );
-      assert.equal(existsSync(marker), false, 'the stub gcloud was called');
-      // Named, still dry: the project shows, nothing runs.
-      const named = dryRun(script, ['--project', 'creativo-prod']);
-      assert.equal(named.status, 0, named.err);
-      assert.match(
-        named.out,
-        /--project=creativo-prod|get-iam-policy creativo-prod/,
-      );
-      assert.equal(existsSync(marker), false, 'the stub gcloud was called');
-    });
+    if (GCLOUD_SCRIPTS.includes(script)) {
+      it(`${script}: run with no arguments, prints its gcloud commands, runs none and exits 0`, () => {
+        rmSync(marker, { force: true });
+        const run = dryRun(script);
+        assert.equal(run.status, 0, run.err);
+        assert.match(run.out, /^\+ gcloud /m);
+        assert.match(
+          run.out,
+          /^# dry run: nothing ran against your-project-id\./m,
+        );
+        assert.equal(existsSync(marker), false, 'the stub gcloud was called');
+        // Named, still dry: the project shows, nothing runs.
+        const named = dryRun(script, ['--project', 'creativo-v2-prod']);
+        assert.equal(named.status, 0, named.err);
+        assert.match(
+          named.out,
+          /--project=creativo-v2-prod|get-iam-policy creativo-v2-prod/,
+        );
+        assert.equal(existsSync(marker), false, 'the stub gcloud was called');
+      });
+    }
 
     it(`${script}: refuses an unknown argument with exit 2, running nothing`, () => {
       rmSync(marker, { force: true });
@@ -424,5 +433,230 @@ describe('tools/ops/log-metrics.sh — metrics and alerts keyed on LogEvent valu
       text,
       /getAuth\(\)\.revokeRefreshTokens\('<targetUserId from the log line>'\)/,
     );
+  });
+});
+
+describe('tools/ops/github-repo-settings.sh — the release flow’s GitHub settings (ADR 2026-11-18)', () => {
+  const SCRIPT = 'github-repo-settings.sh';
+  const REPO = ['--repo', 'owner-x/repo-y'];
+
+  /** The JSON a `#   {…}` body line of `out` shows, after `marker`. */
+  const bodyAfter = (out, marker) => {
+    const lines = out.split('\n');
+    const at = lines.findIndex((line) => line.includes(marker));
+    return lines
+      .slice(at)
+      .find((line) => line.startsWith('#   {'))
+      .slice(4);
+  };
+
+  it('run with no arguments, prints its gh commands, runs none and exits 0', () => {
+    rmSync(marker, { force: true });
+    const run = dryRun(SCRIPT, REPO);
+    assert.equal(run.status, 0, run.err);
+    assert.match(run.out, /^\+ gh api /m);
+    assert.match(run.out, /^# dry run: nothing ran against owner-x\/repo-y\./m);
+    assert.equal(existsSync(marker), false, 'the stub gh was called');
+  });
+
+  it('merges by squash only, titled by the PR title and bodied by its description, and deletes merged branches', () => {
+    const { out } = dryRun(SCRIPT, REPO);
+    assert.ok(
+      out.includes(
+        '+ gh api --method PATCH repos/owner-x/repo-y -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY -F delete_branch_on_merge=true',
+      ),
+    );
+  });
+
+  it('updates the main ruleset in place — PUT to the one it found, never a new one', () => {
+    const { out } = dryRun(SCRIPT, REPO);
+    assert.match(
+      out,
+      /^\+ gh api repos\/owner-x\/repo-y\/rulesets --jq '\.\[\] \| select\(\.name == "main requires pull requests"\) \| \.id'$/m,
+    );
+    assert.match(
+      out,
+      /^\+ gh api --method PUT 'repos\/owner-x\/repo-y\/rulesets\/<main-ruleset-id>' --input \S+\/main-ruleset\.json$/m,
+    );
+    assert.doesNotMatch(
+      read(`tools/ops/${SCRIPT}`),
+      /--method POST "repos\/\$REPO\/rulesets" --input "\$TMP\/main-ruleset\.json"/,
+    );
+  });
+
+  it('keeps every rule, check and bypass it reads, adds pr-title once and leaves squash the only merge method', (t) => {
+    const jq = spawnSync('jq', ['--version'], { encoding: 'utf8' });
+    if (jq.status !== 0) {
+      t.skip('no jq on PATH (gh runs its own; the runner image ships jq)');
+      return;
+    }
+    const text = read(`tools/ops/${SCRIPT}`);
+    const rules = /^CONVERGE_RULES='([\s\S]*?)'$/m
+      .exec(text)[1]
+      .replace(`'"$ACTIONS_INTEGRATION_ID"'`, '15368');
+    const mainBody = /^MAIN_BODY='([^\n]*)'$/m
+      .exec(text)[1]
+      .replace(`'"$CONVERGE_RULES"'`, rules);
+    const releaseBody = /^RELEASE_BODY='([^\n]*)'$/m
+      .exec(text)[1]
+      .replace(`'"$RELEASE_RULESET"'`, 'release branches require pull requests')
+      .replace(`'"$CONVERGE_RULES"'`, rules);
+    // The live ruleset's shape (2026-11-18), as `gh api …/rulesets/<id>` reads it.
+    const live = {
+      id: 26367400,
+      name: 'main requires pull requests',
+      target: 'branch',
+      source_type: 'Repository',
+      enforcement: 'active',
+      conditions: { ref_name: { exclude: [], include: ['~DEFAULT_BRANCH'] } },
+      rules: [
+        { type: 'deletion' },
+        { type: 'non_fast_forward' },
+        {
+          type: 'pull_request',
+          parameters: {
+            required_approving_review_count: 0,
+            allowed_merge_methods: ['merge', 'squash', 'rebase'],
+          },
+        },
+        {
+          type: 'required_status_checks',
+          parameters: {
+            strict_required_status_checks_policy: false,
+            required_status_checks: [
+              { context: 'main', integration_id: 15368 },
+              { context: 'pr-title', integration_id: 15368 },
+              { context: 'e2e', integration_id: 15368 },
+            ],
+          },
+        },
+      ],
+      bypass_actors: [],
+      _links: { self: { href: 'https://api.github.com/…' } },
+    };
+    const apply = (filter) => {
+      const result = spawnSync('jq', ['-c', filter], {
+        input: JSON.stringify(live),
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const main = apply(mainBody);
+    assert.deepEqual(Object.keys(main).sort(), [
+      'bypass_actors',
+      'conditions',
+      'enforcement',
+      'name',
+      'rules',
+      'target',
+    ]);
+    assert.deepEqual(
+      main.rules.map((rule) => rule.type),
+      [
+        'deletion',
+        'non_fast_forward',
+        'pull_request',
+        'required_status_checks',
+      ],
+    );
+    assert.deepEqual(main.rules[2].parameters, {
+      required_approving_review_count: 0,
+      allowed_merge_methods: ['squash'],
+    });
+    assert.deepEqual(main.rules[3].parameters, {
+      strict_required_status_checks_policy: false,
+      required_status_checks: [
+        { context: 'main', integration_id: 15368 },
+        { context: 'e2e', integration_id: 15368 },
+        { context: 'pr-title', integration_id: 15368 },
+      ],
+    });
+    assert.deepEqual(main.conditions, live.conditions);
+    const release = apply(releaseBody);
+    assert.equal(release.name, 'release branches require pull requests');
+    assert.deepEqual(release.conditions, {
+      ref_name: { include: ['refs/heads/release/**'], exclude: [] },
+    });
+    assert.deepEqual(release.rules, main.rules);
+  });
+
+  it('lets only the release App create, move or delete a v* tag', () => {
+    const { out } = dryRun(SCRIPT, REPO);
+    const body = bodyAfter(out, "# 4. 'release tags'");
+    assert.equal(
+      body,
+      '{"name":"release tags","target":"tag","enforcement":"active","conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}],"bypass_actors":[{"actor_id":<release-app-id>,"actor_type":"Integration","bypass_mode":"always"}]}',
+    );
+  });
+
+  it('makes staging deployable from main only, and production from v* tags only after the owner approves', () => {
+    const { out } = dryRun(SCRIPT, REPO);
+    assert.equal(
+      bodyAfter(out, '# 5. the environments'),
+      '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}',
+    );
+    assert.ok(
+      out.includes(
+        '+ gh api --method POST repos/owner-x/repo-y/environments/staging/deployment-branch-policies -f name=main -f type=branch',
+      ),
+    );
+    assert.ok(out.includes('+ gh api users/owner-x --jq .id'));
+    const production = JSON.parse(
+      bodyAfter(out, '+ gh api users/owner-x --jq .id').replace(
+        '<owner-user-id>',
+        '1',
+      ),
+    );
+    assert.deepEqual(production, {
+      wait_timer: 0,
+      prevent_self_review: false,
+      can_admins_bypass: false,
+      reviewers: [{ type: 'User', id: 1 }],
+      deployment_branch_policy: {
+        protected_branches: false,
+        custom_branch_policies: true,
+      },
+    });
+    assert.ok(
+      out.includes(
+        "+ gh api --method POST repos/owner-x/repo-y/environments/production/deployment-branch-policies -f 'name=v*' -f type=tag",
+      ),
+    );
+  });
+
+  it('sets the App’s client ID as a variable and its key as a secret, never echoing the key', () => {
+    const { out } = dryRun(SCRIPT, REPO);
+    assert.ok(
+      out.includes(
+        "+ gh variable set RELEASE_APP_CLIENT_ID --repo owner-x/repo-y --body '<client-id>'",
+      ),
+    );
+    assert.ok(
+      out.includes(
+        "+ gh secret set RELEASE_APP_PRIVATE_KEY --repo owner-x/repo-y '<' '<app.pem>'",
+      ),
+    );
+    assert.doesNotMatch(read(`tools/ops/${SCRIPT}`), /cat "\$APP_KEY_FILE"/);
+  });
+
+  it('refuses --apply without a numeric App id, or with half the App’s credentials, running nothing', () => {
+    rmSync(marker, { force: true });
+    for (const args of [
+      [...REPO, '--apply'],
+      [...REPO, '--apply', '--release-app-id', 'my-app'],
+      [
+        ...REPO,
+        '--apply',
+        '--release-app-id',
+        '7',
+        '--release-app-client-id',
+        'Iv1.x',
+      ],
+    ]) {
+      const run = dryRun(SCRIPT, args);
+      assert.equal(run.status, 2, args.join(' '));
+    }
+    assert.equal(existsSync(marker), false);
   });
 });
