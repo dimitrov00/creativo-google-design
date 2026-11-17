@@ -1,0 +1,134 @@
+name: deploy
+description: >-
+  One environment's deploy, in the runbook's order (docs/production-deploy.md
+  §3; ADR 2026-11-18 E6): the release stamp, the checkout pointed at the
+  project, the environment's web build, the CSP gate, Workload Identity
+  Federation, the preflight, then Firestore indexes and TTL (and a bounded
+  wait until they serve), rules, functions and hosting back to back, and a
+  smoke check of the live site. Non-interactive and never forced: a deploy
+  that would delete a function, raise the minimum bill or drop an index
+  stops and names the command. Called by deploy-staging.yml and
+  deploy-production.yml after their own refusal of the legacy projects.
+inputs:
+  environment:
+    description: staging or production — the web build configuration and the flag map
+    required: true
+  project:
+    description: The Firebase project id (the environment's FIREBASE_PROJECT_ID variable)
+    required: true
+  workload-identity-provider:
+    description: The environment's GCP_WORKLOAD_IDENTITY_PROVIDER variable
+    required: true
+  service-account:
+    description: The environment's GCP_DEPLOY_SERVICE_ACCOUNT variable
+    required: true
+  ref:
+    description: The ref the build names its release by (a tag, or the branch the commit is on)
+    required: true
+  sha:
+    description: The commit being deployed
+    required: true
+runs:
+  using: composite
+  steps:
+    # The stamp names this build everywhere: the web bundle (a define), the
+    # functions' .env.<project> (CREATIVO_RELEASE, read by the predeploy's
+    # flags writer) and the Hosting release message. FLAGS_ENV picks the
+    # environment's flag map and App Check mode for the flags writer and the
+    # preflight's P10 — for every step from here on.
+    - name: Name the release and the environment
+      shell: bash
+      env:
+        RELEASE_REF: ${{ inputs.ref }}
+        RELEASE_SHA: ${{ inputs.sha }}
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        stamp="$(node tools/release/release-stamp.mjs --ref "$RELEASE_REF" --sha "$RELEASE_SHA")"
+        echo "CREATIVO_RELEASE=$stamp" >> "$GITHUB_ENV"
+        echo "FLAGS_ENV=$ENVIRONMENT" >> "$GITHUB_ENV"
+        echo "release $stamp to $ENVIRONMENT"
+
+    - name: Point the checkout at the project
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: node tools/release/deploy-target.mjs --project "$PROJECT" --environment "$ENVIRONMENT"
+
+    - name: Build the web for the environment
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: pnpm exec nx build web --configuration="$ENVIRONMENT" --skip-nx-cache "--define.CREATIVO_RELEASE=\"'$CREATIVO_RELEASE'\""
+
+    - name: The CSP the build needs is the one Hosting serves
+      shell: bash
+      run: node tools/verify/csp/check-csp.mjs
+
+    - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.workload-identity-provider }}
+        service_account: ${{ inputs.service-account }}
+
+    # The golden rule: the preflight first, in both scopes — but P2 and P3,
+    # which only the index deploy below can satisfy when a release adds an
+    # index.
+    - name: Preflight, both scopes, before anything deploys
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: |
+        node tools/verify/preflight/preflight.mjs --scope web --only P1,P4,P5,P6,P10 --project "$PROJECT"
+        node tools/verify/preflight/preflight.mjs --scope functions --only P6,P7,P8,P9,P10 --project "$PROJECT"
+
+    - name: Deploy the Firestore indexes and TTL policies (additive)
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: pnpm exec firebase deploy --only firestore:indexes --project "$PROJECT" --non-interactive
+
+    # A query that runs before its composite is READY fails, and only in a
+    # hosted project: wait until P2 and P3 pass — at most 20 minutes.
+    - name: Wait until every index is READY and every TTL ACTIVE
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: |
+        for attempt in $(seq 1 40); do
+          if node tools/verify/preflight/preflight.mjs --scope functions --only P2,P3 --project "$PROJECT"; then
+            exit 0
+          fi
+          echo "attempt ${attempt}: not yet — waiting 30 s"
+          sleep 30
+        done
+        echo "::error::the indexes or TTL policies did not finish within 20 minutes"
+        exit 1
+
+    - name: Deploy the Firestore and Storage rules
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: pnpm exec firebase deploy --only firestore:rules,storage --project "$PROJECT" --non-interactive
+
+    # The predeploy builds the functions, writes the environment's flag map,
+    # App Check mode and release stamp (FLAGS_ENV, CREATIVO_RELEASE) and runs
+    # the functions-scope preflight in full.
+    - name: Deploy the functions
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: pnpm exec firebase deploy --only functions --project "$PROJECT" --non-interactive
+
+    # Straight after the functions: they share the callable wire. The
+    # predeploy runs the web-scope preflight in full over the build above.
+    - name: Deploy hosting
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: pnpm exec firebase deploy --only hosting:web --project "$PROJECT" --non-interactive --message "release $CREATIVO_RELEASE"
+
+    - name: Smoke-check the live site
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: node tools/release/smoke.mjs --origin "https://$PROJECT.web.app" --project "$PROJECT" --release "$CREATIVO_RELEASE"

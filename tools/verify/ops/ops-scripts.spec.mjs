@@ -94,9 +94,10 @@ after(() => {
 });
 
 describe('tools/ops — every script, dry by default', () => {
-  it('holds the five scripts and the eight alert policies the plans name', () => {
+  it('holds the six scripts and the eight alert policies the plans name', () => {
     assert.deepEqual(SCRIPTS, [
       'audit-logs.sh',
+      'deploy-identity.sh',
       'firestore-backups.sh',
       'github-repo-settings.sh',
       'log-metrics.sh',
@@ -152,6 +153,27 @@ describe('tools/ops — every script, dry by default', () => {
           /--project=creativo-v2-prod|get-iam-policy creativo-v2-prod/,
         );
         assert.equal(existsSync(marker), false, 'the stub gcloud was called');
+      });
+    }
+
+    if (GCLOUD_SCRIPTS.includes(script)) {
+      it(`${script}: refuses the legacy projects with exit 2 — before printing or running anything, dry run included (ADR 2026-11-18, E11)`, () => {
+        const text = read(`tools/ops/${script}`);
+        assert.match(text, /^\. "\$HERE\/lib\/legacy-projects\.sh"$/m);
+        assert.match(text, /^done\nrefuse_legacy_project "\$PROJECT"$/m);
+        for (const id of ['creativo-prod', 'creativo-staging']) {
+          for (const args of [
+            ['--project', id],
+            ['--project', id, '--apply'],
+          ]) {
+            rmSync(marker, { force: true });
+            const run = dryRun(script, args);
+            assert.equal(run.status, 2, `${script} ${args.join(' ')}`);
+            assert.equal(run.out, '');
+            assert.match(run.err, /^refused: .*old, live app/);
+            assert.equal(existsSync(marker), false);
+          }
+        }
       });
     }
 
@@ -656,6 +678,140 @@ describe('tools/ops/github-repo-settings.sh — the release flow’s GitHub sett
     ]) {
       const run = dryRun(SCRIPT, args);
       assert.equal(run.status, 2, args.join(' '));
+    }
+    assert.equal(existsSync(marker), false);
+  });
+});
+
+describe('tools/ops/deploy-identity.sh — Workload Identity Federation per environment (ADR 2026-11-18, E8)', () => {
+  const SCRIPT = 'deploy-identity.sh';
+  const args = (environment) => [
+    '--project',
+    'creativo-v2-prod',
+    '--environment',
+    environment,
+    '--repo',
+    'owner-x/repo-y',
+  ];
+
+  it('federates this repository’s jobs of one environment — by repository id, and for production only from refs/tags/v*', () => {
+    const production = dryRun(SCRIPT, args('production')).out;
+    assert.ok(
+      production.includes(
+        "+ gcloud iam workload-identity-pools providers create-oidc creativo-deploy --location=global --workload-identity-pool=github-actions --issuer-uri=https://token.actions.githubusercontent.com --attribute-mapping=google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref '--attribute-condition=assertion.repository_id == '\\''REPOSITORY_ID'\\'' && assertion.environment == '\\''production'\\'' && assertion.ref.startsWith('\\''refs/tags/v'\\'')' --project=creativo-v2-prod",
+      ),
+      production,
+    );
+    const staging = dryRun(SCRIPT, args('staging')).out;
+    assert.match(
+      staging,
+      /assertion\.environment == '\\''staging'\\'' && assertion\.ref == '\\''refs\/heads\/main'\\''/,
+    );
+    assert.doesNotMatch(staging, /refs\/tags/);
+  });
+
+  it('lets only that environment’s jobs impersonate the deploy account', () => {
+    const { out } = dryRun(SCRIPT, args('production'));
+    assert.ok(
+      out.includes(
+        '+ gcloud iam service-accounts add-iam-policy-binding creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com --role=roles/iam.workloadIdentityUser --member=principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions/subject/repo:owner-x/repo-y:environment:production --project=creativo-v2-prod',
+      ),
+    );
+  });
+
+  it('grants the deploy account exactly the roles firebase-tools deploys with — never owner, editor or an IAM admin', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    const roles = [
+      ...out.matchAll(
+        /^\+ gcloud projects add-iam-policy-binding creativo-v2-prod --member=serviceAccount:creativo-deployer@creativo-v2-prod\.iam\.gserviceaccount\.com --role=(\S+) --condition=None$/gm,
+      ),
+    ].map((match) => match[1]);
+    assert.deepEqual(roles, [
+      'roles/firebasehosting.admin',
+      'roles/firebaserules.admin',
+      'roles/datastore.indexAdmin',
+      'roles/datastore.viewer',
+      'roles/cloudfunctions.admin',
+      'roles/run.admin',
+      'roles/cloudscheduler.admin',
+      'roles/secretmanager.viewer',
+      'roles/artifactregistry.reader',
+      'roles/serviceusage.serviceUsageConsumer',
+      'roles/serviceusage.serviceUsageViewer',
+      'roles/logging.viewer',
+    ]);
+    assert.doesNotMatch(
+      out,
+      /roles\/(owner|editor|resourcemanager\.projectIamAdmin|iam\.securityAdmin|secretmanager\.admin|firebase\.admin)\b/,
+    );
+    // actAs on the runtime account alone, never on the project.
+    assert.ok(
+      out.includes(
+        '+ gcloud iam service-accounts add-iam-policy-binding PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/iam.serviceAccountUser --member=serviceAccount:creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com --project=creativo-v2-prod',
+      ),
+    );
+    assert.doesNotMatch(
+      out,
+      /add-iam-policy-binding creativo-v2-prod [^\n]*serviceAccountUser/,
+    );
+  });
+
+  it('grants up front what a first deploy would grant itself — the agents, the runtime account’s secrets', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    for (const line of [
+      '--member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator',
+      '--member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/run.invoker',
+      '--member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/eventarc.eventReceiver',
+      '--member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-firebasestorage.iam.gserviceaccount.com --role=roles/firebaserules.firestoreServiceAgent',
+    ]) {
+      assert.ok(out.includes(line), line);
+    }
+    for (const secret of [
+      'WALKIN_ID_KEY',
+      'LOG_DIGEST_KEY',
+      'OTP_POSTMARK_TOKEN',
+      'OTP_EMAIL_FROM',
+    ]) {
+      assert.ok(
+        out.includes(
+          `+ gcloud secrets add-iam-policy-binding ${secret} --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor --project=creativo-v2-prod`,
+        ),
+        secret,
+      );
+    }
+  });
+
+  it('sets the environment’s three variables — no secret, no key', () => {
+    const { out } = dryRun(SCRIPT, args('production'));
+    assert.deepEqual(
+      [
+        ...out.matchAll(
+          /^\+ gh variable set (\S+) --env production --repo owner-x\/repo-y --body (\S+)$/gm,
+        ),
+      ].map((match) => [match[1], match[2]]),
+      [
+        ['FIREBASE_PROJECT_ID', 'creativo-v2-prod'],
+        [
+          'GCP_WORKLOAD_IDENTITY_PROVIDER',
+          'projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions/providers/creativo-deploy',
+        ],
+        [
+          'GCP_DEPLOY_SERVICE_ACCOUNT',
+          'creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com',
+        ],
+      ],
+    );
+    const text = read(`tools/ops/${SCRIPT}`);
+    assert.doesNotMatch(text, /keys create|gh secret set|credentials_json/);
+  });
+
+  it('refuses --apply without an environment, and an environment of no name, running nothing', () => {
+    rmSync(marker, { force: true });
+    for (const bad of [
+      ['--project', 'creativo-v2-prod', '--apply', '--repo', 'owner-x/repo-y'],
+      ['--project', 'creativo-v2-prod', '--environment', 'prod'],
+    ]) {
+      assert.equal(dryRun(SCRIPT, bad).status, 2, bad.join(' '));
     }
     assert.equal(existsSync(marker), false);
   });

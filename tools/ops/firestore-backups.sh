@@ -25,6 +25,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=names.env
 . "$HERE/names.env"
+# shellcheck source=lib/legacy-projects.sh
+. "$HERE/lib/legacy-projects.sh"
 
 usage() {
   echo 'usage: tools/ops/firestore-backups.sh [--project <id>] [--apply]   (a dry run without --apply)'
@@ -42,6 +44,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+refuse_legacy_project "$PROJECT"
 if [ "$APPLY" = 1 ] && [ -z "$PROJECT" ]; then
   echo "--apply needs --project <id> (or PROJECT_ID)" >&2
   exit 2

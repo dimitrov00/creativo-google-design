@@ -2,13 +2,14 @@
 
 Everything that has to happen before, during and after a production deploy of
 Creativo: the web app on Firebase Hosting, Cloud Functions gen 2 (Node 22),
-Firestore, Storage and Auth. It is for the owner and for any agent asked to
-ship.
+Firestore, Storage and Auth. It is for the owner. **Agents never deploy:
+only CI does** (section «Environments and releases», next).
 
-**The app has never been deployed.** `.firebaserc` still names the placeholder
-project `creativo-replace-me`, and no hosted project exists yet
-(`.firebaserc:2-11`, `docs/architecture/firestore-runbook.md:238`). Section 1
-is therefore all still to do.
+**The app has never been deployed.** `.firebaserc` names placeholder
+projects only (`creativo-replace-me`, and the `staging` and `production`
+aliases), and no hosted project exists yet
+(`docs/architecture/firestore-runbook.md:238`). Section 1 is therefore all
+still to do, once per environment.
 
 **Golden rule: run the preflight first, in both scopes.**
 
@@ -45,18 +46,18 @@ refuses an `ENFORCE` the web cannot satisfy: the built bundle in the web
 scope, the LIVE site in the functions scope (unreadable = FAIL; the App Check
 section below). Its ten checks are:
 
-| Check | Passes when                                                                                                       |
-| ----- | ----------------------------------------------------------------------------------------------------------------- |
-| P1    | `locations/loc-center` exists, the read guard admits it, and its `timeZone` is a canonical IANA zone              |
-| P2    | all 8 `purgeAt` TTL policies are `ACTIVE`                                                                         |
-| P3    | all 25 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates) |
-| P4    | the built web bundle contains no `REPLACE_ME` and names the project id                                            |
-| P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host             |
-| P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project                      |
-| P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)  |
-| P8    | no `@launchBlocker` export in `apps/functions/src` is used at all (functions scope only)                          |
-| P9    | always — informational: reports PITR, the backup schedules, the audit sink and its bucket (functions scope only)  |
-| P10   | `config/app-check.json`'s mode is `OFF` or `MONITOR`, or `ENFORCE` and the web carries the site key (both scopes) |
+| Check | Passes when                                                                                                                        |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| P1    | `locations/loc-center` exists, the read guard admits it, and its `timeZone` is a canonical IANA zone                               |
+| P2    | all 8 `purgeAt` TTL policies are `ACTIVE`                                                                                          |
+| P3    | all 25 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates)                  |
+| P4    | the built web bundle contains no `REPLACE_ME` and names the project id                                                             |
+| P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host                              |
+| P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project, or one of the old app's two projects |
+| P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)                   |
+| P8    | no `@launchBlocker` export in `apps/functions/src` is used at all (functions scope only)                                           |
+| P9    | always — informational: reports PITR, the backup schedules, the audit sink and its bucket (functions scope only)                   |
+| P10   | `config/app-check.json`'s mode is `OFF` or `MONITOR`, or `ENFORCE` and the web carries the site key (both scopes)                  |
 
 The `@emulatorOnly` exports are the console OTP sender (`consoleOtpSender`),
 the fixed-code OTP crypto (`fixedCodeOtpCryptoPorts`) and its code
@@ -92,6 +93,158 @@ behaviour was checked against (`firestore-runbook.md:148`), so run them as
 `pnpm exec firebase …` unless your global CLI is the same version. Each item
 ends with its source. Items marked **decide** have no ruling in the repo yet,
 so the owner has to make the call.
+
+---
+
+## Environments and releases
+
+**Only CI deploys** (since 2026-11-18;
+`docs/architecture/decisions/2026-11-18-releases-and-environments.md`).
+Staging is `main`: every merge deploys there once CI passes on it.
+Production is the release tags: merging release-please's PR tags `vX.Y.Z`,
+and the tag deploys once you approve it. Both run section 3 of this
+checklist, in its order, non-interactively and never with `--force`
+(`.github/actions/deploy`). The rest of this checklist still applies to
+each project; what changed is who runs section 3.
+
+|                       | staging                                           | production                                           |
+| --------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| GitHub Environment    | `staging`                                         | `production`                                         |
+| Firebase project      | a NEW project; suggested id `creativo-v2-staging` | a NEW project; suggested id `creativo-v2-prod`       |
+| Deploys               | after CI passes on `main` (or `release/**`)       | from a tag `v*`, after you approve                   |
+| Workflow              | `.github/workflows/deploy-staging.yml`            | `.github/workflows/deploy-production.yml`            |
+| Web build             | `web:build:staging` (`environment.staging.ts`)    | `web:build:production` (`environment.production.ts`) |
+| Flags, App Check mode | the `staging` maps of `config/`                   | the `production` maps of `config/`                   |
+| Sign-in codes         | its own Postmark server                           | its own Postmark server                              |
+| Address               | `https://<id>.web.app`                            | `https://<id>.web.app`                               |
+
+> **Never `creativo-prod` or `creativo-staging`.** Those projects run your
+> old, live React app. Nothing here deploys to them, reads them or
+> configures them: the preflight's P6, both deploy workflows' first step,
+> every `tools/ops` script and `tools/release/deploy-target.mjs` refuse
+> them, and a spec fails if a config, workflow or environment file names
+> either. The migration of their data is a later, separate plan.
+
+Project ids are configuration, never code: each environment's GitHub
+variables name its project, its Workload Identity provider and its deploy
+service account. `.firebaserc` and `firebase.json` keep placeholders; each
+deploy points its throwaway checkout at its own project
+(`tools/release/deploy-target.mjs`: the CSP's callables host, the default
+project and the `web` hosting target on the project's default site). There
+are no JSON keys and no deploy secrets in GitHub; the runtime secrets live
+only in each project's Secret Manager.
+
+### Once, in this order
+
+- [ ] **1. Create the two projects, each on Blaze with a budget alert.**
+      Firebase console → Add project, twice. Upgrade each to Blaze. In
+      Google Cloud console → Billing → Budgets & alerts, give each project
+      its own budget (for example 25 € a month for staging, 100 € for
+      production) with alerts at 50 %, 90 % and 100 %. A budget alerts, it
+      does not stop spending.
+- [ ] **2. Set each project up as section 1 says**: the Firestore location
+      and the (default) database, the default Storage bucket, `WALKIN_ID_KEY`
+      and `LOG_DIGEST_KEY`, and the OTP sender — **a separate Postmark server
+      for staging**, with its own token and its own from-address in the
+      staging project's Secret Manager, so a test never spends production's
+      volume or sending reputation. Then section 2's `locations/loc-center`:
+      every deploy's preflight refuses a project without it (P1).
+- [ ] **3. Commit each project's public web config** in a PR: Firebase
+      console → Project settings → Your apps → add a Web app → the config
+      object, into `apps/web/src/environments/environment.staging.ts` and
+      `environment.production.ts`. These values are public. Until they are
+      there, the preflight's P4 stops the deploy (the bundle carries
+      `REPLACE_ME`).
+- [ ] **4. Create the release App.** GitHub → Settings → Developer settings
+      → GitHub Apps → New GitHub App: any name (for example
+      `creativo-release`), homepage the repository's URL, webhook off,
+      repository permissions **Contents: Read and write**, **Pull requests:
+      Read and write**, **Issues: Read and write** (Metadata: Read is
+      automatic), "Only on this account". Create it, note its **App ID** and
+      **Client ID**, generate a **private key** (a `.pem` download), then
+      Install App → only this repository. Why an App: a release PR or tag
+      made with `GITHUB_TOKEN` would start no workflow, so CI would never
+      run on the release PR and the tag would never deploy.
+- [ ] **5. Apply the repository settings.** Read the dry run, then apply
+      it, then delete the `.pem` from your disk:
+
+```bash
+tools/ops/github-repo-settings.sh
+```
+
+```bash
+tools/ops/github-repo-settings.sh --apply --release-app-id <App ID> --release-app-client-id <Client ID> --release-app-key-file <path/to/key.pem>
+```
+
+It sets squash-only merging (the PR title and description become the
+commit), deletes merged branches, adds the `pr-title` check to the `main`
+ruleset, puts the same rules on `release/**`, lets only the App create a
+`v*` tag, and creates the two environments: `staging` deployable from
+`main` only, `production` from tags `v*` only and only after **your**
+approval (you are its one required reviewer).
+
+- [ ] **6. Create each project's deploy identity.** Signed in to `gcloud`
+      as the project's Owner and to `gh` as yourself, read the dry run,
+      then apply it — once with `--environment staging` and the staging id,
+      once with `--environment production` and the production id. It enables
+      the APIs, creates the Workload Identity pool, its GitHub provider (this
+      repository's id, that environment's jobs, and for production only
+      `refs/tags/v*`), the deploy service account and its roles, grants the
+      bindings a first deploy would otherwise ask for, and sets the
+      environment's three variables. Run it after step 2: it grants the
+      runtime account access to the four secrets, which must exist.
+
+```bash
+tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging
+```
+
+```bash
+tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --apply
+```
+
+- [ ] **7. The first staging deploy.** Merge any PR, or re-run the latest
+      CI run on `main`; watch Actions → Deploy staging. Then, once per
+      project: `firebase functions:artifacts:setpolicy --project "$PROJECT_ID"`
+      (the deploy account may read the functions' image cleanup policy, not
+      set it), and section 3.5 (the metrics, alerts and backstops). If the
+      first deploy names a missing permission, add that role to
+      `DEPLOY_ROLES` in `tools/ops/deploy-identity.sh` in a PR, and re-run
+      the script.
+- [ ] **8. The first release.** release-please keeps a PR open titled
+      `chore: release 0.1.0`. Merge it when staging looks right; Actions →
+      Deploy production waits for you: Review deployments → Approve.
+
+No custom domain yet: both environments serve on `<id>.web.app` until the
+migration from the old app is planned — its domain is part of that plan.
+When one comes, add it to the reCAPTCHA key's domains (App Check) and to
+Auth's authorised domains.
+
+### Every release
+
+1. Features and fixes merge to `main`; each one reaches staging on its own.
+   Unreleased features stay dark in production: its flag map keeps them off.
+2. release-please's PR collects them, with the next version and the
+   changelog. Merge it when you want to release; agents never do.
+3. The tag starts Deploy production. Approve it (Actions → the run →
+   Review deployments). The job refuses a tag whose commit did not pass CI.
+4. **Rollback:** Actions → Deploy production → Run workflow → «Use workflow
+   from»: **Tags** → the previous `vX.Y.Z`, and the same tag in `tag`; then
+   approve. It deploys that tag's code with that tag's workflow. If the
+   newer release added a function, the rollback stops at the deletion and
+   names the command (`firebase functions:delete …`): delete it yourself,
+   or roll back only the web — Firebase console → Hosting → release history
+   → Rollback, which is instant (each release is named `release <version>`).
+
+### Hotfixes
+
+- **Default:** a `fix:` PR to `main`, like any change. Staging deploys it,
+  release-please's PR now proposes the patch, you merge it and approve.
+- **Rare:** only when `main` holds work that must not ship and cannot be
+  kept dark. Land the fix on `main` first; cut `release/vX.Y` from the live
+  tag (`git push origin vX.Y.Z:refs/heads/release/vX.Y`); cherry-pick the
+  fix into a PR against it. CI runs on it, staging deploys it,
+  release-please opens `chore(release/vX.Y): release X.Y.Z+1`, and its tag
+  deploys like any other.
 
 ---
 
@@ -133,48 +286,40 @@ so the owner has to make the call.
 
 ### Project id, hosting site, web config, CSP host
 
-- [ ] **Replace `creativo-replace-me` in `.firebaserc`** (in both `default` and
-      `targets`) with the real id. Then register it with the CLI yourself:
+- [ ] **Leave `.firebaserc` and `firebase.json` on their placeholders.**
+      Each deploy points its own throwaway checkout at its project
+      (`tools/release/deploy-target.mjs`): `.firebaserc`'s default and the
+      `web` hosting target on the project's default site
+      (`<id>.web.app`, which every project has — no
+      `hosting:sites:create`). For your own CLI, you may replace the
+      `staging` and `production` aliases with the real ids in a PR; the
+      deploy then refuses an alias that names another project than the
+      environment's `FIREBASE_PROJECT_ID`, so the two can never drift.
 
-```bash
-firebase use --add
-```
+Source: `.firebaserc`; `tools/release/deploy-target.mjs`; P6 refuses the
+placeholders and the legacy projects (`checkEnvironment`).
 
-- [ ] **Create the hosting site and map it to the `web` target:**
-
-```bash
-firebase hosting:sites:create creativo-web --project "$PROJECT_ID"
-```
-
-```bash
-firebase target:apply hosting web creativo-web --project "$PROJECT_ID"
-```
-
-Hosting site ids are global across Firebase. If `creativo-web` is taken, pick
-another id and put it in `.firebaserc` → `targets` → `<id>` → `hosting` →
-`web` (the template comment calls it `<site-id>`).
-
-Source: `.firebaserc:2-12`; P6 refuses the placeholder
-(`tools/verify/preflight/preflight.mjs:23-24`, `:228-231` (`checkEnvironment`)).
-
-- [ ] **Fill in the production web Firebase config.** Replace every
+- [ ] **Fill in each environment's web Firebase config.** Replace every
       `REPLACE_ME` in `apps/web/src/environments/environment.production.ts`
-      (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId)
-      with the values from Firebase console → Project settings → Your apps →
-      Web. These values are public client config, not secrets. The production
-      build swaps this file in for `environment.ts` (`fileReplacements`). P4
-      fails if the built bundle still contains `REPLACE_ME`, or if no script
-      names the project id as a string literal.
+      and `environment.staging.ts` (apiKey, authDomain, projectId,
+      storageBucket, messagingSenderId, appId) with the values from Firebase
+      console → Project settings → Your apps → Web, of that environment's
+      project. These values are public client config, not secrets. The
+      `production` and `staging` builds swap their file in for
+      `environment.ts` (`fileReplacements`). P4 fails if the built bundle
+      still contains `REPLACE_ME`, or if no script names the project id as a
+      string literal.
       Source: `apps/web/src/environments/environment.production.ts:8-15`;
       `apps/web/project.json:52-57`;
       `tools/verify/preflight/preflight.mjs:427-463` (`checkBundle`).
-- [ ] **Point the CSP at the real callables host.** In `firebase.json`, change
-      `https://us-central1-creativo-replace-me.cloudfunctions.net` to
-      `https://us-central1-<PROJECT_ID>.cloudfunctions.net`. If the host is
-      wrong, every callable (booking, OTP, staff) is blocked by `connect-src`.
-      Edit `.firebaserc` first: `check-csp.mjs` compares `connect-src` with the
-      host of `.firebaserc`'s default project (check (d)), and CI runs it on
-      every push. Leave the App Check sources as they are (reCAPTCHA
+- [ ] **The CSP's callables host is the deploy's.** `firebase.json`'s
+      `connect-src` names `https://us-central1-creativo-replace-me.cloudfunctions.net`;
+      each deploy swaps it for its own project's host
+      (`tools/release/deploy-target.mjs`, which asserts nothing else in the
+      file changed), then runs `check-csp.mjs`, which compares `connect-src`
+      with `.firebaserc`'s (pointed) default project (check (d)), and the
+      preflight's P5. Never commit a real host there: one file serves two
+      projects. Leave the App Check sources as they are (reCAPTCHA
       Enterprise's script and frames under `script-src` / `frame-src`, the
       token exchange `https://content-firebaseappcheck.googleapis.com` under
       `connect-src`; security hardening S-RU-23): check (f) refuses any
@@ -656,10 +801,12 @@ console after use. Do it in this order:
       `appCheck.siteKey` — every web deploy from then on ships it (step 3),
       so finish step 2 first (gitleaks has no rule for site keys; if it ever
       flags one, allowlist it — never bypass the hook).
-- [ ] **2. Staging first.** The same with a staging key — a temporary,
-      NEVER-COMMITTED edit of `environment.production.ts` for the staging
-      build (no staging build configuration exists; P10 judges the edited
-      file). In a real browser with the console open: no ENFORCED CSP
+- [ ] **2. Staging first.** The same with a staging key of the staging
+      project, in `apps/web/src/environments/environment.staging.ts`
+      (`appCheck.siteKey`, committed: it is public), built by
+      `web:build:staging` and judged by P10 (which reads the deploy's own
+      environment file), and `config/app-check.json`'s `staging` mode. In a
+      real browser with the console open: no ENFORCED CSP
       violation — none from `connect-src` either (a host it shows missing
       joins `firebase.json` in the same change as the measurement); record
       the Trusted Types report-only samples of BOTH directives
@@ -837,9 +984,16 @@ pnpm run preflight --project "$PROJECT_ID"
 
 ## 3. Every deploy, in order
 
-Deploys are manual, from a clean `main` whose CI is green. CI
-(`.github/workflows/ci.yml`) has no deploy job and names no secret but
-`GITHUB_TOKEN`. Its jobs run in parallel: `main` runs format, affected
+**CI runs this section** (`.github/actions/deploy`, called by
+`deploy-staging.yml` after CI passes on `main` and by
+`deploy-production.yml` from a release tag after your approval; section
+«Environments and releases»): the preflight in both scopes, then 3.1 with a
+bounded wait for P2 and P3, 3.2, 3.3 and 3.4 back to back, then a smoke
+check of the live site. Non-interactive and never `--force`, so a deploy
+that would delete a function, raise the minimum bill or drop an index stops
+and names the command. What follows is what it runs and why, and what you
+do by hand only when it stops. CI (`.github/workflows/ci.yml`) itself has
+no deploy job and names no secret but `GITHUB_TOKEN`. Its jobs run in parallel: `main` runs format, affected
 lint/test/build/typecheck, the static CSP hash check, the icon checks,
 `pnpm audit` and gitleaks (the audit ignores ONE advisory,
 `GHSA-fc5q-39xc-vjpf`, picomatch's ReDoS, through `pnpm.auditConfig` in
