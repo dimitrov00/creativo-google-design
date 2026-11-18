@@ -191,10 +191,12 @@ approval (you are its one required reviewer).
       once with `--environment production` and the production id. It enables
       the APIs, creates the Workload Identity pool, its GitHub provider (this
       repository's id, that environment's jobs, and for production only
-      `refs/tags/v*`), the deploy service account and its roles, grants the
-      bindings a first deploy would otherwise ask for, and sets the
-      environment's three variables. Run it after step 2: it grants the
-      runtime account access to the four secrets, which must exist.
+      `refs/tags/v*`), the deploy service account and its roles, makes sure
+      the functions' runtime account exists and lets it sign the sign-in
+      tokens (Token Creator on itself), grants the bindings a first deploy
+      would otherwise ask for, and sets the environment's three variables.
+      Run it after step 2: it grants the runtime account access to the four
+      secrets, which must exist.
 
 ```bash
 tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging
@@ -532,24 +534,27 @@ Source: `apps/functions/src/adapters/postmark-otp-sender.adapter.ts`,
       Source: OR-32 (as above).
 - [ ] **Let the functions runtime service account sign custom tokens.** The
       Admin SDK runs with no key file (`initializeApp()`), so
-      `createCustomToken` signs through IAM `signBlob`. Enable the IAM Service
-      Account Credentials API and give the runtime service account (gen 2's
-      default is `<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`) the
-      Service Account Token Creator role on itself. Without this, every OTP
-      verify fails in production, and the emulator never shows it. This is a
-      Firebase platform requirement inferred from the code path; the repo has
-      no doc for it, so check the current Firebase Admin docs.
+      `createCustomToken` signs through IAM `signBlob`: the runtime service
+      account (gen 2's default,
+      `<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`) needs the IAM
+      Service Account Credentials API and the Service Account Token Creator
+      role on itself. Without them every OTP verify fails in production, and
+      the emulator never shows it. **`tools/ops/deploy-identity.sh` does both**
+      (Environments and releases, step 6): its step 0 enables the API, and
+      Compute Engine's, which creates the runtime account in a new project;
+      its step 7 waits for the account and grants the role on the account
+      itself, never project-wide. A project set up before the script did this
+      gets it by re-running the script, which is idempotent. To check, read
+      the account's policy and look for `roles/iam.serviceAccountTokenCreator`
+      with the account itself as the member:
 
 ```bash
-gcloud services enable iamcredentials.googleapis.com --project="$PROJECT_ID"
+gcloud iam service-accounts get-iam-policy "<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" --project="$PROJECT_ID"
 ```
 
-```bash
-gcloud iam service-accounts add-iam-policy-binding "<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" --role=roles/iam.serviceAccountTokenCreator --project="$PROJECT_ID"
-```
-
-Source: `apps/functions/src/adapters/auth-claims.adapter.ts:62`;
-`apps/functions/src/lib/firebase-admin.ts:9`.
+Source: `apps/functions/src/adapters/auth-claims.adapter.ts:73`;
+`apps/functions/src/lib/firebase-admin.ts:9`; `tools/ops/deploy-identity.sh`
+(step 7).
 
 ### Domain
 

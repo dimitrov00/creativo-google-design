@@ -11,7 +11,9 @@
 # (default) Firestore database, its default Storage bucket and the four
 # runtime secrets (WALKIN_ID_KEY, LOG_DIGEST_KEY, OTP_POSTMARK_TOKEN,
 # OTP_EMAIL_FROM) in place. In order:
-#   0. the APIs the deploy and the identity need;
+#   0. the APIs the deploy and the identity need — Compute Engine's among
+#      them, which creates the functions' runtime account (the default
+#      compute one) in a project that has none yet;
 #   1. the project number and the repository's numeric id (reads);
 #   2. a workload identity pool (WIF_POOL_ID);
 #   3. its GitHub OIDC provider (WIF_PROVIDER_ID), whose condition admits
@@ -25,7 +27,11 @@
 #      indexes and TTL, functions gen 2 with the Cloud Run invoker, Cloud
 #      Scheduler, Secret Manager and Artifact Registry read) and what the
 #      preflight reads (Firestore, the API checks, P9's logging);
-#   7. actAs on the functions' runtime account (the default compute one) only;
+#   7. the functions' runtime account: waited for until step 0 has created
+#      it, the deploy account's actAs on it alone, and the account's Token
+#      Creator role on itself — `createCustomToken` signs through IAM
+#      signBlob (the Admin SDK has no key file), so without it every
+#      sign-in code checks out and then fails to mint the session;
 #   8. the bindings a first deploy would grant itself, so the deploy account
 #      never edits the project's IAM policy: the Pub/Sub agent's token
 #      creator, the runtime account's run.invoker and eventarc.eventReceiver,
@@ -65,6 +71,9 @@ APIS=(
   cloudscheduler.googleapis.com
   secretmanager.googleapis.com
   logging.googleapis.com
+  # Creates <number>-compute@developer.gserviceaccount.com, the account the
+  # functions run as (step 7); turning the API on starts no machine.
+  compute.googleapis.com
 )
 
 DEPLOY_ROLES=(
@@ -254,8 +263,26 @@ for role in "${DEPLOY_ROLES[@]}"; do
   run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$DEPLOYER" "--role=$role" --condition=None
 done
 
-echo "# 7. actAs on the functions' runtime account only"
+echo "# 7. the functions' runtime account ${RUNTIME}"
+# Step 0's Compute Engine API creates it, a little after the enable returns:
+# under --apply, wait for it (two minutes at most) before binding to it.
+show gcloud iam service-accounts describe "$RUNTIME" "--project=$PROJECT"
+if [ "$APPLY" = 1 ]; then
+  waited=0
+  until gcloud iam service-accounts describe "$RUNTIME" "--project=$PROJECT" >/dev/null 2>&1; do
+    if [ "$waited" -ge 120 ]; then
+      echo "the runtime account ${RUNTIME} is still missing two minutes after the Compute Engine API was enabled; if it was deleted, restore it (IAM → Service accounts, within 30 days) and re-run" >&2
+      exit 1
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+fi
+# The deploy account may act as this account and no other.
 run gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --role=roles/iam.serviceAccountUser "--member=serviceAccount:$DEPLOYER" "--project=$PROJECT"
+# It signs its own custom tokens (verifyOtpChallenge → createCustomToken →
+# IAM signBlob): Token Creator on itself, never on the project.
+run gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --role=roles/iam.serviceAccountTokenCreator "--member=serviceAccount:$RUNTIME" "--project=$PROJECT"
 
 echo '# 8. the bindings a first deploy would otherwise grant itself'
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:service-${NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com" --role=roles/iam.serviceAccountTokenCreator --condition=None
