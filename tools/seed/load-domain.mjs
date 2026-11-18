@@ -42,7 +42,10 @@
  *   `Collections` (its collection), `StoredDocumentSystem` (the read
  *   guards' registry `guardOf` and their one dispatch `admit`, which a read
  *   passes through before it is trusted) and `ZonedTimeSystem` (its
- *   `checkZone`, the `TimeZone` smart constructor, F-2).
+ *   `checkZone`, the `TimeZone` smart constructor, F-2) — and the shop
+ *   bootstrap (`tools/ops/shop-location.mjs`), which holds a body to the
+ *   same check and its week to `DayHours.parseWeek`, the stored week's
+ *   edge guard.
  *
  * `load-domain.spec.mjs` holds each name equal to the ordinary import.
  *
@@ -99,7 +102,7 @@ export { firestoreCatalogPorts } from './${SEED_SERVER_MODULES.catalog}';
 ${Object.entries(SEED_PLAN_MODULES)
   .map(([name, path]) => `export * as ${name} from './${path}';`)
   .join('\n')}
-export { StreakRule, TenantConfig } from '@core/components';
+export { DayHours, StreakRule, TenantConfig } from '@core/components';
 export { Collections } from '@core/entities';
 export {
   LoyaltyCatalogSystem,

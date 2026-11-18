@@ -949,17 +949,55 @@ Admin-SDK edit of those collections is recorded as `SYSTEM` / `ADMIN_SDK`
       `timeZone` (for example `Europe/Sofia`). It has to exist before the
       functions deploy: P1 runs in both predeploys. Without it, event saves are
       refused with `ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN`. OR-35 keeps the id as
-      `loc-center`. Model the body on the seed's `loc-center` fixture: every
-      key of `ShopLocation` (meta, geo point, venue phone and cover slices):
-      `name`, `shortName`, `address` (localized), `mapUrl`,
-      `photos`, `openingHours` (seven days, Monday first: the envelope every
-      barber's hours are clamped to), `timeZone`, `locationStatus`,
-      `sortOrder`, and the flat geo, phone and cover fields.
+      `loc-center`. The body is every key of `ShopLocation` (meta, geo point,
+      venue phone and cover slices): `name`, `shortName`, `address`
+      (localized), `mapUrl`, `photos`, `openingHours` (seven days, Monday
+      first: the envelope every barber's hours are clamped to), `timeZone`,
+      `locationStatus`, `sortOrder`, and the flat geo, phone and cover
+      fields. **`tools/ops/shop-location.mjs` writes it**, dry by default.
+      It holds the body to the whole shape of a shop (`locations` has no read
+      guard, so P1 alone would pass a shop with no week) and to P1 itself
+      before it writes, creates an absent document, leaves an equal one alone
+      and refuses a different one unless `--replace`, then reads it back
+      through P1. It writes this one document only, never the seed. Staging
+      may take the seed's example shop (`--example`); production takes the
+      real shop: print the example as a template, edit the name, address, map
+      link, coordinates, phone and hours, and pass the file with `--from`
+      (`shop.json` is git-ignored).
       Source: `firestore.rules:539-542`;
       `libs/ecs-core/src/components/tenant-config.data.ts:20-24`;
       `libs/ecs-core/src/entities/shop-location.entity.ts:63`;
       `tools/seed/fixtures/catalog.fixtures.ts:172-208`;
-      `docs/architecture/firestore-runbook.md:210-219`. Check it with:
+      `docs/architecture/firestore-runbook.md:210-219`;
+      `tools/ops/shop-location.mjs`.
+
+The script reads and writes through the Admin SDK under your
+application-default credentials. Sign in once, and set the quota project if
+Firestore asks for one:
+
+```bash
+gcloud auth application-default login
+```
+
+```bash
+gcloud auth application-default set-quota-project "$PROJECT_ID"
+```
+
+Then print the template, read the dry run, and write:
+
+```bash
+node tools/ops/shop-location.mjs --example --template > shop.json
+```
+
+```bash
+node tools/ops/shop-location.mjs --from shop.json --project "$PROJECT_ID"
+```
+
+```bash
+node tools/ops/shop-location.mjs --from shop.json --project "$PROJECT_ID" --apply
+```
+
+Check it with:
 
 ```bash
 pnpm run preflight --project "$PROJECT_ID"

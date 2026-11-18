@@ -24,7 +24,12 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { BookingPolicy, StreakRule, TenantConfig } from '@core/components';
+import {
+  BookingPolicy,
+  DayHours,
+  StreakRule,
+  TenantConfig,
+} from '@core/components';
 import { Collections } from '@core/entities';
 import { clientStatsPaths, projectClientStats } from '@core/pipelines';
 import { Result } from '@core/primitives';
@@ -90,6 +95,11 @@ const PREFLIGHT_DOMAIN_MEMBERS = {
   ZonedTimeSystem: ['checkZone'],
 };
 
+/** What the shop-location bootstrap (tools/ops/shop-location.mjs) holds a shop's week to. */
+const SHOP_LOCATION_MEMBERS = {
+  DayHours: ['parseWeek'],
+};
+
 /** What the seed's commit plan is handed of the read guard (OR-33): the registry itself. */
 const SEED_COMMIT_MEMBERS = {
   StoredDocumentSystem: ['guardOf'],
@@ -105,6 +115,7 @@ const direct = {
   LoyaltyCatalogSystem,
   StoredDocumentSystem,
   ZonedTimeSystem,
+  DayHours,
 };
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -187,6 +198,7 @@ describe('loadSeedDomain', () => {
     for (const [name, members] of [
       ...Object.entries(LOYALTY_DOMAIN_MEMBERS),
       ...Object.entries(PREFLIGHT_DOMAIN_MEMBERS),
+      ...Object.entries(SHOP_LOCATION_MEMBERS),
       ...Object.entries(SEED_COMMIT_MEMBERS),
     ]) {
       for (const member of members) {

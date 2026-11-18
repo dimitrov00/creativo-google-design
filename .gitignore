@@ -65,3 +65,5 @@ __screenshots__/
 /playwright-report/
 
 vitest.config.*.timestamp*
+# The shop body tools/ops/shop-location.mjs writes from (docs/production-deploy.md §2)
+/shop.json
