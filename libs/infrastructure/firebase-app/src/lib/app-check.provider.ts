@@ -16,7 +16,10 @@ import {
 import { ClientIssueKind } from '@core/components';
 import type { ClientIssuePorts } from '@core/ports';
 import { ClientIssueSystem } from '@core/systems';
-import { FIREBASE_APP } from './firebase-app.provider';
+import {
+  FIREBASE_APP,
+  type FirebaseEmulatorConfig,
+} from './firebase-app.provider';
 import { CLIENT_ISSUE_REPORTER } from './reporting-error-handler';
 import { WEB_RELEASE } from './web-release';
 
@@ -107,15 +110,15 @@ type AppCheckUnavailable =
   (typeof AppCheckUnavailable)[keyof typeof AppCheckUnavailable];
 
 /**
- * The page's App Check configuration: the emulators on → EMULATOR (whatever
+ * The page's App Check configuration: emulator addresses → EMULATOR (whatever
  * the site key says — a key is never sent to the emulators); else an empty
  * site key → NONE; else RECAPTCHA_ENTERPRISE over that key.
  */
 export function appCheckConfigOf(environment: {
-  readonly emulators: { readonly enabled: boolean };
+  readonly emulators: FirebaseEmulatorConfig | null;
   readonly appCheck: { readonly siteKey: string };
 }): AppCheckConfig {
-  if (environment.emulators.enabled) {
+  if (environment.emulators !== null) {
     return { appCheckSource: AppCheckSource.Emulator };
   }
   const siteKey = environment.appCheck.siteKey;

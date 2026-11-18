@@ -59,17 +59,22 @@ export function provideFirebaseApp(options: FirebaseOptions) {
   ]);
 }
 
-/** Emulator host/port config, sourced from each app's `environment.ts` — never hardcoded in a provider. */
-export interface FirebaseEmulatorConfig {
-  readonly authUrl?: string;
-  readonly firestoreHost?: string;
-  readonly firestorePort?: number;
-  readonly functionsHost?: string;
-  readonly functionsPort?: number;
+/**
+ * Where the local emulators answer — every emulated service's address in one
+ * struct, sourced from the dev `environment.ts`, never hardcoded in a
+ * provider. A deployed build has none: its environment says `null`, and each
+ * provider below connects to an emulator only when handed this struct whole.
+ */
+export type FirebaseEmulatorConfig = {
+  readonly authUrl: string;
+  readonly firestoreHost: string;
+  readonly firestorePort: number;
+  readonly functionsHost: string;
+  readonly functionsPort: number;
   /** Consumed by `libs/infrastructure/storage`'s own provider — declared here so every emulated service reads one config shape. */
-  readonly storageHost?: string;
-  readonly storagePort?: number;
-}
+  readonly storageHost: string;
+  readonly storagePort: number;
+};
 
 /**
  * The session's persistence, in the order `getAuth` picks it — IndexedDB
@@ -94,7 +99,7 @@ const FIREBASE_AUTH_PERSISTENCE = [
  * (~3.4 kB gzipped, measured on firebase 12.16). A popup or redirect
  * sign-in added later passes its resolver to that call, never back here.
  */
-export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
+export function provideFirebaseAuth(emulator: FirebaseEmulatorConfig | null) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_AUTH,
@@ -102,7 +107,7 @@ export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
         const auth = initializeAuth(inject(FIREBASE_APP), {
           persistence: [...FIREBASE_AUTH_PERSISTENCE],
         });
-        if (emulator?.authUrl) {
+        if (emulator !== null) {
           connectAuthEmulator(auth, emulator.authUrl, {
             disableWarnings: true,
           });
@@ -121,13 +126,15 @@ export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
  */
 export const FUNCTIONS_REGION = 'europe-west8';
 
-export function provideFirebaseFunctions(emulator?: FirebaseEmulatorConfig) {
+export function provideFirebaseFunctions(
+  emulator: FirebaseEmulatorConfig | null,
+) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_FUNCTIONS,
       useFactory: () => {
         const functions = getFunctions(inject(FIREBASE_APP), FUNCTIONS_REGION);
-        if (emulator?.functionsHost && emulator.functionsPort) {
+        if (emulator !== null) {
           connectFunctionsEmulator(
             functions,
             emulator.functionsHost,

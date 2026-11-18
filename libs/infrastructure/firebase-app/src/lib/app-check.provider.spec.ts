@@ -136,17 +136,25 @@ describe('appCheckConfigOf — the page’s App Check source', () => {
     for (const siteKey of ['', 'site-key']) {
       expect(
         appCheckConfigOf({
-          emulators: { enabled: true },
+          emulators: {
+            authUrl: 'http://127.0.0.1:9099',
+            firestoreHost: '127.0.0.1',
+            firestorePort: 8080,
+            functionsHost: '127.0.0.1',
+            functionsPort: 5001,
+            storageHost: '127.0.0.1',
+            storagePort: 9199,
+          },
           appCheck: { siteKey },
         }),
       ).toEqual({ appCheckSource: AppCheckSource.Emulator });
     }
   });
 
-  it('is NONE for an empty site key with the emulators off (production today)', () => {
+  it('is NONE for an empty site key in a deployed build (production today)', () => {
     expect(
       appCheckConfigOf({
-        emulators: { enabled: false },
+        emulators: null,
         appCheck: { siteKey: '' },
       }),
     ).toEqual({ appCheckSource: AppCheckSource.None });
@@ -155,7 +163,7 @@ describe('appCheckConfigOf — the page’s App Check source', () => {
   it('is RECAPTCHA_ENTERPRISE over the site key otherwise', () => {
     expect(
       appCheckConfigOf({
-        emulators: { enabled: false },
+        emulators: null,
         appCheck: { siteKey: 'site-key' },
       }),
     ).toEqual({

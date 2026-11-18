@@ -33,8 +33,19 @@ const { FIREBASE_APP, FIREBASE_AUTH, provideFirebaseAuth } =
 
 const APP = { name: '[DEFAULT]' } as unknown as FirebaseApp;
 
+/** The dev environment's emulator addresses (`environment.ts`, `firebase.json`'s ports). */
+const EMULATORS = {
+  authUrl: 'http://127.0.0.1:9099',
+  firestoreHost: '127.0.0.1',
+  firestorePort: 8080,
+  functionsHost: '127.0.0.1',
+  functionsPort: 5001,
+  storageHost: '127.0.0.1',
+  storagePort: 9199,
+} as const;
+
 /** The auth instance a root built with `provideFirebaseAuth(emulator)` hands out. */
-function authFrom(emulator?: Parameters<typeof provideFirebaseAuth>[0]): Auth {
+function authFrom(emulator: Parameters<typeof provideFirebaseAuth>[0]): Auth {
   const injector = createEnvironmentInjector(
     [{ provide: FIREBASE_APP, useValue: APP }, provideFirebaseAuth(emulator)],
     Injector.NULL as EnvironmentInjector,
@@ -56,7 +67,7 @@ describe('provideFirebaseAuth — initializeAuth, no popup/redirect resolver', (
   });
 
   it('initialises the app’s auth with getAuth’s persistence order and nothing else', () => {
-    expect(authFrom()).toBe(AUTH);
+    expect(authFrom(null)).toBe(AUTH);
 
     expect(authMocks.initializeAuth).toHaveBeenCalledTimes(1);
     const [app, deps] = authMocks.initializeAuth.mock.calls[0] ?? [];
@@ -75,7 +86,7 @@ describe('provideFirebaseAuth — initializeAuth, no popup/redirect resolver', (
   });
 
   it('connects the Auth emulator when the environment names one', () => {
-    const auth = authFrom({ authUrl: 'http://127.0.0.1:9099' });
+    const auth = authFrom(EMULATORS);
 
     expect(authMocks.connectAuthEmulator).toHaveBeenCalledWith(
       auth,
@@ -84,9 +95,8 @@ describe('provideFirebaseAuth — initializeAuth, no popup/redirect resolver', (
     );
   });
 
-  it('connects nothing without an emulator', () => {
-    authFrom();
-    authFrom({});
+  it('connects nothing in a deployed build (no emulators)', () => {
+    authFrom(null);
 
     expect(authMocks.connectAuthEmulator).not.toHaveBeenCalled();
   });

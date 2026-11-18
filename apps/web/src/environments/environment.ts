@@ -1,10 +1,12 @@
 // A named import, so the bundle carries only this environment's map.
 import { development as featureFlags } from '@creativo/config/feature-flags';
+import type { WebEnvironment } from './web-environment';
 
-// Firebase's web config is public, non-secret client config — safe to
-// commit; security comes from Firestore/Functions rules and Auth, not from
-// hiding this object. Placeholder values until the real Firebase project
-// exists; fill in once it's created.
+// The local build's environment (`nx serve`, the e2e suites, the CSP smoke):
+// the demo project against the emulators. Firebase's web config is public,
+// non-secret client config — the REPLACE_ME values here never reach a real
+// project, because every service below is pointed at an emulator. The
+// deployed builds swap in environment.staging.ts / environment.production.ts.
 
 // Whoever served the app is also running the emulators: `localhost` on this
 // machine, the Mac's LAN IP when a phone loads it over Wi-Fi. A hardcoded
@@ -16,8 +18,7 @@ const emulatorHost =
     ? '127.0.0.1'
     : globalThis.location.hostname;
 
-export const environment = {
-  production: false,
+export const environment: WebEnvironment = {
   firebase: {
     apiKey: 'REPLACE_ME',
     authDomain: 'REPLACE_ME',
@@ -31,7 +32,6 @@ export const environment = {
   // Matches firebase.json's emulator ports — dev/serve and e2e-against-
   // emulators both use this default configuration unchanged.
   emulators: {
-    enabled: true,
     authUrl: `http://${emulatorHost}:9099`,
     firestoreHost: emulatorHost,
     firestorePort: 8080,

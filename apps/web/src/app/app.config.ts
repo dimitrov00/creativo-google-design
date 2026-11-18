@@ -127,10 +127,6 @@ import { appRoutes } from './app.routes';
 import { ScheduleReuseStrategy } from './schedule-reuse.strategy';
 import { environment } from '../environments/environment';
 
-const emulators = environment.emulators.enabled
-  ? environment.emulators
-  : undefined;
-
 /**
  * THE DATA LAYER LOADS ON ITS FIRST CALL, NOT AT BOOT.
  *
@@ -166,8 +162,8 @@ export const firebaseData = lazyAdapterScope('firebase-data', async () => {
   return {
     module: { firestore, storage },
     providers: [
-      firestore.provideFirestoreDb(emulators),
-      storage.provideFirebaseStorage(emulators),
+      firestore.provideFirestoreDb(environment.emulators),
+      storage.provideFirebaseStorage(environment.emulators),
     ],
     instances: [storage.FIREBASE_STORAGE, FIREBASE_FIRESTORE],
   };
@@ -298,7 +294,7 @@ export const appConfig: ApplicationConfig = {
     // service worker (`web:build:csp-smoke`, OR-31), and a cached shell
     // would outlive the emulators' data anyway.
     provideServiceWorker('ngsw-worker.js', {
-      enabled: !isDevMode() && !environment.emulators.enabled,
+      enabled: !isDevMode() && environment.emulators === null,
       registrationStrategy: 'registerWhenStable:30000',
     }),
 
@@ -325,8 +321,8 @@ export const appConfig: ApplicationConfig = {
     // key (its script bounded), nothing at all without one (production
     // today). The callable client waits for that bounded decision.
     provideFirebaseAppCheck(appCheckConfigOf(environment)),
-    provideFirebaseAuth(emulators),
-    provideFirebaseFunctions(emulators),
+    provideFirebaseAuth(environment.emulators),
+    provideFirebaseFunctions(environment.emulators),
 
     // ── Deployment config ──
     // Explicit even though the token has a matching factory default: this

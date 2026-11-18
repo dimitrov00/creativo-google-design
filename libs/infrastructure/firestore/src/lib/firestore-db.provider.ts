@@ -17,7 +17,7 @@ import {
  * whose injector creates the instance once, on the first data-port call —
  * never at boot, and never in the initial chunk.
  */
-export function provideFirestoreDb(emulator?: FirebaseEmulatorConfig) {
+export function provideFirestoreDb(emulator: FirebaseEmulatorConfig | null) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_FIRESTORE,
@@ -36,7 +36,7 @@ export function provideFirestoreDb(emulator?: FirebaseEmulatorConfig) {
             tabManager: persistentMultipleTabManager(),
           }),
         });
-        if (emulator?.firestoreHost && emulator.firestorePort) {
+        if (emulator !== null) {
           connectFirestoreEmulator(
             firestore,
             emulator.firestoreHost,

@@ -25,13 +25,15 @@ export const FIREBASE_STORAGE = new InjectionToken<FirebaseStorage>(
   'FIREBASE_STORAGE',
 );
 
-export function provideFirebaseStorage(emulator?: FirebaseEmulatorConfig) {
+export function provideFirebaseStorage(
+  emulator: FirebaseEmulatorConfig | null,
+) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_STORAGE,
       useFactory: () => {
         const storage = getStorage(inject(FIREBASE_APP));
-        if (emulator?.storageHost && emulator?.storagePort !== undefined) {
+        if (emulator !== null) {
           connectStorageEmulator(
             storage,
             emulator.storageHost,
