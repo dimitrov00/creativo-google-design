@@ -10,10 +10,11 @@
   "// routes 2026-11-14": "Client onboarding given a ceiling of its own, 1.58 MB (built 1.552, 1.6 kB over the default it stood just under): the session now knows what the owner lets each staff level do (staff permissions, stage T) — the access service, the access system and the permission cells' table, about 6.5 kB in the chunks every route loads, because the shell's menu row and the route gate ask them before any staff screen is open. About 2% above the build rather than the usual 5%.",
   "// routes 2026-11-16": "The staff schedule to 2.13 MB (built 2.091, 1 kB over the 2.09 it stood under since 2026-11-07): team onboarding 1b put the reminder rule (EmploymentSystem.isReminded / remindersOf) and the Team rows' notes for owed sessions and kept roles in the systems and components chunks every route loads; the schedule's own reminders are a chunk of their own, fetched on idle. About 2% above the build rather than the usual 5%.",
   "// routes 2026-11-17": "Admin loyalty to 1.75 MB (built 1.714, 3.7 kB over the 1.71 it stood under since 2026-11-07): the staff welcome's `ui-avatar-orbit` (6.4 kB with its styles) lands in the shared design-system chunk every route loads, because the builder keeps the `@creativo/ui/controls` barrel whole, and loyalty had the least room. About 2% above the build. Client booking now stands 0.8 kB under its 1.76 MB.",
+  "// routes 2026-11-17, later": "Client booking to 1.80 MB (built 1.7605, 0.45 kB over the 1.76 it stood 0.73 kB under): the shell menu's «Моят профил» row and the rule it is shown by (SessionAccessSystem.opensOwnProfile, StaffAccessService.opensOwnProfile) add 1.2 kB to the shell, systems and access chunks every route loads; booking had the least room. About 2% above the build.",
   "defaultRouteBytes": 1550000,
   "routes": {
     "libs/features/staff/dashboard/src/index.ts": 2130000,
-    "libs/features/client/booking/src/index.ts": 1760000,
+    "libs/features/client/booking/src/index.ts": 1800000,
     "libs/features/admin/loyalty/src/index.ts": 1750000,
     "libs/features/staff/analytics/src/index.ts": 1870000,
     "libs/features/client/appointments/src/index.ts": 1640000,

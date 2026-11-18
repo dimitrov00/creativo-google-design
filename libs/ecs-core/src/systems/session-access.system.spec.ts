@@ -16,6 +16,7 @@ import {
 } from '@core/components';
 import {
   AccessScope,
+  BarberId,
   StaffCapability,
   TenantId,
   UserId,
@@ -350,6 +351,47 @@ describe('SessionAccessSystem.decide — the capability gate (staff permissions 
     }
   });
 
+  it('opensOwnProfile: a linked record AND the gate’s own rule — never one without the other', () => {
+    const petar = BarberId.of('petar');
+    const own = (
+      linkedBarberId: BarberId | null,
+      roles: readonly Role[],
+      stored: Record<string, unknown> = {},
+    ) =>
+      SessionAccessSystem.opensOwnProfile(
+        linkedBarberId,
+        StaffPermissions.read(stored),
+        roles,
+      );
+
+    // A barber linked to their record: their page opens.
+    expect(own(petar, [Role.Barber])).toBe(true);
+    // The owner with a chair of their own, too.
+    expect(own(petar, [Role.Admin])).toBe(true);
+    // The owner with no record of their own: everything, and no page.
+    expect(own(null, [Role.Admin])).toBe(false);
+    // A barber not linked (yet): the page has no record to show.
+    expect(own(null, [Role.Barber])).toBe(false);
+    // Linked, but the owner took the profile from barbers: the gate's no.
+    expect(own(petar, [Role.Barber], { barberTeamProfilesScope: 'NONE' })).toBe(
+      false,
+    );
+    // Linked at the front desk: the standard gives the desk no profile.
+    expect(own(petar, [Role.Receptionist])).toBe(false);
+    // Linked, it is exactly the route's gate.
+    for (const roles of [
+      [Role.Barber],
+      [Role.Admin],
+      [Role.ContentManager],
+      [Role.Receptionist],
+      [Role.Client],
+    ]) {
+      expect(own(petar, roles)).toBe(
+        verdict(roles, RouteCapabilities.OwnProfile) === AccessVerdict.Allow,
+      );
+    }
+  });
+
   it('reads the STORED roles it is handed, not the token’s — and turns away a principal that is not active', () => {
     // The token still says barber + admin; the stored account is a client's.
     expect(
@@ -413,6 +455,11 @@ describe('SessionAccessSystem purity', () => {
       decision: SessionAccessSystem.decide(principal, gate),
       capability: SessionAccessSystem.decide(principal, capability),
       readiness: SessionAccessSystem.readiness(principal, 2),
+      ownProfile: SessionAccessSystem.opensOwnProfile(
+        BarberId.of('petar'),
+        capability.permissions,
+        capability.storedRoles,
+      ),
     });
     expect(run()).toEqual(run());
     expect(principal).toEqual(staff);

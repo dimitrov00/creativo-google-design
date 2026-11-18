@@ -8,7 +8,6 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { TranslocoService } from '@jsverse/transloco';
-import { RouteCapabilities } from '@core/components';
 import { StaffSetupSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
@@ -72,7 +71,7 @@ export class StaffSetupCard {
     if (
       barberId === null ||
       !this.team.teamKnown() ||
-      !this.access.opens(RouteCapabilities.OwnProfile)
+      !this.access.opensOwnProfile()
     ) {
       return null;
     }

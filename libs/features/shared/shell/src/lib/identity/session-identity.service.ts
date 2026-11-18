@@ -116,6 +116,15 @@ export class SessionIdentityService {
     this.access.opens(RouteCapabilities.Team),
   );
 
+  /**
+   * The person has a page of their own (`/staff/profile`): an account
+   * linked to a barber record that the route's gate opens for
+   * (`SessionAccessSystem.opensOwnProfile`). The menu's «Моят профил» row —
+   * the way back once the welcome and the setup card have gone; the route's
+   * gate decides on the same capability.
+   */
+  readonly opensOwnProfile = this.access.opensOwnProfile;
+
   /** The uid the cache-clearing effect last saw; `undefined` before its first run. */
   private cacheOwner: UserId | null | undefined = undefined;
 

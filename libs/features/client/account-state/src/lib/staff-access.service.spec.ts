@@ -237,6 +237,36 @@ describe('StaffAccessService — the ways in', () => {
     expect(service.opens(RouteCapabilities.Team)).toBe(false);
   });
 
+  it('opensOwnProfile: a barber linked to their record — never the owner with none, never a half-read session', () => {
+    const { service, stored, permissions, signIn } = harness(
+      staff(Role.Barber),
+    );
+    // Not on a half-read session.
+    expect(service.opensOwnProfile()).toBe(false);
+    stored(account([Role.Barber], IVAN));
+    expect(service.opensOwnProfile()).toBe(false);
+    permissions(cellsOf({}));
+    expect(service.opensOwnProfile()).toBe(true);
+
+    // The owner takes their own profile from barbers: the way in goes.
+    permissions(cellsOf({ barberTeamProfilesScope: None }));
+    expect(service.opensOwnProfile()).toBe(false);
+    permissions(cellsOf({}));
+    expect(service.opensOwnProfile()).toBe(true);
+
+    // The link goes: no record, no page.
+    stored(account([Role.Barber], null));
+    expect(service.opensOwnProfile()).toBe(false);
+
+    // The owner opens everything, and has no page while no record is theirs.
+    signIn(staff(Role.Admin));
+    stored(account([Role.Admin], null));
+    expect(service.opens(RouteCapabilities.OwnProfile)).toBe(true);
+    expect(service.opensOwnProfile()).toBe(false);
+    stored(account([Role.Admin], NIKO));
+    expect(service.opensOwnProfile()).toBe(true);
+  });
+
   it('editsPermissions: the owner alone, by the stored roles', () => {
     const { service, stored, permissions } = harness(staff(Role.Admin));
     expect(service.editsPermissions()).toBe(false);

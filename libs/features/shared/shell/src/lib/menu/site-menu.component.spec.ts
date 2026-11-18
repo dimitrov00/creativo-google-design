@@ -100,6 +100,7 @@ const bg: Translation = {
       staffDay: 'График',
       loyaltyAdmin: 'Лоялност',
       staffAnalytics: 'Анализи',
+      ownProfile: 'Моят профил',
       team: 'Екип',
     },
     hero: { cta: 'Запази час' },
@@ -145,6 +146,8 @@ describe('SiteMenuComponent', () => {
     readsAnalytics?: boolean;
     /** Whoever the Team page opens for — surfaces the «Екип» row. */
     opensTeam?: boolean;
+    /** A linked barber whose own page opens — surfaces «Моят профил». */
+    opensOwnProfile?: boolean;
     /** The account's live bookings — the bookings row counts those still to come. */
     upcoming?: readonly Appointment[];
     /** How many UNREAD notifications the inbox should report. */
@@ -253,6 +256,9 @@ describe('SiteMenuComponent', () => {
     }
     if (inputs.opensTeam !== undefined) {
       fixture.componentRef.setInput('opensTeam', inputs.opensTeam);
+    }
+    if (inputs.opensOwnProfile !== undefined) {
+      fixture.componentRef.setInput('opensOwnProfile', inputs.opensOwnProfile);
     }
     // Several passes: the avatar URL travels principal signal → observable
     // → storage-lookup promise → signal, so the portrait's <img> only
@@ -1117,6 +1123,87 @@ describe('SiteMenuComponent', () => {
       ).toBeTruthy();
       // The schedule keeps the menu's one fill.
       expect(host.querySelectorAll('[data-variant="prominent"]').length).toBe(
+        1,
+      );
+    });
+  });
+
+  describe('the own-profile row', () => {
+    const profileRow = (host: HTMLElement) =>
+      host.querySelector<HTMLAnchorElement>(
+        '[data-testid="menu-staff-profile"]',
+      );
+
+    it('is absent without a page of one’s own — the owner with no linked record included', async () => {
+      // The owner reaches everything, analytics and the team included, and
+      // has no barber record: `opensOwnProfile` is false for them.
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        isAdmin: true,
+        readsAnalytics: true,
+        opensTeam: true,
+        opensOwnProfile: false,
+      });
+      expect(profileRow(fixture.nativeElement)).toBeNull();
+    });
+
+    it('leads to /staff/profile as «Моят профил», in the group under «График» after «Анализи», a quiet row', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        readsAnalytics: true,
+        opensOwnProfile: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      const row = profileRow(host);
+
+      expect(row?.tagName).toBe('A');
+      expect(row?.getAttribute('href')).toBe('/staff/profile');
+      expect(row?.textContent?.trim()).toBe('Моят профил');
+      expect(row?.getAttribute('data-variant')).toBe('plain');
+      const glyph = row?.firstElementChild;
+      expect(glyph?.getAttribute('uiname')).toBe('account.profile');
+      expect(glyph?.getAttribute('data-scale')).toBe('medium');
+
+      // One group with «Анализи», after it; both before booking.
+      const analytics = host.querySelector(
+        '[data-testid="menu-staff-analytics"]',
+      );
+      expect(row?.closest('ui-list-group')).toBe(
+        analytics?.closest('ui-list-group'),
+      );
+      expect(
+        (analytics as Node).compareDocumentPosition(row as Node) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const book = host.querySelector('[data-testid="menu-book"]')!;
+      expect(
+        (row as Node).compareDocumentPosition(book) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // The schedule keeps the menu's one fill.
+      expect(host.querySelectorAll('[data-variant="prominent"]').length).toBe(
+        1,
+      );
+    });
+
+    it('stands in the group alone for someone who reads no analytics', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        opensOwnProfile: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      const row = profileRow(host);
+      expect(row).not.toBeNull();
+      expect(
+        host.querySelector('[data-testid="menu-staff-analytics"]'),
+      ).toBeNull();
+      expect(row?.closest('ui-list-group')?.querySelectorAll('a').length).toBe(
         1,
       );
     });

@@ -62,6 +62,7 @@ async function render<T>(
     readonly colleagues?: readonly BarberVm[];
   } = {},
 ) {
+  const linked = options.linked === undefined ? OWN : options.linked;
   TestBed.configureTestingModule({
     imports: [component],
     providers: [
@@ -96,11 +97,13 @@ async function render<T>(
       {
         provide: StaffAccessService,
         useValue: {
-          linkedBarberId: signal(
-            options.linked === undefined ? OWN : options.linked,
-          ),
+          linkedBarberId: signal(linked),
           scopeOf: () => AccessScope.None,
-          opens: () => options.opensOwn ?? true,
+          // `SessionAccessSystem.opensOwnProfile`: a linked record, and the
+          // route's gate.
+          opensOwnProfile: signal(
+            linked !== null && (options.opensOwn ?? true),
+          ),
         },
       },
       {

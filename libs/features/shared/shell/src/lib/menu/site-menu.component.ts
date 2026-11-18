@@ -110,6 +110,11 @@ export class SiteMenuComponent {
    *  menu's «Екип» row, first in the group of what one manages. UI-only:
    *  the route's capability gate and the callable are the locks. */
   readonly opensTeam = input(false);
+  /** A linked barber whose own page opens (`SessionAccessSystem.opensOwnProfile`)
+   *  — the menu's «Моят профил» row under «График», the way back to
+   *  `/staff/profile` once the welcome and the setup card have gone.
+   *  UI-only: the route's capability gate and the callables are the locks. */
+  readonly opensOwnProfile = input(false);
   readonly closed = output();
 
   /** The onboarding link's `?phase=` word, for the template (D-8.2). */

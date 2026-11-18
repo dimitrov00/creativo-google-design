@@ -4,6 +4,7 @@ import {
   AccessVerdict,
   Principal,
   PrincipalKind,
+  RouteCapabilities,
   type RouteCapability,
   RouteGate,
   type RouteGateRule,
@@ -11,7 +12,7 @@ import {
   type SessionReadinessState,
   type StaffPermissions,
 } from '@core/components';
-import { AccessScope } from '@core/primitives';
+import { AccessScope, type BarberId } from '@core/primitives';
 import type { PrincipalTag } from './guest-guard.system';
 import { StaffAccessSystem } from './staff-access.system';
 
@@ -101,6 +102,29 @@ export const SessionAccessSystem = {
       }
     }
     return false;
+  },
+
+  /**
+   * Whether the person has a page of their own to open — «Моят профил»
+   * (`/staff/profile`): an account linked to a barber record, whose levels
+   * open the route by the gate's own rule (`RouteCapabilities.OwnProfile`
+   * through {@link SessionAccessSystem.opens}). The menu's row and every
+   * other way in ask this, so none shows for someone the page has no record
+   * for (the owner with no chair of their own) or would turn away.
+   */
+  opensOwnProfile(
+    linkedBarberId: BarberId | null,
+    permissions: StaffPermissions,
+    storedRoles: readonly string[],
+  ): boolean {
+    return (
+      linkedBarberId !== null &&
+      SessionAccessSystem.opens(
+        RouteCapabilities.OwnProfile,
+        permissions,
+        storedRoles,
+      )
+    );
   },
 
   /** The route decision for a settled principal. */
