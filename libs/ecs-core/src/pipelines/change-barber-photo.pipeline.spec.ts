@@ -54,7 +54,7 @@ function rig(
       nextId: () => `minted-id-${String(++minted).padStart(8, '0')}`,
       stageUpload: async (userId, stagedName, image) => {
         if (options.stagingFails === true) {
-          return Result.err(MediaError.transient('staffUploads'));
+          return Result.err(MediaError.transient('pending'));
         }
         staged.push({ userId, stagedName, image });
         return Result.ok(undefined);

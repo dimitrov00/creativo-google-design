@@ -49,7 +49,7 @@ export type BarberPhotoInput = {
 
 /** Where the bytes are, and the reference the record will hold. */
 export type BarberPhotoPlan = {
-  /** `staffUploads/{caller}/{name}` — the caller's own staged upload. */
+  /** `pending/{caller}/{name}` — the caller's own staged upload. */
   readonly stagedPath: string;
   /** The record's next photo: its object under `media/`, its size, a centred crop. */
   readonly media: MediaRef;
@@ -68,7 +68,7 @@ export const BarberPhotoSystem = {
 
   /** The caller's staged upload `stagedName` — the path the staging rule guards. */
   stagedPathOf(userId: UserId, stagedName: string): string {
-    return `staffUploads/${userId}/${stagedName}`;
+    return `pending/${userId}/${stagedName}`;
   },
 
   /** The one object a person's account avatar is (`storage.rules`' single-object convention). */

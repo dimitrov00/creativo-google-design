@@ -52,7 +52,7 @@ import {
  * `setBarberPhoto` — a barber's ONE photo, replaced
  * (`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`). The
  * picture is one the caller staged under their own account
- * (`staffUploads/{caller}/{name}`); the bytes never ride the call. The
+ * (`pending/{caller}/{name}`); the bytes never ride the call. The
  * caller gate first, on the VERIFIED token (`admitTeamCaller`: any staff
  * role). Then, in this order:
  *

@@ -375,7 +375,7 @@ describe('storage-objects adapter — the photo’s stat and copy', () => {
     };
   }
 
-  const STAGED = 'staffUploads/u-editor/a1b2c3d4-staged';
+  const STAGED = 'pending/u-editor/a1b2c3d4-staged';
   const PHOTO = 'media/barbers/ivan/operation-photo-0123456';
 
   it('answers an object’s size and type — the size Storage reports as a string read as a number', async () => {

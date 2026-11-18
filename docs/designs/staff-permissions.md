@@ -1271,7 +1271,7 @@ editors"); its server half is merged.
     finds «Добави снимка» or «Смени снимката» under the head: the barber
     themself, a content editor, the owner.
   - The browser sizes the picture, stages it under the signed-in account
-    (`staffUploads/{uid}/{name}`: a staff token, its own folder, an image
+    (`pending/{uid}/{name}`: a staff token, its own folder, an image
     under 5 MiB, no reads) and calls `setBarberPhoto` with the file's name.
     The bytes never ride the call.
   - The call asks who may before it touches an object; checks the staged

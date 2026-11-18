@@ -314,7 +314,7 @@ export function teamBed(options: TeamBedOptions = {}) {
   let stagingFails = false;
   const staging: StagedUploadPorts = {
     stageUpload: async (stagedUserId, stagedName, image) => {
-      if (stagingFails) return Result.err(MediaError.transient('staffUploads'));
+      if (stagingFails) return Result.err(MediaError.transient('pending'));
       calls.staged.push({
         userId: stagedUserId,
         stagedName,

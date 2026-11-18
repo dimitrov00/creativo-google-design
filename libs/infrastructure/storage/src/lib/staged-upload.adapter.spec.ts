@@ -24,7 +24,7 @@ const { stagedUploadPorts } = await import('./staged-upload.adapter');
 
 const STORAGE = { app: 'storage' } as unknown as FirebaseStorage;
 const USER = UserId.of('u-editor');
-const PATH = 'staffUploads/u-editor/a1b2c3d4-staged';
+const PATH = 'pending/u-editor/a1b2c3d4-staged';
 
 const picture = (type: string, size: number): Blob =>
   ({ type, size }) as unknown as Blob;

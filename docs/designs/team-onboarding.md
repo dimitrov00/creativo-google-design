@@ -456,7 +456,7 @@ roles and link inside its transaction.
   shops is one record with segments at each.
 - **Photo.** The browser downscales the image and reports its size (as
   `downscaleImage` does today), and uploads it to a staff staging path
-  `staffUploads/{uid}/{file}`. Its rule: write if signed in with a staff
+  `pending/{uid}/{file}`. Its rule: write if signed in with a staff
   role, image types only, a size limit; no client reads. A callable checks
   the size with `MediaRef.parse`, copies the file to
   `media/barbers/{id}/{random}.jpg`, and writes the `avatarMedia*` fields
@@ -895,7 +895,7 @@ callable-backed web adapter), `TeamWritePorts`, `MediaCopyPorts`, reusing
 - `staffInvites`: deny all.
 - `barbers/{id}`: read unless `DRAFT`, or staff.
 - `scheduleExceptions`: client writes removed (callable only).
-- `storage.rules`: `staffUploads/{uid}/{file}` staff write, no read;
+- `storage.rules`: `pending/{uid}/{file}` staff write, no read;
   `media/barbers/**` get only.
 - A rules integration test covers: the signed-out `== 'PUBLIC'` list, the
   staff `in` list, a client get of a `DRAFT` (denied), a client get of a

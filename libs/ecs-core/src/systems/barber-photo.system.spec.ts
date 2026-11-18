@@ -33,7 +33,7 @@ const input = (over: Partial<BarberPhotoInput> = {}): BarberPhotoInput =>
 describe('BarberPhotoSystem.planOf — where the bytes are and what the record will hold', () => {
   it('reads the staged file under the CALLER’S own folder, and names the new object after the act', () => {
     expect(unwrapOk(BarberPhotoSystem.planOf(input()))).toEqual({
-      stagedPath: 'staffUploads/u-editor/a1b2c3d4-staged',
+      stagedPath: 'pending/u-editor/a1b2c3d4-staged',
       media: {
         mediaId: OP,
         mediaPath: `media/barbers/ivan/${OP}`,
