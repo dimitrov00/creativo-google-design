@@ -64,7 +64,7 @@ Options weighed:
 The rules cannot ask who may edit a barber: that is the owner's permission
 cells, judged by `StaffAccessSystem.admit` on the stored account. So the
 browser never writes under `media/`. It writes to
-`staffUploads/{uid}/{name}` (its own account, staff only, an image under
+`pending/{uid}/{name}` (its own account, staff only, an image under
 5 MiB, no reads), and the call does the rest with the Admin SDK:
 
 1. the token gate, then the stored account against `TEAM_PROFILES`, before
@@ -80,6 +80,12 @@ The object exists before the record names it, so a reader never follows a
 path to nothing. A refused commit deletes the copy it made. `media/` loses
 its `list` permission: a record in preparation is staff-only, and its
 photo's name must not be found by listing.
+
+The folder was named `staffUploads/` until 2026-11-18. It became `pending/`
+because it is a waiting area, emptied by the call and by the bucket's
+one-day lifecycle rule (`tools/ops/storage-lifecycle.json`), not a library
+of staff files, and any later hand-off (a client's included) shares it under
+its own rule condition.
 
 ## F6 — How a link carries the photo
 

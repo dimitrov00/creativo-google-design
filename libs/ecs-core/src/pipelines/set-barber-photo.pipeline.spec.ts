@@ -50,7 +50,7 @@ const OP = OperationId.of('operation-photo-0123456');
 const IVAN = FIXTURE_IDS.barber;
 const NIKO = BarberId.of('niko');
 
-const STAGED = `staffUploads/${ADMIN}/a1b2c3d4-staged`;
+const STAGED = `pending/${ADMIN}/a1b2c3d4-staged`;
 const PHOTO = `media/barbers/${IVAN}/${OP}`;
 const OLDER = `media/barbers/${IVAN}/operation-older-0123456`;
 const JPEG = StoredObjectFacts.unmeasured(90_000, 'image/jpeg');
@@ -249,7 +249,7 @@ describe('setBarberPhoto — a photo that lands', () => {
     const { store, run } = rig({
       caller: ivanUser,
       linkedUserId: ivanUser.id,
-      objects: { [`staffUploads/u-ivan/a1b2c3d4-staged`]: JPEG },
+      objects: { [`pending/u-ivan/a1b2c3d4-staged`]: JPEG },
     });
 
     const answer = await run(
@@ -368,7 +368,7 @@ describe('setBarberPhoto — the staged object', () => {
 
   it('reads only the caller’s own staging folder: another account’s upload is not there', async () => {
     const { run } = rig({
-      objects: { 'staffUploads/u-other/a1b2c3d4-staged': JPEG },
+      objects: { 'pending/u-other/a1b2c3d4-staged': JPEG },
     });
     expect(unwrapErr(await run(call())).errorCode).toBe(
       TeamErrorCode.PhotoMissing,

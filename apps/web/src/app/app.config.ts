@@ -191,8 +191,7 @@ const dataUnavailable = () => Result.err(RepositoryError.unavailable());
  */
 const avatarsUnavailable = () => Result.err(MediaError.transient('avatars'));
 const mediaUnavailable = () => Result.err(MediaError.transient('media'));
-const stagingUnavailable = () =>
-  Result.err(MediaError.transient('staffUploads'));
+const stagingUnavailable = () => Result.err(MediaError.transient('pending'));
 
 /** What `firebaseData` loads: the Firestore and the Storage adapter modules. */
 type FirebaseDataModule =

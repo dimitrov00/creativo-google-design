@@ -68,7 +68,7 @@ export type UploadPhotoBytes = (
 
 /**
  * Stage a picture for a callable to take: the bytes go to the account's own
- * staging folder under `stagedName` (`staffUploads/{userId}/{stagedName}`),
+ * staging folder under `stagedName` (`pending/{userId}/{stagedName}`),
  * which only that account can write and nobody can read. The callable is
  * then told the NAME — never a path — and reads, checks and deletes the
  * object itself (`setBarberPhoto`).

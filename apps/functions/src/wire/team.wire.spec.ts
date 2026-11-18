@@ -565,7 +565,7 @@ describe('decodeSetBarberPhoto', () => {
 
   it('carries no path: the payload names a file, and the caller’s folder is the pipeline’s to add', () => {
     const decoded = decodeSetBarberPhoto(
-      callable({ ...sent, stagedPath: 'staffUploads/u-other/their-file' }),
+      callable({ ...sent, stagedPath: 'pending/u-other/their-file' }),
     );
     expect(decoded.ok && Object.keys(decoded.value)).not.toContain(
       'stagedPath',

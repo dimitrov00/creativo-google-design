@@ -754,16 +754,27 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       (fail-closed). One billed Firestore read per avatar upload.
       Source: `storage.rules` (`accountMayUpload`); security hardening §7
       item 10.
-- [ ] **Add a lifecycle rule that deletes staged uploads after one day.**
-      The team's photo picker writes a picture to
-      `staffUploads/{uid}/{name}` and the `setBarberPhoto` callable deletes
-      it once it has taken it. A picture staged by a call that never came
-      (a closed tab, a failed call) stays. On the default bucket: a
-      lifecycle rule, action Delete, condition age 1 day, prefix
-      `staffUploads/`. Nothing reads these objects, so the rule can only
-      remove leftovers.
-      Source: `storage.rules` (`staffUploads`);
-      `docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`.
+- [ ] **Add a lifecycle rule that deletes pending uploads after one day.**
+      `pending/` is a waiting area: the team's photo picker writes a picture
+      to `pending/{uid}/{name}`, and the `setBarberPhoto` callable checks
+      it, copies it into `media/` and deletes it. A picture whose call never
+      came (a closed tab, a failed or refused call) stays, so the default
+      bucket deletes anything under `pending/` a day old. Nothing reads these
+      objects, so the rule can only remove leftovers. The rule is
+      `tools/ops/storage-lifecycle.json`, the bucket's whole lifecycle
+      configuration, held to the folder by
+      `tools/verify/ops/pending-uploads.spec.mjs`. Apply it once per project
+      (it replaces the bucket's lifecycle configuration, which a new bucket
+      doesn't have):
+
+```bash
+gcloud storage buckets update "gs://$PROJECT_ID.firebasestorage.app" --lifecycle-file=tools/ops/storage-lifecycle.json --project="$PROJECT_ID"
+```
+
+Or in the console: Cloud Storage → the bucket → Lifecycle → Add a rule →
+Delete object; «Object name matches prefix» `pending/`, «Age» 1 day.
+Source: `storage.rules` (`pending`);
+`docs/architecture/decisions/2026-11-15-one-photo-per-barber.md`.
 
 ### App Check (staged: OFF → MONITOR → ENFORCE)
 

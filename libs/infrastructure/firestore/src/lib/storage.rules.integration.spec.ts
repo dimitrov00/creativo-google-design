@@ -71,7 +71,7 @@ const WRITTEN_PREFIXES: readonly string[] = [
   ),
   `appointmentPhotos/${APPOINTMENT}`,
   `unlisted/${ACTIVE}`,
-  `staffUploads/${BARBER}`,
+  `pending/${BARBER}`,
   `media/barbers/${RUN}`,
 ];
 
@@ -328,7 +328,7 @@ describe('storage.rules (emulator)', () => {
   });
 
   describe('a staged upload (the barber photo, one photo per barber)', () => {
-    const staged = `staffUploads/${BARBER}/staged-${RUN}`;
+    const staged = `pending/${BARBER}/staged-${RUN}`;
 
     it('lets a staff member stage an image under their own uid, and delete it', async () => {
       const barber = signedIn(BARBER, Role.Barber);

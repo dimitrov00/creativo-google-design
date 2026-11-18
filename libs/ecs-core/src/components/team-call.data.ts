@@ -229,7 +229,7 @@ export namespace TeamCall {
    */
   export type Photo = {
     readonly barberId: BarberId;
-    /** The staged file's name under `staffUploads/{caller}/`. */
+    /** The staged file's name under `pending/{caller}/`. */
     readonly stagedName: string;
     readonly mediaWidth: number;
     readonly mediaHeight: number;
