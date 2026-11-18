@@ -28,7 +28,8 @@
 #      on by default for new repositories) differ from the classic
 #      repo:<owner/name>:environment:<env>, and a repository can switch
 #      between them, so a subject binding can silently stop matching;
-#   6. its roles — what firebase-tools 15 deploys with (Hosting, rules,
+#   6. its roles — what firebase-tools 15 deploys with (Hosting, rules and
+#      the default Storage bucket's read,
 #      indexes and TTL, functions gen 2 with the Cloud Run invoker, Cloud
 #      Scheduler, Secret Manager and Artifact Registry read) and what the
 #      preflight reads (Firestore, the API checks, P9's logging);
@@ -86,6 +87,9 @@ APIS=(
 DEPLOY_ROLES=(
   roles/firebasehosting.admin
   roles/firebaserules.admin
+  # Read-only: the storage-rules deploy reads the default bucket's name
+  # (firebasestorage.defaultBucket.get) before it releases the rules.
+  roles/firebasestorage.viewer
   roles/datastore.indexAdmin
   roles/datastore.viewer
   roles/cloudfunctions.admin
