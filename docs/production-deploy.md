@@ -1428,10 +1428,11 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
       between the build and a real deploy.
       Source: `firebase.json:11-24`; `tools/flags/write-functions-env.mjs:12-20`,
       `:99-102`, `:161-167`.
-- [ ] **Keep `emulators.enabled: false`** in `environment.production.ts`. It
-      also keeps the `window.__e2eSignIn` test hook unwired.
-      Source: `apps/web/src/environments/environment.production.ts:16-23`;
-      `apps/web/src/app/app.ts:22-30`.
+- [ ] **Keep `emulators: null`** in `environment.production.ts` and
+      `environment.staging.ts`. It also keeps the `window.__e2eSignIn` test
+      hook unwired.
+      Source: `apps/web/src/environments/web-environment.ts` (the one shape);
+      `apps/web/src/app/app.ts` (the hook's guard).
 - [ ] **Never rotate `WALKIN_ID_KEY`** (section 1), and **never answer Yes to
       deletions on the step-1 index deploy** (section 3.1).
 - [ ] **Never deploy production with `FLAGS_ENV=staging`** (or

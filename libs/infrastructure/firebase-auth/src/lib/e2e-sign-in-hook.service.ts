@@ -12,8 +12,8 @@ interface E2eWindow extends Window {
  * Playwright smoke suite uses to put the app into an authenticated,
  * role-bearing session without a real OTP round-trip (the Node-side test
  * mints the custom token via `firebase-admin` against the Auth emulator).
- * Consuming apps should only `inject()` this outside production builds
- * (e.g. `apps/web`'s `App` component guards it on `!environment.production`)
+ * Consuming apps should only `inject()` this against the emulators
+ * (`apps/web`'s `App` component guards it on `environment.emulators !== null`)
  * — this service itself has no opinion on that, it just wires the hook up
  * whenever it's instantiated.
  */

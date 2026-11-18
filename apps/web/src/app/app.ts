@@ -26,7 +26,7 @@ export class App {
     // and only `environment.ts` turns them on — the production environment
     // never does, and the custom tokens the hook takes are minted by the
     // Auth emulator's own tooling.
-    if (environment.emulators.enabled) {
+    if (environment.emulators !== null) {
       inject(E2eSignInHookService);
     }
   }
