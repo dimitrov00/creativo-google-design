@@ -734,6 +734,7 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     assert.deepEqual(roles, [
       'roles/firebasehosting.admin',
       'roles/firebaserules.admin',
+      'roles/firebasestorage.viewer',
       'roles/datastore.indexAdmin',
       'roles/datastore.viewer',
       'roles/cloudfunctions.admin',

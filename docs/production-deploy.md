@@ -211,13 +211,22 @@ tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --app
 ```
 
 - [ ] **7. The first staging deploy.** Merge any PR, or re-run the latest
-      CI run on `main`; watch Actions → Deploy staging. Then, once per
-      project: `firebase functions:artifacts:setpolicy --project "$PROJECT_ID"`
-      (the deploy account may read the functions' image cleanup policy, not
-      set it), and section 3.5 (the metrics, alerts and backstops). If the
-      first deploy names a missing permission, add that role to
-      `DEPLOY_ROLES` in `tools/ops/deploy-identity.sh` in a PR, and re-run
-      the script.
+      Deploy staging run; watch Actions → Deploy staging. **The first run
+      stops at the end of «Deploy the functions», after every function is
+      deployed:** firebase-tools finds no cleanup policy on the functions'
+      new image repository (`gcf-artifacts` in `europe-west8`), and with
+      `--non-interactive` and no `--force` (E6) it refuses to choose one.
+      The repository exists only after that first build, so set the policy
+      then, once per project (the deploy account may read it, not set it),
+      and re-run the deploy; it redeploys the same functions and goes on to
+      hosting. Then section 3.5 (the metrics, alerts and backstops). If a
+      deploy names a missing permission, add that role to `DEPLOY_ROLES` in
+      `tools/ops/deploy-identity.sh` in a PR, and re-run the script.
+
+```bash
+firebase functions:artifacts:setpolicy --location europe-west8 --project "$PROJECT_ID"
+```
+
 - [ ] **8. The first release.** release-please keeps a PR open titled
       `chore: release 0.1.0`. Merge it when staging looks right; Actions →
       Deploy production waits for you: Review deployments → Approve.
