@@ -788,6 +788,18 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     );
   });
 
+  it('creates the Pub/Sub service agent before binding it — a new project has none until asked', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    const identity = out.indexOf(
+      '+ gcloud beta services identity create --service=pubsub.googleapis.com --project=creativo-v2-prod',
+    );
+    const binding = out.indexOf(
+      '--member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator',
+    );
+    assert.ok(identity >= 0, 'the agent is created');
+    assert.ok(binding > identity, 'and only then bound');
+  });
+
   it('grants up front what a first deploy would grant itself — the agents, the runtime account’s secrets', () => {
     const { out } = dryRun(SCRIPT, args('staging'));
     for (const line of [

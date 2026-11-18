@@ -196,7 +196,11 @@ approval (you are its one required reviewer).
       tokens (Token Creator on itself), grants the bindings a first deploy
       would otherwise ask for, and sets the environment's three variables.
       Run it after step 2: it grants the runtime account access to the four
-      secrets, which must exist.
+      secrets, which must exist. Step 8 creates the Pub/Sub service agent
+      with `gcloud beta services identity create` (a new project has none
+      until something asks for it); the first time, gcloud offers to install
+      its beta commands: answer yes. The script is idempotent: if a step
+      fails, fix the cause and run the same command again.
 
 ```bash
 tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging

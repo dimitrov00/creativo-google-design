@@ -34,7 +34,9 @@
 #      sign-in code checks out and then fails to mint the session;
 #   8. the bindings a first deploy would grant itself, so the deploy account
 #      never edits the project's IAM policy: the Pub/Sub agent's token
-#      creator, the runtime account's run.invoker and eventarc.eventReceiver,
+#      creator (the agent created first: enabling the API does not create
+#      it in a new project, and a binding to an absent account fails),
+#      the runtime account's run.invoker and eventarc.eventReceiver,
 #      the Storage rules agent's Firestore role (the one a --non-interactive
 #      deploy skips silently, docs/production-deploy.md §3.2), and the
 #      runtime account's access to each of the four secrets;
@@ -285,6 +287,11 @@ run gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --role=roles/i
 run gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --role=roles/iam.serviceAccountTokenCreator "--member=serviceAccount:$RUNTIME" "--project=$PROJECT"
 
 echo '# 8. the bindings a first deploy would otherwise grant itself'
+# Google creates the Pub/Sub service agent lazily, not when step 0 enables
+# the API: in a new project the binding below would name an account that
+# does not exist yet ("INVALID_ARGUMENT: Service account … does not exist").
+# Creating the identity is idempotent: it returns the agent when it exists.
+run gcloud beta services identity create --service=pubsub.googleapis.com "--project=$PROJECT"
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:service-${NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com" --role=roles/iam.serviceAccountTokenCreator --condition=None
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$RUNTIME" --role=roles/run.invoker --condition=None
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$RUNTIME" --role=roles/eventarc.eventReceiver --condition=None
