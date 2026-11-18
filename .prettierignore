@@ -11,3 +11,6 @@ libs/ui/icons/src/lib/material/material-glyphs.generated.ts
 
 # Written by pnpm in its own layout — reformatted, the next install writes it back; checked by `pnpm install --frozen-lockfile`
 /pnpm-lock.yaml
+
+# Written by release-please in its own style (`*` bullets, double blank lines) on every release PR; reformatted, the next release PR writes it back — tools/release/release-config.spec.mjs
+/CHANGELOG.md

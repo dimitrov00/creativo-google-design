@@ -8,7 +8,7 @@
 // admits, versions the root package once, and stays pre-1.0.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -105,9 +105,25 @@ describe('release-please-config.json — one product, pre-1.0', () => {
     assert.equal(config['include-v-in-tag'], true);
     assert.equal(config['include-component-in-tag'], false);
     assert.equal(config.packages['.']['changelog-path'], 'CHANGELOG.md');
+  });
+
+  it('leaves the changelog to release-please: absent until the first release, never reformatted', () => {
+    // release-please keeps a changelog with no version heading below the
+    // first entry, its headings demoted (a stray «## Changelog» under 0.1.0:
+    // src/updaters/changelog.ts, `adjustHeaders`), so there is no
+    // placeholder before the first release; after it, «# Changelog» heads
+    // the version entries.
+    const changelog = join(ROOT, 'CHANGELOG.md');
+    if (existsSync(changelog)) {
+      const text = readFileSync(changelog, 'utf8');
+      assert.match(text, /^# Changelog\n\n## \[?\d/);
+      assert.doesNotMatch(text, /^## Changelog$/m);
+    }
+    // Its bullets and blank lines are release-please's: Prettier would
+    // rewrite every release PR's entry and fail the static job's format check.
     assert.match(
-      readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'),
-      /^# Changelog\n/,
+      readFileSync(join(ROOT, '.prettierignore'), 'utf8'),
+      /^\/CHANGELOG\.md$/m,
     );
   });
 
