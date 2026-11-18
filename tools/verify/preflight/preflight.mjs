@@ -304,9 +304,22 @@ export function checkEnvironment({ env, projectId }) {
  * (`ShopZoneSystem.zoneOf`).
  */
 export function checkDefaultLocation({ domain, stored }) {
-  const { Collections, StoredDocumentSystem, TenantConfig, ZonedTimeSystem } =
-    domain;
-  const path = `${Collections.Locations}/${TenantConfig.DEFAULT.defaultLocationId}`;
+  return checkLocation({
+    domain,
+    id: domain.TenantConfig.DEFAULT.defaultLocationId,
+    stored,
+  });
+}
+
+/**
+ * P1's verdict on any shop `locations/{id}` (`stored`: its id beside its
+ * body, or `null` when absent) — what `tools/ops/shop-location.mjs` holds a
+ * body to before it writes one, so the bootstrap can never write what the
+ * deploy then refuses.
+ */
+export function checkLocation({ domain, id, stored }) {
+  const { Collections, StoredDocumentSystem, ZonedTimeSystem } = domain;
+  const path = `${Collections.Locations}/${id}`;
   if (stored === null) {
     return row('P1', Verdict.Fail, `${path} does not exist`, [
       'every boundary with no shop in scope reads its zone there — create it with an IANA timeZone (runbook §3)',

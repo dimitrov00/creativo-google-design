@@ -518,7 +518,7 @@ the commit grammar for humans is `CONTRIBUTING.md`.
   the owner's.
 - **Agents never deploy. Only CI deploys**: staging after CI passes on
   `main`, production from a release tag after the owner approves. Never run
-  `firebase deploy`, and never run a `tools/ops/*.sh` script with `--apply`.
+  `firebase deploy`, and never run a `tools/ops/*` script with `--apply`.
 - **The Firebase projects `creativo-prod` and `creativo-staging` run the
   owner's old, live React app.** Never deploy to, read from, configure,
   reuse or name them in config. This product's projects are new ones, and
