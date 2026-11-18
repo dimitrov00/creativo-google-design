@@ -735,6 +735,7 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
       'roles/firebasehosting.admin',
       'roles/firebaserules.admin',
       'roles/firebasestorage.viewer',
+      'roles/storage.bucketViewer',
       'roles/datastore.indexAdmin',
       'roles/datastore.viewer',
       'roles/cloudfunctions.admin',

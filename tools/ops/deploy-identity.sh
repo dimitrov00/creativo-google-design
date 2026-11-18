@@ -29,7 +29,7 @@
 #      repo:<owner/name>:environment:<env>, and a repository can switch
 #      between them, so a subject binding can silently stop matching;
 #   6. its roles — what firebase-tools 15 deploys with (Hosting, rules and
-#      the default Storage bucket's read,
+#      the default Storage bucket's read, its metadata included,
 #      indexes and TTL, functions gen 2 with the Cloud Run invoker, Cloud
 #      Scheduler, Secret Manager and Artifact Registry read) and what the
 #      preflight reads (Firestore, the API checks, P9's logging);
@@ -90,6 +90,11 @@ DEPLOY_ROLES=(
   # Read-only: the storage-rules deploy reads the default bucket's name
   # (firebasestorage.defaultBucket.get) before it releases the rules.
   roles/firebasestorage.viewer
+  # Bucket metadata only (storage.buckets.get, .list), never an object: the
+  # default-bucket lookup also checks the bucket as the caller, and without
+  # these it answers 404 «Firebase Storage has not been set up»
+  # (firebase-tools #6467, #6593; the first staging deploy, 2026-11-18).
+  roles/storage.bucketViewer
   roles/datastore.indexAdmin
   roles/datastore.viewer
   roles/cloudfunctions.admin
