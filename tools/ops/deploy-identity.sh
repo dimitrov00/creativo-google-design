@@ -22,7 +22,12 @@
 #      refs/tags/v*;
 #   4. the deploy service account (DEPLOY_SERVICE_ACCOUNT_ID);
 #   5. who may impersonate it: only this repository's jobs in this
-#      environment (the token's subject, repo:<owner/name>:environment:<env>);
+#      environment — the principal set of the mapped attribute
+#      `repository_environment` (<repository id>/<env>), never the token's
+#      subject: GitHub's immutable subjects (repo:<owner>@<id>/<name>@<id>…,
+#      on by default for new repositories) differ from the classic
+#      repo:<owner/name>:environment:<env>, and a repository can switch
+#      between them, so a subject binding can silently stop matching;
 #   6. its roles — what firebase-tools 15 deploys with (Hosting, rules,
 #      indexes and TTL, functions gen 2 with the Cloud Run invoker, Cloud
 #      Scheduler, Secret Manager and Artifact Registry read) and what the
@@ -212,8 +217,10 @@ POOL="projects/${NUMBER}/locations/global/workloadIdentityPools/${WIF_POOL_ID}"
 PROVIDER="${POOL}/providers/${WIF_PROVIDER_ID}"
 DEPLOYER="${DEPLOY_SERVICE_ACCOUNT_ID}@${PROJECT}.iam.gserviceaccount.com"
 RUNTIME="${NUMBER}-compute@developer.gserviceaccount.com"
-SUBJECT="repo:${REPO}:environment:${ENVIRONMENT}"
-MAPPING='google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref'
+# The one attribute step 5 binds: the repository's id and the environment,
+# both of which the condition below also requires.
+MAPPING="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref,attribute.repository_environment=assertion.repository_id+'/'+assertion.environment"
+IMPERSONATORS="principalSet://iam.googleapis.com/${POOL}/attribute.repository_environment/${REPO_ID}/${ENVIRONMENT}"
 CONDITION="assertion.repository_id == '${REPO_ID}' && assertion.environment == '${ENVIRONMENT}'"
 if [ "$ENVIRONMENT" = production ]; then
   CONDITION="${CONDITION} && assertion.ref.startsWith('refs/tags/v')"
@@ -257,8 +264,8 @@ account_create() {
 }
 converge account_probe account_update account_create
 
-echo "# 5. who may impersonate it: ${SUBJECT}"
-run gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --role=roles/iam.workloadIdentityUser "--member=principal://iam.googleapis.com/${POOL}/subject/${SUBJECT}" "--project=$PROJECT"
+echo "# 5. who may impersonate it: repository ${REPO_ID}'s ${ENVIRONMENT} jobs"
+run gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --role=roles/iam.workloadIdentityUser "--member=$IMPERSONATORS" "--project=$PROJECT"
 
 echo '# 6. its roles on the project'
 for role in "${DEPLOY_ROLES[@]}"; do

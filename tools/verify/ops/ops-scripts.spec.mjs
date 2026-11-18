@@ -698,7 +698,7 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     const production = dryRun(SCRIPT, args('production')).out;
     assert.ok(
       production.includes(
-        "+ gcloud iam workload-identity-pools providers create-oidc creativo-deploy --location=global --workload-identity-pool=github-actions --issuer-uri=https://token.actions.githubusercontent.com --attribute-mapping=google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref '--attribute-condition=assertion.repository_id == '\\''REPOSITORY_ID'\\'' && assertion.environment == '\\''production'\\'' && assertion.ref.startsWith('\\''refs/tags/v'\\'')' --project=creativo-v2-prod",
+        "+ gcloud iam workload-identity-pools providers create-oidc creativo-deploy --location=global --workload-identity-pool=github-actions --issuer-uri=https://token.actions.githubusercontent.com '--attribute-mapping=google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref,attribute.repository_environment=assertion.repository_id+'\\''/'\\''+assertion.environment' '--attribute-condition=assertion.repository_id == '\\''REPOSITORY_ID'\\'' && assertion.environment == '\\''production'\\'' && assertion.ref.startsWith('\\''refs/tags/v'\\'')' --project=creativo-v2-prod",
       ),
       production,
     );
@@ -710,13 +710,18 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     assert.doesNotMatch(staging, /refs\/tags/);
   });
 
-  it('lets only that environment’s jobs impersonate the deploy account', () => {
+  it('lets only that environment’s jobs impersonate the deploy account — by repository id and environment, never by the token’s subject', () => {
     const { out } = dryRun(SCRIPT, args('production'));
     assert.ok(
       out.includes(
-        '+ gcloud iam service-accounts add-iam-policy-binding creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com --role=roles/iam.workloadIdentityUser --member=principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions/subject/repo:owner-x/repo-y:environment:production --project=creativo-v2-prod',
+        '+ gcloud iam service-accounts add-iam-policy-binding creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com --role=roles/iam.workloadIdentityUser --member=principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions/attribute.repository_environment/REPOSITORY_ID/production --project=creativo-v2-prod',
       ),
+      out,
     );
+    // GitHub's immutable subjects (repo:<owner>@<id>/<name>@<id>:…) never
+    // matched the classic repo:<owner/name>:environment:<env> binding: the
+    // first staging deploy was refused iam.serviceAccounts.getAccessToken.
+    assert.doesNotMatch(out, /principal:\/\/[^ ]*\/subject\//);
   });
 
   it('grants the deploy account exactly the roles firebase-tools deploys with — never owner, editor or an IAM admin', () => {
