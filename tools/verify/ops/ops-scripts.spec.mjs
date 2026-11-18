@@ -756,6 +756,38 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     );
   });
 
+  it('makes sure the runtime account exists, then lets it sign its own custom tokens — on itself, never project-wide', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    const runtime = 'PROJECT_NUMBER-compute@developer.gserviceaccount.com';
+    // Compute Engine's API is what creates the default compute account.
+    assert.match(
+      out,
+      /^\+ gcloud services enable [^\n]* compute\.googleapis\.com /m,
+    );
+    assert.match(
+      out,
+      /^\+ gcloud services enable [^\n]* iamcredentials\.googleapis\.com /m,
+    );
+    const describe = out.indexOf(
+      `+ gcloud iam service-accounts describe ${runtime} --project=creativo-v2-prod`,
+    );
+    const tokenCreator = out.indexOf(
+      `+ gcloud iam service-accounts add-iam-policy-binding ${runtime} --role=roles/iam.serviceAccountTokenCreator --member=serviceAccount:${runtime} --project=creativo-v2-prod`,
+    );
+    assert.ok(
+      describe >= 0,
+      'the runtime account is described before it is bound',
+    );
+    assert.ok(
+      tokenCreator > describe,
+      'Token Creator on itself, after the wait',
+    );
+    assert.doesNotMatch(
+      out,
+      /add-iam-policy-binding creativo-v2-prod --member=serviceAccount:PROJECT_NUMBER-compute@[^\n]*serviceAccountTokenCreator/,
+    );
+  });
+
   it('grants up front what a first deploy would grant itself — the agents, the runtime account’s secrets', () => {
     const { out } = dryRun(SCRIPT, args('staging'));
     for (const line of [
