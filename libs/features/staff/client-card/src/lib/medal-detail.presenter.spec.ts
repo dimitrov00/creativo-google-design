@@ -1540,6 +1540,7 @@ describe('medalDetailVm', () => {
           valueText: null,
           isNew: false,
           accessibleName: level.accessibleName,
+          figureName: null,
         });
       }
       expect(page.medal.src).toBe('https://example.test/covers/fade.jpg');
@@ -1680,6 +1681,7 @@ describe('medalDetailVm', () => {
             isNew: false,
             accessibleName:
               'Ниво I, Първо посещение в салона, 20 точки, спечелено на 6 март 2025 г.',
+            figureName: null,
           },
           title: 'Награда',
           reward: '20 точки',

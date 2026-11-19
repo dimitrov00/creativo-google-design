@@ -171,6 +171,69 @@ function render(setup?: (host: Host) => void) {
   };
 }
 
+/** A tile button: words under the ring, and what its figure draws. */
+@Component({
+  imports: [UiMedal],
+  template: `
+    <button
+      uiMedal
+      uiState="earned"
+      uiIcon="loyalty.badge.service"
+      uiLevel="II"
+      uiTitle="Фейд"
+      [uiCaption]="caption()"
+      [uiValue]="0.96"
+      uiValueText="24 от 25 до ниво III"
+      uiFigureLabel=", ниво II, ново"
+      uiLabel="Фейд, ниво II, спечелено на 3 юни, 24 от 25 до ниво III, ново"
+    ></button>
+  `,
+})
+class TileButtonHost {
+  readonly caption = signal<string | null>('24/25 до III');
+}
+
+function renderTileButton() {
+  TestBed.configureTestingModule({
+    imports: [TileButtonHost],
+    errorOnUnknownElements: true,
+    errorOnUnknownProperties: true,
+  });
+  const fixture = TestBed.createComponent(TileButtonHost);
+  fixture.detectChanges();
+  const button = (fixture.nativeElement as HTMLElement).querySelector(
+    'button',
+  ) as HTMLButtonElement;
+  const heard = () =>
+    [...button.querySelectorAll('[data-visually-hidden]')].map((part) =>
+      part.textContent?.trim(),
+    );
+  return { fixture, host: fixture.componentInstance, button, heard };
+}
+
+describe('UiMedal · a button with words (WCAG 2.5.3, «label in name»)', () => {
+  it('is named by the words it prints, then by what its figure draws — never an aria-label over them', () => {
+    const { button, heard } = renderTileButton();
+    expect(button.hasAttribute('aria-label')).toBe(false);
+    expect(button.querySelector('.ui-medal__title')?.textContent).toBe('Фейд');
+    expect(button.querySelector('.ui-medal__caption')?.textContent).toBe(
+      '24/25 до III',
+    );
+    // The rim numeral and the marker are the figure's: said after the words.
+    expect(heard()).toEqual([', ниво II, ново']);
+    expect(
+      button.querySelector('.ui-medal__figure')?.getAttribute('aria-hidden'),
+    ).toBe('true');
+  });
+
+  it('says the ring’s reading where no caption prints it', () => {
+    const { fixture, host, heard } = renderTileButton();
+    host.caption.set(null);
+    fixture.detectChanges();
+    expect(heard()).toEqual([', 24 от 25 до ниво III', ', ниво II, ново']);
+  });
+});
+
 /** A medal on a ground: a card of a tone, a list group, or the bare sheet. */
 @Component({
   imports: [UiCard, UiListGroup, UiMedal],

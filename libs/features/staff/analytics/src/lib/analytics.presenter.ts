@@ -1436,6 +1436,8 @@ function seatRowOf(
     outcome: null,
     bookingStatus: null,
     accessibleName: `${title}, ${dayName} ${time}${factText}`,
+    // The tile draws the day; the line writes only the time.
+    drawnName: `, ${dayName}`,
     testId: `analytics-seat-${row.seatId}`,
   };
 }

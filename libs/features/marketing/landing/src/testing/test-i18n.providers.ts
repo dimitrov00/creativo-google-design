@@ -37,20 +37,10 @@ const bg: Translation = {
       subtitle: 'Резервирай час за секунди.\nБез обаждане.',
       cta: 'Запази час',
     },
-    gallery: {
-      c0: 'Прецизна подрезка.',
-      c1: 'Модерна текстура.',
-      c2: 'Класически конус.',
-      c3: 'Определящият фейд.',
-      c4: 'Бръснене наблизо.',
-      c5: 'Финалният щрих.',
-    },
     barbers: {
       eyebrow: 'Екипът',
       title: 'Ръце, на които може да разчиташ.',
       subtitle: 'Всеки бръснар — своят занаят и свой стол.',
-      years: 'год.',
-      viewAll: 'Покажи още {{count}}',
       exploreBarber: 'Виж {{barber}}',
     },
     services: {
@@ -96,8 +86,6 @@ const bg: Translation = {
       opensAt: 'Отваря в {{time}}',
       opensOn: 'Отваря в {{day}} в {{time}}',
       today: 'Днес',
-      center: { phone: '+359 88 123 4567' },
-      mladost: { phone: '+359 88 765 4321' },
       weekdays: {
         sun: 'Неделя',
         mon: 'Понеделник',

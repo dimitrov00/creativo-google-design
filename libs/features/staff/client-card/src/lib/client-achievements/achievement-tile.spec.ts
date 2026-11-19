@@ -90,7 +90,12 @@ describe('AchievementTile (§2.3.2 AF, AL; §3.8, §3.15)', () => {
     expect(medal?.hasAttribute('data-tile')).toBe(true);
     // ≙ .frame(maxWidth: .infinity): the whole slot is the target.
     expect(medal?.style.inlineSize).toBe('100%');
-    expect(medal?.getAttribute('aria-label')).toBe(FADE.medal.accessibleName);
+    // WCAG 2.5.3: a medal button with words is named by them — the title,
+    // the caption — and then by what only its figure draws, the rim's level.
+    expect(medal?.hasAttribute('aria-label')).toBe(false);
+    expect(text(medal?.querySelector('[data-visually-hidden]'))).toBe(
+      FADE.medal.figureName,
+    );
     // The ring is the DS's circular gauge round the disc, presentational:
     // the arc from the last threshold won to the next, no meter under it.
     expect(ring?.getAttribute('data-gauge-style')).toBe('circularCapacity');

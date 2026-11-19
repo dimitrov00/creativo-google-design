@@ -28,9 +28,13 @@ import { UiOccasionBand } from './occasion-band';
  * Two lives. ON A BUTTON it is an OFFER: the whole card is the control,
  * the call is its label rather than a second control, and the consumer
  * marks it `uiInteractive` for the one hover/press grammar, so it reads to
- * a screen reader as one thing to press. ON AN `article`, `uiApplied`, it
- * is a ticket ON THE BILL (owner, later that day: "make the applied
- * discounts look like the coupons"): nothing to press but what it
+ * a screen reader as one thing to press. THE BUTTON IS NAMED BY ITS WORDS:
+ * the band, the title, the figure, the code, the detail and the call, in
+ * that order — never an `aria-label` over them, which would name it with
+ * words it does not show (WCAG 2.5.3, «label in name»: a speech user says
+ * «Използвай» because that is what the ticket prints). ON AN `article`,
+ * `uiApplied`, it is a ticket ON THE BILL (owner, later that day: "make
+ * the applied discounts look like the coupons"): nothing to press but what it
  * projects — a badge stamped on its glyph's corner (`[uiCouponBadge]`, a
  * check) and a real button where the call stood (`[uiCouponAction]`,
  * «Премахни»), so a whole card never removes a discount by accident.
@@ -45,13 +49,13 @@ import { UiOccasionBand } from './occasion-band';
  *
  * THE CALL is dress, projected: every ticket that offers something wears
  * the SAME pill in `[uiCouponAction]`, a decorative
- * `span[uiButton uiButtonStyle="borderedProminent" uiControlSize="small"
- * aria-hidden="true"]` (the house form for button chrome inside a larger
- * tappable surface). The ticket is the control; the pill is what it
- * wears. A ticket that offers nothing where it stands (a voucher, a
- * ticket in the wallet) projects none. The ticket writes no call of its
- * own: the written `uiAction` went with its last caller (revision 3
- * §3.4, W4).
+ * `span[uiButton uiButtonStyle="borderedProminent" uiControlSize="small"]`
+ * (the house form for button chrome inside a larger tappable surface). The
+ * ticket is the control; the pill is what it wears, and its word is part
+ * of the ticket's name, so it is never hidden from a reader. A ticket that
+ * offers nothing where it stands (a voucher, a ticket in the wallet)
+ * projects none. The ticket writes no call of its own: the written
+ * `uiAction` went with its last caller (revision 3 §3.4, W4).
  *
  * A TICKET WITHOUT CONDITIONS (2026-10-06, the revision 3 review): no
  * chip and nothing projected into `[uiCouponAction]` —

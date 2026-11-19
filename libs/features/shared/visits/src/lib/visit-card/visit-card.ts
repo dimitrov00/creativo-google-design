@@ -98,7 +98,9 @@ function hung(text: string): string {
  * A11y: static, a `role="group"` named by `vm.accessibleName` — the
  * sentence is real text in the reading order and the drawn words are
  * hidden from the reader, so nothing is heard twice. `interactive`, the
- * whole card is a `button[uiCard]` and the name is the button's. The
+ * whole card is a `button[uiCard]` NAMED BY THE WORDS IT PRINTS, in their
+ * reading order, with no `aria-label` over them (WCAG 2.5.3, «label in
+ * name»); only the barber's face is hidden, since the facts name him. The
  * thumbs are buttons of their own, named by their day, and sit OUTSIDE an
  * interactive card's button: they lie over a room the button keeps at its
  * foot, so the eye sees them in the card either way.

@@ -49,6 +49,7 @@ import { formatInstant } from '@creativo/ui/wall-clock';
 import { OnboardingPhase } from '../identity/onboarding-link';
 import { SessionIdentityService } from '../identity/session-identity.service';
 import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
+import { SiteSectionsService } from '../site-sections/site-sections.service';
 
 /**
  * The full-screen guest navigation overlay — v2 `nav-menu.tsx` +
@@ -139,6 +140,12 @@ export class SiteMenuComponent {
    * read starts at shell mount, long before the menu opens.
    */
   private readonly shopZone = this.shopZones.defaultZone();
+
+  /**
+   * Which landing sections are drawn — the «Site» rows link only to those
+   * (`SiteSectionsService`, read from shell mount like the zone above).
+   */
+  protected readonly sections = inject(SiteSectionsService).sections();
 
   /** Name + photo for the identity portrait — the same shell-level read
    *  model backing the header's trigger circle. */

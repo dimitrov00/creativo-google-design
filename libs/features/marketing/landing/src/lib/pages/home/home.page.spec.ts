@@ -1,11 +1,46 @@
-import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { NO_ERRORS_SCHEMA, type Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { NEVER } from 'rxjs';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { FooterFlagshipLocation } from '@creativo/features/shared/shell';
 import {
+  provideEmptyCatalog,
   provideTestCatalog,
   provideTestI18n,
 } from '@creativo/features/marketing/landing/testing';
 import { HomePage } from './home.page';
+
+/** The page, shallow (its sections stubbed), over the catalogue `catalog` provides. */
+async function render(catalog: readonly Provider[]) {
+  await TestBed.configureTestingModule({
+    imports: [HomePage],
+    providers: [...provideTestI18n(), ...catalog, provideRouter([])],
+  })
+    .overrideComponent(HomePage, {
+      set: { imports: [], schemas: [NO_ERRORS_SCHEMA] },
+    })
+    .compileComponents();
+  const fixture = TestBed.createComponent(HomePage);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return fixture;
+}
+
+/** The anchored sections the page draws, in order. */
+function anchorsOf(host: HTMLElement): readonly string[] {
+  return [...host.querySelectorAll('.cr-landing__anchor')].map(
+    (anchor) => anchor.id,
+  );
+}
+
+/** What the page hands the footer's Visit column. */
+function flagshipOf(
+  fixture: Awaited<ReturnType<typeof render>>,
+): FooterFlagshipLocation | null {
+  return fixture.componentInstance['flagshipLocation']();
+}
 
 /**
  * Shallow composition test — the page is a thin shell over the section
@@ -63,5 +98,43 @@ describe('HomePage', () => {
     expect(main?.querySelector('#visit')).not.toBeNull();
 
     expect(host.querySelector('cr-site-footer')).not.toBeNull();
+  });
+
+  it('hands the footer the flagship shop — the first stored by sortOrder — with its map and number', async () => {
+    const fixture = await render(provideTestCatalog());
+
+    expect(flagshipOf(fixture)).toEqual({
+      mapUrl:
+        'https://www.google.com/maps/dir/?api=1&destination=42.4271,25.6366',
+      phoneE164: '+359881234567',
+    });
+  });
+
+  it('draws none of the shop’s own sections for a fresh project — no work, services, team or shops, and no flagship', async () => {
+    const fixture = await render(provideEmptyCatalog());
+    const host: HTMLElement = fixture.nativeElement;
+
+    expect(anchorsOf(host)).toEqual(['courses', 'hiring']);
+    expect(host.querySelector('cr-team-showcase')).toBeNull();
+    expect(host.querySelector('cr-services-section')).toBeNull();
+    expect(host.querySelector('cr-work-gallery')).toBeNull();
+    expect(flagshipOf(fixture)).toBeNull();
+  });
+
+  it('draws no catalogue section before its read answers — a slow read never flashes an empty one', async () => {
+    const fixture = await render([
+      ...provideEmptyCatalog(),
+      {
+        provide: CATALOG_PORTS,
+        useValue: {
+          observeServices: () => NEVER,
+          observeBarbers: () => NEVER,
+          observeCategories: () => NEVER,
+          observeLocations: () => NEVER,
+        },
+      },
+    ]);
+
+    expect(anchorsOf(fixture.nativeElement)).toEqual(['courses', 'hiring']);
   });
 });

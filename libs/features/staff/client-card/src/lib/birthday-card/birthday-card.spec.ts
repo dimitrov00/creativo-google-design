@@ -92,7 +92,7 @@ async function mount(vm: BirthdayVm) {
 const CSS = readFileSync(resolve(__dirname, 'birthday-card.css'), 'utf8');
 
 describe('lib-birthday-card — (a) today, the gift held', () => {
-  it('is ONE ticket whose head is the solid band and whose body is the gift, named by one sentence', async () => {
+  it('is ONE ticket whose head is the solid band and whose body is the gift, named by the words it prints', async () => {
     const { byId, text } = await mount(BIRTHDAY.gift);
     const card = must(byId('client-birthday'));
     expect(card.tagName).toBe('LIB-BIRTHDAY-CARD');
@@ -107,9 +107,19 @@ describe('lib-birthday-card — (a) today, the gift held', () => {
     // The ticket holds a band: the DS moves the tear to the seam.
     expect(ticket.hasAttribute('data-occasion')).toBe(true);
     expect(ticket.hasAttribute('data-valued')).toBe(true);
-    expect(ticket.getAttribute('aria-label')).toBe(
-      'Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай',
-    );
+    // WCAG 2.5.3: no aria-label over the ticket's words — the band, the
+    // label, the figure, the detail and the call name it, in that order.
+    expect(ticket.hasAttribute('aria-label')).toBe(false);
+    const words = ticket.textContent ?? '';
+    const order = [
+      'Рожден ден · 34 г.',
+      'Подарък от салона',
+      '−20 %',
+      'до 28.10',
+      'Използвай',
+    ].map((part) => words.indexOf(part));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
 
     // The band is the ticket's FIRST child, the cake on its disc.
     const band = must(byId('client-birthday-band'));
@@ -136,7 +146,7 @@ describe('lib-birthday-card — (a) today, the gift held', () => {
     expect(ticket.querySelector('[uicouponglyph]')).toBeNull();
   });
 
-  it('wears the decorative pill every ticket wears, never the written call', async () => {
+  it('wears the decorative pill every ticket wears, never the written call, its word in the ticket’s name', async () => {
     const { byId, text } = await mount(BIRTHDAY.gift);
     const ticket = must(byId('client-birthday-gift'));
     const pill = must(ticket.querySelector('[uicouponaction]'));
@@ -144,7 +154,8 @@ describe('lib-birthday-card — (a) today, the gift held', () => {
     expect(pill.classList.contains('ui-button')).toBe(true);
     expect(pill.getAttribute('data-button-style')).toBe('borderedProminent');
     expect(pill.getAttribute('data-control-size')).toBe('small');
-    expect(pill.getAttribute('aria-hidden')).toBe('true');
+    // Not hidden: «Използвай» is what a speech user says to press it.
+    expect(pill.hasAttribute('aria-hidden')).toBe(false);
     expect(text(pill)).toBe('Използвай');
     // `uiAction` (the written call) is deprecated: nothing projects it.
     expect(ticket.querySelector('.ui-coupon-card__action')).toBeNull();

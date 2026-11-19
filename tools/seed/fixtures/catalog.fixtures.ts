@@ -266,7 +266,7 @@ export const IVAN = BarberId.of('ivan');
 export const NIKO = BarberId.of('niko');
 export const STEFAN = BarberId.of('stefan');
 
-/** A portrait the seed uploads from `apps/web/public/barbers/{file}`. */
+/** A portrait the seed uploads from `tools/seed/media/barbers/{file}` — invented demo people, emulator only. */
 export type SeededBarber = Seeded<BarberId, Barber> & { readonly file: string };
 
 /** The avatar fields of a barber's portrait, at its deterministic path. */

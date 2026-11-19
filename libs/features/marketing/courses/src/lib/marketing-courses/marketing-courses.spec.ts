@@ -14,6 +14,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   COURSE_READ_PORTS,
   DEFAULT_LOCATION_PORTS,
@@ -30,6 +31,7 @@ import {
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryCatalogReadPorts,
   memoryClockPorts,
   memoryCourseReadPorts,
   memoryDefaultLocationPorts,
@@ -108,6 +110,8 @@ async function configure(
     providers: [
       provideRouter([]),
       ...provideTestI18n(),
+      // The site header's menu links only the landing sections drawn.
+      { provide: CATALOG_PORTS, useValue: memoryCatalogReadPorts() },
       {
         provide: COURSE_READ_PORTS,
         useValue: recordedCourseReads(courses, asked),

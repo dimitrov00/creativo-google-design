@@ -70,6 +70,7 @@ function row(
       (upcoming ? VisitRowOutcome.Open : VisitRowOutcome.Worked),
     bookingStatus: upcoming ? BookingStatus.Confirmed : BookingStatus.Completed,
     accessibleName: id,
+    drawnName: null,
     testId: `row-${id}`,
   };
 }

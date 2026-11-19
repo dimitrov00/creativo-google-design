@@ -101,9 +101,10 @@ export interface VisitCardFields {
   /** The visit's thumbs, at most three; each opens its photo. Empty where there are none. */
   readonly photos: readonly VisitRowPhoto[];
   /**
-   * The card as one sentence (`visits.card.name`): the label, then every
-   * fact the eye reads — the services, the day, who, the figure, the
-   * status word and the whole quote.
+   * The STATIC card as one sentence (`visits.card.name`): the label, then
+   * every fact the eye reads — the services, the day, who, the figure, the
+   * status word and the whole quote. The interactive card does not wear
+   * it: a button is named by the words it prints (WCAG 2.5.3).
    */
   readonly accessibleName: string;
   /** The host's: `client-visit-last` · `client-visit-next` · `client-visit-waitlist` · `account-upcoming`. */

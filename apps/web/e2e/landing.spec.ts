@@ -15,6 +15,11 @@ declare global {
  * in view, and an installed-PWA active-user launch skips straight to
  * `/account` (home.guard.spec.ts covers the same branch as a fast unit test;
  * this proves it end-to-end against a real session).
+ *
+ * The sections that show the shop draw what is STORED (2026-11-19): the run
+ * seeds the dev catalogue (`global-setup.ts`), so the team is its barbers,
+ * the shelf its services and the «Visit» section its two shops — and the
+ * work strip, which waits for photos of the shop's own work, is not drawn.
  */
 /**
  * The path a bundled chunk names a `maplibre-gl` module by
@@ -24,6 +29,11 @@ declare global {
 const MAPLIBRE_MODULE = /\/maplibre-gl\/dist\/maplibre-gl\.(?:mjs|css)\b/;
 
 async function scrollThroughPage(page: Page): Promise<void> {
+  // The stored sections are drawn once the catalogue's reads answer, and
+  // the «Visit» section's `@defer (on viewport)` placeholder with them: a
+  // scroll that passes before it exists never wakes it. So wait for the
+  // section run to be there first — the shops' anchor is its last.
+  await page.locator('#visit').waitFor({ state: 'attached' });
   // Forces every `@defer (on viewport)` section to hydrate — the page has
   // no infinite scroll/virtualization, so a few full-viewport steps reach
   // the bottom reliably regardless of section height.
@@ -46,7 +56,6 @@ test.describe('marketing landing', () => {
 
     await scrollThroughPage(page);
 
-    await expect(page.getByTestId('landing-work-gallery')).toBeVisible();
     await expect(page.getByTestId('landing-barbers')).toBeVisible();
     await expect(page.getByTestId('landing-services')).toBeVisible();
     await expect(page.getByTestId('landing-hiring')).toBeVisible();
@@ -54,6 +63,44 @@ test.describe('marketing landing', () => {
     // The footer is the shared shell's now (`cr-site-footer`), the same one
     // the careers and courses pages close on.
     await expect(page.getByTestId('site-footer')).toBeVisible();
+    // No bundled photos posing as the shop's work.
+    await expect(page.getByTestId('landing-work-gallery')).toHaveCount(0);
+  });
+
+  test('draws the stored catalogue — the seeded barbers and shops, no rating, the flagship in the footer', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('landing-hero')).toBeVisible();
+    await scrollThroughPage(page);
+
+    // The team is the seed's public barbers, in their `sortOrder`.
+    const team = page.getByTestId('landing-barbers');
+    await expect(team.locator('.team-card h3')).toContainText([
+      'Иван Колев',
+      'Нико Димов',
+      'Стефан Петров',
+    ]);
+    // A rating is never authored, and the catalogue has no reviews.
+    await expect(page.locator('ui-rating')).toHaveCount(0);
+
+    // The «Visit» section lists the seed's two shops, each with its own
+    // number.
+    const shops = page.getByTestId('landing-locations');
+    await expect(shops.locator('.location-card h3')).toHaveText([
+      'Креативо · Център',
+      'Креативо · Младост',
+    ]);
+    await expect(
+      shops.locator('.location-card a[href="tel:+359887654321"]'),
+    ).toHaveCount(1);
+
+    // The footer's Visit column dials the flagship — the first shop by
+    // `sortOrder` — and links only the sections the page draws.
+    const footer = page.getByTestId('site-footer');
+    await expect(footer.locator('a[href="tel:+359881234567"]')).toHaveCount(1);
+    await expect(footer.locator('a[href="/#team"]')).toHaveCount(1);
+    await expect(footer.locator('a[href="/#work"]')).toHaveCount(0);
   });
 
   /*

@@ -15,6 +15,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   GATEWAY_PORTS,
@@ -42,6 +43,7 @@ import {
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryCatalogReadPorts,
   memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryInboxPorts,
@@ -143,6 +145,8 @@ async function render(options?: {
     providers: [
       provideRouter([]),
       ...provideTestI18n(),
+      // The site header's menu links only the landing sections drawn.
+      { provide: CATALOG_PORTS, useValue: memoryCatalogReadPorts() },
       {
         provide: AUTH_SESSION_PORTS,
         useValue: memoryAuthSessionPorts({

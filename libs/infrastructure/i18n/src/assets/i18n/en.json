@@ -680,45 +680,17 @@
       "subtitle": "Book in seconds. Walk in on time. Walk out a new man.",
       "cta": "Pick a time"
     },
-    "gallery": {
-      "c0": "The precise trim.",
-      "c1": "Modern texture.",
-      "c2": "Classic taper.",
-      "c3": "The defining fade.",
-      "c4": "The close shave.",
-      "c5": "Finishing detail."
-    },
     "barbers": {
       "eyebrow": "The team",
       "title": "Hands you can trust.",
       "subtitle": "Each barber, their own craft — and their own chair.",
-      "years": "yrs",
-      "viewAll": "See {{count}} more",
       "explore": "Explore",
       "exploreBarber": "Explore {{barber}}'s profile",
       "closeDetails": "Close barber profile",
       "galleryLabel": "Selected looks by {{barber}}",
       "galleryImageAlt": "A look created by {{barber}}",
-      "ratingLabel": "client rating",
       "book": "Book now",
-      "bookWith": "Book with {{barber}}",
-      "ivan": {
-        "name": "Ivan Kolev",
-        "role": "Chief barber",
-        "specialty": "Scissors · shape · natural movement",
-        "about": "Ivan builds a shape that continues to work after you leave the chair — precise, natural, and considered around the way you live."
-      },
-      "niko": {
-        "name": "Niko Dimov",
-        "role": "Top barber",
-        "specialty": "Modern fades · clean geometry",
-        "about": "Niko combines technically clean fades with a sharp instinct for proportion, texture, and a modern silhouette."
-      },
-      "stefan": {
-        "name": "Stefan Iliev",
-        "role": "Senior barber",
-        "specialty": "Razor · ritual · beard contour"
-      }
+      "bookWith": "Book with {{barber}}"
     },
     "services": {
       "eyebrow": "The services",
@@ -751,7 +723,7 @@
       "eyebrow": "Find us",
       "title": "Easy to find.",
       "titleMulti": "Our locations.",
-      "intro": "Both Creativo locations keep the same rhythm — precise work, considered pace, and a chair worth the trip.",
+      "intro": "Precise work, a considered pace, and a chair worth the trip.",
       "open": "Open",
       "openUntil": "Open until {{time}}",
       "closed": "Closed",
@@ -784,16 +756,6 @@
         "thu": "Thursday",
         "fri": "Friday",
         "sat": "Saturday"
-      },
-      "center": {
-        "name": "Creativo · Center",
-        "address": "120 Tsar Simeon Veliki Blvd, Stara Zagora",
-        "phone": "+359 88 123 4567"
-      },
-      "mladost": {
-        "name": "Creativo · Mladost",
-        "address": "14 Armeyska St, Mladost, Stara Zagora",
-        "phone": "+359 88 765 4321"
       }
     },
     "courses": {
@@ -1762,8 +1724,6 @@
     "reward": {
       "until": "until {{date}}",
       "more": "· {{count}} more",
-      "name": "{{title}}, {{value}}, use",
-      "nameBare": "{{title}}, use",
       "appliedName": "{{title}}, {{value}}, with this visit",
       "appliedNameBare": "{{title}}, with this visit",
       "stack": "×{{count}}"
@@ -1805,8 +1765,7 @@
         "stamps": "Stamps",
         "rhythm": "Rhythm"
       },
-      "stampsOf": "{{filled}} of {{size}}",
-      "cardName": "Loyalty: {{points}}. {{sentence}} {{holdings}}"
+      "stampsOf": "{{filled}} of {{size}}"
     },
     "achievements": {
       "title": "Achievements",
@@ -2091,6 +2050,8 @@
       "medalProgressName": "{{title}}, {{value}} of {{target}} to level {{level}}",
       "medalNotStartedName": "{{title}}, not started: {{requirement}}",
       "newSuffix": ", new",
+      "figureLevel": ", level {{level}}",
+      "figureNotStarted": ", not started",
       "nextSuffix": ", {{value}} of {{target}} to level {{level}}",
       "nextOnSuffix": ", level {{level}} on {{date}}",
       "levelSince": "Level {{level}} · since {{date}}",
@@ -2266,7 +2227,6 @@
         "one": ", turning {{age}}",
         "other": ", turning {{age}}"
       },
-      "giftName": "Birthday today{{age}}. Gift: {{value}}, use",
       "giftAppliedName": "Birthday today{{age}}. Gift: {{value}}, with this visit"
     },
     "ledgerPage": {

@@ -135,6 +135,7 @@ describe('visit row view model', () => {
       outcome: null,
       bookingStatus: null,
       accessibleName: 'Фейд, чака свободен час: четвъртък и петък, следобед',
+      drawnName: null,
       testId: 'client-visit-waitlist',
     } as const satisfies VisitRowVm;
     expectTypeOf(waiting).toExtend<VisitRowVm>();

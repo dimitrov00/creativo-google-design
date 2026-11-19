@@ -20,10 +20,11 @@ import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
+import { SiteSectionsService } from '../site-sections/site-sections.service';
 
 /** Where a sitemap row leads — the field `footerLinkTarget` (Law 6). */
 const FooterLinkTarget = {
-  /** An in-page anchor of the landing (`/#work`). */
+  /** An in-page anchor of the landing (`/#team`). */
   Hash: 'HASH',
   /** An app route, through `routerLink`. */
   Router: 'ROUTER',
@@ -99,6 +100,13 @@ export class SiteFooterComponent {
    *  which case those two rows just don't render. */
   readonly flagshipLocation = input<FooterFlagshipLocation | null>(null);
 
+  /**
+   * Which landing sections are drawn: a landing anchor is linked only while
+   * its section is (`SiteSectionsService`). «Нашата работа» is not linked
+   * at all while the strip has no shots of the shop's own work.
+   */
+  private readonly sections = inject(SiteSectionsService).sections();
+
   private readonly principal = toSignal(this.session.observePrincipal(), {
     initialValue: null,
   });
@@ -109,6 +117,7 @@ export class SiteFooterComponent {
 
   protected readonly columns = computed<readonly FooterColumn[]>(() => {
     const flagship = this.flagshipLocation();
+    const sections = this.sections();
     const visitLinks: FooterLink[] = flagship
       ? [
           {
@@ -123,20 +132,19 @@ export class SiteFooterComponent {
           },
         ]
       : [];
-    return [
+    const columns: readonly FooterColumn[] = [
       {
         labelKey: 'landing.footer.cols.explore',
         links: [
-          {
-            labelKey: 'landing.footer.nav.work',
-            footerLinkTarget: FooterLinkTarget.Hash,
-            target: '/#work',
-          },
-          {
-            labelKey: 'landing.footer.nav.team',
-            footerLinkTarget: FooterLinkTarget.Hash,
-            target: '/#team',
-          },
+          ...(sections.team
+            ? [
+                {
+                  labelKey: 'landing.footer.nav.team',
+                  footerLinkTarget: FooterLinkTarget.Hash,
+                  target: '/#team',
+                },
+              ]
+            : []),
           {
             labelKey: 'landing.footer.nav.careers',
             footerLinkTarget: FooterLinkTarget.Router,
@@ -158,11 +166,15 @@ export class SiteFooterComponent {
         labelKey: 'landing.footer.cols.visit',
         links: [
           ...visitLinks,
-          {
-            labelKey: 'landing.footer.links.hours',
-            footerLinkTarget: FooterLinkTarget.Hash,
-            target: '/#visit',
-          },
+          ...(sections.visit
+            ? [
+                {
+                  labelKey: 'landing.footer.links.hours',
+                  footerLinkTarget: FooterLinkTarget.Hash,
+                  target: '/#visit',
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -194,6 +206,8 @@ export class SiteFooterComponent {
         ],
       },
     ];
+    // A column with no link left (no shop stored yet) is not drawn.
+    return columns.filter((column) => column.links.length > 0);
   });
 
   /** The one `CLOCK_PORTS` reading the copyright year is dated by — read once, like the device year it replaced. */

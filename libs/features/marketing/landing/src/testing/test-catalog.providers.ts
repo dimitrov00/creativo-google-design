@@ -5,33 +5,49 @@ import {
   MEDIA_RESOLVE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import type { CatalogReadPorts, MediaResolvePorts } from '@core/ports';
-import type { Barber, Service } from '@core/entities';
+import type { Barber, Service, ShopLocation } from '@core/entities';
 import {
   BarberOffering,
   BarberStatus,
   CompositionKind,
+  DayHours,
+  E164,
+  GeoPoint,
   LocalizedText,
+  LocationStatus,
+  MediaRef,
   ServiceComposition,
   ServiceStatus,
   ServiceTerms,
   ServiceVariant,
   type ServiceTermsInput,
+  VenuePhone,
 } from '@core/components';
 import {
   BarberId,
   Currency,
   LocalDate,
+  LocationId,
   MediaRefId,
   Result,
   ServiceCategoryId,
   ServiceId,
   UtcEpochMs,
 } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  CATALOG_ART,
+  type CatalogArt,
+} from '@creativo/features/shared/catalog';
+import { LANDING_WORK_SHOTS } from '../lib/content/landing-content';
 import {
   type AuthoredService,
+  type AuthoredShop,
   type AuthoredTerms,
   BARBERS,
   SERVICES,
+  SHOPS,
+  WORK_SHOTS,
 } from './landing-catalog';
 
 /**
@@ -178,22 +194,90 @@ function barbers(): readonly Barber[] {
   }));
 }
 
+/** A demo shop as the `locations` read answers it — every figure through its edge guard. */
+function shopFromVm(vm: AuthoredShop, index: number): ShopLocation {
+  return {
+    id: LocationId.of(vm.id),
+    name: sure(LocalizedText.parse(vm.name)),
+    shortName: null,
+    address: sure(LocalizedText.parse(vm.address)),
+    mapUrl: null,
+    photos: vm.photos.map((path, photo) =>
+      sure(
+        MediaRef.parse({
+          mediaId: MediaRefId.of(`media-${vm.id}-${photo}`),
+          mediaPath: path,
+          mediaWidth: 1200,
+          mediaHeight: 1500,
+          mediaBlurhash: null,
+          mediaFocalX: null,
+          mediaFocalY: null,
+        }),
+      ),
+    ),
+    openingHours: sure(DayHours.parseWeek(vm.week)),
+    timeZone: sure(ZonedTimeSystem.checkZone('Europe/Sofia')),
+    locationStatus: LocationStatus.Active,
+    sortOrder: index + 1,
+    ...sure(GeoPoint.parse(vm.latitude, vm.longitude)),
+    ...sure(VenuePhone.of(sure(E164.parse(vm.phoneE164)), vm.phoneDisplay)),
+    coverMediaId: null,
+    coverMediaPath: null,
+    coverMediaWidth: null,
+    coverMediaHeight: null,
+    coverMediaBlurhash: null,
+    coverMediaFocalX: null,
+    coverMediaFocalY: null,
+  };
+}
+
 /**
- * The fixture catalogue as the live streams answer it. No shops: the
- * landing's locations are still hand-authored, and the shared
- * `CatalogContentService` it reads its services and barbers from subscribes
- * to that stream too. No categories: nothing on the landing groups by them.
+ * The fixture catalogue as the live streams answer it — the demo barbers,
+ * services and shops. No categories: nothing on the landing groups by them.
  */
 function fixtureCatalogPorts(): CatalogReadPorts {
   const services = SERVICES.map(serviceFromVm);
   const people = barbers();
+  const shops = testShops();
   return {
     observeServices: () => of(Result.ok(services)),
     observeBarbers: () => of(Result.ok(people)),
     observeCategories: () => of(Result.ok([])),
+    observeLocations: () => of(Result.ok(shops)),
+  };
+}
+
+/** The demo shops as the `locations` read answers them, in their `sortOrder`. */
+export function testShops(): readonly ShopLocation[] {
+  return SHOPS.map(shopFromVm);
+}
+
+/** The catalogue a fresh project answers: every read answered, nothing stored. */
+function emptyCatalogPorts(): CatalogReadPorts {
+  return {
+    observeServices: () => of(Result.ok([])),
+    observeBarbers: () => of(Result.ok([])),
+    observeCategories: () => of(Result.ok([])),
     observeLocations: () => of(Result.ok([])),
   };
 }
+
+/** The demo art direction: each demo barber's specialty and gallery, each demo service's gallery. */
+const DEMO_ART: CatalogArt = {
+  barbers: Object.fromEntries(
+    BARBERS.map((barber) => [
+      barber.id,
+      {
+        specialty: barber.specialty,
+        gallery: barber.gallery,
+        objectPosition: barber.objectPosition,
+      },
+    ]),
+  ),
+  services: Object.fromEntries(
+    SERVICES.map((service) => [service.id, { gallery: service.gallery }]),
+  ),
+};
 
 /** Echoes the ref's own path back as the URL — the fixture stores real `/work/*.jpg` paths. */
 function fixtureMediaPorts(): MediaResolvePorts {
@@ -203,9 +287,28 @@ function fixtureMediaPorts(): MediaResolvePorts {
   };
 }
 
+/**
+ * The demo catalogue — barbers, services, shops — behind the catalogue's
+ * ports, with the demo art and work strip behind the seams production
+ * leaves empty (`CATALOG_ART`, `LANDING_WORK_SHOTS`).
+ */
 export function provideTestCatalog(): Provider[] {
   return [
     { provide: CATALOG_PORTS, useFactory: fixtureCatalogPorts },
+    { provide: MEDIA_RESOLVE_PORTS, useFactory: fixtureMediaPorts },
+    { provide: CATALOG_ART, useValue: DEMO_ART },
+    { provide: LANDING_WORK_SHOTS, useValue: WORK_SHOTS },
+  ];
+}
+
+/**
+ * A fresh project's catalogue: every read answers, and nothing is stored —
+ * no barber, service or shop, no art, no work shots (staging on
+ * 2026-11-19).
+ */
+export function provideEmptyCatalog(): Provider[] {
+  return [
+    { provide: CATALOG_PORTS, useFactory: emptyCatalogPorts },
     { provide: MEDIA_RESOLVE_PORTS, useFactory: fixtureMediaPorts },
   ];
 }

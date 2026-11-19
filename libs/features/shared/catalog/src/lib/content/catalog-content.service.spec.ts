@@ -5,7 +5,7 @@ import {
   CATALOG_PORTS,
   MEDIA_RESOLVE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { type MediaRef, type Principal, Role } from '@core/components';
+import { MediaRef, type Principal, Role } from '@core/components';
 import type {
   CatalogReadPorts,
   MediaResolvePorts,
@@ -22,13 +22,16 @@ import {
 import { MediaError, RepositoryError } from '@core/errors';
 import {
   barberFixture,
+  locationFixture,
   memoryAuthSessionPorts,
   memoryCatalogReadPorts,
   memoryMediaResolvePorts,
   principalFixture,
   serviceFixture,
+  unwrapOk,
   FIXTURE_TERMS,
 } from '@core/testing';
+import { CATALOG_ART } from './catalog-art';
 import { CatalogContentService } from './catalog-content.service';
 import { DEFAULT_MEDIA_RETRY_POLICY } from './media-url-cache';
 
@@ -165,6 +168,94 @@ describe('CatalogContentService — media', () => {
     TestBed.tick();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(reader.calls).toEqual([cover.path, avatar.path]);
+  });
+
+  it('resolves a shop’s own photos through the same cache, in their stored order', async () => {
+    const photo = (path: string) =>
+      unwrapOk(
+        MediaRef.parse({
+          mediaId: MediaRefId.of(`media-${path}`),
+          mediaPath: path,
+          mediaWidth: 1200,
+          mediaHeight: 1500,
+          mediaBlurhash: null,
+          mediaFocalX: null,
+          mediaFocalY: null,
+        }),
+      );
+    const shop = locationFixture({
+      photos: [photo('shops/centre-2.jpg'), photo('shops/centre-1.jpg')],
+    });
+    const reader = flakyResolver(0);
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: CATALOG_PORTS,
+          useValue: catalogPorts({
+            services: () => of(Result.ok([])),
+            barbers: () => of(Result.ok([])),
+            locations: () => of(Result.ok([shop])),
+          }),
+        },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: reader.ports },
+      ],
+    });
+    const content = TestBed.inject(CatalogContentService);
+    TestBed.tick();
+    // Nothing resolved yet: no photo to show, rather than a broken one.
+    expect(content.photoUrlsOf(shop)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(content.photoUrlsOf(shop)).toEqual([
+      urlOf({ path: 'shops/centre-2.jpg' }),
+      urlOf({ path: 'shops/centre-1.jpg' }),
+    ]);
+  });
+
+  it('merges only the art direction it is given — none by default', async () => {
+    const reader = flakyResolver(0);
+    const bare = setUp(reader);
+    expect(bare.barberVms()[0]?.specialty).toBeNull();
+    expect(bare.barberVms()[0]?.gallery).toEqual([]);
+    expect(bare.serviceVms()[0]?.gallery).toEqual([]);
+    TestBed.resetTestingModule();
+
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: CATALOG_PORTS,
+          useValue: catalogPorts({
+            services: () => services.asObservable(),
+            barbers: () => of(Result.ok([ivan])),
+          }),
+        },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: reader.ports },
+        {
+          provide: CATALOG_ART,
+          useValue: {
+            barbers: {
+              [ivan.id]: {
+                specialty: { en: 'Scissors', bg: 'Ножица' },
+                gallery: ['https://cdn.test/work/cut.jpg'],
+                objectPosition: '50% 25%',
+              },
+            },
+            services: {
+              [fade.id]: { gallery: ['https://cdn.test/work/fade.jpg'] },
+            },
+          },
+        },
+      ],
+    });
+    const styled = TestBed.inject(CatalogContentService);
+    TestBed.tick();
+    expect(styled.barberVms()[0]?.specialty).toEqual({
+      en: 'Scissors',
+      bg: 'Ножица',
+    });
+    expect(styled.serviceVms()[0]?.gallery).toEqual([
+      'https://cdn.test/work/fade.jpg',
+    ]);
   });
 
   it('recovers a cover whose first resolve failed, without a request per re-emit', async () => {

@@ -1,6 +1,6 @@
 @let card = vm();
-<!-- ONE white card, ONE button → the wallet. The button's sentence says it
-     all; the drawn words are hidden from a reader. -->
+<!-- ONE white card, ONE button → the wallet, named by the words it prints
+     (WCAG 2.5.3): the figure, the sentence, the facts. -->
 <button
   type="button"
   uiCard
@@ -8,7 +8,6 @@
   uiPadding="comfortable"
   [uiInteractive]="true"
   class="loyalty-glance__card"
-  [attr.aria-label]="card.accessibleName"
   data-testid="client-loyalty-points"
   (click)="open.emit()"
 >
@@ -18,7 +17,7 @@
   <span class="loyalty-glance__disc" aria-hidden="true"></span>
   <span class="loyalty-glance__disc" aria-hidden="true"></span>
 
-  <span class="loyalty-glance__words" aria-hidden="true">
+  <span class="loyalty-glance__words">
     <!-- The figure: the balance as a display figure in the accent, on
          white (rule 3), the unit quiet beside it on one baseline. -->
     <span class="loyalty-glance__figure">

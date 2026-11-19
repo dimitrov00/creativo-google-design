@@ -4,6 +4,7 @@ export * from './lib/identity/avatar-refusal';
 export * from './lib/identity/onboarding-link';
 export * from './lib/menu/site-menu.component';
 export * from './lib/footer/site-footer.component';
+export * from './lib/site-sections/site-sections.service';
 export * from './lib/prefs/theme.service';
 export * from './lib/prefs/locale-theme-toggle.component';
 export * from './lib/language.service';

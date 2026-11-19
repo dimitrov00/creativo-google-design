@@ -590,10 +590,11 @@ describe('ClientAppointments', () => {
 
       const row = rowById(host, 'appt_1');
       // Still the page's control — a button that opens the visit, named by
-      // its one sentence — inside the shared row.
+      // the words it prints (WCAG 2.5.3), not an aria-label — inside the
+      // shared row.
       expect(row?.tagName).toBe('BUTTON');
       expect(row?.closest('lib-visit-row')).not.toBeNull();
-      expect(row?.getAttribute('aria-label')).toBeTruthy();
+      expect(row?.hasAttribute('aria-label')).toBe(false);
 
       // WHEN, as the DS's stamp, in the accent while the visit is still
       // ahead: «Предстоящи» names no period, so the tile names the month —

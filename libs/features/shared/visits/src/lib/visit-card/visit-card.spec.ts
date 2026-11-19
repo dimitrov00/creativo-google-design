@@ -579,7 +579,7 @@ describe('VisitCard · the thumbs', () => {
 });
 
 describe('VisitCard · the whole card a control (`interactive`)', () => {
-  it('is ONE button: the DS card’s button form, named by the sentence', async () => {
+  it('is ONE button: the DS card’s button form, named by the words it prints', async () => {
     const vm = upcoming();
     const { fixture, host, q } = await mount(vm, { interactive: true });
 
@@ -590,8 +590,22 @@ describe('VisitCard · the whole card a control (`interactive`)', () => {
     expect(card?.hasAttribute('data-interactive')).toBe(true);
     expect(card?.getAttribute('data-tone')).toBe('elevated');
     expect(card?.getAttribute('data-padding')).toBe('comfortable');
-    expect(card?.getAttribute('aria-label')).toBe(vm.accessibleName);
-    // The name is the button's: no group, no second sentence, nothing hidden.
+    // WCAG 2.5.3: no aria-label stands over the words, so the button's name
+    // IS what it prints — the label, the facts, the capsule, in that order.
+    expect(card?.hasAttribute('aria-label')).toBe(false);
+    expect(card?.hasAttribute('aria-labelledby')).toBe(false);
+    const words = card?.textContent ?? '';
+    const order = [
+      vm.label,
+      ...vm.facts.map((part) => part.text.replaceAll(' · ', '\u00a0· ')),
+      vm.capsule?.text ?? '',
+    ]
+      .filter((part) => part !== '')
+      .map((part) => words.indexOf(part));
+    expect(order.length).toBeGreaterThan(1);
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
+    // No group, no second sentence, and nothing of it hidden.
     expect(card?.hasAttribute('role')).toBe(false);
     expect(q('[data-visually-hidden]')).toBeNull();
     expect(q('[aria-hidden="true"]')).toBeNull();

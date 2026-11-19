@@ -23,20 +23,26 @@
     uiFrame
     [uiFrameMaxWidth]="'var(--landing-max-width)'"
   >
+    <!-- A section with nothing stored to show is not drawn — nor its
+         anchor: the menu and the footer link only to what is here. -->
+    @if (content.showsWork) {
     <div id="work" class="cr-landing__anchor">
       <cr-work-gallery />
     </div>
+    } @if (content.showsServices()) {
     <div id="services" class="cr-landing__anchor">
       <cr-services-section />
     </div>
+    } @if (content.showsTeam()) {
     <div id="team" class="cr-landing__anchor">
       <cr-team-showcase />
     </div>
+    } @if (content.showsShops()) {
     <div id="visit" class="cr-landing__anchor">
       <!-- The locations section owns a MapLibre map (~1MB) — `@defer (on
-           viewport)` keeps it out of the initial bundle (v2 lazy rule). -->
+             viewport)` keeps it out of the initial bundle (v2 lazy rule). -->
       @defer (on viewport) {
-      <cr-locations />
+      <cr-locations [shops]="shops()" />
       } @placeholder {
       <!-- Reserves room so the section doesn't jump on hydrate. -->
       <ui-skeleton
@@ -48,6 +54,7 @@
       />
       }
     </div>
+    }
     <div id="courses" class="cr-landing__anchor">
       <cr-courses-section />
     </div>

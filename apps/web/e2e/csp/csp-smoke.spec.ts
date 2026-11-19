@@ -189,6 +189,11 @@ async function expectClean(
 
 /** Scrolls the whole page, so every `@defer (on viewport)` section hydrates. */
 async function scrollThroughPage(page: Page): Promise<void> {
+  // The stored sections are drawn once the catalogue's reads answer, and
+  // the «Visit» section's `@defer (on viewport)` placeholder with them: a
+  // scroll that passes before it exists never wakes it. So wait for the
+  // section run to be there first — the shops' anchor is its last.
+  await page.locator('#visit').waitFor({ state: 'attached' });
   await page.evaluate(async () => {
     const step = Math.max(window.innerHeight, 600);
     for (let y = 0; y <= document.body.scrollHeight; y += step) {

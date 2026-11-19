@@ -93,7 +93,7 @@ const BARBERS: readonly BarberVm[] = [
     name: { en: 'Ivan Kolev', bg: 'Иван Колев' },
     title: { en: 'Chief barber', bg: 'Главен бръснар' },
     bio: { en: 'Twelve years.', bg: 'Дванадесет години.' },
-    avatarSrc: '/barbers/ivan.jpg',
+    avatarSrc: 'https://example.test/barbers/ivan.jpg',
     objectPosition: '50% 25%',
     specialty: { en: 'Scissors', bg: 'Ножица' },
     gallery: [],

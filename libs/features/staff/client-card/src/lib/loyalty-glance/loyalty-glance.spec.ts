@@ -48,7 +48,7 @@ async function mount(vm: LoyaltyGlanceVm) {
 const CSS = readFileSync(resolve(__dirname, 'loyalty-glance.css'), 'utf8');
 
 describe('lib-loyalty-glance — Георги: points, a sentence, three holdings', () => {
-  it('is ONE white elevated card that is ONE button, named by its sentence; its words are not heard twice', async () => {
+  it('is ONE white elevated card that is ONE button, named by the words it prints', async () => {
     const { byId, text } = await mount(LOYALTY_GLANCE.georgi);
     const card = must(byId<HTMLButtonElement>('client-loyalty-points'));
     expect(card.tagName).toBe('BUTTON');
@@ -57,11 +57,11 @@ describe('lib-loyalty-glance — Георги: points, a sentence, three holding
     expect(card.getAttribute('data-tone')).toBe('elevated');
     expect(card.getAttribute('data-padding')).toBe('comfortable');
     expect(card.hasAttribute('data-interactive')).toBe(true);
-    expect(card.getAttribute('aria-label')).toBe(
-      'Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения.',
-    );
+    // WCAG 2.5.3: no aria-label over the card's words, and none of them
+    // hidden — the figure, the sentence and the facts name the button.
+    expect(card.hasAttribute('aria-label')).toBe(false);
     const words = must(card.querySelector('.loyalty-glance__words'));
-    expect(words.getAttribute('aria-hidden')).toBe('true');
+    expect(words.hasAttribute('aria-hidden')).toBe(false);
     // Three blocks, each on its own line: the figure, the sentence, the holdings.
     expect([...words.children].map((block) => text(block))).toEqual([
       // The figure and its unit are two spans on one baseline.

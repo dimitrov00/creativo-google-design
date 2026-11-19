@@ -145,6 +145,7 @@ export function medalOf(
     valueText: null,
     isNew: false,
     accessibleName: overrides.title ?? seriesId,
+    figureName: null,
     ...overrides,
   };
 }
@@ -188,6 +189,7 @@ export function visitRowOf(
     outcome: VisitRowOutcome.Worked,
     bookingStatus: BookingStatus.Completed,
     accessibleName: 'Фейд, 5 септември, Иван Колев, Център, 17,50 €',
+    drawnName: ', 5 септември',
     testId: `history-row-${id}`,
     ...overrides,
   };
@@ -209,6 +211,7 @@ export const MEDALS = {
     valueText: '23 от 25 до ниво III',
     accessibleName:
       'Фейд, ниво II, спечелено на 24 септември 2025 г., 23 от 25 до ниво III',
+    figureName: ', ниво II',
   }),
   /** Earned, high on its ladder. */
   withIvan: medalOf('barber-ivan', {
@@ -399,7 +402,8 @@ const BIRTHDAY_GIFT: RewardReadyVm = {
   detail: 'до 28.10',
   stack: null,
   applied: false,
-  accessibleName: 'Рожден ден, −20 %, използвай',
+  // A ready ticket is a button named by the words it prints.
+  accessibleName: null,
   removeName: 'Премахни отстъпката: Рожден ден',
 };
 
@@ -410,8 +414,8 @@ export const BIRTHDAY = {
     title: 'Рожден ден · 34 г.',
     gift: BIRTHDAY_GIFT,
     giftLabel: 'Подарък от салона',
-    accessibleName:
-      'Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай',
+    // The held gift is a button named by its words: no sentence here.
+    accessibleName: null,
   },
   /** (c) The gift on this visit's bill: stamped, «Премахни» where «Използвай» stood. */
   giftApplied: {
@@ -607,8 +611,6 @@ export const LOYALTY_GLANCE = {
       { id: 'stamps', label: 'Печати', value: '3 от 10' },
       { id: 'rhythm', label: 'Ритъм', value: '9' },
     ],
-    accessibleName:
-      'Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения.',
   },
   /** Out of reach: how far the next reward is. */
   toNext: {
@@ -616,8 +618,6 @@ export const LOYALTY_GLANCE = {
     unit: 'точки',
     sentence: 'Още 42 до безплатно оформяне на брада',
     holdings: [{ id: 'rhythm', label: 'Ритъм', value: '2' }],
-    accessibleName:
-      'Лоялност: 78 точки. Още 42 до безплатно оформяне на брада. Ритъм 2 посещения.',
   },
   /** `loyalty.points` off: the first holding leads as the figure. */
   pointsOff: {
@@ -628,7 +628,6 @@ export const LOYALTY_GLANCE = {
       { id: 'voucher', label: 'Ваучер', value: '25,00 €' },
       { id: 'stamps', label: 'Печати', value: '3 от 10' },
     ],
-    accessibleName: 'Лоялност: ваучер 25,00 €, печати 3 от 10.',
   },
   /** Welcome points and nothing held: no holdings line. */
   bare: {
@@ -636,8 +635,6 @@ export const LOYALTY_GLANCE = {
     unit: 'точки',
     sentence: 'Още 70 до безплатно оформяне на брада',
     holdings: [],
-    accessibleName:
-      'Лоялност: 50 точки. Още 70 до безплатно оформяне на брада.',
   },
 } satisfies Record<string, LoyaltyGlanceVm>;
 
@@ -723,7 +720,7 @@ export const REWARD_READY = {
     detail: 'до 28.10',
     stack: null,
     applied: false,
-    accessibleName: 'Безплатно подстригване, използвай',
+    accessibleName: null,
     removeName: 'Премахни отстъпката: Безплатно подстригване',
   },
   /** A value of its own, two identical grants, another kind held too. */
@@ -734,7 +731,7 @@ export const REWARD_READY = {
     detail: 'до 31.12 · още 1',
     stack: '×2',
     applied: false,
-    accessibleName: 'Отстъпка за редовен клиент, −10 %, използвай',
+    accessibleName: null,
     removeName: 'Премахни отстъпката: Отстъпка за редовен клиент',
   },
   /** On this visit's bill: stamped where it stood. */
@@ -1674,7 +1671,6 @@ export const RECORD_CARD = {
     icon: 'loyalty.record.longestRhythm',
     src: null,
     isNew: true,
-    accessibleName: 'Най-дълъг ритъм: 23, септември 2026 г., нов рекорд',
   },
   mostVisitsInYear: {
     id: 'mostVisitsInYear',
@@ -1685,7 +1681,6 @@ export const RECORD_CARD = {
     icon: 'loyalty.record.mostVisitsInYear',
     src: null,
     isNew: false,
-    accessibleName: 'Най-много за година: 13, 2025 г.',
   },
   /** The hero of a favourite is the SERVICE: its cover in the emblem's place. */
   favouriteService: {
@@ -1697,7 +1692,6 @@ export const RECORD_CARD = {
     icon: 'loyalty.record.favouriteService',
     src: 'media/services/fade.jpg',
     isNew: false,
-    accessibleName: 'Любима услуга: Фейд, 23 пъти',
   },
   firstVisit: {
     id: 'firstVisit',
@@ -1708,7 +1702,6 @@ export const RECORD_CARD = {
     icon: 'loyalty.record.firstVisit',
     src: null,
     isNew: false,
-    accessibleName: 'Първо посещение: 1 март, 2025 г.',
   },
 } satisfies Record<string, RecordCardVm>;
 
@@ -2090,6 +2083,8 @@ export const RECORDS_PAGE = {
     featured: {
       ...RECORD_CARD.mostVisitsInYear,
       sentence: 'посещения за една година',
+      accessibleName:
+        'Най-много за година: 13 посещения за една година, 2025 г.',
     },
     groups: [
       {

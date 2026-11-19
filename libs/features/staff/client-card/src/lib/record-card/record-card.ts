@@ -50,6 +50,11 @@ import { measuredWidthOf, recordFigureFontFor } from '../sheet-width';
  * of a 2 × 2 one line of display figures) whatever a label wraps, and four
  * cards of unequal words stand one height. The test id is the host's
  * (`achievements-record-{kind}`), the consumer's to set.
+ *
+ * The button is NAMED BY THE WORDS IT PRINTS — the label, the figure, the
+ * capsule, the detail — with no `aria-label` over them, so a speech user
+ * says what they see (WCAG 2.5.3, «label in name»). Only the emblem, a
+ * drawing, is hidden.
  */
 @Component({
   selector: 'lib-record-card',
@@ -63,7 +68,6 @@ import { measuredWidthOf, recordFigureFontFor } from '../sheet-width';
       uiPadding="regular"
       [uiInteractive]="true"
       class="record-card"
-      [attr.aria-label]="record.accessibleName"
       [attr.data-kind]="recordKindWords[record.personalRecordKind]"
       [attr.data-new]="record.isNew ? '' : null"
       (click)="open.emit(record.id)"
@@ -82,10 +86,9 @@ import { measuredWidthOf, recordFigureFontFor } from '../sheet-width';
         uiText
         uiFont="callout"
         uiWeight="semibold"
-        aria-hidden="true"
         >{{ record.label }}</span
       >
-      <span class="record-card__figure-row" aria-hidden="true">
+      <span class="record-card__figure-row">
         <span
           class="record-card__figure"
           uiText
@@ -106,7 +109,6 @@ import { measuredWidthOf, recordFigureFontFor } from '../sheet-width';
           uiText
           uiFont="footnote"
           uiForegroundStyle="secondary"
-          aria-hidden="true"
           >{{ bound(detail) }}</span
         >
       }
@@ -135,7 +137,7 @@ export class RecordCard {
    * The detail as drawn: «септември 2026 г.» with its year and «г.» bound,
    * so a narrow card (a 330 phone's, the dialog's 4-up) wraps it before the
    * year and never leaves «г.» alone on a line (review 3, F13). The
-   * card's sentence (`accessibleName`) is the VM's, plain.
+   * no-break space reads as a space, so the card's name keeps its words.
    */
   protected bound(detail: string): string {
     return boundSuffix(detail);

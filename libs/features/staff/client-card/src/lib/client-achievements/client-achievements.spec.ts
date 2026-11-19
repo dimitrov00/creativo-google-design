@@ -261,9 +261,14 @@ describe('ClientAchievementsPage — the head and the records (AA–AE)', () => 
     const rhythm = byId('achievements-record-longestRhythm');
     const button = rhythm?.querySelector('button.record-card');
     expect(button?.getAttribute('data-tone')).toBe('elevated');
-    expect(button?.getAttribute('aria-label')).toBe(
-      'Най-дълъг ритъм: 24 посещения, септември 2026 г., нов рекорд',
+    // WCAG 2.5.3: the card is named by the words it prints, in order.
+    expect(button?.hasAttribute('aria-label')).toBe(false);
+    const said = button?.textContent ?? '';
+    const order = ['Най-дълъг ритъм', '24', 'Нов рекорд', 'септември 2026'].map(
+      (part) => said.indexOf(part),
     );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(text(button?.querySelector('.record-card__figure'))).toBe('24');
     expect(text(button?.querySelector('.record-card__new'))).toBe('Нов рекорд');
     // The favourite's hero is the SERVICE; the first visit is a card (one fact, once: no «Добре дошъл» caption says it any more).

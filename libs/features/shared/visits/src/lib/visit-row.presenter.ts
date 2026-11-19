@@ -433,6 +433,9 @@ function plainRowOf(
         marks: '',
         quote: '',
       }),
+      // The line says who and when in the day; the tile draws the date and
+      // the struck title the state, so a button's name says them after.
+      drawnName: `, ${at.dayLong()}${outcomeSlot}`,
       testId: 'appointment-row',
     };
   }
@@ -589,6 +592,9 @@ function plainRowOf(
       marks: marks.map((mark) => `, ${mark.label}`).join(''),
       quote: quoted === null ? '' : words.quoteName(quoted),
     }),
+    // The fact line never carries the date (the tile does); every state the
+    // staff's row has is written on it.
+    drawnName: `, ${at.dayLong()}`,
     testId: `history-row-${id}`,
   };
 }
@@ -689,6 +695,7 @@ export function waitlistRowOf(
     outcome: null,
     bookingStatus: null,
     accessibleName: `${words.name(services, whenLong)}${more}`,
+    drawnName: null,
     testId: 'client-visit-waitlist',
   };
 }
