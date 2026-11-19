@@ -5,10 +5,14 @@ description: >-
   project, the environment's web build, the CSP gate, Workload Identity
   Federation, the preflight, then Firestore indexes and TTL (and a bounded
   wait until they serve), rules, functions and hosting back to back, and a
-  smoke check of the live site. Non-interactive and never forced: a deploy
-  that would delete a function, raise the minimum bill or drop an index
-  stops and names the command. Called by deploy-staging.yml and
-  deploy-production.yml after their own refusal of the legacy projects.
+  smoke check of the live site. Non-interactive, and only the functions
+  deploy is forced (ADR E6, amended 2026-11-19): firebase-tools goes past a
+  new retry flag, a deletion or a raised minimum bill only when forced, and
+  apps/functions/src/main.spec.ts pins every function's deployed shape, so
+  each of those was a reviewed diff. The index deploy is never forced, so an
+  undeclared index is never dropped.
+  Called by deploy-staging.yml and deploy-production.yml after their own
+  refusal of the legacy projects.
 inputs:
   environment:
     description: staging or production — the web build configuration and the flag map
@@ -113,11 +117,22 @@ runs:
     # The predeploy builds the functions, writes the environment's flag map,
     # App Check mode and release stamp (FLAGS_ENV, CREATIVO_RELEASE) and runs
     # the functions-scope preflight in full.
+    #
+    # Forced, and only here (ADR E6, amended 2026-11-19). Non-interactive,
+    # firebase-tools 15 refuses a function that newly retries, a deletion and
+    # a raised minimum bill unless --force answers for it — the first staging
+    # deploy stopped at the 26 retrying triggers. main.spec.ts pins the
+    # export list and each export's whole endpoint (retry, instances,
+    # memory, secrets, schedule), so what --force confirms is the source CI
+    # tested: a function removed in a merged PR is deleted, a rollback
+    # deletes the functions the newer release added. The image cleanup
+    # policy it would also set needs a role the deploy account lacks: it
+    # warns, and the owner sets it once (docs/production-deploy.md step 7).
     - name: Deploy the functions
       shell: bash
       env:
         PROJECT: ${{ inputs.project }}
-      run: pnpm exec firebase deploy --only functions --project "$PROJECT" --non-interactive
+      run: pnpm exec firebase deploy --only functions --project "$PROJECT" --non-interactive --force
 
     # Straight after the functions: they share the callable wire. The
     # predeploy runs the web-scope preflight in full over the build above.
