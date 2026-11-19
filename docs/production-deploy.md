@@ -1199,8 +1199,11 @@ deploy, and P10 judges both predeploys (section 1, App Check).
       layering, typecheck, lint, test, `test ecs-core --coverage`,
       `typecheck seed-tools`, build web, verify:bundle, build functions +
       check-functions-deps, the grep gates, `verify:p0`, `test:emulator`,
-      `e2e:web`, `verify:appcheck`). Run the emulator journeys one at a time.
-      Source: `docs/architecture/HANDOFF.md:2102-2133`.
+      `e2e:web`, `e2e showcase`, `verify:appcheck`). Run the emulator
+      journeys one at a time. The two screenshot suites (`e2e:web`'s
+      `@screenshot` tests and all of `e2e showcase`) have macOS baselines,
+      so CI runs neither and only this gate catches a stale one.
+      Source: `docs/architecture/HANDOFF.md:3419-3468`.
 - [ ] Run the CSP gate on its own, because it starts every emulator. A changed
       inline script (the pre-paint script, or Beasties output after an Angular
       update) changes the hashes, and the enforced CSP would then block it.
