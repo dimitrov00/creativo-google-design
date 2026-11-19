@@ -775,6 +775,12 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
       out,
       /^\+ gcloud services enable [^\n]* iamcredentials\.googleapis\.com /m,
     );
+    // Every functions deploy reads the billing state through this API, and
+    // the deploy account may not turn it on (the first staging deploy).
+    assert.match(
+      out,
+      /^\+ gcloud services enable [^\n]* cloudbilling\.googleapis\.com /m,
+    );
     const describe = out.indexOf(
       `+ gcloud iam service-accounts describe ${runtime} --project=creativo-v2-prod`,
     );
