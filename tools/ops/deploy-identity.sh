@@ -13,7 +13,9 @@
 # OTP_EMAIL_FROM) in place. In order:
 #   0. the APIs the deploy and the identity need — Compute Engine's among
 #      them, which creates the functions' runtime account (the default
-#      compute one) in a project that has none yet;
+#      compute one) in a project that has none yet, and Cloud Billing's,
+#      which every functions deploy reads (the deploy account may not turn
+#      an API on);
 #   1. the project number and the repository's numeric id (reads);
 #   2. a workload identity pool (WIF_POOL_ID);
 #   3. its GitHub OIDC provider (WIF_PROVIDER_ID), whose condition admits
@@ -85,6 +87,12 @@ APIS=(
   # Creates <number>-compute@developer.gserviceaccount.com, the account the
   # functions run as (step 7); turning the API on starts no machine.
   compute.googleapis.com
+  # Read only: every functions deploy asks whether the project is on Blaze
+  # (firebase-tools' extensions step, even with no extension) and turns this
+  # API on first if it is off — which the deploy account may not do («Permissions
+  # denied enabling cloudbilling.googleapis.com», the first staging deploy,
+  # 2026-11-19). The read itself needs only resourcemanager.projects.get.
+  cloudbilling.googleapis.com
 )
 
 DEPLOY_ROLES=(
