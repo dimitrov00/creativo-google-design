@@ -14,13 +14,24 @@
  *     `2026-10-27T23:40`, an ISO instant), else the clock — and handed to
  *     both runs as `SEED_NOW` (`seed-run.mjs`), so a today-visit ending or
  *     the shop's midnight passing between the runs cannot make them differ.
+ *     The stats alone are computed on the real clock (Phase 3 P3-RU-2), so
+ *     an answer a visit edge moved between the runs must be the engine's at
+ *     each run's own instant, and nothing else may be rewritten.
  * (b) Two backfill runs (the `runBackfill` callable, as a sysadmin) leave
  *     every `clientStats/{customerId}` and `restricted/money` document
- *     byte-equal apart from `updatedAtUtcMs`; the second run writes nothing.
+ *     byte-equal apart from `updatedAtUtcMs`, but for answers the clock
+ *     moved between them (each the engine's at its own instant); the second
+ *     run rewrites exactly those.
  * (c) The seed's stats equal the backfill's for every seeded subject — every
  *     client RECORD a seat names (`subjectCustomerIds`, D29): the stats are
  *     deleted and rebuilt from the appointments alone, then compared with
- *     what the seed wrote.
+ *     what the seed wrote — at one instant. Each pair records the instant it
+ *     was computed at (`updatedAtUtcMs`), and "now" is an input (the next
+ *     visit, the rolling windows): a pair that differs is recomputed by the
+ *     seed's own engine at the seed's instant and at the backfill's, and
+ *     each must match its side (`explainedByTheClock`) — so a visit starting
+ *     or ending between the seed and the backfill never fails the proof,
+ *     and any other difference still does.
  * (d) A staff edit of the seeded party of two (`staffEditAppointment` as
  *     dev-staff-ivan) writes one audit row per account person, each naming
  *     that person's client record as `targetCustomerId`, attributed to Ivan
@@ -418,6 +429,130 @@ const POLICY_PASS_FIELDS = [
 ];
 
 /**
+ * "Now" is an input of every stats answer — the next visit, and the rolling
+ * windows anchored at the shop's current minute — and each pair records the
+ * instant it was computed at (`updatedAtUtcMs`, the projection clock). The
+ * seed, the live trigger and the backfill each read the REAL clock (the
+ * seed's projection on purpose, Phase 3 P3-RU-2), minutes apart; a seeded
+ * visit starting or ending in between moves one client's answer, as it did
+ * in CI on 2026-11-19 at 13:45:07 UTC — the end of that client's 13:00–13:45
+ * visit. So two books are compared at ONE instant, never across two:
+ * `engineAt` reruns the seed's own projection (the bundle's
+ * `projectClientStats` on the server's Firestore adapters, exactly as
+ * `seed:dev` runs it) for each client from nothing — its pair deleted first,
+ * so the projection clock is the pinned instant itself, never a stored
+ * later one — with the clock pinned at `instantOf(customerId)`, and returns
+ * the book it wrote.
+ */
+async function engineAt(customerIds, instantOf) {
+  for (const customerId of customerIds) {
+    const instant = instantOf(customerId);
+    assert(
+      Number.isFinite(instant),
+      `no instant to recompute ${customerId} at`,
+    );
+    await db.recursiveDelete(db.doc(`clientStats/${customerId}`));
+    const project = seedDomain.projectClientStats({
+      commit: seedDomain.firestoreCommitPlan(
+        db,
+        seedDomain.StoredDocumentSystem.guardOf,
+        () => undefined,
+      ),
+      nowUtcMs: () => instant,
+      ...seedDomain.firestoreSettingsPorts(db),
+      ...seedDomain.firestoreCatalogPorts(db),
+      defaultLocationId: seedDomain.TenantConfig.DEFAULT.defaultLocationId,
+      log: () => undefined,
+    });
+    const answer = await project({ customerIds: [customerId] });
+    assert(
+      answer.ok && answer.value.failures.length === 0,
+      `the engine could not recompute ${customerId}: ${JSON.stringify(answer.ok ? answer.value.failures : answer.error)}`,
+    );
+  }
+  const book = await statsBook();
+  return new Map(
+    customerIds.map((customerId) => [customerId, book.get(customerId)]),
+  );
+}
+
+/** The instant a pair of `book` was computed at. */
+const computedAt = (book) => (customerId) =>
+  book.get(customerId)?.stats?.updatedAtUtcMs;
+
+/**
+ * What a pair rebuilt from nothing cannot carry: the write bookkeeping, and
+ * the stamp a policy pass leaves on a stats document.
+ */
+const REBUILT_BOOKKEEPING = [
+  'updatedAtUtcMs',
+  'version',
+  ...POLICY_PASS_FIELDS,
+];
+
+/**
+ * The clients two books disagree on only because the clock moved between
+ * them: each side is the engine's answer at its own instant (`engineAt`,
+ * the earlier side first, so the later one is what the store keeps). The
+ * proof fails for any other disagreement — a client missing from either
+ * book included. Returns how many it explained.
+ */
+async function explainedByTheClock(changed, earlier, later) {
+  if (changed.length === 0) return 0;
+  const missing = changed.filter((id) => !earlier.has(id) || !later.has(id));
+  assert(
+    missing.length === 0,
+    `not the clock: ${missing.join(', ')} missing from one of the two books`,
+  );
+  for (const [side, book] of [
+    ['earlier', earlier],
+    ['later', later],
+  ]) {
+    const engine = await engineAt(changed, computedAt(book));
+    const unexplained = differing(
+      bookBytes(
+        new Map(
+          changed.map((customerId) => [customerId, book.get(customerId)]),
+        ),
+        ...REBUILT_BOOKKEEPING,
+      ),
+      bookBytes(engine, ...REBUILT_BOOKKEEPING),
+    );
+    assert(
+      unexplained.length === 0,
+      `not the clock: the ${side} answer of ${unexplained.join(', ')} is not the engine's at its own instant`,
+    );
+  }
+  return changed.length;
+}
+
+/**
+ * Two books by one writer (the same seed run twice, the same backfill run
+ * twice): every pair either unchanged apart from `updatedAtUtcMs`, or moved
+ * in content by the clock (`explainedByTheClock`). A pair rewritten with the
+ * same answer — a needless write the revision guard should have spared —
+ * fails the proof. Returns how many the clock moved.
+ */
+async function movedByTheClock(earlier, later, writer) {
+  const rewritten = differing(
+    bookBytes(earlier, 'updatedAtUtcMs'),
+    bookBytes(later, 'updatedAtUtcMs'),
+  );
+  const moved = differing(
+    bookBytes(earlier, ...REBUILT_BOOKKEEPING),
+    bookBytes(later, ...REBUILT_BOOKKEEPING),
+  );
+  const needless = rewritten.filter(
+    (customerId) => !moved.includes(customerId),
+  );
+  assert(
+    needless.length === 0,
+    `the ${writer} rewrote ${needless.join(', ')} with the same answer`,
+  );
+  return explainedByTheClock(moved, earlier, later);
+}
+
+/**
  * How long the runner waits on one `runBackfill` call: past the callable's
  * platform timeout (`RUN_BACKFILL_TIMEOUT_SECONDS`, 540 s), so it never
  * walks away from a call the server is still working on and then calls
@@ -552,31 +687,37 @@ await check(
     const firstSince = Date.now();
     const first = runSeed(seedNowMs);
     await settle(firstSince);
+    const statsBefore = await statsBook();
     const before = {
       appointments: await collectionBytes('appointments'),
       users: await collectionBytes('users'),
       customers: await collectionBytes('customers'),
-      stats: bookBytes(await statsBook(), 'updatedAtUtcMs'),
+      stats: bookBytes(statsBefore, 'updatedAtUtcMs'),
     };
     const secondSince = Date.now();
     runSeed(seedNowMs);
     await settle(secondSince);
+    const statsAfter = await statsBook();
     const after = {
       appointments: await collectionBytes('appointments'),
       users: await collectionBytes('users'),
       customers: await collectionBytes('customers'),
-      stats: bookBytes(await statsBook(), 'updatedAtUtcMs'),
+      stats: bookBytes(statsAfter, 'updatedAtUtcMs'),
     };
-    for (const name of ['appointments', 'users', 'customers', 'stats']) {
+    for (const name of ['appointments', 'users', 'customers']) {
       const changed = differing(before[name], after[name]);
       assert(
         changed.length === 0,
         `the second run changed ${name}: ${changed.join(', ')}`,
       );
     }
+    // The documents are pinned at the ONE instant; the stats are computed on
+    // the real clock, so a visit edge between the two runs may move an
+    // answer — the engine's at each run's own instant, or the proof fails.
+    const moved = await movedByTheClock(statsBefore, statsAfter, 'second run');
     seedStats = await statsBook();
     subjects = await seededSubjects();
-    return `${before.appointments.size} appointments, ${before.users.size} users, ${before.customers.size} client records, ${before.stats.size} stats pairs identical after the second run at ${new Date(seedNowMs).toISOString()}; last lines: ${first}`;
+    return `${before.appointments.size} appointments, ${before.users.size} users, ${before.customers.size} client records, ${before.stats.size} stats pairs identical after the second run at ${new Date(seedNowMs).toISOString()}${moved === 0 ? '' : ` (${moved} moved by the clock between the runs, each the engine's at its own instant)`}; last lines: ${first}`;
   },
 );
 
@@ -631,24 +772,36 @@ await check(
 
     const run = await backfillRun(sysadmin);
     await settle(since);
-    firstRun = await statsBook();
-    // Bookkeeping, all of it: a stack whose owner once moved the late line
-    // carries the policy pass's stamp (`policyPass*`) on the seed's stats,
-    // and a rebuild from nothing has none to carry.
-    const bookkeeping = ['updatedAtUtcMs', 'version', ...POLICY_PASS_FIELDS];
-    const changed = differing(
-      bookBytes(seedStats, ...bookkeeping),
-      bookBytes(firstRun, ...bookkeeping),
+    const rebuilt = await statsBook();
+    const lost = subjects.filter(
+      (customerId) =>
+        !rebuilt.has(customerId) || rebuilt.get(customerId).money === null,
     );
     assert(
-      changed.length === 0,
-      `seed and backfill disagree on: ${changed.join(', ')}`,
+      lost.length === 0,
+      `the backfill left subjects without stats: ${lost.join(', ')}`,
     );
+    // Content only (`REBUILT_BOOKKEEPING`): a stack whose owner once moved
+    // the late line carries the policy pass's stamp (`policyPass*`) on the
+    // seed's stats, and a rebuild from nothing has none to carry. The seed
+    // computed its answers minutes before the backfill: any that moved must
+    // be the engine's at each side's own instant (`explainedByTheClock`).
+    const moved = await explainedByTheClock(
+      differing(
+        bookBytes(seedStats, ...REBUILT_BOOKKEEPING),
+        bookBytes(rebuilt, ...REBUILT_BOOKKEEPING),
+      ),
+      seedStats,
+      rebuilt,
+    );
+    // What the store holds now — the backfill's answers, those the clock
+    // moved rewritten by the engine at the backfill's own instants.
+    firstRun = await statsBook();
     assert(
       run.sample !== null && run.sample.mismatched.length === 0,
       `the run's own sample found drift: ${JSON.stringify(run.sample)}`,
     );
-    return `${subjects.length} subjects rebuilt from ${run.processed} appointments (${run.recomputed} written by the backfill, ${run.stamped} mirrors stamped); sample ${run.sample.checked} checked, 0 mismatched`;
+    return `${subjects.length} subjects rebuilt from ${run.processed} appointments (${run.recomputed} written by the backfill, ${run.stamped} mirrors stamped)${moved === 0 ? '' : `, ${moved} moved by the clock since the seed, each the engine's at its own instant`}; sample ${run.sample.checked} checked, 0 mismatched`;
   },
 );
 
@@ -660,17 +813,12 @@ await check(
     const run = await backfillRun(sysadmin);
     await settle(since);
     const secondRun = await statsBook();
-    const changed = differing(
-      bookBytes(firstRun, 'updatedAtUtcMs'),
-      bookBytes(secondRun, 'updatedAtUtcMs'),
-    );
+    // A rewrite is owed only where the answer moved — with the clock, the
+    // one input that changed between the two runs (`explainedByTheClock`).
+    const moved = await movedByTheClock(firstRun, secondRun, 'second run');
     assert(
-      changed.length === 0,
-      `the second run changed: ${changed.join(', ')}`,
-    );
-    assert(
-      run.recomputed === 0,
-      `the second run rewrote ${run.recomputed} clients`,
+      run.recomputed === moved,
+      `the second run rewrote ${run.recomputed} clients, ${moved} of them moved by the clock`,
     );
     const restricted = [...secondRun.values()].every(
       (pair) =>
@@ -678,7 +826,7 @@ await check(
         pair.money?.lifetimeSpendCents !== undefined,
     );
     assert(restricted, 'lifetime spend is not confined to restricted/money');
-    return `${secondRun.size} stats pairs, 0 rewritten, 0 differing; lifetime spend only in restricted/money`;
+    return `${secondRun.size} stats pairs, ${moved} rewritten${moved === 0 ? '' : " (moved by the clock since the first run, each the engine's at its own instant)"}, 0 otherwise differing; lifetime spend only in restricted/money`;
   },
 );
 
