@@ -148,19 +148,21 @@ function discountTitle(
     : discount.label;
 }
 
-/** The three spoken names a card carries, from what it says. */
+/**
+ * The two spoken names a STAMPED card carries, from what it says: its own
+ * and its «Премахни»'s. An offered or blocked card is a button named by the
+ * words it prints (WCAG 2.5.3), so it needs none.
+ */
 function offerNames(
   label: string,
   code: string | null,
   value: string | null,
   words: VisitEditorWords,
-): Pick<OfferChoice, 'accessibleName' | 'blockedName' | 'removeName'> {
-  const accessibleName = [label, code, value]
-    .filter((part): part is string => part !== null)
-    .join(', ');
+): Pick<OfferChoice, 'accessibleName' | 'removeName'> {
   return {
-    accessibleName,
-    blockedName: `${accessibleName}, ${words.couponBlocked}`,
+    accessibleName: [label, code, value]
+      .filter((part): part is string => part !== null)
+      .join(', '),
     removeName: `${words.removeDiscount}: ${label}`,
   };
 }

@@ -3218,19 +3218,18 @@
       [uiDetail]="offer.line"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
-      [attr.aria-label]="offer.blockedName"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />
       <ui-icon uiCouponBadge uiName="booking.blocked" />
       <!-- The one word a blocked ticket says, quiet, where a call would
            stand (the DS's own unavailable example): the ticket is muted
-           whole, the glyph says why, the name says it to a reader. -->
+           whole, the glyph says why, and the word ends the ticket's name —
+           a button is named by the words it prints (WCAG 2.5.3). -->
       <span
         uiCouponAction
         uiText
         uiFont="callout"
         uiForegroundStyle="secondary"
-        aria-hidden="true"
         [attr.data-testid]="offer.testId + '-blocked'"
         >{{ t('staff.visit.couponBlocked') }}</span
       >
@@ -3246,20 +3245,19 @@
       [uiDetail]="offer.line"
       [uiTestId]="offer.testId"
       [attr.data-testid]="offer.testId"
-      [attr.aria-label]="offer.accessibleName"
       (click)="applyOffer(offer)"
     >
       <ui-icon uiCouponGlyph uiName="promo.coupon" />
       <!-- THE CALL IS DRESS (revision 3 §3.4): the same prominent pill every
-           offering ticket wears, decorative — the ticket is the control, its
-           name says «използвай». `uiAction`, the written call, has no caller
-           in this sheet any more. -->
+           offering ticket wears, decorative — the ticket is the control,
+           named by the words it prints, «Използвай» last (WCAG 2.5.3).
+           `uiAction`, the written call, has no caller in this sheet any
+           more. -->
       <span
         uiCouponAction
         uiButton
         uiButtonStyle="borderedProminent"
         uiControlSize="small"
-        aria-hidden="true"
         [attr.data-testid]="offer.testId + '-use'"
         >{{ t('staff.visit.useNow') }}</span
       >

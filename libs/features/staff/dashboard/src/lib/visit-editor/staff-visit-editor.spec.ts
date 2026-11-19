@@ -5256,7 +5256,8 @@ describe('StaffVisitEditor', () => {
       ).toBe('Безплатно подстригване');
       expect(named?.querySelector('.ui-coupon-card__value')).toBeNull();
       expect(named?.querySelector('.ui-coupon-card__figures')).toBeNull();
-      expect(named?.getAttribute('aria-label')).toBe('Безплатно подстригване');
+      // Named by the words it prints (WCAG 2.5.3): no aria-label over them.
+      expect(named?.hasAttribute('aria-label')).toBe(false);
       // A name that does not say it keeps the rule.
       expect(valueOf(host, 'staff-visit-discount-grant-grant-fifth')).toBe(
         'Безплатна услуга',
@@ -5369,11 +5370,17 @@ describe('StaffVisitEditor', () => {
         'комбинира се',
       );
       // An offered ticket wears the house pill, decorative — the ticket is
-      // the control, named «използвай» by its own label (revision 3 §3.4).
+      // the control (revision 3 §3.4), named by the words it prints, the
+      // pill's «Използвай» last: no aria-label, nothing hidden (WCAG 2.5.3).
       const pill = find(host, 'staff-visit-discount-grant-grant-loyal-use');
       expect(pill?.tagName).toBe('SPAN');
       expect(pill?.textContent?.trim()).toBe('Използвай');
-      expect(pill?.getAttribute('aria-hidden')).toBe('true');
+      expect(pill?.hasAttribute('aria-hidden')).toBe(false);
+      expect(
+        find(host, 'staff-visit-discount-grant-grant-loyal')?.hasAttribute(
+          'aria-label',
+        ),
+      ).toBe(false);
       expect(pill?.getAttribute('data-button-style')).toBe('borderedProminent');
       expect(
         pill?.closest('[data-testid="staff-visit-discount-grant-grant-loyal"]'),
@@ -5419,7 +5426,8 @@ describe('StaffVisitEditor', () => {
         ),
       ).not.toBeNull();
       // The one word a blocked ticket says, projected where a call would
-      // stand — quiet, decorative; the written `uiAction` has no caller.
+      // stand — quiet, and the end of its name; the written `uiAction` has
+      // no caller.
       expect(loyal.querySelector('.ui-coupon-card__action')).toBeNull();
       expect(
         find(
@@ -5431,8 +5439,9 @@ describe('StaffVisitEditor', () => {
         find(
           host,
           'staff-visit-discount-grant-grant-loyal-blocked',
-        )?.getAttribute('aria-hidden'),
-      ).toBe('true');
+        )?.hasAttribute('aria-hidden'),
+      ).toBe(false);
+      expect(loyal.hasAttribute('aria-label')).toBe(false);
       expect(applied(host)).toEqual([
         'staff-visit-discount-grant:grant-birthday',
       ]);
@@ -5560,9 +5569,9 @@ describe('StaffVisitEditor', () => {
       ]);
       const first = find(host, 'staff-visit-discount-promo-FIRST10');
       expect(first?.tagName).toBe('BUTTON');
-      expect(first?.getAttribute('aria-label')).toBe(
-        'Първо посещение, FIRST10, −10\u202f%',
-      );
+      // Named by the words it prints — title, figure, code, chip, call —
+      // never an aria-label over them (WCAG 2.5.3).
+      expect(first?.hasAttribute('aria-label')).toBe(false);
       expect(text(host, 'staff-visit-discount-promo-FIRST10-code')).toBe(
         'FIRST10',
       );
