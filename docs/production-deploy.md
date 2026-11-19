@@ -192,21 +192,34 @@ approval (you are its one required reviewer).
       once with `--environment production` and the production id. It enables
       the APIs, creates the Workload Identity pool, its GitHub provider (this
       repository's id, that environment's jobs, and for production only
-      `refs/tags/v*`), the deploy service account and its roles, makes sure
-      the functions' runtime account exists and lets it sign the sign-in
-      tokens (Token Creator on itself), lets the deploy account act as the
-      App Engine default account when the project has one (firebase-tools
-      checks that before every functions deploy, though nothing runs as
-      it), grants the bindings a first deploy would otherwise ask for, and
-      sets the environment's three variables.
+      `refs/tags/v*`), the deploy service account and its roles. It
+      creates the account every function runs as,
+      `creativo-functions@<id>.iam.gserviceaccount.com`, with exactly what
+      the functions call: Firestore, Auth users, App Check's token
+      verifier, log writing, its triggers' invoker and receiver roles, the
+      default bucket's objects (that bucket only), the four secrets, and
+      Token Creator on itself for the sign-in tokens
+      (`docs/architecture/decisions/2026-11-19-functions-runtime-identity.md`).
+      It gives the default compute account, which only builds the
+      functions, Cloud Run Builder. It lets the deploy account act as those
+      two accounts and as the App Engine default account when the project
+      has one (firebase-tools checks that before every functions deploy,
+      though nothing runs as it). It grants the bindings a first deploy
+      would otherwise ask for, and sets the environment's three variables.
       Run it after step 2: it grants the runtime account access to the four
-      secrets, which must exist. Step 8 creates the Pub/Sub and Eventarc
+      secrets and to the default bucket, which must both exist. Step 8 creates the Pub/Sub and Eventarc
       service agents with `gcloud beta services identity create` (a new
       project has neither until something asks for it, and the Eventarc
       agent's role takes minutes to reach the triggers); the first time,
       gcloud offers to install its beta commands: answer yes. The script is
       idempotent: if a step
-      fails, fix the cause and run the same command again.
+      fails, fix the cause and run the same command again. A binding that
+      fails right after the script created its account («does not exist»)
+      is IAM catching up: wait a minute and run it again.
+      **Production, a new project: add `--remove-default-editor`**, so its
+      two default accounts lose the Editor role Google gave them before
+      anything is deployed (step 7a says why; with no function deployed
+      yet, its check passes). Staging does this in step 7a instead.
 
 ```bash
 tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging
@@ -214,6 +227,14 @@ tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging
 
 ```bash
 tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --apply
+```
+
+```bash
+tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment production --remove-default-editor
+```
+
+```bash
+tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment production --remove-default-editor --apply
 ```
 
 - [ ] **7. The first staging deploy.** Merge any PR, or re-run the latest
@@ -229,10 +250,62 @@ tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --app
       Eventarc Service Agent»: re-run it a few minutes later. Then
       section 3.5 (the metrics, alerts and backstops). If a deploy names a
       missing permission, add that role to `DEPLOY_ROLES` in
-      `tools/ops/deploy-identity.sh` in a PR, and re-run the script.
+      `tools/ops/deploy-identity.sh` in a PR, and re-run the script. A
+      function that fails at run time with «permission denied» needs a
+      role in `RUNTIME_ROLES` the same way, a build that does needs one in
+      `BUILD_ROLES`, and the ADR's table gets a row for it.
 
 ```bash
 firebase functions:artifacts:setpolicy --location europe-west8 --project "$PROJECT_ID"
+```
+
+- [ ] **7a. Take Editor off staging's default accounts.** Google gives
+      the default compute account and the App Engine default account the
+      project's Editor role, and the deploy account may act as both. So
+      until this step, anyone who can deploy can run code as the project's
+      Editor (`docs/architecture/decisions/2026-11-19-functions-runtime-identity.md`).
+      Production never has it once step 6 has run with the flag. Staging
+      was set up before 2026-11-19, so it does this here, in this order.
+      **Out of order, the functions stop**, because a function still
+      running as a default account loses Firestore, Auth and its secrets
+      the moment Editor goes.
+  1. **Before the PR that moves the functions to the runtime account
+     merges**, run step 6's two staging commands from an up-to-date
+     `main`: the script landed there first, in a PR of its own, so it
+     never runs from an unmerged branch. They create the runtime account
+     and its grants, give the build account its role, and take nothing
+     away. The merge then deploys every function onto the runtime account.
+     A deploy that names an account that does not exist yet fails.
+  2. **Merge it**, let Deploy staging finish, and check staging (section
+     4). Each line of the listing below should now name
+     `creativo-functions@…`. The Scheduler jobs keep calling with
+     the default compute account's token (the deploy rewrites a job only
+     when its schedule changes), which the account's kept
+     `roles/run.invoker` still allows.
+  3. **Read the removal's dry run, then apply it.** Under `--apply` it
+     lists the functions first and refuses, removing nothing, while any of
+     them runs as another account. It removes Editor from both default
+     accounts. From the default compute account it also removes what the
+     earlier script granted it as the runtime account: Token Creator on
+     itself and the four secrets. Running it a second time changes nothing.
+  4. **Re-run the latest Deploy staging run**, which proves a build without
+     Editor, then section 4 again. **Rollback:** give the account Editor
+     back (the last command), and fix the cause in a PR.
+
+```bash
+gcloud functions list --project "$PROJECT_ID" --format='value(name.basename(),serviceConfig.serviceAccountEmail)'
+```
+
+```bash
+tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --remove-default-editor
+```
+
+```bash
+tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --remove-default-editor --apply
+```
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:<the account>" --role=roles/editor --condition=None
 ```
 
 - [ ] **8. The first release.** release-please keeps a PR open titled
@@ -308,9 +381,10 @@ Auth's authorised domains.
       documented migration (decided 2026-11-18, same record). P1–P3 read Firestore.
       The bucket is the project's DEFAULT one (the `storageBucket` of the web
       config): the web uploads avatars and visit photos there, and the admin's
-      GDPR erasure (`eraseClient`) deletes a person's objects from it with the
-      functions' default service account (runbook §3, "the GDPR erasure ships
-      dark").
+      GDPR erasure (`eraseClient`) deletes a person's objects from it as the
+      functions' runtime account, which holds Storage Object User on that
+      bucket alone (`tools/ops/deploy-identity.sh`, step 7a; runbook §3, "the
+      GDPR erasure ships dark").
       Source: `docs/architecture/firestore-runbook.md:193-208`.
 
 ### Project id, hosting site, web config, CSP host
@@ -556,26 +630,26 @@ Source: `apps/functions/src/adapters/postmark-otp-sender.adapter.ts`,
 - [ ] **Let the functions runtime service account sign custom tokens.** The
       Admin SDK runs with no key file (`initializeApp()`), so
       `createCustomToken` signs through IAM `signBlob`: the runtime service
-      account (gen 2's default,
-      `<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`) needs the IAM
+      account (`creativo-functions@<id>.iam.gserviceaccount.com`, which every
+      function runs as since 2026-11-19, `setGlobalOptions`) needs the IAM
       Service Account Credentials API and the Service Account Token Creator
       role on itself. Without them every OTP verify fails in production, and
       the emulator never shows it. **`tools/ops/deploy-identity.sh` does both**
       (Environments and releases, step 6): its step 0 enables the API, and
-      Compute Engine's, which creates the runtime account in a new project;
-      its step 7 waits for the account and grants the role on the account
-      itself, never project-wide. A project set up before the script did this
+      its step 7a creates the runtime account and grants the role on the
+      account itself, never project-wide. A project set up before the script did this
       gets it by re-running the script, which is idempotent. To check, read
       the account's policy and look for `roles/iam.serviceAccountTokenCreator`
       with the account itself as the member:
 
 ```bash
-gcloud iam service-accounts get-iam-policy "<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" --project="$PROJECT_ID"
+gcloud iam service-accounts get-iam-policy "creativo-functions@$PROJECT_ID.iam.gserviceaccount.com" --project="$PROJECT_ID"
 ```
 
 Source: `apps/functions/src/adapters/auth-claims.adapter.ts:73`;
-`apps/functions/src/lib/firebase-admin.ts:9`; `tools/ops/deploy-identity.sh`
-(step 7).
+`apps/functions/src/lib/firebase-admin.ts:9`;
+`apps/functions/src/lib/runtime-account.ts`; `tools/ops/deploy-identity.sh`
+(step 7a).
 
 ### Domain
 
@@ -835,11 +909,11 @@ console after use. Do it in this order:
       console → App Check → register the web app with the reCAPTCHA
       Enterprise provider and that key. Billing is on (Blaze); confirm the
       assessment quota. Enable the **Firebase App Check API** on the
-      project, and give the functions runtime service account the App Check
-      token-verifier role (`roles/firebaseappcheck.tokenVerifier`, or any
-      role holding the token-verify permission — confirm it in the console):
-      the five consuming callables call the API to verify, and without the
-      role they read `INVALID` on every call. Paste the PUBLIC site key into
+      project. The functions' runtime account already holds the App Check
+      token-verifier role (`roles/firebaseappcheck.tokenVerifier`,
+      `tools/ops/deploy-identity.sh` step 7a): the consuming callables call
+      the API to verify, and without the role they read `INVALID` on every
+      call. Confirm it in the console (IAM → `creativo-functions@…`). Paste the PUBLIC site key into
       `apps/web/src/environments/environment.production.ts`
       `appCheck.siteKey` — every web deploy from then on ships it (step 3),
       so finish step 2 first (gitleaks has no rule for site keys; if it ever
@@ -1299,8 +1373,10 @@ Audit-hardening Phase 3 (WS-D, P3-DEP-15) added the 49th and 50th:
 until it answers done). Both are bound to `WALKIN_ID_KEY` and
 `LOG_DIGEST_KEY` like the export, and refuse `PRIVACY_UNAVAILABLE` until
 `client.privacy` is lit, so they ship dark too. `eraseClient` deletes Auth
-users and objects of the default Storage bucket with the functions' default
-service account: confirm its roles on the project (runbook §3).
+users and objects of the default Storage bucket as the functions' runtime
+account (`creativo-functions@…`: Firebase Authentication Admin on the
+project, Storage Object User on that bucket; `tools/ops/deploy-identity.sh`
+step 7a, runbook §3).
 Source: `apps/functions/src/main.ts` (`previewClientErasure`,
 `eraseClient`); `docs/architecture/firestore-runbook.md` §1.1 ("The
 erasure's reads and writes"), §2.5 and §3.
