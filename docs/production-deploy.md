@@ -200,10 +200,12 @@ approval (you are its one required reviewer).
       it), grants the bindings a first deploy would otherwise ask for, and
       sets the environment's three variables.
       Run it after step 2: it grants the runtime account access to the four
-      secrets, which must exist. Step 8 creates the Pub/Sub service agent
-      with `gcloud beta services identity create` (a new project has none
-      until something asks for it); the first time, gcloud offers to install
-      its beta commands: answer yes. The script is idempotent: if a step
+      secrets, which must exist. Step 8 creates the Pub/Sub and Eventarc
+      service agents with `gcloud beta services identity create` (a new
+      project has neither until something asks for it, and the Eventarc
+      agent's role takes minutes to reach the triggers); the first time,
+      gcloud offers to install its beta commands: answer yes. The script is
+      idempotent: if a step
       fails, fix the cause and run the same command again.
 
 ```bash
@@ -221,7 +223,10 @@ tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --app
       `europe-west8`) has none, and the deploy account may read the policy,
       not set it. The repository exists only after that first build, so set
       the policy then, once per project; until you do, every deploy warns
-      and old images pile up. The run itself goes on to hosting. Then
+      and old images pile up. The run itself goes on to hosting. A project
+      whose Eventarc agent was made by the deploy itself (staging's was)
+      fails its Firestore triggers once, «Permission denied while using the
+      Eventarc Service Agent»: re-run it a few minutes later. Then
       section 3.5 (the metrics, alerts and backstops). If a deploy names a
       missing permission, add that role to `DEPLOY_ROLES` in
       `tools/ops/deploy-identity.sh` in a PR, and re-run the script.

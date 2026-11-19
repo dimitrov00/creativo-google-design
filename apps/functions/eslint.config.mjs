@@ -1,7 +1,12 @@
+// The root config by path, not `#eslint-config`: Node resolves a `#…`
+// import through the NEAREST package.json, and this project has its own —
+// the seed of the deployed functions' package.json, which must not carry the
+// root's `imports` into dist (tools/verify/ci/functions-package.spec.mjs).
+// Two levels up, inside Law 8.3's bound.
 import baseConfig, {
   TESTING_ENTRY_POINT_RESTRICTION,
   ecsProjectBlocks,
-} from '#eslint-config';
+} from '../../eslint.config.mjs';
 
 /**
  * This project's import restrictions (the layer rule minus the half this

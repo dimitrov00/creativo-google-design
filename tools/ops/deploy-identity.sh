@@ -46,7 +46,9 @@
 #   8. the bindings a first deploy would grant itself, so the deploy account
 #      never edits the project's IAM policy: the Pub/Sub agent's token
 #      creator (the agent created first: enabling the API does not create
-#      it in a new project, and a binding to an absent account fails),
+#      it in a new project, and a binding to an absent account fails), the
+#      Eventarc agent and its role (made ahead, so the role has settled
+#      before the first deploy's triggers ask for it),
 #      the runtime account's run.invoker and eventarc.eventReceiver,
 #      the Storage rules agent's Firestore role (the one a --non-interactive
 #      deploy skips silently, docs/production-deploy.md §3.2), and the
@@ -341,6 +343,13 @@ echo '# 8. the bindings a first deploy would otherwise grant itself'
 # does not exist yet ("INVALID_ARGUMENT: Service account … does not exist").
 # Creating the identity is idempotent: it returns the agent when it exists.
 run gcloud beta services identity create --service=pubsub.googleapis.com "--project=$PROJECT"
+# The Eventarc agent too, with its role: the first deploy creates it itself,
+# but its role reaches the 2nd gen triggers only minutes later, and every
+# Firestore trigger of that deploy fails «Permission denied while using the
+# Eventarc Service Agent» (the first staging deploy, 2026-11-19). Made here,
+# it has long settled when the first deploy runs.
+run gcloud beta services identity create --service=eventarc.googleapis.com "--project=$PROJECT"
+run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:service-${NUMBER}@gcp-sa-eventarc.iam.gserviceaccount.com" --role=roles/eventarc.serviceAgent --condition=None
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:service-${NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com" --role=roles/iam.serviceAccountTokenCreator --condition=None
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$RUNTIME" --role=roles/run.invoker --condition=None
 run gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$RUNTIME" --role=roles/eventarc.eventReceiver --condition=None
