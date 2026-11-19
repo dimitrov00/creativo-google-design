@@ -3448,6 +3448,10 @@ pnpm nx run verify-tools:runbook-gates
 pnpm run verify:p0
 pnpm run test:emulator
 pnpm run e2e:web
+pnpm nx e2e showcase   # the design-system workbench's screenshots, light and
+                       # dark (macOS baselines, so CI never runs them; went
+                       # unrun 2026-07-23 → 2026-11-19 and rotted 30/30). No
+                       # emulator, but it serves on :4200 like e2e:web, so alone
 pnpm run verify:csp   # since pass F (OR-31): the static hash gate on the production
                       # and csp-smoke builds, then the hosting-emulator smoke
 pnpm run verify:appcheck   # since security hardening Phase 4: App Check ENFORCE,

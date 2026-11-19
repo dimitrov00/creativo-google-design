@@ -10,12 +10,12 @@ import { test, expect, type Page } from '@playwright/test';
  */
 const CONTROL_ROUTES = [
   'controls/button',
-  'controls/input',
+  'controls/text-field',
   'controls/otp-field',
   'controls/chip',
   'controls/badge',
   'controls/avatar',
-  'controls/spinner',
+  'controls/progress-view',
   'controls/skeleton',
   'controls/stack',
   'controls/toolbar',
@@ -35,6 +35,12 @@ async function gotoWithTheme(
     window.localStorage.setItem('showcase-theme', t);
   }, theme);
   await page.goto(`/${route}`);
+  // Every showcase page renders its title as the one <h1> (`sc-page`). A
+  // route the app no longer has renders only the shell, and that empty
+  // shell would otherwise be recorded as a "passing" baseline — exactly how
+  // `controls/input` and `controls/spinner` went stale after their pages
+  // were renamed (8ae51c9f, 2026-07-23).
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   // No networkidle wait (flaky/discouraged) — `toHaveScreenshot` below
   // already auto-retries until the page is visually stable.
 }
