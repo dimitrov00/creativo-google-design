@@ -193,8 +193,11 @@ approval (you are its one required reviewer).
       repository's id, that environment's jobs, and for production only
       `refs/tags/v*`), the deploy service account and its roles, makes sure
       the functions' runtime account exists and lets it sign the sign-in
-      tokens (Token Creator on itself), grants the bindings a first deploy
-      would otherwise ask for, and sets the environment's three variables.
+      tokens (Token Creator on itself), lets the deploy account act as the
+      App Engine default account when the project has one (firebase-tools
+      checks that before every functions deploy, though nothing runs as
+      it), grants the bindings a first deploy would otherwise ask for, and
+      sets the environment's three variables.
       Run it after step 2: it grants the runtime account access to the four
       secrets, which must exist. Step 8 creates the Pub/Sub service agent
       with `gcloud beta services identity create` (a new project has none

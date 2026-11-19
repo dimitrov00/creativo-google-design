@@ -751,7 +751,7 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
       out,
       /roles\/(owner|editor|resourcemanager\.projectIamAdmin|iam\.securityAdmin|secretmanager\.admin|firebase\.admin)\b/,
     );
-    // actAs on the runtime account alone, never on the project.
+    // actAs on named accounts (step 7), never on the project.
     assert.ok(
       out.includes(
         '+ gcloud iam service-accounts add-iam-policy-binding PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/iam.serviceAccountUser --member=serviceAccount:creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com --project=creativo-v2-prod',
@@ -793,6 +793,34 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
       out,
       /add-iam-policy-binding creativo-v2-prod --member=serviceAccount:PROJECT_NUMBER-compute@[^\n]*serviceAccountTokenCreator/,
     );
+  });
+
+  it('lets the deploy account act as the App Engine default account when there is one — firebase-tools checks it before every functions deploy', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    const appspot = 'creativo-v2-prod@appspot.gserviceaccount.com';
+    const probe = out.indexOf(
+      `+ gcloud iam service-accounts describe ${appspot} --project=creativo-v2-prod`,
+    );
+    const present = out.indexOf('#   present →', probe);
+    const bind = out.indexOf(
+      `+ gcloud iam service-accounts add-iam-policy-binding ${appspot} --role=roles/iam.serviceAccountUser --member=serviceAccount:creativo-deployer@creativo-v2-prod.iam.gserviceaccount.com --project=creativo-v2-prod`,
+    );
+    const absent = out.indexOf('#   absent →', probe);
+    assert.ok(probe >= 0, 'the account is described first');
+    assert.ok(
+      present > probe && bind > present && absent > bind,
+      'bound only when it exists',
+    );
+    // The deploy account acts as exactly these two accounts.
+    const actAs = [
+      ...out.matchAll(
+        /^\+ gcloud iam service-accounts add-iam-policy-binding (\S+) --role=roles\/iam\.serviceAccountUser /gm,
+      ),
+    ].map((match) => match[1]);
+    assert.deepEqual(actAs, [
+      'PROJECT_NUMBER-compute@developer.gserviceaccount.com',
+      appspot,
+    ]);
   });
 
   it('creates the Pub/Sub service agent before binding it — a new project has none until asked', () => {
