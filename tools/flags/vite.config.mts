@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
 
 export default defineConfig(() => ({
-  root: __dirname,
+  root: import.meta.dirname,
   cacheDir: '../../node_modules/.vite/tools/flags',
   // The parity spec imports the domain's flag vocabulary by its alias.
   plugins: [nxViteTsPaths()],
