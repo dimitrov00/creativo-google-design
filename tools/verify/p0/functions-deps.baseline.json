@@ -1,7 +1,8 @@
 {
   "//": "The dependency keys of the generated dist/apps/functions/package.json (pnpm nx build functions). Checked by tools/verify/p0/functions-deps.mjs, which first refuses @angular/*, luxon, @types/luxon and dinero.js (none can be recorded; rxjs stays, phase-4a-repoint.md §10.1); re-record with `node tools/verify/p0/check-functions-deps.mjs --record` only for an intended change, and say why in the commit.",
-  "recordedAt": "2026-10-22",
+  "recordedAt": "2026-11-19",
   "dependencies": [
+    "@google-cloud/functions-framework",
     "firebase-admin",
     "firebase-functions",
     "libphonenumber-js",

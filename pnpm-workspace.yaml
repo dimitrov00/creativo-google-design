@@ -1,5 +1,8 @@
 packages:
   - 'apps/*'
+  # Not a package: the seed of the deployed functions' package.json
+  # (apps/functions/package.json), installed from the root.
+  - '!apps/functions'
   - 'libs/*'
   - 'libs/shared/*'
   - 'packages/*'

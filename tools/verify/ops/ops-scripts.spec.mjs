@@ -841,6 +841,18 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     assert.ok(binding > identity, 'and only then bound');
   });
 
+  it('creates the Eventarc service agent and grants its role ahead of the first deploy — whose triggers otherwise fail while the role settles', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    const identity = out.indexOf(
+      '+ gcloud beta services identity create --service=eventarc.googleapis.com --project=creativo-v2-prod',
+    );
+    const binding = out.indexOf(
+      '+ gcloud projects add-iam-policy-binding creativo-v2-prod --member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-eventarc.iam.gserviceaccount.com --role=roles/eventarc.serviceAgent --condition=None',
+    );
+    assert.ok(identity >= 0, 'the agent is created');
+    assert.ok(binding > identity, 'and only then bound');
+  });
+
   it('grants up front what a first deploy would grant itself — the agents, the runtime account’s secrets', () => {
     const { out } = dryRun(SCRIPT, args('staging'));
     for (const line of [

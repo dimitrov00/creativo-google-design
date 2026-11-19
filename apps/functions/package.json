@@ -1,0 +1,9 @@
+{
+  "name": "functions",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The seed of dist/apps/functions/package.json: Nx's generatePackageJson starts from this file and adds every package the source imports. It lists only what the source never imports but the deployed package must hold: Cloud Build installs the upload with pnpm (the pruned pnpm-lock.yaml beside it) and then requires the Functions Framework to be a declared dependency. Not a pnpm workspace package (pnpm-workspace.yaml excludes it); the version is the root package.json's.",
+  "dependencies": {
+    "@google-cloud/functions-framework": "5.0.5"
+  }
+}
