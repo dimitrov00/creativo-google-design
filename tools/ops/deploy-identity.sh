@@ -37,7 +37,10 @@
 #      it, the deploy account's actAs on it alone, and the account's Token
 #      Creator role on itself — `createCustomToken` signs through IAM
 #      signBlob (the Admin SDK has no key file), so without it every
-#      sign-in code checks out and then fails to mint the session;
+#      sign-in code checks out and then fails to mint the session; and the
+#      deploy account's actAs on the App Engine default account too, when
+#      the project has one — firebase-tools refuses a functions deploy
+#      without it, though nothing runs as that account;
 #   8. the bindings a first deploy would grant itself, so the deploy account
 #      never edits the project's IAM policy: the Pub/Sub agent's token
 #      creator (the agent created first: enabling the API does not create
@@ -226,6 +229,7 @@ POOL="projects/${NUMBER}/locations/global/workloadIdentityPools/${WIF_POOL_ID}"
 PROVIDER="${POOL}/providers/${WIF_PROVIDER_ID}"
 DEPLOYER="${DEPLOY_SERVICE_ACCOUNT_ID}@${PROJECT}.iam.gserviceaccount.com"
 RUNTIME="${NUMBER}-compute@developer.gserviceaccount.com"
+APPSPOT="${PROJECT}@appspot.gserviceaccount.com"
 # The one attribute step 5 binds: the repository's id and the environment,
 # both of which the condition below also requires.
 MAPPING="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref,attribute.repository_environment=assertion.repository_id+'/'+assertion.environment"
@@ -301,6 +305,27 @@ run gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --role=roles/i
 # It signs its own custom tokens (verifyOtpChallenge → createCustomToken →
 # IAM signBlob): Token Creator on itself, never on the project.
 run gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --role=roles/iam.serviceAccountTokenCreator "--member=serviceAccount:$RUNTIME" "--project=$PROJECT"
+
+echo "# 7b. the App Engine default account ${APPSPOT}, which firebase-tools checks"
+# Before any functions deploy, firebase-tools 15 tests actAs on this account
+# and stops when it is missing («Missing permissions required for functions
+# deploy … iam.serviceAccounts.ActAs on service account
+# <project>@appspot.gserviceaccount.com», the first staging deploy,
+# 2026-11-19), though no function here runs as it: gen 2 runs as the
+# account above. Firebase's setup creates it, with Editor, in a project that
+# has no App Engine app; actAs on it alone, like the account above. When the
+# account is absent the check cannot read it and lets the deploy go on, so
+# there is nothing to bind.
+appspot_probe() {
+  probe gcloud iam service-accounts describe "$APPSPOT" "--project=$PROJECT"
+}
+appspot_bind() {
+  run gcloud iam service-accounts add-iam-policy-binding "$APPSPOT" --role=roles/iam.serviceAccountUser "--member=serviceAccount:$DEPLOYER" "--project=$PROJECT"
+}
+appspot_absent() {
+  echo "#   no ${APPSPOT}: firebase-tools' check passes without it"
+}
+converge appspot_probe appspot_bind appspot_absent
 
 echo '# 8. the bindings a first deploy would otherwise grant itself'
 # Google creates the Pub/Sub service agent lazily, not when step 0 enables
