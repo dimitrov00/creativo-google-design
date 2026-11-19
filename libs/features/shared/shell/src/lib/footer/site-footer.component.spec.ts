@@ -10,15 +10,18 @@ import {
 import { Observable, of } from 'rxjs';
 import {
   AUTH_SESSION_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   LOCATION_LOAD_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { LoadLocation } from '@core/ports';
+import type { CatalogReadPorts, LoadLocation } from '@core/ports';
 import type { UtcEpochMs } from '@core/primitives';
 import {
+  barberFixture,
   locationFixture,
   memoryAuthSessionPorts,
+  memoryCatalogReadPorts,
   memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryLocationLoadPorts,
@@ -59,12 +62,16 @@ describe('SiteFooterComponent', () => {
   function configure(
     now?: UtcEpochMs,
     loadLocation?: LoadLocation,
+    // A fresh project's catalogue unless a test stores one.
+    catalog: CatalogReadPorts = memoryCatalogReadPorts(),
   ): Promise<void> {
     return TestBed.configureTestingModule({
       imports: [SiteFooterComponent],
       providers: [
         provideRouter([]),
         ...provideTestI18n(),
+        // Which landing sections are drawn (`SiteSectionsService`).
+        { provide: CATALOG_PORTS, useValue: catalog },
         // An anonymous visitor (the double's default session).
         { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
         // The copyright year reads the injected clock…
@@ -149,5 +156,62 @@ describe('SiteFooterComponent', () => {
     fixture.detectChanges();
 
     expect(legalBar(fixture.nativeElement)).toBe('© 2026 Creativo · bg');
+  });
+
+  /** Every sitemap row's href, in order. */
+  function hrefs(host: HTMLElement): readonly (string | null)[] {
+    return [...host.querySelectorAll('a.cr-footer__link')].map((link) =>
+      link.getAttribute('href'),
+    );
+  }
+
+  it('links no landing section a fresh project has nothing stored for — no team, no hours, no «Нашата работа», no Visit column', async () => {
+    await configure();
+
+    const fixture = TestBed.createComponent(SiteFooterComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(hrefs(host)).not.toContain('/#team');
+    expect(hrefs(host)).not.toContain('/#visit');
+    expect(hrefs(host)).not.toContain('/#work');
+    // Explore and Connect stay; the Visit column has no row left.
+    expect(host.querySelectorAll('.cr-footer__list')).toHaveLength(2);
+    expect(hrefs(host)).toContain('/careers');
+  });
+
+  it('links the team and the hours once a public barber and a shop are stored, and the flagship’s map and number when the page names one', async () => {
+    await configure(
+      undefined,
+      undefined,
+      memoryCatalogReadPorts({
+        barbers: [barberFixture()],
+        locations: [locationFixture()],
+      }),
+    );
+
+    const fixture = TestBed.createComponent(SiteFooterComponent);
+    fixture.componentRef.setInput('flagshipLocation', {
+      mapUrl: 'https://maps.app.goo.gl/creativo',
+      phoneE164: '+35921234567',
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(hrefs(host)).toContain('/#team');
+    expect(hrefs(host)).toEqual(
+      expect.arrayContaining([
+        'https://maps.app.goo.gl/creativo',
+        'tel:+35921234567',
+        '/#visit',
+      ]),
+    );
+    // The strip waits for photos of the shop's own work.
+    expect(hrefs(host)).not.toContain('/#work');
+    expect(host.querySelectorAll('.cr-footer__list')).toHaveLength(3);
   });
 });

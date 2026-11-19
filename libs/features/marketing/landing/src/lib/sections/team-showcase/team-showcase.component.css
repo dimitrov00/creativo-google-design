@@ -75,8 +75,7 @@
   margin: 0;
 }
 
-/* The name owns the full column width (the rating moved up to the role
-   line). No `max-inline-size` clamp: at the 2-column mobile grid a card is
+/* The name owns the full column width. No `max-inline-size` clamp: at the 2-column mobile grid a card is
    ~9rem of usable width, so an 11ch cap only forced ragged early wraps —
    and a single name longer than the cap (Bulgarian surnames routinely are)
    punched straight out of the card. Long tokens break instead of
@@ -86,18 +85,13 @@
   overflow-wrap: anywhere;
 }
 
-/* Role + rating share one row: the role is the flexible half (it
-   ellipsizes rather than pushing the stat out of the box), the stat
-   cluster never shrinks. */
+/* The role line (the barber's title) keeps to one line: it ellipsizes
+   rather than wrapping under the name. */
 .team-card__role {
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.team-card .ui-rating {
-  flex: 0 0 auto;
 }
 
 /* Explore affordance chrome is DS button vocabulary now (span[uiButton]

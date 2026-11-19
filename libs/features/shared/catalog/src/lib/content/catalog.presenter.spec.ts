@@ -116,6 +116,28 @@ describe('catalog.presenter — the service view model carries cents, currency a
     expect(vm.id).toBe(IVAN);
   });
 
+  it('takes the specialty and the gallery from art direction only, and never a rating', () => {
+    const barber = barberFixture({
+      id: IVAN,
+      title: { en: 'Barber', bg: 'Бръснар' },
+    });
+    const bare = barberToVm(barber, undefined, undefined);
+    // The title is the card's role line already: no stand-in specialty.
+    expect(bare.specialty).toBeNull();
+    expect(bare.gallery).toEqual([]);
+    expect('rating' in bare).toBe(false);
+
+    const art = {
+      specialty: { en: 'Scissors', bg: 'Ножица' },
+      gallery: ['https://example.test/work/cut.jpg'],
+      objectPosition: '50% 40%',
+    };
+    const styled = barberToVm(barber, undefined, art);
+    expect(styled.specialty).toBe(art.specialty);
+    expect(styled.gallery).toBe(art.gallery);
+    expect(styled.objectPosition).toBe('50% 40%');
+  });
+
   it('hands every figure on as money in the service’s stored currency (DEP-19)', () => {
     const eur = serviceToVm(cut(), undefined, undefined);
     expect(servicePriceFrom(eur)).toEqual(

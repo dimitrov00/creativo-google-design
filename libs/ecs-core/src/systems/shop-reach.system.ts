@@ -46,6 +46,17 @@ export const ShopReachSystem = {
   },
 
   /**
+   * Where a shop's «directions» link leads: the map link the shop stores
+   * (`mapUrl`, the owner's own pin), else the universal Maps URL on its
+   * coordinates ({@link directionsHref}).
+   */
+  mapHref(
+    shop: Pick<ShopLocation, 'mapUrl' | 'latitude' | 'longitude'>,
+  ): string {
+    return shop.mapUrl ?? ShopReachSystem.directionsHref(shop);
+  },
+
+  /**
    * The links for the shop `locationId` names among `shops`, linear scan;
    * `null` (not listed, nothing named) has no number to press and no
    * destination, so the copy says «get in touch».

@@ -14,63 +14,53 @@
       </ui-section-header>
 
       <ui-grid [uiColumns]="2" uiSpacing="regular" uiRowSpacing="spacious">
-        @for (barber of barbers; track barber.id) {
+        @for (barber of barbers(); track barber.id) {
           <button
             type="button"
             class="team-card morph-card"
             uiInteractive
             uiRadius="prominent"
             [attr.aria-label]="
-              t('landing.barbers.exploreBarber', { barber: t(barber.nameKey) })
+              t('landing.barbers.exploreBarber', {
+                barber: words.text(barber.name),
+              })
             "
             aria-haspopup="dialog"
             aria-controls="barber-detail-sheet"
             [attr.aria-expanded]="activeBarber()?.id === barber.id"
             (click)="openBarber(barber)"
           >
+            <!-- The avatar as the catalogue resolved it; until it lands (or
+                 for a barber with no photo yet) the disc shows its media
+                 canvas. -->
             <div class="team-card__media media-morph">
-              <img
-                [src]="barber.image"
-                [alt]="t(barber.nameKey)"
-                loading="lazy"
-              />
+              @if (barber.avatarSrc) {
+                <img
+                  [src]="barber.avatarSrc"
+                  [alt]="words.text(barber.name)"
+                  [style.object-position]="barber.objectPosition"
+                  loading="lazy"
+                />
+              }
             </div>
 
             <ui-stack class="team-card__copy" uiSpacing="tight">
-              <!-- Rating rides the ROLE line, not the name line: at the
-                   2-column mobile grid a title-size name plus a stat
-                   cluster on one row leaves the name a few characters
-                   before it overflows its box. Both facts are short,
-                   caption-scale metadata — they share a row cleanly, and
-                   the name gets the full column width below. -->
-              <ui-stack
-                uiAxis="horizontal"
-                uiAlignment="center"
-                uiSpacing="compact"
-              >
+              @if (barber.title; as title) {
                 <p
                   class="team-card__role"
                   uiText
                   uiFont="eyebrow"
                   uiForegroundStyle="secondary"
                 >
-                  {{ t(barber.roleKey) }}
+                  {{ words.text(title) }}
                 </p>
-                @if (barber.rating !== undefined) {
-                  <ui-spacer />
-                  <ui-rating [uiValue]="barber.rating" />
-                }
-              </ui-stack>
-              <h3 uiText uiFont="title">{{ t(barber.nameKey) }}</h3>
-              <ui-stack
-                class="team-card__facts"
-                uiAxis="horizontal"
-                uiSpacing="tight"
-                uiText
-                uiFont="caption"
-              >
-                <span>{{ t(barber.specialtyKey) }}</span>
-              </ui-stack>
+              }
+              <h3 uiText uiFont="title">{{ words.text(barber.name) }}</h3>
+              @if (barber.specialty; as specialty) {
+                <p class="team-card__facts" uiText uiFont="caption">
+                  {{ words.text(specialty) }}
+                </p>
+              }
               <ui-spacer />
               <!-- Decorative affordance cluster (the CARD is the control):
                    DS button chrome on span[uiButton] — stroked capsule
@@ -118,61 +108,62 @@
         <div class="barber-sheet__profile-inset">
           <ui-stack class="barber-sheet__profile" uiSpacing="regular">
             <ui-avatar
-              [uiSrc]="barber.image"
-              [uiName]="t(barber.nameKey)"
+              [uiSrc]="barber.avatarSrc"
+              [uiName]="words.text(barber.name)"
               uiControlSize="extraLarge"
             />
-            <p class="barber-sheet__role" uiText uiFont="eyebrow">
-              {{ t(barber.roleKey) }}
-            </p>
-            <h2 id="barber-sheet-title" uiText uiFont="display">
-              {{ t(barber.nameKey) }}
-            </h2>
-            @if (barber.rating !== undefined) {
-              <!-- Rating clusters with the name (HIG) — it's an identity
-                   fact, not body copy. -->
-              <ui-rating class="barber-sheet__rating" [uiValue]="barber.rating">
-                <span uiText uiFont="caption">
-                  {{ t('landing.barbers.ratingLabel') }}
-                </span>
-              </ui-rating>
+            @if (barber.title; as title) {
+              <p class="barber-sheet__role" uiText uiFont="eyebrow">
+                {{ words.text(title) }}
+              </p>
             }
-            <p
-              class="barber-sheet__specialty"
-              uiText
-              uiFont="caption"
-              uiWeight="bold"
-            >
-              {{ t(barber.specialtyKey) }}
-            </p>
-            @if (barber.aboutKey) {
+            <h2 id="barber-sheet-title" uiText uiFont="display">
+              {{ words.text(barber.name) }}
+            </h2>
+            @if (barber.specialty; as specialty) {
+              <p
+                class="barber-sheet__specialty"
+                uiText
+                uiFont="caption"
+                uiWeight="bold"
+              >
+                {{ words.text(specialty) }}
+              </p>
+            }
+            @if (barber.bio; as bio) {
               <p
                 class="barber-sheet__about"
                 uiText
                 uiFont="footnote"
                 uiForegroundStyle="secondary"
               >
-                {{ t(barber.aboutKey) }}
+                {{ words.text(bio) }}
               </p>
             }
           </ui-stack>
         </div>
 
-        <cr-showcase-gallery
-          [images]="barber.gallery"
-          [imageAlt]="
-            t('landing.barbers.galleryImageAlt', {
-              barber: t(barber.nameKey),
-            })
-          "
-          [ariaLabel]="
-            t('landing.barbers.galleryLabel', { barber: t(barber.nameKey) })
-          "
-          [gridViewLabel]="t('marketing.gallery.gridView')"
-          [carouselViewLabel]="t('marketing.gallery.carouselView')"
-          [expanded]="true"
-          [showToggle]="false"
-        />
+        <!-- Selected work — art direction only (`CATALOG_ART`), so most
+             barbers have none and the sheet goes straight to the prices. -->
+        @if (barber.gallery.length > 0) {
+          <cr-showcase-gallery
+            [images]="barber.gallery"
+            [imageAlt]="
+              t('landing.barbers.galleryImageAlt', {
+                barber: words.text(barber.name),
+              })
+            "
+            [ariaLabel]="
+              t('landing.barbers.galleryLabel', {
+                barber: words.text(barber.name),
+              })
+            "
+            [gridViewLabel]="t('marketing.gallery.gridView')"
+            [carouselViewLabel]="t('marketing.gallery.carouselView')"
+            [expanded]="true"
+            [showToggle]="false"
+          />
+        }
 
         <!-- ── The barber's price list. Derived by inverting
              `ServiceVm.offerings` — the seed stores service → barbers, so
@@ -220,7 +211,7 @@
         <a
           href="/client"
           [attr.aria-label]="
-            t('landing.barbers.bookWith', { barber: t(barber.nameKey) })
+            t('landing.barbers.bookWith', { barber: words.text(barber.name) })
           "
           uiButton
           uiButtonStyle="borderedProminent"

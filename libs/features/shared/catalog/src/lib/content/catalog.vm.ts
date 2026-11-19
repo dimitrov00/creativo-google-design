@@ -36,10 +36,11 @@ export interface BarberVm {
   readonly avatarSrc: string;
   /** v2 seeds every avatar with FocalPoint(0.5, 0.25) → object-position. */
   readonly objectPosition: string;
-  /** Client rating (★ 0–5, one decimal) — omitted for barbers without
-   *  enough reviews yet. */
-  readonly rating?: number;
-  /** The one-line craft summary the team cards read; `null` with no art and no title. */
+  /**
+   * The one-line craft summary the team cards read — art direction only
+   * (`CATALOG_ART`), `null` without it. No `rating`: the catalogue has no
+   * reviews, and a rating is never authored (see `catalog.presenter.ts`).
+   */
   readonly specialty: LocalizedText | null;
   /** Selected work, for the barber destination's gallery. */
   readonly gallery: readonly string[];

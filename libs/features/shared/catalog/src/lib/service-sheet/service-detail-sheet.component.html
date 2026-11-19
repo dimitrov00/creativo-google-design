@@ -223,8 +223,9 @@
                          its classification), then the qualifying metadata
                          beneath it at ONE type role and ONE ink. The role
                          keeps its own line — at ~135px of card width it
-                         can't share one with the stats — while rating and
-                         duration run together, dot-separated. -->
+                         can't share one with the duration below it. No
+                         rating: the catalogue has no reviews, and a rating
+                         is never authored. -->
                       <ui-stack
                         uiSpacing="tight"
                         uiAlignment="center"
@@ -251,14 +252,6 @@
                           uiForegroundStyle="secondary"
                           class="service-performer__meta"
                         >
-                          @if (performer.barber.rating !== undefined) {
-                            <ui-rating [uiValue]="performer.barber.rating" />
-                            <span
-                              aria-hidden="true"
-                              class="service-performer__sep"
-                              >·</span
-                            >
-                          }
                           <span class="service-performer__duration">
                             {{ performer.minutes }}
                             {{ t('landing.services.durationLabel') }}
@@ -318,8 +311,8 @@
                         {{ content.text(performer.barber.name) }}
                       </h4>
                       <!-- ONE metadata subtitle, App Store-style: every fact
-                         that qualifies the name — role, rating, duration —
-                         runs together on a single secondary line,
+                         that qualifies the name — role, duration — runs
+                         together on a single secondary line,
                          dot-separated, rather than each claiming a line or
                          a second trailing column of its own. Footnote, not
                          caption: HIG row subtitles sit at Subheadline /
@@ -338,22 +331,9 @@
                             content.text(title)
                           }}</span>
                         }
-                        @if (performer.barber.rating !== undefined) {
-                          @if (performer.barber.title) {
-                            <span
-                              aria-hidden="true"
-                              class="service-performer__sep"
-                              >·</span
-                            >
-                          }
-                          <ui-rating [uiValue]="performer.barber.rating" />
-                        }
-                        <!-- A barber with no title (team onboarding D5) and
-                           no rating leads with the duration alone. -->
-                        @if (
-                          performer.barber.title ||
-                          performer.barber.rating !== undefined
-                        ) {
+                        <!-- A barber with no title (team onboarding D5)
+                           leads with the duration alone. -->
+                        @if (performer.barber.title) {
                           <span
                             aria-hidden="true"
                             class="service-performer__sep"

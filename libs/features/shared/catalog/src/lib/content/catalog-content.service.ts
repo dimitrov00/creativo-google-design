@@ -19,7 +19,7 @@ import { MediaRef, Principal, PrincipalKind } from '@core/components';
 import type { MediaRefId, ServiceId } from '@core/primitives';
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import { CatalogListingSystem } from '@core/systems';
-import { BARBER_ART, SERVICE_ART } from './catalog-art';
+import { CATALOG_ART } from './catalog-art';
 import { type BarberVm, type ServiceVm } from './catalog.vm';
 import { barberToVm, serviceToVm } from './catalog.presenter';
 import { mediaUrlCache } from './media-url-cache';
@@ -40,6 +40,8 @@ import { mediaUrlCache } from './media-url-cache';
 @Injectable({ providedIn: 'root' })
 export class CatalogContentService {
   private readonly catalog = inject(CATALOG_PORTS);
+  /** The editorial extras merged onto the catalogue (none in production yet). */
+  private readonly art = inject(CATALOG_ART);
 
   /**
    * Resolved cover and avatar URLs, one resolve per media object — a
@@ -160,8 +162,21 @@ export class CatalogContentService {
     return barberToVm(
       barber,
       this.media.url(avatarRefOf(barber)),
-      BARBER_ART[barber.id],
+      this.art.barbers[barber.id],
     );
+  }
+
+  /**
+   * A shop's own photos (`ShopLocation.photos`), each resolved through the
+   * session's one URL cache, in their stored order — only those resolved
+   * so far: a photo still on its way, or one Storage refused, is simply not
+   * in the list yet.
+   */
+  photoUrlsOf(location: ShopLocation): readonly string[] {
+    return location.photos.flatMap((photo) => {
+      const url = this.media.url(photo);
+      return url === undefined ? [] : [url];
+    });
   }
 
   private readonly avatarSources = signal<readonly Signal<readonly Barber[]>[]>(
@@ -177,7 +192,7 @@ export class CatalogContentService {
     this.avatarSources.update((sources) => [...sources, source]);
   }
 
-  /** Every cover and avatar the catalogue names. */
+  /** Every cover, avatar and shop photo the catalogue names. */
   private readonly mediaRefs = computed<readonly MediaRef[]>(() => [
     ...this.allServices().flatMap((service) => {
       const cover = coverRefOf(service);
@@ -190,6 +205,7 @@ export class CatalogContentService {
       const avatar = avatarRefOf(barber);
       return avatar ? [avatar] : [];
     }),
+    ...this.locations().flatMap((location) => location.photos),
   ]);
 
   constructor() {
@@ -251,7 +267,7 @@ export class CatalogContentService {
     return serviceToVm(
       service,
       this.coverUrlOf(service),
-      SERVICE_ART[service.id],
+      this.art.services[service.id],
     );
   }
 

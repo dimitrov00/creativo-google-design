@@ -39,6 +39,18 @@ describe('ShopReachSystem', () => {
     expect(ShopReachSystem.reach([], null).reach).toBe('booking.reach.contact');
   });
 
+  it('sends «directions» to the shop’s stored map link, else to its coordinates', () => {
+    expect(
+      ShopReachSystem.mapHref({
+        ...centre,
+        mapUrl: 'https://maps.app.goo.gl/creativo',
+      }),
+    ).toBe('https://maps.app.goo.gl/creativo');
+    expect(ShopReachSystem.mapHref({ ...centre, mapUrl: null })).toBe(
+      'https://www.google.com/maps/dir/?api=1&destination=42.6977,23.3219',
+    );
+  });
+
   it('dials the canonical number, never the display string', () => {
     expect(ShopReachSystem.callHref(centre)).not.toContain(' ');
   });
